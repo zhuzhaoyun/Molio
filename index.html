@@ -1,0 +1,2255 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>知识增长引擎</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,700;1,500&family=JetBrains+Mono:ital,wght@0,400;0,500;1,400&family=Noto+Serif+SC:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   知识增长引擎 — 桌面应用原型
+   AI-Native Knowledge Growth Engine — Desktop Prototype
+   ============================================================ */
+
+:root {
+  --bg-deep: #151210;
+  --bg-base: #1c1915;
+  --bg-surface: #24211c;
+  --bg-elevated: #2c2822;
+  --bg-hover: #322e27;
+  --bg-active: #3a352e;
+  --bg-input: #1e1b17;
+  --border-subtle: #2e2a24;
+  --border-visible: #3d3830;
+  --border-active: #5c5240;
+  --text-primary: #e4d9c2;
+  --text-secondary: #a69880;
+  --text-muted: #6e6556;
+  --text-inverse: #1a1714;
+  --accent: #c9a84c;
+  --accent-glow: #e0b854;
+  --accent-dim: #8a7030;
+  --ai-accent: #c47a38;
+  --ai-glow: #e08c42;
+  --ai-dim: #8a5028;
+  --success: #7a8b6a;
+  --success-bg: #1d2418;
+  --danger: #b8554a;
+  --danger-bg: #241818;
+  --warning: #b8952e;
+  --sidebar-w: 256px;
+  --sidebar-collapsed-w: 52px;
+  --header-h: 48px;
+  --toolbar-h: 44px;
+  --statusbar-h: 32px;
+  --font-display: 'Playfair Display', 'Noto Serif SC', Georgia, serif;
+  --font-body: 'Noto Serif SC', Georgia, 'Source Serif 4', serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', Consolas, monospace;
+  --font-ui: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out-back: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --transition-fast: 150ms ease;
+  --transition-smooth: 300ms var(--ease-out-expo);
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%; overflow: hidden;
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* === App Shell === */
+#app {
+  display: flex;
+  height: 100vh;
+  background: var(--bg-deep);
+}
+
+/* ============================================================
+   SIDEBAR
+   ============================================================ */
+
+.sidebar {
+  width: var(--sidebar-w);
+  min-width: var(--sidebar-w);
+  max-width: var(--sidebar-w);
+  background: var(--bg-base);
+  border-right: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Subtle warm gradient */
+.sidebar::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 160px;
+  background: radial-gradient(ellipse at 50% 0%, rgba(201,168,76,0.04) 0%, transparent 70%);
+  pointer-events: none; z-index: 0;
+}
+
+/* --- Sidebar Header --- */
+.sidebar-header {
+  padding: 12px 12px 8px;
+  position: relative; z-index: 1;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.workspace-switcher {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+.workspace-switcher:hover { background: var(--bg-hover); }
+
+.workspace-avatar {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-visible);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px;
+  font-family: var(--font-display);
+  color: var(--accent);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.workspace-info { flex: 1; min-width: 0; }
+.workspace-name {
+  font-size: 13px; font-weight: 600;
+  font-family: var(--font-ui);
+  color: var(--text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.workspace-sub { font-size: 11px; color: var(--text-muted); font-family: var(--font-ui); }
+
+.search-trigger {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 12px; margin-top: 8px;
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  font-size: 12px; color: var(--text-muted);
+  font-family: var(--font-ui);
+  cursor: pointer;
+  transition: border-color var(--transition-fast);
+}
+.search-trigger:hover { border-color: var(--border-visible); }
+.search-trigger .search-icon { font-size: 13px; }
+.search-trigger .search-shortcut { margin-left: auto; font-size: 10px; font-family: var(--font-mono); }
+
+/* --- Sidebar Content --- */
+.sidebar-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+  position: relative; z-index: 1;
+}
+
+.sidebar-content::-webkit-scrollbar { width: 4px; }
+.sidebar-content::-webkit-scrollbar-thumb { background: var(--border-visible); border-radius: 2px; }
+
+/* --- Sidebar Group --- */
+.sidebar-group {
+  padding: 0 8px;
+  margin-bottom: 4px;
+}
+
+.sidebar-group-label {
+  padding: 8px 8px 4px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-weight: 600;
+}
+
+/* --- Sidebar Menu --- */
+.sidebar-menu { display: flex; flex-direction: column; gap: 2px; }
+
+.sidebar-menu-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  font-size: 13px;
+  font-family: var(--font-ui);
+  color: var(--text-secondary);
+  position: relative;
+}
+.sidebar-menu-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+.sidebar-menu-item.active {
+  background: rgba(201,168,76,0.1);
+  color: var(--accent-glow);
+}
+.sidebar-menu-item.active::before {
+  content: '';
+  position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+  width: 3px; height: 16px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.sidebar-menu-item .item-icon {
+  width: 18px; height: 18px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.sidebar-menu-item .item-icon svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.5; }
+
+.sidebar-menu-item .item-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.sidebar-menu-item .item-badge {
+  font-size: 10px; font-family: var(--font-mono);
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+}
+
+/* --- Sidebar Footer --- */
+.sidebar-footer {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border-subtle);
+  position: relative; z-index: 1;
+}
+
+.help-launcher {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 11px; color: var(--text-muted);
+  font-family: var(--font-ui);
+  transition: background var(--transition-fast);
+}
+.help-launcher:hover { background: var(--bg-hover); color: var(--text-secondary); }
+
+/* --- Sidebar Rail --- */
+.sidebar-rail {
+  position: absolute; top: 0; right: 0; bottom: 0;
+  width: 4px; cursor: col-resize;
+  z-index: 10;
+}
+
+/* ============================================================
+   CONTENT AREA
+   ============================================================ */
+
+.content-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-deep);
+}
+
+/* --- View Header --- */
+.view-header {
+  display: flex; align-items: center; gap: 12px;
+  padding: 0 20px;
+  height: var(--header-h);
+  min-height: var(--header-h);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-base);
+}
+
+.view-header .back-btn {
+  display: flex; align-items: center; gap: 4px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 12px; color: var(--text-muted);
+  font-family: var(--font-ui);
+  transition: all var(--transition-fast);
+  border: none; background: transparent;
+}
+.view-header .back-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+.view-header .breadcrumb {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13px; color: var(--text-secondary);
+  font-family: var(--font-ui);
+}
+.view-header .breadcrumb .sep { color: var(--text-muted); font-size: 11px; }
+.view-header .breadcrumb .current { color: var(--text-primary); font-weight: 500; }
+
+.view-header .spacer { flex: 1; }
+
+.view-header .header-actions { display: flex; gap: 6px; }
+
+/* --- View Content --- */
+.view-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.view-content::-webkit-scrollbar { width: 5px; }
+.view-content::-webkit-scrollbar-thumb { background: var(--border-visible); border-radius: 3px; }
+
+/* ============================================================
+   COMPOSE VIEW (开始创作)
+   ============================================================ */
+
+.compose-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.compose-header {
+  padding: 40px 48px 24px;
+}
+.compose-header h1 {
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--accent-glow);
+  margin-bottom: 8px;
+}
+.compose-header p {
+  color: var(--text-secondary);
+  font-size: 14px;
+  max-width: 520px;
+  line-height: 1.8;
+}
+
+.compose-body {
+  flex: 1;
+  padding: 0 48px 40px;
+  display: flex;
+  gap: 24px;
+  overflow: hidden;
+}
+
+.compose-left {
+  width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+.compose-right {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+}
+
+.compose-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+}
+.compose-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--font-ui);
+  color: var(--text-primary);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.compose-card-title .card-icon {
+  width: 20px; height: 20px;
+  border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px;
+}
+
+/* Writing Method Cards */
+.method-cards { display: flex; flex-direction: column; gap: 6px; }
+
+.method-card {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.method-card:hover { background: var(--bg-hover); border-color: var(--border-visible); }
+.method-card.selected {
+  border-color: var(--accent-dim);
+  background: rgba(201,168,76,0.06);
+}
+
+.method-icon {
+  width: 36px; height: 36px;
+  border-radius: var(--radius-md);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.method-info { flex: 1; }
+.method-name { font-size: 13px; font-weight: 500; font-family: var(--font-ui); color: var(--text-primary); }
+.method-desc { font-size: 11px; color: var(--text-muted); font-family: var(--font-ui); margin-top: 2px; }
+
+/* Material Chips */
+.materials-area { min-height: 100px; }
+.materials-placeholder {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-family: var(--font-ui);
+  border: 1px dashed var(--border-visible);
+  border-radius: var(--radius-md);
+}
+.materials-placeholder .browse-link {
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* Topic Input */
+.topic-input {
+  width: 100%;
+  min-height: 120px;
+  padding: 12px 14px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: var(--font-body);
+  line-height: 1.8;
+  outline: none;
+  resize: vertical;
+  transition: border-color var(--transition-fast);
+}
+.topic-input:focus { border-color: var(--border-active); }
+.topic-input::placeholder { color: var(--text-muted); }
+
+/* Generate Button */
+.generate-btn {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 12px 24px;
+  background: var(--ai-accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-weight: 600;
+  font-family: var(--font-ui);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.generate-btn:hover { background: var(--ai-glow); }
+.generate-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.generate-btn .btn-dot-loader { display: inline-flex; gap: 3px; }
+.generate-btn .btn-dot-loader span { width: 4px; height: 4px; border-radius: 50%; background: #fff; animation: dot-bounce 1.2s ease-in-out infinite; }
+.generate-btn .btn-dot-loader span:nth-child(2) { animation-delay: 0.2s; }
+.generate-btn .btn-dot-loader span:nth-child(3) { animation-delay: 0.4s; }
+
+/* ============================================================
+   FILE LIST VIEW
+   ============================================================ */
+
+.file-list-view {
+  display: flex;
+  height: 100%;
+}
+
+.file-tree-panel {
+  width: 280px;
+  min-width: 280px;
+  border-right: 1px solid var(--border-subtle);
+  background: var(--bg-base);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.file-tree-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.file-tree-header h3 {
+  font-size: 13px; font-weight: 600;
+  font-family: var(--font-ui);
+  color: var(--text-primary);
+}
+.file-tree-actions { display: flex; gap: 4px; }
+
+.file-tree-search {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.file-tree-search input {
+  width: 100%;
+  padding: 6px 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: var(--font-body);
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+.file-tree-search input:focus { border-color: var(--border-active); }
+.file-tree-search input::placeholder { color: var(--text-muted); }
+
+.file-tree-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+.file-tree-body::-webkit-scrollbar { width: 4px; }
+.file-tree-body::-webkit-scrollbar-thumb { background: var(--border-visible); border-radius: 2px; }
+
+/* Tree items */
+.tree-folder-header, .tree-file {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all var(--transition-fast);
+  font-family: var(--font-ui);
+  user-select: none;
+}
+.tree-folder-header { color: var(--text-secondary); }
+.tree-folder-header:hover { color: var(--text-primary); background: var(--bg-hover); }
+.tree-folder-header .tree-chevron {
+  font-size: 9px;
+  transition: transform var(--transition-fast);
+  width: 12px; text-align: center;
+  color: var(--text-muted);
+}
+.tree-folder-header .tree-chevron.open { transform: rotate(90deg); }
+.tree-folder-header .tree-label { flex: 1; }
+.tree-folder-header .tree-count { font-size: 10px; color: var(--text-muted); }
+
+.tree-children { display: none; padding-left: 12px; }
+.tree-children.open { display: block; }
+
+.tree-file { color: var(--text-primary); }
+.tree-file:hover { background: var(--bg-hover); }
+.tree-file.active {
+  background: rgba(201,168,76,0.08);
+  border-left: 2px solid var(--accent);
+  margin-left: -2px;
+  color: var(--accent-glow);
+}
+.tree-file .file-icon { font-size: 13px; color: var(--text-muted); }
+.tree-file .file-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* File Preview Panel */
+.file-preview-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.file-preview-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 40px;
+  text-align: center;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+}
+.file-preview-empty .empty-icon { font-size: 48px; margin-bottom: 16px; opacity: 0.4; }
+.file-preview-empty h3 { font-size: 16px; color: var(--text-secondary); margin-bottom: 8px; }
+.file-preview-empty p { font-size: 13px; max-width: 360px; }
+
+.file-preview-content {
+  flex: 1;
+  padding: 32px 40px;
+  overflow-y: auto;
+}
+.file-preview-content .md-body h1 {
+  font-family: var(--font-display); font-size: 24px; font-weight: 700;
+  margin: 0 0 16px; color: var(--accent-glow);
+}
+.file-preview-content .md-body h2 {
+  font-family: var(--font-display); font-size: 18px; font-weight: 700;
+  margin: 24px 0 12px; color: var(--text-primary);
+}
+.file-preview-content .md-body p { margin: 10px 0; line-height: 1.85; }
+.file-preview-content .md-body blockquote {
+  margin: 16px 0; padding: 12px 16px;
+  border-left: 2px solid var(--accent-dim);
+  background: var(--bg-surface);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-style: italic; color: var(--text-secondary);
+}
+.file-preview-content .md-body ul, .file-preview-content .md-body ol { padding-left: 24px; margin: 10px 0; }
+
+/* ============================================================
+   EDITOR VIEW
+   ============================================================ */
+
+.editor-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.editor-top-bar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 0 20px;
+  height: 44px;
+  min-height: 44px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.editor-top-bar .back-btn {
+  display: flex; align-items: center; gap: 4px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 12px; color: var(--text-muted);
+  font-family: var(--font-ui);
+  transition: all var(--transition-fast);
+  border: none; background: transparent;
+}
+.editor-top-bar .back-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+.editor-top-bar .file-name-display {
+  font-size: 13px;
+  font-weight: 500;
+  font-family: var(--font-ui);
+  color: var(--text-primary);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-base);
+  border: 1px solid var(--border-subtle);
+}
+
+.editor-top-bar .spacer { flex: 1; }
+
+.editor-top-bar .format-btn, .editor-top-bar .publish-btn {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-family: var(--font-ui);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  border: 1px solid var(--border-visible);
+  background: var(--bg-base);
+  color: var(--text-primary);
+}
+.editor-top-bar .format-btn:hover { background: var(--bg-hover); }
+.editor-top-bar .publish-btn {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--text-inverse);
+  font-weight: 600;
+}
+.editor-top-bar .publish-btn:hover { background: var(--accent-glow); border-color: var(--accent-glow); }
+
+/* Editor Toolbar */
+.editor-toolbar {
+  display: flex; align-items: center; gap: 2px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-base);
+  flex-shrink: 0;
+}
+
+.tb-group {
+  display: flex; gap: 1px;
+  padding: 0 6px;
+  border-right: 1px solid var(--border-subtle);
+}
+.tb-group:last-child { border-right: none; }
+
+.tb-btn {
+  width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  border: none; border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.tb-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+.tb-btn.active { background: rgba(201,168,76,0.15); color: var(--accent); }
+
+.tb-spacer { flex: 1; }
+
+/* Editor Body */
+.editor-body {
+  flex: 1; display: flex; overflow: hidden;
+}
+.editor-pane {
+  flex: 1; display: flex; flex-direction: column; overflow: hidden;
+}
+.editor-pane.split { flex: 1; }
+.editor-pane + .editor-pane { border-left: 1px solid var(--border-subtle); }
+
+#editor-textarea {
+  flex: 1;
+  padding: 24px 32px;
+  border: none; resize: none; outline: none;
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.8;
+  overflow-y: auto;
+}
+#editor-textarea::placeholder { color: var(--text-muted); opacity: 0.5; }
+
+#editor-preview {
+  flex: 1;
+  padding: 24px 32px;
+  overflow-y: auto;
+  background: var(--bg-base);
+}
+#editor-preview .md-body {
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.85;
+  color: var(--text-primary);
+}
+#editor-preview .md-body h1 { font-family: var(--font-display); font-size: 26px; font-weight: 700; margin: 24px 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border-subtle); color: var(--accent-glow); }
+#editor-preview .md-body h2 { font-family: var(--font-display); font-size: 20px; font-weight: 700; margin: 32px 0 12px; color: var(--text-primary); }
+#editor-preview .md-body h3 { font-size: 16px; font-weight: 700; margin: 24px 0 8px; color: var(--text-secondary); }
+#editor-preview .md-body p { margin: 10px 0; }
+#editor-preview .md-body strong { font-weight: 700; color: var(--accent-glow); }
+#editor-preview .md-body blockquote { margin: 16px 0; padding: 12px 16px; border-left: 2px solid var(--accent-dim); background: var(--bg-surface); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; font-style: italic; color: var(--text-secondary); }
+#editor-preview .md-body code { padding: 2px 6px; border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: 0.88em; color: var(--ai-accent); }
+#editor-preview .md-body pre { margin: 16px 0; padding: 16px; background: #1a1714; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); overflow-x: auto; }
+#editor-preview .md-body pre code { background: none; padding: 0; color: var(--text-primary); }
+#editor-preview .md-body ul, #editor-preview .md-body ol { padding-left: 24px; margin: 10px 0; }
+#editor-preview .md-body li { margin: 5px 0; }
+#editor-preview .md-body hr { margin: 32px 0; border: none; text-align: center; }
+#editor-preview .md-body hr::after { content: '\00B7  \00B7  \00B7'; color: var(--text-muted); letter-spacing: 6px; font-family: var(--font-display); }
+
+/* Status Bar */
+.editor-statusbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 4px 16px;
+  background: var(--bg-base);
+  border-top: 1px solid var(--border-subtle);
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+  height: var(--statusbar-h);
+}
+.status-runtime { display: flex; align-items: center; gap: 6px; }
+.status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); }
+.status-dot.running { background: var(--ai-accent); animation: pulse-dot 1s ease-in-out infinite; }
+@keyframes pulse-dot { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.4;transform:scale(0.7)} }
+
+/* ============================================================
+   RUNTIME VIEW
+   ============================================================ */
+
+.runtime-view {
+  padding: 32px 40px;
+}
+.runtime-view h2 {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 24px;
+}
+
+.runtime-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 640px;
+}
+
+.runtime-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  transition: border-color var(--transition-fast);
+}
+.runtime-card.connected { border-color: rgba(122,139,106,0.3); }
+
+.runtime-card .rt-icon {
+  width: 48px; height: 48px;
+  border-radius: var(--radius-md);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px;
+  flex-shrink: 0;
+}
+.runtime-card.connected .rt-icon { background: rgba(122,139,106,0.12); }
+.runtime-card:not(.connected) .rt-icon { background: rgba(110,101,86,0.1); }
+
+.runtime-card .rt-info { flex: 1; }
+.runtime-card .rt-name { font-size: 14px; font-weight: 600; font-family: var(--font-ui); }
+.runtime-card .rt-version { font-size: 12px; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px; }
+.runtime-card .rt-status { font-size: 12px; font-family: var(--font-ui); }
+.runtime-card .rt-status.online { color: var(--success); }
+.runtime-card .rt-status.offline { color: var(--danger); }
+.runtime-card .rt-status.not-installed { color: var(--text-muted); }
+
+.runtime-card .rt-actions { display: flex; gap: 6px; }
+
+.runtime-manual {
+  margin-top: 24px;
+  max-width: 640px;
+}
+.runtime-manual h3 {
+  font-size: 13px; font-weight: 600; font-family: var(--font-ui);
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+.runtime-manual .input-row { display: flex; gap: 8px; }
+.runtime-manual input {
+  flex: 1;
+  padding: 8px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  outline: none;
+}
+.runtime-manual input:focus { border-color: var(--border-active); }
+.runtime-manual input::placeholder { color: var(--text-muted); }
+
+/* ============================================================
+   SETTINGS VIEW
+   ============================================================ */
+
+.settings-view {
+  display: flex;
+  height: 100%;
+}
+
+.settings-nav {
+  width: 200px;
+  min-width: 200px;
+  border-right: 1px solid var(--border-subtle);
+  background: var(--bg-base);
+  padding: 8px 0;
+  overflow-y: auto;
+}
+
+.settings-group-label {
+  padding: 8px 16px 4px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-weight: 600;
+}
+
+.settings-nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: var(--font-ui);
+  color: var(--text-secondary);
+  transition: all var(--transition-fast);
+}
+.settings-nav-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+.settings-nav-item.active {
+  background: rgba(201,168,76,0.1);
+  color: var(--accent-glow);
+}
+.settings-nav-item .nav-icon { width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; }
+.settings-nav-item .nav-icon svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.5; }
+
+.settings-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 32px;
+}
+.settings-body::-webkit-scrollbar { width: 5px; }
+.settings-body::-webkit-scrollbar-thumb { background: var(--border-visible); border-radius: 3px; }
+
+.settings-section {
+  max-width: 600px;
+}
+.settings-section h3 {
+  font-size: 16px; font-weight: 600; font-family: var(--font-ui);
+  color: var(--text-primary);
+  margin-bottom: 16px;
+}
+
+.settings-field { margin-bottom: 20px; }
+.settings-field label {
+  display: block;
+  font-size: 12px; font-weight: 500; font-family: var(--font-ui);
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+.settings-field input, .settings-field textarea, .settings-field select {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: var(--font-body);
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+.settings-field input:focus, .settings-field textarea:focus { border-color: var(--border-active); }
+.settings-field textarea { resize: vertical; min-height: 80px; }
+.settings-field .field-desc { font-size: 11px; color: var(--text-muted); margin-top: 4px; font-family: var(--font-ui); }
+
+.settings-divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: 24px 0;
+}
+
+/* ============================================================
+   USAGE VIEW
+   ============================================================ */
+
+.usage-view {
+  padding: 32px 40px;
+}
+.usage-view h2 {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 24px;
+}
+
+.usage-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.usage-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+}
+.usage-card .stat-label {
+  font-size: 11px; color: var(--text-muted);
+  font-family: var(--font-ui);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+.usage-card .stat-value {
+  font-size: 28px; font-weight: 700;
+  font-family: var(--font-display);
+  color: var(--accent-glow);
+}
+.usage-card .stat-sub {
+  font-size: 12px; color: var(--text-secondary);
+  font-family: var(--font-ui);
+  margin-top: 4px;
+}
+
+.usage-chart-placeholder {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 40px;
+  text-align: center;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: 13px;
+}
+
+/* ============================================================
+   MODALS
+   ============================================================ */
+
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(10,9,7,0.7);
+  display: none; align-items: center; justify-content: center;
+  z-index: 100;
+  backdrop-filter: blur(4px);
+}
+.modal-overlay.visible { display: flex; }
+
+.modal {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-visible);
+  border-radius: var(--radius-lg);
+  padding: 28px;
+  max-width: 560px;
+  width: 90%;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+.modal h2 {
+  font-family: var(--font-display);
+  font-size: 20px;
+  margin-bottom: 16px;
+  color: var(--accent-glow);
+}
+.modal .modal-actions {
+  display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px;
+}
+
+/* Format Modal */
+.format-options { display: flex; flex-direction: column; gap: 8px; }
+.format-option {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.format-option:hover { background: var(--bg-hover); border-color: var(--border-visible); }
+.format-option.selected { border-color: var(--accent-dim); background: rgba(201,168,76,0.06); }
+.format-option .fmt-icon { font-size: 20px; }
+.format-option .fmt-name { font-size: 13px; font-weight: 500; font-family: var(--font-ui); }
+.format-option .fmt-desc { font-size: 11px; color: var(--text-muted); font-family: var(--font-ui); }
+
+/* Publish Modal */
+.publish-platforms { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+.publish-platform {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.publish-platform:hover { background: var(--bg-hover); }
+.publish-platform.selected { border-color: var(--accent-dim); background: rgba(201,168,76,0.06); }
+.publish-platform .plat-icon { font-size: 18px; }
+.publish-platform .plat-name { font-size: 13px; font-family: var(--font-ui); }
+.publish-platform .plat-check { margin-left: auto; width: 16px; height: 16px; border-radius: var(--radius-sm); border: 2px solid var(--border-visible); display: flex; align-items: center; justify-content: center; }
+.publish-platform.selected .plat-check { background: var(--accent); border-color: var(--accent); }
+.publish-platform.selected .plat-check::after { content: '\2713'; font-size: 10px; color: var(--text-inverse); font-weight: 700; }
+
+.publish-copy-actions { display: flex; flex-direction: column; gap: 6px; }
+
+/* Outline Modal */
+.outline-section { margin-bottom: 12px; }
+.outline-section h4 { font-size: 14px; font-family: var(--font-ui); color: var(--text-primary); }
+.outline-section p { font-size: 12px; color: var(--text-muted); font-family: var(--font-ui); margin-top: 4px; }
+
+/* ============================================================
+   BUTTONS
+   ============================================================ */
+
+.btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 6px 14px;
+  border: 1px solid var(--border-visible);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: var(--font-ui);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+.btn:hover { background: var(--bg-hover); border-color: var(--border-active); }
+.btn:active { transform: scale(0.97); }
+.btn-primary { background: var(--accent); color: var(--text-inverse); border-color: var(--accent); font-weight: 600; }
+.btn-primary:hover { background: var(--accent-glow); border-color: var(--accent-glow); }
+.btn-ai { background: var(--ai-accent); color: #fff; border-color: var(--ai-accent); font-weight: 600; }
+.btn-ai:hover { background: var(--ai-glow); border-color: var(--ai-glow); }
+.btn-ghost { background: transparent; border-color: transparent; }
+.btn-ghost:hover { background: var(--bg-hover); }
+.btn-xs { padding: 4px 10px; font-size: 11px; }
+.btn-sm { padding: 5px 12px; font-size: 12px; }
+
+/* ============================================================
+   TOAST
+   ============================================================ */
+
+.toast-container { position: fixed; top: 16px; right: 16px; z-index: 200; display: flex; flex-direction: column; gap: 6px; }
+.toast {
+  padding: 10px 18px; border-radius: var(--radius-md);
+  font-size: 12px; font-family: var(--font-ui);
+  background: var(--bg-elevated); color: var(--text-primary);
+  border: 1px solid var(--border-visible);
+  animation: toast-in 300ms var(--ease-out-back);
+}
+.toast.success { border-color: var(--success); color: var(--success); }
+.toast.error { border-color: var(--danger); color: var(--danger); }
+@keyframes toast-in { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+
+/* ============================================================
+   DOT LOADER
+   ============================================================ */
+
+@keyframes dot-bounce { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-6px)} }
+
+.dot-loader { display: inline-flex; gap: 3px; }
+.dot-loader span { width: 4px; height: 4px; border-radius: 50%; background: var(--ai-accent); animation: dot-bounce 1.2s ease-in-out infinite; }
+.dot-loader span:nth-child(2) { animation-delay: 0.2s; }
+.dot-loader span:nth-child(3) { animation-delay: 0.4s; }
+</style>
+</head>
+<body>
+<div id="app">
+
+<!-- ============================================================
+     SIDEBAR
+     ============================================================ -->
+<aside class="sidebar" id="sidebar">
+
+  <!-- Header -->
+  <div class="sidebar-header">
+    <div class="workspace-switcher">
+      <div class="workspace-avatar">K</div>
+      <div class="workspace-info">
+        <div class="workspace-name">我的知识库</div>
+        <div class="workspace-sub">个人工作区</div>
+      </div>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--text-muted);flex-shrink:0"><polyline points="6 9 12 15 18 9"/></svg>
+    </div>
+    <div class="search-trigger" onclick="showToast('搜索功能开发中...', '')">
+      <span class="search-icon">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      </span>
+      <span>搜索文件、页面...</span>
+      <span class="search-shortcut">Ctrl+K</span>
+    </div>
+  </div>
+
+  <!-- Navigation -->
+  <div class="sidebar-content">
+
+    <!-- 创作 -->
+    <div class="sidebar-group">
+      <div class="sidebar-group-label">创作</div>
+      <div class="sidebar-menu">
+        <div class="sidebar-menu-item active" data-view="compose" onclick="navigateTo('compose')">
+          <span class="item-icon">
+            <svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          </span>
+          <span class="item-label">开始创作</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 文件 -->
+    <div class="sidebar-group">
+      <div class="sidebar-group-label">文件</div>
+      <div class="sidebar-menu">
+        <div class="sidebar-menu-item" data-view="files" onclick="navigateTo('files')">
+          <span class="item-icon">
+            <svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          </span>
+          <span class="item-label">文件列表</span>
+          <span class="item-badge">24</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 个人 -->
+    <div class="sidebar-group">
+      <div class="sidebar-group-label">个人</div>
+      <div class="sidebar-menu">
+        <div class="sidebar-menu-item" data-view="usage" onclick="navigateTo('usage')">
+          <span class="item-icon">
+            <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+          </span>
+          <span class="item-label">Usage</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Configure -->
+    <div class="sidebar-group">
+      <div class="sidebar-group-label">Configure</div>
+      <div class="sidebar-menu">
+        <div class="sidebar-menu-item" data-view="runtime" onclick="navigateTo('runtime')">
+          <span class="item-icon">
+            <svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          </span>
+          <span class="item-label">Runtime</span>
+        </div>
+        <div class="sidebar-menu-item" data-view="settings" onclick="navigateTo('settings')">
+          <span class="item-icon">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          </span>
+          <span class="item-label">Settings</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Footer -->
+  <div class="sidebar-footer">
+    <div class="help-launcher" onclick="showToast('文档 / 更新日志 / 反馈', '')">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      帮助与反馈
+    </div>
+  </div>
+
+</aside>
+
+<!-- ============================================================
+     CONTENT AREA
+     ============================================================ -->
+<main class="content-area" id="content-area">
+
+  <!-- ====== VIEW: 开始创作 (DEFAULT) ====== -->
+  <div class="view-content view-compose" id="view-compose" style="display:none;">
+    <div class="compose-view">
+      <div class="compose-header">
+        <h1>开始创作</h1>
+        <p>选择写作方法，从知识库挑选素材，与 AI 协作，将思考转化为有影响力的内容。</p>
+      </div>
+      <div class="compose-body">
+        <div class="compose-left">
+          <!-- Writing Method -->
+          <div class="compose-card">
+            <div class="compose-card-title">
+              <span class="card-icon" style="background:rgba(201,168,76,0.12);color:var(--accent);">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+              </span>
+              写作方法
+            </div>
+            <div class="method-cards" id="compose-methods"></div>
+          </div>
+
+          <!-- Materials -->
+          <div class="compose-card materials-area">
+            <div class="compose-card-title">
+              <span class="card-icon" style="background:rgba(196,122,56,0.12);color:var(--ai-accent);">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+              </span>
+              素材
+            </div>
+            <div id="compose-materials">
+              <div class="materials-placeholder">
+                从 <span class="browse-link" onclick="navigateTo('files')">文件列表</span> 中选择参考材料，或在下方手动添加
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="compose-right">
+          <!-- Topic -->
+          <div class="compose-card">
+            <div class="compose-card-title">
+              <span class="card-icon" style="background:rgba(122,139,106,0.12);color:var(--success);">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="17" y1="10" x2="3" y2="10"/><line x1="21" y1="6" x2="3" y2="6"/><line x1="21" y1="14" x2="3" y2="14"/><line x1="17" y1="18" x2="3" y2="18"/></svg>
+              </span>
+              主题与想法
+            </div>
+            <textarea class="topic-input" id="compose-topic" placeholder="写下你想写的主题、核心观点、想表达的内容...&#10;&#10;例如：AI 时代，判断力比执行力更重要。我想用 Naval 的杠杆理论 + 一人独角兽案例来论证。"></textarea>
+          </div>
+
+          <!-- Task History -->
+          <div class="compose-card" id="compose-history-card" style="display:none;">
+            <div class="compose-card-title">
+              <span class="card-icon" style="background:var(--bg-hover);">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              </span>
+              任务历史
+            </div>
+            <div id="compose-task-log" style="display:flex;flex-direction:column;gap:4px;"></div>
+          </div>
+
+          <!-- Generate -->
+          <div class="compose-card" style="border:none;background:transparent;padding:0;">
+            <button class="generate-btn" id="btn-compose-generate" disabled onclick="startCompose()">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              <span id="btn-compose-text">开始创作</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== VIEW: 文件列表 ====== -->
+  <div class="view-content view-files" id="view-files" style="display:none;">
+    <div class="view-header">
+      <div class="breadcrumb">
+        <span class="current">文件列表</span>
+      </div>
+      <span class="spacer"></span>
+      <div class="header-actions">
+        <button class="btn btn-xs" onclick="showToast('新建文件功能开发中...', '')">+ 新建</button>
+        <button class="btn btn-xs" onclick="showToast('导入功能开发中...', '')">📥 导入</button>
+      </div>
+    </div>
+    <div class="file-list-view">
+      <div class="file-tree-panel">
+        <div class="file-tree-search">
+          <input type="text" placeholder="搜索文件..." oninput="filterFileTree(this.value)">
+        </div>
+        <div class="file-tree-body" id="file-tree-body"></div>
+        <div style="padding:8px 12px;border-top:1px solid var(--border-subtle);display:flex;gap:6px;">
+          <button class="btn btn-xs" style="flex:1;" onclick="showToast('新建文件功能开发中...', '')">+ 新建</button>
+          <button class="btn btn-xs" style="flex:1;" onclick="showToast('导入功能开发中...', '')">📥 导入</button>
+        </div>
+      </div>
+      <div class="file-preview-panel" id="file-preview-panel">
+        <div class="file-preview-empty">
+          <div class="empty-icon">📂</div>
+          <h3>选择一个文件</h3>
+          <p>点击左侧文件树中的文件预览，双击进入编辑模式</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== VIEW: 编辑器 ====== -->
+  <div class="view-content view-editor" id="view-editor" style="display:none;">
+    <div class="editor-view">
+      <div class="editor-top-bar">
+        <button class="back-btn" onclick="navigateTo('files')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+          返回
+        </button>
+        <div class="file-name-display" id="editor-filename">未命名.md</div>
+        <span class="spacer"></span>
+        <button class="format-btn" onclick="showFormatModal()">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+          排版
+        </button>
+        <button class="publish-btn" onclick="showPublishModal()">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          发布
+        </button>
+      </div>
+      <div class="editor-toolbar">
+        <div class="tb-group">
+          <button class="tb-btn" title="加粗" onclick="execAction('bold')" style="font-weight:700;">B</button>
+          <button class="tb-btn" title="斜体" onclick="execAction('italic')" style="font-style:italic;font-family:serif;">I</button>
+          <button class="tb-btn" title="删除线" onclick="execAction('strikethrough')" style="text-decoration:line-through;">S</button>
+        </div>
+        <div class="tb-group">
+          <button class="tb-btn" title="一级标题" onclick="execAction('h1')">H1</button>
+          <button class="tb-btn" title="二级标题" onclick="execAction('h2')">H2</button>
+          <button class="tb-btn" title="三级标题" onclick="execAction('h3')">H3</button>
+        </div>
+        <div class="tb-group">
+          <button class="tb-btn" title="引用" onclick="execAction('quote')" style="font-size:16px;">❝</button>
+          <button class="tb-btn" title="代码块" onclick="execAction('code')" style="font-family:var(--font-mono);font-size:11px;">&lt;/&gt;</button>
+          <button class="tb-btn" title="列表" onclick="execAction('list')">≡</button>
+          <button class="tb-btn" title="分隔线" onclick="execAction('hr')">—</button>
+        </div>
+        <div class="tb-group">
+          <button class="tb-btn active" id="tb-view-edit" title="仅编辑" onclick="setViewMode('edit')">✎</button>
+          <button class="tb-btn" id="tb-view-split" title="分屏" onclick="setViewMode('split')">◧</button>
+          <button class="tb-btn" id="tb-view-preview" title="仅预览" onclick="setViewMode('preview')">👁</button>
+        </div>
+        <span class="tb-spacer"></span>
+        <div class="tb-group" style="border:none;">
+          <button class="btn btn-xs btn-ghost" onclick="showToast('Ctrl+S 保存', 'success')">💾 保存</button>
+        </div>
+      </div>
+      <div class="editor-body" id="editor-body">
+        <div class="editor-pane" id="editor-pane">
+          <textarea id="editor-textarea" placeholder="开始写作...&#10;&#10;Ctrl+B 加粗  Ctrl+I 斜体  Ctrl+S 保存&#10;/ 快速插入内容..."></textarea>
+        </div>
+        <div class="editor-pane" id="preview-pane" style="display:none;">
+          <div class="md-body" id="editor-preview"></div>
+        </div>
+      </div>
+      <div class="editor-statusbar">
+        <span id="status-words">字数: 0</span>
+        <span id="status-domain">域: —</span>
+        <div class="status-runtime">
+          <span class="status-dot" id="status-dot"></span>
+          <span id="status-runtime-text">Claude Code 🟢</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== VIEW: Runtime ====== -->
+  <div class="view-content view-runtime" id="view-runtime" style="display:none;">
+    <div class="view-header">
+      <div class="breadcrumb">
+        <span>Configure</span>
+        <span class="sep">/</span>
+        <span class="current">Runtime</span>
+      </div>
+      <span class="spacer"></span>
+      <div class="header-actions">
+        <button class="btn btn-xs" onclick="scanRuntimes()">🔍 重新扫描</button>
+      </div>
+    </div>
+    <div class="runtime-view">
+      <h2>AI Runtime</h2>
+      <div class="runtime-cards" id="runtime-cards"></div>
+      <div class="runtime-manual">
+        <h3>手动添加 Runtime 路径</h3>
+        <div class="input-row">
+          <input type="text" placeholder="/usr/local/bin/... 或 C:\Program Files\...">
+          <button class="btn btn-sm btn-primary" onclick="showToast('路径已添加', 'success')">添加</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== VIEW: Settings ====== -->
+  <div class="view-content view-settings" id="view-settings" style="display:none;">
+    <div class="view-header">
+      <div class="breadcrumb">
+        <span>Configure</span>
+        <span class="sep">/</span>
+        <span class="current">Settings</span>
+      </div>
+    </div>
+    <div class="settings-view">
+      <div class="settings-nav" id="settings-nav"></div>
+      <div class="settings-body" id="settings-body"></div>
+    </div>
+  </div>
+
+  <!-- ====== VIEW: Usage ====== -->
+  <div class="view-content view-usage" id="view-usage" style="display:none;">
+    <div class="view-header">
+      <div class="breadcrumb">
+        <span class="current">Usage</span>
+      </div>
+    </div>
+    <div class="usage-view">
+      <h2>使用统计</h2>
+      <div class="usage-stats" id="usage-stats"></div>
+      <div class="usage-chart-placeholder">
+        <p style="margin-bottom:8px;font-size:16px;">📊</p>
+        <p>使用趋势图表将在正式版中提供</p>
+        <p style="margin-top:4px;font-size:11px;color:var(--text-muted);">包括 AI 调用次数、文章发布数、知识库增长等</p>
+      </div>
+    </div>
+  </div>
+
+</main>
+</div>
+
+<!-- ============================================================
+     MODAL: 排版
+     ============================================================ -->
+<div class="modal-overlay" id="modal-format">
+  <div class="modal">
+    <h2>🎨 文档排版</h2>
+    <p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;">选择排版主题，预览不同风格效果</p>
+    <div class="format-options" id="format-options"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('modal-format')">取消</button>
+      <button class="btn btn-primary" onclick="applyFormat()">应用</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     MODAL: 发布
+     ============================================================ -->
+<div class="modal-overlay" id="modal-publish">
+  <div class="modal">
+    <h2>📤 发布到平台</h2>
+    <p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;">选择要发布的平台，一键复制格式化内容</p>
+    <div class="publish-platforms" id="publish-platforms"></div>
+    <div class="publish-copy-actions">
+      <button class="btn btn-primary btn-sm" onclick="publishCopy('html')">📋 复制格式化 HTML</button>
+      <button class="btn btn-sm" onclick="publishCopy('markdown')">📄 复制 Markdown</button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('modal-publish')">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     MODAL: AI 大纲审核
+     ============================================================ -->
+<div class="modal-overlay" id="modal-outline">
+  <div class="modal">
+    <h2>📝 AI 生成的大纲</h2>
+    <div id="outline-content" class="md-body" style="margin:16px 0;"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('modal-outline')">取消</button>
+      <button class="btn btn-ai" id="btn-confirm-outline" onclick="confirmComposeOutline()">✅ 确认，生成全文</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast Container -->
+<div class="toast-container" id="toast-container"></div>
+
+<!-- ============================================================
+     SCRIPTS
+     ============================================================ -->
+<script>
+// ============================================================
+// DATA
+// ============================================================
+
+const wikiTree = {
+  '写作': {
+    '概念': ['正确的非共识', '正确非共识写作法', '第四种杠杆', '一人独角兽', '服务即软件', '智能的通缩', 'AI产品规模效应失效'],
+    '案例': ['Midjourney — 11人团队', 'Pieter-Levels', '放弃Dify爆款拆解'],
+    '文章草稿': ['知识库为谁而建？'],
+    '已发布': ['放弃Dify！准确率飙升25%'],
+  },
+  '开发': {
+    '概念': ['LLM-Wiki模式', 'Agent-Harness架构', '上下文工程', 'Skillify', '知识沉淀闭环'],
+    '架构': ['Agent记忆架构', '多人多Agent协作', '快速失败评审模式'],
+  },
+  '业务': {
+    '概念': ['一人独角兽', '第四种杠杆'],
+    '案例': ['Multica — 4人+AI团队'],
+  },
+};
+
+const writingMethods = [
+  { id: 'non-consensus', name: '正确非共识写作法', desc: '反常识击碎刻板印象 + 新认知框架', icon: '💡', bg: 'rgba(201,168,76,0.12)' },
+  { id: 'case-study', name: '案例拆解法', desc: '深度拆解公司/产品/个人的成功逻辑', icon: '🔍', bg: 'rgba(196,122,56,0.12)' },
+  { id: 'tech-tutorial', name: '技术实战教程', desc: '实战导向，具体方案和代码', icon: '⚡', bg: 'rgba(122,139,106,0.12)' },
+  { id: 'free', name: '自由写作', desc: '空白文档，由你主导', icon: '✍️', bg: 'rgba(110,101,86,0.12)' },
+];
+
+const formatThemes = [
+  { id: 'classic', name: '经典', desc: '传统排版，适合技术博客', icon: '📰' },
+  { id: 'elegant', name: '优雅', desc: '精致排版，适合微信公众号', icon: '✨' },
+  { id: 'minimal', name: '简洁', desc: '极简风格，适合知乎/掘金', icon: '📝' },
+];
+
+const publishPlatforms = [
+  { id: 'wechat', name: '微信公众号', icon: '💬' },
+  { id: 'zhihu', name: '知乎', icon: '🔷' },
+  { id: 'juejin', name: '掘金', icon: '💎' },
+  { id: 'twitter', name: 'Twitter/X', icon: '🐦' },
+  { id: 'csdn', name: 'CSDN', icon: '📕' },
+  { id: 'jianshu', name: '简书', icon: '📖' },
+];
+
+const sampleArticleContent = `# 未来最值钱的能力不是编程，是判断力
+
+2024年，黄仁勋说"Everyone is a programmer."很多人理解为：人人都会写代码。
+
+**他真正的意思是：当 AI 可以写代码时，代码本身不再值钱。值钱的是知道"该写什么"。**
+
+---
+
+## 三种杠杆的黄昏
+
+Naval Ravikant 提出的三种商业杠杆，正在被 AI 逐个重构：
+
+- **劳动力杠杆**：雇人干活 → Agent 替代人工，执行成本趋近于零
+- **资本杠杆**：用钱生钱 → AI 让创业资金门槛从百万级降到千元级
+- **代码/媒体杠杆**：写一次卖无数次 → AI 让"写"本身的成本消失
+
+当你发现三种传统杠杆都在贬值时，第四种杠杆浮现了。
+
+---
+
+## 第四种杠杆：AI × 判断力
+
+**AI 负责执行：** 写代码、做设计、生成内容、处理数据、回复客服。
+
+**你负责判断：** 做什么、不做什么、什么时候做、怎么做。
+
+> "在无限杠杆的时代，判断力是你唯一需要出售的商品。" —— Naval Ravikant`;
+
+const runtimes = [
+  { id: 'claude', name: 'Claude Code', version: 'v2.1.153', status: 'connected', statusText: '🟢 已连接', icon: '🧠' },
+  { id: 'codex', name: 'Codex CLI', version: '—', status: 'not-installed', statusText: '⚪ 未安装', icon: '💻' },
+];
+
+const settingsTabs = [
+  { group: '个人', items: [
+    { id: 'profile', label: '个人资料', icon: '<svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>' },
+    { id: 'preferences', label: '偏好设置', icon: '<svg viewBox="0 0 24 24"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>' },
+    { id: 'notifications', label: '通知', icon: '<svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>' },
+    { id: 'api-tokens', label: 'API 令牌', icon: '<svg viewBox="0 0 24 24"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>' },
+  ]},
+  { group: '工作区', items: [
+    { id: 'general', label: '通用', icon: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.604.852.997 1.51 1H21a2 2 0 0 1 0 4h-.09c-.658.003-1.25.396-1.51 1z"/></svg>' },
+    { id: 'knowledge', label: '知识库', icon: '<svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>' },
+    { id: 'integrations', label: '集成', icon: '<svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>' },
+  ]},
+];
+
+const settingsContent = {
+  profile: `<h3>个人资料</h3>
+    <div class="settings-field"><label>昵称</label><input type="text" value="Creator" placeholder="输入你的昵称"><div class="field-desc">显示在工作区中的名称</div></div>
+    <div class="settings-field"><label>简介</label><textarea placeholder="一句话介绍自己...">独立开发者，关注 AI 与内容创作</textarea></div>
+    <div class="settings-divider"></div>
+    <button class="btn btn-primary btn-sm">保存更改</button>`,
+
+  preferences: `<h3>偏好设置</h3>
+    <div class="settings-field"><label>默认编辑器字体</label><select><option>JetBrains Mono (等宽)</option><option>Noto Serif SC (衬线)</option><option>系统默认 (无衬线)</option></select></div>
+    <div class="settings-field"><label>默认写作方法</label><select><option>自由写作</option><option>正确非共识写作法</option><option>案例拆解法</option><option>技术实战教程</option></select></div>
+    <div class="settings-field"><label>默认预览模式</label><select><option>仅编辑</option><option>分屏预览</option><option>仅预览</option></select></div>
+    <div class="settings-divider"></div>
+    <button class="btn btn-primary btn-sm">保存更改</button>`,
+
+  notifications: `<h3>通知设置</h3>
+    <div class="settings-field"><label>AI 生成完成通知</label><select><option>开启</option><option>关闭</option></select><div class="field-desc">AI 完成大纲或全文生成时推送通知</div></div>
+    <div class="settings-field"><label>发布成功通知</label><select><option>开启</option><option>关闭</option></select></div>`,
+
+  'api-tokens': `<h3>API 令牌</h3>
+    <p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;">用于连接外部 AI Runtime 和发布平台</p>
+    <div class="settings-field"><label>Claude API Key</label><input type="password" value="sk-ant-xxxxxxxxxxxx" placeholder="sk-ant-..."><div class="field-desc">用于调用 Claude 代码执行环境</div></div>
+    <div class="settings-divider"></div>
+    <button class="btn btn-primary btn-sm">更新令牌</button>`,
+
+  general: `<h3>通用设置</h3>
+    <div class="settings-field"><label>工作区名称</label><input type="text" value="我的知识库" placeholder="输入工作区名称"></div>
+    <div class="settings-field"><label>默认文件路径</label><input type="text" value="./knowledge-growth-engine/wiki/" placeholder="输入 wiki 目录路径"><div class="field-desc">wiki 文件的存储目录</div></div>`,
+
+  knowledge: `<h3>知识库设置</h3>
+    <div class="settings-field"><label>默认领域</label><select><option>写作</option><option>开发</option><option>跨域</option></select><div class="field-desc">新建页面时的默认归属域</div></div>
+    <div class="settings-field"><label>Ingest 后自动更新索引</label><select><option>开启</option><option>关闭</option></select><div class="field-desc">Ingest 完成后自动更新 index.md 和 log.md</div></div>`,
+
+  integrations: `<h3>集成设置</h3>
+    <div class="settings-field"><label>默认发布平台</label><input type="text" placeholder="微信公众号, 知乎, 掘金" value="微信公众号"><div class="field-desc">多个平台用逗号分隔</div></div>
+    <div class="settings-field"><label>Chrome 扩展路径</label><input type="text" placeholder="doocs/cose 扩展路径"><div class="field-desc">用于自动发布到多平台的 Chrome 扩展</div></div>`,
+};
+
+// ============================================================
+// STATE
+// ============================================================
+
+const state = {
+  currentView: 'compose',    // compose | files | editor | runtime | settings | usage
+  previousView: null,
+  selectedMethod: null,
+  selectedPlatforms: ['wechat'],
+  selectedFormat: 'elegant',
+  editorContent: '',
+  editorFileName: '',
+  editorDomain: '—',
+  editorViewMode: 'split',  // edit | split | preview
+  activeSettingsTab: 'profile',
+  composeTaskLog: [],
+  isComposing: false,
+  currentOutline: null,
+};
+
+// ============================================================
+// INIT
+// ============================================================
+
+function init() {
+  renderComposeMethods();
+  renderFileTree();
+  renderRuntimeCards();
+  renderSettingsNav();
+  renderSettingsContent('profile');
+  renderUsageStats();
+  renderFormatOptions();
+  renderPublishPlatforms();
+
+  // Default view: compose
+  navigateTo('compose');
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      e.preventDefault();
+      saveEditorContent();
+      showToast('已保存', 'success');
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'b' && state.currentView === 'editor') {
+      e.preventDefault(); execAction('bold');
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'i' && state.currentView === 'editor') {
+      e.preventDefault(); execAction('italic');
+    }
+    // Escape to close modals
+    if (e.key === 'Escape') {
+      document.querySelectorAll('.modal-overlay.visible').forEach(m => m.classList.remove('visible'));
+    }
+  });
+
+  // Editor input handler
+  const textarea = document.getElementById('editor-textarea');
+  textarea.addEventListener('input', () => {
+    state.editorContent = textarea.value;
+    updateEditorStatus();
+    if (state.editorViewMode === 'split' || state.editorViewMode === 'preview') {
+      updateEditorPreview();
+    }
+  });
+
+  // Modal overlay click to close
+  document.querySelectorAll('.modal-overlay').forEach(overlay => {
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.classList.remove('visible'); });
+  });
+}
+
+// ============================================================
+// NAVIGATION
+// ============================================================
+
+function navigateTo(viewName) {
+  // Hide all views
+  document.querySelectorAll('.view-content').forEach(v => v.style.display = 'none');
+
+  // Show target view
+  const target = document.getElementById('view-' + viewName);
+  if (target) target.style.display = '';
+
+  // Update sidebar active state
+  document.querySelectorAll('.sidebar-menu-item').forEach(item => {
+    item.classList.toggle('active', item.dataset.view === viewName);
+  });
+
+  state.previousView = state.currentView;
+  state.currentView = viewName;
+
+  // Post-navigate actions
+  if (viewName === 'editor' && state.editorContent) {
+    document.getElementById('editor-textarea').value = state.editorContent;
+    updateEditorStatus();
+    if (state.editorViewMode === 'split' || state.editorViewMode === 'preview') {
+      updateEditorPreview();
+    }
+    setEditorViewMode(state.editorViewMode);
+  }
+}
+
+// ============================================================
+// COMPOSE VIEW
+// ============================================================
+
+function renderComposeMethods() {
+  const container = document.getElementById('compose-methods');
+  container.innerHTML = writingMethods.map(m => `
+    <div class="method-card${state.selectedMethod === m.id ? ' selected' : ''}" data-method="${m.id}" onclick="selectComposeMethod('${m.id}')">
+      <div class="method-icon" style="background:${m.bg};">${m.icon}</div>
+      <div class="method-info">
+        <div class="method-name">${m.name}</div>
+        <div class="method-desc">${m.desc}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function selectComposeMethod(id) {
+  state.selectedMethod = id;
+  renderComposeMethods();
+  updateComposeButton();
+}
+
+function updateComposeButton() {
+  const btn = document.getElementById('btn-compose-generate');
+  btn.disabled = !state.selectedMethod;
+}
+
+function startCompose() {
+  if (state.isComposing || !state.selectedMethod) return;
+  state.isComposing = true;
+
+  const btnText = document.getElementById('btn-compose-text');
+  btnText.innerHTML = '生成大纲中 <span class="btn-dot-loader"><span></span><span></span><span></span></span>';
+
+  addComposeTask('生成大纲', 'running');
+
+  setTimeout(() => {
+    state.currentOutline = {
+      title: document.getElementById('compose-topic').value.slice(0, 40) || '基于你想法的文章',
+      method: writingMethods.find(m => m.id === state.selectedMethod)?.name || '',
+      sections: [
+        { text: '引入：打破常规认知', sub: '用一个反常识现象开场' },
+        { text: '核心论点展开', sub: '建立新的认知框架' },
+        { text: '案例支撑', sub: '用真实案例论证观点' },
+        { text: '行动建议', sub: '给读者可操作的步骤' },
+      ],
+    };
+    addComposeTask('生成大纲', 'done');
+    state.isComposing = false;
+    btnText.textContent = '开始创作';
+    showOutlineModal();
+  }, 1800);
+}
+
+function showOutlineModal() {
+  const modal = document.getElementById('modal-outline');
+  const content = document.getElementById('outline-content');
+  const o = state.currentOutline;
+
+  let html = `<h3 style="font-family:var(--font-display);font-size:20px;color:var(--accent-glow);margin-bottom:16px;">${o.title}</h3>`;
+  html += `<p style="font-size:12px;color:var(--text-muted);margin-bottom:16px;">方法：${o.method}</p>`;
+  html += '<ol style="padding-left:20px;display:flex;flex-direction:column;gap:8px;">';
+  o.sections.forEach((s, i) => {
+    html += `<li class="outline-section"><h4>${s.text}</h4><p>${s.sub}</p></li>`;
+  });
+  html += '</ol>';
+  content.innerHTML = html;
+  modal.classList.add('visible');
+}
+
+function confirmComposeOutline() {
+  closeModal('modal-outline');
+  generateFullArticle();
+}
+
+function generateFullArticle() {
+  state.isComposing = true;
+  const btnText = document.getElementById('btn-compose-text');
+  btnText.innerHTML = '写作中... <span class="btn-dot-loader"><span></span><span></span><span></span></span>';
+  addComposeTask('生成全文', 'running');
+
+  setTimeout(() => {
+    addComposeTask('生成全文', 'done');
+    state.isComposing = false;
+    btnText.textContent = '开始创作';
+
+    // Open editor with generated content
+    state.editorContent = sampleArticleContent;
+    state.editorFileName = state.currentOutline.title + '.md';
+    state.editorDomain = '写作';
+    document.getElementById('editor-filename').textContent = state.editorFileName;
+    navigateTo('editor');
+
+    showToast('文章已生成，可在编辑器中编辑', 'success');
+  }, 2500);
+}
+
+function addComposeTask(task, status) {
+  const card = document.getElementById('compose-history-card');
+  const log = document.getElementById('compose-task-log');
+  card.style.display = '';
+  const dot = status === 'running' ? '🟡' : status === 'done' ? '✅' : '⚪';
+  const item = document.createElement('div');
+  item.style.cssText = 'display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px;font-family:var(--font-ui);color:var(--text-secondary);';
+  item.innerHTML = `<span>${dot}</span><span style="flex:1;">${task}</span>`;
+  log.prepend(item);
+}
+
+// ============================================================
+// FILE TREE VIEW
+// ============================================================
+
+function renderFileTree(filter = '') {
+  const container = document.getElementById('file-tree-body');
+  let html = '';
+  let totalCount = 0;
+
+  for (const [domain, folders] of Object.entries(wikiTree)) {
+    let domainHtml = '';
+    let domainCount = 0;
+
+    for (const [folder, files] of Object.entries(folders)) {
+      const filteredFiles = filter ? files.filter(f => f.toLowerCase().includes(filter.toLowerCase())) : files;
+      if (filteredFiles.length === 0) continue;
+      domainCount += filteredFiles.length;
+
+      domainHtml += `<div class="tree-folder">
+        <div class="tree-folder-header" onclick="toggleFileFolder(this)">
+          <span class="tree-chevron open">▶</span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          <span class="tree-label">${folder}</span>
+          <span class="tree-count">${filteredFiles.length}</span>
+        </div>
+        <div class="tree-children open">`;
+
+      filteredFiles.forEach(f => {
+        domainHtml += `<div class="tree-file" data-path="${domain}/${folder}/${f}" data-domain="${domain}"
+          onclick="previewFile(this, '${domain}/${folder}/${f}')"
+          ondblclick="openFileForEdit('${domain}/${folder}/${f}', '${domain}')">
+          <span class="file-icon">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          </span>
+          <span class="file-name">${f}</span>
+        </div>`;
+      });
+
+      domainHtml += `</div></div>`;
+    }
+
+    if (domainCount > 0) {
+      totalCount += domainCount;
+      html += `<div class="tree-folder">
+        <div class="tree-folder-header" onclick="toggleFileFolder(this)">
+          <span class="tree-chevron open">▶</span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3h7l2 2h9a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><line x1="12" y1="12" x2="12" y2="18"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+          <span class="tree-label" style="font-weight:600;">${domain}</span>
+          <span class="tree-count">${domainCount}</span>
+        </div>
+        <div class="tree-children open">${domainHtml}</div>
+      </div>`;
+    }
+  }
+
+  if (!html) html = '<div style="padding:24px;text-align:center;color:var(--text-muted);font-size:12px;font-family:var(--font-ui);">没有匹配的页面</div>';
+  container.innerHTML = html;
+}
+
+function toggleFileFolder(header) {
+  const chevron = header.querySelector('.tree-chevron');
+  const children = header.nextElementSibling;
+  if (!children || !children.classList.contains('tree-children')) return;
+  const isOpen = children.classList.contains('open');
+  children.classList.toggle('open');
+  chevron.classList.toggle('open');
+}
+
+function filterFileTree(term) {
+  renderFileTree(term);
+}
+
+function previewFile(el, path) {
+  // Update active state
+  document.querySelectorAll('.tree-file').forEach(f => f.classList.remove('active'));
+  el.classList.add('active');
+
+  const parts = path.split('/');
+  const name = parts[parts.length - 1];
+
+  // Show preview in right panel
+  const panel = document.getElementById('file-preview-panel');
+  panel.innerHTML = `
+    <div class="view-header" style="border-bottom:1px solid var(--border-subtle);">
+      <span style="font-size:13px;font-weight:500;font-family:var(--font-ui);">📄 ${name}</span>
+      <span class="spacer"></span>
+      <button class="btn btn-xs btn-ghost" style="color:var(--text-muted);" onclick="showToast('已复制文件路径', 'success')">复制路径</button>
+    </div>
+    <div class="file-preview-content">
+      <div class="md-body">
+        <h1>${name}</h1>
+        <p style="color:var(--text-muted);font-size:12px;font-family:var(--font-ui);margin-bottom:16px;">来源：wiki/${path}</p>
+        <p>这是一个示例知识库页面。双击此文件进入编辑模式。</p>
+        <blockquote>知识库是思考的脚手架，不是知识的仓库。它的价值不在于存储了多少，而在于连接了什么。</blockquote>
+        <h2>核心观点</h2>
+        <p>每个 wiki 页面应该聚焦于一个清晰的概念、案例或框架。页面之间通过双向链接形成知识网络。</p>
+        <h2>相关页面</h2>
+        <ul>
+          <li>关联概念：正确非共识写作法</li>
+          <li>关联案例：Midjourney — 11人团队</li>
+        </ul>
+      </div>
+    </div>
+  `;
+}
+
+function openFileForEdit(path, domain) {
+  const parts = path.split('/');
+  const name = parts[parts.length - 1];
+  state.editorFileName = name + '.md';
+  state.editorDomain = domain;
+  state.editorContent = `# ${name}\n\n> 来源：wiki/${path}\n\n## 核心观点\n\n在此编辑和扩展这个知识页面...\n\n## 相关概念\n\n- 关联页面 1\n- 关联页面 2\n`;
+  document.getElementById('editor-filename').textContent = state.editorFileName;
+  navigateTo('editor');
+}
+
+// ============================================================
+// EDITOR VIEW
+// ============================================================
+
+function setEditorViewMode(mode) {
+  state.editorViewMode = mode;
+  const editorPane = document.getElementById('editor-pane');
+  const previewPane = document.getElementById('preview-pane');
+
+  editorPane.style.display = (mode === 'edit' || mode === 'split') ? 'flex' : 'none';
+  previewPane.style.display = (mode === 'split' || mode === 'preview') ? 'flex' : 'none';
+  previewPane.style.flex = mode === 'preview' ? '1' : '1';
+  editorPane.style.flex = mode === 'edit' ? '1' : '1';
+  editorPane.classList.toggle('split', mode === 'split');
+
+  document.getElementById('tb-view-edit').classList.toggle('active', mode === 'edit');
+  document.getElementById('tb-view-split').classList.toggle('active', mode === 'split');
+  document.getElementById('tb-view-preview').classList.toggle('active', mode === 'preview');
+
+  if (mode === 'split' || mode === 'preview') updateEditorPreview();
+}
+
+function setViewMode(mode) { setEditorViewMode(mode); }
+
+function updateEditorStatus() {
+  const text = state.editorContent || document.getElementById('editor-textarea')?.value || '';
+  const chars = text.replace(/\s/g, '').length;
+  document.getElementById('status-words').textContent = `字数: ${chars}`;
+  document.getElementById('status-domain').textContent = `域: ${state.editorDomain}`;
+}
+
+function updateEditorPreview() {
+  const text = state.editorContent || document.getElementById('editor-textarea')?.value || '';
+  document.getElementById('editor-preview').innerHTML = renderMarkdown(text);
+}
+
+function renderMarkdown(md) {
+  let html = md
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/~~(.+?)~~/g, '<del>$1</del>')
+    .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+    .replace(/`(.+?)`/g, '<code>$1</code>')
+    .replace(/^> (.+)$/gm, '<blockquote><p>$1</p></blockquote>')
+    .replace(/^---$/gm, '<hr>')
+    .replace(/^- (.+)$/gm, '<li>$1</li>')
+    .replace(/\n\n/g, '</p><p>');
+  return '<p>' + html.replace(/\n/g, '<br>') + '</p>';
+}
+
+function execAction(action) {
+  const el = document.getElementById('editor-textarea');
+  if (!el || state.currentView !== 'editor') return;
+  const start = el.selectionStart;
+  const end = el.selectionEnd;
+  const text = el.value;
+
+  const actions = {
+    bold: { pre: '**', post: '**' },
+    italic: { pre: '*', post: '*' },
+    strikethrough: { pre: '~~', post: '~~' },
+    h1: { pre: '# ', post: '' },
+    h2: { pre: '## ', post: '' },
+    h3: { pre: '### ', post: '' },
+    quote: { pre: '> ', post: '' },
+    code: { pre: '\n```\n', post: '\n```\n' },
+    list: { pre: '- ', post: '' },
+    hr: { pre: '\n---\n', post: '' },
+  };
+
+  const cmd = actions[action];
+  if (!cmd) return;
+  const selected = text.substring(start, end) || '文本';
+  el.setRangeText(cmd.pre + selected + cmd.post, start, end, 'select');
+  el.focus();
+  el.dispatchEvent(new Event('input'));
+}
+
+function saveEditorContent() {
+  if (state.currentView === 'editor') {
+    state.editorContent = document.getElementById('editor-textarea').value;
+  }
+}
+
+// ============================================================
+// RUNTIME VIEW
+// ============================================================
+
+function renderRuntimeCards() {
+  const container = document.getElementById('runtime-cards');
+  container.innerHTML = runtimes.map(rt => `
+    <div class="runtime-card ${rt.status}">
+      <div class="rt-icon">${rt.icon}</div>
+      <div class="rt-info">
+        <div class="rt-name">${rt.name}</div>
+        <div class="rt-version">${rt.version}</div>
+      </div>
+      <div class="rt-status ${rt.status}">${rt.statusText}</div>
+      <div class="rt-actions">
+        ${rt.status === 'connected' ? '<button class="btn btn-xs btn-ghost" onclick="showToast(\'' + rt.name + ' 运行中\', \'\')">管理</button>' : '<button class="btn btn-xs" onclick="showToast(\'安装 ' + rt.name + ' 功能开发中...\')">安装</button>'}
+      </div>
+    </div>
+  `).join('');
+}
+
+function scanRuntimes() {
+  showToast('正在扫描 PATH 中的 AI CLI 工具...', '');
+  setTimeout(() => showToast('扫描完成：Claude Code v2.1.153 🟢', 'success'), 1200);
+}
+
+// ============================================================
+// SETTINGS VIEW
+// ============================================================
+
+function renderSettingsNav() {
+  const container = document.getElementById('settings-nav');
+  let html = '';
+
+  settingsTabs.forEach(group => {
+    html += `<div class="settings-group-label">${group.group}</div>`;
+    group.items.forEach(item => {
+      html += `<div class="settings-nav-item${state.activeSettingsTab === item.id ? ' active' : ''}" data-tab="${item.id}" onclick="switchSettingsTab('${item.id}')">
+        <span class="nav-icon">${item.icon}</span>
+        <span>${item.label}</span>
+      </div>`;
+    });
+  });
+
+  container.innerHTML = html;
+}
+
+function switchSettingsTab(tabId) {
+  state.activeSettingsTab = tabId;
+  document.querySelectorAll('.settings-nav-item').forEach(item => {
+    item.classList.toggle('active', item.dataset.tab === tabId);
+  });
+  renderSettingsContent(tabId);
+}
+
+function renderSettingsContent(tabId) {
+  const container = document.getElementById('settings-body');
+  container.innerHTML = settingsContent[tabId] || '<p>暂无设置内容</p>';
+}
+
+// ============================================================
+// USAGE VIEW
+// ============================================================
+
+function renderUsageStats() {
+  const container = document.getElementById('usage-stats');
+  container.innerHTML = `
+    <div class="usage-card">
+      <div class="stat-label">知识库页面</div>
+      <div class="stat-value">24</div>
+      <div class="stat-sub">写作 14 · 开发 7 · 业务 3</div>
+    </div>
+    <div class="usage-card">
+      <div class="stat-label">已发布文章</div>
+      <div class="stat-value">3</div>
+      <div class="stat-sub">微信公众号 2 · 知乎 1</div>
+    </div>
+    <div class="usage-card">
+      <div class="stat-label">AI 调用次数</div>
+      <div class="stat-value">47</div>
+      <div class="stat-sub">本月累计</div>
+    </div>
+    <div class="usage-card">
+      <div class="stat-label">原始素材</div>
+      <div class="stat-value">12</div>
+      <div class="stat-sub">已处理 7 · 待处理 5</div>
+    </div>
+  `;
+}
+
+// ============================================================
+// FORMAT MODAL
+// ============================================================
+
+function renderFormatOptions() {
+  const container = document.getElementById('format-options');
+  container.innerHTML = formatThemes.map(t => `
+    <div class="format-option${state.selectedFormat === t.id ? ' selected' : ''}" data-format="${t.id}" onclick="selectFormat('${t.id}')">
+      <span class="fmt-icon">${t.icon}</span>
+      <div>
+        <div class="fmt-name">${t.name}</div>
+        <div class="fmt-desc">${t.desc}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function selectFormat(id) {
+  state.selectedFormat = id;
+  document.querySelectorAll('.format-option').forEach(el => {
+    el.classList.toggle('selected', el.dataset.format === id);
+  });
+}
+
+function showFormatModal() { document.getElementById('modal-format').classList.add('visible'); }
+
+function applyFormat() {
+  closeModal('modal-format');
+  const theme = formatThemes.find(t => t.id === state.selectedFormat);
+  showToast('已应用「' + theme.name + '」排版主题', 'success');
+}
+
+// ============================================================
+// PUBLISH MODAL
+// ============================================================
+
+function renderPublishPlatforms() {
+  const container = document.getElementById('publish-platforms');
+  container.innerHTML = publishPlatforms.map(p => `
+    <div class="publish-platform${state.selectedPlatforms.includes(p.id) ? ' selected' : ''}" data-platform="${p.id}" onclick="togglePublishPlatform('${p.id}')">
+      <span class="plat-icon">${p.icon}</span>
+      <span class="plat-name">${p.name}</span>
+      <span class="plat-check"></span>
+    </div>
+  `).join('');
+}
+
+function togglePublishPlatform(id) {
+  if (state.selectedPlatforms.includes(id)) {
+    state.selectedPlatforms = state.selectedPlatforms.filter(p => p !== id);
+  } else {
+    state.selectedPlatforms.push(id);
+  }
+  renderPublishPlatforms();
+}
+
+function showPublishModal() { document.getElementById('modal-publish').classList.add('visible'); }
+
+function publishCopy(format) {
+  const text = state.editorContent || document.getElementById('editor-textarea')?.value || '';
+  if (!text.trim()) { showToast('没有内容可复制', 'error'); return; }
+
+  if (format === 'html') {
+    const rendered = renderMarkdown(text);
+    const html = `<section style="font-family:Georgia,'Noto Serif SC',serif;font-size:15px;line-height:1.85;color:#333;max-width:680px;margin:0 auto;">${rendered}</section>`;
+    navigator.clipboard.writeText(html).then(() => {
+      showToast('HTML 已复制！可直接粘贴到公众号编辑器', 'success');
+    }).catch(() => showToast('复制失败', 'error'));
+  } else {
+    navigator.clipboard.writeText(text).then(() => {
+      showToast('Markdown 已复制！', 'success');
+    }).catch(() => showToast('复制失败', 'error'));
+  }
+  closeModal('modal-publish');
+}
+
+// ============================================================
+// HELPERS
+// ============================================================
+
+function closeModal(id) {
+  document.getElementById(id).classList.remove('visible');
+}
+
+function showToast(msg, type = '') {
+  const container = document.getElementById('toast-container');
+  const toast = document.createElement('div');
+  toast.className = 'toast ' + type;
+  toast.textContent = msg;
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateX(20px)';
+    setTimeout(() => toast.remove(), 300);
+  }, 2500);
+}
+
+// ============================================================
+// START
+// ============================================================
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
