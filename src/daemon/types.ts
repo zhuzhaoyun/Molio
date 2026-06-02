@@ -93,10 +93,14 @@ export interface RunState {
 
 // ─── Agent info (for listing) ───
 
+export type AgentDetectSource = 'env-override' | 'path' | 'well-known' | 'fallback-bin' | 'not-found';
+
 export interface AgentInfo {
   id: string;
   name: string;
   available: boolean;
+  binary?: string | null;
+  source?: AgentDetectSource;
   version?: string | null;
   models: RuntimeModelOption[];
   installUrl?: string;

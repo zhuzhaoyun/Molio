@@ -1,10 +1,9 @@
-import type { RuntimeAgentDef } from '../types.js';
+import type { RuntimeAgentDef } from '@kge/contracts';
 
 export function buildSpawnEnv(
   def: RuntimeAgentDef,
   baseEnv?: Record<string, string>,
 ): NodeJS.ProcessEnv {
-  // Start from provided base env, or fall back to process.env
   const source = baseEnv ?? (process.env as Record<string, string>);
   const env: NodeJS.ProcessEnv = { ...source, ...(def.env ?? {}) };
 

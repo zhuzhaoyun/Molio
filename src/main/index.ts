@@ -13,6 +13,16 @@ if (!enforceSingleton()) {
 const runManager = new RunManager();
 registerIpcHandlers(runManager);
 
+// Pre-warm detection on startup
+const initialAgents = runManager.detectAgents();
+console.log('[Main] Initial agent detection:', initialAgents.map(a => ({
+  id: a.id,
+  available: a.available,
+  binary: a.binary,
+  version: a.version,
+  source: a.source,
+})));
+
 // ── Window management ──
 function createMainWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -20,13 +30,13 @@ function createMainWindow(): BrowserWindow {
     height: 800,
     title: 'Knowledge Growth Engine',
     webPreferences: {
-      preload: path.join(__dirname, '..', 'preload', 'index.js'),
+      preload: path.join(import.meta.dirname, '..', 'preload', 'index.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
 
-  win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+  win.loadFile(path.join(import.meta.dirname, '..', 'renderer', 'index.html'));
   return win;
 }
 

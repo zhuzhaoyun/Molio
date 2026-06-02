@@ -1,19 +1,18 @@
 {
   "name": "knowledge-growth-engine",
   "version": "0.1.0",
-  "description": "Knowledge Growth Engine - Desktop AI writing platform",
-  "type": "module",
-  "main": "dist/src/main/index.js",
+  "description": "Knowledge Growth Engine - AI writing platform with local runtime orchestration",
   "private": true,
+  "type": "module",
   "scripts": {
-    "build": "tsc && npm run copy-assets",
-    "copy-assets": "node -e \"require('fs').copyFileSync('src/renderer/index.html','dist/src/renderer/index.html')\"",
-    "start": "npm run build && electron dist/src/main/index.js",
-    "dev": "npm run build && electron dist/src/main/index.js",
-    "test": "tsc && node --test \"dist/test/**/*.test.js\""
+    "dev": "pnpm --filter @kge/daemon dev & pnpm --filter @kge/web dev",
+    "dev:daemon": "pnpm --filter @kge/daemon dev",
+    "dev:web": "pnpm --filter @kge/web dev",
+    "build": "pnpm -r build",
+    "test": "pnpm --filter @kge/daemon test",
+    "typecheck": "pnpm -r typecheck"
   },
   "devDependencies": {
-    "electron": "^35.7.0",
     "typescript": "^5.8.3",
     "@types/node": "^22.15.0"
   }

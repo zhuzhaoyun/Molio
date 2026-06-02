@@ -1,15 +1,17 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-
-import type { AgentEvent, AgentInfo, RunState, RuntimeAgentDef } from './types.js';
+import type {
+  AgentEvent, AgentInfo, RuntimeAgentDef, RunInfo, RunStatus,
+} from '@kge/contracts';
 import { getAgentDef, listAgentDefs } from './runtimes/registry.js';
 import { resolveAgentBinary, probeVersion } from './runtimes/launch.js';
 import { buildSpawnEnv } from './runtimes/env.js';
 import { createClaudeStreamHandler } from './streams/claude-stream.js';
 import { createCodexStreamHandler } from './streams/codex-stream.js';
-import type { StreamHandler } from './types.js';
+import type { StreamHandler } from '@kge/contracts';
 import { createJsonlParser } from './streams/jsonl-parser.js';
 import { loadConfig, getAgentConfig, buildAgentEnv } from './config.js';
+import type { RunState } from '../types.js';
 
 export interface CreateRunOptions {
   agentId: string;
@@ -21,20 +23,13 @@ export interface CreateRunOptions {
 export class RunManager {
   private runs = new Map<string, RunState>();
 
-  /**
-   * Detect all agents with version info and detection source.
-   * Uses config overrides for binary paths.
-   */
   detectAgents(): AgentInfo[] {
     const config = loadConfig();
-
     return listAgentDefs().map((def) => {
       const agentConfig = config.agents[def.id] || {};
       const configuredEnv = agentConfig.env || {};
-
       const result = resolveAgentBinary(def, { configuredEnv });
       const version = result.binary ? probeVersion(result.binary, def.versionArgs) : null;
-
       return {
         id: def.id,
         name: def.name,
@@ -48,17 +43,36 @@ export class RunManager {
     });
   }
 
-  /**
-   * List available agents (alias for detectAgents for backward compat).
-   */
   listAgents(): AgentInfo[] {
     return this.detectAgents();
   }
 
-  /**
-   * Subscribe to events for a specific run.
-   * Returns an unsubscribe function.
-   */
+  hasRun(runId: string): boolean {
+    return this.runs.has(runId);
+  }
+
+  getRunInfo(runId: string): RunInfo | null {
+    const run = this.runs.get(runId);
+    if (!run) return null;
+    return {
+      id: run.id,
+      agentId: run.agentId,
+      status: run.status,
+      createdAt: run.createdAt,
+      lastStopReason: run.lastStopReason,
+    };
+  }
+
+  listRuns(): RunInfo[] {
+    return Array.from(this.runs.values()).map((run) => ({
+      id: run.id,
+      agentId: run.agentId,
+      status: run.status,
+      createdAt: run.createdAt,
+      lastStopReason: run.lastStopReason,
+    }));
+  }
+
   onEvent(runId: string, callback: (event: AgentEvent) => void): (() => void) | null {
     const run = this.runs.get(runId);
     if (!run) return null;
@@ -66,15 +80,10 @@ export class RunManager {
     return () => { run.eventListeners.delete(callback); };
   }
 
-  /**
-   * Create a new run: spawn CLI process, wire up parsing and event dispatch.
-   */
   async createRun(opts: CreateRunOptions): Promise<string> {
-    // ── Step 1: Look up definition ──
     const def = getAgentDef(opts.agentId);
     if (!def) throw new Error(`Unknown agent: ${opts.agentId}`);
 
-    // ── Step 2: Load agent config and resolve binary ──
     const agentConfig = getAgentConfig(opts.agentId);
     const configuredEnv = agentConfig.env || {};
     const result = resolveAgentBinary(def, { configuredEnv });
@@ -86,7 +95,6 @@ export class RunManager {
       );
     }
 
-    // ── Step 3: Create run state ──
     const runId = randomUUID();
     const run: RunState = {
       id: runId,
@@ -101,18 +109,15 @@ export class RunManager {
     };
     this.runs.set(runId, run);
 
-    // ── Step 4: Build environment (merge process.env + agent config + binary override) ──
     const mergedEnv = buildAgentEnv(opts.agentId, agentConfig);
     const env = buildSpawnEnv(def, mergedEnv);
 
-    // ── Step 5: Build arguments ──
     const args = def.buildArgs(
       opts.message,
       { model: opts.model },
       { cwd: opts.cwd },
     );
 
-    // ── Step 6: Spawn ──
     const stdinMode = def.promptViaStdin ? 'pipe' : 'ignore';
     const child: ChildProcess = spawn(result.binary, args, {
       env,
@@ -123,16 +128,13 @@ export class RunManager {
     });
     run.child = child;
 
-    // ── Step 7: Wire stdin EPIPE handler ──
     child.stdin?.on('error', (err: NodeJS.ErrnoException) => {
       if (err.code === 'EPIPE' || err.code === 'EOF') return;
       this.emitEvent(run, { type: 'error', message: `stdin error: ${err.message}` });
     });
 
-    // ── Step 8: Deliver prompt ──
     if (def.promptViaStdin && child.stdin) {
       if (def.promptInputFormat === 'stream-json') {
-        // JSONL: write one line, keep stdin OPEN for later tool_result injection
         const msg = JSON.stringify({
           type: 'user',
           message: { role: 'user', content: opts.message },
@@ -140,54 +142,44 @@ export class RunManager {
         child.stdin.write(msg + '\n', 'utf8');
         run.stdinOpen = true;
       } else {
-        // Plain text: write and close
         child.stdin.end(opts.message);
         run.stdinOpen = false;
       }
     }
 
-    // ── Step 9: Set stdout/stderr encoding ──
     child.stdout?.setEncoding('utf8');
     child.stderr?.setEncoding('utf8');
 
-    // ── Step 10: Select parser ──
     const parser = this.selectParser(def, (ev) => {
       this.emitEvent(run, ev);
 
-      // Track pending host answers for AskUserQuestion
       if (run.stdinOpen && ev.type === 'tool_use' && ev.name === 'AskUserQuestion') {
         run.pendingHostAnswers.add(ev.id);
       }
 
-      // Track stop reason and maybe close stdin
       if (ev.type === 'turn_end') {
         run.lastStopReason = ev.stopReason;
         this.maybeCloseStdin(run);
       }
 
-      // Also close stdin on usage (end of conversation)
       if (ev.type === 'usage') {
         this.maybeCloseStdin(run);
       }
     });
 
-    // ── Step 11: Wire stdout ──
     child.stdout?.on('data', (chunk: string) => {
       parser.feed(chunk);
     });
 
-    // ── Step 12: Wire stderr ──
     child.stderr?.on('data', (chunk: string) => {
       this.emitEvent(run, { type: 'raw', line: `[stderr] ${chunk}` });
     });
 
-    // ── Step 13: Wire error ──
     child.on('error', (err) => {
       run.status = 'failed';
       this.emitEvent(run, { type: 'error', message: `Spawn error: ${err.message}` });
     });
 
-    // ── Step 14: Wire close ──
     child.on('close', (code) => {
       parser.flush();
       run.status = code === 0 ? 'succeeded' : 'failed';
@@ -201,9 +193,6 @@ export class RunManager {
     return runId;
   }
 
-  /**
-   * Inject a tool_result into the running CLI's stdin (for AskUserQuestion).
-   */
   submitToolResult(runId: string, toolUseId: string, content: string): void {
     const run = this.runs.get(runId);
     if (!run) throw new Error(`Run not found: ${runId}`);
@@ -225,20 +214,15 @@ export class RunManager {
     });
     run.child.stdin.write(msg + '\n', 'utf8');
     run.pendingHostAnswers.delete(toolUseId);
-
     this.maybeCloseStdin(run);
   }
 
-  /**
-   * Cancel a running agent.
-   */
   cancelRun(runId: string): void {
     const run = this.runs.get(runId);
     if (!run) return;
     if (run.child && !run.child.killed) {
       run.status = 'canceled';
       run.child.kill('SIGTERM');
-      // Force kill after 5s
       setTimeout(() => {
         if (run.child && !run.child.killed) {
           run.child.kill('SIGKILL');
@@ -251,16 +235,11 @@ export class RunManager {
     }
   }
 
-  /**
-   * Cancel all active runs (called on app shutdown).
-   */
   cancelAll(): void {
     for (const [id] of this.runs) {
       this.cancelRun(id);
     }
   }
-
-  // ── Private helpers ──
 
   private emitEvent(run: RunState, event: AgentEvent): void {
     for (const listener of run.eventListeners) {
@@ -289,7 +268,6 @@ export class RunManager {
         return createCodexStreamHandler(onEvent);
       }
     }
-    // Fallback: raw passthrough
     return createJsonlParser((line: string) => {
       onEvent({ type: 'raw', line });
     });

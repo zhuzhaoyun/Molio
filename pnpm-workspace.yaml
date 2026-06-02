@@ -1,0 +1,9 @@
+packages:
+  - "packages/*"
+  - "apps/*"
+onlyBuiltDependencies:
+  - electron
+  - esbuild
+allowBuilds:
+  electron: true
+  esbuild: true

@@ -10,20 +10,60 @@
 
 
 
+## Project Structure (pnpm Monorepo)
+
+```
+packages/
+  contracts/    @kge/contracts  — shared types (AgentEvent, RunInfo, API types, SSE)
+apps/
+  daemon/       @kge/daemon    — Hono HTTP server wrapping RunManager + SSE transport
+    src/
+      core/     RunManager, config, runtimes/, streams/ (migrated from old src/daemon/)
+      routes/   agents, runs, events, tool-result, config
+      server.ts Hono app with CORS
+      sse.ts    SSE transport helper
+      index.ts  Entry: @hono/node-server on port 3100
+  web/          @kge/web       — Vite + React web UI consuming daemon SSE
+    src/
+      api/      client.ts, sse.ts
+      hooks/    useAgents, useRun
+      components/ AgentSelector, RunPanel, EventStream, ToolResultInput, StatusBadge
+  desktop/      @kge/desktop   — Electron shell (deferred, just scaffold)
+```
+
+### Build & Dev Commands
+
+```bash
+pnpm dev          # daemon (tsx watch :3100) + web (vite :5173)
+pnpm dev:daemon   # daemon only
+pnpm dev:web      # web only
+pnpm build        # build all packages
+pnpm test         # run daemon tests (node:test)
+pnpm typecheck    # typecheck all packages
+```
+
 ## 错误驱动测试 (Error-Driven Testing)
 
 **强制规则**：每次遇到报错（构建错误、运行时错误、逻辑错误），在修复 bug 之前或同时，必须：
 
-1. **在 `test/` 目录下添加一条测试用例**，复现该错误的场景
-2. **测试命名**：描述错误场景，如 `test/claude-stream-dedup.test.ts`
+1. **在 `apps/daemon/test/` 目录下添加一条测试用例**，复现该错误的场景
+2. **测试命名**：描述错误场景，如 `claude-stream-dedup.test.ts`
 3. **测试结构**：用 Node.js 内置 `node:test`，不引入额外依赖
-4. **运行验证**：`npm test` 确认新测试通过
+4. **运行验证**：`pnpm test` 确认新测试通过
 5. **不要只修 bug 不加测试** —— 每个 bug 都是一条永久测试用例
 
 典型流程：
 ```
 遇到报错 → 写测试复现 → 确认测试失败 → 修复 → 确认测试通过 → 提交
 ```
+
+### E2E 测试策略
+
+**核心原则**：WebUI first，Electron 只是壳。E2E 直接测 web 层。
+
+- 使用 kimi-webbridge 或 Playwright 对 `http://localhost:5173` 进行浏览器自动化测试
+- 测试 UI 交互行为（选择 agent → 发送消息 → 查看 SSE 事件流 → 提交 tool result）
+- Electron 壳后期只需测试窗口管理和系统集成
 
 ## External Dependencies (Planned Integration)
 

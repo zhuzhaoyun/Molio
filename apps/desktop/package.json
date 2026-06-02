@@ -1,0 +1,12 @@
+{
+  "name": "@kge/desktop",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "typecheck": "echo 'desktop: not yet implemented'"
+  },
+  "dependencies": {
+    "@kge/contracts": "workspace:*"
+  }
+}

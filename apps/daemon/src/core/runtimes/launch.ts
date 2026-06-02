@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import type { RuntimeAgentDef } from '../types.js';
+import type { RuntimeAgentDef } from '@kge/contracts';
 
 export interface ResolveOptions {
   configuredEnv?: Record<string, string>;
@@ -13,13 +13,6 @@ export interface ResolveResult {
   source: 'env-override' | 'path' | 'well-known' | 'fallback-bin' | 'not-found';
 }
 
-/**
- * Resolve agent binary with multi-strategy detection:
- * 1. Environment variable override (CLAUDE_BIN, CODEX_BIN)
- * 2. PATH lookup (where.exe on Windows, which on POSIX)
- * 3. Well-known user toolchain directories
- * 4. Fallback binaries (e.g., openclaude)
- */
 export function resolveAgentBinary(
   def: RuntimeAgentDef,
   options: ResolveOptions = {},
@@ -31,8 +24,7 @@ export function resolveAgentBinary(
     return { binary: envBin, source: 'env-override' };
   }
 
-  // 2. PATH lookup — on Windows, resolve the full path (where.exe returns
-  // the actual .cmd/.exe path, which execFileSync needs to run without shell: true)
+  // 2. PATH lookup
   const pathResult = resolveOnPath(def.bin);
   if (pathResult) {
     return { binary: pathResult, source: 'path' };
@@ -59,50 +51,6 @@ export function resolveAgentBinary(
   return { binary: null, source: 'not-found' };
 }
 
-function isOnPath(bin: string): boolean {
-  if (process.platform === 'win32') {
-    // On Windows, use full path to where.exe (Electron may not have System32 in PATH)
-    // Also try without .exe for cases like 'where' vs 'where.exe'
-    const whereCmds = [
-      'C:\\Windows\\System32\\where.exe',
-      'where.exe',
-      'where',
-    ];
-
-    for (const cmd of whereCmds) {
-      try {
-        const result = execFileSync(cmd, [bin], {
-          stdio: ['ignore', 'pipe', 'ignore'],
-          windowsHide: true,
-          timeout: 3000,
-        });
-        if (result && result.length > 0) {
-          return true;
-        }
-      } catch {
-        // try next
-      }
-    }
-  } else {
-    try {
-      execFileSync('which', [bin], {
-        stdio: 'ignore',
-        timeout: 3000,
-      });
-      return true;
-    } catch {
-      // not found
-    }
-  }
-  return false;
-}
-
-/**
- * Resolve the full path of a binary on PATH.
- * On Windows, where.exe returns the full path to .cmd/.exe files,
- * which execFileSync needs to execute them without shell: true.
- * Returns null if not found.
- */
 function resolveOnPath(bin: string): string | null {
   if (process.platform === 'win32') {
     const whereCmds = [
@@ -120,12 +68,9 @@ function resolveOnPath(bin: string): string | null {
           timeout: 3000,
         });
         if (result && result.trim().length > 0) {
-          // where.exe may return multiple lines (e.g., both .cmd and extensionless)
-          // Prefer .cmd/.exe/.bat files since execFileSync can execute them directly
           const lines = result.trim().split(/\r?\n/);
           const executableExts = ['.exe', '.cmd', '.bat'];
 
-          // First pass: find a file with an executable extension
           for (const line of lines) {
             const ext = path.extname(line).toLowerCase();
             if (executableExts.includes(ext) && fs.existsSync(line)) {
@@ -133,10 +78,8 @@ function resolveOnPath(bin: string): string | null {
             }
           }
 
-          // Second pass: if only extensionless file found, check for .cmd sibling
           for (const line of lines) {
             if (fs.existsSync(line)) {
-              // Check if there's a .cmd version
               const cmdVersion = line + '.cmd';
               if (fs.existsSync(cmdVersion)) {
                 return cmdVersion;
@@ -169,16 +112,11 @@ function resolveOnPath(bin: string): string | null {
   return null;
 }
 
-/**
- * Get well-known user toolchain directories.
- * These are common places where CLI tools are installed but may not be on PATH.
- */
 export function getWellKnownToolchainDirs(): string[] {
   const home = os.homedir();
   const dirs: string[] = [];
 
   if (process.platform === 'win32') {
-    // Windows-specific locations
     dirs.push(
       path.join(home, 'AppData', 'Local', 'pnpm'),
       path.join(home, 'AppData', 'Roaming', 'npm'),
@@ -187,58 +125,37 @@ export function getWellKnownToolchainDirs(): string[] {
       path.join(home, '.local', 'bin'),
     );
 
-    // nvm4w (nvm for Windows) — common install locations
-    // Default install: C:\nvm4w\nodejs (symlink to active version)
     const nvm4wNodejs = 'C:\\nvm4w\\nodejs';
-    if (fs.existsSync(nvm4wNodejs)) {
-      dirs.push(nvm4wNodejs);
-    }
-    // Also check NVM_HOME env var (set by nvm4w installer)
-    // Add regardless of existence - findInWellKnownDirs will skip non-existent dirs
+    if (fs.existsSync(nvm4wNodejs)) dirs.push(nvm4wNodejs);
     const nvmHome = process.env['NVM_HOME'];
-    if (nvmHome) {
-      dirs.push(nvmHome);
-    }
-    // NVM_SYMLINK — the symlink to active node version
+    if (nvmHome) dirs.push(nvmHome);
     const nvmSymlink = process.env['NVM_SYMLINK'];
-    if (nvmSymlink) {
-      dirs.push(nvmSymlink);
-    }
-    // Legacy nvm-windows location
+    if (nvmSymlink) dirs.push(nvmSymlink);
+
     const nvmDir = path.join(home, 'AppData', 'Roaming', 'nvm');
     if (fs.existsSync(nvmDir)) {
       dirs.push(nvmDir);
       try {
         const versions = fs.readdirSync(nvmDir).filter(v => v.startsWith('v'));
-        for (const v of versions) {
-          dirs.push(path.join(nvmDir, v));
-        }
+        for (const v of versions) dirs.push(path.join(nvmDir, v));
       } catch { /* ignore */ }
     }
 
-    // fnm for Windows
     const fnmDir = path.join(home, 'AppData', 'Local', 'fnm');
     if (fs.existsSync(fnmDir)) {
       dirs.push(fnmDir);
-      // fnm node-versions
       const fnmVersions = path.join(fnmDir, 'node-versions');
       if (fs.existsSync(fnmVersions)) {
         try {
           const versions = fs.readdirSync(fnmVersions).filter(v => v.startsWith('v'));
-          for (const v of versions) {
-            dirs.push(path.join(fnmVersions, v, 'installation'));
-          }
+          for (const v of versions) dirs.push(path.join(fnmVersions, v, 'installation'));
         } catch { /* ignore */ }
       }
     }
 
-    // volta for Windows
     const voltaDir = path.join(home, 'AppData', 'Local', 'Volta', 'bin');
-    if (fs.existsSync(voltaDir)) {
-      dirs.push(voltaDir);
-    }
+    if (fs.existsSync(voltaDir)) dirs.push(voltaDir);
   } else {
-    // POSIX (macOS/Linux)
     dirs.push(
       path.join(home, '.local', 'bin'),
       path.join(home, '.npm-global', 'bin'),
@@ -247,45 +164,34 @@ export function getWellKnownToolchainDirs(): string[] {
       path.join(home, '.bun', 'bin'),
       path.join(home, '.cargo', 'bin'),
       path.join(home, '.volta', 'bin'),
-      // Homebrew (macOS)
       '/opt/homebrew/bin',
       '/usr/local/bin',
     );
 
-    // nvm node versions
     const nvmDir = path.join(home, '.nvm', 'versions', 'node');
     if (fs.existsSync(nvmDir)) {
       try {
         const versions = fs.readdirSync(nvmDir).filter(v => v.startsWith('v'));
-        for (const v of versions) {
-          dirs.push(path.join(nvmDir, v, 'bin'));
-        }
+        for (const v of versions) dirs.push(path.join(nvmDir, v, 'bin'));
       } catch { /* ignore */ }
     }
 
-    // fnm node versions
     const fnmDir = path.join(home, '.fnm', 'node-versions');
     if (fs.existsSync(fnmDir)) {
       try {
         const versions = fs.readdirSync(fnmDir).filter(v => v.startsWith('v'));
-        for (const v of versions) {
-          dirs.push(path.join(fnmDir, v, 'installation', 'bin'));
-        }
+        for (const v of versions) dirs.push(path.join(fnmDir, v, 'installation', 'bin'));
       } catch { /* ignore */ }
     }
 
-    // mise shims
     dirs.push(
       path.join(home, '.local', 'share', 'mise', 'shims'),
       path.join(home, '.asdf', 'shims'),
     );
   }
 
-  // NPM_CONFIG_PREFIX if set
   const npmPrefix = process.env['NPM_CONFIG_PREFIX'];
-  if (npmPrefix) {
-    dirs.push(path.join(npmPrefix, 'bin'));
-  }
+  if (npmPrefix) dirs.push(path.join(npmPrefix, 'bin'));
 
   return dirs;
 }
@@ -297,34 +203,22 @@ function findInWellKnownDirs(bin: string): string | null {
   for (const dir of dirs) {
     if (!fs.existsSync(dir)) continue;
     const candidate = path.join(dir, bin + ext);
-    if (fs.existsSync(candidate)) {
-      return candidate;
-    }
-    // Also try without .cmd on Windows (some tools are .exe)
+    if (fs.existsSync(candidate)) return candidate;
     if (process.platform === 'win32') {
       const exeCandidate = path.join(dir, bin + '.exe');
-      if (fs.existsSync(exeCandidate)) {
-        return exeCandidate;
-      }
+      if (fs.existsSync(exeCandidate)) return exeCandidate;
     }
   }
 
   return null;
 }
 
-export function probeVersion(
-  bin: string,
-  args: string[],
-  timeoutMs = 5000,
-): string | null {
+export function probeVersion(bin: string, args: string[], timeoutMs = 5000): string | null {
   try {
-    // On Windows, .cmd/.bat files require shell: true to execute
     const needsShell = process.platform === 'win32' && (
       bin.endsWith('.cmd') || bin.endsWith('.bat')
     );
 
-    // Ensure the binary's directory + well-known dirs are in PATH so that
-    // .cmd shims (which call node.exe internally) can find their dependencies.
     const extraDirs = [path.dirname(bin), ...getWellKnownToolchainDirs()];
     const currentPath = process.env['PATH'] || '';
     const pathSep = process.platform === 'win32' ? ';' : ':';

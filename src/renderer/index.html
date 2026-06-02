@@ -1448,6 +1448,247 @@ html.dark .platform-item.selected { background: var(--accent-900); }
 .platform-desc { font-size: var(--text-xs); color: var(--text-tertiary); }
 
 /* ============================================
+   VIEW: RUNTIME (Standalone config page)
+   ============================================ */
+.view-runtime {
+  flex: 1;
+  display: none;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.view-runtime.active { display: flex; }
+
+.runtime-page-header {
+  padding: 24px 32px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.runtime-page-title {
+  font-size: var(--text-2xl);
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.runtime-page-desc {
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+}
+
+.runtime-section {
+  padding: 20px 32px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.runtime-section-title {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-tertiary);
+  margin-bottom: 12px;
+}
+
+.runtime-agents-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.runtime-agent-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 16px 20px;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  transition: border var(--transition-fast);
+}
+
+.runtime-agent-card:hover {
+  border-color: var(--border-default);
+}
+
+.runtime-agent-card.available {
+  border-left: 3px solid var(--semantic-success);
+}
+
+.runtime-agent-card.unavailable {
+  border-left: 3px solid var(--semantic-error);
+  opacity: 0.85;
+}
+
+.runtime-agent-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.runtime-agent-icon.claude { background: #D97706; color: white; }
+.runtime-agent-icon.codex { background: #10B981; color: white; }
+.runtime-agent-icon.custom { background: var(--bg-tertiary); color: var(--text-secondary); }
+
+.runtime-agent-body { flex: 1; min-width: 0; }
+
+.runtime-agent-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.runtime-agent-name {
+  font-size: var(--text-lg);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.runtime-agent-version {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  margin-left: 6px;
+}
+
+.runtime-agent-status {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  padding: 3px 10px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.runtime-agent-status.ready { background: #dcfce7; color: #166534; }
+.runtime-agent-status.not-found { background: #fef2f2; color: #991b1b; }
+
+html.dark .runtime-agent-status.ready { background: #052e16; color: #4ade80; }
+html.dark .runtime-agent-status.not-found { background: #450a0a; color: #f87171; }
+
+.runtime-agent-details {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 6px;
+}
+
+.runtime-agent-detail {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.runtime-agent-detail-label {
+  font-weight: 500;
+  color: var(--text-secondary);
+  min-width: 50px;
+}
+
+.runtime-agent-detail-value {
+  font-family: var(--font-mono);
+  word-break: break-all;
+}
+
+.runtime-agent-config {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.runtime-agent-config-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.runtime-agent-config input {
+  flex: 1;
+  height: 30px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 0 10px;
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  outline: none;
+  transition: border var(--transition-fast);
+}
+
+.runtime-agent-config input:focus {
+  border-color: var(--accent-500);
+}
+
+.runtime-agent-config input::placeholder {
+  color: var(--text-tertiary);
+  font-family: var(--font-sans);
+}
+
+.runtime-save-btn {
+  height: 30px;
+  padding: 0 12px;
+  background: var(--accent-600);
+  color: white;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.runtime-save-btn:hover { background: var(--accent-700); }
+.runtime-save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.runtime-config-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.runtime-refresh-btn {
+  height: 32px;
+  padding: 0 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-default);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all var(--transition-fast);
+}
+
+.runtime-refresh-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--accent-500);
+}
+
+.runtime-refresh-btn svg { width: 14px; height: 14px; }
+
+.runtime-install-link {
+  font-size: var(--text-xs);
+  color: var(--accent-600);
+  margin-top: 4px;
+  display: inline-block;
+}
+
+.runtime-install-link:hover { text-decoration: underline; }
+
+/* ============================================
    RESPONSIVE (minimal for desktop)
    ============================================ */
 .sidebar-toggle {
@@ -1590,64 +1831,19 @@ html.dark .platform-item.selected { background: var(--accent-900); }
       </div>
     </div>
 
-    <!-- Runtime sidebar -->
+    <!-- Runtime sidebar (minimal, since main page has the config) -->
     <div class="sidebar-view" id="sidebar-runtime" style="display:none">
       <div class="sidebar-header">
         <span class="sidebar-title">Runtime</span>
       </div>
       <div class="sidebar-content" style="padding:8px 12px">
-        <div class="runtime-card">
-          <div class="runtime-card-icon claude">C</div>
-          <div class="runtime-card-info">
-            <div class="runtime-card-name">Claude Code</div>
-            <div class="runtime-card-path">/usr/local/bin/claude</div>
-          </div>
-          <span class="runtime-card-status ready">Ready</span>
-        </div>
-        <div class="runtime-card">
-          <div class="runtime-card-icon codex">O</div>
-          <div class="runtime-card-info">
-            <div class="runtime-card-name">Codex CLI</div>
-            <div class="runtime-card-path">/usr/local/bin/codex</div>
-          </div>
-          <span class="runtime-card-status not-found">Not found</span>
-        </div>
-        <div style="margin-top:16px">
-          <button style="width:100%;height:34px;border-radius:var(--radius-md);border:1px dashed var(--border-default);color:var(--text-tertiary);font-size:var(--text-sm);display:flex;align-items:center;justify-content:center;gap:4px;transition:all var(--transition-fast)" onmouseover="this.style.borderColor='var(--accent-500)';this.style.color='var(--accent-600)'" onmouseout="this.style.borderColor='var(--border-default)';this.style.color='var(--text-tertiary)'">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Add runtime
-          </button>
-        </div>
-
-        <div style="margin-top:24px">
-          <div class="tree-section-label">Configuration</div>
-          <div class="form-group" style="margin-top:8px">
-            <label class="form-label">Working directory</label>
-            <div class="form-desc">Passed as --cwd to the runtime</div>
-            <div style="display:flex;gap:6px">
-              <input class="form-input" value="D:\work\wiki-vault" style="flex:1" readonly>
-              <button style="width:36px;height:36px;background:var(--bg-tertiary);border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;color:var(--text-tertiary)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
-              </button>
-            </div>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Output mode</label>
-            <select class="form-select">
-              <option>Stream + File watch (recommended)</option>
-              <option>Stream only</option>
-              <option>File watch only</option>
-            </select>
-          </div>
-          <div class="form-toggle">
-            <span class="form-toggle-label">Session persistence</span>
-            <div class="toggle on" onclick="this.classList.toggle('on')"></div>
-          </div>
+        <div style="font-size:var(--text-xs);color:var(--text-tertiary);padding:8px 0">
+          Configure runtimes in the main panel →
         </div>
       </div>
       <div class="sidebar-footer">
         <div class="runtime-dot"></div>
-        <span class="runtime-label">Claude Code connected</span>
+        <span class="runtime-label">Daemon running</span>
       </div>
     </div>
   </aside>
@@ -1930,6 +2126,53 @@ The moat isn't AI. It's your knowledge base context + writing strategy. Others u
       </div>
     </div>
 
+    <!-- VIEW: Runtime (standalone config page) -->
+    <div class="view-runtime" id="view-runtime">
+      <div class="runtime-page-header">
+        <div class="runtime-page-title">Runtime Configuration</div>
+        <div class="runtime-page-desc">Manage AI runtime connections. Auto-detect local CLI tools or configure paths manually.</div>
+      </div>
+
+      <div class="runtime-section">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div class="runtime-section-title" style="margin-bottom:0">Detected Runtimes</div>
+          <button class="runtime-refresh-btn" id="runtime-refresh-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+            Refresh
+          </button>
+        </div>
+        <div class="runtime-agents-grid" id="runtime-agents-container">
+          <div style="padding:24px;text-align:center;color:var(--text-tertiary);font-size:var(--text-sm)">
+            Detecting runtimes...
+          </div>
+        </div>
+      </div>
+
+      <div class="runtime-section">
+        <div class="runtime-section-title">Global Settings</div>
+        <div class="runtime-config-section">
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label">Working directory</label>
+            <div class="form-desc">Default working directory for runtime execution (passed as --cwd)</div>
+            <div style="display:flex;gap:6px">
+              <input class="form-input" id="runtime-cwd-input" value="" placeholder="Select or type a directory path..." style="flex:1">
+              <button id="runtime-cwd-browse-btn" style="width:36px;height:36px;background:var(--bg-tertiary);border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;color:var(--text-tertiary);cursor:pointer;border:none" title="Browse">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="form-toggle">
+            <span class="form-toggle-label">Session persistence</span>
+            <div class="toggle on" onclick="this.classList.toggle('on')"></div>
+          </div>
+          <div class="form-toggle">
+            <span class="form-toggle-label">Auto-detect runtimes on startup</span>
+            <div class="toggle on" onclick="this.classList.toggle('on')"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- VIEW: Empty state -->
     <div class="state-empty" id="view-empty" style="display:none">
       <div class="state-empty-icon">
@@ -2146,12 +2389,14 @@ const sidebarViews = {
   home: document.getElementById('sidebar-home'),
   knowledge: document.getElementById('sidebar-knowledge'),
   runtime: document.getElementById('sidebar-runtime'),
+  // Alias so showView('runtime','runtime') works for both main + sidebar
 };
 const mainViews = {
   home: document.getElementById('view-home'),
   conversation: document.getElementById('view-conversation'),
   file: document.getElementById('view-file'),
   editor: document.getElementById('view-editor'),
+  runtime: document.getElementById('view-runtime'),
   empty: document.getElementById('view-empty'),
   loading: document.getElementById('view-loading'),
   error: document.getElementById('view-error'),
@@ -2165,10 +2410,16 @@ function showView(view, sidebarView) {
   const targetBtn = document.querySelector(`.nav-btn[data-view="${sidebarView || view}"]`);
   if (targetBtn) targetBtn.classList.add('active');
 
-  // Sidebar
-  Object.values(sidebarViews).forEach(v => v.style.display = 'none');
-  if (sidebarViews[sidebarView || view]) {
-    sidebarViews[sidebarView || view].style.display = '';
+  // Sidebar - hide completely for runtime page (standalone layout)
+  const sidebar = document.getElementById('sidebar');
+  if (view === 'runtime') {
+    if (sidebar) sidebar.style.display = 'none';
+  } else {
+    if (sidebar) sidebar.style.display = '';
+    Object.values(sidebarViews).forEach(v => v.style.display = 'none');
+    if (sidebarViews[sidebarView || view]) {
+      sidebarViews[sidebarView || view].style.display = '';
+    }
   }
 
   // Main
@@ -2193,7 +2444,7 @@ navBtns.forEach(btn => {
       return;
     }
     if (view === 'runtime') {
-      showView('home', 'runtime');
+      showView('runtime', 'runtime');
       return;
     }
     if (view === 'knowledge') {
@@ -2392,6 +2643,136 @@ document.addEventListener('click', (e) => {
     mentionDropdown.classList.remove('show');
   }
 });
+
+// ======== Runtime Detection (standalone page) ========
+async function detectAndRenderAgents() {
+  const container = document.getElementById('runtime-agents-container');
+  if (!container) return;
+
+  // Check if running in Electron
+  if (!window.kge) {
+    container.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-tertiary);font-size:var(--text-sm)">Not running in Electron</div>';
+    return;
+  }
+
+  try {
+    const agents = await window.kge.detectAgents();
+    const config = await window.kge.getConfig();
+
+    if (agents.length === 0) {
+      container.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-tertiary);font-size:var(--text-sm)">No agents configured</div>';
+      return;
+    }
+
+    container.innerHTML = agents.map(agent => {
+      const iconClass = agent.id === 'claude' ? 'claude' : agent.id === 'codex' ? 'codex' : 'custom';
+      const iconLetter = agent.name.charAt(0);
+      const statusClass = agent.available ? 'ready' : 'not-found';
+      const statusText = agent.available ? 'Ready' : 'Not found';
+      const binaryPath = agent.binary || config.agents?.[agent.id]?.binaryPath || '';
+      const versionStr = agent.version ? `v${agent.version}` : '';
+      const cardClass = agent.available ? 'available' : 'unavailable';
+
+      const details = [];
+      if (agent.available) {
+        if (binaryPath) details.push({ label: 'Path', value: binaryPath });
+        if (agent.source) details.push({ label: 'Source', value: agent.source });
+        if (versionStr) details.push({ label: 'Version', value: versionStr });
+      }
+
+      const installLink = !agent.available && agent.installUrl
+        ? `<a class="runtime-install-link" href="${agent.installUrl}" target="_blank" rel="noopener">Install guide →</a>`
+        : '';
+
+      return `
+        <div class="runtime-agent-card ${cardClass}" data-agent-id="${agent.id}">
+          <div class="runtime-agent-icon ${iconClass}">${iconLetter}</div>
+          <div class="runtime-agent-body">
+            <div class="runtime-agent-header">
+              <div>
+                <span class="runtime-agent-name">${agent.name}</span>
+                ${versionStr ? `<span class="runtime-agent-version">${versionStr}</span>` : ''}
+              </div>
+              <span class="runtime-agent-status ${statusClass}">${statusText}</span>
+            </div>
+            ${details.length > 0 ? `
+              <div class="runtime-agent-details">
+                ${details.map(d => `
+                  <div class="runtime-agent-detail">
+                    <span class="runtime-agent-detail-label">${d.label}</span>
+                    <span class="runtime-agent-detail-value">${d.value}</span>
+                  </div>
+                `).join('')}
+              </div>
+            ` : ''}
+            ${installLink}
+            <div class="runtime-agent-config">
+              <div class="runtime-agent-config-row">
+                <input class="agent-path-input" data-agent-id="${agent.id}"
+                  placeholder="Override binary path (optional)"
+                  value="${config.agents?.[agent.id]?.binaryPath || ''}">
+                <button class="runtime-save-btn save-path-btn" data-agent-id="${agent.id}">Save</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // Bind save path buttons
+    container.querySelectorAll('.save-path-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const agentId = btn.getAttribute('data-agent-id');
+        const input = container.querySelector(`.agent-path-input[data-agent-id="${agentId}"]`);
+        if (!input) return;
+
+        try {
+          await window.kge.setAgentConfig({
+            agentId: agentId,
+            binaryPath: input.value.trim()
+          });
+          const originalText = btn.textContent;
+          btn.textContent = 'Saved!';
+          btn.disabled = true;
+          setTimeout(() => {
+            btn.textContent = originalText;
+            btn.disabled = false;
+            detectAndRenderAgents();
+          }, 800);
+        } catch (err) {
+          btn.textContent = 'Error';
+          console.error('Failed to save agent config:', err);
+        }
+      });
+    });
+
+    // Update cwd input from config
+    const cwdInput = document.getElementById('runtime-cwd-input');
+    if (cwdInput && config.defaultCwd) {
+      cwdInput.value = config.defaultCwd;
+    }
+
+  } catch (err) {
+    container.innerHTML = `<div style="padding:24px;text-align:center;color:var(--semantic-error);font-size:var(--text-sm)">Detection failed: ${err.message}</div>`;
+  }
+}
+
+// Refresh button
+document.getElementById('runtime-refresh-btn')?.addEventListener('click', detectAndRenderAgents);
+
+// Auto-detect on runtime view open
+const originalShowView = showView;
+showView = function(mainView, sideView) {
+  originalShowView(mainView, sideView);
+  if (sideView === 'runtime' || mainView === 'runtime') {
+    detectAndRenderAgents();
+  }
+};
+
+// Initial detection if already on runtime view
+if (document.getElementById('view-runtime')?.classList.contains('active')) {
+  detectAndRenderAgents();
+}
 </script>
 </body>
 </html>
