@@ -1,31 +1,29 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project Overview
+想要实现的目标如下，知识管理，文档创建，排版，多平台发布
+1、可以管理客户本地的知识库，类似 obsidian + llm_wiki, 也可以使用 weknora 管理知识库
+2、调用 claude code runtime 或 codex 创作或编写文档
+3、使用 doocs/md 排版，以及 doocs/cose 进行多平台发布 
 
-**知识增长引擎 (Knowledge Growth Engine)** — an AI-Native content creation platform that integrates local knowledge base browsing, AI-assisted writing (with Claude Code as runtime), and multi-platform publishing (WeChat, Zhihu, Juejin, Twitter/X).
-
-The UI design references multica and open-design: dark, warm, editorial aesthetic with an AI-native workflow where humans curate and AI agents execute.
-
-## Architecture
+实际上每个的核心组件都有了相关的开源项目，我现在就套壳，做个本地应用，将这些项目或者组件串联起来，组成一个产品
 
 
-### Knowledge Architecture (LLM-Wiki Pattern)
 
-Three-layer vault model (inspired by Obsidian + Claude Code):
+## 错误驱动测试 (Error-Driven Testing)
 
-- **raw/** — immutable source materials. User imports files here. "Ingest" processes them into wiki.
-- **wiki/** — LLM-maintained pages organized by domain (写作/开发/跨域). Page types: `concept`, `entity`, `draft`, `article`, `overview`.
-- **CLAUDE.md** — operational specs defining page types, agent behaviors, and rules.
+**强制规则**：每次遇到报错（构建错误、运行时错误、逻辑错误），在修复 bug 之前或同时，必须：
 
-### AI Writing Workflow
+1. **在 `test/` 目录下添加一条测试用例**，复现该错误的场景
+2. **测试命名**：描述错误场景，如 `test/claude-stream-dedup.test.ts`
+3. **测试结构**：用 Node.js 内置 `node:test`，不引入额外依赖
+4. **运行验证**：`npm test` 确认新测试通过
+5. **不要只修 bug 不加测试** —— 每个 bug 都是一条永久测试用例
 
-通过与 claude code runtime 对话进行创建
-
-### Publishing Workflow
-
-打开文档后，右上角有个发布按钮，点击发布按钮，弹出弹窗，选择要发布的平台，然后发布
+典型流程：
+```
+遇到报错 → 写测试复现 → 确认测试失败 → 修复 → 确认测试通过 → 提交
+```
 
 ## External Dependencies (Planned Integration)
 
@@ -66,5 +64,3 @@ Three-layer vault model (inspired by Obsidian + Claude Code):
 - 两种内容注入策略：Markdown 直注（Markdown 编辑器平台）和 HTML 剪贴板模拟（富文本编辑器平台如微信）
 
 **集成方式**: 作为 Chrome 扩展配合使用，不能作为库导入。如需自定义集成，可 fork 平台适配器的 DOM 操作逻辑，结合 Puppeteer/Playwright 实现无浏览器自动化。
-
-**当前状态**: 项目使用剪贴板复制方式手动分发，待集成 cose 扩展实现自动发布。
