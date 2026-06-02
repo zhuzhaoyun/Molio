@@ -315,6 +315,113 @@
   color: var(--red);
 }
 
+/* -------- AskUserQuestion card -------------------------------------- */
+.ask-user-question .tool-card-header { padding-bottom: 4px; }
+.ask-question-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 12px 12px;
+}
+.ask-question-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ask-question-header {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.ask-question-prompt {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+}
+.ask-question-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ask-question-option {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 7px 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-panel);
+  color: var(--text);
+  font-size: 12.5px;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.ask-question-option:hover { border-color: var(--accent); }
+.ask-question-option.on {
+  border-color: var(--accent);
+  background: var(--accent-bg, var(--bg-subtle));
+}
+.ask-question-option:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+.ask-question-option-label { font-weight: 500; }
+.ask-question-option-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: normal;
+}
+.ask-question-foot {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 12px 12px;
+}
+.ask-question-submit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  color: white;
+  font-weight: 500;
+  padding: 4px 14px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.ask-question-submit:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+.ask-question-submit:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+/* Locked state: unchosen options fade, selected keeps accent */
+.ask-user-question.locked .ask-question-option:not(.on) {
+  border-color: var(--border-soft, var(--border));
+  background: transparent;
+  color: var(--text-muted);
+}
+.ask-user-question.locked .ask-question-option.on {
+  border-color: var(--accent);
+  background: var(--accent-bg, var(--bg-subtle));
+  cursor: default;
+}
+.ask-user-question.locked .ask-question-option.on .ask-question-option-desc {
+  color: var(--text-muted);
+}
+/* Awaiting input status — static purple, no pulse */
+.tool-card-status.awaiting {
+  color: var(--accent);
+  font-style: italic;
+}
+
 /* Thinking block */
 .thinking-block {
   border: 1px solid var(--border-soft);

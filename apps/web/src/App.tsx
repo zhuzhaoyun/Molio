@@ -34,6 +34,7 @@ export default function App() {
             onSend={chat.send}
             onCancel={chat.cancel}
             onNewChat={handleNewChat}
+            onSubmitToolResult={chat.submitToolResult}
           />
         ) : activeView === 'knowledge' ? (
           <div className="placeholder-view">

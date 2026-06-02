@@ -12,23 +12,29 @@
 
 ## Project Structure (pnpm Monorepo)
 
+> 各子包详细说明见各自 `CLAUDE.md` 文件。
+
 ```
 packages/
   contracts/    @kge/contracts  — shared types (AgentEvent, RunInfo, API types, SSE)
 apps/
-  daemon/       @kge/daemon    — Hono HTTP server wrapping RunManager + SSE transport
+  daemon/       @kge/daemon    — Hono HTTP server, RunManager, SSE transport (→ CLAUDE.md)
     src/
-      core/     RunManager, config, runtimes/, streams/ (migrated from old src/daemon/)
-      routes/   agents, runs, events, tool-result, config
+      core/     RunManager, config, db (SQLite), transcript, runtimes/, streams/
+      runtimes/ claude, codex, gemini, qwen — registry, launch, env
+      streams/  claude-stream, codex-stream, json-event-stream, jsonl-parser
+      routes/   agents, runs, events, tool-result, config, projects
       server.ts Hono app with CORS
-      sse.ts    SSE transport helper
       index.ts  Entry: @hono/node-server on port 3100
-  web/          @kge/web       — Vite + React web UI consuming daemon SSE
+    test/       错误驱动测试用例 (node:test)
+  web/          @kge/web       — Vite + React web UI consuming daemon SSE (→ CLAUDE.md)
     src/
       api/      client.ts, sse.ts
-      hooks/    useAgents, useRun
-      components/ AgentSelector, RunPanel, EventStream, ToolResultInput, StatusBadge
-  desktop/      @kge/desktop   — Electron shell (deferred, just scaffold)
+      hooks/    useAgents, useChat, useProjects
+      components/ HomePage, NavRail, ChatPane, ChatComposer, UserMessage, AssistantMessage, ThinkingBlock, ToolCard
+      styles/   tokens, base, rail, home, chat
+    e2e/        E2E 测试场景
+  desktop/      @kge/desktop   — Electron shell (deferred, placeholder only) (→ CLAUDE.md)
 ```
 
 ### Build & Dev Commands

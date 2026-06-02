@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useRef, useEffect, useCallback, useMemo } from 'react';
 import type { AgentInfo } from '@kge/contracts';
 import { ChatComposer } from './ChatComposer';
 import { UserMessage } from './UserMessage';
@@ -14,6 +14,7 @@ interface Props {
   onSend: (message: string) => void;
   onCancel: () => void;
   onNewChat: () => void;
+  onSubmitToolResult?: (toolUseId: string, content: string) => Promise<void>;
 }
 
 export function HomePage({
@@ -25,6 +26,7 @@ export function HomePage({
   onSend,
   onCancel,
   onNewChat,
+  onSubmitToolResult,
 }: Props) {
   const logRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -34,6 +36,29 @@ export function HomePage({
   }, [messages.length, messages[messages.length - 1]?.content]);
 
   const selectedAgentName = agents.find((a) => a.id === selectedAgent)?.name ?? 'Select agent';
+
+  // Find the last assistant message ID so only that card stays interactive
+  const lastAssistantId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (msg && msg.role === 'assistant') return msg.id;
+    }
+    return null;
+  }, [messages]);
+
+  // Wire onAnswerToolUse: route tool_result back to the open stream-json child
+  const onAnswerToolUse = useCallback(
+    async (toolUseId: string, content: string) => {
+      if (!onSubmitToolResult) return false;
+      try {
+        await onSubmitToolResult(toolUseId, content);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [onSubmitToolResult],
+  );
 
   // If there are messages, show chat layout
   if (messages.length > 0) {
@@ -85,7 +110,15 @@ export function HomePage({
               return <UserMessage key={msg.id} content={msg.content} timestamp={msg.timestamp} />;
             }
             if (msg.role === 'assistant') {
-              return <AssistantMessage key={msg.id} message={msg} />;
+              return (
+                <AssistantMessage
+                  key={msg.id}
+                  message={msg}
+                  isLast={msg.id === lastAssistantId}
+                  onAnswerToolUse={onSubmitToolResult ? onAnswerToolUse : undefined}
+                  onSubmitForm={onSend}
+                />
+              );
             }
             if (msg.role === 'error') {
               return (
