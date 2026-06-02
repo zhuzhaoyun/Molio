@@ -1,0 +1,482 @@
+/* ============================================================
+   Chat / Composer / Messages — copied from open-design chat.css
+   ============================================================ */
+
+/* -------- Chat sticky header --------------------------------------- */
+.chat-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  height: 44px;
+  flex-shrink: 0;
+}
+.chat-header-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-strong);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-header-actions {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  margin-left: auto;
+}
+.chat-header-actions .icon-only {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.chat-header-actions .icon-only:hover { background: var(--bg-subtle); color: var(--text); }
+
+/* Agent select in header */
+.chat-header select {
+  width: auto;
+  min-width: 160px;
+  font-size: 12.5px;
+  padding: 5px 30px 5px 10px;
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-subtle);
+  border-color: var(--border);
+}
+
+/* -------- Chat pane layout ----------------------------------------- */
+.chat-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  background: var(--bg);
+}
+
+/* -------- Chat log (scrollable message area) ----------------------- */
+.chat-log {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.chat-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--text-soft);
+  text-align: center;
+}
+.chat-empty-icon {
+  font-size: 40px;
+  opacity: 0.4;
+}
+.chat-empty-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.chat-empty-hint {
+  font-size: 13px;
+  max-width: 320px;
+  line-height: 1.5;
+}
+
+/* -------- Messages -------------------------------------------------- */
+.msg {
+  padding: 0;
+  background: transparent;
+  border: none;
+  white-space: normal;
+  word-wrap: break-word;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* User message — right-aligned bubble */
+.msg.user {
+  align-self: flex-end;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  max-width: min(78%, 560px);
+}
+.msg.user .role {
+  justify-content: flex-end;
+  color: var(--text-muted);
+}
+.msg.user .user-text {
+  white-space: pre-wrap;
+  color: #fff;
+  background: var(--selected);
+  border: 1px solid color-mix(in srgb, var(--selected) 88%, #000);
+  border-radius: 14px 14px 4px 14px;
+  padding: 8px 11px;
+  line-height: 1.45;
+  font-size: 13px;
+  box-shadow: var(--shadow-xs);
+}
+
+/* Assistant message */
+.msg.assistant {
+  max-width: 100%;
+}
+.msg .role {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-strong);
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+.msg-time {
+  color: var(--text-faint);
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Assistant prose */
+.assistant-prose {
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: var(--text);
+}
+.assistant-prose p { margin: 0 0 8px; }
+.assistant-prose p:last-child { margin-bottom: 0; }
+.assistant-prose pre {
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  overflow-x: auto;
+  margin: 8px 0;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.assistant-prose code {
+  font-family: var(--mono);
+  background: var(--bg-subtle);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 0.92em;
+}
+.assistant-prose pre code {
+  background: transparent;
+  padding: 0;
+}
+.assistant-prose ul, .assistant-prose ol {
+  margin: 4px 0 8px;
+  padding-left: 20px;
+}
+.assistant-prose li { margin-bottom: 2px; }
+.assistant-prose blockquote {
+  border-left: 3px solid var(--border-strong);
+  padding-left: 12px;
+  margin: 8px 0;
+  color: var(--text-muted);
+}
+.assistant-prose h1, .assistant-prose h2, .assistant-prose h3 {
+  margin: 12px 0 6px;
+  color: var(--text-strong);
+}
+.assistant-prose h1 { font-size: 18px; }
+.assistant-prose h2 { font-size: 16px; }
+.assistant-prose h3 { font-size: 14px; }
+.assistant-prose a {
+  color: var(--selected);
+  text-decoration: none;
+}
+.assistant-prose a:hover { text-decoration: underline; }
+.assistant-prose table {
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 12.5px;
+  width: 100%;
+}
+.assistant-prose th, .assistant-prose td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: left;
+}
+.assistant-prose th {
+  background: var(--bg-subtle);
+  font-weight: 600;
+}
+
+/* Streaming indicator */
+.streaming-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 14px;
+  background: var(--accent);
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  animation: blink 1s infinite;
+}
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Error message */
+.msg.error {
+  border: 1px solid var(--border);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+/* -------- Tool cards ------------------------------------------------ */
+.tool-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  margin: 6px 0;
+  font-size: 12.5px;
+  overflow: hidden;
+}
+.tool-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  color: var(--text-muted);
+}
+.tool-card-icon {
+  color: var(--accent);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.tool-card-name {
+  color: var(--accent);
+  font-weight: 600;
+}
+.tool-card-detail {
+  color: var(--text-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.tool-card-body {
+  padding: 6px 12px 8px;
+  border-top: 1px solid var(--border-soft);
+  color: var(--text-muted);
+  max-height: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tool-card-body.error {
+  color: var(--red);
+}
+.tool-card-status {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+}
+.tool-card-status.running {
+  color: var(--accent);
+}
+.tool-card-status.done {
+  color: var(--green);
+}
+.tool-card-status.error {
+  color: var(--red);
+}
+
+/* Thinking block */
+.thinking-block {
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  margin: 6px 0;
+  overflow: hidden;
+}
+.thinking-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--bg-subtle);
+  color: var(--text-soft);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+}
+.thinking-header:hover {
+  color: var(--text-muted);
+}
+.thinking-content {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--text-soft);
+  line-height: 1.5;
+  max-height: 200px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  border-top: 1px solid var(--border-soft);
+}
+
+/* -------- Composer -------------------------------------------------- */
+.composer {
+  border-top: 1px solid var(--border);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--bg-panel);
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+}
+.composer-shell {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-xs);
+  padding: 8px 10px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.composer-shell:focus-within {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-sm);
+}
+.composer textarea {
+  min-height: 88px;
+  max-height: min(184px, 34vh);
+  border: none;
+  background: transparent;
+  padding: 4px 4px;
+  resize: none;
+  font-size: 13px;
+  line-height: 1.5;
+  width: 100%;
+}
+.composer textarea:focus {
+  outline: none;
+  box-shadow: none;
+}
+.composer-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 4px;
+}
+.composer-spacer { flex: 1; }
+.composer-send {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+  font-weight: 500;
+  padding: 4px 14px;
+  font-size: 12.5px;
+  border-radius: var(--radius-sm);
+}
+.composer-send:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
+.composer-send.stop {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--bg);
+}
+.composer-send.stop:hover {
+  background: var(--text-strong);
+  border-color: var(--text-strong);
+  color: var(--bg);
+}
+.composer-hint {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin: 0 8px;
+}
+
+/* -------- Status badge ---------------------------------------------- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+.badge-idle {
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+}
+.badge-running {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+}
+.badge-success {
+  background: var(--green-bg);
+  color: var(--green);
+  border: 1px solid var(--green-border);
+}
+.badge-error {
+  background: var(--red-bg);
+  color: var(--red);
+  border: 1px solid var(--red-border);
+}
+.badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.badge-running .badge-dot {
+  animation: pulse 1.5s infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* -------- Usage footer ---------------------------------------------- */
+.usage-footer {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.usage-footer span {
+  font-variant-numeric: tabular-nums;
+}

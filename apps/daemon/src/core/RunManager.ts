@@ -193,6 +193,24 @@ export class RunManager {
     return runId;
   }
 
+  /**
+   * Send a follow-up user message to an active run (multi-turn).
+   * Writes to the existing stdin stream for stream-json agents.
+   */
+  sendMessage(runId: string, message: string): void {
+    const run = this.runs.get(runId);
+    if (!run) throw new Error(`Run not found: ${runId}`);
+    if (!run.child?.stdin?.writable || !run.stdinOpen) {
+      throw new Error('Run not active or stdin closed — start a new run instead');
+    }
+
+    const msg = JSON.stringify({
+      type: 'user',
+      message: { role: 'user', content: message },
+    });
+    run.child.stdin.write(msg + '\n', 'utf8');
+  }
+
   submitToolResult(runId: string, toolUseId: string, content: string): void {
     const run = this.runs.get(runId);
     if (!run) throw new Error(`Run not found: ${runId}`);

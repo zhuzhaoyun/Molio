@@ -1,62 +1,54 @@
 import { useState } from 'react';
 import { useAgents } from './hooks/useAgents';
-import { useRun } from './hooks/useRun';
-import { AgentSelector } from './components/AgentSelector';
-import { StatusBadge } from './components/StatusBadge';
-import { RunPanel } from './components/RunPanel';
-import { EventStream } from './components/EventStream';
-import { ToolResultInput } from './components/ToolResultInput';
+import { useChat } from './hooks/useChat';
+import { HomePage } from './components/HomePage';
+import { NavRail } from './components/NavRail';
+import './styles/rail.css';
+import './styles/home.css';
 import './App.css';
 
-export default function App() {
-  const { agents, loading: agentsLoading, error: agentsError, refresh: refreshAgents } = useAgents();
-  const run = useRun();
-  const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
+type View = 'home' | 'knowledge' | 'runtimes';
 
-  const handleSend = async (message: string) => {
-    if (!selectedAgent) return;
-    run.reset();
-    await run.startRun(selectedAgent, message);
+export default function App() {
+  const { agents } = useAgents();
+  const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
+  const chat = useChat(selectedAgent);
+  const [activeView, setActiveView] = useState<View>('home');
+
+  const handleNewChat = () => {
+    chat.reset();
+    setSelectedAgent(null);
   };
 
   return (
-    <div className="app">
-      <header className="app-header">
-        <h1 className="app-title">KGE</h1>
-        <div className="header-controls">
-          {agentsLoading && <span className="loading">Detecting agents...</span>}
-          {agentsError && <span className="error">{agentsError}</span>}
-          {!agentsLoading && (
-            <AgentSelector
-              agents={agents}
-              selected={selectedAgent}
-              onSelect={setSelectedAgent}
-            />
-          )}
-          <StatusBadge status={run.status} />
-        </div>
-      </header>
-
-      <main className="app-main">
-        <RunPanel
-          isRunning={run.status === 'running'}
-          onSubmit={handleSend}
-          onCancel={run.cancelRun}
-          onReset={run.reset}
-          hasRun={run.runId !== null}
-        />
-
-        <EventStream events={run.events} textContent={run.textContent} />
-
-        {run.pendingToolUse && (
-          <ToolResultInput
-            toolUseId={run.pendingToolUse.id}
-            toolName={run.pendingToolUse.name}
-            input={run.pendingToolUse.input}
-            onSubmit={run.submitToolResult}
+    <div className="entry-shell">
+      <NavRail activeView={activeView} onViewChange={setActiveView} />
+      <div className="entry-main">
+        {activeView === 'home' ? (
+          <HomePage
+            agents={agents}
+            selectedAgent={selectedAgent}
+            onSelectAgent={setSelectedAgent}
+            messages={chat.messages}
+            isRunning={chat.isRunning}
+            onSend={chat.send}
+            onCancel={chat.cancel}
+            onNewChat={handleNewChat}
           />
+        ) : activeView === 'knowledge' ? (
+          <div className="placeholder-view">
+            <div className="placeholder-icon">📚</div>
+            <div className="placeholder-title">Knowledge Base</div>
+            <div className="placeholder-hint">Coming soon — manage your local knowledge base.</div>
+          </div>
+        ) : (
+          <div className="placeholder-view">
+            <div className="placeholder-icon">⚙️</div>
+            <div className="placeholder-title">Runtimes</div>
+            <div className="placeholder-hint">Coming soon — manage local runtime connections.</div>
+          </div>
         )}
-      </main>
+      </div>
     </div>
   );
 }

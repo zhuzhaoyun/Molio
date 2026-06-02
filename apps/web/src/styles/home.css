@@ -1,0 +1,240 @@
+/* ============================================================
+   Home / Landing Page — open-design style
+   ============================================================ */
+
+.home-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 100%;
+  padding: 40px 24px 80px;
+  background: var(--bg);
+  overflow-y: auto;
+}
+
+/* Landing page layout */
+.home-landing {
+  position: relative;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 0;
+}
+
+/* Top-right agent selector on landing page */
+.home-landing-topbar {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 10;
+}
+
+/* Center content (brand + composer) */
+.home-landing-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  width: 100%;
+  max-width: 680px;
+  padding: 0 24px;
+}
+
+/* Brand / Title */
+.home-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.home-brand-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--accent-tint) 0%, var(--accent-soft) 100%);
+  color: var(--accent);
+  font-size: 24px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.home-brand-title {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text-strong);
+  letter-spacing: -0.02em;
+  text-align: center;
+}
+
+.home-brand-subtitle {
+  font-size: 14px;
+  color: var(--text-muted);
+  text-align: center;
+  max-width: 420px;
+  line-height: 1.6;
+}
+
+/* Agent dropdown (reused in landing and header) */
+.home-agent-dropdown {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+}
+
+.home-agent-dropdown select {
+  min-width: 160px;
+  font-size: 12.5px;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  padding: 2px 20px 2px 4px;
+  color: var(--text-strong);
+}
+.home-agent-dropdown select:focus {
+  box-shadow: none;
+}
+
+/* Composer on home page */
+.home-composer-wrap {
+  width: 100%;
+}
+
+.home-composer-wrap .composer {
+  border-top: none;
+  padding: 0;
+  background: transparent;
+}
+
+.home-composer-wrap .composer-shell {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-sm);
+  padding: 10px 12px 8px;
+}
+
+/* ---- Chat layout (when messages exist) ---------------------- */
+.home-page.chat-active {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: auto;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* Header with agent selector on the right */
+.home-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+  flex-shrink: 0;
+  height: 52px;
+}
+
+.home-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.home-header-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--accent-tint) 0%, var(--accent-soft) 100%);
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.home-header-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+  white-space: nowrap;
+}
+
+.home-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+/* Chat log */
+.home-chat-log {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+/* Composer bar at bottom */
+.home-composer-bar {
+  border-top: 1px solid var(--border);
+  padding: 10px 16px;
+  background: var(--bg-panel);
+  flex-shrink: 0;
+}
+
+.home-composer-bar .composer {
+  max-width: 900px;
+  margin: 0 auto;
+  border: none;
+  padding: 0;
+  background: transparent;
+}
+
+.home-composer-bar .composer-shell {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-xs);
+  padding: 10px 12px 8px;
+}
+
+/* Placeholder views */
+.placeholder-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 12px;
+  color: var(--text-muted);
+}
+.placeholder-view .placeholder-icon {
+  font-size: 48px;
+  opacity: 0.5;
+}
+.placeholder-view .placeholder-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+.placeholder-view .placeholder-hint {
+  font-size: 13px;
+  color: var(--text-muted);
+}

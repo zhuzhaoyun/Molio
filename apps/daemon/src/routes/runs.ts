@@ -47,6 +47,24 @@ export function runsRoutes(runManager: RunManager): Hono {
     return c.json(runInfo);
   });
 
+  // POST /api/runs/:id/messages — send follow-up message (multi-turn)
+  app.post('/:id/messages', async (c) => {
+    const body = await c.req.json<{ message: string }>();
+    if (!body.message) {
+      return c.json({
+        error: { code: 'BAD_REQUEST', message: 'message is required' },
+      }, 400);
+    }
+    try {
+      runManager.sendMessage(c.req.param('id'), body.message);
+      return c.json({ ok: true });
+    } catch (err) {
+      return c.json({
+        error: { code: 'SEND_FAILED', message: (err as Error).message },
+      }, 400);
+    }
+  });
+
   // DELETE /api/runs/:id — cancel a run
   app.delete('/:id', (c) => {
     runManager.cancelRun(c.req.param('id'));

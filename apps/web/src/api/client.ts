@@ -41,6 +41,18 @@ export const api = {
     await fetch(`${BASE}/runs/${runId}`, { method: 'DELETE' });
   },
 
+  async sendMessage(runId: string, message: string): Promise<void> {
+    const res = await fetch(`${BASE}/runs/${runId}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error?.message ?? 'Failed to send message');
+    }
+  },
+
   async submitToolResult(runId: string, req: ToolResultRequest): Promise<void> {
     const res = await fetch(`${BASE}/runs/${runId}/tool-result`, {
       method: 'POST',
