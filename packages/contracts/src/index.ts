@@ -28,6 +28,17 @@ export type {
   RunListResponse,
   HealthResponse,
   ApiError,
+  // Phase 2: Multi-turn
+  ChatMessage,
+  ToolEvent,
+  // Phase 3: Persistence
+  Project,
+  Conversation,
+  ProjectListResponse,
+  ConversationListResponse,
+  MessageListResponse,
+  CreateProjectRequest,
+  CreateConversationRequest,
 } from './api.js';
 
 export type { SSEEnvelope } from './sse.js';

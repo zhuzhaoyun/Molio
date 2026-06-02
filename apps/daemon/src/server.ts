@@ -1,13 +1,17 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import type Database from 'better-sqlite3';
 import { RunManager } from './core/RunManager.js';
+import { openDatabase, closeDatabase } from './core/db.js';
 import { agentsRoutes } from './routes/agents.js';
 import { runsRoutes } from './routes/runs.js';
 import { eventsRoutes } from './routes/events.js';
 import { toolResultRoutes } from './routes/tool-result.js';
 import { configRoutes } from './routes/config.js';
+import { projectRoutes } from './routes/projects.js';
 
 export const runManager = new RunManager();
+export const db: Database.Database = openDatabase();
 
 export const app = new Hono();
 
@@ -27,3 +31,17 @@ app.route('/api/runs', runsRoutes(runManager));
 app.route('/api/runs', eventsRoutes(runManager));
 app.route('/api/runs', toolResultRoutes(runManager));
 app.route('/api/config', configRoutes());
+app.route('/api/projects', projectRoutes(db));
+
+// Graceful shutdown
+process.on('SIGINT', () => {
+  runManager.cancelAll();
+  closeDatabase();
+  process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+  runManager.cancelAll();
+  closeDatabase();
+  process.exit(0);
+});

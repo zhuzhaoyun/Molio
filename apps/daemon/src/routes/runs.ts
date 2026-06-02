@@ -21,8 +21,13 @@ export function runsRoutes(runManager: RunManager): Hono {
         message: body.message,
         model: body.model,
         cwd: body.cwd,
+        conversationId: body.conversationId,
+        history: body.history,
       });
-      return c.json({ runId }, 201);
+      return c.json({
+        runId,
+        conversationId: body.conversationId,
+      }, 201);
     } catch (err) {
       return c.json({
         error: { code: 'CREATE_FAILED', message: (err as Error).message },

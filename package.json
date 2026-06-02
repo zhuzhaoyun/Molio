@@ -5,7 +5,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "pnpm --filter @kge/daemon dev & pnpm --filter @kge/web dev",
+    "dev": "concurrently \"pnpm --filter @kge/daemon dev\" \"pnpm --filter @kge/web dev\" --names daemon,web --prefix-colors auto",
     "dev:daemon": "pnpm --filter @kge/daemon dev",
     "dev:web": "pnpm --filter @kge/web dev",
     "build": "pnpm -r build",
@@ -13,7 +13,8 @@
     "typecheck": "pnpm -r typecheck"
   },
   "devDependencies": {
-    "typescript": "^5.8.3",
-    "@types/node": "^22.15.0"
+    "@types/node": "^22.15.0",
+    "concurrently": "^10.0.1",
+    "typescript": "^5.8.3"
   }
 }

@@ -1,0 +1,27 @@
+import type { RuntimeAgentDef } from '@kge/contracts';
+
+export const qwenAgentDef: RuntimeAgentDef = {
+  id: 'qwen',
+  name: 'Qwen Code',
+  bin: 'qwen',
+  versionArgs: ['--version'],
+
+  fallbackModels: [
+    { id: 'default', label: 'Default' },
+    { id: 'qwen-max', label: 'Qwen Max' },
+    { id: 'qwen-plus', label: 'Qwen Plus' },
+  ],
+
+  buildArgs: (_prompt, options = {}) => {
+    const args: string[] = [];
+    if (options.model && options.model !== 'default') {
+      args.push('--model', options.model);
+    }
+    return args;
+  },
+
+  promptViaStdin: true,
+  streamFormat: 'plain',
+
+  installUrl: 'https://github.com/QwenLM/qwen-code',
+};

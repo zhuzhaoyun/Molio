@@ -1,14 +1,48 @@
 // ─── REST API types ───
 
+/**
+ * Chat message for conversation history.
+ * Used in CreateRunRequest to pass prior messages for transcript building.
+ */
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp: number;
+  agentId?: string;
+  runId?: string;
+  // Assistant-only fields
+  thinking?: string;
+  tools?: ToolEvent[];
+  usage?: {
+    input?: number;
+    output?: number;
+    cost?: number;
+  };
+}
+
+export interface ToolEvent {
+  id: string;
+  name: string;
+  input: unknown;
+  result?: string;
+  isError?: boolean;
+  status: 'running' | 'done' | 'error';
+}
+
 export interface CreateRunRequest {
   agentId: string;
   message: string;
   model?: string;
   cwd?: string;
+  // Phase 2: Multi-turn conversation
+  conversationId?: string;
+  history?: ChatMessage[];
 }
 
 export interface CreateRunResponse {
   runId: string;
+  conversationId?: string;
 }
 
 export interface ToolResultRequest {
@@ -34,4 +68,43 @@ export interface ApiError {
     code: string;
     message: string;
   };
+}
+
+// ─── Project & Conversation types (Phase 3) ───
+
+export interface Project {
+  id: string;
+  name: string;
+  metadata?: Record<string, unknown>;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface Conversation {
+  id: string;
+  projectId: string;
+  title: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ProjectListResponse {
+  projects: Project[];
+}
+
+export interface ConversationListResponse {
+  conversations: Conversation[];
+}
+
+export interface MessageListResponse {
+  messages: ChatMessage[];
+}
+
+export interface CreateProjectRequest {
+  name: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface CreateConversationRequest {
+  title?: string;
 }

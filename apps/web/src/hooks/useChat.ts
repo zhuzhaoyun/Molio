@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
-import type { AgentEvent } from '@kge/contracts';
+import type { AgentEvent, ChatMessage as ContractsChatMessage } from '@kge/contracts';
 import { api } from '../api/client';
 import { subscribeToRun } from '../api/sse';
 
@@ -18,6 +18,7 @@ export interface ChatMessage {
   content: string;
   timestamp: number;
   runId?: string;
+  agentId?: string;
   // Assistant-only fields
   thinking?: string;
   tools?: ToolEvent[];
@@ -29,16 +30,32 @@ interface ChatState {
   messages: ChatMessage[];
   runId: string | null;
   isRunning: boolean;
+  conversationId: string | null;
+}
+
+interface UseChatOptions {
+  agentId: string | null;
+  projectId?: string | null;
+  conversationId?: string | null;
+  initialMessages?: ChatMessage[];
 }
 
 let msgCounter = 0;
 function nextMsgId() { return `msg-${++msgCounter}-${Date.now()}`; }
 
-export function useChat(agentId: string | null) {
+export function useChat(options: UseChatOptions | string | null) {
+  // Support both old API (useChat(agentId)) and new API (useChat({ agentId, ... }))
+  const agentId = typeof options === 'string' || options === null ? options : options.agentId;
+  const projectId = typeof options === 'object' && options !== null ? options.projectId : null;
+  const initialConversationId = typeof options === 'object' && options !== null ? options.conversationId : null;
+
   const [state, setState] = useState<ChatState>({
-    messages: [],
+    messages: typeof options === 'object' && options !== null && options.initialMessages
+      ? options.initialMessages
+      : [],
     runId: null,
     isRunning: false,
+    conversationId: initialConversationId ?? null,
   });
   const esRef = useRef<EventSource | null>(null);
   const assistantIdRef = useRef<string | null>(null);
@@ -47,6 +64,24 @@ export function useChat(agentId: string | null) {
     esRef.current?.close();
     esRef.current = null;
   }, []);
+
+  /**
+   * Build history array from current messages for transcript building.
+   */
+  const buildHistory = useCallback((): ContractsChatMessage[] => {
+    return state.messages
+      .filter((m) => m.role === 'user' || m.role === 'assistant')
+      .map((m) => ({
+        id: m.id,
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+        timestamp: m.timestamp,
+        agentId: m.agentId,
+        runId: m.runId,
+        tools: m.tools,
+        usage: m.usage,
+      }));
+  }, [state.messages]);
 
   const send = useCallback(async (text: string) => {
     if (!agentId || !text.trim()) return;
@@ -76,38 +111,85 @@ export function useChat(agentId: string | null) {
       isRunning: true,
     }));
 
-    // Check if we can send to an existing run (multi-turn)
-    const existingRunId = state.runId;
-    let runId: string;
-
-    if (existingRunId) {
-      // Try multi-turn: send follow-up to existing run
+    // Persist user message to DB if we have project/conversation
+    if (projectId && state.conversationId) {
       try {
-        await api.sendMessage(existingRunId, text.trim());
-        runId = existingRunId;
-        // Don't create new SSE — the existing one is still active
-        return;
+        await api.saveMessage(projectId, state.conversationId, {
+          ...userMsg,
+          role: 'user',
+        } as ContractsChatMessage);
       } catch {
-        // Multi-turn failed (run ended), fall through to new run
+        // Persistence failure is non-fatal
       }
     }
 
-    // Create a new run
+    // Build history for transcript (all messages before this turn)
+    const history = buildHistory();
+
+    // Check if we can send to an existing run (multi-turn via stdin)
+    const existingRunId = state.runId;
+
+    if (existingRunId) {
+      // Try multi-turn: send follow-up to existing run's stdin
+      try {
+        await api.sendMessage(existingRunId, text.trim());
+        return; // Don't create new run/SSE — the existing one is still active
+      } catch {
+        // Multi-turn failed (run ended or stdin closed), fall through to new run
+      }
+    }
+
+    // Create a new run with conversation history for transcript building
     closeEventSource();
-    runId = await api.createRun({ agentId, message: text.trim() });
 
-    setState((prev) => ({ ...prev, runId }));
+    try {
+      const result = await api.createRun({
+        agentId,
+        message: text.trim(),
+        conversationId: state.conversationId ?? undefined,
+        history: history.length > 0 ? history : undefined,
+      });
 
-    const es = subscribeToRun(
-      runId,
-      (event: AgentEvent) => {
-        setState((prev) => updateWithEvent(prev, assistantId, event));
-      },
-      () => { /* SSE error — EventSource auto-retries */ },
-    );
+      const runId = result.runId;
+      const convId = result.conversationId ?? state.conversationId;
 
-    esRef.current = es;
-  }, [agentId, state.runId, closeEventSource]);
+      setState((prev) => ({ ...prev, runId, conversationId: convId }));
+
+      // Persist assistant placeholder
+      if (projectId && convId) {
+        try {
+          await api.saveMessage(projectId, convId, {
+            ...assistantMsg,
+            role: 'assistant',
+            runId,
+            agentId,
+          } as ContractsChatMessage);
+        } catch {
+          // Persistence failure is non-fatal
+        }
+      }
+
+      const es = subscribeToRun(
+        runId,
+        (event: AgentEvent) => {
+          setState((prev) => updateWithEvent(prev, assistantId, event));
+        },
+        () => { /* SSE error — EventSource auto-retries */ },
+      );
+
+      esRef.current = es;
+    } catch (err) {
+      // If run creation fails, mark the assistant message as error
+      setState((prev) => {
+        const messages = prev.messages.map((msg) =>
+          msg.id === assistantId
+            ? { ...msg, content: `Error: ${(err as Error).message}`, streaming: false }
+            : msg
+        );
+        return { ...prev, messages, isRunning: false };
+      });
+    }
+  }, [agentId, state.runId, state.conversationId, projectId, closeEventSource, buildHistory]);
 
   const submitToolResult = useCallback(async (toolUseId: string, content: string) => {
     if (!state.runId) return;
@@ -146,7 +228,39 @@ export function useChat(agentId: string | null) {
   const reset = useCallback(() => {
     closeEventSource();
     assistantIdRef.current = null;
-    setState({ messages: [], runId: null, isRunning: false });
+    setState({ messages: [], runId: null, isRunning: false, conversationId: null });
+  }, [closeEventSource]);
+
+  const loadConversation = useCallback(async (
+    projId: string,
+    convId: string,
+  ) => {
+    closeEventSource();
+    assistantIdRef.current = null;
+
+    try {
+      const messages = await api.listMessages(projId, convId);
+      const chatMessages: ChatMessage[] = messages.map((m) => ({
+        id: m.id,
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+        timestamp: m.timestamp,
+        agentId: m.agentId,
+        runId: m.runId,
+        tools: m.tools as ToolEvent[] | undefined,
+        usage: m.usage,
+      }));
+
+      setState({
+        messages: chatMessages,
+        runId: null,
+        isRunning: false,
+        conversationId: convId,
+      });
+    } catch (err) {
+      console.error('Failed to load conversation:', err);
+      setState({ messages: [], runId: null, isRunning: false, conversationId: convId });
+    }
   }, [closeEventSource]);
 
   return {
@@ -155,6 +269,7 @@ export function useChat(agentId: string | null) {
     submitToolResult,
     cancel,
     reset,
+    loadConversation,
   };
 }
 

@@ -1,27 +1,46 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { mkdirSync, createWriteStream, type WriteStream } from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
 import type {
-  AgentEvent, AgentInfo, RuntimeAgentDef, RunInfo, RunStatus,
+  AgentEvent, AgentInfo, RuntimeAgentDef, RunInfo, RunStatus, ChatMessage,
 } from '@kge/contracts';
 import { getAgentDef, listAgentDefs } from './runtimes/registry.js';
 import { resolveAgentBinary, probeVersion } from './runtimes/launch.js';
 import { buildSpawnEnv } from './runtimes/env.js';
 import { createClaudeStreamHandler } from './streams/claude-stream.js';
 import { createCodexStreamHandler } from './streams/codex-stream.js';
+import { createJsonEventStreamHandler } from './streams/json-event-stream.js';
 import type { StreamHandler } from '@kge/contracts';
 import { createJsonlParser } from './streams/jsonl-parser.js';
 import { loadConfig, getAgentConfig, buildAgentEnv } from './config.js';
-import type { RunState } from '../types.js';
+import { buildTranscript, type TranscriptMessage } from './transcript.js';
+import type { RunState, BufferedEvent } from '../types.js';
+
+const TERMINAL_STATUSES = new Set<RunStatus>(['succeeded', 'failed', 'canceled']);
+const MAX_EVENTS = 2_000;
+const RUN_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 export interface CreateRunOptions {
   agentId: string;
   message: string;
   model?: string;
   cwd?: string;
+  projectId?: string;
+  conversationId?: string;
+  assistantMessageId?: string;
+  /** Prior conversation messages for transcript building (multi-turn). */
+  history?: ChatMessage[];
 }
 
 export class RunManager {
   private runs = new Map<string, RunState>();
+  private runsLogDir: string;
+
+  constructor() {
+    this.runsLogDir = path.join(os.homedir(), '.kge', 'runs');
+  }
 
   detectAgents(): AgentInfo[] {
     const config = loadConfig();
@@ -80,6 +99,33 @@ export class RunManager {
     return () => { run.eventListeners.delete(callback); };
   }
 
+  /**
+   * Get buffered events for SSE replay. Returns events with id > afterId.
+   */
+  getBufferedEvents(runId: string, afterId: number = 0): BufferedEvent[] | null {
+    const run = this.runs.get(runId);
+    if (!run) return null;
+    return run.events.filter((e) => e.id > afterId);
+  }
+
+  /**
+   * Check if a run is in a terminal state.
+   */
+  isTerminal(runId: string): boolean {
+    const run = this.runs.get(runId);
+    if (!run) return false;
+    return TERMINAL_STATUSES.has(run.status);
+  }
+
+  /**
+   * Get the last event id for a run (nextEventId - 1).
+   */
+  getLastEventId(runId: string): number {
+    const run = this.runs.get(runId);
+    if (!run) return 0;
+    return run.nextEventId - 1;
+  }
+
   async createRun(opts: CreateRunOptions): Promise<string> {
     const def = getAgentDef(opts.agentId);
     if (!def) throw new Error(`Unknown agent: ${opts.agentId}`);
@@ -96,6 +142,9 @@ export class RunManager {
     }
 
     const runId = randomUUID();
+    const now = Date.now();
+    const eventsLogPath = path.join(this.runsLogDir, runId, 'events.jsonl');
+
     const run: RunState = {
       id: runId,
       agentId: opts.agentId,
@@ -105,7 +154,19 @@ export class RunManager {
       pendingHostAnswers: new Set(),
       lastStopReason: null,
       eventListeners: new Set(),
-      createdAt: Date.now(),
+      createdAt: now,
+      // Phase 1 additions
+      projectId: opts.projectId ?? null,
+      conversationId: opts.conversationId ?? null,
+      assistantMessageId: opts.assistantMessageId ?? null,
+      events: [],
+      nextEventId: 1,
+      eventsLogPath,
+      eventsLogStream: null,
+      updatedAt: now,
+      exitCode: null,
+      error: null,
+      errorCode: null,
     };
     this.runs.set(runId, run);
 
@@ -119,12 +180,14 @@ export class RunManager {
     );
 
     const stdinMode = def.promptViaStdin ? 'pipe' : 'ignore';
+    const isCmd = process.platform === 'win32' && (result.binary.endsWith('.cmd') || result.binary.endsWith('.bat'));
     const child: ChildProcess = spawn(result.binary, args, {
       env,
       stdio: [stdinMode, 'pipe', 'pipe'],
       cwd: opts.cwd || agentConfig.env?.['KGE_CWD'] || process.cwd(),
-      shell: false,
-      windowsVerbatimArguments: process.platform === 'win32',
+      // On Windows, .cmd/.bat files must be spawned with shell: true to avoid EINVAL
+      shell: isCmd,
+      windowsVerbatimArguments: process.platform === 'win32' && !isCmd,
     });
     run.child = child;
 
@@ -135,6 +198,7 @@ export class RunManager {
 
     if (def.promptViaStdin && child.stdin) {
       if (def.promptInputFormat === 'stream-json') {
+        // Pattern A: Stream-JSON agent — interactive stdin, stays open for multi-turn
         const msg = JSON.stringify({
           type: 'user',
           message: { role: 'user', content: opts.message },
@@ -142,7 +206,9 @@ export class RunManager {
         child.stdin.write(msg + '\n', 'utf8');
         run.stdinOpen = true;
       } else {
-        child.stdin.end(opts.message);
+        // Pattern B: Non-stream-json agent — build transcript + new message, close stdin
+        const prompt = this.composePrompt(opts.message, opts.history, opts.agentId);
+        child.stdin.end(prompt);
         run.stdinOpen = false;
       }
     }
@@ -176,18 +242,13 @@ export class RunManager {
     });
 
     child.on('error', (err) => {
-      run.status = 'failed';
       this.emitEvent(run, { type: 'error', message: `Spawn error: ${err.message}` });
+      this.finishRun(run, 'failed', 1, null);
     });
 
     child.on('close', (code) => {
       parser.flush();
-      run.status = code === 0 ? 'succeeded' : 'failed';
-      run.stdinOpen = false;
-      this.emitEvent(run, {
-        type: 'status',
-        label: code === 0 ? 'completed' : 'failed',
-      });
+      this.finishRun(run, code === 0 ? 'succeeded' : 'failed', code, null);
     });
 
     return runId;
@@ -239,7 +300,6 @@ export class RunManager {
     const run = this.runs.get(runId);
     if (!run) return;
     if (run.child && !run.child.killed) {
-      run.status = 'canceled';
       run.child.kill('SIGTERM');
       setTimeout(() => {
         if (run.child && !run.child.killed) {
@@ -259,9 +319,89 @@ export class RunManager {
     }
   }
 
+  /**
+   * Emit an event: buffer it, write to JSONL log, and fan out to listeners.
+   */
   private emitEvent(run: RunState, event: AgentEvent): void {
+    // Track error details
+    if (event.type === 'error') {
+      run.error = event.message;
+    }
+
+    // Buffer the event
+    const id = run.nextEventId++;
+    const record: BufferedEvent = {
+      id,
+      event: event.type,
+      data: event,
+      timestamp: Date.now(),
+    };
+    run.events.push(record);
+    if (run.events.length > MAX_EVENTS) {
+      run.events.splice(0, run.events.length - MAX_EVENTS);
+    }
+    run.updatedAt = Date.now();
+
+    // Write to JSONL log (best-effort)
+    this.ensureLogStream(run)?.write(JSON.stringify(record) + '\n');
+
+    // Fan out to listeners
     for (const listener of run.eventListeners) {
       try { listener(event); } catch { /* listener error, skip */ }
+    }
+  }
+
+  /**
+   * Finish a run: set terminal status, emit end event, close log stream, schedule cleanup.
+   */
+  private finishRun(
+    run: RunState,
+    status: 'succeeded' | 'failed' | 'canceled',
+    code: number | null,
+    signal: string | null,
+  ): void {
+    if (TERMINAL_STATUSES.has(run.status)) return;
+
+    run.status = status;
+    run.exitCode = code;
+    run.stdinOpen = false;
+    run.updatedAt = Date.now();
+
+    // Emit end event
+    this.emitEvent(run, {
+      type: 'status',
+      label: status === 'succeeded' ? 'completed' : status,
+    });
+
+    // Close the JSONL log stream
+    try { run.eventsLogStream?.end(); } catch { /* ignore */ }
+    run.eventsLogStream = null;
+
+    // Schedule cleanup: remove from memory after TTL
+    setTimeout(() => {
+      if (TERMINAL_STATUSES.has(run.status)) {
+        this.runs.delete(run.id);
+      }
+    }, RUN_TTL_MS).unref?.();
+  }
+
+  /**
+   * Lazily create the JSONL log stream for a run.
+   */
+  private ensureLogStream(run: RunState): WriteStream | null {
+    if (!run.eventsLogPath) return null;
+    if (run.eventsLogStream) return run.eventsLogStream;
+
+    try {
+      mkdirSync(path.dirname(run.eventsLogPath), { recursive: true });
+      run.eventsLogStream = createWriteStream(run.eventsLogPath, { flags: 'a' });
+      run.eventsLogStream.on('error', () => {
+        try { run.eventsLogStream?.destroy(); } catch { /* ignore */ }
+        run.eventsLogStream = null;
+      });
+      return run.eventsLogStream;
+    } catch {
+      return null;
     }
   }
 
@@ -274,6 +414,34 @@ export class RunManager {
     }
   }
 
+  /**
+   * Compose the full prompt for non-stream-json agents.
+   * Combines conversation history (transcript) with the new user message.
+   */
+  private composePrompt(
+    message: string,
+    history?: ChatMessage[],
+    agentId?: string,
+  ): string {
+    if (!history || history.length === 0) {
+      return message;
+    }
+
+    // Convert ChatMessage[] to TranscriptMessage[]
+    const transcriptHistory: TranscriptMessage[] = history
+      .filter((m) => m.role === 'user' || m.role === 'assistant')
+      .map((m) => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+        agentId: m.agentId,
+      }));
+
+    const transcript = buildTranscript(transcriptHistory, agentId);
+    if (!transcript) return message;
+
+    return `${transcript}\n\n## user\n${message}`;
+  }
+
   private selectParser(
     def: RuntimeAgentDef,
     onEvent: (ev: AgentEvent) => void,
@@ -282,10 +450,10 @@ export class RunManager {
       return createClaudeStreamHandler(onEvent);
     }
     if (def.streamFormat === 'json-event-stream') {
-      if (def.eventParser === 'codex') {
-        return createCodexStreamHandler(onEvent);
-      }
+      // Use multi-kind dispatcher for all json-event-stream agents
+      return createJsonEventStreamHandler(def.eventParser ?? 'unknown', onEvent);
     }
+    // Plain text or unrecognized format — pass through as raw
     return createJsonlParser((line: string) => {
       onEvent({ type: 'raw', line });
     });

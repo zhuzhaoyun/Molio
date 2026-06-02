@@ -1,8 +1,15 @@
 import type { RuntimeAgentDef } from '@kge/contracts';
 import { claudeAgentDef } from './claude.js';
 import { codexAgentDef } from './codex.js';
+import { geminiAgentDef } from './gemini.js';
+import { qwenAgentDef } from './qwen.js';
 
-const AGENT_DEFS: RuntimeAgentDef[] = [claudeAgentDef, codexAgentDef];
+const AGENT_DEFS: RuntimeAgentDef[] = [
+  claudeAgentDef,
+  codexAgentDef,
+  geminiAgentDef,
+  qwenAgentDef,
+];
 
 const ids = new Set<string>();
 for (const def of AGENT_DEFS) {

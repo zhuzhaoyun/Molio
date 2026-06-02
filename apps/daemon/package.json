@@ -11,11 +11,13 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@hono/node-server": "^1.13.0",
     "@kge/contracts": "workspace:*",
-    "hono": "^4.7.0",
-    "@hono/node-server": "^1.13.0"
+    "better-sqlite3": "^12.10.0",
+    "hono": "^4.7.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "tsx": "^4.19.0"
   }
 }
