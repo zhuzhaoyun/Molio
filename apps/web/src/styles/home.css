@@ -129,6 +129,7 @@
   min-height: auto;
   padding: 0;
   overflow: hidden;
+  align-items: stretch;
 }
 
 /* Header with agent selector on the right */
@@ -189,6 +190,13 @@
   flex-direction: column;
   gap: 14px;
   min-width: 0;
+  align-items: center;
+}
+
+/* Each message row takes full width, content is constrained */
+.home-chat-log > * {
+  width: 100%;
+  max-width: 900px;
 }
 
 /* Composer bar at bottom */
@@ -197,11 +205,12 @@
   padding: 10px 16px;
   background: var(--bg-panel);
   flex-shrink: 0;
+  display: flex;
+  justify-content: center;
 }
 
 .home-composer-bar .composer {
-  max-width: 900px;
-  margin: 0 auto;
+  width: 100%;
   border: none;
   padding: 0;
   background: transparent;
@@ -213,6 +222,16 @@
   background: var(--bg-panel);
   box-shadow: var(--shadow-xs);
   padding: 10px 12px 8px;
+}
+
+/* Mobile responsive: full width on small screens */
+@media (max-width: 768px) {
+  .home-chat-log > * {
+    max-width: 100%;
+  }
+  .home-composer-bar .composer {
+    max-width: 100%;
+  }
 }
 
 /* Placeholder views */
