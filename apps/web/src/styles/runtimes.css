@@ -498,6 +498,132 @@
   color: var(--text-muted);
 }
 
+/* ══════════ Rescan Button ══════════ */
+.rt-rescan-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rt-rescan-notice {
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  animation: rt-fade-in 200ms ease;
+}
+
+.rt-rescan-notice--ok {
+  color: var(--green);
+}
+
+.rt-rescan-notice--err {
+  color: var(--red);
+}
+
+@keyframes rt-rescan-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.rt-rescan-icon--spinning {
+  animation: rt-rescan-spin 800ms linear infinite;
+}
+
+/* ══════════ Test Result Feedback ══════════ */
+.rt-test-result {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  animation: rt-fade-in 200ms ease;
+}
+
+.rt-test-result--running {
+  color: var(--text-muted);
+}
+
+.rt-test-result--ok {
+  color: var(--green);
+}
+
+.rt-test-result--error {
+  color: var(--red);
+}
+
+.rt-test-result__icon {
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.rt-test-result__msg {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes rt-test-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.rt-test-result__spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--text-muted);
+  border-radius: 50%;
+  animation: rt-test-spin 600ms linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes rt-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ══════════ Default Agent ══════════ */
+.rt-agent-card--default {
+  border-color: color-mix(in srgb, var(--accent) 36%, var(--border));
+  background: var(--bg-panel);
+  box-shadow:
+    0 1px 0 color-mix(in srgb, var(--bg-panel) 88%, transparent) inset,
+    0 4px 16px color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+.rt-agent-card--default::before {
+  content: '';
+  position: absolute;
+  inset: 10px auto 10px 0;
+  width: 4px;
+  border-radius: 0 999px 999px 0;
+  background: linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--accent) 56%, var(--selected)));
+}
+
+.rt-badge--default {
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+}
+
+/* ── Agent Card Actions ── */
+.rt-agent-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ── Double-click Hint ── */
+.rt-agents__hint {
+  margin: 16px 0 0;
+  font-size: 12px;
+  color: var(--text-faint);
+  text-align: center;
+}
+
 /* ── Responsive ── */
 @media (max-width: 640px) {
   .rt-header {
@@ -518,5 +644,16 @@
 
   .rt-run-row__time {
     display: none;
+  }
+
+  .rt-agent-card {
+    flex-wrap: wrap;
+  }
+
+  .rt-agent-card__actions {
+    width: 100%;
+    justify-content: flex-end;
+    padding-top: 6px;
+    border-top: 1px solid var(--border-soft);
   }
 }

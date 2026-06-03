@@ -16,6 +16,15 @@ export const api = {
     return data.agents;
   },
 
+  async testAgent(agentId: string): Promise<{ ok: boolean; elapsed: number; status?: string; error?: string }> {
+    const res = await fetch(`${BASE}/agents/${agentId}/test`, { method: 'POST' });
+    if (!res.ok) {
+      const data = await res.json();
+      return { ok: false, elapsed: data.elapsed ?? 0, error: data.error ?? `Test failed: ${res.status}` };
+    }
+    return res.json();
+  },
+
   // ─── Runs ───
 
   async createRun(req: CreateRunRequest): Promise<{ runId: string; conversationId?: string }> {

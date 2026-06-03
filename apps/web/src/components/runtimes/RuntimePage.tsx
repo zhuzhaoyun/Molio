@@ -4,6 +4,17 @@ import { useRuntimes } from '../../hooks/useRuntimes';
 
 type Tab = 'agents' | 'runs';
 
+type TestState =
+  | { status: 'idle' }
+  | { status: 'running' }
+  | { status: 'done'; ok: boolean; elapsed: number; error?: string };
+
+type RescanState =
+  | { status: 'idle' }
+  | { status: 'running' }
+  | { status: 'done'; count: number }
+  | { status: 'error'; message: string };
+
 const AGENT_ICONS: Record<string, string> = {
   claude: '🟣',
   codex: '🟢',
@@ -31,17 +42,67 @@ function formatTime(ts: number): string {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+/* ─── Test Result Feedback ─── */
+function TestResult({ test }: { test: TestState }) {
+  if (test.status === 'idle') return null;
+
+  if (test.status === 'running') {
+    return (
+      <div className="rt-test-result rt-test-result--running">
+        <span className="rt-test-result__spinner" />
+        <span>Testing…</span>
+      </div>
+    );
+  }
+
+  if (test.ok) {
+    return (
+      <div className="rt-test-result rt-test-result--ok">
+        <span className="rt-test-result__icon">✓</span>
+        <span>OK ({test.elapsed}ms)</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rt-test-result rt-test-result--error">
+      <span className="rt-test-result__icon">✗</span>
+      <span className="rt-test-result__msg">{test.error ?? 'Test failed'}</span>
+    </div>
+  );
+}
+
 /* ─── Agent Card ─── */
-function AgentCard({ agent }: { agent: AgentInfo }) {
+function AgentCard({
+  agent,
+  isDefault,
+  testState,
+  onTest,
+  onSetDefault,
+}: {
+  agent: AgentInfo;
+  isDefault: boolean;
+  testState: TestState;
+  onTest: () => void;
+  onSetDefault: () => void;
+}) {
   const icon = AGENT_ICONS[agent.id] ?? '⚙️';
   const sourceLabel = agent.source === 'not-found' ? 'Not found' : agent.source ?? 'unknown';
 
+  const handleDoubleClick = () => {
+    if (agent.available) onSetDefault();
+  };
+
   return (
-    <div className={`rt-agent-card${agent.available ? '' : ' rt-agent-card--unavailable'}`}>
+    <div
+      className={`rt-agent-card${agent.available ? '' : ' rt-agent-card--unavailable'}${isDefault ? ' rt-agent-card--default' : ''}`}
+      onDoubleClick={handleDoubleClick}
+    >
       <div className="rt-agent-card__icon">{icon}</div>
       <div className="rt-agent-card__body">
         <div className="rt-agent-card__header">
           <span className="rt-agent-card__name">{agent.name}</span>
+          {isDefault && <span className="rt-badge rt-badge--default">Default</span>}
           {agent.available ? (
             <span className="rt-badge rt-badge--ok">Available</span>
           ) : (
@@ -64,12 +125,25 @@ function AgentCard({ agent }: { agent: AgentInfo }) {
             ))}
           </div>
         )}
+        {/* Test result feedback */}
+        <TestResult test={testState} />
       </div>
-      {!agent.available && agent.installUrl && (
-        <a className="rt-agent-card__install" href={agent.installUrl} target="_blank" rel="noopener noreferrer">
-          Install →
-        </a>
-      )}
+      <div className="rt-agent-card__actions">
+        {agent.available && (
+          <button
+            className="rt-btn rt-btn--sm rt-btn--ghost"
+            onClick={onTest}
+            disabled={testState.status === 'running'}
+          >
+            Test
+          </button>
+        )}
+        {!agent.available && agent.installUrl && (
+          <a className="rt-agent-card__install" href={agent.installUrl} target="_blank" rel="noopener noreferrer">
+            Install →
+          </a>
+        )}
+      </div>
     </div>
   );
 }
@@ -102,9 +176,51 @@ function RunRow({ run, onCancel }: { run: RunInfo; onCancel: (id: string) => voi
   );
 }
 
+/* ─── Rescan Button ─── */
+function RescanButton({ state, onRescan }: { state: RescanState; onRescan: () => void }) {
+  const isRunning = state.status === 'running';
+
+  return (
+    <div className="rt-rescan-wrap">
+      <button className="rt-btn rt-btn--ghost" onClick={onRescan} disabled={isRunning}>
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          width="16"
+          height="16"
+          className={isRunning ? 'rt-rescan-icon--spinning' : ''}
+        >
+          <polyline points="23 4 23 10 17 10" />
+          <polyline points="1 20 1 14 7 14" />
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+        </svg>
+        {isRunning ? 'Scanning…' : 'Rescan'}
+      </button>
+      {state.status === 'done' && (
+        <span className="rt-rescan-notice rt-rescan-notice--ok">
+          {state.count} available
+        </span>
+      )}
+      {state.status === 'error' && (
+        <span className="rt-rescan-notice rt-rescan-notice--err">
+          Scan failed
+        </span>
+      )}
+    </div>
+  );
+}
+
 /* ─── Main Page ─── */
 export function RuntimePage() {
-  const { agents, runs, loading, error, refresh, cancelRun } = useRuntimes();
+  const {
+    agents, runs, loading, error,
+    defaultAgentId, testStates, rescanState,
+    refresh, testAgent, rescan, setDefaultAgent, cancelRun,
+  } = useRuntimes();
   const [activeTab, setActiveTab] = useState<Tab>('agents');
 
   const availableCount = agents.filter((a) => a.available).length;
@@ -121,14 +237,7 @@ export function RuntimePage() {
             {activeRuns > 0 && ` · ${activeRuns} running`}
           </span>
         </div>
-        <button className="rt-btn rt-btn--ghost" onClick={refresh} disabled={loading}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
-            <polyline points="23 4 23 10 17 10" />
-            <polyline points="1 20 1 14 7 14" />
-            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-          </svg>
-          Refresh
-        </button>
+        <RescanButton state={rescanState} onRescan={rescan} />
       </div>
 
       {/* Tab switcher */}
@@ -163,7 +272,13 @@ export function RuntimePage() {
         {loading ? (
           <div className="rt-loading">Loading…</div>
         ) : activeTab === 'agents' ? (
-          <AgentsView agents={agents} />
+          <AgentsView
+            agents={agents}
+            defaultAgentId={defaultAgentId}
+            testStates={testStates}
+            onTest={testAgent}
+            onSetDefault={setDefaultAgent}
+          />
         ) : (
           <RunsView runs={runs} onCancel={cancelRun} />
         )}
@@ -173,7 +288,19 @@ export function RuntimePage() {
 }
 
 /* ─── Agents View ─── */
-function AgentsView({ agents }: { agents: AgentInfo[] }) {
+function AgentsView({
+  agents,
+  defaultAgentId,
+  testStates,
+  onTest,
+  onSetDefault,
+}: {
+  agents: AgentInfo[];
+  defaultAgentId: string | null;
+  testStates: Record<string, TestState>;
+  onTest: (id: string) => void;
+  onSetDefault: (id: string) => void;
+}) {
   const available = agents.filter((a) => a.available);
   const unavailable = agents.filter((a) => !a.available);
 
@@ -193,7 +320,16 @@ function AgentsView({ agents }: { agents: AgentInfo[] }) {
         <div className="rt-agents__section">
           <h2 className="rt-section-title">Installed</h2>
           <div className="rt-agents__grid">
-            {available.map((a) => <AgentCard key={a.id} agent={a} />)}
+            {available.map((a) => (
+              <AgentCard
+                key={a.id}
+                agent={a}
+                isDefault={a.id === defaultAgentId}
+                testState={testStates[a.id] ?? { status: 'idle' }}
+                onTest={() => onTest(a.id)}
+                onSetDefault={() => onSetDefault(a.id)}
+              />
+            ))}
           </div>
         </div>
       )}
@@ -201,10 +337,22 @@ function AgentsView({ agents }: { agents: AgentInfo[] }) {
         <div className="rt-agents__section">
           <h2 className="rt-section-title">Not Installed</h2>
           <div className="rt-agents__grid">
-            {unavailable.map((a) => <AgentCard key={a.id} agent={a} />)}
+            {unavailable.map((a) => (
+              <AgentCard
+                key={a.id}
+                agent={a}
+                isDefault={false}
+                testState={testStates[a.id] ?? { status: 'idle' }}
+                onTest={() => onTest(a.id)}
+                onSetDefault={() => {}}
+              />
+            ))}
           </div>
         </div>
       )}
+      <p className="rt-agents__hint">
+        Double-click an agent to set it as the default runtime for chat.
+      </p>
     </div>
   );
 }

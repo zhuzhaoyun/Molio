@@ -17,10 +17,28 @@ type View = 'home' | 'knowledge' | 'runtimes';
 
 export default function App() {
   const { agents } = useAgents();
+  const [defaultAgentId, setDefaultAgentId] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [activeVault, setActiveVault] = useState<Vault | null>(null);
   const chat = useChat({ agentId: selectedAgent, cwd: activeVault?.path });
   const [activeView, setActiveView] = useState<View>('home');
+
+  // Load config to get defaultAgentId
+  useEffect(() => {
+    api.getConfig()
+      .then((cfg) => {
+        const id = (cfg as { defaultAgentId?: string }).defaultAgentId;
+        if (id) setDefaultAgentId(id);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Auto-select default agent when agents load and no agent is selected
+  useEffect(() => {
+    if (!selectedAgent && defaultAgentId && agents.some((a) => a.id === defaultAgentId && a.available)) {
+      setSelectedAgent(defaultAgentId);
+    }
+  }, [agents, defaultAgentId, selectedAgent]);
 
   // Load first vault as default cwd for agent runs
   useEffect(() => {
@@ -31,7 +49,8 @@ export default function App() {
 
   const handleNewChat = () => {
     chat.reset();
-    setSelectedAgent(null);
+    // Reset to default agent instead of null
+    setSelectedAgent(defaultAgentId ?? null);
   };
 
   return (

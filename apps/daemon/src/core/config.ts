@@ -13,6 +13,7 @@ export interface AgentConfig {
 export interface AppConfig {
   agents: Record<string, AgentConfig>;
   defaultCwd?: string;
+  defaultAgentId?: string;
 }
 
 const DEFAULT_CONFIG: AppConfig = {
