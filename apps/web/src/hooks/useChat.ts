@@ -38,6 +38,7 @@ interface UseChatOptions {
   projectId?: string | null;
   conversationId?: string | null;
   initialMessages?: ChatMessage[];
+  cwd?: string | null;
 }
 
 let msgCounter = 0;
@@ -48,6 +49,7 @@ export function useChat(options: UseChatOptions | string | null) {
   const agentId = typeof options === 'string' || options === null ? options : options.agentId;
   const projectId = typeof options === 'object' && options !== null ? options.projectId : null;
   const initialConversationId = typeof options === 'object' && options !== null ? options.conversationId : null;
+  const cwd = typeof options === 'object' && options !== null ? options.cwd : null;
 
   const [state, setState] = useState<ChatState>({
     messages: typeof options === 'object' && options !== null && options.initialMessages
@@ -148,6 +150,7 @@ export function useChat(options: UseChatOptions | string | null) {
         message: text.trim(),
         conversationId: state.conversationId ?? undefined,
         history: history.length > 0 ? history : undefined,
+        cwd: cwd ?? undefined,
       });
 
       const runId = result.runId;
@@ -189,7 +192,7 @@ export function useChat(options: UseChatOptions | string | null) {
         return { ...prev, messages, isRunning: false };
       });
     }
-  }, [agentId, state.runId, state.conversationId, projectId, closeEventSource, buildHistory]);
+  }, [agentId, state.runId, state.conversationId, projectId, cwd, closeEventSource, buildHistory]);
 
   const submitToolResult = useCallback(async (toolUseId: string, content: string) => {
     if (!state.runId) return;
