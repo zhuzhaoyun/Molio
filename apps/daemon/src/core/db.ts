@@ -10,7 +10,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
-import type { ChatMessage, Project, Conversation } from '@kge/contracts';
+import type { ChatMessage, Project, Conversation, Vault, KbHistoryEntry } from '@kge/contracts';
 
 type SqliteDb = Database.Database;
 
@@ -85,6 +85,26 @@ function migrate(db: SqliteDb): void {
 
     CREATE INDEX IF NOT EXISTS idx_messages_conv
       ON messages(conversation_id, position);
+
+    CREATE TABLE IF NOT EXISTS vaults (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      path TEXT NOT NULL UNIQUE,
+      description TEXT,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS kb_history (
+      id TEXT PRIMARY KEY,
+      vault_id TEXT NOT NULL,
+      action TEXT NOT NULL,
+      detail TEXT,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY(vault_id) REFERENCES vaults(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_kb_history_vault
+      ON kb_history(vault_id, created_at DESC);
   `);
 }
 
@@ -227,6 +247,46 @@ export function appendMessageEvent(db: SqliteDb, messageId: string, event: unkno
   );
 }
 
+// ─── Vault CRUD ───
+
+export function listVaults(db: SqliteDb): Vault[] {
+  const rows = db.prepare('SELECT * FROM vaults ORDER BY created_at DESC').all() as Array<Record<string, unknown>>;
+  return rows.map(rowToVault);
+}
+
+export function getVault(db: SqliteDb, id: string): Vault | null {
+  const row = db.prepare('SELECT * FROM vaults WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+  return row ? rowToVault(row) : null;
+}
+
+export function createVault(db: SqliteDb, name: string, vaultPath: string, description?: string): Vault {
+  const id = randomUUID();
+  const now = Date.now();
+  db.prepare(
+    'INSERT INTO vaults (id, name, path, description, created_at) VALUES (?, ?, ?, ?, ?)'
+  ).run(id, name, vaultPath, description ?? null, now);
+  return { id, name, path: vaultPath, description, fileCount: 0, createdAt: now };
+}
+
+export function deleteVault(db: SqliteDb, id: string): void {
+  db.prepare('DELETE FROM vaults WHERE id = ?').run(id);
+}
+
+// ─── KB History ───
+
+export function listKbHistory(db: SqliteDb, vaultId: string, limit = 50): KbHistoryEntry[] {
+  const rows = db.prepare(
+    'SELECT * FROM kb_history WHERE vault_id = ? ORDER BY created_at DESC LIMIT ?'
+  ).all(vaultId, limit) as Array<Record<string, unknown>>;
+  return rows.map(rowToKbHistory);
+}
+
+export function addKbHistory(db: SqliteDb, vaultId: string, action: string, detail: string): void {
+  db.prepare(
+    'INSERT INTO kb_history (id, vault_id, action, detail, created_at) VALUES (?, ?, ?, ?, ?)'
+  ).run(randomUUID(), vaultId, action, detail, Date.now());
+}
+
 // ─── Row mappers ───
 
 function rowToProject(row: Record<string, unknown>): Project {
@@ -257,5 +317,26 @@ function rowToMessage(row: Record<string, unknown>): ChatMessage {
     timestamp: row.created_at as number,
     agentId: (row.agent_id as string) ?? undefined,
     tools: row.events_json ? JSON.parse(row.events_json as string) : undefined,
+  };
+}
+
+function rowToVault(row: Record<string, unknown>): Vault {
+  return {
+    id: row.id as string,
+    name: row.name as string,
+    path: row.path as string,
+    description: (row.description as string) ?? undefined,
+    fileCount: 0, // Computed at tree-scan time
+    createdAt: row.created_at as number,
+  };
+}
+
+function rowToKbHistory(row: Record<string, unknown>): KbHistoryEntry {
+  return {
+    id: row.id as string,
+    vaultId: row.vault_id as string,
+    action: row.action as KbHistoryEntry['action'],
+    detail: (row.detail as string) ?? '',
+    createdAt: row.created_at as number,
   };
 }

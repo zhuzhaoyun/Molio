@@ -42,3 +42,14 @@ export type {
 } from './api.js';
 
 export type { SSEEnvelope } from './sse.js';
+
+export type {
+  Vault,
+  TreeNode,
+  FileContent,
+  KbHistoryEntry,
+  CreateVaultRequest,
+  VaultListResponse,
+  FileTreeResponse,
+  KbHistoryListResponse,
+} from './knowledge.js';

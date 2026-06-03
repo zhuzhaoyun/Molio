@@ -9,6 +9,7 @@ import { eventsRoutes } from './routes/events.js';
 import { toolResultRoutes } from './routes/tool-result.js';
 import { configRoutes } from './routes/config.js';
 import { projectRoutes } from './routes/projects.js';
+import { knowledgeRoutes } from './routes/knowledge.js';
 
 export const runManager = new RunManager();
 export const db: Database.Database = openDatabase();
@@ -32,6 +33,7 @@ app.route('/api/runs', eventsRoutes(runManager));
 app.route('/api/runs', toolResultRoutes(runManager));
 app.route('/api/config', configRoutes());
 app.route('/api/projects', projectRoutes(db));
+app.route('/api/knowledge', knowledgeRoutes(db));
 
 // Graceful shutdown
 process.on('SIGINT', () => {
