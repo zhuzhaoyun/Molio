@@ -4,9 +4,11 @@ interface Props {
   isRunning: boolean;
   onSend: (message: string) => void;
   onCancel: () => void;
+  disabled?: boolean;
+  disabledPlaceholder?: string;
 }
 
-export function ChatComposer({ isRunning, onSend, onCancel }: Props) {
+export function ChatComposer({ isRunning, onSend, onCancel, disabled, disabledPlaceholder }: Props) {
   const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -41,7 +43,12 @@ export function ChatComposer({ isRunning, onSend, onCancel }: Props) {
     }
   };
 
-  const canSend = text.trim().length > 0 && !isRunning;
+  const canSend = text.trim().length > 0 && !isRunning && !disabled;
+  const placeholder = disabled
+    ? (disabledPlaceholder ?? 'No agent available')
+    : isRunning
+      ? 'Waiting for response...'
+      : 'Type a message...';
 
   return (
     <div className="composer">
@@ -51,8 +58,8 @@ export function ChatComposer({ isRunning, onSend, onCancel }: Props) {
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={isRunning ? 'Waiting for response...' : 'Type a message...'}
-          disabled={isRunning}
+          placeholder={placeholder}
+          disabled={isRunning || disabled}
           rows={1}
         />
         <div className="composer-row">

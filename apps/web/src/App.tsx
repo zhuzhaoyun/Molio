@@ -33,10 +33,15 @@ export default function App() {
       .catch(() => {});
   }, []);
 
-  // Auto-select default agent when agents load and no agent is selected
+  // Auto-select default agent when agents load and no agent is selected.
+  // Priority: configured default > first available agent.
   useEffect(() => {
-    if (!selectedAgent && defaultAgentId && agents.some((a) => a.id === defaultAgentId && a.available)) {
+    if (selectedAgent) return;
+    if (defaultAgentId && agents.some((a) => a.id === defaultAgentId && a.available)) {
       setSelectedAgent(defaultAgentId);
+    } else {
+      const firstAvailable = agents.find((a) => a.available);
+      if (firstAvailable) setSelectedAgent(firstAvailable.id);
     }
   }, [agents, defaultAgentId, selectedAgent]);
 

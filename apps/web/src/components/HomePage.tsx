@@ -115,7 +115,13 @@ export function HomePage({
 
         {/* Composer at the bottom */}
         <div className="home-composer-bar">
-          <ChatComposer isRunning={isRunning} onSend={onSend} onCancel={onCancel} />
+          <ChatComposer
+            isRunning={isRunning}
+            onSend={onSend}
+            onCancel={onCancel}
+            disabled={!selectedAgentName}
+            disabledPlaceholder="No agent selected — set a default in Runtimes"
+          />
         </div>
       </div>
     );
@@ -131,13 +137,19 @@ export function HomePage({
           <div className="home-brand-title">Knowledge Growth Engine</div>
           <div className="home-brand-subtitle">
             {selectedAgentName
-              ? `Chat with ${selectedAgentName}. Set a different default in Runtimes.`
-              : 'Set a default runtime in Runtimes, then start chatting.'}
+              ? `Chat with ${selectedAgentName}. Change the default in Runtimes.`
+              : 'No runtime available. Go to Runtimes to install or configure an agent.'}
           </div>
         </div>
 
         <div className="home-composer-wrap">
-          <ChatComposer isRunning={isRunning} onSend={onSend} onCancel={onCancel} />
+          <ChatComposer
+            isRunning={isRunning}
+            onSend={onSend}
+            onCancel={onCancel}
+            disabled={!selectedAgentName}
+            disabledPlaceholder="No agent selected — set a default in Runtimes"
+          />
         </div>
       </div>
     </div>
