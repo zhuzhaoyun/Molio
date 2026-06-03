@@ -37,7 +37,8 @@ Web UI 创建 run 时，从当前 project 取出 `localPath` 作为 `cwd` 传给
 
 **Logged**: 2026-06-03T14:45:00+08:00
 **Priority**: high
-**Status**: resolved
+**Status**: promoted
+**Promoted**: CLAUDE.md (added "用户偏好处理规则" section)
 **Area**: frontend
 
 ### Summary
