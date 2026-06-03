@@ -1,14 +1,11 @@
 import { useRef, useEffect, useCallback, useMemo } from 'react';
-import type { AgentInfo } from '@kge/contracts';
 import { ChatComposer } from './ChatComposer';
 import { UserMessage } from './UserMessage';
 import { AssistantMessage } from './AssistantMessage';
 import type { ChatMessage } from '../hooks/useChat';
 
 interface Props {
-  agents: AgentInfo[];
-  selectedAgent: string | null;
-  onSelectAgent: (id: string) => void;
+  selectedAgentName: string | null;
   messages: ChatMessage[];
   isRunning: boolean;
   onSend: (message: string) => void;
@@ -18,9 +15,7 @@ interface Props {
 }
 
 export function HomePage({
-  agents,
-  selectedAgent,
-  onSelectAgent,
+  selectedAgentName,
   messages,
   isRunning,
   onSend,
@@ -34,8 +29,6 @@ export function HomePage({
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length, messages[messages.length - 1]?.content]);
-
-  const selectedAgentName = agents.find((a) => a.id === selectedAgent)?.name ?? 'Select agent';
 
   // Find the last assistant message ID so only that card stays interactive
   const lastAssistantId = useMemo(() => {
@@ -64,7 +57,7 @@ export function HomePage({
   if (messages.length > 0) {
     return (
       <div className="home-page chat-active">
-        {/* Header with agent selector on the right */}
+        {/* Header */}
         <div className="home-header">
           <div className="home-header-left">
             <span className="home-header-logo">K</span>
@@ -79,27 +72,15 @@ export function HomePage({
                 </svg>
               </button>
             )}
-            <div className="home-agent-dropdown">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, color: 'var(--text-muted)' }}>
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                <circle cx="12" cy="7" r="4" />
-              </svg>
-              <select
-                value={selectedAgent ?? ''}
-                onChange={(e) => onSelectAgent(e.target.value)}
-                disabled={isRunning}
-              >
-                <option value="" disabled>
-                  {agents.length === 0 ? 'No agents detected' : 'Select agent...'}
-                </option>
-                {agents.map((agent) => (
-                  <option key={agent.id} value={agent.id} disabled={!agent.available}>
-                    {agent.name}{agent.version ? ` (${agent.version.split(' ')[0]})` : ''}
-                    {!agent.available ? ' — not installed' : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {selectedAgentName && (
+              <span className="home-active-agent">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                  <circle cx="12" cy="7" r="4" />
+                </svg>
+                {selectedAgentName}
+              </span>
+            )}
           </div>
         </div>
 
@@ -143,38 +124,15 @@ export function HomePage({
   // Landing page — no messages yet
   return (
     <div className="home-page home-landing">
-      {/* Top-right agent selector */}
-      <div className="home-landing-topbar">
-        <div className="home-agent-dropdown">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, color: 'var(--text-muted)' }}>
-            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-            <circle cx="12" cy="7" r="4" />
-          </svg>
-          <select
-            value={selectedAgent ?? ''}
-            onChange={(e) => onSelectAgent(e.target.value)}
-            disabled={isRunning}
-          >
-            <option value="" disabled>
-              {agents.length === 0 ? 'No agents detected' : 'Select agent...'}
-            </option>
-            {agents.map((agent) => (
-              <option key={agent.id} value={agent.id} disabled={!agent.available}>
-                {agent.name}{agent.version ? ` (${agent.version.split(' ')[0]})` : ''}
-                {!agent.available ? ' — not installed' : ''}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
       {/* Center brand + composer */}
       <div className="home-landing-content">
         <div className="home-brand">
           <div className="home-brand-logo">K</div>
           <div className="home-brand-title">Knowledge Growth Engine</div>
           <div className="home-brand-subtitle">
-            Select an agent and start a conversation.
+            {selectedAgentName
+              ? `Chat with ${selectedAgentName}. Set a different default in Runtimes.`
+              : 'Set a default runtime in Runtimes, then start chatting.'}
           </div>
         </div>
 

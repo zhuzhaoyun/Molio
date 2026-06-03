@@ -21,14 +21,6 @@
   padding: 0;
 }
 
-/* Top-right agent selector on landing page */
-.home-landing-topbar {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  z-index: 10;
-}
-
 /* Center content (brand + composer) */
 .home-landing-content {
   display: flex;
@@ -78,28 +70,23 @@
   line-height: 1.6;
 }
 
-/* Agent dropdown (reused in landing and header) */
-.home-agent-dropdown {
-  display: flex;
+/* Active agent indicator in chat header */
+.home-active-agent {
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  border: 1px solid var(--border);
+  gap: 5px;
+  padding: 4px 10px;
   border-radius: var(--radius-sm);
   background: var(--bg-subtle);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
-.home-agent-dropdown select {
-  min-width: 160px;
-  font-size: 12.5px;
-  border: none;
-  background: transparent;
-  box-shadow: none;
-  padding: 2px 20px 2px 4px;
-  color: var(--text-strong);
-}
-.home-agent-dropdown select:focus {
-  box-shadow: none;
+.home-active-agent svg {
+  flex-shrink: 0;
+  color: var(--text-soft);
 }
 
 /* Composer on home page */

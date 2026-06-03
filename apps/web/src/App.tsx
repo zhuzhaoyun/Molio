@@ -59,9 +59,7 @@ export default function App() {
       <div className="entry-main">
         {activeView === 'home' ? (
           <HomePage
-            agents={agents}
-            selectedAgent={selectedAgent}
-            onSelectAgent={setSelectedAgent}
+            selectedAgentName={agents.find((a) => a.id === selectedAgent)?.name ?? null}
             messages={chat.messages}
             isRunning={chat.isRunning}
             onSend={chat.send}
