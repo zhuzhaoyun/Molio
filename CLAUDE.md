@@ -168,6 +168,9 @@ if (first) {
 
 
 
+
+
+
 <!-- BEGIN MULTICA-RUNTIME (auto-managed; do not edit) -->
 # Multica Agent Runtime
 
@@ -309,11 +312,11 @@ Each issue carries a small KV `metadata` bag — a high-signal scratchpad where 
 
 **This task was triggered by a NEW comment.** Your primary job is to respond to THIS specific comment, even if you have handled similar requests before in this session.
 
-1. Run `multica issue get d31f1396-924d-4ab9-a1d8-778272878fc2 --output json` to understand the issue context
-2. Run `multica issue metadata list d31f1396-924d-4ab9-a1d8-778272878fc2 --output json` to see what prior agents pinned — best-effort, empty `{}` and CLI failures are normal. See the `## Issue Metadata` section above for what to look for.
-3. You're resuming the prior session, and the triggering comment is already included above. No other new comments on this issue since your last run. Use the triggering comment ID / thread anchor: `0b115ab0-6840-4cae-85d3-cbc1df3a6a92`. If your reply depends on thread context, do not rely only on resumed session memory — first pull the triggering conversation with: `multica issue comment list d31f1396-924d-4ab9-a1d8-778272878fc2 --thread 0b115ab0-6840-4cae-85d3-cbc1df3a6a92 --tail 30 --output json`.
+1. Run `multica issue get f76d21f5-afc9-482d-aa53-c95107e5a1bf --output json` to understand the issue context
+2. Run `multica issue metadata list f76d21f5-afc9-482d-aa53-c95107e5a1bf --output json` to see what prior agents pinned — best-effort, empty `{}` and CLI failures are normal. See the `## Issue Metadata` section above for what to look for.
+3. You're resuming the prior session, and the triggering comment is already included above. No other new comments on this issue since your last run. Use the triggering comment ID / thread anchor: `72e678bb-9c38-4e01-aa93-d1cfc777a677`. If your reply depends on thread context, do not rely only on resumed session memory — first pull the triggering conversation with: `multica issue comment list f76d21f5-afc9-482d-aa53-c95107e5a1bf --thread 72e678bb-9c38-4e01-aa93-d1cfc777a677 --tail 30 --output json`.
 
-4. Find the triggering comment (ID: `0b115ab0-6840-4cae-85d3-cbc1df3a6a92`) and understand what is being asked — do NOT confuse it with previous comments
+4. Find the triggering comment (ID: `72e678bb-9c38-4e01-aa93-d1cfc777a677`) and understand what is being asked — do NOT confuse it with previous comments
 5. **Decide whether a reply is warranted.** If you produced actual work this turn (investigated, fixed, answered a real question), post the result via step 7 — that is a normal reply, not a noise comment. If the triggering comment was a pure acknowledgment / thanks / sign-off from another agent AND you produced no work this turn, do NOT post a reply — and do NOT post a comment saying 'No reply needed' or similar. Simply exit with no output. Silence is a valid and preferred way to end agent-to-agent conversations.
 6. If a reply IS warranted: do any requested work first, then **decide whether to include any `@mention` link.** The default is NO mention. Only mention when you are escalating to a human owner who is not yet involved, delegating a concrete new sub-task to another agent for the first time, or the user explicitly asked you to loop someone in. Never @mention the agent you are replying to as a thank-you or sign-off.
 7. **If you reply, post it as a comment — this step is mandatory when you reply.** Text in your terminal or run logs is NOT delivered to the user. If you decide to reply, post it as a comment — always use the trigger comment ID below, do NOT reuse --parent values from previous turns in this session.
@@ -324,7 +327,7 @@ Use this form, preserving the same issue ID and --parent value:
 
     # 1. Write the reply body to a UTF-8 file (e.g. reply.md) with your file-write tool.
     # 2. Then run:
-    multica issue comment add d31f1396-924d-4ab9-a1d8-778272878fc2 --parent 0b115ab0-6840-4cae-85d3-cbc1df3a6a92 --content-file ./reply.md
+    multica issue comment add f76d21f5-afc9-482d-aa53-c95107e5a1bf --parent 72e678bb-9c38-4e01-aa93-d1cfc777a677 --content-file ./reply.md
 
 Do NOT write literal `\n` escapes to simulate line breaks; the file preserves real newlines.
 8. Before exiting: only if this run produced a fact that clears the high bar (important AND likely to be re-read by future runs on this same issue, e.g. a new PR URL or deploy URL), or you noticed a metadata key from entry that is now stale, pin or clear it via `multica issue metadata set`/`delete`. Most runs write nothing here — that is the expected outcome, not a gap. When in doubt, do not write. See the `## Issue Metadata` section above for the full bar.
