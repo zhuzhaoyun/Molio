@@ -1,10 +1,16 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAgents } from './hooks/useAgents';
 import { useChat } from './hooks/useChat';
 import { HomePage } from './components/HomePage';
 import { NavRail } from './components/NavRail';
+import { KnowledgeBasePage } from './components/kb/KnowledgeBasePage';
+import { RuntimePage } from './components/runtimes/RuntimePage';
+import { api } from './api/client';
+import type { Vault } from '@kge/contracts';
 import './styles/rail.css';
 import './styles/home.css';
+import './styles/knowledge.css';
+import './styles/runtimes.css';
 import './App.css';
 
 type View = 'home' | 'knowledge' | 'runtimes';
@@ -12,8 +18,16 @@ type View = 'home' | 'knowledge' | 'runtimes';
 export default function App() {
   const { agents } = useAgents();
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
-  const chat = useChat(selectedAgent);
+  const [activeVault, setActiveVault] = useState<Vault | null>(null);
+  const chat = useChat({ agentId: selectedAgent, cwd: activeVault?.path });
   const [activeView, setActiveView] = useState<View>('home');
+
+  // Load first vault as default cwd for agent runs
+  useEffect(() => {
+    api.listVaults().then((vaults) => {
+      if (vaults.length > 0) setActiveVault(vaults[0]!);
+    }).catch(() => {});
+  }, []);
 
   const handleNewChat = () => {
     chat.reset();
@@ -37,17 +51,9 @@ export default function App() {
             onSubmitToolResult={chat.submitToolResult}
           />
         ) : activeView === 'knowledge' ? (
-          <div className="placeholder-view">
-            <div className="placeholder-icon">📚</div>
-            <div className="placeholder-title">Knowledge Base</div>
-            <div className="placeholder-hint">Coming soon — manage your local knowledge base.</div>
-          </div>
+          <KnowledgeBasePage />
         ) : (
-          <div className="placeholder-view">
-            <div className="placeholder-icon">⚙️</div>
-            <div className="placeholder-title">Runtimes</div>
-            <div className="placeholder-hint">Coming soon — manage local runtime connections.</div>
-          </div>
+          <RuntimePage />
         )}
       </div>
     </div>

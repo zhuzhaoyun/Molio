@@ -1,6 +1,7 @@
 import type {
   AgentInfo, RunInfo, CreateRunRequest, ToolResultRequest,
   ChatMessage, Project, Conversation,
+  Vault, TreeNode, FileContent, KbHistoryEntry, CreateVaultRequest,
 } from '@kge/contracts';
 
 const BASE = '/api';
@@ -142,8 +143,103 @@ export const api = {
 
   // ─── Config ───
 
-  async getConfig() {
+  async getConfig(): Promise<Record<string, unknown>> {
     const res = await fetch(`${BASE}/config`);
+    if (!res.ok) throw new Error(`Failed to fetch config: ${res.status}`);
     return res.json();
+  },
+
+  async updateConfig(config: Record<string, unknown>): Promise<void> {
+    const res = await fetch(`${BASE}/config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    });
+    if (!res.ok) throw new Error(`Failed to update config: ${res.status}`);
+  },
+
+  async getAgentConfig(agentId: string): Promise<Record<string, unknown>> {
+    const res = await fetch(`${BASE}/config/agents/${agentId}`);
+    if (!res.ok) throw new Error(`Failed to fetch agent config: ${res.status}`);
+    return res.json();
+  },
+
+  async updateAgentConfig(agentId: string, config: Record<string, unknown>): Promise<void> {
+    const res = await fetch(`${BASE}/config/agents/${agentId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    });
+    if (!res.ok) throw new Error(`Failed to update agent config: ${res.status}`);
+  },
+
+  // ─── Knowledge Base ───
+
+  async listVaults(): Promise<Vault[]> {
+    const res = await fetch(`${BASE}/knowledge/vaults`);
+    if (!res.ok) throw new Error(`Failed to fetch vaults: ${res.status}`);
+    const data = await res.json();
+    return data.vaults;
+  },
+
+  async createVault(req: CreateVaultRequest): Promise<Vault> {
+    const res = await fetch(`${BASE}/knowledge/vaults`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error?.message ?? `Failed to create vault: ${res.status}`);
+    }
+    return res.json();
+  },
+
+  async deleteVault(id: string): Promise<void> {
+    await fetch(`${BASE}/knowledge/vaults/${id}`, { method: 'DELETE' });
+  },
+
+  async getFileTree(vaultId: string): Promise<TreeNode[]> {
+    const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/tree`);
+    if (!res.ok) throw new Error(`Failed to fetch file tree: ${res.status}`);
+    const data = await res.json();
+    return data.tree;
+  },
+
+  async readFile(vaultId: string, filePath: string): Promise<FileContent> {
+    const encoded = encodeURIComponent(filePath).replace(/%2F/g, '/');
+    const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/files/${encoded}`);
+    if (!res.ok) throw new Error(`Failed to read file: ${res.status}`);
+    return res.json();
+  },
+
+  async writeFile(vaultId: string, filePath: string, content: string): Promise<void> {
+    const encoded = encodeURIComponent(filePath).replace(/%2F/g, '/');
+    const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/files/${encoded}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }),
+    });
+    if (!res.ok) throw new Error(`Failed to write file: ${res.status}`);
+  },
+
+  async deleteFile(vaultId: string, filePath: string): Promise<void> {
+    const encoded = encodeURIComponent(filePath).replace(/%2F/g, '/');
+    await fetch(`${BASE}/knowledge/vaults/${vaultId}/files/${encoded}`, { method: 'DELETE' });
+  },
+
+  async createDirectory(vaultId: string, dirPath: string): Promise<void> {
+    const encoded = encodeURIComponent(dirPath).replace(/%2F/g, '/');
+    const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/dirs/${encoded}`, {
+      method: 'POST',
+    });
+    if (!res.ok) throw new Error(`Failed to create directory: ${res.status}`);
+  },
+
+  async getKbHistory(vaultId: string, limit = 50): Promise<KbHistoryEntry[]> {
+    const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/history?limit=${limit}`);
+    if (!res.ok) throw new Error(`Failed to fetch history: ${res.status}`);
+    const data = await res.json();
+    return data.history;
   },
 };
