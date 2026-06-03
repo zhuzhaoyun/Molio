@@ -33,15 +33,35 @@ export default function App() {
       .catch(() => {});
   }, []);
 
-  // Auto-select default agent when agents load and no agent is selected.
-  // Priority: configured default > first available agent.
+  // Resolve the active agent once both agents and config are loaded.
+  //
+  // Rules:
+  //  - If the user has configured a defaultAgentId (via Runtimes page) and it
+  //    is still available, honour it.
+  //  - If no defaultAgentId is configured yet, auto-pick the first available
+  //    agent and persist it as the new default — so the next page load reads
+  //    the same default from config, and a double-click on the Runtimes page
+  //    can later override it.
+  //  - Never silently pick a different agent when a configured default exists.
   useEffect(() => {
     if (selectedAgent) return;
-    if (defaultAgentId && agents.some((a) => a.id === defaultAgentId && a.available)) {
-      setSelectedAgent(defaultAgentId);
-    } else {
-      const firstAvailable = agents.find((a) => a.available);
-      if (firstAvailable) setSelectedAgent(firstAvailable.id);
+    if (agents.length === 0) return;
+
+    if (defaultAgentId) {
+      if (agents.some((a) => a.id === defaultAgentId && a.available)) {
+        setSelectedAgent(defaultAgentId);
+      }
+      // If configured default is unavailable, leave selectedAgent null so the
+      // composer shows the "no agent" guidance instead of silently switching.
+      return;
+    }
+
+    // No configured default — auto-pick first available and persist it.
+    const firstAvailable = agents.find((a) => a.available);
+    if (firstAvailable) {
+      setSelectedAgent(firstAvailable.id);
+      setDefaultAgentId(firstAvailable.id);
+      api.updateConfig({ defaultAgentId: firstAvailable.id }).catch(() => {});
     }
   }, [agents, defaultAgentId, selectedAgent]);
 
