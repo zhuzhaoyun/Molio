@@ -3,3 +3,4 @@ dist/
 *.log
 .turbo/
 *.tsbuildinfo
+.multica/

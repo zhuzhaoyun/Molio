@@ -1,0 +1,1063 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KGE Knowledge Base - Prototype</title>
+<style>
+  /* ── Tokens ── */
+  :root {
+    --bg: #faf9f7;
+    --bg-panel: #ffffff;
+    --bg-subtle: #eef1f5;
+    --bg-hover: #f0eee9;
+    --text: #1a1916;
+    --text-strong: #0d0c0a;
+    --text-muted: #74716b;
+    --text-faint: #b3b0a8;
+    --accent: #c96442;
+    --accent-hover: #b45a3b;
+    --accent-soft: #f5d8cb;
+    --green: #2d8a56;
+    --green-bg: #e8f5ee;
+    --green-border: #b8dfc9;
+    --blue: #2563eb;
+    --blue-bg: #eff6ff;
+    --blue-border: #bfdbfe;
+    --amber: #b45309;
+    --amber-bg: #fef3c7;
+    --amber-border: #fde68a;
+    --red: #dc2626;
+    --red-bg: #fef2f2;
+    --red-border: #fecaca;
+    --border: #e5e2dc;
+    --border-strong: #d4d0c8;
+    --shadow-xs: 0 1px 0 rgba(28,27,26,0.04);
+    --shadow-sm: 0 1px 3px rgba(28,27,26,0.06), 0 1px 2px rgba(28,27,26,0.04);
+    --shadow-md: 0 4px 12px rgba(28,27,26,0.08), 0 1px 3px rgba(28,27,26,0.06);
+    --radius-sm: 8px;
+    --radius: 12px;
+    --sans: 'Inter', -apple-system, system-ui, sans-serif;
+    --mono: 'SF Mono', 'Menlo', monospace;
+    --sidebar-bg: #f4f2ef;
+    --sidebar-border: #e8e5e0;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: var(--sans);
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: var(--text);
+    background: var(--bg);
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* ═══════════════════════
+     SHELL: 4-column layout
+     NavRail | FileTree | Main | ActionBar
+     ═══════════════════════ */
+  .shell {
+    display: flex;
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden;
+  }
+
+  /* ── Column 1: Nav Rail ── */
+  .nav-rail {
+    width: 56px;
+    flex-shrink: 0;
+    background: var(--bg-panel);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 12px 0;
+    gap: 4px;
+  }
+
+  .nav-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 120ms ease;
+  }
+
+  .nav-btn:hover { background: var(--bg-hover); color: var(--text); }
+  .nav-btn.is-active { background: var(--accent-soft); color: var(--accent); }
+  .nav-divider { width: 24px; height: 1px; background: var(--border); margin: 8px 0; }
+
+  /* ── Column 2: File Tree ── */
+  .file-panel {
+    width: 240px;
+    flex-shrink: 0;
+    background: var(--sidebar-bg);
+    border-right: 1px solid var(--sidebar-border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .panel-header {
+    padding: 12px 14px 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .panel-header h2 {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .panel-header .btn-icon {
+    width: 26px;
+    height: 26px;
+    border: none;
+    background: transparent;
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    transition: all 120ms ease;
+  }
+
+  .panel-header .btn-icon:hover { background: rgba(0,0,0,0.05); color: var(--text); }
+
+  /* Vault selector */
+  .vault-bar {
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--sidebar-border);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .vault-select {
+    flex: 1;
+    height: 30px;
+    padding: 0 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 12.5px;
+    color: var(--text);
+    background: var(--bg-panel);
+    outline: none;
+    cursor: pointer;
+  }
+
+  .vault-select:focus { border-color: var(--accent); }
+
+  .vault-bar .btn-icon {
+    width: 26px;
+    height: 26px;
+    border: none;
+    background: transparent;
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    transition: all 120ms ease;
+  }
+
+  .vault-bar .btn-icon:hover { background: rgba(0,0,0,0.05); color: var(--text); }
+
+  /* File tree */
+  .tree-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px;
+  }
+
+  .tree-group {
+    margin-bottom: 6px;
+  }
+
+  .tree-group-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--text-muted);
+    letter-spacing: 0.03em;
+    cursor: pointer;
+    user-select: none;
+    border-radius: 5px;
+    transition: background 120ms ease;
+  }
+
+  .tree-group-label:hover { background: rgba(0,0,0,0.03); }
+
+  .tree-group-label .chevron {
+    width: 12px;
+    height: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    transition: transform 120ms ease;
+  }
+
+  .tree-group-label .chevron.collapsed { transform: rotate(-90deg); }
+
+  .tree-children {
+    padding-left: 16px;
+  }
+
+  .tree-children.collapsed { display: none; }
+
+  .tree-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 8px;
+    font-size: 12.5px;
+    color: var(--text);
+    cursor: pointer;
+    border-radius: 5px;
+    transition: background 120ms ease;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .tree-item:hover { background: rgba(0,0,0,0.04); }
+  .tree-item.is-active {
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-weight: 500;
+  }
+
+  .tree-item .tree-icon { font-size: 13px; opacity: 0.5; flex-shrink: 0; }
+  .tree-item .tree-name { overflow: hidden; text-overflow: ellipsis; }
+  .tree-item.is-active .tree-icon { opacity: 1; }
+
+  /* ── Column 3: Main Content ── */
+  .main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
+  }
+
+  .main-header {
+    padding: 16px 24px 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+
+  .main-header h1 {
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--text-strong);
+    letter-spacing: -0.01em;
+  }
+
+  .main-header .breadcrumbs {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+
+  .main-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px 32px;
+    max-width: 800px;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  /* Markdown content preview */
+  .md-preview {
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--text);
+  }
+
+  .md-preview h1 {
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--text-strong);
+    margin: 0 0 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+    letter-spacing: -0.02em;
+  }
+
+  .md-preview h2 {
+    font-size: 19px;
+    font-weight: 600;
+    color: var(--text-strong);
+    margin: 28px 0 12px;
+    letter-spacing: -0.01em;
+  }
+
+  .md-preview h3 {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-strong);
+    margin: 20px 0 8px;
+  }
+
+  .md-preview p { margin: 0 0 12px; color: var(--text); }
+  .md-preview a { color: var(--accent); text-decoration: none; }
+  .md-preview a:hover { text-decoration: underline; }
+  .md-preview code {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    background: var(--bg-subtle);
+    padding: 1px 5px;
+    border-radius: 4px;
+    color: var(--text-strong);
+  }
+
+  .md-preview pre {
+    background: var(--bg-subtle);
+    padding: 14px 16px;
+    border-radius: var(--radius-sm);
+    overflow-x: auto;
+    margin: 12px 0 16px;
+    font-size: 12.5px;
+    line-height: 1.6;
+  }
+
+  .md-preview blockquote {
+    border-left: 3px solid var(--accent);
+    margin: 14px 0;
+    padding: 8px 14px;
+    background: var(--accent-soft);
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    font-style: italic;
+    color: var(--text-muted);
+  }
+
+  .md-preview ul { margin: 10px 0; padding-left: 22px; }
+  .md-preview li { margin: 4px 0; }
+
+  /* Wiki link styling */
+  .md-preview a.wiki-link {
+    color: var(--blue);
+    background: var(--blue-bg);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 12.5px;
+    font-family: var(--mono);
+    border-bottom: 1px solid var(--blue-border);
+    text-decoration: none;
+  }
+
+  /* ── Column 4: Action Bar ── */
+  .action-bar {
+    width: 280px;
+    flex-shrink: 0;
+    background: var(--bg-panel);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .action-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+  }
+
+  .action-group {
+    margin-bottom: 20px;
+  }
+
+  .action-group-title {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .action-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 12px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: all 120ms ease;
+  }
+
+  .action-card:hover {
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .action-card .ac-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    margin-bottom: 8px;
+  }
+
+  .action-card.ingest .ac-icon { background: var(--blue-bg); }
+  .action-card.lint .ac-icon { background: var(--green-bg); }
+  .action-card.chat .ac-icon { background: var(--accent-soft); }
+
+  .action-card .ac-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-strong);
+    margin-bottom: 3px;
+  }
+
+  .action-card .ac-desc {
+    font-size: 11.5px;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+
+  .action-card .ac-hint {
+    font-size: 11px;
+    color: var(--text-faint);
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px solid var(--border);
+  }
+
+  /* Backlinks panel */
+  .backlinks-list {
+    list-style: none;
+  }
+
+  .backlinks-list li {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 12.5px;
+  }
+
+  .backlinks-list li:last-child { border-bottom: none; }
+
+  .backlinks-list a {
+    color: var(--text);
+    text-decoration: none;
+    font-weight: 500;
+  }
+
+  .backlinks-list a:hover { color: var(--accent); }
+
+  .backlinks-list .bk-snippet {
+    color: var(--text-muted);
+    font-size: 11.5px;
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Stats mini */
+  .mini-stats {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .mini-stat {
+    flex: 1;
+    text-align: center;
+    padding: 8px 4px;
+    background: var(--bg-subtle);
+    border-radius: 6px;
+  }
+
+  .mini-stat .mv { font-size: 18px; font-weight: 700; color: var(--text-strong); }
+  .mini-stat .ml { font-size: 10.5px; color: var(--text-muted); margin-top: 2px; }
+
+  /* ── Add Vault Modal ── */
+  .overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(26,25,22,0.35);
+    backdrop-filter: blur(4px);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .overlay.show { display: flex; }
+
+  .modal {
+    background: var(--bg-panel);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-md);
+    width: 440px;
+    max-height: 80vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .modal-header {
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .modal-header h2 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-strong);
+  }
+
+  .modal-close {
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: transparent;
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .modal-close:hover { background: var(--bg-hover); color: var(--text); }
+
+  .modal-body { padding: 20px 24px; }
+  .modal-footer { padding: 16px 24px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 8px; }
+
+  .form-field { margin-bottom: 16px; }
+
+  .form-field label {
+    display: block;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 6px;
+  }
+
+  .form-field input {
+    width: 100%;
+    height: 36px;
+    padding: 0 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 13px;
+    color: var(--text);
+    background: var(--bg);
+    outline: none;
+    transition: border-color 120ms ease;
+  }
+
+  .form-field input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .form-field input::placeholder { color: var(--text-faint); }
+
+  .btn {
+    height: 34px;
+    padding: 0 14px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg-panel);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 120ms ease;
+  }
+
+  .btn:hover { background: var(--bg-hover); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { background: var(--accent-hover); }
+  .btn.ghost { background: transparent; border-color: transparent; color: var(--text-muted); }
+  .btn.ghost:hover { background: var(--bg-hover); color: var(--text); border-color: var(--border); }
+
+  /* ── Misc ── */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .badge.blue { background: var(--blue-bg); color: var(--blue); border: 1px solid var(--blue-border); }
+  .badge.green { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-border); }
+
+  /* Status indicator */
+  .status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 4px;
+  }
+
+  .status-dot.green { background: var(--green); }
+  .status-dot.amber { background: var(--amber); }
+
+  /* Frontmatter display */
+  .frontmatter {
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 12px 16px;
+    margin-bottom: 20px;
+    font-size: 12.5px;
+    font-family: var(--mono);
+  }
+
+  .frontmatter .fm-line {
+    display: flex;
+    gap: 8px;
+    padding: 2px 0;
+  }
+
+  .frontmatter .fm-key { color: var(--text-muted); }
+  .frontmatter .fm-val { color: var(--text); }
+
+  /* Tab switcher in main */
+  .content-tabs {
+    display: flex;
+    gap: 2px;
+    padding: 0 24px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .content-tabs .tab {
+    padding: 8px 14px;
+    font-size: 12.5px;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: all 120ms ease;
+    user-select: none;
+  }
+
+  .content-tabs .tab:hover { color: var(--text); }
+  .content-tabs .tab.is-active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+    font-weight: 600;
+  }
+
+  /* Source link */
+  .source-ref {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    background: var(--bg-subtle);
+    border-radius: 4px;
+    font-size: 11.5px;
+    color: var(--text-muted);
+    text-decoration: none;
+    margin-right: 6px;
+  }
+
+  .source-ref:hover { background: var(--bg-hover); color: var(--text); }
+</style>
+</head>
+<body>
+
+<div class="shell">
+
+  <!-- ═══════ Column 1: Nav Rail ═══════ -->
+  <nav class="nav-rail">
+    <button class="nav-btn" title="Home">
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 10l7-7 7 7M5 8.5V16a1 1 0 001 1h3v-4h2v4h3a1 1 0 001-1V8.5"/></svg>
+    </button>
+    <button class="nav-btn is-active" title="Knowledge Base">
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 4a1 1 0 011-1h4l1.5 1.5H16a1 1 0 011 1V16a1 1 0 01-1 1H4a1 1 0 01-1-1V4z"/><path d="M3 8h14"/></svg>
+    </button>
+    <div class="nav-divider"></div>
+    <button class="nav-btn" title="Runtimes">
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="7"/><path d="M10 6v4l2.5 2.5"/></svg>
+    </button>
+  </nav>
+
+  <!-- ═══════ Column 2: File Tree ═══════ -->
+  <aside class="file-panel">
+    <!-- Vault selector -->
+    <div class="vault-bar">
+      <select class="vault-select" id="vaultSelect">
+        <option>my-wiki</option>
+        <option>project-docs</option>
+        <option>research-notes</option>
+      </select>
+      <button class="btn-icon" title="Add Vault" onclick="showAddVault()">+</button>
+      <button class="btn-icon" title="Vault Settings" onclick="alert('Vault settings')">&#9881;</button>
+    </div>
+
+    <!-- Tree -->
+    <div class="tree-scroll">
+      <!-- wiki/ -->
+      <div class="tree-group">
+        <div class="tree-group-label" onclick="toggleGroup(this)">
+          <span class="chevron">&#9662;</span>
+          <span>wiki</span>
+        </div>
+        <div class="tree-children">
+          <div class="tree-item is-active" onclick="selectItem(this)">
+            <span class="tree-icon">&#128196;</span>
+            <span class="tree-name">index.md</span>
+          </div>
+          <div class="tree-group" style="margin-bottom:0">
+            <div class="tree-group-label" onclick="toggleGroup(this)">
+              <span class="chevron">&#9662;</span>
+              <span>concepts</span>
+            </div>
+            <div class="tree-children">
+              <div class="tree-item" onclick="selectItem(this)">
+                <span class="tree-icon">&#128196;</span>
+                <span class="tree-name">LLM Wiki.md</span>
+              </div>
+              <div class="tree-item" onclick="selectItem(this)">
+                <span class="tree-icon">&#128196;</span>
+                <span class="tree-name">RAG Architecture.md</span>
+              </div>
+              <div class="tree-item" onclick="selectItem(this)">
+                <span class="tree-icon">&#128196;</span>
+                <span class="tree-name">Vector DB Comparison.md</span>
+              </div>
+              <div class="tree-item" onclick="selectItem(this)">
+                <span class="tree-icon">&#128196;</span>
+                <span class="tree-name">Embedding Models.md</span>
+              </div>
+            </div>
+          </div>
+          <div class="tree-group" style="margin-bottom:0">
+            <div class="tree-group-label" onclick="toggleGroup(this)">
+              <span class="chevron">&#9662;</span>
+              <span>entities</span>
+            </div>
+            <div class="tree-children">
+              <div class="tree-item" onclick="selectItem(this)">
+                <span class="tree-icon">&#128196;</span>
+                <span class="tree-name">Karpathy, Andrej.md</span>
+              </div>
+              <div class="tree-item" onclick="selectItem(this)">
+                <span class="tree-icon">&#128196;</span>
+                <span class="tree-name">Anthropic.md</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- raw/ -->
+      <div class="tree-group">
+        <div class="tree-group-label" onclick="toggleGroup(this)">
+          <span class="chevron">&#9662;</span>
+          <span>raw</span>
+        </div>
+        <div class="tree-children">
+          <div class="tree-item" onclick="selectItem(this)">
+            <span class="tree-icon">&#128196;</span>
+            <span class="tree-name">rag-architecture-notes.md</span>
+          </div>
+          <div class="tree-item" onclick="selectItem(this)">
+            <span class="tree-icon">&#128196;</span>
+            <span class="tree-name">vector-db-benchmark-2026.pdf</span>
+          </div>
+          <div class="tree-item" onclick="selectItem(this)">
+            <span class="tree-icon">&#128196;</span>
+            <span class="tree-name">embedding-model-paper.pdf</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- schema/ -->
+      <div class="tree-group">
+        <div class="tree-group-label" onclick="toggleGroup(this)">
+          <span class="chevron">&#9662;</span>
+          <span>schema</span>
+        </div>
+        <div class="tree-children">
+          <div class="tree-item" onclick="selectItem(this)">
+            <span class="tree-icon">&#128196;</span>
+            <span class="tree-name">ingest-rules.md</span>
+          </div>
+          <div class="tree-item" onclick="selectItem(this)">
+            <span class="tree-icon">&#128196;</span>
+            <span class="tree-name">entity-types.md</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ═══════ Column 3: Main Content ═══════ -->
+  <main class="main">
+    <div class="main-header">
+      <div>
+        <h1>RAG Architecture</h1>
+        <div class="breadcrumbs">wiki &gt; concepts &gt; RAG Architecture.md</div>
+      </div>
+      <div class="mini-stats">
+        <div class="mini-stat">
+          <div class="mv">12</div>
+          <div class="ml">Links Out</div>
+        </div>
+        <div class="mini-stat">
+          <div class="mv">5</div>
+          <div class="ml">Links In</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="content-tabs">
+      <div class="tab is-active">Preview</div>
+      <div class="tab">Raw</div>
+      <div class="tab">History</div>
+    </div>
+
+    <div class="main-content">
+      <!-- Frontmatter -->
+      <div class="frontmatter">
+        <div class="fm-line"><span class="fm-key">title:</span><span class="fm-val">RAG Architecture</span></div>
+        <div class="fm-line"><span class="fm-key">tags:</span><span class="fm-val">[rag, llm, architecture]</span></div>
+        <div class="fm-line"><span class="fm-key">created:</span><span class="fm-val">2026-05-28</span></div>
+        <div class="fm-line"><span class="fm-key">updated:</span><span class="fm-val">2026-05-30</span></div>
+        <div class="fm-line"><span class="fm-key">sources:</span><span class="fm-val">rag-architecture-notes.md, vector-db-benchmark-2026.pdf</span></div>
+      </div>
+
+      <div class="md-preview">
+        <h2>Overview</h2>
+        <p>Retrieval-Augmented Generation (RAG) is a technique that enhances LLM outputs by retrieving relevant information from external knowledge sources before generating a response. Unlike fine-tuning, which modifies model weights, RAG keeps the model frozen and augments its context window.</p>
+
+        <h2>Architecture Components</h2>
+        <p>A typical RAG system consists of three main stages:</p>
+        <ul>
+          <li><strong>Indexing</strong> — documents are split into chunks, embedded, and stored in a <a class="wiki-link">[[Vector DB Comparison|vector database]]</a></li>
+          <li><strong>Retrieval</strong> — the query is embedded and matched against the index to find relevant chunks</li>
+          <li><strong>Generation</strong> — retrieved chunks are combined with the prompt and fed to the LLM</li>
+        </ul>
+
+        <h3>Embedding Models</h3>
+        <p>The choice of <a class="wiki-link">[[Embedding Models|embedding model]]</a> significantly impacts retrieval quality. Models like OpenAI's <code>text-embedding-3</code> and sentence-transformers provide dense vector representations that capture semantic meaning.</p>
+
+        <blockquote>
+          "The retrieval step is the bottleneck. No matter how good your LLM is, if the context is missing, the answer will be wrong." — <a href="#">Karpathy, Andrej</a>
+        </blockquote>
+
+        <h2>Comparison with Fine-tuning</h2>
+        <p>While fine-tuning changes the model's internal weights to adapt to a specific domain, RAG leaves the model unchanged and instead enriches the prompt. This makes RAG more suitable for:</p>
+        <ul>
+          <li>Rapidly changing knowledge (news, documentation)</li>
+          <li>Multi-domain applications where a single model serves many topics</li>
+          <li>Scenarios requiring source attribution</li>
+        </ul>
+      </div>
+
+      <!-- Sources -->
+      <div style="margin-top:32px;padding-top:16px;border-top:1px solid var(--border);">
+        <h3 style="font-size:13px;font-weight:600;color:var(--text-muted);margin-bottom:8px;">Sources</h3>
+        <a class="source-ref" href="#">&#128196; rag-architecture-notes.md</a>
+        <a class="source-ref" href="#">&#128196; vector-db-benchmark-2026.pdf</a>
+      </div>
+    </div>
+  </main>
+
+  <!-- ═══════ Column 4: Action Bar ═══════ -->
+  <aside class="action-bar">
+    <div class="action-scroll">
+
+      <!-- Quick Actions -->
+      <div class="action-group">
+        <div class="action-group-title">Quick Actions</div>
+
+        <div class="action-card ingest" onclick="openIngest()">
+          <div class="ac-icon">&#128229;</div>
+          <div class="ac-title">Ingest Sources</div>
+          <div class="ac-desc">Add new raw material and compile into wiki</div>
+          <div class="ac-hint">raw/ &rarr; wiki/</div>
+        </div>
+
+        <div class="action-card lint" onclick="openLint()">
+          <div class="ac-icon">&#9989;</div>
+          <div class="ac-title">Run Lint</div>
+          <div class="ac-desc">Check wiki health and fix issues</div>
+          <div class="ac-hint">scan wiki/</div>
+        </div>
+
+        <div class="action-card chat" onclick="alert('Open chat with wiki context')">
+          <div class="ac-icon">&#128172;</div>
+          <div class="ac-title">Ask in Chat</div>
+          <div class="ac-desc">Open chat with current page as context</div>
+          <div class="ac-hint">Claude Code + wiki</div>
+        </div>
+      </div>
+
+      <!-- Vault Status -->
+      <div class="action-group">
+        <div class="action-group-title">Vault Status</div>
+        <div style="font-size:12.5px;line-height:1.8;color:var(--text-muted);">
+          <div><span class="status-dot green"></span>47 wiki pages</div>
+          <div><span class="status-dot green"></span>12 raw sources</div>
+          <div><span class="status-dot green"></span>156 wiki links</div>
+          <div><span class="status-dot amber"></span>Last compiled: 3d ago</div>
+        </div>
+      </div>
+
+      <!-- Backlinks -->
+      <div class="action-group">
+        <div class="action-group-title">Backlinks (5)</div>
+        <ul class="backlinks-list">
+          <li>
+            <a href="#">index.md</a>
+            <div class="bk-snippet">...see the <strong>[[RAG Architecture]]</strong> page for details on...</div>
+          </li>
+          <li>
+            <a href="#">LLM Wiki.md</a>
+            <div class="bk-snippet">...The <strong>[[RAG Architecture]]</strong> approach differs from fine-tuning...</div>
+          </li>
+          <li>
+            <a href="#">Vector DB Comparison.md</a>
+            <div class="bk-snippet">...as discussed in <strong>[[RAG Architecture]]</strong>, the retrieval...</div>
+          </li>
+          <li>
+            <a href="#">Embedding Models.md</a>
+            <div class="bk-snippet">...In <strong>[[RAG Architecture]]</strong>, the embedding model choice is...</div>
+          </li>
+          <li>
+            <a href="#">Karpathy, Andrej.md</a>
+            <div class="bk-snippet">...the concept of <strong>[[RAG Architecture]]</strong> was first popularized...</div>
+          </li>
+        </ul>
+      </div>
+
+      <!-- Recent Activity -->
+      <div class="action-group">
+        <div class="action-group-title">Recent Activity</div>
+        <div style="font-size:12px;color:var(--text-muted);line-height:1.7;">
+          <div style="padding:6px 0;border-bottom:1px solid var(--border);">
+            <span class="badge blue" style="margin-right:4px">Ingest</span>
+            <span>3 sources &rarr; 5 pages</span>
+            <div style="font-size:11px;color:var(--text-faint);margin-top:2px;">05-30 14:22</div>
+          </div>
+          <div style="padding:6px 0;border-bottom:1px solid var(--border);">
+            <span class="badge green" style="margin-right:4px">Lint</span>
+            <span>4 issues, 2 auto-fixed</span>
+            <div style="font-size:11px;color:var(--text-faint);margin-top:2px;">05-29 09:15</div>
+          </div>
+          <div style="padding:6px 0;">
+            <span class="badge blue" style="margin-right:4px">Ingest</span>
+            <span>1 URL &rarr; 2 pages</span>
+            <div style="font-size:11px;color:var(--text-faint);margin-top:2px;">05-28 16:40</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+</div>
+
+<!-- ═══════ Add Vault Modal ═══════ -->
+<div class="overlay" id="addVaultOverlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Add Knowledge Vault</h2>
+      <button class="modal-close" onclick="closeAddVault()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-field">
+        <label for="vaultName">Vault Name</label>
+        <input type="text" id="vaultName" placeholder="e.g., project-docs" />
+      </div>
+      <div class="form-field">
+        <label for="vaultPath">Folder Path</label>
+        <input type="text" id="vaultPath" placeholder="C:\Users\name\Documents\my-wiki" />
+      </div>
+      <div class="form-field">
+        <label for="vaultDesc">Description (optional)</label>
+        <input type="text" id="vaultDesc" placeholder="Brief description of this vault" />
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn ghost" onclick="closeAddVault()">Cancel</button>
+      <button class="btn primary" onclick="saveVault()">Add Vault</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  function toggleGroup(el) {
+    const children = el.nextElementSibling;
+    const chevron = el.querySelector('.chevron');
+    if (children && children.classList.contains('tree-children')) {
+      children.classList.toggle('collapsed');
+      chevron.classList.toggle('collapsed');
+    }
+  }
+
+  function selectItem(el) {
+    document.querySelectorAll('.tree-item').forEach(item => item.classList.remove('is-active'));
+    el.classList.add('is-active');
+  }
+
+  function showAddVault() { document.getElementById('addVaultOverlay').classList.add('show'); }
+  function closeAddVault() { document.getElementById('addVaultOverlay').classList.remove('show'); }
+
+  function saveVault() {
+    const name = document.getElementById('vaultName').value;
+    const path = document.getElementById('vaultPath').value;
+    if (!name || !path) { alert('Please fill in all fields'); return; }
+    closeAddVault();
+    alert('Vault "' + name + '" added at ' + path);
+  }
+
+  function openIngest() { alert('Open Ingest dialog (drag & drop files)'); }
+  function openLint() { alert('Open Lint results panel'); }
+
+  // Tab switching
+  document.querySelectorAll('.content-tabs .tab').forEach(tab => {
+    tab.addEventListener('click', function() {
+      document.querySelectorAll('.content-tabs .tab').forEach(t => t.classList.remove('is-active'));
+      this.classList.add('is-active');
+    });
+  });
+</script>
+
+</body>
+</html>
