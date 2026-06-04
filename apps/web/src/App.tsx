@@ -5,15 +5,18 @@ import { HomePage } from './components/HomePage';
 import { NavRail } from './components/NavRail';
 import { KnowledgeBasePage } from './components/kb/KnowledgeBasePage';
 import { RuntimePage } from './components/runtimes/RuntimePage';
+import { SettingsPage } from './components/settings/SettingsPage';
+import { UpdateNotification } from './components/UpdateNotification';
 import { api } from './api/client';
 import type { Vault } from '@kge/contracts';
 import './styles/rail.css';
 import './styles/home.css';
 import './styles/knowledge.css';
 import './styles/runtimes.css';
+import './styles/settings.css';
 import './App.css';
 
-type View = 'home' | 'knowledge' | 'runtimes';
+type View = 'home' | 'knowledge' | 'runtimes' | 'settings';
 
 export default function App() {
   const { agents } = useAgents();
@@ -94,10 +97,13 @@ export default function App() {
           />
         ) : activeView === 'knowledge' ? (
           <KnowledgeBasePage />
-        ) : (
+        ) : activeView === 'runtimes' ? (
           <RuntimePage />
+        ) : (
+          <SettingsPage />
         )}
       </div>
+      <UpdateNotification />
     </div>
   );
 }

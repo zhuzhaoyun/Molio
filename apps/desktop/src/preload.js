@@ -1,13 +1,46 @@
 /**
  * @kge/desktop preload script
- * Provides a minimal, safe bridge between the renderer (web app) and the main process.
+ * Provides a bridge between the renderer (web app) and the main process.
  * Context isolation is enabled; this script runs in an isolated context.
  */
 
-import { contextBridge } from 'electron';
+import { contextBridge, ipcRenderer } from 'electron';
 
-// Expose a minimal API to the renderer (currently none needed;
-// the web app communicates with the daemon via HTTP/SSE.)
-contextBridge.exposeInMainWorld('__electron__', {
+// Synchronous app info (version, OS)
+function fetchAppInfo() {
+  try {
+    return ipcRenderer.sendSync('app:get-info');
+  } catch {
+    return { version: 'unknown', os: 'unknown' };
+  }
+}
+
+// Desktop API — static platform + app info
+const desktopAPI = {
   platform: process.platform,
-});
+  appInfo: fetchAppInfo(),
+};
+
+// Updater API — event listeners + actions
+const updaterAPI = {
+  onUpdateAvailable: (callback) => {
+    const handler = (_, info) => callback(info);
+    ipcRenderer.on('updater:update-available', handler);
+    return () => ipcRenderer.removeListener('updater:update-available', handler);
+  },
+  onDownloadProgress: (callback) => {
+    const handler = (_, progress) => callback(progress);
+    ipcRenderer.on('updater:download-progress', handler);
+    return () => ipcRenderer.removeListener('updater:download-progress', handler);
+  },
+  onUpdateDownloaded: (callback) => {
+    const handler = (_, info) => callback(info);
+    ipcRenderer.on('updater:update-downloaded', handler);
+    return () => ipcRenderer.removeListener('updater:update-downloaded', handler);
+  },
+  installUpdate: () => ipcRenderer.invoke('updater:install'),
+  checkForUpdates: () => ipcRenderer.invoke('updater:check'),
+};
+
+contextBridge.exposeInMainWorld('__electron__', desktopAPI);
+contextBridge.exposeInMainWorld('updater', updaterAPI);
