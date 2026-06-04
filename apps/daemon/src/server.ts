@@ -1,5 +1,8 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { serveStatic } from '@hono/node-server/serve-static';
+import { readFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
 import type Database from 'better-sqlite3';
 import { RunManager } from './core/RunManager.js';
 import { openDatabase, closeDatabase } from './core/db.js';
@@ -16,9 +19,18 @@ export const db: Database.Database = openDatabase();
 
 export const app = new Hono();
 
-// CORS — allow Vite dev server and daemon itself
+// CORS — allow Vite dev server, daemon itself, and Electron dev
 app.use('*', cors({
-  origin: ['http://localhost:5173', 'http://localhost:3100'],
+  origin: (origin) => {
+    if (!origin) return origin;
+    try {
+      const url = new URL(origin);
+      if ((url.hostname === 'localhost' || url.hostname === '127.0.0.1') && url.protocol === 'http:') {
+        return origin;
+      }
+    } catch { /* ignore */ }
+    return undefined;
+  },
 }));
 
 // Health check
@@ -34,6 +46,23 @@ app.route('/api/runs', toolResultRoutes(runManager));
 app.route('/api/config', configRoutes());
 app.route('/api/projects', projectRoutes(db));
 app.route('/api/knowledge', knowledgeRoutes(db));
+
+// Static file serving (production / desktop mode)
+const staticDir = process.env['KGE_STATIC_DIR'];
+if (staticDir) {
+  // Serve static assets (js, css, images, etc.)
+  app.use('/*', serveStatic({ root: staticDir }));
+
+  // SPA fallback: serve index.html for non-API, non-asset routes
+  app.get('*', (c) => {
+    if (c.req.path.startsWith('/api/')) return c.notFound();
+    const indexPath = join(staticDir, 'index.html');
+    if (existsSync(indexPath)) {
+      return c.html(readFileSync(indexPath, 'utf-8'));
+    }
+    return c.notFound();
+  });
+}
 
 // Graceful shutdown
 process.on('SIGINT', () => {

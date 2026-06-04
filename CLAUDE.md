@@ -43,10 +43,20 @@ apps/
 pnpm dev          # daemon (tsx watch :3100) + web (vite :5173)
 pnpm dev:daemon   # daemon only
 pnpm dev:web      # web only
+pnpm dev:desktop  # daemon + web + electron (需确保 5173/3100 端口未被占用)
 pnpm build        # build all packages
 pnpm test         # run daemon tests (node:test)
 pnpm typecheck    # typecheck all packages
 ```
+
+### Desktop 构建与运行
+
+```bash
+pnpm desktop:run    # 一键构建 + 生成未打包版本 (win-unpacked)，可直接运行 exe
+pnpm package:dir    # 仅生成未打包目录 (不生成安装包)
+```
+
+生成的 `win-unpacked/` 目录包含可直接运行的 exe，无需安装。
 
 ## 错误驱动测试 (Error-Driven Testing)
 

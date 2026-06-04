@@ -1,12 +1,59 @@
 {
   "name": "@kge/desktop",
   "version": "0.1.0",
+  "description": "Knowledge Growth Engine - AI writing platform desktop app",
+  "author": "KGE Team",
   "type": "module",
   "private": true,
+  "main": "src/main.js",
   "scripts": {
-    "typecheck": "echo 'desktop: not yet implemented'"
+    "dev": "electron .",
+    "prepare": "node scripts/prepare-resources.mjs",
+    "build": "pnpm --filter @kge/contracts build && pnpm --filter @kge/daemon build && pnpm --filter @kge/web build && node scripts/prepare-resources.mjs",
+    "package": "electron-builder --win",
+    "package:dir": "electron-builder --win --dir",
+    "run:unpacked": "electron-builder --win --dir && echo 'Run: ./dist/win-unpacked/Knowledge Growth Engine.exe'",
+    "typecheck": "echo 'desktop: no TS to check'"
   },
-  "dependencies": {
-    "@kge/contracts": "workspace:*"
+  "dependencies": {},
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8",
+    "esbuild": "^0.25.0"
+  },
+  "build": {
+    "appId": "com.kge.desktop",
+    "productName": "Knowledge Growth Engine",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "resources",
+        "to": ".",
+        "filter": ["**/*"]
+      }
+    ],
+    "asarUnpack": [
+      "**/*.node"
+    ],
+    "forceCodeSigning": false,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false
+    }
   }
 }
