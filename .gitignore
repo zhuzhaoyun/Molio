@@ -4,3 +4,5 @@ dist/
 .turbo/
 *.tsbuildinfo
 .multica/
+.learnings/
+.claude/
