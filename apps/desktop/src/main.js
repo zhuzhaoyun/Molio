@@ -70,7 +70,7 @@ function createWindow() {
     height: 900,
     minWidth: 900,
     minHeight: 600,
-    title: 'KGE - Knowledge Growth Engine',
+    title: 'Molio',
     show: false, // Show after ready-to-show to avoid white flash
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

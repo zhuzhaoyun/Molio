@@ -1,5 +1,5 @@
 /* ============================================================
-   Home / Landing Page — open-design style
+   Home / Landing Page
    ============================================================ */
 
 .home-page {
@@ -8,176 +8,161 @@
   align-items: center;
   justify-content: flex-start;
   min-height: 100%;
-  padding: 40px 24px 80px;
   background: var(--bg);
   overflow-y: auto;
 }
 
-/* Landing page layout */
+/* ── Landing page ── */
 .home-landing {
   position: relative;
-  justify-content: center;
   min-height: 100vh;
   padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-/* Center content (brand + composer) */
-.home-landing-content {
+.home-hero-view {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 28px;
   width: 100%;
-  max-width: 720px;
-  padding: 0 24px;
+  max-width: 640px;
+  padding: 40px 24px;
 }
 
-/* Brand / Title */
-.home-brand {
+/* ── Hero ── */
+.home-hero {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
 }
 
-.home-brand-logo {
+.home-hero__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.home-hero__brand-mark {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 56px;
-  height: 56px;
-  border-radius: 14px;
-  background: linear-gradient(135deg, var(--accent-tint) 0%, var(--accent-soft) 100%);
-  color: var(--accent);
-  font-size: 24px;
-  font-weight: 700;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-family: var(--serif);
+  font-size: 13px;
+  font-weight: 600;
   flex-shrink: 0;
 }
 
-.home-brand-title {
-  font-family: var(--serif);
-  font-size: 30px;
+.home-hero__brand-name {
+  font-family: var(--sans);
+  font-size: 22px;
   font-weight: 700;
   color: var(--text-strong);
   letter-spacing: 0.04em;
-  text-align: center;
 }
 
-.home-brand-subtitle {
+.home-hero__tagline {
+  margin: 0;
   font-family: var(--serif);
-  font-size: 14px;
+  font-size: 13px;
   color: var(--text-muted);
+  letter-spacing: 0.08em;
   text-align: center;
-  max-width: 420px;
-  line-height: 1.8;
-  letter-spacing: 0.02em;
 }
 
-/* Feature cards */
-.home-features {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
+/* ── Composer on landing ── */
+.home-composer-wrap {
   width: 100%;
 }
 
-.home-feature-card {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 16px;
-  border-radius: var(--radius);
+.home-composer-wrap .composer {
+  border-top: none;
+  padding: 0;
+  background: transparent;
+}
+
+.home-composer-wrap .composer-shell {
   border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   background: var(--bg-panel);
-  transition: border-color 150ms ease, box-shadow 150ms ease;
+  box-shadow: 0 4px 24px rgba(26, 25, 23, 0.06), 0 1px 3px rgba(26, 25, 23, 0.04);
+  padding: 12px 14px 10px;
+  transition: border-color 180ms ease, box-shadow 180ms ease;
 }
 
-.home-feature-card:hover {
-  border-color: var(--border-strong);
-  box-shadow: var(--shadow-sm);
+.home-composer-wrap .composer-shell:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 4px 24px rgba(26, 25, 23, 0.06), 0 0 0 3px var(--accent-tint);
 }
 
-.home-feature-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: var(--bg-subtle);
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-
-.home-feature-body {
+/* ── Chat layout (when messages exist) ── */
+.home-page.chat-active {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  height: 100%;
+  min-height: auto;
+  padding: 0;
+  overflow: hidden;
+  align-items: stretch;
+}
+
+.home-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+  flex-shrink: 0;
+  height: 52px;
+}
+
+.home-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   min-width: 0;
 }
 
-.home-feature-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-strong);
-  line-height: 1.3;
-}
-
-.home-feature-desc {
-  font-size: 12px;
-  color: var(--text-muted);
-  line-height: 1.5;
-}
-
-/* Quick prompt chips */
-.home-quick-prompts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: center;
-}
-
-.home-quick-chip {
+.home-header-logo {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--border);
-  background: var(--bg-panel);
-  color: var(--text);
-  font-size: 13px;
-  font-weight: 400;
-  cursor: pointer;
-  transition: border-color 150ms ease, background 150ms ease, box-shadow 150ms ease;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-family: var(--serif);
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.home-header-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
   white-space: nowrap;
 }
 
-.home-quick-chip:hover:not(:disabled) {
-  background: var(--bg-subtle);
-  border-color: var(--border-strong);
-  box-shadow: var(--shadow-xs);
+.home-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
 }
 
-.home-quick-chip:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-@media (max-width: 640px) {
-  .home-features {
-    grid-template-columns: 1fr;
-  }
-  .home-quick-prompts {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  .home-quick-chip {
-    justify-content: center;
-  }
-}
-
-/* Active agent indicator in chat header */
+/* Active agent indicator */
 .home-active-agent {
   display: inline-flex;
   align-items: center;
@@ -196,84 +181,6 @@
   color: var(--text-soft);
 }
 
-/* Composer on home page */
-.home-composer-wrap {
-  width: 100%;
-}
-
-.home-composer-wrap .composer {
-  border-top: none;
-  padding: 0;
-  background: transparent;
-}
-
-.home-composer-wrap .composer-shell {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-panel);
-  box-shadow: var(--shadow-sm);
-  padding: 10px 12px 8px;
-}
-
-/* ---- Chat layout (when messages exist) ---------------------- */
-.home-page.chat-active {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: auto;
-  padding: 0;
-  overflow: hidden;
-  align-items: stretch;
-}
-
-/* Header with agent selector on the right */
-.home-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 16px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-panel);
-  flex-shrink: 0;
-  height: 52px;
-}
-
-.home-header-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
-.home-header-logo {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, var(--accent-tint) 0%, var(--accent-soft) 100%);
-  color: var(--accent);
-  font-size: 14px;
-  font-weight: 700;
-  flex-shrink: 0;
-}
-
-.home-header-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-strong);
-  white-space: nowrap;
-}
-
-.home-header-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
-}
-
 /* Chat log */
 .home-chat-log {
   flex: 1;
@@ -287,7 +194,6 @@
   align-items: center;
 }
 
-/* Each message row takes full width, content is constrained */
 .home-chat-log > * {
   width: 100%;
   max-width: 900px;
@@ -318,7 +224,13 @@
   padding: 10px 12px 8px;
 }
 
-/* Mobile responsive: full width on small screens */
+/* ── Responsive ── */
+@media (max-width: 640px) {
+  .home-hero-view {
+    padding: 0 16px;
+  }
+}
+
 @media (max-width: 768px) {
   .home-chat-log > * {
     max-width: 100%;
@@ -328,7 +240,7 @@
   }
 }
 
-/* Placeholder views */
+/* ── Placeholder views ── */
 .placeholder-view {
   display: flex;
   flex-direction: column;

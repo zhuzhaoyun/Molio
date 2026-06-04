@@ -1,8 +1,8 @@
 {
   "name": "@kge/desktop",
   "version": "0.1.0",
-  "description": "Knowledge Growth Engine - AI writing platform desktop app",
-  "author": "KGE Team",
+  "description": "Molio - AI writing & knowledge management platform",
+  "author": "Molio Team",
   "type": "module",
   "private": true,
   "main": "src/main.js",
@@ -12,7 +12,7 @@
     "build": "pnpm --filter @kge/contracts build && pnpm --filter @kge/daemon build && pnpm --filter @kge/web build && node scripts/prepare-resources.mjs",
     "package": "electron-builder --win",
     "package:dir": "electron-builder --win --dir",
-    "run:unpacked": "electron-builder --win --dir && echo 'Run: ./dist/win-unpacked/Knowledge Growth Engine.exe'",
+    "run:unpacked": "electron-builder --win --dir && echo 'Run: ./dist/win-unpacked/墨流 Molio.exe'",
     "typecheck": "echo 'desktop: no TS to check'"
   },
   "dependencies": {},
@@ -23,7 +23,7 @@
   },
   "build": {
     "appId": "com.kge.desktop",
-    "productName": "Knowledge Growth Engine",
+    "productName": "Molio",
     "directories": {
       "output": "dist"
     },
