@@ -12,8 +12,11 @@ import { SELECTOR_MAPPING } from './selectorMapping'
  * @returns 添加作用域后的 CSS
  */
 export function wrapCSSWithScope(css: string, scope: string = `#output`): string {
+  // 移除 CSS 注释，避免正则误匹配
+  const cssWithoutComments = css.replace(/\/\*[\s\S]*?\*\//g, ``)
+
   // 处理每个 CSS 规则
-  return css.replace(
+  return cssWithoutComments.replace(
     /([^{}]+)\{([^}]*)\}/g,
     (match, selectors, properties) => {
       // 跳过 @规则（如 @keyframes, @media）和 :root
