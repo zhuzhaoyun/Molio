@@ -4,7 +4,8 @@
   "type": "module",
   "main": "dist/src/index.js",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx src/index.ts",
+    "dev:watch": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/src/index.js",
     "test": "tsc && node --test \"dist/test/**/*.test.js\"",

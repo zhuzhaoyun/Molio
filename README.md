@@ -134,6 +134,16 @@ Daemon 提供 REST API + SSE 事件流：
 - **WebUI First**：E2E 测试直接测 web 层，Electron 壳只测窗口管理
 - **用户偏好**：当用户已显式配置默认值时，系统不得静默回退到其他选项
 
+## 致谢
+
+Molio 的诞生离不开以下优秀开源项目的启发与支持：
+
+- **[WeKnora](https://github.com/Tencent/WeKnora)** — 知识库管理平台，为 Molio 的知识库管理模块提供了设计参考
+- **[multica](https://github.com/multica-ai/multica)** — 开源 Agent 管理平台，启发了 Molio 的多运行时编排与 Agent 交互设计
+- **[doocs/md](https://github.com/doocs/md)** — 微信 Markdown 编辑器，Molio 的文档排版与多平台格式化能力基于其核心渲染引擎 `@md/core` 构建
+
+感谢这些项目的作者和社区，让 Molio 能站在巨人的肩膀上快速成长。
+
 ## License
 
-MIT
+[Modified Apache 2.0](LICENSE) — 基于 Apache License 2.0，附加商业使用限制条款。内部使用和非商业场景完全免费，商业托管/嵌入需获取商业授权。

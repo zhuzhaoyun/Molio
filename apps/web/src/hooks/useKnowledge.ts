@@ -8,6 +8,7 @@ import type { Vault, TreeNode, FileContent, KbHistoryEntry } from '@molio/contra
 import { api } from '../api/client';
 import type { ThemeConfig } from '../components/kb/MdStylePanel';
 import { defaultThemeConfig } from '../components/kb/MdStylePanel';
+import { copyHtml } from '@molio/doocs-md/shared/utils/clipboard';
 
 export type KbTab = 'preview'; // Simplified - only preview tab now
 
@@ -28,7 +29,6 @@ interface UseKnowledgeReturn {
 
   // Typeset mode state
   isTypesetMode: boolean;
-  showStylePanel: boolean;
   themeConfig: ThemeConfig;
   editedContent: string | null;
 
@@ -52,7 +52,6 @@ interface UseKnowledgeReturn {
 
   // Typeset actions
   toggleTypesetMode: () => void;
-  toggleStylePanel: () => void;
   setThemeConfig: (config: ThemeConfig) => void;
   setEditedContent: (content: string) => void;
   copyToClipboard: () => Promise<void>;
@@ -77,7 +76,6 @@ export function useKnowledge(): UseKnowledgeReturn {
 
   // Typeset mode state
   const [isTypesetMode, setIsTypesetMode] = useState(false);
-  const [showStylePanel, setShowStylePanel] = useState(false);
   const [themeConfig, setThemeConfig] = useState<ThemeConfig>(defaultThemeConfig);
   const [editedContent, setEditedContent] = useState<string | null>(null);
 
@@ -192,15 +190,8 @@ export function useKnowledge(): UseKnowledgeReturn {
   const toggleTypesetMode = useCallback(() => {
     setIsTypesetMode((prev) => {
       // When exiting typeset mode, also close style panel
-      if (prev) {
-        setShowStylePanel(false);
-      }
       return !prev;
     });
-  }, []);
-
-  const toggleStylePanel = useCallback(() => {
-    setShowStylePanel((prev) => !prev);
   }, []);
 
   const handleEditedContentChange = useCallback((content: string) => {
@@ -208,14 +199,19 @@ export function useKnowledge(): UseKnowledgeReturn {
   }, []);
 
   const copyToClipboard = useCallback(async () => {
-    const content = editedContent ?? fileContent?.content ?? '';
-    if (!content) return;
+    const markdownSource = editedContent ?? fileContent?.content ?? '';
+    if (!markdownSource) return;
 
-    try {
-      await navigator.clipboard.writeText(content);
-      // Could add a toast notification here
-    } catch (error) {
-      console.error('Failed to copy to clipboard:', error);
+    // Get the rendered HTML from the preview container (#output)
+    const outputEl = document.querySelector('#output');
+    const html = outputEl?.innerHTML ?? '';
+
+    if (html) {
+      // Copy rich HTML + plain text fallback (for WeChat/paste targets)
+      await copyHtml(html, markdownSource);
+    } else {
+      // Fallback: plain text only (no preview rendered yet)
+      await copyHtml('', markdownSource);
     }
   }, [editedContent, fileContent]);
 
@@ -231,7 +227,6 @@ export function useKnowledge(): UseKnowledgeReturn {
     searchQuery,
     loading,
     isTypesetMode,
-    showStylePanel,
     themeConfig,
     editedContent,
     showVaultSwitcher,
@@ -249,7 +244,6 @@ export function useKnowledge(): UseKnowledgeReturn {
     setShowAddVault,
     setShowImport,
     toggleTypesetMode,
-    toggleStylePanel,
     setThemeConfig,
     setEditedContent: handleEditedContentChange,
     copyToClipboard,
