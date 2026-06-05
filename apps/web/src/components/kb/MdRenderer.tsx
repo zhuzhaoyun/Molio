@@ -6,6 +6,9 @@
  * - highlight.js code highlighting
  * - DOMPurify XSS sanitization
  * - Full theme system (CSS variables + theme CSS injection)
+ *
+ * Note: All styles are managed by doocs/md theme system (applyTheme).
+ * Do NOT add custom CSS here — use the theme system instead.
  */
 
 import { useEffect, useRef, useMemo, useState } from 'react';
@@ -38,13 +41,15 @@ const defaultOptions: IOpts = {
 
 /**
  * Build renderer options from themeConfig.
- * Maps theme-level booleans (isMacCodeBlock, isShowLineNumber) into IOpts fields.
+ * Maps theme-level booleans and config values into IOpts fields.
  */
 function buildRendererOptions(base: Partial<IOpts>, themeConfig?: ThemeConfig): IOpts {
   return {
     ...defaultOptions,
     ...base,
-    // Override with theme config if available
+    legend: themeConfig?.legend ?? base.legend ?? defaultOptions.legend,
+    citeStatus: themeConfig?.citeStatus ?? base.citeStatus ?? defaultOptions.citeStatus,
+    countStatus: themeConfig?.countStatus ?? base.countStatus ?? defaultOptions.countStatus,
     isMacCodeBlock: themeConfig?.isMacCodeBlock ?? base.isMacCodeBlock ?? defaultOptions.isMacCodeBlock,
     isShowLineNumber: themeConfig?.isShowLineNumber ?? base.isShowLineNumber ?? defaultOptions.isShowLineNumber,
   };
@@ -90,15 +95,9 @@ export function MdRenderer({
   }, [content, renderer]);
 
   // Apply theme CSS when themeConfig changes
+  // The doocs/md theme system handles all styles — do NOT inject styles manually
   useEffect(() => {
     if (!themeConfig) return;
-
-    // Build heading styles from theme config (can be extended later)
-    const headingStyles = themeConfig.themeName === 'grace'
-      ? { h1: 'default' as const, h2: 'default' as const, h3: 'default' as const, h4: 'default' as const, h5: 'default' as const, h6: 'default' as const }
-      : themeConfig.themeName === 'simple'
-        ? { h1: 'default' as const, h2: 'default' as const, h3: 'default' as const, h4: 'default' as const, h5: 'default' as const, h6: 'default' as const }
-        : { h1: 'default' as const, h2: 'default' as const, h3: 'default' as const, h4: 'default' as const, h5: 'default' as const, h6: 'default' as const };
 
     applyTheme({
       themeName: themeConfig.themeName,
@@ -108,18 +107,12 @@ export function MdRenderer({
         fontSize: themeConfig.fontSize,
         isUseIndent: themeConfig.isUseIndent,
         isUseJustify: themeConfig.isUseJustify,
-        headingStyles,
+        headingStyles: themeConfig.headingStyles,
       },
       customCSS: themeConfig.customCSS,
     }).catch((err) => {
       console.error('Failed to apply theme:', err);
     });
-
-    // Cleanup: remove theme style on unmount
-    return () => {
-      // ThemeInjector keeps a singleton; we don't remove on every config change
-      // because applyTheme reuses the same <style> tag. Only clean up if needed.
-    };
   }, [themeConfig]);
 
   return (

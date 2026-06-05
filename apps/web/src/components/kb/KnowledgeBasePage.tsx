@@ -65,10 +65,8 @@ export function KnowledgeBasePage() {
         fileContent={kb.fileContent}
         selectedFile={kb.selectedFile}
         isTypesetMode={kb.isTypesetMode}
-        showStylePanel={kb.showStylePanel}
         themeConfig={kb.themeConfig}
         onToggleTypeset={kb.toggleTypesetMode}
-        onToggleStylePanel={kb.toggleStylePanel}
         onThemeConfigChange={kb.setThemeConfig}
         onContentChange={kb.setEditedContent}
         onCopy={kb.copyToClipboard}

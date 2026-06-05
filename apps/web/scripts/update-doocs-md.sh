@@ -41,12 +41,14 @@ rm -rf "$VENDOR_DIR/themes"
 mkdir -p "$VENDOR_DIR/themes"
 cp -r "$TEMP_DIR/packages/shared/src/configs/theme-css/"* "$VENDOR_DIR/themes/"
 
-# Copy shared dependencies (types and utils that @md/core imports)
+# Copy shared dependencies (types, utils, configs, editor that @md/core imports)
 echo "Copying shared dependencies → $VENDOR_DIR/shared/"
 rm -rf "$VENDOR_DIR/shared"
 mkdir -p "$VENDOR_DIR/shared"
 cp -r "$TEMP_DIR/packages/shared/src/types" "$VENDOR_DIR/shared/" 2>/dev/null || true
 cp -r "$TEMP_DIR/packages/shared/src/utils" "$VENDOR_DIR/shared/" 2>/dev/null || true
+cp -r "$TEMP_DIR/packages/shared/src/configs" "$VENDOR_DIR/shared/" 2>/dev/null || true
+cp -r "$TEMP_DIR/packages/shared/src/editor" "$VENDOR_DIR/shared/" 2>/dev/null || true
 
 # Update version in package.json
 if [ -n "$VERSION" ]; then
