@@ -6,7 +6,7 @@ import { NavRail } from './components/NavRail';
 import { KnowledgeBasePage } from './components/kb/KnowledgeBasePage';
 import { RuntimePage } from './components/runtimes/RuntimePage';
 import { api } from './api/client';
-import type { Vault } from '@kge/contracts';
+import type { Vault } from '@molio/contracts';
 import './styles/rail.css';
 import './styles/home.css';
 import './styles/knowledge.css';

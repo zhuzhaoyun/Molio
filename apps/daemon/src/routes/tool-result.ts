@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import type { ToolResultRequest } from '@kge/contracts';
+import type { ToolResultRequest } from '@molio/contracts';
 import type { RunManager } from '../core/RunManager.js';
 
 export function toolResultRoutes(runManager: RunManager): Hono {

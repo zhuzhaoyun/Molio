@@ -4,10 +4,12 @@
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import type { Vault, TreeNode, FileContent, KbHistoryEntry } from '@kge/contracts';
+import type { Vault, TreeNode, FileContent, KbHistoryEntry } from '@molio/contracts';
 import { api } from '../api/client';
+import type { ThemeConfig } from '../components/kb/MdStylePanel';
+import { defaultThemeConfig } from '../components/kb/MdStylePanel';
 
-export type KbTab = 'preview' | 'raw' | 'history';
+export type KbTab = 'preview'; // Simplified - only preview tab now
 
 interface UseKnowledgeReturn {
   // Data
@@ -23,6 +25,12 @@ interface UseKnowledgeReturn {
   panelWidth: number;
   searchQuery: string;
   loading: boolean;
+
+  // Typeset mode state
+  isTypesetMode: boolean;
+  showStylePanel: boolean;
+  themeConfig: ThemeConfig;
+  editedContent: string | null;
 
   // Modals
   showVaultSwitcher: boolean;
@@ -41,6 +49,13 @@ interface UseKnowledgeReturn {
   setShowVaultSwitcher: (show: boolean) => void;
   setShowAddVault: (show: boolean) => void;
   setShowImport: (show: boolean) => void;
+
+  // Typeset actions
+  toggleTypesetMode: () => void;
+  toggleStylePanel: () => void;
+  setThemeConfig: (config: ThemeConfig) => void;
+  setEditedContent: (content: string) => void;
+  copyToClipboard: () => Promise<void>;
 }
 
 export function useKnowledge(): UseKnowledgeReturn {
@@ -59,6 +74,12 @@ export function useKnowledge(): UseKnowledgeReturn {
   const [showVaultSwitcher, setShowVaultSwitcher] = useState(false);
   const [showAddVault, setShowAddVault] = useState(false);
   const [showImport, setShowImport] = useState(false);
+
+  // Typeset mode state
+  const [isTypesetMode, setIsTypesetMode] = useState(false);
+  const [showStylePanel, setShowStylePanel] = useState(false);
+  const [themeConfig, setThemeConfig] = useState<ThemeConfig>(defaultThemeConfig);
+  const [editedContent, setEditedContent] = useState<string | null>(null);
 
 
   // Load vaults on mount
@@ -167,6 +188,37 @@ export function useKnowledge(): UseKnowledgeReturn {
     api.getFileTree(activeVaultId).then(setTree).catch(() => {});
   }, [activeVaultId]);
 
+  // Typeset mode actions
+  const toggleTypesetMode = useCallback(() => {
+    setIsTypesetMode((prev) => {
+      // When exiting typeset mode, also close style panel
+      if (prev) {
+        setShowStylePanel(false);
+      }
+      return !prev;
+    });
+  }, []);
+
+  const toggleStylePanel = useCallback(() => {
+    setShowStylePanel((prev) => !prev);
+  }, []);
+
+  const handleEditedContentChange = useCallback((content: string) => {
+    setEditedContent(content);
+  }, []);
+
+  const copyToClipboard = useCallback(async () => {
+    const content = editedContent ?? fileContent?.content ?? '';
+    if (!content) return;
+
+    try {
+      await navigator.clipboard.writeText(content);
+      // Could add a toast notification here
+    } catch (error) {
+      console.error('Failed to copy to clipboard:', error);
+    }
+  }, [editedContent, fileContent]);
+
   return {
     vaults,
     activeVault,
@@ -178,6 +230,10 @@ export function useKnowledge(): UseKnowledgeReturn {
     panelWidth,
     searchQuery,
     loading,
+    isTypesetMode,
+    showStylePanel,
+    themeConfig,
+    editedContent,
     showVaultSwitcher,
     showAddVault,
     showImport,
@@ -192,5 +248,10 @@ export function useKnowledge(): UseKnowledgeReturn {
     setShowVaultSwitcher,
     setShowAddVault,
     setShowImport,
+    toggleTypesetMode,
+    toggleStylePanel,
+    setThemeConfig,
+    setEditedContent: handleEditedContentChange,
+    copyToClipboard,
   };
 }

@@ -1,4 +1,4 @@
-// @kge/contracts — shared types for daemon, web, and desktop
+// @molio/contracts — shared types for daemon, web, and desktop
 
 export type {
   RuntimeAgentDef,

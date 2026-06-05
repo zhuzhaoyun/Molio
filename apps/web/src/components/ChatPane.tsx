@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { ChatMessage } from '../hooks/useChat';
-import type { AgentInfo } from '@kge/contracts';
+import type { AgentInfo } from '@molio/contracts';
 import { UserMessage } from './UserMessage';
 import { AssistantMessage } from './AssistantMessage';
 import { ChatComposer } from './ChatComposer';

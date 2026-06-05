@@ -4,7 +4,7 @@
  */
 import type { ChildProcess } from 'node:child_process';
 import type { WriteStream } from 'node:fs';
-import type { AgentEvent, RunStatus } from '@kge/contracts';
+import type { AgentEvent, RunStatus } from '@molio/contracts';
 
 /**
  * Buffered event record for SSE replay.

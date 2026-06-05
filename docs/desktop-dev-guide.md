@@ -40,11 +40,11 @@ pnpm install
 ```
 knowledge-growth-engine/
 ├── packages/
-│   └── contracts/          @kge/contracts  — 共享类型定义
+│   └── contracts/          @molio/contracts  — 共享类型定义
 ├── apps/
-│   ├── daemon/             @kge/daemon     — Hono HTTP 服务 (port 3100)
-│   ├── web/                @kge/web        — Vite + React 前端 (port 5173)
-│   └── desktop/            @kge/desktop    — Electron 桌面壳
+│   ├── daemon/             @molio/daemon     — Hono HTTP 服务 (port 3100)
+│   ├── web/                @molio/web        — Vite + React 前端 (port 5173)
+│   └── desktop/            @molio/desktop    — Electron 桌面壳
 │       ├── src/
 │       │   ├── main.js         主进程：启动 daemon + 创建窗口
 │       │   ├── preload.js      预加载脚本：暴露 API 给渲染进程
@@ -74,9 +74,9 @@ pnpm dev:desktop
 
 | 进程 | 命令 | 端口 | 说明 |
 |------|------|------|------|
-| daemon | `pnpm --filter @kge/daemon dev` | 3100 | `tsx watch` 热重载 |
-| web | `pnpm --filter @kge/web dev` | 5173 | Vite dev server + HMR |
-| desktop | `pnpm --filter @kge/desktop dev` | — | `electron .` 启动 Electron |
+| daemon | `pnpm --filter @molio/daemon dev` | 3100 | `tsx watch` 热重载 |
+| web | `pnpm --filter @molio/web dev` | 5173 | Vite dev server + HMR |
+| desktop | `pnpm --filter @molio/desktop dev` | — | `electron .` 启动 Electron |
 
 ### 开发模式的工作方式
 
@@ -125,13 +125,13 @@ pnpm build:desktop
 这个命令实际执行的步骤：
 
 ```
-Step 1: pnpm --filter @kge/contracts build
+Step 1: pnpm --filter @molio/contracts build
         → tsc 编译共享类型到 packages/contracts/dist/
 
-Step 2: pnpm --filter @kge/daemon build
+Step 2: pnpm --filter @molio/daemon build
         → tsc 编译 daemon 到 apps/daemon/dist/src/
 
-Step 3: pnpm --filter @kge/web build
+Step 3: pnpm --filter @molio/web build
         → vite build 编译前端到 apps/web/dist/
 
 Step 4: node scripts/prepare-resources.mjs
@@ -190,7 +190,7 @@ pnpm package
 
 ```bash
 pnpm build                          # 构建所有包
-pnpm --filter @kge/desktop package  # electron-builder --win
+pnpm --filter @molio/desktop package  # electron-builder --win
 ```
 
 `electron-builder` 会：
@@ -220,7 +220,7 @@ pnpm desktop:run
 等价于：
 
 ```bash
-pnpm build && pnpm --filter @kge/desktop run:unpacked
+pnpm build && pnpm --filter @molio/desktop run:unpacked
 ```
 
 这会构建所有包，然后生成未打包版本并提示运行路径：

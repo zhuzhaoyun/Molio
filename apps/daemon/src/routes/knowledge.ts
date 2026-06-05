@@ -4,7 +4,7 @@
 
 import { Hono } from 'hono';
 import type Database from 'better-sqlite3';
-import type { CreateVaultRequest } from '@kge/contracts';
+import type { CreateVaultRequest } from '@molio/contracts';
 import {
   listVaults,
   getVault,

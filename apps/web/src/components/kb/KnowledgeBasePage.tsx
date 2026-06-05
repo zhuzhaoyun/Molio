@@ -64,10 +64,16 @@ export function KnowledgeBasePage() {
       {/* Main Content */}
       <KbMainContent
         fileContent={kb.fileContent}
-        history={kb.history}
-        activeTab={kb.activeTab}
         selectedFile={kb.selectedFile}
-        onTabChange={kb.setActiveTab}
+        isTypesetMode={kb.isTypesetMode}
+        showStylePanel={kb.showStylePanel}
+        themeConfig={kb.themeConfig}
+        onToggleTypeset={kb.toggleTypesetMode}
+        onToggleStylePanel={kb.toggleStylePanel}
+        onThemeConfigChange={kb.setThemeConfig}
+        onContentChange={kb.setEditedContent}
+        onCopy={kb.copyToClipboard}
+        onPublish={() => {/* TODO: publish flow */}}
       />
 
       {/* Action Bar (reserved) */}

@@ -7,7 +7,13 @@
     "jsx": "react-jsx",
     "noEmit": true,
     "declaration": false,
-    "sourceMap": false
+    "sourceMap": false,
+    "skipLibCheck": true,
+    "paths": {
+      "@molio/doocs-md/*": ["./vendor/doocs-md/*"]
+    },
+    "baseUrl": "."
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx"]
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "exclude": ["vendor"]
 }

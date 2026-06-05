@@ -1,5 +1,5 @@
 {
-  "name": "@kge/web",
+  "name": "@molio/web",
   "version": "0.1.0",
   "type": "module",
   "scripts": {
@@ -9,9 +9,15 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@kge/contracts": "workspace:*",
+    "@molio/contracts": "workspace:*",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "marked": "^18.0.4",
+    "highlight.js": "^11.11.1",
+    "front-matter": "^4.0.2",
+    "isomorphic-dompurify": "^3.15.0",
+    "es-toolkit": "^1.47.0",
+    "fflate": "^0.8.3"
   },
   "devDependencies": {
     "vite": "^6.3.0",

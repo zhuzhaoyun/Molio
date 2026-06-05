@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import type { AgentEvent } from '@kge/contracts';
+import type { AgentEvent } from '@molio/contracts';
 import { createCodexStreamHandler } from '../src/core/streams/codex-stream.js';
 
 /**

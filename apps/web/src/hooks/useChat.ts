@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
-import type { AgentEvent, ChatMessage as ContractsChatMessage } from '@kge/contracts';
+import type { AgentEvent, ChatMessage as ContractsChatMessage } from '@molio/contracts';
 import { api } from '../api/client';
 import { subscribeToRun } from '../api/sse';
 

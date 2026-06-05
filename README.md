@@ -32,11 +32,11 @@ Molio 是一个本地优先的桌面应用，将知识库管理、AI 辅助写�
 ```
 Molio/
 ├── packages/
-│   └── contracts/       @kge/contracts — 共享类型定义
+│   └── contracts/       @molio/contracts — 共享类型定义
 ├── apps/
-│   ├── daemon/          @kge/daemon   — Hono HTTP 服务端 (API + SSE)
-│   ├── web/             @kge/web      — Vite + React 前端
-│   └── desktop/         @kge/desktop  — Electron 桌面壳
+│   ├── daemon/          @molio/daemon   — Hono HTTP 服务端 (API + SSE)
+│   ├── web/             @molio/web      — Vite + React 前端
+│   └── desktop/         @molio/desktop  — Electron 桌面壳
 └── package.json         monorepo 根配置
 ```
 

@@ -10,7 +10,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
-import type { ChatMessage, Project, Conversation, Vault, KbHistoryEntry } from '@kge/contracts';
+import type { ChatMessage, Project, Conversation, Vault, KbHistoryEntry } from '@molio/contracts';
 
 type SqliteDb = Database.Database;
 

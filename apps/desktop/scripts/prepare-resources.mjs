@@ -109,7 +109,7 @@ function copyWebBuild() {
   console.log('Copying web build...');
   const webDist = join(webDir, 'dist');
   if (!existsSync(webDist)) {
-    throw new Error(`Web build not found at ${webDist}. Run 'pnpm --filter @kge/web build' first.`);
+    throw new Error(`Web build not found at ${webDist}. Run 'pnpm --filter @molio/web build' first.`);
   }
   const webResourcesDir = join(resourcesDir, 'web');
   cpSync(webDist, webResourcesDir, { recursive: true, dereference: true });

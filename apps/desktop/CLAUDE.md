@@ -1,6 +1,6 @@
-# @kge/desktop — Electron Desktop Shell
+# @molio/desktop — Electron Desktop Shell
 
-Electron 桌面应用壳，包裹 `@kge/web` 构建产物，内嵌 `@kge/daemon` 提供后端服务。
+Electron 桌面应用壳，包裹 `@molio/web` 构建产物，内嵌 `@molio/daemon` 提供后端服务。
 
 ## 架构
 
@@ -40,9 +40,9 @@ scripts/
 
 ## 构建流程
 
-1. `pnpm --filter @kge/contracts build` — 编译共享类型
-2. `pnpm --filter @kge/daemon build` — 编译 daemon TypeScript
-3. `pnpm --filter @kge/web build` — 构建 web Vite 产物
+1. `pnpm --filter @molio/contracts build` — 编译共享类型
+2. `pnpm --filter @molio/daemon build` — 编译 daemon TypeScript
+3. `pnpm --filter @molio/web build` — 构建 web Vite 产物
 4. `node scripts/prepare-resources.mjs` — 使用 esbuild 打包 daemon，复制原生依赖和 web 构建
 5. `npx electron-builder --win` — 打包为 Windows 安装程序
 

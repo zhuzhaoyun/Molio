@@ -5,14 +5,14 @@ import path from 'node:path';
 import os from 'node:os';
 import type {
   AgentEvent, AgentInfo, RuntimeAgentDef, RunInfo, RunStatus, ChatMessage,
-} from '@kge/contracts';
+} from '@molio/contracts';
 import { getAgentDef, listAgentDefs } from './runtimes/registry.js';
 import { resolveAgentBinary, probeVersion } from './runtimes/launch.js';
 import { buildSpawnEnv } from './runtimes/env.js';
 import { createClaudeStreamHandler } from './streams/claude-stream.js';
 import { createCodexStreamHandler } from './streams/codex-stream.js';
 import { createJsonEventStreamHandler } from './streams/json-event-stream.js';
-import type { StreamHandler } from '@kge/contracts';
+import type { StreamHandler } from '@molio/contracts';
 import { createJsonlParser } from './streams/jsonl-parser.js';
 import { loadConfig, getAgentConfig, buildAgentEnv } from './config.js';
 import { buildTranscript, type TranscriptMessage } from './transcript.js';

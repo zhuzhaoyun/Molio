@@ -1,4 +1,4 @@
-import type { RuntimeAgentDef } from '@kge/contracts';
+import type { RuntimeAgentDef } from '@molio/contracts';
 
 export const codexAgentDef: RuntimeAgentDef = {
   id: 'codex',

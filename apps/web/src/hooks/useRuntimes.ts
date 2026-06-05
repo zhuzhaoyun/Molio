@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { AgentInfo, RunInfo } from '@kge/contracts';
+import type { AgentInfo, RunInfo } from '@molio/contracts';
 import { api } from '../api/client';
 
 type TestState =

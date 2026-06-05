@@ -1,5 +1,5 @@
 {
-  "name": "@kge/desktop",
+  "name": "@molio/desktop",
   "version": "0.1.0",
   "description": "Molio - AI writing & knowledge management platform",
   "author": "Molio Team",
@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "electron .",
     "prepare": "node scripts/prepare-resources.mjs",
-    "build": "pnpm --filter @kge/contracts build && pnpm --filter @kge/daemon build && pnpm --filter @kge/web build && node scripts/prepare-resources.mjs",
+    "build": "pnpm --filter @molio/contracts build && pnpm --filter @molio/daemon build && pnpm --filter @molio/web build && node scripts/prepare-resources.mjs",
     "package": "electron-builder --win",
     "package:dir": "electron-builder --win --dir",
     "run:unpacked": "electron-builder --win --dir && echo 'Run: ./dist/win-unpacked/墨流 Molio.exe'",

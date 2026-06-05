@@ -1,4 +1,4 @@
-import type { RuntimeAgentDef } from '@kge/contracts';
+import type { RuntimeAgentDef } from '@molio/contracts';
 import { claudeAgentDef } from './claude.js';
 import { codexAgentDef } from './codex.js';
 import { geminiAgentDef } from './gemini.js';

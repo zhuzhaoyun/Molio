@@ -1,4 +1,4 @@
-# @kge/daemon — Backend Server
+# @molio/daemon — Backend Server
 
 Hono HTTP server，负责本地 AI runtime 编排、run 生命周期管理、SSE 事件推送。
 

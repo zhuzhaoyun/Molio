@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import type { CreateRunRequest } from '@kge/contracts';
+import type { CreateRunRequest } from '@molio/contracts';
 import type { RunManager } from '../core/RunManager.js';
 
 export function runsRoutes(runManager: RunManager): Hono {

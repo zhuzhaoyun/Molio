@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type Database from 'better-sqlite3';
-import type { CreateProjectRequest, CreateConversationRequest, ChatMessage } from '@kge/contracts';
+import type { CreateProjectRequest, CreateConversationRequest, ChatMessage } from '@molio/contracts';
 import {
   listProjects,
   getProject,

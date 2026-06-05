@@ -1,4 +1,4 @@
-import type { StreamHandler } from '@kge/contracts';
+import type { StreamHandler } from '@molio/contracts';
 
 export function createJsonlParser(
   handleLine: (line: string) => void,

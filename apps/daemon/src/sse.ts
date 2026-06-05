@@ -1,4 +1,4 @@
-import type { AgentEvent } from '@kge/contracts';
+import type { AgentEvent } from '@molio/contracts';
 import type { RunManager } from './core/RunManager.js';
 import type { BufferedEvent } from './types.js';
 

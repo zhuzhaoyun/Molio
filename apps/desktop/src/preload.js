@@ -1,5 +1,5 @@
 /**
- * @kge/desktop preload script
+ * @molio/desktop preload script
  * Provides a minimal, safe bridge between the renderer (web app) and the main process.
  * Context isolation is enabled; this script runs in an isolated context.
  */

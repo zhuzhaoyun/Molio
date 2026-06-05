@@ -5,7 +5,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import type { TreeNode, FileContent } from '@kge/contracts';
+import type { TreeNode, FileContent } from '@molio/contracts';
 
 /**
  * Scan a vault directory and return the file tree.

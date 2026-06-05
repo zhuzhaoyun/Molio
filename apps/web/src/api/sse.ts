@@ -1,4 +1,4 @@
-import type { AgentEvent } from '@kge/contracts';
+import type { AgentEvent } from '@molio/contracts';
 
 interface SSEEnvelope {
   seq: number;

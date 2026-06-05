@@ -1,4 +1,4 @@
-import type { AgentEvent, StreamHandler, UsageInfo } from '@kge/contracts';
+import type { AgentEvent, StreamHandler, UsageInfo } from '@molio/contracts';
 import { createJsonlParser } from './jsonl-parser.js';
 
 export function createCodexStreamHandler(

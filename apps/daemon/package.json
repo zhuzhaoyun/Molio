@@ -1,5 +1,5 @@
 {
-  "name": "@kge/daemon",
+  "name": "@molio/daemon",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/src/index.js",
@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.13.0",
-    "@kge/contracts": "workspace:*",
+    "@molio/contracts": "workspace:*",
     "better-sqlite3": "^12.10.0",
     "hono": "^4.7.0"
   },

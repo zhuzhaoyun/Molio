@@ -3,7 +3,7 @@
  */
 
 import { useState, useCallback, useRef } from 'react';
-import type { Vault } from '@kge/contracts';
+import type { Vault } from '@molio/contracts';
 
 // ═══════════════════════════════════════════
 // Vault Switcher Modal

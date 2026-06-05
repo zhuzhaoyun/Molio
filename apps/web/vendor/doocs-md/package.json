@@ -1,0 +1,30 @@
+{
+  "name": "@molio/doocs-md",
+  "version": "2.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Vendored @md/core from doocs/md - Markdown rendering engine with themes and extensions",
+  "exports": {
+    ".": "./src/index.ts",
+    "./renderer": "./src/renderer/index.ts",
+    "./extensions": "./src/extensions/index.ts",
+    "./utils": "./src/utils/index.ts",
+    "./theme": "./src/theme/index.ts",
+    "./themes/*": "./themes/*"
+  },
+  "dependencies": {
+    "marked": "^18.0.4",
+    "highlight.js": "^11.11.1",
+    "front-matter": "^4.0.2",
+    "isomorphic-dompurify": "^3.15.0",
+    "es-toolkit": "^1.47.0"
+  },
+  "peerDependencies": {
+    "mermaid": "^11.15.0",
+    "@antv/infographic": "^0.2.19"
+  },
+  "peerDependenciesMeta": {
+    "mermaid": { "optional": true },
+    "@antv/infographic": { "optional": true }
+  }
+}

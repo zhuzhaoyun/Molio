@@ -3,7 +3,7 @@
  */
 
 import type { ReactNode } from 'react';
-import type { TreeNode } from '@kge/contracts';
+import type { TreeNode } from '@molio/contracts';
 import { KbFileTree } from './KbFileTree';
 
 interface KbFilePanelProps {

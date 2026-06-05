@@ -3,7 +3,7 @@
  */
 
 import { useState, useCallback } from 'react';
-import type { TreeNode } from '@kge/contracts';
+import type { TreeNode } from '@molio/contracts';
 
 interface KbFileTreeProps {
   nodes: TreeNode[];

@@ -1719,9 +1719,9 @@ const daemonDir = path.join(app.getPath('userData'), 'daemon');
 
 function checkDaemonUpdate(): boolean {
   try {
-    const latest = execSync('npm view @kge/daemon version', { encoding: 'utf-8' }).trim();
+    const latest = execSync('npm view @molio/daemon version', { encoding: 'utf-8' }).trim();
     const current = require(
-      path.join(daemonDir, 'node_modules/@kge/daemon/package.json')
+      path.join(daemonDir, 'node_modules/@molio/daemon/package.json')
     ).version;
     return latest !== current;
   } catch { return false; }
@@ -1729,7 +1729,7 @@ function checkDaemonUpdate(): boolean {
 
 async function updateDaemon(): Promise<void> {
   // 不需要先停 daemon，运行中的进程用的是内存里的代码
-  execSync('npm install @kge/daemon@latest', { cwd: daemonDir, encoding: 'utf-8' });
+  execSync('npm install @molio/daemon@latest', { cwd: daemonDir, encoding: 'utf-8' });
   // 重启 daemon 子进程加载新代码
   restartDaemon();
 }

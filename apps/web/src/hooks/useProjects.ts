@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import type { Project, Conversation } from '@kge/contracts';
+import type { Project, Conversation } from '@molio/contracts';
 import { api } from '../api/client';
 
 interface UseProjectsReturn {

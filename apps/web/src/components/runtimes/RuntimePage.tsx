@@ -1,5 +1,5 @@
 import { useState, type CSSProperties } from 'react';
-import type { AgentInfo, RunInfo } from '@kge/contracts';
+import type { AgentInfo, RunInfo } from '@molio/contracts';
 import { useRuntimes } from '../../hooks/useRuntimes';
 
 type Tab = 'agents' | 'runs';

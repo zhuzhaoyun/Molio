@@ -1,0 +1,1452 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Molio - 编辑器原型</title>
+<style>
+  /* ============ 基础重置 ============ */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #0a0a0f;
+    color: #e0e0e0;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* ============ 页面导航（原型切换） ============ */
+  .proto-nav {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: 36px;
+    background: #1a1a2e;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    gap: 8px;
+    z-index: 1000;
+    border-bottom: 1px solid #2a2a3e;
+  }
+  .proto-nav span { color: #888; font-size: 12px; margin-right: 8px; }
+  .proto-nav button {
+    background: #2a2a3e;
+    border: 1px solid #3a3a4e;
+    color: #ccc;
+    padding: 4px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s;
+  }
+  .proto-nav button:hover { background: #3a3a4e; }
+  .proto-nav button.active {
+    background: #6366f1;
+    border-color: #6366f1;
+    color: #fff;
+  }
+  .proto-nav .step-label {
+    color: #6366f1;
+    font-size: 11px;
+    margin-left: auto;
+    margin-right: 0;
+  }
+
+  /* ============ 主布局 ============ */
+  .proto-page {
+    display: none;
+    height: calc(100vh - 36px);
+    margin-top: 36px;
+  }
+  .proto-page.active { display: flex; }
+
+  /* ============ 左侧导航栏 ============ */
+  .nav-rail {
+    width: 56px;
+    background: #0f0f18;
+    border-right: 1px solid #1e1e2e;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 16px 0;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+  .nav-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: #666;
+    transition: all 0.2s;
+    position: relative;
+  }
+  .nav-icon:hover { color: #aaa; background: #1a1a2e; }
+  .nav-icon.active {
+    color: #6366f1;
+    background: #1a1a2e;
+  }
+  .nav-icon.active::before {
+    content: '';
+    position: absolute;
+    left: -8px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 3px;
+    height: 20px;
+    background: #6366f1;
+    border-radius: 0 2px 2px 0;
+  }
+  .nav-spacer { flex: 1; }
+
+  /* ============ 场景 1：聊天页（现有） ============ */
+  .chat-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: #0a0a0f;
+  }
+  .chat-header {
+    height: 48px;
+    border-bottom: 1px solid #1e1e2e;
+    display: flex;
+    align-items: center;
+    padding: 0 20px;
+    gap: 10px;
+  }
+  .chat-header .logo {
+    width: 24px;
+    height: 24px;
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    color: #fff;
+  }
+  .chat-header .title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #e0e0e0;
+  }
+  .chat-header .agent-badge {
+    margin-left: auto;
+    font-size: 12px;
+    color: #888;
+    background: #1a1a2e;
+    padding: 3px 10px;
+    border-radius: 12px;
+  }
+
+  .chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px 20px;
+  }
+  .msg-block { margin-bottom: 24px; }
+  .msg-label {
+    font-size: 11px;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .msg-user {
+    background: #1a1a2e;
+    border-radius: 12px;
+    padding: 14px 18px;
+    color: #e0e0e0;
+    max-width: 600px;
+  }
+  .msg-assistant {
+    max-width: 720px;
+    line-height: 1.7;
+  }
+  .msg-assistant h2 {
+    font-size: 18px;
+    color: #e0e0e0;
+    margin-bottom: 12px;
+  }
+  .msg-assistant h3 {
+    font-size: 15px;
+    color: #d0d0d0;
+    margin: 16px 0 8px;
+  }
+  .msg-assistant p {
+    color: #b0b0b0;
+    margin-bottom: 10px;
+    font-size: 14px;
+  }
+  .msg-assistant code {
+    background: #1a1a2e;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 13px;
+    color: #c084fc;
+  }
+  .msg-assistant pre {
+    background: #1a1a2e;
+    border-radius: 8px;
+    padding: 16px;
+    margin: 12px 0;
+    overflow-x: auto;
+    border: 1px solid #2a2a3e;
+  }
+  .msg-assistant pre code {
+    background: none;
+    padding: 0;
+    color: #e0e0e0;
+  }
+  .msg-assistant ul, .msg-assistant ol {
+    padding-left: 20px;
+    margin-bottom: 10px;
+  }
+  .msg-assistant li {
+    color: #b0b0b0;
+    font-size: 14px;
+    margin-bottom: 4px;
+  }
+  .msg-assistant blockquote {
+    border-left: 3px solid #6366f1;
+    padding: 8px 16px;
+    margin: 12px 0;
+    background: #12121e;
+    border-radius: 0 8px 8px 0;
+    color: #999;
+  }
+  .msg-assistant table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 13px;
+  }
+  .msg-assistant th {
+    background: #1a1a2e;
+    padding: 8px 12px;
+    text-align: left;
+    border: 1px solid #2a2a3e;
+    color: #d0d0d0;
+  }
+  .msg-assistant td {
+    padding: 8px 12px;
+    border: 1px solid #2a2a3e;
+    color: #b0b0b0;
+  }
+
+  /* 消息操作按钮 */
+  .msg-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 12px;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  .msg-block:hover .msg-actions { opacity: 1; }
+  .msg-action-btn {
+    background: #1a1a2e;
+    border: 1px solid #2a2a3e;
+    color: #888;
+    padding: 5px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    transition: all 0.2s;
+  }
+  .msg-action-btn:hover {
+    background: #2a2a3e;
+    color: #ccc;
+  }
+  .msg-action-btn.primary {
+    background: #6366f1;
+    border-color: #6366f1;
+    color: #fff;
+  }
+  .msg-action-btn.primary:hover {
+    background: #5558e6;
+  }
+
+  /* 聊天输入框 */
+  .chat-composer {
+    padding: 12px 20px 20px;
+    border-top: 1px solid #1e1e2e;
+  }
+  .composer-box {
+    background: #12121e;
+    border: 1px solid #2a2a3e;
+    border-radius: 12px;
+    padding: 12px 16px;
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+  }
+  .composer-box textarea {
+    flex: 1;
+    background: none;
+    border: none;
+    color: #e0e0e0;
+    font-size: 14px;
+    resize: none;
+    outline: none;
+    line-height: 1.5;
+    font-family: inherit;
+  }
+  .composer-send {
+    width: 32px;
+    height: 32px;
+    background: #6366f1;
+    border: none;
+    border-radius: 8px;
+    color: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  /* ============ 场景 2：编辑器页 ============ */
+  .editor-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: #0a0a0f;
+    overflow: hidden;
+  }
+
+  /* 编辑器顶栏 */
+  .editor-topbar {
+    height: 48px;
+    border-bottom: 1px solid #1e1e2e;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  .editor-topbar .back-btn {
+    background: none;
+    border: none;
+    color: #888;
+    cursor: pointer;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    border-radius: 6px;
+    transition: all 0.2s;
+  }
+  .editor-topbar .back-btn:hover { color: #ccc; background: #1a1a2e; }
+  .editor-topbar .doc-title {
+    font-size: 14px;
+    font-weight: 500;
+    color: #e0e0e0;
+    background: none;
+    border: none;
+    outline: none;
+    font-family: inherit;
+    width: 300px;
+  }
+  .editor-topbar .save-status {
+    font-size: 11px;
+    color: #666;
+  }
+  .editor-topbar .spacer { flex: 1; }
+
+  /* 主题选择器 */
+  .theme-selector {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .theme-dot {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: all 0.2s;
+  }
+  .theme-dot:hover { transform: scale(1.15); }
+  .theme-dot.active { border-color: #fff; }
+  .theme-dot.classic { background: linear-gradient(135deg, #333, #666); }
+  .theme-dot.elegant { background: linear-gradient(135deg, #6366f1, #8b5cf6); }
+  .theme-dot.simple { background: linear-gradient(135deg, #10b981, #34d399); }
+  .theme-dot.custom {
+    background: #1a1a2e;
+    border: 1px dashed #555;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    color: #888;
+  }
+
+  /* 发布按钮 */
+  .publish-btn {
+    background: #6366f1;
+    border: none;
+    color: #fff;
+    padding: 6px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s;
+  }
+  .publish-btn:hover { background: #5558e6; }
+
+  /* 代码主题选择 */
+  .code-theme-select {
+    background: #1a1a2e;
+    border: 1px solid #2a2a3e;
+    color: #aaa;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    outline: none;
+    cursor: pointer;
+  }
+
+  /* 编辑器主体 - 分栏 */
+  .editor-body {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+  }
+
+  /* 编辑区 */
+  .editor-pane {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid #1e1e2e;
+    min-width: 0;
+  }
+  .editor-pane-label {
+    height: 32px;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    font-size: 11px;
+    color: #555;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid #1e1e2e;
+    background: #0c0c14;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .editor-pane-label .word-count {
+    margin-left: auto;
+    color: #444;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .editor-textarea {
+    flex: 1;
+    background: #0a0a0f;
+    color: #d0d0d0;
+    border: none;
+    padding: 20px 24px;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 14px;
+    line-height: 1.8;
+    resize: none;
+    outline: none;
+    tab-size: 2;
+  }
+  .editor-textarea::placeholder { color: #444; }
+
+  /* 预览区 */
+  .preview-pane {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .preview-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px 32px;
+  }
+
+  /* ============ 排版主题样式 ============ */
+  /* Classic 主题 */
+  .theme-classic {
+    font-family: 'Georgia', 'Noto Serif SC', serif;
+    line-height: 1.9;
+    color: #d0d0d0;
+  }
+  .theme-classic h1 {
+    font-size: 26px;
+    font-weight: 700;
+    color: #e8e8e8;
+    margin-bottom: 20px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid #2a2a3e;
+  }
+  .theme-classic h2 {
+    font-size: 20px;
+    font-weight: 600;
+    color: #e0e0e0;
+    margin: 24px 0 12px;
+  }
+  .theme-classic h3 {
+    font-size: 16px;
+    font-weight: 600;
+    color: #d0d0d0;
+    margin: 18px 0 8px;
+  }
+  .theme-classic p {
+    margin-bottom: 14px;
+    font-size: 15px;
+  }
+  .theme-classic code {
+    background: #1e1e2e;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 13px;
+    color: #c084fc;
+  }
+  .theme-classic pre {
+    background: #1a1a2e;
+    border-radius: 8px;
+    padding: 18px;
+    margin: 16px 0;
+    overflow-x: auto;
+    border: 1px solid #2a2a3e;
+  }
+  .theme-classic pre code { background: none; padding: 0; color: #e0e0e0; }
+  .theme-classic blockquote {
+    border-left: 4px solid #6366f1;
+    padding: 12px 20px;
+    margin: 16px 0;
+    background: #12121e;
+    border-radius: 0 8px 8px 0;
+  }
+  .theme-classic table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+  }
+  .theme-classic th {
+    background: #1a1a2e;
+    padding: 10px 14px;
+    text-align: left;
+    border: 1px solid #2a2a3e;
+  }
+  .theme-classic td {
+    padding: 10px 14px;
+    border: 1px solid #2a2a3e;
+  }
+  .theme-classic ul, .theme-classic ol { padding-left: 24px; margin-bottom: 14px; }
+  .theme-classic li { margin-bottom: 6px; }
+
+  /* Elegant 主题 */
+  .theme-elegant {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    line-height: 1.8;
+    color: #c8c8d0;
+  }
+  .theme-elegant h1 {
+    font-size: 28px;
+    font-weight: 700;
+    color: #e8e8f0;
+    margin-bottom: 16px;
+    background: linear-gradient(135deg, #6366f1, #a78bfa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .theme-elegant h2 {
+    font-size: 20px;
+    font-weight: 600;
+    color: #d0d0e0;
+    margin: 28px 0 14px;
+    padding-left: 14px;
+    border-left: 3px solid #6366f1;
+  }
+  .theme-elegant h3 {
+    font-size: 16px;
+    font-weight: 600;
+    color: #c0c0d0;
+    margin: 20px 0 10px;
+  }
+  .theme-elegant p {
+    margin-bottom: 14px;
+    font-size: 15px;
+  }
+  .theme-elegant code {
+    background: rgba(99, 102, 241, 0.15);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 13px;
+    color: #a78bfa;
+  }
+  .theme-elegant pre {
+    background: #12121e;
+    border-radius: 12px;
+    padding: 20px;
+    margin: 16px 0;
+    overflow-x: auto;
+    border: 1px solid #1e1e2e;
+  }
+  .theme-elegant pre code { background: none; padding: 0; color: #e0e0e0; }
+  .theme-elegant blockquote {
+    border-left: 3px solid #a78bfa;
+    padding: 12px 20px;
+    margin: 16px 0;
+    background: linear-gradient(90deg, rgba(99,102,241,0.08), transparent);
+    border-radius: 0 8px 8px 0;
+  }
+  .theme-elegant table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .theme-elegant th {
+    background: rgba(99, 102, 241, 0.15);
+    padding: 10px 14px;
+    text-align: left;
+    border: 1px solid #2a2a3e;
+    color: #c0c0d0;
+  }
+  .theme-elegant td {
+    padding: 10px 14px;
+    border: 1px solid #2a2a3e;
+  }
+  .theme-elegant ul, .theme-elegant ol { padding-left: 24px; margin-bottom: 14px; }
+  .theme-elegant li { margin-bottom: 6px; }
+
+  /* Simple 主题 */
+  .theme-simple {
+    font-family: 'Inter', -apple-system, sans-serif;
+    line-height: 1.75;
+    color: #b8b8c0;
+  }
+  .theme-simple h1 {
+    font-size: 24px;
+    font-weight: 700;
+    color: #e0e0e0;
+    margin-bottom: 16px;
+  }
+  .theme-simple h2 {
+    font-size: 18px;
+    font-weight: 600;
+    color: #d0d0d0;
+    margin: 24px 0 12px;
+  }
+  .theme-simple h3 {
+    font-size: 15px;
+    font-weight: 600;
+    color: #c0c0c0;
+    margin: 18px 0 8px;
+  }
+  .theme-simple p {
+    margin-bottom: 12px;
+    font-size: 14px;
+  }
+  .theme-simple code {
+    background: #1e1e2e;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 12px;
+    color: #34d399;
+  }
+  .theme-simple pre {
+    background: #1a1a2e;
+    border-radius: 6px;
+    padding: 16px;
+    margin: 14px 0;
+    overflow-x: auto;
+  }
+  .theme-simple pre code { background: none; padding: 0; color: #e0e0e0; }
+  .theme-simple blockquote {
+    border-left: 3px solid #10b981;
+    padding: 10px 16px;
+    margin: 14px 0;
+    background: rgba(16, 185, 129, 0.05);
+    border-radius: 0 6px 6px 0;
+  }
+  .theme-simple table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0;
+  }
+  .theme-simple th {
+    background: #1a1a2e;
+    padding: 8px 12px;
+    text-align: left;
+    border: 1px solid #2a2a3e;
+  }
+  .theme-simple td {
+    padding: 8px 12px;
+    border: 1px solid #2a2a3e;
+  }
+  .theme-simple ul, .theme-simple ol { padding-left: 20px; margin-bottom: 12px; }
+  .theme-simple li { margin-bottom: 4px; }
+
+  /* ============ 场景 3：发布面板 ============ */
+  .publish-overlay {
+    position: fixed;
+    top: 36px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+  }
+  .publish-panel {
+    background: #12121e;
+    border: 1px solid #2a2a3e;
+    border-radius: 16px;
+    width: 520px;
+    padding: 28px;
+    box-shadow: 0 24px 48px rgba(0,0,0,0.5);
+  }
+  .publish-panel h3 {
+    font-size: 18px;
+    color: #e0e0e0;
+    margin-bottom: 6px;
+  }
+  .publish-panel .subtitle {
+    font-size: 13px;
+    color: #666;
+    margin-bottom: 24px;
+  }
+
+  .publish-options {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .publish-option {
+    background: #1a1a2e;
+    border: 1px solid #2a2a3e;
+    border-radius: 10px;
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .publish-option:hover {
+    border-color: #6366f1;
+    background: #1e1e32;
+  }
+  .publish-option .icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+  .publish-option .icon.copy { background: #1e293b; }
+  .publish-option .icon.html { background: #1a2e1a; }
+  .publish-option .icon.cose { background: #2e1a2e; }
+  .publish-option .info { flex: 1; }
+  .publish-option .info .name {
+    font-size: 14px;
+    color: #e0e0e0;
+    font-weight: 500;
+  }
+  .publish-option .info .desc {
+    font-size: 12px;
+    color: #666;
+    margin-top: 2px;
+  }
+  .publish-option .arrow {
+    color: #444;
+    font-size: 16px;
+  }
+
+  .publish-divider {
+    height: 1px;
+    background: #2a2a3e;
+    margin: 8px 0;
+  }
+
+  .publish-panel .close-btn {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    background: none;
+    border: none;
+    color: #666;
+    cursor: pointer;
+    font-size: 18px;
+  }
+  .publish-panel { position: relative; }
+
+  /* ============ Toast 提示 ============ */
+  .toast {
+    position: fixed;
+    bottom: 32px;
+    left: 50%;
+    transform: translateX(-50%) translateY(80px);
+    background: #1a1a2e;
+    border: 1px solid #2a2a3e;
+    color: #e0e0e0;
+    padding: 10px 20px;
+    border-radius: 10px;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    z-index: 200;
+    opacity: 0;
+    transition: all 0.3s ease;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  }
+  .toast.show {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+  }
+  .toast .toast-icon { color: #10b981; }
+
+  /* ============ 滚动条 ============ */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #2a2a3e; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #3a3a4e; }
+
+  /* ============ 辅助 ============ */
+  .fade-in {
+    animation: fadeIn 0.3s ease;
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ============ 工具栏（编辑器上方） ============ */
+  .editor-toolbar {
+    height: 40px;
+    border-bottom: 1px solid #1e1e2e;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    gap: 4px;
+    flex-shrink: 0;
+    background: #0c0c14;
+  }
+  .toolbar-btn {
+    width: 30px;
+    height: 30px;
+    border-radius: 6px;
+    border: none;
+    background: none;
+    color: #666;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    transition: all 0.15s;
+  }
+  .toolbar-btn:hover { background: #1a1a2e; color: #ccc; }
+  .toolbar-sep {
+    width: 1px;
+    height: 20px;
+    background: #2a2a3e;
+    margin: 0 6px;
+  }
+  .toolbar-label {
+    font-size: 11px;
+    color: #555;
+    margin-left: 4px;
+  }
+
+  /* ============ 文档列表侧边栏（知识库内） ============ */
+  .doc-sidebar {
+    width: 240px;
+    border-right: 1px solid #1e1e2e;
+    background: #0c0c14;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+  }
+  .doc-sidebar-header {
+    height: 48px;
+    border-bottom: 1px solid #1e1e2e;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    gap: 8px;
+  }
+  .doc-sidebar-header .title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #e0e0e0;
+    flex: 1;
+  }
+  .doc-sidebar-header .add-btn {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    border: none;
+    background: none;
+    color: #666;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+  }
+  .doc-sidebar-header .add-btn:hover { background: #1a1a2e; color: #ccc; }
+
+  .doc-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+  }
+  .doc-item {
+    padding: 10px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    margin-bottom: 2px;
+    transition: all 0.15s;
+  }
+  .doc-item:hover { background: #1a1a2e; }
+  .doc-item.active { background: #1e1e32; }
+  .doc-item .doc-name {
+    font-size: 13px;
+    color: #d0d0d0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .doc-item .doc-meta {
+    font-size: 11px;
+    color: #555;
+    margin-top: 3px;
+  }
+  .doc-item.active .doc-name { color: #a5b4fc; }
+
+  /* ============ 分栏拖拽条 ============ */
+  .resize-handle {
+    width: 4px;
+    background: transparent;
+    cursor: col-resize;
+    flex-shrink: 0;
+    position: relative;
+  }
+  .resize-handle:hover { background: #6366f1; }
+  .resize-handle::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 2px;
+    height: 32px;
+    background: #3a3a4e;
+    border-radius: 1px;
+  }
+</style>
+</head>
+<body>
+
+<!-- 原型页面切换导航 -->
+<div class="proto-nav">
+  <span>📐 原型预览：</span>
+  <button class="active" onclick="showPage('chat')">① AI 对话</button>
+  <button onclick="showPage('editor')">② 编辑排版</button>
+  <button onclick="showPage('publish')">③ 发布导出</button>
+  <span class="step-label">点击按钮切换场景 →</span>
+</div>
+
+<!-- ============ 场景 1：AI 对话（现有页面 + 编辑入口） ============ -->
+<div id="page-chat" class="proto-page active">
+  <div class="nav-rail">
+    <div class="nav-icon active">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    </div>
+    <div class="nav-icon">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+    </div>
+    <div class="nav-icon">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </div>
+    <div class="nav-spacer"></div>
+    <div class="nav-icon">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+    </div>
+  </div>
+
+  <div class="chat-area">
+    <div class="chat-header">
+      <div class="logo">墨</div>
+      <span class="title">Molio</span>
+      <span class="agent-badge">⚡ Claude Sonnet 4</span>
+    </div>
+
+    <div class="chat-messages">
+      <!-- 用户消息 -->
+      <div class="msg-block fade-in">
+        <div class="msg-label">
+          <span>User</span>
+          <span style="color:#444; font-size:10px;">14:30</span>
+        </div>
+        <div class="msg-user">帮我写一篇关于 Rust 异步编程的技术博客，包含 async/await 的基础用法和一个实际的 HTTP 服务器示例</div>
+      </div>
+
+      <!-- AI 回复 -->
+      <div class="msg-block fade-in">
+        <div class="msg-label">
+          <span>Assistant</span>
+          <span style="color:#444; font-size:10px;">14:31</span>
+        </div>
+        <div class="msg-assistant">
+          <h2>Rust 异步编程：从零开始的 async/await 实战</h2>
+          <p>Rust 的异步编程模型是零成本抽象的典范——你在编写直观的 <code>async/await</code> 代码时，编译器会将其转化为高效的状态机，没有运行时开销。</p>
+
+          <h3>为什么选择 async Rust？</h3>
+          <p>传统的多线程模型为每个连接分配一个完整的线程栈（通常 2-8MB），在高并发场景下内存消耗巨大。异步模型则允许你在少量线程上运行成千上万个任务：</p>
+
+          <table>
+            <thead>
+              <tr><th>特性</th><th>多线程模型</th><th>异步模型</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>并发单位</td><td>OS 线程</td><td>Future/Task</td></tr>
+              <tr><td>内存开销</td><td>~2-8MB/连接</td><td>~几百字节/任务</td></tr>
+              <tr><td>调度方式</td><td>内核调度</td><td>用户态调度</td></tr>
+            </tbody>
+          </table>
+
+          <h3>基础用法</h3>
+          <pre><code>use tokio;
+
+#[tokio::main]
+async fn main() {
+    let result = fetch_data("https://api.example.com").await;
+    println!("Got: {}", result);
+}
+
+async fn fetch_data(url: &str) -> String {
+    // 模拟异步操作
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    format!("Response from {}", url)
+}</code></pre>
+
+          <blockquote>关键点：<code>.await</code> 不会阻塞线程，它只是告诉运行时「这个任务在等待 IO，你可以去执行其他任务」。</blockquote>
+
+          <h3>实战：构建异步 HTTP 服务器</h3>
+          <p>使用 <code>hyper</code> 和 <code>tokio</code> 构建一个高性能的 HTTP 服务器：</p>
+
+          <pre><code>use hyper::{Body, Request, Response, Server};
+use hyper::service::{make_service_fn, service_fn};
+use std::convert::Infallible;
+use std::net::SocketAddr;
+
+async fn handle(req: Request&lt;Body&gt;) -> Result&lt;Response&lt;Body&gt;, Infallible&gt; {
+    match req.uri().path() {
+        "/" => Ok(Response::new(Body::from("Hello, async Rust!"))),
+        "/api/status" => Ok(Response::new(Body::from(r#"{"status":"ok"}"#))),
+        _ => Ok(Response::builder()
+            .status(404)
+            .body(Body::from("Not Found"))
+            .unwrap()),
+    }
+}</code></pre>
+
+          <p>这段代码展示了 async Rust 的优雅之处：模式匹配处理路由、零拷贝的 <code>Body</code> 类型、以及编译期就保证的类型安全。</p>
+        </div>
+
+        <!-- 消息操作按钮 -->
+        <div class="msg-actions">
+          <button class="msg-action-btn" onclick="copyText()">📋 复制</button>
+          <button class="msg-action-btn primary" onclick="showPage('editor')">✏️ 编辑排版</button>
+          <button class="msg-action-btn">🔄 重新生成</button>
+          <button class="msg-action-btn">💾 保存到知识库</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="chat-composer">
+      <div class="composer-box">
+        <textarea rows="1" placeholder="输入消息…">继续写，加入错误处理和性能测试的部分</textarea>
+        <button class="composer-send">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 场景 2：编辑排版 ============ -->
+<div id="page-editor" class="proto-page">
+  <div class="nav-rail">
+    <div class="nav-icon">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    </div>
+    <div class="nav-icon">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+    </div>
+    <div class="nav-icon active">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+    </div>
+    <div class="nav-icon">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </div>
+    <div class="nav-spacer"></div>
+  </div>
+
+  <!-- 文档列表侧边栏 -->
+  <div class="doc-sidebar">
+    <div class="doc-sidebar-header">
+      <span class="title">我的文档</span>
+      <button class="add-btn" title="新建文档">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
+    </div>
+    <div class="doc-list">
+      <div class="doc-item active">
+        <div class="doc-name">Rust 异步编程实战</div>
+        <div class="doc-meta">刚刚 · 来自 AI 对话</div>
+      </div>
+      <div class="doc-item">
+        <div class="doc-name">TypeScript 类型体操指南</div>
+        <div class="doc-meta">2 小时前</div>
+      </div>
+      <div class="doc-item">
+        <div class="doc-name">Docker Compose 最佳实践</div>
+        <div class="doc-meta">昨天</div>
+      </div>
+      <div class="doc-item">
+        <div class="doc-name">Git 工作流选型</div>
+        <div class="doc-meta">3 天前</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="editor-area">
+    <!-- 编辑器顶栏 -->
+    <div class="editor-topbar">
+      <button class="back-btn" onclick="showPage('chat')" title="返回对话">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+      </button>
+      <input class="doc-title" value="Rust 异步编程：从零开始的 async/await 实战" />
+      <span class="save-status">已自动保存</span>
+      <div class="spacer"></div>
+
+      <!-- 排版主题 -->
+      <span class="toolbar-label">排版主题</span>
+      <div class="theme-selector">
+        <div class="theme-dot classic" title="经典" onclick="setTheme('classic')"></div>
+        <div class="theme-dot elegant active" title="优雅" onclick="setTheme('elegant')"></div>
+        <div class="theme-dot simple" title="简洁" onclick="setTheme('simple')"></div>
+        <div class="theme-dot custom" title="自定义 CSS">+</div>
+      </div>
+
+      <div class="toolbar-sep"></div>
+
+      <!-- 代码主题 -->
+      <select class="code-theme-select">
+        <option>one-dark</option>
+        <option>github-dark</option>
+        <option>dracula</option>
+        <option>monokai</option>
+      </select>
+
+      <div class="toolbar-sep"></div>
+
+      <!-- 发布 -->
+      <button class="publish-btn" onclick="showPage('publish')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+        发布
+      </button>
+    </div>
+
+    <!-- 工具栏 -->
+    <div class="editor-toolbar">
+      <button class="toolbar-btn" title="加粗"><b>B</b></button>
+      <button class="toolbar-btn" title="斜体"><i>I</i></button>
+      <button class="toolbar-btn" title="代码">&lt;/&gt;</button>
+      <div class="toolbar-sep"></div>
+      <button class="toolbar-btn" title="标题">H</button>
+      <button class="toolbar-btn" title="引用">"</button>
+      <button class="toolbar-btn" title="列表">☰</button>
+      <div class="toolbar-sep"></div>
+      <button class="toolbar-btn" title="表格">▦</button>
+      <button class="toolbar-btn" title="图片">🖼</button>
+      <button class="toolbar-btn" title="链接">🔗</button>
+      <div class="toolbar-sep"></div>
+      <button class="toolbar-btn" title="公式">∑</button>
+      <button class="toolbar-btn" title="图表">◈</button>
+      <div class="toolbar-sep"></div>
+      <button class="toolbar-btn" title="AI 润色">✨</button>
+      <span class="toolbar-label" style="margin-left:auto; color:#444;">Markdown</span>
+    </div>
+
+    <!-- 编辑器主体 -->
+    <div class="editor-body">
+      <!-- 编辑区 -->
+      <div class="editor-pane">
+        <div class="editor-pane-label">
+          <span>编辑</span>
+          <span class="word-count">1,247 字 · 86 行</span>
+        </div>
+        <textarea class="editor-textarea" spellcheck="false">## Rust 异步编程：从零开始的 async/await 实战
+
+Rust 的异步编程模型是零成本抽象的典范——你在编写直观的 `async/await` 代码时，编译器会将其转化为高效的状态机，没有运行时开销。
+
+### 为什么选择 async Rust？
+
+传统的多线程模型为每个连接分配一个完整的线程栈（通常 2-8MB），在高并发场景下内存消耗巨大。异步模型则允许你在少量线程上运行成千上万个任务：
+
+| 特性 | 多线程模型 | 异步模型 |
+|------|-----------|---------|
+| 并发单位 | OS 线程 | Future/Task |
+| 内存开销 | ~2-8MB/连接 | ~几百字节/任务 |
+| 调度方式 | 内核调度 | 用户态调度 |
+
+### 基础用法
+
+```rust
+use tokio;
+
+#[tokio::main]
+async fn main() {
+    let result = fetch_data("https://api.example.com").await;
+    println!("Got: {}", result);
+}
+
+async fn fetch_data(url: &str) -> String {
+    // 模拟异步操作
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    format!("Response from {}", url)
+}
+```
+
+> 关键点：`.await` 不会阻塞线程，它只是告诉运行时「这个任务在等待 IO，你可以去执行其他任务」。
+
+### 实战：构建异步 HTTP 服务器
+
+使用 `hyper` 和 `tokio` 构建一个高性能的 HTTP 服务器：
+
+```rust
+use hyper::{Body, Request, Response, Server};
+use hyper::service::{make_service_fn, service_fn};
+use std::convert::Infallible;
+use std::net::SocketAddr;
+
+async fn handle(req: Request<Body>) -> Result<Response<Body>, Infallible> {
+    match req.uri().path() {
+        "/" => Ok(Response::new(Body::from("Hello, async Rust!"))),
+        "/api/status" => Ok(Response::new(Body::from(r#"{"status":"ok"}"#))),
+        _ => Ok(Response::builder()
+            .status(404)
+            .body(Body::from("Not Found"))
+            .unwrap()),
+    }
+}
+```
+
+这段代码展示了 async Rust 的优雅之处：模式匹配处理路由、零拷贝的 `Body` 类型、以及编译期就保证的类型安全。</textarea>
+      </div>
+
+      <div class="resize-handle"></div>
+
+      <!-- 预览区 -->
+      <div class="preview-pane">
+        <div class="editor-pane-label">
+          <span>预览</span>
+          <span style="margin-left:auto; color:#444; text-transform:none; letter-spacing:0; font-size:11px;" id="current-theme-label">优雅主题</span>
+        </div>
+        <div class="preview-content" id="preview-area">
+          <!-- 预览内容由 JS 渲染 -->
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 场景 3：发布导出 ============ -->
+<div id="page-publish" class="proto-page">
+  <div class="nav-rail">
+    <div class="nav-icon">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    </div>
+    <div class="nav-icon">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+    </div>
+    <div class="nav-icon active">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+    </div>
+    <div class="nav-icon">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </div>
+    <div class="nav-spacer"></div>
+  </div>
+
+  <div class="editor-area" style="position: relative;">
+    <!-- 编辑器背景（模糊） -->
+    <div style="flex:1; display:flex; opacity:0.3; filter:blur(2px);">
+      <div class="editor-pane" style="flex:1;">
+        <div class="editor-pane-label"><span>编辑</span></div>
+        <div style="padding:20px; color:#666; font-size:14px; font-family:monospace;">## Rust 异步编程...</div>
+      </div>
+      <div class="preview-pane" style="flex:1;">
+        <div class="editor-pane-label"><span>预览</span></div>
+      </div>
+    </div>
+
+    <!-- 发布弹窗 -->
+    <div class="publish-overlay" onclick="if(event.target===this)showPage('editor')">
+      <div class="publish-panel">
+        <button class="close-btn" onclick="showPage('editor')">✕</button>
+        <h3>发布与导出</h3>
+        <p class="subtitle">选择导出方式，排版后的内容将自动适配目标平台格式</p>
+
+        <div class="publish-options">
+          <div class="publish-option" onclick="showToast('已复制排版后的 HTML 到剪贴板')">
+            <div class="icon copy">📋</div>
+            <div class="info">
+              <div class="name">复制到剪贴板</div>
+              <div class="desc">排版后的富文本 HTML（带内联样式），可直接粘贴到微信/飞书/Notion</div>
+            </div>
+            <span class="arrow">→</span>
+          </div>
+
+          <div class="publish-option" onclick="showToast('Markdown 文件已下载')">
+            <div class="icon html">📄</div>
+            <div class="info">
+              <div class="name">导出 Markdown 文件</div>
+              <div class="desc">原始 .md 文件，保留所有 Markdown 语法，适合博客/GitHub/文档站</div>
+            </div>
+            <span class="arrow">→</span>
+          </div>
+
+          <div class="publish-option" onclick="showToast('HTML 文件已下载')">
+            <div class="icon html" style="background:#1a2e2e;">🌐</div>
+            <div class="info">
+              <div class="name">导出 HTML 文件</div>
+              <div class="desc">自包含 HTML 文件（CSS 内联），可直接在浏览器打开或上传到网站</div>
+            </div>
+            <span class="arrow">→</span>
+          </div>
+
+          <div class="publish-divider"></div>
+
+          <div class="publish-option" onclick="showToast('请在 Chrome 中安装 cose 扩展后使用')">
+            <div class="icon cose">🚀</div>
+            <div class="info">
+              <div class="name">一键发布到多平台 <span style="font-size:11px; color:#6366f1; margin-left:4px;">cose 扩展</span></div>
+              <div class="desc">微信公众号、知乎、掘金、CSDN、头条等 30+ 平台（需安装 Chrome 扩展）</div>
+            </div>
+            <span class="arrow">→</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast">
+  <span class="toast-icon">✓</span>
+  <span id="toast-text">已复制</span>
+</div>
+
+<script>
+// 页面切换
+function showPage(name) {
+  document.querySelectorAll('.proto-page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  document.querySelectorAll('.proto-nav button').forEach((b, i) => {
+    b.classList.toggle('active', ['chat','editor','publish'][i] === name);
+  });
+  if (name === 'editor') renderPreview();
+}
+
+// 主题切换
+let currentTheme = 'elegant';
+function setTheme(theme) {
+  currentTheme = theme;
+  document.querySelectorAll('.theme-dot').forEach(d => d.classList.remove('active'));
+  document.querySelector('.theme-dot.' + theme).classList.add('active');
+  const labels = { classic: '经典主题', elegant: '优雅主题', simple: '简洁主题' };
+  document.getElementById('current-theme-label').textContent = labels[theme] || theme;
+  renderPreview();
+}
+
+// 简易 Markdown → HTML（仅原型展示用）
+function miniRender(md) {
+  let html = md
+    .replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+    .replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/^- (.+)$/gm, '<li>$1</li>')
+    .replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
+
+  // 简单表格
+  html = html.replace(/\|(.+)\|/g, (match) => {
+    const cells = match.split('|').filter(c => c.trim());
+    if (cells.every(c => /^[-\s]+$/.test(c))) return '';
+    const tag = match.indexOf('---') > -1 ? 'td' : 'td';
+    return '<tr>' + cells.map(c => `<${tag}>${c.trim()}</${tag}>`).join('') + '</tr>';
+  });
+  html = html.replace(/(<tr>.*<\/tr>\s*)+/g, '<table>$&</table>');
+
+  // 段落
+  html = html.split('\n\n').map(block => {
+    if (block.startsWith('<')) return block;
+    if (block.trim()) return '<p>' + block.replace(/\n/g, '<br>') + '</p>';
+    return '';
+  }).join('\n');
+
+  return html;
+}
+
+function renderPreview() {
+  const md = document.querySelector('.editor-textarea').value;
+  const area = document.getElementById('preview-area');
+  area.className = 'preview-content theme-' + currentTheme;
+  area.innerHTML = '<div class="fade-in">' + miniRender(md) + '</div>';
+}
+
+// Toast
+function showToast(text) {
+  const t = document.getElementById('toast');
+  document.getElementById('toast-text').textContent = text;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+function copyText() {
+  showToast('已复制 Markdown 到剪贴板');
+}
+
+// 初始化
+renderPreview();
+</script>
+</body>
+</html>

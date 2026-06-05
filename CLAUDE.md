@@ -16,9 +16,9 @@
 
 ```
 packages/
-  contracts/    @kge/contracts  — shared types (AgentEvent, RunInfo, API types, SSE)
+  contracts/    @molio/contracts  — shared types (AgentEvent, RunInfo, API types, SSE)
 apps/
-  daemon/       @kge/daemon    — Hono HTTP server, RunManager, SSE transport (→ CLAUDE.md)
+  daemon/       @molio/daemon    — Hono HTTP server, RunManager, SSE transport (→ CLAUDE.md)
     src/
       core/     RunManager, config, db (SQLite), transcript, runtimes/, streams/
       runtimes/ claude, codex, gemini, qwen — registry, launch, env
@@ -27,14 +27,14 @@ apps/
       server.ts Hono app with CORS
       index.ts  Entry: @hono/node-server on port 3100
     test/       错误驱动测试用例 (node:test)
-  web/          @kge/web       — Vite + React web UI consuming daemon SSE (→ CLAUDE.md)
+  web/          @molio/web       — Vite + React web UI consuming daemon SSE (→ CLAUDE.md)
     src/
       api/      client.ts, sse.ts
       hooks/    useAgents, useChat, useProjects
       components/ HomePage, NavRail, ChatPane, ChatComposer, UserMessage, AssistantMessage, ThinkingBlock, ToolCard
       styles/   tokens, base, rail, home, chat
     e2e/        E2E 测试场景
-  desktop/      @kge/desktop   — Electron shell (deferred, placeholder only) (→ CLAUDE.md)
+  desktop/      @molio/desktop   — Electron shell (deferred, placeholder only) (→ CLAUDE.md)
 ```
 
 ### Build & Dev Commands
@@ -98,9 +98,16 @@ pnpm package:dir    # 仅生成未打包目录 (不生成安装包)
 - `juice` CSS 内联：将样式内联到 HTML 元素，确保微信编辑器粘贴兼容
 - 剪贴板双格式写入：`text/html` + `text/plain` 同时写入
 
-**集成方式**: `@md/core` 是 workspace 私有包，未发布 npm。需要 vendor 核心渲染代码（`marked` + 扩展 + 主题系统 + CSS 处理），或基于 `marked` + `highlight.js` 自建并参考其主题架构。
+**集成方式**: `@md/core` 是 workspace 私有包，未发布 npm。已将核心渲染代码 vendor 到 `apps/web/vendor/doocs-md/`，配合更新脚本实现便捷升级。
 
-**当前状态**: 项目使用手写正则 Markdown 渲染器（`renderMarkdown()` 函数），待替换为 doocs/md 渲染引擎。
+**当前状态**: ✅ 已集成。知识库文件查看页面使用 doocs/md 渲染，支持排版模式（左右分栏编辑器 + 实时预览 + 样式面板）。
+
+**更新方法**:
+```bash
+cd apps/web
+./scripts/update-doocs-md.sh main  # 拉取最新版本
+pnpm install
+```
 
 ### doocs/cose — 全平台分发
 

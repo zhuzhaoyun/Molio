@@ -2,7 +2,7 @@ import type {
   AgentInfo, RunInfo, CreateRunRequest, ToolResultRequest,
   ChatMessage, Project, Conversation,
   Vault, TreeNode, FileContent, KbHistoryEntry, CreateVaultRequest,
-} from '@kge/contracts';
+} from '@molio/contracts';
 
 const BASE = '/api';
 

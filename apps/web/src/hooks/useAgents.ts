@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import type { AgentInfo } from '@kge/contracts';
+import type { AgentInfo } from '@molio/contracts';
 import { api } from '../api/client';
 
 export function useAgents() {
