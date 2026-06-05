@@ -1,0 +1,44 @@
+# Open Source License
+
+Molio is licensed under a modified version of the Apache License 2.0, with the following additional conditions:
+
+1. Molio may be utilized commercially, including as a backend service for
+   other applications or as a knowledge management platform for enterprises.
+   Should the conditions below be met, a commercial license must be obtained
+   from the producer:
+
+   a. Hosted or embedded service: Unless explicitly authorized by Molio
+      in writing, you may not use the Molio source code to provide a
+      hosted service to third parties, or embed Molio as a component of
+      a product or service that is sold, licensed, or otherwise
+      commercially distributed to third parties.
+
+      - This restriction applies to offering Molio (in whole or
+        substantial part) as a SaaS platform, a managed service, or as
+        an integrated component within another commercial offering.
+      - Internal use within a single organization (including multiple
+        workspaces) does not require a commercial license.
+
+   b. LOGO and copyright information: In the process of using Molio's
+      frontend, you may not remove or modify the LOGO or copyright
+      information in the Molio console or applications. This restriction
+      is inapplicable to uses of Molio that do not involve its frontend.
+
+      - Frontend Definition: For the purposes of this license, the
+        "frontend" of Molio includes all components located in the
+        `apps/web/` directory when running Molio from the raw source
+        code.
+
+2. As a contributor, you should agree that:
+
+   a. The producer can adjust the open-source agreement to be more strict
+      or relaxed as deemed necessary.
+
+   b. Your contributed code may be used for commercial purposes, including
+      but not limited to its cloud business operations.
+
+Apart from the specific conditions mentioned above, all other rights and
+restrictions follow the Apache License 2.0. Detailed information about the
+Apache License 2.0 can be found at http://www.apache.org/licenses/LICENSE-2.0.
+
+© 2025 Molio
