@@ -50,7 +50,8 @@ test/
 ## 命令
 
 ```bash
-pnpm dev          # tsx watch src/index.ts (热重载)
+pnpm dev          # tsx src/index.ts
+pnpm dev:watch    # tsx watch src/index.ts (热重载，独立开发用)
 pnpm build        # tsc 编译到 dist/
 pnpm test         # tsc && node --test "dist/test/**/*.test.js"
 pnpm typecheck    # tsc --noEmit
