@@ -535,17 +535,6 @@
   max-width: 320px;
 }
 
-/* ══════════ Column 4: Action Bar ══════════ */
-.kb-action-bar {
-  width: 220px;
-  flex-shrink: 0;
-  background: var(--bg-panel);
-  border-left: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
 /* ══════════ Modals ══════════ */
 .kb-overlay {
   display: none;

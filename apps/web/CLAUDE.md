@@ -37,7 +37,6 @@ src/
       KnowledgeBasePage.tsx  知识库页面（文件面板 + 主内容区）
       KbFilePanel.tsx         文件树面板（搜索、文件列表、vault 切换）
       KbMainContent.tsx       主内容区（渲染 + 排版模式）
-      KbActionBar.tsx         右侧操作栏（预留）
       KbModals.tsx            模态框（vault 创建/切换/导入）
       MdRenderer.tsx          doocs/md 渲染引擎封装
       MdTypesetEditor.tsx     左右分栏排版编辑器

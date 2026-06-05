@@ -1,12 +1,11 @@
 /**
- * Knowledge Base page — assembles file panel, main content, action bar, and modals.
+ * Knowledge Base page — assembles file panel, main content, and modals.
  */
 
 import { useCallback, useRef } from 'react';
 import { useKnowledge } from '../../hooks/useKnowledge';
 import { KbFilePanel } from './KbFilePanel';
 import { KbMainContent } from './KbMainContent';
-import { KbActionBar } from './KbActionBar';
 import { VaultSwitcherModal, AddVaultModal, ImportModal } from './KbModals';
 
 export function KnowledgeBasePage() {
@@ -75,9 +74,6 @@ export function KnowledgeBasePage() {
         onCopy={kb.copyToClipboard}
         onPublish={() => {/* TODO: publish flow */}}
       />
-
-      {/* Action Bar (reserved) */}
-      <KbActionBar />
 
       {/* Modals */}
       <VaultSwitcherModal
