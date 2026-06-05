@@ -36,6 +36,7 @@ interface UseKnowledgeReturn {
   showVaultSwitcher: boolean;
   showAddVault: boolean;
   showImport: boolean;
+  showCoseInstallPrompt: boolean;
 
   // Actions
   selectVault: (id: string) => void;
@@ -55,6 +56,8 @@ interface UseKnowledgeReturn {
   setThemeConfig: (config: ThemeConfig) => void;
   setEditedContent: (content: string) => void;
   copyToClipboard: () => Promise<void>;
+  publishToChrome: () => Promise<void>;
+  setShowCoseInstallPrompt: (show: boolean) => void;
 }
 
 export function useKnowledge(): UseKnowledgeReturn {
@@ -73,6 +76,7 @@ export function useKnowledge(): UseKnowledgeReturn {
   const [showVaultSwitcher, setShowVaultSwitcher] = useState(false);
   const [showAddVault, setShowAddVault] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [showCoseInstallPrompt, setShowCoseInstallPrompt] = useState(false);
 
   // Typeset mode state
   const [isTypesetMode, setIsTypesetMode] = useState(false);
@@ -215,6 +219,34 @@ export function useKnowledge(): UseKnowledgeReturn {
     }
   }, [editedContent, fileContent]);
 
+  const publishToChrome = useCallback(async () => {
+    const markdownSource = editedContent ?? fileContent?.content ?? '';
+    if (!markdownSource) return;
+
+    // 1. Check COSE extension
+    const { installed } = await api.checkCose();
+    if (!installed) {
+      setShowCoseInstallPrompt(true);
+      return;
+    }
+
+    // 2. Get rendered HTML from #output
+    const outputEl = document.querySelector('#output');
+    const html = outputEl?.innerHTML ?? '';
+
+    // 3. Get resolved theme CSS from <style id="md-theme">
+    const themeStyleEl = document.getElementById('md-theme');
+    const css = themeStyleEl?.textContent ?? '';
+
+    // 4. Extract title from markdown (first heading)
+    const headingMatch = markdownSource.match(/^#{1,6}\s+(.+)$/m);
+    const title = headingMatch?.[1]?.trim() ?? selectedFile?.split('/').pop()?.replace(/\.md$/, '') ?? '';
+
+    // 5. Start bridge server and open Chrome
+    const { bridgeUrl } = await api.startPublish({ title, markdown: markdownSource, html, css });
+    window.open(bridgeUrl, '_blank');
+  }, [editedContent, fileContent, selectedFile]);
+
   return {
     vaults,
     activeVault,
@@ -232,6 +264,7 @@ export function useKnowledge(): UseKnowledgeReturn {
     showVaultSwitcher,
     showAddVault,
     showImport,
+    showCoseInstallPrompt,
     selectVault,
     createVault,
     deleteVault,
@@ -247,5 +280,7 @@ export function useKnowledge(): UseKnowledgeReturn {
     setThemeConfig,
     setEditedContent: handleEditedContentChange,
     copyToClipboard,
+    publishToChrome,
+    setShowCoseInstallPrompt,
   };
 }
