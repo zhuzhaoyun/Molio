@@ -82,6 +82,8 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  text-decoration: none;
+  padding: 0;
   transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
 }
 .entry-nav-rail__btn > svg {

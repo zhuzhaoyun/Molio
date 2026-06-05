@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Routes, Route } from 'react-router-dom';
 import { useAgents } from './hooks/useAgents';
 import { useChat } from './hooks/useChat';
 import { HomePage } from './components/HomePage';
@@ -13,15 +14,12 @@ import './styles/knowledge.css';
 import './styles/runtimes.css';
 import './App.css';
 
-type View = 'home' | 'knowledge' | 'runtimes';
-
 export default function App() {
   const { agents } = useAgents();
   const [defaultAgentId, setDefaultAgentId] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [activeVault, setActiveVault] = useState<Vault | null>(null);
   const chat = useChat({ agentId: selectedAgent, cwd: activeVault?.path });
-  const [activeView, setActiveView] = useState<View>('home');
 
   // Load config to get defaultAgentId
   useEffect(() => {
@@ -80,23 +78,26 @@ export default function App() {
 
   return (
     <div className="entry-shell">
-      <NavRail activeView={activeView} onViewChange={setActiveView} />
+      <NavRail />
       <div className="entry-main">
-        {activeView === 'home' ? (
-          <HomePage
-            selectedAgentName={agents.find((a) => a.id === selectedAgent)?.name ?? null}
-            messages={chat.messages}
-            isRunning={chat.isRunning}
-            onSend={chat.send}
-            onCancel={chat.cancel}
-            onNewChat={handleNewChat}
-            onSubmitToolResult={chat.submitToolResult}
+        <Routes>
+          <Route
+            path="/"
+            element={
+              <HomePage
+                selectedAgentName={agents.find((a) => a.id === selectedAgent)?.name ?? null}
+                messages={chat.messages}
+                isRunning={chat.isRunning}
+                onSend={chat.send}
+                onCancel={chat.cancel}
+                onNewChat={handleNewChat}
+                onSubmitToolResult={chat.submitToolResult}
+              />
+            }
           />
-        ) : activeView === 'knowledge' ? (
-          <KnowledgeBasePage />
-        ) : (
-          <RuntimePage />
-        )}
+          <Route path="/knowledge" element={<KnowledgeBasePage />} />
+          <Route path="/runtimes" element={<RuntimePage />} />
+        </Routes>
       </div>
     </div>
   );

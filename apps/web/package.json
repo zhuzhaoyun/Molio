@@ -10,20 +10,21 @@
   },
   "dependencies": {
     "@molio/contracts": "workspace:*",
+    "es-toolkit": "^1.47.0",
+    "fflate": "^0.8.3",
+    "front-matter": "^4.0.2",
+    "highlight.js": "^11.11.1",
+    "isomorphic-dompurify": "^3.15.0",
+    "marked": "^18.0.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "marked": "^18.0.4",
-    "highlight.js": "^11.11.1",
-    "front-matter": "^4.0.2",
-    "isomorphic-dompurify": "^3.15.0",
-    "es-toolkit": "^1.47.0",
-    "fflate": "^0.8.3"
+    "react-router-dom": "^7.16.0"
   },
   "devDependencies": {
-    "vite": "^6.3.0",
-    "@vitejs/plugin-react": "^4.3.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "typescript": "^5.8.3"
+    "@vitejs/plugin-react": "^4.3.0",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.0"
   }
 }
