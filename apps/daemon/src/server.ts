@@ -13,6 +13,7 @@ import { toolResultRoutes } from './routes/tool-result.js';
 import { configRoutes } from './routes/config.js';
 import { projectRoutes } from './routes/projects.js';
 import { knowledgeRoutes } from './routes/knowledge.js';
+import { publishRoutes, cleanupAllBridges } from './routes/publish.js';
 
 export const runManager = new RunManager();
 export const db: Database.Database = openDatabase();
@@ -46,6 +47,7 @@ app.route('/api/runs', toolResultRoutes(runManager));
 app.route('/api/config', configRoutes());
 app.route('/api/projects', projectRoutes(db));
 app.route('/api/knowledge', knowledgeRoutes(db));
+app.route('/api/publish', publishRoutes());
 
 // Static file serving (production / desktop mode)
 const staticDir = process.env['KGE_STATIC_DIR'];
@@ -66,12 +68,14 @@ if (staticDir) {
 
 // Graceful shutdown
 process.on('SIGINT', () => {
+  cleanupAllBridges();
   runManager.cancelAll();
   closeDatabase();
   process.exit(0);
 });
 
 process.on('SIGTERM', () => {
+  cleanupAllBridges();
   runManager.cancelAll();
   closeDatabase();
   process.exit(0);

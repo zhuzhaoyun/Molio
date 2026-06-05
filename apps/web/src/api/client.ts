@@ -251,4 +251,30 @@ export const api = {
     const data = await res.json();
     return data.history;
   },
+
+  // ─── Publish ───
+
+  async checkCose(): Promise<{ installed: boolean }> {
+    const res = await fetch(`${BASE}/publish/check-cose`, { method: 'POST' });
+    if (!res.ok) throw new Error(`Failed to check COSE: ${res.status}`);
+    return res.json();
+  },
+
+  async startPublish(data: {
+    title: string;
+    markdown: string;
+    html: string;
+    css: string;
+  }): Promise<{ bridgeUrl: string }> {
+    const res = await fetch(`${BASE}/publish/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error?.message ?? `Failed to start publish: ${res.status}`);
+    }
+    return res.json();
+  },
 };
