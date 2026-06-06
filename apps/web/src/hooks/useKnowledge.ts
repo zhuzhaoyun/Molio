@@ -40,6 +40,7 @@ interface UseKnowledgeReturn {
   // Actions
   selectVault: (id: string) => void;
   createVault: (name: string, path: string, description?: string) => Promise<void>;
+  openVault: (path: string) => Promise<void>;
   deleteVault: (id: string) => Promise<void>;
   selectFile: (path: string) => void;
   refreshTree: () => void;
@@ -166,6 +167,14 @@ export function useKnowledge(): UseKnowledgeReturn {
     setShowAddVault(false);
   }, []);
 
+  const openVault = useCallback(async (path: string) => {
+    // Derive a name from the last path segment
+    const name = path.split(/[\/]/).pop() || '未命名仓库';
+    const vault = await api.createVault({ name, path, description: `从本地文件夹打开: ${path}` });
+    setVaults((prev) => [vault, ...prev]);
+    setActiveVaultId(vault.id);
+  }, []);
+
   const deleteVault = useCallback(async (id: string) => {
     await api.deleteVault(id);
     setVaults((prev) => prev.filter((v) => v.id !== id));
@@ -243,6 +252,7 @@ export function useKnowledge(): UseKnowledgeReturn {
     setShowVaultSwitcher,
     setShowAddVault,
     setShowImport,
+    openVault,
     toggleTypesetMode,
     setThemeConfig,
     setEditedContent: handleEditedContentChange,

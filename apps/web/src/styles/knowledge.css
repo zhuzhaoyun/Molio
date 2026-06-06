@@ -1171,25 +1171,50 @@
   left: 18px;
 }
 
-/* ══════════ Vault Manager (Obsidian-style) ══════════ */
+/* ══════════ Vault Manager (Obsidian-style Modal) ══════════ */
 
-.vm-shell {
+/* Modal overlay — centered */
+.vm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+}
+
+/* Modal container — two columns, centered card */
+.vm-modal {
   display: flex;
   width: 100%;
-  height: 100%;
+  max-width: 900px;
+  height: 580px;
+  max-height: 80vh;
   overflow: hidden;
+  background: var(--bg);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg), 0 0 0 1px var(--border);
 }
 
 /* ── Left: Vault List ── */
-.vm-list {
-  width: 320px;
-  min-width: 260px;
-  max-width: 400px;
+.vm-modal-left {
+  width: 280px;
+  min-width: 240px;
+  max-width: 320px;
   flex-shrink: 0;
   background: var(--bg);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+}
+
+.vm-list {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
   overflow: hidden;
 }
 
@@ -1298,14 +1323,14 @@
 }
 
 /* ── Right: Action Panel ── */
-.vm-panel {
+.vm-modal-right {
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   overflow-y: auto;
-  padding: 48px 24px;
+  padding: 40px 32px;
   background: var(--bg);
 }
 
