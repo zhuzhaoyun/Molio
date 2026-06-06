@@ -40,7 +40,7 @@ jobs:
         shell: bash
         run: |
           if [ -n "${{ inputs.version }}" ]; then
-            version="${{ inputs.version }}"
+            version=$(echo "${{ inputs.version }}" | xargs)
           else
             raw=$(git describe --tags --always --dirty)
             version=${raw#v}
@@ -53,4 +53,4 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: npx electron-builder --win --publish always --config.extraMetadata.version=${{ steps.version.outputs.version }}
+        run: npx electron-builder --win --publish always "--config.extraMetadata.version=${{ steps.version.outputs.version }}"
