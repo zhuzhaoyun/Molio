@@ -15,9 +15,12 @@ on:
 permissions:
   contents: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   desktop:
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
         with:
@@ -40,9 +43,9 @@ jobs:
         shell: bash
         run: |
           if [ -n "${{ inputs.version }}" ]; then
-            version="${{ inputs.version }}"
+            version=$(echo "${{ inputs.version }}" | xargs)
           else
-            raw=$(git describe --tags --always --dirty)
+            raw=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
             version=${raw#v}
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -53,4 +56,4 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: npx electron-builder --win --publish always --config.extraMetadata.version=${{ steps.version.outputs.version }}
+        run: npx electron-builder --win --publish always "--config.extraMetadata.version=${{ steps.version.outputs.version }}"

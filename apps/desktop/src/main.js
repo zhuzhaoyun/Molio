@@ -16,8 +16,12 @@ function isDevMode() {
 
 /** Find the system Node.js binary (not Electron's embedded one) */
 function findSystemNode() {
+  const isWin = process.platform === 'win32';
   try {
-    const result = execFileSync('where.exe', ['node'], { encoding: 'utf-8' }).trim();
+    // Windows uses where.exe, Unix (macOS/Linux) uses which
+    const cmd = isWin ? 'where.exe' : 'which';
+    const result = execFileSync(cmd, ['node'], { encoding: 'utf-8' }).trim();
+    // Windows may return multiple lines, Unix returns a single path
     const nodePath = result.split(/\r?\n/)[0];
     if (nodePath) return nodePath;
   } catch { /* fall through */ }
