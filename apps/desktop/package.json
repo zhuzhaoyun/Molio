@@ -15,7 +15,9 @@
     "run:unpacked": "electron-builder --win --dir && echo 'Run: ./dist/win-unpacked/墨流 Molio.exe'",
     "typecheck": "echo 'desktop: no TS to check'"
   },
-  "dependencies": {},
+  "dependencies": {
+    "electron-updater": "^6.8.3"
+  },
   "devDependencies": {
     "electron": "^33.0.0",
     "electron-builder": "^25.1.8",
@@ -34,7 +36,9 @@
       {
         "from": "resources",
         "to": ".",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "asarUnpack": [
@@ -45,15 +49,24 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "signAndEditExecutable": false
     },
     "nsis": {
+      "artifactName": "${productName}-Setup-${version}-windows.${ext}",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "deleteAppDataOnUninstall": false
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "zhuzhaoyun",
+      "repo": "Molio",
+      "releaseType": "release"
     }
   }
 }

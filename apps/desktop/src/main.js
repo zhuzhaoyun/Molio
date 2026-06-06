@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import { spawn, execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { setupAutoUpdater } from './updater.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -73,7 +74,7 @@ function createWindow() {
     title: 'Molio',
     show: false, // Show after ready-to-show to avoid white flash
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
       webSecurity: true,
@@ -97,6 +98,17 @@ function createWindow() {
   }
 }
 
+// ─── App info IPC (sync, used by preload) ───
+
+ipcMain.on('app:get-info', (event) => {
+  const platform = process.platform;
+  const os = platform === 'darwin' ? 'macos' : platform === 'win32' ? 'windows' : 'linux';
+  event.returnValue = {
+    version: app.getVersion(),
+    os,
+  };
+});
+
 // ─── App lifecycle ───
 
 app.whenReady().then(async () => {
@@ -104,6 +116,9 @@ app.whenReady().then(async () => {
     await startDaemonProduction();
   }
   createWindow();
+
+  // Set up auto-updater IPC handlers (dev mode returns "not available")
+  setupAutoUpdater(() => mainWindow);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

@@ -1,0 +1,46 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+      - "!v*-dirty*"
+
+permissions:
+  contents: write
+
+jobs:
+  desktop:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all packages
+        run: pnpm build
+
+      - name: Derive version from git tag
+        id: version
+        shell: bash
+        run: |
+          raw=$(git describe --tags --always --dirty)
+          version=${raw#v}
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Package Desktop installer
+        working-directory: apps/desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npx electron-builder --win --publish always --config.extraMetadata.version=${{ steps.version.outputs.version }}

@@ -4,6 +4,7 @@
   "description": "Molio - AI-powered knowledge management and document publishing platform",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@11.5.0",
   "scripts": {
     "dev": "concurrently \"pnpm --filter @molio/daemon dev\" \"pnpm --filter @molio/web dev\" --names daemon,web --prefix-colors auto",
     "dev:daemon": "pnpm --filter @molio/daemon dev",
