@@ -57,6 +57,7 @@
       "signAndEditExecutable": false
     },
     "nsis": {
+      "artifactName": "${productName}-Setup-${version}-windows.${ext}",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "deleteAppDataOnUninstall": false

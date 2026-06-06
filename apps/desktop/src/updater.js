@@ -3,10 +3,15 @@
  *
  * Uses electron-updater to check for updates from GitHub Releases,
  * download them in the background, and notify the renderer when ready.
+ *
+ * In dev mode (not packaged), IPC handlers are registered but return
+ * "not available" — autoUpdater requires a packaged app to function.
  */
 
-import { autoUpdater } from 'electron-updater';
+import pkg from 'electron-updater';
 import { app, ipcMain } from 'electron';
+
+const { autoUpdater } = pkg;
 
 // Silent background update: download automatically, notify only when ready
 autoUpdater.autoDownload = true;
@@ -37,9 +42,51 @@ function checkForUpdatesOnce() {
 
 /**
  * Set up auto-updater events and IPC handlers.
+ * IPC handlers are always registered so the renderer never gets a
+ * "no handler" error. In dev mode they return a friendly message.
+ *
  * @param {() => import('electron').BrowserWindow | null} getMainWindow
  */
 export function setupAutoUpdater(getMainWindow) {
+  const isPackaged = app.isPackaged;
+
+  // IPC: manual check from renderer (Settings page "Check for updates" button)
+  ipcMain.handle('updater:check', async () => {
+    if (!isPackaged) {
+      return {
+        ok: true,
+        currentVersion: app.getVersion(),
+        latestVersion: app.getVersion(),
+        available: false,
+        devMode: true,
+      };
+    }
+    try {
+      const result = await checkForUpdatesOnce();
+      const currentVersion = app.getVersion();
+      return {
+        ok: true,
+        currentVersion,
+        latestVersion: result?.updateInfo?.version ?? currentVersion,
+        available: result?.isUpdateAvailable ?? false,
+      };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  // IPC: install and restart
+  ipcMain.handle('updater:install', () => {
+    if (!isPackaged) return;
+    autoUpdater.quitAndInstall(false, true);
+  });
+
+  // Only set up autoUpdater events and background polling in packaged builds
+  if (!isPackaged) {
+    console.log('[updater] dev mode — auto-update disabled, IPC handlers registered');
+    return;
+  }
+
   // Notify renderer when a new version is available
   autoUpdater.on('update-available', (info) => {
     console.log(`[updater] v${info.version} available`);
@@ -65,27 +112,6 @@ export function setupAutoUpdater(getMainWindow) {
 
   autoUpdater.on('error', (err) => {
     console.error('[updater] error:', err);
-  });
-
-  // IPC: manual check from renderer (Settings page "Check for updates" button)
-  ipcMain.handle('updater:check', async () => {
-    try {
-      const result = await checkForUpdatesOnce();
-      const currentVersion = app.getVersion();
-      return {
-        ok: true,
-        currentVersion,
-        latestVersion: result?.updateInfo?.version ?? currentVersion,
-        available: result?.isUpdateAvailable ?? false,
-      };
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
-    }
-  });
-
-  // IPC: install and restart
-  ipcMain.handle('updater:install', () => {
-    autoUpdater.quitAndInstall(false, true);
   });
 
   // Background check after startup delay

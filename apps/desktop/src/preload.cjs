@@ -2,9 +2,11 @@
  * @kge/desktop preload script
  * Provides a bridge between the renderer (web app) and the main process.
  * Context isolation is enabled; this script runs in an isolated context.
+ *
+ * NOTE: Electron preload scripts must be CommonJS, not ESM.
  */
 
-import { contextBridge, ipcRenderer } from 'electron';
+const { contextBridge, ipcRenderer } = require('electron');
 
 // Synchronous app info (version, OS)
 function fetchAppInfo() {
