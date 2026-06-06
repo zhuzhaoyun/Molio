@@ -129,6 +129,15 @@ function copyWebBuild() {
 
 // ─── Main ───
 
+// Graceful skip: if daemon/web haven't been built yet (e.g. during `pnpm install`
+// before `pnpm build`), exit cleanly. The build script will call this again.
+const daemonDist = join(daemonDir, 'dist', 'src', 'index.js');
+const webDistCheck = join(webDir, 'dist');
+if (!existsSync(daemonDist) || !existsSync(webDistCheck)) {
+  console.log('Skipping prepare: daemon or web not yet built. Will run during build step.');
+  process.exit(0);
+}
+
 if (existsSync(resourcesDir)) {
   rmSync(resourcesDir, { recursive: true });
 }
