@@ -4,6 +4,7 @@
   "description": "Knowledge Growth Engine - AI writing platform with local runtime orchestration",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@11.5.0",
   "scripts": {
     "dev": "concurrently \"pnpm --filter @kge/daemon dev\" \"pnpm --filter @kge/web dev\" --names daemon,web --prefix-colors auto",
     "dev:daemon": "pnpm --filter @kge/daemon dev",
