@@ -182,7 +182,88 @@ if (first) {
 
 **适用范围**：任何涉及用户偏好设置的功能（默认运行时、默认项目、主题选择等）。
 
+## 团队贡献规则
 
+**核心原则**：所有代码变更必须通过 Pull Request 流程，**禁止直接 push 到 main 分支**。
 
+### 工作流程
 
+```bash
+# 1. 创建功能分支（从 main 切出）
+git checkout main
+git pull origin main
+git checkout -b feat/功能名称
+# 或 fix/问题描述、chore/任务类型
 
+# 2. 开发并提交
+git add .
+git commit -m "feat(scope): 描述"
+
+# 3. 推送并创建 PR
+git push -u origin feat/功能名称
+gh pr create --title "feat: 功能描述" --base main
+```
+
+### 分支命名规范
+
+| 类型 | 格式 | 示例 |
+|------|------|------|
+| 新功能 | `feat/功能简述` | `feat/auto-update-check` |
+| Bug 修复 | `fix/问题描述` | `fix/daemon-port-conflict` |
+| 重构 | `refactor/模块名` | `refactor/knowledge-base-ui` |
+| 配置/工具 | `chore/任务` | `chore/upgrade-dependencies` |
+| 文档 | `docs/内容` | `docs/api-guide` |
+
+### Commit Message 规范
+
+遵循 [Conventional Commits](https://www.conventionalcommits.org/)：
+
+```
+<type>(<scope>): <description>
+
+[可选 body]
+
+[可选 footer]
+```
+
+**Type 类型**：
+- `feat`: 新功能
+- `fix`: Bug 修复
+- `docs`: 文档变更
+- `style`: 代码格式（不影响功能）
+- `refactor`: 重构（既不是新功能也不是修复）
+- `perf`: 性能优化
+- `test`: 测试相关
+- `chore`: 构建过程或辅助工具变更
+
+**Scope（可选）**：
+- `daemon`: daemon 服务相关
+- `web`: web 前端相关
+- `desktop`: Electron 桌面端相关
+- `kb`: 知识库功能相关
+- `ci`: CI/CD 相关
+
+**示例**：
+```bash
+feat(desktop): add auto-update check on startup
+fix(daemon): resolve port 3100 conflict when upgrading
+refactor(kb): extract vault manager into separate component
+chore(ci): add workflow_dispatch for manual builds
+```
+
+### PR 合并规则
+
+1. **必须创建 PR**：所有变更都要通过 PR 合并到 main，不能直接 push
+2. **等待 Review**：至少需要 1 个 approve 才能合并（除非紧急情况）
+3. **解决冲突**：如果 PR 与 main 有冲突，必须 rebase 解决
+4. **CI 通过**：确保所有 CI 检查通过后再合并
+5. **Squash 合并**：多个 commit 的 PR 建议 squash 成一个有意义的 commit
+
+### 管理员权限使用
+
+虽然 `enforce_admins: false` 允许管理员跳过审查直接合并，但**仅在以下紧急情况使用**：
+- 紧急 hotfix 需要立即上线
+- 修复 CI 配置问题
+- 其他协作者都不可用时的关键修复
+
+**正常开发仍然要求走 PR + Review 流程。**
