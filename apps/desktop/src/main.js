@@ -74,7 +74,7 @@ function createWindow() {
     title: 'Molio',
     show: false, // Show after ready-to-show to avoid white flash
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
       webSecurity: true,
@@ -117,10 +117,8 @@ app.whenReady().then(async () => {
   }
   createWindow();
 
-  // Set up auto-updater only in packaged builds
-  if (app.isPackaged) {
-    setupAutoUpdater(() => mainWindow);
-  }
+  // Set up auto-updater IPC handlers (dev mode returns "not available")
+  setupAutoUpdater(() => mainWindow);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
