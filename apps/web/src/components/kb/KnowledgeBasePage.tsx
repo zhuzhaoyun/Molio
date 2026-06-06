@@ -6,7 +6,8 @@ import { useCallback, useRef } from 'react';
 import { useKnowledge } from '../../hooks/useKnowledge';
 import { KbFilePanel } from './KbFilePanel';
 import { KbMainContent } from './KbMainContent';
-import { VaultSwitcherModal, AddVaultModal, ImportModal } from './KbModals';
+import { VaultManagerModal } from './VaultManager';
+import { ImportModal } from './KbModals';
 
 export function KnowledgeBasePage() {
   const kb = useKnowledge();
@@ -54,7 +55,10 @@ export function KnowledgeBasePage() {
         onNewFile={() => {/* TODO: new file flow */}}
         onNewFolder={() => {/* TODO: new folder flow */}}
         onImport={() => kb.setShowImport(true)}
-        onVaultClick={() => kb.setShowVaultSwitcher(true)}
+        onVaultClick={() => {
+          console.log('Vault bar clicked, setting showVaultSwitcher to true');
+          kb.setShowVaultSwitcher(true);
+        }}
       >
         {/* Resize handle attached to panel */}
         <div className="kb-resize-handle" onMouseDown={handleResizeStart} />
@@ -73,23 +77,19 @@ export function KnowledgeBasePage() {
         onPublish={() => {/* TODO: publish flow */}}
       />
 
-      {/* Modals */}
-      <VaultSwitcherModal
+      {/* Vault Manager Modal (Obsidian-style) */}
+      <VaultManagerModal
         show={kb.showVaultSwitcher}
         vaults={kb.vaults}
         activeVaultId={kb.activeVault?.id ?? null}
         onClose={() => kb.setShowVaultSwitcher(false)}
         onSelect={kb.selectVault}
-        onAddVault={() => kb.setShowAddVault(true)}
-        onImport={() => kb.setShowImport(true)}
-      />
-
-      <AddVaultModal
-        show={kb.showAddVault}
-        onClose={() => kb.setShowAddVault(false)}
         onCreate={kb.createVault}
+        onOpen={kb.openVault}
+        onDelete={kb.deleteVault}
       />
 
+      {/* Import modal */}
       <ImportModal
         show={kb.showImport}
         vaultName={kb.activeVault?.name ?? ''}

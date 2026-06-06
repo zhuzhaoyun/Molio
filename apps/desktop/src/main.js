@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import { spawn, execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -122,4 +122,17 @@ app.on('before-quit', () => {
   if (daemonProcess) {
     daemonProcess.kill('SIGTERM');
   }
+});
+
+// ─── IPC handlers ───
+
+ipcMain.handle('show-directory-picker', async () => {
+  const focusedWindow = BrowserWindow.getFocusedWindow();
+  if (!focusedWindow) return null;
+  const result = await dialog.showOpenDialog(focusedWindow, {
+    properties: ['openDirectory'],
+    title: '选择本地仓库文件夹',
+  });
+  if (result.canceled || result.filePaths.length === 0) return null;
+  return result.filePaths[0];
 });

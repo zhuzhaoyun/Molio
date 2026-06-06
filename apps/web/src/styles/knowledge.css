@@ -1171,6 +1171,400 @@
   left: 18px;
 }
 
+/* ══════════ Vault Manager (Obsidian-style Modal) ══════════ */
+
+/* Modal overlay — centered */
+.vm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+}
+
+/* Modal container — two columns, centered card */
+.vm-modal {
+  display: flex;
+  width: 100%;
+  max-width: 900px;
+  height: 580px;
+  max-height: 80vh;
+  overflow: hidden;
+  background: var(--bg);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg), 0 0 0 1px var(--border);
+}
+
+/* ── Left: Vault List ── */
+.vm-modal-left {
+  width: 280px;
+  min-width: 240px;
+  max-width: 320px;
+  flex-shrink: 0;
+  background: var(--bg);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.vm-list {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.vm-list-header {
+  padding: 16px 20px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid var(--border);
+}
+
+.vm-list-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.vm-list-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 20px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.vm-list-empty div {
+  font-size: 40px;
+  margin-bottom: 12px;
+  opacity: 0.4;
+}
+
+.vm-list-empty p {
+  font-size: 13px;
+}
+
+/* Vault item in list */
+.vm-vault-item {
+  padding: 12px 16px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 120ms ease;
+  position: relative;
+  margin-bottom: 6px;
+  border: 1px solid transparent;
+}
+
+.vm-vault-item:hover {
+  background: var(--bg-subtle);
+}
+
+.vm-vault-item.is-active {
+  background: var(--accent-tint);
+  border-color: var(--accent);
+}
+
+.vm-vault-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+  margin-bottom: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-right: 24px;
+}
+
+.vm-vault-path {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vm-vault-delete {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.vm-vault-item:hover .vm-vault-delete {
+  opacity: 1;
+}
+
+.vm-vault-delete:hover {
+  background: var(--bg-muted);
+  color: var(--text);
+}
+
+/* ── Right: Action Panel ── */
+.vm-modal-right {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow-y: auto;
+  padding: 40px 32px;
+  background: var(--bg);
+}
+
+.vm-action-panel {
+  width: 100%;
+  max-width: 520px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* Branding */
+.vm-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 48px;
+}
+
+.vm-brand-logo {
+  font-size: 64px;
+  margin-bottom: 16px;
+  opacity: 0.8;
+}
+
+.vm-brand-title {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text-strong);
+  letter-spacing: -0.02em;
+  margin-bottom: 6px;
+}
+
+.vm-brand-version {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* Action cards */
+.vm-actions {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.vm-action-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: all 120ms ease;
+}
+
+.vm-action-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-sm);
+}
+
+.vm-action-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.vm-action-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-strong);
+  margin-bottom: 4px;
+}
+
+.vm-action-desc {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.vm-action-btn {
+  height: 34px;
+  padding: 0 20px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 120ms ease;
+  flex-shrink: 0;
+}
+
+.vm-action-btn:hover {
+  background: var(--bg-subtle);
+  border-color: var(--border-strong);
+}
+
+.vm-action-btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.vm-action-btn-primary:hover {
+  background: var(--accent-hover);
+}
+
+/* ── Create Vault Form ── */
+.vm-create-form {
+  width: 100%;
+  max-width: 520px;
+}
+
+.vm-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  margin-bottom: 8px;
+  transition: color 120ms ease;
+}
+
+.vm-back-btn:hover {
+  color: var(--text);
+}
+
+.vm-create-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-strong);
+  margin-bottom: 24px;
+  letter-spacing: -0.01em;
+}
+
+.vm-form-group {
+  margin-bottom: 16px;
+}
+
+.vm-form-label {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+  margin-bottom: 6px;
+}
+
+.vm-form-input {
+  width: 100%;
+  height: 38px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.vm-form-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--selected-soft);
+}
+
+.vm-form-input::placeholder {
+  color: var(--text-faint);
+}
+
+.vm-form-row {
+  display: flex;
+  gap: 8px;
+}
+
+.vm-form-row .vm-form-input {
+  flex: 1;
+}
+
+.vm-browse-btn {
+  height: 38px;
+  padding: 0 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 120ms ease;
+}
+
+.vm-browse-btn:hover {
+  background: var(--bg-subtle);
+}
+
+.vm-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 24px;
+}
+
+.vm-submit-btn {
+  height: 38px;
+  padding: 0 24px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+
+.vm-submit-btn:hover {
+  background: var(--accent-hover);
+}
+
+.vm-submit-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* ══════════ doocs/md Preview Styles ══════════
    注意：所有 Markdown 渲染样式由 doocs/md 主题系统（applyTheme）动态注入，
    这里不再定义任何 .md-preview 相关样式，避免与主题 CSS 冲突。
