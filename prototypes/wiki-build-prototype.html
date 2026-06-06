@@ -1,0 +1,1164 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Molio — LLM Wiki 构建原型</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --bg: #faf9f7;
+  --bg-panel: #ffffff;
+  --bg-subtle: #eef1f5;
+  --bg-hover: #f0eee9;
+  --text: #1a1916;
+  --text-strong: #0d0c0a;
+  --text-muted: #74716b;
+  --text-faint: #b3b0a8;
+  --accent: #c96442;
+  --accent-hover: #b45a3b;
+  --accent-soft: #f5d8cb;
+  --green: #2d8a56;
+  --green-bg: #e8f5ee;
+  --green-border: #b8dfc9;
+  --blue: #2563eb;
+  --blue-bg: #eff6ff;
+  --blue-border: #bfdbfe;
+  --amber: #b45309;
+  --amber-bg: #fef3c7;
+  --red: #dc2626;
+  --red-bg: #fef2f2;
+  --purple: #7c3aed;
+  --purple-bg: #f5f3ff;
+  --border: #e5e2dc;
+  --border-strong: #d4d0c8;
+  --shadow-sm: 0 1px 3px rgba(28,27,26,0.06), 0 1px 2px rgba(28,27,26,0.04);
+  --shadow-md: 0 4px 12px rgba(28,27,26,0.08), 0 1px 3px rgba(28,27,26,0.06);
+  --shadow-lg: 0 8px 24px rgba(28,27,26,0.12), 0 2px 6px rgba(28,27,26,0.06);
+  --radius-sm: 8px;
+  --radius: 12px;
+  --sans: 'Inter', -apple-system, system-ui, sans-serif;
+  --mono: 'SF Mono', 'Menlo', monospace;
+  --sidebar-bg: #f4f2ef;
+  --sidebar-border: #e8e5e0;
+}
+
+body {
+  font-family: var(--sans);
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ═══════ Shell ═══════ */
+.shell { display: flex; height: 100vh; width: 100vw; overflow: hidden; }
+
+/* ═══════ Nav Rail ═══════ */
+.nav-rail {
+  width: 56px; flex-shrink: 0; background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; align-items: center;
+  padding: 12px 0; gap: 4px;
+}
+.nav-btn {
+  width: 40px; height: 40px; border-radius: var(--radius-sm);
+  border: none; background: transparent; color: var(--text-muted);
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: all 120ms ease;
+}
+.nav-btn:hover { background: var(--bg-hover); color: var(--text); }
+.nav-btn.is-active { background: var(--accent-soft); color: var(--accent); }
+.nav-divider { width: 24px; height: 1px; background: var(--border); margin: 8px 0; }
+
+/* ═══════ File Panel ═══════ */
+.file-panel {
+  width: 240px; flex-shrink: 0; background: var(--sidebar-bg);
+  border-right: 1px solid var(--sidebar-border);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.panel-header {
+  padding: 12px 14px 8px; display: flex; align-items: center; justify-content: space-between;
+}
+.panel-header h2 {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--text-muted);
+}
+.vault-bar {
+  padding: 6px 10px; border-bottom: 1px solid var(--sidebar-border);
+  display: flex; align-items: center; gap: 6px;
+}
+.vault-select {
+  flex: 1; height: 30px; padding: 0 8px;
+  border: 1px solid var(--border); border-radius: 6px;
+  font-size: 12.5px; color: var(--text); background: var(--bg-panel);
+  outline: none; cursor: pointer;
+}
+.vault-select:focus { border-color: var(--accent); }
+.btn-icon {
+  width: 26px; height: 26px; border: none; background: transparent;
+  border-radius: 6px; cursor: pointer; color: var(--text-muted);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; transition: all 120ms ease;
+}
+.btn-icon:hover { background: rgba(0,0,0,0.05); color: var(--text); }
+
+.tree-scroll { flex: 1; overflow-y: auto; padding: 6px; }
+
+.tree-group { margin-bottom: 6px; }
+.tree-group-label {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 8px; font-size: 11.5px; font-weight: 600;
+  color: var(--text-muted); letter-spacing: 0.03em;
+  cursor: pointer; user-select: none; border-radius: 5px;
+  transition: background 120ms ease;
+}
+.tree-group-label:hover { background: rgba(0,0,0,0.03); }
+.tree-group-label .chevron {
+  width: 12px; height: 12px; display: flex; align-items: center;
+  justify-content: center; font-size: 10px;
+  transition: transform 120ms ease;
+}
+.tree-group-label .chevron.collapsed { transform: rotate(-90deg); }
+.tree-children { padding-left: 16px; }
+.tree-children.collapsed { display: none; }
+
+.tree-item {
+  display: flex; align-items: center; gap: 6px;
+  padding: 3px 8px; font-size: 12.5px; color: var(--text);
+  cursor: pointer; border-radius: 5px;
+  transition: background 120ms ease;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tree-item:hover { background: rgba(0,0,0,0.04); }
+.tree-item.is-active { background: var(--accent-soft); color: var(--accent); font-weight: 500; }
+.tree-item .tree-icon { font-size: 13px; opacity: 0.5; flex-shrink: 0; }
+.tree-item .tree-name { overflow: hidden; text-overflow: ellipsis; }
+.tree-item.is-active .tree-icon { opacity: 1; }
+
+/* Status badge on tree items */
+.tree-status {
+  margin-left: auto; flex-shrink: 0;
+  font-size: 10px; padding: 1px 5px; border-radius: 3px;
+  font-weight: 600;
+}
+.tree-status.done { background: var(--green-bg); color: var(--green); }
+
+/* ═══════ Main ═══════ */
+.main {
+  flex: 1; display: flex; flex-direction: column;
+  overflow: hidden; min-width: 0;
+}
+.main-header {
+  padding: 16px 24px 12px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0;
+}
+.main-header h1 { font-size: 17px; font-weight: 600; color: var(--text-strong); letter-spacing: -0.01em; }
+.main-header .breadcrumbs { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+.main-content { flex: 1; overflow-y: auto; padding: 24px 32px; }
+
+/* ═══════ Buttons ═══════ */
+.btn {
+  height: 34px; padding: 0 14px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--bg-panel);
+  color: var(--text); font-size: 13px; font-weight: 500;
+  cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+  transition: all 120ms ease; font-family: var(--sans);
+}
+.btn:hover { background: var(--bg-hover); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary:hover { background: var(--accent-hover); }
+.btn.ghost { background: transparent; border-color: transparent; color: var(--text-muted); }
+.btn.ghost:hover { background: var(--bg-hover); color: var(--text); border-color: var(--border); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-group { display: flex; gap: 8px; }
+
+/* Header action button */
+.header-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 0 14px; height: 32px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--bg-panel); color: var(--text-muted);
+  font: inherit; font-size: 12.5px; font-weight: 500;
+  cursor: pointer; transition: all 120ms ease; white-space: nowrap;
+}
+.header-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.header-btn svg { width: 14px; height: 14px; flex-shrink: 0; }
+.header-btn.is-accent {
+  background: var(--accent); border-color: var(--accent); color: #fff;
+}
+.header-btn.is-accent:hover { background: var(--accent-hover); }
+
+/* ═══════ Overlay ═══════ */
+.overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(26,25,22,0.35); backdrop-filter: blur(4px);
+  z-index: 100; align-items: center; justify-content: center;
+}
+.overlay.show { display: flex; }
+
+.modal {
+  background: var(--bg-panel); border-radius: var(--radius);
+  box-shadow: var(--shadow-lg); max-height: 85vh;
+  overflow: hidden; display: flex; flex-direction: column;
+}
+.modal.sm { width: 440px; }
+.modal.md { width: 560px; }
+.modal.lg { width: 720px; }
+
+.modal-header {
+  padding: 20px 24px 16px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.modal-header h2 { font-size: 16px; font-weight: 600; color: var(--text-strong); }
+.modal-close {
+  width: 28px; height: 28px; border: none; background: transparent;
+  border-radius: 6px; cursor: pointer; color: var(--text-muted);
+  font-size: 20px; display: flex; align-items: center; justify-content: center;
+}
+.modal-close:hover { background: var(--bg-hover); color: var(--text); }
+.modal-body { padding: 20px 24px; overflow-y: auto; flex: 1; }
+.modal-footer {
+  padding: 16px 24px; border-top: 1px solid var(--border);
+  display: flex; justify-content: flex-end; gap: 8px;
+}
+
+/* ═══════ AI Chat Panel (multi-turn) ═══════ */
+.ai-chat-panel {
+  width: 0;
+  flex-shrink: 0;
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  transition: width 300ms ease;
+  position: relative;
+}
+.ai-chat-panel.is-open {
+  width: 400px;
+  min-width: 400px;
+  flex-shrink: 0;
+}
+
+/* Chat header */
+.ai-chat-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0;
+}
+.ai-chat-header h3 {
+  font-size: 13px; font-weight: 600; color: var(--text-strong);
+  display: flex; align-items: center; gap: 6px;
+}
+.ai-chat-header h3 .dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--green); display: inline-block;
+}
+.ai-chat-header h3 .dot.is-busy {
+  background: var(--amber);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* Chat body (scrollable message area) */
+.ai-chat-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* System prompt (collapsible) */
+.prompt-collapsed {
+  font-size: 12px; color: var(--text-muted);
+  padding: 8px 12px; background: var(--bg-subtle);
+  border-radius: var(--radius-sm); border-left: 3px solid var(--blue);
+  cursor: pointer; transition: background 120ms ease;
+}
+.prompt-collapsed:hover { background: var(--bg-hover); }
+.prompt-collapsed .prompt-title {
+  font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 6px;
+}
+.prompt-collapsed .prompt-preview {
+  margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.prompt-collapsed .prompt-arrow {
+  font-size: 10px; margin-left: auto;
+  transition: transform 120ms ease;
+}
+.prompt-collapsed.is-expanded .prompt-arrow { transform: rotate(180deg); }
+
+.prompt-full {
+  display: none;
+  font-size: 11.5px; color: var(--text-muted);
+  padding: 10px 12px; background: var(--bg);
+  border-radius: var(--radius-sm); border: 1px solid var(--border);
+  margin-top: 4px;
+  font-family: var(--mono); line-height: 1.6;
+}
+.prompt-full.show { display: block; }
+
+/* Message types */
+.chat-msg {
+  display: flex; flex-direction: column;
+  gap: 4px; animation: fadeIn 200ms ease;
+}
+
+.chat-msg.user {
+  align-self: flex-end; max-width: 85%;
+}
+.chat-msg.user .msg-bubble {
+  padding: 10px 14px; background: var(--accent-soft);
+  border-radius: var(--radius-sm); font-size: 13px; color: var(--text);
+}
+
+.chat-msg.ai {
+  align-self: flex-start; max-width: 100%;
+}
+.chat-msg.ai .msg-bubble {
+  padding: 10px 14px; background: var(--bg);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  font-size: 13px; color: var(--text); line-height: 1.6;
+}
+.chat-msg.ai .msg-bubble code {
+  font-family: var(--mono); font-size: 12px;
+  background: var(--bg-subtle); padding: 1px 4px; border-radius: 3px;
+}
+.chat-msg.ai .msg-bubble pre {
+  font-family: var(--mono); font-size: 11.5px;
+  background: var(--bg-subtle); padding: 8px 10px;
+  border-radius: var(--radius-sm); overflow-x: auto;
+  margin: 6px 0;
+}
+.chat-msg.ai .msg-bubble ul { margin: 6px 0; padding-left: 20px; }
+.chat-msg.ai .msg-bubble li { margin: 2px 0; }
+
+/* Thinking block (like Claude Code) */
+.thinking-block {
+  padding: 8px 12px; background: var(--bg-subtle);
+  border-radius: var(--radius-sm); border-left: 3px solid var(--amber);
+  font-size: 12.5px; color: var(--text-muted); font-style: italic;
+  display: flex; align-items: center; gap: 6px;
+}
+.thinking-block .spinner-inline {
+  width: 12px; height: 12px; border: 2px solid var(--border);
+  border-top-color: var(--amber); border-radius: 50%;
+  animation: spin 0.8s linear infinite; flex-shrink: 0;
+}
+
+/* Action buttons in AI message */
+.msg-actions {
+  display: flex; gap: 8px; margin-top: 8px;
+  padding-top: 8px; border-top: 1px solid var(--border);
+}
+.msg-actions .btn { height: 28px; padding: 0 12px; font-size: 12px; }
+
+/* Timestamp */
+.msg-time {
+  font-size: 11px; color: var(--text-faint); margin-top: 2px;
+}
+
+/* Chat input area */
+.ai-chat-input {
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 8px;
+  flex-shrink: 0;
+}
+
+.chat-composer {
+  display: flex; gap: 8px;
+  align-items: flex-end;
+}
+
+.chat-composer textarea {
+  flex: 1; min-height: 36px; max-height: 120px;
+  padding: 8px 12px;
+  border: 1px solid var(--border); border-radius: 6px;
+  font-size: 13px; color: var(--text); background: var(--bg);
+  outline: none; font-family: var(--sans); resize: none;
+  transition: border-color 120ms ease; line-height: 1.5;
+}
+.chat-composer textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.chat-composer textarea:disabled { background: var(--bg-hover); color: var(--text-faint); }
+
+.chat-composer .send-btn {
+  width: 36px; height: 36px; border-radius: 6px;
+  border: none; background: var(--accent); color: #fff;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  font-size: 16px; transition: background 120ms ease; flex-shrink: 0;
+}
+.chat-composer .send-btn:hover { background: var(--accent-hover); }
+.chat-composer .send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Quick actions below input */
+.quick-actions {
+  display: flex; gap: 6px; flex-wrap: wrap;
+}
+.quick-action {
+  padding: 3px 10px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--bg);
+  font-size: 11.5px; color: var(--text-muted); cursor: pointer;
+  transition: all 120ms ease; white-space: nowrap;
+}
+.quick-action:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+
+/* ═══════ Empty state / CTA ═══════ */
+.empty-wiki {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; height: 100%;
+  text-align: center; padding: 40px;
+}
+.empty-wiki .ew-icon { font-size: 48px; margin-bottom: 16px; opacity: 0.3; }
+.empty-wiki .ew-title {
+  font-size: 18px; font-weight: 600; color: var(--text-strong);
+  margin-bottom: 8px;
+}
+.empty-wiki .ew-desc {
+  font-size: 13px; color: var(--text-muted); max-width: 400px;
+  line-height: 1.6; margin-bottom: 24px;
+}
+
+/* ═══════ Markdown preview ═══════ */
+.md-preview { font-size: 14px; line-height: 1.7; color: var(--text); }
+.md-preview h1 { font-size: 24px; font-weight: 700; color: var(--text-strong); margin: 0 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.md-preview h2 { font-size: 18px; font-weight: 600; color: var(--text-strong); margin: 24px 0 10px; }
+.md-preview p { margin: 0 0 12px; }
+.md-preview ul { margin: 8px 0; padding-left: 22px; }
+.md-preview li { margin: 4px 0; }
+.md-preview blockquote { border-left: 3px solid var(--accent); padding: 8px 14px; background: var(--accent-soft); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; margin: 12px 0; font-style: italic; color: var(--text-muted); }
+.md-preview code { font-family: var(--mono); font-size: 12.5px; background: var(--bg-subtle); padding: 1px 5px; border-radius: 4px; }
+.frontmatter {
+  background: var(--bg-subtle); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 12px 16px; margin-bottom: 20px;
+  font-size: 12.5px; font-family: var(--mono);
+}
+.frontmatter .fm-line { display: flex; gap: 8px; padding: 2px 0; }
+.frontmatter .fm-key { color: var(--text-muted); }
+.frontmatter .fm-val { color: var(--text); }
+
+/* ═══════ Animations ═══════ */
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+/* ═══════ Tab for switching views ═══════ */
+.view-tabs {
+  display: flex; gap: 2px; padding: 0 24px;
+  border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.view-tab {
+  padding: 8px 14px; font-size: 12.5px; color: var(--text-muted);
+  cursor: pointer; border-bottom: 2px solid transparent;
+  margin-bottom: -1px; transition: all 120ms ease; user-select: none;
+}
+.view-tab:hover { color: var(--text); }
+.view-tab.is-active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+
+/* ═══════ LOG.md Preview ═══════ */
+.log-table {
+  width: 100%; border-collapse: collapse; font-size: 12px;
+  margin-top: 12px;
+}
+.log-table th {
+  text-align: left; padding: 6px 10px;
+  border-bottom: 2px solid var(--border);
+  font-weight: 600; color: var(--text-muted);
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em;
+}
+.log-table td {
+  padding: 5px 10px; border-bottom: 1px solid var(--border);
+}
+.log-table .status-ok { color: var(--green); font-weight: 600; }
+.log-table .status-fail { color: var(--red); font-weight: 600; }
+.log-table .tag {
+  display: inline-block; padding: 1px 6px; border-radius: 3px;
+  background: var(--bg-subtle); font-size: 11px; margin-right: 3px;
+  font-family: var(--mono);
+}
+
+/* ═══════ Wiki Result (INDEX.md) ═══════ */
+.wiki-result { font-size: 14px; line-height: 1.7; color: var(--text); }
+.wiki-result h1 {
+  font-size: 24px; font-weight: 700; color: var(--text-strong);
+  margin: 0 0 8px; padding-bottom: 8px; border-bottom: 2px solid var(--accent);
+}
+.wiki-result .wiki-meta {
+  font-size: 12.5px; color: var(--text-muted); margin-bottom: 24px;
+  font-style: italic;
+}
+.wiki-result h2 {
+  font-size: 17px; font-weight: 600; color: var(--text-strong);
+  margin: 24px 0 10px; padding-left: 10px; border-left: 3px solid var(--accent);
+}
+.wiki-result .wiki-entry {
+  display: flex; gap: 8px; padding: 4px 0 4px 12px;
+  font-size: 13.5px;
+}
+.wiki-result .wiki-link {
+  color: var(--blue); text-decoration: none; font-weight: 500;
+}
+.wiki-result .wiki-link:hover { text-decoration: underline; }
+.wiki-result .wiki-summary {
+  color: var(--text-muted); font-size: 12.5px;
+}
+</style>
+</head>
+<body>
+
+<div class="shell">
+  <!-- ═══ Nav Rail ═══ -->
+  <nav class="nav-rail">
+    <button class="nav-btn" title="Home">
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 10l7-7 7 7M5 8.5V16a1 1 0 001 1h3v-4h2v4h3a1 1 0 001-1V8.5"/></svg>
+    </button>
+    <button class="nav-btn is-active" title="Knowledge Base">
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 4a1 1 0 011-1h4l1.5 1.5H16a1 1 0 011 1V16a1 1 0 01-1 1H4a1 1 0 01-1-1V4z"/><path d="M3 8h14"/></svg>
+    </button>
+    <div class="nav-divider"></div>
+    <button class="nav-btn" title="Runtimes">
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="7"/><path d="M10 6v4l2.5 2.5"/></svg>
+    </button>
+  </nav>
+
+  <!-- ═══ File Panel ═══ -->
+  <aside class="file-panel" id="filePanel">
+    <div class="vault-bar">
+      <select class="vault-select">
+        <option>frontend-notes</option>
+        <option>research-papers</option>
+      </select>
+      <button class="btn-icon" title="Settings">&#9881;</button>
+    </div>
+
+    <div class="tree-scroll" id="treeScroll">
+      <div class="tree-group">
+        <div class="tree-group-label" onclick="toggleGroup(this)">
+          <span class="chevron">&#9662;</span>
+          <span>📁 notes/</span>
+        </div>
+        <div class="tree-children">
+          <div class="tree-item is-active" onclick="selectFile(this, 'react-hooks')">
+            <span class="tree-icon">📄</span>
+            <span class="tree-name">react-hooks.md</span>
+          </div>
+          <div class="tree-item" onclick="selectFile(this, 'typescript-generics')">
+            <span class="tree-icon">📄</span>
+            <span class="tree-name">typescript-generics.md</span>
+          </div>
+          <div class="tree-item" onclick="selectFile(this, 'webpack-config')">
+            <span class="tree-icon">📄</span>
+            <span class="tree-name">webpack-config.md</span>
+          </div>
+          <div class="tree-item" onclick="selectFile(this, 'vite-vs-webpack')">
+            <span class="tree-icon">📄</span>
+            <span class="tree-name">vite-vs-webpack.md</span>
+          </div>
+          <div class="tree-item" onclick="selectFile(this, 'css-modules')">
+            <span class="tree-icon">📄</span>
+            <span class="tree-name">css-modules.md</span>
+          </div>
+          <div class="tree-item" onclick="selectFile(this, 'redux-patterns')">
+            <span class="tree-icon">📄</span>
+            <span class="tree-name">redux-patterns.md</span>
+          </div>
+          <div class="tree-item" onclick="selectFile(this, 'react-performance')">
+            <span class="tree-icon">📄</span>
+            <span class="tree-name">react-performance.md</span>
+          </div>
+          <div class="tree-item" onclick="selectFile(this, 'eslint-rules')">
+            <span class="tree-icon">📄</span>
+            <span class="tree-name">eslint-rules.md</span>
+          </div>
+          <div class="tree-item" onclick="selectFile(this, 'testing-library')">
+            <span class="tree-icon">📄</span>
+            <span class="tree-name">testing-library.md</span>
+          </div>
+          <div class="tree-item" onclick="selectFile(this, 'nextjs-ssr')">
+            <span class="tree-icon">📄</span>
+            <span class="tree-name">nextjs-ssr.md</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ═══ Main ═══ -->
+  <main class="main" id="mainArea">
+    <!-- Header -->
+    <div class="main-header">
+      <div>
+        <h1 id="pageTitle">frontend-notes</h1>
+        <div class="breadcrumbs" id="breadcrumbs">知识库 · 10 个文件 · 未构建 Wiki</div>
+      </div>
+      <div class="btn-group" id="headerActions">
+        <button class="header-btn is-accent" id="buildWikiBtn" onclick="openAiChat()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+            <path d="M2 17l10 5 10-5"/>
+            <path d="M2 12l10 5 10-5"/>
+          </svg>
+          构建 Wiki
+        </button>
+      </div>
+    </div>
+
+    <!-- Content area -->
+    <div id="viewContainer" style="flex:1; display:flex; flex-direction:column; overflow:hidden;">
+      <!-- View: Empty state -->
+      <div class="empty-wiki" id="viewEmpty">
+        <div class="ew-icon">📚</div>
+        <div class="ew-title">这个知识库还没有构建 Wiki</div>
+        <div class="ew-desc">
+          点击「构建 Wiki」按钮，打开 Claude Code 对话面板。<br>
+          你可以通过多轮对话，指挥 AI 分析你的文件内容，构建结构化的知识索引。
+        </div>
+        <button class="btn primary" onclick="openAiChat()" style="height:40px; padding: 0 24px; font-size:14px;">
+          ⚡ 开始构建 Wiki
+        </button>
+      </div>
+
+      <!-- View: File content -->
+      <div class="main-content" id="viewFile" style="display:none;">
+        <div class="frontmatter" id="fileFrontmatter" style="display:none;">
+          <div class="fm-line"><span class="fm-key">title:</span><span class="fm-val" id="fmTitle"></span></div>
+          <div class="fm-line"><span class="fm-key">summary:</span><span class="fm-val" id="fmSummary"></span></div>
+          <div class="fm-line"><span class="fm-key">tags:</span><span class="fm-val" id="fmTags"></span></div>
+          <div class="fm-line"><span class="fm-key">related:</span><span class="fm-val" id="fmRelated"></span></div>
+        </div>
+        <div class="md-preview" id="fileContent"></div>
+      </div>
+
+      <!-- View: Wiki result -->
+      <div class="main-content" id="viewResult" style="display:none;">
+        <div class="wiki-result" id="wikiResult"></div>
+      </div>
+
+      <!-- View: LOG.md -->
+      <div class="main-content" id="viewLog" style="display:none;">
+        <div class="wiki-result" id="wikiLog"></div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ═══ AI Chat Panel (multi-turn) ═══ -->
+  <aside class="ai-chat-panel is-open" id="aiChatPanel" style="width:400px;min-width:400px;">
+    <!-- Chat header -->
+    <div class="ai-chat-header">
+      <h3><span class="dot" id="agentStatus"></span> Claude Code</h3>
+      <button class="btn-icon" onclick="closeAiChat()">&#10005;</button>
+    </div>
+
+    <!-- Chat body (messages) -->
+    <div class="ai-chat-body" id="aiChatBody">
+      <!-- System prompt (collapsible) -->
+      <div class="prompt-collapsed" id="promptCollapsed" onclick="togglePrompt()">
+        <div class="prompt-title">
+          📋 提示词 <span id="promptPreview">在 frontend-notes 目录下构建 Wiki...</span>
+          <span class="prompt-arrow" id="promptArrow">▼</span>
+        </div>
+      </div>
+      <div class="prompt-full" id="promptFull">
+你是一个知识库整理助手。请对以下目录中的文件进行分析和整理：
+
+## 目录
+frontend-notes
+
+## 任务
+1. 扫描目录中的所有 markdown 文件
+2. 分析知识领域，为每个文件生成：
+   - 标题（简洁，≤20字）
+   - 摘要（50-100字）
+   - 标签（3-5个）
+   - 关键要点
+3. 在文件头部插入 frontmatter
+4. 生成 INDEX.md（按分类组织的知识索引）
+5. 生成 LOG.md（构建日志）
+
+## 约束
+- 不要修改原始文件内容，只在头部加 frontmatter
+- 保持原始文件路径不变
+- INDEX.md 和 LOG.md 生成在根目录
+      </div>
+
+      <!-- Messages will be appended here -->
+    </div>
+
+    <!-- Chat input -->
+    <div class="ai-chat-input">
+      <div class="quick-actions" id="quickActions">
+        <span class="quick-action" onclick="sendQuickAction('开始构建 Wiki')">开始构建 Wiki</span>
+        <span class="quick-action" onclick="sendQuickAction('重新分析分类')">重新分析分类</span>
+        <span class="quick-action" onclick="sendQuickAction('查看当前进度')">查看当前进度</span>
+      </div>
+      <div class="chat-composer">
+        <textarea id="chatInput" placeholder="输入指令..." rows="1"
+          onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();sendChat();}"></textarea>
+        <button class="send-btn" id="sendBtn" onclick="sendChat()">➤</button>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<!-- ═══════ Toast Container ═══════ -->
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+// ════════════════════════════════════════
+// State
+// ════════════════════════════════════════
+let currentView = 'empty';
+let isWikiBuilt = false;
+let chatHistory = [];
+let isAiBusy = false;
+
+// File data
+const files = [
+  { name: 'react-hooks.md', path: 'notes/react-hooks.md', size: 3200 },
+  { name: 'typescript-generics.md', path: 'notes/typescript-generics.md', size: 2800 },
+  { name: 'webpack-config.md', path: 'notes/webpack-config.md', size: 4100 },
+  { name: 'vite-vs-webpack.md', path: 'notes/vite-vs-webpack.md', size: 2200 },
+  { name: 'css-modules.md', path: 'notes/css-modules.md', size: 1800 },
+  { name: 'redux-patterns.md', path: 'notes/redux-patterns.md', size: 3600 },
+  { name: 'react-performance.md', path: 'notes/react-performance.md', size: 2900 },
+  { name: 'eslint-rules.md', path: 'notes/eslint-rules.md', size: 2100 },
+  { name: 'testing-library.md', path: 'notes/testing-library.md', size: 1900 },
+  { name: 'nextjs-ssr.md', path: 'notes/nextjs-ssr.md', size: 3400 },
+];
+
+// Simulated LLM proposal
+const proposal = {
+  domain: '前端开发',
+  description: 'React/TypeScript 前端技术学习笔记，涵盖框架、工程化和性能优化',
+  categories: [
+    { name: 'React 框架', desc: 'React 核心概念、Hooks、状态管理等', files: ['react-hooks.md', 'redux-patterns.md', 'react-performance.md'] },
+    { name: 'TypeScript', desc: '类型系统、泛型、工具类型', files: ['typescript-generics.md'] },
+    { name: '工程化 & 构建', desc: '构建工具、代码规范、测试', files: ['webpack-config.md', 'vite-vs-webpack.md', 'eslint-rules.md', 'testing-library.md'] },
+    { name: '样式方案', desc: 'CSS 模块化、样式最佳实践', files: ['css-modules.md'] },
+    { name: 'SSR & 框架', desc: 'Next.js、服务端渲染', files: ['nextjs-ssr.md'] },
+  ]
+};
+
+// Simulated file processing results
+const fileResults = {
+  'react-hooks.md': { title: 'React Hooks 详解', summary: '深入介绍 useState、useEffect、useContext 等常用 Hook 的用法、常见陷阱和最佳实践', tags: ['react', 'hooks', 'frontend'], related: ['redux-patterns.md', 'react-performance.md'] },
+  'typescript-generics.md': { title: 'TypeScript 泛型入门', summary: '从基础到进阶讲解 TypeScript 泛型语法，包括约束、条件类型和映射类型', tags: ['typescript', 'types'], related: ['react-hooks.md'] },
+  'webpack-config.md': { title: 'Webpack 配置详解', summary: '全面介绍 Webpack 5 的核心配置项，包括 entry、output、loader、plugin 等', tags: ['webpack', 'build-tool', 'engineering'], related: ['vite-vs-webpack.md', 'eslint-rules.md'] },
+  'vite-vs-webpack.md': { title: 'Vite vs Webpack 对比', summary: '从开发体验、构建速度、生态系统等维度对比两大构建工具的优劣', tags: ['vite', 'webpack', 'build-tool'], related: ['webpack-config.md'] },
+  'css-modules.md': { title: 'CSS Modules 实践指南', summary: '讲解 CSS Modules 的原理、配置方法和在 React 项目中的最佳实践', tags: ['css', 'styling', 'react'], related: ['react-hooks.md'] },
+  'redux-patterns.md': { title: 'Redux 设计模式', summary: '介绍 Redux Toolkit、中间件模式、选择器优化等现代 Redux 开发实践', tags: ['redux', 'state-management', 'react'], related: ['react-hooks.md', 'react-performance.md'] },
+  'react-performance.md': { title: 'React 性能优化', summary: '涵盖 memo、useMemo、useCallback、代码分割等 React 性能优化策略', tags: ['react', 'performance', 'optimization'], related: ['react-hooks.md', 'redux-patterns.md'] },
+  'eslint-rules.md': { title: 'ESLint 规则配置', summary: '详解 ESLint 核心规则和常用插件配置，打造统一的代码规范', tags: ['eslint', 'linting', 'engineering'], related: ['testing-library.md', 'webpack-config.md'] },
+  'testing-library.md': { title: 'Testing Library 测试指南', summary: '使用 React Testing Library 编写单元测试，涵盖渲染、交互和异步测试', tags: ['testing', 'react', 'engineering'], related: ['eslint-rules.md'] },
+  'nextjs-ssr.md': { title: 'Next.js SSR 深入', summary: '深入理解 Next.js 的服务端渲染机制，包括 SSG、ISR 和数据获取策略', tags: ['nextjs', 'ssr', 'react'], related: ['react-performance.md', 'react-hooks.md'] },
+};
+
+// ════════════════════════════════════════
+// AI Chat Panel
+// ════════════════════════════════════════
+function openAiChat() {
+  document.getElementById('aiChatPanel').classList.add('is-open');
+  // Focus on input
+  setTimeout(() => document.getElementById('chatInput').focus(), 300);
+}
+
+function closeAiChat() {
+  document.getElementById('aiChatPanel').classList.remove('is-open');
+}
+
+function togglePrompt() {
+  const el = document.getElementById('promptFull');
+  el.classList.toggle('show');
+  document.getElementById('promptCollapsed').classList.toggle('is-expanded');
+}
+
+function setAiBusy(busy) {
+  isAiBusy = busy;
+  const dot = document.getElementById('agentStatus');
+  if (busy) dot.classList.add('is-busy');
+  else dot.classList.remove('is-busy');
+}
+
+function addUserMessage(text) {
+  const body = document.getElementById('aiChatBody');
+  const msg = document.createElement('div');
+  msg.className = 'chat-msg user';
+  msg.innerHTML = `<div class="msg-bubble">${escapeHtml(text)}</div>`;
+  body.appendChild(msg);
+  body.scrollTop = body.scrollHeight;
+}
+
+function addAiMessage(text, actions) {
+  const body = document.getElementById('aiChatBody');
+  const msg = document.createElement('div');
+  msg.className = 'chat-msg ai';
+  let html = `<div class="msg-bubble">${text}</div>`;
+  if (actions) {
+    html += `<div class="msg-actions">${actions}</div>`;
+  }
+  msg.innerHTML = html;
+  body.appendChild(msg);
+  body.scrollTop = body.scrollHeight;
+}
+
+function addThinkingMessage(text) {
+  const body = document.getElementById('aiChatBody');
+  const msg = document.createElement('div');
+  msg.className = 'chat-msg ai';
+  msg.innerHTML = `
+    <div class="thinking-block">
+      <span class="spinner-inline"></span>
+      <span>${escapeHtml(text)}</span>
+    </div>
+  `;
+  msg.id = 'thinkingMsg';
+  body.appendChild(msg);
+  body.scrollTop = body.scrollHeight;
+  return msg;
+}
+
+function removeThinkingMessage() {
+  const el = document.getElementById('thinkingMsg');
+  if (el) el.remove();
+}
+
+function sendQuickAction(text) {
+  sendChatMessage(text);
+}
+
+function sendChat() {
+  const input = document.getElementById('chatInput');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  sendChatMessage(text);
+}
+
+function sendChatMessage(text) {
+  if (isAiBusy) return;
+  addUserMessage(text);
+  setAiBusy(true);
+
+  // Simulate Claude Code response based on message
+  setTimeout(() => {
+    handleClaudeResponse(text);
+    setAiBusy(false);
+  }, 800 + Math.random() * 1000);
+}
+
+function handleClaudeResponse(userMsg) {
+  const msg = userMsg.toLowerCase();
+
+  if (msg.includes('开始') || msg.includes('构建') || msg.includes('wiki')) {
+    // Step 1: Start building
+    const thinking = addThinkingMessage('正在扫描文件目录，分析文件内容...');
+    setTimeout(() => {
+      removeThinkingMessage();
+      addAiMessage(
+        '好的，我开始分析 <code>frontend-notes</code> 目录中的文件...<br><br>' +
+        '已扫描 <strong>10</strong> 个文件，识别出以下知识领域：<br><br>' +
+        '<strong>前端开发</strong> — React/TypeScript 前端技术学习笔记<br><br>' +
+        '建议分类：<ul>' +
+        '<li>React 框架 (3 个文件)</li>' +
+        '<li>TypeScript (1 个文件)</li>' +
+        '<li>工程化 & 构建 (4 个文件)</li>' +
+        '<li>样式方案 (1 个文件)</li>' +
+        '<li>SSR & 框架 (1 个文件)</li>' +
+        '</ul>' +
+        '正在逐个文件生成摘要和 frontmatter...',
+        '<button class="btn primary" onclick="sendQuickAction('确认并写入文件')">确认并写入文件</button>' +
+        '<button class="btn" onclick="sendQuickAction('重新分析分类')">重新分析</button>'
+      );
+    }, 2000);
+    return;
+  }
+
+  if (msg.includes('确认') || msg.includes('写入')) {
+    const thinking = addThinkingMessage('正在写入文件，生成 INDEX.md 和 LOG.md...');
+    setTimeout(() => {
+      removeThinkingMessage();
+      onBuildComplete();
+      addAiMessage(
+        '✅ <strong>Wiki 构建完成！</strong><br><br>' +
+        '共处理 <strong>10</strong> 个文件，生成 <strong>5</strong> 个分类。<br>' +
+        '<ul>' +
+        '<li>INDEX.md — 知识库索引</li>' +
+        '<li>LOG.md — 构建日志</li>' +
+        '<li>每个文件的 frontmatter 已写入</li>' +
+        '</ul>' +
+        '你可以继续问我问题，比如："把 React 相关的文件再整理一下" 或 "重新生成一个更详细的索引"。',
+        '<button class="btn primary" onclick="closeAiChat(); showView(\'result\');">查看 INDEX.md</button>' +
+        '<button class="btn" onclick="closeAiChat(); showView(\'log\');">查看 LOG.md</button>'
+      );
+    }, 2500);
+    return;
+  }
+
+  if (msg.includes('重新') || msg.includes('再分析')) {
+    const thinking = addThinkingMessage('正在重新分析分类方案...');
+    setTimeout(() => {
+      removeThinkingMessage();
+      addAiMessage(
+        '重新分析完成。这次我尝试从不同的角度分类：<br><br>' +
+        '<strong>按技术层次：</strong><ul>' +
+        '<li>基础概念 — react-hooks.md, typescript-generics.md</li>' +
+        '<li>工程实践 — webpack-config.md, vite-vs-webpack.md, eslint-rules.md</li>' +
+        '<li>框架进阶 — redux-patterns.md, react-performance.md, nextjs-ssr.md</li>' +
+        '<li>测试 & 样式 — testing-library.md, css-modules.md</li>' +
+        '</ul>' +
+        '这个方案怎么样？',
+        '<button class="btn primary" onclick="sendQuickAction('用这个方案')">用这个方案</button>' +
+        '<button class="btn" onclick="sendQuickAction('再换一个')">再换一个</button>'
+      );
+    }, 1500);
+    return;
+  }
+
+  if (msg.includes('进度') || msg.includes('状态')) {
+    addAiMessage(
+      '当前构建进度：<br><br>' +
+      '<ul>' +
+      '<li>已扫描: 10 个文件</li>' +
+      '<li>已分析: 10 个文件</li>' +
+      '<li>已生成 frontmatter: 10 个文件</li>' +
+      '<li>已生成 INDEX.md: ✅</li>' +
+      '<li>已生成 LOG.md: ✅</li>' +
+      '</ul>' +
+      '所有文件处理完成！'
+    );
+    return;
+  }
+
+  if (msg.includes('react') && (msg.includes('整理') || msg.includes('相关'))) {
+    addAiMessage(
+      'React 相关的文件整理如下：<br><br>' +
+      '<strong>React 基础</strong><ul>' +
+      '<li>react-hooks.md — React Hooks 详解</li>' +
+      '<li>react-performance.md — React 性能优化</li>' +
+      '</ul>' +
+      '<strong>React 生态</strong><ul>' +
+      '<li>redux-patterns.md — Redux 设计模式</li>' +
+      '<li>css-modules.md — CSS Modules 实践指南</li>' +
+      '<li>nextjs-ssr.md — Next.js SSR 深入</li>' +
+      '</ul>' +
+      '是否需要我把这些文件的关系也用 [[Wiki Links]] 连接起来？',
+      '<button class="btn primary" onclick="sendQuickAction('添加 Wiki Links')">添加 Wiki Links</button>' +
+      '<button class="btn" onclick="sendQuickAction('不用了')">不用了</button>'
+    );
+    return;
+  }
+
+  if (msg.includes('用这个') || msg.includes('好')) {
+    const thinking = addThinkingMessage('正在按新方案写入文件...');
+    setTimeout(() => {
+      removeThinkingMessage();
+      onBuildComplete();
+      addAiMessage(
+        '✅ 已按新方案完成构建！<br><br>' +
+        '新的分类方案已应用到 INDEX.md 中。',
+        '<button class="btn primary" onclick="closeAiChat(); showView(\'result\');">查看 INDEX.md</button>'
+      );
+    }, 1500);
+    return;
+  }
+
+  // Default response
+  addAiMessage(
+    '收到。你可以继续通过对话指挥我完成 Wiki 构建。<br><br>' +
+    '常用指令：<ul>' +
+    '<li>「开始构建 Wiki」— 启动构建</li>' +
+    '<li>「重新分析分类」— 换一种分类方式</li>' +
+    '<li>「查看当前进度」— 查看构建状态</li>' +
+    '<li>「把 XXX 相关的文件整理一下」— 按主题整理</li>' +
+    '</ul>'
+  );
+}
+
+// ════════════════════════════════════════
+// View Switching
+// ════════════════════════════════════════
+function showView(view) {
+  currentView = view;
+  document.getElementById('viewEmpty').style.display = view === 'empty' ? 'flex' : 'none';
+  document.getElementById('viewFile').style.display = view === 'file' ? 'block' : 'none';
+  document.getElementById('viewResult').style.display = view === 'result' ? 'block' : 'none';
+  document.getElementById('viewLog').style.display = view === 'log' ? 'block' : 'none';
+}
+
+// ════════════════════════════════════════
+// File Selection
+// ════════════════════════════════════════
+function selectFile(el, key) {
+  document.querySelectorAll('.tree-item').forEach(i => i.classList.remove('is-active'));
+  el.classList.add('is-active');
+
+  const filename = el.querySelector('.tree-name').textContent;
+  if (isWikiBuilt && fileResults[filename]) {
+    showFileWithMeta(filename);
+  } else {
+    showFileContent(filename);
+  }
+}
+
+function showFileContent(filename) {
+  showView('file');
+  document.getElementById('fileFrontmatter').style.display = 'none';
+  document.getElementById('pageTitle').textContent = filename;
+  document.getElementById('breadcrumbs').textContent = 'notes/' + filename;
+
+  const sampleContent = `
+    <h1>${filename.replace('.md', '').replace(/-/g, ' ')}</h1>
+    <p>这是 ${filename} 的原始内容。文件尚未被 Wiki 构建处理。</p>
+    <h2>概述</h2>
+    <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit.</p>
+    <h2>核心概念</h2>
+    <ul><li>概念一</li><li>概念二</li><li>概念三</li></ul>
+  `;
+  document.getElementById('fileContent').innerHTML = sampleContent;
+}
+
+function showFileWithMeta(filename) {
+  const result = fileResults[filename];
+  if (!result) { showFileContent(filename); return; }
+
+  showView('file');
+  document.getElementById('fileFrontmatter').style.display = 'block';
+  document.getElementById('fmTitle').textContent = result.title;
+  document.getElementById('fmSummary').textContent = result.summary;
+  document.getElementById('fmTags').textContent = '[' + result.tags.join(', ') + ']';
+  document.getElementById('fmRelated').textContent = result.related.join(', ');
+  document.getElementById('pageTitle').textContent = result.title;
+  document.getElementById('breadcrumbs').textContent = 'notes/' + filename + ' · Wiki 已处理';
+
+  document.getElementById('fileContent').innerHTML = `
+    <h1>${result.title}</h1>
+    <blockquote>${result.summary}</blockquote>
+    <h2>核心内容</h2>
+    <p>这里是 ${filename} 的详细内容。</p>
+    <h2>相关文档</h2>
+    <p>${result.related.map(r => `<a href="#" style="color:var(--blue);text-decoration:none;background:var(--blue-bg);padding:1px 5px;border-radius:4px;font-size:12px;font-family:var(--mono);">[[${r}]]</a>`).join(' ')}</p>
+  `;
+}
+
+// ════════════════════════════════════════
+// Build Complete
+// ════════════════════════════════════════
+function onBuildComplete() {
+  isWikiBuilt = true;
+  document.getElementById('breadcrumbs').textContent = '知识库 · 10 个文件 · Wiki 已构建';
+  updateTreeWithStatus();
+  renderIndexMd();
+  renderLogMd();
+}
+
+function updateTreeWithStatus() {
+  const treeItems = document.querySelectorAll('.tree-item');
+  treeItems.forEach(item => {
+    const name = item.querySelector('.tree-name')?.textContent;
+    if (fileResults[name]) {
+      const existing = item.querySelector('.tree-status');
+      if (!existing) {
+        const badge = document.createElement('span');
+        badge.className = 'tree-status done';
+        badge.textContent = '✓';
+        item.appendChild(badge);
+      }
+    }
+  });
+}
+
+function renderIndexMd() {
+  const container = document.getElementById('wikiResult');
+  let html = `
+    <h1>知识库索引</h1>
+    <div class="wiki-meta">前端开发 — React/TypeScript 前端技术学习笔记 · 由 Molio LLM Wiki 生成于 2026-06-05</div>
+  `;
+  proposal.categories.forEach(cat => {
+    html += `<h2>${cat.name}</h2>`;
+    cat.files.forEach(f => {
+      const r = fileResults[f];
+      if (r) {
+        html += `
+          <div class="wiki-entry">
+            <a class="wiki-link" href="#" onclick="showFileWithMeta('${f}'); return false;">[[${r.title}]]</a>
+            <span class="wiki-summary">— ${r.summary.substring(0, 40)}...</span>
+          </div>
+        `;
+      }
+    });
+  });
+  container.innerHTML = html;
+}
+
+function renderLogMd() {
+  const container = document.getElementById('wikiLog');
+  let rows = '';
+  files.forEach(f => {
+    const r = fileResults[f.name];
+    rows += `<tr><td style="font-family:var(--mono);font-size:11.5px;">${f.name}</td><td class="status-ok">✅ 成功</td><td>${r ? r.title : '—'}</td><td>${r ? r.tags.map(t => `<span class="tag">${t}</span>`).join('') : '—'}</td></tr>`;
+  });
+  container.innerHTML = `
+    <h1>Wiki 构建日志</h1>
+    <div class="wiki-meta">构建时间: 2026-06-05 10:30:00 · Agent: Claude Code</div>
+    <h2>构建信息</h2>
+    <ul><li>知识库: <strong>frontend-notes</strong></li><li>知识领域: <strong>前端开发</strong></li><li>文件总数: <strong>10</strong></li></ul>
+    <h2>处理记录</h2>
+    <table class="log-table"><thead><tr><th>文件</th><th>状态</th><th>标题</th><th>标签</th></tr></thead><tbody>${rows}</tbody></table>
+  `;
+}
+
+// ════════════════════════════════════════
+// Tree helpers
+// ════════════════════════════════════════
+function toggleGroup(el) {
+  const children = el.nextElementSibling;
+  const chevron = el.querySelector('.chevron');
+  if (children && children.classList.contains('tree-children')) {
+    children.classList.toggle('collapsed');
+    chevron.classList.toggle('collapsed');
+  }
+}
+
+// ════════════════════════════════════════
+// Utils
+// ════════════════════════════════════════
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function showToast(type, message) {
+  const container = document.getElementById('toastContainer');
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.textContent = message;
+  container.appendChild(toast);
+  setTimeout(() => { toast.style.opacity = '0'; toast.style.transition = 'opacity 200ms'; }, 2500);
+  setTimeout(() => toast.remove(), 2800);
+}
+
+// Auto-resize textarea
+document.addEventListener('input', (e) => {
+  if (e.target.tagName === 'TEXTAREA' && e.target.id === 'chatInput') {
+    e.target.style.height = 'auto';
+    e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
+  }
+});
+
+// Init
+showView('empty');
+</script>
+
+</body>
+</html>
