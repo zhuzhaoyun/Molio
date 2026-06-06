@@ -19,8 +19,26 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  desktop:
-    runs-on: windows-2022
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            platform: win
+            arch-flag: ""
+            label: "Windows x64"
+          - os: macos-latest
+            platform: mac
+            arch-flag: "--arm64"
+            label: "macOS arm64"
+          - os: macos-13
+            platform: mac
+            arch-flag: "--x64"
+            label: "macOS x64"
+
+    name: Build ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -56,4 +74,4 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: npx electron-builder --win --publish always "--config.extraMetadata.version=${{ steps.version.outputs.version }}"
+        run: npx electron-builder --${{ matrix.platform }} ${{ matrix.arch-flag }} --publish always "--config.extraMetadata.version=${{ steps.version.outputs.version }}"

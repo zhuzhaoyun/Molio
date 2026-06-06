@@ -67,14 +67,13 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["x64", "arm64"]
+          "arch": ["arm64"]
         }
       ],
-      "category": "public.app-category.productivity",
-      "icon": "build/icon.icns"
+      "category": "public.app-category.productivity"
     },
     "dmg": {
-      "artifactName": "${productName}-Setup-${version}-mac-${arch}.${ext}"
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
     },
     "linux": {
       "target": [
@@ -87,8 +86,7 @@
           "arch": ["x64"]
         }
       ],
-      "category": "Office",
-      "icon": "build/icon.png"
+      "category": "Office"
     },
     "appImage": {
       "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
