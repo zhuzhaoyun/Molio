@@ -10,9 +10,10 @@ interface KbFileTreeProps {
   selectedFile: string | null;
   searchQuery: string;
   onSelectFile: (path: string) => void;
+  onAddToWiki?: (path: string) => void;
 }
 
-export function KbFileTree({ nodes, selectedFile, searchQuery, onSelectFile }: KbFileTreeProps) {
+export function KbFileTree({ nodes, selectedFile, searchQuery, onSelectFile, onAddToWiki }: KbFileTreeProps) {
   if (nodes.length === 0) {
     return (
       <div className="kb-empty-state" style={{ padding: '32px 16px' }}>
@@ -34,6 +35,7 @@ export function KbFileTree({ nodes, selectedFile, searchQuery, onSelectFile }: K
           selectedFile={selectedFile}
           searchQuery={searchQuery}
           onSelectFile={onSelectFile}
+          onAddToWiki={onAddToWiki}
         />
       ))}
     </div>
@@ -47,12 +49,22 @@ interface TreeNodeItemProps {
   selectedFile: string | null;
   searchQuery: string;
   onSelectFile: (path: string) => void;
+  onAddToWiki?: (path: string) => void;
 }
 
-function TreeNodeItem({ node, selectedFile, searchQuery, onSelectFile }: TreeNodeItemProps) {
+function TreeNodeItem({ node, selectedFile, searchQuery, onSelectFile, onAddToWiki }: TreeNodeItemProps) {
   const [expanded, setExpanded] = useState(true);
 
   const toggle = useCallback(() => setExpanded((e) => !e), []);
+
+  // Don't show "+" for items inside the wiki/ directory
+  const isInsideWiki = node.path.startsWith('wiki/') || node.path === 'wiki';
+  const showAddButton = onAddToWiki && !isInsideWiki;
+
+  const handleAdd = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    onAddToWiki?.(node.path);
+  }, [onAddToWiki, node.path]);
 
   if (node.type === 'directory') {
     return (
@@ -60,6 +72,14 @@ function TreeNodeItem({ node, selectedFile, searchQuery, onSelectFile }: TreeNod
         <div className="kb-tree-group-label" onClick={toggle}>
           <span className={`kb-tree-chevron ${expanded ? '' : 'collapsed'}`}>▾</span>
           <span>{node.name}</span>
+          {showAddButton && (
+            <button
+              type="button"
+              className="wiki-tree-op"
+              title="加入 Wiki"
+              onClick={handleAdd}
+            >+</button>
+          )}
         </div>
         <div className={`kb-tree-children ${expanded ? '' : 'collapsed'}`}>
           {node.children?.map((child) => (
@@ -69,6 +89,7 @@ function TreeNodeItem({ node, selectedFile, searchQuery, onSelectFile }: TreeNod
               selectedFile={selectedFile}
               searchQuery={searchQuery}
               onSelectFile={onSelectFile}
+              onAddToWiki={onAddToWiki}
             />
           ))}
         </div>
@@ -86,6 +107,14 @@ function TreeNodeItem({ node, selectedFile, searchQuery, onSelectFile }: TreeNod
     >
       <span className="kb-tree-icon">📄</span>
       <span className="kb-tree-name">{node.name}</span>
+      {showAddButton && (
+        <button
+          type="button"
+          className="wiki-tree-op"
+          title="加入 Wiki"
+          onClick={handleAdd}
+        >+</button>
+      )}
     </div>
   );
 }

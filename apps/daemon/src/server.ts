@@ -45,7 +45,7 @@ app.route('/api/runs', eventsRoutes(runManager));
 app.route('/api/runs', toolResultRoutes(runManager));
 app.route('/api/config', configRoutes());
 app.route('/api/projects', projectRoutes(db));
-app.route('/api/knowledge', knowledgeRoutes(db));
+app.route('/api/knowledge', knowledgeRoutes(db, runManager));
 
 // Static file serving (production / desktop mode)
 const staticDir = process.env['KGE_STATIC_DIR'];

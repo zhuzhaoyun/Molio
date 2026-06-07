@@ -27,6 +27,9 @@ interface UseKnowledgeReturn {
   searchQuery: string;
   loading: boolean;
 
+  // Wiki state
+  wikiInitialized: boolean;
+
   // Typeset mode state
   isTypesetMode: boolean;
   themeConfig: ThemeConfig;
@@ -44,6 +47,7 @@ interface UseKnowledgeReturn {
   deleteVault: (id: string) => Promise<void>;
   selectFile: (path: string) => void;
   refreshTree: () => void;
+  checkWikiStatus: () => void;
   setActiveTab: (tab: KbTab) => void;
   setPanelWidth: (w: number) => void;
   setSearchQuery: (q: string) => void;
@@ -79,6 +83,9 @@ export function useKnowledge(): UseKnowledgeReturn {
   const [isTypesetMode, setIsTypesetMode] = useState(false);
   const [themeConfig, setThemeConfig] = useState<ThemeConfig>(defaultThemeConfig);
   const [editedContent, setEditedContent] = useState<string | null>(null);
+
+  // Wiki state
+  const [wikiInitialized, setWikiInitialized] = useState(false);
 
 
   // Load vaults on mount
@@ -116,6 +123,24 @@ export function useKnowledge(): UseKnowledgeReturn {
         if (!cancelled) setTree([]);
       } finally {
         if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [activeVaultId]);
+
+  // Check wiki status when vault changes
+  useEffect(() => {
+    if (!activeVaultId) {
+      setWikiInitialized(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const status = await api.getWikiStatus(activeVaultId);
+        if (!cancelled) setWikiInitialized(status.initialized);
+      } catch {
+        if (!cancelled) setWikiInitialized(false);
       }
     })();
     return () => { cancelled = true; };
@@ -193,6 +218,17 @@ export function useKnowledge(): UseKnowledgeReturn {
   const refreshTree = useCallback(() => {
     if (!activeVaultId) return;
     api.getFileTree(activeVaultId).then(setTree).catch(() => {});
+    // Re-check wiki status after tree refresh (build may have created INDEX.md)
+    api.getWikiStatus(activeVaultId)
+      .then((s) => setWikiInitialized(s.initialized))
+      .catch(() => {});
+  }, [activeVaultId]);
+
+  const checkWikiStatus = useCallback(() => {
+    if (!activeVaultId) return;
+    api.getWikiStatus(activeVaultId)
+      .then((s) => setWikiInitialized(s.initialized))
+      .catch(() => {});
   }, [activeVaultId]);
 
   // Typeset mode actions
@@ -235,6 +271,7 @@ export function useKnowledge(): UseKnowledgeReturn {
     panelWidth,
     searchQuery,
     loading,
+    wikiInitialized,
     isTypesetMode,
     themeConfig,
     editedContent,
@@ -246,6 +283,7 @@ export function useKnowledge(): UseKnowledgeReturn {
     deleteVault,
     selectFile,
     refreshTree,
+    checkWikiStatus,
     setActiveTab,
     setPanelWidth,
     setSearchQuery,

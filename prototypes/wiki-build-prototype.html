@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Molio — LLM Wiki 构建原型</title>
+<title>Molio — LLM Wiki 构建原型 v2</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 :root {
@@ -20,7 +20,6 @@
   --accent-soft: #f5d8cb;
   --green: #2d8a56;
   --green-bg: #e8f5ee;
-  --green-border: #b8dfc9;
   --blue: #2563eb;
   --blue-bg: #eff6ff;
   --blue-border: #bfdbfe;
@@ -79,13 +78,6 @@ body {
   border-right: 1px solid var(--sidebar-border);
   display: flex; flex-direction: column; overflow: hidden;
 }
-.panel-header {
-  padding: 12px 14px 8px; display: flex; align-items: center; justify-content: space-between;
-}
-.panel-header h2 {
-  font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
-  text-transform: uppercase; color: var(--text-muted);
-}
 .vault-bar {
   padding: 6px 10px; border-bottom: 1px solid var(--sidebar-border);
   display: flex; align-items: center; gap: 6px;
@@ -131,20 +123,38 @@ body {
   cursor: pointer; border-radius: 5px;
   transition: background 120ms ease;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  position: relative;
 }
 .tree-item:hover { background: rgba(0,0,0,0.04); }
 .tree-item.is-active { background: var(--accent-soft); color: var(--accent); font-weight: 500; }
 .tree-item .tree-icon { font-size: 13px; opacity: 0.5; flex-shrink: 0; }
-.tree-item .tree-name { overflow: hidden; text-overflow: ellipsis; }
+.tree-item .tree-name { overflow: hidden; text-overflow: ellipsis; flex: 1; }
 .tree-item.is-active .tree-icon { opacity: 1; }
 
-/* Status badge on tree items */
-.tree-status {
-  margin-left: auto; flex-shrink: 0;
-  font-size: 10px; padding: 1px 5px; border-radius: 3px;
-  font-weight: 600;
+/* "+" 快捷按钮 — hover 时显示 */
+.tree-item-op {
+  display: none; flex-shrink: 0;
+  width: 20px; height: 20px; border: none;
+  background: var(--accent-soft); color: var(--accent);
+  border-radius: 4px; cursor: pointer;
+  font-size: 14px; font-weight: 700; line-height: 1;
+  align-items: center; justify-content: center;
+  transition: all 120ms ease;
 }
-.tree-status.done { background: var(--green-bg); color: var(--green); }
+.tree-item:hover .tree-item-op { display: flex; }
+.tree-item-op:hover { background: var(--accent); color: #fff; }
+
+.tree-group-label .tree-item-op {
+  display: none; flex-shrink: 0;
+  width: 20px; height: 20px; border: none;
+  background: var(--accent-soft); color: var(--accent);
+  border-radius: 4px; cursor: pointer;
+  font-size: 14px; font-weight: 700; line-height: 1;
+  align-items: center; justify-content: center;
+  margin-left: auto; transition: all 120ms ease;
+}
+.tree-group-label:hover .tree-item-op { display: flex; }
+.tree-group-label .tree-item-op:hover { background: var(--accent); color: #fff; }
 
 /* ═══════ Main ═══════ */
 .main {
@@ -177,7 +187,6 @@ body {
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-group { display: flex; gap: 8px; }
 
-/* Header action button */
 .header-btn {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 0 14px; height: 32px;
@@ -188,49 +197,115 @@ body {
 }
 .header-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 .header-btn svg { width: 14px; height: 14px; flex-shrink: 0; }
-.header-btn.is-accent {
-  background: var(--accent); border-color: var(--accent); color: #fff;
-}
+.header-btn.is-accent { background: var(--accent); border-color: var(--accent); color: #fff; }
 .header-btn.is-accent:hover { background: var(--accent-hover); }
 
-/* ═══════ Overlay ═══════ */
-.overlay {
-  display: none; position: fixed; inset: 0;
-  background: rgba(26,25,22,0.35); backdrop-filter: blur(4px);
-  z-index: 100; align-items: center; justify-content: center;
+/* ═══════ Empty state / CTA ═══════ */
+.empty-wiki {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; height: 100%;
+  text-align: center; padding: 40px;
 }
-.overlay.show { display: flex; }
+.empty-wiki .ew-icon { font-size: 48px; margin-bottom: 16px; opacity: 0.3; }
+.empty-wiki .ew-title {
+  font-size: 18px; font-weight: 600; color: var(--text-strong);
+  margin-bottom: 8px;
+}
+.empty-wiki .ew-desc {
+  font-size: 13px; color: var(--text-muted); max-width: 440px;
+  line-height: 1.7; margin-bottom: 24px;
+}
+.empty-wiki .ew-features {
+  text-align: left; font-size: 12.5px; color: var(--text-muted);
+  margin-bottom: 24px; max-width: 360px;
+}
+.empty-wiki .ew-features li { margin: 4px 0; }
 
-.modal {
-  background: var(--bg-panel); border-radius: var(--radius);
-  box-shadow: var(--shadow-lg); max-height: 85vh;
-  overflow: hidden; display: flex; flex-direction: column;
-}
-.modal.sm { width: 440px; }
-.modal.md { width: 560px; }
-.modal.lg { width: 720px; }
+/* ═══════ Markdown preview ═══════ */
+.md-preview { font-size: 14px; line-height: 1.7; color: var(--text); }
+.md-preview h1 { font-size: 24px; font-weight: 700; color: var(--text-strong); margin: 0 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.md-preview h2 { font-size: 18px; font-weight: 600; color: var(--text-strong); margin: 24px 0 10px; }
+.md-preview p { margin: 0 0 12px; }
+.md-preview ul { margin: 8px 0; padding-left: 22px; }
+.md-preview li { margin: 4px 0; }
+.md-preview blockquote { border-left: 3px solid var(--accent); padding: 8px 14px; background: var(--accent-soft); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; margin: 12px 0; font-style: italic; color: var(--text-muted); }
+.md-preview code { font-family: var(--mono); font-size: 12.5px; background: var(--bg-subtle); padding: 1px 5px; border-radius: 4px; }
 
-.modal-header {
-  padding: 20px 24px 16px; border-bottom: 1px solid var(--border);
-  display: flex; align-items: center; justify-content: space-between;
+/* ═══════ Wiki Result (INDEX.md) ═══════ */
+.wiki-result { font-size: 14px; line-height: 1.7; color: var(--text); }
+.wiki-result h1 {
+  font-size: 24px; font-weight: 700; color: var(--text-strong);
+  margin: 0 0 8px; padding-bottom: 8px; border-bottom: 2px solid var(--accent);
 }
-.modal-header h2 { font-size: 16px; font-weight: 600; color: var(--text-strong); }
-.modal-close {
-  width: 28px; height: 28px; border: none; background: transparent;
-  border-radius: 6px; cursor: pointer; color: var(--text-muted);
-  font-size: 20px; display: flex; align-items: center; justify-content: center;
+.wiki-result .wiki-meta {
+  font-size: 12.5px; color: var(--text-muted); margin-bottom: 24px;
+  font-style: italic;
 }
-.modal-close:hover { background: var(--bg-hover); color: var(--text); }
-.modal-body { padding: 20px 24px; overflow-y: auto; flex: 1; }
-.modal-footer {
-  padding: 16px 24px; border-top: 1px solid var(--border);
-  display: flex; justify-content: flex-end; gap: 8px;
+.wiki-result h2 {
+  font-size: 17px; font-weight: 600; color: var(--text-strong);
+  margin: 24px 0 10px; padding-left: 10px; border-left: 3px solid var(--accent);
+}
+.wiki-result .wiki-entry {
+  display: flex; gap: 8px; padding: 4px 0 4px 12px;
+  font-size: 13.5px;
+}
+.wiki-result .wiki-entry-type {
+  font-size: 10px; padding: 1px 6px; border-radius: 3px;
+  font-weight: 600; flex-shrink: 0; align-self: center;
+  font-family: var(--mono);
+}
+.wiki-result .wiki-entry-type.type-summary { background: var(--blue-bg); color: var(--blue); }
+.wiki-result .wiki-entry-type.type-concept { background: var(--purple-bg); color: var(--purple); }
+.wiki-result .wiki-entry-type.type-entity { background: var(--green-bg); color: var(--green); }
+.wiki-result .wiki-entry-type.type-comparison { background: var(--amber-bg); color: var(--amber); }
+.wiki-result .wiki-entry-type.type-overview { background: #fce7f3; color: #be185d; }
+
+/* ═══════ Wiki Page (individual page view) ═══════ */
+.wiki-page { font-size: 14px; line-height: 1.7; color: var(--text); }
+.wiki-page .wiki-page-header { margin-bottom: 20px; }
+.wiki-page .wiki-page-type {
+  display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 4px;
+  font-weight: 600; font-family: var(--mono); margin-bottom: 8px;
+}
+.wiki-page .wiki-page-title {
+  font-size: 22px; font-weight: 700; color: var(--text-strong);
+  margin: 0;
+}
+.wiki-page .wiki-page-body { margin-top: 16px; }
+.wiki-page .wiki-page-body p { margin: 0 0 12px; }
+.wiki-page .wiki-page-body h2 { font-size: 17px; font-weight: 600; color: var(--text-strong); margin: 20px 0 8px; }
+
+/* Wiki links — [[style]] */
+.wiki-link {
+  color: var(--blue); text-decoration: none;
+  font-family: var(--mono); font-size: 12.5px;
+  background: var(--blue-bg); padding: 1px 6px; border-radius: 4px;
+  cursor: pointer; transition: all 120ms ease;
+}
+.wiki-link:hover { text-decoration: underline; background: var(--blue-border); }
+
+/* ═══════ LOG.md Preview ═══════ */
+.log-table {
+  width: 100%; border-collapse: collapse; font-size: 12px;
+  margin-top: 12px;
+}
+.log-table th {
+  text-align: left; padding: 6px 10px;
+  border-bottom: 2px solid var(--border);
+  font-weight: 600; color: var(--text-muted);
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em;
+}
+.log-table td { padding: 5px 10px; border-bottom: 1px solid var(--border); }
+.log-table .status-ok { color: var(--green); font-weight: 600; }
+.log-table .tag {
+  display: inline-block; padding: 1px 6px; border-radius: 3px;
+  background: var(--bg-subtle); font-size: 11px; margin-right: 3px;
+  font-family: var(--mono);
 }
 
-/* ═══════ AI Chat Panel (multi-turn) ═══════ */
+/* ═══════ AI Chat Panel ═══════ */
 .ai-chat-panel {
-  width: 0;
-  flex-shrink: 0;
+  width: 0; flex-shrink: 0;
   background: var(--bg-panel);
   border-left: 1px solid var(--border);
   display: flex; flex-direction: column;
@@ -238,13 +313,8 @@ body {
   transition: width 300ms ease;
   position: relative;
 }
-.ai-chat-panel.is-open {
-  width: 400px;
-  min-width: 400px;
-  flex-shrink: 0;
-}
+.ai-chat-panel.is-open { width: 420px; min-width: 420px; }
 
-/* Chat header */
 .ai-chat-header {
   padding: 12px 16px;
   border-bottom: 1px solid var(--border);
@@ -264,19 +334,21 @@ body {
   animation: pulse 1.5s ease-in-out infinite;
 }
 
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+/* 操作类型标签 */
+.op-tag {
+  font-size: 10px; padding: 2px 7px; border-radius: 3px;
+  font-weight: 600; font-family: var(--mono); margin-left: 6px;
 }
+.op-tag.op-build { background: var(--accent-soft); color: var(--accent); }
+.op-tag.op-ingest { background: var(--blue-bg); color: var(--blue); }
+.op-tag.op-lint { background: var(--amber-bg); color: var(--amber); }
+.op-tag.op-query { background: var(--purple-bg); color: var(--purple); }
 
-/* Chat body (scrollable message area) */
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
 .ai-chat-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+  flex: 1; overflow-y: auto; padding: 16px;
+  display: flex; flex-direction: column; gap: 16px;
 }
 
 /* System prompt (collapsible) */
@@ -306,26 +378,18 @@ body {
   border-radius: var(--radius-sm); border: 1px solid var(--border);
   margin-top: 4px;
   font-family: var(--mono); line-height: 1.6;
+  white-space: pre-wrap;
 }
 .prompt-full.show { display: block; }
 
 /* Message types */
-.chat-msg {
-  display: flex; flex-direction: column;
-  gap: 4px; animation: fadeIn 200ms ease;
-}
-
-.chat-msg.user {
-  align-self: flex-end; max-width: 85%;
-}
+.chat-msg { display: flex; flex-direction: column; gap: 4px; animation: fadeIn 200ms ease; }
+.chat-msg.user { align-self: flex-end; max-width: 85%; }
 .chat-msg.user .msg-bubble {
   padding: 10px 14px; background: var(--accent-soft);
   border-radius: var(--radius-sm); font-size: 13px; color: var(--text);
 }
-
-.chat-msg.ai {
-  align-self: flex-start; max-width: 100%;
-}
+.chat-msg.ai { align-self: flex-start; max-width: 100%; }
 .chat-msg.ai .msg-bubble {
   padding: 10px 14px; background: var(--bg);
   border: 1px solid var(--border); border-radius: var(--radius-sm);
@@ -335,16 +399,10 @@ body {
   font-family: var(--mono); font-size: 12px;
   background: var(--bg-subtle); padding: 1px 4px; border-radius: 3px;
 }
-.chat-msg.ai .msg-bubble pre {
-  font-family: var(--mono); font-size: 11.5px;
-  background: var(--bg-subtle); padding: 8px 10px;
-  border-radius: var(--radius-sm); overflow-x: auto;
-  margin: 6px 0;
-}
 .chat-msg.ai .msg-bubble ul { margin: 6px 0; padding-left: 20px; }
 .chat-msg.ai .msg-bubble li { margin: 2px 0; }
 
-/* Thinking block (like Claude Code) */
+/* Thinking block */
 .thinking-block {
   padding: 8px 12px; background: var(--bg-subtle);
   border-radius: var(--radius-sm); border-left: 3px solid var(--amber);
@@ -357,6 +415,23 @@ body {
   animation: spin 0.8s linear infinite; flex-shrink: 0;
 }
 
+/* File operation badges in AI message */
+.file-ops { margin: 8px 0; }
+.file-op {
+  display: flex; align-items: center; gap: 6px;
+  padding: 3px 0; font-size: 12px;
+}
+.file-op-badge {
+  font-size: 10px; padding: 1px 6px; border-radius: 3px;
+  font-weight: 700; font-family: var(--mono); flex-shrink: 0;
+}
+.file-op-badge.op-new { background: var(--green-bg); color: var(--green); }
+.file-op-badge.op-update { background: var(--blue-bg); color: var(--blue); }
+.file-op-badge.op-append { background: var(--amber-bg); color: var(--amber); }
+.file-op-path {
+  font-family: var(--mono); font-size: 11.5px; color: var(--text-muted);
+}
+
 /* Action buttons in AI message */
 .msg-actions {
   display: flex; gap: 8px; margin-top: 8px;
@@ -364,10 +439,7 @@ body {
 }
 .msg-actions .btn { height: 28px; padding: 0 12px; font-size: 12px; }
 
-/* Timestamp */
-.msg-time {
-  font-size: 11px; color: var(--text-faint); margin-top: 2px;
-}
+.msg-time { font-size: 11px; color: var(--text-faint); margin-top: 2px; }
 
 /* Chat input area */
 .ai-chat-input {
@@ -376,12 +448,7 @@ body {
   display: flex; flex-direction: column; gap: 8px;
   flex-shrink: 0;
 }
-
-.chat-composer {
-  display: flex; gap: 8px;
-  align-items: flex-end;
-}
-
+.chat-composer { display: flex; gap: 8px; align-items: flex-end; }
 .chat-composer textarea {
   flex: 1; min-height: 36px; max-height: 120px;
   padding: 8px 12px;
@@ -392,7 +459,6 @@ body {
 }
 .chat-composer textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .chat-composer textarea:disabled { background: var(--bg-hover); color: var(--text-faint); }
-
 .chat-composer .send-btn {
   width: 36px; height: 36px; border-radius: 6px;
   border: none; background: var(--accent); color: #fff;
@@ -402,10 +468,8 @@ body {
 .chat-composer .send-btn:hover { background: var(--accent-hover); }
 .chat-composer .send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-/* Quick actions below input */
-.quick-actions {
-  display: flex; gap: 6px; flex-wrap: wrap;
-}
+/* Quick actions */
+.quick-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .quick-action {
   padding: 3px 10px; border-radius: 999px;
   border: 1px solid var(--border); background: var(--bg);
@@ -414,104 +478,22 @@ body {
 }
 .quick-action:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 
-/* ═══════ Empty state / CTA ═══════ */
-.empty-wiki {
-  display: flex; flex-direction: column; align-items: center;
-  justify-content: center; height: 100%;
-  text-align: center; padding: 40px;
-}
-.empty-wiki .ew-icon { font-size: 48px; margin-bottom: 16px; opacity: 0.3; }
-.empty-wiki .ew-title {
-  font-size: 18px; font-weight: 600; color: var(--text-strong);
-  margin-bottom: 8px;
-}
-.empty-wiki .ew-desc {
-  font-size: 13px; color: var(--text-muted); max-width: 400px;
-  line-height: 1.6; margin-bottom: 24px;
-}
-
-/* ═══════ Markdown preview ═══════ */
-.md-preview { font-size: 14px; line-height: 1.7; color: var(--text); }
-.md-preview h1 { font-size: 24px; font-weight: 700; color: var(--text-strong); margin: 0 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
-.md-preview h2 { font-size: 18px; font-weight: 600; color: var(--text-strong); margin: 24px 0 10px; }
-.md-preview p { margin: 0 0 12px; }
-.md-preview ul { margin: 8px 0; padding-left: 22px; }
-.md-preview li { margin: 4px 0; }
-.md-preview blockquote { border-left: 3px solid var(--accent); padding: 8px 14px; background: var(--accent-soft); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; margin: 12px 0; font-style: italic; color: var(--text-muted); }
-.md-preview code { font-family: var(--mono); font-size: 12.5px; background: var(--bg-subtle); padding: 1px 5px; border-radius: 4px; }
-.frontmatter {
-  background: var(--bg-subtle); border: 1px solid var(--border);
-  border-radius: var(--radius-sm); padding: 12px 16px; margin-bottom: 20px;
-  font-size: 12.5px; font-family: var(--mono);
-}
-.frontmatter .fm-line { display: flex; gap: 8px; padding: 2px 0; }
-.frontmatter .fm-key { color: var(--text-muted); }
-.frontmatter .fm-val { color: var(--text); }
-
 /* ═══════ Animations ═══════ */
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
-/* ═══════ Tab for switching views ═══════ */
-.view-tabs {
-  display: flex; gap: 2px; padding: 0 24px;
-  border-bottom: 1px solid var(--border); flex-shrink: 0;
+/* ═══════ Toast ═══════ */
+.toast-container {
+  position: fixed; bottom: 20px; right: 20px; z-index: 200;
+  display: flex; flex-direction: column; gap: 8px;
 }
-.view-tab {
-  padding: 8px 14px; font-size: 12.5px; color: var(--text-muted);
-  cursor: pointer; border-bottom: 2px solid transparent;
-  margin-bottom: -1px; transition: all 120ms ease; user-select: none;
+.toast {
+  padding: 10px 16px; border-radius: var(--radius-sm);
+  font-size: 13px; box-shadow: var(--shadow-md);
+  animation: fadeIn 200ms ease;
 }
-.view-tab:hover { color: var(--text); }
-.view-tab.is-active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
-
-/* ═══════ LOG.md Preview ═══════ */
-.log-table {
-  width: 100%; border-collapse: collapse; font-size: 12px;
-  margin-top: 12px;
-}
-.log-table th {
-  text-align: left; padding: 6px 10px;
-  border-bottom: 2px solid var(--border);
-  font-weight: 600; color: var(--text-muted);
-  font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em;
-}
-.log-table td {
-  padding: 5px 10px; border-bottom: 1px solid var(--border);
-}
-.log-table .status-ok { color: var(--green); font-weight: 600; }
-.log-table .status-fail { color: var(--red); font-weight: 600; }
-.log-table .tag {
-  display: inline-block; padding: 1px 6px; border-radius: 3px;
-  background: var(--bg-subtle); font-size: 11px; margin-right: 3px;
-  font-family: var(--mono);
-}
-
-/* ═══════ Wiki Result (INDEX.md) ═══════ */
-.wiki-result { font-size: 14px; line-height: 1.7; color: var(--text); }
-.wiki-result h1 {
-  font-size: 24px; font-weight: 700; color: var(--text-strong);
-  margin: 0 0 8px; padding-bottom: 8px; border-bottom: 2px solid var(--accent);
-}
-.wiki-result .wiki-meta {
-  font-size: 12.5px; color: var(--text-muted); margin-bottom: 24px;
-  font-style: italic;
-}
-.wiki-result h2 {
-  font-size: 17px; font-weight: 600; color: var(--text-strong);
-  margin: 24px 0 10px; padding-left: 10px; border-left: 3px solid var(--accent);
-}
-.wiki-result .wiki-entry {
-  display: flex; gap: 8px; padding: 4px 0 4px 12px;
-  font-size: 13.5px;
-}
-.wiki-result .wiki-link {
-  color: var(--blue); text-decoration: none; font-weight: 500;
-}
-.wiki-result .wiki-link:hover { text-decoration: underline; }
-.wiki-result .wiki-summary {
-  color: var(--text-muted); font-size: 12.5px;
-}
+.toast.success { background: var(--green-bg); color: var(--green); }
+.toast.info { background: var(--blue-bg); color: var(--blue); }
 </style>
 </head>
 <body>
@@ -540,169 +522,92 @@ body {
       </select>
       <button class="btn-icon" title="Settings">&#9881;</button>
     </div>
-
     <div class="tree-scroll" id="treeScroll">
-      <div class="tree-group">
-        <div class="tree-group-label" onclick="toggleGroup(this)">
-          <span class="chevron">&#9662;</span>
-          <span>📁 notes/</span>
-        </div>
-        <div class="tree-children">
-          <div class="tree-item is-active" onclick="selectFile(this, 'react-hooks')">
-            <span class="tree-icon">📄</span>
-            <span class="tree-name">react-hooks.md</span>
-          </div>
-          <div class="tree-item" onclick="selectFile(this, 'typescript-generics')">
-            <span class="tree-icon">📄</span>
-            <span class="tree-name">typescript-generics.md</span>
-          </div>
-          <div class="tree-item" onclick="selectFile(this, 'webpack-config')">
-            <span class="tree-icon">📄</span>
-            <span class="tree-name">webpack-config.md</span>
-          </div>
-          <div class="tree-item" onclick="selectFile(this, 'vite-vs-webpack')">
-            <span class="tree-icon">📄</span>
-            <span class="tree-name">vite-vs-webpack.md</span>
-          </div>
-          <div class="tree-item" onclick="selectFile(this, 'css-modules')">
-            <span class="tree-icon">📄</span>
-            <span class="tree-name">css-modules.md</span>
-          </div>
-          <div class="tree-item" onclick="selectFile(this, 'redux-patterns')">
-            <span class="tree-icon">📄</span>
-            <span class="tree-name">redux-patterns.md</span>
-          </div>
-          <div class="tree-item" onclick="selectFile(this, 'react-performance')">
-            <span class="tree-icon">📄</span>
-            <span class="tree-name">react-performance.md</span>
-          </div>
-          <div class="tree-item" onclick="selectFile(this, 'eslint-rules')">
-            <span class="tree-icon">📄</span>
-            <span class="tree-name">eslint-rules.md</span>
-          </div>
-          <div class="tree-item" onclick="selectFile(this, 'testing-library')">
-            <span class="tree-icon">📄</span>
-            <span class="tree-name">testing-library.md</span>
-          </div>
-          <div class="tree-item" onclick="selectFile(this, 'nextjs-ssr')">
-            <span class="tree-icon">📄</span>
-            <span class="tree-name">nextjs-ssr.md</span>
-          </div>
-        </div>
-      </div>
+      <!-- 文件树由 JS 动态渲染 -->
     </div>
   </aside>
 
   <!-- ═══ Main ═══ -->
   <main class="main" id="mainArea">
-    <!-- Header -->
     <div class="main-header">
       <div>
         <h1 id="pageTitle">frontend-notes</h1>
-        <div class="breadcrumbs" id="breadcrumbs">知识库 · 10 个文件 · 未构建 Wiki</div>
+        <div class="breadcrumbs" id="breadcrumbs">知识库 · 10 个文件</div>
       </div>
       <div class="btn-group" id="headerActions">
-        <button class="header-btn is-accent" id="buildWikiBtn" onclick="openAiChat()">
+        <button class="header-btn is-accent" onclick="openChatWithOp('build')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px">
             <path d="M12 2L2 7l10 5 10-5-10-5z"/>
             <path d="M2 17l10 5 10-5"/>
             <path d="M2 12l10 5 10-5"/>
           </svg>
-          构建 Wiki
+          <span id="buildBtnText">构建 Wiki</span>
         </button>
       </div>
     </div>
 
-    <!-- Content area -->
     <div id="viewContainer" style="flex:1; display:flex; flex-direction:column; overflow:hidden;">
       <!-- View: Empty state -->
       <div class="empty-wiki" id="viewEmpty">
         <div class="ew-icon">📚</div>
         <div class="ew-title">这个知识库还没有构建 Wiki</div>
         <div class="ew-desc">
-          点击「构建 Wiki」按钮，打开 Claude Code 对话面板。<br>
-          你可以通过多轮对话，指挥 AI 分析你的文件内容，构建结构化的知识索引。
+          通过 AI 对话，将你的文件转化为结构化的知识库 Wiki。<br>
+          AI 会阅读所有文件，生成摘要、概念、实体等页面，并维护它们之间的链接关系。
         </div>
-        <button class="btn primary" onclick="openAiChat()" style="height:40px; padding: 0 24px; font-size:14px;">
+        <ul class="ew-features">
+          <li>📝 每个文件生成摘要页 (summary)</li>
+          <li>💡 提取概念页 (concept) 和实体页 (entity)</li>
+          <li>🔗 自动建立 [[Wiki Links]] 互相引用</li>
+          <li>📋 生成 INDEX.md 索引 和 LOG.md 日志</li>
+        </ul>
+        <button class="btn primary" onclick="openChatWithOp('build')" style="height:40px; padding: 0 24px; font-size:14px;">
           ⚡ 开始构建 Wiki
         </button>
       </div>
 
-      <!-- View: File content -->
+      <!-- View: Raw file content -->
       <div class="main-content" id="viewFile" style="display:none;">
-        <div class="frontmatter" id="fileFrontmatter" style="display:none;">
-          <div class="fm-line"><span class="fm-key">title:</span><span class="fm-val" id="fmTitle"></span></div>
-          <div class="fm-line"><span class="fm-key">summary:</span><span class="fm-val" id="fmSummary"></span></div>
-          <div class="fm-line"><span class="fm-key">tags:</span><span class="fm-val" id="fmTags"></span></div>
-          <div class="fm-line"><span class="fm-key">related:</span><span class="fm-val" id="fmRelated"></span></div>
-        </div>
         <div class="md-preview" id="fileContent"></div>
       </div>
 
-      <!-- View: Wiki result -->
-      <div class="main-content" id="viewResult" style="display:none;">
-        <div class="wiki-result" id="wikiResult"></div>
+      <!-- View: Wiki INDEX.md -->
+      <div class="main-content" id="viewWikiIndex" style="display:none;">
+        <div class="wiki-result" id="wikiIndexContent"></div>
+      </div>
+
+      <!-- View: Wiki page -->
+      <div class="main-content" id="viewWikiPage" style="display:none;">
+        <div class="wiki-page" id="wikiPageContent"></div>
       </div>
 
       <!-- View: LOG.md -->
       <div class="main-content" id="viewLog" style="display:none;">
-        <div class="wiki-result" id="wikiLog"></div>
+        <div class="wiki-result" id="wikiLogContent"></div>
       </div>
     </div>
   </main>
 
-  <!-- ═══ AI Chat Panel (multi-turn) ═══ -->
-  <aside class="ai-chat-panel is-open" id="aiChatPanel" style="width:400px;min-width:400px;">
-    <!-- Chat header -->
+  <!-- ═══ AI Chat Panel ═══ -->
+  <aside class="ai-chat-panel" id="aiChatPanel">
     <div class="ai-chat-header">
-      <h3><span class="dot" id="agentStatus"></span> Claude Code</h3>
-      <button class="btn-icon" onclick="closeAiChat()">&#10005;</button>
+      <h3>
+        <span class="dot" id="agentStatus"></span>
+        Claude Code
+        <span class="op-tag op-build" id="opTag">build</span>
+      </h3>
+      <button class="btn-icon" onclick="closeAiChat()">✕</button>
     </div>
 
-    <!-- Chat body (messages) -->
     <div class="ai-chat-body" id="aiChatBody">
-      <!-- System prompt (collapsible) -->
-      <div class="prompt-collapsed" id="promptCollapsed" onclick="togglePrompt()">
-        <div class="prompt-title">
-          📋 提示词 <span id="promptPreview">在 frontend-notes 目录下构建 Wiki...</span>
-          <span class="prompt-arrow" id="promptArrow">▼</span>
-        </div>
-      </div>
-      <div class="prompt-full" id="promptFull">
-你是一个知识库整理助手。请对以下目录中的文件进行分析和整理：
-
-## 目录
-frontend-notes
-
-## 任务
-1. 扫描目录中的所有 markdown 文件
-2. 分析知识领域，为每个文件生成：
-   - 标题（简洁，≤20字）
-   - 摘要（50-100字）
-   - 标签（3-5个）
-   - 关键要点
-3. 在文件头部插入 frontmatter
-4. 生成 INDEX.md（按分类组织的知识索引）
-5. 生成 LOG.md（构建日志）
-
-## 约束
-- 不要修改原始文件内容，只在头部加 frontmatter
-- 保持原始文件路径不变
-- INDEX.md 和 LOG.md 生成在根目录
-      </div>
-
+      <!-- System prompt (collapsible, 根据操作类型切换) -->
+      <div id="promptArea"></div>
       <!-- Messages will be appended here -->
     </div>
 
-    <!-- Chat input -->
     <div class="ai-chat-input">
-      <div class="quick-actions" id="quickActions">
-        <span class="quick-action" onclick="sendQuickAction('开始构建 Wiki')">开始构建 Wiki</span>
-        <span class="quick-action" onclick="sendQuickAction('重新分析分类')">重新分析分类</span>
-        <span class="quick-action" onclick="sendQuickAction('查看当前进度')">查看当前进度</span>
-      </div>
       <div class="chat-composer">
-        <textarea id="chatInput" placeholder="输入指令..." rows="1"
+        <textarea id="chatInput" placeholder="输入指令或问题..." rows="1"
           onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();sendChat();}"></textarea>
         <button class="send-btn" id="sendBtn" onclick="sendChat()">➤</button>
       </div>
@@ -710,65 +615,570 @@ frontend-notes
   </aside>
 </div>
 
-<!-- ═══════ Toast Container ═══════ -->
 <div class="toast-container" id="toastContainer"></div>
 
 <script>
 // ════════════════════════════════════════
 // State
 // ════════════════════════════════════════
-let currentView = 'empty';
 let isWikiBuilt = false;
-let chatHistory = [];
 let isAiBusy = false;
+let currentOp = 'build'; // build | ingest | lint | query
 
-// File data
-const files = [
-  { name: 'react-hooks.md', path: 'notes/react-hooks.md', size: 3200 },
-  { name: 'typescript-generics.md', path: 'notes/typescript-generics.md', size: 2800 },
-  { name: 'webpack-config.md', path: 'notes/webpack-config.md', size: 4100 },
-  { name: 'vite-vs-webpack.md', path: 'notes/vite-vs-webpack.md', size: 2200 },
-  { name: 'css-modules.md', path: 'notes/css-modules.md', size: 1800 },
-  { name: 'redux-patterns.md', path: 'notes/redux-patterns.md', size: 3600 },
-  { name: 'react-performance.md', path: 'notes/react-performance.md', size: 2900 },
-  { name: 'eslint-rules.md', path: 'notes/eslint-rules.md', size: 2100 },
-  { name: 'testing-library.md', path: 'notes/testing-library.md', size: 1900 },
-  { name: 'nextjs-ssr.md', path: 'notes/nextjs-ssr.md', size: 3400 },
+// ════════════════════════════════════════
+// 4 个独立 System Prompt
+// ════════════════════════════════════════
+const SYSTEM_PROMPTS = {
+  build: {
+    label: 'build',
+    title: '初始化构建',
+    preview: '扫描所有 source 文件，生成 wiki 目录结构...',
+    content: `你是一个 Wiki 构建助手。请对以下知识库进行初始化构建。
+
+## 任务
+1. 阅读 raw sources 目录中的所有 markdown 文件
+2. 分析知识领域，规划 wiki 目录结构（可按需创建子目录）
+3. 为每个 source 文件生成摘要页 (summary)
+4. 提取关键概念，生成概念页 (concept)
+5. 提取重要实体，生成实体页 (entity)
+6. 建立页面之间的 [[Wiki Links]] 互相引用
+7. 在 vault 根目录生成 INDEX.md（索引）和 LOG.md（日志）
+
+## 约束
+- 原始文件不可修改，只读取不写入
+- wiki 页面放在 wiki/ 目录下
+- INDEX.md 和 LOG.md 放在 vault 根目录
+- wiki 目录结构由你根据内容量和领域自行组织`
+  },
+  ingest: {
+    label: 'ingest',
+    title: '单文件 Ingest',
+    preview: '读取指定文件，整合到现有 wiki...',
+    content: `你是一个 Wiki 维护助手。请将指定的新文件整合到现有 Wiki 中。
+
+## 任务
+1. 读取指定的新文件
+2. 阅读现有 INDEX.md，了解当前 wiki 结构
+3. 为新文件生成摘要页 (summary)
+4. 检查是否需要创建新的概念页或实体页
+5. 更新相关的现有 wiki 页面（添加链接、补充信息）
+6. 更新 INDEX.md（添加新条目）
+7. 在 LOG.md 中追加一条记录
+
+## 约束
+- 原始文件不可修改
+- 只修改 wiki/ 目录下的页面和根目录的 INDEX.md、LOG.md
+- 保持现有 wiki 页面的一致性`
+  },
+  lint: {
+    label: 'lint',
+    title: '健康检查',
+    preview: '检查 wiki 矛盾、孤立页、缺失链接...',
+    content: `你是一个 Wiki 质量检查助手。请对现有 Wiki 进行健康检查。
+
+## 检查项
+1. 矛盾检查 — 不同页面之间是否有相互矛盾的说法
+2. 时效性 — 是否有过时的信息需要更新
+3. 孤立页 — 是否有没有任何链接指向的页面
+4. 缺失链接 — 是否有提到但未创建的概念或实体
+5. 交叉引用 — 相关页面之间是否建立了链接
+6. 数据缺口 — 建议补充的新来源
+
+## 输出
+- 列出发现的问题
+- 给出修复建议
+- 不直接修改文件，只报告问题`
+  },
+  query: {
+    label: 'query',
+    title: '问答查询',
+    preview: '读取 INDEX.md 定位相关页，综合回答...',
+    content: `你是一个知识库问答助手。请基于现有 Wiki 回答用户的问题。
+
+## 流程
+1. 阅读 INDEX.md，定位与问题相关的 wiki 页面
+2. 读取相关页面，提取关键信息
+3. 综合多个页面的信息，给出结构化回答
+4. 在回答中引用来源页面（使用 [[Wiki Links]]）
+
+## 可选
+- 如果回答本身有长期价值，可以建议将其归档为新的 wiki 页面
+- 如果发现回答过程中暴露了知识缺口，建议补充新来源`
+  }
+};
+
+// ════════════════════════════════════════
+// Raw Files
+// ════════════════════════════════════════
+const rawFiles = [
+  { name: 'react-hooks.md', path: 'notes/react-hooks.md' },
+  { name: 'typescript-generics.md', path: 'notes/typescript-generics.md' },
+  { name: 'webpack-config.md', path: 'notes/webpack-config.md' },
+  { name: 'vite-vs-webpack.md', path: 'notes/vite-vs-webpack.md' },
+  { name: 'css-modules.md', path: 'notes/css-modules.md' },
+  { name: 'redux-patterns.md', path: 'notes/redux-patterns.md' },
+  { name: 'react-performance.md', path: 'notes/react-performance.md' },
+  { name: 'eslint-rules.md', path: 'notes/eslint-rules.md' },
+  { name: 'testing-library.md', path: 'notes/testing-library.md' },
+  { name: 'nextjs-ssr.md', path: 'notes/nextjs-ssr.md' },
 ];
 
-// Simulated LLM proposal
-const proposal = {
-  domain: '前端开发',
-  description: 'React/TypeScript 前端技术学习笔记，涵盖框架、工程化和性能优化',
-  categories: [
-    { name: 'React 框架', desc: 'React 核心概念、Hooks、状态管理等', files: ['react-hooks.md', 'redux-patterns.md', 'react-performance.md'] },
-    { name: 'TypeScript', desc: '类型系统、泛型、工具类型', files: ['typescript-generics.md'] },
-    { name: '工程化 & 构建', desc: '构建工具、代码规范、测试', files: ['webpack-config.md', 'vite-vs-webpack.md', 'eslint-rules.md', 'testing-library.md'] },
-    { name: '样式方案', desc: 'CSS 模块化、样式最佳实践', files: ['css-modules.md'] },
-    { name: 'SSR & 框架', desc: 'Next.js、服务端渲染', files: ['nextjs-ssr.md'] },
+// ════════════════════════════════════════
+// Wiki Data (after build)
+// ════════════════════════════════════════
+const wikiTree = {
+  name: 'wiki',
+  children: [
+    { name: 'overview.md', slug: 'overview' },
+    {
+      name: 'summaries',
+      children: [
+        { name: 'react-hooks.md', slug: 'summary-react-hooks' },
+        { name: 'redux-patterns.md', slug: 'summary-redux' },
+        { name: 'react-performance.md', slug: 'summary-react-perf' },
+        { name: 'typescript-generics.md', slug: 'summary-ts-generics' },
+        { name: 'webpack-config.md', slug: 'summary-webpack' },
+        { name: 'vite-vs-webpack.md', slug: 'summary-vite-webpack' },
+        { name: 'css-modules.md', slug: 'summary-css-modules' },
+        { name: 'eslint-rules.md', slug: 'summary-eslint' },
+        { name: 'testing-library.md', slug: 'summary-testing' },
+        { name: 'nextjs-ssr.md', slug: 'summary-nextjs' },
+      ]
+    },
+    {
+      name: 'concepts',
+      children: [
+        { name: 'react-fundamentals.md', slug: 'concept-react' },
+        { name: 'typescript-types.md', slug: 'concept-ts' },
+        { name: 'build-tools.md', slug: 'concept-build-tools' },
+        { name: 'css-methodologies.md', slug: 'concept-css' },
+      ]
+    },
+    {
+      name: 'entities',
+      children: [
+        { name: 'redux.md', slug: 'entity-redux' },
+        { name: 'webpack.md', slug: 'entity-webpack' },
+      ]
+    },
+    {
+      name: 'comparisons',
+      children: [
+        { name: 'build-tools.md', slug: 'comparison-build-tools' },
+      ]
+    },
   ]
 };
 
-// Simulated file processing results
-const fileResults = {
-  'react-hooks.md': { title: 'React Hooks 详解', summary: '深入介绍 useState、useEffect、useContext 等常用 Hook 的用法、常见陷阱和最佳实践', tags: ['react', 'hooks', 'frontend'], related: ['redux-patterns.md', 'react-performance.md'] },
-  'typescript-generics.md': { title: 'TypeScript 泛型入门', summary: '从基础到进阶讲解 TypeScript 泛型语法，包括约束、条件类型和映射类型', tags: ['typescript', 'types'], related: ['react-hooks.md'] },
-  'webpack-config.md': { title: 'Webpack 配置详解', summary: '全面介绍 Webpack 5 的核心配置项，包括 entry、output、loader、plugin 等', tags: ['webpack', 'build-tool', 'engineering'], related: ['vite-vs-webpack.md', 'eslint-rules.md'] },
-  'vite-vs-webpack.md': { title: 'Vite vs Webpack 对比', summary: '从开发体验、构建速度、生态系统等维度对比两大构建工具的优劣', tags: ['vite', 'webpack', 'build-tool'], related: ['webpack-config.md'] },
-  'css-modules.md': { title: 'CSS Modules 实践指南', summary: '讲解 CSS Modules 的原理、配置方法和在 React 项目中的最佳实践', tags: ['css', 'styling', 'react'], related: ['react-hooks.md'] },
-  'redux-patterns.md': { title: 'Redux 设计模式', summary: '介绍 Redux Toolkit、中间件模式、选择器优化等现代 Redux 开发实践', tags: ['redux', 'state-management', 'react'], related: ['react-hooks.md', 'react-performance.md'] },
-  'react-performance.md': { title: 'React 性能优化', summary: '涵盖 memo、useMemo、useCallback、代码分割等 React 性能优化策略', tags: ['react', 'performance', 'optimization'], related: ['react-hooks.md', 'redux-patterns.md'] },
-  'eslint-rules.md': { title: 'ESLint 规则配置', summary: '详解 ESLint 核心规则和常用插件配置，打造统一的代码规范', tags: ['eslint', 'linting', 'engineering'], related: ['testing-library.md', 'webpack-config.md'] },
-  'testing-library.md': { title: 'Testing Library 测试指南', summary: '使用 React Testing Library 编写单元测试，涵盖渲染、交互和异步测试', tags: ['testing', 'react', 'engineering'], related: ['eslint-rules.md'] },
-  'nextjs-ssr.md': { title: 'Next.js SSR 深入', summary: '深入理解 Next.js 的服务端渲染机制，包括 SSG、ISR 和数据获取策略', tags: ['nextjs', 'ssr', 'react'], related: ['react-performance.md', 'react-hooks.md'] },
+const wikiPages = {
+  'overview': {
+    title: '前端开发知识总览', type: 'overview',
+    summary: '本知识库涵盖 React/TypeScript 前端技术栈的核心知识，包括框架原理、工程化实践、样式方案和 SSR 等方面。共收录 10 个原始文件，生成 18 个 wiki 页面。',
+    content: '<h2>知识地图</h2><p>本知识库围绕前端开发的核心领域展开，主要分为以下几个方向：</p><ul><li><strong>React 生态</strong> — Hooks、状态管理、性能优化、SSR 框架</li><li><strong>TypeScript</strong> — 类型系统、泛型、工具类型</li><li><strong>工程化</strong> — 构建工具、代码规范、自动化测试</li><li><strong>样式方案</strong> — CSS Modules、模块化样式</li></ul><p>各领域之间有丰富的交叉引用，例如 [[React Hooks]] 同时涉及 [[React 基础]] 和 [[TypeScript 类型]] 两个概念。</p>',
+    links: ['concept-react', 'concept-ts', 'concept-build-tools', 'concept-css']
+  },
+  'summary-react-hooks': {
+    title: 'React Hooks 详解', type: 'summary',
+    summary: '深入介绍 useState、useEffect、useContext 等常用 Hook 的用法、常见陷阱和最佳实践。',
+    content: '<h2>核心要点</h2><ul><li>useState 的惰性初始化和函数式更新</li><li>useEffect 的依赖数组规则和清理函数</li><li>useContext 避免不必要的重渲染</li><li>自定义 Hook 的设计模式</li></ul><h2>来源</h2><p>本文摘要自 <code>notes/react-hooks.md</code></p>',
+    links: ['concept-react', 'summary-redux', 'summary-react-perf']
+  },
+  'summary-redux': {
+    title: 'Redux 设计模式', type: 'summary',
+    summary: '介绍 Redux Toolkit、中间件模式、选择器优化等现代 Redux 开发实践。',
+    content: '<h2>核心要点</h2><ul><li>Redux Toolkit 简化 store 配置</li><li>createSlice 与 createAsyncThunk</li><li>选择器的 memoization (reselect)</li><li>中间件模式与副作用处理</li></ul>',
+    links: ['entity-redux', 'concept-react', 'summary-react-hooks']
+  },
+  'summary-react-perf': {
+    title: 'React 性能优化', type: 'summary',
+    summary: '涵盖 memo、useMemo、useCallback、代码分割等 React 性能优化策略。',
+    content: '<h2>核心要点</h2><ul><li>React.memo 避免不必要的重渲染</li><li>useMemo / useCallback 的正确使用场景</li><li>React.lazy + Suspense 代码分割</li><li>虚拟列表处理大数据集</li></ul>',
+    links: ['concept-react', 'summary-react-hooks', 'summary-redux']
+  },
+  'summary-ts-generics': {
+    title: 'TypeScript 泛型入门', type: 'summary',
+    summary: '从基础到进阶讲解 TypeScript 泛型语法，包括约束、条件类型和映射类型。',
+    content: '<h2>核心要点</h2><ul><li>泛型函数和泛型接口</li><li>泛型约束 (extends)</li><li>条件类型 (T extends U ? X : Y)</li><li>映射类型和工具类型</li></ul>',
+    links: ['concept-ts']
+  },
+  'summary-webpack': {
+    title: 'Webpack 配置详解', type: 'summary',
+    summary: '全面介绍 Webpack 5 的核心配置项，包括 entry、output、loader、plugin 等。',
+    content: '<h2>核心要点</h2><ul><li>entry / output 基础配置</li><li>loader 处理不同类型文件</li><li>plugin 扩展构建流程</li><li>devServer 开发服务器配置</li></ul>',
+    links: ['entity-webpack', 'concept-build-tools', 'summary-vite-webpack']
+  },
+  'summary-vite-webpack': {
+    title: 'Vite vs Webpack 对比', type: 'summary',
+    summary: '从开发体验、构建速度、生态系统等维度对比两大构建工具的优劣。',
+    content: '<h2>核心要点</h2><ul><li>开发模式：Vite 原生 ESM vs Webpack bundle</li><li>构建速度：Vite 快 10-100x</li><li>生态成熟度：Webpack 更成熟</li><li>迁移成本与学习曲线</li></ul>',
+    links: ['concept-build-tools', 'comparison-build-tools', 'entity-webpack']
+  },
+  'summary-css-modules': {
+    title: 'CSS Modules 实践指南', type: 'summary',
+    summary: '讲解 CSS Modules 的原理、配置方法和在 React 项目中的最佳实践。',
+    content: '<h2>核心要点</h2><ul><li>CSS Modules 作用域隔离原理</li><li>与 React 组件集成方式</li><li>composes 组合样式</li><li>CSS 变量与主题系统</li></ul>',
+    links: ['concept-css', 'concept-react']
+  },
+  'summary-eslint': {
+    title: 'ESLint 规则配置', type: 'summary',
+    summary: '详解 ESLint 核心规则和常用插件配置，打造统一的代码规范。',
+    content: '<h2>核心要点</h2><ul><li>ESLint 配置结构</li><li>常用规则集 (recommended, airbnb)</li><li>TypeScript ESLint 集成</li><li>自定义规则开发</li></ul>',
+    links: ['concept-build-tools', 'summary-testing']
+  },
+  'summary-testing': {
+    title: 'Testing Library 测试指南', type: 'summary',
+    summary: '使用 React Testing Library 编写单元测试，涵盖渲染、交互和异步测试。',
+    content: '<h2>核心要点</h2><ul><li>以用户行为为中心的测试理念</li><li>render / screen / fireEvent API</li><li>异步测试与 waitFor</li><li>Mock 与测试隔离</li></ul>',
+    links: ['concept-build-tools', 'summary-eslint', 'concept-react']
+  },
+  'summary-nextjs': {
+    title: 'Next.js SSR 深入', type: 'summary',
+    summary: '深入理解 Next.js 的服务端渲染机制，包括 SSG、ISR 和数据获取策略。',
+    content: '<h2>核心要点</h2><ul><li>SSR vs SSG vs ISR 选择策略</li><li>getServerSideProps / getStaticProps</li><li>App Router 与 Server Components</li><li>增量静态再生 (ISR)</li></ul>',
+    links: ['concept-react', 'summary-react-perf']
+  },
+  'concept-react': {
+    title: 'React 基础', type: 'concept',
+    summary: 'React 核心概念综合，涵盖组件模型、Hooks、状态管理和性能优化。',
+    content: '<h2>核心概念</h2><p>React 是一个基于组件模型的 UI 库。核心概念包括：</p><ul><li><strong>组件</strong> — 函数组件与类组件</li><li><strong>Hooks</strong> — useState, useEffect, useContext 等</li><li><strong>状态管理</strong> — 从 useState 到 Redux 的演进</li><li><strong>性能</strong> — memo, useMemo, useCallback, 代码分割</li></ul><h2>相关页面</h2><p>参见 [[React Hooks 详解]]、[[Redux 设计模式]]、[[React 性能优化]] 了解具体实践。</p>',
+    links: ['summary-react-hooks', 'summary-redux', 'summary-react-perf', 'summary-nextjs', 'summary-css-modules', 'summary-testing']
+  },
+  'concept-ts': {
+    title: 'TypeScript 类型系统', type: 'concept',
+    summary: 'TypeScript 类型系统综合，涵盖基础类型、泛型、条件类型和工具类型。',
+    content: '<h2>核心概念</h2><p>TypeScript 为 JavaScript 添加了静态类型系统：</p><ul><li><strong>基础类型</strong> — string, number, boolean, interface</li><li><strong>泛型</strong> — 参数化类型，提高代码复用性</li><li><strong>高级类型</strong> — 条件类型、映射类型、模板字面量类型</li></ul>',
+    links: ['summary-ts-generics', 'concept-react']
+  },
+  'concept-build-tools': {
+    title: '构建工具', type: 'concept',
+    summary: '前端构建工具综合，涵盖 Webpack、Vite、ESLint、Testing Library 等。',
+    content: '<h2>核心概念</h2><p>前端构建工具链是工程化的基础：</p><ul><li><strong>打包工具</strong> — Webpack (bundle) vs Vite (native ESM)</li><li><strong>代码规范</strong> — ESLint 统一代码风格</li><li><strong>自动化测试</strong> — Testing Library 行为驱动测试</li></ul>',
+    links: ['summary-webpack', 'summary-vite-webpack', 'summary-eslint', 'summary-testing', 'entity-webpack', 'comparison-build-tools']
+  },
+  'concept-css': {
+    title: 'CSS 方法论', type: 'concept',
+    summary: 'CSS 样式方案综合，涵盖 CSS Modules 和其他模块化样式实践。',
+    content: '<h2>核心概念</h2><p>现代 CSS 方案注重作用域隔离和可维护性：</p><ul><li><strong>CSS Modules</strong> — 自动作用域隔离</li><li><strong>CSS 变量</strong> — 运行时主题系统</li><li><strong>组合模式</strong> — composes 复用样式</li></ul>',
+    links: ['summary-css-modules', 'concept-react']
+  },
+  'entity-redux': {
+    title: 'Redux', type: 'entity',
+    summary: 'Redux 状态管理库，从传统 Redux 到 Redux Toolkit 的演进。',
+    content: '<h2>概述</h2><p>Redux 是 JavaScript 应用的状态容器。Redux Toolkit (RTK) 是现代推荐的用法：</p><ul><li>configureStore — 简化 store 配置</li><li>createSlice — 简化 reducer 编写</li><li>createAsyncThunk — 处理异步逻辑</li></ul>',
+    links: ['summary-redux', 'concept-react']
+  },
+  'entity-webpack': {
+    title: 'Webpack', type: 'entity',
+    summary: 'Webpack 模块打包工具，前端工程化的核心工具之一。',
+    content: '<h2>概述</h2><p>Webpack 是最成熟的前端打包工具，核心特性：</p><ul><li>模块依赖图 — 自动分析和打包依赖</li><li>Loader 系统 — 处理 CSS、图片、TypeScript 等</li><li>Plugin 系统 — 扩展构建流程</li><li>代码分割 — 按需加载</li></ul>',
+    links: ['summary-webpack', 'summary-vite-webpack', 'concept-build-tools', 'comparison-build-tools']
+  },
+  'comparison-build-tools': {
+    title: '构建工具对比', type: 'comparison',
+    summary: 'Webpack vs Vite 全面对比，帮助选择适合项目的构建工具。',
+    content: '<h2>对比总结</h2><table style="width:100%;border-collapse:collapse;margin:12px 0;font-size:13px;"><thead><tr style="border-bottom:2px solid var(--border);"><th style="text-align:left;padding:6px 8px;">维度</th><th style="text-align:left;padding:6px 8px;">Webpack</th><th style="text-align:left;padding:6px 8px;">Vite</th></tr></thead><tbody><tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 8px;">开发模式</td><td style="padding:6px 8px;">Bundle</td><td style="padding:6px 8px;">Native ESM</td></tr><tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 8px;">冷启动</td><td style="padding:6px 8px;">较慢</td><td style="padding:6px 8px;">极快</td></tr><tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 8px;">生态</td><td style="padding:6px 8px;">非常成熟</td><td style="padding:6px 8px;">快速增长</td></tr><tr><td style="padding:6px 8px;">适用场景</td><td style="padding:6px 8px;">大型企业应用</td><td style="padding:6px 8px;">中小项目、快速开发</td></tr></tbody></table>',
+    links: ['entity-webpack', 'summary-webpack', 'summary-vite-webpack', 'concept-build-tools']
+  },
 };
+
+// INDEX.md 分类结构
+const wikiCategories = [
+  { name: '总览', pages: ['overview'] },
+  {
+    name: '摘要页 (Summaries)',
+    pages: ['summary-react-hooks', 'summary-redux', 'summary-react-perf', 'summary-ts-generics', 'summary-webpack', 'summary-vite-webpack', 'summary-css-modules', 'summary-eslint', 'summary-testing', 'summary-nextjs']
+  },
+  {
+    name: '概念页 (Concepts)',
+    pages: ['concept-react', 'concept-ts', 'concept-build-tools', 'concept-css']
+  },
+  {
+    name: '实体页 (Entities)',
+    pages: ['entity-redux', 'entity-webpack']
+  },
+  {
+    name: '对比页 (Comparisons)',
+    pages: ['comparison-build-tools']
+  },
+];
+
+// ════════════════════════════════════════
+// File Tree Rendering
+// ════════════════════════════════════════
+function renderTree() {
+  const container = document.getElementById('treeScroll');
+  let html = '';
+
+  // 构建后：根目录的 INDEX.md 和 LOG.md
+  if (isWikiBuilt) {
+    html += `<div class="tree-item" onclick="showView('wikiIndex')">
+      <span class="tree-icon">📋</span>
+      <span class="tree-name">INDEX.md</span>
+    </div>`;
+    html += `<div class="tree-item" onclick="showView('log')">
+      <span class="tree-icon">📝</span>
+      <span class="tree-name">LOG.md</span>
+    </div>`;
+  }
+
+  // notes/ 目录
+  html += `<div class="tree-group">
+    <div class="tree-group-label" onclick="toggleGroup(this)">
+      <span class="chevron">▾</span>
+      <span>📁 notes/</span>
+      <button class="tree-item-op" onclick="event.stopPropagation(); addFolderToWiki('notes/')" title="把整个目录加入 Wiki">+</button>
+    </div>
+    <div class="tree-children">`;
+  rawFiles.forEach(f => {
+    html += `<div class="tree-item" onclick="selectFile(this, '${f.name}')" data-file="${f.name}">
+      <span class="tree-icon">📄</span>
+      <span class="tree-name">${f.name}</span>
+      <button class="tree-item-op" onclick="event.stopPropagation(); addFileToWiki('${f.path}')" title="加入 Wiki">+</button>
+    </div>`;
+  });
+  html += `</div></div>`;
+
+  // wiki/ 目录 (构建后)
+  if (isWikiBuilt) {
+    html += renderWikiTreeGroup(wikiTree, 0);
+  }
+
+  container.innerHTML = html;
+}
+
+function renderWikiTreeGroup(node, depth) {
+  let html = `<div class="tree-group">
+    <div class="tree-group-label" onclick="toggleGroup(this)" style="padding-left:${8 + depth * 16}px">
+      <span class="chevron">▾</span>
+      <span>📁 ${node.name}/</span>
+    </div>
+    <div class="tree-children">`;
+
+  node.children.forEach(child => {
+    if (child.children) {
+      html += renderWikiTreeGroup(child, depth + 1);
+    } else {
+      html += `<div class="tree-item" onclick="showWikiPage('${child.slug}')" style="padding-left:${8 + (depth + 1) * 16}px">
+        <span class="tree-icon">📄</span>
+        <span class="tree-name">${child.name}</span>
+      </div>`;
+    }
+  });
+
+  html += `</div></div>`;
+  return html;
+}
+
+function toggleGroup(el) {
+  const children = el.nextElementSibling;
+  const chevron = el.querySelector('.chevron');
+  if (children && children.classList.contains('tree-children')) {
+    children.classList.toggle('collapsed');
+    chevron.classList.toggle('collapsed');
+  }
+}
+
+// ════════════════════════════════════════
+// View Switching
+// ════════════════════════════════════════
+function showView(view) {
+  const views = ['viewEmpty', 'viewFile', 'viewWikiIndex', 'viewWikiPage', 'viewLog'];
+  views.forEach(v => {
+    document.getElementById(v).style.display = 'none';
+  });
+
+  // 清除 tree-item active 状态
+  document.querySelectorAll('.tree-item').forEach(i => i.classList.remove('is-active'));
+
+  switch (view) {
+    case 'empty':
+      document.getElementById('viewEmpty').style.display = 'flex';
+      document.getElementById('pageTitle').textContent = 'frontend-notes';
+      document.getElementById('breadcrumbs').textContent = '知识库 · 10 个文件';
+      break;
+    case 'wikiIndex':
+      document.getElementById('viewWikiIndex').style.display = 'block';
+      document.getElementById('pageTitle').textContent = 'INDEX.md';
+      document.getElementById('breadcrumbs').textContent = 'frontend-notes / INDEX.md';
+      renderIndexMd();
+      // 标记 tree item
+      document.querySelectorAll('.tree-item').forEach(i => {
+        if (i.querySelector('.tree-name')?.textContent === 'INDEX.md') i.classList.add('is-active');
+      });
+      break;
+    case 'log':
+      document.getElementById('viewLog').style.display = 'block';
+      document.getElementById('pageTitle').textContent = 'LOG.md';
+      document.getElementById('breadcrumbs').textContent = 'frontend-notes / LOG.md';
+      renderLogMd();
+      document.querySelectorAll('.tree-item').forEach(i => {
+        if (i.querySelector('.tree-name')?.textContent === 'LOG.md') i.classList.add('is-active');
+      });
+      break;
+  }
+}
+
+// ════════════════════════════════════════
+// File Selection
+// ════════════════════════════════════════
+function selectFile(el, filename) {
+  document.querySelectorAll('.tree-item').forEach(i => i.classList.remove('is-active'));
+  el.classList.add('is-active');
+
+  document.getElementById('viewEmpty').style.display = 'none';
+  document.getElementById('viewWikiIndex').style.display = 'none';
+  document.getElementById('viewWikiPage').style.display = 'none';
+  document.getElementById('viewLog').style.display = 'none';
+  document.getElementById('viewFile').style.display = 'block';
+
+  document.getElementById('pageTitle').textContent = filename;
+  document.getElementById('breadcrumbs').textContent = `notes/${filename}`;
+
+  const title = filename.replace('.md', '').replace(/-/g, ' ');
+  document.getElementById('fileContent').innerHTML = `
+    <h1>${title}</h1>
+    <p>这是 ${filename} 的原始内容。原始文件不会被 Wiki 构建修改。</p>
+    <h2>概述</h2>
+    <p>文件包含关于 ${title} 的详细技术笔记和实践经验。</p>
+    <h2>核心内容</h2>
+    <ul><li>基础概念与原理</li><li>实践案例与代码示例</li><li>常见问题与解决方案</li><li>最佳实践总结</li></ul>
+  `;
+}
+
+// ════════════════════════════════════════
+// Wiki Page Viewing
+// ════════════════════════════════════════
+function showWikiPage(slug) {
+  const page = wikiPages[slug];
+  if (!page) return;
+
+  const views = ['viewEmpty', 'viewFile', 'viewWikiIndex', 'viewWikiPage', 'viewLog'];
+  views.forEach(v => document.getElementById(v).style.display = 'none');
+  document.getElementById('viewWikiPage').style.display = 'block';
+
+  document.querySelectorAll('.tree-item').forEach(i => i.classList.remove('is-active'));
+  // 找到对应的 tree item 并标记
+  document.querySelectorAll('.tree-item').forEach(i => {
+    const name = i.querySelector('.tree-name')?.textContent;
+    if (name && wikiTree && findSlugInTree(wikiTree, slug, name)) {
+      i.classList.add('is-active');
+    }
+  });
+
+  document.getElementById('pageTitle').textContent = page.title;
+  document.getElementById('breadcrumbs').textContent = `wiki / ${page.title}`;
+
+  const typeLabels = { summary: '摘要', concept: '概念', entity: '实体', comparison: '对比', overview: '总览' };
+  const typeColors = { summary: 'background:var(--blue-bg);color:var(--blue)', concept: 'background:var(--purple-bg);color:var(--purple)', entity: 'background:var(--green-bg);color:var(--green)', comparison: 'background:var(--amber-bg);color:var(--amber)', overview: 'background:#fce7f3;color:#be185d' };
+
+  let linksHtml = '';
+  if (page.links && page.links.length > 0) {
+    linksHtml = '<h2>相关链接</h2><p>' +
+      page.links.map(l => {
+        const linked = wikiPages[l];
+        return linked ? `<a class="wiki-link" onclick="showWikiPage('${l}')">[[${linked.title}]]</a>` : '';
+      }).filter(Boolean).join(' ') +
+      '</p>';
+  }
+
+  document.getElementById('wikiPageContent').innerHTML = `
+    <div class="wiki-page-header">
+      <span class="wiki-page-type" style="${typeColors[page.type]}">${typeLabels[page.type]}</span>
+      <h1 class="wiki-page-title">${page.title}</h1>
+    </div>
+    <blockquote style="border-left:3px solid var(--accent);padding:8px 14px;background:var(--accent-soft);border-radius:0 8px 8px 0;margin:12px 0;font-style:italic;color:var(--text-muted);">${page.summary}</blockquote>
+    <div class="wiki-page-body">${page.content}</div>
+    ${linksHtml}
+  `;
+}
+
+function findSlugInTree(node, slug, name) {
+  if (node.slug === slug) {
+    // 检查文件名是否匹配
+    const page = wikiPages[slug];
+    if (!page) return false;
+    // 简单匹配
+    return true;
+  }
+  if (node.children) {
+    return node.children.some(c => findSlugInTree(c, slug, name));
+  }
+  return false;
+}
+
+// ════════════════════════════════════════
+// INDEX.md Rendering
+// ════════════════════════════════════════
+function renderIndexMd() {
+  const typeLabels = { summary: '摘要', concept: '概念', entity: '实体', comparison: '对比', overview: '总览' };
+
+  let html = `
+    <h1>知识库索引</h1>
+    <div class="wiki-meta">前端开发 — React/TypeScript 前端技术学习笔记 · 由 Molio LLM Wiki 生成</div>
+  `;
+
+  wikiCategories.forEach(cat => {
+    html += `<h2>${cat.name}</h2>`;
+    cat.pages.forEach(slug => {
+      const page = wikiPages[slug];
+      if (page) {
+        html += `<div class="wiki-entry">
+          <span class="wiki-entry-type type-${page.type}">${typeLabels[page.type]}</span>
+          <a class="wiki-link" onclick="showWikiPage('${slug}')">[[${page.title}]]</a>
+          <span style="color:var(--text-muted);font-size:12px;margin-left:4px;">— ${page.summary.substring(0, 35)}...</span>
+        </div>`;
+      }
+    });
+  });
+
+  document.getElementById('wikiIndexContent').innerHTML = html;
+}
+
+// ════════════════════════════════════════
+// LOG.md Rendering
+// ════════════════════════════════════════
+function renderLogMd() {
+  const entries = rawFiles.map(f => {
+    const slug = 'summary-' + f.name.replace('.md', '').replace(/^(react)-.*/, '$1');
+    return f;
+  });
+
+  let rows = '';
+  rawFiles.forEach(f => {
+    const summarySlug = Object.keys(wikiPages).find(k => k.includes(f.name.replace('.md', '').substring(0, 6)));
+    const page = summarySlug ? wikiPages[summarySlug] : null;
+    rows += `<tr>
+      <td style="font-family:var(--mono);font-size:11.5px;">${f.path}</td>
+      <td class="status-ok">✅</td>
+      <td>${page ? page.title : '—'}</td>
+      <td><span class="tag">new</span></td>
+    </tr>`;
+  });
+
+  document.getElementById('wikiLogContent').innerHTML = `
+    <h1>Wiki 构建日志</h1>
+    <div class="wiki-meta">构建时间: 2026-06-06 · Agent: Claude Code · 操作: build (初始化构建)</div>
+    <h2>构建统计</h2>
+    <ul>
+      <li>知识库: <strong>frontend-notes</strong></li>
+      <li>知识领域: <strong>前端开发</strong></li>
+      <li>处理文件: <strong>10</strong> 个</li>
+      <li>生成页面: <strong>18</strong> 个 (10 摘要 + 4 概念 + 2 实体 + 1 对比 + 1 总览)</li>
+    </ul>
+    <h2>处理记录</h2>
+    <table class="log-table">
+      <thead><tr><th>源文件</th><th>状态</th><th>摘要页</th><th>操作</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
 
 // ════════════════════════════════════════
 // AI Chat Panel
 // ════════════════════════════════════════
 function openAiChat() {
   document.getElementById('aiChatPanel').classList.add('is-open');
-  // Focus on input
+  renderPrompt();
   setTimeout(() => document.getElementById('chatInput').focus(), 300);
 }
 
@@ -776,10 +1186,52 @@ function closeAiChat() {
   document.getElementById('aiChatPanel').classList.remove('is-open');
 }
 
+function openChatWithOp(op) {
+  currentOp = op;
+  openAiChat();
+  updateOpTag();
+  renderPrompt();
+  // 自动发送初始消息
+  setTimeout(() => {
+    switch (op) {
+      case 'build':
+        sendChatMessage('开始构建 Wiki', 'build');
+        break;
+      case 'lint':
+        sendChatMessage('检查 Wiki 健康状况', 'lint');
+        break;
+    }
+  }, 400);
+}
+
+function updateOpTag() {
+  const tag = document.getElementById('opTag');
+  tag.textContent = currentOp;
+  tag.className = 'op-tag op-' + currentOp;
+}
+
+function renderPrompt() {
+  const prompt = SYSTEM_PROMPTS[currentOp];
+  if (!prompt) return;
+
+  const area = document.getElementById('promptArea');
+  area.innerHTML = `
+    <div class="prompt-collapsed" onclick="togglePrompt()">
+      <div class="prompt-title">
+        📋 ${prompt.title} <span class="op-tag op-${currentOp}" style="font-size:9px;">${prompt.label}</span>
+        <span class="prompt-arrow">▼</span>
+      </div>
+      <div class="prompt-preview">${prompt.preview}</div>
+    </div>
+    <div class="prompt-full" id="promptFull">${prompt.content}</div>
+  `;
+}
+
 function togglePrompt() {
   const el = document.getElementById('promptFull');
-  el.classList.toggle('show');
-  document.getElementById('promptCollapsed').classList.toggle('is-expanded');
+  if (el) el.classList.toggle('show');
+  const collapsed = document.querySelector('.prompt-collapsed');
+  if (collapsed) collapsed.classList.toggle('is-expanded');
 }
 
 function setAiBusy(busy) {
@@ -798,15 +1250,11 @@ function addUserMessage(text) {
   body.scrollTop = body.scrollHeight;
 }
 
-function addAiMessage(text, actions) {
+function addAiMessage(html) {
   const body = document.getElementById('aiChatBody');
   const msg = document.createElement('div');
   msg.className = 'chat-msg ai';
-  let html = `<div class="msg-bubble">${text}</div>`;
-  if (actions) {
-    html += `<div class="msg-actions">${actions}</div>`;
-  }
-  msg.innerHTML = html;
+  msg.innerHTML = `<div class="msg-bubble">${html}</div>`;
   body.appendChild(msg);
   body.scrollTop = body.scrollHeight;
 }
@@ -815,16 +1263,10 @@ function addThinkingMessage(text) {
   const body = document.getElementById('aiChatBody');
   const msg = document.createElement('div');
   msg.className = 'chat-msg ai';
-  msg.innerHTML = `
-    <div class="thinking-block">
-      <span class="spinner-inline"></span>
-      <span>${escapeHtml(text)}</span>
-    </div>
-  `;
+  msg.innerHTML = `<div class="thinking-block"><span class="spinner-inline"></span><span>${escapeHtml(text)}</span></div>`;
   msg.id = 'thinkingMsg';
   body.appendChild(msg);
   body.scrollTop = body.scrollHeight;
-  return msg;
 }
 
 function removeThinkingMessage() {
@@ -832,8 +1274,39 @@ function removeThinkingMessage() {
   if (el) el.remove();
 }
 
-function sendQuickAction(text) {
-  sendChatMessage(text);
+// ════════════════════════════════════════
+// File Operations Display
+// ════════════════════════════════════════
+function renderFileOps(ops) {
+  return '<div class="file-ops">' +
+    ops.map(op => `<div class="file-op"><span class="file-op-badge op-${op.type}">${op.type.toUpperCase()}</span><span class="file-op-path">${op.path}</span></div>`).join('') +
+    '</div>';
+}
+
+// ════════════════════════════════════════
+// Quick Actions & Chat
+// ════════════════════════════════════════
+function addFileToWiki(path) {
+  currentOp = 'ingest';
+  openAiChat();
+  updateOpTag();
+  renderPrompt();
+  setTimeout(() => sendChatMessage(`把 ${path} 加入 Wiki`, 'ingest'), 300);
+}
+
+function addFolderToWiki(path) {
+  currentOp = 'ingest';
+  openAiChat();
+  updateOpTag();
+  renderPrompt();
+  setTimeout(() => sendChatMessage(`把 ${path} 目录下的所有文件加入 Wiki`, 'ingest'), 300);
+}
+
+function sendQuickAction(text, op) {
+  currentOp = op || 'build';
+  updateOpTag();
+  renderPrompt();
+  sendChatMessage(text, currentOp);
 }
 
 function sendChat() {
@@ -841,213 +1314,209 @@ function sendChat() {
   const text = input.value.trim();
   if (!text) return;
   input.value = '';
-  sendChatMessage(text);
+
+  // 自动判断操作类型
+  let op = currentOp;
+  if (text.includes('构建') || text.includes('初始化')) op = 'build';
+  else if (text.includes('加入') || text.includes('ingest') || text.includes('整合')) op = 'ingest';
+  else if (text.includes('检查') || text.includes('健康') || text.includes('lint')) op = 'lint';
+  else op = 'query';
+
+  currentOp = op;
+  updateOpTag();
+  renderPrompt();
+  sendChatMessage(text, op);
 }
 
-function sendChatMessage(text) {
+function sendChatMessage(text, op) {
   if (isAiBusy) return;
   addUserMessage(text);
   setAiBusy(true);
 
-  // Simulate Claude Code response based on message
   setTimeout(() => {
-    handleClaudeResponse(text);
+    handleClaudeResponse(text, op);
     setAiBusy(false);
-  }, 800 + Math.random() * 1000);
+  }, 800 + Math.random() * 800);
 }
 
-function handleClaudeResponse(userMsg) {
+// ════════════════════════════════════════
+// Claude Response Simulation
+// ════════════════════════════════════════
+function handleClaudeResponse(userMsg, op) {
   const msg = userMsg.toLowerCase();
 
-  if (msg.includes('开始') || msg.includes('构建') || msg.includes('wiki')) {
-    // Step 1: Start building
-    const thinking = addThinkingMessage('正在扫描文件目录，分析文件内容...');
+  // ══ Build: 开始构建 ══
+  if (op === 'build' && (msg.includes('开始') || msg.includes('构建'))) {
+    addThinkingMessage('正在阅读 notes/ 下的 10 个文件...');
     setTimeout(() => {
       removeThinkingMessage();
       addAiMessage(
-        '好的，我开始分析 <code>frontend-notes</code> 目录中的文件...<br><br>' +
-        '已扫描 <strong>10</strong> 个文件，识别出以下知识领域：<br><br>' +
-        '<strong>前端开发</strong> — React/TypeScript 前端技术学习笔记<br><br>' +
-        '建议分类：<ul>' +
-        '<li>React 框架 (3 个文件)</li>' +
-        '<li>TypeScript (1 个文件)</li>' +
-        '<li>工程化 & 构建 (4 个文件)</li>' +
-        '<li>样式方案 (1 个文件)</li>' +
-        '<li>SSR & 框架 (1 个文件)</li>' +
+        '我阅读了所有 10 个文件，识别出知识领域为<strong>前端开发</strong>。<br><br>' +
+        '建议的 Wiki 结构：<br><br>' +
+        '<strong>分类规划：</strong><ul>' +
+        '<li>React 框架 — react-hooks, redux-patterns, react-performance, nextjs-ssr</li>' +
+        '<li>TypeScript — typescript-generics</li>' +
+        '<li>工程化 — webpack-config, vite-vs-webpack, eslint-rules, testing-library</li>' +
+        '<li>样式 — css-modules</li>' +
         '</ul>' +
-        '正在逐个文件生成摘要和 frontmatter...',
-        '<button class="btn primary" onclick="sendQuickAction('确认并写入文件')">确认并写入文件</button>' +
-        '<button class="btn" onclick="sendQuickAction('重新分析分类')">重新分析</button>'
+        '<strong>计划生成的页面 (18 个)：</strong><ul>' +
+        '<li>10 个摘要页 (每个 source 一个)</li>' +
+        '<li>4 个概念页 (React 基础, TypeScript 类型, 构建工具, CSS 方法论)</li>' +
+        '<li>2 个实体页 (Redux, Webpack)</li>' +
+        '<li>1 个对比页 (构建工具对比)</li>' +
+        '<li>1 个总览页</li>' +
+        '</ul>' +
+        '以及根目录的 INDEX.md 和 LOG.md。<br><br>' +
+        '如需确认，请回复「执行构建」；如需调整，请回复「修改方案」。'
       );
     }, 2000);
     return;
   }
 
-  if (msg.includes('确认') || msg.includes('写入')) {
-    const thinking = addThinkingMessage('正在写入文件，生成 INDEX.md 和 LOG.md...');
+  // ══ Build: 执行构建 ══
+  if (op === 'build' && (msg.includes('执行') || msg.includes('确认'))) {
+    addThinkingMessage('正在生成 wiki 页面...');
     setTimeout(() => {
       removeThinkingMessage();
       onBuildComplete();
+
+      const ops = [
+        { type: 'new', path: 'wiki/overview.md' },
+        { type: 'new', path: 'wiki/summaries/react-hooks.md' },
+        { type: 'new', path: 'wiki/summaries/redux-patterns.md' },
+        { type: 'new', path: 'wiki/summaries/react-performance.md' },
+        { type: 'new', path: 'wiki/summaries/typescript-generics.md' },
+        { type: 'new', path: 'wiki/summaries/webpack-config.md' },
+        { type: 'new', path: 'wiki/summaries/vite-vs-webpack.md' },
+        { type: 'new', path: 'wiki/summaries/css-modules.md' },
+        { type: 'new', path: 'wiki/summaries/eslint-rules.md' },
+        { type: 'new', path: 'wiki/summaries/testing-library.md' },
+        { type: 'new', path: 'wiki/summaries/nextjs-ssr.md' },
+        { type: 'new', path: 'wiki/concepts/react-fundamentals.md' },
+        { type: 'new', path: 'wiki/concepts/typescript-types.md' },
+        { type: 'new', path: 'wiki/concepts/build-tools.md' },
+        { type: 'new', path: 'wiki/concepts/css-methodologies.md' },
+        { type: 'new', path: 'wiki/entities/redux.md' },
+        { type: 'new', path: 'wiki/entities/webpack.md' },
+        { type: 'new', path: 'wiki/comparisons/build-tools.md' },
+        { type: 'new', path: 'INDEX.md' },
+        { type: 'new', path: 'LOG.md' },
+      ];
+
       addAiMessage(
         '✅ <strong>Wiki 构建完成！</strong><br><br>' +
-        '共处理 <strong>10</strong> 个文件，生成 <strong>5</strong> 个分类。<br>' +
-        '<ul>' +
-        '<li>INDEX.md — 知识库索引</li>' +
-        '<li>LOG.md — 构建日志</li>' +
-        '<li>每个文件的 frontmatter 已写入</li>' +
-        '</ul>' +
-        '你可以继续问我问题，比如："把 React 相关的文件再整理一下" 或 "重新生成一个更详细的索引"。',
-        '<button class="btn primary" onclick="closeAiChat(); showView(\'result\');">查看 INDEX.md</button>' +
-        '<button class="btn" onclick="closeAiChat(); showView(\'log\');">查看 LOG.md</button>'
+        renderFileOps(ops) +
+        '<br>共生成 <strong>20</strong> 个文件 (18 个 wiki 页面 + INDEX.md + LOG.md)。'
       );
     }, 2500);
     return;
   }
 
-  if (msg.includes('重新') || msg.includes('再分析')) {
-    const thinking = addThinkingMessage('正在重新分析分类方案...');
+  // ══ Build: 修改方案 ══
+  if (op === 'build' && (msg.includes('修改') || msg.includes('重新') || msg.includes('换一个'))) {
+    addThinkingMessage('正在重新规划分类方案...');
     setTimeout(() => {
       removeThinkingMessage();
       addAiMessage(
-        '重新分析完成。这次我尝试从不同的角度分类：<br><br>' +
-        '<strong>按技术层次：</strong><ul>' +
-        '<li>基础概念 — react-hooks.md, typescript-generics.md</li>' +
-        '<li>工程实践 — webpack-config.md, vite-vs-webpack.md, eslint-rules.md</li>' +
-        '<li>框架进阶 — redux-patterns.md, react-performance.md, nextjs-ssr.md</li>' +
-        '<li>测试 & 样式 — testing-library.md, css-modules.md</li>' +
+        '尝试从不同角度组织：<br><br>' +
+        '<strong>按技术层次分类：</strong><ul>' +
+        '<li>📗 基础 — react-hooks, typescript-generics, css-modules</li>' +
+        '<li>📘 进阶 — redux-patterns, react-performance, nextjs-ssr</li>' +
+        '<li>🛠 工程化 — webpack-config, vite-vs-webpack, eslint-rules, testing-library</li>' +
         '</ul>' +
-        '这个方案怎么样？',
-        '<button class="btn primary" onclick="sendQuickAction('用这个方案')">用这个方案</button>' +
-        '<button class="btn" onclick="sendQuickAction('再换一个')">再换一个</button>'
+        '概念页和实体页保持不变。<br><br>' +
+        '如需采用此方案，请回复「用这个方案」；如需继续调整，请回复「再换」。'
       );
     }, 1500);
     return;
   }
 
-  if (msg.includes('进度') || msg.includes('状态')) {
-    addAiMessage(
-      '当前构建进度：<br><br>' +
-      '<ul>' +
-      '<li>已扫描: 10 个文件</li>' +
-      '<li>已分析: 10 个文件</li>' +
-      '<li>已生成 frontmatter: 10 个文件</li>' +
-      '<li>已生成 INDEX.md: ✅</li>' +
-      '<li>已生成 LOG.md: ✅</li>' +
-      '</ul>' +
-      '所有文件处理完成！'
-    );
+  // ══ Build: 用这个方案 ══
+  if (op === 'build' && (msg.includes('用这个') || msg.includes('好'))) {
+    sendChatMessage('执行构建', 'build');
     return;
   }
 
-  if (msg.includes('react') && (msg.includes('整理') || msg.includes('相关'))) {
-    addAiMessage(
-      'React 相关的文件整理如下：<br><br>' +
-      '<strong>React 基础</strong><ul>' +
-      '<li>react-hooks.md — React Hooks 详解</li>' +
-      '<li>react-performance.md — React 性能优化</li>' +
-      '</ul>' +
-      '<strong>React 生态</strong><ul>' +
-      '<li>redux-patterns.md — Redux 设计模式</li>' +
-      '<li>css-modules.md — CSS Modules 实践指南</li>' +
-      '<li>nextjs-ssr.md — Next.js SSR 深入</li>' +
-      '</ul>' +
-      '是否需要我把这些文件的关系也用 [[Wiki Links]] 连接起来？',
-      '<button class="btn primary" onclick="sendQuickAction('添加 Wiki Links')">添加 Wiki Links</button>' +
-      '<button class="btn" onclick="sendQuickAction('不用了')">不用了</button>'
-    );
-    return;
-  }
-
-  if (msg.includes('用这个') || msg.includes('好')) {
-    const thinking = addThinkingMessage('正在按新方案写入文件...');
+  // ══ Ingest: 单文件/文件夹 ══
+  if (op === 'ingest') {
+    const fileName = userMsg.match(/([\w-]+\.md)/)?.[1] || userMsg.match(/([\w-]+\/)/)?.[1] || '文件';
+    addThinkingMessage(`正在读取 ${fileName} 并分析现有 wiki...`);
     setTimeout(() => {
       removeThinkingMessage();
-      onBuildComplete();
+
+      const ops = [
+        { type: 'new', path: 'wiki/summaries/' + fileName },
+        { type: 'update', path: 'wiki/concepts/react-fundamentals.md' },
+        { type: 'update', path: 'wiki/overview.md' },
+        { type: 'update', path: 'INDEX.md' },
+        { type: 'append', path: 'LOG.md' },
+      ];
+
       addAiMessage(
-        '✅ 已按新方案完成构建！<br><br>' +
-        '新的分类方案已应用到 INDEX.md 中。',
-        '<button class="btn primary" onclick="closeAiChat(); showView(\'result\');">查看 INDEX.md</button>'
+        `已将 <code>${fileName}</code> 整合到 Wiki 中：<br><br>` +
+        renderFileOps(ops) +
+        '<br>新页面已创建，相关页面已更新链接。'
+      );
+    }, 1800);
+    return;
+  }
+
+  // ══ Lint: 健康检查 ══
+  if (op === 'lint') {
+    addThinkingMessage('正在扫描 wiki 目录中的所有页面...');
+    setTimeout(() => {
+      removeThinkingMessage();
+      addAiMessage(
+        'Wiki 健康检查报告：<br><br>' +
+        '<strong>✅ 良好</strong><ul>' +
+        '<li>所有页面都有至少一个入站链接</li>' +
+        '<li>INDEX.md 与实际页面一致</li>' +
+        '<li>无矛盾信息</li>' +
+        '</ul>' +
+        '<strong>⚠️ 建议改进</strong><ul>' +
+        '<li><code>wiki/summaries/nextjs-ssr.md</code> 缺少对 [[React Server Components]] 的引用，建议补充</li>' +
+        '<li>缺少 <code>wiki/entities/next-js.md</code> — Next.js 作为重要框架值得单独的实体页</li>' +
+        '<li><code>wiki/concepts/css-methodologies.md</code> 内容较薄，建议添加 CSS-in-JS 对比</li>' +
+        '</ul>'
+      );
+    }, 2000);
+    return;
+  }
+
+  // ══ Query: 问答 ══
+  if (op === 'query' || !['build', 'ingest', 'lint'].includes(op)) {
+    addThinkingMessage('正在检索相关 wiki 页面...');
+    setTimeout(() => {
+      removeThinkingMessage();
+      addAiMessage(
+        '根据 Wiki 中的相关页面，综合回答如下：<br><br>' +
+        'React 性能优化的关键策略主要包括：<br><br>' +
+        '<strong>1. 渲染优化</strong><br>' +
+        '使用 <code>React.memo</code> 避免不必要的重渲染，配合 <code>useMemo</code> 和 <code>useCallback</code> 缓存计算结果和回调函数。' +
+        '<em>(来源: [[React 性能优化]])</em><br><br>' +
+        '<strong>2. 代码分割</strong><br>' +
+        '使用 <code>React.lazy</code> + <code>Suspense</code> 实现路由级别的代码分割，减少首屏加载体积。' +
+        '<em>(来源: [[React 性能优化]])</em><br><br>' +
+        '<strong>3. 状态管理优化</strong><br>' +
+        '使用选择器 memoization (reselect) 避免 Redux 触发的不必要渲染。' +
+        '<em>(来源: [[Redux 设计模式]])</em><br><br>' +
+        '<strong>4. SSR/SSG</strong><br>' +
+        '对首屏要求高的页面使用 Next.js 的 SSG/SSR，减少客户端渲染压力。' +
+        '<em>(来源: [[Next.js SSR 深入]])</em>'
       );
     }, 1500);
     return;
   }
 
-  // Default response
+  // ══ Default ══
   addAiMessage(
-    '收到。你可以继续通过对话指挥我完成 Wiki 构建。<br><br>' +
-    '常用指令：<ul>' +
-    '<li>「开始构建 Wiki」— 启动构建</li>' +
-    '<li>「重新分析分类」— 换一种分类方式</li>' +
-    '<li>「查看当前进度」— 查看构建状态</li>' +
-    '<li>「把 XXX 相关的文件整理一下」— 按主题整理</li>' +
+    '收到。你可以继续通过对话操作 Wiki：<ul>' +
+    '<li>「开始构建 Wiki」— 初始化构建</li>' +
+    '<li>「把 xxx.md 加入 Wiki」— 增量添加</li>' +
+    '<li>「检查 Wiki 健康状况」— 质量检查</li>' +
+    '<li>直接提问 — 基于 Wiki 回答</li>' +
     '</ul>'
   );
-}
-
-// ════════════════════════════════════════
-// View Switching
-// ════════════════════════════════════════
-function showView(view) {
-  currentView = view;
-  document.getElementById('viewEmpty').style.display = view === 'empty' ? 'flex' : 'none';
-  document.getElementById('viewFile').style.display = view === 'file' ? 'block' : 'none';
-  document.getElementById('viewResult').style.display = view === 'result' ? 'block' : 'none';
-  document.getElementById('viewLog').style.display = view === 'log' ? 'block' : 'none';
-}
-
-// ════════════════════════════════════════
-// File Selection
-// ════════════════════════════════════════
-function selectFile(el, key) {
-  document.querySelectorAll('.tree-item').forEach(i => i.classList.remove('is-active'));
-  el.classList.add('is-active');
-
-  const filename = el.querySelector('.tree-name').textContent;
-  if (isWikiBuilt && fileResults[filename]) {
-    showFileWithMeta(filename);
-  } else {
-    showFileContent(filename);
-  }
-}
-
-function showFileContent(filename) {
-  showView('file');
-  document.getElementById('fileFrontmatter').style.display = 'none';
-  document.getElementById('pageTitle').textContent = filename;
-  document.getElementById('breadcrumbs').textContent = 'notes/' + filename;
-
-  const sampleContent = `
-    <h1>${filename.replace('.md', '').replace(/-/g, ' ')}</h1>
-    <p>这是 ${filename} 的原始内容。文件尚未被 Wiki 构建处理。</p>
-    <h2>概述</h2>
-    <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit.</p>
-    <h2>核心概念</h2>
-    <ul><li>概念一</li><li>概念二</li><li>概念三</li></ul>
-  `;
-  document.getElementById('fileContent').innerHTML = sampleContent;
-}
-
-function showFileWithMeta(filename) {
-  const result = fileResults[filename];
-  if (!result) { showFileContent(filename); return; }
-
-  showView('file');
-  document.getElementById('fileFrontmatter').style.display = 'block';
-  document.getElementById('fmTitle').textContent = result.title;
-  document.getElementById('fmSummary').textContent = result.summary;
-  document.getElementById('fmTags').textContent = '[' + result.tags.join(', ') + ']';
-  document.getElementById('fmRelated').textContent = result.related.join(', ');
-  document.getElementById('pageTitle').textContent = result.title;
-  document.getElementById('breadcrumbs').textContent = 'notes/' + filename + ' · Wiki 已处理';
-
-  document.getElementById('fileContent').innerHTML = `
-    <h1>${result.title}</h1>
-    <blockquote>${result.summary}</blockquote>
-    <h2>核心内容</h2>
-    <p>这里是 ${filename} 的详细内容。</p>
-    <h2>相关文档</h2>
-    <p>${result.related.map(r => `<a href="#" style="color:var(--blue);text-decoration:none;background:var(--blue-bg);padding:1px 5px;border-radius:4px;font-size:12px;font-family:var(--mono);">[[${r}]]</a>`).join(' ')}</p>
-  `;
 }
 
 // ════════════════════════════════════════
@@ -1056,77 +1525,8 @@ function showFileWithMeta(filename) {
 function onBuildComplete() {
   isWikiBuilt = true;
   document.getElementById('breadcrumbs').textContent = '知识库 · 10 个文件 · Wiki 已构建';
-  updateTreeWithStatus();
-  renderIndexMd();
-  renderLogMd();
-}
-
-function updateTreeWithStatus() {
-  const treeItems = document.querySelectorAll('.tree-item');
-  treeItems.forEach(item => {
-    const name = item.querySelector('.tree-name')?.textContent;
-    if (fileResults[name]) {
-      const existing = item.querySelector('.tree-status');
-      if (!existing) {
-        const badge = document.createElement('span');
-        badge.className = 'tree-status done';
-        badge.textContent = '✓';
-        item.appendChild(badge);
-      }
-    }
-  });
-}
-
-function renderIndexMd() {
-  const container = document.getElementById('wikiResult');
-  let html = `
-    <h1>知识库索引</h1>
-    <div class="wiki-meta">前端开发 — React/TypeScript 前端技术学习笔记 · 由 Molio LLM Wiki 生成于 2026-06-05</div>
-  `;
-  proposal.categories.forEach(cat => {
-    html += `<h2>${cat.name}</h2>`;
-    cat.files.forEach(f => {
-      const r = fileResults[f];
-      if (r) {
-        html += `
-          <div class="wiki-entry">
-            <a class="wiki-link" href="#" onclick="showFileWithMeta('${f}'); return false;">[[${r.title}]]</a>
-            <span class="wiki-summary">— ${r.summary.substring(0, 40)}...</span>
-          </div>
-        `;
-      }
-    });
-  });
-  container.innerHTML = html;
-}
-
-function renderLogMd() {
-  const container = document.getElementById('wikiLog');
-  let rows = '';
-  files.forEach(f => {
-    const r = fileResults[f.name];
-    rows += `<tr><td style="font-family:var(--mono);font-size:11.5px;">${f.name}</td><td class="status-ok">✅ 成功</td><td>${r ? r.title : '—'}</td><td>${r ? r.tags.map(t => `<span class="tag">${t}</span>`).join('') : '—'}</td></tr>`;
-  });
-  container.innerHTML = `
-    <h1>Wiki 构建日志</h1>
-    <div class="wiki-meta">构建时间: 2026-06-05 10:30:00 · Agent: Claude Code</div>
-    <h2>构建信息</h2>
-    <ul><li>知识库: <strong>frontend-notes</strong></li><li>知识领域: <strong>前端开发</strong></li><li>文件总数: <strong>10</strong></li></ul>
-    <h2>处理记录</h2>
-    <table class="log-table"><thead><tr><th>文件</th><th>状态</th><th>标题</th><th>标签</th></tr></thead><tbody>${rows}</tbody></table>
-  `;
-}
-
-// ════════════════════════════════════════
-// Tree helpers
-// ════════════════════════════════════════
-function toggleGroup(el) {
-  const children = el.nextElementSibling;
-  const chevron = el.querySelector('.chevron');
-  if (children && children.classList.contains('tree-children')) {
-    children.classList.toggle('collapsed');
-    chevron.classList.toggle('collapsed');
-  }
+  document.getElementById('buildBtnText').textContent = 'Wiki 已就绪';
+  renderTree();
 }
 
 // ════════════════════════════════════════
@@ -1157,6 +1557,7 @@ document.addEventListener('input', (e) => {
 });
 
 // Init
+renderTree();
 showView('empty');
 </script>
 
