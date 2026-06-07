@@ -43,8 +43,12 @@ src/
     tool-result.ts  POST /api/runs/:id/tool-result — 提交工具结果
     config.ts       GET/PUT /api/config — 读写配置
     projects.ts     CRUD /api/projects — 项目管理 (SQLite)
-test/
-    *.test.ts       错误驱动测试用例 (node:test)
+test/               测试用例 (node:test)，按源码模块子目录组织
+  core/             config, db, transcript, run-event-buffer
+  streams/          claude-stream, codex-stream, json-event-stream, jsonl-parser
+  runtimes/         env, launch-detection, claude-permission-mode, windows-cmd-resolution
+  routes/           publish, sse
+  compat/           esm-compat, port-check
 ```
 
 ## 命令
@@ -83,4 +87,11 @@ pnpm typecheck    # tsc --noEmit
 
 ## 测试规范
 
-遵循项目根目录 CLAUDE.md 中的**错误驱动测试**规则：每个 bug 必须在 `test/` 下添加复现测试用例。
+遵循项目根目录 CLAUDE.md 中的**错误驱动测试**规则：每个 bug 在 `test/` 下按源码模块子目录添加复现测试用例。
+
+**目录映射**：测试子目录与 `src/` 源码模块一一对应：
+- `test/core/` → `src/core/`（config, db, transcript, RunManager）
+- `test/streams/` → `src/core/streams/`（流解析器）
+- `test/runtimes/` → `src/core/runtimes/`（agent 运行时、launch、env）
+- `test/routes/` → `src/routes/` + `src/sse.ts`（API 路由、SSE）
+- `test/compat/` → 跨模块兼容性检查（ESM、端口检测）

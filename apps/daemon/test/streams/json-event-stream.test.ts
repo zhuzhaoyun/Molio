@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { createJsonEventStreamHandler } from '../src/core/streams/json-event-stream.js';
+import { createJsonEventStreamHandler } from '../../src/core/streams/json-event-stream.js';
 import type { AgentEvent } from '@molio/contracts';
 
 function collectEvents(kind: string, lines: string[]): AgentEvent[] {

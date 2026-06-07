@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { getWellKnownToolchainDirs } from '../src/core/runtimes/launch.js';
+import { getWellKnownToolchainDirs } from '../../src/core/runtimes/launch.js';
 
 describe('Well-known toolchain dirs detection', () => {
   it('should return platform-specific directories', () => {
@@ -72,8 +72,8 @@ describe('Well-known toolchain dirs detection', () => {
 describe('resolveAgentBinary with env override', () => {
   it('should accept configuredEnv option', async () => {
     // Dynamic import to test the function signature
-    const { resolveAgentBinary } = await import('../src/core/runtimes/launch.js');
-    const { claudeAgentDef } = await import('../src/core/runtimes/claude.js');
+    const { resolveAgentBinary } = await import('../../src/core/runtimes/launch.js');
+    const { claudeAgentDef } = await import('../../src/core/runtimes/claude.js');
 
     // Test with no override - should try PATH detection
     const result = resolveAgentBinary(claudeAgentDef);
@@ -82,7 +82,7 @@ describe('resolveAgentBinary with env override', () => {
   });
 
   it('should return not-found for non-existent binary', async () => {
-    const { resolveAgentBinary } = await import('../src/core/runtimes/launch.js');
+    const { resolveAgentBinary } = await import('../../src/core/runtimes/launch.js');
 
     const fakeDef = {
       id: 'fake-agent',

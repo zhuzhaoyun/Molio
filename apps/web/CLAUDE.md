@@ -48,6 +48,9 @@ src/
     home.css      主页样式
     chat.css      聊天组件样式
     knowledge.css 知识库样式（含排版编辑器、样式面板）
+  e2e/
+    *.spec.ts     Playwright 自动化测试（需先 pnpm dev）
+    scenarios/    kimi-webbridge 场景文档（非自动化，手动/AI 驱动）
   vendor/
     doocs-md/     从 doocs/md vendored 的核心渲染代码
       src/

@@ -7,7 +7,7 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { getRetryDelay, createRetryState, RETRY_DELAYS } from '../src/retry.js';
+import { getRetryDelay, createRetryState, RETRY_DELAYS } from '../../src/retry.js';
 
 describe('RETRY_DELAYS', () => {
   it('should have exactly 5 delay levels', () => {

@@ -26,15 +26,25 @@ apps/
       routes/   agents, runs, events, tool-result, config, projects
       server.ts Hono app with CORS
       index.ts  Entry: @hono/node-server on port 3100
-    test/       错误驱动测试用例 (node:test)
+    test/       测试用例 (node:test)，按源码模块子目录组织
+      core/     config, db, transcript, run-event-buffer
+      streams/  claude-stream, codex-stream, json-event-stream, jsonl-parser
+      runtimes/ env, launch, claude-permission, windows-cmd, path-detection
+      routes/   publish, sse
+      compat/   esm-compat, port-check
   web/          @molio/web       — Vite + React web UI consuming daemon SSE (→ CLAUDE.md)
     src/
       api/      client.ts, sse.ts
       hooks/    useAgents, useChat, useProjects
       components/ HomePage, NavRail, ChatPane, ChatComposer, UserMessage, AssistantMessage, ThinkingBlock, ToolCard
       styles/   tokens, base, rail, home, chat
-    e2e/        E2E 测试场景
-  desktop/      @molio/desktop   — Electron shell (deferred, placeholder only) (→ CLAUDE.md)
+    e2e/        E2E 测试
+      *.spec.ts Playwright 测试文件
+      scenarios/ kimi-webbridge 场景文档 (非自动化测试)
+  desktop/      @molio/desktop   — Electron shell (→ CLAUDE.md)
+    test/       测试用例 (node:test)
+      updater/  retry, updater-state-machine, updater-structure
+      *.test.js logger, window-open-handler
 ```
 
 ### Build & Dev Commands
@@ -45,7 +55,8 @@ pnpm dev:daemon   # daemon only
 pnpm dev:web      # web only
 pnpm dev:desktop  # daemon + web + electron (需确保 5173/3100 端口未被占用)
 pnpm build        # build all packages
-pnpm test         # run daemon tests (node:test)
+pnpm test         # run daemon + desktop tests (node:test)
+pnpm test:e2e     # run web E2E tests (Playwright, 需先 pnpm dev)
 pnpm typecheck    # typecheck all packages
 ```
 
@@ -62,7 +73,10 @@ pnpm package:dir    # 仅生成未打包目录 (不生成安装包)
 
 **强制规则**：每次遇到报错（构建错误、运行时错误、逻辑错误），在修复 bug 之前或同时，必须：
 
-1. **在 `apps/daemon/test/` 目录下添加一条测试用例**，复现该错误的场景
+1. **在对应包的 `test/` 目录下添加一条测试用例**，按源码模块子目录组织：
+   - daemon bug → `apps/daemon/test/<module>/xxx.test.ts`（module = core / streams / runtimes / routes / compat）
+   - desktop bug → `apps/desktop/test/<module>/xxx.test.js`（module = updater / logger / main 等）
+   - web bug → `apps/web/e2e/xxx.spec.ts`（Playwright E2E）
 2. **测试命名**：描述错误场景，如 `claude-stream-dedup.test.ts`
 3. **测试结构**：用 Node.js 内置 `node:test`，不引入额外依赖
 4. **运行验证**：`pnpm test` 确认新测试通过

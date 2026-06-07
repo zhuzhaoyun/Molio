@@ -32,8 +32,15 @@ Electron 33 内置 Node.js 20.18.0 (ABI 130)，而系统 Node.js 是 22.x (ABI 1
 ```
 src/
   main.js        Electron main process (ESM)
-  preload.js     Preload script (空，contextIsolation 启用)
+  preload.cjs    Preload script (contextBridge, IPC)
+  updater.js     自动更新逻辑 (electron-updater)
+  retry.js       重试退避策略
+  logger.js      文件日志
   splash.html    启动画面 (daemon 启动时显示)
+test/             测试用例 (node:test)，按源码模块子目录组织
+  updater/       retry, updater-state-machine, updater-structure
+  logger.test.js
+  window-open-handler.test.js
 scripts/
   prepare-resources.mjs  构建时打包 daemon 和复制资源
 ```
@@ -52,7 +59,16 @@ scripts/
 pnpm dev          # 启动 Electron 开发模式 (需先启动 daemon + web)
 pnpm build        # 构建所有依赖包 + 准备资源
 pnpm package      # 打包为 Windows exe 安装程序
+pnpm test         # 运行测试 (node:test, 自动扫描 test/**/*.test.js)
 ```
+
+## 测试规范
+
+遵循项目根目录 CLAUDE.md 中的**错误驱动测试**规则：每个 bug 在 `test/` 下按源码模块子目录添加复现测试用例。
+
+- `test/updater/` → `src/retry.js`, `src/updater.js`（自动更新相关）
+- `test/logger.test.js` → `src/logger.js`（日志模块）
+- `test/window-open-handler.test.js` → `src/main.js`（窗口管理）
 
 ## 打包 (electron-builder)
 

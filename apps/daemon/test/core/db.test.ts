@@ -16,7 +16,7 @@ import {
   listMessages,
   upsertMessage,
   appendMessageEvent,
-} from '../src/core/db.js';
+} from '../../src/core/db.js';
 import type { ChatMessage } from '@molio/contracts';
 import type Database from 'better-sqlite3';
 

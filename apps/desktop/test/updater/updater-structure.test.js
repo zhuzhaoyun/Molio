@@ -15,7 +15,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 const mainJs = readFileSync(
-  path.resolve(import.meta.dirname, '../src/main.js'),
+  path.resolve(import.meta.dirname, '../../src/main.js'),
   'utf-8'
 );
 
@@ -96,7 +96,7 @@ describe('main.js: global crash protection must exist', () => {
 
 describe('updater.js: quitAndInstall must use silent mode', () => {
   const updaterJs = readFileSync(
-    path.resolve(import.meta.dirname, '../src/updater.js'),
+    path.resolve(import.meta.dirname, '../../src/updater.js'),
     'utf-8'
   );
 
@@ -116,7 +116,7 @@ describe('updater.js: quitAndInstall must use silent mode', () => {
 
 describe('updater.js: error event must notify renderer', () => {
   const updaterJs = readFileSync(
-    path.resolve(import.meta.dirname, '../src/updater.js'),
+    path.resolve(import.meta.dirname, '../../src/updater.js'),
     'utf-8'
   );
 
@@ -135,7 +135,7 @@ describe('updater.js: error event must notify renderer', () => {
 
 describe('updater.js: must use retry module (not inline delays)', () => {
   const updaterJs = readFileSync(
-    path.resolve(import.meta.dirname, '../src/updater.js'),
+    path.resolve(import.meta.dirname, '../../src/updater.js'),
     'utf-8'
   );
 
@@ -163,7 +163,7 @@ describe('updater.js: must use retry module (not inline delays)', () => {
 
 describe('preload.cjs: must expose onUpdateError', () => {
   const preloadCjs = readFileSync(
-    path.resolve(import.meta.dirname, '../src/preload.cjs'),
+    path.resolve(import.meta.dirname, '../../src/preload.cjs'),
     'utf-8'
   );
 

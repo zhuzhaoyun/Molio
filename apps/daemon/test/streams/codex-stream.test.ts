@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import type { AgentEvent } from '@molio/contracts';
-import { createCodexStreamHandler } from '../src/core/streams/codex-stream.js';
+import { createCodexStreamHandler } from '../../src/core/streams/codex-stream.js';
 
 /**
  * Tests for Codex stream handler — parses Codex CLI JSONL output.

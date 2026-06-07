@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { claudeAgentDef } from '../src/core/runtimes/claude.js';
+import { claudeAgentDef } from '../../src/core/runtimes/claude.js';
 
 /**
  * Error-driven test: AskUserQuestion must not be auto-confirmed.

@@ -8,7 +8,7 @@
     "dev:watch": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/src/index.js",
-    "test": "tsc && node --test \"dist/test/**/*.test.js\"",
+    "test": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc && node --test \"dist/test/**/*.test.js\"",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

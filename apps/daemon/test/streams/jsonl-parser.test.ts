@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { createJsonlParser } from '../src/core/streams/jsonl-parser.js';
+import { createJsonlParser } from '../../src/core/streams/jsonl-parser.js';
 
 describe('JSONL Parser', () => {
   it('should parse single complete line', () => {

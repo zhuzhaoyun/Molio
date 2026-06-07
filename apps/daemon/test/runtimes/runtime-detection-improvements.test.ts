@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { getWellKnownToolchainDirs } from '../src/core/runtimes/launch.js';
+import { getWellKnownToolchainDirs } from '../../src/core/runtimes/launch.js';
 
 /**
  * Error-driven test for runtime detection improvements.

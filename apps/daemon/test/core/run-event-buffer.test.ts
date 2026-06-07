@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import type { BufferedEvent } from '../src/types.js';
+import type { BufferedEvent } from '../../src/types.js';
 
 /**
  * Tests for the event buffer and SSE replay functionality.

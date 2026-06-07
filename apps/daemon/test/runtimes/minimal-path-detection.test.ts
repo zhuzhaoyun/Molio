@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { RunManager } from '../src/core/RunManager.js';
+import { RunManager } from '../../src/core/RunManager.js';
 
 /**
  * Error-driven test: runtime detection must work even with minimal PATH.
