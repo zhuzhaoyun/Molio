@@ -146,6 +146,30 @@ export function useKnowledge(): UseKnowledgeReturn {
     return () => { cancelled = true; };
   }, [activeVaultId]);
 
+  // Refresh tree when window regains focus (detects external file changes)
+  useEffect(() => {
+    if (!activeVaultId) return;
+
+    let lastFocusTime = Date.now();
+    const MIN_INTERVAL = 1000; // Prevent rapid refreshes
+
+    const handleFocus = async () => {
+      const now = Date.now();
+      if (now - lastFocusTime < MIN_INTERVAL) return;
+      lastFocusTime = now;
+
+      try {
+        const t = await api.getFileTree(activeVaultId);
+        setTree(t);
+      } catch {
+        // Ignore refresh errors
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [activeVaultId]);
+
   // Load file content when file selected
   useEffect(() => {
     if (!activeVaultId || !selectedFile) return;

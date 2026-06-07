@@ -110,6 +110,7 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
         onNewFile={() => {/* TODO: new file flow */}}
         onNewFolder={() => {/* TODO: new folder flow */}}
         onImport={() => kb.setShowImport(true)}
+        onRefresh={kb.refreshTree}
         onVaultClick={() => {
           console.log('Vault bar clicked, setting showVaultSwitcher to true');
           kb.setShowVaultSwitcher(true);
