@@ -221,7 +221,7 @@ export function knowledgeRoutes(db: Database.Database, runManager: RunManager): 
       return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
     }
 
-    const indexExists = existsSync(path.join(vault.path, 'INDEX.md'));
+    const indexExists = existsSync(path.join(vault.path, 'wiki', 'INDEX.md'));
     const wikiDirExists = existsSync(path.join(vault.path, 'wiki'));
 
     return c.json({

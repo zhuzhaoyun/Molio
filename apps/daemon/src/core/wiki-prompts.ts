@@ -15,8 +15,8 @@ Your task: scan all source files in this vault and build a structured wiki from 
 The vault root is the current working directory. Source files are in subdirectories (e.g. notes/, docs/).
 You will create and maintain:
 - \`wiki/\` — a directory of markdown pages you generate
-- \`INDEX.md\` — a vault-level index listing all wiki pages with one-line summaries
-- \`LOG.md\` — a chronological build log
+- \`wiki/INDEX.md\` — an index listing all wiki pages with one-line summaries
+- \`wiki/LOG.md\` — a chronological build log
 
 ## Wiki Pages
 
@@ -37,22 +37,22 @@ Each wiki page should be a markdown file with:
 - \`[[Page Name]]\` wiki-links to cross-reference other pages
 - Source attribution where relevant (which source file the information came from)
 
-## INDEX.md Format
+## wiki/INDEX.md Format
 
 \`\`\`markdown
 # Wiki Index
 
 ## Overview
-- [Overview](wiki/overview.md) — High-level synthesis
+- [Overview](overview.md) — High-level synthesis
 
 ## Summaries
-- [Source Name](wiki/summaries/source-name.md) — One-line summary
+- [Source Name](summaries/source-name.md) — One-line summary
 
 ## Concepts
-- [Concept Name](wiki/concepts/concept-name.md) — One-line description
+- [Concept Name](concepts/concept-name.md) — One-line description
 
 ## Entities
-- [Entity Name](wiki/entities/entity-name.md) — One-line description
+- [Entity Name](entities/entity-name.md) — One-line description
 \`\`\`
 
 ## LOG.md Format
@@ -73,8 +73,8 @@ Append a new entry for this build:
 2. Analyze the content and plan the wiki structure
 3. Create the wiki/ directory and subdirectories
 4. Generate all wiki pages
-5. Create INDEX.md with a complete listing
-6. Create LOG.md with this build's entry
+5. Create wiki/INDEX.md with a complete listing
+6. Create wiki/LOG.md with this build's entry
 7. Report what you created (page count by type)
 
 Be thorough but concise in your wiki pages. Prioritize accuracy over verbosity.
@@ -86,20 +86,20 @@ Your task: ingest a specific source file (or directory of files) into the existi
 
 ## Vault Structure
 
-The vault root is the current working directory. The wiki already exists in \`wiki/\` with an \`INDEX.md\` and \`LOG.md\` at the vault root.
+The vault root is the current working directory. The wiki already exists in \`wiki/\` with \`wiki/INDEX.md\` and \`wiki/LOG.md\`.
 
 ## Instructions
 
 1. Read the specified source file(s)
-2. Read the current INDEX.md to understand the existing wiki structure
+2. Read the current wiki/INDEX.md to understand the existing wiki structure
 3. Scan relevant existing wiki pages to understand what's already covered
 4. For the ingested content:
    - Create a new summary page in \`wiki/summaries/\`
    - Create or update concept pages in \`wiki/concepts/\`
    - Create or update entity pages in \`wiki/entities/\`
    - Update the overview page if the new content changes the big picture
-5. Update INDEX.md — add new pages, update descriptions for modified pages
-6. Append a new entry to LOG.md:
+5. Update wiki/INDEX.md — add new pages, update descriptions for modified pages
+6. Append a new entry to wiki/LOG.md:
    \`\`\`
    ## [YYYY-MM-DD HH:MM] Ingest: <file name>
    - Pages created: N
@@ -116,7 +116,7 @@ Your task: audit the wiki for consistency, completeness, and quality issues.
 
 ## Vault Structure
 
-The vault root is the current working directory. The wiki is in \`wiki/\` with \`INDEX.md\` and \`LOG.md\` at the vault root.
+The vault root is the current working directory. The wiki is in \`wiki/\` with \`wiki/INDEX.md\` and \`wiki/LOG.md\`.
 
 ## Check for These Issues
 
@@ -125,7 +125,7 @@ The vault root is the current working directory. The wiki is in \`wiki/\` with \
 3. **Orphan pages** — Wiki pages with no inbound links from other pages
 4. **Missing pages** — Concepts or entities mentioned via [[wiki-links]] but without their own page
 5. **Missing cross-references** — Related pages that should link to each other but don't
-6. **INDEX.md drift** — Pages that exist but aren't listed, or listed pages that don't exist
+6. **wiki/INDEX.md drift** — Pages that exist but aren't listed, or listed pages that don't exist
 7. **Data gaps** — Topics that could be enriched with a web search or additional source
 
 ## Output Format
@@ -152,11 +152,11 @@ Your task: answer the user's question using the vault's wiki and source files.
 
 ## Vault Structure
 
-The vault root is the current working directory. The wiki is in \`wiki/\` with \`INDEX.md\` at the vault root. Source files are in other subdirectories.
+The vault root is the current working directory. The wiki is in \`wiki/\` with \`wiki/INDEX.md\`. Source files are in other subdirectories.
 
 ## Instructions
 
-1. Read INDEX.md to understand the wiki structure
+1. Read wiki/INDEX.md to understand the wiki structure
 2. Read the most relevant wiki pages for the question
 3. If wiki pages don't fully answer the question, read the original source files for more detail
 4. Synthesize a clear, well-structured answer
@@ -172,4 +172,4 @@ Provide:
 
 ## Optional: Archive as Wiki Page
 
-If the answer constitutes a valuable, reusable synthesis (e.g. a comparison, a deep-dive on a topic), suggest archiving it as a new wiki page. Ask the user if they want to do this, and if so, create the page and update INDEX.md and LOG.md.`;
+If the answer constitutes a valuable, reusable synthesis (e.g. a comparison, a deep-dive on a topic), suggest archiving it as a new wiki page. Ask the user if they want to do this, and if so, create the page and update wiki/INDEX.md and wiki/LOG.md.`;
