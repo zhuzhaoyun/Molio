@@ -28,7 +28,10 @@ jobs:
         run: pnpm build
 
       - name: Run daemon tests
-        run: pnpm test
+        run: pnpm --filter @molio/daemon test
+
+      - name: Run desktop tests (updater regression)
+        run: pnpm --filter @molio/desktop test
 
       - name: Typecheck
         run: pnpm typecheck

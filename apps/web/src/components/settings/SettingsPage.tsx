@@ -62,6 +62,13 @@ export function SettingsPage() {
       })
     );
 
+    // Surface background updater errors (network failures, etc.)
+    cleanups.push(
+      window.updater.onUpdateError((info) => {
+        setResult({ status: 'error', message: info.message });
+      })
+    );
+
     return () => cleanups.forEach((fn) => fn());
   }, []);
 
