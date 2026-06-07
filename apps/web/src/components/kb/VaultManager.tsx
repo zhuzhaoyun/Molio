@@ -16,7 +16,7 @@ import { VaultList } from './VaultList';
 import { VaultActionPanel } from './VaultActionPanel';
 import { CreateVaultForm } from './CreateVaultForm';
 
-export type VaultManagerView = 'list' | 'create';
+export type VaultManagerView = 'list' | 'create' | 'open';
 
 interface VaultManagerModalProps {
   show: boolean;
@@ -82,44 +82,103 @@ export function VaultManagerModal({
           />
         </div>
 
-        {/* Right: Action Panel or Create Form */}
+        {/* Right: Action Panel / Create Form / Open Form */}
         <div className="vm-modal-right">
           {view === 'list' ? (
             <VaultActionPanel
               onCreate={() => setView('create')}
               onOpenLocal={async () => {
-                let pickedPath: string | null = null;
-
-                // 1. Try Electron's native directory picker (desktop app)
+                // Electron: use native directory picker
                 if (window.__electron__?.showDirectoryPicker) {
                   try {
-                    pickedPath = await window.__electron__.showDirectoryPicker();
+                    const pickedPath = await window.__electron__.showDirectoryPicker();
+                    if (pickedPath) {
+                      await onOpen(pickedPath);
+                      setView('list');
+                    }
                   } catch { /* user cancelled */ }
+                  return;
                 }
 
-                // 2. Fall back to manual path input
-                //    NOTE: Browser's showDirectoryPicker() only returns dirHandle.name
-                //    (e.g. "test-wiki"), not the full path ("D:\work\test-wiki").
-                //    The daemon needs the absolute path to scan files, so we skip
-                //    the browser File System Access API and prompt for the full path.
-                if (!pickedPath) {
-                  pickedPath = window.prompt('请输入本地文件夹的完整路径：\n例如 D:\\work\\my-vault');
-                }
-
-                if (pickedPath) {
-                  await onOpen(pickedPath);
-                  setView('list');
-                }
+                // Browser: show inline path input form
+                setView('open');
               }}
             />
-          ) : (
+          ) : view === 'create' ? (
             <CreateVaultForm
               onCreate={handleCreate}
               onCancel={handleBackToList}
               isLoading={creating}
             />
+          ) : (
+            <OpenVaultForm
+              onOpen={async (path: string) => {
+                setCreating(true);
+                try {
+                  await onOpen(path);
+                  setView('list');
+                } finally {
+                  setCreating(false);
+                }
+              }}
+              onCancel={handleBackToList}
+              isLoading={creating}
+            />
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Open local vault form — inline path input for browser environments.
+ */
+function OpenVaultForm({
+  onOpen,
+  onCancel,
+  isLoading,
+}: {
+  onOpen: (path: string) => Promise<void>;
+  onCancel: () => void;
+  isLoading: boolean;
+}) {
+  const [vaultPath, setVaultPath] = useState('');
+
+  const handleSubmit = useCallback(async () => {
+    if (!vaultPath.trim()) return;
+    await onOpen(vaultPath.trim());
+  }, [vaultPath, onOpen]);
+
+  const canSubmit = vaultPath.trim() && !isLoading;
+
+  return (
+    <div className="vm-create-form">
+      <button className="vm-back-btn" onClick={onCancel}>
+        ← 返回
+      </button>
+      <h2 className="vm-create-title">打开本地仓库</h2>
+
+      <div className="vm-form-group">
+        <label className="vm-form-label">文件夹路径</label>
+        <input
+          className="vm-form-input"
+          type="text"
+          placeholder="D:\work\my-vault"
+          value={vaultPath}
+          onChange={(e) => setVaultPath(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && canSubmit && handleSubmit()}
+          autoFocus
+        />
+        <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+          输入本地文件夹的完整路径，将该文件夹作为知识库打开
+        </p>
+      </div>
+
+      <div className="vm-form-actions">
+        <button className="vm-submit-btn" onClick={handleSubmit} disabled={!canSubmit}>
+          {isLoading ? '打开中...' : '打开'}
+        </button>
       </div>
     </div>
   );
