@@ -20,7 +20,7 @@ src/
   types.ts          内部类型 (RunState, BufferedEvent)
   core/
     RunManager.ts   Run 生命周期管理 (create/cancel/submitToolResult)
-    config.ts       配置文件加载 (~/.kge/config.json)
+    config.ts       配置文件加载 (~/.molio/config.json)
     db.ts           SQLite 数据库初始化
     transcript.ts   多轮对话 transcript 构建
     runtimes/

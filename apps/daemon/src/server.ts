@@ -45,11 +45,11 @@ app.route('/api/runs', eventsRoutes(runManager));
 app.route('/api/runs', toolResultRoutes(runManager));
 app.route('/api/config', configRoutes());
 app.route('/api/projects', projectRoutes(db));
-app.route('/api/knowledge', knowledgeRoutes(db));
+app.route('/api/knowledge', knowledgeRoutes(db, runManager));
 app.route('/api/publish', publishRoutes());
 
 // Static file serving (production / desktop mode)
-const staticDir = process.env['KGE_STATIC_DIR'];
+const staticDir = process.env['MOLIO_STATIC_DIR'];
 
 // MIME type mapping
 const mimeTypes: Record<string, string> = {

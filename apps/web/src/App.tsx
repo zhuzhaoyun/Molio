@@ -98,7 +98,7 @@ export default function App() {
               />
             }
           />
-          <Route path="/knowledge" element={<KnowledgeBasePage />} />
+          <Route path="/knowledge" element={<KnowledgeBasePage agentId={selectedAgent} />} />
           <Route path="/runtimes" element={<RuntimePage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Routes>

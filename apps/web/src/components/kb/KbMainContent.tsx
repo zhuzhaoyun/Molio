@@ -15,11 +15,13 @@ interface KbMainContentProps {
   selectedFile: string | null;
   isTypesetMode: boolean;
   themeConfig: ThemeConfig;
+  wikiInitialized: boolean;
   onToggleTypeset: () => void;
   onThemeConfigChange: (config: ThemeConfig) => void;
   onContentChange: (content: string) => void;
   onCopy: () => void;
   onPublish: () => void;
+  onBuildWiki: () => void;
 }
 
 export function KbMainContent({
@@ -27,13 +29,31 @@ export function KbMainContent({
   selectedFile,
   isTypesetMode,
   themeConfig,
+  wikiInitialized,
   onToggleTypeset,
   onContentChange,
   onCopy,
   onPublish,
+  onBuildWiki,
 }: KbMainContentProps) {
-  // No file selected — show empty state
+  // No file selected — show empty state or wiki CTA
   if (!selectedFile) {
+    // Show wiki build CTA if wiki is not initialized
+    if (!wikiInitialized) {
+      return (
+        <main className="kb-main">
+          <div className="kb-empty-state">
+            <div className="kb-empty-icon">🏗</div>
+            <h3>构建知识库 Wiki</h3>
+            <p>使用 AI 自动扫描 vault 中的文件，生成结构化的 wiki 页面。</p>
+            <button type="button" className="wiki-cta-btn" onClick={onBuildWiki}>
+              开始构建 Wiki
+            </button>
+          </div>
+        </main>
+      );
+    }
+
     return (
       <main className="kb-main">
         <div className="kb-empty-state">

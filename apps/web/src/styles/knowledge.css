@@ -1569,3 +1569,253 @@
    注意：所有 Markdown 渲染样式由 doocs/md 主题系统（applyTheme）动态注入，
    这里不再定义任何 .md-preview 相关样式，避免与主题 CSS 冲突。
    ══════════ */
+
+/* ══════════ Wiki Chat Panel ══════════ */
+
+.wiki-chat-panel {
+  width: 420px;
+  min-width: 320px;
+  flex-shrink: 0;
+  background: var(--bg-panel, #fff);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: wiki-panel-slide-in 200ms ease;
+}
+
+@keyframes wiki-panel-slide-in {
+  from { transform: translateX(100%); opacity: 0; }
+  to   { transform: translateX(0); opacity: 1; }
+}
+
+.wiki-chat-header {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.wiki-chat-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wiki-chat-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.wiki-chat-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.wiki-chat-status {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: 4px;
+}
+
+.wiki-chat-close {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 120ms ease;
+}
+
+.wiki-chat-close:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--text);
+}
+
+/* Messages area */
+.wiki-chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 0;
+}
+
+.wiki-chat-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 8px;
+  color: var(--text-muted);
+}
+
+.wiki-chat-empty-icon {
+  font-size: 32px;
+}
+
+.wiki-chat-empty p {
+  font-size: 13px;
+}
+
+/* Message overrides for panel context */
+.wiki-chat-messages .msg {
+  padding: 8px 14px;
+}
+
+.wiki-chat-messages .msg.user .user-text {
+  font-size: 13px;
+}
+
+.wiki-chat-messages .msg.assistant .md-preview {
+  font-size: 13px;
+}
+
+/* Input area */
+.wiki-chat-input {
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.wiki-chat-input-shell {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  background: var(--bg-subtle, #f5f5f4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  transition: border-color 120ms ease;
+}
+
+.wiki-chat-input-shell:focus-within {
+  border-color: var(--accent);
+}
+
+.wiki-chat-input-shell textarea {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  resize: none;
+  outline: none;
+  line-height: 1.5;
+  max-height: 120px;
+}
+
+.wiki-chat-input-shell textarea::placeholder {
+  color: var(--text-faint);
+}
+
+.wiki-chat-input-actions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.wiki-btn-send {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 120ms ease;
+}
+
+.wiki-btn-send:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.wiki-btn-send:not(:disabled):hover {
+  background: var(--accent-hover);
+}
+
+.wiki-btn-stop {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--red, #dc2626);
+  background: transparent;
+  color: var(--red, #dc2626);
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 120ms ease;
+}
+
+.wiki-btn-stop:hover {
+  background: var(--red-bg, #fef2f2);
+}
+
+/* ══════════ Wiki Tree "+" Button ══════════ */
+
+.wiki-tree-op {
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 100ms ease, background 100ms ease;
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.kb-tree-item:hover .wiki-tree-op,
+.kb-tree-group-label:hover .wiki-tree-op {
+  opacity: 1;
+}
+
+.wiki-tree-op:hover {
+  background: var(--accent-soft, #f5d8cb);
+}
+
+/* ══════════ Wiki CTA Button ══════════ */
+
+.wiki-cta-btn {
+  margin-top: 16px;
+  height: 40px;
+  padding: 0 24px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+
+.wiki-cta-btn:hover {
+  background: var(--accent-hover);
+}

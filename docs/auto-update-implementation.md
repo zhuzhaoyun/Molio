@@ -1,10 +1,10 @@
-# KGE 自动更新实施指南
+# Molio 自动更新实施指南
 
-基于 KGE 当前代码库的实际状态，逐步实现 Electron 桌面应用的自动更新功能。
+基于 Molio 当前代码库的实际状态，逐步实现 Electron 桌面应用的自动更新功能。
 
 ## 当前状态
 
-KGE 的 Electron 桌面应用已经具备：
+Molio 的 Electron 桌面应用已经具备：
 
 - ✅ `electron-builder` 已安装并配置（`apps/desktop/package.json` 的 `build` 字段）
 - ✅ NSIS 安装包可以正常打包（`pnpm package`）
@@ -41,7 +41,7 @@ pnpm add electron-updater
 // apps/desktop/package.json
 {
   "build": {
-    "appId": "com.kge.desktop",
+    "appId": "com.molio.desktop",
     "productName": "Knowledge Growth Engine",
     // ... 其他已有配置保持不变 ...
 

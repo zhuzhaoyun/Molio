@@ -56,3 +56,39 @@ export interface FileTreeResponse {
 export interface KbHistoryListResponse {
   history: KbHistoryEntry[];
 }
+
+// ─── Wiki types ───
+
+export type WikiOperationType = 'build' | 'ingest' | 'lint' | 'query';
+
+export interface WikiStatusResponse {
+  initialized: boolean;
+  indexExists: boolean;
+  wikiDirExists: boolean;
+}
+
+export interface WikiBuildRequest {
+  agentId: string;
+  model?: string;
+}
+
+export interface WikiIngestRequest {
+  agentId: string;
+  filePath: string;
+  model?: string;
+}
+
+export interface WikiLintRequest {
+  agentId: string;
+  model?: string;
+}
+
+export interface WikiQueryRequest {
+  agentId: string;
+  message: string;
+  model?: string;
+}
+
+export interface WikiRunResponse {
+  runId: string;
+}
