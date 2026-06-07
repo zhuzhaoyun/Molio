@@ -6,7 +6,7 @@ import type { AgentConfig } from '../src/core/config.js';
 /**
  * Tests for config module.
  * Focuses on buildAgentEnv (pure function).
- * loadConfig/saveConfig require integration testing with real ~/.kge directory.
+ * loadConfig/saveConfig require integration testing with real ~/.molio directory.
  */
 
 describe('Config module', () => {

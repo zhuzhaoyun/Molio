@@ -39,7 +39,7 @@ export class RunManager {
   private runsLogDir: string;
 
   constructor() {
-    this.runsLogDir = path.join(os.homedir(), '.kge', 'runs');
+    this.runsLogDir = path.join(os.homedir(), '.molio', 'runs');
   }
 
   detectAgents(): AgentInfo[] {
@@ -184,7 +184,7 @@ export class RunManager {
     const child: ChildProcess = spawn(result.binary, args, {
       env,
       stdio: [stdinMode, 'pipe', 'pipe'],
-      cwd: opts.cwd || agentConfig.env?.['KGE_CWD'] || process.cwd(),
+      cwd: opts.cwd || agentConfig.env?.['MOLIO_CWD'] || process.cwd(),
       // On Windows, .cmd/.bat files must be spawned with shell: true to avoid EINVAL
       shell: isCmd,
       windowsVerbatimArguments: process.platform === 'win32' && !isCmd,

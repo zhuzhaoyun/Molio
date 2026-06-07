@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import type { ToolEvent } from '../hooks/useChat';
 
 interface Props {
@@ -28,38 +28,17 @@ export function ToolCard({ tool, isLast, onAnswerToolUse, onSubmitForm }: Props)
     );
   }
 
-  // Default: generic tool card with smart summarization
+  // Default: Claude Code style — minimal inline one-liner
   const detail = formatToolInput(tool.input);
   const statusClass = tool.status === 'running' ? 'running' : tool.isError ? 'error' : 'done';
-  const statusLabel = tool.status === 'running' ? '...' : tool.isError ? '✗' : '✓';
-
-  // Summarize result for known tool types to avoid flooding the UI
-  const summary = useMemo(() => summarizeToolResult(tool.name, tool.result), [tool.name, tool.result]);
-  const [expanded, setExpanded] = useState(false);
-  const isTruncated = summary.truncated;
+  const statusLabel = tool.status === 'running' ? '…' : tool.isError ? '✗' : '✓';
 
   return (
-    <div className="tool-card">
-      <div className="tool-card-header">
-        <span className="tool-card-icon">›</span>
-        <span className="tool-card-name">{tool.name}</span>
-        {detail && <span className="tool-card-detail">{detail}</span>}
-        <span className={`tool-card-status ${statusClass}`}>{statusLabel}</span>
-      </div>
-      {summary.text && (
-        <div
-          className={`tool-card-body ${tool.isError ? 'error' : ''}${isTruncated && !expanded ? ' collapsed' : ''}`}
-          onClick={isTruncated ? () => setExpanded((e) => !e) : undefined}
-        >
-          <pre className="tool-card-output">{expanded ? tool.result : summary.text}</pre>
-          {isTruncated && !expanded && (
-            <div className="tool-card-expand">点击展开 ({summary.lines} 行)</div>
-          )}
-          {isTruncated && expanded && (
-            <div className="tool-card-expand">点击收起</div>
-          )}
-        </div>
-      )}
+    <div className="tool-line">
+      <span className="tool-line-arrow">⎿</span>
+      <span className="tool-line-name">{tool.name}</span>
+      {detail && <span className="tool-line-arg">{detail}</span>}
+      <span className={`tool-line-status ${statusClass}`}>{statusLabel}</span>
     </div>
   );
 }
@@ -293,70 +272,6 @@ function AskUserQuestionCard({
   );
 }
 
-/**
- * Summarize tool result for display — avoid flooding the UI with raw content.
- * Known tools get concise summaries; unknown tools get truncated.
- */
-function summarizeToolResult(name: string, result?: string): { text: string; truncated: boolean; lines: number } {
-  if (!result) return { text: '', truncated: false, lines: 0 };
-
-  const lines = result.split('\n').length;
-  const MAX_LINES = 6;
-  const MAX_CHARS = 400;
-
-  switch (name) {
-    case 'Read':
-      // Read returns full file content — show just the file path and size
-      return {
-        text: `已读取 (${lines} 行, ${result.length} 字符)`,
-        truncated: lines > MAX_LINES,
-        lines,
-      };
-
-    case 'Write':
-    case 'NotebookEdit':
-      // Write confirms creation — show confirmation
-      return {
-        text: result.length > MAX_CHARS ? result.slice(0, MAX_CHARS) + '…' : result,
-        truncated: result.length > MAX_CHARS,
-        lines,
-      };
-
-    case 'Edit':
-      // Edit shows what changed — truncate if long
-      return {
-        text: result.length > MAX_CHARS ? result.slice(0, MAX_CHARS) + '…' : result,
-        truncated: result.length > MAX_CHARS,
-        lines,
-      };
-
-    case 'Bash':
-    case 'bash':
-      // Bash output can be huge — show first few lines
-      if (lines > MAX_LINES) {
-        const preview = result.split('\n').slice(0, MAX_LINES).join('\n');
-        return { text: preview + '\n…', truncated: true, lines };
-      }
-      return { text: result, truncated: false, lines };
-
-    case 'Glob':
-    case 'Grep':
-      // Search results — show count and first few
-      if (lines > MAX_LINES * 2) {
-        const preview = result.split('\n').slice(0, MAX_LINES).join('\n');
-        return { text: `${preview}\n… (${lines} 个结果)`, truncated: true, lines };
-      }
-      return { text: result, truncated: false, lines };
-
-    default:
-      // Unknown tools — truncate if too long
-      if (result.length > MAX_CHARS || lines > MAX_LINES * 3) {
-        const preview = result.split('\n').slice(0, MAX_LINES).join('\n');
-        return { text: preview + '\n…', truncated: true, lines };
-      }
-      return { text: result, truncated: false, lines };
-  }
-}
 
 function formatToolInput(input: unknown): string {
   if (typeof input === 'string') return truncate(input, 80);

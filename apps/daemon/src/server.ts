@@ -48,7 +48,7 @@ app.route('/api/projects', projectRoutes(db));
 app.route('/api/knowledge', knowledgeRoutes(db, runManager));
 
 // Static file serving (production / desktop mode)
-const staticDir = process.env['KGE_STATIC_DIR'];
+const staticDir = process.env['MOLIO_STATIC_DIR'];
 if (staticDir) {
   // Serve static assets (js, css, images, etc.)
   app.use('/*', serveStatic({ root: staticDir }));

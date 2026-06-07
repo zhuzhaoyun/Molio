@@ -17,7 +17,7 @@ Electron 桌面应用壳，包裹 `@molio/web` 构建产物，内嵌 `@molio/dae
 ### 生产模式 (app.isPackaged === true)
 
 - Electron 使用系统 Node.js 启动 daemon 子进程
-- Daemon 使用 `KGE_STATIC_DIR` 环境变量定位 web 构建产物
+- Daemon 使用 `MOLIO_STATIC_DIR` 环境变量定位 web 构建产物
 - Daemon 同时提供 API 和静态文件 (port 3100)
 - Electron 加载 `http://localhost:3100`
 

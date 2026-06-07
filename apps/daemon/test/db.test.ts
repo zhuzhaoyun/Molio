@@ -25,7 +25,7 @@ describe('SQLite persistence', () => {
   let tempDir: string;
 
   before(() => {
-    tempDir = mkdtempSync(join(tmpdir(), 'kge-test-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'molio-test-'));
     db = openDatabase(tempDir);
   });
 

@@ -130,18 +130,18 @@ pnpm install
 
 ## Runtime Context Loading
 
-**核心机制**：KGE 的 agent CLI（Claude Code、Codex 等）通过 `cwd` 参数加载项目上下文。spawn 进程时设置 `cwd` 为项目的 `localPath`，agent CLI 会自动读取该目录下的 `CLAUDE.md`、`.claude/` 配置、以及所有 markdown 文件。
+**核心机制**：Molio 的 agent CLI（Claude Code、Codex 等）通过 `cwd` 参数加载项目上下文。spawn 进程时设置 `cwd` 为项目的 `localPath`，agent CLI 会自动读取该目录下的 `CLAUDE.md`、`.claude/` 配置、以及所有 markdown 文件。
 
 **实现方式**（`apps/daemon/src/core/RunManager.ts`）：
 ```typescript
 const child = spawn(binary, args, {
-  cwd: opts.cwd || agentConfig.env?.['KGE_CWD'] || process.cwd(),
+  cwd: opts.cwd || agentConfig.env?.['MOLIO_CWD'] || process.cwd(),
 });
 ```
 
 **Web UI 传参**：创建 run 时，从当前 project 取出 `localPath` 作为 `cwd` 传给 daemon API（`POST /api/runs`）。
 
-**不要做的事**：不要动态生成上下文文件到隔离目录。KGE 是本地知识库应用，用户的项目目录已经有完整的 `CLAUDE.md` 和文档结构，直接 `cd` 到那里就行。
+**不要做的事**：不要动态生成上下文文件到隔离目录。Molio 是本地知识库应用，用户的项目目录已经有完整的 `CLAUDE.md` 和文档结构，直接 `cd` 到那里就行。
 
 ## 用户偏好处理规则
 

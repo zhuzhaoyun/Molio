@@ -1,8 +1,8 @@
 /**
  * SQLite persistence layer for projects, conversations, and messages.
- * Adapted from open-design's db.ts, simplified for KGE's scope.
+ * Adapted from open-design's db.ts, simplified for Molio's scope.
  *
- * Database file: ~/.kge/app.sqlite (WAL mode, foreign keys)
+ * Database file: ~/.molio/app.sqlite (WAL mode, foreign keys)
  */
 
 import Database from 'better-sqlite3';
@@ -18,11 +18,31 @@ let dbInstance: SqliteDb | null = null;
 let dbFile: string | null = null;
 
 /**
+ * Migrate legacy data directory from ~/.kge to ~/.molio.
+ * Only runs once: if ~/.molio doesn't exist but ~/.kge does, rename it.
+ */
+function migrateLegacyDir(): void {
+  const legacyDir = path.join(os.homedir(), '.kge');
+  const newDir = path.join(os.homedir(), '.molio');
+
+  if (!fs.existsSync(legacyDir) || fs.existsSync(newDir)) return;
+
+  try {
+    fs.renameSync(legacyDir, newDir);
+    console.log(`Migrated data directory: ${legacyDir} → ${newDir}`);
+  } catch (err) {
+    console.error(`Failed to migrate ${legacyDir} → ${newDir}:`, err);
+  }
+}
+
+/**
  * Open (or return existing) SQLite database.
  * Creates the data directory and runs migrations on first open.
  */
 export function openDatabase(dataDir?: string): SqliteDb {
-  const dir = dataDir ?? path.join(os.homedir(), '.kge');
+  if (!dataDir) migrateLegacyDir();
+
+  const dir = dataDir ?? path.join(os.homedir(), '.molio');
   const file = path.join(dir, 'app.sqlite');
 
   if (dbInstance && dbFile === file) return dbInstance;
