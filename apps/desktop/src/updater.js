@@ -33,6 +33,9 @@ const retry = createRetryState();
 let retryTimer = null;
 let pollTimer = null;
 
+// Track downloaded version so IPC can report "ready to install" immediately
+let downloadedVersion = null;
+
 /**
  * Attempt a single update check.
  * On success: reset retry counter, schedule next poll.
@@ -140,11 +143,14 @@ export function setupAutoUpdater(getMainWindow) {
     try {
       const result = await checkForUpdatesOnce();
       const currentVersion = app.getVersion();
+      const latestVersion = result?.updateInfo?.version ?? currentVersion;
       return {
         ok: true,
         currentVersion,
-        latestVersion: result?.updateInfo?.version ?? currentVersion,
+        latestVersion,
         available: result?.isUpdateAvailable ?? false,
+        downloaded: downloadedVersion === latestVersion,
+        downloadedVersion,
       };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -191,6 +197,7 @@ export function setupAutoUpdater(getMainWindow) {
 
   // Notify renderer when update is downloaded and ready to install
   autoUpdater.on('update-downloaded', (info) => {
+    downloadedVersion = info.version;
     log('info', 'updater', `v${info.version} downloaded and ready`);
     getMainWindow()?.webContents.send('updater:update-downloaded', {
       version: info.version,
