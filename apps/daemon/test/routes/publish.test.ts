@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { publishRoutes, cleanupAllBridges } from '../src/routes/publish.js';
+import { publishRoutes, cleanupAllBridges } from '../../src/routes/publish.js';
 
 /**
  * Tests for publish API routes.

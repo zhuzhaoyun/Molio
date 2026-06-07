@@ -17,7 +17,7 @@
     "package:dir": "electron-builder --win --dir",
     "run:unpacked": "electron-builder --win --dir && echo 'Run: ./dist/win-unpacked/墨流 Molio.exe'",
     "typecheck": "echo 'desktop: no TS to check'",
-    "test": "node --test test/*.test.js"
+    "test": "node --test \"test/**/*.test.js\""
   },
   "dependencies": {
     "electron-updater": "^6.8.3"

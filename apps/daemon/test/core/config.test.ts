@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildAgentEnv } from '../src/core/config.js';
-import type { AgentConfig } from '../src/core/config.js';
+import { buildAgentEnv } from '../../src/core/config.js';
+import type { AgentConfig } from '../../src/core/config.js';
 
 /**
  * Tests for config module.

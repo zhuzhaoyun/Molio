@@ -9,7 +9,7 @@ import * as path from 'node:path';
  * Use import.meta.dirname (Node 20.11+) or fileURLToPath(import.meta.url) instead.
  */
 describe('ESM compatibility', () => {
-  const srcDir = path.join(import.meta.dirname, '..', 'src');
+  const srcDir = path.join(import.meta.dirname, '..', '..', 'src');
   const CJS_PATTERNS = [
     /(?<!\/\/.*)\b__dirname\b/g,
     /(?<!\/\/.*)\b__filename\b/g,

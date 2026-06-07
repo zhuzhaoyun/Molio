@@ -16,7 +16,7 @@ import path from 'node:path';
 
 const STATE_FILE = path.resolve(
   import.meta.dirname,
-  '../../web/src/components/settings/updater-state.ts'
+  '../../../web/src/components/settings/updater-state.ts'
 );
 
 const stateSrc = readFileSync(STATE_FILE, 'utf-8');
@@ -168,7 +168,7 @@ describe('onCheckResult: must handle "downloaded" response from IPC', () => {
 
 describe('updater.js: must track downloadedVersion for IPC', () => {
   const updaterSrc = readFileSync(
-    path.resolve(import.meta.dirname, '../src/updater.js'),
+    path.resolve(import.meta.dirname, '../../src/updater.js'),
     'utf-8'
   );
 

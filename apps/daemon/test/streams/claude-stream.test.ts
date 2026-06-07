@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import type { AgentEvent } from '@molio/contracts';
-import { createClaudeStreamHandler } from '../src/core/streams/claude-stream.js';
+import { createClaudeStreamHandler } from '../../src/core/streams/claude-stream.js';
 
 /**
  * Tests for Claude stream handler — parses Claude Code CLI JSONL output.

@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveAgentBinary, probeVersion } from '../src/core/runtimes/launch.js';
-import { claudeAgentDef } from '../src/core/runtimes/claude.js';
+import { resolveAgentBinary, probeVersion } from '../../src/core/runtimes/launch.js';
+import { claudeAgentDef } from '../../src/core/runtimes/claude.js';
 
 /**
  * Error-driven test for Windows .cmd binary resolution.

@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildTranscript, type TranscriptMessage } from '../src/core/transcript.js';
+import { buildTranscript, type TranscriptMessage } from '../../src/core/transcript.js';
 
 describe('buildTranscript', () => {
   it('should return empty string for empty history', () => {
