@@ -87,6 +87,49 @@ export function VaultSwitcherModal({
 }
 
 // ═══════════════════════════════════════════
+// COSE Extension Install Prompt
+// ═══════════════════════════════════════════
+
+interface CoseInstallPromptProps {
+  show: boolean;
+  onClose: () => void;
+}
+
+export function CoseInstallPrompt({ show, onClose }: CoseInstallPromptProps) {
+  if (!show) return null;
+
+  return (
+    <div className={`kb-overlay ${show ? 'show' : ''}`} onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="kb-modal" style={{ width: 420 }}>
+        <div className="kb-modal-header">
+          <h2>需要安装 COSE 扩展</h2>
+          <button className="kb-modal-close" onClick={onClose}>&times;</button>
+        </div>
+        <div className="kb-modal-body">
+          <p style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6, marginBottom: 12 }}>
+            发布功能依赖 <strong>COSE</strong> Chrome 扩展（全平台分发工具）。
+            请先在 Chrome 浏览器中安装该扩展，然后重新点击发布按钮。
+          </p>
+          <div style={{ padding: '12px 14px', background: 'var(--bg-subtle)', borderRadius: 'var(--radius-sm)', fontSize: 12.5, color: 'var(--text-muted)', marginBottom: 4 }}>
+            <div style={{ marginBottom: 6 }}>📦 安装方式：</div>
+            <ol style={{ margin: 0, paddingLeft: 18, lineHeight: 1.7 }}>
+              <li>打开 Chrome 应用商店搜索 <strong>COSE</strong></li>
+              <li>或访问 <a href="https://github.com/doocs/cose" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>github.com/doocs/cose</a></li>
+              <li>安装后刷新本页面</li>
+            </ol>
+          </div>
+        </div>
+        <div className="kb-modal-footer">
+          <button className="kb-btn kb-btn-primary" onClick={onClose} style={{ width: '100%', justifyContent: 'center' }}>
+            我知道了
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
 // Add Vault Modal
 // ═══════════════════════════════════════════
 
