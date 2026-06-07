@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
-import { spawn, execFileSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setupAutoUpdater } from './updater.js';
@@ -15,30 +15,19 @@ function isDevMode() {
   return !app.isPackaged;
 }
 
-/** Find the system Node.js binary (not Electron's embedded one) */
-function findSystemNode() {
-  const isWin = process.platform === 'win32';
-  try {
-    // Windows uses where.exe, Unix (macOS/Linux) uses which
-    const cmd = isWin ? 'where.exe' : 'which';
-    const result = execFileSync(cmd, ['node'], { encoding: 'utf-8' }).trim();
-    // Windows may return multiple lines, Unix returns a single path
-    const nodePath = result.split(/\r?\n/)[0];
-    if (nodePath) return nodePath;
-  } catch { /* fall through */ }
-  return 'node';
-}
-
-/** Start the daemon in production mode using the bundled resources */
+/** Start the daemon in production mode using Electron's embedded Node.js */
 function startDaemonProduction() {
   const daemonEntry = path.join(process.resourcesPath, 'daemon', 'daemon.js');
   const webStaticDir = path.join(process.resourcesPath, 'web');
-  const nodeExe = findSystemNode();
 
   return new Promise((resolve, reject) => {
-    daemonProcess = spawn(nodeExe, [daemonEntry], {
+    // Use Electron's embedded Node.js to run the daemon.
+    // ELECTRON_RUN_AS_NODE=1 makes the Electron binary behave as a standard Node.js process,
+    // eliminating the need for users to install Node.js separately.
+    daemonProcess = spawn(process.execPath, [daemonEntry], {
       env: {
         ...process.env,
+        ELECTRON_RUN_AS_NODE: '1',
         MOLIO_PORT: '3100',
         MOLIO_STATIC_DIR: webStaticDir,
       },

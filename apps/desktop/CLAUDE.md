@@ -21,11 +21,11 @@ Electron 桌面应用壳，包裹 `@molio/web` 构建产物，内嵌 `@molio/dae
 - Daemon 同时提供 API 和静态文件 (port 3100)
 - Electron 加载 `http://localhost:3100`
 
-### 为什么使用系统 Node.js 而不是 Electron 的 Node.js？
+### 为什么使用 ELECTRON_RUN_AS_NODE？
 
-Electron 33 内置 Node.js 20.18.0 (ABI 130)，而系统 Node.js 是 22.x (ABI 127)。
-`better-sqlite3` 等原生模块是为系统 Node.js 编译的，直接在 Electron 的 Node.js 中加载会产生 ABI 不匹配。
-使用系统 Node.js 运行 daemon 可以避免这个问题，但需要用户系统已安装 Node.js。
+Electron 33 内置 Node.js 20.18.0。通过设置 `ELECTRON_RUN_AS_NODE=1` 环境变量，可以让 Electron 的二进制文件作为标准 Node.js 进程运行 daemon，无需用户单独安装 Node.js。
+
+`better-sqlite3` 等原生模块在构建时通过 `@electron/rebuild` 重新编译为 Electron 的 ABI，确保在 Electron 的 Node.js 运行时中正确加载。
 
 ## 文件结构
 

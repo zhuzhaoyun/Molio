@@ -23,6 +23,7 @@
     "electron-updater": "^6.8.3"
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.0.4",
     "electron": "^33.0.0",
     "electron-builder": "^25.1.8",
     "esbuild": "^0.25.0"
@@ -53,7 +54,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "signAndEditExecutable": false
@@ -68,7 +71,9 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["arm64"]
+          "arch": [
+            "arm64"
+          ]
         }
       ],
       "category": "public.app-category.productivity"
@@ -80,11 +85,15 @@
       "target": [
         {
           "target": "AppImage",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "deb",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "category": "Office"
