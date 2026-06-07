@@ -12,6 +12,7 @@ import type {
   WikiIngestRequest,
   WikiLintRequest,
   WikiQueryRequest,
+  WikiSaveRequest,
 } from '@molio/contracts';
 import {
   listVaults,
@@ -36,6 +37,7 @@ import {
   WIKI_INGEST_PROMPT,
   WIKI_LINT_PROMPT,
   WIKI_QUERY_PROMPT,
+  WIKI_SAVE_PROMPT,
 } from '../core/wiki-prompts.js';
 
 export function knowledgeRoutes(db: Database.Database, runManager: RunManager): Hono {
@@ -346,6 +348,37 @@ export function knowledgeRoutes(db: Database.Database, runManager: RunManager): 
       return c.json({ runId });
     } catch (err) {
       const message = err instanceof Error ? err.message : '启动 Wiki 查询失败';
+      return c.json({ error: { code: 'INTERNAL', message } }, 500);
+    }
+  });
+
+  // POST /api/knowledge/vaults/:id/wiki/save — save conversation to wiki
+  app.post('/vaults/:id/wiki/save', async (c) => {
+    const vault = getVault(db, c.req.param('id'));
+    if (!vault) {
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
+    }
+
+    try {
+      const body = await c.req.json<WikiSaveRequest>();
+      if (!body.agentId) {
+        return c.json({ error: { code: 'BAD_REQUEST', message: 'agentId is required' } }, 400);
+      }
+
+      const userContext = body.message ?? '请回顾当前对话，将值得归档的内容保存为 wiki 页面。';
+      const message = `${WIKI_SAVE_PROMPT}\n\n---\n\n${userContext}`;
+
+      const runId = await runManager.createRun({
+        agentId: body.agentId,
+        message,
+        model: body.model,
+        cwd: vault.path,
+      });
+
+      addKbHistory(db, vault.id, 'edit', 'Wiki 归档已启动');
+      return c.json({ runId });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '启动 Wiki 归档失败';
       return c.json({ error: { code: 'INTERNAL', message } }, 500);
     }
   });

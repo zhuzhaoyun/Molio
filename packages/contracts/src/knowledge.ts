@@ -59,7 +59,7 @@ export interface KbHistoryListResponse {
 
 // ─── Wiki types ───
 
-export type WikiOperationType = 'build' | 'ingest' | 'lint' | 'query';
+export type WikiOperationType = 'build' | 'ingest' | 'lint' | 'query' | 'save';
 
 export interface WikiStatusResponse {
   initialized: boolean;
@@ -86,6 +86,12 @@ export interface WikiLintRequest {
 export interface WikiQueryRequest {
   agentId: string;
   message: string;
+  model?: string;
+}
+
+export interface WikiSaveRequest {
+  agentId: string;
+  message?: string;
   model?: string;
 }
 

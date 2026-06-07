@@ -59,5 +59,6 @@ export type {
   WikiIngestRequest,
   WikiLintRequest,
   WikiQueryRequest,
+  WikiSaveRequest,
   WikiRunResponse,
 } from './knowledge.js';
