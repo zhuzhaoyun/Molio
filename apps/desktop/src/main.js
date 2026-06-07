@@ -3,6 +3,7 @@ import { spawn, execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setupAutoUpdater } from './updater.js';
+import { log } from './logger.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -113,16 +114,44 @@ ipcMain.on('app:get-info', (event) => {
   };
 });
 
+// ─── Global crash protection ───
+// These handlers prevent unhandled exceptions in non-critical subsystems
+// (daemon, UI) from killing the main process and taking the auto-updater with it.
+// The updater is the lifeline for pushing fixes, so it must survive all other failures.
+
+process.on('uncaughtException', (err) => {
+  log('error', 'main', `uncaughtException: ${err?.message ?? err}`);
+  if (err?.stack) log('error', 'main', err.stack);
+  // Do NOT exit — keep the updater running
+});
+
+process.on('unhandledRejection', (reason) => {
+  const msg = reason instanceof Error ? reason.message : String(reason);
+  log('error', 'main', `unhandledRejection: ${msg}`);
+  // Do NOT exit — keep the updater running
+});
+
 // ─── App lifecycle ───
 
 app.whenReady().then(async () => {
-  if (!isDevMode()) {
-    await startDaemonProduction();
-  }
+  // ① Create window first (updater IPC needs getMainWindow reference)
   createWindow();
 
-  // Set up auto-updater IPC handlers (dev mode returns "not available")
+  // ② Set up auto-updater IMMEDIATELY — before daemon.
+  // Even if daemon fails to start, the updater must be operational
+  // so we can push fixes to users.
   setupAutoUpdater(() => mainWindow);
+
+  // ③ Start daemon last — failure here must not affect updater
+  if (!isDevMode()) {
+    try {
+      await startDaemonProduction();
+    } catch (err) {
+      log('error', 'main', `daemon startup failed: ${err?.message ?? err}`);
+      // Daemon failure is not fatal for the updater.
+      // The UI will show connection errors, but updates still work.
+    }
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

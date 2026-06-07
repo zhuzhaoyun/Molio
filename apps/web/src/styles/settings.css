@@ -266,6 +266,21 @@
   border-color: var(--accent-hover);
 }
 
+/* Error variant */
+.update-toast--error {
+  border-color: #e74c3c;
+}
+
+.update-toast--error .update-toast__title {
+  color: #e74c3c;
+}
+
+.update-toast__subtitle--error {
+  word-break: break-word;
+  max-height: 48px;
+  overflow: hidden;
+}
+
 /* ── Responsive ── */
 @media (max-width: 640px) {
   .settings-header {

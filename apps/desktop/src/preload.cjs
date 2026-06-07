@@ -43,8 +43,14 @@ const updaterAPI = {
     ipcRenderer.on('updater:update-downloaded', handler);
     return () => ipcRenderer.removeListener('updater:update-downloaded', handler);
   },
+  onUpdateError: (callback) => {
+    const handler = (_, info) => callback(info);
+    ipcRenderer.on('updater:error', handler);
+    return () => ipcRenderer.removeListener('updater:error', handler);
+  },
   installUpdate: () => ipcRenderer.invoke('updater:install'),
   checkForUpdates: () => ipcRenderer.invoke('updater:check'),
+  getLogPath: () => ipcRenderer.invoke('updater:log-path'),
 };
 
 contextBridge.exposeInMainWorld('__electron__', desktopAPI);

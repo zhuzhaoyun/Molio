@@ -71,3 +71,55 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npx electron-builder --${{ matrix.platform }} ${{ matrix.arch-flag }} --publish always "--config.extraMetadata.version=${{ steps.version.outputs.version }}"
+
+      - name: Verify update manifest exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="v${VERSION}"
+
+          # Wait briefly for release asset upload to complete
+          sleep 5
+
+          echo "Checking release assets for ${TAG}..."
+          ASSETS=$(gh release view "${TAG}" --repo "${{ github.repository }}" --json assets --jq '.assets[].name' 2>/dev/null || echo "")
+
+          if [ -z "$ASSETS" ]; then
+            echo "::error::No assets found in release ${TAG}"
+            exit 1
+          fi
+
+          echo "Release assets:"
+          echo "$ASSETS"
+
+          # Verify platform-specific update manifest exists
+          if [ "${{ matrix.platform }}" = "win" ]; then
+            MANIFEST="latest.yml"
+          elif [ "${{ matrix.platform }}" = "mac" ]; then
+            MANIFEST="latest-mac.yml"
+          else
+            MANIFEST="latest-linux.yml"
+          fi
+
+          if echo "$ASSETS" | grep -q "^${MANIFEST}$"; then
+            echo "✓ Update manifest '${MANIFEST}' found — auto-update will detect v${VERSION}"
+          else
+            echo "::error::Update manifest '${MANIFEST}' NOT found in release ${TAG}. Auto-update will NOT detect this version!"
+            exit 1
+          fi
+
+          # Validate manifest content: version must match
+          if [ "${{ matrix.platform }}" = "win" ]; then
+            MANIFEST_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/latest.yml"
+            echo "Fetching manifest from ${MANIFEST_URL}..."
+            MANIFEST_CONTENT=$(curl -sL "$MANIFEST_URL" || echo "")
+            if echo "$MANIFEST_CONTENT" | grep -q "version: ${VERSION}"; then
+              echo "✓ Manifest version matches ${VERSION}"
+            else
+              echo "::error::Manifest version does not match ${VERSION}. Content:"
+              echo "$MANIFEST_CONTENT"
+              exit 1
+            fi
+          fi

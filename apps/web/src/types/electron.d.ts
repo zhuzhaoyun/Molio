@@ -10,11 +10,13 @@ interface UpdaterAPI {
   onUpdateAvailable: (callback: (info: { version: string }) => void) => () => void;
   onDownloadProgress: (callback: (progress: { percent: number }) => void) => () => void;
   onUpdateDownloaded: (callback: (info: { version: string }) => void) => () => void;
+  onUpdateError: (callback: (info: { message: string }) => void) => () => void;
   installUpdate: () => Promise<void>;
   checkForUpdates: () => Promise<
     | { ok: true; currentVersion: string; latestVersion: string; available: boolean }
     | { ok: false; error: string }
   >;
+  getLogPath: () => Promise<string | null>;
 }
 
 interface DesktopAPI {
