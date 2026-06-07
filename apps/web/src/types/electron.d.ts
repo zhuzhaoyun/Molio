@@ -13,7 +13,14 @@ interface UpdaterAPI {
   onUpdateError: (callback: (info: { message: string }) => void) => () => void;
   installUpdate: () => Promise<void>;
   checkForUpdates: () => Promise<
-    | { ok: true; currentVersion: string; latestVersion: string; available: boolean }
+    | {
+        ok: true;
+        currentVersion: string;
+        latestVersion: string;
+        available: boolean;
+        downloaded?: boolean;
+        downloadedVersion?: string | null;
+      }
     | { ok: false; error: string }
   >;
   getLogPath: () => Promise<string | null>;

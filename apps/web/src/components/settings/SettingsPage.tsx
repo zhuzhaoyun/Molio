@@ -1,12 +1,14 @@
 import { useEffect, useState, useCallback } from 'react';
+import {
+  type CheckResult,
+  onUpdateAvailable,
+  onDownloadProgress,
+  onUpdateDownloaded,
+  onUpdateError,
+  onCheckResult,
+} from './updater-state';
 
-type CheckResult =
-  | { status: 'idle' }
-  | { status: 'checking' }
-  | { status: 'up-to-date'; currentVersion: string }
-  | { status: 'available'; currentVersion: string; latestVersion: string; downloading: boolean; percent: number }
-  | { status: 'downloaded'; currentVersion: string; latestVersion: string }
-  | { status: 'error'; message: string };
+export type { CheckResult } from './updater-state';
 
 /**
  * Settings page — currently contains the version & update management panel.
@@ -22,69 +24,42 @@ export function SettingsPage() {
   useEffect(() => {
     if (!window.updater) return;
 
+    const cv = currentVersion;
     const cleanups: Array<() => void> = [];
 
     cleanups.push(
       window.updater.onUpdateAvailable((info) => {
-        setResult((prev) => {
-          if (prev.status === 'checking' || prev.status === 'idle') {
-            return {
-              status: 'available',
-              currentVersion: window.__electron__?.appInfo?.version ?? 'dev',
-              latestVersion: info.version,
-              downloading: true,
-              percent: 0,
-            };
-          }
-          return prev;
-        });
+        setResult((prev) => onUpdateAvailable(prev, info, cv));
       })
     );
 
     cleanups.push(
       window.updater.onDownloadProgress((progress) => {
-        setResult((prev) => {
-          if (prev.status === 'available' && prev.downloading) {
-            return { ...prev, percent: progress.percent };
-          }
-          return prev;
-        });
+        setResult((prev) => onDownloadProgress(prev, progress));
       })
     );
 
     cleanups.push(
       window.updater.onUpdateDownloaded((info) => {
-        setResult({
-          status: 'downloaded',
-          currentVersion: window.__electron__?.appInfo?.version ?? 'dev',
-          latestVersion: info.version,
-        });
+        setResult((prev) => onUpdateDownloaded(prev, info, cv));
       })
     );
 
     // Surface background updater errors (network failures, etc.)
     cleanups.push(
       window.updater.onUpdateError((info) => {
-        setResult({ status: 'error', message: info.message });
+        setResult((prev) => onUpdateError(prev, info));
       })
     );
 
     return () => cleanups.forEach((fn) => fn());
-  }, []);
+  }, [currentVersion]);
 
   const handleCheck = useCallback(async () => {
     if (!window.updater) return;
     setResult({ status: 'checking' });
     const res = await window.updater.checkForUpdates();
-    if (!res.ok) {
-      setResult({ status: 'error', message: res.error });
-      return;
-    }
-    if (!res.available) {
-      setResult({ status: 'up-to-date', currentVersion: res.currentVersion });
-    }
-    // If available, the onUpdateAvailable listener will update the state.
-    // Keep 'checking' until that event fires.
+    setResult((prev) => onCheckResult(prev, res));
   }, []);
 
   return (
