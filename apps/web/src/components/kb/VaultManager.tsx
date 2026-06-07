@@ -97,18 +97,13 @@ export function VaultManagerModal({
                   } catch { /* user cancelled */ }
                 }
 
-                // 2. Try browser's File System Access API (web)
-                if (!pickedPath && 'showDirectoryPicker' in window) {
-                  try {
-                    // @ts-expect-error - File System Access API
-                    const dirHandle = await window.showDirectoryPicker();
-                    pickedPath = dirHandle.name;
-                  } catch { /* user cancelled or not supported */ }
-                }
-
-                // 3. Fall back to manual path input
+                // 2. Fall back to manual path input
+                //    NOTE: Browser's showDirectoryPicker() only returns dirHandle.name
+                //    (e.g. "test-wiki"), not the full path ("D:\work\test-wiki").
+                //    The daemon needs the absolute path to scan files, so we skip
+                //    the browser File System Access API and prompt for the full path.
                 if (!pickedPath) {
-                  pickedPath = window.prompt('请输入本地文件夹路径：');
+                  pickedPath = window.prompt('请输入本地文件夹的完整路径：\n例如 D:\\work\\my-vault');
                 }
 
                 if (pickedPath) {
