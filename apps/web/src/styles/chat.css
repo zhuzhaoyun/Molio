@@ -292,13 +292,38 @@
   padding: 6px 12px 8px;
   border-top: 1px solid var(--border-soft);
   color: var(--text-muted);
-  max-height: 120px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: 12px;
+  line-height: 1.5;
+  max-height: 240px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.tool-card-body.collapsed {
+  cursor: pointer;
 }
 .tool-card-body.error {
   color: var(--red);
+}
+.tool-card-output {
+  margin: 0;
+  padding: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: inherit;
+  background: transparent;
+  border: none;
+}
+.tool-card-expand {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--accent);
+  cursor: pointer;
+}
+.tool-card-expand:hover {
+  text-decoration: underline;
 }
 .tool-card-status {
   margin-left: auto;
