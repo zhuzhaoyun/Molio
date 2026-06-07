@@ -37,7 +37,7 @@ src/
       KnowledgeBasePage.tsx  知识库页面（文件面板 + 主内容区）
       KbFilePanel.tsx         文件树面板（搜索、文件列表、vault 切换）
       KbMainContent.tsx       主内容区（渲染 + 排版模式）
-      KbModals.tsx            模态框（vault 创建/切换/导入）
+      KbModals.tsx            模态框（vault 创建/切换/导入/COSE 安装提示）
       MdRenderer.tsx          doocs/md 渲染引擎封装
       MdTypesetEditor.tsx     左右分栏排版编辑器
       MdStylePanel.tsx        样式面板（主题/字体/颜色/选项）
@@ -69,6 +69,7 @@ pnpm dev          # vite dev server (:5173)
 pnpm build        # vite build
 pnpm preview      # vite preview
 pnpm typecheck    # tsc --noEmit
+pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
 ```
 
 ## 关键设计
