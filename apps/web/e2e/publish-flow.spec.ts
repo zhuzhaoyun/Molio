@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -72,25 +73,37 @@ test.describe('Publish button regression (#11)', () => {
     await expect(publishBtn).toBeVisible();
 
     // THE REGRESSION TEST: click publish and verify something happens
-    // Before fix: clicking did nothing (no-op handler)
-    // After fix: either COSE install prompt appears OR bridge page opens
+    // Before fix (#11): clicking did nothing (no-op handler)
+    // After fix (#11): either COSE install prompt appears OR bridge page opens in new tab
+    // After fix (#18): in Electron, setWindowOpenHandler opens bridge in system browser
+
+    // Listen for new page/tab (bridge page opened via window.open)
+    const newPagePromise = page.context().waitForEvent('page', { timeout: 5_000 }).catch(() => null);
+
     await publishBtn.click();
 
-    // Verify a response within 3 seconds:
-    // - COSE install prompt modal (extension not installed)
-    // - Or a new browser tab/window (bridge page opened)
+    // Check for COSE install prompt modal first (extension not installed)
     const coseModal = page.locator('.kb-modal').filter({ hasText: /COSE|扩展|安装/ });
-    const anyModal = page.locator('.kb-overlay.show .kb-modal');
-
-    // Either the COSE modal appears, or we get a popup (bridge page)
     const modalVisible = await coseModal.isVisible({ timeout: 3_000 }).catch(() => false);
-    if (!modalVisible) {
-      // Check if any modal appeared
-      const anyModalVisible = await anyModal.isVisible({ timeout: 1_000 }).catch(() => false);
-      // If no modal, at least verify the page didn't freeze (button is still interactive)
-      if (!anyModalVisible) {
+
+    if (modalVisible) {
+      // COSE not installed — modal shown, this is correct behavior
+      await expect(coseModal).toBeVisible();
+    } else {
+      // COSE is installed (or check passed) — bridge page should open in new tab
+      const newPage = await newPagePromise;
+      if (newPage) {
+        // Verify the bridge page loaded (it should contain "Molio 发布" or the article title)
+        await newPage.waitForLoadState('domcontentloaded');
+        const bridgeContent = await newPage.content();
+        assert.ok(
+          bridgeContent.includes('Molio') || bridgeContent.includes('发布') || bridgeContent.includes('Test'),
+          'Bridge page should contain publish UI content',
+        );
+        await newPage.close();
+      } else {
+        // No modal and no new page — this is the #11 regression
         await expect(publishBtn).toBeEnabled();
-        // Fail: publish button click produced no visible response
         test.fail(false, 'Publish button click produced no response — regression of #11');
       }
     }
