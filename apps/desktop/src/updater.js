@@ -16,6 +16,7 @@
 import pkg from 'electron-updater';
 import { app, ipcMain } from 'electron';
 import { log } from './logger.js';
+import { createRetryState } from './retry.js';
 
 const { autoUpdater } = pkg;
 
@@ -26,12 +27,9 @@ autoUpdater.autoInstallOnAppQuit = true;
 const STARTUP_DELAY = 5_000;         // check 5s after launch
 const POLL_INTERVAL = 60 * 60 * 1000; // check every hour
 
-// Retry backoff delays on failure (ms): 30s → 1m → 2m → 5m → 15m
-const RETRY_DELAYS = [30_000, 60_000, 120_000, 300_000, 900_000];
-
 // Deduplicate concurrent check requests
 let inFlightCheck = null;
-let retryIndex = 0;
+const retry = createRetryState();
 let retryTimer = null;
 let pollTimer = null;
 
@@ -54,7 +52,7 @@ function checkForUpdatesOnce() {
         log('info', 'updater', 'no update available');
       }
       // Reset retry counter on success
-      retryIndex = 0;
+      retry.reset();
 
       void result?.downloadPromise?.catch((err) => {
         const msg = err instanceof Error ? err.message : String(err);
@@ -91,10 +89,10 @@ function notifyError(message) {
 function scheduleRetry() {
   if (retryTimer) return; // already scheduled
 
-  const delay = RETRY_DELAYS[Math.min(retryIndex, RETRY_DELAYS.length - 1)];
-  retryIndex++;
+  const delay = retry.next();
+  const attempt = retry.attempt;
 
-  log('info', 'updater', `retry scheduled in ${delay / 1000}s (attempt ${retryIndex})`);
+  log('info', 'updater', `retry scheduled in ${delay / 1000}s (attempt ${attempt})`);
 
   retryTimer = setTimeout(() => {
     retryTimer = null;
