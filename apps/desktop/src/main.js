@@ -91,6 +91,15 @@ function createWindow() {
     mainWindow?.show();
   });
 
+  // Intercept window.open() — open in system browser instead of Electron
+  // This is critical for the COSE publish flow: the bridge page must run
+  // in the user's real Chrome (where the COSE extension is installed),
+  // not in Electron's embedded Chromium.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url);
+    return { action: 'deny' };
+  });
+
   // Open DevTools in development
   if (isDevMode()) {
     mainWindow.webContents.openDevTools();
