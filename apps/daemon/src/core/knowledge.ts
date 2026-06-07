@@ -73,6 +73,8 @@ export function countFiles(vaultPath: string): number {
 
 /**
  * Read a file from a vault. Path is relative to vault root.
+ * For text files, returns content as UTF-8 string.
+ * For binary files (images, PDF, DOCX), content is empty — use raw file URL or openPath.
  */
 export function readFile(vaultPath: string, relPath: string): FileContent {
   const absFile = path.join(vaultPath, relPath);
@@ -84,14 +86,26 @@ export function readFile(vaultPath: string, relPath: string): FileContent {
   }
 
   const stat = fs.statSync(resolved);
-  const content = fs.readFileSync(resolved, 'utf-8');
+  const mimeType = getMimeType(relPath);
+  const content = isTextFile(resolved) ? fs.readFileSync(resolved, 'utf-8') : '';
 
   return {
     path: relPath,
     content,
     size: stat.size,
     modifiedAt: stat.mtimeMs,
+    mimeType,
   };
+}
+
+/** Resolve a vault-relative path to an absolute filesystem path. */
+export function resolveFilePath(vaultPath: string, relPath: string): string {
+  const absFile = path.join(vaultPath, relPath);
+  const resolved = path.resolve(absFile);
+  if (!resolved.startsWith(path.resolve(vaultPath))) {
+    throw new Error('Path traversal not allowed');
+  }
+  return resolved;
 }
 
 /**
@@ -149,5 +163,52 @@ export function ensureVaultDir(vaultPath: string): void {
 
 function isSupportedFile(name: string): boolean {
   const ext = path.extname(name).toLowerCase();
-  return ['.md', '.txt', '.pdf', '.docx', '.html', '.htm', '.json', '.yaml', '.yml'].includes(ext);
+  return [...TEXT_EXTS, ...IMAGE_EXTS, ...BINARY_EXTS].includes(ext);
 }
+
+/** Text file extensions — content read as UTF-8 */
+const TEXT_EXTS = ['.md', '.txt', '.html', '.htm', '.json', '.yaml', '.yml'];
+
+/** Image file extensions — displayed inline via <img> */
+const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp', '.ico'];
+
+/** Binary file extensions — opened via system default program */
+const BINARY_EXTS = ['.pdf', '.docx', '.doc', '.pptx', '.ppt', '.xlsx', '.xls'];
+
+function isTextFile(filePath: string): boolean {
+  const ext = path.extname(filePath).toLowerCase();
+  return TEXT_EXTS.includes(ext);
+}
+
+function getMimeType(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  return MIME_TYPES[ext] ?? 'application/octet-stream';
+}
+
+const MIME_TYPES: Record<string, string> = {
+  // Text
+  '.md': 'text/markdown',
+  '.txt': 'text/plain',
+  '.html': 'text/html',
+  '.htm': 'text/html',
+  '.json': 'application/json',
+  '.yaml': 'text/yaml',
+  '.yml': 'text/yaml',
+  // Images
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+  '.webp': 'image/webp',
+  '.bmp': 'image/bmp',
+  '.ico': 'image/x-icon',
+  // Binary documents
+  '.pdf': 'application/pdf',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.doc': 'application/msword',
+  '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  '.ppt': 'application/vnd.ms-powerpoint',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.xls': 'application/vnd.ms-excel',
+};

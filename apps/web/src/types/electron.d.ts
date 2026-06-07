@@ -30,6 +30,7 @@ interface DesktopAPI {
   platform: string;
   appInfo: { version: string; os: string };
   showDirectoryPicker: () => Promise<string | null>;
+  openPath: (filePath: string) => Promise<string>;
 }
 
 declare global {

@@ -3,7 +3,7 @@
  */
 
 import { Hono } from 'hono';
-import { existsSync } from 'node:fs';
+import { createReadStream, existsSync } from 'node:fs';
 import path from 'node:path';
 import type Database from 'better-sqlite3';
 import type {
@@ -26,6 +26,7 @@ import {
   scanTree,
   countFiles,
   readFile,
+  resolveFilePath,
   writeFile,
   deleteFile,
   createDirectory,
@@ -174,6 +175,38 @@ export function knowledgeRoutes(db: Database.Database, runManager: RunManager): 
       return c.body(null, 204);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to delete file';
+      return c.json({ error: { code: 'INTERNAL', message } }, 500);
+    }
+  });
+
+  // ─── Raw file serving (for images, PDFs, etc.) ───
+
+  // GET /api/knowledge/vaults/:id/raw/* — serve raw file with proper Content-Type
+  app.get('/vaults/:id/raw/*', (c) => {
+    const vault = getVault(db, c.req.param('id'));
+    if (!vault) {
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
+    }
+
+    const fullPath = c.req.path;
+    const prefix = `/api/knowledge/vaults/${vault.id}/raw/`;
+    const relPath = decodeURIComponent(fullPath.slice(prefix.length));
+
+    if (!relPath) {
+      return c.json({ error: { code: 'BAD_REQUEST', message: 'File path is required' } }, 400);
+    }
+
+    try {
+      const absPath = resolveFilePath(vault.path, relPath);
+      const stream = createReadStream(absPath);
+      const ext = path.extname(absPath).toLowerCase();
+      const mime = RAW_MIME[ext] ?? 'application/octet-stream';
+
+      return new Response(stream as any, {
+        headers: { 'Content-Type': mime },
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to read file';
       return c.json({ error: { code: 'INTERNAL', message } }, 500);
     }
   });
@@ -394,3 +427,16 @@ function countFilesSafe(vaultPath: string): number {
     return 0;
   }
 }
+
+const RAW_MIME: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+  '.webp': 'image/webp',
+  '.bmp': 'image/bmp',
+  '.ico': 'image/x-icon',
+  '.pdf': 'application/pdf',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+};
