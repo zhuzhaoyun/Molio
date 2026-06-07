@@ -17,8 +17,11 @@ function isDevMode() {
 
 /** Start the daemon in production mode using Electron's embedded Node.js */
 function startDaemonProduction() {
-  const daemonEntry = path.join(process.resourcesPath, 'daemon', 'daemon.js');
+  const daemonEntry = path.join(process.resourcesPath, 'daemon', 'daemon.mjs');
   const webStaticDir = path.join(process.resourcesPath, 'web');
+
+  log('info', 'main', `Starting daemon: ${daemonEntry}`);
+  log('info', 'main', `Using Electron binary: ${process.execPath}`);
 
   return new Promise((resolve, reject) => {
     // Use Electron's embedded Node.js to run the daemon.
@@ -34,27 +37,39 @@ function startDaemonProduction() {
       stdio: 'pipe',
     });
 
+    // Collect stderr for diagnostics if daemon fails to start
+    const stderrChunks = [];
+
     daemonProcess.stdout?.on('data', (data) => {
       const msg = data.toString().trim();
-      console.log(`[daemon] ${msg}`);
+      log('info', 'daemon', msg);
       if (msg.includes('listening on')) resolve();
     });
 
     daemonProcess.stderr?.on('data', (data) => {
-      console.error(`[daemon] ${data.toString().trim()}`);
+      const msg = data.toString().trim();
+      stderrChunks.push(msg);
+      log('error', 'daemon', msg);
     });
 
-    daemonProcess.on('exit', (code) => {
-      console.log(`[daemon] exited with code ${code}`);
+    daemonProcess.on('exit', (code, signal) => {
+      log('error', 'main', `daemon exited with code=${code} signal=${signal}`);
+      if (code !== 0 && code !== null && stderrChunks.length > 0) {
+        log('error', 'main', `daemon stderr:\n${stderrChunks.join('\n')}`);
+      }
       daemonProcess = null;
     });
 
     daemonProcess.on('error', (err) => {
+      log('error', 'main', `daemon spawn error: ${err?.message ?? err}`);
       reject(err);
     });
 
-    // Timeout fallback
-    setTimeout(() => resolve(), 10000);
+    // Timeout fallback — resolve even if daemon never reports ready
+    setTimeout(() => {
+      log('warn', 'main', 'daemon startup timeout (10s) — resolving anyway');
+      resolve();
+    }, 10000);
   });
 }
 

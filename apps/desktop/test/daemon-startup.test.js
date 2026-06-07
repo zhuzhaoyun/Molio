@@ -5,7 +5,7 @@
  * where.exe node. On systems without Node.js, the daemon never started.
  *
  * Fix: Use Electron's embedded Node.js via ELECTRON_RUN_AS_NODE=1 and
- * rebuild better-sqlite3 for Electron's ABI using @electron/rebuild.
+ * download Electron prebuilt binary for better-sqlite3 via prebuild-install.
  *
  * See: https://github.com/zhuzhaoyun/Molio/issues/21
  */
@@ -62,31 +62,41 @@ describe('main.js: daemon must use Electron embedded Node.js (not system node)',
       'spawn must be called with (process.execPath, [daemonEntry], ...)'
     );
   });
+
+  it('should reference daemon.mjs (not daemon.js)', () => {
+    assert.ok(
+      mainJs.includes("daemon.mjs") || mainJs.includes('daemon.mjs'),
+      'daemon entry must be daemon.mjs for ESM parsing by Electron embedded Node.js'
+    );
+  });
 });
 
-describe('prepare-resources.mjs: better-sqlite3 must be rebuilt for Electron ABI', () => {
-  it('should import or require @electron/rebuild', () => {
+describe('prepare-resources.mjs: better-sqlite3 must use Electron prebuild', () => {
+  it('should use prebuild-install to download Electron prebuilt binary', () => {
     assert.ok(
-      prepareResourcesJs.includes('@electron/rebuild'),
-      'prepare-resources must use @electron/rebuild to rebuild native modules'
+      prepareResourcesJs.includes('prebuild-install'),
+      'prepare-resources must use prebuild-install to download Electron prebuilt binary'
     );
   });
 
-  it('should call rebuild() targeting better-sqlite3', () => {
+  it('should target electron runtime', () => {
     assert.ok(
-      prepareResourcesJs.includes('rebuild(') || prepareResourcesJs.includes('rebuild ('),
-      'prepare-resources must call rebuild()'
+      prepareResourcesJs.includes("'electron'") || prepareResourcesJs.includes('--runtime electron'),
+      'prebuild-install must target electron runtime'
     );
+  });
+
+  it('should output daemon.mjs (not daemon.js) for ESM parsing', () => {
     assert.ok(
-      prepareResourcesJs.includes('better-sqlite3'),
-      'rebuild must target better-sqlite3'
+      prepareResourcesJs.includes('daemon.mjs'),
+      'esbuild output must be daemon.mjs for ESM parsing by Electron embedded Node.js'
     );
   });
 
   it('should use electronVersion from electron/package.json', () => {
     assert.ok(
       prepareResourcesJs.includes('electronVersion'),
-      'rebuild must use electronVersion from electron/package.json'
+      'prebuild must use electronVersion from electron/package.json'
     );
   });
 });

@@ -4,12 +4,13 @@
  * 1. Bundle the daemon into a single JS file using esbuild
  *    (better-sqlite3 is external — it's a native module)
  * 2. Copy better-sqlite3 + its deps to resources/daemon/node_modules/
- * 3. Rebuild better-sqlite3 for Electron's ABI (so it works with ELECTRON_RUN_AS_NODE)
+ * 3. Download Electron prebuilt binary for better-sqlite3 (no C++ build tools needed)
  * 4. Copy the web build to resources/web/
  */
 
 import { build } from 'esbuild';
 import { cpSync, mkdirSync, existsSync, readdirSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
+import { execSync } from 'node:child_process';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
@@ -44,7 +45,10 @@ async function bundleDaemon() {
   console.log('Bundling daemon...');
 
   const entryPoint = join(daemonDir, 'dist', 'src', 'index.js');
-  const outfile = join(resourcesDir, 'daemon', 'daemon.js');
+  // Use .mjs extension so Node.js (via ELECTRON_RUN_AS_NODE) parses it as ESM.
+  // A plain .js file without a package.json { "type": "module" } is treated as CJS,
+  // causing SyntaxError on `import` statements.
+  const outfile = join(resourcesDir, 'daemon', 'daemon.mjs');
 
   mkdirSync(dirname(outfile), { recursive: true });
 
@@ -76,20 +80,16 @@ function copyNativeDependencies() {
   const destNodeModules = join(resourcesDir, 'daemon', 'node_modules');
   mkdirSync(destNodeModules, { recursive: true });
 
-  // Copy better-sqlite3 — only essential files (lib + native binary + package.json)
+  // Copy better-sqlite3 — only runtime files (lib + package.json).
+  // The native .node binary will be downloaded separately via prebuild-install
+  // targeting Electron's ABI (no Visual Studio needed).
   const sqliteSrc = findPackageDir('better-sqlite3');
   if (sqliteSrc) {
     const sqliteDest = join(destNodeModules, 'better-sqlite3');
     mkdirSync(sqliteDest, { recursive: true });
     cpSync(join(sqliteSrc, 'package.json'), join(sqliteDest, 'package.json'));
     cpSync(join(sqliteSrc, 'lib'), join(sqliteDest, 'lib'), { recursive: true, dereference: true });
-    // Copy build/Release (contains the .node binary)
-    const buildRelease = join(sqliteSrc, 'build', 'Release');
-    if (existsSync(buildRelease)) {
-      mkdirSync(join(sqliteDest, 'build', 'Release'), { recursive: true });
-      cpSync(buildRelease, join(sqliteDest, 'build', 'Release'), { recursive: true, dereference: true });
-    }
-    console.log('  Copied better-sqlite3 (essential files only)');
+    console.log('  Copied better-sqlite3 (runtime files)');
   } else {
     console.warn('  WARNING: better-sqlite3 not found');
   }
@@ -107,40 +107,46 @@ function copyNativeDependencies() {
   }
 }
 
-async function rebuildForElectron() {
-  console.log('Rebuilding native modules for Electron...');
+function downloadElectronPrebuilds() {
+  console.log('Downloading Electron prebuilt native modules...');
 
-  // Get Electron version
   const require = createRequire(import.meta.url);
   const electronPkg = require('electron/package.json');
   const electronVersion = electronPkg.version;
+  const sqliteSrc = findPackageDir('better-sqlite3');
+  if (!sqliteSrc) {
+    throw new Error('better-sqlite3 not found in node_modules');
+  }
 
-  // Create a minimal package.json in resources/daemon so @electron/rebuild
-  // can discover and rebuild better-sqlite3
-  const daemonResDir = join(resourcesDir, 'daemon');
-  const packageJsonPath = join(daemonResDir, 'package.json');
-  writeFileSync(packageJsonPath, JSON.stringify({
-    name: 'molio-daemon',
-    version: '1.0.0',
-    private: true,
-    dependencies: { 'better-sqlite3': '*' },
-  }, null, 2));
+  const sqliteDest = join(resourcesDir, 'daemon', 'node_modules', 'better-sqlite3');
 
-  // @electron/rebuild is a CJS module
-  const { rebuild } = require('@electron/rebuild');
-  await rebuild({
-    buildPath: daemonResDir,
-    electronVersion,
-    platform: process.platform,
-    arch: process.arch,
-    onlyModules: ['better-sqlite3'],
-    force: true,
-  });
+  // Use prebuild-install to download Electron-specific prebuilt binary.
+  // This avoids needing Visual Studio / C++ build tools on the build machine.
+  // prebuild-install looks for: better-sqlite3-v{version}-electron-v{abi}-{platform}-{arch}.tar.gz
+  try {
+    execSync('npx prebuild-install --runtime electron --target ' + electronVersion + ' --arch ' + process.arch, {
+      cwd: sqliteSrc,
+      stdio: 'pipe',
+      encoding: 'utf-8',
+    });
+  } catch (err) {
+    throw new Error(
+      `Failed to download Electron prebuild for better-sqlite3: ${err.stderr || err.message}\n` +
+      `Ensure prebuild-install is available (npx prebuild-install).`
+    );
+  }
 
-  // Clean up temporary package.json
-  rmSync(packageJsonPath);
+  // Copy the downloaded .node binary to the daemon resources
+  const srcNode = join(sqliteSrc, 'build', 'Release', 'better_sqlite3.node');
+  const destNode = join(sqliteDest, 'build', 'Release', 'better_sqlite3.node');
+  if (!existsSync(srcNode)) {
+    throw new Error(`prebuild-install did not produce better_sqlite3.node at ${srcNode}`);
+  }
+  mkdirSync(dirname(destNode), { recursive: true });
+  cpSync(srcNode, destNode);
 
-  console.log(`  Rebuilt better-sqlite3 for Electron v${electronVersion} (${process.platform}/${process.arch})`);
+  const stat = require('fs').statSync(destNode);
+  console.log(`  ✅ Downloaded Electron prebuild for better-sqlite3 (Electron v${electronVersion}, ${(stat.size / 1024).toFixed(0)}KB)`);
 }
 
 function copyWebBuild() {
@@ -183,7 +189,7 @@ mkdirSync(resourcesDir, { recursive: true });
 
 await bundleDaemon();
 copyNativeDependencies();
-await rebuildForElectron();
+downloadElectronPrebuilds();
 copyWebBuild();
 
 console.log('\nResources prepared successfully!');

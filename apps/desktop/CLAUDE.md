@@ -5,7 +5,7 @@ Electron 桌面应用壳，包裹 `@molio/web` 构建产物，内嵌 `@molio/dae
 ## 架构
 
 - **Electron main process** (`src/main.js`): 纯 JavaScript ESM，启动 daemon 子进程，创建 BrowserWindow
-- **Daemon**: 作为系统 Node.js 子进程运行，提供 API 和静态文件服务
+- **Daemon**: 作为 Electron 内置 Node.js 子进程运行，提供 API 和静态文件服务
 - **Web UI**: 在 BrowserWindow 中加载，通过 HTTP 与 daemon 通信
 
 ### 开发模式 (app.isPackaged === false)
@@ -16,7 +16,7 @@ Electron 桌面应用壳，包裹 `@molio/web` 构建产物，内嵌 `@molio/dae
 
 ### 生产模式 (app.isPackaged === true)
 
-- Electron 使用系统 Node.js 启动 daemon 子进程
+- Electron 使用内置 Node.js (ELECTRON_RUN_AS_NODE) 启动 daemon 子进程
 - Daemon 使用 `MOLIO_STATIC_DIR` 环境变量定位 web 构建产物
 - Daemon 同时提供 API 和静态文件 (port 3100)
 - Electron 加载 `http://localhost:3100`
@@ -25,7 +25,7 @@ Electron 桌面应用壳，包裹 `@molio/web` 构建产物，内嵌 `@molio/dae
 
 Electron 33 内置 Node.js 20.18.0。通过设置 `ELECTRON_RUN_AS_NODE=1` 环境变量，可以让 Electron 的二进制文件作为标准 Node.js 进程运行 daemon，无需用户单独安装 Node.js。
 
-`better-sqlite3` 等原生模块在构建时通过 `@electron/rebuild` 重新编译为 Electron 的 ABI，确保在 Electron 的 Node.js 运行时中正确加载。
+`better-sqlite3` 等原生模块在构建时通过 `prebuild-install --runtime electron` 下载 Electron 预编译二进制文件，确保在 Electron 的 Node.js 运行时中正确加载。
 
 ## 文件结构
 
