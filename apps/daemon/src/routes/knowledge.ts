@@ -244,7 +244,7 @@ export function knowledgeRoutes(db: Database.Database, runManager: RunManager): 
         return c.json({ error: { code: 'BAD_REQUEST', message: 'agentId is required' } }, 400);
       }
 
-      const message = `${WIKI_BUILD_PROMPT}\n\n---\n\nBegin the wiki build now. Scan all source files in this vault and create the wiki.`;
+      const message = `${WIKI_BUILD_PROMPT}\n\n---\n\n请现在开始构建 Wiki。扫描 vault 中所有源文件并创建 wiki。`;
 
       const runId = await runManager.createRun({
         agentId: body.agentId,
@@ -253,10 +253,10 @@ export function knowledgeRoutes(db: Database.Database, runManager: RunManager): 
         cwd: vault.path,
       });
 
-      addKbHistory(db, vault.id, 'ingest', 'Wiki build started');
+      addKbHistory(db, vault.id, 'ingest', 'Wiki 构建已启动');
       return c.json({ runId });
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to start wiki build';
+      const message = err instanceof Error ? err.message : '启动 Wiki 构建失败';
       return c.json({ error: { code: 'INTERNAL', message } }, 500);
     }
   });
@@ -274,7 +274,7 @@ export function knowledgeRoutes(db: Database.Database, runManager: RunManager): 
         return c.json({ error: { code: 'BAD_REQUEST', message: 'agentId and filePath are required' } }, 400);
       }
 
-      const message = `${WIKI_INGEST_PROMPT}\n\n---\n\nIngest the following file or directory into the wiki: ${body.filePath}`;
+      const message = `${WIKI_INGEST_PROMPT}\n\n---\n\n请将以下文件导入 wiki：${body.filePath}`;
 
       const runId = await runManager.createRun({
         agentId: body.agentId,
@@ -283,10 +283,10 @@ export function knowledgeRoutes(db: Database.Database, runManager: RunManager): 
         cwd: vault.path,
       });
 
-      addKbHistory(db, vault.id, 'ingest', `Ingested "${body.filePath}"`);
+      addKbHistory(db, vault.id, 'ingest', `已导入 "${body.filePath}"`);
       return c.json({ runId });
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to ingest file';
+      const message = err instanceof Error ? err.message : '导入文件失败';
       return c.json({ error: { code: 'INTERNAL', message } }, 500);
     }
   });
@@ -304,7 +304,7 @@ export function knowledgeRoutes(db: Database.Database, runManager: RunManager): 
         return c.json({ error: { code: 'BAD_REQUEST', message: 'agentId is required' } }, 400);
       }
 
-      const message = `${WIKI_LINT_PROMPT}\n\n---\n\nRun a health check on the wiki now.`;
+      const message = `${WIKI_LINT_PROMPT}\n\n---\n\n请现在对 wiki 进行健康检查。`;
 
       const runId = await runManager.createRun({
         agentId: body.agentId,
@@ -313,10 +313,10 @@ export function knowledgeRoutes(db: Database.Database, runManager: RunManager): 
         cwd: vault.path,
       });
 
-      addKbHistory(db, vault.id, 'lint', 'Wiki health check started');
+      addKbHistory(db, vault.id, 'lint', 'Wiki 健康检查已启动');
       return c.json({ runId });
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to start wiki lint';
+      const message = err instanceof Error ? err.message : '启动 Wiki 健康检查失败';
       return c.json({ error: { code: 'INTERNAL', message } }, 500);
     }
   });
@@ -334,7 +334,7 @@ export function knowledgeRoutes(db: Database.Database, runManager: RunManager): 
         return c.json({ error: { code: 'BAD_REQUEST', message: 'agentId and message are required' } }, 400);
       }
 
-      const message = `${WIKI_QUERY_PROMPT}\n\n---\n\nUser question: ${body.message}`;
+      const message = `${WIKI_QUERY_PROMPT}\n\n---\n\n用户问题：${body.message}`;
 
       const runId = await runManager.createRun({
         agentId: body.agentId,
@@ -345,7 +345,7 @@ export function knowledgeRoutes(db: Database.Database, runManager: RunManager): 
 
       return c.json({ runId });
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to start wiki query';
+      const message = err instanceof Error ? err.message : '启动 Wiki 查询失败';
       return c.json({ error: { code: 'INTERNAL', message } }, 500);
     }
   });
