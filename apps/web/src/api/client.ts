@@ -3,7 +3,7 @@ import type {
   ChatMessage, Project, Conversation,
   Vault, TreeNode, FileContent, KbHistoryEntry, CreateVaultRequest,
   WikiStatusResponse, WikiBuildRequest, WikiIngestRequest,
-  WikiLintRequest, WikiQueryRequest, WikiRunResponse,
+  WikiLintRequest, WikiQueryRequest, WikiSaveRequest, WikiRunResponse,
 } from '@molio/contracts';
 
 const BASE = '/api';
@@ -310,6 +310,19 @@ export const api = {
     if (!res.ok) {
       const err = await res.json();
       throw new Error(err.error?.message ?? `Failed to query wiki: ${res.status}`);
+    }
+    return res.json();
+  },
+
+  async saveWiki(vaultId: string, req: WikiSaveRequest): Promise<WikiRunResponse> {
+    const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/wiki/save`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error?.message ?? `Failed to save wiki: ${res.status}`);
     }
     return res.json();
   },

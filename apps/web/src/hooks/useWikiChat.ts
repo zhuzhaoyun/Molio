@@ -100,6 +100,9 @@ export function useWikiChat(options: UseWikiChatOptions) {
         case 'query':
           result = await api.queryWiki(vaultId, { agentId, message });
           break;
+        case 'save':
+          result = await api.saveWiki(vaultId, { agentId, message });
+          break;
       }
 
       const runId = result.runId;

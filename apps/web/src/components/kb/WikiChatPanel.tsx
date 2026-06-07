@@ -16,6 +16,7 @@ const OPERATION_LABELS: Record<WikiOperationType, string> = {
   ingest: 'Ingest',
   lint: '健康检查',
   query: '问答',
+  save: '归档',
 };
 
 const OPERATION_COLORS: Record<WikiOperationType, string> = {
@@ -23,6 +24,7 @@ const OPERATION_COLORS: Record<WikiOperationType, string> = {
   ingest: 'var(--green, #2d8a56)',
   lint: 'var(--amber, #b45309)',
   query: 'var(--blue, #2563eb)',
+  save: 'var(--purple, #7c3aed)',
 };
 
 interface WikiChatPanelProps {
