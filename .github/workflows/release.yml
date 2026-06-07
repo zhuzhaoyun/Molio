@@ -32,10 +32,6 @@ jobs:
             platform: mac
             arch-flag: "--arm64"
             label: "macOS arm64"
-          - os: macos-13
-            platform: mac
-            arch-flag: "--x64"
-            label: "macOS x64"
 
     name: Build ${{ matrix.label }}
     runs-on: ${{ matrix.os }}

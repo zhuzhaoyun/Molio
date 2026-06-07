@@ -447,6 +447,166 @@ describe('Claude stream handler', () => {
     });
   });
 
+  describe('idle greeting suppression', () => {
+    it('should suppress assistant text blocks after end_turn', () => {
+      const { events, onEvent } = collectEvents();
+      const handler = createClaudeStreamHandler(onEvent);
+
+      // First turn: normal response
+      feedLines(handler, JSON.stringify({
+        type: 'assistant',
+        message: {
+          id: 'msg_200',
+          content: [{ type: 'text', text: 'Task completed.' }],
+          stop_reason: 'end_turn',
+        },
+      }));
+
+      // CLI idle greeting (should be suppressed)
+      feedLines(handler, JSON.stringify({
+        type: 'assistant',
+        message: {
+          id: 'msg_201',
+          content: [{ type: 'text', text: "Hello! I'm ready to help with your coding tasks." }],
+        },
+      }));
+
+      // Another idle greeting
+      feedLines(handler, JSON.stringify({
+        type: 'assistant',
+        message: {
+          id: 'msg_202',
+          content: [{ type: 'text', text: "Hello! I'm Claude Code, Anthropic's official CLI." }],
+        },
+      }));
+
+      const textEvents = events.filter((e) => e.type === 'text_delta');
+      assert.equal(textEvents.length, 1);
+      if (textEvents[0]!.type === 'text_delta') {
+        assert.equal(textEvents[0]!.delta, 'Task completed.');
+      }
+    });
+
+    it('should suppress stream_event text after end_turn', () => {
+      const { events, onEvent } = collectEvents();
+      const handler = createClaudeStreamHandler(onEvent);
+
+      // First turn completes
+      feedLines(handler, JSON.stringify({
+        type: 'assistant',
+        message: {
+          id: 'msg_210',
+          content: [{ type: 'text', text: 'Done.' }],
+          stop_reason: 'end_turn',
+        },
+      }));
+
+      // CLI outputs idle stream events (should be suppressed)
+      feedLines(handler, JSON.stringify({
+        type: 'stream_event',
+        event: { type: 'message_start', message: { id: 'msg_211' } },
+      }));
+      feedLines(handler, JSON.stringify({
+        type: 'stream_event',
+        event: {
+          type: 'content_block_delta',
+          index: 0,
+          delta: { type: 'text_delta', text: 'Hello! I\'m ready to help.' },
+        },
+      }));
+
+      const textEvents = events.filter((e) => e.type === 'text_delta');
+      assert.equal(textEvents.length, 1);
+    });
+
+    it('should reset suppression on new user message (multi-turn)', () => {
+      const { events, onEvent } = collectEvents();
+      const handler = createClaudeStreamHandler(onEvent);
+
+      // First turn completes
+      feedLines(handler, JSON.stringify({
+        type: 'assistant',
+        message: {
+          id: 'msg_220',
+          content: [{ type: 'text', text: 'First response.' }],
+          stop_reason: 'end_turn',
+        },
+      }));
+
+      // Idle greeting (suppressed)
+      feedLines(handler, JSON.stringify({
+        type: 'assistant',
+        message: {
+          id: 'msg_221',
+          content: [{ type: 'text', text: 'Hello!' }],
+        },
+      }));
+
+      // User sends follow-up
+      feedLines(handler, JSON.stringify({
+        type: 'user',
+        message: {
+          content: [{ type: 'text', text: 'Follow-up question' }],
+        },
+      }));
+
+      // Second turn response (should NOT be suppressed)
+      feedLines(handler, JSON.stringify({
+        type: 'assistant',
+        message: {
+          id: 'msg_222',
+          content: [{ type: 'text', text: 'Second response.' }],
+          stop_reason: 'end_turn',
+        },
+      }));
+
+      const textEvents = events.filter((e) => e.type === 'text_delta');
+      assert.equal(textEvents.length, 2);
+      if (textEvents[0]!.type === 'text_delta') {
+        assert.equal(textEvents[0]!.delta, 'First response.');
+      }
+      if (textEvents[1]!.type === 'text_delta') {
+        assert.equal(textEvents[1]!.delta, 'Second response.');
+      }
+    });
+
+    it('should NOT suppress when stop_reason is tool_use', () => {
+      const { events, onEvent } = collectEvents();
+      const handler = createClaudeStreamHandler(onEvent);
+
+      // Turn ends with tool_use (agent wants to call a tool, not done)
+      feedLines(handler, JSON.stringify({
+        type: 'assistant',
+        message: {
+          id: 'msg_230',
+          content: [{ type: 'text', text: 'Let me read the file.' }],
+          stop_reason: 'tool_use',
+        },
+      }));
+
+      // Tool result comes back
+      feedLines(handler, JSON.stringify({
+        type: 'user',
+        message: {
+          content: [{ type: 'tool_result', tool_use_id: 'toolu_050', content: 'file contents', is_error: false }],
+        },
+      }));
+
+      // Agent continues (should NOT be suppressed)
+      feedLines(handler, JSON.stringify({
+        type: 'assistant',
+        message: {
+          id: 'msg_231',
+          content: [{ type: 'text', text: 'Here is what I found.' }],
+          stop_reason: 'end_turn',
+        },
+      }));
+
+      const textEvents = events.filter((e) => e.type === 'text_delta');
+      assert.equal(textEvents.length, 2);
+    });
+  });
+
   describe('multi-turn conversation flow', () => {
     it('should handle a complete init → stream → result flow', () => {
       const { events, onEvent } = collectEvents();

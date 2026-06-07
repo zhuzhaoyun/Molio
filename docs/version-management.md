@@ -3,7 +3,7 @@
 本文档包含两部分：
 
 1. **Multica 调研**：对 Multica 项目版本管理机制的完整分析，包含源码级细节
-2. **KGE 实施方案**：KGE 桌面应用的版本管理和自动更新实施指南
+2. **Molio 实施方案**：Molio 桌面应用的版本管理和自动更新实施指南
 
 ---
 
@@ -22,7 +22,7 @@
   - [客户端身份标识](#客户端身份标识)
   - [GitHub Actions 发布流程](#github-actions-发布流程-1)
   - [关键文件索引](#关键文件索引)
-- [第二部分：KGE 实施方案](#第二部分kge-实施方案)
+- [第二部分：Molio 实施方案](#第二部分molio-实施方案)
   - [方案选型](#方案选型)
   - [版本号管理](#版本号管理-2)
   - [构建与发布流程](#构建与发布流程)
@@ -244,7 +244,7 @@ GitHub Release v0.2.0:
 
 x64 客户端读 `latest.yml`，arm64 客户端读 `latest-arm64.yml`，互不干扰。
 
-**如果 KGE 不需要 arm64 版本**，可以忽略这个问题。只有同时发布 x64 和 arm64 两个架构时才需要处理。
+**如果 Molio 不需要 arm64 版本**，可以忽略这个问题。只有同时发布 x64 和 arm64 两个架构时才需要处理。
 
 ---
 
@@ -859,11 +859,11 @@ export function decideVersionAction(
 - **defer 机制**：有活跃 agent 任务时不重启，等任务完成后再处理
 - **保护用户体验**：不会因为版本不一致而中断正在进行的 agent 对话
 
-### 对 KGE 的参考
+### 对 Molio 的参考
 
-KGE 的 daemon 是 Node.js 应用，打包在 `resources/daemon/` 里。更新后也会面临同样的问题——新 Electron 里是新版 daemon 代码，但旧 daemon 进程还在内存里跑。
+Molio 的 daemon 是 Node.js 应用，打包在 `resources/daemon/` 里。更新后也会面临同样的问题——新 Electron 里是新版 daemon 代码，但旧 daemon 进程还在内存里跑。
 
-KGE 可以采用更简单的策略：**Electron 重启时直接 kill 旧 daemon 再 spawn 新的**，因为 KGE 的 daemon 是无状态的 HTTP 服务（状态在 SQLite 里），重启不会丢失数据。如果 KGE 未来也有长时间运行的 agent 任务，再引入 defer 机制。
+Molio 可以采用更简单的策略：**Electron 重启时直接 kill 旧 daemon 再 spawn 新的**，因为 Molio 的 daemon 是无状态的 HTTP 服务（状态在 SQLite 里），重启不会丢失数据。如果 Molio 未来也有长时间运行的 agent 任务，再引入 defer 机制。
 
 ---
 
@@ -1006,13 +1006,13 @@ desktop:
 
 ---
 
-# 第二部分：KGE 实施方案
+# 第二部分：Molio 实施方案
 
-## KGE 架构特点
+## Molio 架构特点
 
-KGE 是一个 pnpm monorepo 项目，与 Multica 有以下关键区别：
+Molio 是一个 pnpm monorepo 项目，与 Multica 有以下关键区别：
 
-| 对比项 | Multica | KGE |
+| 对比项 | Multica | Molio |
 |--------|---------|-----|
 | Daemon 语言 | Go 二进制 | Node.js (Hono HTTP server) |
 | Daemon 功能 | CLI + 后台服务 | 纯 HTTP 服务 (port 3100) |
@@ -1021,7 +1021,7 @@ KGE 是一个 pnpm monorepo 项目，与 Multica 有以下关键区别：
 | 多架构 | x64 + arm64 | 仅 x64（当前） |
 | Daemon 子进程 | Go CLI 二进制 | 外部 agent CLI（Claude Code, Codex 等） |
 
-KGE 的 Electron 壳需要做的事情：
+Molio 的 Electron 壳需要做的事情：
 
 1. **启动 daemon** — spawn Node.js 进程运行 `apps/daemon` 的代码
 2. **加载 Web UI** — 加载 `apps/web` 构建产物（或 dev server）
@@ -1031,7 +1031,7 @@ KGE 的 Electron 壳需要做的事情：
 
 ## 方案选型
 
-KGE 采用 **electron-updater + GitHub Release** 方案，与 Multica 一致。
+Molio 采用 **electron-updater + GitHub Release** 方案，与 Multica 一致。
 
 - **版本管理**：git tag 驱动
 - **更新分发**：GitHub Release（免费、无需自建服务器）
@@ -1138,9 +1138,9 @@ export function getAppVersion(): string {
 
 ## 构建流程
 
-### KGE 的构建步骤
+### Molio 的构建步骤
 
-KGE 不像 Multica 那样需要编译 Go 二进制，构建流程更简单：
+Molio 不像 Multica 那样需要编译 Go 二进制，构建流程更简单：
 
 ```
 1. pnpm build:daemon   → 编译 daemon 到 apps/daemon/dist/
@@ -1200,8 +1200,8 @@ main();
 
 ```yaml
 # apps/desktop/electron-builder.yml
-appId: com.kge.desktop
-productName: KGE
+appId: com.molio.desktop
+productName: Molio
 
 directories:
   buildResources: build
@@ -1229,7 +1229,7 @@ extraResources:
 win:
   target:
     - nsis
-  artifactName: kge-desktop-${version}-windows-${arch}.${ext}
+  artifactName: molio-desktop-${version}-windows-${arch}.${ext}
 
 # 发布到 GitHub Release
 publish:
@@ -1242,8 +1242,8 @@ publish:
 ### 安装后的目录结构
 
 ```
-C:\Users\xxx\AppData\Local\KGE\
-├── KGE.exe                          ← Electron 主程序
+C:\Users\xxx\AppData\Local\Molio\
+├── Molio.exe                          ← Electron 主程序
 ├── resources/
 │   ├── app.asar                     ← Electron 主进程 + preload 代码
 │   ├── daemon/                      ← daemon 编译产物
@@ -1261,7 +1261,7 @@ GitHub Release 页面包含：
 
 ```
 v0.2.0 Release
-├── kge-desktop-0.2.0-windows-x64.exe    (NSIS 安装包)
+├── molio-desktop-0.2.0-windows-x64.exe    (NSIS 安装包)
 ├── latest.yml                            (更新元数据)
 └── RELEASE_NOTES.md                      (更新日志)
 ```
@@ -1271,10 +1271,10 @@ v0.2.0 Release
 ```yaml
 version: 0.2.0
 files:
-  - url: kge-desktop-0.2.0-windows-x64.exe
+  - url: molio-desktop-0.2.0-windows-x64.exe
     sha512: <base64 hash>
     size: 89234567
-path: kge-desktop-0.2.0-windows-x64.exe
+path: molio-desktop-0.2.0-windows-x64.exe
 sha512: <base64 hash>
 releaseDate: '2026-06-01T10:30:00.000Z'
 ```
@@ -1454,8 +1454,8 @@ export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null): voi
 更新时 NSIS 会覆盖整个安装目录：
 
 ```
-C:\Users\xxx\AppData\Local\KGE\
-├── KGE.exe                    ← 新的 Electron
+C:\Users\xxx\AppData\Local\Molio\
+├── Molio.exe                    ← 新的 Electron
 ├── resources/
 │   ├── app.asar               ← 新的主进程代码
 │   ├── daemon/                ← 新的 daemon（自动更新）
@@ -1633,7 +1633,7 @@ permissions:
 
 jobs:
   desktop:
-    runs-on: windows-latest    # KGE 当前只发布 Windows 版本
+    runs-on: windows-latest    # Molio 当前只发布 Windows 版本
     steps:
       - uses: actions/checkout@v4
         with:
@@ -1823,7 +1823,7 @@ A: 不强制，但未签名的安装包会触发 Windows SmartScreen 警告。�
 
 ### Q: macOS 怎么处理？
 
-A: macOS 需要 Apple Developer ID 签名和公证（notarization），流程比 Windows/Linux 复杂。KGE 当前只发布 Windows 版本，后续需要时再添加 macOS 支持。
+A: macOS 需要 Apple Developer ID 签名和公证（notarization），流程比 Windows/Linux 复杂。Molio 当前只发布 Windows 版本，后续需要时再添加 macOS 支持。
 
 ### Q: 更新失败会怎样？
 
@@ -1831,7 +1831,7 @@ A: electron-updater 会触发 `error` 事件，UI 可以显示错误信息。用
 
 ### Q: daemon 更新时会中断用户操作吗？
 
-A: 打包进 Electron 的方案需要重启应用。但 KGE 的 daemon 是无状态 HTTP 服务（状态在 SQLite 里），重启很快（几百毫秒），SSE 连接会自动重连。
+A: 打包进 Electron 的方案需要重启应用。但 Molio 的 daemon 是无状态 HTTP 服务（状态在 SQLite 里），重启很快（几百毫秒），SSE 连接会自动重连。
 
 ### Q: 能否回退到旧版本？
 

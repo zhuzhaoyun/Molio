@@ -292,13 +292,38 @@
   padding: 6px 12px 8px;
   border-top: 1px solid var(--border-soft);
   color: var(--text-muted);
-  max-height: 120px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: 12px;
+  line-height: 1.5;
+  max-height: 240px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.tool-card-body.collapsed {
+  cursor: pointer;
 }
 .tool-card-body.error {
   color: var(--red);
+}
+.tool-card-output {
+  margin: 0;
+  padding: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: inherit;
+  background: transparent;
+  border: none;
+}
+.tool-card-expand {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--accent);
+  cursor: pointer;
+}
+.tool-card-expand:hover {
+  text-decoration: underline;
 }
 .tool-card-status {
   margin-left: auto;
@@ -313,6 +338,71 @@
 }
 .tool-card-status.error {
   color: var(--red);
+}
+
+/* -------- Claude Code style: inline tool calls -------------------- */
+/* Single tool call — one line */
+.tool-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  font-size: 12px;
+  color: var(--text-soft);
+  font-family: var(--mono);
+}
+.tool-line-arrow {
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+.tool-line-name {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.tool-line-arg {
+  color: var(--text-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.tool-line-status {
+  margin-left: auto;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+.tool-line-status.running { color: var(--accent); }
+.tool-line-status.done { color: var(--green); }
+.tool-line-status.error { color: var(--red); }
+
+/* Tool group — collapsible inline list */
+.tool-group-inline {
+  margin: 2px 0;
+}
+.tool-group-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+  font-family: var(--mono);
+}
+.tool-group-row:hover {
+  color: var(--text-muted);
+}
+.tool-chevron {
+  color: var(--text-faint);
+  font-size: 10px;
+  flex-shrink: 0;
+  width: 12px;
+}
+.tool-group-label {
+  color: var(--text-soft);
+}
+.tool-group-items {
+  padding-left: 18px;
 }
 
 /* -------- AskUserQuestion card -------------------------------------- */

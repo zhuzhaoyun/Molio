@@ -28,24 +28,17 @@ export function ToolCard({ tool, isLast, onAnswerToolUse, onSubmitForm }: Props)
     );
   }
 
-  // Default: generic tool card
+  // Default: Claude Code style — minimal inline one-liner
   const detail = formatToolInput(tool.input);
   const statusClass = tool.status === 'running' ? 'running' : tool.isError ? 'error' : 'done';
-  const statusLabel = tool.status === 'running' ? '...' : tool.isError ? '✗' : '✓';
+  const statusLabel = tool.status === 'running' ? '…' : tool.isError ? '✗' : '✓';
 
   return (
-    <div className="tool-card">
-      <div className="tool-card-header">
-        <span className="tool-card-icon">›</span>
-        <span className="tool-card-name">{tool.name}</span>
-        {detail && <span className="tool-card-detail">{detail}</span>}
-        <span className={`tool-card-status ${statusClass}`}>{statusLabel}</span>
-      </div>
-      {tool.result && (
-        <div className={`tool-card-body ${tool.isError ? 'error' : ''}`}>
-          {tool.result}
-        </div>
-      )}
+    <div className="tool-line">
+      <span className="tool-line-arrow">⎿</span>
+      <span className="tool-line-name">{tool.name}</span>
+      {detail && <span className="tool-line-arg">{detail}</span>}
+      <span className={`tool-line-status ${statusClass}`}>{statusLabel}</span>
     </div>
   );
 }
@@ -278,6 +271,7 @@ function AskUserQuestionCard({
     </div>
   );
 }
+
 
 function formatToolInput(input: unknown): string {
   if (typeof input === 'string') return truncate(input, 80);

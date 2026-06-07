@@ -27,7 +27,7 @@
     "esbuild": "^0.25.0"
   },
   "build": {
-    "appId": "com.kge.desktop",
+    "appId": "com.molio.desktop",
     "productName": "Molio",
     "directories": {
       "output": "dist"

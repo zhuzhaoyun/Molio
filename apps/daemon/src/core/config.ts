@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 
-const CONFIG_DIR = path.join(os.homedir(), '.kge');
+const CONFIG_DIR = path.join(os.homedir(), '.molio');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 
 export interface AgentConfig {

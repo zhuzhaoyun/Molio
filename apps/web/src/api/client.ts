@@ -2,6 +2,8 @@ import type {
   AgentInfo, RunInfo, CreateRunRequest, ToolResultRequest,
   ChatMessage, Project, Conversation,
   Vault, TreeNode, FileContent, KbHistoryEntry, CreateVaultRequest,
+  WikiStatusResponse, WikiBuildRequest, WikiIngestRequest,
+  WikiLintRequest, WikiQueryRequest, WikiRunResponse,
 } from '@molio/contracts';
 
 const BASE = '/api';
@@ -250,6 +252,66 @@ export const api = {
     if (!res.ok) throw new Error(`Failed to fetch history: ${res.status}`);
     const data = await res.json();
     return data.history;
+  },
+
+  // ─── Wiki ───
+
+  async getWikiStatus(vaultId: string): Promise<WikiStatusResponse> {
+    const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/wiki/status`);
+    if (!res.ok) throw new Error(`Failed to fetch wiki status: ${res.status}`);
+    return res.json();
+  },
+
+  async buildWiki(vaultId: string, req: WikiBuildRequest): Promise<WikiRunResponse> {
+    const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/wiki/build`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error?.message ?? `Failed to build wiki: ${res.status}`);
+    }
+    return res.json();
+  },
+
+  async ingestFile(vaultId: string, req: WikiIngestRequest): Promise<WikiRunResponse> {
+    const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/wiki/ingest`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error?.message ?? `Failed to ingest file: ${res.status}`);
+    }
+    return res.json();
+  },
+
+  async lintWiki(vaultId: string, req: WikiLintRequest): Promise<WikiRunResponse> {
+    const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/wiki/lint`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error?.message ?? `Failed to lint wiki: ${res.status}`);
+    }
+    return res.json();
+  },
+
+  async queryWiki(vaultId: string, req: WikiQueryRequest): Promise<WikiRunResponse> {
+    const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/wiki/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error?.message ?? `Failed to query wiki: ${res.status}`);
+    }
+    return res.json();
   },
 
   // ─── Publish ───

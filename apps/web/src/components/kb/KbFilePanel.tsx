@@ -16,8 +16,10 @@ interface KbFilePanelProps {
   onSelectFile: (path: string) => void;
   onNewFile: () => void;
   onNewFolder: () => void;
-  onImport: () => void;
   onVaultClick: () => void;
+  onAddToWiki?: (path: string) => void;
+  onBuildWiki?: () => void;
+  onLintWiki?: () => void;
   children?: ReactNode;
 }
 
@@ -31,8 +33,10 @@ export function KbFilePanel({
   onSelectFile,
   onNewFile,
   onNewFolder,
-  onImport,
   onVaultClick,
+  onAddToWiki,
+  onBuildWiki,
+  onLintWiki,
   children,
 }: KbFilePanelProps) {
   return (
@@ -42,7 +46,12 @@ export function KbFilePanel({
         <button title="New file" onClick={onNewFile}>📄</button>
         <button title="New folder" onClick={onNewFolder}>📁</button>
         <div style={{ flex: 1 }} />
-        <button title="Import knowledge" onClick={onImport} style={{ color: 'var(--accent)' }}>⤵</button>
+        {onBuildWiki && (
+          <button title="构建 Wiki" onClick={onBuildWiki} style={{ color: 'var(--accent)' }}>🏗</button>
+        )}
+        {onLintWiki && (
+          <button title="Wiki 健康检查" onClick={onLintWiki}>🔍</button>
+        )}
       </div>
 
       {/* Search */}
@@ -62,6 +71,7 @@ export function KbFilePanel({
           selectedFile={selectedFile}
           searchQuery={searchQuery}
           onSelectFile={onSelectFile}
+          onAddToWiki={onAddToWiki}
         />
       </div>
 

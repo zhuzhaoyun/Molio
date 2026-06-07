@@ -52,4 +52,12 @@ export type {
   VaultListResponse,
   FileTreeResponse,
   KbHistoryListResponse,
+  // Wiki
+  WikiOperationType,
+  WikiStatusResponse,
+  WikiBuildRequest,
+  WikiIngestRequest,
+  WikiLintRequest,
+  WikiQueryRequest,
+  WikiRunResponse,
 } from './knowledge.js';

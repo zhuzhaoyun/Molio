@@ -1,8 +1,54 @@
 import { useMemo } from 'react';
-import type { ChatMessage } from '../hooks/useChat';
+import type { ChatMessage, ToolEvent } from '../hooks/useChat';
 import { renderMarkdown } from '../utils/markdown';
 import { ToolCard } from './ToolCard';
+import { ToolGroup } from './ToolGroup';
 import { ThinkingBlock } from './ThinkingBlock';
+
+// Tools that should never be grouped (always shown individually)
+const UNGROUPABLE = new Set(['AskUserQuestion', 'ask_user_question']);
+
+type ToolItem =
+  | { kind: 'single'; tool: ToolEvent }
+  | { kind: 'group'; toolName: string; tools: ToolEvent[] };
+
+/**
+ * Group consecutive same-type tool calls.
+ * Only groups when ≥2 consecutive tools share the same name.
+ */
+function groupTools(tools: ToolEvent[]): ToolItem[] {
+  const result: ToolItem[] = [];
+  let i = 0;
+
+  while (i < tools.length) {
+    const tool = tools[i]!;
+
+    // AskUserQuestion is always single
+    if (UNGROUPABLE.has(tool.name)) {
+      result.push({ kind: 'single', tool });
+      i++;
+      continue;
+    }
+
+    // Count consecutive same-type tools
+    let j = i + 1;
+    while (j < tools.length && tools[j]!.name === tool.name && !UNGROUPABLE.has(tools[j]!.name)) {
+      j++;
+    }
+    const count = j - i;
+
+    if (count >= 2) {
+      // Group them
+      result.push({ kind: 'group', toolName: tool.name, tools: tools.slice(i, j) });
+    } else {
+      // Single tool
+      result.push({ kind: 'single', tool });
+    }
+    i = j;
+  }
+
+  return result;
+}
 
 interface Props {
   message: ChatMessage;
@@ -25,6 +71,10 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
     : message.content;
 
   const html = useMemo(() => renderMarkdown(displayContent), [displayContent]);
+  const toolItems = useMemo(
+    () => (message.tools ? groupTools(message.tools) : []),
+    [message.tools]
+  );
 
   return (
     <div className="msg assistant">
@@ -37,17 +87,25 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
         <ThinkingBlock content={message.thinking} streaming={message.streaming && !message.content} />
       )}
 
-      {message.tools && message.tools.length > 0 && (
+      {toolItems.length > 0 && (
         <div className="tool-cards">
-          {message.tools.map((tool) => (
-            <ToolCard
-              key={tool.id}
-              tool={tool}
-              isLast={isLast}
-              onAnswerToolUse={onAnswerToolUse}
-              onSubmitForm={onSubmitForm}
-            />
-          ))}
+          {toolItems.map((item, idx) =>
+            item.kind === 'group' ? (
+              <ToolGroup
+                key={`group-${idx}`}
+                tools={item.tools}
+                toolName={item.toolName}
+              />
+            ) : (
+              <ToolCard
+                key={item.tool.id}
+                tool={item.tool}
+                isLast={isLast}
+                onAnswerToolUse={onAnswerToolUse}
+                onSubmitForm={onSubmitForm}
+              />
+            )
+          )}
         </div>
       )}
 

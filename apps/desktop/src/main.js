@@ -38,8 +38,8 @@ function startDaemonProduction() {
     daemonProcess = spawn(nodeExe, [daemonEntry], {
       env: {
         ...process.env,
-        KGE_PORT: '3100',
-        KGE_STATIC_DIR: webStaticDir,
+        MOLIO_PORT: '3100',
+        MOLIO_STATIC_DIR: webStaticDir,
       },
       stdio: 'pipe',
     });

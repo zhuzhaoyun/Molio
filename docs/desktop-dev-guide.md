@@ -1,4 +1,4 @@
-# KGE Electron 桌面应用 — 开发环境构建与运行指南
+# Molio Electron 桌面应用 — 开发环境构建与运行指南
 
 ## 目录
 
@@ -245,7 +245,7 @@ Run: ./dist/win-unpacked/Knowledge Growth Engine.exe
 │  │  Daemon (Node.js 子进程)                  │  │
 │  │  → http://localhost:3100                   │  │
 │  │  → 同时提供 API 和静态文件                 │  │
-│  │  → KGE_STATIC_DIR = resources/web/        │  │
+│  │  → MOLIO_STATIC_DIR = resources/web/        │  │
 │  └───────────────────────────────────────────┘  │
 │                                                  │
 │  ┌───────────────────────────────────────────┐  │
@@ -309,7 +309,7 @@ netstat -ano | findstr 5173
 
 **原因**：Electron 内嵌的 Node.js 版本和系统 Node.js 版本不同，native 模块 ABI 不兼容。
 
-**解决**：KGE 已处理此问题 — 生产模式使用系统 Node.js 运行 daemon（`findSystemNode()`），不通过 Electron 内嵌的 Node.js 加载 native 模块。确保系统已安装 Node.js ≥ 20.x。
+**解决**：Molio 已处理此问题 — 生产模式使用系统 Node.js 运行 daemon（`findSystemNode()`），不通过 Electron 内嵌的 Node.js 加载 native 模块。确保系统已安装 Node.js ≥ 20.x。
 
 ### 3. 打包后 daemon 启动失败
 
@@ -387,8 +387,8 @@ function startDaemonProduction() {
       cwd: path.dirname(daemonEntry),
       env: {
         ...process.env,
-        KGE_PORT: '3100',
-        KGE_STATIC_DIR: webStaticDir,
+        MOLIO_PORT: '3100',
+        MOLIO_STATIC_DIR: webStaticDir,
       },
       stdio: 'pipe',
     });
@@ -402,13 +402,13 @@ function startDaemonProduction() {
 | 路径 | 值（打包后） | 适用场景 |
 |------|------------|---------|
 | `process.cwd()` | 不确定（取决于启动方式） | ❌ 不要用于定位资源 |
-| `app.getAppPath()` | `C:\Users\...\AppData\Local\KGE\resources\app.asar` | 定位 asar 内的文件 |
-| `process.resourcesPath` | `C:\Users\...\AppData\Local\KGE\resources` | 定位 resources 下的文件 |
-| `path.dirname(daemonEntry)` | `C:\Users\...\AppData\Local\KGE\resources\daemon` | daemon 进程的工作目录 |
+| `app.getAppPath()` | `C:\Users\...\AppData\Local\Molio\resources\app.asar` | 定位 asar 内的文件 |
+| `process.resourcesPath` | `C:\Users\...\AppData\Local\Molio\resources` | 定位 resources 下的文件 |
+| `path.dirname(daemonEntry)` | `C:\Users\...\AppData\Local\Molio\resources\daemon` | daemon 进程的工作目录 |
 
 daemon 的 `cwd` 设为 `resources/daemon/` 目录是合理的，因为：
 - daemon 如果需要读取相对路径的配置文件，应该在自身所在目录
-- daemon spawn 的 agent CLI 进程会继承这个 cwd，但 KGE 的设计是通过 `opts.cwd`（项目的 `localPath`）来指定 agent 的工作目录，不依赖 daemon 的 cwd
+- daemon spawn 的 agent CLI 进程会继承这个 cwd，但 Molio 的设计是通过 `opts.cwd`（项目的 `localPath`）来指定 agent 的工作目录，不依赖 daemon 的 cwd
 
 ### 需要在 daemon 中获取应用路径时
 
@@ -418,11 +418,11 @@ daemon 的 `cwd` 设为 `resources/daemon/` 目录是合理的，因为：
 // main.js — 启动 daemon 时注入
 env: {
   ...process.env,
-  KGE_PORT: '3100',
-  KGE_STATIC_DIR: webStaticDir,
-  KGE_APP_DIR: app.getAppPath(),           // 应用路径
-  KGE_RESOURCES_DIR: process.resourcesPath, // resources 路径
-  KGE_USER_DATA_DIR: app.getPath('userData'), // 用户数据路径
+  MOLIO_PORT: '3100',
+  MOLIO_STATIC_DIR: webStaticDir,
+  MOLIO_APP_DIR: app.getAppPath(),           // 应用路径
+  MOLIO_RESOURCES_DIR: process.resourcesPath, // resources 路径
+  MOLIO_USER_DATA_DIR: app.getPath('userData'), // 用户数据路径
 }
 ```
 
@@ -430,9 +430,9 @@ daemon 中使用：
 
 ```typescript
 // apps/daemon/src/index.ts
-const appDir = process.env.KGE_APP_DIR ?? process.cwd();
-const resourcesDir = process.env.KGE_RESOURCES_DIR ?? process.cwd();
-const userDataDir = process.env.KGE_USER_DATA_DIR ?? process.cwd();
+const appDir = process.env.MOLIO_APP_DIR ?? process.cwd();
+const resourcesDir = process.env.MOLIO_RESOURCES_DIR ?? process.cwd();
+const userDataDir = process.env.MOLIO_USER_DATA_DIR ?? process.cwd();
 ```
 
 这样 daemon 无论在开发模式还是生产模式，都能通过环境变量获取正确的路径，不依赖 `process.cwd()`。
