@@ -9,7 +9,7 @@ import { KbFilePanel } from './KbFilePanel';
 import { KbMainContent } from './KbMainContent';
 import { WikiChatPanel } from './WikiChatPanel';
 import { VaultManagerModal } from './VaultManager';
-import { ImportModal } from './KbModals';
+import { ImportModal, CoseInstallPrompt } from './KbModals';
 
 interface KnowledgeBasePageProps {
   agentId: string | null;
@@ -132,7 +132,7 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
         onThemeConfigChange={kb.setThemeConfig}
         onContentChange={kb.setEditedContent}
         onCopy={kb.copyToClipboard}
-        onPublish={() => {/* TODO: publish flow */}}
+        onPublish={kb.publishToChrome}
         onBuildWiki={handleBuildWiki}
       />
 
@@ -166,6 +166,12 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
         show={kb.showImport}
         vaultName={kb.activeVault?.name ?? ''}
         onClose={() => kb.setShowImport(false)}
+      />
+
+      {/* COSE extension install prompt */}
+      <CoseInstallPrompt
+        show={kb.showCoseInstallPrompt}
+        onClose={() => kb.setShowCoseInstallPrompt(false)}
       />
     </div>
   );
