@@ -1,0 +1,77 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+      - "!v*-dirty*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号 (如 0.2.0-beta.1)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            platform: win
+            arch-flag: ""
+            label: "Windows x64"
+          - os: macos-latest
+            platform: mac
+            arch-flag: "--arm64"
+            label: "macOS arm64"
+          - os: macos-13
+            platform: mac
+            arch-flag: "--x64"
+            label: "macOS x64"
+
+    name: Build ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all packages
+        run: pnpm build
+
+      - name: Derive version
+        id: version
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            version=$(echo "${{ inputs.version }}" | xargs)
+          else
+            raw=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
+            version=${raw#v}
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Package Desktop installer
+        working-directory: apps/desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npx electron-builder --${{ matrix.platform }} ${{ matrix.arch-flag }} --publish always "--config.extraMetadata.version=${{ steps.version.outputs.version }}"

@@ -1,5 +1,5 @@
 import { serve } from '@hono/node-server';
-import { execSync } from 'child_process';
+import { execSync } from 'node:child_process';
 import { app, runManager } from './server.js';
 
 const port = Number(process.env['MOLIO_PORT'] ?? 3100);
@@ -87,9 +87,24 @@ function checkAndKillPortOccupant(port: number): void {
 
 checkAndKillPortOccupant(port);
 
-serve({ fetch: app.fetch, port }, () => {
-  console.log(`Molio daemon listening on http://localhost:${port}`);
-});
+function startServer(): void {
+  const server = serve({ fetch: app.fetch, port }, () => {
+    console.log(`Molio daemon listening on http://localhost:${port}`);
+  });
+
+  server.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      console.log(`Port ${port} in use, checking for old daemon process...`);
+      checkAndKillPortOccupant(port);
+      setTimeout(() => startServer(), 500);
+      return;
+    }
+    console.error('Failed to start daemon:', err.message);
+    process.exit(1);
+  });
+}
+
+startServer();
 
 // Graceful shutdown
 function shutdown(): void {

@@ -10,12 +10,17 @@
     "dev": "electron .",
     "prepare": "node scripts/prepare-resources.mjs",
     "build": "pnpm --filter @molio/contracts build && pnpm --filter @molio/daemon build && pnpm --filter @molio/web build && node scripts/prepare-resources.mjs",
-    "package": "electron-builder --win",
+    "package": "node scripts/package.mjs",
+    "package:win": "electron-builder --win",
+    "package:mac": "electron-builder --mac",
+    "package:linux": "electron-builder --linux",
     "package:dir": "electron-builder --win --dir",
     "run:unpacked": "electron-builder --win --dir && echo 'Run: ./dist/win-unpacked/墨流 Molio.exe'",
     "typecheck": "echo 'desktop: no TS to check'"
   },
-  "dependencies": {},
+  "dependencies": {
+    "electron-updater": "^6.8.3"
+  },
   "devDependencies": {
     "electron": "^33.0.0",
     "electron-builder": "^25.1.8",
@@ -34,7 +39,9 @@
       {
         "from": "resources",
         "to": ".",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "asarUnpack": [
@@ -51,9 +58,47 @@
       "signAndEditExecutable": false
     },
     "nsis": {
+      "artifactName": "${productName}-Setup-${version}-windows.${ext}",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "deleteAppDataOnUninstall": false
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["arm64"]
+        }
+      ],
+      "category": "public.app-category.productivity"
+    },
+    "dmg": {
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": ["x64"]
+        },
+        {
+          "target": "deb",
+          "arch": ["x64"]
+        }
+      ],
+      "category": "Office"
+    },
+    "appImage": {
+      "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
+    },
+    "deb": {
+      "artifactName": "${productName}_${version}_linux_${arch}.${ext}"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "zhuzhaoyun",
+      "repo": "Molio",
+      "releaseType": "release"
     }
   }
 }
