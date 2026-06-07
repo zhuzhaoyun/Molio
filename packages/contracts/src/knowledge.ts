@@ -22,9 +22,10 @@ export interface TreeNode {
 
 export interface FileContent {
   path: string; // Relative path from vault root
-  content: string;
+  content: string; // Empty for binary files (use raw file URL instead)
   size: number;
   modifiedAt: number;
+  mimeType?: string; // e.g. "image/png", "application/pdf"
 }
 
 export interface KbHistoryEntry {

@@ -224,6 +224,12 @@ export const api = {
     return res.json();
   },
 
+  /** Build URL for raw file access (images, PDFs, etc.) */
+  rawFileUrl(vaultId: string, filePath: string): string {
+    const encoded = encodeURIComponent(filePath).replace(/%2F/g, '/');
+    return `${BASE}/knowledge/vaults/${vaultId}/raw/${encoded}`;
+  },
+
   async writeFile(vaultId: string, filePath: string, content: string): Promise<void> {
     const encoded = encodeURIComponent(filePath).replace(/%2F/g, '/');
     const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/files/${encoded}`, {

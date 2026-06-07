@@ -24,6 +24,9 @@ const desktopAPI = {
 
   /** Show a directory picker dialog. Returns the selected path or null. */
   showDirectoryPicker: () => ipcRenderer.invoke('show-directory-picker'),
+
+  /** Open a file with the system default application. */
+  openPath: (filePath) => ipcRenderer.invoke('open-path', filePath),
 };
 
 // Updater API — event listeners + actions
