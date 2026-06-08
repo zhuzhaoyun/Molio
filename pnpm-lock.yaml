@@ -42,6 +42,15 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@molio/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@molio/daemon':
+        specifier: workspace:*
+        version: link:../daemon
+      '@molio/web':
+        specifier: workspace:*
+        version: link:../web
       electron-updater:
         specifier: ^6.8.3
         version: 6.8.3
