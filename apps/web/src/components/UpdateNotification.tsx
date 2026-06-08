@@ -1,16 +1,23 @@
 import { useEffect, useState } from 'react';
+import { useI18n } from '../i18n';
 
 type UpdateState =
   | { status: 'idle' }
-  | { status: 'ready'; version: string }
-  | { status: 'error'; message: string };
+  | { status: 'ready'; version: string };
 
 /**
  * Fixed-position toast that appears when an update has been downloaded
- * and is ready to install, or when an update error occurs.
+ * and is ready to install.
+ *
+ * Background update-check errors (network timeouts, etc.) are intentionally
+ * NOT shown as a toast — they are surfaced in the Settings page instead.
+ * This avoids intrusive popups when the user is already up-to-date but
+ * the GitHub endpoint is unreachable (common in some network environments).
+ *
  * Only renders in Electron (packaged) mode.
  */
 export function UpdateNotification() {
+  const { t } = useI18n();
   const [state, setState] = useState<UpdateState>({ status: 'idle' });
   const [dismissed, setDismissed] = useState(false);
 
@@ -26,53 +33,13 @@ export function UpdateNotification() {
       })
     );
 
-    cleanups.push(
-      window.updater.onUpdateError((info) => {
-        setState({ status: 'error', message: info.message });
-        setDismissed(false);
-      })
-    );
+    // Background errors are NOT shown as toast — see Settings page for error UI
 
     return () => cleanups.forEach((fn) => fn());
   }, []);
 
   if (!window.updater) return null;
   if (state.status === 'idle' || dismissed) return null;
-
-  if (state.status === 'error') {
-    return (
-      <div className="update-toast update-toast--error">
-        <button
-          className="update-toast__close"
-          onClick={() => setDismissed(true)}
-          aria-label="Dismiss"
-        >
-          ✕
-        </button>
-        <p className="update-toast__title">更新检测失败</p>
-        <p className="update-toast__subtitle update-toast__subtitle--error">
-          {state.message}
-        </p>
-        <div className="update-toast__actions">
-          <button
-            className="rt-btn rt-btn--sm"
-            onClick={() => setDismissed(true)}
-          >
-            关闭
-          </button>
-          <button
-            className="rt-btn rt-btn--sm update-toast__primary"
-            onClick={() => {
-              window.updater?.checkForUpdates();
-              setDismissed(true);
-            }}
-          >
-            重试
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="update-toast">
@@ -83,22 +50,22 @@ export function UpdateNotification() {
       >
         ✕
       </button>
-      <p className="update-toast__title">更新就绪</p>
+      <p className="update-toast__title">{t('update.ready')}</p>
       <p className="update-toast__subtitle">
-        v{state.version} 将在重启后应用
+        {t('update.willApply', { version: state.version })}
       </p>
       <div className="update-toast__actions">
         <button
           className="rt-btn rt-btn--sm"
           onClick={() => setDismissed(true)}
         >
-          稍后
+          {t('update.later')}
         </button>
         <button
           className="rt-btn rt-btn--sm update-toast__primary"
           onClick={() => window.updater?.installUpdate()}
         >
-          立即重启
+          {t('update.restartNow')}
         </button>
       </div>
     </div>

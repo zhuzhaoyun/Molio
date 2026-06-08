@@ -16,10 +16,6 @@ export function createClaudeStreamHandler(
   let currentMessageId: string | null = null;
   const textStreamed = new Set<string>();
   const thinkingStreamed = new Set<string>();
-  // After turn_end with end_turn, suppress subsequent assistant text
-  // (Claude Code CLI outputs idle greeting messages between turns).
-  // Reset to false when a new user message arrives (multi-turn follow-up).
-  let turnComplete = false;
 
   function blockKey(index: unknown): string {
     return `${currentMessageId ?? 'anon'}:${index}`;
@@ -40,10 +36,6 @@ export function createClaudeStreamHandler(
       const msg = obj['message'] as Record<string, unknown>;
       const msgId = typeof msg['id'] === 'string' ? msg['id'] : null;
       if (msgId) currentMessageId = msgId;
-
-      // If a previous turn already ended, suppress all content from this
-      // assistant block — it's a CLI idle/greeting message, not task output.
-      if (turnComplete) return;
 
       const content = Array.isArray(msg['content']) ? msg['content'] : [];
       for (const block of content) {
@@ -73,16 +65,12 @@ export function createClaudeStreamHandler(
       }
 
       if (typeof msg['stop_reason'] === 'string') {
-        const reason = msg['stop_reason'] as string;
-        onEvent({ type: 'turn_end', stopReason: reason });
-        if (reason === 'end_turn') turnComplete = true;
+        onEvent({ type: 'turn_end', stopReason: msg['stop_reason'] as string });
       }
       return;
     }
 
     if (obj['type'] === 'user' && typeof obj['message'] === 'object') {
-      // New user message means a follow-up turn — reset the guard
-      turnComplete = false;
       const msg = obj['message'] as Record<string, unknown>;
       const content = Array.isArray(msg['content']) ? msg['content'] : [];
       for (const block of content) {
@@ -114,10 +102,6 @@ export function createClaudeStreamHandler(
   }
 
   function handleStreamEvent(ev: Record<string, unknown>): void {
-    // Suppress all stream events after turn ends (CLI idle output),
-    // until reset by a new user message in handleObject.
-    if (turnComplete) return;
-
     if (ev['type'] === 'message_start') {
       const msg = typeof ev['message'] === 'object'
         ? ev['message'] as Record<string, unknown>

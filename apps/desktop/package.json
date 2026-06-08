@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "electron .",
     "prepare": "node scripts/prepare-resources.mjs",
-    "build": "pnpm --filter @molio/contracts build && pnpm --filter @molio/daemon build && pnpm --filter @molio/web build && node scripts/prepare-resources.mjs",
+    "build": "pnpm --filter @molio/desktop^... build && node scripts/prepare-resources.mjs",
     "package": "node scripts/package.mjs",
     "package:win": "electron-builder --win",
     "package:mac": "electron-builder --mac",
@@ -23,7 +23,7 @@
     "electron-updater": "^6.8.3"
   },
   "devDependencies": {
-    "electron": "^33.0.0",
+    "electron": "^40.0.0",
     "electron-builder": "^25.1.8",
     "esbuild": "^0.25.0"
   },

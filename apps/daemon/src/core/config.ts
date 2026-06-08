@@ -14,6 +14,7 @@ export interface AppConfig {
   agents: Record<string, AgentConfig>;
   defaultCwd?: string;
   defaultAgentId?: string;
+  locale?: string;
 }
 
 const DEFAULT_CONFIG: AppConfig = {

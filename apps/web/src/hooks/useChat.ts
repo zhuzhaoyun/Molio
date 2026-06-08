@@ -95,11 +95,11 @@ export function useChat(options: UseChatOptions | string | null) {
       timestamp: Date.now(),
     };
 
-    const assistantId = nextMsgId();
-    assistantIdRef.current = assistantId;
+    const newAssistantId = nextMsgId();
+    assistantIdRef.current = newAssistantId;
 
     const assistantMsg: ChatMessage = {
-      id: assistantId,
+      id: newAssistantId,
       role: 'assistant',
       content: '',
       timestamp: Date.now(),
@@ -125,21 +125,22 @@ export function useChat(options: UseChatOptions | string | null) {
       }
     }
 
-    // Build history for transcript (all messages before this turn)
-    const history = buildHistory();
-
-    // Check if we can send to an existing run (multi-turn via stdin)
+    // Check if we can send to an existing run (multi-turn via stdin).
+    // For multi-turn agents (e.g. Claude Code), the process stays alive
+    // between turns, so follow-up messages go to the same stdin.
     const existingRunId = state.runId;
 
     if (existingRunId) {
-      // Try multi-turn: send follow-up to existing run's stdin
       try {
         await api.sendMessage(existingRunId, text.trim());
-        return; // Don't create new run/SSE — the existing one is still active
+        return; // SSE is still active, events route via assistantIdRef
       } catch {
         // Multi-turn failed (run ended or stdin closed), fall through to new run
       }
     }
+
+    // Build history for transcript (all messages before this turn)
+    const history = buildHistory();
 
     // Create a new run with conversation history for transcript building
     closeEventSource();
@@ -175,7 +176,13 @@ export function useChat(options: UseChatOptions | string | null) {
       const es = subscribeToRun(
         runId,
         (event: AgentEvent) => {
-          setState((prev) => updateWithEvent(prev, assistantId, event));
+          // Read ref at event time, not closure time. This is critical
+          // for multi-turn: when send() is called again, it updates
+          // assistantIdRef before sendMessage(), so subsequent SSE events
+          // route to the new assistant message.
+          const currentId = assistantIdRef.current;
+          if (!currentId) return;
+          setState((prev) => updateWithEvent(prev, currentId, event));
         },
         () => { /* SSE error — EventSource auto-retries */ },
       );
@@ -183,9 +190,10 @@ export function useChat(options: UseChatOptions | string | null) {
       esRef.current = es;
     } catch (err) {
       // If run creation fails, mark the assistant message as error
+      const errId = newAssistantId;
       setState((prev) => {
         const messages = prev.messages.map((msg) =>
-          msg.id === assistantId
+          msg.id === errId
             ? { ...msg, content: `Error: ${(err as Error).message}`, streaming: false }
             : msg
         );
@@ -198,7 +206,7 @@ export function useChat(options: UseChatOptions | string | null) {
     if (!state.runId) return;
     await api.submitToolResult(state.runId, { toolUseId, content });
 
-    // Update the tool card status
+    // Update the tool card status in whichever assistant message owns it
     setState((prev) => {
       const messages = prev.messages.map((msg) => {
         if (msg.tools) {
@@ -276,22 +284,43 @@ export function useChat(options: UseChatOptions | string | null) {
   };
 }
 
+/**
+ * Apply an SSE event to the chat state.
+ *
+ * Key behaviors for multi-turn agents (Claude Code with stream-json stdin):
+ *  - The child process stays alive between turns (stdin stays open).
+ *  - `turn_end` with stopReason !== 'tool_use' means the agent finished
+ *    answering this turn → re-enable input, mark message as done.
+ *  - `turn_end` with stopReason === 'tool_use' means the agent paused for
+ *    tool execution → keep streaming, keep input locked.
+ *  - `usage` always arrives after a turn completes → also re-enables input
+ *    (serves as a fallback signal).
+ *  - `status: completed/failed` means the child process exited → clear runId.
+ *    For multi-turn agents this only happens on cancel.
+ */
 function updateWithEvent(
   prev: ChatState,
   assistantId: string,
   event: AgentEvent,
 ): ChatState {
+  // Update the target assistant message's content/tools/status.
+  // Guard: if the message already has streaming: false (turn completed),
+  // ignore content-type events to prevent idle chatter from being appended.
   const messages = prev.messages.map((msg) => {
     if (msg.id !== assistantId) return msg;
 
     switch (event.type) {
       case 'text_delta':
+        // Skip if this message already finished (prevents idle chatter)
+        if (!msg.streaming) return msg;
         return { ...msg, content: msg.content + event.delta };
 
       case 'thinking_delta':
+        if (!msg.streaming) return msg;
         return { ...msg, thinking: (msg.thinking ?? '') + event.delta };
 
       case 'tool_use':
+        if (!msg.streaming) return msg;
         return {
           ...msg,
           tools: [
@@ -320,6 +349,9 @@ function updateWithEvent(
         };
 
       case 'turn_end':
+        // Only mark as done when the agent actually finished answering.
+        // 'tool_use' means it paused for tool execution, not done yet.
+        if (event.stopReason === 'tool_use') return msg;
         return { ...msg, streaming: false };
 
       case 'error':
@@ -330,13 +362,25 @@ function updateWithEvent(
     }
   });
 
-  // Check if run ended (status completed/failed)
+  // Determine isRunning and runId based on the event.
   let isRunning = prev.isRunning;
   let runId = prev.runId;
+
+  // Signal 1: turn_end with non-tool_use stopReason → agent finished this turn
+  if (event.type === 'turn_end' && event.stopReason !== 'tool_use') {
+    isRunning = false;
+  }
+
+  // Signal 2: usage → always emitted after a turn completes (fallback)
+  if (event.type === 'usage') {
+    isRunning = false;
+  }
+
+  // Signal 3: process exited → run is truly over, clear runId.
+  // For multi-turn agents this only fires on cancelRun() or process crash.
   if (event.type === 'status' && (event.label === 'completed' || event.label === 'failed')) {
     isRunning = false;
     runId = null;
-    // Finalize the streaming assistant message
     const finalized = messages.map((msg) =>
       msg.id === assistantId ? { ...msg, streaming: false } : msg
     );

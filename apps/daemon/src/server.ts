@@ -40,7 +40,7 @@ app.get('/api/health', (c) => {
 
 // Routes
 app.route('/api/agents', agentsRoutes(runManager));
-app.route('/api/runs', runsRoutes(runManager));
+app.route('/api/runs', runsRoutes(db, runManager));
 app.route('/api/runs', eventsRoutes(runManager));
 app.route('/api/runs', toolResultRoutes(runManager));
 app.route('/api/config', configRoutes());

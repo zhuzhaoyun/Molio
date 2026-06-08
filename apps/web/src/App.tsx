@@ -8,6 +8,8 @@ import { KnowledgeBasePage } from './components/kb/KnowledgeBasePage';
 import { RuntimePage } from './components/runtimes/RuntimePage';
 import { SettingsPage } from './components/settings/SettingsPage';
 import { UpdateNotification } from './components/UpdateNotification';
+import { LanguageProvider } from './i18n/LanguageProvider';
+import type { Locale } from './i18n';
 import { api } from './api/client';
 import type { Vault } from '@molio/contracts';
 import './styles/rail.css';
@@ -22,16 +24,21 @@ export default function App() {
   const [defaultAgentId, setDefaultAgentId] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [activeVault, setActiveVault] = useState<Vault | null>(null);
+  const [locale, setLocale] = useState<Locale>('zh');
+  const [configLoaded, setConfigLoaded] = useState(false);
   const chat = useChat({ agentId: selectedAgent, cwd: activeVault?.path });
 
-  // Load config to get defaultAgentId
+  // Load config to get defaultAgentId and locale
   useEffect(() => {
     api.getConfig()
       .then((cfg) => {
         const id = (cfg as { defaultAgentId?: string }).defaultAgentId;
         if (id) setDefaultAgentId(id);
+        const loc = (cfg as { locale?: string }).locale;
+        if (loc === 'en' || loc === 'zh') setLocale(loc);
+        setConfigLoaded(true);
       })
-      .catch(() => {});
+      .catch(() => { setConfigLoaded(true); });
   }, []);
 
   // Resolve the active agent once both agents and config are loaded.
@@ -79,31 +86,35 @@ export default function App() {
     setSelectedAgent(defaultAgentId ?? null);
   };
 
+  if (!configLoaded) return null;
+
   return (
-    <div className="entry-shell">
-      <NavRail />
-      <div className="entry-main">
-        <Routes>
-          <Route
-            path="/"
-            element={
-              <HomePage
-                selectedAgentName={agents.find((a) => a.id === selectedAgent)?.name ?? null}
-                messages={chat.messages}
-                isRunning={chat.isRunning}
-                onSend={chat.send}
-                onCancel={chat.cancel}
-                onNewChat={handleNewChat}
-                onSubmitToolResult={chat.submitToolResult}
-              />
-            }
-          />
-          <Route path="/knowledge" element={<KnowledgeBasePage agentId={selectedAgent} />} />
-          <Route path="/runtimes" element={<RuntimePage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-        </Routes>
+    <LanguageProvider initialLocale={locale}>
+      <div className="entry-shell">
+        <NavRail />
+        <div className="entry-main">
+          <Routes>
+            <Route
+              path="/"
+              element={
+                <HomePage
+                  selectedAgentName={agents.find((a) => a.id === selectedAgent)?.name ?? null}
+                  messages={chat.messages}
+                  isRunning={chat.isRunning}
+                  onSend={chat.send}
+                  onCancel={chat.cancel}
+                  onNewChat={handleNewChat}
+                  onSubmitToolResult={chat.submitToolResult}
+                />
+              }
+            />
+            <Route path="/knowledge" element={<KnowledgeBasePage agentId={selectedAgent} />} />
+            <Route path="/runtimes" element={<RuntimePage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+          </Routes>
+        </div>
+        <UpdateNotification />
       </div>
-      <UpdateNotification />
-    </div>
+    </LanguageProvider>
   );
 }
