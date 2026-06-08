@@ -9,6 +9,7 @@ import { api } from '../api/client';
 import type { ThemeConfig } from '../components/kb/MdStylePanel';
 import { defaultThemeConfig } from '../components/kb/MdStylePanel';
 import { copyHtml } from '@molio/doocs-md/shared/utils/clipboard';
+import { vaultStore, useActiveVaultId } from '../stores/vaultStore';
 
 export type KbTab = 'preview'; // Simplified - only preview tab now
 
@@ -67,7 +68,8 @@ interface UseKnowledgeReturn {
 
 export function useKnowledge(): UseKnowledgeReturn {
   const [vaults, setVaults] = useState<Vault[]>([]);
-  const [activeVaultId, setActiveVaultId] = useState<string | null>(null);
+  // Read active vault ID from the shared store so App.tsx stays in sync.
+  const activeVaultId = useActiveVaultId();
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<FileContent | null>(null);
@@ -100,9 +102,7 @@ export function useKnowledge(): UseKnowledgeReturn {
         const list = await api.listVaults();
         if (cancelled) return;
         setVaults(list);
-        if (list.length > 0 && !activeVaultId && list[0]) {
-          setActiveVaultId(list[0].id);
-        }
+        vaultStore.setVaults(list); // shared store handles auto-selection
       } catch {
         // No vaults yet — fine
       }
@@ -209,14 +209,18 @@ export function useKnowledge(): UseKnowledgeReturn {
   const activeVault = vaults.find((v) => v.id === activeVaultId) ?? null;
 
   const selectVault = useCallback((id: string) => {
-    setActiveVaultId(id);
+    vaultStore.setActiveVaultId(id);
     setShowVaultSwitcher(false);
   }, []);
 
   const createVault = useCallback(async (name: string, path: string, description?: string) => {
     const vault = await api.createVault({ name, path, description });
-    setVaults((prev) => [vault, ...prev]);
-    setActiveVaultId(vault.id);
+    setVaults((prev) => {
+      const next = [vault, ...prev];
+      vaultStore.setVaults(next);
+      return next;
+    });
+    vaultStore.setActiveVaultId(vault.id);
     setShowAddVault(false);
   }, []);
 
@@ -224,15 +228,23 @@ export function useKnowledge(): UseKnowledgeReturn {
     // Derive a name from the last path segment
     const name = path.split(/[\/]/).pop() || '未命名仓库';
     const vault = await api.createVault({ name, path, description: `从本地文件夹打开: ${path}` });
-    setVaults((prev) => [vault, ...prev]);
-    setActiveVaultId(vault.id);
+    setVaults((prev) => {
+      const next = [vault, ...prev];
+      vaultStore.setVaults(next);
+      return next;
+    });
+    vaultStore.setActiveVaultId(vault.id);
   }, []);
 
   const deleteVault = useCallback(async (id: string) => {
     await api.deleteVault(id);
-    setVaults((prev) => prev.filter((v) => v.id !== id));
+    setVaults((prev) => {
+      const next = prev.filter((v) => v.id !== id);
+      vaultStore.setVaults(next);
+      return next;
+    });
     if (activeVaultId === id) {
-      setActiveVaultId(null);
+      vaultStore.setActiveVaultId(null);
       setTree([]);
       setSelectedFile(null);
       setFileContent(null);
