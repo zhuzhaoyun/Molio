@@ -19,7 +19,7 @@ const en: Record<string, string> = {
   'composer.hint': 'Shift+Enter for new line',
 
   // ── AssistantMessage ──
-  'assistant.label': 'Assistant',
+  'assistant.label': 'Molio',
 
   // ── ThinkingBlock ──
   'thinking.title': 'Thinking',
