@@ -23,7 +23,7 @@ Electron 桌面应用壳，包裹 `@molio/web` 构建产物，内嵌 `@molio/dae
 
 ### 为什么使用 ELECTRON_RUN_AS_NODE？
 
-Electron 33 内置 Node.js 20.18.0。通过设置 `ELECTRON_RUN_AS_NODE=1` 环境变量，可以让 Electron 的二进制文件作为标准 Node.js 进程运行 daemon，无需用户单独安装 Node.js。
+Electron 40 内置 Node.js 24.11.1。通过设置 `ELECTRON_RUN_AS_NODE=1` 环境变量，可以让 Electron 的二进制文件作为标准 Node.js 进程运行 daemon，无需用户单独安装 Node.js。
 
 `better-sqlite3` 等原生模块在构建时通过 `prebuild-install --runtime electron` 下载 Electron 预编译二进制文件，确保在 Electron 的 Node.js 运行时中正确加载。
 

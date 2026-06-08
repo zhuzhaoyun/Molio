@@ -1,6 +1,9 @@
 import { NavLink } from 'react-router-dom';
+import { useI18n } from '../i18n';
 
 export function NavRail() {
+  const { t } = useI18n();
+
   return (
     <nav className="entry-nav-rail">
       <div className="entry-nav-rail__group">
@@ -11,7 +14,7 @@ export function NavRail() {
           className={({ isActive }) =>
             `entry-nav-rail__btn ${isActive ? 'is-active' : ''}`
           }
-          data-tooltip="Home"
+          data-tooltip={t('nav.home')}
         >
           <svg
             viewBox="0 0 24 24"
@@ -32,7 +35,7 @@ export function NavRail() {
           className={({ isActive }) =>
             `entry-nav-rail__btn ${isActive ? 'is-active' : ''}`
           }
-          data-tooltip="Knowledge Base"
+          data-tooltip={t('nav.knowledge')}
         >
           <svg
             viewBox="0 0 24 24"
@@ -55,7 +58,7 @@ export function NavRail() {
           className={({ isActive }) =>
             `entry-nav-rail__btn ${isActive ? 'is-active' : ''}`
           }
-          data-tooltip="Runtimes"
+          data-tooltip={t('nav.runtimes')}
         >
           <svg
             viewBox="0 0 24 24"
@@ -78,7 +81,7 @@ export function NavRail() {
           className={({ isActive }) =>
             `entry-nav-rail__btn ${isActive ? 'is-active' : ''}`
           }
-          data-tooltip="Settings"
+          data-tooltip={t('nav.settings')}
         >
           <svg
             viewBox="0 0 24 24"

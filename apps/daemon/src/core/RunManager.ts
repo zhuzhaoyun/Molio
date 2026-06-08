@@ -408,6 +408,13 @@ export class RunManager {
   private maybeCloseStdin(run: RunState): void {
     if (run.pendingHostAnswers.size > 0) return;
     if (run.lastStopReason === 'tool_use') return;
+
+    // Multi-turn agents (e.g. Claude Code with stream-json stdin) keep stdin
+    // open between turns so follow-up messages can be sent to the same process.
+    // Only close stdin on cancelRun() or when the child process exits.
+    const def = getAgentDef(run.agentId);
+    if (def?.multiTurn) return;
+
     if (run.child?.stdin?.writable && run.stdinOpen) {
       try { run.child.stdin.end(); } catch { /* ignore */ }
       run.stdinOpen = false;

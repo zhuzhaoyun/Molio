@@ -135,7 +135,13 @@ ipcMain.on('app:get-info', (event) => {
 process.on('uncaughtException', (err) => {
   log('error', 'main', `uncaughtException: ${err?.message ?? err}`);
   if (err?.stack) log('error', 'main', err.stack);
-  // Do NOT exit — keep the updater running
+  // Keep the updater running so we can push fixes, but if the error is
+  // unrecoverable (e.g. ENOMEM), exit gracefully after a short delay
+  // rather than leaving the app in a corrupted state.
+  if (err?.code === 'ENOMEM' || err?.code === 'ERR_IPC_CHANNEL_CLOSED') {
+    log('error', 'main', 'fatal error — scheduling exit in 5s');
+    setTimeout(() => app.quit(), 5000);
+  }
 });
 
 process.on('unhandledRejection', (reason) => {
