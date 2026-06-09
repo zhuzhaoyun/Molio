@@ -148,7 +148,9 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
         label: '复制路径',
         icon: '📋',
         onClick: () => {
-          navigator.clipboard.writeText(node.path);
+          // 复制绝对路径
+          const absolutePath = vault ? `${vault.path.replace(/[\\/]+$/, '')}/${node.path}` : node.path;
+          navigator.clipboard.writeText(absolutePath);
         },
       },
     ];
