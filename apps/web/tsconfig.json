@@ -9,6 +9,7 @@
     "declaration": false,
     "sourceMap": false,
     "skipLibCheck": true,
+    "noUncheckedIndexedAccess": false,
     "paths": {
       "@molio/doocs-md/*": ["./vendor/doocs-md/*"]
     },

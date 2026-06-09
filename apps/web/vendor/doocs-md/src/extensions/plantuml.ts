@@ -1,4 +1,3 @@
-// @ts-nocheck — vendored from doocs/md, not authored for noUncheckedIndexedAccess
 import type { MarkedExtension, Tokens } from 'marked'
 import { deflateSync } from 'fflate'
 import { simpleHash } from '../utils/basicHelpers'

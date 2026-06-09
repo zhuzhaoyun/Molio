@@ -1,4 +1,3 @@
-// @ts-nocheck — vendored from doocs/md, not authored for noUncheckedIndexedAccess
 /**
  * CSS 作用域包装器
  * 给 CSS 选择器添加作用域前缀，限制样式只在预览区域生效

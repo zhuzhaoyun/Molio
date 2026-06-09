@@ -1,4 +1,3 @@
-// @ts-nocheck — vendored from doocs/md, not authored for noUncheckedIndexedAccess
 /**
  * CSS 运行时处理工具（浏览器原生实现）
  * 不依赖 PostCSS，直接在浏览器中解析 CSS 自定义属性（var()）

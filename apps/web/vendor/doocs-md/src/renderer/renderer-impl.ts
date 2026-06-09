@@ -1,4 +1,3 @@
-// @ts-nocheck — vendored from doocs/md, not authored for noUncheckedIndexedAccess
 import type { IOpts, RendererAPI } from '../../shared/types/index'
 import type { ReadTimeResults } from '../../shared/utils/readingTime'
 import type { RendererObject, Tokens } from 'marked'

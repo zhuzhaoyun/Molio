@@ -1,4 +1,3 @@
-// @ts-nocheck — vendored from doocs/md, not authored for noUncheckedIndexedAccess
 import type { ComponentRegistry, CustomComponentDef } from '../../shared/types/index'
 import type { MarkedExtension } from 'marked'
 import { escapeHtml, unescapeHtml } from '../utils/basicHelpers'

@@ -1,4 +1,3 @@
-// @ts-nocheck — vendored from doocs/md, not authored for noUncheckedIndexedAccess
 export interface ReadingTimeOptions {
   wordBound?: (char: string) => boolean
   wordsPerMinute?: number

@@ -1,4 +1,3 @@
-// @ts-nocheck — vendored from doocs/md, not authored for noUncheckedIndexedAccess
 import type { MarkedExtension, Tokens } from 'marked'
 /**
  * A marked extension to support footnotes syntax.
