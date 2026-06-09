@@ -7,9 +7,13 @@ on:
         description: 'Branch to test (defaults to current branch)'
         required: false
         default: ''
+  pull_request:
+    branches: [main]
+    types: [labeled]
 
 jobs:
   e2e:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'run-e2e')
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
