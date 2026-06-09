@@ -241,3 +241,23 @@ ipcMain.handle('show-directory-picker', async () => {
 ipcMain.handle('open-path', async (_, filePath) => {
   return shell.openPath(filePath);
 });
+
+// 在系统资源管理器中显示文件/文件夹
+ipcMain.handle('show-item-in-folder', async (_, filePath) => {
+  return shell.showItemInFolder(filePath);
+});
+
+// 重命名本地文件
+ipcMain.handle('rename-file', async (_, oldPath, newPath) => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  if (!fs.existsSync(oldPath)) {
+    throw new Error('Source file not found');
+  }
+  if (fs.existsSync(newPath)) {
+    throw new Error('Target already exists');
+  }
+  fs.mkdirSync(path.dirname(newPath), { recursive: true });
+  fs.renameSync(oldPath, newPath);
+  return newPath;
+});
