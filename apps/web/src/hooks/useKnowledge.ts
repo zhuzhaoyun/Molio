@@ -11,8 +11,6 @@ import { defaultThemeConfig } from '../components/kb/MdStylePanel';
 import { copyHtml } from '@molio/doocs-md/shared/utils/clipboard';
 import { vaultStore, useActiveVaultId } from '../stores/vaultStore';
 
-export type KbTab = 'preview'; // Simplified - only preview tab now
-
 interface UseKnowledgeReturn {
   // Data
   vaults: Vault[];
@@ -21,7 +19,6 @@ interface UseKnowledgeReturn {
   selectedFile: string | null;
   fileContent: FileContent | null;
   history: KbHistoryEntry[];
-  activeTab: KbTab;
 
   // UI state
   panelWidth: number;
@@ -50,7 +47,6 @@ interface UseKnowledgeReturn {
   selectFile: (path: string) => void;
   refreshTree: () => void;
   checkWikiStatus: () => void;
-  setActiveTab: (tab: KbTab) => void;
   setPanelWidth: (w: number) => void;
   setSearchQuery: (q: string) => void;
   setShowVaultSwitcher: (show: boolean) => void;
@@ -74,7 +70,6 @@ export function useKnowledge(): UseKnowledgeReturn {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<FileContent | null>(null);
   const [history, setHistory] = useState<KbHistoryEntry[]>([]);
-  const [activeTab, setActiveTab] = useState<KbTab>('preview');
   const [panelWidth, setPanelWidth] = useState(260);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
@@ -110,9 +105,15 @@ export function useKnowledge(): UseKnowledgeReturn {
     return () => { cancelled = true; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Track previous vault ID to distinguish mount vs vault switch
+  const prevVaultIdRef = useRef<string | null>(null);
+
   // Load tree when vault changes
   useEffect(() => {
     if (!activeVaultId) return;
+    const isVaultSwitch = prevVaultIdRef.current !== null && prevVaultIdRef.current !== activeVaultId;
+    prevVaultIdRef.current = activeVaultId;
+
     let cancelled = false;
     (async () => {
       try {
@@ -120,8 +121,12 @@ export function useKnowledge(): UseKnowledgeReturn {
         const t = await api.getFileTree(activeVaultId);
         if (!cancelled) {
           setTree(t);
-          setSelectedFile(null);
-          setFileContent(null);
+          // Only clear selection on explicit vault switch, not on mount/remount
+          // (tab restore sets selectedFile via KnowledgeBasePage useEffect)
+          if (isVaultSwitch) {
+            setSelectedFile(null);
+            setFileContent(null);
+          }
         }
       } catch {
         if (!cancelled) setTree([]);
@@ -177,6 +182,8 @@ export function useKnowledge(): UseKnowledgeReturn {
   // Load file content when file selected
   useEffect(() => {
     if (!activeVaultId || !selectedFile) return;
+    // Reset edited content when switching files
+    setEditedContent(null);
     let cancelled = false;
     (async () => {
       try {
@@ -191,7 +198,7 @@ export function useKnowledge(): UseKnowledgeReturn {
     return () => { cancelled = true; };
   }, [activeVaultId, selectedFile]);
 
-  // Load history when file or vault changes
+  // Load history when vault changes
   useEffect(() => {
     if (!activeVaultId) return;
     let cancelled = false;
@@ -204,7 +211,7 @@ export function useKnowledge(): UseKnowledgeReturn {
       }
     })();
     return () => { cancelled = true; };
-  }, [activeVaultId, selectedFile]);
+  }, [activeVaultId]);
 
   const activeVault = vaults.find((v) => v.id === activeVaultId) ?? null;
 
@@ -273,10 +280,7 @@ export function useKnowledge(): UseKnowledgeReturn {
 
   // Typeset mode actions
   const toggleTypesetMode = useCallback(() => {
-    setIsTypesetMode((prev) => {
-      // When exiting typeset mode, also close style panel
-      return !prev;
-    });
+    setIsTypesetMode((prev) => !prev);
   }, []);
 
   const handleEditedContentChange = useCallback((content: string) => {
@@ -335,7 +339,6 @@ export function useKnowledge(): UseKnowledgeReturn {
     selectedFile,
     fileContent,
     history,
-    activeTab,
     panelWidth,
     searchQuery,
     loading,
@@ -353,7 +356,6 @@ export function useKnowledge(): UseKnowledgeReturn {
     selectFile,
     refreshTree,
     checkWikiStatus,
-    setActiveTab,
     setPanelWidth,
     setSearchQuery,
     setShowVaultSwitcher,

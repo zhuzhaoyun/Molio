@@ -9,6 +9,7 @@ import type { FileContent } from '@molio/contracts';
 import type { ThemeConfig } from './MdStylePanel';
 import { MdRenderer } from './MdRenderer';
 import { MdTypesetEditor } from './MdTypesetEditor';
+import { MdEditor } from './MdEditor';
 import { api } from '../../api/client';
 
 /** File categories for rendering strategy */
@@ -44,6 +45,13 @@ interface KbMainContentProps {
   onCopy: () => void;
   onPublish: () => void;
   onBuildWiki: () => void;
+  /** 当 tab bar 存在时，可选择隐藏 header 中的文件名 */
+  showFileName?: boolean;
+  /** 是否为编辑模式（仅文本文件） */
+  isEditMode?: boolean;
+  onToggleEdit?: () => void;
+  /** 编辑后的内容（用于阅读模式显示未保存的更改） */
+  editedContent?: string | null;
 }
 
 export function KbMainContent({
@@ -59,6 +67,10 @@ export function KbMainContent({
   onCopy,
   onPublish,
   onBuildWiki,
+  showFileName = true,
+  isEditMode = false,
+  onToggleEdit,
+  editedContent,
 }: KbMainContentProps) {
   // No file selected — show empty state or wiki CTA
   if (!selectedFile) {
@@ -109,25 +121,41 @@ export function KbMainContent({
       {/* Header with filename and action buttons */}
       <div className="kb-main-header">
         <div className="kb-header-left">
-          <span className="kb-header-filename">{fileName}</span>
+          {showFileName && (
+            <span className="kb-header-filename">{fileName}</span>
+          )}
         </div>
         <div className="kb-header-actions">
-          {/* Text file actions: typeset, copy, publish */}
+          {/* Text file actions: edit, copy, publish (typeset mode only), typeset */}
           {category === 'text' && (
             <>
-              <button
-                type="button"
-                className={`kb-btn ${isTypesetMode ? 'is-active' : ''}`}
-                onClick={onToggleTypeset}
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
-                  <path d="M4 7V4h16v3" />
-                  <path d="M9 20h6" />
-                  <path d="M12 4v16" />
-                </svg>
-                <span>{isTypesetMode ? '退出排版' : '排版'}</span>
-              </button>
+              {/* Edit/Read toggle button */}
+              {onToggleEdit && (
+                <button
+                  type="button"
+                  className={`kb-btn ${isEditMode ? 'is-active' : ''}`}
+                  onClick={onToggleEdit}
+                  title={isEditMode ? '阅读模式' : '编辑模式'}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                    {isEditMode ? (
+                      // Eye icon for read mode
+                      <>
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                        <circle cx="12" cy="12" r="3" />
+                      </>
+                    ) : (
+                      // Pencil icon for edit mode
+                      <>
+                        <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+                      </>
+                    )}
+                  </svg>
+                  <span>{isEditMode ? '阅读' : '编辑'}</span>
+                </button>
+              )}
 
+              {/* Copy and Publish buttons (only in typeset mode) */}
               {isTypesetMode && (
                 <>
                   <button type="button" className="kb-btn" onClick={onCopy}>
@@ -145,6 +173,20 @@ export function KbMainContent({
                   </button>
                 </>
               )}
+
+              {/* Typeset button - always at the rightmost position */}
+              <button
+                type="button"
+                className={`kb-btn ${isTypesetMode ? 'is-active' : ''}`}
+                onClick={onToggleTypeset}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                  <path d="M4 7V4h16v3" />
+                  <path d="M9 20h6" />
+                  <path d="M12 4v16" />
+                </svg>
+                <span>{isTypesetMode ? '退出排版' : '排版'}</span>
+              </button>
             </>
           )}
 
@@ -168,10 +210,17 @@ export function KbMainContent({
           initialContent={fileContent?.content ?? ''}
           onContentChange={onContentChange}
         />
+      ) : category === 'text' && isEditMode ? (
+        // Edit mode: CodeMirror Markdown editor
+        <MdEditor
+          initialContent={fileContent?.content ?? ''}
+          onContentChange={onContentChange}
+        />
       ) : category === 'text' ? (
         <div className="kb-content-area">
           {fileContent ? (
-            <MdRenderer content={fileContent.content} themeConfig={themeConfig} />
+            // 优先使用编辑后的内容（未保存的更改），否则使用原始文件内容
+            <MdRenderer content={editedContent ?? fileContent.content} themeConfig={themeConfig} />
           ) : (
             <div className="kb-empty-state"><p>Loading...</p></div>
           )}

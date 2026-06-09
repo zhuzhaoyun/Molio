@@ -271,40 +271,6 @@
   font-weight: 600;
 }
 
-/* Content tabs */
-.kb-content-tabs {
-  display: flex;
-  gap: 0;
-  padding: 0 24px;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-
-.kb-content-tabs .kb-tab {
-  padding: 8px 12px;
-  font-size: 12.5px;
-  color: var(--text-muted);
-  cursor: pointer;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-  transition: all 120ms ease;
-  user-select: none;
-  background: transparent;
-  border-top: none;
-  border-left: none;
-  border-right: none;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-}
-
-.kb-content-tabs .kb-tab:hover { color: var(--text); }
-.kb-content-tabs .kb-tab.is-active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
-
-/* Tab panels */
-.kb-tab-content { flex: 1; overflow-y: auto; }
-
-.kb-tab-panel { display: none; padding: 0; }
-.kb-tab-panel.is-active { display: block; }
 
 /* Markdown preview */
 .kb-md-preview {
@@ -720,19 +686,6 @@
 }
 
 /* ══════════ Typeset Editor Styles ══════════ */
-
-/* Header with filename and actions */
-.kb-main-header {
-  padding: 10px 20px;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-shrink: 0;
-  min-height: 48px;
-  gap: 12px;
-  background: var(--bg-panel);
-}
 
 .kb-header-left {
   display: flex;
@@ -1819,4 +1772,155 @@
 
 .kb-file-card-open:hover {
   background: var(--accent-hover);
+}
+
+/* ── Workspace Tab Bar ── */
+.kb-workspace-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 4px 4px 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  flex-shrink: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.kb-workspace-tabs::-webkit-scrollbar { display: none; }
+
+.kb-wtab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 6px 6px 0 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  transition: all 120ms ease;
+  user-select: none;
+  white-space: nowrap;
+  max-width: 200px;
+}
+
+.kb-wtab:hover { background: var(--bg-subtle); color: var(--text); }
+.kb-wtab.is-active { color: var(--accent); border-bottom-color: var(--accent); background: var(--bg-subtle); }
+
+.kb-wtab-icon { font-size: 12px; opacity: 0.7; flex-shrink: 0; }
+.kb-wtab-title { overflow: hidden; text-overflow: ellipsis; }
+
+.kb-wtab-close {
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: 3px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-left: 4px;
+}
+
+.kb-wtab-close:hover { background: var(--bg-muted); color: var(--text); }
+
+/* ── Content wrapper for tab bar ── */
+.kb-content-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Context Menu ── */
+.ctx-menu-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
+  background: transparent;
+}
+
+.ctx-menu {
+  position: fixed;
+  z-index: 10000;
+  min-width: 180px;
+  padding: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.ctx-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 80ms ease;
+  white-space: nowrap;
+}
+
+.ctx-menu-item:hover { background: var(--bg-subtle); }
+.ctx-menu-item.is-danger { color: #dc2626; }
+.ctx-menu-item.is-danger:hover { background: rgba(220, 38, 38, 0.08); }
+.ctx-menu-item.is-disabled { opacity: 0.4; pointer-events: none; }
+
+.ctx-menu-icon { font-size: 13px; width: 18px; text-align: center; flex-shrink: 0; }
+.ctx-menu-label { flex: 1; }
+
+/* ── Inline rename input ── */
+.kb-tree-rename-input {
+  flex: 1;
+  min-width: 0;
+  padding: 1px 4px;
+  font-size: 12.5px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  outline: none;
+}
+
+.kb-tree-item.is-renaming {
+  background: var(--bg-subtle);
+}
+
+.kb-tree-item.is-renaming .kb-tree-name { display: none; }
+
+/* ── Edit Mode Styles (CodeMirror) ── */
+.kb-edit-mode {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.kb-edit-cm {
+  flex: 1;
+  overflow: hidden;
+}
+
+.kb-edit-cm .cm-editor {
+  height: 100%;
 }

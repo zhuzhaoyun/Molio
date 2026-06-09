@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { useAgents } from './hooks/useAgents';
 import { useChat } from './hooks/useChat';
 import { HomePage } from './components/HomePage';
@@ -19,14 +19,37 @@ import './styles/runtimes.css';
 import './styles/settings.css';
 import './App.css';
 
+const STORAGE_KEY_LAST_ROUTE = 'molio.lastRoute';
+
 export default function App() {
   const { agents } = useAgents();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [defaultAgentId, setDefaultAgentId] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const activeVault = useActiveVault();
   const [locale, setLocale] = useState<Locale>('zh');
   const [configLoaded, setConfigLoaded] = useState(false);
   const chat = useChat({ agentId: selectedAgent, cwd: activeVault?.path });
+
+  // Persist current route on change
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_LAST_ROUTE, location.pathname);
+    } catch { /* ignore */ }
+  }, [location.pathname]);
+
+  // Restore last route on mount (only if at root "/")
+  useEffect(() => {
+    if (location.pathname === '/') {
+      try {
+        const lastRoute = localStorage.getItem(STORAGE_KEY_LAST_ROUTE);
+        if (lastRoute && lastRoute !== '/') {
+          navigate(lastRoute, { replace: true });
+        }
+      } catch { /* ignore */ }
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load config to get defaultAgentId and locale
   useEffect(() => {
