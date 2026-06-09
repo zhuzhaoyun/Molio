@@ -1,9 +1,11 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
-import { spawn } from 'node:child_process';
+import { spawn, execSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setupAutoUpdater } from './updater.js';
 import { log } from './logger.js';
+
+const errMsg = (err) => (err instanceof Error ? err.message : String(err));
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -39,11 +41,15 @@ function startDaemonProduction() {
 
     // Collect stderr for diagnostics if daemon fails to start
     const stderrChunks = [];
+    let started = false;
 
     daemonProcess.stdout?.on('data', (data) => {
       const msg = data.toString().trim();
       log('info', 'daemon', msg);
-      if (msg.includes('listening on')) resolve();
+      if (msg.includes('listening on')) {
+        started = true;
+        resolve();
+      }
     });
 
     daemonProcess.stderr?.on('data', (data) => {
@@ -65,10 +71,12 @@ function startDaemonProduction() {
       reject(err);
     });
 
-    // Timeout fallback — resolve even if daemon never reports ready
+    // Timeout fallback — reject so caller can skip loadApp()
     setTimeout(() => {
-      log('warn', 'main', 'daemon startup timeout (10s) — resolving anyway');
-      resolve();
+      if (!started) {
+        log('warn', 'main', 'daemon startup timeout (10s) — rejecting');
+        reject(new Error('Daemon startup timeout'));
+      }
     }, 10000);
   });
 }
@@ -197,13 +205,20 @@ app.on('window-all-closed', () => {
   }
 });
 
+/** Delay after daemon exit for Windows to release file handles (ms). */
+const DAEMON_KILL_SETTLE_MS = 2000;
+
 /**
- * Force-kill the daemon child process and wait for it to exit.
+ * Force-kill the daemon child process and wait for it to fully exit.
  *
- * Used before update install to release file locks in the installation
- * directory. Without this, the NSIS installer fails with
+ * Used before update install and on normal app quit to release file locks
+ * in the installation directory. Without this, the NSIS installer fails with
  * "Failed to uninstall old application files" because the daemon holds
  * locks on files it needs to replace.
+ *
+ * On Windows, uses `taskkill /F /T` to reliably kill the entire process tree.
+ * Node's proc.kill('SIGKILL') is unreliable on Windows — it may not kill
+ * grandchild processes or release all handles promptly.
  *
  * @returns {Promise<void>}
  */
@@ -211,17 +226,47 @@ function killDaemon() {
   return new Promise((resolve) => {
     if (!daemonProcess) { resolve(); return; }
     const proc = daemonProcess;
-    proc.once('exit', () => {
-      // Brief delay for the OS to release file handles
-      setTimeout(resolve, 500);
-    });
-    try { proc.kill('SIGKILL'); } catch { /* already dead */ }
+    const pid = proc.pid;
+
+    // Prevent double-resolve: exit event may fire after taskkill succeeds,
+    // and the catch block may also fire if process is already dead.
+    let resolved = false;
+    const done = () => {
+      if (!resolved) {
+        resolved = true;
+        log('info', 'main', `daemon exited, waiting ${DAEMON_KILL_SETTLE_MS}ms for OS to release file handles`);
+        setTimeout(resolve, DAEMON_KILL_SETTLE_MS);
+      }
+    };
+
+    proc.once('exit', done);
+
+    try {
+      if (process.platform === 'win32' && pid) {
+        // taskkill /F = force, /T = kill child processes too
+        execSync(`taskkill /F /T /PID ${pid}`, { timeout: 5000 });
+        log('info', 'main', `taskkill sent for daemon pid=${pid}`);
+      } else {
+        proc.kill('SIGKILL');
+      }
+    } catch (err) {
+      // Process may already be dead — that's fine
+      log('warn', 'main', `killDaemon: ${err instanceof Error ? err.message : String(err)}`);
+      done();
+    }
   });
 }
 
-app.on('before-quit', () => {
+app.on('before-quit', (event) => {
   if (daemonProcess) {
-    daemonProcess.kill('SIGKILL');
+    // Prevent the default quit until daemon is fully terminated.
+    // Without this, Electron may exit before the daemon releases its
+    // file handles, leaving locks in the installation directory that
+    // cause the NSIS installer to fail on the next update.
+    event.preventDefault();
+    killDaemon().then(() => {
+      app.quit();
+    });
   }
 });
 
