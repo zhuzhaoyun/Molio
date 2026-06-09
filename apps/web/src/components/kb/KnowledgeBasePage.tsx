@@ -348,6 +348,7 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
           showFileName={tabs.tabs.length === 0}
           isEditMode={isEditMode}
           onToggleEdit={() => setIsEditMode((prev) => !prev)}
+          editedContent={kb.editedContent}
         />
       </div>
 

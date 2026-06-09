@@ -50,6 +50,8 @@ interface KbMainContentProps {
   /** 是否为编辑模式（仅文本文件） */
   isEditMode?: boolean;
   onToggleEdit?: () => void;
+  /** 编辑后的内容（用于阅读模式显示未保存的更改） */
+  editedContent?: string | null;
 }
 
 export function KbMainContent({
@@ -68,6 +70,7 @@ export function KbMainContent({
   showFileName = true,
   isEditMode = false,
   onToggleEdit,
+  editedContent,
 }: KbMainContentProps) {
   // No file selected — show empty state or wiki CTA
   if (!selectedFile) {
@@ -216,7 +219,8 @@ export function KbMainContent({
       ) : category === 'text' ? (
         <div className="kb-content-area">
           {fileContent ? (
-            <MdRenderer content={fileContent.content} themeConfig={themeConfig} />
+            // 优先使用编辑后的内容（未保存的更改），否则使用原始文件内容
+            <MdRenderer content={editedContent ?? fileContent.content} themeConfig={themeConfig} />
           ) : (
             <div className="kb-empty-state"><p>Loading...</p></div>
           )}

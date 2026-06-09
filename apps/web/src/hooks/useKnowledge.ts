@@ -172,6 +172,8 @@ export function useKnowledge(): UseKnowledgeReturn {
   // Load file content when file selected
   useEffect(() => {
     if (!activeVaultId || !selectedFile) return;
+    // Reset edited content when switching files
+    setEditedContent(null);
     let cancelled = false;
     (async () => {
       try {
