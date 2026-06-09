@@ -1,8 +1,10 @@
 import { NavLink } from 'react-router-dom';
 import { useI18n } from '../i18n';
+import { useStartTour } from './OnboardingTour';
 
 export function NavRail() {
   const { t } = useI18n();
+  const startTour = useStartTour();
 
   return (
     <nav className="entry-nav-rail">
@@ -74,8 +76,29 @@ export function NavRail() {
         </NavLink>
       </div>
 
-      {/* Bottom group: Settings */}
+      {/* Bottom group: Guide + Settings */}
       <div className="entry-nav-rail__group">
+        {/* Getting Started Guide */}
+        <button
+          type="button"
+          className="entry-nav-rail__btn"
+          data-tooltip={t('nav.guide')}
+          onClick={startTour}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <circle cx="12" cy="12" r="10" />
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+            <line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+        </button>
+
         <NavLink
           to="/settings"
           className={({ isActive }) =>

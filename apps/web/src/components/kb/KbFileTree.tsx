@@ -1,8 +1,9 @@
 /**
  * Recursive file tree component for the Knowledge Base.
+ * Supports: click-to-open, right-click context menu, inline rename.
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import type { TreeNode } from '@molio/contracts';
 
 interface KbFileTreeProps {
@@ -11,9 +12,32 @@ interface KbFileTreeProps {
   searchQuery: string;
   onSelectFile: (path: string) => void;
   onAddToWiki?: (path: string) => void;
+  /** 右键菜单回调 (node, event) */
+  onContextMenu?: (node: TreeNode, event: React.MouseEvent) => void;
+  /** 内联重命名相关 */
+  renamingPath: string | null;
+  renameValue: string;
+  onRenameChange: (value: string) => void;
+  onRenameSubmit: (oldPath: string, newName: string) => void;
+  onRenameCancel: () => void;
+  /** 当前 vault 的绝对路径（用于 IPC） */
+  vaultPath: string | null;
 }
 
-export function KbFileTree({ nodes, selectedFile, searchQuery, onSelectFile, onAddToWiki }: KbFileTreeProps) {
+export function KbFileTree({
+  nodes,
+  selectedFile,
+  searchQuery,
+  onSelectFile,
+  onAddToWiki,
+  onContextMenu,
+  renamingPath,
+  renameValue,
+  onRenameChange,
+  onRenameSubmit,
+  onRenameCancel,
+  vaultPath,
+}: KbFileTreeProps) {
   if (nodes.length === 0) {
     return (
       <div className="kb-empty-state" style={{ padding: '32px 16px' }}>
@@ -36,6 +60,13 @@ export function KbFileTree({ nodes, selectedFile, searchQuery, onSelectFile, onA
           searchQuery={searchQuery}
           onSelectFile={onSelectFile}
           onAddToWiki={onAddToWiki}
+          onContextMenu={onContextMenu}
+          renamingPath={renamingPath}
+          renameValue={renameValue}
+          onRenameChange={onRenameChange}
+          onRenameSubmit={onRenameSubmit}
+          onRenameCancel={onRenameCancel}
+          vaultPath={vaultPath}
         />
       ))}
     </div>
@@ -50,11 +81,31 @@ interface TreeNodeItemProps {
   searchQuery: string;
   onSelectFile: (path: string) => void;
   onAddToWiki?: (path: string) => void;
+  onContextMenu?: (node: TreeNode, event: React.MouseEvent) => void;
+  renamingPath: string | null;
+  renameValue: string;
+  onRenameChange: (value: string) => void;
+  onRenameSubmit: (oldPath: string, newName: string) => void;
+  onRenameCancel: () => void;
+  vaultPath: string | null;
 }
 
-function TreeNodeItem({ node, selectedFile, searchQuery, onSelectFile, onAddToWiki }: TreeNodeItemProps) {
-  // Default collapsed; auto-expand when searching so results are visible
+function TreeNodeItem({
+  node,
+  selectedFile,
+  searchQuery,
+  onSelectFile,
+  onAddToWiki,
+  onContextMenu,
+  renamingPath,
+  renameValue,
+  onRenameChange,
+  onRenameSubmit,
+  onRenameCancel,
+  vaultPath,
+}: TreeNodeItemProps) {
   const [expanded, setExpanded] = useState(!!searchQuery);
+  const renameInputRef = useRef<HTMLInputElement>(null);
 
   const toggle = useCallback(() => setExpanded((e) => !e), []);
 
@@ -66,6 +117,19 @@ function TreeNodeItem({ node, selectedFile, searchQuery, onSelectFile, onAddToWi
     e.stopPropagation();
     onAddToWiki?.(node.path);
   }, [onAddToWiki, node.path]);
+
+  // 内联重命名相关
+  const isRenaming = renamingPath === node.path && node.type === 'file';
+
+  useEffect(() => {
+    if (isRenaming && renameInputRef.current) {
+      renameInputRef.current.focus();
+      // 选中文本（不含扩展名）
+      const dot = node.name.lastIndexOf('.');
+      const end = dot > 0 ? dot : node.name.length;
+      renameInputRef.current.setSelectionRange(0, end);
+    }
+  }, [isRenaming, node.name]);
 
   if (node.type === 'directory') {
     return (
@@ -91,6 +155,13 @@ function TreeNodeItem({ node, selectedFile, searchQuery, onSelectFile, onAddToWi
               searchQuery={searchQuery}
               onSelectFile={onSelectFile}
               onAddToWiki={onAddToWiki}
+              onContextMenu={onContextMenu}
+              renamingPath={renamingPath}
+              renameValue={renameValue}
+              onRenameChange={onRenameChange}
+              onRenameSubmit={onRenameSubmit}
+              onRenameCancel={onRenameCancel}
+              vaultPath={vaultPath}
             />
           ))}
         </div>
@@ -101,13 +172,40 @@ function TreeNodeItem({ node, selectedFile, searchQuery, onSelectFile, onAddToWi
   // File node
   const isActive = selectedFile === node.path;
 
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onContextMenu?.(node, e);
+  };
+
+  const handleRenameKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      onRenameSubmit(node.path, renameValue);
+    } else if (e.key === 'Escape') {
+      onRenameCancel();
+    }
+  };
+
   return (
     <div
-      className={`kb-tree-item ${isActive ? 'is-active' : ''}`}
-      onClick={() => onSelectFile(node.path)}
+      className={`kb-tree-item ${isActive ? 'is-active' : ''} ${isRenaming ? 'is-renaming' : ''}`}
+      onClick={() => !isRenaming && onSelectFile(node.path)}
+      onContextMenu={handleContextMenu}
     >
       <span className="kb-tree-icon">📄</span>
-      <span className="kb-tree-name">{node.name}</span>
+      {isRenaming ? (
+        <input
+          ref={renameInputRef}
+          className="kb-tree-rename-input"
+          value={renameValue}
+          onChange={(e) => onRenameChange(e.target.value)}
+          onBlur={() => onRenameSubmit(node.path, renameValue)}
+          onKeyDown={handleRenameKeyDown}
+          onClick={(e) => e.stopPropagation()}
+        />
+      ) : (
+        <span className="kb-tree-name">{node.name}</span>
+      )}
       {showAddButton && (
         <button
           type="button"
@@ -122,13 +220,8 @@ function TreeNodeItem({ node, selectedFile, searchQuery, onSelectFile, onAddToWi
 
 // ─── Search filter ───
 
-/**
- * Filter tree nodes by query — keep nodes whose name matches
- * and their parent directories.
- */
 function filterTree(nodes: TreeNode[], query: string): TreeNode[] {
   const result: TreeNode[] = [];
-
   for (const node of nodes) {
     if (node.type === 'directory') {
       const filteredChildren = node.children ? filterTree(node.children, query) : [];
@@ -139,6 +232,5 @@ function filterTree(nodes: TreeNode[], query: string): TreeNode[] {
       result.push(node);
     }
   }
-
   return result;
 }

@@ -20,6 +20,13 @@ interface KbFilePanelProps {
   onAddToWiki?: (path: string) => void;
   onBuildWiki?: () => void;
   onLintWiki?: () => void;
+  onContextMenu?: (node: TreeNode, event: React.MouseEvent) => void;
+  renamingPath: string | null;
+  renameValue: string;
+  onRenameChange: (value: string) => void;
+  onRenameSubmit: (oldPath: string, newName: string) => void;
+  onRenameCancel: () => void;
+  vaultPath: string | null;
   children?: ReactNode;
 }
 
@@ -37,6 +44,13 @@ export function KbFilePanel({
   onAddToWiki,
   onBuildWiki,
   onLintWiki,
+  onContextMenu,
+  renamingPath,
+  renameValue,
+  onRenameChange,
+  onRenameSubmit,
+  onRenameCancel,
+  vaultPath,
   children,
 }: KbFilePanelProps) {
   return (
@@ -72,6 +86,13 @@ export function KbFilePanel({
           searchQuery={searchQuery}
           onSelectFile={onSelectFile}
           onAddToWiki={onAddToWiki}
+          onContextMenu={onContextMenu}
+          renamingPath={renamingPath}
+          renameValue={renameValue}
+          onRenameChange={onRenameChange}
+          onRenameSubmit={onRenameSubmit}
+          onRenameCancel={onRenameCancel}
+          vaultPath={vaultPath}
         />
       </div>
 

@@ -31,6 +31,8 @@ interface DesktopAPI {
   appInfo: { version: string; os: string };
   showDirectoryPicker: () => Promise<string | null>;
   openPath: (filePath: string) => Promise<string>;
+  showItemInFolder: (filePath: string) => Promise<void>;
+  renameFile: (oldPath: string, newPath: string) => Promise<string>;
 }
 
 declare global {
