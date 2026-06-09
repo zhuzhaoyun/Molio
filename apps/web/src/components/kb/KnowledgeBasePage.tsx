@@ -49,6 +49,14 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
   const activeFilePath = activeTab?.type === 'file' ? (activeTab.data?.path as string) : null;
   const selectedFile = activeFilePath ?? kb.selectedFile;
 
+  // Sync active tab path → kb.selectedFile so useKnowledge loads file content.
+  // This fires on openTab, activateTab, and tab close (when activeTabId changes).
+  useEffect(() => {
+    if (activeFilePath && activeFilePath !== kb.selectedFile) {
+      kb.selectFile(activeFilePath);
+    }
+  }, [activeFilePath]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Wiki chat hook — refreshes tree on build completion
   const wikiChat = useWikiChat({
     vaultId: kb.activeVault?.id ?? null,
@@ -287,12 +295,8 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
 
   const handleActivateTab = useCallback((tabId: string) => {
     tabs.activateTab(tabId);
-    // 同步更新 kb.selectedFile 以触发文件内容加载
-    const tab = tabs.tabs.find((t) => t.id === tabId);
-    if (tab?.type === 'file' && tab.data?.path) {
-      kb.selectFile(tab.data.path as string);
-    }
-  }, [tabs, kb.selectFile]);
+    // kb.selectFile sync is handled by the activeFilePath useEffect above
+  }, [tabs]);
 
   // ─── Left-click file handler ───
 
