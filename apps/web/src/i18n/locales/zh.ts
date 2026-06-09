@@ -19,7 +19,7 @@ const zh: Record<string, string> = {
   'composer.hint': 'Shift+Enter 换行',
 
   // ── AssistantMessage ──
-  'assistant.label': 'Assistant',
+  'assistant.label': 'Molio',
 
   // ── ThinkingBlock ──
   'thinking.title': '思考',

@@ -1680,91 +1680,19 @@
   font-size: 13px;
 }
 
-/* Input area */
+/* Input area — reuses shared ChatComposer */
 .wiki-chat-input {
-  padding: 10px 12px;
   border-top: 1px solid var(--border);
   flex-shrink: 0;
 }
 
-.wiki-chat-input-shell {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  background: var(--bg-subtle, #f5f5f4);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 6px 10px;
-  transition: border-color 120ms ease;
+.wiki-chat-input .composer {
+  border-top: none;
+  padding: 8px 12px;
 }
 
-.wiki-chat-input-shell:focus-within {
-  border-color: var(--accent);
-}
-
-.wiki-chat-input-shell textarea {
-  flex: 1;
-  border: none;
-  background: transparent;
-  font: inherit;
-  font-size: 13px;
-  color: var(--text);
-  resize: none;
-  outline: none;
-  line-height: 1.5;
-  max-height: 120px;
-}
-
-.wiki-chat-input-shell textarea::placeholder {
-  color: var(--text-faint);
-}
-
-.wiki-chat-input-actions {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-}
-
-.wiki-btn-send {
-  width: 28px;
-  height: 28px;
-  border: none;
-  background: var(--accent);
-  color: #fff;
-  border-radius: 6px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 120ms ease;
-}
-
-.wiki-btn-send:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.wiki-btn-send:not(:disabled):hover {
-  background: var(--accent-hover);
-}
-
-.wiki-btn-stop {
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--red, #dc2626);
-  background: transparent;
-  color: var(--red, #dc2626);
-  border-radius: 6px;
-  font-size: 12px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  transition: all 120ms ease;
-}
-
-.wiki-btn-stop:hover {
-  background: var(--red-bg, #fef2f2);
+.wiki-chat-input .composer-hint {
+  display: none;
 }
 
 /* ══════════ Wiki Tree "+" Button ══════════ */

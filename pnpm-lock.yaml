@@ -46,6 +46,15 @@ importers:
         specifier: ^6.8.3
         version: 6.8.3
     devDependencies:
+      '@molio/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@molio/daemon':
+        specifier: workspace:*
+        version: link:../daemon
+      '@molio/web':
+        specifier: workspace:*
+        version: link:../web
       electron:
         specifier: ^40.0.0
         version: 40.10.2
