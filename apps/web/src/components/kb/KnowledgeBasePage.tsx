@@ -46,6 +46,17 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
   const isEditMode = activeTab?.type === 'file' ? !!activeTab.data?.isEditMode : false;
   const selectedFile = activeFilePath ?? kb.selectedFile;
 
+  // Close all tabs when vault changes (tabs are vault-specific)
+  const prevVaultIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const currentVaultId = kb.activeVault?.id ?? null;
+    if (prevVaultIdRef.current !== null && prevVaultIdRef.current !== currentVaultId) {
+      // Vault switched — close all tabs
+      tabs.tabs.forEach((t) => tabs.closeTab(t.id));
+    }
+    prevVaultIdRef.current = currentVaultId;
+  }, [kb.activeVault?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Sync active tab path → kb.selectedFile so useKnowledge loads file content.
   // This fires on openTab, activateTab, and tab close (when activeTabId changes).
   useEffect(() => {

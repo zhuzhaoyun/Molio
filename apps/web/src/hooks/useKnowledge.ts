@@ -105,9 +105,15 @@ export function useKnowledge(): UseKnowledgeReturn {
     return () => { cancelled = true; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Track previous vault ID to distinguish mount vs vault switch
+  const prevVaultIdRef = useRef<string | null>(null);
+
   // Load tree when vault changes
   useEffect(() => {
     if (!activeVaultId) return;
+    const isVaultSwitch = prevVaultIdRef.current !== null && prevVaultIdRef.current !== activeVaultId;
+    prevVaultIdRef.current = activeVaultId;
+
     let cancelled = false;
     (async () => {
       try {
@@ -115,8 +121,12 @@ export function useKnowledge(): UseKnowledgeReturn {
         const t = await api.getFileTree(activeVaultId);
         if (!cancelled) {
           setTree(t);
-          setSelectedFile(null);
-          setFileContent(null);
+          // Only clear selection on explicit vault switch, not on mount/remount
+          // (tab restore sets selectedFile via KnowledgeBasePage useEffect)
+          if (isVaultSwitch) {
+            setSelectedFile(null);
+            setFileContent(null);
+          }
         }
       } catch {
         if (!cancelled) setTree([]);

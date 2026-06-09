@@ -155,7 +155,6 @@ function TreeNodeItem({
               onRenameChange={onRenameChange}
               onRenameSubmit={onRenameSubmit}
               onRenameCancel={onRenameCancel}
-              vaultPath={vaultPath}
             />
           ))}
         </div>
