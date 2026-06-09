@@ -9,6 +9,7 @@ import type { FileContent } from '@molio/contracts';
 import type { ThemeConfig } from './MdStylePanel';
 import { MdRenderer } from './MdRenderer';
 import { MdTypesetEditor } from './MdTypesetEditor';
+import { MdEditor } from './MdEditor';
 import { api } from '../../api/client';
 
 /** File categories for rendering strategy */
@@ -207,16 +208,11 @@ export function KbMainContent({
           onContentChange={onContentChange}
         />
       ) : category === 'text' && isEditMode ? (
-        // Edit mode: simple textarea editor
-        <div className="kb-content-area kb-edit-mode">
-          <textarea
-            className="kb-edit-textarea"
-            value={fileContent?.content ?? ''}
-            onChange={(e) => onContentChange(e.target.value)}
-            placeholder="编辑文件内容..."
-            spellCheck={false}
-          />
-        </div>
+        // Edit mode: CodeMirror Markdown editor
+        <MdEditor
+          initialContent={fileContent?.content ?? ''}
+          onContentChange={onContentChange}
+        />
       ) : category === 'text' ? (
         <div className="kb-content-area">
           {fileContent ? (

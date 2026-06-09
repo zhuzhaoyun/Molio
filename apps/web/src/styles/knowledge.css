@@ -1955,31 +1955,19 @@
 
 .kb-tree-item.is-renaming .kb-tree-name { display: none; }
 
-/* ── Edit Mode Styles ── */
+/* ── Edit Mode Styles (CodeMirror) ── */
 .kb-edit-mode {
-  padding: 16px 24px;
-  height: 100%;
+  flex: 1;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
 
-.kb-edit-textarea {
+.kb-edit-cm {
   flex: 1;
-  width: 100%;
-  padding: 12px 16px;
-  font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--text);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  resize: none;
-  outline: none;
-  tab-size: 2;
+  overflow: hidden;
 }
 
-.kb-edit-textarea:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-tint);
+.kb-edit-cm .cm-editor {
+  height: 100%;
 }
