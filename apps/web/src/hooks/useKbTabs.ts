@@ -1,9 +1,14 @@
 /**
  * 通用工作区标签页状态管理 hook
  * Obsidian-style tab system — 文件、Wiki、设置等都可作为 tab 打开
+ *
+ * 状态持久化到 localStorage，支持跨页面/重启恢复
  */
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
+
+const STORAGE_KEY_TABS = 'molio.kb.tabs';
+const STORAGE_KEY_ACTIVE_TAB = 'molio.kb.activeTabId';
 
 export type TabType = 'file' | string;
 
@@ -24,9 +29,43 @@ export interface UseKbTabsReturn {
   getActiveTab: () => WorkspaceTab | undefined;
 }
 
+/** 从 localStorage 读取持久化的标签状态 */
+function readPersistedTabs(): WorkspaceTab[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_TABS);
+    if (raw) return JSON.parse(raw);
+  } catch { /* ignore */ }
+  return [];
+}
+
+/** 从 localStorage 读取持久化的活跃标签 ID */
+function readPersistedActiveTabId(): string | null {
+  try {
+    return localStorage.getItem(STORAGE_KEY_ACTIVE_TAB);
+  } catch { /* ignore */ }
+  return null;
+}
+
+/** 持久化标签状态到 localStorage */
+function persistTabs(tabs: WorkspaceTab[], activeTabId: string | null) {
+  try {
+    localStorage.setItem(STORAGE_KEY_TABS, JSON.stringify(tabs));
+    if (activeTabId) {
+      localStorage.setItem(STORAGE_KEY_ACTIVE_TAB, activeTabId);
+    } else {
+      localStorage.removeItem(STORAGE_KEY_ACTIVE_TAB);
+    }
+  } catch { /* storage unavailable */ }
+}
+
 export function useKbTabs(): UseKbTabsReturn {
-  const [tabs, setTabs] = useState<WorkspaceTab[]>([]);
-  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [tabs, setTabs] = useState<WorkspaceTab[]>(readPersistedTabs);
+  const [activeTabId, setActiveTabId] = useState<string | null>(readPersistedActiveTabId);
+
+  // 每次状态变化时持久化
+  useEffect(() => {
+    persistTabs(tabs, activeTabId);
+  }, [tabs, activeTabId]);
 
   const openTab = useCallback((tabInput: Omit<WorkspaceTab, 'id'> & { id?: string }) => {
     const id = tabInput.id ?? `${tabInput.type}:${Math.random().toString(36).slice(2, 9)}`;
@@ -50,13 +89,16 @@ export function useKbTabs(): UseKbTabsReturn {
       if (idx === -1) return prev;
       const next = prev.filter((t) => t.id !== id);
       // 关闭活跃 tab 时，自动激活前一个
-      if (activeTabId === id) {
-        const newActive = next[idx - 1] ?? next[0] ?? null;
-        setActiveTabId(newActive?.id ?? null);
-      }
+      setActiveTabId((currentActive) => {
+        if (currentActive === id) {
+          const newActive = next[idx - 1] ?? next[0] ?? null;
+          return newActive?.id ?? null;
+        }
+        return currentActive;
+      });
       return next;
     });
-  }, [activeTabId]);
+  }, []);
 
   const activateTab = useCallback((id: string) => {
     setActiveTabId(id);
