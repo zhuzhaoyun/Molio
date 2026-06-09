@@ -3,7 +3,7 @@
  * Now with: workspace tab system + right-click context menu + inline rename.
  */
 
-import { useCallback, useRef, useState, useMemo } from 'react';
+import { useCallback, useRef, useState, useMemo, useEffect } from 'react';
 import { useKnowledge } from '../../hooks/useKnowledge';
 import { useWikiChat } from '../../hooks/useWikiChat';
 import { useKbTabs } from '../../hooks/useKbTabs';
@@ -37,6 +37,9 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
 
   // Edit mode state (for text files)
   const [isEditMode, setIsEditMode] = useState(false);
+
+  // Auto-save timer ref
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Is Electron?
   const isElectron = !!window.__electron__;
@@ -247,6 +250,39 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
     setRenamingPath(null);
   }, []);
 
+  // ─── Auto-save on content change ───
+
+  const handleContentChange = useCallback((content: string) => {
+    // Update edited content state immediately
+    kb.setEditedContent(content);
+
+    // Debounced auto-save to local file (500ms delay)
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+    }
+
+    saveTimerRef.current = setTimeout(async () => {
+      const vault = kb.activeVault;
+      const filePath = selectedFile;
+      if (vault && filePath) {
+        try {
+          await api.writeFile(vault.id, filePath, content);
+        } catch (err) {
+          console.error('Auto-save failed:', err);
+        }
+      }
+    }, 500);
+  }, [kb.setEditedContent, kb.activeVault, selectedFile]);
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+      }
+    };
+  }, []);
+
   // ─── Tab activation handler ───
 
   const handleActivateTab = useCallback((tabId: string) => {
@@ -341,7 +377,7 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
           wikiInitialized={kb.wikiInitialized}
           onToggleTypeset={kb.toggleTypesetMode}
           onThemeConfigChange={kb.setThemeConfig}
-          onContentChange={kb.setEditedContent}
+          onContentChange={handleContentChange}
           onCopy={kb.copyToClipboard}
           onPublish={kb.publishToChrome}
           onBuildWiki={handleBuildWiki}
