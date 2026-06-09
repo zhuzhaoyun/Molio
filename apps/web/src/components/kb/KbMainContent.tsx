@@ -116,11 +116,11 @@ export function KbMainContent({
     <main className="kb-main">
       {/* Header with filename and action buttons */}
       <div className="kb-main-header">
-        {showFileName && (
-          <div className="kb-header-left">
+        <div className="kb-header-left">
+          {showFileName && (
             <span className="kb-header-filename">{fileName}</span>
-          </div>
-        )}
+          )}
+        </div>
         <div className="kb-header-actions">
           {/* Text file actions: edit, copy, publish (typeset mode only), typeset */}
           {category === 'text' && (
