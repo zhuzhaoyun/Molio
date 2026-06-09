@@ -242,6 +242,17 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
     setRenamingPath(null);
   }, []);
 
+  // ─── Tab activation handler ───
+
+  const handleActivateTab = useCallback((tabId: string) => {
+    tabs.activateTab(tabId);
+    // 同步更新 kb.selectedFile 以触发文件内容加载
+    const tab = tabs.tabs.find((t) => t.id === tabId);
+    if (tab?.type === 'file' && tab.data?.path) {
+      kb.selectFile(tab.data.path as string);
+    }
+  }, [tabs, kb.selectFile]);
+
   // ─── Left-click file handler ───
 
   const handleSelectFile = useCallback((path: string) => {
@@ -311,7 +322,7 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
         <KbTabBar
           tabs={tabs.tabs}
           activeTabId={tabs.activeTabId}
-          onActivate={tabs.activateTab}
+          onActivate={handleActivateTab}
           onClose={tabs.closeTab}
         />
 
