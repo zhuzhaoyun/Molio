@@ -8,7 +8,6 @@ import { KnowledgeBasePage } from './components/kb/KnowledgeBasePage';
 import { RuntimePage } from './components/runtimes/RuntimePage';
 import { SettingsPage } from './components/settings/SettingsPage';
 import { UpdateNotification } from './components/UpdateNotification';
-import { OnboardingTourProvider } from './components/OnboardingTour';
 import { LanguageProvider } from './i18n/LanguageProvider';
 import type { Locale } from './i18n';
 import { api } from './api/client';
@@ -18,7 +17,6 @@ import './styles/home.css';
 import './styles/knowledge.css';
 import './styles/runtimes.css';
 import './styles/settings.css';
-import './styles/tour.css';
 import './App.css';
 
 export default function App() {
@@ -93,33 +91,31 @@ export default function App() {
 
   return (
     <LanguageProvider initialLocale={locale}>
-      <OnboardingTourProvider>
-        <div className="entry-shell">
-          <NavRail />
-          <div className="entry-main">
-            <Routes>
-              <Route
-                path="/"
-                element={
-                  <HomePage
-                    selectedAgentName={agents.find((a) => a.id === selectedAgent)?.name ?? null}
-                    messages={chat.messages}
-                    isRunning={chat.isRunning}
-                    onSend={chat.send}
-                    onCancel={chat.cancel}
-                    onNewChat={handleNewChat}
-                    onSubmitToolResult={chat.submitToolResult}
-                  />
-                }
-              />
-              <Route path="/knowledge" element={<KnowledgeBasePage agentId={selectedAgent} />} />
-              <Route path="/runtimes" element={<RuntimePage />} />
-              <Route path="/settings" element={<SettingsPage />} />
-            </Routes>
-          </div>
-          <UpdateNotification />
+      <div className="entry-shell">
+        <NavRail />
+        <div className="entry-main">
+          <Routes>
+            <Route
+              path="/"
+              element={
+                <HomePage
+                  selectedAgentName={agents.find((a) => a.id === selectedAgent)?.name ?? null}
+                  messages={chat.messages}
+                  isRunning={chat.isRunning}
+                  onSend={chat.send}
+                  onCancel={chat.cancel}
+                  onNewChat={handleNewChat}
+                  onSubmitToolResult={chat.submitToolResult}
+                />
+              }
+            />
+            <Route path="/knowledge" element={<KnowledgeBasePage agentId={selectedAgent} />} />
+            <Route path="/runtimes" element={<RuntimePage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+          </Routes>
         </div>
-      </OnboardingTourProvider>
+        <UpdateNotification />
+      </div>
     </LanguageProvider>
   );
 }

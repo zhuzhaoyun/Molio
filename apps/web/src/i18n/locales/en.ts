@@ -97,25 +97,6 @@ const en: Record<string, string> = {
   'settings.restartNow': 'Restart now',
   'settings.desktopOnly': 'Update is only available in the desktop client',
 
-  // ── Onboarding Tour ──
-  'nav.guide': 'Getting Started',
-  'tour.step1.title': 'Step 1: Configure Runtime',
-  'tour.step1.desc': 'First, install and select an AI agent (e.g. Claude Code) as your runtime — the core engine of Molio.',
-  'tour.step2.title': 'Step 2: Import Knowledge Base',
-  'tour.step2.desc': 'Go to the Knowledge Base page, create a Vault and import your documents as source material for AI creation.',
-  'tour.step3.title': 'Step 3: Build Knowledge Base',
-  'tour.step3.desc': 'Index and build a Wiki from your imported documents so AI can understand and retrieve your knowledge.',
-  'tour.step4.title': 'Step 4: Create via Chat',
-  'tour.step4.desc': 'Return to the home page and chat with AI to create articles, answer questions, or generate ideas based on your knowledge base.',
-  'tour.step5.title': 'Step 5: Typeset & Style',
-  'tour.step5.desc': 'Switch to typeset mode and use the doocs/md engine to adjust themes, fonts, and styles for a polished look.',
-  'tour.step6.title': 'Step 6: Publish Everywhere',
-  'tour.step6.desc': 'Once typeset, publish your article to 30+ platforms including WeChat, Zhihu, Juejin, and more with one click.',
-  'tour.skip': 'Skip',
-  'tour.prev': 'Previous',
-  'tour.next': 'Next',
-  'tour.done': 'Get Started',
-
   // ── UpdateNotification ──
   'update.ready': 'Update ready',
   'update.willApply': 'v{version} will be applied after restart',

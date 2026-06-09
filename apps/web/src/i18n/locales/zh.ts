@@ -97,25 +97,6 @@ const zh: Record<string, string> = {
   'settings.restartNow': '立即重启',
   'settings.desktopOnly': '更新功能仅在桌面客户端可用',
 
-  // ── Onboarding Tour ──
-  'nav.guide': '新手引导',
-  'tour.step1.title': '第一步：配置运行时',
-  'tour.step1.desc': '首先需要安装并选择一个 AI 代理（如 Claude Code）作为运行时，它是 Molio 的核心引擎。',
-  'tour.step2.title': '第二步：导入知识库',
-  'tour.step2.desc': '进入知识库页面，创建一个 Vault 并将你的文档导入进来，作为 AI 创作的素材来源。',
-  'tour.step3.title': '第三步：构建知识库',
-  'tour.step3.desc': '对导入的文档进行索引和 Wiki 构建，让 AI 能够理解和检索你的知识。',
-  'tour.step4.title': '第四步：问答创作',
-  'tour.step4.desc': '回到首页与 AI 对话，基于知识库的内容创作文章、回答问题或生成创意。',
-  'tour.step5.title': '第五步：排版美化',
-  'tour.step5.desc': '切换到排版模式，使用 doocs/md 引擎调整主题、字体和样式，让文章更美观。',
-  'tour.step6.title': '第六步：多平台发布',
-  'tour.step6.desc': '排版完成后，一键将文章发布到微信公众号、知乎、掘金等 30+ 平台。',
-  'tour.skip': '跳过',
-  'tour.prev': '上一步',
-  'tour.next': '下一步',
-  'tour.done': '开始使用',
-
   // ── UpdateNotification ──
   'update.ready': '更新就绪',
   'update.willApply': 'v{version} 将在重启后应用',
