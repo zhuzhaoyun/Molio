@@ -1,46 +1,49 @@
 # Molio (墨流)
 
-> AI-Powered Local Knowledge Management & Document Creation Platform
+> The Local AI Workstation for Knowledge Workers: Manage Knowledge → Write with Local AI → Publish with One Click. Your Data Never Leaves.
 
 [English](README_EN.md) | **[中文](README.md)**
 
-Molio is a local-first desktop application that unifies knowledge base management, AI-assisted writing, and multi-platform publishing into one seamless workflow. By orchestrating local AI runtimes (Claude Code, OpenAI Codex, Gemini CLI, Qwen Code), it enables document creation entirely on your device — no cloud uploads required.
+Molio unifies knowledge base management, AI-assisted writing, and multi-platform publishing into one seamless workflow — a **local-first** desktop application. All data stays on your device; by orchestrating local AI runtimes (Claude Code, OpenAI Codex, Gemini CLI, Qwen Code), it enables document creation entirely on your machine — no cloud uploads required.
 
 ## Features
 
-- **Knowledge Base Management** — Obsidian-like local Vault system with file tree browsing, create, edit, and delete
+- **Knowledge Base Management** — LLM_Wiki-inspired self-managing knowledge base with file tree browsing, create, edit, and delete, automatically building a searchable knowledge network
 - **AI-Assisted Writing** — Document creation via local AI runtimes with multi-turn conversation, tool calling, and streaming output
 - **Multi-Runtime Orchestration** — Switch between Claude Code / OpenAI Codex / Gemini CLI / Qwen Code with one click
-- **Project Context Loading** — AI processes automatically load `CLAUDE.md` and document structure from the project directory
+- **Project Context Loading** — AI processes automatically load `CLAUDE.md`, built-in `wiki_prompt`, and document structure from the project directory
 - **Markdown Typesetting** — Integrated [doocs/md](https://github.com/doocs/md) engine for WeChat and platform-specific formatting
 - **Multi-Platform Publishing** — One-click distribution to 30+ platforms via [doocs/cose](https://github.com/doocs/cose)
-- **Desktop App** — Packaged as a native Windows application with Electron, ready to use out of the box
+- **Local-First, Data Privacy** — All data stays on your device; AI runtimes invoke local CLI directly, no document content ever leaves your machine
 
 ## Screenshots
 
-<p align="center">
-  <img src="docs/img/main.png" alt="Home" width="100%" />
-  <br/>
-  <sup>Home: AI chat interface, select agent and send messages with streaming response</sup>
-</p>
-
-<p align="center">
-  <img src="docs/img/wiki_knowledge.png" alt="Knowledge Base" width="100%" />
-  <br/>
-  <sup>Knowledge Base: Vault file tree management, Markdown rendering and browsing</sup>
-</p>
-
-<p align="center">
-  <img src="docs/img/Layout%20.png" alt="Typesetting Editor" width="100%" />
-  <br/>
-  <sup>Typesetting Editor: Split-pane real-time preview with theme, font, and color styling</sup>
-</p>
-
-<p align="center">
-  <img src="docs/img/publish.png" alt="Multi-Platform Publishing" width="100%" />
-  <br/>
-  <sup>Multi-Platform Publishing: One-click sync to 30+ content platforms</sup>
-</p>
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <img src="docs/img/main.png" alt="Home" width="100%" style="border-radius: 8px;" />
+      <br/>
+      <sub>AI Chat: Select agent and send messages with streaming response</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="docs/img/wiki_knowledge.png" alt="Knowledge Base" width="100%" style="border-radius: 8px;" />
+      <br/>
+      <sub>Vault file tree management, Markdown rendering and browsing</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="docs/img/Layout%20.png" alt="Typesetting Editor" width="100%" style="border-radius: 8px;" />
+      <br/>
+      <sub>Split-pane real-time preview with theme, font, and color styling</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="docs/img/publish.png" alt="Multi-Platform Publishing" width="100%" style="border-radius: 8px;" />
+      <br/>
+      <sub>One-click sync to 30+ content platforms</sub>
+    </td>
+  </tr>
+</table>
 
 ## Tech Stack
 
@@ -116,23 +119,6 @@ pnpm typecheck    # Full type checking
 pnpm build        # Build all packages
 ```
 
-## API Overview
-
-The daemon provides REST API + SSE event streaming:
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/health` | Health check |
-| GET | `/api/agents` | List available AI runtimes |
-| POST | `/api/runs` | Create a new AI run |
-| GET | `/api/runs/:id/events` | SSE event stream (streaming output) |
-| POST | `/api/runs/:id/tool-result` | Submit tool call results |
-| GET/POST/DELETE | `/api/knowledge/vaults` | Knowledge base Vault management |
-| GET/POST/DELETE | `/api/knowledge/vaults/:id/files/*` | File read/write/delete |
-| GET | `/api/knowledge/vaults/:id/tree` | File tree scan |
-| GET/PUT | `/api/config` | Application configuration |
-| CRUD | `/api/projects` | Project management |
-
 ## Community
 
 <img src="docs/img/qrcode.png" alt="Community QR Code" width="200" />
@@ -144,6 +130,7 @@ Molio is inspired and supported by these excellent open-source projects:
 - **[WeKnora](https://github.com/Tencent/WeKnora)** — Knowledge management platform, providing design reference for Molio's KB module
 - **[multica](https://github.com/multica-ai/multica)** — Open-source Agent management platform, inspiring Molio's multi-runtime orchestration and Agent interaction design
 - **[doocs/md](https://github.com/doocs/md)** — WeChat Markdown editor, powering Molio's document typesetting and multi-platform formatting via its core rendering engine `@md/core`
+- **[doocs/cose](https://github.com/doocs/cose)** — Multi-platform content distribution extension, powering Molio's publishing capabilities via its platform adapter layer
 
 Thanks to the authors and communities of these projects for enabling Molio to stand on the shoulders of giants.
 
