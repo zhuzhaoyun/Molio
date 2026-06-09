@@ -35,6 +35,9 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
 
+  // Edit mode state (for text files)
+  const [isEditMode, setIsEditMode] = useState(false);
+
   // Is Electron?
   const isElectron = !!window.__electron__;
 
@@ -343,6 +346,8 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
           onPublish={kb.publishToChrome}
           onBuildWiki={handleBuildWiki}
           showFileName={tabs.tabs.length === 0}
+          isEditMode={isEditMode}
+          onToggleEdit={() => setIsEditMode((prev) => !prev)}
         />
       </div>
 
