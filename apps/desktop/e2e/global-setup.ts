@@ -1,6 +1,9 @@
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { homedir, platform } from 'node:os';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 /**
  * Global setup: locate the Electron executable.

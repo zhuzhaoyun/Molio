@@ -1,5 +1,5 @@
 import { _electron, type ElectronApplication, type Page } from '@playwright/test';
-import { waitForDaemon } from './daemon-health';
+import { waitForDaemon, waitForDaemonShutdown } from './daemon-health';
 
 export interface LaunchedApp {
   electronApp: ElectronApplication;
