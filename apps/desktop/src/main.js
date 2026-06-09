@@ -73,7 +73,7 @@ function startDaemonProduction() {
   });
 }
 
-/** Create the main application window */
+/** Create the main application window (shows splash in production). */
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -104,14 +104,19 @@ function createWindow() {
     return { action: 'deny' };
   });
 
-  // Open DevTools in development
   if (isDevMode()) {
     mainWindow.webContents.openDevTools();
-  }
-
-  if (isDevMode()) {
     mainWindow.loadURL('http://localhost:5173');
   } else {
+    // Show splash while daemon starts — real URL is loaded in loadApp()
+    mainWindow.loadFile(path.join(__dirname, 'splash.html'));
+  }
+}
+
+/** Load the real app URL after daemon is ready (production only). */
+function loadApp() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    log('info', 'main', 'daemon ready — loading app');
     mainWindow.loadURL('http://localhost:3100');
   }
 }
@@ -154,12 +159,14 @@ process.on('unhandledRejection', (reason) => {
 
 app.whenReady().then(async () => {
   // ① Create window first (updater IPC needs getMainWindow reference)
+  //    In production this shows splash.html while daemon starts.
   createWindow();
 
   // ② Set up auto-updater IMMEDIATELY — before daemon.
   // Even if daemon fails to start, the updater must be operational
   // so we can push fixes to users.
-  setupAutoUpdater(() => mainWindow);
+  // Pass killDaemon so the updater can release file locks before install.
+  setupAutoUpdater(() => mainWindow, killDaemon);
 
   // ③ Start daemon last — failure here must not affect updater
   if (!isDevMode()) {
@@ -170,6 +177,11 @@ app.whenReady().then(async () => {
       // Daemon failure is not fatal for the updater.
       // The UI will show connection errors, but updates still work.
     }
+
+    // ④ Only load the real app URL AFTER daemon is ready.
+    // Previously loadURL was called in createWindow() before daemon
+    // started, causing 404/ECONNREFUSED on slower machines.
+    loadApp();
   }
 
   app.on('activate', () => {
@@ -185,9 +197,31 @@ app.on('window-all-closed', () => {
   }
 });
 
+/**
+ * Force-kill the daemon child process and wait for it to exit.
+ *
+ * Used before update install to release file locks in the installation
+ * directory. Without this, the NSIS installer fails with
+ * "Failed to uninstall old application files" because the daemon holds
+ * locks on files it needs to replace.
+ *
+ * @returns {Promise<void>}
+ */
+function killDaemon() {
+  return new Promise((resolve) => {
+    if (!daemonProcess) { resolve(); return; }
+    const proc = daemonProcess;
+    proc.once('exit', () => {
+      // Brief delay for the OS to release file handles
+      setTimeout(resolve, 500);
+    });
+    try { proc.kill('SIGKILL'); } catch { /* already dead */ }
+  });
+}
+
 app.on('before-quit', () => {
   if (daemonProcess) {
-    daemonProcess.kill('SIGTERM');
+    daemonProcess.kill('SIGKILL');
   }
 });
 
