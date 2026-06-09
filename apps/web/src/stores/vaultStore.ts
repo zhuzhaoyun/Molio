@@ -10,7 +10,29 @@ import type { Vault } from '@molio/contracts';
 
 type Listener = () => void;
 
-let activeVaultId: string | null = null;
+const STORAGE_KEY = 'molio.activeVaultId';
+
+/** Read persisted vault ID from localStorage (returns null on error). */
+function readPersistedVaultId(): string | null {
+  try {
+    return localStorage.getItem(STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** Persist vault ID to localStorage. */
+function persistVaultId(id: string | null) {
+  try {
+    if (id) {
+      localStorage.setItem(STORAGE_KEY, id);
+    } else {
+      localStorage.removeItem(STORAGE_KEY);
+    }
+  } catch { /* storage unavailable */ }
+}
+
+let activeVaultId: string | null = readPersistedVaultId();
 let vaults: Vault[] = [];
 const listeners = new Set<Listener>();
 
@@ -35,15 +57,23 @@ export const vaultStore = {
   setActiveVaultId(id: string | null) {
     if (activeVaultId !== id) {
       activeVaultId = id;
+      persistVaultId(id);
       emit();
     }
   },
 
   setVaults(list: Vault[]) {
     vaults = list;
-    // Auto-select first vault if nothing is selected yet
+    // If persisted vault is still in the list, keep it
+    if (activeVaultId && !list.some((v) => v.id === activeVaultId)) {
+      // Persisted vault no longer exists — clear and fall through to auto-select
+      activeVaultId = null;
+      persistVaultId(null);
+    }
+    // Auto-select first vault only if nothing is selected
     if (!activeVaultId && list.length > 0 && list[0]) {
       activeVaultId = list[0].id;
+      persistVaultId(activeVaultId);
     }
     emit();
   },
