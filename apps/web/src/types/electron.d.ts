@@ -1,7 +1,7 @@
 /**
  * TypeScript declarations for Electron APIs exposed via preload.
  *
- * These types describe the globals injected by @kge/desktop's preload script.
+ * These types describe the globals injected by @molio/desktop's preload script.
  * In a plain browser (dev mode), these globals are absent — components must
  * guard with `if (!window.updater) ...` / `if (!window.__electron__) ...`.
  */

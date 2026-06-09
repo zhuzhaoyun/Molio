@@ -25,7 +25,10 @@ export function ContextMenu({ items, position, onClose }: ContextMenuProps) {
   // ESC 关闭
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onClose();
+      }
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
@@ -33,6 +36,7 @@ export function ContextMenu({ items, position, onClose }: ContextMenuProps) {
 
   // 点击外部关闭
   useEffect(() => {
+    let listenerAdded = false;
     const handleClick = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         onClose();
@@ -41,10 +45,13 @@ export function ContextMenu({ items, position, onClose }: ContextMenuProps) {
     // 延迟绑定避免右键点击时立即触发关闭
     const timer = setTimeout(() => {
       document.addEventListener('click', handleClick);
+      listenerAdded = true;
     }, 10);
     return () => {
       clearTimeout(timer);
-      document.removeEventListener('click', handleClick);
+      if (listenerAdded) {
+        document.removeEventListener('click', handleClick);
+      }
     };
   }, [onClose]);
 

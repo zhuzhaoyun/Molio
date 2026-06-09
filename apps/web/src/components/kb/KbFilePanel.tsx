@@ -26,7 +26,6 @@ interface KbFilePanelProps {
   onRenameChange: (value: string) => void;
   onRenameSubmit: (oldPath: string, newName: string) => void;
   onRenameCancel: () => void;
-  vaultPath: string | null;
   children?: ReactNode;
 }
 
@@ -50,7 +49,6 @@ export function KbFilePanel({
   onRenameChange,
   onRenameSubmit,
   onRenameCancel,
-  vaultPath,
   children,
 }: KbFilePanelProps) {
   return (
@@ -92,7 +90,6 @@ export function KbFilePanel({
           onRenameChange={onRenameChange}
           onRenameSubmit={onRenameSubmit}
           onRenameCancel={onRenameCancel}
-          vaultPath={vaultPath}
         />
       </div>
 

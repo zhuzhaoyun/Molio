@@ -188,7 +188,7 @@ export function useKnowledge(): UseKnowledgeReturn {
     return () => { cancelled = true; };
   }, [activeVaultId, selectedFile]);
 
-  // Load history when file or vault changes
+  // Load history when vault changes
   useEffect(() => {
     if (!activeVaultId) return;
     let cancelled = false;
@@ -201,7 +201,7 @@ export function useKnowledge(): UseKnowledgeReturn {
       }
     })();
     return () => { cancelled = true; };
-  }, [activeVaultId, selectedFile]);
+  }, [activeVaultId]);
 
   const activeVault = vaults.find((v) => v.id === activeVaultId) ?? null;
 
@@ -270,10 +270,7 @@ export function useKnowledge(): UseKnowledgeReturn {
 
   // Typeset mode actions
   const toggleTypesetMode = useCallback(() => {
-    setIsTypesetMode((prev) => {
-      // When exiting typeset mode, also close style panel
-      return !prev;
-    });
+    setIsTypesetMode((prev) => !prev);
   }, []);
 
   const handleEditedContentChange = useCallback((content: string) => {

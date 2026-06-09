@@ -25,7 +25,6 @@ interface KnowledgeBasePageProps {
 export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
   const kb = useKnowledge();
   const tabs = useKbTabs();
-  const panelRef = useRef<HTMLDivElement>(null);
   const [showChatPanel, setShowChatPanel] = useState(false);
 
   // Context menu state
@@ -34,9 +33,6 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
   // Inline rename state
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
-
-  // Edit mode state (for text files)
-  const [isEditMode, setIsEditMode] = useState(false);
 
   // Auto-save timer ref
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -47,6 +43,7 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
   // Active tab drives selectedFile
   const activeTab = tabs.getActiveTab();
   const activeFilePath = activeTab?.type === 'file' ? (activeTab.data?.path as string) : null;
+  const isEditMode = activeTab?.type === 'file' ? !!activeTab.data?.isEditMode : false;
   const selectedFile = activeFilePath ?? kb.selectedFile;
 
   // Sync active tab path → kb.selectedFile so useKnowledge loads file content.
@@ -198,17 +195,18 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
           icon: '🗑️',
           danger: true,
           onClick: async () => {
+            if (!vault) return;
             if (!confirm(`确定要删除 "${node.name}" 吗？`)) return;
             try {
-              await api.deleteFile(vault!.id, node.path);
-              // 如果该文件有 tab，关闭 tab
+              await api.deleteFile(vault.id, node.path);
+              // Close tab if open
               const tabId = `file:${node.path}`;
               if (tabs.tabs.some((t) => t.id === tabId)) {
                 tabs.closeTab(tabId);
               }
               kb.refreshTree();
-            } catch {
-              alert('删除失败');
+            } catch (err) {
+              console.error('Delete failed:', err);
             }
           },
         }
@@ -282,14 +280,14 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
     }, 500);
   }, [kb.setEditedContent, kb.activeVault, selectedFile]);
 
-  // Cleanup timer on unmount
+  // Cleanup timer on file switch or unmount
   useEffect(() => {
     return () => {
       if (saveTimerRef.current) {
         clearTimeout(saveTimerRef.current);
       }
     };
-  }, []);
+  }, [selectedFile]);
 
   // ─── Tab activation handler ───
 
@@ -300,41 +298,42 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
 
   // ─── Left-click file handler ───
 
+  /** Find a file's display name from the tree */
+  const findFileName = useCallback((nodes: typeof kb.tree, target: string): string | null => {
+    for (const node of nodes) {
+      if (node.path === target) return node.name;
+      if (node.children) {
+        const found = findFileName(node.children, target);
+        if (found) return found;
+      }
+    }
+    return null;
+  }, [kb.tree]);
+
   const handleSelectFile = useCallback((path: string) => {
-    // 在活跃 tab 中打开，如果没有 tab 则新建
-    if (!activeTab) {
-      // 查找文件名
-      const findName = (nodes: typeof kb.tree, target: string): string | null => {
-        for (const node of nodes) {
-          if (node.path === target) return node.name;
-          if (node.children) {
-            const found = findName(node.children, target);
-            if (found) return found;
-          }
-        }
-        return null;
-      };
-      const name = findName(kb.tree, path) || path.split('/').pop() || path;
+    const tabId = `file:${path}`;
+    const existingTab = tabs.tabs.find((t) => t.id === tabId);
+
+    if (existingTab) {
+      // Tab already exists — just activate it
+      tabs.activateTab(tabId);
+    } else {
+      // Create new tab
+      const name = findFileName(kb.tree, path) || path.split('/').pop() || path;
       tabs.openTab({
         type: 'file',
         title: name,
         data: { path, vaultId: kb.activeVault?.id },
-        id: `file:${path}`,
-      });
-    } else {
-      // 更新当前 tab 的路径
-      tabs.updateTab(activeTab.id, {
-        title: path.split('/').pop() || path,
-        data: { ...activeTab.data, path },
+        id: tabId,
       });
     }
-    kb.selectFile(path);
-  }, [activeTab, kb.activeVault, kb.tree, kb.selectFile, tabs]);
+    // activeFilePath useEffect will sync kb.selectFile automatically
+  }, [tabs, kb.activeVault, kb.tree, findFileName]);
 
   const hasVault = !!kb.activeVault;
 
   return (
-    <div className="kb-shell" ref={panelRef}>
+    <div className="kb-shell">
       {/* File Panel */}
       <KbFilePanel
         width={kb.panelWidth}
@@ -356,7 +355,6 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
         onRenameChange={setRenameValue}
         onRenameSubmit={handleRenameSubmit}
         onRenameCancel={handleRenameCancel}
-        vaultPath={kb.activeVault?.path ?? null}
       >
         <div className="kb-resize-handle" onMouseDown={handleResizeStart} />
       </KbFilePanel>
@@ -387,7 +385,13 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
           onBuildWiki={handleBuildWiki}
           showFileName={tabs.tabs.length === 0}
           isEditMode={isEditMode}
-          onToggleEdit={() => setIsEditMode((prev) => !prev)}
+          onToggleEdit={() => {
+            if (activeTab) {
+              tabs.updateTab(activeTab.id, {
+                data: { ...activeTab.data, isEditMode: !isEditMode },
+              });
+            }
+          }}
           editedContent={kb.editedContent}
         />
       </div>

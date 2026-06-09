@@ -20,8 +20,6 @@ interface KbFileTreeProps {
   onRenameChange: (value: string) => void;
   onRenameSubmit: (oldPath: string, newName: string) => void;
   onRenameCancel: () => void;
-  /** 当前 vault 的绝对路径（用于 IPC） */
-  vaultPath: string | null;
 }
 
 export function KbFileTree({
@@ -36,7 +34,6 @@ export function KbFileTree({
   onRenameChange,
   onRenameSubmit,
   onRenameCancel,
-  vaultPath,
 }: KbFileTreeProps) {
   if (nodes.length === 0) {
     return (
@@ -66,7 +63,6 @@ export function KbFileTree({
           onRenameChange={onRenameChange}
           onRenameSubmit={onRenameSubmit}
           onRenameCancel={onRenameCancel}
-          vaultPath={vaultPath}
         />
       ))}
     </div>
@@ -87,7 +83,6 @@ interface TreeNodeItemProps {
   onRenameChange: (value: string) => void;
   onRenameSubmit: (oldPath: string, newName: string) => void;
   onRenameCancel: () => void;
-  vaultPath: string | null;
 }
 
 function TreeNodeItem({
@@ -102,7 +97,6 @@ function TreeNodeItem({
   onRenameChange,
   onRenameSubmit,
   onRenameCancel,
-  vaultPath,
 }: TreeNodeItemProps) {
   const [expanded, setExpanded] = useState(!!searchQuery);
   const renameInputRef = useRef<HTMLInputElement>(null);
