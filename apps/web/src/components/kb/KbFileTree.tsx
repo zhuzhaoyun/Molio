@@ -53,7 +53,8 @@ interface TreeNodeItemProps {
 }
 
 function TreeNodeItem({ node, selectedFile, searchQuery, onSelectFile, onAddToWiki }: TreeNodeItemProps) {
-  const [expanded, setExpanded] = useState(true);
+  // Default collapsed; auto-expand when searching so results are visible
+  const [expanded, setExpanded] = useState(!!searchQuery);
 
   const toggle = useCallback(() => setExpanded((e) => !e), []);
 

@@ -19,8 +19,11 @@
     "test:e2e": "pnpm --filter @molio/web test:e2e",
     "typecheck": "pnpm -r typecheck"
   },
+  "engines": {
+    "node": ">=24.0.0"
+  },
   "devDependencies": {
-    "@types/node": "^22.15.0",
+    "@types/node": "^24.0.0",
     "concurrently": "^10.0.1",
     "typescript": "^5.8.3"
   }

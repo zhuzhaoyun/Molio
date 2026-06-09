@@ -114,6 +114,60 @@ describe('updater.js: quitAndInstall must use silent mode', () => {
   });
 });
 
+describe('updater.js: must kill daemon before quitAndInstall', () => {
+  const updaterJs = readFileSync(
+    path.resolve(import.meta.dirname, '../../src/updater.js'),
+    'utf-8'
+  );
+  const mainJs = readFileSync(
+    path.resolve(import.meta.dirname, '../../src/main.js'),
+    'utf-8'
+  );
+
+  it('setupAutoUpdater should accept a killDaemon parameter', () => {
+    // The function signature must include killDaemon
+    assert.ok(
+      updaterJs.includes('setupAutoUpdater(getMainWindow, killDaemon)'),
+      'setupAutoUpdater must accept killDaemon as second parameter'
+    );
+  });
+
+  it('updater:install handler must call killDaemon before quitAndInstall', () => {
+    // Extract the updater:install handler block
+    const installStart = updaterJs.indexOf("'updater:install'");
+    assert.ok(installStart !== -1, 'updater:install handler must exist');
+
+    // Get ~500 chars after the handler start to capture the full handler
+    const handlerBlock = updaterJs.slice(installStart, installStart + 500);
+
+    const killPos = handlerBlock.indexOf('killDaemon');
+    const quitPos = handlerBlock.indexOf('quitAndInstall');
+
+    assert.ok(killPos !== -1, 'updater:install must call killDaemon');
+    assert.ok(quitPos !== -1, 'updater:install must call quitAndInstall');
+    assert.ok(
+      killPos < quitPos,
+      `killDaemon (pos ${killPos}) must be called BEFORE quitAndInstall (pos ${quitPos})`
+    );
+  });
+
+  it('main.js should pass killDaemon to setupAutoUpdater', () => {
+    assert.ok(
+      mainJs.includes('setupAutoUpdater(') && mainJs.includes('killDaemon'),
+      'main.js must pass killDaemon function to setupAutoUpdater'
+    );
+  });
+
+  it('main.js should use SIGKILL for daemon termination', () => {
+    // SIGKILL is required for reliable termination on Windows.
+    // SIGTERM may not kill child processes, leaving file locks in place.
+    assert.ok(
+      mainJs.includes("'SIGKILL'") || mainJs.includes('"SIGKILL"'),
+      "main.js must use SIGKILL to kill daemon (SIGTERM unreliable on Windows)"
+    );
+  });
+});
+
 describe('updater.js: error event must notify renderer', () => {
   const updaterJs = readFileSync(
     path.resolve(import.meta.dirname, '../../src/updater.js'),

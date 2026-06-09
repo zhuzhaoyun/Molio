@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { useI18n } from '../i18n';
 
 interface Props {
   isRunning: boolean;
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export function ChatComposer({ isRunning, onSend, onCancel, disabled, disabledPlaceholder }: Props) {
+  const { t } = useI18n();
   const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -45,10 +47,10 @@ export function ChatComposer({ isRunning, onSend, onCancel, disabled, disabledPl
 
   const canSend = text.trim().length > 0 && !isRunning && !disabled;
   const placeholder = disabled
-    ? (disabledPlaceholder ?? 'No agent available')
+    ? (disabledPlaceholder ?? t('composer.noAgent'))
     : isRunning
-      ? 'Waiting for response...'
-      : 'Type a message...';
+      ? t('composer.waiting')
+      : t('composer.placeholder');
 
   return (
     <div className="composer">
@@ -73,7 +75,7 @@ export function ChatComposer({ isRunning, onSend, onCancel, disabled, disabledPl
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
               </svg>
-              Stop
+              {t('composer.stop')}
             </button>
           ) : (
             <button
@@ -86,12 +88,12 @@ export function ChatComposer({ isRunning, onSend, onCancel, disabled, disabledPl
                 <line x1="22" y1="2" x2="11" y2="13" />
                 <polygon points="22 2 15 22 11 13 2 9 22 2" />
               </svg>
-              Send
+              {t('composer.send')}
             </button>
           )}
         </div>
       </div>
-      <div className="composer-hint">Shift+Enter for new line</div>
+      <div className="composer-hint">{t('composer.hint')}</div>
     </div>
   );
 }

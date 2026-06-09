@@ -124,8 +124,12 @@ let getMainWindowRef = null;
  * "no handler" error. In dev mode they return a friendly message.
  *
  * @param {() => import('electron').BrowserWindow | null} getMainWindow
+ * @param {() => Promise<void>} [killDaemon] - Kill daemon before install
+ *   to release file locks. Without this, the NSIS installer fails with
+ *   "Failed to uninstall old application files" because the daemon holds
+ *   locks on files in the installation directory.
  */
-export function setupAutoUpdater(getMainWindow) {
+export function setupAutoUpdater(getMainWindow, killDaemon) {
   getMainWindowRef = getMainWindow;
   const isPackaged = app.isPackaged;
 
@@ -158,9 +162,21 @@ export function setupAutoUpdater(getMainWindow) {
   });
 
   // IPC: install and restart — silent install, no user interaction needed
-  ipcMain.handle('updater:install', () => {
+  //
+  // IMPORTANT: Kill the daemon BEFORE calling quitAndInstall.
+  // The daemon holds file locks in the installation directory. If it's still
+  // running when the NSIS installer starts, the installer fails with
+  // "Failed to uninstall old application files" because it can't rename
+  // locked files.
+  ipcMain.handle('updater:install', async () => {
     if (!isPackaged) return;
     log('info', 'updater', 'installing update (silent) and restarting...');
+
+    if (killDaemon) {
+      log('info', 'updater', 'killing daemon before install...');
+      await killDaemon();
+    }
+
     autoUpdater.quitAndInstall(true, true);
   });
 

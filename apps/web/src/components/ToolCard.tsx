@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useI18n } from '../i18n';
 import type { ToolEvent } from '../hooks/useChat';
 
 interface Props {
@@ -104,6 +105,7 @@ function AskUserQuestionCard({
   onSubmitForm?: (text: string) => void;
   onAnswerToolUse?: (toolUseId: string, content: string) => Promise<boolean> | boolean;
 }) {
+  const { t } = useI18n();
   const questions = parseAskUserQuestionInput(input);
   const [selections, setSelections] = useState<Record<string, string | string[]>>(() => {
     const seed: Record<string, string | string[]> = {};
@@ -209,7 +211,7 @@ function AskUserQuestionCard({
     }
   }
 
-  const statusLabel = hasRealAnswer ? 'Answered' : !locked ? 'Awaiting input' : null;
+  const statusLabel = hasRealAnswer ? t('tool.answered') : !locked ? t('tool.awaiting') : null;
   const statusClass = hasRealAnswer ? 'done' : 'awaiting';
 
   return (
@@ -264,7 +266,7 @@ function AskUserQuestionCard({
             disabled={!ready}
             onClick={handleSubmit}
           >
-            Submit
+            {t('tool.submit')}
           </button>
         </div>
       )}

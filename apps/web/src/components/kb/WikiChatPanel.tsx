@@ -1,15 +1,16 @@
 /**
  * Wiki Chat Panel — right-side sliding panel for wiki build/ingest/lint/query conversations.
  *
- * Reuses existing message components (UserMessage, AssistantMessage, ToolCard).
- * Pure presentation — the agent drives all interaction through its own tools.
+ * Reuses existing message components (UserMessage, AssistantMessage)
+ * and ChatComposer for the input area.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useMemo, useCallback } from 'react';
 import type { WikiOperationType } from '@molio/contracts';
 import type { ChatMessage } from '../../hooks/useChat';
 import { UserMessage } from '../UserMessage';
 import { AssistantMessage } from '../AssistantMessage';
+import { ChatComposer } from '../ChatComposer';
 
 const OPERATION_LABELS: Record<WikiOperationType, string> = {
   build: '构建 Wiki',
@@ -48,48 +49,28 @@ export function WikiChatPanel({
 }: WikiChatPanelProps) {
   const logRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const [text, setText] = useState('');
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length, messages[messages.length - 1]?.content]);
 
-  // Auto-resize textarea
-  useEffect(() => {
-    const el = textareaRef.current;
-    if (el) {
-      el.style.height = 'auto';
-      el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+  // Find the last assistant message ID so only that card stays interactive
+  const lastAssistantId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (msg && msg.role === 'assistant') return msg.id;
     }
-  }, [text]);
+    return null;
+  }, [messages]);
 
-  // Focus textarea when not running
-  useEffect(() => {
-    if (!isRunning) textareaRef.current?.focus();
-  }, [isRunning]);
-
-  const handleSend = () => {
-    const trimmed = text.trim();
-    if (trimmed && !isRunning) {
-      onSend(trimmed);
-      setText('');
-      if (textareaRef.current) textareaRef.current.style.height = 'auto';
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
-
-  const handleAnswerToolUse = async (toolUseId: string, content: string): Promise<boolean> => {
-    onSubmitToolResult(toolUseId, content);
-    return true;
-  };
+  const onAnswerToolUse = useCallback(
+    async (toolUseId: string, content: string) => {
+      onSubmitToolResult(toolUseId, content);
+      return true;
+    },
+    [onSubmitToolResult],
+  );
 
   const label = operationType ? OPERATION_LABELS[operationType] : 'Wiki';
   const color = operationType ? OPERATION_COLORS[operationType] : 'var(--text-muted)';
@@ -120,7 +101,7 @@ export function WikiChatPanel({
           </div>
         ) : (
           <>
-            {messages.map((msg, idx) => {
+            {messages.map((msg) => {
               if (msg.role === 'user') {
                 return <UserMessage key={msg.id} content={msg.content} timestamp={msg.timestamp} />;
               }
@@ -129,8 +110,8 @@ export function WikiChatPanel({
                   <AssistantMessage
                     key={msg.id}
                     message={msg}
-                    isLast={idx === messages.length - 1}
-                    onAnswerToolUse={handleAnswerToolUse}
+                    isLast={msg.id === lastAssistantId}
+                    onAnswerToolUse={onAnswerToolUse}
                     onSubmitForm={onSend}
                   />
                 );
@@ -149,41 +130,13 @@ export function WikiChatPanel({
         )}
       </div>
 
-      {/* Input */}
+      {/* Input — reuse shared ChatComposer */}
       <div className="wiki-chat-input">
-        <div className="wiki-chat-input-shell">
-          <textarea
-            ref={textareaRef}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={isRunning ? '等待回复…' : '输入消息…'}
-            disabled={isRunning}
-            rows={1}
-          />
-          <div className="wiki-chat-input-actions">
-            {isRunning ? (
-              <button type="button" className="wiki-btn-stop" onClick={onCancel}>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                  <rect x="4" y="4" width="16" height="16" rx="2" />
-                </svg>
-                停止
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="wiki-btn-send"
-                disabled={!text.trim()}
-                onClick={handleSend}
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="22" y1="2" x2="11" y2="13" />
-                  <polygon points="22 2 15 22 11 13 2 9 22 2" />
-                </svg>
-              </button>
-            )}
-          </div>
-        </div>
+        <ChatComposer
+          isRunning={isRunning}
+          onSend={onSend}
+          onCancel={onCancel}
+        />
       </div>
     </aside>
   );

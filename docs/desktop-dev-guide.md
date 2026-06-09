@@ -20,7 +20,7 @@
 
 | 工具 | 版本要求 | 说明 |
 |------|---------|------|
-| Node.js | ≥ 20.x | 系统安装的 Node.js，daemon 依赖它运行 |
+| Node.js | ≥ 24.x | 系统安装的 Node.js，daemon 依赖它运行 |
 | pnpm | ≥ 9.x | 包管理器 |
 | Git | 任意版本 | 用于版本管理（可选，影响版本号显示） |
 
@@ -148,7 +148,7 @@ Step 4: node scripts/prepare-resources.mjs
 
 ```
 apps/daemon/dist/src/index.js (tsc 输出)
-        ↓ esbuild (bundle, node20, esm)
+        ↓ esbuild (bundle, node24, esm)
 apps/desktop/resources/daemon/daemon.js (单文件)
 ```
 
@@ -309,7 +309,7 @@ netstat -ano | findstr 5173
 
 **原因**：Electron 内嵌的 Node.js 版本和系统 Node.js 版本不同，native 模块 ABI 不兼容。
 
-**解决**：Molio 已处理此问题 — 生产模式使用系统 Node.js 运行 daemon（`findSystemNode()`），不通过 Electron 内嵌的 Node.js 加载 native 模块。确保系统已安装 Node.js ≥ 20.x。
+**解决**：Molio 已处理此问题 — 生产模式使用系统 Node.js 运行 daemon（`findSystemNode()`），不通过 Electron 内嵌的 Node.js 加载 native 模块。确保系统已安装 Node.js ≥ 22.x。
 
 ### 3. 打包后 daemon 启动失败
 

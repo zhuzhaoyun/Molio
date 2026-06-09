@@ -1,8 +1,11 @@
 import { Hono } from 'hono';
 import type { CreateRunRequest } from '@molio/contracts';
+import type Database from 'better-sqlite3';
 import type { RunManager } from '../core/RunManager.js';
+import { getVaultByPath } from '../core/db.js';
+import { WIKI_QUERY_PROMPT } from '../core/wiki-prompts.js';
 
-export function runsRoutes(runManager: RunManager): Hono {
+export function runsRoutes(db: Database.Database, runManager: RunManager): Hono {
   const app = new Hono();
 
   // POST /api/runs — create a new run
@@ -16,9 +19,21 @@ export function runsRoutes(runManager: RunManager): Hono {
     }
 
     try {
+      // If cwd matches a vault, inject wiki query prompt so the agent
+      // operates as a wiki knowledge assistant for that vault.
+      // Only inject on the FIRST turn (no history) — subsequent turns
+      // already carry the prompt via conversation transcript.
+      let message = body.message;
+      if (body.cwd && (!body.history || body.history.length === 0)) {
+        const vault = getVaultByPath(db, body.cwd);
+        if (vault) {
+          message = `${WIKI_QUERY_PROMPT}\n\n---\n\n用户问题：${message}`;
+        }
+      }
+
       const runId = await runManager.createRun({
         agentId: body.agentId,
-        message: body.message,
+        message,
         model: body.model,
         cwd: body.cwd,
         conversationId: body.conversationId,

@@ -209,7 +209,7 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
 
       - name: Install dependencies
@@ -246,11 +246,17 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           TAG="v${VERSION}"
 
-          # Wait briefly for release asset upload to complete
-          sleep 5
-
+          # Poll for release assets with exponential backoff
+          # (GitHub may take a moment to finish uploading after electron-builder exits)
           echo "Checking release assets for ${TAG}..."
-          ASSETS=$(gh release view "${TAG}" --repo "${{ github.repository }}" --json assets --jq '.assets[].name' 2>/dev/null || echo "")
+          ASSETS=""
+          for i in 1 2 3 4 5; do
+            ASSETS=$(gh release view "${TAG}" --repo "${{ github.repository }}" --json assets --jq '.assets[].name' 2>/dev/null || echo "")
+            if [ -n "$ASSETS" ]; then break; fi
+            DELAY=$(( i * 5 ))
+            echo "  attempt ${i}: no assets yet, retrying in ${DELAY}s..."
+            sleep "${DELAY}"
+          done
 
           if [ -z "$ASSETS" ]; then
             echo "::error::No assets found in release ${TAG}"
