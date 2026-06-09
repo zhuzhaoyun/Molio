@@ -1,3 +1,4 @@
+// @ts-nocheck — vendored from doocs/md, not authored for noUncheckedIndexedAccess
 import type { AlertOptions, AlertVariantItem } from '../../shared/types/index'
 import type { MarkedExtension, Tokens } from 'marked'
 import { ucfirst } from '../utils'

@@ -1,3 +1,4 @@
+// @ts-nocheck — vendored from doocs/md, not authored for noUncheckedIndexedAccess
 import type { MarkedExtension } from 'marked'
 import { escapeHtml } from '../utils/basicHelpers'
 

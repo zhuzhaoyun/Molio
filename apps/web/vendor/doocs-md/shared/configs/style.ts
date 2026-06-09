@@ -1,3 +1,4 @@
+// @ts-nocheck — vendored from doocs/md, not authored for noUncheckedIndexedAccess
 import type { IConfigOption } from '../types'
 import type { ThemeName } from './theme-css'
 import { themeOptions } from './theme'
