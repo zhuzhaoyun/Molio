@@ -44,6 +44,8 @@ interface KbMainContentProps {
   onCopy: () => void;
   onPublish: () => void;
   onBuildWiki: () => void;
+  /** 当 tab bar 存在时，可选择隐藏 header 中的文件名 */
+  showFileName?: boolean;
 }
 
 export function KbMainContent({
@@ -59,6 +61,7 @@ export function KbMainContent({
   onCopy,
   onPublish,
   onBuildWiki,
+  showFileName = true,
 }: KbMainContentProps) {
   // No file selected — show empty state or wiki CTA
   if (!selectedFile) {
@@ -108,9 +111,11 @@ export function KbMainContent({
     <main className="kb-main">
       {/* Header with filename and action buttons */}
       <div className="kb-main-header">
-        <div className="kb-header-left">
-          <span className="kb-header-filename">{fileName}</span>
-        </div>
+        {showFileName && (
+          <div className="kb-header-left">
+            <span className="kb-header-filename">{fileName}</span>
+          </div>
+        )}
         <div className="kb-header-actions">
           {/* Text file actions: typeset, copy, publish */}
           {category === 'text' && (

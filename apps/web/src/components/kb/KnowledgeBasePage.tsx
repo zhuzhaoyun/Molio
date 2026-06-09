@@ -329,6 +329,7 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
           onCopy={kb.copyToClipboard}
           onPublish={kb.publishToChrome}
           onBuildWiki={handleBuildWiki}
+          showFileName={tabs.tabs.length === 0}
         />
       </div>
 
