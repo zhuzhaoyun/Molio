@@ -1,6 +1,6 @@
 {
   "name": "@molio/desktop",
-  "version": "0.1.0",
+  "version": "0.3.2",
   "description": "Molio - AI writing & knowledge management platform",
   "author": "Molio Team",
   "type": "module",
@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "electron .",
     "prepare": "node scripts/prepare-resources.mjs",
-    "build": "pnpm --filter @molio/contracts build && pnpm --filter @molio/daemon build && pnpm --filter @molio/web build && node scripts/prepare-resources.mjs",
+    "build": "pnpm --filter @molio/desktop^... build && node scripts/prepare-resources.mjs",
     "package": "node scripts/package.mjs",
     "package:win": "electron-builder --win",
     "package:mac": "electron-builder --mac",
@@ -17,13 +17,19 @@
     "package:dir": "electron-builder --win --dir",
     "run:unpacked": "electron-builder --win --dir && echo 'Run: ./dist/win-unpacked/墨流 Molio.exe'",
     "typecheck": "echo 'desktop: no TS to check'",
-    "test": "node --test \"test/**/*.test.js\""
+    "test": "node --test \"test/**/*.test.js\"",
+    "test:e2e": "npx playwright test --config e2e/playwright.config.ts",
+    "test:e2e:headed": "npx playwright test --config e2e/playwright.config.ts --headed"
   },
   "dependencies": {
     "electron-updater": "^6.8.3"
   },
   "devDependencies": {
-    "electron": "^33.0.0",
+    "@playwright/test": "^1.50.0",
+    "@molio/contracts": "workspace:*",
+    "@molio/daemon": "workspace:*",
+    "@molio/web": "workspace:*",
+    "electron": "^40.0.0",
     "electron-builder": "^25.1.8",
     "esbuild": "^0.25.0"
   },

@@ -279,6 +279,11 @@ export function getVault(db: SqliteDb, id: string): Vault | null {
   return row ? rowToVault(row) : null;
 }
 
+export function getVaultByPath(db: SqliteDb, vaultPath: string): Vault | null {
+  const row = db.prepare('SELECT * FROM vaults WHERE path = ?').get(vaultPath) as Record<string, unknown> | undefined;
+  return row ? rowToVault(row) : null;
+}
+
 export function createVault(db: SqliteDb, name: string, vaultPath: string, description?: string): Vault {
   const id = randomUUID();
   const now = Date.now();

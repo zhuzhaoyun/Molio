@@ -1,9 +1,11 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
-import { spawn } from 'node:child_process';
+import { spawn, execSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setupAutoUpdater } from './updater.js';
 import { log } from './logger.js';
+
+const errMsg = (err) => (err instanceof Error ? err.message : String(err));
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -39,11 +41,15 @@ function startDaemonProduction() {
 
     // Collect stderr for diagnostics if daemon fails to start
     const stderrChunks = [];
+    let started = false;
 
     daemonProcess.stdout?.on('data', (data) => {
       const msg = data.toString().trim();
       log('info', 'daemon', msg);
-      if (msg.includes('listening on')) resolve();
+      if (msg.includes('listening on')) {
+        started = true;
+        resolve();
+      }
     });
 
     daemonProcess.stderr?.on('data', (data) => {
@@ -65,15 +71,17 @@ function startDaemonProduction() {
       reject(err);
     });
 
-    // Timeout fallback — resolve even if daemon never reports ready
+    // Timeout fallback — reject so caller can skip loadApp()
     setTimeout(() => {
-      log('warn', 'main', 'daemon startup timeout (10s) — resolving anyway');
-      resolve();
+      if (!started) {
+        log('warn', 'main', 'daemon startup timeout (10s) — rejecting');
+        reject(new Error('Daemon startup timeout'));
+      }
     }, 10000);
   });
 }
 
-/** Create the main application window */
+/** Create the main application window (shows splash in production). */
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -104,14 +112,19 @@ function createWindow() {
     return { action: 'deny' };
   });
 
-  // Open DevTools in development
   if (isDevMode()) {
     mainWindow.webContents.openDevTools();
-  }
-
-  if (isDevMode()) {
     mainWindow.loadURL('http://localhost:5173');
   } else {
+    // Show splash while daemon starts — real URL is loaded in loadApp()
+    mainWindow.loadFile(path.join(__dirname, 'splash.html'));
+  }
+}
+
+/** Load the real app URL after daemon is ready (production only). */
+function loadApp() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    log('info', 'main', 'daemon ready — loading app');
     mainWindow.loadURL('http://localhost:3100');
   }
 }
@@ -135,7 +148,13 @@ ipcMain.on('app:get-info', (event) => {
 process.on('uncaughtException', (err) => {
   log('error', 'main', `uncaughtException: ${err?.message ?? err}`);
   if (err?.stack) log('error', 'main', err.stack);
-  // Do NOT exit — keep the updater running
+  // Keep the updater running so we can push fixes, but if the error is
+  // unrecoverable (e.g. ENOMEM), exit gracefully after a short delay
+  // rather than leaving the app in a corrupted state.
+  if (err?.code === 'ENOMEM' || err?.code === 'ERR_IPC_CHANNEL_CLOSED') {
+    log('error', 'main', 'fatal error — scheduling exit in 5s');
+    setTimeout(() => app.quit(), 5000);
+  }
 });
 
 process.on('unhandledRejection', (reason) => {
@@ -148,12 +167,14 @@ process.on('unhandledRejection', (reason) => {
 
 app.whenReady().then(async () => {
   // ① Create window first (updater IPC needs getMainWindow reference)
+  //    In production this shows splash.html while daemon starts.
   createWindow();
 
   // ② Set up auto-updater IMMEDIATELY — before daemon.
   // Even if daemon fails to start, the updater must be operational
   // so we can push fixes to users.
-  setupAutoUpdater(() => mainWindow);
+  // Pass killDaemon so the updater can release file locks before install.
+  setupAutoUpdater(() => mainWindow, killDaemon);
 
   // ③ Start daemon last — failure here must not affect updater
   if (!isDevMode()) {
@@ -164,6 +185,11 @@ app.whenReady().then(async () => {
       // Daemon failure is not fatal for the updater.
       // The UI will show connection errors, but updates still work.
     }
+
+    // ④ Only load the real app URL AFTER daemon is ready.
+    // Previously loadURL was called in createWindow() before daemon
+    // started, causing 404/ECONNREFUSED on slower machines.
+    loadApp();
   }
 
   app.on('activate', () => {
@@ -179,9 +205,68 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('before-quit', () => {
+/** Delay after daemon exit for Windows to release file handles (ms). */
+const DAEMON_KILL_SETTLE_MS = 2000;
+
+/**
+ * Force-kill the daemon child process and wait for it to fully exit.
+ *
+ * Used before update install and on normal app quit to release file locks
+ * in the installation directory. Without this, the NSIS installer fails with
+ * "Failed to uninstall old application files" because the daemon holds
+ * locks on files it needs to replace.
+ *
+ * On Windows, uses `taskkill /F /T` to reliably kill the entire process tree.
+ * Node's proc.kill('SIGKILL') is unreliable on Windows — it may not kill
+ * grandchild processes or release all handles promptly.
+ *
+ * @returns {Promise<void>}
+ */
+function killDaemon() {
+  return new Promise((resolve) => {
+    if (!daemonProcess) { resolve(); return; }
+    const proc = daemonProcess;
+    const pid = proc.pid;
+
+    // Prevent double-resolve: exit event may fire after taskkill succeeds,
+    // and the catch block may also fire if process is already dead.
+    let resolved = false;
+    const done = () => {
+      if (!resolved) {
+        resolved = true;
+        log('info', 'main', `daemon exited, waiting ${DAEMON_KILL_SETTLE_MS}ms for OS to release file handles`);
+        setTimeout(resolve, DAEMON_KILL_SETTLE_MS);
+      }
+    };
+
+    proc.once('exit', done);
+
+    try {
+      if (process.platform === 'win32' && pid) {
+        // taskkill /F = force, /T = kill child processes too
+        execSync(`taskkill /F /T /PID ${pid}`, { timeout: 5000 });
+        log('info', 'main', `taskkill sent for daemon pid=${pid}`);
+      } else {
+        proc.kill('SIGKILL');
+      }
+    } catch (err) {
+      // Process may already be dead — that's fine
+      log('warn', 'main', `killDaemon: ${err instanceof Error ? err.message : String(err)}`);
+      done();
+    }
+  });
+}
+
+app.on('before-quit', (event) => {
   if (daemonProcess) {
-    daemonProcess.kill('SIGTERM');
+    // Prevent the default quit until daemon is fully terminated.
+    // Without this, Electron may exit before the daemon releases its
+    // file handles, leaving locks in the installation directory that
+    // cause the NSIS installer to fail on the next update.
+    event.preventDefault();
+    killDaemon().then(() => {
+      app.quit();
+    });
   }
 });
 
@@ -200,4 +285,24 @@ ipcMain.handle('show-directory-picker', async () => {
 
 ipcMain.handle('open-path', async (_, filePath) => {
   return shell.openPath(filePath);
+});
+
+// 在系统资源管理器中显示文件/文件夹
+ipcMain.handle('show-item-in-folder', async (_, filePath) => {
+  return shell.showItemInFolder(filePath);
+});
+
+// 重命名本地文件
+ipcMain.handle('rename-file', async (_, oldPath, newPath) => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  if (!fs.existsSync(oldPath)) {
+    throw new Error('Source file not found');
+  }
+  if (fs.existsSync(newPath)) {
+    throw new Error('Target already exists');
+  }
+  fs.mkdirSync(path.dirname(newPath), { recursive: true });
+  fs.renameSync(oldPath, newPath);
+  return newPath;
 });

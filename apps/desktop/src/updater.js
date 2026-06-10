@@ -15,14 +15,23 @@
 
 import pkg from 'electron-updater';
 import { app, ipcMain } from 'electron';
-import { log } from './logger.js';
+import { spawn } from 'node:child_process';
+import { log, getLogPath } from './logger.js';
 import { createRetryState } from './retry.js';
 
 const { autoUpdater } = pkg;
 
+/** Convenience: format any error to a log-safe string. */
+const errMsg = (err) => (errMsg(err));
+
 // Silent background update: download automatically, notify only when ready
 autoUpdater.autoDownload = true;
-autoUpdater.autoInstallOnAppQuit = true;
+// IMPORTANT: Disabled to prevent electron-updater from spawning the NSIS installer
+// before the app has fully exited. The built-in quitAndInstall() has a race condition
+// where it spawns the installer via setImmediate while the Electron main process still
+// holds file locks on the exe. We handle installation manually in the updater:install
+// handler with correct sequencing: kill daemon → spawn installer → app.quit().
+autoUpdater.autoInstallOnAppQuit = false;
 
 const STARTUP_DELAY = 5_000;         // check 5s after launch
 const POLL_INTERVAL = 60 * 60 * 1000; // check every hour
@@ -58,15 +67,18 @@ function checkForUpdatesOnce() {
       retry.reset();
 
       void result?.downloadPromise?.catch((err) => {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = errMsg(err);
         log('error', 'updater', `download failed: ${msg}`);
+        // Clear stale downloadedVersion so UI doesn't show "ready to install"
+        // for a version whose download actually failed.
+        downloadedVersion = null;
         notifyError(msg);
         scheduleRetry();
       });
       return result;
     })
     .catch((err) => {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errMsg(err);
       log('error', 'updater', `check failed: ${msg}`);
       notifyError(msg);
       scheduleRetry();
@@ -100,7 +112,7 @@ function scheduleRetry() {
   retryTimer = setTimeout(() => {
     retryTimer = null;
     checkForUpdatesOnce().catch((err) => {
-      log('error', 'updater', `retry failed: ${err instanceof Error ? err.message : String(err)}`);
+      log('error', 'updater', `retry failed: ${errMsg(err)}`);
     });
   }, delay);
 }
@@ -110,7 +122,7 @@ function startPolling() {
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = setInterval(() => {
     checkForUpdatesOnce().catch((err) => {
-      log('error', 'updater', `poll failed: ${err instanceof Error ? err.message : String(err)}`);
+      log('error', 'updater', `poll failed: ${errMsg(err)}`);
     });
   }, POLL_INTERVAL);
 }
@@ -124,8 +136,12 @@ let getMainWindowRef = null;
  * "no handler" error. In dev mode they return a friendly message.
  *
  * @param {() => import('electron').BrowserWindow | null} getMainWindow
+ * @param {() => Promise<void>} [killDaemon] - Kill daemon before install
+ *   to release file locks. Without this, the NSIS installer fails with
+ *   "Failed to uninstall old application files" because the daemon holds
+ *   locks on files in the installation directory.
  */
-export function setupAutoUpdater(getMainWindow) {
+export function setupAutoUpdater(getMainWindow, killDaemon) {
   getMainWindowRef = getMainWindow;
   const isPackaged = app.isPackaged;
 
@@ -153,26 +169,74 @@ export function setupAutoUpdater(getMainWindow) {
         downloadedVersion,
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errMsg(err) };
     }
   });
 
   // IPC: install and restart — silent install, no user interaction needed
-  ipcMain.handle('updater:install', () => {
+  //
+  // IMPORTANT: We do NOT use quitAndInstall from electron-updater because it has a
+  // race condition on Windows: it spawns the NSIS installer BEFORE calling
+  // app.quit(), so the Electron main process still holds file locks on the
+  // exe when the installer tries to replace it → "Failed to uninstall old
+  // application files".
+  //
+  // Instead we manually control the sequence:
+  //   1. Kill daemon (release its file locks)
+  //   2. Spawn NSIS installer (detached, so it survives our exit)
+  //   3. app.quit() (release Electron's own file locks on the exe)
+  ipcMain.handle('updater:install', async () => {
     if (!isPackaged) return;
-    log('info', 'updater', 'installing update (silent) and restarting...');
-    autoUpdater.quitAndInstall(true, true);
+    log('info', 'updater', 'installing update (manual sequence)...');
+
+    // Step 1: Kill daemon to release file locks in the installation directory
+    if (killDaemon) {
+      log('info', 'updater', 'killing daemon before install...');
+      await killDaemon();
+    }
+
+    // Step 2: Get the downloaded installer path from electron-updater internals
+    const installerPath = autoUpdater.downloadedUpdateHelper?.file;
+    if (!installerPath) {
+      const msg = 'No downloaded installer found — cannot install update';
+      log('error', 'updater', msg);
+      notifyError(msg);
+      return;
+    }
+
+    log('info', 'updater', `spawning installer: ${installerPath}`);
+
+    // Build NSIS args matching electron-updater's NsisUpdater.doInstall()
+    // --updated: tells the new installer this is an update (skip some prompts)
+    // /S: silent install (no user interaction)
+    // --force-run: restart app after install completes
+    const args = ['--updated', '/S', '--force-run'];
+
+    try {
+      // Spawn installer detached so it survives after we quit
+      const installer = spawn(installerPath, args, {
+        detached: true,
+        stdio: 'ignore',
+      });
+      installer.unref();
+
+      // Wait for the installer to actually start before quitting.
+      // Without this, app.quit() may release file locks before the
+      // installer has a chance to begin, causing a race with Windows
+      // cleanup on the installation directory.
+      installer.on('spawn', () => {
+        log('info', 'updater', `installer started (pid=${installer.pid}), quitting app...`);
+        app.quit();
+      });
+    } catch (err) {
+      const msg = errMsg(err);
+      log('error', 'updater', `failed to spawn installer: ${msg}`);
+      notifyError(msg);
+    }
   });
 
   // IPC: return log file path for diagnostics
-  ipcMain.handle('updater:log-path', async () => {
-    try {
-      const { getLogPath } = await import('./logger.js');
-      return getLogPath();
-    } catch {
-      return null;
-    }
-  });
+  ipcMain.handle('updater:log-path', () => getLogPath());
 
   // Only set up autoUpdater events and background polling in packaged builds
   if (!isPackaged) {
@@ -206,7 +270,7 @@ export function setupAutoUpdater(getMainWindow) {
 
   // Catch autoUpdater errors — log to file AND notify renderer
   autoUpdater.on('error', (err) => {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errMsg(err);
     log('error', 'updater', `autoUpdater error: ${msg}`);
     notifyError(msg);
     scheduleRetry();
@@ -215,7 +279,7 @@ export function setupAutoUpdater(getMainWindow) {
   // Initial check after startup delay
   setTimeout(() => {
     checkForUpdatesOnce().catch((err) => {
-      log('error', 'updater', `initial check failed: ${err instanceof Error ? err.message : String(err)}`);
+      log('error', 'updater', `initial check failed: ${errMsg(err)}`);
     });
   }, STARTUP_DELAY);
 

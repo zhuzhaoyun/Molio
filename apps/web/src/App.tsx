@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { useAgents } from './hooks/useAgents';
 import { useChat } from './hooks/useChat';
 import { HomePage } from './components/HomePage';
@@ -8,8 +8,10 @@ import { KnowledgeBasePage } from './components/kb/KnowledgeBasePage';
 import { RuntimePage } from './components/runtimes/RuntimePage';
 import { SettingsPage } from './components/settings/SettingsPage';
 import { UpdateNotification } from './components/UpdateNotification';
+import { LanguageProvider } from './i18n/LanguageProvider';
+import type { Locale } from './i18n';
 import { api } from './api/client';
-import type { Vault } from '@molio/contracts';
+import { useActiveVault, vaultStore } from './stores/vaultStore';
 import './styles/rail.css';
 import './styles/home.css';
 import './styles/knowledge.css';
@@ -17,21 +19,49 @@ import './styles/runtimes.css';
 import './styles/settings.css';
 import './App.css';
 
+const STORAGE_KEY_LAST_ROUTE = 'molio.lastRoute';
+
 export default function App() {
   const { agents } = useAgents();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [defaultAgentId, setDefaultAgentId] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
-  const [activeVault, setActiveVault] = useState<Vault | null>(null);
+  const activeVault = useActiveVault();
+  const [locale, setLocale] = useState<Locale>('zh');
+  const [configLoaded, setConfigLoaded] = useState(false);
   const chat = useChat({ agentId: selectedAgent, cwd: activeVault?.path });
 
-  // Load config to get defaultAgentId
+  // Persist current route on change
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_LAST_ROUTE, location.pathname);
+    } catch { /* ignore */ }
+  }, [location.pathname]);
+
+  // Restore last route on mount (only if at root "/")
+  useEffect(() => {
+    if (location.pathname === '/') {
+      try {
+        const lastRoute = localStorage.getItem(STORAGE_KEY_LAST_ROUTE);
+        if (lastRoute && lastRoute !== '/') {
+          navigate(lastRoute, { replace: true });
+        }
+      } catch { /* ignore */ }
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Load config to get defaultAgentId and locale
   useEffect(() => {
     api.getConfig()
       .then((cfg) => {
         const id = (cfg as { defaultAgentId?: string }).defaultAgentId;
         if (id) setDefaultAgentId(id);
+        const loc = (cfg as { locale?: string }).locale;
+        if (loc === 'en' || loc === 'zh') setLocale(loc);
+        setConfigLoaded(true);
       })
-      .catch(() => {});
+      .catch(() => { setConfigLoaded(true); });
   }, []);
 
   // Resolve the active agent once both agents and config are loaded.
@@ -66,11 +96,12 @@ export default function App() {
     }
   }, [agents, defaultAgentId, selectedAgent]);
 
-  // Load first vault as default cwd for agent runs
+  // Load vaults into the shared store on mount (so chat cwd is set even
+  // when the KB page has never been visited).
   useEffect(() => {
-    api.listVaults().then((vaults) => {
-      if (vaults.length > 0) setActiveVault(vaults[0]!);
-    }).catch(() => {});
+    api.listVaults()
+      .then((list) => vaultStore.setVaults(list))
+      .catch(() => {});
   }, []);
 
   const handleNewChat = () => {
@@ -79,31 +110,35 @@ export default function App() {
     setSelectedAgent(defaultAgentId ?? null);
   };
 
+  if (!configLoaded) return null;
+
   return (
-    <div className="entry-shell">
-      <NavRail />
-      <div className="entry-main">
-        <Routes>
-          <Route
-            path="/"
-            element={
-              <HomePage
-                selectedAgentName={agents.find((a) => a.id === selectedAgent)?.name ?? null}
-                messages={chat.messages}
-                isRunning={chat.isRunning}
-                onSend={chat.send}
-                onCancel={chat.cancel}
-                onNewChat={handleNewChat}
-                onSubmitToolResult={chat.submitToolResult}
-              />
-            }
-          />
-          <Route path="/knowledge" element={<KnowledgeBasePage agentId={selectedAgent} />} />
-          <Route path="/runtimes" element={<RuntimePage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-        </Routes>
+    <LanguageProvider initialLocale={locale}>
+      <div className="entry-shell">
+        <NavRail />
+        <div className="entry-main">
+          <Routes>
+            <Route
+              path="/"
+              element={
+                <HomePage
+                  selectedAgentName={agents.find((a) => a.id === selectedAgent)?.name ?? null}
+                  messages={chat.messages}
+                  isRunning={chat.isRunning}
+                  onSend={chat.send}
+                  onCancel={chat.cancel}
+                  onNewChat={handleNewChat}
+                  onSubmitToolResult={chat.submitToolResult}
+                />
+              }
+            />
+            <Route path="/knowledge" element={<KnowledgeBasePage agentId={selectedAgent} />} />
+            <Route path="/runtimes" element={<RuntimePage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+          </Routes>
+        </div>
+        <UpdateNotification />
       </div>
-      <UpdateNotification />
-    </div>
+    </LanguageProvider>
   );
 }

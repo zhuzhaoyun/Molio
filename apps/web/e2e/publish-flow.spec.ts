@@ -47,16 +47,16 @@ test.afterAll(async () => {
   }
 });
 
-test.describe('Publish button regression (#11)', () => {
-  test('clicking publish in typeset mode should trigger a response', async ({ page }) => {
-    // Navigate to the app
-    await page.goto('/');
-    await page.waitForLoadState('networkidle');
+/**
+ * Helper: navigate to knowledge base and select the test vault + first file.
+ */
+async function navigateToTestFile(page: any) {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
 
-    // Navigate to knowledge base view
-    const kbNav = page.locator('[data-view="knowledge"], text=知识库, text=Knowledge').first();
-    await kbNav.click();
-    await page.waitForTimeout(500);
+  // Navigate to knowledge base view
+  await page.locator('[data-tooltip="Knowledge Base"]').click();
+  await page.waitForTimeout(500);
 
     // Wait for vault to load and select the first file
     const fileItem = page.locator('.kb-tree-item').first();
@@ -110,18 +110,7 @@ test.describe('Publish button regression (#11)', () => {
   });
 
   test('publish button should exist in typeset mode toolbar', async ({ page }) => {
-    await page.goto('/');
-    await page.waitForLoadState('networkidle');
-
-    // Navigate to knowledge base
-    const kbNav = page.locator('[data-view="knowledge"], text=知识库, text=Knowledge').first();
-    await kbNav.click();
-    await page.waitForTimeout(500);
-
-    // Select first file
-    const fileItem = page.locator('.kb-file-item, .tree-item').first();
-    await fileItem.click({ timeout: 10_000 });
-    await page.waitForTimeout(500);
+    await navigateToTestFile(page);
 
     // Enter typeset mode
     const typesetBtn = page.locator('button').filter({ hasText: '排版' }).first();
