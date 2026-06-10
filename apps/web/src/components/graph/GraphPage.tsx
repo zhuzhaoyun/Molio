@@ -248,11 +248,11 @@ export function GraphPage() {
       defaultEdgeColor: EDGE_DEFAULT,
       defaultEdgeType: 'line',
       edgeLabelSize: 10,
-      labelColor: { color: LABEL_DEFAULT },
-      labelSize: 11,
+      labelColor: { color: '#333333' },
+      labelSize: 12,
       labelFont: 'Inter, PingFang SC, -apple-system, sans-serif',
-      // Labels only show when zoomed in (≈ zoom > 1.2 in Obsidian terms)
-      labelRenderedSizeThreshold: 12,
+      // Labels always show (Obsidian style)
+      labelRenderedSizeThreshold: 0,
       labelDensity: 0.25,
       defaultNodeColor: NODE_DEFAULT,
       renderEdgeLabels: false,
@@ -280,38 +280,32 @@ export function GraphPage() {
     });
 
     // ── Click events ──
-    renderer.on('clickNode', ({ node }) => {
-      const path = graph.getNodeAttribute(node, 'path') as string | undefined;
-      if (path) {
-        if (selectedNodeRef.current === node) {
-          // Double-click: open the document
-          navigate('/knowledge', { state: { openFile: path } });
-        } else {
-          selectedNodeRef.current = node;
-          // Smooth camera animation to center on selected node
-          const nx = graph.getNodeAttribute(node, 'x') as number | undefined;
-          const ny = graph.getNodeAttribute(node, 'y') as number | undefined;
-          if (nx != null && ny != null) {
-            renderer.getCamera().animate(
-              { x: nx, y: ny, ratio: renderer.getCamera().ratio },
-              { duration: 800 },
-            );
-          }
-          renderer.refresh();
-        }
-      }
-    });
+    // 单击选中，双击跳转
+    let clickTimer: ReturnType<typeof setTimeout> | null = null;
+    let clickCount = 0;
 
-    renderer.on('doubleClickNode', ({ node }) => {
-      const path = graph.getNodeAttribute(node, 'path') as string | undefined;
-      if (path) {
-        navigate('/knowledge', { state: { openFile: path } });
+    renderer.on('clickNode', ({ node }) => {
+      clickCount++;
+      if (clickCount === 1) {
+        clickTimer = setTimeout(() => {
+          // Single click: select
+          selectedNodeRef.current = node;
+          renderer.refresh();
+          clickCount = 0;
+        }, 250);
+      } else if (clickCount === 2) {
+        // Double click: navigate
+        if (clickTimer) clearTimeout(clickTimer);
+        clickCount = 0;
+        const path = graph.getNodeAttribute(node, 'path') as string | undefined;
+        if (path) {
+          navigate('/knowledge', { state: { openFile: path } });
+        }
       }
     });
 
     renderer.on('clickStage', () => {
       if (selectedNodeRef.current) {
-        // Release fixed position on deselect
         const prev = selectedNodeRef.current;
         graph.removeNodeAttribute(prev, 'fx');
         graph.removeNodeAttribute(prev, 'fy');
@@ -323,11 +317,15 @@ export function GraphPage() {
     // ── Drag implementation ──
     let draggedNode: string | null = null;
     let isDragging = false;
+    let hasMoved = false;
     const DRAG_THRESHOLD = 4;
     let dragStartMouse = { x: 0, y: 0 };
     const container = containerRef.current;
 
     const handleMouseDown = (e: MouseEvent) => {
+      // Only drag with left mouse button
+      if (e.button !== 0) return;
+
       const rect = container.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
@@ -350,6 +348,7 @@ export function GraphPage() {
       if (closestNode) {
         draggedNode = closestNode;
         isDragging = false;
+        hasMoved = false;
         dragStartMouse = { x: mouseX, y: mouseY };
         e.preventDefault();
         e.stopPropagation();
@@ -366,6 +365,7 @@ export function GraphPage() {
       const moveDist = Math.sqrt((mouseX - dragStartMouse.x) ** 2 + (mouseY - dragStartMouse.y) ** 2);
       if (!isDragging && moveDist > DRAG_THRESHOLD) {
         isDragging = true;
+        hasMoved = true;
       }
 
       if (isDragging) {
@@ -377,8 +377,8 @@ export function GraphPage() {
     };
 
     const handleMouseUp = () => {
-      if (isDragging && draggedNode) {
-        // Fix position after drag (per Obsidian spec)
+      if (draggedNode && isDragging) {
+        // Fix position after drag
         const x = graph.getNodeAttribute(draggedNode, 'x') as number | undefined;
         const y = graph.getNodeAttribute(draggedNode, 'y') as number | undefined;
         if (x != null) graph.setNodeAttribute(draggedNode, 'fx', x);
@@ -388,12 +388,12 @@ export function GraphPage() {
       isDragging = false;
     };
 
-    container.addEventListener('mousedown', handleMouseDown, true);
+    container.addEventListener('mousedown', handleMouseDown);
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
 
     return () => {
-      container.removeEventListener('mousedown', handleMouseDown, true);
+      container.removeEventListener('mousedown', handleMouseDown);
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
 
@@ -404,6 +404,7 @@ export function GraphPage() {
       graphRef.current = null;
       hoveredNodeRef.current = null;
       selectedNodeRef.current = null;
+      if (clickTimer) clearTimeout(clickTimer);
     };
   }, [graphData, navigate]);
 
