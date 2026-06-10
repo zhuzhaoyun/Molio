@@ -139,35 +139,26 @@ export function SettingsPage() {
   );
 }
 
+const LANG_OPTIONS = [
+  { value: 'zh', label: '中文' },
+  { value: 'en', label: 'English' },
+] as const;
+
 function LanguageSelector() {
   const { locale, setLocale } = useI18n();
 
   return (
-    <div className="settings-lang-options">
-      <label
-        className={`settings-lang-option${locale === 'zh' ? ' is-active' : ''}`}
-      >
-        <input
-          type="radio"
-          name="lang"
-          value="zh"
-          checked={locale === 'zh'}
-          onChange={() => setLocale('zh')}
-        />
-        <span>中文</span>
-      </label>
-      <label
-        className={`settings-lang-option${locale === 'en' ? ' is-active' : ''}`}
-      >
-        <input
-          type="radio"
-          name="lang"
-          value="en"
-          checked={locale === 'en'}
-          onChange={() => setLocale('en')}
-        />
-        <span>English</span>
-      </label>
+    <div className="settings-lang-pills">
+      {LANG_OPTIONS.map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          className={`settings-lang-pill${locale === opt.value ? ' is-active' : ''}`}
+          onClick={() => setLocale(opt.value)}
+        >
+          {opt.label}
+        </button>
+      ))}
     </div>
   );
 }
