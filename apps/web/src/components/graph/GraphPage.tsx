@@ -14,7 +14,7 @@ import { NodeCircleProgram } from 'sigma/rendering';
 import { api } from '../../api/client';
 import { useI18n } from '../../i18n';
 import { Minimap } from './Minimap';
-import { useActiveVaultId } from '../../stores/vaultStore';
+import { useActiveVaultId, vaultStore } from '../../stores/vaultStore';
 
 // ── Types ──
 
@@ -102,7 +102,15 @@ export function GraphPage() {
         setGraphData(data);
       })
       .catch((err) => {
-        setError(err.message ?? 'Failed to load graph');
+        if (err.message?.includes('404')) {
+          // Vault no longer exists in DB — clear stale selection.
+          // App.tsx's setVaults() will auto-select a valid vault,
+          // and this useEffect will re-fire with the new activeVaultId.
+          vaultStore.setActiveVaultId(null);
+          setError(null);
+        } else {
+          setError(err.message ?? 'Failed to load graph');
+        }
         setGraphData(null);
       })
       .finally(() => setLoading(false));
