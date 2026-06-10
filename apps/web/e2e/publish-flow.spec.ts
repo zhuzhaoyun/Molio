@@ -55,7 +55,7 @@ async function navigateToTestFile(page: any) {
   await page.waitForLoadState('networkidle');
 
   // Navigate to knowledge base view
-  await page.locator('[data-tooltip="Knowledge Base"]').click();
+  await page.locator('[data-view="knowledge"]').first().click();
   await page.waitForTimeout(500);
 
   // Open vault switcher
