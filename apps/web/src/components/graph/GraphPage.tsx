@@ -13,6 +13,7 @@ import Sigma from 'sigma';
 import { NodeCircleProgram } from 'sigma/rendering';
 import { api } from '../../api/client';
 import { useI18n } from '../../i18n';
+import { Minimap } from './Minimap';
 import type { Vault } from '@molio/contracts';
 
 // ── Types ──
@@ -22,6 +23,7 @@ interface GraphNode {
   label: string;
   path: string;
   linkCount: number;
+  nodeType?: string; // future: document | tag | agent | project | workflow | aiModel
 }
 
 interface GraphEdge {
@@ -29,26 +31,44 @@ interface GraphEdge {
   target: string;
 }
 
-// ── Visual constants (Obsidian dark theme) ──
-// Ref: https://docs.obsidian.md/Reference/CSS+variables/Plugins/Graph
+// ── Visual constants (Galaxy Knowledge Graph style) ──
+// "知识星系" 视觉：连线极淡，节点有层次，hover 聚焦
 
-const NODE_DEFAULT = '#8c8c8c';
-const NODE_HUB = '#a8a8a8';
-const NODE_ISOLATED = '#6a6a6a';
-const NODE_HOVER = '#7cb9ff';
-const NODE_SELECTED = '#ff7b72';
-const EDGE_DEFAULT = '#363636';
-const EDGE_HIGHLIGHT = '#565656';
-const LABEL_DEFAULT = '#d4d4d4';
-const BG_DEFAULT = '#1a1a2e';
+const BG = '#0B1020'; // 深邃夜空背景，不是纯黑
+const NODE_DEFAULT = '#C5CBD6'; // 节点微亮，在深色背景上像星光
+const NODE_ISOLATED = '#6B7280'; // 孤立节点稍暗
+const NODE_HOVER = '#FFFFFF'; // hover 节点纯白
+const NODE_SELECTED = '#FFFFFF'; // 选中节点纯白
+const NODE_HOVER_GLOW = 'rgba(96,165,250,0.8)';
+const EDGE_DEFAULT = 'rgba(60,65,80,0.03)'; // 连线几乎完全隐形
+const EDGE_HOVER = 'rgba(96,165,250,0.8)'; // hover 时亮起
+const EDGE_SELECTED = '#60A5FA';
+const LABEL_DEFAULT = '#D1D5DB';
 
+// Node type colours (future: daemon will provide nodeType)
+const NODE_TYPE_COLORS: Record<string, string> = {
+  document: '#94A3B8',
+  tag: '#22C55E',
+  agent: '#8B5CF6',
+  project: '#3B82F6',
+  workflow: '#F59E0B',
+  aiModel: '#EF4444',
+};
+
+// 节点大小按连接数动态变化：知识越多的节点越大
+// 范围：5 ~ 30，中心节点明显更大，小节点也不消失
 function nodeSize(linkCount: number): number {
-  return Math.max(4, Math.min(18, 4 + Math.sqrt(linkCount + 1) * 2.5));
+  const base = 5;
+  const maxSize = 30;
+  const calculated = base + Math.sqrt(linkCount) * 3;
+  return Math.min(maxSize, calculated);
 }
 
-function nodeColor(linkCount: number): string {
+function nodeColor(linkCount: number, nodeType?: string): string {
+  if (nodeType && NODE_TYPE_COLORS[nodeType]) {
+    return NODE_TYPE_COLORS[nodeType]!;
+  }
   if (linkCount === 0) return NODE_ISOLATED;
-  if (linkCount > 10) return NODE_HUB;
   return NODE_DEFAULT;
 }
 
@@ -126,8 +146,9 @@ export function GraphPage() {
         label: n.label,
         path: n.path,
         linkCount: n.linkCount,
+        nodeType: n.nodeType ?? null,
         size: nodeSize(n.linkCount),
-        color: nodeColor(n.linkCount),
+        color: nodeColor(n.linkCount, n.nodeType),
         type: 'circle',
         x: Math.cos(angle) * radius,
         y: Math.sin(angle) * radius,
@@ -141,63 +162,85 @@ export function GraphPage() {
       } catch { /* Edge already exists */ }
     }
 
-    // Force-directed layout
+    // Force-directed layout: 星系感
+    // 目标：节点自然散开，形成中心辐射结构
     forceLayout.assign(graph, {
-      maxIterations: 800,
+      maxIterations: 1200,
       settings: {
-        attraction: 0.002,
-        repulsion: 8,
-        gravity: 0.02,
-        inertia: 0.6,
-        maxMove: 200,
+        attraction: 0.0015,  // 稍松，节点间距更大
+        repulsion: 2.5,      // 更强排斥，避免拥挤
+        gravity: 0.015,      // 向心力，形成中心
+        inertia: 0.5,        // 低惯性，更稳定
+        maxMove: 150,        // 适度移动范围
       },
     });
 
     // ── Node reducer for hover/select ──
+    // 核心视觉：默认状态下节点微亮，hover 时聚焦，其余淡出
     const nodeReducer = (node: string, data: Record<string, unknown>) => {
       const hovered = hoveredNodeRef.current;
       const selected = selectedNodeRef.current;
       const focusNode = hovered ?? selected;
+      const isSelected = node === selected;
 
+      // 无 focus：默认显示
       if (!focusNode) {
-        return { ...data, color: (data.color as string) ?? NODE_DEFAULT };
-      }
-
-      if (node === focusNode) {
         return {
           ...data,
-          size: ((data.size as number) ?? 6) * 1.3,
-          color: selected ? NODE_SELECTED : NODE_HOVER,
+          color: (data.color as string) ?? NODE_DEFAULT,
+          size: (data.size as number) ?? 6,
         };
       }
 
+      // 当前 hover/选中节点
+      if (node === focusNode) {
+        const scale = isSelected ? 1.5 : 1.2;
+        return {
+          ...data,
+          size: ((data.size as number) ?? 6) * scale,
+          color: NODE_HOVER,
+          // 发光效果：通过 zIndex 或额外渲染实现
+        };
+      }
+
+      // 关联节点（邻居）
       const isConnected = graph.hasEdge(focusNode, node) || graph.hasEdge(node, focusNode);
       if (isConnected) {
         return { ...data, color: (data.color as string) ?? NODE_DEFAULT };
       }
 
-      return { ...data, color: 'rgba(140,140,140,0.15)' };
+      // 非关联节点：几乎消失
+      return { ...data, color: 'rgba(156,163,175,0.08)' };
     };
 
     // ── Edge reducer ──
+    // 默认：线条几乎消失 (rgba 0.05)
+    // hover/选中：关联线亮起 (0.8 高亮)
     const edgeReducer = (edge: string, data: Record<string, unknown>) => {
       const hovered = hoveredNodeRef.current;
       const selected = selectedNodeRef.current;
       const focusNode = hovered ?? selected;
 
+      // 无 focus：默认极淡
       if (!focusNode) {
-        return { ...data, color: (data.color as string) ?? EDGE_DEFAULT };
+        return { ...data, color: EDGE_DEFAULT, size: 0.5 };
       }
 
-      // Get source/target using graphology API, not edge attributes
+      // Get source/target using graphology API
       const source = graph.source(edge);
       const target = graph.target(edge);
       const isConnected = source === focusNode || target === focusNode;
 
       if (isConnected) {
-        return { ...data, color: EDGE_HIGHLIGHT };
+        // 选中状态：粗蓝线
+        if (selected) {
+          return { ...data, color: EDGE_SELECTED, size: 3 };
+        }
+        // hover：亮蓝线
+        return { ...data, color: EDGE_HOVER, size: 2 };
       }
-      return { ...data, color: 'rgba(54,54,54,0.15)' };
+      // 非关联线：几乎消失
+      return { ...data, color: 'rgba(255,255,255,0.02)', size: 0.3 };
     };
 
     // ── Create Sigma ──
@@ -208,13 +251,18 @@ export function GraphPage() {
       defaultEdgeType: 'line',
       edgeLabelSize: 10,
       labelColor: { color: LABEL_DEFAULT },
-      labelSize: 12,
-      labelRenderedSizeThreshold: 8,
+      labelSize: 11,
+      labelFont: 'Inter, PingFang SC, -apple-system, sans-serif',
+      // Labels only show when zoomed in (≈ zoom > 1.2 in Obsidian terms)
+      labelRenderedSizeThreshold: 12,
       labelDensity: 0.25,
       defaultNodeColor: NODE_DEFAULT,
       renderEdgeLabels: false,
       autoRescale: true,
       autoCenter: true,
+      minCameraRatio: 0.2,
+      maxCameraRatio: 8,
+      stagePadding: 80,
       nodeReducer,
       edgeReducer,
     });
@@ -238,16 +286,37 @@ export function GraphPage() {
       const path = graph.getNodeAttribute(node, 'path') as string | undefined;
       if (path) {
         if (selectedNodeRef.current === node) {
+          // Double-click: open the document
           navigate('/knowledge', { state: { openFile: path } });
         } else {
           selectedNodeRef.current = node;
+          // Smooth camera animation to center on selected node
+          const nx = graph.getNodeAttribute(node, 'x') as number | undefined;
+          const ny = graph.getNodeAttribute(node, 'y') as number | undefined;
+          if (nx != null && ny != null) {
+            renderer.getCamera().animate(
+              { x: nx, y: ny, ratio: renderer.getCamera().ratio },
+              { duration: 800 },
+            );
+          }
           renderer.refresh();
         }
       }
     });
 
+    renderer.on('doubleClickNode', ({ node }) => {
+      const path = graph.getNodeAttribute(node, 'path') as string | undefined;
+      if (path) {
+        navigate('/knowledge', { state: { openFile: path } });
+      }
+    });
+
     renderer.on('clickStage', () => {
       if (selectedNodeRef.current) {
+        // Release fixed position on deselect
+        const prev = selectedNodeRef.current;
+        graph.removeNodeAttribute(prev, 'fx');
+        graph.removeNodeAttribute(prev, 'fy');
         selectedNodeRef.current = null;
         renderer.refresh();
       }
@@ -310,6 +379,13 @@ export function GraphPage() {
     };
 
     const handleMouseUp = () => {
+      if (isDragging && draggedNode) {
+        // Fix position after drag (per Obsidian spec)
+        const x = graph.getNodeAttribute(draggedNode, 'x') as number | undefined;
+        const y = graph.getNodeAttribute(draggedNode, 'y') as number | undefined;
+        if (x != null) graph.setNodeAttribute(draggedNode, 'fx', x);
+        if (y != null) graph.setNodeAttribute(draggedNode, 'fy', y);
+      }
       draggedNode = null;
       isDragging = false;
     };
@@ -405,6 +481,7 @@ export function GraphPage() {
         )}
 
         <div ref={containerRef} className="graph-sigma" />
+        <Minimap sigma={sigmaRef.current} />
       </div>
     </div>
   );

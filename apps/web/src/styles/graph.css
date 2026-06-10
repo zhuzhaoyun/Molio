@@ -11,7 +11,7 @@
   inset: 0;
   display: flex;
   flex-direction: column;
-  background: #1a1a2e;
+  background: #0B1020;
 }
 
 /* ── Top Bar ── */
@@ -22,7 +22,7 @@
   justify-content: space-between;
   padding: 10px 16px;
   border-bottom: 1px solid rgba(255,255,255,0.06);
-  background: #1a1a2e;
+  background: #0B1020;
   flex-shrink: 0;
   min-height: 48px;
   z-index: 10;
@@ -88,7 +88,7 @@
   flex: 1;
   position: relative;
   overflow: hidden;
-  background: #1a1a2e;
+  background: #0B1020;
   cursor: grab;
 }
 
@@ -113,7 +113,7 @@
   gap: 12px;
   color: #888;
   z-index: 10;
-  background: #1a1a2e;
+  background: #0B1020;
 }
 
 .graph-loading__spinner {
@@ -145,7 +145,7 @@
   justify-content: center;
   color: #e87872;
   z-index: 10;
-  background: #1a1a2e;
+  background: #0B1020;
 }
 
 .graph-error p {
@@ -165,7 +165,7 @@
   gap: 16px;
   color: #888;
   z-index: 10;
-  background: #1a1a2e;
+  background: #0B1020;
 }
 
 .graph-empty__icon {
@@ -183,4 +183,21 @@
   margin: 0;
   font-size: 14px;
   color: #888;
+}
+
+/* ── Minimap ── */
+
+.graph-minimap {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  z-index: 20;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+.graph-minimap:hover {
+  opacity: 1;
 }
