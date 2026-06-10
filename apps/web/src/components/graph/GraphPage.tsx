@@ -1,8 +1,8 @@
 /**
  * GraphPage — Obsidian-style force-directed knowledge graph.
  *
- * Uses Sigma.js with a custom Canvas edge renderer to match Obsidian's
- * visual quality: visible grey edges, black nodes, and smooth drag.
+ * Visual reference: https://help.obsidian.md/Plugins/Graph+view
+ * Colours match Obsidian's default dark theme CSS variables.
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -29,21 +29,27 @@ interface GraphEdge {
   target: string;
 }
 
-// ── Visual constants (Obsidian-style) ──
+// ── Visual constants (Obsidian dark theme) ──
+// Ref: https://docs.obsidian.md/Reference/CSS+variables/Plugins/Graph
 
-/** Node colour — #8c8c8c is Obsidian's --graph-node default */
-const NODE_COLOR = '#8c8c8c';
-const NODE_HOVER_COLOR = '#4a90d9';
-const NODE_SELECTED_COLOR = '#fb4934';
-/** Edge colour — visible grey, matching Obsidian's --graph-line (#363636 in dark) */
-const EDGE_COLOR = 'rgba(54,54,54,0.5)';
-const EDGE_HIGHLIGHT_COLOR = 'rgba(54,54,54,0.8)';
-/** Obsidian dark background */
-const BG_COLOR = '#1a1a2e';
+const NODE_DEFAULT = '#8c8c8c';
+const NODE_HUB = '#a8a8a8';
+const NODE_ISOLATED = '#6a6a6a';
+const NODE_HOVER = '#7cb9ff';
+const NODE_SELECTED = '#ff7b72';
+const EDGE_DEFAULT = '#363636';
+const EDGE_HIGHLIGHT = '#565656';
+const LABEL_DEFAULT = '#d4d4d4';
+const BG_DEFAULT = '#1a1a2e';
 
-/** Compute node size from link count */
 function nodeSize(linkCount: number): number {
   return Math.max(4, Math.min(18, 4 + Math.sqrt(linkCount + 1) * 2.5));
+}
+
+function nodeColor(linkCount: number): string {
+  if (linkCount === 0) return NODE_ISOLATED;
+  if (linkCount > 10) return NODE_HUB;
+  return NODE_DEFAULT;
 }
 
 // ── Main Page Component ──
@@ -64,7 +70,6 @@ export function GraphPage() {
 
   const hoveredNodeRef = useRef<string | null>(null);
   const selectedNodeRef = useRef<string | null>(null);
-  const isDraggingRef = useRef(false);
 
   // Load vault list
   useEffect(() => {
@@ -122,7 +127,7 @@ export function GraphPage() {
         path: n.path,
         linkCount: n.linkCount,
         size: nodeSize(n.linkCount),
-        color: NODE_COLOR,
+        color: nodeColor(n.linkCount),
         type: 'circle',
         x: Math.cos(angle) * radius,
         y: Math.sin(angle) * radius,
@@ -132,7 +137,7 @@ export function GraphPage() {
     for (const e of graphData.edges) {
       if (!graph.hasNode(e.source) || !graph.hasNode(e.target)) continue;
       try {
-        graph.addEdge(e.source, e.target, { color: EDGE_COLOR });
+        graph.addEdge(e.source, e.target, { color: EDGE_DEFAULT });
       } catch { /* Edge already exists */ }
     }
 
@@ -148,27 +153,27 @@ export function GraphPage() {
       },
     });
 
-    // ── Node reducer for hover/select highlighting ──
+    // ── Node reducer for hover/select ──
     const nodeReducer = (node: string, data: Record<string, unknown>) => {
       const hovered = hoveredNodeRef.current;
       const selected = selectedNodeRef.current;
       const focusNode = hovered ?? selected;
 
       if (!focusNode) {
-        return { ...data, color: (data.color as string) ?? NODE_COLOR };
+        return { ...data, color: (data.color as string) ?? NODE_DEFAULT };
       }
 
       if (node === focusNode) {
         return {
           ...data,
           size: ((data.size as number) ?? 6) * 1.3,
-          color: selected ? NODE_SELECTED_COLOR : NODE_HOVER_COLOR,
+          color: selected ? NODE_SELECTED : NODE_HOVER,
         };
       }
 
       const isConnected = graph.hasEdge(focusNode, node) || graph.hasEdge(node, focusNode);
       if (isConnected) {
-        return { ...data, color: (data.color as string) ?? NODE_COLOR };
+        return { ...data, color: (data.color as string) ?? NODE_DEFAULT };
       }
 
       return { ...data, color: 'rgba(140,140,140,0.15)' };
@@ -181,7 +186,7 @@ export function GraphPage() {
       const focusNode = hovered ?? selected;
 
       if (!focusNode) {
-        return { ...data, color: (data.color as string) ?? EDGE_COLOR };
+        return { ...data, color: (data.color as string) ?? EDGE_DEFAULT };
       }
 
       const edgeData = graph.getEdgeAttributes(edge) as Record<string, unknown>;
@@ -190,27 +195,23 @@ export function GraphPage() {
       const isConnected = source === focusNode || target === focusNode;
 
       if (isConnected) {
-        return { ...data, color: EDGE_HIGHLIGHT_COLOR };
+        return { ...data, color: EDGE_HIGHLIGHT };
       }
-      return { ...data, color: 'rgba(54,54,54,0.08)' };
+      return { ...data, color: 'rgba(54,54,54,0.15)' };
     };
 
-    // Read theme text color for labels
-    const computedStyle = getComputedStyle(document.documentElement);
-    const textColor = computedStyle.getPropertyValue('--text').trim() || '#1a1917';
-
-    // ── Create Sigma with custom edge rendering ──
+    // ── Create Sigma ──
     const renderer = new Sigma(graph, containerRef.current, {
       allowInvalidContainer: true,
       nodeProgramClasses: { circle: NodeCircleProgram },
-      defaultEdgeColor: EDGE_COLOR,
+      defaultEdgeColor: EDGE_DEFAULT,
       defaultEdgeType: 'line',
       edgeLabelSize: 10,
-      labelColor: { color: textColor },
+      labelColor: { color: LABEL_DEFAULT },
       labelSize: 12,
       labelRenderedSizeThreshold: 8,
       labelDensity: 0.25,
-      defaultNodeColor: NODE_COLOR,
+      defaultNodeColor: NODE_DEFAULT,
       renderEdgeLabels: false,
       autoRescale: true,
       autoCenter: true,
@@ -252,7 +253,7 @@ export function GraphPage() {
       }
     });
 
-    // ── Drag implementation (native DOM on canvas container) ──
+    // ── Drag implementation ──
     let draggedNode: string | null = null;
     let isDragging = false;
     const DRAG_THRESHOLD = 4;
@@ -265,7 +266,6 @@ export function GraphPage() {
       const mouseY = e.clientY - rect.top;
       const mouseGraph = renderer.viewportToGraph({ x: mouseX, y: mouseY });
 
-      // Find closest node
       let closestNode: string | null = null;
       let closestDist = Infinity;
 
@@ -314,7 +314,6 @@ export function GraphPage() {
       isDragging = false;
     };
 
-    // Use capture phase so we get events before Sigma's handlers
     container.addEventListener('mousedown', handleMouseDown, true);
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
