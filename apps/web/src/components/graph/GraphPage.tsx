@@ -189,9 +189,9 @@ export function GraphPage() {
         return { ...data, color: (data.color as string) ?? EDGE_DEFAULT };
       }
 
-      const edgeData = graph.getEdgeAttributes(edge) as Record<string, unknown>;
-      const source = (edgeData.source as string) ?? '';
-      const target = (edgeData.target as string) ?? '';
+      // Get source/target using graphology API, not edge attributes
+      const source = graph.source(edge);
+      const target = graph.target(edge);
       const isConnected = source === focusNode || target === focusNode;
 
       if (isConnected) {
