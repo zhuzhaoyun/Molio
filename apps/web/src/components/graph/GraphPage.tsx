@@ -1,18 +1,16 @@
 /**
  * GraphPage — Obsidian-style force-directed knowledge graph.
  *
- * Renders a Sigma.js WebGL graph with an Obsidian-inspired visual style:
- * uniform grey nodes, subtle dotted grid, hover/select highlighting,
- * and smooth force-directed layout with drag support.
+ * Uses Sigma.js with a custom Canvas edge renderer to match Obsidian's
+ * visual quality: visible grey edges, black nodes, and smooth drag.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Graph from 'graphology';
 import forceLayout from 'graphology-layout-force';
 import Sigma from 'sigma';
-import { NodeCircleProgram, EdgeLineProgram } from 'sigma/rendering';
-import type { Attributes } from 'graphology-types';
+import { NodeCircleProgram } from 'sigma/rendering';
 import { api } from '../../api/client';
 import { useI18n } from '../../i18n';
 import type { Vault } from '@molio/contracts';
@@ -31,33 +29,21 @@ interface GraphEdge {
   target: string;
 }
 
-// ── Obsidian-inspired visual constants ──
+// ── Visual constants (Obsidian-style) ──
 
-/**
- * Node colour — matches Obsidian's default --graph-node which resolves
- * to --text-muted: #999 in light mode, ~#777 in dark mode.
- */
-const NODE_COLOR_LIGHT = '#999999';
-const NODE_COLOR_DARK = '#777777';
-/** Node colour on hover — accent blue for feedback */
+/** Node colour — #8c8c8c is Obsidian's --graph-node default */
+const NODE_COLOR = '#8c8c8c';
 const NODE_HOVER_COLOR = '#4a90d9';
-/** Node colour when selected/focused — warm red for emphasis */
 const NODE_SELECTED_COLOR = '#fb4934';
-/** Edge colour (very subtle, adapts to theme via opacity) */
-const EDGE_COLOR = 'rgba(128,128,128,0.15)';
-/** Edge colour on highlight */
-const EDGE_HIGHLIGHT_COLOR = 'rgba(128,128,128,0.4)';
+/** Edge colour — visible grey, matching Obsidian's --graph-line (#363636 in dark) */
+const EDGE_COLOR = 'rgba(54,54,54,0.5)';
+const EDGE_HIGHLIGHT_COLOR = 'rgba(54,54,54,0.8)';
+/** Obsidian dark background */
+const BG_COLOR = '#1a1a2e';
 
 /** Compute node size from link count */
 function nodeSize(linkCount: number): number {
-  return Math.max(3, Math.min(20, 3 + Math.sqrt(linkCount + 1) * 3.5));
-}
-
-/** Get current theme node color */
-function getNodeColor(): string {
-  const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
-    || (!document.documentElement.getAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
-  return isDark ? NODE_COLOR_DARK : NODE_COLOR_LIGHT;
+  return Math.max(4, Math.min(18, 4 + Math.sqrt(linkCount + 1) * 2.5));
 }
 
 // ── Main Page Component ──
@@ -72,12 +58,10 @@ export function GraphPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Refs for Sigma instance and container
   const containerRef = useRef<HTMLDivElement>(null);
   const sigmaRef = useRef<Sigma | null>(null);
   const graphRef = useRef<Graph | null>(null);
 
-  // Track hovered and selected nodes for highlighting
   const hoveredNodeRef = useRef<string | null>(null);
   const selectedNodeRef = useRef<string | null>(null);
   const isDraggingRef = useRef(false);
@@ -112,39 +96,25 @@ export function GraphPage() {
       .finally(() => setLoading(false));
   }, [selectedVaultId]);
 
-  // ── Drag helpers ──
-
-  const screenToGraph = useCallback((renderer: Sigma, x: number, y: number): { x: number; y: number } => {
-    const graphCoords = renderer.viewportToGraph({ x, y });
-    return graphCoords;
-  }, []);
-
-  // ── Initialize Sigma when graph data is available ──
+  // Initialize Sigma when graph data is available
   useEffect(() => {
     if (!graphData || graphData.nodes.length === 0 || !containerRef.current) return;
 
-    // Cleanup previous instance
     if (sigmaRef.current) {
       sigmaRef.current.kill();
       sigmaRef.current = null;
     }
 
-    // ── Build graphology graph ──
+    // ── Build graph ──
     const graph = new Graph({ allowSelfLoops: false, multi: false });
     graphRef.current = graph;
 
-    // Get current theme color
-    const currentNodeColor = getNodeColor();
-
-    // Give nodes an initial circular spread so the force layout starts from a
-    // decent distribution instead of piling everything at (0,0).
     const count = graphData.nodes.length;
     const initialRadius = Math.sqrt(count) * 40 + 200;
     const angleStep = (2 * Math.PI) / (count || 1);
 
     for (let i = 0; i < count; i++) {
       const n = graphData.nodes[i];
-      // Place nodes in a circle with some random jitter
       const angle = angleStep * i + (Math.random() - 0.5) * 0.5;
       const radius = initialRadius * (0.5 + Math.random() * 0.5);
       graph.addNode(n.key, {
@@ -152,9 +122,8 @@ export function GraphPage() {
         path: n.path,
         linkCount: n.linkCount,
         size: nodeSize(n.linkCount),
-        color: currentNodeColor,
+        color: NODE_COLOR,
         type: 'circle',
-        // Initial position so the force layout doesn't start from (0,0)
         x: Math.cos(angle) * radius,
         y: Math.sin(angle) * radius,
       });
@@ -164,12 +133,10 @@ export function GraphPage() {
       if (!graph.hasNode(e.source) || !graph.hasNode(e.target)) continue;
       try {
         graph.addEdge(e.source, e.target, { color: EDGE_COLOR });
-      } catch {
-        // Edge already exists
-      }
+      } catch { /* Edge already exists */ }
     }
 
-    // Apply force-directed layout
+    // Force-directed layout
     forceLayout.assign(graph, {
       maxIterations: 800,
       settings: {
@@ -181,94 +148,69 @@ export function GraphPage() {
       },
     });
 
-    // ── Edge reducer: dim non-connected edges ──
-    const edgeReducer = (edge: string, data: Attributes) => {
+    // ── Node reducer for hover/select highlighting ──
+    const nodeReducer = (node: string, data: Record<string, unknown>) => {
       const hovered = hoveredNodeRef.current;
       const selected = selectedNodeRef.current;
       const focusNode = hovered ?? selected;
 
       if (!focusNode) {
-        return data;
+        return { ...data, color: (data.color as string) ?? NODE_COLOR };
       }
 
-      // Check if this edge is connected to the focused node
-      const edgeAttributes = graph.getEdgeAttributes(edge) as Record<string, unknown>;
-      const ext = edgeAttributes as { source: string; target: string };
-      const isConnected = ext.source === focusNode || ext.target === focusNode;
-
-      if (!isConnected) {
-        return { ...data, color: 'rgba(160,158,154,0.03)' };
-      }
-      return { ...data, color: EDGE_HIGHLIGHT_COLOR };
-    };
-
-    // ── Node reducer: highlight hovered/selected and their neighbors ──
-    const nodeReducer = (node: string, data: Attributes) => {
-      const hovered = hoveredNodeRef.current;
-      const selected = selectedNodeRef.current;
-      const focusNode = hovered ?? selected;
-      const currentColor = getNodeColor();
-
-      if (!focusNode) {
-        // No focus: default state, all nodes visible
-        return {
-          ...data,
-          type: (data.type as string) ?? 'circle',
-          size: (data.size as number) ?? 6,
-          color: (data.color as string) ?? currentColor,
-        };
-      }
-
-      // This node is the focused node itself
       if (node === focusNode) {
         return {
           ...data,
-          type: (data.type as string) ?? 'circle',
           size: ((data.size as number) ?? 6) * 1.3,
           color: selected ? NODE_SELECTED_COLOR : NODE_HOVER_COLOR,
         };
       }
 
-      // Check if this node is connected to the focused node
       const isConnected = graph.hasEdge(focusNode, node) || graph.hasEdge(node, focusNode);
-
       if (isConnected) {
-        return {
-          ...data,
-          type: (data.type as string) ?? 'circle',
-          size: (data.size as number) ?? 6,
-          color: (data.color as string) ?? currentColor,
-        };
+        return { ...data, color: (data.color as string) ?? NODE_COLOR };
       }
 
-      // Dim non-connected nodes
-      const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
-        || (!document.documentElement.getAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
-      return {
-        ...data,
-        type: (data.type as string) ?? 'circle',
-        size: (data.size as number) ?? 6,
-        color: isDark ? 'rgba(119,119,119,0.2)' : 'rgba(153,153,153,0.2)',
-      };
+      return { ...data, color: 'rgba(140,140,140,0.15)' };
     };
 
-    // Read current theme text color for labels (adapts to light/dark mode)
+    // ── Edge reducer ──
+    const edgeReducer = (edge: string, data: Record<string, unknown>) => {
+      const hovered = hoveredNodeRef.current;
+      const selected = selectedNodeRef.current;
+      const focusNode = hovered ?? selected;
+
+      if (!focusNode) {
+        return { ...data, color: (data.color as string) ?? EDGE_COLOR };
+      }
+
+      const edgeData = graph.getEdgeAttributes(edge) as Record<string, unknown>;
+      const source = (edgeData.source as string) ?? '';
+      const target = (edgeData.target as string) ?? '';
+      const isConnected = source === focusNode || target === focusNode;
+
+      if (isConnected) {
+        return { ...data, color: EDGE_HIGHLIGHT_COLOR };
+      }
+      return { ...data, color: 'rgba(54,54,54,0.08)' };
+    };
+
+    // Read theme text color for labels
     const computedStyle = getComputedStyle(document.documentElement);
     const textColor = computedStyle.getPropertyValue('--text').trim() || '#1a1917';
 
-    // Create Sigma instance
+    // ── Create Sigma with custom edge rendering ──
     const renderer = new Sigma(graph, containerRef.current, {
       allowInvalidContainer: true,
       nodeProgramClasses: { circle: NodeCircleProgram },
-      edgeProgramClasses: { line: EdgeLineProgram },
       defaultEdgeColor: EDGE_COLOR,
       defaultEdgeType: 'line',
       edgeLabelSize: 10,
       labelColor: { color: textColor },
-      labelSize: 11,
-      labelRenderedSizeThreshold: 6,
-      labelDensity: 0.3,
-      defaultNodeColor: currentNodeColor,
+      labelSize: 12,
+      labelRenderedSizeThreshold: 8,
+      labelDensity: 0.25,
+      defaultNodeColor: NODE_COLOR,
       renderEdgeLabels: false,
       autoRescale: true,
       autoCenter: true,
@@ -279,7 +221,7 @@ export function GraphPage() {
     sigmaRef.current = renderer;
     renderer.refresh();
 
-    // ── Hover: enterNode / leaveNode ──
+    // ── Hover events ──
     renderer.on('enterNode', ({ node }) => {
       hoveredNodeRef.current = node;
       renderer.refresh();
@@ -290,11 +232,10 @@ export function GraphPage() {
       renderer.refresh();
     });
 
-    // ── Click to select / navigate ──
+    // ── Click events ──
     renderer.on('clickNode', ({ node }) => {
       const path = graph.getNodeAttribute(node, 'path') as string | undefined;
       if (path) {
-        // If clicking the same node, navigate; otherwise select it
         if (selectedNodeRef.current === node) {
           navigate('/knowledge', { state: { openFile: path } });
         } else {
@@ -304,7 +245,6 @@ export function GraphPage() {
       }
     });
 
-    // ── Click on empty space to deselect ──
     renderer.on('clickStage', () => {
       if (selectedNodeRef.current) {
         selectedNodeRef.current = null;
@@ -312,31 +252,29 @@ export function GraphPage() {
       }
     });
 
-    // ── Drag implementation ──
+    // ── Drag implementation (native DOM on canvas container) ──
     let draggedNode: string | null = null;
-    let isMouseDown = false;
-    let dragStartPos: { x: number; y: number } | null = null;
-
+    let isDragging = false;
+    const DRAG_THRESHOLD = 4;
+    let dragStartMouse = { x: 0, y: 0 };
     const container = containerRef.current;
 
     const handleMouseDown = (e: MouseEvent) => {
-      const sigma = sigmaRef.current;
-      if (!sigma) return;
+      const rect = container.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      const mouseGraph = renderer.viewportToGraph({ x: mouseX, y: mouseY });
 
-      const mousePos = sigma.viewportToGraph({ x: e.offsetX, y: e.offsetY });
-      const mouseGraphX = mousePos.x;
-      const mouseGraphY = mousePos.y;
-
-      // Find node under mouse
+      // Find closest node
       let closestNode: string | null = null;
       let closestDist = Infinity;
 
       graph.forEachNode((node, attr) => {
-        const nodeX = (attr.x as number) ?? 0;
-        const nodeY = (attr.y as number) ?? 0;
+        const nx = (attr.x as number) ?? 0;
+        const ny = (attr.y as number) ?? 0;
         const size = (attr.size as number) ?? 6;
-        const dist = Math.sqrt((nodeX - mouseGraphX) ** 2 + (nodeY - mouseGraphY) ** 2);
-        if (dist < size + 5 && dist < closestDist) {
+        const dist = Math.sqrt((nx - mouseGraph.x) ** 2 + (ny - mouseGraph.y) ** 2);
+        if (dist < size * 1.5 + 4 && dist < closestDist) {
           closestDist = dist;
           closestNode = node;
         }
@@ -344,52 +282,45 @@ export function GraphPage() {
 
       if (closestNode) {
         draggedNode = closestNode;
-        isMouseDown = true;
-        dragStartPos = { x: e.clientX, y: e.clientY };
-        isDraggingRef.current = false;
+        isDragging = false;
+        dragStartMouse = { x: mouseX, y: mouseY };
         e.preventDefault();
+        e.stopPropagation();
       }
     };
 
     const handleMouseMove = (e: MouseEvent) => {
-      if (!isMouseDown || !draggedNode) return;
+      if (!draggedNode) return;
 
-      const sigma = sigmaRef.current;
-      if (!sigma) return;
+      const rect = container.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
 
-      // If moved enough, consider it a drag
-      if (dragStartPos) {
-        const moveDist = Math.sqrt(
-          (e.clientX - dragStartPos.x) ** 2 + (e.clientY - dragStartPos.y) ** 2
-        );
-        if (moveDist > 3) {
-          isDraggingRef.current = true;
-        }
+      const moveDist = Math.sqrt((mouseX - dragStartMouse.x) ** 2 + (mouseY - dragStartMouse.y) ** 2);
+      if (!isDragging && moveDist > DRAG_THRESHOLD) {
+        isDragging = true;
       }
 
-      if (isDraggingRef.current) {
-        // Convert screen position to graph position
-        const graphPos = sigma.viewportToGraph({ x: e.offsetX, y: e.offsetY });
+      if (isDragging) {
+        const graphPos = renderer.viewportToGraph({ x: mouseX, y: mouseY });
         graph.setNodeAttribute(draggedNode, 'x', graphPos.x);
         graph.setNodeAttribute(draggedNode, 'y', graphPos.y);
-        sigma.refresh();
+        renderer.refresh();
       }
     };
 
     const handleMouseUp = () => {
       draggedNode = null;
-      isMouseDown = false;
-      isDraggingRef.current = false;
-      dragStartPos = null;
+      isDragging = false;
     };
 
-    container.addEventListener('mousedown', handleMouseDown);
+    // Use capture phase so we get events before Sigma's handlers
+    container.addEventListener('mousedown', handleMouseDown, true);
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
 
-    // Cleanup on unmount or data change
     return () => {
-      container.removeEventListener('mousedown', handleMouseDown);
+      container.removeEventListener('mousedown', handleMouseDown, true);
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
 
@@ -405,8 +336,6 @@ export function GraphPage() {
 
   const nodeCount = graphData?.nodes.length ?? 0;
   const edgeCount = graphData?.edges.length ?? 0;
-
-  // ── Empty states ──
 
   if (vaults.length === 0) {
     return (
@@ -430,13 +359,11 @@ export function GraphPage() {
 
   return (
     <div className="graph-page">
-      {/* Top bar */}
       <div className="graph-topbar">
         <div className="graph-topbar__left">
           <h2 className="graph-topbar__title">{t('graph.title')}</h2>
         </div>
         <div className="graph-topbar__right">
-          {/* Vault selector */}
           <select
             className="graph-vault-select"
             value={selectedVaultId ?? ''}
@@ -449,7 +376,6 @@ export function GraphPage() {
             ))}
           </select>
 
-          {/* Stats */}
           {graphData && !loading && (
             <span className="graph-stat">{t('graph.nodes', { count: nodeCount })}</span>
           )}
@@ -459,7 +385,6 @@ export function GraphPage() {
         </div>
       </div>
 
-      {/* Graph canvas */}
       <div className="graph-canvas">
         {loading && (
           <div className="graph-loading">
@@ -480,7 +405,6 @@ export function GraphPage() {
           </div>
         )}
 
-        {/* Sigma container div - ref attached for direct Sigma initialization */}
         <div ref={containerRef} className="graph-sigma" />
       </div>
     </div>
