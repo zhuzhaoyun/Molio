@@ -36,8 +36,8 @@ apps/
     src/
       api/      client.ts, sse.ts
       hooks/    useAgents, useChat, useProjects
-      components/ HomePage, NavRail, ChatPane, ChatComposer, UserMessage, AssistantMessage, ThinkingBlock, ToolCard
-      styles/   tokens, base, rail, home, chat
+      components/ HomePage, NavRail, ChatPane, ChatComposer, UserMessage, AssistantMessage, ThinkingBlock, ToolCard, graph/(GraphPage, Minimap)
+      styles/   tokens, base, rail, home, chat, graph
     e2e/        E2E 测试
       *.spec.ts Playwright 测试文件
       scenarios/ kimi-webbridge 场景文档 (非自动化测试)

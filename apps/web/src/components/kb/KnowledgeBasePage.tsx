@@ -4,6 +4,7 @@
  */
 
 import { useCallback, useRef, useState, useMemo, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useKnowledge } from '../../hooks/useKnowledge';
 import { useWikiChat } from '../../hooks/useWikiChat';
 import { useKbTabs } from '../../hooks/useKbTabs';
@@ -25,6 +26,7 @@ interface KnowledgeBasePageProps {
 export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
   const kb = useKnowledge();
   const tabs = useKbTabs();
+  const location = useLocation();
   const [showChatPanel, setShowChatPanel] = useState(false);
 
   // Context menu state
@@ -64,6 +66,29 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
       kb.selectFile(activeFilePath);
     }
   }, [activeFilePath]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Handle openFile navigation state (from GraphPage node click)
+  useEffect(() => {
+    const state = location.state as { openFile?: string } | null;
+    if (state?.openFile && kb.activeVault) {
+      const filePath = state.openFile;
+      const tabId = `file:${filePath}`;
+      // Only open if it's not already a tab
+      if (!tabs.tabs.some((t) => t.id === tabId)) {
+        const name = filePath.split('/').pop() || filePath;
+        tabs.openTab({
+          type: 'file',
+          title: name,
+          data: { path: filePath, vaultId: kb.activeVault.id },
+          id: tabId,
+        });
+      } else {
+        tabs.activateTab(tabId);
+      }
+      // Clear state so it doesn't re-trigger
+      window.history.replaceState({}, '', '/knowledge');
+    }
+  }, [location.state, kb.activeVault]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Wiki chat hook — refreshes tree on build completion
   const wikiChat = useWikiChat({
