@@ -48,35 +48,39 @@
   border-radius: var(--radius);
 }
 
-.settings-lang-options {
+.settings-lang-pills {
   display: flex;
-  gap: 4px;
-}
-
-.settings-lang-option {
-  display: flex;
-  align-items: center;
   gap: 8px;
-  padding: 8px 16px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  font-size: 13px;
+  flex-wrap: wrap;
+}
+
+.settings-lang-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 20px;
+  font-size: 14px;
   font-weight: 500;
+  font-family: inherit;
   color: var(--text-muted);
-  transition: background 150ms ease, color 150ms ease;
+  background: transparent;
+  border: 2px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  outline: none;
+  transition: all 150ms ease;
+  user-select: none;
 }
 
-.settings-lang-option:hover {
-  background: var(--bg-subtle);
+.settings-lang-pill:hover {
+  border-color: var(--accent);
+  color: var(--text-strong);
 }
 
-.settings-lang-option.is-active {
+.settings-lang-pill.is-active {
   color: var(--accent);
+  border-color: var(--accent);
   background: var(--accent-tint);
-}
-
-.settings-lang-option input[type="radio"] {
-  accent-color: var(--accent);
 }
 
 /* ── Update Card ── */

@@ -10,17 +10,55 @@ interface CreateVaultFormProps {
   isLoading: boolean;
 }
 
+/** Extract the last segment of a file path as a fallback vault name. */
+function nameFromPath(p: string): string {
+  const normalized = p.replace(/[\\/]+$/, '');
+  const parts = normalized.split(/[/\\]/);
+  return parts[parts.length - 1] || '';
+}
+
 export function CreateVaultForm({ onCreate, onCancel, isLoading }: CreateVaultFormProps) {
   const [name, setName] = useState('');
   const [vaultPath, setVaultPath] = useState('');
   const [description, setDescription] = useState('');
 
+  const handleBrowse = useCallback(async () => {
+    if (!window.__electron__?.showDirectoryPicker) {
+      alert('浏览功能仅在桌面客户端中可用，请手动输入路径。');
+      return;
+    }
+    try {
+      const picked = await window.__electron__.showDirectoryPicker();
+      if (!picked) return;
+      setVaultPath(picked);
+      // Auto-derive name from folder if name is empty (Obsidian-style)
+      if (!name.trim()) {
+        setName(nameFromPath(picked));
+      }
+    } catch {
+      // User cancelled or picker error — ignore silently
+    }
+  }, [name]);
+
   const handleSubmit = useCallback(async () => {
-    if (!name.trim() || !vaultPath.trim()) return;
-    await onCreate(name.trim(), vaultPath.trim(), description.trim() || undefined);
+    // Name falls back to path's last segment when empty
+    const vaultName = name.trim() || nameFromPath(vaultPath.trim());
+    if (!vaultName || !vaultPath.trim()) return;
+    try {
+      await onCreate(vaultName, vaultPath.trim(), description.trim() || undefined);
+    } catch (err) {
+      alert(`创建失败: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }, [name, vaultPath, description, onCreate]);
 
-  const canSubmit = name.trim() && vaultPath.trim() && !isLoading;
+  const effectiveName = name.trim() || nameFromPath(vaultPath.trim());
+  const canSubmit = effectiveName && vaultPath.trim() && !isLoading;
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && canSubmit) {
+      handleSubmit();
+    }
+  }, [canSubmit, handleSubmit]);
 
   return (
     <div className="vm-create-form">
@@ -34,9 +72,10 @@ export function CreateVaultForm({ onCreate, onCancel, isLoading }: CreateVaultFo
         <input
           className="vm-form-input"
           type="text"
-          placeholder="给新仓库起一个名字"
+          placeholder="留空则自动使用文件夹名称"
           value={name}
           onChange={(e) => setName(e.target.value)}
+          onKeyDown={handleKeyDown}
         />
       </div>
 
@@ -49,8 +88,11 @@ export function CreateVaultForm({ onCreate, onCancel, isLoading }: CreateVaultFo
             placeholder="指定新仓库的存放位置"
             value={vaultPath}
             onChange={(e) => setVaultPath(e.target.value)}
+            onKeyDown={handleKeyDown}
           />
-          <button className="vm-browse-btn">浏览</button>
+          <button className="vm-browse-btn" type="button" onClick={handleBrowse}>
+            浏览
+          </button>
         </div>
       </div>
 
@@ -62,6 +104,7 @@ export function CreateVaultForm({ onCreate, onCancel, isLoading }: CreateVaultFo
           placeholder="简短描述这个仓库"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
+          onKeyDown={handleKeyDown}
         />
       </div>
 
