@@ -94,27 +94,62 @@ describe('main.js: global crash protection must exist', () => {
   });
 });
 
-describe('updater.js: quitAndInstall must use silent mode', () => {
+describe('updater.js: must NOT use quitAndInstall (race condition on Windows)', () => {
   const updaterJs = readFileSync(
     path.resolve(import.meta.dirname, '../../src/updater.js'),
     'utf-8'
   );
 
-  it('quitAndInstall should be called with (true, true) for silent install', () => {
-    // Find all quitAndInstall calls
-    const calls = updaterJs.match(/quitAndInstall\([^)]*\)/g) || [];
-    assert.ok(calls.length > 0, 'quitAndInstall must be called somewhere');
+  it('should NOT call autoUpdater.quitAndInstall()', () => {
+    // quitAndInstall() spawns the NSIS installer before app.quit(), causing
+    // "Failed to uninstall old application files" because Electron still
+    // holds file locks. We spawn the installer manually instead.
+    const hasQuitAndInstallCall = /autoUpdater\.quitAndInstall\s*\(/.test(updaterJs);
+    assert.ok(
+      !hasQuitAndInstallCall,
+      'updater.js must NOT call autoUpdater.quitAndInstall() — it has a race condition on Windows'
+    );
+  });
 
-    for (const call of calls) {
-      assert.ok(
-        call.includes('quitAndInstall(true, true)'),
-        `quitAndInstall must use (true, true) for silent install, got: ${call}`
-      );
-    }
+  it('should set autoInstallOnAppQuit to false', () => {
+    assert.ok(
+      updaterJs.includes('autoInstallOnAppQuit = false'),
+      'autoInstallOnAppQuit must be false to prevent uncontrolled install on quit'
+    );
+  });
+
+  it('should spawn installer manually with detached:true', () => {
+    assert.ok(
+      updaterJs.includes('detached: true') || updaterJs.includes('detached:true'),
+      'installer must be spawned with detached:true so it survives app.quit()'
+    );
+  });
+
+  it('should listen for installer spawn event and call app.quit() in callback', () => {
+    // app.quit() must be inside the 'spawn' event callback to prevent
+    // quitting before the installer is confirmed started.
+    // We search for the actual code line, not the comments.
+    // Comments also contain "app.quit()", so we look for the code pattern
+    // where it appears on its own line with whitespace (not in a comment).
+
+    // Verify the spawn event listener exists
+    assert.ok(
+      updaterJs.includes("installer.on('spawn'"),
+      "handler must listen for installer 'spawn' event"
+    );
+
+    // Verify app.quit() is called on a non-comment line (inside the callback)
+    const appQuitLines = updaterJs.split('\n').filter(line =>
+      /\s+app\.quit\(\)/.test(line) && !line.trim().startsWith('//') && !line.trim().startsWith('*')
+    );
+    assert.ok(
+      appQuitLines.length > 0,
+      'handler must call app.quit() in actual code (not just comments)'
+    );
   });
 });
 
-describe('updater.js: must kill daemon before quitAndInstall', () => {
+describe('updater.js: must kill daemon before spawning installer', () => {
   const updaterJs = readFileSync(
     path.resolve(import.meta.dirname, '../../src/updater.js'),
     'utf-8'
@@ -132,22 +167,22 @@ describe('updater.js: must kill daemon before quitAndInstall', () => {
     );
   });
 
-  it('updater:install handler must call killDaemon before quitAndInstall', () => {
+  it('updater:install handler must call killDaemon before spawning installer', () => {
     // Extract the updater:install handler block
     const installStart = updaterJs.indexOf("'updater:install'");
     assert.ok(installStart !== -1, 'updater:install handler must exist');
 
-    // Get ~500 chars after the handler start to capture the full handler
-    const handlerBlock = updaterJs.slice(installStart, installStart + 500);
+    // Get enough chars to capture the full handler
+    const handlerBlock = updaterJs.slice(installStart, installStart + 2000);
 
     const killPos = handlerBlock.indexOf('killDaemon');
-    const quitPos = handlerBlock.indexOf('quitAndInstall');
+    const spawnPos = handlerBlock.indexOf('spawn(');
 
     assert.ok(killPos !== -1, 'updater:install must call killDaemon');
-    assert.ok(quitPos !== -1, 'updater:install must call quitAndInstall');
+    assert.ok(spawnPos !== -1, 'updater:install must spawn installer');
     assert.ok(
-      killPos < quitPos,
-      `killDaemon (pos ${killPos}) must be called BEFORE quitAndInstall (pos ${quitPos})`
+      killPos < spawnPos,
+      `killDaemon (pos ${killPos}) must be called BEFORE spawn (pos ${spawnPos})`
     );
   });
 
@@ -158,12 +193,36 @@ describe('updater.js: must kill daemon before quitAndInstall', () => {
     );
   });
 
-  it('main.js should use SIGKILL for daemon termination', () => {
-    // SIGKILL is required for reliable termination on Windows.
-    // SIGTERM may not kill child processes, leaving file locks in place.
+  it('main.js killDaemon should use taskkill on Windows', () => {
+    // taskkill /F /T is more reliable than proc.kill('SIGKILL') on Windows
+    // for killing the entire process tree and releasing file handles.
     assert.ok(
-      mainJs.includes("'SIGKILL'") || mainJs.includes('"SIGKILL"'),
-      "main.js must use SIGKILL to kill daemon (SIGTERM unreliable on Windows)"
+      mainJs.includes('taskkill'),
+      "main.js killDaemon must use taskkill for reliable Windows process termination"
+    );
+  });
+
+  it('main.js killDaemon should guard against double resolve', () => {
+    assert.ok(
+      mainJs.includes('let resolved'),
+      'killDaemon must use a resolved flag to prevent double-resolve'
+    );
+  });
+
+  it('main.js before-quit should use killDaemon (not raw SIGKILL)', () => {
+    const beforeQuitPos = mainJs.indexOf("app.on('before-quit'");
+    assert.ok(beforeQuitPos !== -1, 'before-quit handler must exist');
+
+    // Get the before-quit handler block (~600 chars to cover the entire handler)
+    const handlerBlock = mainJs.slice(beforeQuitPos, beforeQuitPos + 600);
+
+    assert.ok(
+      handlerBlock.includes('killDaemon'),
+      'before-quit must call killDaemon() for proper daemon cleanup'
+    );
+    assert.ok(
+      handlerBlock.includes('event.preventDefault()'),
+      'before-quit must prevent default to wait for daemon cleanup before quitting'
     );
   });
 });
