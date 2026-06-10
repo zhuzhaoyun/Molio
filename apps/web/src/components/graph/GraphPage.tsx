@@ -14,7 +14,7 @@ import { NodeCircleProgram } from 'sigma/rendering';
 import { api } from '../../api/client';
 import { useI18n } from '../../i18n';
 import { Minimap } from './Minimap';
-import type { Vault } from '@molio/contracts';
+import { useActiveVaultId } from '../../stores/vaultStore';
 
 // ── Types ──
 
@@ -78,8 +78,8 @@ export function GraphPage() {
   const { t } = useI18n();
   const navigate = useNavigate();
 
-  const [vaults, setVaults] = useState<Vault[]>([]);
-  const [selectedVaultId, setSelectedVaultId] = useState<string | null>(null);
+  // 跟随知识库的活跃 vault，知识库切换时图谱自动切换
+  const activeVaultId = useActiveVaultId();
   const [graphData, setGraphData] = useState<{ nodes: GraphNode[]; edges: GraphEdge[] } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -91,26 +91,13 @@ export function GraphPage() {
   const hoveredNodeRef = useRef<string | null>(null);
   const selectedNodeRef = useRef<string | null>(null);
 
-  // Load vault list
+  // Fetch graph data when active vault changes
   useEffect(() => {
-    api.listVaults()
-      .then((list) => {
-        setVaults(list);
-        if (list.length > 0 && !selectedVaultId) {
-          setSelectedVaultId(list[0].id);
-        }
-      })
-      .catch(() => { /* silently ignore */ });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Fetch graph data when vault changes
-  useEffect(() => {
-    if (!selectedVaultId) return;
+    if (!activeVaultId) return;
 
     setLoading(true);
     setError(null);
-    api.getGraph(selectedVaultId)
+    api.getGraph(activeVaultId)
       .then((data) => {
         setGraphData(data);
       })
@@ -119,7 +106,7 @@ export function GraphPage() {
         setGraphData(null);
       })
       .finally(() => setLoading(false));
-  }, [selectedVaultId]);
+  }, [activeVaultId]);
 
   // Initialize Sigma when graph data is available
   useEffect(() => {
@@ -285,16 +272,18 @@ export function GraphPage() {
     });
 
     // ── Click & Drag events ──
-    // 完全使用原生鼠标事件处理点击和拖拽，避免 Sigma clickNode 事件干扰
+    // 使用原生鼠标事件处理节点交互；空白区域交给 Sigma 内置画布拖拽/缩放
     let draggedNode: string | null = null;
     let isDragging = false;
-    let mouseDownTime = 0;
-    let mouseDownNode: string | null = null;
+    let lastClickTime = 0;
+    let lastClickNode: string | null = null;
     const DRAG_THRESHOLD = 4;
+    const DBLCLICK_INTERVAL = 350;
     let dragStartMouse = { x: 0, y: 0 };
     const container = containerRef.current;
 
     // 查找鼠标位置下的节点
+    // 在 graph 坐标系中比较距离，hit radius 取节点实际 size 的 2 倍（方便点选小节点）
     const findNodeAtPosition = (mouseX: number, mouseY: number): string | null => {
       const mouseGraph = renderer.viewportToGraph({ x: mouseX, y: mouseY });
       let closestNode: string | null = null;
@@ -305,7 +294,9 @@ export function GraphPage() {
         const ny = (attr.y as number) ?? 0;
         const size = (attr.size as number) ?? 6;
         const dist = Math.sqrt((nx - mouseGraph.x) ** 2 + (ny - mouseGraph.y) ** 2);
-        if (dist < size + 2 && dist < closestDist) {
+        // hit area = 节点实际半径 × 2，最小 3 graph units
+        const hitRadius = Math.max(size * 2, 3);
+        if (dist < hitRadius && dist < closestDist) {
           closestDist = dist;
           closestNode = node;
         }
@@ -324,17 +315,15 @@ export function GraphPage() {
       const node = findNodeAtPosition(mouseX, mouseY);
 
       if (node) {
+        // 命中节点：接管拖拽，阻止 Sigma 处理此事件
         draggedNode = node;
         isDragging = false;
-        mouseDownNode = node;
-        mouseDownTime = Date.now();
         dragStartMouse = { x: mouseX, y: mouseY };
         e.preventDefault();
         e.stopPropagation();
       } else {
-        // Click on empty space: deselect
+        // 空白区域：取消选中并解除 fx/fy 锁定
         draggedNode = null;
-        mouseDownNode = null;
         if (selectedNodeRef.current) {
           const prev = selectedNodeRef.current;
           graph.removeNodeAttribute(prev, 'fx');
@@ -342,6 +331,7 @@ export function GraphPage() {
           selectedNodeRef.current = null;
           renderer.refresh();
         }
+        // 不阻止默认行为 → Sigma 正常处理画布拖拽
       }
     };
 
@@ -352,7 +342,9 @@ export function GraphPage() {
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
 
-      const moveDist = Math.sqrt((mouseX - dragStartMouse.x) ** 2 + (mouseY - dragStartMouse.y) ** 2);
+      const moveDist = Math.sqrt(
+        (mouseX - dragStartMouse.x) ** 2 + (mouseY - dragStartMouse.y) ** 2,
+      );
       if (!isDragging && moveDist > DRAG_THRESHOLD) {
         isDragging = true;
       }
@@ -361,12 +353,15 @@ export function GraphPage() {
         const graphPos = renderer.viewportToGraph({ x: mouseX, y: mouseY });
         graph.setNodeAttribute(draggedNode, 'x', graphPos.x);
         graph.setNodeAttribute(draggedNode, 'y', graphPos.y);
+        // 实时锁定 fx/fy，防止力引擎覆盖拖拽位置
+        graph.setNodeAttribute(draggedNode, 'fx', graphPos.x);
+        graph.setNodeAttribute(draggedNode, 'fy', graphPos.y);
         renderer.refresh();
       }
     };
 
-    const handleMouseUp = (e: MouseEvent) => {
-      if (!draggedNode || !mouseDownNode) {
+    const handleMouseUp = (_e: MouseEvent) => {
+      if (!draggedNode) {
         draggedNode = null;
         isDragging = false;
         return;
@@ -376,25 +371,24 @@ export function GraphPage() {
       const wasDragging = isDragging;
 
       if (wasDragging) {
-        // Drag end: fix position
-        const x = graph.getNodeAttribute(node, 'x') as number | undefined;
-        const y = graph.getNodeAttribute(node, 'y') as number | undefined;
-        if (x != null) graph.setNodeAttribute(node, 'fx', x);
-        if (y != null) graph.setNodeAttribute(node, 'fy', y);
+        // 拖拽结束：fx/fy 已在 mousemove 中设置，保持锁定
       } else {
-        // Click (not drag): check if it's a double click
+        // 点击（非拖拽）：检测双击
         const now = Date.now();
-        const timeSinceLastClick = now - mouseDownTime;
+        const isDoubleClick =
+          node === lastClickNode && now - lastClickTime < DBLCLICK_INTERVAL;
 
-        if (timeSinceLastClick < 300) {
-          // Double click: navigate to document
+        if (isDoubleClick) {
           const path = graph.getNodeAttribute(node, 'path') as string | undefined;
           if (path) {
             navigate('/knowledge', { state: { openFile: path } });
           }
+          lastClickTime = 0;
+          lastClickNode = null;
         } else {
-          // Single click: select
           selectedNodeRef.current = node;
+          lastClickTime = now;
+          lastClickNode = node;
           renderer.refresh();
         }
       }
@@ -403,7 +397,6 @@ export function GraphPage() {
       isDragging = false;
     };
 
-    // 禁用 Sigma 的点击交互，完全使用原生事件
     container.addEventListener('mousedown', handleMouseDown);
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
@@ -426,7 +419,7 @@ export function GraphPage() {
   const nodeCount = graphData?.nodes.length ?? 0;
   const edgeCount = graphData?.edges.length ?? 0;
 
-  if (vaults.length === 0) {
+  if (!activeVaultId) {
     return (
       <div className="graph-page">
         <div className="graph-empty">
@@ -453,18 +446,6 @@ export function GraphPage() {
           <h2 className="graph-topbar__title">{t('graph.title')}</h2>
         </div>
         <div className="graph-topbar__right">
-          <select
-            className="graph-vault-select"
-            value={selectedVaultId ?? ''}
-            onChange={(e) => setSelectedVaultId(e.target.value || null)}
-          >
-            {vaults.map((v) => (
-              <option key={v.id} value={v.id}>
-                {v.name}
-              </option>
-            ))}
-          </select>
-
           {graphData && !loading && (
             <span className="graph-stat">{t('graph.nodes', { count: nodeCount })}</span>
           )}
