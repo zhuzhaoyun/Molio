@@ -21,7 +21,7 @@ async function navigateToCreateForm(page: import('@playwright/test').Page) {
   await page.waitForLoadState('networkidle');
 
   // Navigate to knowledge base view (left nav rail)
-  const kbNav = page.locator('[data-view="knowledge"], text=知识库, text=Knowledge').first();
+  const kbNav = page.locator('[data-view="knowledge"]');
   await kbNav.click();
   await page.waitForTimeout(500);
 
@@ -47,12 +47,22 @@ test.describe('Create vault form', () => {
     const browseBtn = page.locator('.vm-browse-btn');
     await expect(browseBtn).toBeVisible();
 
-    // In browser mode (no Electron), clicking Browse shows an informational alert
-    const dialogPromise = page.waitForEvent('dialog', { timeout: 3_000 });
+    // In browser mode (no Electron), clicking Browse shows an informational alert.
+    // Use page.on('dialog') instead of waitForEvent to avoid a race condition
+    // where alert() blocks the page and prevents click() from returning.
+    const dialogPromise = new Promise<string>((resolve) => {
+      const handler = (dialog: import('@playwright/test').Dialog) => {
+        resolve(dialog.message());
+        dialog.accept();
+        page.off('dialog', handler);
+      };
+      page.on('dialog', handler);
+    });
+
     await browseBtn.click();
-    const dialog = await dialogPromise;
-    expect(dialog.message()).toContain('桌面客户端');
-    await dialog.accept();
+
+    const message = await dialogPromise;
+    expect(message).toContain('桌面客户端');
   });
 
   test('create button should be disabled when path is empty, enabled when path is filled', async ({ page }) => {
