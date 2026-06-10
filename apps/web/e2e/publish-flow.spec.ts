@@ -48,20 +48,25 @@ test.afterAll(async () => {
 });
 
 /**
- * Helper: navigate to knowledge base and select the test vault + first file.
+ * Helper: navigate to knowledge base, select the test vault, and open a file.
  */
 async function navigateToTestFile(page: any) {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
 
   // Navigate to knowledge base view
-  await page.locator('[data-tooltip="Knowledge Base"]').click();
+  await page.locator('[data-view="knowledge"]').click();
   await page.waitForTimeout(500);
 
-    // Wait for vault to load and select the first file
-    const fileItem = page.locator('.kb-tree-item').first();
-    await fileItem.click({ timeout: 10_000 });
-    await page.waitForTimeout(500);
+  // Wait for vault to load and select the first file
+  const fileItem = page.locator('.kb-tree-item').first();
+  await fileItem.click({ timeout: 10_000 });
+  await page.waitForTimeout(500);
+}
+
+test.describe('Publish button regression (#11)', () => {
+  test('clicking publish in typeset mode should trigger a response', async ({ page }) => {
+    await navigateToTestFile(page);
 
     // Click "排版" button to enter typeset mode
     const typesetBtn = page.locator('button').filter({ hasText: '排版' }).first();
