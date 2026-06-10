@@ -91,9 +91,84 @@ pnpm package:dir    # 仅生成未打包目录 (不生成安装包)
 
 **核心原则**：WebUI first，Electron 只是壳。E2E 直接测 web 层。
 
-- 使用 kimi-webbridge 或 Playwright 对 `http://localhost:5173` 进行浏览器自动化测试
+- 使用 Playwright 对 `http://localhost:5173` 进行浏览器自动化测试
 - 测试 UI 交互行为（选择 agent → 发送消息 → 查看 SSE 事件流 → 提交 tool result）
 - Electron 壳后期只需测试窗口管理和系统集成
+
+#### 前置条件
+
+E2E 测试需要 daemon 和 web 同时运行：
+
+```bash
+pnpm dev   # 启动 daemon(:3100) + web(:5173)，保持运行
+```
+
+#### 常用命令（在 `apps/web/` 目录执行）
+
+```bash
+# 跑所有 E2E
+npx playwright test
+
+# 只跑某个文件
+npx playwright test e2e/create-vault-form.spec.ts
+
+# 只跑名称匹配的用例
+npx playwright test -g "browse button"
+
+# 交互式 UI 模式（推荐开发时用，左侧选用例，右侧看 DOM 快照和截图）
+npx playwright test --ui
+
+# 调试模式（弹出浏览器 + 断点）
+npx playwright test --debug
+
+# 有头模式（显示浏览器窗口）
+npx playwright test --headed
+```
+
+#### 编写规范
+
+- **定位策略**：优先用 `data-testid`，其次 CSS class，不依赖文本内容（避免中英文切换问题）
+- **测试文件位置**：`apps/web/e2e/*.spec.ts`
+- **baseURL**：已在 `playwright.config.ts` 配置为 `http://localhost:5173`，`page.goto('/')` 即可
+- **清理状态**：测试结尾主动清理创建的数据（如 `fetch(..., { method: 'DELETE' })`），避免残留影响后续测试
+- **等待策略**：用 `waitForEvent`/`waitForRequest` 等 Playwright 内置等待，避免硬编码 `waitForTimeout`（仅用于 UI 动画过渡）
+
+#### UI 改动与测试同步（强制规则）
+
+E2E 测试绑定 DOM 结构，**界面调整必须同步修改对应测试**，两者放在同一个 commit 提交，禁止中间断档。
+
+**影响判断表**：
+
+| UI 改动类型 | 是否影响测试 |
+|---|---|
+| 改 CSS class 名 | ✅ 必须改测试中对应的 locator |
+| 改组件层级/结构 | ✅ 影响 `.nth()`、`.first()` 等索引定位 |
+| 删除/重命名一个功能 | ✅ 对应测试要删或重写 |
+| 改按钮文案（不影响逻辑） | ❌ 用 class/testid 定位则不影响 |
+| 纯样式调整（颜色、间距） | ❌ 不影响 |
+| 新增 UI 元素 | ❌ 旧测试不受影响，但应补新测试 |
+
+**减少维护成本的做法**：给关键交互元素加 `data-testid`，比依赖 CSS class 更稳定：
+
+```tsx
+// 组件里
+<button data-testid="create-vault-btn" className={styles.submit}>创建</button>
+
+// 测试里 — class 怎么改都不影响
+page.locator('[data-testid="create-vault-btn"]')
+```
+
+**开发习惯**：改完 UI 顺手跑 `npx playwright test --ui`，有红的同步修 locator，全绿再提交。
+
+#### 典型开发流程
+
+```
+写 spec（用 --ui 模式逐步验证定位器）
+→ 确认测试失败（红）
+→ 改代码
+→ 重跑确认通过（绿）
+→ 提交
+```
 
 ## External Dependencies (Planned Integration)
 
