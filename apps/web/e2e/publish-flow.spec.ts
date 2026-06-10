@@ -48,7 +48,7 @@ test.afterAll(async () => {
 });
 
 /**
- * Helper: navigate to knowledge base and select the test vault + first file.
+ * Helper: navigate to knowledge base, select the test vault, and open a file.
  */
 async function navigateToTestFile(page: any) {
   await page.goto('/');
