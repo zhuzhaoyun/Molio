@@ -279,58 +279,19 @@ export function GraphPage() {
       renderer.refresh();
     });
 
-    // ── Click events ──
-    // 单击选中，双击跳转
-    let clickTimer: ReturnType<typeof setTimeout> | null = null;
-    let clickCount = 0;
-
-    renderer.on('clickNode', ({ node }) => {
-      clickCount++;
-      if (clickCount === 1) {
-        clickTimer = setTimeout(() => {
-          // Single click: select
-          selectedNodeRef.current = node;
-          renderer.refresh();
-          clickCount = 0;
-        }, 250);
-      } else if (clickCount === 2) {
-        // Double click: navigate
-        if (clickTimer) clearTimeout(clickTimer);
-        clickCount = 0;
-        const path = graph.getNodeAttribute(node, 'path') as string | undefined;
-        if (path) {
-          navigate('/knowledge', { state: { openFile: path } });
-        }
-      }
-    });
-
-    renderer.on('clickStage', () => {
-      if (selectedNodeRef.current) {
-        const prev = selectedNodeRef.current;
-        graph.removeNodeAttribute(prev, 'fx');
-        graph.removeNodeAttribute(prev, 'fy');
-        selectedNodeRef.current = null;
-        renderer.refresh();
-      }
-    });
-
-    // ── Drag implementation ──
+    // ── Click & Drag events ──
+    // 完全使用原生鼠标事件处理点击和拖拽，避免 Sigma clickNode 事件干扰
     let draggedNode: string | null = null;
     let isDragging = false;
-    let hasMoved = false;
+    let mouseDownTime = 0;
+    let mouseDownNode: string | null = null;
     const DRAG_THRESHOLD = 4;
     let dragStartMouse = { x: 0, y: 0 };
     const container = containerRef.current;
 
-    const handleMouseDown = (e: MouseEvent) => {
-      // Only drag with left mouse button
-      if (e.button !== 0) return;
-
-      const rect = container.getBoundingClientRect();
-      const mouseX = e.clientX - rect.left;
-      const mouseY = e.clientY - rect.top;
+    // 查找鼠标位置下的节点
+    const findNodeAtPosition = (mouseX: number, mouseY: number): string | null => {
       const mouseGraph = renderer.viewportToGraph({ x: mouseX, y: mouseY });
-
       let closestNode: string | null = null;
       let closestDist = Infinity;
 
@@ -339,19 +300,43 @@ export function GraphPage() {
         const ny = (attr.y as number) ?? 0;
         const size = (attr.size as number) ?? 6;
         const dist = Math.sqrt((nx - mouseGraph.x) ** 2 + (ny - mouseGraph.y) ** 2);
-        if (dist < size * 1.5 + 4 && dist < closestDist) {
+        if (dist < size + 2 && dist < closestDist) {
           closestDist = dist;
           closestNode = node;
         }
       });
 
-      if (closestNode) {
-        draggedNode = closestNode;
+      return closestNode;
+    };
+
+    const handleMouseDown = (e: MouseEvent) => {
+      if (e.button !== 0) return;
+
+      const rect = container.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      const node = findNodeAtPosition(mouseX, mouseY);
+
+      if (node) {
+        draggedNode = node;
         isDragging = false;
-        hasMoved = false;
+        mouseDownNode = node;
+        mouseDownTime = Date.now();
         dragStartMouse = { x: mouseX, y: mouseY };
         e.preventDefault();
         e.stopPropagation();
+      } else {
+        // Click on empty space: deselect
+        draggedNode = null;
+        mouseDownNode = null;
+        if (selectedNodeRef.current) {
+          const prev = selectedNodeRef.current;
+          graph.removeNodeAttribute(prev, 'fx');
+          graph.removeNodeAttribute(prev, 'fy');
+          selectedNodeRef.current = null;
+          renderer.refresh();
+        }
       }
     };
 
@@ -365,7 +350,6 @@ export function GraphPage() {
       const moveDist = Math.sqrt((mouseX - dragStartMouse.x) ** 2 + (mouseY - dragStartMouse.y) ** 2);
       if (!isDragging && moveDist > DRAG_THRESHOLD) {
         isDragging = true;
-        hasMoved = true;
       }
 
       if (isDragging) {
@@ -376,18 +360,45 @@ export function GraphPage() {
       }
     };
 
-    const handleMouseUp = () => {
-      if (draggedNode && isDragging) {
-        // Fix position after drag
-        const x = graph.getNodeAttribute(draggedNode, 'x') as number | undefined;
-        const y = graph.getNodeAttribute(draggedNode, 'y') as number | undefined;
-        if (x != null) graph.setNodeAttribute(draggedNode, 'fx', x);
-        if (y != null) graph.setNodeAttribute(draggedNode, 'fy', y);
+    const handleMouseUp = (e: MouseEvent) => {
+      if (!draggedNode || !mouseDownNode) {
+        draggedNode = null;
+        isDragging = false;
+        return;
       }
+
+      const node = draggedNode;
+      const wasDragging = isDragging;
+
+      if (wasDragging) {
+        // Drag end: fix position
+        const x = graph.getNodeAttribute(node, 'x') as number | undefined;
+        const y = graph.getNodeAttribute(node, 'y') as number | undefined;
+        if (x != null) graph.setNodeAttribute(node, 'fx', x);
+        if (y != null) graph.setNodeAttribute(node, 'fy', y);
+      } else {
+        // Click (not drag): check if it's a double click
+        const now = Date.now();
+        const timeSinceLastClick = now - mouseDownTime;
+
+        if (timeSinceLastClick < 300) {
+          // Double click: navigate to document
+          const path = graph.getNodeAttribute(node, 'path') as string | undefined;
+          if (path) {
+            navigate('/knowledge', { state: { openFile: path } });
+          }
+        } else {
+          // Single click: select
+          selectedNodeRef.current = node;
+          renderer.refresh();
+        }
+      }
+
       draggedNode = null;
       isDragging = false;
     };
 
+    // 禁用 Sigma 的点击交互，完全使用原生事件
     container.addEventListener('mousedown', handleMouseDown);
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
@@ -404,7 +415,6 @@ export function GraphPage() {
       graphRef.current = null;
       hoveredNodeRef.current = null;
       selectedNodeRef.current = null;
-      if (clickTimer) clearTimeout(clickTimer);
     };
   }, [graphData, navigate]);
 
