@@ -19,16 +19,20 @@
     "@codemirror/state": "^6.6.0",
     "@codemirror/view": "^6.43.0",
     "@molio/contracts": "workspace:*",
+    "@react-sigma/core": "^5.0.6",
     "@reactour/tour": "^3.8.0",
     "es-toolkit": "^1.47.0",
     "fflate": "^0.8.3",
     "front-matter": "^4.0.2",
+    "graphology": "^0.26.0",
+    "graphology-layout-forceatlas2": "^0.10.1",
     "highlight.js": "^11.11.1",
     "isomorphic-dompurify": "^3.15.0",
     "marked": "^18.0.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-router-dom": "^7.16.0"
+    "react-router-dom": "^7.16.0",
+    "sigma": "^3.0.3"
   },
   "devDependencies": {
     "@playwright/test": "^1.50.0",

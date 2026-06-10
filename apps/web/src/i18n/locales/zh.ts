@@ -3,6 +3,7 @@ const zh: Record<string, string> = {
   'nav.home': '首页',
   'nav.knowledge': '知识库',
   'nav.runtimes': '运行时',
+  'nav.graph': '图谱',
   'nav.settings': '设置',
 
   // ── HomePage ──
@@ -102,6 +103,15 @@ const zh: Record<string, string> = {
   'update.willApply': 'v{version} 将在重启后应用',
   'update.later': '稍后',
   'update.restartNow': '立即重启',
+
+  // ── GraphPage ──
+  'graph.title': '关系图谱',
+  'graph.loading': '加载图谱数据…',
+  'graph.noVault': '请先创建一个知识库来查看关系图谱',
+  'graph.nodes': '{count} 个节点',
+  'graph.edges': '{count} 条链接',
+  'graph.selectVault': '选择知识库',
+  'graph.empty': '该知识库中没有 Markdown 文件',
 };
 
 export default zh;

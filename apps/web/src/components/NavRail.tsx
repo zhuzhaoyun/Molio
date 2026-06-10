@@ -50,6 +50,31 @@ export function NavRail() {
           </svg>
         </NavLink>
 
+        {/* Graph View */}
+        <NavLink
+          to="/graph"
+          className={({ isActive }) =>
+            `entry-nav-rail__btn ${isActive ? 'is-active' : ''}`
+          }
+          data-tooltip={t('nav.graph')}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <circle cx="6" cy="6" r="2" />
+            <circle cx="18" cy="6" r="2" />
+            <circle cx="12" cy="18" r="2" />
+            <line x1="7.5" y1="7.5" x2="10.5" y2="16.5" />
+            <line x1="16.5" y1="7.5" x2="13.5" y2="16.5" />
+            <line x1="6" y1="8" x2="18" y2="8" />
+          </svg>
+        </NavLink>
+
         <div className="entry-nav-rail__divider" />
 
         {/* Runtimes */}

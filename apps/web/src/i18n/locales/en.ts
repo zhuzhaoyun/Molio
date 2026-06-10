@@ -3,6 +3,7 @@ const en: Record<string, string> = {
   'nav.home': 'Home',
   'nav.knowledge': 'Knowledge Base',
   'nav.runtimes': 'Runtimes',
+  'nav.graph': 'Graph',
   'nav.settings': 'Settings',
 
   // ── HomePage ──
@@ -102,6 +103,15 @@ const en: Record<string, string> = {
   'update.willApply': 'v{version} will be applied after restart',
   'update.later': 'Later',
   'update.restartNow': 'Restart now',
+
+  // ── GraphPage ──
+  'graph.title': 'Graph View',
+  'graph.loading': 'Loading graph data…',
+  'graph.noVault': 'Create a vault first to see the graph',
+  'graph.nodes': '{count} nodes',
+  'graph.edges': '{count} edges',
+  'graph.selectVault': 'Select vault',
+  'graph.empty': 'No Markdown files in this vault',
 };
 
 export default en;

@@ -33,6 +33,9 @@ src/
     AssistantMessage.tsx 助手消息气泡 (thinking + tool cards)
     ThinkingBlock.tsx    思考过程折叠块
     ToolCard.tsx         工具调用卡片
+    graph/                 知识图谱组件
+      GraphPage.tsx        图谱主页面（Sigma.js + ForceAtlas2 力导向布局）
+      Minimap.tsx          右下角小地图（Canvas 绘制全局节点分布 + 视口指示器）
     kb/                    知识库组件
       KnowledgeBasePage.tsx  知识库页面（文件面板 + 主内容区）
       KbFilePanel.tsx         文件树面板（搜索、文件列表、vault 切换）
@@ -47,6 +50,7 @@ src/
     rail.css      导航栏样式
     home.css      主页样式
     chat.css      聊天组件样式
+    graph.css   知识图谱样式（画布、顶栏、minimap、加载/错误/空状态）
     knowledge.css 知识库样式（含排版编辑器、样式面板）
   e2e/
     *.spec.ts     Playwright 自动化测试（需先 pnpm dev）
@@ -88,6 +92,21 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
   - 排版模式：「退出排版」「复制」「发布」「样式」按钮
 - **样式面板**: 右侧悬浮面板，支持主题、字体、字号、主题色、排版选项切换
 - **渲染引擎**: 基于 doocs/md (`marked` v18 + 扩展 + 主题系统)
+
+### 知识图谱 (Graph View)
+
+- **渲染引擎**: Sigma.js v3 (WebGL)，通过 `useRef` + `useEffect` 手动绑定，未使用 `@react-sigma/core` 绑定库（更灵活的自定义交互）
+- **图数据结构**: Graphology
+- **力导向布局**: `graphology-layout-forceatlas2`（ForceAtlas2 算法）
+  - `linLogMode: true` — 近距离强排斥，防止节点重叠
+  - `barnesHutOptimize: true` — O(n log n) 性能优化
+  - 自然社区聚类效果，接近 Obsidian Graph View
+- **交互系统**: 原生 DOM 事件（非 Sigma 内置事件），区分 click / drag / dblclick
+  - 单击选中节点，双击跳转知识库文档
+  - 拖拽节点后通过 `fx`/`fy` 锁定位置
+  - Hover 高亮关联节点和边，非关联元素降低透明度
+- **Minimap**: Canvas 绘制，右下角显示全局节点分布 + 当前视口矩形
+- **React 性能**: 坐标计算和渲染帧循环完全在 Sigma 内部闭环，交互状态用 `useRef`，零 React re-render
 
 ### 聊天 (Chat)
 
@@ -132,6 +151,9 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
   "front-matter": "^4.0.2",
   "isomorphic-dompurify": "^3.15.0",
   "es-toolkit": "^1.47.0",
-  "fflate": "^0.8.3"
+  "fflate": "^0.8.3",
+  "sigma": "^3.x",
+  "graphology": "^0.26.x",
+  "graphology-layout-forceatlas2": "^0.10.x"
 }
 ```

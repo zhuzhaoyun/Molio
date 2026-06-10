@@ -7,6 +7,7 @@ import { NavRail } from './components/NavRail';
 import { KnowledgeBasePage } from './components/kb/KnowledgeBasePage';
 import { RuntimePage } from './components/runtimes/RuntimePage';
 import { SettingsPage } from './components/settings/SettingsPage';
+import { GraphPage } from './components/graph/GraphPage';
 import { UpdateNotification } from './components/UpdateNotification';
 import { LanguageProvider } from './i18n/LanguageProvider';
 import type { Locale } from './i18n';
@@ -17,6 +18,7 @@ import './styles/home.css';
 import './styles/knowledge.css';
 import './styles/runtimes.css';
 import './styles/settings.css';
+import './styles/graph.css';
 import './App.css';
 
 const STORAGE_KEY_LAST_ROUTE = 'molio.lastRoute';
@@ -135,6 +137,7 @@ export default function App() {
             <Route path="/knowledge" element={<KnowledgeBasePage agentId={selectedAgent} />} />
             <Route path="/runtimes" element={<RuntimePage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/graph" element={<GraphPage />} />
           </Routes>
         </div>
         <UpdateNotification />
