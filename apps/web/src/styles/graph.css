@@ -1,0 +1,189 @@
+/* ── Graph Page Layout ── */
+
+/* When graph page is active, make .entry-main a positioning container */
+.entry-main:has(.graph-page) {
+  position: relative;
+  overflow: hidden;
+}
+
+.graph-page {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-app);
+}
+
+/* ── Top Bar ── */
+
+.graph-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+  flex-shrink: 0;
+  min-height: 52px;
+}
+
+.graph-topbar__left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.graph-topbar__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.graph-topbar__right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* ── Vault Selector ── */
+
+.graph-vault-select {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-subtle);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.graph-vault-select:focus {
+  border-color: var(--accent);
+}
+
+/* ── Stats ── */
+
+.graph-stat {
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 8px;
+  white-space: nowrap;
+}
+
+.graph-stat--edges {
+  /* slightly different tint for visual separation */
+}
+
+/* ── Canvas Container ──
+   Uses theme-consistent background with subtle dotted grid.
+   Grid dots use border color so they adapt to light/dark themes. */
+
+.graph-canvas {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(circle, var(--border) 1px, transparent 1px);
+  background-size: 24px 24px;
+  background-color: var(--bg-app);
+  cursor: grab;
+}
+
+.graph-canvas:active {
+  cursor: grabbing;
+}
+
+.graph-sigma {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* ── Loading State ── */
+
+.graph-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--text-muted);
+  z-index: 10;
+  background: var(--bg-app);
+}
+
+.graph-loading__spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: graph-spin 0.8s linear infinite;
+}
+
+@keyframes graph-spin {
+  to { transform: rotate(360deg); }
+}
+
+.graph-loading p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+/* ── Error State ── */
+
+.graph-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--red);
+  z-index: 10;
+  background: var(--bg-app);
+}
+
+.graph-error p {
+  margin: 0;
+  font-size: 14px;
+}
+
+/* ── Empty State ── */
+
+.graph-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  color: var(--text-muted);
+  z-index: 10;
+  background: var(--bg-app);
+}
+
+.graph-empty__icon {
+  width: 64px;
+  height: 64px;
+  opacity: 0.3;
+}
+
+.graph-empty__icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.graph-empty p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-muted);
+}
