@@ -40,7 +40,7 @@ const NODE_ISOLATED = '#999999';  // 孤立节点：更浅的灰
 const NODE_HOVER = '#333333';    // hover：更深
 const NODE_SELECTED = '#8B5CF6'; // 选中：Obsidian 紫色
 const NODE_SELECTED_BORDER = '#7C3AED';
-const EDGE_DEFAULT = '#F5F5F5';  // 连线：极淡灰，几乎看不见
+const EDGE_DEFAULT = '#D4D4D4';  // 连线：淡灰，清晰可见但不喧宾夺主
 const EDGE_HOVER = '#C4B5FD';    // hover 连线：淡紫
 const EDGE_SELECTED = '#8B5CF6'; // 选中连线：紫色
 const LABEL_DEFAULT = '#6B6B6B'; // 标签：灰色
@@ -56,11 +56,11 @@ const NODE_TYPE_COLORS: Record<string, string> = {
 };
 
 // 节点大小按连接数动态变化
-// Obsidian 风格：小节点 2px，大节点 10px，差异明显
+// Obsidian 风格：小节点 4px，大节点 12px，中心节点突出
 function nodeSize(linkCount: number): number {
-  const base = 2;
-  const maxSize = 10;
-  const calculated = base + Math.sqrt(linkCount) * 1.8;
+  const base = 4;
+  const maxSize = 12;
+  const calculated = base + Math.sqrt(linkCount) * 1.5;
   return Math.min(maxSize, calculated);
 }
 
@@ -163,15 +163,15 @@ export function GraphPage() {
     }
 
     // Force-directed layout: Obsidian 风格
-    // 节点均匀散开，形成自然的知识网络
+    // 节点紧凑分布，像自然生长的知识网络
     forceLayout.assign(graph, {
       maxIterations: 1200,
       settings: {
-        attraction: 0.0008,  // 很松，节点间距大
-        repulsion: 3.0,      // 强排斥，均匀分布
-        gravity: 0.01,       // 轻微向心力
-        inertia: 0.4,        // 低惯性
-        maxMove: 100,        // 较小移动范围，更稳定
+        attraction: 0.002,   // 稍紧，节点更靠近
+        repulsion: 2.0,      // 中等排斥
+        gravity: 0.02,       // 较强向心力，更紧凑
+        inertia: 0.5,        // 中等惯性
+        maxMove: 80,         // 较小移动范围
       },
     });
 
@@ -219,9 +219,9 @@ export function GraphPage() {
       const selected = selectedNodeRef.current;
       const focusNode = hovered ?? selected;
 
-      // 无 focus：默认淡灰线
+      // 无 focus：默认淡灰细线
       if (!focusNode) {
-        return { ...data, color: EDGE_DEFAULT, size: 1 };
+        return { ...data, color: EDGE_DEFAULT, size: 0.8 };
       }
 
       // Get source/target using graphology API
