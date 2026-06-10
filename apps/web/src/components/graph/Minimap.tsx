@@ -9,10 +9,10 @@ import type Sigma from 'sigma';
 
 const WIDTH = 160;
 const HEIGHT = 110;
-const BG = '#1F2230';
-const DOT = 'rgba(156,163,175,0.5)';
-const VIEWPORT = 'rgba(96,165,250,0.5)';
-const VIEWPORT_FILL = 'rgba(96,165,250,0.08)';
+const BG = '#FFFFFF';
+const DOT = 'rgba(92,92,92,0.6)';
+const VIEWPORT = 'rgba(139,92,246,0.5)';
+const VIEWPORT_FILL = 'rgba(139,92,246,0.08)';
 
 interface Props {
   sigma: Sigma | null;
@@ -75,7 +75,7 @@ export function Minimap({ sigma }: Props) {
       context.beginPath();
       context.roundRect(0, 0, WIDTH, HEIGHT, 4);
       context.fill();
-      context.strokeStyle = 'rgba(255,255,255,0.06)';
+      context.strokeStyle = 'rgba(0,0,0,0.06)';
       context.lineWidth = 1;
       context.stroke();
 

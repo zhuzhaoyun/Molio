@@ -4,6 +4,7 @@
 .entry-main:has(.graph-page) {
   position: relative;
   overflow: hidden;
+  background: #FAFAFA;
 }
 
 .graph-page {
@@ -11,7 +12,7 @@
   inset: 0;
   display: flex;
   flex-direction: column;
-  background: #0B1020;
+  background: #FAFAFA;
 }
 
 /* ── Top Bar ── */
@@ -22,7 +23,7 @@
   justify-content: space-between;
   padding: 10px 16px;
   border-bottom: 1px solid rgba(255,255,255,0.06);
-  background: #0B1020;
+  background: #FAFAFA;
   flex-shrink: 0;
   min-height: 48px;
   z-index: 10;
@@ -38,7 +39,7 @@
   margin: 0;
   font-size: 15px;
   font-weight: 600;
-  color: #d4d4d4;
+  color: #333333;
 }
 
 .graph-topbar__right {
@@ -51,10 +52,10 @@
 
 .graph-vault-select {
   padding: 5px 10px;
-  border: 1px solid rgba(255,255,255,0.1);
+  border: 1px solid #E5E5E5;
   border-radius: 5px;
-  background: rgba(255,255,255,0.05);
-  color: #d4d4d4;
+  background: #FFFFFF;
+  color: #333333;
   font-size: 12px;
   cursor: pointer;
   outline: none;
@@ -62,7 +63,7 @@
 }
 
 .graph-vault-select:focus {
-  border-color: #4a90d9;
+  border-color: #8B5CF6;
 }
 
 /* ── Stats ── */
@@ -70,8 +71,8 @@
 .graph-stat {
   font-size: 11px;
   color: #888;
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.08);
+  background: #F5F5F5;
+  border: 1px solid #E5E5E5;
   border-radius: 4px;
   padding: 2px 6px;
   white-space: nowrap;
@@ -88,7 +89,7 @@
   flex: 1;
   position: relative;
   overflow: hidden;
-  background: #0B1020;
+  background: #FAFAFA;
   cursor: grab;
 }
 
@@ -113,14 +114,14 @@
   gap: 12px;
   color: #888;
   z-index: 10;
-  background: #0B1020;
+  background: #FAFAFA;
 }
 
 .graph-loading__spinner {
   width: 32px;
   height: 32px;
-  border: 3px solid rgba(255,255,255,0.1);
-  border-top-color: #4a90d9;
+  border: 3px solid #E5E5E5;
+  border-top-color: #8B5CF6;
   border-radius: 50%;
   animation: graph-spin 0.8s linear infinite;
 }
@@ -143,9 +144,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #e87872;
+  color: #EF4444;
   z-index: 10;
-  background: #0B1020;
+  background: #FAFAFA;
 }
 
 .graph-error p {
@@ -163,15 +164,15 @@
   align-items: center;
   justify-content: center;
   gap: 16px;
-  color: #888;
+  color: #999;
   z-index: 10;
-  background: #0B1020;
+  background: #FAFAFA;
 }
 
 .graph-empty__icon {
   width: 64px;
   height: 64px;
-  opacity: 0.3;
+  opacity: 0.2;
 }
 
 .graph-empty__icon svg {
@@ -182,7 +183,7 @@
 .graph-empty p {
   margin: 0;
   font-size: 14px;
-  color: #888;
+  color: #999;
 }
 
 /* ── Minimap ── */

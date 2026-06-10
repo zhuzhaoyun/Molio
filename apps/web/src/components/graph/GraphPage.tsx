@@ -31,19 +31,19 @@ interface GraphEdge {
   target: string;
 }
 
-// ── Visual constants (Galaxy Knowledge Graph style) ──
-// "知识星系" 视觉：连线极淡，节点有层次，hover 聚焦
+// ── Visual constants (Obsidian light theme, matching obsidian.png) ──
+// 浅色背景 + 深色节点，像纸张上的墨点
 
-const BG = '#0B1020'; // 深邃夜空背景，不是纯黑
-const NODE_DEFAULT = '#C5CBD6'; // 节点微亮，在深色背景上像星光
-const NODE_ISOLATED = '#6B7280'; // 孤立节点稍暗
-const NODE_HOVER = '#FFFFFF'; // hover 节点纯白
-const NODE_SELECTED = '#FFFFFF'; // 选中节点纯白
-const NODE_HOVER_GLOW = 'rgba(96,165,250,0.8)';
-const EDGE_DEFAULT = 'rgba(60,65,80,0.03)'; // 连线几乎完全隐形
-const EDGE_HOVER = 'rgba(96,165,250,0.8)'; // hover 时亮起
-const EDGE_SELECTED = '#60A5FA';
-const LABEL_DEFAULT = '#D1D5DB';
+const BG = '#FAFAFA';              // Obsidian 浅色背景
+const NODE_DEFAULT = '#5C5C5C';  // 默认节点：深灰
+const NODE_ISOLATED = '#999999';  // 孤立节点：更浅的灰
+const NODE_HOVER = '#333333';    // hover：更深
+const NODE_SELECTED = '#8B5CF6'; // 选中：Obsidian 紫色
+const NODE_SELECTED_BORDER = '#7C3AED';
+const EDGE_DEFAULT = '#F5F5F5';  // 连线：极淡灰，几乎看不见
+const EDGE_HOVER = '#C4B5FD';    // hover 连线：淡紫
+const EDGE_SELECTED = '#8B5CF6'; // 选中连线：紫色
+const LABEL_DEFAULT = '#6B6B6B'; // 标签：灰色
 
 // Node type colours (future: daemon will provide nodeType)
 const NODE_TYPE_COLORS: Record<string, string> = {
@@ -55,12 +55,12 @@ const NODE_TYPE_COLORS: Record<string, string> = {
   aiModel: '#EF4444',
 };
 
-// 节点大小按连接数动态变化：知识越多的节点越大
-// 范围：5 ~ 30，中心节点明显更大，小节点也不消失
+// 节点大小按连接数动态变化
+// Obsidian 风格：小节点 2px，大节点 10px，差异明显
 function nodeSize(linkCount: number): number {
-  const base = 5;
-  const maxSize = 30;
-  const calculated = base + Math.sqrt(linkCount) * 3;
+  const base = 2;
+  const maxSize = 10;
+  const calculated = base + Math.sqrt(linkCount) * 1.8;
   return Math.min(maxSize, calculated);
 }
 
@@ -162,28 +162,28 @@ export function GraphPage() {
       } catch { /* Edge already exists */ }
     }
 
-    // Force-directed layout: 星系感
-    // 目标：节点自然散开，形成中心辐射结构
+    // Force-directed layout: Obsidian 风格
+    // 节点均匀散开，形成自然的知识网络
     forceLayout.assign(graph, {
       maxIterations: 1200,
       settings: {
-        attraction: 0.0015,  // 稍松，节点间距更大
-        repulsion: 2.5,      // 更强排斥，避免拥挤
-        gravity: 0.015,      // 向心力，形成中心
-        inertia: 0.5,        // 低惯性，更稳定
-        maxMove: 150,        // 适度移动范围
+        attraction: 0.0008,  // 很松，节点间距大
+        repulsion: 3.0,      // 强排斥，均匀分布
+        gravity: 0.01,       // 轻微向心力
+        inertia: 0.4,        // 低惯性
+        maxMove: 100,        // 较小移动范围，更稳定
       },
     });
 
     // ── Node reducer for hover/select ──
-    // 核心视觉：默认状态下节点微亮，hover 时聚焦，其余淡出
+    // Obsidian 风格：默认全部显示，hover 时非关联节点变淡
     const nodeReducer = (node: string, data: Record<string, unknown>) => {
       const hovered = hoveredNodeRef.current;
       const selected = selectedNodeRef.current;
       const focusNode = hovered ?? selected;
       const isSelected = node === selected;
 
-      // 无 focus：默认显示
+      // 无 focus：默认显示所有节点
       if (!focusNode) {
         return {
           ...data,
@@ -192,14 +192,13 @@ export function GraphPage() {
         };
       }
 
-      // 当前 hover/选中节点
+      // 当前 hover/选中节点：紫色高亮
       if (node === focusNode) {
-        const scale = isSelected ? 1.5 : 1.2;
+        const scale = isSelected ? 1.4 : 1.2;
         return {
           ...data,
           size: ((data.size as number) ?? 6) * scale,
-          color: NODE_HOVER,
-          // 发光效果：通过 zIndex 或额外渲染实现
+          color: isSelected ? NODE_SELECTED : NODE_HOVER,
         };
       }
 
@@ -209,21 +208,20 @@ export function GraphPage() {
         return { ...data, color: (data.color as string) ?? NODE_DEFAULT };
       }
 
-      // 非关联节点：几乎消失
-      return { ...data, color: 'rgba(156,163,175,0.08)' };
+      // 非关联节点：变淡但可见（Obsidian 风格，不是完全消失）
+      return { ...data, color: '#D4D4D4' };
     };
 
     // ── Edge reducer ──
-    // 默认：线条几乎消失 (rgba 0.05)
-    // hover/选中：关联线亮起 (0.8 高亮)
+    // Obsidian 风格：默认淡灰，hover 时关联线变紫
     const edgeReducer = (edge: string, data: Record<string, unknown>) => {
       const hovered = hoveredNodeRef.current;
       const selected = selectedNodeRef.current;
       const focusNode = hovered ?? selected;
 
-      // 无 focus：默认极淡
+      // 无 focus：默认淡灰线
       if (!focusNode) {
-        return { ...data, color: EDGE_DEFAULT, size: 0.5 };
+        return { ...data, color: EDGE_DEFAULT, size: 1 };
       }
 
       // Get source/target using graphology API
@@ -232,15 +230,15 @@ export function GraphPage() {
       const isConnected = source === focusNode || target === focusNode;
 
       if (isConnected) {
-        // 选中状态：粗蓝线
+        // 选中状态：粗紫线
         if (selected) {
-          return { ...data, color: EDGE_SELECTED, size: 3 };
+          return { ...data, color: EDGE_SELECTED, size: 2 };
         }
-        // hover：亮蓝线
-        return { ...data, color: EDGE_HOVER, size: 2 };
+        // hover：淡紫线
+        return { ...data, color: EDGE_HOVER, size: 1.5 };
       }
-      // 非关联线：几乎消失
-      return { ...data, color: 'rgba(255,255,255,0.02)', size: 0.3 };
+      // 非关联线：更淡
+      return { ...data, color: '#F0F0F0', size: 0.5 };
     };
 
     // ── Create Sigma ──
