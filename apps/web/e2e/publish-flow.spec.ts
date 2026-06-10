@@ -59,7 +59,7 @@ test.describe('Publish button regression (#11)', () => {
     await page.waitForTimeout(500);
 
     // Wait for vault to load and select the first file
-    const fileItem = page.locator('.kb-file-item, .tree-item').first();
+    const fileItem = page.locator('.kb-tree-item').first();
     await fileItem.click({ timeout: 10_000 });
     await page.waitForTimeout(500);
 

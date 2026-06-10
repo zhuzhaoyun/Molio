@@ -8,6 +8,7 @@ export function NavRail() {
         <NavLink
           to="/"
           end
+          data-view="home"
           className={({ isActive }) =>
             `entry-nav-rail__btn ${isActive ? 'is-active' : ''}`
           }
@@ -29,6 +30,7 @@ export function NavRail() {
         {/* Knowledge Base */}
         <NavLink
           to="/knowledge"
+          data-view="knowledge"
           className={({ isActive }) =>
             `entry-nav-rail__btn ${isActive ? 'is-active' : ''}`
           }
@@ -52,6 +54,7 @@ export function NavRail() {
         {/* Runtimes */}
         <NavLink
           to="/runtimes"
+          data-view="runtimes"
           className={({ isActive }) =>
             `entry-nav-rail__btn ${isActive ? 'is-active' : ''}`
           }
@@ -75,6 +78,7 @@ export function NavRail() {
       <div className="entry-nav-rail__group">
         <NavLink
           to="/settings"
+          data-view="settings"
           className={({ isActive }) =>
             `entry-nav-rail__btn ${isActive ? 'is-active' : ''}`
           }
