@@ -20,6 +20,14 @@ describe('Detection with minimal PATH (Electron desktop launch)', () => {
       return; // Skip on non-Windows
     }
 
+    // Pre-check: if claude is not installed at all, skip rather than fail.
+    // This test validates the fallback search logic, not the presence of claude.
+    const baselineRm = new RunManager();
+    const baseline = baselineRm.detectAgents().find(a => a.id === 'claude');
+    if (!baseline?.available) {
+      return; // claude not installed — nothing to detect regardless of PATH
+    }
+
     const originalPath = process.env['PATH'];
     try {
       // Simulate Electron launched from desktop: minimal PATH
@@ -41,6 +49,13 @@ describe('Detection with minimal PATH (Electron desktop launch)', () => {
 
   it('should detect claude even with empty PATH', () => {
     if (process.platform !== 'win32') {
+      return; // Skip on non-Windows
+    }
+
+    // Pre-check: skip if claude is not installed on this machine.
+    const baselineRm = new RunManager();
+    const baseline = baselineRm.detectAgents().find(a => a.id === 'claude');
+    if (!baseline?.available) {
       return;
     }
 
@@ -61,7 +76,7 @@ describe('Detection with minimal PATH (Electron desktop launch)', () => {
 
   it('should probe version even with minimal PATH', () => {
     if (process.platform !== 'win32') {
-      return;
+      return; // Skip on non-Windows
     }
 
     const originalPath = process.env['PATH'];

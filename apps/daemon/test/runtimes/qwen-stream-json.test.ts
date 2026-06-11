@@ -59,9 +59,9 @@ describe('Qwen Code runtime stream-json configuration', () => {
     assert.ok(args.includes('-p'), 'should have -p flag for non-interactive mode');
   });
 
-  it('should include --verbose flag', () => {
+  it('should NOT include --verbose flag (not supported by Qwen CLI)', () => {
     const args = qwenAgentDef.buildArgs('test prompt', {}, {});
-    assert.ok(args.includes('--verbose'), 'should have --verbose flag');
+    assert.ok(!args.includes('--verbose'), '--verbose is not a valid Qwen CLI flag and causes immediate exit');
   });
 
   it('should add --model flag when model is specified', () => {

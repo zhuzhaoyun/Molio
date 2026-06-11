@@ -43,6 +43,7 @@ export function agentsRoutes(runManager: RunManager): Hono {
             elapsed,
             status: info?.status ?? 'unknown',
             stopReason: info?.lastStopReason ?? null,
+            error: ok ? undefined : (info?.error ?? null),
           });
         }
         await new Promise((r) => setTimeout(r, 300));

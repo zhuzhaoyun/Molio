@@ -125,8 +125,9 @@ export function getWellKnownToolchainDirs(): string[] {
       path.join(home, '.local', 'bin'),
     );
 
-    const nvm4wNodejs = 'C:\\nvm4w\\nodejs';
-    if (fs.existsSync(nvm4wNodejs)) dirs.push(nvm4wNodejs);
+    // nvm4w default symlink — always add as candidate; findInWellKnownDirs
+    // guards with existsSync so non-existent dirs are harmless.
+    dirs.push('C:\\nvm4w\\nodejs');
     const nvmHome = process.env['NVM_HOME'];
     if (nvmHome) dirs.push(nvmHome);
     const nvmSymlink = process.env['NVM_SYMLINK'];
@@ -155,6 +156,18 @@ export function getWellKnownToolchainDirs(): string[] {
 
     const voltaDir = path.join(home, 'AppData', 'Local', 'Volta', 'bin');
     if (fs.existsSync(voltaDir)) dirs.push(voltaDir);
+
+    // WinGet (Windows Package Manager) — each package lives in its own subdirectory
+    // e.g. AppData\Local\Microsoft\WinGet\Packages\Anthropic.ClaudeCode_Microsoft.Winget.Source_*
+    const wingetDir = path.join(home, 'AppData', 'Local', 'Microsoft', 'WinGet', 'Packages');
+    if (fs.existsSync(wingetDir)) {
+      try {
+        for (const entry of fs.readdirSync(wingetDir)) {
+          const pkgDir = path.join(wingetDir, entry);
+          if (fs.statSync(pkgDir).isDirectory()) dirs.push(pkgDir);
+        }
+      } catch { /* ignore */ }
+    }
   } else {
     dirs.push(
       path.join(home, '.local', 'bin'),

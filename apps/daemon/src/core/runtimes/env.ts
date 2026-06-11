@@ -7,6 +7,11 @@ export function buildSpawnEnv(
   const source = baseEnv ?? (process.env as Record<string, string>);
   const env: NodeJS.ProcessEnv = { ...source, ...(def.env ?? {}) };
 
+  // Inject Molio runtime identity so the agent CLI knows which runtime
+  // it is running as (e.g. when the user asks "which runtime is this?").
+  env['MOLIO_AGENT_ID'] = def.id;
+  env['MOLIO_AGENT_NAME'] = def.name;
+
   if (def.id === 'claude') {
     stripUnlessCustomBaseUrl(env, 'ANTHROPIC_BASE_URL', ['ANTHROPIC_API_KEY']);
   }

@@ -17,7 +17,6 @@ export const qwenAgentDef: RuntimeAgentDef = {
       '-p',
       '--input-format', 'stream-json',
       '--output-format', 'stream-json',
-      '--verbose',
     ];
     if (options.model && options.model !== 'default') {
       args.push('--model', options.model);

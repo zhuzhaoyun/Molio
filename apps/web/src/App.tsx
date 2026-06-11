@@ -98,6 +98,24 @@ export default function App() {
     }
   }, [agents, defaultAgentId, selectedAgent]);
 
+  // Sync selectedAgent with config when navigating back from Runtimes page.
+  // The Runtimes page can change defaultAgentId via the config API, but
+  // App.tsx only loads config on mount. Re-read config on route change so
+  // the agent selector stays in sync.
+  useEffect(() => {
+    api.getConfig()
+      .then((cfg) => {
+        const id = (cfg as { defaultAgentId?: string }).defaultAgentId;
+        if (id && id !== defaultAgentId) {
+          setDefaultAgentId(id);
+          if (agents.some((a) => a.id === id && a.available)) {
+            setSelectedAgent(id);
+          }
+        }
+      })
+      .catch(() => {});
+  }, [location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Load vaults into the shared store on mount (so chat cwd is set even
   // when the KB page has never been visited).
   useEffect(() => {

@@ -16,6 +16,7 @@ export function createClaudeStreamHandler(
   let currentMessageId: string | null = null;
   const textStreamed = new Set<string>();
   const thinkingStreamed = new Set<string>();
+  let turnEndEmitted = false;
 
   function blockKey(index: unknown): string {
     return `${currentMessageId ?? 'anon'}:${index}`;
@@ -65,6 +66,7 @@ export function createClaudeStreamHandler(
       }
 
       if (typeof msg['stop_reason'] === 'string') {
+        turnEndEmitted = true;
         onEvent({ type: 'turn_end', stopReason: msg['stop_reason'] as string });
       }
       return;
@@ -91,6 +93,21 @@ export function createClaudeStreamHandler(
     }
 
     if (obj['type'] === 'result') {
+      // Handle error results — emit error event instead of usage
+      if (obj['is_error'] === true) {
+        const err = obj['error'] as Record<string, unknown> | undefined;
+        const message = typeof err?.['message'] === 'string'
+          ? err['message'] as string
+          : 'Agent returned error result';
+        onEvent({ type: 'error', message });
+        return;
+      }
+      // For agents that don't include stop_reason in assistant messages (e.g. Qwen),
+      // emit turn_end when the result arrives so the frontend knows the turn is done.
+      if (!turnEndEmitted) {
+        turnEndEmitted = true;
+        onEvent({ type: 'turn_end', stopReason: 'end_turn' });
+      }
       onEvent({
         type: 'usage',
         usage: obj['usage'] as UsageInfo,
