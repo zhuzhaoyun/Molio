@@ -48,14 +48,14 @@ test.afterAll(async () => {
 });
 
 /**
- * Helper: navigate to knowledge base and select the test vault + first file.
+ * Helper: navigate to knowledge base, select the test vault, and open a file.
  */
 async function navigateToTestFile(page: any) {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
 
   // Navigate to knowledge base view
-  await page.locator('[data-tooltip="Knowledge Base"]').click();
+  await page.locator('[data-view="knowledge"]').first().click();
   await page.waitForTimeout(500);
 
   // Open vault switcher
