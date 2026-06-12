@@ -32,6 +32,7 @@ export function useChat(options: UseChatOptions | string | null) {
   const cwd = typeof options === 'object' && options !== null ? options.cwd : null;
 
   const core = useChatCore({
+    agentId,
     initialMessages: typeof options === 'object' && options !== null ? options.initialMessages : undefined,
     initialConversationId: initialConversationId ?? null,
     createRun: async ({ message, history, conversationId }) => {

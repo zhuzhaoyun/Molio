@@ -38,6 +38,8 @@ export interface ChatMessage {
 interface ChatState {
   messages: ChatMessage[];
   runId: string | null;
+  /** Agent that created the current run — used to detect runtime switches. */
+  runAgentId: string | null;
   isRunning: boolean;
   conversationId: string | null;
 }
@@ -60,6 +62,8 @@ export interface CreateRunContext {
 export interface UseChatCoreOptions {
   /** Called to create a new run. Implementations decide which API to call. */
   createRun: (ctx: CreateRunContext) => Promise<RunResult>;
+  /** Current agent ID — used to detect runtime switches and invalidate stale runs. */
+  agentId?: string | null;
   /** Initial messages to pre-populate (e.g. from DB). */
   initialMessages?: ChatMessage[];
   /** Initial conversation ID. */
@@ -72,11 +76,12 @@ let msgCounter = 0;
 function nextMsgId() { return `msg-${++msgCounter}-${Date.now()}`; }
 
 export function useChatCore(options: UseChatCoreOptions) {
-  const { createRun, initialMessages = [], initialConversationId = null, onComplete } = options;
+  const { createRun, agentId, initialMessages = [], initialConversationId = null, onComplete } = options;
 
   const [state, setState] = useState<ChatState>({
     messages: initialMessages,
     runId: null,
+    runAgentId: null,
     isRunning: false,
     conversationId: initialConversationId,
   });
@@ -120,9 +125,12 @@ export function useChatCore(options: UseChatCoreOptions) {
       isRunning: true,
     }));
 
-    // Try multi-turn on existing run
+    // Try multi-turn on existing run — but only if the agent hasn't changed.
+    // When the user switches runtime (e.g. Claude → Qwen), the existing run
+    // belongs to the old agent; sending a follow-up would go to the wrong process.
     const existingRunId = state.runId;
-    if (existingRunId) {
+    const agentChanged = agentId != null && state.runAgentId != null && agentId !== state.runAgentId;
+    if (existingRunId && !agentChanged) {
       try {
         await api.sendMessage(existingRunId, text.trim());
         return; // SSE is still active, events route via assistantIdRef
@@ -147,6 +155,11 @@ export function useChatCore(options: UseChatCoreOptions) {
 
     closeEventSource();
 
+    // If the agent changed, cancel the old run so its process doesn't linger
+    if (agentChanged && existingRunId) {
+      api.cancelRun(existingRunId).catch(() => {});
+    }
+
     try {
       const result = await createRun({
         message: text.trim(),
@@ -159,7 +172,7 @@ export function useChatCore(options: UseChatCoreOptions) {
       const runId = result.runId;
       const convId = result.conversationId ?? state.conversationId;
 
-      setState((prev) => ({ ...prev, runId, conversationId: convId }));
+      setState((prev) => ({ ...prev, runId, runAgentId: agentId ?? null, conversationId: convId }));
 
       const es = subscribeToRun(
         runId,
@@ -198,7 +211,7 @@ export function useChatCore(options: UseChatCoreOptions) {
         return { ...prev, messages, isRunning: false };
       });
     }
-  }, [state.runId, state.conversationId, state.messages, closeEventSource, createRun, onComplete]);
+  }, [state.runId, state.runAgentId, state.conversationId, state.messages, closeEventSource, createRun, agentId, onComplete]);
 
   const submitToolResult = useCallback(async (toolUseId: string, content: string) => {
     if (!state.runId) return;
@@ -229,14 +242,14 @@ export function useChatCore(options: UseChatCoreOptions) {
       const messages = prev.messages.map((msg) =>
         msg.streaming ? { ...msg, streaming: false } : msg
       );
-      return { ...prev, messages, isRunning: false, runId: null };
+      return { ...prev, messages, isRunning: false, runId: null, runAgentId: null };
     });
   }, [state.runId, closeEventSource]);
 
   const reset = useCallback(() => {
     closeEventSource();
     assistantIdRef.current = null;
-    setState({ messages: [], runId: null, isRunning: false, conversationId: null });
+    setState({ messages: [], runId: null, runAgentId: null, isRunning: false, conversationId: null });
   }, [closeEventSource]);
 
   /**
@@ -248,6 +261,7 @@ export function useChatCore(options: UseChatCoreOptions) {
     setState({
       messages,
       runId: null,
+      runAgentId: null,
       isRunning: false,
       conversationId: conversationId ?? null,
     });
@@ -351,7 +365,7 @@ function updateWithEvent(
     const finalized = messages.map((msg) =>
       msg.id === assistantId ? { ...msg, streaming: false } : msg
     );
-    return { ...prev, messages: finalized, isRunning, runId };
+    return { ...prev, messages: finalized, isRunning, runId, runAgentId: null };
   }
 
   return { ...prev, messages, isRunning, runId };
