@@ -27,6 +27,7 @@ export function useWikiChat(options: UseWikiChatOptions) {
   const operationTypeRef = useRef<WikiOperationType | null>(null);
 
   const core = useChatCore({
+    agentId,
     onComplete,
     createRun: async ({ message, operationType, extra }) => {
       if (!vaultId || !agentId) throw new Error('No vault or agent selected');

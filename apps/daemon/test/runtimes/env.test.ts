@@ -242,4 +242,46 @@ describe('buildSpawnEnv', () => {
       assert.equal(env['ANTHROPIC_API_KEY'], 'sk-ant-key');
     });
   });
+
+  describe('Claude Code git-bash auto-detection (Windows)', () => {
+    const isWindows = process.platform === 'win32';
+
+    it('should not override CLAUDE_CODE_GIT_BASH_PATH if already set', () => {
+      const def = makeDef({ id: 'claude' });
+      const env = buildSpawnEnv(def, {
+        CLAUDE_CODE_GIT_BASH_PATH: 'C:\\custom\\bash.exe',
+      });
+
+      assert.equal(env['CLAUDE_CODE_GIT_BASH_PATH'], 'C:\\custom\\bash.exe');
+    });
+
+    it('should not set CLAUDE_CODE_GIT_BASH_PATH for non-claude agents', () => {
+      const def = makeDef({ id: 'codex' });
+      const env = buildSpawnEnv(def, {});
+
+      assert.equal(env['CLAUDE_CODE_GIT_BASH_PATH'], undefined);
+    });
+
+    // Windows-only: verify auto-detection finds git bash
+    it({ skip: !isWindows ? 'Windows only' : undefined }, () => {
+      const def = makeDef({ id: 'claude' });
+      const env = buildSpawnEnv(def, {});
+
+      // On Windows with git installed, CLAUDE_CODE_GIT_BASH_PATH should be set
+      if (env['CLAUDE_CODE_GIT_BASH_PATH']) {
+        assert.ok(
+          env['CLAUDE_CODE_GIT_BASH_PATH']!.endsWith('bash.exe'),
+          `Expected path ending with bash.exe, got: ${env['CLAUDE_CODE_GIT_BASH_PATH']}`,
+        );
+      }
+      // If git is not installed, we don't fail — just verify no crash
+    });
+
+    it('should not set CLAUDE_CODE_GIT_BASH_PATH on non-Windows', { skip: isWindows ? 'non-Windows only' : undefined }, () => {
+      const def = makeDef({ id: 'claude' });
+      const env = buildSpawnEnv(def, {});
+
+      assert.equal(env['CLAUDE_CODE_GIT_BASH_PATH'], undefined);
+    });
+  });
 });

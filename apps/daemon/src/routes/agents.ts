@@ -31,10 +31,39 @@ export function agentsRoutes(runManager: RunManager): Hono {
         message: 'Reply with exactly: "pong"',
       });
 
-      // Poll until terminal or timeout
+      // For multi-turn agents (e.g. Qwen, Claude), the process stays alive
+      // after responding (stdin open for follow-up). Detect turn completion
+      // via events instead of waiting for process exit.
+      let turnCompleted = false;
+      let turnError: string | null = null;
+
+      const unsubscribe = runManager.onEvent(runId, (event) => {
+        if (event.type === 'usage') {
+          turnCompleted = true;
+        } else if (event.type === 'error') {
+          turnError = event.message;
+          turnCompleted = true;
+        }
+      });
+
+      // Poll until turn completes, process exits, or timeout
       const deadline = Date.now() + timeoutMs;
       while (Date.now() < deadline) {
+        if (turnCompleted) {
+          unsubscribe?.();
+          runManager.cancelRun(runId);
+          const elapsed = Date.now() - startedAt;
+          const ok = !turnError;
+          return c.json({
+            ok,
+            elapsed,
+            status: ok ? 'succeeded' : 'failed',
+            error: ok ? undefined : turnError,
+          });
+        }
+
         if (runManager.isTerminal(runId)) {
+          unsubscribe?.();
           const info = runManager.getRunInfo(runId);
           const elapsed = Date.now() - startedAt;
           const ok = info?.status === 'succeeded';
@@ -49,7 +78,8 @@ export function agentsRoutes(runManager: RunManager): Hono {
         await new Promise((r) => setTimeout(r, 300));
       }
 
-      // Timeout — cancel the run
+      // Timeout — clean up
+      unsubscribe?.();
       runManager.cancelRun(runId);
       const elapsed = Date.now() - startedAt;
       return c.json({ ok: false, elapsed, error: 'Test timed out after 30s' }, 408);
