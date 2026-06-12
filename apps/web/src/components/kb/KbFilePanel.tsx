@@ -20,6 +20,14 @@ interface KbFilePanelProps {
   onAddToWiki?: (path: string) => void;
   onBuildWiki?: () => void;
   onLintWiki?: () => void;
+  /** Context menu handler — fired on right-click of any tree node */
+  onContextMenu?: (node: TreeNode, e: React.MouseEvent) => void;
+  /** Path of node being renamed (null = none) */
+  renamingPath?: string | null;
+  /** Confirm rename: (oldPath, newName) */
+  onRenameComplete?: (oldPath: string, newName: string) => void;
+  /** Cancel rename */
+  onRenameCancel?: () => void;
   children?: ReactNode;
 }
 
@@ -37,20 +45,24 @@ export function KbFilePanel({
   onAddToWiki,
   onBuildWiki,
   onLintWiki,
+  onContextMenu,
+  renamingPath,
+  onRenameComplete,
+  onRenameCancel,
   children,
 }: KbFilePanelProps) {
   return (
     <aside className="kb-file-panel" style={{ width }}>
       {/* Toolbar */}
       <div className="kb-file-toolbar">
-        <button title="New file" onClick={onNewFile}>📄</button>
-        <button title="New folder" onClick={onNewFolder}>📁</button>
+        <button type="button" title="新建文件" onClick={onNewFile}>📄</button>
+        <button type="button" title="新建文件夹" onClick={onNewFolder}>📁</button>
         <div style={{ flex: 1 }} />
         {onBuildWiki && (
-          <button title="构建 Wiki" onClick={onBuildWiki} style={{ color: 'var(--accent)' }}>🏗</button>
+          <button type="button" title="构建 Wiki" onClick={onBuildWiki} style={{ color: 'var(--accent)' }}>🏗</button>
         )}
         {onLintWiki && (
-          <button title="Wiki 健康检查" onClick={onLintWiki}>🔍</button>
+          <button type="button" title="Wiki 健康检查" onClick={onLintWiki}>🔍</button>
         )}
       </div>
 
@@ -72,6 +84,10 @@ export function KbFilePanel({
           searchQuery={searchQuery}
           onSelectFile={onSelectFile}
           onAddToWiki={onAddToWiki}
+          onContextMenu={onContextMenu}
+          renamingPath={renamingPath}
+          onRenameComplete={onRenameComplete}
+          onRenameCancel={onRenameCancel}
         />
       </div>
 

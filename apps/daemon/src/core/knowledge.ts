@@ -141,6 +141,44 @@ export function deleteFile(vaultPath: string, relPath: string): void {
 }
 
 /**
+ * Rename / move a file or directory within a vault.
+ */
+export function renamePath(vaultPath: string, oldRelPath: string, newRelPath: string): void {
+  const absOld = path.resolve(path.join(vaultPath, oldRelPath));
+  const absNew = path.resolve(path.join(vaultPath, newRelPath));
+
+  // Security: both paths must be inside the vault
+  const vaultRoot = path.resolve(vaultPath);
+  if (!absOld.startsWith(vaultRoot) || !absNew.startsWith(vaultRoot)) {
+    throw new Error('Path traversal not allowed');
+  }
+
+  if (!fs.existsSync(absOld)) {
+    throw new Error(`Source not found: ${oldRelPath}`);
+  }
+
+  // Create parent directories for the new path
+  fs.mkdirSync(path.dirname(absNew), { recursive: true });
+  fs.renameSync(absOld, absNew);
+}
+
+/**
+ * Delete a directory (recursively) from a vault.
+ */
+export function deleteDirectory(vaultPath: string, relPath: string): void {
+  const absDir = path.resolve(path.join(vaultPath, relPath));
+
+  // Security: prevent path traversal
+  if (!absDir.startsWith(path.resolve(vaultPath))) {
+    throw new Error('Path traversal not allowed');
+  }
+
+  if (fs.existsSync(absDir)) {
+    fs.rmSync(absDir, { recursive: true, force: true });
+  }
+}
+
+/**
  * Create a directory inside a vault.
  */
 export function createDirectory(vaultPath: string, relPath: string): void {

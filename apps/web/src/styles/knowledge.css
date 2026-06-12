@@ -1892,3 +1892,110 @@
 .kb-file-card-open:hover {
   background: var(--accent-hover);
 }
+
+/* ══════════ Context Menu ══════════ */
+
+.ctx-menu-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+}
+
+.ctx-menu {
+  position: fixed;
+  min-width: 160px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), 0 1px 4px rgba(0, 0, 0, 0.08);
+  padding: 4px;
+  z-index: 301;
+  animation: ctx-menu-in 80ms ease;
+}
+
+@keyframes ctx-menu-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.ctx-menu-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  border-radius: 5px;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 80ms ease;
+}
+
+.ctx-menu-item:hover {
+  background: var(--bg-subtle);
+}
+
+.ctx-menu-item.is-danger {
+  color: var(--red, #dc2626);
+}
+
+.ctx-menu-item.is-danger:hover {
+  background: var(--red-bg, #fef2f2);
+}
+
+.ctx-menu-item.is-disabled {
+  color: var(--text-faint);
+  cursor: not-allowed;
+}
+
+.ctx-menu-item.is-disabled:hover {
+  background: transparent;
+}
+
+.ctx-menu-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 8px;
+}
+
+/* ══════════ Inline Rename Input ══════════ */
+
+.kb-tree-rename-input {
+  flex: 1;
+  height: 20px;
+  padding: 0 4px;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+  box-shadow: 0 0 0 2px var(--selected-soft);
+  min-width: 0;
+}
+
+/* ══════════ Save Feedback ══════════ */
+
+.kb-save-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  padding: 8px 16px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  font-size: 13px;
+  color: var(--text);
+  z-index: 400;
+  animation: kb-toast-in 200ms ease;
+}
+
+@keyframes kb-toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
