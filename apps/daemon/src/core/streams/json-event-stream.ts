@@ -130,6 +130,14 @@ function handleCodexEvent(obj: unknown, onEvent: (ev: AgentEvent) => void): bool
 }
 
 // ─── Gemini handler ───
+//
+// Actual Gemini CLI stream-json event shapes (v0.46.0):
+//   init:         { type: "init", timestamp, session_id, model }
+//   message:      { type: "message", timestamp, role: "user"|"assistant", content, delta?: true }
+//   tool_use:     { type: "tool_use", timestamp, tool_name, tool_id, parameters }
+//   tool_result:  { type: "tool_result", timestamp, tool_id, status: "success"|"error", output, error?: { type, message } }
+//   error:        { type: "error", timestamp, severity: "warning"|"error", message }
+//   result:       { type: "result", timestamp, status: "success"|"error", error?: { type, message }, stats: { total_tokens, input_tokens, output_tokens, cached, input, duration_ms, tool_calls, models } }
 
 function handleGeminiEvent(obj: unknown, onEvent: (ev: AgentEvent) => void): boolean {
   if (!isRecord(obj)) return false;
@@ -140,38 +148,77 @@ function handleGeminiEvent(obj: unknown, onEvent: (ev: AgentEvent) => void): boo
     return true;
   }
 
-  // Text message
+  // Text message — only emit assistant messages (skip user echo)
   if (obj.type === 'message' && typeof obj.content === 'string') {
-    onEvent({ type: 'text_delta', delta: obj.content });
+    if (obj.role !== 'user') {
+      onEvent({ type: 'text_delta', delta: obj.content });
+    }
     return true;
   }
 
-  // Alternative text format
+  // Alternative text format (fallback, not seen in v0.46 but kept for safety)
   if (obj.type === 'text' && typeof obj.text === 'string') {
     onEvent({ type: 'text_delta', delta: obj.text });
     return true;
   }
 
-  // Result / usage
-  if (obj.type === 'result') {
-    const usage: UsageInfo = {};
-    if (isRecord(obj.usage)) {
-      if (typeof obj.usage.input_tokens === 'number') usage.input_tokens = obj.usage.input_tokens;
-      if (typeof obj.usage.output_tokens === 'number') usage.output_tokens = obj.usage.output_tokens;
-    }
-    onEvent({ type: 'usage', usage });
+  // Tool use
+  if (obj.type === 'tool_use' && typeof obj.tool_id === 'string') {
+    onEvent({
+      type: 'tool_use',
+      id: obj.tool_id,
+      name: typeof obj.tool_name === 'string' ? obj.tool_name : 'unknown',
+      input: isRecord(obj.parameters) ? obj.parameters : {},
+    });
     return true;
   }
 
-  // Turn end
-  if (obj.type === 'turn_end' || obj.type === 'done') {
-    onEvent({ type: 'turn_end', stopReason: typeof obj.stop_reason === 'string' ? obj.stop_reason : 'end_turn' });
+  // Tool result
+  if (obj.type === 'tool_result' && typeof obj.tool_id === 'string') {
+    onEvent({
+      type: 'tool_result',
+      toolUseId: obj.tool_id,
+      content: typeof obj.output === 'string' ? obj.output : '',
+      isError: obj.status === 'error',
+    });
     return true;
   }
 
-  // Error
+  // Error (non-fatal warnings and errors during the stream)
   if (obj.type === 'error' && typeof obj.message === 'string') {
     onEvent({ type: 'error', message: obj.message });
+    return true;
+  }
+
+  // Result — final event: usage stats + turn completion
+  if (obj.type === 'result') {
+    // Emit error if the result indicates failure
+    if (obj.status === 'error' && isRecord(obj.error) && typeof obj.error.message === 'string') {
+      onEvent({ type: 'error', message: obj.error.message });
+    }
+
+    // Emit usage stats from the `stats` field
+    if (isRecord(obj.stats)) {
+      const usage: UsageInfo = {};
+      if (typeof obj.stats.input_tokens === 'number') usage.input_tokens = obj.stats.input_tokens;
+      if (typeof obj.stats.output_tokens === 'number') usage.output_tokens = obj.stats.output_tokens;
+      if (typeof obj.stats.cached === 'number') usage.cached_read_tokens = obj.stats.cached;
+      if (Object.keys(usage).length > 0) {
+        onEvent({ type: 'usage', usage });
+      }
+    }
+
+    // Emit turn_end to signal completion
+    onEvent({
+      type: 'turn_end',
+      stopReason: obj.status === 'error' ? 'error' : 'end_turn',
+    });
+    return true;
+  }
+
+  // Legacy turn_end / done (kept for backward compat, not emitted by v0.46)
+  if (obj.type === 'turn_end' || obj.type === 'done') {
+    onEvent({ type: 'turn_end', stopReason: typeof obj.stop_reason === 'string' ? obj.stop_reason : 'end_turn' });
     return true;
   }
 
