@@ -6,3 +6,9 @@ dist/
 .multica/
 .learnings/
 .claude/
+
+# Playwright E2E test artifacts
+test-results/
+playwright-report/
+.workbuddy/
+deliverables/

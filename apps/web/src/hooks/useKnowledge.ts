@@ -9,8 +9,7 @@ import { api } from '../api/client';
 import type { ThemeConfig } from '../components/kb/MdStylePanel';
 import { defaultThemeConfig } from '../components/kb/MdStylePanel';
 import { copyHtml } from '@molio/doocs-md/shared/utils/clipboard';
-
-export type KbTab = 'preview'; // Simplified - only preview tab now
+import { vaultStore, useActiveVaultId } from '../stores/vaultStore';
 
 interface UseKnowledgeReturn {
   // Data
@@ -20,7 +19,6 @@ interface UseKnowledgeReturn {
   selectedFile: string | null;
   fileContent: FileContent | null;
   history: KbHistoryEntry[];
-  activeTab: KbTab;
 
   // UI state
   panelWidth: number;
@@ -49,7 +47,6 @@ interface UseKnowledgeReturn {
   selectFile: (path: string) => void;
   refreshTree: () => void;
   checkWikiStatus: () => void;
-  setActiveTab: (tab: KbTab) => void;
   setPanelWidth: (w: number) => void;
   setSearchQuery: (q: string) => void;
   setShowVaultSwitcher: (show: boolean) => void;
@@ -76,12 +73,12 @@ interface UseKnowledgeReturn {
 
 export function useKnowledge(): UseKnowledgeReturn {
   const [vaults, setVaults] = useState<Vault[]>([]);
-  const [activeVaultId, setActiveVaultId] = useState<string | null>(null);
+  // Read active vault ID from the shared store so App.tsx stays in sync.
+  const activeVaultId = useActiveVaultId();
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<FileContent | null>(null);
   const [history, setHistory] = useState<KbHistoryEntry[]>([]);
-  const [activeTab, setActiveTab] = useState<KbTab>('preview');
   const [panelWidth, setPanelWidth] = useState(260);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
@@ -109,9 +106,7 @@ export function useKnowledge(): UseKnowledgeReturn {
         const list = await api.listVaults();
         if (cancelled) return;
         setVaults(list);
-        if (list.length > 0 && !activeVaultId && list[0]) {
-          setActiveVaultId(list[0].id);
-        }
+        vaultStore.setVaults(list); // shared store handles auto-selection
       } catch {
         // No vaults yet — fine
       }
@@ -119,9 +114,15 @@ export function useKnowledge(): UseKnowledgeReturn {
     return () => { cancelled = true; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Track previous vault ID to distinguish mount vs vault switch
+  const prevVaultIdRef = useRef<string | null>(null);
+
   // Load tree when vault changes
   useEffect(() => {
     if (!activeVaultId) return;
+    const isVaultSwitch = prevVaultIdRef.current !== null && prevVaultIdRef.current !== activeVaultId;
+    prevVaultIdRef.current = activeVaultId;
+
     let cancelled = false;
     (async () => {
       try {
@@ -129,8 +130,12 @@ export function useKnowledge(): UseKnowledgeReturn {
         const t = await api.getFileTree(activeVaultId);
         if (!cancelled) {
           setTree(t);
-          setSelectedFile(null);
-          setFileContent(null);
+          // Only clear selection on explicit vault switch, not on mount/remount
+          // (tab restore sets selectedFile via KnowledgeBasePage useEffect)
+          if (isVaultSwitch) {
+            setSelectedFile(null);
+            setFileContent(null);
+          }
         }
       } catch {
         if (!cancelled) setTree([]);
@@ -186,6 +191,8 @@ export function useKnowledge(): UseKnowledgeReturn {
   // Load file content when file selected
   useEffect(() => {
     if (!activeVaultId || !selectedFile) return;
+    // Reset edited content when switching files
+    setEditedContent(null);
     let cancelled = false;
     (async () => {
       try {
@@ -200,7 +207,7 @@ export function useKnowledge(): UseKnowledgeReturn {
     return () => { cancelled = true; };
   }, [activeVaultId, selectedFile]);
 
-  // Load history when file or vault changes
+  // Load history when vault changes
   useEffect(() => {
     if (!activeVaultId) return;
     let cancelled = false;
@@ -213,19 +220,23 @@ export function useKnowledge(): UseKnowledgeReturn {
       }
     })();
     return () => { cancelled = true; };
-  }, [activeVaultId, selectedFile]);
+  }, [activeVaultId]);
 
   const activeVault = vaults.find((v) => v.id === activeVaultId) ?? null;
 
   const selectVault = useCallback((id: string) => {
-    setActiveVaultId(id);
+    vaultStore.setActiveVaultId(id);
     setShowVaultSwitcher(false);
   }, []);
 
   const createVault = useCallback(async (name: string, path: string, description?: string) => {
     const vault = await api.createVault({ name, path, description });
-    setVaults((prev) => [vault, ...prev]);
-    setActiveVaultId(vault.id);
+    setVaults((prev) => {
+      const next = [vault, ...prev];
+      vaultStore.setVaults(next);
+      return next;
+    });
+    vaultStore.setActiveVaultId(vault.id);
     setShowAddVault(false);
   }, []);
 
@@ -233,15 +244,23 @@ export function useKnowledge(): UseKnowledgeReturn {
     // Derive a name from the last path segment
     const name = path.split(/[\/]/).pop() || '未命名仓库';
     const vault = await api.createVault({ name, path, description: `从本地文件夹打开: ${path}` });
-    setVaults((prev) => [vault, ...prev]);
-    setActiveVaultId(vault.id);
+    setVaults((prev) => {
+      const next = [vault, ...prev];
+      vaultStore.setVaults(next);
+      return next;
+    });
+    vaultStore.setActiveVaultId(vault.id);
   }, []);
 
   const deleteVault = useCallback(async (id: string) => {
     await api.deleteVault(id);
-    setVaults((prev) => prev.filter((v) => v.id !== id));
+    setVaults((prev) => {
+      const next = prev.filter((v) => v.id !== id);
+      vaultStore.setVaults(next);
+      return next;
+    });
     if (activeVaultId === id) {
-      setActiveVaultId(null);
+      vaultStore.setActiveVaultId(null);
       setTree([]);
       setSelectedFile(null);
       setFileContent(null);
@@ -333,10 +352,7 @@ export function useKnowledge(): UseKnowledgeReturn {
 
   // Typeset mode actions
   const toggleTypesetMode = useCallback(() => {
-    setIsTypesetMode((prev) => {
-      // When exiting typeset mode, also close style panel
-      return !prev;
-    });
+    setIsTypesetMode((prev) => !prev);
   }, []);
 
   const setTypesetMode = useCallback((on: boolean) => {
@@ -403,7 +419,6 @@ export function useKnowledge(): UseKnowledgeReturn {
     selectedFile,
     fileContent,
     history,
-    activeTab,
     panelWidth,
     searchQuery,
     loading,
@@ -421,7 +436,6 @@ export function useKnowledge(): UseKnowledgeReturn {
     selectFile,
     refreshTree,
     checkWikiStatus,
-    setActiveTab,
     setPanelWidth,
     setSearchQuery,
     setShowVaultSwitcher,

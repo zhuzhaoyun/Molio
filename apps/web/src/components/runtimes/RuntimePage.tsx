@@ -1,6 +1,7 @@
 import { useState, type CSSProperties } from 'react';
 import type { AgentInfo, RunInfo } from '@molio/contracts';
 import { useRuntimes } from '../../hooks/useRuntimes';
+import { useI18n, type Locale } from '../../i18n';
 
 type Tab = 'agents' | 'runs';
 
@@ -22,35 +23,45 @@ const AGENT_ICONS: Record<string, string> = {
   qwen: '🟠',
 };
 
-const STATUS_LABELS: Record<string, { label: string; className: string }> = {
-  pending: { label: 'Pending', className: 'rt-status--pending' },
-  running: { label: 'Running', className: 'rt-status--running' },
-  succeeded: { label: 'Succeeded', className: 'rt-status--succeeded' },
-  failed: { label: 'Failed', className: 'rt-status--failed' },
-  canceled: { label: 'Canceled', className: 'rt-status--canceled' },
-};
+function getStatusLabels(locale: Locale): Record<string, { label: string; className: string }> {
+  const t = (key: string) => {
+    const labels: Record<string, Record<string, string>> = {
+      zh: { pending: '等待中', running: '运行中', succeeded: '成功', failed: '失败', canceled: '已取消' },
+      en: { pending: 'Pending', running: 'Running', succeeded: 'Succeeded', failed: 'Failed', canceled: 'Canceled' },
+    };
+    return labels[locale]?.[key] ?? key;
+  };
+  return {
+    pending: { label: t('pending'), className: 'rt-status--pending' },
+    running: { label: t('running'), className: 'rt-status--running' },
+    succeeded: { label: t('succeeded'), className: 'rt-status--succeeded' },
+    failed: { label: t('failed'), className: 'rt-status--failed' },
+    canceled: { label: t('canceled'), className: 'rt-status--canceled' },
+  };
+}
 
-function formatTime(ts: number): string {
+function formatTime(ts: number, locale: Locale, t: (key: string, params?: Record<string, string | number>) => string): string {
   const d = new Date(ts);
-  const now = new Date();
-  const diff = now.getTime() - ts;
+  const diff = Date.now() - ts;
 
-  if (diff < 60_000) return 'just now';
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+  if (diff < 60_000) return t('runtimes.justNow');
+  if (diff < 3_600_000) return t('runtimes.mAgo', { n: String(Math.floor(diff / 60_000)) });
+  if (diff < 86_400_000) return t('runtimes.hAgo', { n: String(Math.floor(diff / 3_600_000)) });
 
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleDateString(locale === 'zh' ? 'zh-CN' : 'en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 /* ─── Test Result Feedback ─── */
 function TestResult({ test }: { test: TestState }) {
+  const { t } = useI18n();
+
   if (test.status === 'idle') return null;
 
   if (test.status === 'running') {
     return (
       <div className="rt-test-result rt-test-result--running">
         <span className="rt-test-result__spinner" />
-        <span>Testing…</span>
+        <span>{t('runtimes.testing')}</span>
       </div>
     );
   }
@@ -59,7 +70,7 @@ function TestResult({ test }: { test: TestState }) {
     return (
       <div className="rt-test-result rt-test-result--ok">
         <span className="rt-test-result__icon">✓</span>
-        <span>OK ({test.elapsed}ms)</span>
+        <span>{t('runtimes.testOk', { elapsed: String(test.elapsed) })}</span>
       </div>
     );
   }
@@ -67,7 +78,7 @@ function TestResult({ test }: { test: TestState }) {
   return (
     <div className="rt-test-result rt-test-result--error">
       <span className="rt-test-result__icon">✗</span>
-      <span className="rt-test-result__msg">{test.error ?? 'Test failed'}</span>
+      <span className="rt-test-result__msg">{test.error ?? t('runtimes.testFailed')}</span>
     </div>
   );
 }
@@ -86,8 +97,9 @@ function AgentCard({
   onTest: () => void;
   onSetDefault: () => void;
 }) {
+  const { t } = useI18n();
   const icon = AGENT_ICONS[agent.id] ?? '⚙️';
-  const sourceLabel = agent.source === 'not-found' ? 'Not found' : agent.source ?? 'unknown';
+  const sourceLabel = agent.source === 'not-found' ? t('runtimes.notFound') : agent.source ?? 'unknown';
 
   const handleDoubleClick = () => {
     if (agent.available) onSetDefault();
@@ -102,11 +114,11 @@ function AgentCard({
       <div className="rt-agent-card__body">
         <div className="rt-agent-card__header">
           <span className="rt-agent-card__name">{agent.name}</span>
-          {isDefault && <span className="rt-badge rt-badge--default">Default</span>}
+          {isDefault && <span className="rt-badge rt-badge--default">{t('runtimes.default')}</span>}
           {agent.available ? (
-            <span className="rt-badge rt-badge--ok">Available</span>
+            <span className="rt-badge rt-badge--ok">{t('runtimes.available')}</span>
           ) : (
-            <span className="rt-badge rt-badge--off">Unavailable</span>
+            <span className="rt-badge rt-badge--off">{t('runtimes.unavailable')}</span>
           )}
         </div>
         <div className="rt-agent-card__meta">
@@ -135,12 +147,12 @@ function AgentCard({
             onClick={onTest}
             disabled={testState.status === 'running'}
           >
-            Test
+            {t('runtimes.test')}
           </button>
         )}
         {!agent.available && agent.installUrl && (
           <a className="rt-agent-card__install" href={agent.installUrl} target="_blank" rel="noopener noreferrer">
-            Install →
+            {t('runtimes.install')}
           </a>
         )}
       </div>
@@ -150,7 +162,9 @@ function AgentCard({
 
 /* ─── Run Row ─── */
 function RunRow({ run, onCancel }: { run: RunInfo; onCancel: (id: string) => void }) {
-  const status = STATUS_LABELS[run.status] ?? { label: run.status, className: '' };
+  const { t, locale } = useI18n();
+  const statusLabels = getStatusLabels(locale);
+  const status = statusLabels[run.status] ?? { label: run.status, className: '' };
 
   return (
     <div className="rt-run-row">
@@ -161,14 +175,14 @@ function RunRow({ run, onCancel }: { run: RunInfo; onCancel: (id: string) => voi
       <div className="rt-run-row__status">
         <span className={`rt-status ${status.className}`}>{status.label}</span>
       </div>
-      <div className="rt-run-row__time">{formatTime(run.createdAt)}</div>
+      <div className="rt-run-row__time">{formatTime(run.createdAt, locale, t)}</div>
       <div className="rt-run-row__reason">
         {run.lastStopReason ? <span className="rt-run-row__reason-text">{run.lastStopReason}</span> : null}
       </div>
       <div className="rt-run-row__actions">
         {run.status === 'running' && (
           <button className="rt-btn rt-btn--sm rt-btn--ghost" onClick={() => onCancel(run.id)}>
-            Cancel
+            {t('runtimes.cancel')}
           </button>
         )}
       </div>
@@ -178,6 +192,7 @@ function RunRow({ run, onCancel }: { run: RunInfo; onCancel: (id: string) => voi
 
 /* ─── Rescan Button ─── */
 function RescanButton({ state, onRescan }: { state: RescanState; onRescan: () => void }) {
+  const { t } = useI18n();
   const isRunning = state.status === 'running';
 
   return (
@@ -198,16 +213,16 @@ function RescanButton({ state, onRescan }: { state: RescanState; onRescan: () =>
           <polyline points="1 20 1 14 7 14" />
           <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
         </svg>
-        {isRunning ? 'Scanning…' : 'Rescan'}
+        {isRunning ? t('runtimes.scanning') : t('runtimes.rescan')}
       </button>
       {state.status === 'done' && (
         <span className="rt-rescan-notice rt-rescan-notice--ok">
-          {state.count} available
+          {state.count} {t('runtimes.availableSuffix')}
         </span>
       )}
       {state.status === 'error' && (
         <span className="rt-rescan-notice rt-rescan-notice--err">
-          Scan failed
+          {t('runtimes.scanFailed')}
         </span>
       )}
     </div>
@@ -216,6 +231,7 @@ function RescanButton({ state, onRescan }: { state: RescanState; onRescan: () =>
 
 /* ─── Main Page ─── */
 export function RuntimePage() {
+  const { t, locale } = useI18n();
   const {
     agents, runs, loading, error,
     defaultAgentId, testStates, rescanState,
@@ -231,10 +247,10 @@ export function RuntimePage() {
       {/* Header */}
       <div className="rt-header">
         <div className="rt-header__left">
-          <h1 className="rt-header__title">Runtimes</h1>
+          <h1 className="rt-header__title">{t('runtimes.title')}</h1>
           <span className="rt-header__subtitle">
-            {availableCount} agent{availableCount !== 1 ? 's' : ''} available
-            {activeRuns > 0 && ` · ${activeRuns} running`}
+            {t('runtimes.agentsAvailable', { count: String(availableCount) })}
+            {activeRuns > 0 && ` · ${t('runtimes.running', { count: String(activeRuns) })}`}
           </span>
         </div>
         <RescanButton state={rescanState} onRescan={rescan} />
@@ -247,7 +263,7 @@ export function RuntimePage() {
           className={`rt-tab${activeTab === 'agents' ? ' active' : ''}`}
           onClick={() => setActiveTab('agents')}
         >
-          <span className="rt-tab__title">Agents</span>
+          <span className="rt-tab__title">{t('runtimes.agentsTab')}</span>
           <span className="rt-tab__count">{agents.length}</span>
         </button>
         <button
@@ -255,7 +271,7 @@ export function RuntimePage() {
           className={`rt-tab${activeTab === 'runs' ? ' active' : ''}`}
           onClick={() => setActiveTab('runs')}
         >
-          <span className="rt-tab__title">Runs</span>
+          <span className="rt-tab__title">{t('runtimes.runsTab')}</span>
           <span className="rt-tab__count">{runs.length}</span>
         </button>
       </div>
@@ -265,12 +281,12 @@ export function RuntimePage() {
         {error && (
           <div className="rt-error">
             <span>{error}</span>
-            <button className="rt-btn rt-btn--sm rt-btn--ghost" onClick={refresh}>Retry</button>
+            <button className="rt-btn rt-btn--sm rt-btn--ghost" onClick={refresh}>{t('runtimes.retry')}</button>
           </div>
         )}
 
         {loading ? (
-          <div className="rt-loading">Loading…</div>
+          <div className="rt-loading">{t('runtimes.loading')}</div>
         ) : activeTab === 'agents' ? (
           <AgentsView
             agents={agents}
@@ -301,6 +317,7 @@ function AgentsView({
   onTest: (id: string) => void;
   onSetDefault: (id: string) => void;
 }) {
+  const { t } = useI18n();
   const available = agents.filter((a) => a.available);
   const unavailable = agents.filter((a) => !a.available);
 
@@ -308,8 +325,8 @@ function AgentsView({
     return (
       <div className="rt-empty">
         <div className="rt-empty__icon">🔍</div>
-        <div className="rt-empty__text">No agents detected</div>
-        <div className="rt-empty__hint">Install a supported AI CLI to get started.</div>
+        <div className="rt-empty__text">{t('runtimes.noAgents')}</div>
+        <div className="rt-empty__hint">{t('runtimes.installHint')}</div>
       </div>
     );
   }
@@ -318,7 +335,7 @@ function AgentsView({
     <div className="rt-agents">
       {available.length > 0 && (
         <div className="rt-agents__section">
-          <h2 className="rt-section-title">Installed</h2>
+          <h2 className="rt-section-title">{t('runtimes.installed')}</h2>
           <div className="rt-agents__grid">
             {available.map((a) => (
               <AgentCard
@@ -335,7 +352,7 @@ function AgentsView({
       )}
       {unavailable.length > 0 && (
         <div className="rt-agents__section">
-          <h2 className="rt-section-title">Not Installed</h2>
+          <h2 className="rt-section-title">{t('runtimes.notInstalled')}</h2>
           <div className="rt-agents__grid">
             {unavailable.map((a) => (
               <AgentCard
@@ -351,7 +368,7 @@ function AgentsView({
         </div>
       )}
       <p className="rt-agents__hint">
-        Double-click an agent to set it as the default runtime for chat.
+        {t('runtimes.agentHint')}
       </p>
     </div>
   );
@@ -359,12 +376,14 @@ function AgentsView({
 
 /* ─── Runs View ─── */
 function RunsView({ runs, onCancel }: { runs: RunInfo[]; onCancel: (id: string) => void }) {
+  const { t } = useI18n();
+
   if (runs.length === 0) {
     return (
       <div className="rt-empty">
         <div className="rt-empty__icon">📭</div>
-        <div className="rt-empty__text">No runs yet</div>
-        <div className="rt-empty__hint">Start a conversation to create a run.</div>
+        <div className="rt-empty__text">{t('runtimes.noRuns')}</div>
+        <div className="rt-empty__hint">{t('runtimes.startHint')}</div>
       </div>
     );
   }
@@ -376,7 +395,7 @@ function RunsView({ runs, onCancel }: { runs: RunInfo[]; onCancel: (id: string) 
     <div className="rt-runs">
       {activeRuns.length > 0 && (
         <div className="rt-runs__section">
-          <h2 className="rt-section-title">Active</h2>
+          <h2 className="rt-section-title">{t('runtimes.active')}</h2>
           <div className="rt-runs__list">
             {activeRuns.map((r) => <RunRow key={r.id} run={r} onCancel={onCancel} />)}
           </div>
@@ -384,7 +403,7 @@ function RunsView({ runs, onCancel }: { runs: RunInfo[]; onCancel: (id: string) 
       )}
       {completedRuns.length > 0 && (
         <div className="rt-runs__section">
-          <h2 className="rt-section-title">Completed</h2>
+          <h2 className="rt-section-title">{t('runtimes.completed')}</h2>
           <div className="rt-runs__list">
             {completedRuns.map((r) => <RunRow key={r.id} run={r} onCancel={onCancel} />)}
           </div>

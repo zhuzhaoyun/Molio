@@ -9,7 +9,8 @@
  */
 
 import { build } from 'esbuild';
-import { cpSync, mkdirSync, existsSync, readdirSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, existsSync, readdirSync, rmSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { execSync } from 'node:child_process';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -56,18 +57,11 @@ async function bundleDaemon() {
     entryPoints: [entryPoint],
     bundle: true,
     platform: 'node',
-    target: 'node20',
+    target: 'node24',
     format: 'esm',
     outfile,
     external: ['better-sqlite3'],
-    banner: {
-      js: [
-        "import { fileURLToPath as __fts } from 'node:url';",
-        "import { dirname as __dn } from 'node:path';",
-        'const __filename = __fts(import.meta.url);',
-        'const __dirname = __dn(__filename);',
-      ].join('\n'),
-    },
+    // No banner needed — Node 24+ supports import.meta.dirname/filename natively
     logLevel: 'info',
   });
 
@@ -120,16 +114,25 @@ function downloadElectronPrebuilds() {
 
   const sqliteDest = join(resourcesDir, 'daemon', 'node_modules', 'better-sqlite3');
 
-  // Use prebuild-install to download Electron-specific prebuilt binary.
-  // This avoids needing Visual Studio / C++ build tools on the build machine.
-  // prebuild-install looks for: better-sqlite3-v{version}-electron-v{abi}-{platform}-{arch}.tar.gz
+  // Download Electron prebuild to a TEMP directory to avoid overwriting the
+  // Node.js .node binary in the shared pnpm store. Previously, running
+  // prebuild-install in the pnpm store directory replaced the Node.js ABI
+  // binary with the Electron ABI binary, breaking daemon dev mode.
+  const tempDir = mkdtempSync(join(tmpdir(), 'molio-electron-prebuild-'));
+  const tempBuildRelease = join(tempDir, 'build', 'Release');
+  mkdirSync(tempBuildRelease, { recursive: true });
+
+  // Copy package.json so prebuild-install can determine the module version
+  cpSync(join(sqliteSrc, 'package.json'), join(tempDir, 'package.json'));
+
   try {
     execSync('npx prebuild-install --runtime electron --target ' + electronVersion + ' --arch ' + process.arch, {
-      cwd: sqliteSrc,
+      cwd: tempDir,
       stdio: 'pipe',
       encoding: 'utf-8',
     });
   } catch (err) {
+    rmSync(tempDir, { recursive: true, force: true });
     throw new Error(
       `Failed to download Electron prebuild for better-sqlite3: ${err.stderr || err.message}\n` +
       `Ensure prebuild-install is available (npx prebuild-install).`
@@ -137,13 +140,17 @@ function downloadElectronPrebuilds() {
   }
 
   // Copy the downloaded .node binary to the daemon resources
-  const srcNode = join(sqliteSrc, 'build', 'Release', 'better_sqlite3.node');
+  const srcNode = join(tempBuildRelease, 'better_sqlite3.node');
   const destNode = join(sqliteDest, 'build', 'Release', 'better_sqlite3.node');
   if (!existsSync(srcNode)) {
+    rmSync(tempDir, { recursive: true, force: true });
     throw new Error(`prebuild-install did not produce better_sqlite3.node at ${srcNode}`);
   }
   mkdirSync(dirname(destNode), { recursive: true });
   cpSync(srcNode, destNode);
+
+  // Clean up temp directory
+  rmSync(tempDir, { recursive: true, force: true });
 
   const stat = require('fs').statSync(destNode);
   console.log(`  ✅ Downloaded Electron prebuild for better-sqlite3 (Electron v${electronVersion}, ${(stat.size / 1024).toFixed(0)}KB)`);
@@ -158,15 +165,8 @@ function copyWebBuild() {
   const webResourcesDir = join(resourcesDir, 'web');
   cpSync(webDist, webResourcesDir, { recursive: true, dereference: true });
 
-  // Fix asset paths in index.html for local file serving (remove leading slashes)
-  const indexPath = join(webResourcesDir, 'index.html');
-  if (existsSync(indexPath)) {
-    let html = readFileSync(indexPath, 'utf-8');
-    html = html.replace(/src="\/assets\//g, 'src="assets/');
-    html = html.replace(/href="\/assets\//g, 'href="assets/');
-    writeFileSync(indexPath, html, 'utf-8');
-    console.log('  Fixed asset paths in index.html');
-  }
+  // Asset paths in index.html use absolute paths (/assets/...) which the daemon
+  // serves correctly from root, so no path rewriting is needed.
 
   console.log('Web build copied.');
 }

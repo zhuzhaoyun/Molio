@@ -40,6 +40,49 @@
   margin-bottom: 24px;
 }
 
+/* ── Language Selector ── */
+.settings-language-card {
+  padding: 8px 16px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.settings-lang-pills {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.settings-lang-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  font-family: inherit;
+  color: var(--text-muted);
+  background: transparent;
+  border: 2px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  outline: none;
+  transition: all 150ms ease;
+  user-select: none;
+}
+
+.settings-lang-pill:hover {
+  border-color: var(--accent);
+  color: var(--text-strong);
+}
+
+.settings-lang-pill.is-active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-tint);
+}
+
 /* ── Update Card ── */
 .settings-update-card {
   display: flex;

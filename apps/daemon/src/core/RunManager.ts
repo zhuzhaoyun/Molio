@@ -22,6 +22,14 @@ const TERMINAL_STATUSES = new Set<RunStatus>(['succeeded', 'failed', 'canceled']
 const MAX_EVENTS = 2_000;
 const RUN_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
+/**
+ * Build a system-hint prefix that tells the agent CLI which runtime
+ * it is running as inside Molio.  Prepended to the first user message.
+ */
+export function buildRuntimeHint(def: RuntimeAgentDef): string {
+  return `<system-hint>You are running as "${def.name}" (id: ${def.id}) inside Molio. When the user asks which AI runtime or agent is active, tell them this.</system-hint>\n\n`;
+}
+
 export interface CreateRunOptions {
   agentId: string;
   message: string;
@@ -79,6 +87,7 @@ export class RunManager {
       status: run.status,
       createdAt: run.createdAt,
       lastStopReason: run.lastStopReason,
+      error: run.error,
     };
   }
 
@@ -89,6 +98,7 @@ export class RunManager {
       status: run.status,
       createdAt: run.createdAt,
       lastStopReason: run.lastStopReason,
+      error: run.error,
     }));
   }
 
@@ -172,6 +182,7 @@ export class RunManager {
 
     const mergedEnv = buildAgentEnv(opts.agentId, agentConfig);
     const env = buildSpawnEnv(def, mergedEnv);
+    env['MOLIO_RUN_ID'] = runId;
 
     const args = def.buildArgs(
       opts.message,
@@ -196,18 +207,22 @@ export class RunManager {
       this.emitEvent(run, { type: 'error', message: `stdin error: ${err.message}` });
     });
 
+    // Runtime identity hint — prepended to the first message so the agent
+    // CLI knows which runtime it is running as inside Molio.
+    const runtimeHint = buildRuntimeHint(def);
+
     if (def.promptViaStdin && child.stdin) {
       if (def.promptInputFormat === 'stream-json') {
         // Pattern A: Stream-JSON agent — interactive stdin, stays open for multi-turn
         const msg = JSON.stringify({
           type: 'user',
-          message: { role: 'user', content: opts.message },
+          message: { role: 'user', content: runtimeHint + opts.message },
         });
         child.stdin.write(msg + '\n', 'utf8');
         run.stdinOpen = true;
       } else {
         // Pattern B: Non-stream-json agent — build transcript + new message, close stdin
-        const prompt = this.composePrompt(opts.message, opts.history, opts.agentId);
+        const prompt = this.composePrompt(runtimeHint + opts.message, opts.history, opts.agentId);
         child.stdin.end(prompt);
         run.stdinOpen = false;
       }
@@ -238,7 +253,10 @@ export class RunManager {
     });
 
     child.stderr?.on('data', (chunk: string) => {
-      this.emitEvent(run, { type: 'raw', line: `[stderr] ${chunk}` });
+      const trimmed = chunk.trim();
+      if (trimmed) {
+        this.emitEvent(run, { type: 'error', message: trimmed });
+      }
     });
 
     child.on('error', (err) => {
@@ -367,6 +385,18 @@ export class RunManager {
     run.stdinOpen = false;
     run.updatedAt = Date.now();
 
+    // If the run failed with a tracked error that hasn't been sent yet, emit it
+    // so the frontend can display it. Skip if an error event was already emitted
+    // (e.g. from stderr handler) to avoid duplicate messages.
+    if (status === 'failed' && run.error) {
+      const alreadyEmitted = run.events.some(
+        (e) => e.event === 'error',
+      );
+      if (!alreadyEmitted) {
+        this.emitEvent(run, { type: 'error', message: run.error });
+      }
+    }
+
     // Emit end event
     this.emitEvent(run, {
       type: 'status',
@@ -408,6 +438,13 @@ export class RunManager {
   private maybeCloseStdin(run: RunState): void {
     if (run.pendingHostAnswers.size > 0) return;
     if (run.lastStopReason === 'tool_use') return;
+
+    // Multi-turn agents (e.g. Claude Code with stream-json stdin) keep stdin
+    // open between turns so follow-up messages can be sent to the same process.
+    // Only close stdin on cancelRun() or when the child process exits.
+    const def = getAgentDef(run.agentId);
+    if (def?.multiTurn) return;
+
     if (run.child?.stdin?.writable && run.stdinOpen) {
       try { run.child.stdin.end(); } catch { /* ignore */ }
       run.stdinOpen = false;

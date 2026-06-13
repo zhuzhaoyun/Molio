@@ -37,6 +37,14 @@ export interface RuntimeAgentDef {
   promptViaStdin?: boolean;
   promptInputFormat?: 'text' | 'stream-json';
 
+  /**
+   * Whether the agent supports interactive multi-turn conversations
+   * (keeps stdin open between turns for follow-up messages).
+   * When true, stdin is NOT closed after turn_end — it stays open
+   * until cancelRun() or the child process exits naturally.
+   */
+  multiTurn?: boolean;
+
   fallbackModels: RuntimeModelOption[];
 
   env?: Record<string, string>;

@@ -376,4 +376,12 @@ export const api = {
     }
     return res.json();
   },
+
+  // ─── Graph ───
+
+  async getGraph(vaultId: string): Promise<{ nodes: { key: string; label: string; path: string; linkCount: number }[]; edges: { source: string; target: string }[] }> {
+    const res = await fetch(`${BASE}/graph/${vaultId}`);
+    if (!res.ok) throw new Error(`Failed to fetch graph: ${res.status}`);
+    return res.json();
+  },
 };

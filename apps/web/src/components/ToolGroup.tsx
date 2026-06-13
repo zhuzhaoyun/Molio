@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useI18n } from '../i18n';
 import type { ToolEvent } from '../hooks/useChat';
 
 interface Props {
@@ -9,23 +10,24 @@ interface Props {
 /**
  * Collapsed group for consecutive same-type tool calls.
  * Claude Code style: minimal inline one-liners, no cards.
- * Collapsed: "▸ 86 个文件读取"
+ * Collapsed: "▸ 86 file reads"
  * Expanded: list of "  ⎿ Read filename.md" lines
  */
 export function ToolGroup({ tools, toolName }: Props) {
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
 
   const hasRunning = tools.some((t) => t.status === 'running');
   const hasError = tools.some((t) => t.isError);
   const statusIcon = hasRunning ? '' : hasError ? ' ✗' : '';
 
-  const summary = groupSummary(toolName, tools.length);
+  const summary = groupSummary(toolName, tools.length, t);
 
   // Show all items when expanded (no truncation — user might want to see all)
   const items = expanded
-    ? tools.map((t) => ({
-        label: formatArg(t),
-        status: t.status === 'running' ? 'running' : t.isError ? 'error' : 'done',
+    ? tools.map((tool) => ({
+        label: formatArg(tool),
+        status: tool.status === 'running' ? 'running' : tool.isError ? 'error' : 'done',
       }))
     : [];
 
@@ -59,24 +61,26 @@ export function ToolGroup({ tools, toolName }: Props) {
   );
 }
 
-function groupSummary(toolName: string, count: number): string {
-  const unit = groupUnit(toolName);
+type TranslationFn = (key: string) => string;
+
+function groupSummary(toolName: string, count: number, t: TranslationFn): string {
+  const unit = groupUnit(toolName, t);
   return `${count} ${unit}`;
 }
 
-function groupUnit(toolName: string): string {
+function groupUnit(toolName: string, t: TranslationFn): string {
   switch (toolName) {
-    case 'Read': return '个文件读取';
-    case 'Write': return '个文件写入';
-    case 'Edit': return '处修改';
+    case 'Read': return t('toolGroup.fileRead');
+    case 'Write': return t('toolGroup.fileWrite');
+    case 'Edit': return t('toolGroup.edit');
     case 'Bash':
-    case 'bash': return '个命令';
-    case 'Glob': return '次文件搜索';
-    case 'Grep': return '次内容搜索';
-    case 'Agent': return '个子代理';
-    case 'WebFetch': return '次网页抓取';
-    case 'WebSearch': return '次网页搜索';
-    default: return '次工具调用';
+    case 'bash': return t('toolGroup.command');
+    case 'Glob': return t('toolGroup.fileSearch');
+    case 'Grep': return t('toolGroup.contentSearch');
+    case 'Agent': return t('toolGroup.agent');
+    case 'WebFetch': return t('toolGroup.webFetch');
+    case 'WebSearch': return t('toolGroup.webSearch');
+    default: return t('toolGroup.default');
   }
 }
 

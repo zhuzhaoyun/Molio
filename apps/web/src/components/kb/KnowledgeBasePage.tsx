@@ -1,11 +1,13 @@
 /**
  * Knowledge Base page — assembles file panel, main content, wiki chat panel, and modals.
+ * Now with: workspace tab system + right-click context menu + inline rename.
  */
 
 import { useCallback, useRef, useState } from 'react';
 import type { TreeNode } from '@molio/contracts';
 import { useKnowledge } from '../../hooks/useKnowledge';
 import { useWikiChat } from '../../hooks/useWikiChat';
+import { useKbTabs } from '../../hooks/useKbTabs';
 import { KbFilePanel } from './KbFilePanel';
 import { KbMainContent } from './KbMainContent';
 import { WikiChatPanel } from './WikiChatPanel';
@@ -19,7 +21,8 @@ interface KnowledgeBasePageProps {
 
 export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
   const kb = useKnowledge();
-  const panelRef = useRef<HTMLDivElement>(null);
+  const tabs = useKbTabs();
+  const location = useLocation();
   const [showChatPanel, setShowChatPanel] = useState(false);
 
   // Context menu state
@@ -58,7 +61,6 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
     vaultId: kb.activeVault?.id ?? null,
     agentId,
     onComplete: () => {
-      // Refresh file tree and wiki status after a successful build
       kb.refreshTree();
     },
   });
@@ -318,12 +320,12 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
   const hasVault = !!kb.activeVault;
 
   return (
-    <div className="kb-shell" ref={panelRef}>
+    <div className="kb-shell">
       {/* File Panel */}
       <KbFilePanel
         width={kb.panelWidth}
         tree={kb.tree}
-        selectedFile={kb.selectedFile}
+        selectedFile={selectedFile}
         searchQuery={kb.searchQuery}
         vaultName={kb.activeVault?.name ?? ''}
         onSearchChange={kb.setSearchQuery}
@@ -339,7 +341,6 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
         onRenameComplete={handleRenameComplete}
         onRenameCancel={handleRenameCancel}
       >
-        {/* Resize handle attached to panel */}
         <div className="kb-resize-handle" onMouseDown={handleResizeStart} />
       </KbFilePanel>
 
@@ -375,7 +376,7 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
         />
       )}
 
-      {/* Vault Manager Modal (Obsidian-style) */}
+      {/* Vault Manager Modal */}
       <VaultManagerModal
         show={kb.showVaultSwitcher}
         vaults={kb.vaults}

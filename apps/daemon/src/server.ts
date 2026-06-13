@@ -13,6 +13,7 @@ import { configRoutes } from './routes/config.js';
 import { projectRoutes } from './routes/projects.js';
 import { knowledgeRoutes } from './routes/knowledge.js';
 import { publishRoutes, cleanupAllBridges } from './routes/publish.js';
+import { graphRoutes } from './routes/graph.js';
 
 export const runManager = new RunManager();
 export const db: Database.Database = openDatabase();
@@ -40,13 +41,14 @@ app.get('/api/health', (c) => {
 
 // Routes
 app.route('/api/agents', agentsRoutes(runManager));
-app.route('/api/runs', runsRoutes(runManager));
+app.route('/api/runs', runsRoutes(db, runManager));
 app.route('/api/runs', eventsRoutes(runManager));
 app.route('/api/runs', toolResultRoutes(runManager));
 app.route('/api/config', configRoutes());
 app.route('/api/projects', projectRoutes(db));
 app.route('/api/knowledge', knowledgeRoutes(db, runManager));
 app.route('/api/publish', publishRoutes());
+app.route('/api/graph', graphRoutes(db));
 
 // Static file serving (production / desktop mode)
 const staticDir = process.env['MOLIO_STATIC_DIR'];

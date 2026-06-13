@@ -27,6 +27,12 @@ const desktopAPI = {
 
   /** Open a file with the system default application. */
   openPath: (filePath) => ipcRenderer.invoke('open-path', filePath),
+
+  /** Reveal a file or folder in the system's file manager (Explorer/Finder). */
+  showItemInFolder: (filePath) => ipcRenderer.invoke('show-item-in-folder', filePath),
+
+  /** Rename a local file (oldPath -> newPath). */
+  renameFile: (oldPath, newPath) => ipcRenderer.invoke('rename-file', oldPath, newPath),
 };
 
 // Updater API — event listeners + actions

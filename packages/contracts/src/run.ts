@@ -13,4 +13,5 @@ export interface RunInfo {
   status: RunStatus;
   createdAt: number;
   lastStopReason: string | null;
+  error?: string | null;
 }

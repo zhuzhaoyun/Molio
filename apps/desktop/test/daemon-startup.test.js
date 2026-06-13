@@ -71,6 +71,65 @@ describe('main.js: daemon must use Electron embedded Node.js (not system node)',
   });
 });
 
+describe('main.js: must load URL only after daemon is ready (not in createWindow)', () => {
+  it('createWindow should NOT call loadURL for production (localhost:3100)', () => {
+    // Extract createWindow function body
+    const fnStart = mainJs.indexOf('function createWindow()');
+    assert.ok(fnStart !== -1, 'createWindow must exist');
+
+    const fnEnd = mainJs.indexOf('\nfunction ', fnStart + 1);
+    const fnBody = mainJs.slice(fnStart, fnEnd);
+
+    assert.ok(
+      !fnBody.includes('localhost:3100'),
+      'createWindow must NOT call loadURL for localhost:3100 — that causes 404 on slow machines'
+    );
+  });
+
+  it('createWindow should load splash.html in production mode', () => {
+    const fnStart = mainJs.indexOf('function createWindow()');
+    const fnEnd = mainJs.indexOf('\nfunction ', fnStart + 1);
+    const fnBody = mainJs.slice(fnStart, fnEnd);
+
+    assert.ok(
+      fnBody.includes('splash.html'),
+      'createWindow must load splash.html while waiting for daemon'
+    );
+  });
+
+  it('loadApp should call loadURL for localhost:3100', () => {
+    assert.ok(
+      mainJs.includes('function loadApp()'),
+      'loadApp function must exist'
+    );
+
+    const fnStart = mainJs.indexOf('function loadApp()');
+    const fnEnd = mainJs.indexOf('\nfunction ', fnStart + 1);
+    const fnBody = mainJs.slice(fnStart, fnEnd > fnStart ? fnEnd : fnStart + 500);
+
+    assert.ok(
+      fnBody.includes('localhost:3100'),
+      'loadApp must call loadURL for localhost:3100'
+    );
+  });
+
+  it('loadApp should be called after startDaemonProduction in whenReady', () => {
+    const whenReadyPos = mainJs.indexOf('app.whenReady()');
+    assert.ok(whenReadyPos !== -1, 'app.whenReady() must exist');
+
+    const whenReadyBlock = mainJs.slice(whenReadyPos);
+    const daemonPos = whenReadyBlock.indexOf('startDaemonProduction');
+    const loadAppPos = whenReadyBlock.indexOf('loadApp()');
+
+    assert.ok(daemonPos !== -1, 'startDaemonProduction must be in whenReady block');
+    assert.ok(loadAppPos !== -1, 'loadApp() must be in whenReady block');
+    assert.ok(
+      loadAppPos > daemonPos,
+      `loadApp() (pos ${loadAppPos}) must be called AFTER startDaemonProduction (pos ${daemonPos})`
+    );
+  });
+});
+
 describe('prepare-resources.mjs: better-sqlite3 must use Electron prebuild', () => {
   it('should use prebuild-install to download Electron prebuilt binary', () => {
     assert.ok(

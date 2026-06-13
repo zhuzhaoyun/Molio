@@ -159,6 +159,20 @@ function TreeNodeItem({
   // File node
   const isActive = selectedFile === node.path;
 
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onContextMenu?.(node, e);
+  };
+
+  const handleRenameKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      onRenameSubmit(node.path, renameValue);
+    } else if (e.key === 'Escape') {
+      onRenameCancel();
+    }
+  };
+
   return (
     <div
       className={`kb-tree-item ${isActive ? 'is-active' : ''}`}
@@ -251,13 +265,8 @@ function RenameInput({ initialValue, onConfirm, onCancel }: RenameInputProps) {
 
 // ─── Search filter ───
 
-/**
- * Filter tree nodes by query — keep nodes whose name matches
- * and their parent directories.
- */
 function filterTree(nodes: TreeNode[], query: string): TreeNode[] {
   const result: TreeNode[] = [];
-
   for (const node of nodes) {
     if (node.type === 'directory') {
       const filteredChildren = node.children ? filterTree(node.children, query) : [];
@@ -268,6 +277,5 @@ function filterTree(nodes: TreeNode[], query: string): TreeNode[] {
       result.push(node);
     }
   }
-
   return result;
 }

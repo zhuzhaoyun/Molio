@@ -13,7 +13,11 @@ export const qwenAgentDef: RuntimeAgentDef = {
   ],
 
   buildArgs: (_prompt, options = {}) => {
-    const args: string[] = [];
+    const args = [
+      '-p',
+      '--input-format', 'stream-json',
+      '--output-format', 'stream-json',
+    ];
     if (options.model && options.model !== 'default') {
       args.push('--model', options.model);
     }
@@ -21,7 +25,9 @@ export const qwenAgentDef: RuntimeAgentDef = {
   },
 
   promptViaStdin: true,
-  streamFormat: 'plain',
+  promptInputFormat: 'stream-json',
+  streamFormat: 'claude-stream-json',
+  multiTurn: true,
 
   installUrl: 'https://github.com/QwenLM/qwen-code',
 };

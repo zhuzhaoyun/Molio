@@ -188,6 +188,48 @@ describe('buildSpawnEnv', () => {
     });
   });
 
+  describe('Molio runtime identity injection', () => {
+    it('should inject MOLIO_AGENT_ID and MOLIO_AGENT_NAME for all agents', () => {
+      const def = makeDef({ id: 'qwen', name: 'Qwen Code' });
+      const env = buildSpawnEnv(def, { PATH: '/usr/bin' });
+
+      assert.equal(env['MOLIO_AGENT_ID'], 'qwen');
+      assert.equal(env['MOLIO_AGENT_NAME'], 'Qwen Code');
+    });
+
+    it('should inject identity for claude agent', () => {
+      const def = makeDef({ id: 'claude', name: 'Claude Code' });
+      const env = buildSpawnEnv(def, {});
+
+      assert.equal(env['MOLIO_AGENT_ID'], 'claude');
+      assert.equal(env['MOLIO_AGENT_NAME'], 'Claude Code');
+    });
+
+    it('should inject identity for codex agent', () => {
+      const def = makeDef({ id: 'codex', name: 'Codex CLI' });
+      const env = buildSpawnEnv(def, {});
+
+      assert.equal(env['MOLIO_AGENT_ID'], 'codex');
+      assert.equal(env['MOLIO_AGENT_NAME'], 'Codex CLI');
+    });
+
+    it('should inject identity for gemini agent', () => {
+      const def = makeDef({ id: 'gemini', name: 'Gemini CLI' });
+      const env = buildSpawnEnv(def, {});
+
+      assert.equal(env['MOLIO_AGENT_ID'], 'gemini');
+      assert.equal(env['MOLIO_AGENT_NAME'], 'Gemini CLI');
+    });
+
+    it('should not be overridden by baseEnv', () => {
+      const def = makeDef({ id: 'qwen', name: 'Qwen Code' });
+      const env = buildSpawnEnv(def, { MOLIO_AGENT_ID: 'hijacked' });
+
+      // def values should take precedence (spread order: baseEnv → def.env → MOLIO_*)
+      assert.equal(env['MOLIO_AGENT_ID'], 'qwen');
+    });
+  });
+
   describe('case-insensitive base URL detection', () => {
     it('should detect lowercase base URL key', () => {
       const def = makeDef({ id: 'claude' });
@@ -198,6 +240,48 @@ describe('buildSpawnEnv', () => {
 
       // lowercase key should still count as "custom base URL set"
       assert.equal(env['ANTHROPIC_API_KEY'], 'sk-ant-key');
+    });
+  });
+
+  describe('Claude Code git-bash auto-detection (Windows)', () => {
+    const isWindows = process.platform === 'win32';
+
+    it('should not override CLAUDE_CODE_GIT_BASH_PATH if already set', () => {
+      const def = makeDef({ id: 'claude' });
+      const env = buildSpawnEnv(def, {
+        CLAUDE_CODE_GIT_BASH_PATH: 'C:\\custom\\bash.exe',
+      });
+
+      assert.equal(env['CLAUDE_CODE_GIT_BASH_PATH'], 'C:\\custom\\bash.exe');
+    });
+
+    it('should not set CLAUDE_CODE_GIT_BASH_PATH for non-claude agents', () => {
+      const def = makeDef({ id: 'codex' });
+      const env = buildSpawnEnv(def, {});
+
+      assert.equal(env['CLAUDE_CODE_GIT_BASH_PATH'], undefined);
+    });
+
+    // Windows-only: verify auto-detection finds git bash
+    it({ skip: !isWindows ? 'Windows only' : undefined }, () => {
+      const def = makeDef({ id: 'claude' });
+      const env = buildSpawnEnv(def, {});
+
+      // On Windows with git installed, CLAUDE_CODE_GIT_BASH_PATH should be set
+      if (env['CLAUDE_CODE_GIT_BASH_PATH']) {
+        assert.ok(
+          env['CLAUDE_CODE_GIT_BASH_PATH']!.endsWith('bash.exe'),
+          `Expected path ending with bash.exe, got: ${env['CLAUDE_CODE_GIT_BASH_PATH']}`,
+        );
+      }
+      // If git is not installed, we don't fail — just verify no crash
+    });
+
+    it('should not set CLAUDE_CODE_GIT_BASH_PATH on non-Windows', { skip: isWindows ? 'non-Windows only' : undefined }, () => {
+      const def = makeDef({ id: 'claude' });
+      const env = buildSpawnEnv(def, {});
+
+      assert.equal(env['CLAUDE_CODE_GIT_BASH_PATH'], undefined);
     });
   });
 });

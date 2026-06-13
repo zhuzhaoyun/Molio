@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import type { ChatMessage, ToolEvent } from '../hooks/useChat';
 import { renderMarkdown } from '../utils/markdown';
+import { useI18n } from '../i18n';
 import { ToolCard } from './ToolCard';
 import { ToolGroup } from './ToolGroup';
 import { ThinkingBlock } from './ThinkingBlock';
@@ -61,6 +62,8 @@ interface Props {
 }
 
 export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitForm }: Props) {
+  const { t } = useI18n();
+
   // Check if the message has an AskUserQuestion tool — suppress the markdown
   // fallback text that duplicates the interactive card.
   const hasAskUserQuestion = message.tools?.some(
@@ -79,7 +82,7 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
   return (
     <div className="msg assistant">
       <div className="role">
-        <span>Assistant</span>
+        <span>{t('assistant.label')}</span>
         <span className="msg-time">{formatTime(message.timestamp)}</span>
       </div>
 

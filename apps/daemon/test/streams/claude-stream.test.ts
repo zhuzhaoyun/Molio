@@ -430,6 +430,114 @@ describe('Claude stream handler', () => {
         assert.equal(usageEvents[0]!.durationMs, 3200);
       }
     });
+
+    it('should emit error event when result has is_error=true', () => {
+      const { events, onEvent } = collectEvents();
+      const handler = createClaudeStreamHandler(onEvent);
+
+      // Qwen Code outputs this when auth is not configured
+      feedLines(handler, JSON.stringify({
+        type: 'result',
+        subtype: 'error_during_execution',
+        is_error: true,
+        duration_ms: 0,
+        duration_api_ms: 0,
+        num_turns: 0,
+        usage: { input_tokens: 0, output_tokens: 0 },
+        error: { message: 'No auth type is selected. Please configure an auth type.' },
+      }));
+
+      const errorEvents = events.filter((e) => e.type === 'error');
+      assert.equal(errorEvents.length, 1);
+      if (errorEvents[0]!.type === 'error') {
+        assert.equal(errorEvents[0]!.message, 'No auth type is selected. Please configure an auth type.');
+      }
+
+      // Should NOT emit a usage event for error results
+      const usageEvents = events.filter((e) => e.type === 'usage');
+      assert.equal(usageEvents.length, 0);
+    });
+
+    it('should emit generic error message when is_error=true but no error.message', () => {
+      const { events, onEvent } = collectEvents();
+      const handler = createClaudeStreamHandler(onEvent);
+
+      feedLines(handler, JSON.stringify({
+        type: 'result',
+        is_error: true,
+        usage: { input_tokens: 0, output_tokens: 0 },
+      }));
+
+      const errorEvents = events.filter((e) => e.type === 'error');
+      assert.equal(errorEvents.length, 1);
+      if (errorEvents[0]!.type === 'error') {
+        assert.equal(errorEvents[0]!.message, 'Agent returned error result');
+      }
+    });
+
+    it('should emit turn_end when result arrives without prior stop_reason (Qwen fix)', () => {
+      // Bug: Qwen Code assistant messages lack stop_reason, so turn_end was never
+      // emitted. Messages stayed in "streaming" state forever in the frontend.
+      // Fix: emit turn_end when result arrives if no turn_end was emitted yet.
+      const { events, onEvent } = collectEvents();
+      const handler = createClaudeStreamHandler(onEvent);
+
+      // Simulate Qwen output: assistant message WITHOUT stop_reason
+      feedLines(handler, JSON.stringify({
+        type: 'assistant',
+        message: {
+          id: 'msg_qwen_001',
+          content: [{ type: 'text', text: 'Here is my answer.' }],
+          // Note: no stop_reason field — this is what Qwen produces
+        },
+      }));
+
+      // Then result arrives (normal completion)
+      feedLines(handler, JSON.stringify({
+        type: 'result',
+        usage: { input_tokens: 50, output_tokens: 10 },
+        total_cost_usd: 0.001,
+        duration_ms: 800,
+      }));
+
+      // Should have emitted turn_end before the usage event
+      const turnEnds = events.filter((e) => e.type === 'turn_end');
+      assert.equal(turnEnds.length, 1, 'should emit exactly one turn_end');
+      if (turnEnds[0]!.type === 'turn_end') {
+        assert.equal(turnEnds[0]!.stopReason, 'end_turn');
+      }
+
+      // usage event should still be emitted after turn_end
+      const usageEvents = events.filter((e) => e.type === 'usage');
+      assert.equal(usageEvents.length, 1);
+    });
+
+    it('should NOT emit duplicate turn_end when stop_reason was already present', () => {
+      // When assistant message has stop_reason, turn_end is emitted there.
+      // The result handler should NOT emit another turn_end.
+      const { events, onEvent } = collectEvents();
+      const handler = createClaudeStreamHandler(onEvent);
+
+      feedLines(handler, JSON.stringify({
+        type: 'assistant',
+        message: {
+          id: 'msg_claude_001',
+          content: [{ type: 'text', text: 'Answer.' }],
+          stop_reason: 'end_turn',
+        },
+      }));
+
+      feedLines(handler, JSON.stringify({
+        type: 'result',
+        usage: { input_tokens: 100, output_tokens: 10 },
+        total_cost_usd: 0.001,
+        duration_ms: 1000,
+      }));
+
+      // Should have exactly one turn_end (from assistant message, not from result)
+      const turnEnds = events.filter((e) => e.type === 'turn_end');
+      assert.equal(turnEnds.length, 1, 'should not emit duplicate turn_end');
+    });
   });
 
   describe('invalid JSON handling', () => {
@@ -447,8 +555,13 @@ describe('Claude stream handler', () => {
     });
   });
 
-  describe('idle greeting suppression', () => {
-    it('should suppress assistant text blocks after end_turn', () => {
+  describe('multi-turn event passthrough', () => {
+    // The parser emits ALL events without suppression. Idle greeting
+    // filtering is handled at the frontend (useChat.ts) via the
+    // streaming: false guard — once a message finishes (turn_end with
+    // non-tool_use stopReason), further content events are ignored.
+
+    it('should emit all assistant text blocks including post-turn messages', () => {
       const { events, onEvent } = collectEvents();
       const handler = createClaudeStreamHandler(onEvent);
 
@@ -462,32 +575,20 @@ describe('Claude stream handler', () => {
         },
       }));
 
-      // CLI idle greeting (should be suppressed)
+      // CLI idle greeting — parser emits it; frontend will filter
       feedLines(handler, JSON.stringify({
         type: 'assistant',
         message: {
           id: 'msg_201',
-          content: [{ type: 'text', text: "Hello! I'm ready to help with your coding tasks." }],
-        },
-      }));
-
-      // Another idle greeting
-      feedLines(handler, JSON.stringify({
-        type: 'assistant',
-        message: {
-          id: 'msg_202',
-          content: [{ type: 'text', text: "Hello! I'm Claude Code, Anthropic's official CLI." }],
+          content: [{ type: 'text', text: "Hello! I'm ready to help." }],
         },
       }));
 
       const textEvents = events.filter((e) => e.type === 'text_delta');
-      assert.equal(textEvents.length, 1);
-      if (textEvents[0]!.type === 'text_delta') {
-        assert.equal(textEvents[0]!.delta, 'Task completed.');
-      }
+      assert.equal(textEvents.length, 2);
     });
 
-    it('should suppress stream_event text after end_turn', () => {
+    it('should emit all stream_event text including post-turn messages', () => {
       const { events, onEvent } = collectEvents();
       const handler = createClaudeStreamHandler(onEvent);
 
@@ -501,7 +602,7 @@ describe('Claude stream handler', () => {
         },
       }));
 
-      // CLI outputs idle stream events (should be suppressed)
+      // CLI outputs idle stream events — parser emits them
       feedLines(handler, JSON.stringify({
         type: 'stream_event',
         event: { type: 'message_start', message: { id: 'msg_211' } },
@@ -516,29 +617,20 @@ describe('Claude stream handler', () => {
       }));
 
       const textEvents = events.filter((e) => e.type === 'text_delta');
-      assert.equal(textEvents.length, 1);
+      assert.equal(textEvents.length, 2);
     });
 
-    it('should reset suppression on new user message (multi-turn)', () => {
+    it('should emit text from all turns in a multi-turn conversation', () => {
       const { events, onEvent } = collectEvents();
       const handler = createClaudeStreamHandler(onEvent);
 
-      // First turn completes
+      // First turn
       feedLines(handler, JSON.stringify({
         type: 'assistant',
         message: {
           id: 'msg_220',
           content: [{ type: 'text', text: 'First response.' }],
           stop_reason: 'end_turn',
-        },
-      }));
-
-      // Idle greeting (suppressed)
-      feedLines(handler, JSON.stringify({
-        type: 'assistant',
-        message: {
-          id: 'msg_221',
-          content: [{ type: 'text', text: 'Hello!' }],
         },
       }));
 
@@ -550,7 +642,7 @@ describe('Claude stream handler', () => {
         },
       }));
 
-      // Second turn response (should NOT be suppressed)
+      // Second turn response
       feedLines(handler, JSON.stringify({
         type: 'assistant',
         message: {
@@ -570,7 +662,7 @@ describe('Claude stream handler', () => {
       }
     });
 
-    it('should NOT suppress when stop_reason is tool_use', () => {
+    it('should emit all text when stop_reason is tool_use then end_turn', () => {
       const { events, onEvent } = collectEvents();
       const handler = createClaudeStreamHandler(onEvent);
 
@@ -592,7 +684,7 @@ describe('Claude stream handler', () => {
         },
       }));
 
-      // Agent continues (should NOT be suppressed)
+      // Agent continues
       feedLines(handler, JSON.stringify({
         type: 'assistant',
         message: {
@@ -604,6 +696,12 @@ describe('Claude stream handler', () => {
 
       const textEvents = events.filter((e) => e.type === 'text_delta');
       assert.equal(textEvents.length, 2);
+
+      // Verify turn_end events have correct stopReasons
+      const turnEnds = events.filter((e) => e.type === 'turn_end');
+      assert.equal(turnEnds.length, 2);
+      if (turnEnds[0]!.type === 'turn_end') assert.equal(turnEnds[0]!.stopReason, 'tool_use');
+      if (turnEnds[1]!.type === 'turn_end') assert.equal(turnEnds[1]!.stopReason, 'end_turn');
     });
   });
 

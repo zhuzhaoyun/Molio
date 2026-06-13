@@ -7,15 +7,17 @@ import {
   onUpdateError,
   onCheckResult,
 } from './updater-state';
+import { useI18n } from '../../i18n';
 
 export type { CheckResult } from './updater-state';
 
 /**
- * Settings page — currently contains the version & update management panel.
+ * Settings page — language selector + version & update management panel.
  * Designed to work both in Electron (with window.updater) and in plain browser
  * (where update features are hidden).
  */
 export function SettingsPage() {
+  const { t } = useI18n();
   const [result, setResult] = useState<CheckResult>({ status: 'idle' });
   const currentVersion = window.__electron__?.appInfo?.version ?? 'dev';
   const isElectron = !!window.updater;
@@ -66,17 +68,26 @@ export function SettingsPage() {
     <div className="settings-shell">
       {/* Header */}
       <div className="settings-header">
-        <h1 className="settings-header__title">设置</h1>
+        <h1 className="settings-header__title">{t('settings.title')}</h1>
       </div>
 
-      {/* Update section */}
+      {/* Content */}
       <div className="settings-content">
+        {/* Language section */}
         <section className="settings-section">
-          <h2 className="rt-section-title">版本与更新</h2>
+          <h2 className="rt-section-title">{t('settings.language')}</h2>
+          <div className="settings-language-card">
+            <LanguageSelector />
+          </div>
+        </section>
+
+        {/* Update section */}
+        <section className="settings-section">
+          <h2 className="rt-section-title">{t('settings.versionSection')}</h2>
           <div className="settings-update-card">
             <div className="settings-update-card__info">
               <div className="settings-update-card__version-row">
-                <span className="settings-update-card__label">当前版本</span>
+                <span className="settings-update-card__label">{t('settings.currentVersion')}</span>
                 <span className="settings-update-card__version">
                   v{currentVersion}
                 </span>
@@ -89,7 +100,7 @@ export function SettingsPage() {
               )}
               {!isElectron && (
                 <span className="settings-update-card__hint">
-                  更新功能仅在桌面客户端可用
+                  {t('settings.desktopOnly')}
                 </span>
               )}
             </div>
@@ -103,7 +114,7 @@ export function SettingsPage() {
                 style={{ width: `${Math.round(result.percent)}%` }}
               />
               <span className="settings-progress__label">
-                下载中 {Math.round(result.percent)}%
+                {t('settings.downloading', { percent: String(Math.round(result.percent)) })}
               </span>
             </div>
           )}
@@ -112,13 +123,13 @@ export function SettingsPage() {
           {result.status === 'downloaded' && (
             <div className="settings-ready">
               <span className="settings-ready__text">
-                v{result.latestVersion} 已下载，重启后应用更新
+                {t('settings.readyText', { version: result.latestVersion })}
               </span>
               <button
                 className="rt-btn rt-btn--sm settings-ready__btn"
                 onClick={() => window.updater?.installUpdate()}
               >
-                立即重启
+                {t('settings.restartNow')}
               </button>
             </div>
           )}
@@ -128,7 +139,33 @@ export function SettingsPage() {
   );
 }
 
+const LANG_OPTIONS = [
+  { value: 'zh', label: '中文' },
+  { value: 'en', label: 'English' },
+] as const;
+
+function LanguageSelector() {
+  const { locale, setLocale } = useI18n();
+
+  return (
+    <div className="settings-lang-pills">
+      {LANG_OPTIONS.map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          className={`settings-lang-pill${locale === opt.value ? ' is-active' : ''}`}
+          onClick={() => setLocale(opt.value)}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function UpdateStatus({ result }: { result: CheckResult }) {
+  const { t } = useI18n();
+
   switch (result.status) {
     case 'idle':
       return null;
@@ -136,25 +173,25 @@ function UpdateStatus({ result }: { result: CheckResult }) {
       return (
         <span className="settings-update-card__status settings-update-card__status--checking">
           <span className="settings-spinner" />
-          正在检查更新…
+          {t('settings.isChecking')}
         </span>
       );
     case 'up-to-date':
       return (
         <span className="settings-update-card__status settings-update-card__status--ok">
-          ✓ 已是最新版本
+          ✓ {t('settings.upToDate')}
         </span>
       );
     case 'available':
       return (
         <span className="settings-update-card__status settings-update-card__status--new">
-          发现新版本 v{result.latestVersion}
+          {t('settings.newVersion', { version: result.latestVersion })}
         </span>
       );
     case 'downloaded':
       return (
         <span className="settings-update-card__status settings-update-card__status--ready">
-          ✓ 更新已下载
+          ✓ {t('settings.downloaded')}
         </span>
       );
     case 'error':
@@ -173,6 +210,7 @@ function UpdateButton({
   result: CheckResult;
   onCheck: () => void;
 }) {
+  const { t } = useI18n();
   const disabled = result.status === 'checking' || (result.status === 'available' && result.downloading);
 
   return (
@@ -181,7 +219,7 @@ function UpdateButton({
       onClick={onCheck}
       disabled={disabled}
     >
-      {result.status === 'checking' ? '检查中…' : '检查更新'}
+      {result.status === 'checking' ? t('settings.checking') : t('settings.checkUpdate')}
     </button>
   );
 }
