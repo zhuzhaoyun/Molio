@@ -159,25 +159,17 @@ function TreeNodeItem({
   // File node
   const isActive = selectedFile === node.path;
 
-  const handleContextMenu = (e: React.MouseEvent) => {
+  const handleFileContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     onContextMenu?.(node, e);
-  };
-
-  const handleRenameKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      onRenameSubmit(node.path, renameValue);
-    } else if (e.key === 'Escape') {
-      onRenameCancel();
-    }
-  };
+  }, [onContextMenu, node]);
 
   return (
     <div
       className={`kb-tree-item ${isActive ? 'is-active' : ''}`}
       onClick={() => !isRenaming && onSelectFile(node.path)}
-      onContextMenu={handleContextMenu}
+      onContextMenu={handleFileContextMenu}
     >
       <span className="kb-tree-icon">📄</span>
       {isRenaming ? (

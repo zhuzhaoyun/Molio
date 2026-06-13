@@ -22,7 +22,6 @@ interface KnowledgeBasePageProps {
 export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
   const kb = useKnowledge();
   const tabs = useKbTabs();
-  const location = useLocation();
   const [showChatPanel, setShowChatPanel] = useState(false);
 
   // Context menu state
@@ -325,7 +324,7 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
       <KbFilePanel
         width={kb.panelWidth}
         tree={kb.tree}
-        selectedFile={selectedFile}
+        selectedFile={kb.selectedFile}
         searchQuery={kb.searchQuery}
         vaultName={kb.activeVault?.name ?? ''}
         onSearchChange={kb.setSearchQuery}
