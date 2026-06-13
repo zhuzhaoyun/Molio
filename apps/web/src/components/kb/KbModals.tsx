@@ -1,8 +1,9 @@
 /**
- * Knowledge Base modals — Vault Switcher, Add Vault, Import Knowledge.
+ * Knowledge Base modals — Vault Switcher, Add Vault, Import Knowledge,
+ * plus generic InputDialog and ConfirmDialog (replacing window.prompt / window.confirm).
  */
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import type { Vault } from '@molio/contracts';
 
 // ═══════════════════════════════════════════
@@ -384,6 +385,157 @@ export function ImportModal({ show, vaultName, onClose }: ImportModalProps) {
             disabled={files.length === 0 || importing}
           >
             {importing ? 'Importing...' : 'Import Files'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// Input Dialog (replaces window.prompt)
+// ═══════════════════════════════════════════
+
+interface InputDialogProps {
+  show: boolean;
+  title: string;
+  label: string;
+  defaultValue?: string;
+  placeholder?: string;
+  confirmLabel?: string;
+  onConfirm: (value: string) => void;
+  onCancel: () => void;
+}
+
+export function InputDialog({
+  show,
+  title,
+  label,
+  defaultValue = '',
+  placeholder,
+  confirmLabel = '确定',
+  onConfirm,
+  onCancel,
+}: InputDialogProps) {
+  const [value, setValue] = useState(defaultValue);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Sync defaultValue and auto-select when dialog opens
+  useEffect(() => {
+    if (show) {
+      setValue(defaultValue);
+      // Select all text after a tick so the input is mounted
+      setTimeout(() => inputRef.current?.select(), 50);
+    }
+  }, [show, defaultValue]);
+
+  const handleConfirm = useCallback(() => {
+    if (value.trim()) onConfirm(value.trim());
+  }, [value, onConfirm]);
+
+  // Enter to confirm, Escape to cancel
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleConfirm();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      onCancel();
+    }
+  }, [handleConfirm, onCancel]);
+
+  if (!show) return null;
+
+  return (
+    <div className={`kb-overlay ${show ? 'show' : ''}`} onClick={(e) => e.target === e.currentTarget && onCancel()}>
+      <div className="kb-modal" style={{ width: 400 }}>
+        <div className="kb-modal-header">
+          <h2>{title}</h2>
+          <button className="kb-modal-close" onClick={onCancel}>&times;</button>
+        </div>
+        <div className="kb-modal-body">
+          <div className="kb-form-field">
+            <label>{label}</label>
+            <input
+              ref={inputRef}
+              type="text"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={placeholder}
+              autoFocus
+            />
+          </div>
+        </div>
+        <div className="kb-modal-footer">
+          <button className="kb-btn kb-btn-ghost" onClick={onCancel}>取消</button>
+          <button
+            className="kb-btn kb-btn-primary"
+            onClick={handleConfirm}
+            disabled={!value.trim()}
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// Confirm Dialog (replaces window.confirm)
+// ═══════════════════════════════════════════
+
+interface ConfirmDialogProps {
+  show: boolean;
+  title: string;
+  message: string;
+  confirmLabel?: string;
+  danger?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}
+
+export function ConfirmDialog({
+  show,
+  title,
+  message,
+  confirmLabel = '确定',
+  danger = false,
+  onConfirm,
+  onCancel,
+}: ConfirmDialogProps) {
+  // Escape to cancel
+  useEffect(() => {
+    if (!show) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCancel();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [show, onCancel]);
+
+  if (!show) return null;
+
+  return (
+    <div className={`kb-overlay ${show ? 'show' : ''}`} onClick={(e) => e.target === e.currentTarget && onCancel()}>
+      <div className="kb-modal" style={{ width: 400 }}>
+        <div className="kb-modal-header">
+          <h2>{title}</h2>
+          <button className="kb-modal-close" onClick={onCancel}>&times;</button>
+        </div>
+        <div className="kb-modal-body">
+          <p style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6, margin: 0 }}>
+            {message}
+          </p>
+        </div>
+        <div className="kb-modal-footer">
+          <button className="kb-btn kb-btn-ghost" onClick={onCancel}>取消</button>
+          <button
+            className={`kb-btn ${danger ? 'kb-btn-danger' : 'kb-btn-primary'}`}
+            onClick={onConfirm}
+          >
+            {confirmLabel}
           </button>
         </div>
       </div>

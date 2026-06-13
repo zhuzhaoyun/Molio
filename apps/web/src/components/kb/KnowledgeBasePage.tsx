@@ -10,7 +10,7 @@ import { KbFilePanel } from './KbFilePanel';
 import { KbMainContent } from './KbMainContent';
 import { WikiChatPanel } from './WikiChatPanel';
 import { VaultManagerModal } from './VaultManager';
-import { ImportModal, CoseInstallPrompt } from './KbModals';
+import { ImportModal, CoseInstallPrompt, InputDialog, ConfirmDialog } from './KbModals';
 import { ContextMenu, type MenuItem } from './ContextMenu';
 
 interface KnowledgeBasePageProps {
@@ -31,6 +31,27 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
   // Save toast state
   const [saveToast, setSaveToast] = useState<string | null>(null);
   const saveToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Input dialog state (replaces window.prompt)
+  const [inputDialog, setInputDialog] = useState<{
+    show: boolean;
+    title: string;
+    label: string;
+    defaultValue: string;
+    placeholder?: string;
+    confirmLabel?: string;
+    onConfirm: (value: string) => void;
+  }>({ show: false, title: '', label: '', defaultValue: '', onConfirm: () => {} });
+
+  // Confirm dialog state (replaces window.confirm)
+  const [confirmDialog, setConfirmDialog] = useState<{
+    show: boolean;
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    danger?: boolean;
+    onConfirm: () => void;
+  }>({ show: false, title: '', message: '', onConfirm: () => {} });
 
   // Wiki chat hook — refreshes tree on build completion
   const wikiChat = useWikiChat({
@@ -105,30 +126,72 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
     }
   }, [wikiChat]);
 
-  // ─── New file / folder flows ───
+  // ─── Save toast helper (defined early — used by callbacks below) ───
 
-  const handleNewFile = useCallback(async () => {
-    if (!kb.activeVault) return;
-    const name = window.prompt('新建文件名称（含扩展名，如 note.md）：', 'untitled.md');
-    if (!name?.trim()) return;
-    const defaultContent = name.endsWith('.md') ? `# ${name.replace(/\.md$/, '')}\n\n` : '';
-    try {
-      await kb.createFile(name.trim(), defaultContent);
-    } catch (err) {
-      window.alert(`创建文件失败：${err instanceof Error ? err.message : String(err)}`);
-    }
-  }, [kb.activeVault, kb.createFile]);
+  const showToast = useCallback((msg: string) => {
+    if (saveToastTimer.current) clearTimeout(saveToastTimer.current);
+    setSaveToast(msg);
+    saveToastTimer.current = setTimeout(() => setSaveToast(null), 2000);
+  }, []);
 
-  const handleNewFolder = useCallback(async () => {
+  // ─── New file / folder flows (React dialogs instead of window.prompt) ───
+
+  const handleNewFile = useCallback((parentPath?: string) => {
     if (!kb.activeVault) return;
-    const name = window.prompt('新建文件夹名称：', '新建文件夹');
-    if (!name?.trim()) return;
-    try {
-      await kb.createFolder(name.trim());
-    } catch (err) {
-      window.alert(`创建文件夹失败：${err instanceof Error ? err.message : String(err)}`);
-    }
-  }, [kb.activeVault, kb.createFolder]);
+    const prefix = parentPath ? `${parentPath}/` : '';
+    setInputDialog({
+      show: true,
+      title: parentPath ? `在 ${parentPath} 下新建文件` : '新建文件',
+      label: '文件名称（含扩展名，如 note.md）',
+      defaultValue: 'untitled.md',
+      confirmLabel: '创建',
+      onConfirm: async (name) => {
+        setInputDialog((prev) => ({ ...prev, show: false }));
+        const fullPath = `${prefix}${name}`;
+        const defaultContent = name.endsWith('.md') ? `# ${name.replace(/\.md$/, '')}\n\n` : '';
+        try {
+          await kb.createFile(fullPath, defaultContent);
+          // Auto-enter typeset (edit) mode for new text files
+          const ext = name.slice(name.lastIndexOf('.')).toLowerCase();
+          const isText = ['.md', '.txt', '.html', '.htm', '.json', '.yaml', '.yml'].includes(ext);
+          if (isText) {
+            kb.setTypesetMode(true);
+          }
+        } catch (err) {
+          showToast(`创建文件失败：${err instanceof Error ? err.message : String(err)}`);
+        }
+      },
+    });
+  }, [kb.activeVault, kb.createFile, kb.setTypesetMode, showToast]);
+
+  const handleNewFolder = useCallback((parentPath?: string) => {
+    if (!kb.activeVault) return;
+    const prefix = parentPath ? `${parentPath}/` : '';
+    setInputDialog({
+      show: true,
+      title: parentPath ? `在 ${parentPath} 下新建文件夹` : '新建文件夹',
+      label: '文件夹名称',
+      defaultValue: '新建文件夹',
+      confirmLabel: '创建',
+      onConfirm: async (name) => {
+        setInputDialog((prev) => ({ ...prev, show: false }));
+        const fullPath = `${prefix}${name}`;
+        try {
+          await kb.createFolder(fullPath);
+        } catch (err) {
+          showToast(`创建文件夹失败：${err instanceof Error ? err.message : String(err)}`);
+        }
+      },
+    });
+  }, [kb.activeVault, kb.createFolder, showToast]);
+
+  const handleCancelInputDialog = useCallback(() => {
+    setInputDialog((prev) => ({ ...prev, show: false }));
+  }, []);
+
+  const handleCancelConfirmDialog = useCallback(() => {
+    setConfirmDialog((prev) => ({ ...prev, show: false }));
+  }, []);
 
   // ─── Context menu ───
 
@@ -150,6 +213,17 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
         label: '打开',
         onClick: () => kb.selectFile(node.path),
       });
+    } else {
+      // Directory: offer create file / subfolder inside
+      items.push({
+        label: '新建文件',
+        onClick: () => handleNewFile(node.path),
+      });
+      items.push({
+        label: '新建子文件夹',
+        onClick: () => handleNewFolder(node.path),
+      });
+      items.push({ divider: true });
     }
 
     items.push({
@@ -163,34 +237,50 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
       items.push({
         label: '删除',
         danger: true,
-        onClick: async () => {
-          if (window.confirm(`确定删除文件 "${node.name}"？`)) {
-            try {
-              await kb.deleteFile(node.path);
-            } catch (err) {
-              window.alert(`删除失败：${err instanceof Error ? err.message : String(err)}`);
-            }
-          }
+        onClick: () => {
+          setConfirmDialog({
+            show: true,
+            title: '删除文件',
+            message: `确定删除文件 "${node.name}"？`,
+            confirmLabel: '删除',
+            danger: true,
+            onConfirm: async () => {
+              setConfirmDialog((prev) => ({ ...prev, show: false }));
+              try {
+                await kb.deleteFile(node.path);
+              } catch (err) {
+                showToast(`删除失败：${err instanceof Error ? err.message : String(err)}`);
+              }
+            },
+          });
         },
       });
     } else {
       items.push({
         label: '删除文件夹',
         danger: true,
-        onClick: async () => {
-          if (window.confirm(`确定删除文件夹 "${node.name}" 及其所有内容？`)) {
-            try {
-              await kb.deleteFolder(node.path);
-            } catch (err) {
-              window.alert(`删除失败：${err instanceof Error ? err.message : String(err)}`);
-            }
-          }
+        onClick: () => {
+          setConfirmDialog({
+            show: true,
+            title: '删除文件夹',
+            message: `确定删除文件夹 "${node.name}" 及其所有内容？`,
+            confirmLabel: '删除',
+            danger: true,
+            onConfirm: async () => {
+              setConfirmDialog((prev) => ({ ...prev, show: false }));
+              try {
+                await kb.deleteFolder(node.path);
+              } catch (err) {
+                showToast(`删除失败：${err instanceof Error ? err.message : String(err)}`);
+              }
+            },
+          });
         },
       });
     }
 
     return items;
-  }, [ctxMenu, kb]);
+  }, [ctxMenu, kb, showToast, handleNewFile, handleNewFolder]);
 
   // ─── Inline rename ───
 
@@ -203,21 +293,15 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
     try {
       await kb.renameFile(oldPath, newPath);
     } catch (err) {
-      window.alert(`重命名失败：${err instanceof Error ? err.message : String(err)}`);
+      showToast(`重命名失败：${err instanceof Error ? err.message : String(err)}`);
     }
-  }, [kb.renameFile]);
+  }, [kb.renameFile, showToast]);
 
   const handleRenameCancel = useCallback(() => {
     setRenamingPath(null);
   }, []);
 
   // ─── Save edited content ───
-
-  const showToast = useCallback((msg: string) => {
-    if (saveToastTimer.current) clearTimeout(saveToastTimer.current);
-    setSaveToast(msg);
-    saveToastTimer.current = setTimeout(() => setSaveToast(null), 2000);
-  }, []);
 
   const handleSave = useCallback(async () => {
     if (!kb.selectedFile || kb.editedContent === null) return;
@@ -329,6 +413,29 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
       {saveToast && (
         <div className="kb-save-toast">{saveToast}</div>
       )}
+
+      {/* Input dialog (replaces window.prompt) */}
+      <InputDialog
+        show={inputDialog.show}
+        title={inputDialog.title}
+        label={inputDialog.label}
+        defaultValue={inputDialog.defaultValue}
+        placeholder={inputDialog.placeholder}
+        confirmLabel={inputDialog.confirmLabel}
+        onConfirm={inputDialog.onConfirm}
+        onCancel={handleCancelInputDialog}
+      />
+
+      {/* Confirm dialog (replaces window.confirm) */}
+      <ConfirmDialog
+        show={confirmDialog.show}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmLabel={confirmDialog.confirmLabel}
+        danger={confirmDialog.danger}
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={handleCancelConfirmDialog}
+      />
     </div>
   );
 }

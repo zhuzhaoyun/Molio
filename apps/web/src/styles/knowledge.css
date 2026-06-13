@@ -673,6 +673,8 @@
 .kb-btn.kb-btn-primary:hover { background: var(--accent-hover); }
 .kb-btn.kb-btn-ghost { background: transparent; border-color: transparent; color: var(--text-muted); }
 .kb-btn.kb-btn-ghost:hover { background: var(--bg-subtle); color: var(--text); border-color: var(--border); }
+.kb-btn.kb-btn-danger { background: #dc3545; border-color: #dc3545; color: #fff; }
+.kb-btn.kb-btn-danger:hover { background: #c82333; border-color: #c82333; }
 .kb-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* Vault option in switcher */

@@ -66,6 +66,7 @@ interface UseKnowledgeReturn {
 
   // Typeset actions
   toggleTypesetMode: () => void;
+  setTypesetMode: (on: boolean) => void;
   setThemeConfig: (config: ThemeConfig) => void;
   setEditedContent: (content: string) => void;
   copyToClipboard: () => Promise<void>;
@@ -338,6 +339,14 @@ export function useKnowledge(): UseKnowledgeReturn {
     });
   }, []);
 
+  const setTypesetMode = useCallback((on: boolean) => {
+    setIsTypesetMode(on);
+    if (!on) {
+      // When exiting typeset mode, clear the edited content marker
+      setEditedContent(null);
+    }
+  }, []);
+
   const handleEditedContentChange = useCallback((content: string) => {
     setEditedContent(content);
   }, []);
@@ -426,6 +435,7 @@ export function useKnowledge(): UseKnowledgeReturn {
     renameFile,
     saveFile,
     toggleTypesetMode,
+    setTypesetMode,
     setThemeConfig,
     setEditedContent: handleEditedContentChange,
     copyToClipboard,

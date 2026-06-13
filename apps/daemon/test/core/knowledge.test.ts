@@ -10,7 +10,9 @@ import {
   createDirectory,
   deleteDirectory,
   renamePath,
+  resolveFilePath,
   scanTree,
+  countFiles,
 } from '../../src/core/knowledge.js';
 
 describe('knowledge filesystem operations', () => {
@@ -164,6 +166,156 @@ describe('knowledge filesystem operations', () => {
       } finally {
         rmSync(cleanVault, { recursive: true, force: true });
       }
+    });
+
+    it('should sort directories before files', () => {
+      const cleanVault = mkdtempSync(join(tmpdir(), 'molio-sort-'));
+      try {
+        writeFileSync(join(cleanVault, 'zebra.md'), 'z');
+        writeFileSync(join(cleanVault, 'alpha.md'), 'a');
+        mkdirSync(join(cleanVault, 'middle-dir'));
+        writeFileSync(join(cleanVault, 'beta.txt'), 'b');
+
+        const tree = scanTree(cleanVault);
+        // First entry should be the directory, then files alphabetically
+        assert.equal(tree[0]!.type, 'directory');
+        assert.equal(tree[0]!.name, 'middle-dir');
+        assert.equal(tree[1]!.type, 'file');
+        assert.equal(tree[1]!.name, 'alpha.md');
+        assert.equal(tree[2]!.type, 'file');
+        assert.equal(tree[2]!.name, 'beta.txt');
+        assert.equal(tree[3]!.type, 'file');
+        assert.equal(tree[3]!.name, 'zebra.md');
+      } finally {
+        rmSync(cleanVault, { recursive: true, force: true });
+      }
+    });
+
+    it('should skip unsupported file extensions', () => {
+      const cleanVault = mkdtempSync(join(tmpdir(), 'molio-ext-'));
+      try {
+        writeFileSync(join(cleanVault, 'good.md'), 'ok');
+        writeFileSync(join(cleanVault, 'bad.exe'), 'skip');
+        writeFileSync(join(cleanVault, 'also-bad.zip'), 'skip');
+
+        const tree = scanTree(cleanVault);
+        assert.equal(tree.length, 1);
+        assert.equal(tree[0]!.name, 'good.md');
+      } finally {
+        rmSync(cleanVault, { recursive: true, force: true });
+      }
+    });
+
+    it('should return empty array for empty vault', () => {
+      const cleanVault = mkdtempSync(join(tmpdir(), 'molio-empty-'));
+      try {
+        const tree = scanTree(cleanVault);
+        assert.deepEqual(tree, []);
+      } finally {
+        rmSync(cleanVault, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe('countFiles', () => {
+    it('should count supported files recursively', () => {
+      const cleanVault = mkdtempSync(join(tmpdir(), 'molio-count-'));
+      try {
+        writeFileSync(join(cleanVault, 'a.md'), 'a');
+        writeFileSync(join(cleanVault, 'b.txt'), 'b');
+        mkdirSync(join(cleanVault, 'sub'));
+        writeFileSync(join(cleanVault, 'sub', 'c.md'), 'c');
+        writeFileSync(join(cleanVault, 'sub', 'skip.exe'), 'skip');
+
+        const count = countFiles(cleanVault);
+        assert.equal(count, 3); // a.md, b.txt, sub/c.md
+      } finally {
+        rmSync(cleanVault, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe('readFile — MIME types', () => {
+    it('should detect markdown MIME type', () => {
+      writeFile(vaultPath, 'mime-test.md', '# MD');
+      const file = readFile(vaultPath, 'mime-test.md');
+      assert.equal(file.mimeType, 'text/markdown');
+    });
+
+    it('should detect JSON MIME type', () => {
+      writeFile(vaultPath, 'data.json', '{}');
+      const file = readFile(vaultPath, 'data.json');
+      assert.equal(file.mimeType, 'application/json');
+    });
+
+    it('should detect YAML MIME type', () => {
+      writeFile(vaultPath, 'config.yaml', 'key: val');
+      const file = readFile(vaultPath, 'config.yaml');
+      assert.equal(file.mimeType, 'text/yaml');
+    });
+  });
+
+  describe('writeFile — edge cases', () => {
+    it('should create a file with empty content', () => {
+      writeFile(vaultPath, 'empty.md', '');
+      const file = readFile(vaultPath, 'empty.md');
+      assert.equal(file.content, '');
+      assert.equal(file.size, 0);
+    });
+
+    it('should handle unicode content', () => {
+      writeFile(vaultPath, 'unicode.md', '# 中文测试 🎉\n\n内容');
+      const file = readFile(vaultPath, 'unicode.md');
+      assert.equal(file.content, '# 中文测试 🎉\n\n内容');
+    });
+  });
+
+  describe('path traversal protection', () => {
+    it('writeFile should reject path traversal', () => {
+      assert.throws(() => {
+        writeFile(vaultPath, '../../etc/passwd', 'hacked');
+      }, /Path traversal/);
+    });
+
+    it('readFile should reject path traversal', () => {
+      assert.throws(() => {
+        readFile(vaultPath, '../../etc/passwd');
+      }, /Path traversal/);
+    });
+
+    it('createDirectory should reject path traversal', () => {
+      assert.throws(() => {
+        createDirectory(vaultPath, '../../tmp/evil');
+      }, /Path traversal/);
+    });
+
+    it('deleteDirectory should reject path traversal', () => {
+      assert.throws(() => {
+        deleteDirectory(vaultPath, '../../tmp');
+      }, /Path traversal/);
+    });
+
+    it('resolveFilePath should reject path traversal', () => {
+      assert.throws(() => {
+        resolveFilePath(vaultPath, '../../../etc/shadow');
+      }, /Path traversal/);
+    });
+  });
+
+  describe('renamePath — edge cases', () => {
+    it('should reject path traversal on destination', () => {
+      writeFile(vaultPath, 'safe.md', 'safe');
+      assert.throws(() => {
+        renamePath(vaultPath, 'safe.md', '../../etc/evil.md');
+      }, /Path traversal/);
+    });
+
+    it('should create parent directories for the new path', () => {
+      writeFile(vaultPath, 'flat.md', 'flatten');
+      renamePath(vaultPath, 'flat.md', 'new/deep/path/flat.md');
+      assert.ok(!existsSync(join(vaultPath, 'flat.md')));
+      const file = readFile(vaultPath, 'new/deep/path/flat.md');
+      assert.equal(file.content, 'flatten');
     });
   });
 });
