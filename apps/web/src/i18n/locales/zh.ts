@@ -3,8 +3,12 @@ const zh: Record<string, string> = {
   'nav.home': '首页',
   'nav.knowledge': '知识库',
   'nav.runtimes': '运行时',
+  'nav.channels': '渠道',
   'nav.graph': '图谱',
   'nav.settings': '设置',
+
+  // ── Common ──
+  'common.save': '保存',
 
   // ── HomePage ──
   'home.newChat': '新对话',
@@ -81,6 +85,36 @@ const zh: Record<string, string> = {
   'runtimes.hAgo': '{n}小时前',
   'runtimes.testOk': 'OK ({elapsed}ms)',
   'runtimes.testFailed': '测试失败',
+
+  // ── Channels ──
+  'channels.title': '渠道',
+  'channels.listLabel': '渠道列表',
+  'channels.status.available': '可用',
+  'channels.status.planned': '计划中',
+  'channels.comingSoon': '暂未接入',
+  'channels.weixin.title': '微信 ClawBot',
+  'channels.weixin.desc': '微信里的原生机器人会话',
+  'channels.weixin.longDesc': '扫码授权后，手机微信里会出现微信ClawBot 会话。发给它的文本或公众号文章链接会转交给桌面 Molio。',
+  'channels.weixin.defaultAgent': '默认运行时',
+  'channels.weixin.useAppDefault': '使用应用默认运行时',
+  'channels.weixin.connect': '连接微信',
+  'channels.weixin.reconnect': '重新连接',
+  'channels.weixin.disconnect': '断开',
+  'channels.weixin.noQr': '点击连接后显示二维码',
+  'channels.weixin.qrAlt': '微信登录二维码',
+  'channels.weixin.scanHint': '用手机微信扫码并确认授权',
+  'channels.weixin.connectedHint': '微信通道已连接',
+  'channels.weixin.lastMessage': '最近消息：{time}',
+  'channels.weixin.activeRun': '最近运行：{runId}',
+  'channels.weixin.status.idle': '未连接',
+  'channels.weixin.status.waiting_scan': '等待扫码',
+  'channels.weixin.status.scanned': '已扫码，等待确认',
+  'channels.weixin.status.logged_in': '已连接',
+  'channels.weixin.status.error': '连接异常',
+  'channels.feishu.title': '飞书',
+  'channels.feishu.desc': '通过飞书机器人接收消息与指令',
+  'channels.wecom.title': '企业微信',
+  'channels.wecom.desc': '通过企业微信应用接入团队消息',
 
   // ── Settings ──
   'settings.title': '设置',

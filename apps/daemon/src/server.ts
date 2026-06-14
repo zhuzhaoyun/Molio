@@ -14,9 +14,14 @@ import { projectRoutes } from './routes/projects.js';
 import { knowledgeRoutes } from './routes/knowledge.js';
 import { publishRoutes, cleanupAllBridges } from './routes/publish.js';
 import { graphRoutes } from './routes/graph.js';
+import { weixinRoutes } from './routes/weixin.js';
+import { WeixinService } from './core/weixin/service.js';
+import { ConversationService } from './core/conversations/service.js';
 
 export const runManager = new RunManager();
 export const db: Database.Database = openDatabase();
+export const conversationService = new ConversationService(db);
+export const weixinService = new WeixinService(runManager, conversationService, db);
 
 export const app = new Hono();
 
@@ -49,6 +54,9 @@ app.route('/api/projects', projectRoutes(db));
 app.route('/api/knowledge', knowledgeRoutes(db, runManager));
 app.route('/api/publish', publishRoutes());
 app.route('/api/graph', graphRoutes(db));
+app.route('/api/weixin', weixinRoutes(weixinService));
+
+void weixinService.start();
 
 // Static file serving (production / desktop mode)
 const staticDir = process.env['MOLIO_STATIC_DIR'];
@@ -119,6 +127,7 @@ if (staticDir) {
 // Graceful shutdown
 process.on('SIGINT', () => {
   cleanupAllBridges();
+  weixinService.stop();
   runManager.cancelAll();
   closeDatabase();
   process.exit(0);
@@ -126,6 +135,7 @@ process.on('SIGINT', () => {
 
 process.on('SIGTERM', () => {
   cleanupAllBridges();
+  weixinService.stop();
   runManager.cancelAll();
   closeDatabase();
   process.exit(0);

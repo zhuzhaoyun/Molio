@@ -6,6 +6,28 @@ import type {
   WikiLintRequest, WikiQueryRequest, WikiSaveRequest, WikiRunResponse,
 } from '@molio/contracts';
 
+export type WeixinLoginStatus = 'idle' | 'waiting_scan' | 'scanned' | 'logged_in' | 'error';
+
+export interface WeixinStatus {
+  enabled: boolean;
+  loginStatus: WeixinLoginStatus;
+  connected: boolean;
+  qrcodeUrl: string;
+  lastError: string | null;
+  lastMessageAt: number | null;
+  activeRunId: string | null;
+  hasCredentials: boolean;
+}
+
+export interface WeixinConfig {
+  enabled?: boolean;
+  baseUrl?: string;
+  cdnBaseUrl?: string;
+  credentialsPath?: string;
+  defaultAgentId?: string;
+  defaultCwd?: string;
+}
+
 const BASE = '/api';
 
 export const api = {
@@ -182,6 +204,36 @@ export const api = {
       body: JSON.stringify(config),
     });
     if (!res.ok) throw new Error(`Failed to update agent config: ${res.status}`);
+  },
+
+  // ─── Weixin ClawBot ───
+
+  async getWeixinStatus(): Promise<WeixinStatus> {
+    const res = await fetch(`${BASE}/weixin/status`);
+    if (!res.ok) throw new Error(`Failed to fetch Weixin status: ${res.status}`);
+    return res.json();
+  },
+
+  async beginWeixinLogin(): Promise<WeixinStatus> {
+    const res = await fetch(`${BASE}/weixin/login`, { method: 'POST' });
+    if (!res.ok) throw new Error(`Failed to start Weixin login: ${res.status}`);
+    return res.json();
+  },
+
+  async updateWeixinConfig(config: WeixinConfig): Promise<WeixinStatus> {
+    const res = await fetch(`${BASE}/weixin/config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    });
+    if (!res.ok) throw new Error(`Failed to update Weixin config: ${res.status}`);
+    return res.json();
+  },
+
+  async disconnectWeixin(): Promise<WeixinStatus> {
+    const res = await fetch(`${BASE}/weixin/disconnect`, { method: 'POST' });
+    if (!res.ok) throw new Error(`Failed to disconnect Weixin: ${res.status}`);
+    return res.json();
   },
 
   // ─── Knowledge Base ───

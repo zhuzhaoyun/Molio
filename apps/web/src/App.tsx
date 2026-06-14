@@ -7,6 +7,7 @@ import { NavRail } from './components/NavRail';
 import { KnowledgeBasePage } from './components/kb/KnowledgeBasePage';
 import { RuntimePage } from './components/runtimes/RuntimePage';
 import { SettingsPage } from './components/settings/SettingsPage';
+import { ChannelsPage } from './components/channels/ChannelsPage';
 import { GraphPage } from './components/graph/GraphPage';
 import { UpdateNotification } from './components/UpdateNotification';
 import { LanguageProvider } from './i18n/LanguageProvider';
@@ -18,6 +19,7 @@ import './styles/home.css';
 import './styles/knowledge.css';
 import './styles/runtimes.css';
 import './styles/settings.css';
+import './styles/channels.css';
 import './styles/graph.css';
 import './App.css';
 
@@ -124,6 +126,19 @@ export default function App() {
       .catch(() => {});
   }, []);
 
+  // Keep daemon-side defaultCwd aligned with the active knowledge vault so
+  // external channels (Weixin, future Feishu/WeCom) run against the same cwd.
+  useEffect(() => {
+    const cwd = activeVault?.path;
+    if (!cwd) return;
+    api.getConfig()
+      .then((cfg) => {
+        if ((cfg as { defaultCwd?: string }).defaultCwd === cwd) return;
+        return api.updateConfig({ ...cfg, defaultCwd: cwd });
+      })
+      .catch(() => {});
+  }, [activeVault?.path]);
+
   const handleNewChat = () => {
     chat.reset();
     // Reset to default agent instead of null
@@ -154,6 +169,7 @@ export default function App() {
             />
             <Route path="/knowledge" element={<KnowledgeBasePage agentId={selectedAgent} />} />
             <Route path="/runtimes" element={<RuntimePage />} />
+            <Route path="/channels" element={<ChannelsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/graph" element={<GraphPage />} />
           </Routes>

@@ -212,17 +212,17 @@ export class RunManager {
     const runtimeHint = buildRuntimeHint(def);
 
     if (def.promptViaStdin && child.stdin) {
+      const prompt = this.composePrompt(runtimeHint + opts.message, opts.history, opts.agentId);
       if (def.promptInputFormat === 'stream-json') {
         // Pattern A: Stream-JSON agent — interactive stdin, stays open for multi-turn
         const msg = JSON.stringify({
           type: 'user',
-          message: { role: 'user', content: runtimeHint + opts.message },
+          message: { role: 'user', content: prompt },
         });
         child.stdin.write(msg + '\n', 'utf8');
         run.stdinOpen = true;
       } else {
         // Pattern B: Non-stream-json agent — build transcript + new message, close stdin
-        const prompt = this.composePrompt(runtimeHint + opts.message, opts.history, opts.agentId);
         child.stdin.end(prompt);
         run.stdinOpen = false;
       }

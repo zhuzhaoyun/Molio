@@ -84,6 +84,9 @@ export interface Conversation {
   id: string;
   projectId: string;
   title: string | null;
+  channelType?: string;
+  externalSessionId?: string | null;
+  metadata?: Record<string, unknown>;
   createdAt: number;
   updatedAt: number;
 }
