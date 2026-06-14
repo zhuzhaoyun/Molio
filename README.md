@@ -119,6 +119,21 @@ pnpm typecheck    # 全量类型检查
 pnpm build        # 构建所有子包
 ```
 
+## 常见问题
+
+### macOS 提示"已损坏，无法打开"
+
+这是 macOS Gatekeeper 的安全提示，因为 Molio 目前**未经过 Apple 公证**（需要 Apple Developer Program 年费 $99）。这不是应用本身的问题，请按以下任一方法解决：
+
+**方法一（推荐）**：右键点击应用 → 选择"打开" → 点击"打开"按钮（只需第一次）
+
+**方法二**：打开终端，运行：
+```bash
+sudo xattr -d com.apple.quarantine /Applications/Molio.app
+```
+
+之后即可正常双击打开。
+
 ## 用户交流群
 
 <img src="docs/img/qrcode.png" alt="用户交流群二维码" width="200" />
