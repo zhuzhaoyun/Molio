@@ -315,6 +315,13 @@ export function GraphPage() {
         draggedNode = node;
         isDragging = false;
         dragStartMouse = { x: mouseX, y: mouseY };
+        // Lock d3 node position so collision doesn't push it away during drag
+        const d3Node = simulation.getNode(node);
+        if (d3Node) {
+          const attrs = graph.getNodeAttributes(node);
+          d3Node.fx = (attrs.x as number) ?? 0;
+          d3Node.fy = (attrs.y as number) ?? 0;
+        }
         e.preventDefault();
         e.stopPropagation();
       } else {
@@ -324,6 +331,12 @@ export function GraphPage() {
           const prev = selectedNodeRef.current;
           graph.removeNodeAttribute(prev, 'fx');
           graph.removeNodeAttribute(prev, 'fy');
+          // Also release d3 lock if any
+          const d3Node = simulation.getNode(prev);
+          if (d3Node) {
+            d3Node.fx = null;
+            d3Node.fy = null;
+          }
           selectedNodeRef.current = null;
           renderer.refresh();
         }
@@ -347,11 +360,20 @@ export function GraphPage() {
 
       if (isDragging) {
         const graphPos = renderer.viewportToGraph({ x: mouseX, y: mouseY });
-        graph.setNodeAttribute(draggedNode, 'x', graphPos.x);
-        graph.setNodeAttribute(draggedNode, 'y', graphPos.y);
-        // 实时锁定 fx/fy，防止力引擎覆盖拖拽位置
-        graph.setNodeAttribute(draggedNode, 'fx', graphPos.x);
-        graph.setNodeAttribute(draggedNode, 'fy', graphPos.y);
+        const d3Node = simulation.getNode(draggedNode);
+        if (d3Node) {
+          // Update d3 node position + lock
+          d3Node.x = graphPos.x;
+          d3Node.y = graphPos.y;
+          d3Node.fx = graphPos.x;
+          d3Node.fy = graphPos.y;
+          // Write to graphology so sigma renders it
+          graph.setNodeAttribute(draggedNode, 'x', graphPos.x);
+          graph.setNodeAttribute(draggedNode, 'y', graphPos.y);
+        }
+        // Wake simulation — forces propagate to neighbors via spring force,
+        // collision constraint pushes overlapping nodes apart
+        simulation.wake(0.5);
         renderer.refresh();
       }
     };
@@ -367,7 +389,16 @@ export function GraphPage() {
       const wasDragging = isDragging;
 
       if (wasDragging) {
-        // 拖拽结束：fx/fy 已在 mousemove 中设置，保持锁定
+        // Release d3 fx/fy lock → node settles naturally with damping
+        const d3Node = simulation.getNode(node);
+        if (d3Node) {
+          d3Node.fx = null;
+          d3Node.fy = null;
+          graph.removeNodeAttribute(node, 'fx');
+          graph.removeNodeAttribute(node, 'fy');
+        }
+        // Small nudge for gradual convergence
+        simulation.wake(0.1);
       } else {
         // 点击（非拖拽）：检测双击
         const now = Date.now();
