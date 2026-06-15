@@ -131,6 +131,34 @@ function loadApp() {
   }
 }
 
+/**
+ * Parse a molio:// protocol URL and navigate the Electron window accordingly.
+ * Supported formats:
+ *   molio://open?vault=<vaultId>&file=<filePath> — navigate to KB page and open file
+ *   molio://launch — just bring window to front (no navigation)
+ */
+function navigateFromProtocolUrl(protocolUrl) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+
+  try {
+    const url = new URL(protocolUrl);
+    const action = url.hostname; // 'open' or 'launch'
+
+    if (action === 'open') {
+      const vaultId = url.searchParams.get('vault');
+      const filePath = url.searchParams.get('file');
+      if (vaultId && filePath) {
+        const target = `http://localhost:3100/knowledge?vault=${encodeURIComponent(vaultId)}&file=${encodeURIComponent(filePath)}`;
+        log('info', 'main', `navigating to ${target}`);
+        mainWindow.loadURL(target);
+      }
+    }
+    // 'launch' action: no navigation needed, window already restored+focused
+  } catch (e) {
+    log('error', 'main', `Failed to parse protocol URL: ${protocolUrl}`);
+  }
+}
+
 // ─── App info IPC (sync, used by preload) ───
 
 ipcMain.on('app:get-info', (event) => {
@@ -182,10 +210,12 @@ if (!singleLock) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
     }
-    // Log the command line for debugging
-    const url = commandLine.find(arg => arg.startsWith('molio://'));
-    if (url) {
-      log('info', 'main', `second-instance triggered via ${url}`);
+    // Handle molio:// protocol URL for navigation
+    // Format: molio://open?vault=<vaultId>&file=<filePath>
+    const protocolUrl = commandLine.find(arg => arg.startsWith('molio://'));
+    if (protocolUrl) {
+      log('info', 'main', `second-instance triggered via ${protocolUrl}`);
+      navigateFromProtocolUrl(protocolUrl);
     }
   });
 }
@@ -218,17 +248,20 @@ app.whenReady().then(async () => {
       // The UI will show connection errors, but updates still work.
     }
 
-    // ④ Only load the real app URL AFTER daemon is ready.
-    // Previously loadURL was called in createWindow() before daemon
-    // started, causing 404/ECONNREFUSED on slower machines.
-    loadApp();
+    // ④ Load the real app URL, or navigate to molio:// target if launched from protocol
+    const protocolUrl = process.argv.find(arg => arg.startsWith('molio://'));
+    if (protocolUrl) {
+      navigateFromProtocolUrl(protocolUrl);
+    } else {
+      loadApp();
+    }
   }
 
   // macOS: handle open-url when app is not running
   app.on('open-url', (event, url) => {
     event.preventDefault();
     log('info', 'main', `open-url: ${url}`);
-    // molio:// is only used for launching; the URL itself has no special meaning
+    navigateFromProtocolUrl(url);
   });
 
   app.on('activate', () => {

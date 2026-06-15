@@ -3,11 +3,13 @@
  * Now with: workspace tab system + right-click context menu + inline rename.
  */
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import type { TreeNode } from '@molio/contracts';
 import { useKnowledge } from '../../hooks/useKnowledge';
 import { useWikiChat } from '../../hooks/useWikiChat';
 import { useKbTabs } from '../../hooks/useKbTabs';
+import { vaultStore } from '../../stores/vaultStore';
 import { KbFilePanel } from './KbFilePanel';
 import { KbMainContent } from './KbMainContent';
 import { WikiChatPanel } from './WikiChatPanel';
@@ -22,7 +24,34 @@ interface KnowledgeBasePageProps {
 export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
   const kb = useKnowledge();
   const tabs = useKbTabs();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [showChatPanel, setShowChatPanel] = useState(false);
+
+  // Handle ?vault=<vaultId>&file=<filePath> query params for external navigation
+  // (e.g. from molio:// protocol triggered by Chrome extension after clip save)
+  const urlNavHandledRef = useRef(false);
+  useEffect(() => {
+    if (urlNavHandledRef.current) return;
+    const vaultId = searchParams.get('vault');
+    const filePath = searchParams.get('file');
+    if (!vaultId || !filePath) return;
+    if (kb.vaults.length === 0) return; // vaults not loaded yet
+
+    urlNavHandledRef.current = true;
+    // Select the vault from query param
+    vaultStore.setActiveVaultId(vaultId);
+    // Wait for tree to load, then select the file
+    const checkAndSelect = () => {
+      if (kb.tree.length > 0) {
+        kb.selectFile(filePath);
+      } else {
+        setTimeout(checkAndSelect, 300);
+      }
+    };
+    setTimeout(checkAndSelect, 500);
+    // Clear query params after handling (keeps URL clean)
+    setSearchParams({}, { replace: true });
+  }, [searchParams, kb.vaults, kb.tree, kb.selectFile, setSearchParams]);
 
   // Context menu state
   const [ctxMenu, setCtxMenu] = useState<{ node: TreeNode; x: number; y: number } | null>(null);
