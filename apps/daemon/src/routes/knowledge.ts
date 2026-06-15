@@ -30,6 +30,8 @@ import {
   writeFile,
   deleteFile,
   createDirectory,
+  deleteDirectory,
+  renamePath,
   ensureVaultDir,
 } from '../core/knowledge.js';
 import type { RunManager } from '../core/RunManager.js';
@@ -179,6 +181,35 @@ export function knowledgeRoutes(db: Database.Database, runManager: RunManager): 
     }
   });
 
+  // PUT /api/knowledge/vaults/:id/files/* — rename a file
+  app.put('/vaults/:id/files/*', async (c) => {
+    const vault = getVault(db, c.req.param('id'));
+    if (!vault) {
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
+    }
+
+    const fullPath = c.req.path;
+    const prefix = `/api/knowledge/vaults/${vault.id}/files/`;
+    const relPath = decodeURIComponent(fullPath.slice(prefix.length));
+
+    if (!relPath) {
+      return c.json({ error: { code: 'BAD_REQUEST', message: 'File path is required' } }, 400);
+    }
+
+    try {
+      const body = await c.req.json<{ newPath: string }>();
+      if (!body.newPath) {
+        return c.json({ error: { code: 'BAD_REQUEST', message: 'newPath is required' } }, 400);
+      }
+      renamePath(vault.path, relPath, body.newPath);
+      addKbHistory(db, vault.id, 'edit', `Renamed "${relPath}" → "${body.newPath}"`);
+      return c.json({ ok: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to rename file';
+      return c.json({ error: { code: 'INTERNAL', message } }, 500);
+    }
+  });
+
   // ─── Raw file serving (for images, PDFs, etc.) ───
 
   // GET /api/knowledge/vaults/:id/raw/* — serve raw file with proper Content-Type
@@ -229,6 +260,31 @@ export function knowledgeRoutes(db: Database.Database, runManager: RunManager): 
       return c.json({ ok: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to create directory';
+      return c.json({ error: { code: 'INTERNAL', message } }, 500);
+    }
+  });
+
+  // DELETE /api/knowledge/vaults/:id/dirs/* — delete a directory
+  app.delete('/vaults/:id/dirs/*', (c) => {
+    const vault = getVault(db, c.req.param('id'));
+    if (!vault) {
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
+    }
+
+    const fullPath = c.req.path;
+    const prefix = `/api/knowledge/vaults/${vault.id}/dirs/`;
+    const relPath = decodeURIComponent(fullPath.slice(prefix.length));
+
+    if (!relPath) {
+      return c.json({ error: { code: 'BAD_REQUEST', message: 'Directory path is required' } }, 400);
+    }
+
+    try {
+      deleteDirectory(vault.path, relPath);
+      addKbHistory(db, vault.id, 'edit', `Directory "${relPath}" deleted`);
+      return c.body(null, 204);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to delete directory';
       return c.json({ error: { code: 'INTERNAL', message } }, 500);
     }
   });

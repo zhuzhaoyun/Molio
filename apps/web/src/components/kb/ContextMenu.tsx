@@ -1,16 +1,18 @@
 /**
- * 通用右键上下文菜单组件
- * 使用 Portal 渲染到 document.body，避免被 overflow: hidden 裁剪
+ * Floating context menu for right-click actions on file tree nodes.
  */
 
 import { useEffect, useRef } from 'react';
 
 export interface MenuItem {
-  label: string;
-  icon?: string;
-  onClick: () => void;
-  disabled?: boolean;
+  label?: string;
+  /** Render as a separator when true */
+  divider?: boolean;
+  onClick?: () => void;
+  /** Red text for destructive actions */
   danger?: boolean;
+  /** Disabled (greyed out) */
+  disabled?: boolean;
 }
 
 interface ContextMenuProps {
@@ -22,7 +24,7 @@ interface ContextMenuProps {
 export function ContextMenu({ items, position, onClose }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // ESC 关闭
+  // ESC to close
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -34,7 +36,7 @@ export function ContextMenu({ items, position, onClose }: ContextMenuProps) {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
-  // 点击外部关闭
+  // Click outside to close — delay binding to avoid the right-click event itself
   useEffect(() => {
     let listenerAdded = false;
     const handleClick = (e: MouseEvent) => {
@@ -42,7 +44,6 @@ export function ContextMenu({ items, position, onClose }: ContextMenuProps) {
         onClose();
       }
     };
-    // 延迟绑定避免右键点击时立即触发关闭
     const timer = setTimeout(() => {
       document.addEventListener('click', handleClick);
       listenerAdded = true;
@@ -55,9 +56,21 @@ export function ContextMenu({ items, position, onClose }: ContextMenuProps) {
     };
   }, [onClose]);
 
-  // 视口边界检测
+  // Also close on scroll or window resize
+  useEffect(() => {
+    const close = () => onClose();
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [onClose]);
+
+  // Viewport edge detection
   const menuWidth = 180;
-  const menuHeight = items.length * 32 + 8;
+  const itemHeight = 28;
+  const menuHeight = items.length * itemHeight + 8;
   const x = position.x + menuWidth > window.innerWidth ? position.x - menuWidth : position.x;
   const y = position.y + menuHeight > window.innerHeight ? position.y - menuHeight : position.y;
 
@@ -69,23 +82,25 @@ export function ContextMenu({ items, position, onClose }: ContextMenuProps) {
         style={{ left: x, top: y }}
         onClick={(e) => e.stopPropagation()}
       >
-        {items.map((item, i) => (
-          <button
-            key={i}
-            type="button"
-            className={`ctx-menu-item ${item.danger ? 'is-danger' : ''} ${item.disabled ? 'is-disabled' : ''}`}
-            onClick={() => {
-              if (!item.disabled) {
-                item.onClick();
+        {items.map((item, i) => {
+          if (item.divider) {
+            return <div key={i} className="ctx-menu-divider" />;
+          }
+          return (
+            <button
+              key={i}
+              type="button"
+              className={`ctx-menu-item${item.danger ? ' is-danger' : ''}${item.disabled ? ' is-disabled' : ''}`}
+              disabled={item.disabled}
+              onClick={() => {
+                item.onClick?.();
                 onClose();
-              }
-            }}
-            disabled={item.disabled}
-          >
-            {item.icon && <span className="ctx-menu-icon">{item.icon}</span>}
-            <span className="ctx-menu-label">{item.label}</span>
-          </button>
-        ))}
+              }}
+            >
+              {item.label}
+            </button>
+          );
+        })}
       </div>
     </div>
   );

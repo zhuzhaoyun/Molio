@@ -53,8 +53,17 @@ interface UseKnowledgeReturn {
   setShowAddVault: (show: boolean) => void;
   setShowImport: (show: boolean) => void;
 
+  // File operations
+  createFile: (relPath: string, content?: string) => Promise<void>;
+  createFolder: (relPath: string) => Promise<void>;
+  deleteFile: (relPath: string) => Promise<void>;
+  deleteFolder: (relPath: string) => Promise<void>;
+  renameFile: (oldPath: string, newPath: string) => Promise<void>;
+  saveFile: (relPath: string, content: string) => Promise<void>;
+
   // Typeset actions
   toggleTypesetMode: () => void;
+  setTypesetMode: (on: boolean) => void;
   setThemeConfig: (config: ThemeConfig) => void;
   setEditedContent: (content: string) => void;
   copyToClipboard: () => Promise<void>;
@@ -278,9 +287,80 @@ export function useKnowledge(): UseKnowledgeReturn {
       .catch(() => {});
   }, [activeVaultId]);
 
+  // File operations
+  const createFile = useCallback(async (relPath: string, content = '') => {
+    if (!activeVaultId) return;
+    await api.writeFile(activeVaultId, relPath, content);
+    // Refresh tree and select the new file
+    const t = await api.getFileTree(activeVaultId);
+    setTree(t);
+    setSelectedFile(relPath);
+  }, [activeVaultId]);
+
+  const createFolder = useCallback(async (relPath: string) => {
+    if (!activeVaultId) return;
+    await api.createDirectory(activeVaultId, relPath);
+    const t = await api.getFileTree(activeVaultId);
+    setTree(t);
+  }, [activeVaultId]);
+
+  const deleteFile = useCallback(async (relPath: string) => {
+    if (!activeVaultId) return;
+    await api.deleteFile(activeVaultId, relPath);
+    // If the deleted file is currently selected, clear it
+    if (selectedFile === relPath) {
+      setSelectedFile(null);
+      setFileContent(null);
+    }
+    const t = await api.getFileTree(activeVaultId);
+    setTree(t);
+  }, [activeVaultId, selectedFile]);
+
+  const deleteFolder = useCallback(async (relPath: string) => {
+    if (!activeVaultId) return;
+    await api.deleteDirectory(activeVaultId, relPath);
+    // If the selected file is inside the deleted folder, clear it
+    if (selectedFile && (selectedFile === relPath || selectedFile.startsWith(relPath + '/'))) {
+      setSelectedFile(null);
+      setFileContent(null);
+    }
+    const t = await api.getFileTree(activeVaultId);
+    setTree(t);
+  }, [activeVaultId, selectedFile]);
+
+  const renameFile = useCallback(async (oldPath: string, newPath: string) => {
+    if (!activeVaultId) return;
+    await api.renameFile(activeVaultId, oldPath, newPath);
+    // If the renamed file is currently selected, update selection
+    if (selectedFile === oldPath) {
+      setSelectedFile(newPath);
+    }
+    const t = await api.getFileTree(activeVaultId);
+    setTree(t);
+  }, [activeVaultId, selectedFile]);
+
+  const saveFile = useCallback(async (relPath: string, content: string) => {
+    if (!activeVaultId) return;
+    await api.writeFile(activeVaultId, relPath, content);
+    // Update the cached fileContent to reflect the saved state
+    setFileContent((prev) => prev && prev.path === relPath
+      ? { ...prev, content, modifiedAt: Date.now() }
+      : prev);
+    // Also clear the editedContent marker so the UI knows we're in sync
+    setEditedContent(null);
+  }, [activeVaultId]);
+
   // Typeset mode actions
   const toggleTypesetMode = useCallback(() => {
     setIsTypesetMode((prev) => !prev);
+  }, []);
+
+  const setTypesetMode = useCallback((on: boolean) => {
+    setIsTypesetMode(on);
+    if (!on) {
+      // When exiting typeset mode, clear the edited content marker
+      setEditedContent(null);
+    }
   }, []);
 
   const handleEditedContentChange = useCallback((content: string) => {
@@ -362,7 +442,14 @@ export function useKnowledge(): UseKnowledgeReturn {
     setShowAddVault,
     setShowImport,
     openVault,
+    createFile,
+    createFolder,
+    deleteFile,
+    deleteFolder,
+    renameFile,
+    saveFile,
     toggleTypesetMode,
+    setTypesetMode,
     setThemeConfig,
     setEditedContent: handleEditedContentChange,
     copyToClipboard,
