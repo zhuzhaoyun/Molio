@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Graph from 'graphology';
-import forceAtlas2 from 'graphology-layout-forceatlas2';
+import { useSimulation } from './useSimulation';
 import Sigma from 'sigma';
 import { NodeCircleProgram } from 'sigma/rendering';
 import { api } from '../../api/client';
@@ -91,6 +91,8 @@ export function GraphPage() {
   const hoveredNodeRef = useRef<string | null>(null);
   const selectedNodeRef = useRef<string | null>(null);
 
+  const simulation = useSimulation();
+
   // Fetch graph data when active vault changes
   useEffect(() => {
     if (!activeVaultId) return;
@@ -156,24 +158,6 @@ export function GraphPage() {
         graph.addEdge(e.source, e.target, { color: EDGE_DEFAULT });
       } catch { /* Edge already exists */ }
     }
-
-    // ForceAtlas2 layout — Sigma.js 官方推荐的高级力导向算法
-    // 自带碰撞避免 + Barnes-Hut O(n log n) 优化 + 自然社区聚类
-    // 参数调优参考 Obsidian Graph View 的紧凑但无重叠效果
-    forceAtlas2.assign(graph, {
-      iterations: 300,
-      settings: {
-        linLogMode: true,        // LinLog 模式：更强的近距离排斥，有效防止重叠
-        outboundAttractionDistribution: true,  // 按出度分配吸引力，避免hub节点拉扯过度
-        barnesHutOptimize: true, // Barnes-Hut 近似，万节点级别性能保障
-        barnesHutTheta: 0.5,     // theta 越小越精确（默认1.2），0.5 适合中小规模
-        edgeWeightInfluence: 0,  // 边权重不影响布局（当前无边权重）
-        scalingRatio: 8,         // 全局缩放比，越大节点间距越大
-        strongGravityMode: false,// 关闭强重力，让外围节点自然散开
-        gravity: 0.5,            // 温和向心力，保持整体紧凑但不挤压
-        slowDown: 1 + Math.log(1 + graph.order), // 自适应减速，大图收敛更稳
-      },
-    });
 
     // ── Node reducer for hover/select ──
     // Obsidian 风格：默认全部显示，hover 时非关联节点变淡
@@ -267,6 +251,10 @@ export function GraphPage() {
 
     sigmaRef.current = renderer;
     renderer.refresh();
+    // Start d3-force physics engine
+    simulation.init(graph, renderer, () => {
+      renderer.refresh();
+    });
 
     // ── Hover events ──
     renderer.on('enterNode', ({ node }) => {
@@ -410,6 +398,7 @@ export function GraphPage() {
     document.addEventListener('mouseup', handleMouseUp);
 
     return () => {
+      simulation.stop();
       container.removeEventListener('mousedown', handleMouseDown);
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
