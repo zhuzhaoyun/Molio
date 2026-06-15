@@ -1,13 +1,53 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import * as os from 'node:os';
 import type { RuntimeAgentDef } from '@molio/contracts';
+
+/**
+ * Load a `.env` file and return key-value pairs.
+ * Minimal parser — handles `KEY=VALUE` lines, ignores comments and blanks.
+ */
+function loadDotEnv(filePath: string): Record<string, string> {
+  const result: Record<string, string> = {};
+  try {
+    const content = fs.readFileSync(filePath, 'utf8');
+    for (const raw of content.split('\n')) {
+      const line = raw.trim();
+      if (!line || line.startsWith('#')) continue;
+      const eq = line.indexOf('=');
+      if (eq <= 0) continue;
+      const key = line.slice(0, eq).trim();
+      let value = line.slice(eq + 1).trim();
+      // Strip surrounding quotes
+      if ((value.startsWith('"') && value.endsWith('"')) ||
+          (value.startsWith("'") && value.endsWith("'"))) {
+        value = value.slice(1, -1);
+      }
+      result[key] = value;
+    }
+  } catch {
+    // File doesn't exist or unreadable — that's fine
+  }
+  return result;
+}
+
+/**
+ * Resolve the config directory for an agent and load its `.env` file.
+ * Convention: ~/.{agentId}/.env  (e.g. ~/.gemini/.env)
+ */
+function loadAgentDotEnv(agentId: string): Record<string, string> {
+  const configDir = path.join(os.homedir(), `.${agentId}`);
+  return loadDotEnv(path.join(configDir, '.env'));
+}
 
 export function buildSpawnEnv(
   def: RuntimeAgentDef,
   baseEnv?: Record<string, string>,
 ): NodeJS.ProcessEnv {
+  // Priority: daemon config > parent process env > agent .env file
+  const agentDotEnv = loadAgentDotEnv(def.id);
   const source = baseEnv ?? (process.env as Record<string, string>);
-  const env: NodeJS.ProcessEnv = { ...source, ...(def.env ?? {}) };
+  const env: NodeJS.ProcessEnv = { ...agentDotEnv, ...source, ...(def.env ?? {}) };
 
   // Inject Molio runtime identity so the agent CLI knows which runtime
   // it is running as (e.g. when the user asks "which runtime is this?").

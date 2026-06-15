@@ -3,8 +3,8 @@
  * Now with: workspace tab system + right-click context menu + inline rename.
  */
 
-import { useCallback, useRef, useState, useMemo, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useCallback, useRef, useState } from 'react';
+import type { TreeNode } from '@molio/contracts';
 import { useKnowledge } from '../../hooks/useKnowledge';
 import { useWikiChat } from '../../hooks/useWikiChat';
 import { useKbTabs } from '../../hooks/useKbTabs';
@@ -12,12 +12,8 @@ import { KbFilePanel } from './KbFilePanel';
 import { KbMainContent } from './KbMainContent';
 import { WikiChatPanel } from './WikiChatPanel';
 import { VaultManagerModal } from './VaultManager';
-import { ImportModal, CoseInstallPrompt } from './KbModals';
+import { ImportModal, CoseInstallPrompt, InputDialog, ConfirmDialog } from './KbModals';
 import { ContextMenu, type MenuItem } from './ContextMenu';
-import { KbTabBar } from './KbTabBar';
-import { api } from '../../api/client';
-import type { TreeNode } from '@molio/contracts';
-import { createPortal } from 'react-dom';
 
 interface KnowledgeBasePageProps {
   agentId: string | null;
@@ -26,7 +22,6 @@ interface KnowledgeBasePageProps {
 export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
   const kb = useKnowledge();
   const tabs = useKbTabs();
-  const location = useLocation();
   const [showChatPanel, setShowChatPanel] = useState(false);
 
   // Context menu state
@@ -34,61 +29,31 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
 
   // Inline rename state
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
-  const [renameValue, setRenameValue] = useState('');
 
-  // Auto-save timer ref
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Save toast state
+  const [saveToast, setSaveToast] = useState<string | null>(null);
+  const saveToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Is Electron?
-  const isElectron = !!window.__electron__;
+  // Input dialog state (replaces window.prompt)
+  const [inputDialog, setInputDialog] = useState<{
+    show: boolean;
+    title: string;
+    label: string;
+    defaultValue: string;
+    placeholder?: string;
+    confirmLabel?: string;
+    onConfirm: (value: string) => void;
+  }>({ show: false, title: '', label: '', defaultValue: '', onConfirm: () => {} });
 
-  // Active tab drives selectedFile
-  const activeTab = tabs.getActiveTab();
-  const activeFilePath = activeTab?.type === 'file' ? (activeTab.data?.path as string) : null;
-  const isEditMode = activeTab?.type === 'file' ? !!activeTab.data?.isEditMode : false;
-  const selectedFile = activeFilePath ?? kb.selectedFile;
-
-  // Close all tabs when vault changes (tabs are vault-specific)
-  const prevVaultIdRef = useRef<string | null>(null);
-  useEffect(() => {
-    const currentVaultId = kb.activeVault?.id ?? null;
-    if (prevVaultIdRef.current !== null && prevVaultIdRef.current !== currentVaultId) {
-      // Vault switched — close all tabs
-      tabs.tabs.forEach((t) => tabs.closeTab(t.id));
-    }
-    prevVaultIdRef.current = currentVaultId;
-  }, [kb.activeVault?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Sync active tab path → kb.selectedFile so useKnowledge loads file content.
-  // This fires on openTab, activateTab, and tab close (when activeTabId changes).
-  useEffect(() => {
-    if (activeFilePath && activeFilePath !== kb.selectedFile) {
-      kb.selectFile(activeFilePath);
-    }
-  }, [activeFilePath]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Handle openFile navigation state (from GraphPage node click)
-  useEffect(() => {
-    const state = location.state as { openFile?: string } | null;
-    if (state?.openFile && kb.activeVault) {
-      const filePath = state.openFile;
-      const tabId = `file:${filePath}`;
-      // Only open if it's not already a tab
-      if (!tabs.tabs.some((t) => t.id === tabId)) {
-        const name = filePath.split('/').pop() || filePath;
-        tabs.openTab({
-          type: 'file',
-          title: name,
-          data: { path: filePath, vaultId: kb.activeVault.id },
-          id: tabId,
-        });
-      } else {
-        tabs.activateTab(tabId);
-      }
-      // Clear state so it doesn't re-trigger
-      window.history.replaceState({}, '', '/knowledge');
-    }
-  }, [location.state, kb.activeVault]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Confirm dialog state (replaces window.confirm)
+  const [confirmDialog, setConfirmDialog] = useState<{
+    show: boolean;
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    danger?: boolean;
+    onConfirm: () => void;
+  }>({ show: false, title: '', message: '', onConfirm: () => {} });
 
   // Wiki chat hook — refreshes tree on build completion
   const wikiChat = useWikiChat({
@@ -162,209 +127,194 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
     }
   }, [wikiChat]);
 
-  // ─── Right-click context menu ───
+  // ─── Save toast helper (defined early — used by callbacks below) ───
 
-  const handleContextMenu = useCallback((node: TreeNode, event: React.MouseEvent) => {
-    setCtxMenu({ node, x: event.clientX, y: event.clientY });
+  const showToast = useCallback((msg: string) => {
+    if (saveToastTimer.current) clearTimeout(saveToastTimer.current);
+    setSaveToast(msg);
+    saveToastTimer.current = setTimeout(() => setSaveToast(null), 2000);
   }, []);
 
-  const handleCloseContextMenu = useCallback(() => {
+  // ─── New file / folder flows (React dialogs instead of window.prompt) ───
+
+  const handleNewFile = useCallback((parentPath?: string) => {
+    if (!kb.activeVault) return;
+    const prefix = parentPath ? `${parentPath}/` : '';
+    setInputDialog({
+      show: true,
+      title: parentPath ? `在 ${parentPath} 下新建文件` : '新建文件',
+      label: '文件名称（含扩展名，如 note.md）',
+      defaultValue: 'untitled.md',
+      confirmLabel: '创建',
+      onConfirm: async (name) => {
+        setInputDialog((prev) => ({ ...prev, show: false }));
+        const fullPath = `${prefix}${name}`;
+        const defaultContent = name.endsWith('.md') ? `# ${name.replace(/\.md$/, '')}\n\n` : '';
+        try {
+          await kb.createFile(fullPath, defaultContent);
+          // Auto-enter typeset (edit) mode for new text files
+          const ext = name.slice(name.lastIndexOf('.')).toLowerCase();
+          const isText = ['.md', '.txt', '.html', '.htm', '.json', '.yaml', '.yml'].includes(ext);
+          if (isText) {
+            kb.setTypesetMode(true);
+          }
+        } catch (err) {
+          showToast(`创建文件失败：${err instanceof Error ? err.message : String(err)}`);
+        }
+      },
+    });
+  }, [kb.activeVault, kb.createFile, kb.setTypesetMode, showToast]);
+
+  const handleNewFolder = useCallback((parentPath?: string) => {
+    if (!kb.activeVault) return;
+    const prefix = parentPath ? `${parentPath}/` : '';
+    setInputDialog({
+      show: true,
+      title: parentPath ? `在 ${parentPath} 下新建文件夹` : '新建文件夹',
+      label: '文件夹名称',
+      defaultValue: '新建文件夹',
+      confirmLabel: '创建',
+      onConfirm: async (name) => {
+        setInputDialog((prev) => ({ ...prev, show: false }));
+        const fullPath = `${prefix}${name}`;
+        try {
+          await kb.createFolder(fullPath);
+        } catch (err) {
+          showToast(`创建文件夹失败：${err instanceof Error ? err.message : String(err)}`);
+        }
+      },
+    });
+  }, [kb.activeVault, kb.createFolder, showToast]);
+
+  const handleCancelInputDialog = useCallback(() => {
+    setInputDialog((prev) => ({ ...prev, show: false }));
+  }, []);
+
+  const handleCancelConfirmDialog = useCallback(() => {
+    setConfirmDialog((prev) => ({ ...prev, show: false }));
+  }, []);
+
+  // ─── Context menu ───
+
+  const handleContextMenu = useCallback((node: TreeNode, e: React.MouseEvent) => {
+    setCtxMenu({ node, x: e.clientX, y: e.clientY });
+  }, []);
+
+  const handleCloseCtxMenu = useCallback(() => {
     setCtxMenu(null);
   }, []);
 
-  const contextMenuItems = useMemo<MenuItem[]>(() => {
+  const getContextMenuItems = useCallback((): MenuItem[] => {
     if (!ctxMenu) return [];
-    const node = ctxMenu.node;
-    const vault = kb.activeVault;
-    const absPath = vault ? `${vault.path.replace(/[\\/]+$/, '')}/${node.path}` : '';
+    const { node } = ctxMenu;
+    const items: MenuItem[] = [];
 
-    const items: MenuItem[] = [
-      {
-        label: '在新标签页中打开',
-        icon: '📑',
+    if (node.type === 'file') {
+      items.push({
+        label: '打开',
+        onClick: () => kb.selectFile(node.path),
+      });
+    } else {
+      // Directory: offer create file / subfolder inside
+      items.push({
+        label: '新建文件',
+        onClick: () => handleNewFile(node.path),
+      });
+      items.push({
+        label: '新建子文件夹',
+        onClick: () => handleNewFolder(node.path),
+      });
+      items.push({ divider: true });
+    }
+
+    items.push({
+      label: '重命名',
+      onClick: () => setRenamingPath(node.path),
+    });
+
+    items.push({ divider: true });
+
+    if (node.type === 'file') {
+      items.push({
+        label: '删除',
+        danger: true,
         onClick: () => {
-          tabs.openTab({
-            type: 'file',
-            title: node.name,
-            data: { path: node.path, vaultId: vault?.id },
-            id: `file:${node.path}`,
+          setConfirmDialog({
+            show: true,
+            title: '删除文件',
+            message: `确定删除文件 "${node.name}"？`,
+            confirmLabel: '删除',
+            danger: true,
+            onConfirm: async () => {
+              setConfirmDialog((prev) => ({ ...prev, show: false }));
+              try {
+                await kb.deleteFile(node.path);
+              } catch (err) {
+                showToast(`删除失败：${err instanceof Error ? err.message : String(err)}`);
+              }
+            },
           });
         },
-      },
-      {
-        label: '复制路径',
-        icon: '📋',
+      });
+    } else {
+      items.push({
+        label: '删除文件夹',
+        danger: true,
         onClick: () => {
-          // 复制绝对路径
-          const absolutePath = vault ? `${vault.path.replace(/[\\/]+$/, '')}/${node.path}` : node.path;
-          navigator.clipboard.writeText(absolutePath);
-        },
-      },
-    ];
-
-    if (isElectron) {
-      items.push(
-        {
-          label: '用外部程序打开',
-          icon: '🔗',
-          onClick: () => {
-            if (absPath) window.__electron__!.openPath(absPath);
-          },
-        },
-        {
-          label: '在资源管理器中显示',
-          icon: '📁',
-          onClick: () => {
-            if (absPath) window.__electron__!.showItemInFolder(absPath);
-          },
-        },
-        {
-          label: '重命名',
-          icon: '✏️',
-          onClick: () => {
-            setRenamingPath(node.path);
-            setRenameValue(node.name);
-          },
-        },
-        {
-          label: '删除',
-          icon: '🗑️',
-          danger: true,
-          onClick: async () => {
-            if (!vault) return;
-            if (!confirm(`确定要删除 "${node.name}" 吗？`)) return;
-            try {
-              await api.deleteFile(vault.id, node.path);
-              // Close tab if open
-              const tabId = `file:${node.path}`;
-              if (tabs.tabs.some((t) => t.id === tabId)) {
-                tabs.closeTab(tabId);
+          setConfirmDialog({
+            show: true,
+            title: '删除文件夹',
+            message: `确定删除文件夹 "${node.name}" 及其所有内容？`,
+            confirmLabel: '删除',
+            danger: true,
+            onConfirm: async () => {
+              setConfirmDialog((prev) => ({ ...prev, show: false }));
+              try {
+                await kb.deleteFolder(node.path);
+              } catch (err) {
+                showToast(`删除失败：${err instanceof Error ? err.message : String(err)}`);
               }
-              kb.refreshTree();
-            } catch (err) {
-              console.error('Delete failed:', err);
-            }
-          },
-        }
-      );
+            },
+          });
+        },
+      });
     }
 
     return items;
-  }, [ctxMenu, kb.activeVault, isElectron, tabs]);
+  }, [ctxMenu, kb, showToast, handleNewFile, handleNewFolder]);
 
-  // ─── Rename handlers ───
+  // ─── Inline rename ───
 
-  const handleRenameSubmit = useCallback(async (oldPath: string, newName: string) => {
-    if (!newName || newName === oldPath.split('/').pop()) {
-      setRenamingPath(null);
-      return;
-    }
-
-    const vault = kb.activeVault;
-    if (!vault) {
-      setRenamingPath(null);
-      return;
-    }
-
-    const dir = oldPath.includes('/') ? oldPath.slice(0, oldPath.lastIndexOf('/') + 1) : '';
-    const newPath = dir + newName;
-    const oldAbs = `${vault.path.replace(/[\\/]+$/, '')}/${oldPath}`;
-    const newAbs = `${vault.path.replace(/[\\/]+$/, '')}/${newPath}`;
-
-    if (isElectron) {
-      try {
-        await window.__electron__!.renameFile(oldAbs, newAbs);
-        // 更新 tab
-        const oldTabId = `file:${oldPath}`;
-        if (tabs.tabs.some((t) => t.id === oldTabId)) {
-          tabs.updateTab(oldTabId, { id: `file:${newPath}`, title: newName });
-        }
-        kb.refreshTree();
-      } catch (err) {
-        alert(`重命名失败: ${err instanceof Error ? err.message : '未知错误'}`);
-      }
-    }
-
+  const handleRenameComplete = useCallback(async (oldPath: string, newName: string) => {
     setRenamingPath(null);
-  }, [kb.activeVault, isElectron, tabs, kb.refreshTree]);
+    // Compute new path: same parent directory, new name
+    const lastSlash = oldPath.lastIndexOf('/');
+    const newPath = lastSlash >= 0 ? `${oldPath.slice(0, lastSlash + 1)}${newName}` : newName;
+    if (newPath === oldPath) return;
+    try {
+      await kb.renameFile(oldPath, newPath);
+    } catch (err) {
+      showToast(`重命名失败：${err instanceof Error ? err.message : String(err)}`);
+    }
+  }, [kb.renameFile, showToast]);
 
   const handleRenameCancel = useCallback(() => {
     setRenamingPath(null);
   }, []);
 
-  // ─── Auto-save on content change ───
+  // ─── Save edited content ───
 
-  const handleContentChange = useCallback((content: string) => {
-    // Update edited content state immediately
-    kb.setEditedContent(content);
-
-    // Debounced auto-save to local file (500ms delay)
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
+  const handleSave = useCallback(async () => {
+    if (!kb.selectedFile || kb.editedContent === null) return;
+    try {
+      await kb.saveFile(kb.selectedFile, kb.editedContent);
+      showToast('已保存');
+    } catch (err) {
+      showToast(`保存失败：${err instanceof Error ? err.message : String(err)}`);
     }
+  }, [kb.selectedFile, kb.editedContent, kb.saveFile, showToast]);
 
-    saveTimerRef.current = setTimeout(async () => {
-      const vault = kb.activeVault;
-      const filePath = selectedFile;
-      if (vault && filePath) {
-        try {
-          await api.writeFile(vault.id, filePath, content);
-        } catch (err) {
-          console.error('Auto-save failed:', err);
-        }
-      }
-    }, 500);
-  }, [kb.setEditedContent, kb.activeVault, selectedFile]);
-
-  // Cleanup timer on file switch or unmount
-  useEffect(() => {
-    return () => {
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
-      }
-    };
-  }, [selectedFile]);
-
-  // ─── Tab activation handler ───
-
-  const handleActivateTab = useCallback((tabId: string) => {
-    tabs.activateTab(tabId);
-    // kb.selectFile sync is handled by the activeFilePath useEffect above
-  }, [tabs]);
-
-  // ─── Left-click file handler ───
-
-  /** Find a file's display name from the tree */
-  const findFileName = useCallback((nodes: typeof kb.tree, target: string): string | null => {
-    for (const node of nodes) {
-      if (node.path === target) return node.name;
-      if (node.children) {
-        const found = findFileName(node.children, target);
-        if (found) return found;
-      }
-    }
-    return null;
-  }, [kb.tree]);
-
-  const handleSelectFile = useCallback((path: string) => {
-    const tabId = `file:${path}`;
-    const existingTab = tabs.tabs.find((t) => t.id === tabId);
-
-    if (existingTab) {
-      // Tab already exists — just activate it
-      tabs.activateTab(tabId);
-    } else {
-      // Create new tab
-      const name = findFileName(kb.tree, path) || path.split('/').pop() || path;
-      tabs.openTab({
-        type: 'file',
-        title: name,
-        data: { path, vaultId: kb.activeVault?.id },
-        id: tabId,
-      });
-    }
-    // activeFilePath useEffect will sync kb.selectFile automatically
-  }, [tabs, kb.activeVault, kb.tree, findFileName]);
+  const hasUnsavedChanges = kb.editedContent !== null;
 
   const hasVault = !!kb.activeVault;
 
@@ -374,63 +324,43 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
       <KbFilePanel
         width={kb.panelWidth}
         tree={kb.tree}
-        selectedFile={selectedFile}
+        selectedFile={kb.selectedFile}
         searchQuery={kb.searchQuery}
         vaultName={kb.activeVault?.name ?? ''}
         onSearchChange={kb.setSearchQuery}
-        onSelectFile={handleSelectFile}
-        onNewFile={() => {/* TODO: new file flow */}}
-        onNewFolder={() => {/* TODO: new folder flow */}}
+        onSelectFile={kb.selectFile}
+        onNewFile={handleNewFile}
+        onNewFolder={handleNewFolder}
         onVaultClick={() => kb.setShowVaultSwitcher(true)}
         onAddToWiki={hasVault ? handleIngestFile : undefined}
         onBuildWiki={hasVault && !kb.wikiInitialized ? handleBuildWiki : undefined}
         onLintWiki={hasVault && kb.wikiInitialized ? handleLintWiki : undefined}
         onContextMenu={handleContextMenu}
         renamingPath={renamingPath}
-        renameValue={renameValue}
-        onRenameChange={setRenameValue}
-        onRenameSubmit={handleRenameSubmit}
+        onRenameComplete={handleRenameComplete}
         onRenameCancel={handleRenameCancel}
       >
         <div className="kb-resize-handle" onMouseDown={handleResizeStart} />
       </KbFilePanel>
 
       {/* Main Content */}
-      <div className="kb-content-wrapper">
-        {/* Workspace Tab Bar */}
-        <KbTabBar
-          tabs={tabs.tabs}
-          activeTabId={tabs.activeTabId}
-          onActivate={handleActivateTab}
-          onClose={tabs.closeTab}
-        />
-
-        <KbMainContent
-          fileContent={kb.fileContent}
-          selectedFile={selectedFile}
-          vaultId={kb.activeVault?.id ?? null}
-          vaultPath={kb.activeVault?.path ?? null}
-          isTypesetMode={kb.isTypesetMode}
-          themeConfig={kb.themeConfig}
-          wikiInitialized={kb.wikiInitialized}
-          onToggleTypeset={kb.toggleTypesetMode}
-          onThemeConfigChange={kb.setThemeConfig}
-          onContentChange={handleContentChange}
-          onCopy={kb.copyToClipboard}
-          onPublish={kb.publishToChrome}
-          onBuildWiki={handleBuildWiki}
-          showFileName={tabs.tabs.length === 0}
-          isEditMode={isEditMode}
-          onToggleEdit={() => {
-            if (activeTab) {
-              tabs.updateTab(activeTab.id, {
-                data: { ...activeTab.data, isEditMode: !isEditMode },
-              });
-            }
-          }}
-          editedContent={kb.editedContent}
-        />
-      </div>
+      <KbMainContent
+        fileContent={kb.fileContent}
+        selectedFile={kb.selectedFile}
+        vaultId={kb.activeVault?.id ?? null}
+        vaultPath={kb.activeVault?.path ?? null}
+        isTypesetMode={kb.isTypesetMode}
+        themeConfig={kb.themeConfig}
+        wikiInitialized={kb.wikiInitialized}
+        hasUnsavedChanges={hasUnsavedChanges}
+        onToggleTypeset={kb.toggleTypesetMode}
+        onThemeConfigChange={kb.setThemeConfig}
+        onContentChange={kb.setEditedContent}
+        onSave={kb.isTypesetMode ? handleSave : undefined}
+        onCopy={kb.copyToClipboard}
+        onPublish={kb.publishToChrome}
+        onBuildWiki={handleBuildWiki}
+      />
 
       {/* Wiki Chat Panel (right side) */}
       {showChatPanel && (
@@ -470,12 +400,42 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
         onClose={() => kb.setShowCoseInstallPrompt(false)}
       />
 
-      {/* Context Menu */}
-      {ctxMenu &&
-        createPortal(
-          <ContextMenu items={contextMenuItems} position={{ x: ctxMenu.x, y: ctxMenu.y }} onClose={handleCloseContextMenu} />,
-          document.body
-        )}
+      {/* Context menu */}
+      {ctxMenu && (
+        <ContextMenu
+          items={getContextMenuItems()}
+          position={{ x: ctxMenu.x, y: ctxMenu.y }}
+          onClose={handleCloseCtxMenu}
+        />
+      )}
+
+      {/* Save toast */}
+      {saveToast && (
+        <div className="kb-save-toast">{saveToast}</div>
+      )}
+
+      {/* Input dialog (replaces window.prompt) */}
+      <InputDialog
+        show={inputDialog.show}
+        title={inputDialog.title}
+        label={inputDialog.label}
+        defaultValue={inputDialog.defaultValue}
+        placeholder={inputDialog.placeholder}
+        confirmLabel={inputDialog.confirmLabel}
+        onConfirm={inputDialog.onConfirm}
+        onCancel={handleCancelInputDialog}
+      />
+
+      {/* Confirm dialog (replaces window.confirm) */}
+      <ConfirmDialog
+        show={confirmDialog.show}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmLabel={confirmDialog.confirmLabel}
+        danger={confirmDialog.danger}
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={handleCancelConfirmDialog}
+      />
     </div>
   );
 }

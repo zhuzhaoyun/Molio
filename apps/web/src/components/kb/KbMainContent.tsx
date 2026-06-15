@@ -5,6 +5,7 @@
  * - Binary (pdf/docx/pptx): file info card + "open with system app" button
  */
 
+import { useEffect } from 'react';
 import type { FileContent } from '@molio/contracts';
 import type { ThemeConfig } from './MdStylePanel';
 import { MdRenderer } from './MdRenderer';
@@ -39,9 +40,12 @@ interface KbMainContentProps {
   isTypesetMode: boolean;
   themeConfig: ThemeConfig;
   wikiInitialized: boolean;
+  /** Whether the edited content has unsaved changes */
+  hasUnsavedChanges?: boolean;
   onToggleTypeset: () => void;
   onThemeConfigChange: (config: ThemeConfig) => void;
   onContentChange: (content: string) => void;
+  onSave?: () => void;
   onCopy: () => void;
   onPublish: () => void;
   onBuildWiki: () => void;
@@ -62,8 +66,10 @@ export function KbMainContent({
   isTypesetMode,
   themeConfig,
   wikiInitialized,
+  hasUnsavedChanges,
   onToggleTypeset,
   onContentChange,
+  onSave,
   onCopy,
   onPublish,
   onBuildWiki,
@@ -72,6 +78,19 @@ export function KbMainContent({
   onToggleEdit,
   editedContent,
 }: KbMainContentProps) {
+  // Ctrl+S / Cmd+S to save
+  useEffect(() => {
+    if (!onSave) return;
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        onSave();
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onSave]);
+
   // No file selected — show empty state or wiki CTA
   if (!selectedFile) {
     if (!wikiInitialized) {
@@ -121,9 +140,10 @@ export function KbMainContent({
       {/* Header with filename and action buttons */}
       <div className="kb-main-header">
         <div className="kb-header-left">
-          {showFileName && (
-            <span className="kb-header-filename">{fileName}</span>
-          )}
+          <span className="kb-header-filename">
+            {fileName}
+            {hasUnsavedChanges && <span style={{ color: 'var(--text-muted)', fontWeight: 400, marginLeft: 6 }}>●</span>}
+          </span>
         </div>
         <div className="kb-header-actions">
           {/* Text file actions: edit, copy, publish (typeset mode only), typeset */}
@@ -158,6 +178,16 @@ export function KbMainContent({
               {/* Copy and Publish buttons (only in typeset mode) */}
               {isTypesetMode && (
                 <>
+                  {onSave && (
+                    <button type="button" className="kb-btn" onClick={onSave}>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                        <polyline points="17 21 17 13 7 13 7 21" />
+                        <polyline points="7 3 7 8 15 8" />
+                      </svg>
+                      <span>保存</span>
+                    </button>
+                  )}
                   <button type="button" className="kb-btn" onClick={onCopy}>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
                       <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />

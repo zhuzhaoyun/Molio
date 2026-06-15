@@ -125,17 +125,42 @@ function downloadElectronPrebuilds() {
   // Copy package.json so prebuild-install can determine the module version
   cpSync(join(sqliteSrc, 'package.json'), join(tempDir, 'package.json'));
 
-  try {
-    execSync('npx prebuild-install --runtime electron --target ' + electronVersion + ' --arch ' + process.arch, {
-      cwd: tempDir,
-      stdio: 'pipe',
-      encoding: 'utf-8',
-    });
-  } catch (err) {
+  // Retry up to 3 times with exponential backoff
+  const maxRetries = 3;
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      execSync('npx prebuild-install --runtime electron --target ' + electronVersion + ' --arch ' + process.arch, {
+        cwd: tempDir,
+        stdio: 'pipe',
+        encoding: 'utf-8',
+        env: {
+          ...process.env,
+          // Support npm registry mirror via environment variable
+          ...(process.env.NPM_REGISTRY ? { npm_config_registry: process.env.NPM_REGISTRY } : {}),
+        },
+      });
+      lastError = null;
+      break; // Success
+    } catch (err) {
+      lastError = err;
+      if (attempt < maxRetries) {
+        const delay = attempt * 3000; // 3s, 6s
+        console.warn(`  Attempt ${attempt}/${maxRetries} failed, retrying in ${delay/1000}s...`);
+        execSync(`sleep ${delay / 1000}`, { stdio: 'ignore' });
+      }
+    }
+  }
+
+  if (lastError) {
     rmSync(tempDir, { recursive: true, force: true });
     throw new Error(
-      `Failed to download Electron prebuild for better-sqlite3: ${err.stderr || err.message}\n` +
-      `Ensure prebuild-install is available (npx prebuild-install).`
+      `Failed to download Electron prebuild for better-sqlite3 (after ${maxRetries} retries): ${lastError.stderr || lastError.message}\n` +
+      `Tips:\n` +
+      `  1. 设置代理再重试: export https_proxy=http://127.0.0.1:7890 && export http_proxy=http://127.0.0.1:7890\n` +
+      `  2. 设置 npm 镜像源: export NPM_REGISTRY=https://registry.npmmirror.com\n` +
+      `  3. 手动确认 prebuild-install 可用: npx prebuild-install`
     );
   }
 

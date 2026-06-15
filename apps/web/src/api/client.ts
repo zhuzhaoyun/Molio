@@ -321,12 +321,30 @@ export const api = {
     await fetch(`${BASE}/knowledge/vaults/${vaultId}/files/${encoded}`, { method: 'DELETE' });
   },
 
+  async renameFile(vaultId: string, oldPath: string, newPath: string): Promise<void> {
+    const encoded = encodeURIComponent(oldPath).replace(/%2F/g, '/');
+    const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/files/${encoded}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ newPath }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error?.message ?? `Failed to rename: ${res.status}`);
+    }
+  },
+
   async createDirectory(vaultId: string, dirPath: string): Promise<void> {
     const encoded = encodeURIComponent(dirPath).replace(/%2F/g, '/');
     const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/dirs/${encoded}`, {
       method: 'POST',
     });
     if (!res.ok) throw new Error(`Failed to create directory: ${res.status}`);
+  },
+
+  async deleteDirectory(vaultId: string, dirPath: string): Promise<void> {
+    const encoded = encodeURIComponent(dirPath).replace(/%2F/g, '/');
+    await fetch(`${BASE}/knowledge/vaults/${vaultId}/dirs/${encoded}`, { method: 'DELETE' });
   },
 
   async getKbHistory(vaultId: string, limit = 50): Promise<KbHistoryEntry[]> {
