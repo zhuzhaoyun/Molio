@@ -15,21 +15,7 @@ import { api } from '../../api/client';
 import { useI18n } from '../../i18n';
 import { Minimap } from './Minimap';
 import { useActiveVaultId, vaultStore } from '../../stores/vaultStore';
-
-// ── Types ──
-
-interface GraphNode {
-  key: string;
-  label: string;
-  path: string;
-  linkCount: number;
-  nodeType?: string; // future: document | tag | agent | project | workflow | aiModel
-}
-
-interface GraphEdge {
-  source: string;
-  target: string;
-}
+import type { GraphData } from '@molio/contracts';
 
 // ── Visual constants (Obsidian light theme, matching obsidian.png) ──
 // 浅色背景 + 深色节点，像纸张上的墨点
@@ -45,14 +31,21 @@ const EDGE_HOVER = '#C4B5FD';    // hover 连线：淡紫
 const EDGE_SELECTED = '#8B5CF6'; // 选中连线：紫色
 const LABEL_DEFAULT = '#6B6B6B'; // 标签：灰色
 
-// Node type colours (future: daemon will provide nodeType)
+// Node type colours — matched to wiki directory structure
 const NODE_TYPE_COLORS: Record<string, string> = {
-  document: '#94A3B8',
-  tag: '#22C55E',
-  agent: '#8B5CF6',
-  project: '#3B82F6',
-  workflow: '#F59E0B',
-  aiModel: '#EF4444',
+  document:   '#94A3B8',  // 灰蓝 — 普通文档
+  source:     '#3B82F6',  // 蓝色 — 源文件
+  entity:     '#22C55E',  // 绿色 — 实体
+  concept:    '#8B5CF6',  // 紫色 — 概念
+  comparison: '#F59E0B',  // 橙色 — 对比
+  question:   '#EF4444',  // 红色 — 问答
+  wiki:       '#6B7280',  // 灰色 — 其他 wiki 页面
+  // Legacy types (for backwards compatibility)
+  tag:        '#22C55E',
+  agent:      '#8B5CF6',
+  project:    '#3B82F6',
+  workflow:   '#F59E0B',
+  aiModel:    '#EF4444',
 };
 
 // 节点大小按连接数动态变化
@@ -80,7 +73,7 @@ export function GraphPage() {
 
   // 跟随知识库的活跃 vault，知识库切换时图谱自动切换
   const activeVaultId = useActiveVaultId();
-  const [graphData, setGraphData] = useState<{ nodes: GraphNode[]; edges: GraphEdge[] } | null>(null);
+  const [graphData, setGraphData] = useState<GraphData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -157,6 +150,30 @@ export function GraphPage() {
       try {
         graph.addEdge(e.source, e.target, { color: EDGE_DEFAULT });
       } catch { /* Edge already exists */ }
+    }
+
+    // ── Dead link nodes ──
+    // Render unresolved wikilinks as small semi-transparent nodes
+    if (graphData.deadLinks && graphData.deadLinks.length > 0) {
+      const seen = new Set<string>();
+      for (const dl of graphData.deadLinks) {
+        if (seen.has(dl.targetName)) continue;
+        seen.add(dl.targetName);
+        const deadKey = `__dead__${dl.targetName}`;
+        try {
+          graph.addNode(deadKey, {
+            label: `${dl.targetName} (?)`,
+            path: '',
+            linkCount: 0,
+            nodeType: null,
+            size: 4,
+            color: '#D4D4D4',
+            type: 'circle',
+            x: (Math.random() - 0.5) * initialRadius,
+            y: (Math.random() - 0.5) * initialRadius,
+          });
+        } catch { /* node already exists */ }
+      }
     }
 
     // ── Node reducer for hover/select ──
@@ -478,6 +495,11 @@ export function GraphPage() {
           )}
           {graphData && !loading && (
             <span className="graph-stat graph-stat--edges">{t('graph.edges', { count: edgeCount })}</span>
+          )}
+          {graphData && graphData.deadLinks && graphData.deadLinks.length > 0 && (
+            <span className="graph-stat graph-stat--deadlink" title={`${graphData.deadLinks.length} dead link(s)`}>
+              死链接 {graphData.deadLinks.length}
+            </span>
           )}
         </div>
       </div>
