@@ -371,9 +371,8 @@ export function GraphPage() {
           graph.setNodeAttribute(draggedNode, 'x', graphPos.x);
           graph.setNodeAttribute(draggedNode, 'y', graphPos.y);
         }
-        // Wake simulation — forces propagate to neighbors via spring force,
-        // collision constraint pushes overlapping nodes apart
-        simulation.wake(0.5);
+        // Wake simulation — gentle nudge so only connected nodes react
+        simulation.wake();
         renderer.refresh();
       }
     };
