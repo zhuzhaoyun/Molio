@@ -9,6 +9,8 @@ const errMsg = (err) => (err instanceof Error ? err.message : String(err));
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+const PROTOCOL = 'molio';
+
 let mainWindow = null;
 let daemonProcess = null;
 
@@ -163,6 +165,36 @@ process.on('unhandledRejection', (reason) => {
   // Do NOT exit — keep the updater running
 });
 
+// ─── Single-instance lock + custom protocol ───
+// molio:// custom protocol allows external apps (Chrome extension) to launch Molio
+// when daemon is not running. On Windows, setAsDefaultProtocolClient writes to registry;
+// on macOS, it registers via Launch Services.
+
+const singleLock = app.requestSingleInstanceLock();
+
+if (!singleLock) {
+  app.quit();
+} else {
+  app.on('second-instance', (_event, commandLine) => {
+    // Someone tried to launch via molio:// or double-click while app is running
+    // Restore the existing window
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+    // Log the command line for debugging
+    const url = commandLine.find(arg => arg.startsWith('molio://'));
+    if (url) {
+      log('info', 'main', `second-instance triggered via ${url}`);
+    }
+  });
+}
+
+// Register the custom protocol handler (idempotent — only writes if not already set)
+if (!app.isDefaultProtocolClient(PROTOCOL)) {
+  app.setAsDefaultProtocolClient(PROTOCOL);
+}
+
 // ─── App lifecycle ───
 
 app.whenReady().then(async () => {
@@ -191,6 +223,13 @@ app.whenReady().then(async () => {
     // started, causing 404/ECONNREFUSED on slower machines.
     loadApp();
   }
+
+  // macOS: handle open-url when app is not running
+  app.on('open-url', (event, url) => {
+    event.preventDefault();
+    log('info', 'main', `open-url: ${url}`);
+    // molio:// is only used for launching; the URL itself has no special meaning
+  });
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
