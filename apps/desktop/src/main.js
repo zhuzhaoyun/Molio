@@ -137,27 +137,35 @@ function loadApp() {
 
 /**
  * Parse a molio:// protocol URL and navigate the Electron window accordingly.
+ *
+ * Uses path-style URLs (not query params) because Windows shell mangles `?` and
+ * `&` when passing protocol URLs as command-line arguments.
+ *
  * Supported formats:
- *   molio://open?vault=<vaultId>&file=<filePath> — navigate to KB page and open file
+ *   molio://open/vault/<vaultId>/file/<filePath> — navigate to KB page and open file
  *   molio://launch — just bring window to front (no navigation)
  */
 function navigateFromProtocolUrl(protocolUrl) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
 
   try {
-    const url = new URL(protocolUrl);
-    const action = url.hostname; // 'open' or 'launch'
-
-    if (action === 'open') {
-      const vaultId = url.searchParams.get('vault');
-      const filePath = url.searchParams.get('file');
-      if (vaultId && filePath) {
-        const target = `http://localhost:3100/knowledge?vault=${encodeURIComponent(vaultId)}&file=${encodeURIComponent(filePath)}`;
-        log('info', 'main', `navigating to ${target}`);
-        mainWindow.loadURL(target);
-      }
+    // Parse path-style URL: molio://open/vault/<vaultId>/file/<filePath>
+    const match = protocolUrl.match(/^molio:\/\/open\/vault\/([^/]+)\/file\/(.+)$/);
+    if (match) {
+      const vaultId = decodeURIComponent(match[1]);
+      const filePath = decodeURIComponent(match[2]);
+      const target = `http://localhost:3100/knowledge?vault=${encodeURIComponent(vaultId)}&file=${encodeURIComponent(filePath)}`;
+      log('info', 'main', `navigating to ${target}`);
+      mainWindow.loadURL(target);
+      return;
     }
-    // 'launch' action: no navigation needed, window already restored+focused
+
+    // molio://launch — no navigation needed, window already restored+focused
+    if (protocolUrl.startsWith('molio://launch')) {
+      return;
+    }
+
+    log('warn', 'main', `Unrecognized protocol URL: ${protocolUrl}`);
   } catch (e) {
     log('error', 'main', `Failed to parse protocol URL: ${protocolUrl}`);
   }
