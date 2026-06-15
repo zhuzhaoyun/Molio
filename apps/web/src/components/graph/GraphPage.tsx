@@ -423,13 +423,13 @@ export function GraphPage() {
       isDragging = false;
     };
 
-    container.addEventListener('mousedown', handleMouseDown);
+    container.addEventListener('mousedown', handleMouseDown, { capture: true });
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
 
     return () => {
       simulation.stop();
-      container.removeEventListener('mousedown', handleMouseDown);
+      container.removeEventListener('mousedown', handleMouseDown, { capture: true });
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
 
