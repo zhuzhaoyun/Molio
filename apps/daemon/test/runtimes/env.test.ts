@@ -1,5 +1,8 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as os from 'node:os';
 import { buildSpawnEnv } from '../../src/core/runtimes/env.js';
 import type { RuntimeAgentDef } from '@molio/contracts';
 
@@ -282,6 +285,78 @@ describe('buildSpawnEnv', () => {
       const env = buildSpawnEnv(def, {});
 
       assert.equal(env['CLAUDE_CODE_GIT_BASH_PATH'], undefined);
+    });
+  });
+
+  describe('agent .env file loading', () => {
+    const testAgentId = '_molio_test_agent';
+    const configDir = path.join(os.homedir(), `.${testAgentId}`);
+    const envFile = path.join(configDir, '.env');
+
+    afterEach(() => {
+      // Clean up test config directory
+      try { fs.rmSync(configDir, { recursive: true, force: true }); } catch { /* ignore */ }
+    });
+
+    it('should load vars from ~/.{agentId}/.env', () => {
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(envFile, 'TEST_API_KEY=sk-test-123\nTEST_MODEL=gpt-4\n');
+
+      const def = makeDef({ id: testAgentId });
+      const env = buildSpawnEnv(def, {});
+
+      assert.equal(env['TEST_API_KEY'], 'sk-test-123');
+      assert.equal(env['TEST_MODEL'], 'gpt-4');
+    });
+
+    it('should let process.env override .env file', () => {
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(envFile, 'SHARED_KEY=from-dotenv\n');
+
+      const def = makeDef({ id: testAgentId });
+      const env = buildSpawnEnv(def, { SHARED_KEY: 'from-process' });
+
+      assert.equal(env['SHARED_KEY'], 'from-process');
+    });
+
+    it('should let def.env override both .env and process.env', () => {
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(envFile, 'MY_KEY=from-dotenv\n');
+
+      const def = makeDef({ id: testAgentId, env: { MY_KEY: 'from-def' } });
+      const env = buildSpawnEnv(def, { MY_KEY: 'from-process' });
+
+      assert.equal(env['MY_KEY'], 'from-def');
+    });
+
+    it('should handle quoted values in .env', () => {
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(envFile, 'QUOTED_DOUBLE="hello world"\nQUOTED_SINGLE=\'single quoted\'\n');
+
+      const def = makeDef({ id: testAgentId });
+      const env = buildSpawnEnv(def, {});
+
+      assert.equal(env['QUOTED_DOUBLE'], 'hello world');
+      assert.equal(env['QUOTED_SINGLE'], 'single quoted');
+    });
+
+    it('should skip comments and blank lines', () => {
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(envFile, '# this is a comment\n\nKEY_A=1\n  # another comment\nKEY_B=2\n');
+
+      const def = makeDef({ id: testAgentId });
+      const env = buildSpawnEnv(def, {});
+
+      assert.equal(env['KEY_A'], '1');
+      assert.equal(env['KEY_B'], '2');
+      assert.equal(env['# this is a comment'], undefined);
+    });
+
+    it('should not fail when .env does not exist', () => {
+      const def = makeDef({ id: testAgentId });
+      const env = buildSpawnEnv(def, { SAFE: 'yes' });
+
+      assert.equal(env['SAFE'], 'yes');
     });
   });
 });
