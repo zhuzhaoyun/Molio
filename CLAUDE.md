@@ -38,9 +38,21 @@ apps/
       hooks/    useAgents, useChat, useProjects
       components/ HomePage, NavRail, ChatPane, ChatComposer, UserMessage, AssistantMessage, ThinkingBlock, ToolCard, graph/(GraphPage, Minimap)
       styles/   tokens, base, rail, home, chat, graph
-    e2e/        E2E 测试
-      *.spec.ts Playwright 测试文件
-      scenarios/ kimi-webbridge 场景文档 (非自动化测试)
+    e2e/        E2E 测试 (Playwright, 覆盖全量主流程)
+      helpers/  mock-sse.ts (SSE mock), navigation.ts, cleanup.ts
+      bootstrap.spec.ts    应用启动 & 首屏
+      chat-single.spec.ts  单轮对话 (发送 → SSE → 渲染)
+      chat-multi.spec.ts   多轮对话 & 新建对话
+      chat-streaming.spec.ts SSE 事件渲染 (thinking/tool/error)
+      navigation.spec.ts   页面导航可达性
+      history.spec.ts      对话历史 & 恢复
+      knowledge.spec.ts    知识库文件浏览
+      settings.spec.ts     设置 & 语言切换
+      channels.spec.ts     渠道页面
+      graph.spec.ts        知识图谱
+      *-form.spec.ts       vault 创建表单
+      *-flow.spec.ts       发布流程回归
+      scenarios/           kimi-webbridge 场景文档 (非自动化)
   desktop/      @molio/desktop   — Electron shell (→ CLAUDE.md)
     test/       测试用例 (node:test)
       updater/  retry, updater-state-machine, updater-structure
@@ -159,6 +171,29 @@ page.locator('[data-testid="create-vault-btn"]')
 ```
 
 **开发习惯**：改完 UI 顺手跑 `npx playwright test --ui`，有红的同步修 locator，全绿再提交。
+
+#### E2E 覆盖范围与核心流程保护
+
+E2E 测试覆盖以下核心主流程，**任何改动这些区域的 PR 必须确保 E2E 全部通过**：
+
+| Spec 文件 | 覆盖功能 | 保护的核心流程 |
+|-----------|---------|--------------|
+| `bootstrap.spec.ts` | 应用启动 & 首屏 | 应用能正常加载，landing page 渲染 |
+| `chat-single.spec.ts` | 单轮对话 | 发送消息 → SSE 流式响应 → 渲染完成 |
+| `chat-multi.spec.ts` | 多轮对话 & 新建 | 多轮上下文 → 新建对话重置 |
+| `chat-streaming.spec.ts` | SSE 事件渲染 | thinking block, tool use, error 渲染 |
+| `navigation.spec.ts` | 页面导航 | 所有 7 个页面可达 |
+| `history.spec.ts` | 对话历史 | 历史列表 → 恢复对话 |
+| `knowledge.spec.ts` | 知识库 | vault 选择 → 文件浏览 → 内容查看 |
+| `settings.spec.ts` | 设置 | 语言切换 |
+| `channels.spec.ts` | 渠道 | 渠道列表 → 面板切换 |
+| `graph.spec.ts` | 知识图谱 | 图谱页面渲染 |
+| `create-vault-form.spec.ts` | vault 创建表单 | 表单交互 → API 调用 |
+| `publish-flow.spec.ts` | 发布流程 | 排版 → 发布按钮 |
+
+**Mock SSE 策略**：聊天测试使用 `page.route()` 拦截 daemon API，返回预设 SSE 事件流，无需真实 agent。核心 helper 在 `e2e/helpers/mock-sse.ts`。
+
+**data-testid 约定**：关键交互元素使用 `data-testid` 属性（`composer-input`, `composer-send`, `new-chat-btn`, `user-message`, `assistant-message`, `assistant-prose`, `usage-footer`, `thinking-block`），修改这些组件时必须保留 testid。
 
 #### 典型开发流程
 
@@ -346,7 +381,35 @@ chore(ci): add workflow_dispatch for manual builds
 2. **等待 Review**：至少需要 1 个 approve 才能合并（除非紧急情况）
 3. **解决冲突**：如果 PR 与 main 有冲突，必须 rebase 解决
 4. **CI 通过**：确保所有 CI 检查通过后再合并
-5. **Squash 合并**：多个 commit 的 PR 建议 squash 成一个有意义的 commit
+5. **E2E 门禁**：触及核心流程组件（HomePage, ChatComposer, UserMessage, AssistantMessage, ThinkingBlock, NavRail 等）的 PR，必须运行 `cd apps/web && npx playwright test` 并确认全绿。E2E 失败的 PR **禁止合并**，除非失败原因是已知的环境问题（如 daemon 未启动）
+6. **Squash 合并**：多个 commit 的 PR 建议 squash 成一个有意义的 commit
+
+#### 核心流程变更的 E2E 检查清单
+
+当 PR 修改以下文件时，**强制要求**在提交前运行全量 E2E：
+
+```
+apps/web/src/components/HomePage.tsx
+apps/web/src/components/ChatComposer.tsx
+apps/web/src/components/UserMessage.tsx
+apps/web/src/components/AssistantMessage.tsx
+apps/web/src/components/ThinkingBlock.tsx
+apps/web/src/components/ToolCard.tsx
+apps/web/src/components/NavRail.tsx
+apps/web/src/hooks/useChat.ts
+apps/web/src/hooks/useChatCore.ts
+apps/web/src/api/client.ts
+apps/web/src/api/sse.ts
+apps/web/src/App.tsx
+apps/daemon/src/routes/runs.ts
+apps/daemon/src/routes/events.ts
+apps/daemon/src/core/RunManager.ts
+```
+
+快速检查命令：
+```bash
+cd apps/web && npx playwright test
+```
 
 ### 管理员权限使用
 

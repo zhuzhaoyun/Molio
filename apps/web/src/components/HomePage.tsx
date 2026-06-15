@@ -67,7 +67,7 @@ export function HomePage({
           </div>
           <div className="home-header-right">
             {!isRunning && (
-              <button type="button" className="icon-only" onClick={onNewChat} title={t('home.newChat')}>
+              <button type="button" data-testid="new-chat-btn" className="icon-only" onClick={onNewChat} title={t('home.newChat')}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="12" y1="5" x2="12" y2="19" />
                   <line x1="5" y1="12" x2="19" y2="12" />
@@ -137,9 +137,9 @@ export function HomePage({
         <div className="home-hero">
           <div className="home-hero__brand">
             <span className="home-hero__brand-mark">墨</span>
-            <span className="home-hero__brand-name">Molio</span>
+            <span className="home-hero__brand-name" data-testid="hero-brand">Molio</span>
           </div>
-          <p className="home-hero__tagline">{t('home.tagline')}</p>
+          <p className="home-hero__tagline" data-testid="hero-tagline">{t('home.tagline')}</p>
         </div>
 
         {/* Composer */}

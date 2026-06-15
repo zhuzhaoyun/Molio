@@ -58,6 +58,7 @@ export function NavRail() {
           className={({ isActive }) =>
             `entry-nav-rail__btn ${isActive ? 'is-active' : ''}`
           }
+          data-view="graph"
           data-tooltip={t('nav.graph')}
         >
           <svg
