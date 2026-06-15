@@ -90,14 +90,14 @@ export function useSimulation(): SimulationAPI {
         'link',
         forceLink<D3Node, D3Link>(d3Links)
           .id((d) => d.id)
-          .distance(120)
-          .strength(0.3),
+          .distance(150)
+          .strength(0.2),
       )
-      .force('charge', forceManyBody<D3Node>().strength(-50).distanceMax(200))
+      .force('charge', forceManyBody<D3Node>().strength(-150).distanceMax(500))
       .force('collide', forceCollide<D3Node>().radius((d) => d.radius + 6))
-      .force('center', forceCenter<D3Node>().strength(0.8))
-      .alphaDecay(0.04)
-      .velocityDecay(0.4)
+      .force('center', forceCenter<D3Node>().strength(0.15))
+      .alphaDecay(0.02)
+      .velocityDecay(0.35)
       .on('tick', () => {
         // Write d3 coordinates back to graphology
         for (const d of d3Nodes) {
@@ -112,7 +112,7 @@ export function useSimulation(): SimulationAPI {
     simRef.current = simulation;
   }, []);
 
-  const wake = useCallback((alpha = 0.2) => {
+  const wake = useCallback((alpha = 0.15) => {
     if (simRef.current) {
       simRef.current.alpha(alpha).restart();
     }
