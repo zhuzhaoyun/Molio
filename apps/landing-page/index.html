@@ -3,7 +3,53 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Molio 墨流 — 你的知识，由你掌控，持续成长</title>
+
+<!-- ========== SEO 核心 ========== -->
+<title>Molio 墨流 — 一体化知识库管理平台 | Obsidian 式 Wiki · 知识图谱 · AI 创作 · 多平台发布</title>
+<meta name="description" content="Molio 墨流是一体化知识管理平台，融合 Obsidian 式本地 Wiki、知识图谱、AI 辅助创作与多平台发布。支持 Markdown 编辑、双向链接、全文检索，让知识收集→沉淀→关联→创作→发布形成完整闭环。">
+<meta name="keywords" content="知识库,知识管理,Obsidian,开源 Wiki,本地知识库,个人知识管理,LLM Wiki,知识图谱,双向链接,Markdown 编辑器,AI 写作,多平台发布,一体化知识管理,笔记软件,第二大脑,知识沉淀,墨流,Molio">
+<meta name="author" content="Molio">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://molio.cn/">
+
+<!-- ========== Open Graph（社交分享） ========== -->
+<meta property="og:title" content="Molio 墨流 — 一体化知识库管理平台 | Obsidian 式 Wiki · 知识图谱 · AI 创作">
+<meta property="og:description" content="本地优先的知识管理平台，融合 Obsidian 式 Wiki 体验、知识图谱可视化、AI 辅助创作与一键多平台发布。你的知识，由你掌控，持续成长。">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://molio.cn/">
+<meta property="og:image" content="https://molio.cn/images/brand.png">
+<meta property="og:image:alt" content="Molio 墨流 — 一体化知识管理平台界面预览">
+<meta property="og:site_name" content="Molio 墨流">
+<meta property="og:locale" content="zh_CN">
+
+<!-- ========== Twitter Card ========== -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Molio 墨流 — 一体化知识库管理平台">
+<meta name="twitter:description" content="本地优先的知识管理平台，融合 Obsidian 式 Wiki、知识图谱、AI 创作与多平台发布。">
+<meta name="twitter:image" content="https://molio.cn/images/brand.png">
+
+<!-- ========== JSON-LD 结构化数据 ========== -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Molio 墨流",
+  "applicationCategory": "KnowledgeManagementApplication",
+  "operatingSystem": "Windows, macOS, Linux",
+  "description": "一体化知识管理平台，融合 Obsidian 式本地 Wiki、知识图谱、AI 辅助创作与多平台发布。",
+  "url": "https://molio.cn/",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "CNY"
+  },
+  "author": {
+    "@type": "Organization",
+    "name": "Molio"
+  }
+}
+</script>
+
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html, body {
@@ -98,6 +144,7 @@ html, body {
 }
 .brand-slogan .highlight {
   color: #8B7355;
+  text-shadow: 0 0 40px rgba(139,115,85,0.15);
 }
 
 .brand-quote {
@@ -536,18 +583,19 @@ html, body {
           <div class="logo-icon">M</div>
           <div class="logo-text">Molio</div>
         </div>
-        <div class="brand-slogan">
+        <h1 class="brand-slogan">
           你的知识，<br>
-          <span class="highlight">由你掌控</span>，持续成长。
-        </div>
+          <span class="highlight">All in One</span>，尽在掌握。
+        </h1>
         <div class="brand-quote">
           知识不是孤岛，而是彼此连接的网络。<br>
-          让每一次阅读、思考与创作，都成为你的一部分。
+          一体化 Obsidian 式 Wiki 知识库，让每一次阅读、思考与创作，都成为你的一部分。
         </div>
         <div class="brand-pills">
+          <span class="brand-pill">🔄 All in One</span>
           <span class="brand-pill">本地优先</span>
-          <span class="brand-pill">知识连接</span>
-          <span class="brand-pill">个性化创作</span>
+          <span class="brand-pill">知识图谱</span>
+          <span class="brand-pill">AI 创作</span>
           <span class="brand-pill">多平台发布</span>
         </div>
         <div class="cycle-bar">
@@ -578,7 +626,7 @@ html, body {
         </div>
       </div>
       <div class="brand-right">
-        <img src="images/brand.png" alt="Molio 品牌图">
+        <img src="images/brand.png" alt="Molio 墨流一体化知识管理平台 — 收集、沉淀、关联、创作、发布五大核心功能界面">
       </div>
     </div>
   </div>
@@ -602,7 +650,7 @@ html, body {
         </ul>
       </div>
       <div class="content-image">
-        <img src="images/kg-collect.png" alt="AI 对话界面">
+        <img src="images/kg-collect.png" alt="Molio 知识收集功能 — AI 对话式知识导入与 Markdown 文件管理界面">
       </div>
     </div>
   </div>
@@ -618,15 +666,15 @@ html, body {
     <div class="content-layout reverse">
       <div class="content-text">
         <h3>让知识在本地<br><span class="accent">深度沉淀</span></h3>
-        <p>收集只是开始，真正的价值在于沉淀。Molio 基于类 LLM_Wiki 的自管理知识库，让你的每一次记录都成为可追溯、可检索、可复用的知识资产。</p>
+        <p>收集只是开始，真正的价值在于沉淀。Molio 提供类似 Obsidian 的本地 Wiki 体验，基于 LLM_Wiki 的自管理知识库，让你的每一次记录都成为可追溯、可检索、可复用的知识资产。</p>
         <ul class="features-list">
-          <li>SQLite 本地数据库，持久化存储知识节点</li>
-          <li>文件树视图 + Markdown 渲染，沉浸式阅读体验</li>
-          <li>全文检索，快速定位所需知识</li>
+          <li>本地 SQLite 数据库，类 Obsidian 的本地知识库存储</li>
+          <li>文件树视图 + Markdown 渲染，沉浸式 Wiki 阅读体验</li>
+          <li>全文检索 + 双向链接，快速定位与关联知识节点</li>
         </ul>
       </div>
       <div class="content-image">
-        <img src="images/kg-build.png" alt="知识库管理">
+        <img src="images/kg-build.png" alt="Molio 知识沉淀 — Obsidian 风格本地 Wiki 文件树与 Markdown 实时预览编辑界面">
       </div>
     </div>
   </div>
@@ -642,7 +690,7 @@ html, body {
     <div class="content-layout">
       <div class="content-text">
         <h3>让知识之间<br><span class="accent">彼此连接</span></h3>
-        <p>知识不是孤岛。Molio 自动构建知识节点之间的关联网络，可视化呈现知识图谱。当你查看一个主题时，相关的知识脉络自然浮现，激发新的思考与灵感。</p>
+        <p>知识不是孤岛。Molio 自动构建知识节点之间的双向链接网络，可视化呈现知识图谱。当你查看一个主题时，相关的知识脉络自然浮现，激发新的思考与灵感，就像 Obsidian 的 Graph View 一样直观。</p>
         <ul class="features-list">
           <li>自动识别知识节点间的关联关系</li>
           <li>可视化知识图谱，直观呈现知识网络</li>
@@ -650,7 +698,7 @@ html, body {
         </ul>
       </div>
       <div class="content-image">
-        <img src="images/kg-graph.png" alt="知识网络图谱">
+        <img src="images/kg-graph.png" alt="Molio 知识关联 — 可视化知识图谱，展示双向链接与知识节点之间的关联网络">
       </div>
     </div>
   </div>
@@ -675,7 +723,7 @@ html, body {
         </ul>
       </div>
       <div class="content-image">
-        <img src="images/main.png" alt="AI 创作对话">
+        <img src="images/main.png" alt="Molio AI 辅助创作 — 基于知识库上下文的 Claude Code 多轮对话写作界面">
       </div>
     </div>
   </div>
@@ -695,13 +743,13 @@ html, body {
     <div class="dual-images" style="max-width: 1100px; margin: 0 auto;">
       <div>
         <div class="dual-image">
-          <img src="images/layout.png" alt="Markdown 排版">
+          <img src="images/layout.png" alt="Molio 内容发布 — doocs/md 排版引擎左右分栏实时预览，支持微信公众号格式化">
         </div>
         <div class="dual-caption">左右分栏实时预览 · 主题字体可调</div>
       </div>
       <div>
         <div class="dual-image">
-          <img src="images/publish.png" alt="多平台发布">
+          <img src="images/publish.png" alt="Molio 一键发布 — 支持微信公众号、知乎、CSDN、掘金等 30+ 内容平台分发">
         </div>
         <div class="dual-caption">一键发布到 30+ 内容平台</div>
       </div>
@@ -713,14 +761,14 @@ html, body {
 <div class="section" id="s7">
   <div class="section-content">
     <div class="closure-layout">
-      <h2 class="section-title">知识循环，<span style="color:#8B7355">生生不息</span></h2>
-      <p class="section-subtitle">从收集到发布，再回到收集——Molio 让知识流动起来</p>
+      <h2 class="section-title">知识循环，<span style="color:#8B7355">All in One</span></h2>
+      <p class="section-subtitle">收集 → 沉淀 → 关联 → 创作 → 发布，一体化完成，让知识流动起来</p>
 
       <div class="closure-ring">
         <div class="ring-bg"></div>
         <div class="ring-center">
           <div class="ring-center-icon">⟲</div>
-          <div class="ring-center-quote">"知识不是孤岛，而是彼此连接的网络。"</div>
+          <div class="ring-center-quote">"All in One — 一个平台，完整闭环。"</div>
           <div class="ring-center-source">— Molio</div>
         </div>
         <div class="ring-node collect">
@@ -766,7 +814,7 @@ html, body {
 
 <div class="autoplay-hint">⏱️ 自动轮播中，点击圆点或按方向键切换</div>
 
-<div class="footer">Molio 墨流 — 你的知识，由你掌控，持续成长</div>
+<div class="footer">Molio 墨流 — All in One 一体化知识管理平台，你的知识，由你掌控，持续成长</div>
 
 <script>
 /* ===================== 柔和粒子动画（暖色调） ===================== */
@@ -930,7 +978,7 @@ document.addEventListener('keydown', (e) => {
 
 <div class="float-qr-wrap">
   <div class="float-qr-img">
-    <img src="images/qrcode.png" alt="用户交流群">
+    <img src="images/qrcode.png" alt="Molio 墨流用户交流群二维码，扫码加入知识管理社区">
   </div>
   <div class="float-qr-caption">加好友交流</div>
 </div>
