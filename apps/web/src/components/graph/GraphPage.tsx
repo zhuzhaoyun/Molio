@@ -177,12 +177,13 @@ export function GraphPage() {
     }
 
     // ── Node reducer for hover/select ──
-    // Obsidian 风格：默认全部显示，hover 时非关联节点变淡
+    // 局部图模式：选中节点后聚焦邻居，非关联节点大幅淡出
     const nodeReducer = (node: string, data: Record<string, unknown>) => {
       const hovered = hoveredNodeRef.current;
       const selected = selectedNodeRef.current;
       const focusNode = hovered ?? selected;
       const isSelected = node === selected;
+      const isFocusMode = !!selected; // true when a node is locked by click
 
       // 无 focus：默认显示所有节点
       if (!focusNode) {
@@ -193,7 +194,7 @@ export function GraphPage() {
         };
       }
 
-      // 当前 hover/选中节点：紫色高亮
+      // 当前 focus 节点：高亮
       if (node === focusNode) {
         const scale = isSelected ? 1.4 : 1.2;
         return {
@@ -206,10 +207,24 @@ export function GraphPage() {
       // 关联节点（邻居）
       const isConnected = graph.hasEdge(focusNode, node) || graph.hasEdge(node, focusNode);
       if (isConnected) {
-        return { ...data, color: (data.color as string) ?? NODE_DEFAULT };
+        return {
+          ...data,
+          color: (data.color as string) ?? NODE_DEFAULT,
+          // 选中模式下邻居保持原始大小
+          size: isFocusMode ? (data.size as number) ?? 6 : undefined,
+        };
       }
 
-      // 非关联节点：变淡但可见（Obsidian 风格，不是完全消失）
+      // 非关联节点：
+      if (isFocusMode) {
+        // 选中模式：大幅淡出（保留位置布局，但视觉上几乎消失）
+        return {
+          ...data,
+          color: '#F0F0F0',
+          size: ((data.size as number) ?? 6) * 0.15,
+        };
+      }
+      // 悬停模式：轻微变淡
       return { ...data, color: '#D4D4D4' };
     };
 
