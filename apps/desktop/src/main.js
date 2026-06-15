@@ -249,9 +249,12 @@ app.whenReady().then(async () => {
     }
 
     // ④ Load the real app URL, or navigate to molio:// target if launched from protocol
-    const protocolUrl = process.argv.find(arg => arg.startsWith('molio://'));
+    log('info', 'main', `process.argv: ${JSON.stringify(process.argv)}`);
+    const protocolUrl = process.argv.find(arg => typeof arg === 'string' && arg.startsWith('molio://'));
     if (protocolUrl) {
-      navigateFromProtocolUrl(protocolUrl);
+      log('info', 'main', `detected protocol URL in argv: ${protocolUrl}`);
+      // Defer navigation slightly to ensure daemon is fully ready
+      setTimeout(() => navigateFromProtocolUrl(protocolUrl), 500);
     } else {
       loadApp();
     }
