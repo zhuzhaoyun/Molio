@@ -295,3 +295,40 @@ jobs:
               exit 1
             fi
           fi
+
+      # ── Add macOS Gatekeeper notice to release body ──
+      - name: Add macOS Gatekeeper notice to release body
+        if: matrix.platform == 'mac' && ! cancelled()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          TAG="v${{ steps.version.outputs.version }}"
+          NOTICE="## ⚠️ macOS 用户必读
+
+          如果打开 Molio 时提示"已损坏，无法打开"，这是 macOS 安全机制（Gatekeeper）的正常提示，
+          因为 Molio 目前未经过 Apple 公证（需要 Apple Developer Program）。
+          **应用本身没有问题**，请按以下方法解决：
+
+          ### 方法一（推荐）
+          在 Finder 中 **右键** 点击 Molio.app → 选择 **"打开"** → 点击 **"打开"** 按钮。
+          （只需操作一次，以后可直接双击打开）
+
+          ### 方法二
+          打开终端，运行以下命令：
+          \`\`\`bash
+          sudo xattr -d com.apple.quarantine /Applications/Molio.app
+          \`\`\`
+
+          ---
+          "
+
+          # Get current body, prepend notice, update
+          BODY=$(gh release view "${TAG}" --repo "${{ github.repository }}" --json body --jq '.body' 2>/dev/null || echo "")
+          if echo "$BODY" | grep -q "macOS 用户必读\|Gatekeeper"; then
+            echo "✓ Release body already has macOS notice — skipping"
+          else
+            echo "Prepending macOS notice to release body..."
+            gh release edit "${TAG}" --repo "${{ github.repository }}" --notes "${NOTICE}${BODY}"
+            echo "✓ macOS notice added to release body"
+          fi

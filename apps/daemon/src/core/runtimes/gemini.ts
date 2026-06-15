@@ -13,7 +13,12 @@ export const geminiAgentDef: RuntimeAgentDef = {
   ],
 
   buildArgs: (_prompt, options = {}) => {
-    const args: string[] = [];
+    const args: string[] = [
+      '-p', '.', // headless (non-interactive) mode; actual prompt arrives via stdin
+      '--output-format', 'stream-json', // JSONL events on stdout
+      '--yolo', // auto-approve all tool calls (daemon has no human in the loop)
+      '--skip-trust', // bypass workspace trust check (headless/automated environment)
+    ];
     if (options.model && options.model !== 'default') {
       args.push('--model', options.model);
     }

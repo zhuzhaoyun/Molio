@@ -85,7 +85,7 @@ describe('json-event-stream dispatcher', () => {
   describe('gemini events', () => {
     it('should parse init event as status', () => {
       const events = collectEvents('gemini', [
-        JSON.stringify({ type: 'init' }),
+        JSON.stringify({ type: 'init', session_id: 'abc', model: 'gemini-2.5-pro' }),
       ]);
       assert.equal(events.length, 1);
       assert.equal(events[0]!.type, 'status');
@@ -94,9 +94,9 @@ describe('json-event-stream dispatcher', () => {
       }
     });
 
-    it('should parse message event as text_delta', () => {
+    it('should parse assistant message event as text_delta', () => {
       const events = collectEvents('gemini', [
-        JSON.stringify({ type: 'message', content: 'Hello from Gemini' }),
+        JSON.stringify({ type: 'message', role: 'assistant', content: 'Hello from Gemini', delta: true }),
       ]);
       assert.equal(events.length, 1);
       assert.equal(events[0]!.type, 'text_delta');
@@ -105,15 +105,130 @@ describe('json-event-stream dispatcher', () => {
       }
     });
 
-    it('should parse result event as usage', () => {
+    it('should skip user message echo', () => {
       const events = collectEvents('gemini', [
-        JSON.stringify({ type: 'result', usage: { input_tokens: 200, output_tokens: 80 } }),
+        JSON.stringify({ type: 'message', role: 'user', content: 'my prompt' }),
       ]);
-      assert.equal(events.length, 1);
-      assert.equal(events[0]!.type, 'usage');
+      assert.equal(events.length, 0);
     });
 
-    it('should parse done event as turn_end', () => {
+    it('should parse tool_use event', () => {
+      const events = collectEvents('gemini', [
+        JSON.stringify({
+          type: 'tool_use',
+          tool_name: 'read_file',
+          tool_id: 'tool-123',
+          parameters: { path: '/tmp/test.txt' },
+        }),
+      ]);
+      assert.equal(events.length, 1);
+      assert.equal(events[0]!.type, 'tool_use');
+      if (events[0]!.type === 'tool_use') {
+        assert.equal(events[0]!.id, 'tool-123');
+        assert.equal(events[0]!.name, 'read_file');
+        assert.deepEqual(events[0]!.input, { path: '/tmp/test.txt' });
+      }
+    });
+
+    it('should parse tool_result event (success)', () => {
+      const events = collectEvents('gemini', [
+        JSON.stringify({
+          type: 'tool_result',
+          tool_id: 'tool-123',
+          status: 'success',
+          output: 'file contents here',
+        }),
+      ]);
+      assert.equal(events.length, 1);
+      assert.equal(events[0]!.type, 'tool_result');
+      if (events[0]!.type === 'tool_result') {
+        assert.equal(events[0]!.toolUseId, 'tool-123');
+        assert.equal(events[0]!.content, 'file contents here');
+        assert.equal(events[0]!.isError, false);
+      }
+    });
+
+    it('should parse tool_result event (error)', () => {
+      const events = collectEvents('gemini', [
+        JSON.stringify({
+          type: 'tool_result',
+          tool_id: 'tool-456',
+          status: 'error',
+          output: '',
+          error: { type: 'TOOL_EXECUTION_ERROR', message: 'permission denied' },
+        }),
+      ]);
+      assert.equal(events.length, 1);
+      assert.equal(events[0]!.type, 'tool_result');
+      if (events[0]!.type === 'tool_result') {
+        assert.equal(events[0]!.toolUseId, 'tool-456');
+        assert.equal(events[0]!.isError, true);
+      }
+    });
+
+    it('should parse error event', () => {
+      const events = collectEvents('gemini', [
+        JSON.stringify({ type: 'error', severity: 'warning', message: 'Rate limit approaching' }),
+      ]);
+      assert.equal(events.length, 1);
+      assert.equal(events[0]!.type, 'error');
+      if (events[0]!.type === 'error') {
+        assert.equal(events[0]!.message, 'Rate limit approaching');
+      }
+    });
+
+    it('should parse result event as usage + turn_end', () => {
+      const events = collectEvents('gemini', [
+        JSON.stringify({
+          type: 'result',
+          status: 'success',
+          stats: {
+            total_tokens: 280,
+            input_tokens: 200,
+            output_tokens: 80,
+            cached: 50,
+            duration_ms: 1234,
+            tool_calls: 0,
+            models: {},
+          },
+        }),
+      ]);
+      assert.equal(events.length, 2);
+      assert.equal(events[0]!.type, 'usage');
+      if (events[0]!.type === 'usage') {
+        assert.equal(events[0]!.usage?.input_tokens, 200);
+        assert.equal(events[0]!.usage?.output_tokens, 80);
+        assert.equal(events[0]!.usage?.cached_read_tokens, 50);
+      }
+      assert.equal(events[1]!.type, 'turn_end');
+      if (events[1]!.type === 'turn_end') {
+        assert.equal(events[1]!.stopReason, 'end_turn');
+      }
+    });
+
+    it('should parse result event with error status', () => {
+      const events = collectEvents('gemini', [
+        JSON.stringify({
+          type: 'result',
+          status: 'error',
+          error: { type: 'API_ERROR', message: 'Quota exceeded' },
+          stats: { total_tokens: 0, input_tokens: 0, output_tokens: 0, cached: 0, duration_ms: 100, tool_calls: 0, models: {} },
+        }),
+      ]);
+      // error + usage (0 is still a number) + turn_end
+      assert.equal(events.length, 3);
+      assert.equal(events[0]!.type, 'error');
+      if (events[0]!.type === 'error') {
+        assert.equal(events[0]!.message, 'Quota exceeded');
+      }
+      assert.equal(events[1]!.type, 'usage');
+      assert.equal(events[2]!.type, 'turn_end');
+      if (events[2]!.type === 'turn_end') {
+        assert.equal(events[2]!.stopReason, 'error');
+      }
+    });
+
+    it('should parse legacy done event as turn_end', () => {
       const events = collectEvents('gemini', [
         JSON.stringify({ type: 'done' }),
       ]);
