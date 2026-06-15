@@ -12,3 +12,6 @@ test-results/
 playwright-report/
 .workbuddy/
 deliverables/
+
+# macOS
+.DS_Store
