@@ -1,6 +1,6 @@
 import { serve } from '@hono/node-server';
 import { execSync } from 'node:child_process';
-import { app, runManager } from './server.js';
+import { app, runManager, weixinService } from './server.js';
 
 const port = Number(process.env['MOLIO_PORT'] ?? 3100);
 
@@ -109,6 +109,7 @@ startServer();
 // Graceful shutdown
 function shutdown(): void {
   console.log('\nShutting down, canceling active runs...');
+  weixinService.stop();
   runManager.cancelAll();
   process.exit(0);
 }

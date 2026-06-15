@@ -1,10 +1,32 @@
 import type {
   AgentInfo, RunInfo, CreateRunRequest, ToolResultRequest,
-  ChatMessage, Project, Conversation,
+  ChatMessage, Project, Conversation, ConversationHistoryItem,
   Vault, TreeNode, FileContent, KbHistoryEntry, CreateVaultRequest,
   WikiStatusResponse, WikiBuildRequest, WikiIngestRequest,
   WikiLintRequest, WikiQueryRequest, WikiSaveRequest, WikiRunResponse,
 } from '@molio/contracts';
+
+export type WeixinLoginStatus = 'idle' | 'waiting_scan' | 'scanned' | 'logged_in' | 'error';
+
+export interface WeixinStatus {
+  enabled: boolean;
+  loginStatus: WeixinLoginStatus;
+  connected: boolean;
+  qrcodeUrl: string;
+  lastError: string | null;
+  lastMessageAt: number | null;
+  activeRunId: string | null;
+  hasCredentials: boolean;
+}
+
+export interface WeixinConfig {
+  enabled?: boolean;
+  baseUrl?: string;
+  cdnBaseUrl?: string;
+  credentialsPath?: string;
+  defaultAgentId?: string;
+  defaultCwd?: string;
+}
 
 const BASE = '/api';
 
@@ -182,6 +204,60 @@ export const api = {
       body: JSON.stringify(config),
     });
     if (!res.ok) throw new Error(`Failed to update agent config: ${res.status}`);
+  },
+
+  async listConversationHistory(): Promise<ConversationHistoryItem[]> {
+    const res = await fetch(`${BASE}/conversations`);
+    if (!res.ok) throw new Error(`Failed to fetch conversation history: ${res.status}`);
+    const data = await res.json();
+    return data.conversations;
+  },
+
+  async getConversation(conversationId: string): Promise<Conversation> {
+    const res = await fetch(`${BASE}/conversations/${conversationId}`);
+    if (!res.ok) throw new Error(`Failed to fetch conversation: ${res.status}`);
+    return res.json();
+  },
+
+  async listConversationMessages(conversationId: string): Promise<ChatMessage[]> {
+    const res = await fetch(`${BASE}/conversations/${conversationId}/messages`);
+    if (!res.ok) throw new Error(`Failed to fetch messages: ${res.status}`);
+    const data = await res.json();
+    return data.messages;
+  },
+
+  async deleteConversationById(conversationId: string): Promise<void> {
+    await fetch(`${BASE}/conversations/${conversationId}`, { method: 'DELETE' });
+  },
+
+  // ─── Weixin ClawBot ───
+
+  async getWeixinStatus(): Promise<WeixinStatus> {
+    const res = await fetch(`${BASE}/weixin/status`);
+    if (!res.ok) throw new Error(`Failed to fetch Weixin status: ${res.status}`);
+    return res.json();
+  },
+
+  async beginWeixinLogin(): Promise<WeixinStatus> {
+    const res = await fetch(`${BASE}/weixin/login`, { method: 'POST' });
+    if (!res.ok) throw new Error(`Failed to start Weixin login: ${res.status}`);
+    return res.json();
+  },
+
+  async updateWeixinConfig(config: WeixinConfig): Promise<WeixinStatus> {
+    const res = await fetch(`${BASE}/weixin/config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    });
+    if (!res.ok) throw new Error(`Failed to update Weixin config: ${res.status}`);
+    return res.json();
+  },
+
+  async disconnectWeixin(): Promise<WeixinStatus> {
+    const res = await fetch(`${BASE}/weixin/disconnect`, { method: 'POST' });
+    if (!res.ok) throw new Error(`Failed to disconnect Weixin: ${res.status}`);
+    return res.json();
   },
 
   // ─── Knowledge Base ───

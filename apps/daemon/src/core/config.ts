@@ -10,11 +10,21 @@ export interface AgentConfig {
   env?: Record<string, string>;
 }
 
+export interface WeixinConfig {
+  enabled?: boolean;
+  baseUrl?: string;
+  cdnBaseUrl?: string;
+  credentialsPath?: string;
+  defaultAgentId?: string;
+  defaultCwd?: string;
+}
+
 export interface AppConfig {
   agents: Record<string, AgentConfig>;
   defaultCwd?: string;
   defaultAgentId?: string;
   locale?: string;
+  weixin?: WeixinConfig;
 }
 
 const DEFAULT_CONFIG: AppConfig = {

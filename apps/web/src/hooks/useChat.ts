@@ -9,7 +9,6 @@
  */
 
 import { useCallback } from 'react';
-import type { ChatMessage as ContractsChatMessage } from '@molio/contracts';
 import { api } from '../api/client';
 import { useChatCore } from './useChatCore';
 import type { ChatMessage } from './useChatCore';
@@ -18,7 +17,6 @@ export type { ChatMessage, ToolEvent } from './useChatCore';
 
 interface UseChatOptions {
   agentId: string | null;
-  projectId?: string | null;
   conversationId?: string | null;
   initialMessages?: ChatMessage[];
   cwd?: string | null;
@@ -27,7 +25,6 @@ interface UseChatOptions {
 export function useChat(options: UseChatOptions | string | null) {
   // Support both old API (useChat(agentId)) and new API (useChat({ agentId, ... }))
   const agentId = typeof options === 'string' || options === null ? options : options.agentId;
-  const projectId = typeof options === 'object' && options !== null ? options.projectId : null;
   const initialConversationId = typeof options === 'object' && options !== null ? options.conversationId : null;
   const cwd = typeof options === 'object' && options !== null ? options.cwd : null;
 
@@ -58,20 +55,6 @@ export function useChat(options: UseChatOptions | string | null) {
         cwd: cwd ?? undefined,
       });
 
-      // Persist user message (best-effort)
-      if (projectId && result.conversationId) {
-        try {
-          await api.saveMessage(projectId, result.conversationId, {
-            id: `msg-persist-${Date.now()}`,
-            role: 'user',
-            content: message,
-            timestamp: Date.now(),
-          } as ContractsChatMessage);
-        } catch {
-          // Persistence failure is non-fatal
-        }
-      }
-
       return result;
     },
   });
@@ -84,7 +67,9 @@ export function useChat(options: UseChatOptions | string | null) {
     convId: string,
   ) => {
     try {
-      const messages = await api.listMessages(projId, convId);
+      const messages = projId
+        ? await api.listMessages(projId, convId)
+        : await api.listConversationMessages(convId);
       const chatMessages: ChatMessage[] = messages.map((m) => ({
         id: m.id,
         role: m.role as 'user' | 'assistant',
@@ -103,6 +88,10 @@ export function useChat(options: UseChatOptions | string | null) {
     }
   }, [core.setMessages]);
 
+  const loadConversationById = useCallback(async (convId: string) => {
+    await loadConversation('', convId);
+  }, [loadConversation]);
+
   return {
     messages: core.messages,
     runId: core.runId,
@@ -113,5 +102,6 @@ export function useChat(options: UseChatOptions | string | null) {
     cancel: core.cancel,
     reset: core.reset,
     loadConversation,
+    loadConversationById,
   };
 }

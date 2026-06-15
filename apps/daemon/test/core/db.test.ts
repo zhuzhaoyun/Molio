@@ -13,6 +13,10 @@ import {
   listConversations,
   createConversation,
   deleteConversation,
+  CHANNELS_PROJECT_ID,
+  createExternalConversation,
+  ensureChannelsProject,
+  getConversationByExternalSession,
   listMessages,
   upsertMessage,
   appendMessageEvent,
@@ -71,6 +75,14 @@ describe('SQLite persistence', () => {
       assert.ok(fetched);
       assert.deepEqual(fetched!.metadata, { key: 'value', count: 42 });
     });
+
+    it('should hide the system channels project from project lists', () => {
+      const systemProject = ensureChannelsProject(db);
+      assert.equal(systemProject.id, CHANNELS_PROJECT_ID);
+
+      const projects = listProjects(db);
+      assert.equal(projects.some((p) => p.id === CHANNELS_PROJECT_ID), false);
+    });
   });
 
   describe('conversations', () => {
@@ -96,6 +108,25 @@ describe('SQLite persistence', () => {
       const conv = createConversation(db, projectId);
       assert.ok(conv.id);
       assert.equal(conv.title, null);
+    });
+
+    it('should create and fetch external channel conversations', () => {
+      const conv = createExternalConversation(db, {
+        channelType: 'weixin',
+        externalSessionId: 'wx-user-1',
+        title: '微信 wx-user-1',
+        metadata: { source: 'test' },
+      });
+
+      assert.equal(conv.projectId, CHANNELS_PROJECT_ID);
+      assert.equal(conv.channelType, 'weixin');
+      assert.equal(conv.externalSessionId, 'wx-user-1');
+      assert.deepEqual(conv.metadata, { source: 'test' });
+
+      const fetched = getConversationByExternalSession(db, 'weixin', 'wx-user-1');
+      assert.ok(fetched);
+      assert.equal(fetched!.id, conv.id);
+      assert.deepEqual(fetched!.metadata, { source: 'test' });
     });
 
     it('should delete conversation (cascades to messages)', () => {

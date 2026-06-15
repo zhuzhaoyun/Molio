@@ -84,8 +84,17 @@ export interface Conversation {
   id: string;
   projectId: string;
   title: string | null;
+  channelType?: string;
+  externalSessionId?: string | null;
+  metadata?: Record<string, unknown>;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface ConversationHistoryItem {
+  conversation: Conversation;
+  lastMessage: ChatMessage | null;
+  messageCount: number;
 }
 
 export interface ProjectListResponse {
@@ -94,6 +103,10 @@ export interface ProjectListResponse {
 
 export interface ConversationListResponse {
   conversations: Conversation[];
+}
+
+export interface ConversationHistoryListResponse {
+  conversations: ConversationHistoryItem[];
 }
 
 export interface MessageListResponse {
