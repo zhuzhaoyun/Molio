@@ -271,7 +271,10 @@ export function GraphPage() {
     // 使用原生鼠标事件处理节点交互；空白区域交给 Sigma 内置画布拖拽/缩放
     let draggedNode: string | null = null;
     let isDragging = false;
+    let lastClickTime = 0;
+    let lastClickNode: string | null = null;
     const DRAG_THRESHOLD = 4;
+    const DBLCLICK_INTERVAL = 350;
     let dragStartMouse = { x: 0, y: 0 };
     const container = containerRef.current;
 
@@ -396,12 +399,24 @@ export function GraphPage() {
         // Small nudge for gradual convergence
         simulation.wake(0.1);
       } else {
-        // 点击（非拖拽）：导航到对应文章
-        const path = graph.getNodeAttribute(node, 'path') as string | undefined;
-        if (path) {
-          navigate('/knowledge', { state: { openFile: path } });
+        // 点击（非拖拽）：检测双击
+        const now = Date.now();
+        const isDoubleClick =
+          node === lastClickNode && now - lastClickTime < DBLCLICK_INTERVAL;
+
+        if (isDoubleClick) {
+          const path = graph.getNodeAttribute(node, 'path') as string | undefined;
+          if (path) {
+            navigate('/knowledge', { state: { openFile: path } });
+          }
+          lastClickTime = 0;
+          lastClickNode = null;
+        } else {
+          selectedNodeRef.current = node;
+          lastClickTime = now;
+          lastClickNode = node;
+          renderer.refresh();
         }
-      }
       }
 
       draggedNode = null;
@@ -489,6 +504,14 @@ export function GraphPage() {
 
         <div ref={containerRef} className="graph-sigma" />
         <Minimap sigma={sigmaRef.current} />
+      </div>
+
+      <div className="graph-hints">
+        <span className="graph-hint">拖拽节点 · 邻居联动</span>
+        <span className="graph-hint-sep">|</span>
+        <span className="graph-hint">单击选中 · 高亮关联</span>
+        <span className="graph-hint-sep">|</span>
+        <span className="graph-hint">双击节点 · 打开文章</span>
       </div>
     </div>
   );
