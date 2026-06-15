@@ -120,10 +120,7 @@ const zh: Record<string, string> = {
   // ── History ──
   'history.title': '历史记录',
   'history.count': '{count} 个会话',
-  'history.tabsLabel': '历史类型',
-  'history.quickAccess': '快捷访问',
   'history.chatHistory': '会话历史',
-  'history.webHistory': '网页历史',
   'history.loading': '加载中…',
   'history.refresh': '刷新',
   'history.empty': '暂无会话记录',

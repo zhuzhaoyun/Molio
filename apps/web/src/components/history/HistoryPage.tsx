@@ -40,19 +40,11 @@ export function HistoryPage({ onOpenConversation }: Props) {
   return (
     <div className="history-shell">
       <header className="history-topbar">
-        <div className="history-tabs" aria-label={t('history.tabsLabel')}>
-          <button type="button" className="history-tab is-muted" disabled>
-            <BookmarkIcon />
-            {t('history.quickAccess')}
-          </button>
-          <button type="button" className="history-tab is-active">
+        <div className="history-title">
+          <span className="history-title__icon">
             <ChatIcon />
-            {t('history.chatHistory')}
-          </button>
-          <button type="button" className="history-tab is-muted" disabled>
-            <GlobeIcon />
-            {t('history.webHistory')}
-          </button>
+          </span>
+          <h1>{t('history.chatHistory')}</h1>
         </div>
         <button className="history-refresh" type="button" onClick={refresh} disabled={loading}>
           {loading ? t('history.loading') : t('history.refresh')}
@@ -109,7 +101,12 @@ function HistoryRow({
         <ChatIcon />
       </span>
       <span className="history-row__body">
-        <span className="history-row__title">{conversation.title || t('history.untitled')}</span>
+        <span className="history-row__title-line">
+          <span className="history-row__title">{conversation.title || t('history.untitled')}</span>
+          <span className={`history-source-badge history-source-badge--${conversation.channelType ?? 'desktop'}`}>
+            {sourceLabel(t, conversation.channelType)}
+          </span>
+        </span>
         <span className="history-row__summary">{lastMessage?.content || t('history.noMessage')}</span>
       </span>
     </button>
@@ -162,21 +159,9 @@ function ChatIcon() {
   );
 }
 
-function BookmarkIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-    </svg>
-  );
-}
-
-function GlobeIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="12" cy="12" r="10" />
-      <path d="M2 12h20" />
-      <path d="M12 2a15 15 0 0 1 0 20" />
-      <path d="M12 2a15 15 0 0 0 0 20" />
-    </svg>
-  );
+function sourceLabel(t: (key: string, params?: Record<string, string | number>) => string, channelType?: string) {
+  if (channelType === 'weixin') return t('history.source.weixin');
+  if (channelType === 'feishu') return t('history.source.feishu');
+  if (channelType === 'wecom') return t('history.source.wecom');
+  return t('history.source.desktop');
 }

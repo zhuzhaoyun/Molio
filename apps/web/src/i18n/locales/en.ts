@@ -120,10 +120,7 @@ const en: Record<string, string> = {
   // ── History ──
   'history.title': 'History',
   'history.count': '{count} conversations',
-  'history.tabsLabel': 'History type',
-  'history.quickAccess': 'Quick Access',
   'history.chatHistory': 'Chat History',
-  'history.webHistory': 'Web History',
   'history.loading': 'Loading…',
   'history.refresh': 'Refresh',
   'history.empty': 'No conversations yet',
