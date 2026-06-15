@@ -225,13 +225,28 @@ if (!singleLock) {
 }
 
 // Register the custom protocol handler (idempotent — only writes if not already set)
-if (!app.isDefaultProtocolClient(PROTOCOL)) {
-  app.setAsDefaultProtocolClient(PROTOCOL);
+// Must be called after app.whenReady() on Windows for registry writes to work.
+// On macOS, setAsDefaultProtocolClient must be called before ready.
+if (process.platform === 'darwin') {
+  if (!app.isDefaultProtocolClient(PROTOCOL)) {
+    app.setAsDefaultProtocolClient(PROTOCOL);
+  }
 }
 
 // ─── App lifecycle ───
 
 app.whenReady().then(async () => {
+  // Register protocol on Windows (must be inside whenReady)
+  if (process.platform !== 'darwin') {
+    if (!app.isDefaultProtocolClient(PROTOCOL)) {
+      const ok = app.setAsDefaultProtocolClient(PROTOCOL);
+      if (ok) {
+        log('info', 'main', `Protocol '${PROTOCOL}://' registered successfully`);
+      } else {
+        log('error', 'main', `Failed to register protocol '${PROTOCOL}://'`);
+      }
+    }
+  }
   // ① Create window first (updater IPC needs getMainWindow reference)
   //    In production this shows splash.html while daemon starts.
   createWindow();
