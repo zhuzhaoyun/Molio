@@ -1,10 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   type CheckResult,
-  onUpdateAvailable,
-  onDownloadProgress,
-  onUpdateDownloaded,
-  onUpdateError,
+  fromUpdaterState,
   onCheckResult,
 } from './updater-state';
 import { useI18n } from '../../i18n';
@@ -22,40 +19,25 @@ export function SettingsPage() {
   const currentVersion = window.__electron__?.appInfo?.version ?? 'dev';
   const isElectron = !!window.updater;
 
-  // Listen for background updater events to reflect live state
+  // Query current updater state first, then subscribe to changes. This keeps
+  // Settings accurate even if the update was downloaded before React mounted.
   useEffect(() => {
     if (!window.updater) return;
 
-    const cv = currentVersion;
-    const cleanups: Array<() => void> = [];
+    let disposed = false;
+    window.updater.getState().then((state) => {
+      if (!disposed) setResult(fromUpdaterState(state));
+    });
 
-    cleanups.push(
-      window.updater.onUpdateAvailable((info) => {
-        setResult((prev) => onUpdateAvailable(prev, info, cv));
-      })
-    );
+    const cleanup = window.updater.onStateChanged((state) => {
+      setResult(fromUpdaterState(state));
+    });
 
-    cleanups.push(
-      window.updater.onDownloadProgress((progress) => {
-        setResult((prev) => onDownloadProgress(prev, progress));
-      })
-    );
-
-    cleanups.push(
-      window.updater.onUpdateDownloaded((info) => {
-        setResult((prev) => onUpdateDownloaded(prev, info, cv));
-      })
-    );
-
-    // Surface background updater errors (network failures, etc.)
-    cleanups.push(
-      window.updater.onUpdateError((info) => {
-        setResult((prev) => onUpdateError(prev, info));
-      })
-    );
-
-    return () => cleanups.forEach((fn) => fn());
-  }, [currentVersion]);
+    return () => {
+      disposed = true;
+      cleanup();
+    };
+  }, []);
 
   const handleCheck = useCallback(async () => {
     if (!window.updater) return;
@@ -133,6 +115,14 @@ export function SettingsPage() {
               </button>
             </div>
           )}
+
+          {result.status === 'installing' && (
+            <div className="settings-ready">
+              <span className="settings-ready__text">
+                {t('settings.readyText', { version: result.latestVersion })}
+              </span>
+            </div>
+          )}
         </section>
       </div>
     </div>
@@ -194,6 +184,13 @@ function UpdateStatus({ result }: { result: CheckResult }) {
           ✓ {t('settings.downloaded')}
         </span>
       );
+    case 'installing':
+      return (
+        <span className="settings-update-card__status settings-update-card__status--checking">
+          <span className="settings-spinner" />
+          {t('settings.checking')}
+        </span>
+      );
     case 'error':
       return (
         <span className="settings-update-card__status settings-update-card__status--error">
@@ -211,7 +208,10 @@ function UpdateButton({
   onCheck: () => void;
 }) {
   const { t } = useI18n();
-  const disabled = result.status === 'checking' || (result.status === 'available' && result.downloading);
+  const disabled =
+    result.status === 'checking' ||
+    result.status === 'installing' ||
+    (result.status === 'available' && result.downloading);
 
   return (
     <button

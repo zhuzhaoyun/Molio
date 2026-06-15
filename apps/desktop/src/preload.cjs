@@ -37,6 +37,11 @@ const desktopAPI = {
 
 // Updater API — event listeners + actions
 const updaterAPI = {
+  onStateChanged: (callback) => {
+    const handler = (_, state) => callback(state);
+    ipcRenderer.on('updater:state-changed', handler);
+    return () => ipcRenderer.removeListener('updater:state-changed', handler);
+  },
   onUpdateAvailable: (callback) => {
     const handler = (_, info) => callback(info);
     ipcRenderer.on('updater:update-available', handler);
@@ -59,6 +64,7 @@ const updaterAPI = {
   },
   installUpdate: () => ipcRenderer.invoke('updater:install'),
   checkForUpdates: () => ipcRenderer.invoke('updater:check'),
+  getState: () => ipcRenderer.invoke('updater:get-state'),
   getLogPath: () => ipcRenderer.invoke('updater:log-path'),
 };
 
