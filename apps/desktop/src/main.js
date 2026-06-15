@@ -11,6 +11,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const PROTOCOL = 'molio';
 
+// Set app name before any other app API calls — this controls the display name
+// shown in Windows protocol association dialogs ("要打开 Molio 吗?").
+app.name = 'Molio';
+
 let mainWindow = null;
 let daemonProcess = null;
 
