@@ -1,5 +1,9 @@
 import { Hono } from 'hono';
+import { stream } from 'hono/streaming';
 import type { RunManager } from '../core/RunManager.js';
+import { getAgentDef } from '../core/runtimes/registry.js';
+import { installAgent } from '../core/runtimes/install.js';
+import type { InstallEvent } from '@molio/contracts';
 
 export function agentsRoutes(runManager: RunManager): Hono {
   const app = new Hono();
@@ -91,6 +95,39 @@ export function agentsRoutes(runManager: RunManager): Hono {
         error: (err as Error).message,
       }, 500);
     }
+  });
+
+  // POST /:agentId/install — one-click install an agent via SSE
+  app.post('/:agentId/install', (c) => {
+    const agentId = c.req.param('agentId');
+    const def = getAgentDef(agentId);
+
+    if (!def) {
+      return c.json({ error: `Unknown agent: ${agentId}` }, 404);
+    }
+    if (!def.installable) {
+      return c.json({ error: `Agent ${agentId} does not support auto-install` }, 400);
+    }
+
+    // Check if already installed
+    const agents = runManager.detectAgents();
+    const agent = agents.find((a) => a.id === agentId);
+    if (agent?.available) {
+      return c.json({ error: `${agentId} is already installed` }, 400);
+    }
+
+    c.header('Content-Type', 'text/event-stream');
+    c.header('Cache-Control', 'no-cache');
+    c.header('Connection', 'keep-alive');
+
+    return stream(c, async (s) => {
+      await installAgent({
+        agentId,
+        onEvent: (event: InstallEvent) => {
+          s.write(`data: ${JSON.stringify(event)}\n\n`);
+        },
+      });
+    });
   });
 
   return app;

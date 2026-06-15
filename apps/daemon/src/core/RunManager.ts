@@ -66,6 +66,7 @@ export class RunManager {
         version,
         models: def.fallbackModels,
         installUrl: def.installUrl,
+        installable: def.installable,
       };
     });
   }

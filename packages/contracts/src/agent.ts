@@ -50,6 +50,13 @@ export interface RuntimeAgentDef {
   env?: Record<string, string>;
 
   installUrl?: string;
+
+  /**
+   * When true, Molio can install this agent automatically via npm
+   * (requires Node.js on the host). The install button replaces the
+   * external install link in the Runtime page.
+   */
+  installable?: boolean;
 }
 
 // ─── Agent detection result ───
@@ -65,4 +72,13 @@ export interface AgentInfo {
   version?: string | null;
   models: RuntimeModelOption[];
   installUrl?: string;
+  installable?: boolean;
+}
+
+// ─── Agent install events (SSE) ───
+
+export interface InstallEvent {
+  type: 'log' | 'done' | 'error' | 'node-check';
+  message: string;
+  exitCode?: number;
 }

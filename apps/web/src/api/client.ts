@@ -1,5 +1,5 @@
 import type {
-  AgentInfo, RunInfo, CreateRunRequest, ToolResultRequest,
+  AgentInfo, InstallEvent, RunInfo, CreateRunRequest, ToolResultRequest,
   ChatMessage, Project, Conversation, ConversationHistoryItem,
   Vault, TreeNode, FileContent, KbHistoryEntry, CreateVaultRequest,
   WikiStatusResponse, WikiBuildRequest, WikiIngestRequest,
@@ -47,6 +47,60 @@ export const api = {
       return { ok: false, elapsed: data.elapsed ?? 0, error: data.error ?? `Test failed: ${res.status}` };
     }
     return res.json();
+  },
+
+  /**
+   * Install an agent via SSE stream. Calls `onEvent` for each progress event.
+   * Returns the final event (done or error).
+   */
+  async installAgent(
+    agentId: string,
+    onEvent: (event: InstallEvent) => void,
+  ): Promise<InstallEvent> {
+    const res = await fetch(`${BASE}/agents/${agentId}/install`, { method: 'POST' });
+    if (!res.ok) {
+      const data = await res.json();
+      const errorEvent: InstallEvent = {
+        type: 'error',
+        message: data.error ?? `Install failed: ${res.status}`,
+      };
+      onEvent(errorEvent);
+      return errorEvent;
+    }
+
+    const reader = res.body?.getReader();
+    if (!reader) {
+      const errorEvent: InstallEvent = { type: 'error', message: 'No response stream' };
+      onEvent(errorEvent);
+      return errorEvent;
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let lastEvent: InstallEvent = { type: 'log', message: '' };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const event: InstallEvent = JSON.parse(line.slice(6));
+            onEvent(event);
+            lastEvent = event;
+          } catch {
+            // Skip malformed SSE frames
+          }
+        }
+      }
+    }
+
+    return lastEvent;
   },
 
   // ─── Runs ───

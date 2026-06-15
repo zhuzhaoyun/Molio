@@ -38,5 +38,6 @@ export const claudeAgentDef: RuntimeAgentDef = {
   streamFormat: 'claude-stream-json',
   multiTurn: true,
 
+  installable: true,
   installUrl: 'https://code.claude.com/docs/en/setup',
 };

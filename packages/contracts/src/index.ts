@@ -7,6 +7,7 @@ export type {
   RuntimeContext,
   AgentDetectSource,
   AgentInfo,
+  InstallEvent,
 } from './agent.js';
 
 export type {

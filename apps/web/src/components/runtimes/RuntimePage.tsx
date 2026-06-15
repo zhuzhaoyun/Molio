@@ -2,6 +2,8 @@ import { useState, type CSSProperties } from 'react';
 import type { AgentInfo, RunInfo } from '@molio/contracts';
 import { useRuntimes } from '../../hooks/useRuntimes';
 import { useI18n, type Locale } from '../../i18n';
+import { InstallButton } from './InstallButton';
+import { ProviderConfig } from './ProviderConfig';
 
 type Tab = 'agents' | 'runs';
 
@@ -90,12 +92,14 @@ function AgentCard({
   testState,
   onTest,
   onSetDefault,
+  onRescan,
 }: {
   agent: AgentInfo;
   isDefault: boolean;
   testState: TestState;
   onTest: () => void;
   onSetDefault: () => void;
+  onRescan: () => void;
 }) {
   const { t } = useI18n();
   const icon = AGENT_ICONS[agent.id] ?? '⚙️';
@@ -139,6 +143,10 @@ function AgentCard({
         )}
         {/* Test result feedback */}
         <TestResult test={testState} />
+        {/* Provider config for installed agents (Claude Code) */}
+        {agent.available && agent.installable && (
+          <ProviderConfig agentId={agent.id} />
+        )}
       </div>
       <div className="rt-agent-card__actions">
         {agent.available && (
@@ -150,7 +158,10 @@ function AgentCard({
             {t('runtimes.test')}
           </button>
         )}
-        {!agent.available && agent.installUrl && (
+        {!agent.available && agent.installable && (
+          <InstallButton agentId={agent.id} onInstalled={onRescan} />
+        )}
+        {!agent.available && !agent.installable && agent.installUrl && (
           <a className="rt-agent-card__install" href={agent.installUrl} target="_blank" rel="noopener noreferrer">
             {t('runtimes.install')}
           </a>
@@ -294,6 +305,7 @@ export function RuntimePage() {
             testStates={testStates}
             onTest={testAgent}
             onSetDefault={setDefaultAgent}
+            onRescan={rescan}
           />
         ) : (
           <RunsView runs={runs} onCancel={cancelRun} />
@@ -310,12 +322,14 @@ function AgentsView({
   testStates,
   onTest,
   onSetDefault,
+  onRescan,
 }: {
   agents: AgentInfo[];
   defaultAgentId: string | null;
   testStates: Record<string, TestState>;
   onTest: (id: string) => void;
   onSetDefault: (id: string) => void;
+  onRescan: () => void;
 }) {
   const { t } = useI18n();
   const available = agents.filter((a) => a.available);
@@ -345,6 +359,7 @@ function AgentsView({
                 testState={testStates[a.id] ?? { status: 'idle' }}
                 onTest={() => onTest(a.id)}
                 onSetDefault={() => onSetDefault(a.id)}
+                onRescan={onRescan}
               />
             ))}
           </div>
@@ -362,6 +377,7 @@ function AgentsView({
                 testState={testStates[a.id] ?? { status: 'idle' }}
                 onTest={() => onTest(a.id)}
                 onSetDefault={() => {}}
+                onRescan={onRescan}
               />
             ))}
           </div>
