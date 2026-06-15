@@ -34,8 +34,10 @@ export type {
   // Phase 3: Persistence
   Project,
   Conversation,
+  ConversationHistoryItem,
   ProjectListResponse,
   ConversationListResponse,
+  ConversationHistoryListResponse,
   MessageListResponse,
   CreateProjectRequest,
   CreateConversationRequest,

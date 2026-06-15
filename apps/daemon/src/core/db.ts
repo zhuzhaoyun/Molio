@@ -15,6 +15,7 @@ import type { ChatMessage, Project, Conversation, Vault, KbHistoryEntry } from '
 type SqliteDb = Database.Database;
 
 export const CHANNELS_PROJECT_ID = '__molio_channels__';
+export const DESKTOP_PROJECT_ID = '__molio_desktop__';
 
 let dbInstance: SqliteDb | null = null;
 let dbFile: string | null = null;
@@ -155,8 +156,8 @@ function addColumnIfMissing(db: SqliteDb, table: string, column: string, definit
 
 export function listProjects(db: SqliteDb): Project[] {
   const rows = db.prepare(
-    'SELECT * FROM projects WHERE id != ? ORDER BY updated_at DESC'
-  ).all(CHANNELS_PROJECT_ID) as Array<Record<string, unknown>>;
+    'SELECT * FROM projects WHERE id NOT IN (?, ?) ORDER BY updated_at DESC'
+  ).all(CHANNELS_PROJECT_ID, DESKTOP_PROJECT_ID) as Array<Record<string, unknown>>;
   return rows.map(rowToProject);
 }
 
@@ -192,6 +193,24 @@ export function ensureChannelsProject(db: SqliteDb): Project {
   };
 }
 
+export function ensureDesktopProject(db: SqliteDb): Project {
+  const existing = getProject(db, DESKTOP_PROJECT_ID);
+  if (existing) return existing;
+
+  const now = Date.now();
+  const metadata = { system: true, purpose: 'desktop' };
+  db.prepare(
+    'INSERT INTO projects (id, name, metadata_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)'
+  ).run(DESKTOP_PROJECT_ID, 'Molio Desktop', JSON.stringify(metadata), now, now);
+  return {
+    id: DESKTOP_PROJECT_ID,
+    name: 'Molio Desktop',
+    metadata,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
 export function deleteProject(db: SqliteDb, id: string): void {
   db.prepare('DELETE FROM projects WHERE id = ?').run(id);
 }
@@ -203,6 +222,48 @@ export function listConversations(db: SqliteDb, projectId: string): Conversation
     'SELECT * FROM conversations WHERE project_id = ? ORDER BY updated_at DESC'
   ).all(projectId) as Array<Record<string, unknown>>;
   return rows.map(rowToConversation);
+}
+
+export function listConversationHistory(
+  db: SqliteDb,
+  limit = 100,
+): Array<{ conversation: Conversation; lastMessage: ChatMessage | null; messageCount: number }> {
+  const rows = db.prepare(`
+    SELECT
+      c.*,
+      COALESCE(stats.message_count, 0) AS message_count,
+      lm.id AS last_id,
+      lm.role AS last_role,
+      lm.content AS last_content,
+      lm.agent_id AS last_agent_id,
+      lm.run_id AS last_run_id,
+      lm.events_json AS last_events_json,
+      lm.created_at AS last_created_at
+    FROM conversations c
+    LEFT JOIN (
+      SELECT conversation_id, COUNT(*) AS message_count, MAX(position) AS max_position
+      FROM messages
+      GROUP BY conversation_id
+    ) stats ON stats.conversation_id = c.id
+    LEFT JOIN messages lm
+      ON lm.conversation_id = c.id AND lm.position = stats.max_position
+    ORDER BY c.updated_at DESC
+    LIMIT ?
+  `).all(limit) as Array<Record<string, unknown>>;
+
+  return rows.map((row) => ({
+    conversation: rowToConversation(row),
+    lastMessage: row.last_id ? rowToMessage({
+      id: row.last_id,
+      role: row.last_role,
+      content: row.last_content,
+      agent_id: row.last_agent_id,
+      run_id: row.last_run_id,
+      events_json: row.last_events_json,
+      created_at: row.last_created_at,
+    }) : null,
+    messageCount: Number(row.message_count ?? 0),
+  }));
 }
 
 export function getConversation(db: SqliteDb, id: string): Conversation | null {
@@ -217,6 +278,11 @@ export function createConversation(db: SqliteDb, projectId: string, title?: stri
     'INSERT INTO conversations (id, project_id, title, channel_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
   ).run(id, projectId, title ?? null, 'desktop', now, now);
   return { id, projectId, title: title ?? null, channelType: 'desktop', externalSessionId: null, createdAt: now, updatedAt: now };
+}
+
+export function createDesktopConversation(db: SqliteDb, title?: string): Conversation {
+  ensureDesktopProject(db);
+  return createConversation(db, DESKTOP_PROJECT_ID, title);
 }
 
 export interface ExternalConversationInput {

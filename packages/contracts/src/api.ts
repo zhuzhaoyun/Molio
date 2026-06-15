@@ -91,12 +91,22 @@ export interface Conversation {
   updatedAt: number;
 }
 
+export interface ConversationHistoryItem {
+  conversation: Conversation;
+  lastMessage: ChatMessage | null;
+  messageCount: number;
+}
+
 export interface ProjectListResponse {
   projects: Project[];
 }
 
 export interface ConversationListResponse {
   conversations: Conversation[];
+}
+
+export interface ConversationHistoryListResponse {
+  conversations: ConversationHistoryItem[];
 }
 
 export interface MessageListResponse {

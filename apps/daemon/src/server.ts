@@ -10,6 +10,7 @@ import { runsRoutes } from './routes/runs.js';
 import { eventsRoutes } from './routes/events.js';
 import { toolResultRoutes } from './routes/tool-result.js';
 import { configRoutes } from './routes/config.js';
+import { conversationRoutes } from './routes/conversations.js';
 import { projectRoutes } from './routes/projects.js';
 import { knowledgeRoutes } from './routes/knowledge.js';
 import { publishRoutes, cleanupAllBridges } from './routes/publish.js';
@@ -46,10 +47,11 @@ app.get('/api/health', (c) => {
 
 // Routes
 app.route('/api/agents', agentsRoutes(runManager));
-app.route('/api/runs', runsRoutes(db, runManager));
+app.route('/api/runs', runsRoutes(db, runManager, conversationService));
 app.route('/api/runs', eventsRoutes(runManager));
 app.route('/api/runs', toolResultRoutes(runManager));
 app.route('/api/config', configRoutes());
+app.route('/api/conversations', conversationRoutes(db));
 app.route('/api/projects', projectRoutes(db));
 app.route('/api/knowledge', knowledgeRoutes(db, runManager));
 app.route('/api/publish', publishRoutes());

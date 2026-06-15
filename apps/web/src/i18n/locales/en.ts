@@ -4,6 +4,7 @@ const en: Record<string, string> = {
   'nav.knowledge': 'Knowledge Base',
   'nav.runtimes': 'Runtimes',
   'nav.channels': 'Channels',
+  'nav.history': 'History',
   'nav.graph': 'Graph',
   'nav.settings': 'Settings',
 
@@ -115,6 +116,28 @@ const en: Record<string, string> = {
   'channels.feishu.desc': 'Receive messages and commands through a Feishu bot',
   'channels.wecom.title': 'WeCom',
   'channels.wecom.desc': 'Connect team messages through a WeCom app',
+
+  // ── History ──
+  'history.title': 'History',
+  'history.count': '{count} conversations',
+  'history.loading': 'Loading…',
+  'history.refresh': 'Refresh',
+  'history.empty': 'No conversations yet',
+  'history.emptyHint': 'Desktop chats and Weixin messages will appear here.',
+  'history.listLabel': 'Conversation list',
+  'history.untitled': 'Untitled conversation',
+  'history.noMessage': 'No messages',
+  'history.messageCount': '{count} messages',
+  'history.open': 'Open',
+  'history.delete': 'Delete',
+  'history.updatedAt': 'Updated',
+  'history.messages': 'Messages',
+  'history.externalSession': 'External session',
+  'history.lastMessage': 'Last message',
+  'history.source.desktop': 'Desktop',
+  'history.source.weixin': 'Weixin',
+  'history.source.feishu': 'Feishu',
+  'history.source.wecom': 'WeCom',
 
   // ── Settings ──
   'settings.title': 'Settings',

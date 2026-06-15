@@ -1,6 +1,6 @@
 import type {
   AgentInfo, RunInfo, CreateRunRequest, ToolResultRequest,
-  ChatMessage, Project, Conversation,
+  ChatMessage, Project, Conversation, ConversationHistoryItem,
   Vault, TreeNode, FileContent, KbHistoryEntry, CreateVaultRequest,
   WikiStatusResponse, WikiBuildRequest, WikiIngestRequest,
   WikiLintRequest, WikiQueryRequest, WikiSaveRequest, WikiRunResponse,
@@ -204,6 +204,30 @@ export const api = {
       body: JSON.stringify(config),
     });
     if (!res.ok) throw new Error(`Failed to update agent config: ${res.status}`);
+  },
+
+  async listConversationHistory(): Promise<ConversationHistoryItem[]> {
+    const res = await fetch(`${BASE}/conversations`);
+    if (!res.ok) throw new Error(`Failed to fetch conversation history: ${res.status}`);
+    const data = await res.json();
+    return data.conversations;
+  },
+
+  async getConversation(conversationId: string): Promise<Conversation> {
+    const res = await fetch(`${BASE}/conversations/${conversationId}`);
+    if (!res.ok) throw new Error(`Failed to fetch conversation: ${res.status}`);
+    return res.json();
+  },
+
+  async listConversationMessages(conversationId: string): Promise<ChatMessage[]> {
+    const res = await fetch(`${BASE}/conversations/${conversationId}/messages`);
+    if (!res.ok) throw new Error(`Failed to fetch messages: ${res.status}`);
+    const data = await res.json();
+    return data.messages;
+  },
+
+  async deleteConversationById(conversationId: string): Promise<void> {
+    await fetch(`${BASE}/conversations/${conversationId}`, { method: 'DELETE' });
   },
 
   // ─── Weixin ClawBot ───

@@ -2,7 +2,9 @@ import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import type { ChatMessage, Conversation } from '@molio/contracts';
 import {
+  createDesktopConversation,
   createExternalConversation,
+  getConversation,
   getConversationByExternalSession,
   listMessages,
   upsertMessage,
@@ -17,6 +19,14 @@ export interface ExternalConversationKey {
 
 export class ConversationService {
   constructor(private readonly db: Database.Database) {}
+
+  createDesktopConversation(title?: string): Conversation {
+    return createDesktopConversation(this.db, title);
+  }
+
+  getConversation(conversationId: string): Conversation | null {
+    return getConversation(this.db, conversationId);
+  }
 
   getOrCreateExternalConversation(input: ExternalConversationKey): Conversation {
     const existing = getConversationByExternalSession(
@@ -39,6 +49,11 @@ export class ConversationService {
       content,
       timestamp: Date.now(),
     };
+    upsertMessage(this.db, conversationId, message);
+    return message;
+  }
+
+  appendMessage(conversationId: string, message: ChatMessage): ChatMessage {
     upsertMessage(this.db, conversationId, message);
     return message;
   }

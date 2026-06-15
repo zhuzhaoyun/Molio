@@ -91,6 +91,15 @@ export class RunManager {
     };
   }
 
+  getRunContext(runId: string): { agentId: string; conversationId: string | null } | null {
+    const run = this.runs.get(runId);
+    if (!run) return null;
+    return {
+      agentId: run.agentId,
+      conversationId: run.conversationId,
+    };
+  }
+
   listRuns(): RunInfo[] {
     return Array.from(this.runs.values()).map((run) => ({
       id: run.id,

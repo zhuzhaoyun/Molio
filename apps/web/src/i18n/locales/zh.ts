@@ -4,6 +4,7 @@ const zh: Record<string, string> = {
   'nav.knowledge': '知识库',
   'nav.runtimes': '运行时',
   'nav.channels': '渠道',
+  'nav.history': '历史记录',
   'nav.graph': '图谱',
   'nav.settings': '设置',
 
@@ -115,6 +116,28 @@ const zh: Record<string, string> = {
   'channels.feishu.desc': '通过飞书机器人接收消息与指令',
   'channels.wecom.title': '企业微信',
   'channels.wecom.desc': '通过企业微信应用接入团队消息',
+
+  // ── History ──
+  'history.title': '历史记录',
+  'history.count': '{count} 个会话',
+  'history.loading': '加载中…',
+  'history.refresh': '刷新',
+  'history.empty': '暂无会话记录',
+  'history.emptyHint': '桌面聊天和微信消息都会显示在这里。',
+  'history.listLabel': '会话列表',
+  'history.untitled': '未命名会话',
+  'history.noMessage': '暂无消息',
+  'history.messageCount': '{count} 条消息',
+  'history.open': '打开',
+  'history.delete': '删除',
+  'history.updatedAt': '最近更新',
+  'history.messages': '消息数',
+  'history.externalSession': '外部会话',
+  'history.lastMessage': '最后一条消息',
+  'history.source.desktop': '桌面',
+  'history.source.weixin': '微信',
+  'history.source.feishu': '飞书',
+  'history.source.wecom': '企业微信',
 
   // ── Settings ──
   'settings.title': '设置',
