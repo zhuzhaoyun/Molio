@@ -134,7 +134,7 @@ describe('updater.js: must NOT use quitAndInstall (race condition on Windows)', 
 
     // Verify the spawn event listener exists
     assert.ok(
-      updaterJs.includes("installer.on('spawn'"),
+      updaterJs.includes("installer.once('spawn'") || updaterJs.includes("installer.on('spawn'"),
       "handler must listen for installer 'spawn' event"
     );
 
@@ -162,18 +162,19 @@ describe('updater.js: must kill daemon before spawning installer', () => {
   it('setupAutoUpdater should accept a killDaemon parameter', () => {
     // The function signature must include killDaemon
     assert.ok(
-      updaterJs.includes('setupAutoUpdater(getMainWindow, killDaemon)'),
+      /setupAutoUpdater\s*\([^)]*killDaemon/.test(updaterJs),
       'setupAutoUpdater must accept killDaemon as second parameter'
     );
   });
 
   it('updater:install handler must call killDaemon before spawning installer', () => {
-    // Extract the updater:install handler block
-    const installStart = updaterJs.indexOf("'updater:install'");
-    assert.ok(installStart !== -1, 'updater:install handler must exist');
+    // Extract the install helper block. The IPC handler delegates to this
+    // helper so the sequencing stays testable without coupling to IPC shape.
+    const installStart = updaterJs.indexOf('function installDownloadedUpdate');
+    assert.ok(installStart !== -1, 'installDownloadedUpdate helper must exist');
 
     // Get enough chars to capture the full handler
-    const handlerBlock = updaterJs.slice(installStart, installStart + 2000);
+    const handlerBlock = updaterJs.slice(installStart, installStart + 3500);
 
     const killPos = handlerBlock.indexOf('killDaemon');
     const spawnPos = handlerBlock.indexOf('spawn(');
@@ -242,6 +243,93 @@ describe('updater.js: error event must notify renderer', () => {
     assert.ok(
       updaterJs.includes("'updater:error'") || updaterJs.includes('"updater:error"'),
       "error handler must send 'updater:error' IPC event to renderer"
+    );
+  });
+});
+
+describe('updater.js: update checks must actively start downloads', () => {
+  const updaterJs = readFileSync(
+    path.resolve(import.meta.dirname, '../../src/updater.js'),
+    'utf-8'
+  );
+
+  it('should disable autoDownload and use an explicit download path', () => {
+    assert.ok(
+      updaterJs.includes('autoDownload = false'),
+      'autoDownload must be disabled so downloads start through the controller'
+    );
+  });
+
+  it('should explicitly call downloadUpdate when an update is available', () => {
+    assert.ok(
+      updaterJs.includes('startDownload'),
+      'updater.js must have an explicit download starter'
+    );
+    assert.ok(
+      /autoUpdater\s*\.\s*downloadUpdate/.test(updaterJs),
+      'updater.js must actively call autoUpdater.downloadUpdate() after finding an update'
+    );
+  });
+});
+
+describe('updater.js: must expose queryable updater state', () => {
+  const updaterJs = readFileSync(
+    path.resolve(import.meta.dirname, '../../src/updater.js'),
+    'utf-8'
+  );
+  const preloadCjs = readFileSync(
+    path.resolve(import.meta.dirname, '../../src/preload.cjs'),
+    'utf-8'
+  );
+
+  it('should register updater:get-state IPC handler', () => {
+    assert.ok(
+      updaterJs.includes("'updater:get-state'") || updaterJs.includes('"updater:get-state"'),
+      'updater.js must expose updater:get-state so renderer can recover missed events'
+    );
+  });
+
+  it('should broadcast updater:state-changed events', () => {
+    assert.ok(
+      updaterJs.includes("'updater:state-changed'") || updaterJs.includes('"updater:state-changed"'),
+      'updater.js must broadcast updater:state-changed'
+    );
+  });
+
+  it('preload should expose getState and onStateChanged', () => {
+    assert.ok(preloadCjs.includes('getState'), 'preload.cjs must expose getState');
+    assert.ok(preloadCjs.includes('onStateChanged'), 'preload.cjs must expose onStateChanged');
+  });
+});
+
+describe('updater.js: install must use public downloaded event data', () => {
+  const updaterJs = readFileSync(
+    path.resolve(import.meta.dirname, '../../src/updater.js'),
+    'utf-8'
+  );
+
+  it('should not depend on downloadedUpdateHelper internals', () => {
+    assert.ok(
+      !updaterJs.includes('downloadedUpdateHelper'),
+      'updater.js should use update-downloaded.downloadedFile instead of electron-updater internals'
+    );
+  });
+
+  it('should store downloadedFile from update-downloaded event', () => {
+    const downloadedHandler = updaterJs.match(
+      /autoUpdater\.on\('update-downloaded'[\s\S]*?\}\);/
+    );
+    assert.ok(downloadedHandler, 'update-downloaded handler must exist');
+    assert.ok(
+      downloadedHandler[0].includes('downloadedFile'),
+      'update-downloaded handler must store downloadedFile'
+    );
+  });
+
+  it('should handle installer spawn errors', () => {
+    assert.ok(
+      updaterJs.includes("installer.once('error'") || updaterJs.includes("installer.on('error'"),
+      'installer spawn errors must be handled and surfaced'
     );
   });
 });
