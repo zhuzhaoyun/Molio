@@ -4,6 +4,7 @@ import type {
   Vault, TreeNode, FileContent, KbHistoryEntry, CreateVaultRequest,
   WikiStatusResponse, WikiBuildRequest, WikiIngestRequest,
   WikiLintRequest, WikiQueryRequest, WikiSaveRequest, WikiRunResponse,
+  GraphData,
 } from '@molio/contracts';
 
 export type WeixinLoginStatus = 'idle' | 'waiting_scan' | 'scanned' | 'logged_in' | 'error';
@@ -455,7 +456,7 @@ export const api = {
 
   // ─── Graph ───
 
-  async getGraph(vaultId: string): Promise<{ nodes: { key: string; label: string; path: string; linkCount: number }[]; edges: { source: string; target: string }[] }> {
+  async getGraph(vaultId: string): Promise<GraphData> {
     const res = await fetch(`${BASE}/graph/${vaultId}`);
     if (!res.ok) throw new Error(`Failed to fetch graph: ${res.status}`);
     return res.json();

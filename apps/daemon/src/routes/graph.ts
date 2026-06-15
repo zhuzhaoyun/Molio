@@ -10,22 +10,33 @@ import path from 'node:path';
 import type Database from 'better-sqlite3';
 import { getVault } from '../core/db.js';
 import { scanTree, resolveFilePath } from '../core/knowledge.js';
+import type { GraphNode, GraphEdge, GraphData, DeadLinkInfo } from '@molio/contracts';
 
-export interface GraphNode {
-  key: string;
-  label: string;
-  path: string;
-  linkCount: number;
-}
+/**
+ * Infer node type from frontmatter or directory path.
+ */
+function inferNodeType(filePath: string, content: string): string | undefined {
+  // 1. Parse frontmatter for `type:` field
+  const fmMatch = content.match(/^---\s*\n([\s\S]*?)\n---/);
+  if (fmMatch) {
+    const fm = fmMatch[1] ?? '';
+    const typeMatch = fm.match(/^type:\s*(.+)$/m);
+    if (typeMatch) {
+      const t = typeMatch[1]!.trim();
+      if (t) return t;
+    }
+  }
 
-export interface GraphEdge {
-  source: string;
-  target: string;
-}
+  // 2. Infer from wiki directory structure
+  if (filePath.startsWith('wiki/sources/')) return 'source';
+  if (filePath.startsWith('wiki/entities/')) return 'entity';
+  if (filePath.startsWith('wiki/concepts/')) return 'concept';
+  if (filePath.startsWith('wiki/comparisons/')) return 'comparison';
+  if (filePath.startsWith('wiki/questions/')) return 'question';
+  if (filePath.startsWith('wiki/')) return 'wiki';
 
-export interface GraphData {
-  nodes: GraphNode[];
-  edges: GraphEdge[];
+  // 3. Default
+  return 'document';
 }
 
 export function graphRoutes(db: Database.Database): Hono {
@@ -66,6 +77,10 @@ function buildGraph(vaultPath: string): GraphData {
   const pathToKey = new Map<string, string>();
   // Counter for link counts
   const linkCounts = new Map<string, number>();
+  // Map for node types
+  const nodeTypes = new Map<string, string | undefined>();
+  // Dead links list
+  const deadLinksList: DeadLinkInfo[] = [];
 
   for (const f of mdFiles) {
     const relPath = f.path;
@@ -79,6 +94,15 @@ function buildGraph(vaultPath: string): GraphData {
     }
     nameIndex.get(basename)!.push(relPath);
 
+    // Read file content for node type inference
+    const absPath = resolveFilePath(vaultPath, f.path);
+    let content = '';
+    try {
+      content = existsSync(absPath) ? readFileSync(absPath, 'utf-8') : '';
+    } catch { /* binary or unreadable */ }
+
+    const nodeType = inferNodeType(f.path, content);
+    nodeTypes.set(key, nodeType);
     linkCounts.set(key, 0);
   }
 
@@ -102,7 +126,15 @@ function buildGraph(vaultPath: string): GraphData {
 
       // Try to resolve the link target
       const targetKey = resolveLink(rawName, f.path, nameIndex, pathToKey);
-      if (!targetKey || targetKey === sourceKey) continue;
+      if (!targetKey) {
+        // Record dead link
+        if (!deadLinks.has(rawName.toLowerCase())) {
+          deadLinks.add(rawName.toLowerCase());
+          deadLinksList.push({ sourceFile: f.path, targetName: rawName });
+        }
+        continue;
+      }
+      if (targetKey === sourceKey) continue;
 
       const edgeKey = sourceKey < targetKey
         ? `${sourceKey}→${targetKey}`
@@ -122,6 +154,7 @@ function buildGraph(vaultPath: string): GraphData {
     label: f.name.replace(/\.md$/i, ''),
     path: f.path,
     linkCount: linkCounts.get(pathToKey.get(f.path)!) ?? 0,
+    nodeType: nodeTypes.get(pathToKey.get(f.path)!),
   }));
 
   // Build edge list
@@ -130,7 +163,7 @@ function buildGraph(vaultPath: string): GraphData {
     return { source: parts[0] ?? '', target: parts[1] ?? '' };
   });
 
-  return { nodes, edges: edgeList };
+  return { nodes, edges: edgeList, deadLinks: deadLinksList };
 }
 
 /**
