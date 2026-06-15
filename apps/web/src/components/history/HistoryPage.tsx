@@ -7,28 +7,23 @@ interface Props {
   onOpenConversation: (conversationId: string) => void;
 }
 
+interface HistoryGroup {
+  key: string;
+  label: string;
+  items: ConversationHistoryItem[];
+}
+
 export function HistoryPage({ onOpenConversation }: Props) {
   const { t } = useI18n();
   const [items, setItems] = useState<ConversationHistoryItem[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const activeItem = useMemo(
-    () => items.find((item) => item.conversation.id === activeId) ?? items[0] ?? null,
-    [activeId, items],
-  );
 
   const refresh = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const next = await api.listConversationHistory();
-      setItems(next);
-      setActiveId((current) => {
-        if (current && next.some((item) => item.conversation.id === current)) return current;
-        return next[0]?.conversation.id ?? null;
-      });
+      setItems(await api.listConversationHistory());
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -40,167 +35,148 @@ export function HistoryPage({ onOpenConversation }: Props) {
     void refresh();
   }, [refresh]);
 
-  const handleDelete = useCallback(async (conversationId: string) => {
-    await api.deleteConversationById(conversationId);
-    await refresh();
-  }, [refresh]);
+  const groups = useMemo(() => groupByDate(items), [items]);
 
   return (
     <div className="history-shell">
-      <header className="history-header">
-        <div className="history-header__left">
-          <h1 className="history-header__title">{t('history.title')}</h1>
-          <span className="history-header__subtitle">{t('history.count', { count: items.length })}</span>
+      <header className="history-topbar">
+        <div className="history-tabs" aria-label={t('history.tabsLabel')}>
+          <button type="button" className="history-tab is-muted" disabled>
+            <BookmarkIcon />
+            {t('history.quickAccess')}
+          </button>
+          <button type="button" className="history-tab is-active">
+            <ChatIcon />
+            {t('history.chatHistory')}
+          </button>
+          <button type="button" className="history-tab is-muted" disabled>
+            <GlobeIcon />
+            {t('history.webHistory')}
+          </button>
         </div>
-        <button className="rt-btn rt-btn--sm" type="button" onClick={refresh} disabled={loading}>
+        <button className="history-refresh" type="button" onClick={refresh} disabled={loading}>
           {loading ? t('history.loading') : t('history.refresh')}
         </button>
       </header>
 
-      {error && <div className="history-error">{error}</div>}
+      <main className="history-content">
+        {error && <div className="history-error">{error}</div>}
 
-      {loading && items.length === 0 ? (
-        <div className="rt-loading">{t('history.loading')}</div>
-      ) : items.length === 0 ? (
-        <div className="rt-empty">
-          <div className="rt-empty__text">{t('history.empty')}</div>
-          <div className="rt-empty__hint">{t('history.emptyHint')}</div>
-        </div>
-      ) : (
-        <div className="history-layout">
-          <aside className="history-list" aria-label={t('history.listLabel')}>
-            {items.map((item) => (
-              <HistoryListItem
-                key={item.conversation.id}
-                item={item}
-                active={item.conversation.id === activeItem?.conversation.id}
-                onSelect={() => setActiveId(item.conversation.id)}
-              />
+        {loading && items.length === 0 ? (
+          <div className="rt-loading">{t('history.loading')}</div>
+        ) : items.length === 0 ? (
+          <div className="rt-empty">
+            <div className="rt-empty__text">{t('history.empty')}</div>
+            <div className="rt-empty__hint">{t('history.emptyHint')}</div>
+          </div>
+        ) : (
+          <section className="history-card" aria-label={t('history.listLabel')}>
+            {groups.map((group) => (
+              <div className="history-date-group" key={group.key}>
+                <h2 className="history-date-title">{group.label}</h2>
+                <div className="history-date-list">
+                  {group.items.map((item) => (
+                    <HistoryRow
+                      key={item.conversation.id}
+                      item={item}
+                      onOpen={() => onOpenConversation(item.conversation.id)}
+                    />
+                  ))}
+                </div>
+              </div>
             ))}
-          </aside>
-
-          <main className="history-detail">
-            {activeItem && (
-              <HistoryDetail
-                item={activeItem}
-                onOpen={() => onOpenConversation(activeItem.conversation.id)}
-                onDelete={() => void handleDelete(activeItem.conversation.id)}
-              />
-            )}
-          </main>
-        </div>
-      )}
+          </section>
+        )}
+      </main>
     </div>
   );
 }
 
-function HistoryListItem({
+function HistoryRow({
   item,
-  active,
-  onSelect,
+  onOpen,
 }: {
   item: ConversationHistoryItem;
-  active: boolean;
-  onSelect: () => void;
+  onOpen: () => void;
 }) {
   const { t } = useI18n();
-  const { conversation, lastMessage, messageCount } = item;
+  const { conversation, lastMessage } = item;
 
   return (
-    <button
-      type="button"
-      className={`history-item${active ? ' is-active' : ''}`}
-      onClick={onSelect}
-    >
-      <span className="history-item__main">
-        <span className="history-item__top">
-          <span className="history-item__title">{conversation.title || t('history.untitled')}</span>
-          <span className={`history-source history-source--${conversation.channelType ?? 'desktop'}`}>
-            {sourceLabel(t, conversation.channelType)}
-          </span>
-        </span>
-        <span className="history-item__preview">
-          {lastMessage?.content || t('history.noMessage')}
-        </span>
+    <button type="button" className="history-row" onClick={onOpen}>
+      <span className="history-row__time">{formatTime(conversation.updatedAt)}</span>
+      <span className={`history-row__source history-row__source--${conversation.channelType ?? 'desktop'}`}>
+        <ChatIcon />
       </span>
-      <span className="history-item__meta">
-        <span>{formatTime(conversation.updatedAt)}</span>
-        <span>{t('history.messageCount', { count: messageCount })}</span>
+      <span className="history-row__body">
+        <span className="history-row__title">{conversation.title || t('history.untitled')}</span>
+        <span className="history-row__summary">{lastMessage?.content || t('history.noMessage')}</span>
       </span>
     </button>
   );
 }
 
-function HistoryDetail({
-  item,
-  onOpen,
-  onDelete,
-}: {
-  item: ConversationHistoryItem;
-  onOpen: () => void;
-  onDelete: () => void;
-}) {
-  const { t } = useI18n();
-  const { conversation, lastMessage, messageCount } = item;
+function groupByDate(items: ConversationHistoryItem[]): HistoryGroup[] {
+  const groups = new Map<string, HistoryGroup>();
 
-  return (
-    <section className="history-detail-card">
-      <div className="history-detail-card__head">
-        <div className="history-detail-card__title-block">
-          <span className={`history-source history-source--${conversation.channelType ?? 'desktop'}`}>
-            {sourceLabel(t, conversation.channelType)}
-          </span>
-          <h2>{conversation.title || t('history.untitled')}</h2>
-        </div>
-        <div className="history-detail-card__actions">
-          <button className="rt-btn rt-btn--sm" type="button" onClick={onOpen}>
-            {t('history.open')}
-          </button>
-          <button className="rt-btn rt-btn--sm rt-btn--ghost" type="button" onClick={onDelete}>
-            {t('history.delete')}
-          </button>
-        </div>
-      </div>
+  for (const item of items) {
+    const date = new Date(item.conversation.updatedAt);
+    const key = [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, '0'),
+      String(date.getDate()).padStart(2, '0'),
+    ].join('-');
 
-      <dl className="history-detail-meta">
-        <div>
-          <dt>{t('history.updatedAt')}</dt>
-          <dd>{new Date(conversation.updatedAt).toLocaleString()}</dd>
-        </div>
-        <div>
-          <dt>{t('history.messages')}</dt>
-          <dd>{messageCount}</dd>
-        </div>
-        {conversation.externalSessionId && (
-          <div>
-            <dt>{t('history.externalSession')}</dt>
-            <dd>{conversation.externalSessionId}</dd>
-          </div>
-        )}
-      </dl>
+    const existing = groups.get(key);
+    if (existing) {
+      existing.items.push(item);
+      continue;
+    }
 
-      <div className="history-last-message">
-        <div className="history-last-message__label">{t('history.lastMessage')}</div>
-        <div className="history-last-message__body">
-          {lastMessage?.content || t('history.noMessage')}
-        </div>
-      </div>
-    </section>
-  );
+    groups.set(key, {
+      key,
+      label: formatDateLabel(date),
+      items: [item],
+    });
+  }
+
+  return Array.from(groups.values());
 }
 
-function sourceLabel(t: (key: string, params?: Record<string, string | number>) => string, channelType?: string) {
-  if (channelType === 'weixin') return t('history.source.weixin');
-  if (channelType === 'feishu') return t('history.source.feishu');
-  if (channelType === 'wecom') return t('history.source.wecom');
-  return t('history.source.desktop');
+function formatDateLabel(date: Date) {
+  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
 }
 
 function formatTime(value: number) {
-  const date = new Date(value);
-  const now = new Date();
-  if (date.toDateString() === now.toDateString()) {
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  }
-  return date.toLocaleDateString();
+  return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function ChatIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
+      <path d="M8 9h.01" />
+      <path d="M12 9h.01" />
+      <path d="M16 9h.01" />
+    </svg>
+  );
+}
+
+function BookmarkIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+    </svg>
+  );
+}
+
+function GlobeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="10" />
+      <path d="M2 12h20" />
+      <path d="M12 2a15 15 0 0 1 0 20" />
+      <path d="M12 2a15 15 0 0 0 0 20" />
+    </svg>
+  );
 }
