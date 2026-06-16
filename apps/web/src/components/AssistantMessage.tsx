@@ -80,7 +80,7 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
   );
 
   return (
-    <div className="msg assistant">
+    <div className="msg assistant" data-testid="assistant-message">
       <div className="role">
         <span>{t('assistant.label')}</span>
         <span className="msg-time">{formatTime(message.timestamp)}</span>
@@ -115,6 +115,7 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
       {displayContent && (
         <div
           className="assistant-prose"
+          data-testid="assistant-prose"
           dangerouslySetInnerHTML={{ __html: html }}
         />
       )}
@@ -122,7 +123,7 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
       {message.streaming && <span className="streaming-cursor" />}
 
       {message.usage && (
-        <div className="usage-footer">
+        <div className="usage-footer" data-testid="usage-footer">
           {message.usage.input != null && <span>{message.usage.input} in</span>}
           {message.usage.output != null && <span>{message.usage.output} out</span>}
           {message.usage.cost != null && <span>${message.usage.cost.toFixed(4)}</span>}
