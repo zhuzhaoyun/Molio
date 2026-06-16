@@ -7,22 +7,14 @@
  */
 
 interface UpdaterAPI {
+  onStateChanged: (callback: (state: UpdaterState) => void) => () => void;
   onUpdateAvailable: (callback: (info: { version: string }) => void) => () => void;
   onDownloadProgress: (callback: (progress: { percent: number }) => void) => () => void;
   onUpdateDownloaded: (callback: (info: { version: string }) => void) => () => void;
   onUpdateError: (callback: (info: { message: string }) => void) => () => void;
-  installUpdate: () => Promise<void>;
-  checkForUpdates: () => Promise<
-    | {
-        ok: true;
-        currentVersion: string;
-        latestVersion: string;
-        available: boolean;
-        downloaded?: boolean;
-        downloadedVersion?: string | null;
-      }
-    | { ok: false; error: string }
-  >;
+  installUpdate: () => Promise<UpdaterState>;
+  checkForUpdates: () => Promise<UpdaterState>;
+  getState: () => Promise<UpdaterState>;
   getLogPath: () => Promise<string | null>;
 }
 
@@ -36,6 +28,29 @@ interface DesktopAPI {
 }
 
 declare global {
+  type UpdaterStatus =
+    | 'idle'
+    | 'checking'
+    | 'up-to-date'
+    | 'available'
+    | 'downloading'
+    | 'downloaded'
+    | 'installing'
+    | 'error';
+
+  interface UpdaterState {
+    ok: true;
+    status: UpdaterStatus;
+    currentVersion: string;
+    latestVersion: string;
+    available: boolean;
+    downloading: boolean;
+    downloaded: boolean;
+    percent: number;
+    message: string | null;
+    devMode: boolean;
+  }
+
   interface Window {
     updater?: UpdaterAPI;
     __electron__?: DesktopAPI;

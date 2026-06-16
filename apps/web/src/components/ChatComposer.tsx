@@ -57,6 +57,7 @@ export function ChatComposer({ isRunning, onSend, onCancel, disabled, disabledPl
       <div className="composer-shell">
         <textarea
           ref={textareaRef}
+          data-testid="composer-input"
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
@@ -69,6 +70,7 @@ export function ChatComposer({ isRunning, onSend, onCancel, disabled, disabledPl
           {isRunning ? (
             <button
               type="button"
+              data-testid="composer-stop"
               className="composer-send stop"
               onClick={onCancel}
             >
@@ -80,6 +82,7 @@ export function ChatComposer({ isRunning, onSend, onCancel, disabled, disabledPl
           ) : (
             <button
               type="button"
+              data-testid="composer-send"
               className="composer-send"
               disabled={!canSend}
               onClick={handleSend}
