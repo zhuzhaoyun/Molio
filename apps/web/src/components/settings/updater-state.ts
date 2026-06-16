@@ -2,8 +2,6 @@
  * Pure state-machine transitions for the auto-updater UI.
  *
  * Extracted so the rules can be unit-tested without React or Electron.
- * SettingsPage.tsx implements these same transitions inline; if you change
- * either file, keep them in sync.
  */
 
 export type CheckResult =
@@ -12,6 +10,7 @@ export type CheckResult =
   | { status: 'up-to-date'; currentVersion: string }
   | { status: 'available'; currentVersion: string; latestVersion: string; downloading: boolean; percent: number }
   | { status: 'downloaded'; currentVersion: string; latestVersion: string }
+  | { status: 'installing'; currentVersion: string; latestVersion: string }
   | { status: 'error'; message: string };
 
 // ── Event payloads ──────────────────────────────────────────────
@@ -21,10 +20,14 @@ export interface UpdateDownloadedInfo { version: string }
 export interface UpdateErrorInfo { message: string }
 export interface CheckResponse {
   ok: boolean;
+  status?: string;
   currentVersion?: string;
   latestVersion?: string;
   available?: boolean;
+  downloading?: boolean;
   downloaded?: boolean;
+  percent?: number;
+  message?: string | null;
   error?: string;
 }
 
@@ -76,6 +79,53 @@ export function onUpdateDownloaded(prev: CheckResult, info: UpdateDownloadedInfo
   };
 }
 
+/** Convert the main-process updater snapshot into UI state. */
+export function fromUpdaterState(state: CheckResponse): CheckResult {
+  if (!state.ok) {
+    return { status: 'error', message: state.error ?? 'Unknown error' };
+  }
+
+  const currentVersion = state.currentVersion ?? 'dev';
+  const latestVersion = state.latestVersion ?? currentVersion;
+
+  switch (state.status) {
+    case 'checking':
+      return { status: 'checking' };
+    case 'up-to-date':
+      return { status: 'up-to-date', currentVersion };
+    case 'available':
+    case 'downloading':
+      return {
+        status: 'available',
+        currentVersion,
+        latestVersion,
+        downloading: state.downloading ?? true,
+        percent: state.percent ?? 0,
+      };
+    case 'downloaded':
+      return { status: 'downloaded', currentVersion, latestVersion };
+    case 'installing':
+      return { status: 'installing', currentVersion, latestVersion };
+    case 'error':
+      return { status: 'error', message: state.message ?? state.error ?? 'Unknown error' };
+    case 'idle':
+    default:
+      if (state.downloaded) {
+        return { status: 'downloaded', currentVersion, latestVersion };
+      }
+      if (state.available) {
+        return {
+          status: 'available',
+          currentVersion,
+          latestVersion,
+          downloading: state.downloading ?? false,
+          percent: state.percent ?? 0,
+        };
+      }
+      return { status: 'idle' };
+  }
+}
+
 /** Handle `error` event from electron-updater. */
 export function onUpdateError(_prev: CheckResult, info: UpdateErrorInfo): CheckResult {
   return { status: 'error', message: info.message };
@@ -83,6 +133,9 @@ export function onUpdateError(_prev: CheckResult, info: UpdateErrorInfo): CheckR
 
 /** Handle IPC response from `updater:check`. */
 export function onCheckResult(prev: CheckResult, res: CheckResponse): CheckResult {
+  if (res.status) {
+    return fromUpdaterState(res);
+  }
   if (!res.ok) {
     return { status: 'error', message: res.error ?? 'Unknown error' };
   }

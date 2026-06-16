@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { gotoHome, clickNav } from './helpers/navigation';
 
 /**
  * E2E tests for the Create Vault form.
@@ -17,13 +18,11 @@ import { test, expect } from '@playwright/test';
 const DAEMON_API = 'http://localhost:3100/api';
 
 async function navigateToCreateForm(page: import('@playwright/test').Page) {
-  await page.goto('/');
-  await page.waitForLoadState('networkidle');
+  await gotoHome(page);
+  await clickNav(page, 'knowledge');
 
-  // Navigate to knowledge base view (left nav rail)
-  const kbNav = page.locator('[data-view="knowledge"]');
-  await kbNav.click();
-  await page.waitForTimeout(500);
+  // Wait for the knowledge base shell to render
+  await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
   // Open the vault manager modal by clicking the vault bar in the file panel
   const vaultBar = page.locator('.kb-vault-bar').first();

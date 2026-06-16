@@ -5,7 +5,7 @@ interface Props {
 
 export function UserMessage({ content, timestamp }: Props) {
   return (
-    <div className="msg user">
+    <div className="msg user" data-testid="user-message">
       <div className="role">
         <span className="msg-time">{formatTime(timestamp)}</span>
       </div>

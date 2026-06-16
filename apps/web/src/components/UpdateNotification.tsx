@@ -24,18 +24,26 @@ export function UpdateNotification() {
   useEffect(() => {
     if (!window.updater) return;
 
-    const cleanups: (() => void)[] = [];
+    let disposed = false;
 
-    cleanups.push(
-      window.updater.onUpdateDownloaded((info) => {
-        setState({ status: 'ready', version: info.version });
+    const applyState = (updaterState: UpdaterState) => {
+      if (updaterState.status === 'downloaded') {
+        setState({ status: 'ready', version: updaterState.latestVersion });
         setDismissed(false);
-      })
-    );
+      }
+    };
+
+    window.updater.getState().then((updaterState) => {
+      if (!disposed) applyState(updaterState);
+    });
+
+    const cleanup = window.updater.onStateChanged(applyState);
 
     // Background errors are NOT shown as toast — see Settings page for error UI
-
-    return () => cleanups.forEach((fn) => fn());
+    return () => {
+      disposed = true;
+      cleanup();
+    };
   }, []);
 
   if (!window.updater) return null;
