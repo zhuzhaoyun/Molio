@@ -385,18 +385,35 @@ jobs:
           echo "✅ OIDC token obtained (${#ID_TOKEN} chars)"
           echo "::endgroup::"
 
-          # Call STS AssumeRoleWithOIDC directly via curl
+          # Call STS AssumeRoleWithOIDC via Python (handles signing automatically)
           echo "::group::STS AssumeRoleWithOIDC"
-          CREDENTIALS=$(curl -s "https://sts.aliyuncs.com/?Action=AssumeRoleWithOIDC&Version=2015-04-01&Format=JSON&RoleArn=${ALIYUN_ROLE_ARN}&OIDCProviderArn=${ALIYUN_OIDC_PROVIDER_ARN}&OIDCToken=${ID_TOKEN}&RoleSessionName=github-actions-${{ github.run_id }}&DurationSeconds=3600")
+          pip install -q alibabacloud_sts20150401
+          CREDENTIALS=$(python3 -c "
+import json, os
+from alibabacloud_sts20150401.client import Client as StsClient
+from alibabacloud_sts20150401 import models as sts_models
+from alibabacloud_tea_openapi import models as open_api_models
+
+config = open_api_models.Config(
+    access_key_id='',
+    access_key_secret='',
+    credential=open_api_models.CredentialConfig(
+        bearer_token=os.environ['ID_TOKEN'],
+    ),
+    region_id='cn-guangzhou',
+)
+client = StsClient(config=config)
+req = sts_models.AssumeRoleWithOIDCRequest(
+    role_arn='${{ vars.ALIYUN_ROLE_ARN }}',
+    oidc_provider_arn='${{ vars.ALIYUN_OIDC_PROVIDER_ARN }}',
+    role_session_name='github-actions-${{ github.run_id }}',
+    duration_seconds=3600,
+)
+resp = client.assume_role_with_oidc(req)
+print(json.dumps(resp.body.to_map()))
+" 2>&1)
           echo "STS response: $CREDENTIALS"
           echo "::endgroup::"
-
-          # Check for errors
-          ERROR_CODE=$(echo "$CREDENTIALS" | jq -r '.Code // empty')
-          if [ -n "$ERROR_CODE" ]; then
-            echo "❌ STS API error: $ERROR_CODE - $(echo "$CREDENTIALS" | jq -r '.Message')"
-            exit 1
-          fi
 
           # Extract credentials
           AK_ID=$(echo "$CREDENTIALS" | jq -r '.Credentials.AccessKeyId')
