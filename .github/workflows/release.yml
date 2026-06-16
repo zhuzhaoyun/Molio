@@ -385,40 +385,21 @@ jobs:
           echo "✅ OIDC token obtained (${#ID_TOKEN} chars)"
           echo "::endgroup::"
 
-          # Call STS AssumeRoleWithOIDC via Python (handles signing automatically)
+          # Call STS AssumeRoleWithOIDC via Python script (handles signing automatically)
           echo "::group::STS AssumeRoleWithOIDC"
           pip install -q alibabacloud_sts20150401
-          CREDENTIALS=$(python3 -c "
-import json, os
-from alibabacloud_sts20150401.client import Client as StsClient
-from alibabacloud_sts20150401 import models as sts_models
-from alibabacloud_tea_openapi import models as open_api_models
-
-config = open_api_models.Config(
-    access_key_id='',
-    access_key_secret='',
-    credential=open_api_models.CredentialConfig(
-        bearer_token=os.environ['ID_TOKEN'],
-    ),
-    region_id='cn-guangzhou',
-)
-client = StsClient(config=config)
-req = sts_models.AssumeRoleWithOIDCRequest(
-    role_arn='${{ vars.ALIYUN_ROLE_ARN }}',
-    oidc_provider_arn='${{ vars.ALIYUN_OIDC_PROVIDER_ARN }}',
-    role_session_name='github-actions-${{ github.run_id }}',
-    duration_seconds=3600,
-)
-resp = client.assume_role_with_oidc(req)
-print(json.dumps(resp.body.to_map()))
-" 2>&1)
+          CREDENTIALS=$(python3 scripts/sts_oidc.py \
+            --role-arn "${ALIYUN_ROLE_ARN}" \
+            --oidc-provider-arn "${ALIYUN_OIDC_PROVIDER_ARN}" \
+            --session-name "github-actions-${{ github.run_id }}" \
+            2>&1)
           echo "STS response: $CREDENTIALS"
           echo "::endgroup::"
 
           # Extract credentials
-          AK_ID=$(echo "$CREDENTIALS" | jq -r '.Credentials.AccessKeyId')
-          AK_SECRET=$(echo "$CREDENTIALS" | jq -r '.Credentials.AccessKeySecret')
-          STS_TOKEN=$(echo "$CREDENTIALS" | jq -r '.Credentials.SecurityToken')
+          AK_ID=$(echo "$CREDENTIALS" | jq -r '.AccessKeyId')
+          AK_SECRET=$(echo "$CREDENTIALS" | jq -r '.AccessKeySecret')
+          STS_TOKEN=$(echo "$CREDENTIALS" | jq -r '.SecurityToken')
 
           if [ -z "$AK_ID" ] || [ "$AK_ID" = "null" ]; then
             echo "❌ Failed to extract credentials from STS response"
