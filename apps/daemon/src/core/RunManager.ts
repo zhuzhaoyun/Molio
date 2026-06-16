@@ -276,7 +276,11 @@ export class RunManager {
       // Codex CLI logs "Reading prompt from stdin..." and "Reading additional
       // input from stdin..." to stderr as informational messages, not errors.
       // Filter them out so they don't show up as red error bubbles in the UI.
-      if (trimmed && !(def.id === 'codex' && trimmed.includes('Reading prompt from stdin'))) {
+      const isCodexInfoStderr = def.id === 'codex' && (
+        trimmed.includes('Reading prompt from stdin') ||
+        trimmed.includes('Reading additional input from stdin')
+      );
+      if (trimmed && !isCodexInfoStderr) {
         this.emitEvent(run, { type: 'error', message: trimmed });
       }
     });
