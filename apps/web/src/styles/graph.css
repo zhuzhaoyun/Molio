@@ -203,6 +203,61 @@
   opacity: 1;
 }
 
+/* ── Legend ── */
+
+.graph-legend {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding: 8px 12px;
+  background: rgba(255,255,255,0.85);
+  border: 1px solid rgba(0,0,0,0.06);
+  border-radius: 6px;
+  font-size: 11px;
+  z-index: 20;
+  backdrop-filter: blur(4px);
+  user-select: none;
+  pointer-events: none;
+  max-width: 180px;
+}
+
+.graph-legend__item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.graph-legend__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.graph-legend__dot--dead {
+  background: #D4D4D4;
+  border: 1px dashed #999;
+}
+
+.graph-legend__label {
+  color: #555;
+  white-space: nowrap;
+}
+
+@media (prefers-color-scheme: dark) {
+  .graph-legend {
+    background: rgba(30,30,40,0.8);
+    border-color: rgba(255,255,255,0.08);
+  }
+
+  .graph-legend__label {
+    color: #AAA;
+  }
+}
+
 /* ── Interaction Hints ── */
 
 .graph-hints {
