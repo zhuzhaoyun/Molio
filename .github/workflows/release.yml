@@ -416,6 +416,10 @@ jobs:
 
       - name: Upload release assets to OSS
         shell: bash
+        env:
+          OSS_ACCESS_KEY_ID: ${{ env.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ env.OSS_ACCESS_KEY_SECRET }}
+          OSS_SECURITY_TOKEN: ${{ env.OSS_SECURITY_TOKEN }}
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           TAG="v${VERSION}"
@@ -425,6 +429,9 @@ jobs:
             filename=$(basename "$file")
             ossutil cp "$file" oss://${{ vars.OSS_BUCKET }}/releases/${TAG}/${filename} \
               --endpoint=${{ vars.OSS_ENDPOINT }} \
+              -i "${OSS_ACCESS_KEY_ID}" \
+              -k "${OSS_ACCESS_KEY_SECRET}" \
+              -t "${OSS_SECURITY_TOKEN}" \
               --update
           done
 
@@ -434,6 +441,9 @@ jobs:
           EOF
           ossutil cp /tmp/latest.json oss://${{ vars.OSS_BUCKET }}/releases/latest.json \
             --endpoint=${{ vars.OSS_ENDPOINT }} \
+            -i "${OSS_ACCESS_KEY_ID}" \
+            -k "${OSS_ACCESS_KEY_SECRET}" \
+            -t "${OSS_SECURITY_TOKEN}" \
             --meta Cache-Control:no-cache
 
           echo "✅ Uploaded ${TAG} to oss://${{ vars.OSS_BUCKET }}/releases/${TAG}/"
