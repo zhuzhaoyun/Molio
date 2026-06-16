@@ -3,6 +3,9 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: false,
+  /* All E2E tests share the daemon process — serialise to avoid race conditions
+     where one test's vault creation/deletion affects another's vault list query. */
+  workers: 1,
   retries: 0,
   timeout: 30_000,
   use: {
