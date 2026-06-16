@@ -30,8 +30,8 @@ export interface D3Link extends SimulationLinkDatum<D3Node> {
 }
 
 export interface SimulationAPI {
-  /** Bind the simulation to a graphology graph + sigma renderer. Call inside useEffect. */
-  init: (graph: Graph, sigma: Sigma, onTick: () => void) => void;
+  /** Bind the simulation to a graphology graph. Positions sync on tick callbacks. Call inside useEffect. */
+  init: (graph: Graph, sigma: Sigma, _onTick?: () => void) => void;
   /** Wake up the simulation (call during drag). */
   wake: (alpha?: number) => void;
   /** Stop the simulation. */
@@ -52,7 +52,7 @@ export function useSimulation(): SimulationAPI {
     nodesRef.current = [];
   }, []);
 
-  const init = useCallback((graph: Graph, sigma: Sigma, onTick: () => void) => {
+  const init = useCallback((graph: Graph, sigma: Sigma, _onTick?: () => void) => {
     // Kill previous simulation if any
     if (simRef.current) {
       simRef.current.stop();
@@ -99,14 +99,16 @@ export function useSimulation(): SimulationAPI {
       .alphaDecay(0.02)
       .velocityDecay(0.35)
       .on('tick', () => {
-        // Write d3 coordinates back to graphology
+        // Write d3 coordinates back to graphology (no renderer.refresh here!)
+        // Rendering is driven by the interaction handler's explicit refresh,
+        // or by a RAF loop. Decoupling physics ticks from rendering prevents
+        // flicker caused by two sources calling refresh() at conflicting rates.
         for (const d of d3Nodes) {
           if (graph.hasNode(d.id)) {
             graph.setNodeAttribute(d.id, 'x', d.x);
             graph.setNodeAttribute(d.id, 'y', d.y);
           }
         }
-        onTick();
       });
 
     simRef.current = simulation;

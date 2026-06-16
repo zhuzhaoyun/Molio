@@ -283,10 +283,8 @@ export function GraphPage() {
 
     sigmaRef.current = renderer;
     renderer.refresh();
-    // Start d3-force physics engine
-    simulation.init(graph, renderer, () => {
-      renderer.refresh();
-    });
+    // Start d3-force physics engine (positions sync on tick, rendering via interaction handlers)
+    simulation.init(graph, renderer, () => {});
 
     // ── Hover events ──
     renderer.on('enterNode', ({ node }) => {
