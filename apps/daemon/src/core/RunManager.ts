@@ -201,7 +201,17 @@ export class RunManager {
 
     const stdinMode = def.promptViaStdin ? 'pipe' : 'ignore';
     const isCmd = process.platform === 'win32' && (result.binary.endsWith('.cmd') || result.binary.endsWith('.bat'));
-    const child: ChildProcess = spawn(result.binary, args, {
+    // On Windows with shell: true, Node.js concatenates args with spaces.
+    // Wrap args containing spaces in double quotes so they remain single arguments.
+    const spawnArgs = isCmd
+      ? args.map((arg) => {
+          if (arg.includes(' ') || arg.includes('"')) {
+            return `"${arg.replace(/"/g, '\\"')}"`;
+          }
+          return arg;
+        })
+      : args;
+    const child: ChildProcess = spawn(result.binary, spawnArgs, {
       env,
       stdio: [stdinMode, 'pipe', 'pipe'],
       cwd: opts.cwd || agentConfig.env?.['MOLIO_CWD'] || process.cwd(),
@@ -263,7 +273,10 @@ export class RunManager {
 
     child.stderr?.on('data', (chunk: string) => {
       const trimmed = chunk.trim();
-      if (trimmed) {
+      // Codex CLI logs "Reading prompt from stdin..." and "Reading additional
+      // input from stdin..." to stderr as informational messages, not errors.
+      // Filter them out so they don't show up as red error bubbles in the UI.
+      if (trimmed && !(def.id === 'codex' && trimmed.includes('Reading prompt from stdin'))) {
         this.emitEvent(run, { type: 'error', message: trimmed });
       }
     });
