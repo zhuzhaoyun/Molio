@@ -267,8 +267,8 @@ export function GraphPage() {
       labelColor: { color: '#333333' },
       labelSize: 12,
       labelFont: 'Inter, PingFang SC, -apple-system, sans-serif',
-      // Labels always show (Obsidian style)
-      labelRenderedSizeThreshold: 0,
+      // 标签按缩放级别自动显隐 — 缩小时只显示大节点标签
+      labelRenderedSizeThreshold: 5,
       labelDensity: 0.25,
       defaultNodeColor: NODE_DEFAULT,
       renderEdgeLabels: false,

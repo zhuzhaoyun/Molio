@@ -191,6 +191,11 @@ function collectMdFiles(
  * 2. Basename match in the nameIndex
  * 3. If multiple matches with same basename, prefer same-directory one
  */
+/** Strip spaces/dashes/underscores for fuzzy name matching. */
+function normalizeName(name: string): string {
+  return name.replace(/[\s_\-]+/g, '').toLowerCase();
+}
+
 function resolveLink(
   rawName: string,
   sourcePath: string,
@@ -200,8 +205,20 @@ function resolveLink(
   // Strip any .md extension from the link text
   const cleanName = rawName.replace(/\.md$/i, '').trim().toLowerCase();
 
-  // Case 1: Look up by clean name in the index
-  const candidates = nameIndex.get(cleanName);
+  // Case 1: Look up by exact name in the index
+  let candidates = nameIndex.get(cleanName);
+  if (!candidates || candidates.length === 0) {
+    // Case 2: Fuzzy match — strip spaces/dashes/underscores for comparison.
+    // AI-generated wikilinks like [[AI Safety]] may not match filename
+    // ai-safety.md with exact string comparison.
+    const fuzzyKey = normalizeName(cleanName);
+    for (const [key, paths] of nameIndex) {
+      if (normalizeName(key) === fuzzyKey) {
+        candidates = paths;
+        break;
+      }
+    }
+  }
   if (!candidates || candidates.length === 0) return null;
 
   if (candidates.length === 1) {
