@@ -14,6 +14,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -332,3 +333,59 @@ jobs:
             gh release edit "${TAG}" --repo "${{ github.repository }}" --notes "${NOTICE}${BODY}"
             echo "✓ macOS notice added to release body"
           fi
+
+  # ── Upload release assets to Alibaba Cloud OSS (China mirror) ──
+  upload-oss:
+    name: Upload to Alibaba Cloud OSS
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Derive version
+        id: version
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            version=$(echo "${{ inputs.version }}" | xargs)
+          else
+            raw=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
+            version=${raw#v}
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Download release assets from GitHub
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ steps.version.outputs.version }}"
+          echo "Downloading assets from ${TAG}..."
+          gh release download "${TAG}" --dir ./release-assets --skip-existing
+          echo "Downloaded files:"
+          ls -la ./release-assets/
+
+      - name: Configure Aliyun credentials (OIDC)
+        uses: aliyun/configure-credentials@v3
+        with:
+          role-arn: ${{ vars.ALIYUN_ROLE_ARN }}
+          oidc-provider-arn: ${{ vars.ALIYUN_OIDC_PROVIDER_ARN }}
+          role-session-name: github-actions-${{ github.run_id }}
+
+      - name: Upload to OSS
+        uses: aliyun/ossutil-action@v1
+        with:
+          command: cp -r ./release-assets/ oss://${{ vars.OSS_BUCKET }}/releases/v${{ steps.version.outputs.version }}/ --endpoint=${{ vars.OSS_ENDPOINT }} --update
+
+      - name: Update latest.json on OSS
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          cat > /tmp/latest.json <<EOF
+          {"version":"${VERSION}","updatedAt":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
+          EOF
+          ossutil cp /tmp/latest.json oss://${{ vars.OSS_BUCKET }}/releases/latest.json \
+            --endpoint=${{ vars.OSS_ENDPOINT }} \
+            --meta Cache-Control:no-cache
+          echo "✅ latest.json updated to v${VERSION}"
