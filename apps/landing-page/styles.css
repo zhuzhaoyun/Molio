@@ -1,0 +1,429 @@
+/* ============ 共享样式 ============ */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  width: 100%; min-height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Serif SC', serif;
+  background: #FAF8F5;
+  color: #1A1A1A;
+}
+
+/* ============ 粒子背景 ============ */
+#particle-canvas {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.35;
+}
+
+/* ============ 顶部导航栏 ============ */
+.top-nav {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%;
+  z-index: 200;
+  background: rgba(250,248,245,0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(232,221,208,0.6);
+}
+.nav-inner {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0 40px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.nav-logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+  color: #1A1A1A;
+  font-size: 18px;
+  font-weight: 700;
+}
+.logo-icon-sm {
+  width: 32px; height: 32px;
+  background: #1A1A1A;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+.nav-links {
+  display: flex;
+  gap: 32px;
+  align-items: center;
+}
+.nav-link {
+  text-decoration: none;
+  color: #6B6B6B;
+  font-size: 15px;
+  font-weight: 500;
+  padding: 6px 0;
+  border-bottom: 2px solid transparent;
+  transition: all 0.3s;
+}
+.nav-link:hover {
+  color: #8B7355;
+  border-bottom-color: #8B7355;
+}
+.nav-link.active {
+  color: #1A1A1A;
+  border-bottom-color: #8B7355;
+  font-weight: 600;
+}
+
+/* ============ 通用页面布局 ============ */
+.page-content {
+  position: relative;
+  z-index: 1;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 100px 24px 80px;
+  min-height: 100vh;
+}
+.page-title {
+  font-size: 36px;
+  font-weight: 700;
+  margin-bottom: 12px;
+  color: #1A1A1A;
+}
+.page-subtitle {
+  font-size: 18px;
+  color: #6B6B6B;
+  margin-bottom: 48px;
+}
+
+/* ============ 步骤卡片 ============ */
+.step-card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 32px;
+  margin-bottom: 24px;
+  border: 1px solid #E8DDD0;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.04);
+  transition: all 0.3s;
+}
+.step-card:hover {
+  box-shadow: 0 8px 28px rgba(0,0,0,0.08);
+  transform: translateY(-2px);
+}
+.step-card-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.step-number {
+  width: 48px; height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+.step-number.brown { background: #8B7355; }
+.step-number.green { background: #6B8E5E; }
+.step-number.orange { background: #C4956A; }
+.step-number.teal { background: #5A8A7A; }
+.step-number.purple { background: #7A6B8E; }
+.step-number.red { background: #B5655A; }
+.step-number.blue { background: #5A6B8E; }
+.step-number.gray { background: #8B8B8B; }
+.step-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: #1A1A1A;
+}
+
+/* ============ 下载卡片 ============ */
+.download-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 24px;
+  margin-bottom: 48px;
+}
+.download-card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 28px;
+  border: 1px solid #E8DDD0;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.04);
+  text-align: center;
+  transition: all 0.3s;
+}
+.download-card:hover {
+  box-shadow: 0 8px 28px rgba(0,0,0,0.08);
+  transform: translateY(-4px);
+}
+.download-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+}
+.download-name {
+  font-size: 18px;
+  font-weight: 700;
+  color: #1A1A1A;
+  margin-bottom: 4px;
+}
+.download-desc {
+  font-size: 14px;
+  color: #6B6B6B;
+  margin-bottom: 16px;
+}
+.download-meta {
+  font-size: 13px;
+  color: #8B8B8B;
+  margin-bottom: 16px;
+}
+.download-btn {
+  display: inline-block;
+  padding: 10px 28px;
+  background: #8B7355;
+  color: #fff;
+  border-radius: 8px;
+  text-decoration: none;
+  font-size: 15px;
+  font-weight: 600;
+  transition: all 0.3s;
+  border: none;
+  cursor: pointer;
+}
+.download-btn:hover {
+  background: #6B5B3A;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(139,115,85,0.3);
+}
+.download-btn.secondary {
+  background: transparent;
+  color: #8B7355;
+  border: 1px solid #8B7355;
+  margin-left: 8px;
+}
+.download-btn.secondary:hover {
+  background: rgba(139,115,85,0.08);
+}
+
+/* ============ 内容文字 ============ */
+.content-text h3 {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 16px;
+  color: #1A1A1A;
+  line-height: 1.4;
+}
+.content-text p {
+  font-size: 16px;
+  color: #5A5A5A;
+  line-height: 1.8;
+  margin-bottom: 16px;
+}
+.content-text ul,
+.content-text ol {
+  margin: 0 0 16px 0;
+  padding-left: 24px;
+}
+.content-text li {
+  font-size: 15px;
+  color: #4A4A4A;
+  line-height: 1.8;
+  margin-bottom: 8px;
+}
+
+/* ============ 代码/路径 ============ */
+code {
+  background: #F5F0EB;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 14px;
+  color: #1A1A1A;
+  font-family: 'SF Mono', 'Courier New', monospace;
+}
+
+/* ============ 提示块 ============ */
+.tip-box {
+  background: linear-gradient(135deg, #F5F0EB 0%, #FAF8F5 100%);
+  border-left: 4px solid #8B7355;
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin: 16px 0;
+  font-size: 15px;
+  color: #4A4A4A;
+  line-height: 1.7;
+}
+.tip-box strong {
+  color: #8B7355;
+}
+
+/* ============ 区域标题 ============ */
+.section-heading {
+  font-size: 24px;
+  font-weight: 700;
+  color: #1A1A1A;
+  margin: 48px 0 24px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #E8DDD0;
+}
+
+/* ============ 右下角二维码 ============ */
+.float-qr-wrap {
+  position: fixed;
+  bottom: 80px;
+  right: 30px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  background: #fff;
+  border-radius: 16px;
+  padding: 12px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+  border: 1px solid #E8DDD0;
+  transition: all 0.3s;
+}
+.float-qr-wrap:hover {
+  box-shadow: 0 8px 28px rgba(0,0,0,0.12);
+  transform: translateY(-2px);
+}
+.float-qr-img {
+  width: 100px; height: 100px;
+}
+.float-qr-img img {
+  width: 100%; height: 100%;
+  object-fit: contain;
+}
+.float-qr-caption {
+  font-size: 12px;
+  color: #8B7355;
+  font-weight: 600;
+  text-align: center;
+}
+
+/* ============ 右上角 GitHub ============ */
+.float-github {
+  position: fixed;
+  top: 72px;
+  right: 30px;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #fff;
+  border-radius: 12px;
+  padding: 10px 18px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+  border: 1px solid #E8DDD0;
+  transition: all 0.3s;
+}
+.float-github:hover {
+  box-shadow: 0 8px 28px rgba(0,0,0,0.12);
+  transform: translateY(-2px);
+}
+.gh-icon {
+  width: 24px; height: 24px;
+  flex-shrink: 0;
+}
+.gh-icon svg {
+  width: 100%; height: 100%;
+  fill: #1A1A1A;
+}
+.gh-url {
+  font-size: 14px;
+  font-weight: 500;
+  color: #1A1A1A;
+  letter-spacing: 0.5px;
+  font-family: 'SF Mono', 'Courier New', monospace;
+}
+.gh-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+}
+
+/* ============ 指示器（仅首页） ============ */
+.indicators {
+  position: fixed;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 12px;
+  z-index: 100;
+}
+.indicator {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: #D4C5B0;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+.indicator.active {
+  background: #8B7355;
+  width: 32px;
+  border-radius: 5px;
+}
+
+/* ============ 页脚（仅首页） ============ */
+.footer {
+  position: fixed;
+  bottom: 20px;
+  right: 40px;
+  font-size: 13px;
+  color: #B0A090;
+  z-index: 100;
+}
+
+/* ============ 自动播放提示（仅首页） ============ */
+.autoplay-hint {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 13px;
+  color: #B0A090;
+  z-index: 100;
+  background: rgba(255,255,255,0.8);
+  padding: 6px 16px;
+  border-radius: 20px;
+  backdrop-filter: blur(4px);
+  border: 1px solid #E8DDD0;
+}
+
+/* ============ 响应式 ============ */
+@media (max-width: 1200px) {
+  .nav-inner { padding: 0 24px; }
+  .nav-links { gap: 20px; }
+  .float-qr-wrap { padding: 8px; bottom: 70px; right: 16px; left: auto; }
+  .float-qr-img { width: 70px; height: 70px; }
+  .float-qr-caption { font-size: 10px; }
+  .float-github { top: 68px; right: 16px; padding: 8px 12px; }
+  .gh-url { font-size: 11px; }
+}
+
+@media (max-width: 768px) {
+  .nav-inner { padding: 0 16px; }
+  .nav-links { gap: 16px; }
+  .nav-link { font-size: 14px; }
+  .page-content { padding: 80px 16px 60px; }
+  .page-title { font-size: 28px; }
+  .step-card { padding: 24px; }
+  .step-title { font-size: 18px; }
+  .download-grid { grid-template-columns: 1fr; }
+  .content-text h3 { font-size: 20px; }
+  .content-text p, .content-text li { font-size: 14px; }
+}
