@@ -130,6 +130,48 @@ describe('main.js: must load URL only after daemon is ready (not in createWindow
   });
 });
 
+describe('main.js: daemon failure must show error page (not blank screen)', () => {
+  it('exit handler should reject promise when daemon dies before starting', () => {
+    // The exit handler must call reject() when the daemon crashes before
+    // printing "listening on", so the caller doesn't wait for the 10s timeout.
+    const exitHandlerStart = mainJs.indexOf("daemonProcess.on('exit'");
+    assert.ok(exitHandlerStart !== -1, "exit handler must exist");
+
+    const exitHandlerEnd = mainJs.indexOf('});', exitHandlerStart);
+    const exitBody = mainJs.slice(exitHandlerStart, exitHandlerEnd);
+
+    assert.ok(
+      exitBody.includes('reject'),
+      'exit handler must reject the promise when daemon dies before starting'
+    );
+    assert.ok(
+      exitBody.includes('!started'),
+      'exit handler must check !started before rejecting'
+    );
+  });
+
+  it('loadApp() must only be called when daemon starts successfully', () => {
+    // loadApp() must be guarded by a daemonReady check, not called unconditionally.
+    const whenReadyBlock = mainJs.slice(mainJs.indexOf('app.whenReady()'));
+
+    assert.ok(
+      whenReadyBlock.includes('daemonReady'),
+      'startup code must track daemon readiness with a flag'
+    );
+    assert.ok(
+      /if\s*\(\s*daemonReady\s*\)/.test(whenReadyBlock),
+      'loadApp() must only be called when daemonReady is true'
+    );
+  });
+
+  it('should show error page when daemon fails to start', () => {
+    assert.ok(
+      mainJs.includes('showDaemonErrorPage'),
+      'showDaemonErrorPage function must exist for graceful daemon failure'
+    );
+  });
+});
+
 describe('prepare-resources.mjs: better-sqlite3 must use Electron prebuild', () => {
   it('should use prebuild-install to download Electron prebuilt binary', () => {
     assert.ok(

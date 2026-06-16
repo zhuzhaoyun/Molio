@@ -121,6 +121,8 @@ function getWellKnownToolchainDirs(): string[] {
 
   if (process.platform === 'win32') {
     dirs.push(
+      // Molio user-level npm prefix (auto-install fallback)
+      path.join(home, '.molio', 'npm'),
       path.join(home, 'AppData', 'Local', 'pnpm'),
       path.join(home, 'AppData', 'Roaming', 'npm'),
       path.join(home, 'AppData', 'Local', 'Yarn', 'bin'),
@@ -159,6 +161,8 @@ function getWellKnownToolchainDirs(): string[] {
     if (fs.existsSync(voltaDir)) dirs.push(voltaDir);
   } else {
     dirs.push(
+      // Molio user-level npm prefix (auto-install fallback)
+      path.join(home, '.molio', 'npm', 'bin'),
       path.join(home, '.local', 'bin'),
       path.join(home, '.npm-global', 'bin'),
       path.join(home, '.npm-packages', 'bin'),

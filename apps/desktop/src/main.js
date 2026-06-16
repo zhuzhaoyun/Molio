@@ -64,6 +64,12 @@ function startDaemonProduction() {
         log('error', 'main', `daemon stderr:\n${stderrChunks.join('\n')}`);
       }
       daemonProcess = null;
+      // Reject immediately if daemon died before printing "listening on"
+      // instead of waiting for the 10s timeout.
+      if (!started) {
+        const msg = stderrChunks.join('\n') || `daemon exited with code=${code} signal=${signal}`;
+        reject(new Error(`Daemon process died before starting: ${msg}`));
+      }
     });
 
     daemonProcess.on('error', (err) => {
@@ -129,6 +135,34 @@ function loadApp() {
   }
 }
 
+/**
+ * Show a user-friendly error page when the daemon fails to start.
+ * The auto-updater keeps running in the background so fixes can still be pushed.
+ */
+function showDaemonErrorPage() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  log('warn', 'main', 'showing daemon error page');
+  const html = `data:text/html;charset=utf-8,${encodeURIComponent(`<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Molio</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { display: flex; align-items: center; justify-content: center; height: 100vh;
+         background: #181816; color: #eceae6;
+         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  .box { text-align: center; max-width: 480px; padding: 32px; }
+  h1 { font-size: 20px; margin-bottom: 12px; }
+  p  { font-size: 14px; opacity: 0.6; line-height: 1.6; margin-bottom: 20px; }
+  button { padding: 8px 24px; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px;
+           background: transparent; color: #eceae6; font-size: 14px; cursor: pointer; }
+  button:hover { background: rgba(255,255,255,0.06); }
+</style></head><body><div class="box">
+  <h1>服务启动失败</h1>
+  <p>应用后端服务未能正常启动，请检查端口 3100 是否被占用，或尝试重启应用。</p>
+  <button onclick="location.reload()">重试</button>
+</div></body></html>`)}`;
+  mainWindow.loadURL(html);
+}
+
 // ─── App info IPC (sync, used by preload) ───
 
 ipcMain.on('app:get-info', (event) => {
@@ -178,18 +212,23 @@ app.whenReady().then(async () => {
 
   // ③ Start daemon last — failure here must not affect updater
   if (!isDevMode()) {
+    let daemonReady = false;
     try {
       await startDaemonProduction();
+      daemonReady = true;
     } catch (err) {
       log('error', 'main', `daemon startup failed: ${err?.message ?? err}`);
       // Daemon failure is not fatal for the updater.
-      // The UI will show connection errors, but updates still work.
     }
 
-    // ④ Only load the real app URL AFTER daemon is ready.
-    // Previously loadURL was called in createWindow() before daemon
-    // started, causing 404/ECONNREFUSED on slower machines.
-    loadApp();
+    // ④ Only load the real app URL if daemon started successfully.
+    // Previously loadApp() was called unconditionally, causing a blank
+    // white screen (ECONNREFUSED) when the daemon failed to start.
+    if (daemonReady) {
+      loadApp();
+    } else {
+      showDaemonErrorPage();
+    }
   }
 
   app.on('activate', () => {

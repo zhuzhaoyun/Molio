@@ -8,7 +8,7 @@ import type {
 } from '@molio/contracts';
 import { getAgentDef, listAgentDefs } from './runtimes/registry.js';
 import { resolveAgentBinary, probeVersion } from './runtimes/launch.js';
-import { buildSpawnEnv } from './runtimes/env.js';
+import { buildSpawnEnv, createStderrDecoder } from './runtimes/env.js';
 import { createClaudeStreamHandler } from './streams/claude-stream.js';
 import { createCodexStreamHandler } from './streams/codex-stream.js';
 import { createJsonEventStreamHandler } from './streams/json-event-stream.js';
@@ -57,10 +57,15 @@ export class RunManager {
       const configuredEnv = agentConfig.env || {};
       const result = resolveAgentBinary(def, { configuredEnv });
       const version = result.binary ? probeVersion(result.binary, def.versionArgs) : null;
+      // Agent is only "available" if we can both find the binary AND
+      // successfully probe its version. A .cmd shim created by npm always
+      // exists even when the postinstall failed (leaving a placeholder).
+      // probeVersion returns null when the binary can't actually execute.
+      const available = result.binary !== null && version !== null;
       return {
         id: def.id,
         name: def.name,
-        available: result.binary !== null,
+        available,
         binary: result.binary,
         source: result.source,
         version,
@@ -201,14 +206,16 @@ export class RunManager {
     );
 
     const stdinMode = def.promptViaStdin ? 'pipe' : 'ignore';
-    const isCmd = process.platform === 'win32' && (result.binary.endsWith('.cmd') || result.binary.endsWith('.bat'));
+    const isWin = process.platform === 'win32';
+    const isCmd = isWin && (result.binary.endsWith('.cmd') || result.binary.endsWith('.bat'));
+
     const child: ChildProcess = spawn(result.binary, args, {
       env,
       stdio: [stdinMode, 'pipe', 'pipe'],
       cwd: opts.cwd || agentConfig.env?.['MOLIO_CWD'] || process.cwd(),
       // On Windows, .cmd/.bat files must be spawned with shell: true to avoid EINVAL
       shell: isCmd,
-      windowsVerbatimArguments: process.platform === 'win32' && !isCmd,
+      windowsVerbatimArguments: isWin && !isCmd,
     });
     run.child = child;
 
@@ -239,7 +246,10 @@ export class RunManager {
     }
 
     child.stdout?.setEncoding('utf8');
-    child.stderr?.setEncoding('utf8');
+    // On Windows with non-UTF-8 console code page (e.g. CP936/GBK for Chinese),
+    // stderr from cmd.exe and child processes is in the system code page, not UTF-8.
+    // Use a TextDecoder-based decoder to avoid mojibake in error messages.
+    const stderrDecoder = createStderrDecoder();
 
     const parser = this.selectParser(def, (ev) => {
       this.emitEvent(run, ev);
@@ -262,8 +272,11 @@ export class RunManager {
       parser.feed(chunk);
     });
 
-    child.stderr?.on('data', (chunk: string) => {
-      const trimmed = chunk.trim();
+    child.stderr?.on('data', (chunk: Buffer | string) => {
+      const text = stderrDecoder
+        ? stderrDecoder(chunk as Buffer)
+        : (chunk as string);
+      const trimmed = text.trim();
       if (trimmed) {
         this.emitEvent(run, { type: 'error', message: trimmed });
       }

@@ -639,6 +639,7 @@
   flex-direction: column;
   gap: 8px;
   min-width: 200px;
+  max-width: 480px;
 }
 
 .rt-install-status {
@@ -682,6 +683,8 @@
 
 .rt-install-result--error {
   color: var(--red);
+  flex-direction: column;
+  align-items: flex-start;
 }
 
 .rt-install-result__icon {
@@ -691,12 +694,19 @@
 }
 
 .rt-install-result__msg {
-  max-width: 260px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  max-width: 100%;
+  max-height: 200px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
   font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  line-height: 1.5;
   color: var(--text-muted);
+  background: var(--bg-subtle);
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border-soft);
 }
 
 /* ══════════ Provider Config ══════════ */

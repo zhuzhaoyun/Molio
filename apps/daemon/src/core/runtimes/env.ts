@@ -1,7 +1,10 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { execSync } from 'node:child_process';
+import { TextDecoder as NodeTextDecoder } from 'node:util';
 import type { RuntimeAgentDef } from '@molio/contracts';
+import { detectNode } from './node-detect.js';
 
 /**
  * Load a `.env` file and return key-value pairs.
@@ -69,7 +72,62 @@ export function buildSpawnEnv(
     stripUnlessCustomBaseUrl(env, 'OPENAI_BASE_URL', ['OPENAI_API_KEY', 'CODEX_API_KEY']);
   }
 
+  // Ensure Node.js and npm-installed agent CLIs are in PATH.
+  // Agent CLIs installed via npm create .cmd shims that call `node`,
+  // which fails if node is not in PATH (common on systems with old/nvm Node.js).
+  augmentPath(env);
+
   return env;
+}
+
+/**
+ * Add Node.js and npm-installed binary directories to PATH.
+ * This ensures that:
+ * - `.cmd` shims (like `claude.cmd`) can find `node`
+ * - npm-installed CLIs are accessible even if user hasn't restarted terminal
+ * - The Molio user-level npm prefix (~/.molio/npm) is always searchable
+ */
+function augmentPath(env: NodeJS.ProcessEnv): void {
+  const pathKey = process.platform === 'win32' ? 'Path' : 'PATH';
+  // Normalize key — Windows env can use Path, PATH, or path
+  const actualKey = Object.keys(env).find(k => k.toUpperCase() === 'PATH') || pathKey;
+  const pathSep = process.platform === 'win32' ? ';' : ':';
+  const currentPath = (env[actualKey] as string) || '';
+
+  const dirsToAdd: string[] = [];
+  const home = os.homedir();
+
+  // 1. System Node.js directory (so `node` is available for .cmd shims)
+  try {
+    const nodeResult = detectNode();
+    if (nodeResult.binary) {
+      dirsToAdd.push(path.dirname(nodeResult.binary));
+    }
+    if (nodeResult.npmBinary) {
+      dirsToAdd.push(path.dirname(nodeResult.npmBinary));
+    }
+  } catch { /* ignore */ }
+
+  // 2. Molio user-level npm prefix (where `npm install --prefix` puts bins)
+  if (process.platform === 'win32') {
+    // On Windows, npm puts .cmd shims directly in the prefix dir
+    dirsToAdd.push(path.join(home, '.molio', 'npm'));
+    // Also add common npm global bin dirs
+    dirsToAdd.push(path.join(home, 'AppData', 'Roaming', 'npm'));
+  } else {
+    dirsToAdd.push(path.join(home, '.molio', 'npm', 'bin'));
+    dirsToAdd.push(path.join(home, '.local', 'bin'));
+  }
+
+  // Filter to dirs that exist and aren't already in PATH
+  const newDirs = dirsToAdd.filter(d => {
+    if (!fs.existsSync(d)) return false;
+    return !currentPath.toLowerCase().includes(d.toLowerCase());
+  });
+
+  if (newDirs.length > 0) {
+    env[actualKey] = `${newDirs.join(pathSep)}${pathSep}${currentPath}`;
+  }
 }
 
 /**
@@ -131,4 +189,75 @@ function stripUnlessCustomBaseUrl(
   for (const key of Object.keys(env)) {
     if (upper.has(key.toUpperCase())) delete env[key];
   }
+}
+
+/* ── Windows console encoding ── */
+
+let cachedCodePage: number | null = null;
+
+/**
+ * Detect the Windows console code page via `chcp`.
+ * Returns 65001 (UTF-8) on non-Windows platforms or when detection fails.
+ * Result is cached after the first call.
+ */
+export function detectWindowsCodePage(): number {
+  if (process.platform !== 'win32') return 65001;
+  if (cachedCodePage !== null) return cachedCodePage;
+
+  try {
+    const output = execSync('chcp', { encoding: 'utf8', timeout: 5000 });
+    const match = output.match(/(\d+)/);
+    cachedCodePage = match && match[1] ? parseInt(match[1], 10) : 65001;
+  } catch {
+    cachedCodePage = 65001;
+  }
+  return cachedCodePage;
+}
+
+/** Reset the cached code page (for testing). */
+export function resetCodePageCache(): void {
+  cachedCodePage = null;
+}
+
+/**
+ * Map a Windows code page to a TextDecoder-compatible encoding label.
+ */
+function codePageToEncoding(cp: number): string {
+  switch (cp) {
+    case 65001: return 'utf-8';
+    case 936:   return 'gbk';
+    case 950:   return 'big5';
+    case 932:   return 'shift_jis';
+    case 949:   return 'euc-kr';
+    case 1252:  return 'windows-1252';
+    case 437:   return 'ibm437';
+    default:    return 'utf-8';
+  }
+}
+
+/**
+ * Create a decoder for child process stderr on Windows.
+ *
+ * On non-Windows or when the code page is already UTF-8, returns null —
+ * the caller should fall back to `setEncoding('utf8')`.
+ *
+ * On Windows with a non-UTF-8 code page (e.g. 936/GBK for Chinese),
+ * returns a function that decodes raw Buffer chunks into properly
+ * encoded strings via TextDecoder.
+ */
+export function createStderrDecoder(): ((buf: Buffer) => string) | null {
+  if (process.platform !== 'win32') return null;
+
+  const cp = detectWindowsCodePage();
+  if (cp === 65001) return null;
+
+  const encoding = codePageToEncoding(cp);
+  let decoder: NodeTextDecoder;
+  try {
+    decoder = new NodeTextDecoder(encoding);
+  } catch {
+    return null; // Unknown encoding — fall back to UTF-8
+  }
+
+  return (buf: Buffer) => decoder.decode(buf, { stream: true });
 }

@@ -70,8 +70,11 @@ export function InstallButton({ agentId, onInstalled }: InstallButtonProps) {
     return (
       <div className="rt-install-wrap">
         <div className="rt-install-result rt-install-result--error">
-          <span className="rt-install-result__icon">✗</span>
-          <span className="rt-install-result__msg">{state.message}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span className="rt-install-result__icon">✗</span>
+            <span style={{ fontWeight: 600 }}>{t('runtimes.installFailed')}</span>
+          </div>
+          <pre className="rt-install-result__msg">{state.message}</pre>
         </div>
         <button
           className="rt-btn rt-btn--sm rt-btn--ghost"

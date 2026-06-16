@@ -118,6 +118,9 @@ export function getWellKnownToolchainDirs(): string[] {
 
   if (process.platform === 'win32') {
     dirs.push(
+      // Molio user-level npm prefix (auto-install fallback when global dir
+      // is not writable). npm puts .cmd shims directly in the prefix dir.
+      path.join(home, '.molio', 'npm'),
       path.join(home, 'AppData', 'Local', 'pnpm'),
       path.join(home, 'AppData', 'Roaming', 'npm'),
       path.join(home, 'AppData', 'Local', 'Yarn', 'bin'),
@@ -170,6 +173,9 @@ export function getWellKnownToolchainDirs(): string[] {
     }
   } else {
     dirs.push(
+      // Molio user-level npm prefix (auto-install fallback).
+      // npm puts bin shims in <prefix>/bin on Unix.
+      path.join(home, '.molio', 'npm', 'bin'),
       path.join(home, '.local', 'bin'),
       path.join(home, '.npm-global', 'bin'),
       path.join(home, '.npm-packages', 'bin'),
