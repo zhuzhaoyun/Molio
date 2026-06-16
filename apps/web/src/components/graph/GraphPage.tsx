@@ -354,6 +354,8 @@ export function GraphPage() {
           d3Node.fx = (attrs.x as number) ?? 0;
           d3Node.fy = (attrs.y as number) ?? 0;
         }
+        // 唤醒物理引擎——这次唤醒会持续 tick，拖拽过程中不需要重复唤醒
+        simulation.wake();
         e.preventDefault();
         e.stopPropagation();
       } else {
@@ -403,8 +405,7 @@ export function GraphPage() {
           graph.setNodeAttribute(draggedNode, 'x', graphPos.x);
           graph.setNodeAttribute(draggedNode, 'y', graphPos.y);
         }
-        // Wake simulation — gentle nudge so only connected nodes react
-        simulation.wake();
+        // 不唤醒引擎——mousedown 时已唤醒，引擎持续 tick 带动邻居
         renderer.refresh();
       }
     };
