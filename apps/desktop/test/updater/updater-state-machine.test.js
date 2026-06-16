@@ -164,40 +164,47 @@ describe('onCheckResult: must handle "downloaded" response from IPC', () => {
   });
 });
 
-// ── updater.js: must track downloadedVersion ────────────────────
+// ── updater.js: must track downloaded state for IPC ─────────────
 
-describe('updater.js: must track downloadedVersion for IPC', () => {
+describe('updater.js: must expose downloaded state for IPC', () => {
   const updaterSrc = readFileSync(
     path.resolve(import.meta.dirname, '../../src/updater.js'),
     'utf-8'
   );
 
-  it('should declare a downloadedVersion variable', () => {
+  it('should maintain an updaterState object', () => {
     assert.ok(
-      updaterSrc.includes('downloadedVersion'),
-      'updater.js must track downloadedVersion'
+      updaterSrc.includes('updaterState'),
+      'updater.js must keep the current updater state in main process'
     );
   });
 
-  it('should set downloadedVersion on update-downloaded event', () => {
+  it('should set downloaded state and file on update-downloaded event', () => {
     const downloadedHandler = updaterSrc.match(
       /autoUpdater\.on\('update-downloaded'[\s\S]*?\}\);/
     );
     assert.ok(downloadedHandler, 'update-downloaded handler must exist');
     assert.ok(
-      downloadedHandler[0].includes('downloadedVersion'),
-      'update-downloaded handler must set downloadedVersion'
+      downloadedHandler[0].includes("status: 'downloaded'"),
+      'update-downloaded handler must set status to downloaded'
+    );
+    assert.ok(
+      downloadedHandler[0].includes('downloadedFile'),
+      'update-downloaded handler must store downloadedFile'
     );
   });
 
-  it('IPC updater:check should include "downloaded" in response', () => {
-    const ipcHandler = updaterSrc.match(
-      /ipcMain\.handle\('updater:check'[\s\S]*?\}\);/
-    );
-    assert.ok(ipcHandler, 'updater:check IPC handler must exist');
+  it('IPC should expose updater:get-state', () => {
     assert.ok(
-      ipcHandler[0].includes('downloaded'),
-      'updater:check response must include downloaded field'
+      updaterSrc.includes("'updater:get-state'") || updaterSrc.includes('"updater:get-state"'),
+      'updater:get-state must return the latest updater state'
+    );
+  });
+
+  it('publicState should include downloaded field', () => {
+    assert.ok(
+      updaterSrc.includes('downloaded:'),
+      'public updater state must include downloaded field'
     );
   });
 });

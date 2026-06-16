@@ -158,4 +158,15 @@ describe('prepare-resources.mjs: better-sqlite3 must use Electron prebuild', () 
       'prebuild must use electronVersion from electron/package.json'
     );
   });
+
+  it('should keep qrcode external and copy its runtime dependencies', () => {
+    assert.ok(
+      prepareResourcesJs.includes("'qrcode'"),
+      'qrcode must stay external so its CommonJS fs requires work in the ESM daemon bundle'
+    );
+    assert.ok(
+      prepareResourcesJs.includes("'dijkstrajs'") && prepareResourcesJs.includes("'pngjs'"),
+      'qrcode runtime dependencies must be copied to desktop resources'
+    );
+  });
 });

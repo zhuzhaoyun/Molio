@@ -3,7 +3,7 @@
  *
  * 1. Bundle the daemon into a single JS file using esbuild
  *    (better-sqlite3 is external — it's a native module)
- * 2. Copy better-sqlite3 + its deps to resources/daemon/node_modules/
+ * 2. Copy runtime dependencies to resources/daemon/node_modules/
  * 3. Download Electron prebuilt binary for better-sqlite3 (no C++ build tools needed)
  * 4. Copy the web build to resources/web/
  */
@@ -42,6 +42,10 @@ function findPackageDir(pkgName) {
   return null;
 }
 
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
 async function bundleDaemon() {
   console.log('Bundling daemon...');
 
@@ -60,7 +64,7 @@ async function bundleDaemon() {
     target: 'node24',
     format: 'esm',
     outfile,
-    external: ['better-sqlite3'],
+    external: ['better-sqlite3', 'qrcode'],
     // No banner needed — Node 24+ supports import.meta.dirname/filename natively
     logLevel: 'info',
   });
@@ -90,6 +94,20 @@ function copyNativeDependencies() {
 
   // Copy bindings + file-uri-to-path (dependencies of better-sqlite3)
   for (const pkg of ['bindings', 'file-uri-to-path']) {
+    const src = findPackageDir(pkg);
+    if (!src) {
+      console.warn(`  WARNING: ${pkg} not found, skipping`);
+      continue;
+    }
+    const dest = join(destNodeModules, pkg);
+    cpSync(src, dest, { recursive: true, dereference: true });
+    console.log(`  Copied ${pkg}`);
+  }
+
+  // qrcode is CommonJS and calls require('fs') inside its PNG renderer.
+  // Keep it external so Electron's embedded Node.js loads it as normal CJS
+  // instead of letting esbuild inline it into the ESM daemon bundle.
+  for (const pkg of ['qrcode', 'dijkstrajs', 'pngjs']) {
     const src = findPackageDir(pkg);
     if (!src) {
       console.warn(`  WARNING: ${pkg} not found, skipping`);
@@ -148,7 +166,7 @@ function downloadElectronPrebuilds() {
       if (attempt < maxRetries) {
         const delay = attempt * 3000; // 3s, 6s
         console.warn(`  Attempt ${attempt}/${maxRetries} failed, retrying in ${delay/1000}s...`);
-        execSync(`sleep ${delay / 1000}`, { stdio: 'ignore' });
+        sleepSync(delay);
       }
     }
   }
