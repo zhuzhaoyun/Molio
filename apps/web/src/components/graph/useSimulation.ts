@@ -12,7 +12,8 @@ import {
   forceLink,
   forceManyBody,
   forceCollide,
-  forceCenter,
+  forceX,
+  forceY,
   type SimulationNodeDatum,
   type SimulationLinkDatum,
 } from 'd3-force';
@@ -22,6 +23,8 @@ import type Sigma from 'sigma';
 export interface D3Node extends SimulationNodeDatum {
   id: string;
   radius: number;
+  initX: number;  // Rest position X — node springs back here when released
+  initY: number;  // Rest position Y — node springs back here when released
 }
 
 export interface D3Link extends SimulationLinkDatum<D3Node> {
@@ -69,10 +72,14 @@ export function useSimulation(): SimulationAPI {
     const d3Links: D3Link[] = [];
 
     graph.forEachNode((key, attrs) => {
+      const x = (attrs.x as number) ?? Math.random() * 100;
+      const y = (attrs.y as number) ?? Math.random() * 100;
       const node: D3Node = {
         id: key,
-        x: (attrs.x as number) ?? Math.random() * 100,
-        y: (attrs.y as number) ?? Math.random() * 100,
+        x,
+        y,
+        initX: x,  // Record initial position as spring rest target
+        initY: y,
         radius: Math.max((attrs.size as number) ?? 6, 4),
       };
       d3Nodes.push(node);
@@ -93,10 +100,13 @@ export function useSimulation(): SimulationAPI {
           .distance(150)
           .strength(0.2),
       )
-      .force('charge', forceManyBody<D3Node>().strength(-150).distanceMax(500))
+      .force('charge', forceManyBody<D3Node>().strength(-80).distanceMax(300))
       .force('collide', forceCollide<D3Node>().radius((d) => d.radius + 6))
-      .force('center', forceCenter<D3Node>().strength(0.15))
-      .alphaDecay(0.02)
+      // Individual spring forces — each node has its own rest position (initX/initY).
+      // Drag stretches the spring, release snaps back with damping → "rubber band" feel.
+      .force('x', forceX<D3Node>((d) => (d.fx != null ? d.fx : d.initX)).strength(0.004))
+      .force('y', forceY<D3Node>((d) => (d.fy != null ? d.fy : d.initY)).strength(0.004))
+      .alphaDecay(0.03)
       .velocityDecay(0.35)
       .on('tick', () => {
         // Write d3 coordinates back to graphology (no renderer.refresh here!)

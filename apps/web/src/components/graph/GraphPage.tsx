@@ -125,13 +125,12 @@ export function GraphPage() {
     graphRef.current = graph;
 
     const count = graphData.nodes.length;
-    const initialRadius = Math.sqrt(count) * 40 + 200;
-    const angleStep = (2 * Math.PI) / (count || 1);
+    // 均匀正圆形初始布局 — 替代随机散布，让图谱从干净整洁的圆形开始
+    const radius = Math.sqrt(count) * 60 + 200;
 
     for (let i = 0; i < count; i++) {
       const n = graphData.nodes[i];
-      const angle = angleStep * i + (Math.random() - 0.5) * 0.5;
-      const radius = initialRadius * (0.5 + Math.random() * 0.5);
+      const angle = (2 * Math.PI * i) / count;
       graph.addNode(n.key, {
         label: n.label,
         path: n.path,
@@ -169,8 +168,8 @@ export function GraphPage() {
             size: 4,
             color: '#D4D4D4',
             type: 'circle',
-            x: (Math.random() - 0.5) * initialRadius,
-            y: (Math.random() - 0.5) * initialRadius,
+            x: (Math.random() - 0.5) * radius,
+            y: (Math.random() - 0.5) * radius,
           });
         } catch { /* node already exists */ }
       }
