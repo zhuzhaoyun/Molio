@@ -376,15 +376,38 @@ jobs:
           ALIYUN_OIDC_PROVIDER_ARN: ${{ vars.ALIYUN_OIDC_PROVIDER_ARN }}
         run: |
           # Get OIDC token from GitHub
+          echo "::group::OIDC Token Request"
           ID_TOKEN=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.aliyuncs.com" | jq -r '.value')
+          if [ -z "$ID_TOKEN" ] || [ "$ID_TOKEN" = "null" ]; then
+            echo "❌ Failed to get OIDC token from GitHub"
+            exit 1
+          fi
+          echo "✅ OIDC token obtained (${#ID_TOKEN} chars)"
+          echo "::endgroup::"
 
           # Call STS AssumeRoleWithOIDC directly via curl
+          echo "::group::STS AssumeRoleWithOIDC"
           CREDENTIALS=$(curl -s "https://sts.aliyuncs.com/?Action=AssumeRoleWithOIDC&Version=2015-04-01&Format=JSON&RoleArn=${ALIYUN_ROLE_ARN}&OIDCProviderArn=${ALIYUN_OIDC_PROVIDER_ARN}&OIDCToken=${ID_TOKEN}&RoleSessionName=github-actions-${{ github.run_id }}&DurationSeconds=3600")
+          echo "STS response: $CREDENTIALS"
+          echo "::endgroup::"
+
+          # Check for errors
+          ERROR_CODE=$(echo "$CREDENTIALS" | jq -r '.Code // empty')
+          if [ -n "$ERROR_CODE" ]; then
+            echo "❌ STS API error: $ERROR_CODE - $(echo "$CREDENTIALS" | jq -r '.Message')"
+            exit 1
+          fi
 
           # Extract credentials
           AK_ID=$(echo "$CREDENTIALS" | jq -r '.Credentials.AccessKeyId')
           AK_SECRET=$(echo "$CREDENTIALS" | jq -r '.Credentials.AccessKeySecret')
           STS_TOKEN=$(echo "$CREDENTIALS" | jq -r '.Credentials.SecurityToken')
+
+          if [ -z "$AK_ID" ] || [ "$AK_ID" = "null" ]; then
+            echo "❌ Failed to extract credentials from STS response"
+            exit 1
+          fi
+          echo "✅ STS credentials obtained"
 
           # Persist for subsequent steps
           echo "OSS_ACCESS_KEY_ID=$AK_ID" >> $GITHUB_ENV
