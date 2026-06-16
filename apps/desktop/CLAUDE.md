@@ -31,18 +31,21 @@ Electron 40 内置 Node.js 24.11.1。通过设置 `ELECTRON_RUN_AS_NODE=1` 环�
 
 ```
 src/
-  main.js        Electron main process (ESM)
-  preload.cjs    Preload script (contextBridge, IPC)
-  updater.js     自动更新逻辑 (electron-updater)
-  retry.js       重试退避策略
-  logger.js      文件日志
-  splash.html    启动画面 (daemon 启动时显示)
-test/             测试用例 (node:test)，按源码模块子目录组织
-  updater/       retry, updater-state-machine, updater-structure
+  main.js          Electron main process (ESM)
+  preload.cjs      Preload script (contextBridge, IPC)
+  updater.js       自动更新逻辑 (electron-updater)
+  retry.js         重试退避策略
+  logger.js        文件日志
+  splash.html      启动画面 (daemon 启动时显示)
+test/               测试用例 (node:test)，按源码模块子目录组织
+  updater/         retry, updater-state-machine, updater-structure
   logger.test.js
+  daemon-startup.test.js
   window-open-handler.test.js
 scripts/
   prepare-resources.mjs  构建时打包 daemon 和复制资源
+  package.mjs            打包脚本
+  fix-exe-metadata.mjs   修复 exe 元数据
 ```
 
 ## 构建流程
@@ -68,6 +71,7 @@ pnpm test         # 运行测试 (node:test, 自动扫描 test/**/*.test.js)
 
 - `test/updater/` → `src/retry.js`, `src/updater.js`（自动更新相关）
 - `test/logger.test.js` → `src/logger.js`（日志模块）
+- `test/daemon-startup.test.js` → `src/main.js`（daemon 启动）
 - `test/window-open-handler.test.js` → `src/main.js`（窗口管理）
 
 ## 打包 (electron-builder)
@@ -82,5 +86,5 @@ pnpm test         # 运行测试 (node:test, 自动扫描 test/**/*.test.js)
 ## 核心原则
 
 - **WebUI first**: 业务逻辑全部在 web 层，Electron 只是壳
-- **E2E 测试直接测 web 层**，Electron 壳只测窗口管理
+- **E2E 测试直接测 web 层**，Electron 壳只测窗口管理和 daemon 启动
 - 系统集成（托盘图标、文件关联、自动更新）后续阶段实现

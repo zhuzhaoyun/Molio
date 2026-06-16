@@ -1,14 +1,9 @@
-# CLAUDE.md
+# Molio — 本地知识管理 + AI 写作 + 多平台发布
 
-
-想要实现的目标如下，知识管理，文档创建，排版，多平台发布
-1、可以管理客户本地的知识库，类似 obsidian + llm_wiki, 也可以使用 weknora 管理知识库
-2、调用 claude code runtime 或 codex 创作或编写文档
-3、使用 doocs/md 排版，以及 doocs/cose 进行多平台发布 
-
-实际上每个的核心组件都有了相关的开源项目，我现在就套壳，做个本地应用，将这些项目或者组件串联起来，组成一个产品
-
-
+知识管理、文档创建、排版、多平台发布的一站式本地应用：
+1. 管理本地知识库（类 Obsidian + LLM Wiki），支持 weknora 知识库
+2. 调用 Claude Code / Codex 等 AI runtime 创作或编写文档
+3. 使用 doocs/md 排版，doocs/cose 进行多平台发布
 
 ## Project Structure (pnpm Monorepo)
 
@@ -18,48 +13,12 @@
 packages/
   contracts/    @molio/contracts  — shared types (AgentEvent, RunInfo, API types, SSE)
 apps/
-  daemon/       @molio/daemon    — Hono HTTP server, RunManager, SSE transport (→ CLAUDE.md)
-    src/
-      core/     RunManager, config, db (SQLite), transcript, runtimes/, streams/
-      runtimes/ claude, codex, gemini, qwen — registry, launch, env
-      streams/  claude-stream, codex-stream, json-event-stream, jsonl-parser
-      routes/   agents, runs, events, tool-result, config, projects
-      server.ts Hono app with CORS
-      index.ts  Entry: @hono/node-server on port 3100
-    test/       测试用例 (node:test)，按源码模块子目录组织
-      core/     config, db, transcript, run-event-buffer
-      streams/  claude-stream, codex-stream, json-event-stream, jsonl-parser
-      runtimes/ env, launch, claude-permission, windows-cmd, path-detection
-      routes/   publish, sse
-      compat/   esm-compat, port-check
-  web/          @molio/web       — Vite + React web UI consuming daemon SSE (→ CLAUDE.md)
-    src/
-      api/      client.ts, sse.ts
-      hooks/    useAgents, useChat, useProjects
-      components/ HomePage, NavRail, ChatPane, ChatComposer, UserMessage, AssistantMessage, ThinkingBlock, ToolCard, graph/(GraphPage, Minimap)
-      styles/   tokens, base, rail, home, chat, graph
-    e2e/        E2E 测试 (Playwright, 覆盖全量主流程)
-      helpers/  mock-sse.ts (SSE mock), navigation.ts, cleanup.ts
-      bootstrap.spec.ts    应用启动 & 首屏
-      chat-single.spec.ts  单轮对话 (发送 → SSE → 渲染)
-      chat-multi.spec.ts   多轮对话 & 新建对话
-      chat-streaming.spec.ts SSE 事件渲染 (thinking/tool/error)
-      navigation.spec.ts   页面导航可达性
-      history.spec.ts      对话历史 & 恢复
-      knowledge.spec.ts    知识库文件浏览
-      settings.spec.ts     设置 & 语言切换
-      channels.spec.ts     渠道页面
-      graph.spec.ts        知识图谱
-      *-form.spec.ts       vault 创建表单
-      *-flow.spec.ts       发布流程回归
-      scenarios/           kimi-webbridge 场景文档 (非自动化)
-  desktop/      @molio/desktop   — Electron shell (→ CLAUDE.md)
-    test/       测试用例 (node:test)
-      updater/  retry, updater-state-machine, updater-structure
-      *.test.js logger, window-open-handler
+  daemon/       @molio/daemon    — Hono HTTP server, RunManager, SSE transport (→ apps/daemon/CLAUDE.md)
+  web/          @molio/web       — Vite + React web UI, consuming daemon SSE (→ apps/web/CLAUDE.md)
+  desktop/      @molio/desktop   — Electron shell (→ apps/desktop/CLAUDE.md)
 ```
 
-### Build & Dev Commands
+## Build & Dev Commands
 
 ```bash
 pnpm dev          # daemon (tsx watch :3100) + web (vite :5173)
@@ -82,7 +41,7 @@ pnpm package        # 完整打包
 
 生成的 `win-unpacked/` 目录包含可直接运行的 exe，无需安装。
 
-### Chrome 扩展同步打开协议
+## Chrome 扩展同步打开协议
 
 Molio Chrome 扩展保存剪藏时通过 `molio://` 唤起桌面端。协议约定：
 
@@ -90,182 +49,11 @@ Molio Chrome 扩展保存剪藏时通过 `molio://` 唤起桌面端。协议约�
 - `molio://open/file/<filePath>`：只知道文件相对路径时，由 Web 端使用当前/默认 vault 解析
 - `molio://launch`：只用于打开应用，不应作为剪藏保存后的文件定位主路径
 
-桌面端只负责解析协议并导航到 `/knowledge?...`；Web 端负责等待目标 vault 的文件树加载完成，再选中文件。扩展可能先发出文件打开意图再完成写入，因此 Web 端文件读取允许一次短重试。改这条链路时要同时检查 `molio-connect/background.js`、`apps/desktop/src/main.js` 和 `apps/web/src/components/kb/KnowledgeBasePage.tsx` / `apps/web/src/hooks/useKnowledge.ts`。
-
-## 错误驱动测试 (Error-Driven Testing)
-
-**强制规则**：每次遇到报错（构建错误、运行时错误、逻辑错误），在修复 bug 之前或同时，必须：
-
-1. **在对应包的 `test/` 目录下添加一条测试用例**，按源码模块子目录组织：
-   - daemon bug → `apps/daemon/test/<module>/xxx.test.ts`（module = core / streams / runtimes / routes / compat）
-   - desktop bug → `apps/desktop/test/<module>/xxx.test.js`（module = updater / logger / main 等）
-   - web bug → `apps/web/e2e/xxx.spec.ts`（Playwright E2E）
-2. **测试命名**：描述错误场景，如 `claude-stream-dedup.test.ts`
-3. **测试结构**：用 Node.js 内置 `node:test`，不引入额外依赖
-4. **运行验证**：`pnpm test` 确认新测试通过
-5. **不要只修 bug 不加测试** —— 每个 bug 都是一条永久测试用例
-
-典型流程：
-```
-遇到报错 → 写测试复现 → 确认测试失败 → 修复 → 确认测试通过 → 提交
-```
-
-### E2E 测试策略
-
-**核心原则**：WebUI first，Electron 只是壳。E2E 直接测 web 层。
-
-- 使用 Playwright 对 `http://localhost:5173` 进行浏览器自动化测试
-- 测试 UI 交互行为（选择 agent → 发送消息 → 查看 SSE 事件流 → 提交 tool result）
-- Electron 壳后期只需测试窗口管理和系统集成
-
-#### 前置条件
-
-E2E 测试需要 daemon 和 web 同时运行：
-
-```bash
-pnpm dev   # 启动 daemon(:3100) + web(:5173)，保持运行
-```
-
-#### 常用命令（在 `apps/web/` 目录执行）
-
-```bash
-# 跑所有 E2E
-npx playwright test
-
-# 只跑某个文件
-npx playwright test e2e/create-vault-form.spec.ts
-
-# 只跑名称匹配的用例
-npx playwright test -g "browse button"
-
-# 交互式 UI 模式（推荐开发时用，左侧选用例，右侧看 DOM 快照和截图）
-npx playwright test --ui
-
-# 调试模式（弹出浏览器 + 断点）
-npx playwright test --debug
-
-# 有头模式（显示浏览器窗口）
-npx playwright test --headed
-```
-
-#### 编写规范
-
-- **定位策略**：优先用 `data-testid`，其次 CSS class，不依赖文本内容（避免中英文切换问题）
-- **测试文件位置**：`apps/web/e2e/*.spec.ts`
-- **baseURL**：已在 `playwright.config.ts` 配置为 `http://localhost:5173`，`page.goto('/')` 即可
-- **清理状态**：测试结尾主动清理创建的数据（如 `fetch(..., { method: 'DELETE' })`），避免残留影响后续测试
-- **等待策略**：用 `waitForEvent`/`waitForRequest` 等 Playwright 内置等待，避免硬编码 `waitForTimeout`（仅用于 UI 动画过渡）
-
-#### UI 改动与测试同步（强制规则）
-
-E2E 测试绑定 DOM 结构，**界面调整必须同步修改对应测试**，两者放在同一个 commit 提交，禁止中间断档。
-
-**影响判断表**：
-
-| UI 改动类型 | 是否影响测试 |
-|---|---|
-| 改 CSS class 名 | ✅ 必须改测试中对应的 locator |
-| 改组件层级/结构 | ✅ 影响 `.nth()`、`.first()` 等索引定位 |
-| 删除/重命名一个功能 | ✅ 对应测试要删或重写 |
-| 改按钮文案（不影响逻辑） | ❌ 用 class/testid 定位则不影响 |
-| 纯样式调整（颜色、间距） | ❌ 不影响 |
-| 新增 UI 元素 | ❌ 旧测试不受影响，但应补新测试 |
-
-**减少维护成本的做法**：给关键交互元素加 `data-testid`，比依赖 CSS class 更稳定：
-
-```tsx
-// 组件里
-<button data-testid="create-vault-btn" className={styles.submit}>创建</button>
-
-// 测试里 — class 怎么改都不影响
-page.locator('[data-testid="create-vault-btn"]')
-```
-
-**开发习惯**：改完 UI 顺手跑 `npx playwright test --ui`，有红的同步修 locator，全绿再提交。
-
-#### E2E 覆盖范围与核心流程保护
-
-E2E 测试覆盖以下核心主流程，**任何改动这些区域的 PR 必须确保 E2E 全部通过**：
-
-| Spec 文件 | 覆盖功能 | 保护的核心流程 |
-|-----------|---------|--------------|
-| `bootstrap.spec.ts` | 应用启动 & 首屏 | 应用能正常加载，landing page 渲染 |
-| `chat-single.spec.ts` | 单轮对话 | 发送消息 → SSE 流式响应 → 渲染完成 |
-| `chat-multi.spec.ts` | 多轮对话 & 新建 | 多轮上下文 → 新建对话重置 |
-| `chat-streaming.spec.ts` | SSE 事件渲染 | thinking block, tool use, error 渲染 |
-| `navigation.spec.ts` | 页面导航 | 所有 7 个页面可达 |
-| `history.spec.ts` | 对话历史 | 历史列表 → 恢复对话 |
-| `knowledge.spec.ts` | 知识库 | vault 选择 → 文件浏览 → 内容查看 |
-| `settings.spec.ts` | 设置 | 语言切换 |
-| `channels.spec.ts` | 渠道 | 渠道列表 → 面板切换 |
-| `graph.spec.ts` | 知识图谱 | 图谱页面渲染 |
-| `create-vault-form.spec.ts` | vault 创建表单 | 表单交互 → API 调用 |
-| `publish-flow.spec.ts` | 发布流程 | 排版 → 发布按钮 |
-
-**Mock SSE 策略**：聊天测试使用 `page.route()` 拦截 daemon API，返回预设 SSE 事件流，无需真实 agent。核心 helper 在 `e2e/helpers/mock-sse.ts`。
-
-**data-testid 约定**：关键交互元素使用 `data-testid` 属性（`composer-input`, `composer-send`, `new-chat-btn`, `user-message`, `assistant-message`, `assistant-prose`, `usage-footer`, `thinking-block`），修改这些组件时必须保留 testid。
-
-#### 典型开发流程
-
-```
-写 spec（用 --ui 模式逐步验证定位器）
-→ 确认测试失败（红）
-→ 改代码
-→ 重跑确认通过（绿）
-→ 提交
-```
-
-## External Dependencies (Planned Integration)
-
-### doocs/md — Markdown 排版引擎
-
-**仓库**: https://github.com/doocs/md  
-**用途**: 文档排版与编辑，提供 Markdown → 多平台格式化 HTML 的渲染能力。
-
-**技术栈**: Vue 3 + Vite + TypeScript monorepo。核心渲染引擎 `@md/core` 是框架无关的。
-
-**关键能力**:
-- `marked` v18 + 12 个自定义扩展（KaTeX 数学公式、Mermaid 图表、PlantUML、脚注、目录等）
-- `highlight.js` 代码高亮（懒加载语言包）
-- CSS 变量主题系统：3 套内置主题（经典/优雅/简洁）+ 自定义 CSS 支持
-- CSS 处理器：运行时解析 `var(--xxx)` 和 `calc()` 表达式，输出自包含 HTML（微信公众号兼容）
-- `juice` CSS 内联：将样式内联到 HTML 元素，确保微信编辑器粘贴兼容
-- 剪贴板双格式写入：`text/html` + `text/plain` 同时写入
-
-**集成方式**: `@md/core` 是 workspace 私有包，未发布 npm。已将核心渲染代码 vendor 到 `apps/web/vendor/doocs-md/`，配合更新脚本实现便捷升级。
-
-**当前状态**: ✅ 已集成。知识库文件查看页面使用 doocs/md 渲染，支持排版模式（左右分栏编辑器 + 实时预览 + 样式面板）。
-
-**更新方法**:
-```bash
-cd apps/web
-./scripts/update-doocs-md.sh main  # 拉取最新版本
-pnpm install
-```
-
-### doocs/cose — 全平台分发
-
-**仓库**: https://github.com/doocs/cose  
-**用途**: 将文章一键发布到 30+ 内容平台。
-
-**类型**: Chrome 扩展（Manifest V3），**不是** npm 包或 SDK。
-
-**支持平台 (33个)**:
-- 自媒体：微信公众号、今日头条、知乎、抖音、小红书、百家号、网易号、搜狐号、微博、B站、豆瓣、少数派、Twitter/X
-- 博客/技术社区：CSDN、博客园、掘金、Medium、思否、InfoQ、简书、开源中国、51CTO
-- 云平台：腾讯云、阿里云、华为云、百度千帆、支付宝开放平台、ModelScope、火山引擎
-
-**架构**: 
-- `@cose/core` — 平台适配器层，每个平台一个 adapter 文件
-- `@cose/detection` — 登录状态检测（通过 offscreen document + cookie-aware fetch）
-- 两种内容注入策略：Markdown 直注（Markdown 编辑器平台）和 HTML 剪贴板模拟（富文本编辑器平台如微信）
-
-**集成方式**: 作为 Chrome 扩展配合使用，不能作为库导入。如需自定义集成，可 fork 平台适配器的 DOM 操作逻辑，结合 Puppeteer/Playwright 实现无浏览器自动化。
+桌面端只负责解析协议并导航到 `/knowledge?...`；Web 端负责等待目标 vault 的文件树加载完成，再选中文件。扩展可能先发出文件打开意图再完成写入，因此 Web 端文件读取允许一次短重试。改这条链路时要同时检查 `molio-connect/background.js`、`apps/desktop/src/main.js`、`apps/web/src/components/kb/KnowledgeBasePage.tsx` 和 `apps/web/src/hooks/useKnowledge.ts`。
 
 ## Runtime Context Loading
 
-**核心机制**：Molio 的 agent CLI（Claude Code、Codex 等）通过 `cwd` 参数加载项目上下文。spawn 进程时设置 `cwd` 为项目的 `localPath`，agent CLI 会自动读取该目录下的 `CLAUDE.md`、`.claude/` 配置、以及所有 markdown 文件。
+Agent CLI（Claude Code、Codex 等）通过 `cwd` 参数加载项目上下文。spawn 进程时设置 `cwd` 为项目的 `localPath`，agent CLI 会自动读取该目录下的 `CLAUDE.md`、`.claude/` 配置、以及所有 markdown 文件。
 
 **实现方式**（`apps/daemon/src/core/RunManager.ts`）：
 ```typescript
@@ -276,46 +64,63 @@ const child = spawn(binary, args, {
 
 **Web UI 传参**：创建 run 时，从当前 project 取出 `localPath` 作为 `cwd` 传给 daemon API（`POST /api/runs`）。
 
-**不要做的事**：不要动态生成上下文文件到隔离目录。Molio 是本地知识库应用，用户的项目目录已经有完整的 `CLAUDE.md` 和文档结构，直接 `cd` 到那里就行。
+**不要做的事**：不要动态生成上下文文件到隔离目录。用户的项目目录已经有完整的 `CLAUDE.md` 和文档结构，直接 `cd` 到那里就行。
+
+## 错误驱动测试 (Error-Driven Testing)
+
+**强制规则**：每次遇到报错，修复 bug 的同时必须在对应包的 `test/` 目录下添加测试用例：
+
+| 错误来源 | 测试位置 | 测试框架 |
+|---------|---------|---------|
+| daemon bug | `apps/daemon/test/<module>/xxx.test.ts` | node:test |
+| desktop bug | `apps/desktop/test/<module>/xxx.test.js` | node:test |
+| web bug | `apps/web/e2e/xxx.spec.ts` | Playwright |
+
+典型流程：`遇到报错 → 写测试复现 → 确认测试失败 → 修复 → 确认测试通过 → 提交`
+
+### E2E 测试 (Web)
+
+**核心原则**：WebUI first，Electron 只是壳。E2E 直接测 web 层。
+
+- 使用 Playwright 对 `http://localhost:5173` 进行测试
+- 前置条件：`pnpm dev`（daemon + web 同时运行）
+- 常用命令：`npx playwright test` / `--ui` / `--debug` / `--headed` / `-g "test name"`
+- 定位策略：优先 `data-testid`，其次 CSS class，不依赖文本内容
+- 编写规范见 `apps/web/CLAUDE.md`
+
+### UI 改动与 E2E 同步（强制规则）
+
+界面调整必须同步修改对应测试，同一个 commit 提交。`data-testid` 比 CSS class 更稳定，关键交互元素应使用：
+
+```tsx
+<button data-testid="create-vault-btn" className={styles.submit}>创建</button>
+// 测试：page.locator('[data-testid="create-vault-btn"]')
+```
+
+### E2E 核心流程保护
+
+触及以下文件的 PR 必须运行全量 E2E 并确认全绿：
+
+```
+apps/web/src/components/HomePage.tsx, ChatComposer.tsx, UserMessage.tsx,
+  AssistantMessage.tsx, ThinkingBlock.tsx, ToolCard.tsx, NavRail.tsx
+apps/web/src/hooks/useChat.ts, useChatCore.ts
+apps/web/src/api/client.ts, sse.ts
+apps/web/src/App.tsx
+apps/daemon/src/routes/runs.ts, events.ts
+apps/daemon/src/core/RunManager.ts
+```
+
+快速检查：`cd apps/web && npx playwright test`
 
 ## 用户偏好处理规则
 
-**核心原则**：当用户已显式表达偏好（通过配置、双击设置等），系统必须尊重该选择，不得静默回退到其他选项。
+当用户已显式表达偏好（通过配置、双击设置等），系统必须尊重该选择，不得静默回退到其他选项。
 
 **自动选择的正确逻辑**：
-1. 如果用户已配置默认值（如 `defaultAgentId`）且该值可用，**始终使用用户的选择**
-2. 如果用户已配置默认值但该值不可用（如 agent 已卸载），**保持未选择状态**并明确告知用户，不要静默切换到其他选项
-3. 只在用户从未配置过默认值时（首次启动），才自动选择第一个可用选项，并**立即持久化**到配置中（视为一次性初始化，而非每次启动的 fallback）
-
-**错误示例**：
-```typescript
-// ❌ 错误：当配置的默认值不可用时，静默选择其他 agent
-if (defaultAgentId && isAvailable(defaultAgentId)) {
-  setSelectedAgent(defaultAgentId);
-} else {
-  setSelectedAgent(firstAvailable);  // 无视了用户的选择
-}
-```
-
-**正确示例**：
-```typescript
-// ✅ 正确：区分"用户已配置"和"用户从未配置"两种情况
-if (defaultAgentId) {
-  if (isAvailable(defaultAgentId)) {
-    setSelectedAgent(defaultAgentId);  // 尊重用户选择
-  }
-  // 如果不可用，保持 null，让 UI 显示引导信息
-  return;
-}
-// 只在从未配置时才自动选择并持久化
-const first = findFirstAvailable();
-if (first) {
-  setSelectedAgent(first.id);
-  persistDefault(first.id);  // 下次启动走上面的分支
-}
-```
-
-**适用范围**：任何涉及用户偏好设置的功能（默认运行时、默认项目、主题选择等）。
+1. 如果用户已配置默认值且该值可用，**始终使用用户的选择**
+2. 如果用户已配置默认值但该值不可用，**保持未选择状态**并明确告知用户，不要静默切换到其他选项
+3. 只在用户从未配置过默认值时（首次启动），才自动选择第一个可用选项，并**立即持久化**到配置中
 
 ## 团队贡献规则
 
@@ -324,22 +129,14 @@ if (first) {
 ### 工作流程
 
 ```bash
-# 1. 创建功能分支（从 main 切出）
-git checkout main
-git pull origin main
-git checkout -b feat/功能名称
-# 或 fix/问题描述、chore/任务类型
-
-# 2. 开发并提交
-git add .
-git commit -m "feat(scope): 描述"
-
-# 3. 推送并创建 PR
+git checkout main && git pull origin main
+git checkout -b feat/功能名称   # 或 fix/、refactor/、chore/、docs/
+git add . && git commit -m "feat(scope): 描述"
 git push -u origin feat/功能名称
 gh pr create --title "feat: 功能描述" --base main
 ```
 
-### 分支命名规范
+### 分支命名
 
 | 类型 | 格式 | 示例 |
 |------|------|------|
@@ -349,84 +146,19 @@ gh pr create --title "feat: 功能描述" --base main
 | 配置/工具 | `chore/任务` | `chore/upgrade-dependencies` |
 | 文档 | `docs/内容` | `docs/api-guide` |
 
-### Commit Message 规范
+### Commit Message
 
-遵循 [Conventional Commits](https://www.conventionalcommits.org/)：
+遵循 [Conventional Commits](https://www.conventionalcommits.org/)：`<type>(<scope>): <description>`
 
-```
-<type>(<scope>): <description>
-
-[可选 body]
-
-[可选 footer]
-```
-
-**Type 类型**：
-- `feat`: 新功能
-- `fix`: Bug 修复
-- `docs`: 文档变更
-- `style`: 代码格式（不影响功能）
-- `refactor`: 重构（既不是新功能也不是修复）
-- `perf`: 性能优化
-- `test`: 测试相关
-- `chore`: 构建过程或辅助工具变更
-
-**Scope（可选）**：
-- `daemon`: daemon 服务相关
-- `web`: web 前端相关
-- `desktop`: Electron 桌面端相关
-- `kb`: 知识库功能相关
-- `ci`: CI/CD 相关
-
-**示例**：
-```bash
-feat(desktop): add auto-update check on startup
-fix(daemon): resolve port 3100 conflict when upgrading
-refactor(kb): extract vault manager into separate component
-chore(ci): add workflow_dispatch for manual builds
-```
+Scope: `daemon` | `web` | `desktop` | `kb` | `ci`
 
 ### PR 合并规则
 
-1. **必须创建 PR**：所有变更都要通过 PR 合并到 main，不能直接 push
-2. **等待 Review**：至少需要 1 个 approve 才能合并（除非紧急情况）
-3. **解决冲突**：如果 PR 与 main 有冲突，必须 rebase 解决
-4. **CI 通过**：确保所有 CI 检查通过后再合并
-5. **E2E 门禁**：触及核心流程组件（HomePage, ChatComposer, UserMessage, AssistantMessage, ThinkingBlock, NavRail 等）的 PR，必须运行 `cd apps/web && npx playwright test` 并确认全绿。E2E 失败的 PR **禁止合并**，除非失败原因是已知的环境问题（如 daemon 未启动）
-6. **Squash 合并**：多个 commit 的 PR 建议 squash 成一个有意义的 commit
+1. 必须创建 PR，不能直接 push main
+2. 至少 1 个 approve（紧急情况除外）
+3. 与 main 冲突时必须 rebase 解决
+4. CI 全部通过
+5. E2E 门禁：触及核心流程组件的 PR 必须 E2E 全绿
+6. 多 commit 的 PR 建议 squash 合并
 
-#### 核心流程变更的 E2E 检查清单
-
-当 PR 修改以下文件时，**强制要求**在提交前运行全量 E2E：
-
-```
-apps/web/src/components/HomePage.tsx
-apps/web/src/components/ChatComposer.tsx
-apps/web/src/components/UserMessage.tsx
-apps/web/src/components/AssistantMessage.tsx
-apps/web/src/components/ThinkingBlock.tsx
-apps/web/src/components/ToolCard.tsx
-apps/web/src/components/NavRail.tsx
-apps/web/src/hooks/useChat.ts
-apps/web/src/hooks/useChatCore.ts
-apps/web/src/api/client.ts
-apps/web/src/api/sse.ts
-apps/web/src/App.tsx
-apps/daemon/src/routes/runs.ts
-apps/daemon/src/routes/events.ts
-apps/daemon/src/core/RunManager.ts
-```
-
-快速检查命令：
-```bash
-cd apps/web && npx playwright test
-```
-
-### 管理员权限使用
-
-虽然 `enforce_admins: false` 允许管理员跳过审查直接合并，但**仅在以下紧急情况使用**：
-- 紧急 hotfix 需要立即上线
-- 修复 CI 配置问题
-- 其他协作者都不可用时的关键修复
-
-**正常开发仍然要求走 PR + Review 流程。**
+**管理员权限**仅在紧急 hotfix、修复 CI 配置、协作者不可用等情况下使用，正常开发仍走 PR + Review 流程。
