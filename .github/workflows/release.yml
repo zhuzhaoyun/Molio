@@ -388,11 +388,18 @@ jobs:
           # Call STS AssumeRoleWithOIDC via Python script (handles signing automatically)
           echo "::group::STS AssumeRoleWithOIDC"
           pip install -q alibabacloud_sts20150401
+          set +e
           CREDENTIALS=$(python3 scripts/sts_oidc.py \
             --role-arn "${ALIYUN_ROLE_ARN}" \
             --oidc-provider-arn "${ALIYUN_OIDC_PROVIDER_ARN}" \
-            --session-name "github-actions-${{ github.run_id }}" \
-            2>&1)
+            --session-name "github-actions-${{ github.run_id }}")
+          PY_EXIT=$?
+          set -e
+          if [ $PY_EXIT -ne 0 ]; then
+            echo "❌ Python script failed with exit code $PY_EXIT"
+            echo "Output: $CREDENTIALS"
+            exit 1
+          fi
           echo "STS response: $CREDENTIALS"
           echo "::endgroup::"
 
@@ -403,6 +410,7 @@ jobs:
 
           if [ -z "$AK_ID" ] || [ "$AK_ID" = "null" ]; then
             echo "❌ Failed to extract credentials from STS response"
+            echo "Raw response: $CREDENTIALS"
             exit 1
           fi
           echo "✅ STS credentials obtained"
