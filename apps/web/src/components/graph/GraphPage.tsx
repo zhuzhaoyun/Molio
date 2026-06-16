@@ -8,14 +8,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Graph from 'graphology';
+import type { GraphData } from '@molio/contracts';
 import { useSimulation } from './useSimulation';
 import Sigma from 'sigma';
 import { NodeCircleProgram } from 'sigma/rendering';
 import { api } from '../../api/client';
 import { useI18n } from '../../i18n';
-import { Minimap } from './Minimap';
 import { useActiveVaultId, vaultStore } from '../../stores/vaultStore';
-import type { GraphData } from '@molio/contracts';
 
 // ── Visual constants (Obsidian light theme, matching obsidian.png) ──
 // 浅色背景 + 深色节点，像纸张上的墨点
@@ -76,6 +75,7 @@ export function GraphPage() {
   const [graphData, setGraphData] = useState<GraphData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showInfo, setShowInfo] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const sigmaRef = useRef<Sigma | null>(null);
@@ -535,50 +535,62 @@ export function GraphPage() {
         )}
 
         <div ref={containerRef} className="graph-sigma" />
-        <Minimap sigma={sigmaRef.current} />
 
+        {/* 折叠式信息面板（图例 + 操作说明） */}
         {graphData && (
-          <div className="graph-legend">
-            <div className="graph-legend__item">
-              <span className="graph-legend__dot" style={{ background: '#3B82F6' }} />
-              <span className="graph-legend__label">源文件</span>
-            </div>
-            <div className="graph-legend__item">
-              <span className="graph-legend__dot" style={{ background: '#8B5CF6' }} />
-              <span className="graph-legend__label">概念</span>
-            </div>
-            <div className="graph-legend__item">
-              <span className="graph-legend__dot" style={{ background: '#22C55E' }} />
-              <span className="graph-legend__label">实体</span>
-            </div>
-            <div className="graph-legend__item">
-              <span className="graph-legend__dot" style={{ background: '#F59E0B' }} />
-              <span className="graph-legend__label">对比</span>
-            </div>
-            <div className="graph-legend__item">
-              <span className="graph-legend__dot" style={{ background: '#EF4444' }} />
-              <span className="graph-legend__label">问答</span>
-            </div>
-            <div className="graph-legend__item">
-              <span className="graph-legend__dot" style={{ background: '#94A3B8' }} />
-              <span className="graph-legend__label">文档</span>
-            </div>
-            {graphData.deadLinks && graphData.deadLinks.length > 0 && (
-              <div className="graph-legend__item">
-                <span className="graph-legend__dot graph-legend__dot--dead" />
-                <span className="graph-legend__label">死链接</span>
+          <>
+            <button className="graph-info-btn" onClick={() => setShowInfo(!showInfo)} title="图例与操作">
+              {showInfo ? '✕' : '?'}
+            </button>
+            {showInfo && (
+              <div className="graph-info-panel">
+                <div className="graph-info__section">
+                  <div className="graph-info__title">节点颜色</div>
+                  <div className="graph-legend">
+                    <div className="graph-legend__item">
+                      <span className="graph-legend__dot" style={{ background: '#3B82F6' }} />
+                      <span className="graph-legend__label">源文件</span>
+                    </div>
+                    <div className="graph-legend__item">
+                      <span className="graph-legend__dot" style={{ background: '#8B5CF6' }} />
+                      <span className="graph-legend__label">概念</span>
+                    </div>
+                    <div className="graph-legend__item">
+                      <span className="graph-legend__dot" style={{ background: '#22C55E' }} />
+                      <span className="graph-legend__label">实体</span>
+                    </div>
+                    <div className="graph-legend__item">
+                      <span className="graph-legend__dot" style={{ background: '#F59E0B' }} />
+                      <span className="graph-legend__label">对比</span>
+                    </div>
+                    <div className="graph-legend__item">
+                      <span className="graph-legend__dot" style={{ background: '#EF4444' }} />
+                      <span className="graph-legend__label">问答</span>
+                    </div>
+                    <div className="graph-legend__item">
+                      <span className="graph-legend__dot" style={{ background: '#94A3B8' }} />
+                      <span className="graph-legend__label">文档</span>
+                    </div>
+                    {graphData.deadLinks && graphData.deadLinks.length > 0 && (
+                      <div className="graph-legend__item">
+                        <span className="graph-legend__dot graph-legend__dot--dead" />
+                        <span className="graph-legend__label">死链接</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="graph-info__section">
+                  <div className="graph-info__title">操作</div>
+                  <div className="graph-info__hints">
+                    <div className="graph-hint">拖拽节点 · 邻居联动</div>
+                    <div className="graph-hint">单击选中 · 高亮关联</div>
+                    <div className="graph-hint">双击节点 · 打开文章</div>
+                  </div>
+                </div>
               </div>
             )}
-          </div>
+          </>
         )}
-      </div>
-
-      <div className="graph-hints">
-        <span className="graph-hint">拖拽节点 · 邻居联动</span>
-        <span className="graph-hint-sep">|</span>
-        <span className="graph-hint">单击选中 · 高亮关联</span>
-        <span className="graph-hint-sep">|</span>
-        <span className="graph-hint">双击节点 · 打开文章</span>
       </div>
     </div>
   );
