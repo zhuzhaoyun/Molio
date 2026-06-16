@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Obtain Alibaba Cloud STS credentials via OIDC (GitHub Actions).
 
+Uses alibabacloud_credentials with type='oidc_role_arn' to automatically
+exchange a GitHub Actions OIDC token for temporary STS credentials.
+
 Usage:
     export ID_TOKEN=<github-oidc-token>
     python3 scripts/sts_oidc.py \
@@ -40,15 +43,12 @@ def main():
     try:
         from alibabacloud_credentials.client import Client as CredClient
         from alibabacloud_credentials.models import Config as CredConfig
-        from alibabacloud_sts20150401.client import Client as StsClient
-        from alibabacloud_sts20150401 import models as sts_models
-        from alibabacloud_tea_openapi import models as open_api_models
     except ImportError as e:
         print(f"ERROR: Missing dependency: {e}", file=sys.stderr)
-        print("Run: pip install alibabacloud_sts20150401 alibabacloud_credentials", file=sys.stderr)
+        print("Run: pip install alibabacloud_credentials", file=sys.stderr)
         sys.exit(1)
 
-    # Create credential client using OIDC role ARN type
+    # Use OIDC credential type — automatically calls AssumeRoleWithOIDC
     cred_config = CredConfig(
         type="oidc_role_arn",
         oidc_provider_arn=args.oidc_provider_arn,
@@ -57,34 +57,19 @@ def main():
         role_session_name=args.session_name,
         role_session_expiration=args.duration_seconds,
     )
-    cred_client = CredClient(config=cred_config)
-
-    # Use the credential client to create STS client
-    config = open_api_models.Config(
-        credential=cred_client,
-        region_id="cn-guangzhou",
-    )
-    client = StsClient(config=config)
-
-    req = sts_models.AssumeRoleWithOIDCRequest(
-        role_arn=args.role_arn,
-        oidc_provider_arn=args.oidc_provider_arn,
-        role_session_name=args.session_name,
-        duration_seconds=args.duration_seconds,
-        oidc_token=id_token,
-    )
 
     try:
-        resp = client.assume_role_with_oidc(req)
+        cred_client = CredClient(config=cred_config)
+        # get_credential() triggers the OIDC → STS exchange
+        credential = cred_client.get_credential()
     except Exception as e:
-        print(f"ERROR: STS AssumeRoleWithOIDC failed: {e}", file=sys.stderr)
+        print(f"ERROR: Failed to obtain STS credentials: {e}", file=sys.stderr)
         sys.exit(1)
 
-    creds = resp.body.credentials
     result = {
-        "AccessKeyId": creds.access_key_id,
-        "AccessKeySecret": creds.access_key_secret,
-        "SecurityToken": creds.security_token,
+        "AccessKeyId": credential.access_key_id,
+        "AccessKeySecret": credential.access_key_secret,
+        "SecurityToken": credential.security_token,
     }
     print(json.dumps(result))
 
