@@ -37,3 +37,7 @@ macOS 要求从互联网下载的应用必须经过 Apple 公证
 Gatekeeper 的安全警告。应用本身完全安全。
 
 项目地址：https://github.com/zhuzhaoyun/Molio
+
+> 提示：如果你已经安装了 Molio 但忘记了这份说明，
+> 可以在 Finder 中右键点击 Molio.app → "显示包内容"，
+> 在 Contents 文件夹中找到 `使用前必读.txt`。

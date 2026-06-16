@@ -26,17 +26,20 @@ export default async function (context) {
 }
 
 /**
- * Copy macOS usage README into DMG root (alongside Molio.app).
- * Users opening the DMG will see this file immediately, explaining
- * how to bypass Gatekeeper's "damaged app" warning.
+ * Copy macOS usage README into the .app bundle root (Contents/).
+ * Users can find it by right-clicking Molio.app → "Show Package Contents".
+ *
+ * Note: electron-builder's DMG creator only includes the .app bundle and
+ * the Applications symlink — it ignores extra files in appOutDir.
+ * So we place the README inside the .app bundle instead.
  */
 async function copyMacOSReadme(appOutDir) {
   const src = join(__dirname, '..', 'build', 'macos-usage.txt');
-  const dest = join(appOutDir, '使用前必读.txt');
+  const dest = join(appOutDir, 'Molio.app', 'Contents', '使用前必读.txt');
 
   try {
     copyFileSync(src, dest);
-    console.log('[after-pack] macOS: copied 使用前必读.txt to DMG root');
+    console.log('[after-pack] macOS: copied 使用前必读.txt to Molio.app/Contents/');
   } catch (err) {
     console.error(`[after-pack] macOS: failed to copy README: ${err.message}`);
     // Don't fail the build — README is cosmetic

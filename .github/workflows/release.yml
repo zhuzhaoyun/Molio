@@ -323,7 +323,7 @@ jobs:
           sudo xattr -d com.apple.quarantine /Applications/Molio.app
           \`\`\`
 
-          > 💡 **提示**：DMG 安装包内已附带 `使用前必读.txt` 文件，挂载 DMG 即可看到详细说明。
+          > 💡 **提示**：安装后如需查看说明，右键点击 Molio.app → "显示包内容"，在 Contents 文件夹中可找到 `使用前必读.txt`。
 
           ---
           "
