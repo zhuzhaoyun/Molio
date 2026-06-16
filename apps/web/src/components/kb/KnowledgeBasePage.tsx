@@ -3,11 +3,13 @@
  * Now with: workspace tab system + right-click context menu + inline rename.
  */
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import type { TreeNode } from '@molio/contracts';
 import { useKnowledge } from '../../hooks/useKnowledge';
 import { useWikiChat } from '../../hooks/useWikiChat';
 import { useKbTabs } from '../../hooks/useKbTabs';
+import { vaultStore } from '../../stores/vaultStore';
 import { KbFilePanel } from './KbFilePanel';
 import { KbMainContent } from './KbMainContent';
 import { WikiChatPanel } from './WikiChatPanel';
@@ -19,10 +21,52 @@ interface KnowledgeBasePageProps {
   agentId: string | null;
 }
 
+interface UrlFileNavigation {
+  vaultId: string;
+  filePath: string;
+}
+
+function resolveUrlFileNavigation(
+  searchParams: URLSearchParams,
+  kb: ReturnType<typeof useKnowledge>,
+): UrlFileNavigation | null {
+  const filePath = searchParams.get('file');
+  if (!filePath || kb.vaults.length === 0) return null;
+
+  const vaultId = searchParams.get('vault') || kb.activeVault?.id || kb.vaults[0]?.id || null;
+  if (!vaultId) return null;
+
+  return { vaultId, filePath };
+}
+
 export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
   const kb = useKnowledge();
   const tabs = useKbTabs();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [showChatPanel, setShowChatPanel] = useState(false);
+  const [pendingUrlNav, setPendingUrlNav] = useState<UrlFileNavigation | null>(null);
+
+  // Handle ?vault=<vaultId>&file=<filePath> query params for external navigation
+  // (e.g. from molio:// protocol triggered by Chrome extension after clip save)
+  useEffect(() => {
+    const nav = resolveUrlFileNavigation(searchParams, kb);
+    if (!nav) return;
+
+    setPendingUrlNav(nav);
+    vaultStore.setActiveVaultId(nav.vaultId);
+    // Clear query params after handling (keeps URL clean)
+    setSearchParams({}, { replace: true });
+  }, [searchParams, kb.vaults, kb.activeVault?.id, setSearchParams]);
+
+  useEffect(() => {
+    if (!pendingUrlNav) return;
+    if (kb.activeVault?.id !== pendingUrlNav.vaultId) return;
+    if (kb.treeVaultId !== pendingUrlNav.vaultId) return;
+    if (kb.tree.length === 0) return;
+
+    kb.selectFile(pendingUrlNav.filePath);
+    setPendingUrlNav(null);
+  }, [pendingUrlNav, kb.activeVault?.id, kb.treeVaultId, kb.tree, kb.selectFile]);
 
   // Context menu state
   const [ctxMenu, setCtxMenu] = useState<{ node: TreeNode; x: number; y: number } | null>(null);
