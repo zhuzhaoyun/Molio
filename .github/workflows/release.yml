@@ -385,24 +385,22 @@ jobs:
           echo "✅ OIDC token obtained (${#ID_TOKEN} chars)"
           echo "::endgroup::"
 
-          # Call STS AssumeRoleWithOIDC via POST (OIDC token too long for URL query string)
+          # Call STS AssumeRoleWithOIDC via Python SDK with OIDC credential type
           echo "::group::STS AssumeRoleWithOIDC"
-          CREDENTIALS=$(curl -s -X POST "https://sts.aliyuncs.com/" \
-            -d "Action=AssumeRoleWithOIDC" \
-            -d "Version=2015-04-01" \
-            -d "Format=JSON" \
-            -d "RoleArn=${ALIYUN_ROLE_ARN}" \
-            -d "OIDCProviderArn=${ALIYUN_OIDC_PROVIDER_ARN}" \
-            -d "OIDCToken=${ID_TOKEN}" \
-            -d "RoleSessionName=github-actions-${{ github.run_id }}" \
-            -d "DurationSeconds=3600")
+          pip install -q alibabacloud_sts20150401 alibabacloud_credentials
+          python3 scripts/sts_oidc.py \
+            --role-arn "${ALIYUN_ROLE_ARN}" \
+            --oidc-provider-arn "${ALIYUN_OIDC_PROVIDER_ARN}" \
+            --session-name "github-actions-${{ github.run_id }}" \
+            > /tmp/sts_output.json
+          CREDENTIALS=$(cat /tmp/sts_output.json)
           echo "STS response: $CREDENTIALS"
           echo "::endgroup::"
 
           # Extract credentials
-          AK_ID=$(echo "$CREDENTIALS" | jq -r '.Credentials.AccessKeyId')
-          AK_SECRET=$(echo "$CREDENTIALS" | jq -r '.Credentials.AccessKeySecret')
-          STS_TOKEN=$(echo "$CREDENTIALS" | jq -r '.Credentials.SecurityToken')
+          AK_ID=$(echo "$CREDENTIALS" | jq -r '.AccessKeyId')
+          AK_SECRET=$(echo "$CREDENTIALS" | jq -r '.AccessKeySecret')
+          STS_TOKEN=$(echo "$CREDENTIALS" | jq -r '.SecurityToken')
 
           if [ -z "$AK_ID" ] || [ "$AK_ID" = "null" ]; then
             echo "❌ Failed to extract credentials from STS response"
