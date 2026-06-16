@@ -135,6 +135,46 @@ function loadApp() {
   }
 }
 
+/** Whether the window is still showing the production splash screen. */
+function isShowingSplash() {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  const currentUrl = mainWindow.webContents.getURL();
+  return currentUrl === '' || currentUrl.includes('splash.html');
+}
+
+function parseMolioProtocolUrl(protocolUrl) {
+  const vaultFileMatch = protocolUrl.match(/^molio:\/\/open\/vault\/([^/]+)\/file\/(.+)$/);
+  if (vaultFileMatch) {
+    return {
+      action: 'open-file',
+      vaultId: decodeURIComponent(vaultFileMatch[1]),
+      filePath: decodeURIComponent(vaultFileMatch[2]),
+    };
+  }
+
+  const fileOnlyMatch = protocolUrl.match(/^molio:\/\/open\/file\/(.+)$/);
+  if (fileOnlyMatch) {
+    return {
+      action: 'open-file',
+      vaultId: null,
+      filePath: decodeURIComponent(fileOnlyMatch[1]),
+    };
+  }
+
+  if (protocolUrl.startsWith('molio://launch')) {
+    return { action: 'launch' };
+  }
+
+  return null;
+}
+
+function buildKnowledgeUrlFromProtocolTarget(target) {
+  const params = new URLSearchParams();
+  if (target.vaultId) params.set('vault', target.vaultId);
+  params.set('file', target.filePath);
+  return `http://localhost:3100/knowledge?${params.toString()}`;
+}
+
 /**
  * Parse a molio:// protocol URL and navigate the Electron window accordingly.
  *
@@ -143,25 +183,27 @@ function loadApp() {
  *
  * Supported formats:
  *   molio://open/vault/<vaultId>/file/<filePath> — navigate to KB page and open file
- *   molio://launch — just bring window to front (no navigation)
+ *   molio://open/file/<filePath> — navigate using the active/default vault
+ *   molio://launch — load app if still on splash; otherwise just bring window to front
  */
 function navigateFromProtocolUrl(protocolUrl) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
 
   try {
-    // Parse path-style URL: molio://open/vault/<vaultId>/file/<filePath>
-    const match = protocolUrl.match(/^molio:\/\/open\/vault\/([^/]+)\/file\/(.+)$/);
-    if (match) {
-      const vaultId = decodeURIComponent(match[1]);
-      const filePath = decodeURIComponent(match[2]);
-      const target = `http://localhost:3100/knowledge?vault=${encodeURIComponent(vaultId)}&file=${encodeURIComponent(filePath)}`;
-      log('info', 'main', `navigating to ${target}`);
-      mainWindow.loadURL(target);
+    const target = parseMolioProtocolUrl(protocolUrl);
+    if (target?.action === 'open-file') {
+      const appUrl = buildKnowledgeUrlFromProtocolTarget(target);
+      log('info', 'main', `navigating to ${appUrl}`);
+      mainWindow.loadURL(appUrl);
       return;
     }
 
-    // molio://launch — no navigation needed, window already restored+focused
-    if (protocolUrl.startsWith('molio://launch')) {
+    // molio://launch — if this is the initial launch, replace splash with the app.
+    // For second-instance launches, the existing app window should keep its state.
+    if (target?.action === 'launch') {
+      if (isShowingSplash()) {
+        loadApp();
+      }
       return;
     }
 

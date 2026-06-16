@@ -65,9 +65,20 @@ pnpm typecheck    # typecheck all packages
 ```bash
 pnpm desktop:run    # 一键构建 + 生成未打包版本 (win-unpacked)，可直接运行 exe
 pnpm package:dir    # 仅生成未打包目录 (不生成安装包)
+pnpm package        # 完整打包
 ```
 
 生成的 `win-unpacked/` 目录包含可直接运行的 exe，无需安装。
+
+### Chrome 扩展同步打开协议
+
+Molio Chrome 扩展保存剪藏时通过 `molio://` 唤起桌面端。协议约定：
+
+- `molio://open/vault/<vaultId>/file/<filePath>`：已知 vault 时直接打开指定文件
+- `molio://open/file/<filePath>`：只知道文件相对路径时，由 Web 端使用当前/默认 vault 解析
+- `molio://launch`：只用于打开应用，不应作为剪藏保存后的文件定位主路径
+
+桌面端只负责解析协议并导航到 `/knowledge?...`；Web 端负责等待目标 vault 的文件树加载完成，再选中文件。扩展可能先发出文件打开意图再完成写入，因此 Web 端文件读取允许一次短重试。改这条链路时要同时检查 `molio-connect/background.js`、`apps/desktop/src/main.js` 和 `apps/web/src/components/kb/KnowledgeBasePage.tsx` / `apps/web/src/hooks/useKnowledge.ts`。
 
 ## 错误驱动测试 (Error-Driven Testing)
 
