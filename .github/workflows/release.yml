@@ -14,6 +14,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -332,3 +333,84 @@ jobs:
             gh release edit "${TAG}" --repo "${{ github.repository }}" --notes "${NOTICE}${BODY}"
             echo "✓ macOS notice added to release body"
           fi
+
+  # ── Upload release assets to Alibaba Cloud OSS (China mirror) ──
+  upload-oss:
+    name: Upload to Alibaba Cloud OSS
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Derive version
+        id: version
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            version=$(echo "${{ inputs.version }}" | xargs)
+          else
+            raw=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
+            version=${raw#v}
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Download release assets from GitHub
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ steps.version.outputs.version }}"
+          echo "Downloading assets from ${TAG}..."
+          gh release download "${TAG}" --dir ./release-assets --skip-existing
+          echo "Downloaded files:"
+          ls -la ./release-assets/
+
+      - name: Install ossutil
+        run: |
+          curl -fsSL https://gosspublic.alicdn.com/ossutil/install.sh | sudo bash
+
+      - name: Obtain STS credentials via OIDC
+        env:
+          ALIYUN_ROLE_ARN: ${{ vars.ALIYUN_ROLE_ARN }}
+          ALIYUN_OIDC_PROVIDER_ARN: ${{ vars.ALIYUN_OIDC_PROVIDER_ARN }}
+        run: |
+          # Get OIDC token from GitHub
+          ID_TOKEN=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.aliyuncs.com" | jq -r '.value')
+
+          # Call STS AssumeRoleWithOIDC directly via curl
+          CREDENTIALS=$(curl -s "https://sts.aliyuncs.com/?Action=AssumeRoleWithOIDC&Version=2015-04-01&Format=JSON&RoleArn=${ALIYUN_ROLE_ARN}&OIDCProviderArn=${ALIYUN_OIDC_PROVIDER_ARN}&OIDCToken=${ID_TOKEN}&RoleSessionName=github-actions-${{ github.run_id }}&DurationSeconds=3600")
+
+          # Extract credentials
+          AK_ID=$(echo "$CREDENTIALS" | jq -r '.Credentials.AccessKeyId')
+          AK_SECRET=$(echo "$CREDENTIALS" | jq -r '.Credentials.AccessKeySecret')
+          STS_TOKEN=$(echo "$CREDENTIALS" | jq -r '.Credentials.SecurityToken')
+
+          # Persist for subsequent steps
+          echo "OSS_ACCESS_KEY_ID=$AK_ID" >> $GITHUB_ENV
+          echo "OSS_ACCESS_KEY_SECRET=$AK_SECRET" >> $GITHUB_ENV
+          echo "OSS_SECURITY_TOKEN=$STS_TOKEN" >> $GITHUB_ENV
+
+      - name: Upload release assets to OSS
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="v${VERSION}"
+
+          # Upload all release assets
+          for file in ./release-assets/*; do
+            filename=$(basename "$file")
+            ossutil cp "$file" oss://${{ vars.OSS_BUCKET }}/releases/${TAG}/${filename} \
+              --endpoint=${{ vars.OSS_ENDPOINT }} \
+              --update
+          done
+
+          # Write latest.json
+          cat > /tmp/latest.json <<EOF
+          {"version":"${VERSION}","updatedAt":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
+          EOF
+          ossutil cp /tmp/latest.json oss://${{ vars.OSS_BUCKET }}/releases/latest.json \
+            --endpoint=${{ vars.OSS_ENDPOINT }} \
+            --meta Cache-Control:no-cache
+
+          echo "✅ Uploaded ${TAG} to oss://${{ vars.OSS_BUCKET }}/releases/${TAG}/"

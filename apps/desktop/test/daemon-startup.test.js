@@ -130,6 +130,64 @@ describe('main.js: must load URL only after daemon is ready (not in createWindow
   });
 });
 
+describe('main.js: protocol launch should leave splash after daemon is ready', () => {
+  it('should parse molio://launch as a protocol target', () => {
+    assert.ok(
+      mainJs.includes('function parseMolioProtocolUrl'),
+      'main.js must centralize molio:// protocol parsing'
+    );
+    assert.ok(
+      mainJs.includes("return { action: 'launch' }"),
+      'molio://launch must parse to a launch action'
+    );
+  });
+
+  it('should detect when the production splash page is still showing', () => {
+    assert.ok(
+      mainJs.includes('function isShowingSplash()'),
+      'main.js must be able to detect the splash page before handling molio://launch'
+    );
+    assert.ok(
+      mainJs.includes('splash.html'),
+      'splash detection must check for splash.html'
+    );
+    assert.ok(
+      mainJs.includes('webContents.getURL()'),
+      'splash detection must inspect the current BrowserWindow URL'
+    );
+  });
+
+  it('molio://launch should call loadApp when still on splash', () => {
+    const navigatePos = mainJs.indexOf('function navigateFromProtocolUrl');
+    assert.ok(navigatePos !== -1, 'navigateFromProtocolUrl must exist');
+
+    const navigateBlock = mainJs.slice(navigatePos, navigatePos + 900);
+    assert.ok(
+      navigateBlock.includes("target?.action === 'launch'"),
+      'navigateFromProtocolUrl must handle parsed launch actions'
+    );
+    assert.ok(
+      navigateBlock.includes('isShowingSplash()'),
+      'molio://launch handling must check if the app is still showing splash'
+    );
+    assert.ok(
+      navigateBlock.includes('loadApp()'),
+      'molio://launch handling must load the real app when launched from splash'
+    );
+  });
+
+  it('should support file-only open protocol for single-prompt clip saves', () => {
+    assert.ok(
+      mainJs.includes('molio://open/file/'),
+      'desktop protocol parser must support molio://open/file/<filePath>'
+    );
+    assert.ok(
+      mainJs.includes("params.set('file', target.filePath)"),
+      'file-only protocol target must navigate to the knowledge page with a file param'
+    );
+  });
+});
+
 describe('prepare-resources.mjs: better-sqlite3 must use Electron prebuild', () => {
   it('should use prebuild-install to download Electron prebuilt binary', () => {
     assert.ok(

@@ -99,3 +99,30 @@ export interface WikiSaveRequest {
 export interface WikiRunResponse {
   runId: string;
 }
+
+// ─── Graph types ───
+
+export interface GraphNode {
+  key: string;
+  label: string;
+  path: string;
+  linkCount: number;
+  nodeType?: string;
+  deadLink?: boolean;
+}
+
+export interface GraphEdge {
+  source: string;
+  target: string;
+}
+
+export interface DeadLinkInfo {
+  sourceFile: string;
+  targetName: string;
+}
+
+export interface GraphData {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  deadLinks: DeadLinkInfo[];
+}
