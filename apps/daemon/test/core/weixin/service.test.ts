@@ -21,22 +21,24 @@ describe('WeixinService run context', () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it('injects wiki query prompt when Weixin runs against the active vault cwd', () => {
+  it('injects wiki context when Weixin runs against the active vault cwd', () => {
     const vaultPath = join(tempDir, 'vault');
     createVault(db, 'Test Vault', vaultPath);
 
     const message = buildWeixinRunMessage(db, '介绍一下知识库地址', vaultPath, true);
 
-    assert.match(message, /你的任务：使用 vault 的 wiki 和源文件来回答用户的问题。/);
-    assert.match(message, /用户问题：介绍一下知识库地址/);
+    assert.match(message, /你是一个本地知识库的微信入口助手。/);
+    assert.match(message, /自动收件，确认后知识化入库/);
+    assert.match(message, /用户消息：介绍一下知识库地址/);
   });
 
-  it('does not re-inject wiki query prompt after conversation history exists', () => {
+  it('keeps Weixin intake instructions after conversation history exists', () => {
     const vaultPath = join(tempDir, 'vault');
     createVault(db, 'Test Vault', vaultPath);
 
     const message = buildWeixinRunMessage(db, '继续', vaultPath, false);
 
-    assert.equal(message, '继续');
+    assert.match(message, /你是一个本地知识库的微信入口助手。/);
+    assert.match(message, /用户消息：继续/);
   });
 });
