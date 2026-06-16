@@ -22,7 +22,7 @@ function inferNodeType(filePath: string, content: string): string | undefined {
     const fm = fmMatch[1] ?? '';
     const typeMatch = fm.match(/^type:\s*(.+)$/m);
     if (typeMatch) {
-      const t = typeMatch[1]!.trim();
+      const t = typeMatch[1]!.trim().replace(/^["']|["']$/g, '');
       if (t) return t;
     }
   }
@@ -203,12 +203,27 @@ function resolveLink(
   pathToKey: Map<string, string>,
 ): string | null {
   // Strip any .md extension from the link text
-  const cleanName = rawName.replace(/\.md$/i, '').trim().toLowerCase();
+  let cleanName = rawName.replace(/\.md$/i, '').trim().toLowerCase();
+
+  // Skip non-.md files (images, etc.)
+  if (rawName.match(/\.(png|jpg|jpeg|gif|svg|webp|pdf|docx?|xlsx?)$/i)) {
+    return null;
+  }
 
   // Case 1: Look up by exact name in the index
   let candidates = nameIndex.get(cleanName);
   if (!candidates || candidates.length === 0) {
-    // Case 2: Fuzzy match — strip spaces/dashes/underscores for comparison.
+    // Case 2: The link text may include a directory path like [[开发/概念/知识库五范式]].
+    // Extract just the basename (last segment) for matching.
+    if (cleanName.includes('/')) {
+      const baseOnly = cleanName.split('/').pop() ?? cleanName;
+      if (baseOnly !== cleanName) {
+        candidates = nameIndex.get(baseOnly);
+      }
+    }
+  }
+  if (!candidates || candidates.length === 0) {
+    // Case 3: Fuzzy match — strip spaces/dashes/underscores for comparison.
     // AI-generated wikilinks like [[AI Safety]] may not match filename
     // ai-safety.md with exact string comparison.
     const fuzzyKey = normalizeName(cleanName);
