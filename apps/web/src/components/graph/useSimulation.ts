@@ -100,7 +100,7 @@ export function useSimulation(): SimulationAPI {
           .distance(100)
           .strength(0.15),
       )
-      .force('charge', forceManyBody<D3Node>().strength(-80).distanceMax(300))
+      .force('charge', forceManyBody<D3Node>().strength(-60).distanceMax(250))
       .force('collide', forceCollide<D3Node>().radius((d) => d.radius + 6))
       // Individual spring forces — each node has its own rest position (initX/initY).
       // Drag stretches the spring, release snaps back with damping → "rubber band" feel.
