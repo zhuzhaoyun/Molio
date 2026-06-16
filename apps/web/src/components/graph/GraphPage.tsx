@@ -397,7 +397,9 @@ export function GraphPage() {
           graph.setNodeAttribute(draggedNode, 'x', graphPos.x);
           graph.setNodeAttribute(draggedNode, 'y', graphPos.y);
         }
-        // 不唤醒引擎——mousedown 时已唤醒，引擎持续 tick 带动邻居
+        // 轻柔保持引擎活跃——mousedown 的唤醒在 ~1s 后衰减殆尽
+        // 低 alpha 让邻居持续被弹簧拉动，不会闪烁（tick 已不再调用 refresh）
+        simulation.wake(0.06);
         renderer.refresh();
       }
     };
