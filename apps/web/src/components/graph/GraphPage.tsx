@@ -30,29 +30,32 @@ const EDGE_HOVER = '#C4B5FD';    // hover 连线：淡紫
 const EDGE_SELECTED = '#8B5CF6'; // 选中连线：紫色
 const LABEL_DEFAULT = '#6B6B6B'; // 标签：灰色
 
-// Node type colours — matched to wiki directory structure
+// 节点颜色 — 精简为 3 阶灰度 + 2 个强调色，降低视觉杂乱
 const NODE_TYPE_COLORS: Record<string, string> = {
-  document:   '#94A3B8',  // 灰蓝 — 普通文档
-  source:     '#3B82F6',  // 蓝色 — 源文件
-  entity:     '#22C55E',  // 绿色 — 实体
-  concept:    '#8B5CF6',  // 紫色 — 概念
-  comparison: '#F59E0B',  // 橙色 — 对比
-  question:   '#EF4444',  // 红色 — 问答
-  wiki:       '#6B7280',  // 灰色 — 其他 wiki 页面
-  // Legacy types (for backwards compatibility)
-  tag:        '#22C55E',
+  // 中性色（文档类）
+  document:   '#8899AA',
+  source:     '#8899AA',
+  wiki:       '#7A8A99',
+  // 知识核心（紫色强调）
+  concept:    '#8B5CF6',
+  entity:     '#8B5CF6',
+  // 观点/对比（琥珀强调）
+  comparison: '#D97706',
+  question:   '#D97706',
+  // Legacy types
+  tag:        '#8B5CF6',
   agent:      '#8B5CF6',
-  project:    '#3B82F6',
-  workflow:   '#F59E0B',
-  aiModel:    '#EF4444',
+  project:    '#8899AA',
+  workflow:   '#D97706',
+  aiModel:    '#D97706',
 };
 
 // 节点大小按连接数动态变化
-// Obsidian 风格：小节点 4px，大节点 12px，中心节点突出
+// Obsidian 风格：小节点 3px，大节点 9px，中心节点突出
 function nodeSize(linkCount: number): number {
-  const base = 4;
-  const maxSize = 12;
-  const calculated = base + Math.sqrt(linkCount) * 1.5;
+  const base = 2;
+  const maxSize = 8;
+  const calculated = base + Math.sqrt(linkCount) * 1.2;
   return Math.min(maxSize, calculated);
 }
 
@@ -546,38 +549,20 @@ export function GraphPage() {
               <div className="graph-info-panel">
                 <div className="graph-info__section">
                   <div className="graph-info__title">节点颜色</div>
-                  <div className="graph-legend">
+                    <div className="graph-legend">
                     <div className="graph-legend__item">
-                      <span className="graph-legend__dot" style={{ background: '#3B82F6' }} />
-                      <span className="graph-legend__label">源文件</span>
+                      <span className="graph-legend__dot" style={{ background: '#8899AA' }} />
+                      <span className="graph-legend__label">文档 / 源文件</span>
                     </div>
                     <div className="graph-legend__item">
                       <span className="graph-legend__dot" style={{ background: '#8B5CF6' }} />
-                      <span className="graph-legend__label">概念</span>
+                      <span className="graph-legend__label">概念 / 实体</span>
                     </div>
                     <div className="graph-legend__item">
-                      <span className="graph-legend__dot" style={{ background: '#22C55E' }} />
-                      <span className="graph-legend__label">实体</span>
+                      <span className="graph-legend__dot" style={{ background: '#D97706' }} />
+                      <span className="graph-legend__label">对比 / 问答</span>
                     </div>
-                    <div className="graph-legend__item">
-                      <span className="graph-legend__dot" style={{ background: '#F59E0B' }} />
-                      <span className="graph-legend__label">对比</span>
                     </div>
-                    <div className="graph-legend__item">
-                      <span className="graph-legend__dot" style={{ background: '#EF4444' }} />
-                      <span className="graph-legend__label">问答</span>
-                    </div>
-                    <div className="graph-legend__item">
-                      <span className="graph-legend__dot" style={{ background: '#94A3B8' }} />
-                      <span className="graph-legend__label">文档</span>
-                    </div>
-                    {graphData.deadLinks && graphData.deadLinks.length > 0 && (
-                      <div className="graph-legend__item">
-                        <span className="graph-legend__dot graph-legend__dot--dead" />
-                        <span className="graph-legend__label">死链接</span>
-                      </div>
-                    )}
-                  </div>
                 </div>
                 <div className="graph-info__section">
                   <div className="graph-info__title">操作</div>
