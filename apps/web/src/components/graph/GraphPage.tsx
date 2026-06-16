@@ -286,19 +286,24 @@ export function GraphPage() {
     simulation.init(graph, renderer, () => {});
 
     // 聚焦到主集群——忽略孤立节点，让图谱主体填满画布
-    let cx = 0, cy = 0, clusterCount = 0;
-    graph.forEachNode((key, attrs) => {
-      if ((attrs.linkCount as number) > 0) {
-        cx += (attrs.x as number) ?? 0;
-        cy += (attrs.y as number) ?? 0;
-        clusterCount++;
+    try {
+      let cx = 0, cy = 0, clusterCount = 0;
+      graph.forEachNode((key, _attrs) => {
+        const linkCount = graph.getNodeAttribute(key, "linkCount") as number;
+        if (linkCount > 0) {
+          cx += (graph.getNodeAttribute(key, "x") as number) ?? 0;
+          cy += (graph.getNodeAttribute(key, "y") as number) ?? 0;
+          clusterCount++;
+        }
+      });
+      if (clusterCount > 0) {
+        const camera = renderer.getCamera();
+        camera.x = cx / clusterCount;
+        camera.y = cy / clusterCount;
+        camera.ratio = 0.3;
       }
-    });
-    if (clusterCount > 0) {
-      const camera = renderer.getCamera();
-      camera.x = cx / clusterCount;
-      camera.y = cy / clusterCount;
-      camera.ratio = 0.3;
+    } catch (e) {
+      console.warn("Graph camera focus error:", e);
     }
 
     // ── Hover events ──
