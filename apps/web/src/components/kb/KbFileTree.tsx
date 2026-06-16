@@ -158,6 +158,12 @@ function TreeNodeItem({
 
   // File node
   const isActive = selectedFile === node.path;
+  const itemRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isActive) return;
+    itemRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [isActive]);
 
   const handleFileContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -167,6 +173,7 @@ function TreeNodeItem({
 
   return (
     <div
+      ref={itemRef}
       className={`kb-tree-item ${isActive ? 'is-active' : ''}`}
       onClick={() => !isRenaming && onSelectFile(node.path)}
       onContextMenu={handleFileContextMenu}
