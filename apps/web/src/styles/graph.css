@@ -186,19 +186,136 @@
   color: #999;
 }
 
-/* ── Minimap ── */
+/* ── Collapsible Info Panel (legend + hints) ── */
 
-.graph-minimap {
+.graph-info-btn {
   position: absolute;
   bottom: 12px;
-  right: 12px;
-  z-index: 20;
-  opacity: 0.7;
-  transition: opacity 0.2s;
-  border-radius: 4px;
-  pointer-events: none;
+  left: 12px;
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(0,0,0,0.1);
+  border-radius: 50%;
+  background: rgba(255,255,255,0.9);
+  color: #666;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  z-index: 30;
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+  line-height: 1;
 }
 
-.graph-minimap:hover {
-  opacity: 1;
+.graph-info-btn:hover {
+  background: #fff;
+  color: #333;
+}
+
+.graph-info-panel {
+  position: absolute;
+  bottom: 48px;
+  left: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 14px;
+  background: rgba(255,255,255,0.92);
+  border: 1px solid rgba(0,0,0,0.06);
+  border-radius: 8px;
+  font-size: 11px;
+  z-index: 30;
+  backdrop-filter: blur(6px);
+  user-select: none;
+  max-width: 200px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+}
+
+.graph-info__section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.graph-info__title {
+  font-weight: 600;
+  color: #444;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.graph-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.graph-legend__item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.graph-legend__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.graph-legend__dot--dead {
+  background: #D4D4D4;
+  border: 1px dashed #999;
+}
+
+.graph-legend__label {
+  color: #555;
+  white-space: nowrap;
+}
+
+.graph-info__hints {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.graph-hint {
+  color: #777;
+  font-size: 11px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .graph-info-btn {
+    background: rgba(40,40,50,0.8);
+    border-color: rgba(255,255,255,0.1);
+    color: #AAA;
+  }
+
+  .graph-info-btn:hover {
+    background: rgba(60,60,70,0.9);
+    color: #DDD;
+  }
+
+  .graph-info-panel {
+    background: rgba(30,30,40,0.9);
+    border-color: rgba(255,255,255,0.08);
+    box-shadow: 0 2px 12px rgba(0,0,0,0.3);
+  }
+
+  .graph-info__title {
+    color: #BBB;
+  }
+
+  .graph-legend__label {
+    color: #AAA;
+  }
+
+  .graph-hint {
+    color: #999;
+  }
+}
 }
