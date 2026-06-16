@@ -373,9 +373,6 @@ jobs:
       - name: Configure OSS credentials via Aliyun CLI (OIDC)
         env:
           ALIYUN_ROLE_ARN: ${{ vars.ALIYUN_ROLE_ARN }}
-          ALIYUN_OIDC_PROVIDER_ARN: ${{ vars.ALIYUN_OIDC_PROVIDER_ARN }}
-          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ${{ env.ACTIONS_ID_TOKEN_REQUEST_TOKEN }}
-          ACTIONS_ID_TOKEN_REQUEST_URL: ${{ env.ACTIONS_ID_TOKEN_REQUEST_URL }}
         run: |
           # Install aliyun CLI
           curl -fsSL https://aliyuncli.alicdn.com/aliyun_cli_latest_linux_amd64.tar.gz | tar xz -C /usr/local/bin aliyun
