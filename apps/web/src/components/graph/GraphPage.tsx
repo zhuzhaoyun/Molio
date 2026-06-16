@@ -287,12 +287,15 @@ export function GraphPage() {
     simulation.init(graph, renderer, () => {});
 
     // ── Hover events ──
+    // 拖拽时跳过 hover，避免 enterNode/leaveNode 频繁触发导致邻居节点大小闪烁
     renderer.on('enterNode', ({ node }) => {
+      if (draggedNode) return;
       hoveredNodeRef.current = node;
       renderer.refresh();
     });
 
     renderer.on('leaveNode', () => {
+      if (draggedNode) return;
       hoveredNodeRef.current = null;
       renderer.refresh();
     });
