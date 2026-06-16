@@ -370,32 +370,26 @@ jobs:
         run: |
           curl -fsSL https://gosspublic.alicdn.com/ossutil/install.sh | sudo bash
 
-      - name: Configure OSS credentials via Aliyun CLI (OIDC)
+      - name: Obtain STS credentials via OIDC
         env:
           ALIYUN_ROLE_ARN: ${{ vars.ALIYUN_ROLE_ARN }}
+          ALIYUN_OIDC_PROVIDER_ARN: ${{ vars.ALIYUN_OIDC_PROVIDER_ARN }}
         run: |
-          # Install aliyun CLI
-          curl -fsSL https://aliyuncli.alicdn.com/aliyun_cli_latest_linux_amd64.tar.gz | tar xz -C /usr/local/bin aliyun
-
-          # Get OIDC token
+          # Get OIDC token from GitHub
           ID_TOKEN=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.aliyuncs.com" | jq -r '.value')
 
-          # Assume role to get temporary credentials
-          CREDENTIALS=$(aliyun sts AssumeRoleWithOIDC \
-            --RoleArn "$ALIYUN_ROLE_ARN" \
-            --OIDCToken "$ID_TOKEN" \
-            --RoleSessionName "github-actions-${{ github.run_id }}" \
-            --DurationSeconds 3600)
+          # Call STS AssumeRoleWithOIDC directly via curl
+          CREDENTIALS=$(curl -s "https://sts.aliyuncs.com/?Action=AssumeRoleWithOIDC&Version=2015-04-01&Format=JSON&RoleArn=${ALIYUN_ROLE_ARN}&OIDCProviderArn=${ALIYUN_OIDC_PROVIDER_ARN}&OIDCToken=${ID_TOKEN}&RoleSessionName=github-actions-${{ github.run_id }}&DurationSeconds=3600")
 
-          # Export for ossutil
-          export OSS_ACCESS_KEY_ID=$(echo "$CREDENTIALS" | jq -r '.Credentials.AccessKeyId')
-          export OSS_ACCESS_KEY_SECRET=$(echo "$CREDENTIALS" | jq -r '.Credentials.AccessKeySecret')
-          export OSS_SECURITY_TOKEN=$(echo "$CREDENTIALS" | jq -r '.Credentials.SecurityToken')
+          # Extract credentials
+          AK_ID=$(echo "$CREDENTIALS" | jq -r '.Credentials.AccessKeyId')
+          AK_SECRET=$(echo "$CREDENTIALS" | jq -r '.Credentials.AccessKeySecret')
+          STS_TOKEN=$(echo "$CREDENTIALS" | jq -r '.Credentials.SecurityToken')
 
-          # Persist credentials for subsequent steps
-          echo "OSS_ACCESS_KEY_ID=$OSS_ACCESS_KEY_ID" >> $GITHUB_ENV
-          echo "OSS_ACCESS_KEY_SECRET=$OSS_ACCESS_KEY_SECRET" >> $GITHUB_ENV
-          echo "OSS_SECURITY_TOKEN=$OSS_SECURITY_TOKEN" >> $GITHUB_ENV
+          # Persist for subsequent steps
+          echo "OSS_ACCESS_KEY_ID=$AK_ID" >> $GITHUB_ENV
+          echo "OSS_ACCESS_KEY_SECRET=$AK_SECRET" >> $GITHUB_ENV
+          echo "OSS_SECURITY_TOKEN=$STS_TOKEN" >> $GITHUB_ENV
 
       - name: Upload release assets to OSS
         shell: bash
