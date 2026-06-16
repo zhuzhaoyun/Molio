@@ -15,3 +15,6 @@ deliverables/
 
 # macOS
 .DS_Store
+
+.codegraph/
+.cursor/
