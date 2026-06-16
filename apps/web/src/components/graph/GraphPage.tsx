@@ -126,7 +126,7 @@ export function GraphPage() {
 
     const count = graphData.nodes.length;
     // 均匀正圆形初始布局 — 替代随机散布，让图谱从干净整洁的圆形开始
-    const radius = Math.sqrt(count) * 60 + 200;
+    const radius = Math.sqrt(count) * 35 + 120;
 
     for (let i = 0; i < count; i++) {
       const n = graphData.nodes[i];
@@ -272,7 +272,7 @@ export function GraphPage() {
       defaultNodeColor: NODE_DEFAULT,
       renderEdgeLabels: false,
       autoRescale: true,
-      autoCenter: true,
+      autoCenter: false,
       minCameraRatio: 0.2,
       maxCameraRatio: 8,
       stagePadding: 80,
@@ -284,6 +284,22 @@ export function GraphPage() {
     renderer.refresh();
     // Start d3-force physics engine (positions sync on tick, rendering via interaction handlers)
     simulation.init(graph, renderer, () => {});
+
+    // 聚焦到主集群——忽略孤立节点，让图谱主体填满画布
+    let cx = 0, cy = 0, clusterCount = 0;
+    graph.forEachNode((key, attrs) => {
+      if ((attrs.linkCount as number) > 0) {
+        cx += (attrs.x as number) ?? 0;
+        cy += (attrs.y as number) ?? 0;
+        clusterCount++;
+      }
+    });
+    if (clusterCount > 0) {
+      const camera = renderer.getCamera();
+      camera.x = cx / clusterCount;
+      camera.y = cy / clusterCount;
+      camera.ratio = 0.3;
+    }
 
     // ── Hover events ──
     // 拖拽时跳过 hover，避免 enterNode/leaveNode 频繁触发导致邻居节点大小闪烁

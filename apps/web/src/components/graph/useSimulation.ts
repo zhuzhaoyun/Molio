@@ -97,8 +97,8 @@ export function useSimulation(): SimulationAPI {
         'link',
         forceLink<D3Node, D3Link>(d3Links)
           .id((d) => d.id)
-          .distance(150)
-          .strength(0.2),
+          .distance(100)
+          .strength(0.15),
       )
       .force('charge', forceManyBody<D3Node>().strength(-80).distanceMax(300))
       .force('collide', forceCollide<D3Node>().radius((d) => d.radius + 6))
