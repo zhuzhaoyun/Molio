@@ -56,7 +56,7 @@
       "**/*.node"
     ],
     "forceCodeSigning": false,
-    "afterPack": "scripts/fix-exe-metadata.mjs",
+    "afterPack": "scripts/after-pack.mjs",
     "win": {
       "target": [
         {

@@ -304,21 +304,26 @@ jobs:
         shell: bash
         run: |
           TAG="v${{ steps.version.outputs.version }}"
-          NOTICE="## ⚠️ macOS 用户必读
+          NOTICE="## ⚠️ macOS 用户必读 — 关于"已损坏"提示
 
-          如果打开 Molio 时提示"已损坏，无法打开"，这是 macOS 安全机制（Gatekeeper）的正常提示，
-          因为 Molio 目前未经过 Apple 公证（需要 Apple Developer Program）。
-          **应用本身没有问题**，请按以下方法解决：
+          **如果你打开 Molio 时提示"已损坏，无法打开"，这不是应用有问题，而是 macOS Gatekeeper 的正常安全提示。**
 
-          ### 方法一（推荐）
-          在 Finder 中 **右键** 点击 Molio.app → 选择 **"打开"** → 点击 **"打开"** 按钮。
-          （只需操作一次，以后可直接双击打开）
+          Molio 目前未经过 Apple 公证（需 Apple Developer Program 会员，年费 $99），
+          因此 macOS 会阻止运行。应用本身完全安全，不含恶意代码。
 
-          ### 方法二
-          打开终端，运行以下命令：
+          ### ✅ 解决方法（任选一种）
+
+          **方法一：右键打开（推荐，最简单）**
+          在 Finder 中 **右键点击** Molio.app → 选择 **"打开"** → 在弹出的对话框中点击 **"打开"**。
+          只需操作一次，以后可直接双击打开。
+
+          **方法二：终端命令（一劳永逸）**
+          打开终端，粘贴运行：
           \`\`\`bash
           sudo xattr -d com.apple.quarantine /Applications/Molio.app
           \`\`\`
+
+          > 💡 **提示**：DMG 安装包内已附带 `使用前必读.txt` 文件，挂载 DMG 即可看到详细说明。
 
           ---
           "

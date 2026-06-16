@@ -72,12 +72,27 @@ pnpm test         # 运行测试 (node:test, 自动扫描 test/**/*.test.js)
 
 ## 打包 (electron-builder)
 
-- 目标平台: Windows x64
-- 安装程序: NSIS (可选安装目录，非一键安装)
+### 多平台构建
+
+| 平台 | 格式 | 架构 |
+|------|------|------|
+| Windows | NSIS 安装程序 | x64 |
+| macOS | DMG | arm64 |
+| Linux | AppImage + deb | x64 |
+
 - daemon 编译产物 → resources/daemon/
 - web 构建产物 → resources/web/
 - 原生模块 (better-sqlite3) 通过 asarUnpack 处理
-- `signAndEditExecutable: false` 跳过代码签名
+- **macOS 当前无代码签名/公证**：用户首次打开需右键 → 打开，或 `sudo xattr -d com.apple.quarantine`。DMG 根目录自带 `使用前必读.txt` 说明。
+
+### afterPack 钩子
+
+`scripts/after-pack.mjs` 是 electron-builder 的统一 afterPack 入口：
+
+| 平台 | 操作 |
+|------|------|
+| macOS | 复制 `build/macos-usage.txt` 到 DMG 根目录（Gatekeeper 绕过说明） |
+| Windows | 用 rcedit 修补 .exe 元数据（协议关联对话框显示 "Molio"） |
 
 ## 核心原则
 
