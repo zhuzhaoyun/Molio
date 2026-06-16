@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - "v*.*.*"
+      - "v*"
       - "!v*-dirty*"
   workflow_dispatch:
     inputs:
@@ -376,15 +376,38 @@ jobs:
           ALIYUN_OIDC_PROVIDER_ARN: ${{ vars.ALIYUN_OIDC_PROVIDER_ARN }}
         run: |
           # Get OIDC token from GitHub
-          ID_TOKEN=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.aliyuncs.com" | jq -r '.value')
+          echo "::group::OIDC Token Request"
+          export ID_TOKEN=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.aliyuncs.com" | jq -r '.value')
+          if [ -z "$ID_TOKEN" ] || [ "$ID_TOKEN" = "null" ]; then
+            echo "❌ Failed to get OIDC token from GitHub"
+            exit 1
+          fi
+          echo "✅ OIDC token obtained (${#ID_TOKEN} chars)"
+          echo "::endgroup::"
 
-          # Call STS AssumeRoleWithOIDC directly via curl
-          CREDENTIALS=$(curl -s "https://sts.aliyuncs.com/?Action=AssumeRoleWithOIDC&Version=2015-04-01&Format=JSON&RoleArn=${ALIYUN_ROLE_ARN}&OIDCProviderArn=${ALIYUN_OIDC_PROVIDER_ARN}&OIDCToken=${ID_TOKEN}&RoleSessionName=github-actions-${{ github.run_id }}&DurationSeconds=3600")
+          # Call STS AssumeRoleWithOIDC via Python SDK with OIDC credential type
+          echo "::group::STS AssumeRoleWithOIDC"
+          pip install -q alibabacloud_sts20150401 alibabacloud_credentials
+          python3 scripts/sts_oidc.py \
+            --role-arn "${ALIYUN_ROLE_ARN}" \
+            --oidc-provider-arn "${ALIYUN_OIDC_PROVIDER_ARN}" \
+            --session-name "github-actions-${{ github.run_id }}" \
+            > /tmp/sts_output.json
+          CREDENTIALS=$(cat /tmp/sts_output.json)
+          echo "STS response: $CREDENTIALS"
+          echo "::endgroup::"
 
           # Extract credentials
-          AK_ID=$(echo "$CREDENTIALS" | jq -r '.Credentials.AccessKeyId')
-          AK_SECRET=$(echo "$CREDENTIALS" | jq -r '.Credentials.AccessKeySecret')
-          STS_TOKEN=$(echo "$CREDENTIALS" | jq -r '.Credentials.SecurityToken')
+          AK_ID=$(echo "$CREDENTIALS" | jq -r '.AccessKeyId')
+          AK_SECRET=$(echo "$CREDENTIALS" | jq -r '.AccessKeySecret')
+          STS_TOKEN=$(echo "$CREDENTIALS" | jq -r '.SecurityToken')
+
+          if [ -z "$AK_ID" ] || [ "$AK_ID" = "null" ]; then
+            echo "❌ Failed to extract credentials from STS response"
+            echo "Raw response: $CREDENTIALS"
+            exit 1
+          fi
+          echo "✅ STS credentials obtained"
 
           # Persist for subsequent steps
           echo "OSS_ACCESS_KEY_ID=$AK_ID" >> $GITHUB_ENV
@@ -393,6 +416,10 @@ jobs:
 
       - name: Upload release assets to OSS
         shell: bash
+        env:
+          OSS_ACCESS_KEY_ID: ${{ env.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ env.OSS_ACCESS_KEY_SECRET }}
+          OSS_SECURITY_TOKEN: ${{ env.OSS_SECURITY_TOKEN }}
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           TAG="v${VERSION}"
@@ -402,6 +429,9 @@ jobs:
             filename=$(basename "$file")
             ossutil cp "$file" oss://${{ vars.OSS_BUCKET }}/releases/${TAG}/${filename} \
               --endpoint=${{ vars.OSS_ENDPOINT }} \
+              -i "${OSS_ACCESS_KEY_ID}" \
+              -k "${OSS_ACCESS_KEY_SECRET}" \
+              -t "${OSS_SECURITY_TOKEN}" \
               --update
           done
 
@@ -411,6 +441,9 @@ jobs:
           EOF
           ossutil cp /tmp/latest.json oss://${{ vars.OSS_BUCKET }}/releases/latest.json \
             --endpoint=${{ vars.OSS_ENDPOINT }} \
+            -i "${OSS_ACCESS_KEY_ID}" \
+            -k "${OSS_ACCESS_KEY_SECRET}" \
+            -t "${OSS_SECURITY_TOKEN}" \
             --meta Cache-Control:no-cache
 
           echo "✅ Uploaded ${TAG} to oss://${{ vars.OSS_BUCKET }}/releases/${TAG}/"
