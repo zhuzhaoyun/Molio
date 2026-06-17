@@ -17,6 +17,9 @@ export function renderMarkdown(text: string): string {
   // Escape HTML
   let html = escapeHtml(text);
 
+  // Strikethrough (before bold/italic to avoid ** conflict)
+  html = html.replace(/~~(.+?)~~/g, '<del>$1</del>');
+
   // Fenced code blocks
   html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, _lang, code) => {
     return `<pre><code>${code.trim()}</code></pre>`;
@@ -57,6 +60,10 @@ export function renderMarkdown(text: string): string {
 
   // Ordered lists
   html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
+
+  // Task lists (before standard unordered lists)
+  html = html.replace(/^- \[x\] (.+)$/gm, '<li class="task-list-item"><input type="checkbox" class="md-task-checkbox" checked disabled>$1</li>');
+  html = html.replace(/^- \[ \] (.+)$/gm, '<li class="task-list-item"><input type="checkbox" class="md-task-checkbox" disabled>$1</li>');
 
   // Horizontal rules
   html = html.replace(/^---$/gm, '<hr>');
