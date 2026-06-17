@@ -113,6 +113,7 @@ export const kbTabsStore = {
 
   updateTab(id: string, patch: Partial<WorkspaceTab>) {
     let changed = false;
+    const newId = patch.id;
     tabs = tabs.map((t) => {
       if (t.id === id) {
         changed = true;
@@ -120,6 +121,10 @@ export const kbTabsStore = {
       }
       return t;
     });
+    // If the active tab's id changed, update activeTabId too
+    if (changed && newId && activeTabId === id && id !== newId) {
+      activeTabId = newId;
+    }
     if (changed) emit();
   },
 };
