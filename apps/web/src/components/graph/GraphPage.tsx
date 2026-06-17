@@ -15,6 +15,9 @@ import { NodeCircleProgram } from 'sigma/rendering';
 import { api } from '../../api/client';
 import { useI18n } from '../../i18n';
 import { useActiveVaultId, vaultStore } from '../../stores/vaultStore';
+import { useGraphSettings } from './useGraphSettings';
+import { GraphSettingsPanel } from './GraphSettingsPanel';
+import { getThemeColors } from './types';
 
 // ── Visual constants (Obsidian light theme, matching obsidian.png) ──
 // 浅色背景 + 深色节点，像纸张上的墨点
@@ -52,11 +55,11 @@ const NODE_TYPE_COLORS: Record<string, string> = {
 
 // 节点大小按连接数动态变化
 // Obsidian 风格：小节点 3px，大节点 9px，中心节点突出
-function nodeSize(linkCount: number): number {
+function nodeSize(linkCount: number, scale: number = 1.0): number {
   const base = 2;
   const maxSize = 8;
-  const calculated = base + Math.sqrt(linkCount) * 1.2;
-  return Math.min(maxSize, calculated);
+  const calculated = (base + Math.sqrt(linkCount) * 1.2) * scale;
+  return Math.min(maxSize * scale, calculated);
 }
 
 function nodeColor(linkCount: number, nodeType?: string): string {
@@ -78,7 +81,7 @@ export function GraphPage() {
   const [graphData, setGraphData] = useState<GraphData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showInfo, setShowInfo] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const sigmaRef = useRef<Sigma | null>(null);
@@ -86,8 +89,12 @@ export function GraphPage() {
 
   const hoveredNodeRef = useRef<string | null>(null);
   const selectedNodeRef = useRef<string | null>(null);
+  // Persist node positions across graph rebuilds (theme change, nodeScale change)
+  const savedPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
 
   const simulation = useSimulation();
+  const { settings, updateSettings, updateForce } = useGraphSettings();
+  const themeColors = getThemeColors(settings.theme);
 
   // Fetch graph data when active vault changes
   useEffect(() => {
@@ -118,6 +125,9 @@ export function GraphPage() {
   useEffect(() => {
     if (!graphData || graphData.nodes.length === 0 || !containerRef.current) return;
 
+    // Use saved positions from previous build (theme change, nodeScale change)
+    const savedPositions = savedPositionsRef.current;
+
     if (sigmaRef.current) {
       sigmaRef.current.kill();
       sigmaRef.current = null;
@@ -134,23 +144,26 @@ export function GraphPage() {
     for (let i = 0; i < count; i++) {
       const n = graphData.nodes[i];
       const angle = (2 * Math.PI * i) / count;
+      const saved = savedPositions.get(n.key);
       graph.addNode(n.key, {
         label: n.label,
         path: n.path,
         linkCount: n.linkCount,
         nodeType: n.nodeType ?? null,
-        size: nodeSize(n.linkCount),
-        color: nodeColor(n.linkCount, n.nodeType),
+        size: nodeSize(n.linkCount, settings.nodeScale),
+        color: n.nodeType && NODE_TYPE_COLORS[n.nodeType]
+          ? NODE_TYPE_COLORS[n.nodeType]
+          : (n.linkCount === 0 ? themeColors.isolated : themeColors.node),
         type: 'circle',
-        x: Math.cos(angle) * radius,
-        y: Math.sin(angle) * radius,
+        x: saved?.x ?? Math.cos(angle) * radius,
+        y: saved?.y ?? Math.sin(angle) * radius,
       });
     }
 
     for (const e of graphData.edges) {
       if (!graph.hasNode(e.source) || !graph.hasNode(e.target)) continue;
       try {
-        graph.addEdge(e.source, e.target, { color: EDGE_DEFAULT });
+        graph.addEdge(e.source, e.target, { color: themeColors.edge });
       } catch { /* Edge already exists */ }
     }
 
@@ -162,21 +175,51 @@ export function GraphPage() {
         if (seen.has(dl.targetName)) continue;
         seen.add(dl.targetName);
         const deadKey = `__dead__${dl.targetName}`;
+        const saved = savedPositions.get(deadKey);
         try {
           graph.addNode(deadKey, {
             label: `${dl.targetName} (?)`,
             path: '',
             linkCount: 0,
             nodeType: null,
-            size: 4,
-            color: '#D4D4D4',
+            size: 4 * settings.nodeScale,
+            color: themeColors.deadNode,
             type: 'circle',
-            x: (Math.random() - 0.5) * radius,
-            y: (Math.random() - 0.5) * radius,
+            x: saved?.x ?? (Math.random() - 0.5) * radius,
+            y: saved?.y ?? (Math.random() - 0.5) * radius,
           });
         } catch { /* node already exists */ }
       }
     }
+
+    // ── Apply filter settings ──
+    graph.forEachNode((key, attrs) => {
+      const isDead = key.startsWith('__dead__');
+      const linkCount = (attrs.linkCount as number) ?? 0;
+
+      // Dead link filter
+      if (isDead && !settings.showDeadLinks) {
+        graph.setNodeAttribute(key, 'hidden', true);
+        return;
+      }
+
+      // Orphan filter (isolated nodes: no links, not dead links)
+      if (!isDead && linkCount === 0 && !settings.showOrphans) {
+        graph.setNodeAttribute(key, 'hidden', true);
+        return;
+      }
+
+      // Type filter
+      if (settings.visibleTypes.length > 0) {
+        const nodeType = (attrs.nodeType as string) ?? 'document';
+        if (!settings.visibleTypes.includes(nodeType)) {
+          graph.setNodeAttribute(key, 'hidden', true);
+          return;
+        }
+      }
+
+      graph.setNodeAttribute(key, 'hidden', false);
+    });
 
     // ── Node reducer for hover/select ──
     // 局部图模式：选中节点后聚焦邻居，非关联节点大幅淡出
@@ -191,7 +234,7 @@ export function GraphPage() {
       if (!focusNode) {
         return {
           ...data,
-          color: (data.color as string) ?? NODE_DEFAULT,
+          color: (data.color as string) ?? themeColors.node,
           size: (data.size as number) ?? 6,
         };
       }
@@ -202,7 +245,7 @@ export function GraphPage() {
         return {
           ...data,
           size: ((data.size as number) ?? 6) * scale,
-          color: isSelected ? NODE_SELECTED : NODE_HOVER,
+          color: isSelected ? themeColors.selected : themeColors.hover,
         };
       }
 
@@ -211,7 +254,7 @@ export function GraphPage() {
       if (isConnected) {
         return {
           ...data,
-          color: (data.color as string) ?? NODE_DEFAULT,
+          color: (data.color as string) ?? themeColors.node,
           // 选中模式下邻居保持原始大小
           size: isFocusMode ? (data.size as number) ?? 6 : undefined,
         };
@@ -222,12 +265,12 @@ export function GraphPage() {
         // 选中模式：大幅淡出（保留位置布局，但视觉上几乎消失）
         return {
           ...data,
-          color: '#F0F0F0',
+          color: themeColors.dimmed,
           size: ((data.size as number) ?? 6) * 0.15,
         };
       }
       // 悬停模式：轻微变淡
-      return { ...data, color: '#D4D4D4' };
+      return { ...data, color: themeColors.edge };
     };
 
     // ── Edge reducer ──
@@ -239,7 +282,7 @@ export function GraphPage() {
 
       // 无 focus：默认淡灰细线
       if (!focusNode) {
-        return { ...data, color: EDGE_DEFAULT, size: 0.8 };
+        return { ...data, color: themeColors.edge, size: settings.edgeWidth };
       }
 
       // Get source/target using graphology API
@@ -250,29 +293,29 @@ export function GraphPage() {
       if (isConnected) {
         // 选中状态：粗紫线
         if (selected) {
-          return { ...data, color: EDGE_SELECTED, size: 2 };
+          return { ...data, color: themeColors.edgeSelected, size: 2 };
         }
         // hover：淡紫线
-        return { ...data, color: EDGE_HOVER, size: 1.5 };
+        return { ...data, color: themeColors.edgeHover, size: 1.5 };
       }
       // 非关联线：更淡
-      return { ...data, color: '#F0F0F0', size: 0.5 };
+      return { ...data, color: themeColors.dimmed, size: 0.5 };
     };
 
     // ── Create Sigma ──
     const renderer = new Sigma(graph, containerRef.current, {
       allowInvalidContainer: true,
       nodeProgramClasses: { circle: NodeCircleProgram },
-      defaultEdgeColor: EDGE_DEFAULT,
+      defaultEdgeColor: themeColors.edge,
       defaultEdgeType: 'line',
       edgeLabelSize: 10,
-      labelColor: { color: '#333333' },
+      labelColor: { color: themeColors.label },
       labelSize: 12,
       labelFont: 'Inter, PingFang SC, -apple-system, sans-serif',
       // 标签按缩放级别自动显隐 — 缩小时只显示大节点标签
       labelRenderedSizeThreshold: 5,
       labelDensity: 0.25,
-      defaultNodeColor: NODE_DEFAULT,
+      defaultNodeColor: themeColors.node,
       renderEdgeLabels: false,
       autoRescale: true,
       autoCenter: true,
@@ -287,6 +330,20 @@ export function GraphPage() {
     renderer.refresh();
     // Start d3-force physics engine (positions sync on tick, rendering via interaction handlers)
     simulation.init(graph, renderer, () => {});
+
+    // Apply stored force params to the fresh simulation
+    const { forces, edgeWidth } = settings;
+    simulation.setForceParam('centerStrength', forces.centerStrength);
+    simulation.setForceParam('repelStrength', forces.repelStrength);
+    simulation.setForceParam('linkStrength', forces.linkStrength);
+    simulation.setForceParam('linkDistance', forces.linkDistance);
+
+    // Apply edge width
+    if (edgeWidth !== 0.8) {
+      graph.forEachEdge((key) => {
+        graph.setEdgeAttribute(key, 'size', edgeWidth);
+      });
+    }
 
     renderer.on('leaveNode', () => {
       if (draggedNode) return;
@@ -458,6 +515,15 @@ export function GraphPage() {
     document.addEventListener('mouseup', handleMouseUp);
 
     return () => {
+      // Save positions before teardown so they persist across rebuilds (theme change, etc.)
+      const positions = new Map<string, { x: number; y: number }>();
+      if (graphRef.current) {
+        graphRef.current.forEachNode((key, attrs) => {
+          positions.set(key, { x: (attrs.x as number) ?? 0, y: (attrs.y as number) ?? 0 });
+        });
+      }
+      savedPositionsRef.current = positions;
+
       simulation.stop();
       container.removeEventListener('mousedown', handleMouseDown, { capture: true });
       document.removeEventListener('mousemove', handleMouseMove);
@@ -471,7 +537,56 @@ export function GraphPage() {
       hoveredNodeRef.current = null;
       selectedNodeRef.current = null;
     };
-  }, [graphData, navigate]);
+  }, [graphData, navigate, settings.theme, settings.nodeScale]);
+
+  // ── Live filter updates (no rebuild needed) ──
+  useEffect(() => {
+    const graph = graphRef.current;
+    const renderer = sigmaRef.current;
+    if (!graph || !renderer) return;
+
+    graph.forEachNode((key, attrs) => {
+      const isDead = key.startsWith('__dead__');
+      const linkCount = (attrs.linkCount as number) ?? 0;
+
+      // Dead link filter
+      if (isDead && !settings.showDeadLinks) {
+        graph.setNodeAttribute(key, 'hidden', true);
+        return;
+      }
+
+      // Orphan filter (isolated nodes: no links, not dead links)
+      if (!isDead && linkCount === 0 && !settings.showOrphans) {
+        graph.setNodeAttribute(key, 'hidden', true);
+        return;
+      }
+
+      // Type filter
+      if (settings.visibleTypes.length > 0) {
+        const nodeType = (attrs.nodeType as string) ?? 'document';
+        if (!settings.visibleTypes.includes(nodeType)) {
+          graph.setNodeAttribute(key, 'hidden', true);
+          return;
+        }
+      }
+
+      graph.setNodeAttribute(key, 'hidden', false);
+    });
+
+    renderer.refresh();
+  }, [settings.showOrphans, settings.showDeadLinks, settings.visibleTypes]);
+
+  // ── Live edge width update (no rebuild needed) ──
+  useEffect(() => {
+    const graph = graphRef.current;
+    const renderer = sigmaRef.current;
+    if (!graph || !renderer) return;
+
+    graph.forEachEdge((key) => {
+      graph.setEdgeAttribute(key, 'size', settings.edgeWidth);
+    });
+    renderer.refresh();
+  }, [settings.edgeWidth]);
 
   const nodeCount = graphData?.nodes.length ?? 0;
   const edgeCount = graphData?.edges.length ?? 0;
@@ -514,6 +629,13 @@ export function GraphPage() {
               死链接 {graphData.deadLinks.length}
             </span>
           )}
+          <button
+            className={`graph-settings-btn ${showSettings ? 'is-active' : ''}`}
+            onClick={() => setShowSettings(!showSettings)}
+            title="图谱设置"
+          >
+            ⚙
+          </button>
         </div>
       </div>
 
@@ -539,42 +661,23 @@ export function GraphPage() {
 
         <div ref={containerRef} className="graph-sigma" />
 
-        {/* 折叠式信息面板（图例 + 操作说明） */}
-        {graphData && (
-          <>
-            <button className="graph-info-btn" onClick={() => setShowInfo(!showInfo)} title="图例与操作">
-              {showInfo ? '✕' : '?'}
-            </button>
-            {showInfo && (
-              <div className="graph-info-panel">
-                <div className="graph-info__section">
-                  <div className="graph-info__title">节点颜色</div>
-                    <div className="graph-legend">
-                    <div className="graph-legend__item">
-                      <span className="graph-legend__dot" style={{ background: '#8899AA' }} />
-                      <span className="graph-legend__label">文档 / 源文件</span>
-                    </div>
-                    <div className="graph-legend__item">
-                      <span className="graph-legend__dot" style={{ background: '#8B5CF6' }} />
-                      <span className="graph-legend__label">概念 / 实体</span>
-                    </div>
-                    <div className="graph-legend__item">
-                      <span className="graph-legend__dot" style={{ background: '#D97706' }} />
-                      <span className="graph-legend__label">对比 / 问答</span>
-                    </div>
-                    </div>
-                </div>
-                <div className="graph-info__section">
-                  <div className="graph-info__title">操作</div>
-                  <div className="graph-info__hints">
-                    <div className="graph-hint">拖拽节点 · 邻居联动</div>
-                    <div className="graph-hint">单击选中 · 高亮关联</div>
-                    <div className="graph-hint">双击节点 · 打开文章</div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </>
+        {/* 图谱设置面板 */}
+        {graphData && showSettings && (
+          <GraphSettingsPanel
+            settings={settings}
+            onUpdateSettings={updateSettings}
+            onUpdateForce={(patch) => {
+              updateForce(patch);
+              // Apply force changes to live simulation
+              for (const [name, value] of Object.entries(patch)) {
+                simulation.setForceParam(name, value);
+              }
+            }}
+            onClose={() => setShowSettings(false)}
+            availableTypes={graphData.nodes
+              .map(n => n.nodeType)
+              .filter((t): t is string => !!t)}
+          />
         )}
       </div>
     </div>
