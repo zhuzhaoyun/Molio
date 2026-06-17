@@ -209,10 +209,10 @@ export function GraphPage() {
         return;
       }
 
-      // Type filter
+      // Type filter — only filter nodes that have an explicit type
       if (settings.visibleTypes.length > 0) {
-        const nodeType = (attrs.nodeType as string) ?? 'document';
-        if (!settings.visibleTypes.includes(nodeType)) {
+        const rawType = attrs.nodeType as string | null;
+        if (rawType && !settings.visibleTypes.includes(rawType)) {
           graph.setNodeAttribute(key, 'hidden', true);
           return;
         }
@@ -561,10 +561,10 @@ export function GraphPage() {
         return;
       }
 
-      // Type filter
+      // Type filter — only filter nodes that have an explicit type
       if (settings.visibleTypes.length > 0) {
-        const nodeType = (attrs.nodeType as string) ?? 'document';
-        if (!settings.visibleTypes.includes(nodeType)) {
+        const rawType = attrs.nodeType as string | null;
+        if (rawType && !settings.visibleTypes.includes(rawType)) {
           graph.setNodeAttribute(key, 'hidden', true);
           return;
         }
