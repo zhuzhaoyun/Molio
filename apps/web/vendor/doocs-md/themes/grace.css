@@ -105,24 +105,7 @@ hr {
   background: linear-gradient(to right, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.1), rgba(0, 0, 0, 0));
 }
 
-/* ==================== 表格 ==================== */
-table {
-  border-collapse: separate;
-  border-spacing: 0;
-  border-radius: 8px;
-  margin: 1em 8px;
-  color: hsl(var(--foreground));
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-  overflow: hidden;
-}
-
-thead {
-  color: #fff;
-}
-
-td {
-  padding: 0.5em 1em;
-}
+/* [MOLIO] 表格样式移至 base.css 的 .md-table 体系，此处不再覆盖 */
 
 /* ==================== 强调 ==================== */
 em {

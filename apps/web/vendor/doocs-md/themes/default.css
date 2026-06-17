@@ -376,30 +376,7 @@ strong {
   font-size: inherit;
 }
 
-/* ==================== 表格 ==================== */
-table {
-  color: hsl(var(--foreground));
-}
-
-thead {
-  font-weight: bold;
-  color: hsl(var(--foreground));
-}
-
-th {
-  border: 1px solid color-mix(in srgb, hsl(var(--foreground)) 15%, transparent);
-  padding: 0.25em 0.5em;
-  color: hsl(var(--foreground));
-  word-break: keep-all;
-  background: color-mix(in srgb, hsl(var(--foreground)) 5%, transparent);
-}
-
-td {
-  border: 1px solid color-mix(in srgb, hsl(var(--foreground)) 15%, transparent);
-  padding: 0.25em 0.5em;
-  color: hsl(var(--foreground));
-  word-break: keep-all;
-}
+/* [MOLIO] 表格样式移至 base.css 的 .md-table 体系，此处不再覆盖 */
 
 /* ==================== KaTeX 公式 ==================== */
 .katex-inline {
