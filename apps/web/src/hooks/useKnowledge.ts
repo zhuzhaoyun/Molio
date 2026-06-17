@@ -27,6 +27,24 @@ export function preprocessWikiEmbeds(markdown: string, vaultId: string): string 
   );
 }
 
+/** Hosts known to block hotlinking — route images from these through the daemon proxy */
+const PROXIED_IMAGE_HOSTS = [
+  'mmbiz.qpic.cn',
+  'mmbiz.qlogo.cn',
+];
+
+/* [MOLIO] Route external images from anti-hotlinking hosts through daemon proxy */
+export function proxyExternalImages(markdown: string): string {
+  const pattern = new RegExp(
+    `!\\[([^\\]]*)\\]\\((https?://(?:${PROXIED_IMAGE_HOSTS.map(h => h.replace(/\./g, '\\.')).join('|')})[^)]+)\\)`,
+    'g',
+  );
+  return markdown.replace(pattern, (_m, alt: string, url: string) => {
+    const proxyUrl = `${window.location.origin}/api/proxy/image?url=${encodeURIComponent(url)}`;
+    return `![${alt}](${proxyUrl})`;
+  });
+}
+
 interface UseKnowledgeReturn {
   // Data
   vaults: Vault[];

@@ -45,6 +45,37 @@ app.get('/api/health', (c) => {
   return c.json({ status: 'ok' as const, version: '0.1.0' });
 });
 
+// Image proxy — bypasses Referer-based anti-hotlinking (e.g. mmbiz.qpic.cn)
+app.get('/api/proxy/image', async (c) => {
+  const imageUrl = c.req.query('url');
+  if (!imageUrl) return c.json({ error: 'Missing url param' }, 400);
+
+  let parsed: URL;
+  try { parsed = new URL(imageUrl); } catch {
+    return c.json({ error: 'Invalid URL' }, 400);
+  }
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    return c.json({ error: 'Invalid protocol' }, 400);
+  }
+
+  try {
+    const resp = await fetch(imageUrl, {
+      headers: { 'User-Agent': 'Molio/1.0' },
+    });
+    if (!resp.ok) return c.body(null, resp.status);
+
+    const contentType = resp.headers.get('content-type') || 'image/png';
+    const buffer = Buffer.from(await resp.arrayBuffer());
+
+    return c.body(buffer, 200, {
+      'Content-Type': contentType,
+      'Cache-Control': 'public, max-age=86400',
+    });
+  } catch {
+    return c.body(null, 502);
+  }
+});
+
 // Routes
 app.route('/api/agents', agentsRoutes(runManager));
 app.route('/api/runs', runsRoutes(db, runManager, conversationService));

@@ -21,7 +21,7 @@ import { foldGutter, foldKeymap } from '@codemirror/language';
 import { highlightSelectionMatches, searchKeymap } from '@codemirror/search';
 import { MdRenderer } from './MdRenderer';
 import { MdStylePanel, defaultThemeConfig, type ThemeConfig } from './MdStylePanel';
-import { preprocessWikiEmbeds } from '../../hooks/useKnowledge';
+import { preprocessWikiEmbeds, proxyExternalImages } from '../../hooks/useKnowledge';
 
 // ─── Markdown formatting helpers (from @md/shared/editor/format.ts) ───
 
@@ -295,7 +295,7 @@ export function MdTypesetEditor({
           ref={previewRef}
           className={`kb-typeset-preview ${isMobilePreview ? 'is-mobile' : 'is-desktop'}`}
         >
-          <MdRenderer content={vaultId ? preprocessWikiEmbeds(content, vaultId) : content} themeConfig={themeConfig} />
+          <MdRenderer content={vaultId ? proxyExternalImages(preprocessWikiEmbeds(content, vaultId)) : proxyExternalImages(content)} themeConfig={themeConfig} />
         </div>
       </div>
 
