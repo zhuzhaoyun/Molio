@@ -431,26 +431,21 @@ export function useKnowledge(): UseKnowledgeReturn {
     const markdownSource = editedContent ?? fileContent?.content ?? '';
     if (!markdownSource) return;
 
-    // 1. Check COSE extension
-    const { installed } = await api.checkCose();
-    if (!installed) {
-      setShowCoseInstallPrompt(true);
-      return;
-    }
-
-    // 2. Get rendered HTML from #output
+    // 1. Get rendered HTML from #output
     const outputEl = document.querySelector('#output');
     const html = outputEl?.innerHTML ?? '';
 
-    // 3. Get resolved theme CSS from <style id="md-theme">
+    // 2. Get resolved theme CSS from <style id="md-theme">
     const themeStyleEl = document.getElementById('md-theme');
     const css = themeStyleEl?.textContent ?? '';
 
-    // 4. Extract title from markdown (first heading)
+    // 3. Extract title from markdown (first heading)
     const headingMatch = markdownSource.match(/^#{1,6}\s+(.+)$/m);
     const title = headingMatch?.[1]?.trim() ?? selectedFile?.split('/').pop()?.replace(/\.md$/, '') ?? '';
 
-    // 5. Start bridge server and open Chrome
+    // 4. Start bridge server and open in system browser
+    //    Bridge page will detect window.$cose at runtime (works with both
+    //    Chrome Store install and developer-mode sideload)
     const { bridgeUrl } = await api.startPublish({ title, markdown: markdownSource, html, css });
     window.open(bridgeUrl, '_blank');
   }, [editedContent, fileContent, selectedFile]);
