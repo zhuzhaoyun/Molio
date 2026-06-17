@@ -91,8 +91,23 @@ export function KbMainContent({
     return () => document.removeEventListener('keydown', handler);
   }, [onSave]);
 
-  // No file selected — show empty state or wiki CTA
+  // No file selected — show appropriate empty state
   if (!selectedFile) {
+    // No vault created yet — prompt to create a vault
+    if (!vaultId) {
+      return (
+        <main className="kb-main">
+          <div className="kb-empty-state">
+            <div className="kb-empty-icon">📚</div>
+            <h3>欢迎使用知识库</h3>
+            <p>创建一个知识库来管理你的文档和笔记。</p>
+            <p className="kb-empty-hint">知识库是存储和组织文档的地方，支持 Markdown 文件管理、AI 辅助阅读和 Wiki 生成。</p>
+          </div>
+        </main>
+      );
+    }
+
+    // Vault exists but wiki not initialized yet
     if (!wikiInitialized) {
       return (
         <main className="kb-main">
@@ -111,9 +126,9 @@ export function KbMainContent({
     return (
       <main className="kb-main">
         <div className="kb-empty-state">
-          <div className="kb-empty-icon">📚</div>
-          <h3>No file selected</h3>
-          <p>Select a file from the tree to view its content.</p>
+          <div className="kb-empty-icon">📄</div>
+          <h3>未选择文件</h3>
+          <p>从左侧文件树中选择一个文件查看内容。</p>
         </div>
       </main>
     );
