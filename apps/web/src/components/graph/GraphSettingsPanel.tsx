@@ -4,6 +4,21 @@ import { NODE_TYPE_LABELS } from './types';
 
 type Tab = 'filter' | 'appearance' | 'forces' | 'legend';
 
+const TYPE_DOT_COLORS: Record<string, string> = {
+  document: '#8899AA',
+  source: '#8899AA',
+  wiki: '#7A8A99',
+  concept: '#8B5CF6',
+  entity: '#8B5CF6',
+  comparison: '#D97706',
+  question: '#D97706',
+  tag: '#8B5CF6',
+  agent: '#8B5CF6',
+  project: '#8899AA',
+  workflow: '#D97706',
+  aiModel: '#D97706',
+};
+
 interface Props {
   settings: GraphSettings;
   onUpdateSettings: (patch: Partial<GraphSettings>) => void;
@@ -111,6 +126,7 @@ export function GraphSettingsPanel({ settings, onUpdateSettings, onUpdateForce, 
                       checked={isTypeVisible(key)}
                       onChange={() => toggleType(key)}
                     />
+                    <span className="graph-settings__checkbox-dot" style={{ background: TYPE_DOT_COLORS[key] ?? '#8899AA' }} />
                     <span>{label}</span>
                   </label>
                 ))}
