@@ -20,7 +20,7 @@ h1 {
 h2 {
   display: table;
   padding: 0 0.2em;
-  margin: 4em auto 2em;
+  margin: 2em auto 1em;
   color: #fff;
   background: var(--md-primary-color);
   font-size: calc(var(--md-font-size) * 1.2);
@@ -63,9 +63,9 @@ h6 {
 }
 
 /* ==================== 段落 ==================== */
+/* [MOLIO] 去掉侧边距和字间距，更适合中文阅读 */
 p {
-  margin: 1.5em 8px;
-  letter-spacing: 0.1em;
+  margin: 1em 0;
   color: hsl(var(--foreground));
 }
 
@@ -293,9 +293,9 @@ ul {
   color: hsl(var(--foreground));
 }
 
+/* [MOLIO] 恢复原生 list-item 渲染，base.css 已处理基础样式 */
 li {
-  display: block;
-  margin: 0.2em 8px;
+  margin: 0.2em 0;
   color: hsl(var(--foreground));
 }
 
