@@ -6,6 +6,7 @@ const en: Record<string, string> = {
   'nav.channels': 'Channels',
   'nav.history': 'History',
   'nav.graph': 'Graph',
+  'nav.help': 'Help',
   'nav.settings': 'Settings',
 
   // ── Common ──

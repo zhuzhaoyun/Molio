@@ -10,22 +10,33 @@ import path from 'node:path';
 import type Database from 'better-sqlite3';
 import { getVault } from '../core/db.js';
 import { scanTree, resolveFilePath } from '../core/knowledge.js';
+import type { GraphNode, GraphEdge, GraphData, DeadLinkInfo } from '@molio/contracts';
 
-export interface GraphNode {
-  key: string;
-  label: string;
-  path: string;
-  linkCount: number;
-}
+/**
+ * Infer node type from frontmatter or directory path.
+ */
+function inferNodeType(filePath: string, content: string): string | undefined {
+  // 1. Parse frontmatter for `type:` field
+  const fmMatch = content.match(/^---\s*\n([\s\S]*?)\n---/);
+  if (fmMatch) {
+    const fm = fmMatch[1] ?? '';
+    const typeMatch = fm.match(/^type:\s*(.+)$/m);
+    if (typeMatch) {
+      const t = typeMatch[1]!.trim().replace(/^["']|["']$/g, '');
+      if (t) return t;
+    }
+  }
 
-export interface GraphEdge {
-  source: string;
-  target: string;
-}
+  // 2. Infer from wiki directory structure
+  if (filePath.startsWith('wiki/sources/')) return 'source';
+  if (filePath.startsWith('wiki/entities/')) return 'entity';
+  if (filePath.startsWith('wiki/concepts/')) return 'concept';
+  if (filePath.startsWith('wiki/comparisons/')) return 'comparison';
+  if (filePath.startsWith('wiki/questions/')) return 'question';
+  if (filePath.startsWith('wiki/')) return 'wiki';
 
-export interface GraphData {
-  nodes: GraphNode[];
-  edges: GraphEdge[];
+  // 3. Default
+  return 'document';
 }
 
 export function graphRoutes(db: Database.Database): Hono {
@@ -66,6 +77,10 @@ function buildGraph(vaultPath: string): GraphData {
   const pathToKey = new Map<string, string>();
   // Counter for link counts
   const linkCounts = new Map<string, number>();
+  // Map for node types
+  const nodeTypes = new Map<string, string | undefined>();
+  // Dead links list
+  const deadLinksList: DeadLinkInfo[] = [];
 
   for (const f of mdFiles) {
     const relPath = f.path;
@@ -79,6 +94,15 @@ function buildGraph(vaultPath: string): GraphData {
     }
     nameIndex.get(basename)!.push(relPath);
 
+    // Read file content for node type inference
+    const absPath = resolveFilePath(vaultPath, f.path);
+    let content = '';
+    try {
+      content = existsSync(absPath) ? readFileSync(absPath, 'utf-8') : '';
+    } catch { /* binary or unreadable */ }
+
+    const nodeType = inferNodeType(f.path, content);
+    nodeTypes.set(key, nodeType);
     linkCounts.set(key, 0);
   }
 
@@ -102,7 +126,15 @@ function buildGraph(vaultPath: string): GraphData {
 
       // Try to resolve the link target
       const targetKey = resolveLink(rawName, f.path, nameIndex, pathToKey);
-      if (!targetKey || targetKey === sourceKey) continue;
+      if (!targetKey) {
+        // Record dead link
+        if (!deadLinks.has(rawName.toLowerCase())) {
+          deadLinks.add(rawName.toLowerCase());
+          deadLinksList.push({ sourceFile: f.path, targetName: rawName });
+        }
+        continue;
+      }
+      if (targetKey === sourceKey) continue;
 
       const edgeKey = sourceKey < targetKey
         ? `${sourceKey}→${targetKey}`
@@ -122,6 +154,7 @@ function buildGraph(vaultPath: string): GraphData {
     label: f.name.replace(/\.md$/i, ''),
     path: f.path,
     linkCount: linkCounts.get(pathToKey.get(f.path)!) ?? 0,
+    nodeType: nodeTypes.get(pathToKey.get(f.path)!),
   }));
 
   // Build edge list
@@ -130,7 +163,7 @@ function buildGraph(vaultPath: string): GraphData {
     return { source: parts[0] ?? '', target: parts[1] ?? '' };
   });
 
-  return { nodes, edges: edgeList };
+  return { nodes, edges: edgeList, deadLinks: deadLinksList };
 }
 
 /**
@@ -158,6 +191,11 @@ function collectMdFiles(
  * 2. Basename match in the nameIndex
  * 3. If multiple matches with same basename, prefer same-directory one
  */
+/** Strip spaces/dashes/underscores for fuzzy name matching. */
+function normalizeName(name: string): string {
+  return name.replace(/[\s_\-]+/g, '').toLowerCase();
+}
+
 function resolveLink(
   rawName: string,
   sourcePath: string,
@@ -165,10 +203,37 @@ function resolveLink(
   pathToKey: Map<string, string>,
 ): string | null {
   // Strip any .md extension from the link text
-  const cleanName = rawName.replace(/\.md$/i, '').trim().toLowerCase();
+  let cleanName = rawName.replace(/\.md$/i, '').trim().toLowerCase();
 
-  // Case 1: Look up by clean name in the index
-  const candidates = nameIndex.get(cleanName);
+  // Skip non-.md files (images, etc.)
+  if (rawName.match(/\.(png|jpg|jpeg|gif|svg|webp|pdf|docx?|xlsx?)$/i)) {
+    return null;
+  }
+
+  // Case 1: Look up by exact name in the index
+  let candidates = nameIndex.get(cleanName);
+  if (!candidates || candidates.length === 0) {
+    // Case 2: The link text may include a directory path like [[开发/概念/知识库五范式]].
+    // Extract just the basename (last segment) for matching.
+    if (cleanName.includes('/')) {
+      const baseOnly = cleanName.split('/').pop() ?? cleanName;
+      if (baseOnly !== cleanName) {
+        candidates = nameIndex.get(baseOnly);
+      }
+    }
+  }
+  if (!candidates || candidates.length === 0) {
+    // Case 3: Fuzzy match — strip spaces/dashes/underscores for comparison.
+    // AI-generated wikilinks like [[AI Safety]] may not match filename
+    // ai-safety.md with exact string comparison.
+    const fuzzyKey = normalizeName(cleanName);
+    for (const [key, paths] of nameIndex) {
+      if (normalizeName(key) === fuzzyKey) {
+        candidates = paths;
+        break;
+      }
+    }
+  }
   if (!candidates || candidates.length === 0) return null;
 
   if (candidates.length === 1) {

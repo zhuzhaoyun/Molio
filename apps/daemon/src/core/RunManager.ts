@@ -8,7 +8,7 @@ import type {
 } from '@molio/contracts';
 import { getAgentDef, listAgentDefs } from './runtimes/registry.js';
 import { resolveAgentBinary, probeVersion } from './runtimes/launch.js';
-import { buildSpawnEnv, createStderrDecoder } from './runtimes/env.js';
+import { buildSpawnEnv } from './runtimes/env.js';
 import { createClaudeStreamHandler } from './streams/claude-stream.js';
 import { createCodexStreamHandler } from './streams/codex-stream.js';
 import { createJsonEventStreamHandler } from './streams/json-event-stream.js';
@@ -57,21 +57,15 @@ export class RunManager {
       const configuredEnv = agentConfig.env || {};
       const result = resolveAgentBinary(def, { configuredEnv });
       const version = result.binary ? probeVersion(result.binary, def.versionArgs) : null;
-      // Agent is only "available" if we can both find the binary AND
-      // successfully probe its version. A .cmd shim created by npm always
-      // exists even when the postinstall failed (leaving a placeholder).
-      // probeVersion returns null when the binary can't actually execute.
-      const available = result.binary !== null && version !== null;
       return {
         id: def.id,
         name: def.name,
-        available,
+        available: result.binary !== null,
         binary: result.binary,
         source: result.source,
         version,
         models: def.fallbackModels,
         installUrl: def.installUrl,
-        installable: def.installable,
       };
     });
   }
@@ -206,16 +200,24 @@ export class RunManager {
     );
 
     const stdinMode = def.promptViaStdin ? 'pipe' : 'ignore';
-    const isWin = process.platform === 'win32';
-    const isCmd = isWin && (result.binary.endsWith('.cmd') || result.binary.endsWith('.bat'));
-
-    const child: ChildProcess = spawn(result.binary, args, {
+    const isCmd = process.platform === 'win32' && (result.binary.endsWith('.cmd') || result.binary.endsWith('.bat'));
+    // On Windows with shell: true, Node.js concatenates args with spaces.
+    // Wrap args containing spaces in double quotes so they remain single arguments.
+    const spawnArgs = isCmd
+      ? args.map((arg) => {
+          if (arg.includes(' ') || arg.includes('"')) {
+            return `"${arg.replace(/"/g, '\\"')}"`;
+          }
+          return arg;
+        })
+      : args;
+    const child: ChildProcess = spawn(result.binary, spawnArgs, {
       env,
       stdio: [stdinMode, 'pipe', 'pipe'],
       cwd: opts.cwd || agentConfig.env?.['MOLIO_CWD'] || process.cwd(),
       // On Windows, .cmd/.bat files must be spawned with shell: true to avoid EINVAL
       shell: isCmd,
-      windowsVerbatimArguments: isWin && !isCmd,
+      windowsVerbatimArguments: process.platform === 'win32' && !isCmd,
     });
     run.child = child;
 
@@ -246,10 +248,7 @@ export class RunManager {
     }
 
     child.stdout?.setEncoding('utf8');
-    // On Windows with non-UTF-8 console code page (e.g. CP936/GBK for Chinese),
-    // stderr from cmd.exe and child processes is in the system code page, not UTF-8.
-    // Use a TextDecoder-based decoder to avoid mojibake in error messages.
-    const stderrDecoder = createStderrDecoder();
+    child.stderr?.setEncoding('utf8');
 
     const parser = this.selectParser(def, (ev) => {
       this.emitEvent(run, ev);
@@ -272,12 +271,16 @@ export class RunManager {
       parser.feed(chunk);
     });
 
-    child.stderr?.on('data', (chunk: Buffer | string) => {
-      const text = stderrDecoder
-        ? stderrDecoder(chunk as Buffer)
-        : (chunk as string);
-      const trimmed = text.trim();
-      if (trimmed) {
+    child.stderr?.on('data', (chunk: string) => {
+      const trimmed = chunk.trim();
+      // Codex CLI logs "Reading prompt from stdin..." and "Reading additional
+      // input from stdin..." to stderr as informational messages, not errors.
+      // Filter them out so they don't show up as red error bubbles in the UI.
+      const isCodexInfoStderr = def.id === 'codex' && (
+        trimmed.includes('Reading prompt from stdin') ||
+        trimmed.includes('Reading additional input from stdin')
+      );
+      if (trimmed && !isCodexInfoStderr) {
         this.emitEvent(run, { type: 'error', message: trimmed });
       }
     });

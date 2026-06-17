@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="styles.css">
 
 <!-- ========== SEO 核心 ========== -->
 <title>Molio 墨流 — 一体化知识库管理平台 | Obsidian 式 Wiki · 知识图谱 · AI 创作 · 多平台发布</title>
@@ -51,24 +52,7 @@
 </script>
 
 <style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-html, body {
-  width: 100%; height: 100%;
-  overflow: hidden;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Serif SC', serif;
-  background: #FAF8F5;
-  color: #1A1A1A;
-}
-
-/* ============ 柔和粒子背景画布 ============ */
-#particle-canvas {
-  position: fixed;
-  top: 0; left: 0;
-  width: 100%; height: 100%;
-  z-index: 0;
-  pointer-events: none;
-  opacity: 0.35;
-}
+html, body { overflow: hidden; }
 
 /* ============ 全屏区块 ============ */
 .section {
@@ -237,7 +221,7 @@ html, body {
   gap: 12px;
   margin-bottom: 24px;
 }
-.step-number {
+.step-badge .step-number {
   width: 48px; height: 48px;
   border-radius: 50%;
   background: #1A1A1A;
@@ -249,12 +233,12 @@ html, body {
   font-weight: 700;
   flex-shrink: 0;
 }
-.step-number.brown { background: #8B7355; }
-.step-number.green { background: #6B8E5E; }
-.step-number.orange { background: #C4956A; }
-.step-number.teal { background: #5A8A7A; }
-.step-number.purple { background: #7A6B8E; }
-.step-label {
+.step-badge .step-number.brown { background: #8B7355; }
+.step-badge .step-number.green { background: #6B8E5E; }
+.step-badge .step-number.orange { background: #C4956A; }
+.step-badge .step-number.teal { background: #5A8A7A; }
+.step-badge .step-number.purple { background: #7A6B8E; }
+.step-badge .step-label {
   font-size: 18px;
   color: #8B7355;
   font-weight: 600;
@@ -418,126 +402,6 @@ html, body {
   color: #8B8B8B;
 }
 
-/* ============ 右下角二维码 ============ */
-.float-qr-wrap {
-  position: fixed;
-  bottom: 80px;
-  right: 30px;
-  z-index: 100;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  background: #fff;
-  border-radius: 16px;
-  padding: 12px;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.08);
-  border: 1px solid #E8DDD0;
-  transition: all 0.3s;
-}
-.float-qr-wrap:hover {
-  box-shadow: 0 8px 28px rgba(0,0,0,0.12);
-  transform: translateY(-2px);
-}
-.float-qr-img {
-  width: 100px; height: 100px;
-}
-.float-qr-img img {
-  width: 100%; height: 100%;
-  object-fit: contain;
-}
-.float-qr-caption {
-  font-size: 12px;
-  color: #8B7355;
-  font-weight: 600;
-  text-align: center;
-}
-
-/* ============ 右上角 GitHub 地址 ============ */
-.float-github {
-  position: fixed;
-  top: 24px;
-  right: 30px;
-  z-index: 100;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: #fff;
-  border-radius: 12px;
-  padding: 10px 18px;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.08);
-  border: 1px solid #E8DDD0;
-  transition: all 0.3s;
-}
-.float-github:hover {
-  box-shadow: 0 8px 28px rgba(0,0,0,0.12);
-  transform: translateY(-2px);
-}
-.gh-icon {
-  width: 24px; height: 24px;
-  flex-shrink: 0;
-}
-.gh-icon svg {
-  width: 100%; height: 100%;
-  fill: #1A1A1A;
-}
-.gh-url {
-  font-size: 14px;
-  font-weight: 500;
-  color: #1A1A1A;
-  letter-spacing: 0.5px;
-  font-family: 'SF Mono', 'Courier New', monospace;
-}
-
-/* ============ 底部指示器 ============ */
-.indicators {
-  position: fixed;
-  bottom: 40px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  gap: 12px;
-  z-index: 100;
-}
-.indicator {
-  width: 10px; height: 10px;
-  border-radius: 50%;
-  background: #D4C5B0;
-  cursor: pointer;
-  transition: all 0.3s;
-}
-.indicator.active {
-  background: #8B7355;
-  width: 32px;
-  border-radius: 5px;
-}
-
-/* ============ 页脚 ============ */
-.footer {
-  position: fixed;
-  bottom: 20px;
-  right: 40px;
-  font-size: 13px;
-  color: #B0A090;
-  z-index: 100;
-}
-
-/* ============ 自动播放提示 ============ */
-.autoplay-hint {
-  position: fixed;
-  bottom: 80px;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 13px;
-  color: #B0A090;
-  z-index: 100;
-  background: rgba(255,255,255,0.8);
-  padding: 6px 16px;
-  border-radius: 20px;
-  backdrop-filter: blur(4px);
-  border: 1px solid #E8DDD0;
-}
-
 /* ============ 响应式 ============ */
 @media (max-width: 1200px) {
   .section { padding: 40px 50px; }
@@ -557,11 +421,6 @@ html, body {
   .ring-node .r-desc { font-size: 11px; }
   .ring-center-icon { font-size: 40px; }
   .ring-center-quote { font-size: 15px; }
-  .float-qr-wrap { padding: 8px; bottom: 70px; right: 16px; left: auto; }
-  .float-qr-img { width: 70px; height: 70px; }
-  .float-qr-caption { font-size: 10px; }
-  .float-github { padding: 8px 12px; top: 16px; right: 16px; }
-  .gh-url { font-size: 11px; }
   .cycle-bar { flex-wrap: wrap; justify-content: center; }
 }
 @media (max-width: 768px) {
@@ -571,6 +430,18 @@ html, body {
 </style>
 </head>
 <body>
+
+<!-- ============ 顶部导航栏 ============ -->
+<nav class="top-nav">
+  <div class="nav-inner">
+    <a href="index.html" class="nav-logo"><span class="logo-icon-sm">M</span> Molio</a>
+    <div class="nav-links">
+      <a href="index.html" class="nav-link active">首页</a>
+      <a href="help.html" class="nav-link">使用指南</a>
+      <a href="download.html" class="nav-link">下载</a>
+    </div>
+  </div>
+</nav>
 
 <canvas id="particle-canvas"></canvas>
 
@@ -968,7 +839,7 @@ document.addEventListener('keydown', (e) => {
 });
 </script>
 <div class="float-github">
-  <a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer" class="gh-link" style="display:flex;align-items:center;gap:10px;text-decoration:none;">
+  <a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer" class="gh-link">
     <div class="gh-icon">
       <svg viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
     </div>

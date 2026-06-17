@@ -130,44 +130,60 @@ describe('main.js: must load URL only after daemon is ready (not in createWindow
   });
 });
 
-describe('main.js: daemon failure must show error page (not blank screen)', () => {
-  it('exit handler should reject promise when daemon dies before starting', () => {
-    // The exit handler must call reject() when the daemon crashes before
-    // printing "listening on", so the caller doesn't wait for the 10s timeout.
-    const exitHandlerStart = mainJs.indexOf("daemonProcess.on('exit'");
-    assert.ok(exitHandlerStart !== -1, "exit handler must exist");
-
-    const exitHandlerEnd = mainJs.indexOf('});', exitHandlerStart);
-    const exitBody = mainJs.slice(exitHandlerStart, exitHandlerEnd);
-
+describe('main.js: protocol launch should leave splash after daemon is ready', () => {
+  it('should parse molio://launch as a protocol target', () => {
     assert.ok(
-      exitBody.includes('reject'),
-      'exit handler must reject the promise when daemon dies before starting'
+      mainJs.includes('function parseMolioProtocolUrl'),
+      'main.js must centralize molio:// protocol parsing'
     );
     assert.ok(
-      exitBody.includes('!started'),
-      'exit handler must check !started before rejecting'
+      mainJs.includes("return { action: 'launch' }"),
+      'molio://launch must parse to a launch action'
     );
   });
 
-  it('loadApp() must only be called when daemon starts successfully', () => {
-    // loadApp() must be guarded by a daemonReady check, not called unconditionally.
-    const whenReadyBlock = mainJs.slice(mainJs.indexOf('app.whenReady()'));
-
+  it('should detect when the production splash page is still showing', () => {
     assert.ok(
-      whenReadyBlock.includes('daemonReady'),
-      'startup code must track daemon readiness with a flag'
+      mainJs.includes('function isShowingSplash()'),
+      'main.js must be able to detect the splash page before handling molio://launch'
     );
     assert.ok(
-      /if\s*\(\s*daemonReady\s*\)/.test(whenReadyBlock),
-      'loadApp() must only be called when daemonReady is true'
+      mainJs.includes('splash.html'),
+      'splash detection must check for splash.html'
+    );
+    assert.ok(
+      mainJs.includes('webContents.getURL()'),
+      'splash detection must inspect the current BrowserWindow URL'
     );
   });
 
-  it('should show error page when daemon fails to start', () => {
+  it('molio://launch should call loadApp when still on splash', () => {
+    const navigatePos = mainJs.indexOf('function navigateFromProtocolUrl');
+    assert.ok(navigatePos !== -1, 'navigateFromProtocolUrl must exist');
+
+    const navigateBlock = mainJs.slice(navigatePos, navigatePos + 900);
     assert.ok(
-      mainJs.includes('showDaemonErrorPage'),
-      'showDaemonErrorPage function must exist for graceful daemon failure'
+      navigateBlock.includes("target?.action === 'launch'"),
+      'navigateFromProtocolUrl must handle parsed launch actions'
+    );
+    assert.ok(
+      navigateBlock.includes('isShowingSplash()'),
+      'molio://launch handling must check if the app is still showing splash'
+    );
+    assert.ok(
+      navigateBlock.includes('loadApp()'),
+      'molio://launch handling must load the real app when launched from splash'
+    );
+  });
+
+  it('should support file-only open protocol for single-prompt clip saves', () => {
+    assert.ok(
+      mainJs.includes('molio://open/file/'),
+      'desktop protocol parser must support molio://open/file/<filePath>'
+    );
+    assert.ok(
+      mainJs.includes("params.set('file', target.filePath)"),
+      'file-only protocol target must navigate to the knowledge page with a file param'
     );
   });
 });

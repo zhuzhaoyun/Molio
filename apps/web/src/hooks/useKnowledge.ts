@@ -11,10 +11,13 @@ import { defaultThemeConfig } from '../components/kb/MdStylePanel';
 import { copyHtml } from '@molio/doocs-md/shared/utils/clipboard';
 import { vaultStore, useActiveVaultId } from '../stores/vaultStore';
 
+const FILE_LOAD_RETRY_MS = 600;
+
 interface UseKnowledgeReturn {
   // Data
   vaults: Vault[];
   activeVault: Vault | null;
+  treeVaultId: string | null;
   tree: TreeNode[];
   selectedFile: string | null;
   fileContent: FileContent | null;
@@ -76,6 +79,7 @@ export function useKnowledge(): UseKnowledgeReturn {
   // Read active vault ID from the shared store so App.tsx stays in sync.
   const activeVaultId = useActiveVaultId();
   const [tree, setTree] = useState<TreeNode[]>([]);
+  const [treeVaultId, setTreeVaultId] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<FileContent | null>(null);
   const [history, setHistory] = useState<KbHistoryEntry[]>([]);
@@ -96,6 +100,25 @@ export function useKnowledge(): UseKnowledgeReturn {
 
   // Wiki state
   const [wikiInitialized, setWikiInitialized] = useState(false);
+  const fileLoadRetryRef = useRef<{ key: string; timer: ReturnType<typeof setTimeout> | null }>({ key: '', timer: null });
+
+  const clearFileLoadRetry = useCallback(() => {
+    if (fileLoadRetryRef.current.timer) {
+      clearTimeout(fileLoadRetryRef.current.timer);
+      fileLoadRetryRef.current.timer = null;
+    }
+  }, []);
+
+  const scheduleFileLoadRetry = useCallback((vaultId: string, filePath: string, requestKey: string) => {
+    if (fileLoadRetryRef.current.key === requestKey) return;
+    fileLoadRetryRef.current.key = requestKey;
+    fileLoadRetryRef.current.timer = setTimeout(() => {
+      fileLoadRetryRef.current.timer = null;
+      api.readFile(vaultId, filePath)
+        .then((content) => setFileContent(content))
+        .catch(() => {});
+    }, FILE_LOAD_RETRY_MS);
+  }, []);
 
 
   // Load vaults on mount
@@ -127,9 +150,12 @@ export function useKnowledge(): UseKnowledgeReturn {
     (async () => {
       try {
         setLoading(true);
+        setTree([]);
+        setTreeVaultId(null);
         const t = await api.getFileTree(activeVaultId);
         if (!cancelled) {
           setTree(t);
+          setTreeVaultId(activeVaultId);
           // Only clear selection on explicit vault switch, not on mount/remount
           // (tab restore sets selectedFile via KnowledgeBasePage useEffect)
           if (isVaultSwitch) {
@@ -138,7 +164,10 @@ export function useKnowledge(): UseKnowledgeReturn {
           }
         }
       } catch {
-        if (!cancelled) setTree([]);
+        if (!cancelled) {
+          setTree([]);
+          setTreeVaultId(null);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -179,6 +208,7 @@ export function useKnowledge(): UseKnowledgeReturn {
       try {
         const t = await api.getFileTree(activeVaultId);
         setTree(t);
+        setTreeVaultId(activeVaultId);
       } catch {
         // Ignore refresh errors
       }
@@ -194,6 +224,10 @@ export function useKnowledge(): UseKnowledgeReturn {
     // Reset edited content when switching files
     setEditedContent(null);
     let cancelled = false;
+    const requestKey = `${activeVaultId}:${selectedFile}`;
+
+    clearFileLoadRetry();
+
     (async () => {
       try {
         const content = await api.readFile(activeVaultId, selectedFile);
@@ -201,11 +235,14 @@ export function useKnowledge(): UseKnowledgeReturn {
           setFileContent(content);
         }
       } catch {
-        if (!cancelled) setFileContent(null);
+        if (!cancelled) {
+          setFileContent(null);
+          scheduleFileLoadRetry(activeVaultId, selectedFile, requestKey);
+        }
       }
     })();
     return () => { cancelled = true; };
-  }, [activeVaultId, selectedFile]);
+  }, [activeVaultId, selectedFile, clearFileLoadRetry, scheduleFileLoadRetry]);
 
   // Load history when vault changes
   useEffect(() => {
@@ -262,6 +299,7 @@ export function useKnowledge(): UseKnowledgeReturn {
     if (activeVaultId === id) {
       vaultStore.setActiveVaultId(null);
       setTree([]);
+      setTreeVaultId(null);
       setSelectedFile(null);
       setFileContent(null);
     }
@@ -273,7 +311,12 @@ export function useKnowledge(): UseKnowledgeReturn {
 
   const refreshTree = useCallback(() => {
     if (!activeVaultId) return;
-    api.getFileTree(activeVaultId).then(setTree).catch(() => {});
+    api.getFileTree(activeVaultId)
+      .then((t) => {
+        setTree(t);
+        setTreeVaultId(activeVaultId);
+      })
+      .catch(() => {});
     // Re-check wiki status after tree refresh (build may have created INDEX.md)
     api.getWikiStatus(activeVaultId)
       .then((s) => setWikiInitialized(s.initialized))
@@ -415,6 +458,7 @@ export function useKnowledge(): UseKnowledgeReturn {
   return {
     vaults,
     activeVault,
+    treeVaultId,
     tree,
     selectedFile,
     fileContent,

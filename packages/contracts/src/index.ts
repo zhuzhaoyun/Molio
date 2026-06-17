@@ -64,4 +64,9 @@ export type {
   WikiQueryRequest,
   WikiSaveRequest,
   WikiRunResponse,
+  // Graph
+  GraphNode,
+  GraphEdge,
+  GraphData,
+  DeadLinkInfo,
 } from './knowledge.js';

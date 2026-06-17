@@ -9,6 +9,12 @@ const errMsg = (err) => (err instanceof Error ? err.message : String(err));
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+const PROTOCOL = 'molio';
+
+// Set app name before any other app API calls — this controls the display name
+// shown in Windows protocol association dialogs ("要打开 Molio 吗?").
+app.name = 'Molio';
+
 let mainWindow = null;
 let daemonProcess = null;
 
@@ -64,12 +70,6 @@ function startDaemonProduction() {
         log('error', 'main', `daemon stderr:\n${stderrChunks.join('\n')}`);
       }
       daemonProcess = null;
-      // Reject immediately if daemon died before printing "listening on"
-      // instead of waiting for the 10s timeout.
-      if (!started) {
-        const msg = stderrChunks.join('\n') || `daemon exited with code=${code} signal=${signal}`;
-        reject(new Error(`Daemon process died before starting: ${msg}`));
-      }
     });
 
     daemonProcess.on('error', (err) => {
@@ -135,32 +135,82 @@ function loadApp() {
   }
 }
 
+/** Whether the window is still showing the production splash screen. */
+function isShowingSplash() {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  const currentUrl = mainWindow.webContents.getURL();
+  return currentUrl === '' || currentUrl.includes('splash.html');
+}
+
+function parseMolioProtocolUrl(protocolUrl) {
+  const vaultFileMatch = protocolUrl.match(/^molio:\/\/open\/vault\/([^/]+)\/file\/(.+)$/);
+  if (vaultFileMatch) {
+    return {
+      action: 'open-file',
+      vaultId: decodeURIComponent(vaultFileMatch[1]),
+      filePath: decodeURIComponent(vaultFileMatch[2]),
+    };
+  }
+
+  const fileOnlyMatch = protocolUrl.match(/^molio:\/\/open\/file\/(.+)$/);
+  if (fileOnlyMatch) {
+    return {
+      action: 'open-file',
+      vaultId: null,
+      filePath: decodeURIComponent(fileOnlyMatch[1]),
+    };
+  }
+
+  if (protocolUrl.startsWith('molio://launch')) {
+    return { action: 'launch' };
+  }
+
+  return null;
+}
+
+function buildKnowledgeUrlFromProtocolTarget(target) {
+  const params = new URLSearchParams();
+  if (target.vaultId) params.set('vault', target.vaultId);
+  params.set('file', target.filePath);
+  return `http://localhost:3100/knowledge?${params.toString()}`;
+}
+
 /**
- * Show a user-friendly error page when the daemon fails to start.
- * The auto-updater keeps running in the background so fixes can still be pushed.
+ * Parse a molio:// protocol URL and navigate the Electron window accordingly.
+ *
+ * Uses path-style URLs (not query params) because Windows shell mangles `?` and
+ * `&` when passing protocol URLs as command-line arguments.
+ *
+ * Supported formats:
+ *   molio://open/vault/<vaultId>/file/<filePath> — navigate to KB page and open file
+ *   molio://open/file/<filePath> — navigate using the active/default vault
+ *   molio://launch — load app if still on splash; otherwise just bring window to front
  */
-function showDaemonErrorPage() {
+function navigateFromProtocolUrl(protocolUrl) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  log('warn', 'main', 'showing daemon error page');
-  const html = `data:text/html;charset=utf-8,${encodeURIComponent(`<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><title>Molio</title>
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { display: flex; align-items: center; justify-content: center; height: 100vh;
-         background: #181816; color: #eceae6;
-         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
-  .box { text-align: center; max-width: 480px; padding: 32px; }
-  h1 { font-size: 20px; margin-bottom: 12px; }
-  p  { font-size: 14px; opacity: 0.6; line-height: 1.6; margin-bottom: 20px; }
-  button { padding: 8px 24px; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px;
-           background: transparent; color: #eceae6; font-size: 14px; cursor: pointer; }
-  button:hover { background: rgba(255,255,255,0.06); }
-</style></head><body><div class="box">
-  <h1>服务启动失败</h1>
-  <p>应用后端服务未能正常启动，请检查端口 3100 是否被占用，或尝试重启应用。</p>
-  <button onclick="location.reload()">重试</button>
-</div></body></html>`)}`;
-  mainWindow.loadURL(html);
+
+  try {
+    const target = parseMolioProtocolUrl(protocolUrl);
+    if (target?.action === 'open-file') {
+      const appUrl = buildKnowledgeUrlFromProtocolTarget(target);
+      log('info', 'main', `navigating to ${appUrl}`);
+      mainWindow.loadURL(appUrl);
+      return;
+    }
+
+    // molio://launch — if this is the initial launch, replace splash with the app.
+    // For second-instance launches, the existing app window should keep its state.
+    if (target?.action === 'launch') {
+      if (isShowingSplash()) {
+        loadApp();
+      }
+      return;
+    }
+
+    log('warn', 'main', `Unrecognized protocol URL: ${protocolUrl}`);
+  } catch (e) {
+    log('error', 'main', `Failed to parse protocol URL: ${protocolUrl}`);
+  }
 }
 
 // ─── App info IPC (sync, used by preload) ───
@@ -197,9 +247,56 @@ process.on('unhandledRejection', (reason) => {
   // Do NOT exit — keep the updater running
 });
 
+// ─── Single-instance lock + custom protocol ───
+// molio:// custom protocol allows external apps (Chrome extension) to launch Molio
+// when daemon is not running. On Windows, setAsDefaultProtocolClient writes to registry;
+// on macOS, it registers via Launch Services.
+
+const singleLock = app.requestSingleInstanceLock();
+
+if (!singleLock) {
+  app.quit();
+} else {
+  app.on('second-instance', (_event, commandLine) => {
+    // Someone tried to launch via molio:// or double-click while app is running
+    // Restore the existing window
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+    // Handle molio:// protocol URL for navigation
+    // Format: molio://open?vault=<vaultId>&file=<filePath>
+    const protocolUrl = commandLine.find(arg => arg.startsWith('molio://'));
+    if (protocolUrl) {
+      log('info', 'main', `second-instance triggered via ${protocolUrl}`);
+      navigateFromProtocolUrl(protocolUrl);
+    }
+  });
+}
+
+// Register the custom protocol handler (idempotent — only writes if not already set)
+// Must be called after app.whenReady() on Windows for registry writes to work.
+// On macOS, setAsDefaultProtocolClient must be called before ready.
+if (process.platform === 'darwin') {
+  if (!app.isDefaultProtocolClient(PROTOCOL)) {
+    app.setAsDefaultProtocolClient(PROTOCOL);
+  }
+}
+
 // ─── App lifecycle ───
 
 app.whenReady().then(async () => {
+  // Register protocol on Windows (must be inside whenReady)
+  if (process.platform !== 'darwin') {
+    if (!app.isDefaultProtocolClient(PROTOCOL)) {
+      const ok = app.setAsDefaultProtocolClient(PROTOCOL);
+      if (ok) {
+        log('info', 'main', `Protocol '${PROTOCOL}://' registered successfully`);
+      } else {
+        log('error', 'main', `Failed to register protocol '${PROTOCOL}://'`);
+      }
+    }
+  }
   // ① Create window first (updater IPC needs getMainWindow reference)
   //    In production this shows splash.html while daemon starts.
   createWindow();
@@ -212,24 +309,32 @@ app.whenReady().then(async () => {
 
   // ③ Start daemon last — failure here must not affect updater
   if (!isDevMode()) {
-    let daemonReady = false;
     try {
       await startDaemonProduction();
-      daemonReady = true;
     } catch (err) {
       log('error', 'main', `daemon startup failed: ${err?.message ?? err}`);
       // Daemon failure is not fatal for the updater.
+      // The UI will show connection errors, but updates still work.
     }
 
-    // ④ Only load the real app URL if daemon started successfully.
-    // Previously loadApp() was called unconditionally, causing a blank
-    // white screen (ECONNREFUSED) when the daemon failed to start.
-    if (daemonReady) {
-      loadApp();
+    // ④ Load the real app URL, or navigate to molio:// target if launched from protocol
+    log('info', 'main', `process.argv: ${JSON.stringify(process.argv)}`);
+    const protocolUrl = process.argv.find(arg => typeof arg === 'string' && arg.startsWith('molio://'));
+    if (protocolUrl) {
+      log('info', 'main', `detected protocol URL in argv: ${protocolUrl}`);
+      // Defer navigation slightly to ensure daemon is fully ready
+      setTimeout(() => navigateFromProtocolUrl(protocolUrl), 500);
     } else {
-      showDaemonErrorPage();
+      loadApp();
     }
   }
+
+  // macOS: handle open-url when app is not running
+  app.on('open-url', (event, url) => {
+    event.preventDefault();
+    log('info', 'main', `open-url: ${url}`);
+    navigateFromProtocolUrl(url);
+  });
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

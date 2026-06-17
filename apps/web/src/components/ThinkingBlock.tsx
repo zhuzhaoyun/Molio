@@ -11,7 +11,7 @@ export function ThinkingBlock({ content, streaming }: Props) {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="thinking-block">
+    <div className="thinking-block" data-testid="thinking-block">
       <div className="thinking-header" onClick={() => setExpanded(!expanded)}>
         <span>{expanded ? '▾' : '▸'}</span>
         <span>{streaming ? t('thinking.streaming') : t('thinking.title')}</span>

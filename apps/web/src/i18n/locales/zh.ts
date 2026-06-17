@@ -6,6 +6,7 @@ const zh: Record<string, string> = {
   'nav.channels': '渠道',
   'nav.history': '历史记录',
   'nav.graph': '图谱',
+  'nav.help': '帮助',
   'nav.settings': '设置',
 
   // ── Common ──
