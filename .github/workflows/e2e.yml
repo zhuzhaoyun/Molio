@@ -9,7 +9,7 @@ on:
         default: ''
   pull_request:
     branches: [main]
-    types: [labeled]
+    types: [labeled, synchronize]
 
 jobs:
   e2e:
