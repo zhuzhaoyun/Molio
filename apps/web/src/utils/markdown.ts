@@ -54,16 +54,17 @@ export function renderMarkdown(text: string): string {
   // Blockquotes
   html = html.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>');
 
-  // Unordered lists
-  html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
-  html = html.replace(/(<li>.*<\/li>\n?)+/g, (match) => `<ul>${match}</ul>`);
+  // Task lists (MUST run before generic unordered list to prevent - [x] from
+  // being captured as a plain list item)
+  html = html.replace(/^- \[x\] (.+)$/gm, '<li class="task-list-item"><input type="checkbox" class="md-task-checkbox" checked disabled>$1</li>');
+  html = html.replace(/^- \[ \] (.+)$/gm, '<li class="task-list-item"><input type="checkbox" class="md-task-checkbox" disabled>$1</li>');
 
   // Ordered lists
   html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
 
-  // Task lists (before standard unordered lists)
-  html = html.replace(/^- \[x\] (.+)$/gm, '<li class="task-list-item"><input type="checkbox" class="md-task-checkbox" checked disabled>$1</li>');
-  html = html.replace(/^- \[ \] (.+)$/gm, '<li class="task-list-item"><input type="checkbox" class="md-task-checkbox" disabled>$1</li>');
+  // Unordered lists (generic — runs after specific patterns like task lists)
+  html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
+  html = html.replace(/(<li>.*<\/li>\n?)+/g, (match) => `<ul>${match}</ul>`);
 
   // Horizontal rules
   html = html.replace(/^---$/gm, '<hr>');
