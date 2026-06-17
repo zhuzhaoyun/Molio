@@ -81,7 +81,8 @@ body { overflow-x: hidden; }
     <div class="content-text">
       <p>配置好 AI 助手后，Molio 才能进行智能创作：</p>
       <ol>
-        <li>点击左侧导航栏的<strong>「运行时」</strong>进入管理页面</li>
+        <li>点击左侧导航栏的<strong>「设置」</strong>进入设置页面</li>
+        <li>切换到<strong>「运行时」</strong>标签页</li>
         <li>确认至少有一个 AI 助手显示 <strong>「已安装」</strong>和 <strong>「可用」</strong></li>
         <li><strong>双击</strong>一个助手将其设为默认，后续创作会自动使用它</li>
       </ol>
@@ -101,17 +102,38 @@ body { overflow-x: hidden; }
       <p>知识库是 Molio 的工作空间，存放你的所有文档和资料：</p>
       <ol>
         <li>点击左侧导航栏的<strong>「知识库」</strong></li>
-        <li>点击<strong>「创建知识库」</strong>，选择一个本地文件夹作为知识库的存放位置</li>
+        <li>点击底部的<strong>「创建知识库」</strong>，选择一个本地文件夹作为知识库的存放位置</li>
         <li>你也可以选择打开已有的文件夹作为知识库</li>
       </ol>
       <p>支持同时管理多个知识库，可随时切换。知识库中的 Markdown 文件、双向链接等内容都会被 AI 读取并理解。</p>
     </div>
   </div>
 
-  <!-- Step 5: 开始创作 -->
+  <!-- Step 5: 构建知识库 Wiki -->
   <div class="step-card">
     <div class="step-card-header">
-      <div class="step-number purple">5</div>
+      <div class="step-number teal">5</div>
+      <h2 class="step-title">构建知识库 Wiki</h2>
+    </div>
+    <div class="content-text">
+      <p>Wiki 是知识库的 AI 智能索引，构建后 AI 能更精准地理解和引用你的文档：</p>
+      <ol>
+        <li>打开知识库，确保左侧文件树中已显示文件</li>
+        <li>点击工具栏上的<strong>「构建 Wiki」</strong>按钮（书本图标）</li>
+        <li>AI 会自动扫描知识库中的 Markdown 文件，生成结构化的 Wiki 索引</li>
+        <li>构建完成后，你可以在 Wiki 面板中浏览所有主题的关联关系</li>
+      </ol>
+      <p><strong>将单个文件加入 Wiki：</strong>在文件树中右键点击任意文件，选择<strong>「加入 Wiki」</strong>，即可将该文件纳入 Wiki 索引。你也可以随时右键选择<strong>「从 Wiki 移除」</strong>。</p>
+      <div class="tip-box">
+        <strong>Wiki 健康检查：</strong>点击工具栏的放大镜图标，可以检测 Wiki 索引的完整性，发现并修复潜在问题。
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 6: 开始创作 -->
+  <div class="step-card">
+    <div class="step-card-header">
+      <div class="step-number purple">6</div>
       <h2 class="step-title">开始创作</h2>
     </div>
     <div class="content-text">
@@ -128,10 +150,10 @@ body { overflow-x: hidden; }
     </div>
   </div>
 
-  <!-- Step 6: 排版美化 -->
+  <!-- Step 7: 排版美化 -->
   <div class="step-card">
     <div class="step-card-header">
-      <div class="step-number red">6</div>
+      <div class="step-number red">7</div>
       <h2 class="step-title">排版美化</h2>
     </div>
     <div class="content-text">
@@ -156,10 +178,10 @@ body { overflow-x: hidden; }
     </div>
   </div>
 
-  <!-- Step 7: 多平台发布 -->
+  <!-- Step 8: 多平台发布 -->
   <div class="step-card">
     <div class="step-card-header">
-      <div class="step-number blue">7</div>
+      <div class="step-number blue">8</div>
       <h2 class="step-title">多平台发布</h2>
     </div>
     <div class="content-text">
@@ -182,7 +204,8 @@ body { overflow-x: hidden; }
     <div class="content-text">
       <p>通过微信通道，你可以直接在微信中与 AI 助手对话：</p>
       <ol>
-        <li>点击左侧导航栏的<strong>「渠道」</strong></li>
+        <li>点击左侧导航栏的<strong>「设置」</strong>进入设置页面</li>
+        <li>切换到<strong>「渠道」</strong>标签页</li>
         <li>选择微信，点击<strong>「连接微信」</strong></li>
         <li>用手机微信扫描屏幕上的二维码并确认授权</li>
         <li>授权成功后，微信中的「ClawBot」会话会将消息转发到 Molio 处理</li>
@@ -198,16 +221,25 @@ body { overflow-x: hidden; }
   <div class="step-card">
     <div class="content-text">
       <p><strong>AI 助手显示「未安装」怎么办？</strong><br>
-      请确认已按照各 AI 工具的官方文档完成安装和登录授权。安装完成后，在运行时页面点击「重新扫描」或重启 Molio。</p>
+      请确认已按照各 AI 工具的官方文档完成安装和登录授权。安装完成后，在设置页面的运行时标签页中点击「重新扫描」或重启 Molio。</p>
 
       <p><strong>为什么 AI 看不到我的文件？</strong><br>
-      请确认当前聊天使用的是正确的知识库。AI 只能访问当前选中的知识库文件夹中的文件。你可以在知识库页面左上角切换知识库。</p>
+      请确认当前聊天使用的是正确的知识库。AI 只能访问当前选中的知识库文件夹中的文件。你可以在知识库页面底部切换知识库。</p>
 
-      <p><strong>排版后复制到微信格式丢失？</strong><br>
-      请使用排版模式中的「复制」按钮（不要直接 Ctrl+C）。该按钮会将渲染后的富文本 HTML 写入剪贴板，直接粘贴到微信编辑器即可保留格式。</p>
+      <p><strong>如何构建知识库 Wiki？</strong><br>
+      在知识库页面中，点击顶部工具栏的「构建 Wiki」按钮（书本图标）。AI 会自动扫描知识库中的 Markdown 文件并生成索引。构建完成后，AI 就能更精准地引用你的文档内容了。</p>
+
+      <p><strong>如何将单个文件加入 Wiki？</strong><br>
+      在左侧文件树中右键点击目标文件，选择「加入 Wiki」。被加入 Wiki 的文件会被 AI 优先索引和理解。随时可以通过右键菜单「从 Wiki 移除」来取消关联。</p>
+
+      <p><strong>Wiki 构建失败了怎么办？</strong><br>
+      先尝试点击「Wiki 健康检查」按钮（放大镜图标），系统会自动诊断并修复常见问题。如果仍有问题，检查知识库中是否有空的 Markdown 文件或格式异常的文件。</p>
 
       <p><strong>知识库删除后会丢失文件吗？</strong><br>
       不会。从 Molio 中移除知识库只是取消了关联，文件夹和其中的文件仍保留在磁盘上，不会被删除。</p>
+
+      <p><strong>排版后复制到微信格式丢失？</strong><br>
+      请使用排版模式中的「复制」按钮（不要直接 Ctrl+C）。该按钮会将渲染后的富文本 HTML 写入剪贴板，直接粘贴到微信编辑器即可保留格式。</p>
 
       <p><strong>如何反馈问题或获取帮助？</strong><br>
       可以通过 GitHub Issues 提交反馈，或扫描页面右下角的二维码加入用户交流群。</p>
