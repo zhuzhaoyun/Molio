@@ -41,6 +41,11 @@ export function GraphSettingsPanel({ settings, onUpdateSettings, onUpdateForce, 
   // Click outside to close
   useEffect(() => {
     const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      // Don't close when clicking the settings button — the button's own
+      // click handler toggles the panel.  Intercepting it here would cause a
+      // double-toggle (mousedown closes, click re-opens).
+      if (target.closest('.graph-settings-btn')) return;
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
         onClose();
       }
