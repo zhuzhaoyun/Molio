@@ -26,9 +26,10 @@ function saveSettings(s: GraphSettings): void {
 export function useGraphSettings() {
   const [settings, setSettings] = useState<GraphSettings>(loadSettings);
 
-  // Persist on every change
+  // Persist on every change (debounced to avoid excessive writes during slider drags)
   useEffect(() => {
-    saveSettings(settings);
+    const timer = setTimeout(() => saveSettings(settings), 300);
+    return () => clearTimeout(timer);
   }, [settings]);
 
   const updateSettings = useCallback((patch: Partial<GraphSettings>) => {
