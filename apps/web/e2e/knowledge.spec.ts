@@ -99,4 +99,23 @@ test.describe('Knowledge Base', () => {
     const mainContent = page.locator('.kb-main');
     await expect(mainContent).toBeVisible({ timeout: 5_000 });
   });
+
+  test('file is selected when navigated via URL params', async ({ page }) => {
+    await gotoHome(page);
+    await clickNav(page, 'knowledge');
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await page.waitForTimeout(1000);
+
+    // Navigate directly with URL params (same pendingUrlNav mechanism
+    // used by the location.state handler for graph double-click navigation)
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=test.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+
+    // Wait for file tree to load and file to be selected (and cleared from URL)
+    await expect(page).toHaveURL(/knowledge$/, { timeout: 10_000 });
+
+    // The file content should be rendered in the main area
+    const mainContent = page.locator('.kb-main');
+    await expect(mainContent).toContainText('Test', { timeout: 10_000 });
+  });
 });

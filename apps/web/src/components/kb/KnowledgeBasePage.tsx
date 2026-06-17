@@ -4,7 +4,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import type { TreeNode } from '@molio/contracts';
 import { useKnowledge } from '../../hooks/useKnowledge';
 import { useWikiChat } from '../../hooks/useWikiChat';
@@ -45,6 +45,8 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
   const kb = useKnowledge();
   const tabs = useKbTabs();
   const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [showChatPanel, setShowChatPanel] = useState(false);
   const [pendingUrlNav, setPendingUrlNav] = useState<UrlFileNavigation | null>(null);
 
@@ -60,6 +62,30 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
     setSearchParams({}, { replace: true });
   }, [searchParams, kb.vaults, kb.activeVault?.id, setSearchParams]);
 
+  // Handle location.state for in-app navigation (e.g., from graph double-click)
+  useEffect(() => {
+    const state = location.state as { openFile?: string; vaultId?: string } | null;
+    if (!state?.openFile) return;
+    if (kb.vaults.length === 0) return;
+
+    const vaultId = state.vaultId || kb.activeVault?.id || kb.vaults[0]?.id;
+    if (!vaultId) return;
+
+    setPendingUrlNav({ vaultId, filePath: state.openFile });
+    vaultStore.setActiveVaultId(vaultId);
+    // Clear state to prevent re-processing on re-renders
+    navigate('.', { replace: true, state: {} });
+  }, [location.state, kb.vaults, kb.activeVault?.id, navigate]);
+
+  useEffect(() => {
+    if (!pendingUrlNav) return;
+    if (kb.activeVault?.id !== pendingUrlNav.vaultId) return;
+    if (kb.treeVaultId !== pendingUrlNav.vaultId) return;
+    if (kb.tree.length === 0) return;
+
+    kb.selectFile(pendingUrlNav.filePath);
+    setPendingUrlNav(null);
+  }, [pendingUrlNav, kb.activeVault?.id, kb.treeVaultId, kb.tree, kb.selectFile]);
   // Context menu state
   const [ctxMenu, setCtxMenu] = useState<{ node: TreeNode; x: number; y: number } | null>(null);
 

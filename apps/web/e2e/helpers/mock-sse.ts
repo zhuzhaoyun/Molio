@@ -124,6 +124,40 @@ export async function mockChatRun(page: Page, opts: MockRunOptions = {}) {
       body: JSON.stringify({ ok: true }),
     });
   });
+
+  // 5) GET /api/agents → return a fake available agent so the composer is enabled
+  await page.route('**/api/agents', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        agents: [
+          {
+            id: 'claude',
+            name: 'Claude',
+            available: true,
+            binary: '/usr/bin/claude',
+            source: 'path',
+            version: '1.0.0',
+            models: [],
+            installUrl: 'https://claude.ai',
+          },
+        ],
+      }),
+    });
+  });
+
+  // 6) GET /api/config → return defaultAgentId so the agent is auto-selected
+  await page.route('**/api/config', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        defaultAgentId: 'claude',
+        locale: 'zh',
+      }),
+    });
+  });
 }
 
 // ── Cleanup ────────────────────────────────────────────────────────────
@@ -137,4 +171,6 @@ export async function unmockAll(page: Page) {
   await page.unroute('**/api/runs/*/events**');
   await page.unroute('**/api/runs/*/messages');
   await page.unroute('**/api/runs/*/tool-result');
+  await page.unroute('**/api/agents');
+  await page.unroute('**/api/config');
 }

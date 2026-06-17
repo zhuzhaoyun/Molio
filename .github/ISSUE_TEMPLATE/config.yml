@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+ contact_links:
+  - name: Questions & Discussions / 问题与讨论
+    url: https://github.com/zhuzhaoyun/Molio/discussions
+    about: 如果你有问题或想讨论功能，请使用 Discussions / If you have questions or want to discuss features, please use Discussions
