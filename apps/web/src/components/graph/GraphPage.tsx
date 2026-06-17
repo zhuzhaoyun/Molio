@@ -437,7 +437,7 @@ export function GraphPage() {
         if (isDoubleClick) {
           const path = graph.getNodeAttribute(node, 'path') as string | undefined;
           if (path) {
-            navigate('/knowledge', { state: { openFile: path } });
+            navigate('/knowledge', { state: { openFile: path, vaultId: activeVaultId } });
           }
           lastClickTime = 0;
           lastClickNode = null;
