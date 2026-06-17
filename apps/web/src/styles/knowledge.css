@@ -42,7 +42,6 @@
   background: transparent;
   border-radius: 5px;
   color: var(--text-muted);
-  font-size: 15px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -50,9 +49,18 @@
   transition: all 120ms ease;
 }
 
+.kb-file-toolbar button svg {
+  width: 16px;
+  height: 16px;
+}
+
 .kb-file-toolbar button:hover {
   background: var(--bg-subtle);
   color: var(--text);
+}
+
+.kb-file-toolbar .kb-toolbar-btn-accent {
+  color: var(--accent);
 }
 
 /* Vault bar at bottom */

@@ -55,14 +55,36 @@ export function KbFilePanel({
     <aside className="kb-file-panel" style={{ width }}>
       {/* Toolbar */}
       <div className="kb-file-toolbar">
-        <button type="button" title="新建文件" onClick={onNewFile}>📄</button>
-        <button type="button" title="新建文件夹" onClick={onNewFolder}>📁</button>
+        <button type="button" title="新建文件" onClick={onNewFile}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="12" y1="18" x2="12" y2="12" />
+            <line x1="9" y1="15" x2="15" y2="15" />
+          </svg>
+        </button>
+        <button type="button" title="新建文件夹" onClick={onNewFolder}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+          </svg>
+        </button>
         <div style={{ flex: 1 }} />
         {onBuildWiki && (
-          <button type="button" title="构建 Wiki" onClick={onBuildWiki} style={{ color: 'var(--accent)' }}>🏗</button>
+          <button type="button" title="构建 Wiki" onClick={onBuildWiki} className="kb-toolbar-btn-accent">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+            </svg>
+          </button>
         )}
         {onLintWiki && (
-          <button type="button" title="Wiki 健康检查" onClick={onLintWiki}>🔍</button>
+          <button type="button" title="Wiki 健康检查" onClick={onLintWiki}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              <line x1="11" y1="8" x2="11" y2="11" />
+              <line x1="11" y1="11" x2="14" y2="11" />
+            </svg>
+          </button>
         )}
       </div>
 
