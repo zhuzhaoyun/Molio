@@ -21,6 +21,7 @@ import { foldGutter, foldKeymap } from '@codemirror/language';
 import { highlightSelectionMatches, searchKeymap } from '@codemirror/search';
 import { MdRenderer } from './MdRenderer';
 import { MdStylePanel, defaultThemeConfig, type ThemeConfig } from './MdStylePanel';
+import { preprocessWikiEmbeds } from '../../hooks/useKnowledge';
 
 // ─── Markdown formatting helpers (from @md/shared/editor/format.ts) ───
 
@@ -142,11 +143,14 @@ export interface MdTypesetEditorProps {
   initialContent: string;
   /** Callback when content changes */
   onContentChange?: (content: string) => void;
+  /** Vault ID for wiki embed URL resolution */
+  vaultId?: string;
 }
 
 export function MdTypesetEditor({
   initialContent,
   onContentChange,
+  vaultId,
 }: MdTypesetEditorProps) {
   const [content, setContent] = useState(initialContent);
   const [themeConfig, setThemeConfig] = useState<ThemeConfig>(defaultThemeConfig);
@@ -291,7 +295,7 @@ export function MdTypesetEditor({
           ref={previewRef}
           className={`kb-typeset-preview ${isMobilePreview ? 'is-mobile' : 'is-desktop'}`}
         >
-          <MdRenderer content={content} themeConfig={themeConfig} />
+          <MdRenderer content={vaultId ? preprocessWikiEmbeds(content, vaultId) : content} themeConfig={themeConfig} />
         </div>
       </div>
 

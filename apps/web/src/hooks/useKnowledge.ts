@@ -13,6 +13,20 @@ import { vaultStore, useActiveVaultId } from '../stores/vaultStore';
 
 const FILE_LOAD_RETRY_MS = 600;
 
+/* [MOLIO] Convert ![[...]] wiki embed syntax to standard markdown image syntax */
+export function preprocessWikiEmbeds(markdown: string, vaultId: string): string {
+  // ![[image.png|300x200]] → ![image.png|300x200](raw-url)
+  return markdown.replace(
+    /!\[\[([^\]|]+)(?:\|(\d+)(?:x(\d+))?)?\]\]/g,
+    (_m, file: string, w?: string, h?: string) => {
+      const size = w ? (h ? `|${w}x${h}` : `|${w}`) : '';
+      const encoded = encodeURIComponent(file.trim());
+      const baseUrl = window.location.origin;
+      return `![${file}${size}](${baseUrl}/api/knowledge/vaults/${vaultId}/raw/${encoded})`;
+    },
+  );
+}
+
 interface UseKnowledgeReturn {
   // Data
   vaults: Vault[];
