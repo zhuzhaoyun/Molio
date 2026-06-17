@@ -111,11 +111,17 @@
     "deb": {
       "artifactName": "${productName}_${version}_linux_${arch}.${ext}"
     },
-    "publish": {
-      "provider": "github",
-      "owner": "zhuzhaoyun",
-      "repo": "Molio",
-      "releaseType": "release"
-    }
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases/"
+      },
+      {
+        "provider": "github",
+        "owner": "zhuzhaoyun",
+        "repo": "Molio",
+        "releaseType": "release"
+      }
+    ]
   }
 }

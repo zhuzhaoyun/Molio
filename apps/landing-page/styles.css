@@ -386,6 +386,16 @@ code {
   font-size: 13px;
   color: #B0A090;
   z-index: 100;
+  text-align: right;
+}
+.footer .icp-link {
+  color: #B0A090;
+  text-decoration: none;
+  transition: color 0.3s;
+}
+.footer .icp-link:hover {
+  color: #8B7355;
+  text-decoration: underline;
 }
 
 /* ============ 自动播放提示（仅首页） ============ */

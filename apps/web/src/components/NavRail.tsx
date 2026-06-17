@@ -157,7 +157,7 @@ export function NavRail() {
       <div className="entry-nav-rail__group">
         {/* Help — external link to online docs */}
         <a
-          href="https://your-doc-site.example.com/molio-help"
+          href="https://molio.cn/help.html"
           target="_blank"
           rel="noopener noreferrer"
           className="entry-nav-rail__btn"
