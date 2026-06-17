@@ -11,8 +11,6 @@ interface Props {
   onClose: () => void;
   // Node types present in the current graph data (for checkboxes)
   availableTypes: string[];
-  searchQuery?: string;
-  onSearchChange?: (query: string) => void;
 }
 
 const TABS: { key: Tab; label: string }[] = [
@@ -34,7 +32,7 @@ function getTypeOptions(availableTypes: string[]): { key: string; label: string 
   return result;
 }
 
-export function GraphSettingsPanel({ settings, onUpdateSettings, onUpdateForce, onClose, availableTypes, searchQuery, onSearchChange }: Props) {
+export function GraphSettingsPanel({ settings, onUpdateSettings, onUpdateForce, onClose, availableTypes }: Props) {
   const [tab, setTab] = useState<Tab>('filter');
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -103,17 +101,6 @@ export function GraphSettingsPanel({ settings, onUpdateSettings, onUpdateForce, 
         {/* ── Filter Tab ── */}
         {tab === 'filter' && (
           <div className="graph-settings__section">
-            <div className="graph-settings__group">
-              <label className="graph-settings__label">🔍 搜索节点</label>
-              <input
-                className="graph-settings__search"
-                type="text"
-                placeholder="输入节点名称…"
-                value={searchQuery ?? ''}
-                onChange={(e) => onSearchChange?.(e.target.value)}
-              />
-            </div>
-
             {typeOptions.length > 0 && (
               <div className="graph-settings__group">
                 <div className="graph-settings__group-title">按类型筛选</div>
