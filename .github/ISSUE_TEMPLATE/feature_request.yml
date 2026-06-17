@@ -1,0 +1,81 @@
+name: Feature Request / 功能建议
+description: 提交一个功能建议 / Submit a feature request
+title: "[Feature]: "
+labels: ["enhancement"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢提出功能建议！请尽量详细描述，帮助我们理解你的需求。
+        Thank you for submitting a feature request! Please describe in detail to help us understand your needs.
+
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: 前置确认 / Prerequisites
+      options:
+        - label: 我已经搜索了现有的 issues，确认没有重复的功能请求 / I have searched existing issues and confirmed this is not a duplicate
+          required: true
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: 影响范围 / Scope
+      description: 这个功能主要涉及哪个方面？/ Which area does this feature mainly involve?
+      options:
+        - 知识库管理 / Knowledge Base Management
+        - AI 写作 / Agent / AI Writing / Agent
+        - 多平台发布 / Multi-platform Publishing
+        - 桌面端体验 / Desktop Experience
+        - 其他 / Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: 功能描述 / Feature Description
+      description: 请清晰描述你期望的功能 / Please clearly describe the feature you want
+      placeholder: |
+        例如：希望支持在知识库中直接搜索 PDF 文档的内容。
+        e.g. Support searching PDF document content directly in the knowledge base.
+    validations:
+      required: true
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: 使用场景 / Use Case
+      description: 请描述这个功能会在什么场景下使用，解决什么问题 / Describe the scenarios where this feature would be used and what problem it solves
+      placeholder: |
+        例如：我有很多 PDF 论文保存在知识库中，目前只能看到文件名，
+        希望能搜索到 PDF 内的文字内容，方便查找资料。
+        e.g. I have many PDF papers stored in the knowledge base. Currently, I can only see the file names.
+        I hope to search the text content within PDFs to facilitate finding materials.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: 期望的解决方案 / Proposed Solution
+      description: 如果你有任何关于如何实现的想法，请在这里描述 / If you have any ideas on how to implement this, describe them here
+      placeholder: |
+        例如：集成 pdfjs，在导入 PDF 时提取文本内容并建立索引...
+        e.g. Integrate pdfjs to extract text content when importing PDFs and build an index...
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 替代方案 / Alternatives
+      description: 你是否考虑过其他替代方案？/ Have you considered any alternative solutions?
+      placeholder: |
+        例如：也可以先导出 PDF 为文本再导入，但比较麻烦。
+        e.g. One could also export PDF to text first and then import, but it's cumbersome.
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: 其他信息 / Additional Information
+      description: 任何其他相关的信息、截图或参考链接 / Any other relevant information, screenshots, or reference links
