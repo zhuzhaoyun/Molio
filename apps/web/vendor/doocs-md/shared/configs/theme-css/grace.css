@@ -92,8 +92,9 @@ ul {
   padding-left: 1.5em;
 }
 
+/* [MOLIO] 对齐 base.css 的 list-item 渲染 */
 li {
-  margin: 0.5em 8px;
+  margin: 0.3em 0;
 }
 
 /* ==================== 分隔线 ==================== */
