@@ -178,12 +178,11 @@ test.describe('Markdown Rendering', () => {
     const listItems = page.locator('#output li');
     await expect(listItems).toHaveCount(5);
 
-    // doocs/md default theme sets li { display: block } for typography control
-    // (the bullet/number markers are provided via ::before pseudo-element)
+    // [MOLIO] 修复后 li 使用原生 list-item 渲染，而非 display: block
     const firstRegularItem = page.locator('#output ul li').first();
     await expect(firstRegularItem).toBeVisible();
     const display = await firstRegularItem.evaluate((el) => getComputedStyle(el).display);
-    expect(display).toBe('block');
+    expect(display).toBe('list-item');
   });
 
   test('tables have zebra-stripe styling on even rows', async ({ page }) => {
