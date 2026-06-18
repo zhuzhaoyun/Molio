@@ -87,7 +87,9 @@ export function MdTypesetEditor({
       {/* Middle: doocs/md themed preview */}
       <div className="kb-typeset-preview">
         <div className="kb-typeset-preview-header">排版预览</div>
-        <div className="kb-typeset-preview-body">
+        <div
+          className={`kb-typeset-preview-body${themeConfig.previewWidth === 'mobile' ? ' kb-preview--mobile' : ''}`}
+        >
           <MdRenderer content={previewContent} themeConfig={themeConfig} />
         </div>
       </div>

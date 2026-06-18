@@ -827,6 +827,20 @@
   max-width: 100%;
 }
 
+/* ── Mobile preview mode (centered 375px card) ── */
+.kb-preview--mobile {
+  background: var(--bg-muted);
+  padding: 24px 0;
+}
+.kb-preview--mobile > .md-preview {
+  max-width: 375px;
+  margin: 0 auto;
+  background: var(--bg-panel);
+  box-shadow: 0 0 0 1px var(--border), 0 4px 16px rgba(0,0,0,0.07);
+  border-radius: 4px;
+  padding: 24px 20px 48px;
+}
+
 /* ── Source textarea (typeset left pane) ── */
 .kb-typeset-textarea {
   flex: 1;
