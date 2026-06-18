@@ -351,6 +351,18 @@ export class WeixinService {
       this.persistContextTokens();
     }
 
+    // Handle /new command — close current conversation, next message starts fresh
+    const trimmed = parsed.text.trim();
+    if (trimmed === '/new' || trimmed === '/clear' || trimmed === '/重置') {
+      const closed = this.conversations.closeExternalSession('weixin', parsed.fromUserId);
+      if (closed) {
+        await this.sendText(parsed.fromUserId, '已开启新会话。发送消息即可开始新的对话。');
+      } else {
+        await this.sendText(parsed.fromUserId, '当前已是新会话。');
+      }
+      return;
+    }
+
     await this.createMolioRun(parsed);
   }
 
