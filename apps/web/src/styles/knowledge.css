@@ -757,6 +757,7 @@
 .kb-content-area {
   flex: 1;
   overflow-y: auto;
+  padding: 32px 48px 64px;
 }
 
 /* ══════════ Edit Mode Editor ══════════ */

@@ -24,12 +24,11 @@
 /* ── Editor area ── */
 .milkdown .editor {
   font-family: var(--mono);
-  font-size: 14px;
-  line-height: 1.8;
+  font-size: 15px;
+  line-height: 1.85;
   color: var(--text);
-  padding: 24px 32px;
-  max-width: 860px;
-  margin: 0 auto;
+  padding: 32px 48px 64px;
+  max-width: 760px;
   height: 100%;
   overflow-y: auto;
 }
