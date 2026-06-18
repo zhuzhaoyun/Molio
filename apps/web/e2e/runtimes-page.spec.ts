@@ -1,7 +1,11 @@
 import { test, expect } from '@playwright/test';
+import { gotoHome, clickNav } from './helpers/navigation';
 
 /**
- * E2E tests for the Runtimes page.
+ * E2E tests for the Runtimes panel (inside Settings).
+ *
+ * The standalone /runtimes route was removed; the RuntimePage now lives
+ * as RuntimesPanel inside the Settings page, reached via the "runtimes" tab.
  *
  * Regression: Issue #55 — Codex CLI throws "Reading prompt from stdin..."
  * to stderr on Windows, which Molio mistakenly shows as an error.
@@ -10,12 +14,23 @@ import { test, expect } from '@playwright/test';
  * Prerequisites: `pnpm dev` running (daemon :3100, web :5173)
  */
 
-const DAEMON_API = 'http://localhost:3100/api';
+/** Navigate to Settings → Runtimes tab and wait for the panel to render. */
+async function openRuntimesPanel(page: import('@playwright/test').Page) {
+  await gotoHome(page);
+  await clickNav(page, 'settings');
+  await expect(page.locator('.settings-shell')).toBeVisible({ timeout: 5_000 });
+
+  // Click the "Runtimes" / "运行时" tab
+  const runtimesTab = page.locator('.settings-tab-btn').filter({ hasText: /Runtime|运行时/ });
+  await runtimesTab.click({ timeout: 5_000 });
+
+  // Wait for the rt-shell to appear inside settings content
+  await expect(page.locator('.rt-shell')).toBeVisible({ timeout: 5_000 });
+}
 
 test.describe('Runtimes page', () => {
   test('should display agent cards with availability status', async ({ page }) => {
-    await page.goto('/runtimes');
-    await page.waitForLoadState('networkidle');
+    await openRuntimesPanel(page);
 
     // Wait for the page to load agents
     await page.waitForSelector('.rt-agent-card', { timeout: 10_000 });
@@ -32,8 +47,7 @@ test.describe('Runtimes page', () => {
   });
 
   test('should show Codex agent card', async ({ page }) => {
-    await page.goto('/runtimes');
-    await page.waitForLoadState('networkidle');
+    await openRuntimesPanel(page);
 
     // Wait for agents to load
     await page.waitForSelector('.rt-agent-card', { timeout: 10_000 });
@@ -48,9 +62,30 @@ test.describe('Runtimes page', () => {
     expect(count).toBeGreaterThan(0);
   });
 
+  test('should show install button or test button for Claude agent', async ({ page }) => {
+    await openRuntimesPanel(page);
+
+    await page.waitForSelector('.rt-agent-card', { timeout: 10_000 });
+
+    // Find the Claude card
+    const claudeCard = page.locator('.rt-agent-card').filter({
+      has: page.locator('.rt-agent-card__name', { hasText: /Claude/i }),
+    });
+    const count = await claudeCard.count();
+    if (count === 0) return; // Skip if Claude card not found
+
+    // Claude should show one of: InstallButton (installable), an <a> link (installUrl only), or Test button (installed)
+    const installBtn = claudeCard.locator('.rt-install-btn');
+    const installLink = claudeCard.locator('.rt-agent-card__install');
+    const testBtn = claudeCard.locator('.rt-btn').filter({ hasText: /Test|测试/ });
+    const hasInstallBtn = await installBtn.count();
+    const hasInstallLink = await installLink.count();
+    const hasTestBtn = await testBtn.count();
+    expect(hasInstallBtn + hasInstallLink + hasTestBtn).toBeGreaterThan(0);
+  });
+
   test('should refresh agents when rescan button is clicked', async ({ page }) => {
-    await page.goto('/runtimes');
-    await page.waitForLoadState('networkidle');
+    await openRuntimesPanel(page);
 
     // Wait for initial load
     await page.waitForSelector('.rt-agent-card', { timeout: 10_000 });

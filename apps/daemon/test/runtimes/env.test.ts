@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { buildSpawnEnv } from '../../src/core/runtimes/env.js';
+import { buildSpawnEnv, createStderrDecoder, detectWindowsCodePage, resetCodePageCache } from '../../src/core/runtimes/env.js';
 import type { RuntimeAgentDef } from '@molio/contracts';
 
 /**
@@ -71,7 +71,9 @@ describe('buildSpawnEnv', () => {
       const env = buildSpawnEnv(def, baseEnv);
 
       assert.equal(env['CUSTOM'], 'value');
-      assert.equal(env['PATH'], '/usr/bin');
+      // PATH may be augmented with Node.js/npm dirs by buildSpawnEnv,
+      // but the original value should be preserved within it.
+      assert.ok(env['PATH']?.includes('/usr/bin'), `PATH should contain /usr/bin, got: ${env['PATH']}`);
     });
 
     it('should merge def.env into the environment', () => {
@@ -136,6 +138,43 @@ describe('buildSpawnEnv', () => {
       });
 
       assert.equal(env['ANTHROPIC_API_KEY'], undefined);
+    });
+
+    it('should strip ANTHROPIC_AUTH_TOKEN and model mapping vars when no custom base URL', () => {
+      const def = makeDef({ id: 'claude' });
+      const env = buildSpawnEnv(def, {
+        ANTHROPIC_AUTH_TOKEN: 'sk-third-party-token',
+        ANTHROPIC_API_KEY: 'sk-ant-key',
+        ANTHROPIC_DEFAULT_SONNET_MODEL: 'deepseek-chat',
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: 'deepseek-chat',
+        ANTHROPIC_DEFAULT_OPUS_MODEL: 'deepseek-reasoner',
+        PATH: '/usr/bin',
+      });
+
+      assert.equal(env['ANTHROPIC_AUTH_TOKEN'], undefined);
+      assert.equal(env['ANTHROPIC_API_KEY'], undefined);
+      assert.equal(env['ANTHROPIC_DEFAULT_SONNET_MODEL'], undefined);
+      assert.equal(env['ANTHROPIC_DEFAULT_HAIKU_MODEL'], undefined);
+      assert.equal(env['ANTHROPIC_DEFAULT_OPUS_MODEL'], undefined);
+    });
+
+    it('should keep ANTHROPIC_AUTH_TOKEN and model mapping vars when custom base URL is set', () => {
+      const def = makeDef({ id: 'claude' });
+      const env = buildSpawnEnv(def, {
+        ANTHROPIC_AUTH_TOKEN: 'sk-third-party-token',
+        ANTHROPIC_API_KEY: 'sk-ant-key',
+        ANTHROPIC_BASE_URL: 'https://api.deepseek.com/anthropic',
+        ANTHROPIC_DEFAULT_SONNET_MODEL: 'deepseek-chat',
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: 'deepseek-chat',
+        ANTHROPIC_DEFAULT_OPUS_MODEL: 'deepseek-reasoner',
+      });
+
+      assert.equal(env['ANTHROPIC_AUTH_TOKEN'], 'sk-third-party-token');
+      assert.equal(env['ANTHROPIC_API_KEY'], 'sk-ant-key');
+      assert.equal(env['ANTHROPIC_BASE_URL'], 'https://api.deepseek.com/anthropic');
+      assert.equal(env['ANTHROPIC_DEFAULT_SONNET_MODEL'], 'deepseek-chat');
+      assert.equal(env['ANTHROPIC_DEFAULT_HAIKU_MODEL'], 'deepseek-chat');
+      assert.equal(env['ANTHROPIC_DEFAULT_OPUS_MODEL'], 'deepseek-reasoner');
     });
   });
 
@@ -357,6 +396,71 @@ describe('buildSpawnEnv', () => {
       const env = buildSpawnEnv(def, { SAFE: 'yes' });
 
       assert.equal(env['SAFE'], 'yes');
+    });
+  });
+});
+
+describe('Windows console encoding', () => {
+  afterEach(() => {
+    resetCodePageCache();
+  });
+
+  describe('detectWindowsCodePage', () => {
+    it('should return a number', () => {
+      const cp = detectWindowsCodePage();
+      assert.equal(typeof cp, 'number');
+      assert.ok(cp > 0);
+    });
+
+    it('should cache the result on repeated calls', () => {
+      const cp1 = detectWindowsCodePage();
+      const cp2 = detectWindowsCodePage();
+      assert.equal(cp1, cp2);
+    });
+
+    it('should return 65001 on non-Windows', { skip: process.platform === 'win32' ? 'non-Windows only' : undefined }, () => {
+      assert.equal(detectWindowsCodePage(), 65001);
+    });
+
+    it('should re-detect after cache reset', () => {
+      const cp1 = detectWindowsCodePage();
+      resetCodePageCache();
+      const cp2 = detectWindowsCodePage();
+      // Same platform, so result should be the same
+      assert.equal(cp1, cp2);
+    });
+  });
+
+  describe('createStderrDecoder', () => {
+    it('should return null on non-Windows', { skip: process.platform === 'win32' ? 'non-Windows only' : undefined }, () => {
+      assert.equal(createStderrDecoder(), null);
+    });
+
+    it('should decode GBK-encoded Chinese text correctly', { skip: process.platform !== 'win32' ? 'Windows only' : undefined }, () => {
+      // On Chinese Windows, the code page is typically 936 (GBK).
+      // "系统找不到指定的路径" in GBK encoding:
+      const gbkBytes = Buffer.from([
+        0xcf, 0xb5, 0xcd, 0xb3, 0xd5, 0xd2, 0xb2, 0xbb,
+        0xb5, 0xbd, 0xd6, 0xb8, 0xb6, 0xa8, 0xb5, 0xc4,
+        0xc2, 0xb7, 0xbe, 0xb6,
+      ]);
+
+      const decoder = createStderrDecoder();
+      if (decoder) {
+        // Code page is not UTF-8 — decoder should properly decode GBK
+        const text = decoder(gbkBytes);
+        assert.equal(text, '系统找不到指定的路径');
+      }
+      // If decoder is null, code page is already UTF-8 — no fix needed
+    });
+
+    it('should not garble ASCII text', { skip: process.platform !== 'win32' ? 'Windows only' : undefined }, () => {
+      const decoder = createStderrDecoder();
+      if (decoder) {
+        const buf = Buffer.from('Error: file not found', 'ascii');
+        const text = decoder(buf);
+        assert.equal(text, 'Error: file not found');
+      }
     });
   });
 });

@@ -451,16 +451,26 @@ jobs:
               --force
             echo "✅ Updated latest.json to ${VERSION}"
 
-            # Copy latest.yml from version dir to root for electron-updater generic provider
+            # Copy latest.yml from version dir to root for electron-updater generic provider.
+            # The yml's url/path fields are relative filenames (e.g. "Molio-Setup-0.3.22-windows.exe"),
+            # but files live under releases/<tag>/. We must prepend the tag directory so
+            # electron-updater resolves the correct download URL.
             LATEST_YML="oss://${{ vars.OSS_BUCKET }}/releases/${TAG}/latest.yml"
-            ossutil cp "${LATEST_YML}" oss://${{ vars.OSS_BUCKET }}/releases/latest.yml \
+            ossutil cp "${LATEST_YML}" /tmp/latest-raw.yml \
+              --endpoint=${{ vars.OSS_ENDPOINT }} \
+              -i "${OSS_ACCESS_KEY_ID}" \
+              -k "${OSS_ACCESS_KEY_SECRET}" \
+              -t "${OSS_SECURITY_TOKEN}" \
+              --force
+            sed -i "s|url: |url: ${TAG}/|g; s|path: |path: ${TAG}/|g" /tmp/latest-raw.yml
+            ossutil cp /tmp/latest-raw.yml oss://${{ vars.OSS_BUCKET }}/releases/latest.yml \
               --endpoint=${{ vars.OSS_ENDPOINT }} \
               -i "${OSS_ACCESS_KEY_ID}" \
               -k "${OSS_ACCESS_KEY_SECRET}" \
               -t "${OSS_SECURITY_TOKEN}" \
               --meta Cache-Control:no-cache \
               --force
-            echo "✅ Updated latest.yml to ${VERSION}"
+            echo "✅ Updated latest.yml to ${VERSION} (paths prefixed with ${TAG}/)"
           fi
 
           echo "✅ Uploaded ${TAG} to oss://${{ vars.OSS_BUCKET }}/releases/${TAG}/"

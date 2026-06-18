@@ -101,7 +101,7 @@ async function navigateToTestFile(page: import('@playwright/test').Page) {
 
   // Wait for file content to load — publishToChrome returns silently if fileContent is null.
   // The header filename appears immediately; the content area shows "Loading..." until fetched.
-  await expect(page.locator('.kb-header-filename')).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator('.kb-header-filename-center')).toBeVisible({ timeout: 10_000 });
   await expect(page.locator('.kb-content-area').getByText('Loading...')).toBeHidden({ timeout: 10_000 });
 }
 

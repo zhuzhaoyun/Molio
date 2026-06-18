@@ -1,6 +1,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { execSync } from 'node:child_process';
+import { TextDecoder as NodeTextDecoder } from 'node:util';
 import type { RuntimeAgentDef } from '@molio/contracts';
 
 /**
@@ -55,7 +57,13 @@ export function buildSpawnEnv(
   env['MOLIO_AGENT_NAME'] = def.name;
 
   if (def.id === 'claude') {
-    stripUnlessCustomBaseUrl(env, 'ANTHROPIC_BASE_URL', ['ANTHROPIC_API_KEY']);
+    stripUnlessCustomBaseUrl(env, 'ANTHROPIC_BASE_URL', [
+      'ANTHROPIC_API_KEY',
+      'ANTHROPIC_AUTH_TOKEN',
+      'ANTHROPIC_DEFAULT_SONNET_MODEL',
+      'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+      'ANTHROPIC_DEFAULT_OPUS_MODEL',
+    ]);
     // Claude Code on Windows requires git-bash.
     // Auto-detect if CLAUDE_CODE_GIT_BASH_PATH is not already set.
     if (process.platform === 'win32' && !env['CLAUDE_CODE_GIT_BASH_PATH']) {
@@ -69,7 +77,29 @@ export function buildSpawnEnv(
     stripUnlessCustomBaseUrl(env, 'OPENAI_BASE_URL', ['OPENAI_API_KEY', 'CODEX_API_KEY']);
   }
 
+  // Ensure Molio-installed agent binaries are in PATH.
+  augmentPath(env);
+
   return env;
+}
+
+/**
+ * Ensure the Molio user-level binary directory (~/.molio/bin) is in PATH.
+ * This is where one-click install places downloaded agent binaries.
+ */
+function augmentPath(env: NodeJS.ProcessEnv): void {
+  const pathKey = process.platform === 'win32' ? 'Path' : 'PATH';
+  const actualKey = Object.keys(env).find(k => k.toUpperCase() === 'PATH') || pathKey;
+  const pathSep = process.platform === 'win32' ? ';' : ':';
+  const currentPath = (env[actualKey] as string) || '';
+
+  const home = os.homedir();
+  const molioBin = path.join(home, '.molio', 'bin');
+
+  // Only add if it exists and isn't already in PATH
+  if (fs.existsSync(molioBin) && !currentPath.toLowerCase().includes(molioBin.toLowerCase())) {
+    env[actualKey] = `${molioBin}${pathSep}${currentPath}`;
+  }
 }
 
 /**
@@ -131,4 +161,75 @@ function stripUnlessCustomBaseUrl(
   for (const key of Object.keys(env)) {
     if (upper.has(key.toUpperCase())) delete env[key];
   }
+}
+
+/* ── Windows console encoding ── */
+
+let cachedCodePage: number | null = null;
+
+/**
+ * Detect the Windows console code page via `chcp`.
+ * Returns 65001 (UTF-8) on non-Windows platforms or when detection fails.
+ * Result is cached after the first call.
+ */
+export function detectWindowsCodePage(): number {
+  if (process.platform !== 'win32') return 65001;
+  if (cachedCodePage !== null) return cachedCodePage;
+
+  try {
+    const output = execSync('chcp', { encoding: 'utf8', timeout: 5000 });
+    const match = output.match(/(\d+)/);
+    cachedCodePage = match && match[1] ? parseInt(match[1], 10) : 65001;
+  } catch {
+    cachedCodePage = 65001;
+  }
+  return cachedCodePage;
+}
+
+/** Reset the cached code page (for testing). */
+export function resetCodePageCache(): void {
+  cachedCodePage = null;
+}
+
+/**
+ * Map a Windows code page to a TextDecoder-compatible encoding label.
+ */
+function codePageToEncoding(cp: number): string {
+  switch (cp) {
+    case 65001: return 'utf-8';
+    case 936:   return 'gbk';
+    case 950:   return 'big5';
+    case 932:   return 'shift_jis';
+    case 949:   return 'euc-kr';
+    case 1252:  return 'windows-1252';
+    case 437:   return 'ibm437';
+    default:    return 'utf-8';
+  }
+}
+
+/**
+ * Create a decoder for child process stderr on Windows.
+ *
+ * On non-Windows or when the code page is already UTF-8, returns null —
+ * the caller should fall back to `setEncoding('utf8')`.
+ *
+ * On Windows with a non-UTF-8 code page (e.g. 936/GBK for Chinese),
+ * returns a function that decodes raw Buffer chunks into properly
+ * encoded strings via TextDecoder.
+ */
+export function createStderrDecoder(): ((buf: Buffer) => string) | null {
+  if (process.platform !== 'win32') return null;
+
+  const cp = detectWindowsCodePage();
+  if (cp === 65001) return null;
+
+  const encoding = codePageToEncoding(cp);
+  let decoder: NodeTextDecoder;
+  try {
+    decoder = new NodeTextDecoder(encoding);
+  } catch {
+    return null; // Unknown encoding — fall back to UTF-8
+  }
+
+  return (buf: Buffer) => decoder.decode(buf, { stream: true });
 }

@@ -309,23 +309,29 @@ app.whenReady().then(async () => {
 
   // ③ Start daemon last — failure here must not affect updater
   if (!isDevMode()) {
+    let daemonReady = false;
     try {
       await startDaemonProduction();
+      daemonReady = true;
     } catch (err) {
       log('error', 'main', `daemon startup failed: ${err?.message ?? err}`);
       // Daemon failure is not fatal for the updater.
-      // The UI will show connection errors, but updates still work.
     }
 
-    // ④ Load the real app URL, or navigate to molio:// target if launched from protocol
-    log('info', 'main', `process.argv: ${JSON.stringify(process.argv)}`);
-    const protocolUrl = process.argv.find(arg => typeof arg === 'string' && arg.startsWith('molio://'));
-    if (protocolUrl) {
-      log('info', 'main', `detected protocol URL in argv: ${protocolUrl}`);
-      // Defer navigation slightly to ensure daemon is fully ready
-      setTimeout(() => navigateFromProtocolUrl(protocolUrl), 500);
+    // ④ Only load the real app URL if daemon started successfully.
+    // If launched via molio:// protocol, navigate to the target instead.
+    if (daemonReady) {
+      log('info', 'main', `process.argv: ${JSON.stringify(process.argv)}`);
+      const protocolUrl = process.argv.find(arg => typeof arg === 'string' && arg.startsWith('molio://'));
+      if (protocolUrl) {
+        log('info', 'main', `detected protocol URL in argv: ${protocolUrl}`);
+        // Defer navigation slightly to ensure daemon is fully ready
+        setTimeout(() => navigateFromProtocolUrl(protocolUrl), 500);
+      } else {
+        loadApp();
+      }
     } else {
-      loadApp();
+      showDaemonErrorPage();
     }
   }
 

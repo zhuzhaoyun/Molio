@@ -624,6 +624,334 @@
   text-align: center;
 }
 
+/* ══════════ Install Button ══════════ */
+.rt-install-btn {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.rt-install-btn:hover {
+  background: var(--accent-soft);
+}
+
+.rt-install-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 200px;
+  max-width: 480px;
+}
+
+.rt-install-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.rt-install-log {
+  max-height: 140px;
+  overflow-y: auto;
+  padding: 8px 10px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-soft);
+}
+
+.rt-install-log__line {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.rt-install-result {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  animation: rt-fade-in 200ms ease;
+}
+
+.rt-install-result--ok {
+  color: var(--green);
+}
+
+.rt-install-result--error {
+  color: var(--red);
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.rt-install-result__icon {
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.rt-install-result__msg {
+  max-width: 100%;
+  max-height: 200px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  line-height: 1.5;
+  color: var(--text-muted);
+  background: var(--bg-subtle);
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border-soft);
+}
+
+/* ── Progress bar ── */
+.rt-install-progress {
+  height: 6px;
+  background: var(--bg-subtle);
+  border-radius: 3px;
+  overflow: hidden;
+  border: 1px solid var(--border-soft);
+}
+
+.rt-install-progress__bar {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 300ms ease;
+  min-width: 2px;
+}
+
+/* ── Phase label ── */
+.rt-install-phase {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* ── Cancel button ── */
+.rt-btn--xs {
+  padding: 1px 6px;
+  font-size: 10px;
+  line-height: 1.4;
+  border-radius: 3px;
+}
+
+.rt-install-cancel {
+  margin-left: auto;
+}
+
+/* ── Error category badge ── */
+.rt-install-error__category {
+  font-weight: 600;
+  font-size: 12px;
+}
+
+/* ── Error hint ── */
+.rt-install-error__hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  padding: 6px 8px;
+  background: var(--bg-subtle);
+  border-radius: 4px;
+  border: 1px solid var(--border-soft);
+}
+
+/* ── Actions row (retry / manual install link) ── */
+.rt-install-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* ══════════ Provider Config ══════════ */
+.rt-provider-toggle {
+  gap: 4px;
+}
+
+.rt-provider-toggle__icon {
+  font-size: 13px;
+}
+
+.rt-provider-toggle__current {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.rt-provider-config {
+  margin-top: 10px;
+  padding: 12px 14px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  animation: rt-fade-in 200ms ease;
+}
+
+.rt-provider-config__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.rt-provider-config__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.rt-provider-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rt-provider-form__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rt-provider-form__label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.rt-provider-form__hint {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-faint);
+}
+
+.rt-provider-form__select,
+.rt-provider-form__input {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  color: var(--text);
+  font-size: 13px;
+  font-family: var(--mono);
+  outline: none;
+  transition: border-color 120ms ease;
+}
+
+.rt-provider-form__select:focus,
+.rt-provider-form__input:focus {
+  border-color: var(--accent);
+}
+
+.rt-provider-form__link {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: color 120ms ease;
+}
+
+.rt-provider-form__link:hover {
+  color: var(--accent);
+}
+
+.rt-provider-form__models {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rt-provider-form__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.rt-provider-form__status {
+  font-size: 12px;
+  font-weight: 500;
+  animation: rt-fade-in 200ms ease;
+}
+
+.rt-provider-form__status--ok {
+  color: var(--green);
+}
+
+.rt-provider-form__status--err {
+  color: var(--red);
+}
+
+/* ── Model Mapping ── */
+.rt-provider-form__mapping {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rt-provider-mapping-toggle {
+  align-self: flex-start;
+  padding: 2px 6px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--fg-muted);
+}
+
+.rt-provider-mapping-toggle:hover {
+  color: var(--fg);
+}
+
+.rt-provider-mapping {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--bg-elevated, rgba(255,255,255,0.03));
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+
+.rt-provider-mapping__hint {
+  font-size: 11px;
+  color: var(--fg-muted);
+  margin: 0 0 4px;
+  line-height: 1.4;
+}
+
+.rt-provider-mapping__field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.rt-provider-mapping__alias {
+  min-width: 48px;
+  font-family: var(--font-mono, monospace);
+  font-weight: 600;
+  color: var(--fg-muted);
+  text-transform: lowercase;
+}
+
+.rt-provider-mapping__arrow {
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+
+.rt-provider-mapping__input {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  padding: 3px 6px;
+  font-family: var(--font-mono, monospace);
+}
+
 /* ── Responsive ── */
 @media (max-width: 640px) {
   .rt-header {

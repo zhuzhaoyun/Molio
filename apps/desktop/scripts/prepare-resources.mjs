@@ -65,7 +65,13 @@ async function bundleDaemon() {
     format: 'esm',
     outfile,
     external: ['better-sqlite3', 'qrcode'],
-    // No banner needed — Node 24+ supports import.meta.dirname/filename natively
+    // Provide a createRequire shim so that CJS modules bundled into the ESM
+    // output (e.g. fast-glob via trash → globby) can call require() for
+    // Node.js built-in modules. Without this, esbuild's __require wrapper
+    // throws "Dynamic require of 'os' is not supported".
+    banner: {
+      js: `import { createRequire as __molioCreateRequire } from 'module'; const require = __molioCreateRequire(import.meta.url);`,
+    },
     logLevel: 'info',
   });
 
@@ -214,6 +220,23 @@ function copyWebBuild() {
   console.log('Web build copied.');
 }
 
+/**
+ * Copy built-in skill source files to resources/daemon/skills/.
+ * The daemon's skill-installer reads these at runtime to install skills
+ * into each vault's .claude/skills/ directory.
+ */
+function copySkillSources() {
+  console.log('Copying skill sources...');
+  const skillsSrc = join(daemonDir, 'src', 'tools', 'skills');
+  if (!existsSync(skillsSrc)) {
+    console.warn('  WARNING: skills source directory not found, skipping');
+    return;
+  }
+  const skillsDest = join(resourcesDir, 'daemon', 'skills');
+  cpSync(skillsSrc, skillsDest, { recursive: true, dereference: true });
+  console.log('  Skill sources copied.');
+}
+
 // ─── Main ───
 
 // Graceful skip: if daemon/web haven't been built yet (e.g. during `pnpm install`
@@ -234,5 +257,6 @@ await bundleDaemon();
 copyNativeDependencies();
 downloadElectronPrebuilds();
 copyWebBuild();
+copySkillSources();
 
 console.log('\nResources prepared successfully!');

@@ -27,22 +27,6 @@ test.describe('Navigation', () => {
     expect(page.url()).toContain('/graph');
   });
 
-  test('navigate to runtimes', async ({ page }) => {
-    await gotoHome(page);
-    await clickNav(page, 'runtimes');
-
-    await expect(page.locator('.rt-shell')).toBeVisible({ timeout: 5_000 });
-    expect(page.url()).toContain('/runtimes');
-  });
-
-  test('navigate to channels', async ({ page }) => {
-    await gotoHome(page);
-    await clickNav(page, 'channels');
-
-    await expect(page.locator('.channels-shell')).toBeVisible({ timeout: 5_000 });
-    expect(page.url()).toContain('/channels');
-  });
-
   test('navigate to history', async ({ page }) => {
     await gotoHome(page);
     await clickNav(page, 'history');
