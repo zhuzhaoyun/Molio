@@ -808,55 +808,7 @@
   background: var(--bg-panel);
 }
 
-/* ── Typeset tab bar (Edit | Preview) ── */
-.kb-typeset-tabs {
-  display: flex;
-  gap: 0;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-panel);
-  flex-shrink: 0;
-}
-.kb-typeset-tab {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  font-size: 13px;
-  color: var(--text-muted);
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  cursor: pointer;
-  transition: color 0.15s, border-color 0.15s;
-}
-.kb-typeset-tab:hover {
-  color: var(--text);
-}
-.kb-typeset-tab.is-active {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
-}
-
-/* ── doocs/md themed preview (visible, typeset mode) ── */
-.kb-typeset-preview {
-  flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg);
-  padding: 0;
-}
-
-/* ── Keep #output inside preview scrollable ── */
-.kb-typeset-preview > #output,
-.kb-typeset-preview > .md-preview {
-  flex: 1;
-  padding: 24px 32px;
-  max-width: 100%;
-}
-
-/* ── Offscreen doocs/md publish preview (hidden fallback) ── */
+/* ── Offscreen doocs/md publish preview (hidden, for copy/publish flow) ── */
 .kb-typeset-preview-hidden {
   position: absolute;
   left: -9999px;
