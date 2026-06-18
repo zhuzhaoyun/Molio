@@ -38,18 +38,24 @@ const PROXIED_HOSTS = [
 export function proxyExternalImages(markdown: string): string {
   const proxyBase = `${window.location.origin}/api/proxy/image?url=`;
 
+  function cleanAndEncode(rawUrl: string): string {
+    // Decode HTML entities (&amp; → &) before encoding for the proxy
+    const decoded = rawUrl.replace(/&amp;/g, '&');
+    return encodeURIComponent(decoded);
+  }
+
   // Markdown images: ![alt](url) on proxied hosts
   let result = markdown.replace(
     /!\[([^\]]*)\]\((https?:\/\/(?:mmbiz\.qpic\.cn|mmbiz\.qlogo\.cn|mpvideo\.qpic\.cn)[^)]+)\)/g,
     (_m, alt: string, url: string) =>
-      `![${alt}](${proxyBase}${encodeURIComponent(url)})`,
+      `![${alt}](${proxyBase}${cleanAndEncode(url)})`,
   );
 
   // Raw HTML <video src="..."> or <source src="...">
   result = result.replace(
     /(<(?:video|source)\s[^>]*?)src="(https?:\/\/(?:mmbiz\.qpic\.cn|mmbiz\.qlogo\.cn|mpvideo\.qpic\.cn)[^"]*)"/g,
     (_m, prefix: string, url: string) =>
-      `${prefix}src="${proxyBase}${encodeURIComponent(url)}"`,
+      `${prefix}src="${proxyBase}${cleanAndEncode(url)}"`,
   );
 
   return result;

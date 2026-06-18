@@ -24,9 +24,11 @@ const PROXIED_HOSTS_DOM = ['mmbiz.qpic.cn', 'mmbiz.qlogo.cn', 'mpvideo.qpic.cn']
 /** Rewrite proxied host src to daemon proxy — DOM manipulation, doesn't touch ProseMirror doc */
 function proxyMediaInDOM(container: HTMLElement) {
   container.querySelectorAll('img, video, source').forEach((el) => {
-    const src = el.getAttribute('src');
-    if (!src) return;
+    const rawSrc = el.getAttribute('src');
+    if (!rawSrc) return;
     try {
+      // Decode HTML entities (&amp; → &) before URL parsing
+      const src = rawSrc.replace(/&amp;/g, '&');
       const host = new URL(src).hostname;
       if (PROXIED_HOSTS_DOM.some(h => host === h || host.endsWith('.' + h))) {
         el.setAttribute('src', `${window.location.origin}/api/proxy/image?url=${encodeURIComponent(src)}`);
