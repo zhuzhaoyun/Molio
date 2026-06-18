@@ -96,8 +96,6 @@ export function GraphPage() {
   const { settings, updateSettings, updateForce } = useGraphSettings();
   const themeColors = getThemeColors(settings.theme);
 
-  const simulation = useSimulation();
-
   // Fetch graph data when active vault changes
   useEffect(() => {
     if (!activeVaultId) return;
