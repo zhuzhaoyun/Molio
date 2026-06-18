@@ -50,15 +50,15 @@ describe('knowledge filesystem operations', () => {
   });
 
   describe('deleteFile', () => {
-    it('should delete a file', () => {
+    it('should delete a file', async () => {
       writeFile(vaultPath, 'to-delete.md', 'bye');
       assert.ok(existsSync(join(vaultPath, 'to-delete.md')));
-      deleteFile(vaultPath, 'to-delete.md');
+      await deleteFile(vaultPath, 'to-delete.md');
       assert.ok(!existsSync(join(vaultPath, 'to-delete.md')));
     });
 
-    it('should not throw when deleting non-existent file', () => {
-      deleteFile(vaultPath, 'does-not-exist.md');
+    it('should not throw when deleting non-existent file', async () => {
+      await deleteFile(vaultPath, 'does-not-exist.md');
       // No error — silent success
     });
   });
@@ -76,24 +76,24 @@ describe('knowledge filesystem operations', () => {
   });
 
   describe('deleteDirectory', () => {
-    it('should delete an empty directory', () => {
+    it('should delete an empty directory', async () => {
       createDirectory(vaultPath, 'empty-dir');
       assert.ok(existsSync(join(vaultPath, 'empty-dir')));
-      deleteDirectory(vaultPath, 'empty-dir');
+      await deleteDirectory(vaultPath, 'empty-dir');
       assert.ok(!existsSync(join(vaultPath, 'empty-dir')));
     });
 
-    it('should delete a directory with contents', () => {
+    it('should delete a directory with contents', async () => {
       createDirectory(vaultPath, 'full-dir/sub');
       writeFile(vaultPath, 'full-dir/note.md', 'content');
       writeFile(vaultPath, 'full-dir/sub/deep.md', 'deep');
       assert.ok(existsSync(join(vaultPath, 'full-dir', 'sub', 'deep.md')));
-      deleteDirectory(vaultPath, 'full-dir');
+      await deleteDirectory(vaultPath, 'full-dir');
       assert.ok(!existsSync(join(vaultPath, 'full-dir')));
     });
 
-    it('should not throw when deleting non-existent directory', () => {
-      deleteDirectory(vaultPath, 'never-existed');
+    it('should not throw when deleting non-existent directory', async () => {
+      await deleteDirectory(vaultPath, 'never-existed');
       // No error
     });
   });
@@ -289,9 +289,9 @@ describe('knowledge filesystem operations', () => {
       }, /Path traversal/);
     });
 
-    it('deleteDirectory should reject path traversal', () => {
-      assert.throws(() => {
-        deleteDirectory(vaultPath, '../../tmp');
+    it('deleteDirectory should reject path traversal', async () => {
+      await assert.rejects(async () => {
+        await deleteDirectory(vaultPath, '../../tmp');
       }, /Path traversal/);
     });
 

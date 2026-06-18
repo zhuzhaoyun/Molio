@@ -159,7 +159,7 @@ export function knowledgeRoutes(db: Database.Database, runManager: RunManager): 
   });
 
   // DELETE /api/knowledge/vaults/:id/files/* — delete a file
-  app.delete('/vaults/:id/files/*', (c) => {
+  app.delete('/vaults/:id/files/*', async (c) => {
     const vault = getVault(db, c.req.param('id'));
     if (!vault) {
       return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
@@ -174,7 +174,7 @@ export function knowledgeRoutes(db: Database.Database, runManager: RunManager): 
     }
 
     try {
-      deleteFile(vault.path, relPath);
+      await deleteFile(vault.path, relPath);
       addKbHistory(db, vault.id, 'edit', `File "${relPath}" deleted`);
       return c.body(null, 204);
     } catch (err) {
@@ -267,7 +267,7 @@ export function knowledgeRoutes(db: Database.Database, runManager: RunManager): 
   });
 
   // DELETE /api/knowledge/vaults/:id/dirs/* — delete a directory
-  app.delete('/vaults/:id/dirs/*', (c) => {
+  app.delete('/vaults/:id/dirs/*', async (c) => {
     const vault = getVault(db, c.req.param('id'));
     if (!vault) {
       return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
@@ -282,7 +282,7 @@ export function knowledgeRoutes(db: Database.Database, runManager: RunManager): 
     }
 
     try {
-      deleteDirectory(vault.path, relPath);
+      await deleteDirectory(vault.path, relPath);
       addKbHistory(db, vault.id, 'edit', `Directory "${relPath}" deleted`);
       return c.body(null, 204);
     } catch (err) {

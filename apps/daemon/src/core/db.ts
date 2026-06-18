@@ -145,7 +145,7 @@ function migrate(db: SqliteDb): void {
   // conversation while preserving the old one for history.
   db.exec(`DROP INDEX IF EXISTS idx_conv_external_session`);
   db.exec(`
-    CREATE UNIQUE INDEX idx_conv_external_session_open
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_conv_external_session_open
       ON conversations(channel_type, external_session_id)
       WHERE external_session_id IS NOT NULL AND closed_at IS NULL;
   `);
