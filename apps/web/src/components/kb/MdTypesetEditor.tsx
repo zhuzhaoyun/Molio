@@ -2,7 +2,7 @@
  * MdTypesetEditor — 3-column typeset mode (doocs/md pattern).
  *
  * Layout:
- * - Left:   Milkdown WYSIWYG source editor (editable, no theme styling)
+ * - Left:   Raw markdown source (plain textarea, editable)
  * - Middle: doocs/md themed preview (read-only, full theme rendering)
  * - Right:  MdStylePanel (controls doocs/md publish theme)
  *
@@ -11,7 +11,6 @@
  * Copy/publish reads #output from the visible middle preview.
  */
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { MdMilkdownEditor } from './MdMilkdownEditor';
 import { MdRenderer } from './MdRenderer';
 import { MdStylePanel, defaultThemeConfig, type ThemeConfig } from './MdStylePanel';
 import { preprocessWikiEmbeds, proxyExternalImages, stripTrackingPixels } from '../../hooks/useKnowledge';
@@ -23,85 +22,66 @@ export interface MdTypesetEditorProps {
   selectedFile?: string | null;
 }
 
-const PROXIED_HOSTS_DOM = ['mmbiz.qpic.cn', 'mmbiz.qlogo.cn', 'mpvideo.qpic.cn'];
-
-/** Rewrite proxied host src to daemon proxy — DOM manipulation only, doesn't touch ProseMirror doc */
-function proxyMediaInDOM(container: HTMLElement) {
-  container.querySelectorAll('img, video, source').forEach((el) => {
-    const rawSrc = el.getAttribute('src');
-    if (!rawSrc) return;
-    try {
-      const src = rawSrc.replace(/&amp;/g, '&');
-      const host = new URL(src).hostname;
-      if (PROXIED_HOSTS_DOM.some(h => host === h || host.endsWith('.' + h))) {
-        el.setAttribute('src', `${window.location.origin}/api/proxy/image?url=${encodeURIComponent(src)}`);
-      }
-    } catch { /* invalid URL, skip */ }
-  });
-}
-
 export function MdTypesetEditor({
   initialContent,
   onContentChange,
   vaultId,
-  selectedFile,
 }: MdTypesetEditorProps) {
   const [content, setContent] = useState(initialContent);
   const [themeConfig, setThemeConfig] = useState<ThemeConfig>(defaultThemeConfig);
-  const editorContainerRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     setContent(initialContent);
   }, [initialContent]);
 
-  // After Milkdown renders, proxy mmbiz images in the DOM
-  useEffect(() => {
-    const container = editorContainerRef.current;
-    if (!container) return;
-    const timer = setTimeout(() => proxyMediaInDOM(container), 500);
-    const observer = new MutationObserver(() => proxyMediaInDOM(container));
-    observer.observe(container, { childList: true, subtree: true });
-    return () => {
-      clearTimeout(timer);
-      observer.disconnect();
-    };
-  }, [initialContent]);
-
-  const handleContentChange = useCallback(
-    (newContent: string) => {
+  const handleSourceChange = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      const newContent = e.target.value;
       setContent(newContent);
       onContentChange?.(newContent);
     },
     [onContentChange],
   );
 
+  // Tab key inserts spaces in textarea instead of moving focus
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const textarea = e.currentTarget;
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const newValue = textarea.value.slice(0, start) + '  ' + textarea.value.slice(end);
+      textarea.value = newValue;
+      textarea.selectionStart = textarea.selectionEnd = start + 2;
+      // Fire synthetic change
+      setContent(newValue);
+      onContentChange?.(newValue);
+    }
+  }, [onContentChange]);
+
   const handleThemeChange = useCallback((newConfig: ThemeConfig) => {
     setThemeConfig(newConfig);
   }, []);
 
-  // Content for Milkdown source editor
-  const sourceContent = vaultId
-    ? proxyExternalImages(preprocessWikiEmbeds(stripTrackingPixels(initialContent), vaultId))
-    : proxyExternalImages(stripTrackingPixels(initialContent));
-
-  // Content for doocs/md themed preview (live-updating as user edits)
+  // Content for doocs/md themed preview (live-updating as user edits source)
   const previewContent = vaultId
     ? proxyExternalImages(preprocessWikiEmbeds(stripTrackingPixels(content), vaultId))
     : proxyExternalImages(stripTrackingPixels(content));
 
   return (
     <div className="kb-typeset-editor">
-      {/* Left: Milkdown source editor */}
+      {/* Left: Raw markdown source */}
       <div className="kb-typeset-source">
-        <div className="kb-typeset-source-header">Markdown 源</div>
-        <div className="kb-typeset-cm" ref={editorContainerRef}>
-          <MdMilkdownEditor
-            initialContent={sourceContent}
-            onContentChange={handleContentChange}
-            vaultId={vaultId}
-            fileKey={selectedFile}
-          />
-        </div>
+        <div className="kb-typeset-source-header">Markdown</div>
+        <textarea
+          ref={textareaRef}
+          className="kb-typeset-textarea"
+          value={content}
+          onChange={handleSourceChange}
+          onKeyDown={handleKeyDown}
+          spellCheck={false}
+        />
       </div>
 
       {/* Middle: doocs/md themed preview */}

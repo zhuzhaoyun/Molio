@@ -827,6 +827,28 @@
   max-width: 100%;
 }
 
+/* ── Source textarea (typeset left pane) ── */
+.kb-typeset-textarea {
+  flex: 1;
+  width: 100%;
+  padding: 16px;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text);
+  background: var(--bg-panel);
+  border: none;
+  outline: none;
+  resize: none;
+  tab-size: 2;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-y: auto;
+}
+.kb-typeset-textarea::placeholder {
+  color: var(--text-faint);
+}
+
 /* ── Milkdown editor container (typeset source pane) ── */
 .kb-typeset-cm {
   flex: 1;
