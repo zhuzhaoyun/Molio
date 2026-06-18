@@ -27,14 +27,31 @@ const PROXIED_HOSTS_DOM = ['mmbiz.qpic.cn', 'mmbiz.qlogo.cn', 'mpvideo.qpic.cn']
 const MILKDOWN_THEME_STYLE_ID = 'milkdown-theme-override';
 
 /** Build CSS overrides so Milkdown reflects doocs/md theme configuration */
+/** Map doocs/md theme name to Milkdown background / surface colours */
+function getThemeColors(themeName: string): { bg: string; surface: string } {
+  switch (themeName) {
+    case 'grace':  return { bg: '#faf9f6', surface: '#f3efe8' };
+    case 'simple': return { bg: '#ffffff', surface: '#f5f5f5' };
+    default:       return { bg: '#ffffff', surface: '#fafafa' }; // default
+  }
+}
+
 function buildMilkdownThemeCSS(config: ThemeConfig): string {
   const isMobile = config.previewWidth === 'mobile';
   const primary = config.primaryColor;
   // fontSize from doocs/md already includes 'px' suffix (e.g. '16px')
   const fontSize = config.fontSize.endsWith('px') ? config.fontSize : `${config.fontSize}px`;
   const fontFamily = config.fontFamily.includes("'") ? config.fontFamily : `'${config.fontFamily}'`;
+  const colors = getThemeColors(config.themeName);
 
   return [
+    // Theme background / surface
+    `.milkdown {`,
+    `  --crepe-color-primary: ${primary};`,
+    `  --crepe-color-background: ${colors.bg};`,
+    `  --crepe-color-surface-low: ${colors.surface};`,
+    `  --crepe-color-surface: ${colors.surface};`,
+    `}`,
     // Layout
     `.milkdown .editor {`,
     `  font-family: ${fontFamily};`,
@@ -52,8 +69,7 @@ function buildMilkdownThemeCSS(config: ThemeConfig): string {
     config.isUseJustify ? '  text-align: justify;' : '',
     `}`,
     config.isUseIndent ? `.milkdown .editor > p { text-indent: 2em; }` : '',
-    // Primary color
-    `.milkdown { --crepe-color-primary: ${primary}; }`,
+    // Primary color accents
     `.milkdown .editor a { color: ${primary}; }`,
     `.milkdown .editor blockquote { border-left-color: ${primary}; }`,
     `.milkdown .editor th { border-bottom-color: ${primary}; }`,
