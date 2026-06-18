@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useState, type CSSProperties } from 'react';
 import type { AgentInfo, RunInfo } from '@molio/contracts';
 import { useRuntimes } from '../../hooks/useRuntimes';
 import { useI18n, type Locale } from '../../i18n';
+import { InstallButton } from '../runtimes/InstallButton';
+import { ProviderConfig } from '../runtimes/ProviderConfig';
 
 type Tab = 'agents' | 'runs';
 
@@ -90,12 +92,14 @@ function AgentCard({
   testState,
   onTest,
   onSetDefault,
+  onRescan,
 }: {
   agent: AgentInfo;
   isDefault: boolean;
   testState: TestState;
   onTest: () => void;
   onSetDefault: () => void;
+  onRescan: () => void;
 }) {
   const { t } = useI18n();
   const icon = AGENT_ICONS[agent.id] ?? '⚙️';
@@ -132,12 +136,17 @@ function AgentCard({
         </div>
         {agent.models.length > 0 && (
           <div className="rt-agent-card__models">
-            {agent.models.map((m: { id: string; label: string }) => (
+            {agent.models.map((m) => (
               <span key={m.id} className="rt-chip">{m.label}</span>
             ))}
           </div>
         )}
+        {/* Test result feedback */}
         <TestResult test={testState} />
+        {/* Provider config for installed agents (Claude Code) */}
+        {agent.available && agent.installable && (
+          <ProviderConfig agentId={agent.id} />
+        )}
       </div>
       <div className="rt-agent-card__actions">
         {agent.available && (
@@ -149,10 +158,8 @@ function AgentCard({
             {t('runtimes.test')}
           </button>
         )}
-        {!agent.available && agent.installUrl && (
-          <a className="rt-agent-card__install" href={agent.installUrl} target="_blank" rel="noopener noreferrer">
-            {t('runtimes.install')}
-          </a>
+        {!agent.available && (
+          <InstallOrLink agent={agent} onInstalled={onRescan} key={agent.id} />
         )}
       </div>
     </div>
@@ -160,6 +167,31 @@ function AgentCard({
 }
 
 /* ─── Run Row ─── */
+/**
+ * Renders either an InstallButton (auto-install) or a plain link (manual install).
+ * The installable check is done at runtime via bracket notation to prevent
+ * Rollup from tree-shaking the InstallButton component away.
+ */
+function InstallOrLink({ agent, onInstalled }: { agent: AgentInfo; onInstalled: () => void }) {
+  const { t } = useI18n();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const canAutoInstall = (agent as any).installable === true;
+
+  if (canAutoInstall) {
+    return <InstallButton agentId={agent.id} installUrl={agent.installUrl} onInstalled={onInstalled} />;
+  }
+
+  if (agent.installUrl) {
+    return (
+      <a className="rt-agent-card__install" href={agent.installUrl} target="_blank" rel="noopener noreferrer">
+        {t('runtimes.install')}
+      </a>
+    );
+  }
+
+  return null;
+}
+
 function RunRow({ run, onCancel }: { run: RunInfo; onCancel: (id: string) => void }) {
   const { t, locale } = useI18n();
   const statusLabels = getStatusLabels(locale);
@@ -228,6 +260,81 @@ function RescanButton({ state, onRescan }: { state: RescanState; onRescan: () =>
   );
 }
 
+/* ─── Main Page ─── */
+export function RuntimesPanel() {
+  const { t, locale } = useI18n();
+  const {
+    agents, runs, loading, error,
+    defaultAgentId, testStates, rescanState,
+    refresh, testAgent, rescan, setDefaultAgent, cancelRun,
+  } = useRuntimes();
+  const [activeTab, setActiveTab] = useState<Tab>('agents');
+
+  const availableCount = agents.filter((a) => a.available).length;
+  const activeRuns = runs.filter((r) => r.status === 'running').length;
+
+  return (
+    <div className="rt-shell">
+      {/* Header */}
+      <div className="rt-header">
+        <div className="rt-header__left">
+          <h1 className="rt-header__title">{t('runtimes.title')}</h1>
+          <span className="rt-header__subtitle">
+            {t('runtimes.agentsAvailable', { count: String(availableCount) })}
+            {activeRuns > 0 && ` · ${t('runtimes.running', { count: String(activeRuns) })}`}
+          </span>
+        </div>
+        <RescanButton state={rescanState} onRescan={rescan} />
+      </div>
+
+      {/* Tab switcher */}
+      <div className="rt-tabs" role="tablist" style={{ '--tab-cols': 2 } as CSSProperties}>
+        <button
+          role="tab"
+          className={`rt-tab${activeTab === 'agents' ? ' active' : ''}`}
+          onClick={() => setActiveTab('agents')}
+        >
+          <span className="rt-tab__title">{t('runtimes.agentsTab')}</span>
+          <span className="rt-tab__count">{agents.length}</span>
+        </button>
+        <button
+          role="tab"
+          className={`rt-tab${activeTab === 'runs' ? ' active' : ''}`}
+          onClick={() => setActiveTab('runs')}
+        >
+          <span className="rt-tab__title">{t('runtimes.runsTab')}</span>
+          <span className="rt-tab__count">{runs.length}</span>
+        </button>
+      </div>
+
+      {/* Content */}
+      <div className="rt-content">
+        {error && (
+          <div className="rt-error">
+            <span>{error}</span>
+            <button className="rt-btn rt-btn--sm rt-btn--ghost" onClick={refresh}>{t('runtimes.retry')}</button>
+          </div>
+        )}
+
+        {loading ? (
+          <div className="rt-loading">{t('runtimes.loading')}</div>
+        ) : activeTab === 'agents' ? (
+          <AgentsView
+            agents={agents}
+            defaultAgentId={defaultAgentId}
+            testStates={testStates}
+            onTest={testAgent}
+            onSetDefault={setDefaultAgent}
+            onRescan={rescan}
+          />
+        ) : (
+          <RunsView runs={runs} onCancel={cancelRun} />
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ─── Agents View ─── */
 function AgentsView({
   agents,
@@ -235,12 +342,14 @@ function AgentsView({
   testStates,
   onTest,
   onSetDefault,
+  onRescan,
 }: {
   agents: AgentInfo[];
   defaultAgentId: string | null;
   testStates: Record<string, TestState>;
   onTest: (id: string) => void;
   onSetDefault: (id: string) => void;
+  onRescan: () => void;
 }) {
   const { t } = useI18n();
   const available = agents.filter((a) => a.available);
@@ -270,6 +379,7 @@ function AgentsView({
                 testState={testStates[a.id] ?? { status: 'idle' }}
                 onTest={() => onTest(a.id)}
                 onSetDefault={() => onSetDefault(a.id)}
+                onRescan={onRescan}
               />
             ))}
           </div>
@@ -287,6 +397,7 @@ function AgentsView({
                 testState={testStates[a.id] ?? { status: 'idle' }}
                 onTest={() => onTest(a.id)}
                 onSetDefault={() => {}}
+                onRescan={onRescan}
               />
             ))}
           </div>
@@ -334,80 +445,6 @@ function RunsView({ runs, onCancel }: { runs: RunInfo[]; onCancel: (id: string) 
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-/* ─── Runtimes Panel (used inside Settings) ─── */
-export function RuntimesPanel() {
-  const { t } = useI18n();
-  const {
-    agents, runs, loading, error,
-    defaultAgentId, testStates, rescanState,
-    refresh, testAgent, rescan, setDefaultAgent, cancelRun,
-  } = useRuntimes();
-  const [activeTab, setActiveTab] = useState<Tab>('agents');
-
-  const availableCount = agents.filter((a) => a.available).length;
-  const activeRuns = runs.filter((r) => r.status === 'running').length;
-
-  return (
-    <div className="rt-shell">
-      {/* Header */}
-      <div className="rt-header">
-        <div className="rt-header__left">
-          <h1 className="rt-header__title">{t('runtimes.title')}</h1>
-          <span className="rt-header__subtitle">
-            {t('runtimes.agentsAvailable', { count: String(availableCount) })}
-            {activeRuns > 0 && ` · ${t('runtimes.running', { count: String(activeRuns) })}`}
-          </span>
-        </div>
-        <RescanButton state={rescanState} onRescan={rescan} />
-      </div>
-
-      {/* Tab switcher */}
-      <div className="rt-tabs" role="tablist">
-        <button
-          role="tab"
-          className={`rt-tab${activeTab === 'agents' ? ' active' : ''}`}
-          onClick={() => setActiveTab('agents')}
-        >
-          <span className="rt-tab__title">{t('runtimes.agentsTab')}</span>
-          <span className="rt-tab__count">{agents.length}</span>
-        </button>
-        <button
-          role="tab"
-          className={`rt-tab${activeTab === 'runs' ? ' active' : ''}`}
-          onClick={() => setActiveTab('runs')}
-        >
-          <span className="rt-tab__title">{t('runtimes.runsTab')}</span>
-          <span className="rt-tab__count">{runs.length}</span>
-        </button>
-      </div>
-
-      {/* Content */}
-      <div className="rt-content">
-        {error && (
-          <div className="rt-error">
-            <span>{error}</span>
-            <button className="rt-btn rt-btn--sm rt-btn--ghost" onClick={refresh}>{t('runtimes.retry')}</button>
-          </div>
-        )}
-
-        {loading ? (
-          <div className="rt-loading">{t('runtimes.loading')}</div>
-        ) : activeTab === 'agents' ? (
-          <AgentsView
-            agents={agents}
-            defaultAgentId={defaultAgentId}
-            testStates={testStates}
-            onTest={testAgent}
-            onSetDefault={setDefaultAgent}
-          />
-        ) : (
-          <RunsView runs={runs} onCancel={cancelRun} />
-        )}
-      </div>
     </div>
   );
 }

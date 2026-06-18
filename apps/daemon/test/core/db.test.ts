@@ -241,6 +241,22 @@ describe('SQLite persistence', () => {
     });
   });
 
+  describe('migration idempotency', () => {
+    it('should not fail when openDatabase is called twice on the same directory', () => {
+      // First open already happened in before(); close and reopen to simulate restart
+      closeDatabase();
+      // Reopen — this runs all migrations again; must not throw
+      db = openDatabase(tempDir);
+      assert.ok(db);
+      // Verify the database is still functional
+      const project = createProject(db, 'Post-reopen Test');
+      assert.ok(project.id);
+      const fetched = getProject(db, project.id);
+      assert.ok(fetched);
+      assert.equal(fetched!.name, 'Post-reopen Test');
+    });
+  });
+
   describe('foreign key cascades', () => {
     it('should cascade delete project → conversations → messages', () => {
       const project = createProject(db, 'Cascade Test');

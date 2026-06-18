@@ -65,7 +65,13 @@ async function bundleDaemon() {
     format: 'esm',
     outfile,
     external: ['better-sqlite3', 'qrcode'],
-    // No banner needed — Node 24+ supports import.meta.dirname/filename natively
+    // Provide a createRequire shim so that CJS modules bundled into the ESM
+    // output (e.g. fast-glob via trash → globby) can call require() for
+    // Node.js built-in modules. Without this, esbuild's __require wrapper
+    // throws "Dynamic require of 'os' is not supported".
+    banner: {
+      js: `import { createRequire as __molioCreateRequire } from 'module'; const require = __molioCreateRequire(import.meta.url);`,
+    },
     logLevel: 'info',
   });
 

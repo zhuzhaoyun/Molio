@@ -158,13 +158,8 @@ function AgentCard({
             {t('runtimes.test')}
           </button>
         )}
-        {!agent.available && agent.installable && (
-          <InstallButton agentId={agent.id} installUrl={agent.installUrl} onInstalled={onRescan} />
-        )}
-        {!agent.available && !agent.installable && agent.installUrl && (
-          <a className="rt-agent-card__install" href={agent.installUrl} target="_blank" rel="noopener noreferrer">
-            {t('runtimes.install')}
-          </a>
+        {!agent.available && (
+          <InstallOrLink agent={agent} onInstalled={onRescan} key={agent.id} />
         )}
       </div>
     </div>
@@ -172,6 +167,31 @@ function AgentCard({
 }
 
 /* ─── Run Row ─── */
+/**
+ * Renders either an InstallButton (auto-install) or a plain link (manual install).
+ * The installable check is done at runtime via bracket notation to prevent
+ * Rollup from tree-shaking the InstallButton component away.
+ */
+function InstallOrLink({ agent, onInstalled }: { agent: AgentInfo; onInstalled: () => void }) {
+  const { t } = useI18n();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const canAutoInstall = (agent as any).installable === true;
+
+  if (canAutoInstall) {
+    return <InstallButton agentId={agent.id} installUrl={agent.installUrl} onInstalled={onInstalled} />;
+  }
+
+  if (agent.installUrl) {
+    return (
+      <a className="rt-agent-card__install" href={agent.installUrl} target="_blank" rel="noopener noreferrer">
+        {t('runtimes.install')}
+      </a>
+    );
+  }
+
+  return null;
+}
+
 function RunRow({ run, onCancel }: { run: RunInfo; onCancel: (id: string) => void }) {
   const { t, locale } = useI18n();
   const statusLabels = getStatusLabels(locale);
