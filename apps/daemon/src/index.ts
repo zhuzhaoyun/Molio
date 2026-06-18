@@ -1,6 +1,8 @@
 import { serve } from '@hono/node-server';
 import { execSync } from 'node:child_process';
-import { app, runManager, weixinService } from './server.js';
+import { app, db, runManager, weixinService } from './server.js';
+import { listVaults } from './core/db.js';
+import { installBuiltinSkills } from './core/skill-installer.js';
 
 const port = Number(process.env['MOLIO_PORT'] ?? 3100);
 
@@ -86,6 +88,11 @@ function checkAndKillPortOccupant(port: number): void {
 }
 
 checkAndKillPortOccupant(port);
+
+// Ensure all existing vaults have built-in skills installed (idempotent, <1ms per vault if already installed).
+for (const vault of listVaults(db)) {
+  installBuiltinSkills(vault.path);
+}
 
 function startServer(): void {
   const server = serve({ fetch: app.fetch, port }, () => {
