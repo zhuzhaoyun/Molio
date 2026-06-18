@@ -162,3 +162,29 @@ Scope: `daemon` | `web` | `desktop` | `kb` | `ci`
 6. 多 commit 的 PR 建议 squash 合并
 
 **管理员权限**仅在紧急 hotfix、修复 CI 配置、协作者不可用等情况下使用，正常开发仍走 PR + Review 流程。
+
+### 版本发布规范（Semver）
+
+Git tag 决定构建版本号和自动更新行为。**不要用 `-release`/`-test` 后缀**，遵循标准 semver：
+
+| 用途 | Tag 格式 | 示例 | OSS latest 更新 | 谁能收到更新 |
+|------|---------|------|-----------------|-------------|
+| 正式版 | `vMAJOR.MINOR.PATCH` | `v0.3.22` | ✅ 更新 | 所有用户 |
+| Beta | `vMAJOR.MINOR.PATCH-beta.N` | `v0.3.22-beta.1` | ❌ 跳过 | 仅同系列 beta 用户 |
+| RC | `vMAJOR.MINOR.PATCH-rc.N` | `v0.3.22-rc.1` | ❌ 跳过 | 仅同系列 rc 用户 |
+
+**electron-updater prerelease 规则**：
+- 正式版用户 → 只收到正式版更新
+- prerelease 用户 → 收到同系列后续 prerelease + 正式版
+- `0.3.22-beta < 0.3.22`（prerelease 永远低于同名正式版）
+
+**发版流程**：
+```bash
+# 内部测试
+git tag v0.3.22-beta.1 && git push origin v0.3.22-beta.1
+
+# 正式发布（触发 OSS latest.yml/latest.json 更新）
+git tag v0.3.22 && git push origin v0.3.22
+```
+
+CI 中通过 `grep -qiE '(test|beta|alpha|rc|dirty)'` 判断是否为预发布版，匹配则跳过 OSS latest 文件更新。
