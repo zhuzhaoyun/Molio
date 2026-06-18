@@ -36,6 +36,9 @@ interface UseKnowledgeReturn {
   themeConfig: ThemeConfig;
   editedContent: string | null;
 
+  // Edit mode state
+  isEditMode: boolean;
+
   // Modals
   showVaultSwitcher: boolean;
   showAddVault: boolean;
@@ -47,7 +50,7 @@ interface UseKnowledgeReturn {
   createVault: (name: string, path: string, description?: string) => Promise<void>;
   openVault: (path: string) => Promise<void>;
   deleteVault: (id: string) => Promise<void>;
-  selectFile: (path: string) => void;
+  selectFile: (path: string | null) => void;
   refreshTree: () => void;
   checkWikiStatus: () => void;
   setPanelWidth: (w: number) => void;
@@ -72,6 +75,10 @@ interface UseKnowledgeReturn {
   copyToClipboard: () => Promise<void>;
   publishToChrome: () => Promise<void>;
   setShowCoseInstallPrompt: (show: boolean) => void;
+
+  // Edit mode actions
+  toggleEditMode: () => void;
+  setEditMode: (on: boolean) => void;
 }
 
 export function useKnowledge(): UseKnowledgeReturn {
@@ -97,6 +104,9 @@ export function useKnowledge(): UseKnowledgeReturn {
   const [isTypesetMode, setIsTypesetMode] = useState(false);
   const [themeConfig, setThemeConfig] = useState<ThemeConfig>(defaultThemeConfig);
   const [editedContent, setEditedContent] = useState<string | null>(null);
+
+  // Edit mode state
+  const [isEditMode, setIsEditMode] = useState(false);
 
   // Wiki state
   const [wikiInitialized, setWikiInitialized] = useState(false);
@@ -305,8 +315,10 @@ export function useKnowledge(): UseKnowledgeReturn {
     }
   }, [activeVaultId]);
 
-  const selectFile = useCallback((path: string) => {
+  const selectFile = useCallback((path: string | null) => {
     setSelectedFile(path);
+    // Reset edit mode when switching files
+    setIsEditMode(false);
   }, []);
 
   const refreshTree = useCallback(() => {
@@ -410,6 +422,14 @@ export function useKnowledge(): UseKnowledgeReturn {
     setEditedContent(content);
   }, []);
 
+  const toggleEditMode = useCallback(() => {
+    setIsEditMode((prev) => !prev);
+  }, []);
+
+  const setEditMode = useCallback((on: boolean) => {
+    setIsEditMode(on);
+  }, []);
+
   const copyToClipboard = useCallback(async () => {
     const markdownSource = editedContent ?? fileContent?.content ?? '';
     if (!markdownSource) return;
@@ -465,6 +485,7 @@ export function useKnowledge(): UseKnowledgeReturn {
     isTypesetMode,
     themeConfig,
     editedContent,
+    isEditMode,
     showVaultSwitcher,
     showAddVault,
     showImport,
@@ -494,5 +515,7 @@ export function useKnowledge(): UseKnowledgeReturn {
     copyToClipboard,
     publishToChrome,
     setShowCoseInstallPrompt,
+    toggleEditMode,
+    setEditMode,
   };
 }

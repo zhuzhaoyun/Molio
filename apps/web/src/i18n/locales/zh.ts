@@ -2,6 +2,7 @@ const zh: Record<string, string> = {
   // ── NavRail ──
   'nav.home': '首页',
   'nav.knowledge': '知识库',
+  'nav.create': '创作',
   'nav.runtimes': '运行时',
   'nav.channels': '渠道',
   'nav.history': '历史记录',
@@ -149,6 +150,9 @@ const zh: Record<string, string> = {
   'settings.readyText': 'v{version} 已下载，重启后应用更新',
   'settings.restartNow': '立即重启',
   'settings.desktopOnly': '更新功能仅在桌面客户端可用',
+  'settings.tabGeneral': '通用',
+  'settings.tabRuntimes': '运行时',
+  'settings.tabChannels': '渠道',
 
   // ── UpdateNotification ──
   'update.ready': '更新就绪',

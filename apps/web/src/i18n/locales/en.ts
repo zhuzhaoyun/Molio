@@ -2,6 +2,7 @@ const en: Record<string, string> = {
   // ── NavRail ──
   'nav.home': 'Home',
   'nav.knowledge': 'Knowledge Base',
+  'nav.create': 'Create',
   'nav.runtimes': 'Runtimes',
   'nav.channels': 'Channels',
   'nav.history': 'History',
@@ -149,6 +150,9 @@ const en: Record<string, string> = {
   'settings.readyText': 'v{version} downloaded, restart to apply',
   'settings.restartNow': 'Restart now',
   'settings.desktopOnly': 'Update is only available in the desktop client',
+  'settings.tabGeneral': 'General',
+  'settings.tabRuntimes': 'Runtimes',
+  'settings.tabChannels': 'Channels',
 
   // ── UpdateNotification ──
   'update.ready': 'Update ready',

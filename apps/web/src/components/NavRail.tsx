@@ -7,7 +7,7 @@ export function NavRail() {
   return (
     <nav className="entry-nav-rail">
       <div className="entry-nav-rail__group">
-        {/* Home */}
+        {/* Home — Create/Chat */}
         <NavLink
           to="/"
           end
@@ -79,55 +79,6 @@ export function NavRail() {
         </NavLink>
 
         <div className="entry-nav-rail__divider" />
-
-        {/* Runtimes */}
-        <NavLink
-          to="/runtimes"
-          data-view="runtimes"
-          className={({ isActive }) =>
-            `entry-nav-rail__btn ${isActive ? 'is-active' : ''}`
-          }
-          data-tooltip={t('nav.runtimes')}
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <polyline points="16 18 22 12 16 6" />
-            <polyline points="8 6 2 12 8 18" />
-          </svg>
-        </NavLink>
-
-        {/* Channels */}
-        <NavLink
-          to="/channels"
-          data-view="channels"
-          className={({ isActive }) =>
-            `entry-nav-rail__btn ${isActive ? 'is-active' : ''}`
-          }
-          data-tooltip={t('nav.channels')}
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M4 7h5" />
-            <path d="M15 7h5" />
-            <path d="M9 7a3 3 0 0 0 6 0" />
-            <path d="M4 17h5" />
-            <path d="M15 17h5" />
-            <path d="M9 17a3 3 0 0 1 6 0" />
-            <path d="M12 10v4" />
-          </svg>
-        </NavLink>
 
         {/* History */}
         <NavLink

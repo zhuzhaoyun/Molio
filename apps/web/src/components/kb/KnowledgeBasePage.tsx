@@ -9,8 +9,10 @@ import type { TreeNode } from '@molio/contracts';
 import { useKnowledge } from '../../hooks/useKnowledge';
 import { useWikiChat } from '../../hooks/useWikiChat';
 import { useKbTabs } from '../../hooks/useKbTabs';
+import { kbTabsStore } from '../../stores/kbTabsStore';
 import { vaultStore } from '../../stores/vaultStore';
 import { KbFilePanel } from './KbFilePanel';
+import { KbTabBar } from './KbTabBar';
 import { KbMainContent } from './KbMainContent';
 import { WikiChatPanel } from './WikiChatPanel';
 import { VaultManagerModal } from './VaultManager';
@@ -84,7 +86,6 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
     kb.selectFile(pendingUrlNav.filePath);
     setPendingUrlNav(null);
   }, [pendingUrlNav, kb.activeVault?.id, kb.treeVaultId, kb.tree, kb.selectFile]);
-
   // Context menu state
   const [ctxMenu, setCtxMenu] = useState<{ node: TreeNode; x: number; y: number } | null>(null);
 
@@ -124,6 +125,92 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
       kb.refreshTree();
     },
   });
+
+  // ─── Tab-aware file selection ───
+
+  /** Open a file: reuse current tab if one exists, otherwise create a new tab. */
+  const handleSelectFile = useCallback((path: string) => {
+    const fileName = path.split('/').pop() ?? path;
+    const tabId = `file:${path}`;
+    const existingTab = tabs.tabs.find(t => t.id === tabId);
+    if (existingTab) {
+      // Already open in a tab — just activate it
+      tabs.activateTab(tabId);
+    } else if (tabs.tabs.length === 0) {
+      // No tabs — create first one
+      tabs.openTab({ id: tabId, type: 'file', title: fileName });
+    } else {
+      // Replace current active tab (reusing the slot)
+      const activeTab = tabs.tabs.find(t => t.id === tabs.activeTabId);
+      if (activeTab) {
+        tabs.updateTab(activeTab.id, { id: tabId, type: 'file', title: fileName });
+      } else {
+        tabs.openTab({ id: tabId, type: 'file', title: fileName });
+      }
+    }
+    kb.selectFile(path);
+  }, [tabs, kb]);
+
+  /** Open a file in a new tab (always creates a new tab). */
+  const handleOpenInNewTab = useCallback((path: string) => {
+    const fileName = path.split('/').pop() ?? path;
+    const tabId = `file:${path}`;
+    tabs.openTab({ id: tabId, type: 'file', title: fileName });
+    kb.selectFile(path);
+  }, [tabs, kb]);
+
+  /** Switch to a tab and load its file */
+  const handleActivateTab = useCallback((tabId: string) => {
+    tabs.activateTab(tabId);
+    if (tabId.startsWith('file:')) {
+      const path = tabId.slice(5);
+      kb.selectFile(path);
+    }
+  }, [tabs, kb]);
+
+  /** Close a tab; if it was active, the store auto-activates an adjacent tab */
+  const handleCloseTab = useCallback((tabId: string) => {
+    const wasActive = tabs.activeTabId === tabId;
+    tabs.closeTab(tabId);
+    if (wasActive) {
+      // After close, the store has already set a new activeTabId.
+      // Sync selectedFile with the newly active tab.
+      const newActive = kbTabsStore.getActiveTab();
+      if (newActive && newActive.id.startsWith('file:')) {
+        kb.selectFile(newActive.id.slice(5));
+      } else {
+        // No tabs left — clear selection
+        kb.selectFile(null);
+      }
+    }
+  }, [tabs, kb]);
+
+  // Sync: when URL navigation resolves, open in tab
+  useEffect(() => {
+    if (!pendingUrlNav) return;
+    if (kb.activeVault?.id !== pendingUrlNav.vaultId) return;
+    if (kb.treeVaultId !== pendingUrlNav.vaultId) return;
+    if (kb.tree.length === 0) return;
+
+    handleSelectFile(pendingUrlNav.filePath);
+    setPendingUrlNav(null);
+  }, [pendingUrlNav, kb.activeVault?.id, kb.treeVaultId, kb.tree, handleSelectFile]);
+
+  // Sync: on mount & vault/tab change, restore active tab's file into selectedFile.
+  // This ensures that after navigating away and back, the persisted tab state
+  // is reflected in useKnowledge's selectedFile so content loads and tabs work.
+  useEffect(() => {
+    if (!kb.activeVault) return;
+    if (!tabs.activeTabId) return;
+    const activeTab = tabs.tabs.find(t => t.id === tabs.activeTabId);
+    if (activeTab && activeTab.id.startsWith('file:')) {
+      const path = activeTab.id.slice(5);
+      if (kb.selectedFile !== path) {
+        kb.selectFile(path);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kb.activeVault?.id, tabs.activeTabId]);
 
   // Panel resize drag handling
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
@@ -273,7 +360,11 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
     if (node.type === 'file') {
       items.push({
         label: '打开',
-        onClick: () => kb.selectFile(node.path),
+        onClick: () => handleSelectFile(node.path),
+      });
+      items.push({
+        label: '在新标签页中打开',
+        onClick: () => handleOpenInNewTab(node.path),
       });
     } else {
       // Directory: offer create file / subfolder inside
@@ -285,6 +376,30 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
         label: '新建子文件夹',
         onClick: () => handleNewFolder(node.path),
       });
+      items.push({ divider: true });
+    }
+
+    // System actions: open in explorer + copy absolute path
+    const vaultPath = kb.activeVault?.path;
+    if (vaultPath) {
+      const absolutePath = `${vaultPath.replace(/[\\/]+$/, '')}/${node.path}`;
+
+      const showInFolder = window.__electron__?.showItemInFolder;
+      if (showInFolder) {
+        items.push({
+          label: '在资源管理器中显示',
+          onClick: () => showInFolder(absolutePath),
+        });
+      }
+
+      items.push({
+        label: '复制路径',
+        onClick: () => {
+          navigator.clipboard.writeText(absolutePath);
+          showToast('已复制路径');
+        },
+      });
+
       items.push({ divider: true });
     }
 
@@ -342,7 +457,7 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
     }
 
     return items;
-  }, [ctxMenu, kb, showToast, handleNewFile, handleNewFolder]);
+  }, [ctxMenu, kb, showToast, handleNewFile, handleNewFolder, handleSelectFile, handleOpenInNewTab]);
 
   // ─── Inline rename ───
 
@@ -389,12 +504,12 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
         searchQuery={kb.searchQuery}
         vaultName={kb.activeVault?.name ?? ''}
         onSearchChange={kb.setSearchQuery}
-        onSelectFile={kb.selectFile}
+        onSelectFile={handleSelectFile}
         onNewFile={handleNewFile}
         onNewFolder={handleNewFolder}
         onVaultClick={() => kb.setShowVaultSwitcher(true)}
         onAddToWiki={hasVault ? handleIngestFile : undefined}
-        onBuildWiki={hasVault && !kb.wikiInitialized ? handleBuildWiki : undefined}
+        onBuildWiki={hasVault ? handleBuildWiki : undefined}
         onLintWiki={hasVault && kb.wikiInitialized ? handleLintWiki : undefined}
         onContextMenu={handleContextMenu}
         renamingPath={renamingPath}
@@ -404,24 +519,35 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
         <div className="kb-resize-handle" onMouseDown={handleResizeStart} />
       </KbFilePanel>
 
-      {/* Main Content */}
-      <KbMainContent
-        fileContent={kb.fileContent}
-        selectedFile={kb.selectedFile}
-        vaultId={kb.activeVault?.id ?? null}
-        vaultPath={kb.activeVault?.path ?? null}
-        isTypesetMode={kb.isTypesetMode}
-        themeConfig={kb.themeConfig}
-        wikiInitialized={kb.wikiInitialized}
-        hasUnsavedChanges={hasUnsavedChanges}
-        onToggleTypeset={kb.toggleTypesetMode}
-        onThemeConfigChange={kb.setThemeConfig}
-        onContentChange={kb.setEditedContent}
-        onSave={kb.isTypesetMode ? handleSave : undefined}
-        onCopy={kb.copyToClipboard}
-        onPublish={kb.publishToChrome}
-        onBuildWiki={handleBuildWiki}
-      />
+      {/* Tab Bar + Main Content */}
+      <div className="kb-main-wrapper">
+        <KbTabBar
+          tabs={tabs.tabs}
+          activeTabId={tabs.activeTabId}
+          onActivate={handleActivateTab}
+          onClose={handleCloseTab}
+        />
+        <KbMainContent
+          fileContent={kb.fileContent}
+          selectedFile={kb.selectedFile}
+          vaultId={kb.activeVault?.id ?? null}
+          vaultPath={kb.activeVault?.path ?? null}
+          isTypesetMode={kb.isTypesetMode}
+          themeConfig={kb.themeConfig}
+          wikiInitialized={kb.wikiInitialized}
+          hasUnsavedChanges={hasUnsavedChanges}
+          onToggleTypeset={kb.toggleTypesetMode}
+          onThemeConfigChange={kb.setThemeConfig}
+          onContentChange={kb.setEditedContent}
+          onSave={handleSave}
+          onCopy={kb.copyToClipboard}
+          onPublish={kb.publishToChrome}
+          onBuildWiki={handleBuildWiki}
+          showFileName={true}
+          isEditMode={kb.isEditMode}
+          onToggleEdit={kb.toggleEditMode}
+        />
+      </div>
 
       {/* Wiki Chat Panel (right side) */}
       {showChatPanel && (

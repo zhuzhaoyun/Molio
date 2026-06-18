@@ -91,8 +91,23 @@ export function KbMainContent({
     return () => document.removeEventListener('keydown', handler);
   }, [onSave]);
 
-  // No file selected — show empty state or wiki CTA
+  // No file selected — show appropriate empty state
   if (!selectedFile) {
+    // No vault created yet — prompt to create a vault
+    if (!vaultId) {
+      return (
+        <main className="kb-main">
+          <div className="kb-empty-state">
+            <div className="kb-empty-icon">📚</div>
+            <h3>欢迎使用知识库</h3>
+            <p>创建一个知识库来管理你的文档和笔记。</p>
+            <p className="kb-empty-hint">知识库是存储和组织文档的地方，支持 Markdown 文件管理、AI 辅助阅读和 Wiki 生成。</p>
+          </div>
+        </main>
+      );
+    }
+
+    // Vault exists but wiki not initialized yet
     if (!wikiInitialized) {
       return (
         <main className="kb-main">
@@ -111,9 +126,9 @@ export function KbMainContent({
     return (
       <main className="kb-main">
         <div className="kb-empty-state">
-          <div className="kb-empty-icon">📚</div>
-          <h3>No file selected</h3>
-          <p>Select a file from the tree to view its content.</p>
+          <div className="kb-empty-icon">📄</div>
+          <h3>未选择文件</h3>
+          <p>从左侧文件树中选择一个文件查看内容。</p>
         </div>
       </main>
     );
@@ -139,24 +154,25 @@ export function KbMainContent({
     <main className="kb-main">
       {/* Header with filename and action buttons */}
       <div className="kb-main-header">
-        <div className="kb-header-left">
-          <span className="kb-header-filename">
-            {fileName}
-            {hasUnsavedChanges && <span style={{ color: 'var(--text-muted)', fontWeight: 400, marginLeft: 6 }}>●</span>}
-          </span>
-        </div>
+        {showFileName && (
+          <div className="kb-header-filename-center">
+            <span>
+              {fileName}
+              {hasUnsavedChanges && <span style={{ color: 'var(--text-muted)', fontWeight: 400, marginLeft: 6 }}>●</span>}
+            </span>
+          </div>
+        )}
         <div className="kb-header-actions">
           {/* Text file actions: edit, copy, publish (typeset mode only), typeset */}
           {category === 'text' && (
             <>
-              {/* Edit/Read toggle button */}
-              {onToggleEdit && (
-                <button
-                  type="button"
-                  className={`kb-btn ${isEditMode ? 'is-active' : ''}`}
-                  onClick={onToggleEdit}
-                  title={isEditMode ? '阅读模式' : '编辑模式'}
-                >
+              {/* Edit/Read toggle button — always shown for text files */}
+              <button
+                type="button"
+                className={`kb-btn ${isEditMode ? 'is-active' : ''}`}
+                onClick={onToggleEdit}
+                title={isEditMode ? '阅读模式' : '编辑模式'}
+              >
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
                     {isEditMode ? (
                       // Eye icon for read mode
@@ -173,21 +189,22 @@ export function KbMainContent({
                   </svg>
                   <span>{isEditMode ? '阅读' : '编辑'}</span>
                 </button>
+
+              {/* Save button (shown in both typeset mode and edit mode) */}
+              {onSave && (
+                <button type="button" className="kb-btn" onClick={onSave}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                    <polyline points="17 21 17 13 7 13 7 21" />
+                    <polyline points="7 3 7 8 15 8" />
+                  </svg>
+                  <span>保存</span>
+                </button>
               )}
 
               {/* Copy and Publish buttons (only in typeset mode) */}
               {isTypesetMode && (
                 <>
-                  {onSave && (
-                    <button type="button" className="kb-btn" onClick={onSave}>
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
-                        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-                        <polyline points="17 21 17 13 7 13 7 21" />
-                        <polyline points="7 3 7 8 15 8" />
-                      </svg>
-                      <span>保存</span>
-                    </button>
-                  )}
                   <button type="button" className="kb-btn" onClick={onCopy}>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
                       <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
