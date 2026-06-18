@@ -883,6 +883,10 @@
   overflow: hidden;
   background: var(--bg-panel);
 }
+.kb-edit-cm > [data-milkdown-root="true"] {
+  flex: 1;
+  overflow-y: auto;
+}
 
 /* ── Offscreen doocs/md publish preview (hidden fallback) ── */
 .kb-typeset-preview-hidden {

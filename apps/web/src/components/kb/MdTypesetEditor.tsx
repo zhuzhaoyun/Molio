@@ -30,10 +30,37 @@ export function MdTypesetEditor({
   const [content, setContent] = useState(initialContent);
   const [themeConfig, setThemeConfig] = useState<ThemeConfig>(defaultThemeConfig);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const previewBodyRef = useRef<HTMLDivElement>(null);
+  const syncingRef = useRef(false);
 
   useEffect(() => {
     setContent(initialContent);
   }, [initialContent]);
+
+  // ── Synchronized scrolling between source textarea and preview ──
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    const preview = previewBodyRef.current;
+    if (!textarea || !preview) return;
+
+    const syncScroll = (source: HTMLElement, target: HTMLElement) => {
+      if (syncingRef.current) return;
+      syncingRef.current = true;
+      const ratio = source.scrollTop / Math.max(1, source.scrollHeight - source.clientHeight);
+      target.scrollTop = ratio * Math.max(1, target.scrollHeight - target.clientHeight);
+      requestAnimationFrame(() => { syncingRef.current = false; });
+    };
+
+    const onTextareaScroll = () => syncScroll(textarea, preview);
+    const onPreviewScroll = () => syncScroll(preview, textarea);
+
+    textarea.addEventListener('scroll', onTextareaScroll, { passive: true });
+    preview.addEventListener('scroll', onPreviewScroll, { passive: true });
+    return () => {
+      textarea.removeEventListener('scroll', onTextareaScroll);
+      preview.removeEventListener('scroll', onPreviewScroll);
+    };
+  }, []);
 
   const handleSourceChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -88,6 +115,7 @@ export function MdTypesetEditor({
       <div className="kb-typeset-preview">
         <div className="kb-typeset-preview-header">排版预览</div>
         <div
+          ref={previewBodyRef}
           className={`kb-typeset-preview-body${themeConfig.previewWidth === 'mobile' ? ' kb-preview--mobile' : ''}`}
         >
           <MdRenderer content={previewContent} themeConfig={themeConfig} />
