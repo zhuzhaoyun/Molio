@@ -220,6 +220,23 @@ function copyWebBuild() {
   console.log('Web build copied.');
 }
 
+/**
+ * Copy built-in skill source files to resources/daemon/skills/.
+ * The daemon's skill-installer reads these at runtime to install skills
+ * into each vault's .claude/skills/ directory.
+ */
+function copySkillSources() {
+  console.log('Copying skill sources...');
+  const skillsSrc = join(daemonDir, 'src', 'tools', 'skills');
+  if (!existsSync(skillsSrc)) {
+    console.warn('  WARNING: skills source directory not found, skipping');
+    return;
+  }
+  const skillsDest = join(resourcesDir, 'daemon', 'skills');
+  cpSync(skillsSrc, skillsDest, { recursive: true, dereference: true });
+  console.log('  Skill sources copied.');
+}
+
 // ─── Main ───
 
 // Graceful skip: if daemon/web haven't been built yet (e.g. during `pnpm install`
@@ -240,5 +257,6 @@ await bundleDaemon();
 copyNativeDependencies();
 downloadElectronPrebuilds();
 copyWebBuild();
+copySkillSources();
 
 console.log('\nResources prepared successfully!');
