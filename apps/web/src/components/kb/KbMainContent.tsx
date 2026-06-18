@@ -11,7 +11,7 @@ import type { ThemeConfig } from './MdStylePanel';
 import { MdRenderer } from './MdRenderer';
 import { MdTypesetEditor } from './MdTypesetEditor';
 import { MdEditor } from './MdEditor';
-import { preprocessWikiEmbeds, proxyExternalImages } from '../../hooks/useKnowledge';
+import { preprocessWikiEmbeds, proxyExternalImages, stripTrackingPixels } from '../../hooks/useKnowledge';
 import { api } from '../../api/client';
 
 /** File categories for rendering strategy */
@@ -167,7 +167,7 @@ export function KbMainContent({
           {/* Text file actions: edit, copy, publish (typeset mode only), typeset */}
           {category === 'text' && (
             <>
-              {/* Edit/Read toggle button — always shown for text files */}
+              {/* Edit/Read toggle button (Milkdown WYSIWYG ↔ doocs/md read) */}
               <button
                 type="button"
                 className={`kb-btn ${isEditMode ? 'is-active' : ''}`}
@@ -269,7 +269,7 @@ export function KbMainContent({
         <div className="kb-content-area">
           {fileContent ? (
             // 优先使用编辑后的内容（未保存的更改），否则使用原始文件内容
-            <MdRenderer content={proxyExternalImages(preprocessWikiEmbeds(editedContent ?? fileContent.content, vaultId ?? ''))} themeConfig={themeConfig} />
+            <MdRenderer content={proxyExternalImages(preprocessWikiEmbeds(stripTrackingPixels(editedContent ?? fileContent.content), vaultId ?? ''))} themeConfig={themeConfig} />
           ) : (
             <div className="kb-empty-state"><p>Loading...</p></div>
           )}

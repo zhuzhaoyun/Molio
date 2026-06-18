@@ -805,68 +805,27 @@
 }
 
 
+/* ── Milkdown editor container (typeset mode left pane) ── */
 .kb-typeset-cm {
   flex: 1;
   overflow: hidden;
 }
 
-.kb-typeset-cm .cm-editor {
+/* ── Milkdown editor container (edit mode) ── */
+.kb-edit-cm {
   height: 100%;
-}
-
-.kb-typeset-cm .cm-editor.cm-focused {
-  outline: none;
-}
-
-/* Center: Preview area */
-.kb-typeset-center {
-  display: flex;
-  flex-direction: column;
   overflow: hidden;
-  border-right: 1px solid var(--border);
+  background: var(--bg-panel);
 }
 
-.kb-typeset-preview {
-  flex: 1;
-  overflow-y: auto;
-  background: #e8e8e8;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding: 24px;
-}
-
-/* Desktop preview: max-width centered */
-.kb-typeset-preview.is-desktop {
-  align-items: flex-start;
-}
-
-.kb-typeset-preview.is-desktop #output {
-  max-width: 800px;
-  width: 100%;
-  margin: 0 auto;
-  background: #fff;
-  box-shadow: 0 0 16px rgba(0,0,0,0.1);
-  border-radius: 4px;
-  min-height: 100%;
-  padding: 32px;
-}
-
-/* Mobile preview: fixed 375px width */
-.kb-typeset-preview.is-mobile {
-  display: flex;
-  justify-content: center;
-  padding: 20px;
-}
-
-.kb-typeset-preview.is-mobile #output {
-  width: 375px;
-  flex-shrink: 0;
-  background: #fff;
-  box-shadow: 0 0 16px rgba(0,0,0,0.1);
-  border-radius: 4px;
-  min-height: 100%;
-  padding: 24px;
+/* ── Offscreen doocs/md publish preview (hidden, for copy/publish flow) ── */
+.kb-typeset-preview-hidden {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  width: 800px;
+  pointer-events: none;
+  visibility: visible;
 }
 
 /* ══════════ Style Panel (Embedded Sidebar) ══════════ */
