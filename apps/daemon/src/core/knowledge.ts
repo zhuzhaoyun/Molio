@@ -5,6 +5,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import trash from 'trash';
 import type { TreeNode, FileContent } from '@molio/contracts';
 
 /**
@@ -125,9 +126,9 @@ export function writeFile(vaultPath: string, relPath: string, content: string): 
 }
 
 /**
- * Delete a file from a vault.
+ * Delete a file from a vault — moves to system recycle bin instead of permanent deletion.
  */
-export function deleteFile(vaultPath: string, relPath: string): void {
+export async function deleteFile(vaultPath: string, relPath: string): Promise<void> {
   const absFile = path.join(vaultPath, relPath);
 
   const resolved = path.resolve(absFile);
@@ -136,7 +137,7 @@ export function deleteFile(vaultPath: string, relPath: string): void {
   }
 
   if (fs.existsSync(resolved)) {
-    fs.unlinkSync(resolved);
+    await trash(resolved);
   }
 }
 
@@ -163,9 +164,9 @@ export function renamePath(vaultPath: string, oldRelPath: string, newRelPath: st
 }
 
 /**
- * Delete a directory (recursively) from a vault.
+ * Delete a directory (recursively) from a vault — moves to system recycle bin.
  */
-export function deleteDirectory(vaultPath: string, relPath: string): void {
+export async function deleteDirectory(vaultPath: string, relPath: string): Promise<void> {
   const absDir = path.resolve(path.join(vaultPath, relPath));
 
   // Security: prevent path traversal
@@ -174,7 +175,7 @@ export function deleteDirectory(vaultPath: string, relPath: string): void {
   }
 
   if (fs.existsSync(absDir)) {
-    fs.rmSync(absDir, { recursive: true, force: true });
+    await trash(absDir);
   }
 }
 
