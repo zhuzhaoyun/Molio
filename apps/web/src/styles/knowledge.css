@@ -793,6 +793,7 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  background: var(--bg-muted);
 }
 .kb-typeset-cm > [data-milkdown-root="true"] {
   flex: 1;

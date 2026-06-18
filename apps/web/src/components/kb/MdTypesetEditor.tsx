@@ -28,7 +28,7 @@ const MILKDOWN_THEME_STYLE_ID = 'milkdown-theme-override';
 
 /** Build CSS overrides so Milkdown reflects doocs/md theme configuration */
 function buildMilkdownThemeCSS(config: ThemeConfig): string {
-  const width = config.previewWidth === 'mobile' ? '375px' : '100%';
+  const isMobile = config.previewWidth === 'mobile';
   const primary = config.primaryColor;
   // fontSize from doocs/md already includes 'px' suffix (e.g. '16px')
   const fontSize = config.fontSize.endsWith('px') ? config.fontSize : `${config.fontSize}px`;
@@ -39,7 +39,16 @@ function buildMilkdownThemeCSS(config: ThemeConfig): string {
     `.milkdown .editor {`,
     `  font-family: ${fontFamily};`,
     `  font-size: ${fontSize};`,
-    `  max-width: ${width};`,
+    isMobile
+      ? [
+          '  max-width: 375px;',
+          '  margin: 24px auto;',
+          '  background: var(--bg-panel);',
+          '  box-shadow: 0 0 0 1px var(--border), 0 4px 16px rgba(0,0,0,0.07);',
+          '  border-radius: 4px;',
+          '  padding: 32px 24px 48px;',
+        ].join('\n')
+      : '  max-width: 100%;',
     config.isUseJustify ? '  text-align: justify;' : '',
     `}`,
     config.isUseIndent ? `.milkdown .editor > p { text-indent: 2em; }` : '',
