@@ -290,24 +290,22 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
     const prefix = parentPath ? `${parentPath}/` : '';
     setInputDialog({
       show: true,
-      title: parentPath ? `在 ${parentPath} 下新建文件` : '新建文件',
-      label: '文件名称（含扩展名，如 note.md）',
-      defaultValue: 'untitled.md',
+      title: parentPath ? `在 ${parentPath} 下新建笔记` : '新建笔记',
+      label: '笔记标题',
+      defaultValue: '未命名笔记',
       confirmLabel: '创建',
       onConfirm: async (name) => {
         setInputDialog((prev) => ({ ...prev, show: false }));
-        const fullPath = `${prefix}${name}`;
-        const defaultContent = name.endsWith('.md') ? `# ${name.replace(/\.md$/, '')}\n\n` : '';
+        // Auto-append .md if user didn't include an extension
+        const fileName = /\.[a-z0-9]+$/i.test(name) ? name : `${name}.md`;
+        const fullPath = `${prefix}${fileName}`;
+        const title = fileName.replace(/\.md$/, '');
+        const defaultContent = `# ${title}\n\n`;
         try {
           await kb.createFile(fullPath, defaultContent);
-          // Auto-enter typeset (edit) mode for new text files
-          const ext = name.slice(name.lastIndexOf('.')).toLowerCase();
-          const isText = ['.md', '.txt', '.html', '.htm', '.json', '.yaml', '.yml'].includes(ext);
-          if (isText) {
-            kb.setTypesetMode(true);
-          }
+          kb.setTypesetMode(true);
         } catch (err) {
-          showToast(`创建文件失败：${err instanceof Error ? err.message : String(err)}`);
+          showToast(`创建笔记失败：${err instanceof Error ? err.message : String(err)}`);
         }
       },
     });
