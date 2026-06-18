@@ -30,23 +30,27 @@ const MILKDOWN_THEME_STYLE_ID = 'milkdown-theme-override';
 function buildMilkdownThemeCSS(config: ThemeConfig): string {
   const width = config.previewWidth === 'mobile' ? '375px' : '100%';
   const primary = config.primaryColor;
+  // fontSize from doocs/md already includes 'px' suffix (e.g. '16px')
+  const fontSize = config.fontSize.endsWith('px') ? config.fontSize : `${config.fontSize}px`;
+  const fontFamily = config.fontFamily.includes("'") ? config.fontFamily : `'${config.fontFamily}'`;
 
   return [
+    // Layout
     `.milkdown .editor {`,
-    `  font-family: ${config.fontFamily};`,
-    `  font-size: ${config.fontSize}px;`,
+    `  font-family: ${fontFamily};`,
+    `  font-size: ${fontSize};`,
     `  max-width: ${width};`,
     config.isUseJustify ? '  text-align: justify;' : '',
     `}`,
-    config.isUseIndent ? `.milkdown .editor p { text-indent: 2em; }` : '',
-    // Accent color cascades
+    config.isUseIndent ? `.milkdown .editor > p { text-indent: 2em; }` : '',
+    // Primary color
     `.milkdown { --crepe-color-primary: ${primary}; }`,
     `.milkdown .editor a { color: ${primary}; }`,
     `.milkdown .editor blockquote { border-left-color: ${primary}; }`,
     `.milkdown .editor th { border-bottom-color: ${primary}; }`,
     `.milkdown .editor code { color: ${primary}; }`,
     `.milkdown .editor li[data-item-type="task"] input[type="checkbox"] { accent-color: ${primary}; }`,
-    // Strikethrough keeps default opacity
+    `.milkdown .editor .ProseMirror-focused .ProseMirror-selectednode { outline-color: ${primary}; }`,
   ].filter(Boolean).join('\n');
 }
 
