@@ -10,6 +10,7 @@
     "test:e2e": "npx playwright test"
   },
   "dependencies": {
+    "@milkdown/crepe": "^7.21.2",
     "@milkdown/kit": "^7.21.2",
     "@milkdown/react": "^7.21.2",
     "@milkdown/theme-nord": "^7.21.2",
