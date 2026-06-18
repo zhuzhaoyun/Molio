@@ -27,22 +27,33 @@ export function preprocessWikiEmbeds(markdown: string, vaultId: string): string 
   );
 }
 
-/** Hosts known to block hotlinking — route images from these through the daemon proxy */
-const PROXIED_IMAGE_HOSTS = [
+/** Hosts known to block hotlinking — route media from these through the daemon proxy */
+const PROXIED_HOSTS = [
   'mmbiz.qpic.cn',
   'mmbiz.qlogo.cn',
+  'mpvideo.qpic.cn',
 ];
 
-/* [MOLIO] Route external images from anti-hotlinking hosts through daemon proxy */
+/* [MOLIO] Route external images/videos from anti-hotlinking hosts through daemon proxy */
 export function proxyExternalImages(markdown: string): string {
-  const pattern = new RegExp(
-    `!\\[([^\\]]*)\\]\\((https?://(?:${PROXIED_IMAGE_HOSTS.map(h => h.replace(/\./g, '\\.')).join('|')})[^)]+)\\)`,
-    'g',
+  const hostPattern = PROXIED_HOSTS.map(h => h.replace(/\./g, '\\.')).join('|');
+  let result = markdown;
+
+  // Markdown images: ![alt](url)
+  result = result.replace(
+    new RegExp(`!\\[([^\\]]*)\\]\\((https?://(?:${hostPattern})[^)]+)\\)`, 'g'),
+    (_m, alt: string, url: string) =>
+      `![${alt}](${window.location.origin}/api/proxy/image?url=${encodeURIComponent(url)})`,
   );
-  return markdown.replace(pattern, (_m, alt: string, url: string) => {
-    const proxyUrl = `${window.location.origin}/api/proxy/image?url=${encodeURIComponent(url)}`;
-    return `![${alt}](${proxyUrl})`;
-  });
+
+  // Raw HTML <video src="url"> or <source src="url">
+  result = result.replace(
+    new RegExp(`(<(?:video|source)\\s[^>]*?)src="(https?://(?:${hostPattern})[^"]*)"`, 'g'),
+    (_m, prefix: string, url: string) =>
+      `${prefix}src="${window.location.origin}/api/proxy/image?url=${encodeURIComponent(url)}"`,
+  );
+
+  return result;
 }
 
 /* [MOLIO] Strip WeChat tracking pixels (1×1 transparent SVG data URIs) */

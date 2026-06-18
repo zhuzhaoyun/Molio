@@ -19,14 +19,17 @@ export interface MdTypesetEditorProps {
   vaultId?: string;
 }
 
-/** Rewrite mmbiz img src to daemon proxy — DOM manipulation, doesn't touch ProseMirror doc */
-function proxyImagesInDOM(container: HTMLElement) {
-  const imgs = container.querySelectorAll('img');
-  imgs.forEach((img) => {
+const PROXIED_HOSTS_DOM = ['mmbiz.qpic.cn', 'mmbiz.qlogo.cn', 'mpvideo.qpic.cn'];
+
+/** Rewrite proxied host src to daemon proxy — DOM manipulation, doesn't touch ProseMirror doc */
+function proxyMediaInDOM(container: HTMLElement) {
+  container.querySelectorAll('img, video, source').forEach((el) => {
+    const src = el.getAttribute('src');
+    if (!src) return;
     try {
-      const host = new URL(img.src).hostname;
-      if (host === 'mmbiz.qpic.cn' || host.endsWith('.mmbiz.qpic.cn')) {
-        img.src = `${window.location.origin}/api/proxy/image?url=${encodeURIComponent(img.src)}`;
+      const host = new URL(src).hostname;
+      if (PROXIED_HOSTS_DOM.some(h => host === h || host.endsWith('.' + h))) {
+        el.setAttribute('src', `${window.location.origin}/api/proxy/image?url=${encodeURIComponent(src)}`);
       }
     } catch { /* invalid URL, skip */ }
   });
@@ -50,9 +53,9 @@ export function MdTypesetEditor({
     const container = editorContainerRef.current;
     if (!container) return;
     // Small delay for Milkdown to finish rendering
-    const timer = setTimeout(() => proxyImagesInDOM(container), 500);
+    const timer = setTimeout(() => proxyMediaInDOM(container), 500);
     // Also observe for mutations (e.g., new images added during editing)
-    const observer = new MutationObserver(() => proxyImagesInDOM(container));
+    const observer = new MutationObserver(() => proxyMediaInDOM(container));
     observer.observe(container, { childList: true, subtree: true });
     return () => {
       clearTimeout(timer);
