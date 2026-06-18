@@ -26,11 +26,6 @@ export function generateCSSVariables(config: CSSVariableConfig): string {
   --md-primary-color: ${config.primaryColor};
   --md-font-family: ${config.fontFamily};
   --md-font-size: ${config.fontSize};
-
-  /* [MOLIO] 上游 doocs/md 在父项目中定义这些变量，vendored 版本中没有。
-     发布时 processCSS 需要将它们解析为实际值，否则文字颜色/引用块背景丢失。 */
-  --foreground: 0, 0%, 13%;
-  --blockquote-background: rgba(127, 127, 127, 0.08);
 }
 
 /* 段落缩进和对齐 */
