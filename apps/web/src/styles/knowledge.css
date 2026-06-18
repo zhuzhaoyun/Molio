@@ -875,20 +875,26 @@
   overflow-y: auto;
 }
 
-/* ── Milkdown editor container (edit mode) ── */
-.kb-edit-cm {
+/* ── Edit mode textarea ── */
+.kb-edit-textarea {
   flex: 1;
-  min-height: 0;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+  width: 100%;
+  padding: 32px 48px;
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--text);
   background: var(--bg-panel);
-}
-.kb-edit-cm > [data-milkdown-root="true"] {
-  flex: 1;
-  min-height: 0;
+  border: none;
+  outline: none;
+  resize: none;
+  tab-size: 2;
+  white-space: pre-wrap;
+  word-wrap: break-word;
   overflow-y: auto;
+}
+.kb-edit-textarea::placeholder {
+  color: var(--text-faint);
 }
 
 /* ── Offscreen doocs/md publish preview (hidden fallback) ── */
