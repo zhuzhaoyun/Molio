@@ -31,8 +31,8 @@ test.describe('App bootstrap', () => {
     const nav = page.locator('.entry-nav-rail');
     await expect(nav).toBeVisible();
 
-    // Verify all 7 nav items are present (home, knowledge, graph, runtimes, channels, history, settings)
-    const expectedViews = ['home', 'knowledge', 'graph', 'runtimes', 'channels', 'history', 'settings'];
+    // Verify all nav items are present (home, knowledge, graph, history, settings, help)
+    const expectedViews = ['home', 'knowledge', 'graph', 'history', 'settings', 'help'];
     for (const view of expectedViews) {
       await expect(page.locator(`[data-view="${view}"]`)).toBeVisible();
     }
