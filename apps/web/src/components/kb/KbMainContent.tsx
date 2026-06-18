@@ -167,7 +167,8 @@ export function KbMainContent({
           {/* Text file actions: edit, copy, publish (typeset mode only), typeset */}
           {category === 'text' && (
             <>
-              {/* Edit/Read toggle button (Milkdown WYSIWYG ↔ doocs/md read) */}
+              {/* Edit/Read toggle — only in Read mode (typeset has its own source editor) */}
+              {!isTypesetMode && (
               <button
                 type="button"
                 className={`kb-btn ${isEditMode ? 'is-active' : ''}`}
@@ -190,6 +191,7 @@ export function KbMainContent({
                   </svg>
                   <span>{isEditMode ? '阅读' : '编辑'}</span>
                 </button>
+              )}
 
               {/* Save button (shown in both typeset mode and edit mode) */}
               {onSave && (
