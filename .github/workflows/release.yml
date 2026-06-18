@@ -435,15 +435,32 @@ jobs:
               --update
           done
 
-          # Write latest.json
-          cat > /tmp/latest.json <<EOF
+          # Only update latest.json and latest.yml for stable releases (skip test/beta/alpha/rc)
+          if echo "${VERSION}" | grep -qiE '(test|beta|alpha|rc|dirty)'; then
+            echo "⏭️  Skipping latest.json/latest.yml update — ${VERSION} is a pre-release"
+          else
+            cat > /tmp/latest.json <<EOF
           {"version":"${VERSION}","updatedAt":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
           EOF
-          ossutil cp /tmp/latest.json oss://${{ vars.OSS_BUCKET }}/releases/latest.json \
-            --endpoint=${{ vars.OSS_ENDPOINT }} \
-            -i "${OSS_ACCESS_KEY_ID}" \
-            -k "${OSS_ACCESS_KEY_SECRET}" \
-            -t "${OSS_SECURITY_TOKEN}" \
-            --meta Cache-Control:no-cache
+            ossutil cp /tmp/latest.json oss://${{ vars.OSS_BUCKET }}/releases/latest.json \
+              --endpoint=${{ vars.OSS_ENDPOINT }} \
+              -i "${OSS_ACCESS_KEY_ID}" \
+              -k "${OSS_ACCESS_KEY_SECRET}" \
+              -t "${OSS_SECURITY_TOKEN}" \
+              --meta Cache-Control:no-cache \
+              --force
+            echo "✅ Updated latest.json to ${VERSION}"
+
+            # Copy latest.yml from version dir to root for electron-updater generic provider
+            LATEST_YML="oss://${{ vars.OSS_BUCKET }}/releases/${TAG}/latest.yml"
+            ossutil cp "${LATEST_YML}" oss://${{ vars.OSS_BUCKET }}/releases/latest.yml \
+              --endpoint=${{ vars.OSS_ENDPOINT }} \
+              -i "${OSS_ACCESS_KEY_ID}" \
+              -k "${OSS_ACCESS_KEY_SECRET}" \
+              -t "${OSS_SECURITY_TOKEN}" \
+              --meta Cache-Control:no-cache \
+              --force
+            echo "✅ Updated latest.yml to ${VERSION}"
+          fi
 
           echo "✅ Uploaded ${TAG} to oss://${{ vars.OSS_BUCKET }}/releases/${TAG}/"

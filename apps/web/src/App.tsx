@@ -5,9 +5,7 @@ import { useChat } from './hooks/useChat';
 import { HomePage } from './components/HomePage';
 import { NavRail } from './components/NavRail';
 import { KnowledgeBasePage } from './components/kb/KnowledgeBasePage';
-import { RuntimePage } from './components/runtimes/RuntimePage';
 import { SettingsPage } from './components/settings/SettingsPage';
-import { ChannelsPage } from './components/channels/ChannelsPage';
 import { HistoryPage } from './components/history/HistoryPage';
 import { GraphPage } from './components/graph/GraphPage';
 import { UpdateNotification } from './components/UpdateNotification';
@@ -45,7 +43,7 @@ export default function App() {
     } catch { /* ignore */ }
   }, [location.pathname]);
 
-  // Restore last route on mount (only if at root "/")
+  // On mount, restore last route (only if at root "/")
   useEffect(() => {
     if (location.pathname === '/') {
       try {
@@ -71,15 +69,6 @@ export default function App() {
   }, []);
 
   // Resolve the active agent once both agents and config are loaded.
-  //
-  // Rules:
-  //  - If the user has configured a defaultAgentId (via Runtimes page) and it
-  //    is still available, honour it.
-  //  - If no defaultAgentId is configured yet, auto-pick the first available
-  //    agent and persist it as the new default — so the next page load reads
-  //    the same default from config, and a double-click on the Runtimes page
-  //    can later override it.
-  //  - Never silently pick a different agent when a configured default exists.
   useEffect(() => {
     if (selectedAgent) return;
     if (agents.length === 0) return;
@@ -88,12 +77,9 @@ export default function App() {
       if (agents.some((a) => a.id === defaultAgentId && a.available)) {
         setSelectedAgent(defaultAgentId);
       }
-      // If configured default is unavailable, leave selectedAgent null so the
-      // composer shows the "no agent" guidance instead of silently switching.
       return;
     }
 
-    // No configured default — auto-pick first available and persist it.
     const firstAvailable = agents.find((a) => a.available);
     if (firstAvailable) {
       setSelectedAgent(firstAvailable.id);
@@ -102,10 +88,7 @@ export default function App() {
     }
   }, [agents, defaultAgentId, selectedAgent]);
 
-  // Sync selectedAgent with config when navigating back from Runtimes page.
-  // The Runtimes page can change defaultAgentId via the config API, but
-  // App.tsx only loads config on mount. Re-read config on route change so
-  // the agent selector stays in sync.
+  // Sync selectedAgent with config when navigating back from Settings page.
   useEffect(() => {
     api.getConfig()
       .then((cfg) => {
@@ -120,16 +103,14 @@ export default function App() {
       .catch(() => {});
   }, [location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Load vaults into the shared store on mount (so chat cwd is set even
-  // when the KB page has never been visited).
+  // Load vaults into the shared store on mount
   useEffect(() => {
     api.listVaults()
       .then((list) => vaultStore.setVaults(list))
       .catch(() => {});
   }, []);
 
-  // Keep daemon-side defaultCwd aligned with the active knowledge vault so
-  // external channels (Weixin, future Feishu/WeCom) run against the same cwd.
+  // Keep daemon-side defaultCwd aligned with the active knowledge vault
   useEffect(() => {
     const cwd = activeVault?.path;
     if (!cwd) return;
@@ -143,7 +124,6 @@ export default function App() {
 
   const handleNewChat = () => {
     chat.reset();
-    // Reset to default agent instead of null
     setSelectedAgent(defaultAgentId ?? null);
   };
 
@@ -182,8 +162,6 @@ export default function App() {
               }
             />
             <Route path="/knowledge" element={<KnowledgeBasePage agentId={selectedAgent} />} />
-            <Route path="/runtimes" element={<RuntimePage />} />
-            <Route path="/channels" element={<ChannelsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/graph" element={<GraphPage />} />
           </Routes>

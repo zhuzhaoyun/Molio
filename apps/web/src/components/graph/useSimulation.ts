@@ -14,6 +14,10 @@ import {
   forceCollide,
   forceX,
   forceY,
+  type ForceX,
+  type ForceY,
+  type ForceManyBody,
+  type ForceLink,
   type SimulationNodeDatum,
   type SimulationLinkDatum,
 } from 'd3-force';
@@ -41,6 +45,8 @@ export interface SimulationAPI {
   stop: () => void;
   /** Get the d3 node object for a given node ID. Returns undefined if not found. */
   getNode: (id: string) => D3Node | undefined;
+  /** Update a single d3-force parameter by name (centerStrength, repelStrength, linkStrength, linkDistance). */
+  setForceParam: (name: string, value: number) => void;
 }
 
 export function useSimulation(): SimulationAPI {
@@ -134,5 +140,27 @@ export function useSimulation(): SimulationAPI {
     return nodesRef.current.find((n) => n.id === id);
   }, []);
 
-  return { init, wake, stop, getNode };
+  const setForceParam = useCallback((name: string, value: number) => {
+    const sim = simRef.current;
+    if (!sim) return;
+
+    switch (name) {
+      case 'centerStrength':
+        sim.force<ForceX<D3Node>>('x')?.strength(value);
+        sim.force<ForceY<D3Node>>('y')?.strength(value);
+        break;
+      case 'repelStrength':
+        sim.force<ForceManyBody<D3Node>>('charge')?.strength(value);
+        break;
+      case 'linkStrength':
+        sim.force<ForceLink<D3Node, D3Link>>('link')?.strength(value);
+        break;
+      case 'linkDistance':
+        sim.force<ForceLink<D3Node, D3Link>>('link')?.distance(value);
+        break;
+    }
+    sim.alpha(0.3).restart();
+  }, []);
+
+  return { init, wake, stop, getNode, setForceParam };
 }
