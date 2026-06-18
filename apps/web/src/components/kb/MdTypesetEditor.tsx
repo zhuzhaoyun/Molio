@@ -75,12 +75,15 @@ export function MdTypesetEditor({
     setThemeConfig(newConfig);
   }, []);
 
-  // Preprocessed content for hidden publish preview + Milkdown display
-  const displayContent = stripTrackingPixels(
-    vaultId
-      ? proxyExternalImages(preprocessWikiEmbeds(content, vaultId))
-      : proxyExternalImages(content),
-  );
+  // Content for Milkdown visible editor — same preprocessing as Read mode
+  const milkdownContent = vaultId
+    ? proxyExternalImages(preprocessWikiEmbeds(stripTrackingPixels(initialContent), vaultId))
+    : proxyExternalImages(stripTrackingPixels(initialContent));
+
+  // Content for hidden publish preview (uses live-updating `content` state)
+  const publishContent = vaultId
+    ? proxyExternalImages(preprocessWikiEmbeds(stripTrackingPixels(content), vaultId))
+    : proxyExternalImages(stripTrackingPixels(content));
 
   return (
     <div className="kb-typeset-editor">
@@ -88,7 +91,7 @@ export function MdTypesetEditor({
       <div className="kb-typeset-left">
         <div className="kb-typeset-cm" ref={editorContainerRef}>
           <MdMilkdownEditor
-            initialContent={stripTrackingPixels(initialContent)}
+            initialContent={milkdownContent}
             onContentChange={handleContentChange}
             vaultId={vaultId}
           />
@@ -100,7 +103,7 @@ export function MdTypesetEditor({
 
       {/* Hidden: doocs/md renderer for publish/copy compatibility */}
       <div className="kb-typeset-preview-hidden" aria-hidden="true">
-        <MdRenderer content={displayContent} themeConfig={themeConfig} />
+        <MdRenderer content={publishContent} themeConfig={themeConfig} />
       </div>
     </div>
   );
