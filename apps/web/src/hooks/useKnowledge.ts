@@ -36,21 +36,20 @@ const PROXIED_HOSTS = [
 
 /* [MOLIO] Route external images/videos from anti-hotlinking hosts through daemon proxy */
 export function proxyExternalImages(markdown: string): string {
-  const hostPattern = PROXIED_HOSTS.map(h => h.replace(/\./g, '\\.')).join('|');
-  let result = markdown;
+  const proxyBase = `${window.location.origin}/api/proxy/image?url=`;
 
-  // Markdown images: ![alt](url)
-  result = result.replace(
-    new RegExp(`!\\[([^\\]]*)\\]\\((https?://(?:${hostPattern})[^)]+)\\)`, 'g'),
+  // Markdown images: ![alt](url) on proxied hosts
+  let result = markdown.replace(
+    /!\[([^\]]*)\]\((https?:\/\/(?:mmbiz\.qpic\.cn|mmbiz\.qlogo\.cn|mpvideo\.qpic\.cn)[^)]+)\)/g,
     (_m, alt: string, url: string) =>
-      `![${alt}](${window.location.origin}/api/proxy/image?url=${encodeURIComponent(url)})`,
+      `![${alt}](${proxyBase}${encodeURIComponent(url)})`,
   );
 
-  // Raw HTML <video src="url"> or <source src="url">
+  // Raw HTML <video src="..."> or <source src="...">
   result = result.replace(
-    new RegExp(`(<(?:video|source)\\s[^>]*?)src="(https?://(?:${hostPattern})[^"]*)"`, 'g'),
+    /(<(?:video|source)\s[^>]*?)src="(https?:\/\/(?:mmbiz\.qpic\.cn|mmbiz\.qlogo\.cn|mpvideo\.qpic\.cn)[^"]*)"/g,
     (_m, prefix: string, url: string) =>
-      `${prefix}src="${window.location.origin}/api/proxy/image?url=${encodeURIComponent(url)}"`,
+      `${prefix}src="${proxyBase}${encodeURIComponent(url)}"`,
   );
 
   return result;
