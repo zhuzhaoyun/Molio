@@ -133,34 +133,58 @@ export function generateBridgePage(data: BridgePageData): string {
     .platform-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 6px 24px;
+      gap: 2px 24px;
       padding-left: 8px;
     }
     .platform-item {
       display: flex;
       align-items: center;
-      gap: 8px;
-      padding: 4px 0;
+      gap: 6px;
+      padding: 5px 0;
       font-size: 13px;
+      min-height: 28px;
     }
-    .platform-item.disabled { opacity: 0.5; }
+    .platform-item.disabled { opacity: 0.4; }
     .platform-item input[type="checkbox"] {
       accent-color: #FE5200;
-      width: 16px;
-      height: 16px;
+      width: 15px;
+      height: 15px;
       cursor: pointer;
+      flex-shrink: 0;
+      margin: 0;
     }
     .platform-item input[type="checkbox"]:disabled { cursor: not-allowed; }
-    .platform-icon { width: 16px; height: 16px; border-radius: 2px; flex-shrink: 0; }
-    .platform-name { font-weight: 500; }
-    .platform-status { font-size: 12px; }
+    .platform-icon {
+      width: 16px; height: 16px;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+    .platform-name {
+      font-weight: 500;
+      flex-shrink: 0;
+    }
+    .platform-status {
+      font-size: 12px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
+    }
     .platform-status.checking { color: #999; }
-    .platform-status.logged-in { color: #666; }
-    .platform-status.logged-in a { color: #FE5200; text-decoration: none; }
+    .platform-status.logged-in {
+      color: #666;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      min-width: 0;
+    }
+    .platform-status.logged-in a { color: #FE5200; text-decoration: none; flex-shrink: 0; }
     .platform-status.logged-in a:hover { text-decoration: underline; }
     .platform-avatar {
-      width: 16px; height: 16px; border-radius: 50%;
+      width: 14px; height: 14px;
+      border-radius: 50%;
       object-fit: cover;
+      flex-shrink: 0;
     }
 
     .check-spinner {
@@ -170,6 +194,7 @@ export function generateBridgePage(data: BridgePageData): string {
       border-top-color: #FE5200;
       border-radius: 50%;
       animation: spin 0.6s linear infinite;
+      flex-shrink: 0;
     }
 
     /* Actions */
