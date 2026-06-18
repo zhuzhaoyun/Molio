@@ -14,7 +14,7 @@ Vite + React 前端，消费 daemon SSE 事件流，提供聊天式 AI 交互界
 ```
 src/
   main.tsx             React 入口
-  App.tsx              根组件：视图路由 (home / knowledge / runtimes / history / channels / settings / graph)
+  App.tsx              根组件：视图路由 (home / knowledge / history / settings / graph)
   App.css              全局布局样式
   api/
     client.ts          HTTP 客户端 (fetch wrapper)
@@ -108,6 +108,27 @@ pnpm typecheck    # tsc --noEmit
 pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
 ```
 
+## E2E 同步规则（强制）
+
+当以下目录的文件发生变化时，**必须**检查 `apps/web/e2e/` 下是否有对应测试需要同步更新，并在同一个 commit 提交：
+
+| 触发目录 | 对应 E2E 测试 |
+|---------|-------------|
+| `src/components/HomePage.tsx` | `e2e/bootstrap.spec.ts` |
+| `src/components/NavRail.tsx` | `e2e/bootstrap.spec.ts`, `e2e/navigation.spec.ts` |
+| `src/components/kb/` | `e2e/publish-flow.spec.ts` |
+| `src/components/graph/` | `e2e/graph-settings.spec.ts` |
+| `src/components/runtimes/` | `e2e/runtimes-page.spec.ts`, `e2e/runtime-provider-config.spec.ts` |
+| `src/components/settings/` | `e2e/runtimes-page.spec.ts`（RuntimesPanel 在此） |
+| `src/App.tsx`（路由变更） | `e2e/navigation.spec.ts`, `e2e/bootstrap.spec.ts` |
+
+**检查步骤**：
+
+1. 改完组件后，对照上表找到对应 E2E 文件
+2. 检查测试中使用的 CSS class / `data-testid` / `data-view` 是否仍存在于新代码
+3. 若路由结构变化（增删路由、改 NavRail 按钮），同步更新 `navigation.spec.ts` 和 `bootstrap.spec.ts`
+4. 选择器优先级：`data-testid` > `data-view` > CSS class > 文本内容（越靠前越稳定）
+
 ## 关键设计
 
 ### 页面路由
@@ -116,10 +137,8 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
 |------|------|------|
 | 主页 (聊天) | `/` | HomePage, ChatPane, ChatComposer |
 | 知识库 | `/knowledge` | KnowledgeBasePage + kb/* |
-| 运行时 | `/runtimes` | RuntimePage |
 | 历史 | `/history` | HistoryPage |
-| 渠道 | `/channels` | ChannelsPage |
-| 设置 | `/settings` | SettingsPage |
+| 设置 | `/settings` | SettingsPage（含 RuntimesPanel、ChannelsPanel） |
 | 图谱 | `/graph` | GraphPage, Minimap |
 
 ### 知识库 (Knowledge Base)
