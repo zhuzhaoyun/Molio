@@ -260,7 +260,7 @@ export function KbMainContent({
           vaultId={vaultId ?? ''}
         />
       ) : category === 'text' && isEditMode ? (
-        // Edit mode: CodeMirror Markdown editor
+        // Edit mode: Milkdown WYSIWYG Markdown editor
         <MdEditor
           initialContent={fileContent?.content ?? ''}
           onContentChange={onContentChange}

@@ -87,7 +87,7 @@ async function openRenderTestFile(page: import('@playwright/test').Page) {
   await fileItem.click({ timeout: 10_000 });
 
   // Wait for file content to load
-  await expect(page.locator('.kb-header-filename')).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator('.kb-header-filename-center')).toBeVisible({ timeout: 10_000 });
   await expect(page.locator('.kb-content-area').getByText('Loading...')).toBeHidden({ timeout: 10_000 });
 }
 
