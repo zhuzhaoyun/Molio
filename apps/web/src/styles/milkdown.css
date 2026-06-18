@@ -29,7 +29,8 @@
   color: var(--text);
   padding: 32px 48px 64px;
   max-width: 760px;
-  height: 100%;
+  margin: 0 auto;
+  min-height: 100%;
   overflow-y: auto;
 }
 
