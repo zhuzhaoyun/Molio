@@ -45,6 +45,14 @@ export function proxyExternalImages(markdown: string): string {
   });
 }
 
+/* [MOLIO] Strip WeChat tracking pixels (1×1 transparent SVG data URIs) */
+export function stripTrackingPixels(markdown: string): string {
+  return markdown.replace(
+    /!\[[^\]]*\]\(data:image\/svg\+xml,[^)]*1px[^)]*\)/g,
+    '',
+  );
+}
+
 interface UseKnowledgeReturn {
   // Data
   vaults: Vault[];
