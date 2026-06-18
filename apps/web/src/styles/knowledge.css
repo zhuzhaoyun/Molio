@@ -769,25 +769,6 @@
   flex-direction: column;
 }
 
-.kb-edit-cm {
-  flex: 1;
-  overflow-y: auto;
-  min-height: 0;
-  height: 100%;
-}
-
-/* CodeMirror specific styles for scroll */
-.kb-edit-cm .cm-editor {
-  height: 100% !important;
-  display: flex !important;
-  flex-direction: column !important;
-}
-
-.kb-edit-cm .cm-scroller {
-  flex: 1 !important;
-  overflow-y: auto !important;
-}
-
 /* ══════════ 3-Column Typeset Editor ══════════ */
 
 .kb-typeset-editor {
@@ -820,6 +801,8 @@
 
 /* ── Milkdown editor container (edit mode) ── */
 .kb-edit-cm {
+  flex: 1;
+  min-height: 0;
   height: 100%;
   overflow: hidden;
   background: var(--bg-panel);

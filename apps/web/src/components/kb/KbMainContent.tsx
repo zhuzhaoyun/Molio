@@ -258,12 +258,14 @@ export function KbMainContent({
           initialContent={fileContent?.content ?? ''}
           onContentChange={onContentChange}
           vaultId={vaultId ?? ''}
+          selectedFile={selectedFile}
         />
       ) : category === 'text' && isEditMode ? (
         // Edit mode: Milkdown WYSIWYG Markdown editor
         <MdEditor
           initialContent={fileContent?.content ?? ''}
           onContentChange={onContentChange}
+          selectedFile={selectedFile}
         />
       ) : category === 'text' ? (
         <div className="kb-content-area">

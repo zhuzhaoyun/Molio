@@ -17,6 +17,7 @@ export interface MdTypesetEditorProps {
   initialContent: string;
   onContentChange?: (content: string) => void;
   vaultId?: string;
+  selectedFile?: string | null;
 }
 
 const PROXIED_HOSTS_DOM = ['mmbiz.qpic.cn', 'mmbiz.qlogo.cn', 'mpvideo.qpic.cn'];
@@ -41,6 +42,7 @@ export function MdTypesetEditor({
   initialContent,
   onContentChange,
   vaultId,
+  selectedFile,
 }: MdTypesetEditorProps) {
   const [content, setContent] = useState(initialContent);
   const [themeConfig, setThemeConfig] = useState<ThemeConfig>(defaultThemeConfig);
@@ -96,6 +98,7 @@ export function MdTypesetEditor({
             initialContent={milkdownContent}
             onContentChange={handleContentChange}
             vaultId={vaultId}
+            fileKey={selectedFile}
           />
         </div>
       </div>

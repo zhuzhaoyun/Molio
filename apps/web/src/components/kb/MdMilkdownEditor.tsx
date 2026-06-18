@@ -13,6 +13,8 @@ export interface MdMilkdownEditorProps {
   initialContent: string;
   onContentChange?: (content: string) => void;
   vaultId?: string;
+  /** Changing fileKey forces remount — used to switch between files in the same vault */
+  fileKey?: string | null;
 }
 
 function MilkdownInner({
@@ -45,7 +47,7 @@ function MilkdownInner({
 export function MdMilkdownEditor(props: MdMilkdownEditorProps) {
   return (
     <MilkdownProvider>
-      <MilkdownInner key={props.vaultId ?? 'no-vault'} {...props} />
+      <MilkdownInner key={props.fileKey ?? props.vaultId ?? 'no-vault'} {...props} />
     </MilkdownProvider>
   );
 }
