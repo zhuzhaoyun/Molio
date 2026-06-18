@@ -7,7 +7,7 @@ export function NavRail() {
   return (
     <nav className="entry-nav-rail">
       <div className="entry-nav-rail__group">
-        {/* Home */}
+        {/* Home — Create/Chat */}
         <NavLink
           to="/"
           end
@@ -80,55 +80,6 @@ export function NavRail() {
 
         <div className="entry-nav-rail__divider" />
 
-        {/* Runtimes */}
-        <NavLink
-          to="/runtimes"
-          data-view="runtimes"
-          className={({ isActive }) =>
-            `entry-nav-rail__btn ${isActive ? 'is-active' : ''}`
-          }
-          data-tooltip={t('nav.runtimes')}
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <polyline points="16 18 22 12 16 6" />
-            <polyline points="8 6 2 12 8 18" />
-          </svg>
-        </NavLink>
-
-        {/* Channels */}
-        <NavLink
-          to="/channels"
-          data-view="channels"
-          className={({ isActive }) =>
-            `entry-nav-rail__btn ${isActive ? 'is-active' : ''}`
-          }
-          data-tooltip={t('nav.channels')}
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M4 7h5" />
-            <path d="M15 7h5" />
-            <path d="M9 7a3 3 0 0 0 6 0" />
-            <path d="M4 17h5" />
-            <path d="M15 17h5" />
-            <path d="M9 17a3 3 0 0 1 6 0" />
-            <path d="M12 10v4" />
-          </svg>
-        </NavLink>
-
         {/* History */}
         <NavLink
           to="/history"
@@ -153,8 +104,31 @@ export function NavRail() {
         </NavLink>
       </div>
 
-      {/* Bottom group: Settings */}
+      {/* Bottom group: Help + Settings */}
       <div className="entry-nav-rail__group">
+        {/* Help — external link to online docs */}
+        <a
+          href="https://molio.cn/help.html"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="entry-nav-rail__btn"
+          data-view="help"
+          data-tooltip={t('nav.help')}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <circle cx="12" cy="12" r="10" />
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+            <line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+        </a>
+
         <NavLink
           to="/settings"
           data-view="settings"

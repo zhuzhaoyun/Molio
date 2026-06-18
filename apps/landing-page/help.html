@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="styles.css">
+
+<title>Molio 使用指南 — 从安装到发布，七步上手</title>
+<meta name="description" content="Molio 使用指南：安装 AI 助手 → 配置运行时 → 创建知识库 → 开始创作 → 排版美化 → 多平台发布，七步完成从知识管理到内容发布的完整工作流。">
+
+<style>
+html { scroll-behavior: smooth; }
+body { overflow-x: hidden; }
+</style>
+</head>
+<body>
+
+<nav class="top-nav">
+  <div class="nav-inner">
+    <a href="index.html" class="nav-logo"><span class="logo-icon-sm">M</span> Molio</a>
+    <div class="nav-links">
+      <a href="index.html" class="nav-link">首页</a>
+      <a href="help.html" class="nav-link active">使用指南</a>
+      <a href="download.html" class="nav-link">下载</a>
+    </div>
+  </div>
+</nav>
+
+<canvas id="particle-canvas"></canvas>
+
+<main class="page-content">
+  <h1 class="page-title">Molio 使用指南</h1>
+  <p class="page-subtitle">从安装到发布，七步完成你的知识管理工作流</p>
+
+  <!-- Step 1: 安装 AI 助手 -->
+  <div class="step-card">
+    <div class="step-card-header">
+      <div class="step-number brown">1</div>
+      <h2 class="step-title">安装 AI 助手</h2>
+    </div>
+    <div class="content-text">
+      <p>Molio 本身不包含 AI 模型，需要搭配 AI 命令行工具使用。请至少安装一个：</p>
+      <ul>
+        <li><strong>Claude Code</strong> — <a href="https://docs.anthropic.com/en/docs/claude-code/installation" target="_blank">官网安装指南</a></li>
+        <li><strong>OpenAI Codex</strong> — <a href="https://openai.com/codex" target="_blank">官网安装指南</a></li>
+        <li><strong>Gemini CLI</strong> — <a href="https://github.com/google-gemini/gemini-cli" target="_blank">GitHub 仓库</a></li>
+        <li><strong>Qwen Code</strong> — <a href="https://github.com/QwenLM/qwen-code" target="_blank">GitHub 仓库</a></li>
+      </ul>
+      <div class="tip-box">
+        <strong>提示：</strong>安装完成后，按照各工具的指引完成登录授权，确保可以在终端中正常调用。
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2: 安装并启动 Molio -->
+  <div class="step-card">
+    <div class="step-card-header">
+      <div class="step-number green">2</div>
+      <h2 class="step-title">安装并启动 Molio</h2>
+    </div>
+    <div class="content-text">
+      <p>前往<a href="download.html">下载页面</a>，获取对应系统的安装包：</p>
+      <ul>
+        <li><strong>Windows</strong>：双击 <code>.exe</code> 文件，按向导完成安装</li>
+        <li><strong>macOS</strong>：打开 <code>.dmg</code>，将 Molio 拖入 Applications</li>
+        <li><strong>Linux</strong>：运行 <code>.AppImage</code> 或使用 <code>.deb</code> 包安装</li>
+      </ul>
+      <p>首次启动后，Molio 会显示启动画面，等待后台服务就绪后自动进入主界面。</p>
+      <div class="tip-box">
+        <strong>自动更新：</strong>Molio 会在后台自动检查新版本，发现更新后提示你重启应用。
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 3: 配置运行时 -->
+  <div class="step-card">
+    <div class="step-card-header">
+      <div class="step-number orange">3</div>
+      <h2 class="step-title">配置 AI 运行时</h2>
+    </div>
+    <div class="content-text">
+      <p>配置好 AI 助手后，Molio 才能进行智能创作：</p>
+      <ol>
+        <li>点击左侧导航栏的<strong>「设置」</strong>进入设置页面</li>
+        <li>切换到<strong>「运行时」</strong>标签页</li>
+        <li>确认至少有一个 AI 助手显示 <strong>「已安装」</strong>和 <strong>「可用」</strong></li>
+        <li><strong>双击</strong>一个助手将其设为默认，后续创作会自动使用它</li>
+      </ol>
+      <div class="tip-box">
+        <strong>助手显示「不可用」？</strong> 点击「测试」按钮查看详情。常见原因：未安装该工具、未完成登录授权、或者该工具不在系统 PATH 中。
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 4: 创建知识库 -->
+  <div class="step-card">
+    <div class="step-card-header">
+      <div class="step-number teal">4</div>
+      <h2 class="step-title">创建知识库</h2>
+    </div>
+    <div class="content-text">
+      <p>知识库是 Molio 的工作空间，存放你的所有文档和资料：</p>
+      <ol>
+        <li>点击左侧导航栏的<strong>「知识库」</strong></li>
+        <li>点击底部的<strong>「创建知识库」</strong>，选择一个本地文件夹作为知识库的存放位置</li>
+        <li>你也可以选择打开已有的文件夹作为知识库</li>
+      </ol>
+      <p>支持同时管理多个知识库，可随时切换。知识库中的 Markdown 文件、双向链接等内容都会被 AI 读取并理解。</p>
+    </div>
+  </div>
+
+  <!-- Step 5: 构建知识库 Wiki -->
+  <div class="step-card">
+    <div class="step-card-header">
+      <div class="step-number teal">5</div>
+      <h2 class="step-title">构建知识库 Wiki</h2>
+    </div>
+    <div class="content-text">
+      <p>Wiki 是知识库的 AI 智能索引，构建后 AI 能更精准地理解和引用你的文档：</p>
+      <ol>
+        <li>打开知识库，确保左侧文件树中已显示文件</li>
+        <li>点击工具栏上的<strong>「构建 Wiki」</strong>按钮（书本图标）</li>
+        <li>AI 会自动扫描知识库中的 Markdown 文件，生成结构化的 Wiki 索引</li>
+        <li>构建完成后，你可以在 Wiki 面板中浏览所有主题的关联关系</li>
+      </ol>
+      <p><strong>将单个文件加入 Wiki：</strong>在文件树中右键点击任意文件，选择<strong>「加入 Wiki」</strong>，即可将该文件纳入 Wiki 索引。你也可以随时右键选择<strong>「从 Wiki 移除」</strong>。</p>
+      <div class="tip-box">
+        <strong>Wiki 健康检查：</strong>点击工具栏的放大镜图标，可以检测 Wiki 索引的完整性，发现并修复潜在问题。
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 6: 开始创作 -->
+  <div class="step-card">
+    <div class="step-card-header">
+      <div class="step-number purple">6</div>
+      <h2 class="step-title">开始创作</h2>
+    </div>
+    <div class="content-text">
+      <p>一切就绪，开始与 AI 协作创作：</p>
+      <ol>
+        <li>回到<strong>「首页」</strong>聊天界面</li>
+        <li>在底部输入框描述你的需求，按 <code>Enter</code> 发送</li>
+        <li>AI 会基于当前知识库的上下文进行创作，实时流式输出</li>
+        <li>AI 可能会调用工具（读写文件、执行命令等），点击「允许」确认执行</li>
+      </ol>
+      <div class="tip-box">
+        <strong>小贴士：</strong><code>Shift + Enter</code> 换行，<code>Enter</code> 发送。点击「新对话」可清空当前上下文重新开始。
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 7: 排版美化 -->
+  <div class="step-card">
+    <div class="step-card-header">
+      <div class="step-number red">7</div>
+      <h2 class="step-title">排版美化</h2>
+    </div>
+    <div class="content-text">
+      <p>让 Markdown 文档变身精美的公众号文章：</p>
+      <ol>
+        <li>在知识库中打开一个 Markdown 文件</li>
+        <li>点击右上角的<strong>「排版」</strong>按钮</li>
+        <li>进入三栏模式：左侧编辑源码、中间实时预览、右侧样式面板</li>
+      </ol>
+      <p>在右侧样式面板中可以调整：</p>
+      <ul>
+        <li><strong>主题</strong>：经典 / 优雅 / 简洁</li>
+        <li><strong>字体与字号</strong>：标题和正文分别设置</li>
+        <li><strong>主题色</strong>：自定义整体色调</li>
+        <li><strong>代码样式</strong>：80+ 种代码高亮主题</li>
+        <li><strong>预览宽度</strong>：手机端 (375px) / 桌面端</li>
+        <li><strong>更多</strong>：段首缩进、两端对齐、行号、字数统计等</li>
+      </ul>
+      <div class="tip-box">
+        <strong>复制到微信：</strong>排版完成后点击「复制」按钮，内容会以富文本格式写入剪贴板，直接粘贴到微信公众号编辑器即可。
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 8: 多平台发布 -->
+  <div class="step-card">
+    <div class="step-card-header">
+      <div class="step-number blue">8</div>
+      <h2 class="step-title">多平台发布</h2>
+    </div>
+    <div class="content-text">
+      <p>将排版好的内容一键分发到多个内容平台：</p>
+      <ol>
+        <li>确保已安装 <strong>COSE Chrome 扩展</strong>（<a href="https://chromewebstore.google.com/detail/cose-%E5%A4%9A%E5%B9%B3%E5%8F%B0%E6%96%87%E7%AB%A0%E5%90%8C%E6%AD%A5/ilhikcdphhpjofhlnbojifbihhfmmhfk?hl=zh-CN&utm_source=ext_sidebar" target="_blank" rel="noopener noreferrer">Chrome 商店</a>）</li>
+        <li>在排版模式下点击<strong>「发布」</strong>按钮</li>
+        <li>Molio 会自动唤起 Chrome 浏览器，打开 COSE 发布界面</li>
+        <li>选择目标平台（微信、知乎、CSDN、掘金等 30+ 平台），一键分发</li>
+      </ol>
+      <div class="tip-box">
+        <strong>国内用户：</strong>如果无法访问 Chrome 商店，可前往<a href="download.html">下载页面</a>获取 COSE 扩展的离线安装包。
+      </div>
+    </div>
+  </div>
+
+  <!-- 连接微信 -->
+  <h2 class="section-heading">连接微信</h2>
+  <div class="step-card">
+    <div class="content-text">
+      <p>通过微信通道，你可以直接在微信中与 AI 助手对话：</p>
+      <ol>
+        <li>点击左侧导航栏的<strong>「设置」</strong>进入设置页面</li>
+        <li>切换到<strong>「渠道」</strong>标签页</li>
+        <li>选择微信，点击<strong>「连接微信」</strong></li>
+        <li>用手机微信扫描屏幕上的二维码并确认授权</li>
+        <li>授权成功后，微信中的「ClawBot」会话会将消息转发到 Molio 处理</li>
+      </ol>
+      <div class="tip-box">
+        <strong>注意：</strong>微信通道使用你在「运行时」中设置的默认 AI 助手来处理消息。
+      </div>
+    </div>
+  </div>
+
+  <!-- 常见问题 -->
+  <h2 class="section-heading">常见问题</h2>
+  <div class="step-card">
+    <div class="content-text">
+      <p><strong>如何构建知识库 Wiki？</strong><br>
+      在知识库页面中，点击顶部工具栏的「构建 Wiki」按钮（书本图标）。AI 会自动扫描知识库中的 Markdown 文件并生成索引。构建完成后，AI 就能更精准地引用你的文档内容了。</p>
+
+      <p><strong>如何将单个文件加入 Wiki？</strong><br>
+      在左侧文件树中右键点击目标文件，选择「加入 Wiki」。被加入 Wiki 的文件会被 AI 优先索引和理解。随时可以通过右键菜单「从 Wiki 移除」来取消关联。</p>
+
+      <p><strong>Wiki 构建失败了怎么办？</strong><br>
+      先尝试点击「Wiki 健康检查」按钮（放大镜图标），系统会自动诊断并修复常见问题。如果仍有问题，检查知识库中是否有空的 Markdown 文件或格式异常的文件。</p>
+
+      <p><strong>知识库删除后会丢失文件吗？</strong><br>
+      不会。从 Molio 中移除知识库只是取消了关联，文件夹和其中的文件仍保留在磁盘上，不会被删除。</p>
+
+      <p><strong>排版后复制到微信格式丢失？</strong><br>
+      请使用排版模式中的「复制」按钮（不要直接 Ctrl+C）。该按钮会将渲染后的富文本 HTML 写入剪贴板，直接粘贴到微信编辑器即可保留格式。</p>
+
+      <p><strong>如何反馈问题或获取帮助？</strong><br>
+      可以通过 GitHub Issues 提交反馈，或扫描页面右下角的二维码加入用户交流群。</p>
+    </div>
+  </div>
+</main>
+
+<!-- 粒子背景脚本 -->
+<script>
+const canvas = document.getElementById('particle-canvas');
+const ctx = canvas.getContext('2d');
+let w, h;
+let particles = [];
+
+function resize() {
+  w = canvas.width = window.innerWidth;
+  h = canvas.height = document.documentElement.scrollHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+class Particle {
+  constructor() {
+    this.x = Math.random() * w;
+    this.y = Math.random() * h;
+    this.vx = (Math.random() - 0.5) * 0.4;
+    this.vy = (Math.random() - 0.5) * 0.4;
+    this.radius = Math.random() * 2 + 0.5;
+    this.opacity = Math.random() * 0.3 + 0.1;
+    const hues = [25, 30, 35, 40, 45];
+    this.hue = hues[Math.floor(Math.random() * hues.length)];
+  }
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    if (this.x < 0 || this.x > w) this.vx *= -1;
+    if (this.y < 0 || this.y > h) this.vy *= -1;
+  }
+  draw() {
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    ctx.fillStyle = `hsla(${this.hue}, 40%, 60%, ${this.opacity})`;
+    ctx.fill();
+  }
+}
+
+for (let i = 0; i < 60; i++) {
+  particles.push(new Particle());
+}
+
+function drawLines() {
+  for (let i = 0; i < particles.length; i++) {
+    let connections = 0;
+    for (let j = i + 1; j < particles.length; j++) {
+      const dx = particles[i].x - particles[j].x;
+      const dy = particles[i].y - particles[j].y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 160 && connections < 2) {
+        const alpha = (1 - dist / 160) * 0.08;
+        ctx.beginPath();
+        ctx.moveTo(particles[i].x, particles[i].y);
+        ctx.lineTo(particles[j].x, particles[j].y);
+        ctx.strokeStyle = `hsla(30, 30%, 60%, ${alpha})`;
+        ctx.lineWidth = 0.6;
+        ctx.stroke();
+        connections++;
+      }
+    }
+  }
+}
+
+function animate() {
+  ctx.clearRect(0, 0, w, h);
+  particles.forEach(p => { p.update(); p.draw(); });
+  drawLines();
+  requestAnimationFrame(animate);
+}
+animate();
+</script>
+
+<!-- 悬浮 GitHub -->
+<div class="float-github">
+  <a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer" class="gh-link">
+    <div class="gh-icon">
+      <svg viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+    </div>
+    <span class="gh-url">github.com/zhuzhaoyun/Molio</span>
+  </a>
+</div>
+
+<!-- 悬浮二维码 -->
+<div class="float-qr-wrap">
+  <div class="float-qr-img">
+    <img src="images/qrcode.png" alt="Molio 墨流用户交流群二维码，扫码加入知识管理社区">
+  </div>
+  <div class="float-qr-caption">加好友交流</div>
+</div>
+
+</body>
+</html>

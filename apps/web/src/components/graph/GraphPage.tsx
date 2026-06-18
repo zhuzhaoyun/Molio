@@ -8,28 +8,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Graph from 'graphology';
-import forceAtlas2 from 'graphology-layout-forceatlas2';
+import type { GraphData } from '@molio/contracts';
+import { useSimulation } from './useSimulation';
 import Sigma from 'sigma';
 import { NodeCircleProgram } from 'sigma/rendering';
 import { api } from '../../api/client';
 import { useI18n } from '../../i18n';
-import { Minimap } from './Minimap';
 import { useActiveVaultId, vaultStore } from '../../stores/vaultStore';
-
-// ── Types ──
-
-interface GraphNode {
-  key: string;
-  label: string;
-  path: string;
-  linkCount: number;
-  nodeType?: string; // future: document | tag | agent | project | workflow | aiModel
-}
-
-interface GraphEdge {
-  source: string;
-  target: string;
-}
+import { useGraphSettings } from './useGraphSettings';
+import { GraphSettingsPanel } from './GraphSettingsPanel';
+import { getThemeColors } from './types';
 
 // ── Visual constants (Obsidian light theme, matching obsidian.png) ──
 // 浅色背景 + 深色节点，像纸张上的墨点
@@ -45,23 +33,33 @@ const EDGE_HOVER = '#C4B5FD';    // hover 连线：淡紫
 const EDGE_SELECTED = '#8B5CF6'; // 选中连线：紫色
 const LABEL_DEFAULT = '#6B6B6B'; // 标签：灰色
 
-// Node type colours (future: daemon will provide nodeType)
+// 节点颜色 — 精简为 3 阶灰度 + 2 个强调色，降低视觉杂乱
 const NODE_TYPE_COLORS: Record<string, string> = {
-  document: '#94A3B8',
-  tag: '#22C55E',
-  agent: '#8B5CF6',
-  project: '#3B82F6',
-  workflow: '#F59E0B',
-  aiModel: '#EF4444',
+  // 中性色（文档类）
+  document:   '#8899AA',
+  source:     '#8899AA',
+  wiki:       '#7A8A99',
+  // 知识核心（紫色强调）
+  concept:    '#8B5CF6',
+  entity:     '#8B5CF6',
+  // 观点/对比（琥珀强调）
+  comparison: '#D97706',
+  question:   '#D97706',
+  // Legacy types
+  tag:        '#8B5CF6',
+  agent:      '#8B5CF6',
+  project:    '#8899AA',
+  workflow:   '#D97706',
+  aiModel:    '#D97706',
 };
 
 // 节点大小按连接数动态变化
-// Obsidian 风格：小节点 4px，大节点 12px，中心节点突出
-function nodeSize(linkCount: number): number {
-  const base = 4;
-  const maxSize = 12;
-  const calculated = base + Math.sqrt(linkCount) * 1.5;
-  return Math.min(maxSize, calculated);
+// Obsidian 风格：小节点 3px，大节点 9px，中心节点突出
+function nodeSize(linkCount: number, scale: number = 1.0): number {
+  const base = 2;
+  const maxSize = 8;
+  const calculated = (base + Math.sqrt(linkCount) * 1.2) * scale;
+  return Math.min(maxSize * scale, calculated);
 }
 
 function nodeColor(linkCount: number, nodeType?: string): string {
@@ -80,9 +78,10 @@ export function GraphPage() {
 
   // 跟随知识库的活跃 vault，知识库切换时图谱自动切换
   const activeVaultId = useActiveVaultId();
-  const [graphData, setGraphData] = useState<{ nodes: GraphNode[]; edges: GraphEdge[] } | null>(null);
+  const [graphData, setGraphData] = useState<GraphData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const sigmaRef = useRef<Sigma | null>(null);
@@ -90,6 +89,12 @@ export function GraphPage() {
 
   const hoveredNodeRef = useRef<string | null>(null);
   const selectedNodeRef = useRef<string | null>(null);
+  // Persist node positions across graph rebuilds (theme change, nodeScale change)
+  const savedPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
+
+  const simulation = useSimulation();
+  const { settings, updateSettings, updateForce } = useGraphSettings();
+  const themeColors = getThemeColors(settings.theme);
 
   // Fetch graph data when active vault changes
   useEffect(() => {
@@ -120,6 +125,9 @@ export function GraphPage() {
   useEffect(() => {
     if (!graphData || graphData.nodes.length === 0 || !containerRef.current) return;
 
+    // Use saved positions from previous build (theme change, nodeScale change)
+    const savedPositions = savedPositionsRef.current;
+
     if (sigmaRef.current) {
       sigmaRef.current.kill();
       sigmaRef.current = null;
@@ -130,86 +138,139 @@ export function GraphPage() {
     graphRef.current = graph;
 
     const count = graphData.nodes.length;
-    const initialRadius = Math.sqrt(count) * 40 + 200;
-    const angleStep = (2 * Math.PI) / (count || 1);
+    // 均匀正圆形初始布局 — 替代随机散布，让图谱从干净整洁的圆形开始
+    const radius = Math.sqrt(count) * 35 + 120;
 
     for (let i = 0; i < count; i++) {
       const n = graphData.nodes[i];
-      const angle = angleStep * i + (Math.random() - 0.5) * 0.5;
-      const radius = initialRadius * (0.5 + Math.random() * 0.5);
+      const angle = (2 * Math.PI * i) / count;
+      const saved = savedPositions.get(n.key);
       graph.addNode(n.key, {
         label: n.label,
         path: n.path,
         linkCount: n.linkCount,
         nodeType: n.nodeType ?? null,
-        size: nodeSize(n.linkCount),
-        color: nodeColor(n.linkCount, n.nodeType),
+        size: nodeSize(n.linkCount, settings.nodeScale),
+        color: n.nodeType && NODE_TYPE_COLORS[n.nodeType]
+          ? NODE_TYPE_COLORS[n.nodeType]
+          : (n.linkCount === 0 ? themeColors.isolated : themeColors.node),
         type: 'circle',
-        x: Math.cos(angle) * radius,
-        y: Math.sin(angle) * radius,
+        x: saved?.x ?? Math.cos(angle) * radius,
+        y: saved?.y ?? Math.sin(angle) * radius,
       });
     }
 
     for (const e of graphData.edges) {
       if (!graph.hasNode(e.source) || !graph.hasNode(e.target)) continue;
       try {
-        graph.addEdge(e.source, e.target, { color: EDGE_DEFAULT });
+        graph.addEdge(e.source, e.target, { color: themeColors.edge });
       } catch { /* Edge already exists */ }
     }
 
-    // ForceAtlas2 layout — Sigma.js 官方推荐的高级力导向算法
-    // 自带碰撞避免 + Barnes-Hut O(n log n) 优化 + 自然社区聚类
-    // 参数调优参考 Obsidian Graph View 的紧凑但无重叠效果
-    forceAtlas2.assign(graph, {
-      iterations: 300,
-      settings: {
-        linLogMode: true,        // LinLog 模式：更强的近距离排斥，有效防止重叠
-        outboundAttractionDistribution: true,  // 按出度分配吸引力，避免hub节点拉扯过度
-        barnesHutOptimize: true, // Barnes-Hut 近似，万节点级别性能保障
-        barnesHutTheta: 0.5,     // theta 越小越精确（默认1.2），0.5 适合中小规模
-        edgeWeightInfluence: 0,  // 边权重不影响布局（当前无边权重）
-        scalingRatio: 8,         // 全局缩放比，越大节点间距越大
-        strongGravityMode: false,// 关闭强重力，让外围节点自然散开
-        gravity: 0.5,            // 温和向心力，保持整体紧凑但不挤压
-        slowDown: 1 + Math.log(1 + graph.order), // 自适应减速，大图收敛更稳
-      },
+    // ── Dead link nodes ──
+    // Render unresolved wikilinks as small semi-transparent nodes
+    if (graphData.deadLinks && graphData.deadLinks.length > 0) {
+      const seen = new Set<string>();
+      for (const dl of graphData.deadLinks) {
+        if (seen.has(dl.targetName)) continue;
+        seen.add(dl.targetName);
+        const deadKey = `__dead__${dl.targetName}`;
+        const saved = savedPositions.get(deadKey);
+        try {
+          graph.addNode(deadKey, {
+            label: `${dl.targetName} (?)`,
+            path: '',
+            linkCount: 0,
+            nodeType: null,
+            size: 4 * settings.nodeScale,
+            color: themeColors.deadNode,
+            type: 'circle',
+            x: saved?.x ?? (Math.random() - 0.5) * radius,
+            y: saved?.y ?? (Math.random() - 0.5) * radius,
+          });
+        } catch { /* node already exists */ }
+      }
+    }
+
+    // ── Apply filter settings ──
+    graph.forEachNode((key, attrs) => {
+      const isDead = key.startsWith('__dead__');
+      const linkCount = (attrs.linkCount as number) ?? 0;
+
+      // Dead link filter
+      if (isDead && !settings.showDeadLinks) {
+        graph.setNodeAttribute(key, 'hidden', true);
+        return;
+      }
+
+      // Orphan filter (isolated nodes: no links, not dead links)
+      if (!isDead && linkCount === 0 && !settings.showOrphans) {
+        graph.setNodeAttribute(key, 'hidden', true);
+        return;
+      }
+
+      // Type filter — only filter nodes that have an explicit type
+      if (settings.visibleTypes.length > 0) {
+        const rawType = attrs.nodeType as string | null;
+        if (rawType && !settings.visibleTypes.includes(rawType)) {
+          graph.setNodeAttribute(key, 'hidden', true);
+          return;
+        }
+      }
+
+      graph.setNodeAttribute(key, 'hidden', false);
     });
 
     // ── Node reducer for hover/select ──
-    // Obsidian 风格：默认全部显示，hover 时非关联节点变淡
+    // 局部图模式：选中节点后聚焦邻居，非关联节点大幅淡出
     const nodeReducer = (node: string, data: Record<string, unknown>) => {
       const hovered = hoveredNodeRef.current;
       const selected = selectedNodeRef.current;
       const focusNode = hovered ?? selected;
       const isSelected = node === selected;
+      const isFocusMode = !!selected; // true when a node is locked by click
 
       // 无 focus：默认显示所有节点
       if (!focusNode) {
         return {
           ...data,
-          color: (data.color as string) ?? NODE_DEFAULT,
+          color: (data.color as string) ?? themeColors.node,
           size: (data.size as number) ?? 6,
         };
       }
 
-      // 当前 hover/选中节点：紫色高亮
+      // 当前 focus 节点：高亮
       if (node === focusNode) {
         const scale = isSelected ? 1.4 : 1.2;
         return {
           ...data,
           size: ((data.size as number) ?? 6) * scale,
-          color: isSelected ? NODE_SELECTED : NODE_HOVER,
+          color: isSelected ? themeColors.selected : themeColors.hover,
         };
       }
 
       // 关联节点（邻居）
       const isConnected = graph.hasEdge(focusNode, node) || graph.hasEdge(node, focusNode);
       if (isConnected) {
-        return { ...data, color: (data.color as string) ?? NODE_DEFAULT };
+        return {
+          ...data,
+          color: (data.color as string) ?? themeColors.node,
+          // 选中模式下邻居保持原始大小
+          size: isFocusMode ? (data.size as number) ?? 6 : undefined,
+        };
       }
 
-      // 非关联节点：变淡但可见（Obsidian 风格，不是完全消失）
-      return { ...data, color: '#D4D4D4' };
+      // 非关联节点：
+      if (isFocusMode) {
+        // 选中模式：大幅淡出（保留位置布局，但视觉上几乎消失）
+        return {
+          ...data,
+          color: themeColors.dimmed,
+          size: ((data.size as number) ?? 6) * 0.15,
+        };
+      }
+      // 悬停模式：轻微变淡
+      return { ...data, color: themeColors.edge };
     };
 
     // ── Edge reducer ──
@@ -221,7 +282,7 @@ export function GraphPage() {
 
       // 无 focus：默认淡灰细线
       if (!focusNode) {
-        return { ...data, color: EDGE_DEFAULT, size: 0.8 };
+        return { ...data, color: themeColors.edge, size: settings.edgeWidth };
       }
 
       // Get source/target using graphology API
@@ -232,29 +293,29 @@ export function GraphPage() {
       if (isConnected) {
         // 选中状态：粗紫线
         if (selected) {
-          return { ...data, color: EDGE_SELECTED, size: 2 };
+          return { ...data, color: themeColors.edgeSelected, size: 2 };
         }
         // hover：淡紫线
-        return { ...data, color: EDGE_HOVER, size: 1.5 };
+        return { ...data, color: themeColors.edgeHover, size: 1.5 };
       }
       // 非关联线：更淡
-      return { ...data, color: '#F0F0F0', size: 0.5 };
+      return { ...data, color: themeColors.dimmed, size: 0.5 };
     };
 
     // ── Create Sigma ──
     const renderer = new Sigma(graph, containerRef.current, {
       allowInvalidContainer: true,
       nodeProgramClasses: { circle: NodeCircleProgram },
-      defaultEdgeColor: EDGE_DEFAULT,
+      defaultEdgeColor: themeColors.edge,
       defaultEdgeType: 'line',
       edgeLabelSize: 10,
-      labelColor: { color: '#333333' },
+      labelColor: { color: themeColors.label },
       labelSize: 12,
       labelFont: 'Inter, PingFang SC, -apple-system, sans-serif',
-      // Labels always show (Obsidian style)
-      labelRenderedSizeThreshold: 0,
+      // 标签按缩放级别自动显隐 — 缩小时只显示大节点标签
+      labelRenderedSizeThreshold: 5,
       labelDensity: 0.25,
-      defaultNodeColor: NODE_DEFAULT,
+      defaultNodeColor: themeColors.node,
       renderEdgeLabels: false,
       autoRescale: true,
       autoCenter: true,
@@ -267,14 +328,25 @@ export function GraphPage() {
 
     sigmaRef.current = renderer;
     renderer.refresh();
+    // Start d3-force physics engine (positions sync on tick, rendering via interaction handlers)
+    simulation.init(graph, renderer, () => {});
 
-    // ── Hover events ──
-    renderer.on('enterNode', ({ node }) => {
-      hoveredNodeRef.current = node;
-      renderer.refresh();
-    });
+    // Apply stored force params to the fresh simulation
+    const { forces, edgeWidth } = settings;
+    simulation.setForceParam('centerStrength', forces.centerStrength);
+    simulation.setForceParam('repelStrength', forces.repelStrength);
+    simulation.setForceParam('linkStrength', forces.linkStrength);
+    simulation.setForceParam('linkDistance', forces.linkDistance);
+
+    // Apply edge width
+    if (edgeWidth !== 0.8) {
+      graph.forEachEdge((key) => {
+        graph.setEdgeAttribute(key, 'size', edgeWidth);
+      });
+    }
 
     renderer.on('leaveNode', () => {
+      if (draggedNode) return;
       hoveredNodeRef.current = null;
       renderer.refresh();
     });
@@ -327,6 +399,15 @@ export function GraphPage() {
         draggedNode = node;
         isDragging = false;
         dragStartMouse = { x: mouseX, y: mouseY };
+        // Lock d3 node position so collision doesn't push it away during drag
+        const d3Node = simulation.getNode(node);
+        if (d3Node) {
+          const attrs = graph.getNodeAttributes(node);
+          d3Node.fx = (attrs.x as number) ?? 0;
+          d3Node.fy = (attrs.y as number) ?? 0;
+        }
+        // 唤醒物理引擎——这次唤醒会持续 tick，拖拽过程中不需要重复唤醒
+        simulation.wake();
         e.preventDefault();
         e.stopPropagation();
       } else {
@@ -336,6 +417,12 @@ export function GraphPage() {
           const prev = selectedNodeRef.current;
           graph.removeNodeAttribute(prev, 'fx');
           graph.removeNodeAttribute(prev, 'fy');
+          // Also release d3 lock if any
+          const d3Node = simulation.getNode(prev);
+          if (d3Node) {
+            d3Node.fx = null;
+            d3Node.fy = null;
+          }
           selectedNodeRef.current = null;
           renderer.refresh();
         }
@@ -359,11 +446,20 @@ export function GraphPage() {
 
       if (isDragging) {
         const graphPos = renderer.viewportToGraph({ x: mouseX, y: mouseY });
-        graph.setNodeAttribute(draggedNode, 'x', graphPos.x);
-        graph.setNodeAttribute(draggedNode, 'y', graphPos.y);
-        // 实时锁定 fx/fy，防止力引擎覆盖拖拽位置
-        graph.setNodeAttribute(draggedNode, 'fx', graphPos.x);
-        graph.setNodeAttribute(draggedNode, 'fy', graphPos.y);
+        const d3Node = simulation.getNode(draggedNode);
+        if (d3Node) {
+          // Update d3 node position + lock
+          d3Node.x = graphPos.x;
+          d3Node.y = graphPos.y;
+          d3Node.fx = graphPos.x;
+          d3Node.fy = graphPos.y;
+          // Write to graphology so sigma renders it
+          graph.setNodeAttribute(draggedNode, 'x', graphPos.x);
+          graph.setNodeAttribute(draggedNode, 'y', graphPos.y);
+        }
+        // 轻柔保持引擎活跃——mousedown 的唤醒在 ~1s 后衰减殆尽
+        // 低 alpha 让邻居持续被弹簧拉动，不会闪烁（tick 已不再调用 refresh）
+        simulation.wake(0.06);
         renderer.refresh();
       }
     };
@@ -379,7 +475,16 @@ export function GraphPage() {
       const wasDragging = isDragging;
 
       if (wasDragging) {
-        // 拖拽结束：fx/fy 已在 mousemove 中设置，保持锁定
+        // Release d3 fx/fy lock → node settles naturally with damping
+        const d3Node = simulation.getNode(node);
+        if (d3Node) {
+          d3Node.fx = null;
+          d3Node.fy = null;
+          graph.removeNodeAttribute(node, 'fx');
+          graph.removeNodeAttribute(node, 'fy');
+        }
+        // Small nudge for gradual convergence
+        simulation.wake(0.1);
       } else {
         // 点击（非拖拽）：检测双击
         const now = Date.now();
@@ -389,7 +494,7 @@ export function GraphPage() {
         if (isDoubleClick) {
           const path = graph.getNodeAttribute(node, 'path') as string | undefined;
           if (path) {
-            navigate('/knowledge', { state: { openFile: path } });
+            navigate('/knowledge', { state: { openFile: path, vaultId: activeVaultId } });
           }
           lastClickTime = 0;
           lastClickNode = null;
@@ -405,12 +510,22 @@ export function GraphPage() {
       isDragging = false;
     };
 
-    container.addEventListener('mousedown', handleMouseDown);
+    container.addEventListener('mousedown', handleMouseDown, { capture: true });
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
 
     return () => {
-      container.removeEventListener('mousedown', handleMouseDown);
+      // Save positions before teardown so they persist across rebuilds (theme change, etc.)
+      const positions = new Map<string, { x: number; y: number }>();
+      if (graphRef.current) {
+        graphRef.current.forEachNode((key, attrs) => {
+          positions.set(key, { x: (attrs.x as number) ?? 0, y: (attrs.y as number) ?? 0 });
+        });
+      }
+      savedPositionsRef.current = positions;
+
+      simulation.stop();
+      container.removeEventListener('mousedown', handleMouseDown, { capture: true });
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
 
@@ -422,7 +537,56 @@ export function GraphPage() {
       hoveredNodeRef.current = null;
       selectedNodeRef.current = null;
     };
-  }, [graphData, navigate]);
+  }, [graphData, navigate, settings.theme, settings.nodeScale]);
+
+  // ── Live filter updates (no rebuild needed) ──
+  useEffect(() => {
+    const graph = graphRef.current;
+    const renderer = sigmaRef.current;
+    if (!graph || !renderer) return;
+
+    graph.forEachNode((key, attrs) => {
+      const isDead = key.startsWith('__dead__');
+      const linkCount = (attrs.linkCount as number) ?? 0;
+
+      // Dead link filter
+      if (isDead && !settings.showDeadLinks) {
+        graph.setNodeAttribute(key, 'hidden', true);
+        return;
+      }
+
+      // Orphan filter (isolated nodes: no links, not dead links)
+      if (!isDead && linkCount === 0 && !settings.showOrphans) {
+        graph.setNodeAttribute(key, 'hidden', true);
+        return;
+      }
+
+      // Type filter — only filter nodes that have an explicit type
+      if (settings.visibleTypes.length > 0) {
+        const rawType = attrs.nodeType as string | null;
+        if (rawType && !settings.visibleTypes.includes(rawType)) {
+          graph.setNodeAttribute(key, 'hidden', true);
+          return;
+        }
+      }
+
+      graph.setNodeAttribute(key, 'hidden', false);
+    });
+
+    renderer.refresh();
+  }, [settings.showOrphans, settings.showDeadLinks, settings.visibleTypes]);
+
+  // ── Live edge width update (no rebuild needed) ──
+  useEffect(() => {
+    const graph = graphRef.current;
+    const renderer = sigmaRef.current;
+    if (!graph || !renderer) return;
+
+    graph.forEachEdge((key) => {
+      graph.setEdgeAttribute(key, 'size', settings.edgeWidth);
+    });
+    renderer.refresh();
+  }, [settings.edgeWidth]);
 
   const nodeCount = graphData?.nodes.length ?? 0;
   const edgeCount = graphData?.edges.length ?? 0;
@@ -460,6 +624,18 @@ export function GraphPage() {
           {graphData && !loading && (
             <span className="graph-stat graph-stat--edges">{t('graph.edges', { count: edgeCount })}</span>
           )}
+          {graphData && graphData.deadLinks && graphData.deadLinks.length > 0 && (
+            <span className="graph-stat graph-stat--deadlink" title={`${graphData.deadLinks.length} dead link(s)`}>
+              死链接 {graphData.deadLinks.length}
+            </span>
+          )}
+          <button
+            className={`graph-settings-btn ${showSettings ? 'is-active' : ''}`}
+            onClick={() => setShowSettings(!showSettings)}
+            title="图谱设置"
+          >
+            ⚙
+          </button>
         </div>
       </div>
 
@@ -484,7 +660,25 @@ export function GraphPage() {
         )}
 
         <div ref={containerRef} className="graph-sigma" />
-        <Minimap sigma={sigmaRef.current} />
+
+        {/* 图谱设置面板 */}
+        {graphData && showSettings && (
+          <GraphSettingsPanel
+            settings={settings}
+            onUpdateSettings={updateSettings}
+            onUpdateForce={(patch) => {
+              updateForce(patch);
+              // Apply force changes to live simulation
+              for (const [name, value] of Object.entries(patch)) {
+                simulation.setForceParam(name, value);
+              }
+            }}
+            onClose={() => setShowSettings(false)}
+            availableTypes={graphData.nodes
+              .map(n => n.nodeType)
+              .filter((t): t is string => !!t)}
+          />
+        )}
       </div>
     </div>
   );

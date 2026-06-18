@@ -186,19 +186,325 @@
   color: #999;
 }
 
-/* ── Minimap ── */
+/* ── Legend ── */
 
-.graph-minimap {
-  position: absolute;
-  bottom: 12px;
-  right: 12px;
-  z-index: 20;
-  opacity: 0.7;
-  transition: opacity 0.2s;
-  border-radius: 4px;
-  pointer-events: none;
+.graph-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
 }
 
-.graph-minimap:hover {
-  opacity: 1;
+.graph-legend__item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.graph-legend__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.graph-legend__dot--dead {
+  background: #D4D4D4;
+  border: 1px dashed #999;
+}
+
+.graph-legend__label {
+  color: #555;
+  white-space: nowrap;
+}
+
+.graph-info__hints {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.graph-hint {
+  color: #777;
+  font-size: 11px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .graph-legend__label {
+    color: #AAA;
+  }
+
+  .graph-hint {
+    color: #999;
+  }
+}
+
+/* ── Settings Button ── */
+
+.graph-settings-btn {
+  width: 28px;
+  height: 28px;
+  border: 1px solid #E5E5E5;
+  border-radius: 6px;
+  background: #FFFFFF;
+  color: #666;
+  font-size: 15px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, border-color 0.15s;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.graph-settings-btn:hover,
+.graph-settings-btn.is-active {
+  background: #F5F3FF;
+  border-color: #8B5CF6;
+  color: #8B5CF6;
+}
+
+@media (prefers-color-scheme: dark) {
+  .graph-settings-btn {
+    background: rgba(40, 40, 50, 0.8);
+    border-color: rgba(255, 255, 255, 0.1);
+    color: #AAA;
+  }
+
+  .graph-settings-btn:hover,
+  .graph-settings-btn.is-active {
+    background: rgba(80, 60, 120, 0.3);
+    border-color: rgba(139, 92, 246, 0.6);
+    color: #C4B5FD;
+  }
+}
+
+/* ── Settings Panel (popover) ── */
+
+.graph-settings-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 260px;
+  max-height: calc(100% - 16px);
+  margin: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 10px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.1);
+  z-index: 30;
+  backdrop-filter: blur(12px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-size: 12px;
+  animation: graph-settings-in 0.15s ease-out;
+}
+
+@keyframes graph-settings-in {
+  from { opacity: 0; transform: translateY(-6px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.graph-settings__tabs {
+  display: flex;
+  gap: 2px;
+  padding: 6px;
+  flex-shrink: 0;
+}
+
+.graph-settings__tab {
+  flex: 1;
+  padding: 5px 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: #777;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.graph-settings__tab:hover {
+  background: rgba(0, 0, 0, 0.04);
+  color: #444;
+}
+
+.graph-settings__tab.is-active {
+  background: #F0EBFF;
+  color: #8B5CF6;
+}
+
+.graph-settings__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 16px;
+}
+
+.graph-settings__section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.graph-settings__group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.graph-settings__group-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #888;
+  margin-bottom: 4px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.graph-settings__label {
+  font-size: 12px;
+  color: #555;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.graph-settings__checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #444;
+  transition: background 0.1s;
+}
+
+.graph-settings__checkbox:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.graph-settings__checkbox input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: #8B5CF6;
+  flex-shrink: 0;
+}
+
+.graph-settings__checkbox-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.graph-settings__search {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid #E5E5E5;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #333;
+  background: #F9F9F9;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.graph-settings__search:focus {
+  border-color: #8B5CF6;
+  background: #FFF;
+}
+
+.graph-settings__select {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid #E5E5E5;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #333;
+  background: #F9F9F9;
+  outline: none;
+  cursor: pointer;
+}
+
+.graph-settings__select:focus {
+  border-color: #8B5CF6;
+}
+
+.graph-settings__range {
+  width: 100%;
+  accent-color: #8B5CF6;
+  margin: 0;
+}
+
+/* ── Dark Mode ── */
+
+@media (prefers-color-scheme: dark) {
+  .graph-settings-panel {
+    background: rgba(24, 24, 34, 0.94);
+    border-color: rgba(255, 255, 255, 0.08);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+  }
+
+  .graph-settings__tabs {
+    border-bottom-color: rgba(255, 255, 255, 0.06);
+  }
+
+  .graph-settings__tab {
+    color: #777;
+  }
+
+  .graph-settings__tab:hover {
+    background: rgba(255, 255, 255, 0.04);
+    color: #AAA;
+  }
+
+  .graph-settings__tab.is-active {
+    background: rgba(139, 92, 246, 0.15);
+    color: #A78BFA;
+  }
+
+  .graph-settings__group-title {
+    color: #777;
+    border-bottom-color: rgba(255, 255, 255, 0.06);
+  }
+
+  .graph-settings__label {
+    color: #AAA;
+  }
+
+  .graph-settings__checkbox {
+    color: #BBB;
+  }
+
+  .graph-settings__checkbox:hover {
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  .graph-settings__search {
+    background: #1A1A2E;
+    border-color: rgba(255, 255, 255, 0.1);
+    color: #CCC;
+  }
+
+  .graph-settings__search:focus {
+    border-color: #A78BFA;
+    background: #1E1E32;
+  }
+
+  .graph-settings__select {
+    background: #1A1A2E;
+    border-color: rgba(255, 255, 255, 0.1);
+    color: #CCC;
+  }
+
+  .graph-settings__select:focus {
+    border-color: #A78BFA;
+  }
 }

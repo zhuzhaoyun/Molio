@@ -36,6 +36,9 @@ interface UseKnowledgeReturn {
   themeConfig: ThemeConfig;
   editedContent: string | null;
 
+  // Edit mode state
+  isEditMode: boolean;
+
   // Modals
   showVaultSwitcher: boolean;
   showAddVault: boolean;
@@ -47,7 +50,7 @@ interface UseKnowledgeReturn {
   createVault: (name: string, path: string, description?: string) => Promise<void>;
   openVault: (path: string) => Promise<void>;
   deleteVault: (id: string) => Promise<void>;
-  selectFile: (path: string) => void;
+  selectFile: (path: string | null) => void;
   refreshTree: () => void;
   checkWikiStatus: () => void;
   setPanelWidth: (w: number) => void;
@@ -72,6 +75,10 @@ interface UseKnowledgeReturn {
   copyToClipboard: () => Promise<void>;
   publishToChrome: () => Promise<void>;
   setShowCoseInstallPrompt: (show: boolean) => void;
+
+  // Edit mode actions
+  toggleEditMode: () => void;
+  setEditMode: (on: boolean) => void;
 }
 
 export function useKnowledge(): UseKnowledgeReturn {
@@ -97,6 +104,9 @@ export function useKnowledge(): UseKnowledgeReturn {
   const [isTypesetMode, setIsTypesetMode] = useState(false);
   const [themeConfig, setThemeConfig] = useState<ThemeConfig>(defaultThemeConfig);
   const [editedContent, setEditedContent] = useState<string | null>(null);
+
+  // Edit mode state
+  const [isEditMode, setIsEditMode] = useState(false);
 
   // Wiki state
   const [wikiInitialized, setWikiInitialized] = useState(false);
@@ -305,8 +315,10 @@ export function useKnowledge(): UseKnowledgeReturn {
     }
   }, [activeVaultId]);
 
-  const selectFile = useCallback((path: string) => {
+  const selectFile = useCallback((path: string | null) => {
     setSelectedFile(path);
+    // Reset edit mode when switching files
+    setIsEditMode(false);
   }, []);
 
   const refreshTree = useCallback(() => {
@@ -410,6 +422,14 @@ export function useKnowledge(): UseKnowledgeReturn {
     setEditedContent(content);
   }, []);
 
+  const toggleEditMode = useCallback(() => {
+    setIsEditMode((prev) => !prev);
+  }, []);
+
+  const setEditMode = useCallback((on: boolean) => {
+    setIsEditMode(on);
+  }, []);
+
   const copyToClipboard = useCallback(async () => {
     const markdownSource = editedContent ?? fileContent?.content ?? '';
     if (!markdownSource) return;
@@ -431,26 +451,21 @@ export function useKnowledge(): UseKnowledgeReturn {
     const markdownSource = editedContent ?? fileContent?.content ?? '';
     if (!markdownSource) return;
 
-    // 1. Check COSE extension
-    const { installed } = await api.checkCose();
-    if (!installed) {
-      setShowCoseInstallPrompt(true);
-      return;
-    }
-
-    // 2. Get rendered HTML from #output
+    // 1. Get rendered HTML from #output
     const outputEl = document.querySelector('#output');
     const html = outputEl?.innerHTML ?? '';
 
-    // 3. Get resolved theme CSS from <style id="md-theme">
+    // 2. Get resolved theme CSS from <style id="md-theme">
     const themeStyleEl = document.getElementById('md-theme');
     const css = themeStyleEl?.textContent ?? '';
 
-    // 4. Extract title from markdown (first heading)
+    // 3. Extract title from markdown (first heading)
     const headingMatch = markdownSource.match(/^#{1,6}\s+(.+)$/m);
     const title = headingMatch?.[1]?.trim() ?? selectedFile?.split('/').pop()?.replace(/\.md$/, '') ?? '';
 
-    // 5. Start bridge server and open Chrome
+    // 4. Start bridge server and open in system browser
+    //    Bridge page will detect window.$cose at runtime (works with both
+    //    Chrome Store install and developer-mode sideload)
     const { bridgeUrl } = await api.startPublish({ title, markdown: markdownSource, html, css });
     window.open(bridgeUrl, '_blank');
   }, [editedContent, fileContent, selectedFile]);
@@ -470,6 +485,7 @@ export function useKnowledge(): UseKnowledgeReturn {
     isTypesetMode,
     themeConfig,
     editedContent,
+    isEditMode,
     showVaultSwitcher,
     showAddVault,
     showImport,
@@ -499,5 +515,7 @@ export function useKnowledge(): UseKnowledgeReturn {
     copyToClipboard,
     publishToChrome,
     setShowCoseInstallPrompt,
+    toggleEditMode,
+    setEditMode,
   };
 }
