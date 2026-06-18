@@ -139,6 +139,43 @@ describe('buildSpawnEnv', () => {
 
       assert.equal(env['ANTHROPIC_API_KEY'], undefined);
     });
+
+    it('should strip ANTHROPIC_AUTH_TOKEN and model mapping vars when no custom base URL', () => {
+      const def = makeDef({ id: 'claude' });
+      const env = buildSpawnEnv(def, {
+        ANTHROPIC_AUTH_TOKEN: 'sk-third-party-token',
+        ANTHROPIC_API_KEY: 'sk-ant-key',
+        ANTHROPIC_DEFAULT_SONNET_MODEL: 'deepseek-chat',
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: 'deepseek-chat',
+        ANTHROPIC_DEFAULT_OPUS_MODEL: 'deepseek-reasoner',
+        PATH: '/usr/bin',
+      });
+
+      assert.equal(env['ANTHROPIC_AUTH_TOKEN'], undefined);
+      assert.equal(env['ANTHROPIC_API_KEY'], undefined);
+      assert.equal(env['ANTHROPIC_DEFAULT_SONNET_MODEL'], undefined);
+      assert.equal(env['ANTHROPIC_DEFAULT_HAIKU_MODEL'], undefined);
+      assert.equal(env['ANTHROPIC_DEFAULT_OPUS_MODEL'], undefined);
+    });
+
+    it('should keep ANTHROPIC_AUTH_TOKEN and model mapping vars when custom base URL is set', () => {
+      const def = makeDef({ id: 'claude' });
+      const env = buildSpawnEnv(def, {
+        ANTHROPIC_AUTH_TOKEN: 'sk-third-party-token',
+        ANTHROPIC_API_KEY: 'sk-ant-key',
+        ANTHROPIC_BASE_URL: 'https://api.deepseek.com/anthropic',
+        ANTHROPIC_DEFAULT_SONNET_MODEL: 'deepseek-chat',
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: 'deepseek-chat',
+        ANTHROPIC_DEFAULT_OPUS_MODEL: 'deepseek-reasoner',
+      });
+
+      assert.equal(env['ANTHROPIC_AUTH_TOKEN'], 'sk-third-party-token');
+      assert.equal(env['ANTHROPIC_API_KEY'], 'sk-ant-key');
+      assert.equal(env['ANTHROPIC_BASE_URL'], 'https://api.deepseek.com/anthropic');
+      assert.equal(env['ANTHROPIC_DEFAULT_SONNET_MODEL'], 'deepseek-chat');
+      assert.equal(env['ANTHROPIC_DEFAULT_HAIKU_MODEL'], 'deepseek-chat');
+      assert.equal(env['ANTHROPIC_DEFAULT_OPUS_MODEL'], 'deepseek-reasoner');
+    });
   });
 
   describe('Codex/OpenAI API key stripping', () => {

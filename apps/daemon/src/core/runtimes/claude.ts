@@ -38,6 +38,28 @@ export const claudeAgentDef: RuntimeAgentDef = {
   streamFormat: 'claude-stream-json',
   multiTurn: true,
 
-  installable: true,
+  install: {
+    source: {
+      type: 'npm-native',
+      version: '2.1.179',
+      packages: {
+        'win32-x64':        { pkgName: '@anthropic-ai/claude-code-win32-x64',       binInTar: 'package/claude.exe' },
+        'win32-arm64':      { pkgName: '@anthropic-ai/claude-code-win32-arm64',     binInTar: 'package/claude.exe' },
+        'darwin-arm64':     { pkgName: '@anthropic-ai/claude-code-darwin-arm64',    binInTar: 'package/claude' },
+        'darwin-x64':       { pkgName: '@anthropic-ai/claude-code-darwin-x64',      binInTar: 'package/claude' },
+        'linux-x64':        { pkgName: '@anthropic-ai/claude-code-linux-x64',       binInTar: 'package/claude' },
+        'linux-arm64':      { pkgName: '@anthropic-ai/claude-code-linux-arm64',     binInTar: 'package/claude' },
+        'linux-x64-musl':   { pkgName: '@anthropic-ai/claude-code-linux-x64-musl',  binInTar: 'package/claude' },
+        'linux-arm64-musl': { pkgName: '@anthropic-ai/claude-code-linux-arm64-musl', binInTar: 'package/claude' },
+      },
+      registries: [
+        'https://registry.npmjs.org',
+        'https://registry.npmmirror.com',
+      ],
+    },
+    requirements: {
+      minWindowsBuild: 17763,
+    },
+  },
   installUrl: 'https://code.claude.com/docs/en/setup',
 };

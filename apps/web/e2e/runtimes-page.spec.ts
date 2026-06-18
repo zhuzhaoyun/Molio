@@ -48,6 +48,27 @@ test.describe('Runtimes page', () => {
     expect(count).toBeGreaterThan(0);
   });
 
+  test('should show install button or test button for Claude agent', async ({ page }) => {
+    await page.goto('/runtimes');
+    await page.waitForLoadState('networkidle');
+
+    await page.waitForSelector('.rt-agent-card', { timeout: 10_000 });
+
+    // Find the Claude card
+    const claudeCard = page.locator('.rt-agent-card').filter({
+      has: page.locator('.rt-agent-card__name', { hasText: /Claude/i }),
+    });
+    const count = await claudeCard.count();
+    if (count === 0) return; // Skip if Claude card not found
+
+    // Claude should show either an Install button (not installed) or a Test button (installed)
+    const installBtn = claudeCard.locator('.rt-install-btn');
+    const testBtn = claudeCard.locator('.rt-btn').filter({ hasText: /Test|测试/ });
+    const hasInstallBtn = await installBtn.count();
+    const hasTestBtn = await testBtn.count();
+    expect(hasInstallBtn + hasTestBtn).toBeGreaterThan(0);
+  });
+
   test('should refresh agents when rescan button is clicked', async ({ page }) => {
     await page.goto('/runtimes');
     await page.waitForLoadState('networkidle');

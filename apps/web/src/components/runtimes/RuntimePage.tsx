@@ -159,7 +159,7 @@ function AgentCard({
           </button>
         )}
         {!agent.available && agent.installable && (
-          <InstallButton agentId={agent.id} onInstalled={onRescan} />
+          <InstallButton agentId={agent.id} installUrl={agent.installUrl} onInstalled={onRescan} />
         )}
         {!agent.available && !agent.installable && agent.installUrl && (
           <a className="rt-agent-card__install" href={agent.installUrl} target="_blank" rel="noopener noreferrer">

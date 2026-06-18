@@ -42,11 +42,11 @@ describe('Windows .cmd binary resolution (error-driven)', () => {
     const result = resolveAgentBinary(claudeAgentDef);
 
     if (result.binary && result.binary.endsWith('.cmd')) {
-      const version = probeVersion(result.binary, claudeAgentDef.versionArgs);
+      const probeResult = probeVersion(result.binary, claudeAgentDef.versionArgs);
       // If claude is installed, version should be detected
-      assert.ok(version !== null,
+      assert.ok(probeResult.version !== null,
         `probeVersion should succeed for .cmd binary: ${result.binary}`);
-      assert.ok(version!.length > 0, 'Version string should not be empty');
+      assert.ok(probeResult.version!.length > 0, 'Version string should not be empty');
     }
   });
 

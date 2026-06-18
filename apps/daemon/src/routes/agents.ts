@@ -105,7 +105,7 @@ export function agentsRoutes(runManager: RunManager): Hono {
     if (!def) {
       return c.json({ error: `Unknown agent: ${agentId}` }, 404);
     }
-    if (!def.installable) {
+    if (!def.install) {
       return c.json({ error: `Agent ${agentId} does not support auto-install` }, 400);
     }
 
@@ -121,8 +121,13 @@ export function agentsRoutes(runManager: RunManager): Hono {
     c.header('Connection', 'keep-alive');
 
     return stream(c, async (s) => {
+      const ac = new AbortController();
+      // Abort install when the client disconnects
+      s.onAbort(() => ac.abort());
+
       await installAgent({
         agentId,
+        signal: ac.signal,
         onEvent: (event: InstallEvent) => {
           s.write(`data: ${JSON.stringify(event)}\n\n`);
         },

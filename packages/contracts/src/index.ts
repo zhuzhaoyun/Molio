@@ -8,6 +8,12 @@ export type {
   AgentDetectSource,
   AgentInfo,
   InstallEvent,
+  InstallSource,
+  NpmNativeInstallSource,
+  PlatformRequirement,
+  InstallConfig,
+  InstallPhase,
+  ErrorCategory,
 } from './agent.js';
 
 export type {

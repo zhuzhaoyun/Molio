@@ -709,6 +709,66 @@
   border: 1px solid var(--border-soft);
 }
 
+/* ── Progress bar ── */
+.rt-install-progress {
+  height: 6px;
+  background: var(--bg-subtle);
+  border-radius: 3px;
+  overflow: hidden;
+  border: 1px solid var(--border-soft);
+}
+
+.rt-install-progress__bar {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 300ms ease;
+  min-width: 2px;
+}
+
+/* ── Phase label ── */
+.rt-install-phase {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* ── Cancel button ── */
+.rt-btn--xs {
+  padding: 1px 6px;
+  font-size: 10px;
+  line-height: 1.4;
+  border-radius: 3px;
+}
+
+.rt-install-cancel {
+  margin-left: auto;
+}
+
+/* ── Error category badge ── */
+.rt-install-error__category {
+  font-weight: 600;
+  font-size: 12px;
+}
+
+/* ── Error hint ── */
+.rt-install-error__hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  padding: 6px 8px;
+  background: var(--bg-subtle);
+  border-radius: 4px;
+  border: 1px solid var(--border-soft);
+}
+
+/* ── Actions row (retry / manual install link) ── */
+.rt-install-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
 /* ══════════ Provider Config ══════════ */
 .rt-provider-toggle {
   gap: 4px;
@@ -826,6 +886,70 @@
 
 .rt-provider-form__status--err {
   color: var(--red);
+}
+
+/* ── Model Mapping ── */
+.rt-provider-form__mapping {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rt-provider-mapping-toggle {
+  align-self: flex-start;
+  padding: 2px 6px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--fg-muted);
+}
+
+.rt-provider-mapping-toggle:hover {
+  color: var(--fg);
+}
+
+.rt-provider-mapping {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--bg-elevated, rgba(255,255,255,0.03));
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+
+.rt-provider-mapping__hint {
+  font-size: 11px;
+  color: var(--fg-muted);
+  margin: 0 0 4px;
+  line-height: 1.4;
+}
+
+.rt-provider-mapping__field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.rt-provider-mapping__alias {
+  min-width: 48px;
+  font-family: var(--font-mono, monospace);
+  font-weight: 600;
+  color: var(--fg-muted);
+  text-transform: lowercase;
+}
+
+.rt-provider-mapping__arrow {
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+
+.rt-provider-mapping__input {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  padding: 3px 6px;
+  font-family: var(--font-mono, monospace);
 }
 
 /* ── Responsive ── */

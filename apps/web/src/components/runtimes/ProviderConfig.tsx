@@ -14,14 +14,24 @@ interface ProviderConfigProps {
   agentId: string;
 }
 
+interface ModelMapping {
+  sonnet: string;
+  haiku: string;
+  opus: string;
+}
+
+const EMPTY_MAPPING: ModelMapping = { sonnet: '', haiku: '', opus: '' };
+
 export function ProviderConfig({ agentId }: ProviderConfigProps) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
 
   // Form state
-  const [providerId, setProviderId] = useState('anthropic');
+  const [providerId, setProviderId] = useState('deepseek');
   const [apiKey, setApiKey] = useState('');
   const [customBaseUrl, setCustomBaseUrl] = useState('');
+  const [mapping, setMapping] = useState<ModelMapping>(EMPTY_MAPPING);
+  const [showMapping, setShowMapping] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>('idle');
 
   // Load current config on mount
@@ -30,9 +40,19 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
       const env = (config.env ?? {}) as Record<string, string>;
       const detected = detectProvider(env);
       setProviderId(detected);
-      setApiKey(env['ANTHROPIC_API_KEY'] ?? '');
+      // ANTHROPIC_AUTH_TOKEN is the canonical key; fall back to API_KEY
+      setApiKey(env['ANTHROPIC_AUTH_TOKEN'] || env['ANTHROPIC_API_KEY'] || '');
       if (detected === 'custom') {
         setCustomBaseUrl(env['ANTHROPIC_BASE_URL'] ?? '');
+      }
+      // Load saved model mapping
+      const savedMapping: ModelMapping = {
+        sonnet: env['ANTHROPIC_DEFAULT_SONNET_MODEL'] ?? '',
+        haiku: env['ANTHROPIC_DEFAULT_HAIKU_MODEL'] ?? '',
+        opus: env['ANTHROPIC_DEFAULT_OPUS_MODEL'] ?? '',
+      };
+      if (savedMapping.sonnet || savedMapping.haiku || savedMapping.opus) {
+        setMapping(savedMapping);
       }
     }).catch(() => {
       // Ignore — defaults are fine
@@ -44,25 +64,41 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
   const handleProviderChange = useCallback((id: string) => {
     setProviderId(id);
     setSaveState('idle');
-    // Clear API key when switching providers
     setApiKey('');
     if (id !== 'custom') {
       const p = CLAUDE_PROVIDERS.find((p) => p.id === id);
       setCustomBaseUrl(p?.baseUrl ?? '');
+      // Pre-fill model mapping from provider defaults
+      if (p?.defaultModelMapping) {
+        setMapping({
+          sonnet: p.defaultModelMapping.sonnet ?? '',
+          haiku: p.defaultModelMapping.haiku ?? '',
+          opus: p.defaultModelMapping.opus ?? '',
+        });
+      } else {
+        setMapping(EMPTY_MAPPING);
+      }
+    } else {
+      setMapping(EMPTY_MAPPING);
     }
   }, []);
 
   const handleSave = useCallback(async () => {
     setSaveState('saving');
     try {
-      const env = buildProviderEnv(providerId, apiKey, customBaseUrl);
+      const modelMapping = (mapping.sonnet || mapping.haiku || mapping.opus)
+        ? mapping
+        : undefined;
+      const env = buildProviderEnv(providerId, apiKey, customBaseUrl, modelMapping);
       await api.updateAgentConfig(agentId, { env });
       setSaveState('saved');
       setTimeout(() => setSaveState('idle'), 3000);
     } catch (err) {
       setSaveState('error');
     }
-  }, [agentId, providerId, apiKey, customBaseUrl]);
+  }, [agentId, providerId, apiKey, customBaseUrl, mapping]);
+
+  const isThirdParty = providerId !== 'anthropic';
 
   if (!expanded) {
     return (
@@ -145,20 +181,42 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
               className="rt-provider-form__input"
               value={customBaseUrl}
               onChange={(e) => { setCustomBaseUrl(e.target.value); setSaveState('idle'); }}
-              placeholder="https://api.example.com/v1"
+              placeholder="https://api.example.com/anthropic"
             />
           </label>
         )}
 
-        {/* Model preview */}
-        {provider.models.length > 0 && (
-          <div className="rt-provider-form__models">
-            <span className="rt-provider-form__label">{t('runtimes.models')}</span>
-            <div className="rt-agent-card__models">
-              {provider.models.map((m) => (
-                <span key={m.id} className="rt-chip">{m.label}</span>
-              ))}
-            </div>
+        {/* Model mapping for third-party providers */}
+        {isThirdParty && (
+          <div className="rt-provider-form__mapping">
+            <button
+              type="button"
+              className="rt-btn rt-btn--xs rt-btn--ghost rt-provider-mapping-toggle"
+              onClick={() => setShowMapping(!showMapping)}
+            >
+              {showMapping ? '▾' : '▸'} {t('runtimes.models')}
+            </button>
+            {showMapping && (
+              <div className="rt-provider-mapping">
+                <p className="rt-provider-mapping__hint">{t('runtimes.modelMappingHint')}</p>
+                {(['sonnet', 'haiku', 'opus'] as const).map((alias) => (
+                  <label key={alias} className="rt-provider-mapping__field">
+                    <span className="rt-provider-mapping__alias">{alias}</span>
+                    <span className="rt-provider-mapping__arrow">→</span>
+                    <input
+                      type="text"
+                      className="rt-provider-form__input rt-provider-mapping__input"
+                      value={mapping[alias]}
+                      onChange={(e) => {
+                        setMapping({ ...mapping, [alias]: e.target.value });
+                        setSaveState('idle');
+                      }}
+                      placeholder={`${alias} model id`}
+                    />
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

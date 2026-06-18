@@ -53,17 +53,24 @@ export const api = {
   /**
    * Install an agent via SSE stream. Calls `onEvent` for each progress event.
    * Returns the final event (done or error).
+   * Pass `signal` to allow cancellation (e.g. via AbortController).
    */
   async installAgent(
     agentId: string,
     onEvent: (event: InstallEvent) => void,
+    signal?: AbortSignal,
   ): Promise<InstallEvent> {
-    const res = await fetch(`${BASE}/agents/${agentId}/install`, { method: 'POST' });
+    const res = await fetch(`${BASE}/agents/${agentId}/install`, {
+      method: 'POST',
+      signal,
+    });
     if (!res.ok) {
       const data = await res.json();
       const errorEvent: InstallEvent = {
         type: 'error',
         message: data.error ?? `Install failed: ${res.status}`,
+        category: 'unknown',
+        retryable: true,
       };
       onEvent(errorEvent);
       return errorEvent;
@@ -71,7 +78,12 @@ export const api = {
 
     const reader = res.body?.getReader();
     if (!reader) {
-      const errorEvent: InstallEvent = { type: 'error', message: 'No response stream' };
+      const errorEvent: InstallEvent = {
+        type: 'error',
+        message: 'No response stream',
+        category: 'unknown',
+        retryable: false,
+      };
       onEvent(errorEvent);
       return errorEvent;
     }

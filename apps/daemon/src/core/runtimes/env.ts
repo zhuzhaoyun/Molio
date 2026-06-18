@@ -4,7 +4,6 @@ import * as os from 'node:os';
 import { execSync } from 'node:child_process';
 import { TextDecoder as NodeTextDecoder } from 'node:util';
 import type { RuntimeAgentDef } from '@molio/contracts';
-import { detectNode } from './node-detect.js';
 
 /**
  * Load a `.env` file and return key-value pairs.
@@ -58,7 +57,13 @@ export function buildSpawnEnv(
   env['MOLIO_AGENT_NAME'] = def.name;
 
   if (def.id === 'claude') {
-    stripUnlessCustomBaseUrl(env, 'ANTHROPIC_BASE_URL', ['ANTHROPIC_API_KEY']);
+    stripUnlessCustomBaseUrl(env, 'ANTHROPIC_BASE_URL', [
+      'ANTHROPIC_API_KEY',
+      'ANTHROPIC_AUTH_TOKEN',
+      'ANTHROPIC_DEFAULT_SONNET_MODEL',
+      'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+      'ANTHROPIC_DEFAULT_OPUS_MODEL',
+    ]);
     // Claude Code on Windows requires git-bash.
     // Auto-detect if CLAUDE_CODE_GIT_BASH_PATH is not already set.
     if (process.platform === 'win32' && !env['CLAUDE_CODE_GIT_BASH_PATH']) {
@@ -72,61 +77,28 @@ export function buildSpawnEnv(
     stripUnlessCustomBaseUrl(env, 'OPENAI_BASE_URL', ['OPENAI_API_KEY', 'CODEX_API_KEY']);
   }
 
-  // Ensure Node.js and npm-installed agent CLIs are in PATH.
-  // Agent CLIs installed via npm create .cmd shims that call `node`,
-  // which fails if node is not in PATH (common on systems with old/nvm Node.js).
+  // Ensure Molio-installed agent binaries are in PATH.
   augmentPath(env);
 
   return env;
 }
 
 /**
- * Add Node.js and npm-installed binary directories to PATH.
- * This ensures that:
- * - `.cmd` shims (like `claude.cmd`) can find `node`
- * - npm-installed CLIs are accessible even if user hasn't restarted terminal
- * - The Molio user-level npm prefix (~/.molio/npm) is always searchable
+ * Ensure the Molio user-level binary directory (~/.molio/bin) is in PATH.
+ * This is where one-click install places downloaded agent binaries.
  */
 function augmentPath(env: NodeJS.ProcessEnv): void {
   const pathKey = process.platform === 'win32' ? 'Path' : 'PATH';
-  // Normalize key — Windows env can use Path, PATH, or path
   const actualKey = Object.keys(env).find(k => k.toUpperCase() === 'PATH') || pathKey;
   const pathSep = process.platform === 'win32' ? ';' : ':';
   const currentPath = (env[actualKey] as string) || '';
 
-  const dirsToAdd: string[] = [];
   const home = os.homedir();
+  const molioBin = path.join(home, '.molio', 'bin');
 
-  // 1. System Node.js directory (so `node` is available for .cmd shims)
-  try {
-    const nodeResult = detectNode();
-    if (nodeResult.binary) {
-      dirsToAdd.push(path.dirname(nodeResult.binary));
-    }
-    if (nodeResult.npmBinary) {
-      dirsToAdd.push(path.dirname(nodeResult.npmBinary));
-    }
-  } catch { /* ignore */ }
-
-  // 2. Molio user-level npm prefix (where `npm install --prefix` puts bins)
-  if (process.platform === 'win32') {
-    // On Windows, npm puts .cmd shims directly in the prefix dir
-    dirsToAdd.push(path.join(home, '.molio', 'npm'));
-    // Also add common npm global bin dirs
-    dirsToAdd.push(path.join(home, 'AppData', 'Roaming', 'npm'));
-  } else {
-    dirsToAdd.push(path.join(home, '.molio', 'npm', 'bin'));
-    dirsToAdd.push(path.join(home, '.local', 'bin'));
-  }
-
-  // Filter to dirs that exist and aren't already in PATH
-  const newDirs = dirsToAdd.filter(d => {
-    if (!fs.existsSync(d)) return false;
-    return !currentPath.toLowerCase().includes(d.toLowerCase());
-  });
-
-  if (newDirs.length > 0) {
-    env[actualKey] = `${newDirs.join(pathSep)}${pathSep}${currentPath}`;
+  // Only add if it exists and isn't already in PATH
+  if (fs.existsSync(molioBin) && !currentPath.toLowerCase().includes(molioBin.toLowerCase())) {
+    env[actualKey] = `${molioBin}${pathSep}${currentPath}`;
   }
 }
 

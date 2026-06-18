@@ -8,7 +8,7 @@ import type {
 } from '@molio/contracts';
 import { getAgentDef, listAgentDefs } from './runtimes/registry.js';
 import { resolveAgentBinary, probeVersion } from './runtimes/launch.js';
-import { buildSpawnEnv } from './runtimes/env.js';
+import { buildSpawnEnv, createStderrDecoder } from './runtimes/env.js';
 import { createClaudeStreamHandler } from './streams/claude-stream.js';
 import { createCodexStreamHandler } from './streams/codex-stream.js';
 import { createJsonEventStreamHandler } from './streams/json-event-stream.js';
@@ -56,16 +56,35 @@ export class RunManager {
       const agentConfig = config.agents[def.id] || {};
       const configuredEnv = agentConfig.env || {};
       const result = resolveAgentBinary(def, { configuredEnv });
-      const version = result.binary ? probeVersion(result.binary, def.versionArgs) : null;
+      let available = result.binary !== null;
+      let binary = result.binary;
+      let version: string | null = null;
+
+      let probeError: string | null = null;
+      if (result.binary) {
+        const probeResult = probeVersion(result.binary, def.versionArgs);
+        version = probeResult.version;
+        probeError = probeResult.error ?? null;
+
+        // A binary that exists on disk but can't execute is NOT usable.
+        // This handles stale/broken binaries left by failed installs —
+        // the file is found in a well-known dir but can't actually run.
+        if (!probeResult.version && probeResult.error) {
+          available = false;
+        }
+      }
+
       return {
         id: def.id,
         name: def.name,
-        available: result.binary !== null,
-        binary: result.binary,
+        available,
+        binary,
         source: result.source,
         version,
+        probeError: probeError,
         models: def.fallbackModels,
         installUrl: def.installUrl,
+        installable: !!def.install,
       };
     });
   }
@@ -248,7 +267,8 @@ export class RunManager {
     }
 
     child.stdout?.setEncoding('utf8');
-    child.stderr?.setEncoding('utf8');
+
+    const stderrDecoder = createStderrDecoder();
 
     const parser = this.selectParser(def, (ev) => {
       this.emitEvent(run, ev);
@@ -271,8 +291,9 @@ export class RunManager {
       parser.feed(chunk);
     });
 
-    child.stderr?.on('data', (chunk: string) => {
-      const trimmed = chunk.trim();
+    child.stderr?.on('data', (chunk: Buffer) => {
+      const text = stderrDecoder ? stderrDecoder(chunk) : chunk.toString('utf8');
+      const trimmed = text.trim();
       // Codex CLI logs "Reading prompt from stdin..." and "Reading additional
       // input from stdin..." to stderr as informational messages, not errors.
       // Filter them out so they don't show up as red error bubbles in the UI.

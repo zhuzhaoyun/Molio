@@ -51,6 +51,49 @@ export function resolveAgentBinary(
   return { binary: null, source: 'not-found' };
 }
 
+/** Minimum expected size for a valid native binary (1 MB). */
+const MIN_BINARY_SIZE = 1_024 * 1_024;
+
+export function validateBinary(filePath: string, platform: string): string | null {
+  try {
+    const stats = fs.statSync(filePath);
+    if (stats.size < MIN_BINARY_SIZE) {
+      return `File too small (${stats.size} bytes, expected >= ${MIN_BINARY_SIZE})`;
+    }
+
+    // Windows shell scripts (.cmd, .bat) are text files, skip PE header check
+    const ext = path.extname(filePath).toLowerCase();
+    if (platform === 'win32' && (ext === '.cmd' || ext === '.bat')) {
+      return null;
+    }
+
+    const fd = fs.openSync(filePath, 'r');
+    const header = Buffer.alloc(4);
+    fs.readSync(fd, header, 0, 4, 0);
+    fs.closeSync(fd);
+
+    if (platform === 'win32') {
+      // PE files start with 'MZ' (DOS header)
+      if (header[0] !== 0x4D || header[1] !== 0x5A) {
+        return `Invalid PE header: ${header.toString('hex')}`;
+      }
+    } else {
+      // ELF files start with 0x7f 'E' 'L' 'F'
+      // Mach-O starts with 0xFEEDFACE (big-endian) or 0xFEEDFACF (64-bit)
+      const isElf = header[0] === 0x7F && header[1] === 0x45 && header[2] === 0x4C && header[3] === 0x46;
+      const isMachO =
+        (header[0] === 0xFE && header[1] === 0xED && header[2] === 0xFA && (header[3] === 0xCE || header[3] === 0xCF));
+      if (!isElf && !isMachO) {
+        return `Invalid ELF/Mach-O header: ${header.toString('hex')}`;
+      }
+    }
+
+    return null; // valid
+  } catch (err) {
+    return `Validation error: ${err instanceof Error ? err.message : String(err)}`;
+  }
+}
+
 function resolveOnPath(bin: string): string | null {
   if (process.platform === 'win32') {
     const whereCmds = [
@@ -118,9 +161,8 @@ export function getWellKnownToolchainDirs(): string[] {
 
   if (process.platform === 'win32') {
     dirs.push(
-      // Molio user-level npm prefix (auto-install fallback when global dir
-      // is not writable). npm puts .cmd shims directly in the prefix dir.
-      path.join(home, '.molio', 'npm'),
+      // Molio user-level binary directory (one-click install target)
+      path.join(home, '.molio', 'bin'),
       path.join(home, 'AppData', 'Local', 'pnpm'),
       path.join(home, 'AppData', 'Roaming', 'npm'),
       path.join(home, 'AppData', 'Local', 'Yarn', 'bin'),
@@ -173,9 +215,8 @@ export function getWellKnownToolchainDirs(): string[] {
     }
   } else {
     dirs.push(
-      // Molio user-level npm prefix (auto-install fallback).
-      // npm puts bin shims in <prefix>/bin on Unix.
-      path.join(home, '.molio', 'npm', 'bin'),
+      // Molio user-level binary directory (one-click install target)
+      path.join(home, '.molio', 'bin'),
       path.join(home, '.local', 'bin'),
       path.join(home, '.npm-global', 'bin'),
       path.join(home, '.npm-packages', 'bin'),
@@ -232,7 +273,12 @@ function findInWellKnownDirs(bin: string): string | null {
   return null;
 }
 
-export function probeVersion(bin: string, args: string[], timeoutMs = 5000): string | null {
+export interface ProbeResult {
+  version: string | null;
+  error?: string;
+}
+
+export function probeVersion(bin: string, args: string[], timeoutMs = 5000): ProbeResult {
   try {
     const needsShell = process.platform === 'win32' && (
       bin.endsWith('.cmd') || bin.endsWith('.bat')
@@ -249,13 +295,14 @@ export function probeVersion(bin: string, args: string[], timeoutMs = 5000): str
     const stdout = execFileSync(bin, args, {
       encoding: 'utf8',
       timeout: timeoutMs,
-      stdio: ['ignore', 'pipe', 'ignore'],
+      stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
       shell: needsShell,
       env: { ...process.env, PATH: envPath },
     });
-    return stdout.trim().split('\n')[0] ?? null;
-  } catch {
-    return null;
+    return { version: stdout.trim().split('\n')[0] ?? null };
+  } catch (err: any) {
+    const msg = err?.stderr || err?.message || String(err);
+    return { version: null, error: msg };
   }
 }

@@ -105,6 +105,8 @@ export function useRuntimes() {
       setAgents(agentsData);
       const count = agentsData.filter((a) => a.available).length;
       setRescanState({ status: 'done', count });
+      // Notify useAgents in App.tsx so the home page auto-selects newly installed agents
+      window.dispatchEvent(new CustomEvent('molio:agents-changed'));
     } catch (err) {
       setRescanState({ status: 'error', message: (err as Error).message });
     }
