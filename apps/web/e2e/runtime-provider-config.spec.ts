@@ -24,6 +24,13 @@ test.describe('Runtime provider config', () => {
     const runtimesTab = page.locator('.settings-tab-btn').filter({ hasText: /Runtime|运行时/ });
     await runtimesTab.click({ timeout: 5_000 });
     await expect(page.locator('.rt-shell')).toBeVisible();
+
+    // All tests in this suite require Claude Code to be installed and available.
+    // Skip gracefully in CI environments where it isn't.
+    const claudeCard = page.locator('.rt-agent-card').filter({ hasText: 'Claude Code' });
+    const hasCard = await claudeCard.count();
+    const isAvailable = hasCard > 0 && await claudeCard.locator('.rt-badge--ok').count() > 0;
+    test.skip(!isAvailable, 'Claude Code not installed in this environment');
   });
 
   test('Claude Code card shows provider config button when installed', async ({ page }) => {

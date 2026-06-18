@@ -74,12 +74,14 @@ test.describe('Runtimes page', () => {
     const count = await claudeCard.count();
     if (count === 0) return; // Skip if Claude card not found
 
-    // Claude should show either an Install button (not installed) or a Test button (installed)
+    // Claude should show one of: InstallButton (installable), an <a> link (installUrl only), or Test button (installed)
     const installBtn = claudeCard.locator('.rt-install-btn');
+    const installLink = claudeCard.locator('.rt-agent-card__install');
     const testBtn = claudeCard.locator('.rt-btn').filter({ hasText: /Test|测试/ });
     const hasInstallBtn = await installBtn.count();
+    const hasInstallLink = await installLink.count();
     const hasTestBtn = await testBtn.count();
-    expect(hasInstallBtn + hasTestBtn).toBeGreaterThan(0);
+    expect(hasInstallBtn + hasInstallLink + hasTestBtn).toBeGreaterThan(0);
   });
 
   test('should refresh agents when rescan button is clicked', async ({ page }) => {
