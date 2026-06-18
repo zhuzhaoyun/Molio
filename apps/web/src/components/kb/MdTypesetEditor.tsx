@@ -1,14 +1,14 @@
 /**
- * MdTypesetEditor — WYSIWYG Markdown editor with style panel for publishing.
+ * MdTypesetEditor — 3-column typeset mode (doocs/md pattern).
  *
- * 2-column layout:
- * - Left: Milkdown WYSIWYG editor (responds to theme changes via dynamic CSS)
- * - Right: MdStylePanel (controls doocs/md publish theme)
+ * Layout:
+ * - Left:   Milkdown WYSIWYG source editor (editable, no theme styling)
+ * - Middle: doocs/md themed preview (read-only, full theme rendering)
+ * - Right:  MdStylePanel (controls doocs/md publish theme)
  *
- * A hidden offscreen MdRenderer keeps #output available for publish/copy flows.
- * Theme changes are bridged to Milkdown via a live <style> element so the
- * WYSIWYG editor reflects font, color, width, indent, and justify settings
- * in real time — no edit/preview toggle needed.
+ * Content flows: source edit → content state → middle preview re-renders.
+ * Theme flows:   style panel → themeConfig → middle preview re-renders.
+ * Copy/publish reads #output from the visible middle preview.
  */
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { MdMilkdownEditor } from './MdMilkdownEditor';
@@ -24,62 +24,8 @@ export interface MdTypesetEditorProps {
 }
 
 const PROXIED_HOSTS_DOM = ['mmbiz.qpic.cn', 'mmbiz.qlogo.cn', 'mpvideo.qpic.cn'];
-const MILKDOWN_THEME_STYLE_ID = 'milkdown-theme-override';
 
-/** Build CSS overrides so Milkdown reflects doocs/md theme configuration */
-/** Map doocs/md theme name to Milkdown background / surface colours */
-function getThemeColors(themeName: string): { bg: string; surface: string } {
-  switch (themeName) {
-    case 'grace':  return { bg: '#faf9f6', surface: '#f3efe8' };
-    case 'simple': return { bg: '#ffffff', surface: '#f5f5f5' };
-    default:       return { bg: '#ffffff', surface: '#fafafa' }; // default
-  }
-}
-
-function buildMilkdownThemeCSS(config: ThemeConfig): string {
-  const isMobile = config.previewWidth === 'mobile';
-  const primary = config.primaryColor;
-  // fontSize from doocs/md already includes 'px' suffix (e.g. '16px')
-  const fontSize = config.fontSize.endsWith('px') ? config.fontSize : `${config.fontSize}px`;
-  const fontFamily = config.fontFamily.includes("'") ? config.fontFamily : `'${config.fontFamily}'`;
-  const colors = getThemeColors(config.themeName);
-
-  return [
-    // Theme background / surface
-    `.milkdown {`,
-    `  --crepe-color-primary: ${primary};`,
-    `  --crepe-color-background: ${colors.bg};`,
-    `  --crepe-color-surface-low: ${colors.surface};`,
-    `  --crepe-color-surface: ${colors.surface};`,
-    `}`,
-    // Layout
-    `.milkdown .editor {`,
-    `  font-family: ${fontFamily};`,
-    `  font-size: ${fontSize};`,
-    isMobile
-      ? [
-          '  max-width: 375px;',
-          '  margin: 24px auto;',
-          '  background: var(--bg-panel);',
-          '  box-shadow: 0 0 0 1px var(--border), 0 4px 16px rgba(0,0,0,0.07);',
-          '  border-radius: 4px;',
-          '  padding: 32px 24px 48px;',
-        ].join('\n')
-      : '  max-width: 100%;',
-    config.isUseJustify ? '  text-align: justify;' : '',
-    `}`,
-    config.isUseIndent ? `.milkdown .editor > p { text-indent: 2em; }` : '',
-    // Primary color accents
-    `.milkdown .editor a { color: ${primary}; }`,
-    `.milkdown .editor blockquote { border-left-color: ${primary}; }`,
-    `.milkdown .editor th { border-bottom-color: ${primary}; }`,
-    `.milkdown .editor code { color: ${primary}; }`,
-    `.milkdown .editor li[data-item-type="task"] input[type="checkbox"] { accent-color: ${primary}; }`,
-    `.milkdown .editor .ProseMirror-focused .ProseMirror-selectednode { outline-color: ${primary}; }`,
-  ].filter(Boolean).join('\n');
-}
-
-/** Rewrite proxied host src to daemon proxy — DOM manipulation, doesn't touch ProseMirror doc */
+/** Rewrite proxied host src to daemon proxy — DOM manipulation only, doesn't touch ProseMirror doc */
 function proxyMediaInDOM(container: HTMLElement) {
   container.querySelectorAll('img, video, source').forEach((el) => {
     const rawSrc = el.getAttribute('src');
@@ -108,20 +54,6 @@ export function MdTypesetEditor({
     setContent(initialContent);
   }, [initialContent]);
 
-  // Bridge doocs/md theme config → Milkdown live CSS overrides
-  useEffect(() => {
-    let styleEl = document.getElementById(MILKDOWN_THEME_STYLE_ID) as HTMLStyleElement | null;
-    if (!styleEl) {
-      styleEl = document.createElement('style');
-      styleEl.id = MILKDOWN_THEME_STYLE_ID;
-      document.head.appendChild(styleEl);
-    }
-    styleEl.textContent = buildMilkdownThemeCSS(themeConfig);
-    return () => {
-      styleEl?.remove();
-    };
-  }, [themeConfig]);
-
   // After Milkdown renders, proxy mmbiz images in the DOM
   useEffect(() => {
     const container = editorContainerRef.current;
@@ -147,23 +79,24 @@ export function MdTypesetEditor({
     setThemeConfig(newConfig);
   }, []);
 
-  // Content for Milkdown editor — same preprocessing as Read mode
-  const milkdownContent = vaultId
+  // Content for Milkdown source editor
+  const sourceContent = vaultId
     ? proxyExternalImages(preprocessWikiEmbeds(stripTrackingPixels(initialContent), vaultId))
     : proxyExternalImages(stripTrackingPixels(initialContent));
 
-  // Content for publish preview (uses live-updating `content` state)
-  const publishContent = vaultId
+  // Content for doocs/md themed preview (live-updating as user edits)
+  const previewContent = vaultId
     ? proxyExternalImages(preprocessWikiEmbeds(stripTrackingPixels(content), vaultId))
     : proxyExternalImages(stripTrackingPixels(content));
 
   return (
     <div className="kb-typeset-editor">
-      {/* Left: Milkdown WYSIWYG editor */}
-      <div className="kb-typeset-left">
+      {/* Left: Milkdown source editor */}
+      <div className="kb-typeset-source">
+        <div className="kb-typeset-source-header">Markdown 源</div>
         <div className="kb-typeset-cm" ref={editorContainerRef}>
           <MdMilkdownEditor
-            initialContent={milkdownContent}
+            initialContent={sourceContent}
             onContentChange={handleContentChange}
             vaultId={vaultId}
             fileKey={selectedFile}
@@ -171,13 +104,16 @@ export function MdTypesetEditor({
         </div>
       </div>
 
+      {/* Middle: doocs/md themed preview */}
+      <div className="kb-typeset-preview">
+        <div className="kb-typeset-preview-header">排版预览</div>
+        <div className="kb-typeset-preview-body">
+          <MdRenderer content={previewContent} themeConfig={themeConfig} />
+        </div>
+      </div>
+
       {/* Right: Style Panel */}
       <MdStylePanel config={themeConfig} onChange={handleThemeChange} />
-
-      {/* Hidden: doocs/md renderer for publish/copy compatibility */}
-      <div className="kb-typeset-preview-hidden" aria-hidden="true">
-        <MdRenderer content={publishContent} themeConfig={themeConfig} />
-      </div>
     </div>
   );
 }

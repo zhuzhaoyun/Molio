@@ -777,23 +777,62 @@
   overflow: hidden;
 }
 
-/* Left: Markdown editor */
-.kb-typeset-left {
+/* ── Left: Milkdown source editor ── */
+.kb-typeset-source {
   flex: 1;
-  min-width: 280px;
+  min-width: 260px;
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--border);
 }
+.kb-typeset-source-header {
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
 
+/* ── Middle: doocs/md themed preview ── */
+.kb-typeset-preview {
+  flex: 1.2;
+  min-width: 340px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+}
+.kb-typeset-preview-header {
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.kb-typeset-preview-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 24px 32px;
+  background: var(--bg);
+}
+.kb-typeset-preview-body > .md-preview {
+  max-width: 100%;
+}
 
-/* ── Milkdown editor container (typeset mode left pane) ── */
+/* ── Milkdown editor container (typeset source pane) ── */
 .kb-typeset-cm {
   flex: 1;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  background: var(--bg-muted);
 }
 .kb-typeset-cm > [data-milkdown-root="true"] {
   flex: 1;
@@ -809,7 +848,7 @@
   background: var(--bg-panel);
 }
 
-/* ── Offscreen doocs/md publish preview (hidden, for copy/publish flow) ── */
+/* ── Offscreen doocs/md publish preview (hidden fallback) ── */
 .kb-typeset-preview-hidden {
   position: absolute;
   left: -9999px;
