@@ -89,7 +89,7 @@ function TreeNodeItem({
   onRenameComplete,
   onRenameCancel,
 }: TreeNodeItemProps) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   const toggle = useCallback(() => setExpanded((e) => !e), []);
 
   // Don't show "+" for items inside the wiki/ directory

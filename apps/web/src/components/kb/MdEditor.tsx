@@ -72,6 +72,12 @@ const editorTheme = EditorView.theme({
     backgroundColor: 'var(--bg)',
     color: 'var(--text)',
     height: '100%',
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  '.cm-scroller': {
+    flex: 1,
+    overflow: 'auto',
   },
   '.cm-content': {
     padding: '16px 24px',
@@ -211,6 +217,27 @@ export function MdEditor({
     });
 
     editorViewRef.current = view;
+
+    // Ensure the editor container takes full height
+    if (editorContainerRef.current) {
+      editorContainerRef.current.style.height = '100%';
+      editorContainerRef.current.style.minHeight = '0';
+    }
+
+    // Force CodeMirror editor to fill container height
+    const cmEditor = editorContainerRef.current?.querySelector('.cm-editor') as HTMLElement | null;
+    if (cmEditor) {
+      cmEditor.style.height = '100%';
+      cmEditor.style.display = 'flex';
+      cmEditor.style.flexDirection = 'column';
+    }
+
+    // Force scroller to be scrollable
+    const cmScroller = editorContainerRef.current?.querySelector('.cm-scroller') as HTMLElement | null;
+    if (cmScroller) {
+      cmScroller.style.flex = '1';
+      cmScroller.style.overflow = 'auto';
+    }
 
     return () => {
       view.destroy();
