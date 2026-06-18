@@ -10,7 +10,7 @@
  * Theme flows:   style panel → themeConfig → middle preview re-renders.
  * Copy/publish reads #output from the visible middle preview.
  */
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { MdRenderer } from './MdRenderer';
 import { MdStylePanel, defaultThemeConfig, type ThemeConfig } from './MdStylePanel';
 import { preprocessWikiEmbeds, proxyExternalImages, stripTrackingPixels } from '../../hooks/useKnowledge';
@@ -91,10 +91,14 @@ export function MdTypesetEditor({
     setThemeConfig(newConfig);
   }, []);
 
-  // Content for doocs/md themed preview (live-updating as user edits source)
-  const previewContent = vaultId
-    ? proxyExternalImages(preprocessWikiEmbeds(stripTrackingPixels(content), vaultId))
-    : proxyExternalImages(stripTrackingPixels(content));
+  // Content for doocs/md themed preview (live-updating as user edits source).
+  // Memoized to avoid re-running three full-string regex scans on every keystroke.
+  const previewContent = useMemo(() => {
+    const stripped = stripTrackingPixels(content);
+    return vaultId
+      ? proxyExternalImages(preprocessWikiEmbeds(stripped, vaultId))
+      : proxyExternalImages(stripped);
+  }, [content, vaultId]);
 
   return (
     <div className="kb-typeset-editor">

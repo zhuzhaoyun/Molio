@@ -14,8 +14,7 @@
  *   <img loading="lazy"> for images
  *   <li> for regular lists (display: block in default theme)
  * Note: Rich CSS styles (zebra-stripe, list-item display, comprehensive base) are
- *   defined in vendor/doocs-md/themes/ but runtime CSS comes from
- *   vendor/doocs-md/shared/configs/theme-css/ via applyTheme().
+ *   defined in vendor/doocs-md/shared/configs/theme-css/ via applyTheme().
  */
 
 import { test, expect } from '@playwright/test';
@@ -193,8 +192,6 @@ test.describe('Markdown Rendering', () => {
     await expect(rows).toHaveCount(2);
 
     // Verify even rows have a background color from doocs/md theme
-    // (shared/configs/theme-css/ does not yet include the comprehensive nth-child(even) rule
-    // from vendor/doocs-md/themes/ -- the rich CSS files in themes/ are pending sync)
     const evenRow = page.locator('#output .md-table tbody tr:nth-child(even)').first();
     await expect(evenRow).toBeVisible({ timeout: 5_000 });
   });

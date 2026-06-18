@@ -257,6 +257,7 @@ export function KbMainContent({
       {/* Content area — branch by file category */}
       {category === 'text' && isTypesetMode ? (
         <MdTypesetEditor
+          key={selectedFile}
           initialContent={fileContent?.content ?? ''}
           onContentChange={onContentChange}
           vaultId={vaultId ?? ''}

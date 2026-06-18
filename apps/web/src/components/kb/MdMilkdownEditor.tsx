@@ -8,6 +8,8 @@ import { gfm } from '@milkdown/kit/preset/gfm';
 import { Milkdown, MilkdownProvider, useEditor } from '@milkdown/react';
 import { nord } from '@milkdown/theme-nord';
 import { listener, listenerCtx } from '@milkdown/kit/plugin/listener';
+import { wikiEmbedPlugin } from './plugins/wikiEmbedPlugin';
+import { imageProxyPlugin } from './plugins/imageProxyPlugin';
 
 export interface MdMilkdownEditorProps {
   initialContent: string;
@@ -20,6 +22,7 @@ export interface MdMilkdownEditorProps {
 function MilkdownInner({
   initialContent,
   onContentChange,
+  vaultId,
 }: MdMilkdownEditorProps) {
   const callbackRef = useRef(onContentChange);
   callbackRef.current = onContentChange;
@@ -37,7 +40,9 @@ function MilkdownInner({
         })
         .use(commonmark)
         .use(gfm)
-        .use(listener),
+        .use(listener)
+        .use(wikiEmbedPlugin({ vaultId }))
+        .use(imageProxyPlugin()),
     [],
   );
 

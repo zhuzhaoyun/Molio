@@ -17,16 +17,17 @@ export function renderMarkdown(text: string): string {
   // Escape HTML
   let html = escapeHtml(text);
 
-  // Strikethrough (before bold/italic to avoid ** conflict)
-  html = html.replace(/~~(.+?)~~/g, '<del>$1</del>');
-
-  // Fenced code blocks
+  // Fenced code blocks (MUST run before strikethrough to prevent ~~ inside
+  // code blocks from being rendered as <del>)
   html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, _lang, code) => {
     return `<pre><code>${code.trim()}</code></pre>`;
   });
 
   // Inline code
   html = html.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+
+  // Strikethrough (after code blocks, before bold/italic to avoid ** conflict)
+  html = html.replace(/~~(.+?)~~/g, '<del>$1</del>');
 
   // Headers
   html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');

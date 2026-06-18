@@ -27,13 +27,6 @@ export function preprocessWikiEmbeds(markdown: string, vaultId: string): string 
   );
 }
 
-/** Hosts known to block hotlinking — route media from these through the daemon proxy */
-const PROXIED_HOSTS = [
-  'mmbiz.qpic.cn',
-  'mmbiz.qlogo.cn',
-  'mpvideo.qpic.cn',
-];
-
 /* [MOLIO] Route external images/videos from anti-hotlinking hosts through daemon proxy */
 export function proxyExternalImages(markdown: string): string {
   const proxyBase = `${window.location.origin}/api/proxy/image?url=`;
