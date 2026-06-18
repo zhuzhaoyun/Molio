@@ -16,7 +16,8 @@
     "@molio/contracts": "workspace:*",
     "better-sqlite3": "^12.10.0",
     "hono": "^4.7.0",
-    "qrcode": "^1.5.4"
+    "qrcode": "^1.5.4",
+    "trash": "^10.1.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
