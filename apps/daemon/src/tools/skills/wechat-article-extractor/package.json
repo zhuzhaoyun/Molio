@@ -1,0 +1,7 @@
+{
+  "name": "wechat-article-extractor",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "description": "Zero-dependency WeChat article extractor skill for Claude Code"
+}

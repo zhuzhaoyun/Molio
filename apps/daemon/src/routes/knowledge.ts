@@ -35,6 +35,7 @@ import {
   ensureVaultDir,
 } from '../core/knowledge.js';
 import type { RunManager } from '../core/RunManager.js';
+import { installBuiltinSkills } from '../core/skill-installer.js';
 import {
   WIKI_BUILD_PROMPT,
   WIKI_INGEST_PROMPT,
@@ -67,6 +68,7 @@ export function knowledgeRoutes(db: Database.Database, runManager: RunManager): 
     try {
       ensureVaultDir(body.path);
       const vault = createVault(db, body.name, body.path, body.description);
+      installBuiltinSkills(body.path);
       addKbHistory(db, vault.id, 'edit', `Vault "${vault.name}" created`);
       return c.json({ ...vault, fileCount: 0 }, 201);
     } catch (err) {

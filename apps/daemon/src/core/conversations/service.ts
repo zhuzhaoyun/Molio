@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import type { ChatMessage, Conversation } from '@molio/contracts';
 import {
+  closeConversation,
   createDesktopConversation,
   createExternalConversation,
   getConversation,
@@ -73,5 +74,17 @@ export class ConversationService {
     };
     upsertMessage(this.db, conversationId, message);
     return message;
+  }
+
+  /**
+   * Close the current external session conversation so the next message
+   * creates a fresh one. The old conversation is preserved for history viewing.
+   * @returns true if a conversation was closed, false if none existed
+   */
+  closeExternalSession(channelType: string, externalSessionId: string): boolean {
+    const existing = getConversationByExternalSession(this.db, channelType, externalSessionId);
+    if (!existing) return false;
+    closeConversation(this.db, existing.id);
+    return true;
   }
 }

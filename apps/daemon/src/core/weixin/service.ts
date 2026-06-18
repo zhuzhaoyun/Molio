@@ -8,7 +8,7 @@ import type { RunManager } from '../RunManager.js';
 import type { ConversationService } from '../conversations/service.js';
 import { loadConfig, saveConfig, type WeixinConfig } from '../config.js';
 import { getVaultByPath } from '../db.js';
-import { WIKI_QUERY_PROMPT } from '../wiki-prompts.js';
+import { WIKI_WEIXIN_PROMPT } from '../wiki-prompts.js';
 import { DEFAULT_BASE_URL, WeixinApi } from './client.js';
 import { buildMolioPrompt, parseWeixinMessage } from './message.js';
 import type { ParsedWeixinMessage, WeixinCredentials, WeixinStatus } from './types.js';
@@ -79,15 +79,15 @@ export function buildWeixinRunMessage(
   db: Database.Database | undefined,
   text: string,
   cwd: string | undefined,
-  isFirstTurn: boolean,
+  _isFirstTurn: boolean,
 ): string {
   const message = buildMolioPrompt(text);
-  if (!db || !cwd || !isFirstTurn) return message;
+  if (!db || !cwd) return message;
 
   const vault = getVaultByPath(db, cwd);
   if (!vault) return message;
 
-  return `${WIKI_QUERY_PROMPT}\n\n---\n\n用户问题：${message}`;
+  return `${WIKI_WEIXIN_PROMPT}\n\n---\n\n用户消息：${message}`;
 }
 
 export class WeixinService {
@@ -349,6 +349,18 @@ export class WeixinService {
     if (parsed.contextToken) {
       this.contextTokens.set(parsed.fromUserId, parsed.contextToken);
       this.persistContextTokens();
+    }
+
+    // Handle /new command — close current conversation, next message starts fresh
+    const trimmed = parsed.text.trim();
+    if (trimmed === '/new' || trimmed === '/clear' || trimmed === '/重置') {
+      const closed = this.conversations.closeExternalSession('weixin', parsed.fromUserId);
+      if (closed) {
+        await this.sendText(parsed.fromUserId, '已开启新会话。发送消息即可开始新的对话。');
+      } else {
+        await this.sendText(parsed.fromUserId, '当前已是新会话。');
+      }
+      return;
     }
 
     await this.createMolioRun(parsed);

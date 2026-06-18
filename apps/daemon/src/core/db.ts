@@ -137,12 +137,17 @@ function migrate(db: SqliteDb): void {
   addColumnIfMissing(db, 'conversations', 'channel_type', "TEXT NOT NULL DEFAULT 'desktop'");
   addColumnIfMissing(db, 'conversations', 'external_session_id', 'TEXT');
   addColumnIfMissing(db, 'conversations', 'metadata_json', 'TEXT');
+  addColumnIfMissing(db, 'conversations', 'closed_at', 'INTEGER');
   addColumnIfMissing(db, 'messages', 'run_id', 'TEXT');
 
+  // Rebuild the external session unique index to only enforce uniqueness
+  // on open (non-closed) conversations. This allows /new to create a fresh
+  // conversation while preserving the old one for history.
+  db.exec(`DROP INDEX IF EXISTS idx_conv_external_session`);
   db.exec(`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_conv_external_session
+    CREATE UNIQUE INDEX idx_conv_external_session_open
       ON conversations(channel_type, external_session_id)
-      WHERE external_session_id IS NOT NULL;
+      WHERE external_session_id IS NOT NULL AND closed_at IS NULL;
   `);
 }
 
@@ -297,10 +302,19 @@ export function getConversationByExternalSession(
   channelType: string,
   externalSessionId: string,
 ): Conversation | null {
+  // Only return the latest open (not closed) conversation for this external session
   const row = db.prepare(
-    'SELECT * FROM conversations WHERE channel_type = ? AND external_session_id = ?'
+    'SELECT * FROM conversations WHERE channel_type = ? AND external_session_id = ? AND closed_at IS NULL ORDER BY created_at DESC LIMIT 1'
   ).get(channelType, externalSessionId) as Record<string, unknown> | undefined;
   return row ? rowToConversation(row) : null;
+}
+
+/**
+ * Mark a conversation as closed so it won't be returned by getConversationByExternalSession.
+ * The conversation and its messages are preserved for history viewing.
+ */
+export function closeConversation(db: SqliteDb, id: string): void {
+  db.prepare('UPDATE conversations SET closed_at = ?, updated_at = ? WHERE id = ?').run(Date.now(), Date.now(), id);
 }
 
 export function createExternalConversation(db: SqliteDb, input: ExternalConversationInput): Conversation {
