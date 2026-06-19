@@ -70,7 +70,7 @@ export const defaultThemeConfig: ThemeConfig = {
   codeBlockTheme: codeBlockThemeOptions[23]!.value, // 'github'
   headingStyles: {},
   legend: legendOptions[0]!.value,
-  previewWidth: 'mobile',
+  previewWidth: 'desktop',
   isUseIndent: false,
   isUseJustify: true,
   isMacCodeBlock: true,

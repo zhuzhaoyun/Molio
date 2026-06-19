@@ -757,6 +757,7 @@
 .kb-content-area {
   flex: 1;
   overflow-y: auto;
+  padding: 32px 48px 64px;
 }
 
 /* ══════════ Edit Mode Editor ══════════ */
@@ -768,25 +769,6 @@
   flex-direction: column;
 }
 
-.kb-edit-cm {
-  flex: 1;
-  overflow-y: auto;
-  min-height: 0;
-  height: 100%;
-}
-
-/* CodeMirror specific styles for scroll */
-.kb-edit-cm .cm-editor {
-  height: 100% !important;
-  display: flex !important;
-  flex-direction: column !important;
-}
-
-.kb-edit-cm .cm-scroller {
-  flex: 1 !important;
-  overflow-y: auto !important;
-}
-
 /* ══════════ 3-Column Typeset Editor ══════════ */
 
 .kb-typeset-editor {
@@ -795,78 +777,134 @@
   overflow: hidden;
 }
 
-/* Left: Markdown editor */
-.kb-typeset-left {
+/* ── Left: Milkdown source editor ── */
+.kb-typeset-source {
   flex: 1;
-  min-width: 280px;
+  min-width: 260px;
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--border);
 }
+.kb-typeset-source-header {
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
 
+/* ── Middle: doocs/md themed preview ── */
+.kb-typeset-preview {
+  flex: 1.2;
+  min-width: 340px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+}
+.kb-typeset-preview-header {
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.kb-typeset-preview-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 24px 32px;
+  background: var(--bg);
+}
+.kb-typeset-preview-body > .md-preview {
+  max-width: 100%;
+}
 
+/* ── Mobile preview mode (centered 375px card) ── */
+.kb-preview--mobile {
+  background: var(--bg-muted);
+  padding: 24px 0;
+}
+.kb-preview--mobile > .md-preview {
+  max-width: 375px;
+  margin: 0 auto;
+  background: var(--bg-panel);
+  box-shadow: 0 0 0 1px var(--border), 0 4px 16px rgba(0,0,0,0.07);
+  border-radius: 4px;
+  padding: 24px 20px 48px;
+}
+
+/* ── Source textarea (typeset left pane) ── */
+.kb-typeset-textarea {
+  flex: 1;
+  width: 100%;
+  padding: 16px;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text);
+  background: var(--bg-panel);
+  border: none;
+  outline: none;
+  resize: none;
+  tab-size: 2;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-y: auto;
+}
+.kb-typeset-textarea::placeholder {
+  color: var(--text-faint);
+}
+
+/* ── Milkdown editor container (typeset source pane) ── */
 .kb-typeset-cm {
   flex: 1;
   overflow: hidden;
-}
-
-.kb-typeset-cm .cm-editor {
-  height: 100%;
-}
-
-.kb-typeset-cm .cm-editor.cm-focused {
-  outline: none;
-}
-
-/* Center: Preview area */
-.kb-typeset-center {
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-  border-right: 1px solid var(--border);
 }
-
-.kb-typeset-preview {
+.kb-typeset-cm > [data-milkdown-root="true"] {
   flex: 1;
   overflow-y: auto;
-  background: #e8e8e8;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding: 24px;
 }
 
-/* Desktop preview: max-width centered */
-.kb-typeset-preview.is-desktop {
-  align-items: flex-start;
-}
-
-.kb-typeset-preview.is-desktop #output {
-  max-width: 800px;
+/* ── Edit mode textarea ── */
+.kb-edit-textarea {
+  flex: 1;
   width: 100%;
-  margin: 0 auto;
-  background: #fff;
-  box-shadow: 0 0 16px rgba(0,0,0,0.1);
-  border-radius: 4px;
-  min-height: 100%;
-  padding: 32px;
+  padding: 32px 48px;
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--text);
+  background: var(--bg-panel);
+  border: none;
+  outline: none;
+  resize: none;
+  tab-size: 2;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-y: auto;
+}
+.kb-edit-textarea::placeholder {
+  color: var(--text-faint);
 }
 
-/* Mobile preview: fixed 375px width */
-.kb-typeset-preview.is-mobile {
-  display: flex;
-  justify-content: center;
-  padding: 20px;
-}
-
-.kb-typeset-preview.is-mobile #output {
-  width: 375px;
-  flex-shrink: 0;
-  background: #fff;
-  box-shadow: 0 0 16px rgba(0,0,0,0.1);
-  border-radius: 4px;
-  min-height: 100%;
-  padding: 24px;
+/* ── Offscreen doocs/md publish preview (hidden fallback) ── */
+.kb-typeset-preview-hidden {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  width: 800px;
+  pointer-events: none;
+  visibility: visible;
 }
 
 /* ══════════ Style Panel (Embedded Sidebar) ══════════ */
@@ -1048,15 +1086,21 @@
 .kb-style-select {
   width: 100%;
   height: 32px;
-  padding: 0 8px;
+  padding: 0 28px 0 8px;
   font: inherit;
   font-size: 12px;
   color: var(--text);
-  background: var(--bg);
+  background-color: var(--bg);
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%2374716b' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='3 5 6 8 9 5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 12px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   outline: none;
   cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
   transition: border-color 120ms ease;
 }
 

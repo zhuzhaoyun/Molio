@@ -353,6 +353,17 @@ export function initRenderer(opts: IOpts = {}): RendererAPI {
           .replace(PARAGRAPH_WRAPPER_REGEX, `$1`)
       }
 
+      /* [MOLIO] 支持 GFM 任务列表 - [ ] / - [x] */
+      if (token.task) {
+        const checked = token.checked ? ` checked` : ``
+        const checkbox = `<input type="checkbox" class="md-task-checkbox"${checked} disabled />`
+        return styledContent(
+          `listitem task-list-item`,
+          `${checkbox}${content}`,
+          `li`,
+        )
+      }
+
       return styledContent(
         `listitem`,
         `${prefix}${content}`,
@@ -375,7 +386,8 @@ export function initRenderer(opts: IOpts = {}): RendererAPI {
       const newText = opts.legend ? transform(opts.legend, altText, title, href) : ``
       const subText = newText ? styledContent(`figcaption`, newText) : ``
       const titleAttr = title ? ` title="${title}"` : ``
-      return `<figure><img src="${href}"${titleAttr}${widthAttr}${heightAttr} alt="${altText}"/>${subText}</figure>`
+      /* [MOLIO] 添加 loading="lazy" 和 onerror fallback */
+      return `<figure><img src="${href}" loading="lazy"${titleAttr}${widthAttr}${heightAttr} alt="${altText}" onerror="this.dataset.error='1'"/>${subText}</figure>`
     },
 
     link({ href, title, text, tokens }: Tokens.Link): string {
@@ -401,6 +413,11 @@ export function initRenderer(opts: IOpts = {}): RendererAPI {
       return styledContent(`em`, this.parser.parseInline(tokens))
     },
 
+    /* [MOLIO] 支持 GFM 删除线 */
+    del({ tokens }: Tokens.Del): string {
+      return styledContent(`del`, this.parser.parseInline(tokens), `del`);
+    },
+
     table({ header, rows }: Tokens.Table): string {
       const headerRow = header
         .map((cell) => {
@@ -416,9 +433,10 @@ export function initRenderer(opts: IOpts = {}): RendererAPI {
           return styledContent(`tr`, rowContent)
         })
         .join(``)
+      /* [MOLIO] 使用 table-wrapper + md-table class，CSS 端由 base.css 统一样式 */
       return `
-        <section style="max-width: 100%; overflow: auto; -webkit-overflow-scrolling: touch">
-          <table class="preview-table">
+        <section class="table-wrapper">
+          <table class="md-table">
             <thead>${headerRow}</thead>
             <tbody>${body}</tbody>
           </table>

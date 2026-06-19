@@ -151,16 +151,16 @@ export function generateBridgePage(data: BridgePageData): string {
       cursor: pointer;
     }
     .platform-item input[type="checkbox"]:disabled { cursor: not-allowed; }
-    .platform-icon { width: 16px; height: 16px; border-radius: 2px; flex-shrink: 0; }
-    .platform-name { font-weight: 500; }
-    .platform-status { font-size: 12px; }
+    .platform-icon { width: 16px; height: 16px; border-radius: 2px; flex-shrink: 0; display: inline-block; margin: 0; }
+    .platform-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .platform-status { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
     .platform-status.checking { color: #999; }
-    .platform-status.logged-in { color: #666; }
+    .platform-status.logged-in { color: #666; display: inline-flex; align-items: center; gap: 2px; }
     .platform-status.logged-in a { color: #FE5200; text-decoration: none; }
     .platform-status.logged-in a:hover { text-decoration: underline; }
     .platform-avatar {
       width: 16px; height: 16px; border-radius: 50%;
-      object-fit: cover;
+      object-fit: cover; display: inline-block; margin: 0; vertical-align: middle;
     }
 
     .check-spinner {
@@ -324,9 +324,11 @@ export function generateBridgePage(data: BridgePageData): string {
 
     // ── Init: prepare styled HTML and copy button ──
     function init() {
-      // Inject styled HTML into #output (for COSE clipboard reading)
+      // Inject styled HTML into #output (for COSE clipboard reading).
+      // Scope unscoped CSS rules to #output so base styles (h1, p, img, etc.)
+      // don't leak globally and break the bridge page UI layout.
       const outputEl = document.getElementById('output');
-      outputEl.innerHTML = '<style>' + ARTICLE.css + '</style>' + ARTICLE.html;
+      outputEl.innerHTML = '<style>' + scopeCSS(ARTICLE.css) + '</style>' + ARTICLE.html;
 
       // Set up copy button
       const copyBtn = document.getElementById('copy-btn');
@@ -353,6 +355,26 @@ export function generateBridgePage(data: BridgePageData): string {
 
       // Start COSE detection
       detectCose();
+    }
+
+    // ── Scope unscoped CSS rules to #output ──
+    // Prevents base styles (h1, p, img, a, strong, etc.) from leaking
+    // out of the hidden #output div and breaking the bridge page UI.
+    function scopeCSS(css) {
+      return css.replace(/([^{}]+)\\{([^}]*)\\}/g, function(match, selectors, properties) {
+        var trimmed = selectors.trim();
+        // Skip at-rules, :root, and already-scoped rules
+        if (trimmed.charAt(0) === '@' || trimmed.indexOf(':root') === 0 || trimmed.indexOf('#output') !== -1) {
+          return match;
+        }
+        // Prefix each comma-separated selector with #output
+        var wrapped = selectors.split(',').map(function(s) {
+          s = s.trim();
+          if (!s || s.indexOf('#output') !== -1) return s;
+          return '#output ' + s;
+        }).filter(Boolean).join(',\\n');
+        return wrapped + '{' + properties + '}';
+      });
     }
 
     // ── COSE detection ──
@@ -453,7 +475,7 @@ export function generateBridgePage(data: BridgePageData): string {
               if (account.avatar) {
                 html += '<img class="platform-avatar" src="' + escapeHtml(account.avatar) + '" onerror="this.style.display=\\'none\\'">';
               }
-              html += '@' + escapeHtml(account.displayName || account.title);
+              html += '@' + escapeHtml(decodeUnicode(account.displayName || account.title));
               html += '</span>';
             } else {
               html += '<span class="platform-status logged-in"><a href="' + escapeHtml(account.home || '#') + '" target="_blank">登录</a></span>';
@@ -562,6 +584,13 @@ export function generateBridgePage(data: BridgePageData): string {
       document.querySelectorAll('.state').forEach(function(el) { el.classList.remove('active'); });
       var target = document.getElementById('state-' + name);
       if (target) target.classList.add('active');
+    }
+
+    function decodeUnicode(str) {
+      if (!str) return '';
+      return String(str).replace(/\\u([0-9a-fA-F]{4})/g, function(_, hex) {
+        return String.fromCharCode(parseInt(hex, 16));
+      });
     }
 
     function escapeHtml(str) {

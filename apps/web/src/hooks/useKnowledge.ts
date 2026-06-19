@@ -13,6 +13,55 @@ import { vaultStore, useActiveVaultId } from '../stores/vaultStore';
 
 const FILE_LOAD_RETRY_MS = 600;
 
+/* [MOLIO] Convert ![[...]] wiki embed syntax to standard markdown image syntax */
+export function preprocessWikiEmbeds(markdown: string, vaultId: string): string {
+  // ![[image.png|300x200]] → ![image.png|300x200](raw-url)
+  return markdown.replace(
+    /!\[\[([^\]|]+)(?:\|(\d+)(?:x(\d+))?)?\]\]/g,
+    (_m, file: string, w?: string, h?: string) => {
+      const size = w ? (h ? `|${w}x${h}` : `|${w}`) : '';
+      const encoded = encodeURIComponent(file.trim());
+      const baseUrl = window.location.origin;
+      return `![${file}${size}](${baseUrl}/api/knowledge/vaults/${vaultId}/raw/${encoded})`;
+    },
+  );
+}
+
+/* [MOLIO] Route external images/videos from anti-hotlinking hosts through daemon proxy */
+export function proxyExternalImages(markdown: string): string {
+  const proxyBase = `${window.location.origin}/api/proxy/image?url=`;
+
+  function cleanAndEncode(rawUrl: string): string {
+    // Decode HTML entities (&amp; → &) before encoding for the proxy
+    const decoded = rawUrl.replace(/&amp;/g, '&');
+    return encodeURIComponent(decoded);
+  }
+
+  // Markdown images: ![alt](url) on proxied hosts
+  let result = markdown.replace(
+    /!\[([^\]]*)\]\((https?:\/\/(?:mmbiz\.qpic\.cn|mmbiz\.qlogo\.cn|mpvideo\.qpic\.cn)[^)]+)\)/g,
+    (_m, alt: string, url: string) =>
+      `![${alt}](${proxyBase}${cleanAndEncode(url)})`,
+  );
+
+  // Raw HTML <video src="..."> or <source src="...">
+  result = result.replace(
+    /(<(?:video|source)\s[^>]*?)src="(https?:\/\/(?:mmbiz\.qpic\.cn|mmbiz\.qlogo\.cn|mpvideo\.qpic\.cn)[^"]*)"/g,
+    (_m, prefix: string, url: string) =>
+      `${prefix}src="${proxyBase}${cleanAndEncode(url)}"`,
+  );
+
+  return result;
+}
+
+/* [MOLIO] Strip WeChat tracking pixels (1×1 transparent SVG data URIs) */
+export function stripTrackingPixels(markdown: string): string {
+  return markdown.replace(
+    /!\[[^\]]*\]\(data:image\/svg\+xml,[^)]*1px[^)]*\)/g,
+    '',
+  );
+}
+
 interface UseKnowledgeReturn {
   // Data
   vaults: Vault[];

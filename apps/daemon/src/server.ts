@@ -14,6 +14,7 @@ import { conversationRoutes } from './routes/conversations.js';
 import { projectRoutes } from './routes/projects.js';
 import { knowledgeRoutes } from './routes/knowledge.js';
 import { publishRoutes, cleanupAllBridges } from './routes/publish.js';
+import { proxyRoutes } from './routes/proxy.js';
 import { graphRoutes } from './routes/graph.js';
 import { weixinRoutes } from './routes/weixin.js';
 import { WeixinService } from './core/weixin/service.js';
@@ -45,6 +46,7 @@ app.get('/api/health', (c) => {
   return c.json({ status: 'ok' as const, version: '0.1.0' });
 });
 
+
 // Routes
 app.route('/api/agents', agentsRoutes(runManager));
 app.route('/api/runs', runsRoutes(db, runManager, conversationService));
@@ -55,6 +57,7 @@ app.route('/api/conversations', conversationRoutes(db));
 app.route('/api/projects', projectRoutes(db));
 app.route('/api/knowledge', knowledgeRoutes(db, runManager));
 app.route('/api/publish', publishRoutes());
+app.route('/api/proxy', proxyRoutes());
 app.route('/api/graph', graphRoutes(db));
 app.route('/api/weixin', weixinRoutes(weixinService));
 

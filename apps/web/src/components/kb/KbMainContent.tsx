@@ -11,6 +11,7 @@ import type { ThemeConfig } from './MdStylePanel';
 import { MdRenderer } from './MdRenderer';
 import { MdTypesetEditor } from './MdTypesetEditor';
 import { MdEditor } from './MdEditor';
+import { preprocessWikiEmbeds, proxyExternalImages, stripTrackingPixels } from '../../hooks/useKnowledge';
 import { api } from '../../api/client';
 
 /** File categories for rendering strategy */
@@ -166,7 +167,8 @@ export function KbMainContent({
           {/* Text file actions: edit, copy, publish (typeset mode only), typeset */}
           {category === 'text' && (
             <>
-              {/* Edit/Read toggle button — always shown for text files */}
+              {/* Edit/Read toggle — only in Read mode (typeset has its own source editor) */}
+              {!isTypesetMode && (
               <button
                 type="button"
                 className={`kb-btn ${isEditMode ? 'is-active' : ''}`}
@@ -189,6 +191,7 @@ export function KbMainContent({
                   </svg>
                   <span>{isEditMode ? '阅读' : '编辑'}</span>
                 </button>
+              )}
 
               {/* Save button (shown in both typeset mode and edit mode) */}
               {onSave && (
@@ -254,20 +257,24 @@ export function KbMainContent({
       {/* Content area — branch by file category */}
       {category === 'text' && isTypesetMode ? (
         <MdTypesetEditor
+          key={selectedFile}
           initialContent={fileContent?.content ?? ''}
           onContentChange={onContentChange}
+          vaultId={vaultId ?? ''}
+          selectedFile={selectedFile}
         />
       ) : category === 'text' && isEditMode ? (
-        // Edit mode: CodeMirror Markdown editor
+        // Edit mode: Milkdown WYSIWYG Markdown editor
         <MdEditor
           initialContent={fileContent?.content ?? ''}
           onContentChange={onContentChange}
+          selectedFile={selectedFile}
         />
       ) : category === 'text' ? (
         <div className="kb-content-area">
           {fileContent ? (
             // 优先使用编辑后的内容（未保存的更改），否则使用原始文件内容
-            <MdRenderer content={editedContent ?? fileContent.content} themeConfig={themeConfig} />
+            <MdRenderer content={proxyExternalImages(preprocessWikiEmbeds(stripTrackingPixels(editedContent ?? fileContent.content), vaultId ?? ''))} themeConfig={themeConfig} />
           ) : (
             <div className="kb-empty-state"><p>Loading...</p></div>
           )}
