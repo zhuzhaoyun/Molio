@@ -112,7 +112,7 @@ test.describe('Runtime provider config', () => {
     });
 
     expect(response.env).toBeDefined();
-    expect(response.env.ANTHROPIC_BASE_URL).toBe('https://api.deepseek.com');
+    expect(response.env.ANTHROPIC_BASE_URL).toBe('https://api.deepseek.com/anthropic');
     expect(response.env.ANTHROPIC_API_KEY).toBe('sk-test-e2e-deepseek-key');
 
     // Collapse and re-expand — should detect DeepSeek as current provider
