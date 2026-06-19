@@ -63,6 +63,25 @@ export function saveConfig(config: AppConfig): void {
   }
 }
 
+/**
+ * Merge a partial config update with the existing config.
+ * Preserves agent and weixin configurations that are absent from the partial.
+ */
+export function mergeConfig(partial: Partial<AppConfig>): AppConfig {
+  const existing = loadConfig();
+  return {
+    ...existing,
+    ...partial,
+    agents: {
+      ...existing.agents,
+      ...(partial.agents ?? {}),
+    },
+    weixin: partial.weixin !== undefined
+      ? { ...(existing.weixin ?? {}), ...partial.weixin }
+      : existing.weixin,
+  };
+}
+
 export function getAgentConfig(agentId: string): AgentConfig {
   const config = loadConfig();
   return config.agents[agentId] || {};

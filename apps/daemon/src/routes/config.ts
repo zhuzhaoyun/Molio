@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { loadConfig, saveConfig, getAgentConfig, setAgentConfig } from '../core/config.js';
+import { loadConfig, saveConfig, getAgentConfig, setAgentConfig, mergeConfig } from '../core/config.js';
 import type { AppConfig, AgentConfig } from '../core/config.js';
 
 export function configRoutes(): Hono {
@@ -10,10 +10,11 @@ export function configRoutes(): Hono {
     return c.json(loadConfig());
   });
 
-  // PUT /api/config
+  // PUT /api/config — merge with existing config to prevent partial
+  // updates from wiping agent configs (API keys, env vars, etc.).
   app.put('/', async (c) => {
-    const body = await c.req.json<AppConfig>();
-    saveConfig(body);
+    const body = await c.req.json<Partial<AppConfig>>();
+    saveConfig(mergeConfig(body));
     return c.json({ ok: true });
   });
 
