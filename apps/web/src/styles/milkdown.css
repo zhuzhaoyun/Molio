@@ -1,0 +1,167 @@
+/* ============================================================
+   Milkdown Editor Theme — mapped to Molio CSS variables
+   ============================================================ */
+
+/* ── Editor root ── */
+.milkdown {
+  --crepe-color-background: var(--bg-panel);
+  --crepe-color-on-background: var(--text);
+  --crepe-color-surface: var(--bg-subtle);
+  --crepe-color-surface-low: var(--bg);
+  --crepe-color-on-surface: var(--text);
+  --crepe-color-outline: var(--border);
+  --crepe-color-primary: var(--accent);
+  --crepe-color-on-primary: #fff;
+  --crepe-color-secondary: var(--bg-muted);
+  --crepe-color-on-secondary: var(--text-muted);
+  --crepe-color-inline-code: var(--bg-subtle);
+  --crepe-color-on-inline-code: var(--accent);
+  --crepe-color-selected: var(--accent-soft);
+  --crepe-color-shadow: transparent;
+  --crepe-color-error: #e5534b;
+}
+
+/* ── Editor area ── */
+.milkdown .editor {
+  font-family: var(--mono);
+  font-size: 15px;
+  line-height: 1.85;
+  color: var(--text);
+  padding: 32px 48px 64px;
+  max-width: 760px;
+  margin: 0 auto;
+  min-height: 100%;
+  overflow-y: auto;
+}
+
+/* ── Typography ── */
+.milkdown .editor h1 { font-size: 1.6em; font-weight: 700; margin: 1.5em 0 0.5em; color: var(--text-strong); }
+.milkdown .editor h2 { font-size: 1.35em; font-weight: 600; margin: 1.4em 0 0.4em; color: var(--text-strong); }
+.milkdown .editor h3 { font-size: 1.15em; font-weight: 600; margin: 1.2em 0 0.3em; color: var(--text-strong); }
+.milkdown .editor p { margin: 0.6em 0; }
+.milkdown .editor blockquote {
+  border-left: 4px solid var(--accent);
+  padding: 0.5em 1em;
+  margin: 0.8em 0;
+  background: var(--bg-subtle);
+  border-radius: 0 6px 6px 0;
+  color: var(--text-muted);
+}
+
+/* ── Links ── */
+.milkdown .editor a { color: var(--accent); text-decoration: underline; }
+
+/* ── Horizontal rule ── */
+.milkdown .editor hr { border: none; border-top: 1px solid var(--border); margin: 1.5em 0; }
+
+/* ── Inline code ── */
+.milkdown .editor code {
+  font-family: var(--mono);
+  font-size: 0.9em;
+  background: var(--bg-subtle);
+  color: var(--accent);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border-soft);
+}
+
+/* ── Code blocks ── */
+.milkdown .editor pre {
+  background: var(--bg-subtle);
+  border-radius: 8px;
+  padding: 1em;
+  overflow-x: auto;
+  margin: 0.8em 0;
+  font-size: 0.9em;
+  line-height: 1.5;
+  border: 1px solid var(--border-soft);
+}
+.milkdown .editor pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text);
+  font-size: inherit;
+}
+
+/* ── Tables ── */
+.milkdown .editor table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1em 0;
+  font-size: 0.95em;
+}
+.milkdown .editor th {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  font-weight: 600;
+  padding: 0.6em 0.8em;
+  border-bottom: 2px solid var(--accent);
+  text-align: left;
+}
+.milkdown .editor td {
+  padding: 0.5em 0.8em;
+  border-bottom: 1px solid var(--border-soft);
+}
+.milkdown .editor tr:nth-child(even) td {
+  background: var(--bg-subtle);
+}
+.milkdown .editor tr:hover td {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+/* ── Task lists ── */
+.milkdown .editor li[data-item-type="task"] {
+  list-style: none;
+}
+.milkdown .editor li[data-item-type="task"] input[type="checkbox"] {
+  accent-color: var(--accent);
+  margin-right: 0.5em;
+}
+
+/* ── Strikethrough ── */
+.milkdown .editor del { text-decoration: line-through; opacity: 0.7; }
+
+/* ── Bold / Italic ── */
+.milkdown .editor strong { font-weight: 700; color: var(--text-strong); }
+.milkdown .editor em { font-style: italic; }
+
+/* ── Lists ── */
+.milkdown .editor ul, .milkdown .editor ol { padding-left: 1.5em; margin: 0.4em 0; }
+.milkdown .editor li { margin: 0.15em 0; }
+
+/* ── Images ── */
+.milkdown .editor img { max-width: 100%; height: auto; border-radius: 4px; display: block; margin: 0.5em auto; }
+
+/* ── Placeholder ── */
+.milkdown .editor .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--text-faint);
+  pointer-events: none;
+  height: 0;
+  float: left;
+}
+
+/* ── Selection ── */
+.milkdown .editor .ProseMirror-focused .ProseMirror-selection,
+.milkdown .editor .ProseMirror ::selection {
+  background: var(--accent-soft);
+}
+.milkdown .editor .ProseMirror .ProseMirror-selectednode {
+  outline: 2px solid var(--accent);
+}
+
+/* ── Cursor ── */
+.milkdown .editor .ProseMirror-focused .ProseMirror-cursor {
+  border-left-color: var(--accent);
+}
+
+/* ── Dark mode ── */
+[data-theme="dark"] .milkdown {
+  --crepe-color-background: #1a1a1a;
+  --crepe-color-surface: #222;
+  --crepe-color-surface-low: #181818;
+}
+[data-theme="dark"] .milkdown .editor pre {
+  background: #1e1e1e;
+  border-color: #333;
+}

@@ -35,7 +35,11 @@ function sanitizeHtml(html: string): string {
   )
 
   // XSS 处理
-  html = DOMPurify.sanitize(html, { ADD_TAGS: [`mp-common-profile`] })
+  // Allow onerror only for our benign broken-image fallback (set by renderer-impl.ts)
+  html = DOMPurify.sanitize(html, {
+    ADD_TAGS: [`mp-common-profile`],
+    ADD_ATTR: [`onerror`],
+  })
 
   // 还原被保护的内容
   html = html.replace(

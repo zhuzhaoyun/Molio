@@ -39,43 +39,29 @@ body { overflow-x: hidden; }
       <h2 class="step-title">安装 AI 助手</h2>
     </div>
     <div class="content-text">
-      <p>Molio 本身不包含 AI 模型，需要搭配 AI 命令行工具使用。请至少安装一个：</p>
-      <ul>
-        <li><strong>Claude Code</strong> — <a href="https://docs.anthropic.com/en/docs/claude-code/installation" target="_blank">官网安装指南</a></li>
-        <li><strong>OpenAI Codex</strong> — <a href="https://openai.com/codex" target="_blank">官网安装指南</a></li>
-        <li><strong>Gemini CLI</strong> — <a href="https://github.com/google-gemini/gemini-cli" target="_blank">GitHub 仓库</a></li>
-        <li><strong>Qwen Code</strong> — <a href="https://github.com/QwenLM/qwen-code" target="_blank">GitHub 仓库</a></li>
-      </ul>
+      <p>Molio 需要搭配 AI 运行时使用。如果你已经安装了 Claude Code，可以跳过此步骤，直接进入下一步。</p>
+      <p>如果尚未安装 Claude Code，Molio 支持一键安装：</p>
+      <ol>
+        <li>打开 Molio，进入<strong>「设置」→「运行时」</strong>页面</li>
+        <li>点击 Claude Code 旁的<strong>「一键安装」</strong>按钮即可自动完成</li>
+      </ol>
+      <p>安装完成后，配置 API Key 即可使用：</p>
+      <ol start="3">
+        <li>前往 <a href="https://platform.deepseek.com/top_up" target="_blank" rel="noopener noreferrer">DeepSeek 平台</a>购买 API Token</li>
+        <li>在 API Keys 页面获取你的 API Key</li>
+        <li>回到 Molio 运行时页面，点击 Claude Code 旁的<strong>「模型提供商」</strong>，粘贴 API Key 后点击<strong>「保存」</strong></li>
+      </ol>
       <div class="tip-box">
-        <strong>提示：</strong>安装完成后，按照各工具的指引完成登录授权，确保可以在终端中正常调用。
+        <strong>提示：</strong>Molio 已内置 DeepSeek、OpenRouter、硅基流动等多家模型提供商，也可自定义接入任意 Anthropic 兼容 API。
       </div>
     </div>
   </div>
 
-  <!-- Step 2: 安装并启动 Molio -->
-  <div class="step-card">
-    <div class="step-card-header">
-      <div class="step-number green">2</div>
-      <h2 class="step-title">安装并启动 Molio</h2>
-    </div>
-    <div class="content-text">
-      <p>前往<a href="download.html">下载页面</a>，获取对应系统的安装包：</p>
-      <ul>
-        <li><strong>Windows</strong>：双击 <code>.exe</code> 文件，按向导完成安装</li>
-        <li><strong>macOS</strong>：打开 <code>.dmg</code>，将 Molio 拖入 Applications</li>
-        <li><strong>Linux</strong>：运行 <code>.AppImage</code> 或使用 <code>.deb</code> 包安装</li>
-      </ul>
-      <p>首次启动后，Molio 会显示启动画面，等待后台服务就绪后自动进入主界面。</p>
-      <div class="tip-box">
-        <strong>自动更新：</strong>Molio 会在后台自动检查新版本，发现更新后提示你重启应用。
-      </div>
-    </div>
-  </div>
 
-  <!-- Step 3: 配置运行时 -->
+  <!-- Step 2: 配置运行时 -->
   <div class="step-card">
     <div class="step-card-header">
-      <div class="step-number orange">3</div>
+      <div class="step-number orange">2</div>
       <h2 class="step-title">配置 AI 运行时</h2>
     </div>
     <div class="content-text">
@@ -92,10 +78,10 @@ body { overflow-x: hidden; }
     </div>
   </div>
 
-  <!-- Step 4: 创建知识库 -->
+  <!-- Step 3: 创建知识库 -->
   <div class="step-card">
     <div class="step-card-header">
-      <div class="step-number teal">4</div>
+      <div class="step-number teal">3</div>
       <h2 class="step-title">创建知识库</h2>
     </div>
     <div class="content-text">
@@ -109,10 +95,10 @@ body { overflow-x: hidden; }
     </div>
   </div>
 
-  <!-- Step 5: 构建知识库 Wiki -->
+  <!-- Step 4: 构建知识库 Wiki -->
   <div class="step-card">
     <div class="step-card-header">
-      <div class="step-number teal">5</div>
+      <div class="step-number teal">4</div>
       <h2 class="step-title">构建知识库 Wiki</h2>
     </div>
     <div class="content-text">
@@ -130,10 +116,10 @@ body { overflow-x: hidden; }
     </div>
   </div>
 
-  <!-- Step 6: 开始创作 -->
+  <!-- Step 5: 开始创作 -->
   <div class="step-card">
     <div class="step-card-header">
-      <div class="step-number purple">6</div>
+      <div class="step-number purple">5</div>
       <h2 class="step-title">开始创作</h2>
     </div>
     <div class="content-text">
@@ -150,10 +136,10 @@ body { overflow-x: hidden; }
     </div>
   </div>
 
-  <!-- Step 7: 排版美化 -->
+  <!-- Step 6: 排版美化 -->
   <div class="step-card">
     <div class="step-card-header">
-      <div class="step-number red">7</div>
+      <div class="step-number red">6</div>
       <h2 class="step-title">排版美化</h2>
     </div>
     <div class="content-text">
@@ -178,10 +164,10 @@ body { overflow-x: hidden; }
     </div>
   </div>
 
-  <!-- Step 8: 多平台发布 -->
+  <!-- Step 7: 多平台发布 -->
   <div class="step-card">
     <div class="step-card-header">
-      <div class="step-number blue">8</div>
+      <div class="step-number blue">7</div>
       <h2 class="step-title">多平台发布</h2>
     </div>
     <div class="content-text">
