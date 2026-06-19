@@ -10,36 +10,11 @@ body:
         感谢提交 Bug 报告！为了帮助我们快速定位和修复问题，请尽量填写以下信息。
         Thank you for reporting a bug! Please fill in the following information to help us quickly locate and fix the issue.
 
-  - type: checkboxes
-    id: prerequisites
-    attributes:
-      label: 前置确认 / Prerequisites
-      description: 在提交前，请确认以下事项 / Please confirm the following before submitting
-      options:
-        - label: 我已经搜索了现有的 issues，确认没有重复报告 / I have searched existing issues and confirmed this is not a duplicate
-          required: true
-        - label: 我使用的是最新版本 / I am using the latest version
-          required: true
-
-  - type: dropdown
-    id: package
-    attributes:
-      label: 问题涉及的包 / Affected Package
-      description: 请选择问题出现的具体包或模块 / Please select the specific package or module where the issue occurs
-      options:
-        - apps/web（Web UI）
-        - apps/daemon（后端服务 / Backend Service）
-        - apps/desktop（桌面端 / Desktop）
-        - packages/contracts（共享类型 / Shared Types）
-        - 其他 / 不确定 / Other / Not sure
-    validations:
-      required: true
-
   - type: input
     id: version
     attributes:
       label: 应用版本 / App Version
-      description: 你当前使用的 Molio 版本号（可在关于页面或 package.json 查看）/ Your current Molio version (check About page or package.json)
+      description: 你当前使用的 Molio 版本号（可在设置页面查看）/ Your current Molio version (check the Settings page)
       placeholder: "例如 / e.g. 1.2.3"
     validations:
       required: true
@@ -53,27 +28,14 @@ body:
     validations:
       required: true
 
-  - type: dropdown
-    id: node-version
-    attributes:
-      label: Node.js 版本 / Node.js Version
-      description: 你使用的 Node.js 版本 / Your Node.js version
-      options:
-        - "18.x"
-        - "20.x"
-        - "22.x"
-        - "其他 / Other"
-    validations:
-      required: true
-
   - type: textarea
     id: description
     attributes:
       label: 问题描述 / Description
-      description: 请清晰描述你遇到的问题 / Please clearly describe the issue you encountered
+      description: 请清晰描述你遇到的问题、期望行为是什么、实际发生了什么 / Please clearly describe the issue, what you expected and what actually happened
       placeholder: |
-        例如：在创建新 vault 时，点击"创建"按钮后界面卡住，没有任何反应。
-        e.g. When creating a new vault, the UI freezes after clicking the "Create" button with no response.
+        例如：创建新 vault 时，点击"创建"按钮后界面卡住，没有任何反应。期望能成功创建并跳转到知识库页面。
+        e.g. When creating a new vault, the UI freezes after clicking the "Create" button. Expected to create successfully and redirect to the knowledge base page.
     validations:
       required: true
 
@@ -81,36 +43,11 @@ body:
     id: reproduce
     attributes:
       label: 重现步骤 / Reproduction Steps
-      description: 请提供能够重现该问题的详细步骤 / Please provide detailed steps to reproduce the issue
+      description: 请提供能够重现该问题的步骤（可选）/ Please provide steps to reproduce the issue (optional)
       placeholder: |
         1. 打开应用 / Open the app
         2. 点击 '...' / Click '...'
-        3. 输入 '...' / Enter '...'
-        4. 看到错误 / See error
-    validations:
-      required: true
-
-  - type: textarea
-    id: expected
-    attributes:
-      label: 期望行为 / Expected Behavior
-      description: 描述你期望发生的事情 / Describe what you expected to happen
-      placeholder: |
-        例如：应该成功创建 vault 并跳转到知识库页面。
-        e.g. The vault should be created successfully and redirect to the knowledge base page.
-    validations:
-      required: true
-
-  - type: textarea
-    id: actual
-    attributes:
-      label: 实际行为 / Actual Behavior
-      description: 描述实际发生的事情 / Describe what actually happened
-      placeholder: |
-        例如：界面卡住，控制台报错 TypeError: Cannot read properties of undefined。
-        e.g. The UI freezes and the console reports TypeError: Cannot read properties of undefined.
-    validations:
-      required: true
+        3. 看到错误 / See error
 
   - type: textarea
     id: logs
@@ -124,15 +61,3 @@ body:
     attributes:
       label: 截图或录屏 / Screenshots or Recordings
       description: 如果可能，请提供问题的截图或录屏链接 / If possible, provide screenshots or recording links of the issue
-
-  - type: dropdown
-    id: severity
-    attributes:
-      label: 严重程度 / Severity
-      description: 请选择该问题对你的影响程度 / Please select the impact level of this issue
-      options:
-        - 阻塞（完全无法使用）/ Blocking (completely unusable)
-        - 严重（主要功能不可用）/ Critical (major feature unavailable)
-        - 中等（有 workaround）/ Medium (has workaround)
-        - 轻微（不影响主要功能）/ Minor (does not affect main functionality)
-      default: 2
