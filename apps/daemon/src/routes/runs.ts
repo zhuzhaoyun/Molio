@@ -4,8 +4,14 @@ import type Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
 import type { RunManager } from '../core/RunManager.js';
 import type { ConversationService } from '../core/conversations/service.js';
-import { getVaultByPath } from '../core/db.js';
-import { WIKI_QUERY_PROMPT } from '../core/wiki-prompts.js';
+import { getVaultByPath, addKbHistory } from '../core/db.js';
+import {
+  WIKI_QUERY_PROMPT,
+  WIKI_BUILD_PROMPT,
+  WIKI_INGEST_PROMPT,
+  WIKI_LINT_PROMPT,
+  WIKI_SAVE_PROMPT,
+} from '../core/wiki-prompts.js';
 
 export function runsRoutes(
   db: Database.Database,
@@ -47,7 +53,53 @@ export function runsRoutes(
       // Only inject on the FIRST turn (no history) — subsequent turns
       // already carry the prompt via conversation transcript.
       let message = body.message;
-      if (body.cwd && (!body.history || body.history.length === 0)) {
+
+      // Handle explicit wiki operations — select prompt and build message
+      if (body.wikiOperation) {
+        const vault = body.cwd ? getVaultByPath(db, body.cwd) : null;
+        if (!vault) {
+          return c.json({
+            error: { code: 'BAD_REQUEST', message: 'cwd must point to a vault for wiki operations' },
+          }, 400);
+        }
+
+        const wikiPrompts: Record<string, string> = {
+          build: WIKI_BUILD_PROMPT,
+          ingest: WIKI_INGEST_PROMPT,
+          lint: WIKI_LINT_PROMPT,
+          query: WIKI_QUERY_PROMPT,
+          save: WIKI_SAVE_PROMPT,
+        };
+
+        const prompt = wikiPrompts[body.wikiOperation];
+        if (!prompt) {
+          return c.json({
+            error: { code: 'BAD_REQUEST', message: `Unknown wiki operation: ${body.wikiOperation}` },
+          }, 400);
+        }
+
+        switch (body.wikiOperation) {
+          case 'build':
+            message = `${prompt}\n\n---\n\n请现在开始构建 Wiki。扫描 vault 中所有源文件并创建 wiki。`;
+            addKbHistory(db, vault.id, 'ingest', 'Wiki 构建已启动');
+            break;
+          case 'ingest':
+            message = `${prompt}\n\n---\n\n请将以下文件导入 wiki：${body.wikiExtra?.filePath ?? body.message}`;
+            addKbHistory(db, vault.id, 'ingest', `已导入 "${body.wikiExtra?.filePath ?? ''}"`);
+            break;
+          case 'lint':
+            message = `${prompt}\n\n---\n\n请现在对 wiki 进行健康检查。`;
+            addKbHistory(db, vault.id, 'lint', 'Wiki 健康检查已启动');
+            break;
+          case 'query':
+            message = `${prompt}\n\n---\n\n用户问题：${body.message}`;
+            break;
+          case 'save':
+            message = `${prompt}\n\n---\n\n${body.message || '请回顾当前对话，将值得归档的内容保存为 wiki 页面。'}`;
+            addKbHistory(db, vault.id, 'edit', 'Wiki 归档已启动');
+            break;
+        }
+      } else if (body.cwd && (!body.history || body.history.length === 0)) {
         const vault = getVaultByPath(db, body.cwd);
         if (vault) {
           message = `${WIKI_QUERY_PROMPT}\n\n---\n\n用户问题：${message}`;

@@ -38,6 +38,9 @@ export interface CreateRunRequest {
   // Phase 2: Multi-turn conversation
   conversationId?: string;
   history?: ChatMessage[];
+  // Wiki operation support — when set, backend prepends the appropriate system prompt
+  wikiOperation?: import('./knowledge.js').WikiOperationType;
+  wikiExtra?: { filePath?: string };
 }
 
 export interface CreateRunResponse {
