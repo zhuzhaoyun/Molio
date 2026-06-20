@@ -95,6 +95,22 @@ export class WeixinApi {
     });
   }
 
+  async healthCheck(): Promise<boolean> {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5_000);
+      try {
+        const url = `${ensureTrailingSlash(this.baseUrl)}ilink/bot/get_bot_qrcode?bot_type=${BOT_TYPE}`;
+        const res = await fetch(url, { signal: controller.signal });
+        return res.ok;
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch {
+      return false;
+    }
+  }
+
   async fetchQrCode(): Promise<FetchQrCodeResponse> {
     const url = `${ensureTrailingSlash(this.baseUrl)}ilink/bot/get_bot_qrcode?bot_type=${BOT_TYPE}`;
     const res = await fetch(url);

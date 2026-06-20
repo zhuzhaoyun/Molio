@@ -1,5 +1,8 @@
 export type WeixinLoginStatus = 'idle' | 'waiting_scan' | 'scanned' | 'logged_in' | 'error';
 
+/** Internal connection state machine states. */
+export type ConnectionState = 'idle' | 'connecting' | 'polling' | 'unhealthy' | 'expired';
+
 export interface WeixinCredentials {
   token: string;
   baseUrl: string;
@@ -17,6 +20,8 @@ export interface WeixinStatus {
   lastMessageAt: number | null;
   activeRunId: string | null;
   hasCredentials: boolean;
+  /** Detailed connection state for auto-reconnect diagnostics. */
+  connectionState?: ConnectionState;
 }
 
 export interface WeixinRawItem {
