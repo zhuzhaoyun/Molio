@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import type { AgentEvent, CreateRunRequest } from '@molio/contracts';
+import type { CreateRunRequest } from '@molio/contracts';
 import type Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
 import type { RunManager } from '../core/RunManager.js';
@@ -54,6 +54,9 @@ export function runsRoutes(
         }
       }
 
+      const conversationId = conversation.id;
+      const agentId = body.agentId;
+
       const runId = await runManager.createRun({
         agentId: body.agentId,
         message,
@@ -61,8 +64,18 @@ export function runsRoutes(
         cwd: body.cwd,
         conversationId: conversation.id,
         history: body.history,
+        onTurnComplete: (text, rid) => {
+          conversations.appendMessage(conversationId, {
+            id: randomUUID(),
+            role: 'assistant',
+            content: text,
+            timestamp: Date.now(),
+            agentId,
+            runId: rid,
+          });
+        },
       });
-      persistAssistantReply(runManager, conversations, runId, conversation.id, body.agentId);
+
       return c.json({
         runId,
         conversationId: conversation.id,
@@ -111,18 +124,9 @@ export function runsRoutes(
           agentId: runContext.agentId,
         });
       }
-      const afterEventId = runManager.getLastEventId(runId);
+      // onTurnComplete callback was registered during createRun() and
+      // persists across turns. sendMessage() resets the text accumulator.
       runManager.sendMessage(runId, body.message);
-      if (runContext?.conversationId) {
-        persistAssistantReply(
-          runManager,
-          conversations,
-          runId,
-          runContext.conversationId,
-          runContext.agentId,
-          afterEventId,
-        );
-      }
       return c.json({ ok: true });
     } catch (err) {
       return c.json({
@@ -138,69 +142,4 @@ export function runsRoutes(
   });
 
   return app;
-}
-
-function persistAssistantReply(
-  runManager: RunManager,
-  conversations: ConversationService,
-  runId: string,
-  conversationId: string,
-  agentId: string,
-  afterEventId = 0,
-): void {
-  let text = '';
-  let finished = false;
-  let unsubscribe: (() => void) | null = null;
-
-  const finish = (content: string) => {
-    if (finished) return;
-    finished = true;
-    unsubscribe?.();
-    const trimmed = content.trim();
-    if (!trimmed) return;
-    conversations.appendMessage(conversationId, {
-      id: randomUUID(),
-      role: 'assistant',
-      content: trimmed,
-      timestamp: Date.now(),
-      agentId,
-      runId,
-    });
-  };
-
-  const handleEvent = (event: AgentEvent) => {
-    if (runManager.getLastEventId(runId) <= afterEventId) return;
-    handleReplyEvent(event);
-  };
-
-  const handleReplyEvent = (event: AgentEvent) => {
-    if (event.type === 'text_delta') {
-      text += event.delta;
-      return;
-    }
-    if (event.type === 'error') {
-      finish(`Molio 处理失败：${event.message}`);
-      return;
-    }
-    if (event.type === 'turn_end' && event.stopReason !== 'tool_use') {
-      finish(text);
-      return;
-    }
-    if (event.type === 'status' && event.label === 'failed') {
-      finish(text || 'Molio 运行失败。');
-      return;
-    }
-    if (event.type === 'status' && event.label === 'completed') {
-      finish(text);
-    }
-  };
-
-  const buffered = runManager.getBufferedEvents(runId, afterEventId) ?? [];
-  for (const record of buffered) {
-    handleReplyEvent(record.data as AgentEvent);
-    if (finished) return;
-  }
-  if (runManager.isTerminal(runId)) return;
-
-  unsubscribe = runManager.onEvent(runId, handleEvent);
 }

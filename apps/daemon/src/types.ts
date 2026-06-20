@@ -5,6 +5,7 @@
 import type { ChildProcess } from 'node:child_process';
 import type { WriteStream } from 'node:fs';
 import type { AgentEvent, RunStatus } from '@molio/contracts';
+import type { TurnTextCollector } from './core/turn-text-collector.js';
 
 /**
  * Buffered event record for SSE replay.
@@ -40,4 +41,8 @@ export interface RunState {
   exitCode: number | null;
   error: string | null;
   errorCode: string | null;
+
+  // --- Turn-complete persistence ---
+  /** Manages per-turn text accumulation and persistence. */
+  turnText: TurnTextCollector;
 }

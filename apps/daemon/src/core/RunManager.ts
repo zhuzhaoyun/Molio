@@ -17,6 +17,7 @@ import { createJsonlParser } from './streams/jsonl-parser.js';
 import { loadConfig, getAgentConfig, buildAgentEnv } from './config.js';
 import { buildTranscript, type TranscriptMessage } from './transcript.js';
 import type { RunState, BufferedEvent } from '../types.js';
+import { TurnTextCollector } from './turn-text-collector.js';
 
 const TERMINAL_STATUSES = new Set<RunStatus>(['succeeded', 'failed', 'canceled']);
 const MAX_EVENTS = 2_000;
@@ -40,6 +41,8 @@ export interface CreateRunOptions {
   assistantMessageId?: string;
   /** Prior conversation messages for transcript building (multi-turn). */
   history?: ChatMessage[];
+  /** Called when a turn completes with accumulated text content. */
+  onTurnComplete?: (text: string, runId: string) => void;
 }
 
 export class RunManager {
@@ -205,6 +208,7 @@ export class RunManager {
       exitCode: null,
       error: null,
       errorCode: null,
+      turnText: new TurnTextCollector(runId, opts.onTurnComplete),
     };
     this.runs.set(runId, run);
 
@@ -330,6 +334,9 @@ export class RunManager {
       throw new Error('Run not active or stdin closed — start a new run instead');
     }
 
+    // Flush any accumulated text from the previous turn before starting a new one.
+    run.turnText.flush();
+
     const msg = JSON.stringify({
       type: 'user',
       message: { role: 'user', content: message },
@@ -364,6 +371,10 @@ export class RunManager {
   cancelRun(runId: string): void {
     const run = this.runs.get(runId);
     if (!run) return;
+
+    // Flush any accumulated text before killing the process.
+    run.turnText.flush();
+
     if (run.child && !run.child.killed) {
       run.child.kill('SIGTERM');
       setTimeout(() => {
@@ -391,6 +402,18 @@ export class RunManager {
     // Track error details
     if (event.type === 'error') {
       run.error = event.message;
+    }
+
+    // Accumulate text for turn-complete persistence
+    if (event.type === 'text_delta') {
+      run.turnText.append(event.delta);
+    }
+
+    // Flush on turn completion or terminal status
+    if (event.type === 'turn_end' && event.stopReason !== 'tool_use') {
+      run.turnText.flush();
+    } else if (event.type === 'status' && (event.label === 'completed' || event.label === 'failed')) {
+      run.turnText.flush();
     }
 
     // Buffer the event

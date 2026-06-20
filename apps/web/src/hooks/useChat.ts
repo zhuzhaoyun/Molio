@@ -8,7 +8,7 @@
  *  - api.createRun() as the run creator
  */
 
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { api } from '../api/client';
 import { useChatCore } from './useChatCore';
 import type { ChatMessage } from './useChatCore';
@@ -91,6 +91,16 @@ export function useChat(options: UseChatOptions | string | null) {
   const loadConversationById = useCallback(async (convId: string) => {
     await loadConversation('', convId);
   }, [loadConversation]);
+
+  // Auto-restore messages from DB when conversationId exists but messages are empty.
+  // This handles page refresh or any scenario where React state is reset.
+  useEffect(() => {
+    if (core.messages.length > 0) return;
+    if (!core.conversationId) return;
+    void loadConversationById(core.conversationId).catch(() => {
+      // Conversation may have been deleted — ignore
+    });
+  }, [core.conversationId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return {
     messages: core.messages,
