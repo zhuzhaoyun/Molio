@@ -11,13 +11,15 @@ import { getVaultByPath } from '../db.js';
 import { WIKI_WEIXIN_PROMPT } from '../wiki-prompts.js';
 import { DEFAULT_BASE_URL, WeixinApi } from './client.js';
 import { buildMolioPrompt, parseWeixinMessage } from './message.js';
-import type { ParsedWeixinMessage, WeixinCredentials, WeixinStatus } from './types.js';
+import type { ConnectionState, ParsedWeixinMessage, WeixinCredentials, WeixinStatus } from './types.js';
 
 const SESSION_EXPIRED_CODE = -14;
 const QR_LOGIN_TIMEOUT_MS = 8 * 60 * 1000;
 const QR_MAX_REFRESHES = 10;
 const TEXT_CHUNK_LIMIT = 4000;
 const RUN_REPLY_TIMEOUT_MS = 5 * 60 * 1000;
+/** Health probe interval when in unhealthy state (ms). */
+const HEALTH_PROBE_INTERVAL_MS = 30_000;
 
 function configDir(): string {
   return path.join(os.homedir(), '.molio');
@@ -93,8 +95,10 @@ export function buildWeixinRunMessage(
 export class WeixinService {
   private api: WeixinApi | null = null;
   private cursor = '';
-  private polling = false;
+  private connectionState: ConnectionState = 'idle';
   private loginAbort: AbortController | null = null;
+  private pollAbort: AbortController | null = null;
+  private healthTimer: ReturnType<typeof setInterval> | null = null;
   private contextTokens = new Map<string, string>();
   private receivedMessageIds = new Map<string, number>();
   private status: WeixinStatus = {
@@ -106,6 +110,7 @@ export class WeixinService {
     lastMessageAt: null,
     activeRunId: null,
     hasCredentials: false,
+    connectionState: 'idle',
   };
 
   constructor(
@@ -121,6 +126,7 @@ export class WeixinService {
       ...this.status,
       enabled: !!cfg.enabled,
       hasCredentials: fs.existsSync(credentialsPath),
+      connectionState: this.connectionState,
     };
   }
 
@@ -148,19 +154,26 @@ export class WeixinService {
       return this.getStatus();
     }
 
-    if (this.polling && this.api) return this.getStatus();
+    // Already actively polling — nothing to do.
+    if (this.connectionState === 'polling' && this.api) return this.getStatus();
+    // Already probing for recovery — let it continue.
+    if (this.connectionState === 'unhealthy') return this.getStatus();
+    // Login flow in progress — don't interfere.
+    if (this.connectionState === 'connecting') return this.getStatus();
 
     const credentialsPath = resolveCredentialsPath(cfg);
     const credentials = readCredentials(credentialsPath);
     if (credentials) {
+      this.transitionTo('connecting');
       this.contextTokens = new Map(Object.entries(credentials.contextTokens ?? {}));
       this.api = new WeixinApi(credentials.baseUrl, credentials.token);
       this.status.loginStatus = 'logged_in';
       this.status.connected = true;
       this.status.qrcodeUrl = '';
       this.status.lastError = null;
-      void this.pollLoop();
+      this.startPolling();
     } else {
+      this.transitionTo('idle');
       this.status.loginStatus = 'idle';
       this.status.connected = false;
       this.status.lastError = null;
@@ -170,11 +183,14 @@ export class WeixinService {
   }
 
   stop(): WeixinStatus {
-    this.polling = false;
+    this.stopHealthProbe();
+    this.pollAbort?.abort();
+    this.pollAbort = null;
     this.loginAbort?.abort();
     this.loginAbort = null;
     this.api = null;
     this.cursor = '';
+    this.transitionTo('idle');
     this.status = {
       ...this.status,
       enabled: false,
@@ -206,11 +222,17 @@ export class WeixinService {
     };
     saveConfig(config);
 
+    // Clean up any existing polling/health probe before starting login.
+    this.stopHealthProbe();
+    this.pollAbort?.abort();
+    this.pollAbort = null;
+
     this.loginAbort?.abort();
     this.loginAbort = new AbortController();
     const abortSignal = this.loginAbort.signal;
     const api = new WeixinApi(cfg.baseUrl || DEFAULT_BASE_URL);
 
+    this.transitionTo('connecting');
     this.status = {
       ...this.status,
       enabled: true,
@@ -271,7 +293,7 @@ export class WeixinService {
               qrcodeUrl: '',
               lastError: null,
             };
-            void this.pollLoop();
+            this.startPolling();
             return;
           }
 
@@ -288,29 +310,91 @@ export class WeixinService {
     }
   }
 
-  private async pollLoop(): Promise<void> {
-    if (this.polling) return;
-    this.polling = true;
-    let failures = 0;
+  /** Transition to a new connection state and sync the status object. */
+  private transitionTo(state: ConnectionState): void {
+    this.connectionState = state;
+    this.status.connectionState = state;
+  }
 
-    while (this.polling && this.api) {
+  /** Start the poll loop and health probe timer. Assumes this.api is set. */
+  private startPolling(): void {
+    this.transitionTo('polling');
+    this.pollAbort?.abort();
+    this.pollAbort = new AbortController();
+    void this.pollLoop(this.pollAbort.signal);
+    this.startHealthProbe();
+  }
+
+  /** Stop the periodic health probe timer. */
+  private stopHealthProbe(): void {
+    if (this.healthTimer !== null) {
+      clearInterval(this.healthTimer);
+      this.healthTimer = null;
+    }
+  }
+
+  /** Start a periodic health probe that detects network recovery while unhealthy. */
+  private startHealthProbe(): void {
+    this.stopHealthProbe();
+    this.healthTimer = setInterval(() => {
+      void this.runHealthProbe();
+    }, HEALTH_PROBE_INTERVAL_MS);
+    // Don't keep the process alive just for the health probe.
+    if (this.healthTimer && typeof this.healthTimer === 'object' && 'unref' in this.healthTimer) {
+      (this.healthTimer as NodeJS.Timeout).unref();
+    }
+  }
+
+  /** Execute a single health probe tick. */
+  private async runHealthProbe(): Promise<void> {
+    if (!this.api) return;
+
+    // While polling normally, use the probe to detect silent hangs.
+    // While unhealthy, use it to detect network recovery.
+    const healthy = await this.api.healthCheck();
+
+    if (healthy && this.connectionState === 'unhealthy') {
+      // Network recovered — restart polling with existing credentials.
+      this.status.lastError = null;
+      this.startPolling();
+      return;
+    }
+
+    if (!healthy && this.connectionState === 'polling') {
+      // Probe failed while we thought we were fine — the getUpdates fetch
+      // may be silently hung. Abort it and transition to unhealthy.
+      this.pollAbort?.abort();
+      this.pollAbort = null;
+      this.transitionTo('unhealthy');
+      this.status.connected = false;
+      this.status.lastError = 'Network unreachable (detected by health probe). Waiting for recovery...';
+    }
+  }
+
+  private async pollLoop(abortSignal: AbortSignal): Promise<void> {
+    while (!abortSignal.aborted && this.api) {
       try {
         const response = await this.api.getUpdates(this.cursor);
+
+        // If we were aborted while waiting for getUpdates, exit cleanly.
+        if (abortSignal.aborted) break;
+
         const ret = Number(response.ret ?? 0);
         const errcode = Number(response.errcode ?? 0);
         if (ret === SESSION_EXPIRED_CODE || errcode === SESSION_EXPIRED_CODE) {
+          this.transitionTo('expired');
           this.status.loginStatus = 'error';
           this.status.connected = false;
           this.status.lastError = 'Weixin session expired. Please reconnect.';
           removeCredentials(resolveCredentialsPath(this.getConfig()));
           this.api = null;
-          break;
+          this.stopHealthProbe();
+          return;
         }
         if (ret !== 0 || errcode !== 0) {
           throw new Error(String(response.errmsg ?? `getupdates failed: ${ret || errcode}`));
         }
 
-        failures = 0;
         this.status.connected = true;
         this.status.loginStatus = 'logged_in';
         this.status.lastError = null;
@@ -325,15 +409,23 @@ export class WeixinService {
           }
         }
       } catch (err) {
-        failures += 1;
+        if (abortSignal.aborted) break;
+        // Network/API error — transition to unhealthy and let the health
+        // probe handle recovery detection instead of blind retries.
         this.status.lastError = err instanceof Error ? err.message : String(err);
         this.status.connected = false;
-        await this.sleep(failures >= 3 ? 30_000 : 2_000);
-        if (failures >= 3) failures = 0;
+        this.transitionTo('unhealthy');
+        return;
       }
     }
 
-    this.polling = false;
+    // Loop exited without explicit state change (e.g. abort) — if we still
+    // think we're polling, something unexpected happened. Mark unhealthy so
+    // the health probe can attempt recovery.
+    if (this.connectionState === 'polling' && !abortSignal.aborted) {
+      this.transitionTo('unhealthy');
+      this.status.connected = false;
+    }
   }
 
   private async handleRawMessage(raw: Parameters<typeof parseWeixinMessage>[0]): Promise<void> {

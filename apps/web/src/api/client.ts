@@ -17,6 +17,7 @@ export interface WeixinStatus {
   lastMessageAt: number | null;
   activeRunId: string | null;
   hasCredentials: boolean;
+  connectionState?: 'idle' | 'connecting' | 'polling' | 'unhealthy' | 'expired';
 }
 
 export interface WeixinConfig {
