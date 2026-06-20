@@ -128,4 +128,57 @@ describe('TurnTextCollector', () => {
     collector.flush();
     assert.equal(capturedRunId, 'my-run-123');
   });
+
+  /**
+   * Regression test for PR #75: multi-turn message ordering.
+   *
+   * When a user sends a new message while the assistant is still replying,
+   * the pending assistant reply must be flushed BEFORE the user message
+   * is inserted into the DB. This ensures position ordering matches the
+   * actual conversation order (assistant reply < next user message).
+   *
+   * Simulates the sequence:
+   *   1. Assistant accumulates text (partial reply)
+   *   2. User sends new message → flushPendingReply() called first
+   *   3. User message inserted
+   *   4. New assistant reply starts accumulating
+   */
+  it('should flush pending reply before new user message to preserve ordering', () => {
+    const persisted: Array<{ role: string; content: string; order: number }> = [];
+    let orderCounter = 0;
+
+    const collector = new TurnTextCollector('run-1', (text) => {
+      persisted.push({ role: 'assistant', content: text, order: ++orderCounter });
+    });
+
+    // Turn 1: Assistant starts replying
+    collector.append('Assistant reply part 1... ');
+    collector.append('Assistant reply part 2.');
+
+    // User sends new message — flushPendingReply() should be called BEFORE
+    // inserting the user message. Simulate this by flushing now.
+    const flushed = collector.flush();
+    assert.equal(flushed, true, 'Should flush pending assistant reply');
+
+    // Now user message would be inserted (simulated)
+    persisted.push({ role: 'user', content: 'New user message', order: ++orderCounter });
+
+    // Turn 2: Assistant starts replying to the new message
+    collector.append('Second assistant reply.');
+    collector.flush();
+
+    // Verify ordering: assistant1 < user2 < assistant2
+    assert.equal(persisted.length, 3);
+    assert.equal(persisted[0]!.role, 'assistant');
+    assert.equal(persisted[0]!.content, 'Assistant reply part 1... Assistant reply part 2.');
+    assert.equal(persisted[0]!.order, 1);
+
+    assert.equal(persisted[1]!.role, 'user');
+    assert.equal(persisted[1]!.content, 'New user message');
+    assert.equal(persisted[1]!.order, 2);
+
+    assert.equal(persisted[2]!.role, 'assistant');
+    assert.equal(persisted[2]!.content, 'Second assistant reply.');
+    assert.equal(persisted[2]!.order, 3);
+  });
 });

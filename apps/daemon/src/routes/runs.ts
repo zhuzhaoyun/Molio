@@ -115,6 +115,11 @@ export function runsRoutes(
     try {
       const runId = c.req.param('id');
       const runContext = runManager.getRunContext(runId);
+
+      // Flush pending assistant reply BEFORE inserting user message
+      // to ensure correct position ordering in the database.
+      runManager.flushPendingReply(runId);
+
       if (runContext?.conversationId) {
         conversations.appendMessage(runContext.conversationId, {
           id: randomUUID(),
@@ -125,7 +130,7 @@ export function runsRoutes(
         });
       }
       // onTurnComplete callback was registered during createRun() and
-      // persists across turns. sendMessage() resets the text accumulator.
+      // persists across turns.
       runManager.sendMessage(runId, body.message);
       return c.json({ ok: true });
     } catch (err) {

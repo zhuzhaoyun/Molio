@@ -324,8 +324,22 @@ export class RunManager {
   }
 
   /**
+   * Flush any accumulated assistant text for the given run.
+   * Call this BEFORE inserting a new user message to ensure correct
+   * position ordering in the database (assistant reply < next user message).
+   */
+  flushPendingReply(runId: string): void {
+    const run = this.runs.get(runId);
+    if (!run) return;
+    run.turnText.flush();
+  }
+
+  /**
    * Send a follow-up user message to an active run (multi-turn).
    * Writes to the existing stdin stream for stream-json agents.
+   *
+   * NOTE: Caller should invoke flushPendingReply() before inserting
+   * the user message into the DB to maintain correct ordering.
    */
   sendMessage(runId: string, message: string): void {
     const run = this.runs.get(runId);
@@ -333,9 +347,6 @@ export class RunManager {
     if (!run.child?.stdin?.writable || !run.stdinOpen) {
       throw new Error('Run not active or stdin closed — start a new run instead');
     }
-
-    // Flush any accumulated text from the previous turn before starting a new one.
-    run.turnText.flush();
 
     const msg = JSON.stringify({
       type: 'user',
