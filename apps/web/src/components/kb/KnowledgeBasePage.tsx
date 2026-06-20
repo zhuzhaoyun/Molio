@@ -7,7 +7,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import type { TreeNode } from '@molio/contracts';
 import { useKnowledge } from '../../hooks/useKnowledge';
-import { useWikiChat } from '../../hooks/useWikiChat';
+import { useChat } from '../../hooks/useChat';
 import { useKbTabs } from '../../hooks/useKbTabs';
 import { kbTabsStore } from '../../stores/kbTabsStore';
 import { vaultStore } from '../../stores/vaultStore';
@@ -118,9 +118,11 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
   }>({ show: false, title: '', message: '', onConfirm: () => {} });
 
   // Wiki chat hook — refreshes tree on build completion
-  const wikiChat = useWikiChat({
-    vaultId: kb.activeVault?.id ?? null,
+  const wikiChat = useChat({
     agentId,
+    cwd: kb.activeVault?.path ?? null,
+    mode: 'wiki',
+    vaultId: kb.activeVault?.id ?? null,
     onComplete: () => {
       kb.refreshTree();
     },
@@ -246,7 +248,7 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
     setShowChatPanel(true);
     wikiChat.reset();
     setTimeout(() => {
-      wikiChat.startOperation('build', '开始构建 Wiki');
+      wikiChat.startWikiOperation('build', '开始构建 Wiki');
     }, 50);
   }, [agentId, wikiChat]);
 
@@ -255,7 +257,7 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
     setShowChatPanel(true);
     wikiChat.reset();
     setTimeout(() => {
-      wikiChat.startOperation('ingest', `把 ${filePath} 加入 Wiki`, { filePath });
+      wikiChat.startWikiOperation('ingest', `把 ${filePath} 加入 Wiki`, { filePath });
     }, 50);
   }, [agentId, wikiChat]);
 
@@ -264,7 +266,7 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
     setShowChatPanel(true);
     wikiChat.reset();
     setTimeout(() => {
-      wikiChat.startOperation('lint', '检查 Wiki 健康状况');
+      wikiChat.startWikiOperation('lint', '检查 Wiki 健康状况');
     }, 50);
   }, [agentId, wikiChat]);
 
