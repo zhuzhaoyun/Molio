@@ -1,11 +1,17 @@
 import { Hono } from 'hono';
-import type { AgentEvent, CreateRunRequest } from '@molio/contracts';
+import type { CreateRunRequest } from '@molio/contracts';
 import type Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
 import type { RunManager } from '../core/RunManager.js';
 import type { ConversationService } from '../core/conversations/service.js';
-import { getVaultByPath } from '../core/db.js';
-import { WIKI_QUERY_PROMPT } from '../core/wiki-prompts.js';
+import { getVaultByPath, addKbHistory } from '../core/db.js';
+import {
+  WIKI_QUERY_PROMPT,
+  WIKI_BUILD_PROMPT,
+  WIKI_INGEST_PROMPT,
+  WIKI_LINT_PROMPT,
+  WIKI_SAVE_PROMPT,
+} from '../core/wiki-prompts.js';
 
 export function runsRoutes(
   db: Database.Database,
@@ -47,12 +53,61 @@ export function runsRoutes(
       // Only inject on the FIRST turn (no history) — subsequent turns
       // already carry the prompt via conversation transcript.
       let message = body.message;
-      if (body.cwd && (!body.history || body.history.length === 0)) {
+
+      // Handle explicit wiki operations — select prompt and build message
+      if (body.wikiOperation) {
+        const vault = body.cwd ? getVaultByPath(db, body.cwd) : null;
+        if (!vault) {
+          return c.json({
+            error: { code: 'BAD_REQUEST', message: 'cwd must point to a vault for wiki operations' },
+          }, 400);
+        }
+
+        const wikiPrompts: Record<string, string> = {
+          build: WIKI_BUILD_PROMPT,
+          ingest: WIKI_INGEST_PROMPT,
+          lint: WIKI_LINT_PROMPT,
+          query: WIKI_QUERY_PROMPT,
+          save: WIKI_SAVE_PROMPT,
+        };
+
+        const prompt = wikiPrompts[body.wikiOperation];
+        if (!prompt) {
+          return c.json({
+            error: { code: 'BAD_REQUEST', message: `Unknown wiki operation: ${body.wikiOperation}` },
+          }, 400);
+        }
+
+        switch (body.wikiOperation) {
+          case 'build':
+            message = `${prompt}\n\n---\n\n请现在开始构建 Wiki。扫描 vault 中所有源文件并创建 wiki。`;
+            addKbHistory(db, vault.id, 'ingest', 'Wiki 构建已启动');
+            break;
+          case 'ingest':
+            message = `${prompt}\n\n---\n\n请将以下文件导入 wiki：${body.wikiExtra?.filePath ?? body.message}`;
+            addKbHistory(db, vault.id, 'ingest', `已导入 "${body.wikiExtra?.filePath ?? ''}"`);
+            break;
+          case 'lint':
+            message = `${prompt}\n\n---\n\n请现在对 wiki 进行健康检查。`;
+            addKbHistory(db, vault.id, 'lint', 'Wiki 健康检查已启动');
+            break;
+          case 'query':
+            message = `${prompt}\n\n---\n\n用户问题：${body.message}`;
+            break;
+          case 'save':
+            message = `${prompt}\n\n---\n\n${body.message || '请回顾当前对话，将值得归档的内容保存为 wiki 页面。'}`;
+            addKbHistory(db, vault.id, 'edit', 'Wiki 归档已启动');
+            break;
+        }
+      } else if (body.cwd && (!body.history || body.history.length === 0)) {
         const vault = getVaultByPath(db, body.cwd);
         if (vault) {
           message = `${WIKI_QUERY_PROMPT}\n\n---\n\n用户问题：${message}`;
         }
       }
+
+      const conversationId = conversation.id;
+      const agentId = body.agentId;
 
       const runId = await runManager.createRun({
         agentId: body.agentId,
@@ -61,8 +116,18 @@ export function runsRoutes(
         cwd: body.cwd,
         conversationId: conversation.id,
         history: body.history,
+        onTurnComplete: (text, rid) => {
+          conversations.appendMessage(conversationId, {
+            id: randomUUID(),
+            role: 'assistant',
+            content: text,
+            timestamp: Date.now(),
+            agentId,
+            runId: rid,
+          });
+        },
       });
-      persistAssistantReply(runManager, conversations, runId, conversation.id, body.agentId);
+
       return c.json({
         runId,
         conversationId: conversation.id,
@@ -102,6 +167,11 @@ export function runsRoutes(
     try {
       const runId = c.req.param('id');
       const runContext = runManager.getRunContext(runId);
+
+      // Flush pending assistant reply BEFORE inserting user message
+      // to ensure correct position ordering in the database.
+      runManager.flushPendingReply(runId);
+
       if (runContext?.conversationId) {
         conversations.appendMessage(runContext.conversationId, {
           id: randomUUID(),
@@ -111,18 +181,9 @@ export function runsRoutes(
           agentId: runContext.agentId,
         });
       }
-      const afterEventId = runManager.getLastEventId(runId);
+      // onTurnComplete callback was registered during createRun() and
+      // persists across turns.
       runManager.sendMessage(runId, body.message);
-      if (runContext?.conversationId) {
-        persistAssistantReply(
-          runManager,
-          conversations,
-          runId,
-          runContext.conversationId,
-          runContext.agentId,
-          afterEventId,
-        );
-      }
       return c.json({ ok: true });
     } catch (err) {
       return c.json({
@@ -138,69 +199,4 @@ export function runsRoutes(
   });
 
   return app;
-}
-
-function persistAssistantReply(
-  runManager: RunManager,
-  conversations: ConversationService,
-  runId: string,
-  conversationId: string,
-  agentId: string,
-  afterEventId = 0,
-): void {
-  let text = '';
-  let finished = false;
-  let unsubscribe: (() => void) | null = null;
-
-  const finish = (content: string) => {
-    if (finished) return;
-    finished = true;
-    unsubscribe?.();
-    const trimmed = content.trim();
-    if (!trimmed) return;
-    conversations.appendMessage(conversationId, {
-      id: randomUUID(),
-      role: 'assistant',
-      content: trimmed,
-      timestamp: Date.now(),
-      agentId,
-      runId,
-    });
-  };
-
-  const handleEvent = (event: AgentEvent) => {
-    if (runManager.getLastEventId(runId) <= afterEventId) return;
-    handleReplyEvent(event);
-  };
-
-  const handleReplyEvent = (event: AgentEvent) => {
-    if (event.type === 'text_delta') {
-      text += event.delta;
-      return;
-    }
-    if (event.type === 'error') {
-      finish(`Molio 处理失败：${event.message}`);
-      return;
-    }
-    if (event.type === 'turn_end' && event.stopReason !== 'tool_use') {
-      finish(text);
-      return;
-    }
-    if (event.type === 'status' && event.label === 'failed') {
-      finish(text || 'Molio 运行失败。');
-      return;
-    }
-    if (event.type === 'status' && event.label === 'completed') {
-      finish(text);
-    }
-  };
-
-  const buffered = runManager.getBufferedEvents(runId, afterEventId) ?? [];
-  for (const record of buffered) {
-    handleReplyEvent(record.data as AgentEvent);
-    if (finished) return;
-  }
-  if (runManager.isTerminal(runId)) return;
-
-  unsubscribe = runManager.onEvent(runId, handleEvent);
 }

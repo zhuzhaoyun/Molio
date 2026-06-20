@@ -8,11 +8,6 @@ import path from 'node:path';
 import type Database from 'better-sqlite3';
 import type {
   CreateVaultRequest,
-  WikiBuildRequest,
-  WikiIngestRequest,
-  WikiLintRequest,
-  WikiQueryRequest,
-  WikiSaveRequest,
 } from '@molio/contracts';
 import {
   listVaults,
@@ -36,13 +31,6 @@ import {
 } from '../core/knowledge.js';
 import type { RunManager } from '../core/RunManager.js';
 import { installBuiltinSkills } from '../core/skill-installer.js';
-import {
-  WIKI_BUILD_PROMPT,
-  WIKI_INGEST_PROMPT,
-  WIKI_LINT_PROMPT,
-  WIKI_QUERY_PROMPT,
-  WIKI_SAVE_PROMPT,
-} from '../core/wiki-prompts.js';
 
 export function knowledgeRoutes(db: Database.Database, runManager: RunManager): Hono {
   const app = new Hono();
@@ -322,156 +310,6 @@ export function knowledgeRoutes(db: Database.Database, runManager: RunManager): 
       indexExists,
       wikiDirExists,
     });
-  });
-
-  // POST /api/knowledge/vaults/:id/wiki/build — trigger wiki build
-  app.post('/vaults/:id/wiki/build', async (c) => {
-    const vault = getVault(db, c.req.param('id'));
-    if (!vault) {
-      return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
-    }
-
-    try {
-      const body = await c.req.json<WikiBuildRequest>();
-      if (!body.agentId) {
-        return c.json({ error: { code: 'BAD_REQUEST', message: 'agentId is required' } }, 400);
-      }
-
-      const message = `${WIKI_BUILD_PROMPT}\n\n---\n\n请现在开始构建 Wiki。扫描 vault 中所有源文件并创建 wiki。`;
-
-      const runId = await runManager.createRun({
-        agentId: body.agentId,
-        message,
-        model: body.model,
-        cwd: vault.path,
-      });
-
-      addKbHistory(db, vault.id, 'ingest', 'Wiki 构建已启动');
-      return c.json({ runId });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '启动 Wiki 构建失败';
-      return c.json({ error: { code: 'INTERNAL', message } }, 500);
-    }
-  });
-
-  // POST /api/knowledge/vaults/:id/wiki/ingest — ingest a file or directory
-  app.post('/vaults/:id/wiki/ingest', async (c) => {
-    const vault = getVault(db, c.req.param('id'));
-    if (!vault) {
-      return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
-    }
-
-    try {
-      const body = await c.req.json<WikiIngestRequest>();
-      if (!body.agentId || !body.filePath) {
-        return c.json({ error: { code: 'BAD_REQUEST', message: 'agentId and filePath are required' } }, 400);
-      }
-
-      const message = `${WIKI_INGEST_PROMPT}\n\n---\n\n请将以下文件导入 wiki：${body.filePath}`;
-
-      const runId = await runManager.createRun({
-        agentId: body.agentId,
-        message,
-        model: body.model,
-        cwd: vault.path,
-      });
-
-      addKbHistory(db, vault.id, 'ingest', `已导入 "${body.filePath}"`);
-      return c.json({ runId });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '导入文件失败';
-      return c.json({ error: { code: 'INTERNAL', message } }, 500);
-    }
-  });
-
-  // POST /api/knowledge/vaults/:id/wiki/lint — run wiki health check
-  app.post('/vaults/:id/wiki/lint', async (c) => {
-    const vault = getVault(db, c.req.param('id'));
-    if (!vault) {
-      return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
-    }
-
-    try {
-      const body = await c.req.json<WikiLintRequest>();
-      if (!body.agentId) {
-        return c.json({ error: { code: 'BAD_REQUEST', message: 'agentId is required' } }, 400);
-      }
-
-      const message = `${WIKI_LINT_PROMPT}\n\n---\n\n请现在对 wiki 进行健康检查。`;
-
-      const runId = await runManager.createRun({
-        agentId: body.agentId,
-        message,
-        model: body.model,
-        cwd: vault.path,
-      });
-
-      addKbHistory(db, vault.id, 'lint', 'Wiki 健康检查已启动');
-      return c.json({ runId });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '启动 Wiki 健康检查失败';
-      return c.json({ error: { code: 'INTERNAL', message } }, 500);
-    }
-  });
-
-  // POST /api/knowledge/vaults/:id/wiki/query — ask a question against the wiki
-  app.post('/vaults/:id/wiki/query', async (c) => {
-    const vault = getVault(db, c.req.param('id'));
-    if (!vault) {
-      return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
-    }
-
-    try {
-      const body = await c.req.json<WikiQueryRequest>();
-      if (!body.agentId || !body.message) {
-        return c.json({ error: { code: 'BAD_REQUEST', message: 'agentId and message are required' } }, 400);
-      }
-
-      const message = `${WIKI_QUERY_PROMPT}\n\n---\n\n用户问题：${body.message}`;
-
-      const runId = await runManager.createRun({
-        agentId: body.agentId,
-        message,
-        model: body.model,
-        cwd: vault.path,
-      });
-
-      return c.json({ runId });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '启动 Wiki 查询失败';
-      return c.json({ error: { code: 'INTERNAL', message } }, 500);
-    }
-  });
-
-  // POST /api/knowledge/vaults/:id/wiki/save — save conversation to wiki
-  app.post('/vaults/:id/wiki/save', async (c) => {
-    const vault = getVault(db, c.req.param('id'));
-    if (!vault) {
-      return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
-    }
-
-    try {
-      const body = await c.req.json<WikiSaveRequest>();
-      if (!body.agentId) {
-        return c.json({ error: { code: 'BAD_REQUEST', message: 'agentId is required' } }, 400);
-      }
-
-      const userContext = body.message ?? '请回顾当前对话，将值得归档的内容保存为 wiki 页面。';
-      const message = `${WIKI_SAVE_PROMPT}\n\n---\n\n${userContext}`;
-
-      const runId = await runManager.createRun({
-        agentId: body.agentId,
-        message,
-        model: body.model,
-        cwd: vault.path,
-      });
-
-      addKbHistory(db, vault.id, 'edit', 'Wiki 归档已启动');
-      return c.json({ runId });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '启动 Wiki 归档失败';
-      return c.json({ error: { code: 'INTERNAL', message } }, 500);
-    }
   });
 
   return app;
