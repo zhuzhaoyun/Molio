@@ -26,10 +26,7 @@ export const claudeAgentDef: RuntimeAgentDef = {
     if (options.model && options.model !== 'default') {
       args.push('--model', options.model);
     }
-    args.push('--permission-mode', 'acceptEdits');
-    // Pre-approve autonomous operation tools — but NOT AskUserQuestion,
-    // which must remain interactive so the user can respond.
-    args.push('--allowedTools', 'Bash', 'Edit', 'Write', 'NotebookEdit', 'WebFetch', 'WebSearch');
+    args.push('--dangerously-skip-permissions');
     return args;
   },
 

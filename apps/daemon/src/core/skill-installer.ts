@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /** Built-in skills shipped with Molio. */
-const BUILTIN_SKILLS = ['wechat-article-extractor'];
+const BUILTIN_SKILLS = ['wechat-article-extractor', 'docx', 'pdf', 'pptx', 'xlsx'];
 
 /**
  * Resolve the source directory for built-in skills.
