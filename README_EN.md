@@ -1,20 +1,20 @@
 # Molio (墨流)
 
-> The Local AI Workstation for Knowledge Workers: Manage Knowledge → Write with Local AI → Publish with One Click. Your Data Never Leaves.
+> Obsidian-compatible local knowledge base + Claude Code GUI + WeChat AI Assistant — all data stays on your machine
 
 [English](README_EN.md) | **[中文](README.md)**
 
-Molio unifies knowledge base management, AI-assisted writing, and multi-platform publishing into one seamless workflow — a **local-first** desktop application. All data stays on your device; by orchestrating local AI runtimes (Claude Code, OpenAI Codex, Gemini CLI, Qwen Code), it enables document creation entirely on your machine — no cloud uploads required.
+Molio is a **local-first** desktop app that unifies knowledge management, AI writing, and multi-platform publishing. Open your existing Obsidian Vault directly, clip web pages with the Chrome extension, write documents via Claude Code / Codex / Gemini CLI in a graphical UI, or chat with your knowledge base from your phone via WeChat — everything stays on your machine, nothing goes through third-party servers.
 
 ## Features
 
-- **Knowledge Base Management** — LLM_Wiki-inspired self-managing knowledge base with file tree browsing, create, edit, and delete, automatically building a searchable knowledge network
-- **AI-Assisted Writing** — Document creation via local AI runtimes with multi-turn conversation, tool calling, and streaming output
-- **Multi-Runtime Orchestration** — Switch between Claude Code / OpenAI Codex / Gemini CLI / Qwen Code with one click
-- **Project Context Loading** — AI processes automatically load `CLAUDE.md`, built-in `wiki_prompt`, and document structure from the project directory
-- **Markdown Typesetting** — Integrated [doocs/md](https://github.com/doocs/md) engine for WeChat and platform-specific formatting
-- **Multi-Platform Publishing** — One-click distribution to 30+ platforms via [doocs/cose](https://github.com/doocs/cose)
-- **Local-First, Data Privacy** — All data stays on your device; AI runtimes invoke local CLI directly, no document content ever leaves your machine
+- **🗂️ Obsidian-Compatible Vault** — Point it at your existing Obsidian directory, zero migration; plain Markdown files, no vendor lock-in, switch back anytime
+- **✂️ Built-in Web Clipper** — Chrome extension clips web pages to your knowledge base with one click, auto-opens the desktop app to the saved file
+- **🤖 Claude Code / Codex / Gemini CLI GUI** — No command line needed; pick an agent, send messages, watch streaming output in the UI, auto-loads project `CLAUDE.md` context
+- **💬 WeChat AI Assistant** — Scan a QR code to connect your personal WeChat; chat with your local knowledge base from your phone; send article links for auto-summary and save
+- **🎨 Powered by doocs/md Typesetting** — One-click formatting for WeChat, Zhihu, and more; split-pane real-time preview
+- **🚀 Publish to 30+ Platforms** — Built on [doocs/cose](https://github.com/doocs/cose), write once and publish everywhere — no more copy-pasting across platforms
+- **🔒 All Data Stays Local** — Knowledge base, AI conversations, and WeChat messages all stored on your machine, never routed through third-party servers
 
 ## Screenshots
 
@@ -127,10 +127,10 @@ pnpm build        # Build all packages
 
 Molio is inspired and supported by these excellent open-source projects:
 
-- **[WeKnora](https://github.com/Tencent/WeKnora)** — Knowledge management platform, providing design reference for Molio's KB module
 - **[multica](https://github.com/multica-ai/multica)** — Open-source Agent management platform, inspiring Molio's multi-runtime orchestration and Agent interaction design
 - **[doocs/md](https://github.com/doocs/md)** — WeChat Markdown editor, powering Molio's document typesetting and multi-platform formatting via its core rendering engine `@md/core`
 - **[doocs/cose](https://github.com/doocs/cose)** — Multi-platform content distribution extension, powering Molio's publishing capabilities via its platform adapter layer
+- **[WeKnora](https://github.com/Tencent/WeKnora)** — Tencent's open-source knowledge management platform, providing design philosophy reference for Molio's KB module
 
 Thanks to the authors and communities of these projects for enabling Molio to stand on the shoulders of giants.
 

@@ -1,20 +1,20 @@
 # Molio (墨流)
 
-> 知识工作者的本地 AI 工作台：管理知识库 → 调用本地 AI 写作 → 一键排版发布，全程数据不出境
+> 兼容 Obsidian Vault 的本地知识库 + Claude Code 图形界面 + 微信 AI 助手 — 数据全在你自己的电脑上
 
 **[English](README_EN.md)** | 中文
 
-Molio 将知识库管理、AI 辅助写作和多平台发布串联为一体，是一款**本地优先**的桌面应用。所有数据存储在本地，通过编排 Claude Code、OpenAI Codex、Gemini CLI、Qwen Code 等本地 AI 运行时完成文档创作，内容无需上传到云端。
+Molio 是一款**本地优先**的桌面应用，将知识库管理、AI 写作和多平台发布串联为一体。直接打开你的 Obsidian Vault，通过 Chrome 扩展一键剪藏网页，在 UI 里调用 Claude Code / Codex / Gemini CLI 写文档，扫个码就能在手机微信里跟知识库对话 — 所有内容存在你自己的电脑上，不经过任何第三方服务器。
 
 ## 核心功能
 
-- **知识库管理** — 基于类 LLM_Wiki 的自管理知识库，支持文件树浏览、创建、编辑、删除，自动构建可检索的知识网络
-- **AI 辅助写作** — 通过本地 AI 运行时进行文档创作，支持多轮对话、工具调用、流式输出
-- **多运行时编排** — 支持 Claude Code / OpenAI Codex / Gemini CLI / Qwen Code，一键切换
-- **项目上下文加载** — AI 进程自动加载项目目录下的 `CLAUDE.md`、内置的 `wiki_prompt` 以及文档结构
-- **Markdown 排版** — 集成 [doocs/md](https://github.com/doocs/md) 排版引擎，支持微信公众号等平台格式化
-- **多平台发布** — 配合 [doocs/cose](https://github.com/doocs/cose) 一键发布到 30+ 内容平台
-- **本地优先，数据私有** — 所有数据存储在本地，AI 运行时直接调用本地 CLI，文档内容无需上传云端
+- **🗂️ 兼容 Obsidian Vault** — 直接打开你的 Obsidian 目录，零迁移成本；纯 Markdown 文件，无厂商锁定，随时可以切回去
+- **✂️ 自带 Web Clipper** — Chrome 扩展一键剪藏网页到知识库，自动唤起桌面端定位到刚保存的文件
+- **🤖 Claude Code / Codex / Gemini CLI 图形界面** — 不用敲命令行，在 UI 里选 Agent、发消息、看流式输出，自动加载项目 `CLAUDE.md` 上下文
+- **💬 微信 AI 助手** — 扫个码就连上个人微信，在手机里跟你的本地知识库对话；发公众号链接还能自动总结并存入知识库
+- **🎨 内置 doocs/md 排版** — 微信公众号、知乎等平台格式一键转换，左右分栏实时预览
+- **🚀 30+ 平台一键发布** — 基于 [doocs/cose](https://github.com/doocs/cose)，写完即发，告别逐平台复制粘贴
+- **🔒 数据全在本地** — 知识库、AI 对话、微信消息全部存在你自己的电脑上，不经过任何第三方服务器
 
 ## 界面预览
 
@@ -142,10 +142,10 @@ sudo xattr -d com.apple.quarantine /Applications/Molio.app
 
 Molio 的诞生离不开以下优秀开源项目的启发与支持：
 
-- **[WeKnora](https://github.com/Tencent/WeKnora)** — 知识库管理平台，为 Molio 的知识库管理模块提供了设计参考
 - **[multica](https://github.com/multica-ai/multica)** — 开源 Agent 管理平台，启发了 Molio 的多运行时编排与 Agent 交互设计
 - **[doocs/md](https://github.com/doocs/md)** — 微信 Markdown 编辑器，Molio 的文档排版与多平台格式化能力基于其核心渲染引擎 `@md/core` 构建
 - **[doocs/cose](https://github.com/doocs/cose)** — 全平台内容分发扩展，Molio 的多平台发布能力由其平台适配器层提供支持
+- **[WeKnora](https://github.com/Tencent/WeKnora)** — 腾讯开源知识库管理平台，为 Molio 的知识库模块提供了设计理念参考
 
 感谢这些项目的作者和社区，让 Molio 能站在巨人的肩膀上快速成长。
 
