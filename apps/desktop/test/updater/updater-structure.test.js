@@ -94,20 +94,41 @@ describe('main.js: global crash protection must exist', () => {
   });
 });
 
-describe('updater.js: must NOT use quitAndInstall (race condition on Windows)', () => {
+describe('updater.js: must NOT use quitAndInstall on Windows path', () => {
   const updaterJs = readFileSync(
     path.resolve(import.meta.dirname, '../../src/updater.js'),
     'utf-8'
   );
 
-  it('should NOT call autoUpdater.quitAndInstall()', () => {
-    // quitAndInstall() spawns the NSIS installer before app.quit(), causing
-    // "Failed to uninstall old application files" because Electron still
-    // holds file locks. We spawn the installer manually instead.
+  it('should call quitAndInstall() only on non-Windows path', () => {
+    // quitAndInstall() is safe on macOS/Linux (install happens AFTER Electron exits).
+    // On Windows, the manual NSIS spawn in spawnInstaller() avoids the file-lock race.
+    // Verify the call exists AND is guarded by a non-win32 platform check.
     const hasQuitAndInstallCall = /autoUpdater\.quitAndInstall\s*\(/.test(updaterJs);
     assert.ok(
-      !hasQuitAndInstallCall,
-      'updater.js must NOT call autoUpdater.quitAndInstall() — it has a race condition on Windows'
+      hasQuitAndInstallCall,
+      'updater.js must call autoUpdater.quitAndInstall() for macOS/Linux'
+    );
+
+    // Verify the call is NOT reachable on Windows — it must be AFTER a platform check
+    const win32CheckPos = updaterJs.indexOf("process.platform === 'win32'");
+    const quitAndInstallPos = updaterJs.indexOf('autoUpdater.quitAndInstall(');
+    assert.ok(win32CheckPos !== -1, 'must have process.platform check');
+    assert.ok(quitAndInstallPos !== -1, 'must call quitAndInstall');
+    assert.ok(
+      quitAndInstallPos > win32CheckPos,
+      'quitAndInstall() call must appear AFTER the win32 platform check (i.e., in the non-Windows branch)'
+    );
+  });
+
+  it('should have spawnInstaller for Windows path', () => {
+    assert.ok(
+      updaterJs.includes('function spawnInstaller'),
+      'updater.js must extract Windows NSIS logic into spawnInstaller()'
+    );
+    assert.ok(
+      updaterJs.includes("'--updated'") && updaterJs.includes("'/S'") && updaterJs.includes("'--force-run'"),
+      'spawnInstaller must use NSIS-specific flags'
     );
   });
 
@@ -379,6 +400,43 @@ describe('preload.cjs: must expose onUpdateError', () => {
     assert.ok(
       preloadCjs.includes("'updater:error'") || preloadCjs.includes('"updater:error"'),
       "preload.cjs must listen for 'updater:error' IPC event"
+    );
+  });
+});
+
+describe('release.yml: must promote all three platform manifests to OSS root', () => {
+  const releaseYml = readFileSync(
+    path.resolve(import.meta.dirname, '../../../../.github/workflows/release.yml'),
+    'utf-8'
+  );
+
+  it('should loop over all three manifests', () => {
+    assert.ok(
+      releaseYml.includes('latest.yml') && releaseYml.includes('latest-mac.yml') && releaseYml.includes('latest-linux.yml'),
+      'release.yml must reference latest.yml, latest-mac.yml, and latest-linux.yml'
+    );
+    assert.ok(
+      releaseYml.includes('latest-mac.yml') && releaseYml.includes('latest-linux.yml'),
+      'release.yml must promote latest-mac.yml and latest-linux.yml (not just latest.yml)'
+    );
+  });
+
+  it('should use || continue for graceful skip', () => {
+    assert.ok(
+      releaseYml.includes('|| continue'),
+      'release.yml manifest loop must use || continue to skip unbuilt platforms'
+    );
+  });
+
+  it('should apply sed path prefix to all manifests', () => {
+    // The sed command must exist inside the manifest loop
+    assert.ok(
+      releaseYml.includes('s|url: |url: ${TAG}/|g'),
+      'release.yml must have sed path prefix for url field'
+    );
+    assert.ok(
+      releaseYml.includes('s|path: |path: ${TAG}/|g'),
+      'release.yml must have sed path prefix for path field'
     );
   });
 });

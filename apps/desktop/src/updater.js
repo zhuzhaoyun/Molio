@@ -230,17 +230,44 @@ async function installDownloadedUpdate(killDaemon) {
 
   installing = true;
   setState({ status: 'installing', message: null });
-  log('info', 'updater', 'installing update (manual sequence)...');
+  log('info', 'updater', 'installing update...');
 
+  // Always kill daemon first — releases file handles on all platforms
   if (killDaemon) {
     log('info', 'updater', 'killing daemon before install...');
     await killDaemon();
   }
 
-  const installerPath = updaterState.downloadedFile;
-  log('info', 'updater', `spawning installer: ${installerPath}`);
+  if (process.platform === 'win32') {
+    // Windows: manual NSIS spawn to avoid file-lock race condition.
+    // The daemon is already dead — we spawn the installer, confirm it
+    // started, then quit Electron.
+    return spawnInstaller(updaterState.downloadedFile);
+  }
 
-  // --updated: tells the new installer this is an update (skip some prompts)
+  // macOS / Linux: delegate to electron-updater's built-in install.
+  // - macOS: quitAndInstall() mounts DMG, copies .app, relaunches
+  // - Linux: quitAndInstall() handles AppImage/deb
+  // quitAndInstall(isSilent=true, isForceRunAfterUpdate=true):
+  //   isSilent — no user prompts
+  //   isForceRunAfterUpdate — auto-restart after install
+  log('info', 'updater', `delegating install to quitAndInstall (platform=${process.platform})`);
+  autoUpdater.quitAndInstall(true, true);
+  return publicState();
+}
+
+/**
+ * Spawn the Windows NSIS installer and quit the app.
+ * Extracted from installDownloadedUpdate() so the platform dispatch is explicit
+ * and each platform's install strategy is independently testable.
+ *
+ * @param {string} installerPath — path to the NSIS installer .exe
+ * @returns {Promise<object>} publicState after spawn
+ */
+function spawnInstaller(installerPath) {
+  log('info', 'updater', `spawning Windows installer: ${installerPath}`);
+
+  // --updated: tells NSIS this is an update (skip some prompts)
   // /S: silent install (no user interaction)
   // --force-run: restart app after install completes
   const args = ['--updated', '/S', '--force-run'];
