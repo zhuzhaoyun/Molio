@@ -446,9 +446,7 @@ jobs:
             echo "📌 Prerelease detected — channel: ${CHANNEL}"
           else
             CHANNEL="latest"
-            cat > /tmp/latest.json << 'JSONEOF'
-            {"version":"${VERSION}","updatedAt":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
-            JSONEOF
+            echo "{\"version\":\"${VERSION}\",\"updatedAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" > /tmp/latest.json
             ossutil cp /tmp/latest.json oss://${{ vars.OSS_BUCKET }}/releases/latest.json \
               --endpoint=${{ vars.OSS_ENDPOINT }} \
               -i "${OSS_ACCESS_KEY_ID}" \
