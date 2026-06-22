@@ -236,7 +236,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          # macOS: allow ad-hoc signing so update-replaced .app bundles retain a
+          # recognizable signature, which may let Gatekeeper remember its exemption
+          # across updates. Windows: disable code signing (we don't have an EV cert).
+          CSC_IDENTITY_AUTO_DISCOVERY: "${{ matrix.platform != 'win' }}"
         run: npx electron-builder --${{ matrix.platform }} ${{ matrix.arch-flag }} --publish always "--config.extraMetadata.version=${{ steps.version.outputs.version }}"
 
       - name: Verify update manifest exists
