@@ -16,6 +16,9 @@
 import pkg from 'electron-updater';
 import { app, ipcMain } from 'electron';
 import { spawn } from 'node:child_process';
+import { writeFileSync, chmodSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, dirname } from 'node:path';
 import { log, getLogPath } from './logger.js';
 import { createRetryState } from './retry.js';
 
@@ -245,12 +248,17 @@ async function installDownloadedUpdate(killDaemon) {
     return spawnInstaller(updaterState.downloadedFile);
   }
 
-  // macOS / Linux: delegate to electron-updater's built-in install.
-  // - macOS: quitAndInstall() mounts DMG, copies .app, relaunches
-  // - Linux: quitAndInstall() handles AppImage/deb
-  // quitAndInstall(isSilent=true, isForceRunAfterUpdate=true):
-  //   isSilent — no user prompts
-  //   isForceRunAfterUpdate — auto-restart after install
+  if (process.platform === 'darwin') {
+    // macOS: manual ZIP extraction to bypass ShipIt code-signature validation.
+    // ShipIt (electron-updater's install helper) requires a valid Developer ID
+    // signature, which we can't provide without Apple Developer Program ($99/yr).
+    // Instead, we write a shell script that waits for the app to quit, extracts
+    // the ZIP, replaces the .app, removes quarantine, and relaunches.
+    const appBundlePath = dirname(dirname(dirname(app.getPath('exe'))));
+    return spawnMacOSUpdater(updaterState.downloadedFile, appBundlePath);
+  }
+
+  // Linux: delegate to electron-updater's built-in install (AppImage/deb)
   log('info', 'updater', `delegating install to quitAndInstall (platform=${process.platform})`);
   autoUpdater.quitAndInstall(true, true);
   return publicState();
@@ -309,6 +317,71 @@ function spawnInstaller(installerPath) {
       finish(publicState());
     }
   });
+}
+
+/**
+ * macOS manual update install: write a shell script that waits for the app
+ * to quit, extracts the ZIP, replaces the .app, removes quarantine xattr,
+ * and relaunches. Bypasses ShipIt (which requires Developer ID signing).
+ *
+ * @param {string} zipPath — path to the downloaded update ZIP
+ * @param {string} appBundlePath — path to the installed .app bundle
+ * @returns {object} publicState
+ */
+function spawnMacOSUpdater(zipPath, appBundlePath) {
+  log('info', 'updater', `macOS manual install: zip=${zipPath} app=${appBundlePath}`);
+
+  const scriptPath = join(tmpdir(), 'molio-update.sh');
+  const script = `#!/bin/bash
+set -e
+echo "[Molio] Waiting for app to quit..."
+sleep 3
+
+echo "[Molio] Extracting update..."
+TMPDIR=$(mktemp -d)
+unzip -qo "$1" -d "$TMPDIR"
+
+NEW_APP=$(find "$TMPDIR" -name "*.app" -maxdepth 1 | head -1)
+if [ -z "$NEW_APP" ]; then
+  echo "[Molio] ERROR: No .app found in update ZIP" >&2
+  exit 1
+fi
+
+echo "[Molio] Replacing old app..."
+rm -rf "$2"
+cp -R "$NEW_APP" "$2"
+
+echo "[Molio] Removing quarantine..."
+xattr -rd com.apple.quarantine "$2" 2>/dev/null || true
+
+echo "[Molio] Launching new version..."
+open "$2"
+
+echo "[Molio] Cleanup..."
+rm -rf "$TMPDIR" "$1" "$3"
+echo "[Molio] Done."
+`;
+
+  try {
+    writeFileSync(scriptPath, script);
+    chmodSync(scriptPath, 0o755);
+
+    const child = spawn('bash', [scriptPath, zipPath, appBundlePath, scriptPath], {
+      detached: true,
+      stdio: 'ignore',
+    });
+    child.unref();
+
+    log('info', 'updater', `macOS update script spawned (pid=${child.pid}), quitting app...`);
+    app.quit();
+    return publicState();
+  } catch (err) {
+    installing = false;
+    const msg = errMsg(err);
+    log('error', 'updater', `failed to spawn macOS updater: ${msg}`);
+    notifyError(msg);
+    return publicState();
+  }
 }
 
 /**
