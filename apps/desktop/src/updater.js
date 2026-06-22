@@ -16,7 +16,7 @@
 import pkg from 'electron-updater';
 import { app, ipcMain } from 'electron';
 import { spawn } from 'node:child_process';
-import { writeFileSync, chmodSync } from 'node:fs';
+import { writeFileSync, chmodSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { log, getLogPath } from './logger.js';
@@ -252,9 +252,30 @@ async function installDownloadedUpdate(killDaemon) {
     // macOS: manual ZIP extraction to bypass ShipIt code-signature validation.
     // ShipIt (electron-updater's install helper) requires a valid Developer ID
     // signature, which we can't provide without Apple Developer Program ($99/yr).
-    // Instead, we write a shell script that waits for the app to quit, extracts
-    // the ZIP, replaces the .app, removes quarantine, and relaunches.
-    const appBundlePath = dirname(dirname(dirname(app.getPath('exe'))));
+    let appBundlePath = dirname(dirname(dirname(app.getPath('exe'))));
+
+    // Detect App Translocation — when a user downloads a ZIP, extracts it,
+    // and runs the .app directly from ~/Downloads, macOS moves it to a
+    // read-only "AppTranslocation" temp path. We must find the ORIGINAL
+    // writable location to update it.
+    if (appBundlePath.includes('AppTranslocation')) {
+      log('info', 'updater', 'app is translocated, searching for original path');
+      const home = app.getPath('home');
+      const candidates = [
+        `${home}/Downloads/Molio.app`,
+        `${home}/Desktop/Molio.app`,
+        '/Applications/Molio.app',
+      ];
+      const found = candidates.find((p) => existsSync(p));
+      if (found) {
+        log('info', 'updater', `resolved original app: ${found}`);
+        appBundlePath = found;
+      } else {
+        log('warn', 'updater',
+          'could not find original app path — falling back to translocation path');
+      }
+    }
+
     return spawnMacOSUpdater(updaterState.downloadedFile, appBundlePath);
   }
 
@@ -331,35 +352,51 @@ function spawnInstaller(installerPath) {
 function spawnMacOSUpdater(zipPath, appBundlePath) {
   log('info', 'updater', `macOS manual install: zip=${zipPath} app=${appBundlePath}`);
 
+  const logDir = join(app.getPath('home'), 'Library', 'Application Support', 'Molio', 'logs');
   const scriptPath = join(tmpdir(), 'molio-update.sh');
+  const logPath = join(logDir, 'update.log');
   const script = `#!/bin/bash
-set -e
-echo "[Molio] Waiting for app to quit..."
+LOG="${logPath}"
+echo "$(date): [update] ========== START ==========" >> "$LOG"
+echo "$(date): [update] ZIP: $1" >> "$LOG"
+echo "$(date): [update] APP: $2" >> "$LOG"
+
+echo "$(date): [update] Waiting for app to quit..." >> "$LOG"
 sleep 3
 
-echo "[Molio] Extracting update..."
+echo "$(date): [update] Extracting update..." >> "$LOG"
 TMPDIR=$(mktemp -d)
-unzip -qo "$1" -d "$TMPDIR"
-
-NEW_APP=$(find "$TMPDIR" -name "*.app" -maxdepth 1 | head -1)
-if [ -z "$NEW_APP" ]; then
-  echo "[Molio] ERROR: No .app found in update ZIP" >&2
+if ! unzip -qo "$1" -d "$TMPDIR" 2>> "$LOG"; then
+  echo "$(date): [update] ERROR: unzip failed" >> "$LOG"
   exit 1
 fi
 
-echo "[Molio] Replacing old app..."
-rm -rf "$2"
-cp -R "$NEW_APP" "$2"
+NEW_APP=$(find "$TMPDIR" -name "*.app" -maxdepth 1 | head -1)
+if [ -z "$NEW_APP" ]; then
+  echo "$(date): [update] ERROR: No .app found in update ZIP" >> "$LOG"
+  ls -la "$TMPDIR" >> "$LOG" 2>&1
+  exit 1
+fi
+echo "$(date): [update] New app: $NEW_APP" >> "$LOG"
 
-echo "[Molio] Removing quarantine..."
-xattr -rd com.apple.quarantine "$2" 2>/dev/null || true
+echo "$(date): [update] Removing old app: $2" >> "$LOG"
+rm -rf "$2" 2>> "$LOG" || true
 
-echo "[Molio] Launching new version..."
-open "$2"
+echo "$(date): [update] Copying new app..." >> "$LOG"
+if ! cp -R "$NEW_APP" "$2" 2>> "$LOG"; then
+  echo "$(date): [update] ERROR: cp failed" >> "$LOG"
+  exit 1
+fi
 
-echo "[Molio] Cleanup..."
-rm -rf "$TMPDIR" "$1" "$3"
-echo "[Molio] Done."
+echo "$(date): [update] Removing quarantine..." >> "$LOG"
+xattr -rd com.apple.quarantine "$2" 2>> "$LOG" || true
+
+echo "$(date): [update] Launching new version..." >> "$LOG"
+open "$2" 2>> "$LOG" || true
+
+echo "$(date): [update] Cleanup..." >> "$LOG"
+rm -rf "$TMPDIR" "$1" 2>> "$LOG" || true
+echo "$(date): [update] ========== DONE ==========" >> "$LOG"
 `;
 
   try {
