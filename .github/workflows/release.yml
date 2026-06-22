@@ -236,6 +236,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # macOS: enable ad-hoc signing so ShipIt (electron-updater's install
+          # helper) can validate the code signature. Without this, pre-signed
+          # Electron Framework binaries conflict with our unsigned binary,
+          # causing "code signature did not pass validation" on install.
+          # Note: ad-hoc signing does NOT satisfy Gatekeeper — users still need
+          # to right-click → Open on first launch.
+          CSC_IDENTITY_AUTO_DISCOVERY: "${{ matrix.platform != 'win' }}"
         run: npx electron-builder --${{ matrix.platform }} ${{ matrix.arch-flag }} --publish always "--config.extraMetadata.version=${{ steps.version.outputs.version }}"
 
       - name: Verify update manifest exists
