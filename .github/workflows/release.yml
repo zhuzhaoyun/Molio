@@ -438,13 +438,17 @@ jobs:
               --update
           done
 
-          # Only update latest.json and latest.yml for stable releases (skip test/beta/alpha/rc)
+          # Determine update channel: stable → "latest", prerelease → prerelease type
+          # electron-updater looks for <channel>.yml / <channel>-mac.yml / <channel>-linux.yml
+          # Stable versions update the "latest" channel; prerelease versions update their own channel.
           if echo "${VERSION}" | grep -qiE '(test|beta|alpha|rc|dirty)'; then
-            echo "⏭️  Skipping latest.json and manifest update — ${VERSION} is a pre-release"
+            CHANNEL=$(echo "${VERSION}" | grep -oiE '(beta|alpha|rc)' | head -1 || echo "beta")
+            echo "📌 Prerelease detected — channel: ${CHANNEL}"
           else
+            CHANNEL="latest"
             cat > /tmp/latest.json <<EOF
           {"version":"${VERSION}","updatedAt":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
-          EOF
+EOF
             ossutil cp /tmp/latest.json oss://${{ vars.OSS_BUCKET }}/releases/latest.json \
               --endpoint=${{ vars.OSS_ENDPOINT }} \
               -i "${OSS_ACCESS_KEY_ID}" \
@@ -453,34 +457,39 @@ jobs:
               --meta Cache-Control:no-cache \
               --force
             echo "✅ Updated latest.json to ${VERSION}"
-
-            # Copy platform manifests from version dir to root for electron-updater generic provider.
-            # The yml's url/path fields are relative filenames, but files live under releases/<tag>/.
-            # We must prepend the tag directory so electron-updater resolves the correct download URL.
-            for MANIFEST in latest.yml latest-mac.yml latest-linux.yml; do
-              MANIFEST_SRC="oss://${{ vars.OSS_BUCKET }}/releases/${TAG}/${MANIFEST}"
-
-              # Download from versioned directory — skip gracefully if platform not built
-              ossutil cp "${MANIFEST_SRC}" /tmp/manifest-raw.yml \
-                --endpoint=${{ vars.OSS_ENDPOINT }} \
-                -i "${OSS_ACCESS_KEY_ID}" \
-                -k "${OSS_ACCESS_KEY_SECRET}" \
-                -t "${OSS_SECURITY_TOKEN}" \
-                --force 2>/dev/null || continue
-
-              # Prefix relative url/path with version directory
-              sed -i "s|url: |url: ${TAG}/|g; s|path: |path: ${TAG}/|g" /tmp/manifest-raw.yml
-
-              ossutil cp /tmp/manifest-raw.yml "oss://${{ vars.OSS_BUCKET }}/releases/${MANIFEST}" \
-                --endpoint=${{ vars.OSS_ENDPOINT }} \
-                -i "${OSS_ACCESS_KEY_ID}" \
-                -k "${OSS_ACCESS_KEY_SECRET}" \
-                -t "${OSS_SECURITY_TOKEN}" \
-                --meta Cache-Control:no-cache \
-                --force
-
-              echo "✅ Updated ${MANIFEST} (paths prefixed with ${TAG}/)"
-            done
           fi
+
+          # Copy platform manifests from version dir to root for electron-updater generic provider.
+          # The yml's url/path fields are relative filenames, but files live under releases/<tag>/.
+          # We must prepend the tag directory so electron-updater resolves the correct download URL.
+          # Source manifests are always named latest*.yml in the versioned dir; we rename them
+          # to match the channel (e.g. latest-mac.yml → beta-mac.yml for beta channel).
+          for MANIFEST_SRC_NAME in latest.yml latest-mac.yml latest-linux.yml; do
+            MANIFEST_SRC="oss://${{ vars.OSS_BUCKET }}/releases/${TAG}/${MANIFEST_SRC_NAME}"
+
+            # Download from versioned directory — skip gracefully if platform not built
+            ossutil cp "${MANIFEST_SRC}" /tmp/manifest-raw.yml \
+              --endpoint=${{ vars.OSS_ENDPOINT }} \
+              -i "${OSS_ACCESS_KEY_ID}" \
+              -k "${OSS_ACCESS_KEY_SECRET}" \
+              -t "${OSS_SECURITY_TOKEN}" \
+              --force 2>/dev/null || continue
+
+            # Prefix relative url/path with version directory
+            sed -i "s|url: |url: ${TAG}/|g; s|path: |path: ${TAG}/|g" /tmp/manifest-raw.yml
+
+            # Map source name to channel name (latest.yml → beta.yml, latest-mac.yml → beta-mac.yml)
+            MANIFEST_DST_NAME=$(echo "${MANIFEST_SRC_NAME}" | sed "s/^latest/${CHANNEL}/")
+
+            ossutil cp /tmp/manifest-raw.yml "oss://${{ vars.OSS_BUCKET }}/releases/${MANIFEST_DST_NAME}" \
+              --endpoint=${{ vars.OSS_ENDPOINT }} \
+              -i "${OSS_ACCESS_KEY_ID}" \
+              -k "${OSS_ACCESS_KEY_SECRET}" \
+              -t "${OSS_SECURITY_TOKEN}" \
+              --meta Cache-Control:no-cache \
+              --force
+
+            echo "✅ Updated ${MANIFEST_DST_NAME} (paths prefixed with ${TAG}/)"
+          done
 
           echo "✅ Uploaded ${TAG} to oss://${{ vars.OSS_BUCKET }}/releases/${TAG}/"
