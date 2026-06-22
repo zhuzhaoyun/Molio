@@ -283,26 +283,31 @@ jobs:
           fi
 
           # Validate manifest content: version must match.
-          # GitHub's download CDN may lag behind the API — retry with backoff.
+          # Use `gh release download` instead of curl because the download URL
+          # changes to "untagged-xxxx" when a tag is force-pushed (GitHub
+          # detaches the release). gh CLI resolves via API — always correct.
           if [ "${{ matrix.platform }}" = "win" ]; then
-            MANIFEST_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/latest.yml"
-            echo "Fetching manifest from ${MANIFEST_URL}..."
+            MANIFEST="latest.yml"
+            echo "Downloading ${MANIFEST} to verify version..."
             MANIFEST_CONTENT=""
             for i in 1 2 3 4 5; do
-              MANIFEST_CONTENT=$(curl -sL "$MANIFEST_URL" || echo "")
-              if echo "$MANIFEST_CONTENT" | grep -q "version:"; then
-                echo "  attempt ${i}: got manifest content"
+              rm -f "/tmp/${MANIFEST}"
+              gh release download "${TAG}" --repo "${{ github.repository }}" \
+                --pattern "${MANIFEST}" --dir /tmp --clobber 2>/dev/null || true
+              if [ -f "/tmp/${MANIFEST}" ]; then
+                MANIFEST_CONTENT=$(cat "/tmp/${MANIFEST}")
+                echo "  attempt ${i}: downloaded manifest"
                 break
               fi
               DELAY=$(( i * 5 ))
-              echo "  attempt ${i}: CDN not ready, retrying in ${DELAY}s..."
+              echo "  attempt ${i}: download not ready, retrying in ${DELAY}s..."
               sleep "${DELAY}"
             done
             if echo "$MANIFEST_CONTENT" | grep -q "version: ${VERSION}"; then
               echo "✓ Manifest version matches ${VERSION}"
             else
               echo "::error::Manifest version does not match ${VERSION}. Content:"
-              echo "$MANIFEST_CONTENT"
+              echo "${MANIFEST_CONTENT:-empty}"
               exit 1
             fi
           fi
