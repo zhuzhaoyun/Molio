@@ -24,7 +24,24 @@ test.describe('Composer @ file picker', () => {
     }
   });
 
-  test('file picker closes on Escape', async ({ page }) => {
+  test('file picker has search input', async ({ page }) => {
+    await gotoHome(page);
+    await page.reload({ waitUntil: 'networkidle' });
+
+    const input = page.locator('[data-testid="composer-input"]');
+    await input.click();
+    await input.fill('@');
+
+    const picker = page.locator('[data-testid="file-picker"]');
+    const pickerVisible = await picker.isVisible({ timeout: 3000 }).catch(() => false);
+    if (pickerVisible) {
+      const searchInput = page.locator('[data-testid="file-picker-search"]');
+      await expect(searchInput).toBeVisible();
+      await expect(searchInput).toBeFocused();
+    }
+  });
+
+  test('file picker closes on Escape and clears @ text', async ({ page }) => {
     await gotoHome(page);
     await page.reload({ waitUntil: 'networkidle' });
 
@@ -37,6 +54,8 @@ test.describe('Composer @ file picker', () => {
     if (pickerVisible) {
       await page.keyboard.press('Escape');
       await expect(picker).not.toBeVisible();
+      // @ text should be cleared
+      await expect(input).toHaveValue('');
     }
   });
 

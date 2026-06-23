@@ -1,4 +1,3 @@
-// apps/web/src/components/CommandPalette.tsx
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import type { Command, CommandAction } from '../commands/types';
 import './CommandPalette.css';
@@ -7,10 +6,12 @@ interface Props {
   filterText: string;
   commands: Command[];
   onExecute: (action: CommandAction) => void;
+  /** Called when user presses Tab on a command that has completeText set. */
+  onComplete?: (text: string) => void;
   onClose: () => void;
 }
 
-export function CommandPalette({ filterText, commands, onExecute, onClose }: Props) {
+export function CommandPalette({ filterText, commands, onExecute, onComplete, onClose }: Props) {
   const [activeIdx, setActiveIdx] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -26,9 +27,10 @@ export function CommandPalette({ filterText, commands, onExecute, onClose }: Pro
   }, [commands, filterText]);
 
   // Reset active index when filtered list changes
-  useEffect(() => {
-    setActiveIdx(0);
-  }, [filtered]);
+  useEffect(() => { setActiveIdx(0); }, [filtered]);
+
+  const activeCmd: Command | undefined = filtered[activeIdx];
+  const canComplete = !!(activeCmd?.completeText);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -42,12 +44,15 @@ export function CommandPalette({ filterText, commands, onExecute, onClose }: Pro
         e.preventDefault();
         const cmd = filtered[activeIdx];
         if (cmd) onExecute(cmd.action);
+      } else if (e.key === 'Tab' && activeCmd?.completeText) {
+        e.preventDefault();
+        onComplete?.(activeCmd.completeText);
       } else if (e.key === 'Escape') {
         e.preventDefault();
         onClose();
       }
     },
-    [filtered, activeIdx, onExecute, onClose],
+    [filtered, activeIdx, activeCmd, onExecute, onComplete, onClose],
   );
 
   useEffect(() => {
@@ -66,7 +71,7 @@ export function CommandPalette({ filterText, commands, onExecute, onClose }: Pro
       <div className="cmd-palette-header">命令</div>
       <div ref={listRef}>
         {filtered.length === 0 ? (
-          <div className="file-picker-empty">无匹配命令</div>
+          <div className="cmd-palette-empty">无匹配命令</div>
         ) : (
           filtered.map((cmd, i) => (
             <div
@@ -83,10 +88,18 @@ export function CommandPalette({ filterText, commands, onExecute, onClose }: Pro
                 <span className="cmd-palette-item-label">/{cmd.id}</span>
                 <span className="cmd-palette-item-desc">{cmd.description}</span>
               </div>
+              {cmd.completeText && (
+                <span className="cmd-palette-item-hint">Tab 补全</span>
+              )}
             </div>
           ))
         )}
       </div>
+      {canComplete && (
+        <div className="cmd-palette-footer">
+          Enter 执行 · Tab 补全到输入框
+        </div>
+      )}
     </div>
   );
 }

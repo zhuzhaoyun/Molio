@@ -21,6 +21,7 @@ export const BUILTIN_COMMANDS: Command[] = [
     label: '优化文字',
     description: '润色和改进当前文本表达',
     action: { type: 'callback', key: 'polish' },
+    completeText: '请帮我优化以下文字的表达，使其更清晰流畅：',
   },
   {
     id: 'outline',
@@ -28,6 +29,7 @@ export const BUILTIN_COMMANDS: Command[] = [
     label: '生成大纲',
     description: '为当前话题生成结构化大纲',
     action: { type: 'callback', key: 'outline' },
+    completeText: '请为以下内容生成一个结构化大纲：',
   },
   {
     id: 'search',

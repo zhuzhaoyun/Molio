@@ -64,6 +64,15 @@
   text-overflow: ellipsis;
 }
 
+.cmd-palette-item-hint {
+  font-size: 10px;
+  color: var(--text-faint);
+  background: var(--bg-subtle);
+  padding: 1px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
 .cmd-palette-header {
   padding: 6px 12px;
   font-size: 11px;
@@ -72,4 +81,19 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
   border-bottom: 1px solid var(--border-soft);
+}
+
+.cmd-palette-footer {
+  padding: 4px 12px;
+  font-size: 11px;
+  color: var(--text-faint);
+  border-top: 1px solid var(--border-soft);
+  text-align: right;
+}
+
+.cmd-palette-empty {
+  padding: 16px 12px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
 }

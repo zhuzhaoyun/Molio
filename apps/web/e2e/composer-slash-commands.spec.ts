@@ -66,4 +66,23 @@ test.describe('Composer / slash commands', () => {
     // The / text should be removed from textarea
     await expect(input).toHaveValue('');
   });
+
+  test('Tab completes polish command into textarea without sending', async ({ page }) => {
+    await gotoHome(page);
+    await page.reload({ waitUntil: 'networkidle' });
+
+    const input = page.locator('[data-testid="composer-input"]');
+    await input.click();
+    await input.fill('/polish');
+
+    const palette = page.locator('[data-testid="cmd-palette"]');
+    await expect(palette).toBeVisible({ timeout: 3000 });
+
+    // Tab should complete the command
+    await page.keyboard.press('Tab');
+    // Palette should close
+    await expect(palette).not.toBeVisible();
+    // Textarea should contain the polish prompt
+    await expect(input).toHaveValue('请帮我优化以下文字的表达，使其更清晰流畅：');
+  });
 });

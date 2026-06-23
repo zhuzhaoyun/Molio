@@ -9,13 +9,19 @@ export interface Command {
   /** One-line description of what the command does */
   description: string;
   /**
-   * The action to execute. Return value semantics:
+   * The action to execute on Enter. Return value semantics:
    * - `{ type: 'navigate', route: string }` → navigate to route
    * - `{ type: 'insert', text: string }` → insert text into composer
    * - `{ type: 'callback', key: string }` → invoke a named callback registered by the host
    * - `{ type: 'none' }` → no-op (palette closes, nothing happens)
    */
   action: CommandAction;
+  /**
+   * Optional: text to insert into composer when the user presses Tab (completion).
+   * When set, Tab inserts this text without sending; Enter still executes `action`.
+   * When unset, Tab is ignored (only Enter executes).
+   */
+  completeText?: string;
 }
 
 export type CommandAction =

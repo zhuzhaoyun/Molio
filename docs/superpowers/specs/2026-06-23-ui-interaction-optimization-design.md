@@ -2,7 +2,7 @@
 
 **Date**: 2026-06-23  
 **Branch**: `feat/ui-interaction-optimization`  
-**Status**: Phase 1 & 2 Complete, Phase 3 Pending
+**Status**: Phase 1, 2 & 3 Complete ✅
 
 ## Implementation Progress
 
@@ -10,13 +10,22 @@
 |-------|---------|--------|---------|
 | 1 | File Reference Protocol | ✅ Done | `948e445`..`dc4c376` |
 | 2 | KB Inline Q&A Panel | ✅ Done | `445f01a`..`a762efe` |
-| 3 | Home Page Input Enhancement | ⏳ Pending | — |
+| 3 | Home Page Input Enhancement | ✅ Done | `d0b60d0`..`7b49772` |
 
 ### Phase 2 Implementation Notes
 
 - **Daemon fix**: `wikiExtra.filePath` was being sent but daemon only used it for `wikiOperation: 'ingest'`. Added file-content injection with a focused prompt (replacing the broad `WIKI_QUERY_PROMPT` for file-specific Q&A) in `apps/daemon/src/routes/runs.ts`.
 - **History categorization**: File Q&A conversations now use `📄 {filename}：{message}` as title to distinguish from general chat.
 - **Deferred**: Selected-text "就此提问" float button and resizable panel border — planned as follow-ups.
+
+### Phase 3 Implementation Notes
+
+- **@ File Search**: FilePicker popup triggered by typing `@` in ChatComposer. Flattens vault file tree, sorts by `modifiedAt` desc, shows 8 most recent when no filter, filters by name/path when typing. Keyboard navigation (Arrow/Enter/Escape). File selected → badge appears in composer.
+- **/ Slash Commands**: CommandPalette popup triggered by typing `/`. 6 built-in commands: new-doc, browse-kb, polish, outline, search, new-chat. Filter by id/label/description. Execute via Enter or click.
+- **Composer Upgrade**: `FileRef` badges rendered above textarea with remove button. `onSend` signature updated to include `fileRefs: FileRef[]`. Trigger text auto-removed on selection. Hint updated to `@ 引用文件  / 命令  Enter 发送  Shift+Enter 换行`.
+- **Landing Page**: Single "📂 浏览知识库" quick action button below the hero section. (Recent files section and "新建文档" button were removed as redundant — `@` file search in composer already provides quick file access, and both buttons navigated to the same `/knowledge` route.)
+- **FileOperationCard + DiffView**: When AI tools write files, operation cards appear in chat with [打开文件] [查看本次修改] [💬 讨论这个文件] buttons. Inline diff with add/del/ctx lines, dark mode support.
+- **Deferred**: Drag & drop from KB file tree, image paste (needs daemon asset upload endpoint), selected-text "就此提问" float button in MdRenderer, resizable panel border for FileChatPanel.
 
 ---
 

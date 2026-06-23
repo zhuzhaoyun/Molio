@@ -122,13 +122,16 @@ export function ChatComposer({
     [removeTrigger],
   );
 
-  // FilePicker: on close (Escape)
+  // FilePicker: on close (Escape) — clean up @ trigger text
   const handleFilePickerClose = useCallback(() => {
-    setTrigger(null);
-    textareaRef.current?.focus();
-  }, []);
+    if (trigger?.type === 'file') removeTrigger();
+    else {
+      setTrigger(null);
+      textareaRef.current?.focus();
+    }
+  }, [trigger, removeTrigger]);
 
-  // CommandPalette: on execute
+  // CommandPalette: on execute (Enter)
   const handleCommandExecute = useCallback(
     (action: CommandAction) => {
       removeTrigger();
@@ -149,11 +152,24 @@ export function ChatComposer({
     [removeTrigger, navigate, onCommand],
   );
 
-  // CommandPalette: on close
+  // CommandPalette: Tab completion — insert completeText into textarea
+  const handleCommandComplete = useCallback(
+    (completeText: string) => {
+      removeTrigger();
+      setText((prev) => prev + completeText);
+      textareaRef.current?.focus();
+    },
+    [removeTrigger],
+  );
+
+  // CommandPalette: on close (Escape) — clean up / trigger text
   const handleCommandClose = useCallback(() => {
-    setTrigger(null);
-    textareaRef.current?.focus();
-  }, []);
+    if (trigger?.type === 'command') removeTrigger();
+    else {
+      setTrigger(null);
+      textareaRef.current?.focus();
+    }
+  }, [trigger, removeTrigger]);
 
   // Remove a fileRef badge
   const removeFileRef = useCallback((idx: number) => {
@@ -253,6 +269,7 @@ export function ChatComposer({
               filterText={filterText}
               commands={BUILTIN_COMMANDS}
               onExecute={handleCommandExecute}
+              onComplete={handleCommandComplete}
               onClose={handleCommandClose}
             />
           )}
