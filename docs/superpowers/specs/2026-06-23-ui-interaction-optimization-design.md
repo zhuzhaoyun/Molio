@@ -2,7 +2,21 @@
 
 **Date**: 2026-06-23  
 **Branch**: `feat/ui-interaction-optimization`  
-**Status**: Draft
+**Status**: Phase 1 & 2 Complete, Phase 3 Pending
+
+## Implementation Progress
+
+| Phase | Feature | Status | Commits |
+|-------|---------|--------|---------|
+| 1 | File Reference Protocol | ✅ Done | `948e445`..`dc4c376` |
+| 2 | KB Inline Q&A Panel | ✅ Done | `445f01a`..`a762efe` |
+| 3 | Home Page Input Enhancement | ⏳ Pending | — |
+
+### Phase 2 Implementation Notes
+
+- **Daemon fix**: `wikiExtra.filePath` was being sent but daemon only used it for `wikiOperation: 'ingest'`. Added file-content injection with a focused prompt (replacing the broad `WIKI_QUERY_PROMPT` for file-specific Q&A) in `apps/daemon/src/routes/runs.ts`.
+- **History categorization**: File Q&A conversations now use `📄 {filename}：{message}` as title to distinguish from general chat.
+- **Deferred**: Selected-text "就此提问" float button and resizable panel border — planned as follow-ups.
 
 ---
 
