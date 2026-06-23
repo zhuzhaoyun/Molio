@@ -16,7 +16,6 @@ export function createClaudeStreamHandler(
   let currentMessageId: string | null = null;
   const textStreamed = new Set<string>();
   const thinkingStreamed = new Set<string>();
-  let turnEndEmitted = false;
 
   function blockKey(index: unknown): string {
     return `${currentMessageId ?? 'anon'}:${index}`;
@@ -65,8 +64,13 @@ export function createClaudeStreamHandler(
         }
       }
 
+      // Some agents (e.g. Qwen Code) include stop_reason on the assistant
+      // message block. Emit turn_end here when present. The `result` event
+      // below ALSO emits turn_end unconditionally — that is intentional: a
+      // turn may surface two turn_end events in that case. Every downstream
+      // consumer is idempotent (RunManager.flush, frontend streaming=false,
+      // weixin finish() guard), so duplicates are harmless.
       if (typeof msg['stop_reason'] === 'string') {
-        turnEndEmitted = true;
         onEvent({ type: 'turn_end', stopReason: msg['stop_reason'] as string });
       }
       return;
@@ -102,12 +106,13 @@ export function createClaudeStreamHandler(
         onEvent({ type: 'error', message });
         return;
       }
-      // For agents that don't include stop_reason in assistant messages (e.g. Qwen),
-      // emit turn_end when the result arrives so the frontend knows the turn is done.
-      if (!turnEndEmitted) {
-        turnEndEmitted = true;
-        onEvent({ type: 'turn_end', stopReason: 'end_turn' });
-      }
+      // `result` is the terminal signal of a turn — emit turn_end
+      // unconditionally. Real Claude Code streams stop_reason: null on every
+      // assistant block (verified against 2.1.168), so turn_end originates
+      // here exclusively; without this emission the last turn's reply is
+      // never flushed (issue #87). See the assistant branch above for why a
+      // duplicate turn_end is safe.
+      onEvent({ type: 'turn_end', stopReason: 'end_turn' });
       onEvent({
         type: 'usage',
         usage: obj['usage'] as UsageInfo,

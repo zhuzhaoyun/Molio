@@ -1,15 +1,27 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import crypto from 'node:crypto';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type Database from 'better-sqlite3';
 import { openDatabase, closeDatabase } from '../../../src/core/db.js';
 import { WeixinService } from '../../../src/core/weixin/service.js';
 import { ConversationService } from '../../../src/core/conversations/service.js';
-import { WeixinApi } from '../../../src/core/weixin/client.js';
+import { WeixinApi, deriveAesKey } from '../../../src/core/weixin/client.js';
+import { materializeAttachments, type DownloadMediaFn } from '../../../src/core/weixin/media.js';
 import type { RunManager } from '../../../src/core/RunManager.js';
 import type { ConnectionState } from '../../../src/core/weixin/types.js';
+
+/** AES-128-ECB encrypt with PKCS7 padding (matches WeChat CDN media). */
+function ecbEncrypt(plain: Buffer, keyHex: string): Buffer {
+  const key = Buffer.from(keyHex, 'hex');
+  const padLen = 16 - (plain.length % 16);
+  const padded = Buffer.concat([plain, Buffer.alloc(padLen, padLen)]);
+  const cipher = crypto.createCipheriv('aes-128-ecb', key, null);
+  cipher.setAutoPadding(false);
+  return Buffer.concat([cipher.update(padded), cipher.final()]);
+}
 
 /** Minimal mock of RunManager — only the methods WeixinService uses. */
 function createMockRunManager(): RunManager {
@@ -46,15 +58,22 @@ describe('WeixinService state machine — basics', () => {
   let tempDir: string;
   let service: WeixinService;
   let conversations: ConversationService;
+  let originalUserprofile: string | undefined;
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), 'molio-weixin-sm-test-'));
     db = openDatabase(tempDir);
     conversations = new ConversationService(db);
     service = new WeixinService(createMockRunManager(), conversations, db);
+    // Point os.homedir() at the temp dir so start() cannot pick up the
+    // developer's real ~/.molio/weixin-credentials.json (env-sensitive flake).
+    originalUserprofile = process.env.USERPROFILE;
+    process.env.USERPROFILE = tempDir;
   });
 
   afterEach(() => {
+    if (originalUserprofile === undefined) delete process.env.USERPROFILE;
+    else process.env.USERPROFILE = originalUserprofile;
     service.stop();
     closeDatabase();
     rmSync(tempDir, { recursive: true, force: true });
@@ -299,5 +318,153 @@ describe('WeixinService state machine — integration', () => {
       getUpdatesCallCount <= callsBeforeLogin + 1,
       `Old pollLoop should stop after beginLogin. Calls: ${callsBeforeLogin} → ${getUpdatesCallCount}`,
     );
+  });
+});
+
+describe('media attachment materialization', () => {
+  let tempDir: string;
+  let originalFetch: typeof globalThis.fetch;
+
+  // Real WeChat media uses AES-128-ECB; we simulate the CDN by stubbing fetch
+  // to return ECB-encrypted bytes, then let the real downloadMedia decrypt.
+  const KEY_HEX = '24dae86aeb24d7a2069b7b852dec5bc3';
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), 'molio-weixin-dl-test-'));
+    originalFetch = globalThis.fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  /** Build a download function backed by a real WeixinApi and the stubbed fetch. */
+  function makeDownloadFn(): DownloadMediaFn {
+    const api = new WeixinApi('https://ilinkai.weixin.qq.com', 'tok');
+    return (url: string, aesKey?: string) => api.downloadMedia(url, aesKey);
+  }
+
+  /** Stub fetch to respond with the given body bytes. */
+  function stubFetchBody(body: Buffer): void {
+    globalThis.fetch = (async () => ({
+      ok: true,
+      status: 200,
+      headers: new Map() as unknown as Headers,
+      arrayBuffer: async () => body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength),
+      text: async () => '',
+    })) as unknown as typeof globalThis.fetch;
+  }
+
+  it('downloads + AES-ECB decrypts a file attachment to a local path', async () => {
+    const url = 'https://cdn.example.com/download?token=abc';
+    const plain = Buffer.from('%PDF-1.7\nfake pdf body for testing');
+    stubFetchBody(ecbEncrypt(plain, KEY_HEX));
+
+    const message = {
+      id: 'm1',
+      fromUserId: 'u1',
+      toUserId: 'b1',
+      contextToken: '',
+      text: `[文件] report.pdf (大小: 29B, 链接: ${url})`,
+      attachments: [{ kind: 'file' as const, url, fileName: 'report.pdf', aesKey: KEY_HEX }],
+      raw: {},
+    };
+
+    await materializeAttachments(message, tempDir, makeDownloadFn());
+
+    assert.ok(!message.text.includes(url), 'URL should be replaced by local path');
+    assert.match(message.text, /raw[\\/]+wechat/);
+    assert.match(message.text, /report\.pdf/);
+
+    const localPathMatch = message.text.match(/([^\s]*raw[\\/]+wechat[^\s]*report\.pdf)/);
+    assert.ok(localPathMatch, 'expected a local path in the text');
+    const localPath = localPathMatch![1];
+    assert.ok(localPath, 'local path should be non-empty');
+    assert.ok(existsSync(localPath), 'downloaded file should exist on disk');
+    assert.ok(readFileSync(localPath).equals(plain), 'decrypted plaintext should match');
+  });
+
+  it('downloads + AES-ECB decrypts an image attachment with correct magic', async () => {
+    const url = 'https://cdn.example.com/download?token=img';
+    const jpeg = Buffer.concat([
+      Buffer.from([0xff, 0xd8, 0xff, 0xe0]),
+      Buffer.alloc(20, 0),
+      Buffer.from([0xff, 0xd9]),
+    ]);
+    stubFetchBody(ecbEncrypt(jpeg, KEY_HEX));
+
+    const message = {
+      id: 'm2',
+      fromUserId: 'u1',
+      toUserId: 'b1',
+      contextToken: '',
+      text: `[图片] (链接: ${url}, 宽: 94, 高: 210)`,
+      attachments: [{ kind: 'image' as const, url, width: 94, height: 210, aesKey: KEY_HEX }],
+      raw: {},
+    };
+
+    await materializeAttachments(message, tempDir, makeDownloadFn());
+
+    assert.ok(!message.text.includes(url));
+    assert.match(message.text, /raw[\\/]+wechat/);
+    const localPathMatch = message.text.match(/([^\s]*raw[\\/]+wechat[^\s]*\.(jpg|png|webp|gif))/);
+    assert.ok(localPathMatch, 'expected an image local path with an image extension');
+    const localPath = localPathMatch![1];
+    assert.ok(localPath, 'local path should be non-empty');
+    assert.ok(existsSync(localPath), 'downloaded image should exist on disk');
+    const onDisk = readFileSync(localPath);
+    assert.equal(onDisk.slice(0, 4).toString('hex'), 'ffd8ffe0');
+  });
+
+  it('leaves the URL text intact when download fails', async () => {
+    const url = 'https://cdn.example.com/download?token=fail';
+    globalThis.fetch = (async () => ({ ok: false, status: 500, text: async () => 'server error' })) as unknown as typeof globalThis.fetch;
+
+    const message = {
+      id: 'm3',
+      fromUserId: 'u1',
+      toUserId: 'b1',
+      contextToken: '',
+      text: `[文件] x.pdf (链接: ${url})`,
+      attachments: [{ kind: 'file' as const, url, fileName: 'x.pdf', aesKey: KEY_HEX }],
+      raw: {},
+    };
+
+    await materializeAttachments(message, tempDir, makeDownloadFn());
+
+    assert.ok(message.text.includes(url));
+  });
+
+  it('does nothing without attachments or cwd', async () => {
+    const message = { id: 'm4', fromUserId: 'u1', toUserId: 'b1', contextToken: '', text: 'hi', raw: {} };
+    await materializeAttachments(message, tempDir, makeDownloadFn());
+    assert.equal(message.text, 'hi');
+  });
+});
+
+describe('deriveAesKey', () => {
+  it('parses a 32-char hex string into 16 bytes', () => {
+    const k = deriveAesKey('24dae86aeb24d7a2069b7b852dec5bc3');
+    assert.ok(k);
+    assert.equal(k!.length, 16);
+    assert.equal(k!.toString('hex'), '24dae86aeb24d7a2069b7b852dec5bc3');
+  });
+
+  it('parses a base64 of a 32-char hex string (media.aes_key)', () => {
+    const k = deriveAesKey('MjRkYWU4NmFlYjI0ZDdhMjA2OWI3Yjg1MmRlYzViYzM=');
+    assert.ok(k);
+    assert.equal(k!.toString('hex'), '24dae86aeb24d7a2069b7b852dec5bc3');
+  });
+
+  it('parses a base64 of 16 raw bytes', () => {
+    const raw = crypto.randomBytes(16);
+    const k = deriveAesKey(raw.toString('base64'));
+    assert.ok(k);
+    assert.equal(k!.toString('hex'), raw.toString('hex'));
+  });
+
+  it('returns null for an uninterpretable key', () => {
+    assert.equal(deriveAesKey('not-a-valid-key'), null);
   });
 });
