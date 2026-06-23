@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { useAgents } from './hooks/useAgents';
 import { useChat } from './hooks/useChat';
 import { HomePage } from './components/HomePage';
-import type { FileRef } from './components/ChatComposer';
+
 import { NavRail } from './components/NavRail';
 import { KnowledgeBasePage } from './components/kb/KnowledgeBasePage';
 import { SettingsPage } from './components/settings/SettingsPage';
@@ -128,31 +128,6 @@ export default function App() {
     setSelectedAgent(defaultAgentId ?? null);
   };
 
-  // Wrap chat.send to match ChatComposer's onSend signature (message, fileRefs)
-  const handleSend = useCallback((message: string, _fileRefs: FileRef[]) => {
-    chat.send(message);
-  }, [chat.send]);
-
-  // Handle slash command callbacks
-  const handleCommand = useCallback((key: string) => {
-    switch (key) {
-      case 'new-doc':
-        navigate('/knowledge');
-        break;
-      case 'new-chat':
-        handleNewChat();
-        break;
-      case 'polish':
-        chat.send('请润色优化以下文字表达：');
-        break;
-      case 'outline':
-        chat.send('请为当前话题生成结构化大纲。');
-        break;
-      default:
-        break;
-    }
-  }, [navigate, handleNewChat, chat.send]);
-
   if (!configLoaded) return null;
 
   return (
@@ -168,11 +143,10 @@ export default function App() {
                   selectedAgentName={agents.find((a) => a.id === selectedAgent)?.name ?? null}
                   messages={chat.messages}
                   isRunning={chat.isRunning}
-                  onSend={handleSend}
+                  onSend={chat.send}
                   onCancel={chat.cancel}
                   onNewChat={handleNewChat}
                   onSubmitToolResult={chat.submitToolResult}
-                  onCommand={handleCommand}
                 />
               }
             />

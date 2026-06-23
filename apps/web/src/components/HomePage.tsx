@@ -1,20 +1,51 @@
-import { useRef, useEffect, useCallback, useMemo } from 'react';
+import { useRef, useEffect, useCallback, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { ChatComposer } from './ChatComposer';
 import type { FileRef } from './ChatComposer';
 import { UserMessage } from './UserMessage';
 import { AssistantMessage } from './AssistantMessage';
 import { useI18n } from '../i18n';
 import type { ChatMessage } from '../hooks/useChat';
+import { useFileNavigation } from '../hooks/useFileNavigation';
+import { useActiveVault } from '../stores/vaultStore';
+import { api } from '../api/client';
+import type { TreeNode } from '@molio/contracts';
 
 interface Props {
   selectedAgentName: string | null;
   messages: ChatMessage[];
   isRunning: boolean;
-  onSend: (message: string, fileRefs: FileRef[]) => void;
+  onSend: (message: string) => void;
   onCancel: () => void;
   onNewChat: () => void;
   onSubmitToolResult?: (toolUseId: string, content: string) => Promise<void>;
-  onCommand?: (key: string) => void;
+}
+
+/** Flatten tree into files, sort by modifiedAt desc, take top N. */
+function getRecentFiles(tree: TreeNode[], count: number): TreeNode[] {
+  const files: TreeNode[] = [];
+  function walk(nodes: TreeNode[]) {
+    for (const n of nodes) {
+      if (n.type === 'file') files.push(n);
+      if (n.children) walk(n.children);
+    }
+  }
+  walk(tree);
+  files.sort((a, b) => (b.modifiedAt ?? 0) - (a.modifiedAt ?? 0));
+  return files.slice(0, count);
+}
+
+/** Format time ago in Chinese. */
+function timeAgo(ms: number): string {
+  const diff = Date.now() - ms;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return '刚刚';
+  if (mins < 60) return `${mins}分钟前`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}小时前`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}天前`;
+  return `${Math.floor(days / 30)}个月前`;
 }
 
 export function HomePage({
@@ -25,11 +56,33 @@ export function HomePage({
   onCancel,
   onNewChat,
   onSubmitToolResult,
-  onCommand,
 }: Props) {
   const { t } = useI18n();
+  const navigate = useNavigate();
   const logRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const activeVault = useActiveVault();
+  const { openFile } = useFileNavigation();
+
+  // Recent files state
+  const [recentFiles, setRecentFiles] = useState<TreeNode[]>([]);
+
+  // Fetch recent files when vault changes
+  useEffect(() => {
+    if (!activeVault) {
+      setRecentFiles([]);
+      return;
+    }
+    let cancelled = false;
+    api.getFileTree(activeVault.id)
+      .then((tree) => {
+        if (!cancelled) setRecentFiles(getRecentFiles(tree, 5));
+      })
+      .catch(() => {
+        if (!cancelled) setRecentFiles([]);
+      });
+    return () => { cancelled = true; };
+  }, [activeVault?.id]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -56,6 +109,43 @@ export function HomePage({
       }
     },
     [onSubmitToolResult],
+  );
+
+  // Wrap onSend to handle fileRefs → message prefix
+  const handleSend = useCallback(
+    (message: string, fileRefs?: FileRef[]) => {
+      if (fileRefs && fileRefs.length > 0) {
+        const prefix = fileRefs
+          .map((r) => `[📄 ${r.filePath.split('/').pop() ?? r.filePath}](${r.filePath})`)
+          .join(' ');
+        const fullMessage = `${prefix}\n\n${message || '请根据以上文件帮我分析。'}`;
+        onSend(fullMessage);
+      } else {
+        onSend(message);
+      }
+    },
+    [onSend],
+  );
+
+  // Command callbacks
+  const handleCommand = useCallback(
+    (key: string) => {
+      switch (key) {
+        case 'new-chat':
+          onNewChat();
+          break;
+        case 'new-doc':
+          navigate('/knowledge');
+          break;
+        case 'polish':
+          handleSend('请帮我优化以下文字的表达，使其更清晰流畅：', []);
+          break;
+        case 'outline':
+          handleSend('请为以下内容生成一个结构化大纲：', []);
+          break;
+      }
+    },
+    [onNewChat, navigate, handleSend],
   );
 
   // If there are messages, show chat layout
@@ -102,7 +192,7 @@ export function HomePage({
                   message={msg}
                   isLast={msg.id === lastAssistantId}
                   onAnswerToolUse={onSubmitToolResult ? onAnswerToolUse : undefined}
-                  onSubmitForm={(text: string) => onSend(text, [])}
+                  onSubmitForm={(text: string) => handleSend(text, [])}
                 />
               );
             }
@@ -122,11 +212,11 @@ export function HomePage({
         <div className="home-composer-bar">
           <ChatComposer
             isRunning={isRunning}
-            onSend={onSend}
+            onSend={handleSend}
             onCancel={onCancel}
             disabled={!selectedAgentName}
             disabledPlaceholder={t('home.noAgent')}
-            onCommand={onCommand}
+            onCommand={handleCommand}
           />
         </div>
       </div>
@@ -146,15 +236,63 @@ export function HomePage({
           <p className="home-hero__tagline" data-testid="hero-tagline">{t('home.tagline')}</p>
         </div>
 
+        {/* Recent files + Quick actions */}
+        <div className="home-landing-sections">
+          {/* Recent files */}
+          {activeVault && (
+            <div className="home-recent-files" data-testid="home-recent-files">
+              <div className="home-recent-header">最近文件</div>
+              {recentFiles.length === 0 ? (
+                <div className="home-recent-empty">暂无文件</div>
+              ) : (
+                recentFiles.map((f) => (
+                  <div
+                    key={f.path}
+                    className="home-recent-item"
+                    data-testid="home-recent-item"
+                    onClick={() => openFile(activeVault.id, f.path)}
+                  >
+                    <span className="home-recent-item-icon">📄</span>
+                    <span className="home-recent-item-name">{f.name}</span>
+                    <span className="home-recent-item-time">
+                      {f.modifiedAt ? timeAgo(f.modifiedAt) : ''}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+
+          {/* Quick actions */}
+          <div className="home-quick-actions">
+            <button
+              type="button"
+              className="home-quick-btn"
+              data-testid="home-quick-new-doc"
+              onClick={() => navigate('/knowledge')}
+            >
+              📝 新建文档
+            </button>
+            <button
+              type="button"
+              className="home-quick-btn"
+              data-testid="home-quick-browse-kb"
+              onClick={() => navigate('/knowledge')}
+            >
+              📂 浏览知识库
+            </button>
+          </div>
+        </div>
+
         {/* Composer */}
         <div className="home-composer-wrap">
           <ChatComposer
             isRunning={isRunning}
-            onSend={onSend}
+            onSend={handleSend}
             onCancel={onCancel}
+            onCommand={handleCommand}
             disabled={!selectedAgentName}
             disabledPlaceholder={t('home.noAgent')}
-            onCommand={onCommand}
           />
         </div>
       </div>
