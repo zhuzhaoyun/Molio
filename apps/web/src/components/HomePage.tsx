@@ -81,9 +81,6 @@ export function HomePage({
         case 'new-chat':
           onNewChat();
           break;
-        case 'new-doc':
-          navigate('/knowledge');
-          break;
         case 'polish':
           handleSend('请帮我优化以下文字的表达，使其更清晰流畅：', []);
           break;
@@ -92,7 +89,7 @@ export function HomePage({
           break;
       }
     },
-    [onNewChat, navigate, handleSend],
+    [onNewChat, handleSend],
   );
 
   // If there are messages, show chat layout

@@ -2,13 +2,6 @@ import type { Command } from './types';
 
 export const BUILTIN_COMMANDS: Command[] = [
   {
-    id: 'new-doc',
-    icon: '📝',
-    label: '新建文档',
-    description: '在知识库中创建新的 Markdown 文档',
-    action: { type: 'callback', key: 'new-doc' },
-  },
-  {
     id: 'browse-kb',
     icon: '📂',
     label: '浏览知识库',
