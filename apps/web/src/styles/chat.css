@@ -678,3 +678,17 @@
 .usage-footer span {
   font-variant-numeric: tabular-nums;
 }
+
+/* ─── Wikilink click target in assistant messages ─── */
+.assistant-prose .kb-wiki-link {
+  cursor: pointer;
+  color: var(--color-accent);
+  text-decoration: none;
+  border-bottom: 1px dashed var(--color-accent);
+  transition: background 0.15s;
+}
+
+.assistant-prose .kb-wiki-link:hover {
+  background: var(--color-accent-light);
+  border-bottom-style: solid;
+}
