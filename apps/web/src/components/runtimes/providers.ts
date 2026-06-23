@@ -43,8 +43,7 @@ export const CLAUDE_PROVIDERS: ProviderPreset[] = [
     baseUrl: 'https://api.deepseek.com/anthropic',
     models: [
       { id: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
-      { id: 'deepseek-chat', label: 'DeepSeek Chat (V3)' },
-      { id: 'deepseek-reasoner', label: 'DeepSeek Reasoner (R1)' },
+      { id: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
     ],
     apiKeyHint: 'sk-...',
     apiKeyUrl: 'https://platform.deepseek.com/api_keys',
