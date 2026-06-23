@@ -384,6 +384,10 @@ function killDaemon() {
     const done = () => {
       if (!resolved) {
         resolved = true;
+        if (forceTimer) {
+          clearTimeout(forceTimer);
+          forceTimer = null;
+        }
         log('info', 'main', `daemon exited, waiting ${DAEMON_KILL_SETTLE_MS}ms for OS to release file handles`);
         setTimeout(resolve, DAEMON_KILL_SETTLE_MS);
       }
@@ -391,20 +395,37 @@ function killDaemon() {
 
     proc.once('exit', done);
 
-    try {
-      if (process.platform === 'win32' && pid) {
-        // taskkill /F = force, /T = kill child processes too
-        execSync(`taskkill /F /T /PID ${pid}`, { timeout: 5000 });
-        log('info', 'main', `taskkill sent for daemon pid=${pid}`);
-      } else {
-        proc.kill('SIGKILL');
-      }
-    } catch (err) {
-      // Process may already be dead — that's fine
-      log('warn', 'main', `killDaemon: ${err instanceof Error ? err.message : String(err)}`);
-      done();
-    }
+    // Try a graceful shutdown first: ask the daemon to flush in-flight
+    // assistant replies and exit on its own. Fall back to a force kill
+    // if it does not exit within the timeout.
+    requestDaemonShutdown();
+
+    // Hard timeout: ensure we never block app quit indefinitely.
+    let forceTimer = setTimeout(() => forceKillDaemon(pid), 5000);
   });
+}
+
+function requestDaemonShutdown() {
+  fetch('http://localhost:3100/api/shutdown', { method: 'POST' }).catch((err) => {
+    // Network errors are expected once the daemon is already shutting down.
+    log('warn', 'main', `Graceful shutdown request failed: ${err instanceof Error ? err.message : String(err)}`);
+  });
+}
+
+function forceKillDaemon(pid) {
+  if (!pid) return;
+  try {
+    if (process.platform === 'win32') {
+      // taskkill /F = force, /T = kill child processes too
+      execSync(`taskkill /F /T /PID ${pid}`, { timeout: 5000 });
+      log('info', 'main', `force taskkill sent for daemon pid=${pid}`);
+    } else {
+      daemonProcess?.kill('SIGKILL');
+    }
+  } catch (err) {
+    // Process may already be dead — that's fine
+    log('warn', 'main', `forceKillDaemon: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 app.on('before-quit', (event) => {
