@@ -55,6 +55,8 @@ interface KbMainContentProps {
   /** 是否为编辑模式（仅文本文件） */
   isEditMode?: boolean;
   onToggleEdit?: () => void;
+  /** Callback when user clicks "询问此文件" button. */
+  onAskAboutFile?: (filePath: string) => void;
   /** 编辑后的内容（用于阅读模式显示未保存的更改） */
   editedContent?: string | null;
 }
@@ -77,6 +79,7 @@ export function KbMainContent({
   showFileName = true,
   isEditMode = false,
   onToggleEdit,
+  onAskAboutFile,
   editedContent,
 }: KbMainContentProps) {
   // Ctrl+S / Cmd+S to save
@@ -202,6 +205,22 @@ export function KbMainContent({
                     <polyline points="7 3 7 8 15 8" />
                   </svg>
                   <span>保存</span>
+                </button>
+              )}
+
+              {/* Ask about file button — opens inline Q&A panel */}
+              {onAskAboutFile && selectedFile && (
+                <button
+                  type="button"
+                  className="kb-btn"
+                  onClick={() => onAskAboutFile(selectedFile)}
+                  title="询问此文件 (Ctrl+L)"
+                  data-testid="kb-btn-ask-file"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
+                  </svg>
+                  <span>询问此文件</span>
                 </button>
               )}
 

@@ -8,6 +8,7 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import type { TreeNode } from '@molio/contracts';
 import { useKnowledge } from '../../hooks/useKnowledge';
 import { useChat } from '../../hooks/useChat';
+import { useFileChat } from '../../hooks/useFileChat';
 import { useKbTabs } from '../../hooks/useKbTabs';
 import { kbTabsStore } from '../../stores/kbTabsStore';
 import { vaultStore } from '../../stores/vaultStore';
@@ -15,6 +16,7 @@ import { KbFilePanel } from './KbFilePanel';
 import { KbTabBar } from './KbTabBar';
 import { KbMainContent } from './KbMainContent';
 import { WikiChatPanel } from './WikiChatPanel';
+import { FileChatPanel } from './FileChatPanel';
 import { VaultManagerModal } from './VaultManager';
 import { ImportModal, CoseInstallPrompt, InputDialog, ConfirmDialog } from './KbModals';
 import { ContextMenu, type MenuItem } from './ContextMenu';
@@ -48,6 +50,8 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const [showChatPanel, setShowChatPanel] = useState(false);
+  const [fileChatOpen, setFileChatOpen] = useState(false);
+  const [fileChatFilePath, setFileChatFilePath] = useState<string | null>(null);
   const [pendingUrlNav, setPendingUrlNav] = useState<UrlFileNavigation | null>(null);
 
   // Handle ?vault=<vaultId>&file=<filePath> query params for external navigation
@@ -127,6 +131,18 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
       kb.refreshTree();
     },
   });
+
+  // File Q&A chat hook — independent conversation per file
+  const fileChat = useFileChat({
+    agentId,
+    vaultPath: kb.activeVault?.path ?? null,
+    filePath: fileChatFilePath,
+  });
+
+  const openFileChat = useCallback((filePath: string) => {
+    setFileChatFilePath(filePath);
+    setFileChatOpen(true);
+  }, []);
 
   // ─── Tab-aware file selection ───
 
@@ -277,6 +293,32 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
     }
   }, [wikiChat]);
 
+  const handleCloseFileChat = useCallback(() => {
+    setFileChatOpen(false);
+  }, []);
+
+  // Ctrl+L / Cmd+L — open file chat for current file
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Don't trigger when focus is in an input/textarea
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+      if ((e.ctrlKey || e.metaKey) && e.key === 'l') {
+        e.preventDefault();
+        const activeTab = tabs.activeTabId
+          ? kbTabsStore.getTabs().find(t => t.id === tabs.activeTabId)
+          : null;
+        if (activeTab?.id.startsWith('file:')) {
+          const filePath = activeTab.id.slice(5);
+          openFileChat(filePath);
+        }
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [tabs.activeTabId, openFileChat]);
+
   // ─── Save toast helper (defined early — used by callbacks below) ───
 
   const showToast = useCallback((msg: string) => {
@@ -365,6 +407,14 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
       items.push({
         label: '在新标签页中打开',
         onClick: () => handleOpenInNewTab(node.path),
+      });
+      items.push({ divider: true });
+      items.push({
+        label: '询问此文件',
+        onClick: () => {
+          handleCloseCtxMenu();
+          openFileChat(node.path);
+        },
       });
     } else {
       // Directory: offer create file / subfolder inside
@@ -543,6 +593,7 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
           onCopy={kb.copyToClipboard}
           onPublish={kb.publishToChrome}
           onBuildWiki={handleBuildWiki}
+          onAskAboutFile={openFileChat}
           showFileName={true}
           isEditMode={kb.isEditMode}
           onToggleEdit={kb.toggleEditMode}
@@ -559,6 +610,19 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
           onCancel={wikiChat.cancel}
           onClose={handleCloseChat}
           onSubmitToolResult={wikiChat.submitToolResult}
+        />
+      )}
+
+      {/* File Chat Panel (right side Q&A) */}
+      {fileChatOpen && fileChatFilePath && (
+        <FileChatPanel
+          messages={fileChat.messages}
+          isRunning={fileChat.isRunning}
+          filePath={fileChatFilePath}
+          onSend={fileChat.send}
+          onCancel={fileChat.cancel}
+          onClose={handleCloseFileChat}
+          onSubmitToolResult={fileChat.onSubmitToolResult}
         />
       )}
 
