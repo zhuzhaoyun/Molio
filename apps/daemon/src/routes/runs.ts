@@ -2,6 +2,8 @@ import { Hono } from 'hono';
 import type { CreateRunRequest } from '@molio/contracts';
 import type Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import type { RunManager } from '../core/RunManager.js';
 import type { ConversationService } from '../core/conversations/service.js';
 import { getVaultByPath, addKbHistory } from '../core/db.js';
@@ -102,7 +104,28 @@ export function runsRoutes(
       } else if (body.cwd && (!body.history || body.history.length === 0)) {
         const vault = getVaultByPath(db, body.cwd);
         if (vault) {
-          message = `${WIKI_QUERY_PROMPT}\n\n---\n\n用户问题：${message}`;
+          // If a specific file is referenced via wikiExtra, read it and include as context
+          if (body.wikiExtra?.filePath) {
+            const fileAbsPath = path.join(vault.path, body.wikiExtra.filePath);
+            try {
+              const stat = fs.statSync(fileAbsPath);
+              // Only include text files up to 50KB as context
+              if (stat.isFile() && stat.size <= 50 * 1024) {
+                const fileContent = fs.readFileSync(fileAbsPath, 'utf-8');
+                message = `${WIKI_QUERY_PROMPT}\n\n---\n\n当前正在讨论的文件：${body.wikiExtra.filePath}\n\n文件内容：\n\`\`\`markdown\n${fileContent}\n\`\`\`\n\n---\n\n用户问题：${message}`;
+              } else if (stat.isFile()) {
+                // Large file: mention it but don't include full content
+                message = `${WIKI_QUERY_PROMPT}\n\n---\n\n当前正在讨论的文件：${body.wikiExtra.filePath}\n（文件较大，已省略完整内容）\n\n用户问题：${message}`;
+              } else {
+                message = `${WIKI_QUERY_PROMPT}\n\n---\n\n当前正在讨论的文件：${body.wikiExtra.filePath}\n\n用户问题：${message}`;
+              }
+            } catch {
+              // File not found — still mention the path
+              message = `${WIKI_QUERY_PROMPT}\n\n---\n\n当前正在讨论的文件：${body.wikiExtra.filePath}\n\n用户问题：${message}`;
+            }
+          } else {
+            message = `${WIKI_QUERY_PROMPT}\n\n---\n\n用户问题：${message}`;
+          }
         }
       }
 
