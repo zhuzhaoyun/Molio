@@ -46,6 +46,19 @@ app.get('/api/health', (c) => {
   return c.json({ status: 'ok' as const, version: '0.1.0' });
 });
 
+// Graceful shutdown endpoint — called by the desktop shell before quitting
+// so we can flush in-flight assistant replies to the database.
+app.post('/api/shutdown', (c) => {
+  console.log('Shutdown requested by desktop shell, flushing active runs...');
+  cleanupAllBridges();
+  weixinService.stop();
+  runManager.cancelAll();
+  closeDatabase();
+  // Give the HTTP response a chance to be sent before exiting
+  setTimeout(() => process.exit(0), 100);
+  return c.body(null, 204);
+});
+
 
 // Routes
 app.route('/api/agents', agentsRoutes(runManager));

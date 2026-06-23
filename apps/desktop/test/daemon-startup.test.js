@@ -228,3 +228,32 @@ describe('prepare-resources.mjs: better-sqlite3 must use Electron prebuild', () 
     );
   });
 });
+
+describe('main.js: graceful daemon shutdown to preserve last assistant reply', () => {
+  it('should request /api/shutdown before force-killing daemon', () => {
+    assert.ok(
+      mainJs.includes('/api/shutdown'),
+      'killDaemon must call the daemon shutdown endpoint so in-flight assistant replies can be flushed'
+    );
+    assert.ok(
+      mainJs.includes('function requestDaemonShutdown'),
+      'requestDaemonShutdown helper must exist'
+    );
+  });
+
+  it('should fall back to force kill after a timeout', () => {
+    const killDaemonStart = mainJs.indexOf('function killDaemon()');
+    assert.ok(killDaemonStart !== -1, 'killDaemon function must exist');
+
+    const killDaemonEnd = mainJs.indexOf('\nfunction requestDaemonShutdown', killDaemonStart);
+    const killDaemonBlock = mainJs.slice(killDaemonStart, killDaemonEnd > killDaemonStart ? killDaemonEnd : killDaemonStart + 1200);
+    assert.ok(
+      killDaemonBlock.includes('setTimeout') && killDaemonBlock.includes('forceKillDaemon'),
+      'killDaemon must schedule a force-kill fallback timeout'
+    );
+    assert.ok(
+      killDaemonBlock.includes('forceTimer'),
+      'killDaemon must clear the fallback timer once the daemon exits'
+    );
+  });
+});

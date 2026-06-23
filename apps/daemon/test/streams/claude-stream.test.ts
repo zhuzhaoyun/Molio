@@ -512,9 +512,15 @@ describe('Claude stream handler', () => {
       assert.equal(usageEvents.length, 1);
     });
 
-    it('should NOT emit duplicate turn_end when stop_reason was already present', () => {
-      // When assistant message has stop_reason, turn_end is emitted there.
-      // The result handler should NOT emit another turn_end.
+    it('emits turn_end from both assistant block and result (duplicates are harmless)', () => {
+      // When an assistant message carries stop_reason, turn_end is emitted
+      // from the assistant branch. The `result` event ALSO emits turn_end
+      // unconditionally — `result` is the terminal turn signal and must always
+      // fire it (real Claude Code has stop_reason: null on assistant blocks, so
+      // without the result emission the last turn's reply is never flushed —
+      // issue #87). A duplicate turn_end is safe: every downstream consumer
+      // (RunManager.flush, frontend streaming=false, weixin finish() guard) is
+      // idempotent.
       const { events, onEvent } = collectEvents();
       const handler = createClaudeStreamHandler(onEvent);
 
@@ -534,9 +540,12 @@ describe('Claude stream handler', () => {
         duration_ms: 1000,
       }));
 
-      // Should have exactly one turn_end (from assistant message, not from result)
+      // Both turn_end events are emitted: one from the assistant block, one
+      // from the result terminal signal.
       const turnEnds = events.filter((e) => e.type === 'turn_end');
-      assert.equal(turnEnds.length, 1, 'should not emit duplicate turn_end');
+      assert.equal(turnEnds.length, 2, 'assistant block and result each emit turn_end');
+      assert.equal(turnEnds[0]!.stopReason, 'end_turn');
+      assert.equal(turnEnds[1]!.stopReason, 'end_turn');
     });
   });
 
@@ -751,8 +760,9 @@ describe('Claude stream handler', () => {
       assert.equal(events[1]!.type, 'status'); // streaming
       assert.equal(events[2]!.type, 'text_delta'); // streamed text
       // No duplicate text_delta from assistant block
-      assert.equal(events[3]!.type, 'turn_end');
-      assert.equal(events[4]!.type, 'usage');
+      assert.equal(events[3]!.type, 'turn_end'); // from assistant block (stop_reason present)
+      assert.equal(events[4]!.type, 'turn_end'); // from result terminal signal (always emitted)
+      assert.equal(events[5]!.type, 'usage');
     });
   });
 });
