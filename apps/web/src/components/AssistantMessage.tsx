@@ -78,7 +78,12 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
 
   const html = useMemo(() => renderMarkdown(displayContent), [displayContent]);
   const toolItems = useMemo(
-    () => (message.tools ? groupTools(message.tools) : []),
+    () => {
+      const displayTools = (message.tools || []).filter(
+        (t) => !(isFileWriteTool(t.name) && t.status === 'done')
+      );
+      return groupTools(displayTools);
+    },
     [message.tools]
   );
 

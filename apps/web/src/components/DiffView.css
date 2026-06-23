@@ -32,6 +32,7 @@
   color: var(--text-muted);
 }
 
+[data-theme="dark"] .diff-line-add,
 @media (prefers-color-scheme: dark) {
   .diff-line-add {
     background: #1a3b27;

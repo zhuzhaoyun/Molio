@@ -17,6 +17,18 @@ interface DiffLine {
  * Uses a simple LCS-free heuristic — adequate for short AI-generated edits.
  */
 function computeDiff(oldStr: string, newStr: string): DiffLine[] {
+  if (!oldStr && !newStr) return [];
+
+  // Handle Write (create) case: no old content → all additions
+  if (!oldStr) {
+    return newStr.split('\n').map((line) => ({ type: 'add' as const, content: line }));
+  }
+
+  // Handle deletion case: no new content → all deletions
+  if (!newStr) {
+    return oldStr.split('\n').map((line) => ({ type: 'del' as const, content: line }));
+  }
+
   const oldLines = oldStr.split('\n');
   const newLines = newStr.split('\n');
   const result: DiffLine[] = [];
