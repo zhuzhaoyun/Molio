@@ -240,33 +240,6 @@
   }
 }
 
-/* ── Landing: quick actions ── */
-.home-quick-actions {
-  display: flex;
-  gap: 8px;
-  width: 100%;
-}
-
-.home-quick-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg-panel);
-  color: var(--text);
-  font-size: 13px;
-  cursor: pointer;
-  transition: border-color 0.12s, background 0.12s;
-  font-family: inherit;
-}
-
-.home-quick-btn:hover {
-  border-color: var(--accent);
-  background: var(--accent-tint);
-}
-
 /* ── Placeholder views ── */
 .placeholder-view {
   display: flex;

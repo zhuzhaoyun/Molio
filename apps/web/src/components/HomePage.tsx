@@ -1,5 +1,4 @@
 import { useRef, useEffect, useCallback, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { ChatComposer } from './ChatComposer';
 import type { FileRef } from './ChatComposer';
 import { UserMessage } from './UserMessage';
@@ -27,7 +26,6 @@ export function HomePage({
   onSubmitToolResult,
 }: Props) {
   const { t } = useI18n();
-  const navigate = useNavigate();
   const logRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -178,18 +176,6 @@ export function HomePage({
             <span className="home-hero__brand-name" data-testid="hero-brand">Molio</span>
           </div>
           <p className="home-hero__tagline" data-testid="hero-tagline">{t('home.tagline')}</p>
-        </div>
-
-        {/* Quick action */}
-        <div className="home-quick-actions">
-          <button
-            type="button"
-            className="home-quick-btn"
-            data-testid="home-quick-browse-kb"
-            onClick={() => navigate('/knowledge')}
-          >
-            📂 浏览知识库
-          </button>
         </div>
 
         {/* Composer */}

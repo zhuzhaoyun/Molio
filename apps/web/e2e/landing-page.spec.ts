@@ -19,21 +19,5 @@ test.describe('Landing page', () => {
     await expect(input).toBeEnabled();
   });
 
-  test('browse knowledge button is visible', async ({ page }) => {
-    await gotoHome(page);
-    await page.reload({ waitUntil: 'networkidle' });
-
-    const browseBtn = page.locator('[data-testid="home-quick-browse-kb"]');
-    await expect(browseBtn).toBeVisible();
-  });
-
-  test('browse knowledge button navigates to knowledge page', async ({ page }) => {
-    await gotoHome(page);
-    await page.reload({ waitUntil: 'networkidle' });
-
-    const browseBtn = page.locator('[data-testid="home-quick-browse-kb"]');
-    await browseBtn.click();
-
-    await expect(page).toHaveURL(/\/knowledge/, { timeout: 5000 });
-  });
 });
+
