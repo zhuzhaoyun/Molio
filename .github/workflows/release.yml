@@ -236,7 +236,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          # macOS: enable ad-hoc signing so ShipIt (electron-updater's install
+          # helper) can validate the code signature. Without this, pre-signed
+          # Electron Framework binaries conflict with our unsigned binary,
+          # causing "code signature did not pass validation" on install.
+          # Note: ad-hoc signing does NOT satisfy Gatekeeper — users still need
+          # to right-click → Open on first launch.
+          CSC_IDENTITY_AUTO_DISCOVERY: "${{ matrix.platform != 'win' }}"
         run: npx electron-builder --${{ matrix.platform }} ${{ matrix.arch-flag }} --publish always "--config.extraMetadata.version=${{ steps.version.outputs.version }}"
 
       - name: Verify update manifest exists
@@ -283,16 +289,32 @@ jobs:
             exit 1
           fi
 
-          # Validate manifest content: version must match
+          # Validate manifest content: version must match.
+          # Use `gh release download` instead of curl because the download URL
+          # changes to "untagged-xxxx" when a tag is force-pushed (GitHub
+          # detaches the release). gh CLI resolves via API — always correct.
           if [ "${{ matrix.platform }}" = "win" ]; then
-            MANIFEST_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/latest.yml"
-            echo "Fetching manifest from ${MANIFEST_URL}..."
-            MANIFEST_CONTENT=$(curl -sL "$MANIFEST_URL" || echo "")
+            MANIFEST="latest.yml"
+            echo "Downloading ${MANIFEST} to verify version..."
+            MANIFEST_CONTENT=""
+            for i in 1 2 3 4 5; do
+              rm -f "/tmp/${MANIFEST}"
+              gh release download "${TAG}" --repo "${{ github.repository }}" \
+                --pattern "${MANIFEST}" --dir /tmp --clobber 2>/dev/null || true
+              if [ -f "/tmp/${MANIFEST}" ]; then
+                MANIFEST_CONTENT=$(cat "/tmp/${MANIFEST}")
+                echo "  attempt ${i}: downloaded manifest"
+                break
+              fi
+              DELAY=$(( i * 5 ))
+              echo "  attempt ${i}: download not ready, retrying in ${DELAY}s..."
+              sleep "${DELAY}"
+            done
             if echo "$MANIFEST_CONTENT" | grep -q "version: ${VERSION}"; then
               echo "✓ Manifest version matches ${VERSION}"
             else
               echo "::error::Manifest version does not match ${VERSION}. Content:"
-              echo "$MANIFEST_CONTENT"
+              echo "${MANIFEST_CONTENT:-empty}"
               exit 1
             fi
           fi
@@ -307,19 +329,26 @@ jobs:
           TAG="v${{ steps.version.outputs.version }}"
           NOTICE="## ⚠️ macOS 用户必读
 
-          如果打开 Molio 时提示"已损坏，无法打开"，这是 macOS 安全机制（Gatekeeper）的正常提示，
-          因为 Molio 目前未经过 Apple 公证（需要 Apple Developer Program）。
-          **应用本身没有问题**，请按以下方法解决：
+          如果打开 Molio 时提示"已损坏，无法打开"或"无法验证开发者"，
+          这是 macOS Gatekeeper 对未公证应用的正常拦截（Apple 公证需要 \$99/年的 Apple Developer Program）。
+          **应用本身没有安全问题**，请按以下方法解决：
 
-          ### 方法一（推荐）
-          在 Finder 中 **右键** 点击 Molio.app → 选择 **"打开"** → 点击 **"打开"** 按钮。
-          （只需操作一次，以后可直接双击打开）
+          ### 方法一（推荐）：右键打开
+          在 Finder 中 **右键** 点击 Molio.app → 选择 **"打开"** → 在弹出的对话框中再次点击 **"打开"**。
+          只需操作一次，以后可直接双击打开。
 
-          ### 方法二
-          打开终端，运行以下命令：
+          ### 方法二：移除隔离标记
+          打开终端，运行以下命令（请将路径替换为你的 Molio.app 实际位置）：
           \`\`\`bash
-          sudo xattr -d com.apple.quarantine /Applications/Molio.app
+          # 如果装在 /Applications：
+          sudo xattr -rd com.apple.quarantine /Applications/Molio.app
+
+          # 如果解压在 ~/Downloads：
+          xattr -rd com.apple.quarantine ~/Downloads/Molio.app
           \`\`\`
+
+          > **提示**：如果从 ZIP 解压后首次打开仍被拦截，请前往 **系统设置 → 隐私与安全性** ，
+          > 在页面底部找到 Molio 并点击"仍要打开"。
 
           ---
           "
@@ -435,13 +464,15 @@ jobs:
               --update
           done
 
-          # Only update latest.json and latest.yml for stable releases (skip test/beta/alpha/rc)
+          # Determine update channel: stable → "latest", prerelease → prerelease type
+          # electron-updater looks for <channel>.yml / <channel>-mac.yml / <channel>-linux.yml
+          # Stable versions update the "latest" channel; prerelease versions update their own channel.
           if echo "${VERSION}" | grep -qiE '(test|beta|alpha|rc|dirty)'; then
-            echo "⏭️  Skipping latest.json and manifest update — ${VERSION} is a pre-release"
+            CHANNEL=$(echo "${VERSION}" | grep -oiE '(beta|alpha|rc)' | head -1 || echo "beta")
+            echo "📌 Prerelease detected — channel: ${CHANNEL}"
           else
-            cat > /tmp/latest.json <<EOF
-          {"version":"${VERSION}","updatedAt":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
-          EOF
+            CHANNEL="latest"
+            echo "{\"version\":\"${VERSION}\",\"updatedAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" > /tmp/latest.json
             ossutil cp /tmp/latest.json oss://${{ vars.OSS_BUCKET }}/releases/latest.json \
               --endpoint=${{ vars.OSS_ENDPOINT }} \
               -i "${OSS_ACCESS_KEY_ID}" \
@@ -450,34 +481,39 @@ jobs:
               --meta Cache-Control:no-cache \
               --force
             echo "✅ Updated latest.json to ${VERSION}"
-
-            # Copy platform manifests from version dir to root for electron-updater generic provider.
-            # The yml's url/path fields are relative filenames, but files live under releases/<tag>/.
-            # We must prepend the tag directory so electron-updater resolves the correct download URL.
-            for MANIFEST in latest.yml latest-mac.yml latest-linux.yml; do
-              MANIFEST_SRC="oss://${{ vars.OSS_BUCKET }}/releases/${TAG}/${MANIFEST}"
-
-              # Download from versioned directory — skip gracefully if platform not built
-              ossutil cp "${MANIFEST_SRC}" /tmp/manifest-raw.yml \
-                --endpoint=${{ vars.OSS_ENDPOINT }} \
-                -i "${OSS_ACCESS_KEY_ID}" \
-                -k "${OSS_ACCESS_KEY_SECRET}" \
-                -t "${OSS_SECURITY_TOKEN}" \
-                --force 2>/dev/null || continue
-
-              # Prefix relative url/path with version directory
-              sed -i "s|url: |url: ${TAG}/|g; s|path: |path: ${TAG}/|g" /tmp/manifest-raw.yml
-
-              ossutil cp /tmp/manifest-raw.yml "oss://${{ vars.OSS_BUCKET }}/releases/${MANIFEST}" \
-                --endpoint=${{ vars.OSS_ENDPOINT }} \
-                -i "${OSS_ACCESS_KEY_ID}" \
-                -k "${OSS_ACCESS_KEY_SECRET}" \
-                -t "${OSS_SECURITY_TOKEN}" \
-                --meta Cache-Control:no-cache \
-                --force
-
-              echo "✅ Updated ${MANIFEST} (paths prefixed with ${TAG}/)"
-            done
           fi
+
+          # Copy platform manifests from version dir to root for electron-updater generic provider.
+          # The yml's url/path fields are relative filenames, but files live under releases/<tag>/.
+          # We must prepend the tag directory so electron-updater resolves the correct download URL.
+          # Source manifests are always named latest*.yml in the versioned dir; we rename them
+          # to match the channel (e.g. latest-mac.yml → beta-mac.yml for beta channel).
+          for MANIFEST_SRC_NAME in latest.yml latest-mac.yml latest-linux.yml; do
+            MANIFEST_SRC="oss://${{ vars.OSS_BUCKET }}/releases/${TAG}/${MANIFEST_SRC_NAME}"
+
+            # Download from versioned directory — skip gracefully if platform not built
+            ossutil cp "${MANIFEST_SRC}" /tmp/manifest-raw.yml \
+              --endpoint=${{ vars.OSS_ENDPOINT }} \
+              -i "${OSS_ACCESS_KEY_ID}" \
+              -k "${OSS_ACCESS_KEY_SECRET}" \
+              -t "${OSS_SECURITY_TOKEN}" \
+              --force 2>/dev/null || continue
+
+            # Prefix relative url/path with version directory
+            sed -i "s|url: |url: ${TAG}/|g; s|path: |path: ${TAG}/|g" /tmp/manifest-raw.yml
+
+            # Map source name to channel name (latest.yml → beta.yml, latest-mac.yml → beta-mac.yml)
+            MANIFEST_DST_NAME=$(echo "${MANIFEST_SRC_NAME}" | sed "s/^latest/${CHANNEL}/")
+
+            ossutil cp /tmp/manifest-raw.yml "oss://${{ vars.OSS_BUCKET }}/releases/${MANIFEST_DST_NAME}" \
+              --endpoint=${{ vars.OSS_ENDPOINT }} \
+              -i "${OSS_ACCESS_KEY_ID}" \
+              -k "${OSS_ACCESS_KEY_SECRET}" \
+              -t "${OSS_SECURITY_TOKEN}" \
+              --meta Cache-Control:no-cache \
+              --force
+
+            echo "✅ Updated ${MANIFEST_DST_NAME} (paths prefixed with ${TAG}/)"
+          done
 
           echo "✅ Uploaded ${TAG} to oss://${{ vars.OSS_BUCKET }}/releases/${TAG}/"
