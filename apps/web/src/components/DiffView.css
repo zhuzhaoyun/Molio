@@ -32,7 +32,15 @@
   color: var(--text-muted);
 }
 
-[data-theme="dark"] .diff-line-add,
+[data-theme="dark"] .diff-line-add {
+  background: #1a3b27;
+  color: #8ddba8;
+}
+[data-theme="dark"] .diff-line-del {
+  background: #3b1816;
+  color: #f0a8a2;
+}
+
 @media (prefers-color-scheme: dark) {
   .diff-line-add {
     background: #1a3b27;
