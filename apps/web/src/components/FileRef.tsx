@@ -44,7 +44,7 @@ export function FileRef({ vaultId, filePath, displayName, className }: FileRefPr
       data-testid="file-ref"
       data-file-path={filePath}
       data-file-vault={vaultId}
-      title={`${filePath}\n点击打开文件`}
+      title={`${filePath}`}
       onClick={handleClick}
       role="button"
       tabIndex={0}

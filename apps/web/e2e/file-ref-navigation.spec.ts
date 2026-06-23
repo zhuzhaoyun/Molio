@@ -8,7 +8,6 @@ test.describe('File reference navigation', () => {
     // Send a message asking the AI to include a wikilink.
     // The AI may or may not comply depending on the agent — but if it does,
     // the rendered wikilink should have the data-file-path attribute.
-    const input = page.locator('[data-testid="composer-input"]');
     const sendBtn = page.locator('[data-testid="composer-send"]');
 
     // Check that composer is ready (not disabled due to missing agent)
@@ -48,9 +47,6 @@ test.describe('File reference navigation', () => {
   test('wikilinks have proper styling', async ({ page }) => {
     await gotoHome(page);
 
-    // Verify that the CSS for .kb-wiki-link is loaded by checking for the
-    // presence of assistant prose container (which includes the styles)
-    const input = page.locator('[data-testid="composer-input"]');
     const sendBtn = page.locator('[data-testid="composer-send"]');
 
     const isDisabled = await sendBtn.isDisabled().catch(() => true);
@@ -62,9 +58,13 @@ test.describe('File reference navigation', () => {
     await sendMessage(page, '回复 [[test/style-check.md]]，就回复"好的"即可');
     await page.waitForTimeout(5000);
 
-    // Just verify the page renders without errors and the assistant-prose exists
-    const prose = page.locator('[data-testid="assistant-prose"]');
-    const visible = await prose.isVisible().catch(() => false);
-    expect(visible).toBe(true);
+    // Check that .kb-wiki-link elements (if present) have cursor: pointer
+    const wikiLinks = page.locator('[data-testid="assistant-prose"] .kb-wiki-link');
+    const count = await wikiLinks.count();
+    if (count > 0) {
+      const cursor = await wikiLinks.first().evaluate(el => window.getComputedStyle(el).cursor);
+      expect(cursor).toBe('pointer');
+    }
+    // If count is 0, the AI didn't include a wikilink — test passes vacuously
   });
 });

@@ -4,8 +4,8 @@
   gap: 3px;
   padding: 1px 6px;
   border-radius: 4px;
-  background: var(--color-surface-2);
-  color: var(--color-accent);
+  background: var(--bg-subtle);
+  color: var(--accent);
   text-decoration: none;
   font-size: 0.9em;
   cursor: pointer;
@@ -14,7 +14,7 @@
 }
 
 .file-ref:hover {
-  background: var(--color-accent-light);
+  background: var(--accent-tint);
   text-decoration: none;
 }
 
