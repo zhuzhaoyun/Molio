@@ -79,11 +79,15 @@ export function validateBinary(filePath: string, platform: string): string | nul
       }
     } else {
       // ELF files start with 0x7f 'E' 'L' 'F'
-      // Mach-O starts with 0xFEEDFACE (big-endian) or 0xFEEDFACF (64-bit)
+      // Mach-O magic is 0xFEEDFACE (32-bit) / 0xFEEDFACF (64-bit), but the on-disk
+      // byte order depends on the target endianness. macOS binaries (x86_64 and
+      // Apple Silicon) are little-endian, so the header bytes are reversed:
+      //   32-bit LE: CE FA ED FE   |   64-bit LE: CF FA ED FE
+      //   32-bit BE: FE ED FA CE   |   64-bit BE: FE ED FA CF
       const isElf = header[0] === 0x7F && header[1] === 0x45 && header[2] === 0x4C && header[3] === 0x46;
-      const isMachO =
-        (header[0] === 0xFE && header[1] === 0xED && header[2] === 0xFA && (header[3] === 0xCE || header[3] === 0xCF));
-      if (!isElf && !isMachO) {
+      const isMachOBig =    header[0] === 0xFE && header[1] === 0xED && header[2] === 0xFA && (header[3] === 0xCE || header[3] === 0xCF);
+      const isMachOLittle = (header[0] === 0xCE || header[0] === 0xCF) && header[1] === 0xFA && header[2] === 0xED && header[3] === 0xFE;
+      if (!isElf && !isMachOBig && !isMachOLittle) {
         return `Invalid ELF/Mach-O header: ${header.toString('hex')}`;
       }
     }
