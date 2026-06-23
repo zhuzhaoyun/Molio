@@ -2,6 +2,9 @@ import { test, expect } from '@playwright/test';
 import { gotoHome, clickNav } from './helpers/navigation';
 
 /**
+ * @area runtimes
+ * @priority P1
+ *
  * E2E tests for the Runtimes panel (inside Settings).
  *
  * The standalone /runtimes route was removed; the RuntimePage now lives

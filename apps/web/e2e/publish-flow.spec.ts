@@ -6,6 +6,9 @@ import { tmpdir } from 'node:os';
 import { gotoHome, clickNav } from './helpers/navigation';
 
 /**
+ * @area publish
+ * @priority P0
+ *
  * E2E tests for the publish flow.
  *
  * Regression: Issue #11 — publish button was a no-op because onPublish

@@ -2,6 +2,9 @@ import { test, expect } from '@playwright/test';
 import { gotoHome, waitForLanding } from './helpers/navigation';
 
 /**
+ * @area navigation
+ * @priority P0
+ *
  * E2E tests for app bootstrap and first render.
  *
  * Verifies that the application loads correctly, the landing page renders,

@@ -4,6 +4,11 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { gotoHome, clickNav } from './helpers/navigation';
 
+/**
+ * @area graph
+ * @priority P2
+ */
+
 const DAEMON_API = 'http://localhost:3100/api';
 
 /** fetch with a hard timeout so beforeAll never hangs if daemon is unreachable */
