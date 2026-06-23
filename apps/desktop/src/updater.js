@@ -16,6 +16,9 @@
 import pkg from 'electron-updater';
 import { app, ipcMain } from 'electron';
 import { spawn } from 'node:child_process';
+import { writeFileSync, chmodSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, dirname } from 'node:path';
 import { log, getLogPath } from './logger.js';
 import { createRetryState } from './retry.js';
 
@@ -245,12 +248,38 @@ async function installDownloadedUpdate(killDaemon) {
     return spawnInstaller(updaterState.downloadedFile);
   }
 
-  // macOS / Linux: delegate to electron-updater's built-in install.
-  // - macOS: quitAndInstall() mounts DMG, copies .app, relaunches
-  // - Linux: quitAndInstall() handles AppImage/deb
-  // quitAndInstall(isSilent=true, isForceRunAfterUpdate=true):
-  //   isSilent — no user prompts
-  //   isForceRunAfterUpdate — auto-restart after install
+  if (process.platform === 'darwin') {
+    // macOS: manual ZIP extraction to bypass ShipIt code-signature validation.
+    // ShipIt (electron-updater's install helper) requires a valid Developer ID
+    // signature, which we can't provide without Apple Developer Program ($99/yr).
+    let appBundlePath = dirname(dirname(dirname(app.getPath('exe'))));
+
+    // Detect App Translocation — when a user downloads a ZIP, extracts it,
+    // and runs the .app directly from ~/Downloads, macOS moves it to a
+    // read-only "AppTranslocation" temp path. We must find the ORIGINAL
+    // writable location to update it.
+    if (appBundlePath.includes('AppTranslocation')) {
+      log('info', 'updater', 'app is translocated, searching for original path');
+      const home = app.getPath('home');
+      const candidates = [
+        `${home}/Downloads/Molio.app`,
+        `${home}/Desktop/Molio.app`,
+        '/Applications/Molio.app',
+      ];
+      const found = candidates.find((p) => existsSync(p));
+      if (found) {
+        log('info', 'updater', `resolved original app: ${found}`);
+        appBundlePath = found;
+      } else {
+        log('warn', 'updater',
+          'could not find original app path — falling back to translocation path');
+      }
+    }
+
+    return spawnMacOSUpdater(updaterState.downloadedFile, appBundlePath);
+  }
+
+  // Linux: delegate to electron-updater's built-in install (AppImage/deb)
   log('info', 'updater', `delegating install to quitAndInstall (platform=${process.platform})`);
   autoUpdater.quitAndInstall(true, true);
   return publicState();
@@ -309,6 +338,87 @@ function spawnInstaller(installerPath) {
       finish(publicState());
     }
   });
+}
+
+/**
+ * macOS manual update install: write a shell script that waits for the app
+ * to quit, extracts the ZIP, replaces the .app, removes quarantine xattr,
+ * and relaunches. Bypasses ShipIt (which requires Developer ID signing).
+ *
+ * @param {string} zipPath — path to the downloaded update ZIP
+ * @param {string} appBundlePath — path to the installed .app bundle
+ * @returns {object} publicState
+ */
+function spawnMacOSUpdater(zipPath, appBundlePath) {
+  log('info', 'updater', `macOS manual install: zip=${zipPath} app=${appBundlePath}`);
+
+  const logDir = join(app.getPath('home'), 'Library', 'Application Support', 'Molio', 'logs');
+  const scriptPath = join(tmpdir(), 'molio-update.sh');
+  const logPath = join(logDir, 'update.log');
+  const script = `#!/bin/bash
+LOG="${logPath}"
+echo "$(date): [update] ========== START ==========" >> "$LOG"
+echo "$(date): [update] ZIP: $1" >> "$LOG"
+echo "$(date): [update] APP: $2" >> "$LOG"
+
+echo "$(date): [update] Waiting for app to quit..." >> "$LOG"
+sleep 3
+
+echo "$(date): [update] Extracting update..." >> "$LOG"
+TMPDIR=$(mktemp -d)
+if ! unzip -qo "$1" -d "$TMPDIR" 2>> "$LOG"; then
+  echo "$(date): [update] ERROR: unzip failed" >> "$LOG"
+  exit 1
+fi
+
+NEW_APP=$(find "$TMPDIR" -name "*.app" -maxdepth 1 | head -1)
+if [ -z "$NEW_APP" ]; then
+  echo "$(date): [update] ERROR: No .app found in update ZIP" >> "$LOG"
+  ls -la "$TMPDIR" >> "$LOG" 2>&1
+  exit 1
+fi
+echo "$(date): [update] New app: $NEW_APP" >> "$LOG"
+
+echo "$(date): [update] Removing old app: $2" >> "$LOG"
+rm -rf "$2" 2>> "$LOG" || true
+
+echo "$(date): [update] Copying new app..." >> "$LOG"
+if ! cp -R "$NEW_APP" "$2" 2>> "$LOG"; then
+  echo "$(date): [update] ERROR: cp failed" >> "$LOG"
+  exit 1
+fi
+
+echo "$(date): [update] Removing quarantine..." >> "$LOG"
+xattr -rd com.apple.quarantine "$2" 2>> "$LOG" || true
+
+echo "$(date): [update] Launching new version..." >> "$LOG"
+open "$2" 2>> "$LOG" || true
+
+echo "$(date): [update] Cleanup..." >> "$LOG"
+rm -rf "$TMPDIR" "$1" 2>> "$LOG" || true
+echo "$(date): [update] ========== DONE ==========" >> "$LOG"
+`;
+
+  try {
+    writeFileSync(scriptPath, script);
+    chmodSync(scriptPath, 0o755);
+
+    const child = spawn('bash', [scriptPath, zipPath, appBundlePath, scriptPath], {
+      detached: true,
+      stdio: 'ignore',
+    });
+    child.unref();
+
+    log('info', 'updater', `macOS update script spawned (pid=${child.pid}), quitting app...`);
+    app.quit();
+    return publicState();
+  } catch (err) {
+    installing = false;
+    const msg = errMsg(err);
+    log('error', 'updater', `failed to spawn macOS updater: ${msg}`);
+    notifyError(msg);
+    return publicState();
+  }
 }
 
 /**

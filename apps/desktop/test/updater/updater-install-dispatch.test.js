@@ -104,20 +104,91 @@ describe('spawnInstaller: Windows NSIS path', () => {
   });
 });
 
-// ── macOS/Linux path: quitAndInstall ────────────────────────────
+// ── macOS path: spawnMacOSUpdater ─────────────────────────────────
 
-describe('macOS/Linux path: quitAndInstall delegation', () => {
-  it('should call autoUpdater.quitAndInstall', () => {
+describe('macOS path: spawnMacOSUpdater', () => {
+  it('should be defined as a separate function', () => {
+    assert.ok(
+      updaterJs.includes('function spawnMacOSUpdater('),
+      'spawnMacOSUpdater must be extracted as a standalone function'
+    );
+  });
+
+  it('should write a shell script to tmpdir', () => {
+    assert.ok(
+      updaterJs.includes("join(tmpdir(), 'molio-update.sh')"),
+      'shell script must be written to tmpdir'
+    );
+  });
+
+  it('should extract ZIP with unzip', () => {
+    assert.ok(
+      updaterJs.includes('unzip -qo'),
+      'must unzip the update ZIP'
+    );
+  });
+
+  it('should remove quarantine xattr', () => {
+    assert.ok(
+      updaterJs.includes('xattr -rd com.apple.quarantine'),
+      'must remove quarantine xattr from new .app'
+    );
+  });
+
+  it('should open the new app', () => {
+    assert.ok(
+      updaterJs.includes('open "$2"'),
+      'must launch new app with open command'
+    );
+  });
+
+  it('should get app bundle path from app.getPath', () => {
+    assert.ok(
+      updaterJs.includes("dirname(dirname(dirname(app.getPath('exe')))"),
+      'must derive .app bundle path from exe path'
+    );
+  });
+
+  it('should spawn bash script with detached:true', () => {
+    assert.ok(
+      updaterJs.includes('detached: true') || updaterJs.includes('detached:true'),
+      'bash script must be spawned with detached:true'
+    );
+  });
+
+  it('should call app.quit() after spawn', () => {
+    const spawnFuncStart = updaterJs.indexOf('function spawnMacOSUpdater');
+    const appQuitPos = updaterJs.indexOf('app.quit()', spawnFuncStart);
+    assert.ok(
+      appQuitPos > spawnFuncStart,
+      'app.quit() must be called inside spawnMacOSUpdater'
+    );
+  });
+});
+
+// ── Linux path: quitAndInstall ────────────────────────────────────
+
+describe('Linux path: quitAndInstall delegation', () => {
+  it('should call autoUpdater.quitAndInstall for non-darwin', () => {
     assert.ok(
       /autoUpdater\.quitAndInstall\s*\(/.test(updaterJs),
-      'macOS/Linux path must call autoUpdater.quitAndInstall()'
+      'Linux path must call autoUpdater.quitAndInstall()'
     );
   });
 
   it('should pass silent and force-run arguments', () => {
     assert.ok(
       updaterJs.includes('quitAndInstall(true, true)'),
-      'quitAndInstall must be called with (true, true) — silent install + force restart'
+      'quitAndInstall must be called with (true, true)'
+    );
+  });
+
+  it('should NOT call quitAndInstall on darwin', () => {
+    const darwinPos = updaterJs.indexOf("process.platform === 'darwin'");
+    const quitAndInstallPos = updaterJs.indexOf('autoUpdater.quitAndInstall(');
+    assert.ok(
+      quitAndInstallPos > darwinPos,
+      'quitAndInstall() must appear AFTER the darwin check (Linux branch only)'
     );
   });
 });
