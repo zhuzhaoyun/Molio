@@ -33,9 +33,13 @@ export function runsRoutes(
     }
 
     try {
+      // Build conversation title — for file-specific Q&A, prefix with filename
+      const convTitle = body.wikiExtra?.filePath
+        ? `📄 ${body.wikiExtra.filePath.split('/').pop() ?? body.wikiExtra.filePath}：${body.message.slice(0, 50)}`
+        : body.message.slice(0, 80);
       const conversation = body.conversationId
         ? conversations.getConversation(body.conversationId)
-        : conversations.createDesktopConversation(body.message.slice(0, 80));
+        : conversations.createDesktopConversation(convTitle);
       if (!conversation) {
         return c.json({
           error: { code: 'NOT_FOUND', message: 'Conversation not found' },
@@ -104,7 +108,6 @@ export function runsRoutes(
       } else if (body.cwd && (!body.history || body.history.length === 0)) {
         const vault = getVaultByPath(db, body.cwd);
         if (vault) {
-          console.log('[runs] wikiExtra:', JSON.stringify(body.wikiExtra));
           // If a specific file is referenced via wikiExtra, read it and include as context.
           // Use a focused prompt rather than WIKI_QUERY_PROMPT — the latter instructs the
           // agent to explore the entire wiki which distracts from the specific file at hand.
