@@ -40,13 +40,16 @@ export function renderMarkdown(text: string): string {
   html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
 
   // Wiki-links: [[Page Name]] or [[Page Name|display text]]
+  // data-file-path stores the raw path for click-navigation.
   html = html.replace(
     /\[\[([^\]|]+)\|([^\]]+)\]\]/g,
-    '<a class="kb-wiki-link">$2</a>'
+    (_m: string, path: string, display: string) =>
+      `<a class="kb-wiki-link" data-file-path="${path}">${display}</a>`
   );
   html = html.replace(
     /\[\[([^\]]+)\]\]/g,
-    '<a class="kb-wiki-link">$1</a>'
+    (_m: string, path: string) =>
+      `<a class="kb-wiki-link" data-file-path="${path}">${path}</a>`
   );
 
   // Standard links
