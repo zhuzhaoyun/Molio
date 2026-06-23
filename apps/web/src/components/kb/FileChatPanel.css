@@ -115,6 +115,37 @@
   color: var(--text-soft);
 }
 
+/* Selected text preview in empty state */
+.file-chat-selected-preview {
+  width: 100%;
+  margin-top: 12px;
+  text-align: left;
+}
+
+.file-chat-selected-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+
+.file-chat-selected-preview blockquote {
+  margin: 0;
+  padding: 8px 12px;
+  background: var(--bg-subtle);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text);
+  max-height: 120px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .file-chat-input {
   flex-shrink: 0;
   padding: 10px 14px;

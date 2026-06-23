@@ -10,6 +10,8 @@ interface FileChatPanelProps {
   isRunning: boolean;
   /** File path for the context badge. */
   filePath: string | null;
+  /** Selected text from the preview (via "就此提问" float button). Shown in empty state. */
+  selectedText?: string | null;
   onSend: (text: string) => void;
   onCancel: () => void;
   onClose: () => void;
@@ -25,6 +27,7 @@ export function FileChatPanel({
   messages,
   isRunning,
   filePath,
+  selectedText,
   onSend,
   onCancel,
   onClose,
@@ -135,6 +138,12 @@ export function FileChatPanel({
             <div className="file-chat-empty-icon">💬</div>
             <p>AI 助手已就绪</p>
             {fileName && <p className="file-chat-empty-hint">上下文：{fileName}</p>}
+            {selectedText && (
+              <div className="file-chat-selected-preview" data-testid="file-chat-selected-preview">
+                <div className="file-chat-selected-label">选中内容</div>
+                <blockquote>{selectedText}</blockquote>
+              </div>
+            )}
           </div>
         ) : (
           <>

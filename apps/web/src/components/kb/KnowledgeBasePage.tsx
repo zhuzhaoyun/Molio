@@ -641,6 +641,7 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
           messages={fileChat.messages}
           isRunning={fileChat.isRunning}
           filePath={fileChatFilePath}
+          selectedText={fileChatSelectedText}
           onSend={handleFileChatSend}
           onCancel={fileChat.cancel}
           onClose={handleCloseFileChat}
