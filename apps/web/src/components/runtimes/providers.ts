@@ -42,6 +42,7 @@ export const CLAUDE_PROVIDERS: ProviderPreset[] = [
     name: 'DeepSeek',
     baseUrl: 'https://api.deepseek.com/anthropic',
     models: [
+      { id: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
       { id: 'deepseek-chat', label: 'DeepSeek Chat (V3)' },
       { id: 'deepseek-reasoner', label: 'DeepSeek Reasoner (R1)' },
     ],
@@ -49,9 +50,9 @@ export const CLAUDE_PROVIDERS: ProviderPreset[] = [
     apiKeyUrl: 'https://platform.deepseek.com/api_keys',
     docsUrl: 'https://api-docs.deepseek.com/',
     defaultModelMapping: {
-      sonnet: 'deepseek-chat',
-      haiku: 'deepseek-chat',
-      opus: 'deepseek-reasoner',
+      sonnet: 'deepseek-v4-pro',
+      haiku: 'deepseek-v4-pro',
+      opus: 'deepseek-v4-pro',
     },
   },
   {
