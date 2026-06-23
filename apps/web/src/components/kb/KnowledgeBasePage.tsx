@@ -52,6 +52,7 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
   const [showChatPanel, setShowChatPanel] = useState(false);
   const [fileChatOpen, setFileChatOpen] = useState(false);
   const [fileChatFilePath, setFileChatFilePath] = useState<string | null>(null);
+  const [fileChatSelectedText, setFileChatSelectedText] = useState<string | null>(null);
   const [pendingUrlNav, setPendingUrlNav] = useState<UrlFileNavigation | null>(null);
 
   // Handle ?vault=<vaultId>&file=<filePath> query params for external navigation
@@ -139,10 +140,18 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
     filePath: fileChatFilePath,
   });
 
-  const openFileChat = useCallback((filePath: string) => {
+  const openFileChat = useCallback((filePath: string, selectedText?: string) => {
     setFileChatFilePath(filePath);
+    setFileChatSelectedText(selectedText ?? null);
     setFileChatOpen(true);
   }, []);
+
+  const handleAskAboutSelection = useCallback((selectedText: string) => {
+    const currentFile = kb.selectedFile;
+    if (currentFile) {
+      openFileChat(currentFile, selectedText);
+    }
+  }, [kb.selectedFile, openFileChat]);
 
   // ─── Tab-aware file selection ───
 
@@ -295,7 +304,19 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
 
   const handleCloseFileChat = useCallback(() => {
     setFileChatOpen(false);
+    setFileChatSelectedText(null);
   }, []);
+
+  // Wrap fileChat.send to prepend selected text as context
+  const handleFileChatSend = useCallback((text: string) => {
+    if (fileChatSelectedText) {
+      const contextMsg = `关于文件中的以下选中内容：\n> ${fileChatSelectedText}\n\n${text || '请帮我分析以上选中内容。'}`;
+      setFileChatSelectedText(null); // only prepend once
+      fileChat.send(contextMsg);
+    } else {
+      fileChat.send(text);
+    }
+  }, [fileChatSelectedText, fileChat.send]);
 
   // Ctrl+L / Cmd+L — open file chat for current file
   useEffect(() => {
@@ -594,6 +615,7 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
           onPublish={kb.publishToChrome}
           onBuildWiki={handleBuildWiki}
           onAskAboutFile={openFileChat}
+          onAskAboutSelection={handleAskAboutSelection}
           showFileName={true}
           isEditMode={kb.isEditMode}
           onToggleEdit={kb.toggleEditMode}
@@ -619,7 +641,7 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
           messages={fileChat.messages}
           isRunning={fileChat.isRunning}
           filePath={fileChatFilePath}
-          onSend={fileChat.send}
+          onSend={handleFileChatSend}
           onCancel={fileChat.cancel}
           onClose={handleCloseFileChat}
           onSubmitToolResult={fileChat.onSubmitToolResult}

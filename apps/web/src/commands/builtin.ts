@@ -25,13 +25,6 @@ export const BUILTIN_COMMANDS: Command[] = [
     completeText: '请为以下内容生成一个结构化大纲：',
   },
   {
-    id: 'search',
-    icon: '🔍',
-    label: '搜索全部文档',
-    description: '在知识库中搜索关键词',
-    action: { type: 'navigate', route: '/knowledge' },
-  },
-  {
     id: 'new-chat',
     icon: '💬',
     label: '新建对话',

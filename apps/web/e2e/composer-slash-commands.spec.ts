@@ -13,9 +13,9 @@ test.describe('Composer / slash commands', () => {
 
     const palette = page.locator('[data-testid="cmd-palette"]');
     await expect(palette).toBeVisible({ timeout: 3000 });
-    // All 5 commands should be visible initially
+    // All 4 commands should be visible initially
     const items = page.locator('[data-testid="cmd-palette-item"]');
-    await expect(items).toHaveCount(5);
+    await expect(items).toHaveCount(4);
   });
 
   test('command palette filters by typed text', async ({ page }) => {
@@ -30,7 +30,7 @@ test.describe('Composer / slash commands', () => {
     // Should filter to only matching commands
     const count = await items.count();
     expect(count).toBeGreaterThan(0);
-    expect(count).toBeLessThan(6);
+    expect(count).toBeLessThan(4);
   });
 
   test('command palette closes on Escape', async ({ page }) => {

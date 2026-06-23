@@ -1,4 +1,4 @@
-import { useEffect, useRef, useMemo, useCallback } from 'react';
+import { useEffect, useRef, useMemo, useCallback, useState } from 'react';
 import type { ChatMessage } from '../../hooks/useChat';
 import { UserMessage } from '../UserMessage';
 import { AssistantMessage } from '../AssistantMessage';
@@ -33,6 +33,40 @@ export function FileChatPanel({
   const logRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  // Resizable panel width
+  const [panelWidth, setPanelWidth] = useState(360);
+  const resizingRef = useRef<{ startX: number; startWidth: number } | null>(null);
+
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    resizingRef.current = { startX: e.clientX, startWidth: panelWidth };
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, [panelWidth]);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!resizingRef.current) return;
+      const delta = resizingRef.current.startX - e.clientX;
+      const newWidth = Math.min(
+        Math.max(resizingRef.current.startWidth + delta, 280),
+        window.innerWidth * 0.5,
+      );
+      setPanelWidth(newWidth);
+    };
+    const handleMouseUp = () => {
+      resizingRef.current = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, []);
+
   // Auto-scroll to bottom on new messages
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -58,7 +92,17 @@ export function FileChatPanel({
   const fileName = filePath ? extractFileName(filePath) : null;
 
   return (
-    <aside className="file-chat-panel" data-testid="file-chat-panel">
+    <aside
+      className="file-chat-panel"
+      data-testid="file-chat-panel"
+      style={{ width: panelWidth, minWidth: 280, maxWidth: '50vw' }}
+    >
+      {/* Resize handle */}
+      <div
+        className="file-chat-resize-handle"
+        data-testid="file-chat-resize-handle"
+        onMouseDown={handleResizeStart}
+      />
       {/* Header */}
       <div className="file-chat-header">
         <div className="file-chat-header-left">

@@ -5,7 +5,7 @@
  * - Binary (pdf/docx/pptx): file info card + "open with system app" button
  */
 
-import { useEffect } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import type { FileContent } from '@molio/contracts';
 import type { ThemeConfig } from './MdStylePanel';
 import { MdRenderer } from './MdRenderer';
@@ -57,6 +57,8 @@ interface KbMainContentProps {
   onToggleEdit?: () => void;
   /** Callback when user clicks "询问此文件" button. */
   onAskAboutFile?: (filePath: string) => void;
+  /** Callback when user selects text and clicks the float "就此提问" button. */
+  onAskAboutSelection?: (selectedText: string) => void;
   /** 编辑后的内容（用于阅读模式显示未保存的更改） */
   editedContent?: string | null;
 }
@@ -80,8 +82,50 @@ export function KbMainContent({
   isEditMode = false,
   onToggleEdit,
   onAskAboutFile,
+  onAskAboutSelection,
   editedContent,
 }: KbMainContentProps) {
+  // Selected text floating "ask" button
+  const [floatBtn, setFloatBtn] = useState<{ text: string; x: number; y: number } | null>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  const handleTextSelect = useCallback(() => {
+    // Small delay so the selection is settled
+    setTimeout(() => {
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || !sel.toString().trim()) {
+        setFloatBtn(null);
+        return;
+      }
+      const text = sel.toString().trim();
+      if (!text) { setFloatBtn(null); return; }
+
+      // Check selection is inside our content area
+      const contentEl = contentRef.current;
+      if (!contentEl) return;
+      const range = sel.getRangeAt(0);
+      if (!contentEl.contains(range.commonAncestorContainer)) {
+        setFloatBtn(null);
+        return;
+      }
+
+      // Position near the end of selection
+      const rect = range.getBoundingClientRect();
+      setFloatBtn({
+        text,
+        x: rect.right + 8,
+        y: rect.top - 4,
+      });
+    }, 0);
+  }, []);
+
+  const handleAskSelection = useCallback(() => {
+    if (!floatBtn) return;
+    onAskAboutSelection?.(floatBtn.text);
+    setFloatBtn(null);
+    window.getSelection()?.removeAllRanges();
+  }, [floatBtn, onAskAboutSelection]);
+
   // Ctrl+S / Cmd+S to save
   useEffect(() => {
     if (!onSave) return;
@@ -290,12 +334,24 @@ export function KbMainContent({
           selectedFile={selectedFile}
         />
       ) : category === 'text' ? (
-        <div className="kb-content-area">
+        <div className="kb-content-area" ref={contentRef} onMouseUp={handleTextSelect}>
           {fileContent ? (
             // 优先使用编辑后的内容（未保存的更改），否则使用原始文件内容
             <MdRenderer content={proxyExternalImages(preprocessWikiEmbeds(stripTrackingPixels(editedContent ?? fileContent.content), vaultId ?? ''))} themeConfig={themeConfig} />
           ) : (
             <div className="kb-empty-state"><p>Loading...</p></div>
+          )}
+          {/* Float "ask about selection" button */}
+          {floatBtn && (
+            <button
+              type="button"
+              className="kb-float-ask-btn"
+              data-testid="kb-float-ask-btn"
+              style={{ left: floatBtn.x, top: floatBtn.y }}
+              onClick={handleAskSelection}
+            >
+              💬 就此提问
+            </button>
           )}
         </div>
       ) : category === 'image' && vaultId ? (

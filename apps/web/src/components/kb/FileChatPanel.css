@@ -10,6 +10,23 @@
   border-left: 1px solid var(--border);
   background: var(--bg-panel);
   overflow: hidden;
+  position: relative;
+}
+
+/* Resize handle on left border */
+.file-chat-resize-handle {
+  position: absolute;
+  top: 0;
+  left: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 10;
+  transition: background 0.15s;
+}
+
+.file-chat-resize-handle:hover {
+  background: var(--accent-tint);
 }
 
 .file-chat-header {
