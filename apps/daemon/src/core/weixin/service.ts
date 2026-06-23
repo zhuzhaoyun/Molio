@@ -11,6 +11,7 @@ import { getVaultByPath } from '../db.js';
 import { WIKI_WEIXIN_PROMPT } from '../wiki-prompts.js';
 import { DEFAULT_BASE_URL, WeixinApi } from './client.js';
 import { buildMolioPrompt, parseWeixinMessage } from './message.js';
+import { materializeAttachments } from './media.js';
 import type { ConnectionState, ParsedWeixinMessage, WeixinCredentials, WeixinStatus } from './types.js';
 
 const SESSION_EXPIRED_CODE = -14;
@@ -429,8 +430,6 @@ export class WeixinService {
   }
 
   private async handleRawMessage(raw: Parameters<typeof parseWeixinMessage>[0]): Promise<void> {
-    if (raw.message_type !== 1) return;
-
     const msgId = String(raw.message_id ?? raw.seq ?? '');
     if (msgId && this.isDuplicate(msgId)) return;
 
@@ -478,9 +477,17 @@ export class WeixinService {
       });
       conversationId = conversation.id;
       const history = this.conversations.listHistory(conversation.id);
-      this.conversations.appendUserMessage(conversation.id, message.text);
 
       const cwd = this.resolveRunCwd(cfg);
+      // Download any file/image attachments to cwd/raw/wechat/<date>/ and
+      // rewrite message.text to point at the local files before running.
+      await materializeAttachments(
+        message,
+        cwd,
+        this.api ? (url, aesKey) => this.api!.downloadMedia(url, aesKey) : undefined,
+      );
+
+      this.conversations.appendUserMessage(conversation.id, message.text);
       const runId = await this.runManager.createRun({
         agentId,
         cwd,
