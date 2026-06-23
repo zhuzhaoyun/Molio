@@ -1,0 +1,136 @@
+import { useEffect, useRef, useMemo, useCallback } from 'react';
+import type { ChatMessage } from '../../hooks/useChat';
+import { UserMessage } from '../UserMessage';
+import { AssistantMessage } from '../AssistantMessage';
+import { ChatComposer } from '../ChatComposer';
+import './FileChatPanel.css';
+
+interface FileChatPanelProps {
+  messages: ChatMessage[];
+  isRunning: boolean;
+  /** File path for the context badge. */
+  filePath: string | null;
+  onSend: (text: string) => void;
+  onCancel: () => void;
+  onClose: () => void;
+  onSubmitToolResult: (toolUseId: string, content: string) => void;
+}
+
+function extractFileName(path: string): string {
+  const parts = path.split('/');
+  return parts[parts.length - 1] || path;
+}
+
+export function FileChatPanel({
+  messages,
+  isRunning,
+  filePath,
+  onSend,
+  onCancel,
+  onClose,
+  onSubmitToolResult,
+}: FileChatPanelProps) {
+  const logRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom on new messages
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages.length, messages[messages.length - 1]?.content]);
+
+  // Find the last assistant message ID so only that card stays interactive
+  const lastAssistantId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (msg && msg.role === 'assistant') return msg.id;
+    }
+    return null;
+  }, [messages]);
+
+  const onAnswerToolUse = useCallback(
+    async (toolUseId: string, content: string) => {
+      onSubmitToolResult(toolUseId, content);
+      return true;
+    },
+    [onSubmitToolResult],
+  );
+
+  const fileName = filePath ? extractFileName(filePath) : null;
+
+  return (
+    <aside className="file-chat-panel" data-testid="file-chat-panel">
+      {/* Header */}
+      <div className="file-chat-header">
+        <div className="file-chat-header-left">
+          <span className="file-chat-label">询问此文件</span>
+          {fileName && (
+            <span className="file-chat-context" title={filePath ?? undefined}>
+              {fileName}
+            </span>
+          )}
+          {isRunning && <span className="file-chat-status">运行中…</span>}
+        </div>
+        <button
+          type="button"
+          className="file-chat-close"
+          onClick={onClose}
+          title="关闭"
+          data-testid="file-chat-close"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Messages */}
+      <div className="file-chat-messages" ref={logRef}>
+        {messages.length === 0 ? (
+          <div className="file-chat-empty">
+            <div className="file-chat-empty-icon">💬</div>
+            <p>AI 助手已就绪</p>
+            {fileName && <p className="file-chat-empty-hint">上下文：{fileName}</p>}
+          </div>
+        ) : (
+          <>
+            {messages.map((msg) => {
+              if (msg.role === 'user') {
+                return <UserMessage key={msg.id} content={msg.content} timestamp={msg.timestamp} />;
+              }
+              if (msg.role === 'assistant') {
+                return (
+                  <AssistantMessage
+                    key={msg.id}
+                    message={msg}
+                    isLast={msg.id === lastAssistantId}
+                    onAnswerToolUse={onAnswerToolUse}
+                    onSubmitForm={onSend}
+                  />
+                );
+              }
+              if (msg.role === 'error') {
+                return (
+                  <div key={msg.id} className="msg error">
+                    {msg.content}
+                  </div>
+                );
+              }
+              return null;
+            })}
+            <div ref={bottomRef} />
+          </>
+        )}
+      </div>
+
+      {/* Input */}
+      <div className="file-chat-input">
+        <ChatComposer
+          isRunning={isRunning}
+          onSend={onSend}
+          onCancel={onCancel}
+        />
+      </div>
+    </aside>
+  );
+}
