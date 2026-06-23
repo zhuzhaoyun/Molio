@@ -692,3 +692,59 @@
   background: var(--accent-tint);
   border-bottom-style: solid;
 }
+
+/* ─── FileRef badges inside composer ─── */
+.composer-file-refs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 2px 4px 6px;
+}
+
+.composer-file-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--accent);
+  white-space: nowrap;
+  max-width: 220px;
+}
+
+.composer-file-badge-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.composer-file-badge-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 50%;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.composer-file-badge-remove:hover {
+  background: var(--border-soft);
+  color: var(--text);
+}
+
+/* ─── Composer trigger overlay positioning ─── */
+.composer-trigger-zone {
+  position: relative;
+}

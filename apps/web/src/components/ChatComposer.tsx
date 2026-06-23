@@ -1,18 +1,44 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useI18n } from '../i18n';
+import type { CommandAction } from '../commands/types';
+import { BUILTIN_COMMANDS } from '../commands/builtin';
+import { vaultStore } from '../stores/vaultStore';
+import { FilePicker } from './FilePicker';
+import { CommandPalette } from './CommandPalette';
+
+export interface FileRef {
+  vaultId: string;
+  filePath: string;
+}
 
 interface Props {
   isRunning: boolean;
-  onSend: (message: string) => void;
+  onSend: (message: string, fileRefs: FileRef[]) => void;
   onCancel: () => void;
   disabled?: boolean;
   disabledPlaceholder?: string;
+  /** Callback for command actions that need host intervention (e.g. new-doc, polish, outline, new-chat). */
+  onCommand?: (key: string) => void;
 }
 
-export function ChatComposer({ isRunning, onSend, onCancel, disabled, disabledPlaceholder }: Props) {
+export function ChatComposer({
+  isRunning,
+  onSend,
+  onCancel,
+  disabled,
+  disabledPlaceholder,
+  onCommand,
+}: Props) {
   const { t } = useI18n();
+  const navigate = useNavigate();
   const [text, setText] = useState('');
+  const [fileRefs, setFileRefs] = useState<FileRef[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const shellRef = useRef<HTMLDivElement>(null);
+
+  // Trigger overlay state
+  const [trigger, setTrigger] = useState<{ type: 'file' | 'command'; startIdx: number } | null>(null);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -28,12 +54,119 @@ export function ChatComposer({ isRunning, onSend, onCancel, disabled, disabledPl
     if (!isRunning) textareaRef.current?.focus();
   }, [isRunning]);
 
+  // Detect @ and / triggers based on cursor position
+  const checkTrigger = useCallback((value: string, cursorPos: number) => {
+    // Find the @ or / that precedes the cursor
+    const textBefore = value.slice(0, cursorPos);
+    // Match @ or / at start of line or after a space
+    const match = textBefore.match(/(?:^|\s)([@\/])(\S*)$/);
+    if (match) {
+      const fullMatch = match[0]; // includes leading space if any
+      const prefix = match[1]; // @ or /
+      // startIdx is the position of the trigger char itself
+      const startIdx = cursorPos - fullMatch.length + (fullMatch.startsWith(' ') ? 1 : 0);
+      if (prefix === '@') {
+        setTrigger({ type: 'file', startIdx });
+        return;
+      }
+      if (prefix === '/') {
+        setTrigger({ type: 'command', startIdx });
+        return;
+      }
+    }
+    setTrigger(null);
+  }, []);
+
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newValue = e.target.value;
+    setText(newValue);
+    checkTrigger(newValue, e.target.selectionStart);
+  };
+
+  // Re-check trigger on cursor move (arrow keys)
+  const handleKeyUp = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    const el = e.currentTarget;
+    checkTrigger(el.value, el.selectionStart);
+  };
+
+  const handleMouseUp = (e: React.MouseEvent<HTMLTextAreaElement>) => {
+    const el = e.currentTarget;
+    checkTrigger(el.value, el.selectionStart);
+  };
+
+  // Remove trigger text + trigger char from textarea
+  const removeTrigger = useCallback(() => {
+    if (!trigger) return;
+    const currentCursor = textareaRef.current?.selectionStart ?? trigger.startIdx;
+    setText((prev) => {
+      const before = prev.slice(0, trigger.startIdx);
+      const after = prev.slice(currentCursor);
+      return before + after;
+    });
+    setTrigger(null);
+    textareaRef.current?.focus();
+  }, [trigger]);
+
+  // FilePicker: on select
+  const handleFileSelect = useCallback(
+    (filePath: string) => {
+      const vaultId = vaultStore.getActiveVaultId();
+      if (!vaultId) return;
+      // Avoid duplicates
+      setFileRefs((prev) => {
+        if (prev.some((r) => r.filePath === filePath)) return prev;
+        return [...prev, { vaultId, filePath }];
+      });
+      removeTrigger();
+    },
+    [removeTrigger],
+  );
+
+  // FilePicker: on close (Escape)
+  const handleFilePickerClose = useCallback(() => {
+    setTrigger(null);
+    textareaRef.current?.focus();
+  }, []);
+
+  // CommandPalette: on execute
+  const handleCommandExecute = useCallback(
+    (action: CommandAction) => {
+      removeTrigger();
+      switch (action.type) {
+        case 'navigate':
+          navigate(action.route);
+          break;
+        case 'insert':
+          setText((prev) => prev + action.text);
+          break;
+        case 'callback':
+          onCommand?.(action.key);
+          break;
+        case 'none':
+          break;
+      }
+    },
+    [removeTrigger, navigate, onCommand],
+  );
+
+  // CommandPalette: on close
+  const handleCommandClose = useCallback(() => {
+    setTrigger(null);
+    textareaRef.current?.focus();
+  }, []);
+
+  // Remove a fileRef badge
+  const removeFileRef = useCallback((idx: number) => {
+    setFileRefs((prev) => prev.filter((_, i) => i !== idx));
+  }, []);
+
   const handleSend = () => {
     const trimmed = text.trim();
-    if (trimmed && !isRunning) {
-      onSend(trimmed);
+    if ((trimmed || fileRefs.length > 0) && !isRunning) {
+      onSend(trimmed, fileRefs);
       setText('');
-      // Reset textarea height
+      setFileRefs([]);
+      setTrigger(null);
       if (textareaRef.current) textareaRef.current.style.height = 'auto';
     }
   };
@@ -41,30 +174,90 @@ export function ChatComposer({ isRunning, onSend, onCancel, disabled, disabledPl
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSend();
+      // Don't send if a trigger overlay is open — FilePicker/CommandPalette handles Enter
+      if (!trigger) {
+        handleSend();
+      }
     }
   };
 
-  const canSend = text.trim().length > 0 && !isRunning && !disabled;
+  const canSend = (text.trim().length > 0 || fileRefs.length > 0) && !isRunning && !disabled;
   const placeholder = disabled
     ? (disabledPlaceholder ?? t('composer.noAgent'))
     : isRunning
       ? t('composer.waiting')
       : t('composer.placeholder');
 
+  // Get vaultId for FilePicker
+  const activeVaultId = vaultStore.getActiveVaultId();
+
+  // Extract filter text from trigger char to cursor
+  const filterText = trigger
+    ? text.slice(trigger.startIdx + 1, textareaRef.current?.selectionStart ?? undefined)
+    : '';
+
   return (
     <div className="composer">
-      <div className="composer-shell">
-        <textarea
-          ref={textareaRef}
-          data-testid="composer-input"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={placeholder}
-          disabled={isRunning || disabled}
-          rows={1}
-        />
+      <div className="composer-shell" ref={shellRef}>
+        {/* FileRef badges */}
+        {fileRefs.length > 0 && (
+          <div className="composer-file-refs" data-testid="composer-file-refs">
+            {fileRefs.map((ref, i) => (
+              <span key={`${ref.filePath}-${i}`} className="composer-file-badge" data-testid="composer-file-badge">
+                <span className="composer-file-badge-name" title={ref.filePath}>
+                  {'📄 '}
+                  {ref.filePath.split('/').pop() ?? ref.filePath}
+                </span>
+                <button
+                  type="button"
+                  className="composer-file-badge-remove"
+                  data-testid="composer-file-badge-remove"
+                  onClick={() => removeFileRef(i)}
+                  aria-label="移除引用"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Textarea with trigger overlays */}
+        <div className="composer-trigger-zone">
+          <textarea
+            ref={textareaRef}
+            data-testid="composer-input"
+            value={text}
+            onChange={handleChange}
+            onKeyDown={handleKeyDown}
+            onKeyUp={handleKeyUp}
+            onMouseUp={handleMouseUp}
+            placeholder={placeholder}
+            disabled={isRunning || disabled}
+            rows={1}
+          />
+
+          {/* FilePicker overlay */}
+          {trigger?.type === 'file' && activeVaultId && (
+            <FilePicker
+              vaultId={activeVaultId}
+              filterText={filterText}
+              onSelect={handleFileSelect}
+              onClose={handleFilePickerClose}
+            />
+          )}
+
+          {/* CommandPalette overlay */}
+          {trigger?.type === 'command' && (
+            <CommandPalette
+              filterText={filterText}
+              commands={BUILTIN_COMMANDS}
+              onExecute={handleCommandExecute}
+              onClose={handleCommandClose}
+            />
+          )}
+        </div>
+
         <div className="composer-row">
           <span className="composer-spacer" />
           {isRunning ? (
@@ -96,7 +289,7 @@ export function ChatComposer({ isRunning, onSend, onCancel, disabled, disabledPl
           )}
         </div>
       </div>
-      <div className="composer-hint">{t('composer.hint')}</div>
+      <div className="composer-hint">@ 引用文件  / 命令  Enter 发送  Shift+Enter 换行</div>
     </div>
   );
 }

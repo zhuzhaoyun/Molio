@@ -1,5 +1,6 @@
 import { useRef, useEffect, useCallback, useMemo } from 'react';
 import { ChatComposer } from './ChatComposer';
+import type { FileRef } from './ChatComposer';
 import { UserMessage } from './UserMessage';
 import { AssistantMessage } from './AssistantMessage';
 import { useI18n } from '../i18n';
@@ -9,10 +10,11 @@ interface Props {
   selectedAgentName: string | null;
   messages: ChatMessage[];
   isRunning: boolean;
-  onSend: (message: string) => void;
+  onSend: (message: string, fileRefs: FileRef[]) => void;
   onCancel: () => void;
   onNewChat: () => void;
   onSubmitToolResult?: (toolUseId: string, content: string) => Promise<void>;
+  onCommand?: (key: string) => void;
 }
 
 export function HomePage({
@@ -23,6 +25,7 @@ export function HomePage({
   onCancel,
   onNewChat,
   onSubmitToolResult,
+  onCommand,
 }: Props) {
   const { t } = useI18n();
   const logRef = useRef<HTMLDivElement>(null);
@@ -99,7 +102,7 @@ export function HomePage({
                   message={msg}
                   isLast={msg.id === lastAssistantId}
                   onAnswerToolUse={onSubmitToolResult ? onAnswerToolUse : undefined}
-                  onSubmitForm={onSend}
+                  onSubmitForm={(text: string) => onSend(text, [])}
                 />
               );
             }
@@ -123,6 +126,7 @@ export function HomePage({
             onCancel={onCancel}
             disabled={!selectedAgentName}
             disabledPlaceholder={t('home.noAgent')}
+            onCommand={onCommand}
           />
         </div>
       </div>
@@ -150,6 +154,7 @@ export function HomePage({
             onCancel={onCancel}
             disabled={!selectedAgentName}
             disabledPlaceholder={t('home.noAgent')}
+            onCommand={onCommand}
           />
         </div>
       </div>
