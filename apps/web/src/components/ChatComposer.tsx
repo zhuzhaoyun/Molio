@@ -18,7 +18,7 @@ interface Props {
   onCancel: () => void;
   disabled?: boolean;
   disabledPlaceholder?: string;
-  /** Callback for command actions that need host intervention (e.g. new-doc, polish, outline, new-chat). */
+  /** Callback for command actions that need host intervention (e.g. polish, outline, new-chat). */
   onCommand?: (key: string) => void;
 }
 
@@ -35,7 +35,6 @@ export function ChatComposer({
   const [text, setText] = useState('');
   const [fileRefs, setFileRefs] = useState<FileRef[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const shellRef = useRef<HTMLDivElement>(null);
 
   // Trigger overlay state
   const [trigger, setTrigger] = useState<{ type: 'file' | 'command'; startIdx: number } | null>(null);
@@ -214,7 +213,7 @@ export function ChatComposer({
 
   return (
     <div className="composer">
-      <div className="composer-shell" ref={shellRef}>
+      <div className="composer-shell">
         {/* FileRef badges */}
         {fileRefs.length > 0 && (
           <div className="composer-file-refs" data-testid="composer-file-refs">
