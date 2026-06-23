@@ -104,24 +104,47 @@ export function runsRoutes(
       } else if (body.cwd && (!body.history || body.history.length === 0)) {
         const vault = getVaultByPath(db, body.cwd);
         if (vault) {
-          // If a specific file is referenced via wikiExtra, read it and include as context
+          // If a specific file is referenced via wikiExtra, read it and include as context.
+          // Use a focused prompt rather than WIKI_QUERY_PROMPT — the latter instructs the
+          // agent to explore the entire wiki which distracts from the specific file at hand.
           if (body.wikiExtra?.filePath) {
             const fileAbsPath = path.join(vault.path, body.wikiExtra.filePath);
             try {
               const stat = fs.statSync(fileAbsPath);
-              // Only include text files up to 50KB as context
               if (stat.isFile() && stat.size <= 50 * 1024) {
                 const fileContent = fs.readFileSync(fileAbsPath, 'utf-8');
-                message = `${WIKI_QUERY_PROMPT}\n\n---\n\n当前正在讨论的文件：${body.wikiExtra.filePath}\n\n文件内容：\n\`\`\`markdown\n${fileContent}\n\`\`\`\n\n---\n\n用户问题：${message}`;
+                message = `你是一个专业的文档助理。用户正在 Molio 知识库中查看文件 "${body.wikiExtra.filePath}"，并围绕该文件向你提问。
+
+=== 文件 "${body.wikiExtra.filePath}" 的完整内容 ===
+
+${fileContent}
+
+=== 文件内容结束 ===
+
+用户问题：${message}
+
+请基于上面这个文件的内容直接回答用户。如果需要引用文件中的具体段落，请直接引用。不要建议用户去查看其他文件或 wiki 页面——用户已经把要讨论的文件通过 "询问此文件" 功能提供给你了。`;
               } else if (stat.isFile()) {
-                // Large file: mention it but don't include full content
-                message = `${WIKI_QUERY_PROMPT}\n\n---\n\n当前正在讨论的文件：${body.wikiExtra.filePath}\n（文件较大，已省略完整内容）\n\n用户问题：${message}`;
+                // Large file: note the file but don't include full content
+                message = `你是一个专业的文档助理。用户正在 Molio 知识库中查看文件 "${body.wikiExtra.filePath}"，但该文件过大（>50KB），未能加载完整内容。
+
+用户问题：${message}
+
+请告知用户文件过大，并建议他们在知识库编辑器中打开文件进行查看。`;
               } else {
-                message = `${WIKI_QUERY_PROMPT}\n\n---\n\n当前正在讨论的文件：${body.wikiExtra.filePath}\n\n用户问题：${message}`;
+                message = `你是一个专业的文档助理。用户正在 Molio 知识库中查看文件 "${body.wikiExtra.filePath}"。
+
+用户问题：${message}
+
+请告知用户该文件不是普通文本文件，建议在知识库中预览。`;
               }
             } catch {
-              // File not found — still mention the path
-              message = `${WIKI_QUERY_PROMPT}\n\n---\n\n当前正在讨论的文件：${body.wikiExtra.filePath}\n\n用户问题：${message}`;
+              // File not found — let the agent know
+              message = `你是一个专业的文档助理。用户尝试在 Molio 知识库中讨论文件 "${body.wikiExtra.filePath}"，但该文件似乎不存在或无法访问。
+
+用户问题：${message}
+
+请告知用户文件可能已被移动或删除，建议在知识库中确认文件路径。`;
             }
           } else {
             message = `${WIKI_QUERY_PROMPT}\n\n---\n\n用户问题：${message}`;
