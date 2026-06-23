@@ -109,13 +109,14 @@ export function KbMainContent({
         return;
       }
 
-      // Position near the end of selection
-      const rect = range.getBoundingClientRect();
-      setFloatBtn({
-        text,
-        x: rect.right + 8,
-        y: rect.top - 4,
-      });
+      // Position near the END of selection (collapse to end for accurate coords)
+      const endRange = range.cloneRange();
+      endRange.collapse(false);
+      const endRect = endRange.getBoundingClientRect();
+      // Clamp to viewport so the button never overflows
+      const x = Math.min(endRect.right + 8, window.innerWidth - 120);
+      const y = Math.max(endRect.bottom + 4, 8);
+      setFloatBtn({ text, x, y });
     }, 0);
   }, []);
 
