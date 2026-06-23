@@ -7,6 +7,7 @@ import { useFileNavigation } from '../hooks/useFileNavigation';
 import { ToolCard } from './ToolCard';
 import { ToolGroup } from './ToolGroup';
 import { ThinkingBlock } from './ThinkingBlock';
+import { FileOperationCard, isFileWriteTool, extractFilePath } from './FileOperationCard';
 
 // Tools that should never be grouped (always shown individually)
 const UNGROUPABLE = new Set(['AskUserQuestion', 'ask_user_question']);
@@ -131,6 +132,22 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
           )}
         </div>
       )}
+
+      {/* File operation cards for completed write tools */}
+      {message.tools
+        ?.filter((t) => t.status === 'done' && isFileWriteTool(t.name))
+        .map((t) => {
+          const filePath = extractFilePath(t.input);
+          if (!filePath) return null;
+          return (
+            <FileOperationCard
+              key={`op-${t.id}`}
+              filePath={filePath}
+              toolName={t.name}
+              toolInput={t.input}
+            />
+          );
+        })}
 
       {displayContent && (
         <div

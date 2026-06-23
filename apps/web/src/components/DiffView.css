@@ -1,0 +1,44 @@
+/* apps/web/src/components/DiffView.css */
+
+.diff-view {
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.55;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  max-height: 300px;
+  overflow-y: auto;
+  background: var(--bg-subtle);
+}
+
+.diff-line {
+  padding: 1px 10px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.diff-line-add {
+  background: #dafbe1;
+  color: #1a3b27;
+}
+
+.diff-line-del {
+  background: #ffebe9;
+  color: #5c1a14;
+}
+
+.diff-line-ctx {
+  color: var(--text-muted);
+}
+
+@media (prefers-color-scheme: dark) {
+  .diff-line-add {
+    background: #1a3b27;
+    color: #8ddba8;
+  }
+  .diff-line-del {
+    background: #3b1816;
+    color: #f0a8a2;
+  }
+}
