@@ -104,6 +104,7 @@ export function runsRoutes(
       } else if (body.cwd && (!body.history || body.history.length === 0)) {
         const vault = getVaultByPath(db, body.cwd);
         if (vault) {
+          console.log('[runs] wikiExtra:', JSON.stringify(body.wikiExtra));
           // If a specific file is referenced via wikiExtra, read it and include as context.
           // Use a focused prompt rather than WIKI_QUERY_PROMPT — the latter instructs the
           // agent to explore the entire wiki which distracts from the specific file at hand.
