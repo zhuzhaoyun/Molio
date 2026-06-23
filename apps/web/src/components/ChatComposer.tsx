@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useI18n } from '../i18n';
-import type { CommandAction } from '../commands/types';
+import type { Command, CommandAction } from '../commands/types';
 import { BUILTIN_COMMANDS } from '../commands/builtin';
 import { vaultStore } from '../stores/vaultStore';
 import { FilePicker } from './FilePicker';
@@ -20,6 +20,8 @@ interface Props {
   disabledPlaceholder?: string;
   /** Callback for command actions that need host intervention (e.g. polish, outline, new-chat). */
   onCommand?: (key: string) => void;
+  /** Commands to show in the palette. Defaults to BUILTIN_COMMANDS. */
+  commands?: Command[];
 }
 
 export function ChatComposer({
@@ -29,6 +31,7 @@ export function ChatComposer({
   disabled,
   disabledPlaceholder,
   onCommand,
+  commands = BUILTIN_COMMANDS,
 }: Props) {
   const { t } = useI18n();
   const navigate = useNavigate();
@@ -266,7 +269,7 @@ export function ChatComposer({
           {trigger?.type === 'command' && (
             <CommandPalette
               filterText={filterText}
-              commands={BUILTIN_COMMANDS}
+              commands={commands}
               onExecute={handleCommandExecute}
               onComplete={handleCommandComplete}
               onClose={handleCommandClose}

@@ -11,6 +11,7 @@ import type { ChatMessage } from '../../hooks/useChat';
 import { UserMessage } from '../UserMessage';
 import { AssistantMessage } from '../AssistantMessage';
 import { ChatComposer } from '../ChatComposer';
+import { KB_CHAT_COMMANDS } from '../../commands/builtin';
 
 const OPERATION_LABELS: Record<WikiOperationType, string> = {
   build: '构建 Wiki',
@@ -71,6 +72,11 @@ export function WikiChatPanel({
     },
     [onSubmitToolResult],
   );
+
+  const handleCommand = useCallback((key: string) => {
+    if (key === 'polish') onSend('请帮我优化以下文字的表达，使其更清晰流畅：');
+    if (key === 'outline') onSend('请为以下内容生成一个结构化大纲：');
+  }, [onSend]);
 
   const label = operationType ? OPERATION_LABELS[operationType] : 'Wiki';
   const color = operationType ? OPERATION_COLORS[operationType] : 'var(--text-muted)';
@@ -136,6 +142,8 @@ export function WikiChatPanel({
           isRunning={isRunning}
           onSend={onSend}
           onCancel={onCancel}
+          onCommand={handleCommand}
+          commands={KB_CHAT_COMMANDS}
         />
       </div>
     </aside>

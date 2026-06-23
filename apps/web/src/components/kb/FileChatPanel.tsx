@@ -3,6 +3,7 @@ import type { ChatMessage } from '../../hooks/useChat';
 import { UserMessage } from '../UserMessage';
 import { AssistantMessage } from '../AssistantMessage';
 import { ChatComposer } from '../ChatComposer';
+import { KB_CHAT_COMMANDS } from '../../commands/builtin';
 import './FileChatPanel.css';
 
 interface FileChatPanelProps {
@@ -94,6 +95,11 @@ export function FileChatPanel({
 
   const fileName = filePath ? extractFileName(filePath) : null;
 
+  const handleCommand = useCallback((key: string) => {
+    if (key === 'polish') onSend('请帮我优化以下文字的表达，使其更清晰流畅：');
+    if (key === 'outline') onSend('请为以下内容生成一个结构化大纲：');
+  }, [onSend]);
+
   return (
     <aside
       className="file-chat-panel"
@@ -182,6 +188,8 @@ export function FileChatPanel({
           isRunning={isRunning}
           onSend={onSend}
           onCancel={onCancel}
+          onCommand={handleCommand}
+          commands={KB_CHAT_COMMANDS}
         />
       </div>
     </aside>

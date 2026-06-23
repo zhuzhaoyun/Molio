@@ -1,5 +1,6 @@
 import type { Command } from './types';
 
+/** Commands for the home page ChatComposer. */
 export const BUILTIN_COMMANDS: Command[] = [
   {
     id: 'browse-kb',
@@ -32,3 +33,11 @@ export const BUILTIN_COMMANDS: Command[] = [
     action: { type: 'callback', key: 'new-chat' },
   },
 ];
+
+/**
+ * Commands for ChatComposer instances inside KB panels (FileChatPanel, WikiChatPanel).
+ * Excludes navigation commands that are redundant when already in the KB page.
+ */
+export const KB_CHAT_COMMANDS: Command[] = BUILTIN_COMMANDS.filter(
+  (c) => c.id !== 'browse-kb' && c.id !== 'new-chat',
+);
