@@ -25,6 +25,10 @@ const en: Record<string, string> = {
   'composer.stop': 'Stop',
   'composer.send': 'Send',
   'composer.hint': 'Shift+Enter for new line',
+  'composer.uploading': 'Uploading image...',
+  'composer.uploadError': 'Image upload failed',
+  'composer.uploadNoVault': 'Please select or create a vault first',
+  'composer.uploadDismiss': 'Dismiss',
 
   // ── AssistantMessage ──
   'assistant.label': 'Molio',

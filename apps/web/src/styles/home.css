@@ -286,8 +286,8 @@
   justify-content: space-between;
   padding: 4px 8px;
   font-size: 13px;
-  color: var(--danger, #d32f2f);
-  background: var(--danger-bg, #ffebee);
+  color: var(--red);
+  background: var(--red-bg);
   border-radius: 4px;
   margin-bottom: 4px;
 }
@@ -295,7 +295,7 @@
 .composer-upload-error-dismiss {
   background: none;
   border: none;
-  color: var(--danger, #d32f2f);
+  color: var(--red);
   cursor: pointer;
   font-size: 16px;
   padding: 0 2px;

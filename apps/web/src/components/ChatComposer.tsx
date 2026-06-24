@@ -225,7 +225,7 @@ export function ChatComposer({
 
         const vaultId = vaultStore.getActiveVaultId();
         if (!vaultId) {
-          setUploadError('请先选择或创建知识库');
+          setUploadError(t('composer.uploadNoVault'));
           return;
         }
 
@@ -249,7 +249,7 @@ export function ChatComposer({
             });
           }
         } catch (err) {
-          const message = err instanceof Error ? err.message : '图片上传失败';
+          const message = err instanceof Error ? err.message : t('composer.uploadError');
           setUploadError(message);
         } finally {
           setUploadingImage(false);
@@ -305,7 +305,7 @@ export function ChatComposer({
         {/* Uploading indicator */}
         {uploadingImage && (
           <div className="composer-uploading" data-testid="composer-uploading">
-            上传图片中...
+            {t('composer.uploading')}
           </div>
         )}
 
@@ -317,7 +317,7 @@ export function ChatComposer({
               type="button"
               className="composer-upload-error-dismiss"
               onClick={() => setUploadError(null)}
-              aria-label="关闭"
+              aria-label={t('composer.uploadDismiss')}
             >
               ×
             </button>

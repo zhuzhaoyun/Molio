@@ -25,6 +25,10 @@ const zh: Record<string, string> = {
   'composer.stop': '停止',
   'composer.send': '发送',
   'composer.hint': 'Shift+Enter 换行',
+  'composer.uploading': '上传图片中...',
+  'composer.uploadError': '图片上传失败',
+  'composer.uploadNoVault': '请先选择或创建知识库',
+  'composer.uploadDismiss': '关闭',
 
   // ── AssistantMessage ──
   'assistant.label': 'Molio',
