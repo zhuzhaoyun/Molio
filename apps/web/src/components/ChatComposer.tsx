@@ -4,6 +4,7 @@ import { useI18n } from '../i18n';
 import type { Command, CommandAction } from '../commands/types';
 import { BUILTIN_COMMANDS } from '../commands/builtin';
 import { vaultStore } from '../stores/vaultStore';
+import { api } from '../api/client';
 import { FilePicker } from './FilePicker';
 import { CommandPalette } from './CommandPalette';
 
@@ -37,6 +38,15 @@ export function ChatComposer({
   const navigate = useNavigate();
   const [text, setText] = useState('');
   const [fileRefs, setFileRefs] = useState<FileRef[]>([]);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  // Auto-clear upload error after 4 seconds
+  useEffect(() => {
+    if (!uploadError) return;
+    const timer = setTimeout(() => setUploadError(null), 4000);
+    return () => clearTimeout(timer);
+  }, [uploadError]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Trigger overlay state
@@ -199,6 +209,58 @@ export function ChatComposer({
     }
   };
 
+  // Handle image paste (Ctrl+V / Cmd+V)
+  const handlePaste = useCallback(
+    async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (!item || !item.type.startsWith('image/')) continue;
+
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (!file) continue;
+
+        const vaultId = vaultStore.getActiveVaultId();
+        if (!vaultId) {
+          setUploadError('请先选择或创建知识库');
+          return;
+        }
+
+        setUploadingImage(true);
+        setUploadError(null);
+        try {
+          const { filePath } = await api.uploadAsset(vaultId, file);
+          const el = textareaRef.current;
+          if (el) {
+            const start = el.selectionStart;
+            const end = el.selectionEnd;
+            const mdImage = `![image](${filePath})`;
+            setText((prev) => prev.slice(0, start) + mdImage + prev.slice(end));
+            // Restore cursor position after React re-render
+            requestAnimationFrame(() => {
+              el.focus();
+              const newPos = start + mdImage.length;
+              el.setSelectionRange(newPos, newPos);
+              // Trigger height recalculation
+              el.dispatchEvent(new Event('input', { bubbles: true }));
+            });
+          }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : '图片上传失败';
+          setUploadError(message);
+        } finally {
+          setUploadingImage(false);
+        }
+        // Only handle first image in paste
+        return;
+      }
+    },
+    [],
+  );
+
   const canSend = (text.trim().length > 0 || fileRefs.length > 0) && !isRunning && !disabled;
   const placeholder = disabled
     ? (disabledPlaceholder ?? t('composer.noAgent'))
@@ -240,6 +302,28 @@ export function ChatComposer({
           </div>
         )}
 
+        {/* Uploading indicator */}
+        {uploadingImage && (
+          <div className="composer-uploading" data-testid="composer-uploading">
+            上传图片中...
+          </div>
+        )}
+
+        {/* Upload error */}
+        {uploadError && (
+          <div className="composer-upload-error" data-testid="composer-upload-error">
+            {uploadError}
+            <button
+              type="button"
+              className="composer-upload-error-dismiss"
+              onClick={() => setUploadError(null)}
+              aria-label="关闭"
+            >
+              ×
+            </button>
+          </div>
+        )}
+
         {/* Textarea with trigger overlays */}
         <div className="composer-trigger-zone">
           <textarea
@@ -250,6 +334,7 @@ export function ChatComposer({
             onKeyDown={handleKeyDown}
             onKeyUp={handleKeyUp}
             onMouseUp={handleMouseUp}
+            onPaste={handlePaste}
             placeholder={placeholder}
             disabled={isRunning || disabled}
             rows={1}

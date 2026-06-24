@@ -263,3 +263,41 @@
   font-size: 13px;
   color: var(--text-muted);
 }
+
+/* ── Image upload indicator ── */
+.composer-uploading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  animation: composer-upload-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes composer-upload-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.composer-upload-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  font-size: 13px;
+  color: var(--danger, #d32f2f);
+  background: var(--danger-bg, #ffebee);
+  border-radius: 4px;
+  margin-bottom: 4px;
+}
+
+.composer-upload-error-dismiss {
+  background: none;
+  border: none;
+  color: var(--danger, #d32f2f);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 0 2px;
+  line-height: 1;
+}
