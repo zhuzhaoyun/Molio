@@ -34,6 +34,8 @@ export interface ProviderPreset {
     haiku?: string;
     opus?: string;
   };
+  /** Whether sonnet/opus should opt into the provider's 1M context suffix. */
+  useOneMContextSuffix?: boolean;
 }
 
 export const CLAUDE_PROVIDERS: ProviderPreset[] = [
@@ -50,9 +52,10 @@ export const CLAUDE_PROVIDERS: ProviderPreset[] = [
     docsUrl: 'https://api-docs.deepseek.com/',
     defaultModelMapping: {
       sonnet: 'deepseek-v4-pro',
-      haiku: 'deepseek-v4-pro',
+      haiku: 'deepseek-v4-flash',
       opus: 'deepseek-v4-pro',
     },
+    useOneMContextSuffix: true,
   },
   {
     id: 'anthropic',
@@ -155,8 +158,11 @@ export function buildProviderEnv(
       ANTHROPIC_AUTH_TOKEN: '',
       ANTHROPIC_API_KEY: '',
       ANTHROPIC_DEFAULT_SONNET_MODEL: '',
+      ANTHROPIC_DEFAULT_SONNET_MODEL_NAME: '',
       ANTHROPIC_DEFAULT_HAIKU_MODEL: '',
       ANTHROPIC_DEFAULT_OPUS_MODEL: '',
+      ANTHROPIC_DEFAULT_OPUS_MODEL_NAME: '',
+      ANTHROPIC_MODEL: '',
     };
   }
 
@@ -168,6 +174,9 @@ export function buildProviderEnv(
     ...provider?.defaultModelMapping,
     ...modelMapping,
   };
+  const sonnetModel = mapping.sonnet ?? '';
+  const haikuModel = mapping.haiku ?? '';
+  const opusModel = mapping.opus ?? '';
 
   return {
     ANTHROPIC_BASE_URL: baseUrl,
@@ -175,10 +184,27 @@ export function buildProviderEnv(
     ANTHROPIC_AUTH_TOKEN: apiKey,
     // Keep ANTHROPIC_API_KEY in sync for backward compatibility
     ANTHROPIC_API_KEY: apiKey,
-    // Model mapping: Claude Code internally routes sonnet/haiku/opus aliases
-    // to these provider-specific model names
-    ANTHROPIC_DEFAULT_SONNET_MODEL: mapping.sonnet ?? '',
-    ANTHROPIC_DEFAULT_HAIKU_MODEL: mapping.haiku ?? '',
-    ANTHROPIC_DEFAULT_OPUS_MODEL: mapping.opus ?? '',
+    // Claude Code internally routes sonnet/haiku/opus aliases to these
+    // provider-specific model names. DeepSeek uses a [1M] suffix for the
+    // larger sonnet/opus context window while keeping the plain model id as
+    // the explicit fallback/default.
+    ANTHROPIC_DEFAULT_SONNET_MODEL: formatClaudeModelId(sonnetModel, provider, 'sonnet'),
+    ANTHROPIC_DEFAULT_SONNET_MODEL_NAME: sonnetModel,
+    ANTHROPIC_DEFAULT_HAIKU_MODEL: haikuModel,
+    ANTHROPIC_DEFAULT_OPUS_MODEL: formatClaudeModelId(opusModel, provider, 'opus'),
+    ANTHROPIC_DEFAULT_OPUS_MODEL_NAME: opusModel,
+    ANTHROPIC_MODEL: sonnetModel,
   };
+}
+
+function formatClaudeModelId(
+  modelId: string,
+  provider: ProviderPreset | undefined,
+  alias: 'sonnet' | 'haiku' | 'opus',
+): string {
+  if (!modelId) return '';
+  if (provider?.useOneMContextSuffix && alias !== 'haiku') {
+    return `${modelId}[1M]`;
+  }
+  return modelId;
 }
