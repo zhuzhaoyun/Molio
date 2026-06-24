@@ -38,6 +38,7 @@ jobs:
         run: pnpm --filter @molio/desktop test
 
       - name: Verify desktop resources build
+        shell: bash
         run: |
           cd apps/desktop
           node scripts/prepare-resources.mjs
