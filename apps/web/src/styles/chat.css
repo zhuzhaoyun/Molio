@@ -847,32 +847,6 @@
   background: rgba(255, 255, 255, 0.8);
 }
 
-/* Upload button */
-.composer-upload-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  border-radius: var(--radius-sm);
-  flex-shrink: 0;
-  transition: color 120ms ease, background 120ms ease;
-}
-
-.composer-upload-btn:hover {
-  color: var(--accent);
-  background: var(--accent-tint);
-}
-
-.composer-upload-btn:disabled {
-  color: var(--text-faint);
-  cursor: not-allowed;
-}
-
 /* Hidden file input */
 .composer-file-input {
   display: none;
