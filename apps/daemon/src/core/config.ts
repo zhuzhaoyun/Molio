@@ -4,6 +4,19 @@ import * as os from 'node:os';
 
 const CONFIG_DIR = path.join(os.homedir(), '.molio');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
+const CLAUDE_DIR = path.join(os.homedir(), '.claude');
+const CLAUDE_SETTINGS_FILE = path.join(CLAUDE_DIR, 'settings.json');
+const CLAUDE_MANAGED_ENV_KEYS = new Set([
+  'ANTHROPIC_BASE_URL',
+  'ANTHROPIC_AUTH_TOKEN',
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_DEFAULT_SONNET_MODEL',
+  'ANTHROPIC_DEFAULT_SONNET_MODEL_NAME',
+  'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+  'ANTHROPIC_DEFAULT_OPUS_MODEL',
+  'ANTHROPIC_DEFAULT_OPUS_MODEL_NAME',
+  'ANTHROPIC_MODEL',
+]);
 
 export interface AgentConfig {
   binaryPath?: string;
@@ -30,6 +43,11 @@ export interface AppConfig {
 const DEFAULT_CONFIG: AppConfig = {
   agents: {},
 };
+
+interface ClaudeSettingsFile {
+  env?: Record<string, unknown>;
+  [key: string]: unknown;
+}
 
 export function loadConfig(): AppConfig {
   try {
@@ -84,12 +102,43 @@ export function mergeConfig(partial: Partial<AppConfig>): AppConfig {
 
 export function getAgentConfig(agentId: string): AgentConfig {
   const config = loadConfig();
-  return config.agents[agentId] || {};
+  const base = config.agents[agentId] || {};
+  if (agentId !== 'claude') return base;
+
+  const legacyEnv = pickClaudeManagedEnv(base.env);
+  const claudeEnv = loadClaudeSettingsEnv();
+  if (!claudeEnv && Object.keys(legacyEnv).length > 0) {
+    tryMigrateClaudeEnv(config, legacyEnv);
+  } else if (claudeEnv && Object.keys(legacyEnv).length > 0) {
+    tryCleanupClaudeEnvFromMolioConfig(config);
+  }
+
+  const effectiveClaudeEnv = loadClaudeSettingsEnv() ?? legacyEnv;
+  const localEnv = omitClaudeManagedEnv(base.env);
+  if (Object.keys(effectiveClaudeEnv).length === 0) {
+    return localEnv ? { ...base, env: localEnv } : { ...base, env: undefined };
+  }
+
+  return {
+    ...base,
+    env: {
+      ...(localEnv ?? {}),
+      ...effectiveClaudeEnv,
+    },
+  };
 }
 
 export function setAgentConfig(agentId: string, agentConfig: AgentConfig): void {
   const config = loadConfig();
-  config.agents[agentId] = agentConfig;
+  if (agentId === 'claude') {
+    saveClaudeSettingsEnv(agentConfig.env ?? {});
+    config.agents[agentId] = {
+      ...agentConfig,
+      env: omitClaudeManagedEnv(agentConfig.env),
+    };
+  } else {
+    config.agents[agentId] = agentConfig;
+  }
   saveConfig(config);
 }
 
@@ -103,4 +152,106 @@ export function buildAgentEnv(agentId: string, agentConfig: AgentConfig): Record
     env[`${agentId.toUpperCase()}_BIN`] = agentConfig.binaryPath;
   }
   return env;
+}
+
+function loadClaudeSettingsEnv(): Record<string, string> | null {
+  const settings = readJsonFile<ClaudeSettingsFile>(CLAUDE_SETTINGS_FILE);
+  if (!settings?.env || typeof settings.env !== 'object') return null;
+
+  const env: Record<string, string> = {};
+  for (const [key, value] of Object.entries(settings.env)) {
+    if (!CLAUDE_MANAGED_ENV_KEYS.has(key)) continue;
+    if (typeof value === 'string') env[key] = value;
+  }
+  return Object.keys(env).length > 0 ? env : null;
+}
+
+function saveClaudeSettingsEnv(agentEnv: Record<string, string>): void {
+  const settings = readJsonFile<ClaudeSettingsFile>(CLAUDE_SETTINGS_FILE) ?? {};
+  const existingEnv = settings.env && typeof settings.env === 'object'
+    ? { ...settings.env }
+    : {};
+
+  for (const key of CLAUDE_MANAGED_ENV_KEYS) {
+    delete existingEnv[key];
+  }
+
+  for (const [key, value] of Object.entries(agentEnv)) {
+    if (!CLAUDE_MANAGED_ENV_KEYS.has(key)) continue;
+    if (typeof value === 'string' && value.trim() !== '') {
+      existingEnv[key] = value;
+    }
+  }
+
+  const nextSettings: ClaudeSettingsFile = { ...settings };
+  if (Object.keys(existingEnv).length > 0) {
+    nextSettings.env = existingEnv;
+  } else {
+    delete nextSettings.env;
+  }
+
+  writeJsonFileAtomic(CLAUDE_SETTINGS_FILE, nextSettings, CLAUDE_DIR);
+}
+
+function pickClaudeManagedEnv(env?: Record<string, string>): Record<string, string> {
+  const picked: Record<string, string> = {};
+  if (!env) return picked;
+  for (const [key, value] of Object.entries(env)) {
+    if (CLAUDE_MANAGED_ENV_KEYS.has(key) && typeof value === 'string') {
+      picked[key] = value;
+    }
+  }
+  return picked;
+}
+
+function omitClaudeManagedEnv(env?: Record<string, string>): Record<string, string> | undefined {
+  if (!env) return undefined;
+  const remaining: Record<string, string> = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (!CLAUDE_MANAGED_ENV_KEYS.has(key) && typeof value === 'string') {
+      remaining[key] = value;
+    }
+  }
+  return Object.keys(remaining).length > 0 ? remaining : undefined;
+}
+
+function tryMigrateClaudeEnv(config: AppConfig, legacyEnv: Record<string, string>): void {
+  try {
+    saveClaudeSettingsEnv(legacyEnv);
+    tryCleanupClaudeEnvFromMolioConfig(config);
+  } catch (err) {
+    console.warn('Failed to migrate Claude env to ~/.claude/settings.json:', err);
+  }
+}
+
+function tryCleanupClaudeEnvFromMolioConfig(config: AppConfig): void {
+  const current = config.agents['claude'];
+  if (!current) return;
+  const nextEnv = omitClaudeManagedEnv(current.env);
+  const changed = Object.keys(pickClaudeManagedEnv(current.env)).length > 0;
+  if (!changed) return;
+
+  config.agents['claude'] = {
+    ...current,
+    env: nextEnv,
+  };
+  saveConfig(config);
+}
+
+function readJsonFile<T>(filePath: string): T | null {
+  try {
+    if (!fs.existsSync(filePath)) return null;
+    return JSON.parse(fs.readFileSync(filePath, 'utf8')) as T;
+  } catch {
+    return null;
+  }
+}
+
+function writeJsonFileAtomic(filePath: string, data: unknown, dirPath: string): void {
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
+  }
+  const tmpFile = filePath + '.tmp';
+  fs.writeFileSync(tmpFile, JSON.stringify(data, null, 2), 'utf8');
+  fs.renameSync(tmpFile, filePath);
 }

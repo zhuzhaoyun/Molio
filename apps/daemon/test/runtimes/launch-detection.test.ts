@@ -2,7 +2,8 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { getWellKnownToolchainDirs } from '../../src/core/runtimes/launch.js';
+import * as fs from 'node:fs';
+import { getWellKnownToolchainDirs, validateBinary } from '../../src/core/runtimes/launch.js';
 
 describe('Well-known toolchain dirs detection', () => {
   it('should return platform-specific directories', () => {
@@ -97,5 +98,33 @@ describe('resolveAgentBinary with env override', () => {
     const result = resolveAgentBinary(fakeDef);
     assert.equal(result.binary, null);
     assert.equal(result.source, 'not-found');
+  });
+});
+
+describe('validateBinary Mach-O detection', () => {
+  it('should accept little-endian 64-bit Mach-O headers', () => {
+    const tmpFile = path.join(os.tmpdir(), `molio-macho-${Date.now()}`);
+    const payload = Buffer.alloc(1_024 * 1_024, 0);
+    payload.writeUInt32BE(0xCFFAEDFE, 0);
+
+    try {
+      fs.writeFileSync(tmpFile, payload);
+      assert.equal(validateBinary(tmpFile, 'darwin'), null);
+    } finally {
+      fs.rmSync(tmpFile, { force: true });
+    }
+  });
+
+  it('should reject non-native headers on darwin', () => {
+    const tmpFile = path.join(os.tmpdir(), `molio-bad-header-${Date.now()}`);
+    const payload = Buffer.alloc(1_024 * 1_024, 0);
+    payload.write('TEXT', 0, 'ascii');
+
+    try {
+      fs.writeFileSync(tmpFile, payload);
+      assert.match(validateBinary(tmpFile, 'darwin') ?? '', /Invalid ELF\/Mach-O header/);
+    } finally {
+      fs.rmSync(tmpFile, { force: true });
+    }
   });
 });
