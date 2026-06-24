@@ -95,10 +95,11 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Run affected E2E
-        run: npx playwright test ${{ steps.specs.outputs.specs }}
+        run: npx playwright test $SPECS
         working-directory: apps/web
         env:
           CI: 'true'
+          SPECS: ${{ steps.specs.outputs.specs }}
 
       - name: Upload Playwright report
         if: always()
