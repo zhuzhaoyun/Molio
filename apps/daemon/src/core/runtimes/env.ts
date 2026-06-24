@@ -61,8 +61,11 @@ export function buildSpawnEnv(
       'ANTHROPIC_API_KEY',
       'ANTHROPIC_AUTH_TOKEN',
       'ANTHROPIC_DEFAULT_SONNET_MODEL',
+      'ANTHROPIC_DEFAULT_SONNET_MODEL_NAME',
       'ANTHROPIC_DEFAULT_HAIKU_MODEL',
       'ANTHROPIC_DEFAULT_OPUS_MODEL',
+      'ANTHROPIC_DEFAULT_OPUS_MODEL_NAME',
+      'ANTHROPIC_MODEL',
     ]);
     // Claude Code on Windows requires git-bash.
     // Auto-detect if CLAUDE_CODE_GIT_BASH_PATH is not already set.
