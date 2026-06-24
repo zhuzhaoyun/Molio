@@ -858,7 +858,7 @@
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  border-radius: var(--radius-sm);
+  border-radius: 6px;
   flex-shrink: 0;
   transition: color 120ms ease, background 120ms ease;
 }
