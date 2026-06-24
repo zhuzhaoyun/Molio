@@ -3,7 +3,7 @@
  */
 
 import { Hono } from 'hono';
-import { createReadStream, existsSync } from 'node:fs';
+import { createReadStream, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type Database from 'better-sqlite3';
 import type {
@@ -228,6 +228,82 @@ export function knowledgeRoutes(db: Database.Database, runManager: RunManager): 
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to read file';
+      return c.json({ error: { code: 'INTERNAL', message } }, 500);
+    }
+  });
+
+  // ─── Asset upload ───
+
+  // POST /api/knowledge/vaults/:id/assets/upload — upload an image asset
+  app.post('/vaults/:id/assets/upload', async (c) => {
+    const vault = getVault(db, c.req.param('id'));
+    if (!vault) {
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
+    }
+
+    // Size check via Content-Length header (guard before reading body)
+    const contentLength = Number(c.req.header('Content-Length') ?? '0');
+    const MAX_SIZE = 50 * 1024 * 1024; // 50 MB
+    if (contentLength > MAX_SIZE) {
+      return c.json({ error: { code: 'PAYLOAD_TOO_LARGE', message: '图片过大（最大 50MB）' } }, 413);
+    }
+
+    try {
+      const body = await c.req.parseBody();
+      const file = body['file'];
+
+      if (!file || typeof file === 'string') {
+        return c.json({ error: { code: 'BAD_REQUEST', message: 'No file provided' } }, 400);
+      }
+
+      // file is a File-like object with .name, .type, and .arrayBuffer()
+      const fileName = (file as any).name ?? 'image.png';
+      const mimeType = (file as any).type ?? 'application/octet-stream';
+
+      // Validate image type
+      const ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+      if (!ALLOWED_TYPES.includes(mimeType)) {
+        return c.json({ error: { code: 'BAD_REQUEST', message: '不支持的图片格式（仅 PNG/JPEG/GIF/WebP）' } }, 400);
+      }
+
+      const ext = mimeType === 'image/jpeg' ? '.jpg'
+        : mimeType === 'image/png' ? '.png'
+        : mimeType === 'image/gif' ? '.gif'
+        : '.webp';
+
+      // Generate unique filename
+      const now = new Date();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const ts = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+
+      // Sequence counter for same-second uploads
+      let seq = 1;
+      let relPath: string;
+      do {
+        relPath = `.molio/assets/${ts}-${seq}${ext}`;
+        seq++;
+      } while (existsSync(resolveFilePath(vault.path, relPath)));
+
+      // Read file bytes
+      const bytes = await (file as any).arrayBuffer();
+      const buf = Buffer.from(bytes);
+
+      // Ensure .molio/assets/ directory exists
+      try {
+        mkdirSync(resolveFilePath(vault.path, '.molio/assets'), { recursive: true });
+      } catch {
+        // dir might already exist — fine
+      }
+
+      // Write to disk
+      const absPath = resolveFilePath(vault.path, relPath);
+      writeFileSync(absPath, buf);
+
+      const url = `/api/knowledge/vaults/${vault.id}/raw/${encodeURIComponent(relPath).replace(/%2F/g, '/')}`;
+
+      return c.json({ filePath: relPath, url }, 201);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to upload asset';
       return c.json({ error: { code: 'INTERNAL', message } }, 500);
     }
   });
