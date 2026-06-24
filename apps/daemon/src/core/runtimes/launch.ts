@@ -53,6 +53,14 @@ export function resolveAgentBinary(
 
 /** Minimum expected size for a valid native binary (1 MB). */
 const MIN_BINARY_SIZE = 1_024 * 1_024;
+const MACHO_MAGICS = new Set([
+  'feedface',
+  'feedfacf',
+  'cefaedfe',
+  'cffaedfe',
+  'cafebabe',
+  'bebafeca',
+]);
 
 export function validateBinary(filePath: string, platform: string): string | null {
   try {
@@ -79,12 +87,12 @@ export function validateBinary(filePath: string, platform: string): string | nul
       }
     } else {
       // ELF files start with 0x7f 'E' 'L' 'F'
-      // Mach-O starts with 0xFEEDFACE (big-endian) or 0xFEEDFACF (64-bit)
-      const isElf = header[0] === 0x7F && header[1] === 0x45 && header[2] === 0x4C && header[3] === 0x46;
-      const isMachO =
-        (header[0] === 0xFE && header[1] === 0xED && header[2] === 0xFA && (header[3] === 0xCE || header[3] === 0xCF));
+      // Accept both byte orders for Mach-O and universal/fat headers.
+      const magic = header.toString('hex');
+      const isElf = magic === '7f454c46';
+      const isMachO = MACHO_MAGICS.has(magic);
       if (!isElf && !isMachO) {
-        return `Invalid ELF/Mach-O header: ${header.toString('hex')}`;
+        return `Invalid ELF/Mach-O header: ${magic}`;
       }
     }
 

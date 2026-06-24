@@ -82,8 +82,8 @@ test.describe('Runtime provider config', () => {
 
     // Should show DeepSeek models
     const modelsSection = configPanel.locator('.rt-provider-form__models');
-    await expect(modelsSection).toContainText('DeepSeek Chat (V3)');
-    await expect(modelsSection).toContainText('DeepSeek Reasoner (R1)');
+    await expect(modelsSection).toContainText('DeepSeek V4 Pro');
+    await expect(modelsSection).toContainText('DeepSeek V4 Flash');
   });
 
   test('save DeepSeek config and verify persistence', async ({ page }) => {
