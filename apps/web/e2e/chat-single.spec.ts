@@ -3,6 +3,9 @@ import { gotoHome, sendMessage } from './helpers/navigation';
 import { mockChatRun, unmockAll, SCRIPTS } from './helpers/mock-sse';
 
 /**
+ * @area chat
+ * @priority P0
+ *
  * E2E tests for single-turn chat: sending a message and receiving a streamed response.
  *
  * Uses mock SSE to avoid dependency on a real AI agent. The mock intercepts

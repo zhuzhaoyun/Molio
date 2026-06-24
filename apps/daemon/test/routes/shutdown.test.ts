@@ -61,7 +61,11 @@ describe('Shutdown route', () => {
   it('should flush in-flight assistant replies before exiting', async () => {
     // Point the claude agent at our fake binary. Prevent the fake agent from
     // emitting turn_end so the assistant text stays buffered until shutdown.
-    const fakeClaudePath = join(process.cwd(), 'test/fixtures/fake-agents/fake-claude.cmd');
+    const fakeClaudePath = join(
+      process.cwd(),
+      'test/fixtures/fake-agents',
+      process.platform === 'win32' ? 'fake-claude.cmd' : 'fake-claude.mjs',
+    );
     process.env['CLAUDE_BIN'] = fakeClaudePath;
     process.env['FAKE_CLAUDE_NO_TURN_END'] = '1';
 

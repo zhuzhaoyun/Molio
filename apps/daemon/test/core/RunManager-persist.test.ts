@@ -11,7 +11,11 @@ import { closeDatabase, openDatabase, listMessages } from '../../src/core/db.js'
 import { getAgentDef } from '../../src/core/runtimes/registry.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const fakeClaudePath = join(process.cwd(), 'test/fixtures/fake-agents/fake-claude.cmd');
+const fakeClaudePath = join(
+  process.cwd(),
+  'test/fixtures/fake-agents',
+  process.platform === 'win32' ? 'fake-claude.cmd' : 'fake-claude.mjs',
+);
 
 describe('RunManager persists assistant reply on successful run', () => {
   let db: Database.Database;

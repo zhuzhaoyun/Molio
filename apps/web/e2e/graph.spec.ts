@@ -2,6 +2,9 @@ import { test, expect } from '@playwright/test';
 import { gotoHome, clickNav } from './helpers/navigation';
 
 /**
+ * @area graph
+ * @priority P1
+ *
  * E2E tests for the Graph (knowledge graph) page.
  *
  * Graph rendering depends on Sigma.js WebGL — these tests verify page structure

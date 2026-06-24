@@ -8,6 +8,11 @@ import {
 } from './helpers/cleanup';
 
 /**
+ * @area history
+ * @priority P1
+ */
+
+/**
  * E2E tests for the conversation history page.
  *
  * Prerequisites: `pnpm dev` running (daemon :3100, web :5173)

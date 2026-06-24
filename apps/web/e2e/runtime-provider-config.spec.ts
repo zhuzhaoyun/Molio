@@ -1,6 +1,9 @@
 import { test, expect } from '@playwright/test';
 
 /**
+ * @area runtimes
+ * @priority P1
+ *
  * E2E: Claude Code one-click install + DeepSeek provider configuration.
  *
  * Prerequisites: daemon (:3100) + web (:5173) running via `pnpm dev`.

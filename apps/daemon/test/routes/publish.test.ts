@@ -14,6 +14,19 @@ async function jsonBody(res: Response): Promise<Record<string, unknown>> {
   return res.json() as Promise<Record<string, unknown>>;
 }
 
+/** Poll until `url` refuses connection (bridge server shut down). */
+async function waitForServerDown(url: string, timeoutMs = 2000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      await fetch(url);
+      await new Promise((r) => setTimeout(r, 50));
+    } catch {
+      return; // connection refused = server down
+    }
+  }
+}
+
 /** Helper: create a publish app and clean up all bridges after the callback. */
 async function withApp<T>(fn: (app: ReturnType<typeof publishRoutes>) => Promise<T>): Promise<T> {
   const app = publishRoutes();
@@ -135,7 +148,7 @@ describe('Publish routes', () => {
         assert.equal(delBody['ok'], true);
 
         // Bridge should no longer be serving (connection refused)
-        await assert.rejects(fetch(bridgeUrl));
+        await waitForServerDown(bridgeUrl);
       });
     });
 
