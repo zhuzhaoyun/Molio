@@ -49,10 +49,6 @@ test.describe('Composer image paste', () => {
     await expect(composer).toBeVisible();
 
     // Dispatch a synthetic paste event carrying a minimal valid PNG.
-    // NOTE: In Chromium, ClipboardEvent.clipboardData constructed
-    // synthetically may be null due to browser security restrictions.
-    // If the paste handler does not fire, the conditional markdown
-    // checks below are skipped — verify manually in that case.
     await composer.evaluate((el) => {
       const pngBytes = new Uint8Array([
         0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
@@ -76,16 +72,12 @@ test.describe('Composer image paste', () => {
       );
     });
 
-    // Wait for the async upload + React re-render cycle to complete
-    await page.waitForTimeout(3000);
-
-    // If the synthetic clipboard event carried data successfully,
-    // the paste handler inserted markdown into the textarea
-    const value = await composer.inputValue();
-    if (value) {
+    // Wait for async upload + React re-render to complete
+    await expect(async () => {
+      const value = await composer.inputValue();
       expect(value).toContain('![image](.molio/assets/');
       expect(value).toContain('.png)');
-    }
+    }).toPass({ timeout: 5000 });
 
     // Upload error indicator should never be visible
     await expect(
@@ -100,7 +92,12 @@ test.describe('Composer image paste', () => {
     const composer = page.locator('[data-testid="composer-input"]');
     await expect(composer).toBeVisible();
 
-    // Simulate a paste event containing only plain text
+    // Insert text (synthetic paste events cannot insert text in Chromium
+    // due to browser security, so use fill() for the value)
+    await composer.fill('Hello, world!');
+
+    // Dispatch a synthetic paste event to verify the handler does not
+    // treat text/plain as an image (no upload, no error)
     await composer.evaluate((el) => {
       const dt = new DataTransfer();
       dt.setData('text/plain', 'Hello, world!');
@@ -114,13 +111,12 @@ test.describe('Composer image paste', () => {
       );
     });
 
-    // Allow time for any async handler to run
-    await page.waitForTimeout(1000);
-
     // Uploading indicator must not appear for non-image paste
-    await expect(
-      page.locator('[data-testid="composer-uploading"]'),
-    ).not.toBeVisible();
+    const uploading = page.locator('[data-testid="composer-uploading"]');
+    await expect(uploading).toHaveCount(0);
+
+    // Text value should still be present
+    await expect(composer).toHaveValue('Hello, world!');
 
     // Upload error must not appear either
     await expect(
