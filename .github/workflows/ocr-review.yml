@@ -1,0 +1,536 @@
+# OpenCodeReview - GitHub Actions PR Auto-Review
+#
+# Automatically reviews pull requests using OpenCodeReview (npm: @alibaba-group/open-code-review)
+# and posts inline review comments with suggestion blocks on the PR.
+#
+# Triggers:
+#   - PR opened/synchronize/reopened (auto, same-repo only — skips forks to protect LLM quota)
+#   - Comment on PR starting with '/open-code-review' or '@open-code-review' (explicit, any PR)
+#
+# Required secrets (Settings → Secrets and variables → Actions):
+#   OCR_LLM_URL        - LLM API endpoint (e.g., https://api.openai.com/v1/chat/completions)
+#   OCR_LLM_AUTH_TOKEN - Authentication token for the LLM API
+#
+# Optional secrets:
+#   OCR_LLM_MODEL         - Model name (default: gpt-4o)
+#   OCR_LLM_USE_ANTHROPIC - Set to 'true' if using Anthropic Claude models
+#
+# Optional variables (for retry/delay tuning, see retry strategy in the post-comments step):
+#   OCR_RETRY_BASE_DELAY, OCR_RETRY_MAX_DELAY, OCR_MAX_RETRIES,
+#   OCR_SUCCESS_DELAY, OCR_FAILURE_DELAY,
+#   OCR_LOW_REMAINING_THRESHOLD, OCR_LOW_REMAINING_SPACING
+#
+# Retry strategy follows GitHub's documented rate-limit guidance:
+#   https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api
+
+name: Open Code Review
+
+concurrency:
+  group: ocr-review-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: true
+
+on:
+  # pull_request_target so secrets are available even for fork PRs. Safe because
+  # OCR only reads the diff and does not execute PR code.
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  code-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Run on PR events from the same repo (skip forks to protect LLM quota),
+    # or on explicit /open-code-review | @open-code-review comments on any PR.
+    # Draft PRs are skipped on auto-trigger; comment trigger still works.
+    if: |
+      (github.event_name == 'pull_request_target' && github.event.pull_request.draft == false && github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && (startsWith(github.event.comment.body, '/open-code-review') || startsWith(github.event.comment.body, '@open-code-review')))
+    steps:
+      - name: Get PR context
+        id: pr-context
+        if: github.event_name != 'pull_request_target'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // For issue_comment events, get PR info
+            const prNumber = context.issue.number;
+            const { data: pullRequest } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+            core.setOutput('base_ref', pullRequest.base.ref);
+            core.setOutput('head_ref', pullRequest.head.ref);
+            core.setOutput('head_sha', pullRequest.head.sha);
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history needed for merge-base diff
+          ref: ${{ github.event.pull_request.head.sha || steps.pr-context.outputs.head_sha }}
+
+      - name: Fetch PR head ref (ensures fork commits are available)
+        run: git fetch origin pull/${{ github.event.pull_request.number || github.event.issue.number }}/head
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install OpenCodeReview
+        run: |
+          npm install -g @alibaba-group/open-code-review
+          echo "OpenCodeReview installed with version:"
+          ocr version || true
+
+      - name: Configure OCR
+        run: |
+          ocr config set llm.url ${{ secrets.OCR_LLM_URL }}
+          ocr config set llm.auth_token ${{ secrets.OCR_LLM_AUTH_TOKEN }}
+          ocr config set llm.model ${{ secrets.OCR_LLM_MODEL }}
+          ocr config set llm.use_anthropic ${{ secrets.OCR_LLM_USE_ANTHROPIC }}
+          ocr config set llm.extra_body '{"thinking": {"type": "disabled"}}'
+
+      - name: Run OpenCodeReview
+        id: review
+        run: |
+          # Get base ref and head SHA from PR context (different for comment triggers)
+          # Note: We use HEAD_SHA instead of origin/${HEAD_REF} to support fork PRs,
+          # because fork branches don't exist on the origin remote.
+          if [ "${{ github.event_name }}" = "pull_request_target" ]; then
+            BASE_REF="${{ github.event.pull_request.base.ref }}"
+            HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          else
+            BASE_REF="${{ steps.pr-context.outputs.base_ref }}"
+            HEAD_SHA="${{ steps.pr-context.outputs.head_sha }}"
+          fi
+
+          echo "Reviewing PR: ${HEAD_SHA} against origin/${BASE_REF}"
+
+          # Run OCR in range mode with JSON output
+          ocr review \
+            --from "origin/${BASE_REF}" \
+            --to "${HEAD_SHA}" \
+            --format json \
+            --audience agent \
+            --background "${{ github.event.pull_request.title || github.event.issue.title }}" \
+            > /tmp/ocr-result.json 2>/tmp/ocr-stderr.log || true
+
+          echo "OCR review completed. Output:"
+          cat /tmp/ocr-result.json
+          echo "OCR review completed. Error log:"
+          cat /tmp/ocr-stderr.log
+
+      - name: Post review comments to PR
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const path = '/tmp/ocr-result.json';
+
+            // Read OCR output
+            let result;
+            try {
+              const raw = fs.readFileSync(path, 'utf8');
+              result = JSON.parse(raw);
+            } catch (e) {
+              console.log('Failed to parse OCR output:', e.message);
+              // Post a simple comment if parsing fails
+              const stderr = fs.readFileSync('/tmp/ocr-stderr.log', 'utf8').trim();
+              if (stderr) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  body: `⚠️ **OpenCodeReview** encountered an error:\n${fencedBlock(stderr)}`
+                });
+              }
+              return;
+            }
+
+            const comments = result.comments || [];
+            const warnings = result.warnings || [];
+
+            // If no comments, post a summary
+            if (comments.length === 0) {
+              const message = result.message || 'No comments generated. Looks good to me.';
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: `✅ **OpenCodeReview**: ${message}`
+              });
+              return;
+            }
+
+            // Prepare PR review with inline comments
+            const prNumber = context.issue.number;
+            let commitSha;
+
+            // Get commit SHA from event context
+            if (context.eventName === 'pull_request_target') {
+              commitSha = context.payload.pull_request.head.sha;
+            } else {
+              // For comment events, we need to fetch the PR
+              const { data: pullRequest } = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: prNumber
+              });
+              commitSha = pullRequest.head.sha;
+            }
+
+            // Build review comments array for the PR review API
+            // Only inline comments with line info can be posted via createReview
+            const reviewComments = [];
+            const commentsWithoutLine = [];
+
+            for (const comment of comments) {
+              const body = formatComment(comment);
+
+              // Check if comment has valid line information for inline comment (line >= 1)
+              const hasValidLine = (comment.start_line >= 1) || (comment.end_line >= 1);
+              if (!hasValidLine) {
+                commentsWithoutLine.push({ comment, body });
+                continue;
+              }
+
+              const reviewComment = {
+                path: comment.path,
+                body: body
+              };
+
+              // Use line range if available
+              if (comment.start_line >= 1 && comment.end_line >= 1 && comment.start_line !== comment.end_line) {
+                reviewComment.start_line = comment.start_line;
+                reviewComment.line = comment.end_line;
+                reviewComment.start_side = 'RIGHT';
+                reviewComment.side = 'RIGHT';
+              } else if (comment.end_line >= 1) {
+                reviewComment.line = comment.end_line;
+                reviewComment.side = 'RIGHT';
+              } else if (comment.start_line >= 1) {
+                reviewComment.line = comment.start_line;
+                reviewComment.side = 'RIGHT';
+              }
+
+              reviewComments.push({ comment, reviewComment });
+            }
+
+            // Submit as a single PR review with all comments
+            const totalCount = comments.length;
+            const inlineCount = reviewComments.length;
+            const summaryCount = commentsWithoutLine.length;
+            let summaryBody = buildSummaryBody(totalCount, inlineCount, summaryCount, warnings);
+
+            // Add comments without line info to summary body
+            summaryBody += formatSummaryComments(commentsWithoutLine);
+
+            // Statistics tracking
+            let successCount = 0;
+            let failedCount = 0;
+            const failedComments = [];
+
+            try {
+              const batchRes = await github.rest.pulls.createReview({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: prNumber,
+                commit_id: commitSha,
+                body: summaryBody,
+                event: 'COMMENT',
+                comments: reviewComments.map(({ reviewComment }) => reviewComment)
+              });
+              successCount = reviewComments.length;
+              console.log(`Successfully posted review with ${successCount} inline comments (${commentsWithoutLine.length} in summary)`);
+              logRateLimitQuota(batchRes, 'after batch createReview');
+            } catch (e) {
+              console.log('Failed to post review with inline comments:', e.message);
+              console.log('Falling back to posting comments individually with rate-limit-aware retry...');
+
+              // Fallback: post comments one by one with delay to avoid secondary rate limits.
+              // GitHub enforces ~80 content-generating requests per minute; spacing calls
+              // helps stay under that threshold. Retry/wait durations are derived from the
+              // rate-limit response headers per GitHub's documented strategy.
+              const MAX_RETRIES = parseInt(process.env.OCR_MAX_RETRIES, 10) || 3;
+              const SUCCESS_DELAY = parseInt(process.env.OCR_SUCCESS_DELAY, 10) || 2000; // delay after successful post
+              const FAILURE_DELAY = parseInt(process.env.OCR_FAILURE_DELAY, 10) || 1000; // delay after non-retryable failure
+              const LOW_REMAINING_THRESHOLD = parseInt(process.env.OCR_LOW_REMAINING_THRESHOLD, 10) || 3;
+              const LOW_REMAINING_SPACING = parseInt(process.env.OCR_LOW_REMAINING_SPACING, 10) || 10000;
+
+              // If the batch itself was rate-limited, honor its rate-limit headers
+              // (retry-after / x-ratelimit-reset) before retrying per-comment,
+              // otherwise the first per-comment call re-hits the same wall immediately.
+              const batchRetry = computeRetryDelayMs(e, 0);
+              if (batchRetry != null) {
+                const secs = (batchRetry.delayMs / 1000).toFixed(1);
+                console.log(
+                  `Batch createReview was rate-limited (HTTP ${e.status}). ` +
+                  `Cooling down ${secs}s via '${batchRetry.source}' (${batchRetry.detail}) before per-comment retry.`
+                );
+                await sleep(batchRetry.delayMs);
+              }
+
+              for (const { comment, reviewComment } of reviewComments) {
+                let posted = false;
+                for (let attempt = 0; attempt <= MAX_RETRIES && !posted; attempt++) {
+                  try {
+                    const res = await github.rest.pulls.createReview({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      pull_number: prNumber,
+                      commit_id: commitSha,
+                      body: '',
+                      event: 'COMMENT',
+                      comments: [reviewComment]
+                    });
+                    successCount++;
+                    posted = true;
+                    console.log(`Successfully posted comment for ${reviewComment.path}`);
+                    // Proactive throttle: if remaining quota is low, slow down to
+                    // avoid hitting the limit (GitHub best practice: watch the header).
+                    const remaining = logRateLimitQuota(res, `after ${reviewComment.path}`);
+                    const lowQuota = remaining != null && remaining <= LOW_REMAINING_THRESHOLD;
+                    if (lowQuota) {
+                      console.log(`[rate-limit] quota low (remaining=${remaining} <= ${LOW_REMAINING_THRESHOLD}); increasing spacing to ${LOW_REMAINING_SPACING}ms.`);
+                      await sleep(LOW_REMAINING_SPACING);
+                    } else {
+                      await sleep(SUCCESS_DELAY);
+                    }
+                  } catch (innerE) {
+                    // Decide whether to retry and how long to wait, based on GitHub's
+                    // rate-limit documentation (retry-after / x-ratelimit-* headers).
+                    const retryInfo = computeRetryDelayMs(innerE, attempt);
+                    const willRetry = retryInfo != null && attempt < MAX_RETRIES;
+                    if (willRetry) {
+                      const secs = (retryInfo.delayMs / 1000).toFixed(1);
+                      console.log(
+                        `Rate-limited/transient error on ${reviewComment.path} ` +
+                        `(HTTP ${innerE.status}, attempt ${attempt + 1}/${MAX_RETRIES}). ` +
+                        `Waiting ${secs}s via '${retryInfo.source}' (${retryInfo.detail}). ` +
+                        `Error: ${innerE.message}`
+                      );
+                      await sleep(retryInfo.delayMs);
+                    } else {
+                      failedCount++;
+                      failedComments.push({ comment, error: innerE.message });
+                      const reason = retryInfo == null ? 'non-retryable error' : 'rate-limit retries exhausted';
+                      console.log(`Failed to post comment for ${reviewComment.path} (${reason}, HTTP ${innerE.status || 'n/a'}): ${innerE.message}`);
+                      // After exhausting retries use the success-style pace delay;
+                      // for other errors use the shorter failure pace delay.
+                      await sleep(retryInfo == null ? FAILURE_DELAY : SUCCESS_DELAY);
+                      break;
+                    }
+                  }
+                }
+              }
+
+              // Post summary comment with statistics
+              let finalBody = buildSummaryBody(totalCount, successCount, commentsWithoutLine.length + failedComments.length, warnings);
+              finalBody += formatSummaryComments(commentsWithoutLine);
+              finalBody += `\n\n---\n\n📊 **Posting Statistics:**`;
+              finalBody += `\n- ✅ Successfully posted: ${successCount} comment(s)`;
+              if (failedCount > 0) {
+                finalBody += `\n- ❌ Failed to post: ${failedCount} comment(s)`;
+              }
+
+              // Add failed comments as summary content so review feedback is not lost.
+              if (failedComments.length > 0) {
+                finalBody += '\n\n---\n\n### ⚠️ Inline comments shown in summary';
+                for (const { comment, error } of failedComments) {
+                  finalBody += '\n\n---\n\n';
+                  finalBody += formatCommentMarkdown(comment, error);
+                }
+              }
+
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body: finalBody
+              });
+            }
+
+            function sleep(ms) {
+              return new Promise(resolve => setTimeout(resolve, ms));
+            }
+
+            // Case-insensitive header lookup. Octokit normalizes response headers to
+            // lowercase, but this defensive check also handles original casing so that
+            // quota logging and retry delay computation never silently miss a header.
+            function getHeader(headers, name) {
+              const v = headers[name] != null ? headers[name] : headers[name.toLowerCase()];
+              return v != null ? String(v).trim() : undefined;
+            }
+
+            // Decide whether an error is worth retrying and, if so, how long to wait.
+            // Implements GitHub's documented rate-limit retry strategy using the
+            // response headers (retry-after, x-ratelimit-remaining, x-ratelimit-reset).
+            // Returns { delayMs, source, detail } when retryable, or null otherwise.
+            // See: https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api
+            function computeRetryDelayMs(error, attempt) {
+              if (!error) return null;
+              const status = error.status;
+              const message = String(error.message || '');
+              const isRateLimit = status === 429 || (status === 403 && /rate limit|abuse|secondary/i.test(message));
+              const isTransient = (status >= 500 && status < 600) || status === 408;
+              if (!isRateLimit && !isTransient) return null;
+
+              const headers = ((error.response || {}).headers) || {};
+              const header = (name) => getHeader(headers, name);
+              const nowSec = Math.floor(Date.now() / 1000);
+
+              // The absolute maximum wait for any single retry. Header-derived waits
+              // (retry-after / x-ratelimit-reset) are GitHub's recommended durations,
+              // but capping them prevents a far-future reset from stalling the CI job
+              // past its timeout. When we cap, the next retry may re-hit the limit.
+              const cap = parseInt(process.env.OCR_RETRY_MAX_DELAY, 10) || 300000;
+              const base = parseInt(process.env.OCR_RETRY_BASE_DELAY, 10) || 60000;
+
+              // { rawMs, source, detail } describing the recommended wait before cap.
+              let info = null;
+
+              if (isRateLimit) {
+                // (1) Honor "retry-after" when present (seconds, or an HTTP-date).
+                const retryAfter = header('retry-after');
+                if (retryAfter) {
+                  const secs = Number(retryAfter);
+                  if (!isNaN(secs) && secs >= 0) {
+                    info = { rawMs: secs * 1000, source: 'retry-after', detail: `${secs}s (from header)` };
+                  } else {
+                    const dateMs = Date.parse(retryAfter);
+                    if (!isNaN(dateMs)) {
+                      info = { rawMs: Math.max(0, dateMs - Date.now()), source: 'retry-after (HTTP-date)', detail: retryAfter };
+                    }
+                  }
+                }
+
+                // (2) Primary limit exhausted (x-ratelimit-remaining=0): wait until reset.
+                if (!info) {
+                  const remaining = header('x-ratelimit-remaining');
+                  const reset = header('x-ratelimit-reset');
+                  if (reset != null && Number(remaining) === 0) {
+                    const rawMs = Math.max(0, Number(reset) - nowSec) * 1000;
+                    info = { rawMs, source: 'x-ratelimit-reset', detail: `remaining=0, reset epoch=${reset} (in ${Math.ceil(rawMs / 1000)}s)` };
+                  }
+                }
+
+                // (3) Secondary limit with no retry hint: docs say wait at least one
+                //     minute, then increase exponentially between retries.
+                if (!info) {
+                  const backoff = Math.min(base * Math.pow(2, attempt), cap);
+                  const jitter = Math.floor(Math.random() * 1000);
+                  info = { rawMs: backoff + jitter, source: 'exponential-backoff', detail: `base=${base}ms*2^${attempt} (cap ${cap}ms) +${jitter}ms jitter` };
+                }
+              } else {
+                // Transient server error (5xx / 408): back off without the 60s floor.
+                // Use a shorter base than the rate-limit path: server hiccups are
+                // typically short-lived, so a 2s initial wait (doubling per retry)
+                // is sufficient and avoids stalling the CI job unnecessarily.
+                const transientBase = 2000;
+                const backoff = Math.min(transientBase * Math.pow(2, attempt), cap);
+                const jitter = Math.floor(Math.random() * 1000);
+                info = { rawMs: backoff + jitter, source: 'transient-backoff', detail: `base=${transientBase}ms*2^${attempt} (cap ${cap}ms) +${jitter}ms jitter (HTTP ${status})` };
+              }
+
+              // Apply the universal cap to header-derived waits too.
+              const delayMs = Math.min(info.rawMs, cap);
+              if (delayMs < info.rawMs) {
+                info.detail += ` [CAPPED to ${cap}ms; GitHub recommended ${Math.ceil(info.rawMs / 1000)}s]`;
+              }
+              return { delayMs, source: info.source, detail: info.detail };
+            }
+
+            // Best-effort logging of remaining rate-limit quota from a successful response.
+            // Returns the parsed x-ratelimit-remaining value (or null) for proactive throttling.
+            function logRateLimitQuota(response, tag) {
+              try {
+                const h = (response && response.headers) || {};
+                const header = (name) => getHeader(h, name);
+                const remaining = header('x-ratelimit-remaining');
+                const limit = header('x-ratelimit-limit');
+                const reset = header('x-ratelimit-reset');
+                if (remaining != null) {
+                  console.log(
+                    `[rate-limit] ${tag}: remaining=${remaining}/${limit != null ? limit : '?'}` +
+                    (reset != null ? `, reset epoch=${reset}` : '')
+                  );
+                }
+                return remaining != null ? Number(remaining) : null;
+              } catch (_) { return null; }
+            }
+
+            function formatComment(comment) {
+              let body = comment.content || '';
+
+              // Add code suggestion if available
+              if (comment.suggestion_code && comment.existing_code) {
+                body += '\n\n**Suggestion:**\n';
+                body += fencedBlock(comment.suggestion_code, 'suggestion');
+              }
+
+              return body;
+            }
+
+            function formatCommentMarkdown(comment, error) {
+              let md = `### 📄 \`${comment.path}\``;
+              if (comment.start_line && comment.end_line) {
+                md += ` (L${comment.start_line}-L${comment.end_line})`;
+              }
+              md += '\n\n';
+              if (error) {
+                md += `⚠️ GitHub could not post this as an inline comment: ${error}\n\n`;
+              }
+              md += comment.content || '';
+
+              if (comment.suggestion_code && comment.existing_code) {
+                md += '\n\n<details><summary>💡 Suggested Change</summary>\n\n';
+                md += '**Before:**\n' + fencedBlock(comment.existing_code) + '\n\n';
+                md += '**After:**\n' + fencedBlock(comment.suggestion_code) + '\n\n';
+                md += '</details>';
+              }
+
+              return md;
+            }
+
+            function buildSummaryBody(totalCount, inlineCount, summaryCount, warnings) {
+              let body = `🔍 **OpenCodeReview** found **${totalCount}** issue(s) in this PR.`;
+              if (totalCount > 0) {
+                body += `\n- ✅ ${inlineCount} posted as inline comment(s)`;
+                body += `\n- 📝 ${summaryCount} posted as summary`;
+              }
+              if (warnings.length > 0) {
+                body += `\n\n⚠️ ${warnings.length} warning(s) occurred during review.`;
+              }
+              return body;
+            }
+
+            function formatSummaryComments(summaryComments) {
+              let body = '';
+              for (const { comment } of summaryComments) {
+                body += '\n\n---\n\n';
+                body += formatCommentMarkdown(comment);
+              }
+              return body;
+            }
+
+            function fencedBlock(content, language = '') {
+              const text = String(content || '');
+              const fence = safeFence(text);
+              let block = fence + language + '\n' + text;
+              if (!text.endsWith('\n')) block += '\n';
+              return block + fence;
+            }
+
+            function safeFence(content) {
+              const matches = String(content || '').match(/`+/g) || [];
+              const maxTicks = matches.reduce((max, ticks) => Math.max(max, ticks.length), 0);
+              return '`'.repeat(Math.max(3, maxTicks + 1));
+            }
