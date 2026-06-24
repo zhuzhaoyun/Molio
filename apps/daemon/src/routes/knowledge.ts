@@ -245,7 +245,7 @@ export function knowledgeRoutes(db: Database.Database, runManager: RunManager): 
     const contentLength = Number(c.req.header('Content-Length') ?? '0');
     const MAX_SIZE = 50 * 1024 * 1024; // 50 MB
     if (contentLength > MAX_SIZE) {
-      return c.json({ error: { code: 'PAYLOAD_TOO_LARGE', message: '图片过大（最大 50MB）' } }, 413);
+      return c.json({ error: { code: 'PAYLOAD_TOO_LARGE', message: 'Image too large (max 50MB)' } }, 413);
     }
 
     try {
@@ -263,7 +263,7 @@ export function knowledgeRoutes(db: Database.Database, runManager: RunManager): 
       // Validate image type
       const ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
       if (!ALLOWED_TYPES.includes(mimeType)) {
-        return c.json({ error: { code: 'BAD_REQUEST', message: '不支持的图片格式（仅 PNG/JPEG/GIF/WebP）' } }, 400);
+        return c.json({ error: { code: 'BAD_REQUEST', message: 'Unsupported image format (PNG/JPEG/GIF/WebP only)' } }, 400);
       }
 
       const ext = mimeType === 'image/jpeg' ? '.jpg'
