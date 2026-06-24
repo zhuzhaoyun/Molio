@@ -852,11 +852,11 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 34px;
+  height: 34px;
   border: none;
   background: transparent;
-  color: var(--text-muted);
+  color: var(--text);
   cursor: pointer;
   border-radius: 6px;
   flex-shrink: 0;
