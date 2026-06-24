@@ -1705,13 +1705,13 @@
 }
 
 .wiki-chat-close {
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   border: none;
   background: transparent;
   border-radius: 6px;
   cursor: pointer;
-  color: var(--text-muted);
+  color: var(--text);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1720,7 +1720,7 @@
 
 .wiki-chat-close:hover {
   background: rgba(0, 0, 0, 0.05);
-  color: var(--text);
+  color: var(--accent);
 }
 
 /* Messages area */

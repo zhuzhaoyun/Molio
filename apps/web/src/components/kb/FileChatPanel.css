@@ -71,22 +71,22 @@
 
 .file-chat-close {
   flex-shrink: 0;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
   border: none;
   background: none;
-  color: var(--text-muted);
+  color: var(--text);
   cursor: pointer;
-  border-radius: 4px;
-  transition: background 0.15s;
+  border-radius: 6px;
+  transition: background 0.15s, color 0.15s;
 }
 
 .file-chat-close:hover {
   background: var(--bg-subtle);
-  color: var(--text);
+  color: var(--accent);
 }
 
 .file-chat-messages {
