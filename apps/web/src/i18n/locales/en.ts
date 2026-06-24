@@ -29,6 +29,8 @@ const en: Record<string, string> = {
   'composer.uploadError': 'Image upload failed',
   'composer.uploadNoVault': 'Please select or create a vault first',
   'composer.uploadDismiss': 'Dismiss',
+  'composer.uploadImage': 'Upload image',
+  'composer.uploadRetryHint': 'Please paste the image again',
 
   // ── AssistantMessage ──
   'assistant.label': 'Molio',

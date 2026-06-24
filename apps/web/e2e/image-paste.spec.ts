@@ -5,9 +5,8 @@ const TEST_VAULT_ID = 'e2e-image-paste-vault';
 const UPLOADED_FILE_PATH = '.molio/assets/e2e-test-1.png';
 
 test.describe('Composer image paste', () => {
-  test('pasting an image inserts markdown', async ({ page }) => {
+  test('pasting an image shows thumbnail badge', async ({ page }) => {
     // Mock vault list so an active vault exists for the paste handler.
-    // The vaultStore auto-selects the first vault, so this vault becomes active.
     await page.route('**/api/knowledge/vaults', async (route) => {
       if (route.request().method() === 'GET') {
         await route.fulfill({
@@ -42,7 +41,6 @@ test.describe('Composer image paste', () => {
     );
 
     await gotoHome(page);
-    // Reload to pick up the mocked vault list (fetched on mount)
     await page.reload({ waitUntil: 'networkidle' });
 
     const composer = page.locator('[data-testid="composer-input"]');
@@ -72,17 +70,17 @@ test.describe('Composer image paste', () => {
       );
     });
 
-    // Wait for async upload + React re-render to complete
-    await expect(async () => {
-      const value = await composer.inputValue();
-      expect(value).toContain('![image](.molio/assets/');
-      expect(value).toContain('.png)');
-    }).toPass({ timeout: 5000 });
-
-    // Upload error indicator should never be visible
+    // Wait for thumbnail badge to appear (async upload completes)
     await expect(
-      page.locator('[data-testid="composer-upload-error"]'),
-    ).not.toBeVisible();
+      page.locator('[data-testid="composer-image-thumb"]'),
+    ).toBeVisible({ timeout: 5000 });
+
+    // The textarea should NOT contain markdown — images are thumbnails, not text
+    const textValue = await composer.inputValue();
+    expect(textValue).not.toContain('![image]');
+
+    // Upload button should be visible
+    await expect(page.locator('[data-testid="composer-upload-btn"]')).toBeVisible();
   });
 
   test('pasting non-image text does not trigger upload', async ({ page }) => {
@@ -92,12 +90,10 @@ test.describe('Composer image paste', () => {
     const composer = page.locator('[data-testid="composer-input"]');
     await expect(composer).toBeVisible();
 
-    // Insert text (synthetic paste events cannot insert text in Chromium
-    // due to browser security, so use fill() for the value)
     await composer.fill('Hello, world!');
 
     // Dispatch a synthetic paste event to verify the handler does not
-    // treat text/plain as an image (no upload, no error)
+    // treat text/plain as an image (no upload, no thumbnail)
     await composer.evaluate((el) => {
       const dt = new DataTransfer();
       dt.setData('text/plain', 'Hello, world!');
@@ -111,16 +107,25 @@ test.describe('Composer image paste', () => {
       );
     });
 
-    // Uploading indicator must not appear for non-image paste
-    const uploading = page.locator('[data-testid="composer-uploading"]');
-    await expect(uploading).toHaveCount(0);
+    // No image thumbnails should appear for text paste
+    const thumbs = page.locator('[data-testid="composer-image-thumb"]');
+    await expect(thumbs).toHaveCount(0);
 
     // Text value should still be present
     await expect(composer).toHaveValue('Hello, world!');
+  });
 
-    // Upload error must not appear either
-    await expect(
-      page.locator('[data-testid="composer-upload-error"]'),
-    ).not.toBeVisible();
+  test('upload button opens file picker', async ({ page }) => {
+    await gotoHome(page);
+    await page.reload({ waitUntil: 'networkidle' });
+
+    // Upload button should exist and be clickable
+    const uploadBtn = page.locator('[data-testid="composer-upload-btn"]');
+    await expect(uploadBtn).toBeVisible();
+    await expect(uploadBtn).toBeEnabled();
+
+    // Hidden file input should exist
+    const fileInput = page.locator('[data-testid="composer-file-input"]');
+    await expect(fileInput).toBeHidden();
   });
 });

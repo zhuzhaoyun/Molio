@@ -29,6 +29,8 @@ const zh: Record<string, string> = {
   'composer.uploadError': '图片上传失败',
   'composer.uploadNoVault': '请先选择或创建知识库',
   'composer.uploadDismiss': '关闭',
+  'composer.uploadImage': '上传图片',
+  'composer.uploadRetryHint': '请重新粘贴图片',
 
   // ── AssistantMessage ──
   'assistant.label': 'Molio',

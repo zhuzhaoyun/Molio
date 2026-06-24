@@ -1,6 +1,6 @@
 import { useRef, useEffect, useCallback, useMemo } from 'react';
 import { ChatComposer } from './ChatComposer';
-import type { FileRef } from './ChatComposer';
+import type { FileRef, PastedImage } from './ChatComposer';
 import { UserMessage } from './UserMessage';
 import { AssistantMessage } from './AssistantMessage';
 import { useI18n } from '../i18n';
@@ -56,14 +56,27 @@ export function HomePage({
     [onSubmitToolResult],
   );
 
-  // Wrap onSend to handle fileRefs → message prefix
+  // Wrap onSend to handle fileRefs + pastedImages → message prefix
   const handleSend = useCallback(
-    (message: string, fileRefs?: FileRef[]) => {
+    (message: string, fileRefs?: FileRef[], pastedImages?: PastedImage[]) => {
+      const parts: string[] = [];
+
+      if (pastedImages && pastedImages.length > 0) {
+        const doneImages = pastedImages.filter((p) => p.state === 'done');
+        parts.push(doneImages.map((p) => `![image](${p.filePath})`).join('\n'));
+      }
+
       if (fileRefs && fileRefs.length > 0) {
-        const prefix = fileRefs
-          .map((r) => `[📄 ${r.filePath.split('/').pop() ?? r.filePath}](${r.filePath})`)
-          .join(' ');
-        const fullMessage = `${prefix}\n\n${message || '请根据以上文件帮我分析。'}`;
+        parts.push(
+          fileRefs
+            .map((r) => `[📄 ${r.filePath.split('/').pop() ?? r.filePath}](${r.filePath})`)
+            .join(' '),
+        );
+      }
+
+      if (parts.length > 0) {
+        const prefix = parts.join('\n\n');
+        const fullMessage = `${prefix}\n\n${message || '请根据以上内容帮我分析。'}`;
         onSend(fullMessage);
       } else {
         onSend(message);

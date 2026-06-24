@@ -13,9 +13,17 @@ export interface FileRef {
   filePath: string;
 }
 
+export interface PastedImage {
+  id: string;
+  filePath: string;
+  url: string;
+  state: 'uploading' | 'done' | 'error';
+  error?: string;
+}
+
 interface Props {
   isRunning: boolean;
-  onSend: (message: string, fileRefs: FileRef[]) => void;
+  onSend: (message: string, fileRefs: FileRef[], pastedImages: PastedImage[]) => void;
   onCancel: () => void;
   disabled?: boolean;
   disabledPlaceholder?: string;
@@ -38,16 +46,9 @@ export function ChatComposer({
   const navigate = useNavigate();
   const [text, setText] = useState('');
   const [fileRefs, setFileRefs] = useState<FileRef[]>([]);
-  const [uploadingImage, setUploadingImage] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-
-  // Auto-clear upload error after 4 seconds
-  useEffect(() => {
-    if (!uploadError) return;
-    const timer = setTimeout(() => setUploadError(null), 4000);
-    return () => clearTimeout(timer);
-  }, [uploadError]);
+  const [pastedImages, setPastedImages] = useState<PastedImage[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Trigger overlay state
   const [trigger, setTrigger] = useState<{ type: 'file' | 'command'; startIdx: number } | null>(null);
@@ -190,10 +191,12 @@ export function ChatComposer({
 
   const handleSend = () => {
     const trimmed = text.trim();
-    if ((trimmed || fileRefs.length > 0) && !isRunning) {
-      onSend(trimmed, fileRefs);
+    const hasContent = trimmed || fileRefs.length > 0 || pastedImages.length > 0;
+    if (hasContent && !isRunning) {
+      onSend(trimmed, fileRefs, pastedImages);
       setText('');
       setFileRefs([]);
+      setPastedImages([]);
       setTrigger(null);
       if (textareaRef.current) textareaRef.current.style.height = 'auto';
     }
@@ -209,6 +212,35 @@ export function ChatComposer({
     }
   };
 
+  // Upload a single image file (from paste or file picker)
+  const uploadImage = useCallback(async (file: File) => {
+    const vaultId = vaultStore.getActiveVaultId();
+    if (!vaultId) {
+      return;
+    }
+
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const tempUrl = URL.createObjectURL(file);
+
+    // Add with uploading state (show local preview immediately)
+    setPastedImages((prev) => [...prev, { id, filePath: '', url: tempUrl, state: 'uploading' }]);
+
+    try {
+      const { filePath, url } = await api.uploadAsset(vaultId, file);
+      // Update to done state with server URL
+      setPastedImages((prev) =>
+        prev.map((img) => (img.id === id ? { ...img, filePath, url, state: 'done' as const } : img)),
+      );
+      // Revoke local blob URL after server URL is set
+      URL.revokeObjectURL(tempUrl);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : t('composer.uploadError');
+      setPastedImages((prev) =>
+        prev.map((img) => (img.id === id ? { ...img, state: 'error' as const, error: message } : img)),
+      );
+    }
+  }, [t]);
+
   // Handle image paste (Ctrl+V / Cmd+V)
   const handlePaste = useCallback(
     async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -223,45 +255,67 @@ export function ChatComposer({
         const file = item.getAsFile();
         if (!file) continue;
 
-        const vaultId = vaultStore.getActiveVaultId();
-        if (!vaultId) {
-          setUploadError(t('composer.uploadNoVault'));
-          return;
-        }
-
-        setUploadingImage(true);
-        setUploadError(null);
-        try {
-          const { filePath } = await api.uploadAsset(vaultId, file);
-          const el = textareaRef.current;
-          if (el) {
-            const start = el.selectionStart;
-            const end = el.selectionEnd;
-            const mdImage = `![image](${filePath})`;
-            setText((prev) => prev.slice(0, start) + mdImage + prev.slice(end));
-            // Restore cursor position after React re-render
-            requestAnimationFrame(() => {
-              el.focus();
-              const newPos = start + mdImage.length;
-              el.setSelectionRange(newPos, newPos);
-              // Trigger height recalculation
-              el.dispatchEvent(new Event('input', { bubbles: true }));
-            });
-          }
-        } catch (err) {
-          const message = err instanceof Error ? err.message : t('composer.uploadError');
-          setUploadError(message);
-        } finally {
-          setUploadingImage(false);
-        }
-        // Only handle first image in paste
-        return;
+        uploadImage(file);
       }
     },
-    [],
+    [uploadImage],
   );
 
-  const canSend = (text.trim().length > 0 || fileRefs.length > 0) && !isRunning && !disabled;
+  // Handle image selection from file input
+  const handleFileInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      if (!files) return;
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (file && file.type.startsWith('image/')) {
+          uploadImage(file);
+        }
+      }
+      // Reset input so same file can be selected again
+      e.target.value = '';
+    },
+    [uploadImage],
+  );
+
+  const openFilePicker = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  // Remove a pasted image
+  const removePastedImage = useCallback((id: string) => {
+    setPastedImages((prev) => {
+      const img = prev.find((p) => p.id === id);
+      if (img && img.url.startsWith('blob:')) {
+        URL.revokeObjectURL(img.url);
+      }
+      return prev.filter((p) => p.id !== id);
+    });
+  }, []);
+
+  // Retry failed upload
+  const retryImage = useCallback(
+    async (id: string) => {
+      setPastedImages((prev) =>
+        prev.map((img) => (img.id === id ? { ...img, state: 'uploading' as const, error: undefined } : img)),
+      );
+      // We can't re-upload without the original File object, so just remove and let user re-paste
+      // For now, mark as error with message
+      setPastedImages((prev) =>
+        prev.map((img) =>
+          img.id === id
+            ? { ...img, state: 'error' as const, error: t('composer.uploadRetryHint') }
+            : img,
+        ),
+      );
+    },
+    [t],
+  );
+
+  const canSend =
+    (text.trim().length > 0 || fileRefs.length > 0 || pastedImages.some((p) => p.state === 'done')) &&
+    !isRunning &&
+    !disabled;
   const placeholder = disabled
     ? (disabledPlaceholder ?? t('composer.noAgent'))
     : isRunning
@@ -279,11 +333,11 @@ export function ChatComposer({
   return (
     <div className="composer">
       <div className="composer-shell">
-        {/* FileRef badges */}
-        {fileRefs.length > 0 && (
-          <div className="composer-file-refs" data-testid="composer-file-refs">
+        {/* FileRef badges + image thumbnails */}
+        {(fileRefs.length > 0 || pastedImages.length > 0) && (
+          <div className="composer-attachments" data-testid="composer-attachments">
             {fileRefs.map((ref, i) => (
-              <span key={`${ref.filePath}-${i}`} className="composer-file-badge" data-testid="composer-file-badge">
+              <span key={`file-${ref.filePath}-${i}`} className="composer-file-badge" data-testid="composer-file-badge">
                 <span className="composer-file-badge-name" title={ref.filePath}>
                   {'📄 '}
                   {ref.filePath.split('/').pop() ?? ref.filePath}
@@ -299,30 +353,55 @@ export function ChatComposer({
                 </button>
               </span>
             ))}
+            {pastedImages.map((img) => (
+              <div
+                key={`img-${img.id}`}
+                className={`composer-image-thumb${img.state === 'error' ? ' is-error' : ''}`}
+                data-testid="composer-image-thumb"
+              >
+                {img.state === 'uploading' && (
+                  <div className="composer-image-thumb-loading">
+                    <div className="composer-image-thumb-spinner" />
+                  </div>
+                )}
+                {img.state === 'error' && (
+                  <button
+                    type="button"
+                    className="composer-image-thumb-retry"
+                    onClick={() => retryImage(img.id)}
+                    aria-label="重新上传"
+                    title={img.error ?? t('composer.uploadError')}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="23 4 23 10 17 10" />
+                      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                    </svg>
+                  </button>
+                )}
+                <img
+                  src={img.url}
+                  alt={img.filePath || 'pasted image'}
+                  className="composer-image-thumb-img"
+                  onClick={() => {
+                    if (img.state === 'done') window.open(img.url, '_blank');
+                  }}
+                  style={{ cursor: img.state === 'done' ? 'pointer' : 'default' }}
+                />
+                <button
+                  type="button"
+                  className="composer-image-thumb-remove"
+                  onClick={() => removePastedImage(img.id)}
+                  aria-label="移除图片"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
           </div>
         )}
 
         {/* Uploading indicator */}
-        {uploadingImage && (
-          <div className="composer-uploading" data-testid="composer-uploading">
-            {t('composer.uploading')}
-          </div>
-        )}
-
         {/* Upload error */}
-        {uploadError && (
-          <div className="composer-upload-error" data-testid="composer-upload-error">
-            {uploadError}
-            <button
-              type="button"
-              className="composer-upload-error-dismiss"
-              onClick={() => setUploadError(null)}
-              aria-label={t('composer.uploadDismiss')}
-            >
-              ×
-            </button>
-          </div>
-        )}
 
         {/* Textarea with trigger overlays */}
         <div className="composer-trigger-zone">
@@ -377,23 +456,48 @@ export function ChatComposer({
               {t('composer.stop')}
             </button>
           ) : (
-            <button
-              type="button"
-              data-testid="composer-send"
-              className="composer-send"
-              disabled={!canSend}
-              onClick={handleSend}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="22" y1="2" x2="11" y2="13" />
-                <polygon points="22 2 15 22 11 13 2 9 22 2" />
-              </svg>
-              {t('composer.send')}
-            </button>
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/gif,image/webp"
+                multiple
+                className="composer-file-input"
+                data-testid="composer-file-input"
+                onChange={handleFileInputChange}
+              />
+              <button
+                type="button"
+                className="composer-upload-btn"
+                data-testid="composer-upload-btn"
+                onClick={openFilePicker}
+                disabled={disabled}
+                title={t('composer.uploadImage')}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                  <circle cx="8.5" cy="8.5" r="1.5" />
+                  <polyline points="21 15 16 10 5 21" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                data-testid="composer-send"
+                className="composer-send"
+                disabled={!canSend}
+                onClick={handleSend}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="22" y1="2" x2="11" y2="13" />
+                  <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                </svg>
+                {t('composer.send')}
+              </button>
+            </>
           )}
         </div>
       </div>
-      <div className="composer-hint">@ 引用文件  / 命令  Enter 发送  Shift+Enter 换行</div>
+      <div className="composer-hint">@ 引用文件  / 命令  粘贴图片  Enter 发送  Shift+Enter 换行</div>
     </div>
   );
 }

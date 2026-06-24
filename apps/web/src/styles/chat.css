@@ -744,6 +744,171 @@
   color: var(--text);
 }
 
+/* ─── Image thumbnails in composer ─── */
+.composer-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 2px 4px 6px;
+  align-items: flex-start;
+}
+
+.composer-image-thumb {
+  position: relative;
+  height: 56px;
+  border-radius: 8px;
+  overflow: hidden;
+  flex-shrink: 0;
+  border: 1px solid var(--border-soft);
+  background: var(--bg-subtle);
+}
+
+.composer-image-thumb.is-error {
+  border-color: var(--red-border);
+  background: var(--red-bg);
+}
+
+.composer-image-thumb-img {
+  height: 100%;
+  width: auto;
+  min-width: 42px;
+  display: block;
+  object-fit: cover;
+}
+
+.composer-image-thumb-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  cursor: pointer;
+  border-radius: 50%;
+  font-size: 11px;
+  line-height: 1;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.composer-image-thumb:hover .composer-image-thumb-remove {
+  opacity: 1;
+}
+
+.composer-image-thumb-remove:hover {
+  background: var(--red);
+}
+
+/* Loading overlay */
+.composer-image-thumb-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.7);
+  z-index: 1;
+}
+
+.composer-image-thumb-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: composer-thumb-spin 0.6s linear infinite;
+}
+
+@keyframes composer-thumb-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Retry button on error */
+.composer-image-thumb-retry {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.6);
+  border: none;
+  cursor: pointer;
+  z-index: 1;
+  color: var(--red);
+}
+
+.composer-image-thumb-retry:hover {
+  background: rgba(255, 255, 255, 0.8);
+}
+
+/* Upload button */
+.composer-upload-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  transition: color 120ms ease, background 120ms ease;
+}
+
+.composer-upload-btn:hover {
+  color: var(--accent);
+  background: var(--accent-tint);
+}
+
+.composer-upload-btn:disabled {
+  color: var(--text-faint);
+  cursor: not-allowed;
+}
+
+/* Hidden file input */
+.composer-file-input {
+  display: none;
+}
+
+/* ─── Image rendering in chat messages ─── */
+.user-image-link {
+  display: block;
+  max-width: 320px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--border-soft);
+  margin: 6px 0;
+  text-decoration: none;
+  transition: box-shadow 150ms ease;
+}
+
+.user-image-link:hover {
+  box-shadow: var(--shadow-md);
+}
+
+.user-image {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.user-image-view {
+  display: block;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg-subtle);
+  text-align: right;
+}
+
 /* ─── Composer trigger overlay positioning ─── */
 .composer-trigger-zone {
   position: relative;
