@@ -2,7 +2,7 @@
 
 **Date**: 2026-06-24  
 **Branch**: `feat/ui-interaction-optimization` (Phase 3 remaining)  
-**Status**: Design ✅
+**Status**: ✅ Complete
 
 ## Overview
 
@@ -25,11 +25,12 @@ Molio 作为 AI 写作工具，截图问 AI（"帮我根据这个表格写报告
 
 | 决策 | 选择 | 理由 |
 |------|------|------|
-| 粘贴后展示 | markdown 文本插入 textarea（上传中显示 loading 指示） | 最简单，与 B 方案一致，onSend 零改动。上传成功在光标处插入 `![image](path)`，用户可编辑删除 |
-| 上传时机 | 粘贴后立即上传 | 发送无需等待；错误提前暴露 |
+| 粘贴后展示 | 缩略图徽章（56px 高）在 textarea 上方 | 与 FileRef 徽章视觉一致，支持多张预览、点击查看原图、删除。上传中显示本地 blob 预览 + spinner，失败显示红色边框 + 重试 |
+| 上传时机 | 粘贴/选择后立即上传 | 发送无需等待；错误提前暴露 |
 | 存储路径 | `{vault}/.molio/assets/` | 与用户文件隔离，放在 `.molio/` 隐藏目录下 |
 | 文件命名 | `YYYY-MM-DD-HHmmss-{序号}.png` | 可读、无碰撞（同秒序号递增） |
-| 消息传图 | markdown `![image](path)` 拼入 message | 零接口改动；CLI 自动识别文本中的图片路径 |
+| 消息传图 | `onSend` 扩展为 `(message, fileRefs, pastedImages)` | HomePage 将 `pastedImages` 转换为 markdown `![image](path)` 拼入消息，前端聊天消息渲染实际图片（非文本） |
+| 上传入口 | Ctrl+V 粘贴 + 🖼 按钮选择文件 | 双入口覆盖快捷键用户和鼠标用户，按钮位于输入框左下角（spacer 左侧），与发送按钮对称 |
 
 ## Key Insight: Claude Code CLI Image Recognition
 
@@ -40,12 +41,13 @@ Claude Code CLI 会自动扫描用户输入中出现的图片文件路径（`.pn
 ## Architecture
 
 ```
-User Ctrl+V
+User Ctrl+V / 点击🖼按钮
     │
     ▼
-ChatComposer.onPaste(event)
+ChatComposer (onPaste / file input)
     │
-    ├── 从 clipboardData.items 检测 image/png 或 image/jpeg
+    ├── 从 clipboardData.items 检测 image/* 类型
+    ├── 上传中: 添加 PastedImage{state:'uploading'} → 显示本地 blob 缩略图 + spinner
     │
     ▼
 api.uploadAsset(vaultId, file)
@@ -55,57 +57,80 @@ api.uploadAsset(vaultId, file)
     ▼
 Daemon knowledge route
     │
-    ├── 读取 uploaded file buffer
-    ├── 生成文件名: {timestamp}-{seq}.{ext}
-    ├── 写入 {vaultPath}/.molio/assets/{filename}
-    ├── 确保 .molio/ 和 .molio/assets/ 目录存在
+    ├── 校验 MIME 类型 (image/png,jpeg,gif,webp) + 大小（50MB）
+    ├── 写入 {vaultPath}/.molio/assets/{timestamp}-{seq}.{ext}
     └── 返回 { filePath, url }
     │
     ▼
 ChatComposer
     │
-    ├── 上传中: textarea 上方显示 "📎 上传中..." 文字提示
-    ├── 成功: 在 textarea 光标处插入 `![image](.molio/assets/{filename})`，提示消失
-    └── 失败: toast "图片上传失败"，提示消失，不插入内容
+    ├── 成功: PastedImage → state:'done', 替换 blob URL 为 server URL
+    ├── 失败: PastedImage → state:'error', 红色边框 + 重试图标
+    └── 点击缩略图 → 新标签打开原图
     │
     ▼
-用户点发送 → onSend(message)
+用户点发送 → onSend(message, fileRefs, pastedImages)
     │
     ▼
-POST /api/runs { message: "...\n![image](.molio/assets/xxx.png)" }
+HomePage.handleSend: pastedImages → `![image](path)` 拼入消息文本
+    │
+    ▼
+POST /api/runs { message: "帮我看看\n\n![image](.molio/assets/xxx.png)" }
     │
     ▼
 RunManager spawn CLI → CLI 读图片 → 编码 → API
 ```
 
-## Files to Create / Modify
+### 聊天消息渲染
 
-### New Files
+```
+UserMessage 收到 content: "帮我看看\n\n![image](.molio/assets/xxx.png)"
+    │
+    ├── 正则解析 ![image](path) → 提取路径
+    ├── api.rawFileUrl(vaultId, path) → 构建完整 URL
+    └── 渲染: 文字 + <img> 缩略图 (max-width 320px) + "查看原图 ↗"
+```
+
+## Implementation
+
+### Created Files
 
 | File | Purpose |
 |------|---------|
-| — | 无新增文件（改动收敛到现有模块） |
+| `apps/daemon/test/routes/asset-upload.test.ts` | Daemon 上传端点单元测试（5 项） |
+| `apps/web/e2e/image-paste.spec.ts` | 图片粘贴 E2E 测试（3 项） |
 
 ### Modified Files
 
-#### Daemon
-
 | File | Change |
 |------|--------|
-| `apps/daemon/src/routes/knowledge.ts` | 新增 `POST /api/knowledge/vaults/:id/assets/upload` 路由：接收 multipart/form-data 单文件，校验类型（image/png, image/jpeg, image/gif, image/webp），限制大小（默认 50MB），写入 `{vaultPath}/.molio/assets/{filename}`，返回 `{ filePath, url }` |
+| **Daemon** | |
+| `apps/daemon/src/routes/knowledge.ts` | 新增 `POST /api/knowledge/vaults/:id/assets/upload` 路由 |
+| **Web API** | |
+| `apps/web/src/api/client.ts` | 新增 `uploadAsset(vaultId, file)` 方法 |
+| **Web UI** | |
+| `apps/web/src/components/ChatComposer.tsx` | `PastedImage` 接口 + `pastedImages` 状态 + `uploadImage` + `onPaste` + 文件选择 input + 上传按钮 + 缩略图徽章渲染 + 扩展 `onSend` 签名 |
+| `apps/web/src/components/HomePage.tsx` | `handleSend` 将 `pastedImages` 转换为 markdown 前缀 |
+| `apps/web/src/components/UserMessage.tsx` | 正则解析 `![image](path)`，渲染为 `<img>` + "查看原图" |
+| `apps/web/src/styles/chat.css` | 缩略图徽章、上传按钮、加载动画、消息内图片样式 |
+| `apps/web/src/i18n/locales/zh.ts` | 新增 `composer.uploadImage`, `composer.uploadRetryHint` |
+| `apps/web/src/i18n/locales/en.ts` | 新增 `composer.uploadImage`, `composer.uploadRetryHint` |
 
-#### Web API Client
+### Commits (image paste feature)
 
-| File | Change |
-|------|--------|
-| `apps/web/src/api/client.ts` | 新增 `uploadAsset(vaultId: string, file: File): Promise<{ filePath: string; url: string }>` — `POST /api/knowledge/vaults/:id/assets/upload`，FormData 包装 |
-
-#### Web UI
-
-| File | Change |
-|------|--------|
-| `apps/web/src/components/ChatComposer.tsx` | 新增 `onPaste` handler：检测 clipboard items 中 image 类型 → 调用 `api.uploadAsset` → 在光标处插入 `![image](path)`。上传中在 textarea 上方显示 "📎 上传中..." 文字提示。失败 toast + 允许重试。onSend 签名不变。 |
-| `apps/web/src/components/ChatComposer.css` | "上传中..." 提示样式 |
+| Commit | Description |
+|--------|-------------|
+| `034e6be` | docs(spec): image paste design spec |
+| `d37e58b` | docs(plan): image paste implementation plan |
+| `5a7f349` | feat(daemon): add asset upload endpoint |
+| `ac0bf30` | feat(web): add api.uploadAsset |
+| `e90e654` | feat(web): add image paste to ChatComposer |
+| `e0c24b1` | fix(web): i18n + CSS tokens |
+| `96be82c` | test(web): add E2E tests |
+| `4fa27b3` | fix(test): retry-based assertion |
+| `edb3abf` | fix(daemon): English error messages |
+| `e0f5e1f` | feat(web): thumbnails + upload button + inline image rendering |
+| `8896939`~`9e6e305` | fix(web): upload button position, style, icon iterations |
 
 ## Data Flow
 

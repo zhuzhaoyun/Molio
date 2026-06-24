@@ -10,7 +10,8 @@
 |-------|---------|--------|---------|
 | 1 | File Reference Protocol | ✅ Done | `948e445`..`dc4c376` |
 | 2 | KB Inline Q&A Panel | ✅ Done | `445f01a`..`a762efe` |
-| 3 | Home Page Input Enhancement | ✅ Done | `d0b60d0`..`7b49772` |
+| 3 | Home Page Input Enhancement | ✅ Done | `d0b60d0`..`9e6e305` |
+| — | Image Paste (Phase 3 continued) | ✅ Done | `5a7f349`..`9e6e305` |
 
 ### Phase 2 Implementation Notes
 
@@ -20,12 +21,29 @@
 
 ### Phase 3 Implementation Notes
 
-- **@ File Search**: FilePicker popup triggered by typing `@` in ChatComposer. Flattens vault file tree, sorts by `modifiedAt` desc, shows 8 most recent when no filter, filters by name/path when typing. Keyboard navigation (Arrow/Enter/Escape). File selected → badge appears in composer.
-- **/ Slash Commands**: CommandPalette popup triggered by typing `/`. 6 built-in commands: new-doc, browse-kb, polish, outline, search, new-chat. Filter by id/label/description. Execute via Enter or click.
-- **Composer Upgrade**: `FileRef` badges rendered above textarea with remove button. `onSend` signature updated to include `fileRefs: FileRef[]`. Trigger text auto-removed on selection. Hint updated to `@ 引用文件  / 命令  Enter 发送  Shift+Enter 换行`.
-- **Landing Page**: Single "📂 浏览知识库" quick action button below the hero section. (Recent files section and "新建文档" button were removed as redundant — `@` file search in composer already provides quick file access, and both buttons navigated to the same `/knowledge` route.)
-- **FileOperationCard + DiffView**: When AI tools write files, operation cards appear in chat with [打开文件] [查看本次修改] [💬 讨论这个文件] buttons. Inline diff with add/del/ctx lines, dark mode support.
-- **Deferred**: Drag & drop from KB file tree, image paste (needs daemon asset upload endpoint), selected-text "就此提问" float button in MdRenderer, resizable panel border for FileChatPanel.
+- **@ File Search**: FilePicker popup triggered by typing `@` in ChatComposer. Built-in search input with auto-focus, filters vault file tree by name/path in real time. Shows relative timestamps (刚刚 / N分钟前 / N小时前 / N天前). Keyboard navigation (Arrow/Enter/Escape). File selected → badge appears in composer, `@` text auto-cleaned.
+- **/ Slash Commands**: CommandPalette popup triggered by typing `/`. 5 built-in commands: browse-kb, polish, outline, search, new-chat. Filter by id/label/description. Two interaction modes: **Enter** = execute immediately (navigate / callback); **Tab** = complete template text into textarea for further editing (polish, outline). Commands with `completeText` show "Tab 补全" badge and footer hint. `/new-doc` removed as redundant with browse-kb.
+- **Composer Upgrade**: `FileRef` badges rendered above textarea with remove button. `onSend` signature updated to include `fileRefs: FileRef[]` and later `pastedImages: PastedImage[]`. Trigger text auto-removed on selection AND on Escape close. Hint updated to `@ 引用文件  / 命令  粘贴图片  Enter 发送  Shift+Enter 换行`.
+- **Landing Page**: Single "📂 浏览知识库" quick action button below the hero section. (Recent files section and "新建文档" button removed as redundant — `@` file search in composer already provides quick file access, and both navigated to the same `/knowledge` route.)
+- **FileOperationCard + DiffView**: When AI tools write files, operation cards appear in chat with [打开文件] [查看本次修改] [💬 讨论这个文件] buttons. Inline diff with add/del/ctx lines, supports `[data-theme="dark"]` and `prefers-color-scheme: dark`. Write tools filtered from tool-cards to prevent duplicate rendering.
+- **E2E Tests**: 3 spec files (composer-file-picker, composer-slash-commands, landing-page), 14 test cases total.
+- **Post-implementation fixes**: DiffView dark theme CSS syntax fix (split `[data-theme]` and `@media` blocks), `computeDiff` empty string guard, unused `shellRef` removed, stale JSDoc cleaned.
+- **Deferred**: Drag & drop from KB file tree (cut — `@` search provides same value with better UX).<br/>
+  ~~selected-text "就此提问" float button~~ → ✅ Done (`3030ed5`)<br/>
+  ~~resizable panel border for FileChatPanel~~ → ✅ Done (`3030ed5`)<br/>
+  ~~image paste~~ → ✅ Done (see below)
+
+### Image Paste (Phase 3 continued)
+
+- **Daemon Asset Upload**: `POST /api/knowledge/vaults/:id/assets/upload` — multipart form-data, MIME validation (PNG/JPEG/GIF/WebP), 50MB limit, writes to `{vault}/.molio/assets/YYYY-MM-DD-HHmmss-{seq}.{ext}`, returns `{ filePath, url }`.
+- **Thumbnail Badges**: Pasted/selected images show as 56px thumbnail badges above textarea, with loading spinner, error state (red border + retry), and click-to-view-original. Replaces original markdown-text-insertion design.
+- **Upload Button**: 🖼 icon-only button (26px) in composer-row left side, triggers hidden `<input type="file" accept="image/*" multiple>`. Tooltip "上传图片".
+- **Chat Message Rendering**: `UserMessage` parses `![image](path)` with regex, renders actual `<img>` (max-width 320px) with "查看原图 ↗" link. Raw file URL served via existing `GET /api/knowledge/vaults/:id/raw/*`.
+- **onSend Extension**: Signature changed to `(message: string, fileRefs: FileRef[], pastedImages: PastedImage[])`. HomePage converts `pastedImages` to `![image](path)` markdown prefix in message — backend still receives plain text, CLI auto-attaches images.
+- **i18n**: 6 composer keys added (zh.ts + en.ts): `uploading`, `uploadError`, `uploadNoVault`, `uploadDismiss`, `uploadImage`, `uploadRetryHint`.
+- **E2E Tests**: 3 test cases — paste image shows thumbnail, text paste no upload, upload button exists.
+- **Unit Tests**: 5 daemon test cases — vault not found, bad MIME, success (file bytes verified), oversized, no file field.
+- **Design spec**: [2026-06-24-image-paste-design.md](2026-06-24-image-paste-design.md)
 
 ---
 
