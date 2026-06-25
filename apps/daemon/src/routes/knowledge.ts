@@ -284,7 +284,7 @@ export function knowledgeRoutes(db: Database.Database, runManager: RunManager): 
       const ts = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
 
       // Read file bytes
-      const bytes = await (file as any).arrayBuffer();
+      const bytes = await fileObj.arrayBuffer();
       const buf = Buffer.from(bytes);
 
       // Ensure .molio/assets/ directory exists. recursive:true is idempotent
