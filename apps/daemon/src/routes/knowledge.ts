@@ -3,6 +3,7 @@
  */
 
 import { Hono } from 'hono';
+import { stream } from 'hono/streaming';
 import { createReadStream, existsSync } from 'node:fs';
 import path from 'node:path';
 import type Database from 'better-sqlite3';
@@ -29,10 +30,16 @@ import {
   renamePath,
   ensureVaultDir,
 } from '../core/knowledge.js';
+import { annotateTreeStatus } from '../core/wiki-status.js';
+import { VAULT_TREE_CHANGED_EVENT, type VaultWatcher } from '../core/vault-watcher.js';
 import type { RunManager } from '../core/RunManager.js';
 import { installBuiltinSkills } from '../core/skill-installer.js';
 
-export function knowledgeRoutes(db: Database.Database, runManager: RunManager): Hono {
+export function knowledgeRoutes(
+  db: Database.Database,
+  runManager: RunManager,
+  vaultWatcher: VaultWatcher,
+): Hono {
   const app = new Hono();
 
   // ─── Vaults ───
@@ -58,6 +65,7 @@ export function knowledgeRoutes(db: Database.Database, runManager: RunManager): 
       const vault = createVault(db, body.name, body.path, body.description);
       installBuiltinSkills(body.path);
       addKbHistory(db, vault.id, 'edit', `Vault "${vault.name}" created`);
+      void vaultWatcher.watch(vault.id, vault.path);
       return c.json({ ...vault, fileCount: 0 }, 201);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to create vault';
@@ -72,13 +80,14 @@ export function knowledgeRoutes(db: Database.Database, runManager: RunManager): 
       return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
     }
     deleteVault(db, c.req.param('id'));
+    void vaultWatcher.unwatch(c.req.param('id'));
     return c.body(null, 204);
   });
 
   // ─── File tree ───
 
   // GET /api/knowledge/vaults/:id/tree — scan vault directory tree
-  app.get('/vaults/:id/tree', (c) => {
+  app.get('/vaults/:id/tree', async (c) => {
     const vault = getVault(db, c.req.param('id'));
     if (!vault) {
       return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
@@ -86,6 +95,8 @@ export function knowledgeRoutes(db: Database.Database, runManager: RunManager): 
 
     try {
       const tree = scanTree(vault.path);
+      // Annotate with ingest status (only if the vault has a .git repo).
+      await annotateTreeStatus(vault.path, tree);
       return c.json({ tree });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to scan vault';
@@ -312,6 +323,31 @@ export function knowledgeRoutes(db: Database.Database, runManager: RunManager): 
     });
   });
 
+  // ─── Vault tree change events (SSE) ───
+
+  // GET /api/knowledge/vaults/:id/events — live tree-change notifications
+  // Pushed by VaultWatcher (chokidar) so the UI refreshes when files land
+  // externally (Chrome extension clippings, weixin media, external edits)
+  // without relying on window focus.
+  app.get('/vaults/:id/events', (c) => {
+    const vaultId = c.req.param('id');
+    const vault = getVault(db, vaultId);
+    if (!vault) {
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
+    }
+
+    c.header('Content-Type', 'text/event-stream');
+    c.header('Cache-Control', 'no-cache');
+    c.header('Connection', 'keep-alive');
+
+    const sseStream = createVaultSSEStream(vaultWatcher, vaultId);
+
+    return stream(c, async (s) => {
+      c.req.raw.signal.addEventListener('abort', sseStream.cleanup);
+      await s.pipe(sseStream.stream);
+    });
+  });
+
   return app;
 }
 
@@ -322,6 +358,69 @@ function countFilesSafe(vaultPath: string): number {
   } catch {
     return 0;
   }
+}
+
+/**
+ * Build a long-lived SSE stream that emits `tree-changed` frames when the
+ * VaultWatcher reports changes for the given vault. Mirrors the pattern in
+ * sse.ts: subscriptions + keepalive live inside the ReadableStream, and
+ * `cancel`/`cleanup` tear them down on client disconnect.
+ */
+function createVaultSSEStream(
+  vaultWatcher: VaultWatcher,
+  vaultId: string,
+): { stream: ReadableStream<Uint8Array>; cleanup: () => void } {
+  const encoder = new TextEncoder();
+  let ping: ReturnType<typeof setInterval> | null = null;
+  let listener: ((changedId: string) => void) | null = null;
+
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      listener = (changedId: string) => {
+        if (changedId !== vaultId) return;
+        const frame = `data: ${JSON.stringify({ type: 'tree-changed' })}\n\n`;
+        try {
+          controller.enqueue(encoder.encode(frame));
+        } catch {
+          /* stream closed — cleanup will handle */
+        }
+      };
+      vaultWatcher.on(VAULT_TREE_CHANGED_EVENT, listener);
+
+      ping = setInterval(() => {
+        try {
+          controller.enqueue(encoder.encode(':ping\n\n'));
+        } catch {
+          /* stream closed */
+        }
+      }, 15_000);
+      ping.unref?.();
+    },
+    cancel() {
+      if (ping) {
+        clearInterval(ping);
+        ping = null;
+      }
+      if (listener) {
+        vaultWatcher.off(VAULT_TREE_CHANGED_EVENT, listener);
+        listener = null;
+      }
+    },
+  });
+
+  return {
+    stream,
+    cleanup: () => {
+      if (ping) {
+        clearInterval(ping);
+        ping = null;
+      }
+      if (listener) {
+        vaultWatcher.off(VAULT_TREE_CHANGED_EVENT, listener);
+        listener = null;
+      }
+    },
+  };
 }
 
 const RAW_MIME: Record<string, string> = {

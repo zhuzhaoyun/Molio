@@ -4,7 +4,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import type { TreeNode } from '@molio/contracts';
+import type { TreeNode, IngestStatus } from '@molio/contracts';
 
 interface KbFileTreeProps {
   nodes: TreeNode[];
@@ -127,14 +127,19 @@ function TreeNodeItem({
           ) : (
             <span>{node.name}</span>
           )}
-          {showAddButton && (
-            <button
-              type="button"
-              className="wiki-tree-op"
-              title="加入 Wiki"
-              onClick={handleAdd}
-            >+</button>
-          )}
+          {(!isInsideWiki && node.ingestStatus) || showAddButton ? (
+            <div className="kb-tree-trailing">
+              {!isInsideWiki && <IngestBadge status={node.ingestStatus} />}
+              {showAddButton && (
+                <button
+                  type="button"
+                  className="wiki-tree-op"
+                  title="加入 Wiki"
+                  onClick={handleAdd}
+                >+</button>
+              )}
+            </div>
+          ) : null}
         </div>
         <div className={`kb-tree-children ${expanded ? '' : 'collapsed'}`}>
           {node.children?.map((child) => (
@@ -188,15 +193,41 @@ function TreeNodeItem({
       ) : (
         <span className="kb-tree-name">{node.name}</span>
       )}
-      {showAddButton && (
-        <button
-          type="button"
-          className="wiki-tree-op"
-          title="加入 Wiki"
-          onClick={handleAdd}
-        >+</button>
-      )}
+      {(!isInsideWiki && node.ingestStatus) || showAddButton ? (
+        <div className="kb-tree-trailing">
+          {!isInsideWiki && <IngestBadge status={node.ingestStatus} />}
+          {showAddButton && (
+            <button
+              type="button"
+              className="wiki-tree-op"
+              title="加入 Wiki"
+              onClick={handleAdd}
+            >+</button>
+          )}
+        </div>
+      ) : null}
     </div>
+  );
+}
+
+// ─── Ingest status badge ───
+
+const INGEST_BADGE: Record<IngestStatus, { cls: string; title: string }> = {
+  'pending': { cls: 'kb-ingest-badge is-pending', title: '待入库' },
+  'tracked-clean': { cls: 'kb-ingest-badge is-clean', title: '已入库' },
+  'tracked-modified': { cls: 'kb-ingest-badge is-modified', title: '已入库·源已更新，建议重新 ingest' },
+};
+
+function IngestBadge({ status }: { status?: IngestStatus }) {
+  if (!status) return null;
+  const m = INGEST_BADGE[status];
+  return (
+    <span
+      className={m.cls}
+      title={m.title}
+      data-testid={`ingest-badge-${status}`}
+      aria-label={m.title}
+    />
   );
 }
 

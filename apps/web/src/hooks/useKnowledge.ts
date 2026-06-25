@@ -391,6 +391,24 @@ export function useKnowledge(): UseKnowledgeReturn {
       .catch(() => {});
   }, [activeVaultId]);
 
+  // Live tree refresh via SSE — daemon's VaultWatcher pushes `tree-changed`
+  // when files land externally (Chrome extension clippings, weixin media,
+  // external edits), so the tree updates without needing window focus.
+  useEffect(() => {
+    if (!activeVaultId) return;
+    const es = new EventSource(`/api/knowledge/vaults/${activeVaultId}/events`);
+    es.onmessage = (msg) => {
+      try {
+        const payload = JSON.parse(msg.data);
+        if (payload?.type === 'tree-changed') refreshTree();
+      } catch {
+        // Ignore keepalive pings / parse errors
+      }
+    };
+    // EventSource auto-reconnects on error; nothing to do here.
+    return () => es.close();
+  }, [activeVaultId, refreshTree]);
+
   // File operations
   const createFile = useCallback(async (relPath: string, content = '') => {
     if (!activeVaultId) return;

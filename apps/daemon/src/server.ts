@@ -19,11 +19,13 @@ import { graphRoutes } from './routes/graph.js';
 import { weixinRoutes } from './routes/weixin.js';
 import { WeixinService } from './core/weixin/service.js';
 import { ConversationService } from './core/conversations/service.js';
+import { VaultWatcher } from './core/vault-watcher.js';
 
 export const runManager = new RunManager();
 export const db: Database.Database = openDatabase();
 export const conversationService = new ConversationService(db);
 export const weixinService = new WeixinService(runManager, conversationService, db);
+export const vaultWatcher = new VaultWatcher(db);
 
 export const app = new Hono();
 
@@ -52,6 +54,7 @@ app.post('/api/shutdown', (c) => {
   console.log('Shutdown requested by desktop shell, flushing active runs...');
   cleanupAllBridges();
   weixinService.stop();
+  void vaultWatcher.stop();
   runManager.cancelAll();
   closeDatabase();
   // Give the HTTP response a chance to be sent before exiting
@@ -68,13 +71,14 @@ app.route('/api/runs', toolResultRoutes(runManager));
 app.route('/api/config', configRoutes());
 app.route('/api/conversations', conversationRoutes(db));
 app.route('/api/projects', projectRoutes(db));
-app.route('/api/knowledge', knowledgeRoutes(db, runManager));
+app.route('/api/knowledge', knowledgeRoutes(db, runManager, vaultWatcher));
 app.route('/api/publish', publishRoutes());
 app.route('/api/proxy', proxyRoutes());
 app.route('/api/graph', graphRoutes(db));
 app.route('/api/weixin', weixinRoutes(weixinService));
 
 void weixinService.start();
+void vaultWatcher.start();
 
 // Static file serving (production / desktop mode)
 const staticDir = process.env['MOLIO_STATIC_DIR'];
@@ -146,6 +150,7 @@ if (staticDir) {
 process.on('SIGINT', () => {
   cleanupAllBridges();
   weixinService.stop();
+  void vaultWatcher.stop();
   runManager.cancelAll();
   closeDatabase();
   process.exit(0);
@@ -154,6 +159,7 @@ process.on('SIGINT', () => {
 process.on('SIGTERM', () => {
   cleanupAllBridges();
   weixinService.stop();
+  void vaultWatcher.stop();
   runManager.cancelAll();
   closeDatabase();
   process.exit(0);
