@@ -31,7 +31,7 @@ function settle(ms: number): Promise<void> {
 function waitForTreeChanged(
   watcher: VaultWatcher,
   vaultId: string,
-  timeoutMs = 3000,
+  timeoutMs = 5000,
 ): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
     let done = false;
@@ -72,6 +72,10 @@ describe('VaultWatcher', () => {
     vaultId = vault.id;
     watcher = new VaultWatcher(db);
     await watcher.watch(vaultId, vaultDir);
+    // Let the native backend settle before the test writes. On macOS the
+    // FSEvents subscription can lag chokidar's `ready` event, so a write in
+    // the very next tick is occasionally missed (flake on the first test).
+    await settle(300);
   });
 
   afterEach(async () => {
