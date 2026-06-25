@@ -7,6 +7,7 @@ import type { RunManager } from '../core/RunManager.js';
 import type { ConversationService } from '../core/conversations/service.js';
 import { getVaultByPath, addKbHistory } from '../core/db.js';
 import { resolveFilePath } from '../core/knowledge.js';
+import { resolveFilePath } from '../core/knowledge.js';
 import {
   WIKI_QUERY_PROMPT,
   WIKI_BUILD_PROMPT,
