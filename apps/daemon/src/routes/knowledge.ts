@@ -284,8 +284,13 @@ export function knowledgeRoutes(db: Database.Database, runManager: RunManager): 
       const ts = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
 
       // Read file bytes
-      const bytes = await fileObj.arrayBuffer();
+      const bytes = await (file as any).arrayBuffer();
       const buf = Buffer.from(bytes);
+
+      // Validate actual size after reading (defense against Content-Length spoofing)
+      if (buf.byteLength > MAX_SIZE) {
+        return c.json({ error: { code: 'PAYLOAD_TOO_LARGE', message: 'Image too large (max 50MB)' } }, 413);
+      }
 
       // Ensure .molio/assets/ directory exists. recursive:true is idempotent
       // (no EEXIST), so any error here is a real OS failure (EACCES/ENOSPC/EROFS)
