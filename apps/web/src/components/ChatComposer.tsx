@@ -605,7 +605,15 @@ export function ChatComposer({
           )}
         </div>
       </div>
-      <div className="composer-hint">@ 引用文件  / 命令  粘贴图片  Enter 发送  Shift+Enter 换行</div>
+      <div className="composer-hint">
+        <span className="hint-item"><kbd>@</kbd> <span className="hint-desc">{t('composer.hintFileRef')}</span></span>
+        <span className="hint-sep">·</span>
+        <span className="hint-item"><kbd>/</kbd> <span className="hint-desc">{t('composer.hintCommand')}</span></span>
+        <span className="hint-sep">·</span>
+        <span className="hint-item"><kbd>Enter</kbd> <span className="hint-desc">{t('composer.hintSend')}</span></span>
+        <span className="hint-sep">·</span>
+        <span className="hint-item"><kbd>Shift</kbd><span className="hint-kbd-plus">+</span><kbd>Enter</kbd> <span className="hint-desc">{t('composer.hintNewline')}</span></span>
+      </div>
     </div>
   );
 }

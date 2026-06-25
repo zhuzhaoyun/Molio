@@ -618,9 +618,46 @@
   color: var(--bg);
 }
 .composer-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 11px;
   color: var(--text-faint);
   margin: 0 8px;
+  user-select: none;
+}
+.hint-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.hint-sep {
+  color: var(--border);
+  font-size: 8px;
+  line-height: 1;
+}
+.composer-hint kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 17px;
+  padding: 0 4px;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-faint);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  line-height: 1;
+  box-shadow: 0 1px 0 var(--border);
+}
+.hint-kbd-plus {
+  margin: 0 1px;
+  font-size: 9px;
+  color: var(--text-faint);
 }
 
 /* -------- Status badge ---------------------------------------------- */

@@ -151,3 +151,8 @@
   padding: 10px 14px;
   border-top: 1px solid var(--border-soft);
 }
+
+/* Compact hint: only show kbd badges, hide text descriptions */
+.file-chat-input .composer-hint .hint-desc {
+  display: none;
+}
