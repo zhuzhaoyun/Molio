@@ -263,8 +263,9 @@ export function knowledgeRoutes(db: Database.Database, runManager: RunManager): 
       }
 
       // file is a File-like object with .name, .type, and .arrayBuffer()
-      const fileName = (file as any).name ?? 'image.png';
-      const mimeType = (file as any).type ?? 'application/octet-stream';
+      const fileObj = file as File;
+      const fileName = fileObj.name || 'image.png';
+      const mimeType = fileObj.type || 'application/octet-stream';
 
       // Validate image type
       const ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
