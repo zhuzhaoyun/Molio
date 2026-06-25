@@ -16,6 +16,8 @@ export interface PastedImage {
   url: string;
   state: 'uploading' | 'done' | 'error';
   error?: string;
+  /** Original File — retained so a failed upload can be retried. */
+  file?: File;
 }
 
 interface Props {
@@ -134,11 +136,19 @@ export function ChatComposer({
 
   const handleSend = () => {
     const trimmed = text.trim();
-    const hasContent = trimmed || fileRefs.length > 0 || pastedImages.length > 0;
+    // Only include images that finished uploading successfully — uploading
+    // entries have filePath:'' and error entries have invalid data, so sending
+    // them would push broken markdown to the backend.
+    const doneImages = pastedImages.filter((p) => p.state === 'done');
+    const hasContent = trimmed || fileRefs.length > 0 || doneImages.length > 0;
     if (hasContent && !isRunning) {
-      onSend(trimmed, fileRefs, pastedImages);
+      onSend(trimmed, fileRefs, doneImages);
       setText('');
       setFileRefs([]);
+      // Revoke any remaining blob URLs (error/uploading thumbs) before clearing.
+      for (const img of pastedImages) {
+        if (img.url.startsWith('blob:')) URL.revokeObjectURL(img.url);
+      }
       setPastedImages([]);
       setTriggerStartIdx(null);
       if (textareaRef.current) textareaRef.current.style.height = 'auto';
@@ -166,7 +176,7 @@ export function ChatComposer({
     const tempUrl = URL.createObjectURL(file);
 
     // Add with uploading state (show local preview immediately)
-    setPastedImages((prev) => [...prev, { id, filePath: '', url: tempUrl, state: 'uploading' }]);
+    setPastedImages((prev) => [...prev, { id, filePath: '', url: tempUrl, state: 'uploading', file }]);
 
     try {
       const { filePath, url } = await api.uploadAsset(vaultId, file);
@@ -239,6 +249,19 @@ export function ChatComposer({
     return () => document.removeEventListener('mousedown', handler);
   }, [showHistory]);
 
+  // Keep a ref of the latest pastedImages so the unmount cleanup (registered
+  // once) can revoke any still-pending blob URLs — otherwise images left in
+  // 'uploading' or 'error' state on unmount leak their object URLs.
+  const pastedImagesRef = useRef<PastedImage[]>([]);
+  pastedImagesRef.current = pastedImages;
+  useEffect(() => {
+    return () => {
+      for (const img of pastedImagesRef.current) {
+        if (img.url.startsWith('blob:')) URL.revokeObjectURL(img.url);
+      }
+    };
+  }, []);
+
   const handleHistoryClick = useCallback(async () => {
     if (showHistory) {
       setShowHistory(false);
@@ -272,27 +295,28 @@ export function ChatComposer({
     });
   }, []);
 
-  // Retry failed upload
+  // Retry failed upload by re-uploading the retained original File.
   const retryImage = useCallback(
     async (id: string) => {
-      setPastedImages((prev) =>
-        prev.map((img) => (img.id === id ? { ...img, state: 'uploading' as const, error: undefined } : img)),
-      );
-      // We can't re-upload without the original File object, so just remove and let user re-paste
-      // For now, mark as error with message
-      setPastedImages((prev) =>
-        prev.map((img) =>
-          img.id === id
-            ? { ...img, state: 'error' as const, error: t('composer.uploadRetryHint') }
-            : img,
-        ),
-      );
+      // Read the current file via the state updater (avoids stale closure).
+      let fileToRetry: File | undefined;
+      setPastedImages((prev) => {
+        fileToRetry = prev.find((p) => p.id === id)?.file;
+        return prev;
+      });
+      if (!fileToRetry) return; // nothing to retry — keep the error thumb
+      removePastedImage(id);
+      uploadImage(fileToRetry);
     },
-    [t],
+    [uploadImage, removePastedImage],
   );
 
+  // Block sending while any image is still uploading so incomplete image data
+  // is never pushed to the backend.
+  const isUploading = pastedImages.some((p) => p.state === 'uploading');
   const canSend =
     (text.trim().length > 0 || fileRefs.length > 0 || pastedImages.some((p) => p.state === 'done')) &&
+    !isUploading &&
     !isRunning &&
     !disabled;
   const placeholder = disabled

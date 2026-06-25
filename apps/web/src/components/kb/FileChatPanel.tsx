@@ -180,9 +180,13 @@ export function FileChatPanel({
 
       {/* Input */}
       <div className="file-chat-input">
+        {/* FileChatPanel's send path is text-only today; explicitly accept only
+            the text arg from ChatComposer so fileRefs/pastedImages are not
+            silently accepted then discarded. Wire them through if/when this
+            panel gains attachment support. */}
         <ChatComposer
           isRunning={isRunning}
-          onSend={onSend}
+          onSend={(text) => onSend(text)}
           onCancel={onCancel}
           onOpenConversation={onOpenConversation}
         />

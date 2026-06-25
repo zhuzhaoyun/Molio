@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { DiffView } from './DiffView';
 import { useFileNavigation } from '../hooks/useFileNavigation';
+import { useActiveVaultId } from '../stores/vaultStore';
 import './FileOperationCard.css';
 
 interface Props {
@@ -11,27 +12,36 @@ interface Props {
   toolInput: unknown;
 }
 
-/** Try to extract old_string and new_string from a tool input. */
-function extractDiffInput(input: unknown): { oldStr: string; newStr: string } | null {
-  if (input && typeof input === 'object') {
-    const obj = input as Record<string, unknown>;
-    if (typeof obj.old_string === 'string' && typeof obj.new_string === 'string') {
-      return { oldStr: obj.old_string, newStr: obj.new_string };
-    }
-    // Write tool: old is empty, new is the content
-    if (typeof obj.content === 'string' && !obj.old_string) {
-      return { oldStr: '', newStr: obj.content };
-    }
+/** Tool names that create a file from scratch (full content), vs. Edit which patches. */
+const WRITE_TOOL_NAMES = new Set(['Write', 'write', 'write_file', 'WriteFile']);
+
+/**
+ * Try to extract old_string and new_string from a tool input.
+ * Uses toolName to reliably distinguish Write (content) from Edit
+ * (old_string/new_string) — previously an Edit with an empty old_string
+ * (e.g. an insertion) was misclassified as a Write.
+ */
+function extractDiffInput(toolName: string, input: unknown): { oldStr: string; newStr: string } | null {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
+  const obj = input as Record<string, unknown>;
+  if (typeof obj.old_string === 'string' && typeof obj.new_string === 'string') {
+    return { oldStr: obj.old_string, newStr: obj.new_string };
+  }
+  // Write tool: old is empty, new is the full content
+  if (WRITE_TOOL_NAMES.has(toolName) && typeof obj.content === 'string') {
+    return { oldStr: '', newStr: obj.content };
   }
   return null;
 }
 
 export function FileOperationCard({ filePath, toolName, toolInput }: Props) {
   const [showDiff, setShowDiff] = useState(false);
-  const { openFile, askAboutFile, getActiveVaultId } = useFileNavigation();
-  const vaultId = getActiveVaultId();
+  const { openFile, askAboutFile } = useFileNavigation();
+  // Subscribe reactively so the card re-renders when the active vault changes;
+  // the imperative getActiveVaultId() read in render does not trigger updates.
+  const vaultId = useActiveVaultId();
 
-  const diffInput = extractDiffInput(toolInput);
+  const diffInput = extractDiffInput(toolName, toolInput);
   const fileName = filePath.split('/').pop() ?? filePath;
 
   const handleOpen = () => {
@@ -87,7 +97,7 @@ export function isFileWriteTool(toolName: string): boolean {
 
 /** Extract file path from tool input (best-effort). */
 export function extractFilePath(toolInput: unknown): string | null {
-  if (toolInput && typeof toolInput === 'object') {
+  if (toolInput && typeof toolInput === 'object' && !Array.isArray(toolInput)) {
     const obj = toolInput as Record<string, unknown>;
     if (typeof obj.file_path === 'string') return obj.file_path;
     if (typeof obj.filePath === 'string') return obj.filePath;

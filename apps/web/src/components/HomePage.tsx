@@ -65,7 +65,12 @@ export function HomePage({
 
       if (pastedImages && pastedImages.length > 0) {
         const doneImages = pastedImages.filter((p) => p.state === 'done');
-        parts.push(doneImages.map((p) => `![image](${p.filePath})`).join('\n'));
+        // Only push when there is at least one finished image — otherwise
+        // .map().join('\n') yields '' and parts.push('') makes parts.length>0
+        // falsy-truthy, emitting a message with leading newlines.
+        if (doneImages.length > 0) {
+          parts.push(doneImages.map((p) => `![image](${p.filePath})`).join('\n'));
+        }
       }
 
       if (fileRefs && fileRefs.length > 0) {
