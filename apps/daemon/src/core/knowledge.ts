@@ -80,13 +80,26 @@ export function countFiles(vaultPath: string): number {
 export function readFile(vaultPath: string, relPath: string): FileContent {
   let resolved = resolveFilePath(vaultPath, relPath);
 
-  // Auto-resolve: if the path doesn't exist and has no known extension, try .md
+  // Auto-resolve: if the path doesn't exist, try fallbacks
   if (!fs.existsSync(resolved)) {
     const ext = path.extname(relPath).toLowerCase();
+    // Fallback 1: no extension → try .md
     if (!ext) {
       const mdPath = resolveFilePath(vaultPath, relPath + '.md');
       if (fs.existsSync(mdPath)) {
         resolved = mdPath;
+      }
+    }
+    // Fallback 2: case-insensitive match in same directory
+    if (!fs.existsSync(resolved)) {
+      const dir = path.dirname(resolved);
+      const targetLower = path.basename(resolved).toLowerCase();
+      try {
+        const entries = fs.readdirSync(dir);
+        const match = entries.find((e) => e.toLowerCase() === targetLower);
+        if (match) resolved = path.join(dir, match);
+      } catch {
+        // dir may not exist — that's fine
       }
     }
   }

@@ -349,5 +349,18 @@ describe('knowledge filesystem operations', () => {
       const file = readFile(vaultPath, 'data.txt');
       assert.equal(file.content, 'text data');
     });
+
+    it('should match file with different case (case-insensitive fallback)', () => {
+      writeFile(vaultPath, 'Index.MD', 'case-insensitive content');
+      const file = readFile(vaultPath, 'INDEX.md');
+      assert.equal(file.content, 'case-insensitive content');
+    });
+
+    it('should match file in subdirectory with different case', () => {
+      mkdirSync(join(vaultPath, 'Dir'), { recursive: true });
+      writeFile(vaultPath, 'Dir/Readme.MD', 'dir content');
+      const file = readFile(vaultPath, 'dir/README.md');
+      assert.equal(file.content, 'dir content');
+    });
   });
 });
