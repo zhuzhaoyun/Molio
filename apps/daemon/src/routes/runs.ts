@@ -3,10 +3,10 @@ import type { CreateRunRequest } from '@molio/contracts';
 import type Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
-import path from 'node:path';
 import type { RunManager } from '../core/RunManager.js';
 import type { ConversationService } from '../core/conversations/service.js';
 import { getVaultByPath, addKbHistory } from '../core/db.js';
+import { resolveFilePath } from '../core/knowledge.js';
 import {
   WIKI_QUERY_PROMPT,
   WIKI_BUILD_PROMPT,
@@ -112,8 +112,14 @@ export function runsRoutes(
           // Use a focused prompt rather than WIKI_QUERY_PROMPT — the latter instructs the
           // agent to explore the entire wiki which distracts from the specific file at hand.
           if (body.wikiExtra?.filePath) {
-            const fileAbsPath = path.join(vault.path, body.wikiExtra.filePath);
             try {
+              // Resolve within the vault with path-traversal protection. A
+              // malicious filePath like "../../etc/passwd" must not escape the
+              // vault root. resolveFilePath throws on traversal; that error
+              // falls through to the catch below and is treated as
+              // "not accessible" so neither the file nor the traversal
+              // attempt is leaked to the caller.
+              const fileAbsPath = resolveFilePath(vault.path, body.wikiExtra.filePath);
               const stat = fs.statSync(fileAbsPath);
               if (stat.isFile() && stat.size <= 50 * 1024) {
                 const fileContent = fs.readFileSync(fileAbsPath, 'utf-8');
