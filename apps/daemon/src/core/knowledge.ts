@@ -97,13 +97,19 @@ export function readFile(vaultPath: string, relPath: string): FileContent {
         resolved = wikiPath;
       }
     }
-    // Fallback 3: case-insensitive match in same directory
+    // Fallback 3: search directory for matching file (case-insensitive + extension variants)
     if (!fs.existsSync(resolved)) {
       const dir = path.dirname(resolved);
-      const targetLower = path.basename(resolved).toLowerCase();
+      const base = path.basename(resolved);
+      const baseLower = base.toLowerCase();
       try {
         const entries = fs.readdirSync(dir);
-        const match = entries.find((e) => e.toLowerCase() === targetLower);
+        // Exact case-insensitive match (e.g. INDEX.md → Index.md)
+        let match = entries.find((e) => e.toLowerCase() === baseLower);
+        // If no exact match, try base + .md (e.g. 知识库五范式 → 知识库五范式.md)
+        if (!match) {
+          match = entries.find((e) => e.toLowerCase() === baseLower + '.md');
+        }
         if (match) resolved = path.join(dir, match);
       } catch {
         // dir may not exist — that's fine

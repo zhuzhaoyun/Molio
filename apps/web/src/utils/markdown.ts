@@ -41,15 +41,16 @@ export function renderMarkdown(text: string): string {
 
   // Wiki-links: [[Page Name]] or [[Page Name|display text]]
   // data-file-path stores the raw path for click-navigation.
+  // Skip directory paths (ending with /) — they are not files.
   html = html.replace(
     /\[\[([^\]|]+)\|([^\]]+)\]\]/g,
     (_m: string, path: string, display: string) =>
-      `<a class="kb-wiki-link" data-file-path="${path}">${display}</a>`
+      path.endsWith('/') ? display : `<a class="kb-wiki-link" data-file-path="${path.trim()}">${display}</a>`
   );
   html = html.replace(
     /\[\[([^\]]+)\]\]/g,
     (_m: string, path: string) =>
-      `<a class="kb-wiki-link" data-file-path="${path}">${path}</a>`
+      path.endsWith('/') ? path : `<a class="kb-wiki-link" data-file-path="${path.trim()}">${path}</a>`
   );
 
   // Standard links
