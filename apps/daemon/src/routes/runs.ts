@@ -123,7 +123,9 @@ export function runsRoutes(
               // attempt is leaked to the caller.
               const fileAbsPath = resolveFilePath(vault.path, body.wikiExtra.filePath);
               const stat = fs.statSync(fileAbsPath);
-              if (stat.isFile() && stat.size <= 50 * 1024) {
+const MAX_FILE_CHAT_SIZE = 50 * 1024; // 50KB
+// ...
+              if (stat.isFile() && stat.size <= MAX_FILE_CHAT_SIZE) {
                 const fileContent = fs.readFileSync(fileAbsPath, 'utf-8');
                 message = `用户正在知识库中查看文件 "${body.wikiExtra.filePath}"，并围绕该文件提问。
 
