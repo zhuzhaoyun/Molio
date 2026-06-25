@@ -139,8 +139,12 @@ describe('VaultWatcher', () => {
       const other = createVault(db, 'other-vault', otherDir, undefined);
       // Watching a second vault should not throw even if the first is watched.
       await watcher.watch(other.id, otherDir);
+      // Let the second watcher's polling record its initial (empty) state
+      // before writing, so the next poll detects the new file reliably. On a
+      // loaded CI runner the second watcher's first poll can lag.
+      await settle(300);
 
-      const got = waitForTreeChanged(watcher, other.id);
+      const got = waitForTreeChanged(watcher, other.id, 5000);
       writeFileSync(join(otherDir, 'z.md'), 'z');
       assert.equal(await got, true);
     } finally {
