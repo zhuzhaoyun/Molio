@@ -1804,7 +1804,7 @@
   opacity: 0.5;
 }
 
-.kb-ingest-badge.is-pending { background: #d97706; opacity: 0.9; }      /* amber — not yet ingested */
+.kb-ingest-badge.is-pending { background: #9ca3af; opacity: 0.8; }      /* gray — not yet ingested */
 .kb-ingest-badge.is-clean { background: #16a34a; opacity: 0.85; }      /* green — ingested, unchanged */
 .kb-ingest-badge.is-modified { background: #eab308; opacity: 1; }      /* yellow — source changed, re-ingest */
 
@@ -1829,7 +1829,7 @@
   margin-right: 4px;
   background: var(--text-faint);
 }
-.kb-ingest-stats__item.is-pending::before { background: #d97706; }
+.kb-ingest-stats__item.is-pending::before { background: #9ca3af; }
 .kb-ingest-stats__item.is-clean::before { background: #16a34a; }
 .kb-ingest-stats__item.is-modified::before { background: #eab308; }
 
