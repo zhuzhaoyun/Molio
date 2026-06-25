@@ -17,7 +17,9 @@ function extractFileName(path: string): string {
 }
 
 function getFileIcon(path: string): string {
-  const ext = path.split('.').pop()?.toLowerCase();
+  // Match only the segment after the last dot so a dotless file named e.g.
+  // "md" isn't mistaken for a markdown file.
+  const ext = path.match(/\.([^.]+)$/)?.[1]?.toLowerCase();
   if (ext === 'md') return '📄';
   if (ext === 'png' || ext === 'jpg' || ext === 'jpeg' || ext === 'gif' || ext === 'webp') return '🖼️';
   if (ext === 'pdf') return '📕';
@@ -38,14 +40,28 @@ export function FileRef({ vaultId, filePath, displayName, className }: FileRefPr
     [openFile, vaultId, filePath],
   );
 
+  // Keyboard activation (Enter/Space) — role="button" + tabIndex made it
+  // focusable but without this, keyboard users could not trigger navigation.
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        e.stopPropagation();
+        openFile(vaultId, filePath);
+      }
+    },
+    [openFile, vaultId, filePath],
+  );
+
   return (
     <a
       className={`file-ref ${className ?? ''}`}
       data-testid="file-ref"
       data-file-path={filePath}
       data-file-vault={vaultId}
-      title={`${filePath}`}
+      title={filePath}
       onClick={handleClick}
+      onKeyDown={handleKeyDown}
       role="button"
       tabIndex={0}
     >

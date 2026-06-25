@@ -15,39 +15,23 @@
 .diff-line {
   padding: 1px 10px;
   white-space: pre-wrap;
-  word-break: break-all;
+  /* Only break a token when it would otherwise overflow — break-all splits
+     file paths and identifiers mid-token, hurting readability. */
+  overflow-wrap: anywhere;
 }
 
+/* Use semantic tokens so colors adapt to both light/dark themes via tokens.css
+   (which redefines these vars for [data-theme="dark"] and prefers-color-scheme). */
 .diff-line-add {
-  background: #dafbe1;
-  color: #1a3b27;
+  background: var(--green-bg);
+  color: var(--green);
 }
 
 .diff-line-del {
-  background: #ffebe9;
-  color: #5c1a14;
+  background: var(--red-bg);
+  color: var(--red);
 }
 
 .diff-line-ctx {
   color: var(--text-muted);
-}
-
-[data-theme="dark"] .diff-line-add {
-  background: #1a3b27;
-  color: #8ddba8;
-}
-[data-theme="dark"] .diff-line-del {
-  background: #3b1816;
-  color: #f0a8a2;
-}
-
-@media (prefers-color-scheme: dark) {
-  .diff-line-add {
-    background: #1a3b27;
-    color: #8ddba8;
-  }
-  .diff-line-del {
-    background: #3b1816;
-    color: #f0a8a2;
-  }
 }

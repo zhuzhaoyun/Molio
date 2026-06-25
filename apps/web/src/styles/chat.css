@@ -820,8 +820,9 @@
   width: 18px;
   height: 18px;
   border: none;
-  background: rgba(0, 0, 0, 0.45);
-  color: #fff;
+  /* Theme-aware so the button stays visible on both light and dark themes. */
+  background: color-mix(in srgb, var(--text) 45%, transparent);
+  color: var(--bg-panel);
   cursor: pointer;
   border-radius: 50%;
   font-size: 11px;
@@ -838,6 +839,14 @@
   opacity: 1;
 }
 
+/* Touch devices have no hover — keep the remove button visible so users can
+   actually remove an uploaded image on mobile/tablet. */
+@media (hover: none) {
+  .composer-image-thumb-remove {
+    opacity: 1;
+  }
+}
+
 .composer-image-thumb-remove:hover {
   background: var(--red);
 }
@@ -849,7 +858,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.7);
+  background: color-mix(in srgb, var(--bg-panel) 70%, transparent);
   z-index: 1;
 }
 
@@ -873,7 +882,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.6);
+  background: color-mix(in srgb, var(--bg-panel) 60%, transparent);
   border: none;
   cursor: pointer;
   z-index: 1;
@@ -881,7 +890,7 @@
 }
 
 .composer-image-thumb-retry:hover {
-  background: rgba(255, 255, 255, 0.8);
+  background: color-mix(in srgb, var(--bg-panel) 80%, transparent);
 }
 
 /* Upload image button — compact icon, left side of composer row */

@@ -299,10 +299,14 @@ export function useKnowledge(): UseKnowledgeReturn {
         }
       } catch (err) {
         if (cancelled) return;
-        const is404 = err instanceof Error && err.message.includes('404');
+        // Match the HTTP status as a word boundary so an unrelated error whose
+        // message happens to contain "404" elsewhere isn't misclassified.
+        const is404 = err instanceof Error && /\b404\b/.test(err.message);
         if (is404) {
           setFileContent(null);
-          setFileLoadError(`文件未找到：${selectedFile}`);
+          // Store a stable code, not a locale string — the display layer
+          // (KbMainContent) renders the user-facing message via i18n.
+          setFileLoadError('not_found');
         } else {
           setFileContent(null);
           scheduleFileLoadRetry(activeVaultId, selectedFile, requestKey);

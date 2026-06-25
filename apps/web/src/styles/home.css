@@ -280,6 +280,13 @@
   50% { opacity: 0.4; }
 }
 
+/* Respect users with vestibular / motion sensitivity. */
+@media (prefers-reduced-motion: reduce) {
+  .composer-uploading {
+    animation: none;
+  }
+}
+
 .composer-upload-error {
   display: flex;
   align-items: center;
