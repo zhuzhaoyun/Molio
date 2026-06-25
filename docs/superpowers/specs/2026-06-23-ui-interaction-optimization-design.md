@@ -12,6 +12,7 @@
 | 2 | KB Inline Q&A Panel | ✅ Done | `445f01a`..`a762efe` |
 | 3 | Home Page Input Enhancement | ✅ Done | `d0b60d0`..`9e6e305` |
 | — | Image Paste (Phase 3 continued) | ✅ Done | `5a7f349`..`9e6e305` |
+| — | History Button + File Resolution + Bug Fixes | ✅ Done | `82f8009`..`1d5ed5e` |
 
 ### Phase 2 Implementation Notes
 
@@ -44,6 +45,56 @@
 - **E2E Tests**: 3 test cases — paste image shows thumbnail, text paste no upload, upload button exists.
 - **Unit Tests**: 5 daemon test cases — vault not found, bad MIME, success (file bytes verified), oversized, no file field.
 - **Design spec**: [2026-06-24-image-paste-design.md](2026-06-24-image-paste-design.md)
+
+### Post-Phase 3 Enhancements
+
+#### Composer History Button
+
+- **Button**: 🕐 clock icon (20px), left side of composer row, next to upload button. Tooltip "历史记录".
+- **Dropdown**: click opens popup listing recent conversations from `api.listConversationHistory()`, grouped by time (今天/昨天/本周/更早). Each row shows title + message count + channel badge + relative time.
+- **Signature detail**: hover left accent bar (3px coral) slides in via `::before` pseudo-element.
+- **Click behavior**: selects conversation → `loadConversationById` loads messages in-place, no page navigation needed.
+- **Scope**: HomePage ChatComposer + FileChatPanel ChatComposer (KB "询问此文件" panel).
+- **i18n**: 3 new keys (`composer.history`, `composer.noHistory`, `composer.untitled`).
+- **Commits**: `f28ca13` (feature), `9b3986e` (style), `ae24b69` (width fix), `cb50fb5` (FileChatPanel wiring).
+
+#### File Resolution Robustness (Daemon readFile)
+
+- **Problem**: AI-generated wikilinks frequently fail to resolve due to missing `.md` extensions, `wiki/` prefix mismatches, or case differences.
+- **Solution**: `readFile()` now tries 4-layer fallback per candidate path prefix:
+  1. Exact path match
+  2. Append `.md` extension
+  3. Case-insensitive directory search (exact + `.md` variant)
+- **Path prefixes tried**: vault root, then `wiki/` subdirectory (each independently).
+- **404 handling**: file-not-found now returns HTTP 404 (was 500); web `useKnowledge` skips retry on 404 and shows "文件无法打开" error UI.
+- **Commits**: `015c1a8`, `7e9ef58`, `82f8009`, `be6615c`, `15e24b6`, `1d5ed5e`.
+
+#### Directory Wikilink Filtering
+
+- **Problem**: AI response wikilinks like `[[开发/概念/]]` (directories) were rendered as clickable file links, leading to 404.
+- **Fix**: `markdown.ts` wikilink regex now checks for trailing `/` — directory paths render as plain text.
+- **Commit**: `5761ac1`.
+
+#### UI Bug Fixes
+
+| Fix | Commit | Description |
+|-----|--------|-------------|
+| Select arrow double-render | `6376dc9`, `470cc75` | `background: var(--bg)` shorthand overrode custom SVG arrow; changed to `background-color` |
+| Close button icon size | `7f3af22` | FileChatPanel + WikiChatPanel close icons 16px → 20px, button 28px → 32px |
+| Upload button position | `8896939` | Moved to left side of composer row, changed to text+SVG then icon-only |
+| Upload button icon size | `5e19b41`..`9e6e305` | Iterated from 16px → 26px with bolder stroke and darker color |
+
+#### E2E Test Gap
+
+| Test | Commit | Description |
+|------|--------|-------------|
+| `operation-cards.spec.ts` | `03133fe` | 4 test cases: Write card + diff, Edit add/del/ctx, tool filtering, error state |
+
+#### KB Interaction Enhancement Spec (Upcoming)
+
+- **Design spec**: [2026-06-25-kb-interaction-enhancement-design.md](2026-06-25-kb-interaction-enhancement-design.md)
+- **Status**: Design complete, implementation pending.
+- **Scope**: `···` global menu, document status bar (word/char count), outline panel, collapse-all folders, full-text search, AI actions (Phase 3).
 
 ---
 
