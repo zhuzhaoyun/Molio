@@ -165,7 +165,16 @@ export default function App() {
                 />
               }
             />
-            <Route path="/knowledge" element={<KnowledgeBasePage agentId={selectedAgent} />} />
+            <Route path="/knowledge" element={
+            <KnowledgeBasePage
+              agentId={selectedAgent}
+              onOpenConversation={(conversationId) => {
+                void chat.loadConversationById(conversationId).then(() => {
+                  navigate('/');
+                });
+              }}
+            />
+          } />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/graph" element={<GraphPage />} />
           </Routes>

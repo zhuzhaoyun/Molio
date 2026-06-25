@@ -23,6 +23,7 @@ import { ContextMenu, type MenuItem } from './ContextMenu';
 
 interface KnowledgeBasePageProps {
   agentId: string | null;
+  onOpenConversation?: (conversationId: string) => void;
 }
 
 interface UrlFileNavigation {
@@ -43,7 +44,7 @@ function resolveUrlFileNavigation(
   return { vaultId, filePath };
 }
 
-export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
+export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBasePageProps) {
   const kb = useKnowledge();
   const tabs = useKbTabs();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -647,6 +648,7 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
           onCancel={fileChat.cancel}
           onClose={handleCloseFileChat}
           onSubmitToolResult={fileChat.onSubmitToolResult}
+          onOpenConversation={onOpenConversation}
         />
       )}
 

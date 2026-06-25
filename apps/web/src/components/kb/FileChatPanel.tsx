@@ -17,6 +17,7 @@ interface FileChatPanelProps {
   onCancel: () => void;
   onClose: () => void;
   onSubmitToolResult: (toolUseId: string, content: string) => void;
+  onOpenConversation?: (conversationId: string) => void;
 }
 
 function extractFileName(path: string): string {
@@ -33,6 +34,7 @@ export function FileChatPanel({
   onCancel,
   onClose,
   onSubmitToolResult,
+  onOpenConversation,
 }: FileChatPanelProps) {
   const logRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -190,6 +192,7 @@ export function FileChatPanel({
           onCancel={onCancel}
           onCommand={handleCommand}
           commands={KB_CHAT_COMMANDS}
+          onOpenConversation={onOpenConversation}
         />
       </div>
     </aside>
