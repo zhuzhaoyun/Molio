@@ -91,10 +91,15 @@ jobs:
 
       - name: Configure OCR
         run: |
-          ocr config set llm.url ${{ secrets.OCR_LLM_URL }}
-          ocr config set llm.auth_token ${{ secrets.OCR_LLM_AUTH_TOKEN }}
-          ocr config set llm.model ${{ secrets.OCR_LLM_MODEL }}
-          ocr config set llm.use_anthropic ${{ secrets.OCR_LLM_USE_ANTHROPIC }}
+          # Quote values so empty secrets don't collapse into a missing argument.
+          # OCR_LLM_USE_ANTHROPIC is optional — only set when configured, otherwise
+          # `ocr config set llm.use_anthropic` with no value fails the step.
+          ocr config set llm.url "${{ secrets.OCR_LLM_URL }}"
+          ocr config set llm.auth_token "${{ secrets.OCR_LLM_AUTH_TOKEN }}"
+          ocr config set llm.model "${{ secrets.OCR_LLM_MODEL }}"
+          if [ -n "${{ secrets.OCR_LLM_USE_ANTHROPIC }}" ]; then
+            ocr config set llm.use_anthropic "${{ secrets.OCR_LLM_USE_ANTHROPIC }}"
+          fi
           ocr config set llm.extra_body '{"thinking": {"type": "disabled"}}'
 
       - name: Run OpenCodeReview
