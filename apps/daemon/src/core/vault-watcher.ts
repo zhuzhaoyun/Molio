@@ -12,6 +12,7 @@
  * commits from self-triggering a refresh loop.
  */
 import { EventEmitter } from 'node:events';
+import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import type Database from 'better-sqlite3';
 import chokidar, { type FSWatcher } from 'chokidar';
@@ -56,8 +57,25 @@ export class VaultWatcher extends EventEmitter {
     try {
       // `await` works for both chokidar v3 (returns FSWatcher) and v4
       // (returns Promise<FSWatcher>).
-      const root = path.resolve(vaultPath);
-      const watcher = await chokidar.watch(vaultPath, {
+      //
+      // Resolve to the canonical long path first. libuv's recursive fs.watch on
+      // Windows asserts that reported filenames start with the watched dir
+      // (src/win/fs-event.c: !_wcsnicmp). When the watched path contains an 8.3
+      // short-name component (e.g. C:\Users\RUNNER~1\... — Windows generates
+      // these for any path segment longer than 8 chars), the form libuv stores
+      // can differ from what ReadDirectoryChangesW reports, and libuv ABORTS the
+      // process. realpath resolves short names to long, so the forms match.
+      // This also protects the daemon: any user whose vault path has a >8-char
+      // segment would otherwise crash on startup. Falls back to the original
+      // path if resolution fails (e.g. the dir doesn't exist yet).
+      let resolvedPath = vaultPath;
+      try {
+        resolvedPath = realpathSync(vaultPath);
+      } catch {
+        /* path may not exist yet — watch the original path */
+      }
+      const root = path.resolve(resolvedPath);
+      const watcher = await chokidar.watch(resolvedPath, {
         // Ignore dotfile entries (.git, .claude, .gitignore) — they aren't in
         // the displayed tree (scanTree skips dotfiles) and watching .git would
         // self-trigger on our own ingest commits. Never ignore the vault root
