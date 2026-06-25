@@ -117,7 +117,7 @@ export function runsRoutes(
               const stat = fs.statSync(fileAbsPath);
               if (stat.isFile() && stat.size <= 50 * 1024) {
                 const fileContent = fs.readFileSync(fileAbsPath, 'utf-8');
-                message = `你是一个专业的文档助理。用户正在 Molio 知识库中查看文件 "${body.wikiExtra.filePath}"，并围绕该文件向你提问。
+                message = `用户正在知识库中查看文件 "${body.wikiExtra.filePath}"，并围绕该文件提问。
 
 === 文件 "${body.wikiExtra.filePath}" 的完整内容 ===
 
@@ -127,24 +127,24 @@ ${fileContent}
 
 用户问题：${message}
 
-请基于上面这个文件的内容直接回答用户。如果需要引用文件中的具体段落，请直接引用。不要建议用户去查看其他文件或 wiki 页面——用户已经把要讨论的文件通过 "询问此文件" 功能提供给你了。`;
+请基于上面这个文件的内容直接回答。需要引用具体段落时直接引用原文。用户已通过"询问此文件"指定了要讨论的文件，无需建议查看其他文件或 wiki 页面。`;
               } else if (stat.isFile()) {
                 // Large file: note the file but don't include full content
-                message = `你是一个专业的文档助理。用户正在 Molio 知识库中查看文件 "${body.wikiExtra.filePath}"，但该文件过大（>50KB），未能加载完整内容。
+                message = `用户正在知识库中查看文件 "${body.wikiExtra.filePath}"，但该文件过大（>50KB），未加载完整内容。
 
 用户问题：${message}
 
-请告知用户文件过大，并建议他们在知识库编辑器中打开文件进行查看。`;
+请告知用户文件过大无法整体加载，建议在知识库编辑器中打开，或针对文件特定部分提问。`;
               } else {
-                message = `你是一个专业的文档助理。用户正在 Molio 知识库中查看文件 "${body.wikiExtra.filePath}"。
+                message = `用户正在知识库中查看文件 "${body.wikiExtra.filePath}"，但该文件不是文本格式，无法读取内容。
 
 用户问题：${message}
 
-请告知用户该文件不是普通文本文件，建议在知识库中预览。`;
+请告知用户该文件无法以文本形式读取，建议在知识库中预览。`;
               }
             } catch {
               // File not found — let the agent know
-              message = `你是一个专业的文档助理。用户尝试在 Molio 知识库中讨论文件 "${body.wikiExtra.filePath}"，但该文件似乎不存在或无法访问。
+              message = `用户尝试讨论知识库中的文件 "${body.wikiExtra.filePath}"，但该文件不存在或无法访问。
 
 用户问题：${message}
 
