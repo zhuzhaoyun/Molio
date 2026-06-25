@@ -65,7 +65,10 @@ export class VaultWatcher extends EventEmitter {
       let resolvedPath = vaultPath;
       try {
         resolvedPath = realpathSync(vaultPath);
-      } catch {
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+          console.warn(`[vault-watcher] realpath failed for ${vaultId} (${vaultPath}):`, (err as Error).message);
+        }
         /* path may not exist yet — watch the original path */
       }
       const root = path.resolve(resolvedPath);
