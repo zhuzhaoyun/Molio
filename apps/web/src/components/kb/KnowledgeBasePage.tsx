@@ -12,6 +12,7 @@ import { useFileChat } from '../../hooks/useFileChat';
 import { useKbTabs } from '../../hooks/useKbTabs';
 import { kbTabsStore } from '../../stores/kbTabsStore';
 import { vaultStore } from '../../stores/vaultStore';
+import { kbTreeRefreshStore } from '../../stores/kbTreeRefresh';
 import { KbFilePanel } from './KbFilePanel';
 import { KbTabBar } from './KbTabBar';
 import { KbMainContent } from './KbMainContent';
@@ -26,6 +27,12 @@ import { useI18n } from '../../i18n';
 
 interface KnowledgeBasePageProps {
   agentId: string | null;
+  /** Wiki chat hook owned by App (survives route switches). */
+  wikiChat: ReturnType<typeof useChat>;
+  /** Whether the wiki chat panel should be visible. */
+  showChatPanel: boolean;
+  /** Setter for showing/hiding the wiki chat panel. */
+  onShowChatPanelChange: (show: boolean) => void;
   onOpenConversation?: (conversationId: string) => void;
 }
 
@@ -47,18 +54,30 @@ function resolveUrlFileNavigation(
   return { vaultId, filePath };
 }
 
-export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBasePageProps) {
+export function KnowledgeBasePage({
+  agentId,
+  wikiChat,
+  showChatPanel,
+  onShowChatPanelChange,
+  onOpenConversation,
+}: KnowledgeBasePageProps) {
   const { t } = useI18n();
   const kb = useKnowledge();
   const tabs = useKbTabs();
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const [showChatPanel, setShowChatPanel] = useState(false);
   const [fileChatOpen, setFileChatOpen] = useState(false);
   const [fileChatFilePath, setFileChatFilePath] = useState<string | null>(null);
   const [fileChatSelectedText, setFileChatSelectedText] = useState<string | null>(null);
   const [pendingUrlNav, setPendingUrlNav] = useState<UrlFileNavigation | null>(null);
+
+  // Register the tree refresher so App-level wikiChat.onComplete can trigger
+  // a tree refresh even after this page has been unmounted (no-op in that case).
+  useEffect(() => {
+    kbTreeRefreshStore.setRefresher(kb.refreshTree);
+    return () => kbTreeRefreshStore.setRefresher(null);
+  }, [kb.refreshTree]);
 
   // Handle ?vault=<vaultId>&file=<filePath> query params for external navigation
   // (e.g. from molio:// protocol triggered by Chrome extension after clip save)
@@ -126,17 +145,6 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
     danger?: boolean;
     onConfirm: () => void;
   }>({ show: false, title: '', message: '', onConfirm: () => {} });
-
-  // Wiki chat hook — refreshes tree on build completion
-  const wikiChat = useChat({
-    agentId,
-    cwd: kb.activeVault?.path ?? null,
-    mode: 'wiki',
-    vaultId: kb.activeVault?.id ?? null,
-    onComplete: () => {
-      kb.refreshTree();
-    },
-  });
 
   // File Q&A chat hook — independent conversation per file
   const fileChat = useFileChat({
@@ -275,37 +283,37 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
   // Wiki operation handlers
   const handleBuildWiki = useCallback(() => {
     if (!agentId) return;
-    setShowChatPanel(true);
+    onShowChatPanelChange(true);
     wikiChat.reset();
     setTimeout(() => {
       wikiChat.startWikiOperation('build', '开始构建 Wiki');
     }, 50);
-  }, [agentId, wikiChat]);
+  }, [agentId, wikiChat, onShowChatPanelChange]);
 
   const handleIngestFile = useCallback((filePath: string) => {
     if (!agentId) return;
-    setShowChatPanel(true);
+    onShowChatPanelChange(true);
     wikiChat.reset();
     setTimeout(() => {
       wikiChat.startWikiOperation('ingest', `把 ${filePath} 加入 Wiki`, { filePath });
     }, 50);
-  }, [agentId, wikiChat]);
+  }, [agentId, wikiChat, onShowChatPanelChange]);
 
   const handleLintWiki = useCallback(() => {
     if (!agentId) return;
-    setShowChatPanel(true);
+    onShowChatPanelChange(true);
     wikiChat.reset();
     setTimeout(() => {
       wikiChat.startWikiOperation('lint', '检查 Wiki 健康状况');
     }, 50);
-  }, [agentId, wikiChat]);
+  }, [agentId, wikiChat, onShowChatPanelChange]);
 
   const handleCloseChat = useCallback(() => {
-    setShowChatPanel(false);
+    onShowChatPanelChange(false);
     if (wikiChat.isRunning) {
       wikiChat.cancel();
     }
-  }, [wikiChat]);
+  }, [wikiChat, onShowChatPanelChange]);
 
   const handleCloseFileChat = useCallback(() => {
     setFileChatOpen(false);

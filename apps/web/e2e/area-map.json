@@ -26,11 +26,12 @@
         "apps/web/src/components/kb/*",
         "apps/web/src/hooks/useKnowledge*",
         "apps/web/src/hooks/useKbTabs*",
+        "apps/web/src/stores/kbTreeRefresh*",
         "apps/daemon/src/core/knowledge.ts",
         "apps/daemon/src/core/db.ts",
         "apps/daemon/src/routes/knowledge.ts"
       ],
-      "specs": ["create-vault-form", "knowledge", "markdown-render"]
+      "specs": ["create-vault-form", "knowledge", "markdown-render", "wiki-chat-persist"]
     },
     "publish": {
       "paths": [
@@ -101,6 +102,7 @@
     "publish-flow": { "priority": "P0", "file": "publish-flow.spec.ts" },
     "runtime-provider-config": { "priority": "P1", "file": "runtime-provider-config.spec.ts" },
     "runtimes-page": { "priority": "P1", "file": "runtimes-page.spec.ts" },
-    "settings": { "priority": "P1", "file": "settings.spec.ts" }
+    "settings": { "priority": "P1", "file": "settings.spec.ts" },
+    "wiki-chat-persist": { "priority": "P1", "file": "wiki-chat-persist.spec.ts" }
   }
 }

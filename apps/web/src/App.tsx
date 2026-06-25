@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { useAgents } from './hooks/useAgents';
 import { useChat } from './hooks/useChat';
@@ -14,6 +14,7 @@ import { LanguageProvider } from './i18n/LanguageProvider';
 import type { Locale } from './i18n';
 import { api } from './api/client';
 import { useActiveVault, vaultStore } from './stores/vaultStore';
+import { kbTreeRefreshStore } from './stores/kbTreeRefresh';
 import './styles/rail.css';
 import './styles/home.css';
 import './styles/knowledge.css';
@@ -36,6 +37,19 @@ export default function App() {
   const [locale, setLocale] = useState<Locale>('zh');
   const [configLoaded, setConfigLoaded] = useState(false);
   const chat = useChat({ agentId: selectedAgent, cwd: activeVault?.path });
+
+  // Wiki chat lives at App level so background ingest/build/lint runs survive
+  // route switches (e.g. user navigating to Home and back to /knowledge).
+  // The chat panel itself still only renders inside KnowledgeBasePage.
+  const [showWikiChatPanel, setShowWikiChatPanel] = useState(false);
+  const onWikiComplete = useCallback(() => kbTreeRefreshStore.refresh(), []);
+  const wikiChat = useChat({
+    agentId: selectedAgent,
+    cwd: activeVault?.path ?? null,
+    mode: 'wiki',
+    vaultId: activeVault?.id ?? null,
+    onComplete: onWikiComplete,
+  });
 
   // Persist current route on change
   useEffect(() => {
@@ -168,6 +182,9 @@ export default function App() {
             <Route path="/knowledge" element={
             <KnowledgeBasePage
               agentId={selectedAgent}
+              wikiChat={wikiChat}
+              showChatPanel={showWikiChatPanel}
+              onShowChatPanelChange={setShowWikiChatPanel}
               onOpenConversation={(conversationId) => {
                 void chat.loadConversationById(conversationId).then(() => {
                   navigate('/');
