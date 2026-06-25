@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { DiffView } from './DiffView';
 import { useFileNavigation } from '../hooks/useFileNavigation';
 import { useActiveVaultId } from '../stores/vaultStore';
+import { useI18n } from '../i18n';
 import './FileOperationCard.css';
 
 interface Props {
@@ -35,6 +36,7 @@ function extractDiffInput(toolName: string, input: unknown): { oldStr: string; n
 }
 
 export function FileOperationCard({ filePath, toolName, toolInput }: Props) {
+  const { t } = useI18n();
   const [showDiff, setShowDiff] = useState(false);
   const { openFile, askAboutFile } = useFileNavigation();
   // Subscribe reactively so the card re-renders when the active vault changes;
@@ -61,7 +63,7 @@ export function FileOperationCard({ filePath, toolName, toolInput }: Props) {
       <div className="file-op-card-actions">
         {vaultId && (
           <button type="button" className="file-op-card-btn" data-testid="file-op-open" onClick={handleOpen}>
-            打开文件
+            {t('fileOp.open')}
           </button>
         )}
         {diffInput && (
@@ -71,12 +73,12 @@ export function FileOperationCard({ filePath, toolName, toolInput }: Props) {
             data-testid="file-op-diff-toggle"
             onClick={() => setShowDiff((v) => !v)}
           >
-            {showDiff ? '收起变更' : '查看本次修改'}
+            {showDiff ? t('fileOp.collapseChanges') : t('fileOp.viewChanges')}
           </button>
         )}
         {vaultId && (
           <button type="button" className="file-op-card-btn" data-testid="file-op-discuss" onClick={handleDiscuss}>
-            💬 讨论这个文件
+            💬 {t('fileOp.discuss')}
           </button>
         )}
       </div>

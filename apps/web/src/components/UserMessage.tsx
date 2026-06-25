@@ -1,5 +1,6 @@
 import { api } from '../api/client';
 import { useActiveVaultId } from '../stores/vaultStore';
+import { useI18n } from '../i18n';
 
 interface Props {
   content: string;
@@ -22,7 +23,7 @@ function isSafeImagePath(filePath: string): boolean {
 // vaultId is passed in (from a reactive hook in the component) so the message
 // re-renders when the active vault changes — reading the store imperatively
 // during render yields stale URLs.
-function renderContent(content: string, vaultId: string | null): React.ReactNode {
+function renderContent(content: string, vaultId: string | null, t: (key: string) => string): React.ReactNode {
   const parts: React.ReactNode[] = [];
   let lastIndex = 0;
   const regex = /!\[image\]\(([^)]+)\)/g;
@@ -60,7 +61,7 @@ function renderContent(content: string, vaultId: string | null): React.ReactNode
         data-testid="user-image"
       >
         <img src={imgUrl} alt={filePath} className="user-image" />
-        <span className="user-image-view">查看原图 ↗</span>
+        <span className="user-image-view">{t('userMessage.viewOriginal')} ↗</span>
       </a>,
     );
 
@@ -83,7 +84,8 @@ function renderContent(content: string, vaultId: string | null): React.ReactNode
 
 export function UserMessage({ content, timestamp }: Props) {
   const vaultId = useActiveVaultId();
-  const rendered = renderContent(content, vaultId);
+  const { t } = useI18n();
+  const rendered = renderContent(content, vaultId, t);
 
   return (
     <div className="msg user" data-testid="user-message">

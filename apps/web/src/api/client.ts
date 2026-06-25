@@ -394,7 +394,7 @@ export const api = {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: { message: `Upload failed: ${res.status}` } }));
-      throw new Error(err.error?.message ?? `上传失败: ${res.status}`);
+      throw new Error(err.error?.message ?? `Upload failed: ${res.status}`);
     }
     return res.json();
   },

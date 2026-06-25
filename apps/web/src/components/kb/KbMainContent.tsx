@@ -13,6 +13,7 @@ import { MdTypesetEditor } from './MdTypesetEditor';
 import { MdEditor } from './MdEditor';
 import { preprocessWikiEmbeds, proxyExternalImages, stripTrackingPixels } from '../../hooks/useKnowledge';
 import { api } from '../../api/client';
+import { useI18n } from '../../i18n';
 
 /** File categories for rendering strategy */
 type FileCategory = 'text' | 'image' | 'binary';
@@ -88,6 +89,7 @@ export function KbMainContent({
   onAskAboutSelection,
   editedContent,
 }: KbMainContentProps) {
+  const { t } = useI18n();
   // Selected text floating "ask" button
   const [floatBtn, setFloatBtn] = useState<{ text: string; x: number; y: number } | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -281,13 +283,13 @@ export function KbMainContent({
                   type="button"
                   className="kb-btn"
                   onClick={() => onAskAboutFile(selectedFile)}
-                  title="询问此文件 (Ctrl+L)"
+                  title={`${t('kb.askAboutFile')} (Ctrl+L)`}
                   data-testid="kb-btn-ask-file"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
                   </svg>
-                  <span>询问此文件</span>
+                  <span>{t('kb.askAboutFile')}</span>
                 </button>
               )}
 
@@ -344,9 +346,9 @@ export function KbMainContent({
       {fileLoadError && selectedFile && (
         <div className="kb-load-error">
           <div className="kb-load-error-icon">⚠</div>
-          <p className="kb-load-error-title">无法打开文件</p>
+          <p className="kb-load-error-title">{t('kb.cannotOpen')}</p>
           <p className="kb-load-error-path">{selectedFile}</p>
-          <p className="kb-load-error-hint">该文件可能已被删除、重命名或从未被创建（可能是 AI 生成的错误引用）</p>
+          <p className="kb-load-error-hint">{t('kb.fileNotFound')}</p>
         </div>
       )}
 
@@ -384,7 +386,7 @@ export function KbMainContent({
               style={{ left: floatBtn.x, top: floatBtn.y }}
               onClick={handleAskSelection}
             >
-              💬 就此提问
+              💬 {t('kb.askSelection')}
             </button>
           )}
         </div>

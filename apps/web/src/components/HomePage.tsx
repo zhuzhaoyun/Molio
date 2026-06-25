@@ -83,7 +83,7 @@ export function HomePage({
 
       if (parts.length > 0) {
         const prefix = parts.join('\n\n');
-        const fullMessage = `${prefix}\n\n${message || '请根据以上内容帮我分析。'}`;
+        const fullMessage = `${prefix}\n\n${message || t('home.fileContextFallback')}`;
         onSend(fullMessage);
       } else {
         onSend(message);

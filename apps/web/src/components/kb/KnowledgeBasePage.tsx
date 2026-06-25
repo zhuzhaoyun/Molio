@@ -20,6 +20,7 @@ import { FileChatPanel } from './FileChatPanel';
 import { VaultManagerModal } from './VaultManager';
 import { ImportModal, CoseInstallPrompt, InputDialog, ConfirmDialog } from './KbModals';
 import { ContextMenu, type MenuItem } from './ContextMenu';
+import { useI18n } from '../../i18n';
 
 interface KnowledgeBasePageProps {
   agentId: string | null;
@@ -45,6 +46,7 @@ function resolveUrlFileNavigation(
 }
 
 export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBasePageProps) {
+  const { t } = useI18n();
   const kb = useKnowledge();
   const tabs = useKbTabs();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -316,7 +318,7 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
   // Wrap fileChat.send to prepend selected text as context
   const handleFileChatSend = useCallback((text: string) => {
     if (fileChatSelectedText) {
-      const contextMsg = `关于文件中的以下选中内容：\n> ${fileChatSelectedText}\n\n${text || '请帮我分析以上选中内容。'}`;
+      const contextMsg = `${t('kb.fileChatContextPrefix')}\n> ${fileChatSelectedText}\n\n${text || t('kb.fileChatDefaultPrompt')}`;
       setFileChatSelectedText(null); // only prepend once
       fileChat.send(contextMsg);
     } else {
@@ -438,7 +440,7 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
       });
       items.push({ divider: true });
       items.push({
-        label: '询问此文件',
+        label: t('kb.askAboutFile'),
         onClick: () => {
           handleCloseCtxMenu();
           openFileChat(node.path);

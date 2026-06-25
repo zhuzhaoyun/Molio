@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import type { TreeNode } from '@molio/contracts';
 import { api } from '../api/client';
+import { useI18n } from '../i18n';
 import './FilePicker.css';
 
 interface Props {
@@ -24,19 +25,22 @@ function flattenFiles(nodes: TreeNode[]): TreeNode[] {
   return files;
 }
 
-function timeAgo(ms: number): string {
+type TFunc = (key: string, params?: Record<string, string | number>) => string;
+
+function timeAgo(ms: number, t: TFunc): string {
   const diff = Date.now() - ms;
   const mins = Math.floor(diff / 60000);
-  if (mins < 1) return '刚刚';
-  if (mins < 60) return `${mins}分钟前`;
+  if (mins < 1) return t('filePicker.justNow');
+  if (mins < 60) return t('filePicker.mAgo', { n: mins });
   const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}小时前`;
+  if (hours < 24) return t('filePicker.hAgo', { n: hours });
   const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}天前`;
-  return '';
+  if (days < 30) return t('filePicker.dAgo', { n: days });
+  return t('filePicker.older');
 }
 
 export function FilePicker({ vaultId, filterText, onSelect, onClose }: Props) {
+  const { t } = useI18n();
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -134,7 +138,15 @@ export function FilePicker({ vaultId, filterText, onSelect, onClose }: Props) {
   if (loading) {
     return (
       <div className="file-picker-overlay">
-        <div className="file-picker-empty">加载中…</div>
+        <div className="file-picker-empty">{t('filePicker.loading')}</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="file-picker-overlay">
+        <div className="file-picker-empty">{t('filePicker.loadError')}</div>
       </div>
     );
   }
@@ -151,14 +163,14 @@ export function FilePicker({ vaultId, filterText, onSelect, onClose }: Props) {
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           onKeyDown={handleSearchKeyDown}
-          placeholder="搜索文件…"
+          placeholder={t('filePicker.searchPlaceholder')}
         />
       </div>
 
       {/* File list */}
       <div ref={listRef}>
         {files.length === 0 ? (
-          <div className="file-picker-empty">无匹配文件</div>
+          <div className="file-picker-empty">{t('filePicker.noMatch')}</div>
         ) : (
           files.map((f, i) => (
             <div
@@ -173,7 +185,7 @@ export function FilePicker({ vaultId, filterText, onSelect, onClose }: Props) {
               <span className="file-picker-item-icon">📄</span>
               <span className="file-picker-item-name">{f.name}</span>
               <span className="file-picker-item-time">
-                {f.modifiedAt ? timeAgo(f.modifiedAt) : ''}
+                {f.modifiedAt ? timeAgo(f.modifiedAt, t) : ''}
               </span>
             </div>
           ))

@@ -210,6 +210,48 @@ const en: Record<string, string> = {
   'graph.edges': '{count} edges',
   'graph.selectVault': 'Select vault',
   'graph.empty': 'No Markdown files in this vault',
+
+  // ── FileOperationCard ──
+  'fileOp.open': 'Open file',
+  'fileOp.viewChanges': 'View changes',
+  'fileOp.collapseChanges': 'Collapse changes',
+  'fileOp.discuss': 'Discuss this file',
+
+  // ── DiffView ──
+  'diff.noChanges': 'No changes',
+
+  // ── FileChatPanel ──
+  'fileChat.askFile': 'Ask about this file',
+  'fileChat.running': 'Running…',
+  'fileChat.close': 'Close',
+  'fileChat.ready': 'AI assistant ready',
+  'fileChat.contextLabel': 'Context:',
+  'fileChat.selection': 'Selection',
+
+  // ── KnowledgeBase (file chat) ──
+  'kb.askAboutFile': 'Ask about this file',
+  'kb.askSelection': 'Ask about this',
+  'kb.cannotOpen': 'Cannot open file',
+  'kb.fileNotFound': 'This file may have been deleted, renamed, or never created (possibly an AI-generated broken reference).',
+  'kb.fileChatContextPrefix': 'Regarding the following selection from the file:',
+  'kb.fileChatDefaultPrompt': 'Please analyze the selection above.',
+
+  // ── FilePicker ──
+  'filePicker.justNow': 'Just now',
+  'filePicker.mAgo': '{n} min ago',
+  'filePicker.hAgo': '{n} h ago',
+  'filePicker.dAgo': '{n} d ago',
+  'filePicker.older': 'Older',
+  'filePicker.loading': 'Loading…',
+  'filePicker.noMatch': 'No matching files',
+  'filePicker.searchPlaceholder': 'Search files…',
+  'filePicker.loadError': 'Failed to load files',
+
+  // ── UserMessage ──
+  'userMessage.viewOriginal': 'View original',
+
+  // ── HomePage ──
+  'home.fileContextFallback': 'Please analyze the above content.',
 };
 
 export default en;

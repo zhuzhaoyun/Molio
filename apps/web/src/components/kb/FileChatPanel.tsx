@@ -3,6 +3,7 @@ import type { ChatMessage } from '../../hooks/useChat';
 import { UserMessage } from '../UserMessage';
 import { AssistantMessage } from '../AssistantMessage';
 import { ChatComposer } from '../ChatComposer';
+import { useI18n } from '../../i18n';
 import './FileChatPanel.css';
 
 interface FileChatPanelProps {
@@ -35,7 +36,7 @@ export function FileChatPanel({
   onSubmitToolResult,
   onOpenConversation,
 }: FileChatPanelProps) {
-  const logRef = useRef<HTMLDivElement>(null);
+  const { t } = useI18n();
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // Resizable panel width
@@ -111,19 +112,19 @@ export function FileChatPanel({
       {/* Header */}
       <div className="file-chat-header">
         <div className="file-chat-header-left">
-          <span className="file-chat-label">询问此文件</span>
+          <span className="file-chat-label">{t('fileChat.askFile')}</span>
           {fileName && (
             <span className="file-chat-context" title={filePath ?? undefined}>
               {fileName}
             </span>
           )}
-          {isRunning && <span className="file-chat-status">运行中…</span>}
+          {isRunning && <span className="file-chat-status">{t('fileChat.running')}</span>}
         </div>
         <button
           type="button"
           className="file-chat-close"
           onClick={onClose}
-          title="关闭"
+          title={t('fileChat.close')}
           data-testid="file-chat-close"
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
@@ -134,15 +135,15 @@ export function FileChatPanel({
       </div>
 
       {/* Messages */}
-      <div className="file-chat-messages" ref={logRef}>
+      <div className="file-chat-messages">
         {messages.length === 0 ? (
           <div className="file-chat-empty">
             <div className="file-chat-empty-icon">💬</div>
-            <p>AI 助手已就绪</p>
-            {fileName && <p className="file-chat-empty-hint">上下文：{fileName}</p>}
+            <p>{t('fileChat.ready')}</p>
+            {fileName && <p className="file-chat-empty-hint">{t('fileChat.contextLabel')}{fileName}</p>}
             {selectedText && (
               <div className="file-chat-selected-preview" data-testid="file-chat-selected-preview">
-                <div className="file-chat-selected-label">选中内容</div>
+                <div className="file-chat-selected-label">{t('fileChat.selection')}</div>
                 <blockquote>{selectedText}</blockquote>
               </div>
             )}

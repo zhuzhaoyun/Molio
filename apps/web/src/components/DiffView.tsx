@@ -1,5 +1,6 @@
 // apps/web/src/components/DiffView.tsx
 import { useMemo } from 'react';
+import { useI18n } from '../i18n';
 import './DiffView.css';
 
 interface Props {
@@ -52,12 +53,14 @@ function computeDiff(oldStr: string, newStr: string): DiffLine[] {
 }
 
 export function DiffView({ oldStr, newStr }: Props) {
+  const { t } = useI18n();
   const lines = useMemo(() => computeDiff(oldStr, newStr), [oldStr, newStr]);
 
   if (lines.length === 0) {
-    return <div className="diff-view"><div className="diff-line diff-line-ctx">无变更</div></div>;
+    return <div className="diff-view"><div className="diff-line diff-line-ctx">{t('diff.noChanges')}</div></div>;
   }
 
+  const prefix = (type: DiffLine['type']) => (type === 'add' ? '+' : type === 'del' ? '-' : ' ');
   return (
     <div className="diff-view" data-testid="diff-view">
       {lines.map((line, i) => (
@@ -65,7 +68,7 @@ export function DiffView({ oldStr, newStr }: Props) {
           key={i}
           className={`diff-line diff-line-${line.type}`}
         >
-          {line.type === 'add' ? '+' : line.type === 'del' ? '-' : ' '} {line.content}
+          {prefix(line.type)} {line.content}
         </div>
       ))}
     </div>
