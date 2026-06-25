@@ -45,25 +45,6 @@
   min-width: 0;
 }
 
-.file-chat-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
-  white-space: nowrap;
-}
-
-.file-chat-context {
-  font-size: 11px;
-  color: var(--accent);
-  background: var(--accent-tint);
-  padding: 1px 8px;
-  border-radius: 10px;
-  max-width: 160px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .file-chat-status {
   font-size: 11px;
   color: var(--text-muted);
@@ -108,11 +89,6 @@
 
 .file-chat-empty-icon {
   font-size: 36px;
-}
-
-.file-chat-empty-hint {
-  font-size: 12px;
-  color: var(--text-soft);
 }
 
 /* Selected text preview in empty state */

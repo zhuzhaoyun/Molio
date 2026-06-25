@@ -221,11 +221,9 @@ const en: Record<string, string> = {
   'diff.noChanges': 'No changes',
 
   // ── FileChatPanel ──
-  'fileChat.askFile': 'Ask about this file',
   'fileChat.running': 'Running…',
   'fileChat.close': 'Close',
   'fileChat.ready': 'AI assistant ready',
-  'fileChat.contextLabel': 'Context:',
   'fileChat.selection': 'Selection',
 
   // ── KnowledgeBase (file chat) ──

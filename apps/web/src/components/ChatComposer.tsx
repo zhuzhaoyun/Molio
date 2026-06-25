@@ -4,10 +4,13 @@ import type { ConversationHistoryItem } from '@molio/contracts';
 import { vaultStore } from '../stores/vaultStore';
 import { api } from '../api/client';
 import { FilePicker } from './FilePicker';
+import { FolderIcon, FileDocIcon } from './FileIcons';
 
 export interface FileRef {
   vaultId: string;
   filePath: string;
+  /** True when filePath points at a directory rather than a file. */
+  isDirectory?: boolean;
 }
 
 export interface PastedImage {
@@ -20,12 +23,47 @@ export interface PastedImage {
   file?: File;
 }
 
+/**
+ * Build the markdown prefix for file refs + pasted images. Shared by every
+ * ChatComposer host (home page, file-chat panel) so the message format — and
+ * the agent's reading cues — stay consistent.
+ *
+ * Folders get a trailing slash plus a link title that tells the agent to
+ * enumerate the directory; files stay plain `[📄 name](path)` links.
+ */
+export function buildAttachmentPrefix(fileRefs: FileRef[], pastedImages: PastedImage[]): string {
+  const parts: string[] = [];
+
+  const doneImages = pastedImages.filter((p) => p.state === 'done');
+  if (doneImages.length > 0) {
+    parts.push(doneImages.map((p) => `![image](${p.filePath})`).join('\n'));
+  }
+
+  if (fileRefs.length > 0) {
+    parts.push(
+      fileRefs
+        .map((r) => {
+          const name = r.filePath.split('/').pop() ?? r.filePath;
+          if (r.isDirectory) {
+            return `[📁 ${name}/](${r.filePath}/ "文件夹，请读取其下所有相关文件")`;
+          }
+          return `[📄 ${name}](${r.filePath})`;
+        })
+        .join(' '),
+    );
+  }
+
+  return parts.length > 0 ? parts.join('\n\n') : '';
+}
+
 interface Props {
   isRunning: boolean;
   onSend: (message: string, fileRefs: FileRef[], pastedImages: PastedImage[]) => void;
   onCancel: () => void;
   disabled?: boolean;
   disabledPlaceholder?: string;
+  /** Pre-populated file refs (e.g. "ask about this file" shortcut). */
+  initialFileRefs?: FileRef[];
   /** Callback when user selects a conversation from history. */
   onOpenConversation?: (conversationId: string) => void;
 }
@@ -36,11 +74,12 @@ export function ChatComposer({
   onCancel,
   disabled,
   disabledPlaceholder,
+  initialFileRefs,
   onOpenConversation,
 }: Props) {
   const { t } = useI18n();
   const [text, setText] = useState('');
-  const [fileRefs, setFileRefs] = useState<FileRef[]>([]);
+  const [fileRefs, setFileRefs] = useState<FileRef[]>(initialFileRefs ?? []);
   const [pastedImages, setPastedImages] = useState<PastedImage[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -111,13 +150,13 @@ export function ChatComposer({
 
   // FilePicker: on select
   const handleFileSelect = useCallback(
-    (filePath: string) => {
+    (filePath: string, isDirectory: boolean) => {
       const vaultId = vaultStore.getActiveVaultId();
       if (!vaultId) return;
       // Avoid duplicates
       setFileRefs((prev) => {
         if (prev.some((r) => r.filePath === filePath)) return prev;
-        return [...prev, { vaultId, filePath }];
+        return [...prev, { vaultId, filePath, isDirectory }];
       });
       removeTrigger();
     },
@@ -341,9 +380,12 @@ export function ChatComposer({
           <div className="composer-attachments" data-testid="composer-attachments">
             {fileRefs.map((ref, i) => (
               <span key={`file-${ref.filePath}-${i}`} className="composer-file-badge" data-testid="composer-file-badge">
+                <span className="composer-file-badge-icon">
+                  {ref.isDirectory ? <FolderIcon size={13} /> : <FileDocIcon size={12} />}
+                </span>
                 <span className="composer-file-badge-name" title={ref.filePath}>
-                  {'📄 '}
                   {ref.filePath.split('/').pop() ?? ref.filePath}
+                  {ref.isDirectory ? '/' : ''}
                 </span>
                 <button
                   type="button"

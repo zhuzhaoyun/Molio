@@ -2,33 +2,31 @@ import { useEffect, useRef, useMemo, useCallback, useState } from 'react';
 import type { ChatMessage } from '../../hooks/useChat';
 import { UserMessage } from '../UserMessage';
 import { AssistantMessage } from '../AssistantMessage';
-import { ChatComposer } from '../ChatComposer';
+import { ChatComposer, type FileRef, type PastedImage } from '../ChatComposer';
 import { useI18n } from '../../i18n';
 import './FileChatPanel.css';
 
 interface FileChatPanelProps {
   messages: ChatMessage[];
   isRunning: boolean;
-  /** File path for the context badge. */
+  /** File path relative to vault root — pre-filled as a @ ref in the composer. */
   filePath: string | null;
+  /** Vault id for the pre-filled @ ref. */
+  vaultId: string | null;
   /** Selected text from the preview (via "就此提问" float button). Shown in empty state. */
   selectedText?: string | null;
-  onSend: (text: string) => void;
+  onSend: (text: string, fileRefs?: FileRef[], pastedImages?: PastedImage[]) => void;
   onCancel: () => void;
   onClose: () => void;
   onSubmitToolResult: (toolUseId: string, content: string) => void;
   onOpenConversation?: (conversationId: string) => void;
 }
 
-function extractFileName(path: string): string {
-  const parts = path.split('/');
-  return parts[parts.length - 1] || path;
-}
-
 export function FileChatPanel({
   messages,
   isRunning,
   filePath,
+  vaultId,
   selectedText,
   onSend,
   onCancel,
@@ -95,7 +93,13 @@ export function FileChatPanel({
     [onSubmitToolResult],
   );
 
-  const fileName = filePath ? extractFileName(filePath) : null;
+  // Pre-fill the current file as a @ ref so "ask about this file" behaves like
+  // the home page chat with the file already @-mentioned. Keying the composer
+  // on filePath forces a fresh mount (and re-seeded @ ref) when the file changes.
+  const initialFileRefs = useMemo<FileRef[]>(
+    () => (filePath && vaultId ? [{ vaultId, filePath }] : []),
+    [filePath, vaultId],
+  );
 
   return (
     <aside
@@ -112,12 +116,6 @@ export function FileChatPanel({
       {/* Header */}
       <div className="file-chat-header">
         <div className="file-chat-header-left">
-          <span className="file-chat-label">{t('fileChat.askFile')}</span>
-          {fileName && (
-            <span className="file-chat-context" title={filePath ?? undefined}>
-              {fileName}
-            </span>
-          )}
           {isRunning && <span className="file-chat-status">{t('fileChat.running')}</span>}
         </div>
         <button
@@ -140,7 +138,6 @@ export function FileChatPanel({
           <div className="file-chat-empty">
             <div className="file-chat-empty-icon">💬</div>
             <p>{t('fileChat.ready')}</p>
-            {fileName && <p className="file-chat-empty-hint">{t('fileChat.contextLabel')}{fileName}</p>}
             {selectedText && (
               <div className="file-chat-selected-preview" data-testid="file-chat-selected-preview">
                 <div className="file-chat-selected-label">{t('fileChat.selection')}</div>
@@ -181,14 +178,12 @@ export function FileChatPanel({
 
       {/* Input */}
       <div className="file-chat-input">
-        {/* FileChatPanel's send path is text-only today; explicitly accept only
-            the text arg from ChatComposer so fileRefs/pastedImages are not
-            silently accepted then discarded. Wire them through if/when this
-            panel gains attachment support. */}
         <ChatComposer
+          key={filePath ?? undefined}
           isRunning={isRunning}
-          onSend={(text) => onSend(text)}
+          onSend={onSend}
           onCancel={onCancel}
+          initialFileRefs={initialFileRefs}
           onOpenConversation={onOpenConversation}
         />
       </div>

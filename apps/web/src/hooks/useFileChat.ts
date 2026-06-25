@@ -7,7 +7,7 @@ export interface UseFileChatOptions {
   agentId: string | null;
   /** Vault filesystem path — passed as cwd for the agent. */
   vaultPath: string | null;
-  /** File path relative to vault root — passed as wikiExtra.filePath. */
+  /** File path relative to vault root — used to reset the conversation when it changes. */
   filePath: string | null;
 }
 
@@ -55,7 +55,6 @@ export function useFileChat(opts: UseFileChatOptions): FileChatState {
         message: ctx.message,
         cwd: vaultPath ?? undefined,
         conversationId: ctx.conversationId ?? conversationIdRef.current ?? undefined,
-        wikiExtra: filePath ? { filePath } : undefined,
         history: contractHistory.length > 0 ? contractHistory : undefined,
       });
       // Remember conversation for multi-turn

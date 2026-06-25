@@ -759,6 +759,12 @@
   min-width: 0;
 }
 
+.composer-file-badge-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
 .composer-file-badge-remove {
   display: inline-flex;
   align-items: center;

@@ -100,4 +100,32 @@ test.describe('Composer @ file picker', () => {
       await expect(badge).not.toBeVisible();
     }
   });
+
+  test('folder can be selected as a @ ref', async ({ page }) => {
+    await gotoHome(page);
+    await page.reload({ waitUntil: 'networkidle' });
+
+    const input = page.locator('[data-testid="composer-input"]');
+    await input.click();
+    await input.fill('@');
+
+    const picker = page.locator('[data-testid="file-picker"]');
+    const pickerVisible = await picker.isVisible({ timeout: 3000 }).catch(() => false);
+    if (!pickerVisible) return;
+
+    // Directories surface only when searched (they sort below files). Type a
+    // slash to match any path, then look for a folder item (name ends with '/').
+    const searchInput = page.locator('[data-testid="file-picker-search"]');
+    await searchInput.fill('/');
+    const items = page.locator('[data-testid="file-picker-item"]');
+    const folderItem = items.filter({ hasText: /\// }).first();
+    const hasFolder = await folderItem.isVisible({ timeout: 3000 }).catch(() => false);
+    if (!hasFolder) return;
+
+    await folderItem.click();
+    const badge = page.locator('[data-testid="composer-file-badge"]').first();
+    await expect(badge).toBeVisible({ timeout: 3000 });
+    // Folder badge label ends with a trailing slash.
+    await expect(badge).toContainText('/');
+  });
 });

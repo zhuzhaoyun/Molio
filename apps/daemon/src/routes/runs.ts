@@ -2,11 +2,9 @@ import { Hono } from 'hono';
 import type { CreateRunRequest } from '@molio/contracts';
 import type Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
-import fs from 'node:fs';
 import type { RunManager } from '../core/RunManager.js';
 import type { ConversationService } from '../core/conversations/service.js';
 import { getVaultByPath, addKbHistory } from '../core/db.js';
-import { resolveFilePath, isTextFile } from '../core/knowledge.js';
 import {
   WIKI_QUERY_PROMPT,
   WIKI_BUILD_PROMPT,
@@ -14,9 +12,6 @@ import {
   WIKI_LINT_PROMPT,
   WIKI_SAVE_PROMPT,
 } from '../core/wiki-prompts.js';
-
-/** Max file size to inline into a file-Q&A prompt (kept small to bound prompt cost). */
-const MAX_FILE_CHAT_SIZE = 50 * 1024; // 50KB
 
 export function runsRoutes(
   db: Database.Database,
@@ -114,68 +109,11 @@ export function runsRoutes(
       } else if (body.cwd && (!body.history || body.history.length === 0)) {
         const vault = getVaultByPath(db, body.cwd);
         if (vault) {
-          // If a specific file is referenced via wikiExtra, read it and include as context.
-          // Use a focused prompt rather than WIKI_QUERY_PROMPT — the latter instructs the
-          // agent to explore the entire wiki which distracts from the specific file at hand.
-          if (body.wikiExtra?.filePath) {
-            try {
-              // Resolve within the vault with path-traversal protection. A
-              // malicious filePath like "../../etc/passwd" must not escape the
-              // vault root. resolveFilePath throws on traversal; that error
-              // falls through to the catch below and is treated as
-              // "not accessible" so neither the file nor the traversal
-              // attempt is leaked to the caller.
-              const fileAbsPath = resolveFilePath(vault.path, body.wikiExtra.filePath);
-              const stat = await fs.promises.stat(fileAbsPath);
-              if (!stat.isFile()) {
-                // Not a regular file (e.g. a directory).
-                message = `用户正在知识库中查看文件 "${body.wikiExtra.filePath}"，但它不是一个常规文件，无法读取内容。
-
-用户问题：${message}
-
-请告知用户该路径不是文件，建议在知识库中选择一个具体文件。`;
-              } else if (stat.size > MAX_FILE_CHAT_SIZE) {
-                // Large file: note the file but don't include full content
-                message = `用户正在知识库中查看文件 "${body.wikiExtra.filePath}"，但该文件过大（>50KB），未加载完整内容。
-
-用户问题：${message}
-
-请告知用户文件过大无法整体加载，建议在知识库编辑器中打开，或针对文件特定部分提问。`;
-              } else if (!isTextFile(fileAbsPath)) {
-                // Binary file (image/pdf/docx) — reading as UTF-8 would inject
-                // garbage into the prompt, so refuse rather than embed bytes.
-                message = `用户正在知识库中查看文件 "${body.wikiExtra.filePath}"，但该文件不是文本格式，无法读取内容。
-
-用户问题：${message}
-
-请告知用户该文件无法以文本形式读取，建议在知识库中预览。`;
-              } else {
-                const fileContent = await fs.promises.readFile(fileAbsPath, 'utf-8');
-                message = `用户正在知识库中查看文件 "${body.wikiExtra.filePath}"，并围绕该文件提问。
-
-=== 文件 "${body.wikiExtra.filePath}" 的完整内容 ===
-
-${fileContent}
-
-=== 文件内容结束 ===
-
-用户问题：${message}
-
-请基于上面这个文件的内容直接回答。需要引用具体段落时直接引用原文。用户已通过"询问此文件"指定了要讨论的文件，无需建议查看其他文件或 wiki 页面。`;
-              }
-            } catch (err) {
-              // File not found, traversal attempt, or read failure — log the
-              // real cause and let the agent know the file is unavailable.
-              console.error('[runs] file chat read failed:', err);
-              message = `用户尝试讨论知识库中的文件 "${body.wikiExtra.filePath}"，但该文件不存在或无法访问。
-
-用户问题：${message}
-
-请告知用户文件可能已被移动或删除，建议在知识库中确认文件路径。`;
-            }
-          } else {
-            message = `${WIKI_QUERY_PROMPT}\n\n---\n\n用户问题：${message}`;
-          }
+          // First message in a vault-context conversation: prepend the wiki
+          // query prompt so the agent can explore the knowledge base. File
+          // context (when the user @-mentions a file) is carried inline in
+          // the message as a markdown link — the agent reads it itself.
+          message = `${WIKI_QUERY_PROMPT}\n\n---\n\n用户问题：${message}`;
         }
       }
 

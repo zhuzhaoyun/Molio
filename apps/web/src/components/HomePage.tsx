@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback, useMemo } from 'react';
-import { ChatComposer } from './ChatComposer';
+import { ChatComposer, buildAttachmentPrefix } from './ChatComposer';
 import type { FileRef, PastedImage } from './ChatComposer';
 import { UserMessage } from './UserMessage';
 import { AssistantMessage } from './AssistantMessage';
@@ -61,30 +61,9 @@ export function HomePage({
   // Wrap onSend to handle fileRefs + pastedImages → message prefix
   const handleSend = useCallback(
     (message: string, fileRefs?: FileRef[], pastedImages?: PastedImage[]) => {
-      const parts: string[] = [];
-
-      if (pastedImages && pastedImages.length > 0) {
-        const doneImages = pastedImages.filter((p) => p.state === 'done');
-        // Only push when there is at least one finished image — otherwise
-        // .map().join('\n') yields '' and parts.push('') makes parts.length>0
-        // falsy-truthy, emitting a message with leading newlines.
-        if (doneImages.length > 0) {
-          parts.push(doneImages.map((p) => `![image](${p.filePath})`).join('\n'));
-        }
-      }
-
-      if (fileRefs && fileRefs.length > 0) {
-        parts.push(
-          fileRefs
-            .map((r) => `[📄 ${r.filePath.split('/').pop() ?? r.filePath}](${r.filePath})`)
-            .join(' '),
-        );
-      }
-
-      if (parts.length > 0) {
-        const prefix = parts.join('\n\n');
-        const fullMessage = `${prefix}\n\n${message || t('home.fileContextFallback')}`;
-        onSend(fullMessage);
+      const prefix = buildAttachmentPrefix(fileRefs ?? [], pastedImages ?? []);
+      if (prefix) {
+        onSend(`${prefix}\n\n${message || t('home.fileContextFallback')}`);
       } else {
         onSend(message);
       }

@@ -20,6 +20,8 @@ import { FileChatPanel } from './FileChatPanel';
 import { VaultManagerModal } from './VaultManager';
 import { ImportModal, CoseInstallPrompt, InputDialog, ConfirmDialog } from './KbModals';
 import { ContextMenu, type MenuItem } from './ContextMenu';
+import type { FileRef, PastedImage } from '../ChatComposer';
+import { buildAttachmentPrefix } from '../ChatComposer';
 import { useI18n } from '../../i18n';
 
 interface KnowledgeBasePageProps {
@@ -316,15 +318,26 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
   }, [fileChat]);
 
   // Wrap fileChat.send to prepend selected text as context
-  const handleFileChatSend = useCallback((text: string) => {
-    if (fileChatSelectedText) {
-      const contextMsg = `${t('kb.fileChatContextPrefix')}\n> ${fileChatSelectedText}\n\n${text || t('kb.fileChatDefaultPrompt')}`;
-      setFileChatSelectedText(null); // only prepend once
-      fileChat.send(contextMsg);
-    } else {
-      fileChat.send(text);
-    }
-  }, [fileChatSelectedText, fileChat.send]);
+  const handleFileChatSend = useCallback(
+    (text: string, fileRefs?: FileRef[], pastedImages?: PastedImage[]) => {
+      // Build the same @ ref / image prefix the home page composer does, so the
+      // "ask about this file" chat is just a normal chat with the file pre-@-ed.
+      const prefix = buildAttachmentPrefix(fileRefs ?? [], pastedImages ?? []);
+      let message = text;
+      if (prefix) {
+        message = `${prefix}\n\n${message || t('home.fileContextFallback')}`;
+      }
+
+      if (fileChatSelectedText) {
+        const contextMsg = `${t('kb.fileChatContextPrefix')}\n> ${fileChatSelectedText}\n\n${message || t('kb.fileChatDefaultPrompt')}`;
+        setFileChatSelectedText(null); // only prepend once
+        fileChat.send(contextMsg);
+      } else {
+        fileChat.send(message);
+      }
+    },
+    [fileChatSelectedText, fileChat.send],
+  );
 
   // Ctrl+L / Cmd+L — open file chat for current file
   useEffect(() => {
@@ -651,6 +664,7 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
           messages={fileChat.messages}
           isRunning={fileChat.isRunning}
           filePath={fileChatFilePath}
+          vaultId={kb.activeVault?.id ?? null}
           selectedText={fileChatSelectedText}
           onSend={handleFileChatSend}
           onCancel={fileChat.cancel}

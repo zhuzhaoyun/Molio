@@ -33,7 +33,7 @@ test.describe('File chat panel', () => {
     }
   });
 
-  test('empty state shows context hint', async ({ page }) => {
+  test('empty state shows composer with current file pre-@-mentioned', async ({ page }) => {
     await gotoHome(page);
     await page.reload({ waitUntil: 'networkidle' });
     await clickNav(page, 'knowledge');
@@ -56,6 +56,12 @@ test.describe('File chat panel', () => {
         // Input should be ready
         const input = page.locator('[data-testid="file-chat-panel"] [data-testid="composer-input"]');
         expect(await input.isVisible()).toBe(true);
+
+        // The current file should be pre-filled as a @ ref badge in the composer
+        const fileBadge = page.locator(
+          '[data-testid="file-chat-panel"] [data-testid="composer-file-badge"]',
+        );
+        expect(await fileBadge.first().isVisible()).toBe(true);
       }
     }
   });

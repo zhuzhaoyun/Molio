@@ -221,11 +221,9 @@ const zh: Record<string, string> = {
   'diff.noChanges': '无变更',
 
   // ── FileChatPanel ──
-  'fileChat.askFile': '询问此文件',
   'fileChat.running': '运行中…',
   'fileChat.close': '关闭',
   'fileChat.ready': 'AI 助手已就绪',
-  'fileChat.contextLabel': '上下文：',
   'fileChat.selection': '选中内容',
 
   // ── KnowledgeBase (file chat) ──

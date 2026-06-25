@@ -2,27 +2,34 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import type { TreeNode } from '@molio/contracts';
 import { api } from '../api/client';
 import { useI18n } from '../i18n';
+import { FolderIcon, FileDocIcon } from './FileIcons';
 import './FilePicker.css';
 
 interface Props {
   vaultId: string;
   /** Initial filter text — pre-fills the search input. */
   filterText: string;
-  onSelect: (filePath: string) => void;
+  onSelect: (filePath: string, isDirectory: boolean) => void;
   onClose: () => void;
 }
 
-/** Flatten tree into file-only list. */
-function flattenFiles(nodes: TreeNode[]): TreeNode[] {
-  const files: TreeNode[] = [];
+/** Flatten tree into a list of selectable nodes (files and directories). */
+function flattenNodes(nodes: TreeNode[]): TreeNode[] {
+  const out: TreeNode[] = [];
   function walk(list: TreeNode[]) {
     for (const n of list) {
-      if (n.type === 'file') files.push(n);
+      out.push(n);
       if (n.children) walk(n.children);
     }
   }
   walk(nodes);
-  return files;
+  return out;
+}
+
+/** Folder portion of a vault-relative path (without the filename), or '' at root. */
+function folderPath(fullPath: string): string {
+  const idx = fullPath.lastIndexOf('/');
+  return idx === -1 ? '' : fullPath.slice(0, idx + 1);
 }
 
 type TFunc = (key: string, params?: Record<string, string | number>) => string;
@@ -80,16 +87,32 @@ export function FilePicker({ vaultId, filterText, onSelect, onClose }: Props) {
     searchRef.current?.focus();
   }, []);
 
-  // Flatten + filter
+  // Build the selectable list. With no query, surface top-level directories
+  // first (so folders are discoverable without typing) then recent files.
+  // When searching, match any node — files or nested directories — by name/path.
   const files = useMemo(() => {
-    const all = flattenFiles(tree);
-    all.sort((a, b) => (b.modifiedAt ?? 0) - (a.modifiedAt ?? 0));
-    if (!searchQuery) return all.slice(0, 8);
+    if (!searchQuery) {
+      const topDirs = tree
+        .filter((n) => n.type === 'directory')
+        .sort((a, b) => a.name.localeCompare(b.name));
+      const recentFiles = flattenNodes(tree)
+        .filter((n) => n.type === 'file')
+        .sort((a, b) => (b.modifiedAt ?? 0) - (a.modifiedAt ?? 0))
+        .slice(0, 8);
+      return [...topDirs, ...recentFiles].slice(0, 12);
+    }
     const q = searchQuery.toLowerCase();
-    return all
+    return flattenNodes(tree)
       .filter(
         (f) => f.name.toLowerCase().includes(q) || f.path.toLowerCase().includes(q),
       )
+      .sort((a, b) => {
+        // Directories first so a folder named "概念" surfaces above files
+        // that merely contain the word "概念".
+        if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
+        if (a.type === 'directory') return a.path.localeCompare(b.path);
+        return (b.modifiedAt ?? 0) - (a.modifiedAt ?? 0);
+      })
       .slice(0, 50);
   }, [tree, searchQuery]);
 
@@ -108,7 +131,7 @@ export function FilePicker({ vaultId, filterText, onSelect, onClose }: Props) {
       } else if (e.key === 'Enter') {
         e.preventDefault();
         const f = files[activeIdxRef.current];
-        if (f) onSelect(f.path);
+        if (f) onSelect(f.path, f.type === 'directory');
       } else if (e.key === 'Escape') {
         e.preventDefault();
         onClose();
@@ -179,11 +202,22 @@ export function FilePicker({ vaultId, filterText, onSelect, onClose }: Props) {
               data-testid="file-picker-item"
               onMouseDown={(e) => {
                 e.preventDefault();
-                onSelect(f.path);
+                onSelect(f.path, f.type === 'directory');
               }}
             >
-              <span className="file-picker-item-icon">📄</span>
-              <span className="file-picker-item-name">{f.name}</span>
+              <span className="file-picker-item-icon">
+                {f.type === 'directory' ? <FolderIcon size={16} /> : <FileDocIcon size={15} />}
+              </span>
+              <div className="file-picker-item-text">
+                <span className="file-picker-item-name">
+                  {f.type === 'directory' ? `${f.name}/` : f.name}
+                </span>
+                {folderPath(f.path) && (
+                  <span className="file-picker-item-dir" title={folderPath(f.path)}>
+                    {folderPath(f.path)}
+                  </span>
+                )}
+              </div>
               <span className="file-picker-item-time">
                 {f.modifiedAt ? timeAgo(f.modifiedAt, t) : ''}
               </span>
