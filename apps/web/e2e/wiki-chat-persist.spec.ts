@@ -32,6 +32,19 @@ test.describe('Wiki chat panel — page switch persistence', () => {
   });
 
   test('panel stays open with progress after navigating away and back', async ({ page }) => {
+    // Mock the wiki run with a script that emits a text delta but never
+    // sends turn_end/usage — so isRunning stays true throughout the test.
+    // Set up before gotoHome so /api/agents and /api/config are mocked when
+    // App resolves selectedAgent (otherwise handleBuildWiki no-ops on null agentId).
+    await mockChatRun(page, {
+      runId: 'run-wiki-persist',
+      convId: 'conv-wiki-persist',
+      script: [
+        { type: 'status', label: 'running', model: 'claude-sonnet-4-5' },
+        { type: 'text_delta', delta: 'Ingesting knowledge base...' },
+      ],
+    });
+
     await gotoHome(page);
     await clickNav(page, 'knowledge');
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
@@ -46,17 +59,6 @@ test.describe('Wiki chat panel — page switch persistence', () => {
     await vaultItem.click();
     // Wait for the file panel to reflect the active vault
     await expect(page.locator('button[title="构建 Wiki"]')).toBeVisible({ timeout: 5_000 });
-
-    // Mock the wiki run with a script that emits a text delta but never
-    // sends turn_end/usage — so isRunning stays true throughout the test.
-    await mockChatRun(page, {
-      runId: 'run-wiki-persist',
-      convId: 'conv-wiki-persist',
-      script: [
-        { type: 'status', label: 'running', model: 'claude-sonnet-4-5' },
-        { type: 'text_delta', delta: 'Ingesting knowledge base...' },
-      ],
-    });
 
     // Trigger a wiki operation via the "构建 Wiki" toolbar button.
     const buildBtn = page.locator('button[title="构建 Wiki"]').first();
