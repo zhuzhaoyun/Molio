@@ -90,9 +90,13 @@ export function readFile(vaultPath: string, relPath: string): FileContent {
     throw err;
   }
 
-  const stat = fs.statSync(resolved);
-  const mimeType = getMimeType(path.basename(resolved));
-  const content = isTextFile(resolved) ? fs.readFileSync(resolved, 'utf-8') : '';
+  // Follow symlinks and re-validate the real path is still inside the vault
+  // before reading — defends against a symlink swapped in to escape the vault.
+  const real = resolveRealWithinVault(vaultPath, resolved);
+
+  const stat = fs.statSync(real);
+  const mimeType = getMimeType(path.basename(real));
+  const content = isTextFile(real) ? fs.readFileSync(real, 'utf-8') : '';
 
   return {
     path: relPath,
@@ -142,7 +146,13 @@ function resolveWithFallbacks(vaultPath: string, relPath: string): string {
       if (!match && !hasExt) {
         match = entries.find((e) => e.toLowerCase() === targetLower + '.md');
       }
-      if (match) return path.join(targetDir, match);
+      if (match) {
+        // Re-validate so a matched entry can never bypass the vault boundary
+        // (defense-in-depth).
+        const candidate = path.join(targetDir, match);
+        assertWithinVault(vaultPath, candidate);
+        return candidate;
+      }
     } catch {
       // directory not found — try next prefix
     }
@@ -156,10 +166,48 @@ function resolveWithFallbacks(vaultPath: string, relPath: string): string {
 export function resolveFilePath(vaultPath: string, relPath: string): string {
   const absFile = path.join(vaultPath, relPath);
   const resolved = path.resolve(absFile);
-  if (!resolved.startsWith(path.resolve(vaultPath))) {
+  assertWithinVault(vaultPath, resolved);
+  return resolved;
+}
+
+/**
+ * Verify an already-resolved absolute path stays inside the vault root.
+ * Uses a trailing path separator so a sibling directory like
+ * `/data/vault-secret` is NOT mistaken for `/data/vault`. The daemon has no
+ * authentication (CORS allows any localhost origin), so this guard is the
+ * primary boundary against path-traversal exfiltration.
+ */
+function assertWithinVault(vaultPath: string, resolved: string): void {
+  const vaultRoot = path.resolve(vaultPath);
+  if (resolved !== vaultRoot && !resolved.startsWith(vaultRoot + path.sep)) {
     throw new Error('Path traversal not allowed');
   }
-  return resolved;
+}
+
+/**
+ * Resolve the real on-disk path (following symlinks) and confirm it remains
+ * inside the vault. Closes a TOCTOU/symlink-escape: between an existsSync
+ * check and a later read, a file could be replaced with a symlink pointing
+ * outside the vault, and statSync/readFileSync follow symlinks by default.
+ *
+ * The vault root itself may contain symlink components (e.g. macOS tmpdir
+ * `/var` → `/private/var`), so we canonicalize both sides before comparing.
+ */
+function resolveRealWithinVault(vaultPath: string, resolved: string): string {
+  assertWithinVault(vaultPath, resolved);
+  const real = fs.realpathSync(resolved);
+  // Canonicalize the vault root the same way so a symlinked root doesn't
+  // cause legitimate reads to be rejected.
+  let realVault: string;
+  try {
+    realVault = fs.realpathSync(path.resolve(vaultPath));
+  } catch {
+    realVault = path.resolve(vaultPath);
+  }
+  if (real !== realVault && !real.startsWith(realVault + path.sep)) {
+    throw new Error('Path traversal not allowed');
+  }
+  return real;
 }
 
 /**
@@ -168,11 +216,9 @@ export function resolveFilePath(vaultPath: string, relPath: string): string {
 export function writeFile(vaultPath: string, relPath: string, content: string): void {
   const absFile = path.join(vaultPath, relPath);
 
-  // Security: prevent path traversal
+  // Security: prevent path traversal (sibling-directory bypass)
   const resolved = path.resolve(absFile);
-  if (!resolved.startsWith(path.resolve(vaultPath))) {
-    throw new Error('Path traversal not allowed');
-  }
+  assertWithinVault(vaultPath, resolved);
 
   fs.mkdirSync(path.dirname(resolved), { recursive: true });
   fs.writeFileSync(resolved, content, 'utf-8');
@@ -185,9 +231,7 @@ export async function deleteFile(vaultPath: string, relPath: string): Promise<vo
   const absFile = path.join(vaultPath, relPath);
 
   const resolved = path.resolve(absFile);
-  if (!resolved.startsWith(path.resolve(vaultPath))) {
-    throw new Error('Path traversal not allowed');
-  }
+  assertWithinVault(vaultPath, resolved);
 
   if (fs.existsSync(resolved)) {
     await trash(resolved);
@@ -202,10 +246,8 @@ export function renamePath(vaultPath: string, oldRelPath: string, newRelPath: st
   const absNew = path.resolve(path.join(vaultPath, newRelPath));
 
   // Security: both paths must be inside the vault
-  const vaultRoot = path.resolve(vaultPath);
-  if (!absOld.startsWith(vaultRoot) || !absNew.startsWith(vaultRoot)) {
-    throw new Error('Path traversal not allowed');
-  }
+  assertWithinVault(vaultPath, absOld);
+  assertWithinVault(vaultPath, absNew);
 
   if (!fs.existsSync(absOld)) {
     throw new Error(`Source not found: ${oldRelPath}`);
@@ -223,9 +265,7 @@ export async function deleteDirectory(vaultPath: string, relPath: string): Promi
   const absDir = path.resolve(path.join(vaultPath, relPath));
 
   // Security: prevent path traversal
-  if (!absDir.startsWith(path.resolve(vaultPath))) {
-    throw new Error('Path traversal not allowed');
-  }
+  assertWithinVault(vaultPath, absDir);
 
   if (fs.existsSync(absDir)) {
     await trash(absDir);
@@ -239,9 +279,7 @@ export function createDirectory(vaultPath: string, relPath: string): void {
   const absDir = path.join(vaultPath, relPath);
 
   const resolved = path.resolve(absDir);
-  if (!resolved.startsWith(path.resolve(vaultPath))) {
-    throw new Error('Path traversal not allowed');
-  }
+  assertWithinVault(vaultPath, resolved);
 
   fs.mkdirSync(resolved, { recursive: true });
 }
@@ -267,7 +305,7 @@ const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp', '.
 /** Binary file extensions — opened via system default program */
 const BINARY_EXTS = ['.pdf', '.docx', '.doc', '.pptx', '.ppt', '.xlsx', '.xls'];
 
-function isTextFile(filePath: string): boolean {
+export function isTextFile(filePath: string): boolean {
   const ext = path.extname(filePath).toLowerCase();
   return TEXT_EXTS.includes(ext);
 }

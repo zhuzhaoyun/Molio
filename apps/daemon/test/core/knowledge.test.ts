@@ -1,7 +1,7 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, basename } from 'node:path';
 import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import {
   writeFile,
@@ -136,6 +136,37 @@ describe('knowledge filesystem operations', () => {
       assert.throws(() => {
         renamePath(vaultPath, 'nonexistent.md', 'anything.md');
       }, /Source not found/);
+    });
+  });
+
+  describe('resolveFilePath — sibling-directory bypass', () => {
+    // Regression: `startsWith(vaultRoot)` without a trailing separator let a
+    // sibling directory whose name shares the vault's prefix (e.g. vault
+    // `/data/vault` vs `/data/vault-secret`) pass the traversal check. The
+    // daemon has no auth, so this was directly exploitable to read/escape.
+    it('should reject a sibling path that shares the vault name prefix', () => {
+      const vaultName = basename(vaultPath);
+      const siblingDir = join(vaultPath + '-secret');
+      try {
+        mkdirSync(siblingDir, { recursive: true });
+        writeFileSync(join(siblingDir, 'secret.txt'), 'OUTSIDE_VAULT');
+
+        const relEscape = `../${vaultName}-secret/secret.txt`;
+        // resolveFilePath must throw — the sibling is outside the vault even
+        // though its path starts with the (un-separator) vault root prefix.
+        assert.throws(() => resolveFilePath(vaultPath, relEscape), /Path traversal/);
+        // And readFile must not read it either.
+        assert.throws(() => readFile(vaultPath, relEscape), /Path traversal/);
+      } finally {
+        rmSync(siblingDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should still resolve legitimate in-vault paths', () => {
+      writeFileSync(join(vaultPath, 'legit.md'), 'inside');
+      const resolved = resolveFilePath(vaultPath, 'legit.md');
+      assert.ok(resolved.startsWith(vaultPath));
+      assert.equal(readFile(vaultPath, 'legit.md').content, 'inside');
     });
   });
 

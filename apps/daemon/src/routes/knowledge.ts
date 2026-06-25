@@ -247,10 +247,16 @@ export function knowledgeRoutes(db: Database.Database, runManager: RunManager): 
       return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
     }
 
-    // Size check via Content-Length header (guard before reading body)
-    const contentLength = Number(c.req.header('Content-Length') ?? '0');
+    // Size check via Content-Length header (guard before reading body).
+    // Parse strictly: a missing/non-numeric/oversized value is rejected
+    // immediately so the body is never buffered into memory. The daemon has no
+    // auth (CORS allows any localhost origin), so without this guard a spoofed
+    // or absent Content-Length could force OOM by buffering an arbitrarily
+    // large body before the post-read check below runs.
+    const rawLen = c.req.header('Content-Length');
+    const contentLength = rawLen != null ? parseInt(rawLen, 10) : NaN;
     const MAX_SIZE = 50 * 1024 * 1024; // 50 MB
-    if (contentLength > MAX_SIZE) {
+    if (!Number.isFinite(contentLength) || contentLength < 0 || contentLength > MAX_SIZE) {
       return c.json({ error: { code: 'PAYLOAD_TOO_LARGE', message: 'Image too large (max 50MB)' } }, 413);
     }
 
@@ -264,7 +270,6 @@ export function knowledgeRoutes(db: Database.Database, runManager: RunManager): 
 
       // file is a File-like object with .name, .type, and .arrayBuffer()
       const fileObj = file as File;
-      const fileName = fileObj.name || 'image.png';
       const mimeType = fileObj.type || 'application/octet-stream';
 
       // Validate image type
@@ -273,10 +278,13 @@ export function knowledgeRoutes(db: Database.Database, runManager: RunManager): 
         return c.json({ error: { code: 'BAD_REQUEST', message: 'Unsupported image format (PNG/JPEG/GIF/WebP only)' } }, 400);
       }
 
-      const ext = mimeType === 'image/jpeg' ? '.jpg'
-        : mimeType === 'image/png' ? '.png'
-        : mimeType === 'image/gif' ? '.gif'
-        : '.webp';
+      const EXT_BY_TYPE: Record<string, string> = {
+        'image/jpeg': '.jpg',
+        'image/png': '.png',
+        'image/gif': '.gif',
+        'image/webp': '.webp',
+      };
+      const ext = EXT_BY_TYPE[mimeType] ?? '.webp';
 
       // Generate unique filename
       const now = new Date();
@@ -284,7 +292,7 @@ export function knowledgeRoutes(db: Database.Database, runManager: RunManager): 
       const ts = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
 
       // Read file bytes
-      const bytes = await (file as any).arrayBuffer();
+      const bytes = await fileObj.arrayBuffer();
       const buf = Buffer.from(bytes);
 
       // Validate actual size after reading (defense against Content-Length spoofing)
@@ -296,30 +304,32 @@ export function knowledgeRoutes(db: Database.Database, runManager: RunManager): 
       // (no EEXIST), so any error here is a real OS failure (EACCES/ENOSPC/EROFS)
       // and should propagate rather than be swallowed — otherwise the subsequent
       // writeFileSync surfaces a misleading ENOENT that hides the real cause.
-      mkdirSync(resolveFilePath(vault.path, '.molio/assets'), { recursive: true });
+      mkdirSync(resolveFilePath(vault.path, ASSETS_DIR), { recursive: true });
 
       // Write to disk using an exclusive-create (`wx`) flag with EEXIST retry.
       // The previous existsSync + writeFileSync pair was racy: the `await`
       // arrayBuffer() between check and write yields the event loop, so two
       // same-second uploads could both pass the check and overwrite each other.
       // `wx` makes the check-and-create atomic at the OS level — if the file
-      // already exists we bump the sequence counter and retry.
-      let seq = 1;
-      let relPath: string;
-      let absPath: string;
-      for (;;) {
-        relPath = `.molio/assets/${ts}-${seq}${ext}`;
+      // already exists we bump the sequence counter and retry (bounded).
+      const MAX_NAME_RETRIES = 1000;
+      let relPath = '';
+      let absPath = '';
+      for (let seq = 1; seq <= MAX_NAME_RETRIES; seq++) {
+        relPath = `${ASSETS_DIR}/${ts}-${seq}${ext}`;
         absPath = resolveFilePath(vault.path, relPath);
         try {
           writeFileSync(absPath, buf, { flag: 'wx' });
           break;
-        } catch (err: any) {
-          if (err?.code === 'EEXIST') {
-            seq++;
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
             continue;
           }
           throw err;
         }
+      }
+      if (!absPath) {
+        throw new Error('Failed to generate a unique asset filename after maximum retries');
       }
 
       const url = `/api/knowledge/vaults/${vault.id}/raw/${encodeURIComponent(relPath).replace(/%2F/g, '/')}`;
