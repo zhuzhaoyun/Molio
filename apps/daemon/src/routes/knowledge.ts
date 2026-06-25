@@ -238,6 +238,8 @@ export function knowledgeRoutes(db: Database.Database, runManager: RunManager): 
 
   // ─── Asset upload ───
 
+  const ASSETS_DIR = '.molio/assets';
+
   // POST /api/knowledge/vaults/:id/assets/upload — upload an image asset
   app.post('/vaults/:id/assets/upload', async (c) => {
     const vault = getVault(db, c.req.param('id'));
