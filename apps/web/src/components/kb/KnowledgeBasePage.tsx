@@ -601,6 +601,7 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
         <KbMainContent
           fileContent={kb.fileContent}
           selectedFile={kb.selectedFile}
+          fileLoadError={kb.fileLoadError}
           vaultId={kb.activeVault?.id ?? null}
           vaultPath={kb.activeVault?.path ?? null}
           isTypesetMode={kb.isTypesetMode}

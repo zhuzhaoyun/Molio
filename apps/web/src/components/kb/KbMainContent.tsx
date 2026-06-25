@@ -41,6 +41,8 @@ interface KbMainContentProps {
   isTypesetMode: boolean;
   themeConfig: ThemeConfig;
   wikiInitialized: boolean;
+  /** Non-null when file load failed (e.g. 404). */
+  fileLoadError?: string | null;
   /** Whether the edited content has unsaved changes */
   hasUnsavedChanges?: boolean;
   onToggleTypeset: () => void;
@@ -71,6 +73,7 @@ export function KbMainContent({
   isTypesetMode,
   themeConfig,
   wikiInitialized,
+  fileLoadError,
   hasUnsavedChanges,
   onToggleTypeset,
   onContentChange,
@@ -317,6 +320,16 @@ export function KbMainContent({
           )}
         </div>
       </div>
+
+      {/* File load error */}
+      {fileLoadError && selectedFile && (
+        <div className="kb-load-error">
+          <div className="kb-load-error-icon">⚠</div>
+          <p className="kb-load-error-title">无法打开文件</p>
+          <p className="kb-load-error-path">{selectedFile}</p>
+          <p className="kb-load-error-hint">该文件可能已被删除、重命名或从未被创建（可能是 AI 生成的错误引用）</p>
+        </div>
+      )}
 
       {/* Content area — branch by file category */}
       {category === 'text' && isTypesetMode ? (

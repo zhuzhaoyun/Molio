@@ -754,6 +754,48 @@
 }
 
 /* Content area for normal mode */
+/* ── File load error ── */
+.kb-load-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  gap: 6px;
+  padding: 48px 24px;
+  text-align: center;
+}
+
+.kb-load-error-icon {
+  font-size: 32px;
+  margin-bottom: 4px;
+}
+
+.kb-load-error-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-strong);
+  margin: 0;
+}
+
+.kb-load-error-path {
+  font-size: 13px;
+  font-family: var(--mono);
+  color: var(--text-muted);
+  background: var(--bg-subtle);
+  padding: 3px 10px;
+  border-radius: 4px;
+  margin: 0;
+  word-break: break-all;
+}
+
+.kb-load-error-hint {
+  font-size: 12px;
+  color: var(--text-soft);
+  margin: 8px 0 0;
+  max-width: 360px;
+}
+
 .kb-content-area {
   flex: 1;
   overflow-y: auto;

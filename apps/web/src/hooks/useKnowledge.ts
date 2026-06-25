@@ -70,6 +70,7 @@ interface UseKnowledgeReturn {
   tree: TreeNode[];
   selectedFile: string | null;
   fileContent: FileContent | null;
+  fileLoadError: string | null;
   history: KbHistoryEntry[];
 
   // UI state
@@ -138,6 +139,7 @@ export function useKnowledge(): UseKnowledgeReturn {
   const [treeVaultId, setTreeVaultId] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<FileContent | null>(null);
+  const [fileLoadError, setFileLoadError] = useState<string | null>(null);
   const [history, setHistory] = useState<KbHistoryEntry[]>([]);
   const [panelWidth, setPanelWidth] = useState(260);
   const [searchQuery, setSearchQuery] = useState('');
@@ -280,8 +282,9 @@ export function useKnowledge(): UseKnowledgeReturn {
   // Load file content when file selected
   useEffect(() => {
     if (!activeVaultId || !selectedFile) return;
-    // Reset edited content when switching files
+    // Reset edited content and error when switching files
     setEditedContent(null);
+    setFileLoadError(null);
     let cancelled = false;
     const requestKey = `${activeVaultId}:${selectedFile}`;
 
@@ -292,9 +295,15 @@ export function useKnowledge(): UseKnowledgeReturn {
         const content = await api.readFile(activeVaultId, selectedFile);
         if (!cancelled) {
           setFileContent(content);
+          setFileLoadError(null);
         }
-      } catch {
-        if (!cancelled) {
+      } catch (err) {
+        if (cancelled) return;
+        const is404 = err instanceof Error && err.message.includes('404');
+        if (is404) {
+          setFileContent(null);
+          setFileLoadError(`文件未找到：${selectedFile}`);
+        } else {
           setFileContent(null);
           scheduleFileLoadRetry(activeVaultId, selectedFile, requestKey);
         }
@@ -526,6 +535,7 @@ export function useKnowledge(): UseKnowledgeReturn {
     tree,
     selectedFile,
     fileContent,
+    fileLoadError,
     history,
     panelWidth,
     searchQuery,
