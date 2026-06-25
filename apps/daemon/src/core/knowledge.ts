@@ -90,7 +90,14 @@ export function readFile(vaultPath: string, relPath: string): FileContent {
         resolved = mdPath;
       }
     }
-    // Fallback 2: case-insensitive match in same directory
+    // Fallback 2: try wiki/ prefix (wiki index/metadata files)
+    if (!fs.existsSync(resolved) && !relPath.startsWith('wiki/')) {
+      const wikiPath = resolveFilePath(vaultPath, 'wiki/' + relPath);
+      if (fs.existsSync(wikiPath)) {
+        resolved = wikiPath;
+      }
+    }
+    // Fallback 3: case-insensitive match in same directory
     if (!fs.existsSync(resolved)) {
       const dir = path.dirname(resolved);
       const targetLower = path.basename(resolved).toLowerCase();

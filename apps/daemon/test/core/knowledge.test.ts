@@ -351,8 +351,8 @@ describe('knowledge filesystem operations', () => {
     });
 
     it('should match file with different case (case-insensitive fallback)', () => {
-      writeFile(vaultPath, 'Index.MD', 'case-insensitive content');
-      const file = readFile(vaultPath, 'INDEX.md');
+      writeFile(vaultPath, 'CaseTest.MD', 'case-insensitive content');
+      const file = readFile(vaultPath, 'CASETEST.md');
       assert.equal(file.content, 'case-insensitive content');
     });
 
@@ -361,6 +361,13 @@ describe('knowledge filesystem operations', () => {
       writeFile(vaultPath, 'Dir/Readme.MD', 'dir content');
       const file = readFile(vaultPath, 'dir/README.md');
       assert.equal(file.content, 'dir content');
+    });
+
+    it('should find wiki files via wiki/ prefix fallback', () => {
+      mkdirSync(join(vaultPath, 'wiki'), { recursive: true });
+      writeFile(vaultPath, 'wiki/INDEX.md', 'wiki index content');
+      const file = readFile(vaultPath, 'INDEX.md');
+      assert.equal(file.content, 'wiki index content');
     });
   });
 });
