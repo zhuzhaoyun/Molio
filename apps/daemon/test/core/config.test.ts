@@ -1,4 +1,4 @@
-import { describe, it, afterEach } from 'node:test';
+import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -99,49 +99,38 @@ describe('Config module', () => {
   });
 
   describe('mergeConfig', () => {
-    const configFile = path.join(os.homedir(), '.molio', 'config.json');
-    const claudeSettingsFile = path.join(os.homedir(), '.claude', 'settings.json');
-    let originalConfig: string | null = null;
-    let originalClaudeSettings: string | null = null;
+    let tempHome: string | null = null;
+    let originalHome: string | undefined;
+    let originalUserProfile: string | undefined;
 
-    afterEach(() => {
-      // Restore original config after each test
-      try {
-        if (originalConfig !== null) {
-          if (originalConfig === '') {
-            fs.unlinkSync(configFile);
-          } else {
-            fs.writeFileSync(configFile, originalConfig, 'utf8');
-          }
-        }
-      } catch { /* ignore */ }
-      try {
-        if (originalClaudeSettings !== null) {
-          fs.mkdirSync(path.dirname(claudeSettingsFile), { recursive: true });
-          if (originalClaudeSettings === '') {
-            fs.unlinkSync(claudeSettingsFile);
-          } else {
-            fs.writeFileSync(claudeSettingsFile, originalClaudeSettings, 'utf8');
-          }
-        }
-      } catch { /* ignore */ }
-    });
-
-    function backupConfig() {
-      try {
-        originalConfig = fs.readFileSync(configFile, 'utf8');
-      } catch {
-        originalConfig = '';
-      }
-      try {
-        originalClaudeSettings = fs.readFileSync(claudeSettingsFile, 'utf8');
-      } catch {
-        originalClaudeSettings = '';
-      }
+    function configFile(): string {
+      return path.join(os.homedir(), '.molio', 'config.json');
+    }
+    function claudeSettingsFile(): string {
+      return path.join(os.homedir(), '.claude', 'settings.json');
     }
 
+    beforeEach(() => {
+      tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-config-test-'));
+      originalHome = process.env.HOME;
+      originalUserProfile = process.env.USERPROFILE;
+      process.env.HOME = tempHome;
+      process.env.USERPROFILE = tempHome;
+    });
+
+    afterEach(() => {
+      if (originalHome === undefined) delete process.env.HOME;
+      else process.env.HOME = originalHome;
+      if (originalUserProfile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = originalUserProfile;
+      if (tempHome) {
+        fs.rmSync(tempHome, { recursive: true, force: true });
+      }
+      tempHome = null;
+    });
+
     function setupBaseConfig(agents: AppConfig['agents']) {
-      fs.mkdirSync(path.dirname(configFile), { recursive: true });
+      fs.mkdirSync(path.dirname(configFile()), { recursive: true });
       saveConfig({
         agents: agents ?? {},
         defaultAgentId: 'claude',
@@ -149,7 +138,6 @@ describe('Config module', () => {
     }
 
     it('should preserve agents when partial update does not include agents', () => {
-      backupConfig();
       setupBaseConfig({
         claude: {
           env: {
@@ -169,7 +157,6 @@ describe('Config module', () => {
     });
 
     it('should merge agents at per-agent level', () => {
-      backupConfig();
       setupBaseConfig({
         claude: {
           env: { ANTHROPIC_AUTH_TOKEN: 'sk-claude-key' },
@@ -196,7 +183,6 @@ describe('Config module', () => {
     });
 
     it('should preserve agents when partial update sends only locale', () => {
-      backupConfig();
       setupBaseConfig({
         claude: {
           env: { ANTHROPIC_AUTH_TOKEN: 'sk-key' },
@@ -213,7 +199,6 @@ describe('Config module', () => {
     });
 
     it('should prefer ~/.claude/settings.json env for claude agent reads', () => {
-      backupConfig();
       setupBaseConfig({
         claude: {
           env: {
@@ -222,8 +207,8 @@ describe('Config module', () => {
           },
         },
       });
-      fs.mkdirSync(path.dirname(claudeSettingsFile), { recursive: true });
-      fs.writeFileSync(claudeSettingsFile, JSON.stringify({
+      fs.mkdirSync(path.dirname(claudeSettingsFile()), { recursive: true });
+      fs.writeFileSync(claudeSettingsFile(), JSON.stringify({
         env: {
           ANTHROPIC_BASE_URL: 'https://api.deepseek.com/anthropic',
           ANTHROPIC_DEFAULT_SONNET_MODEL: 'deepseek-v4-pro[1M]',
@@ -240,10 +225,9 @@ describe('Config module', () => {
     });
 
     it('should persist claude env to ~/.claude/settings.json without clobbering other settings', () => {
-      backupConfig();
       setupBaseConfig({});
-      fs.mkdirSync(path.dirname(claudeSettingsFile), { recursive: true });
-      fs.writeFileSync(claudeSettingsFile, JSON.stringify({
+      fs.mkdirSync(path.dirname(claudeSettingsFile()), { recursive: true });
+      fs.writeFileSync(claudeSettingsFile(), JSON.stringify({
         enabledPlugins: { foo: true },
         theme: 'auto',
         env: {
@@ -264,7 +248,7 @@ describe('Config module', () => {
         },
       });
 
-      const saved = JSON.parse(fs.readFileSync(claudeSettingsFile, 'utf8'));
+      const saved = JSON.parse(fs.readFileSync(claudeSettingsFile(), 'utf8'));
       assert.equal(saved.theme, 'auto');
       assert.equal(saved.enabledPlugins.foo, true);
       assert.equal(saved.env.KEEP_ME, 'yes');
@@ -274,7 +258,6 @@ describe('Config module', () => {
     });
 
     it('should clean managed Claude env keys from ~/.molio/config.json after save', () => {
-      backupConfig();
       setupBaseConfig({});
 
       setAgentConfig('claude', {
@@ -294,7 +277,6 @@ describe('Config module', () => {
     });
 
     it('should migrate legacy Claude env from ~/.molio/config.json into ~/.claude/settings.json on read', () => {
-      backupConfig();
       setupBaseConfig({
         claude: {
           env: {
@@ -311,7 +293,7 @@ describe('Config module', () => {
       assert.equal(agentConfig.env?.['ANTHROPIC_MODEL'], 'deepseek-v4-pro');
       assert.equal(agentConfig.env?.['KEEP_LOCAL'], 'legacy-local');
 
-      const settings = JSON.parse(fs.readFileSync(claudeSettingsFile, 'utf8'));
+      const settings = JSON.parse(fs.readFileSync(claudeSettingsFile(), 'utf8'));
       assert.equal(settings.env.ANTHROPIC_BASE_URL, 'https://api.deepseek.com/anthropic');
       assert.equal(settings.env.ANTHROPIC_MODEL, 'deepseek-v4-pro');
 
@@ -322,7 +304,6 @@ describe('Config module', () => {
     });
 
     it('should clean duplicated managed Claude env keys from ~/.molio/config.json when settings.json already exists', () => {
-      backupConfig();
       setupBaseConfig({
         claude: {
           env: {
@@ -332,8 +313,8 @@ describe('Config module', () => {
           },
         },
       });
-      fs.mkdirSync(path.dirname(claudeSettingsFile), { recursive: true });
-      fs.writeFileSync(claudeSettingsFile, JSON.stringify({
+      fs.mkdirSync(path.dirname(claudeSettingsFile()), { recursive: true });
+      fs.writeFileSync(claudeSettingsFile(), JSON.stringify({
         env: {
           ANTHROPIC_BASE_URL: 'https://api.deepseek.com/anthropic',
           ANTHROPIC_MODEL: 'deepseek-v4-pro',
