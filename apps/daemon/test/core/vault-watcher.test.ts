@@ -96,8 +96,9 @@ describe('VaultWatcher', () => {
     writeFileSync(join(vaultDir, 'b.md'), 'b');
     writeFileSync(join(vaultDir, 'c.md'), 'c');
 
-    // Wait past the debounce window plus FSEvents delivery margin.
-    await settle(1500);
+    // Wait past the debounce window plus one poll interval (Windows polling)
+    // and the native-event delivery margin (macOS FSEvents).
+    await settle(2500);
     watcher.off(VAULT_TREE_CHANGED_EVENT, onEmit);
     // The debounce window collapses the burst; allow 1 or 2 emits across platforms.
     assert.ok(count >= 1, `expected >=1 emit, got ${count}`);
@@ -113,8 +114,8 @@ describe('VaultWatcher', () => {
     writeFileSync(join(vaultDir, '.git', 'config'), 'noop');
     writeFileSync(join(vaultDir, '.gitignore'), '*.png');
 
-    // Wait long enough that a buggy emit would have surfaced.
-    await settle(1000);
+    // Wait past one poll interval so a buggy emit would have surfaced.
+    await settle(1500);
     watcher.off(VAULT_TREE_CHANGED_EVENT, onEmit);
     assert.equal(emitted, false);
   });
@@ -127,7 +128,7 @@ describe('VaultWatcher', () => {
     watcher.on(VAULT_TREE_CHANGED_EVENT, onEmit);
 
     writeFileSync(join(vaultDir, 'after-stop.md'), 'x');
-    await settle(1000);
+    await settle(1500);
     watcher.off(VAULT_TREE_CHANGED_EVENT, onEmit);
     assert.equal(emitted, false);
   });

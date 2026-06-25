@@ -58,16 +58,10 @@ export class VaultWatcher extends EventEmitter {
       // `await` works for both chokidar v3 (returns FSWatcher) and v4
       // (returns Promise<FSWatcher>).
       //
-      // Resolve to the canonical long path first. libuv's recursive fs.watch on
-      // Windows asserts that reported filenames start with the watched dir
-      // (src/win/fs-event.c: !_wcsnicmp). When the watched path contains an 8.3
-      // short-name component (e.g. C:\Users\RUNNER~1\... — Windows generates
-      // these for any path segment longer than 8 chars), the form libuv stores
-      // can differ from what ReadDirectoryChangesW reports, and libuv ABORTS the
-      // process. realpath resolves short names to long, so the forms match.
-      // This also protects the daemon: any user whose vault path has a >8-char
-      // segment would otherwise crash on startup. Falls back to the original
-      // path if resolution fails (e.g. the dir doesn't exist yet).
+      // Resolve to the canonical long path first so the `ignored`/`root`
+      // comparisons below are consistent with the paths chokidar reports.
+      // Falls back to the original path if resolution fails (e.g. the dir
+      // doesn't exist yet).
       let resolvedPath = vaultPath;
       try {
         resolvedPath = realpathSync(vaultPath);
@@ -88,6 +82,19 @@ export class VaultWatcher extends EventEmitter {
         },
         ignoreInitial: true,
         persistent: true,
+        // On Windows, chokidar's per-directory fs.watch (ReadDirectoryChangesW)
+        // triggers a libuv process-abort assertion when the watched path's form
+        // doesn't match what the OS reports (src/win/fs-event.c:72,
+        // !wcsnicmp) — this fires on the CI runner and would crash any user
+        // whose vault path has a >8-char segment (Windows generates 8.3 short
+        // names for those). Polling bypasses fs.watch entirely (uses stat
+        // polling), so the assertion can never fire. Cost: ~1s landing latency
+        // and light CPU — acceptable for "see landed files without refocusing".
+        // macOS/Linux keep native fs.watch (kqueue/inotify/FSEvents) — no such
+        // assertion, instant notifications.
+        ...(process.platform === 'win32'
+          ? { usePolling: true, interval: 1000, binaryInterval: 3000 }
+          : {}),
       });
 
       const handleChange = () => this.scheduleEmit(vaultId);
