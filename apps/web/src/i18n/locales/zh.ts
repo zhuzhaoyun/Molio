@@ -31,6 +31,9 @@ const zh: Record<string, string> = {
   'composer.uploadDismiss': '关闭',
   'composer.uploadImage': '上传图片',
   'composer.uploadRetryHint': '请重新粘贴图片',
+  'composer.history': '历史记录',
+  'composer.noHistory': '暂无历史记录',
+  'composer.untitled': '未命名对话',
 
   // ── AssistantMessage ──
   'assistant.label': 'Molio',

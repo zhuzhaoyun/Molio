@@ -31,6 +31,9 @@ const en: Record<string, string> = {
   'composer.uploadDismiss': 'Dismiss',
   'composer.uploadImage': 'Upload image',
   'composer.uploadRetryHint': 'Please paste the image again',
+  'composer.history': 'History',
+  'composer.noHistory': 'No conversation history',
+  'composer.untitled': 'Untitled',
 
   // ── AssistantMessage ──
   'assistant.label': 'Molio',

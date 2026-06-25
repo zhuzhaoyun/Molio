@@ -147,6 +147,9 @@ export default function App() {
                   onCancel={chat.cancel}
                   onNewChat={handleNewChat}
                   onSubmitToolResult={chat.submitToolResult}
+                  onOpenConversation={(conversationId) => {
+                    void chat.loadConversationById(conversationId);
+                  }}
                 />
               }
             />

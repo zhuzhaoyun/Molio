@@ -873,6 +873,79 @@
   cursor: not-allowed;
 }
 
+/* ── History dropdown ── */
+.composer-history-dropdown {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  margin-bottom: 6px;
+  width: 320px;
+  max-height: 360px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+  z-index: 40;
+}
+
+.composer-history-header {
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-soft);
+  flex-shrink: 0;
+}
+
+.composer-history-list {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.composer-history-empty {
+  padding: 24px 14px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-soft);
+}
+
+.composer-history-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 10px 14px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border-soft);
+  transition: background 120ms ease;
+}
+
+.composer-history-item:last-child {
+  border-bottom: none;
+}
+
+.composer-history-item:hover {
+  background: var(--bg-subtle);
+}
+
+.composer-history-title {
+  font-size: 13px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-history-meta {
+  font-size: 11px;
+  color: var(--text-soft);
+}
+
 /* Hidden file input */
 .composer-file-input {
   display: none;

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useI18n } from '../i18n';
 import type { Command, CommandAction } from '../commands/types';
+import type { ConversationHistoryItem } from '@molio/contracts';
 import { BUILTIN_COMMANDS } from '../commands/builtin';
 import { vaultStore } from '../stores/vaultStore';
 import { api } from '../api/client';
@@ -31,6 +32,8 @@ interface Props {
   onCommand?: (key: string) => void;
   /** Commands to show in the palette. Defaults to BUILTIN_COMMANDS. */
   commands?: Command[];
+  /** Callback when user selects a conversation from history. */
+  onOpenConversation?: (conversationId: string) => void;
 }
 
 export function ChatComposer({
@@ -41,6 +44,7 @@ export function ChatComposer({
   disabledPlaceholder,
   onCommand,
   commands = BUILTIN_COMMANDS,
+  onOpenConversation,
 }: Props) {
   const { t } = useI18n();
   const navigate = useNavigate();
@@ -49,6 +53,10 @@ export function ChatComposer({
   const [pastedImages, setPastedImages] = useState<PastedImage[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // History picker state
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyItems, setHistoryItems] = useState<ConversationHistoryItem[]>([]);
 
   // Trigger overlay state
   const [trigger, setTrigger] = useState<{ type: 'file' | 'command'; startIdx: number } | null>(null);
@@ -282,6 +290,42 @@ export function ChatComposer({
     fileInputRef.current?.click();
   }, []);
 
+  // History picker
+  const historyRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showHistory) return;
+    const handler = (e: MouseEvent) => {
+      if (historyRef.current && !historyRef.current.contains(e.target as Node)) {
+        setShowHistory(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showHistory]);
+
+  const handleHistoryClick = useCallback(async () => {
+    if (showHistory) {
+      setShowHistory(false);
+      return;
+    }
+    try {
+      const items = await api.listConversationHistory();
+      setHistoryItems(items);
+      setShowHistory(true);
+    } catch {
+      // silently fail
+    }
+  }, [showHistory]);
+
+  const handleSelectConversation = useCallback(
+    (convId: string) => {
+      setShowHistory(false);
+      onOpenConversation?.(convId);
+    },
+    [onOpenConversation],
+  );
+
   // Remove a pasted image
   const removePastedImage = useCallback((id: string) => {
     setPastedImages((prev) => {
@@ -482,6 +526,50 @@ export function ChatComposer({
                   <path d="M21 15l-5-5-7 7" />
                 </svg>
               </button>
+              {onOpenConversation && (
+                <>
+                  <button
+                    type="button"
+                    className="composer-upload-btn"
+                    data-testid="composer-history-btn"
+                    onClick={handleHistoryClick}
+                    title={t('composer.history')}
+                  >
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="10" />
+                      <polyline points="12 6 12 12 16 14" />
+                    </svg>
+                  </button>
+                  {/* History dropdown */}
+                  {showHistory && (
+                    <div className="composer-history-dropdown" data-testid="composer-history-dropdown" ref={historyRef}>
+                      <div className="composer-history-header">{t('composer.history')}</div>
+                      <div className="composer-history-list">
+                        {historyItems.length === 0 ? (
+                          <div className="composer-history-empty">{t('composer.noHistory')}</div>
+                        ) : (
+                          historyItems.map((item) => (
+                            <button
+                              key={item.conversation.id}
+                              type="button"
+                              className="composer-history-item"
+                              data-testid="composer-history-item"
+                              onClick={() => handleSelectConversation(item.conversation.id)}
+                            >
+                              <span className="composer-history-title">
+                                {item.conversation.title || t('composer.untitled')}
+                              </span>
+                              <span className="composer-history-meta">
+                                {item.messageCount} 条消息 · {formatRelativeTime(item.conversation.updatedAt)}
+                              </span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
               <span className="composer-spacer" />
               <button
                 type="button"
@@ -503,4 +591,16 @@ export function ChatComposer({
       <div className="composer-hint">@ 引用文件  / 命令  粘贴图片  Enter 发送  Shift+Enter 换行</div>
     </div>
   );
+}
+
+function formatRelativeTime(ts: number): string {
+  const diff = Date.now() - ts;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return '刚刚';
+  if (mins < 60) return `${mins}分钟前`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}小时前`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}天前`;
+  return new Date(ts).toLocaleDateString();
 }

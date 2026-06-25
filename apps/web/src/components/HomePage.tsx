@@ -14,6 +14,7 @@ interface Props {
   onCancel: () => void;
   onNewChat: () => void;
   onSubmitToolResult?: (toolUseId: string, content: string) => Promise<void>;
+  onOpenConversation?: (conversationId: string) => void;
 }
 
 export function HomePage({
@@ -24,6 +25,7 @@ export function HomePage({
   onCancel,
   onNewChat,
   onSubmitToolResult,
+  onOpenConversation,
 }: Props) {
   const { t } = useI18n();
   const logRef = useRef<HTMLDivElement>(null);
@@ -172,6 +174,7 @@ export function HomePage({
             disabled={!selectedAgentName}
             disabledPlaceholder={t('home.noAgent')}
             onCommand={handleCommand}
+            onOpenConversation={onOpenConversation}
           />
         </div>
       </div>
@@ -200,6 +203,7 @@ export function HomePage({
             onCommand={handleCommand}
             disabled={!selectedAgentName}
             disabledPlaceholder={t('home.noAgent')}
+            onOpenConversation={onOpenConversation}
           />
         </div>
       </div>
