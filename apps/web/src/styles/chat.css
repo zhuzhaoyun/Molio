@@ -878,63 +878,104 @@
   position: absolute;
   bottom: 100%;
   left: 0;
-  margin-bottom: 6px;
-  width: 320px;
-  max-height: 360px;
+  margin-bottom: 8px;
+  width: 340px;
+  max-height: 420px;
   background: var(--bg-panel);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-md);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
   display: flex;
   flex-direction: column;
   z-index: 40;
+  overflow: hidden;
 }
 
+/* Header */
 .composer-history-header {
-  padding: 10px 14px;
-  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 10px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--text-muted);
-  border-bottom: 1px solid var(--border-soft);
+  color: var(--text-strong);
   flex-shrink: 0;
+  border-bottom: 1px solid var(--border-soft);
 }
 
 .composer-history-list {
   overflow-y: auto;
   flex: 1;
+  padding: 4px 0;
 }
 
+/* Empty state */
 .composer-history-empty {
-  padding: 24px 14px;
+  padding: 32px 16px;
   text-align: center;
   font-size: 13px;
   color: var(--text-soft);
 }
 
+/* Time group */
+.composer-history-group {
+  padding: 8px 16px 2px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* Item row */
 .composer-history-item {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: 10px;
   width: 100%;
-  padding: 10px 14px;
+  padding: 9px 16px;
   border: none;
   background: transparent;
   text-align: left;
   cursor: pointer;
-  border-bottom: 1px solid var(--border-soft);
+  position: relative;
   transition: background 120ms ease;
 }
 
-.composer-history-item:last-child {
-  border-bottom: none;
+/* Left accent mark on hover — the signature detail */
+.composer-history-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 0;
+  border-radius: 0 2px 2px 0;
+  background: var(--accent);
+  transition: width 150ms ease;
+}
+
+.composer-history-item:hover::before {
+  width: 3px;
 }
 
 .composer-history-item:hover {
   background: var(--bg-subtle);
 }
 
+/* Item content */
+.composer-history-item-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
 .composer-history-title {
   font-size: 13px;
+  line-height: 1.3;
   color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -943,7 +984,32 @@
 
 .composer-history-meta {
   font-size: 11px;
-  color: var(--text-soft);
+  color: var(--text-faint);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Channel badge — tiny pill */
+.composer-history-channel {
+  display: inline-block;
+  padding: 1px 5px;
+  font-size: 9.5px;
+  font-weight: 500;
+  color: var(--accent);
+  background: var(--accent-tint);
+  border-radius: 3px;
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+
+/* Time label, right-aligned */
+.composer-history-time {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  flex-shrink: 0;
+  align-self: flex-start;
+  margin-top: 1px;
 }
 
 /* Hidden file input */

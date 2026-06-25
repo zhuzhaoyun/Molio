@@ -543,26 +543,43 @@ export function ChatComposer({
                   {/* History dropdown */}
                   {showHistory && (
                     <div className="composer-history-dropdown" data-testid="composer-history-dropdown" ref={historyRef}>
-                      <div className="composer-history-header">{t('composer.history')}</div>
+                      <div className="composer-history-header">
+                        <span>{t('composer.history')}</span>
+                      </div>
                       <div className="composer-history-list">
                         {historyItems.length === 0 ? (
                           <div className="composer-history-empty">{t('composer.noHistory')}</div>
                         ) : (
-                          historyItems.map((item) => (
-                            <button
-                              key={item.conversation.id}
-                              type="button"
-                              className="composer-history-item"
-                              data-testid="composer-history-item"
-                              onClick={() => handleSelectConversation(item.conversation.id)}
-                            >
-                              <span className="composer-history-title">
-                                {item.conversation.title || t('composer.untitled')}
-                              </span>
-                              <span className="composer-history-meta">
-                                {item.messageCount} 条消息 · {formatRelativeTime(item.conversation.updatedAt)}
-                              </span>
-                            </button>
+                          groupedHistory(historyItems).map((group) => (
+                            <div key={group.label}>
+                              <div className="composer-history-group">{group.label}</div>
+                              {group.items.map((item) => (
+                                <button
+                                  key={item.conversation.id}
+                                  type="button"
+                                  className="composer-history-item"
+                                  data-testid="composer-history-item"
+                                  onClick={() => handleSelectConversation(item.conversation.id)}
+                                >
+                                  <div className="composer-history-item-body">
+                                    <span className="composer-history-title">
+                                      {item.conversation.title || t('composer.untitled')}
+                                    </span>
+                                    <span className="composer-history-meta">
+                                      {item.messageCount} 条消息
+                                      {item.conversation.channelType && item.conversation.channelType !== 'desktop' && (
+                                        <span className="composer-history-channel">
+                                          {item.conversation.channelType === 'weixin' ? '微信' : item.conversation.channelType}
+                                        </span>
+                                      )}
+                                    </span>
+                                  </div>
+                                  <span className="composer-history-time">
+                                    {formatHistoryTime(item.conversation.updatedAt)}
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
                           ))
                         )}
                       </div>
@@ -593,14 +610,48 @@ export function ChatComposer({
   );
 }
 
-function formatRelativeTime(ts: number): string {
-  const diff = Date.now() - ts;
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return '刚刚';
-  if (mins < 60) return `${mins}分钟前`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}小时前`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}天前`;
-  return new Date(ts).toLocaleDateString();
+interface HistoryGroup {
+  label: string;
+  items: ConversationHistoryItem[];
+}
+
+function groupedHistory(items: ConversationHistoryItem[]): HistoryGroup[] {
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const yesterdayStart = todayStart - 86400000;
+  const weekStart = todayStart - 7 * 86400000;
+
+  const groups: Record<string, ConversationHistoryItem[]> = {};
+
+  for (const item of items) {
+    const ts = item.conversation.updatedAt;
+    let key: string;
+    if (ts >= todayStart) {
+      key = '今天';
+    } else if (ts >= yesterdayStart) {
+      key = '昨天';
+    } else if (ts >= weekStart) {
+      key = '本周';
+    } else {
+      key = '更早';
+    }
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(item);
+  }
+
+  const order = ['今天', '昨天', '本周', '更早'];
+  return order.filter((k) => groups[k]).map((label) => ({ label, items: groups[label] }));
+}
+
+function formatHistoryTime(ts: number): string {
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  if (ts >= todayStart) {
+    return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+  const thisYearStart = new Date(now.getFullYear(), 0, 1).getTime();
+  if (ts >= thisYearStart) {
+    return new Date(ts).toLocaleDateString([], { month: 'short', day: 'numeric' });
+  }
+  return new Date(ts).toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' });
 }
