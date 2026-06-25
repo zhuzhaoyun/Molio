@@ -1,6 +1,6 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { api } from '../api/client';
-import { useChatCore, type ChatMessage, type CreateRunContext } from './useChatCore';
+import { useChatCore, type CreateRunContext, type ChatMessage } from './useChatCore';
 
 export interface UseFileChatOptions {
   /** Current agent ID — required to create runs. */
@@ -27,7 +27,16 @@ export function useFileChat(opts: UseFileChatOptions): FileChatState {
 
   const createRun = useCallback(
     async (ctx: CreateRunContext) => {
-      // Map to contracts ChatMessage type (strips 'error' role)
+      // Guard before the API call so a missing agent produces a clear,
+      // user-facing error rather than an opaque 400/500 from the daemon.
+      if (!agentId) {
+        throw new Error('No agent selected — please choose an agent before sending a message.');
+      }
+
+      // Map to the contracts ChatMessage type — ctx.history is already
+      // filtered to user/assistant by useChatCore.send, but the local
+      // ChatMessage role union still includes 'error', so the map narrows
+      // the type to what the contract accepts.
       const contractHistory = ctx.history
         .filter((m) => m.role === 'user' || m.role === 'assistant')
         .map((m) => ({
@@ -42,7 +51,7 @@ export function useFileChat(opts: UseFileChatOptions): FileChatState {
         }));
 
       const result = await api.createRun({
-        agentId: agentId!,
+        agentId,
         message: ctx.message,
         cwd: vaultPath ?? undefined,
         conversationId: ctx.conversationId ?? conversationIdRef.current ?? undefined,
@@ -62,6 +71,17 @@ export function useFileChat(opts: UseFileChatOptions): FileChatState {
     createRun,
     agentId,
   });
+
+  // Reset the conversation when the target file changes — otherwise the new
+  // file's Q&A is appended to the previous file's conversation (and may be
+  // routed to the previous file's still-active run). Skip the first mount.
+  const filePathRef = useRef(filePath);
+  useEffect(() => {
+    if (filePathRef.current === filePath) return;
+    filePathRef.current = filePath;
+    conversationIdRef.current = null;
+    chat.reset();
+  }, [filePath, chat]);
 
   return {
     messages: chat.messages,

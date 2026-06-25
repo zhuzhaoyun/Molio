@@ -39,10 +39,21 @@ function timeAgo(ms: number): string {
 export function FilePicker({ vaultId, filterText, onSelect, onClose }: Props) {
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState(filterText);
   const [activeIdx, setActiveIdx] = useState(0);
+  const activeIdxRef = useRef(0);
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+
+  // Keep activeIdxRef in sync so the keydown handler can read the latest
+  // index without activeIdx in its dependency array (avoids re-binding the
+  // document listener on every ArrowUp/ArrowDown press).
+  useEffect(() => { activeIdxRef.current = activeIdx; }, [activeIdx]);
+
+  // Sync searchQuery when the parent-provided filterText changes (the parent
+  // re-derives it from the textarea on every keystroke after the picker opens).
+  useEffect(() => { setSearchQuery(filterText); }, [filterText]);
 
   // Fetch file tree on mount
   useEffect(() => {
@@ -51,8 +62,11 @@ export function FilePicker({ vaultId, filterText, onSelect, onClose }: Props) {
       .then((t) => {
         if (!cancelled) { setTree(t); setLoading(false); }
       })
-      .catch(() => {
-        if (!cancelled) setLoading(false);
+      .catch((err) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to load files');
+          setLoading(false);
+        }
       });
     return () => { cancelled = true; };
   }, [vaultId]);
@@ -68,9 +82,11 @@ export function FilePicker({ vaultId, filterText, onSelect, onClose }: Props) {
     all.sort((a, b) => (b.modifiedAt ?? 0) - (a.modifiedAt ?? 0));
     if (!searchQuery) return all.slice(0, 8);
     const q = searchQuery.toLowerCase();
-    return all.filter(
-      (f) => f.name.toLowerCase().includes(q) || f.path.toLowerCase().includes(q),
-    );
+    return all
+      .filter(
+        (f) => f.name.toLowerCase().includes(q) || f.path.toLowerCase().includes(q),
+      )
+      .slice(0, 50);
   }, [tree, searchQuery]);
 
   // Reset active index when files change
@@ -87,14 +103,14 @@ export function FilePicker({ vaultId, filterText, onSelect, onClose }: Props) {
         setActiveIdx((prev) => Math.max(prev - 1, 0));
       } else if (e.key === 'Enter') {
         e.preventDefault();
-        const f = files[activeIdx];
+        const f = files[activeIdxRef.current];
         if (f) onSelect(f.path);
       } else if (e.key === 'Escape') {
         e.preventDefault();
         onClose();
       }
     },
-    [files, activeIdx, onSelect, onClose],
+    [files, onSelect, onClose],
   );
 
   useEffect(() => {

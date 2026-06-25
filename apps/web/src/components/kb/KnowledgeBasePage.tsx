@@ -306,7 +306,12 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
   const handleCloseFileChat = useCallback(() => {
     setFileChatOpen(false);
     setFileChatSelectedText(null);
-  }, []);
+    // Cancel an in-progress run so the SSE EventSource closes and the
+    // underlying agent process doesn't keep running after the panel closes.
+    if (fileChat.isRunning) {
+      fileChat.cancel();
+    }
+  }, [fileChat]);
 
   // Wrap fileChat.send to prepend selected text as context
   const handleFileChatSend = useCallback((text: string) => {
@@ -326,13 +331,14 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
       const tag = (e.target as HTMLElement).tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
 
-      if ((e.ctrlKey || e.metaKey) && e.key === 'l') {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') {
         e.preventDefault();
+        const FILE_TAB_PREFIX = 'file:';
         const activeTab = tabs.activeTabId
           ? kbTabsStore.getTabs().find(t => t.id === tabs.activeTabId)
           : null;
-        if (activeTab?.id.startsWith('file:')) {
-          const filePath = activeTab.id.slice(5);
+        if (activeTab?.id.startsWith(FILE_TAB_PREFIX)) {
+          const filePath = activeTab.id.slice(FILE_TAB_PREFIX.length);
           openFileChat(filePath);
         }
       }
