@@ -318,4 +318,36 @@ describe('knowledge filesystem operations', () => {
       assert.equal(file.content, 'flatten');
     });
   });
+
+  describe('readFile auto-resolve', () => {
+    it('should read a .md file with path lacking extension', () => {
+      writeFile(vaultPath, 'doc.md', 'hello auto-resolve');
+      const file = readFile(vaultPath, 'doc');
+      assert.equal(file.content, 'hello auto-resolve');
+    });
+
+    it('should read a .md file in subdirectory with path lacking extension', () => {
+      mkdirSync(join(vaultPath, 'sub'), { recursive: true });
+      writeFile(vaultPath, 'sub/nested.md', 'nested content');
+      const file = readFile(vaultPath, 'sub/nested');
+      assert.equal(file.content, 'nested content');
+    });
+
+    it('should use exact path when file with full extension exists', () => {
+      writeFile(vaultPath, 'readme.md', 'readme content');
+      const file = readFile(vaultPath, 'readme.md');
+      assert.equal(file.content, 'readme content');
+    });
+
+    it('should throw if neither exact path nor .md fallback exists', () => {
+      assert.throws(() => readFile(vaultPath, 'nonexistent'));
+    });
+
+    it('should not auto-append .md when other extension is present', () => {
+      writeFile(vaultPath, 'data.txt', 'text data');
+      // 'data.txt' exists, so it should read it
+      const file = readFile(vaultPath, 'data.txt');
+      assert.equal(file.content, 'text data');
+    });
+  });
 });

@@ -78,16 +78,21 @@ export function countFiles(vaultPath: string): number {
  * For binary files (images, PDF, DOCX), content is empty — use raw file URL or openPath.
  */
 export function readFile(vaultPath: string, relPath: string): FileContent {
-  const absFile = path.join(vaultPath, relPath);
+  let resolved = resolveFilePath(vaultPath, relPath);
 
-  // Security: prevent path traversal
-  const resolved = path.resolve(absFile);
-  if (!resolved.startsWith(path.resolve(vaultPath))) {
-    throw new Error('Path traversal not allowed');
+  // Auto-resolve: if the path doesn't exist and has no known extension, try .md
+  if (!fs.existsSync(resolved)) {
+    const ext = path.extname(relPath).toLowerCase();
+    if (!ext) {
+      const mdPath = resolveFilePath(vaultPath, relPath + '.md');
+      if (fs.existsSync(mdPath)) {
+        resolved = mdPath;
+      }
+    }
   }
 
   const stat = fs.statSync(resolved);
-  const mimeType = getMimeType(relPath);
+  const mimeType = getMimeType(path.basename(resolved));
   const content = isTextFile(resolved) ? fs.readFileSync(resolved, 'utf-8') : '';
 
   return {
