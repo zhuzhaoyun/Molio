@@ -80,41 +80,8 @@ export function countFiles(vaultPath: string): number {
 export function readFile(vaultPath: string, relPath: string): FileContent {
   let resolved = resolveFilePath(vaultPath, relPath);
 
-  // Auto-resolve: if the path doesn't exist, try fallbacks
   if (!fs.existsSync(resolved)) {
-    const ext = path.extname(relPath).toLowerCase();
-    // Fallback 1: no extension → try .md
-    if (!ext) {
-      const mdPath = resolveFilePath(vaultPath, relPath + '.md');
-      if (fs.existsSync(mdPath)) {
-        resolved = mdPath;
-      }
-    }
-    // Fallback 2: try wiki/ prefix (wiki index/metadata files)
-    if (!fs.existsSync(resolved) && !relPath.startsWith('wiki/')) {
-      const wikiPath = resolveFilePath(vaultPath, 'wiki/' + relPath);
-      if (fs.existsSync(wikiPath)) {
-        resolved = wikiPath;
-      }
-    }
-    // Fallback 3: search directory for matching file (case-insensitive + extension variants)
-    if (!fs.existsSync(resolved)) {
-      const dir = path.dirname(resolved);
-      const base = path.basename(resolved);
-      const baseLower = base.toLowerCase();
-      try {
-        const entries = fs.readdirSync(dir);
-        // Exact case-insensitive match (e.g. INDEX.md → Index.md)
-        let match = entries.find((e) => e.toLowerCase() === baseLower);
-        // If no exact match, try base + .md (e.g. 知识库五范式 → 知识库五范式.md)
-        if (!match) {
-          match = entries.find((e) => e.toLowerCase() === baseLower + '.md');
-        }
-        if (match) resolved = path.join(dir, match);
-      } catch {
-        // dir may not exist — that's fine
-      }
-    }
+    resolved = resolveWithFallbacks(vaultPath, relPath);
   }
 
   if (!fs.existsSync(resolved)) {
@@ -134,6 +101,55 @@ export function readFile(vaultPath: string, relPath: string): FileContent {
     modifiedAt: stat.mtimeMs,
     mimeType,
   };
+}
+
+/**
+ * Try multiple fallback strategies to find a file that may be missing
+ * an extension, in a subdirectory, or have case mismatches.
+ */
+function resolveWithFallbacks(vaultPath: string, relPath: string): string {
+  const ext = path.extname(relPath).toLowerCase();
+  const hasExt = !!ext;
+
+  // Prefixes to try: vault root, then wiki/ subdirectory
+  const prefixes = [''];
+  if (!relPath.startsWith('wiki/')) {
+    prefixes.push('wiki/');
+  }
+
+  for (const prefix of prefixes) {
+    const baseRelPath = prefix + relPath;
+
+    // Strategy A: exact path
+    const exact = resolveFilePath(vaultPath, baseRelPath);
+    if (fs.existsSync(exact)) return exact;
+
+    // Strategy B: add .md extension
+    if (!hasExt) {
+      const md = resolveFilePath(vaultPath, baseRelPath + '.md');
+      if (fs.existsSync(md)) return md;
+    }
+
+    // Strategy C: case-insensitive search in the target directory
+    const targetDir = path.dirname(exact);
+    const targetBase = path.basename(exact);
+    const targetLower = targetBase.toLowerCase();
+    try {
+      const entries = fs.readdirSync(targetDir);
+      // Exact case-insensitive match
+      let match = entries.find((e) => e.toLowerCase() === targetLower);
+      // Try with .md if original has no extension
+      if (!match && !hasExt) {
+        match = entries.find((e) => e.toLowerCase() === targetLower + '.md');
+      }
+      if (match) return path.join(targetDir, match);
+    } catch {
+      // directory not found — try next prefix
+    }
+  }
+
+  // Return the original resolved path if all fallbacks fail
+  return resolveFilePath(vaultPath, relPath);
 }
 
 /** Resolve a vault-relative path to an absolute filesystem path. */
