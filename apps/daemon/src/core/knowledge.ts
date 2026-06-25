@@ -85,8 +85,8 @@ export function readFile(vaultPath: string, relPath: string): FileContent {
   }
 
   if (!fs.existsSync(resolved)) {
-    const err: NodeJS.ErrnoException = new Error(`File not found: ${relPath}`);
-    (err as any).code = 'ENOENT';
+    const err = new Error(`File not found: ${relPath}`) as NodeJS.ErrnoException;
+    err.code = 'ENOENT';
     throw err;
   }
 
