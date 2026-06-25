@@ -878,8 +878,8 @@
   position: absolute;
   bottom: 100%;
   left: 0;
+  right: 0;
   margin-bottom: 8px;
-  width: 340px;
   max-height: 420px;
   background: var(--bg-panel);
   border: 1px solid var(--border);
