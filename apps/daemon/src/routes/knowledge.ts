@@ -280,33 +280,45 @@ export function knowledgeRoutes(db: Database.Database, runManager: RunManager): 
       const pad = (n: number) => String(n).padStart(2, '0');
       const ts = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
 
-      // Sequence counter for same-second uploads
-      let seq = 1;
-      let relPath: string;
-      do {
-        relPath = `.molio/assets/${ts}-${seq}${ext}`;
-        seq++;
-      } while (existsSync(resolveFilePath(vault.path, relPath)));
-
       // Read file bytes
       const bytes = await (file as any).arrayBuffer();
       const buf = Buffer.from(bytes);
 
-      // Ensure .molio/assets/ directory exists
-      try {
-        mkdirSync(resolveFilePath(vault.path, '.molio/assets'), { recursive: true });
-      } catch {
-        // dir might already exist — fine
-      }
+      // Ensure .molio/assets/ directory exists. recursive:true is idempotent
+      // (no EEXIST), so any error here is a real OS failure (EACCES/ENOSPC/EROFS)
+      // and should propagate rather than be swallowed — otherwise the subsequent
+      // writeFileSync surfaces a misleading ENOENT that hides the real cause.
+      mkdirSync(resolveFilePath(vault.path, '.molio/assets'), { recursive: true });
 
-      // Write to disk
-      const absPath = resolveFilePath(vault.path, relPath);
-      writeFileSync(absPath, buf);
+      // Write to disk using an exclusive-create (`wx`) flag with EEXIST retry.
+      // The previous existsSync + writeFileSync pair was racy: the `await`
+      // arrayBuffer() between check and write yields the event loop, so two
+      // same-second uploads could both pass the check and overwrite each other.
+      // `wx` makes the check-and-create atomic at the OS level — if the file
+      // already exists we bump the sequence counter and retry.
+      let seq = 1;
+      let relPath: string;
+      let absPath: string;
+      for (;;) {
+        relPath = `.molio/assets/${ts}-${seq}${ext}`;
+        absPath = resolveFilePath(vault.path, relPath);
+        try {
+          writeFileSync(absPath, buf, { flag: 'wx' });
+          break;
+        } catch (err: any) {
+          if (err?.code === 'EEXIST') {
+            seq++;
+            continue;
+          }
+          throw err;
+        }
+      }
 
       const url = `/api/knowledge/vaults/${vault.id}/raw/${encodeURIComponent(relPath).replace(/%2F/g, '/')}`;
 
       return c.json({ filePath: relPath, url }, 201);
     } catch (err) {
+      console.error('[knowledge] asset upload failed:', err);
       const message = err instanceof Error ? err.message : 'Failed to upload asset';
       return c.json({ error: { code: 'INTERNAL', message } }, 500);
     }

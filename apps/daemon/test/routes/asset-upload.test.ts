@@ -2,7 +2,7 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { Hono } from 'hono';
 import { knowledgeRoutes } from '../../src/routes/knowledge.js';
 import { openDatabase, closeDatabase, createVault } from '../../src/core/db.js';
@@ -212,7 +212,60 @@ describe('Asset upload routes', () => {
     assert.equal((data['error'] as Record<string, unknown>)?.['code'], 'PAYLOAD_TOO_LARGE');
   });
 
-  // ─── Test 5: No file field → 400 ───
+  // ─── Test 5: Concurrent same-second uploads must not collide ───
+
+  it('should give distinct paths to concurrent same-second uploads (no overwrite)', async () => {
+    // Two uploads fired in the same second with different content. The handler
+    // awaits arrayBuffer() between the filename check and the write, so a racy
+    // check-then-write would let both pick the same `ts-1` path and silently
+    // overwrite each other. The `wx` exclusive-create flag must bump the second
+    // request to `ts-2` and preserve both files.
+    const bytesA = PNG_BYTES;
+    const bytesB = new Uint8Array([...PNG_BYTES, 0x00]); // distinct content, same MIME
+
+    const build = (bytes: Uint8Array) =>
+      buildMultipartBody('file', 'paste.png', 'image/png', bytes);
+
+    const { body: bodyA, boundary: boundaryA } = build(bytesA);
+    const { body: bodyB, boundary: boundaryB } = build(bytesB);
+
+    const [resA, resB] = await Promise.all([
+      app.request(`/api/knowledge/vaults/${vaultId}/assets/upload`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': `multipart/form-data; boundary=${boundaryA}`,
+          'Content-Length': String(bodyA.length),
+        },
+        body: bodyA,
+      }),
+      app.request(`/api/knowledge/vaults/${vaultId}/assets/upload`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': `multipart/form-data; boundary=${boundaryB}`,
+          'Content-Length': String(bodyB.length),
+        },
+        body: bodyB,
+      }),
+    ]);
+
+    assert.equal(resA.status, 201);
+    assert.equal(resB.status, 201);
+
+    const dataA = await json(resA);
+    const dataB = await json(resB);
+    const pathA = dataA['filePath'] as string;
+    const pathB = dataB['filePath'] as string;
+
+    assert.notEqual(pathA, pathB, 'concurrent uploads must not share the same path');
+
+    // Both files must exist on disk with their own correct bytes — no overwrite.
+    const diskA = readFileSync(join(vaultDir, pathA));
+    const diskB = readFileSync(join(vaultDir, pathB));
+    assert.deepEqual(diskA, Buffer.from(bytesA), 'file A must retain its own bytes');
+    assert.deepEqual(diskB, Buffer.from(bytesB), 'file B must retain its own bytes');
+  });
+
+  // ─── Test 6: No file field → 400 ───
 
   it('should return 400 when no file is provided', async () => {
     const boundary = '----MolioTestBoundary';
@@ -234,5 +287,40 @@ describe('Asset upload routes', () => {
     assert.equal(res.status, 400);
     const data = await json(res);
     assert.equal((data['error'] as Record<string, unknown>)?.['code'], 'BAD_REQUEST');
+  });
+
+  // ─── Test 7: mkdir failure surfaces real OS error, not misleading ENOENT ───
+
+  it('should surface the real OS error when .molio/assets cannot be created', async () => {
+    // Fresh vault where `.molio` is a regular file — mkdir(.molio/assets, recursive)
+    // throws ENOTDIR. The handler must NOT swallow this; the response should carry
+    // the real cause rather than masking it as a misleading ENOENT from the
+    // subsequent writeFileSync.
+    const blockedVaultDir = mkdtempSync(join(tmpdir(), 'molio-asset-blocked-'));
+    writeFileSync(join(blockedVaultDir, '.molio'), 'not a directory');
+    const db = openDatabase(tempDir);
+    const blockedVault = createVault(db, 'blocked-vault', blockedVaultDir);
+
+    try {
+      const { body, boundary } = buildMultipartBody('file', 'test.png', 'image/png', PNG_BYTES);
+      const res = await app.request(`/api/knowledge/vaults/${blockedVault.id}/assets/upload`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': `multipart/form-data; boundary=${boundary}`,
+          'Content-Length': String(body.length),
+        },
+        body,
+      });
+
+      assert.equal(res.status, 500);
+      const data = await json(res);
+      const message = (data['error'] as Record<string, unknown>)?.['message'] as string;
+      assert.ok(
+        message.includes('ENOTDIR'),
+        `expected real ENOTDIR cause in message, got: ${message}`,
+      );
+    } finally {
+      rmSync(blockedVaultDir, { recursive: true, force: true });
+    }
   });
 });
