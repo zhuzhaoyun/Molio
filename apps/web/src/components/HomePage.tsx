@@ -87,24 +87,6 @@ export function HomePage({
     [onSend],
   );
 
-  // Command callbacks
-  const handleCommand = useCallback(
-    (key: string) => {
-      switch (key) {
-        case 'new-chat':
-          onNewChat();
-          break;
-        case 'polish':
-          handleSend('请帮我优化以下文字的表达，使其更清晰流畅：', []);
-          break;
-        case 'outline':
-          handleSend('请为以下内容生成一个结构化大纲：', []);
-          break;
-      }
-    },
-    [onNewChat, handleSend],
-  );
-
   // If there are messages, show chat layout
   if (messages.length > 0) {
     return (
@@ -173,7 +155,6 @@ export function HomePage({
             onCancel={onCancel}
             disabled={!selectedAgentName}
             disabledPlaceholder={t('home.noAgent')}
-            onCommand={handleCommand}
             onOpenConversation={onOpenConversation}
           />
         </div>
@@ -200,7 +181,6 @@ export function HomePage({
             isRunning={isRunning}
             onSend={handleSend}
             onCancel={onCancel}
-            onCommand={handleCommand}
             disabled={!selectedAgentName}
             disabledPlaceholder={t('home.noAgent')}
             onOpenConversation={onOpenConversation}

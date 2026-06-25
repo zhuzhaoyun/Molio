@@ -1,13 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useI18n } from '../i18n';
-import type { Command, CommandAction } from '../commands/types';
 import type { ConversationHistoryItem } from '@molio/contracts';
-import { BUILTIN_COMMANDS } from '../commands/builtin';
 import { vaultStore } from '../stores/vaultStore';
 import { api } from '../api/client';
 import { FilePicker } from './FilePicker';
-import { CommandPalette } from './CommandPalette';
 
 export interface FileRef {
   vaultId: string;
@@ -28,10 +24,6 @@ interface Props {
   onCancel: () => void;
   disabled?: boolean;
   disabledPlaceholder?: string;
-  /** Callback for command actions that need host intervention (e.g. polish, outline, new-chat). */
-  onCommand?: (key: string) => void;
-  /** Commands to show in the palette. Defaults to BUILTIN_COMMANDS. */
-  commands?: Command[];
   /** Callback when user selects a conversation from history. */
   onOpenConversation?: (conversationId: string) => void;
 }
@@ -42,12 +34,9 @@ export function ChatComposer({
   onCancel,
   disabled,
   disabledPlaceholder,
-  onCommand,
-  commands = BUILTIN_COMMANDS,
   onOpenConversation,
 }: Props) {
   const { t } = useI18n();
-  const navigate = useNavigate();
   const [text, setText] = useState('');
   const [fileRefs, setFileRefs] = useState<FileRef[]>([]);
   const [pastedImages, setPastedImages] = useState<PastedImage[]>([]);
@@ -58,8 +47,8 @@ export function ChatComposer({
   const [showHistory, setShowHistory] = useState(false);
   const [historyItems, setHistoryItems] = useState<ConversationHistoryItem[]>([]);
 
-  // Trigger overlay state
-  const [trigger, setTrigger] = useState<{ type: 'file' | 'command'; startIdx: number } | null>(null);
+  // FilePicker trigger: @ start index in textarea value
+  const [triggerStartIdx, setTriggerStartIdx] = useState<number | null>(null);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -75,27 +64,17 @@ export function ChatComposer({
     if (!isRunning) textareaRef.current?.focus();
   }, [isRunning]);
 
-  // Detect @ and / triggers based on cursor position
+  // Detect @ trigger based on cursor position
   const checkTrigger = useCallback((value: string, cursorPos: number) => {
-    // Find the @ or / that precedes the cursor
     const textBefore = value.slice(0, cursorPos);
-    // Match @ or / at start of line or after a space
-    const match = textBefore.match(/(?:^|\s)([@\/])(\S*)$/);
+    const match = textBefore.match(/(?:^|\s)@(\S*)$/);
     if (match) {
-      const fullMatch = match[0]; // includes leading space if any
-      const prefix = match[1]; // @ or /
-      // startIdx is the position of the trigger char itself
+      const fullMatch = match[0];
       const startIdx = cursorPos - fullMatch.length + (fullMatch.startsWith(' ') ? 1 : 0);
-      if (prefix === '@') {
-        setTrigger({ type: 'file', startIdx });
-        return;
-      }
-      if (prefix === '/') {
-        setTrigger({ type: 'command', startIdx });
-        return;
-      }
+      setTriggerStartIdx(startIdx);
+      return;
     }
-    setTrigger(null);
+    setTriggerStartIdx(null);
   }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -115,18 +94,18 @@ export function ChatComposer({
     checkTrigger(el.value, el.selectionStart);
   };
 
-  // Remove trigger text + trigger char from textarea
+  // Remove trigger text + @ from textarea
   const removeTrigger = useCallback(() => {
-    if (!trigger) return;
-    const currentCursor = textareaRef.current?.selectionStart ?? trigger.startIdx;
+    if (triggerStartIdx === null) return;
+    const currentCursor = textareaRef.current?.selectionStart ?? triggerStartIdx;
     setText((prev) => {
-      const before = prev.slice(0, trigger.startIdx);
+      const before = prev.slice(0, triggerStartIdx);
       const after = prev.slice(currentCursor);
       return before + after;
     });
-    setTrigger(null);
+    setTriggerStartIdx(null);
     textareaRef.current?.focus();
-  }, [trigger]);
+  }, [triggerStartIdx]);
 
   // FilePicker: on select
   const handleFileSelect = useCallback(
@@ -145,52 +124,8 @@ export function ChatComposer({
 
   // FilePicker: on close (Escape) — clean up @ trigger text
   const handleFilePickerClose = useCallback(() => {
-    if (trigger?.type === 'file') removeTrigger();
-    else {
-      setTrigger(null);
-      textareaRef.current?.focus();
-    }
-  }, [trigger, removeTrigger]);
-
-  // CommandPalette: on execute (Enter)
-  const handleCommandExecute = useCallback(
-    (action: CommandAction) => {
-      removeTrigger();
-      switch (action.type) {
-        case 'navigate':
-          navigate(action.route);
-          break;
-        case 'insert':
-          setText((prev) => prev + action.text);
-          break;
-        case 'callback':
-          onCommand?.(action.key);
-          break;
-        case 'none':
-          break;
-      }
-    },
-    [removeTrigger, navigate, onCommand],
-  );
-
-  // CommandPalette: Tab completion — insert completeText into textarea
-  const handleCommandComplete = useCallback(
-    (completeText: string) => {
-      removeTrigger();
-      setText((prev) => prev + completeText);
-      textareaRef.current?.focus();
-    },
-    [removeTrigger],
-  );
-
-  // CommandPalette: on close (Escape) — clean up / trigger text
-  const handleCommandClose = useCallback(() => {
-    if (trigger?.type === 'command') removeTrigger();
-    else {
-      setTrigger(null);
-      textareaRef.current?.focus();
-    }
-  }, [trigger, removeTrigger]);
+    removeTrigger();
+  }, [removeTrigger]);
 
   // Remove a fileRef badge
   const removeFileRef = useCallback((idx: number) => {
@@ -205,7 +140,7 @@ export function ChatComposer({
       setText('');
       setFileRefs([]);
       setPastedImages([]);
-      setTrigger(null);
+      setTriggerStartIdx(null);
       if (textareaRef.current) textareaRef.current.style.height = 'auto';
     }
   };
@@ -213,8 +148,8 @@ export function ChatComposer({
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      // Don't send if a trigger overlay is open — FilePicker/CommandPalette handles Enter
-      if (!trigger) {
+      // Don't send if FilePicker overlay is open — FilePicker handles Enter
+      if (triggerStartIdx === null) {
         handleSend();
       }
     }
@@ -369,9 +304,9 @@ export function ChatComposer({
   // Get vaultId for FilePicker
   const activeVaultId = vaultStore.getActiveVaultId();
 
-  // Extract filter text from trigger char to cursor
-  const filterText = trigger
-    ? text.slice(trigger.startIdx + 1, textareaRef.current?.selectionStart ?? undefined)
+  // Extract filter text from @ trigger to cursor
+  const filterText = triggerStartIdx !== null
+    ? text.slice(triggerStartIdx + 1, textareaRef.current?.selectionStart ?? undefined)
     : '';
 
   return (
@@ -464,23 +399,12 @@ export function ChatComposer({
           />
 
           {/* FilePicker overlay */}
-          {trigger?.type === 'file' && activeVaultId && (
+          {triggerStartIdx !== null && activeVaultId && (
             <FilePicker
               vaultId={activeVaultId}
               filterText={filterText}
               onSelect={handleFileSelect}
               onClose={handleFilePickerClose}
-            />
-          )}
-
-          {/* CommandPalette overlay */}
-          {trigger?.type === 'command' && (
-            <CommandPalette
-              filterText={filterText}
-              commands={commands}
-              onExecute={handleCommandExecute}
-              onComplete={handleCommandComplete}
-              onClose={handleCommandClose}
             />
           )}
         </div>
@@ -607,8 +531,6 @@ export function ChatComposer({
       </div>
       <div className="composer-hint">
         <span className="hint-item"><kbd>@</kbd> <span className="hint-desc">{t('composer.hintFileRef')}</span></span>
-        <span className="hint-sep">·</span>
-        <span className="hint-item"><kbd>/</kbd> <span className="hint-desc">{t('composer.hintCommand')}</span></span>
         <span className="hint-sep">·</span>
         <span className="hint-item"><kbd>Enter</kbd> <span className="hint-desc">{t('composer.hintSend')}</span></span>
         <span className="hint-sep">·</span>
