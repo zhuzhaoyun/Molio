@@ -42,15 +42,20 @@ export function renderMarkdown(text: string): string {
   // Wiki-links: [[Page Name]] or [[Page Name|display text]]
   // data-file-path stores the raw path for click-navigation.
   // Skip directory paths (ending with /) — they are not files.
+  // path is inserted into a double-quoted attribute, so it must be
+  // attribute-escaped — escapeHtml (run above) does NOT escape quotes, so a
+  // value like `file" onmouseover="alert(1)` would otherwise break out of the
+  // attribute and inject an event handler (output is rendered via
+  // dangerouslySetInnerHTML).
   html = html.replace(
     /\[\[([^\]|]+)\|([^\]]+)\]\]/g,
     (_m: string, path: string, display: string) =>
-      path.endsWith('/') ? display : `<a class="kb-wiki-link" data-file-path="${path.trim()}">${display}</a>`
+      path.endsWith('/') ? display : `<a class="kb-wiki-link" data-file-path="${escapeAttr(path.trim())}">${display}</a>`
   );
   html = html.replace(
     /\[\[([^\]]+)\]\]/g,
     (_m: string, path: string) =>
-      path.endsWith('/') ? path : `<a class="kb-wiki-link" data-file-path="${path.trim()}">${path}</a>`
+      path.endsWith('/') ? path : `<a class="kb-wiki-link" data-file-path="${escapeAttr(path.trim())}">${path}</a>`
   );
 
   // Standard links
@@ -118,4 +123,13 @@ function escapeHtml(text: string): string {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
+}
+
+/**
+ * Escape a string for use inside an HTML attribute value. Input is assumed to
+ * have already been through escapeHtml (so &/</> are handled); this closes the
+ * remaining quote-breakout vector for double- and single-quoted attributes.
+ */
+function escapeAttr(text: string): string {
+  return text.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }

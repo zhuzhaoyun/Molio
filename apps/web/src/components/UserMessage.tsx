@@ -1,14 +1,28 @@
 import { api } from '../api/client';
-import { vaultStore } from '../stores/vaultStore';
+import { useActiveVaultId } from '../stores/vaultStore';
 
 interface Props {
   content: string;
   timestamp: number;
 }
 
-// Split content by markdown image syntax ![image](path) and render actual images
-function renderContent(content: string): React.ReactNode {
-  const vaultId = vaultStore.getActiveVaultId();
+/**
+ * A path is safe to turn into a vault raw-file URL only when it is a plain
+ * relative path. Reject anything that looks like a URL scheme (javascript:,
+ * data:, etc.) — when vaultId is absent we would otherwise feed the raw value
+ * straight into href/src, enabling script execution from stored/restored
+ * message content.
+ */
+function isSafeImagePath(filePath: string): boolean {
+  // Disallow an explicit scheme (contains a colon before any slash).
+  return !/(^[a-z][a-z0-9+.-]*:)/i.test(filePath);
+}
+
+// Split content by markdown image syntax ![image](path) and render actual images.
+// vaultId is passed in (from a reactive hook in the component) so the message
+// re-renders when the active vault changes — reading the store imperatively
+// during render yields stale URLs.
+function renderContent(content: string, vaultId: string | null): React.ReactNode {
   const parts: React.ReactNode[] = [];
   let lastIndex = 0;
   const regex = /!\[image\]\(([^)]+)\)/g;
@@ -25,8 +39,17 @@ function renderContent(content: string): React.ReactNode {
     }
 
     const filePath = match[1];
-    const imgUrl = vaultId ? api.rawFileUrl(vaultId, filePath) : filePath;
 
+    // Only render an image when we can resolve it to a safe vault URL. If
+    // there is no active vault or the path looks like a URL scheme, render the
+    // raw markdown as plain text instead of risking javascript:/data: URLs.
+    if (!vaultId || !isSafeImagePath(filePath)) {
+      parts.push(<span key={key++}>{match[0]}</span>);
+      lastIndex = match.index + match[0].length;
+      continue;
+    }
+
+    const imgUrl = api.rawFileUrl(vaultId, filePath);
     parts.push(
       <a
         key={key++}
@@ -59,7 +82,8 @@ function renderContent(content: string): React.ReactNode {
 }
 
 export function UserMessage({ content, timestamp }: Props) {
-  const rendered = renderContent(content);
+  const vaultId = useActiveVaultId();
+  const rendered = renderContent(content, vaultId);
 
   return (
     <div className="msg user" data-testid="user-message">
