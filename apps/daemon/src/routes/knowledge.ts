@@ -116,6 +116,10 @@ export function knowledgeRoutes(db: Database.Database, runManager: RunManager): 
       return c.json(file);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to read file';
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT') {
+        return c.json({ error: { code: 'NOT_FOUND', message } }, 404);
+      }
       return c.json({ error: { code: 'INTERNAL', message } }, 500);
     }
   });

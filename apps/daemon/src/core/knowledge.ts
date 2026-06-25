@@ -91,6 +91,12 @@ export function readFile(vaultPath: string, relPath: string): FileContent {
     }
   }
 
+  if (!fs.existsSync(resolved)) {
+    const err: NodeJS.ErrnoException = new Error(`File not found: ${relPath}`);
+    (err as any).code = 'ENOENT';
+    throw err;
+  }
+
   const stat = fs.statSync(resolved);
   const mimeType = getMimeType(path.basename(resolved));
   const content = isTextFile(resolved) ? fs.readFileSync(resolved, 'utf-8') : '';
