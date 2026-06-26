@@ -28,6 +28,7 @@ import {
   deleteDirectory,
   renamePath,
   ensureVaultDir,
+  searchFiles,
 } from '../core/knowledge.js';
 import type { RunManager } from '../core/RunManager.js';
 import { installBuiltinSkills } from '../core/skill-installer.js';
@@ -420,6 +421,28 @@ export function knowledgeRoutes(db: Database.Database, runManager: RunManager): 
       indexExists,
       wikiDirExists,
     });
+  });
+
+  // GET /api/knowledge/vaults/:id/search — 全文搜索
+  app.get('/vaults/:id/search', (c) => {
+    const vault = getVault(db, c.req.param('id'));
+    if (!vault) {
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
+    }
+
+    const q = c.req.query('q') ?? '';
+    if (!q.trim()) {
+      return c.json({ error: { code: 'BAD_REQUEST', message: 'Query (q) is required' } }, 400);
+    }
+    const limit = Math.min(Number(c.req.query('limit') ?? '20'), 100);
+
+    try {
+      const { results, truncated } = searchFiles(vault.path, q, limit);
+      return c.json({ results, truncated });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to search vault';
+      return c.json({ error: { code: 'INTERNAL', message } }, 500);
+    }
   });
 
   return app;

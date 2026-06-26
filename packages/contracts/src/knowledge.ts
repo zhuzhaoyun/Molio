@@ -126,3 +126,16 @@ export interface GraphData {
   edges: GraphEdge[];
   deadLinks: DeadLinkInfo[];
 }
+
+// ─── Search ───
+
+export interface SearchResult {
+  filePath: string;   // vault 相对路径
+  fileName: string;   // basename
+  snippet: string;    // 关键词前后各 30 字符
+}
+
+export interface SearchResponse {
+  results: SearchResult[];
+  truncated: boolean; // 是否因 limit 截断
+}
