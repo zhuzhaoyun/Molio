@@ -434,7 +434,10 @@ export function knowledgeRoutes(db: Database.Database, runManager: RunManager): 
     if (!q.trim()) {
       return c.json({ error: { code: 'BAD_REQUEST', message: 'Query (q) is required' } }, 400);
     }
-    const limit = Math.min(Number(c.req.query('limit') ?? '20'), 100);
+    const rawLimit = Number(c.req.query('limit') ?? '20');
+    const limit = !Number.isFinite(rawLimit) || rawLimit <= 0 || !Number.isInteger(rawLimit)
+      ? 20
+      : Math.min(rawLimit, 100);
 
     try {
       const { results, truncated } = searchFiles(vault.path, q, limit);

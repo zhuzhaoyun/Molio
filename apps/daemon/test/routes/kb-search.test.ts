@@ -84,4 +84,24 @@ describe('Knowledge routes — full-text search', () => {
     assert.equal((body['results'] as unknown[]).length, 2);
     assert.equal(body['truncated'], true);
   });
+
+  it('falls back to default limit for invalid limit=abc', async () => {
+    const res = await app.request(`/api/knowledge/vaults/${vaultId}/search?q=拆分&limit=abc`);
+    assert.equal(res.status, 200);
+    const body = await json(res);
+    const results = body['results'] as Array<Record<string, unknown>>;
+    // 默认 limit=20，两个文件都命中，应该返回 2 个结果
+    assert.equal(results.length, 2);
+    assert.equal(body['truncated'], false);
+  });
+
+  it('falls back to default limit for limit=0', async () => {
+    const res = await app.request(`/api/knowledge/vaults/${vaultId}/search?q=拆分&limit=0`);
+    assert.equal(res.status, 200);
+    const body = await json(res);
+    const results = body['results'] as Array<Record<string, unknown>>;
+    // 默认 limit=20，两个文件都命中，应该返回 2 个结果
+    assert.equal(results.length, 2);
+    assert.equal(body['truncated'], false);
+  });
 });
