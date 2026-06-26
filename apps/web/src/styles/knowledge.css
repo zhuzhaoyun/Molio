@@ -803,6 +803,25 @@
   position: relative;
 }
 
+/* ── Status bar (document stats) ── */
+.kb-status-bar {
+  flex-shrink: 0;
+  padding: 4px 16px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--text-muted);
+  background: var(--bg-subtle);
+  min-height: 28px;
+}
+
+.kb-status-bar .kb-status-sep {
+  opacity: 0.5;
+}
+
 /* Float "ask about selection" button */
 .kb-float-ask-btn {
   position: fixed;

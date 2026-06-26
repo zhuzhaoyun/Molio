@@ -34,6 +34,22 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/** CJK character range + English word count. Returns "word count" (CJK each char = 1 + English word count). */
+function countWords(text: string): number {
+  const cjkMatches = text.match(/[一-鿿㐀-䶿]/g);
+  const cjk = cjkMatches ? cjkMatches.length : 0;
+  // English words (strip CJK then split by non-alphanumeric)
+  const stripped = text.replace(/[一-鿿㐀-䶿]/g, ' ');
+  const enMatches = stripped.match(/[A-Za-z0-9]+/g);
+  const en = enMatches ? enMatches.length : 0;
+  return cjk + en;
+}
+
+function formatReadTime(words: number, suffix: string): string {
+  const mins = Math.max(1, Math.ceil(words / 300));
+  return `~${mins} ${suffix}`;
+}
+
 interface KbMainContentProps {
   fileContent: FileContent | null;
   selectedFile: string | null;
@@ -417,6 +433,26 @@ export function KbMainContent({
       ) : (
         <div className="kb-content-area">
           <div className="kb-empty-state"><p>Loading...</p></div>
+        </div>
+      )}
+
+      {/* Status bar: word count / char count / read time (text files only) */}
+      {category === 'text' && (
+        <div className="kb-status-bar" data-testid="kb-status-bar">
+          {(() => {
+            const text = editedContent ?? fileContent?.content ?? '';
+            const words = countWords(text);
+            const chars = text.length;
+            return (
+              <>
+                <span>{t('kb.statsWords')}: {words.toLocaleString()}</span>
+                <span className="kb-status-sep">/</span>
+                <span>{t('kb.statsChars')}: {chars.toLocaleString()}</span>
+                <span className="kb-status-sep">/</span>
+                <span>{t('kb.statsReadTime')}: {formatReadTime(words, t('kb.statsReadTimeSuffix'))}</span>
+              </>
+            );
+          })()}
         </div>
       )}
     </main>

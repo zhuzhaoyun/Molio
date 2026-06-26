@@ -227,6 +227,11 @@ const zh: Record<string, string> = {
   'fileChat.selection': '选中内容',
 
   // ── KnowledgeBase (file chat) ──
+  'kb.statsWords': '字数',
+  'kb.statsChars': '字符',
+  'kb.statsReadTime': '阅读时间',
+  'kb.statsReadTimeSuffix': '分钟',
+  'kb.statsNoFile': '',
   'kb.askAboutFile': '询问此文件',
   'kb.askSelection': '就此提问',
   'kb.cannotOpen': '无法打开文件',
