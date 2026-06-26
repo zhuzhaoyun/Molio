@@ -12,7 +12,15 @@ import { WIKI_WEIXIN_PROMPT } from '../wiki-prompts.js';
 import { DEFAULT_BASE_URL, WeixinApi } from './client.js';
 import { buildMolioPrompt, parseWeixinMessage } from './message.js';
 import { materializeAttachments } from './media.js';
-import type { ConnectionState, ParsedWeixinMessage, WeixinCredentials, WeixinStatus } from './types.js';
+import { extractOutboundMedia } from './outbound-media.js';
+import type {
+  ConnectionState,
+  OutboundMediaItem,
+  ParsedWeixinMessage,
+  WeixinCredentials,
+  WeixinStatus,
+} from './types.js';
+import { UploadMediaType } from './types.js';
 
 const SESSION_EXPIRED_CODE = -14;
 const QR_LOGIN_TIMEOUT_MS = 8 * 60 * 1000;
@@ -497,7 +505,7 @@ export class WeixinService {
       });
       this.status.activeRunId = runId;
       await this.sendText(message.fromUserId, 'Molio 正在处理...');
-      void this.forwardRunReply(runId, message.fromUserId, conversation.id, agentId);
+      void this.forwardRunReply(runId, message.fromUserId, conversation.id, agentId, cwd);
     } catch (err) {
       const text = `Molio 处理失败：${err instanceof Error ? err.message : String(err)}`;
       if (conversationId) {
@@ -512,23 +520,40 @@ export class WeixinService {
     toUserId: string,
     conversationId: string,
     agentId: string,
+    cwd: string | undefined,
   ): Promise<void> {
     let reply = '';
     let settled = false;
     let unsubscribe: (() => void) | null = null;
+    /** tool_use events seen this turn — used to detect deliverable files. */
+    const writtenFiles: Array<{ name: string; input: unknown }> = [];
 
     const finish = async (text: string) => {
       if (settled) return;
       settled = true;
       unsubscribe?.();
       clearTimeout(timer);
-      this.conversations.appendAssistantMessage(conversationId, text, { agentId, runId });
-      await this.sendText(toUserId, text);
+      // Pull out <attach/> markers (and Write-tool files): the files are
+      // delivered as real WeChat attachments; the markers are stripped from
+      // `cleanText` so the phone never sees a local path.
+      const { items, text: cleanText } = extractOutboundMedia(writtenFiles, text, cwd);
+      this.conversations.appendAssistantMessage(conversationId, cleanText || text, { agentId, runId });
+      if (cleanText) {
+        await this.sendText(toUserId, cleanText);
+      }
+      for (const item of items) {
+        await this.sendMediaFile(toUserId, item);
+      }
     };
 
     const handleEvent = (event: AgentEvent) => {
       if (event.type === 'text_delta') {
         reply += event.delta;
+        return;
+      }
+
+      if (event.type === 'tool_use') {
+        writtenFiles.push({ name: event.name, input: event.input });
         return;
       }
 
@@ -580,6 +605,43 @@ export class WeixinService {
         this.persistContextTokens();
         return;
       }
+    }
+  }
+
+  /**
+   * Upload a local file to the Weixin CDN and deliver it as an image/file/
+   * video message. Best-effort: failures are logged but never break the text
+   * reply. Drops the context token on session expiry, mirroring sendText.
+   */
+  private async sendMediaFile(toUserId: string, item: OutboundMediaItem): Promise<void> {
+    if (!this.api) return;
+    const contextToken = this.contextTokens.get(toUserId);
+    if (!contextToken) return;
+
+    const mediaType = item.kind === 'image'
+      ? UploadMediaType.IMAGE
+      : item.kind === 'video'
+        ? UploadMediaType.VIDEO
+        : UploadMediaType.FILE;
+
+    try {
+      const uploaded = await this.api.uploadMedia(item.filePath, toUserId, mediaType);
+      const response = item.kind === 'image'
+        ? await this.api.sendImageMessage(toUserId, uploaded, contextToken)
+        : item.kind === 'video'
+          ? await this.api.sendVideoMessage(toUserId, uploaded, contextToken)
+          : await this.api.sendFileMessage(toUserId, item.fileName, uploaded, contextToken);
+      const ret = Number(response.ret ?? 0);
+      const errcode = Number(response.errcode ?? 0);
+      if (ret === SESSION_EXPIRED_CODE || errcode === SESSION_EXPIRED_CODE) {
+        this.contextTokens.delete(toUserId);
+        this.persistContextTokens();
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[weixin-send-media] failed: ${err instanceof Error ? err.message : String(err)} file=${item.filePath}`,
+      );
     }
   }
 
