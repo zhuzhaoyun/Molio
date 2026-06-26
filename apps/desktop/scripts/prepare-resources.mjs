@@ -147,13 +147,14 @@ function copyTrashBinaries() {
   }
   const trashLib = join(trashSrc, 'lib');
   const destDir = join(resourcesDir, 'daemon'); // daemon.mjs lives here; import.meta.url resolves here
+  mkdirSync(destDir, { recursive: true });
   for (const bin of ['windows-trash.exe', 'macos-trash']) {
     const src = join(trashLib, bin);
     if (!existsSync(src)) {
       console.warn(`  WARNING: ${bin} not found in trash/lib, skipping`);
       continue;
     }
-    cpSync(src, join(destDir, bin));
+    cpSync(src, join(destDir, bin), { dereference: true });
     console.log(`  Copied ${bin}`);
   }
 }
