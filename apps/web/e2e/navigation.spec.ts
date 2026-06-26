@@ -2,6 +2,9 @@ import { test, expect } from '@playwright/test';
 import { gotoHome, clickNav } from './helpers/navigation';
 
 /**
+ * @area navigation
+ * @priority P1
+ *
  * E2E tests for navigation between all main pages.
  *
  * Verifies that every page is reachable via the NavRail and that the

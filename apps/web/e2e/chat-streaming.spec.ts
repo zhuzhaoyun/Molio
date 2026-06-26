@@ -3,6 +3,9 @@ import { gotoHome, sendMessage } from './helpers/navigation';
 import { mockChatRun, unmockAll, SCRIPTS } from './helpers/mock-sse';
 
 /**
+ * @area chat
+ * @priority P1
+ *
  * E2E tests for SSE event rendering details: thinking blocks, tool use, errors.
  *
  * Each test uses a specific script that exercises different event types.

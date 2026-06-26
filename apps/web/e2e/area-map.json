@@ -1,0 +1,106 @@
+{
+  "_comment": "Area → path globs + E2E spec mapping. Used by scripts/select-specs.mjs to pick affected specs from git diff.",
+  "_priority_default": "P0 specs always run; P1 specs run only when their area is touched; P2 specs run only in nightly full.",
+  "areas": {
+    "chat": {
+      "paths": [
+        "apps/web/src/components/ChatComposer.*",
+        "apps/web/src/components/UserMessage.*",
+        "apps/web/src/components/AssistantMessage.*",
+        "apps/web/src/components/ThinkingBlock.*",
+        "apps/web/src/components/ToolCard.*",
+        "apps/web/src/components/ToolGroup.*",
+        "apps/web/src/components/ChatPane.*",
+        "apps/web/src/hooks/useChat*",
+        "apps/web/src/hooks/useChatCore*",
+        "apps/daemon/src/routes/runs.ts",
+        "apps/daemon/src/routes/events.ts",
+        "apps/daemon/src/routes/tool-result.ts",
+        "apps/daemon/src/core/RunManager.ts",
+        "apps/daemon/src/streams/*"
+      ],
+      "specs": ["chat-single", "chat-multi", "chat-streaming"]
+    },
+    "kb": {
+      "paths": [
+        "apps/web/src/components/kb/*",
+        "apps/web/src/hooks/useKnowledge*",
+        "apps/web/src/hooks/useKbTabs*",
+        "apps/daemon/src/core/knowledge.ts",
+        "apps/daemon/src/core/db.ts",
+        "apps/daemon/src/routes/knowledge.ts"
+      ],
+      "specs": ["create-vault-form", "knowledge", "markdown-render"]
+    },
+    "publish": {
+      "paths": [
+        "apps/daemon/src/publish-bridge/*",
+        "apps/daemon/src/routes/publish.ts",
+        "apps/web/src/components/publish*"
+      ],
+      "specs": ["publish-flow"]
+    },
+    "runtimes": {
+      "paths": [
+        "apps/daemon/src/core/runtimes/*",
+        "apps/web/src/components/runtimes/*",
+        "apps/web/src/hooks/useRuntimes*"
+      ],
+      "specs": ["runtimes-page", "runtime-provider-config"]
+    },
+    "graph": {
+      "paths": [
+        "apps/web/src/components/graph/*",
+        "apps/web/src/styles/graph.css"
+      ],
+      "specs": ["graph", "graph-settings"]
+    },
+    "navigation": {
+      "paths": [
+        "apps/web/src/components/NavRail*",
+        "apps/web/src/components/HomePage*",
+        "apps/web/src/App.tsx",
+        "apps/web/src/main.tsx"
+      ],
+      "specs": ["bootstrap", "navigation"]
+    },
+    "settings": {
+      "paths": [
+        "apps/web/src/components/settings/*",
+        "apps/web/src/styles/settings.css"
+      ],
+      "specs": ["settings"]
+    },
+    "history": {
+      "paths": [
+        "apps/web/src/components/history*",
+        "apps/web/src/hooks/useHistory*"
+      ],
+      "specs": ["history"]
+    },
+    "desktop": {
+      "paths": [
+        "apps/desktop/src/*",
+        "apps/desktop/scripts/*"
+      ],
+      "specs": []
+    }
+  },
+  "specs": {
+    "bootstrap": { "priority": "P0", "file": "bootstrap.spec.ts" },
+    "chat-single": { "priority": "P0", "file": "chat-single.spec.ts" },
+    "chat-multi": { "priority": "P0", "file": "chat-multi.spec.ts" },
+    "chat-streaming": { "priority": "P1", "file": "chat-streaming.spec.ts" },
+    "create-vault-form": { "priority": "P0", "file": "create-vault-form.spec.ts" },
+    "graph": { "priority": "P1", "file": "graph.spec.ts" },
+    "graph-settings": { "priority": "P2", "file": "graph-settings.spec.ts" },
+    "history": { "priority": "P1", "file": "history.spec.ts" },
+    "knowledge": { "priority": "P0", "file": "knowledge.spec.ts" },
+    "markdown-render": { "priority": "P1", "file": "markdown-render.spec.ts" },
+    "navigation": { "priority": "P1", "file": "navigation.spec.ts" },
+    "publish-flow": { "priority": "P0", "file": "publish-flow.spec.ts" },
+    "runtime-provider-config": { "priority": "P1", "file": "runtime-provider-config.spec.ts" },
+    "runtimes-page": { "priority": "P1", "file": "runtimes-page.spec.ts" },
+    "settings": { "priority": "P1", "file": "settings.spec.ts" }
+  }
+}

@@ -48,7 +48,11 @@ describe('Multi-turn persistence with real Claude Code stream shape', () => {
     app.route('/api/runs', runsRoutes(db, runManager, conversationService));
     app.route('/api/runs', eventsRoutes(runManager));
 
-    process.env['CLAUDE_BIN'] = join(process.cwd(), 'test/fixtures/fake-agents/fake-claude.cmd');
+    process.env['CLAUDE_BIN'] = join(
+      process.cwd(),
+      'test/fixtures/fake-agents',
+      process.platform === 'win32' ? 'fake-claude.cmd' : 'fake-claude.mjs',
+    );
     // Mimic real Claude Code: assistant blocks carry stop_reason: null.
     process.env['FAKE_CLAUDE_REAL_STREAM'] = '1';
     process.env['FAKE_CLAUDE_MULTI_TURN'] = '1';

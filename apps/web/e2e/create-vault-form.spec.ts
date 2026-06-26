@@ -2,6 +2,9 @@ import { test, expect } from '@playwright/test';
 import { gotoHome, clickNav } from './helpers/navigation';
 
 /**
+ * @area kb
+ * @priority P0
+ *
  * E2E tests for the Create Vault form.
  *
  * Regression: the "浏览" (Browse) button had no onClick handler, so clicking

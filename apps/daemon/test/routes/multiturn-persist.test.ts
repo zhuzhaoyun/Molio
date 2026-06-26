@@ -36,7 +36,11 @@ describe('Multi-turn assistant reply persistence', () => {
     app.route('/api/runs', runsRoutes(db, runManager, conversationService));
     app.route('/api/runs', eventsRoutes(runManager));
 
-    process.env['CLAUDE_BIN'] = join(process.cwd(), 'test/fixtures/fake-agents/fake-claude.cmd');
+    process.env['CLAUDE_BIN'] = join(
+      process.cwd(),
+      'test/fixtures/fake-agents',
+      process.platform === 'win32' ? 'fake-claude.cmd' : 'fake-claude.mjs',
+    );
     process.env['FAKE_CLAUDE_MULTI_TURN'] = '1';
   });
 

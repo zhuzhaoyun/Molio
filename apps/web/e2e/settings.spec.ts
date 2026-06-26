@@ -2,6 +2,9 @@ import { test, expect } from '@playwright/test';
 import { gotoHome, clickNav } from './helpers/navigation';
 
 /**
+ * @area settings
+ * @priority P1
+ *
  * E2E tests for the Settings page.
  *
  * Prerequisites: `pnpm dev` running (daemon :3100, web :5173)

@@ -8,7 +8,7 @@
     "dev:watch": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/src/index.js",
-    "test": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true })\" && tsc && node --test \"dist/test/**/*.test.js\"",
+    "test": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true })\" && tsc && node --test --test-timeout=30000 \"dist/test/**/*.test.js\"",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

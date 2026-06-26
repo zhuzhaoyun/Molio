@@ -1,0 +1,154 @@
+name: E2E Coverage Reminder
+
+on:
+  schedule:
+    # 10:00 UTC = 18:00 Asia/Shanghai
+    - cron: '57 10 * * *'
+  workflow_dispatch:
+    inputs:
+      lookback_hours:
+        description: 'Hours of merged PRs to inspect'
+        required: true
+        default: '24'
+      dry_run:
+        description: 'Log only, do not create issues'
+        required: true
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const isDryRun = "${{ inputs.dry_run || 'true' }}" === 'true';
+            const lookbackHours = parseInt("${{ inputs.lookback_hours || '24' }}", 10) || 24;
+            const since = new Date(Date.now() - lookbackHours * 60 * 60 * 1000);
+
+            // Files that should not trigger E2E coverage reminders
+            const lowSignalPatterns = [
+              /^docs\//,
+              /^\.github\/ISSUE_TEMPLATE\//,
+              /^\.github\/PULL_REQUEST_TEMPLATE/,
+              /^README/i,
+              /^CHANGELOG/i,
+              /^pnpm-lock\.yaml$/,
+              /^package-lock\.json$/,
+            ];
+
+            // Get merged PRs in the lookback window
+            const prs = await github.rest.pulls.list({
+              owner,
+              repo,
+              state: 'closed',
+              sort: 'updated',
+              direction: 'desc',
+              per_page: 50,
+            });
+
+            const mergedRecently = prs.data.filter(pr =>
+              pr.merged_at && new Date(pr.merged_at) > since
+            );
+
+            if (mergedRecently.length === 0) {
+              console.log('No merged PRs in the lookback window.');
+              return;
+            }
+
+            console.log(`Found ${mergedRecently.length} merged PRs in the last ${lookbackHours}h.`);
+
+            // For each merged PR, check if it touched areas that need E2E coverage
+            const needsE2E = [];
+            for (const pr of mergedRecently) {
+              // Get files changed in this PR
+              const files = await github.rest.pulls.listFiles({
+                owner,
+                repo,
+                pull_number: pr.number,
+              });
+
+              const changedPaths = files.data.map(f => f.filename);
+
+              // Filter out low-signal files
+              const significantChanges = changedPaths.filter(path =>
+                !lowSignalPatterns.some(p => p.test(path))
+              );
+
+              if (significantChanges.length === 0) {
+                console.log(`PR #${pr.number}: only low-signal changes, skipping.`);
+                continue;
+              }
+
+              // Check if any changed file is in a core flow area
+              const coreFlowFiles = [
+                'apps/web/src/components/HomePage.tsx',
+                'apps/web/src/components/ChatComposer.tsx',
+                'apps/web/src/components/UserMessage.tsx',
+                'apps/web/src/components/AssistantMessage.tsx',
+                'apps/web/src/components/ThinkingBlock.tsx',
+                'apps/web/src/components/ToolCard.tsx',
+                'apps/web/src/components/NavRail.tsx',
+                'apps/web/src/hooks/useChat.ts',
+                'apps/web/src/hooks/useChatCore.ts',
+                'apps/web/src/api/client.ts',
+                'apps/web/src/api/sse.ts',
+                'apps/web/src/App.tsx',
+                'apps/daemon/src/routes/runs.ts',
+                'apps/daemon/src/routes/events.ts',
+                'apps/daemon/src/core/RunManager.ts',
+              ];
+
+              const touchedCore = significantChanges.some(f => coreFlowFiles.includes(f));
+
+              if (touchedCore) {
+                // Check if PR includes E2E test changes
+                const hasE2E = changedPaths.some(f => f.startsWith('apps/web/e2e/'));
+                if (!hasE2E) {
+                  needsE2E.push({
+                    number: pr.number,
+                    title: pr.title,
+                    url: pr.html_url,
+                    changedFiles: significantChanges.filter(f => coreFlowFiles.includes(f)),
+                  });
+                }
+              }
+            }
+
+            console.log(`${needsE2E.length} PRs need E2E coverage.`);
+
+            // Create issues for missing coverage (if not dry run)
+            if (!isDryRun) {
+              for (const item of needsE2E) {
+                await github.rest.issues.create({
+                  owner,
+                  repo,
+                  title: `[needs-e2e] PR #${item.number}: ${item.title}`,
+                  body: `PR ${item.url} modified core flow files but has no E2E test changes:\n\n${item.changedFiles.map(f => `- ${f}`).join('\n')}\n\nPlease add E2E tests covering these changes.`,
+                  labels: ['needs-e2e'],
+                });
+              }
+            } else {
+              for (const item of needsE2E) {
+                console.log(`[dry-run] Would create issue for PR #${item.number}: ${item.title}`);
+                console.log(`  Files: ${item.changedFiles.join(', ')}`);
+              }
+            }
