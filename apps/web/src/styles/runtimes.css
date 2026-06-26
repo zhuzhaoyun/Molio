@@ -837,7 +837,7 @@
   padding: 6px 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: var(--bg-panel);
+  background-color: var(--bg-panel);
   color: var(--text);
   font-size: 13px;
   font-family: var(--mono);

@@ -1,7 +1,9 @@
-import { useMemo } from 'react';
+import { useMemo, useCallback } from 'react';
 import type { ChatMessage, ToolEvent } from '../hooks/useChat';
 import { renderMarkdown } from '../utils/markdown';
 import { useI18n } from '../i18n';
+import { useActiveVaultId } from '../stores/vaultStore';
+import { useFileNavigation } from '../hooks/useFileNavigation';
 import { ToolCard } from './ToolCard';
 import { ToolGroup } from './ToolGroup';
 import { ThinkingBlock } from './ThinkingBlock';
@@ -75,8 +77,26 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
 
   const html = useMemo(() => renderMarkdown(displayContent), [displayContent]);
   const toolItems = useMemo(
-    () => (message.tools ? groupTools(message.tools) : []),
+    () => groupTools(message.tools || []),
     [message.tools]
+  );
+
+  const activeVaultId = useActiveVaultId();
+  const { openFile } = useFileNavigation();
+
+  const handleProseClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      const target = e.target as HTMLElement;
+      const link = target.closest('.kb-wiki-link') as HTMLAnchorElement | null;
+      if (!link || !activeVaultId) return;
+
+      e.preventDefault();
+      const filePath = link.getAttribute('data-file-path') || link.textContent?.trim();
+      if (filePath) {
+        openFile(activeVaultId, filePath);
+      }
+    },
+    [openFile, activeVaultId],
   );
 
   return (
@@ -116,6 +136,8 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
         <div
           className="assistant-prose"
           data-testid="assistant-prose"
+          onClick={handleProseClick}
+          role="presentation"
           dangerouslySetInnerHTML={{ __html: html }}
         />
       )}

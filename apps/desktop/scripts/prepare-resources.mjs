@@ -125,6 +125,40 @@ function copyNativeDependencies() {
   }
 }
 
+/**
+ * Copy platform-specific binaries used by the `trash` package.
+ *
+ * esbuild inlines the `trash` JS source into daemon.mjs, but `trash` spawns
+ * platform binaries located via `new URL('windows-trash.exe', import.meta.url)`
+ * and `new URL('macos-trash', import.meta.url)`. After bundling, `import.meta.url`
+ * points at `resources/daemon/daemon.mjs`, so the binaries must sit next to
+ * daemon.mjs — otherwise deleting files/folders fails with ENOENT at spawn
+ * time and the user sees "删除失败" with no error in the UI.
+ *
+ * Regression test: apps/desktop/test/trash-binaries.test.js
+ * See: https://github.com/zhuzhaoyun/Molio/issues/80
+ */
+function copyTrashBinaries() {
+  console.log('Copying trash platform binaries...');
+  const trashSrc = findPackageDir('trash');
+  if (!trashSrc) {
+    console.warn('  WARNING: trash package not found, deletion will be broken in packaged app');
+    return;
+  }
+  const trashLib = join(trashSrc, 'lib');
+  const destDir = join(resourcesDir, 'daemon'); // daemon.mjs lives here; import.meta.url resolves here
+  mkdirSync(destDir, { recursive: true });
+  for (const bin of ['windows-trash.exe', 'macos-trash']) {
+    const src = join(trashLib, bin);
+    if (!existsSync(src)) {
+      console.warn(`  WARNING: ${bin} not found in trash/lib, skipping`);
+      continue;
+    }
+    cpSync(src, join(destDir, bin), { dereference: true });
+    console.log(`  Copied ${bin}`);
+  }
+}
+
 function downloadElectronPrebuilds() {
   console.log('Downloading Electron prebuilt native modules...');
 
@@ -255,6 +289,7 @@ mkdirSync(resourcesDir, { recursive: true });
 
 await bundleDaemon();
 copyNativeDependencies();
+copyTrashBinaries();
 downloadElectronPrebuilds();
 copyWebBuild();
 copySkillSources();

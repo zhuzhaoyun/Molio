@@ -4,7 +4,7 @@
 
 import { Hono } from 'hono';
 import { stream } from 'hono/streaming';
-import { createReadStream, existsSync } from 'node:fs';
+import { createReadStream, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type Database from 'better-sqlite3';
 import type {
@@ -127,6 +127,10 @@ export function knowledgeRoutes(
       return c.json(file);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to read file';
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT') {
+        return c.json({ error: { code: 'NOT_FOUND', message } }, 404);
+      }
       return c.json({ error: { code: 'INTERNAL', message } }, 500);
     }
   });
@@ -239,6 +243,112 @@ export function knowledgeRoutes(
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to read file';
+      return c.json({ error: { code: 'INTERNAL', message } }, 500);
+    }
+  });
+
+  // ─── Asset upload ───
+
+  const ASSETS_DIR = '.molio/assets';
+
+  // POST /api/knowledge/vaults/:id/assets/upload — upload an image asset
+  app.post('/vaults/:id/assets/upload', async (c) => {
+    const vault = getVault(db, c.req.param('id'));
+    if (!vault) {
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
+    }
+
+    // Size check via Content-Length header (guard before reading body).
+    // Parse strictly: a missing/non-numeric/oversized value is rejected
+    // immediately so the body is never buffered into memory. The daemon has no
+    // auth (CORS allows any localhost origin), so without this guard a spoofed
+    // or absent Content-Length could force OOM by buffering an arbitrarily
+    // large body before the post-read check below runs.
+    const rawLen = c.req.header('Content-Length');
+    const contentLength = rawLen != null ? parseInt(rawLen, 10) : NaN;
+    const MAX_SIZE = 50 * 1024 * 1024; // 50 MB
+    if (!Number.isFinite(contentLength) || contentLength < 0 || contentLength > MAX_SIZE) {
+      return c.json({ error: { code: 'PAYLOAD_TOO_LARGE', message: 'Image too large (max 50MB)' } }, 413);
+    }
+
+    try {
+      const body = await c.req.parseBody();
+      const file = body['file'];
+
+      if (!file || typeof file === 'string') {
+        return c.json({ error: { code: 'BAD_REQUEST', message: 'No file provided' } }, 400);
+      }
+
+      // file is a File-like object with .name, .type, and .arrayBuffer()
+      const fileObj = file as File;
+      const mimeType = fileObj.type || 'application/octet-stream';
+
+      // Validate image type
+      const ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+      if (!ALLOWED_TYPES.includes(mimeType)) {
+        return c.json({ error: { code: 'BAD_REQUEST', message: 'Unsupported image format (PNG/JPEG/GIF/WebP only)' } }, 400);
+      }
+
+      const EXT_BY_TYPE: Record<string, string> = {
+        'image/jpeg': '.jpg',
+        'image/png': '.png',
+        'image/gif': '.gif',
+        'image/webp': '.webp',
+      };
+      const ext = EXT_BY_TYPE[mimeType] ?? '.webp';
+
+      // Generate unique filename
+      const now = new Date();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const ts = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+
+      // Read file bytes
+      const bytes = await fileObj.arrayBuffer();
+      const buf = Buffer.from(bytes);
+
+      // Validate actual size after reading (defense against Content-Length spoofing)
+      if (buf.byteLength > MAX_SIZE) {
+        return c.json({ error: { code: 'PAYLOAD_TOO_LARGE', message: 'Image too large (max 50MB)' } }, 413);
+      }
+
+      // Ensure .molio/assets/ directory exists. recursive:true is idempotent
+      // (no EEXIST), so any error here is a real OS failure (EACCES/ENOSPC/EROFS)
+      // and should propagate rather than be swallowed — otherwise the subsequent
+      // writeFileSync surfaces a misleading ENOENT that hides the real cause.
+      mkdirSync(resolveFilePath(vault.path, ASSETS_DIR), { recursive: true });
+
+      // Write to disk using an exclusive-create (`wx`) flag with EEXIST retry.
+      // The previous existsSync + writeFileSync pair was racy: the `await`
+      // arrayBuffer() between check and write yields the event loop, so two
+      // same-second uploads could both pass the check and overwrite each other.
+      // `wx` makes the check-and-create atomic at the OS level — if the file
+      // already exists we bump the sequence counter and retry (bounded).
+      const MAX_NAME_RETRIES = 1000;
+      let relPath = '';
+      let absPath = '';
+      for (let seq = 1; seq <= MAX_NAME_RETRIES; seq++) {
+        relPath = `${ASSETS_DIR}/${ts}-${seq}${ext}`;
+        absPath = resolveFilePath(vault.path, relPath);
+        try {
+          writeFileSync(absPath, buf, { flag: 'wx' });
+          break;
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
+            continue;
+          }
+          throw err;
+        }
+      }
+      if (!absPath) {
+        throw new Error('Failed to generate a unique asset filename after maximum retries');
+      }
+
+      const url = `/api/knowledge/vaults/${vault.id}/raw/${encodeURIComponent(relPath).replace(/%2F/g, '/')}`;
+
+      return c.json({ filePath: relPath, url }, 201);
+    } catch (err) {
+      console.error('[knowledge] asset upload failed:', err);
+      const message = err instanceof Error ? err.message : 'Failed to upload asset';
       return c.json({ error: { code: 'INTERNAL', message } }, 500);
     }
   });

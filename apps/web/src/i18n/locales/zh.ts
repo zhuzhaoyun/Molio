@@ -25,6 +25,19 @@ const zh: Record<string, string> = {
   'composer.stop': '停止',
   'composer.send': '发送',
   'composer.hint': 'Shift+Enter 换行',
+  'composer.hintFileRef': '引用文件',
+  'composer.hintCommand': '命令',
+  'composer.hintSend': '发送',
+  'composer.hintNewline': '换行',
+  'composer.uploading': '上传图片中...',
+  'composer.uploadError': '图片上传失败',
+  'composer.uploadNoVault': '请先选择或创建知识库',
+  'composer.uploadDismiss': '关闭',
+  'composer.uploadImage': '上传图片',
+  'composer.uploadRetryHint': '请重新粘贴图片',
+  'composer.history': '历史记录',
+  'composer.noHistory': '暂无历史记录',
+  'composer.untitled': '未命名对话',
 
   // ── AssistantMessage ──
   'assistant.label': 'Molio',
@@ -197,6 +210,37 @@ const zh: Record<string, string> = {
   'graph.edges': '{count} 条链接',
   'graph.selectVault': '选择知识库',
   'graph.empty': '该知识库中没有 Markdown 文件',
+
+  // ── FileChatPanel ──
+  'fileChat.running': '运行中…',
+  'fileChat.close': '关闭',
+  'fileChat.ready': 'AI 助手已就绪',
+  'fileChat.selection': '选中内容',
+
+  // ── KnowledgeBase (file chat) ──
+  'kb.askAboutFile': '询问此文件',
+  'kb.askSelection': '就此提问',
+  'kb.cannotOpen': '无法打开文件',
+  'kb.fileNotFound': '该文件可能已被删除、重命名或从未被创建（可能是 AI 生成的错误引用）',
+  'kb.fileChatContextPrefix': '关于文件中的以下选中内容：',
+  'kb.fileChatDefaultPrompt': '请帮我分析以上选中内容。',
+
+  // ── FilePicker ──
+  'filePicker.justNow': '刚刚',
+  'filePicker.mAgo': '{n}分钟前',
+  'filePicker.hAgo': '{n}小时前',
+  'filePicker.dAgo': '{n}天前',
+  'filePicker.older': '更早',
+  'filePicker.loading': '加载中…',
+  'filePicker.noMatch': '无匹配文件',
+  'filePicker.searchPlaceholder': '搜索文件…',
+  'filePicker.loadError': '加载文件失败',
+
+  // ── UserMessage ──
+  'userMessage.viewOriginal': '查看原图',
+
+  // ── HomePage ──
+  'home.fileContextFallback': '请根据以上内容帮我分析。',
 };
 
 export default zh;

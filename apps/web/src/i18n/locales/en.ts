@@ -25,6 +25,19 @@ const en: Record<string, string> = {
   'composer.stop': 'Stop',
   'composer.send': 'Send',
   'composer.hint': 'Shift+Enter for new line',
+  'composer.hintFileRef': 'Reference files',
+  'composer.hintCommand': 'Commands',
+  'composer.hintSend': 'Send',
+  'composer.hintNewline': 'New line',
+  'composer.uploading': 'Uploading image...',
+  'composer.uploadError': 'Image upload failed',
+  'composer.uploadNoVault': 'Please select or create a vault first',
+  'composer.uploadDismiss': 'Dismiss',
+  'composer.uploadImage': 'Upload image',
+  'composer.uploadRetryHint': 'Please paste the image again',
+  'composer.history': 'History',
+  'composer.noHistory': 'No conversation history',
+  'composer.untitled': 'Untitled',
 
   // ── AssistantMessage ──
   'assistant.label': 'Molio',
@@ -197,6 +210,37 @@ const en: Record<string, string> = {
   'graph.edges': '{count} edges',
   'graph.selectVault': 'Select vault',
   'graph.empty': 'No Markdown files in this vault',
+
+  // ── FileChatPanel ──
+  'fileChat.running': 'Running…',
+  'fileChat.close': 'Close',
+  'fileChat.ready': 'AI assistant ready',
+  'fileChat.selection': 'Selection',
+
+  // ── KnowledgeBase (file chat) ──
+  'kb.askAboutFile': 'Ask about this file',
+  'kb.askSelection': 'Ask about this',
+  'kb.cannotOpen': 'Cannot open file',
+  'kb.fileNotFound': 'This file may have been deleted, renamed, or never created (possibly an AI-generated broken reference).',
+  'kb.fileChatContextPrefix': 'Regarding the following selection from the file:',
+  'kb.fileChatDefaultPrompt': 'Please analyze the selection above.',
+
+  // ── FilePicker ──
+  'filePicker.justNow': 'Just now',
+  'filePicker.mAgo': '{n} min ago',
+  'filePicker.hAgo': '{n} h ago',
+  'filePicker.dAgo': '{n} d ago',
+  'filePicker.older': 'Older',
+  'filePicker.loading': 'Loading…',
+  'filePicker.noMatch': 'No matching files',
+  'filePicker.searchPlaceholder': 'Search files…',
+  'filePicker.loadError': 'Failed to load files',
+
+  // ── UserMessage ──
+  'userMessage.viewOriginal': 'View original',
+
+  // ── HomePage ──
+  'home.fileContextFallback': 'Please analyze the above content.',
 };
 
 export default en;

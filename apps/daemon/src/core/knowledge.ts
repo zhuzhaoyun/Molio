@@ -78,17 +78,25 @@ export function countFiles(vaultPath: string): number {
  * For binary files (images, PDF, DOCX), content is empty — use raw file URL or openPath.
  */
 export function readFile(vaultPath: string, relPath: string): FileContent {
-  const absFile = path.join(vaultPath, relPath);
+  let resolved = resolveFilePath(vaultPath, relPath);
 
-  // Security: prevent path traversal
-  const resolved = path.resolve(absFile);
-  if (!resolved.startsWith(path.resolve(vaultPath))) {
-    throw new Error('Path traversal not allowed');
+  if (!fs.existsSync(resolved)) {
+    resolved = resolveWithFallbacks(vaultPath, relPath);
   }
 
-  const stat = fs.statSync(resolved);
-  const mimeType = getMimeType(relPath);
-  const content = isTextFile(resolved) ? fs.readFileSync(resolved, 'utf-8') : '';
+  if (!fs.existsSync(resolved)) {
+    const err = new Error(`File not found: ${relPath}`) as NodeJS.ErrnoException;
+    err.code = 'ENOENT';
+    throw err;
+  }
+
+  // Follow symlinks and re-validate the real path is still inside the vault
+  // before reading — defends against a symlink swapped in to escape the vault.
+  const real = resolveRealWithinVault(vaultPath, resolved);
+
+  const stat = fs.statSync(real);
+  const mimeType = getMimeType(path.basename(real));
+  const content = isTextFile(real) ? fs.readFileSync(real, 'utf-8') : '';
 
   return {
     path: relPath,
@@ -99,14 +107,168 @@ export function readFile(vaultPath: string, relPath: string): FileContent {
   };
 }
 
+/**
+ * Try multiple fallback strategies to find a file that may be missing
+ * an extension, in a subdirectory, or have case mismatches.
+ */
+function resolveWithFallbacks(vaultPath: string, relPath: string): string {
+  const ext = path.extname(relPath).toLowerCase();
+  const hasExt = !!ext;
+
+  // Prefixes to try: vault root, then wiki/ subdirectory
+  const prefixes = [''];
+  if (!relPath.startsWith('wiki/')) {
+    prefixes.push('wiki/');
+  }
+
+  for (const prefix of prefixes) {
+    const baseRelPath = prefix + relPath;
+
+    // Strategy A: exact path
+    const exact = resolveFilePath(vaultPath, baseRelPath);
+    if (fs.existsSync(exact)) return exact;
+
+    // Strategy B: add .md extension
+    if (!hasExt) {
+      const md = resolveFilePath(vaultPath, baseRelPath + '.md');
+      if (fs.existsSync(md)) return md;
+    }
+
+    // Strategy C: case-insensitive search in the target directory
+    const targetDir = path.dirname(exact);
+    const targetBase = path.basename(exact);
+    const targetLower = targetBase.toLowerCase();
+    try {
+      const entries = fs.readdirSync(targetDir);
+      // Exact case-insensitive match
+      let match = entries.find((e) => e.toLowerCase() === targetLower);
+      // Try with .md if original has no extension
+      if (!match && !hasExt) {
+        match = entries.find((e) => e.toLowerCase() === targetLower + '.md');
+      }
+      if (match) {
+        // Re-validate so a matched entry can never bypass the vault boundary
+        // (defense-in-depth).
+        const candidate = path.join(targetDir, match);
+        assertWithinVault(vaultPath, candidate);
+        return candidate;
+      }
+    } catch {
+      // directory not found — try next prefix
+    }
+  }
+
+  // Strategy D: bare page name (no directory component) — recursively search
+  // the vault. Wiki links are conventionally bare page names like
+  // "[[知识库五范式]]", but the file usually lives in a nested wiki/
+  // subdirectory, so the per-directory search above misses it. Walk the tree
+  // for a file whose stem matches (case-insensitive, ±.md).
+  if (!relPath.includes('/')) {
+    const found = findFileByStem(vaultPath, relPath, hasExt);
+    if (found) return found;
+  }
+
+  // Return the original resolved path if all fallbacks fail
+  return resolveFilePath(vaultPath, relPath);
+}
+
+/**
+ * Recursively walk the vault for a file matching a bare page name.
+ * - With extension: match the full filename (case-insensitive).
+ * - Without extension: match the filename stem (basename minus extension),
+ *   so "[[知识库五范式]]" resolves to "知识库五范式.md" anywhere in the tree.
+ * Hidden entries (`.molio`, `.claude`, …) are skipped.
+ */
+function findFileByStem(
+  vaultPath: string,
+  bareName: string,
+  hasExt: boolean,
+): string | null {
+  const nameLower = bareName.toLowerCase();
+  const stemLower = hasExt
+    ? path.basename(bareName, path.extname(bareName)).toLowerCase()
+    : nameLower;
+  let result: string | null = null;
+
+  const walk = (dir: string): void => {
+    if (result) return;
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.name.startsWith('.')) continue;
+      const abs = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(abs);
+        if (result) return;
+      } else if (entry.isFile()) {
+        const entryLower = entry.name.toLowerCase();
+        const match = hasExt
+          ? entryLower === nameLower
+          : entryLower === nameLower ||
+            path.basename(entry.name, path.extname(entry.name)).toLowerCase() === stemLower;
+        if (match) {
+          assertWithinVault(vaultPath, abs);
+          result = abs;
+          return;
+        }
+      }
+    }
+  };
+
+  walk(vaultPath);
+  return result;
+}
+
 /** Resolve a vault-relative path to an absolute filesystem path. */
 export function resolveFilePath(vaultPath: string, relPath: string): string {
   const absFile = path.join(vaultPath, relPath);
   const resolved = path.resolve(absFile);
-  if (!resolved.startsWith(path.resolve(vaultPath))) {
+  assertWithinVault(vaultPath, resolved);
+  return resolved;
+}
+
+/**
+ * Verify an already-resolved absolute path stays inside the vault root.
+ * Uses a trailing path separator so a sibling directory like
+ * `/data/vault-secret` is NOT mistaken for `/data/vault`. The daemon has no
+ * authentication (CORS allows any localhost origin), so this guard is the
+ * primary boundary against path-traversal exfiltration.
+ */
+function assertWithinVault(vaultPath: string, resolved: string): void {
+  const vaultRoot = path.resolve(vaultPath);
+  if (resolved !== vaultRoot && !resolved.startsWith(vaultRoot + path.sep)) {
     throw new Error('Path traversal not allowed');
   }
-  return resolved;
+}
+
+/**
+ * Resolve the real on-disk path (following symlinks) and confirm it remains
+ * inside the vault. Closes a TOCTOU/symlink-escape: between an existsSync
+ * check and a later read, a file could be replaced with a symlink pointing
+ * outside the vault, and statSync/readFileSync follow symlinks by default.
+ *
+ * The vault root itself may contain symlink components (e.g. macOS tmpdir
+ * `/var` → `/private/var`), so we canonicalize both sides before comparing.
+ */
+function resolveRealWithinVault(vaultPath: string, resolved: string): string {
+  assertWithinVault(vaultPath, resolved);
+  const real = fs.realpathSync(resolved);
+  // Canonicalize the vault root the same way so a symlinked root doesn't
+  // cause legitimate reads to be rejected.
+  let realVault: string;
+  try {
+    realVault = fs.realpathSync(path.resolve(vaultPath));
+  } catch {
+    realVault = path.resolve(vaultPath);
+  }
+  if (real !== realVault && !real.startsWith(realVault + path.sep)) {
+    throw new Error('Path traversal not allowed');
+  }
+  return real;
 }
 
 /**
@@ -115,11 +277,9 @@ export function resolveFilePath(vaultPath: string, relPath: string): string {
 export function writeFile(vaultPath: string, relPath: string, content: string): void {
   const absFile = path.join(vaultPath, relPath);
 
-  // Security: prevent path traversal
+  // Security: prevent path traversal (sibling-directory bypass)
   const resolved = path.resolve(absFile);
-  if (!resolved.startsWith(path.resolve(vaultPath))) {
-    throw new Error('Path traversal not allowed');
-  }
+  assertWithinVault(vaultPath, resolved);
 
   fs.mkdirSync(path.dirname(resolved), { recursive: true });
   fs.writeFileSync(resolved, content, 'utf-8');
@@ -132,9 +292,7 @@ export async function deleteFile(vaultPath: string, relPath: string): Promise<vo
   const absFile = path.join(vaultPath, relPath);
 
   const resolved = path.resolve(absFile);
-  if (!resolved.startsWith(path.resolve(vaultPath))) {
-    throw new Error('Path traversal not allowed');
-  }
+  assertWithinVault(vaultPath, resolved);
 
   if (fs.existsSync(resolved)) {
     await trash(resolved);
@@ -149,10 +307,8 @@ export function renamePath(vaultPath: string, oldRelPath: string, newRelPath: st
   const absNew = path.resolve(path.join(vaultPath, newRelPath));
 
   // Security: both paths must be inside the vault
-  const vaultRoot = path.resolve(vaultPath);
-  if (!absOld.startsWith(vaultRoot) || !absNew.startsWith(vaultRoot)) {
-    throw new Error('Path traversal not allowed');
-  }
+  assertWithinVault(vaultPath, absOld);
+  assertWithinVault(vaultPath, absNew);
 
   if (!fs.existsSync(absOld)) {
     throw new Error(`Source not found: ${oldRelPath}`);
@@ -170,9 +326,7 @@ export async function deleteDirectory(vaultPath: string, relPath: string): Promi
   const absDir = path.resolve(path.join(vaultPath, relPath));
 
   // Security: prevent path traversal
-  if (!absDir.startsWith(path.resolve(vaultPath))) {
-    throw new Error('Path traversal not allowed');
-  }
+  assertWithinVault(vaultPath, absDir);
 
   if (fs.existsSync(absDir)) {
     await trash(absDir);
@@ -186,9 +340,7 @@ export function createDirectory(vaultPath: string, relPath: string): void {
   const absDir = path.join(vaultPath, relPath);
 
   const resolved = path.resolve(absDir);
-  if (!resolved.startsWith(path.resolve(vaultPath))) {
-    throw new Error('Path traversal not allowed');
-  }
+  assertWithinVault(vaultPath, resolved);
 
   fs.mkdirSync(resolved, { recursive: true });
 }
@@ -214,7 +366,7 @@ const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp', '.
 /** Binary file extensions — opened via system default program */
 const BINARY_EXTS = ['.pdf', '.docx', '.doc', '.pptx', '.ppt', '.xlsx', '.xls'];
 
-function isTextFile(filePath: string): boolean {
+export function isTextFile(filePath: string): boolean {
   const ext = path.extname(filePath).toLowerCase();
   return TEXT_EXTS.includes(ext);
 }

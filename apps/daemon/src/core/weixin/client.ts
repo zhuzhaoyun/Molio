@@ -1,5 +1,14 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 import { randomBytes, randomUUID } from 'node:crypto';
+import {
+  CDN_BASE_URL,
+  MessageItemType,
+  MessageType,
+  MessageState,
+  UploadMediaType,
+  type UploadedFileInfo,
+} from './types.js';
 
 const DEFAULT_BASE_URL = 'https://ilinkai.weixin.qq.com';
 const DEFAULT_CLIENT_VERSION = '131072';
@@ -49,6 +58,24 @@ export function deriveAesKey(aesKey: string): Buffer | null {
   return null;
 }
 
+/** AES-128-ECB ciphertext size with PKCS7 padding (16-byte boundary). */
+export function aesEcbPaddedSize(plaintextSize: number): number {
+  return Math.ceil((plaintextSize + 1) / 16) * 16;
+}
+
+/** Encrypt a buffer with AES-128-ECB and PKCS7 padding (matches WeChat CDN media). */
+export function encryptAesEcb(plaintext: Buffer, key: Buffer): Buffer {
+  const cipher = crypto.createCipheriv('aes-128-ecb', key, null);
+  return Buffer.concat([cipher.update(plaintext), cipher.final()]);
+}
+
+/** Encode an AES key (raw 16 bytes or hex string) as the base64 `aes_key` field. */
+export function encodeAesKeyField(aeskeyHex: string): string {
+  // iLink stores aes_key as base64 of the hex-string UTF-8 bytes (see inbound
+  // media.aes_key), so the outbound form must match for round-trip decryption.
+  return Buffer.from(aeskeyHex, 'utf8').toString('base64');
+}
+
 function buildHeaders(token = ''): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -83,10 +110,15 @@ export interface PollQrStatusResponse {
 }
 
 export class WeixinApi {
+  readonly cdnBaseUrl: string;
+
   constructor(
     readonly baseUrl = DEFAULT_BASE_URL,
     readonly token = '',
-  ) {}
+    cdnBaseUrl: string = CDN_BASE_URL,
+  ) {
+    this.cdnBaseUrl = cdnBaseUrl;
+  }
 
   async post(endpoint: string, body: Record<string, unknown>, timeoutMs = 15_000): Promise<Record<string, unknown>> {
     const controller = new AbortController();
@@ -117,17 +149,216 @@ export class WeixinApi {
   }
 
   async sendText(toUserId: string, text: string, contextToken: string): Promise<Record<string, unknown>> {
+    return this.sendMediaItem(
+      toUserId,
+      { type: MessageItemType.TEXT, text_item: { text } },
+      contextToken,
+    );
+  }
+
+  /**
+   * Request a pre-signed CDN upload reference for a media file (iLink
+   * `getuploadurl`). Returns `{ upload_param, thumb_upload_param }`; the
+   * `upload_param` is the encrypted query param used to build the CDN URL.
+   */
+  async getUploadUrl(params: {
+    filekey: string;
+    mediaType: number;
+    toUserId: string;
+    rawsize: number;
+    rawfilemd5: string;
+    filesize: number;
+    aeskey: string;
+    noNeedThumb?: boolean;
+  }): Promise<{ upload_param?: string; thumb_upload_param?: string }> {
+    const resp = await this.post('ilink/bot/getuploadurl', {
+      filekey: params.filekey,
+      media_type: params.mediaType,
+      to_user_id: params.toUserId,
+      rawsize: params.rawsize,
+      rawfilemd5: params.rawfilemd5,
+      filesize: params.filesize,
+      no_need_thumb: params.noNeedThumb ?? true,
+      aeskey: params.aeskey,
+    });
+    return {
+      upload_param: typeof resp.upload_param === 'string' ? resp.upload_param : undefined,
+      thumb_upload_param: typeof resp.thumb_upload_param === 'string' ? resp.thumb_upload_param : undefined,
+    };
+  }
+
+  /**
+   * POST AES-128-ECB-encrypted bytes to the Weixin CDN. The CDN returns the
+   * download reference via the `x-encrypted-param` response header.
+   */
+  async uploadBufferToCdn(
+    buf: Buffer,
+    uploadParam: string,
+    filekey: string,
+    aeskey: Buffer,
+    timeoutMs = 60_000,
+  ): Promise<string> {
+    const ciphertext = encryptAesEcb(buf, aeskey);
+    const url =
+      `${this.cdnBaseUrl}/upload?encrypted_query_param=${encodeURIComponent(uploadParam)}` +
+      `&filekey=${encodeURIComponent(filekey)}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: new Uint8Array(ciphertext),
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        const errMsg = res.headers.get('x-error-message') ?? (await res.text().catch(() => ''));
+        throw new Error(`Weixin CDN upload ${res.status}: ${errMsg || res.statusText}`);
+      }
+      const downloadParam = res.headers.get('x-encrypted-param');
+      if (!downloadParam) {
+        throw new Error('Weixin CDN upload response missing x-encrypted-param header');
+      }
+      return downloadParam;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
+   * Full upload pipeline: read file → md5 → gen aeskey → getUploadUrl →
+   * encrypt → upload to CDN. Returns the info needed to reference the file
+   * in an outbound image/file/video message.
+   */
+  async uploadMedia(
+    filePath: string,
+    toUserId: string,
+    mediaType: number,
+  ): Promise<UploadedFileInfo> {
+    const plaintext = await fs.promises.readFile(filePath);
+    const rawsize = plaintext.length;
+    const rawfilemd5 = crypto.createHash('md5').update(plaintext).digest('hex');
+    const filesize = aesEcbPaddedSize(rawsize);
+    const filekey = randomBytes(16).toString('hex');
+    const aeskey = randomBytes(16);
+    const aeskeyHex = aeskey.toString('hex');
+
+    const { upload_param } = await this.getUploadUrl({
+      filekey,
+      mediaType,
+      toUserId,
+      rawsize,
+      rawfilemd5,
+      filesize,
+      aeskey: aeskeyHex,
+    });
+    if (!upload_param) {
+      throw new Error('Weixin getUploadUrl returned no upload_param');
+    }
+    const downloadEncryptedQueryParam = await this.uploadBufferToCdn(
+      plaintext,
+      upload_param,
+      filekey,
+      aeskey,
+    );
+
+    return {
+      filekey,
+      downloadEncryptedQueryParam,
+      aeskey: aeskeyHex,
+      fileSize: rawsize,
+      fileSizeCiphertext: filesize,
+    };
+  }
+
+  /** Send a single media item (image/file/video) downstream. */
+  async sendMediaItem(
+    toUserId: string,
+    item: Record<string, unknown>,
+    contextToken: string,
+  ): Promise<Record<string, unknown>> {
     return this.post('ilink/bot/sendmessage', {
       msg: {
         from_user_id: '',
         to_user_id: toUserId,
         client_id: randomUUID().replace(/-/g, '').slice(0, 16),
-        message_type: 2,
-        message_state: 2,
-        item_list: [{ type: 1, text_item: { text } }],
+        message_type: MessageType.BOT,
+        message_state: MessageState.FINISH,
+        item_list: [item],
         context_token: contextToken,
       },
     });
+  }
+
+  /** Send an image message using a previously uploaded file. */
+  async sendImageMessage(
+    toUserId: string,
+    uploaded: UploadedFileInfo,
+    contextToken: string,
+  ): Promise<Record<string, unknown>> {
+    return this.sendMediaItem(
+      toUserId,
+      {
+        type: MessageItemType.IMAGE,
+        image_item: {
+          media: {
+            encrypt_query_param: uploaded.downloadEncryptedQueryParam,
+            aes_key: encodeAesKeyField(uploaded.aeskey),
+            encrypt_type: 1,
+          },
+          mid_size: uploaded.fileSizeCiphertext,
+        },
+      },
+      contextToken,
+    );
+  }
+
+  /** Send a file attachment using a previously uploaded file. */
+  async sendFileMessage(
+    toUserId: string,
+    fileName: string,
+    uploaded: UploadedFileInfo,
+    contextToken: string,
+  ): Promise<Record<string, unknown>> {
+    return this.sendMediaItem(
+      toUserId,
+      {
+        type: MessageItemType.FILE,
+        file_item: {
+          media: {
+            encrypt_query_param: uploaded.downloadEncryptedQueryParam,
+            aes_key: encodeAesKeyField(uploaded.aeskey),
+            encrypt_type: 1,
+          },
+          file_name: fileName,
+          len: String(uploaded.fileSize),
+        },
+      },
+      contextToken,
+    );
+  }
+
+  /** Send a video message using a previously uploaded file. */
+  async sendVideoMessage(
+    toUserId: string,
+    uploaded: UploadedFileInfo,
+    contextToken: string,
+  ): Promise<Record<string, unknown>> {
+    return this.sendMediaItem(
+      toUserId,
+      {
+        type: MessageItemType.VIDEO,
+        video_item: {
+          media: {
+            encrypt_query_param: uploaded.downloadEncryptedQueryParam,
+            aes_key: encodeAesKeyField(uploaded.aeskey),
+            encrypt_type: 1,
+          },
+          video_size: uploaded.fileSizeCiphertext,
+        },
+      },
+      contextToken,
+    );
   }
 
   async healthCheck(): Promise<boolean> {

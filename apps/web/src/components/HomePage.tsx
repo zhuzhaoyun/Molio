@@ -1,5 +1,6 @@
 import { useRef, useEffect, useCallback, useMemo } from 'react';
-import { ChatComposer } from './ChatComposer';
+import { ChatComposer, buildAttachmentPrefix } from './ChatComposer';
+import type { FileRef, PastedImage } from './ChatComposer';
 import { UserMessage } from './UserMessage';
 import { AssistantMessage } from './AssistantMessage';
 import { useI18n } from '../i18n';
@@ -13,6 +14,7 @@ interface Props {
   onCancel: () => void;
   onNewChat: () => void;
   onSubmitToolResult?: (toolUseId: string, content: string) => Promise<void>;
+  onOpenConversation?: (conversationId: string) => void;
 }
 
 export function HomePage({
@@ -23,6 +25,7 @@ export function HomePage({
   onCancel,
   onNewChat,
   onSubmitToolResult,
+  onOpenConversation,
 }: Props) {
   const { t } = useI18n();
   const logRef = useRef<HTMLDivElement>(null);
@@ -53,6 +56,19 @@ export function HomePage({
       }
     },
     [onSubmitToolResult],
+  );
+
+  // Wrap onSend to handle fileRefs + pastedImages → message prefix
+  const handleSend = useCallback(
+    (message: string, fileRefs?: FileRef[], pastedImages?: PastedImage[]) => {
+      const prefix = buildAttachmentPrefix(fileRefs ?? [], pastedImages ?? []);
+      if (prefix) {
+        onSend(`${prefix}\n\n${message || t('home.fileContextFallback')}`);
+      } else {
+        onSend(message);
+      }
+    },
+    [onSend],
   );
 
   // If there are messages, show chat layout
@@ -99,7 +115,7 @@ export function HomePage({
                   message={msg}
                   isLast={msg.id === lastAssistantId}
                   onAnswerToolUse={onSubmitToolResult ? onAnswerToolUse : undefined}
-                  onSubmitForm={onSend}
+                  onSubmitForm={(text: string) => handleSend(text, [])}
                 />
               );
             }
@@ -119,10 +135,11 @@ export function HomePage({
         <div className="home-composer-bar">
           <ChatComposer
             isRunning={isRunning}
-            onSend={onSend}
+            onSend={handleSend}
             onCancel={onCancel}
             disabled={!selectedAgentName}
             disabledPlaceholder={t('home.noAgent')}
+            onOpenConversation={onOpenConversation}
           />
         </div>
       </div>
@@ -146,10 +163,11 @@ export function HomePage({
         <div className="home-composer-wrap">
           <ChatComposer
             isRunning={isRunning}
-            onSend={onSend}
+            onSend={handleSend}
             onCancel={onCancel}
             disabled={!selectedAgentName}
             disabledPlaceholder={t('home.noAgent')}
+            onOpenConversation={onOpenConversation}
           />
         </div>
       </div>
