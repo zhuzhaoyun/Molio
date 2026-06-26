@@ -1,0 +1,55 @@
+.kb-more-menu {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.kb-more-menu-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 2px 10px;
+  font-size: 16px;
+  letter-spacing: 2px;
+  color: var(--text-muted);
+  cursor: pointer;
+  line-height: 1.2;
+  font-family: inherit;
+}
+.kb-more-menu-btn:hover { color: var(--text); background: var(--bg-subtle); }
+
+.kb-more-menu-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  min-width: 200px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  padding: 4px 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+}
+
+.kb-more-item {
+  background: none;
+  border: none;
+  text-align: left;
+  padding: 8px 14px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+}
+.kb-more-item:hover:not(:disabled) { background: var(--bg-subtle); }
+.kb-more-item.is-disabled, .kb-more-item:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.kb-more-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}

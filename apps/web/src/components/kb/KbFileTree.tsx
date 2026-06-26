@@ -19,6 +19,8 @@ interface KbFileTreeProps {
   onRenameComplete?: (oldPath: string, newName: string) => void;
   /** Called when the user cancels rename (ESC / blur with no value) */
   onRenameCancel?: () => void;
+  /** Incrementing counter; when it changes, collapse every directory. */
+  collapseAllCounter?: number;
 }
 
 export function KbFileTree({
@@ -31,6 +33,7 @@ export function KbFileTree({
   renamingPath,
   onRenameComplete,
   onRenameCancel,
+  collapseAllCounter,
 }: KbFileTreeProps) {
   if (nodes.length === 0) {
     return (
@@ -58,6 +61,7 @@ export function KbFileTree({
           renamingPath={renamingPath}
           onRenameComplete={onRenameComplete}
           onRenameCancel={onRenameCancel}
+          collapseAllCounter={collapseAllCounter}
         />
       ))}
     </div>
@@ -76,6 +80,7 @@ interface TreeNodeItemProps {
   renamingPath?: string | null;
   onRenameComplete?: (oldPath: string, newName: string) => void;
   onRenameCancel?: () => void;
+  collapseAllCounter?: number;
 }
 
 function TreeNodeItem({
@@ -88,9 +93,15 @@ function TreeNodeItem({
   renamingPath,
   onRenameComplete,
   onRenameCancel,
+  collapseAllCounter,
 }: TreeNodeItemProps) {
   const [expanded, setExpanded] = useState(false);
   const toggle = useCallback(() => setExpanded((e) => !e), []);
+
+  useEffect(() => {
+    if (collapseAllCounter === undefined) return;
+    setExpanded(false);
+  }, [collapseAllCounter]);
 
   // Don't show "+" for items inside the wiki/ directory
   const isInsideWiki = node.path.startsWith('wiki/') || node.path === 'wiki';
@@ -136,22 +147,25 @@ function TreeNodeItem({
             >+</button>
           )}
         </div>
-        <div className={`kb-tree-children ${expanded ? '' : 'collapsed'}`}>
-          {node.children?.map((child) => (
-            <TreeNodeItem
-              key={child.path}
-              node={child}
-              selectedFile={selectedFile}
-              searchQuery={searchQuery}
-              onSelectFile={onSelectFile}
-              onAddToWiki={onAddToWiki}
-              onContextMenu={onContextMenu}
-              renamingPath={renamingPath}
-              onRenameComplete={onRenameComplete}
-              onRenameCancel={onRenameCancel}
-            />
-          ))}
-        </div>
+        {expanded && (
+          <div className="kb-tree-children">
+            {node.children?.map((child) => (
+              <TreeNodeItem
+                key={child.path}
+                node={child}
+                selectedFile={selectedFile}
+                searchQuery={searchQuery}
+                onSelectFile={onSelectFile}
+                onAddToWiki={onAddToWiki}
+                onContextMenu={onContextMenu}
+                renamingPath={renamingPath}
+                onRenameComplete={onRenameComplete}
+                onRenameCancel={onRenameCancel}
+                collapseAllCounter={collapseAllCounter}
+              />
+            ))}
+          </div>
+        )}
       </div>
     );
   }

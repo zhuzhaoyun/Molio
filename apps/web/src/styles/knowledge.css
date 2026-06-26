@@ -162,8 +162,6 @@
   overflow: hidden;
 }
 
-.kb-tree-children.collapsed { display: none; }
-
 .kb-tree-item {
   display: flex;
   align-items: center;
@@ -244,6 +242,16 @@
 }
 
 /* ══════════ Column 3: Main Content ══════════ */
+.kb-main-topbar {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--border);
+  min-height: 32px;
+}
+
 .kb-main {
   flex: 1;
   display: flex;

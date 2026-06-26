@@ -227,6 +227,15 @@ const en: Record<string, string> = {
   'fileChat.selection': 'Selection',
 
   // ── KnowledgeBase (file chat) ──
+  'kb.moreMenuLabel': 'More',
+  'kb.moreMenuOutline': 'Outline',
+  'kb.moreMenuStats': 'Document stats',
+  'kb.moreMenuSearch': 'Full-text search',
+  'kb.moreMenuCollapseAll': 'Collapse all folders',
+  'kb.moreMenuComingSoon': 'Coming soon',
+  'kb.moreMenuAiSummary': 'AI summary',
+  'kb.moreMenuAiKeyPoints': 'AI key points',
+  'kb.moreMenuAiRelated': 'Find related files',
   'kb.statsWords': 'Words',
   'kb.statsChars': 'Chars',
   'kb.statsReadTime': 'Read',

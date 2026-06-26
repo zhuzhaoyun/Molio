@@ -28,6 +28,8 @@ interface KbFilePanelProps {
   onRenameComplete?: (oldPath: string, newName: string) => void;
   /** Cancel rename */
   onRenameCancel?: () => void;
+  /** Incrementing counter; when it changes, collapse every directory in the tree. */
+  collapseAllCounter?: number;
   children?: ReactNode;
 }
 
@@ -49,6 +51,7 @@ export function KbFilePanel({
   renamingPath,
   onRenameComplete,
   onRenameCancel,
+  collapseAllCounter,
   children,
 }: KbFilePanelProps) {
   return (
@@ -116,6 +119,7 @@ export function KbFilePanel({
           renamingPath={renamingPath}
           onRenameComplete={onRenameComplete}
           onRenameCancel={onRenameCancel}
+          collapseAllCounter={collapseAllCounter}
         />
       </div>
 

@@ -227,6 +227,15 @@ const zh: Record<string, string> = {
   'fileChat.selection': '选中内容',
 
   // ── KnowledgeBase (file chat) ──
+  'kb.moreMenuLabel': '更多选项',
+  'kb.moreMenuOutline': '文档大纲',
+  'kb.moreMenuStats': '文档统计',
+  'kb.moreMenuSearch': '全文搜索',
+  'kb.moreMenuCollapseAll': '折叠全部文件夹',
+  'kb.moreMenuComingSoon': '即将上线',
+  'kb.moreMenuAiSummary': 'AI 生成摘要',
+  'kb.moreMenuAiKeyPoints': 'AI 提取要点',
+  'kb.moreMenuAiRelated': '查找相关文件',
   'kb.statsWords': '字数',
   'kb.statsChars': '字符',
   'kb.statsReadTime': '阅读时间',
