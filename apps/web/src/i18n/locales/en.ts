@@ -231,7 +231,6 @@ const en: Record<string, string> = {
   'kb.statsChars': 'Chars',
   'kb.statsReadTime': 'Read',
   'kb.statsReadTimeSuffix': 'min',
-  'kb.statsNoFile': '',
   'kb.askAboutFile': 'Ask about this file',
   'kb.askSelection': 'Ask about this',
   'kb.cannotOpen': 'Cannot open file',
