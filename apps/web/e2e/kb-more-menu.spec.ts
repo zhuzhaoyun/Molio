@@ -1,5 +1,4 @@
 import { test, expect } from '@playwright/test';
-import { gotoHome, clickNav } from './helpers/navigation';
 import { createTempVault, cleanupTempVault, type TempVault } from './helpers/cleanup';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -56,7 +55,7 @@ test.describe('KB More Menu', () => {
     await page.locator('[data-testid="more-item-collapse-all"]').click();
 
     // subA 的子文件应不再可见
-    await expect(page.locator('.kb-tree-item').filter({ hasText: 's.md' })).toHaveCount(0);
-    await expect(page.locator('.kb-tree-item').filter({ hasText: 'a.md' })).toHaveCount(0);
+    await expect(page.locator('.kb-tree-item').filter({ hasText: 's.md' })).not.toBeVisible();
+    await expect(page.locator('.kb-tree-item').filter({ hasText: 'a.md' })).not.toBeVisible();
   });
 });

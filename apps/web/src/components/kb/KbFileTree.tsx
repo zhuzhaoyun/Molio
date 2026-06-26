@@ -147,25 +147,23 @@ function TreeNodeItem({
             >+</button>
           )}
         </div>
-        {expanded && (
-          <div className="kb-tree-children">
-            {node.children?.map((child) => (
-              <TreeNodeItem
-                key={child.path}
-                node={child}
-                selectedFile={selectedFile}
-                searchQuery={searchQuery}
-                onSelectFile={onSelectFile}
-                onAddToWiki={onAddToWiki}
-                onContextMenu={onContextMenu}
-                renamingPath={renamingPath}
-                onRenameComplete={onRenameComplete}
-                onRenameCancel={onRenameCancel}
-                collapseAllCounter={collapseAllCounter}
-              />
-            ))}
-          </div>
-        )}
+        <div className={`kb-tree-children ${expanded ? '' : 'collapsed'}`}>
+          {node.children?.map((child) => (
+            <TreeNodeItem
+              key={child.path}
+              node={child}
+              selectedFile={selectedFile}
+              searchQuery={searchQuery}
+              onSelectFile={onSelectFile}
+              onAddToWiki={onAddToWiki}
+              onContextMenu={onContextMenu}
+              renamingPath={renamingPath}
+              onRenameComplete={onRenameComplete}
+              onRenameCancel={onRenameCancel}
+              collapseAllCounter={collapseAllCounter}
+            />
+          ))}
+        </div>
       </div>
     );
   }

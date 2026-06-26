@@ -162,6 +162,10 @@
   overflow: hidden;
 }
 
+.kb-tree-children.collapsed {
+  display: none;
+}
+
 .kb-tree-item {
   display: flex;
   align-items: center;
