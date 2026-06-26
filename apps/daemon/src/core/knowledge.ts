@@ -158,8 +158,69 @@ function resolveWithFallbacks(vaultPath: string, relPath: string): string {
     }
   }
 
+  // Strategy D: bare page name (no directory component) — recursively search
+  // the vault. Wiki links are conventionally bare page names like
+  // "[[知识库五范式]]", but the file usually lives in a nested wiki/
+  // subdirectory, so the per-directory search above misses it. Walk the tree
+  // for a file whose stem matches (case-insensitive, ±.md).
+  if (!relPath.includes('/')) {
+    const found = findFileByStem(vaultPath, relPath, hasExt);
+    if (found) return found;
+  }
+
   // Return the original resolved path if all fallbacks fail
   return resolveFilePath(vaultPath, relPath);
+}
+
+/**
+ * Recursively walk the vault for a file matching a bare page name.
+ * - With extension: match the full filename (case-insensitive).
+ * - Without extension: match the filename stem (basename minus extension),
+ *   so "[[知识库五范式]]" resolves to "知识库五范式.md" anywhere in the tree.
+ * Hidden entries (`.molio`, `.claude`, …) are skipped.
+ */
+function findFileByStem(
+  vaultPath: string,
+  bareName: string,
+  hasExt: boolean,
+): string | null {
+  const nameLower = bareName.toLowerCase();
+  const stemLower = hasExt
+    ? path.basename(bareName, path.extname(bareName)).toLowerCase()
+    : nameLower;
+  let result: string | null = null;
+
+  const walk = (dir: string): void => {
+    if (result) return;
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.name.startsWith('.')) continue;
+      const abs = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(abs);
+        if (result) return;
+      } else if (entry.isFile()) {
+        const entryLower = entry.name.toLowerCase();
+        const match = hasExt
+          ? entryLower === nameLower
+          : entryLower === nameLower ||
+            path.basename(entry.name, path.extname(entry.name)).toLowerCase() === stemLower;
+        if (match) {
+          assertWithinVault(vaultPath, abs);
+          result = abs;
+          return;
+        }
+      }
+    }
+  };
+
+  walk(vaultPath);
+  return result;
 }
 
 /** Resolve a vault-relative path to an absolute filesystem path. */

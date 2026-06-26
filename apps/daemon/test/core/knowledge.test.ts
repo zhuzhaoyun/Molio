@@ -400,5 +400,25 @@ describe('knowledge filesystem operations', () => {
       const file = readFile(vaultPath, 'INDEX.md');
       assert.equal(file.content, 'wiki index content');
     });
+
+    it('should resolve a bare page name to a nested wiki file (recursive)', () => {
+      mkdirSync(join(vaultPath, 'wiki', 'dev', 'concept'), { recursive: true });
+      writeFile(vaultPath, 'wiki/dev/concept/paradigm.md', 'nested paradigm');
+      const file = readFile(vaultPath, 'paradigm');
+      assert.equal(file.content, 'nested paradigm');
+    });
+
+    it('should resolve a bare page name case-insensitively across the tree', () => {
+      mkdirSync(join(vaultPath, 'notes', 'sub'), { recursive: true });
+      writeFile(vaultPath, 'notes/sub/Canon.md', 'canon content');
+      const file = readFile(vaultPath, 'canon');
+      assert.equal(file.content, 'canon content');
+    });
+
+    it('should skip hidden directories during recursive bare-name search', () => {
+      mkdirSync(join(vaultPath, '.molio', 'assets'), { recursive: true });
+      writeFile(vaultPath, '.molio/assets/hidden.md', 'hidden content');
+      assert.throws(() => readFile(vaultPath, 'hidden'));
+    });
   });
 });
