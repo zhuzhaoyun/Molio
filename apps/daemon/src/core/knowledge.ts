@@ -434,19 +434,24 @@ export function searchFiles(
         walk(abs);
         if (truncated) return;
       } else if (entry.isFile() && isTextFile(entry.name)) {
-        const content = fs.readFileSync(abs, 'utf-8');
-        const idx = content.indexOf(query);
-        if (idx >= 0) {
-          const start = Math.max(0, idx - 30);
-          const end = Math.min(content.length, idx + query.length + 30);
-          const snippet = content.slice(start, end).replace(/\s+/g, ' ').trim();
-          // vault 相对路径
-          const relPath = path.relative(vaultPath, abs).split(path.sep).join('/');
-          results.push({ filePath: relPath, fileName: entry.name, snippet });
-          if (results.length >= limit) {
-            truncated = true;
-            return;
+        try {
+          const content = fs.readFileSync(abs, 'utf-8');
+          const idx = content.indexOf(query);
+          if (idx >= 0) {
+            const start = Math.max(0, idx - 30);
+            const end = Math.min(content.length, idx + query.length + 30);
+            const snippet = content.slice(start, end).replace(/\s+/g, ' ').trim();
+            // vault 相对路径
+            const relPath = path.relative(vaultPath, abs).split(path.sep).join('/');
+            results.push({ filePath: relPath, fileName: entry.name, snippet });
+            if (results.length >= limit) {
+              truncated = true;
+              return;
+            }
           }
+        } catch {
+          // skip unreadable files — don't fail the whole vault search
+          continue;
         }
       }
     }

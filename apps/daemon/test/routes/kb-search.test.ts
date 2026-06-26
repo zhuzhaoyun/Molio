@@ -2,7 +2,7 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, chmodSync } from 'node:fs';
 import { Hono } from 'hono';
 import { knowledgeRoutes } from '../../src/routes/knowledge.js';
 import { openDatabase, closeDatabase, createVault } from '../../src/core/db.js';
@@ -103,5 +103,31 @@ describe('Knowledge routes — full-text search', () => {
     // 默认 limit=20，两个文件都命中，应该返回 2 个结果
     assert.equal(results.length, 2);
     assert.equal(body['truncated'], false);
+  });
+
+  it('skips unreadable files without failing the whole vault search', async () => {
+    if (process.platform === 'win32') {
+      // chmod is unreliable on Windows; skip this regression test there
+      return;
+    }
+
+    const readablePath = join(vaultDir, 'readable.md');
+    const unreadablePath = join(vaultDir, 'unreadable.md');
+
+    writeFileSync(readablePath, '# 可读\n包含关键词 微服务 的内容\n');
+    writeFileSync(unreadablePath, '# 不可读\n包含关键词 微服务 的内容\n');
+    chmodSync(unreadablePath, 0o000);
+
+    try {
+      const res = await app.request(`/api/knowledge/vaults/${vaultId}/search?q=微服务`);
+      assert.equal(res.status, 200);
+      const body = await json(res);
+      const results = body['results'] as Array<Record<string, unknown>>;
+      const paths = results.map((r) => r['filePath'] as string);
+      assert.ok(paths.includes('readable.md'), 'should return the readable matching file');
+      assert.ok(!paths.includes('unreadable.md'), 'should skip the unreadable file');
+    } finally {
+      chmodSync(unreadablePath, 0o644);
+    }
   });
 });

@@ -252,6 +252,7 @@ const en: Record<string, string> = {
   'kb.fileChatDefaultPrompt': 'Please analyze the selection above.',
   'kb.outlineTitle': 'Outline',
   'kb.outlineEmpty': 'No headings',
+  'kb.close': 'Close',
 
   // ── FilePicker ──
   'filePicker.justNow': 'Just now',

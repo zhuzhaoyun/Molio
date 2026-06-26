@@ -252,6 +252,7 @@ const zh: Record<string, string> = {
   'kb.fileChatDefaultPrompt': '请帮我分析以上选中内容。',
   'kb.outlineTitle': '文档大纲',
   'kb.outlineEmpty': '暂无标题',
+  'kb.close': '关闭',
 
   // ── FilePicker ──
   'filePicker.justNow': '刚刚',

@@ -88,7 +88,7 @@ export function SearchPanel({ vaultId, onOpenFile, onClose }: SearchPanelProps) 
             onChange={(e) => setQuery(e.target.value)}
           />
           <button type="button" className="kb-search-close" data-testid="kb-search-close"
-            onClick={onClose} aria-label="close">✕</button>
+            onClick={onClose} aria-label={t('kb.close')}>✕</button>
         </div>
 
         <div className="kb-search-results">

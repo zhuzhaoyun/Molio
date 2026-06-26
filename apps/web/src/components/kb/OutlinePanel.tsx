@@ -20,7 +20,13 @@ const HEADING_RE = /^(#{2,3})\s+(.+?)\s*$/;
 
 function parseHeadings(content: string): Heading[] {
   const headings: Heading[] = [];
+  let inFence = false;
   for (const line of content.split('\n')) {
+    if (/^```/.test(line)) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) continue;
     const m = line.match(HEADING_RE);
     if (!m) continue;
     const level = (m[1].length as 2 | 3); // ## →2, ### →3
@@ -50,7 +56,7 @@ export function OutlinePanel({ content, onClose }: OutlinePanelProps) {
       <div className="kb-outline-header">
         <span>📋 {t('kb.outlineTitle')}</span>
         <button type="button" className="kb-outline-close" data-testid="kb-outline-close"
-          onClick={onClose} aria-label="close">✕</button>
+          onClick={onClose} aria-label={t('kb.close')}>✕</button>
       </div>
       <div className="kb-outline-body">
         {headings.length === 0 ? (
