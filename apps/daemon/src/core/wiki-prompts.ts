@@ -327,8 +327,12 @@ daemon 在把微信消息交给你之前，已经把其中的文件/图片附件
 ### B. URL / 网页分享（消息里是 http 链接，没有实体文件）
 
 1. 将它作为 source candidate 处理。
-2. 在 \`raw/wechat/\` 下新建一个原始资料暂存文件，路径为 \`raw/wechat/YYYY-MM-DD/HHmm-简短标题.md\`。
-3. 暂存文件应记录：收到时间、微信来源、原始链接、可见元数据、可访问时提取到的标题和简短摘要。
+2. 如果是 \`mp.weixin.qq.com\` 链接，**必须**使用 \`wechat-article-extractor\` skill 提取正文，**禁止用 WebFetch**（会被企业安全策略拦截）：
+   \`\`\`bash
+   node "<skill_dir>/extract.js" "<url>"
+   \`\`\`
+   \`<skill_dir>\` 是 vault 下 \`.claude/skills/wechat-article-extractor/\` 的绝对路径。脚本 stdout 输出 Markdown 正文，stderr 输出一行 JSON 元数据（含 title/author/account/publishTime）。将提取结果暂存为 \`raw/wechat/YYYY-MM-DD/HHmm-简短标题.md\`，并在文件头部加 frontmatter 记录来源信息。退出码为 2（内容不可用）时不要重试，提示用户手动粘贴正文。
+3. 非 \`mp.weixin.qq.com\` 链接按一般 URL 处理，在 \`raw/wechat/\` 下新建暂存文件 \`raw/wechat/YYYY-MM-DD/HHmm-简短标题.md\`，记录收到时间、原始链接、可见元数据、可访问时提取到的标题和简短摘要。
 4. 回复用户：已暂存到哪个 \`raw/wechat/\` 路径，并提示“回复入库/保存到知识库/归档后，我再整理进知识库”。
 
 ### 入库与确认

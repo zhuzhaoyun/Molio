@@ -54,5 +54,9 @@ describe('WeixinService run context', () => {
     assert.match(message, /暂存文件/);
     // And it must still cover URL/web-share fallback that does create a .md.
     assert.match(message, /raw\/wechat\/YYYY-MM-DD\/HHmm-简短标题\.md/);
+    // mp.weixin.qq.com links must use the wechat-article-extractor skill,
+    // not WebFetch (which is blocked by enterprise security policy).
+    assert.match(message, /wechat-article-extractor/);
+    assert.match(message, /禁止用 WebFetch/);
   });
 });
