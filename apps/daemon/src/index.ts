@@ -1,6 +1,6 @@
 import { serve } from '@hono/node-server';
 import { execSync } from 'node:child_process';
-import { app, db, runManager, weixinService } from './server.js';
+import { app, db, runManager, weixinService, vaultWatcher } from './server.js';
 import { listVaults } from './core/db.js';
 import { installBuiltinSkills } from './core/skill-installer.js';
 
@@ -117,6 +117,7 @@ startServer();
 function shutdown(): void {
   console.log('\nShutting down, canceling active runs...');
   weixinService.stop();
+  void vaultWatcher.stop();
   runManager.cancelAll();
   process.exit(0);
 }

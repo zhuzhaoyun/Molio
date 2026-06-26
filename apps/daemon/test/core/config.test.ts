@@ -3,8 +3,21 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { buildAgentEnv, mergeConfig, loadConfig, saveConfig, getAgentConfig, setAgentConfig } from '../../src/core/config.js';
 import type { AgentConfig, AppConfig } from '../../src/core/config.js';
+
+// Isolate HOME before importing config. config.ts derives CONFIG_DIR/CLAUDE_DIR
+// from os.homedir() at module load, so we must redirect HOME first (a static
+// import would capture the real home before we can override it). node:test runs
+// each file in its own worker with an isolated process.env, so this only
+// affects config.test.ts: the real ~/.molio and ~/.claude are never touched,
+// and the cross-file migration race that made these tests flaky on CI
+// (a concurrent file's getAgentConfig migrating settings.json mid-test) cannot
+// occur. Each test starts from a clean temp home via backupConfig/afterEach.
+const TMP_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-cfg-home-'));
+process.env.HOME = TMP_HOME;
+process.env.USERPROFILE = TMP_HOME;
+const { buildAgentEnv, mergeConfig, loadConfig, saveConfig, getAgentConfig, setAgentConfig } =
+  await import('../../src/core/config.js');
 
 /**
  * Tests for config module.

@@ -7,6 +7,7 @@ import { Hono } from 'hono';
 import { knowledgeRoutes } from '../../src/routes/knowledge.js';
 import { openDatabase, closeDatabase, createVault } from '../../src/core/db.js';
 import { RunManager } from '../../src/core/RunManager.js';
+import { VaultWatcher } from '../../src/core/vault-watcher.js';
 
 /**
  * Asset upload route tests — image paste feature (Task 1).
@@ -84,7 +85,7 @@ describe('Asset upload routes', () => {
     vaultId = vault.id;
     // Mount sub-app at /api/knowledge
     const root = new Hono();
-    root.route('/api/knowledge', knowledgeRoutes(db, new RunManager()));
+    root.route('/api/knowledge', knowledgeRoutes(db, new RunManager(), new VaultWatcher(db)));
     app = root;
   });
 

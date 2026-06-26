@@ -55,6 +55,7 @@ export type { SSEEnvelope } from './sse.js';
 export type {
   Vault,
   TreeNode,
+  IngestStatus,
   FileContent,
   KbHistoryEntry,
   CreateVaultRequest,

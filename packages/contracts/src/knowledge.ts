@@ -18,7 +18,21 @@ export interface TreeNode {
   children?: TreeNode[]; // Only for directories
   size?: number; // Only for files (bytes)
   modifiedAt?: number; // Only for files (epoch ms)
+  /**
+   * Version-tracking status relative to the last ingest commit.
+   * Only present once the vault has a `.git` repo (i.e. wiki has been used).
+   * - `pending`: file never committed (not yet ingested into wiki)
+   * - `tracked-clean`: committed, source unchanged since
+   * - `tracked-modified`: committed, but source changed since (re-ingest advised)
+   */
+  ingestStatus?: IngestStatus;
 }
+
+/**
+ * Ingest status of a vault file, derived from git HEAD vs workdir.
+ * See {@link TreeNode.ingestStatus}.
+ */
+export type IngestStatus = 'pending' | 'tracked-clean' | 'tracked-modified';
 
 export interface FileContent {
   path: string; // Relative path from vault root
