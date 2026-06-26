@@ -14,7 +14,8 @@ test.describe('KB Full-text Search', () => {
   test.afterAll(async () => { if (vault) await cleanupTempVault(vault); });
 
   test('search via menu shows matching file and opens it', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=a.md`);
+    // 先打开非匹配文件 b.md，再搜索匹配 a.md，证明点击真的会切换文件
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=b.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     await page.locator('[data-testid="kb-more-menu-btn"]').click();
@@ -30,7 +31,7 @@ test.describe('KB Full-text Search', () => {
 
     // 点击结果打开文件
     await panel.locator('[data-testid="kb-search-result"]').click();
-    // 面板关闭，文件在标签栏打开
+    // 面板关闭，文件在标签栏打开并切换到 a.md
     await expect(panel).not.toBeVisible();
     await expect(page.locator('.kb-wtab-title')).toContainText('a.md');
   });

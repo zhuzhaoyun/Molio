@@ -42,26 +42,30 @@ export function SearchPanel({ vaultId, onOpenFile, onClose }: SearchPanelProps) 
       return;
     }
     setLoading(true);
+    let isMounted = true;
     timer.current = setTimeout(async () => {
       try {
         const data = await api.searchFiles(vaultId, q);
+        if (!isMounted) return;
         setResults(data.results);
         setTruncated(data.truncated);
       } catch {
+        if (!isMounted) return;
         setResults([]);
         setTruncated(false);
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     }, 300);
     return () => {
+      isMounted = false;
       if (timer.current) clearTimeout(timer.current);
     };
   }, [query, vaultId]);
 
-  const highlight = (snippet: string, q: string) => {
+  const highlight = (snippet: string, q: string): [string, string, string] => {
     const idx = snippet.toLowerCase().indexOf(q.toLowerCase());
-    if (idx < 0) return snippet;
+    if (idx < 0) return [snippet, '', ''];
     return [
       snippet.slice(0, idx),
       snippet.slice(idx, idx + q.length),
