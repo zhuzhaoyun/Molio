@@ -15,7 +15,7 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:3100',
+        target: process.env['MOLIO_DAEMON'] ?? 'http://localhost:3100',
         changeOrigin: true,
       },
     },

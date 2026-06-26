@@ -3,6 +3,9 @@ import { gotoHome, clickNav } from './helpers/navigation';
 import { createTempVault, cleanupTempVault, type TempVault } from './helpers/cleanup';
 
 /**
+ * @area kb
+ * @priority P0
+ *
  * E2E tests for the Knowledge Base page.
  *
  * Uses createTempVault() to register a real temp directory as a vault,

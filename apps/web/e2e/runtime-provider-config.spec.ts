@@ -1,6 +1,9 @@
 import { test, expect } from '@playwright/test';
 
 /**
+ * @area runtimes
+ * @priority P1
+ *
  * E2E: Claude Code one-click install + DeepSeek provider configuration.
  *
  * Prerequisites: daemon (:3100) + web (:5173) running via `pnpm dev`.
@@ -79,8 +82,8 @@ test.describe('Runtime provider config', () => {
 
     // Should show DeepSeek models
     const modelsSection = configPanel.locator('.rt-provider-form__models');
-    await expect(modelsSection).toContainText('DeepSeek Chat (V3)');
-    await expect(modelsSection).toContainText('DeepSeek Reasoner (R1)');
+    await expect(modelsSection).toContainText('DeepSeek V4 Pro');
+    await expect(modelsSection).toContainText('DeepSeek V4 Flash');
   });
 
   test('save DeepSeek config and verify persistence', async ({ page }) => {

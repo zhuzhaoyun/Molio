@@ -1,26 +1,25 @@
-name: E2E Tests
+name: E2E Full
 
 on:
+  schedule:
+    # 03:00 UTC = 11:00 Asia/Shanghai
+    - cron: '0 3 * * *'
   workflow_dispatch:
     inputs:
       branch:
-        description: 'Branch to test (defaults to current branch)'
+        description: 'Branch to test (defaults to main)'
         required: false
-        default: ''
-  pull_request:
-    branches: [main]
-    types: [labeled, synchronize]
+        default: 'main'
 
 jobs:
-  e2e:
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'run-e2e')
+  e2e-full:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.branch || github.ref }}
+          ref: ${{ inputs.branch || 'main' }}
 
       - uses: pnpm/action-setup@v4
         with:
@@ -28,7 +27,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
           cache: 'pnpm'
 
       - name: Install dependencies
@@ -41,60 +40,24 @@ jobs:
         run: npx playwright install --with-deps chromium
         working-directory: apps/web
 
-      - name: Start daemon in background
-        run: |
-          pnpm --filter @molio/daemon dev &
-          echo $! > /tmp/daemon.pid
-
-      - name: Start web dev server in background
-        run: |
-          pnpm --filter @molio/web dev &
-          echo $! > /tmp/web.pid
-
-      - name: Wait for services to be ready
-        run: |
-          echo "Waiting for daemon (:3100)..."
-          for i in $(seq 1 30); do
-            if curl -sf http://localhost:3100/api/health > /dev/null 2>&1; then
-              echo "Daemon is ready"
-              break
-            fi
-            if [ "$i" -eq 30 ]; then
-              echo "Daemon failed to start within 30s"
-              exit 1
-            fi
-            sleep 1
-          done
-
-          echo "Waiting for web dev server (:5173)..."
-          for i in $(seq 1 30); do
-            if curl -sf http://localhost:5173 > /dev/null 2>&1; then
-              echo "Web dev server is ready"
-              break
-            fi
-            if [ "$i" -eq 30 ]; then
-              echo "Web dev server failed to start within 30s"
-              exit 1
-            fi
-            sleep 1
-          done
-
-      - name: Run E2E tests
+      - name: Run full E2E suite (P0+P1+P2)
         run: npx playwright test
         working-directory: apps/web
+        env:
+          CI: 'true'
 
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-full-report-${{ github.run_id }}
           path: apps/web/playwright-report/
-          retention-days: 14
+          retention-days: 30
 
       - name: Upload test results
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results
+          name: test-results-full-${{ github.run_id }}
           path: apps/web/test-results/
           retention-days: 7

@@ -1,4 +1,7 @@
 /**
+ * @area kb
+ * @priority P1
+ *
  * E2E tests for Markdown rendering in the Knowledge Base.
  *
  * Creates a temporary vault with a comprehensive markdown file, then

@@ -8,13 +8,14 @@
     "dev:watch": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/src/index.js",
-    "test": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true })\" && tsc && node --test \"dist/test/**/*.test.js\"",
+    "test": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true })\" && tsc && node --test --test-timeout=30000 \"dist/test/**/*.test.js\"",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.0",
     "@molio/contracts": "workspace:*",
     "better-sqlite3": "^12.10.0",
+    "chokidar": "^5.0.0",
     "hono": "^4.7.0",
     "qrcode": "^1.5.4",
     "trash": "^10.1.1"

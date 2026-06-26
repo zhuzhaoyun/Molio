@@ -3,6 +3,9 @@ import { gotoHome, sendMessage } from './helpers/navigation';
 import { mockChatRun, unmockAll } from './helpers/mock-sse';
 
 /**
+ * @area chat
+ * @priority P0
+ *
  * E2E tests for multi-turn conversation and new chat reset.
  *
  * Prerequisites: `pnpm dev` running (daemon :3100, web :5173)

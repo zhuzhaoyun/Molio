@@ -41,4 +41,22 @@ describe('WeixinService run context', () => {
     assert.match(message, /你是一个本地知识库的微信入口助手。/);
     assert.match(message, /用户消息：继续/);
   });
+
+  it('tells the model to use downloaded files as-is, not create extra .md', () => {
+    const vaultPath = join(tempDir, 'vault');
+    createVault(db, 'Test Vault', vaultPath);
+
+    const message = buildWeixinRunMessage(db, '收到文件', vaultPath, true);
+
+    // The prompt must instruct the model that downloaded entity files are the
+    // staging material themselves — no extra .md placeholder should be created.
+    assert.match(message, /不要再额外新建/);
+    assert.match(message, /暂存文件/);
+    // And it must still cover URL/web-share fallback that does create a .md.
+    assert.match(message, /raw\/wechat\/YYYY-MM-DD\/HHmm-简短标题\.md/);
+    // mp.weixin.qq.com links must use the wechat-article-extractor skill,
+    // not WebFetch (which is blocked by enterprise security policy).
+    assert.match(message, /wechat-article-extractor/);
+    assert.match(message, /禁止用 WebFetch/);
+  });
 });

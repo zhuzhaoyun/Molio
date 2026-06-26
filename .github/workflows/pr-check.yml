@@ -6,8 +6,12 @@ on:
 
 jobs:
   build-and-test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4
@@ -29,12 +33,12 @@ jobs:
 
       - name: Run daemon tests
         run: pnpm --filter @molio/daemon test
-        continue-on-error: true  # known flaky: 13 tests cancelled by parent timeout
 
       - name: Run desktop tests (updater regression)
         run: pnpm --filter @molio/desktop test
 
       - name: Verify desktop resources build
+        shell: bash
         run: |
           cd apps/desktop
           node scripts/prepare-resources.mjs
@@ -52,4 +56,63 @@ jobs:
 
       - name: Typecheck
         run: pnpm typecheck
-        continue-on-error: true  # vendor/doocs-md has known type issues
+
+  e2e-affected:
+    runs-on: ubuntu-latest
+    needs: [build-and-test]
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history for diff against base branch
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all packages
+        run: pnpm build
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+        working-directory: apps/web
+
+      - name: Select affected E2E specs
+        id: specs
+        run: |
+          SPECS=$(node apps/web/e2e/scripts/select-specs.mjs --base origin/${{ github.base_ref }})
+          echo "specs<<EOF" >> $GITHUB_OUTPUT
+          echo "$SPECS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Run affected E2E
+        run: npx playwright test $SPECS
+        working-directory: apps/web
+        env:
+          CI: 'true'
+          SPECS: ${{ steps.specs.outputs.specs }}
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ github.run_id }}
+          path: apps/web/playwright-report/
+          retention-days: 14
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ github.run_id }}
+          path: apps/web/test-results/
+          retention-days: 7

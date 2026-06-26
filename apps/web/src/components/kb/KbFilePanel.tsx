@@ -3,6 +3,7 @@
  */
 
 import type { ReactNode } from 'react';
+import { useMemo } from 'react';
 import type { TreeNode } from '@molio/contracts';
 import { KbFileTree } from './KbFileTree';
 
@@ -54,6 +55,12 @@ export function KbFilePanel({
   collapseAllCounter,
   children,
 }: KbFilePanelProps) {
+  // Ingest status counts for the vault stats bar. Only shown once the vault
+  // has version tracking (any node carries ingestStatus). wiki/ subtree is
+  // excluded — those are wiki products, not ingest sources.
+  const stats = useMemo(() => countIngestStatus(tree), [tree]);
+  const showStats = stats.pending + stats.clean + stats.modified > 0;
+
   return (
     <aside className="kb-file-panel" style={{ width }}>
       {/* Toolbar */}
@@ -107,6 +114,17 @@ export function KbFilePanel({
         />
       </div>
 
+      {/* Ingest status summary — only when the vault has version tracking */}
+      {showStats && (
+        <div className="kb-ingest-stats" data-testid="kb-ingest-stats">
+          <span className="kb-ingest-stats__item is-pending">待入库 {stats.pending}</span>
+          <span className="kb-ingest-stats__sep">·</span>
+          <span className="kb-ingest-stats__item is-clean">已入库 {stats.clean}</span>
+          <span className="kb-ingest-stats__sep">·</span>
+          <span className="kb-ingest-stats__item is-modified">待更新 {stats.modified}</span>
+        </div>
+      )}
+
       {/* File tree */}
       <div className="kb-tree-scroll">
         <KbFileTree
@@ -140,4 +158,27 @@ export function KbFilePanel({
       {children}
     </aside>
   );
+}
+
+/**
+ * Count ingest-status badges across the tree, excluding the wiki/ subtree
+ * (wiki pages are products, not ingest sources).
+ */
+function countIngestStatus(nodes: TreeNode[]): { pending: number; clean: number; modified: number } {
+  const counts = { pending: 0, clean: 0, modified: 0 };
+  const walk = (list: TreeNode[], inWiki: boolean) => {
+    for (const n of list) {
+      const insideWiki = inWiki || n.path === 'wiki' || n.path.startsWith('wiki/');
+      if (n.type === 'directory' && n.children) {
+        walk(n.children, insideWiki);
+        continue;
+      }
+      if (insideWiki) continue;
+      if (n.ingestStatus === 'pending') counts.pending++;
+      else if (n.ingestStatus === 'tracked-clean') counts.clean++;
+      else if (n.ingestStatus === 'tracked-modified') counts.modified++;
+    }
+  };
+  walk(nodes, false);
+  return counts;
 }

@@ -401,7 +401,11 @@ export const api = {
 
   async deleteFile(vaultId: string, filePath: string): Promise<void> {
     const encoded = encodeURIComponent(filePath).replace(/%2F/g, '/');
-    await fetch(`${BASE}/knowledge/vaults/${vaultId}/files/${encoded}`, { method: 'DELETE' });
+    const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/files/${encoded}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      throw new Error(err?.error?.message ?? `Failed to delete file: ${res.status}`);
+    }
   },
 
   async renameFile(vaultId: string, oldPath: string, newPath: string): Promise<void> {
@@ -427,7 +431,11 @@ export const api = {
 
   async deleteDirectory(vaultId: string, dirPath: string): Promise<void> {
     const encoded = encodeURIComponent(dirPath).replace(/%2F/g, '/');
-    await fetch(`${BASE}/knowledge/vaults/${vaultId}/dirs/${encoded}`, { method: 'DELETE' });
+    const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/dirs/${encoded}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      throw new Error(err?.error?.message ?? `Failed to delete directory: ${res.status}`);
+    }
   },
 
   async getKbHistory(vaultId: string, limit = 50): Promise<KbHistoryEntry[]> {

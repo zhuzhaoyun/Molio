@@ -1881,6 +1881,59 @@
   background: var(--accent-soft, #f5d8cb);
 }
 
+/* ══════════ Ingest Status Badge + Trailing Group ══════════ */
+
+.kb-tree-trailing {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* Cancel the `+` button's auto-margin now that it lives inside a trailing group */
+.kb-tree-trailing .wiki-tree-op { margin-left: 0; }
+
+.kb-ingest-badge {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--text-faint);
+  opacity: 0.5;
+}
+
+.kb-ingest-badge.is-pending { background: #9ca3af; opacity: 0.8; }      /* gray — not yet ingested */
+.kb-ingest-badge.is-clean { background: #16a34a; opacity: 0.85; }      /* green — ingested, unchanged */
+.kb-ingest-badge.is-modified { background: #eab308; opacity: 1; }      /* yellow — source changed, re-ingest */
+
+/* ══════════ Ingest Status Stats Bar ══════════ */
+
+.kb-ingest-stats {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-subtle, var(--bg-subtle));
+}
+
+.kb-ingest-stats__item { display: inline-flex; align-items: center; }
+.kb-ingest-stats__item::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-right: 4px;
+  background: var(--text-faint);
+}
+.kb-ingest-stats__item.is-pending::before { background: #9ca3af; }
+.kb-ingest-stats__item.is-clean::before { background: #16a34a; }
+.kb-ingest-stats__item.is-modified::before { background: #eab308; }
+
+.kb-ingest-stats__sep { color: var(--text-faint); }
+
 /* ══════════ Wiki CTA Button ══════════ */
 
 .wiki-cta-btn {

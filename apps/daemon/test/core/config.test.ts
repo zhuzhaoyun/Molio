@@ -3,8 +3,21 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { buildAgentEnv, mergeConfig, loadConfig, saveConfig } from '../../src/core/config.js';
 import type { AgentConfig, AppConfig } from '../../src/core/config.js';
+
+// Isolate HOME before importing config. config.ts derives CONFIG_DIR/CLAUDE_DIR
+// from os.homedir() at module load, so we must redirect HOME first (a static
+// import would capture the real home before we can override it). node:test runs
+// each file in its own worker with an isolated process.env, so this only
+// affects config.test.ts: the real ~/.molio and ~/.claude are never touched,
+// and the cross-file migration race that made these tests flaky on CI
+// (a concurrent file's getAgentConfig migrating settings.json mid-test) cannot
+// occur. Each test starts from a clean temp home via backupConfig/afterEach.
+const TMP_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-cfg-home-'));
+process.env.HOME = TMP_HOME;
+process.env.USERPROFILE = TMP_HOME;
+const { buildAgentEnv, mergeConfig, loadConfig, saveConfig, getAgentConfig, setAgentConfig } =
+  await import('../../src/core/config.js');
 
 /**
  * Tests for config module.
@@ -87,7 +100,9 @@ describe('Config module', () => {
 
   describe('mergeConfig', () => {
     const configFile = path.join(os.homedir(), '.molio', 'config.json');
+    const claudeSettingsFile = path.join(os.homedir(), '.claude', 'settings.json');
     let originalConfig: string | null = null;
+    let originalClaudeSettings: string | null = null;
 
     afterEach(() => {
       // Restore original config after each test
@@ -100,6 +115,16 @@ describe('Config module', () => {
           }
         }
       } catch { /* ignore */ }
+      try {
+        if (originalClaudeSettings !== null) {
+          fs.mkdirSync(path.dirname(claudeSettingsFile), { recursive: true });
+          if (originalClaudeSettings === '') {
+            fs.unlinkSync(claudeSettingsFile);
+          } else {
+            fs.writeFileSync(claudeSettingsFile, originalClaudeSettings, 'utf8');
+          }
+        }
+      } catch { /* ignore */ }
     });
 
     function backupConfig() {
@@ -107,6 +132,11 @@ describe('Config module', () => {
         originalConfig = fs.readFileSync(configFile, 'utf8');
       } catch {
         originalConfig = '';
+      }
+      try {
+        originalClaudeSettings = fs.readFileSync(claudeSettingsFile, 'utf8');
+      } catch {
+        originalClaudeSettings = '';
       }
     }
 
@@ -180,6 +210,145 @@ describe('Config module', () => {
       assert.equal(config.locale, 'en');
       assert.ok(config.agents.claude, 'claude agent should be preserved');
       assert.equal(config.agents.claude?.env?.['ANTHROPIC_AUTH_TOKEN'], 'sk-key');
+    });
+
+    it('should prefer ~/.claude/settings.json env for claude agent reads', () => {
+      backupConfig();
+      setupBaseConfig({
+        claude: {
+          env: {
+            ANTHROPIC_BASE_URL: 'https://old.example.com',
+            ANTHROPIC_MODEL: 'old-model',
+          },
+        },
+      });
+      fs.mkdirSync(path.dirname(claudeSettingsFile), { recursive: true });
+      fs.writeFileSync(claudeSettingsFile, JSON.stringify({
+        env: {
+          ANTHROPIC_BASE_URL: 'https://api.deepseek.com/anthropic',
+          ANTHROPIC_DEFAULT_SONNET_MODEL: 'deepseek-v4-pro[1M]',
+          ANTHROPIC_DEFAULT_SONNET_MODEL_NAME: 'deepseek-v4-pro',
+          ANTHROPIC_MODEL: 'deepseek-v4-pro',
+        },
+        theme: 'auto',
+      }, null, 2));
+
+      const agentConfig = getAgentConfig('claude');
+      assert.equal(agentConfig.env?.['ANTHROPIC_BASE_URL'], 'https://api.deepseek.com/anthropic');
+      assert.equal(agentConfig.env?.['ANTHROPIC_DEFAULT_SONNET_MODEL'], 'deepseek-v4-pro[1M]');
+      assert.equal(agentConfig.env?.['ANTHROPIC_MODEL'], 'deepseek-v4-pro');
+    });
+
+    it('should persist claude env to ~/.claude/settings.json without clobbering other settings', () => {
+      backupConfig();
+      setupBaseConfig({});
+      fs.mkdirSync(path.dirname(claudeSettingsFile), { recursive: true });
+      fs.writeFileSync(claudeSettingsFile, JSON.stringify({
+        enabledPlugins: { foo: true },
+        theme: 'auto',
+        env: {
+          KEEP_ME: 'yes',
+          ANTHROPIC_MODEL: 'old-model',
+        },
+      }, null, 2));
+
+      setAgentConfig('claude', {
+        env: {
+          ANTHROPIC_BASE_URL: 'https://api.deepseek.com/anthropic',
+          ANTHROPIC_DEFAULT_SONNET_MODEL: 'deepseek-v4-pro[1M]',
+          ANTHROPIC_DEFAULT_SONNET_MODEL_NAME: 'deepseek-v4-pro',
+          ANTHROPIC_DEFAULT_HAIKU_MODEL: 'deepseek-v4-flash',
+          ANTHROPIC_DEFAULT_OPUS_MODEL: 'deepseek-v4-pro[1M]',
+          ANTHROPIC_DEFAULT_OPUS_MODEL_NAME: 'deepseek-v4-pro',
+          ANTHROPIC_MODEL: 'deepseek-v4-pro',
+        },
+      });
+
+      const saved = JSON.parse(fs.readFileSync(claudeSettingsFile, 'utf8'));
+      assert.equal(saved.theme, 'auto');
+      assert.equal(saved.enabledPlugins.foo, true);
+      assert.equal(saved.env.KEEP_ME, 'yes');
+      assert.equal(saved.env.ANTHROPIC_DEFAULT_SONNET_MODEL, 'deepseek-v4-pro[1M]');
+      assert.equal(saved.env.ANTHROPIC_DEFAULT_OPUS_MODEL_NAME, 'deepseek-v4-pro');
+      assert.equal(saved.env.ANTHROPIC_MODEL, 'deepseek-v4-pro');
+    });
+
+    it('should clean managed Claude env keys from ~/.molio/config.json after save', () => {
+      backupConfig();
+      setupBaseConfig({});
+
+      setAgentConfig('claude', {
+        binaryPath: '/tmp/claude',
+        env: {
+          ANTHROPIC_BASE_URL: 'https://api.deepseek.com/anthropic',
+          ANTHROPIC_MODEL: 'deepseek-v4-pro',
+          KEEP_LOCAL: '1',
+        },
+      });
+
+      const molioConfig = loadConfig();
+      assert.equal(molioConfig.agents.claude?.binaryPath, '/tmp/claude');
+      assert.equal(molioConfig.agents.claude?.env?.['KEEP_LOCAL'], '1');
+      assert.equal(molioConfig.agents.claude?.env?.['ANTHROPIC_BASE_URL'], undefined);
+      assert.equal(molioConfig.agents.claude?.env?.['ANTHROPIC_MODEL'], undefined);
+    });
+
+    it('should migrate legacy Claude env from ~/.molio/config.json into ~/.claude/settings.json on read', () => {
+      backupConfig();
+      setupBaseConfig({
+        claude: {
+          env: {
+            ANTHROPIC_BASE_URL: 'https://api.deepseek.com/anthropic',
+            ANTHROPIC_DEFAULT_SONNET_MODEL: 'deepseek-v4-pro[1M]',
+            ANTHROPIC_MODEL: 'deepseek-v4-pro',
+            KEEP_LOCAL: 'legacy-local',
+          },
+        },
+      });
+
+      const agentConfig = getAgentConfig('claude');
+      assert.equal(agentConfig.env?.['ANTHROPIC_BASE_URL'], 'https://api.deepseek.com/anthropic');
+      assert.equal(agentConfig.env?.['ANTHROPIC_MODEL'], 'deepseek-v4-pro');
+      assert.equal(agentConfig.env?.['KEEP_LOCAL'], 'legacy-local');
+
+      const settings = JSON.parse(fs.readFileSync(claudeSettingsFile, 'utf8'));
+      assert.equal(settings.env.ANTHROPIC_BASE_URL, 'https://api.deepseek.com/anthropic');
+      assert.equal(settings.env.ANTHROPIC_MODEL, 'deepseek-v4-pro');
+
+      const molioConfig = loadConfig();
+      assert.equal(molioConfig.agents.claude?.env?.['ANTHROPIC_BASE_URL'], undefined);
+      assert.equal(molioConfig.agents.claude?.env?.['ANTHROPIC_MODEL'], undefined);
+      assert.equal(molioConfig.agents.claude?.env?.['KEEP_LOCAL'], 'legacy-local');
+    });
+
+    it('should clean duplicated managed Claude env keys from ~/.molio/config.json when settings.json already exists', () => {
+      backupConfig();
+      setupBaseConfig({
+        claude: {
+          env: {
+            ANTHROPIC_BASE_URL: 'https://old.example.com',
+            ANTHROPIC_MODEL: 'old-model',
+            KEEP_LOCAL: '1',
+          },
+        },
+      });
+      fs.mkdirSync(path.dirname(claudeSettingsFile), { recursive: true });
+      fs.writeFileSync(claudeSettingsFile, JSON.stringify({
+        env: {
+          ANTHROPIC_BASE_URL: 'https://api.deepseek.com/anthropic',
+          ANTHROPIC_MODEL: 'deepseek-v4-pro',
+        },
+        theme: 'auto',
+      }, null, 2));
+
+      const agentConfig = getAgentConfig('claude');
+      assert.equal(agentConfig.env?.['ANTHROPIC_BASE_URL'], 'https://api.deepseek.com/anthropic');
+      assert.equal(agentConfig.env?.['KEEP_LOCAL'], '1');
+
+      const molioConfig = loadConfig();
+      assert.equal(molioConfig.agents.claude?.env?.['ANTHROPIC_BASE_URL'], undefined);
+      assert.equal(molioConfig.agents.claude?.env?.['ANTHROPIC_MODEL'], undefined);
+      assert.equal(molioConfig.agents.claude?.env?.['KEEP_LOCAL'], '1');
     });
   });
 });

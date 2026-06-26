@@ -125,6 +125,73 @@ apps/daemon/src/core/RunManager.ts
 
 快速检查：`cd apps/web && npx playwright test`
 
+## 自动化测试体系
+
+完整的测试与 AI review 体系，覆盖 PR 推送 → 合并 → 发版三个时机。
+
+### 测试分层
+
+| 层 | 工具 | 位置 | 触发时机 |
+|---|---|---|---|
+| Unit | `node:test` | `apps/daemon/test/**`, `apps/desktop/test/**` | 每次 PR (win + mac) |
+| E2E | Playwright | `apps/web/e2e/*.spec.ts` | 每次 PR (ubuntu) — affected + P0 |
+| E2E Full | Playwright | 同上 | nightly 03:00 UTC + manual |
+| Release Smoke | inline (release.yml) | `apps/desktop/dist/win-unpacked` 等 | tag 触发 |
+| Impact Analysis | grep + area-map | `scripts/codegraph-impact.mjs` | PR opened/synchronize/reopened |
+
+### E2E 优先级与 area 标签
+
+每个 spec 顶部声明：
+```ts
+/**
+ * @area chat
+ * @priority P0  // P0=每次必跑, P1=改动 area 时跑, P2=nightly only
+ */
+```
+
+area 映射在 `apps/web/e2e/area-map.json`，包含 path globs → specs。
+
+**Affected E2E 选择逻辑**（`apps/web/e2e/scripts/select-specs.mjs`）：
+- 所有 P0 spec 始终运行（兜底）
+- P1 spec 仅在改动命中其 area 时运行
+- P2 spec 仅 nightly 运行
+
+### CI 工作流
+
+| Workflow | 触发 | 作用 |
+|---|---|---|
+| `pr-check.yml` | PR | matrix `[windows-latest, macos-latest]` 跑 build+typecheck+unit；ubuntu job 跑 affected E2E |
+| `e2e.yml` | nightly + manual | 全量 E2E (P0+P1+P2) |
+| `impact-analysis.yml` | PR opened/synchronize/reopened | 分析 diff + 命中 area + 会跑的 E2E 清单 → PR 评论 |
+| `release.yml` | tag `v*` | win + mac 打包 + smoke (启动 exe → 验证 daemon 健康 → 验证 web UI) |
+| `coverage-reminder.yml` | daily 18:00 Asia/Shanghai | 扫描前 24h 合并的 PR，检查 area 覆盖 |
+
+### Impact Analysis 配置
+
+PR 推送时自动分析改动影响，在 PR 上评论：
+- 改动文件清单
+- 改动符号 + 调用方数量（`scripts/codegraph-impact.mjs` 用 git grep 算）
+- 命中的 area + 对应会跑的 E2E spec 清单
+
+**不调外部 LLM API**，纯本地分析，成本为零。Fork PR 也会跑（不依赖 secret）。
+
+人工 reviewer 根据 PR 评论里的「影响符号 caller 数」判断改动风险：caller 数越多，回归风险越大，需要更仔细 review。
+
+### 发版前 Mac 真机验证
+
+CI 在 `macos-latest` (Apple Silicon) 上验证打包后可启动。Intel Mac 路径需手动验证：
+
+1. 在 2018 Intel Mac 上 `git clone` + `git checkout v0.3.x-beta.N`
+2. `pnpm install && pnpm desktop:run`
+3. 验证：窗口能打开、能创建 vault、能发消息、能打包更新
+4. 记录到 release checklist
+
+### 平台范围
+
+- **Windows**：主开发平台，CI + 真机全覆盖
+- **macOS**：CI 用 `macos-latest` (Apple Silicon M1)，Intel Mac 真机手动验证
+- **Linux**：Molio 无 Linux 发布版，跳过 CI 测试
+
 ## 用户偏好处理规则
 
 当用户已显式表达偏好（通过配置、双击设置等），系统必须尊重该选择，不得静默回退到其他选项。
