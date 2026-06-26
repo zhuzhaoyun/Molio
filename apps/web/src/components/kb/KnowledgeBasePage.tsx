@@ -19,6 +19,7 @@ import { KbMainContent } from './KbMainContent';
 import { WikiChatPanel } from './WikiChatPanel';
 import { FileChatPanel } from './FileChatPanel';
 import { OutlinePanel } from './OutlinePanel';
+import { SearchPanel } from './SearchPanel';
 import { VaultManagerModal } from './VaultManager';
 import { ImportModal, CoseInstallPrompt, InputDialog, ConfirmDialog } from './KbModals';
 import { ContextMenu, type MenuItem } from './ContextMenu';
@@ -352,6 +353,18 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
     },
     [fileChatSelectedText, fileChat.send],
   );
+
+  // Ctrl/Cmd+F — 打开全文搜索（仅 KB 页面）
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        setShowSearch(true);
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, []);
 
   // Ctrl+L / Cmd+L — open file chat for current file
   useEffect(() => {
@@ -702,6 +715,18 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
         <OutlinePanel
           content={kb.fileContent?.content ?? ''}
           onClose={() => setShowOutline(false)}
+        />
+      )}
+
+      {/* Full-text Search Panel */}
+      {showSearch && kb.activeVault?.id && (
+        <SearchPanel
+          vaultId={kb.activeVault.id}
+          onOpenFile={(p) => {
+            setShowSearch(false);
+            handleSelectFile(p);
+          }}
+          onClose={() => setShowSearch(false)}
         />
       )}
 

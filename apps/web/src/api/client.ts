@@ -3,7 +3,7 @@ import type {
   ChatMessage, Project, Conversation, ConversationHistoryItem,
   Vault, TreeNode, FileContent, KbHistoryEntry, CreateVaultRequest,
   WikiStatusResponse,
-  GraphData,
+  GraphData, SearchResult, SearchResponse,
 } from '@molio/contracts';
 
 export type WeixinLoginStatus = 'idle' | 'waiting_scan' | 'scanned' | 'logged_in' | 'error';
@@ -435,6 +435,14 @@ export const api = {
     if (!res.ok) throw new Error(`Failed to fetch history: ${res.status}`);
     const data = await res.json();
     return data.history;
+  },
+
+  async searchFiles(vaultId: string, query: string, limit = 20): Promise<SearchResponse> {
+    const res = await fetch(
+      `${BASE}/knowledge/vaults/${vaultId}/search?q=${encodeURIComponent(query)}&limit=${limit}`,
+    );
+    if (!res.ok) throw new Error(`Failed to search: ${res.status}`);
+    return res.json();
   },
 
   // ─── Wiki ───
