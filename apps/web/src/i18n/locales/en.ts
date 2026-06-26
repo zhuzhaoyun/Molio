@@ -246,6 +246,8 @@ const en: Record<string, string> = {
   'kb.fileNotFound': 'This file may have been deleted, renamed, or never created (possibly an AI-generated broken reference).',
   'kb.fileChatContextPrefix': 'Regarding the following selection from the file:',
   'kb.fileChatDefaultPrompt': 'Please analyze the selection above.',
+  'kb.outlineTitle': 'Outline',
+  'kb.outlineEmpty': 'No headings',
 
   // ── FilePicker ──
   'filePicker.justNow': 'Just now',

@@ -246,6 +246,8 @@ const zh: Record<string, string> = {
   'kb.fileNotFound': '该文件可能已被删除、重命名或从未被创建（可能是 AI 生成的错误引用）',
   'kb.fileChatContextPrefix': '关于文件中的以下选中内容：',
   'kb.fileChatDefaultPrompt': '请帮我分析以上选中内容。',
+  'kb.outlineTitle': '文档大纲',
+  'kb.outlineEmpty': '暂无标题',
 
   // ── FilePicker ──
   'filePicker.justNow': '刚刚',

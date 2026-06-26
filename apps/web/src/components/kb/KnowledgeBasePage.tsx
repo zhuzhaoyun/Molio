@@ -18,6 +18,7 @@ import { KbMoreMenu } from './KbMoreMenu';
 import { KbMainContent } from './KbMainContent';
 import { WikiChatPanel } from './WikiChatPanel';
 import { FileChatPanel } from './FileChatPanel';
+import { OutlinePanel } from './OutlinePanel';
 import { VaultManagerModal } from './VaultManager';
 import { ImportModal, CoseInstallPrompt, InputDialog, ConfirmDialog } from './KbModals';
 import { ContextMenu, type MenuItem } from './ContextMenu';
@@ -693,6 +694,14 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
           onClose={handleCloseFileChat}
           onSubmitToolResult={fileChat.onSubmitToolResult}
           onOpenConversation={onOpenConversation}
+        />
+      )}
+
+      {/* Outline Panel */}
+      {showOutline && (
+        <OutlinePanel
+          content={kb.fileContent?.content ?? ''}
+          onClose={() => setShowOutline(false)}
         />
       )}
 
