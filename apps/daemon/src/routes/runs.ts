@@ -31,9 +31,16 @@ export function runsRoutes(
     }
 
     try {
+      // Build conversation title — for file-specific Q&A, prefix with filename.
+      // Guard against an empty filePath: split('/').pop() returns '' (not
+      // undefined), so ?? wouldn't catch it — use a truthiness check.
+      const fileBase = body.wikiExtra?.filePath ? body.wikiExtra.filePath.split('/').pop() : undefined;
+      const convTitle = fileBase
+        ? `📄 ${fileBase}：${body.message.slice(0, 80)}`
+        : body.message.slice(0, 80);
       const conversation = body.conversationId
         ? conversations.getConversation(body.conversationId)
-        : conversations.createDesktopConversation(body.message.slice(0, 80));
+        : conversations.createDesktopConversation(convTitle);
       if (!conversation) {
         return c.json({
           error: { code: 'NOT_FOUND', message: 'Conversation not found' },
@@ -102,6 +109,10 @@ export function runsRoutes(
       } else if (body.cwd && (!body.history || body.history.length === 0)) {
         const vault = getVaultByPath(db, body.cwd);
         if (vault) {
+          // First message in a vault-context conversation: prepend the wiki
+          // query prompt so the agent can explore the knowledge base. File
+          // context (when the user @-mentions a file) is carried inline in
+          // the message as a markdown link — the agent reads it itself.
           message = `${WIKI_QUERY_PROMPT}\n\n---\n\n用户问题：${message}`;
         }
       }

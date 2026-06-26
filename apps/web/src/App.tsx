@@ -3,6 +3,7 @@ import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { useAgents } from './hooks/useAgents';
 import { useChat } from './hooks/useChat';
 import { HomePage } from './components/HomePage';
+
 import { NavRail } from './components/NavRail';
 import { KnowledgeBasePage } from './components/kb/KnowledgeBasePage';
 import { SettingsPage } from './components/settings/SettingsPage';
@@ -146,6 +147,9 @@ export default function App() {
                   onCancel={chat.cancel}
                   onNewChat={handleNewChat}
                   onSubmitToolResult={chat.submitToolResult}
+                  onOpenConversation={(conversationId) => {
+                    void chat.loadConversationById(conversationId);
+                  }}
                 />
               }
             />
@@ -161,7 +165,16 @@ export default function App() {
                 />
               }
             />
-            <Route path="/knowledge" element={<KnowledgeBasePage agentId={selectedAgent} />} />
+            <Route path="/knowledge" element={
+            <KnowledgeBasePage
+              agentId={selectedAgent}
+              onOpenConversation={(conversationId) => {
+                void chat.loadConversationById(conversationId).then(() => {
+                  navigate('/');
+                });
+              }}
+            />
+          } />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/graph" element={<GraphPage />} />
           </Routes>

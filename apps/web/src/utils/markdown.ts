@@ -26,6 +26,20 @@ export function renderMarkdown(text: string): string {
   // Inline code
   html = html.replace(/`([^`\n]+)`/g, '<code>$1</code>');
 
+  // Protect code spans/blocks from inline transforms (wikilinks, links,
+  // bold, …). Content inside <code>/<pre> must render verbatim — a path or
+  // `[[wikilink]]` written inside backticks is code, not a navigable link.
+  // Restored after those transforms run, just before paragraph wrapping.
+  const codeStore: string[] = [];
+  html = html.replace(
+    /<pre><code>[\s\S]*?<\/code><\/pre>|<code>[^<]*<\/code>/g,
+    (m) => {
+      const i = codeStore.length;
+      codeStore.push(m);
+      return `@@${i}@@`;
+    },
+  );
+
   // Strikethrough (after code blocks, before bold/italic to avoid ** conflict)
   html = html.replace(/~~(.+?)~~/g, '<del>$1</del>');
 
@@ -40,17 +54,38 @@ export function renderMarkdown(text: string): string {
   html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
 
   // Wiki-links: [[Page Name]] or [[Page Name|display text]]
+  // data-file-path stores the raw path for click-navigation.
+  // Skip directory paths (ending with /) — they are not files.
+  // path is inserted into a double-quoted attribute, so it must be
+  // attribute-escaped — escapeHtml (run above) does NOT escape quotes, so a
+  // value like `file" onmouseover="alert(1)` would otherwise break out of the
+  // attribute and inject an event handler (output is rendered via
+  // dangerouslySetInnerHTML).
   html = html.replace(
     /\[\[([^\]|]+)\|([^\]]+)\]\]/g,
-    '<a class="kb-wiki-link">$2</a>'
+    (_m: string, path: string, display: string) =>
+      path.endsWith('/') ? display : `<a class="kb-wiki-link" data-file-path="${escapeAttr(path.trim())}">${display}</a>`
   );
   html = html.replace(
     /\[\[([^\]]+)\]\]/g,
-    '<a class="kb-wiki-link">$1</a>'
+    (_m: string, path: string) =>
+      path.endsWith('/') ? path : `<a class="kb-wiki-link" data-file-path="${escapeAttr(path.trim())}">${path}</a>`
   );
 
-  // Standard links
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  // Images and standard links. A leading "!" marks an image. URLs with a
+  // scheme (http/https/ftp/mailto/tel) open in a new tab; anything else is a
+  // local vault path, rendered as a kb-wiki-link so the click navigates inside
+  // the KB instead of opening a broken browser tab on a relative URL.
+  html = html.replace(/!?\[([^\]]+)\]\(([^)]+)\)/g, (_m, text, url) => {
+    const safeUrl = escapeAttr(url.trim());
+    if (_m.startsWith('!')) {
+      return `<img src="${safeUrl}" alt="${escapeAttr(text)}" />`;
+    }
+    if (/^(https?:|ftp:|mailto:|tel:)/i.test(url)) {
+      return `<a href="${safeUrl}" target="_blank" rel="noopener">${text}</a>`;
+    }
+    return `<a class="kb-wiki-link" data-file-path="${safeUrl}">${text}</a>`;
+  });
 
   // Blockquotes
   html = html.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>');
@@ -95,6 +130,10 @@ export function renderMarkdown(text: string): string {
     }
   );
 
+  // Restore code spans/blocks now (after inline transforms) so <pre> is
+  // detected as a block below and inline <code> lands inside its paragraph.
+  html = html.replace(/@@(\d+)@@/g, (_m, i) => codeStore[Number(i)] ?? '');
+
   // Paragraphs — wrap remaining text blocks
   html = html
     .split(/\n\n+/)
@@ -114,4 +153,13 @@ function escapeHtml(text: string): string {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
+}
+
+/**
+ * Escape a string for use inside an HTML attribute value. Input is assumed to
+ * have already been through escapeHtml (so &/</> are handled); this closes the
+ * remaining quote-breakout vector for double- and single-quoted attributes.
+ */
+function escapeAttr(text: string): string {
+  return text.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }

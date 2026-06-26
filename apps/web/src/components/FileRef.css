@@ -1,0 +1,28 @@
+.file-ref {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--bg-subtle);
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 0.9em;
+  cursor: pointer;
+  transition: background 0.15s;
+  vertical-align: baseline;
+}
+
+.file-ref:hover {
+  background: var(--accent-tint);
+  text-decoration: none;
+}
+
+.file-ref__icon {
+  font-size: 1em;
+  line-height: 1;
+}
+
+.file-ref__name {
+  line-height: 1.4;
+}

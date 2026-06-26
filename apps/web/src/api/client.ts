@@ -383,6 +383,22 @@ export const api = {
     if (!res.ok) throw new Error(`Failed to write file: ${res.status}`);
   },
 
+  /** Upload an image asset to the vault's .molio/assets/ directory. */
+  async uploadAsset(vaultId: string, file: File): Promise<{ filePath: string; url: string }> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/assets/upload`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: { message: `Upload failed: ${res.status}` } }));
+      throw new Error(err.error?.message ?? `Upload failed: ${res.status}`);
+    }
+    return res.json();
+  },
+
   async deleteFile(vaultId: string, filePath: string): Promise<void> {
     const encoded = encodeURIComponent(filePath).replace(/%2F/g, '/');
     const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/files/${encoded}`, { method: 'DELETE' });

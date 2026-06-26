@@ -5,7 +5,7 @@
  * - Binary (pdf/docx/pptx): file info card + "open with system app" button
  */
 
-import { useEffect } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import type { FileContent } from '@molio/contracts';
 import type { ThemeConfig } from './MdStylePanel';
 import { MdRenderer } from './MdRenderer';
@@ -13,6 +13,7 @@ import { MdTypesetEditor } from './MdTypesetEditor';
 import { MdEditor } from './MdEditor';
 import { preprocessWikiEmbeds, proxyExternalImages, stripTrackingPixels } from '../../hooks/useKnowledge';
 import { api } from '../../api/client';
+import { useI18n } from '../../i18n';
 
 /** File categories for rendering strategy */
 type FileCategory = 'text' | 'image' | 'binary';
@@ -41,6 +42,8 @@ interface KbMainContentProps {
   isTypesetMode: boolean;
   themeConfig: ThemeConfig;
   wikiInitialized: boolean;
+  /** Non-null when file load failed (e.g. 404). */
+  fileLoadError?: string | null;
   /** Whether the edited content has unsaved changes */
   hasUnsavedChanges?: boolean;
   onToggleTypeset: () => void;
@@ -55,6 +58,10 @@ interface KbMainContentProps {
   /** 是否为编辑模式（仅文本文件） */
   isEditMode?: boolean;
   onToggleEdit?: () => void;
+  /** Callback when user clicks "询问此文件" button. */
+  onAskAboutFile?: (filePath: string) => void;
+  /** Callback when user selects text and clicks the float "就此提问" button. */
+  onAskAboutSelection?: (selectedText: string) => void;
   /** 编辑后的内容（用于阅读模式显示未保存的更改） */
   editedContent?: string | null;
 }
@@ -67,6 +74,7 @@ export function KbMainContent({
   isTypesetMode,
   themeConfig,
   wikiInitialized,
+  fileLoadError,
   hasUnsavedChanges,
   onToggleTypeset,
   onContentChange,
@@ -77,8 +85,72 @@ export function KbMainContent({
   showFileName = true,
   isEditMode = false,
   onToggleEdit,
+  onAskAboutFile,
+  onAskAboutSelection,
   editedContent,
 }: KbMainContentProps) {
+  const { t } = useI18n();
+  // Selected text floating "ask" button
+  const [floatBtn, setFloatBtn] = useState<{ text: string; x: number; y: number } | null>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const floatBtnRef = useRef<HTMLButtonElement>(null);
+  // Track the text-selection debounce timer so it can be cleared on each new
+  // call and on unmount (avoids setFloatBtn on an unmounted component).
+  const selectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (selectTimerRef.current) clearTimeout(selectTimerRef.current);
+    };
+  }, []);
+
+  const handleTextSelect = useCallback(() => {
+    // Small delay so the selection is settled
+    if (selectTimerRef.current) clearTimeout(selectTimerRef.current);
+    selectTimerRef.current = setTimeout(() => {
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || !sel.toString().trim()) {
+        setFloatBtn(null);
+        return;
+      }
+      const text = sel.toString().trim();
+      if (!text) { setFloatBtn(null); return; }
+
+      // Check selection is inside our content area
+      const contentEl = contentRef.current;
+      if (!contentEl) return;
+      // Guard: in edge cases selection can be non-collapsed with zero ranges,
+      // which would make getRangeAt(0) throw IndexSizeError.
+      if (sel.rangeCount === 0) {
+        setFloatBtn(null);
+        return;
+      }
+      const range = sel.getRangeAt(0);
+      if (!contentEl.contains(range.commonAncestorContainer)) {
+        setFloatBtn(null);
+        return;
+      }
+
+      // Position near the END of selection (collapse to end for accurate coords)
+      const endRange = range.cloneRange();
+      endRange.collapse(false);
+      const endRect = endRange.getBoundingClientRect();
+      // Clamp to viewport so the button never overflows (measure the button
+      // width rather than assuming a magic 120px).
+      const btnWidth = floatBtnRef.current?.offsetWidth ?? 100;
+      const x = Math.min(endRect.right + 8, window.innerWidth - btnWidth - 16);
+      const y = Math.max(endRect.bottom + 4, 8);
+      setFloatBtn({ text, x, y });
+    }, 0);
+  }, []);
+
+  const handleAskSelection = useCallback(() => {
+    if (!floatBtn) return;
+    onAskAboutSelection?.(floatBtn.text);
+    setFloatBtn(null);
+    window.getSelection()?.removeAllRanges();
+  }, [floatBtn, onAskAboutSelection]);
+
   // Ctrl+S / Cmd+S to save
   useEffect(() => {
     if (!onSave) return;
@@ -205,6 +277,22 @@ export function KbMainContent({
                 </button>
               )}
 
+              {/* Ask about file button — opens inline Q&A panel */}
+              {onAskAboutFile && selectedFile && (
+                <button
+                  type="button"
+                  className="kb-btn"
+                  onClick={() => onAskAboutFile(selectedFile)}
+                  title={`${t('kb.askAboutFile')} (Ctrl+L)`}
+                  data-testid="kb-btn-ask-file"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
+                  </svg>
+                  <span>{t('kb.askAboutFile')}</span>
+                </button>
+              )}
+
               {/* Copy and Publish buttons (only in typeset mode) */}
               {isTypesetMode && (
                 <>
@@ -254,6 +342,16 @@ export function KbMainContent({
         </div>
       </div>
 
+      {/* File load error */}
+      {fileLoadError && selectedFile && (
+        <div className="kb-load-error">
+          <div className="kb-load-error-icon">⚠</div>
+          <p className="kb-load-error-title">{t('kb.cannotOpen')}</p>
+          <p className="kb-load-error-path">{selectedFile}</p>
+          <p className="kb-load-error-hint">{t('kb.fileNotFound')}</p>
+        </div>
+      )}
+
       {/* Content area — branch by file category */}
       {category === 'text' && isTypesetMode ? (
         <MdTypesetEditor
@@ -271,12 +369,25 @@ export function KbMainContent({
           selectedFile={selectedFile}
         />
       ) : category === 'text' ? (
-        <div className="kb-content-area">
+        <div className="kb-content-area" ref={contentRef} onMouseUp={handleTextSelect}>
           {fileContent ? (
             // 优先使用编辑后的内容（未保存的更改），否则使用原始文件内容
             <MdRenderer content={proxyExternalImages(preprocessWikiEmbeds(stripTrackingPixels(editedContent ?? fileContent.content), vaultId ?? ''))} themeConfig={themeConfig} />
           ) : (
             <div className="kb-empty-state"><p>Loading...</p></div>
+          )}
+          {/* Float "ask about selection" button */}
+          {floatBtn && (
+            <button
+              ref={floatBtnRef}
+              type="button"
+              className="kb-float-ask-btn"
+              data-testid="kb-float-ask-btn"
+              style={{ left: floatBtn.x, top: floatBtn.y }}
+              onClick={handleAskSelection}
+            >
+              💬 {t('kb.askSelection')}
+            </button>
           )}
         </div>
       ) : category === 'image' && vaultId ? (

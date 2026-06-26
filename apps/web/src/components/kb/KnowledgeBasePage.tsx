@@ -8,6 +8,7 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import type { TreeNode } from '@molio/contracts';
 import { useKnowledge } from '../../hooks/useKnowledge';
 import { useChat } from '../../hooks/useChat';
+import { useFileChat } from '../../hooks/useFileChat';
 import { useKbTabs } from '../../hooks/useKbTabs';
 import { kbTabsStore } from '../../stores/kbTabsStore';
 import { vaultStore } from '../../stores/vaultStore';
@@ -15,12 +16,17 @@ import { KbFilePanel } from './KbFilePanel';
 import { KbTabBar } from './KbTabBar';
 import { KbMainContent } from './KbMainContent';
 import { WikiChatPanel } from './WikiChatPanel';
+import { FileChatPanel } from './FileChatPanel';
 import { VaultManagerModal } from './VaultManager';
 import { ImportModal, CoseInstallPrompt, InputDialog, ConfirmDialog } from './KbModals';
 import { ContextMenu, type MenuItem } from './ContextMenu';
+import type { FileRef, PastedImage } from '../ChatComposer';
+import { buildAttachmentPrefix } from '../ChatComposer';
+import { useI18n } from '../../i18n';
 
 interface KnowledgeBasePageProps {
   agentId: string | null;
+  onOpenConversation?: (conversationId: string) => void;
 }
 
 interface UrlFileNavigation {
@@ -41,13 +47,17 @@ function resolveUrlFileNavigation(
   return { vaultId, filePath };
 }
 
-export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
+export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBasePageProps) {
+  const { t } = useI18n();
   const kb = useKnowledge();
   const tabs = useKbTabs();
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
   const [showChatPanel, setShowChatPanel] = useState(false);
+  const [fileChatOpen, setFileChatOpen] = useState(false);
+  const [fileChatFilePath, setFileChatFilePath] = useState<string | null>(null);
+  const [fileChatSelectedText, setFileChatSelectedText] = useState<string | null>(null);
   const [pendingUrlNav, setPendingUrlNav] = useState<UrlFileNavigation | null>(null);
 
   // Handle ?vault=<vaultId>&file=<filePath> query params for external navigation
@@ -127,6 +137,26 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
       kb.refreshTree();
     },
   });
+
+  // File Q&A chat hook — independent conversation per file
+  const fileChat = useFileChat({
+    agentId,
+    vaultPath: kb.activeVault?.path ?? null,
+    filePath: fileChatFilePath,
+  });
+
+  const openFileChat = useCallback((filePath: string, selectedText?: string) => {
+    setFileChatFilePath(filePath);
+    setFileChatSelectedText(selectedText ?? null);
+    setFileChatOpen(true);
+  }, []);
+
+  const handleAskAboutSelection = useCallback((selectedText: string) => {
+    const currentFile = kb.selectedFile;
+    if (currentFile) {
+      openFileChat(currentFile, selectedText);
+    }
+  }, [kb.selectedFile, openFileChat]);
 
   // ─── Tab-aware file selection ───
 
@@ -277,6 +307,61 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
     }
   }, [wikiChat]);
 
+  const handleCloseFileChat = useCallback(() => {
+    setFileChatOpen(false);
+    setFileChatSelectedText(null);
+    // Cancel an in-progress run so the SSE EventSource closes and the
+    // underlying agent process doesn't keep running after the panel closes.
+    if (fileChat.isRunning) {
+      fileChat.cancel();
+    }
+  }, [fileChat]);
+
+  // Wrap fileChat.send to prepend selected text as context
+  const handleFileChatSend = useCallback(
+    (text: string, fileRefs?: FileRef[], pastedImages?: PastedImage[]) => {
+      // Build the same @ ref / image prefix the home page composer does, so the
+      // "ask about this file" chat is just a normal chat with the file pre-@-ed.
+      const prefix = buildAttachmentPrefix(fileRefs ?? [], pastedImages ?? []);
+      let message = text;
+      if (prefix) {
+        message = `${prefix}\n\n${message || t('home.fileContextFallback')}`;
+      }
+
+      if (fileChatSelectedText) {
+        const contextMsg = `${t('kb.fileChatContextPrefix')}\n> ${fileChatSelectedText}\n\n${message || t('kb.fileChatDefaultPrompt')}`;
+        setFileChatSelectedText(null); // only prepend once
+        fileChat.send(contextMsg);
+      } else {
+        fileChat.send(message);
+      }
+    },
+    [fileChatSelectedText, fileChat.send],
+  );
+
+  // Ctrl+L / Cmd+L — open file chat for current file
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Don't trigger when focus is in an input/textarea
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') {
+        e.preventDefault();
+        const FILE_TAB_PREFIX = 'file:';
+        const activeTab = tabs.activeTabId
+          ? kbTabsStore.getTabs().find(t => t.id === tabs.activeTabId)
+          : null;
+        if (activeTab?.id.startsWith(FILE_TAB_PREFIX)) {
+          const filePath = activeTab.id.slice(FILE_TAB_PREFIX.length);
+          openFileChat(filePath);
+        }
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [tabs.activeTabId, openFileChat]);
+
   // ─── Save toast helper (defined early — used by callbacks below) ───
 
   const showToast = useCallback((msg: string) => {
@@ -365,6 +450,14 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
       items.push({
         label: '在新标签页中打开',
         onClick: () => handleOpenInNewTab(node.path),
+      });
+      items.push({ divider: true });
+      items.push({
+        label: t('kb.askAboutFile'),
+        onClick: () => {
+          handleCloseCtxMenu();
+          openFileChat(node.path);
+        },
       });
     } else {
       // Directory: offer create file / subfolder inside
@@ -530,6 +623,7 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
         <KbMainContent
           fileContent={kb.fileContent}
           selectedFile={kb.selectedFile}
+          fileLoadError={kb.fileLoadError}
           vaultId={kb.activeVault?.id ?? null}
           vaultPath={kb.activeVault?.path ?? null}
           isTypesetMode={kb.isTypesetMode}
@@ -543,6 +637,8 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
           onCopy={kb.copyToClipboard}
           onPublish={kb.publishToChrome}
           onBuildWiki={handleBuildWiki}
+          onAskAboutFile={openFileChat}
+          onAskAboutSelection={handleAskAboutSelection}
           showFileName={true}
           isEditMode={kb.isEditMode}
           onToggleEdit={kb.toggleEditMode}
@@ -559,6 +655,22 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
           onCancel={wikiChat.cancel}
           onClose={handleCloseChat}
           onSubmitToolResult={wikiChat.submitToolResult}
+        />
+      )}
+
+      {/* File Chat Panel (right side Q&A) */}
+      {fileChatOpen && fileChatFilePath && (
+        <FileChatPanel
+          messages={fileChat.messages}
+          isRunning={fileChat.isRunning}
+          filePath={fileChatFilePath}
+          vaultId={kb.activeVault?.id ?? null}
+          selectedText={fileChatSelectedText}
+          onSend={handleFileChatSend}
+          onCancel={fileChat.cancel}
+          onClose={handleCloseFileChat}
+          onSubmitToolResult={fileChat.onSubmitToolResult}
+          onOpenConversation={onOpenConversation}
         />
       )}
 

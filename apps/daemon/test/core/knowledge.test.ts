@@ -1,7 +1,7 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, basename } from 'node:path';
 import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import {
   writeFile,
@@ -136,6 +136,37 @@ describe('knowledge filesystem operations', () => {
       assert.throws(() => {
         renamePath(vaultPath, 'nonexistent.md', 'anything.md');
       }, /Source not found/);
+    });
+  });
+
+  describe('resolveFilePath — sibling-directory bypass', () => {
+    // Regression: `startsWith(vaultRoot)` without a trailing separator let a
+    // sibling directory whose name shares the vault's prefix (e.g. vault
+    // `/data/vault` vs `/data/vault-secret`) pass the traversal check. The
+    // daemon has no auth, so this was directly exploitable to read/escape.
+    it('should reject a sibling path that shares the vault name prefix', () => {
+      const vaultName = basename(vaultPath);
+      const siblingDir = join(vaultPath + '-secret');
+      try {
+        mkdirSync(siblingDir, { recursive: true });
+        writeFileSync(join(siblingDir, 'secret.txt'), 'OUTSIDE_VAULT');
+
+        const relEscape = `../${vaultName}-secret/secret.txt`;
+        // resolveFilePath must throw — the sibling is outside the vault even
+        // though its path starts with the (un-separator) vault root prefix.
+        assert.throws(() => resolveFilePath(vaultPath, relEscape), /Path traversal/);
+        // And readFile must not read it either.
+        assert.throws(() => readFile(vaultPath, relEscape), /Path traversal/);
+      } finally {
+        rmSync(siblingDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should still resolve legitimate in-vault paths', () => {
+      writeFileSync(join(vaultPath, 'legit.md'), 'inside');
+      const resolved = resolveFilePath(vaultPath, 'legit.md');
+      assert.ok(resolved.startsWith(vaultPath));
+      assert.equal(readFile(vaultPath, 'legit.md').content, 'inside');
     });
   });
 
@@ -316,6 +347,78 @@ describe('knowledge filesystem operations', () => {
       assert.ok(!existsSync(join(vaultPath, 'flat.md')));
       const file = readFile(vaultPath, 'new/deep/path/flat.md');
       assert.equal(file.content, 'flatten');
+    });
+  });
+
+  describe('readFile auto-resolve', () => {
+    it('should read a .md file with path lacking extension', () => {
+      writeFile(vaultPath, 'doc.md', 'hello auto-resolve');
+      const file = readFile(vaultPath, 'doc');
+      assert.equal(file.content, 'hello auto-resolve');
+    });
+
+    it('should read a .md file in subdirectory with path lacking extension', () => {
+      mkdirSync(join(vaultPath, 'sub'), { recursive: true });
+      writeFile(vaultPath, 'sub/nested.md', 'nested content');
+      const file = readFile(vaultPath, 'sub/nested');
+      assert.equal(file.content, 'nested content');
+    });
+
+    it('should use exact path when file with full extension exists', () => {
+      writeFile(vaultPath, 'readme.md', 'readme content');
+      const file = readFile(vaultPath, 'readme.md');
+      assert.equal(file.content, 'readme content');
+    });
+
+    it('should throw if neither exact path nor .md fallback exists', () => {
+      assert.throws(() => readFile(vaultPath, 'nonexistent'));
+    });
+
+    it('should not auto-append .md when other extension is present', () => {
+      writeFile(vaultPath, 'data.txt', 'text data');
+      // 'data.txt' exists, so it should read it
+      const file = readFile(vaultPath, 'data.txt');
+      assert.equal(file.content, 'text data');
+    });
+
+    it('should match file with different case (case-insensitive fallback)', () => {
+      writeFile(vaultPath, 'CaseTest.MD', 'case-insensitive content');
+      const file = readFile(vaultPath, 'CASETEST.md');
+      assert.equal(file.content, 'case-insensitive content');
+    });
+
+    it('should match file in subdirectory with different case', () => {
+      mkdirSync(join(vaultPath, 'Dir'), { recursive: true });
+      writeFile(vaultPath, 'Dir/Readme.MD', 'dir content');
+      const file = readFile(vaultPath, 'dir/README.md');
+      assert.equal(file.content, 'dir content');
+    });
+
+    it('should find wiki files via wiki/ prefix fallback', () => {
+      mkdirSync(join(vaultPath, 'wiki'), { recursive: true });
+      writeFile(vaultPath, 'wiki/INDEX.md', 'wiki index content');
+      const file = readFile(vaultPath, 'INDEX.md');
+      assert.equal(file.content, 'wiki index content');
+    });
+
+    it('should resolve a bare page name to a nested wiki file (recursive)', () => {
+      mkdirSync(join(vaultPath, 'wiki', 'dev', 'concept'), { recursive: true });
+      writeFile(vaultPath, 'wiki/dev/concept/paradigm.md', 'nested paradigm');
+      const file = readFile(vaultPath, 'paradigm');
+      assert.equal(file.content, 'nested paradigm');
+    });
+
+    it('should resolve a bare page name case-insensitively across the tree', () => {
+      mkdirSync(join(vaultPath, 'notes', 'sub'), { recursive: true });
+      writeFile(vaultPath, 'notes/sub/Canon.md', 'canon content');
+      const file = readFile(vaultPath, 'canon');
+      assert.equal(file.content, 'canon content');
+    });
+
+    it('should skip hidden directories during recursive bare-name search', () => {
+      mkdirSync(join(vaultPath, '.molio', 'assets'), { recursive: true });
+      writeFile(vaultPath, '.molio/assets/hidden.md', 'hidden content');
+      assert.throws(() => readFile(vaultPath, 'hidden'));
     });
   });
 });
