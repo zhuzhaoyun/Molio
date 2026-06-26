@@ -208,7 +208,10 @@ describe('WeixinService media reply path', () => {
   });
 
   it('delivers a file the AI references via <attach/> marker and strips the path', async () => {
-    const pdfPath = join(tempDir, 'raw', 'wechat', '2026-06-24', 'Goals.pdf');
+    // Simulate a file in a nested subdirectory (e.g. wiki clip, generated report)
+    // without hardcoding any business-specific path structure.
+    const subDir = mkdtempSync(join(tempDir, 'nested-'));
+    const pdfPath = join(subDir, 'Goals.pdf');
     writeFileSync(pdfPath, '%PDF-1.4 body');
 
     await deliverUserMessage('把这个文件发给我');
