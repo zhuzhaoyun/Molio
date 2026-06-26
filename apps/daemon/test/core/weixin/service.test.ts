@@ -32,14 +32,17 @@ describe('WeixinService run context', () => {
     assert.match(message, /用户消息：介绍一下知识库地址/);
   });
 
-  it('keeps Weixin intake instructions after conversation history exists', () => {
+  it('does NOT re-inject wiki intake frame on follow-up turns (reused session)', () => {
     const vaultPath = join(tempDir, 'vault');
     createVault(db, 'Test Vault', vaultPath);
 
+    // isFirstTurn=false → the message is a follow-up to a reused multi-turn
+    // session that already carries the wiki frame from turn 1. Re-injecting
+    // would pollute context and burn tokens, so only the raw prompt is sent.
     const message = buildWeixinRunMessage(db, '继续', vaultPath, false);
 
-    assert.match(message, /你是一个本地知识库的微信入口助手。/);
-    assert.match(message, /用户消息：继续/);
+    assert.doesNotMatch(message, /你是一个本地知识库的微信入口助手。/);
+    assert.equal(message, '继续');
   });
 
   it('tells the model to use downloaded files as-is, not create extra .md', () => {

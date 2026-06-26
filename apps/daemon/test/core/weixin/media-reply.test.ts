@@ -17,6 +17,12 @@ function createEmittingRunManager(): { rm: RunManager; emit: (e: AgentEvent) => 
   let handler: ((e: AgentEvent) => void) | null = null;
   const rm = {
     createRun: async () => 'run-1',
+    // These tests exercise the single-message reply path, not multi-turn
+    // reuse, so canAcceptMessage reports false (no reuse → fresh spawn).
+    canAcceptMessage: () => false,
+    sendMessage: () => {},
+    flushPendingReply: () => {},
+    cancelRun: () => {},
     onEvent: (_runId: string, cb: (e: AgentEvent) => void) => {
       handler = cb;
       return () => { handler = null; };

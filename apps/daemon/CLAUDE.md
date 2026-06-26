@@ -110,7 +110,7 @@ pnpm typecheck    # tsc --noEmit
 
 - **Channel 只做外部通道适配**：微信、飞书、企业微信等模块只负责登录、轮询/回调、消息解析、发送回复和通道私有 token；不要在通道模块里实现长期会话历史。
 - **Conversation 是统一会话边界**：所有桌面端、微信、未来飞书/企业微信发起的对话都写入公共 conversations/messages 存储，后续"历史记录"页面从这里统一查询。
-- **Run 是一次执行，不是会话**：每条外部消息可以创建一个新的 run，但必须携带稳定 conversationId 和历史 messages，让模型能理解上下文。
+- **Run 是一次执行，不是会话**：每条外部消息可以创建一个新的 run，但必须携带稳定 conversationId 和历史 messages，让模型能理解上下文。**例外：stream-json 多轮 agent（如 Claude Code）**——微信通道按 `fromUserId` 复用同一 multi-turn run，后续消息走 `RunManager.sendMessage()` 写入已有进程的 stdin，而非每条消息新开进程。`WeixinService` 用 `userRuns` 维护每用户的活跃 run，turn 进行中时排队、`turn_end` 后 drain；进程失活（`canAcceptMessage=false`）或 `/new` 时回退到新开 run。这保留了 agent 原生 session 连续性与 prompt cache。
 - **外部身份映射规则**：外部通道用 `channel_type + external_session_id` 定位同一个 conversation，例如 `weixin + fromUserId`、`feishu + openId`、`wecom + userId`。
 - **渠道模块保持干净独立**：`core/weixin` 不直接关心数据库表结构、不维护自有 session store；它通过公共 `ConversationService` 获取/创建会话、读取历史、追加用户和助手消息。
 - **系统渠道项目**：当前数据库仍要求 `conversations.project_id NOT NULL`，外部渠道会话挂到隐藏系统项目 `__molio_channels__` 下；项目列表接口应过滤系统项目，避免污染用户项目。

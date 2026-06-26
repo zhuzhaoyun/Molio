@@ -335,6 +335,24 @@ export class RunManager {
   }
 
   /**
+   * Whether a run is still alive and can accept a follow-up message via
+   * sendMessage() — i.e. it is a multi-turn agent whose stdin is still open
+   * and writable, and the run has not reached a terminal status.
+   *
+   * Non-throwing precheck so callers (e.g. WeixinService) can decide between
+   * reusing an existing multi-turn session and spawning a fresh run without
+   * catching sendMessage()'s thrown error.
+   */
+  canAcceptMessage(runId: string): boolean {
+    const run = this.runs.get(runId);
+    if (!run) return false;
+    if (TERMINAL_STATUSES.has(run.status)) return false;
+    const def = getAgentDef(run.agentId);
+    if (!def?.multiTurn) return false;
+    return run.stdinOpen && !!run.child?.stdin?.writable;
+  }
+
+  /**
    * Send a follow-up user message to an active run (multi-turn).
    * Writes to the existing stdin stream for stream-json agents.
    *
