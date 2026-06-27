@@ -11,6 +11,7 @@ import {
   WIKI_INGEST_PROMPT,
   WIKI_LINT_PROMPT,
   WIKI_SAVE_PROMPT,
+  QUERY_SYS_PROMPT_FILE,
 } from '../core/wiki-prompts.js';
 
 export function runsRoutes(
@@ -63,7 +64,7 @@ export function runsRoutes(
       // into a prescribed path. Multi-turn follow-ups reuse the live process,
       // which already carries this from the first turn.
       let message = body.message;
-      let appendSystemPrompt: string | undefined;
+      let appendSystemPromptFile: string | undefined;
 
       // Handle explicit wiki operations — select prompt and build message
       if (body.wikiOperation) {
@@ -103,10 +104,10 @@ export function runsRoutes(
             addKbHistory(db, vault.id, 'lint', 'Wiki 健康检查已启动');
             break;
           case 'query':
-            // Wiki Q&A frame lives in the system prompt; the user's question
-            // is the clean user message.
+            // Wiki Q&A frame lives in the system prompt (file); the user's
+            // question is the clean user message.
             message = body.message;
-            appendSystemPrompt = prompt;
+            appendSystemPromptFile = QUERY_SYS_PROMPT_FILE;
             break;
           case 'save':
             message = `${prompt}\n\n---\n\n${body.message || '请回顾当前对话，将值得归档的内容保存为 wiki 页面。'}`;
@@ -116,14 +117,14 @@ export function runsRoutes(
       } else if (body.cwd) {
         const vault = getVaultByPath(db, body.cwd);
         if (vault) {
-          // Vault-context conversation: pass the wiki query frame as the
-          // system prompt. Applied on every vault createRun (not just the
+          // Vault-context conversation: pass the wiki query frame (file) as
+          // the system prompt. Applied on every vault createRun (not just the
           // first turn) because the frame no longer rides the conversation
           // transcript — a re-spawned run would otherwise lose the wiki role.
           // The system prompt is cached, so this is cheaper than the old
           // transcript-carry approach. File context (@-mentions) is carried
           // inline in the message as a markdown link — the agent reads it.
-          appendSystemPrompt = WIKI_QUERY_PROMPT;
+          appendSystemPromptFile = QUERY_SYS_PROMPT_FILE;
         }
       }
 
@@ -133,7 +134,7 @@ export function runsRoutes(
       const runId = await runManager.createRun({
         agentId: body.agentId,
         message,
-        appendSystemPrompt,
+        appendSystemPromptFile,
         model: body.model,
         cwd: body.cwd,
         conversationId: conversation.id,

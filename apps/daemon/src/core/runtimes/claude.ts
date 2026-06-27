@@ -27,11 +27,13 @@ export const claudeAgentDef: RuntimeAgentDef = {
       args.push('--model', options.model);
     }
     // Wiki/vault role frame lives in the system prompt, NOT the user message.
-    // spawn() passes argv directly (no shell), so the text — including
-    // newlines/backticks/$ — travels verbatim; well under the Windows 32KB
-    // command-line ceiling. Verified end-to-end via the Run C / D2 probes.
-    if (options.appendSystemPrompt) {
-      args.push('--append-system-prompt', options.appendSystemPrompt);
+    // Passed via --append-system-prompt-FILE (a temp path), not inline text:
+    // the wiki frame is multi-KB with embedded quotes/backticks/backslashes,
+    // and inline `--append-system-prompt <text>` breaks the CLI's argv parsing
+    // on Windows, silently dropping later flags (notably
+    // --dangerously-skip-permissions) and blocking all tool calls.
+    if (options.appendSystemPromptFile) {
+      args.push('--append-system-prompt-file', options.appendSystemPromptFile);
     }
     args.push('--dangerously-skip-permissions');
     return args;

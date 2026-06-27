@@ -8,7 +8,7 @@ import type { RunManager } from '../RunManager.js';
 import type { ConversationService } from '../conversations/service.js';
 import { loadConfig, saveConfig, type WeixinConfig } from '../config.js';
 import { getVaultByPath } from '../db.js';
-import { WIKI_WEIXIN_PROMPT } from '../wiki-prompts.js';
+import { WEIXIN_SYS_PROMPT_FILE } from '../wiki-prompts.js';
 import { DEFAULT_BASE_URL, WeixinApi } from './client.js';
 import { buildMolioPrompt, parseWeixinMessage } from './message.js';
 import { materializeAttachments } from './media.js';
@@ -91,23 +91,24 @@ export function buildWeixinRunMessage(
   text: string,
   cwd: string | undefined,
   isFirstTurn: boolean,
-): { message: string; appendSystemPrompt?: string } {
+): { message: string; appendSystemPromptFile?: string } {
   const message = buildMolioPrompt(text);
   // The wiki intake frame is injected as the agent's SYSTEM prompt (via
-  // --append-system-prompt) only on the first turn of a fresh process.
-  // Follow-ups reuse the existing multi-turn session, which already carries
-  // the frame from turn 1. Keeping the frame in the system prompt instead of
-  // prepending it to the user message lets the agent use its native retrieval
-  // judgment on the user's actual query — verified to unblock "总结今天的工作"
-  // (git log + find -newermt) while still steering intake (wechat-article-
-  // extractor etc.).
+  // --append-system-prompt-file, pointing at ~/.molio/sysprompt/weixin.txt
+  // materialized at daemon startup) only on the first turn of a fresh
+  // process. Follow-ups reuse the existing multi-turn session, which already
+  // carries the frame from turn 1. Keeping the frame in the system prompt
+  // instead of prepending it to the user message lets the agent use its
+  // native retrieval judgment on the user's actual query — verified to
+  // unblock "总结今天的工作" (git log + find -newermt) while still steering
+  // intake (wechat-article-extractor etc.).
   if (!isFirstTurn) return { message };
   if (!db || !cwd) return { message };
 
   const vault = getVaultByPath(db, cwd);
   if (!vault) return { message };
 
-  return { message, appendSystemPrompt: WIKI_WEIXIN_PROMPT };
+  return { message, appendSystemPromptFile: WEIXIN_SYS_PROMPT_FILE };
 }
 
 /**
@@ -137,10 +138,10 @@ export interface QueuedMessage {
   rawUserText: string;
   /**
    * Wiki/vault role frame passed as the agent's system prompt (via
-   * --append-system-prompt) on a fresh spawn. Undefined on follow-ups —
+   * --append-system-prompt-file) on a fresh spawn. Undefined on follow-ups —
    * the reused process already carries it from turn 1.
    */
-  appendSystemPrompt?: string;
+  appendSystemPromptFile?: string;
 }
 
 export class WeixinService {
@@ -549,7 +550,7 @@ export class WeixinService {
       // The wiki intake frame is injected only on fresh spawns; follow-ups
       // reuse the existing session which already carries it.
       const isFreshSpawn = !this.canReuseRunFor(message.fromUserId);
-      const { message: runMessage, appendSystemPrompt } = buildWeixinRunMessage(
+      const { message: runMessage, appendSystemPromptFile } = buildWeixinRunMessage(
         this.db,
         message.text,
         cwd,
@@ -563,7 +564,7 @@ export class WeixinService {
         cwd,
         runMessage,
         rawUserText: message.text,
-        appendSystemPrompt,
+        appendSystemPromptFile,
         history,
       });
     } catch (err) {
@@ -588,13 +589,13 @@ export class WeixinService {
    * so DB position ordering matches the real conversation order.
    */
   private async dispatchMessage(msg: QueuedMessage & { history: ChatMessage[] }): Promise<void> {
-    const { fromUserId, conversationId, agentId, cwd, runMessage, rawUserText, appendSystemPrompt, history } = msg;
+    const { fromUserId, conversationId, agentId, cwd, runMessage, rawUserText, appendSystemPromptFile, history } = msg;
     const state = this.userRuns.get(fromUserId);
 
     if (state && this.runManager.canAcceptMessage(state.runId)) {
       if (state.busy) {
         // A turn is in flight — buffer and drain on its turn_end.
-        state.queue.push({ fromUserId, conversationId, agentId, cwd, runMessage, rawUserText, appendSystemPrompt });
+        state.queue.push({ fromUserId, conversationId, agentId, cwd, runMessage, rawUserText, appendSystemPromptFile });
         return;
       }
       state.busy = true;
@@ -602,8 +603,9 @@ export class WeixinService {
       // ordering stays correct (mirrors the desktop POST /:id/messages path).
       this.runManager.flushPendingReply(state.runId);
       this.conversations.appendUserMessage(conversationId, rawUserText);
-      // appendSystemPrompt is intentionally NOT passed here: sendMessage reuses
-      // the live process, which already carries the system prompt from spawn.
+      // appendSystemPromptFile is intentionally NOT passed here: sendMessage
+      // reuses the live process, which already carries the system prompt from
+      // spawn.
       this.runManager.sendMessage(state.runId, runMessage);
       this.status.activeRunId = state.runId;
       await this.sendText(fromUserId, 'Molio 正在处理...');
@@ -621,7 +623,7 @@ export class WeixinService {
       agentId,
       cwd,
       message: runMessage,
-      appendSystemPrompt,
+      appendSystemPromptFile,
       conversationId,
       history,
     });

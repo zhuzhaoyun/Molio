@@ -1,11 +1,16 @@
 /**
- * Wiki system prompts — injected as the first message in wiki agent runs.
+ * Wiki system prompts — injected as the agent's system prompt (via
+ * --append-system-prompt-file) on wiki/vault runs.
  *
  * Each prompt tells the agent how to operate on the vault's wiki/ directory.
  * The agent uses its own tools (Read, Write, Edit, Bash, etc.) to carry out
  * the instructions. We just render the conversation in the UI.
  *
  */
+
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 // ─── Shared constants ───
 
@@ -479,3 +484,34 @@ ${HOT_CACHE_FORMAT}
 9. **汇报**：创建了什么页面，链接了哪些已有页面
 
 如果对话内容没有长期参考价值（如简单的事实查询、临时操作），告知用户不需要归档，并说明原因。`;
+
+// ─── System-prompt file materialization ───
+
+/**
+ * Directory under `~/.molio/` where the wiki system-prompt frames are
+ * materialized as fixed-name files, so the agent CLI can read them via
+ * `--append-system-prompt-file <path>`.
+ *
+ * Why a file (not inline `--append-system-prompt <text>`): the wiki frame is
+ * multi-KB with embedded quotes/backslashes; inline it broke the CLI's argv
+ * parsing on Windows and silently ate `--dangerously-skip-permissions`. A
+ * plain file path has no such pitfall. See `weixin-channel-agent-design.md`.
+ */
+export function sysPromptDir(): string {
+  return path.join(os.homedir(), '.molio', 'sysprompt');
+}
+
+/** Fixed file paths for each wiki system-prompt frame (passed to the CLI). */
+export const WEIXIN_SYS_PROMPT_FILE = path.join(sysPromptDir(), 'weixin.txt');
+export const QUERY_SYS_PROMPT_FILE = path.join(sysPromptDir(), 'query.txt');
+
+/**
+ * Write the wiki system-prompt frames to fixed files under `~/.molio/sysprompt/`.
+ * Called once at daemon startup (idempotent — overwrites so the files always
+ * match the daemon's compiled prompt text). `dir` is overridable for tests.
+ */
+export function ensureWikiSysPromptFiles(dir: string = sysPromptDir()): void {
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'weixin.txt'), WIKI_WEIXIN_PROMPT, 'utf8');
+  fs.writeFileSync(path.join(dir, 'query.txt'), WIKI_QUERY_PROMPT, 'utf8');
+}

@@ -8,14 +8,16 @@ export interface RuntimeModelOption {
 export interface RuntimeBuildOptions {
   model?: string | null;
   /**
-   * Extra system-prompt text appended to the agent's built-in system prompt
-   * (e.g. a wiki/vault role frame). Passed to the CLI verbatim — for Claude
-   * Code this becomes `--append-system-prompt <text>`. Keeping the wiki frame
-   * in the system prompt (instead of prepending it to the user message) lets
-   * the agent use its native retrieval judgment on the user's actual query
-   * instead of being role-locked into a prescribed retrieval path.
+   * Path to a temp file whose contents are appended to the agent's built-in
+   * system prompt (e.g. a wiki/vault role frame). For Claude Code this becomes
+   * `--append-system-prompt-file <path>`. We pass a FILE path (not the text
+   * inline) because the wiki frame is multi-KB with embedded quotes/backticks/
+   * backslashes — passing it inline as `--append-system-prompt <text>` breaks
+   * the CLI's argv parsing on Windows and silently eats subsequent flags
+   * (notably `--dangerously-skip-permissions`), causing tool calls to be
+   * blocked. A plain path arg has no such issue.
    */
-  appendSystemPrompt?: string;
+  appendSystemPromptFile?: string;
 }
 
 export interface RuntimeContext {

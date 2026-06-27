@@ -36,7 +36,7 @@ class MockRunManager {
   private created = new Set<string>();
   private nonReceptive = new Set<string>();
   private listeners = new Map<string, (ev: AgentEvent) => void>();
-  readonly createRunCalls: Array<{ runId: string; agentId: string; cwd?: string; message: string; appendSystemPrompt?: string }> = [];
+  readonly createRunCalls: Array<{ runId: string; agentId: string; cwd?: string; message: string; appendSystemPromptFile?: string }> = [];
   readonly sendMessageCalls: Array<{ runId: string; message: string }> = [];
   readonly flushCalls: string[] = [];
   readonly cancelCalls: string[] = [];
@@ -47,7 +47,7 @@ class MockRunManager {
     cwd?: string;
     conversationId?: string;
     history?: ChatMessage[];
-    appendSystemPrompt?: string;
+    appendSystemPromptFile?: string;
   }): Promise<string> => {
     const runId = `run-${this.nextId++}`;
     this.created.add(runId);
@@ -56,7 +56,7 @@ class MockRunManager {
       agentId: opts.agentId,
       cwd: opts.cwd,
       message: opts.message,
-      appendSystemPrompt: opts.appendSystemPrompt,
+      appendSystemPromptFile: opts.appendSystemPromptFile,
     });
     return runId;
   };
@@ -251,25 +251,26 @@ describe('WeixinService multi-turn run reuse', () => {
     assert.ok(mock.flushCalls.includes(run1), 'should flush pending reply before next user msg');
   });
 
-  it('passes appendSystemPrompt to createRun on fresh spawn, not to sendMessage on reuse', async () => {
-    // Fresh spawn: dispatchMessage must forward appendSystemPrompt to createRun
-    // and keep the user message clean — the wiki frame lives in the system
-    // prompt, NOT prepended to the message (role-locking it would suppress
-    // native retrieval; verified by the Run A/B/C probes).
-    await dispatch({ ...payload('总结今天的工作'), appendSystemPrompt: 'WIKI-FRAME' });
+  it('passes appendSystemPromptFile to createRun on fresh spawn, not to sendMessage on reuse', async () => {
+    // Fresh spawn: dispatchMessage must forward appendSystemPromptFile to
+    // createRun and keep the user message clean — the wiki frame lives in the
+    // system prompt file, NOT prepended to the message (role-locking it would
+    // suppress native retrieval; verified by the Run A/B/C probes).
+    const fakePath = '/fake/molio/sysprompt/weixin.txt';
+    await dispatch({ ...payload('总结今天的工作'), appendSystemPromptFile: fakePath });
     assert.equal(mock.createRunCalls.length, 1);
-    assert.equal(mock.createRunCalls[0]!.appendSystemPrompt, 'WIKI-FRAME');
+    assert.equal(mock.createRunCalls[0]!.appendSystemPromptFile, fakePath);
     assert.equal(mock.createRunCalls[0]!.message, '总结今天的工作');
-    assert.doesNotMatch(mock.createRunCalls[0]!.message, /WIKI-FRAME/);
+    assert.doesNotMatch(mock.createRunCalls[0]!.message, /sysprompt/);
 
     const run1 = mock.createRunCalls[0]!.runId;
     mock.emit(run1, { type: 'turn_end', stopReason: 'end_turn' });
     await settle();
 
-    // Reuse: sendMessage gets the clean message only. appendSystemPrompt is
-    // intentionally NOT re-passed — the live process already carries it from
-    // spawn, so no new spawn and no re-injection.
-    await dispatch({ ...payload('再问一个'), appendSystemPrompt: 'WIKI-FRAME' });
+    // Reuse: sendMessage gets the clean message only. appendSystemPromptFile
+    // is intentionally NOT re-passed — the live process already carries it
+    // from spawn, so no new spawn and no re-injection.
+    await dispatch({ ...payload('再问一个'), appendSystemPromptFile: fakePath });
     assert.equal(mock.createRunCalls.length, 1, 'reuse must not spawn a new run');
     assert.equal(mock.sendMessageCalls.length, 1);
     assert.equal(mock.sendMessageCalls[0]!.message, '再问一个');
