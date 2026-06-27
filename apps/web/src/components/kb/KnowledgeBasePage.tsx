@@ -14,7 +14,7 @@ import { kbTabsStore } from '../../stores/kbTabsStore';
 import { vaultStore } from '../../stores/vaultStore';
 import { KbFilePanel } from './KbFilePanel';
 import { KbTabBar } from './KbTabBar';
-import { KbMoreMenu } from './KbMoreMenu';
+import { KbCommandLauncher } from './KbMoreMenu';
 import { KbMainContent } from './KbMainContent';
 import { WikiChatPanel } from './WikiChatPanel';
 import { FileChatPanel } from './FileChatPanel';
@@ -64,7 +64,6 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
   const [pendingUrlNav, setPendingUrlNav] = useState<UrlFileNavigation | null>(null);
   const [showOutline, setShowOutline] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
-  const [collapseAllCounter, setCollapseAllCounter] = useState(0);
 
   // Handle ?vault=<vaultId>&file=<filePath> query params for external navigation
   // (e.g. from molio:// protocol triggered by Chrome extension after clip save)
@@ -277,15 +276,6 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
   }, [kb.panelWidth, kb.setPanelWidth]);
-
-  const handleScrollToStats = useCallback(() => {
-    const el = document.querySelector('[data-testid="kb-status-bar"]');
-    el?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, []);
-
-  const handleCollapseAll = useCallback(() => {
-    setCollapseAllCounter((n) => n + 1);
-  }, []);
 
   // Wiki operation handlers
   const handleBuildWiki = useCallback(() => {
@@ -629,27 +619,16 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
         onNewFolder={handleNewFolder}
         onVaultClick={() => kb.setShowVaultSwitcher(true)}
         onAddToWiki={hasVault ? handleIngestFile : undefined}
-        onBuildWiki={hasVault ? handleBuildWiki : undefined}
-        onLintWiki={hasVault && kb.wikiInitialized ? handleLintWiki : undefined}
         onContextMenu={handleContextMenu}
         renamingPath={renamingPath}
         onRenameComplete={handleRenameComplete}
         onRenameCancel={handleRenameCancel}
-        collapseAllCounter={collapseAllCounter}
       >
         <div className="kb-resize-handle" onMouseDown={handleResizeStart} />
       </KbFilePanel>
 
       {/* Tab Bar + Main Content */}
       <div className="kb-main-wrapper">
-        <div className="kb-main-topbar">
-          <KbMoreMenu
-            onOpenOutline={() => setShowOutline(true)}
-            onOpenSearch={() => setShowSearch(true)}
-            onScrollToStats={handleScrollToStats}
-            onCollapseAll={handleCollapseAll}
-          />
-        </div>
         <KbTabBar
           tabs={tabs.tabs}
           activeTabId={tabs.activeTabId}
@@ -673,8 +652,16 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
           onCopy={kb.copyToClipboard}
           onPublish={kb.publishToChrome}
           onBuildWiki={handleBuildWiki}
-          onAskAboutFile={openFileChat}
           onAskAboutSelection={handleAskAboutSelection}
+          onOpenOutline={() => setShowOutline(true)}
+          onOpenSearch={() => setShowSearch(true)}
+          moreMenu={
+            <KbCommandLauncher
+              onAskAboutFile={kb.selectedFile ? () => openFileChat(kb.selectedFile!) : undefined}
+              onBuildWiki={hasVault ? handleBuildWiki : undefined}
+              onLintWiki={hasVault && kb.wikiInitialized ? handleLintWiki : undefined}
+            />
+          }
           showFileName={true}
           isEditMode={kb.isEditMode}
           onToggleEdit={kb.toggleEditMode}

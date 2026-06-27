@@ -1,15 +1,19 @@
 /**
  * Recursive file tree component for the Knowledge Base.
+ * Controlled expansion: the expanded set is owned by the parent (KbFilePanel)
+ * so the collapse/expand-all toggle can read and mutate it directly.
  * Supports: click-select, right-click context menu, inline rename.
  */
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useCallback, useRef, useEffect } from 'react';
 import type { TreeNode, IngestStatus } from '@molio/contracts';
 
 interface KbFileTreeProps {
   nodes: TreeNode[];
   selectedFile: string | null;
   searchQuery: string;
+  expandedPaths: Set<string>;
+  onTogglePath: (path: string) => void;
   onSelectFile: (path: string) => void;
   onAddToWiki?: (path: string) => void;
   onContextMenu?: (node: TreeNode, e: React.MouseEvent) => void;
@@ -19,21 +23,20 @@ interface KbFileTreeProps {
   onRenameComplete?: (oldPath: string, newName: string) => void;
   /** Called when the user cancels rename (ESC / blur with no value) */
   onRenameCancel?: () => void;
-  /** Incrementing counter; when it changes, collapse every directory. */
-  collapseAllCounter?: number;
 }
 
 export function KbFileTree({
   nodes,
   selectedFile,
   searchQuery,
+  expandedPaths,
+  onTogglePath,
   onSelectFile,
   onAddToWiki,
   onContextMenu,
   renamingPath,
   onRenameComplete,
   onRenameCancel,
-  collapseAllCounter,
 }: KbFileTreeProps) {
   if (nodes.length === 0) {
     return (
@@ -55,13 +58,14 @@ export function KbFileTree({
           node={node}
           selectedFile={selectedFile}
           searchQuery={searchQuery}
+          expandedPaths={expandedPaths}
+          onTogglePath={onTogglePath}
           onSelectFile={onSelectFile}
           onAddToWiki={onAddToWiki}
           onContextMenu={onContextMenu}
           renamingPath={renamingPath}
           onRenameComplete={onRenameComplete}
           onRenameCancel={onRenameCancel}
-          collapseAllCounter={collapseAllCounter}
         />
       ))}
     </div>
@@ -74,34 +78,30 @@ interface TreeNodeItemProps {
   node: TreeNode;
   selectedFile: string | null;
   searchQuery: string;
+  expandedPaths: Set<string>;
+  onTogglePath: (path: string) => void;
   onSelectFile: (path: string) => void;
   onAddToWiki?: (path: string) => void;
   onContextMenu?: (node: TreeNode, e: React.MouseEvent) => void;
   renamingPath?: string | null;
   onRenameComplete?: (oldPath: string, newName: string) => void;
   onRenameCancel?: () => void;
-  collapseAllCounter?: number;
 }
 
 function TreeNodeItem({
   node,
   selectedFile,
   searchQuery,
+  expandedPaths,
+  onTogglePath,
   onSelectFile,
   onAddToWiki,
   onContextMenu,
   renamingPath,
   onRenameComplete,
   onRenameCancel,
-  collapseAllCounter,
 }: TreeNodeItemProps) {
-  const [expanded, setExpanded] = useState(false);
-  const toggle = useCallback(() => setExpanded((e) => !e), []);
-
-  useEffect(() => {
-    if (collapseAllCounter === undefined) return;
-    setExpanded(false);
-  }, [collapseAllCounter]);
+  const expanded = expandedPaths.has(node.path);
 
   // Don't show "+" for items inside the wiki/ directory
   const isInsideWiki = node.path.startsWith('wiki/') || node.path === 'wiki';
@@ -125,7 +125,7 @@ function TreeNodeItem({
       <div className="kb-tree-group">
         <div
           className="kb-tree-group-label"
-          onClick={toggle}
+          onClick={() => onTogglePath(node.path)}
           onContextMenu={handleContextMenu}
         >
           <span className={`kb-tree-chevron ${expanded ? '' : 'collapsed'}`}>▾</span>
@@ -159,13 +159,14 @@ function TreeNodeItem({
               node={child}
               selectedFile={selectedFile}
               searchQuery={searchQuery}
+              expandedPaths={expandedPaths}
+              onTogglePath={onTogglePath}
               onSelectFile={onSelectFile}
               onAddToWiki={onAddToWiki}
               onContextMenu={onContextMenu}
               renamingPath={renamingPath}
               onRenameComplete={onRenameComplete}
               onRenameCancel={onRenameCancel}
-              collapseAllCounter={collapseAllCounter}
             />
           ))}
         </div>

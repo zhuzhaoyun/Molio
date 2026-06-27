@@ -246,14 +246,15 @@
 }
 
 /* ══════════ Column 3: Main Content ══════════ */
-.kb-main-topbar {
+/* Vertical hairline between file-action buttons and the AI / view actions
+   (Q&A, search, `···`) in the KB header. */
+.kb-header-actions-divider {
+  width: 1px;
+  height: 16px;
+  background: var(--border);
+  margin: 0 4px;
   flex-shrink: 0;
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  padding: 4px 12px;
-  border-bottom: 1px solid var(--border);
-  min-height: 32px;
+  align-self: center;
 }
 
 .kb-main {

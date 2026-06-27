@@ -19,8 +19,8 @@ test.describe('KB Outline Panel', () => {
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
-    await page.locator('[data-testid="kb-more-menu-btn"]').click();
-    await page.locator('[data-testid="more-item-outline"]').click();
+    // Outline is now a direct toolbar button (not behind a menu)
+    await page.locator('[data-testid="kb-btn-outline"]').click();
 
     const panel = page.locator('[data-testid="kb-outline-panel"]');
     await expect(panel).toBeVisible();

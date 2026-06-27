@@ -3,19 +3,25 @@
   flex-shrink: 0;
 }
 
+/* Match the toolbar's ghost icon buttons (kb-btn-ghost sizing) so the `···`
+   sits in line with search / Q&A in the header actions. */
 .kb-more-menu-btn {
-  background: none;
-  border: 1px solid var(--border);
+  background: transparent;
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
-  padding: 2px 10px;
-  font-size: 16px;
-  letter-spacing: 2px;
+  padding: 2px 6px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
   color: var(--text-muted);
   cursor: pointer;
-  line-height: 1.2;
   font-family: inherit;
 }
-.kb-more-menu-btn:hover { color: var(--text); background: var(--bg-subtle); }
+.kb-more-menu-btn:hover {
+  color: var(--text);
+  background: var(--bg-subtle);
+  border-color: var(--border);
+}
 
 .kb-more-menu-dropdown {
   position: absolute;

@@ -13,13 +13,13 @@ test.describe('KB Full-text Search', () => {
   });
   test.afterAll(async () => { if (vault) await cleanupTempVault(vault); });
 
-  test('search via menu shows matching file and opens it', async ({ page }) => {
+  test('search button shows matching file and opens it', async ({ page }) => {
     // 先打开非匹配文件 b.md，再搜索匹配 a.md，证明点击真的会切换文件
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=b.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
-    await page.locator('[data-testid="kb-more-menu-btn"]').click();
-    await page.locator('[data-testid="more-item-search"]').click();
+    // Search is a direct toolbar button now (not buried in the `···` menu)
+    await page.locator('[data-testid="kb-btn-search"]').click();
 
     const panel = page.locator('[data-testid="kb-search-panel"]');
     await expect(panel).toBeVisible();

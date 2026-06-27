@@ -1,9 +1,11 @@
 /**
  * Left file panel — toolbar, search, file tree, vault bar.
+ * Owns the tree's expansion state so the collapse/expand-all toggle can read
+ * and mutate it directly (no round-trip through the page).
  */
 
 import type { ReactNode } from 'react';
-import { useMemo } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import type { TreeNode } from '@molio/contracts';
 import { KbFileTree } from './KbFileTree';
 
@@ -19,8 +21,6 @@ interface KbFilePanelProps {
   onNewFolder: (parentPath?: string) => void;
   onVaultClick: () => void;
   onAddToWiki?: (path: string) => void;
-  onBuildWiki?: () => void;
-  onLintWiki?: () => void;
   /** Context menu handler — fired on right-click of any tree node */
   onContextMenu?: (node: TreeNode, e: React.MouseEvent) => void;
   /** Path of node being renamed (null = none) */
@@ -29,8 +29,6 @@ interface KbFilePanelProps {
   onRenameComplete?: (oldPath: string, newName: string) => void;
   /** Cancel rename */
   onRenameCancel?: () => void;
-  /** Incrementing counter; when it changes, collapse every directory in the tree. */
-  collapseAllCounter?: number;
   children?: ReactNode;
 }
 
@@ -46,15 +44,31 @@ export function KbFilePanel({
   onNewFolder,
   onVaultClick,
   onAddToWiki,
-  onBuildWiki,
-  onLintWiki,
   onContextMenu,
   renamingPath,
   onRenameComplete,
   onRenameCancel,
-  collapseAllCounter,
   children,
 }: KbFilePanelProps) {
+  // Expansion state is owned here so the toggle button can read it directly.
+  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
+  const anyExpanded = expandedPaths.size > 0;
+
+  const togglePath = useCallback((path: string) => {
+    setExpandedPaths((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }, []);
+
+  const collapseAll = useCallback(() => setExpandedPaths(new Set()), []);
+  const expandAll = useCallback(
+    () => setExpandedPaths(new Set(collectDirPaths(tree))),
+    [tree],
+  );
+
   // Ingest status counts for the vault stats bar. Only shown once the vault
   // has version tracking (any node carries ingestStatus). wiki/ subtree is
   // excluded — those are wiki products, not ingest sources.
@@ -85,23 +99,27 @@ export function KbFilePanel({
           </svg>
         </button>
         <div style={{ flex: 1 }} />
-        {onBuildWiki && (
-          <button type="button" title="构建 Wiki" onClick={onBuildWiki} className="kb-toolbar-btn-accent">
+        {/* Collapse-all / Expand-all toggle — reflects actual tree state */}
+        <button
+          type="button"
+          title={anyExpanded ? '折叠全部' : '展开全部'}
+          onClick={anyExpanded ? collapseAll : expandAll}
+          data-testid="kb-btn-collapse-all"
+        >
+          {anyExpanded ? (
+            // chevrons-up (collapse)
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+              <polyline points="6 13 12 7 18 13" />
+              <polyline points="6 19 12 13 18 19" />
             </svg>
-          </button>
-        )}
-        {onLintWiki && (
-          <button type="button" title="Wiki 健康检查" onClick={onLintWiki}>
+          ) : (
+            // chevrons-down (expand)
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="11" cy="11" r="8" />
-              <line x1="21" y1="21" x2="16.65" y2="16.65" />
-              <line x1="11" y1="8" x2="11" y2="11" />
-              <line x1="11" y1="11" x2="14" y2="11" />
+              <polyline points="6 7 12 13 18 7" />
+              <polyline points="6 13 12 19 18 13" />
             </svg>
-          </button>
-        )}
+          )}
+        </button>
       </div>
 
       {/* Search */}
@@ -131,13 +149,14 @@ export function KbFilePanel({
           nodes={tree}
           selectedFile={selectedFile}
           searchQuery={searchQuery}
+          expandedPaths={expandedPaths}
+          onTogglePath={togglePath}
           onSelectFile={onSelectFile}
           onAddToWiki={onAddToWiki}
           onContextMenu={onContextMenu}
           renamingPath={renamingPath}
           onRenameComplete={onRenameComplete}
           onRenameCancel={onRenameCancel}
-          collapseAllCounter={collapseAllCounter}
         />
       </div>
 
@@ -158,6 +177,21 @@ export function KbFilePanel({
       {children}
     </aside>
   );
+}
+
+/** Collect every directory path in the tree (for expand-all). */
+function collectDirPaths(nodes: TreeNode[]): string[] {
+  const paths: string[] = [];
+  const walk = (list: TreeNode[]) => {
+    for (const n of list) {
+      if (n.type === 'directory') {
+        paths.push(n.path);
+        if (n.children) walk(n.children);
+      }
+    }
+  };
+  walk(nodes);
+  return paths;
 }
 
 /**
