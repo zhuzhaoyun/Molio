@@ -7,6 +7,15 @@ export interface RuntimeModelOption {
 
 export interface RuntimeBuildOptions {
   model?: string | null;
+  /**
+   * Extra system-prompt text appended to the agent's built-in system prompt
+   * (e.g. a wiki/vault role frame). Passed to the CLI verbatim — for Claude
+   * Code this becomes `--append-system-prompt <text>`. Keeping the wiki frame
+   * in the system prompt (instead of prepending it to the user message) lets
+   * the agent use its native retrieval judgment on the user's actual query
+   * instead of being role-locked into a prescribed retrieval path.
+   */
+  appendSystemPrompt?: string;
 }
 
 export interface RuntimeContext {

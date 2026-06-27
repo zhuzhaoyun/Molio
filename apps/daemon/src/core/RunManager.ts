@@ -43,6 +43,13 @@ export interface CreateRunOptions {
   history?: ChatMessage[];
   /** Called when a turn completes with accumulated text content. */
   onTurnComplete?: (text: string, runId: string) => void;
+  /**
+   * System-prompt text appended to the agent's built-in system prompt at
+   * spawn time (e.g. the wiki/vault role frame). Only consumed on a fresh
+   * spawn — multi-turn follow-ups reuse the same process, which already
+   * carries this from the first turn.
+   */
+  appendSystemPrompt?: string;
 }
 
 export class RunManager {
@@ -218,7 +225,7 @@ export class RunManager {
 
     const args = def.buildArgs(
       opts.message,
-      { model: opts.model },
+      { model: opts.model, appendSystemPrompt: opts.appendSystemPrompt },
       { cwd: opts.cwd },
     );
 

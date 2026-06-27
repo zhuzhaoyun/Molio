@@ -56,10 +56,14 @@ export function runsRoutes(
       });
 
       // If cwd matches a vault, inject wiki query prompt so the agent
-      // operates as a wiki knowledge assistant for that vault.
-      // Only inject on the FIRST turn (no history) — subsequent turns
-      // already carry the prompt via conversation transcript.
+      // operates as a wiki knowledge assistant for that vault. The wiki frame
+      // is passed as the agent's SYSTEM prompt (via --append-system-prompt),
+      // not prepended to the user message — this lets the agent use its native
+      // retrieval judgment on the actual query instead of being role-locked
+      // into a prescribed path. Multi-turn follow-ups reuse the live process,
+      // which already carries this from the first turn.
       let message = body.message;
+      let appendSystemPrompt: string | undefined;
 
       // Handle explicit wiki operations — select prompt and build message
       if (body.wikiOperation) {
@@ -99,21 +103,27 @@ export function runsRoutes(
             addKbHistory(db, vault.id, 'lint', 'Wiki 健康检查已启动');
             break;
           case 'query':
-            message = `${prompt}\n\n---\n\n用户问题：${body.message}`;
+            // Wiki Q&A frame lives in the system prompt; the user's question
+            // is the clean user message.
+            message = body.message;
+            appendSystemPrompt = prompt;
             break;
           case 'save':
             message = `${prompt}\n\n---\n\n${body.message || '请回顾当前对话，将值得归档的内容保存为 wiki 页面。'}`;
             addKbHistory(db, vault.id, 'edit', 'Wiki 归档已启动');
             break;
         }
-      } else if (body.cwd && (!body.history || body.history.length === 0)) {
+      } else if (body.cwd) {
         const vault = getVaultByPath(db, body.cwd);
         if (vault) {
-          // First message in a vault-context conversation: prepend the wiki
-          // query prompt so the agent can explore the knowledge base. File
-          // context (when the user @-mentions a file) is carried inline in
-          // the message as a markdown link — the agent reads it itself.
-          message = `${WIKI_QUERY_PROMPT}\n\n---\n\n用户问题：${message}`;
+          // Vault-context conversation: pass the wiki query frame as the
+          // system prompt. Applied on every vault createRun (not just the
+          // first turn) because the frame no longer rides the conversation
+          // transcript — a re-spawned run would otherwise lose the wiki role.
+          // The system prompt is cached, so this is cheaper than the old
+          // transcript-carry approach. File context (@-mentions) is carried
+          // inline in the message as a markdown link — the agent reads it.
+          appendSystemPrompt = WIKI_QUERY_PROMPT;
         }
       }
 
@@ -123,6 +133,7 @@ export function runsRoutes(
       const runId = await runManager.createRun({
         agentId: body.agentId,
         message,
+        appendSystemPrompt,
         model: body.model,
         cwd: body.cwd,
         conversationId: conversation.id,

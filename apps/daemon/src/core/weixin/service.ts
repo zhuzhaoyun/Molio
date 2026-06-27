@@ -91,19 +91,23 @@ export function buildWeixinRunMessage(
   text: string,
   cwd: string | undefined,
   isFirstTurn: boolean,
-): string {
+): { message: string; appendSystemPrompt?: string } {
   const message = buildMolioPrompt(text);
-  // The wiki intake frame is only injected on the first turn of a fresh
-  // process. Follow-ups reuse the existing multi-turn session, which already
-  // carries the frame from turn 1 — re-injecting would pollute context and
-  // waste tokens.
-  if (!isFirstTurn) return message;
-  if (!db || !cwd) return message;
+  // The wiki intake frame is injected as the agent's SYSTEM prompt (via
+  // --append-system-prompt) only on the first turn of a fresh process.
+  // Follow-ups reuse the existing multi-turn session, which already carries
+  // the frame from turn 1. Keeping the frame in the system prompt instead of
+  // prepending it to the user message lets the agent use its native retrieval
+  // judgment on the user's actual query — verified to unblock "总结今天的工作"
+  // (git log + find -newermt) while still steering intake (wechat-article-
+  // extractor etc.).
+  if (!isFirstTurn) return { message };
+  if (!db || !cwd) return { message };
 
   const vault = getVaultByPath(db, cwd);
-  if (!vault) return message;
+  if (!vault) return { message };
 
-  return `${WIKI_WEIXIN_PROMPT}\n\n---\n\n用户消息：${message}`;
+  return { message, appendSystemPrompt: WIKI_WEIXIN_PROMPT };
 }
 
 /**
@@ -131,6 +135,12 @@ export interface QueuedMessage {
   runMessage: string;
   /** Raw user text, persisted as the user message when dispatched. */
   rawUserText: string;
+  /**
+   * Wiki/vault role frame passed as the agent's system prompt (via
+   * --append-system-prompt) on a fresh spawn. Undefined on follow-ups —
+   * the reused process already carries it from turn 1.
+   */
+  appendSystemPrompt?: string;
 }
 
 export class WeixinService {
@@ -539,7 +549,12 @@ export class WeixinService {
       // The wiki intake frame is injected only on fresh spawns; follow-ups
       // reuse the existing session which already carries it.
       const isFreshSpawn = !this.canReuseRunFor(message.fromUserId);
-      const runMessage = buildWeixinRunMessage(this.db, message.text, cwd, isFreshSpawn);
+      const { message: runMessage, appendSystemPrompt } = buildWeixinRunMessage(
+        this.db,
+        message.text,
+        cwd,
+        isFreshSpawn,
+      );
 
       await this.dispatchMessage({
         fromUserId: message.fromUserId,
@@ -548,6 +563,7 @@ export class WeixinService {
         cwd,
         runMessage,
         rawUserText: message.text,
+        appendSystemPrompt,
         history,
       });
     } catch (err) {
@@ -572,13 +588,13 @@ export class WeixinService {
    * so DB position ordering matches the real conversation order.
    */
   private async dispatchMessage(msg: QueuedMessage & { history: ChatMessage[] }): Promise<void> {
-    const { fromUserId, conversationId, agentId, cwd, runMessage, rawUserText, history } = msg;
+    const { fromUserId, conversationId, agentId, cwd, runMessage, rawUserText, appendSystemPrompt, history } = msg;
     const state = this.userRuns.get(fromUserId);
 
     if (state && this.runManager.canAcceptMessage(state.runId)) {
       if (state.busy) {
         // A turn is in flight — buffer and drain on its turn_end.
-        state.queue.push({ fromUserId, conversationId, agentId, cwd, runMessage, rawUserText });
+        state.queue.push({ fromUserId, conversationId, agentId, cwd, runMessage, rawUserText, appendSystemPrompt });
         return;
       }
       state.busy = true;
@@ -586,6 +602,8 @@ export class WeixinService {
       // ordering stays correct (mirrors the desktop POST /:id/messages path).
       this.runManager.flushPendingReply(state.runId);
       this.conversations.appendUserMessage(conversationId, rawUserText);
+      // appendSystemPrompt is intentionally NOT passed here: sendMessage reuses
+      // the live process, which already carries the system prompt from spawn.
       this.runManager.sendMessage(state.runId, runMessage);
       this.status.activeRunId = state.runId;
       await this.sendText(fromUserId, 'Molio 正在处理...');
@@ -603,6 +621,7 @@ export class WeixinService {
       agentId,
       cwd,
       message: runMessage,
+      appendSystemPrompt,
       conversationId,
       history,
     });
@@ -651,8 +670,6 @@ export class WeixinService {
     let reply = '';
     let settled = false;
     let unsubscribe: (() => void) | null = null;
-    /** tool_use events seen this turn — used to detect deliverable files. */
-    const writtenFiles: Array<{ name: string; input: unknown }> = [];
 
     const finish = async (text: string, opts?: { cancelRun?: boolean }) => {
       if (settled) return;
@@ -665,10 +682,12 @@ export class WeixinService {
       if (opts?.cancelRun) {
         this.runManager.cancelRun(runId);
       }
-      // Pull out <attach/> markers (and Write-tool files): the files are
-      // delivered as real WeChat attachments; the markers are stripped from
-      // `cleanText` so the phone never sees a local path.
-      const { items, text: cleanText } = extractOutboundMedia(writtenFiles, text, cwd);
+      // Pull out <attach/> markers: those files are delivered as real WeChat
+      // attachments; the markers are stripped from `cleanText` so the phone
+      // never sees a local path. Delivery is explicit-only — files the AI
+      // writes via Write/Edit are NOT auto-delivered (that would spam the
+      // user with every .md produced during ingestion).
+      const { items, text: cleanText } = extractOutboundMedia(text, cwd);
       this.conversations.appendAssistantMessage(conversationId, cleanText || text, { agentId, runId });
       if (cleanText) {
         await this.sendText(toUserId, cleanText);
@@ -686,10 +705,9 @@ export class WeixinService {
         return;
       }
 
-      if (event.type === 'tool_use') {
-        writtenFiles.push({ name: event.name, input: event.input });
-        return;
-      }
+      // tool_use events are intentionally not handled here — file delivery is
+      // explicit-only via <attach/> markers parsed from the reply text, so we
+      // don't need to track which files the AI wrote.
 
       if (event.type === 'error') {
         void finish(`Molio 处理失败：${event.message}`);

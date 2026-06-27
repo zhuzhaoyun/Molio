@@ -140,47 +140,43 @@ describe('WeixinService media reply path', () => {
     await (service as unknown as { handleRawMessage: (r: typeof raw) => Promise<void> }).handleRawMessage(raw);
   }
 
-  it('delivers an image the AI wrote via Write tool as an image message', async () => {
+  it('does NOT auto-deliver an image written via Write (explicit-only)', async () => {
     const imgPath = join(tempDir, 'chart.png');
     writeFileSync(imgPath, 'png-bytes');
 
     await deliverUserMessage('生成一张图');
 
-    // Simulate the agent stream: it wrote an image, then ended its turn.
+    // Agent wrote an image via Write and ended its turn — but emitted NO
+    // <attach/> marker. Delivery is explicit-only now: the image is NOT sent.
+    // (Previously any Write-tool file on the allowlist was auto-delivered,
+    // which spammed users with .md pages created during ingestion.)
     emit({ type: 'tool_use', id: 'tu-1', name: 'Write', input: { file_path: imgPath } });
     emit({ type: 'text_delta', delta: '已生成图片' });
     emit({ type: 'turn_end', stopReason: 'end_turn' });
 
-    // Let the async finish() chain settle.
     await new Promise((r) => setTimeout(r, 50));
 
-    // Text reply was sent.
-    assert.ok(sentTexts.some((t) => t.includes('已生成图片')), `expected reply text, got ${JSON.stringify(sentTexts)}`);
-    // Image was uploaded + delivered with the stored context token.
-    assert.equal(uploadedFiles.length, 1);
-    assert.equal(uploadedFiles[0]!.filePath, imgPath);
-    assert.equal(uploadedFiles[0]!.mediaType, 1); // IMAGE
-    assert.equal(sentImages.length, 1);
-    assert.equal(sentImages[0]!.toUserId, 'user-1@im.wechat');
-    assert.equal(sentImages[0]!.contextToken, 'ctx-token-1');
+    // Text reply still sent.
+    assert.ok(sentTexts.some((t) => t.includes('已生成图片')));
+    // No file uploaded or delivered — no <attach/> marker.
+    assert.equal(uploadedFiles.length, 0);
+    assert.equal(sentImages.length, 0);
   });
 
-  it('delivers a document (pdf) the AI wrote as a file attachment', async () => {
+  it('does NOT auto-deliver a pdf written via Write (explicit-only)', async () => {
     const pdfPath = join(tempDir, 'summary.pdf');
     writeFileSync(pdfPath, '%PDF-1.4 body');
 
     await deliverUserMessage('总结成 pdf');
 
+    // Agent wrote a pdf via Write with no <attach/> marker → not delivered.
     emit({ type: 'tool_use', id: 'tu-1', name: 'Write', input: { file_path: pdfPath } });
     emit({ type: 'turn_end', stopReason: 'end_turn' });
 
     await new Promise((r) => setTimeout(r, 50));
 
-    assert.equal(uploadedFiles.length, 1);
-    assert.equal(uploadedFiles[0]!.mediaType, 3); // FILE
-    assert.equal(sentFiles.length, 1);
-    assert.equal(sentFiles[0]!.fileName, 'summary.pdf');
-    assert.equal(sentFiles[0]!.contextToken, 'ctx-token-1');
+    assert.equal(uploadedFiles.length, 0);
+    assert.equal(sentFiles.length, 0);
   });
 
   it('does not send source files the AI wrote (not on deliverable allowlist)', async () => {
