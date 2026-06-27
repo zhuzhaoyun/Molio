@@ -13,6 +13,13 @@ interface KbFileTreeProps {
   selectedFile: string | null;
   searchQuery: string;
   expandedPaths: Set<string>;
+  /**
+   * Incremented by the parent to request the active file scroll itself into
+   * view (used by the "locate" button). The effect in TreeNodeItem depends on
+   * this token, so a change re-runs the scroll even if the file was already
+   * active.
+   */
+  revealToken?: number;
   onTogglePath: (path: string) => void;
   onSelectFile: (path: string) => void;
   onAddToWiki?: (path: string) => void;
@@ -30,6 +37,7 @@ export function KbFileTree({
   selectedFile,
   searchQuery,
   expandedPaths,
+  revealToken,
   onTogglePath,
   onSelectFile,
   onAddToWiki,
@@ -59,6 +67,7 @@ export function KbFileTree({
           selectedFile={selectedFile}
           searchQuery={searchQuery}
           expandedPaths={expandedPaths}
+          revealToken={revealToken}
           onTogglePath={onTogglePath}
           onSelectFile={onSelectFile}
           onAddToWiki={onAddToWiki}
@@ -79,6 +88,7 @@ interface TreeNodeItemProps {
   selectedFile: string | null;
   searchQuery: string;
   expandedPaths: Set<string>;
+  revealToken?: number;
   onTogglePath: (path: string) => void;
   onSelectFile: (path: string) => void;
   onAddToWiki?: (path: string) => void;
@@ -93,6 +103,7 @@ function TreeNodeItem({
   selectedFile,
   searchQuery,
   expandedPaths,
+  revealToken,
   onTogglePath,
   onSelectFile,
   onAddToWiki,
@@ -160,6 +171,7 @@ function TreeNodeItem({
               selectedFile={selectedFile}
               searchQuery={searchQuery}
               expandedPaths={expandedPaths}
+              revealToken={revealToken}
               onTogglePath={onTogglePath}
               onSelectFile={onSelectFile}
               onAddToWiki={onAddToWiki}
@@ -178,10 +190,14 @@ function TreeNodeItem({
   const isActive = selectedFile === node.path;
   const itemRef = useRef<HTMLDivElement>(null);
 
+  // Scroll into view when the file becomes active, or when the parent bumps
+  // revealToken (the "locate" button) — needed because locating a file that
+  // is *already* active but buried under collapsed ancestors wouldn't fire
+  // the isActive branch on its own.
   useEffect(() => {
     if (!isActive) return;
     itemRef.current?.scrollIntoView({ block: 'nearest' });
-  }, [isActive]);
+  }, [isActive, revealToken]);
 
   const handleFileContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();

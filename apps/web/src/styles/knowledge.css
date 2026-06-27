@@ -34,7 +34,10 @@
   gap: 4px;
 }
 
-.kb-file-toolbar button {
+/* Toolbar icon buttons. `:not(.kb-sort-item)` keeps the 28×28 sizing off the
+   sort dropdown's menu items, which live inside the toolbar but need their
+   own full-width layout (see .kb-sort-item). */
+.kb-file-toolbar button:not(.kb-sort-item) {
   width: 28px;
   height: 28px;
   padding: 0;
@@ -49,18 +52,67 @@
   transition: all 120ms ease;
 }
 
-.kb-file-toolbar button svg {
+.kb-file-toolbar button:not(.kb-sort-item) svg {
   width: 16px;
   height: 16px;
 }
 
-.kb-file-toolbar button:hover {
+.kb-file-toolbar button:not(.kb-sort-item):hover {
   background: var(--bg-subtle);
   color: var(--text);
+}
+.kb-file-toolbar button:disabled:not(.kb-sort-item) {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+.kb-file-toolbar button:disabled:not(.kb-sort-item):hover {
+  background: transparent;
+  color: var(--text-muted);
 }
 
 .kb-file-toolbar .kb-toolbar-btn-accent {
   color: var(--accent);
+}
+
+/* Sort dropdown (left tree toolbar) — same ghost-button sizing as the toolbar */
+.kb-sort-menu {
+  position: relative;
+  flex-shrink: 0;
+}
+.kb-sort-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  min-width: 168px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  padding: 4px 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+}
+.kb-sort-item {
+  background: none;
+  border: none;
+  text-align: left;
+  padding: 7px 12px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.kb-sort-item:hover { background: var(--bg-subtle); }
+.kb-sort-item.is-active { color: var(--accent); }
+.kb-sort-check {
+  width: 14px;
+  display: inline-flex;
+  justify-content: center;
+  font-size: 12px;
 }
 
 /* Vault bar at bottom */

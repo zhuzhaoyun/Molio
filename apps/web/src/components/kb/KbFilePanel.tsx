@@ -5,9 +5,14 @@
  */
 
 import type { ReactNode } from 'react';
-import { useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import type { TreeNode } from '@molio/contracts';
+import { useI18n } from '../../i18n';
 import { KbFileTree } from './KbFileTree';
+
+type SortBy = 'name' | 'modified' | 'size';
+
+const SORT_OPTIONS: SortBy[] = ['name', 'modified', 'size'];
 
 interface KbFilePanelProps {
   width: number;
@@ -50,9 +55,22 @@ export function KbFilePanel({
   onRenameCancel,
   children,
 }: KbFilePanelProps) {
+  const { t } = useI18n();
   // Expansion state is owned here so the toggle button can read it directly.
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
   const anyExpanded = expandedPaths.size > 0;
+
+  // Sort order applied to the whole tree (directories always first, sorted by
+  // name; files sorted by the chosen key). Persisted across re-renders.
+  const [sortBy, setSortBy] = useState<SortBy>('name');
+  const [sortMenuOpen, setSortMenuOpen] = useState(false);
+  const sortRef = useRef<HTMLDivElement>(null);
+
+  // Bumped each time the user hits "locate" — KbFileTree scrolls the active
+  // file into view when this token changes (see TreeNodeItem effect).
+  const [revealToken, setRevealToken] = useState(0);
+
+  const sortedTree = useMemo(() => sortTree(tree, sortBy), [tree, sortBy]);
 
   const togglePath = useCallback((path: string) => {
     setExpandedPaths((prev) => {
@@ -65,15 +83,52 @@ export function KbFilePanel({
 
   const collapseAll = useCallback(() => setExpandedPaths(new Set()), []);
   const expandAll = useCallback(
-    () => setExpandedPaths(new Set(collectDirPaths(tree))),
-    [tree],
+    () => setExpandedPaths(new Set(collectDirPaths(sortedTree))),
+    [sortedTree],
   );
+
+  // Locate the currently selected file in the tree: expand every ancestor
+  // directory so the file item is rendered, then bump the reveal token so the
+  // item scrolls itself into view.
+  const locateFile = useCallback(() => {
+    if (!selectedFile) return;
+    setExpandedPaths((prev) => {
+      const next = new Set(prev);
+      const parts = selectedFile.split('/');
+      for (let i = 1; i < parts.length; i++) {
+        next.add(parts.slice(0, i).join('/'));
+      }
+      return next;
+    });
+    setRevealToken((n) => n + 1);
+  }, [selectedFile]);
+
+  // Close the sort menu on outside click / ESC (same pattern as the launcher)
+  useEffect(() => {
+    if (!sortMenuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (sortRef.current && !sortRef.current.contains(e.target as Node)) setSortMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setSortMenuOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [sortMenuOpen]);
 
   // Ingest status counts for the vault stats bar. Only shown once the vault
   // has version tracking (any node carries ingestStatus). wiki/ subtree is
   // excluded — those are wiki products, not ingest sources.
   const stats = useMemo(() => countIngestStatus(tree), [tree]);
   const showStats = stats.pending + stats.clean + stats.modified > 0;
+
+  const sortLabel: Record<SortBy, string> = {
+    name: t('kb.sortByName'),
+    modified: t('kb.sortByModified'),
+    size: t('kb.sortBySize'),
+  };
 
   return (
     <aside className="kb-file-panel" style={{ width }}>
@@ -98,7 +153,62 @@ export function KbFilePanel({
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
           </svg>
         </button>
+        <button
+          type="button"
+          title={selectedFile ? t('kb.locateFile') : t('kb.locateFileNeedFile')}
+          onClick={locateFile}
+          disabled={!selectedFile}
+          data-testid="kb-btn-locate"
+        >
+          {/* crosshair — reveal current file in tree */}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="7" />
+            <line x1="12" y1="2" x2="12" y2="5" />
+            <line x1="12" y1="19" x2="12" y2="22" />
+            <line x1="2" y1="12" x2="5" y2="12" />
+            <line x1="19" y1="12" x2="22" y2="12" />
+            <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none" />
+          </svg>
+        </button>
         <div style={{ flex: 1 }} />
+        {/* Sort order dropdown — directories always first; files by chosen key */}
+        <div className="kb-sort-menu" ref={sortRef}>
+          <button
+            type="button"
+            title={`${t('kb.sortLabel')}: ${sortLabel[sortBy]}`}
+            onClick={() => setSortMenuOpen((o) => !o)}
+            data-testid="kb-btn-sort"
+            aria-haspopup="menu"
+            aria-expanded={sortMenuOpen}
+          >
+            {/* arrow-down-wide-narrow — sort */}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M11 5h10" />
+              <path d="M11 9h7" />
+              <path d="M11 13h4" />
+              <path d="m3 17 3 3 3-3" />
+              <path d="M6 18V4" />
+            </svg>
+          </button>
+          {sortMenuOpen && (
+            <div className="kb-sort-dropdown" data-testid="kb-sort-dropdown" role="menu">
+              {SORT_OPTIONS.map((opt) => (
+                <button
+                  key={opt}
+                  type="button"
+                  className={`kb-sort-item ${opt === sortBy ? 'is-active' : ''}`}
+                  role="menuitemradio"
+                  aria-checked={opt === sortBy}
+                  data-testid={`kb-sort-${opt}`}
+                  onClick={() => { setSortBy(opt); setSortMenuOpen(false); }}
+                >
+                  <span className="kb-sort-check">{opt === sortBy ? '✓' : ''}</span>
+                  {sortLabel[opt]}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         {/* Collapse-all / Expand-all toggle — reflects actual tree state */}
         <button
           type="button"
@@ -146,10 +256,11 @@ export function KbFilePanel({
       {/* File tree */}
       <div className="kb-tree-scroll">
         <KbFileTree
-          nodes={tree}
+          nodes={sortedTree}
           selectedFile={selectedFile}
           searchQuery={searchQuery}
           expandedPaths={expandedPaths}
+          revealToken={revealToken}
           onTogglePath={togglePath}
           onSelectFile={onSelectFile}
           onAddToWiki={onAddToWiki}
@@ -192,6 +303,33 @@ function collectDirPaths(nodes: TreeNode[]): string[] {
   };
   walk(nodes);
   return paths;
+}
+
+/**
+ * Return a sorted copy of the tree. Directories always come first (sorted by
+ * name); files are sorted by the chosen key. For `modified`/`size`, missing
+ * values sort to the bottom; name sorts ascending, the rest descending
+ * (newest / largest first). Does not mutate the input.
+ */
+function sortTree(nodes: TreeNode[], sortBy: SortBy): TreeNode[] {
+  const sorted = [...nodes].sort((a, b) => {
+    if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
+    if (a.type === 'directory') return a.name.localeCompare(b.name, undefined, { numeric: true });
+    if (sortBy === 'modified') {
+      const av = a.modifiedAt ?? 0;
+      const bv = b.modifiedAt ?? 0;
+      return bv - av; // newest first
+    }
+    if (sortBy === 'size') {
+      const av = a.size ?? 0;
+      const bv = b.size ?? 0;
+      return bv - av; // largest first
+    }
+    return a.name.localeCompare(b.name, undefined, { numeric: true });
+  });
+  return sorted.map((n) =>
+    n.type === 'directory' && n.children ? { ...n, children: sortTree(n.children, sortBy) } : n,
+  );
 }
 
 /**
