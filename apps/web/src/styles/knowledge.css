@@ -105,11 +105,16 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  white-space: nowrap; /* keep label on one line so item height stays stable */
+  line-height: 1.2;
 }
 .kb-sort-item:hover { background: var(--bg-subtle); }
 .kb-sort-item.is-active { color: var(--accent); }
 .kb-sort-check {
   width: 14px;
+  flex-shrink: 0;
   display: inline-flex;
   justify-content: center;
   font-size: 12px;
