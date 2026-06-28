@@ -36,7 +36,8 @@ describe('builtin wiki operation skills', () => {
         assert.ok(fs.existsSync(skillMdPath), `missing installed ${skillMdPath}`);
         const content = fs.readFileSync(skillMdPath, 'utf8');
 
-        const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+        // Tolerate CRLF (Windows CI checks out with core.autocrlf=true).
+        const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
         assert.ok(fmMatch, 'SKILL.md should start with YAML frontmatter');
         const frontmatter = fmMatch![1]!;
 
