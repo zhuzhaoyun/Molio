@@ -24,7 +24,8 @@ src/
     db.ts              SQLite 数据库初始化
     transcript.ts      多轮对话 transcript 构建
     knowledge.ts       知识库管理（vault、文件树）
-    wiki-prompts.ts    Wiki 对话提示词模板
+    wiki-prompts.ts    Wiki 系统提示词模板（QUERY/WEIXIN always-on 角色帧，物化成 sysprompt 文件）
+    tools/skills/      Builtin Claude Code skills（wechat-article-extractor, docx/pdf/pptx/xlsx, wiki-build/ingest/lint/save）—— wiki 操作走 skills，agent 按动词 on-demand 调用，不再有 wikiOperation prepend
     runtimes/
       registry.ts      Agent 定义注册表 (claude, codex, gemini, qwen)
       claude.ts        Claude Code runtime 定义

@@ -60,6 +60,15 @@ describe('ensureWikiSysPromptFiles', () => {
     // not WebFetch (blocked by enterprise security policy).
     assert.match(sys, /wechat-article-extractor/);
     assert.match(sys, /禁止用 WebFetch/);
+    // The frame advertises the wiki operation skills so the agent invokes them
+    // on demand for 入库/构建/健康检查/归档 instead of improvising.
+    assert.match(sys, /wiki-ingest/);
+    assert.match(sys, /wiki-build/);
+    assert.match(sys, /wiki-lint/);
+    assert.match(sys, /wiki-save/);
+    // The ingest procedure itself lives in the wiki-ingest skill now, not the
+    // weixin frame — the "入库与确认" procedure section must be gone.
+    assert.doesNotMatch(sys, /入库与确认/);
   });
 
   it('exports fixed paths under ~/.molio/sysprompt/', () => {

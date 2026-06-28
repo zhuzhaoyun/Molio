@@ -4,15 +4,8 @@ import type Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
 import type { RunManager } from '../core/RunManager.js';
 import type { ConversationService } from '../core/conversations/service.js';
-import { getVaultByPath, addKbHistory } from '../core/db.js';
-import {
-  WIKI_QUERY_PROMPT,
-  WIKI_BUILD_PROMPT,
-  WIKI_INGEST_PROMPT,
-  WIKI_LINT_PROMPT,
-  WIKI_SAVE_PROMPT,
-  QUERY_SYS_PROMPT_FILE,
-} from '../core/wiki-prompts.js';
+import { getVaultByPath } from '../core/db.js';
+import { QUERY_SYS_PROMPT_FILE } from '../core/wiki-prompts.js';
 
 export function runsRoutes(
   db: Database.Database,
@@ -32,13 +25,9 @@ export function runsRoutes(
     }
 
     try {
-      // Build conversation title — for file-specific Q&A, prefix with filename.
-      // Guard against an empty filePath: split('/').pop() returns '' (not
-      // undefined), so ?? wouldn't catch it — use a truthiness check.
-      const fileBase = body.wikiExtra?.filePath ? body.wikiExtra.filePath.split('/').pop() : undefined;
-      const convTitle = fileBase
-        ? `📄 ${fileBase}：${body.message.slice(0, 80)}`
-        : body.message.slice(0, 80);
+      // Build conversation title from the message. (File-specific ingest
+      // messages embed the file path in the text, so it surfaces in the title.)
+      const convTitle = body.message.slice(0, 80);
       const conversation = body.conversationId
         ? conversations.getConversation(body.conversationId)
         : conversations.createDesktopConversation(convTitle);
@@ -56,74 +45,24 @@ export function runsRoutes(
         agentId: body.agentId,
       });
 
-      // If cwd matches a vault, inject wiki query prompt so the agent
-      // operates as a wiki knowledge assistant for that vault. The wiki frame
-      // is passed as the agent's SYSTEM prompt (via --append-system-prompt),
-      // not prepended to the user message — this lets the agent use its native
-      // retrieval judgment on the actual query instead of being role-locked
-      // into a prescribed path. Multi-turn follow-ups reuse the live process,
-      // which already carries this from the first turn.
+      // If cwd matches a vault, attach the wiki query frame as the agent's
+      // SYSTEM prompt (via --append-system-prompt-file). The frame is always-on
+      // background (retrieval-safe per the A/B/C probe); the agent uses its
+      // native retrieval on the actual query and invokes wiki-* skills
+      // (build/ingest/lint/save) on demand when the user asks for an operation
+      // — so chat-typed verbs and UI buttons hit the same procedure.
       let message = body.message;
       let appendSystemPromptFile: string | undefined;
 
-      // Handle explicit wiki operations — select prompt and build message
-      if (body.wikiOperation) {
-        const vault = body.cwd ? getVaultByPath(db, body.cwd) : null;
-        if (!vault) {
-          return c.json({
-            error: { code: 'BAD_REQUEST', message: 'cwd must point to a vault for wiki operations' },
-          }, 400);
-        }
-
-        const wikiPrompts: Record<string, string> = {
-          build: WIKI_BUILD_PROMPT,
-          ingest: WIKI_INGEST_PROMPT,
-          lint: WIKI_LINT_PROMPT,
-          query: WIKI_QUERY_PROMPT,
-          save: WIKI_SAVE_PROMPT,
-        };
-
-        const prompt = wikiPrompts[body.wikiOperation];
-        if (!prompt) {
-          return c.json({
-            error: { code: 'BAD_REQUEST', message: `Unknown wiki operation: ${body.wikiOperation}` },
-          }, 400);
-        }
-
-        switch (body.wikiOperation) {
-          case 'build':
-            message = `${prompt}\n\n---\n\n请现在开始构建 Wiki。扫描 vault 中所有源文件并创建 wiki。`;
-            addKbHistory(db, vault.id, 'ingest', 'Wiki 构建已启动');
-            break;
-          case 'ingest':
-            message = `${prompt}\n\n---\n\n请将以下文件导入 wiki：${body.wikiExtra?.filePath ?? body.message}`;
-            addKbHistory(db, vault.id, 'ingest', `已导入 "${body.wikiExtra?.filePath ?? ''}"`);
-            break;
-          case 'lint':
-            message = `${prompt}\n\n---\n\n请现在对 wiki 进行健康检查。`;
-            addKbHistory(db, vault.id, 'lint', 'Wiki 健康检查已启动');
-            break;
-          case 'query':
-            // Wiki Q&A frame lives in the system prompt (file); the user's
-            // question is the clean user message.
-            message = body.message;
-            appendSystemPromptFile = QUERY_SYS_PROMPT_FILE;
-            break;
-          case 'save':
-            message = `${prompt}\n\n---\n\n${body.message || '请回顾当前对话，将值得归档的内容保存为 wiki 页面。'}`;
-            addKbHistory(db, vault.id, 'edit', 'Wiki 归档已启动');
-            break;
-        }
-      } else if (body.cwd) {
+      if (body.cwd) {
         const vault = getVaultByPath(db, body.cwd);
         if (vault) {
-          // Vault-context conversation: pass the wiki query frame (file) as
-          // the system prompt. Applied on every vault createRun (not just the
-          // first turn) because the frame no longer rides the conversation
-          // transcript — a re-spawned run would otherwise lose the wiki role.
-          // The system prompt is cached, so this is cheaper than the old
-          // transcript-carry approach. File context (@-mentions) is carried
-          // inline in the message as a markdown link — the agent reads it.
+          // Applied on every vault createRun (not just the first turn) because
+          // the frame no longer rides the conversation transcript — a re-spawned
+          // run would otherwise lose the wiki role. The system prompt is cached,
+          // so this is cheaper than the old transcript-carry approach. File
+          // context (@-mentions) is carried inline in the message — the agent
+          // reads it.
           appendSystemPromptFile = QUERY_SYS_PROMPT_FILE;
         }
       }

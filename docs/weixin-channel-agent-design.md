@@ -55,7 +55,8 @@ Claude Code 原生支持 multiTurn（`stdin` 保持打开，跨轮复用同一 s
 - `dispatchMessage` 的 fresh-spawn 分支把 `appendSystemPrompt` 传给 `createRun`；reuse 分支（sendMessage）不传（进程已带）。
 - `RunManager.createRun` 把 `opts.appendSystemPrompt`（文本）经 `getAppendSystemPromptFile` 写成临时文件，把**文件路径**传给 `buildArgs`。
 - `claude.ts` `buildArgs` push `--append-system-prompt-file <path>`。
-- 桌面端 `routes/runs.ts` 同治：`query` 操作 + vault 首轮分支改设 `appendSystemPrompt = WIKI_QUERY_PROMPT`（不再 prepend 到 message）；`build/ingest/lint/save` 任务指令保持原样（角色锁定是对的）。
+- 桌面端 `routes/runs.ts` 同治：vault 分支挂 `appendSystemPromptFile = QUERY_SYS_PROMPT_FILE`（不再 prepend 到 message）。`query`/`weixin` 是 always-on 角色帧，留 system prompt（A/B/C 探针验证过：放 system 当背景不压原生检索，做成 on-demand skill 会被重新加载成「生效规定路径」而 role-lock 普通查询）。
+- `build/ingest/lint/save` **抽成 Claude Code skills**（`src/tools/skills/wiki-*/SKILL.md`，`description` 列 `Triggers on:` 关键词），由 `installBuiltinSkills` 装进 vault `.claude/skills/`。agent 在 session 里 on-demand 调用——按钮和聊天打字（「入库」「构建 wiki」「健康检查」「归档」）都只是发自然语言消息，agent 按动词命中对应 skill 跑 canonical 流程，两者一致。这取代了旧的 `wikiOperation` prepend 路径：不再需要 daemon 侧动词检测，也不再需要「操作动词强制 fresh spawn」（skill 可在活着的多轮 session 里随时加载）。`CreateRunRequest.wikiOperation`/`wikiExtra` 字段已删。
 
 ### 为什么用 `-file` 而非 inline `--append-system-prompt <text>`（argv 教训）
 
@@ -128,6 +129,6 @@ Claude Code 原生支持 multiTurn（`stdin` 保持打开，跨轮复用同一 s
 
 ## 不改的
 
-- `WIKI_WEIXIN_PROMPT` / `WIKI_QUERY_PROMPT` 文本内容不动（位置改了就够，实测验证）。
-- `build/ingest/lint/save` 任务指令保持 message prepend（是任务动词，角色锁定是对的）。
+- `WIKI_WEIXIN_PROMPT` / `WIKI_QUERY_PROMPT` 文本内容不动（位置改了就够，实测验证）；它们是 always-on 角色帧，留 system prompt，**不**做成 skill（见上）。
+- `build/ingest/lint/save` 流程内容不动，但载体从「message prepend」改成 `wiki-*` skills（on-demand），流程文本原样搬进各 `SKILL.md`。
 - session jsonl 转录本不碰（跨会话总结靠 git + 文件系统 mtime，与 session 文件无关）。
