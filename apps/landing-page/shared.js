@@ -1,7 +1,6 @@
 /**
  * Molio 全站公共脚本
- * - 注入悬浮二维码 / GitHub（装饰性元素）
- * - 注入统计占位符（GA + 百度）
+ * - 注入悬浮二维码（装饰性元素）
  * - 滚动入场 reveal
  * - 首页锚点导航高亮
  * 无 canvas，尊重 prefers-reduced-motion。
@@ -24,56 +23,18 @@
   function injectFloaters() {
     if (document.getElementById('molio-floaters')) return;
 
+    const qrPrefix = location.pathname.includes('/blog/') ? '../' : '';
     const wrap = document.createElement('div');
     wrap.id = 'molio-floaters';
     wrap.innerHTML = `
       <div class="float-qr-wrap" aria-label="用户交流群二维码">
         <div class="float-qr-img">
-          <img src="/images/qrcode.webp" alt="Molio 墨流用户交流群二维码" loading="lazy" width="90" height="90">
+          <img src="${qrPrefix}images/qrcode.webp" alt="Molio 墨流用户交流群二维码" loading="lazy" width="90" height="90">
         </div>
         <div class="float-qr-caption">加好友交流</div>
       </div>
     `;
     document.body.appendChild(wrap);
-  }
-
-  /* ---------- 2. 注入统计代码（占位符） ---------- */
-  function injectAnalytics() {
-    if (document.getElementById('molio-analytics')) return;
-
-    const marker = document.createElement('div');
-    marker.id = 'molio-analytics';
-    marker.style.display = 'none';
-
-    // Google Analytics 占位符
-    const gaScript = document.createElement('script');
-    gaScript.async = true;
-    gaScript.src = 'https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX';
-
-    const gaInit = document.createElement('script');
-    gaInit.textContent = `
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){ dataLayer.push(arguments); }
-      gtag('js', new Date());
-      gtag('config', 'G-XXXXXXXXXX');
-    `;
-
-    // 百度统计占位符
-    const baidu = document.createElement('script');
-    baidu.textContent = `
-      var _hmt = _hmt || [];
-      (function(){
-        var hm = document.createElement("script");
-        hm.src = "https://hm.baidu.com/hm.js?YOUR_BAIDU_ID";
-        var s = document.getElementsByTagName("script")[0];
-        s.parentNode.insertBefore(hm, s);
-      })();
-    `;
-
-    document.body.appendChild(marker);
-    document.body.appendChild(gaScript);
-    document.body.appendChild(gaInit);
-    document.body.appendChild(baidu);
   }
 
   /* ---------- 3. 滚动 reveal ---------- */
@@ -135,7 +96,6 @@
   function run() {
     injectAtmosphere();
     injectFloaters();
-    injectAnalytics();
     initReveal();
     initAnchorNav();
   }
