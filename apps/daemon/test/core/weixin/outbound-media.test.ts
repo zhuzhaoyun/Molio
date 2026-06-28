@@ -52,7 +52,7 @@ describe('extractOutboundMedia', () => {
     writeFileSync(pdf, '%PDF');
 
     const reply = `已附上两个文件。\n<attach path="${md}"/>\n<attach path="${pdf}"/>`;
-    const { items, text } = extractOutboundMedia([], reply, tempDir);
+    const { items, text } = extractOutboundMedia(reply, tempDir);
 
     assert.equal(items.length, 2);
     assert.deepEqual(items.map((i) => i.fileName).sort(), ['Goals.md', 'report.pdf']);
@@ -65,7 +65,7 @@ describe('extractOutboundMedia', () => {
 
   it('strips markers but keeps them out of text even when file is missing', () => {
     const reply = `<attach path="${join(tempDir, 'missing.pdf')}"/>`;
-    const { items, text } = extractOutboundMedia([], reply, tempDir);
+    const { items, text } = extractOutboundMedia(reply, tempDir);
     assert.equal(items.length, 0);
     assert.equal(text, ''); // marker stripped, nothing left
   });
@@ -75,7 +75,7 @@ describe('extractOutboundMedia', () => {
     const rel = 'wiki/concepts/Goals.md';
     writeFileSync(join(tempDir, rel), '# goals');
     const reply = `<attach path="${rel}"/>`;
-    const { items, text } = extractOutboundMedia([], reply, tempDir);
+    const { items, text } = extractOutboundMedia(reply, tempDir);
     assert.equal(items.length, 1);
     assert.equal(items[0]!.fileName, 'Goals.md');
     assert.equal(text, '');
@@ -85,7 +85,7 @@ describe('extractOutboundMedia', () => {
     const pdf = join(tempDir, 'x.pdf');
     writeFileSync(pdf, 'x');
     const reply = `<attach path='${pdf}'/>`;
-    const { items } = extractOutboundMedia([], reply, tempDir);
+    const { items } = extractOutboundMedia(reply, tempDir);
     assert.equal(items.length, 1);
   });
 
@@ -93,49 +93,32 @@ describe('extractOutboundMedia', () => {
     const ts = join(tempDir, 'mod.ts');
     writeFileSync(ts, 'export {}');
     const reply = `<attach path="${ts}"/>`;
-    const { items, text } = extractOutboundMedia([], reply, tempDir);
+    const { items, text } = extractOutboundMedia(reply, tempDir);
     assert.equal(items.length, 0);
     // marker still stripped even though file not deliverable
     assert.ok(!text.includes('<attach'));
     assert.ok(!text.includes(ts));
   });
 
-  it('collects files written by Write tool (no marker needed)', () => {
+  it('does NOT deliver files written via Write without an <attach/> marker', () => {
+    // Regression: delivery is explicit-only. Previously any file written by a
+    // Write-like tool was auto-delivered if its extension was on the allowlist
+    // — which spammed the user with every .md produced during ingestion. Now
+    // Write/Edit output is never auto-delivered; only <attach/> markers count.
     const img = join(tempDir, 'chart.png');
+    const md = join(tempDir, 'page.md');
     writeFileSync(img, 'x');
-    const { items } = extractOutboundMedia(
-      [{ name: 'Write', input: { file_path: img } }],
-      '图已生成',
-      tempDir,
-    );
-    assert.equal(items.length, 1);
-    assert.equal(items[0]!.kind, 'image');
+    writeFileSync(md, '# page');
+    const { items } = extractOutboundMedia('图已生成，已写入 page.md', tempDir);
+    assert.equal(items.length, 0, 'no marker → no delivery, even for images');
   });
 
-  it('ignores Edit/MultiEdit (existing-source edits are not deliverables)', () => {
-    const src = join(tempDir, 'module.ts');
-    writeFileSync(src, 'export {}');
-    const { items } = extractOutboundMedia(
-      [
-        { name: 'Edit', input: { file_path: src } },
-        { name: 'MultiEdit', input: { file_path: src } },
-      ],
-      '',
-      tempDir,
-    );
-    assert.equal(items.length, 0);
-  });
-
-  it('dedupes when the same file is both Write-created and marker-referenced', () => {
+  it('dedupes when the same file is referenced by multiple <attach/> markers', () => {
     const md = join(tempDir, 'Goals.md');
     writeFileSync(md, '# goals');
-    const reply = `<attach path="${md}"/>`;
-    const { items } = extractOutboundMedia(
-      [{ name: 'Write', input: { file_path: md } }],
-      reply,
-      tempDir,
-    );
-    assert.equal(items.length, 1);
+    const reply = `<attach path="${md}"/>\n再次附上 <attach path="${md}"/>`;
+    const { items } = extractOutboundMedia(reply, tempDir);
+    assert.equal(items.length, 1, 'same file referenced twice → delivered once');
   });
 
   it('does not treat [[wiki links]] or bare paths in text as attachments', () => {
@@ -145,7 +128,7 @@ describe('extractOutboundMedia', () => {
     mkdirSync(join(tempDir, 'concepts'), { recursive: true });
     writeFileSync(join(tempDir, 'concepts', 'Goals.md'), '# goals');
     const reply = '参见 [[concepts/Goals.md]]，或看 concepts/Goals.md。';
-    const { items, text } = extractOutboundMedia([], reply, tempDir);
+    const { items, text } = extractOutboundMedia(reply, tempDir);
     assert.equal(items.length, 0);
     assert.equal(text, reply); // untouched — no markers to strip
   });
@@ -154,7 +137,7 @@ describe('extractOutboundMedia', () => {
     const md = join(tempDir, 'Goals.md');
     writeFileSync(md, '# goals');
     const reply = `- 文件：\`<attach path="${md}"/>\`\n- 其他说明`;
-    const { text } = extractOutboundMedia([], reply, tempDir);
+    const { text } = extractOutboundMedia(reply, tempDir);
     // The marker is gone; the leftover empty bullet is cleaned up.
     assert.ok(!text.includes('<attach'));
     assert.ok(!text.includes(md));

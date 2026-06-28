@@ -46,7 +46,7 @@ export function useChat(options: UseChatOptions | string | null) {
     initialMessages: typeof options === 'object' && options !== null ? options.initialMessages : undefined,
     initialConversationId: initialConversationId ?? null,
     onComplete,
-    createRun: async ({ message, history, conversationId, operationType, extra }) => {
+    createRun: async ({ message, history, conversationId }) => {
       // Map to contracts ChatMessage type (strips 'error' role)
       const contractHistory = history
         .filter((m) => m.role === 'user' || m.role === 'assistant')
@@ -61,20 +61,9 @@ export function useChat(options: UseChatOptions | string | null) {
           usage: m.usage,
         }));
 
-      // Wiki mode: pass wikiOperation + wikiExtra to backend
-      if (mode === 'wiki' && operationType) {
-        return api.createRun({
-          agentId: agentId!,
-          message,
-          conversationId: conversationId ?? undefined,
-          history: contractHistory.length > 0 ? contractHistory : undefined,
-          cwd: cwd ?? undefined,
-          wikiOperation: operationType as WikiOperationType,
-          wikiExtra: extra?.filePath ? { filePath: extra.filePath as string } : undefined,
-        });
-      }
-
-      // Normal chat mode
+      // Wiki operations are now invoked by the agent via wiki-* skills (no
+      // backend wikiOperation field). The message text carries any trigger
+      // words / file path; the agent loads the matching skill on demand.
       return api.createRun({
         agentId: agentId!,
         message,
@@ -129,19 +118,17 @@ export function useChat(options: UseChatOptions | string | null) {
   }, [core.conversationId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
-   * Start a wiki operation — creates a run with the appropriate wiki prompt.
-   * Only meaningful when mode='wiki'.
+   * Start a wiki operation — sends a natural-language message that triggers
+   * the matching wiki-* skill (build/ingest/lint/save). The caller embeds any
+   * trigger words / file path in `message`. `operationTypeRef` is UI-only
+   * (panel badge); it no longer selects a backend prompt.
    */
   const startWikiOperation = useCallback(async (
     type: WikiOperationType,
     message: string,
-    extra?: { filePath?: string },
   ) => {
     operationTypeRef.current = type;
-    await core.send(message, {
-      operationType: type,
-      extra: extra as Record<string, unknown>,
-    });
+    await core.send(message);
   }, [core.send]);
 
   const resetWithOpClear = useCallback(() => {
