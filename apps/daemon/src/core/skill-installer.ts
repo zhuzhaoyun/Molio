@@ -11,7 +11,20 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /** Built-in skills shipped with Molio. */
-const BUILTIN_SKILLS = ['wechat-article-extractor', 'docx', 'pdf', 'pptx', 'xlsx'];
+const BUILTIN_SKILLS = [
+  'wechat-article-extractor',
+  'docx',
+  'pdf',
+  'pptx',
+  'xlsx',
+  // Wiki operations — on-demand skills the agent invokes by intent
+  // (构建/入库/健康检查/归档). Replaces the old wikiOperation prompt-prepend
+  // path so chat-typed verbs and UI buttons hit the same procedure.
+  'wiki-build',
+  'wiki-ingest',
+  'wiki-lint',
+  'wiki-save',
+];
 
 /**
  * Resolve the source directory for built-in skills.

@@ -2,17 +2,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { OutboundMediaItem } from './types.js';
 
-/**
- * Tools that create or fully overwrite a file (vs. targeted edits to existing
- * source). Files produced by these are candidate deliverables.
- */
-const WRITE_TOOLS = new Set([
-  'Write',
-  'create_file',
-  'write_file',
-  'str_replace_editor',
-]);
-
 /** Image extensions → delivered as image messages. Lowercase, no dot. */
 const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico']);
 /** Video extensions → delivered as video messages. */
@@ -37,24 +26,6 @@ export function classifyByExt(ext: string): 'image' | 'file' | 'video' | null {
 function extOf(filePath: string): string {
   return path.extname(filePath).slice(1);
 }
-
-/** Extract the file path from a tool_use input across common field names. */
-function filePathFromInput(input: unknown): string | undefined {
-  if (!input || typeof input !== 'object') return undefined;
-  const obj = input as Record<string, unknown>;
-  const candidate = obj.file_path ?? obj.filePath ?? obj.path ?? obj.notebook_path;
-  return typeof candidate === 'string' && candidate.trim() ? candidate : undefined;
-}
-
-/**
- * Attachment marker the AI emits in its reply to request a file be delivered.
- * Molio parses these, uploads each file as an attachment, and strips the
- * markers from the text before sending it to WeChat — so the user never sees
- * a local path, only the file attachment + a clean message.
- *
- * Format: `<attach path="..."/>` (single or double quotes).
- */
-const ATTACH_MARKER_RE = /<attach\s+path\s*=\s*["']([^"']+)["']\s*\/?>/g;
 
 /**
  * Resolve a candidate path against `cwd`; if it points to an existing
@@ -91,29 +62,36 @@ function tidyText(text: string): string {
 }
 
 /**
- * Extract deliverable files for the turn from two signals:
- *   1. `tool_use` events where a Write-like tool wrote a file, and
- *   2. `<attach path="..."/>` markers in the reply text.
+ * Attachment marker the AI emits in its reply to request a file be delivered.
+ * Molio parses these, uploads each file as an attachment, and strips the
+ * markers from the text before sending it to WeChat — so the user never sees
+ * a local path, only the file attachment + a clean message.
  *
- * Markers are stripped from the returned `text` so the WeChat-bound reply
- * never contains local paths — the user receives the file as an attachment
- * plus a clean text message. Files are deduped by resolved absolute path.
+ * Format: `<attach path="..."/>` (single or double quotes).
+ */
+const ATTACH_MARKER_RE = /<attach\s+path\s*=\s*["']([^"']+)["']\s*\/?>/g;
+
+/**
+ * Extract deliverable files for the turn from `<attach path="..."/>` markers
+ * in the reply text.
+ *
+ * Delivery is EXPLICIT ONLY: a file is sent to WeChat solely when the AI
+ * writes an `<attach/>` marker for it (the wiki prompt instructs it to do
+ * precisely when the user asks for a file). Files the AI creates via Write or
+ * Edit during a turn are NOT auto-delivered — in a knowledge-base workflow
+ * Write is routinely used for internal work (wiki pages, staging files,
+ * notes), so auto-delivering on Write would spam the user with every .md
+ * produced during ingestion. Markers are stripped from the returned `text` so
+ * the WeChat-bound reply never contains local paths; the user receives the
+ * file as an attachment plus a clean text message. Files are deduped by
+ * resolved absolute path.
  */
 export function extractOutboundMedia(
-  toolUses: Array<{ name: string; input: unknown }>,
   replyText: string,
   cwd: string | undefined,
 ): { items: OutboundMediaItem[]; text: string } {
   const seen = new Set<string>();
   const items: OutboundMediaItem[] = [];
-
-  for (const t of toolUses) {
-    if (!WRITE_TOOLS.has(t.name)) continue;
-    const relOrAbs = filePathFromInput(t.input);
-    if (!relOrAbs) continue;
-    const item = resolveDeliverable(relOrAbs, cwd, seen);
-    if (item) items.push(item);
-  }
 
   // Parse + strip <attach path="..."/> markers. The path is only used to
   // locate the file locally; it never reaches WeChat as text.
