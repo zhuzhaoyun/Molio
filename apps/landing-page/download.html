@@ -3,230 +3,99 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#1A1714">
+
+<!-- SEO -->
+<title>Molio 下载 — 桌面客户端与浏览器扩展</title>
+<meta name="description" content="下载 Molio 桌面客户端（Windows / macOS）及 COSE、Molio Connect Chrome 扩展离线安装包。国内用户可直接下载离线包。">
+<meta name="keywords" content="Molio 下载,Claude Code GUI,本地知识库,Web Clipper,Obsidian 替代">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://molio.cn/download.html">
+
+<!-- Preconnect -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com">
+
+<link rel="icon" type="image/png" href="/images/favicon-32.png">
+<link rel="apple-touch-icon" href="/images/favicon-180.png">
 <link rel="stylesheet" href="styles.css">
 
-<title>Molio 下载 — 桌面客户端与浏览器扩展</title>
-<meta name="description" content="下载 Molio 桌面客户端（Windows / macOS / Linux）及 COSE、doocs/md Chrome 扩展离线安装包。国内用户可直接下载离线包。">
+<!-- Open Graph -->
+<meta property="og:title" content="Molio 下载 — 桌面客户端与浏览器扩展">
+<meta property="og:description" content="下载 Molio 桌面客户端（Windows / macOS）及 Chrome 扩展离线安装包。">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://molio.cn/download.html">
+<meta property="og:image" content="https://molio.cn/images/brand.webp">
+<meta property="og:site_name" content="Molio 墨流">
+<meta property="og:locale" content="zh_CN">
 
-<style>
-html { scroll-behavior: smooth; }
-body { overflow-x: hidden; }
+<!-- Twitter -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Molio 下载 — 桌面客户端与浏览器扩展">
+<meta name="twitter:description" content="下载 Molio 桌面客户端（Windows / macOS）及 Chrome 扩展离线安装包。">
+<meta name="twitter:image" content="https://molio.cn/images/brand.webp">
 
-/* 大页面布局 */
-.page-content {
-  max-width: 1000px;
+<!-- JSON-LD -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Molio 墨流",
+  "applicationCategory": "KnowledgeManagementApplication",
+  "operatingSystem": "Windows, macOS",
+  "description": "兼容 Obsidian Vault 的本地知识库，内置 Claude Code 图形界面、微信 AI 助手和 Chrome Web Clipper。",
+  "url": "https://molio.cn/download.html",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "CNY",
+    "url": "https://molio.cn/download.html"
+  }
 }
-
-/* 下载区域标题 */
-.download-section-title {
-  font-size: 20px;
-  font-weight: 700;
-  color: #1A1A1A;
-  margin: 48px 0 24px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid #E8DDD0;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.download-section-title .icon {
-  font-size: 24px;
-}
-
-/* 下载卡片网格 */
-.download-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 24px;
-  margin-bottom: 24px;
-}
-.download-card {
-  background: #fff;
-  border-radius: 16px;
-  padding: 32px 24px;
-  border: 1px solid #E8DDD0;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.04);
-  text-align: center;
-  transition: all 0.3s;
-}
-.download-card:hover {
-  box-shadow: 0 8px 28px rgba(0,0,0,0.08);
-  transform: translateY(-4px);
-}
-.download-card .icon {
-  font-size: 48px;
-  margin-bottom: 12px;
-  line-height: 1;
-}
-.download-card .name {
-  font-size: 18px;
-  font-weight: 700;
-  color: #1A1A1A;
-  margin-bottom: 4px;
-}
-.download-card .desc {
-  font-size: 14px;
-  color: #6B6B6B;
-  margin-bottom: 8px;
-}
-.download-card .meta {
-  font-size: 13px;
-  color: #8B8B8B;
-  margin-bottom: 16px;
-  font-family: 'SF Mono', 'Courier New', monospace;
-}
-.download-card .btn-group {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: center;
-}
-.download-card .btn-group .download-btn {
-  display: inline-block;
-  padding: 10px 20px;
-  background: #8B7355;
-  color: #fff;
-  border-radius: 8px;
-  text-decoration: none;
-  font-size: 14px;
-  font-weight: 600;
-  transition: all 0.3s;
-  border: none;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.download-card .btn-group .download-btn:hover {
-  background: #6B5B3A;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 16px rgba(139,115,85,0.3);
-}
-.download-card .btn-group .download-btn.secondary {
-  background: transparent;
-  color: #8B7355;
-  border: 1px solid #8B7355;
-}
-.download-card .btn-group .download-btn.secondary:hover {
-  background: rgba(139,115,85,0.08);
-}
-
-/* 安装说明卡片 */
-.install-guide {
-  background: #fff;
-  border-radius: 16px;
-  padding: 32px;
-  border: 1px solid #E8DDD0;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.04);
-  margin-bottom: 24px;
-}
-.install-guide h3 {
-  font-size: 18px;
-  font-weight: 700;
-  color: #1A1A1A;
-  margin-bottom: 16px;
-}
-.install-guide ol {
-  margin: 0;
-  padding-left: 24px;
-}
-.install-guide li {
-  font-size: 15px;
-  color: #4A4A4A;
-  line-height: 1.8;
-  margin-bottom: 8px;
-}
-.install-guide code {
-  background: #F5F0EB;
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 14px;
-  color: #1A1A1A;
-  font-family: 'SF Mono', 'Courier New', monospace;
-}
-
-/* AI 助手依赖表格 */
-.ai-tools-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-bottom: 24px;
-}
-.ai-tools-table th,
-.ai-tools-table td {
-  padding: 12px 16px;
-  text-align: left;
-  font-size: 15px;
-  border-bottom: 1px solid #E8DDD0;
-}
-.ai-tools-table th {
-  font-weight: 600;
-  color: #1A1A1A;
-  background: #F5F0EB;
-}
-.ai-tools-table td {
-  color: #4A4A4A;
-}
-.ai-tools-table td a {
-  color: #8B7355;
-  text-decoration: none;
-}
-.ai-tools-table td a:hover {
-  text-decoration: underline;
-}
-
-/* 响应式 */
-@media (max-width: 768px) {
-  .download-grid { grid-template-columns: 1fr; }
-  .download-card .btn-group { flex-direction: column; }
-  .download-card .btn-group .download-btn { width: 100%; }
-  .ai-tools-table th,
-  .ai-tools-table td { font-size: 14px; padding: 10px; }
-}
-</style>
+</script>
 </head>
 <body>
 
-<nav class="top-nav">
+<nav class="top-nav" aria-label="主导航">
   <div class="nav-inner">
     <a href="index.html" class="nav-logo"><span class="logo-icon-sm">M</span> Molio</a>
     <div class="nav-links">
       <a href="index.html" class="nav-link">首页</a>
       <a href="help.html" class="nav-link">使用指南</a>
+      <a href="faq.html" class="nav-link">常见问题</a>
+      <a href="blog/index.html" class="nav-link">博客</a>
       <a href="download.html" class="nav-link active">下载</a>
-    </div>
+     <a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer" class="nav-gh" aria-label="GitHub 仓库"><svg viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg></a></div>
   </div>
 </nav>
-
-<canvas id="particle-canvas"></canvas>
 
 <main class="page-content">
   <h1 class="page-title">下载 Molio</h1>
   <p class="page-subtitle">获取桌面客户端、浏览器扩展及 AI 助手工具</p>
 
-  <!-- Molio 桌面客户端 -->
-  <div class="download-section-title">
-    <span class="icon">💻</span>
-    Molio 桌面客户端
-  </div>
+  <h2 class="download-section-title"> Molio 桌面客户端</h2>
   <div class="download-grid">
-    <div class="download-card">
-      <div class="icon">🪟</div>
+    <div class="download-card reveal">
+      
       <div class="name">Windows 版</div>
       <div class="desc">64 位安装包</div>
       <div class="meta" id="win-meta">Molio-Setup-0.3.21-release-windows.exe</div>
       <div class="btn-group">
-        <a id="win-download" href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases/v0.3.21-release/Molio-Setup-0.3.21-release-windows.exe" class="download-btn">下载 Windows 版</a>
+        <a id="win-download" href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases/v0.3.21-release/Molio-Setup-0.3.21-release-windows.exe" class="download-btn primary">下载 Windows 版</a>
       </div>
     </div>
-    <div class="download-card">
-      <div class="icon">🍎</div>
+    <div class="download-card reveal">
+      
       <div class="name">macOS 版</div>
       <div class="desc">ARM64 (Apple Silicon)</div>
       <div class="meta" id="mac-meta">Molio-0.3.21-release-mac-arm64.dmg</div>
       <div class="btn-group">
-        <a id="mac-download" href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases/v0.3.21-release/Molio-0.3.21-release-mac-arm64.dmg" class="download-btn">下载 macOS 版</a>
+        <a id="mac-download" href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases/v0.3.21-release/Molio-0.3.21-release-mac-arm64.dmg" class="download-btn primary">下载 macOS 版</a>
       </div>
     </div>
-    <div class="download-card" style="opacity:0.6;">
-      <div class="icon">🐧</div>
+    <div class="download-card reveal" style="opacity:0.6;">
+      
       <div class="name">Linux 版</div>
       <div class="desc">暂不支持</div>
       <div class="meta">—</div>
@@ -236,37 +105,32 @@ body { overflow-x: hidden; }
     </div>
   </div>
 
-  <!-- Chrome 扩展 -->
-  <div class="download-section-title">
-    <span class="icon">🧩</span>
-    Chrome 浏览器扩展
-  </div>
+  <h2 class="download-section-title"> Chrome 浏览器扩展</h2>
   <div class="download-grid">
-    <div class="download-card">
-      <div class="icon">🚀</div>
+    <div class="download-card reveal">
+      
       <div class="name">COSE</div>
       <div class="desc">多平台一键发布到微信、知乎、CSDN 等 30+ 内容平台</div>
       <div class="meta">v1.3.6</div>
       <div class="btn-group">
-        <a href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases/cose-extension-v1.3.6.zip" class="download-btn">离线安装包</a>
+        <a href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases/cose-extension-v1.3.6.zip" class="download-btn primary">离线安装包</a>
         <a href="https://chromewebstore.google.com/detail/cose-%E5%A4%9A%E5%B9%B3%E5%8F%B0%E6%96%87%E7%AB%A0%E5%90%8C%E6%AD%A5/ilhikcdphhpjofhlnbojifbihhfmmhfk?hl=zh-CN&utm_source=ext_sidebar" target="_blank" rel="noopener noreferrer" class="download-btn secondary">Chrome 商店</a>
       </div>
     </div>
-    <div class="download-card">
-      <div class="icon">🔗</div>
+    <div class="download-card reveal">
+      
       <div class="name">Molio Connect</div>
       <div class="desc">浏览器剪藏插件，一键保存网页内容到 Molio 知识库</div>
       <div class="meta">v0.2.4</div>
       <div class="btn-group">
-        <a href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases/molio-connect-0.2.4-chrome-store.zip" class="download-btn">离线安装包</a>
+        <a href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases/molio-connect-0.2.4-chrome-store.zip" class="download-btn primary">离线安装包</a>
         <a href="https://chromewebstore.google.com/detail/molio/pjdacbbkjpegfkogoieejajljplngbik?hl=zh-CN&utm_source=ext_sidebar" target="_blank" rel="noopener noreferrer" class="download-btn secondary">Chrome 商店</a>
       </div>
     </div>
   </div>
 
-  <!-- 离线安装说明 -->
-  <div class="install-guide">
-    <h3>🔧 Chrome 扩展离线安装说明（适用于无法访问 Chrome 商店的用户）</h3>
+  <div class="step-card reveal">
+    <h3 style="font-family:var(--font-display); font-size:18px; margin-bottom:14px;">🔧 Chrome 扩展离线安装说明</h3>
     <ol>
       <li>下载扩展的 <code>.zip</code> 压缩包并解压</li>
       <li>打开 Chrome 浏览器，地址栏输入 <code>chrome://extensions</code> 并回车</li>
@@ -276,49 +140,57 @@ body { overflow-x: hidden; }
     </ol>
   </div>
 
-  <!-- AI 助手前置依赖 -->
-  <div class="download-section-title">
-    <span class="icon">🤖</span>
-    AI 助手工具（前置依赖）
-  </div>
-  <p style="font-size:15px;color:#5A5A5A;margin-bottom:16px;line-height:1.7;">
-    Molio 需要搭配 AI 命令行工具使用。请至少安装一个，并完成登录授权：
-  </p>
+  <h2 class="download-section-title"> AI 助手工具（前置依赖）</h2>
+  <p style="font-size:15px; color:var(--ink-soft); margin-bottom:16px; line-height:1.7;">Molio 需要搭配 AI 命令行工具使用。请至少安装一个，并完成登录授权：</p>
   <table class="ai-tools-table">
     <thead>
-      <tr>
-        <th>AI 助手</th>
-        <th>说明</th>
-        <th>官方文档</th>
-      </tr>
+      <tr><th>AI 助手</th><th>说明</th><th>官方文档</th></tr>
     </thead>
     <tbody>
-      <tr>
-        <td><strong>Claude Code</strong></td>
-        <td>Anthropic 官方 AI 编程助手</td>
-        <td><a href="https://docs.anthropic.com/en/docs/claude-code/installation" target="_blank">安装指南 →</a></td>
-      </tr>
-      <tr>
-        <td><strong>OpenAI Codex</strong></td>
-        <td>OpenAI 官方 AI 编程助手</td>
-        <td><a href="https://openai.com/codex" target="_blank">官网 →</a></td>
-      </tr>
-      <tr>
-        <td><strong>Gemini CLI</strong></td>
-        <td>Google Gemini 官方命令行工具</td>
-        <td><a href="https://github.com/google-gemini/gemini-cli" target="_blank">GitHub →</a></td>
-      </tr>
-      <tr>
-        <td><strong>Qwen Code</strong></td>
-        <td>阿里通义千问编程助手</td>
-        <td><a href="https://github.com/QwenLM/qwen-code" target="_blank">GitHub →</a></td>
-      </tr>
+      <tr><td><strong>Claude Code</strong></td><td>Anthropic 官方 AI 编程助手</td><td><a href="https://docs.anthropic.com/en/docs/claude-code/installation" target="_blank" rel="noopener noreferrer">安装指南 →</a></td></tr>
+      <tr><td><strong>OpenAI Codex</strong></td><td>OpenAI 官方 AI 编程助手</td><td><a href="https://openai.com/codex" target="_blank" rel="noopener noreferrer">官网 →</a></td></tr>
+      <tr><td><strong>Gemini CLI</strong></td><td>Google Gemini 官方命令行工具</td><td><a href="https://github.com/google-gemini/gemini-cli" target="_blank" rel="noopener noreferrer">GitHub →</a></td></tr>
+      <tr><td><strong>Qwen Code</strong></td><td>阿里通义千问编程助手</td><td><a href="https://github.com/QwenLM/qwen-code" target="_blank" rel="noopener noreferrer">GitHub →</a></td></tr>
     </tbody>
   </table>
-
 </main>
 
-<!-- 下载链接动态加载 -->
+<!-- Footer -->
+<footer class="site-footer">
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <a href="index.html" class="footer-logo"><span class="logo-icon-sm">M</span> Molio</a>
+      <p>兼容 Obsidian 的本地 AI 知识库。内置 Claude Code 图形界面、微信 AI 助手和 Chrome Web Clipper，数据全在你自己电脑上。</p>
+    </div>
+    <div class="footer-links">
+      <h4>产品</h4>
+      <a href="index.html">首页</a>
+      <a href="download.html">下载</a>
+      <a href="help.html">使用指南</a>
+      <a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer">GitHub 开源</a>
+    </div>
+    <div class="footer-links">
+      <h4>资源</h4>
+      <a href="help.html">快速入门</a>
+      <a href="help.html#step-6">排版教程</a>
+      <a href="help.html#step-7">发布指南</a>
+      <a href="https://github.com/zhuzhaoyun/Molio/issues" target="_blank" rel="noopener noreferrer">问题反馈</a>
+    </div>
+    <div class="footer-links">
+      <h4>关于</h4>
+      <a href="blog/index.html">博客</a>
+      <a href="faq.html">常见问题</a>
+      <a href="privacy.html">隐私政策</a>
+      <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">粤ICP备2023134483号</a>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <span>© 2026 Molio 墨流. 基于 MIT 协议开源.</span>
+    <span>Molio 墨流 — 兼容 Obsidian 的本地知识库 + Claude Code GUI + 微信 AI 助手，数据全在你自己电脑上</span>
+  </div>
+</footer>
+
+<script src="shared.js"></script>
 <script>
 (function() {
   const OSS_BASE = 'https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases';
@@ -335,112 +207,37 @@ body { overflow-x: hidden; }
     if (meta) meta.textContent = filename;
   }
 
-  // HTML 中已内置默认 OSS 下载链接，fetch 成功后更新为最新版本
-  // fetch 失败时保持默认链接不变，用户仍可正常下载
   fetch(LATEST_URL)
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      var v = data.version;
+    .then(r => r.json())
+    .then(data => {
+      const v = data.version;
       if (!v) throw new Error('no version');
       setDownload('win', v, 'Molio-Setup-' + v + '-windows.exe');
       setDownload('mac', v, 'Molio-' + v + '-mac-arm64.dmg');
     })
-    .catch(function() {
-      // 保持 HTML 中的默认 OSS 链接，无需 fallback 到 GitHub
+    .catch(() => {
+      // 保持 HTML 中的默认 OSS 链接
     });
 })();
 </script>
 
-<!-- 粒子背景脚本 -->
+<!-- Google Analytics 4 -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-X6LMX9VR0Y"></script>
 <script>
-const canvas = document.getElementById('particle-canvas');
-const ctx = canvas.getContext('2d');
-let w, h;
-let particles = [];
-
-function resize() {
-  w = canvas.width = window.innerWidth;
-  h = canvas.height = document.documentElement.scrollHeight;
-}
-resize();
-window.addEventListener('resize', resize);
-
-class Particle {
-  constructor() {
-    this.x = Math.random() * w;
-    this.y = Math.random() * h;
-    this.vx = (Math.random() - 0.5) * 0.4;
-    this.vy = (Math.random() - 0.5) * 0.4;
-    this.radius = Math.random() * 2 + 0.5;
-    this.opacity = Math.random() * 0.3 + 0.1;
-    const hues = [25, 30, 35, 40, 45];
-    this.hue = hues[Math.floor(Math.random() * hues.length)];
-  }
-  update() {
-    this.x += this.vx;
-    this.y += this.vy;
-    if (this.x < 0 || this.x > w) this.vx *= -1;
-    if (this.y < 0 || this.y > h) this.vy *= -1;
-  }
-  draw() {
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-    ctx.fillStyle = `hsla(${this.hue}, 40%, 60%, ${this.opacity})`;
-    ctx.fill();
-  }
-}
-
-for (let i = 0; i < 60; i++) {
-  particles.push(new Particle());
-}
-
-function drawLines() {
-  for (let i = 0; i < particles.length; i++) {
-    let connections = 0;
-    for (let j = i + 1; j < particles.length; j++) {
-      const dx = particles[i].x - particles[j].x;
-      const dy = particles[i].y - particles[j].y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < 160 && connections < 2) {
-        const alpha = (1 - dist / 160) * 0.08;
-        ctx.beginPath();
-        ctx.moveTo(particles[i].x, particles[i].y);
-        ctx.lineTo(particles[j].x, particles[j].y);
-        ctx.strokeStyle = `hsla(30, 30%, 60%, ${alpha})`;
-        ctx.lineWidth = 0.6;
-        ctx.stroke();
-        connections++;
-      }
-    }
-  }
-}
-
-function animate() {
-  ctx.clearRect(0, 0, w, h);
-  particles.forEach(p => { p.update(); p.draw(); });
-  drawLines();
-  requestAnimationFrame(animate);
-}
-animate();
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-X6LMX9VR0Y');
 </script>
-
-<!-- 悬浮 GitHub -->
-<div class="float-github">
-  <a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer" class="gh-link">
-    <div class="gh-icon">
-      <svg viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
-    </div>
-    <span class="gh-url">github.com/zhuzhaoyun/Molio</span>
-  </a>
-</div>
-
-<!-- 悬浮二维码 -->
-<div class="float-qr-wrap">
-  <div class="float-qr-img">
-    <img src="images/qrcode.png" alt="Molio 墨流用户交流群二维码，扫码加入知识管理社区">
-  </div>
-  <div class="float-qr-caption">加好友交流</div>
-</div>
-
+<!-- 百度统计 -->
+<script>
+var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = "https://hm.baidu.com/hm.js?YOUR_BAIDU_ID";
+  var s = document.getElementsByTagName("script")[0];
+  s.parentNode.insertBefore(hm, s);
+})();
+</script>
 </body>
 </html>
