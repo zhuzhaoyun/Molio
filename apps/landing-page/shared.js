@@ -24,12 +24,13 @@
   function injectFloaters() {
     if (document.getElementById('molio-floaters')) return;
 
+    const qrPrefix = location.pathname.includes('/blog/') ? '../' : '';
     const wrap = document.createElement('div');
     wrap.id = 'molio-floaters';
     wrap.innerHTML = `
       <div class="float-qr-wrap" aria-label="用户交流群二维码">
         <div class="float-qr-img">
-          <img src="/images/qrcode.webp" alt="Molio 墨流用户交流群二维码" loading="lazy" width="90" height="90">
+          <img src="${qrPrefix}images/qrcode.webp" alt="Molio 墨流用户交流群二维码" loading="lazy" width="90" height="90">
         </div>
         <div class="float-qr-caption">加好友交流</div>
       </div>

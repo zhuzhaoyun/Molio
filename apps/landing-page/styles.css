@@ -4,7 +4,7 @@
    ============================================================ */
 
 /* ---------- Fonts ---------- */
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,400;1,9..144,700&family=Noto+Serif+SC:wght@400;600;700;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,400;1,9..144,700&family=Source+Serif+4:ital,wght@0,400;0,600;0,700;1,400;1,600;1,700&family=Noto+Serif+SC:wght@400;600;700;900&display=swap');
 
 :root {
   /* 纸 */
@@ -267,6 +267,7 @@ p { margin-bottom: 0; }
   align-items: center;
   padding-top: var(--nav-h);
   padding-bottom: 80px;
+  position: relative;
 }
 
 .hero-inner {
@@ -280,24 +281,104 @@ p { margin-bottom: 0; }
   width: 100%;
 }
 
-.hero-text h1 {
-  font-size: clamp(44px, 6.5vw, 76px);
-  line-height: 1.08;
-  letter-spacing: -0.03em;
-  margin-bottom: 28px;
+.hero-text {
+  position: relative;
 }
 
-.hero-text h1 em {
-  font-style: italic;
-  color: var(--seal);
-}
-
-.hero-text .hero-desc {
-  font-size: 17px;
-  color: var(--ink-40);
-  line-height: 1.8;
-  max-width: 480px;
+/* Eyebrow — 刊首语风格 */
+.hero-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   margin-bottom: 36px;
+  font-family: var(--font-body);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--ink-40);
+}
+
+.hero-eyebrow-line {
+  width: 28px;
+  height: 1.5px;
+  background: var(--seal);
+  flex-shrink: 0;
+}
+
+/* H1 — 主标题：英文 italic + 中文正常 */
+.hero-text h1 {
+  font-size: clamp(36px, 5.2vw, 62px);
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  margin-bottom: 32px;
+  font-weight: 700;
+}
+
+.hero-title-line {
+  color: var(--seal);
+  line-height: 1.15;
+  font-size: 1em;
+}
+
+.hero-title-line em {
+  font-style: italic;
+  font-weight: 700;
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-feature-settings: "liga" 1;
+}
+
+.hero-title-zh {
+  font-style: normal;
+  font-family: var(--font-zh);
+  font-weight: 700;
+}
+
+.hero-title-sub {
+  display: block;
+  color: var(--ink);
+  font-size: 0.52em;
+  font-weight: 700;
+  line-height: 1.4;
+  margin-top: 0.2em;
+  letter-spacing: 0;
+  font-family: var(--font-zh);
+}
+
+/* Hero desc — 左侧细线点缀 */
+.hero-text .hero-desc {
+  font-size: 16px;
+  color: var(--ink-40);
+  line-height: 1.85;
+  max-width: 460px;
+  margin-bottom: 20px;
+  padding-left: 16px;
+  border-left: 1.5px solid var(--hair);
+}
+
+/* Hero checks — 纯本地卖点 */
+.hero-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+  margin-bottom: 32px;
+  list-style: none;
+  padding-left: 16px;
+}
+
+.hero-checks li {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-60);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hero-checks li::before {
+  content: '✓';
+  color: var(--seal);
+  font-weight: 700;
+  font-size: 12px;
 }
 
 .hero-text .hero-desc br { display: none; }
@@ -307,6 +388,21 @@ p { margin-bottom: 0; }
   gap: 16px;
   align-items: center;
   flex-wrap: wrap;
+}
+
+/* Staggered reveal for hero children */
+.hero .reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition:
+    opacity 0.7s var(--ease),
+    transform 0.7s var(--ease);
+  transition-delay: calc(var(--delay, 0) * 0.12s);
+}
+
+.hero .reveal.in-view {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .hero-image-frame {
@@ -1479,7 +1575,11 @@ p { margin-bottom: 0; }
   .section { padding: 64px 0; }
   .nav-links { gap: 16px; }
   .nav-link { font-size: 13px; }
-  .hero-text h1 { font-size: 36px; }
+  .hero-text h1 { font-size: 32px; line-height: 1.18; }
+  .hero-eyebrow { font-size: 14px; gap: 10px; margin-bottom: 20px; }
+  .hero-text .hero-desc { padding-left: 14px; font-size: 15px; }
+  .hero-checks { gap: 4px 16px; margin-bottom: 24px; }
+  .hero-checks li { font-size: 12px; }
   .hero-actions .btn { width: 100%; }
   .footer-inner { grid-template-columns: 1fr; gap: 32px; }
   .footer-bottom { flex-direction: column; text-align: center; }
