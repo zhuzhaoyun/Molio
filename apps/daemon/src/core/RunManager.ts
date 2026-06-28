@@ -43,6 +43,13 @@ export interface CreateRunOptions {
   history?: ChatMessage[];
   /** Called when a turn completes with accumulated text content. */
   onTurnComplete?: (text: string, runId: string) => void;
+  /**
+   * Path to a file whose contents are appended to the agent's built-in system
+   * prompt at spawn time (e.g. the wiki/vault role frame, materialized by
+   * `ensureWikiSysPromptFiles`). Only consumed on a fresh spawn — multi-turn
+   * follow-ups reuse the same process, which already carries it from turn 1.
+   */
+  appendSystemPromptFile?: string;
 }
 
 export class RunManager {
@@ -218,7 +225,14 @@ export class RunManager {
 
     const args = def.buildArgs(
       opts.message,
-      { model: opts.model },
+      {
+        model: opts.model,
+        // Path to a file with the wiki/vault role frame (materialized at
+        // daemon startup by ensureWikiSysPromptFiles). Passed as
+        // --append-system-prompt-file <path> — NOT inline text, which broke
+        // argv parsing on Windows and ate --dangerously-skip-permissions.
+        appendSystemPromptFile: opts.appendSystemPromptFile,
+      },
       { cwd: opts.cwd },
     );
 
@@ -332,6 +346,24 @@ export class RunManager {
     const run = this.runs.get(runId);
     if (!run) return;
     run.turnText.flush();
+  }
+
+  /**
+   * Whether a run is still alive and can accept a follow-up message via
+   * sendMessage() — i.e. it is a multi-turn agent whose stdin is still open
+   * and writable, and the run has not reached a terminal status.
+   *
+   * Non-throwing precheck so callers (e.g. WeixinService) can decide between
+   * reusing an existing multi-turn session and spawning a fresh run without
+   * catching sendMessage()'s thrown error.
+   */
+  canAcceptMessage(runId: string): boolean {
+    const run = this.runs.get(runId);
+    if (!run) return false;
+    if (TERMINAL_STATUSES.has(run.status)) return false;
+    const def = getAgentDef(run.agentId);
+    if (!def?.multiTurn) return false;
+    return run.stdinOpen && !!run.child?.stdin?.writable;
   }
 
   /**

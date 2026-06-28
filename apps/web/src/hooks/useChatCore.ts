@@ -53,10 +53,6 @@ export interface CreateRunContext {
   message: string;
   history: ChatMessage[];
   conversationId: string | null;
-  /** Operation type for wiki operations (build/ingest/lint/query/save). */
-  operationType?: string;
-  /** Extra params (e.g. filePath for ingest). */
-  extra?: Record<string, unknown>;
 }
 
 export interface UseChatCoreOptions {
@@ -97,7 +93,7 @@ export function useChatCore(options: UseChatCoreOptions) {
   /**
    * Send a message — tries multi-turn on existing run first, falls back to createRun.
    */
-  const send = useCallback(async (text: string, extra?: { operationType?: string; extra?: Record<string, unknown> }) => {
+  const send = useCallback(async (text: string) => {
     if (!text.trim()) return;
 
     const userMsg: ChatMessage = {
@@ -165,8 +161,6 @@ export function useChatCore(options: UseChatCoreOptions) {
         message: text.trim(),
         history,
         conversationId: state.conversationId,
-        operationType: extra?.operationType,
-        extra: extra?.extra,
       });
 
       const runId = result.runId;

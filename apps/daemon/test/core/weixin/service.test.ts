@@ -5,9 +5,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type Database from 'better-sqlite3';
 import { openDatabase, closeDatabase, createVault } from '../../../src/core/db.js';
-import { buildWeixinRunMessage } from '../../../src/core/weixin/service.js';
+import { wikiPromptFileFor } from '../../../src/core/weixin/dispatcher.js';
+import { WEIXIN_SYS_PROMPT_FILE } from '../../../src/core/wiki-prompts.js';
 
-describe('WeixinService run context', () => {
+/**
+ * Tests for wikiPromptFileFor — the single place that decides whether a weixin
+ * fresh spawn carries the wiki/vault system-prompt file. The dispatcher calls
+ * it only in the fresh-spawn branch (reuse via sendMessage does not), so the
+ * "no prompt on follow-up" rule is enforced structurally and covered by the
+ * dispatcher tests; here we cover the vault-resolution logic itself.
+ */
+describe('weixin wikiPromptFileFor', () => {
   let db: Database.Database;
   let tempDir: string;
 
@@ -21,42 +29,18 @@ describe('WeixinService run context', () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it('injects wiki context when Weixin runs against the active vault cwd', () => {
+  it('returns the weixin system-prompt file when cwd is a registered vault', () => {
     const vaultPath = join(tempDir, 'vault');
     createVault(db, 'Test Vault', vaultPath);
-
-    const message = buildWeixinRunMessage(db, '介绍一下知识库地址', vaultPath, true);
-
-    assert.match(message, /你是一个本地知识库的微信入口助手。/);
-    assert.match(message, /自动收件，确认后知识化入库/);
-    assert.match(message, /用户消息：介绍一下知识库地址/);
+    assert.equal(wikiPromptFileFor(db, vaultPath), WEIXIN_SYS_PROMPT_FILE);
   });
 
-  it('keeps Weixin intake instructions after conversation history exists', () => {
-    const vaultPath = join(tempDir, 'vault');
-    createVault(db, 'Test Vault', vaultPath);
-
-    const message = buildWeixinRunMessage(db, '继续', vaultPath, false);
-
-    assert.match(message, /你是一个本地知识库的微信入口助手。/);
-    assert.match(message, /用户消息：继续/);
+  it('returns undefined when cwd is not a vault', () => {
+    assert.equal(wikiPromptFileFor(db, '/not/a/vault'), undefined);
   });
 
-  it('tells the model to use downloaded files as-is, not create extra .md', () => {
-    const vaultPath = join(tempDir, 'vault');
-    createVault(db, 'Test Vault', vaultPath);
-
-    const message = buildWeixinRunMessage(db, '收到文件', vaultPath, true);
-
-    // The prompt must instruct the model that downloaded entity files are the
-    // staging material themselves — no extra .md placeholder should be created.
-    assert.match(message, /不要再额外新建/);
-    assert.match(message, /暂存文件/);
-    // And it must still cover URL/web-share fallback that does create a .md.
-    assert.match(message, /raw\/wechat\/YYYY-MM-DD\/HHmm-简短标题\.md/);
-    // mp.weixin.qq.com links must use the wechat-article-extractor skill,
-    // not WebFetch (which is blocked by enterprise security policy).
-    assert.match(message, /wechat-article-extractor/);
-    assert.match(message, /禁止用 WebFetch/);
+  it('returns undefined when db or cwd is missing', () => {
+    assert.equal(wikiPromptFileFor(undefined, '/some/path'), undefined);
+    assert.equal(wikiPromptFileFor(db, undefined), undefined);
   });
 });
