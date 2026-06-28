@@ -5,10 +5,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type Database from 'better-sqlite3';
 import { openDatabase, closeDatabase, createVault } from '../../../src/core/db.js';
-import { buildWeixinRunMessage } from '../../../src/core/weixin/service.js';
+import { wikiPromptFileFor } from '../../../src/core/weixin/dispatcher.js';
 import { WEIXIN_SYS_PROMPT_FILE } from '../../../src/core/wiki-prompts.js';
 
-describe('WeixinService run context', () => {
+/**
+ * Tests for wikiPromptFileFor — the single place that decides whether a weixin
+ * fresh spawn carries the wiki/vault system-prompt file. The dispatcher calls
+ * it only in the fresh-spawn branch (reuse via sendMessage does not), so the
+ * "no prompt on follow-up" rule is enforced structurally and covered by the
+ * dispatcher tests; here we cover the vault-resolution logic itself.
+ */
+describe('weixin wikiPromptFileFor', () => {
   let db: Database.Database;
   let tempDir: string;
 
@@ -22,38 +29,18 @@ describe('WeixinService run context', () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it('passes wiki frame as system-prompt file (not in user message) on first vault turn', () => {
+  it('returns the weixin system-prompt file when cwd is a registered vault', () => {
     const vaultPath = join(tempDir, 'vault');
     createVault(db, 'Test Vault', vaultPath);
-
-    const result = buildWeixinRunMessage(db, '介绍一下知识库地址', vaultPath, true);
-
-    // The user message is the clean prompt — the wiki frame must NOT be
-    // prepended to it (that role-locks the agent and suppresses native
-    // retrieval; verified by the Run A/B/C probes).
-    assert.equal(result.message, '介绍一下知识库地址');
-    assert.doesNotMatch(result.message, /你是一个本地知识库的微信入口助手。/);
-    // The wiki frame travels as a system-prompt FILE path instead (the file
-    // itself is materialized by ensureWikiSysPromptFiles at daemon startup).
-    assert.equal(result.appendSystemPromptFile, WEIXIN_SYS_PROMPT_FILE);
+    assert.equal(wikiPromptFileFor(db, vaultPath), WEIXIN_SYS_PROMPT_FILE);
   });
 
-  it('does NOT pass wiki frame on follow-up turns (reused session)', () => {
-    const vaultPath = join(tempDir, 'vault');
-    createVault(db, 'Test Vault', vaultPath);
-
-    // isFirstTurn=false → follow-up to a reused multi-turn session that
-    // already carries the frame from turn 1's system prompt. Re-passing it
-    // is unnecessary (sendMessage reuses the live process).
-    const result = buildWeixinRunMessage(db, '继续', vaultPath, false);
-
-    assert.equal(result.appendSystemPromptFile, undefined);
-    assert.equal(result.message, '继续');
+  it('returns undefined when cwd is not a vault', () => {
+    assert.equal(wikiPromptFileFor(db, '/not/a/vault'), undefined);
   });
 
-  it('does not pass wiki frame when cwd is not a vault', () => {
-    const result = buildWeixinRunMessage(db, 'hi', '/not/a/vault', true);
-    assert.equal(result.appendSystemPromptFile, undefined);
-    assert.equal(result.message, 'hi');
+  it('returns undefined when db or cwd is missing', () => {
+    assert.equal(wikiPromptFileFor(undefined, '/some/path'), undefined);
+    assert.equal(wikiPromptFileFor(db, undefined), undefined);
   });
 });

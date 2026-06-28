@@ -5,31 +5,25 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type Database from 'better-sqlite3';
 import type { AgentEvent, ChatMessage } from '@molio/contracts';
-import { openDatabase, closeDatabase, listMessages } from '../../../src/core/db.js';
-import { WeixinService } from '../../../src/core/weixin/service.js';
+import { openDatabase, closeDatabase, listMessages, createVault } from '../../../src/core/db.js';
 import { ConversationService } from '../../../src/core/conversations/service.js';
 import type { RunManager } from '../../../src/core/RunManager.js';
-import type { QueuedMessage } from '../../../src/core/weixin/service.js';
+import { WeixinRunDispatcher, type DispatchRequest } from '../../../src/core/weixin/dispatcher.js';
+import { WEIXIN_SYS_PROMPT_FILE } from '../../../src/core/wiki-prompts.js';
 
 /**
- * Integration tests for WeChat multi-turn run reuse.
+ * Integration tests for the weixin multi-turn run dispatcher.
  *
- * Regression coverage for the fix where each WeChat message used to spawn a
+ * Regression coverage for the fix where each weixin message used to spawn a
  * fresh `claude -p` process, throwing away Claude Code's native session
- * continuity (and prompt cache). The channel now reuses one multi-turn run
- * per user via RunManager.sendMessage(), queuing messages while a turn is in
+ * continuity (and prompt cache). The dispatcher reuses one multi-turn run per
+ * user via RunManager.sendMessage(), queuing messages while a turn is in
  * flight and draining on turn_end.
  *
- * These tests drive the dispatch state machine (dispatchMessage →
- * forwardRunReply → drainQueue) directly with a mock RunManager whose event
- * listeners the test can fire, plus a real SQLite conversation store so DB
- * ordering is verified. createMolioRun's config resolution is deliberately
- * bypassed to keep the state-machine assertions hermetic.
+ * These tests drive WeixinRunDispatcher directly with a mock RunManager whose
+ * event listeners the test can fire, plus a real SQLite conversation store so
+ * DB ordering is verified. Sinks (sendText/sendMediaFile) are no-op recorders.
  */
-
-interface DispatchPayload extends QueuedMessage {
-  history: ChatMessage[];
-}
 
 class MockRunManager {
   private nextId = 1;
@@ -83,8 +77,6 @@ class MockRunManager {
     this.nonReceptive.add(runId);
   };
 
-  cancelAll = (): void => {};
-
   onEvent = (runId: string, cb: (ev: AgentEvent) => void): (() => void) | null => {
     if (!this.created.has(runId)) return null;
     this.listeners.set(runId, cb);
@@ -107,13 +99,13 @@ function settle(ms = 0): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-describe('WeixinService multi-turn run reuse', () => {
+describe('WeixinRunDispatcher multi-turn run reuse', () => {
   let db: Database.Database;
   let tempDir: string;
   let cwdDir: string;
   let conversations: ConversationService;
   let mock: MockRunManager;
-  let service: WeixinService;
+  let dispatcher: WeixinRunDispatcher;
   let conversationId: string;
 
   beforeEach(() => {
@@ -121,9 +113,18 @@ describe('WeixinService multi-turn run reuse', () => {
     cwdDir = join(tempDir, 'work');
     mkdirSync(cwdDir, { recursive: true });
     db = openDatabase(tempDir);
+    // Register cwdDir as a vault so wikiPromptFileFor(db, cwdDir) resolves to
+    // the weixin system-prompt file on fresh spawns.
+    createVault(db, 'Test Vault', cwdDir);
     conversations = new ConversationService(db);
     mock = new MockRunManager();
-    service = new WeixinService(mock.asRunManager(), conversations, db);
+    dispatcher = new WeixinRunDispatcher({
+      runManager: mock.asRunManager(),
+      conversations,
+      db,
+      sendText: async () => {},
+      sendMediaFile: async () => {},
+    });
     const conv = conversations.getOrCreateExternalConversation({
       channelType: 'weixin',
       externalSessionId: 'u1',
@@ -133,28 +134,23 @@ describe('WeixinService multi-turn run reuse', () => {
   });
 
   afterEach(() => {
-    service.stop();
     closeDatabase();
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  function payload(text: string, history: ChatMessage[] = []): DispatchPayload {
+  function payload(text: string, history: ChatMessage[] = []): DispatchRequest {
     return {
       fromUserId: 'u1',
       conversationId,
       agentId: 'claude',
       cwd: cwdDir,
-      runMessage: text,
       rawUserText: text,
       history,
     };
   }
 
-  /** Drive the private dispatchMessage directly. */
-  function dispatch(p: DispatchPayload): Promise<void> {
-    return (service as unknown as {
-      dispatchMessage: (p: DispatchPayload) => Promise<void>;
-    }).dispatchMessage(p);
+  function dispatch(p: DispatchRequest): Promise<void> {
+    return dispatcher.dispatch(p);
   }
 
   it('reuses the active run for a second message (sendMessage, no new spawn)', async () => {
@@ -205,7 +201,7 @@ describe('WeixinService multi-turn run reuse', () => {
     // Turn 1 ends → finish → drain → queued message is sent into the same run.
     mock.emit(run1, { type: 'text_delta', delta: 'first answer' });
     mock.emit(run1, { type: 'turn_end', stopReason: 'end_turn' });
-    await settle(); // let drainQueue → dispatchMessage run
+    await settle(); // let drainQueue → dispatch run
 
     assert.equal(mock.sendMessageCalls.length, 1, 'queued message drained on turn_end');
     assert.equal(mock.sendMessageCalls[0]!.runId, run1);
@@ -251,15 +247,13 @@ describe('WeixinService multi-turn run reuse', () => {
     assert.ok(mock.flushCalls.includes(run1), 'should flush pending reply before next user msg');
   });
 
-  it('passes appendSystemPromptFile to createRun on fresh spawn, not to sendMessage on reuse', async () => {
-    // Fresh spawn: dispatchMessage must forward appendSystemPromptFile to
-    // createRun and keep the user message clean — the wiki frame lives in the
-    // system prompt file, NOT prepended to the message (role-locking it would
-    // suppress native retrieval; verified by the Run A/B/C probes).
-    const fakePath = '/fake/molio/sysprompt/weixin.txt';
-    await dispatch({ ...payload('总结今天的工作'), appendSystemPromptFile: fakePath });
+  it('passes the wiki prompt file to createRun on fresh spawn, not to sendMessage on reuse', async () => {
+    // Fresh spawn: the dispatcher derives appendSystemPromptFile from (db, cwd)
+    // at spawn time and keeps the user message clean — the wiki frame lives in
+    // the system prompt file, NOT prepended to the message.
+    await dispatch(payload('总结今天的工作'));
     assert.equal(mock.createRunCalls.length, 1);
-    assert.equal(mock.createRunCalls[0]!.appendSystemPromptFile, fakePath);
+    assert.equal(mock.createRunCalls[0]!.appendSystemPromptFile, WEIXIN_SYS_PROMPT_FILE);
     assert.equal(mock.createRunCalls[0]!.message, '总结今天的工作');
     assert.doesNotMatch(mock.createRunCalls[0]!.message, /sysprompt/);
 
@@ -267,34 +261,51 @@ describe('WeixinService multi-turn run reuse', () => {
     mock.emit(run1, { type: 'turn_end', stopReason: 'end_turn' });
     await settle();
 
-    // Reuse: sendMessage gets the clean message only. appendSystemPromptFile
-    // is intentionally NOT re-passed — the live process already carries it
-    // from spawn, so no new spawn and no re-injection.
-    await dispatch({ ...payload('再问一个'), appendSystemPromptFile: fakePath });
+    // Reuse: sendMessage gets the clean message only. The prompt file is
+    // intentionally NOT re-passed — the live process already carries it.
+    await dispatch(payload('再问一个'));
     assert.equal(mock.createRunCalls.length, 1, 'reuse must not spawn a new run');
     assert.equal(mock.sendMessageCalls.length, 1);
     assert.equal(mock.sendMessageCalls[0]!.message, '再问一个');
   });
 
-  it('/new cancels the reusable run so the next message spawns fresh', async () => {
+  it('re-derives the wiki prompt file when a queued message drains into a fresh spawn', async () => {
+    // Regression: a queued follow-up used to carry appendSystemPromptFile=
+    // undefined (frozen at queue time), so if it drained into a fresh spawn
+    // (run died / timed out) the new process lost the wiki role frame. The
+    // dispatcher now derives the file at spawn time, so the fresh spawn still
+    // gets it.
     await dispatch(payload('first'));
     const run1 = mock.createRunCalls[0]!.runId;
 
-    // Send /new via the raw message handler path (parses text → /new branch).
-    const handleRaw = (service as unknown as {
-      handleRawMessage: (raw: Record<string, unknown>) => Promise<void>;
-    }).handleRawMessage.bind(service);
-    await handleRaw({
-      message_id: 'new-1',
-      from_user_id: 'u1',
-      item_list: [{ type: 1, text_item: { text: '/new' } }],
-    });
+    // Second message arrives mid-turn → queued.
+    await dispatch(payload('second'));
+    assert.equal(mock.sendMessageCalls.length, 0, 'should queue while busy');
 
-    assert.ok(mock.cancelCalls.includes(run1), '/new should cancel the reusable run');
+    // Run dies mid-conversation, then turn_end drains the queue.
+    mock.markNonReceptive(run1);
+    mock.emit(run1, { type: 'turn_end', stopReason: 'end_turn' });
+    await settle(); // let drainQueue → fresh-spawn dispatch run
+
+    assert.equal(mock.createRunCalls.length, 2, 'queued msg drained into a fresh spawn');
+    assert.equal(
+      mock.createRunCalls[1]!.appendSystemPromptFile,
+      WEIXIN_SYS_PROMPT_FILE,
+      'fresh spawn from a drained queue must still carry the wiki prompt file',
+    );
+    assert.equal(mock.sendMessageCalls.length, 0, 'dead run is not sent a message');
+  });
+
+  it('cancelUser (the /new action) drops the reusable run so the next message spawns fresh', async () => {
+    await dispatch(payload('first'));
+    const run1 = mock.createRunCalls[0]!.runId;
+
+    dispatcher.cancelUser('u1');
+    assert.ok(mock.cancelCalls.includes(run1), 'cancelUser should cancel the reusable run');
 
     // Next message spawns a fresh run (no reuse).
     await dispatch(payload('after new'));
-    assert.equal(mock.createRunCalls.length, 2, 'next message after /new spawns fresh');
+    assert.equal(mock.createRunCalls.length, 2, 'next message after cancel spawns fresh');
     assert.equal(mock.sendMessageCalls.length, 0);
   });
 });

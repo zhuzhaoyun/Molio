@@ -3,16 +3,13 @@ import os from 'node:os';
 import path from 'node:path';
 import QRCode from 'qrcode';
 import type Database from 'better-sqlite3';
-import type { AgentEvent, ChatMessage } from '@molio/contracts';
 import type { RunManager } from '../RunManager.js';
 import type { ConversationService } from '../conversations/service.js';
 import { loadConfig, saveConfig, type WeixinConfig } from '../config.js';
-import { getVaultByPath } from '../db.js';
-import { WEIXIN_SYS_PROMPT_FILE } from '../wiki-prompts.js';
 import { DEFAULT_BASE_URL, WeixinApi } from './client.js';
-import { buildMolioPrompt, parseWeixinMessage } from './message.js';
+import { WeixinRunDispatcher } from './dispatcher.js';
+import { parseWeixinMessage } from './message.js';
 import { materializeAttachments } from './media.js';
-import { extractOutboundMedia } from './outbound-media.js';
 import type {
   ConnectionState,
   OutboundMediaItem,
@@ -26,7 +23,6 @@ const SESSION_EXPIRED_CODE = -14;
 const QR_LOGIN_TIMEOUT_MS = 8 * 60 * 1000;
 const QR_MAX_REFRESHES = 10;
 const TEXT_CHUNK_LIMIT = 4000;
-const RUN_REPLY_TIMEOUT_MS = 5 * 60 * 1000;
 /** Health probe interval when in unhealthy state (ms). */
 const HEALTH_PROBE_INTERVAL_MS = 30_000;
 
@@ -86,64 +82,6 @@ async function toQrDataUrl(content: string): Promise<string> {
   });
 }
 
-export function buildWeixinRunMessage(
-  db: Database.Database | undefined,
-  text: string,
-  cwd: string | undefined,
-  isFirstTurn: boolean,
-): { message: string; appendSystemPromptFile?: string } {
-  const message = buildMolioPrompt(text);
-  // The wiki intake frame is injected as the agent's SYSTEM prompt (via
-  // --append-system-prompt-file, pointing at ~/.molio/sysprompt/weixin.txt
-  // materialized at daemon startup) only on the first turn of a fresh
-  // process. Follow-ups reuse the existing multi-turn session, which already
-  // carries the frame from turn 1. Keeping the frame in the system prompt
-  // instead of prepending it to the user message lets the agent use its
-  // native retrieval judgment on the user's actual query — verified to
-  // unblock "总结今天的工作" (git log + find -newermt) while still steering
-  // intake (wechat-article-extractor etc.).
-  if (!isFirstTurn) return { message };
-  if (!db || !cwd) return { message };
-
-  const vault = getVaultByPath(db, cwd);
-  if (!vault) return { message };
-
-  return { message, appendSystemPromptFile: WEIXIN_SYS_PROMPT_FILE };
-}
-
-/**
- * Per-WeChat-user reusable run state.
- *
- * WeChat messages from the same user reuse a single multi-turn run (Claude
- * Code keeps stdin open across turns) instead of spawning a fresh process
- * per message. `busy` serializes turns: while a turn is in flight, later
- * messages are buffered in `queue` and drained on `turn_end`. This preserves
- * Claude Code's native session continuity (and its prompt cache) across
- * WeChat messages, and avoids orphaning one claude process per message.
- */
-interface UserRunState {
-  runId: string;
-  busy: boolean;
-  queue: QueuedMessage[];
-}
-
-export interface QueuedMessage {
-  fromUserId: string;
-  conversationId: string;
-  agentId: string;
-  cwd: string | undefined;
-  /** Already-wrapped run message (wiki frame only on fresh spawn). */
-  runMessage: string;
-  /** Raw user text, persisted as the user message when dispatched. */
-  rawUserText: string;
-  /**
-   * Wiki/vault role frame passed as the agent's system prompt (via
-   * --append-system-prompt-file) on a fresh spawn. Undefined on follow-ups —
-   * the reused process already carries it from turn 1.
-   */
-  appendSystemPromptFile?: string;
-}
-
 export class WeixinService {
   private api: WeixinApi | null = null;
   private cursor = '';
@@ -153,8 +91,8 @@ export class WeixinService {
   private healthTimer: ReturnType<typeof setInterval> | null = null;
   private contextTokens = new Map<string, string>();
   private receivedMessageIds = new Map<string, number>();
-  /** fromUserId → reusable multi-turn run state. */
-  private userRuns = new Map<string, UserRunState>();
+  /** Multi-turn run reuse state machine (per-user run/queue/drain). */
+  private readonly dispatcher: WeixinRunDispatcher;
   private status: WeixinStatus = {
     enabled: false,
     loginStatus: 'idle',
@@ -171,7 +109,19 @@ export class WeixinService {
     private readonly runManager: RunManager,
     private readonly conversations: ConversationService,
     private readonly db?: Database.Database,
-  ) {}
+  ) {
+    // The dispatcher owns run/queue state; the channel owns the send path
+    // (it depends on `api` + `contextTokens`, which live here). Sinks capture
+    // `this` so dispatches always use the current api/context token.
+    this.dispatcher = new WeixinRunDispatcher({
+      runManager,
+      conversations,
+      db,
+      sendText: (toUserId, text) => this.sendText(toUserId, text),
+      sendMediaFile: (toUserId, item) => this.sendMediaFile(toUserId, item),
+      onActiveRun: (runId) => { this.status.activeRunId = runId; },
+    });
+  }
 
   getStatus(): WeixinStatus {
     const cfg = this.getConfig();
@@ -244,7 +194,7 @@ export class WeixinService {
     this.loginAbort = null;
     // Tear down any reusable multi-turn runs so we don't orphan claude
     // processes when the channel stops.
-    this.cancelAllUserRuns();
+    this.dispatcher.cancelAll();
     this.api = null;
     this.cursor = '';
     this.transitionTo('idle');
@@ -504,7 +454,7 @@ export class WeixinService {
       const closed = this.conversations.closeExternalSession('weixin', parsed.fromUserId);
       // Drop the reusable run too so the next message spawns a fresh session
       // (new conversation, no prior context).
-      this.cancelUserRun(parsed.fromUserId);
+      this.dispatcher.cancelUser(parsed.fromUserId);
       if (closed) {
         await this.sendText(parsed.fromUserId, '已开启新会话。发送消息即可开始新的对话。');
       } else {
@@ -546,25 +496,14 @@ export class WeixinService {
         this.api ? (url, aesKey) => this.api!.downloadMedia(url, aesKey) : undefined,
       );
 
-      // A fresh spawn is required when there is no reusable run for this user.
-      // The wiki intake frame is injected only on fresh spawns; follow-ups
-      // reuse the existing session which already carries it.
-      const isFreshSpawn = !this.canReuseRunFor(message.fromUserId);
-      const { message: runMessage, appendSystemPromptFile } = buildWeixinRunMessage(
-        this.db,
-        message.text,
-        cwd,
-        isFreshSpawn,
-      );
-
-      await this.dispatchMessage({
+      // Hand off to the dispatcher: it decides reuse-vs-fresh-spawn, derives
+      // the wiki system-prompt file at spawn time, and serializes turns.
+      await this.dispatcher.dispatch({
         fromUserId: message.fromUserId,
         conversationId: conversation.id,
         agentId,
         cwd,
-        runMessage,
         rawUserText: message.text,
-        appendSystemPromptFile,
         history,
       });
     } catch (err) {
@@ -573,178 +512,6 @@ export class WeixinService {
         this.conversations.appendAssistantMessage(conversationId, text, { agentId });
       }
       await this.sendText(message.fromUserId, text);
-    }
-  }
-
-  /** Whether the user currently has a reusable (alive, multi-turn) run. */
-  private canReuseRunFor(fromUserId: string): boolean {
-    const state = this.userRuns.get(fromUserId);
-    return !!state && this.runManager.canAcceptMessage(state.runId);
-  }
-
-  /**
-   * Dispatch a WeChat user message: reuse the active multi-turn run, queue it
-   * while a turn is in flight, or spawn a fresh run. User messages are
-   * persisted at dispatch time (after flushing any pending assistant reply)
-   * so DB position ordering matches the real conversation order.
-   */
-  private async dispatchMessage(msg: QueuedMessage & { history: ChatMessage[] }): Promise<void> {
-    const { fromUserId, conversationId, agentId, cwd, runMessage, rawUserText, appendSystemPromptFile, history } = msg;
-    const state = this.userRuns.get(fromUserId);
-
-    if (state && this.runManager.canAcceptMessage(state.runId)) {
-      if (state.busy) {
-        // A turn is in flight — buffer and drain on its turn_end.
-        state.queue.push({ fromUserId, conversationId, agentId, cwd, runMessage, rawUserText, appendSystemPromptFile });
-        return;
-      }
-      state.busy = true;
-      // Persist the pending assistant reply BEFORE the next user message so
-      // ordering stays correct (mirrors the desktop POST /:id/messages path).
-      this.runManager.flushPendingReply(state.runId);
-      this.conversations.appendUserMessage(conversationId, rawUserText);
-      // appendSystemPromptFile is intentionally NOT passed here: sendMessage
-      // reuses the live process, which already carries the system prompt from
-      // spawn.
-      this.runManager.sendMessage(state.runId, runMessage);
-      this.status.activeRunId = state.runId;
-      await this.sendText(fromUserId, 'Molio 正在处理...');
-      void this.forwardRunReply(state.runId, fromUserId, conversationId, agentId, cwd);
-      return;
-    }
-
-    // No reusable run — cancel any stale tracked run for this user, then spawn.
-    if (state) {
-      this.runManager.cancelRun(state.runId);
-      this.userRuns.delete(fromUserId);
-    }
-    this.conversations.appendUserMessage(conversationId, rawUserText);
-    const runId = await this.runManager.createRun({
-      agentId,
-      cwd,
-      message: runMessage,
-      appendSystemPromptFile,
-      conversationId,
-      history,
-    });
-    this.userRuns.set(fromUserId, { runId, busy: true, queue: [] });
-    this.status.activeRunId = runId;
-    await this.sendText(fromUserId, 'Molio 正在处理...');
-    void this.forwardRunReply(runId, fromUserId, conversationId, agentId, cwd);
-  }
-
-  /**
-   * Drain the next queued message for a user after a turn completed. Called
-   * from forwardRunReply's finish(). If the run died mid-conversation, the
-   * next dispatch falls back to a fresh spawn.
-   */
-  private drainQueue(fromUserId: string): void {
-    const state = this.userRuns.get(fromUserId);
-    if (!state) return;
-    state.busy = false;
-    const next = state.queue.shift();
-    if (!next) return;
-    void this.dispatchMessage({ ...next, history: [] });
-  }
-
-  /** Cancel and forget the reusable run for a user (e.g. on /new or stop). */
-  private cancelUserRun(fromUserId: string): void {
-    const state = this.userRuns.get(fromUserId);
-    if (!state) return;
-    this.runManager.cancelRun(state.runId);
-    this.userRuns.delete(fromUserId);
-  }
-
-  /** Cancel every active user run (used on stop). */
-  private cancelAllUserRuns(): void {
-    for (const fromUserId of Array.from(this.userRuns.keys())) {
-      this.cancelUserRun(fromUserId);
-    }
-  }
-
-  private async forwardRunReply(
-    runId: string,
-    toUserId: string,
-    conversationId: string,
-    agentId: string,
-    cwd: string | undefined,
-  ): Promise<void> {
-    let reply = '';
-    let settled = false;
-    let unsubscribe: (() => void) | null = null;
-
-    const finish = async (text: string, opts?: { cancelRun?: boolean }) => {
-      if (settled) return;
-      settled = true;
-      unsubscribe?.();
-      clearTimeout(timer);
-      // On timeout we give up on this turn's reply; cancel the run so a
-      // queued follow-up spawns fresh instead of writing into a run that is
-      // still grinding on the previous message.
-      if (opts?.cancelRun) {
-        this.runManager.cancelRun(runId);
-      }
-      // Pull out <attach/> markers: those files are delivered as real WeChat
-      // attachments; the markers are stripped from `cleanText` so the phone
-      // never sees a local path. Delivery is explicit-only — files the AI
-      // writes via Write/Edit are NOT auto-delivered (that would spam the
-      // user with every .md produced during ingestion).
-      const { items, text: cleanText } = extractOutboundMedia(text, cwd);
-      this.conversations.appendAssistantMessage(conversationId, cleanText || text, { agentId, runId });
-      if (cleanText) {
-        await this.sendText(toUserId, cleanText);
-      }
-      for (const item of items) {
-        await this.sendMediaFile(toUserId, item);
-      }
-      // Drain the next queued message (no-op if queue empty).
-      this.drainQueue(toUserId);
-    };
-
-    const handleEvent = (event: AgentEvent) => {
-      if (event.type === 'text_delta') {
-        reply += event.delta;
-        return;
-      }
-
-      // tool_use events are intentionally not handled here — file delivery is
-      // explicit-only via <attach/> markers parsed from the reply text, so we
-      // don't need to track which files the AI wrote.
-
-      if (event.type === 'error') {
-        void finish(`Molio 处理失败：${event.message}`);
-        return;
-      }
-
-      if (event.type === 'turn_end') {
-        const text = reply.trim();
-        void finish(text || 'Molio 已完成处理，但没有返回文本内容。');
-        return;
-      }
-
-      if (event.type === 'status' && (event.label === 'failed' || event.label === 'canceled')) {
-        void finish(`Molio 运行已${event.label === 'failed' ? '失败' : '取消'}。`);
-        return;
-      }
-
-      if (event.type === 'status' && event.label === 'completed') {
-        const text = reply.trim();
-        void finish(text || 'Molio 已完成处理，但没有返回文本内容。');
-      }
-    };
-
-    const timer = setTimeout(() => {
-      void finish(
-        reply.trim() || `Molio 仍在处理，稍后可在桌面端查看运行：${runId}`,
-        { cancelRun: true },
-      );
-    }, RUN_REPLY_TIMEOUT_MS);
-    timer.unref?.();
-
-    unsubscribe = this.runManager.onEvent(runId, handleEvent);
-    if (!unsubscribe) {
-      clearTimeout(timer);
-      await this.sendText(toUserId, `Molio 已创建运行，但无法订阅结果：${runId}`);
     }
   }
 
