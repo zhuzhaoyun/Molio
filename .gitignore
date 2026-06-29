@@ -21,3 +21,4 @@ deliverables/
 
 # Superpowers docs (design specs, plans)
 docs/superpowers/
+.artifacts/

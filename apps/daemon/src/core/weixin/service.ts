@@ -3,16 +3,13 @@ import os from 'node:os';
 import path from 'node:path';
 import QRCode from 'qrcode';
 import type Database from 'better-sqlite3';
-import type { AgentEvent } from '@molio/contracts';
 import type { RunManager } from '../RunManager.js';
 import type { ConversationService } from '../conversations/service.js';
 import { loadConfig, saveConfig, type WeixinConfig } from '../config.js';
-import { getVaultByPath } from '../db.js';
-import { WIKI_WEIXIN_PROMPT } from '../wiki-prompts.js';
 import { DEFAULT_BASE_URL, WeixinApi } from './client.js';
-import { buildMolioPrompt, parseWeixinMessage } from './message.js';
+import { WeixinRunDispatcher } from './dispatcher.js';
+import { parseWeixinMessage } from './message.js';
 import { materializeAttachments } from './media.js';
-import { extractOutboundMedia } from './outbound-media.js';
 import type {
   ConnectionState,
   OutboundMediaItem,
@@ -26,7 +23,6 @@ const SESSION_EXPIRED_CODE = -14;
 const QR_LOGIN_TIMEOUT_MS = 8 * 60 * 1000;
 const QR_MAX_REFRESHES = 10;
 const TEXT_CHUNK_LIMIT = 4000;
-const RUN_REPLY_TIMEOUT_MS = 5 * 60 * 1000;
 /** Health probe interval when in unhealthy state (ms). */
 const HEALTH_PROBE_INTERVAL_MS = 30_000;
 
@@ -86,21 +82,6 @@ async function toQrDataUrl(content: string): Promise<string> {
   });
 }
 
-export function buildWeixinRunMessage(
-  db: Database.Database | undefined,
-  text: string,
-  cwd: string | undefined,
-  _isFirstTurn: boolean,
-): string {
-  const message = buildMolioPrompt(text);
-  if (!db || !cwd) return message;
-
-  const vault = getVaultByPath(db, cwd);
-  if (!vault) return message;
-
-  return `${WIKI_WEIXIN_PROMPT}\n\n---\n\n用户消息：${message}`;
-}
-
 export class WeixinService {
   private api: WeixinApi | null = null;
   private cursor = '';
@@ -110,6 +91,8 @@ export class WeixinService {
   private healthTimer: ReturnType<typeof setInterval> | null = null;
   private contextTokens = new Map<string, string>();
   private receivedMessageIds = new Map<string, number>();
+  /** Multi-turn run reuse state machine (per-user run/queue/drain). */
+  private readonly dispatcher: WeixinRunDispatcher;
   private status: WeixinStatus = {
     enabled: false,
     loginStatus: 'idle',
@@ -126,7 +109,19 @@ export class WeixinService {
     private readonly runManager: RunManager,
     private readonly conversations: ConversationService,
     private readonly db?: Database.Database,
-  ) {}
+  ) {
+    // The dispatcher owns run/queue state; the channel owns the send path
+    // (it depends on `api` + `contextTokens`, which live here). Sinks capture
+    // `this` so dispatches always use the current api/context token.
+    this.dispatcher = new WeixinRunDispatcher({
+      runManager,
+      conversations,
+      db,
+      sendText: (toUserId, text) => this.sendText(toUserId, text),
+      sendMediaFile: (toUserId, item) => this.sendMediaFile(toUserId, item),
+      onActiveRun: (runId) => { this.status.activeRunId = runId; },
+    });
+  }
 
   getStatus(): WeixinStatus {
     const cfg = this.getConfig();
@@ -197,6 +192,9 @@ export class WeixinService {
     this.pollAbort = null;
     this.loginAbort?.abort();
     this.loginAbort = null;
+    // Tear down any reusable multi-turn runs so we don't orphan claude
+    // processes when the channel stops.
+    this.dispatcher.cancelAll();
     this.api = null;
     this.cursor = '';
     this.transitionTo('idle');
@@ -454,6 +452,9 @@ export class WeixinService {
     const trimmed = parsed.text.trim();
     if (trimmed === '/new' || trimmed === '/clear' || trimmed === '/重置') {
       const closed = this.conversations.closeExternalSession('weixin', parsed.fromUserId);
+      // Drop the reusable run too so the next message spawns a fresh session
+      // (new conversation, no prior context).
+      this.dispatcher.cancelUser(parsed.fromUserId);
       if (closed) {
         await this.sendText(parsed.fromUserId, '已开启新会话。发送消息即可开始新的对话。');
       } else {
@@ -495,99 +496,22 @@ export class WeixinService {
         this.api ? (url, aesKey) => this.api!.downloadMedia(url, aesKey) : undefined,
       );
 
-      this.conversations.appendUserMessage(conversation.id, message.text);
-      const runId = await this.runManager.createRun({
+      // Hand off to the dispatcher: it decides reuse-vs-fresh-spawn, derives
+      // the wiki system-prompt file at spawn time, and serializes turns.
+      await this.dispatcher.dispatch({
+        fromUserId: message.fromUserId,
+        conversationId: conversation.id,
         agentId,
         cwd,
-        message: buildWeixinRunMessage(this.db, message.text, cwd, history.length === 0),
-        conversationId: conversation.id,
+        rawUserText: message.text,
         history,
       });
-      this.status.activeRunId = runId;
-      await this.sendText(message.fromUserId, 'Molio 正在处理...');
-      void this.forwardRunReply(runId, message.fromUserId, conversation.id, agentId, cwd);
     } catch (err) {
       const text = `Molio 处理失败：${err instanceof Error ? err.message : String(err)}`;
       if (conversationId) {
         this.conversations.appendAssistantMessage(conversationId, text, { agentId });
       }
       await this.sendText(message.fromUserId, text);
-    }
-  }
-
-  private async forwardRunReply(
-    runId: string,
-    toUserId: string,
-    conversationId: string,
-    agentId: string,
-    cwd: string | undefined,
-  ): Promise<void> {
-    let reply = '';
-    let settled = false;
-    let unsubscribe: (() => void) | null = null;
-    /** tool_use events seen this turn — used to detect deliverable files. */
-    const writtenFiles: Array<{ name: string; input: unknown }> = [];
-
-    const finish = async (text: string) => {
-      if (settled) return;
-      settled = true;
-      unsubscribe?.();
-      clearTimeout(timer);
-      // Pull out <attach/> markers (and Write-tool files): the files are
-      // delivered as real WeChat attachments; the markers are stripped from
-      // `cleanText` so the phone never sees a local path.
-      const { items, text: cleanText } = extractOutboundMedia(writtenFiles, text, cwd);
-      this.conversations.appendAssistantMessage(conversationId, cleanText || text, { agentId, runId });
-      if (cleanText) {
-        await this.sendText(toUserId, cleanText);
-      }
-      for (const item of items) {
-        await this.sendMediaFile(toUserId, item);
-      }
-    };
-
-    const handleEvent = (event: AgentEvent) => {
-      if (event.type === 'text_delta') {
-        reply += event.delta;
-        return;
-      }
-
-      if (event.type === 'tool_use') {
-        writtenFiles.push({ name: event.name, input: event.input });
-        return;
-      }
-
-      if (event.type === 'error') {
-        void finish(`Molio 处理失败：${event.message}`);
-        return;
-      }
-
-      if (event.type === 'turn_end') {
-        const text = reply.trim();
-        void finish(text || 'Molio 已完成处理，但没有返回文本内容。');
-        return;
-      }
-
-      if (event.type === 'status' && (event.label === 'failed' || event.label === 'canceled')) {
-        void finish(`Molio 运行已${event.label === 'failed' ? '失败' : '取消'}。`);
-        return;
-      }
-
-      if (event.type === 'status' && event.label === 'completed') {
-        const text = reply.trim();
-        void finish(text || 'Molio 已完成处理，但没有返回文本内容。');
-      }
-    };
-
-    const timer = setTimeout(() => {
-      void finish(reply.trim() || `Molio 仍在处理，稍后可在桌面端查看运行：${runId}`);
-    }, RUN_REPLY_TIMEOUT_MS);
-    timer.unref?.();
-
-    unsubscribe = this.runManager.onEvent(runId, handleEvent);
-    if (!unsubscribe) {
-      clearTimeout(timer);
-      await this.sendText(toUserId, `Molio 已创建运行，但无法订阅结果：${runId}`);
     }
   }
 

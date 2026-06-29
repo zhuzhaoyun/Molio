@@ -283,7 +283,7 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
     setShowChatPanel(true);
     wikiChat.reset();
     setTimeout(() => {
-      wikiChat.startWikiOperation('build', '开始构建 Wiki');
+      wikiChat.startWikiOperation('build', '用 wiki-build skill 开始构建 Wiki：扫描 vault 中所有源文件，构建结构化 wiki。');
     }, 50);
   }, [agentId, wikiChat]);
 
@@ -292,7 +292,7 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
     setShowChatPanel(true);
     wikiChat.reset();
     setTimeout(() => {
-      wikiChat.startWikiOperation('ingest', `把 ${filePath} 加入 Wiki`, { filePath });
+      wikiChat.startWikiOperation('ingest', `用 wiki-ingest skill 把这个文件加入 Wiki：${filePath}`);
     }, 50);
   }, [agentId, wikiChat]);
 
@@ -301,7 +301,7 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
     setShowChatPanel(true);
     wikiChat.reset();
     setTimeout(() => {
-      wikiChat.startWikiOperation('lint', '检查 Wiki 健康状况');
+      wikiChat.startWikiOperation('lint', '用 wiki-lint skill 检查 Wiki 健康状况：查孤立页/断链/frontmatter 缺失/内容矛盾等，生成 lint 报告。');
     }, 50);
   }, [agentId, wikiChat]);
 

@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+
+# 禁止抓取无用页面
+Disallow: /api/
+Disallow: /admin/
+Disallow: /*.json$
+
+# Sitemap
+Sitemap: https://molio.cn/sitemap.xml
