@@ -2111,19 +2111,51 @@
 
 .kb-workspace-tabs {
   display: flex;
+  align-items: stretch;
+  gap: 0;
+  padding: 0;
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  height: 36px;
+}
+
+/* Scrollable tab list — keeps trailing global actions fixed when tabs overflow. */
+.kb-wtab-list {
+  display: flex;
   align-items: center;
   gap: 0;
   padding: 0 8px;
-  background: var(--bg-subtle);
-  border-bottom: 1px solid var(--border);
   overflow-x: auto;
   overflow-y: hidden;
-  flex-shrink: 0;
-  height: 36px;
+  flex: 1 1 auto;
+  min-width: 0;
   scrollbar-width: none;
 }
 
-.kb-workspace-tabs::-webkit-scrollbar { display: none; }
+.kb-wtab-list::-webkit-scrollbar { display: none; }
+
+/* Trailing global actions (vault-level, not tied to the active document). */
+.kb-wtab-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 6px 0 4px;
+  margin-left: auto;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  background: var(--bg-subtle);
+}
+
+.kb-wtab-actions .kb-btn {
+  padding: 4px;
+  color: var(--text-muted);
+}
+
+.kb-wtab-actions .kb-btn:hover {
+  color: var(--text);
+  background: var(--bg-panel);
+}
 
 .kb-wtab {
   display: flex;

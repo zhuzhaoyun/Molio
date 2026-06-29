@@ -31,9 +31,10 @@ test.describe('KB Full-text Search', () => {
 
     // 点击结果打开文件
     await panel.locator('[data-testid="kb-search-result"]').click();
-    // 面板关闭，文件在标签栏打开并切换到 a.md
+    // 面板关闭，文件在标签栏新开 tab 并切换到 a.md（b.md tab 保留）
     await expect(panel).not.toBeVisible();
-    await expect(page.locator('.kb-wtab-title')).toContainText('a.md');
+    await expect(page.locator('.kb-wtab.is-active .kb-wtab-title')).toContainText('a.md');
+    await expect(page.locator('.kb-wtab')).toHaveCount(2);
   });
 
   test('Ctrl+F opens search panel', async ({ page }) => {
@@ -44,5 +45,18 @@ test.describe('KB Full-text Search', () => {
     // ESC 关闭
     await page.keyboard.press('Escape');
     await expect(page.locator('[data-testid="kb-search-panel"]')).not.toBeVisible();
+  });
+
+  test('search button stays visible in tab bar with no tabs open', async ({ page }) => {
+    // Select the vault without opening a file → no tabs, but the global search
+    // entry in the tab bar must remain available.
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.kb-wtab')).toHaveCount(0);
+
+    const searchBtn = page.locator('[data-testid="kb-btn-search"]');
+    await expect(searchBtn).toBeVisible({ timeout: 5_000 });
+    await searchBtn.click();
+    await expect(page.locator('[data-testid="kb-search-panel"]')).toBeVisible();
   });
 });
