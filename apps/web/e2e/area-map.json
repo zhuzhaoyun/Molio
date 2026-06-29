@@ -30,7 +30,7 @@
         "apps/daemon/src/core/db.ts",
         "apps/daemon/src/routes/knowledge.ts"
       ],
-      "specs": ["create-vault-form", "knowledge", "markdown-render", "kb-tree-sort-locate"]
+      "specs": ["create-vault-form", "knowledge", "markdown-render", "kb-tree-sort-locate", "kb-chat-entry"]
     },
     "publish": {
       "paths": [
@@ -97,7 +97,8 @@
     "history": { "priority": "P1", "file": "history.spec.ts" },
     "knowledge": { "priority": "P0", "file": "knowledge.spec.ts" },
     "kb-tree-sort-locate": { "priority": "P1", "file": "kb-tree-sort-locate.spec.ts" },
-    "markdown-render": { "priority": "P1", "file": "markdown-render.spec.ts" },
+    "kb-chat-entry": { "priority": "P1", "file": "kb-chat-entry.spec.ts" },
+        "markdown-render": { "priority": "P1", "file": "markdown-render.spec.ts" },
     "navigation": { "priority": "P1", "file": "navigation.spec.ts" },
     "publish-flow": { "priority": "P0", "file": "publish-flow.spec.ts" },
     "runtime-provider-config": { "priority": "P1", "file": "runtime-provider-config.spec.ts" },
