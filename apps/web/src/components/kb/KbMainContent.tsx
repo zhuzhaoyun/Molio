@@ -6,7 +6,6 @@
  */
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import type { ReactNode } from 'react';
 import type { FileContent } from '@molio/contracts';
 import type { ThemeConfig } from './MdStylePanel';
 import { MdRenderer } from './MdRenderer';
@@ -79,10 +78,8 @@ interface KbMainContentProps {
   onAskAboutSelection?: (selectedText: string) => void;
   /** Open the document outline panel. */
   onOpenOutline?: () => void;
-  /** Open the full-text search panel (vault-level, always visible). */
-  onOpenSearch?: () => void;
-  /** Trailing node at the end of the toolbar (the ✨ command launcher). */
-  moreMenu?: ReactNode;
+  /** Open the unified KB chat panel in QA mode for the current file. */
+  onAskAboutFile?: () => void;
   /** 编辑后的内容（用于阅读模式显示未保存的更改） */
   editedContent?: string | null;
 }
@@ -108,8 +105,7 @@ export function KbMainContent({
   onToggleEdit,
   onAskAboutSelection,
   onOpenOutline,
-  onOpenSearch,
-  moreMenu,
+  onAskAboutFile,
   editedContent,
 }: KbMainContentProps) {
   const { t } = useI18n();
@@ -291,7 +287,7 @@ export function KbMainContent({
           )}
 
           {/* Divider: file actions │ view / command actions */}
-          {selectedFile && category && (onOpenOutline || onOpenSearch || moreMenu) && (
+          {selectedFile && category && (onOpenOutline || onAskAboutFile) && (
             <span className="kb-header-actions-divider" />
           )}
 
@@ -336,23 +332,20 @@ export function KbMainContent({
             </button>
           )}
 
-          {/* Full-text search (vault-level, always visible) */}
-          {onOpenSearch && (
+          {/* 💬 Ask about this file — document-scoped, direct (one click) */}
+          {onAskAboutFile && selectedFile && (
             <button
               type="button"
               className="kb-btn kb-btn-ghost"
-              onClick={onOpenSearch}
-              title={`${t('kb.moreMenuSearch')} (Ctrl/Cmd+F)`}
-              data-testid="kb-btn-search"
+              onClick={onAskAboutFile}
+              title={t('kb.askButton')}
+              data-testid="kb-btn-ask"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
-                <circle cx="11" cy="11" r="8" />
-                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
               </svg>
             </button>
           )}
-
-          {moreMenu}
         </div>
       </div>
 

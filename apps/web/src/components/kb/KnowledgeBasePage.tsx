@@ -7,17 +7,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import type { TreeNode } from '@molio/contracts';
 import { useKnowledge } from '../../hooks/useKnowledge';
-import { useChat } from '../../hooks/useChat';
-import { useFileChat } from '../../hooks/useFileChat';
+import { useKbChat } from '../../hooks/useKbChat';
 import { useKbTabs } from '../../hooks/useKbTabs';
 import { kbTabsStore } from '../../stores/kbTabsStore';
 import { vaultStore } from '../../stores/vaultStore';
 import { KbFilePanel } from './KbFilePanel';
 import { KbTabBar } from './KbTabBar';
-import { KbCommandLauncher } from './KbMoreMenu';
 import { KbMainContent } from './KbMainContent';
-import { WikiChatPanel } from './WikiChatPanel';
-import { FileChatPanel } from './FileChatPanel';
+import { KbChatPanel } from './KbChatPanel';
 import { OutlinePanel } from './OutlinePanel';
 import { SearchPanel } from './SearchPanel';
 import { VaultManagerModal } from './VaultManager';
@@ -57,10 +54,8 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const [showChatPanel, setShowChatPanel] = useState(false);
-  const [fileChatOpen, setFileChatOpen] = useState(false);
-  const [fileChatFilePath, setFileChatFilePath] = useState<string | null>(null);
-  const [fileChatSelectedText, setFileChatSelectedText] = useState<string | null>(null);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [qaSelectedText, setQaSelectedText] = useState<string | null>(null);
   const [pendingUrlNav, setPendingUrlNav] = useState<UrlFileNavigation | null>(null);
   const [showOutline, setShowOutline] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
@@ -92,15 +87,6 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
     navigate('.', { replace: true, state: {} });
   }, [location.state, kb.vaults, kb.activeVault?.id, navigate]);
 
-  useEffect(() => {
-    if (!pendingUrlNav) return;
-    if (kb.activeVault?.id !== pendingUrlNav.vaultId) return;
-    if (kb.treeVaultId !== pendingUrlNav.vaultId) return;
-    if (kb.tree.length === 0) return;
-
-    kb.selectFile(pendingUrlNav.filePath);
-    setPendingUrlNav(null);
-  }, [pendingUrlNav, kb.activeVault?.id, kb.treeVaultId, kb.tree, kb.selectFile]);
   // Context menu state
   const [ctxMenu, setCtxMenu] = useState<{ node: TreeNode; x: number; y: number } | null>(null);
 
@@ -132,84 +118,104 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
     onConfirm: () => void;
   }>({ show: false, title: '', message: '', onConfirm: () => {} });
 
-  // Wiki chat hook — refreshes tree on build completion
-  const wikiChat = useChat({
-    agentId,
-    cwd: kb.activeVault?.path ?? null,
-    mode: 'wiki',
-    vaultId: kb.activeVault?.id ?? null,
-    onComplete: () => {
-      kb.refreshTree();
-    },
-  });
-
-  // File Q&A chat hook — independent conversation per file
-  const fileChat = useFileChat({
+  // Unified KB chat hook — covers QA, build, lint, ingest
+  const kbChat = useKbChat({
     agentId,
     vaultPath: kb.activeVault?.path ?? null,
-    filePath: fileChatFilePath,
+    onComplete: () => { kb.refreshTree(); },
   });
 
-  const openFileChat = useCallback((filePath: string, selectedText?: string) => {
-    setFileChatFilePath(filePath);
-    setFileChatSelectedText(selectedText ?? null);
-    setFileChatOpen(true);
-  }, []);
+  const handleOpenQa = useCallback(() => {
+    if (!kb.selectedFile) return;
+    setQaSelectedText(null);
+    kbChat.openQa();
+    setChatOpen(true);
+  }, [kb.selectedFile, kbChat]);
 
   const handleAskAboutSelection = useCallback((selectedText: string) => {
-    const currentFile = kb.selectedFile;
-    if (currentFile) {
-      openFileChat(currentFile, selectedText);
-    }
-  }, [kb.selectedFile, openFileChat]);
+    if (!kb.selectedFile) return;
+    setQaSelectedText(selectedText);
+    kbChat.openQa();
+    setChatOpen(true);
+  }, [kb.selectedFile, kbChat]);
 
   // ─── Tab-aware file selection ───
 
-  /** Open a file: reuse current tab if one exists, otherwise create a new tab. */
+  /**
+   * If the current document has unsaved edits, prompt before switching files;
+   * otherwise run `action` immediately. Guards tab-switch / file-open paths so
+   * multi-tab navigation doesn't silently discard edits.
+   */
+  const runOrConfirmDiscard = useCallback((action: () => void) => {
+    if (kb.editedContent === null) {
+      action();
+      return;
+    }
+    setConfirmDialog({
+      show: true,
+      title: '放弃未保存的修改？',
+      message: '当前文档有未保存的修改，切换后将丢弃这些修改。',
+      confirmLabel: '放弃修改并切换',
+      danger: true,
+      onConfirm: () => {
+        setConfirmDialog((prev) => ({ ...prev, show: false }));
+        action();
+      },
+    });
+  }, [kb.editedContent]);
+
+  /**
+   * Open a file: activate its tab if already open, otherwise open a new tab
+   * (appended to the right of existing tabs). Never overwrites an existing tab.
+   * Prompts before switching away from unsaved edits.
+   */
   const handleSelectFile = useCallback((path: string) => {
-    const fileName = path.split('/').pop() ?? path;
-    const tabId = `file:${path}`;
-    const existingTab = tabs.tabs.find(t => t.id === tabId);
-    if (existingTab) {
-      // Already open in a tab — just activate it
-      tabs.activateTab(tabId);
-    } else if (tabs.tabs.length === 0) {
-      // No tabs — create first one
-      tabs.openTab({ id: tabId, type: 'file', title: fileName });
-    } else {
-      // Replace current active tab (reusing the slot)
-      const activeTab = tabs.tabs.find(t => t.id === tabs.activeTabId);
-      if (activeTab) {
-        tabs.updateTab(activeTab.id, { id: tabId, type: 'file', title: fileName });
+    const action = () => {
+      const fileName = path.split('/').pop() ?? path;
+      const tabId = `file:${path}`;
+      const existingTab = tabs.tabs.find(t => t.id === tabId);
+      if (existingTab) {
+        // Already open in a tab — just activate it
+        tabs.activateTab(tabId);
       } else {
+        // Open a new tab (openTab appends to the end and activates it)
         tabs.openTab({ id: tabId, type: 'file', title: fileName });
       }
-    }
-    kb.selectFile(path);
-  }, [tabs, kb]);
-
-  /** Open a file in a new tab (always creates a new tab). */
-  const handleOpenInNewTab = useCallback((path: string) => {
-    const fileName = path.split('/').pop() ?? path;
-    const tabId = `file:${path}`;
-    tabs.openTab({ id: tabId, type: 'file', title: fileName });
-    kb.selectFile(path);
-  }, [tabs, kb]);
-
-  /** Switch to a tab and load its file */
-  const handleActivateTab = useCallback((tabId: string) => {
-    tabs.activateTab(tabId);
-    if (tabId.startsWith('file:')) {
-      const path = tabId.slice(5);
       kb.selectFile(path);
+    };
+    // Re-selecting the current file is a no-op — don't prompt.
+    if (path === kb.selectedFile) {
+      action();
+      return;
     }
-  }, [tabs, kb]);
+    runOrConfirmDiscard(action);
+  }, [tabs, kb, runOrConfirmDiscard]);
 
-  /** Close a tab; if it was active, the store auto-activates an adjacent tab */
+  /** Open a file in a new tab — same semantics as handleSelectFile. */
+  const handleOpenInNewTab = handleSelectFile;
+
+  /** Switch to a tab and load its file. Prompts before discarding unsaved edits. */
+  const handleActivateTab = useCallback((tabId: string) => {
+    // Clicking the already-active tab is a no-op — don't prompt.
+    if (tabId === tabs.activeTabId) return;
+    runOrConfirmDiscard(() => {
+      tabs.activateTab(tabId);
+      if (tabId.startsWith('file:')) {
+        kb.selectFile(tabId.slice(5));
+      }
+    });
+  }, [tabs, kb, runOrConfirmDiscard]);
+
+  /** Close a tab; if it was active, the store auto-activates an adjacent tab. */
   const handleCloseTab = useCallback((tabId: string) => {
     const wasActive = tabs.activeTabId === tabId;
-    tabs.closeTab(tabId);
-    if (wasActive) {
+    // Closing a non-active tab doesn't switch the viewed file — no prompt.
+    if (!wasActive) {
+      tabs.closeTab(tabId);
+      return;
+    }
+    runOrConfirmDiscard(() => {
+      tabs.closeTab(tabId);
       // After close, the store has already set a new activeTabId.
       // Sync selectedFile with the newly active tab.
       const newActive = kbTabsStore.getActiveTab();
@@ -219,8 +225,8 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
         // No tabs left — clear selection
         kb.selectFile(null);
       }
-    }
-  }, [tabs, kb]);
+    });
+  }, [tabs, kb, runOrConfirmDiscard]);
 
   // Sync: when URL navigation resolves, open in tab
   useEffect(() => {
@@ -278,70 +284,37 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
   }, [kb.panelWidth, kb.setPanelWidth]);
 
   // Wiki operation handlers
-  const handleBuildWiki = useCallback(() => {
-    if (!agentId) return;
-    setShowChatPanel(true);
-    wikiChat.reset();
-    setTimeout(() => {
-      wikiChat.startWikiOperation('build', '用 wiki-build skill 开始构建 Wiki：扫描 vault 中所有源文件，构建结构化 wiki。');
-    }, 50);
-  }, [agentId, wikiChat]);
+  const handleOpenWikiOp = useCallback((type: 'build' | 'lint') => {
+    kbChat.openWikiOp(type);
+    setChatOpen(true);
+  }, [kbChat]);
 
   const handleIngestFile = useCallback((filePath: string) => {
     if (!agentId) return;
-    setShowChatPanel(true);
-    wikiChat.reset();
-    setTimeout(() => {
-      wikiChat.startWikiOperation('ingest', `用 wiki-ingest skill 把这个文件加入 Wiki：${filePath}`);
-    }, 50);
-  }, [agentId, wikiChat]);
-
-  const handleLintWiki = useCallback(() => {
-    if (!agentId) return;
-    setShowChatPanel(true);
-    wikiChat.reset();
-    setTimeout(() => {
-      wikiChat.startWikiOperation('lint', '用 wiki-lint skill 检查 Wiki 健康状况：查孤立页/断链/frontmatter 缺失/内容矛盾等，生成 lint 报告。');
-    }, 50);
-  }, [agentId, wikiChat]);
+    kbChat.openIngest(filePath);
+    setChatOpen(true);
+  }, [agentId, kbChat]);
 
   const handleCloseChat = useCallback(() => {
-    setShowChatPanel(false);
-    if (wikiChat.isRunning) {
-      wikiChat.cancel();
-    }
-  }, [wikiChat]);
+    setChatOpen(false);
+    kbChat.close();
+  }, [kbChat]);
 
-  const handleCloseFileChat = useCallback(() => {
-    setFileChatOpen(false);
-    setFileChatSelectedText(null);
-    // Cancel an in-progress run so the SSE EventSource closes and the
-    // underlying agent process doesn't keep running after the panel closes.
-    if (fileChat.isRunning) {
-      fileChat.cancel();
-    }
-  }, [fileChat]);
-
-  // Wrap fileChat.send to prepend selected text as context
-  const handleFileChatSend = useCallback(
+  // Wrap send to prepend selected text as context for QA mode
+  const handleKbChatSend = useCallback(
     (text: string, fileRefs?: FileRef[], pastedImages?: PastedImage[]) => {
-      // Build the same @ ref / image prefix the home page composer does, so the
-      // "ask about this file" chat is just a normal chat with the file pre-@-ed.
       const prefix = buildAttachmentPrefix(fileRefs ?? [], pastedImages ?? []);
       let message = text;
       if (prefix) {
         message = `${prefix}\n\n${message || t('home.fileContextFallback')}`;
       }
-
-      if (fileChatSelectedText) {
-        const contextMsg = `${t('kb.fileChatContextPrefix')}\n> ${fileChatSelectedText}\n\n${message || t('kb.fileChatDefaultPrompt')}`;
-        setFileChatSelectedText(null); // only prepend once
-        fileChat.send(contextMsg);
-      } else {
-        fileChat.send(message);
+      if (qaSelectedText) {
+        message = `${t('kb.fileChatContextPrefix')}\n> ${qaSelectedText}\n\n${message || t('kb.fileChatDefaultPrompt')}`;
+        setQaSelectedText(null); // only prepend once
       }
+      kbChat.send(message);
     },
-    [fileChatSelectedText, fileChat.send],
+    [qaSelectedText, kbChat, t],
   );
 
   // Ctrl/Cmd+F — 打开全文搜索（仅 KB 页面）
@@ -356,7 +329,24 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
     return () => document.removeEventListener('keydown', handler);
   }, []);
 
-  // Ctrl+L / Cmd+L — open file chat for current file
+  // Ctrl/Cmd+K — open KB chat in QA mode for the current file
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        const tag = (e.target as HTMLElement)?.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+        e.preventDefault();
+        if (!kb.selectedFile) return;
+        setQaSelectedText(null);
+        kbChat.openQa();
+        setChatOpen(true);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [kb.selectedFile, kbChat]);
+
+  // Ctrl+L / Cmd+L — open file chat for current file (legacy shortcut, now opens QA)
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       // Don't trigger when focus is in an input/textarea
@@ -365,19 +355,15 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
 
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') {
         e.preventDefault();
-        const FILE_TAB_PREFIX = 'file:';
-        const activeTab = tabs.activeTabId
-          ? kbTabsStore.getTabs().find(t => t.id === tabs.activeTabId)
-          : null;
-        if (activeTab?.id.startsWith(FILE_TAB_PREFIX)) {
-          const filePath = activeTab.id.slice(FILE_TAB_PREFIX.length);
-          openFileChat(filePath);
-        }
+        if (!kb.selectedFile) return;
+        setQaSelectedText(null);
+        kbChat.openQa();
+        setChatOpen(true);
       }
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [tabs.activeTabId, openFileChat]);
+  }, [kb.selectedFile, kbChat]);
 
   // ─── Save toast helper (defined early — used by callbacks below) ───
 
@@ -473,7 +459,12 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
         label: t('kb.askAboutFile'),
         onClick: () => {
           handleCloseCtxMenu();
-          openFileChat(node.path);
+          if (kb.selectedFile !== node.path) {
+            handleSelectFile(node.path);
+          }
+          setQaSelectedText(null);
+          kbChat.openQa();
+          setChatOpen(true);
         },
       });
     } else {
@@ -567,7 +558,7 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
     }
 
     return items;
-  }, [ctxMenu, kb, showToast, handleNewFile, handleNewFolder, handleSelectFile, handleOpenInNewTab]);
+  }, [ctxMenu, kb, showToast, handleNewFile, handleNewFolder, handleSelectFile, handleOpenInNewTab, kbChat]);
 
   // ─── Inline rename ───
 
@@ -634,6 +625,47 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
           activeTabId={tabs.activeTabId}
           onActivate={handleActivateTab}
           onClose={handleCloseTab}
+          actions={
+            <>
+              <button
+                type="button"
+                className="kb-btn kb-btn-ghost"
+                onClick={() => handleOpenWikiOp('build')}
+                disabled={!kb.activeVault}
+                title={kb.activeVault ? t('kb.buildWiki') : t('kb.cmdNeedsVault')}
+                data-testid="kb-btn-build-wiki"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                  <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+                  <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className="kb-btn kb-btn-ghost"
+                onClick={() => handleOpenWikiOp('lint')}
+                disabled={!kb.activeVault || !kb.wikiInitialized}
+                title={kb.activeVault && kb.wikiInitialized ? t('kb.lintWiki') : t('kb.cmdNeedsVault')}
+                data-testid="kb-btn-lint-wiki"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                  <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className="kb-btn kb-btn-ghost"
+                onClick={() => setShowSearch(true)}
+                title={`${t('kb.moreMenuSearch')} (Ctrl/Cmd+F)`}
+                data-testid="kb-btn-search"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+              </button>
+            </>
+          }
         />
         <KbMainContent
           fileContent={kb.fileContent}
@@ -651,48 +683,29 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
           onSave={handleSave}
           onCopy={kb.copyToClipboard}
           onPublish={kb.publishToChrome}
-          onBuildWiki={handleBuildWiki}
+          onBuildWiki={() => handleOpenWikiOp('build')}
           onAskAboutSelection={handleAskAboutSelection}
           onOpenOutline={() => setShowOutline(true)}
-          onOpenSearch={() => setShowSearch(true)}
-          moreMenu={
-            <KbCommandLauncher
-              onAskAboutFile={kb.selectedFile ? () => openFileChat(kb.selectedFile!) : undefined}
-              onBuildWiki={hasVault ? handleBuildWiki : undefined}
-              onLintWiki={hasVault && kb.wikiInitialized ? handleLintWiki : undefined}
-            />
-          }
+          onAskAboutFile={kb.selectedFile ? handleOpenQa : undefined}
           showFileName={true}
           isEditMode={kb.isEditMode}
           onToggleEdit={kb.toggleEditMode}
         />
       </div>
 
-      {/* Wiki Chat Panel (right side) */}
-      {showChatPanel && (
-        <WikiChatPanel
-          messages={wikiChat.messages}
-          isRunning={wikiChat.isRunning}
-          operationType={wikiChat.operationType}
-          onSend={wikiChat.send}
-          onCancel={wikiChat.cancel}
-          onClose={handleCloseChat}
-          onSubmitToolResult={wikiChat.submitToolResult}
-        />
-      )}
-
-      {/* File Chat Panel (right side Q&A) */}
-      {fileChatOpen && fileChatFilePath && (
-        <FileChatPanel
-          messages={fileChat.messages}
-          isRunning={fileChat.isRunning}
-          filePath={fileChatFilePath}
+      {/* Unified KB Chat Panel (right side) */}
+      {chatOpen && (
+        <KbChatPanel
+          mode={kbChat.mode}
+          messages={kbChat.messages}
+          isRunning={kbChat.isRunning}
+          filePath={kbChat.mode === 'qa' ? kb.selectedFile : null}
           vaultId={kb.activeVault?.id ?? null}
-          selectedText={fileChatSelectedText}
-          onSend={handleFileChatSend}
-          onCancel={fileChat.cancel}
-          onClose={handleCloseFileChat}
-          onSubmitToolResult={fileChat.onSubmitToolResult}
+          selectedText={qaSelectedText}
+          onSend={handleKbChatSend}
+          onCancel={kbChat.cancel}
+          onClose={handleCloseChat}
+          onSubmitToolResult={(toolUseId, content) => kbChat.submitToolResult(toolUseId, content).then(() => true)}
           onOpenConversation={onOpenConversation}
         />
       )}
