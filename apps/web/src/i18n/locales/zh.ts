@@ -231,7 +231,6 @@ const zh: Record<string, string> = {
   'kb.moreMenuSearch': '全文搜索',
   'kb.moreMenuCollapseAll': '折叠全部文件夹',
   'kb.moreMenuComingSoon': '即将上线',
-  'kb.cmdLauncherLabel': '快捷指令',
   'kb.buildWiki': '构建 Wiki',
   'kb.lintWiki': 'Wiki 健康检查',
   'kb.cmdNeedsFile': '请先打开一个文件',

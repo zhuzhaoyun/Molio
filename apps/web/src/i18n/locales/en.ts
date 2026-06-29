@@ -231,7 +231,6 @@ const en: Record<string, string> = {
   'kb.moreMenuSearch': 'Full-text search',
   'kb.moreMenuCollapseAll': 'Collapse all folders',
   'kb.moreMenuComingSoon': 'Coming soon',
-  'kb.cmdLauncherLabel': 'Quick commands',
   'kb.buildWiki': 'Build Wiki',
   'kb.lintWiki': 'Wiki health check',
   'kb.cmdNeedsFile': 'Open a file first',

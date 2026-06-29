@@ -5,7 +5,7 @@ import { UserMessage } from '../UserMessage';
 import { AssistantMessage } from '../AssistantMessage';
 import { ChatComposer, type FileRef, type PastedImage } from '../ChatComposer';
 import { useI18n } from '../../i18n';
-import './FileChatPanel.css';
+import './KbChatPanel.css';
 
 interface KbChatPanelProps {
   mode: KbChatMode | null;
