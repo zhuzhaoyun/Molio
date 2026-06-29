@@ -38,8 +38,8 @@
    sort dropdown's menu items, which live inside the toolbar but need their
    own full-width layout (see .kb-sort-item). */
 .kb-file-toolbar button:not(.kb-sort-item) {
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   padding: 0;
   border: none;
   background: transparent;
@@ -53,8 +53,8 @@
 }
 
 .kb-file-toolbar button:not(.kb-sort-item) svg {
-  width: 16px;
-  height: 16px;
+  width: 15px;
+  height: 15px;
 }
 
 .kb-file-toolbar button:not(.kb-sort-item):hover {
@@ -807,7 +807,12 @@
 .kb-header-actions .kb-btn {
   padding: 2px 6px;
   font-size: 11px;
-  height: 24px;
+  height: 26px;
+}
+
+.kb-header-actions .kb-btn svg {
+  width: 15px;
+  height: 15px;
 }
 
 /* Button active state */
@@ -815,6 +820,13 @@
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
+}
+/* Ghost toggles (e.g. edit/read) get a quiet active state — solid accent fill is
+   reserved for the primary CTA (排版) so it stays the loudest element. */
+.kb-btn.kb-btn-ghost.is-active {
+  background: var(--accent-tint);
+  border-color: transparent;
+  color: var(--accent);
 }
 
 .kb-btn svg {

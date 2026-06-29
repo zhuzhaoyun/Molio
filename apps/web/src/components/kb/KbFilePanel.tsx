@@ -134,7 +134,7 @@ export function KbFilePanel({
     <aside className="kb-file-panel" style={{ width }}>
       {/* Toolbar */}
       <div className="kb-file-toolbar">
-        <button type="button" title="新建笔记" onClick={() => {
+        <button type="button" title={t('kb.newNote')} onClick={() => {
           const parent = selectedFile ? selectedFile.includes('/') ? selectedFile.slice(0, selectedFile.lastIndexOf('/')) : undefined : undefined;
           onNewFile(parent);
         }}>
@@ -145,7 +145,7 @@ export function KbFilePanel({
             <line x1="9" y1="15" x2="15" y2="15" />
           </svg>
         </button>
-        <button type="button" title="新建子文件夹" onClick={() => {
+        <button type="button" title={t('kb.newFolder')} onClick={() => {
           const parent = selectedFile ? selectedFile.includes('/') ? selectedFile.slice(0, selectedFile.lastIndexOf('/')) : undefined : undefined;
           onNewFolder(parent);
         }}>
@@ -212,7 +212,7 @@ export function KbFilePanel({
         {/* Collapse-all / Expand-all toggle — reflects actual tree state */}
         <button
           type="button"
-          title={anyExpanded ? '折叠全部' : '展开全部'}
+          title={anyExpanded ? t('kb.collapseAll') : t('kb.expandAll')}
           onClick={anyExpanded ? collapseAll : expandAll}
           data-testid="kb-btn-collapse-all"
         >
@@ -236,7 +236,7 @@ export function KbFilePanel({
       <div className="kb-search-bar">
         <input
           type="text"
-          placeholder="Search files..."
+          placeholder={t('kb.searchPlaceholder')}
           value={searchQuery}
           onChange={(e) => onSearchChange(e.target.value)}
         />

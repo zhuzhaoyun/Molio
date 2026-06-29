@@ -9,13 +9,19 @@
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
-  padding: 2px 6px;
-  height: 24px;
+  padding: 0;
+  height: 26px;
+  width: 26px;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   color: var(--text-muted);
   cursor: pointer;
   font-family: inherit;
+}
+.kb-more-menu-btn svg {
+  width: 15px;
+  height: 15px;
 }
 .kb-more-menu-btn:hover {
   color: var(--text);

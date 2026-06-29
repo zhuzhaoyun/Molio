@@ -224,7 +224,7 @@ export function KbMainContent({
             <>
               {/* Save — only in editing modes (read mode has nothing to save) */}
               {onSave && (isEditMode || isTypesetMode) && (
-                <button type="button" className="kb-btn kb-btn-ghost" onClick={onSave} title="保存">
+                <button type="button" className="kb-btn kb-btn-ghost" onClick={onSave} title={t('kb.save')}>
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
                     <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
                     <polyline points="17 21 17 13 7 13 7 21" />
@@ -236,13 +236,13 @@ export function KbMainContent({
               {/* Copy and Publish (typeset mode only) */}
               {isTypesetMode && (
                 <>
-                  <button type="button" className="kb-btn kb-btn-ghost" onClick={onCopy} title="复制">
+                  <button type="button" className="kb-btn kb-btn-ghost" onClick={onCopy} title={t('kb.copy')}>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
                       <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
                       <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
                     </svg>
                   </button>
-                  <button type="button" className="kb-btn kb-btn-ghost" onClick={onPublish} title="发布">
+                  <button type="button" className="kb-btn kb-btn-ghost" onClick={onPublish} title={t('kb.publish')}>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
                       <line x1="22" y1="2" x2="11" y2="13" />
                       <polygon points="22 2 15 22 11 13 2 9 22 2" />
@@ -257,7 +257,7 @@ export function KbMainContent({
                 type="button"
                 className={`kb-btn ${isTypesetMode ? 'is-active' : ''}`}
                 onClick={onToggleTypeset}
-                title={isTypesetMode ? '退出排版' : '排版'}
+                title={isTypesetMode ? t('kb.exitTypeset') : t('kb.typeset')}
                 data-testid="kb-btn-typeset"
               >
                 {isTypesetMode ? (
@@ -273,7 +273,7 @@ export function KbMainContent({
                     <path d="M12 4v16" />
                   </svg>
                 )}
-                {!isTypesetMode && <span>排版</span>}
+                {!isTypesetMode && <span>{t('kb.typeset')}</span>}
               </button>
             </>
           )}
@@ -286,7 +286,7 @@ export function KbMainContent({
                 <polyline points="15 3 21 3 21 9" />
                 <line x1="10" y1="14" x2="21" y2="3" />
               </svg>
-              <span>用外部程序打开</span>
+              <span>{t('kb.openExternal')}</span>
             </button>
           )}
 
@@ -322,7 +322,7 @@ export function KbMainContent({
               type="button"
               className={`kb-btn kb-btn-ghost ${isEditMode ? 'is-active' : ''}`}
               onClick={onToggleEdit}
-              title={isEditMode ? '阅读模式' : '编辑模式'}
+              title={isEditMode ? t('kb.readMode') : t('kb.editMode')}
               data-testid="kb-btn-edit"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
