@@ -25,7 +25,7 @@ const en: Record<string, string> = {
   'composer.stop': 'Stop',
   'composer.send': 'Send',
   'composer.hint': 'Shift+Enter for new line',
-  'composer.hintFileRef': 'Reference files',
+  'composer.hintFileRef': 'Reference files/folders',
   'composer.hintCommand': 'Commands',
   'composer.hintSend': 'Send',
   'composer.hintNewline': 'New line',
