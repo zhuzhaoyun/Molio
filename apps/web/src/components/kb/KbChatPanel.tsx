@@ -19,7 +19,7 @@ interface KbChatPanelProps {
   onSend: (text: string, fileRefs?: FileRef[], pastedImages?: PastedImage[]) => void;
   onCancel: () => void;
   onClose: () => void;
-  onSubmitToolResult: (toolUseId: string, content: string) => Promise<boolean>;
+  onSubmitToolResult: (toolUseId: string, content: string) => Promise<void>;
   onOpenConversation?: (conversationId: string) => void;
 }
 
@@ -76,7 +76,6 @@ export function KbChatPanel({
 
   const onAnswerToolUse = useCallback(async (toolUseId: string, content: string) => {
     await onSubmitToolResult(toolUseId, content);
-    return true;
   }, [onSubmitToolResult]);
 
   // qa 模式预载 @当前文档（与旧 FileChatPanel 一致）；wiki 模式不带 @-ref。

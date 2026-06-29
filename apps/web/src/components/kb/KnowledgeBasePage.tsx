@@ -705,7 +705,7 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
           onSend={handleKbChatSend}
           onCancel={kbChat.cancel}
           onClose={handleCloseChat}
-          onSubmitToolResult={(toolUseId, content) => kbChat.submitToolResult(toolUseId, content).then(() => true)}
+          onSubmitToolResult={kbChat.submitToolResult}
           onOpenConversation={onOpenConversation}
         />
       )}

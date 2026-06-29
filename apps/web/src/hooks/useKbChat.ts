@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
 import { useChatCore, type CreateRunContext, type ChatMessage } from './useChatCore';
 
@@ -9,7 +9,7 @@ const WIKI_PROMPTS: Record<'build' | 'lint', string> = {
   lint: '用 wiki-lint skill 检查 Wiki 健康状况：查孤立页/断链/frontmatter 缺失/内容矛盾等，生成 lint 报告。',
 };
 
-export function WIKI_INGEST_PROMPT(filePath: string): string {
+function WIKI_INGEST_PROMPT(filePath: string): string {
   return `用 wiki-ingest skill 把这个文件加入 Wiki：${filePath}`;
 }
 
@@ -66,7 +66,17 @@ export function useKbChat(opts: UseKbChatOptions): KbChatState {
 
   const chat = useChatCore({ createRun, agentId, onComplete });
 
+  const chatRef = useRef(chat);
+  chatRef.current = chat;
+
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+  }, []);
+
   const reset = useCallback(() => {
+    if (chat.isRunning) chat.cancel();
     conversationIdRef.current = null;
     setMode(null);
     chat.reset();
@@ -80,21 +90,24 @@ export function useKbChat(opts: UseKbChatOptions): KbChatState {
   const openWikiOp = useCallback((type: 'build' | 'lint') => {
     reset();
     setMode(type);
-    // reset 内部 setState 是异步的；用 setTimeout 确保 send 走新线程。
-    // 沿用旧 handleBuildWiki/handleLintWiki 的 50ms 模式。
-    setTimeout(() => { chat.send(WIKI_PROMPTS[type]); }, 50);
-  }, [reset, chat]);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      chatRef.current.send(WIKI_PROMPTS[type]);
+    }, 50);
+  }, [reset]);
 
   const openIngest = useCallback((filePath: string) => {
     reset();
     setMode('ingest');
-    setTimeout(() => { chat.send(WIKI_INGEST_PROMPT(filePath)); }, 50);
-  }, [reset, chat]);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      chatRef.current.send(WIKI_INGEST_PROMPT(filePath));
+    }, 50);
+  }, [reset]);
 
   const close = useCallback(() => {
-    if (chat.isRunning) chat.cancel();
     reset();
-  }, [chat, reset]);
+  }, [reset]);
 
   return {
     mode,

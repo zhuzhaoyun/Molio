@@ -59,7 +59,7 @@ interface Props {
   /** True only for the most recent assistant message — locks older AskUserQuestion cards. */
   isLast?: boolean;
   /** Route tool_result back to the open stream-json child via daemon. */
-  onAnswerToolUse?: (toolUseId: string, content: string) => Promise<boolean> | boolean;
+  onAnswerToolUse?: (toolUseId: string, content: string) => Promise<boolean | void> | boolean | void;
   /** Fallback: send the answer as a fresh user message. */
   onSubmitForm?: (text: string) => void;
 }
