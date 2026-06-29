@@ -84,9 +84,9 @@ export function KbChatPanel({
     [mode, filePath, vaultId],
   );
 
-  // 被动上下文标签（非可切 tab）
+  // 被动上下文标签（非可切 tab）。qa 模式用固定标题，不显示文档名。
   const contextLabel =
-    mode === 'qa' ? (filePath ? t('kb.chatContextAboutFile', { file: filePath.split('/').pop() ?? filePath }) : t('kb.askButton'))
+    mode === 'qa' ? t('kb.askButton')
     : mode === 'build' ? t('kb.chatContextBuildWiki')
     : mode === 'lint' ? t('kb.chatContextLintWiki')
     : '';

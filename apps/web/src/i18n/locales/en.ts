@@ -254,7 +254,6 @@ const en: Record<string, string> = {
   'kb.readMode': 'Reading mode',
   'kb.openExternal': 'Open with external app',
   'kb.askButton': 'Ask',
-  'kb.chatContextAboutFile': 'About {file}',
   'kb.chatContextBuildWiki': 'Build Wiki',
   'kb.chatContextLintWiki': 'Wiki health check',
   'kb.chatStarting': 'Starting…',

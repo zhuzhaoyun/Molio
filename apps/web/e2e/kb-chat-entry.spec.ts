@@ -30,8 +30,8 @@ test.describe('KB chat entry (scoped buttons)', () => {
 
     const panel = page.locator('[data-testid="kb-chat-panel"]');
     await expect(panel).toBeVisible();
-    // context label shows the file name
-    await expect(panel.locator('.file-chat-label')).toContainText('doc.md');
+    // qa mode uses a fixed title (NOT the document name)
+    await expect(panel.locator('.file-chat-label')).not.toContainText('doc.md');
     // composer seeded with the file as a @ ref (chip / mention present)
     await expect(panel.locator('.file-chat-input')).toContainText(/doc\.md/);
   });

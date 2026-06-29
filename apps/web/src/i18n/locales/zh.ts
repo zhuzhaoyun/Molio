@@ -254,7 +254,6 @@ const zh: Record<string, string> = {
   'kb.readMode': '阅读模式',
   'kb.openExternal': '用外部程序打开',
   'kb.askButton': '问答',
-  'kb.chatContextAboutFile': '关于 {file}',
   'kb.chatContextBuildWiki': '构建 Wiki',
   'kb.chatContextLintWiki': 'Wiki 健康检查',
   'kb.chatStarting': '正在启动…',
