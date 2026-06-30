@@ -1,6 +1,6 @@
 import { useEffect, useRef, useMemo, useCallback, useState } from 'react';
 import type { ChatMessage } from '../../hooks/useChat';
-import type { KbChatMode } from '../../hooks/useKbChat';
+import type { KbChatMode, QueuedOp } from '../../hooks/useKbChat';
 import { UserMessage } from '../UserMessage';
 import { AssistantMessage } from '../AssistantMessage';
 import { ChatComposer, type FileRef, type PastedImage } from '../ChatComposer';
@@ -16,16 +16,19 @@ interface KbChatPanelProps {
   vaultId: string | null;
   /** qa 模式下从预览「就此提问」带入的选中文本。 */
   selectedText?: string | null;
+  queuedOps: QueuedOp[];
   onSend: (text: string, fileRefs?: FileRef[], pastedImages?: PastedImage[]) => void;
   onCancel: () => void;
   onClose: () => void;
+  onNewChat: () => void;
+  onCancelQueued: (id: string) => void;
   onSubmitToolResult: (toolUseId: string, content: string) => Promise<void>;
   onOpenConversation?: (conversationId: string) => void;
 }
 
 export function KbChatPanel({
-  mode, messages, isRunning, filePath, vaultId, selectedText,
-  onSend, onCancel, onClose, onSubmitToolResult, onOpenConversation,
+  mode, messages, isRunning, filePath, vaultId, selectedText, queuedOps,
+  onSend, onCancel, onClose, onNewChat, onCancelQueued, onSubmitToolResult, onOpenConversation,
 }: KbChatPanelProps) {
   const { t } = useI18n();
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -84,6 +87,14 @@ export function KbChatPanel({
     [mode, filePath, vaultId],
   );
 
+  const queueLabel = useCallback((op: QueuedOp): string => {
+    if (op.type === 'build') return t('kb.buildWiki');
+    if (op.type === 'lint') return t('kb.lintWiki');
+    return t('kb.chatContextIngest', { file: op.filePath ?? '' });
+  }, [t]);
+  const queueIcon = (op: QueuedOp): string =>
+    op.type === 'build' ? '📚' : op.type === 'lint' ? '🩺' : '➕';
+
   // 被动上下文标签（非可切 tab）。qa 模式用固定标题，不显示文档名。
   const contextLabel =
     mode === 'qa' ? t('kb.askButton')
@@ -103,6 +114,18 @@ export function KbChatPanel({
           <span className="file-chat-label">{contextLabel}</span>
           {isRunning && <span className="file-chat-status">{t('fileChat.running')}</span>}
         </div>
+        <button
+          type="button"
+          className="file-chat-new"
+          onClick={onNewChat}
+          title={t('home.newChat')}
+          data-testid="kb-chat-new"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 5v14" />
+            <path d="M5 12h14" />
+          </svg>
+        </button>
         <button
           type="button"
           className="file-chat-close"
@@ -155,6 +178,25 @@ export function KbChatPanel({
           </>
         )}
       </div>
+
+      {queuedOps.length > 0 && (
+        <div className="kb-chat-queue" data-testid="kb-chat-queue">
+          <div className="kb-chat-queue-header">{t('kb.chatQueuedCount', { n: queuedOps.length })}</div>
+          {queuedOps.map((op) => (
+            <div key={op.id} className="kb-chat-queue-item" data-testid="kb-chat-queue-item">
+              <span className="kb-chat-queue-icon">{queueIcon(op)}</span>
+              <span className="kb-chat-queue-label">{queueLabel(op)}</span>
+              <button
+                type="button"
+                className="kb-chat-queue-cancel"
+                onClick={() => onCancelQueued(op.id)}
+                title={t('kb.close')}
+                data-testid="kb-chat-queue-cancel"
+              >×</button>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="file-chat-input">
         <ChatComposer

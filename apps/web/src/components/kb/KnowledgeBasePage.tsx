@@ -752,9 +752,12 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
           filePath={kbChat.mode === 'qa' ? kb.selectedFile : null}
           vaultId={kb.activeVault?.id ?? null}
           selectedText={qaSelectedText}
+          queuedOps={kbChat.queuedOps}
           onSend={handleKbChatSend}
           onCancel={kbChat.cancel}
           onClose={handleCloseChat}
+          onNewChat={kbChat.reset}
+          onCancelQueued={kbChat.cancelQueued}
           onSubmitToolResult={kbChat.submitToolResult}
           onOpenConversation={onOpenConversation}
         />
