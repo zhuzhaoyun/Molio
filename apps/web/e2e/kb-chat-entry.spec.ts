@@ -91,4 +91,19 @@ test.describe('KB chat entry (scoped buttons)', () => {
     const panel = page.locator('[data-testid="kb-chat-panel"]');
     await expect(panel).toBeVisible();
   });
+
+  test('新对话 button clears the thread', async ({ page }) => {
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+
+    // Start a build (puts the skill prompt in the thread).
+    await page.locator('[data-testid="kb-btn-build-wiki"]').click();
+    const panel = page.locator('[data-testid="kb-chat-panel"]');
+    await expect(panel).toBeVisible();
+    await expect(panel.locator('.file-chat-messages')).toContainText(/wiki-build/, { timeout: 10_000 });
+
+    // 新对话 clears everything.
+    await page.locator('[data-testid="kb-chat-new"]').click();
+    await expect(panel.locator('.file-chat-messages')).not.toContainText(/wiki-build/);
+  });
 });
