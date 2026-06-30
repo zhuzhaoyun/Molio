@@ -149,6 +149,24 @@ const ENV_SELF_HEAL_BLOCK = [
 ].join('\n');
 
 /**
+ * Sentinel for the web-fetch preference rule.
+ */
+const WEB_FETCH_SENTINEL = '<!-- molio:web-fetch-preference -->';
+
+/**
+ * Rule that tells the agent to prefer curl over WebFetch for Chinese users.
+ * WebFetch runs on Anthropic's overseas servers and often fails on Chinese
+ * sites due to anti-scraping and network policies. curl is always available.
+ */
+const WEB_FETCH_BLOCK = [
+  WEB_FETCH_SENTINEL,
+  '## Web Fetching — Prefer curl',
+  '',
+  'WebFetch runs on overseas servers and often fails on Chinese sites.',
+  'Prefer `curl` for web content extraction. Only fall back to WebFetch for international sites.',
+].join('\n');
+
+/**
  * All Molio-managed rule blocks injected into every vault's .claude/CLAUDE.md.
  * Each has a unique sentinel so injection is idempotent and individual rules
  * can be revised later without re-injecting stale copies.
@@ -156,6 +174,7 @@ const ENV_SELF_HEAL_BLOCK = [
 const MOILIO_RULES: Array<{ sentinel: string; block: string; label: string }> = [
   { sentinel: DOCLING_RULE_SENTINEL, block: DOCLING_RULE_BLOCK, label: 'docling preference' },
   { sentinel: ENV_SELF_HEAL_SENTINEL, block: ENV_SELF_HEAL_BLOCK, label: 'environment self-heal' },
+  { sentinel: WEB_FETCH_SENTINEL, block: WEB_FETCH_BLOCK, label: 'web fetch preference' },
 ];
 
 /**
@@ -185,6 +204,7 @@ function ensureMolioRules(claudeDir: string): void {
     // position of earlier sentinels we haven't processed yet.
     for (let i = MOILIO_RULES.length - 1; i >= 0; i--) {
       const rule = MOILIO_RULES[i];
+      if (!rule) continue;
       const sentinelIdx = content.indexOf(rule.sentinel);
 
       if (sentinelIdx >= 0) {

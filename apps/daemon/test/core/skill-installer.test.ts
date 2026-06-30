@@ -139,6 +139,37 @@ describe('skill-installer migration', () => {
     );
   });
 
+  it('should inject web-fetch preference rule into .claude/CLAUDE.md', () => {
+    installBuiltinSkills(tmpVault);
+
+    const content = fs.readFileSync(
+      path.join(tmpVault, '.claude', 'CLAUDE.md'),
+      'utf-8',
+    );
+    // Core directive: prefer curl over WebFetch for Chinese sites
+    assert.ok(
+      content.includes('Prefer curl') || content.includes('prefer curl'),
+      'should instruct to prefer curl',
+    );
+    assert.ok(
+      content.includes('curl'),
+      'should mention curl as the preferred alternative',
+    );
+    assert.ok(
+      content.includes('WebFetch'),
+      'should mention WebFetch limitations',
+    );
+    // Should NOT mention browser-mcp or kimi-webbridge (simplified rule)
+    assert.ok(
+      !content.includes('browser-mcp'),
+      'should not mention browser-mcp (simplified to curl only)',
+    );
+    assert.ok(
+      !content.includes('kimi-webbridge'),
+      'should not mention kimi-webbridge (simplified to curl only)',
+    );
+  });
+
   it('should not overwrite existing user content in .claude/CLAUDE.md', () => {
     // Pre-create .claude/CLAUDE.md with user content
     const claudeDir = path.join(tmpVault, '.claude');
