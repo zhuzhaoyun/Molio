@@ -49,6 +49,25 @@ test.describe('KB chat entry (scoped buttons)', () => {
     await expect(panel.locator('.file-chat-messages')).toContainText(/wiki-build/, { timeout: 10_000 });
   });
 
+  test('switching build → 💬问答 cancels build and resets the thread', async ({ page }) => {
+    // Open with a file so the 💬问答 (document-scoped) button is available.
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+
+    // Start a wiki build (auto-sends the skill prompt).
+    await page.locator('[data-testid="kb-btn-build-wiki"]').click();
+    const panel = page.locator('[data-testid="kb-chat-panel"]');
+    await expect(panel).toBeVisible();
+    await expect(panel.locator('.file-chat-messages')).toContainText(/wiki-build/, { timeout: 10_000 });
+
+    // Switch to 问答 — must reset: cancel the build run + clear the thread + qa mode.
+    await page.locator('[data-testid="kb-btn-ask"]').click();
+    // The build prompt is gone (thread was reset, not appended to).
+    await expect(panel.locator('.file-chat-messages')).not.toContainText(/wiki-build/);
+    // qa mode: composer seeded with @当前文档.
+    await expect(panel.locator('.file-chat-input')).toContainText(/doc\.md/);
+  });
+
   test('🩺健康检查 disabled when wiki not initialized', async ({ page }) => {
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });

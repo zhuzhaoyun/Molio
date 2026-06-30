@@ -76,6 +76,10 @@ export function useKbChat(opts: UseKbChatOptions): KbChatState {
   }, []);
 
   const reset = useCallback(() => {
+    // Clear any pending wiki auto-send timer — otherwise switching to qa
+    // (or closing) within 50ms of openWikiOp/openIngest would fire the wiki
+    // prompt into the new mode's conversation.
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
     if (chat.isRunning) chat.cancel();
     conversationIdRef.current = null;
     setMode(null);
