@@ -7,7 +7,7 @@ interface Props {
   /** True only for tool calls inside the most recent assistant message. */
   isLast?: boolean;
   /** Submit handler: routes tool_result back to the open stream-json child. */
-  onAnswerToolUse?: (toolUseId: string, content: string) => Promise<boolean> | boolean;
+  onAnswerToolUse?: (toolUseId: string, content: string) => Promise<boolean | void> | boolean | void;
   /** Fallback: sends the answer as a fresh user message. */
   onSubmitForm?: (text: string) => void;
 }
@@ -103,7 +103,7 @@ function AskUserQuestionCard({
   status: ToolEvent['status'];
   isLast: boolean;
   onSubmitForm?: (text: string) => void;
-  onAnswerToolUse?: (toolUseId: string, content: string) => Promise<boolean> | boolean;
+  onAnswerToolUse?: (toolUseId: string, content: string) => Promise<boolean | void> | boolean | void;
 }) {
   const { t } = useI18n();
   const questions = parseAskUserQuestionInput(input);

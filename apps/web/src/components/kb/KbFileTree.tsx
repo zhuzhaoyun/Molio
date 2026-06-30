@@ -1,15 +1,26 @@
 /**
  * Recursive file tree component for the Knowledge Base.
+ * Controlled expansion: the expanded set is owned by the parent (KbFilePanel)
+ * so the collapse/expand-all toggle can read and mutate it directly.
  * Supports: click-select, right-click context menu, inline rename.
  */
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useCallback, useRef, useEffect } from 'react';
 import type { TreeNode, IngestStatus } from '@molio/contracts';
 
 interface KbFileTreeProps {
   nodes: TreeNode[];
   selectedFile: string | null;
   searchQuery: string;
+  expandedPaths: Set<string>;
+  /**
+   * Incremented by the parent to request the active file scroll itself into
+   * view (used by the "locate" button). The effect in TreeNodeItem depends on
+   * this token, so a change re-runs the scroll even if the file was already
+   * active.
+   */
+  revealToken?: number;
+  onTogglePath: (path: string) => void;
   onSelectFile: (path: string) => void;
   onAddToWiki?: (path: string) => void;
   onContextMenu?: (node: TreeNode, e: React.MouseEvent) => void;
@@ -25,6 +36,9 @@ export function KbFileTree({
   nodes,
   selectedFile,
   searchQuery,
+  expandedPaths,
+  revealToken,
+  onTogglePath,
   onSelectFile,
   onAddToWiki,
   onContextMenu,
@@ -52,6 +66,9 @@ export function KbFileTree({
           node={node}
           selectedFile={selectedFile}
           searchQuery={searchQuery}
+          expandedPaths={expandedPaths}
+          revealToken={revealToken}
+          onTogglePath={onTogglePath}
           onSelectFile={onSelectFile}
           onAddToWiki={onAddToWiki}
           onContextMenu={onContextMenu}
@@ -70,6 +87,9 @@ interface TreeNodeItemProps {
   node: TreeNode;
   selectedFile: string | null;
   searchQuery: string;
+  expandedPaths: Set<string>;
+  revealToken?: number;
+  onTogglePath: (path: string) => void;
   onSelectFile: (path: string) => void;
   onAddToWiki?: (path: string) => void;
   onContextMenu?: (node: TreeNode, e: React.MouseEvent) => void;
@@ -82,6 +102,9 @@ function TreeNodeItem({
   node,
   selectedFile,
   searchQuery,
+  expandedPaths,
+  revealToken,
+  onTogglePath,
   onSelectFile,
   onAddToWiki,
   onContextMenu,
@@ -89,8 +112,7 @@ function TreeNodeItem({
   onRenameComplete,
   onRenameCancel,
 }: TreeNodeItemProps) {
-  const [expanded, setExpanded] = useState(false);
-  const toggle = useCallback(() => setExpanded((e) => !e), []);
+  const expanded = expandedPaths.has(node.path);
 
   // Don't show "+" for items inside the wiki/ directory
   const isInsideWiki = node.path.startsWith('wiki/') || node.path === 'wiki';
@@ -114,7 +136,7 @@ function TreeNodeItem({
       <div className="kb-tree-group">
         <div
           className="kb-tree-group-label"
-          onClick={toggle}
+          onClick={() => onTogglePath(node.path)}
           onContextMenu={handleContextMenu}
         >
           <span className={`kb-tree-chevron ${expanded ? '' : 'collapsed'}`}>▾</span>
@@ -148,6 +170,9 @@ function TreeNodeItem({
               node={child}
               selectedFile={selectedFile}
               searchQuery={searchQuery}
+              expandedPaths={expandedPaths}
+              revealToken={revealToken}
+              onTogglePath={onTogglePath}
               onSelectFile={onSelectFile}
               onAddToWiki={onAddToWiki}
               onContextMenu={onContextMenu}
@@ -165,10 +190,14 @@ function TreeNodeItem({
   const isActive = selectedFile === node.path;
   const itemRef = useRef<HTMLDivElement>(null);
 
+  // Scroll into view when the file becomes active, or when the parent bumps
+  // revealToken (the "locate" button) — needed because locating a file that
+  // is *already* active but buried under collapsed ancestors wouldn't fire
+  // the isActive branch on its own.
   useEffect(() => {
     if (!isActive) return;
     itemRef.current?.scrollIntoView({ block: 'nearest' });
-  }, [isActive]);
+  }, [isActive, revealToken]);
 
   const handleFileContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();

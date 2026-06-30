@@ -1,43 +1,34 @@
 import { useEffect, useRef, useMemo, useCallback, useState } from 'react';
 import type { ChatMessage } from '../../hooks/useChat';
+import type { KbChatMode } from '../../hooks/useKbChat';
 import { UserMessage } from '../UserMessage';
 import { AssistantMessage } from '../AssistantMessage';
 import { ChatComposer, type FileRef, type PastedImage } from '../ChatComposer';
 import { useI18n } from '../../i18n';
-import './FileChatPanel.css';
+import './KbChatPanel.css';
 
-interface FileChatPanelProps {
+interface KbChatPanelProps {
+  mode: KbChatMode | null;
   messages: ChatMessage[];
   isRunning: boolean;
-  /** File path relative to vault root — pre-filled as a @ ref in the composer. */
+  /** qa 模式下预载为 @-ref 的当前文件（相对 vault 根）。 */
   filePath: string | null;
-  /** Vault id for the pre-filled @ ref. */
   vaultId: string | null;
-  /** Selected text from the preview (via "就此提问" float button). Shown in empty state. */
+  /** qa 模式下从预览「就此提问」带入的选中文本。 */
   selectedText?: string | null;
   onSend: (text: string, fileRefs?: FileRef[], pastedImages?: PastedImage[]) => void;
   onCancel: () => void;
   onClose: () => void;
-  onSubmitToolResult: (toolUseId: string, content: string) => void;
+  onSubmitToolResult: (toolUseId: string, content: string) => Promise<void>;
   onOpenConversation?: (conversationId: string) => void;
 }
 
-export function FileChatPanel({
-  messages,
-  isRunning,
-  filePath,
-  vaultId,
-  selectedText,
-  onSend,
-  onCancel,
-  onClose,
-  onSubmitToolResult,
-  onOpenConversation,
-}: FileChatPanelProps) {
+export function KbChatPanel({
+  mode, messages, isRunning, filePath, vaultId, selectedText,
+  onSend, onCancel, onClose, onSubmitToolResult, onOpenConversation,
+}: KbChatPanelProps) {
   const { t } = useI18n();
   const bottomRef = useRef<HTMLDivElement>(null);
-
-  // Resizable panel width
   const [panelWidth, setPanelWidth] = useState(360);
   const resizingRef = useRef<{ startX: number; startWidth: number } | null>(null);
 
@@ -71,12 +62,10 @@ export function FileChatPanel({
     };
   }, []);
 
-  // Auto-scroll to bottom on new messages
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length, messages[messages.length - 1]?.content]);
 
-  // Find the last assistant message ID so only that card stays interactive
   const lastAssistantId = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
       const msg = messages[i];
@@ -85,37 +74,33 @@ export function FileChatPanel({
     return null;
   }, [messages]);
 
-  const onAnswerToolUse = useCallback(
-    async (toolUseId: string, content: string) => {
-      onSubmitToolResult(toolUseId, content);
-      return true;
-    },
-    [onSubmitToolResult],
+  const onAnswerToolUse = useCallback(async (toolUseId: string, content: string) => {
+    await onSubmitToolResult(toolUseId, content);
+  }, [onSubmitToolResult]);
+
+  // qa 模式预载 @当前文档（与旧 FileChatPanel 一致）；wiki 模式不带 @-ref。
+  const initialFileRefs = useMemo<FileRef[]>(
+    () => (mode === 'qa' && filePath && vaultId ? [{ vaultId, filePath }] : []),
+    [mode, filePath, vaultId],
   );
 
-  // Pre-fill the current file as a @ ref so "ask about this file" behaves like
-  // the home page chat with the file already @-mentioned. Keying the composer
-  // on filePath forces a fresh mount (and re-seeded @ ref) when the file changes.
-  const initialFileRefs = useMemo<FileRef[]>(
-    () => (filePath && vaultId ? [{ vaultId, filePath }] : []),
-    [filePath, vaultId],
-  );
+  // 被动上下文标签（非可切 tab）。qa 模式用固定标题，不显示文档名。
+  const contextLabel =
+    mode === 'qa' ? t('kb.askButton')
+    : mode === 'build' ? t('kb.chatContextBuildWiki')
+    : mode === 'lint' ? t('kb.chatContextLintWiki')
+    : '';
 
   return (
     <aside
       className="file-chat-panel"
-      data-testid="file-chat-panel"
+      data-testid="kb-chat-panel"
       style={{ width: panelWidth, minWidth: 280, maxWidth: '50vw' }}
     >
-      {/* Resize handle */}
-      <div
-        className="file-chat-resize-handle"
-        data-testid="file-chat-resize-handle"
-        onMouseDown={handleResizeStart}
-      />
-      {/* Header */}
+      <div className="file-chat-resize-handle" onMouseDown={handleResizeStart} />
       <div className="file-chat-header">
         <div className="file-chat-header-left">
+          <span className="file-chat-label">{contextLabel}</span>
           {isRunning && <span className="file-chat-status">{t('fileChat.running')}</span>}
         </div>
         <button
@@ -123,7 +108,7 @@ export function FileChatPanel({
           className="file-chat-close"
           onClick={onClose}
           title={t('fileChat.close')}
-          data-testid="file-chat-close"
+          data-testid="kb-chat-close"
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
             <line x1="18" y1="6" x2="6" y2="18" />
@@ -132,14 +117,13 @@ export function FileChatPanel({
         </button>
       </div>
 
-      {/* Messages */}
       <div className="file-chat-messages">
         {messages.length === 0 ? (
           <div className="file-chat-empty">
-            <div className="file-chat-empty-icon">💬</div>
-            <p>{t('fileChat.ready')}</p>
-            {selectedText && (
-              <div className="file-chat-selected-preview" data-testid="file-chat-selected-preview">
+            <div className="file-chat-empty-icon">{mode === 'qa' ? '💬' : '🤖'}</div>
+            <p>{mode === 'qa' ? t('fileChat.ready') : t('kb.chatStarting')}</p>
+            {mode === 'qa' && selectedText && (
+              <div className="file-chat-selected-preview" data-testid="kb-chat-selected-preview">
                 <div className="file-chat-selected-label">{t('fileChat.selection')}</div>
                 <blockquote>{selectedText}</blockquote>
               </div>
@@ -163,11 +147,7 @@ export function FileChatPanel({
                 );
               }
               if (msg.role === 'error') {
-                return (
-                  <div key={msg.id} className="msg error">
-                    {msg.content}
-                  </div>
-                );
+                return <div key={msg.id} className="msg error">{msg.content}</div>;
               }
               return null;
             })}
@@ -176,10 +156,9 @@ export function FileChatPanel({
         )}
       </div>
 
-      {/* Input */}
       <div className="file-chat-input">
         <ChatComposer
-          key={filePath ?? undefined}
+          key={mode === 'qa' ? (filePath ?? undefined) : (mode ?? undefined)}
           isRunning={isRunning}
           onSend={onSend}
           onCancel={onCancel}

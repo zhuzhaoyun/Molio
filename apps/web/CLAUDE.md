@@ -151,6 +151,7 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
 - **样式面板**: 右侧悬浮面板，支持主题、字体、字号、主题色、排版选项切换
 - **渲染引擎**: 基于 doocs/md (`marked` v18 + 扩展 + 主题系统)
 - **Tab 系统**: 支持多文件 Tab 切换
+- **统一聊天面板** (`KbChatPanel` + `useKbChat`)：`💬问答`（文档级，`kb-main-header`）/ `📚构建Wiki`·`🩺健康检查`（vault 级，`KbTabBar` 尾部）。任务运行中再点入口：问答不中断、wiki 类弹「中断/排队/取消」。排队复用 agent stdin 原生队列，详见 [docs/kb-chat-interrupt-queue.md](../../docs/kb-chat-interrupt-queue.md)。
 
 ### 知识图谱 (Graph View)
 

@@ -120,8 +120,8 @@ test.describe('Publish button regression (#11)', () => {
     await typesetBtn.click({ timeout: 5_000 });
     await page.waitForTimeout(500);
 
-    // Verify publish button is visible
-    const publishBtn = page.locator('button').filter({ hasText: '发布' });
+    // Verify publish button is visible (icon-only button — locate by tooltip)
+    const publishBtn = page.locator('button[title="发布"]');
     await expect(publishBtn).toBeVisible();
 
     // THE REGRESSION TEST: click publish and verify something happens
@@ -174,8 +174,8 @@ test.describe('Publish button regression (#11)', () => {
     const typesetBtn = page.locator('button').filter({ hasText: '排版' }).first();
     await typesetBtn.click({ timeout: 5_000 });
 
-    // Verify both copy and publish buttons exist
-    await expect(page.locator('button').filter({ hasText: '复制' })).toBeVisible();
-    await expect(page.locator('button').filter({ hasText: '发布' })).toBeVisible();
+    // Verify both copy and publish buttons exist (icon-only — by tooltip)
+    await expect(page.locator('button[title="复制"]')).toBeVisible();
+    await expect(page.locator('button[title="发布"]')).toBeVisible();
   });
 });

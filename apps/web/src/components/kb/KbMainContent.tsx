@@ -34,6 +34,22 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/** CJK character range + English word count. Returns "word count" (CJK each char = 1 + English word count). */
+function countWords(text: string): number {
+  const cjkMatches = text.match(/[一-鿿㐀-䶿]/g);
+  const cjk = cjkMatches ? cjkMatches.length : 0;
+  // English words (strip CJK then split by non-alphanumeric)
+  const stripped = text.replace(/[一-鿿㐀-䶿]/g, ' ');
+  const enMatches = stripped.match(/[A-Za-z0-9]+/g);
+  const en = enMatches ? enMatches.length : 0;
+  return cjk + en;
+}
+
+function formatReadTime(words: number, suffix: string): string {
+  const mins = Math.max(1, Math.ceil(words / 300));
+  return `~${mins} ${suffix}`;
+}
+
 interface KbMainContentProps {
   fileContent: FileContent | null;
   selectedFile: string | null;
@@ -58,10 +74,12 @@ interface KbMainContentProps {
   /** 是否为编辑模式（仅文本文件） */
   isEditMode?: boolean;
   onToggleEdit?: () => void;
-  /** Callback when user clicks "询问此文件" button. */
-  onAskAboutFile?: (filePath: string) => void;
   /** Callback when user selects text and clicks the float "就此提问" button. */
   onAskAboutSelection?: (selectedText: string) => void;
+  /** Open the document outline panel. */
+  onOpenOutline?: () => void;
+  /** Open the unified KB chat panel in QA mode for the current file. */
+  onAskAboutFile?: () => void;
   /** 编辑后的内容（用于阅读模式显示未保存的更改） */
   editedContent?: string | null;
 }
@@ -85,8 +103,9 @@ export function KbMainContent({
   showFileName = true,
   isEditMode = false,
   onToggleEdit,
-  onAskAboutFile,
   onAskAboutSelection,
+  onOpenOutline,
+  onAskAboutFile,
   editedContent,
 }: KbMainContentProps) {
   const { t } = useI18n();
@@ -164,51 +183,10 @@ export function KbMainContent({
     return () => document.removeEventListener('keydown', handler);
   }, [onSave]);
 
-  // No file selected — show appropriate empty state
-  if (!selectedFile) {
-    // No vault created yet — prompt to create a vault
-    if (!vaultId) {
-      return (
-        <main className="kb-main">
-          <div className="kb-empty-state">
-            <div className="kb-empty-icon">📚</div>
-            <h3>欢迎使用知识库</h3>
-            <p>创建一个知识库来管理你的文档和笔记。</p>
-            <p className="kb-empty-hint">知识库是存储和组织文档的地方，支持 Markdown 文件管理、AI 辅助阅读和 Wiki 生成。</p>
-          </div>
-        </main>
-      );
-    }
-
-    // Vault exists but wiki not initialized yet
-    if (!wikiInitialized) {
-      return (
-        <main className="kb-main">
-          <div className="kb-empty-state">
-            <div className="kb-empty-icon">🏗</div>
-            <h3>构建知识库 Wiki</h3>
-            <p>使用 AI 自动扫描 vault 中的文件，生成结构化的 wiki 页面。</p>
-            <button type="button" className="wiki-cta-btn" onClick={onBuildWiki}>
-              开始构建 Wiki
-            </button>
-          </div>
-        </main>
-      );
-    }
-
-    return (
-      <main className="kb-main">
-        <div className="kb-empty-state">
-          <div className="kb-empty-icon">📄</div>
-          <h3>未选择文件</h3>
-          <p>从左侧文件树中选择一个文件查看内容。</p>
-        </div>
-      </main>
-    );
-  }
-
-  const fileName = selectedFile.split('/').pop() ?? selectedFile;
-  const category = getFileCategory(fileName);
+  // Compute file metadata null-safe so the header can render in empty states
+  // (search / more-menu stay visible even when no file is open).
+  const fileName = selectedFile ? (selectedFile.split('/').pop() ?? selectedFile) : '';
+  const category = fileName ? getFileCategory(fileName) : null;
 
   // Build absolute path for shell.openPath (Electron only)
   const absolutePath = vaultPath && selectedFile
@@ -225,9 +203,10 @@ export function KbMainContent({
 
   return (
     <main className="kb-main">
-      {/* Header with filename and action buttons */}
+      {/* Header — always rendered so view actions (search / more-menu) stay
+          visible even in empty states. File actions only render when a file is open. */}
       <div className="kb-main-header">
-        {showFileName && (
+        {showFileName && selectedFile && (
           <div className="kb-header-filename-center">
             <span>
               {fileName}
@@ -236,94 +215,61 @@ export function KbMainContent({
           </div>
         )}
         <div className="kb-header-actions">
-          {/* Text file actions: edit, copy, publish (typeset mode only), typeset */}
-          {category === 'text' && (
+          {/* ── File edit / output actions (text files only) ── */}
+          {category === 'text' && selectedFile && (
             <>
-              {/* Edit/Read toggle — only in Read mode (typeset has its own source editor) */}
-              {!isTypesetMode && (
-              <button
-                type="button"
-                className={`kb-btn ${isEditMode ? 'is-active' : ''}`}
-                onClick={onToggleEdit}
-                title={isEditMode ? '阅读模式' : '编辑模式'}
-              >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
-                    {isEditMode ? (
-                      // Eye icon for read mode
-                      <>
-                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                        <circle cx="12" cy="12" r="3" />
-                      </>
-                    ) : (
-                      // Pencil icon for edit mode
-                      <>
-                        <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
-                      </>
-                    )}
-                  </svg>
-                  <span>{isEditMode ? '阅读' : '编辑'}</span>
-                </button>
-              )}
-
-              {/* Save button (shown in both typeset mode and edit mode) */}
-              {onSave && (
-                <button type="button" className="kb-btn" onClick={onSave}>
+              {/* Save — only in editing modes (read mode has nothing to save) */}
+              {onSave && (isEditMode || isTypesetMode) && (
+                <button type="button" className="kb-btn kb-btn-ghost" onClick={onSave} title={t('kb.save')}>
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
                     <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
                     <polyline points="17 21 17 13 7 13 7 21" />
                     <polyline points="7 3 7 8 15 8" />
                   </svg>
-                  <span>保存</span>
                 </button>
               )}
 
-              {/* Ask about file button — opens inline Q&A panel */}
-              {onAskAboutFile && selectedFile && (
-                <button
-                  type="button"
-                  className="kb-btn"
-                  onClick={() => onAskAboutFile(selectedFile)}
-                  title={`${t('kb.askAboutFile')} (Ctrl+L)`}
-                  data-testid="kb-btn-ask-file"
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
-                  </svg>
-                  <span>{t('kb.askAboutFile')}</span>
-                </button>
-              )}
-
-              {/* Copy and Publish buttons (only in typeset mode) */}
+              {/* Copy and Publish (typeset mode only) */}
               {isTypesetMode && (
                 <>
-                  <button type="button" className="kb-btn" onClick={onCopy}>
+                  <button type="button" className="kb-btn kb-btn-ghost" onClick={onCopy} title={t('kb.copy')}>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
                       <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
                       <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
                     </svg>
-                    <span>复制</span>
                   </button>
-                  <button type="button" className="kb-btn" onClick={onPublish}>
+                  <button type="button" className="kb-btn kb-btn-ghost" onClick={onPublish} title={t('kb.publish')}>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
-                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                      <line x1="22" y1="2" x2="11" y2="13" />
+                      <polygon points="22 2 15 22 11 13 2 9 22 2" />
                     </svg>
-                    <span>发布</span>
                   </button>
                 </>
               )}
 
-              {/* Typeset button - always at the rightmost position */}
+              {/* Typeset toggle — signature action. Read mode: T icon + "排版"
+                  label (entry, prominent). Typeset mode: exit icon only (leave). */}
               <button
                 type="button"
                 className={`kb-btn ${isTypesetMode ? 'is-active' : ''}`}
                 onClick={onToggleTypeset}
+                title={isTypesetMode ? t('kb.exitTypeset') : t('kb.typeset')}
+                data-testid="kb-btn-typeset"
               >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
-                  <path d="M4 7V4h16v3" />
-                  <path d="M9 20h6" />
-                  <path d="M12 4v16" />
-                </svg>
-                <span>{isTypesetMode ? '退出排版' : '排版'}</span>
+                {isTypesetMode ? (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                    <polyline points="16 17 21 12 16 7" />
+                    <line x1="21" y1="12" x2="9" y2="12" />
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                    <path d="M4 7V4h16v3" />
+                    <path d="M9 20h6" />
+                    <path d="M12 4v16" />
+                  </svg>
+                )}
+                {!isTypesetMode && <span>{t('kb.typeset')}</span>}
               </button>
             </>
           )}
@@ -336,24 +282,106 @@ export function KbMainContent({
                 <polyline points="15 3 21 3 21 9" />
                 <line x1="10" y1="14" x2="21" y2="3" />
               </svg>
-              <span>用外部程序打开</span>
+              <span>{t('kb.openExternal')}</span>
+            </button>
+          )}
+
+          {/* Divider: file actions │ view / command actions */}
+          {selectedFile && category && (onOpenOutline || onAskAboutFile) && (
+            <span className="kb-header-actions-divider" />
+          )}
+
+          {/* ── View / command actions ── */}
+          {/* Document outline (file-scoped) */}
+          {onOpenOutline && selectedFile && (
+            <button
+              type="button"
+              className="kb-btn kb-btn-ghost"
+              onClick={onOpenOutline}
+              title={t('kb.moreMenuOutline')}
+              data-testid="kb-btn-outline"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                <line x1="8" y1="6" x2="21" y2="6" />
+                <line x1="8" y1="12" x2="21" y2="12" />
+                <line x1="8" y1="18" x2="21" y2="18" />
+                <line x1="3" y1="6" x2="3.01" y2="6" />
+                <line x1="3" y1="12" x2="3.01" y2="12" />
+                <line x1="3" y1="18" x2="3.01" y2="18" />
+              </svg>
+            </button>
+          )}
+
+          {/* Edit / Read toggle — icon-only, grouped with search */}
+          {!isTypesetMode && (
+            <button
+              type="button"
+              className={`kb-btn kb-btn-ghost ${isEditMode ? 'is-active' : ''}`}
+              onClick={onToggleEdit}
+              title={isEditMode ? t('kb.readMode') : t('kb.editMode')}
+              data-testid="kb-btn-edit"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                {isEditMode ? (
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                ) : (
+                  <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+                )}
+                {isEditMode && <circle cx="12" cy="12" r="3" />}
+              </svg>
+            </button>
+          )}
+
+          {/* 💬 Ask about this file — document-scoped, direct (one click) */}
+          {onAskAboutFile && selectedFile && (
+            <button
+              type="button"
+              className="kb-btn kb-btn-ghost"
+              onClick={onAskAboutFile}
+              title={t('kb.askButton')}
+              data-testid="kb-btn-ask"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              </svg>
             </button>
           )}
         </div>
       </div>
 
-      {/* File load error */}
-      {fileLoadError && selectedFile && (
+      {/* ── Body: empty states / error / content ── */}
+      {!selectedFile ? (
+        !vaultId ? (
+          <div className="kb-empty-state">
+            <div className="kb-empty-icon">📚</div>
+            <h3>欢迎使用知识库</h3>
+            <p>创建一个知识库来管理你的文档和笔记。</p>
+            <p className="kb-empty-hint">知识库是存储和组织文档的地方，支持 Markdown 文件管理、AI 辅助阅读和 Wiki 生成。</p>
+          </div>
+        ) : !wikiInitialized ? (
+          <div className="kb-empty-state">
+            <div className="kb-empty-icon">🏗</div>
+            <h3>构建知识库 Wiki</h3>
+            <p>使用 AI 自动扫描 vault 中的文件，生成结构化的 wiki 页面。</p>
+            <button type="button" className="wiki-cta-btn" onClick={onBuildWiki}>
+              开始构建 Wiki
+            </button>
+          </div>
+        ) : (
+          <div className="kb-empty-state">
+            <div className="kb-empty-icon">📄</div>
+            <h3>未选择文件</h3>
+            <p>从左侧文件树中选择一个文件查看内容。</p>
+          </div>
+        )
+      ) : fileLoadError ? (
         <div className="kb-load-error">
           <div className="kb-load-error-icon">⚠</div>
           <p className="kb-load-error-title">{t('kb.cannotOpen')}</p>
           <p className="kb-load-error-path">{selectedFile}</p>
           <p className="kb-load-error-hint">{t('kb.fileNotFound')}</p>
         </div>
-      )}
-
-      {/* Content area — branch by file category */}
-      {category === 'text' && isTypesetMode ? (
+      ) : category === 'text' && isTypesetMode ? (
         <MdTypesetEditor
           key={selectedFile}
           initialContent={fileContent?.content ?? ''}
@@ -417,6 +445,26 @@ export function KbMainContent({
       ) : (
         <div className="kb-content-area">
           <div className="kb-empty-state"><p>Loading...</p></div>
+        </div>
+      )}
+
+      {/* Status bar: word count / char count / read time (text files only) */}
+      {category === 'text' && (
+        <div className="kb-status-bar" data-testid="kb-status-bar">
+          {(() => {
+            const text = editedContent ?? fileContent?.content ?? '';
+            const words = countWords(text);
+            const chars = text.length;
+            return (
+              <>
+                <span>{t('kb.statsWords')}: {words.toLocaleString()}</span>
+                <span className="kb-status-sep">/</span>
+                <span>{t('kb.statsChars')}: {chars.toLocaleString()}</span>
+                <span className="kb-status-sep">/</span>
+                <span>{t('kb.statsReadTime')}: {formatReadTime(words, t('kb.statsReadTimeSuffix'))}</span>
+              </>
+            );
+          })()}
         </div>
       )}
     </main>

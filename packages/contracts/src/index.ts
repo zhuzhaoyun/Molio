@@ -76,4 +76,7 @@ export type {
   GraphEdge,
   GraphData,
   DeadLinkInfo,
+  // Search
+  SearchResult,
+  SearchResponse,
 } from './knowledge.js';
