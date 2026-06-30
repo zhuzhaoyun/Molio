@@ -34,9 +34,12 @@
   gap: 4px;
 }
 
-.kb-file-toolbar button {
-  width: 28px;
-  height: 28px;
+/* Toolbar icon buttons. `:not(.kb-sort-item)` keeps the 28×28 sizing off the
+   sort dropdown's menu items, which live inside the toolbar but need their
+   own full-width layout (see .kb-sort-item). */
+.kb-file-toolbar button:not(.kb-sort-item) {
+  width: 26px;
+  height: 26px;
   padding: 0;
   border: none;
   background: transparent;
@@ -49,18 +52,72 @@
   transition: all 120ms ease;
 }
 
-.kb-file-toolbar button svg {
-  width: 16px;
-  height: 16px;
+.kb-file-toolbar button:not(.kb-sort-item) svg {
+  width: 15px;
+  height: 15px;
 }
 
-.kb-file-toolbar button:hover {
+.kb-file-toolbar button:not(.kb-sort-item):hover {
   background: var(--bg-subtle);
   color: var(--text);
+}
+.kb-file-toolbar button:disabled:not(.kb-sort-item) {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+.kb-file-toolbar button:disabled:not(.kb-sort-item):hover {
+  background: transparent;
+  color: var(--text-muted);
 }
 
 .kb-file-toolbar .kb-toolbar-btn-accent {
   color: var(--accent);
+}
+
+/* Sort dropdown (left tree toolbar) — same ghost-button sizing as the toolbar */
+.kb-sort-menu {
+  position: relative;
+  flex-shrink: 0;
+}
+.kb-sort-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  min-width: 168px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  padding: 4px 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+}
+.kb-sort-item {
+  background: none;
+  border: none;
+  text-align: left;
+  padding: 7px 12px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  white-space: nowrap; /* keep label on one line so item height stays stable */
+  line-height: 1.2;
+}
+.kb-sort-item:hover { background: var(--bg-subtle); }
+.kb-sort-item.is-active { color: var(--accent); }
+.kb-sort-check {
+  width: 14px;
+  flex-shrink: 0;
+  display: inline-flex;
+  justify-content: center;
+  font-size: 12px;
 }
 
 /* Vault bar at bottom */
@@ -162,7 +219,9 @@
   overflow: hidden;
 }
 
-.kb-tree-children.collapsed { display: none; }
+.kb-tree-children.collapsed {
+  display: none;
+}
 
 .kb-tree-item {
   display: flex;
@@ -244,6 +303,17 @@
 }
 
 /* ══════════ Column 3: Main Content ══════════ */
+/* Vertical hairline between file-action buttons and the AI / view actions
+   (Q&A, search, `···`) in the KB header. */
+.kb-header-actions-divider {
+  width: 1px;
+  height: 16px;
+  background: var(--border);
+  margin: 0 4px;
+  flex-shrink: 0;
+  align-self: center;
+}
+
 .kb-main {
   flex: 1;
   display: flex;
@@ -737,7 +807,12 @@
 .kb-header-actions .kb-btn {
   padding: 2px 6px;
   font-size: 11px;
-  height: 24px;
+  height: 26px;
+}
+
+.kb-header-actions .kb-btn svg {
+  width: 15px;
+  height: 15px;
 }
 
 /* Button active state */
@@ -745,6 +820,13 @@
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
+}
+/* Ghost toggles (e.g. edit/read) get a quiet active state — solid accent fill is
+   reserved for the primary CTA (排版) so it stays the loudest element. */
+.kb-btn.kb-btn-ghost.is-active {
+  background: var(--accent-tint);
+  border-color: transparent;
+  color: var(--accent);
 }
 
 .kb-btn svg {
@@ -801,6 +883,25 @@
   overflow-y: auto;
   padding: 32px 48px 64px;
   position: relative;
+}
+
+/* ── Status bar (document stats) ── */
+.kb-status-bar {
+  flex-shrink: 0;
+  padding: 4px 16px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--text-muted);
+  background: var(--bg-subtle);
+  min-height: 28px;
+}
+
+.kb-status-bar .kb-status-sep {
+  opacity: 0.5;
 }
 
 /* Float "ask about selection" button */
@@ -2010,19 +2111,51 @@
 
 .kb-workspace-tabs {
   display: flex;
+  align-items: stretch;
+  gap: 0;
+  padding: 0;
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  height: 36px;
+}
+
+/* Scrollable tab list — keeps trailing global actions fixed when tabs overflow. */
+.kb-wtab-list {
+  display: flex;
   align-items: center;
   gap: 0;
   padding: 0 8px;
-  background: var(--bg-subtle);
-  border-bottom: 1px solid var(--border);
   overflow-x: auto;
   overflow-y: hidden;
-  flex-shrink: 0;
-  height: 36px;
+  flex: 1 1 auto;
+  min-width: 0;
   scrollbar-width: none;
 }
 
-.kb-workspace-tabs::-webkit-scrollbar { display: none; }
+.kb-wtab-list::-webkit-scrollbar { display: none; }
+
+/* Trailing global actions (vault-level, not tied to the active document). */
+.kb-wtab-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 6px 0 4px;
+  margin-left: auto;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  background: var(--bg-subtle);
+}
+
+.kb-wtab-actions .kb-btn {
+  padding: 4px;
+  color: var(--text-muted);
+}
+
+.kb-wtab-actions .kb-btn:hover {
+  color: var(--text);
+  background: var(--bg-panel);
+}
 
 .kb-wtab {
   display: flex;

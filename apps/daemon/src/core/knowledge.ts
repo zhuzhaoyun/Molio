@@ -6,7 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import trash from 'trash';
-import type { TreeNode, FileContent } from '@molio/contracts';
+import type { TreeNode, FileContent, SearchResult } from '@molio/contracts';
 
 /**
  * Scan a vault directory and return the file tree.
@@ -403,3 +403,60 @@ const MIME_TYPES: Record<string, string> = {
   '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   '.xls': 'application/vnd.ms-excel',
 };
+
+/**
+ * 全文搜索 vault 内文本文件。遍历目录，对每个文本文件 String.includes 匹配，
+ * 命中则截取关键词前后 30 字符作为 snippet。
+ * - 跳过隐藏文件/目录（. 开头）
+ * - 只搜 TEXT_EXTS 内的文件
+ * - limit 截断，truncated 标记是否还有更多
+ */
+export function searchFiles(
+  vaultPath: string,
+  query: string,
+  limit = 20,
+): { results: SearchResult[]; truncated: boolean } {
+  const results: SearchResult[] = [];
+  let truncated = false;
+
+  const walk = (absDir: string): void => {
+    if (truncated) return;
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(absDir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.name.startsWith('.')) continue;
+      const abs = path.join(absDir, entry.name);
+      if (entry.isDirectory()) {
+        walk(abs);
+        if (truncated) return;
+      } else if (entry.isFile() && isTextFile(entry.name)) {
+        try {
+          const content = fs.readFileSync(abs, 'utf-8');
+          const idx = content.indexOf(query);
+          if (idx >= 0) {
+            const start = Math.max(0, idx - 30);
+            const end = Math.min(content.length, idx + query.length + 30);
+            const snippet = content.slice(start, end).replace(/\s+/g, ' ').trim();
+            // vault 相对路径
+            const relPath = path.relative(vaultPath, abs).split(path.sep).join('/');
+            results.push({ filePath: relPath, fileName: entry.name, snippet });
+            if (results.length >= limit) {
+              truncated = true;
+              return;
+            }
+          }
+        } catch {
+          // skip unreadable files — don't fail the whole vault search
+          continue;
+        }
+      }
+    }
+  };
+
+  walk(vaultPath);
+  return { results, truncated };
+}

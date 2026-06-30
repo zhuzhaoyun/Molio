@@ -1,0 +1,40 @@
+{
+  "$schema": "https://alibaba.github.io/open-code-review/schema.json",
+  "rules": [
+    {
+      "path": "apps/daemon/src/**/*.{ts,tsx}",
+      "rule": "NEVER REPORT these (handled by ESLint or out of scope — reporting them wastes reviewer attention):\n\n- Chinese string literals (e.g. '上传失败', '加载中…', '请根据以上内容帮我分析。', '今天', '昨天') → molio/no-hardcoded-chinese\n- Empty catch `catch {}` or `.catch(() => {})` → no-empty\n- `fs.*Sync()` calls in async functions → node/no-sync\n- `void someAsync()` fire-and-forget → no-floating-promises\n- Unused vars/params (incl. `_name` with underscore prefix) → no-unused-vars\n- Nested ternary chains `a ? b ? c : d : e` → no-nested-ternary\n- Magic numbers (50*1024, 8, 2000, etc.) → not a bug\n- Defensive `if (!m) return null` on a typed lookup → type system already guarantees non-null\n- Refactor suggestions (\"extract helper\", \"DRY\", \"consolidate\", \"shared component\") without correctness impact → subjective\n- Wording nitpicks (\"ambiguous\", \"unclear\") / \"this is fine\" / \"looks good\" / \"no issue\" confirmation comments → no value\n\nIf your finding matches ANY of the above, DO NOT post it. Reviewer will see no value.\n\nREPORT these (LLM-only value, ESLint cannot catch):\n- Race conditions, async state machine bugs, stale closures\n- Unbounded memory / OOM risks (e.g. reading whole file without size guard)\n- Cache invalidation errors (token misses inputs)\n- SSE / event timing / cleanup lifecycle bugs\n- Shutdown race (e.g. `void watcher.stop()` before closeDatabase)\n- Path traversal / security semantic issues\n- Missing error handling at system boundaries (spawn, network, fs entry points)\n- WeixinService / RunManager state transitions that violate project invariants\n\nContext: Molio daemon = Hono HTTP server + RunManager + SSE transport + Electron-side file watchers.",
+      "merge_system_rule": false
+    },
+    {
+      "path": "apps/web/src/**/*.{ts,tsx}",
+      "rule": "NEVER REPORT these (handled by ESLint or out of scope — reporting them wastes reviewer attention):\n\n- Chinese string literals (e.g. '今天', '昨天', '本周', '更早', '条消息', '微信', '加载中…', '搜索文件…', '无匹配文件', '打开文件', '收起变更', '查看本次修改', '无变更', '请根据以上内容帮我分析。') → molio/no-hardcoded-chinese\n- a11y: missing `onKeyDown` on `role=\"button\"`, `role=\"button\"` on `<a>`, `outline: none` → jsx-a11y/*\n- Empty catch → no-empty\n- Nested ternary → no-nested-ternary\n- Unused vars → no-unused-vars\n- className with trailing space from undefined (e.g. `file-ref ${className ?? ''}`) → cosmetic\n- Refactor suggestions (\"extract shared component\", \"DRY\", \"consolidate\") without correctness impact → subjective\n- Wording nitpicks (\"ambiguous\", \"unclear\") → no value\n- Missing user feedback for UX edge cases (e.g. no vault active, empty state) → product-driven, not a bug\n\nIf your finding matches ANY of the above, DO NOT post it. Reviewer will see no value.\n\nREPORT these (LLM-only value):\n- Race conditions, stale closures in hooks/effects\n- useEffect dependency bugs causing unnecessary teardown/reinit\n- SSE EventSource reconnection logic errors (e.g. non-2xx → permanent CLOSED)\n- Module-level mutable singletons + stale callback references\n- useCallback / useMemo correctness issues with real impact\n- Uncontrolled memory growth in long-lived subscriptions\n\nContext: Molio web = Vite + React. SSE client consuming daemon events.",
+      "merge_system_rule": false
+    },
+    {
+      "path": "apps/web/src/**/*.css",
+      "rule": "NEVER REPORT these:\n\n- Pixel-level size nitpicks (e.g. 7px vs 6px badge, \"increase to 10px for visibility\") → subjective\n- Hardcoded color values (e.g. #9ca3af, #16a34a, #eab308) → project is migrating to CSS variables, do not report piecemeal\n\nIf your finding matches ANY of the above, DO NOT post it.\n\nREPORT these:\n- Layout bugs (overflow, z-index conflicts, broken flex/grid)\n- Theme token misuse (e.g. dark mode rules applied without `html:not([data-theme])` guard, conflicting with project pattern)",
+      "merge_system_rule": false
+    },
+    {
+      "path": "apps/desktop/scripts/**/*.{mjs,js}",
+      "rule": "NEVER REPORT these:\n- Style/naming in build scripts\n\nREPORT these:\n- Build correctness bugs (wrong copy flags, missing mkdir, dereference missing on symlinked pnpm packages)\n- Path resolution issues that break packaging",
+      "merge_system_rule": false
+    },
+    {
+      "path": "**/*.{test,spec}.{ts,tsx,js}",
+      "rule": "Skip. Test files are not reviewed.",
+      "merge_system_rule": false
+    },
+    {
+      "path": "**/*.{json,yml,yaml,md,mdx}",
+      "rule": "Skip. Config and docs are not reviewed.",
+      "merge_system_rule": false
+    },
+    {
+      "path": "**/*.{css,scss}",
+      "rule": "Skip. Covered by the more specific web CSS rule above where applicable.",
+      "merge_system_rule": false
+    }
+  ]
+}

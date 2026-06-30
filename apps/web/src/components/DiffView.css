@@ -1,0 +1,37 @@
+/* apps/web/src/components/DiffView.css */
+
+.diff-view {
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.55;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  max-height: 300px;
+  overflow-y: auto;
+  background: var(--bg-subtle);
+}
+
+.diff-line {
+  padding: 1px 10px;
+  white-space: pre-wrap;
+  /* Only break a token when it would otherwise overflow — break-all splits
+     file paths and identifiers mid-token, hurting readability. */
+  overflow-wrap: anywhere;
+}
+
+/* Use semantic tokens so colors adapt to both light/dark themes via tokens.css
+   (which redefines these vars for [data-theme="dark"] and prefers-color-scheme). */
+.diff-line-add {
+  background: var(--green-bg);
+  color: var(--green);
+}
+
+.diff-line-del {
+  background: var(--red-bg);
+  color: var(--red);
+}
+
+.diff-line-ctx {
+  color: var(--text-muted);
+}
