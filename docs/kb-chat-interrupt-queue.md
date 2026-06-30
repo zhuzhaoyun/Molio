@@ -31,71 +31,50 @@ KB 页面右侧统一聊天面板由 `useKbChat` 驱动（包 `useChatCore`）�
 
 所以问答本身永远不触发中断判断。
 
-## 排队机制：对接运行时，不造轮子
+## 排队机制：前端 pending 列表（视觉隔离 + 规避路由错位）
 
-「排队等当前完成」**不引入 React 层的 pendingOp / effect 状态机**，直接复用 agent 运行时的原生 stdin 队列。
+「排队等当前完成」用**前端 pending 列表**，不立即进 `messages` 流：
 
-### 链路
+- `queueWikiOp`/`queueIngest` 把操作 push 到 `useKbChat.queuedOps`（不 send）。
+- 面板在 `messages` 与 `composer` 之间渲染独立「排队中」区（pill + × 取消），排队消息**不显示在已发送区域**。
+- `isRunning` 由 true→false（`prevRunningRef` 边沿检测）时，shift 首项 → `setMode + chat.send(prompt)`，走 `createRun` 续同一线程（带 history）。
 
-```
-queueWikiOp(type)
-  → chatRef.current.send(WIKI_PROMPTS[type])        // useKbChat
-  → useChatCore.send(text)
-      → 有 existingRunId && !agentChanged?
-          → api.sendMessage(runId, text)            // POST /api/runs/:id/messages
-              → daemon RunManager.sendMessage(runId, msg)
-                  → child.stdin.write(msg + '\n')   // 写入仍在打开的 agent stdin
-          → agent（Claude Code 等）自己排队：处理完当前轮，再处理这条
-          → 失败（stdin 已关）→ 回退 createRun（见下）
-```
+### 为什么不用 agent stdin 队列
 
-`queueWikiOp` / `queueIngest` 只调 `chat.send(prompt)`——**不 reset、不 cancel、不改 mode**。提示词作为用户消息立即出现在对话里（排队可见），agent 处理完当前轮后接下一条。
+agent stdin 队列（`sendMessage` 写入运行中 run 的 stdin）功能上能排队，但 `useChatCore.send` 每次把 `assistantIdRef` 覆盖为新占位 → run 还在跑时再 send，当前 turn 剩余事件会路由到排队占位（`assistantIdRef` 错位），原占位卡 streaming——这是「排队消息看起来像已发送」的根因。前端 pending 列表每次只在上一条完成后才 send，永不同时存在两个竞争占位，顺带规避此 bug。
 
-### Pattern A vs Pattern B（运行时差异）
+stdin 多轮 `sendMessage` 仍用于**问答 follow-up**（用户在 run 跑时输入 + Enter）和主页 chat——这些是单条后续消息，不走 wiki 排队路径。
 
-daemon `RunManager` 按 agent 类型分两种 stdin 模式：
+## 中断机制（续线程）
 
-- **Pattern A（stream-JSON，如 Claude Code）**：`stdinOpen = true`，stdin 常开。`sendMessage` 写入 stdin，agent 在当前轮结束后处理新消息——**原生多轮队列**。排队在这类 agent 上完全正常。
-- **Pattern B（非 stream-json）**：`stdin.end(prompt)` 后关闭，`stdinOpen = false`。`sendMessage` 抛 `Run not active or stdin closed` → `useChatCore.send` catch 后回退 `createRun`——**排队退化为「起一个新 run」**（旧 run 仍跑完，新 run 并行启动）。
+「中断并立即执行」= `openWikiOp`/`openIngest`：
 
-> Pattern B 的退化是运行时限制，非前端逻辑问题。主用例 Claude Code 属 Pattern A，排队正常。
+- `if (chat.isRunning) chat.cancel()` —— 关 SSE + `api.cancelRun` 杀后端 run。
+- `setMode(type)`。
+- `clearTimeout(timerRef); setTimeout(50ms, chatRef.current.send(prompt))` —— 50ms 让 cancel 的 setState flush，send 走 `createRun`（续同一线程，带 history）。
 
-### 为什么不造轮子
+**不 reset、不清消息**——中断续线程，上下文不断。想起新线程走「新对话」按钮（`reset`）。
 
-agent 进程本身就是一个消息处理循环（stdin → 处理 → 下一轮）。在前端再建一个 `pendingOp` + `isRunning` 翻 false 的 effect 去排队，会与 agent 自身的队列重复且不同步（前端不知道 agent 何时处理完）。直接 `sendMessage` 写入 stdin，让 agent 自己调度，是唯一正确的接合点。
+## 新对话 vs close
 
-## 中断机制
-
-「中断并立即执行」= `openWikiOp(type)`（或 `openIngest`）：
-
-```
-openWikiOp(type)
-  → reset()
-      → 清 timerRef（见下）
-      → if (chat.isRunning) chat.cancel()   // api.cancelRun，杀后端 run
-      → conversationIdRef = null
-      → setMode(null)
-      → chat.reset()                        // 关 SSE + 清空消息
-  → setMode(type)
-  → setTimeout(50ms, chatRef.current.send(prompt))  // 新 run
-```
-
-`chat.cancel()` 调 `api.cancelRun(runId)`，daemon 终止 agent 进程，无泄漏。
+- **新对话**（面板头部按钮，复刻主页 `new-chat-btn`）：`reset()` —— 清 `queuedOps` + `timerRef` + cancel + 清 `messages` + `setMode(null)`。唯一的清空入口。
+- **close(✕)**：`cancel + 清 queuedOps + 清 timer`，**不清 messages**——关面板=隐藏，对话保留，重开还在。
 
 ## 50ms 延迟与快速连点
 
-`openWikiOp`/`openIngest` 用 `setTimeout(50ms, chatRef.current.send)` 等 `reset()` 的 state 更新 flush 后再发（`chatRef` 拿最新 `chat`，避免 stale `runId`）。
+`openWikiOp`/`openIngest` 用 `setTimeout(50ms, chatRef.current.send)` 等 cancel + setMode 的 state 更新 flush 后再发（`chatRef` 拿最新 `chat`，避免 stale `runId`）。
 
-`reset()` 里会 `clearTimeout(timerRef.current)`——否则在 50ms 内从 wiki 切到问答（或关闭面板）会让待触发的 wiki 提示词误发进新线程。`openQa` 不 reset 所以不碰 timer，但它也不排定时器，无影响。
+`reset()` 与 `close()` 都会 `clearTimeout(timerRef.current)`——否则在 50ms 内从 wiki 切到问答、新对话或关闭面板会让待触发的 wiki 提示词误发进新线程。`openQa` 不排定时器，无影响。
 
 ## 关键代码位置
 
 | 位置 | 职责 |
 |------|------|
 | `apps/web/src/hooks/useKbChat.ts` `openQa` | 问答：只 setMode，不 reset |
-| 同上 `openWikiOp`/`openIngest` | 中断路径：reset + 自动发 |
-| 同上 `queueWikiOp`/`queueIngest` | 排队路径：直接 chat.send（走 sendMessage stdin 队列） |
-| 同上 `reset` | 清 timer + cancel + 清消息（中断/切换/关闭共用） |
+| 同上 `openWikiOp`/`openIngest` | cancel + send，续线程 |
+| 同上 `queueWikiOp`/`queueIngest` | push 到 queuedOps（不 send），完成后 shift |
+| 同上 `reset` | 新对话：清 queuedOps + timer + cancel + 清 messages + setMode(null) |
+| 同上 `close` | cancel + 清排队，不清 messages |
 | `apps/web/src/components/kb/KnowledgeBasePage.tsx` `confirmRunningOp` | 3 按钮确认弹窗（中断/排队/取消） |
 | 同上 `handleOpenWikiOp`/`handleIngestFile` | `isRunning` 守卫 → 直接执行 or 弹确认 |
 | `apps/web/src/components/kb/KbModals.tsx` `ConfirmDialog` | 通用确认弹窗，`tertiaryLabel`+`onTertiary` 支持第三按钮 |
@@ -108,4 +87,4 @@ openWikiOp(type)
 - E2E `apps/web/e2e/kb-chat-entry.spec.ts`：
   - `💬问答 while a build is active does NOT interrupt — keeps thread + seeds @当前文档`：问答不 reset、build 消息保留 + `@当前文档` 预载。
   - `📚构建Wiki opens chat + auto-sends`：非运行态直接执行。
-- 中断/排队弹窗的 `isRunning` 触发态在无真实 agent 的测试环境非确定，靠逻辑 + 代码审查保证；前端不造独立队列，故无需单独测排队状态机。
+- 中断/排队弹窗的 `isRunning` 触发态在无真实 agent 的测试环境非确定，靠逻辑 + 代码审查保证；前端 pending 列表的状态流转由对应单元 / E2E 测试覆盖。
