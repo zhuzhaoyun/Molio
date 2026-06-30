@@ -41,6 +41,10 @@ CLI tool that uses AI models (layout detection, OCR, table extraction) to conver
 ### Install docling
 
 ```bash
+# China users (recommended) — uses Tsinghua mirror, ~10x faster than default
+pip install docling -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+# International users
 pip install docling
 ```
 
@@ -177,8 +181,10 @@ export HF_ENDPOINT=https://hf-mirror.com
 **Fix**:
 
 ```bash
-# Install
-pip install docling
+# Install (China users use Tsinghua mirror for speed)
+pip install docling -i https://pypi.tuna.tsinghua.edu.cn/simple
+# International users
+# pip install docling
 
 # Verify it's installed
 python -c "import docling; print('OK')"
