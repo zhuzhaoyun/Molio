@@ -31,6 +31,21 @@ Molio is a **local-first** desktop application that unifies knowledge management
 | 💬 **Messaging Integration** | Mobile chat with your knowledge base via WeChat (regional integration) |
 | 📖 **Knowledge Graph** | Visual browsing of your knowledge connections and relationships |
 
+### 📡 Channels
+
+A single Molio instance can serve multiple channels in parallel. Most channels can be onboarded right from the Web console.
+
+| Channel | Text | Image | File | Voice | Group |
+|---------|:----:|:-----:|:----:|:-----:|:-----:|
+| **Web Console** *(default)* | ✅ | ✅ | ✅ | ✅ | — |
+| **WeChat** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Feishu** | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ |
+| Telegram | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ |
+| Slack | ⏳ | ⏳ | ⏳ | — | ⏳ |
+| Discord | ⏳ | ⏳ | ⏳ | — | ⏳ |
+
+✅ Supported · ⏳ Planned · — N/A
+
 ### 🖼️ Screenshots
 
 <table>
@@ -62,8 +77,20 @@ Molio is a **local-first** desktop application that unifies knowledge management
 
 ## 🚀 Quick Start
 
-### Prerequisites
+### Installation
 
+Download the latest release from [GitHub Releases](https://github.com/zhuzhaoyun/Molio/releases):
+
+- **Windows**: `Molio-Setup-x.x.x.exe`
+- **macOS**: `Molio-x.x.x.dmg`
+
+Install and launch. On first run, you'll be guided to configure an AI runtime CLI (e.g., Claude Code, Codex, Gemini).
+
+### Development (from source)
+
+If you want to build from source or contribute to development:
+
+**Prerequisites:**
 - **Node.js** >= 22
 - **pnpm** >= 9
 - At least one AI runtime CLI:
@@ -71,8 +98,6 @@ Molio is a **local-first** desktop application that unifies knowledge management
   - [OpenAI Codex CLI](https://github.com/openai/codex)
   - [Gemini CLI](https://github.com/google-gemini/gemini-cli)
   - [Qwen Code](https://github.com/QwenLM/qwen-code)
-
-### Install & Run
 
 ```bash
 # Clone the repository
@@ -90,7 +115,7 @@ pnpm dev:daemon   # Backend only (port 3100)
 pnpm dev:web      # Frontend only (port 5173)
 ```
 
-### Desktop Build
+**Desktop Build:**
 
 ```bash
 # One-click build + generate unpacked version
@@ -103,7 +128,7 @@ pnpm package
 pnpm package:dir
 ```
 
-## 🛠️ Development
+**Testing:**
 
 ```bash
 pnpm test         # Run all tests (node:test)

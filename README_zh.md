@@ -31,6 +31,21 @@ Molio 是一款**本地优先**的桌面应用，将知识管理、AI 写作和�
 | 💬 **微信 AI 助手** | 扫码连接个人微信，手机上和你的知识库对话；发公众号链接自动总结并存入知识库 |
 | 📖 **知识图谱** | 可视化浏览知识关联与结构 |
 
+### 📡 渠道支持
+
+一个 Molio 实例可并行服务多个渠道，大多数渠道可在 Web 控制台一键接入。
+
+| 渠道 | 文本 | 图片 | 文件 | 语音 | 群聊 |
+|------|:----:|:----:|:----:|:----:|:----:|
+| **Web 控制台** *(默认)* | ✅ | ✅ | ✅ | ✅ | — |
+| **微信** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **飞书** | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ |
+| Telegram | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ |
+| Slack | ⏳ | ⏳ | ⏳ | — | ⏳ |
+| Discord | ⏳ | ⏳ | ⏳ | — | ⏳ |
+
+✅ 已支持 · ⏳ 计划中 · — 不适用
+
 ### 🖼️ 界面预览
 
 <table>
@@ -62,8 +77,20 @@ Molio 是一款**本地优先**的桌面应用，将知识管理、AI 写作和�
 
 ## 🚀 快速开始
 
-### 前置要求
+### 下载安装
 
+从 [GitHub Releases](https://github.com/zhuzhaoyun/Molio/releases) 下载最新版本：
+
+- **Windows**: `Molio-Setup-x.x.x.exe`
+- **macOS**: `Molio-x.x.x.dmg`
+
+安装后启动即可，首次使用会引导你配置 AI 运行时 CLI（如 Claude Code、Codex、Gemini 等）。
+
+### 从源码构建（开发者）
+
+如果你想从源码构建或参与开发：
+
+**前置要求：**
 - **Node.js** >= 22
 - **pnpm** >= 9
 - 至少安装一个 AI 运行时 CLI：
@@ -71,8 +98,6 @@ Molio 是一款**本地优先**的桌面应用，将知识管理、AI 写作和�
   - [OpenAI Codex CLI](https://github.com/openai/codex)
   - [Gemini CLI](https://github.com/google-gemini/gemini-cli)
   - [Qwen Code](https://github.com/QwenLM/qwen-code)
-
-### 安装与运行
 
 ```bash
 # 克隆项目
@@ -90,7 +115,7 @@ pnpm dev:daemon   # 仅后端 :3100
 pnpm dev:web      # 仅前端 :5173
 ```
 
-### 构建桌面应用
+**构建桌面应用：**
 
 ```bash
 # 一键构建 + 生成未打包版本
@@ -103,7 +128,7 @@ pnpm package
 pnpm package:dir
 ```
 
-## 🛠️ 开发与测试
+**测试：**
 
 ```bash
 pnpm test         # 运行所有测试 (node:test)
