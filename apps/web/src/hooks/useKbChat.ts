@@ -14,7 +14,7 @@ function WIKI_INGEST_PROMPT(filePath: string): string {
   return `用 wiki-ingest skill 把这个文件加入 Wiki：${filePath}`;
 }
 
-/** 排队中的操作（不立即发送，等当前 run 完成后 shift 执行）。 */
+/** 排队中的操作（不立即发送，等当前 run 自然完成后 shift 执行）。 */
 export interface QueuedOp {
   id: string;
   type: 'build' | 'lint' | 'ingest';
@@ -37,9 +37,9 @@ export interface KbChatState {
   queuedOps: QueuedOp[];
   /** 问答：只切 mode（预载 @当前文档），不 reset、不 cancel、不中断。 */
   openQa: () => void;
-  /** wiki 中断：cancel 当前 run + 切 mode + 50ms 后 send（续同一线程，不清消息）。 */
+  /** wiki 中断：await cancel + 切 mode + 50ms 后 send（续同一线程，不清消息）。 */
   openWikiOp: (type: 'build' | 'lint') => void;
-  /** wiki 排队：push 到 queuedOps，不 send；当前 run 完成后 shift 执行。 */
+  /** wiki 排队：push 到 queuedOps，不 send；当前 run 自然完成后 shift 执行。 */
   queueWikiOp: (type: 'build' | 'lint') => void;
   /** ingest 中断：同 openWikiOp。 */
   openIngest: (filePath: string) => void;
@@ -48,9 +48,10 @@ export interface KbChatState {
   /** 从排队列表移除一项。 */
   cancelQueued: (id: string) => void;
   send: (text: string) => void;
+  /** stop 按钮：清排队 + cancel（suppress shift）。 */
   cancel: () => void;
   submitToolResult: (toolUseId: string, content: string) => Promise<void>;
-  /** 关面板（隐藏）：cancel 在跑的 + 清排队 + 清 timer，不清 messages。 */
+  /** 关面板（隐藏）：cancel + 清排队 + 清 timer，不清 messages。 */
   close: () => void;
   /** 新对话：清一切（queuedOps + messages + mode + cancel）。 */
   reset: () => void;
@@ -92,32 +93,46 @@ export function useKbChat(opts: UseKbChatOptions): KbChatState {
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevRunningRef = useRef(false);
+  /** set by cancel paths (stop / interrupt / close / reset) to suppress the shift
+   * effect for that true→false edge — so a cancel doesn't auto-advance the queue.
+   * Consumed (reset to false) on each true→false edge in the shift effect. */
+  const suppressShiftRef = useRef(false);
 
-  // 卸载时清定时器
   useEffect(() => () => {
     if (timerRef.current) clearTimeout(timerRef.current);
   }, []);
 
-  // shift-on-complete：isRunning 由 true→false 时，执行排队首项（续线程）。
-  // prevRunningRef 检测边沿，避免每次 render 重复触发。
+  // shift-on-complete: ONLY on natural completion (not cancel).
+  // suppressShiftRef is set by cancel paths and consumed on each true→false edge.
   useEffect(() => {
-    if (prevRunningRef.current && !chat.isRunning && queuedOps.length > 0) {
-      const [first, ...rest] = queuedOps;
-      setQueuedOps(rest);
-      setMode(first.type);
-      if (timerRef.current) clearTimeout(timerRef.current);
-      // 50ms 让完成后的 state flush；send 走 createRun（续同一线程，带 history）。
-      timerRef.current = setTimeout(() => {
-        chatRef.current.send(first.prompt);
-      }, 50);
+    if (prevRunningRef.current && !chat.isRunning) {
+      if (!suppressShiftRef.current && queuedOps.length > 0) {
+        const [first, ...rest] = queuedOps;
+        setQueuedOps(rest);
+        setMode(first.type);
+        if (timerRef.current) clearTimeout(timerRef.current);
+        // 50ms 让完成后的 state flush；send 走 createRun（续同一线程，带 history）。
+        timerRef.current = setTimeout(() => {
+          chatRef.current.send(first.prompt);
+        }, 50);
+      }
+      suppressShiftRef.current = false; // consume
     }
     prevRunningRef.current = chat.isRunning;
   }, [chat.isRunning, queuedOps]);
+
+  // internal cancel wrapper: suppress shift + chat.cancel (keeps queue).
+  // Used by close/reset (fire-and-forget) — they don't send after, so no await needed.
+  const cancelRun = useCallback(() => {
+    suppressShiftRef.current = true;
+    chat.cancel();
+  }, [chat]);
 
   // 新对话：清一切
   const reset = useCallback(() => {
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
     setQueuedOps([]);
+    suppressShiftRef.current = true;
     if (chat.isRunning) chat.cancel();
     conversationIdRef.current = null;
     setMode(null);
@@ -129,10 +144,13 @@ export function useKbChat(opts: UseKbChatOptions): KbChatState {
     setMode('qa');
   }, []);
 
-  const openWikiOp = useCallback((type: 'build' | 'lint') => {
-    // 中断：cancel 当前 run（关 SSE + 杀后端）+ 切 mode + 50ms 后 send。
+  const openWikiOp = useCallback(async (type: 'build' | 'lint') => {
+    // 中断：await cancel（杀后端 run + state flush，避免 send 窜进旧 run）+ 切 mode + 50ms send。
     // 不 reset、不清消息——续同一线程（createRun 带 history）。
-    if (chat.isRunning) chat.cancel();
+    if (chat.isRunning) {
+      suppressShiftRef.current = true;
+      await chat.cancel();
+    }
     setMode(type);
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
@@ -141,16 +159,16 @@ export function useKbChat(opts: UseKbChatOptions): KbChatState {
   }, [chat]);
 
   const queueWikiOp = useCallback((type: 'build' | 'lint') => {
-    // 排队：不 send，push 到 queuedOps；完成后 shift 执行。
-    setQueuedOps((prev) => [...prev, {
-      id: `q${++idRef.current}`,
-      type,
-      prompt: WIKI_PROMPTS[type],
-    }]);
+    // 排队：不 send，push 到 queuedOps；自然完成后 shift 执行。
+    const id = `q${++idRef.current}`; // generate BEFORE updater (purity / Strict Mode)
+    setQueuedOps((prev) => [...prev, { id, type, prompt: WIKI_PROMPTS[type] }]);
   }, []);
 
-  const openIngest = useCallback((filePath: string) => {
-    if (chat.isRunning) chat.cancel();
+  const openIngest = useCallback(async (filePath: string) => {
+    if (chat.isRunning) {
+      suppressShiftRef.current = true;
+      await chat.cancel();
+    }
     setMode('ingest');
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
@@ -159,24 +177,27 @@ export function useKbChat(opts: UseKbChatOptions): KbChatState {
   }, [chat]);
 
   const queueIngest = useCallback((filePath: string) => {
-    setQueuedOps((prev) => [...prev, {
-      id: `q${++idRef.current}`,
-      type: 'ingest',
-      filePath,
-      prompt: WIKI_INGEST_PROMPT(filePath),
-    }]);
+    const id = `q${++idRef.current}`;
+    setQueuedOps((prev) => [...prev, { id, type: 'ingest', filePath, prompt: WIKI_INGEST_PROMPT(filePath) }]);
   }, []);
 
   const cancelQueued = useCallback((id: string) => {
     setQueuedOps((prev) => prev.filter((op) => op.id !== id));
   }, []);
 
+  // exposed cancel (composer stop button): clear queue + suppress + chat.cancel
+  const cancel = useCallback(() => {
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    setQueuedOps([]);
+    cancelRun();
+  }, [cancelRun]);
+
   const close = useCallback(() => {
     // 隐藏：cancel 在跑的 + 清排队 + 清 timer；不清 messages（重开还在）。
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
     setQueuedOps([]);
-    if (chat.isRunning) chat.cancel();
-  }, [chat]);
+    cancelRun();
+  }, [cancelRun]);
 
   return {
     mode,
@@ -190,7 +211,7 @@ export function useKbChat(opts: UseKbChatOptions): KbChatState {
     queueIngest,
     cancelQueued,
     send: chat.send,
-    cancel: chat.cancel,
+    cancel,
     submitToolResult: chat.submitToolResult,
     close,
     reset,
