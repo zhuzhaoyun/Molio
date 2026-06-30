@@ -146,6 +146,12 @@ const ENV_SELF_HEAL_BLOCK = [
   'Never tell the user "X is not available, please do it manually" without first attempting to',
   'install it. Bailing out to a manual workaround is the last resort, not the first response.',
   'Only if installation genuinely fails, tell the user what you tried and suggest a fallback.',
+  '',
+  '## Long-running Task Feedback',
+  '',
+  'If any task (installation, download, processing, conversion, etc.) is expected to take more',
+  'than 5 minutes, proactively inform the user that the task is still in progress so they do',
+  'not think the system is stuck or unresponsive.',
 ].join('\n');
 
 /**
