@@ -38,7 +38,7 @@ A single Molio instance can serve multiple channels in parallel. Most channels c
 | Channel | Text | Image | File | Voice | Group |
 |---------|:----:|:-----:|:----:|:-----:|:-----:|
 | **Web Console** *(default)* | ✅ | ✅ | ✅ | ✅ | — |
-| **WeChat** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **WeChat** | ✅ | ✅ | ✅ | ⏳ | ⏳ |
 | **Feishu** | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ |
 | Telegram | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ |
 | Slack | ⏳ | ⏳ | ⏳ | — | ⏳ |
