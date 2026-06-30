@@ -228,7 +228,7 @@ const en: Record<string, string> = {
 
   // ── KnowledgeBase (file chat) ──
   'kb.moreMenuOutline': 'Outline',
-  'kb.moreMenuSearch': 'Full-text search',
+  'kb.moreMenuSearch': 'Search',
   'kb.moreMenuCollapseAll': 'Collapse all folders',
   'kb.moreMenuComingSoon': 'Coming soon',
   'kb.buildWiki': 'Build Wiki',

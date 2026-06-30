@@ -228,7 +228,7 @@ const zh: Record<string, string> = {
 
   // ── KnowledgeBase (file chat) ──
   'kb.moreMenuOutline': '文档大纲',
-  'kb.moreMenuSearch': '全文搜索',
+  'kb.moreMenuSearch': '搜索',
   'kb.moreMenuCollapseAll': '折叠全部文件夹',
   'kb.moreMenuComingSoon': '即将上线',
   'kb.buildWiki': '构建 Wiki',
