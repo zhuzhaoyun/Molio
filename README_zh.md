@@ -1,74 +1,66 @@
-# Molio (墨流)
+<div align="center">
 
-> 兼容 Obsidian Vault 的本地知识库 + Claude Code 图形界面 + 微信 AI 助手 — 数据全在你自己的电脑上
+# 📚 Molio (墨流)
 
-**[English](README_EN.md)** | 中文
+**你的本地知识库 + AI 写作台 + 全平台发布器 — 数据全在你自己的电脑上**
 
-Molio 是一款**本地优先**的桌面应用，将知识库管理、AI 写作和多平台发布串联为一体。直接打开你的 Obsidian Vault，通过 Chrome 扩展一键剪藏网页，在 UI 里调用 Claude Code / Codex / Gemini CLI 写文档，扫个码就能在手机微信里跟知识库对话 — 所有内容存在你自己的电脑上，不经过任何第三方服务器。
+[English](README.md) · [中文](README_zh.md)
 
-## 核心功能
+[![GitHub Release](https://img.shields.io/github/v/release/zhuzhaoyun/Molio?style=flat-square)](https://github.com/zhuzhaoyun/Molio/releases)
+[![License](https://img.shields.io/github/license/zhuzhaoyun/Molio?style=flat-square)](LICENSE)
+[![GitHub Stars](https://img.shields.io/github/stars/zhuzhaoyun/Molio?style=flat-square)](https://github.com/zhuzhaoyun/Molio/stargazers)
+[![Last Commit](https://img.shields.io/github/last-commit/zhuzhaoyun/Molio?style=flat-square)](https://github.com/zhuzhaoyun/Molio/commits)
 
-- **🗂️ 兼容 Obsidian Vault** — 直接打开你的 Obsidian 目录，零迁移成本；纯 Markdown 文件，无厂商锁定，随时可以切回去
-- **✂️ 自带 Web Clipper** — Chrome 扩展一键剪藏网页到知识库，自动唤起桌面端定位到刚保存的文件
-- **🤖 Claude Code / Codex / Gemini CLI 图形界面** — 不用敲命令行，在 UI 里选 Agent、发消息、看流式输出，自动加载项目 `CLAUDE.md` 上下文
-- **💬 微信 AI 助手** — 扫个码就连上个人微信，在手机里跟你的本地知识库对话；发公众号链接还能自动总结并存入知识库
-- **🎨 内置 doocs/md 排版** — 微信公众号、知乎等平台格式一键转换，左右分栏实时预览
-- **🚀 30+ 平台一键发布** — 基于 [doocs/cose](https://github.com/doocs/cose)，写完即发，告别逐平台复制粘贴
-- **🔒 数据全在本地** — 知识库、AI 对话、微信消息全部存在你自己的电脑上，不经过任何第三方服务器
+</div>
 
-## 界面预览
+---
+
+Molio 是一款**本地优先**的桌面应用，将知识管理、AI 写作和内容发布串联为一体。直接打开你的 Obsidian 知识库，在图形界面里调用 Claude Code / Codex / Gemini 写文档，通过微信在手机上和知识库对话，写完一键排版发布到公众号、知乎、头条等 30+ 平台 — 所有内容存在你自己的电脑上，不经过任何第三方服务器。
+
+### 🌟 核心能力
+
+| 功能 | 说明 |
+|------|------|
+| 🗂️ **Obsidian 兼容** | 直接打开你的 Obsidian 目录，零迁移；纯 Markdown 文件，无厂商锁定，随时切回 |
+| 🤖 **多 Agent 图形界面** | 在统一界面里使用 Claude Code、OpenAI Codex、Gemini CLI、Qwen Code，支持流式输出 |
+| 🔒 **本地优先** | 知识库、AI 对话、所有设置全在本地 — 完全私密，不经过任何第三方服务器 |
+| ✂️ **[Web Clipper](https://github.com/zhuzhaoyun/molio-connect)** | Chrome 扩展一键剪藏网页到知识库，自动唤起桌面端定位到刚保存的文件 |
+| 📝 **智能编辑器** | 左右分栏 Markdown 编辑器，实时预览，语法高亮，AI 辅助写作 |
+| 🎨 **专业排版** | 基于 [doocs/md](https://github.com/doocs/md) 的排版引擎，公众号/知乎/头条格式一键转换 |
+| 🚀 **30+ 平台发布** | 写完即发，告别逐平台复制粘贴 — 基于 [doocs/cose](https://github.com/doocs/cose)，深度适配国内内容平台 |
+| 💬 **微信 AI 助手** | 扫码连接个人微信，手机上和你的知识库对话；发公众号链接自动总结并存入知识库 |
+| 📖 **知识图谱** | 可视化浏览知识关联与结构 |
+
+### 🖼️ 界面预览
 
 <table>
   <tr>
     <td width="50%" align="center">
-      <img src="docs/img/main.png" alt="首页" width="100%" style="border-radius: 8px;" />
+      <img src="docs/img/main.png" alt="AI 对话" width="100%" style="border-radius: 8px;" />
       <br/>
-      <sub>AI 对话：选择 Agent 发送消息，支持流式响应</sub>
+      <sub>AI 对话：多 Agent 支持，流式响应</sub>
     </td>
     <td width="50%" align="center">
       <img src="docs/img/wiki_knowledge.png" alt="知识库" width="100%" style="border-radius: 8px;" />
       <br/>
-      <sub>Vault 文件树管理，Markdown 渲染与浏览</sub>
+      <sub>知识库：Vault 文件树管理与 Markdown 渲染</sub>
     </td>
   </tr>
   <tr>
     <td width="50%" align="center">
       <img src="docs/img/Layout%20.png" alt="排版编辑器" width="100%" style="border-radius: 8px;" />
       <br/>
-      <sub>左右分栏实时预览，主题/字体/颜色可调</sub>
+      <sub>排版编辑器：左右分栏实时预览，主题/字体/颜色可调</sub>
     </td>
     <td width="50%" align="center">
       <img src="docs/img/publish.png" alt="多平台发布" width="100%" style="border-radius: 8px;" />
       <br/>
-      <sub>一键同步到 30+ 内容平台</sub>
+      <sub>多平台发布：一键同步到 30+ 内容平台</sub>
     </td>
   </tr>
 </table>
 
-## 技术栈
-
-| 层级 | 技术 |
-|------|------|
-| 前端 | React 19 + Vite 6 + TypeScript |
-| 后端 | Hono + Node.js + SQLite (better-sqlite3) |
-| 桌面 | Electron 40 + electron-builder |
-| 构建 | pnpm workspace monorepo |
-| 测试 | node:test (内置) |
-
-## 项目结构
-
-```
-Molio/
-├── packages/
-│   └── contracts/       @molio/contracts — 共享类型定义
-├── apps/
-│   ├── daemon/          @molio/daemon   — Hono HTTP 服务端 (API + SSE)
-│   ├── web/             @molio/web      — Vite + React 前端
-│   └── desktop/         @molio/desktop  — Electron 桌面壳
-└── package.json         monorepo 根配置
-```
-
-## 快速开始
+## 🚀 快速开始
 
 ### 前置要求
 
@@ -111,15 +103,35 @@ pnpm package
 pnpm package:dir
 ```
 
-### 测试与类型检查
+## 🛠️ 开发与测试
 
 ```bash
 pnpm test         # 运行所有测试 (node:test)
 pnpm typecheck    # 全量类型检查
 pnpm build        # 构建所有子包
+pnpm test:e2e     # E2E 测试 (需先启动 pnpm dev)
 ```
 
-## 常见问题
+## 🏗️ 项目架构
+
+```
+Molio/
+├── packages/
+│   └── contracts/       @molio/contracts — 共享类型定义
+├── apps/
+│   ├── daemon/          @molio/daemon   — Hono HTTP 服务端 (API + SSE)
+│   ├── web/             @molio/web      — Vite + React 前端
+│   └── desktop/         @molio/desktop  — Electron 桌面壳
+└── package.json         monorepo 根配置
+```
+
+**技术栈：**
+- **前端：** React 19 + Vite 6 + TypeScript
+- **后端：** Hono + Node.js + SQLite (better-sqlite3)
+- **桌面：** Electron 40 + electron-builder
+- **构建：** pnpm workspace monorepo
+
+## ❓ 常见问题
 
 ### macOS 提示"已损坏，无法打开"
 
@@ -134,11 +146,13 @@ sudo xattr -d com.apple.quarantine /Applications/Molio.app
 
 之后即可正常双击打开。
 
-## 用户交流群
+## 💬 用户交流群
+
+扫码加入微信群，反馈问题、交流使用、参与讨论：
 
 <img src="docs/img/qrcode.png" alt="用户交流群二维码" width="200" />
 
-## 致谢
+## ❤️ 致谢
 
 Molio 的诞生离不开以下优秀开源项目的启发与支持：
 
@@ -149,6 +163,16 @@ Molio 的诞生离不开以下优秀开源项目的启发与支持：
 
 感谢这些项目的作者和社区，让 Molio 能站在巨人的肩膀上快速成长。
 
-## License
+## 📄 License
 
 [Modified Apache 2.0](LICENSE) — 基于 Apache License 2.0，附加商业使用限制条款。内部使用和非商业场景完全免费，商业托管/嵌入需获取商业授权。
+
+---
+
+<div align="center">
+
+**如果 Molio 对你有帮助，欢迎给个 ⭐️ [Star](https://github.com/zhuzhaoyun/Molio) 支持一下！**
+
+[⭐ Star](https://github.com/zhuzhaoyun/Molio) · [🐛 反馈问题](https://github.com/zhuzhaoyun/Molio/issues) · [💡 功能建议](https://github.com/zhuzhaoyun/Molio/issues)
+
+</div>
