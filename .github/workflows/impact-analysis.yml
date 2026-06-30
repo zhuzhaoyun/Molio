@@ -32,7 +32,11 @@ jobs:
 
       - name: Get PR diff
         run: |
-          gh pr diff ${{ github.event.pull_request.number }} > pr.diff
+          # Use local git diff instead of `gh pr diff` — GitHub's API caps diff
+          # responses at 20000 lines and returns HTTP 406 for larger PRs, which
+          # silently breaks impact analysis on big PRs (e.g. #127). With
+          # fetch-depth: 0 above, both SHAs are already local.
+          git diff "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}" > pr.diff
           gh pr view ${{ github.event.pull_request.number }} --json title,body > pr-meta.json
         env:
           GH_TOKEN: ${{ github.token }}
