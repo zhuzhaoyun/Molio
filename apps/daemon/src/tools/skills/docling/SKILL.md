@@ -1,7 +1,7 @@
 ---
 name: docling
 description: PRIMARY skill for converting .pdf, .docx, .pptx, .xlsx, .doc, .ppt, .xls files and images to Markdown. Always prefer this over the docx/pdf/pptx/xlsx/paddleocr skills — docling uses GPU-accelerated OCR + layout detection + table structure extraction for much higher quality output. Also supports LaTeX, audio/video transcripts.
-version: 1.1.0
+version: 1.1.2
 metadata:
   requires:
     bins: ["docling"]

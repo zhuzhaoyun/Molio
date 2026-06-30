@@ -53,9 +53,39 @@ function resolveSkillsSourceDir(): string {
 /**
  * Recursively copy a directory, skipping if destination already exists (idempotent).
  */
-function copyDirSync(src: string, dest: string): void {
-  if (fs.existsSync(dest)) return; // idempotent: skip if already installed
+/**
+ * Read the version from a skill's SKILL.md file.
+ * Returns null if the file doesn't exist or has no version field.
+ */
+function readSkillVersion(skillDir: string): string | null {
+  const skillMd = path.join(skillDir, 'SKILL.md');
+  if (!fs.existsSync(skillMd)) return null;
 
+  const content = fs.readFileSync(skillMd, 'utf-8');
+  const match = content.match(/^version:\s*(.+)$/m);
+  return match && match[1] ? match[1].trim() : null;
+}
+
+/**
+ * Check if two skills have different versions.
+ * Returns true if versions differ or if one is missing.
+ */
+function shouldUpdateSkill(srcDir: string, destDir: string): boolean {
+  if (!fs.existsSync(destDir)) return true; // dest doesn't exist, need to install
+
+  const srcVersion = readSkillVersion(srcDir);
+  const destVersion = readSkillVersion(destDir);
+
+  // If either has no version, compare by checking if dest exists (already checked above)
+  if (!srcVersion || !destVersion) return false; // assume up-to-date if no version info
+
+  return srcVersion !== destVersion;
+}
+
+/**
+ * Recursively copy a directory, overwriting files to keep them in sync.
+ */
+function copyDirSync(src: string, dest: string): void {
   fs.mkdirSync(dest, { recursive: true });
 
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
@@ -316,8 +346,10 @@ export function installBuiltinSkills(vaultPath: string): void {
     }
 
     try {
-      copyDirSync(skillSrc, skillDest);
-      console.log(`[skill-installer] Installed skill "${skillName}" → ${skillDest}`);
+      if (shouldUpdateSkill(skillSrc, skillDest)) {
+        copyDirSync(skillSrc, skillDest);
+        console.log(`[skill-installer] Installed/updated skill "${skillName}" → ${skillDest}`);
+      }
     } catch (err) {
       console.error(
         `[skill-installer] Failed to install skill "${skillName}":`,

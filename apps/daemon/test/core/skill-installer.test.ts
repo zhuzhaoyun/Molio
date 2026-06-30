@@ -255,4 +255,33 @@ describe('skill-installer migration', () => {
       'user content should be preserved',
     );
   });
+
+  it('should update skill when version differs, skip when same', () => {
+    // First install
+    installBuiltinSkills(tmpVault);
+    const doclingMd = path.join(skillsDir, 'docling', 'SKILL.md');
+    const currentContent = fs.readFileSync(doclingMd, 'utf-8');
+
+    // Simulate an older version in the vault
+    const oldContent = currentContent.replace('version: 1.1.2', 'version: 0.9.0');
+    fs.writeFileSync(doclingMd, oldContent, 'utf-8');
+    assert.ok(
+      fs.readFileSync(doclingMd, 'utf-8').includes('version: 0.9.0'),
+      'old version should be written',
+    );
+
+    // Second pass: version differs, should update
+    installBuiltinSkills(tmpVault);
+    assert.ok(
+      fs.readFileSync(doclingMd, 'utf-8').includes('version: 1.1.2'),
+      'skill should be updated to current version',
+    );
+
+    // Third pass: version is same, should not rewrite (no error either)
+    installBuiltinSkills(tmpVault);
+    assert.ok(
+      fs.readFileSync(doclingMd, 'utf-8').includes('version: 1.1.2'),
+      'skill should remain at current version',
+    );
+  });
 });
