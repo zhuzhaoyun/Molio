@@ -25,7 +25,7 @@ const zh: Record<string, string> = {
   'composer.stop': '停止',
   'composer.send': '发送',
   'composer.hint': 'Shift+Enter 换行',
-  'composer.hintFileRef': '引用文件',
+  'composer.hintFileRef': '引用文件/目录',
   'composer.hintCommand': '命令',
   'composer.hintSend': '发送',
   'composer.hintNewline': '换行',
