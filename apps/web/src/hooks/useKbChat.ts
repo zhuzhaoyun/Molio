@@ -124,7 +124,7 @@ export function useKbChat(opts: UseKbChatOptions): KbChatState {
   // internal cancel wrapper: suppress shift + chat.cancel (keeps queue).
   // Used by close/reset (fire-and-forget) — they don't send after, so no await needed.
   const cancelRun = useCallback(() => {
-    suppressShiftRef.current = true;
+    if (chat.isRunning) suppressShiftRef.current = true;
     chat.cancel();
   }, [chat]);
 
@@ -132,8 +132,10 @@ export function useKbChat(opts: UseKbChatOptions): KbChatState {
   const reset = useCallback(() => {
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
     setQueuedOps([]);
-    suppressShiftRef.current = true;
-    if (chat.isRunning) chat.cancel();
+    if (chat.isRunning) {
+      suppressShiftRef.current = true;
+      chat.cancel();
+    }
     conversationIdRef.current = null;
     setMode(null);
     chat.reset();
