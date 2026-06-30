@@ -24,12 +24,18 @@ export interface KbChatState {
   mode: KbChatMode | null;
   messages: ChatMessage[];
   isRunning: boolean;
-  /** 问答模式：reset 线程 + 设 mode='qa'，不发送（等用户输入）。 */
+  /** 问答：只切 mode（预载 @当前文档），不 reset、不 cancel、不中断在跑的 run。 */
   openQa: () => void;
-  /** wiki 模式：reset 线程 + 设 mode + 自动发送 skill 提示词（一键开干）。 */
+  /** wiki：reset 线程 + 设 mode + 自动发送（中断在跑的 run，一键开干）。 */
   openWikiOp: (type: 'build' | 'lint') => void;
-  /** ingest 模式：reset 线程 + 设 mode='ingest' + 自动发送 ingest 提示词。 */
+  /** wiki 排队：不 reset、不 cancel，直接 send 提示词——走 useChatCore 的多轮
+   *  sendMessage 路径，写入运行中 agent 的 stdin（Claude Code 等原生队列），
+   *  agent 处理完当前轮再处理这条。Pattern B（stdin 已关）会回退到 createRun。 */
+  queueWikiOp: (type: 'build' | 'lint') => void;
+  /** ingest：reset + 自动发送（中断）。 */
   openIngest: (filePath: string) => void;
+  /** ingest 排队：同 queueWikiOp，写入运行中 agent 的 stdin。 */
+  queueIngest: (filePath: string) => void;
   send: (text: string) => void;
   cancel: () => void;
   submitToolResult: (toolUseId: string, content: string) => Promise<void>;
@@ -87,9 +93,11 @@ export function useKbChat(opts: UseKbChatOptions): KbChatState {
   }, [chat]);
 
   const openQa = useCallback(() => {
-    reset();
+    // 问答只激活 + 预载 @当前文档（mode='qa' 触发面板 seeding）。
+    // 不 reset、不 cancel —— 不打断在跑的 run；用户 Enter 发送时走正常 send
+    // 路径（有 run 在跑就多轮 follow-up，没就新建）。
     setMode('qa');
-  }, [reset]);
+  }, []);
 
   const openWikiOp = useCallback((type: 'build' | 'lint') => {
     reset();
@@ -100,6 +108,12 @@ export function useKbChat(opts: UseKbChatOptions): KbChatState {
     }, 50);
   }, [reset]);
 
+  const queueWikiOp = useCallback((type: 'build' | 'lint') => {
+    // 排队：直接 send，走 useChatCore 多轮 sendMessage → agent stdin 队列。
+    // 不 reset、不 cancel、不改 mode（当前任务仍在跑，label 不动）。
+    chatRef.current.send(WIKI_PROMPTS[type]);
+  }, []);
+
   const openIngest = useCallback((filePath: string) => {
     reset();
     setMode('ingest');
@@ -108,6 +122,10 @@ export function useKbChat(opts: UseKbChatOptions): KbChatState {
       chatRef.current.send(WIKI_INGEST_PROMPT(filePath));
     }, 50);
   }, [reset]);
+
+  const queueIngest = useCallback((filePath: string) => {
+    chatRef.current.send(WIKI_INGEST_PROMPT(filePath));
+  }, []);
 
   const close = useCallback(() => {
     reset();
@@ -119,7 +137,9 @@ export function useKbChat(opts: UseKbChatOptions): KbChatState {
     isRunning: chat.isRunning,
     openQa,
     openWikiOp,
+    queueWikiOp,
     openIngest,
+    queueIngest,
     send: chat.send,
     cancel: chat.cancel,
     submitToolResult: chat.submitToolResult,

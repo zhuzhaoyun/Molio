@@ -114,6 +114,8 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
     title: string;
     message: string;
     confirmLabel?: string;
+    tertiaryLabel?: string;
+    onTertiary?: () => void;
     danger?: boolean;
     onConfirm: () => void;
   }>({ show: false, title: '', message: '', onConfirm: () => {} });
@@ -284,16 +286,64 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
   }, [kb.panelWidth, kb.setPanelWidth]);
 
   // Wiki operation handlers
+  // 3-button confirm for "run a wiki op while a task is running":
+  // 中断并立即执行 / 排队等当前完成 / 取消。排队走 agent stdin 原生队列。
+  const confirmRunningOp = useCallback((opts: {
+    title: string;
+    message: string;
+    onInterrupt: () => void;
+    onQueue: () => void;
+  }) => {
+    setConfirmDialog({
+      show: true,
+      title: opts.title,
+      message: opts.message,
+      confirmLabel: '中断并立即执行',
+      tertiaryLabel: '排队等当前完成',
+      danger: true,
+      onConfirm: () => {
+        setConfirmDialog((prev) => ({ ...prev, show: false }));
+        opts.onInterrupt();
+      },
+      onTertiary: () => {
+        setConfirmDialog((prev) => ({ ...prev, show: false }));
+        opts.onQueue();
+      },
+    });
+  }, []);
+
   const handleOpenWikiOp = useCallback((type: 'build' | 'lint') => {
-    kbChat.openWikiOp(type);
-    setChatOpen(true);
-  }, [kbChat]);
+    const interrupt = () => { kbChat.openWikiOp(type); setChatOpen(true); };
+    const queue = () => { kbChat.queueWikiOp(type); setChatOpen(true); };
+    if (kbChat.isRunning) {
+      confirmRunningOp({
+        title: '当前任务进行中',
+        message: type === 'build'
+          ? '构建 Wiki 会作为新任务发送。选择如何处理当前正在运行的任务：'
+          : 'Wiki 健康检查会作为新任务发送。选择如何处理当前正在运行的任务：',
+        onInterrupt: interrupt,
+        onQueue: queue,
+      });
+    } else {
+      interrupt();
+    }
+  }, [kbChat, confirmRunningOp]);
 
   const handleIngestFile = useCallback((filePath: string) => {
     if (!agentId) return;
-    kbChat.openIngest(filePath);
-    setChatOpen(true);
-  }, [agentId, kbChat]);
+    const interrupt = () => { kbChat.openIngest(filePath); setChatOpen(true); };
+    const queue = () => { kbChat.queueIngest(filePath); setChatOpen(true); };
+    if (kbChat.isRunning) {
+      confirmRunningOp({
+        title: '当前任务进行中',
+        message: `把 ${filePath} 加入 Wiki 会作为新任务发送。选择如何处理当前正在运行的任务：`,
+        onInterrupt: interrupt,
+        onQueue: queue,
+      });
+    } else {
+      interrupt();
+    }
+  }, [agentId, kbChat, confirmRunningOp]);
 
   const handleCloseChat = useCallback(() => {
     setChatOpen(false);
@@ -787,6 +837,8 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
         title={confirmDialog.title}
         message={confirmDialog.message}
         confirmLabel={confirmDialog.confirmLabel}
+        tertiaryLabel={confirmDialog.tertiaryLabel}
+        onTertiary={confirmDialog.onTertiary}
         danger={confirmDialog.danger}
         onConfirm={confirmDialog.onConfirm}
         onCancel={handleCancelConfirmDialog}
