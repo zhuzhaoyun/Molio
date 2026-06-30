@@ -1,7 +1,7 @@
 # KB 聊天：中断 / 排队机制
 
 > 适用：知识库页面的统一聊天面板（`useKbChat` + `KbChatPanel`）。
-> 记录「任务运行中再次点击入口按钮」时的交互与底层机制，避免重复造轮子。
+> 记录「任务运行中再次点击入口按钮」时的交互与底层机制。排队用前端 pending 列表（不接 agent stdin 队列），理由见下。
 
 ## 背景
 
@@ -80,7 +80,7 @@ stdin 多轮 `sendMessage` 仍用于**问答 follow-up**（用户在 run 跑时�
 | `apps/web/src/components/kb/KbModals.tsx` `ConfirmDialog` | 通用确认弹窗，`tertiaryLabel`+`onTertiary` 支持第三按钮 |
 | `apps/web/src/hooks/useChatCore.ts` `send` | 多轮分支：`existingRunId` → `api.sendMessage`，失败回退 `createRun` |
 | `apps/web/src/api/client.ts` `sendMessage` | `POST /api/runs/:id/messages` |
-| `apps/daemon/src/core/RunManager.ts` `sendMessage` | 写入 agent stdin（Pattern A）/ 抛错（Pattern B） |
+| `apps/daemon/src/core/RunManager.ts` `sendMessage` | 写入运行中 agent 的 stdin（stream-json agent）；stdin 已关则抛错 |
 
 ## 测试覆盖
 
