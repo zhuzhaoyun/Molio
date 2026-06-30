@@ -1,3 +1,4 @@
+// apps/web/src/hooks/useKbChat.ts
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
 import { useChatCore, type CreateRunContext, type ChatMessage } from './useChatCore';
@@ -13,6 +14,15 @@ function WIKI_INGEST_PROMPT(filePath: string): string {
   return `用 wiki-ingest skill 把这个文件加入 Wiki：${filePath}`;
 }
 
+/** 排队中的操作（不立即发送，等当前 run 完成后 shift 执行）。 */
+export interface QueuedOp {
+  id: string;
+  type: 'build' | 'lint' | 'ingest';
+  /** ingest 专用。 */
+  filePath?: string;
+  prompt: string;
+}
+
 export interface UseKbChatOptions {
   agentId: string | null;
   vaultPath: string | null;
@@ -24,29 +34,34 @@ export interface KbChatState {
   mode: KbChatMode | null;
   messages: ChatMessage[];
   isRunning: boolean;
-  /** 问答：只切 mode（预载 @当前文档），不 reset、不 cancel、不中断在跑的 run。 */
+  queuedOps: QueuedOp[];
+  /** 问答：只切 mode（预载 @当前文档），不 reset、不 cancel、不中断。 */
   openQa: () => void;
-  /** wiki：reset 线程 + 设 mode + 自动发送（中断在跑的 run，一键开干）。 */
+  /** wiki 中断：cancel 当前 run + 切 mode + 50ms 后 send（续同一线程，不清消息）。 */
   openWikiOp: (type: 'build' | 'lint') => void;
-  /** wiki 排队：不 reset、不 cancel，直接 send 提示词——走 useChatCore 的多轮
-   *  sendMessage 路径，写入运行中 agent 的 stdin（Claude Code 等原生队列），
-   *  agent 处理完当前轮再处理这条。Pattern B（stdin 已关）会回退到 createRun。 */
+  /** wiki 排队：push 到 queuedOps，不 send；当前 run 完成后 shift 执行。 */
   queueWikiOp: (type: 'build' | 'lint') => void;
-  /** ingest：reset + 自动发送（中断）。 */
+  /** ingest 中断：同 openWikiOp。 */
   openIngest: (filePath: string) => void;
-  /** ingest 排队：同 queueWikiOp，写入运行中 agent 的 stdin。 */
+  /** ingest 排队：同 queueWikiOp。 */
   queueIngest: (filePath: string) => void;
+  /** 从排队列表移除一项。 */
+  cancelQueued: (id: string) => void;
   send: (text: string) => void;
   cancel: () => void;
   submitToolResult: (toolUseId: string, content: string) => Promise<void>;
-  /** 关面板：取消在跑的 run + reset。 */
+  /** 关面板（隐藏）：cancel 在跑的 + 清排队 + 清 timer，不清 messages。 */
   close: () => void;
+  /** 新对话：清一切（queuedOps + messages + mode + cancel）。 */
+  reset: () => void;
 }
 
 export function useKbChat(opts: UseKbChatOptions): KbChatState {
   const { agentId, vaultPath, onComplete } = opts;
   const conversationIdRef = useRef<string | null>(null);
   const [mode, setMode] = useState<KbChatMode | null>(null);
+  const [queuedOps, setQueuedOps] = useState<QueuedOp[]>([]);
+  const idRef = useRef(0);
 
   const createRun = useCallback(async (ctx: CreateRunContext) => {
     if (!agentId) {
@@ -76,16 +91,33 @@ export function useKbChat(opts: UseKbChatOptions): KbChatState {
   chatRef.current = chat;
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevRunningRef = useRef(false);
 
+  // 卸载时清定时器
   useEffect(() => () => {
     if (timerRef.current) clearTimeout(timerRef.current);
   }, []);
 
+  // shift-on-complete：isRunning 由 true→false 时，执行排队首项（续线程）。
+  // prevRunningRef 检测边沿，避免每次 render 重复触发。
+  useEffect(() => {
+    if (prevRunningRef.current && !chat.isRunning && queuedOps.length > 0) {
+      const [first, ...rest] = queuedOps;
+      setQueuedOps(rest);
+      setMode(first.type);
+      if (timerRef.current) clearTimeout(timerRef.current);
+      // 50ms 让完成后的 state flush；send 走 createRun（续同一线程，带 history）。
+      timerRef.current = setTimeout(() => {
+        chatRef.current.send(first.prompt);
+      }, 50);
+    }
+    prevRunningRef.current = chat.isRunning;
+  }, [chat.isRunning, queuedOps]);
+
+  // 新对话：清一切
   const reset = useCallback(() => {
-    // Clear any pending wiki auto-send timer — otherwise switching to qa
-    // (or closing) within 50ms of openWikiOp/openIngest would fire the wiki
-    // prompt into the new mode's conversation.
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    setQueuedOps([]);
     if (chat.isRunning) chat.cancel();
     conversationIdRef.current = null;
     setMode(null);
@@ -93,56 +125,74 @@ export function useKbChat(opts: UseKbChatOptions): KbChatState {
   }, [chat]);
 
   const openQa = useCallback(() => {
-    // 问答只激活 + 预载 @当前文档（mode='qa' 触发面板 seeding）。
-    // 不 reset、不 cancel —— 不打断在跑的 run；用户 Enter 发送时走正常 send
-    // 路径（有 run 在跑就多轮 follow-up，没就新建）。
+    // 问答只激活 + 预载 @当前文档；不 reset、不 cancel、不中断。
     setMode('qa');
   }, []);
 
   const openWikiOp = useCallback((type: 'build' | 'lint') => {
-    reset();
+    // 中断：cancel 当前 run（关 SSE + 杀后端）+ 切 mode + 50ms 后 send。
+    // 不 reset、不清消息——续同一线程（createRun 带 history）。
+    if (chat.isRunning) chat.cancel();
     setMode(type);
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
       chatRef.current.send(WIKI_PROMPTS[type]);
     }, 50);
-  }, [reset]);
+  }, [chat]);
 
   const queueWikiOp = useCallback((type: 'build' | 'lint') => {
-    // 排队：直接 send，走 useChatCore 多轮 sendMessage → agent stdin 队列。
-    // 不 reset、不 cancel、不改 mode（当前任务仍在跑，label 不动）。
-    chatRef.current.send(WIKI_PROMPTS[type]);
+    // 排队：不 send，push 到 queuedOps；完成后 shift 执行。
+    setQueuedOps((prev) => [...prev, {
+      id: `q${++idRef.current}`,
+      type,
+      prompt: WIKI_PROMPTS[type],
+    }]);
   }, []);
 
   const openIngest = useCallback((filePath: string) => {
-    reset();
+    if (chat.isRunning) chat.cancel();
     setMode('ingest');
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
       chatRef.current.send(WIKI_INGEST_PROMPT(filePath));
     }, 50);
-  }, [reset]);
+  }, [chat]);
 
   const queueIngest = useCallback((filePath: string) => {
-    chatRef.current.send(WIKI_INGEST_PROMPT(filePath));
+    setQueuedOps((prev) => [...prev, {
+      id: `q${++idRef.current}`,
+      type: 'ingest',
+      filePath,
+      prompt: WIKI_INGEST_PROMPT(filePath),
+    }]);
+  }, []);
+
+  const cancelQueued = useCallback((id: string) => {
+    setQueuedOps((prev) => prev.filter((op) => op.id !== id));
   }, []);
 
   const close = useCallback(() => {
-    reset();
-  }, [reset]);
+    // 隐藏：cancel 在跑的 + 清排队 + 清 timer；不清 messages（重开还在）。
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    setQueuedOps([]);
+    if (chat.isRunning) chat.cancel();
+  }, [chat]);
 
   return {
     mode,
     messages: chat.messages,
     isRunning: chat.isRunning,
+    queuedOps,
     openQa,
     openWikiOp,
     queueWikiOp,
     openIngest,
     queueIngest,
+    cancelQueued,
     send: chat.send,
     cancel: chat.cancel,
     submitToolResult: chat.submitToolResult,
     close,
+    reset,
   };
 }
