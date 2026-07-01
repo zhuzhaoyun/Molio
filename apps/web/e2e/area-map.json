@@ -84,6 +84,19 @@
         "apps/desktop/scripts/*"
       ],
       "specs": []
+    },
+    "kb-import": {
+      "paths": [
+        "apps/web/src/components/kb/KbFilePanel.*",
+        "apps/web/src/components/kb/KbFileTree.*",
+        "apps/web/src/components/kb/KbModals.*",
+        "apps/web/src/components/kb/ImportConflictDialog.*",
+        "apps/web/src/components/kb/KnowledgeBasePage.*",
+        "apps/web/src/api/client.*",
+        "apps/daemon/src/routes/knowledge.ts",
+        "apps/daemon/src/core/knowledge.ts"
+      ],
+      "specs": ["drag-drop-import"]
     }
   },
   "specs": {
@@ -103,6 +116,7 @@
     "publish-flow": { "priority": "P0", "file": "publish-flow.spec.ts" },
     "runtime-provider-config": { "priority": "P1", "file": "runtime-provider-config.spec.ts" },
     "runtimes-page": { "priority": "P1", "file": "runtimes-page.spec.ts" },
-    "settings": { "priority": "P1", "file": "settings.spec.ts" }
+    "settings": { "priority": "P1", "file": "settings.spec.ts" },
+    "drag-drop-import": { "priority": "P1", "file": "drag-drop-import.spec.ts" }
   }
 }
