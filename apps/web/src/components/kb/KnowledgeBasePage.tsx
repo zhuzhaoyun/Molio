@@ -19,10 +19,12 @@ import { OutlinePanel } from './OutlinePanel';
 import { SearchPanel } from './SearchPanel';
 import { VaultManagerModal } from './VaultManager';
 import { ImportModal, CoseInstallPrompt, InputDialog, ConfirmDialog } from './KbModals';
+import { ImportConflictDialog } from './ImportConflictDialog';
 import { ContextMenu, type MenuItem } from './ContextMenu';
 import type { FileRef, PastedImage } from '../ChatComposer';
 import { buildAttachmentPrefix } from '../ChatComposer';
 import { useI18n } from '../../i18n';
+import { api } from '../../api/client';
 
 interface KnowledgeBasePageProps {
   agentId: string | null;
@@ -119,6 +121,12 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
     danger?: boolean;
     onConfirm: () => void;
   }>({ show: false, title: '', message: '', onConfirm: () => {} });
+
+  // Import conflict dialog state
+  const [conflictDialog, setConflictDialog] = useState<{
+    show: boolean;
+    conflicts: Array<{ file: string }>;
+  }>({ show: false, conflicts: [] });
 
   // Unified KB chat hook — covers QA, build, lint, ingest
   const kbChat = useKbChat({
@@ -629,6 +637,105 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
     setRenamingPath(null);
   }, []);
 
+  const handleMoveFile = useCallback(async (srcPath: string, destDir: string) => {
+    if (!kb.activeVault) return;
+    const fileName = srcPath.split('/').pop() ?? srcPath;
+    const newPath = `${destDir}/${fileName}`;
+
+    // Check for existing file at target
+    const targetExists = kb.tree.some((n) => {
+      const walk = (nodes: TreeNode[]): boolean => {
+        for (const node of nodes) {
+          if (node.path === newPath) return true;
+          if (node.type === 'directory' && node.children && walk(node.children)) return true;
+        }
+        return false;
+      };
+      return walk([n]);
+    });
+
+    if (targetExists) {
+      showToast('目标位置已存在同名文件');
+      return;
+    }
+
+    try {
+      await kb.renameFile(srcPath, newPath);
+    } catch (err) {
+      showToast(`移动文件失败：${err instanceof Error ? err.message : String(err)}`);
+    }
+  }, [kb.activeVault, kb.tree, kb.renameFile, showToast]);
+
+  const handleImportFiles = useCallback(async (files: File[], targetDir: string) => {
+    if (!kb.activeVault) return;
+
+    // Reject folders
+    const nonFiles = Array.from(files).filter((f) => f.type === '' && f.name.indexOf('.') === -1);
+    if (nonFiles.length > 0 && nonFiles.length === files.length) {
+      showToast('暂不支持导入文件夹');
+      return;
+    }
+
+    // Progress toast for large imports
+    if (files.length > 20) {
+      showToast(`正在导入 ${files.length} 个文件...`);
+    }
+
+    try {
+      const result = await api.importFiles(kb.activeVault.id, Array.from(files), targetDir, 'ask');
+
+      // Handle conflict response (409)
+      if (result.errors.length > 0 && result.errors[0].reason === 'conflict') {
+        setConflictDialog({ show: true, conflicts: result.errors });
+        // Store pending files for retry
+        (handleImportFiles as any).__pendingFiles = files;
+        (handleImportFiles as any).__pendingTargetDir = targetDir;
+        return;
+      }
+
+      // Refresh tree
+      await kb.refreshTree();
+
+      // Show result toast
+      const imported = result.imported.length;
+      const renamed = result.renamed.length;
+      const skipped = result.skipped.length;
+      const errCount = result.errors.length;
+
+      const parts: string[] = [];
+      if (imported > 0) parts.push(`${imported} 个文件`);
+      if (renamed > 0) parts.push(`${renamed} 个已重命名以保留原文件`);
+      if (skipped > 0) parts.push(`${skipped} 个已跳过`);
+      if (errCount > 0) parts.push(`${errCount} 个格式不支持已跳过`);
+
+      if (parts.length > 0) {
+        showToast(`导入完成：${parts.join('，')}`);
+      }
+    } catch (err) {
+      showToast(`导入失败：${err instanceof Error ? err.message : '无法连接到服务'}`);
+    }
+  }, [kb.activeVault, kb.refreshTree, showToast]);
+
+  const handleConflictContinue = useCallback(async (strategy: 'skip' | 'replace' | 'rename') => {
+    setConflictDialog({ show: false, conflicts: [] });
+    const files = (handleImportFiles as any).__pendingFiles as File[] | undefined;
+    const targetDir = (handleImportFiles as any).__pendingTargetDir as string | undefined;
+    if (!files || !kb.activeVault) return;
+
+    try {
+      const result = await api.importFiles(kb.activeVault.id, Array.from(files), targetDir ?? '', strategy);
+      await kb.refreshTree();
+
+      const imported = result.imported.length;
+      const renamed = result.renamed.length;
+      if (imported + renamed > 0) {
+        showToast(`导入完成：${imported + renamed} 个文件`);
+      }
+    } catch (err) {
+      showToast(`导入失败：${err instanceof Error ? err.message : '无法连接到服务'}`);
+    }
+  }, [kb.activeVault, kb.refreshTree, showToast]);
+
   // ─── Save edited content ───
 
   const handleSave = useCallback(async () => {
@@ -664,6 +771,8 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
         renamingPath={renamingPath}
         onRenameComplete={handleRenameComplete}
         onRenameCancel={handleRenameCancel}
+        onImportFiles={handleImportFiles}
+        onMoveFile={handleMoveFile}
       >
         <div className="kb-resize-handle" onMouseDown={handleResizeStart} />
       </KbFilePanel>
@@ -798,6 +907,22 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
         vaultName={kb.activeVault?.name ?? ''}
         vaultId={kb.activeVault?.id ?? ''}
         onClose={() => kb.setShowImport(false)}
+        onImportComplete={(result) => {
+          kb.refreshTree();
+          const imported = result.imported.length;
+          const renamed = result.renamed.length;
+          if (imported + renamed > 0) {
+            showToast(`导入完成：${imported + renamed} 个文件`);
+          }
+        }}
+      />
+
+      {/* Import conflict dialog */}
+      <ImportConflictDialog
+        show={conflictDialog.show}
+        conflicts={conflictDialog.conflicts}
+        onCancel={() => setConflictDialog({ show: false, conflicts: [] })}
+        onContinue={handleConflictContinue}
       />
 
       {/* COSE extension install prompt */}
