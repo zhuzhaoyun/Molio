@@ -271,7 +271,21 @@ export function ImportModal({ show, vaultName, vaultId, onClose, onImportComplet
   }, [files]);
 
   const removeFile = useCallback((index: number) => {
-    setFiles((prev) => prev.filter((_, i) => i !== index));
+    setFiles((prev) => {
+      const next = prev.filter((_, i) => i !== index);
+      // Keep only the last-added raw File for each name still in next
+      const nextNames = new Set(next.map((f) => f.name));
+      rawFiles.current = rawFiles.current
+        .filter((rf) => nextNames.has(rf.name))
+        .reduceRight((acc, rf) => {
+          // reduceRight + unshift keeps last occurrence per name
+          if (!acc.some((existing) => existing.name === rf.name)) {
+            acc.unshift(rf);
+          }
+          return acc;
+        }, [] as File[]);
+      return next;
+    });
   }, []);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
