@@ -375,15 +375,17 @@ export function knowledgeRoutes(
       return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
     }
 
-    // Size guard via Content-Length
+    // Size guard via Content-Length (if present — FormData uses chunked encoding)
     const rawLen = c.req.header('Content-Length');
-    const contentLength = rawLen != null ? parseInt(rawLen, 10) : NaN;
-    if (!Number.isFinite(contentLength) || contentLength < 0 || contentLength > MAX_IMPORT_SIZE) {
-      return c.json({ error: { code: 'PAYLOAD_TOO_LARGE', message: 'Upload too large (max 50MB)' } }, 413);
+    if (rawLen != null) {
+      const contentLength = parseInt(rawLen, 10);
+      if (contentLength > MAX_IMPORT_SIZE) {
+        return c.json({ error: { code: 'PAYLOAD_TOO_LARGE', message: 'Upload too large (max 50MB)' } }, 413);
+      }
     }
 
     try {
-      const body = await c.req.parseBody();
+      const body = await c.req.parseBody({ all: true });
       const targetDir = (typeof body['targetDir'] === 'string' ? body['targetDir'] : '').replace(/^\/+|\/+$/g, '');
       const conflict = (typeof body['conflict'] === 'string' ? body['conflict'] : 'ask') as
         'ask' | 'skip' | 'replace' | 'rename';
@@ -400,14 +402,24 @@ export function knowledgeRoutes(
       const fileEntries: Array<{ name: string; buffer: Buffer }> = [];
       const perFileErrors: ImportResult['errors'] = [];
       for (const [key, value] of Object.entries(body)) {
-        if (key.startsWith('files') && value && typeof value === 'object' && 'arrayBuffer' in value) {
+        if (!key.startsWith('files')) continue;
+        if (Array.isArray(value)) {
+          for (const item of value) {
+            if (item && typeof item === 'object' && 'arrayBuffer' in item) {
+              const file = item as File;
+              const buf = Buffer.from(await file.arrayBuffer());
+              if (buf.byteLength > MAX_IMPORT_SIZE) {
+                perFileErrors.push({ file: file.name, reason: 'file_too_large' });
+              } else {
+                fileEntries.push({ name: file.name, buffer: buf });
+              }
+            }
+          }
+        } else if (value && typeof value === 'object' && 'arrayBuffer' in value) {
           const file = value as File;
-          const bytes = await file.arrayBuffer();
-          const buf = Buffer.from(bytes);
-          // Guard: reject individual files > MAX_IMPORT_SIZE
+          const buf = Buffer.from(await file.arrayBuffer());
           if (buf.byteLength > MAX_IMPORT_SIZE) {
             perFileErrors.push({ file: file.name, reason: 'file_too_large' });
-            continue;
           } else {
             fileEntries.push({ name: file.name, buffer: buf });
           }
