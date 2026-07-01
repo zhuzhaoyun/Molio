@@ -2,9 +2,9 @@
 
 # 📚 Molio
 
-**Your local knowledge base, AI writing studio, and multi-platform publisher — all in one desktop app.**
+**Build your local second brain — AI-powered, your data stays yours.**
 
-[English](README.md) · [中文](README_zh.md)
+[English](README.md) · [中文](README_zh.md) · [🌐 Official Website](https://molio.cn/)
 
 [![GitHub Release](https://img.shields.io/github/v/release/zhuzhaoyun/Molio?style=flat-square)](https://github.com/zhuzhaoyun/Molio/releases)
 [![License](https://img.shields.io/github/license/zhuzhaoyun/Molio?style=flat-square)](LICENSE)
@@ -22,12 +22,9 @@ Molio is a **local-first** desktop application that unifies knowledge management
 | Feature | Description |
 |---------|-------------|
 | 🗂️ **Obsidian-Compatible** | Point Molio at your existing Obsidian vault — zero migration, pure Markdown, no vendor lock-in |
-| 🤖 **Multi-Agent GUI** | Use Claude Code, OpenAI Codex, Gemini CLI, or Qwen Code in a unified graphical interface with streaming output |
-| 🔒 **Local-First Architecture** | All data (knowledge base, AI conversations, settings) stays on your machine — complete privacy |
-| ✂️ **[Web Clipper](https://github.com/zhuzhaoyun/molio-connect)** | Chrome extension clips web pages to your vault with one click, auto-opens the desktop app |
-| 📝 **Smart Editor** | Split-pane Markdown editor with real-time preview, syntax highlighting, and AI-assisted writing |
-| 🎨 **Typesetting Engine** | Built-in formatting tools powered by [doocs/md](https://github.com/doocs/md) for professional document layouts |
-| 🚀 **Multi-Platform Publishing** | Write once, publish to 30+ platforms — includes dedicated support for Chinese content platforms (WeChat Official Accounts, Zhihu, Toutiao, etc.) via [doocs/cose](https://github.com/doocs/cose) |
+| 🤖 **Multi-Agent + Local-First** | Use Claude Code, Codex, Gemini CLI, Qwen Code in a unified GUI with streaming output — all data stays on your machine, never touching third-party servers |
+| ✂️ **[Web Clipper](https://chromewebstore.google.com/detail/pjdacbbkjpegfkogoieejajljplngbik)** | Chrome extension clips web pages to your vault with one click, auto-opens the desktop app. [Chrome Web Store](https://chromewebstore.google.com/detail/pjdacbbkjpegfkogoieejajljplngbik) \| [Other Browsers](https://molio.cn/download.html) |
+| 📝 **Editor → Publish** | Split-pane Markdown editor with real-time preview, typesetting powered by [doocs/md](https://github.com/doocs/md), one-click publishing to 30+ platforms via [doocs/cose](https://github.com/doocs/cose) |
 | 💬 **Messaging Integration** | Mobile chat with your knowledge base via WeChat (regional integration) |
 | 📖 **Knowledge Graph** | Visual browsing of your knowledge connections and relationships |
 

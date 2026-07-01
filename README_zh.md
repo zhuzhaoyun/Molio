@@ -2,9 +2,9 @@
 
 # 📚 Molio (墨流)
 
-**你的本地知识库 + AI 写作台 + 全平台发布器 — 数据全在你自己的电脑上**
+**构建你的本地第二大脑 — AI 驱动，数据全为你所有。**
 
-[English](README.md) · [中文](README_zh.md)
+[English](README.md) · [中文](README_zh.md) · [🌐 官网](https://molio.cn/)
 
 [![GitHub Release](https://img.shields.io/github/v/release/zhuzhaoyun/Molio?style=flat-square)](https://github.com/zhuzhaoyun/Molio/releases)
 [![License](https://img.shields.io/github/license/zhuzhaoyun/Molio?style=flat-square)](LICENSE)
@@ -22,12 +22,9 @@ Molio 是一款**本地优先**的桌面应用，将知识管理、AI 写作和�
 | 功能 | 说明 |
 |------|------|
 | 🗂️ **Obsidian 兼容** | 直接打开你的 Obsidian 目录，零迁移；纯 Markdown 文件，无厂商锁定，随时切回 |
-| 🤖 **多 Agent 图形界面** | 在统一界面里使用 Claude Code、OpenAI Codex、Gemini CLI、Qwen Code，支持流式输出 |
-| 🔒 **本地优先** | 知识库、AI 对话、所有设置全在本地 — 完全私密，不经过任何第三方服务器 |
-| ✂️ **[Web Clipper](https://github.com/zhuzhaoyun/molio-connect)** | Chrome 扩展一键剪藏网页到知识库，自动唤起桌面端定位到刚保存的文件 |
-| 📝 **智能编辑器** | 左右分栏 Markdown 编辑器，实时预览，语法高亮，AI 辅助写作 |
-| 🎨 **专业排版** | 基于 [doocs/md](https://github.com/doocs/md) 的排版引擎，公众号/知乎/头条格式一键转换 |
-| 🚀 **30+ 平台发布** | 写完即发，告别逐平台复制粘贴 — 基于 [doocs/cose](https://github.com/doocs/cose)，深度适配国内内容平台 |
+| 🤖 **多 Agent + 本地优先** | 在统一界面里使用 Claude Code、Codex、Gemini CLI、Qwen Code，支持流式输出 — 知识库、AI 对话、所有设置全在本地，不经过任何第三方服务器 |
+| ✂️ **[Web Clipper](https://chromewebstore.google.com/detail/pjdacbbkjpegfkogoieejajljplngbik)** | Chrome 扩展一键剪藏网页到知识库，自动唤起桌面端定位到刚保存的文件。[Chrome 应用商店](https://chromewebstore.google.com/detail/pjdacbbkjpegfkogoieejajljplngbik) \| [其他浏览器](https://molio.cn/download.html) |
+| 📝 **编辑 → 发布** | 左右分栏 Markdown 编辑器，实时预览；基于 [doocs/md](https://github.com/doocs/md) 排版，[doocs/cose](https://github.com/doocs/cose) 一键发布到 30+ 平台 |
 | 💬 **微信 AI 助手** | 扫码连接个人微信，手机上和你的知识库对话；发公众号链接自动总结并存入知识库 |
 | 📖 **知识图谱** | 可视化浏览知识关联与结构 |
 
