@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { useAgents } from './hooks/useAgents';
 import { useChat } from './hooks/useChat';
+import { useKbChat, type KbChatState } from './hooks/useKbChat';
 import { HomePage } from './components/HomePage';
 
 import { NavRail } from './components/NavRail';
@@ -36,6 +37,15 @@ export default function App() {
   const [locale, setLocale] = useState<Locale>('zh');
   const [configLoaded, setConfigLoaded] = useState(false);
   const chat = useChat({ agentId: selectedAgent, cwd: activeVault?.path });
+
+  // KB Chat — lifted to App level so chat state survives route navigation
+  const kbChatOnCompleteRef = useRef<() => void>(() => {});
+  const kbChat = useKbChat({
+    agentId: selectedAgent,
+    vaultPath: activeVault?.path ?? null,
+    onComplete: () => kbChatOnCompleteRef.current(),
+  });
+  const [kbChatOpen, setKbChatOpen] = useState(false);
 
   // Persist current route on change
   useEffect(() => {
@@ -168,6 +178,11 @@ export default function App() {
             <Route path="/knowledge" element={
             <KnowledgeBasePage
               agentId={selectedAgent}
+              // KB Chat — owned by App for navigation persistence
+              kbChat={kbChat}
+              kbChatOpen={kbChatOpen}
+              onKbChatOpenChange={setKbChatOpen}
+              registerKbChatOnComplete={(fn) => { kbChatOnCompleteRef.current = fn; }}
               onOpenConversation={(conversationId) => {
                 void chat.loadConversationById(conversationId).then(() => {
                   navigate('/');
