@@ -796,6 +796,7 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
       <ImportModal
         show={kb.showImport}
         vaultName={kb.activeVault?.name ?? ''}
+        vaultId={kb.activeVault?.id ?? ''}
         onClose={() => kb.setShowImport(false)}
       />
 

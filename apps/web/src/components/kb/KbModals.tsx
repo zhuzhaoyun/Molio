@@ -5,6 +5,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { Vault } from '@molio/contracts';
+import { api } from '../../api/client';
 
 // ═══════════════════════════════════════════
 // Vault Switcher Modal
@@ -227,7 +228,14 @@ export function AddVaultModal({ show, onClose, onCreate }: AddVaultModalProps) {
 interface ImportModalProps {
   show: boolean;
   vaultName: string;
+  vaultId: string;
   onClose: () => void;
+  onImportComplete?: (result: {
+    imported: string[];
+    renamed: Array<{ from: string; to: string }>;
+    skipped: string[];
+    errors: Array<{ file: string; reason: string }>;
+  }) => void;
 }
 
 interface ImportedFile {
@@ -235,22 +243,27 @@ interface ImportedFile {
   size: number;
 }
 
-export function ImportModal({ show, vaultName, onClose }: ImportModalProps) {
+export function ImportModal({ show, vaultName, vaultId, onClose, onImportComplete }: ImportModalProps) {
   const [files, setFiles] = useState<ImportedFile[]>([]);
-  const [target, setTarget] = useState<'raw' | 'wiki'>('raw');
-  const [autoIngest, setAutoIngest] = useState(true);
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const rawFiles = useRef<File[]>([]);
 
   const handleFiles = useCallback((fileList: FileList | null) => {
     if (!fileList) return;
-    const validExts = ['.md', '.pdf', '.txt', '.docx', '.html', '.htm'];
+    const validExts = [
+      '.md', '.pdf', '.txt', '.docx', '.doc', '.html', '.htm',
+      '.pptx', '.ppt', '.xlsx', '.xls',
+      '.json', '.yaml', '.yml',
+      '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp', '.ico',
+    ];
     const newFiles: ImportedFile[] = [];
 
     for (const file of Array.from(fileList)) {
       const ext = '.' + file.name.split('.').pop()?.toLowerCase();
       if (validExts.includes(ext) && !files.find((f) => f.name === file.name)) {
         newFiles.push({ name: file.name, size: file.size });
+        rawFiles.current.push(file);
       }
     }
 
@@ -279,14 +292,29 @@ export function ImportModal({ show, vaultName, onClose }: ImportModalProps) {
   const handleImport = useCallback(async () => {
     if (files.length === 0) return;
     setImporting(true);
-    // TODO: implement actual file upload via API
-    // For now, just close after a brief delay
-    setTimeout(() => {
-      setImporting(false);
+    try {
+      const result = await api.importFiles(
+        vaultId,
+        rawFiles.current.filter((rf) => files.some((f) => f.name === rf.name)),
+        '',
+        'ask',
+      );
+      onImportComplete?.(result);
       setFiles([]);
+      rawFiles.current = [];
       onClose();
-    }, 500);
-  }, [files, onClose]);
+    } catch (err) {
+      onImportComplete?.({
+        imported: [],
+        renamed: [],
+        skipped: [],
+        errors: [{ file: '', reason: err instanceof Error ? err.message : 'Import failed' }],
+      });
+      onClose();
+    } finally {
+      setImporting(false);
+    }
+  }, [files, vaultId, onImportComplete, onClose]);
 
   if (!show) return null;
 
@@ -311,13 +339,13 @@ export function ImportModal({ show, vaultName, onClose }: ImportModalProps) {
               Drop files here or click to browse
             </div>
             <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
-              Supports .md, .pdf, .txt, .docx, .html
+              Supports .md, .pdf, .txt, .docx, .html, images, and more
             </div>
             <input
               ref={fileInputRef}
               type="file"
               multiple
-              accept=".md,.pdf,.txt,.docx,.html,.htm"
+              accept=".md,.pdf,.txt,.docx,.doc,.html,.htm,.pptx,.ppt,.xlsx,.xls,.json,.yaml,.yml,.png,.jpg,.jpeg,.gif,.svg,.webp,.bmp,.ico"
               style={{ display: 'none' }}
               onChange={(e) => handleFiles(e.target.files)}
             />
@@ -346,36 +374,6 @@ export function ImportModal({ show, vaultName, onClose }: ImportModalProps) {
               </div>
             </div>
           )}
-
-          {/* Options */}
-          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
-              Import Options
-            </div>
-            <div className="kb-form-field" style={{ marginBottom: 10 }}>
-              <label>Target Folder</label>
-              <select
-                value={target}
-                onChange={(e) => setTarget(e.target.value as 'raw' | 'wiki')}
-                style={{ width: '100%', height: 34, padding: '0 8px', font: 'inherit', fontSize: 13, color: 'var(--text)', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', outline: 'none', cursor: 'pointer' }}
-              >
-                <option value="raw">raw/ (unprocessed sources)</option>
-                <option value="wiki">wiki/ (direct to knowledge)</option>
-              </select>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--text)' }}>
-              <input
-                type="checkbox"
-                checked={autoIngest}
-                onChange={(e) => setAutoIngest(e.target.checked)}
-                style={{ accentColor: 'var(--accent)', cursor: 'pointer' }}
-              />
-              <label style={{ cursor: 'pointer' }}>Auto-ingest with Claude Code after import</label>
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--text-faint)', marginLeft: 24, marginTop: 2 }}>
-              Compile sources into structured wiki pages with cross-references
-            </div>
-          </div>
         </div>
         <div className="kb-modal-footer">
           <button className="kb-btn kb-btn-ghost" onClick={onClose}>Cancel</button>
