@@ -8,6 +8,15 @@
 import { useCallback, useRef, useEffect } from 'react';
 import type { TreeNode, IngestStatus } from '@molio/contracts';
 
+/** Directories that reject drag-and-drop operations. */
+const PROTECTED_DIRS = ['wiki', 'docling_output'];
+
+function isInsideProtected(nodePath: string): boolean {
+  return PROTECTED_DIRS.some(
+    d => nodePath === d || nodePath.startsWith(d + '/')
+  );
+}
+
 interface KbFileTreeProps {
   nodes: TreeNode[];
   selectedFile: string | null;
@@ -30,6 +39,8 @@ interface KbFileTreeProps {
   onRenameComplete?: (oldPath: string, newName: string) => void;
   /** Called when the user cancels rename (ESC / blur with no value) */
   onRenameCancel?: () => void;
+  /** Called when a file is dropped on a directory (internal drag-move). */
+  onMoveFile?: (srcPath: string, destDir: string) => void;
 }
 
 export function KbFileTree({
@@ -45,6 +56,7 @@ export function KbFileTree({
   renamingPath,
   onRenameComplete,
   onRenameCancel,
+  onMoveFile,
 }: KbFileTreeProps) {
   if (nodes.length === 0) {
     return (
@@ -75,6 +87,7 @@ export function KbFileTree({
           renamingPath={renamingPath}
           onRenameComplete={onRenameComplete}
           onRenameCancel={onRenameCancel}
+          onMoveFile={onMoveFile}
         />
       ))}
     </div>
@@ -96,6 +109,7 @@ interface TreeNodeItemProps {
   renamingPath?: string | null;
   onRenameComplete?: (oldPath: string, newName: string) => void;
   onRenameCancel?: () => void;
+  onMoveFile?: (srcPath: string, destDir: string) => void;
 }
 
 function TreeNodeItem({
@@ -111,12 +125,13 @@ function TreeNodeItem({
   renamingPath,
   onRenameComplete,
   onRenameCancel,
+  onMoveFile,
 }: TreeNodeItemProps) {
   const expanded = expandedPaths.has(node.path);
 
-  // Don't show "+" for items inside the wiki/ directory
-  const isInsideWiki = node.path.startsWith('wiki/') || node.path === 'wiki';
-  const showAddButton = onAddToWiki && !isInsideWiki;
+  // Don't show "+" for items inside protected directories
+  const nodeProtected = isInsideProtected(node.path);
+  const showAddButton = onAddToWiki && !nodeProtected;
 
   const handleAdd = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -132,12 +147,40 @@ function TreeNodeItem({
   const isRenaming = renamingPath === node.path;
 
   if (node.type === 'directory') {
+    // Determine drop acceptance for this directory
+    const acceptsDrop = onMoveFile && !nodeProtected;
+
+    const handleDirDragOver = useCallback((e: React.DragEvent) => {
+      // Only accept internal moves (no Files in dataTransfer)
+      if (e.dataTransfer.types.includes('Files')) return;
+      if (!acceptsDrop) {
+        e.dataTransfer.dropEffect = 'none';
+        return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = 'move';
+    }, [acceptsDrop]);
+
+    const handleDirDrop = useCallback((e: React.DragEvent) => {
+      if (e.dataTransfer.types.includes('Files')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const srcPath = e.dataTransfer.getData('text/plain');
+      if (!srcPath || !acceptsDrop) return;
+      // Guard: don't drop on self or child directory
+      if (srcPath === node.path || node.path.startsWith(srcPath + '/')) return;
+      onMoveFile?.(srcPath, node.path);
+    }, [node.path, acceptsDrop, onMoveFile]);
+
     return (
       <div className="kb-tree-group">
         <div
           className="kb-tree-group-label"
           onClick={() => onTogglePath(node.path)}
           onContextMenu={handleContextMenu}
+          onDragOver={handleDirDragOver}
+          onDrop={handleDirDrop}
         >
           <span className={`kb-tree-chevron ${expanded ? '' : 'collapsed'}`}>▾</span>
           {isRenaming ? (
@@ -149,9 +192,9 @@ function TreeNodeItem({
           ) : (
             <span>{node.name}</span>
           )}
-          {(!isInsideWiki && node.ingestStatus) || showAddButton ? (
+          {(!nodeProtected && node.ingestStatus) || showAddButton ? (
             <div className="kb-tree-trailing">
-              {!isInsideWiki && <IngestBadge status={node.ingestStatus} />}
+              {!nodeProtected && <IngestBadge status={node.ingestStatus} />}
               {showAddButton && (
                 <button
                   type="button"
@@ -179,6 +222,7 @@ function TreeNodeItem({
               renamingPath={renamingPath}
               onRenameComplete={onRenameComplete}
               onRenameCancel={onRenameCancel}
+              onMoveFile={onMoveFile}
             />
           ))}
         </div>
@@ -189,6 +233,16 @@ function TreeNodeItem({
   // File node
   const isActive = selectedFile === node.path;
   const itemRef = useRef<HTMLDivElement>(null);
+  const canDrag = !nodeProtected;
+
+  const handleDragStart = useCallback((e: React.DragEvent) => {
+    if (!canDrag) {
+      e.preventDefault();
+      return;
+    }
+    e.dataTransfer.setData('text/plain', node.path);
+    e.dataTransfer.effectAllowed = 'move';
+  }, [canDrag, node.path]);
 
   // Scroll into view when the file becomes active, or when the parent bumps
   // revealToken (the "locate" button) — needed because locating a file that
@@ -211,6 +265,8 @@ function TreeNodeItem({
       className={`kb-tree-item ${isActive ? 'is-active' : ''}`}
       onClick={() => !isRenaming && onSelectFile(node.path)}
       onContextMenu={handleFileContextMenu}
+      draggable={canDrag}
+      onDragStart={handleDragStart}
     >
       <span className="kb-tree-icon">📄</span>
       {isRenaming ? (
@@ -222,9 +278,9 @@ function TreeNodeItem({
       ) : (
         <span className="kb-tree-name">{node.name}</span>
       )}
-      {(!isInsideWiki && node.ingestStatus) || showAddButton ? (
+      {(!nodeProtected && node.ingestStatus) || showAddButton ? (
         <div className="kb-tree-trailing">
-          {!isInsideWiki && <IngestBadge status={node.ingestStatus} />}
+          {!nodeProtected && <IngestBadge status={node.ingestStatus} />}
           {showAddButton && (
             <button
               type="button"
