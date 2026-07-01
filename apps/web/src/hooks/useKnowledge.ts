@@ -379,8 +379,10 @@ export function useKnowledge(): UseKnowledgeReturn {
 
   const selectFile = useCallback((path: string | null) => {
     setSelectedFile(path);
-    // Reset edit mode when switching files
+    // Reset edit/typeset mode when switching files — mode state is global,
+    // not per-tab, so leaving it set would leak into the newly opened file.
     setIsEditMode(false);
+    setIsTypesetMode(false);
   }, []);
 
   const refreshTree = useCallback(() => {

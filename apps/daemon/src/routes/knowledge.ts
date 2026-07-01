@@ -29,6 +29,7 @@ import {
   deleteDirectory,
   renamePath,
   ensureVaultDir,
+  searchFiles,
 } from '../core/knowledge.js';
 import { annotateTreeStatus } from '../core/wiki-status.js';
 import { VAULT_TREE_CHANGED_EVENT, type VaultWatcher } from '../core/vault-watcher.js';
@@ -431,6 +432,31 @@ export function knowledgeRoutes(
       indexExists,
       wikiDirExists,
     });
+  });
+
+  // GET /api/knowledge/vaults/:id/search — 全文搜索
+  app.get('/vaults/:id/search', (c) => {
+    const vault = getVault(db, c.req.param('id'));
+    if (!vault) {
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
+    }
+
+    const q = c.req.query('q') ?? '';
+    if (!q.trim()) {
+      return c.json({ error: { code: 'BAD_REQUEST', message: 'Query (q) is required' } }, 400);
+    }
+    const rawLimit = Number(c.req.query('limit') ?? '20');
+    const limit = !Number.isFinite(rawLimit) || rawLimit <= 0 || !Number.isInteger(rawLimit)
+      ? 20
+      : Math.min(rawLimit, 100);
+
+    try {
+      const { results, truncated } = searchFiles(vault.path, q, limit);
+      return c.json({ results, truncated });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to search vault';
+      return c.json({ error: { code: 'INTERNAL', message } }, 500);
+    }
   });
 
   // ─── Vault tree change events (SSE) ───

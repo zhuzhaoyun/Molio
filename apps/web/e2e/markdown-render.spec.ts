@@ -28,6 +28,22 @@ import { gotoHome, clickNav } from './helpers/navigation';
 
 const DAEMON_API = 'http://localhost:3100/api';
 
+// Reproduces the WeChat-clipping citation-marker crash: articles use
+// `\\[1\\]` `\\[2\\]` as escaped-bracket reference markers, which the KaTeX
+// extension's blockLatexRule mistook for LaTeX `\\[ ... \\]` block math and
+// tried to call window.MathJax (never loaded) → "Cannot read properties of
+// undefined (reading 'texReset')". See katex.ts guard.
+const CITATION_TEST_MD = `飞樰 *2026年5月13日 08:30*
+
+开源了一个名为"LLM-Wiki"的项目\\[1\\]，核心是 Markdown 文件\\[2\\]。
+
+References
+
+\\[1\\] LLM-Wiki：https://example.com/1
+
+\\[2\\] AI Maker：https://example.com/2
+`;
+
 const RENDER_TEST_MD = `# Test Markdown Rendering
 
 ## Table
@@ -68,7 +84,7 @@ const vaultName = `e2e-render-${Date.now()}`;
  * only fetches vaults on page mount. We reload once so the store picks up the
  * new vault before opening the vault switcher.
  */
-async function openRenderTestFile(page: import('@playwright/test').Page) {
+async function openRenderTestFile(page: import('@playwright/test').Page, filename = 'render-test.md') {
   await gotoHome(page);
   // Reload to re-fetch vault list from daemon (picks up vault created in beforeAll)
   await page.reload({ waitUntil: 'networkidle' });
@@ -84,8 +100,8 @@ async function openRenderTestFile(page: import('@playwright/test').Page) {
   await vaultItem.click({ timeout: 5_000 });
   await page.waitForTimeout(1_000);
 
-  // Click render-test.md in the file tree
-  const fileItem = page.locator('.kb-tree-item').filter({ hasText: 'render-test.md' });
+  // Click the target file in the file tree
+  const fileItem = page.locator('.kb-tree-item').filter({ hasText: filename });
   await fileItem.click({ timeout: 10_000 });
 
   // Wait for file content to load
@@ -98,6 +114,7 @@ test.describe('Markdown Rendering', () => {
     // Create a temporary directory with a comprehensive markdown test file
     testVaultPath = mkdtempSync(join(tmpdir(), 'molio-e2e-render-'));
     writeFileSync(join(testVaultPath, 'render-test.md'), RENDER_TEST_MD);
+    writeFileSync(join(testVaultPath, 'citation-test.md'), CITATION_TEST_MD);
 
     // Register the vault via the daemon API
     const res = await fetch(`${DAEMON_API}/knowledge/vaults`, {
@@ -197,5 +214,23 @@ test.describe('Markdown Rendering', () => {
     // Verify even rows have a background color from doocs/md theme
     const evenRow = page.locator('#output .md-table tbody tr:nth-child(even)').first();
     await expect(evenRow).toBeVisible({ timeout: 5_000 });
+  });
+
+  test('escaped-bracket citation markers do not crash MathJax renderer', async ({ page }) => {
+    // Reproduces the WeChat-clipping crash: `\\[1\\]` citation markers must
+    // NOT be treated as LaTeX block math. MathJax is not loaded in Molio, so
+    // any `\\[ ... \\]` / `$ ... $` token reaching the KaTeX renderer crashes
+    // ("Cannot read properties of undefined (reading 'texReset')"). The guard
+    // must fall back to raw text instead.
+    await openRenderTestFile(page, 'citation-test.md');
+
+    // Must NOT render the MdRenderer error fallback
+    await expect(page.locator('#output')).not.toContainText('Error rendering content', { timeout: 5_000 });
+    await expect(page.locator('#output')).not.toContainText('texReset');
+
+    // The `\\[N\\]` markers should render as literal `[N]` text in the body
+    const output = page.locator('#output');
+    await expect(output).toContainText('[1]');
+    await expect(output).toContainText('[2]');
   });
 });

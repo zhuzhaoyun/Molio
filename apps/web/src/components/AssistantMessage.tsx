@@ -7,6 +7,7 @@ import { useFileNavigation } from '../hooks/useFileNavigation';
 import { ToolCard } from './ToolCard';
 import { ToolGroup } from './ToolGroup';
 import { ThinkingBlock } from './ThinkingBlock';
+import { FileOperationCard, isFileWriteTool, extractFilePath } from './FileOperationCard';
 
 // Tools that should never be grouped (always shown individually)
 const UNGROUPABLE = new Set(['AskUserQuestion', 'ask_user_question']);
@@ -58,7 +59,7 @@ interface Props {
   /** True only for the most recent assistant message — locks older AskUserQuestion cards. */
   isLast?: boolean;
   /** Route tool_result back to the open stream-json child via daemon. */
-  onAnswerToolUse?: (toolUseId: string, content: string) => Promise<boolean> | boolean;
+  onAnswerToolUse?: (toolUseId: string, content: string) => Promise<boolean | void> | boolean | void;
   /** Fallback: send the answer as a fresh user message. */
   onSubmitForm?: (text: string) => void;
 }
@@ -77,7 +78,12 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
 
   const html = useMemo(() => renderMarkdown(displayContent), [displayContent]);
   const toolItems = useMemo(
-    () => groupTools(message.tools || []),
+    () => {
+      const displayTools = (message.tools || []).filter(
+        (t) => !(isFileWriteTool(t.name) && t.status === 'done')
+      );
+      return groupTools(displayTools);
+    },
     [message.tools]
   );
 
@@ -131,6 +137,22 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
           )}
         </div>
       )}
+
+      {/* File operation cards for completed write tools */}
+      {message.tools
+        ?.filter((t) => t.status === 'done' && isFileWriteTool(t.name))
+        .map((t) => {
+          const filePath = extractFilePath(t.input);
+          if (!filePath) return null;
+          return (
+            <FileOperationCard
+              key={`op-${t.id}`}
+              filePath={filePath}
+              toolName={t.name}
+              toolInput={t.input}
+            />
+          );
+        })}
 
       {displayContent && (
         <div

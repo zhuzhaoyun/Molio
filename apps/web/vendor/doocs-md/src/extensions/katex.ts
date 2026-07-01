@@ -18,10 +18,28 @@ function createRenderer(defaultDisplay: boolean, withStyle: boolean = true) {
   return (token: any) => {
     const display = token.displayMode ?? defaultDisplay
 
+    // [MOLIO] Guard: MathJax is loaded lazily and may be absent (not yet
+    // loaded, offline, CDN failure, SSR/test env). Without this guard any
+    // `\[ ... \]` / `$ ... $` token reaching the renderer crashes with
+    // "Cannot read properties of undefined (reading 'texReset')". WeChat
+    // clippings use `\[1\]` citation markers which collide with the LaTeX
+    // block rule, so this path is hit by ordinary articles, not just math.
+    // Fall back to raw text so the document still renders.
     // @ts-expect-error MathJax is a global variable
-    window.MathJax.texReset()
-    // @ts-expect-error MathJax is a global variable
-    const mjxContainer = window.MathJax.tex2svg(token.text, { display })
+    const mathjax = window.MathJax
+    if (!mathjax?.texReset || !mathjax?.tex2svg) {
+      // Render as standard markdown would: strip the backslash before brackets
+      // / parens so `\[1\]` → `[1]` and `\(x\)` → `(x)` (these are escaped
+      // brackets in CommonMark, which is how WeChat clippings use them as
+      // citation markers). `$...$` / `$$...$$` are kept literal.
+      const raw = escapeHtml((token.raw ?? token.text).replace(/\\([()\[\]])/g, `$1`))
+      return display
+        ? `<section class="katex-block" data-math-display="true" data-math-raw="${raw}">${raw}</section>`
+        : `<span class="katex-inline" data-math-display="false" data-math-raw="${raw}">${raw}</span>`
+    }
+
+    mathjax.texReset()
+    const mjxContainer = mathjax.tex2svg(token.text, { display })
     const svg = mjxContainer.firstChild
     const width = svg.style[`min-width`] || svg.getAttribute(`width`)
     svg.removeAttribute(`width`)

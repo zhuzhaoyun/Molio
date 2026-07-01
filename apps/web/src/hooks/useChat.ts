@@ -1,16 +1,14 @@
 /**
- * useChat — unified chat hook for both normal chat and wiki operations.
+ * useChat — chat hook for normal (home) chat.
  *
  * Wraps useChatCore with:
  *  - DB persistence (saveMessage)
  *  - Conversation ID management
  *  - History loading (loadConversation)
  *  - api.createRun() as the run creator
- *  - Wiki operation support (mode: 'wiki')
  */
 
-import { useCallback, useEffect, useRef } from 'react';
-import type { WikiOperationType } from '@molio/contracts';
+import { useCallback, useEffect } from 'react';
 import { api } from '../api/client';
 import { useChatCore } from './useChatCore';
 import type { ChatMessage } from './useChatCore';
@@ -22,11 +20,7 @@ interface UseChatOptions {
   conversationId?: string | null;
   initialMessages?: ChatMessage[];
   cwd?: string | null;
-  /** 'chat' (default) for normal chat, 'wiki' for wiki operations. */
-  mode?: 'chat' | 'wiki';
-  /** Required when mode='wiki'. */
-  vaultId?: string | null;
-  /** Called after a run completes successfully (e.g. to refresh file tree). */
+  /** Called after a run completes successfully. */
   onComplete?: () => void;
 }
 
@@ -35,18 +29,14 @@ export function useChat(options: UseChatOptions | string | null) {
   const agentId = typeof options === 'string' || options === null ? options : options.agentId;
   const initialConversationId = typeof options === 'object' && options !== null ? options.conversationId : null;
   const cwd = typeof options === 'object' && options !== null ? options.cwd : null;
-  const mode = typeof options === 'object' && options !== null ? (options.mode ?? 'chat') : 'chat';
-  const vaultId = typeof options === 'object' && options !== null ? options.vaultId : null;
   const onComplete = typeof options === 'object' && options !== null ? options.onComplete : undefined;
-
-  const operationTypeRef = useRef<WikiOperationType | null>(null);
 
   const core = useChatCore({
     agentId,
     initialMessages: typeof options === 'object' && options !== null ? options.initialMessages : undefined,
     initialConversationId: initialConversationId ?? null,
     onComplete,
-    createRun: async ({ message, history, conversationId, operationType, extra }) => {
+    createRun: async ({ message, history, conversationId }) => {
       // Map to contracts ChatMessage type (strips 'error' role)
       const contractHistory = history
         .filter((m) => m.role === 'user' || m.role === 'assistant')
@@ -61,20 +51,6 @@ export function useChat(options: UseChatOptions | string | null) {
           usage: m.usage,
         }));
 
-      // Wiki mode: pass wikiOperation + wikiExtra to backend
-      if (mode === 'wiki' && operationType) {
-        return api.createRun({
-          agentId: agentId!,
-          message,
-          conversationId: conversationId ?? undefined,
-          history: contractHistory.length > 0 ? contractHistory : undefined,
-          cwd: cwd ?? undefined,
-          wikiOperation: operationType as WikiOperationType,
-          wikiExtra: extra?.filePath ? { filePath: extra.filePath as string } : undefined,
-        });
-      }
-
-      // Normal chat mode
       return api.createRun({
         agentId: agentId!,
         message,
@@ -128,27 +104,6 @@ export function useChat(options: UseChatOptions | string | null) {
     });
   }, [core.conversationId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /**
-   * Start a wiki operation — creates a run with the appropriate wiki prompt.
-   * Only meaningful when mode='wiki'.
-   */
-  const startWikiOperation = useCallback(async (
-    type: WikiOperationType,
-    message: string,
-    extra?: { filePath?: string },
-  ) => {
-    operationTypeRef.current = type;
-    await core.send(message, {
-      operationType: type,
-      extra: extra as Record<string, unknown>,
-    });
-  }, [core.send]);
-
-  const resetWithOpClear = useCallback(() => {
-    operationTypeRef.current = null;
-    core.reset();
-  }, [core.reset]);
-
   return {
     messages: core.messages,
     runId: core.runId,
@@ -157,11 +112,8 @@ export function useChat(options: UseChatOptions | string | null) {
     send: core.send,
     submitToolResult: core.submitToolResult,
     cancel: core.cancel,
-    reset: resetWithOpClear,
+    reset: core.reset,
     loadConversation,
     loadConversationById,
-    // Wiki mode fields
-    operationType: operationTypeRef.current,
-    startWikiOperation,
   };
 }
