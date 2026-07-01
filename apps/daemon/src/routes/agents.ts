@@ -17,7 +17,11 @@ export function agentsRoutes(runManager: RunManager): Hono {
   // POST /:agentId/test — test agent connectivity with a short run
   app.post('/:agentId/test', async (c) => {
     const agentId = c.req.param('agentId');
-    const timeoutMs = 30_000; // 30s max
+    const def = getAgentDef(agentId);
+    // ACP agents (Hermes) have a slow cold start — plugin/MCP loading can
+    // take well over 30s on a slow machine. Give them a longer outer budget.
+    const isAcp = def?.transport === 'acp-jsonrpc';
+    const timeoutMs = isAcp ? 120_000 : 30_000;
 
     const agents = runManager.detectAgents();
     const agent = agents.find((a) => a.id === agentId);
@@ -30,19 +34,28 @@ export function agentsRoutes(runManager: RunManager): Hono {
 
     const startedAt = Date.now();
     try {
-      const runId = await runManager.createRun({
-        agentId,
-        message: 'Reply with exactly: "pong"',
-      });
+      // For ACP agents (Hermes), the test verifies the **handshake only**
+      // (initialize + session/new) — not a full LLM turn. Reasons:
+      //   1. LLM latency is environment-dependent (provider, network, model)
+      //      and can exceed any reasonable idle timeout — making the test
+      //      flaky for reasons unrelated to "is hermes installed correctly".
+      //   2. The test button's job is to verify the runtime is installed and
+      //      the ACP transport works. LLM issues surface in real chat usage.
+      // The `models` event fires after session/new completes, signalling that
+      // the full handshake (MCP load, plugin discovery, provider connection)
+      // succeeded. For stdio-jsonl agents, keep sending "pong" as before.
+      const message = isAcp ? '' : 'Reply with exactly: "pong"';
+      const runId = await runManager.createRun({ agentId, message });
 
-      // For multi-turn agents (e.g. Qwen, Claude), the process stays alive
-      // after responding (stdin open for follow-up). Detect turn completion
-      // via events instead of waiting for process exit.
       let turnCompleted = false;
       let turnError: string | null = null;
 
       const unsubscribe = runManager.onEvent(runId, (event) => {
-        if (event.type === 'usage') {
+        if (isAcp && event.type === 'models') {
+          // ACP handshake complete: initialize + session/new succeeded,
+          // plugins loaded, provider connected, models returned.
+          turnCompleted = true;
+        } else if (!isAcp && event.type === 'usage') {
           turnCompleted = true;
         } else if (event.type === 'error') {
           turnError = event.message;
@@ -86,7 +99,7 @@ export function agentsRoutes(runManager: RunManager): Hono {
       unsubscribe?.();
       runManager.cancelRun(runId);
       const elapsed = Date.now() - startedAt;
-      return c.json({ ok: false, elapsed, error: 'Test timed out after 30s' }, 408);
+      return c.json({ ok: false, elapsed, error: `Test timed out after ${Math.round(timeoutMs / 1000)}s` }, 408);
     } catch (err) {
       const elapsed = Date.now() - startedAt;
       return c.json({

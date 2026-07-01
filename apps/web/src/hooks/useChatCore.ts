@@ -11,6 +11,7 @@ import { useState, useCallback, useRef } from 'react';
 import type { AgentEvent } from '@molio/contracts';
 import { api } from '../api/client';
 import { subscribeToRun } from '../api/sse';
+import { ACP_MODELS_UPDATED_EVENT, type AcpModelsUpdatedDetail } from './useAgents';
 
 export interface ToolEvent {
   id: string;
@@ -179,6 +180,16 @@ export function useChatCore(options: UseChatCoreOptions) {
         (event: AgentEvent) => {
           const currentId = assistantIdRef.current;
           if (!currentId) return;
+          // ACP agents (Hermes) report their real model list via session/new.
+          // Fan out to useAgents so the model picker updates dynamically.
+          if (event.type === 'models' && agentId) {
+            const detail: AcpModelsUpdatedDetail = {
+              agentId,
+              models: event.models,
+              currentModelId: event.currentModelId,
+            };
+            window.dispatchEvent(new CustomEvent(ACP_MODELS_UPDATED_EVENT, { detail }));
+          }
           setState((prev) => updateWithEvent(prev, currentId, event));
         },
         () => { /* SSE error — EventSource auto-retries */ },

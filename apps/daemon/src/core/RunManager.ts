@@ -12,6 +12,7 @@ import { buildSpawnEnv, createStderrDecoder } from './runtimes/env.js';
 import { createClaudeStreamHandler } from './streams/claude-stream.js';
 import { createCodexStreamHandler } from './streams/codex-stream.js';
 import { createJsonEventStreamHandler } from './streams/json-event-stream.js';
+import { AcpTransport } from './streams/acp-transport.js';
 import type { StreamHandler } from '@molio/contracts';
 import { createJsonlParser } from './streams/jsonl-parser.js';
 import { loadConfig, getAgentConfig, buildAgentEnv } from './config.js';
@@ -22,6 +23,42 @@ import { TurnTextCollector } from './turn-text-collector.js';
 const TERMINAL_STATUSES = new Set<RunStatus>(['succeeded', 'failed', 'canceled']);
 const MAX_EVENTS = 2_000;
 const RUN_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
+/**
+ * Map ACP PromptResponse.stopReason → Molio turn_end.stopReason.
+ * ACP values: end_turn | max_tokens | max_turn_requests | refusal | cancelled
+ */
+function mapAcpStopReason(stop: string | undefined): string {
+  switch (stop) {
+    case 'end_turn':
+    case 'max_tokens':
+    case 'max_turn_requests':
+    case 'refusal':
+    case 'cancelled':
+      return stop;
+    default:
+      return 'end_turn';
+  }
+}
+
+/**
+ * Map ACP Usage → Molio UsageInfo. Field names are unstable (ACP spec marks
+ * Usage as UNSTABLE), so read defensively across snake/camel variants.
+ */
+function mapAcpUsage(u: any): import('@molio/contracts').UsageInfo {
+  const out: import('@molio/contracts').UsageInfo = {};
+  if (typeof u?.input_tokens === 'number') out.input_tokens = u.input_tokens;
+  else if (typeof u?.inputTokens === 'number') out.input_tokens = u.inputTokens;
+  if (typeof u?.output_tokens === 'number') out.output_tokens = u.output_tokens;
+  else if (typeof u?.outputTokens === 'number') out.output_tokens = u.outputTokens;
+  if (typeof u?.thought_tokens === 'number') out.thought_tokens = u.thought_tokens;
+  else if (typeof u?.thoughtTokens === 'number') out.thought_tokens = u.thoughtTokens;
+  if (typeof u?.cached_read_tokens === 'number') out.cached_read_tokens = u.cached_read_tokens;
+  else if (typeof u?.cachedReadTokens === 'number') out.cached_read_tokens = u.cachedReadTokens;
+  if (typeof u?.cached_write_tokens === 'number') out.cached_write_tokens = u.cached_write_tokens;
+  else if (typeof u?.cachedWriteTokens === 'number') out.cached_write_tokens = u.cachedWriteTokens;
+  return out;
+}
 
 /**
  * Build a system-hint prefix that tells the agent CLI which runtime
@@ -222,7 +259,7 @@ export class RunManager {
       { cwd: opts.cwd },
     );
 
-    const stdinMode = def.promptViaStdin ? 'pipe' : 'ignore';
+    const stdinMode = def.promptViaStdin || def.transport === 'acp-jsonrpc' ? 'pipe' : 'ignore';
     const isCmd = process.platform === 'win32' && (result.binary.endsWith('.cmd') || result.binary.endsWith('.bat'));
     // On Windows with shell: true, Node.js concatenates args with spaces.
     // Wrap args containing spaces in double quotes so they remain single arguments.
@@ -249,6 +286,52 @@ export class RunManager {
       this.emitEvent(run, { type: 'error', message: `stdin error: ${err.message}` });
     });
 
+    child.stdout?.setEncoding('utf8');
+    const stderrDecoder = createStderrDecoder();
+
+    if (def.transport === 'acp-jsonrpc') {
+      // ── ACP path (Hermes) — long-running JSON-RPC server over stdio ──
+      // No stdin prompt, no selectParser. Drive initialize/session/new/session/prompt via AcpTransport.
+      this.initAcp(run, def, child, opts.cwd || agentConfig.env?.['MOLIO_CWD'] || process.cwd())
+        .then(() => {
+          // After init, drive the first session/prompt with the user's message.
+          // Subsequent turns go through sendMessage.
+          if (opts.message && run.acp) {
+            this.sendMessage(runId, opts.message);
+          }
+        })
+        .catch((err) => {
+          // Initialization already emitted its own error event; just ensure the run is finished.
+          if (!TERMINAL_STATUSES.has(run.status)) {
+            this.finishRun(run, 'failed', 1, null);
+          }
+          this.emitEvent(run, { type: 'error', message: `ACP init failed: ${err.message}` });
+        });
+
+      child.stderr?.on('data', (chunk: Buffer) => {
+        const text = stderrDecoder ? stderrDecoder(chunk) : chunk.toString('utf8');
+        // stderr counts as activity — reset idle timers on pending ACP requests
+        // so cold-start plugin loading doesn't trip the timeout.
+        run.acp?.transport.noteActivity();
+        this.handleAcpStderr(run, text);
+      });
+
+      child.on('error', (err) => {
+        this.emitEvent(run, { type: 'error', message: `Spawn error: ${err.message}` });
+        this.finishRun(run, 'failed', 1, null);
+      });
+
+      child.on('close', (code) => {
+        run.acp?.transport.flush();
+        run.acp?.transport.rejectAll(new Error(`hermes-acp process exited (code=${code})`));
+        this.finishRun(run, code === 0 ? 'succeeded' : 'failed', code, null);
+      });
+
+      return runId;
+    }
+
+    // ── stdio-jsonl path (Claude/Codex/Gemini/Qwen) — existing behavior ──
+
     // Runtime identity hint — prepended to the first message so the agent
     // CLI knows which runtime it is running as inside Molio.
     const runtimeHint = buildRuntimeHint(def);
@@ -269,10 +352,6 @@ export class RunManager {
         run.stdinOpen = false;
       }
     }
-
-    child.stdout?.setEncoding('utf8');
-
-    const stderrDecoder = createStderrDecoder();
 
     const parser = this.selectParser(def, (ev) => {
       this.emitEvent(run, ev);
@@ -324,6 +403,94 @@ export class RunManager {
   }
 
   /**
+   * ACP initialization — runs after spawn, drives initialize + session/new.
+   * Fire-and-forget from createRun so runId is returned immediately; failures
+   * emit error events and finish the run. On success, sets run.acp and pushes
+   * models to the frontend.
+   */
+  private async initAcp(
+    run: RunState,
+    def: RuntimeAgentDef,
+    child: ChildProcess,
+    cwd: string,
+  ): Promise<void> {
+    const transport = new AcpTransport(
+      (json) => {
+        if (child.stdin?.writable) child.stdin.write(json, 'utf8');
+      },
+      (ev) => this.emitEvent(run, ev),
+    );
+
+    // Assign to run.acp early (sessionId filled in after session/new) so the
+    // stderr handler in createRun can reset the transport's idle timer during
+    // initialize / session/new — before this, run.acp was undefined and stderr
+    // activity during cold start wouldn't reset the timeout.
+    run.acp = { transport, sessionId: '' };
+
+    child.stdout?.setEncoding('utf8');
+    child.stdout?.on('data', (chunk: string) => transport.feed(chunk));
+
+    const acp = def.acp!;
+    // Test escape hatch: env overrides for ACP timeouts so integration tests
+    // don't have to wait the full 15s idle / 5min absolute defaults.
+    const idleTimeout = Number(process.env.MOLIO_ACP_IDLE_TIMEOUT_MS) ||
+      acp.idleTimeoutMs || 15000;
+    const absoluteTimeout = Number(process.env.MOLIO_ACP_ABSOLUTE_TIMEOUT_MS) ||
+      acp.absoluteTimeoutMs || 300000;
+
+    // initialize
+    await transport.request(
+      'initialize',
+      { protocolVersion: 1, clientCapabilities: {} },
+      { idleTimeoutMs: idleTimeout, absoluteTimeoutMs: absoluteTimeout },
+    );
+
+    // session/new — slow (loads plugins, connects provider).
+    // cwd is required by ACP schema ("Must be an absolute path").
+    const session: any = await transport.request(
+      'session/new',
+      { mcpServers: [], cwd },
+      { idleTimeoutMs: idleTimeout, absoluteTimeoutMs: absoluteTimeout },
+    );
+    const sessionId: string = session?.sessionId;
+    if (!sessionId) {
+      throw new Error('session/new returned no sessionId');
+    }
+    run.acp.sessionId = sessionId;
+
+    // Capture available models for the frontend
+    const models: any = session?.models?.availableModels;
+    if (Array.isArray(models)) {
+      run.acpModels = models.map((m: any) => ({
+        modelId: String(m.modelId),
+        name: String(m.name ?? m.modelId),
+      }));
+      this.emitEvent(run, {
+        type: 'models',
+        models: run.acpModels.map((m) => ({ id: m.modelId, label: m.name })),
+        currentModelId: typeof session?.models?.currentModelId === 'string'
+          ? session.models.currentModelId
+          : undefined,
+      });
+    }
+
+    this.emitEvent(run, { type: 'status', label: 'running' });
+  }
+
+  /**
+   * Hermes stderr is verbose (plugin registration, provider connection, MCP tools).
+   * Drop INFO/WARNING/DEBUG log lines; only surface ERROR + Python tracebacks as error events.
+   */
+  private handleAcpStderr(run: RunState, text: string): void {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    // Hermes log format: YYYY-MM-DD HH:MM:SS [LEVEL] logger: message
+    const isLogLevel = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \[(INFO|WARNING|DEBUG)\]/;
+    if (isLogLevel.test(trimmed)) return;
+    this.emitEvent(run, { type: 'error', message: trimmed });
+  }
+
+  /**
    * Flush any accumulated assistant text for the given run.
    * Call this BEFORE inserting a new user message to ensure correct
    * position ordering in the database (assistant reply < next user message).
@@ -344,6 +511,44 @@ export class RunManager {
   sendMessage(runId: string, message: string): void {
     const run = this.runs.get(runId);
     if (!run) throw new Error(`Run not found: ${runId}`);
+    const def = getAgentDef(run.agentId);
+
+    if (def?.transport === 'acp-jsonrpc') {
+      if (!run.acp) throw new Error('ACP session not initialized');
+      const { transport, sessionId } = run.acp;
+      const acp = def.acp!;
+      // Prompt phase uses a longer idle timeout than handshake — hermes goes
+      // silent while waiting for the LLM to respond (compiling system prompt,
+      // loading tool defs, first-token latency).
+      const promptIdle = Number(process.env.MOLIO_ACP_PROMPT_IDLE_TIMEOUT_MS) ||
+        acp.promptIdleTimeoutMs || 60000;
+      const absoluteTimeout = Number(process.env.MOLIO_ACP_ABSOLUTE_TIMEOUT_MS) ||
+        acp.absoluteTimeoutMs || 300000;
+      // Fire-and-forget: events flow in via session/update notifications during the await;
+      // turn_end is emitted when the prompt response arrives.
+      transport.request(
+        'session/prompt',
+        { sessionId, prompt: [{ type: 'text', text: message }] },
+        { idleTimeoutMs: promptIdle, absoluteTimeoutMs: absoluteTimeout },
+      )
+        .then((resp: any) => {
+          this.emitEvent(run, {
+            type: 'turn_end',
+            stopReason: mapAcpStopReason(resp?.stopReason),
+          });
+          if (resp?.usage) {
+            this.emitEvent(run, { type: 'usage', usage: mapAcpUsage(resp.usage) });
+          }
+          transport.unmarkCancelled(sessionId);
+        })
+        .catch((err: Error) => {
+          // If the session was cancelled, the cancel flow already handles termination — don't spam errors.
+          if (transport.isCancelled(sessionId)) return;
+          this.emitEvent(run, { type: 'error', message: `prompt failed: ${err.message}` });
+        });
+      return;
+    }
+
     if (!run.child?.stdin?.writable || !run.stdinOpen) {
       throw new Error('Run not active or stdin closed — start a new run instead');
     }
@@ -358,6 +563,12 @@ export class RunManager {
   submitToolResult(runId: string, toolUseId: string, content: string): void {
     const run = this.runs.get(runId);
     if (!run) throw new Error(`Run not found: ${runId}`);
+    const def = getAgentDef(run.agentId);
+
+    if (def?.transport === 'acp-jsonrpc') {
+      throw new Error('ACP transport does not support host tool results — Hermes executes tools internally');
+    }
+
     if (!run.child?.stdin?.writable || !run.stdinOpen) {
       throw new Error('Run not active or stdin closed');
     }
@@ -382,9 +593,28 @@ export class RunManager {
   cancelRun(runId: string): void {
     const run = this.runs.get(runId);
     if (!run) return;
+    const def = getAgentDef(run.agentId);
 
-    // Flush any accumulated text before killing the process.
+    // Flush any accumulated text before terminating.
     run.turnText.flush();
+
+    if (def?.transport === 'acp-jsonrpc' && run.acp) {
+      const { transport, sessionId } = run.acp;
+      transport.markCancelled(sessionId);
+      const cancelTimeout = def.acp?.cancelTimeoutMs ?? 5000;
+      // Cancel is a short ack — strict absolute deadline, no idle timer.
+      transport.request('session/cancel', { sessionId }, { absoluteTimeoutMs: cancelTimeout })
+        .catch(() => { /* cancel itself failed — fall through to SIGTERM */ })
+        .finally(() => {
+          if (run.child && !run.child.killed) {
+            run.child.kill('SIGTERM');
+            setTimeout(() => {
+              if (run.child && !run.child.killed) run.child.kill('SIGKILL');
+            }, 5000);
+          }
+        });
+      return;
+    }
 
     if (run.child && !run.child.killed) {
       run.child.kill('SIGTERM');

@@ -66,7 +66,13 @@ export interface RuntimeAgentDef {
     runtimeContext?: RuntimeContext,
   ) => string[];
 
-  streamFormat: string;
+  /**
+   * Output stream format — used by selectParser to pick the right stream handler.
+   * Required for 'stdio-jsonl' transport agents. Omit (or leave undefined) for
+   * 'acp-jsonrpc' transport agents — their output is driven by AcpTransport,
+   * not selectParser.
+   */
+  streamFormat?: string;
   eventParser?: string;
 
   promptViaStdin?: boolean;
@@ -79,6 +85,45 @@ export interface RuntimeAgentDef {
    * until cancelRun() or the child process exits naturally.
    */
   multiTurn?: boolean;
+
+  /**
+   * Transport mode: how Molio talks to the agent process.
+   * - 'stdio-jsonl' (default): one-shot spawn, write prompt to stdin, parse JSONL from stdout.
+   * - 'acp-jsonrpc': long-running JSON-RPC server (Agent Client Protocol). Spawn stays alive,
+   *   multi-turn via session/prompt requests, events via session/update notifications.
+   * When 'acp-jsonrpc', RunManager bypasses selectParser and drives an AcpTransport instead.
+   */
+  transport?: 'stdio-jsonl' | 'acp-jsonrpc';
+
+  /**
+   * ACP method mapping + timeouts. Only meaningful when transport === 'acp-jsonrpc'.
+   *
+   * Timeouts are **activity-based**, not absolute: the idle timer resets on any
+   * stdout/stderr output from the agent, so slow cold starts (MCP loading,
+   * plugin discovery, provider connection) don't trip the timeout as long as
+   * the agent is still printing progress. Only a truly hung agent (no output
+   * for `idleTimeoutMs`) times out. An absolute safety-net cap is also enforced.
+   *
+   * The handshake phase (initialize + session/new) is chatty — the agent
+   * prints progress throughout — so a short `idleTimeoutMs` catches true hangs
+   * quickly. The prompt phase (session/prompt) is different: while waiting for
+   * the LLM to respond, the agent can be **completely silent** for tens of
+   * seconds (compiling system prompt, loading tool defs, waiting for first
+   * token). `promptIdleTimeoutMs` is a longer idle timeout for that phase.
+   */
+  acp?: {
+    promptMethod: 'session/prompt';
+    cancelMethod: 'session/cancel';
+    /** Handshake idle (initialize + session/new) — agent is chatty, default 15s. */
+    idleTimeoutMs?: number;
+    /** Prompt-phase idle (session/prompt) — LLM latency, agent can be silent, default 60s. */
+    promptIdleTimeoutMs?: number;
+    /** Hard cap regardless of activity, as a safety net (default 300s = 5min). */
+    absoluteTimeoutMs?: number;
+    /** Timeout for `session/cancel` — strict absolute deadline (default 5s).
+     *  On expiry, fall back to SIGTERM. Cancel is a short ack, no idle timer. */
+    cancelTimeoutMs?: number;
+  };
 
   fallbackModels: RuntimeModelOption[];
 
