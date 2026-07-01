@@ -306,7 +306,10 @@ export class RunManager {
     if (def.transport === 'acp-jsonrpc') {
       // ── ACP path (Hermes) — long-running JSON-RPC server over stdio ──
       // No stdin prompt, no selectParser. Drive initialize/session/new/session/prompt via AcpTransport.
-      this.initAcp(run, def, child, opts.cwd || agentConfig.env?.['MOLIO_CWD'] || process.cwd())
+      // ACP schema requires cwd to be absolute; resolve against process.cwd()
+      // so a relative MOLIO_CWD env var doesn't silently break session/new.
+      const acpCwd = path.resolve(opts.cwd || agentConfig.env?.['MOLIO_CWD'] || process.cwd());
+      this.initAcp(run, def, child, acpCwd)
         .then(() => {
           // After init, drive the first session/prompt with the user's message.
           // Subsequent turns go through sendMessage.
@@ -337,8 +340,26 @@ export class RunManager {
 
       child.on('close', (code) => {
         run.acp?.transport.flush();
+        const hadPending = run.acp?.transport.hasPending() ?? false;
+        const wasCancelled = run.acp
+          ? run.acp.transport.isCancelled(run.acp.sessionId)
+          : false;
         run.acp?.transport.rejectAll(new Error(`hermes-acp process exited (code=${code})`));
-        this.finishRun(run, code === 0 ? 'succeeded' : 'failed', code, null);
+        // ACP runs are long-running — the process exiting is never a "clean
+        // success" on its own. Decide terminal status by what triggered it:
+        //   - cancelRun marked the session → 'canceled'
+        //   - prompt was in-flight when the process died → 'failed' (mid-prompt crash)
+        //   - otherwise (clean shutdown after a normal turn) → fall back to exit code
+        //     so a graceful agent-initiated exit still resolves as succeeded.
+        let status: 'succeeded' | 'failed' | 'canceled';
+        if (wasCancelled) {
+          status = 'canceled';
+        } else if (hadPending) {
+          status = 'failed';
+        } else {
+          status = code === 0 ? 'succeeded' : 'failed';
+        }
+        this.finishRun(run, status, code, null);
       });
 
       return runId;
@@ -546,8 +567,15 @@ export class RunManager {
     const def = getAgentDef(run.agentId);
 
     if (def?.transport === 'acp-jsonrpc') {
+      if (TERMINAL_STATUSES.has(run.status)) {
+        throw new Error('Run is already in a terminal state — start a new run instead');
+      }
       if (!run.acp) throw new Error('ACP session not initialized');
       const { transport, sessionId } = run.acp;
+      // initAcp sets sessionId='' before session/new resolves; if session/new
+      // failed, run.acp exists but sessionId is empty. Guard against sending
+      // a malformed session/prompt with an empty sessionId.
+      if (!sessionId) throw new Error('ACP session not initialized — sessionId is empty');
       const acp = def.acp!;
       // Prompt phase uses a longer idle timeout than handshake — hermes goes
       // silent while waiting for the LLM to respond (compiling system prompt,
@@ -577,6 +605,9 @@ export class RunManager {
           // If the session was cancelled, the cancel flow already handles termination — don't spam errors.
           if (transport.isCancelled(sessionId)) return;
           this.emitEvent(run, { type: 'error', message: `prompt failed: ${err.message}` });
+          // Without finishRun here, the run stays in 'running' until the 30-min
+          // TTL cleanup fires — the UI shows a spinner forever after a prompt failure.
+          this.finishRun(run, 'failed', 1, null);
         });
       return;
     }

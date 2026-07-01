@@ -50,6 +50,9 @@ interface PendingEntry {
 }
 
 export class AcpTransport {
+  /** Cap stdout buffer to prevent unbounded growth from malformed/large payloads. */
+  private static readonly MAX_BUFFER_SIZE = 10 * 1024 * 1024; // 10 MB
+
   private buffer = '';
   private pending = new Map<number, PendingEntry>();
   private nextId = 1;
@@ -67,6 +70,18 @@ export class AcpTransport {
     this.buffer += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
     // Any stdout data counts as activity — reset idle timers before parsing.
     this.noteActivity();
+    if (this.buffer.length > AcpTransport.MAX_BUFFER_SIZE) {
+      // Drop everything and surface as a raw event so it isn't silently lost.
+      // Continuing to parse a 10MB+ partial frame risks OOM and is almost
+      // certainly garbage (binary data, malformed JSON, or a hostile payload).
+      const dropped = this.buffer.length;
+      this.buffer = '';
+      this.onEvent({
+        type: 'raw',
+        line: `[AcpTransport buffer overflow — dropped ${dropped} bytes without a newline]`,
+      });
+      return;
+    }
     let nl: number;
     while ((nl = this.buffer.indexOf('\n')) !== -1) {
       const line = this.buffer.slice(0, nl).trim();
@@ -140,6 +155,15 @@ export class AcpTransport {
       entry.reject(error);
     }
     this.pending.clear();
+    // No further session/update notifications can arrive — drop the cancelled
+    // markers so the set doesn't accumulate stale entries across re-used runs.
+    this.cancelledSessionIds.clear();
+  }
+
+  /** Test/inspection: are there any in-flight requests? Used by RunManager to
+   *  decide whether a process exit was a mid-prompt crash or a clean shutdown. */
+  hasPending(): boolean {
+    return this.pending.size > 0;
   }
 
   /** Mark a session as cancelled — subsequent session/update notifications for it are dropped. */

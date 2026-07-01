@@ -17,6 +17,9 @@
 //     delaying initialize — simulates real hermes printing "loading plugin X"
 //     progress, used to verify the idle-timer reset logic
 //   - FAKE_HERMES_EXIT_AFTER_INIT=1: exit right after initialize (process-exit test)
+//   - FAKE_HERMES_EXIT_DURING_PROMPT=1: exit mid-prompt after streaming some
+//     notifications but before responding — used to verify the close handler
+//     marks the run as 'failed' (not 'succeeded') when a prompt is in-flight
 //   - FAKE_HERMES_PROMPT_MODE=refusal: return stopReason 'refusal' for prompt
 
 import readline from 'node:readline';
@@ -31,6 +34,7 @@ const INIT_ERROR = process.env['FAKE_HERMES_INIT_ERROR'] === '1';
 const SLOW_INIT_MS = Number(process.env['FAKE_HERMES_SLOW_INIT_MS'] ?? '0');
 const INIT_HEARTBEAT = process.env['FAKE_HERMES_INIT_HEARTBEAT'] === '1';
 const EXIT_AFTER_INIT = process.env['FAKE_HERMES_EXIT_AFTER_INIT'] === '1';
+const EXIT_DURING_PROMPT = process.env['FAKE_HERMES_EXIT_DURING_PROMPT'] === '1';
 const PROMPT_MODE = process.env['FAKE_HERMES_PROMPT_MODE'] ?? 'normal';
 
 const SESSION_ID = 'fake-session-0001';
@@ -128,6 +132,12 @@ function handleRequest(msg) {
         toolCallId: 'tc-1', status: 'completed', rawOutput: 'hi\n',
       } },
     });
+    if (EXIT_DURING_PROMPT) {
+      // Die mid-prompt: notifications already streamed, but no response.
+      // The RunManager close handler must treat this as 'failed', not 'succeeded'.
+      setTimeout(() => process.exit(1), 10);
+      return;
+    }
     send({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn' } });
     return;
   }

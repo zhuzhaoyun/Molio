@@ -115,7 +115,9 @@ describe('RunManager ACP integration (Hermes)', () => {
     await collectEvents(runId, (ev) => ev.type === 'models');
 
     runManager.cancelRun(runId);
-    // Should reach a terminal status (cancelled → canceled or failed, depending on SIGTERM timing)
+    // The run must reach a terminal status — the close handler decides
+    // 'canceled' (if isCancelled) or 'failed' (if mid-prompt). Either is
+    // acceptable; what matters is that it doesn't hang forever.
     await new Promise<void>((resolve) => {
       const check = () => {
         const info = runManager.getRunInfo(runId);
@@ -124,6 +126,16 @@ describe('RunManager ACP integration (Hermes)', () => {
       };
       check();
     });
+  });
+
+  it('process exit mid-prompt is marked failed (not succeeded)', async () => {
+    // Without the close-handler fix, a process exiting with code 0 while a
+    // session/prompt is pending would be marked 'succeeded' — contradicting
+    // the rejected prompt. The fix checks `transport.hasPending()` first.
+    process.env['FAKE_HERMES_EXIT_DURING_PROMPT'] = '1';
+    const runId = await runManager.createRun({ agentId: 'hermes', message: 'hi' });
+    await waitForStatus(runId, 'failed');
+    delete process.env['FAKE_HERMES_EXIT_DURING_PROMPT'];
   });
 
   it('initialize idle-timeout emits error and fails the run', async () => {
@@ -170,8 +182,10 @@ describe('RunManager ACP integration (Hermes)', () => {
   it('hermes def uses generous cold-start timeouts', () => {
     const def = getAgentDef('hermes')!;
     assert.equal(def.acp?.idleTimeoutMs, 15000);
-    assert.equal(def.acp?.promptIdleTimeoutMs, 60000);
-    assert.equal(def.acp?.absoluteTimeoutMs, 300000);
+    // 5min prompt idle — accommodates long-running tool calls (OCR, doc
+    // conversion) where hermes itself is silent while a subprocess runs.
+    assert.equal(def.acp?.promptIdleTimeoutMs, 300000);
+    assert.equal(def.acp?.absoluteTimeoutMs, 1800000);
     assert.equal(def.acp?.cancelTimeoutMs, 5000);
   });
 

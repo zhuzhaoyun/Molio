@@ -107,7 +107,11 @@ export interface RuntimeAgentDef {
   transport?: 'stdio-jsonl' | 'acp-jsonrpc';
 
   /**
-   * ACP method mapping + timeouts. Only meaningful when transport === 'acp-jsonrpc'.
+   * ACP timeouts. Only meaningful when transport === 'acp-jsonrpc'.
+   *
+   * The actual JSON-RPC methods (`initialize`, `session/new`, `session/prompt`,
+   * `session/cancel`) are hardcoded in RunManager — they're fixed by the ACP
+   * spec, so there's no value in surfacing them as config.
    *
    * Timeouts are **activity-based**, not absolute: the idle timer resets on any
    * stdout/stderr output from the agent, so slow cold starts (MCP loading,
@@ -123,8 +127,6 @@ export interface RuntimeAgentDef {
    * token). `promptIdleTimeoutMs` is a longer idle timeout for that phase.
    */
   acp?: {
-    promptMethod: 'session/prompt';
-    cancelMethod: 'session/cancel';
     /** Handshake idle (initialize + session/new) — agent is chatty, default 15s. */
     idleTimeoutMs?: number;
     /** Prompt-phase idle (session/prompt) — LLM latency, agent can be silent, default 60s. */
