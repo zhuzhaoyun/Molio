@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { useAgents } from './hooks/useAgents';
 import { useChat } from './hooks/useChat';
@@ -46,6 +46,12 @@ export default function App() {
     onComplete: () => kbChatOnCompleteRef.current(),
   });
   const [kbChatOpen, setKbChatOpen] = useState(false);
+
+  // Stable callback so KnowledgeBasePage's registerKbChatOnComplete effect
+  // doesn't re-run on every App render.
+  const registerKbChatOnComplete = useCallback((fn: () => void) => {
+    kbChatOnCompleteRef.current = fn;
+  }, []);
 
   // Persist current route on change
   useEffect(() => {
@@ -182,7 +188,7 @@ export default function App() {
               kbChat={kbChat}
               kbChatOpen={kbChatOpen}
               onKbChatOpenChange={setKbChatOpen}
-              registerKbChatOnComplete={(fn) => { kbChatOnCompleteRef.current = fn; }}
+              registerKbChatOnComplete={registerKbChatOnComplete}
               onOpenConversation={(conversationId) => {
                 void chat.loadConversationById(conversationId).then(() => {
                   navigate('/');

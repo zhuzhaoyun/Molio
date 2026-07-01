@@ -351,8 +351,8 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
   }, [agentId, kbChat, confirmRunningOp]);
 
   const handleCloseChat = useCallback(() => {
-    onKbChatOpenChange(false);
     kbChat.close();
+    onKbChatOpenChange(false);
   }, [kbChat, onKbChatOpenChange]);
 
   // Wrap send to prepend selected text as context for QA mode
