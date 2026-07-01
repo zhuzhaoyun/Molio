@@ -32,6 +32,7 @@ import {
   searchFiles,
   importFiles,
   isInsideProtected,
+  type ImportResult,
 } from '../core/knowledge.js';
 import { annotateTreeStatus } from '../core/wiki-status.js';
 import { VAULT_TREE_CHANGED_EVENT, type VaultWatcher } from '../core/vault-watcher.js';
@@ -397,17 +398,16 @@ export function knowledgeRoutes(
 
       // Collect files from the multipart body
       const fileEntries: Array<{ name: string; buffer: Buffer }> = [];
+      const perFileErrors: ImportResult['errors'] = [];
       for (const [key, value] of Object.entries(body)) {
         if (key.startsWith('files') && value && typeof value === 'object' && 'arrayBuffer' in value) {
           const file = value as File;
           const bytes = await file.arrayBuffer();
           const buf = Buffer.from(bytes);
+          // Guard: reject individual files > MAX_IMPORT_SIZE
           if (buf.byteLength > MAX_IMPORT_SIZE) {
-            fileEntries.push({ name: file.name, buffer: Buffer.alloc(0) });
-            // mark as too-large in a way importFiles can handle — we inject an error
-            // actually, just skip: importFiles checks the name/ext only
-            // We handle size limit per-file: reject if individual file > 50MB
-            // (Content-Length was the total guard; individual file guard here)
+            perFileErrors.push({ file: file.name, reason: 'file_too_large' });
+            continue;
           } else {
             fileEntries.push({ name: file.name, buffer: buf });
           }
@@ -419,6 +419,7 @@ export function knowledgeRoutes(
       }
 
       const result = importFiles(vault.path, fileEntries, targetDir, conflict);
+      result.errors = [...perFileErrors, ...result.errors];
 
       // If conflict: "ask" and conflicts were found, return 409
       if (conflict === 'ask' && result.errors.some(e => e.reason === 'conflict')) {
