@@ -41,6 +41,10 @@ interface KbFileTreeProps {
   onRenameCancel?: () => void;
   /** Called when a file is dropped on a directory (internal drag-move). */
   onMoveFile?: (srcPath: string, destDir: string) => void;
+  /** Called when an external file drag hovers over a directory node. */
+  onNodeDragOver?: (dirPath: string) => void;
+  /** Called when an external file drag leaves a directory node. */
+  onNodeDragLeave?: () => void;
 }
 
 export function KbFileTree({
@@ -57,6 +61,8 @@ export function KbFileTree({
   onRenameComplete,
   onRenameCancel,
   onMoveFile,
+  onNodeDragOver,
+  onNodeDragLeave,
 }: KbFileTreeProps) {
   if (nodes.length === 0) {
     return (
@@ -88,6 +94,8 @@ export function KbFileTree({
           onRenameComplete={onRenameComplete}
           onRenameCancel={onRenameCancel}
           onMoveFile={onMoveFile}
+          onNodeDragOver={onNodeDragOver}
+          onNodeDragLeave={onNodeDragLeave}
         />
       ))}
     </div>
@@ -110,6 +118,8 @@ interface TreeNodeItemProps {
   onRenameComplete?: (oldPath: string, newName: string) => void;
   onRenameCancel?: () => void;
   onMoveFile?: (srcPath: string, destDir: string) => void;
+  onNodeDragOver?: (dirPath: string) => void;
+  onNodeDragLeave?: () => void;
 }
 
 function TreeNodeItem({
@@ -126,6 +136,8 @@ function TreeNodeItem({
   onRenameComplete,
   onRenameCancel,
   onMoveFile,
+  onNodeDragOver,
+  onNodeDragLeave,
 }: TreeNodeItemProps) {
   const expanded = expandedPaths.has(node.path);
 
@@ -151,8 +163,18 @@ function TreeNodeItem({
     const acceptsDrop = onMoveFile && !nodeProtected;
 
     const handleDirDragOver = useCallback((e: React.DragEvent) => {
-      // Only accept internal moves (no Files in dataTransfer)
-      if (e.dataTransfer.types.includes('Files')) return;
+      if (e.dataTransfer.types.includes('Files')) {
+        // External drop — signal the panel
+        if (acceptsDrop) {
+          e.preventDefault();
+          e.stopPropagation();
+          onNodeDragOver?.(node.path);
+        } else {
+          e.dataTransfer.dropEffect = 'none';
+        }
+        return;
+      }
+      // Internal move handling (from Task 6)
       if (!acceptsDrop) {
         e.dataTransfer.dropEffect = 'none';
         return;
@@ -160,7 +182,11 @@ function TreeNodeItem({
       e.preventDefault();
       e.stopPropagation();
       e.dataTransfer.dropEffect = 'move';
-    }, [acceptsDrop]);
+    }, [acceptsDrop, node.path, onNodeDragOver]);
+
+    const handleDirDragLeave = useCallback((e: React.DragEvent) => {
+      onNodeDragLeave?.();
+    }, [onNodeDragLeave]);
 
     const handleDirDrop = useCallback((e: React.DragEvent) => {
       if (e.dataTransfer.types.includes('Files')) return;
@@ -177,9 +203,11 @@ function TreeNodeItem({
       <div className="kb-tree-group">
         <div
           className="kb-tree-group-label"
+          data-drop-dir={node.path}
           onClick={() => onTogglePath(node.path)}
           onContextMenu={handleContextMenu}
           onDragOver={handleDirDragOver}
+          onDragLeave={handleDirDragLeave}
           onDrop={handleDirDrop}
         >
           <span className={`kb-tree-chevron ${expanded ? '' : 'collapsed'}`}>▾</span>
@@ -223,6 +251,8 @@ function TreeNodeItem({
               onRenameComplete={onRenameComplete}
               onRenameCancel={onRenameCancel}
               onMoveFile={onMoveFile}
+              onNodeDragOver={onNodeDragOver}
+              onNodeDragLeave={onNodeDragLeave}
             />
           ))}
         </div>
