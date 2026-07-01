@@ -909,10 +909,11 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
         vaultName={kb.activeVault?.name ?? ''}
         vaultId={kb.activeVault?.id ?? ''}
         onClose={() => kb.setShowImport(false)}
-        onImportComplete={(result) => {
+        onImportComplete={(result, importFiles, targetDir) => {
           kb.refreshTree();
-          // Check for conflicts first
+          // Check for conflicts first — store files so the conflict dialog can retry.
           if (result.errors.length > 0 && result.errors[0].reason === 'conflict') {
+            pendingImportRef.current = { files: importFiles, targetDir };
             setConflictDialog({ show: true, conflicts: result.errors });
             return;
           }

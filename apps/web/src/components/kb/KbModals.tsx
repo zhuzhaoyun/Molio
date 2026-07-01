@@ -225,17 +225,22 @@ export function AddVaultModal({ show, onClose, onCreate }: AddVaultModalProps) {
 // Import Knowledge Modal
 // ═══════════════════════════════════════════
 
+/** Result returned by the daemon's import-files API (also used for local error reporting). */
+export interface ImportApiResult {
+  imported: string[];
+  renamed: Array<{ from: string; to: string }>;
+  skipped: string[];
+  errors: Array<{ file: string; reason: string }>;
+}
+
 interface ImportModalProps {
   show: boolean;
   vaultName: string;
   vaultId: string;
   onClose: () => void;
-  onImportComplete?: (result: {
-    imported: string[];
-    renamed: Array<{ from: string; to: string }>;
-    skipped: string[];
-    errors: Array<{ file: string; reason: string }>;
-  }) => void;
+  /** Called after import completes (including conflicts). The caller receives the files so it can
+   *  store them for conflict retry — the modal clears its own file state immediately after. */
+  onImportComplete?: (result: ImportApiResult, files: File[], targetDir: string) => void;
 }
 
 interface ImportedFile {
@@ -306,24 +311,26 @@ export function ImportModal({ show, vaultName, vaultId, onClose, onImportComplet
   const handleImport = useCallback(async () => {
     if (files.length === 0) return;
     setImporting(true);
+    const importingFiles = rawFiles.current.filter((rf) => files.some((f) => f.name === rf.name));
     try {
-      const result = await api.importFiles(
-        vaultId,
-        rawFiles.current.filter((rf) => files.some((f) => f.name === rf.name)),
-        '',
-        'ask',
-      );
-      onImportComplete?.(result);
+      const result = await api.importFiles(vaultId, importingFiles, '', 'ask');
+      onImportComplete?.(result, importingFiles, '');
       setFiles([]);
       rawFiles.current = [];
       onClose();
     } catch (err) {
-      onImportComplete?.({
-        imported: [],
-        renamed: [],
-        skipped: [],
-        errors: [{ file: '', reason: err instanceof Error ? err.message : 'Import failed' }],
-      });
+      onImportComplete?.(
+        {
+          imported: [],
+          renamed: [],
+          skipped: [],
+          errors: [{ file: '', reason: err instanceof Error ? err.message : 'Import failed' }],
+        },
+        [],
+        '',
+      );
+      setFiles([]);
+      rawFiles.current = [];
       onClose();
     } finally {
       setImporting(false);
