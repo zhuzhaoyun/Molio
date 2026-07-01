@@ -2338,3 +2338,48 @@
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+
+/* ── Drag-and-drop import ── */
+
+/* Root-level drop indicator: bar at the bottom of the panel */
+.kb-file-panel.drag-over-root {
+  position: relative;
+}
+.kb-file-panel.drag-over-root::after {
+  content: '释放到根目录';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-tint);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  border-top: 2px solid var(--accent);
+  z-index: 10;
+  pointer-events: none;
+}
+
+/* Directory node drop target highlight */
+.kb-file-panel.drag-over-node .kb-tree-group-label[data-drop-dir]:hover {
+  background: var(--accent-tint) !important;
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Drag ghost for internal moves (minimal — the browser default ghost is fine) */
+
+/* Drop effect: none cursor for protected directories */
+.kb-tree-group-label[data-drop-protected="true"] {
+  cursor: not-allowed;
+}
+
+/* Directory node accepting drop — change cursor */
+.kb-tree-group-label[data-drop-dir] {
+  cursor: pointer;
+}
