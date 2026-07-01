@@ -128,6 +128,9 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
     conflicts: Array<{ file: string }>;
   }>({ show: false, conflicts: [] });
 
+  // Pending import files for conflict retry (replaces fragile `as any` function-property hack)
+  const pendingImportRef = useRef<{ files: File[]; targetDir: string } | null>(null);
+
   // Unified KB chat hook — covers QA, build, lint, ingest
   const kbChat = useKbChat({
     agentId,
@@ -686,10 +689,8 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
 
       // Handle conflict response (409)
       if (result.errors.length > 0 && result.errors[0].reason === 'conflict') {
+        pendingImportRef.current = { files, targetDir };
         setConflictDialog({ show: true, conflicts: result.errors });
-        // Store pending files for retry
-        (handleImportFiles as any).__pendingFiles = files;
-        (handleImportFiles as any).__pendingTargetDir = targetDir;
         return;
       }
 
@@ -718,9 +719,10 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
 
   const handleConflictContinue = useCallback(async (strategy: 'skip' | 'replace' | 'rename') => {
     setConflictDialog({ show: false, conflicts: [] });
-    const files = (handleImportFiles as any).__pendingFiles as File[] | undefined;
-    const targetDir = (handleImportFiles as any).__pendingTargetDir as string | undefined;
-    if (!files || !kb.activeVault) return;
+    const pending = pendingImportRef.current;
+    if (!pending || !kb.activeVault) return;
+    const { files, targetDir } = pending;
+    pendingImportRef.current = null; // clear after reading
 
     try {
       const result = await api.importFiles(kb.activeVault.id, Array.from(files), targetDir ?? '', strategy);
@@ -909,10 +911,17 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
         onClose={() => kb.setShowImport(false)}
         onImportComplete={(result) => {
           kb.refreshTree();
+          // Check for conflicts first
+          if (result.errors.length > 0 && result.errors[0].reason === 'conflict') {
+            setConflictDialog({ show: true, conflicts: result.errors });
+            return;
+          }
           const imported = result.imported.length;
           const renamed = result.renamed.length;
           if (imported + renamed > 0) {
             showToast(`导入完成：${imported + renamed} 个文件`);
+          } else if (result.errors.length > 0) {
+            showToast(`导入失败：${result.errors[0].reason}`);
           }
         }}
       />
@@ -921,7 +930,7 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
       <ImportConflictDialog
         show={conflictDialog.show}
         conflicts={conflictDialog.conflicts}
-        onCancel={() => setConflictDialog({ show: false, conflicts: [] })}
+        onCancel={() => { setConflictDialog({ show: false, conflicts: [] }); pendingImportRef.current = null; }}
         onContinue={handleConflictContinue}
       />
 
