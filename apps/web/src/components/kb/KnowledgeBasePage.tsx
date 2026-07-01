@@ -751,6 +751,7 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
       {/* Unified KB Chat Panel (right side) */}
       {kbChatOpen && (
         <KbChatPanel
+          composerKey="kb"
           mode={kbChat.mode}
           messages={kbChat.messages}
           isRunning={kbChat.isRunning}
