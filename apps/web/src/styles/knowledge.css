@@ -2378,9 +2378,11 @@
 
 /* Drag ghost for internal moves (minimal — the browser default ghost is fine) */
 
-/* Drop effect: none cursor for protected directories */
-.kb-tree-group-label[data-drop-protected="true"] {
+/* Protected directory — visually dimmed during drag to signal rejection */
+.kb-tree-group-label.drag-reject {
+  opacity: 0.35;
   cursor: not-allowed;
+  transition: none !important;
 }
 
 /* Directory node accepting drop — change cursor */

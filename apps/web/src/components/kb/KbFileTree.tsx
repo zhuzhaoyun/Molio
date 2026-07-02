@@ -166,6 +166,8 @@ function TreeNodeItem({
     const handleDirDragOver = useCallback((e: React.DragEvent) => {
       if (!acceptsDrop) {
         e.dataTransfer.dropEffect = 'none';
+        // Visual rejection feedback: dim the protected directory
+        (e.currentTarget as HTMLElement).classList.add('drag-reject');
         return;
       }
       e.preventDefault();
@@ -174,6 +176,7 @@ function TreeNodeItem({
       // Ensure only this node is highlighted — clear others in case dragLeave
       // was blocked by the relatedTarget guard on a sibling directory.
       const el = e.currentTarget as HTMLElement;
+      el.classList.remove('drag-reject');
       const panel = el.closest('.kb-file-panel');
       panel?.querySelectorAll('.kb-tree-group-label.drag-target').forEach((n) => {
         if (n !== el) n.classList.remove('drag-target');
@@ -196,13 +199,13 @@ function TreeNodeItem({
       const group = (e.currentTarget as HTMLElement).closest('.kb-tree-group');
       if (related && group?.contains(related)) return;
 
-      (e.currentTarget as HTMLElement).classList.remove('drag-target');
+      (e.currentTarget as HTMLElement).classList.remove('drag-target', 'drag-reject');
       onNodeDragLeave?.();
     }, [onNodeDragLeave]);
 
     // Clean up highlight class on drop (dragLeave may not fire reliably after drop).
     const handleDirDrop = useCallback((e: React.DragEvent) => {
-      (e.currentTarget as HTMLElement).classList.remove('drag-target');
+      (e.currentTarget as HTMLElement).classList.remove('drag-target', 'drag-reject');
       if (e.dataTransfer.types.includes('Files')) return;
       e.preventDefault();
       e.stopPropagation();

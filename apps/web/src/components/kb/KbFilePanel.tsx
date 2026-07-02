@@ -145,8 +145,8 @@ export function KbFilePanel({
       dragCounterRef.current = 0;
       setDragOver(null);
       // Clean up any lingering highlight when drag leaves the panel
-      document.querySelectorAll('.kb-tree-group-label.drag-target').forEach((el) => {
-        el.classList.remove('drag-target');
+      document.querySelectorAll('.kb-tree-group-label.drag-target, .kb-tree-group-label.drag-reject').forEach((el) => {
+        el.classList.remove('drag-target', 'drag-reject');
       });
     }
   }, []);
