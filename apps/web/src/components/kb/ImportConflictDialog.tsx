@@ -56,7 +56,7 @@ export function ImportConflictDialog({
           <button className="kb-modal-close" onClick={onCancel}>&times;</button>
         </div>
 
-        <div className="kb-modal-body" style={{ padding: '14px 20px', overflowY: 'auto' }}>
+        <div className="kb-modal-body" style={{ padding: '14px 20px', flex: 1, minHeight: 0, overflowY: 'auto' }}>
           <p className="conflict-desc">
             {conflicts.length} 个文件在目标位置已存在：
           </p>
