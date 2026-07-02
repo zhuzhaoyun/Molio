@@ -264,6 +264,7 @@ test.describe('KB Drag-and-Drop Import', () => {
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-file-panel')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.kb-tree-name').filter({ hasText: 'existing.md' })).toBeVisible({ timeout: 10_000 });
 
     // Drop a brand new file (no conflict expected)
     await page.evaluate(() => {
@@ -299,6 +300,7 @@ test.describe('KB Drag-and-Drop Import', () => {
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-file-panel')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.kb-tree-name').filter({ hasText: 'existing.md' })).toBeVisible({ timeout: 10_000 });
 
     // Drop an unsupported file type (e.g., .exe)
     await page.evaluate(() => {
