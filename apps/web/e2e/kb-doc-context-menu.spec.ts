@@ -79,6 +79,11 @@ test('context menu appears with correct items and disabled states', async ({ pag
   await page.mouse.up({ button: 'right' });
   await expect(page.locator('.ctx-menu')).toBeVisible({ timeout: 3_000 });
 
+  // 无选区时：复制与就此提问 disabled；全选 enabled
+  await expect(page.locator('.ctx-menu-item', { hasText: '复制' })).toBeDisabled();
+  await expect(page.locator('.ctx-menu-item', { hasText: '就此提问' })).toBeDisabled();
+  await expect(page.locator('.ctx-menu-item', { hasText: '全选' })).toBeEnabled();
+
   // 三项都存在
   await expect(page.locator('.ctx-menu-item', { hasText: t_zh_copy })).toBeVisible();
   // 用 data-testid 不可得（ContextMenu 不带 testid），用文本定位
