@@ -53,7 +53,7 @@ async function openFile(page: import('@playwright/test').Page) {
 test('drag selection survives mouseup', async ({ page }) => {
   await openFile(page);
   const para = page.locator('#output section p').first();
-  const box = await para.boundingBox()!;
+  const box = (await para.boundingBox())!;
   const startX = box.x + 12, endX = box.x + box.width - 12, y = box.y + box.height / 2;
 
   await page.mouse.move(startX, y);
@@ -69,7 +69,7 @@ test('drag selection survives mouseup', async ({ page }) => {
 test('context menu appears with correct items and disabled states', async ({ page }) => {
   await openFile(page);
   const para = page.locator('#output section p').first();
-  const box = await para.boundingBox()!;
+  const box = (await para.boundingBox())!;
 
   // 先在无选区状态下右键（点击一次放置光标，无选区）
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
@@ -99,7 +99,7 @@ test('copy action writes selection to clipboard', async ({ page }) => {
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
   await openFile(page);
   const para = page.locator('#output section p').first();
-  const box = await para.boundingBox()!;
+  const box = (await para.boundingBox())!;
 
   // 拖选
   await page.mouse.move(box.x + 12, box.y + box.height / 2);
@@ -122,7 +122,7 @@ test('copy action writes selection to clipboard', async ({ page }) => {
 test('select-all action selects #output content', async ({ page }) => {
   await openFile(page);
   const para = page.locator('#output section p').first();
-  const box = await para.boundingBox()!;
+  const box = (await para.boundingBox())!;
 
   await page.mouse.move(box.x + 10, box.y + box.height / 2);
   await page.mouse.down({ button: 'right' });
@@ -137,7 +137,7 @@ test('select-all action selects #output content', async ({ page }) => {
 test('ask-about-selection opens chat with selection preview', async ({ page }) => {
   await openFile(page);
   const para = page.locator('#output section p').first();
-  const box = await para.boundingBox()!;
+  const box = (await para.boundingBox())!;
 
   await page.mouse.move(box.x + 12, box.y + box.height / 2);
   await page.mouse.down();
