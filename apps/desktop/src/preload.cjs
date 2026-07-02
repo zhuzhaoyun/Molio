@@ -33,6 +33,18 @@ const desktopAPI = {
 
   /** Rename a local file (oldPath -> newPath). */
   renameFile: (oldPath, newPath) => ipcRenderer.invoke('rename-file', oldPath, newPath),
+
+  /**
+   * Subscribe to in-page navigation requests from the main process
+   * (triggered by molio://open/... when the app is already running).
+   * Avoids a full reload — the SPA routes to the file via React Router.
+   * Returns an unsubscribe function.
+   */
+  onNavigate: (callback) => {
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on('molio:navigate', handler);
+    return () => ipcRenderer.removeListener('molio:navigate', handler);
+  },
 };
 
 // Updater API — event listeners + actions

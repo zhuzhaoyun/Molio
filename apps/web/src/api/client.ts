@@ -353,6 +353,23 @@ export const api = {
     await fetch(`${BASE}/knowledge/vaults/${id}`, { method: 'DELETE' });
   },
 
+  /** Returns the user's currently-active vault (the one external clippers target). */
+  async getActiveVault(): Promise<{ vaultId: string | null; vault: (Vault & { fileCount: number }) | null }> {
+    const res = await fetch(`${BASE}/knowledge/active-vault`);
+    if (!res.ok) throw new Error(`Failed to fetch active vault: ${res.status}`);
+    return res.json();
+  },
+
+  /** Set the active vault. Pass null to clear. Fire-and-forget safe. */
+  async setActiveVault(id: string | null): Promise<void> {
+    const res = await fetch(`${BASE}/knowledge/active-vault`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+    if (!res.ok) throw new Error(`Failed to set active vault: ${res.status}`);
+  },
+
   async getFileTree(vaultId: string): Promise<TreeNode[]> {
     const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/tree`);
     if (!res.ok) throw new Error(`Failed to fetch file tree: ${res.status}`);

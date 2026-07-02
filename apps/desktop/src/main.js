@@ -192,9 +192,21 @@ function navigateFromProtocolUrl(protocolUrl) {
   try {
     const target = parseMolioProtocolUrl(protocolUrl);
     if (target?.action === 'open-file') {
-      const appUrl = buildKnowledgeUrlFromProtocolTarget(target);
-      log('info', 'main', `navigating to ${appUrl}`);
-      mainWindow.loadURL(appUrl);
+      // Cold start: window still on splash → renderer isn't ready for IPC, so
+      // do a full loadURL to the knowledge route (initial app load, no flash).
+      // Warm start: app already loaded → send an IPC so the SPA navigates
+      // in-page to the file without a full reload (no flash, no state loss).
+      if (isShowingSplash()) {
+        const appUrl = buildKnowledgeUrlFromProtocolTarget(target);
+        log('info', 'main', `navigating to ${appUrl}`);
+        mainWindow.loadURL(appUrl);
+      } else {
+        log('info', 'main', `in-page navigate: vault=${target.vaultId ?? '(active)'} file=${target.filePath}`);
+        mainWindow.webContents.send('molio:navigate', {
+          vaultId: target.vaultId,
+          filePath: target.filePath,
+        });
+      }
       return;
     }
 
