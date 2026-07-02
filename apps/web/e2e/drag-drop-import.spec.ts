@@ -86,9 +86,12 @@ test.describe('KB Drag-and-Drop Import', () => {
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-file-panel')).toBeVisible({ timeout: 5_000 });
 
-    const hasDragClass = await page.evaluate(() => {
+    // Dispatch dragenter to trigger the React drag-over state.
+    // React state updates are async — use Playwright's expect to wait for
+    // the CSS class rather than checking synchronously in page.evaluate.
+    await page.evaluate(() => {
       const panel = document.querySelector('.kb-file-panel');
-      if (!panel) return 'panel-not-found';
+      if (!panel) return;
 
       const dt = new DataTransfer();
       const file = new File(['content'], 'test.md', { type: 'text/markdown' });
@@ -100,12 +103,10 @@ test.describe('KB Drag-and-Drop Import', () => {
         dataTransfer: dt,
       });
       panel.dispatchEvent(enterEvent);
-
-      // After dragenter, the panel should have the drag-over-root class
-      return panel.classList.contains('drag-over-root');
     });
 
-    expect(hasDragClass).toBe(true);
+    // Wait for React to process the event and add the class
+    await expect(page.locator('.kb-file-panel')).toHaveClass(/drag-over-root/, { timeout: 5_000 });
   });
 
   test('drops multiple files onto root, all appear in tree', async ({ page }) => {
@@ -151,15 +152,23 @@ test.describe('KB Drag-and-Drop Import', () => {
   // ── Internal drag-move test ──
 
   test('drags a file from one directory to another within the tree', async ({ page }) => {
-    // Open the vault with sourceDir/drag-me.md selected so the tree is loaded
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=sourceDir/drag-me.md`);
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
-    // Expand directories so tree items are visible
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(1000);
+
+    // Expand sourceDir to reveal drag-me.md
+    const sourceDirLabel = page.locator('.kb-tree-group-label').filter({ hasText: 'sourceDir' });
+    await expect(sourceDirLabel).toBeVisible({ timeout: 5_000 });
+    const sourceDirChevron = sourceDirLabel.locator('.kb-tree-chevron');
+    // Click to expand if collapsed (chevron has 'collapsed' class when directory is closed)
+    if (await sourceDirChevron.evaluate((el) => el.classList.contains('collapsed')).catch(() => true)) {
+      await sourceDirLabel.click();
+      await page.waitForTimeout(500);
+    }
 
     // Locate the drag-me.md tree item (the draggable element)
     const dragItem = page.locator('.kb-tree-item').filter({ hasText: 'drag-me.md' });
-    await expect(dragItem).toBeVisible({ timeout: 10_000 });
+    await expect(dragItem).toBeVisible({ timeout: 5_000 });
 
     // Locate the target directory (targetDir) — find its tree group label
     const targetLabel = page.locator('.kb-tree-group-label').filter({ hasText: 'targetDir' });
@@ -168,24 +177,32 @@ test.describe('KB Drag-and-Drop Import', () => {
     // Use evaluate to simulate native drag-and-drop since Playwright's
     // dragTo() does not trigger the custom drag events we need.
     const moved = await page.evaluate(() => {
-      const treeItem = document.querySelector('.kb-tree-item[data-drop-dir]');
-      if (!treeItem) return 'no-drop-dir';
+      // data-drop-dir is on .kb-tree-group-label, not .kb-tree-item
+      const dirLabels = document.querySelectorAll('[data-drop-dir]');
+      if (dirLabels.length === 0) return 'no-drop-dir';
 
-      // Find the target dir node that has a data-drop-dir attribute
-      const targetDir = Array.from(document.querySelectorAll('[data-drop-dir]'))
+      // Find the target directory label
+      const targetDir = Array.from(dirLabels)
         .find((el) => el.getAttribute('data-drop-dir') === 'targetDir');
       if (!targetDir) return 'targetDir-not-found';
 
-      // Find the draggable item
-      const item = document.querySelector('.kb-tree-item');
-      if (!item) return 'no-item';
+      // Find the draggable file item for drag-me.md
+      const items = document.querySelectorAll('.kb-tree-item');
+      let dragItem: Element | null = null;
+      for (const item of items) {
+        if (item.textContent?.includes('drag-me.md')) {
+          dragItem = item;
+          break;
+        }
+      }
+      if (!dragItem) return 'no-drag-item';
 
       // Simulate dragstart on the source item (sets dataTransfer data)
       const dt = new DataTransfer();
       const dragStartEvent = new DragEvent('dragstart', {
         bubbles: true, cancelable: true, dataTransfer: dt,
       });
-      item.dispatchEvent(dragStartEvent);
+      dragItem.dispatchEvent(dragStartEvent);
 
       // Simulate dragover on the target directory
       const dragOverEvent = new DragEvent('dragover', {
@@ -204,11 +221,11 @@ test.describe('KB Drag-and-Drop Import', () => {
 
     expect(moved).toBe('ok');
 
-    // After the move, the file should no longer be under sourceDir
+    // After the move, the file should be moved to targetDir
     // (The internal move is handled by the API — wait for tree refresh)
     await page.waitForTimeout(1500);
 
-    // The internal drag-move triggers a tree refresh; verify the tree still renders
+    // The tree should still render after the move
     await expect(page.locator('.kb-file-panel')).toBeVisible();
   });
 
