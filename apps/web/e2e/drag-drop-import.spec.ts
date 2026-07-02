@@ -40,8 +40,9 @@ test.describe('KB Drag-and-Drop Import', () => {
   test('drops a single .md file onto root, file appears in tree', async ({ page }) => {
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
-    // Wait for the file panel to be fully rendered
+    // Wait for the vault to be fully loaded and the file tree to render
     await expect(page.locator('.kb-file-panel')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.kb-tree-name').filter({ hasText: 'existing.md' })).toBeVisible({ timeout: 10_000 });
 
     // Simulate drop using page.evaluate — dispatch a DragEvent on the file panel
     const dropped = await page.evaluate(() => {
@@ -113,6 +114,7 @@ test.describe('KB Drag-and-Drop Import', () => {
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-file-panel')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.kb-tree-name').filter({ hasText: 'existing.md' })).toBeVisible({ timeout: 10_000 });
 
     await page.evaluate(() => {
       const panel = document.querySelector('.kb-file-panel');
