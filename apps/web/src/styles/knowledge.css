@@ -2364,21 +2364,40 @@
   pointer-events: none;
 }
 
-/* Directory node drop target highlight — uses explicit class instead of :hover
-   because browsers suppress the :hover pseudo-class during drag operations.
-   Uses box-shadow (not border) to avoid content layout shift when the class
-   is toggled during drag. */
+/* ── Directory drop-target highlight ──
+   Two-level highlight with visual hierarchy:
+   - Group: barely-there tint for zone definition (large area, subtle)
+   - Label: crisp ring for precise target indication (small area, focal)
+   When collapsed (children are display:none), the group tint naturally
+   only shows behind the label — same visual as before. */
+
+/* Group-level: faint background defines the full drop zone.
+   accent-tint is near-identical to the background — just enough shift to
+   read as "this area belongs to the directory" without feeling like a solid
+   color block. The border-color outline defines the zone boundary quietly. */
+.kb-tree-group.drag-target {
+  background: var(--accent-tint);
+  border-radius: var(--radius-sm);
+  box-shadow: inset 0 0 0 1px var(--border);
+  transition: none !important;
+}
+
+/* Label-level: crisp inner ring for focal precision.
+   Uses accent-soft (noticeable) background + solid accent ring. */
 .kb-tree-group-label.drag-target {
   background: var(--accent-soft) !important;
   box-shadow: inset 0 0 0 1.5px var(--accent);
   border-radius: var(--radius-sm);
-  /* override the default 120ms transition — drag feedback must be instant */
   transition: none !important;
 }
 
-/* Drag ghost for internal moves (minimal — the browser default ghost is fine) */
-
-/* Protected directory — visually dimmed during drag to signal rejection */
+/* Group-level rejection — dim the entire directory area */
+.kb-tree-group.drag-reject {
+  opacity: 0.35;
+  cursor: not-allowed;
+  transition: none !important;
+}
+/* Label-level rejection — kept for panel cleanup compatibility */
 .kb-tree-group-label.drag-reject {
   opacity: 0.35;
   cursor: not-allowed;

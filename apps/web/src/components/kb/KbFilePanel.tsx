@@ -145,7 +145,7 @@ export function KbFilePanel({
       dragCounterRef.current = 0;
       setDragOver(null);
       // Clean up any lingering highlight when drag leaves the panel
-      document.querySelectorAll('.kb-tree-group-label.drag-target, .kb-tree-group-label.drag-reject').forEach((el) => {
+      document.querySelectorAll('.kb-tree-group.drag-target, .kb-tree-group.drag-reject, .kb-tree-group-label.drag-target, .kb-tree-group-label.drag-reject').forEach((el) => {
         el.classList.remove('drag-target', 'drag-reject');
       });
     }
@@ -157,8 +157,8 @@ export function KbFilePanel({
     dragCounterRef.current = 0;
     setDragOver(null);
 
-    // Clean up any lingering drag-target class on directory labels
-    document.querySelectorAll('.kb-tree-group-label.drag-target').forEach((el) => {
+    // Clean up any lingering drag-target class on directory groups and labels
+    document.querySelectorAll('.kb-tree-group.drag-target, .kb-tree-group-label.drag-target').forEach((el) => {
       el.classList.remove('drag-target');
     });
 

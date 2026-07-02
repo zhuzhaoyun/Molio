@@ -166,46 +166,55 @@ function TreeNodeItem({
     const handleDirDragOver = useCallback((e: React.DragEvent) => {
       if (!acceptsDrop) {
         e.dataTransfer.dropEffect = 'none';
-        // Visual rejection feedback: dim the protected directory
-        (e.currentTarget as HTMLElement).classList.add('drag-reject');
+        const group = e.currentTarget as HTMLElement;
+        group.classList.add('drag-reject');
+        group.querySelector('.kb-tree-group-label')?.classList.add('drag-reject');
         return;
       }
       e.preventDefault();
       e.stopPropagation();
 
-      // Ensure only this node is highlighted — clear others in case dragLeave
-      // was blocked by the relatedTarget guard on a sibling directory.
-      const el = e.currentTarget as HTMLElement;
-      el.classList.remove('drag-reject');
-      const panel = el.closest('.kb-file-panel');
-      panel?.querySelectorAll('.kb-tree-group-label.drag-target').forEach((n) => {
-        if (n !== el) n.classList.remove('drag-target');
+      // Ensure only this node is highlighted — clear others first.
+      const group = e.currentTarget as HTMLElement;
+      const label = group.querySelector('.kb-tree-group-label') as HTMLElement | null;
+      // Clear stale highlights from other groups (both label-level and group-level)
+      const panel = group.closest('.kb-file-panel');
+      panel?.querySelectorAll('.kb-tree-group.drag-target').forEach((g) => {
+        if (g !== group) g.classList.remove('drag-target');
       });
-      el.classList.add('drag-target');
+      panel?.querySelectorAll('.kb-tree-group-label.drag-target').forEach((n) => {
+        if (n !== label) n.classList.remove('drag-target');
+      });
+      // Apply highlight to both group (full-area background) and label (ring)
+      group.classList.remove('drag-reject');
+      group.classList.add('drag-target');
+      label?.classList.remove('drag-reject');
+      label?.classList.add('drag-target');
 
       if (e.dataTransfer.types.includes('Files')) {
-        // External drop — signal the panel to update its root/node indicator
         onNodeDragOver?.(node.path);
       } else {
-        // Internal move — set move cursor
         e.dataTransfer.dropEffect = 'move';
       }
     }, [acceptsDrop, node.path, onNodeDragOver]);
 
     const handleDirDragLeave = useCallback((e: React.DragEvent) => {
-      // Don't remove highlight if moving to a descendant of this directory
+      // Don't remove highlight if moving to a descendant of this group
       // (e.g. from the label to a file inside this directory's children).
       const related = e.relatedTarget as HTMLElement | null;
-      const group = (e.currentTarget as HTMLElement).closest('.kb-tree-group');
-      if (related && group?.contains(related)) return;
+      const group = e.currentTarget as HTMLElement;
+      if (related && group.contains(related)) return;
 
-      (e.currentTarget as HTMLElement).classList.remove('drag-target', 'drag-reject');
+      group.classList.remove('drag-target', 'drag-reject');
+      group.querySelector('.kb-tree-group-label')?.classList.remove('drag-target', 'drag-reject');
       onNodeDragLeave?.();
     }, [onNodeDragLeave]);
 
     // Clean up highlight class on drop (dragLeave may not fire reliably after drop).
     const handleDirDrop = useCallback((e: React.DragEvent) => {
-      (e.currentTarget as HTMLElement).classList.remove('drag-target', 'drag-reject');
+      const group = e.currentTarget as HTMLElement;
+      group.classList.remove('drag-target', 'drag-reject');
+      group.querySelector('.kb-tree-group-label')?.classList.remove('drag-target', 'drag-reject');
       if (e.dataTransfer.types.includes('Files')) return;
       e.preventDefault();
       e.stopPropagation();
@@ -217,15 +226,17 @@ function TreeNodeItem({
     }, [node.path, acceptsDrop, onMoveFile]);
 
     return (
-      <div className="kb-tree-group">
-        <div
-          className="kb-tree-group-label"
+      <div
+          className="kb-tree-group"
           {...(!nodeProtected ? { 'data-drop-dir': node.path } : {})}
-          onClick={() => onTogglePath(node.path)}
-          onContextMenu={handleContextMenu}
           onDragOver={handleDirDragOver}
           onDragLeave={handleDirDragLeave}
           onDrop={handleDirDrop}
+        >
+        <div
+          className="kb-tree-group-label"
+          onClick={() => onTogglePath(node.path)}
+          onContextMenu={handleContextMenu}
         >
           <span className={`kb-tree-chevron ${expanded ? '' : 'collapsed'}`}>▾</span>
           {isRenaming ? (
