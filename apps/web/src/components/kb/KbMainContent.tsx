@@ -5,12 +5,14 @@
  * - Binary (pdf/docx/pptx): file info card + "open with system app" button
  */
 
-import { useEffect, useState, useRef, useMemo } from 'react';
+import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import type { FileContent } from '@molio/contracts';
 import type { ThemeConfig } from './MdStylePanel';
 import { MdRenderer } from './MdRenderer';
 import { MdTypesetEditor } from './MdTypesetEditor';
 import { MdEditor } from './MdEditor';
+import { ContextMenu } from './ContextMenu';
+import type { MenuItem } from './ContextMenu';
 import { preprocessWikiEmbeds, proxyExternalImages, stripTrackingPixels } from '../../hooks/useKnowledge';
 import { api } from '../../api/client';
 import { useI18n } from '../../i18n';
@@ -110,6 +112,7 @@ export function KbMainContent({
 }: KbMainContentProps) {
   const { t } = useI18n();
   const contentRef = useRef<HTMLDivElement>(null);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
 
   // Memoize the rendered markdown content so MdRenderer (wrapped in memo)
   // doesn't see a new string prop on unrelated re-renders.
@@ -117,6 +120,18 @@ export function KbMainContent({
     () => proxyExternalImages(preprocessWikiEmbeds(stripTrackingPixels(editedContent ?? fileContent?.content ?? ''), vaultId ?? '')),
     [editedContent, fileContent?.content, vaultId],
   );
+
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setCtxMenu({ x: e.clientX, y: e.clientY });
+  }, []);
+
+  const closeContextMenu = useCallback(() => setCtxMenu(null), []);
+
+  const selectionText = useCallback(() => {
+    const sel = window.getSelection();
+    return sel ? sel.toString().trim() : '';
+  }, []);
 
   // Ctrl+S / Cmd+S to save
   useEffect(() => {
@@ -345,7 +360,7 @@ export function KbMainContent({
           selectedFile={selectedFile}
         />
       ) : category === 'text' ? (
-        <div className="kb-content-area" ref={contentRef}>
+        <div className="kb-content-area" ref={contentRef} onContextMenu={handleContextMenu}>
           {fileContent ? (
             // 优先使用编辑后的内容（未保存的更改），否则使用原始文件内容
             <MdRenderer content={renderedContent} themeConfig={themeConfig} />
@@ -381,6 +396,23 @@ export function KbMainContent({
         <div className="kb-content-area">
           <div className="kb-empty-state"><p>Loading...</p></div>
         </div>
+      )}
+
+      {ctxMenu && (
+        <ContextMenu
+          items={(() => {
+            const sel = selectionText();
+            const items: MenuItem[] = [
+              { label: t('kb.copy'), disabled: !sel, onClick: () => { /* Task 3 */ } },
+              { label: t('kb.ctxSelectAll'), onClick: () => { /* Task 3 */ } },
+              { divider: true },
+              { label: t('kb.askSelection'), disabled: !sel, onClick: () => { /* Task 3 */ } },
+            ];
+            return items;
+          })()}
+          position={ctxMenu}
+          onClose={closeContextMenu}
+        />
       )}
 
       {/* Status bar: word count / char count / read time (text files only) */}

@@ -19,6 +19,7 @@ const MD = `# Selection Repro
 let vaultPath: string;
 let vaultId: string;
 const vaultName = `e2e-ctx-${Date.now()}`;
+const t_zh_copy = '复制';
 
 test.beforeAll(async () => {
   vaultPath = mkdtempSync(join(tmpdir(), 'molio-ctx-'));
@@ -63,4 +64,28 @@ test('drag selection survives mouseup', async ({ page }) => {
 
   const sel = await page.evaluate(() => window.getSelection()?.toString() ?? '');
   expect(sel.length).toBeGreaterThan(0);
+});
+
+test('context menu appears with correct items and disabled states', async ({ page }) => {
+  await openFile(page);
+  const para = page.locator('#output section p').first();
+  const box = await para.boundingBox()!;
+
+  // 先在无选区状态下右键（点击一次放置光标，无选区）
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await page.waitForTimeout(150);
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down({ button: 'right' });
+  await page.mouse.up({ button: 'right' });
+  await expect(page.locator('.ctx-menu')).toBeVisible({ timeout: 3_000 });
+
+  // 三项都存在
+  await expect(page.locator('.ctx-menu-item', { hasText: t_zh_copy })).toBeVisible();
+  // 用 data-testid 不可得（ContextMenu 不带 testid），用文本定位
+  const items = page.locator('.ctx-menu-item');
+  await expect(items).toHaveCount(3);
+
+  // 关闭菜单（ESC）
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.ctx-menu')).toBeHidden();
 });
