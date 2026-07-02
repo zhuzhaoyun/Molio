@@ -2364,8 +2364,9 @@
   pointer-events: none;
 }
 
-/* Directory node drop target highlight */
-.kb-file-panel.drag-over-node .kb-tree-group-label[data-drop-dir]:hover {
+/* Directory node drop target highlight — uses explicit class instead of :hover
+   because browsers suppress the :hover pseudo-class during drag operations. */
+.kb-tree-group-label.drag-target {
   background: var(--accent-tint) !important;
   outline: 2px solid var(--accent);
   outline-offset: -2px;

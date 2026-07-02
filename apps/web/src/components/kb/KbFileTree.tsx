@@ -164,10 +164,11 @@ function TreeNodeItem({
 
     const handleDirDragOver = useCallback((e: React.DragEvent) => {
       if (e.dataTransfer.types.includes('Files')) {
-        // External drop — signal the panel
+        // External drop — signal the panel + add highlight class directly
         if (acceptsDrop) {
           e.preventDefault();
           e.stopPropagation();
+          (e.currentTarget as HTMLElement).classList.add('drag-target');
           onNodeDragOver?.(node.path);
         } else {
           e.dataTransfer.dropEffect = 'none';
@@ -185,10 +186,13 @@ function TreeNodeItem({
     }, [acceptsDrop, node.path, onNodeDragOver]);
 
     const handleDirDragLeave = useCallback((e: React.DragEvent) => {
+      (e.currentTarget as HTMLElement).classList.remove('drag-target');
       onNodeDragLeave?.();
     }, [onNodeDragLeave]);
 
+    // Clean up highlight class on drop (dragLeave may not fire after drop)
     const handleDirDrop = useCallback((e: React.DragEvent) => {
+      (e.currentTarget as HTMLElement).classList.remove('drag-target');
       if (e.dataTransfer.types.includes('Files')) return;
       e.preventDefault();
       e.stopPropagation();
