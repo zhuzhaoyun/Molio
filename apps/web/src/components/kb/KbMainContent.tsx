@@ -403,10 +403,48 @@ export function KbMainContent({
           items={(() => {
             const sel = selectionText();
             const items: MenuItem[] = [
-              { label: t('kb.copy'), disabled: !sel, onClick: () => { /* Task 3 */ } },
-              { label: t('kb.ctxSelectAll'), onClick: () => { /* Task 3 */ } },
+              {
+                label: t('kb.copy'),
+                disabled: !sel,
+                onClick: async () => {
+                  if (!sel) return;
+                  try {
+                    await navigator.clipboard.writeText(sel);
+                  } catch {
+                    // 回退：用遗留命令复制
+                    try {
+                      const ta = document.createElement('textarea');
+                      ta.value = sel;
+                      document.body.appendChild(ta);
+                      ta.select();
+                      document.execCommand('copy');
+                      ta.remove();
+                    } catch { /* 静默 */ }
+                  }
+                },
+              },
+              {
+                label: t('kb.ctxSelectAll'),
+                onClick: () => {
+                  const out = contentRef.current?.querySelector('#output');
+                  if (!out) return;
+                  const range = document.createRange();
+                  range.selectNodeContents(out);
+                  const s = window.getSelection();
+                  if (!s) return;
+                  s.removeAllRanges();
+                  s.addRange(range);
+                },
+              },
               { divider: true },
-              { label: t('kb.askSelection'), disabled: !sel, onClick: () => { /* Task 3 */ } },
+              {
+                label: t('kb.askSelection'),
+                disabled: !sel,
+                onClick: () => {
+                  if (!sel) return;
+                  onAskAboutSelection?.(sel);
+                },
+              },
             ];
             return items;
           })()}

@@ -94,3 +94,63 @@ test('context menu appears with correct items and disabled states', async ({ pag
   await page.keyboard.press('Escape');
   await expect(page.locator('.ctx-menu')).toBeHidden();
 });
+
+test('copy action writes selection to clipboard', async ({ page }) => {
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await openFile(page);
+  const para = page.locator('#output section p').first();
+  const box = await para.boundingBox()!;
+
+  // 拖选
+  await page.mouse.move(box.x + 12, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 120, box.y + box.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await page.waitForTimeout(200);
+  const selBefore = await page.evaluate(() => window.getSelection()?.toString() ?? '');
+
+  // 右键 → 复制
+  await page.mouse.move(box.x + 60, box.y + box.height / 2);
+  await page.mouse.down({ button: 'right' });
+  await page.mouse.up({ button: 'right' });
+  await page.locator('.ctx-menu-item', { hasText: '复制' }).click();
+
+  const clip = await page.evaluate(() => navigator.clipboard.readText());
+  expect(clip).toBe(selBefore);
+});
+
+test('select-all action selects #output content', async ({ page }) => {
+  await openFile(page);
+  const para = page.locator('#output section p').first();
+  const box = await para.boundingBox()!;
+
+  await page.mouse.move(box.x + 10, box.y + box.height / 2);
+  await page.mouse.down({ button: 'right' });
+  await page.mouse.up({ button: 'right' });
+  await page.locator('.ctx-menu-item', { hasText: '全选' }).click();
+  await page.waitForTimeout(200);
+
+  const sel = await page.evaluate(() => window.getSelection()?.toString() ?? '');
+  expect(sel).toContain('这是一段用来测试选中的中文内容');
+});
+
+test('ask-about-selection opens chat with selection preview', async ({ page }) => {
+  await openFile(page);
+  const para = page.locator('#output section p').first();
+  const box = await para.boundingBox()!;
+
+  await page.mouse.move(box.x + 12, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 120, box.y + box.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await page.waitForTimeout(200);
+  const selBefore = await page.evaluate(() => window.getSelection()?.toString() ?? '');
+
+  await page.mouse.move(box.x + 60, box.y + box.height / 2);
+  await page.mouse.down({ button: 'right' });
+  await page.mouse.up({ button: 'right' });
+  await page.locator('.ctx-menu-item', { hasText: '就此提问' }).click();
+
+  await expect(page.locator('[data-testid="kb-chat-panel"]')).toBeVisible({ timeout: 5_000 });
+  await expect(page.locator('[data-testid="kb-chat-selected-preview"]')).toContainText(selBefore);
+});
