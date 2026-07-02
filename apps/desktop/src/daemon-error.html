@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Molio</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      background: #181816;
+      color: #eceae6;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      padding: 24px;
+    }
+    .card {
+      max-width: 460px;
+      text-align: center;
+    }
+    .title {
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      margin-bottom: 8px;
+    }
+    .desc {
+      font-size: 13px;
+      opacity: 0.6;
+      line-height: 1.6;
+      margin-bottom: 20px;
+    }
+    .log-path {
+      font-family: 'SF Mono', Consolas, monospace;
+      font-size: 11px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 6px;
+      padding: 8px 10px;
+      word-break: break-all;
+      margin-bottom: 20px;
+      opacity: 0.7;
+    }
+    .actions {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+    }
+    button {
+      font-size: 13px;
+      padding: 8px 16px;
+      border-radius: 6px;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.04);
+      color: #eceae6;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    button:hover { background: rgba(255,255,255,0.08); }
+    button.primary {
+      background: #c96442;
+      border-color: #c96442;
+      color: #fff;
+    }
+    button.primary:hover { background: #d77452; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="title">后端服务启动失败</div>
+    <div class="desc">Molio 的本地服务未能成功启动。请将下方日志文件发送给开发者以便定位问题，或尝试重启应用。</div>
+    <div class="log-path" id="log-path"></div>
+    <div class="actions">
+      <button id="open-log">打开日志文件夹</button>
+      <button id="restart" class="primary">重启 Molio</button>
+    </div>
+  </div>
+  <script>
+    (function () {
+      var params = new URLSearchParams(location.search);
+      var logPath = params.get('log') || '';
+      document.getElementById('log-path').textContent = logPath;
+
+      var api = window.__electron__ || {};
+      document.getElementById('open-log').addEventListener('click', function () {
+        if (logPath && api.showItemInFolder) api.showItemInFolder(logPath);
+      });
+      document.getElementById('restart').addEventListener('click', function () {
+        if (api.restartApp) api.restartApp();
+      });
+    })();
+  </script>
+</body>
+</html>
