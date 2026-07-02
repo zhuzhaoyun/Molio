@@ -5,7 +5,7 @@
  * - Binary (pdf/docx/pptx): file info card + "open with system app" button
  */
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import type { FileContent } from '@molio/contracts';
 import type { ThemeConfig } from './MdStylePanel';
 import { MdRenderer } from './MdRenderer';
@@ -109,66 +109,14 @@ export function KbMainContent({
   editedContent,
 }: KbMainContentProps) {
   const { t } = useI18n();
-  // Selected text floating "ask" button
-  const [floatBtn, setFloatBtn] = useState<{ text: string; x: number; y: number } | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const floatBtnRef = useRef<HTMLButtonElement>(null);
-  // Track the text-selection debounce timer so it can be cleared on each new
-  // call and on unmount (avoids setFloatBtn on an unmounted component).
-  const selectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    return () => {
-      if (selectTimerRef.current) clearTimeout(selectTimerRef.current);
-    };
-  }, []);
-
-  const handleTextSelect = useCallback(() => {
-    // Small delay so the selection is settled
-    if (selectTimerRef.current) clearTimeout(selectTimerRef.current);
-    selectTimerRef.current = setTimeout(() => {
-      const sel = window.getSelection();
-      if (!sel || sel.isCollapsed || !sel.toString().trim()) {
-        setFloatBtn(null);
-        return;
-      }
-      const text = sel.toString().trim();
-      if (!text) { setFloatBtn(null); return; }
-
-      // Check selection is inside our content area
-      const contentEl = contentRef.current;
-      if (!contentEl) return;
-      // Guard: in edge cases selection can be non-collapsed with zero ranges,
-      // which would make getRangeAt(0) throw IndexSizeError.
-      if (sel.rangeCount === 0) {
-        setFloatBtn(null);
-        return;
-      }
-      const range = sel.getRangeAt(0);
-      if (!contentEl.contains(range.commonAncestorContainer)) {
-        setFloatBtn(null);
-        return;
-      }
-
-      // Position near the END of selection (collapse to end for accurate coords)
-      const endRange = range.cloneRange();
-      endRange.collapse(false);
-      const endRect = endRange.getBoundingClientRect();
-      // Clamp to viewport so the button never overflows (measure the button
-      // width rather than assuming a magic 120px).
-      const btnWidth = floatBtnRef.current?.offsetWidth ?? 100;
-      const x = Math.min(endRect.right + 8, window.innerWidth - btnWidth - 16);
-      const y = Math.max(endRect.bottom + 4, 8);
-      setFloatBtn({ text, x, y });
-    }, 0);
-  }, []);
-
-  const handleAskSelection = useCallback(() => {
-    if (!floatBtn) return;
-    onAskAboutSelection?.(floatBtn.text);
-    setFloatBtn(null);
-    window.getSelection()?.removeAllRanges();
-  }, [floatBtn, onAskAboutSelection]);
+  // Memoize the rendered markdown content so MdRenderer (wrapped in memo)
+  // doesn't see a new string prop on unrelated re-renders.
+  const renderedContent = useMemo(
+    () => proxyExternalImages(preprocessWikiEmbeds(stripTrackingPixels(editedContent ?? fileContent?.content ?? ''), vaultId ?? '')),
+    [editedContent, fileContent?.content, vaultId],
+  );
 
   // Ctrl+S / Cmd+S to save
   useEffect(() => {
@@ -397,25 +345,12 @@ export function KbMainContent({
           selectedFile={selectedFile}
         />
       ) : category === 'text' ? (
-        <div className="kb-content-area" ref={contentRef} onMouseUp={handleTextSelect}>
+        <div className="kb-content-area" ref={contentRef}>
           {fileContent ? (
             // 优先使用编辑后的内容（未保存的更改），否则使用原始文件内容
-            <MdRenderer content={proxyExternalImages(preprocessWikiEmbeds(stripTrackingPixels(editedContent ?? fileContent.content), vaultId ?? ''))} themeConfig={themeConfig} />
+            <MdRenderer content={renderedContent} themeConfig={themeConfig} />
           ) : (
             <div className="kb-empty-state"><p>Loading...</p></div>
-          )}
-          {/* Float "ask about selection" button */}
-          {floatBtn && (
-            <button
-              ref={floatBtnRef}
-              type="button"
-              className="kb-float-ask-btn"
-              data-testid="kb-float-ask-btn"
-              style={{ left: floatBtn.x, top: floatBtn.y }}
-              onClick={handleAskSelection}
-            >
-              💬 {t('kb.askSelection')}
-            </button>
           )}
         </div>
       ) : category === 'image' && vaultId ? (
