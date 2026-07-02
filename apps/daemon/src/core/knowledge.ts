@@ -403,6 +403,10 @@ export interface ImportResult {
   renamed: Array<{ from: string; to: string }>;
   skipped: string[];
   errors: Array<{ file: string; reason: string }>;
+  /** Conflict files when conflict: "ask" — present ONLY when conflicts were detected.
+   *  Separated from `errors` so callers can distinguish "needs user decision"
+   *  from "permanently invalid" without coupling to reason strings. */
+  conflicts?: Array<{ file: string; reason: string }>;
 }
 
 /** ILLEGAL_CHARS: characters forbidden in filenames on Windows + macOS. */
@@ -453,7 +457,9 @@ export function importFiles(
     }
     if (conflicts.length > 0) {
       // Return early — the route will send 409 with the conflict list.
-      result.errors = conflicts;
+      // Preserve validation errors (unsupported_format, etc.) collected in step 1
+      // alongside the conflict list so consumers can show a complete picture.
+      result.conflicts = conflicts;
       return result;
     }
     // No conflicts — proceed with "rename" as safety net.

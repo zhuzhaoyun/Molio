@@ -410,6 +410,7 @@ export const api = {
     renamed: Array<{ from: string; to: string }>;
     skipped: string[];
     errors: Array<{ file: string; reason: string }>;
+    conflicts?: Array<{ file: string; reason: string }>;
   }> {
     const formData = new FormData();
     for (const file of files) {

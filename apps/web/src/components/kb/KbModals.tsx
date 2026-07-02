@@ -231,6 +231,8 @@ export interface ImportApiResult {
   renamed: Array<{ from: string; to: string }>;
   skipped: string[];
   errors: Array<{ file: string; reason: string }>;
+  /** Conflict files when conflict: "ask" — present ONLY when conflicts detected. */
+  conflicts?: Array<{ file: string; reason: string }>;
 }
 
 interface ImportModalProps {
@@ -240,12 +242,14 @@ interface ImportModalProps {
   onClose: () => void;
   /** Called after import completes (including conflicts). The caller receives the files so it can
    *  store them for conflict retry — the modal clears its own file state immediately after. */
-  onImportComplete?: (result: ImportApiResult, files: File[], targetDir: string) => void;
+  onImportComplete?: (result: ImportApiResult, files: File[], targetDir: string, oversizedCount?: number) => void;
 }
 
 interface ImportedFile {
   name: string;
   size: number;
+  /** If set, the file was rejected and this explains why. */
+  error?: string;
 }
 
 export function ImportModal({ show, vaultName, vaultId, onClose, onImportComplete }: ImportModalProps) {
@@ -256,6 +260,7 @@ export function ImportModal({ show, vaultName, vaultId, onClose, onImportComplet
 
   const handleFiles = useCallback((fileList: FileList | null) => {
     if (!fileList) return;
+    const MAX_FILE_SIZE = 50 * 1024 * 1024;
     const validExts = [
       '.md', '.pdf', '.txt', '.docx', '.doc', '.html', '.htm',
       '.pptx', '.ppt', '.xlsx', '.xls',
@@ -263,13 +268,19 @@ export function ImportModal({ show, vaultName, vaultId, onClose, onImportComplet
       '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp', '.ico',
     ];
     const newFiles: ImportedFile[] = [];
+    const skippedFiles: string[] = [];
 
     for (const file of Array.from(fileList)) {
+      if (files.find((f) => f.name === file.name)) continue;
       const ext = '.' + file.name.split('.').pop()?.toLowerCase();
-      if (validExts.includes(ext) && !files.find((f) => f.name === file.name)) {
-        newFiles.push({ name: file.name, size: file.size });
-        rawFiles.current.push(file);
+      if (!validExts.includes(ext)) continue;
+      if (file.size > MAX_FILE_SIZE) {
+        skippedFiles.push(file.name);
+        newFiles.push({ name: file.name, size: file.size, error: '超过 50MB 限制' });
+        continue;
       }
+      newFiles.push({ name: file.name, size: file.size });
+      rawFiles.current.push(file);
     }
 
     setFiles((prev) => [...prev, ...newFiles]);
@@ -309,12 +320,14 @@ export function ImportModal({ show, vaultName, vaultId, onClose, onImportComplet
   }, [handleFiles]);
 
   const handleImport = useCallback(async () => {
-    if (files.length === 0) return;
+    const validFiles = files.filter((f) => !f.error);
+    if (validFiles.length === 0) return;
     setImporting(true);
-    const importingFiles = rawFiles.current.filter((rf) => files.some((f) => f.name === rf.name));
+    const oversizedCount = files.filter((f) => !!f.error).length;
+    const importingFiles = rawFiles.current.filter((rf) => validFiles.some((f) => f.name === rf.name));
     try {
       const result = await api.importFiles(vaultId, importingFiles, '', 'ask');
-      onImportComplete?.(result, importingFiles, '');
+      onImportComplete?.(result, importingFiles, '', oversizedCount);
       setFiles([]);
       rawFiles.current = [];
       onClose();
@@ -328,6 +341,7 @@ export function ImportModal({ show, vaultName, vaultId, onClose, onImportComplet
         },
         [],
         '',
+        oversizedCount,
       );
       setFiles([]);
       rawFiles.current = [];
@@ -380,10 +394,14 @@ export function ImportModal({ show, vaultName, vaultId, onClose, onImportComplet
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 3, maxHeight: 140, overflowY: 'auto' }}>
                 {files.map((f, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', background: 'var(--bg-subtle)', borderRadius: 'var(--radius-sm)', fontSize: 12.5 }}>
-                    <span style={{ fontSize: 13 }}>📄</span>
-                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text)' }}>{f.name}</span>
-                    <span style={{ fontSize: 11, color: 'var(--text-faint)', flexShrink: 0 }}>{(f.size / 1024).toFixed(1)} KB</span>
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', background: f.error ? 'var(--bg-warning, rgba(255,200,50,0.12))' : 'var(--bg-subtle)', borderRadius: 'var(--radius-sm)', fontSize: 12.5 }}>
+                    <span style={{ fontSize: 13 }}>{f.error ? '⚠️' : '📄'}</span>
+                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: f.error ? 'var(--text-muted)' : 'var(--text)' }}>{f.name}</span>
+                    {f.error ? (
+                      <span style={{ fontSize: 10.5, color: 'var(--accent)', flexShrink: 0, fontWeight: 500 }}>{f.error}</span>
+                    ) : (
+                      <span style={{ fontSize: 11, color: 'var(--text-faint)', flexShrink: 0 }}>{(f.size / 1024).toFixed(1)} KB</span>
+                    )}
                     <button
                       onClick={() => removeFile(i)}
                       style={{ width: 18, height: 18, padding: 0, border: 'none', background: 'transparent', borderRadius: 4, color: 'var(--text-faint)', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
@@ -401,7 +419,7 @@ export function ImportModal({ show, vaultName, vaultId, onClose, onImportComplet
           <button
             className="kb-btn kb-btn-primary"
             onClick={handleImport}
-            disabled={files.length === 0 || importing}
+            disabled={files.filter((f) => !f.error).length === 0 || importing}
           >
             {importing ? 'Importing...' : 'Import Files'}
           </button>

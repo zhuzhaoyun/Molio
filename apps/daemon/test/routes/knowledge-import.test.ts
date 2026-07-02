@@ -271,9 +271,15 @@ describe('Knowledge routes — file import', () => {
     const res = await app.request(req);
     assert.equal(res.status, 409);
     const data = await json(res);
+    // Conflicts are now in a separate `conflicts` field – not mixed with validation errors
+    const conflicts = data['conflicts'] as Array<{ file: string; reason: string }> | undefined;
+    assert.ok(conflicts, 'should have conflicts field');
+    assert.equal(conflicts.length, 1);
+    assert.equal(conflicts[0]!.file, 'existing.md');
+    assert.equal(conflicts[0]!.reason, 'conflict');
+    // Validation errors should be empty in this case (no format/size/char issues)
     const errors = data['errors'] as Array<{ file: string; reason: string }>;
-    assert.equal(errors.length, 1);
-    assert.equal(errors[0]!.reason, 'conflict');
+    assert.equal(errors.length, 0);
   });
 
   it('conflict: ask — returns 200 when no conflicts exist', async () => {
@@ -287,6 +293,41 @@ describe('Knowledge routes — file import', () => {
     });
     const res = await app.request(req);
     assert.equal(res.status, 200);
+  });
+
+  it('conflict: ask — preserves validation errors alongside conflicts', async () => {
+    // Mixed scenario: valid file with conflict + unsupported format + illegal chars
+    writeFileSync(join(vaultDir, 'conflict.md'), 'original');
+    const fd = makeFormData({
+      files: [
+        makeFile('conflict.md', 'new'),      // name conflict
+        makeFile('virus.exe', 'malware'),    // unsupported format
+        makeFile('bad:name.md', '# Bad'),    // illegal chars
+        makeFile('clean.md', '# Clean'),     // valid, no conflict
+      ],
+      conflict: 'ask',
+    });
+    const req = new Request(`http://localhost/api/knowledge/vaults/${vaultId}/import`, {
+      method: 'POST',
+      body: fd,
+    });
+    const res = await app.request(req);
+    assert.equal(res.status, 409);
+
+    const data = await json(res);
+
+    // Conflicts should be separated from validation errors
+    const conflicts = data['conflicts'] as Array<{ file: string; reason: string }> | undefined;
+    assert.ok(conflicts, 'should have conflicts field');
+    assert.equal(conflicts.length, 1);
+    assert.equal(conflicts[0]!.file, 'conflict.md');
+    assert.equal(conflicts[0]!.reason, 'conflict');
+
+    // Validation errors should be preserved (NOT overwritten by conflicts)
+    const errors = data['errors'] as Array<{ file: string; reason: string }>;
+    assert.equal(errors.length, 2);
+    const errorReasons = errors.map(e => e.reason).sort();
+    assert.deepEqual(errorReasons, ['illegal_chars', 'unsupported_format']);
   });
 
   // ─── protected-dir rename guard ───

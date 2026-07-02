@@ -434,7 +434,7 @@ export function knowledgeRoutes(
       result.errors = [...perFileErrors, ...result.errors];
 
       // If conflict: "ask" and conflicts were found, return 409
-      if (conflict === 'ask' && result.errors.some(e => e.reason === 'conflict')) {
+      if (result.conflicts && result.conflicts.length > 0) {
         return c.json(result, 409);
       }
 

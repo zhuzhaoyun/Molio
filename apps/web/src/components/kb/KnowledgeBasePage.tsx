@@ -49,6 +49,22 @@ function resolveUrlFileNavigation(
   return { vaultId, filePath };
 }
 
+/** Summarize import errors into a human-readable string for toasts. */
+function summarizeErrors(errors: Array<{ file: string; reason: string }>): string {
+  const counts: Record<string, number> = {};
+  for (const e of errors) {
+    counts[e.reason] = (counts[e.reason] || 0) + 1;
+  }
+  const parts: string[] = [];
+  if (counts['unsupported_format']) parts.push(`${counts['unsupported_format']} 个格式不支持`);
+  if (counts['file_too_large']) parts.push(`${counts['file_too_large']} 个超过 50MB 限制`);
+  if (counts['illegal_chars']) parts.push(`${counts['illegal_chars']} 个文件名含非法字符`);
+  if (counts['protected_dir']) parts.push(`${counts['protected_dir']} 个目标为受保护目录`);
+  if (counts['rename_exhausted']) parts.push(`${counts['rename_exhausted']} 个重命名失败`);
+  if (parts.length === 0) parts.push(`${errors.length} 个文件无法导入`);
+  return parts.join('，');
+}
+
 export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBasePageProps) {
   const { t } = useI18n();
   const kb = useKnowledge();
@@ -129,7 +145,7 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
   }>({ show: false, conflicts: [] });
 
   // Pending import files for conflict retry (replaces fragile `as any` function-property hack)
-  const pendingImportRef = useRef<{ files: File[]; targetDir: string } | null>(null);
+  const pendingImportRef = useRef<{ files: File[]; targetDir: string; oversizedCount: number } | null>(null);
 
   // Unified KB chat hook — covers QA, build, lint, ingest
   const kbChat = useKbChat({
@@ -679,18 +695,40 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
       return;
     }
 
+    // Pre-flight checks — filter out files that would fail before any network request.
+    const MAX_FILE_SIZE = 50 * 1024 * 1024;
+    const oversized = Array.from(files).filter((f) => f.size > MAX_FILE_SIZE);
+    const validFiles = Array.from(files).filter((f) => f.size <= MAX_FILE_SIZE);
+    const preflightErrors: string[] = [];
+    if (oversized.length > 0) {
+      preflightErrors.push(`${oversized.length} 个超过 50MB 限制`);
+    }
+    if (validFiles.length === 0) {
+      showToast(preflightErrors.join('，'));
+      return;
+    }
+
     // Progress toast for large imports
-    if (files.length > 20) {
-      showToast(`正在导入 ${files.length} 个文件...`);
+    if (validFiles.length > 20) {
+      showToast(`正在导入 ${validFiles.length} 个文件...`);
     }
 
     try {
-      const result = await api.importFiles(kb.activeVault.id, Array.from(files), targetDir, 'ask');
+      const result = await api.importFiles(kb.activeVault.id, validFiles, targetDir, 'ask');
 
-      // Handle conflict response (409)
-      if (result.errors.length > 0 && result.errors[0].reason === 'conflict') {
-        pendingImportRef.current = { files, targetDir };
-        setConflictDialog({ show: true, conflicts: result.errors });
+      // Build a consolidated message from pre-flight + daemon errors
+      const allErrors = [...preflightErrors];
+      if (result.errors.length > 0) {
+        allErrors.push(summarizeErrors(result.errors));
+      }
+
+      // Handle conflict response — conflicts field is separate from validation errors
+      if (result.conflicts && result.conflicts.length > 0) {
+        pendingImportRef.current = { files: validFiles, targetDir, oversizedCount: oversized.length };
+        setConflictDialog({ show: true, conflicts: result.conflicts });
+        if (allErrors.length > 0) {
+          showToast(`${allErrors.join('，')}，请处理文件冲突`);
+        }
         return;
       }
 
@@ -701,13 +739,12 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
       const imported = result.imported.length;
       const renamed = result.renamed.length;
       const skipped = result.skipped.length;
-      const errCount = result.errors.length;
 
       const parts: string[] = [];
       if (imported > 0) parts.push(`${imported} 个文件`);
       if (renamed > 0) parts.push(`${renamed} 个已重命名以保留原文件`);
       if (skipped > 0) parts.push(`${skipped} 个已跳过`);
-      if (errCount > 0) parts.push(`${errCount} 个格式不支持已跳过`);
+      if (allErrors.length > 0) parts.push(allErrors.join('，'));
 
       if (parts.length > 0) {
         showToast(`导入完成：${parts.join('，')}`);
@@ -721,7 +758,7 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
     setConflictDialog({ show: false, conflicts: [] });
     const pending = pendingImportRef.current;
     if (!pending || !kb.activeVault) return;
-    const { files, targetDir } = pending;
+    const { files, targetDir, oversizedCount } = pending;
     pendingImportRef.current = null; // clear after reading
 
     try {
@@ -730,8 +767,19 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
 
       const imported = result.imported.length;
       const renamed = result.renamed.length;
-      if (imported + renamed > 0) {
-        showToast(`导入完成：${imported + renamed} 个文件`);
+      const skipped = result.skipped.length;
+
+      const parts: string[] = [];
+      if (imported + renamed > 0) parts.push(`成功导入 ${imported + renamed} 个文件`);
+      if (skipped > 0) {
+        parts.push(strategy === 'skip' ? `${skipped} 个冲突文件已跳过` : `${skipped} 个已跳过`);
+      }
+      // Pre-flight errors were shown in the first toast; carry forward only oversized
+      // so the user sees what happened to those files too.
+      if (oversizedCount > 0) parts.push(`${oversizedCount} 个超过 50MB 限制未导入`);
+
+      if (parts.length > 0) {
+        showToast(`导入完成：${parts.join('，')}`);
       }
     } catch (err) {
       showToast(`导入失败：${err instanceof Error ? err.message : '无法连接到服务'}`);
@@ -909,20 +957,35 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
         vaultName={kb.activeVault?.name ?? ''}
         vaultId={kb.activeVault?.id ?? ''}
         onClose={() => kb.setShowImport(false)}
-        onImportComplete={(result, importFiles, targetDir) => {
+        onImportComplete={(result, importFiles, targetDir, oversizedCount = 0) => {
           kb.refreshTree();
-          // Check for conflicts first — store files so the conflict dialog can retry.
-          if (result.errors.length > 0 && result.errors[0].reason === 'conflict') {
-            pendingImportRef.current = { files: importFiles, targetDir };
-            setConflictDialog({ show: true, conflicts: result.errors });
+
+          // Build pre-flight errors so they can be merged into toasts
+          const preflightErrors: string[] = [];
+          if (oversizedCount > 0) preflightErrors.push(`${oversizedCount} 个超过 50MB 限制`);
+
+          // Check for conflicts — uses separate conflicts field (not mixed with errors)
+          if (result.conflicts && result.conflicts.length > 0) {
+            pendingImportRef.current = { files: importFiles, targetDir, oversizedCount };
+            setConflictDialog({ show: true, conflicts: result.conflicts });
+            const allErrors = [...preflightErrors];
+            if (result.errors.length > 0) allErrors.push(summarizeErrors(result.errors));
+            if (allErrors.length > 0) {
+              showToast(`${allErrors.join('，')}，请处理文件冲突`);
+            }
             return;
           }
+
           const imported = result.imported.length;
           const renamed = result.renamed.length;
-          if (imported + renamed > 0) {
-            showToast(`导入完成：${imported + renamed} 个文件`);
-          } else if (result.errors.length > 0) {
-            showToast(`导入失败：${result.errors[0].reason}`);
+          const skipped = result.skipped.length;
+          const parts: string[] = [];
+          if (imported + renamed > 0) parts.push(`成功导入 ${imported + renamed} 个文件`);
+          if (skipped > 0) parts.push(`${skipped} 个已跳过`);
+          if (preflightErrors.length > 0) parts.push(preflightErrors.join('，'));
+          if (result.errors.length > 0) parts.push(summarizeErrors(result.errors));
+          if (parts.length > 0) {
+            showToast(`导入完成：${parts.join('，')}`);
           }
         }}
       />
