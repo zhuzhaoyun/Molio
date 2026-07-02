@@ -183,6 +183,7 @@ function TreeNodeItem({
       e.preventDefault();
       e.stopPropagation();
       e.dataTransfer.dropEffect = 'move';
+      (e.currentTarget as HTMLElement).classList.add('drag-target');
     }, [acceptsDrop, node.path, onNodeDragOver]);
 
     const handleDirDragLeave = useCallback((e: React.DragEvent) => {
