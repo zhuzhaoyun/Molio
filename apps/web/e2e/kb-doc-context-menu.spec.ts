@@ -16,6 +16,13 @@ const MD = `# Selection Repro
 
 这是一段用来测试选中的中文内容。Another English paragraph here with enough text to drag across.
 `;
+const TABLE_MD = `# Table Copy
+
+| 姓名 | 城市 |
+|---|---|
+| 张三 | 北京 |
+| 李四 | 上海 |
+`;
 let vaultPath: string;
 let vaultId: string;
 const vaultName = `e2e-ctx-${Date.now()}`;
@@ -24,6 +31,7 @@ const t_zh_copy = '复制';
 test.beforeAll(async () => {
   vaultPath = mkdtempSync(join(tmpdir(), 'molio-ctx-'));
   writeFileSync(join(vaultPath, 'sel-test.md'), MD);
+  writeFileSync(join(vaultPath, 'table-test.md'), TABLE_MD);
   const res = await fetch(`${DAEMON_API}/knowledge/vaults`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -37,7 +45,7 @@ test.afterAll(async () => {
   if (vaultPath) rmSync(vaultPath, { recursive: true, force: true });
 });
 
-async function openFile(page: import('@playwright/test').Page) {
+async function openFile(page: import('@playwright/test').Page, filename = 'sel-test.md') {
   await gotoHome(page);
   await page.reload({ waitUntil: 'domcontentloaded' });
   await clickNav(page, 'knowledge');
@@ -46,8 +54,8 @@ async function openFile(page: import('@playwright/test').Page) {
   await page.waitForTimeout(400);
   await page.locator('.vm-vault-item').filter({ hasText: vaultName }).click();
   await page.waitForTimeout(800);
-  await page.locator('.kb-tree-item').filter({ hasText: 'sel-test.md' }).click();
-  await page.waitForSelector('.kb-content-area #output section p', { timeout: 10_000 });
+  await page.locator('.kb-tree-item').filter({ hasText: filename }).click();
+  await page.waitForSelector('.kb-content-area #output section', { timeout: 10_000 });
 }
 
 test('drag selection survives mouseup', async ({ page }) => {
@@ -153,4 +161,44 @@ test('ask-about-selection opens chat with selection preview', async ({ page }) =
 
   await expect(page.locator('[data-testid="kb-chat-panel"]')).toBeVisible({ timeout: 5_000 });
   await expect(page.locator('[data-testid="kb-chat-selected-preview"]')).toContainText(selBefore);
+});
+
+test('copy action writes rich text html (table preserved)', async ({ page }) => {
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await openFile(page, 'table-test.md');
+  await page.waitForSelector('#output table.md-table', { timeout: 10_000 });
+  const table = page.locator('#output table.md-table').first();
+  const box = (await table.boundingBox())!;
+
+  // Select all #output (includes the table) via the context menu's 全选
+  await page.mouse.move(box.x + 8, box.y + 8);
+  await page.mouse.down({ button: 'right' });
+  await page.mouse.up({ button: 'right' });
+  await page.locator('.ctx-menu-item', { hasText: '全选' }).click();
+  await page.waitForTimeout(200);
+
+  // Right-click again on the table (selection preserved) → 复制
+  await page.mouse.move(box.x + 8, box.y + 8);
+  await page.mouse.down({ button: 'right' });
+  await page.mouse.up({ button: 'right' });
+  await page.locator('.ctx-menu-item', { hasText: '复制' }).click();
+  await page.waitForTimeout(200);
+
+  // Read clipboard text/html — table structure must be preserved
+  const html = await page.evaluate(async () => {
+    const clips = await navigator.clipboard.read();
+    for (const c of clips) {
+      if (c.types.includes('text/html')) {
+        const blob = await c.getType('text/html');
+        return await blob.text();
+      }
+    }
+    return '';
+  });
+  expect(html).toContain('<table');
+  expect(html).toContain('张三');
+
+  // Plain text still present (cell content)
+  const text = await page.evaluate(() => navigator.clipboard.readText());
+  expect(text).toContain('张三');
 });

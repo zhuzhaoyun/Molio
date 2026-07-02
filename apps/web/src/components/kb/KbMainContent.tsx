@@ -402,12 +402,34 @@ export function KbMainContent({
         <ContextMenu
           items={(() => {
             const sel = selectionText();
+            // Capture the selection's HTML at menu-open time so the copy
+            // handler can write rich text (text/html) — preserves table
+            // structure and inline formatting when pasting into rich editors.
+            // sel is captured by value too; clicking the menu item may clear
+            // the live selection before the async clipboard write resolves.
+            const selHtml = (() => {
+              const s = window.getSelection();
+              if (!s || s.rangeCount === 0) return '';
+              const div = document.createElement('div');
+              div.appendChild(s.getRangeAt(0).cloneContents());
+              return div.innerHTML;
+            })();
             const items: MenuItem[] = [
               {
                 label: t('kb.copy'),
                 disabled: !sel,
                 onClick: async () => {
                   if (!sel) return;
+                  // Rich-text copy: text/plain + text/html so tables and
+                  // formatting survive pasting into Word/Notion/email.
+                  try {
+                    const item = new ClipboardItem({
+                      'text/plain': new Blob([sel], { type: 'text/plain' }),
+                      'text/html': new Blob([selHtml], { type: 'text/html' }),
+                    });
+                    await navigator.clipboard.write([item]);
+                    return;
+                  } catch { /* ClipboardItem/write unavailable — fall back */ }
                   try {
                     await navigator.clipboard.writeText(sel);
                   } catch {
