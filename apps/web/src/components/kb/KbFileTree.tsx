@@ -159,39 +159,48 @@ function TreeNodeItem({
   const isRenaming = renamingPath === node.path;
 
   if (node.type === 'directory') {
-    // Determine drop acceptance for this directory
-    const acceptsDrop = onMoveFile && !nodeProtected;
+    // Determine drop acceptance for this directory.
+    // Both external import and internal move targets need to be non-protected.
+    const acceptsDrop = !nodeProtected;
 
     const handleDirDragOver = useCallback((e: React.DragEvent) => {
-      if (e.dataTransfer.types.includes('Files')) {
-        // External drop — signal the panel + add highlight class directly
-        if (acceptsDrop) {
-          e.preventDefault();
-          e.stopPropagation();
-          (e.currentTarget as HTMLElement).classList.add('drag-target');
-          onNodeDragOver?.(node.path);
-        } else {
-          e.dataTransfer.dropEffect = 'none';
-        }
-        return;
-      }
-      // Internal move handling (from Task 6)
       if (!acceptsDrop) {
         e.dataTransfer.dropEffect = 'none';
         return;
       }
       e.preventDefault();
       e.stopPropagation();
-      e.dataTransfer.dropEffect = 'move';
-      (e.currentTarget as HTMLElement).classList.add('drag-target');
+
+      // Ensure only this node is highlighted — clear others in case dragLeave
+      // was blocked by the relatedTarget guard on a sibling directory.
+      const el = e.currentTarget as HTMLElement;
+      const panel = el.closest('.kb-file-panel');
+      panel?.querySelectorAll('.kb-tree-group-label.drag-target').forEach((n) => {
+        if (n !== el) n.classList.remove('drag-target');
+      });
+      el.classList.add('drag-target');
+
+      if (e.dataTransfer.types.includes('Files')) {
+        // External drop — signal the panel to update its root/node indicator
+        onNodeDragOver?.(node.path);
+      } else {
+        // Internal move — set move cursor
+        e.dataTransfer.dropEffect = 'move';
+      }
     }, [acceptsDrop, node.path, onNodeDragOver]);
 
     const handleDirDragLeave = useCallback((e: React.DragEvent) => {
+      // Don't remove highlight if moving to a descendant of this directory
+      // (e.g. from the label to a file inside this directory's children).
+      const related = e.relatedTarget as HTMLElement | null;
+      const group = (e.currentTarget as HTMLElement).closest('.kb-tree-group');
+      if (related && group?.contains(related)) return;
+
       (e.currentTarget as HTMLElement).classList.remove('drag-target');
       onNodeDragLeave?.();
     }, [onNodeDragLeave]);
 
-    // Clean up highlight class on drop (dragLeave may not fire after drop)
+    // Clean up highlight class on drop (dragLeave may not fire reliably after drop).
     const handleDirDrop = useCallback((e: React.DragEvent) => {
       (e.currentTarget as HTMLElement).classList.remove('drag-target');
       if (e.dataTransfer.types.includes('Files')) return;
@@ -208,7 +217,7 @@ function TreeNodeItem({
       <div className="kb-tree-group">
         <div
           className="kb-tree-group-label"
-          data-drop-dir={node.path}
+          {...(!nodeProtected ? { 'data-drop-dir': node.path } : {})}
           onClick={() => onTogglePath(node.path)}
           onContextMenu={handleContextMenu}
           onDragOver={handleDirDragOver}
