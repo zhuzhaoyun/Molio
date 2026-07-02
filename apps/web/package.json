@@ -27,13 +27,16 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.16.0",
-    "sigma": "^3.0.3"
+    "sigma": "^3.0.3",
+    "turndown": "^7.2.4",
+    "turndown-plugin-gfm": "^1.0.2"
   },
   "devDependencies": {
     "@playwright/test": "^1.50.0",
     "@types/d3-force": "^3.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/turndown": "^5.0.6",
     "@vitejs/plugin-react": "^4.3.0",
     "typescript": "^5.8.3",
     "vite": "^6.3.0"

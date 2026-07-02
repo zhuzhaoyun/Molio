@@ -16,6 +16,23 @@ import type { MenuItem } from './ContextMenu';
 import { preprocessWikiEmbeds, proxyExternalImages, stripTrackingPixels } from '../../hooks/useKnowledge';
 import { api } from '../../api/client';
 import { useI18n } from '../../i18n';
+import TurndownService from 'turndown';
+import { gfm } from 'turndown-plugin-gfm';
+
+/**
+ * Lazy singleton HTML→Markdown converter. Used by the copy action to write a
+ * Markdown `text/plain` slot alongside `text/html`, so pasting a table (or
+ * any selection) into Obsidian / a Markdown editor / 记事本 yields Markdown
+ * source instead of flat text or HTML. GFM plugin enables pipe-table support.
+ */
+let _turndown: TurndownService | null = null;
+function getTurndown(): TurndownService {
+  if (!_turndown) {
+    _turndown = new TurndownService({ headingStyle: 'atx', bulletListMarker: '-' });
+    _turndown.use(gfm);
+  }
+  return _turndown;
+}
 
 /** File categories for rendering strategy */
 type FileCategory = 'text' | 'image' | 'binary';
@@ -414,17 +431,30 @@ export function KbMainContent({
               div.appendChild(s.getRangeAt(0).cloneContents());
               return div.innerHTML;
             })();
+            // Markdown source for the text/plain slot — tables become pipe
+            // tables, lists/bold/links become Markdown. Falls back to flat
+            // selection text if conversion fails.
+            const selMd = (() => {
+              if (!selHtml) return sel;
+              try {
+                const md = getTurndown().turndown(selHtml);
+                return md || sel;
+              } catch {
+                return sel;
+              }
+            })();
             const items: MenuItem[] = [
               {
                 label: t('kb.copy'),
                 disabled: !sel,
                 onClick: async () => {
                   if (!sel) return;
-                  // Rich-text copy: text/plain + text/html so tables and
-                  // formatting survive pasting into Word/Notion/email.
+                  // Triple-slot copy: text/plain = Markdown (Obsidian / md
+                  // editors / 记事本), text/html = rich text (Word / Notion /
+                  // email). Tables survive in both.
                   try {
                     const item = new ClipboardItem({
-                      'text/plain': new Blob([sel], { type: 'text/plain' }),
+                      'text/plain': new Blob([selMd], { type: 'text/plain' }),
                       'text/html': new Blob([selHtml], { type: 'text/html' }),
                     });
                     await navigator.clipboard.write([item]);

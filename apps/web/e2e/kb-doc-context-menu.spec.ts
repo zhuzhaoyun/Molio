@@ -109,22 +109,31 @@ test('copy action writes selection to clipboard', async ({ page }) => {
   const para = page.locator('#output section p').first();
   const box = (await para.boundingBox())!;
 
-  // 拖选
-  await page.mouse.move(box.x + 12, box.y + box.height / 2);
+  // 拖选整段大部分（横跨段落），避免小幅选区在 suite 上下文里漂移
+  await page.mouse.move(box.x + 10, box.y + box.height / 2);
   await page.mouse.down();
-  await page.mouse.move(box.x + 120, box.y + box.height / 2, { steps: 8 });
+  await page.mouse.move(box.x + box.width - 10, box.y + box.height / 2, { steps: 12 });
   await page.mouse.up();
-  await page.waitForTimeout(200);
+  await page.waitForTimeout(250);
   const selBefore = await page.evaluate(() => window.getSelection()?.toString() ?? '');
+  expect(selBefore.length).toBeGreaterThan(0);
 
   // 右键 → 复制
-  await page.mouse.move(box.x + 60, box.y + box.height / 2);
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down({ button: 'right' });
   await page.mouse.up({ button: 'right' });
   await page.locator('.ctx-menu-item', { hasText: '复制' }).click();
+  await page.waitForTimeout(250);
 
-  const clip = await page.evaluate(() => navigator.clipboard.readText());
-  expect(clip).toBe(selBefore);
+  // readText 可能因 clipboard 异步稍延迟，重试几次
+  let clip = '';
+  for (let i = 0; i < 5 && !clip; i++) {
+    clip = await page.evaluate(() => navigator.clipboard.readText().catch(() => ''));
+    if (!clip) await page.waitForTimeout(150);
+  }
+  // text/plain 现在是 markdown；纯文本段落 turndown 后≈原文，至少包含选中文本
+  expect(clip.length).toBeGreaterThan(0);
+  expect(clip).toContain('中文内容');
 });
 
 test('select-all action selects #output content', async ({ page }) => {
@@ -163,7 +172,7 @@ test('ask-about-selection opens chat with selection preview', async ({ page }) =
   await expect(page.locator('[data-testid="kb-chat-selected-preview"]')).toContainText(selBefore);
 });
 
-test('copy action writes rich text html (table preserved)', async ({ page }) => {
+test('copy action writes markdown + html (table preserved)', async ({ page }) => {
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
   await openFile(page, 'table-test.md');
   await page.waitForSelector('#output table.md-table', { timeout: 10_000 });
@@ -184,7 +193,7 @@ test('copy action writes rich text html (table preserved)', async ({ page }) => 
   await page.locator('.ctx-menu-item', { hasText: '复制' }).click();
   await page.waitForTimeout(200);
 
-  // Read clipboard text/html — table structure must be preserved
+  // text/html — table structure preserved for rich-text paste (Word/Notion)
   const html = await page.evaluate(async () => {
     const clips = await navigator.clipboard.read();
     for (const c of clips) {
@@ -198,7 +207,9 @@ test('copy action writes rich text html (table preserved)', async ({ page }) => 
   expect(html).toContain('<table');
   expect(html).toContain('张三');
 
-  // Plain text still present (cell content)
+  // text/plain — markdown source (Obsidian/markdown editors/记事本)
   const text = await page.evaluate(() => navigator.clipboard.readText());
+  expect(text).toContain('|');      // markdown pipe table
+  expect(text).toContain('姓名');   // header cell as markdown
   expect(text).toContain('张三');
 });
