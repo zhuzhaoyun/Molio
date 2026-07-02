@@ -1,9 +1,10 @@
 /**
  * Import conflict dialog — shown when files already exist at the target.
- * macOS Finder style: radio button strategy selection + "apply to all" checkbox.
+ * Presents three strategies (skip / rename / replace) with clear visual
+ * distinction between selected and unselected options.
  */
 
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 
 interface ConflictFile {
   file: string;
@@ -15,6 +16,24 @@ interface ImportConflictDialogProps {
   onCancel: () => void;
   onContinue: (strategy: 'skip' | 'replace' | 'rename') => void;
 }
+
+const STRATEGIES = [
+  {
+    value: 'rename' as const,
+    label: '保留两者',
+    desc: '新文件自动重命名，已有文件不受影响',
+  },
+  {
+    value: 'skip' as const,
+    label: '跳过',
+    desc: '不导入这些文件，保留已有文件',
+  },
+  {
+    value: 'replace' as const,
+    label: '替换',
+    desc: '用新文件覆盖已有文件',
+  },
+];
 
 export function ImportConflictDialog({
   show,
@@ -31,89 +50,53 @@ export function ImportConflictDialog({
       className="kb-overlay show"
       onClick={(e) => e.target === e.currentTarget && onCancel()}
     >
-      <div className="kb-modal" style={{ width: 480 }}>
+      <div className="kb-modal" style={{ width: 440 }}>
         <div className="kb-modal-header">
           <h2>文件冲突</h2>
           <button className="kb-modal-close" onClick={onCancel}>&times;</button>
         </div>
-        <div className="kb-modal-body">
-          <p style={{ fontSize: 13, color: 'var(--text)', marginBottom: 10 }}>
-            以下文件在目标位置已存在：
-          </p>
-          <div
-            style={{
-              maxHeight: 160,
-              overflowY: 'auto',
-              marginBottom: 16,
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-sm)',
-            }}
-          >
-            {conflicts.map((c, i) => (
-              <div
-                key={i}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '6px 10px',
-                  fontSize: 12.5,
-                  color: 'var(--text)',
-                  borderBottom: i < conflicts.length - 1 ? '1px solid var(--border)' : 'none',
-                }}
-              >
-                <span style={{ fontSize: 14 }}>📄</span>
-                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {c.file}
-                </span>
-              </div>
-            ))}
-          </div>
 
-          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
-            操作
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {([
-              ['skip', '跳过 — 保留已有文件'],
-              ['rename', '保留两者 — 新文件自动重命名'],
-              ['replace', '替换 — 覆盖已有文件'],
-            ] as const).map(([val, label]) => (
+        <div className="kb-modal-body" style={{ padding: '16px 20px' }}>
+          <p className="conflict-desc">
+            {conflicts.length} 个文件在目标位置已存在：
+          </p>
+
+          <ul className="conflict-file-list">
+            {conflicts.map((c) => (
+              <li key={c.file} className="conflict-file-item">
+                <span className="conflict-file-icon">📄</span>
+                <span className="conflict-file-name">{c.file}</span>
+              </li>
+            ))}
+          </ul>
+
+          <p className="conflict-desc">选择处理方式：</p>
+
+          <div className="conflict-strategy-list">
+            {STRATEGIES.map((s) => (
               <label
-                key={val}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '6px 8px',
-                  borderRadius: 'var(--radius-sm)',
-                  cursor: 'pointer',
-                  background: strategy === val ? 'var(--accent-tint)' : 'transparent',
-                  fontSize: 13,
-                  color: 'var(--text)',
-                }}
+                key={s.value}
+                className={`conflict-strategy-option${strategy === s.value ? ' is-selected' : ''}`}
               >
                 <input
                   type="radio"
                   name="conflict-strategy"
-                  value={val}
-                  checked={strategy === val}
-                  onChange={() => setStrategy(val)}
-                  style={{ accentColor: 'var(--accent)' }}
+                  value={s.value}
+                  checked={strategy === s.value}
+                  onChange={() => setStrategy(s.value)}
                 />
-                {label}
+                <span className="conflict-strategy-text">
+                  <span className="conflict-strategy-label">{s.label}</span>
+                  <span className="conflict-strategy-desc">{s.desc}</span>
+                </span>
               </label>
             ))}
           </div>
         </div>
+
         <div className="kb-modal-footer">
-          <button className="kb-btn" onClick={onCancel}>
-            取消
-          </button>
-          <button
-            className="kb-btn kb-btn-primary"
-            onClick={() => onContinue(strategy)}
-          >
+          <button className="kb-btn" onClick={onCancel}>取消</button>
+          <button className="kb-btn kb-btn-primary" onClick={() => onContinue(strategy)}>
             继续
           </button>
         </div>
