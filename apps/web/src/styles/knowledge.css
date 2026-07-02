@@ -2355,7 +2355,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--accent-tint);
+  background: var(--accent-soft);
   color: var(--accent);
   font-size: 12px;
   font-weight: 600;
@@ -2365,12 +2365,15 @@
 }
 
 /* Directory node drop target highlight — uses explicit class instead of :hover
-   because browsers suppress the :hover pseudo-class during drag operations. */
+   because browsers suppress the :hover pseudo-class during drag operations.
+   Uses box-shadow (not border) to avoid content layout shift when the class
+   is toggled during drag. */
 .kb-tree-group-label.drag-target {
   background: var(--accent-soft) !important;
-  border-left: 3px solid var(--accent);
-  box-shadow: inset 0 0 0 1px var(--accent);
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+  border-radius: var(--radius-sm);
+  /* override the default 120ms transition — drag feedback must be instant */
+  transition: none !important;
 }
 
 /* Drag ghost for internal moves (minimal — the browser default ghost is fine) */
