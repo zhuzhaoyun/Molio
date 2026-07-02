@@ -289,6 +289,19 @@ function TreeNodeItem({
     }
     e.dataTransfer.setData('text/plain', node.path);
     e.dataTransfer.effectAllowed = 'move';
+
+    // Build a clean drag image — icon + name only, no ingest badge or "+" button.
+    const el = e.currentTarget as HTMLElement;
+    const ghost = el.cloneNode(true) as HTMLElement;
+    ghost.querySelector('.kb-tree-trailing')?.remove();
+    ghost.style.position = 'fixed';
+    ghost.style.top = '-9999px';
+    ghost.style.left = '-9999px';
+    ghost.style.width = `${el.offsetWidth}px`;
+    document.body.appendChild(ghost);
+    e.dataTransfer.setDragImage(ghost, 0, 0);
+    // The browser captures the image synchronously; clean up on the next frame.
+    requestAnimationFrame(() => ghost.remove());
   }, [canDrag, node.path]);
 
   // Scroll into view when the file becomes active, or when the parent bumps
