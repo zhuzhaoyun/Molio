@@ -19,10 +19,12 @@ import { OutlinePanel } from './OutlinePanel';
 import { SearchPanel } from './SearchPanel';
 import { VaultManagerModal } from './VaultManager';
 import { ImportModal, CoseInstallPrompt, InputDialog, ConfirmDialog } from './KbModals';
+import { ImportConflictDialog } from './ImportConflictDialog';
 import { ContextMenu, type MenuItem } from './ContextMenu';
 import type { FileRef, PastedImage } from '../ChatComposer';
 import { buildAttachmentPrefix } from '../ChatComposer';
 import { useI18n } from '../../i18n';
+import { api } from '../../api/client';
 
 interface KnowledgeBasePageProps {
   agentId: string | null;
@@ -50,6 +52,22 @@ function resolveUrlFileNavigation(
   if (!vaultId) return null;
 
   return { vaultId, filePath };
+}
+
+/** Summarize import errors into a human-readable string for toasts. */
+function summarizeErrors(errors: Array<{ file: string; reason: string }>): string {
+  const counts: Record<string, number> = {};
+  for (const e of errors) {
+    counts[e.reason] = (counts[e.reason] || 0) + 1;
+  }
+  const parts: string[] = [];
+  if (counts['unsupported_format']) parts.push(`${counts['unsupported_format']} 个格式不支持`);
+  if (counts['file_too_large']) parts.push(`${counts['file_too_large']} 个超过 50MB 限制`);
+  if (counts['illegal_chars']) parts.push(`${counts['illegal_chars']} 个文件名含非法字符`);
+  if (counts['protected_dir']) parts.push(`${counts['protected_dir']} 个目标为受保护目录`);
+  if (counts['rename_exhausted']) parts.push(`${counts['rename_exhausted']} 个重命名失败`);
+  if (parts.length === 0) parts.push(`${errors.length} 个文件无法导入`);
+  return parts.join('，');
 }
 
 export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenChange, registerKbChatOnComplete, onOpenConversation }: KnowledgeBasePageProps) {
@@ -131,6 +149,15 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
     registerKbChatOnComplete(() => { kb.refreshTree(); });
     return () => registerKbChatOnComplete(() => {});
   }, [kb.refreshTree, registerKbChatOnComplete]);
+
+  // Import conflict dialog state
+  const [conflictDialog, setConflictDialog] = useState<{
+    show: boolean;
+    conflicts: Array<{ file: string }>;
+  }>({ show: false, conflicts: [] });
+
+  // Pending import files for conflict retry (replaces fragile `as any` function-property hack)
+  const pendingImportRef = useRef<{ files: File[]; targetDir: string; oversizedCount: number } | null>(null);
 
   const handleOpenQa = useCallback(() => {
     if (!kb.selectedFile) return;
@@ -634,6 +661,136 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
     setRenamingPath(null);
   }, []);
 
+  const handleMoveFile = useCallback(async (srcPath: string, destDir: string) => {
+    if (!kb.activeVault) return;
+    const fileName = srcPath.split('/').pop() ?? srcPath;
+    const newPath = `${destDir}/${fileName}`;
+
+    // Check for existing file at target
+    const targetExists = kb.tree.some((n) => {
+      const walk = (nodes: TreeNode[]): boolean => {
+        for (const node of nodes) {
+          if (node.path === newPath) return true;
+          if (node.type === 'directory' && node.children && walk(node.children)) return true;
+        }
+        return false;
+      };
+      return walk([n]);
+    });
+
+    if (targetExists) {
+      showToast('目标位置已存在同名文件');
+      return;
+    }
+
+    try {
+      await kb.renameFile(srcPath, newPath);
+    } catch (err) {
+      showToast(`移动文件失败：${err instanceof Error ? err.message : String(err)}`);
+    }
+  }, [kb.activeVault, kb.tree, kb.renameFile, showToast]);
+
+  const handleImportFiles = useCallback(async (files: File[], targetDir: string) => {
+    if (!kb.activeVault) return;
+
+    // Reject folders
+    const nonFiles = Array.from(files).filter((f) => f.type === '' && f.name.indexOf('.') === -1);
+    if (nonFiles.length > 0 && nonFiles.length === files.length) {
+      showToast('暂不支持导入文件夹');
+      return;
+    }
+
+    // Pre-flight checks — filter out files that would fail before any network request.
+    const MAX_FILE_SIZE = 50 * 1024 * 1024;
+    const oversized = Array.from(files).filter((f) => f.size > MAX_FILE_SIZE);
+    const validFiles = Array.from(files).filter((f) => f.size <= MAX_FILE_SIZE);
+    const preflightErrors: string[] = [];
+    if (oversized.length > 0) {
+      preflightErrors.push(`${oversized.length} 个超过 50MB 限制`);
+    }
+    if (validFiles.length === 0) {
+      showToast(preflightErrors.join('，'));
+      return;
+    }
+
+    // Progress toast for large imports
+    if (validFiles.length > 20) {
+      showToast(`正在导入 ${validFiles.length} 个文件...`);
+    }
+
+    try {
+      const result = await api.importFiles(kb.activeVault.id, validFiles, targetDir, 'ask');
+
+      // Build a consolidated message from pre-flight + daemon errors
+      const allErrors = [...preflightErrors];
+      if (result.errors.length > 0) {
+        allErrors.push(summarizeErrors(result.errors));
+      }
+
+      // Handle conflict response — conflicts field is separate from validation errors
+      if (result.conflicts && result.conflicts.length > 0) {
+        pendingImportRef.current = { files: validFiles, targetDir, oversizedCount: oversized.length };
+        setConflictDialog({ show: true, conflicts: result.conflicts });
+        if (allErrors.length > 0) {
+          showToast(`${allErrors.join('，')}，请处理文件冲突`);
+        }
+        return;
+      }
+
+      // Refresh tree
+      await kb.refreshTree();
+
+      // Show result toast
+      const imported = result.imported.length;
+      const renamed = result.renamed.length;
+      const skipped = result.skipped.length;
+
+      const parts: string[] = [];
+      if (imported > 0) parts.push(`${imported} 个文件`);
+      if (renamed > 0) parts.push(`${renamed} 个已重命名以保留原文件`);
+      if (skipped > 0) parts.push(`${skipped} 个已跳过`);
+      if (allErrors.length > 0) parts.push(allErrors.join('，'));
+
+      if (parts.length > 0) {
+        showToast(`导入完成：${parts.join('，')}`);
+      }
+    } catch (err) {
+      showToast(`导入失败：${err instanceof Error ? err.message : '无法连接到服务'}`);
+    }
+  }, [kb.activeVault, kb.refreshTree, showToast]);
+
+  const handleConflictContinue = useCallback(async (strategy: 'skip' | 'replace' | 'rename') => {
+    setConflictDialog({ show: false, conflicts: [] });
+    const pending = pendingImportRef.current;
+    if (!pending || !kb.activeVault) return;
+    const { files, targetDir, oversizedCount } = pending;
+    pendingImportRef.current = null; // clear after reading
+
+    try {
+      const result = await api.importFiles(kb.activeVault.id, Array.from(files), targetDir ?? '', strategy);
+      await kb.refreshTree();
+
+      const imported = result.imported.length;
+      const renamed = result.renamed.length;
+      const skipped = result.skipped.length;
+
+      const parts: string[] = [];
+      if (imported + renamed > 0) parts.push(`成功导入 ${imported + renamed} 个文件`);
+      if (skipped > 0) {
+        parts.push(strategy === 'skip' ? `${skipped} 个冲突文件已跳过` : `${skipped} 个已跳过`);
+      }
+      // Pre-flight errors were shown in the first toast; carry forward only oversized
+      // so the user sees what happened to those files too.
+      if (oversizedCount > 0) parts.push(`${oversizedCount} 个超过 50MB 限制未导入`);
+
+      if (parts.length > 0) {
+        showToast(`导入完成：${parts.join('，')}`);
+      }
+    } catch (err) {
+      showToast(`导入失败：${err instanceof Error ? err.message : '无法连接到服务'}`);
+    }
+  }, [kb.activeVault, kb.refreshTree, showToast]);
+
   // ─── Save edited content ───
 
   const handleSave = useCallback(async () => {
@@ -669,6 +826,8 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
         renamingPath={renamingPath}
         onRenameComplete={handleRenameComplete}
         onRenameCancel={handleRenameCancel}
+        onImportFiles={handleImportFiles}
+        onMoveFile={handleMoveFile}
       >
         <div className="kb-resize-handle" onMouseDown={handleResizeStart} />
       </KbFilePanel>
@@ -802,7 +961,47 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
       <ImportModal
         show={kb.showImport}
         vaultName={kb.activeVault?.name ?? ''}
+        vaultId={kb.activeVault?.id ?? ''}
         onClose={() => kb.setShowImport(false)}
+        onImportComplete={(result, importFiles, targetDir, oversizedCount = 0) => {
+          kb.refreshTree();
+
+          // Build pre-flight errors so they can be merged into toasts
+          const preflightErrors: string[] = [];
+          if (oversizedCount > 0) preflightErrors.push(`${oversizedCount} 个超过 50MB 限制`);
+
+          // Check for conflicts — uses separate conflicts field (not mixed with errors)
+          if (result.conflicts && result.conflicts.length > 0) {
+            pendingImportRef.current = { files: importFiles, targetDir, oversizedCount };
+            setConflictDialog({ show: true, conflicts: result.conflicts });
+            const allErrors = [...preflightErrors];
+            if (result.errors.length > 0) allErrors.push(summarizeErrors(result.errors));
+            if (allErrors.length > 0) {
+              showToast(`${allErrors.join('，')}，请处理文件冲突`);
+            }
+            return;
+          }
+
+          const imported = result.imported.length;
+          const renamed = result.renamed.length;
+          const skipped = result.skipped.length;
+          const parts: string[] = [];
+          if (imported + renamed > 0) parts.push(`成功导入 ${imported + renamed} 个文件`);
+          if (skipped > 0) parts.push(`${skipped} 个已跳过`);
+          if (preflightErrors.length > 0) parts.push(preflightErrors.join('，'));
+          if (result.errors.length > 0) parts.push(summarizeErrors(result.errors));
+          if (parts.length > 0) {
+            showToast(`导入完成：${parts.join('，')}`);
+          }
+        }}
+      />
+
+      {/* Import conflict dialog */}
+      <ImportConflictDialog
+        show={conflictDialog.show}
+        conflicts={conflictDialog.conflicts}
+        onCancel={() => { setConflictDialog({ show: false, conflicts: [] }); pendingImportRef.current = null; }}
+        onContinue={handleConflictContinue}
       />
 
       {/* COSE extension install prompt */}
