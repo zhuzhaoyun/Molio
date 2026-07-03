@@ -211,15 +211,6 @@ const zh: Record<string, string> = {
   'graph.selectVault': '选择知识库',
   'graph.empty': '该知识库中没有 Markdown 文件',
 
-  // ── FileOperationCard ──
-  'fileOp.open': '打开文件',
-  'fileOp.viewChanges': '查看本次修改',
-  'fileOp.collapseChanges': '收起变更',
-  'fileOp.discuss': '讨论这个文件',
-
-  // ── DiffView ──
-  'diff.noChanges': '无变更',
-
   // ── FileChatPanel ──
   'fileChat.running': '运行中…',
   'fileChat.close': '关闭',
