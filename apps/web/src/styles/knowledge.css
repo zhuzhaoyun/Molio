@@ -904,6 +904,41 @@
   opacity: 0.5;
 }
 
+/* ── Large-text fallback preview ──
+   Files beyond LARGE_TEXT_THRESHOLD bypass doocs/md (marked + DOMPurify
+   would freeze the main thread). Shown as a truncated monospace block. */
+.kb-large-text-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.kb-large-text-notice {
+  padding: 10px 14px;
+  border-radius: 6px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.kb-large-text-pre {
+  margin: 0;
+  padding: 16px 20px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: 13px;
+  line-height: 1.5;
+  /* No wrapping: long lines scroll horizontally. Avoids the O(n) wrap
+     recalculation that pre-wrap does on every resize/scroll for big files. */
+  white-space: pre;
+  overflow: auto;
+  max-height: 70vh;
+  color: var(--text);
+}
+
 /* ══════════ Edit Mode Editor ══════════ */
 
 .kb-edit-mode {

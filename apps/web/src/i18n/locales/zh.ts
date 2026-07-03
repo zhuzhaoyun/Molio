@@ -260,6 +260,8 @@ const zh: Record<string, string> = {
   'kb.statsChars': '字符',
   'kb.statsReadTime': '阅读时间',
   'kb.statsReadTimeSuffix': '分钟',
+  'kb.statsSize': '大小',
+  'kb.largeFileNotice': '{name} · {size}：文件过大，已跳过 Markdown 渲染，以纯文本显示。',
   'kb.askAboutFile': '问答',
   'kb.askSelection': '就此提问',
   'kb.cannotOpen': '无法打开文件',

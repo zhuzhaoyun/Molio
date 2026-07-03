@@ -260,6 +260,8 @@ const en: Record<string, string> = {
   'kb.statsChars': 'Chars',
   'kb.statsReadTime': 'Read',
   'kb.statsReadTimeSuffix': 'min',
+  'kb.statsSize': 'Size',
+  'kb.largeFileNotice': '{name} · {size}: file too large, skipped Markdown rendering, shown as plain text.',
   'kb.askAboutFile': 'Ask AI',
   'kb.askSelection': 'Ask about this',
   'kb.cannotOpen': 'Cannot open file',

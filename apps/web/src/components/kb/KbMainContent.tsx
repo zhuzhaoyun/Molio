@@ -40,6 +40,17 @@ type FileCategory = 'text' | 'image' | 'binary';
 const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp', '.ico']);
 const BINARY_EXTS = new Set(['.pdf', '.docx', '.doc', '.pptx', '.ppt', '.xlsx', '.xls']);
 
+/**
+ * Files larger than this are NOT run through the doocs/md pipeline
+ * (`marked` tokenization + `DOMPurify.sanitize` on a multi-MB string builds a
+ * full DOM tree and walks it synchronously on the main thread → UI freeze).
+ * Instead they render as a full, non-wrapping monospace `<pre>` (horizontal
+ * scroll for long lines, no truncation). This is still O(whole-file) for
+ * layout — fine up to ~tens of MB; a virtualized viewer (CodeMirror) is the
+ * proper fix for truly huge files. See test.json (4.3 MB) freeze bug.
+ */
+const LARGE_TEXT_THRESHOLD = 256 * 1024; // 256 KB (string length, i.e. UTF-16 chars)
+
 function getFileCategory(fileName: string): FileCategory {
   const ext = fileName.slice(fileName.lastIndexOf('.')).toLowerCase();
   if (IMAGE_EXTS.has(ext)) return 'image';
@@ -131,11 +142,26 @@ export function KbMainContent({
   const contentRef = useRef<HTMLDivElement>(null);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
 
+  // Raw text for the current file — the source of truth for both the
+  // markdown pipeline and the large-text fallback. Memoized so downstream
+  // memos / child components don't see a fresh string on unrelated re-renders.
+  const rawContent = useMemo(
+    () => editedContent ?? fileContent?.content ?? '',
+    [editedContent, fileContent?.content],
+  );
+
+  // Large text files bypass the doocs/md pipeline entirely (see
+  // LARGE_TEXT_THRESHOLD). This also short-circuits the three global-regex
+  // preprocessing passes below, which are O(n) over the whole string.
+  const isLargeText = rawContent.length > LARGE_TEXT_THRESHOLD;
+
   // Memoize the rendered markdown content so MdRenderer (wrapped in memo)
   // doesn't see a new string prop on unrelated re-renders.
   const renderedContent = useMemo(
-    () => proxyExternalImages(preprocessWikiEmbeds(stripTrackingPixels(editedContent ?? fileContent?.content ?? ''), vaultId ?? '')),
-    [editedContent, fileContent?.content, vaultId],
+    () => isLargeText
+      ? rawContent
+      : proxyExternalImages(preprocessWikiEmbeds(stripTrackingPixels(rawContent), vaultId ?? '')),
+    [rawContent, isLargeText, vaultId],
   );
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
@@ -361,7 +387,7 @@ export function KbMainContent({
           <p className="kb-load-error-path">{selectedFile}</p>
           <p className="kb-load-error-hint">{t('kb.fileNotFound')}</p>
         </div>
-      ) : category === 'text' && isTypesetMode ? (
+      ) : category === 'text' && isTypesetMode && !isLargeText ? (
         <MdTypesetEditor
           key={selectedFile}
           initialContent={fileContent?.content ?? ''}
@@ -369,7 +395,7 @@ export function KbMainContent({
           vaultId={vaultId ?? ''}
           selectedFile={selectedFile}
         />
-      ) : category === 'text' && isEditMode ? (
+      ) : category === 'text' && isEditMode && !isLargeText ? (
         // Edit mode: Milkdown WYSIWYG Markdown editor
         <MdEditor
           initialContent={fileContent?.content ?? ''}
@@ -379,8 +405,25 @@ export function KbMainContent({
       ) : category === 'text' ? (
         <div className="kb-content-area" ref={contentRef} onContextMenu={handleContextMenu}>
           {fileContent ? (
-            // 优先使用编辑后的内容（未保存的更改），否则使用原始文件内容
-            <MdRenderer content={renderedContent} themeConfig={themeConfig} />
+            isLargeText ? (
+              // Large text: skip marked + DOMPurify (would freeze the main
+              // thread). Render the FULL content as a monospace, non-wrapping
+              // <pre> (horizontal scroll for long lines) — no truncation.
+              // Still O(whole-file) for layout; a virtualized viewer is the
+              // proper fix for huge files (see follow-up plan).
+              <div className="kb-large-text-preview" data-testid="kb-large-text-preview">
+                <div className="kb-large-text-notice">
+                  {t('kb.largeFileNotice', {
+                    name: fileName,
+                    size: formatFileSize(fileContent.size),
+                  })}
+                </div>
+                <pre className="kb-large-text-pre">{rawContent}</pre>
+              </div>
+            ) : (
+              // 优先使用编辑后的内容（未保存的更改），否则使用原始文件内容
+              <MdRenderer content={renderedContent} themeConfig={themeConfig} />
+            )
           ) : (
             <div className="kb-empty-state"><p>Loading...</p></div>
           )}
@@ -513,6 +556,17 @@ export function KbMainContent({
         <div className="kb-status-bar" data-testid="kb-status-bar">
           {(() => {
             const text = editedContent ?? fileContent?.content ?? '';
+            // Skip the two regex scans in countWords for large files — they
+            // run on every render and are O(n) over a multi-MB string.
+            if (text.length > LARGE_TEXT_THRESHOLD) {
+              return (
+                <>
+                  <span>{t('kb.statsSize')}: {formatFileSize(text.length)}</span>
+                  <span className="kb-status-sep">/</span>
+                  <span>{t('kb.statsChars')}: {text.length.toLocaleString()}</span>
+                </>
+              );
+            }
             const words = countWords(text);
             const chars = text.length;
             return (
