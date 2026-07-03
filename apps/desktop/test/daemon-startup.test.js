@@ -252,6 +252,55 @@ describe('prepare-resources.mjs: better-sqlite3 must use Electron prebuild', () 
   });
 });
 
+describe('main.js: daemon startup failure must show an error page, not spin forever', () => {
+  // Regression: when startDaemonProduction() rejects (timeout/crash), the else
+  // branch used to call showDaemonErrorPage() which was never defined. The
+  // resulting ReferenceError was swallowed by uncaughtException, leaving the
+  // window stuck on splash.html's spinner indefinitely.
+  it('should define showDaemonErrorPage function', () => {
+    assert.ok(
+      /\bfunction\s+showDaemonErrorPage\s*\(/.test(mainJs),
+      'showDaemonErrorPage must be defined so daemon failure shows an error page instead of an infinite spinner'
+    );
+  });
+
+  it('should call showDaemonErrorPage in the daemon-not-ready else branch', () => {
+    const elsePos = mainJs.indexOf('} else {');
+    assert.ok(elsePos !== -1, 'whenReady must have an else branch for daemon-not-ready');
+    const afterElse = mainJs.slice(elsePos);
+    assert.ok(
+      afterElse.includes('showDaemonErrorPage()'),
+      'the daemon-not-ready else branch must call showDaemonErrorPage()'
+    );
+  });
+
+  it('should load daemon-error.html from the error page', () => {
+    assert.ok(
+      mainJs.includes('daemon-error.html'),
+      'showDaemonErrorPage must load daemon-error.html'
+    );
+  });
+
+  it('should expose a restartApp action in preload for the error page', () => {
+    const preload = readFileSync(
+      path.resolve(import.meta.dirname, '../src/preload.cjs'),
+      'utf-8'
+    );
+    assert.ok(
+      preload.includes("restartApp") && preload.includes('app:restart'),
+      'preload must expose restartApp() -> app:restart IPC for the error page restart button'
+    );
+  });
+
+  it('should handle app:restart IPC with app.relaunch + exit', () => {
+    const handlerPos = mainJs.indexOf("'app:restart'");
+    assert.ok(handlerPos !== -1, "main.js must register an 'app:restart' IPC handler");
+    const block = mainJs.slice(handlerPos, handlerPos + 200);
+    assert.ok(block.includes('app.relaunch'), 'app:restart must call app.relaunch()');
+    assert.ok(block.includes('app.exit'), 'app:restart must call app.exit() to quit the current instance');
+  });
+});
+
 describe('main.js: graceful daemon shutdown to preserve last assistant reply', () => {
   it('should request /api/shutdown before force-killing daemon', () => {
     assert.ok(

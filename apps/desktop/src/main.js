@@ -3,7 +3,7 @@ import { spawn, execSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setupAutoUpdater } from './updater.js';
-import { log } from './logger.js';
+import { log, getLogPath } from './logger.js';
 
 const errMsg = (err) => (err instanceof Error ? err.message : String(err));
 
@@ -152,6 +152,28 @@ function loadApp() {
     log('info', 'main', 'daemon ready — loading app');
     mainWindow.loadURL('http://localhost:3100');
   }
+}
+
+/**
+ * Show a static error page when the daemon fails to start.
+ *
+ * Replaces the splash screen (which would otherwise spin forever) with a clear
+ * message, the log file path, and actions to open the log folder or relaunch.
+ * The log path is passed via query string so the page can display it without
+ * needing Node integration.
+ */
+function showDaemonErrorPage() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  let logPath = null;
+  try {
+    logPath = getLogPath();
+  } catch (err) {
+    log('warn', 'main', `unable to resolve log path: ${err?.message ?? err}`);
+  }
+  log('error', 'main', `showing daemon error page (log=${logPath})`);
+  const errorPage = path.join(__dirname, 'daemon-error.html');
+  const query = logPath ? { log: logPath } : undefined;
+  mainWindow.loadFile(errorPage, query ? { query } : undefined);
 }
 
 /** Whether the window is still showing the production splash screen. */
@@ -503,6 +525,13 @@ app.on('before-quit', (event) => {
 });
 
 // ─── IPC handlers ───
+
+// Relaunch the app (used by the daemon-error page's "重启" button).
+ipcMain.handle('app:restart', () => {
+  log('info', 'main', 'app:restart requested — relaunching');
+  app.relaunch();
+  app.exit(0);
+});
 
 // Renderer signals it has mounted and registered its `molio:navigate`
 // listener. Flush any navigation that was queued during cold start (before the

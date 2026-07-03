@@ -34,6 +34,9 @@ const desktopAPI = {
   /** Rename a local file (oldPath -> newPath). */
   renameFile: (oldPath, newPath) => ipcRenderer.invoke('rename-file', oldPath, newPath),
 
+  /** Relaunch the app (used by the daemon-error page). */
+  restartApp: () => ipcRenderer.invoke('app:restart'),
+
   /**
    * Subscribe to in-page navigation requests from the main process
    * (triggered by molio://open/... when the app is already running).
