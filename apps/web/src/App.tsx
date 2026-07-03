@@ -63,9 +63,13 @@ export default function App() {
   useEffect(() => {
     const electron = window.__electron__;
     if (!electron?.onNavigate) return; // absent in plain browser dev
-    return electron.onNavigate(({ vaultId, filePath }) => {
+    const unsub = electron.onNavigate(({ vaultId, filePath }) => {
       navigate('/knowledge', { state: { openFile: filePath, vaultId: vaultId ?? undefined } });
     });
+    // Signal readiness so main flushes any molio://open that arrived during
+    // cold start (before this listener was registered) instead of dropping it.
+    electron.notifyReady?.();
+    return unsub;
   }, [navigate]);
 
   // Load config to get defaultAgentId and locale

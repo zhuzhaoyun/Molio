@@ -45,6 +45,14 @@ const desktopAPI = {
     ipcRenderer.on('molio:navigate', handler);
     return () => ipcRenderer.removeListener('molio:navigate', handler);
   },
+
+  /**
+   * Tell the main process the renderer has mounted and registered its
+   * molio:navigate listener. Main uses this to flush any navigation that was
+   * queued during cold start (before this listener existed), so a
+   * molio://open/... fired right after launch still opens the target file.
+   */
+  notifyReady: () => ipcRenderer.send('molio:renderer-ready'),
 };
 
 // Updater API — event listeners + actions
