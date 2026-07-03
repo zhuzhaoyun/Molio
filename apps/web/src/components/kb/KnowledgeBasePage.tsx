@@ -262,7 +262,7 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
     });
   }, [tabs, kb, runOrConfirmDiscard]);
 
-  // Sync: when URL navigation resolves, open in tab. The path from external
+  // When URL navigation resolves, open in tab. The path from external
   // navigation (assistant links, molio://, graph) may omit the extension and/or
   // wiki/ prefix, so ask the daemon to canonicalize it before opening — this
   // keeps tab title, tree highlighting, and "在目录中定位" consistent with

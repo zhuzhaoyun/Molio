@@ -340,6 +340,7 @@ describe('Knowledge routes — file operations', () => {
 
   describe('GET /vaults/:id/resolve/*', () => {
     it('returns the canonical path for an extension-less link', async () => {
+      mkdirSync(join(vaultDir, 'notes'), { recursive: true });
       writeFileSync(join(vaultDir, 'notes', 'idea.md'), '# idea\n');
       const res = await app.request(
         `/api/knowledge/vaults/${vaultId}/resolve/notes/idea`,
