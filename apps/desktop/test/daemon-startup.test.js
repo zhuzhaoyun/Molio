@@ -161,7 +161,10 @@ describe('main.js: protocol launch should leave splash after daemon is ready', (
     const navigatePos = mainJs.indexOf('function navigateFromProtocolUrl');
     assert.ok(navigatePos !== -1, 'navigateFromProtocolUrl must exist');
 
-    const navigateBlock = mainJs.slice(navigatePos, navigatePos + 900);
+    // Window must cover the whole navigateFromProtocolUrl body, including the
+    // open-file branch — otherwise the launch branch (which comes after it)
+    // falls outside the slice and the assertions falsely fail.
+    const navigateBlock = mainJs.slice(navigatePos, navigatePos + 2000);
     assert.ok(
       navigateBlock.includes("target?.action === 'launch'"),
       'navigateFromProtocolUrl must handle parsed launch actions'
@@ -184,6 +187,26 @@ describe('main.js: protocol launch should leave splash after daemon is ready', (
     assert.ok(
       mainJs.includes("params.set('file', target.filePath)"),
       'file-only protocol target must navigate to the knowledge page with a file param'
+    );
+  });
+
+  it('molio://open should fall back to loadURL when the renderer is not ready', () => {
+    // Regression: when a stale Molio process holds the single-instance lock
+    // with a dead daemon, the window shows the static daemon-error page (not
+    // the SPA), so molio:renderer-ready never fires and a queued navigation
+    // was silently dropped — the clip saved but the file never opened.
+    // The fix: if rendererReady is false, loadURL the knowledge route
+    // directly instead of queuing.
+    const navigatePos = mainJs.indexOf('function navigateFromProtocolUrl');
+    assert.ok(navigatePos !== -1, 'navigateFromProtocolUrl must exist');
+    const navigateBlock = mainJs.slice(navigatePos, navigatePos + 2000);
+    assert.ok(
+      navigateBlock.includes('!rendererReady'),
+      'open-file navigation must fall back to loadURL when the renderer is not ready'
+    );
+    assert.ok(
+      /isShowingSplash\(\)\s*\|\|\s*!rendererReady/.test(navigateBlock),
+      'the loadURL fallback condition must cover both splash and not-ready states'
     );
   });
 });

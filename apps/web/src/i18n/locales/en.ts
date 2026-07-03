@@ -211,15 +211,6 @@ const en: Record<string, string> = {
   'graph.selectVault': 'Select vault',
   'graph.empty': 'No Markdown files in this vault',
 
-  // ── FileOperationCard ──
-  'fileOp.open': 'Open file',
-  'fileOp.viewChanges': 'View changes',
-  'fileOp.collapseChanges': 'Collapse changes',
-  'fileOp.discuss': 'Discuss this file',
-
-  // ── DiffView ──
-  'diff.noChanges': 'No changes',
-
   // ── FileChatPanel ──
   'fileChat.running': 'Running…',
   'fileChat.close': 'Close',
@@ -247,6 +238,7 @@ const en: Record<string, string> = {
   'kb.expandAll': 'Expand all',
   'kb.save': 'Save',
   'kb.copy': 'Copy',
+  'kb.ctxSelectAll': 'Select All',
   'kb.publish': 'Publish',
   'kb.typeset': 'Typeset',
   'kb.exitTypeset': 'Exit typeset',

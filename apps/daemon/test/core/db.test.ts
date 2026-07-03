@@ -20,6 +20,13 @@ import {
   listMessages,
   upsertMessage,
   appendMessageEvent,
+  createVault,
+  deleteVault,
+  getActiveVaultId,
+  setActiveVaultId,
+  getKv,
+  setKv,
+  deleteKv,
 } from '../../src/core/db.js';
 import type { ChatMessage } from '@molio/contracts';
 import type Database from 'better-sqlite3';
@@ -277,6 +284,41 @@ describe('SQLite persistence', () => {
       // Messages should be gone
       const messages = listMessages(db, conv.id);
       assert.equal(messages.length, 0);
+    });
+  });
+
+  describe('kv store', () => {
+    it('should set, get, and delete a key', () => {
+      assert.equal(getKv(db, 'missing'), null);
+      setKv(db, 'foo', 'bar');
+      assert.equal(getKv(db, 'foo'), 'bar');
+      // Upsert — second set overwrites
+      setKv(db, 'foo', 'baz');
+      assert.equal(getKv(db, 'foo'), 'baz');
+      deleteKv(db, 'foo');
+      assert.equal(getKv(db, 'foo'), null);
+    });
+  });
+
+  describe('active vault', () => {
+    it('should default to null and round-trip an id', () => {
+      assert.equal(getActiveVaultId(db), null);
+      const vault = createVault(db, 'Active Test', join(tempDir, 'active-test-vault'));
+      setActiveVaultId(db, vault.id);
+      assert.equal(getActiveVaultId(db), vault.id);
+      // Clear via null
+      setActiveVaultId(db, null);
+      assert.equal(getActiveVaultId(db), null);
+    });
+
+    it('should clear active-vault when its vault is deleted', () => {
+      const vault = createVault(db, 'Doomed', join(tempDir, 'doomed-vault'));
+      setActiveVaultId(db, vault.id);
+      assert.equal(getActiveVaultId(db), vault.id);
+
+      deleteVault(db, vault.id);
+      // deleteVault self-clears the active-vault pointer
+      assert.equal(getActiveVaultId(db), null);
     });
   });
 });
