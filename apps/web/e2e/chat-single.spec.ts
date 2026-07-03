@@ -107,4 +107,29 @@ test.describe('Chat — single turn', () => {
     // Chat header should be visible
     await expect(page.locator('.home-header')).toBeVisible();
   });
+
+  test('composer input is cleared after first send (landing → chat-active remount)', async ({ page }) => {
+    // Regression: the landing-page composer and the chat-active composer are
+    // different component instances sharing the `home` draft cache. On the
+    // first send, HomePage switches branches and unmounts the landing
+    // composer before its draft-sync effect can run for the queued
+    // setText(''), so the chat-active composer rehydrated from the stale
+    // draft and the input was not cleared.
+    await gotoHome(page);
+
+    const textarea = page.locator('[data-testid="composer-input"]');
+    await sendMessage(page, 'Hello world');
+
+    // User bubble must be present (send actually happened)
+    await expect(page.locator('[data-testid="user-message"]')).toBeVisible({ timeout: 5_000 });
+
+    // Input must be cleared after the branch switch
+    await expect(textarea).toHaveValue('');
+
+    // And the draft must not resurrect on the next render — type again, send
+    // a second message, and confirm the input clears once more.
+    await textarea.fill('Second message');
+    await textarea.press('Enter');
+    await expect(textarea).toHaveValue('');
+  });
 });

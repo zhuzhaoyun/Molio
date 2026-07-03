@@ -199,6 +199,14 @@ export function ChatComposer({
     if (hasContent && !isRunning) {
       onSend(trimmed, fileRefs, doneImages);
       setText('');
+      // Clear the draft cache synchronously *before* the parent re-renders.
+      // On the home page, the first send flips HomePage from the landing
+      // branch to the chat-active branch, which unmounts this ChatComposer
+      // and mounts a fresh one. That unmount happens before the draft-sync
+      // effect (which depends on `text`) can run for the just-queued
+      // setText(''), so the new instance would otherwise rehydrate from the
+      // stale draft and the input would not be cleared.
+      if (composerKey) drafts.delete(composerKey);
       setFileRefs([]);
       // Revoke any remaining blob URLs (error/uploading thumbs) before clearing.
       for (const img of pastedImages) {
