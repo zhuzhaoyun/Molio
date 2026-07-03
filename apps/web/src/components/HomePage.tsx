@@ -134,6 +134,7 @@ export function HomePage({
         {/* Composer at the bottom */}
         <div className="home-composer-bar">
           <ChatComposer
+            composerKey="home"
             isRunning={isRunning}
             onSend={handleSend}
             onCancel={onCancel}
@@ -162,6 +163,7 @@ export function HomePage({
         {/* Composer */}
         <div className="home-composer-wrap">
           <ChatComposer
+            composerKey="home"
             isRunning={isRunning}
             onSend={handleSend}
             onCancel={onCancel}

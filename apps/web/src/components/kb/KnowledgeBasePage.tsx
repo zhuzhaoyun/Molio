@@ -7,7 +7,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import type { TreeNode } from '@molio/contracts';
 import { useKnowledge } from '../../hooks/useKnowledge';
-import { useKbChat } from '../../hooks/useKbChat';
+import type { KbChatState } from '../../hooks/useKbChat';
 import { useKbTabs } from '../../hooks/useKbTabs';
 import { kbTabsStore } from '../../stores/kbTabsStore';
 import { vaultStore } from '../../stores/vaultStore';
@@ -28,6 +28,11 @@ import { api } from '../../api/client';
 
 interface KnowledgeBasePageProps {
   agentId: string | null;
+  // KB Chat — owned by App for navigation persistence
+  kbChat: KbChatState;
+  kbChatOpen: boolean;
+  onKbChatOpenChange: (open: boolean) => void;
+  registerKbChatOnComplete: (fn: () => void) => void;
   onOpenConversation?: (conversationId: string) => void;
 }
 
@@ -65,14 +70,14 @@ function summarizeErrors(errors: Array<{ file: string; reason: string }>): strin
   return parts.join('，');
 }
 
-export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBasePageProps) {
+export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenChange, registerKbChatOnComplete, onOpenConversation }: KnowledgeBasePageProps) {
   const { t } = useI18n();
   const kb = useKnowledge();
   const tabs = useKbTabs();
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const [chatOpen, setChatOpen] = useState(false);
+
   const [qaSelectedText, setQaSelectedText] = useState<string | null>(null);
   const [pendingUrlNav, setPendingUrlNav] = useState<UrlFileNavigation | null>(null);
   const [showOutline, setShowOutline] = useState(false);
@@ -138,6 +143,13 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
     onConfirm: () => void;
   }>({ show: false, title: '', message: '', onConfirm: () => {} });
 
+  // Register onComplete callback with App so wiki builds trigger tree refresh.
+  // Cleanup resets to noop when this page unmounts.
+  useEffect(() => {
+    registerKbChatOnComplete(() => { kb.refreshTree(); });
+    return () => registerKbChatOnComplete(() => {});
+  }, [kb.refreshTree, registerKbChatOnComplete]);
+
   // Import conflict dialog state
   const [conflictDialog, setConflictDialog] = useState<{
     show: boolean;
@@ -147,25 +159,18 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
   // Pending import files for conflict retry (replaces fragile `as any` function-property hack)
   const pendingImportRef = useRef<{ files: File[]; targetDir: string; oversizedCount: number } | null>(null);
 
-  // Unified KB chat hook — covers QA, build, lint, ingest
-  const kbChat = useKbChat({
-    agentId,
-    vaultPath: kb.activeVault?.path ?? null,
-    onComplete: () => { kb.refreshTree(); },
-  });
-
   const handleOpenQa = useCallback(() => {
     if (!kb.selectedFile) return;
     setQaSelectedText(null);
     kbChat.openQa();
-    setChatOpen(true);
+    onKbChatOpenChange(true);
   }, [kb.selectedFile, kbChat]);
 
   const handleAskAboutSelection = useCallback((selectedText: string) => {
     if (!kb.selectedFile) return;
     setQaSelectedText(selectedText);
     kbChat.openQa();
-    setChatOpen(true);
+    onKbChatOpenChange(true);
   }, [kb.selectedFile, kbChat]);
 
   // ─── Tab-aware file selection ───
@@ -340,8 +345,8 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
   }, []);
 
   const handleOpenWikiOp = useCallback((type: 'build' | 'lint') => {
-    const interrupt = () => { kbChat.openWikiOp(type); setChatOpen(true); };
-    const queue = () => { kbChat.queueWikiOp(type); setChatOpen(true); };
+    const interrupt = () => { kbChat.openWikiOp(type); onKbChatOpenChange(true); };
+    const queue = () => { kbChat.queueWikiOp(type); onKbChatOpenChange(true); };
     if (kbChat.isRunning) {
       confirmRunningOp({
         title: '当前任务进行中',
@@ -358,8 +363,8 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
 
   const handleIngestFile = useCallback((filePath: string) => {
     if (!agentId) return;
-    const interrupt = () => { kbChat.openIngest(filePath); setChatOpen(true); };
-    const queue = () => { kbChat.queueIngest(filePath); setChatOpen(true); };
+    const interrupt = () => { kbChat.openIngest(filePath); onKbChatOpenChange(true); };
+    const queue = () => { kbChat.queueIngest(filePath); onKbChatOpenChange(true); };
     if (kbChat.isRunning) {
       confirmRunningOp({
         title: '当前任务进行中',
@@ -373,9 +378,9 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
   }, [agentId, kbChat, confirmRunningOp]);
 
   const handleCloseChat = useCallback(() => {
-    setChatOpen(false);
     kbChat.close();
-  }, [kbChat]);
+    onKbChatOpenChange(false);
+  }, [kbChat, onKbChatOpenChange]);
 
   // Wrap send to prepend selected text as context for QA mode
   const handleKbChatSend = useCallback(
@@ -416,7 +421,7 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
         if (!kb.selectedFile) return;
         setQaSelectedText(null);
         kbChat.openQa();
-        setChatOpen(true);
+        onKbChatOpenChange(true);
       }
     };
     window.addEventListener('keydown', handler);
@@ -435,7 +440,7 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
         if (!kb.selectedFile) return;
         setQaSelectedText(null);
         kbChat.openQa();
-        setChatOpen(true);
+        onKbChatOpenChange(true);
       }
     };
     document.addEventListener('keydown', handler);
@@ -541,7 +546,7 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
           }
           setQaSelectedText(null);
           kbChat.openQa();
-          setChatOpen(true);
+          onKbChatOpenChange(true);
         },
       });
     } else {
@@ -903,8 +908,9 @@ export function KnowledgeBasePage({ agentId, onOpenConversation }: KnowledgeBase
       </div>
 
       {/* Unified KB Chat Panel (right side) */}
-      {chatOpen && (
+      {kbChatOpen && (
         <KbChatPanel
+          composerKey="kb"
           mode={kbChat.mode}
           messages={kbChat.messages}
           isRunning={kbChat.isRunning}
