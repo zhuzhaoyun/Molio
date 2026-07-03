@@ -132,6 +132,12 @@ function migrate(db: SqliteDb): void {
 
     CREATE INDEX IF NOT EXISTS idx_kb_history_vault
       ON kb_history(vault_id, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS kv (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
   `);
 
   addColumnIfMissing(db, 'conversations', 'channel_type', "TEXT NOT NULL DEFAULT 'desktop'");
@@ -469,6 +475,48 @@ export function createVault(db: SqliteDb, name: string, vaultPath: string, descr
 
 export function deleteVault(db: SqliteDb, id: string): void {
   db.prepare('DELETE FROM vaults WHERE id = ?').run(id);
+  // Clear active-vault if it pointed at the deleted vault.
+  if (getActiveVaultId(db) === id) {
+    setActiveVaultId(db, null);
+  }
+}
+
+// ─── Key/value store (active-vault etc.) ───
+
+export function getKv(db: SqliteDb, key: string): string | null {
+  const row = db.prepare('SELECT value FROM kv WHERE key = ?').get(key) as
+    | { value: string }
+    | undefined;
+  return row?.value ?? null;
+}
+
+export function setKv(db: SqliteDb, key: string, value: string): void {
+  db.prepare(
+    `INSERT INTO kv (key, value, updated_at) VALUES (?, ?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+  ).run(key, value, Date.now());
+}
+
+export function deleteKv(db: SqliteDb, key: string): void {
+  db.prepare('DELETE FROM kv WHERE key = ?').run(key);
+}
+
+// ─── Active vault ───
+
+const ACTIVE_VAULT_KEY = 'active_vault';
+
+/** Returns the id of the user's currently-selected vault, or null. */
+export function getActiveVaultId(db: SqliteDb): string | null {
+  return getKv(db, ACTIVE_VAULT_KEY);
+}
+
+/** Set/clear the active vault. Pass null to clear. */
+export function setActiveVaultId(db: SqliteDb, id: string | null): void {
+  if (id) {
+    setKv(db, ACTIVE_VAULT_KEY, id);
+  } else {
+    deleteKv(db, ACTIVE_VAULT_KEY);
+  }
 }
 
 // ─── KB History ───

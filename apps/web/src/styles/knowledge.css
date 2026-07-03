@@ -904,31 +904,6 @@
   opacity: 0.5;
 }
 
-/* Float "ask about selection" button */
-.kb-float-ask-btn {
-  position: fixed;
-  z-index: 30;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 5px 10px;
-  background: var(--accent);
-  color: #fff;
-  border: none;
-  border-radius: var(--radius-sm);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  box-shadow: var(--shadow-md);
-  white-space: nowrap;
-  font-family: inherit;
-  transition: background 0.12s;
-}
-
-.kb-float-ask-btn:hover {
-  background: var(--accent-hover);
-}
-
 /* ══════════ Edit Mode Editor ══════════ */
 
 .kb-edit-mode {

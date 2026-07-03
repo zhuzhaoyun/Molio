@@ -238,6 +238,7 @@ const zh: Record<string, string> = {
   'kb.expandAll': '展开全部',
   'kb.save': '保存',
   'kb.copy': '复制',
+  'kb.ctxSelectAll': '全选',
   'kb.publish': '发布',
   'kb.typeset': '排版',
   'kb.exitTypeset': '退出排版',

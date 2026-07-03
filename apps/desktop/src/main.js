@@ -18,6 +18,16 @@ app.name = 'Molio';
 let mainWindow = null;
 let daemonProcess = null;
 
+// Whether the renderer has mounted and registered its `molio:navigate`
+// listener yet. On cold start the SPA doesn't mount until after the daemon is
+// up and loadApp() runs — which is *after* the clipper's /api/health poll
+// already reports ready. So a molio://open/... that fires right after launch
+// (warm second-instance path) would reach a renderer that isn't listening yet
+// and the IPC would be dropped, leaving the just-saved file unopened. We queue
+// such navigations and flush them once the renderer signals readiness.
+let rendererReady = false;
+let pendingNavigation = null;
+
 /** Whether the app is running in development mode (not packaged) */
 function isDevMode() {
   return !app.isPackaged;
@@ -109,6 +119,15 @@ function createWindow() {
     mainWindow?.show();
   });
 
+  // A full page load (cold-start loadApp, or any reload) recreates the
+  // renderer context, so the previous molio:navigate listener is gone and
+  // molio:renderer-ready will fire again once the SPA re-mounts. Re-arm on
+  // every did-start-loading so a queued navigation never gets delivered to a
+  // stale listener that no longer exists.
+  mainWindow.webContents.on('did-start-loading', () => {
+    rendererReady = false;
+  });
+
   // Intercept window.open() — open in system browser instead of Electron
   // This is critical for the COSE publish flow: the bridge page must run
   // in the user's real Chrome (where the COSE extension is installed),
@@ -176,6 +195,35 @@ function buildKnowledgeUrlFromProtocolTarget(target) {
 }
 
 /**
+ * Deliver an open-file navigation to the renderer (warm-start path).
+ *
+ * If the renderer has mounted and registered its `molio:navigate` listener,
+ * send the IPC for in-page routing (no reload, no state loss).
+ *
+ * If it hasn't yet — e.g. a clip just cold-launched Molio and the SPA is still
+ * booting after loadApp() — queue the navigation. The renderer flushes it via
+ * `molio:renderer-ready` once its listener is wired up. Without this queue,
+ * the IPC would be delivered before the listener exists and the just-saved
+ * file would never open.
+ */
+function deliverNavigation(target) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (rendererReady) {
+    log('info', 'main', `in-page navigate: vault=${target.vaultId ?? '(active)'} file=${target.filePath}`);
+    mainWindow.webContents.send('molio:navigate', {
+      vaultId: target.vaultId,
+      filePath: target.filePath,
+    });
+  } else {
+    pendingNavigation = {
+      vaultId: target.vaultId,
+      filePath: target.filePath,
+    };
+    log('info', 'main', `renderer not ready — queued navigate: vault=${target.vaultId ?? '(active)'} file=${target.filePath}`);
+  }
+}
+
+/**
  * Parse a molio:// protocol URL and navigate the Electron window accordingly.
  *
  * Uses path-style URLs (not query params) because Windows shell mangles `?` and
@@ -192,9 +240,21 @@ function navigateFromProtocolUrl(protocolUrl) {
   try {
     const target = parseMolioProtocolUrl(protocolUrl);
     if (target?.action === 'open-file') {
-      const appUrl = buildKnowledgeUrlFromProtocolTarget(target);
-      log('info', 'main', `navigating to ${appUrl}`);
-      mainWindow.loadURL(appUrl);
+      // Splash, error page, or renderer not yet ready: the in-page IPC path
+      // can't deliver (no SPA listener, or a non-SPA page like the daemon
+      // error page that never sends molio:renderer-ready, so a queued nav
+      // would be dropped and the just-saved file never opens). Fall back to
+      // a full loadURL of the knowledge route — the SPA reads ?vault=&file=
+      // and opens the file. Reload is fine here since the renderer is already
+      // in a broken/transient state; the warm healthy path uses IPC below.
+      if (isShowingSplash() || !rendererReady) {
+        const appUrl = buildKnowledgeUrlFromProtocolTarget(target);
+        log('info', 'main', `navigating to ${appUrl} (renderer ${rendererReady ? 'on splash' : 'not ready'})`);
+        pendingNavigation = null; // loadURL supersedes any stale queued nav
+        mainWindow.loadURL(appUrl);
+      } else {
+        deliverNavigation(target);
+      }
       return;
     }
 
@@ -264,8 +324,9 @@ if (!singleLock) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
     }
-    // Handle molio:// protocol URL for navigation
-    // Format: molio://open?vault=<vaultId>&file=<filePath>
+    // Handle molio:// protocol URL for navigation (path-style — see
+    // parseMolioProtocolUrl; query-param form was abandoned due to Windows
+    // mangling '?' and '&').
     const protocolUrl = commandLine.find(arg => arg.startsWith('molio://'));
     if (protocolUrl) {
       log('info', 'main', `second-instance triggered via ${protocolUrl}`);
@@ -442,6 +503,22 @@ app.on('before-quit', (event) => {
 });
 
 // ─── IPC handlers ───
+
+// Renderer signals it has mounted and registered its `molio:navigate`
+// listener. Flush any navigation that was queued during cold start (before the
+// listener existed), so a molio://open/... fired right after launch still
+// opens the just-saved file instead of being dropped.
+ipcMain.on('molio:renderer-ready', () => {
+  rendererReady = true;
+  if (pendingNavigation && mainWindow && !mainWindow.isDestroyed()) {
+    const nav = pendingNavigation;
+    pendingNavigation = null;
+    log('info', 'main', `renderer ready — flushing queued navigate: vault=${nav.vaultId ?? '(active)'} file=${nav.filePath}`);
+    mainWindow.webContents.send('molio:navigate', nav);
+  } else {
+    log('info', 'main', 'renderer ready (no queued navigation to flush)');
+  }
+});
 
 ipcMain.handle('show-directory-picker', async () => {
   const focusedWindow = BrowserWindow.getFocusedWindow();

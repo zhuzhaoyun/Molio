@@ -5,15 +5,34 @@
  * - Binary (pdf/docx/pptx): file info card + "open with system app" button
  */
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import type { FileContent } from '@molio/contracts';
 import type { ThemeConfig } from './MdStylePanel';
 import { MdRenderer } from './MdRenderer';
 import { MdTypesetEditor } from './MdTypesetEditor';
 import { MdEditor } from './MdEditor';
+import { ContextMenu } from './ContextMenu';
+import type { MenuItem } from './ContextMenu';
 import { preprocessWikiEmbeds, proxyExternalImages, stripTrackingPixels } from '../../hooks/useKnowledge';
 import { api } from '../../api/client';
 import { useI18n } from '../../i18n';
+import TurndownService from 'turndown';
+import { gfm } from 'turndown-plugin-gfm';
+
+/**
+ * Lazy singleton HTML→Markdown converter. Used by the copy action to write a
+ * Markdown `text/plain` slot alongside `text/html`, so pasting a table (or
+ * any selection) into Obsidian / a Markdown editor / 记事本 yields Markdown
+ * source instead of flat text or HTML. GFM plugin enables pipe-table support.
+ */
+let _turndown: TurndownService | null = null;
+function getTurndown(): TurndownService {
+  if (!_turndown) {
+    _turndown = new TurndownService({ headingStyle: 'atx', bulletListMarker: '-' });
+    _turndown.use(gfm);
+  }
+  return _turndown;
+}
 
 /** File categories for rendering strategy */
 type FileCategory = 'text' | 'image' | 'binary';
@@ -109,66 +128,27 @@ export function KbMainContent({
   editedContent,
 }: KbMainContentProps) {
   const { t } = useI18n();
-  // Selected text floating "ask" button
-  const [floatBtn, setFloatBtn] = useState<{ text: string; x: number; y: number } | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const floatBtnRef = useRef<HTMLButtonElement>(null);
-  // Track the text-selection debounce timer so it can be cleared on each new
-  // call and on unmount (avoids setFloatBtn on an unmounted component).
-  const selectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
 
-  useEffect(() => {
-    return () => {
-      if (selectTimerRef.current) clearTimeout(selectTimerRef.current);
-    };
+  // Memoize the rendered markdown content so MdRenderer (wrapped in memo)
+  // doesn't see a new string prop on unrelated re-renders.
+  const renderedContent = useMemo(
+    () => proxyExternalImages(preprocessWikiEmbeds(stripTrackingPixels(editedContent ?? fileContent?.content ?? ''), vaultId ?? '')),
+    [editedContent, fileContent?.content, vaultId],
+  );
+
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setCtxMenu({ x: e.clientX, y: e.clientY });
   }, []);
 
-  const handleTextSelect = useCallback(() => {
-    // Small delay so the selection is settled
-    if (selectTimerRef.current) clearTimeout(selectTimerRef.current);
-    selectTimerRef.current = setTimeout(() => {
-      const sel = window.getSelection();
-      if (!sel || sel.isCollapsed || !sel.toString().trim()) {
-        setFloatBtn(null);
-        return;
-      }
-      const text = sel.toString().trim();
-      if (!text) { setFloatBtn(null); return; }
+  const closeContextMenu = useCallback(() => setCtxMenu(null), []);
 
-      // Check selection is inside our content area
-      const contentEl = contentRef.current;
-      if (!contentEl) return;
-      // Guard: in edge cases selection can be non-collapsed with zero ranges,
-      // which would make getRangeAt(0) throw IndexSizeError.
-      if (sel.rangeCount === 0) {
-        setFloatBtn(null);
-        return;
-      }
-      const range = sel.getRangeAt(0);
-      if (!contentEl.contains(range.commonAncestorContainer)) {
-        setFloatBtn(null);
-        return;
-      }
-
-      // Position near the END of selection (collapse to end for accurate coords)
-      const endRange = range.cloneRange();
-      endRange.collapse(false);
-      const endRect = endRange.getBoundingClientRect();
-      // Clamp to viewport so the button never overflows (measure the button
-      // width rather than assuming a magic 120px).
-      const btnWidth = floatBtnRef.current?.offsetWidth ?? 100;
-      const x = Math.min(endRect.right + 8, window.innerWidth - btnWidth - 16);
-      const y = Math.max(endRect.bottom + 4, 8);
-      setFloatBtn({ text, x, y });
-    }, 0);
+  const selectionText = useCallback(() => {
+    const sel = window.getSelection();
+    return sel ? sel.toString().trim() : '';
   }, []);
-
-  const handleAskSelection = useCallback(() => {
-    if (!floatBtn) return;
-    onAskAboutSelection?.(floatBtn.text);
-    setFloatBtn(null);
-    window.getSelection()?.removeAllRanges();
-  }, [floatBtn, onAskAboutSelection]);
 
   // Ctrl+S / Cmd+S to save
   useEffect(() => {
@@ -397,25 +377,12 @@ export function KbMainContent({
           selectedFile={selectedFile}
         />
       ) : category === 'text' ? (
-        <div className="kb-content-area" ref={contentRef} onMouseUp={handleTextSelect}>
+        <div className="kb-content-area" ref={contentRef} onContextMenu={handleContextMenu}>
           {fileContent ? (
             // 优先使用编辑后的内容（未保存的更改），否则使用原始文件内容
-            <MdRenderer content={proxyExternalImages(preprocessWikiEmbeds(stripTrackingPixels(editedContent ?? fileContent.content), vaultId ?? ''))} themeConfig={themeConfig} />
+            <MdRenderer content={renderedContent} themeConfig={themeConfig} />
           ) : (
             <div className="kb-empty-state"><p>Loading...</p></div>
-          )}
-          {/* Float "ask about selection" button */}
-          {floatBtn && (
-            <button
-              ref={floatBtnRef}
-              type="button"
-              className="kb-float-ask-btn"
-              data-testid="kb-float-ask-btn"
-              style={{ left: floatBtn.x, top: floatBtn.y }}
-              onClick={handleAskSelection}
-            >
-              💬 {t('kb.askSelection')}
-            </button>
           )}
         </div>
       ) : category === 'image' && vaultId ? (
@@ -446,6 +413,99 @@ export function KbMainContent({
         <div className="kb-content-area">
           <div className="kb-empty-state"><p>Loading...</p></div>
         </div>
+      )}
+
+      {ctxMenu && (
+        <ContextMenu
+          items={(() => {
+            const sel = selectionText();
+            // Capture the selection's HTML at menu-open time so the copy
+            // handler can write rich text (text/html) — preserves table
+            // structure and inline formatting when pasting into rich editors.
+            // sel is captured by value too; clicking the menu item may clear
+            // the live selection before the async clipboard write resolves.
+            const selHtml = (() => {
+              const s = window.getSelection();
+              if (!s || s.rangeCount === 0) return '';
+              const div = document.createElement('div');
+              div.appendChild(s.getRangeAt(0).cloneContents());
+              // doocs/md injects <style> blocks inside #output; strip them so
+              // their CSS text doesn't leak into the copied markdown/html.
+              div.querySelectorAll('style, script').forEach((el) => el.remove());
+              return div.innerHTML;
+            })();
+            // Markdown source for the text/plain slot — tables become pipe
+            // tables, lists/bold/links become Markdown. Falls back to flat
+            // selection text if conversion fails.
+            const selMd = (() => {
+              if (!selHtml) return sel;
+              try {
+                const md = getTurndown().turndown(selHtml);
+                return md || sel;
+              } catch {
+                return sel;
+              }
+            })();
+            const items: MenuItem[] = [
+              {
+                label: t('kb.copy'),
+                disabled: !sel,
+                onClick: async () => {
+                  if (!sel) return;
+                  // Triple-slot copy: text/plain = Markdown (Obsidian / md
+                  // editors / 记事本), text/html = rich text (Word / Notion /
+                  // email). Tables survive in both.
+                  try {
+                    const item = new ClipboardItem({
+                      'text/plain': new Blob([selMd], { type: 'text/plain' }),
+                      'text/html': new Blob([selHtml], { type: 'text/html' }),
+                    });
+                    await navigator.clipboard.write([item]);
+                    return;
+                  } catch { /* ClipboardItem/write unavailable — fall back */ }
+                  try {
+                    await navigator.clipboard.writeText(sel);
+                  } catch {
+                    // 回退：用遗留命令复制
+                    try {
+                      const ta = document.createElement('textarea');
+                      ta.value = sel;
+                      document.body.appendChild(ta);
+                      ta.select();
+                      document.execCommand('copy');
+                      ta.remove();
+                    } catch { /* 静默 */ }
+                  }
+                },
+              },
+              {
+                label: t('kb.ctxSelectAll'),
+                onClick: () => {
+                  const out = contentRef.current?.querySelector('#output');
+                  if (!out) return;
+                  const range = document.createRange();
+                  range.selectNodeContents(out);
+                  const s = window.getSelection();
+                  if (!s) return;
+                  s.removeAllRanges();
+                  s.addRange(range);
+                },
+              },
+              { divider: true },
+              {
+                label: t('kb.askSelection'),
+                disabled: !sel,
+                onClick: () => {
+                  if (!sel) return;
+                  onAskAboutSelection?.(sel);
+                },
+              },
+            ];
+            return items;
+          })()}
+          position={ctxMenu}
+          onClose={closeContextMenu}
+        />
       )}
 
       {/* Status bar: word count / char count / read time (text files only) */}
