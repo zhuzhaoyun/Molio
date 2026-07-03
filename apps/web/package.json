@@ -10,9 +10,6 @@
     "test:e2e": "npx playwright test"
   },
   "dependencies": {
-    "@milkdown/kit": "^7.21.2",
-    "@milkdown/react": "^7.21.2",
-    "@milkdown/theme-nord": "^7.21.2",
     "@molio/contracts": "workspace:*",
     "@react-sigma/core": "^5.0.6",
     "@reactour/tour": "^3.8.0",
