@@ -211,15 +211,6 @@ const en: Record<string, string> = {
   'graph.selectVault': 'Select vault',
   'graph.empty': 'No Markdown files in this vault',
 
-  // ── FileOperationCard ──
-  'fileOp.open': 'Open file',
-  'fileOp.viewChanges': 'View changes',
-  'fileOp.collapseChanges': 'Collapse changes',
-  'fileOp.discuss': 'Discuss this file',
-
-  // ── DiffView ──
-  'diff.noChanges': 'No changes',
-
   // ── FileChatPanel ──
   'fileChat.running': 'Running…',
   'fileChat.close': 'Close',

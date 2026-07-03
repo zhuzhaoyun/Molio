@@ -27,25 +27,6 @@ export function buildNavState(
   };
 }
 
-export interface AskAboutState {
-  route: string;
-  state: { askAboutFile: string; vaultId: string };
-}
-
-/**
- * Build the navigation target for "ask about this file".
- * Navigates to home page with file context for a new chat.
- */
-export function buildAskAboutState(
-  vaultId: string,
-  filePath: string,
-): AskAboutState {
-  return {
-    route: '/',
-    state: { askAboutFile: filePath, vaultId },
-  };
-}
-
 /**
  * React hook for file navigation.
  *
@@ -53,10 +34,6 @@ export function buildAskAboutState(
  *   Works regardless of current page — React Router triggers
  *   the KB page's useEffect even when already on /knowledge
  *   because location.state changes.
- *
- * askAboutFile: navigate to / with askAboutFile state.
- *   HomePage can use this to start a new conversation with
- *   file context pre-loaded.
  */
 export function useFileNavigation() {
   const navigate = useNavigate();
@@ -75,13 +52,5 @@ export function useFileNavigation() {
     [navigate],
   );
 
-  const askAboutFile = useCallback(
-    (vaultId: string, filePath: string) => {
-      const nav = buildAskAboutState(vaultId, filePath);
-      navigate(nav.route, { state: nav.state });
-    },
-    [navigate],
-  );
-
-  return { openFile, askAboutFile, getActiveVaultId };
+  return { openFile, getActiveVaultId };
 }
