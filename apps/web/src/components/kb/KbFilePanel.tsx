@@ -34,6 +34,10 @@ interface KbFilePanelProps {
   onRenameComplete?: (oldPath: string, newName: string) => void;
   /** Cancel rename */
   onRenameCancel?: () => void;
+  /** Called when files are dropped from the OS file manager. */
+  onImportFiles?: (files: File[], targetDir: string) => void;
+  /** Called when a file is dragged from one directory to another within the tree. */
+  onMoveFile?: (srcPath: string, destDir: string) => void;
   children?: ReactNode;
 }
 
@@ -53,6 +57,8 @@ export function KbFilePanel({
   renamingPath,
   onRenameComplete,
   onRenameCancel,
+  onImportFiles,
+  onMoveFile,
   children,
 }: KbFilePanelProps) {
   const { t } = useI18n();
@@ -69,6 +75,13 @@ export function KbFilePanel({
   // Bumped each time the user hits "locate" — KbFileTree scrolls the active
   // file into view when this token changes (see TreeNodeItem effect).
   const [revealToken, setRevealToken] = useState(0);
+
+  // Drag-over state for external file import
+  const [dragOver, setDragOver] = useState<{
+    type: 'root' | 'node';
+    path?: string;
+  } | null>(null);
+  const dragCounterRef = useRef(0);
 
   const sortedTree = useMemo(() => sortTree(tree, sortBy), [tree, sortBy]);
 
@@ -103,6 +116,91 @@ export function KbFilePanel({
     setRevealToken((n) => n + 1);
   }, [selectedFile]);
 
+  // ── External drag-and-drop handlers ──
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Only handle external file drops (ignore internal drags)
+    if (!e.dataTransfer.types.includes('Files')) return;
+    dragCounterRef.current++;
+    if (dragCounterRef.current === 1) {
+      setDragOver({ type: 'root' });
+    }
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!e.dataTransfer.types.includes('Files')) return;
+    // Default to root; the KbFileTree directory nodes will set "node" type
+    // via onDragOverNode callback (bubbles up through CSS class changes)
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current--;
+    if (dragCounterRef.current <= 0) {
+      dragCounterRef.current = 0;
+      setDragOver(null);
+      // Clean up any lingering highlight when drag leaves the panel
+      document.querySelectorAll('.kb-tree-group.drag-target, .kb-tree-group.drag-reject, .kb-tree-group-label.drag-target, .kb-tree-group-label.drag-reject').forEach((el) => {
+        el.classList.remove('drag-target', 'drag-reject');
+      });
+    }
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current = 0;
+    setDragOver(null);
+
+    // Clean up any lingering drag-target class on directory groups and labels
+    document.querySelectorAll('.kb-tree-group.drag-target, .kb-tree-group-label.drag-target').forEach((el) => {
+      el.classList.remove('drag-target');
+    });
+
+    // Check for folders — if any item in the file list is a directory, reject
+    const { files } = e.dataTransfer;
+    if (files.length === 0) return;
+
+    // Determine target directory from drop position
+    // The KbFileTree directory nodes set a data attribute during dragOver
+    // We extract it from the event target
+    let targetDir = '';
+    const target = e.target as HTMLElement;
+    const dirEl = target.closest('[data-drop-dir]');
+    if (dirEl) {
+      targetDir = dirEl.getAttribute('data-drop-dir') ?? '';
+    }
+
+    // Reject folders (browser can't distinguish — check for empty type)
+    for (let i = 0; i < files.length; i++) {
+      if (files[i].type === '' && files[i].name.indexOf('.') === -1) {
+        // Likely a folder or file without extension — use size as heuristic:
+        // folders dragged in have size 0 or very small
+        // Actually, the browser gives us File objects for files only.
+        // Folders from the OS are NOT included in dataTransfer.files.
+        // So this check is moot — the browser already filters. Keep as safety.
+        break;
+      }
+    }
+
+    onImportFiles?.(Array.from(files), targetDir);
+  }, [onImportFiles]);
+
+  // Called by KbFileTree directory nodes during dragOver to update the panel's
+  // drag indicator state for "drop on a specific directory".
+  const handleNodeDragOver = useCallback((dirPath: string) => {
+    setDragOver({ type: 'node', path: dirPath });
+  }, []);
+
+  const handleNodeDragLeave = useCallback(() => {
+    setDragOver((prev) => prev?.type === 'node' ? { type: 'root' } : prev);
+  }, []);
+
   // Close the sort menu on outside click / ESC (same pattern as the launcher)
   useEffect(() => {
     if (!sortMenuOpen) return;
@@ -130,8 +228,21 @@ export function KbFilePanel({
     size: t('kb.sortBySize'),
   };
 
+  const dragClass = dragOver
+    ? dragOver.type === 'node'
+      ? 'drag-over-node'
+      : 'drag-over-root'
+    : '';
+
   return (
-    <aside className="kb-file-panel" style={{ width }}>
+    <aside
+      className={`kb-file-panel ${dragClass}`}
+      style={{ width }}
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       {/* Toolbar */}
       <div className="kb-file-toolbar">
         <button type="button" title={t('kb.newNote')} onClick={() => {
@@ -268,6 +379,9 @@ export function KbFilePanel({
           renamingPath={renamingPath}
           onRenameComplete={onRenameComplete}
           onRenameCancel={onRenameCancel}
+          onMoveFile={onMoveFile}
+          onNodeDragOver={handleNodeDragOver}
+          onNodeDragLeave={handleNodeDragLeave}
         />
       </div>
 

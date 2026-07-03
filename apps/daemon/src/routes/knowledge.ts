@@ -32,6 +32,9 @@ import {
   renamePath,
   ensureVaultDir,
   searchFiles,
+  importFiles,
+  isInsideProtected,
+  type ImportResult,
 } from '../core/knowledge.js';
 import { annotateTreeStatus } from '../core/wiki-status.js';
 import { VAULT_TREE_CHANGED_EVENT, type VaultWatcher } from '../core/vault-watcher.js';
@@ -245,6 +248,13 @@ export function knowledgeRoutes(
       if (!body.newPath) {
         return c.json({ error: { code: 'BAD_REQUEST', message: 'newPath is required' } }, 400);
       }
+      // Explicit protected-dir check for clearer error messaging
+      if (isInsideProtected(relPath)) {
+        return c.json({ error: { code: 'BAD_REQUEST', message: `Cannot move files out of protected directory: ${relPath}` } }, 400);
+      }
+      if (isInsideProtected(body.newPath)) {
+        return c.json({ error: { code: 'BAD_REQUEST', message: `Cannot move files into protected directory: ${body.newPath}` } }, 400);
+      }
       renamePath(vault.path, relPath, body.newPath);
       addKbHistory(db, vault.id, 'edit', `Renamed "${relPath}" → "${body.newPath}"`);
       return c.json({ ok: true });
@@ -388,6 +398,88 @@ export function knowledgeRoutes(
     } catch (err) {
       console.error('[knowledge] asset upload failed:', err);
       const message = err instanceof Error ? err.message : 'Failed to upload asset';
+      return c.json({ error: { code: 'INTERNAL', message } }, 500);
+    }
+  });
+
+  // ─── File import (drag-and-drop / ImportModal) ───
+
+  const MAX_IMPORT_SIZE = 50 * 1024 * 1024; // 50 MB
+
+  // POST /api/knowledge/vaults/:id/import — import files via multipart
+  app.post('/vaults/:id/import', async (c) => {
+    const vault = getVault(db, c.req.param('id'));
+    if (!vault) {
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
+    }
+
+    // Size guard via Content-Length (if present — FormData uses chunked encoding)
+    const rawLen = c.req.header('Content-Length');
+    if (rawLen != null) {
+      const contentLength = parseInt(rawLen, 10);
+      if (contentLength > MAX_IMPORT_SIZE) {
+        return c.json({ error: { code: 'PAYLOAD_TOO_LARGE', message: 'Upload too large (max 50MB)' } }, 413);
+      }
+    }
+
+    try {
+      const body = await c.req.parseBody({ all: true });
+      const targetDir = (typeof body['targetDir'] === 'string' ? body['targetDir'] : '').replace(/^\/+|\/+$/g, '');
+      const conflict = (typeof body['conflict'] === 'string' ? body['conflict'] : 'ask') as
+        'ask' | 'skip' | 'replace' | 'rename';
+
+      // Validation: targetDir must not be a protected directory
+      if (targetDir && isInsideProtected(targetDir)) {
+        return c.json(
+          { error: { code: 'BAD_REQUEST', message: `Cannot import into protected directory: ${targetDir}` } },
+          400,
+        );
+      }
+
+      // Collect files from the multipart body
+      const fileEntries: Array<{ name: string; buffer: Buffer }> = [];
+      const perFileErrors: ImportResult['errors'] = [];
+      for (const [key, value] of Object.entries(body)) {
+        if (!key.startsWith('files')) continue;
+        if (Array.isArray(value)) {
+          for (const item of value) {
+            if (item && typeof item === 'object' && 'arrayBuffer' in item) {
+              const file = item as File;
+              const buf = Buffer.from(await file.arrayBuffer());
+              if (buf.byteLength > MAX_IMPORT_SIZE) {
+                perFileErrors.push({ file: file.name, reason: 'file_too_large' });
+              } else {
+                fileEntries.push({ name: file.name, buffer: buf });
+              }
+            }
+          }
+        } else if (value && typeof value === 'object' && 'arrayBuffer' in value) {
+          const file = value as File;
+          const buf = Buffer.from(await file.arrayBuffer());
+          if (buf.byteLength > MAX_IMPORT_SIZE) {
+            perFileErrors.push({ file: file.name, reason: 'file_too_large' });
+          } else {
+            fileEntries.push({ name: file.name, buffer: buf });
+          }
+        }
+      }
+
+      if (fileEntries.length === 0) {
+        return c.json({ error: { code: 'BAD_REQUEST', message: 'No files provided' } }, 400);
+      }
+
+      const result = importFiles(vault.path, fileEntries, targetDir, conflict);
+      result.errors = [...perFileErrors, ...result.errors];
+
+      // If conflict: "ask" and conflicts were found, return 409
+      if (result.conflicts && result.conflicts.length > 0) {
+        return c.json(result, 409);
+      }
+
+      addKbHistory(db, vault.id, 'import', `${result.imported.length} file(s) imported`);
+      return c.json(result, 200);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to import files';
       return c.json({ error: { code: 'INTERNAL', message } }, 500);
     }
   });

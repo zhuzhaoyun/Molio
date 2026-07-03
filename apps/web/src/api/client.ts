@@ -416,6 +416,40 @@ export const api = {
     return res.json();
   },
 
+  /** Import files (upload) to a vault directory. */
+  async importFiles(
+    vaultId: string,
+    files: File[],
+    targetDir = '',
+    conflict = 'ask',
+  ): Promise<{
+    imported: string[];
+    renamed: Array<{ from: string; to: string }>;
+    skipped: string[];
+    errors: Array<{ file: string; reason: string }>;
+    conflicts?: Array<{ file: string; reason: string }>;
+  }> {
+    const formData = new FormData();
+    for (const file of files) {
+      formData.append('files', file);
+    }
+    if (targetDir) {
+      formData.append('targetDir', targetDir);
+    }
+    formData.append('conflict', conflict);
+
+    const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/import`, {
+      method: 'POST',
+      body: formData,
+    });
+    // 409 = conflict: "ask" with conflicts — still valid JSON response
+    if (!res.ok && res.status !== 409) {
+      const err = await res.json().catch(() => ({ error: { message: `Import failed: ${res.status}` } }));
+      throw new Error(err.error?.message ?? `Import failed: ${res.status}`);
+    }
+    return res.json();
+  },
+
   async deleteFile(vaultId: string, filePath: string): Promise<void> {
     const encoded = encodeURIComponent(filePath).replace(/%2F/g, '/');
     const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/files/${encoded}`, { method: 'DELETE' });
