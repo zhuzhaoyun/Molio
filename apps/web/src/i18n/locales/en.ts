@@ -247,6 +247,7 @@ const en: Record<string, string> = {
   'kb.expandAll': 'Expand all',
   'kb.save': 'Save',
   'kb.copy': 'Copy',
+  'kb.ctxSelectAll': 'Select All',
   'kb.publish': 'Publish',
   'kb.typeset': 'Typeset',
   'kb.exitTypeset': 'Exit typeset',

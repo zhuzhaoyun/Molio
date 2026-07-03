@@ -11,7 +11,7 @@
  * Do NOT add custom CSS here — use the theme system instead.
  */
 
-import { useEffect, useRef, useMemo, useState } from 'react';
+import { useEffect, useRef, useMemo, useState, memo } from 'react';
 import { initRenderer } from '@molio/doocs-md/src/renderer/renderer-impl';
 import { renderMarkdown, postProcessHtml } from '@molio/doocs-md/src/utils/markdownHelpers';
 import { applyTheme } from '@molio/doocs-md/src/theme/themeApplicator';
@@ -55,7 +55,7 @@ function buildRendererOptions(base: Partial<IOpts>, themeConfig?: ThemeConfig): 
   };
 }
 
-export function MdRenderer({
+export const MdRenderer = memo(function MdRenderer({
   content,
   themeConfig,
   options = defaultOptions,
@@ -123,4 +123,4 @@ export function MdRenderer({
       dangerouslySetInnerHTML={{ __html: renderedHtml }}
     />
   );
-}
+});
