@@ -72,6 +72,22 @@ export default function App() {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // In-page navigation from molio:// protocol (desktop main → renderer IPC).
+  // When a clip lands and molio://open/... fires while the app is already open,
+  // the main process sends `molio:navigate` instead of reloading the window,
+  // so we route to the file via React Router with no flash/state loss.
+  useEffect(() => {
+    const electron = window.__electron__;
+    if (!electron?.onNavigate) return; // absent in plain browser dev
+    const unsub = electron.onNavigate(({ vaultId, filePath }) => {
+      navigate('/knowledge', { state: { openFile: filePath, vaultId: vaultId ?? undefined } });
+    });
+    // Signal readiness so main flushes any molio://open that arrived during
+    // cold start (before this listener was registered) instead of dropping it.
+    electron.notifyReady?.();
+    return unsub;
+  }, [navigate]);
+
   // Load config to get defaultAgentId and locale
   useEffect(() => {
     api.getConfig()

@@ -17,6 +17,8 @@ import {
   deleteVault,
   listKbHistory,
   addKbHistory,
+  getActiveVaultId,
+  setActiveVaultId,
 } from '../core/db.js';
 import {
   scanTree,
@@ -86,6 +88,42 @@ export function knowledgeRoutes(
     deleteVault(db, c.req.param('id'));
     void vaultWatcher.unwatch(c.req.param('id'));
     return c.body(null, 204);
+  });
+
+  // ─── Active vault ───
+
+  // GET /api/knowledge/active-vault — the user's currently-selected vault.
+  // Used by external clients (e.g. the Molio-forked Web Clipper) to know which
+  // vault a new clip should land in, mirroring "save to the open vault".
+  app.get('/active-vault', (c) => {
+    const id = getActiveVaultId(db);
+    if (!id) {
+      return c.json({ vaultId: null, vault: null });
+    }
+    const vault = getVault(db, id);
+    if (!vault) {
+      // Stale pointer — vault was deleted out of band. Clear it.
+      setActiveVaultId(db, null);
+      return c.json({ vaultId: null, vault: null });
+    }
+    return c.json({ vaultId: id, vault: { ...vault, fileCount: countFilesSafe(vault.path) } });
+  });
+
+  // POST /api/knowledge/active-vault { id } — set the active vault.
+  // Called by the web/desktop UI whenever the user switches vault, so external
+  // clients reading GET /active-vault follow along.
+  app.post('/active-vault', async (c) => {
+    const body = await c.req.json<{ id: string | null }>();
+    if (body.id === null || body.id === undefined) {
+      setActiveVaultId(db, null);
+      return c.json({ ok: true, vaultId: null });
+    }
+    const vault = getVault(db, body.id);
+    if (!vault) {
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
+    }
+    setActiveVaultId(db, body.id);
+    return c.json({ ok: true, vaultId: body.id });
   });
 
   // ─── File tree ───

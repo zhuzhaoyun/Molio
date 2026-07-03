@@ -33,6 +33,26 @@ const desktopAPI = {
 
   /** Rename a local file (oldPath -> newPath). */
   renameFile: (oldPath, newPath) => ipcRenderer.invoke('rename-file', oldPath, newPath),
+
+  /**
+   * Subscribe to in-page navigation requests from the main process
+   * (triggered by molio://open/... when the app is already running).
+   * Avoids a full reload — the SPA routes to the file via React Router.
+   * Returns an unsubscribe function.
+   */
+  onNavigate: (callback) => {
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on('molio:navigate', handler);
+    return () => ipcRenderer.removeListener('molio:navigate', handler);
+  },
+
+  /**
+   * Tell the main process the renderer has mounted and registered its
+   * molio:navigate listener. Main uses this to flush any navigation that was
+   * queued during cold start (before this listener existed), so a
+   * molio://open/... fired right after launch still opens the target file.
+   */
+  notifyReady: () => ipcRenderer.send('molio:renderer-ready'),
 };
 
 // Updater API — event listeners + actions
