@@ -429,6 +429,9 @@ export function KbMainContent({
               if (!s || s.rangeCount === 0) return '';
               const div = document.createElement('div');
               div.appendChild(s.getRangeAt(0).cloneContents());
+              // doocs/md injects <style> blocks inside #output; strip them so
+              // their CSS text doesn't leak into the copied markdown/html.
+              div.querySelectorAll('style, script').forEach((el) => el.remove());
               return div.innerHTML;
             })();
             // Markdown source for the text/plain slot — tables become pipe

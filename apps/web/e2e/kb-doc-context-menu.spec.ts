@@ -212,4 +212,8 @@ test('copy action writes markdown + html (table preserved)', async ({ page }) =>
   expect(text).toContain('|');      // markdown pipe table
   expect(text).toContain('姓名');   // header cell as markdown
   expect(text).toContain('张三');
+  // doocs/md injects <style> blocks inside #output; they must NOT leak into
+  // the copied markdown (regression guard for the style-strip in selHtml).
+  expect(text).not.toContain('.preview-wrapper');
+  expect(text).not.toContain('hljs');
 });
