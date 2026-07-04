@@ -117,3 +117,48 @@ test.describe('KB tab limit', () => {
     await expect(page.locator('.kb-wtab')).toHaveCount(25);
   });
 });
+
+test.describe('KB tab overflow UI', () => {
+  test.describe.configure({ mode: 'serial' });
+  test.use({ viewport: { width: 500, height: 400 } });
+
+  test.beforeAll(async () => {
+    vault = await createTempVault('e2e-kb-tab-overflow');
+    fs.unlinkSync(path.join(vault.path, 'test.md'));
+    for (let i = 1; i <= 8; i++) {
+      const n = String(i).padStart(2, '0');
+      fs.writeFileSync(path.join(vault.path, `g${n}.md`), `# G${n}\n`);
+    }
+  });
+  test.afterAll(async () => { if (vault) await cleanupTempVault(vault); });
+
+  test('active tab scrolls into the visible scroll area on open', async ({ page }) => {
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.kb-tree-item').filter({ hasText: 'g01.md' })).toBeVisible({ timeout: 10_000 });
+
+    // Open 8 tabs in a 500px viewport → overflow. The last opened is active.
+    for (let i = 1; i <= 8; i++) {
+      const n = String(i).padStart(2, '0');
+      await page.locator('.kb-tree-item').filter({ hasText: `g${n}.md` }).click();
+    }
+    await expect(page.locator('.kb-wtab')).toHaveCount(8, { timeout: 5_000 });
+
+    const scroll = page.locator('.kb-wtab-scroll');
+    const active = page.locator('.kb-wtab.is-active');
+    const sBox = await scroll.boundingBox();
+    const aBox = await active.boundingBox();
+    const activeText = await active.textContent();
+    const scrollLeft = await scroll.evaluate((el) => (el as HTMLElement).scrollLeft);
+    const scrollWidth = await scroll.evaluate((el) => (el as HTMLElement).scrollWidth);
+    const clientWidth = await scroll.evaluate((el) => (el as HTMLElement).clientWidth);
+    console.log({ activeText, sBox, aBox, scrollLeft, scrollWidth, clientWidth });
+    expect(sBox).not.toBeNull();
+    expect(aBox).not.toBeNull();
+    // With inline: 'end' the active tab's right edge aligns with the scroll
+    // container's right edge (allowing 1px tolerance), proving it was
+    // scrolled into view.
+    expect(aBox!.x + aBox!.width).toBeLessThanOrEqual(sBox!.x + sBox!.width + 1);
+    expect(aBox!.x + aBox!.width).toBeGreaterThanOrEqual(sBox!.x + sBox!.width - 1);
+  });
+});

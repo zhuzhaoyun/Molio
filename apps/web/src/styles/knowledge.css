@@ -2096,7 +2096,7 @@
 }
 
 /* Scrollable tab list — keeps trailing global actions fixed when tabs overflow. */
-.kb-wtab-list {
+.kb-wtab-scroll {
   display: flex;
   align-items: center;
   gap: 0;
@@ -2108,7 +2108,34 @@
   scrollbar-width: none;
 }
 
-.kb-wtab-list::-webkit-scrollbar { display: none; }
+.kb-wtab-scroll::-webkit-scrollbar { display: none; }
+
+/* Overflow arrows + dropdown trigger (functional in later tasks). */
+.kb-wtab-arrow {
+  flex-shrink: 0;
+  width: 20px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+.kb-wtab-arrow:hover { color: var(--text); background: var(--bg-panel); }
+.kb-wtab-arrow[hidden] { display: none; }
+
+.kb-wtab-more {
+  flex-shrink: 0;
+  width: 22px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+}
+.kb-wtab-more:hover { color: var(--text); background: var(--bg-panel); }
+.kb-wtab-more[hidden] { display: none; }
 
 /* Trailing global actions (vault-level, not tied to the active document). */
 .kb-wtab-actions {
