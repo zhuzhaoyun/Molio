@@ -8,7 +8,7 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import type { TreeNode } from '@molio/contracts';
 import { useKnowledge } from '../../hooks/useKnowledge';
 import type { KbChatState } from '../../hooks/useKbChat';
-import { useKbTabs } from '../../hooks/useKbTabs';
+import { useKbTabs, MAX_TABS } from '../../hooks/useKbTabs';
 import { kbTabsStore } from '../../stores/kbTabsStore';
 import { vaultStore } from '../../stores/vaultStore';
 import { KbFilePanel } from './KbFilePanel';
@@ -173,6 +173,14 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
     onKbChatOpenChange(true);
   }, [kb.selectedFile, kbChat]);
 
+  // ─── Save toast helper (used by file selection and other callbacks) ───
+
+  const showToast = useCallback((msg: string) => {
+    if (saveToastTimer.current) clearTimeout(saveToastTimer.current);
+    setSaveToast(msg);
+    saveToastTimer.current = setTimeout(() => setSaveToast(null), 2000);
+  }, []);
+
   // ─── Tab-aware file selection ───
 
   /**
@@ -209,21 +217,33 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
       const tabId = `file:${path}`;
       const existingTab = tabs.tabs.find(t => t.id === tabId);
       if (existingTab) {
-        // Already open in a tab — just activate it
         tabs.activateTab(tabId);
       } else {
-        // Open a new tab (openTab appends to the end and activates it)
-        tabs.openTab({ id: tabId, type: 'file', title: fileName });
+        const res = tabs.openTab({ id: tabId, type: 'file', title: fileName });
+        if (!res.opened && res.reason === 'limit') {
+          // Defensive: pre-check below should have caught this; never switch
+          // the viewed file or discard edits when blocked.
+          showToast(`已达 ${MAX_TABS} 个标签上限，请先关闭某个标签`);
+          return;
+        }
       }
       kb.selectFile(path);
     };
-    // Re-selecting the current file is a no-op — don't prompt.
+    // Limit pre-check BEFORE the discard prompt: avoids confirming "discard
+    // edits" only to have the open blocked by the cap. Re-opening an existing
+    // tab is exempt (activate != new open).
+    const tabId = `file:${path}`;
+    const existingTab = tabs.tabs.find(t => t.id === tabId);
+    if (!existingTab && tabs.tabs.length >= MAX_TABS) {
+      showToast(`已达 ${MAX_TABS} 个标签上限，请先关闭某个标签`);
+      return;
+    }
     if (path === kb.selectedFile) {
       action();
       return;
     }
     runOrConfirmDiscard(action);
-  }, [tabs, kb, runOrConfirmDiscard]);
+  }, [tabs, kb, runOrConfirmDiscard, showToast]);
 
   /** Open a file in a new tab — same semantics as handleSelectFile. */
   const handleOpenInNewTab = handleSelectFile;
@@ -446,14 +466,6 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
   }, [kb.selectedFile, kbChat]);
-
-  // ─── Save toast helper (defined early — used by callbacks below) ───
-
-  const showToast = useCallback((msg: string) => {
-    if (saveToastTimer.current) clearTimeout(saveToastTimer.current);
-    setSaveToast(msg);
-    saveToastTimer.current = setTimeout(() => setSaveToast(null), 2000);
-  }, []);
 
   // ─── New file / folder flows (React dialogs instead of window.prompt) ───
 
@@ -1021,7 +1033,7 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
 
       {/* Save toast */}
       {saveToast && (
-        <div className="kb-save-toast">{saveToast}</div>
+        <div className="kb-save-toast" data-testid="kb-notice">{saveToast}</div>
       )}
 
       {/* Input dialog (replaces window.prompt) */}

@@ -10,6 +10,9 @@ import { useSyncExternalStore } from 'react';
 const STORAGE_KEY_TABS = 'molio.kb.tabs';
 const STORAGE_KEY_ACTIVE_TAB = 'molio.kb.activeTabId';
 
+/** Maximum number of simultaneously open document tabs. Cap-only, not configurable. */
+export const MAX_TABS = 20;
+
 export type TabType = 'file' | string;
 
 export interface WorkspaceTab {
@@ -75,21 +78,26 @@ export const kbTabsStore = {
     return tabs.find((t) => t.id === activeTabId);
   },
 
-  openTab(tabInput: Omit<WorkspaceTab, 'id'> & { id?: string }) {
+  openTab(tabInput: Omit<WorkspaceTab, 'id'> & { id?: string }): { opened: boolean; reason?: 'limit' } {
     const id = tabInput.id ?? `${tabInput.type}:${Math.random().toString(36).slice(2, 9)}`;
     const existing = tabs.find((t) => t.id === id);
     if (existing) {
-      // Already exists — just activate
+      // Already exists — just activate; not a new open.
       if (activeTabId !== id) {
         activeTabId = id;
         emit();
       }
-      return;
+      return { opened: false };
+    }
+    // Cap: do not mutate state or emit; caller surfaces a notice.
+    if (tabs.length >= MAX_TABS) {
+      return { opened: false, reason: 'limit' };
     }
     const newTab: WorkspaceTab = { ...tabInput, id };
     tabs = [...tabs, newTab];
     activeTabId = id;
     emit();
+    return { opened: true };
   },
 
   closeTab(id: string) {
@@ -105,6 +113,7 @@ export const kbTabsStore = {
   },
 
   activateTab(id: string) {
+    if (!tabs.some((t) => t.id === id)) return;
     if (activeTabId !== id) {
       activeTabId = id;
       emit();

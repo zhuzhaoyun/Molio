@@ -15,11 +15,12 @@ import {
 } from '../stores/kbTabsStore';
 
 export type { TabType, WorkspaceTab } from '../stores/kbTabsStore';
+export { MAX_TABS } from '../stores/kbTabsStore';
 
 export interface UseKbTabsReturn {
   tabs: WorkspaceTab[];
   activeTabId: string | null;
-  openTab: (tab: Omit<WorkspaceTab, 'id'> & { id?: string }) => void;
+  openTab: (tab: Omit<WorkspaceTab, 'id'> & { id?: string }) => { opened: boolean; reason?: 'limit' };
   closeTab: (id: string) => void;
   activateTab: (id: string) => void;
   updateTab: (id: string, patch: Partial<WorkspaceTab>) => void;
