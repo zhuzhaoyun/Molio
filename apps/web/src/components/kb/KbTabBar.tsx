@@ -4,7 +4,7 @@
  * 布局：左箭头 + 可横向滚动的 tab 列表 + 右箭头 + 下拉 ▾ + 右侧固定全局操作区。
  * active tab 变化时自动滚入可见区。箭头与下拉在后续 task 接入逻辑。
  */
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { WorkspaceTab } from '../../hooks/useKbTabs';
 
 interface KbTabBarProps {
@@ -27,6 +27,31 @@ function getTabIcon(type: string): string {
 export function KbTabBar({ tabs, activeTabId, onActivate, onClose, actions }: KbTabBarProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<HTMLDivElement>(null);
+  const [canLeft, setCanLeft] = useState(false);
+  const [canRight, setCanRight] = useState(false);
+
+  const recompute = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setCanLeft(el.scrollLeft > 0);
+    setCanRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
+  };
+
+  // Recompute overflow on mount, tab changes, and resize.
+  useEffect(() => {
+    recompute();
+    const el = scrollRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => recompute());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [tabs.length]);
+
+  const scrollBy = (dir: 1 | -1) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollBy({ left: dir * el.clientWidth * 0.8, behavior: 'smooth' });
+  };
 
   // Scroll the active tab into view whenever it changes or a tab is added.
   useEffect(() => {
@@ -41,11 +66,12 @@ export function KbTabBar({ tabs, activeTabId, onActivate, onClose, actions }: Kb
         type="button"
         className="kb-wtab-arrow"
         data-testid="kb-tab-arrow-left"
-        hidden
+        hidden={!canLeft}
         tabIndex={-1}
         aria-label="向左滚动"
+        onClick={() => scrollBy(-1)}
       >‹</button>
-      <div className="kb-wtab-scroll" ref={scrollRef}>
+      <div className="kb-wtab-scroll" ref={scrollRef} onScroll={recompute}>
         {tabs.map((tab) => {
           const isActive = tab.id === activeTabId;
           return (
@@ -81,9 +107,10 @@ export function KbTabBar({ tabs, activeTabId, onActivate, onClose, actions }: Kb
         type="button"
         className="kb-wtab-arrow"
         data-testid="kb-tab-arrow-right"
-        hidden
+        hidden={!canRight}
         tabIndex={-1}
         aria-label="向右滚动"
+        onClick={() => scrollBy(1)}
       >›</button>
       <button
         type="button"

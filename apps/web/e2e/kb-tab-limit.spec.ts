@@ -148,11 +148,9 @@ test.describe('KB tab overflow UI', () => {
     const active = page.locator('.kb-wtab.is-active');
     const sBox = await scroll.boundingBox();
     const aBox = await active.boundingBox();
-    const activeText = await active.textContent();
     const scrollLeft = await scroll.evaluate((el) => (el as HTMLElement).scrollLeft);
     const scrollWidth = await scroll.evaluate((el) => (el as HTMLElement).scrollWidth);
     const clientWidth = await scroll.evaluate((el) => (el as HTMLElement).clientWidth);
-    console.log({ activeText, sBox, aBox, scrollLeft, scrollWidth, clientWidth });
     expect(sBox).not.toBeNull();
     expect(aBox).not.toBeNull();
     // With inline: 'nearest' the active tab is fully within the scroll
@@ -160,5 +158,27 @@ test.describe('KB tab overflow UI', () => {
     // scrolled into view.
     expect(aBox!.x + aBox!.width).toBeLessThanOrEqual(sBox!.x + sBox!.width + 1);
     expect(aBox!.x).toBeGreaterThanOrEqual(sBox!.x - 1);
+  });
+
+  test('arrows appear when tabs overflow and scroll on click', async ({ page }) => {
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    for (let i = 1; i <= 8; i++) {
+      const n = String(i).padStart(2, '0');
+      await page.locator('.kb-tree-item').filter({ hasText: `g${n}.md` }).click();
+    }
+    const scroll = page.locator('.kb-wtab-scroll');
+    const before = (await scroll.boundingBox())!;
+
+    // Overflowing → right arrow visible. Because the active (last) tab was
+    // scrolled into view, the container has already shifted right, so the
+    // left arrow is also visible.
+    await expect(page.locator('[data-testid="kb-tab-arrow-right"]')).toBeVisible();
+    await expect(page.locator('[data-testid="kb-tab-arrow-left"]')).toBeVisible();
+
+    await page.locator('[data-testid="kb-tab-arrow-right"]').click();
+    await expect.poll(async () => (await scroll.evaluate((el) => el.scrollLeft)) > 0).toBeTruthy();
+    // After scrolling right, left arrow becomes visible.
+    await expect(page.locator('[data-testid="kb-tab-arrow-left"]')).toBeVisible();
   });
 });
