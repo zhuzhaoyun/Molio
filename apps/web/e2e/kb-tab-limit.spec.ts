@@ -120,7 +120,7 @@ test.describe('KB tab limit', () => {
 
 test.describe('KB tab overflow UI', () => {
   test.describe.configure({ mode: 'serial' });
-  test.use({ viewport: { width: 500, height: 400 } });
+  test.use({ viewport: { width: 800, height: 600 } });
 
   test.beforeAll(async () => {
     vault = await createTempVault('e2e-kb-tab-overflow');
@@ -155,10 +155,10 @@ test.describe('KB tab overflow UI', () => {
     console.log({ activeText, sBox, aBox, scrollLeft, scrollWidth, clientWidth });
     expect(sBox).not.toBeNull();
     expect(aBox).not.toBeNull();
-    // With inline: 'end' the active tab's right edge aligns with the scroll
-    // container's right edge (allowing 1px tolerance), proving it was
+    // With inline: 'nearest' the active tab is fully within the scroll
+    // container (allowing 1px tolerance on each edge), proving it was
     // scrolled into view.
     expect(aBox!.x + aBox!.width).toBeLessThanOrEqual(sBox!.x + sBox!.width + 1);
-    expect(aBox!.x + aBox!.width).toBeGreaterThanOrEqual(sBox!.x + sBox!.width - 1);
+    expect(aBox!.x).toBeGreaterThanOrEqual(sBox!.x - 1);
   });
 });

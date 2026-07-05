@@ -4,7 +4,7 @@
  * 布局：左箭头 + 可横向滚动的 tab 列表 + 右箭头 + 下拉 ▾ + 右侧固定全局操作区。
  * active tab 变化时自动滚入可见区。箭头与下拉在后续 task 接入逻辑。
  */
-import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import type { WorkspaceTab } from '../../hooks/useKbTabs';
 
 interface KbTabBarProps {
@@ -29,8 +29,8 @@ export function KbTabBar({ tabs, activeTabId, onActivate, onClose, actions }: Kb
   const activeRef = useRef<HTMLDivElement>(null);
 
   // Scroll the active tab into view whenever it changes or a tab is added.
-  useLayoutEffect(() => {
-    activeRef.current?.scrollIntoView({ inline: 'end', block: 'nearest' });
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
   }, [activeTabId, tabs.length]);
 
   if (tabs.length === 0 && !actions) return null;
