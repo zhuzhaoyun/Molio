@@ -29,6 +29,27 @@ export function KbTabBar({ tabs, activeTabId, onActivate, onClose, actions }: Kb
   const activeRef = useRef<HTMLDivElement>(null);
   const [canLeft, setCanLeft] = useState(false);
   const [canRight, setCanRight] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const moreRef = useRef<HTMLButtonElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on Esc or outside click (button + menu count as one unit).
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenuOpen(false); };
+    const onPointer = (e: MouseEvent) => {
+      const target = e.target as Node;
+      const insideMore = moreRef.current?.contains(target) ?? false;
+      const insideDropdown = dropdownRef.current?.contains(target) ?? false;
+      if (!insideMore && !insideDropdown) setMenuOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onPointer);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('mousedown', onPointer);
+    };
+  }, [menuOpen]);
 
   const recompute = () => {
     const el = scrollRef.current;
@@ -114,11 +135,39 @@ export function KbTabBar({ tabs, activeTabId, onActivate, onClose, actions }: Kb
       >›</button>
       <button
         type="button"
+        ref={moreRef}
         className="kb-wtab-more"
         data-testid="kb-tab-more"
         hidden={tabs.length === 0}
         aria-label="全部标签"
+        aria-expanded={menuOpen}
+        onClick={() => setMenuOpen((v) => !v)}
       >▾</button>
+      {menuOpen && (
+        <div className="kb-tab-dropdown" data-testid="kb-tab-dropdown" ref={dropdownRef}>
+          {tabs.map((tab) => {
+            const isActive = tab.id === activeTabId;
+            return (
+              <div
+                key={tab.id}
+                className={`kb-wtab-dropdown-item ${isActive ? 'is-active' : ''}`}
+                data-testid="kb-tab-dropdown-item"
+                onClick={() => { onActivate(tab.id); setMenuOpen(false); }}
+                title={tab.title}
+              >
+                <span className="kb-wtab-icon">{getTabIcon(tab.type)}</span>
+                <span className="kb-wtab-dropdown-title">{tab.title}</span>
+                <button
+                  type="button"
+                  className="kb-wtab-dropdown-close"
+                  onClick={(e) => { e.stopPropagation(); onClose(tab.id); }}
+                  title="关闭"
+                >×</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
       {actions && <div className="kb-wtab-actions">{actions}</div>}
     </div>
   );

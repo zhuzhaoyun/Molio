@@ -2093,6 +2093,7 @@
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
   height: 36px;
+  position: relative;
 }
 
 /* Scrollable tab list — keeps trailing global actions fixed when tabs overflow. */
@@ -2136,6 +2137,55 @@
 }
 .kb-wtab-more:hover { color: var(--text); background: var(--bg-panel); }
 .kb-wtab-more[hidden] { display: none; }
+
+/* Dropdown menu listing all tabs (overflow affordance). */
+.kb-tab-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 200;
+  margin-top: 2px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  max-height: 320px;
+  overflow-y: auto;
+  min-width: 180px;
+}
+
+.kb-wtab-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.kb-wtab-dropdown-item:hover { background: var(--bg-subtle); color: var(--text); }
+.kb-wtab-dropdown-item.is-active { color: var(--text-strong); font-weight: 500; }
+
+.kb-wtab-dropdown-title {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.kb-wtab-dropdown-close {
+  width: 16px;
+  height: 16px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  color: var(--text-faint);
+  font-size: 14px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.kb-wtab-dropdown-close:hover { background: var(--bg-muted); color: var(--text); }
 
 /* Trailing global actions (vault-level, not tied to the active document). */
 .kb-wtab-actions {

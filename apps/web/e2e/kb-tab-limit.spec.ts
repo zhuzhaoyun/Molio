@@ -181,4 +181,45 @@ test.describe('KB tab overflow UI', () => {
     // After scrolling right, left arrow becomes visible.
     await expect(page.locator('[data-testid="kb-tab-arrow-left"]')).toBeVisible();
   });
+
+  test('dropdown lists all tabs; selecting one activates + scrolls it into view', async ({ page }) => {
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    for (let i = 1; i <= 8; i++) {
+      const n = String(i).padStart(2, '0');
+      await page.locator('.kb-tree-item').filter({ hasText: `g${n}.md` }).click();
+    }
+    // g01 is the first-opened, off-screen left after scrolling to g08.
+    await page.locator('[data-testid="kb-tab-more"]').click();
+    const dropdown = page.locator('[data-testid="kb-tab-dropdown"]');
+    await expect(dropdown).toBeVisible({ timeout: 3_000 });
+    await expect(dropdown.locator('[data-testid="kb-tab-dropdown-item"]')).toHaveCount(8);
+
+    // Click the item whose title is g01.md → activates g01 and brings it into view.
+    await dropdown.locator('[data-testid="kb-tab-dropdown-item"]').first().click();
+    await expect(page.locator('.kb-wtab.is-active')).toContainText('g01.md');
+    const scroll = page.locator('.kb-wtab-scroll');
+    const sBox = await scroll.boundingBox();
+    const aBox = await page.locator('.kb-wtab.is-active').boundingBox();
+    expect(aBox!.x).toBeGreaterThanOrEqual(sBox!.x - 1);
+  });
+
+  test('dropdown item × closes that tab without activating it', async ({ page }) => {
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    for (let i = 1; i <= 8; i++) {
+      const n = String(i).padStart(2, '0');
+      await page.locator('.kb-tree-item').filter({ hasText: `g${n}.md` }).click();
+    }
+    // Active is g08 before opening dropdown.
+    await page.locator('[data-testid="kb-tab-more"]').click();
+    const dropdown = page.locator('[data-testid="kb-tab-dropdown"]');
+    await expect(dropdown).toBeVisible({ timeout: 3_000 });
+
+    // Close the first item (g01) via its ×; active must stay on g08, count 7.
+    await dropdown.locator('[data-testid="kb-tab-dropdown-item"]').first()
+      .locator('.kb-wtab-dropdown-close').click();
+    await expect(page.locator('.kb-wtab')).toHaveCount(7, { timeout: 5_000 });
+    await expect(page.locator('.kb-wtab.is-active')).toContainText('g08.md');
+  });
 });
