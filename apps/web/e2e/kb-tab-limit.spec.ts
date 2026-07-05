@@ -106,12 +106,13 @@ test.describe('KB tab limit', () => {
       localStorage.setItem('molio.kb.activeTabId', 'file:f01.md');
     }, seeded);
 
+    // 26th new file must be blocked (f22..f25 are already persisted, so use f26).
+    fs.writeFileSync(path.join(vault.path, 'f26.md'), '# F26\n');
+
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-wtab')).toHaveCount(25, { timeout: 5_000 });
 
-    // 26th new file must be blocked (f22..f25 are already persisted, so use f26).
-    fs.writeFileSync(path.join(vault.path, 'f26.md'), '# F26\n');
     await page.locator('.kb-tree-item').filter({ hasText: 'f26.md' }).click();
     await expect(page.locator('[data-testid="kb-notice"]')).toBeVisible({ timeout: 3_000 });
     await expect(page.locator('.kb-wtab')).toHaveCount(25);
@@ -137,7 +138,7 @@ test.describe('KB tab overflow UI', () => {
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-tree-item').filter({ hasText: 'g01.md' })).toBeVisible({ timeout: 10_000 });
 
-    // Open 8 tabs in a 500px viewport → overflow. The last opened is active.
+    // Open 8 tabs in a narrow 800px viewport → overflow. The last opened is active.
     for (let i = 1; i <= 8; i++) {
       const n = String(i).padStart(2, '0');
       await page.locator('.kb-tree-item').filter({ hasText: `g${n}.md` }).click();
@@ -148,9 +149,6 @@ test.describe('KB tab overflow UI', () => {
     const active = page.locator('.kb-wtab.is-active');
     const sBox = await scroll.boundingBox();
     const aBox = await active.boundingBox();
-    const scrollLeft = await scroll.evaluate((el) => (el as HTMLElement).scrollLeft);
-    const scrollWidth = await scroll.evaluate((el) => (el as HTMLElement).scrollWidth);
-    const clientWidth = await scroll.evaluate((el) => (el as HTMLElement).clientWidth);
     expect(sBox).not.toBeNull();
     expect(aBox).not.toBeNull();
     // With inline: 'nearest' the active tab is fully within the scroll
@@ -168,7 +166,6 @@ test.describe('KB tab overflow UI', () => {
       await page.locator('.kb-tree-item').filter({ hasText: `g${n}.md` }).click();
     }
     const scroll = page.locator('.kb-wtab-scroll');
-    const before = (await scroll.boundingBox())!;
 
     // Overflowing → right arrow visible. Because the active (last) tab was
     // scrolled into view, the container has already shifted right, so the
@@ -176,9 +173,13 @@ test.describe('KB tab overflow UI', () => {
     await expect(page.locator('[data-testid="kb-tab-arrow-right"]')).toBeVisible();
     await expect(page.locator('[data-testid="kb-tab-arrow-left"]')).toBeVisible();
 
+    const scrollBeforeLeft = await scroll.evaluate((el) => el.scrollLeft);
+    await page.locator('[data-testid="kb-tab-arrow-left"]').click();
+    await expect.poll(async () => (await scroll.evaluate((el) => el.scrollLeft)) < scrollBeforeLeft - 10).toBeTruthy();
+    const scrollBefore = await scroll.evaluate((el) => el.scrollLeft);
     await page.locator('[data-testid="kb-tab-arrow-right"]').click();
-    await expect.poll(async () => (await scroll.evaluate((el) => el.scrollLeft)) > 0).toBeTruthy();
-    // After scrolling right, left arrow becomes visible.
+    await expect.poll(async () => (await scroll.evaluate((el) => el.scrollLeft)) > scrollBefore + 10).toBeTruthy();
+    // Right-arrow click advanced scrollLeft; left arrow remains visible.
     await expect(page.locator('[data-testid="kb-tab-arrow-left"]')).toBeVisible();
   });
 
