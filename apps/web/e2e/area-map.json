@@ -30,7 +30,7 @@
         "apps/daemon/src/core/db.ts",
         "apps/daemon/src/routes/knowledge.ts"
       ],
-      "specs": ["create-vault-form", "knowledge", "markdown-render", "kb-tree-sort-locate", "kb-chat-entry"]
+      "specs": ["create-vault-form", "knowledge", "markdown-render", "kb-tree-sort-locate", "kb-chat-entry", "kb-tab-limit"]
     },
     "publish": {
       "paths": [
