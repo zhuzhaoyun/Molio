@@ -7,6 +7,7 @@
 
 import { useSyncExternalStore } from 'react';
 import type { Vault } from '@molio/contracts';
+import { api } from '../api/client.js';
 
 type Listener = () => void;
 
@@ -40,6 +41,19 @@ function emit() {
   for (const l of listeners) l();
 }
 
+/**
+ * Push the current active vault id to the daemon so external clients
+ * (e.g. the Molio-forked Web Clipper) can follow "save to the open vault".
+ * Fire-and-forget — failing to sync is non-fatal (UI keeps working locally).
+ */
+function syncActiveVaultToServer(id: string | null): void {
+  void api.setActiveVault(id).catch((err) => {
+    // Swallow: the daemon may be down or unreachable; localStorage still holds
+    // the source of truth for the UI.
+    console.warn('[vaultStore] failed to sync active vault to daemon:', err);
+  });
+}
+
 export const vaultStore = {
   subscribe(cb: Listener) {
     listeners.add(cb);
@@ -59,6 +73,7 @@ export const vaultStore = {
       activeVaultId = id;
       persistVaultId(id);
       emit();
+      syncActiveVaultToServer(id);
     }
   },
 
@@ -76,6 +91,9 @@ export const vaultStore = {
       persistVaultId(activeVaultId);
     }
     emit();
+    // Sync the resolved id to the daemon so external clients (Web Clipper)
+    // follow the user's selection. Idempotent — safe to call on every refresh.
+    syncActiveVaultToServer(activeVaultId);
   },
 };
 

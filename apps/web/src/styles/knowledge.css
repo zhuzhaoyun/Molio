@@ -904,31 +904,6 @@
   opacity: 0.5;
 }
 
-/* Float "ask about selection" button */
-.kb-float-ask-btn {
-  position: fixed;
-  z-index: 30;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 5px 10px;
-  background: var(--accent);
-  color: #fff;
-  border: none;
-  border-radius: var(--radius-sm);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  box-shadow: var(--shadow-md);
-  white-space: nowrap;
-  font-family: inherit;
-  transition: background 0.12s;
-}
-
-.kb-float-ask-btn:hover {
-  background: var(--accent-hover);
-}
-
 /* ══════════ Edit Mode Editor ══════════ */
 
 .kb-edit-mode {
@@ -2337,4 +2312,174 @@
 @keyframes kb-toast-in {
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Drag-and-drop import ── */
+
+/* Root-level drop indicator: bar at the bottom of the panel */
+.kb-file-panel.drag-over-root {
+  position: relative;
+}
+.kb-file-panel.drag-over-root::after {
+  content: '释放到根目录';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  border-top: 2px solid var(--accent);
+  z-index: 10;
+  pointer-events: none;
+}
+
+/* ── Directory drop-target highlight ──
+   Two-level highlight with visual hierarchy:
+   - Group: barely-there tint for zone definition (large area, subtle)
+   - Label: crisp ring for precise target indication (small area, focal)
+   When collapsed (children are display:none), the group tint naturally
+   only shows behind the label — same visual as before. */
+
+/* Group-level: faint background defines the full drop zone.
+   accent-tint is near-identical to the background — just enough shift to
+   read as "this area belongs to the directory" without feeling like a solid
+   color block. The border-color outline defines the zone boundary quietly. */
+.kb-tree-group.drag-target {
+  background: var(--accent-tint);
+  border-radius: var(--radius-sm);
+  box-shadow: inset 0 0 0 1px var(--border);
+  transition: none !important;
+}
+
+/* Label-level: crisp inner ring for focal precision.
+   Uses accent-soft (noticeable) background + solid accent ring. */
+.kb-tree-group-label.drag-target {
+  background: var(--accent-soft) !important;
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+  border-radius: var(--radius-sm);
+  transition: none !important;
+}
+
+/* Group-level rejection — dim the entire directory area */
+.kb-tree-group.drag-reject {
+  opacity: 0.35;
+  cursor: not-allowed;
+  transition: none !important;
+}
+/* Label-level rejection — kept for panel cleanup compatibility */
+.kb-tree-group-label.drag-reject {
+  opacity: 0.35;
+  cursor: not-allowed;
+  transition: none !important;
+}
+
+/* Directory node accepting drop — change cursor */
+.kb-tree-group-label[data-drop-dir] {
+  cursor: pointer;
+}
+
+/* ── Conflict dialog ── */
+
+.conflict-desc {
+  font-size: 12.5px;
+  color: var(--text);
+  margin: 0 0 8px 0;
+}
+
+.conflict-file-list {
+  list-style: none;
+  margin: 0 0 12px 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.conflict-file-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  font-size: 12.5px;
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+}
+.conflict-file-item:last-child {
+  border-bottom: none;
+}
+
+.conflict-file-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+.conflict-file-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace);
+  font-size: 11.5px;
+}
+
+.conflict-strategy-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.conflict-strategy-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 100ms ease, border-color 100ms ease;
+}
+.conflict-strategy-option:hover {
+  background: var(--bg-subtle);
+}
+.conflict-strategy-option.is-selected {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.conflict-strategy-option input[type="radio"] {
+  width: auto;
+  margin: 0;
+  margin-top: 1px;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+}
+
+.conflict-strategy-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+}
+
+.conflict-strategy-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.conflict-strategy-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.35;
 }

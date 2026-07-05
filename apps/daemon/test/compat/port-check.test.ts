@@ -1,44 +1,64 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
+import { isKillablePortOccupant } from '../../src/core/port-check.js';
 
 /**
  * 测试端口占用检测逻辑的判断规则
  *
  * 场景：daemon 启动前检测端口是否被占用
- * - Node/tsx 进程 → 自动杀掉（可能是上次没退出的 daemon）
+ * - node/tsx 或打包后的 Molio.exe / electron.exe（以 ELECTRON_RUN_AS_NODE
+ *   跑 daemon）→ 自动杀掉（可能是上次没退出的 daemon）
  * - 其他进程 → 报错退出（避免误杀用户软件）
+ *
+ * 回归：打包后 daemon 是用 Molio.exe 跑的，旧的 isNodeProcess 只认
+ * node/tsx，导致残留的 daemon 被当成"非 Node 进程"拒绝清理，
+ * daemon 直接 process.exit(1)，应用卡在 splash（见 desktop 错误页修复）。
  */
 describe('port occupant detection', () => {
-  it('should identify Node process as killable', () => {
-    const processNames = [
-      'node.exe                    12345  Console                    1    100,000 K',
-      'node',
-      'tsx',
-      'NODE.EXE',
-    ];
+  const killable = [
+    'node.exe                    12345  Console                    1    100,000 K',
+    'node',
+    'tsx',
+    'NODE.EXE',
+    'Molio.exe                   67890  Console                    1     80,000 K',
+    'molio.exe',
+    'electron.exe                11111  Console                    1    120,000 K',
+    'ELECTRON.EXE',
+  ];
 
-    for (const name of processNames) {
-      const isNodeProcess = name.toLowerCase().includes('node') ||
-                            name.toLowerCase().includes('tsx');
-      assert.strictEqual(isNodeProcess, true, `"${name}" should be identified as Node process`);
+  const nonKillable = [
+    'chrome.exe',
+    'Code.exe',
+    'nginx.exe',
+    'java',
+    'python.exe',
+    'docker-proxy',
+  ];
+
+  it('should identify killable processes (node/tsx/molio/electron)', () => {
+    for (const name of killable) {
+      assert.strictEqual(
+        isKillablePortOccupant(name),
+        true,
+        `"${name}" should be identified as a killable stale daemon`
+      );
     }
   });
 
-  it('should identify non-Node process as non-killable', () => {
-    const processNames = [
-      'chrome.exe',
-      'Code.exe',
-      'nginx.exe',
-      'java',
-      'python',
-      'docker-proxy',
-    ];
-
-    for (const name of processNames) {
-      const isNodeProcess = name.toLowerCase().includes('node') ||
-                            name.toLowerCase().includes('tsx');
-      assert.strictEqual(isNodeProcess, false, `"${name}" should NOT be identified as Node process`);
+  it('should identify non-killable processes', () => {
+    for (const name of nonKillable) {
+      assert.strictEqual(
+        isKillablePortOccupant(name),
+        false,
+        `"${name}" should NOT be identified as a killable process`
+      );
     }
+  });
+
+  it('should be case-insensitive', () => {
+    assert.strictEqual(isKillablePortOccupant('MOLIO.EXE'), true);
+    assert.strictEqual(isKillablePortOccupant('Electron.exe'), true);
+    assert.strictEqual(isKillablePortOccupant('NODE'), true);
   });
 
   it('should parse PID from Windows netstat output', () => {

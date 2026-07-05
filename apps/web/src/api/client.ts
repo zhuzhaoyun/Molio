@@ -353,6 +353,23 @@ export const api = {
     await fetch(`${BASE}/knowledge/vaults/${id}`, { method: 'DELETE' });
   },
 
+  /** Returns the user's currently-active vault (the one external clippers target). */
+  async getActiveVault(): Promise<{ vaultId: string | null; vault: (Vault & { fileCount: number }) | null }> {
+    const res = await fetch(`${BASE}/knowledge/active-vault`);
+    if (!res.ok) throw new Error(`Failed to fetch active vault: ${res.status}`);
+    return res.json();
+  },
+
+  /** Set the active vault. Pass null to clear. Fire-and-forget safe. */
+  async setActiveVault(id: string | null): Promise<void> {
+    const res = await fetch(`${BASE}/knowledge/active-vault`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+    if (!res.ok) throw new Error(`Failed to set active vault: ${res.status}`);
+  },
+
   async getFileTree(vaultId: string): Promise<TreeNode[]> {
     const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/tree`);
     if (!res.ok) throw new Error(`Failed to fetch file tree: ${res.status}`);
@@ -395,6 +412,40 @@ export const api = {
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: { message: `Upload failed: ${res.status}` } }));
       throw new Error(err.error?.message ?? `Upload failed: ${res.status}`);
+    }
+    return res.json();
+  },
+
+  /** Import files (upload) to a vault directory. */
+  async importFiles(
+    vaultId: string,
+    files: File[],
+    targetDir = '',
+    conflict = 'ask',
+  ): Promise<{
+    imported: string[];
+    renamed: Array<{ from: string; to: string }>;
+    skipped: string[];
+    errors: Array<{ file: string; reason: string }>;
+    conflicts?: Array<{ file: string; reason: string }>;
+  }> {
+    const formData = new FormData();
+    for (const file of files) {
+      formData.append('files', file);
+    }
+    if (targetDir) {
+      formData.append('targetDir', targetDir);
+    }
+    formData.append('conflict', conflict);
+
+    const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/import`, {
+      method: 'POST',
+      body: formData,
+    });
+    // 409 = conflict: "ask" with conflicts — still valid JSON response
+    if (!res.ok && res.status !== 409) {
+      const err = await res.json().catch(() => ({ error: { message: `Import failed: ${res.status}` } }));
+      throw new Error(err.error?.message ?? `Import failed: ${res.status}`);
     }
     return res.json();
   },

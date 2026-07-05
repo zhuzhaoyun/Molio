@@ -5,7 +5,6 @@ import App from './App';
 import './styles/tokens.css';
 import './styles/base.css';
 import './styles/chat.css';
-import './styles/milkdown.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

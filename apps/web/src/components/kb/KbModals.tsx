@@ -5,6 +5,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { Vault } from '@molio/contracts';
+import { api } from '../../api/client';
 
 // ═══════════════════════════════════════════
 // Vault Switcher Modal
@@ -224,41 +225,83 @@ export function AddVaultModal({ show, onClose, onCreate }: AddVaultModalProps) {
 // Import Knowledge Modal
 // ═══════════════════════════════════════════
 
+/** Result returned by the daemon's import-files API (also used for local error reporting). */
+export interface ImportApiResult {
+  imported: string[];
+  renamed: Array<{ from: string; to: string }>;
+  skipped: string[];
+  errors: Array<{ file: string; reason: string }>;
+  /** Conflict files when conflict: "ask" — present ONLY when conflicts detected. */
+  conflicts?: Array<{ file: string; reason: string }>;
+}
+
 interface ImportModalProps {
   show: boolean;
   vaultName: string;
+  vaultId: string;
   onClose: () => void;
+  /** Called after import completes (including conflicts). The caller receives the files so it can
+   *  store them for conflict retry — the modal clears its own file state immediately after. */
+  onImportComplete?: (result: ImportApiResult, files: File[], targetDir: string, oversizedCount?: number) => void;
 }
 
 interface ImportedFile {
   name: string;
   size: number;
+  /** If set, the file was rejected and this explains why. */
+  error?: string;
 }
 
-export function ImportModal({ show, vaultName, onClose }: ImportModalProps) {
+export function ImportModal({ show, vaultName, vaultId, onClose, onImportComplete }: ImportModalProps) {
   const [files, setFiles] = useState<ImportedFile[]>([]);
-  const [target, setTarget] = useState<'raw' | 'wiki'>('raw');
-  const [autoIngest, setAutoIngest] = useState(true);
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const rawFiles = useRef<File[]>([]);
 
   const handleFiles = useCallback((fileList: FileList | null) => {
     if (!fileList) return;
-    const validExts = ['.md', '.pdf', '.txt', '.docx', '.html', '.htm'];
+    const MAX_FILE_SIZE = 50 * 1024 * 1024;
+    const validExts = [
+      '.md', '.pdf', '.txt', '.docx', '.doc', '.html', '.htm',
+      '.pptx', '.ppt', '.xlsx', '.xls',
+      '.json', '.yaml', '.yml',
+      '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp', '.ico',
+    ];
     const newFiles: ImportedFile[] = [];
+    const skippedFiles: string[] = [];
 
     for (const file of Array.from(fileList)) {
+      if (files.find((f) => f.name === file.name)) continue;
       const ext = '.' + file.name.split('.').pop()?.toLowerCase();
-      if (validExts.includes(ext) && !files.find((f) => f.name === file.name)) {
-        newFiles.push({ name: file.name, size: file.size });
+      if (!validExts.includes(ext)) continue;
+      if (file.size > MAX_FILE_SIZE) {
+        skippedFiles.push(file.name);
+        newFiles.push({ name: file.name, size: file.size, error: '超过 50MB 限制' });
+        continue;
       }
+      newFiles.push({ name: file.name, size: file.size });
+      rawFiles.current.push(file);
     }
 
     setFiles((prev) => [...prev, ...newFiles]);
   }, [files]);
 
   const removeFile = useCallback((index: number) => {
-    setFiles((prev) => prev.filter((_, i) => i !== index));
+    setFiles((prev) => {
+      const next = prev.filter((_, i) => i !== index);
+      // Keep only the last-added raw File for each name still in next
+      const nextNames = new Set(next.map((f) => f.name));
+      rawFiles.current = rawFiles.current
+        .filter((rf) => nextNames.has(rf.name))
+        .reduceRight((acc, rf) => {
+          // reduceRight + unshift keeps last occurrence per name
+          if (!acc.some((existing) => existing.name === rf.name)) {
+            acc.unshift(rf);
+          }
+          return acc;
+        }, [] as File[]);
+      return next;
+    });
   }, []);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -277,16 +320,36 @@ export function ImportModal({ show, vaultName, onClose }: ImportModalProps) {
   }, [handleFiles]);
 
   const handleImport = useCallback(async () => {
-    if (files.length === 0) return;
+    const validFiles = files.filter((f) => !f.error);
+    if (validFiles.length === 0) return;
     setImporting(true);
-    // TODO: implement actual file upload via API
-    // For now, just close after a brief delay
-    setTimeout(() => {
-      setImporting(false);
+    const oversizedCount = files.filter((f) => !!f.error).length;
+    const importingFiles = rawFiles.current.filter((rf) => validFiles.some((f) => f.name === rf.name));
+    try {
+      const result = await api.importFiles(vaultId, importingFiles, '', 'ask');
+      onImportComplete?.(result, importingFiles, '', oversizedCount);
       setFiles([]);
+      rawFiles.current = [];
       onClose();
-    }, 500);
-  }, [files, onClose]);
+    } catch (err) {
+      onImportComplete?.(
+        {
+          imported: [],
+          renamed: [],
+          skipped: [],
+          errors: [{ file: '', reason: err instanceof Error ? err.message : 'Import failed' }],
+        },
+        [],
+        '',
+        oversizedCount,
+      );
+      setFiles([]);
+      rawFiles.current = [];
+      onClose();
+    } finally {
+      setImporting(false);
+    }
+  }, [files, vaultId, onImportComplete, onClose]);
 
   if (!show) return null;
 
@@ -311,13 +374,13 @@ export function ImportModal({ show, vaultName, onClose }: ImportModalProps) {
               Drop files here or click to browse
             </div>
             <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
-              Supports .md, .pdf, .txt, .docx, .html
+              Supports .md, .pdf, .txt, .docx, .html, images, and more
             </div>
             <input
               ref={fileInputRef}
               type="file"
               multiple
-              accept=".md,.pdf,.txt,.docx,.html,.htm"
+              accept=".md,.pdf,.txt,.docx,.doc,.html,.htm,.pptx,.ppt,.xlsx,.xls,.json,.yaml,.yml,.png,.jpg,.jpeg,.gif,.svg,.webp,.bmp,.ico"
               style={{ display: 'none' }}
               onChange={(e) => handleFiles(e.target.files)}
             />
@@ -331,10 +394,14 @@ export function ImportModal({ show, vaultName, onClose }: ImportModalProps) {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 3, maxHeight: 140, overflowY: 'auto' }}>
                 {files.map((f, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', background: 'var(--bg-subtle)', borderRadius: 'var(--radius-sm)', fontSize: 12.5 }}>
-                    <span style={{ fontSize: 13 }}>📄</span>
-                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text)' }}>{f.name}</span>
-                    <span style={{ fontSize: 11, color: 'var(--text-faint)', flexShrink: 0 }}>{(f.size / 1024).toFixed(1)} KB</span>
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', background: f.error ? 'var(--bg-warning, rgba(255,200,50,0.12))' : 'var(--bg-subtle)', borderRadius: 'var(--radius-sm)', fontSize: 12.5 }}>
+                    <span style={{ fontSize: 13 }}>{f.error ? '⚠️' : '📄'}</span>
+                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: f.error ? 'var(--text-muted)' : 'var(--text)' }}>{f.name}</span>
+                    {f.error ? (
+                      <span style={{ fontSize: 10.5, color: 'var(--accent)', flexShrink: 0, fontWeight: 500 }}>{f.error}</span>
+                    ) : (
+                      <span style={{ fontSize: 11, color: 'var(--text-faint)', flexShrink: 0 }}>{(f.size / 1024).toFixed(1)} KB</span>
+                    )}
                     <button
                       onClick={() => removeFile(i)}
                       style={{ width: 18, height: 18, padding: 0, border: 'none', background: 'transparent', borderRadius: 4, color: 'var(--text-faint)', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
@@ -346,43 +413,13 @@ export function ImportModal({ show, vaultName, onClose }: ImportModalProps) {
               </div>
             </div>
           )}
-
-          {/* Options */}
-          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
-              Import Options
-            </div>
-            <div className="kb-form-field" style={{ marginBottom: 10 }}>
-              <label>Target Folder</label>
-              <select
-                value={target}
-                onChange={(e) => setTarget(e.target.value as 'raw' | 'wiki')}
-                style={{ width: '100%', height: 34, padding: '0 8px', font: 'inherit', fontSize: 13, color: 'var(--text)', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', outline: 'none', cursor: 'pointer' }}
-              >
-                <option value="raw">raw/ (unprocessed sources)</option>
-                <option value="wiki">wiki/ (direct to knowledge)</option>
-              </select>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--text)' }}>
-              <input
-                type="checkbox"
-                checked={autoIngest}
-                onChange={(e) => setAutoIngest(e.target.checked)}
-                style={{ accentColor: 'var(--accent)', cursor: 'pointer' }}
-              />
-              <label style={{ cursor: 'pointer' }}>Auto-ingest with Claude Code after import</label>
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--text-faint)', marginLeft: 24, marginTop: 2 }}>
-              Compile sources into structured wiki pages with cross-references
-            </div>
-          </div>
         </div>
         <div className="kb-modal-footer">
           <button className="kb-btn kb-btn-ghost" onClick={onClose}>Cancel</button>
           <button
             className="kb-btn kb-btn-primary"
             onClick={handleImport}
-            disabled={files.length === 0 || importing}
+            disabled={files.filter((f) => !f.error).length === 0 || importing}
           >
             {importing ? 'Importing...' : 'Import Files'}
           </button>
