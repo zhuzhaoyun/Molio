@@ -111,9 +111,9 @@
       
       <div class="name">COSE</div>
       <div class="desc">多平台一键发布到微信、知乎、CSDN 等 30+ 内容平台</div>
-      <div class="meta">v1.3.6</div>
+      <div class="meta" id="cose-meta">v1.3.6</div>
       <div class="btn-group">
-        <a href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases/cose-extension-v1.3.6.zip" class="download-btn primary">离线安装包</a>
+        <a id="cose-download" href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases/cose-extension-v1.3.6.zip" class="download-btn primary">离线安装包</a>
         <a href="https://chromewebstore.google.com/detail/cose-%E5%A4%9A%E5%B9%B3%E5%8F%B0%E6%96%87%E7%AB%A0%E5%90%8C%E6%AD%A5/ilhikcdphhpjofhlnbojifbihhfmmhfk?hl=zh-CN&utm_source=ext_sidebar" target="_blank" rel="noopener noreferrer" class="download-btn secondary">Chrome 商店</a>
       </div>
     </div>
@@ -121,9 +121,9 @@
       
       <div class="name">Molio Connect</div>
       <div class="desc">浏览器剪藏插件，一键保存网页内容到 Molio 知识库</div>
-      <div class="meta">v0.2.4</div>
+      <div class="meta" id="mc-meta">v0.2.4</div>
       <div class="btn-group">
-        <a href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases/molio-connect-0.2.4-chrome-store.zip" class="download-btn primary">离线安装包</a>
+        <a id="mc-download" href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases/molio-connect-0.2.4-chrome-store.zip" class="download-btn primary">离线安装包</a>
         <a href="https://chromewebstore.google.com/detail/molio/pjdacbbkjpegfkogoieejajljplngbik?hl=zh-CN&utm_source=ext_sidebar" target="_blank" rel="noopener noreferrer" class="download-btn secondary">Chrome 商店</a>
       </div>
     </div>
@@ -201,6 +201,32 @@
       if (!v) throw new Error('no version');
       setDownload('win', v, 'Molio-Setup-' + v + '-windows.exe');
       setDownload('mac', v, 'Molio-' + v + '-mac-arm64.dmg');
+    })
+    .catch(() => {
+      // 保持 HTML 中的默认 OSS 链接
+    });
+
+  // 扩展版本动态获取
+  const EXT_URL = OSS_BASE + '/extensions-latest.json';
+  fetch(EXT_URL)
+    .then(r => r.json())
+    .then(data => {
+      if (data.cose) {
+        const v = data.cose;
+        const url = OSS_BASE + '/cose-extension-v' + v + '.zip';
+        const btn = document.getElementById('cose-download');
+        const meta = document.getElementById('cose-meta');
+        if (btn) btn.href = url;
+        if (meta) meta.textContent = 'v' + v;
+      }
+      if (data['molio-connect']) {
+        const v = data['molio-connect'];
+        const url = OSS_BASE + '/molio-connect-' + v + '-chrome-store.zip';
+        const btn = document.getElementById('mc-download');
+        const meta = document.getElementById('mc-meta');
+        if (btn) btn.href = url;
+        if (meta) meta.textContent = 'v' + v;
+      }
     })
     .catch(() => {
       // 保持 HTML 中的默认 OSS 链接
