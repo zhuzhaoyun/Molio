@@ -176,6 +176,11 @@ export function getWellKnownToolchainDirs(): string[] {
       path.join(home, 'AppData', 'Local', 'Yarn', 'bin'),
       path.join(home, '.bun', 'bin'),
       path.join(home, '.local', 'bin'),
+      // Hermes Agent — official PowerShell installer (iex ...) drops the venv
+      // here. Resolving via well-known dir avoids depending on PATH propagation:
+      // a daemon started before the installer updated PATH can't see the new
+      // entry, since Windows processes inherit PATH as a startup snapshot.
+      path.join(home, 'AppData', 'Local', 'hermes', 'hermes-agent', 'venv', 'Scripts'),
     );
 
     // nvm4w default symlink — always add as candidate; findInWellKnownDirs
