@@ -1157,3 +1157,39 @@
   border: 1px solid var(--border); background: transparent; color: var(--text-primary);
 }
 .user-edit-save:disabled { opacity: 0.4; cursor: default; }
+
+/* ─── CodeBlock ─── */
+.codeblock {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin: 8px 0;
+  background: var(--bg-code, #f6f8fa);
+  overflow: hidden;
+}
+.codeblock-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 4px 10px;
+  font-size: 12px; color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-code-header, rgba(0,0,0,0.03));
+}
+.codeblock-lang { text-transform: lowercase; letter-spacing: 0.3px; }
+.codeblock-copy {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; font-size: 12px;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: transparent; color: var(--text-secondary); cursor: pointer;
+}
+.codeblock-copy:hover { background: var(--bg-hover); color: var(--text-primary); }
+.codeblock-copy.copied { color: var(--accent); }
+.codeblock pre { margin: 0; padding: 10px 12px; overflow-x: auto; }
+.codeblock pre code { font-family: var(--font-mono, monospace); font-size: 13px; white-space: pre; }
+.codeblock-fold {
+  display: block; width: 100%; padding: 4px;
+  font-size: 12px; color: var(--text-secondary);
+  background: transparent; border: none; border-top: 1px solid var(--border);
+  cursor: pointer;
+}
+.codeblock-fold:hover { color: var(--text-primary); }
+.codeblock.streaming pre::after { content: '▋'; animation: cb-blink 1s steps(2) infinite; }
+@keyframes cb-blink { 50% { opacity: 0; } }

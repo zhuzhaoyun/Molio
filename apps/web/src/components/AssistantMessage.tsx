@@ -1,6 +1,7 @@
 import { useMemo, useCallback } from 'react';
 import type { ChatMessage, ToolEvent } from '../hooks/useChat';
-import { renderMarkdown } from '../utils/markdown';
+import { renderMarkdown, splitContent } from '../utils/markdown';
+import { CodeBlock } from './CodeBlock';
 import { useI18n } from '../i18n';
 import { useActiveVaultId } from '../stores/vaultStore';
 import { useFileNavigation } from '../hooks/useFileNavigation';
@@ -78,7 +79,7 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
     ? suppressAskUserQuestionFallback(message.content)
     : message.content;
 
-  const html = useMemo(() => renderMarkdown(displayContent), [displayContent]);
+  const segments = useMemo(() => splitContent(displayContent), [displayContent]);
   const toolItems = useMemo(
     () => groupTools(message.tools || []),
     [message.tools]
@@ -141,8 +142,15 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
           data-testid="assistant-prose"
           onClick={handleProseClick}
           role="presentation"
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
+        >
+          {segments.map((seg, i) =>
+            seg.type === 'text' ? (
+              <div key={i} dangerouslySetInnerHTML={{ __html: renderMarkdown(seg.content) }} />
+            ) : (
+              <CodeBlock key={i} lang={seg.lang} code={seg.code} streaming={message.streaming} />
+            ),
+          )}
+        </div>
       )}
 
       {message.streaming && <span className="streaming-cursor" />}

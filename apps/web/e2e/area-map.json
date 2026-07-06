@@ -12,15 +12,19 @@
         "apps/web/src/components/ToolCard.*",
         "apps/web/src/components/ToolGroup.*",
         "apps/web/src/components/ChatPane.*",
+        "apps/web/src/components/CodeBlock.*",
+        "apps/web/src/utils/markdown.*",
         "apps/web/src/hooks/useChat*",
         "apps/web/src/hooks/useChatCore*",
         "apps/daemon/src/routes/runs.ts",
         "apps/daemon/src/routes/events.ts",
         "apps/daemon/src/routes/tool-result.ts",
+        "apps/daemon/src/routes/conversations.ts",
         "apps/daemon/src/core/RunManager.ts",
+        "apps/daemon/src/core/conversations/run-starter.ts",
         "apps/daemon/src/streams/*"
       ],
-      "specs": ["chat-single", "chat-multi", "chat-streaming", "chat-copy", "chat-regenerate", "chat-edit-resend"]
+      "specs": ["chat-single", "chat-multi", "chat-streaming", "chat-copy", "chat-regenerate", "chat-edit-resend", "chat-codeblock"]
     },
     "kb": {
       "paths": [
@@ -108,6 +112,7 @@
     "chat-copy": { "priority": "P0", "file": "chat-copy.spec.ts" },
     "chat-regenerate": { "priority": "P0", "file": "chat-regenerate.spec.ts" },
     "chat-edit-resend": { "priority": "P0", "file": "chat-edit-resend.spec.ts" },
+    "chat-codeblock": { "priority": "P0", "file": "chat-codeblock.spec.ts" },
     "create-vault-form": { "priority": "P0", "file": "create-vault-form.spec.ts" },
     "graph": { "priority": "P1", "file": "graph.spec.ts" },
     "graph-settings": { "priority": "P2", "file": "graph-settings.spec.ts" },

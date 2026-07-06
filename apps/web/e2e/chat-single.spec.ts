@@ -132,4 +132,12 @@ test.describe('Chat — single turn', () => {
     await textarea.press('Enter');
     await expect(textarea).toHaveValue('');
   });
+
+  test('assistant message shows hover toolbar with copy after completion', async ({ page }) => {
+    await gotoHome(page);
+    await sendMessage(page, 'Test');
+    await expect(page.locator('[data-testid="usage-footer"]')).toBeVisible({ timeout: 10_000 });
+    await page.locator('[data-testid="assistant-message"]').hover();
+    await expect(page.locator('[data-testid="assistant-message"]').locator('[data-testid="msg-copy-btn"]')).toBeVisible();
+  });
 });
