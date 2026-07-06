@@ -55,12 +55,14 @@ function startDaemonProduction() {
       stdio: 'pipe',
     });
 
-    // Collect stderr for diagnostics if daemon fails to start
+    // Collect stderr/stdout for diagnostics if daemon fails to start
     const stderrChunks = [];
+    const stdoutChunks = [];
     let started = false;
 
     daemonProcess.stdout?.on('data', (data) => {
       const msg = data.toString().trim();
+      stdoutChunks.push(msg);
       log('info', 'daemon', msg);
       if (msg.includes('listening on')) {
         started = true;
@@ -76,8 +78,13 @@ function startDaemonProduction() {
 
     daemonProcess.on('exit', (code, signal) => {
       log('error', 'main', `daemon exited with code=${code} signal=${signal}`);
-      if (code !== 0 && code !== null && stderrChunks.length > 0) {
-        log('error', 'main', `daemon stderr:\n${stderrChunks.join('\n')}`);
+      if (code !== 0 && code !== null) {
+        if (stdoutChunks.length > 0) {
+          log('error', 'main', `daemon stdout tail:\n${stdoutChunks.slice(-20).join('\n')}`);
+        }
+        if (stderrChunks.length > 0) {
+          log('error', 'main', `daemon stderr:\n${stderrChunks.join('\n')}`);
+        }
       }
       daemonProcess = null;
     });
@@ -369,6 +376,16 @@ if (process.platform === 'darwin') {
 // ─── App lifecycle ───
 
 app.whenReady().then(async () => {
+  // Guard: requestSingleInstanceLock() returned false on a second instance,
+  // but on some Electron versions whenReady still fires after app.quit().
+  // If we proceed, startDaemonProduction() would spawn a second daemon whose
+  // checkAndKillPortOccupant() kills the first instance's daemon — leaving
+  // the running app with no backend. Bail out instead.
+  if (!singleLock) {
+    log('warn', 'main', 'whenReady fired without single-instance lock — second instance, quitting');
+    app.quit();
+    return;
+  }
   // Register protocol on Windows (must be inside whenReady)
   if (process.platform !== 'darwin') {
     if (!app.isDefaultProtocolClient(PROTOCOL)) {
