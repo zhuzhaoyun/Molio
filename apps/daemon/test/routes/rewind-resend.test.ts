@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { Hono } from 'hono';
 import type Database from 'better-sqlite3';
 import { conversationRoutes } from '../../src/routes/conversations.js';
@@ -15,6 +16,8 @@ class MockRunManager {
   readonly cancelled: string[] = [];
   private terminal = new Set<string>();
   private contexts = new Map<string, { agentId: string; conversationId: string | null }>();
+  /** Stored onTurnComplete callbacks for runs registered via registerDeferredRun. */
+  private deferredCallbacks = new Map<string, (text: string, rid: string) => void>();
 
   createRun(opts: { agentId: string; message: string; history?: ChatMessage[]; cwd?: string; onTurnComplete?: (t: string, r: string) => void }): Promise<string> {
     this.calls.push({ op: 'createRun', agentId: opts.agentId, message: opts.message, history: opts.history, cwd: opts.cwd });
@@ -26,7 +29,26 @@ class MockRunManager {
   }
   getRunContext(runId: string) { return this.contexts.get(runId) ?? null; }
   isTerminal(runId: string) { return this.terminal.has(runId); }
+  // Mirrors the real RunManager.cancelRun after the Option A fix: cancelRun
+  // synchronously marks the run terminal so isTerminal returns true immediately.
   cancelRun(runId: string) { this.cancelled.push(runId); this.terminal.add(runId); }
+
+  /** Register a run whose onTurnComplete is NOT called immediately — mirrors a
+   * real run that is still streaming when it gets cancelled. */
+  registerDeferredRun(
+    runId: string,
+    ctx: { agentId: string; conversationId: string | null },
+    onTurnComplete: (text: string, rid: string) => void,
+  ): void {
+    this.contexts.set(runId, ctx);
+    this.deferredCallbacks.set(runId, onTurnComplete);
+  }
+
+  /** Simulate a late buffered turn_end from a dying run. */
+  triggerDeferredTurnEnd(runId: string, text: string): void {
+    const cb = this.deferredCallbacks.get(runId);
+    if (cb) cb(text, runId);
+  }
 }
 
 function mkMsg(role: 'user' | 'assistant', content: string, runId?: string): ChatMessage {
@@ -138,5 +160,49 @@ describe('POST /api/conversations/:id/rewind-resend', () => {
     const { status, body } = await postRewind(conv.id, { newContent: 'x', agentId: 'claude' });
     assert.equal(status, 400);
     assert.equal(body.error?.code, 'BAD_REQUEST');
+  });
+
+  it('drops a late onTurnComplete from the cancelled run (no orphan assistant reply)', async () => {
+    // Reproduces the cancel-then-truncate race: the rewind-resend endpoint
+    // cancels the active run, truncates history, and starts a fresh run. A
+    // late turn_end from the dying run must NOT append an orphan assistant
+    // reply after the new user message.
+    const conv = createDesktopConversation(db, 't');
+    upsertMessage(db, conv.id, mkMsg('user', 'q1'));
+    upsertMessage(db, conv.id, mkMsg('assistant', 'a1', 'run-old'));
+    upsertMessage(db, conv.id, mkMsg('user', 'q2'));
+    // A partial/streaming reply from 'run-alive' — getRewindPoint uses this
+    // assistant message's run_id as the activeRunId to cancel.
+    upsertMessage(db, conv.id, mkMsg('assistant', 'partial-reply', 'run-alive'));
+
+    // Pre-register the alive run with a DEFERRED onTurnComplete that mirrors
+    // run-starter.ts (including the isTerminal defense-in-depth gate).
+    runManager.registerDeferredRun(
+      'run-alive',
+      { agentId: 'claude', conversationId: conv.id },
+      (text, rid) => {
+        if (runManager.isTerminal(rid)) return;
+        conversations.appendMessage(conv.id, {
+          id: randomUUID(),
+          role: 'assistant',
+          content: text,
+          timestamp: Date.now(),
+          agentId: 'claude',
+          runId: rid,
+        });
+      },
+    );
+
+    const { status } = await postRewind(conv.id, { newContent: 'q2', agentId: 'claude' });
+    assert.equal(status, 200);
+    assert.deepEqual(runManager.cancelled, ['run-alive']);
+
+    // Simulate a late buffered turn_end from the dying 'run-alive' process —
+    // its onTurnComplete fires AFTER the new run already appended 'reply-1'.
+    runManager.triggerDeferredTurnEnd('run-alive', 'orphan-old-assistant');
+
+    // Expected: [q1, a1, q2, reply-1] — NO orphan 'orphan-old-assistant'.
+    const msgs = listMessages(db, conv.id).map((m) => m.content);
+    assert.deepEqual(msgs, ['q1', 'a1', 'q2', 'reply-1']);
   });
 });

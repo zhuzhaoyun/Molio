@@ -10,6 +10,13 @@ import { mockChatRun, mockRewindResend, unmockAll, SCRIPTS } from './helpers/moc
  */
 
 test.describe('Chat — regenerate', () => {
+  // Centralized cleanup: if a test fails before reaching its inline unroute,
+  // the mock routes would leak into sibling tests. afterEach always runs.
+  test.afterEach(async ({ page }) => {
+    await unmockAll(page);
+    await page.unroute('**/api/runs/run-2/events**');
+  });
+
   test('regenerate replaces the last assistant reply', async ({ page }) => {
     await mockChatRun(page, { runId: 'run-1', conversationId: 'conv-1' });
     await mockRewindResend(page, 'run-2', 'conv-1', SCRIPTS.regenerateReply);
@@ -26,9 +33,6 @@ test.describe('Chat — regenerate', () => {
     // Old reply is gone; new (different) reply appears.
     await expect(page.locator('[data-testid="assistant-prose"]')).toContainText('fresh, different answer', { timeout: 10_000 });
     await expect(page.locator('[data-testid="assistant-prose"]')).not.toContainText('Hello, how can I help you?');
-
-    await unmockAll(page);
-    await page.unroute('**/api/runs/run-2/events**');
   });
 
   test('regenerate button hidden on non-last assistant messages', async ({ page }) => {
@@ -42,7 +46,5 @@ test.describe('Chat — regenerate', () => {
 
     // Only one regenerate button (on the last).
     await expect(page.locator('[data-testid="msg-regenerate-btn"]')).toHaveCount(1);
-
-    await unmockAll(page);
   });
 });

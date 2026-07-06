@@ -54,6 +54,12 @@ export async function startConversationRun(
     conversationId,
     history: opts.history,
     onTurnComplete: (text, rid) => {
+      // Defense-in-depth: if the run has already been cancelled (e.g. by the
+      // rewind-resend endpoint), drop the late reply so it cannot land after
+      // the new user message and produce an orphan assistant turn. cancelRun
+      // sets run.status = 'canceled' synchronously, so isTerminal returns true
+      // immediately.
+      if (runManager.isTerminal(rid)) return;
       conversations.appendMessage(conversationId, {
         id: randomUUID(),
         role: 'assistant',

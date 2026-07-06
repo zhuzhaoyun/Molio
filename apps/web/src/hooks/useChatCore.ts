@@ -101,6 +101,14 @@ export function useChatCore(options: UseChatCoreOptions) {
     const runId = result.runId;
     const convId = result.conversationId ?? state.conversationId;
 
+    // The passed assistantId is the initial SSE event target. We set the ref
+    // here (instead of relying solely on callers) so the parameter is
+    // actually used and callers don't need an implicit set-ref-first contract.
+    // The ref — not the parameter — is read inside the callback so the
+    // multi-turn path (api.sendMessage on an existing run) can retarget
+    // events to a new assistant message without resubscribing.
+    assistantIdRef.current = assistantId;
+
     setState((prev) => ({
       ...prev,
       messages: optimisticMessages,

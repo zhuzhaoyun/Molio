@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 
 export type ToolbarActionKey = 'copy' | 'regenerate' | 'edit';
 
@@ -46,6 +46,15 @@ async function copyText(text: string): Promise<boolean> {
 export function MessageToolbar({ actions }: Props) {
   const [copied, setCopied] = useState(false);
   const [failed, setFailed] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Clear any pending reset timer on unmount to avoid setting state on an
+  // unmounted component.
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
 
   const handleClick = useCallback(async (a: ToolbarAction) => {
     if (a.key === 'copy') {
@@ -53,10 +62,12 @@ export function MessageToolbar({ actions }: Props) {
       if (ok) {
         setCopied(true);
         setFailed(false);
-        setTimeout(() => setCopied(false), 1500);
+        if (timerRef.current) clearTimeout(timerRef.current);
+        timerRef.current = setTimeout(() => setCopied(false), 1500);
       } else {
         setFailed(true);
-        setTimeout(() => setFailed(false), 1500);
+        if (timerRef.current) clearTimeout(timerRef.current);
+        timerRef.current = setTimeout(() => setFailed(false), 1500);
       }
     } else {
       a.onClick();

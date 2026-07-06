@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 
 const FOLD_THRESHOLD = 20;
 
@@ -11,6 +11,15 @@ interface Props {
 export function CodeBlock({ lang, code, streaming }: Props) {
   const [folded, setFolded] = useState(() => code.split('\n').length > FOLD_THRESHOLD);
   const [copied, setCopied] = useState(false);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Clear any pending "reset copied" timer on unmount so we don't set state
+  // on an unmounted component.
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    };
+  }, []);
 
   const lines = useMemo(() => code.split('\n'), [code]);
   const isLong = lines.length > FOLD_THRESHOLD;
@@ -39,7 +48,8 @@ export function CodeBlock({ lang, code, streaming }: Props) {
     }
     if (ok) {
       setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopied(false), 1500);
     }
   }, [code]);
 
