@@ -2239,17 +2239,7 @@
   background: var(--bg-panel);
   color: var(--text-strong);
   border-color: var(--border);
-  font-weight: 500;
   margin-bottom: -1px;
-}
-
-.kb-wtab-icon {
-  font-size: 12px;
-  flex-shrink: 0;
-  line-height: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
 }
 
 .kb-wtab-title {

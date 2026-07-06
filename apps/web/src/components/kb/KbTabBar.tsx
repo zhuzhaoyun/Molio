@@ -5,7 +5,6 @@
  * active tab 变化时自动滚入可见区。箭头与下拉在后续 task 接入逻辑。
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { FileDocIcon } from '../FileIcons';
 import type { WorkspaceTab } from '../../hooks/useKbTabs';
 
 interface KbTabBarProps {
@@ -16,14 +15,6 @@ interface KbTabBarProps {
   actions?: ReactNode;
 }
 
-function getTabIcon(type: string): ReactNode {
-  switch (type) {
-    case 'file':
-      return <FileDocIcon size={12} />;
-    default:
-      return <span style={{ fontSize: 12 }}>📑</span>;
-  }
-}
 
 export function KbTabBar({ tabs, activeTabId, onActivate, onClose, actions }: KbTabBarProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -116,7 +107,6 @@ export function KbTabBar({ tabs, activeTabId, onActivate, onClose, actions }: Kb
               }}
               title={tab.title}
             >
-              <span className="kb-wtab-icon">{getTabIcon(tab.type)}</span>
               <span className="kb-wtab-title">{tab.title}</span>
               <button
                 type="button"
@@ -162,7 +152,6 @@ export function KbTabBar({ tabs, activeTabId, onActivate, onClose, actions }: Kb
                 onClick={() => { onActivate(tab.id); setMenuOpen(false); }}
                 title={tab.title}
               >
-                <span className="kb-wtab-icon">{getTabIcon(tab.type)}</span>
                 <span className="kb-wtab-dropdown-title">{tab.title}</span>
                 <button
                   type="button"
