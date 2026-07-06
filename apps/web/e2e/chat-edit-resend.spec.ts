@@ -46,6 +46,9 @@ test.describe('Chat — edit & resend', () => {
 
     await page.locator('[data-testid="user-message"]').hover();
     await page.locator('[data-testid="msg-edit-btn"]').click();
+    // Edit actions render localized labels, not raw i18n keys.
+    await expect(page.locator('[data-testid="msg-edit-save"]')).toContainText('保存');
+    await expect(page.locator('[data-testid="msg-edit-cancel"]')).toContainText('取消');
     await page.locator('[data-testid="msg-edit-textarea"]').fill('discard me');
     await page.locator('[data-testid="msg-edit-cancel"]').click();
 

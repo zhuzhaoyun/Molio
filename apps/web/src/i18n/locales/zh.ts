@@ -12,6 +12,7 @@ const zh: Record<string, string> = {
 
   // ── Common ──
   'common.save': '保存',
+  'common.cancel': '取消',
 
   // ── HomePage ──
   'home.newChat': '新对话',

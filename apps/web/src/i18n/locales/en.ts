@@ -12,6 +12,7 @@ const en: Record<string, string> = {
 
   // ── Common ──
   'common.save': 'Save',
+  'common.cancel': 'Cancel',
 
   // ── HomePage ──
   'home.newChat': 'New chat',
