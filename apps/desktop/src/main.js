@@ -378,8 +378,8 @@ if (process.platform === 'darwin') {
 app.whenReady().then(async () => {
   // Guard: requestSingleInstanceLock() returned false on a second instance,
   // but on some Electron versions whenReady still fires after app.quit().
-  // If we proceed, startDaemonProduction() would spawn a second daemon whose
-  // checkAndKillPortOccupant() kills the first instance's daemon — leaving
+  // If we proceed, the daemon startup below would spawn a second backend
+  // whose port-conflict check kills the first instance's daemon — leaving
   // the running app with no backend. Bail out instead.
   if (!singleLock) {
     log('warn', 'main', 'whenReady fired without single-instance lock — second instance, quitting');
