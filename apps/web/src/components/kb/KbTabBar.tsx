@@ -15,6 +15,29 @@ interface KbTabBarProps {
   actions?: ReactNode;
 }
 
+function tabDisplayTitle(tab: WorkspaceTab, allTabs: WorkspaceTab[]): { display: string; tooltip: string } {
+  if (!tab.id.startsWith('file:')) {
+    return { display: tab.title, tooltip: tab.title };
+  }
+  const relPath = tab.id.slice(5);
+  const filename = relPath.split('/').pop() ?? relPath;
+  const tooltip = relPath;
+  const siblings = allTabs.filter(
+    (t) => t.id.startsWith('file:') && (t.id.slice(5).split('/').pop() ?? '') === filename,
+  );
+  if (siblings.length <= 1) return { display: filename, tooltip };
+  const slashIdx = relPath.lastIndexOf('/');
+  const parentName = slashIdx > 0 ? relPath.slice(0, slashIdx).split('/').pop() : null;
+  const candidate = parentName ? `${parentName}/${filename}` : filename;
+  const stillCollide =
+    siblings.filter((t) => {
+      const p = t.id.slice(5);
+      const si = p.lastIndexOf('/');
+      const pn = si > 0 ? p.slice(0, si).split('/').pop() : null;
+      return (pn ? `${pn}/${filename}` : filename) === candidate;
+    }).length > 1;
+  return { display: stillCollide ? relPath : candidate, tooltip };
+}
 
 export function KbTabBar({ tabs, activeTabId, onActivate, onClose, actions }: KbTabBarProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -93,6 +116,7 @@ export function KbTabBar({ tabs, activeTabId, onActivate, onClose, actions }: Kb
       <div className="kb-wtab-scroll" ref={scrollRef} onScroll={recompute}>
         {tabs.map((tab) => {
           const isActive = tab.id === activeTabId;
+          const { display, tooltip } = tabDisplayTitle(tab, tabs);
           return (
             <div
               key={tab.id}
@@ -105,9 +129,9 @@ export function KbTabBar({ tabs, activeTabId, onActivate, onClose, actions }: Kb
                   onClose(tab.id);
                 }
               }}
-              title={tab.title}
+              title={tooltip}
             >
-              <span className="kb-wtab-title">{tab.title}</span>
+              <span className="kb-wtab-title">{display}</span>
               <button
                 type="button"
                 className="kb-wtab-close"
@@ -144,15 +168,16 @@ export function KbTabBar({ tabs, activeTabId, onActivate, onClose, actions }: Kb
         <div className="kb-tab-dropdown" data-testid="kb-tab-dropdown" ref={dropdownRef}>
           {tabs.map((tab) => {
             const isActive = tab.id === activeTabId;
+            const { display, tooltip } = tabDisplayTitle(tab, tabs);
             return (
               <div
                 key={tab.id}
                 className={`kb-wtab-dropdown-item ${isActive ? 'is-active' : ''}`}
                 data-testid="kb-tab-dropdown-item"
                 onClick={() => { onActivate(tab.id); setMenuOpen(false); }}
-                title={tab.title}
+                title={tooltip}
               >
-                <span className="kb-wtab-dropdown-title">{tab.title}</span>
+                <span className="kb-wtab-dropdown-title">{display}</span>
                 <button
                   type="button"
                   className="kb-wtab-dropdown-close"
