@@ -20,7 +20,7 @@
         "apps/daemon/src/core/RunManager.ts",
         "apps/daemon/src/streams/*"
       ],
-      "specs": ["chat-single", "chat-multi", "chat-streaming", "chat-copy"]
+      "specs": ["chat-single", "chat-multi", "chat-streaming", "chat-copy", "chat-regenerate", "chat-edit-resend"]
     },
     "kb": {
       "paths": [
@@ -105,6 +105,9 @@
     "chat-single": { "priority": "P0", "file": "chat-single.spec.ts" },
     "chat-multi": { "priority": "P0", "file": "chat-multi.spec.ts" },
     "chat-streaming": { "priority": "P1", "file": "chat-streaming.spec.ts" },
+    "chat-copy": { "priority": "P0", "file": "chat-copy.spec.ts" },
+    "chat-regenerate": { "priority": "P0", "file": "chat-regenerate.spec.ts" },
+    "chat-edit-resend": { "priority": "P0", "file": "chat-edit-resend.spec.ts" },
     "create-vault-form": { "priority": "P0", "file": "create-vault-form.spec.ts" },
     "graph": { "priority": "P1", "file": "graph.spec.ts" },
     "graph-settings": { "priority": "P2", "file": "graph-settings.spec.ts" },

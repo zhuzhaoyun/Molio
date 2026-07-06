@@ -59,6 +59,13 @@ export function useChat(options: UseChatOptions | string | null) {
         cwd: cwd ?? undefined,
       });
     },
+    rewindResend: async ({ conversationId, newContent }) => {
+      return api.rewindResend(conversationId, {
+        newContent,
+        agentId: agentId ?? undefined,
+        cwd: cwd ?? undefined,
+      });
+    },
   });
 
   /**
@@ -115,5 +122,7 @@ export function useChat(options: UseChatOptions | string | null) {
     reset: core.reset,
     loadConversation,
     loadConversationById,
+    regenerateLast: core.regenerateLast,
+    editAndResend: core.editAndResend,
   };
 }

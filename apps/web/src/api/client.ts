@@ -297,6 +297,19 @@ export const api = {
     await fetch(`${BASE}/conversations/${conversationId}`, { method: 'DELETE' });
   },
 
+  async rewindResend(conversationId: string, req: { newContent: string; agentId?: string; cwd?: string }): Promise<{ runId: string; conversationId: string }> {
+    const res = await fetch(`${BASE}/conversations/${conversationId}/rewind-resend`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error?.message ?? `Failed to rewind-resend: ${res.status}`);
+    }
+    return res.json();
+  },
+
   // ─── Weixin ClawBot ───
 
   async getWeixinStatus(): Promise<WeixinStatus> {

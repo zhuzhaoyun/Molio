@@ -15,6 +15,8 @@ interface Props {
   onNewChat: () => void;
   onSubmitToolResult?: (toolUseId: string, content: string) => Promise<void>;
   onOpenConversation?: (conversationId: string) => void;
+  onRegenerate?: () => void;
+  onEdit?: (messageId: string, newContent: string) => void;
 }
 
 export function HomePage({
@@ -26,6 +28,8 @@ export function HomePage({
   onNewChat,
   onSubmitToolResult,
   onOpenConversation,
+  onRegenerate,
+  onEdit,
 }: Props) {
   const { t } = useI18n();
   const logRef = useRef<HTMLDivElement>(null);
@@ -106,7 +110,21 @@ export function HomePage({
         <div className="home-chat-log" ref={logRef}>
           {messages.map((msg) => {
             if (msg.role === 'user') {
-              return <UserMessage key={msg.id} message={msg} />;
+              const isLastUser = (() => {
+                for (let i = messages.length - 1; i >= 0; i--) {
+                  if (messages[i]!.role === 'user') return messages[i]!.id === msg.id;
+                }
+                return false;
+              })();
+              return (
+                <UserMessage
+                  key={msg.id}
+                  message={msg}
+                  isLast={isLastUser}
+                  onEdit={onEdit}
+                  disabled={isRunning}
+                />
+              );
             }
             if (msg.role === 'assistant') {
               return (
@@ -116,6 +134,7 @@ export function HomePage({
                   isLast={msg.id === lastAssistantId}
                   onAnswerToolUse={onSubmitToolResult ? onAnswerToolUse : undefined}
                   onSubmitForm={(text: string) => handleSend(text, [])}
+                  onRegenerate={msg.id === lastAssistantId ? onRegenerate : undefined}
                 />
               );
             }

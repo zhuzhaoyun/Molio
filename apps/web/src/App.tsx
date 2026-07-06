@@ -182,6 +182,8 @@ export default function App() {
                   onOpenConversation={(conversationId) => {
                     void chat.loadConversationById(conversationId);
                   }}
+                  onRegenerate={chat.regenerateLast}
+                  onEdit={chat.editAndResend}
                 />
               }
             />

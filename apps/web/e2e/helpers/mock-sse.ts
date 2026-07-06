@@ -22,6 +22,14 @@ export const SCRIPTS = {
     { type: 'usage', usage: { input_tokens: 100, output_tokens: 20 }, costUsd: 0.005 },
   ],
 
+  /** A different reply text so tests can verify regeneration actually re-ran. */
+  regenerateReply: [
+    { type: 'status', label: 'running', model: 'claude-sonnet-4-5' },
+    { type: 'text_delta', delta: 'Here is a fresh, different answer.' },
+    { type: 'turn_end', stopReason: 'end_turn' },
+    { type: 'usage', usage: { input_tokens: 110, output_tokens: 25 }, costUsd: 0.006 },
+  ],
+
   /** Reply with thinking block */
   withThinking: [
     { type: 'status', label: 'running' },
@@ -160,6 +168,34 @@ export async function mockChatRun(page: Page, opts: MockRunOptions = {}) {
   });
 }
 
+/**
+ * Mock POST /api/conversations/:id/rewind-resend to return a new runId, and
+ * mock that new run's SSE stream with `script`.
+ */
+export async function mockRewindResend(
+  page: Page,
+  newRunId: string,
+  conversationId: string,
+  script: readonly object[] = SCRIPTS.regenerateReply,
+) {
+  await page.route('**/api/conversations/*/rewind-resend', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ runId: newRunId, conversationId }),
+    });
+  });
+  await page.route(`**/api/runs/${newRunId}/events**`, async (route) => {
+    const frames = script.map((evt, i) => sseFrame(i + 1, newRunId, evt)).join('');
+    await route.fulfill({
+      status: 200,
+      contentType: 'text/event-stream',
+      headers: { 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' },
+      body: frames,
+    });
+  });
+}
+
 // ── Cleanup ────────────────────────────────────────────────────────────
 
 /**
@@ -173,4 +209,5 @@ export async function unmockAll(page: Page) {
   await page.unroute('**/api/runs/*/tool-result');
   await page.unroute('**/api/agents');
   await page.unroute('**/api/config');
+  await page.unroute('**/api/conversations/*/rewind-resend');
 }

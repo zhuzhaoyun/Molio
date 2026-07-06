@@ -62,9 +62,11 @@ interface Props {
   onAnswerToolUse?: (toolUseId: string, content: string) => Promise<boolean | void> | boolean | void;
   /** Fallback: send the answer as a fresh user message. */
   onSubmitForm?: (text: string) => void;
+  /** Regenerate the last assistant reply. */
+  onRegenerate?: () => void;
 }
 
-export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitForm }: Props) {
+export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitForm, onRegenerate }: Props) {
   const { t } = useI18n();
 
   // Check if the message has an AskUserQuestion tool — suppress the markdown
@@ -157,9 +159,14 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
         <MessageToolbar actions={[
           {
             key: 'copy', label: '复制', icon: '📋', testid: 'msg-copy-btn',
-            text: message.content,
-            onClick: () => {},
+            text: message.content, onClick: () => {},
           },
+          ...(isLast && onRegenerate
+            ? [{
+                key: 'regenerate' as const, label: '重新生成', icon: '↻', testid: 'msg-regenerate-btn',
+                text: '', onClick: onRegenerate,
+              }]
+            : []),
         ]} />
       )}
     </div>
