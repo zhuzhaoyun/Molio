@@ -156,7 +156,7 @@ test.describe('KB same-name tab disambiguation (#5)', () => {
     await expandFolder(page, 'notes');
     await page.locator('.kb-tree-item:visible').filter({ hasText: 'index.md' }).first().click();
     await expandFolder(page, 'drafts');
-    await page.locator('.kb-tree-item:visible').filter({ hasText: 'index.md' }).first().click();
+    await page.locator('.kb-tree-group').filter({ hasText: 'drafts' }).locator('.kb-tree-item').filter({ hasText: 'index.md' }).click();
     await page.locator('.kb-tree-item').filter({ hasText: 'readme.md' }).click();
     await expect(page.locator('.kb-wtab')).toHaveCount(3, { timeout: 5_000 });
 

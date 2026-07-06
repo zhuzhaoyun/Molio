@@ -744,7 +744,7 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
     } catch (err) {
       showToast(`移动文件失败：${err instanceof Error ? err.message : String(err)}`);
     }
-  }, [kb.activeVault, kb.activeVault?.id, kb.tree, kb.renameFile, tabs, showToast]);
+  }, [kb.activeVault?.id, kb.tree, kb.renameFile, tabs, showToast]);
 
   const handleImportFiles = useCallback(async (files: File[], targetDir: string) => {
     if (!kb.activeVault) return;
