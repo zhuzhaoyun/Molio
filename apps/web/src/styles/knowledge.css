@@ -2177,13 +2177,24 @@
 .kb-wtab-dropdown-close {
   width: 16px;
   height: 16px;
+  padding: 0;
   border: none;
   background: transparent;
   border-radius: 4px;
   color: var(--text-faint);
   font-size: 14px;
+  line-height: 1;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 80ms ease;
   flex-shrink: 0;
+}
+.kb-wtab-dropdown-item:hover .kb-wtab-dropdown-close,
+.kb-wtab-dropdown-item.is-active .kb-wtab-dropdown-close {
+  opacity: 1;
 }
 .kb-wtab-dropdown-close:hover { background: var(--bg-muted); color: var(--text); }
 
