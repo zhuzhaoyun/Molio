@@ -129,3 +129,11 @@ function shutdown(): void {
 
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
+
+// [DEBUG] catch uncaught exceptions to diagnose daemon crashes
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL] uncaughtException:', err?.stack ?? err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[FATAL] unhandledRejection:', reason instanceof Error ? reason.stack : reason);
+});
