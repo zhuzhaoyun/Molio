@@ -22,6 +22,7 @@ export interface UseKbTabsReturn {
   activeTabId: string | null;
   openTab: (tab: Omit<WorkspaceTab, 'id'> & { id?: string }) => { opened: boolean; reason?: 'limit' };
   closeTab: (id: string) => void;
+  removeWhere: (predicate: (t: WorkspaceTab) => boolean) => string[];
   activateTab: (id: string) => void;
   updateTab: (id: string, patch: Partial<WorkspaceTab>) => void;
   getActiveTab: () => WorkspaceTab | undefined;
@@ -38,6 +39,11 @@ export function useKbTabs(): UseKbTabsReturn {
 
   const closeTab = useCallback(
     (id: string) => kbTabsStore.closeTab(id),
+    [],
+  );
+
+  const removeWhere = useCallback(
+    (predicate: (t: WorkspaceTab) => boolean) => kbTabsStore.removeWhere(predicate),
     [],
   );
 
@@ -58,7 +64,7 @@ export function useKbTabs(): UseKbTabsReturn {
   );
 
   return useMemo(
-    () => ({ tabs, activeTabId, openTab, closeTab, activateTab, updateTab, getActiveTab }),
-    [tabs, activeTabId, openTab, closeTab, activateTab, updateTab, getActiveTab],
+    () => ({ tabs, activeTabId, openTab, closeTab, removeWhere, activateTab, updateTab, getActiveTab }),
+    [tabs, activeTabId, openTab, closeTab, removeWhere, activateTab, updateTab, getActiveTab],
   );
 }

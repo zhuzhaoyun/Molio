@@ -19,6 +19,7 @@ export interface WorkspaceTab {
   id: string;
   type: TabType;
   title: string;
+  vaultId?: string;
   data?: Record<string, unknown>;
 }
 
@@ -110,6 +111,19 @@ export const kbTabsStore = {
       activeTabId = newActive?.id ?? null;
     }
     emit();
+  },
+
+  removeWhere(predicate: (t: WorkspaceTab) => boolean): string[] {
+    const removed = tabs.filter(predicate);
+    if (removed.length === 0) return [];
+    const removedIds = new Set(removed.map((t) => t.id));
+    const survivors = tabs.filter((t) => !removedIds.has(t.id));
+    tabs = survivors;
+    if (activeTabId && removedIds.has(activeTabId)) {
+      activeTabId = survivors[0]?.id ?? null;
+    }
+    emit();
+    return removed.map((t) => t.id);
   },
 
   activateTab(id: string) {
