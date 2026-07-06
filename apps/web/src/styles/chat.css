@@ -1108,7 +1108,7 @@
 /* ─── Message toolbar (hover-reveal) ─── */
 .message-toolbar {
   display: flex;
-  gap: 4px;
+  gap: 2px;
   align-items: center;
   margin-top: 6px;
   opacity: 0;
@@ -1124,25 +1124,68 @@
 @media (hover: none) {
   .message-toolbar { opacity: 1; pointer-events: auto; }
 }
-.message-toolbar button {
+
+/* Icon-only button, shared by the message toolbar and the code-block header.
+ * Square, low-contrast, muted; lifts to primary text color on hover. */
+.icon-btn {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  font-size: 12px;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
   color: var(--text-secondary);
   background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  border: 1px solid transparent;
+  border-radius: 7px;
   cursor: pointer;
-  transition: background 0.1s, color 0.1s;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
-.message-toolbar button:hover:not(:disabled) {
-  background: var(--bg-hover);
+.icon-btn:hover:not(:disabled) {
   color: var(--text-primary);
+  background: var(--bg-hover);
+  border-color: var(--border);
 }
-.message-toolbar button:disabled { opacity: 0.4; cursor: default; }
-.message-toolbar button.copied { color: var(--accent); }
+.icon-btn:active:not(:disabled) { transform: translateY(0.5px); }
+.icon-btn:disabled { opacity: 0.35; cursor: default; }
+.icon-btn.copied { color: var(--accent); }
+
+/* Copied micro-interaction: a brief accent pulse so the checkmark lands. */
+@keyframes icon-copied-pulse {
+  0%   { box-shadow: 0 0 0 0 var(--accent-tint); }
+  60%  { box-shadow: 0 0 0 5px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.icon-btn.copied { animation: icon-copied-pulse 0.6s ease-out; }
+
+/* Custom tooltip — the Chinese hint lives here, never as inline button text.
+ * Appears above the button so it doesn't overflow the message bottom edge. */
+.icon-btn[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  right: 50%;
+  bottom: calc(100% + 6px);
+  transform: translateX(50%) translateY(2px);
+  padding: 3px 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: nowrap;
+  color: #fff;
+  background: var(--text-primary, #1f1d1a);
+  border-radius: 5px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.14s ease 0.35s, transform 0.14s ease 0.35s;
+  z-index: 20;
+}
+.icon-btn[data-tip]:hover::after,
+.icon-btn[data-tip]:focus-visible::after {
+  opacity: 1;
+  transform: translateX(50%) translateY(0);
+}
+/* No tooltip delay for the copied/failed confirmation — show immediately. */
+.icon-btn.copied[data-tip]::after { transition-delay: 0s; }
 
 /* ─── User message edit mode ─── */
 .user-edit { display: flex; flex-direction: column; gap: 6px; }
@@ -1168,24 +1211,19 @@
 }
 .codeblock-header {
   display: flex; justify-content: space-between; align-items: center;
-  padding: 4px 10px;
+  padding: 4px 8px 4px 10px;
   font-size: 12px; color: var(--text-secondary);
   border-bottom: 1px solid var(--border);
   background: var(--bg-code-header, rgba(0,0,0,0.03));
 }
 .codeblock-lang { text-transform: lowercase; letter-spacing: 0.3px; }
-.codeblock-copy {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 2px 8px; font-size: 12px;
-  border: 1px solid var(--border); border-radius: 6px;
-  background: transparent; color: var(--text-secondary); cursor: pointer;
-}
-.codeblock-copy:hover { background: var(--bg-hover); color: var(--text-primary); }
-.codeblock-copy.copied { color: var(--accent); }
+/* codeblock-copy reuses .icon-btn; only size differs (slightly tighter). */
+.codeblock-copy { width: 24px; height: 24px; }
 .codeblock pre { margin: 0; padding: 10px 12px; overflow-x: auto; }
 .codeblock pre code { font-family: var(--font-mono, monospace); font-size: 13px; white-space: pre; }
 .codeblock-fold {
-  display: block; width: 100%; padding: 4px;
+  display: inline-flex; align-items: center; gap: 4px;
+  width: 100%; padding: 4px;
   font-size: 12px; color: var(--text-secondary);
   background: transparent; border: none; border-top: 1px solid var(--border);
   cursor: pointer;

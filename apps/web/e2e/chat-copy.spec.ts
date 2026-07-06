@@ -56,7 +56,9 @@ test.describe('Chat — copy', () => {
     await page.locator('[data-testid="assistant-message"]').hover();
     const btn = page.locator('[data-testid="assistant-message"] [data-testid="msg-copy-btn"]');
     await btn.click();
-    // Button text switches to "已复制" transiently
-    await expect(btn).toContainText('已复制');
+    // Icon-only button: copied state surfaces as the .copied class and a
+    // tooltip whose data-tip flips to "已复制" (no inline text on the button).
+    await expect(btn).toHaveClass(/copied/);
+    await expect(btn).toHaveAttribute('data-tip', '已复制');
   });
 });

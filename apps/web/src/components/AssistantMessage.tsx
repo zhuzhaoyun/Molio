@@ -166,12 +166,12 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
       {!message.streaming && (
         <MessageToolbar actions={[
           {
-            key: 'copy', label: '复制', icon: '📋', testid: 'msg-copy-btn',
+            key: 'copy', label: '复制', testid: 'msg-copy-btn',
             text: message.content, onClick: () => {},
           },
           ...(isLast && onRegenerate
             ? [{
-                key: 'regenerate' as const, label: '重新生成', icon: '↻', testid: 'msg-regenerate-btn',
+                key: 'regenerate' as const, label: '重新生成', testid: 'msg-regenerate-btn',
                 text: '', onClick: onRegenerate,
               }]
             : []),

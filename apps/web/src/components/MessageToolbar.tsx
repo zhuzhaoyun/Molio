@@ -1,16 +1,26 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { CopyIcon, RegenerateIcon, EditIcon, CheckIcon } from './icons';
 
 export type ToolbarActionKey = 'copy' | 'regenerate' | 'edit';
 
 export interface ToolbarAction {
   key: ToolbarActionKey;
+  /** Short Chinese label — shown only as a hover tooltip, never inline. */
   label: string;
-  icon: string;
   testid: string;
   /** Content to copy for the copy action; ignored by other actions. */
   text: string;
   onClick: () => void;
   disabled?: boolean;
+}
+
+/** The icon shown for an action in its default (non-copied) state. */
+function ActionIcon({ k }: { k: ToolbarActionKey }) {
+  switch (k) {
+    case 'copy': return <CopyIcon />;
+    case 'regenerate': return <RegenerateIcon />;
+    case 'edit': return <EditIcon />;
+  }
 }
 
 interface Props {
@@ -78,19 +88,19 @@ export function MessageToolbar({ actions }: Props) {
     <div className="message-toolbar" data-testid="message-toolbar">
       {actions.map((a) => {
         const showCopied = a.key === 'copy' && copied;
+        const tip = a.key === 'copy' && failed ? '复制失败' : showCopied ? '已复制' : a.label;
         return (
           <button
             key={a.key}
             type="button"
             data-testid={a.testid}
-            className={showCopied ? 'copied' : undefined}
+            className={`icon-btn${showCopied ? ' copied' : ''}`}
+            data-tip={tip}
             disabled={a.disabled}
             onClick={() => handleClick(a)}
-            title={a.key === 'copy' && failed ? '复制失败' : showCopied ? '已复制' : a.label}
-            aria-label={a.label}
+            aria-label={tip}
           >
-            <span aria-hidden>{showCopied ? '✓' : a.icon}</span>
-            <span>{showCopied ? '已复制' : a.label}</span>
+            {showCopied ? <CheckIcon /> : <ActionIcon k={a.key} />}
           </button>
         );
       })}

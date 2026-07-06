@@ -116,13 +116,13 @@ export function UserMessage({ message, isLast, onEdit, disabled }: Props) {
 
   const actions: ToolbarAction[] = [
     {
-      key: 'copy', label: '复制', icon: '📋', testid: 'msg-copy-btn',
+      key: 'copy', label: '复制', testid: 'msg-copy-btn',
       text: message.content, onClick: () => {},
     },
   ];
   if (onEdit && isLast) {
     actions.push({
-      key: 'edit', label: '编辑', icon: '✏️', testid: 'msg-edit-btn',
+      key: 'edit', label: '编辑', testid: 'msg-edit-btn',
       text: '', onClick: startEdit,
     });
   }

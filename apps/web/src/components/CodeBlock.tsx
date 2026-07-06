@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import { CopyIcon, CheckIcon, ChevronIcon } from './icons';
 
 const FOLD_THRESHOLD = 20;
 
@@ -63,12 +64,13 @@ export function CodeBlock({ lang, code, streaming }: Props) {
         </span>
         <button
           type="button"
-          className={`codeblock-copy${copied ? ' copied' : ''}`}
+          className={`icon-btn codeblock-copy${copied ? ' copied' : ''}`}
           data-testid="codeblock-copy-btn"
+          data-tip={copied ? '已复制' : '复制代码'}
           onClick={copy}
-          title={copied ? '已复制' : '复制代码'}
+          aria-label={copied ? '已复制' : '复制代码'}
         >
-          {copied ? '✓ 已复制' : '📋 复制'}
+          {copied ? <CheckIcon size={15} /> : <CopyIcon size={15} />}
         </button>
       </div>
       <pre>
@@ -81,7 +83,8 @@ export function CodeBlock({ lang, code, streaming }: Props) {
           data-testid="codeblock-expand-btn"
           onClick={() => setFolded((f) => !f)}
         >
-          {folded ? `展开(共 ${lines.length} 行)` : '收起'}
+          <ChevronIcon />
+          <span>{folded ? `展开 · 共 ${lines.length} 行` : '收起'}</span>
         </button>
       )}
     </div>
