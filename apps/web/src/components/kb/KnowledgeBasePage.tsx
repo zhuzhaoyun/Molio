@@ -219,7 +219,7 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
       if (existingTab) {
         tabs.activateTab(tabId);
       } else {
-        const res = tabs.openTab({ id: tabId, type: 'file', title: fileName });
+        const res = tabs.openTab({ id: tabId, type: 'file', title: fileName, vaultId: kb.activeVault?.id });
         if (!res.opened && res.reason === 'limit') {
           // Defensive: pre-check below should have caught this; never switch
           // the viewed file or discard edits when blocked.
@@ -534,6 +534,27 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
     setCtxMenu(null);
   }, []);
 
+  const handleDeleteFile = useCallback(async (filePath: string) => {
+    try {
+      await kb.deleteFile(filePath);
+    } catch (err) {
+      showToast(`删除失败：${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
+    tabs.closeTab(`file:${filePath}`);
+  }, [kb, tabs, showToast]);
+
+  const handleDeleteFolder = useCallback(async (folderPath: string) => {
+    try {
+      await kb.deleteFolder(folderPath);
+    } catch (err) {
+      showToast(`删除失败：${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
+    const prefix = `file:${folderPath}/`;
+    tabs.removeWhere(t => t.vaultId === kb.activeVault?.id && t.id.startsWith(prefix));
+  }, [kb, tabs, showToast]);
+
   const getContextMenuItems = useCallback((): MenuItem[] => {
     if (!ctxMenu) return [];
     const { node } = ctxMenu;
@@ -618,11 +639,7 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
             danger: true,
             onConfirm: async () => {
               setConfirmDialog((prev) => ({ ...prev, show: false }));
-              try {
-                await kb.deleteFile(node.path);
-              } catch (err) {
-                showToast(`删除失败：${err instanceof Error ? err.message : String(err)}`);
-              }
+              await handleDeleteFile(node.path);
             },
           });
         },
@@ -640,11 +657,7 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
             danger: true,
             onConfirm: async () => {
               setConfirmDialog((prev) => ({ ...prev, show: false }));
-              try {
-                await kb.deleteFolder(node.path);
-              } catch (err) {
-                showToast(`删除失败：${err instanceof Error ? err.message : String(err)}`);
-              }
+              await handleDeleteFolder(node.path);
             },
           });
         },
@@ -652,7 +665,7 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
     }
 
     return items;
-  }, [ctxMenu, kb, showToast, handleNewFile, handleNewFolder, handleSelectFile, handleOpenInNewTab, kbChat]);
+  }, [ctxMenu, kb, showToast, handleNewFile, handleNewFolder, handleSelectFile, handleOpenInNewTab, handleDeleteFile, handleDeleteFolder, kbChat]);
 
   // ─── Inline rename ───
 
@@ -664,10 +677,14 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
     if (newPath === oldPath) return;
     try {
       await kb.renameFile(oldPath, newPath);
+      const newFileName = newPath.split('/').pop() ?? newPath;
+      const existingTabForNewPath = tabs.tabs.find(t => t.id === `file:${newPath}`);
+      if (existingTabForNewPath) tabs.closeTab(`file:${newPath}`);
+      tabs.updateTab(`file:${oldPath}`, { id: `file:${newPath}`, title: newFileName, vaultId: kb.activeVault?.id });
     } catch (err) {
       showToast(`重命名失败：${err instanceof Error ? err.message : String(err)}`);
     }
-  }, [kb.renameFile, showToast]);
+  }, [kb.renameFile, kb.activeVault?.id, tabs, showToast]);
 
   const handleRenameCancel = useCallback(() => {
     setRenamingPath(null);
@@ -697,10 +714,14 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
 
     try {
       await kb.renameFile(srcPath, newPath);
+      const newFileName = newPath.split('/').pop() ?? newPath;
+      const existingTabForNewPath = tabs.tabs.find(t => t.id === `file:${newPath}`);
+      if (existingTabForNewPath) tabs.closeTab(`file:${newPath}`);
+      tabs.updateTab(`file:${srcPath}`, { id: `file:${newPath}`, title: newFileName, vaultId: kb.activeVault?.id });
     } catch (err) {
       showToast(`移动文件失败：${err instanceof Error ? err.message : String(err)}`);
     }
-  }, [kb.activeVault, kb.tree, kb.renameFile, showToast]);
+  }, [kb.activeVault, kb.activeVault?.id, kb.tree, kb.renameFile, tabs, showToast]);
 
   const handleImportFiles = useCallback(async (files: File[], targetDir: string) => {
     if (!kb.activeVault) return;
