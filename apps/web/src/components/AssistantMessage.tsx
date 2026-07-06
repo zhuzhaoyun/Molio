@@ -7,6 +7,7 @@ import { useFileNavigation } from '../hooks/useFileNavigation';
 import { ToolCard } from './ToolCard';
 import { ToolGroup } from './ToolGroup';
 import { ThinkingBlock } from './ThinkingBlock';
+import { MessageToolbar } from './MessageToolbar';
 
 // Tools that should never be grouped (always shown individually)
 const UNGROUPABLE = new Set(['AskUserQuestion', 'ask_user_question']);
@@ -150,6 +151,16 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
           {message.usage.output != null && <span>{message.usage.output} out</span>}
           {message.usage.cost != null && <span>${message.usage.cost.toFixed(4)}</span>}
         </div>
+      )}
+
+      {!message.streaming && (
+        <MessageToolbar actions={[
+          {
+            key: 'copy', label: '复制', icon: '📋', testid: 'msg-copy-btn',
+            text: message.content,
+            onClick: () => {},
+          },
+        ]} />
       )}
     </div>
   );

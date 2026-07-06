@@ -1104,3 +1104,56 @@
 .composer-trigger-zone {
   position: relative;
 }
+
+/* ─── Message toolbar (hover-reveal) ─── */
+.message-toolbar {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-top: 6px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  pointer-events: none;
+}
+.msg:hover .message-toolbar,
+.message-toolbar:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+/* Touch devices have no hover — keep toolbar visible. */
+@media (hover: none) {
+  .message-toolbar { opacity: 1; pointer-events: auto; }
+}
+.message-toolbar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+.message-toolbar button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.message-toolbar button:disabled { opacity: 0.4; cursor: default; }
+.message-toolbar button.copied { color: var(--accent); }
+
+/* ─── User message edit mode ─── */
+.user-edit { display: flex; flex-direction: column; gap: 6px; }
+.user-edit-input {
+  width: 100%; min-height: 60px; resize: vertical;
+  padding: 8px; font: inherit; color: var(--text-primary);
+  background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px;
+}
+.user-edit-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.user-edit-save, .user-edit-cancel {
+  padding: 4px 12px; font-size: 13px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--border); background: transparent; color: var(--text-primary);
+}
+.user-edit-save:disabled { opacity: 0.4; cursor: default; }

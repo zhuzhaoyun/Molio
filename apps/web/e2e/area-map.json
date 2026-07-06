@@ -7,6 +7,7 @@
         "apps/web/src/components/ChatComposer.*",
         "apps/web/src/components/UserMessage.*",
         "apps/web/src/components/AssistantMessage.*",
+        "apps/web/src/components/MessageToolbar.*",
         "apps/web/src/components/ThinkingBlock.*",
         "apps/web/src/components/ToolCard.*",
         "apps/web/src/components/ToolGroup.*",
@@ -19,7 +20,7 @@
         "apps/daemon/src/core/RunManager.ts",
         "apps/daemon/src/streams/*"
       ],
-      "specs": ["chat-single", "chat-multi", "chat-streaming"]
+      "specs": ["chat-single", "chat-multi", "chat-streaming", "chat-copy"]
     },
     "kb": {
       "paths": [

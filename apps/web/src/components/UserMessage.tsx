@@ -1,10 +1,17 @@
+import { useState, useCallback } from 'react';
 import { api } from '../api/client';
 import { useActiveVaultId } from '../stores/vaultStore';
 import { useI18n } from '../i18n';
+import { MessageToolbar, type ToolbarAction } from './MessageToolbar';
+import type { ChatMessage } from '../hooks/useChat';
 
 interface Props {
-  content: string;
-  timestamp: number;
+  message: ChatMessage;
+  isLast?: boolean;
+  /** Edit-and-resend. If absent, the edit button is hidden. */
+  onEdit?: (messageId: string, newContent: string) => void;
+  /** Disable actions while a run is in progress. */
+  disabled?: boolean;
 }
 
 /**
@@ -82,17 +89,79 @@ function renderContent(content: string, vaultId: string | null, t: (key: string)
   return parts;
 }
 
-export function UserMessage({ content, timestamp }: Props) {
+export function UserMessage({ message, isLast, onEdit, disabled }: Props) {
   const vaultId = useActiveVaultId();
   const { t } = useI18n();
-  const rendered = renderContent(content, vaultId, t);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(message.content);
+
+  const rendered = renderContent(message.content, vaultId, t);
+
+  const startEdit = useCallback(() => {
+    setDraft(message.content);
+    setEditing(true);
+  }, [message.content]);
+
+  const cancelEdit = useCallback(() => {
+    setDraft(message.content);
+    setEditing(false);
+  }, [message.content]);
+
+  const saveEdit = useCallback(() => {
+    const trimmed = draft.trim();
+    if (!trimmed) return; // empty save disabled in UI
+    setEditing(false);
+    onEdit?.(message.id, trimmed);
+  }, [draft, onEdit, message.id]);
+
+  const actions: ToolbarAction[] = [
+    {
+      key: 'copy', label: '复制', icon: '📋', testid: 'msg-copy-btn',
+      text: message.content, onClick: () => {},
+    },
+  ];
+  if (onEdit && isLast) {
+    actions.push({
+      key: 'edit', label: '编辑', icon: '✏️', testid: 'msg-edit-btn',
+      text: '', onClick: startEdit,
+    });
+  }
 
   return (
     <div className="msg user" data-testid="user-message">
       <div className="role">
-        <span className="msg-time">{formatTime(timestamp)}</span>
+        <span className="msg-time">{formatTime(message.timestamp)}</span>
       </div>
-      <div className="user-text">{rendered}</div>
+      {editing ? (
+        <div className="user-edit">
+          <textarea
+            data-testid="msg-edit-textarea"
+            className="user-edit-input"
+            value={draft}
+            autoFocus
+            onChange={(e) => setDraft(e.target.value)}
+            rows={Math.min(10, Math.max(2, draft.split('\n').length))}
+          />
+          <div className="user-edit-actions">
+            <button data-testid="msg-edit-cancel" className="user-edit-cancel" onClick={cancelEdit}>
+              {t('common.cancel')}
+            </button>
+            <button
+              data-testid="msg-edit-save"
+              className="user-edit-save"
+              onClick={saveEdit}
+              disabled={!draft.trim() || disabled}
+            >
+              {t('common.save')}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="user-text">{rendered}</div>
+          <MessageToolbar actions={actions} />
+        </>
+      )}
     </div>
   );
 }
