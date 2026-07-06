@@ -1188,10 +1188,17 @@
 .icon-btn.copied[data-tip]::after { transition-delay: 0s; }
 
 /* ─── User message edit mode ─── */
-.user-edit { display: flex; flex-direction: column; gap: 6px; }
+.user-edit {
+  display: flex; flex-direction: column; gap: 6px;
+  /* Wider than the read-only bubble (which caps at 78%/560px) so editing
+   * longer text is comfortable. Right-aligned to match the user bubble. */
+  width: min(92%, 680px);
+  max-width: 100%;
+}
 .user-edit-input {
-  width: 100%; min-height: 60px; resize: vertical;
-  padding: 8px; font: inherit; color: var(--text-primary);
+  width: 100%; min-height: 88px; resize: vertical;
+  padding: 8px 10px; font: inherit; font-size: 13px; line-height: 1.5;
+  color: var(--text-primary);
   background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px;
 }
 .user-edit-actions { display: flex; gap: 8px; justify-content: flex-end; }
