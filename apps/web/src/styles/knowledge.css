@@ -2123,7 +2123,7 @@
   line-height: 1;
 }
 .kb-wtab-arrow:hover { color: var(--text); background: var(--bg-panel); }
-.kb-wtab-arrow[hidden] { display: none; }
+.kb-wtab-arrow[hidden] { visibility: hidden; }
 
 .kb-wtab-more {
   flex-shrink: 0;
@@ -2136,7 +2136,7 @@
   line-height: 1;
 }
 .kb-wtab-more:hover { color: var(--text); background: var(--bg-panel); }
-.kb-wtab-more[hidden] { display: none; }
+.kb-wtab-more[hidden] { visibility: hidden; }
 
 /* Dropdown menu listing all tabs (overflow affordance). */
 .kb-tab-dropdown {
@@ -2148,7 +2148,7 @@
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--shadow-md);
   max-height: 320px;
   overflow-y: auto;
   min-width: 180px;
@@ -2224,7 +2224,7 @@
   font-size: 12px;
   cursor: pointer;
   user-select: none;
-  transition: all 100ms ease;
+  transition: background-color 100ms ease, color 100ms ease, border-color 100ms ease;
   position: relative;
   margin-right: 1px;
   flex-shrink: 0;
@@ -2240,12 +2240,16 @@
   color: var(--text-strong);
   border-color: var(--border);
   font-weight: 500;
+  margin-bottom: -1px;
 }
 
 .kb-wtab-icon {
   font-size: 12px;
   flex-shrink: 0;
   line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .kb-wtab-title {
@@ -2282,6 +2286,17 @@
 .kb-wtab-close:hover {
   background: var(--bg-muted);
   color: var(--text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kb-wtab,
+  .kb-wtab-close,
+  .kb-wtab-arrow,
+  .kb-wtab-more,
+  .kb-wtab-dropdown-item,
+  .kb-wtab-dropdown-close {
+    transition: none;
+  }
 }
 
 /* ══════════ Context Menu ══════════ */
