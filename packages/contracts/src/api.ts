@@ -40,6 +40,18 @@ export interface CreateRunRequest {
   history?: ChatMessage[];
 }
 
+export interface RewindResendRequest {
+  /** New user message content (edited text, or the original for regenerate). */
+  newContent: string;
+  agentId?: string;
+  cwd?: string;
+}
+
+export interface RewindResendResponse {
+  runId: string;
+  conversationId: string;
+}
+
 export interface CreateRunResponse {
   runId: string;
   conversationId?: string;
