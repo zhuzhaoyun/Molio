@@ -5,6 +5,7 @@
  * active tab 变化时自动滚入可见区。箭头与下拉在后续 task 接入逻辑。
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { FileDocIcon } from '../FileIcons';
 import type { WorkspaceTab } from '../../hooks/useKbTabs';
 
 interface KbTabBarProps {
@@ -15,12 +16,12 @@ interface KbTabBarProps {
   actions?: ReactNode;
 }
 
-function getTabIcon(type: string): string {
+function getTabIcon(type: string): ReactNode {
   switch (type) {
     case 'file':
-      return '📄';
+      return <FileDocIcon size={12} />;
     default:
-      return '📑';
+      return <span style={{ fontSize: 12 }}>📑</span>;
   }
 }
 
@@ -71,7 +72,13 @@ export function KbTabBar({ tabs, activeTabId, onActivate, onClose, actions }: Kb
   const scrollBy = (dir: 1 | -1) => {
     const el = scrollRef.current;
     if (!el) return;
-    el.scrollBy({ left: dir * el.clientWidth * 0.8, behavior: 'smooth' });
+    const reducedMotion =
+      typeof window !== 'undefined' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    el.scrollBy({
+      left: dir * el.clientWidth * 0.8,
+      behavior: reducedMotion ? 'auto' : 'smooth',
+    });
   };
 
   // Scroll the active tab into view whenever it changes or a tab is added.
