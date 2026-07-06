@@ -90,3 +90,46 @@ test.describe('KB stale tab cleanup (proactive)', () => {
     await expect(page.locator('.kb-wtab.is-active')).toContainText('b.md');
   });
 });
+
+test.describe('KB stale tab cleanup (reactive)', () => {
+  test.beforeAll(async () => {
+    vault = await createTempVault('e2e-kb-tab-reactive');
+    fs.unlinkSync(path.join(vault.path, 'test.md'));
+    fs.writeFileSync(path.join(vault.path, 'real.md'), '# Real\n');
+  });
+  test.afterAll(async () => { if (vault) await cleanupTempVault(vault); });
+
+  test('a tab whose path no longer exists in the tree gets cleaned on load', async ({ page }) => {
+    // seed a stale tab pointing at a non-existent path, but with the correct vaultId
+    await page.addInitScript((vaultId) => {
+      localStorage.setItem('molio.kb.tabs', JSON.stringify([
+        { id: 'file:ghost.md', type: 'file', title: 'ghost.md', vaultId },
+        { id: 'file:real.md', type: 'file', title: 'real.md', vaultId },
+      ]));
+      localStorage.setItem('molio.kb.activeTabId', 'file:ghost.md');
+    }, vault.id);
+
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.kb-tree-item').filter({ hasText: 'real.md' })).toBeVisible({ timeout: 10_000 });
+    // ghost.md doesn't exist in tree → its tab cleaned; real.md stays
+    await expect(page.locator('.kb-wtab')).toHaveCount(1, { timeout: 5_000 });
+    await expect(page.locator('.kb-wtab')).toContainText('real.md');
+  });
+
+  test('tabs belonging to another vault are not cleaned when this vault loads', async ({ page }) => {
+    // seed a tab with a foreign vaultId
+    await page.addInitScript((vaultId) => {
+      localStorage.setItem('molio.kb.tabs', JSON.stringify([
+        { id: 'file:other-vault-file.md', type: 'file', title: 'other-vault-file.md', vaultId: 'vault-foreign' },
+        { id: 'file:real.md', type: 'file', title: 'real.md', vaultId },
+      ]));
+      localStorage.setItem('molio.kb.activeTabId', 'file:real.md');
+    }, vault.id);
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.kb-tree-item').filter({ hasText: 'real.md' })).toBeVisible({ timeout: 10_000 });
+    // foreign-vault tab NOT cleaned (still 2 tabs)
+    await expect(page.locator('.kb-wtab')).toHaveCount(2, { timeout: 5_000 });
+  });
+});

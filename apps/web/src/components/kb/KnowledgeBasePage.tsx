@@ -309,6 +309,29 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kb.activeVault?.id, tabs.activeTabId]);
 
+  // Reactive safety net: close tabs whose file no longer exists in the active vault's tree.
+  // Triggers on tree refresh (external deletes via VaultWatcher) and vault switches.
+  useEffect(() => {
+    const av = kb.activeVault;
+    if (!av || kb.treeVaultId !== av.id || kb.tree.length === 0) return;
+    const paths = new Set<string>();
+    const collect = (nodes: TreeNode[]) => {
+      for (const n of nodes) {
+        if (n.type === 'file') paths.add(n.path);
+        if (n.children) collect(n.children);
+      }
+    };
+    collect(kb.tree);
+    const staleIds = tabs.tabs
+      .filter(t => t.vaultId === av.id && t.id.startsWith('file:') && !paths.has(t.id.slice(5)))
+      .map(t => t.id);
+    if (staleIds.length) {
+      const staleSet = new Set(staleIds);
+      tabs.removeWhere(t => staleSet.has(t.id));
+      if (!tabs.activeTabId) kb.selectFile(null);
+    }
+  }, [kb.tree, kb.treeVaultId, kb.activeVault?.id, tabs.tabs, tabs.removeWhere, kb.selectFile]);
+
   // Panel resize drag handling
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
