@@ -130,8 +130,11 @@ export function HomePage({
             <SelectionConfirmBar
               onDelete={async () => {
                 const ids = [...messageSelectionStore.getSelectedIds()];
-                await onDeleteMessages?.(ids);
-                messageSelectionStore.exit();
+                try {
+                  await onDeleteMessages?.(ids);
+                } finally {
+                  messageSelectionStore.exit();
+                }
               }}
               onCancel={() => messageSelectionStore.exit()}
             />

@@ -12,6 +12,7 @@ import { useState, useCallback, useRef } from 'react';
 import type { AgentEvent } from '@molio/contracts';
 import { api } from '../api/client';
 import { subscribeToRun } from '../api/sse';
+import { messageSelectionStore } from '../stores/messageSelectionStore';
 
 export interface ToolEvent {
   id: string;
@@ -332,6 +333,7 @@ export function useChatCore(options: UseChatCoreOptions) {
   const reset = useCallback(() => {
     closeEventSource();
     assistantIdRef.current = null;
+    messageSelectionStore.exit();
     setState({ messages: [], runId: null, runAgentId: null, isRunning: false, conversationId: null });
   }, [closeEventSource]);
 
@@ -341,6 +343,7 @@ export function useChatCore(options: UseChatCoreOptions) {
   const setMessages = useCallback((messages: ChatMessage[], conversationId?: string | null) => {
     closeEventSource();
     assistantIdRef.current = null;
+    messageSelectionStore.exit();
     setState({
       messages,
       runId: null,
