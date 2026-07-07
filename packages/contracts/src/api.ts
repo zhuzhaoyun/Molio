@@ -52,6 +52,18 @@ export interface RewindResendResponse {
   conversationId: string;
 }
 
+export interface DeleteMessagesRequest {
+  ids: string[];
+}
+
+export interface DeleteMessagesResponse {
+  deleted: number;
+}
+
+export interface UpdateMessageContentRequest {
+  content: string;
+}
+
 export interface CreateRunResponse {
   runId: string;
   conversationId?: string;
