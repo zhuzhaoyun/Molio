@@ -115,12 +115,15 @@ const child = spawn(binary, args, {
 
 ```
 apps/web/src/components/HomePage.tsx, ChatComposer.tsx, UserMessage.tsx,
-  AssistantMessage.tsx, ThinkingBlock.tsx, ToolCard.tsx, NavRail.tsx
+  AssistantMessage.tsx, ThinkingBlock.tsx, ToolCard.tsx, NavRail.tsx,
+  MessageToolbar.tsx, CodeBlock.tsx, SaveToKbButton.tsx, OverflowMenu.tsx,
+  SelectionConfirmBar.tsx, MessageCheckbox.tsx, icons.tsx
+apps/web/src/stores/messageSelectionStore.ts
 apps/web/src/hooks/useChat.ts, useChatCore.ts
 apps/web/src/api/client.ts, sse.ts
 apps/web/src/App.tsx
-apps/daemon/src/routes/runs.ts, events.ts
-apps/daemon/src/core/RunManager.ts
+apps/daemon/src/routes/runs.ts, events.ts, conversations.ts
+apps/daemon/src/core/RunManager.ts, conversations/run-starter.ts, db.ts
 ```
 
 快速检查：`cd apps/web && npx playwright test`
