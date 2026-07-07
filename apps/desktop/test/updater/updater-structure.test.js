@@ -53,8 +53,10 @@ describe('main.js: updater must initialize before daemon', () => {
     const daemonPos = whenReadyBlock.indexOf('startDaemonProduction');
     const beforeDaemon = whenReadyBlock.slice(0, daemonPos);
 
-    // There should be a 'try {' before startDaemonProduction in the whenReady block
-    const lastTry = beforeDaemon.lastIndexOf('try');
+    // There should be a 'try {' before startDaemonProduction in the whenReady block.
+    // Match 'try {' (with brace) to avoid matching the substring 'try' inside
+    // unrelated words like 'entry'.
+    const lastTry = beforeDaemon.lastIndexOf('try {');
     assert.ok(lastTry !== -1, 'startDaemonProduction must be wrapped in try/catch');
 
     // The try should be close to startDaemonProduction (within ~200 chars)

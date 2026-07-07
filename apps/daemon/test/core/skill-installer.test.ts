@@ -262,8 +262,14 @@ describe('skill-installer migration', () => {
     const doclingMd = path.join(skillsDir, 'docling', 'SKILL.md');
     const currentContent = fs.readFileSync(doclingMd, 'utf-8');
 
+    // Read the current version dynamically so this test doesn't break when
+    // the skill's version is bumped.
+    const versionMatch = currentContent.match(/^version:\s*(.+)$/m);
+    const currentVersion = versionMatch?.[1]?.trim() ?? '';
+    assert.ok(currentVersion, 'SKILL.md should declare a version');
+
     // Simulate an older version in the vault
-    const oldContent = currentContent.replace('version: 1.1.2', 'version: 0.9.0');
+    const oldContent = currentContent.replace(`version: ${currentVersion}`, 'version: 0.9.0');
     fs.writeFileSync(doclingMd, oldContent, 'utf-8');
     assert.ok(
       fs.readFileSync(doclingMd, 'utf-8').includes('version: 0.9.0'),
@@ -273,14 +279,14 @@ describe('skill-installer migration', () => {
     // Second pass: version differs, should update
     installBuiltinSkills(tmpVault);
     assert.ok(
-      fs.readFileSync(doclingMd, 'utf-8').includes('version: 1.1.2'),
+      fs.readFileSync(doclingMd, 'utf-8').includes(`version: ${currentVersion}`),
       'skill should be updated to current version',
     );
 
     // Third pass: version is same, should not rewrite (no error either)
     installBuiltinSkills(tmpVault);
     assert.ok(
-      fs.readFileSync(doclingMd, 'utf-8').includes('version: 1.1.2'),
+      fs.readFileSync(doclingMd, 'utf-8').includes(`version: ${currentVersion}`),
       'skill should remain at current version',
     );
   });
