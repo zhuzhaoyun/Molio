@@ -99,7 +99,6 @@ pnpm typecheck    # tsc --noEmit
 | DELETE | `/api/conversations/:id` | 删除会话 |
 | POST | `/api/conversations/:id/rewind-resend` | 重新生成/编辑重发（回退到末条 user 消息重放建新 run） |
 | POST | `/api/conversations/:id/delete-messages` | 按 id 集合删除消息（勾选删除） |
-| PUT | `/api/conversations/:id/messages/:msgId` | 手动编辑助手回复内容（不重跑） |
 | GET/POST/PUT/DELETE | `/api/knowledge` | 知识库管理 |
 | POST | `/api/publish` | 发布到内容平台 |
 | GET | `/api/graph` | 知识图谱数据 |

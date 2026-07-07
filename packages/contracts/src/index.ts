@@ -34,7 +34,6 @@ export type {
   RewindResendResponse,
   DeleteMessagesRequest,
   DeleteMessagesResponse,
-  UpdateMessageContentRequest,
   ToolResultRequest,
   AgentListResponse,
   RunListResponse,

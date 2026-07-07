@@ -60,10 +60,6 @@ export interface DeleteMessagesResponse {
   deleted: number;
 }
 
-export interface UpdateMessageContentRequest {
-  content: string;
-}
-
 export interface CreateRunResponse {
   runId: string;
   conversationId?: string;

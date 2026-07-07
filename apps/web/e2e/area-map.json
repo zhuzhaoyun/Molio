@@ -30,7 +30,7 @@
         "apps/daemon/src/core/conversations/run-starter.ts",
         "apps/daemon/src/streams/*"
       ],
-      "specs": ["chat-single", "chat-multi", "chat-streaming", "chat-copy", "chat-regenerate", "chat-edit-resend", "chat-codeblock", "chat-continue", "chat-save-kb", "chat-overflow-menu", "chat-delete", "chat-edit-assistant"]
+      "specs": ["chat-single", "chat-multi", "chat-streaming", "chat-copy", "chat-regenerate", "chat-edit-resend", "chat-codeblock", "chat-continue", "chat-save-kb", "chat-overflow-menu", "chat-delete"]
     },
     "kb": {
       "paths": [
@@ -118,7 +118,6 @@
     "chat-copy": { "priority": "P0", "file": "chat-copy.spec.ts" },
     "chat-overflow-menu": { "priority": "P0", "file": "chat-overflow-menu.spec.ts" },
     "chat-delete": { "priority": "P0", "file": "chat-delete.spec.ts" },
-    "chat-edit-assistant": { "priority": "P0", "file": "chat-edit-assistant.spec.ts" },
     "chat-regenerate": { "priority": "P0", "file": "chat-regenerate.spec.ts" },
     "chat-edit-resend": { "priority": "P0", "file": "chat-edit-resend.spec.ts" },
     "chat-codeblock": { "priority": "P0", "file": "chat-codeblock.spec.ts" },

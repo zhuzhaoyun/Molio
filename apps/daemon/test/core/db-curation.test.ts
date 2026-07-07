@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { closeDatabase, openDatabase, upsertMessage, createDesktopConversation, listMessages, deleteMessagesById, updateMessageContent } from '../../src/core/db.js';
+import { closeDatabase, openDatabase, upsertMessage, createDesktopConversation, listMessages, deleteMessagesById } from '../../src/core/db.js';
 import type { ChatMessage } from '@molio/contracts';
 
 function mkMsg(id: string, role: 'user' | 'assistant', content: string): ChatMessage {
@@ -47,20 +47,5 @@ describe('DB curation helpers', () => {
     const deleted = deleteMessagesById(db, c1.id, ['u2']);
     assert.equal(deleted, 0);
     assert.equal(listMessages(db, c2.id).length, 1);
-  });
-
-  it('updateMessageContent updates content and returns true on hit', () => {
-    const conv = createDesktopConversation(db, 't');
-    upsertMessage(db, conv.id, mkMsg('a1', 'assistant', 'old'));
-    const ok = updateMessageContent(db, conv.id, 'a1', 'new content');
-    assert.equal(ok, true);
-    assert.equal(listMessages(db, conv.id)[0]!.content, 'new content');
-  });
-
-  it('updateMessageContent returns false when msgId not found', () => {
-    const conv = createDesktopConversation(db, 't');
-    upsertMessage(db, conv.id, mkMsg('a1', 'assistant', 'old'));
-    const ok = updateMessageContent(db, conv.id, 'no-such-id', 'x');
-    assert.equal(ok, false);
   });
 });

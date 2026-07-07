@@ -323,18 +323,6 @@ export const api = {
     return res.json();
   },
 
-  async updateMessageContent(conversationId: string, msgId: string, content: string): Promise<void> {
-    const res = await fetch(`${BASE}/conversations/${conversationId}/messages/${msgId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content }),
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error?.message ?? `Failed to update message: ${res.status}`);
-    }
-  },
-
   // ─── Weixin ClawBot ───
 
   async getWeixinStatus(): Promise<WeixinStatus> {

@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type Database from 'better-sqlite3';
-import type { RewindResendRequest, DeleteMessagesRequest, UpdateMessageContentRequest } from '@molio/contracts';
+import type { RewindResendRequest, DeleteMessagesRequest } from '@molio/contracts';
 import type { RunManager } from '../core/RunManager.js';
 import type { ConversationService } from '../core/conversations/service.js';
 import { startConversationRun } from '../core/conversations/run-starter.js';
@@ -10,7 +10,6 @@ import {
   getRewindPoint,
   deleteMessagesFromPosition,
   deleteMessagesById,
-  updateMessageContent,
   listMessagesBefore,
   listConversationHistory,
   listMessages,
@@ -130,26 +129,6 @@ export function conversationRoutes(
     }
     const deleted = deleteMessagesById(db, convId, body.ids);
     return c.json({ deleted });
-  });
-
-  // PUT /api/conversations/:id/messages/:msgId — update a message's content
-  // (manual edit of an assistant reply, no rerun).
-  app.put('/:id/messages/:msgId', async (c) => {
-    const convId = c.req.param('id');
-    const msgId = c.req.param('msgId');
-    const body = await c.req.json<UpdateMessageContentRequest>();
-    if (!body.content || !body.content.trim()) {
-      return c.json({ error: { code: 'BAD_REQUEST', message: 'content is required' } }, 400);
-    }
-    const conv = getConversation(db, convId);
-    if (!conv) {
-      return c.json({ error: { code: 'NOT_FOUND', message: 'Conversation not found' } }, 404);
-    }
-    const ok = updateMessageContent(db, convId, msgId, body.content);
-    if (!ok) {
-      return c.json({ error: { code: 'NOT_FOUND', message: 'Message not found' } }, 404);
-    }
-    return c.json({ ok: true });
   });
 
   return app;

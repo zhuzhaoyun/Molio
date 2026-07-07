@@ -182,7 +182,7 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
 - **Shell 布局**: NavRail (左侧导航) + 主内容区
 - **聊天流程**: 选择 agent → 输入消息 → POST /api/runs → 订阅 SSE → 实时渲染事件
 - **消息模型**: user / assistant / error，assistant 消息包含 thinking、tools、usage
-- **消息级交互**（hover 显隐 toolbar）: 复制（消息/代码块）、重新生成（末条）、编辑用户消息重发（末条）、继续生成（末条）、保存到知识库（一键存为 KB 新文件）、删除（⋯ 菜单，配对绑定 + 勾选态 + 顶部确认条）、手动编辑助手回复（⋯ 菜单，不重跑，PUT 持久化）
+- **消息级交互**（hover 显隐 toolbar）: 复制（消息/代码块）、重新生成（末条）、编辑用户消息重发（末条）、继续生成（末条）、保存到知识库（一键存为 KB 新文件）、删除（⋯ 菜单，配对绑定 + 勾选态 + 顶部确认条）
 - **代码块**: 拆分渲染——文本段走 `renderMarkdown`，fenced 代码段走 `<CodeBlock>`（语言标签 + 复制 + >20 行折叠）
 - **SSE**: 通过 `EventSource` 订阅 daemon 事件流，实时更新消息状态
 

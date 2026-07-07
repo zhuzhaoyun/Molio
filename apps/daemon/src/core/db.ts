@@ -427,21 +427,6 @@ export function deleteMessagesById(
   return r.changes;
 }
 
-/** Update a single message's content. Returns whether the row was found. */
-export function updateMessageContent(
-  db: SqliteDb,
-  conversationId: string,
-  msgId: string,
-  content: string,
-): boolean {
-  const r = db
-    .prepare(
-      'UPDATE messages SET content = ? WHERE id = ? AND conversation_id = ?',
-    )
-    .run(content, msgId, conversationId);
-  return r.changes > 0;
-}
-
 /**
  * Upsert a message. If the message id already exists, update it.
  * Otherwise, insert with auto-incremented position.

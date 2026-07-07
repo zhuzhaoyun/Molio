@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect, type ReactNode } from 'react'
 import { CopyIcon, RegenerateIcon, EditIcon, ContinueIcon, CheckIcon, TrashIcon } from './icons';
 import { OverflowMenu, type OverflowItem } from './OverflowMenu';
 
-export type ToolbarActionKey = 'copy' | 'regenerate' | 'edit' | 'continue' | 'delete' | 'edit-assistant';
+export type ToolbarActionKey = 'copy' | 'regenerate' | 'edit' | 'continue' | 'delete';
 
 export interface ToolbarAction {
   key: ToolbarActionKey;
@@ -23,7 +23,6 @@ function ActionIcon({ k }: { k: ToolbarActionKey }) {
     case 'edit': return <EditIcon />;
     case 'continue': return <ContinueIcon />;
     case 'delete': return <TrashIcon />;
-    case 'edit-assistant': return <EditIcon />;
   }
 }
 
