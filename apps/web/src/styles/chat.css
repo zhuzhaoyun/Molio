@@ -1195,6 +1195,12 @@
   top: auto;
   bottom: calc(100% + 4px);
 }
+/* Flip rightward when opening leftward would overflow the left edge
+ * (trigger near the left, e.g. a short non-last toolbar). */
+.overflow-menu-dropdown[data-align="start"] {
+  right: auto;
+  left: 0;
+}
 .overflow-menu-item {
   display: flex;
   align-items: center;
@@ -1208,8 +1214,12 @@
   border-radius: 6px;
   cursor: pointer;
   text-align: left;
+  transition: background 0.1s ease, box-shadow 0.1s ease;
 }
-.overflow-menu-item:hover:not(:disabled) { background: var(--bg-hover); }
+.overflow-menu-item:hover:not(:disabled) {
+  background: var(--bg-hover);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
 .overflow-menu-item:disabled { opacity: 0.4; cursor: default; }
 .overflow-menu-item svg { flex-shrink: 0; }
 

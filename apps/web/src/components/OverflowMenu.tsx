@@ -23,6 +23,7 @@ interface Props {
 export function OverflowMenu({ items }: Props) {
   const [open, setOpen] = useState(false);
   const [placement, setPlacement] = useState<'below' | 'above'>('below');
+  const [align, setAlign] = useState<'end' | 'start'>('end');
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -63,12 +64,19 @@ export function OverflowMenu({ items }: Props) {
       }
       node = node.parentElement;
     }
-    const container = scrollParent ? scrollParent.getBoundingClientRect() : { top: 0, bottom: window.innerHeight };
+    const container = scrollParent ? scrollParent.getBoundingClientRect() : { top: 0, bottom: window.innerHeight, left: 0, right: window.innerWidth };
     const btnRect = btn.getBoundingClientRect();
     const ddHeight = dd.offsetHeight;
+    const ddWidth = dd.offsetWidth;
     const spaceBelow = container.bottom - btnRect.bottom;
     const spaceAbove = btnRect.top - container.top;
     setPlacement(ddHeight > spaceBelow - 8 && spaceAbove > spaceBelow ? 'above' : 'below');
+    // Horizontal: default 'end' (right edge aligns to trigger, opens leftward).
+    // If that would overflow the container's left edge (trigger near the left,
+    // e.g. a short non-last toolbar), flip to 'start' (opens rightward).
+    const spaceLeft = btnRect.right - container.left;
+    const spaceRight = container.right - btnRect.left;
+    setAlign(ddWidth > spaceLeft - 8 && spaceRight > spaceLeft ? 'start' : 'end');
   }, [open]);
 
   return (
@@ -89,6 +97,7 @@ export function OverflowMenu({ items }: Props) {
         <div
           className="overflow-menu-dropdown"
           data-placement={placement}
+          data-align={align}
           role="menu"
           data-testid="overflow-menu"
         >
