@@ -262,15 +262,34 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
     });
   }, [tabs, kb, runOrConfirmDiscard]);
 
-  // Sync: when URL navigation resolves, open in tab
+  // When URL navigation resolves, open in tab. The path from external
+  // navigation (assistant links, molio://, graph) may omit the extension and/or
+  // wiki/ prefix, so ask the daemon to canonicalize it before opening — this
+  // keeps tab title, tree highlighting, and "在目录中定位" consistent with
+  // opening from the directory tree.
   useEffect(() => {
     if (!pendingUrlNav) return;
     if (kb.activeVault?.id !== pendingUrlNav.vaultId) return;
     if (kb.treeVaultId !== pendingUrlNav.vaultId) return;
     if (kb.tree.length === 0) return;
 
-    handleSelectFile(pendingUrlNav.filePath);
-    setPendingUrlNav(null);
+    const controller = new AbortController();
+    const { vaultId, filePath } = pendingUrlNav;
+    api.resolveFilePath(vaultId, filePath)
+      .then((canonical) => {
+        if (controller.signal.aborted) return;
+        handleSelectFile(canonical ?? filePath);
+      })
+      .catch(() => {
+        if (controller.signal.aborted) return;
+        // Daemon unreachable / resolve errored — degrade to raw path (pre-fix
+        // behavior for this click; file may still open via readFile fallback).
+        handleSelectFile(filePath);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setPendingUrlNav(null);
+      });
+    return () => controller.abort();
   }, [pendingUrlNav, kb.activeVault?.id, kb.treeVaultId, kb.tree, handleSelectFile]);
 
   // Sync: on mount & vault/tab change, restore active tab's file into selectedFile.

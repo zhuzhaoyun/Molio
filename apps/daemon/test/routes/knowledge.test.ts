@@ -337,4 +337,51 @@ describe('Knowledge routes — file operations', () => {
       assert.ok(typeof entry['createdAt'] === 'number', 'entry should have createdAt');
     });
   });
+
+  describe('GET /vaults/:id/resolve/*', () => {
+    it('returns the canonical path for an extension-less link', async () => {
+      mkdirSync(join(vaultDir, 'notes'), { recursive: true });
+      writeFileSync(join(vaultDir, 'notes', 'idea.md'), '# idea\n');
+      const res = await app.request(
+        `/api/knowledge/vaults/${vaultId}/resolve/notes/idea`,
+      );
+      assert.equal(res.status, 200);
+      const body = await json(res);
+      assert.equal(body.path, 'notes/idea.md');
+    });
+
+    it('resolves a wiki-link missing the wiki/ prefix', async () => {
+      mkdirSync(join(vaultDir, 'wiki', 'entities'), { recursive: true });
+      writeFileSync(join(vaultDir, 'wiki', 'entities', '宇树科技.md'), '# x\n');
+      const res = await app.request(
+        `/api/knowledge/vaults/${vaultId}/resolve/entities/${encodeURIComponent('宇树科技')}`,
+      );
+      assert.equal(res.status, 200);
+      const body = await json(res);
+      assert.equal(body.path, `wiki/entities/宇树科技.md`);
+    });
+
+    it('stem-matches a non-md file', async () => {
+      mkdirSync(join(vaultDir, 'wiki', 'entities'), { recursive: true });
+      writeFileSync(join(vaultDir, 'wiki', 'entities', '季度报告.pdf'), '%PDF\n');
+      const res = await app.request(
+        `/api/knowledge/vaults/${vaultId}/resolve/entities/${encodeURIComponent('季度报告')}`,
+      );
+      assert.equal(res.status, 200);
+      const body = await json(res);
+      assert.equal(body.path, `wiki/entities/季度报告.pdf`);
+    });
+
+    it('returns 404 when nothing matches', async () => {
+      const res = await app.request(
+        `/api/knowledge/vaults/${vaultId}/resolve/does/not/exist`,
+      );
+      assert.equal(res.status, 404);
+    });
+
+    it('returns 404 for unknown vault', async () => {
+      const res = await app.request('/api/knowledge/vaults/non-existent/resolve/foo');
+      assert.equal(res.status, 404);
+    });
+  });
 });
