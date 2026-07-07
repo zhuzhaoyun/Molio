@@ -384,6 +384,22 @@ export const api = {
     return res.json();
   },
 
+  /**
+   * Resolve a (possibly extension-less / wiki-prefix-less) file path to its
+   * canonical vault-relative path with the real on-disk extension. Returns
+   * null on 404 (no match); throws on other errors. Used when opening files
+   * from assistant links / molio:// / graph so the tab title and tree highlight
+   * match the real file.
+   */
+  async resolveFilePath(vaultId: string, filePath: string): Promise<string | null> {
+    const encoded = encodeURIComponent(filePath).replace(/%2F/g, '/');
+    const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/resolve/${encoded}`);
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`Failed to resolve file path: ${res.status}`);
+    const data = await res.json();
+    return data.path as string;
+  },
+
   /** Build URL for raw file access (images, PDFs, etc.) */
   rawFileUrl(vaultId: string, filePath: string): string {
     const encoded = encodeURIComponent(filePath).replace(/%2F/g, '/');

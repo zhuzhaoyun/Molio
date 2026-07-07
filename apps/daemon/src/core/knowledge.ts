@@ -128,10 +128,22 @@ function resolveWithFallbacks(vaultPath: string, relPath: string): string {
     const exact = resolveFilePath(vaultPath, baseRelPath);
     if (fs.existsSync(exact)) return exact;
 
-    // Strategy B: add .md extension
+    // Strategy B: add .md extension (preserve on-disk case by listing entries)
     if (!hasExt) {
       const md = resolveFilePath(vaultPath, baseRelPath + '.md');
-      if (fs.existsSync(md)) return md;
+      const mdDir = path.dirname(md);
+      const mdBase = path.basename(md);
+      try {
+        const mdEntries = fs.readdirSync(mdDir);
+        const mdMatch = mdEntries.find((e) => e.toLowerCase() === mdBase.toLowerCase());
+        if (mdMatch) {
+          const candidate = path.join(mdDir, mdMatch);
+          assertWithinVault(vaultPath, candidate);
+          return candidate;
+        }
+      } catch {
+        // directory not found — continue to next strategy
+      }
     }
 
     // Strategy C: case-insensitive search in the target directory
@@ -142,9 +154,19 @@ function resolveWithFallbacks(vaultPath: string, relPath: string): string {
       const entries = fs.readdirSync(targetDir);
       // Exact case-insensitive match
       let match = entries.find((e) => e.toLowerCase() === targetLower);
-      // Try with .md if original has no extension
+      // Try with .md if original has no extension (.md has priority over other exts)
       if (!match && !hasExt) {
         match = entries.find((e) => e.toLowerCase() === targetLower + '.md');
+      }
+      // Stem match for any other supported extension. .md was already tried
+      // above, so this only fires for non-md files (e.g. [[entities/报告]] →
+      // 报告.pdf). Mirrors the daemon-wide rule that .md is the primary format.
+      if (!match && !hasExt) {
+        match = entries.find((e) => {
+          const eExt = path.extname(e).toLowerCase();
+          if (eExt === '.md' || !ALLOWED_EXTS.includes(eExt)) return false;
+          return path.basename(e, eExt).toLowerCase() === targetLower;
+        });
       }
       if (match) {
         // Re-validate so a matched entry can never bypass the vault boundary
@@ -229,6 +251,37 @@ export function resolveFilePath(vaultPath: string, relPath: string): string {
   const resolved = path.resolve(absFile);
   assertWithinVault(vaultPath, resolved);
   return resolved;
+}
+
+/**
+ * Resolve a vault-relative path to its canonical vault-relative path (with the
+ * real on-disk extension), WITHOUT reading the file. Returns null if no file
+ * matches. Used by the resolve API so the frontend can normalize assistant /
+ * molio:// / wiki-link paths against the same logic readFile uses — keeping
+ * "open from chat link" consistent with "open from directory".
+ */
+export function resolveCanonicalPath(vaultPath: string, relPath: string): string | null {
+  if (!relPath) return null;
+  let resolved: string;
+  try {
+    resolved = resolveFilePath(vaultPath, relPath);
+    if (!fs.existsSync(resolved)) {
+      resolved = resolveWithFallbacks(vaultPath, relPath);
+    }
+  } catch {
+    return null;
+  }
+  if (!fs.existsSync(resolved)) return null;
+  try {
+    // Security: confirm the real path is still inside the vault (symlink-escape
+    // guard). We do NOT use the realpath for the relative path computation —
+    // scanTree stores paths relative to the (non-realpath) vaultPath, so we
+    // match that to keep tree node.path equality correct.
+    resolveRealWithinVault(vaultPath, resolved);
+  } catch {
+    return null;
+  }
+  return path.relative(path.resolve(vaultPath), resolved).split(path.sep).join('/');
 }
 
 /**
