@@ -1109,14 +1109,14 @@
 .msg-checkbox {
   position: absolute;
   top: 6px;
-  right: 6px;
-  width: 18px;
-  height: 18px;
+  left: 6px;
+  width: 20px;
+  height: 20px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border: 1.5px solid var(--border-strong);
-  border-radius: 4px;
+  border-radius: 5px;
   background: var(--bg-panel, #fff);
   color: #fff;
   cursor: pointer;
@@ -1132,20 +1132,31 @@
 /* Position the checkbox relative to the message bubble. */
 .msg { position: relative; }
 
+/* In selection mode, reserve a left gutter for the checkbox and tint the
+ * whole row when checked so the checkbox↔bubble pairing is unambiguous
+ * (email-list row pattern: checkbox at row-left, bubble aligned within the
+ * tinted row). */
+.msg.select-mode { padding-left: 34px; }
+.msg.select-mode.selected {
+  background: var(--accent-tint);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+/* Confirm bar lives in the composer's slot (input and delete are mutually
+ * exclusive) — the .home-composer-bar wrapper provides bg/border/centering,
+ * so this is just the inner flex row. */
 .selection-confirm-bar {
-  position: sticky;
-  top: 0;
-  z-index: 20;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 8px 12px;
-  margin-bottom: 8px;
-  background: var(--bg-panel, #fff);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: var(--shadow-sm, 0 2px 8px rgba(0,0,0,0.08));
+  width: 100%;
+  max-width: 900px;
+  padding: 6px 4px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  margin: 0;
 }
 .selection-count { font-size: 13px; color: var(--text-primary); font-weight: 500; }
 .selection-actions { display: flex; gap: 8px; }
@@ -1180,6 +1191,11 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: var(--shadow-sm, 0 4px 12px rgba(0,0,0,0.12));
+}
+/* Flip upward when there isn't room below (last message near composer). */
+.overflow-menu-dropdown[data-placement="above"] {
+  top: auto;
+  bottom: calc(100% + 4px);
 }
 .overflow-menu-item {
   display: flex;

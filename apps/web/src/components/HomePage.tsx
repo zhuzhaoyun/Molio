@@ -126,19 +126,6 @@ export function HomePage({
 
         {/* Chat log */}
         <div className="home-chat-log" ref={logRef}>
-          {selectMode && (
-            <SelectionConfirmBar
-              onDelete={async () => {
-                const ids = [...messageSelectionStore.getSelectedIds()];
-                try {
-                  await onDeleteMessages?.(ids);
-                } finally {
-                  messageSelectionStore.exit();
-                }
-              }}
-              onCancel={() => messageSelectionStore.exit()}
-            />
-          )}
           {messages.map((msg) => {
             if (msg.role === 'user') {
               const isLastUser = (() => {
@@ -185,17 +172,32 @@ export function HomePage({
           <div ref={bottomRef} />
         </div>
 
-        {/* Composer at the bottom */}
+        {/* Composer at the bottom — hidden in selection mode, replaced by the
+            confirm bar (input and delete are mutually exclusive). */}
         <div className="home-composer-bar">
-          <ChatComposer
-            composerKey="home"
-            isRunning={isRunning}
-            onSend={handleSend}
-            onCancel={onCancel}
-            disabled={!selectedAgentName}
-            disabledPlaceholder={t('home.noAgent')}
-            onOpenConversation={onOpenConversation}
-          />
+          {selectMode ? (
+            <SelectionConfirmBar
+              onDelete={async () => {
+                const ids = [...messageSelectionStore.getSelectedIds()];
+                try {
+                  await onDeleteMessages?.(ids);
+                } finally {
+                  messageSelectionStore.exit();
+                }
+              }}
+              onCancel={() => messageSelectionStore.exit()}
+            />
+          ) : (
+            <ChatComposer
+              composerKey="home"
+              isRunning={isRunning}
+              onSend={handleSend}
+              onCancel={onCancel}
+              disabled={!selectedAgentName}
+              disabledPlaceholder={t('home.noAgent')}
+              onOpenConversation={onOpenConversation}
+            />
+          )}
         </div>
       </div>
     );

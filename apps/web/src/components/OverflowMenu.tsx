@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, type ReactNode } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, type ReactNode } from 'react';
 import { MoreIcon } from './icons';
 
 export interface OverflowItem {
@@ -16,9 +16,13 @@ interface Props {
 /**
  * ⋯ dropdown — tucks low-frequency actions behind one trigger so the toolbar
  * stays uncluttered. Closes on outside-click, Escape, or item click.
+ *
+ * Auto-flips upward when there isn't enough room below (e.g. the last message
+ * near the composer) so the menu isn't clipped or covered by the input bar.
  */
 export function OverflowMenu({ items }: Props) {
   const [open, setOpen] = useState(false);
+  const [placement, setPlacement] = useState<'below' | 'above'>('below');
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -37,6 +41,22 @@ export function OverflowMenu({ items }: Props) {
     };
   }, [open]);
 
+  // Measure after open (before paint) and flip up if the menu would overflow
+  // the viewport bottom — i.e. when the trigger is on the last message and
+  // the dropdown would be clipped or covered by the composer.
+  useLayoutEffect(() => {
+    if (!open || !ref.current) return;
+    const root = ref.current;
+    const btn = root.querySelector<HTMLElement>('[data-testid="msg-overflow-btn"]');
+    const dd = root.querySelector<HTMLElement>('.overflow-menu-dropdown');
+    if (!btn || !dd) return;
+    const btnRect = btn.getBoundingClientRect();
+    const ddHeight = dd.offsetHeight;
+    const spaceBelow = window.innerHeight - btnRect.bottom;
+    const spaceAbove = btnRect.top;
+    setPlacement(ddHeight > spaceBelow - 8 && spaceAbove > spaceBelow ? 'above' : 'below');
+  }, [open]);
+
   return (
     <div className="overflow-menu" ref={ref}>
       <button
@@ -52,7 +72,12 @@ export function OverflowMenu({ items }: Props) {
         <MoreIcon />
       </button>
       {open && (
-        <div className="overflow-menu-dropdown" role="menu" data-testid="overflow-menu">
+        <div
+          className="overflow-menu-dropdown"
+          data-placement={placement}
+          role="menu"
+          data-testid="overflow-menu"
+        >
           {items.map((it) => (
             <button
               key={it.testid}

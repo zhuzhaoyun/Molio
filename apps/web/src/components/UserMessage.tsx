@@ -3,7 +3,7 @@ import { api } from '../api/client';
 import { useActiveVaultId } from '../stores/vaultStore';
 import { useI18n } from '../i18n';
 import { MessageToolbar, type ToolbarAction } from './MessageToolbar';
-import { useSelectMode } from '../stores/messageSelectionStore';
+import { useSelectMode, useIsSelected } from '../stores/messageSelectionStore';
 import { MessageCheckbox } from './MessageCheckbox';
 import type { ChatMessage } from '../hooks/useChat';
 
@@ -97,6 +97,7 @@ export function UserMessage({ message, isLast, onEdit, onRequestDelete, disabled
   const vaultId = useActiveVaultId();
   const { t } = useI18n();
   const selectMode = useSelectMode();
+  const selected = useIsSelected(message.id);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message.content);
 
@@ -134,7 +135,10 @@ export function UserMessage({ message, isLast, onEdit, onRequestDelete, disabled
   }
 
   return (
-    <div className="msg user" data-testid="user-message">
+    <div
+      className={`msg user${selectMode ? ' select-mode' : ''}${selected ? ' selected' : ''}`}
+      data-testid="user-message"
+    >
       <div className="role">
         <span className="msg-time">{formatTime(message.timestamp)}</span>
       </div>

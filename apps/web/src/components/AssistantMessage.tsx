@@ -10,7 +10,7 @@ import { ToolGroup } from './ToolGroup';
 import { ThinkingBlock } from './ThinkingBlock';
 import { SaveToKbButton } from './SaveToKbButton';
 import { MessageToolbar } from './MessageToolbar';
-import { useSelectMode } from '../stores/messageSelectionStore';
+import { useSelectMode, useIsSelected } from '../stores/messageSelectionStore';
 import { MessageCheckbox } from './MessageCheckbox';
 
 // Tools that should never be grouped (always shown individually)
@@ -79,6 +79,7 @@ interface Props {
 export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitForm, onRegenerate, onContinue, onRequestDelete, onEditAssistant }: Props) {
   const { t } = useI18n();
   const selectMode = useSelectMode();
+  const selected = useIsSelected(message.id);
 
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message.content);
@@ -134,7 +135,10 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
   );
 
   return (
-    <div className="msg assistant" data-testid="assistant-message">
+    <div
+      className={`msg assistant${selectMode ? ' select-mode' : ''}${selected ? ' selected' : ''}`}
+      data-testid="assistant-message"
+    >
       <div className="role">
         <span>{t('assistant.label')}</span>
         <span className="msg-time">{formatTime(message.timestamp)}</span>
