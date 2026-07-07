@@ -1218,7 +1218,7 @@
 }
 .overflow-menu-item:hover:not(:disabled) {
   background: var(--bg-hover);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
 }
 .overflow-menu-item:disabled { opacity: 0.4; cursor: default; }
 .overflow-menu-item svg { flex-shrink: 0; }
