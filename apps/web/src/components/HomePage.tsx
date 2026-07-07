@@ -18,6 +18,7 @@ interface Props {
   onRegenerate?: () => void;
   onEdit?: (messageId: string, newContent: string) => void;
   onContinue?: () => void;
+  onRequestDelete?: (id: string) => void;
 }
 
 export function HomePage({
@@ -32,6 +33,7 @@ export function HomePage({
   onRegenerate,
   onEdit,
   onContinue,
+  onRequestDelete,
 }: Props) {
   const { t } = useI18n();
   const logRef = useRef<HTMLDivElement>(null);
@@ -125,6 +127,7 @@ export function HomePage({
                   isLast={isLastUser}
                   onEdit={onEdit}
                   disabled={isRunning}
+                  onRequestDelete={onRequestDelete}
                 />
               );
             }
@@ -138,6 +141,7 @@ export function HomePage({
                   onSubmitForm={(text: string) => handleSend(text, [])}
                   onRegenerate={msg.id === lastAssistantId ? onRegenerate : undefined}
                   onContinue={msg.id === lastAssistantId ? onContinue : undefined}
+                  onRequestDelete={onRequestDelete}
                 />
               );
             }

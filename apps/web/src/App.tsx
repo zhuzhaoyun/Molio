@@ -15,6 +15,7 @@ import { LanguageProvider } from './i18n/LanguageProvider';
 import type { Locale } from './i18n';
 import { api } from './api/client';
 import { useActiveVault, vaultStore } from './stores/vaultStore';
+import { messageSelectionStore } from './stores/messageSelectionStore';
 import './styles/rail.css';
 import './styles/home.css';
 import './styles/knowledge.css';
@@ -185,6 +186,7 @@ export default function App() {
                   onRegenerate={chat.regenerateLast}
                   onEdit={chat.editAndResend}
                   onContinue={() => chat.send('继续')}
+                  onRequestDelete={(id) => messageSelectionStore.enterSelection(id, chat.messages)}
                 />
               }
             />

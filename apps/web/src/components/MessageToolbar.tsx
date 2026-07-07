@@ -1,7 +1,8 @@
 import { useState, useCallback, useRef, useEffect, type ReactNode } from 'react';
-import { CopyIcon, RegenerateIcon, EditIcon, ContinueIcon, CheckIcon } from './icons';
+import { CopyIcon, RegenerateIcon, EditIcon, ContinueIcon, CheckIcon, TrashIcon } from './icons';
+import { OverflowMenu, type OverflowItem } from './OverflowMenu';
 
-export type ToolbarActionKey = 'copy' | 'regenerate' | 'edit' | 'continue';
+export type ToolbarActionKey = 'copy' | 'regenerate' | 'edit' | 'continue' | 'delete' | 'edit-assistant';
 
 export interface ToolbarAction {
   key: ToolbarActionKey;
@@ -21,6 +22,8 @@ function ActionIcon({ k }: { k: ToolbarActionKey }) {
     case 'regenerate': return <RegenerateIcon />;
     case 'edit': return <EditIcon />;
     case 'continue': return <ContinueIcon />;
+    case 'delete': return <TrashIcon />;
+    case 'edit-assistant': return <EditIcon />;
   }
 }
 
@@ -28,6 +31,8 @@ interface Props {
   actions: ToolbarAction[];
   /** Extra button(s) rendered after the actions (e.g. save-to-KB). */
   extra?: ReactNode;
+  /** Low-frequency actions rendered inside the ⋯ overflow dropdown. */
+  overflow?: ToolbarAction[];
 }
 
 async function copyText(text: string): Promise<boolean> {
@@ -56,7 +61,7 @@ async function copyText(text: string): Promise<boolean> {
  * Hover-revealed action bar for chat messages. The copy action has a transient
  * "copied" state; regenerate/edit delegate to the parent.
  */
-export function MessageToolbar({ actions, extra }: Props) {
+export function MessageToolbar({ actions, extra, overflow }: Props) {
   const [copied, setCopied] = useState(false);
   const [failed, setFailed] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -87,6 +92,16 @@ export function MessageToolbar({ actions, extra }: Props) {
     }
   }, []);
 
+  const overflowItems: OverflowItem[] | null = overflow && overflow.length
+    ? overflow.map((a) => ({
+        icon: <ActionIcon k={a.key} />,
+        label: a.label,
+        testid: a.testid,
+        onClick: a.onClick,
+        disabled: a.disabled,
+      }))
+    : null;
+
   return (
     <div className="message-toolbar" data-testid="message-toolbar">
       {actions.map((a) => {
@@ -108,6 +123,7 @@ export function MessageToolbar({ actions, extra }: Props) {
         );
       })}
       {extra}
+      {overflowItems && <OverflowMenu items={overflowItems} />}
     </div>
   );
 }

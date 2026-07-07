@@ -68,9 +68,11 @@ interface Props {
   onRegenerate?: () => void;
   /** Continue generating on the last assistant reply (sends a "继续" follow-up). */
   onContinue?: () => void;
+  /** Request to delete (opens selection mode with this message's pair). */
+  onRequestDelete?: (id: string) => void;
 }
 
-export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitForm, onRegenerate, onContinue }: Props) {
+export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitForm, onRegenerate, onContinue, onRequestDelete }: Props) {
   const { t } = useI18n();
 
   // Check if the message has an AskUserQuestion tool — suppress the markdown
@@ -187,6 +189,10 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
               : []),
           ]}
           extra={<SaveToKbButton content={message.content} />}
+          overflow={onRequestDelete ? [{
+            key: 'delete', label: '删除', testid: 'overflow-item-delete',
+            text: '', onClick: () => onRequestDelete(message.id),
+          }] : undefined}
         />
       )}
     </div>

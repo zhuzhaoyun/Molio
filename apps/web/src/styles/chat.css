@@ -1105,6 +1105,38 @@
   position: relative;
 }
 
+/* ─── Overflow (⋯) menu ─── */
+.overflow-menu { position: relative; display: inline-flex; }
+.overflow-menu-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  min-width: 140px;
+  padding: 4px;
+  background: var(--bg-panel, #fff);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-sm, 0 4px 12px rgba(0,0,0,0.12));
+}
+.overflow-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 13px;
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+}
+.overflow-menu-item:hover:not(:disabled) { background: var(--bg-hover); }
+.overflow-menu-item:disabled { opacity: 0.4; cursor: default; }
+.overflow-menu-item svg { flex-shrink: 0; }
+
 /* ─── Message toolbar (hover-reveal) ─── */
 .message-toolbar {
   display: flex;

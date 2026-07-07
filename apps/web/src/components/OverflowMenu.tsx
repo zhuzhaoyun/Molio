@@ -1,0 +1,77 @@
+import { useState, useRef, useEffect, type ReactNode } from 'react';
+import { MoreIcon } from './icons';
+
+export interface OverflowItem {
+  icon: ReactNode;
+  label: string;
+  testid: string;
+  onClick: () => void;
+  disabled?: boolean;
+}
+
+interface Props {
+  items: OverflowItem[];
+}
+
+/**
+ * ⋯ dropdown — tucks low-frequency actions behind one trigger so the toolbar
+ * stays uncluttered. Closes on outside-click, Escape, or item click.
+ */
+export function OverflowMenu({ items }: Props) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  return (
+    <div className="overflow-menu" ref={ref}>
+      <button
+        type="button"
+        className="icon-btn"
+        data-testid="msg-overflow-btn"
+        data-tip="更多"
+        aria-label="更多"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <MoreIcon />
+      </button>
+      {open && (
+        <div className="overflow-menu-dropdown" role="menu" data-testid="overflow-menu">
+          {items.map((it) => (
+            <button
+              key={it.testid}
+              type="button"
+              role="menuitem"
+              data-testid={it.testid}
+              className="overflow-menu-item"
+              disabled={it.disabled}
+              onClick={() => {
+                setOpen(false);
+                it.onClick();
+              }}
+            >
+              {it.icon}
+              <span>{it.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

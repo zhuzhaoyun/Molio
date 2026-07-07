@@ -10,6 +10,8 @@ interface Props {
   isLast?: boolean;
   /** Edit-and-resend. If absent, the edit button is hidden. */
   onEdit?: (messageId: string, newContent: string) => void;
+  /** Request to delete (opens selection mode with this message's pair). */
+  onRequestDelete?: (id: string) => void;
   /** Disable actions while a run is in progress. */
   disabled?: boolean;
 }
@@ -89,7 +91,7 @@ function renderContent(content: string, vaultId: string | null, t: (key: string)
   return parts;
 }
 
-export function UserMessage({ message, isLast, onEdit, disabled }: Props) {
+export function UserMessage({ message, isLast, onEdit, onRequestDelete, disabled }: Props) {
   const vaultId = useActiveVaultId();
   const { t } = useI18n();
   const [editing, setEditing] = useState(false);
@@ -159,7 +161,13 @@ export function UserMessage({ message, isLast, onEdit, disabled }: Props) {
       ) : (
         <>
           <div className="user-text">{rendered}</div>
-          <MessageToolbar actions={actions} />
+          <MessageToolbar
+            actions={actions}
+            overflow={onRequestDelete ? [{
+              key: 'delete', label: '删除', testid: 'overflow-item-delete',
+              text: '', onClick: () => onRequestDelete(message.id),
+            }] : undefined}
+          />
         </>
       )}
     </div>
