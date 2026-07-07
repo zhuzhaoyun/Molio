@@ -140,6 +140,7 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
       data-testid="assistant-message"
     >
       <div className="role">
+        {selectMode && !message.streaming && <MessageCheckbox id={message.id} />}
         <span>{t('assistant.label')}</span>
         <span className="msg-time">{formatTime(message.timestamp)}</span>
       </div>
@@ -223,9 +224,6 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
         </div>
       )}
 
-      {selectMode && !message.streaming && (
-        <MessageCheckbox id={message.id} />
-      )}
       {!message.streaming && !selectMode && (
         <MessageToolbar
           actions={[

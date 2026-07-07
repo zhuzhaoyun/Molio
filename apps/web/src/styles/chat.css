@@ -1106,22 +1106,23 @@
 }
 
 /* ─── Selection mode ─── */
+/* Checkbox lives inline at the start of the message's role row so it aligns
+ * with the message's leading edge (left for assistant, right for user) and
+ * stays adjacent to the bubble rather than floating in a far corner. */
 .msg-checkbox {
-  position: absolute;
-  top: 6px;
-  left: 6px;
-  width: 20px;
-  height: 20px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  align-self: center;
   border: 1.5px solid var(--border-strong);
   border-radius: 5px;
   background: var(--bg-panel, #fff);
   color: #fff;
   cursor: pointer;
   padding: 0;
-  z-index: 5;
 }
 .msg-checkbox.checked {
   background: var(--accent);
@@ -1129,17 +1130,14 @@
 }
 .msg-checkbox svg { display: block; }
 
-/* Position the checkbox relative to the message bubble. */
 .msg { position: relative; }
 
-/* In selection mode, reserve a left gutter for the checkbox and tint the
- * whole row when checked so the checkbox↔bubble pairing is unambiguous
- * (email-list row pattern: checkbox at row-left, bubble aligned within the
- * tinted row). */
-.msg.select-mode { padding-left: 34px; }
+/* Selected row: a calm neutral tint + a thin soft accent stripe (the solid
+ * accent stripe was too harsh; accent-soft is lighter, 2px is enough). */
+.msg.select-mode { padding: 4px 10px; border-radius: 8px; }
 .msg.select-mode.selected {
-  background: var(--accent-tint);
-  box-shadow: inset 3px 0 0 var(--accent);
+  background: var(--bg-subtle);
+  box-shadow: inset 2px 0 0 var(--accent-soft);
 }
 
 /* Confirm bar lives in the composer's slot (input and delete are mutually

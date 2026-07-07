@@ -140,6 +140,7 @@ export function UserMessage({ message, isLast, onEdit, onRequestDelete, disabled
       data-testid="user-message"
     >
       <div className="role">
+        {selectMode && <MessageCheckbox id={message.id} />}
         <span className="msg-time">{formatTime(message.timestamp)}</span>
       </div>
       {editing ? (
@@ -169,17 +170,15 @@ export function UserMessage({ message, isLast, onEdit, onRequestDelete, disabled
       ) : (
         <>
           <div className="user-text">{rendered}</div>
-          {selectMode
-            ? <MessageCheckbox id={message.id} />
-            : (
-              <MessageToolbar
-                actions={actions}
-                overflow={onRequestDelete ? [{
-                  key: 'delete', label: '删除', testid: 'overflow-item-delete',
-                  text: '', onClick: () => onRequestDelete(message.id),
-                }] : undefined}
-              />
-            )}
+          {!selectMode && (
+            <MessageToolbar
+              actions={actions}
+              overflow={onRequestDelete ? [{
+                key: 'delete', label: '删除', testid: 'overflow-item-delete',
+                text: '', onClick: () => onRequestDelete(message.id),
+              }] : undefined}
+            />
+          )}
         </>
       )}
     </div>

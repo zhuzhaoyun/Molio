@@ -41,19 +41,33 @@ export function OverflowMenu({ items }: Props) {
     };
   }, [open]);
 
-  // Measure after open (before paint) and flip up if the menu would overflow
-  // the viewport bottom — i.e. when the trigger is on the last message and
-  // the dropdown would be clipped or covered by the composer.
+  // Measure after open (before paint) and flip up if the menu would be
+  // clipped by its scroll container (e.g. .home-chat-log) — which happens
+  // when the trigger is on the last message near the composer. Measuring
+  // against the viewport doesn't work because the viewport still has room
+  // below the chat-log (the composer area); the dropdown is clipped by the
+  // chat-log's overflow box, not the viewport.
   useLayoutEffect(() => {
     if (!open || !ref.current) return;
     const root = ref.current;
     const btn = root.querySelector<HTMLElement>('[data-testid="msg-overflow-btn"]');
     const dd = root.querySelector<HTMLElement>('.overflow-menu-dropdown');
     if (!btn || !dd) return;
+    let scrollParent: HTMLElement | null = null;
+    let node: HTMLElement | null = btn.parentElement;
+    while (node && node !== document.body) {
+      const ov = getComputedStyle(node).overflowY;
+      if (ov === 'auto' || ov === 'scroll' || ov === 'overlay') {
+        scrollParent = node;
+        break;
+      }
+      node = node.parentElement;
+    }
+    const container = scrollParent ? scrollParent.getBoundingClientRect() : { top: 0, bottom: window.innerHeight };
     const btnRect = btn.getBoundingClientRect();
     const ddHeight = dd.offsetHeight;
-    const spaceBelow = window.innerHeight - btnRect.bottom;
-    const spaceAbove = btnRect.top;
+    const spaceBelow = container.bottom - btnRect.bottom;
+    const spaceAbove = btnRect.top - container.top;
     setPlacement(ddHeight > spaceBelow - 8 && spaceAbove > spaceBelow ? 'above' : 'below');
   }, [open]);
 
