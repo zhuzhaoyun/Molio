@@ -106,4 +106,98 @@ test.describe('KB tree sort + locate', () => {
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('[data-testid="kb-btn-locate"]')).toBeDisabled();
   });
+
+  // Regression: extension-less file links (assistant markdown links and
+  // molio:// URLs routinely omit ".md"). The daemon's readFile tolerates the
+  // missing extension so the file opens, but the frontend must normalize the
+  // path against the tree so the tab title carries the format and the locate
+  // button can match the active tree row. Mirrors the canonical-path case above.
+  test('extension-less link opens with formatted title and is locatable', async ({ page }) => {
+    // Same file as the canonical test above, but the URL omits ".md".
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=dirA/subA/deep`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.kb-tree-group-label').filter({ hasText: 'dirA' })).toBeVisible({ timeout: 10_000 });
+
+    // Tab title must carry the on-disk extension, not the raw link text.
+    await expect(page.locator('.kb-wtab-title').filter({ hasText: 'deep.md' })).toBeVisible({ timeout: 5_000 });
+
+    // deep.md hidden while ancestors are collapsed
+    await expect(page.locator('.kb-tree-item').filter({ hasText: 'deep.md' })).not.toBeVisible();
+
+    const locate = page.locator('[data-testid="kb-btn-locate"]');
+    await expect(locate).not.toBeDisabled();
+    await locate.click();
+
+    // Ancestors expanded → deep.md visible AND marked active (path matched).
+    const deepItem = page.locator('.kb-tree-item').filter({ hasText: 'deep.md' });
+    await expect(deepItem).toBeVisible();
+    await expect(deepItem).toHaveClass(/is-active/);
+  });
+
+  // Regression: bare page-name links (wiki-style "[[deep]]") resolve to the
+  // file anywhere in the tree, not just at the root.
+  test('bare page-name link resolves to nested file and is locatable', async ({ page }) => {
+    // "deep" has no directory component — resolver must walk the tree.
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=deep`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.kb-tree-group-label').filter({ hasText: 'dirA' })).toBeVisible({ timeout: 10_000 });
+
+    await expect(page.locator('.kb-wtab-title').filter({ hasText: 'deep.md' })).toBeVisible({ timeout: 5_000 });
+
+    const locate = page.locator('[data-testid="kb-btn-locate"]');
+    await expect(locate).not.toBeDisabled();
+    await locate.click();
+
+    const deepItem = page.locator('.kb-tree-item').filter({ hasText: 'deep.md' });
+    await expect(deepItem).toBeVisible();
+    await expect(deepItem).toHaveClass(/is-active/);
+  });
+
+  // Regression: wiki-links routinely drop the "wiki/" prefix — e.g.
+  // [[entities/宇树科技]] points at wiki/entities/宇树科技.md. The link carries
+  // a directory component (so the bare-name walker doesn't fire) AND omits both
+  // the prefix and ".md". The resolver must try the wiki/ prefix, mirroring the
+  // daemon's resolveWithFallbacks.
+  test('wiki-link missing the wiki/ prefix resolves to the nested file', async ({ page }) => {
+    fs.mkdirSync(path.join(vault.path, 'wiki', 'entities'), { recursive: true });
+    fs.writeFileSync(path.join(vault.path, 'wiki', 'entities', '宇树科技.md'), '# 宇树\n');
+
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=entities/宇树科技`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.kb-tree-group-label').filter({ hasText: 'wiki' })).toBeVisible({ timeout: 10_000 });
+
+    // Tab title carries the on-disk name (with .md), not the raw link text.
+    await expect(page.locator('.kb-wtab-title').filter({ hasText: '宇树科技.md' })).toBeVisible({ timeout: 5_000 });
+
+    const locate = page.locator('[data-testid="kb-btn-locate"]');
+    await expect(locate).not.toBeDisabled();
+    await locate.click();
+
+    const item = page.locator('.kb-tree-item').filter({ hasText: '宇树科技.md' });
+    await expect(item).toBeVisible();
+    await expect(item).toHaveClass(/is-active/);
+  });
+
+  // Regression: non-md file. A link like [[entities/季度报告]] (dir + no ext)
+  // must resolve to 季度报告.pdf via stem matching, not just .md. Stem MUST
+  // differ from the 宇树科技.md test above, or .md-priority would pick the .md.
+  test('non-md file resolves via stem match when link omits extension', async ({ page }) => {
+    fs.mkdirSync(path.join(vault.path, 'wiki', 'entities'), { recursive: true });
+    fs.writeFileSync(path.join(vault.path, 'wiki', 'entities', '季度报告.pdf'), '%PDF-1.4\n');
+
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=entities/季度报告`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.kb-tree-group-label').filter({ hasText: 'wiki' })).toBeVisible({ timeout: 10_000 });
+
+    await expect(page.locator('.kb-wtab-title').filter({ hasText: '季度报告.pdf' })).toBeVisible({ timeout: 5_000 });
+
+    const locate = page.locator('[data-testid="kb-btn-locate"]');
+    await expect(locate).not.toBeDisabled();
+    await locate.click();
+
+    const item = page.locator('.kb-tree-item').filter({ hasText: '季度报告.pdf' });
+    await expect(item).toBeVisible();
+    await expect(item).toHaveClass(/is-active/);
+  });
+
 });

@@ -13,6 +13,7 @@ import {
   resolveFilePath,
   scanTree,
   countFiles,
+  resolveCanonicalPath,
 } from '../../src/core/knowledge.js';
 
 describe('knowledge filesystem operations', () => {
@@ -434,6 +435,62 @@ describe('knowledge filesystem operations', () => {
       mkdirSync(join(vaultPath, '.molio', 'assets'), { recursive: true });
       writeFile(vaultPath, '.molio/assets/hidden.md', 'hidden content');
       assert.throws(() => readFile(vaultPath, 'hidden'));
+    });
+  });
+
+  describe('resolveCanonicalPath', () => {
+    it('exact path returns the path unchanged', () => {
+      writeFile(vaultPath, 'exact.md', '# x\n');
+      assert.equal(resolveCanonicalPath(vaultPath, 'exact.md'), 'exact.md');
+    });
+
+    it('appends .md when input has no extension', () => {
+      writeFile(vaultPath, 'bar.md', '# x\n');
+      assert.equal(resolveCanonicalPath(vaultPath, 'bar'), 'bar.md');
+    });
+
+    it('tries the wiki/ prefix when the link drops it', () => {
+      mkdirSync(join(vaultPath, 'wiki', 'entities'), { recursive: true });
+      writeFileSync(join(vaultPath, 'wiki', 'entities', '宇树科技.md'), '# x\n');
+      assert.equal(
+        resolveCanonicalPath(vaultPath, 'entities/宇树科技'),
+        'wiki/entities/宇树科技.md',
+      );
+    });
+
+    it('stem-matches a non-md file when the link omits the extension', () => {
+      mkdirSync(join(vaultPath, 'wiki', 'entities'), { recursive: true });
+      writeFileSync(join(vaultPath, 'wiki', 'entities', '季度报告.pdf'), '%PDF-1.4\n');
+      assert.equal(
+        resolveCanonicalPath(vaultPath, 'entities/季度报告'),
+        'wiki/entities/季度报告.pdf',
+      );
+    });
+
+    it('prefers .md over other extensions with the same stem', () => {
+      mkdirSync(join(vaultPath, 'docs'), { recursive: true });
+      writeFileSync(join(vaultPath, 'docs', 'dup.md'), '# md\n');
+      writeFileSync(join(vaultPath, 'docs', 'dup.pdf'), '%PDF\n');
+      assert.equal(resolveCanonicalPath(vaultPath, 'docs/dup'), 'docs/dup.md');
+    });
+
+    it('bare page name resolves anywhere in the tree', () => {
+      mkdirSync(join(vaultPath, 'wiki', 'deep'), { recursive: true });
+      writeFileSync(join(vaultPath, 'wiki', 'deep', '概念.md'), '# x\n');
+      assert.equal(resolveCanonicalPath(vaultPath, '概念'), 'wiki/deep/概念.md');
+    });
+
+    it('case-insensitive match', () => {
+      writeFileSync(join(vaultPath, 'Case.md'), '# x\n');
+      assert.equal(resolveCanonicalPath(vaultPath, 'case'), 'Case.md');
+    });
+
+    it('returns null when nothing matches', () => {
+      assert.equal(resolveCanonicalPath(vaultPath, 'nope/missing'), null);
+    });
+
+    it('returns null for empty input', () => {
+      assert.equal(resolveCanonicalPath(vaultPath, ''), null);
     });
   });
 });

@@ -25,6 +25,7 @@ import {
   countFiles,
   readFile,
   resolveFilePath,
+  resolveCanonicalPath,
   writeFile,
   deleteFile,
   createDirectory,
@@ -175,6 +176,31 @@ export function knowledgeRoutes(
       }
       return c.json({ error: { code: 'INTERNAL', message } }, 500);
     }
+  });
+
+  // GET /api/knowledge/vaults/:id/resolve/* — resolve a (possibly extension-less
+  // or wiki-prefix-less) path to its canonical vault-relative path. Used by the
+  // frontend when opening files from assistant links / molio:// / graph, so the
+  // tab title and tree highlight match the real on-disk file.
+  app.get('/vaults/:id/resolve/*', (c) => {
+    const vault = getVault(db, c.req.param('id'));
+    if (!vault) {
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
+    }
+
+    const fullPath = c.req.path;
+    const prefix = `/api/knowledge/vaults/${vault.id}/resolve/`;
+    const relPath = decodeURIComponent(fullPath.slice(prefix.length));
+
+    if (!relPath) {
+      return c.json({ error: { code: 'BAD_REQUEST', message: 'File path is required' } }, 400);
+    }
+
+    const canonical = resolveCanonicalPath(vault.path, relPath);
+    if (canonical === null) {
+      return c.json({ error: { code: 'NOT_FOUND', message: 'File not found' } }, 404);
+    }
+    return c.json({ path: canonical });
   });
 
   // POST /api/knowledge/vaults/:id/files/* — write/create a file

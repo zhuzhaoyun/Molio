@@ -2113,10 +2113,11 @@
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
   height: 36px;
+  position: relative;
 }
 
 /* Scrollable tab list — keeps trailing global actions fixed when tabs overflow. */
-.kb-wtab-list {
+.kb-wtab-scroll {
   display: flex;
   align-items: center;
   gap: 0;
@@ -2128,7 +2129,94 @@
   scrollbar-width: none;
 }
 
-.kb-wtab-list::-webkit-scrollbar { display: none; }
+.kb-wtab-scroll::-webkit-scrollbar { display: none; }
+
+/* Overflow arrows + dropdown trigger (functional in later tasks). */
+.kb-wtab-arrow {
+  flex-shrink: 0;
+  width: 20px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+.kb-wtab-arrow:hover { color: var(--text); background: var(--bg-panel); }
+.kb-wtab-arrow[hidden] { visibility: hidden; }
+
+.kb-wtab-more {
+  flex-shrink: 0;
+  width: 22px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+}
+.kb-wtab-more:hover { color: var(--text); background: var(--bg-panel); }
+.kb-wtab-more[hidden] { visibility: hidden; }
+
+/* Dropdown menu listing all tabs (overflow affordance). */
+.kb-tab-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 200;
+  margin-top: 2px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: var(--shadow-md);
+  max-height: 320px;
+  overflow-y: auto;
+  min-width: 180px;
+}
+
+.kb-wtab-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.kb-wtab-dropdown-item:hover { background: var(--bg-subtle); color: var(--text); }
+.kb-wtab-dropdown-item.is-active { color: var(--text-strong); font-weight: 500; }
+
+.kb-wtab-dropdown-title {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.kb-wtab-dropdown-close {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  color: var(--text-faint);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 80ms ease;
+  flex-shrink: 0;
+}
+.kb-wtab-dropdown-item:hover .kb-wtab-dropdown-close,
+.kb-wtab-dropdown-item.is-active .kb-wtab-dropdown-close {
+  opacity: 1;
+}
+.kb-wtab-dropdown-close:hover { background: var(--bg-muted); color: var(--text); }
 
 /* Trailing global actions (vault-level, not tied to the active document). */
 .kb-wtab-actions {
@@ -2167,7 +2255,7 @@
   font-size: 12px;
   cursor: pointer;
   user-select: none;
-  transition: all 100ms ease;
+  transition: background-color 100ms ease, color 100ms ease, border-color 100ms ease;
   position: relative;
   margin-right: 1px;
   flex-shrink: 0;
@@ -2182,13 +2270,7 @@
   background: var(--bg-panel);
   color: var(--text-strong);
   border-color: var(--border);
-  font-weight: 500;
-}
-
-.kb-wtab-icon {
-  font-size: 12px;
-  flex-shrink: 0;
-  line-height: 1;
+  margin-bottom: -1px;
 }
 
 .kb-wtab-title {
@@ -2225,6 +2307,17 @@
 .kb-wtab-close:hover {
   background: var(--bg-muted);
   color: var(--text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kb-wtab,
+  .kb-wtab-close,
+  .kb-wtab-arrow,
+  .kb-wtab-more,
+  .kb-wtab-dropdown-item,
+  .kb-wtab-dropdown-close {
+    transition: none;
+  }
 }
 
 /* ══════════ Context Menu ══════════ */
