@@ -409,6 +409,39 @@ export function listMessagesBefore(
   return rows.map(rowToMessage);
 }
 
+/** Delete a set of messages by id within a conversation. Returns rows deleted. */
+export function deleteMessagesById(
+  db: SqliteDb,
+  conversationId: string,
+  ids: string[],
+): number {
+  if (ids.length === 0) return 0;
+  // Bind each id as a separate parameter; conversationId scopes the delete so
+  // an id from another conversation cannot be hit.
+  const placeholders = ids.map(() => '?').join(', ');
+  const r = db
+    .prepare(
+      `DELETE FROM messages WHERE conversation_id = ? AND id IN (${placeholders})`,
+    )
+    .run(conversationId, ...ids);
+  return r.changes;
+}
+
+/** Update a single message's content. Returns whether the row was found. */
+export function updateMessageContent(
+  db: SqliteDb,
+  conversationId: string,
+  msgId: string,
+  content: string,
+): boolean {
+  const r = db
+    .prepare(
+      'UPDATE messages SET content = ? WHERE id = ? AND conversation_id = ?',
+    )
+    .run(content, msgId, conversationId);
+  return r.changes > 0;
+}
+
 /**
  * Upsert a message. If the message id already exists, update it.
  * Otherwise, insert with auto-incremented position.
