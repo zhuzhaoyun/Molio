@@ -126,7 +126,11 @@ export function HomePage({
         <div className="home-chat-log" ref={logRef}>
           {selectMode && (
             <SelectionConfirmBar
-              onDelete={() => onDeleteMessages?.([...messageSelectionStore.getSelectedIds()])}
+              onDelete={async () => {
+                const ids = [...messageSelectionStore.getSelectedIds()];
+                await onDeleteMessages?.(ids);
+                messageSelectionStore.exit();
+              }}
               onCancel={() => messageSelectionStore.exit()}
             />
           )}

@@ -81,4 +81,30 @@ test.describe('Chat — delete', () => {
     await expect(page.locator('[data-testid="assistant-message"]')).toHaveCount(1);
     await expect(page.locator('[data-testid="user-message"]')).toHaveCount(1);
   });
+
+  test('partial delete exits selection mode and leaves other messages', async ({ page }) => {
+    await mockChatRun(page, { runId: 'run-1', conversationId: 'conv-1', multiTurn: true });
+    await mockDeleteMessages(page);
+    await gotoHome(page);
+    await sendMessage(page, 'First');
+    await expect(page.locator('[data-testid="assistant-prose"]')).toBeVisible({ timeout: 10_000 });
+    await sendMessage(page, 'Second');
+    await expect(page.locator('[data-testid="assistant-message"]')).toHaveCount(2, { timeout: 10_000 });
+    await expect(page.locator('[data-testid="user-message"]')).toHaveCount(2);
+
+    // Delete the FIRST pair via the first assistant's ⋯.
+    await page.locator('[data-testid="assistant-message"]').first().hover();
+    await page.locator('[data-testid="assistant-message"]').first().locator('[data-testid="msg-overflow-btn"]').click();
+    await page.locator('[data-testid="overflow-item-delete"]').click();
+    await expect(page.locator('[data-testid="selection-confirm-bar"]')).toBeVisible();
+
+    // Confirm with the default pair (first user + assistant pre-checked).
+    await page.locator('[data-testid="selection-delete-btn"]').click();
+
+    // Selection mode exits, the first pair is gone, the second pair remains.
+    await expect(page.locator('[data-testid="selection-confirm-bar"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="msg-checkbox"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="assistant-message"]')).toHaveCount(1);
+    await expect(page.locator('[data-testid="user-message"]')).toHaveCount(1);
+  });
 });
