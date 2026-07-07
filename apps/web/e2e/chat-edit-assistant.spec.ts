@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { gotoHome, sendMessage } from './helpers/navigation';
-import { mockChatRun, mockUpdateMessageContent, unmockAll, SCRIPTS } from './helpers/mock-sse';
+import { mockChatRun, mockUpdateMessageContent, unmockAll } from './helpers/mock-sse';
 
 /**
  * @area chat

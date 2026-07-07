@@ -166,7 +166,7 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
         </div>
       )}
 
-      {editing && !selectMode ? (
+      {editing && !selectMode && !message.streaming ? (
         <div className="user-edit">
           <textarea
             data-testid="msg-edit-assistant-textarea"
