@@ -362,7 +362,7 @@ export function ensureVaultDir(vaultPath: string): void {
 
 function isSupportedFile(name: string): boolean {
   const ext = path.extname(name).toLowerCase();
-  return [...TEXT_EXTS, ...IMAGE_EXTS, ...BINARY_EXTS].includes(ext);
+  return ALLOWED_EXTS.includes(ext);
 }
 
 /** Text file extensions — content read as UTF-8 */
@@ -371,6 +371,12 @@ export const TEXT_EXTS = ['.md', '.txt', '.html', '.htm', '.json', '.yaml', '.ym
 /** Image file extensions — displayed inline via <img> */
 export const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp', '.ico'];
 
+/** Video file extensions — displayed inline via <video> */
+export const VIDEO_EXTS = ['.mp4', '.mov', '.webm', '.mkv', '.avi'];
+
+/** Audio file extensions — displayed inline via <audio> */
+export const AUDIO_EXTS = ['.mp3', '.wav', '.m4a', '.flac', '.aac', '.ogg'];
+
 /** Binary file extensions — opened via system default program */
 export const BINARY_EXTS = ['.pdf', '.docx', '.doc', '.pptx', '.ppt', '.xlsx', '.xls'];
 
@@ -378,7 +384,7 @@ export const BINARY_EXTS = ['.pdf', '.docx', '.doc', '.pptx', '.ppt', '.xlsx', '
 export const PROTECTED_DIRS = ['wiki', 'docling_output'];
 
 /** Union of all supported extensions — what scanTree displays == what imports accept. */
-export const ALLOWED_EXTS = [...TEXT_EXTS, ...IMAGE_EXTS, ...BINARY_EXTS];
+export const ALLOWED_EXTS = [...TEXT_EXTS, ...IMAGE_EXTS, ...VIDEO_EXTS, ...AUDIO_EXTS, ...BINARY_EXTS];
 
 /** Check whether a relative path lies inside a protected directory or is one. */
 export function isInsideProtected(relPath: string): boolean {

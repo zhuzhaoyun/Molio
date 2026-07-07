@@ -4,7 +4,7 @@
 
 import { Hono } from 'hono';
 import { stream } from 'hono/streaming';
-import { createReadStream, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { createReadStream, existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type Database from 'better-sqlite3';
 import type {
@@ -283,12 +283,40 @@ export function knowledgeRoutes(
 
     try {
       const absPath = resolveFilePath(vault.path, relPath);
-      const stream = createReadStream(absPath);
       const ext = path.extname(absPath).toLowerCase();
       const mime = RAW_MIME[ext] ?? 'application/octet-stream';
+      const stat = statSync(absPath);
+      const fileSize = stat.size;
 
-      return new Response(stream as any, {
-        headers: { 'Content-Type': mime },
+      // HTTP Range support — required for <video>/<audio> seek and efficient
+      // partial loads. Browsers always send `Range: bytes=0-` for media; PDF
+      // viewers and image lazy-loads also benefit. No Range header → serve the
+      // whole file as before (backward compatible).
+      const rangeHeader = c.req.header('range');
+      const rangeMatch = rangeHeader?.match(/bytes=(\d+)-(\d*)/);
+      if (rangeMatch) {
+        const start = parseInt(rangeMatch[1]!, 10);
+        const end = rangeMatch[2] ? parseInt(rangeMatch[2], 10) : fileSize - 1;
+        const chunkSize = end - start + 1;
+        const partial = createReadStream(absPath, { start, end });
+        return new Response(partial as any, {
+          status: 206,
+          headers: {
+            'Content-Type': mime,
+            'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+            'Content-Length': String(chunkSize),
+            'Accept-Ranges': 'bytes',
+          },
+        });
+      }
+
+      const fullStream = createReadStream(absPath);
+      return new Response(fullStream as any, {
+        headers: {
+          'Content-Type': mime,
+          'Content-Length': String(fileSize),
+          'Accept-Ranges': 'bytes',
+        },
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to read file';
@@ -700,4 +728,17 @@ const RAW_MIME: Record<string, string> = {
   '.ico': 'image/x-icon',
   '.pdf': 'application/pdf',
   '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  // Video
+  '.mp4': 'video/mp4',
+  '.mov': 'video/quicktime',
+  '.webm': 'video/webm',
+  '.mkv': 'video/x-matroska',
+  '.avi': 'video/x-msvideo',
+  // Audio
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.m4a': 'audio/mp4',
+  '.flac': 'audio/flac',
+  '.aac': 'audio/aac',
+  '.ogg': 'audio/ogg',
 };

@@ -2010,6 +2010,26 @@
   background: var(--bg-secondary, #f5f5f5);
 }
 
+.kb-media-viewer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--bg-secondary, #f5f5f5);
+}
+
+.kb-media-viewer video,
+.kb-media-viewer audio {
+  max-width: 100%;
+  max-height: calc(100vh - 140px);
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.kb-media-viewer audio {
+  max-height: 54px;
+}
+
 .kb-image-viewer img {
   max-width: 100%;
   max-height: calc(100vh - 140px);

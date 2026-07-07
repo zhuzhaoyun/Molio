@@ -35,14 +35,19 @@ function getTurndown(): TurndownService {
 }
 
 /** File categories for rendering strategy */
-type FileCategory = 'text' | 'image' | 'binary';
+type FileCategory = 'text' | 'image' | 'video' | 'audio' | 'binary';
 
 const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp', '.ico']);
+const VIDEO_EXTS = new Set(['.mp4', '.mov', '.webm', '.mkv', '.avi']);
+const AUDIO_EXTS = new Set(['.mp3', '.wav', '.m4a', '.flac', '.aac', '.ogg']);
 const BINARY_EXTS = new Set(['.pdf', '.docx', '.doc', '.pptx', '.ppt', '.xlsx', '.xls']);
 
 function getFileCategory(fileName: string): FileCategory {
-  const ext = fileName.slice(fileName.lastIndexOf('.')).toLowerCase();
+  const lastDot = fileName.lastIndexOf('.');
+  const ext = lastDot >= 0 ? fileName.slice(lastDot).toLowerCase() : '';
   if (IMAGE_EXTS.has(ext)) return 'image';
+  if (VIDEO_EXTS.has(ext)) return 'video';
+  if (AUDIO_EXTS.has(ext)) return 'audio';
   if (BINARY_EXTS.has(ext)) return 'binary';
   return 'text';
 }
@@ -391,6 +396,26 @@ export function KbMainContent({
             src={api.rawFileUrl(vaultId, selectedFile)}
             alt={fileName}
           />
+        </div>
+      ) : category === 'video' && vaultId ? (
+        <div className="kb-content-area kb-media-viewer">
+          <video
+            controls
+            preload="metadata"
+            src={api.rawFileUrl(vaultId, selectedFile)}
+          >
+            Your browser does not support video playback.
+          </video>
+        </div>
+      ) : category === 'audio' && vaultId ? (
+        <div className="kb-content-area kb-media-viewer">
+          <audio
+            controls
+            preload="metadata"
+            src={api.rawFileUrl(vaultId, selectedFile)}
+          >
+            Your browser does not support audio playback.
+          </audio>
         </div>
       ) : category === 'binary' ? (
         <div className="kb-content-area">

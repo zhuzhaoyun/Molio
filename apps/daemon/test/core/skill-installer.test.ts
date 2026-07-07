@@ -170,6 +170,33 @@ describe('skill-installer migration', () => {
     );
   });
 
+  it('should inject remotion-preference rule into .claude/CLAUDE.md', () => {
+    installBuiltinSkills(tmpVault);
+
+    const content = fs.readFileSync(
+      path.join(tmpVault, '.claude', 'CLAUDE.md'),
+      'utf-8',
+    );
+    // Core directive: route video creation to the remotion skill, not Python
+    // video libraries. Without this rule the agent defaults to moviepy/ffmpeg
+    // even though the remotion skill is installed — same reason docling needs
+    // a hard rule to win over legacy office skills.
+    assert.ok(
+      content.includes('remotion'),
+      'should mention the remotion skill',
+    );
+    assert.ok(
+      content.includes('moviepy') || content.includes('manim'),
+      'should explicitly call out the Python video libraries to avoid',
+    );
+    // Chinese trigger types must be listed so 介绍视频/宣传视频-style requests
+    // route to the rule via keyword match in the system prompt.
+    assert.ok(
+      content.includes('介绍视频') || content.includes('宣传视频'),
+      'should list Chinese video-type triggers',
+    );
+  });
+
   it('should not overwrite existing user content in .claude/CLAUDE.md', () => {
     // Pre-create .claude/CLAUDE.md with user content
     const claudeDir = path.join(tmpVault, '.claude');
