@@ -8,6 +8,10 @@
         "apps/web/src/components/UserMessage.*",
         "apps/web/src/components/AssistantMessage.*",
         "apps/web/src/components/MessageToolbar.*",
+        "apps/web/src/components/OverflowMenu.*",
+        "apps/web/src/components/SelectionConfirmBar.*",
+        "apps/web/src/components/MessageCheckbox.*",
+        "apps/web/src/stores/messageSelectionStore.*",
         "apps/web/src/components/ThinkingBlock.*",
         "apps/web/src/components/ToolCard.*",
         "apps/web/src/components/ToolGroup.*",
@@ -26,7 +30,7 @@
         "apps/daemon/src/core/conversations/run-starter.ts",
         "apps/daemon/src/streams/*"
       ],
-      "specs": ["chat-single", "chat-multi", "chat-streaming", "chat-copy", "chat-regenerate", "chat-edit-resend", "chat-codeblock", "chat-continue", "chat-save-kb"]
+      "specs": ["chat-single", "chat-multi", "chat-streaming", "chat-copy", "chat-regenerate", "chat-edit-resend", "chat-codeblock", "chat-continue", "chat-save-kb", "chat-overflow-menu", "chat-delete"]
     },
     "kb": {
       "paths": [
@@ -112,6 +116,8 @@
     "chat-multi": { "priority": "P0", "file": "chat-multi.spec.ts" },
     "chat-streaming": { "priority": "P1", "file": "chat-streaming.spec.ts" },
     "chat-copy": { "priority": "P0", "file": "chat-copy.spec.ts" },
+    "chat-overflow-menu": { "priority": "P0", "file": "chat-overflow-menu.spec.ts" },
+    "chat-delete": { "priority": "P0", "file": "chat-delete.spec.ts" },
     "chat-regenerate": { "priority": "P0", "file": "chat-regenerate.spec.ts" },
     "chat-edit-resend": { "priority": "P0", "file": "chat-edit-resend.spec.ts" },
     "chat-codeblock": { "priority": "P0", "file": "chat-codeblock.spec.ts" },

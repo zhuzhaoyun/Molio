@@ -10,6 +10,8 @@ import { ToolGroup } from './ToolGroup';
 import { ThinkingBlock } from './ThinkingBlock';
 import { SaveToKbButton } from './SaveToKbButton';
 import { MessageToolbar } from './MessageToolbar';
+import { useSelectMode } from '../stores/messageSelectionStore';
+import { MessageCheckbox } from './MessageCheckbox';
 
 // Tools that should never be grouped (always shown individually)
 const UNGROUPABLE = new Set(['AskUserQuestion', 'ask_user_question']);
@@ -74,6 +76,7 @@ interface Props {
 
 export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitForm, onRegenerate, onContinue, onRequestDelete }: Props) {
   const { t } = useI18n();
+  const selectMode = useSelectMode();
 
   // Check if the message has an AskUserQuestion tool — suppress the markdown
   // fallback text that duplicates the interactive card.
@@ -168,7 +171,10 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
         </div>
       )}
 
-      {!message.streaming && (
+      {selectMode && !message.streaming && (
+        <MessageCheckbox id={message.id} />
+      )}
+      {!message.streaming && !selectMode && (
         <MessageToolbar
           actions={[
             {

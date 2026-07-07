@@ -350,6 +350,32 @@ export function useChatCore(options: UseChatCoreOptions) {
     });
   }, [closeEventSource]);
 
+  const deleteMessages = useCallback(async (ids: string[]) => {
+    if (!ids.length) return;
+    const convId = state.conversationId;
+    if (!convId) return;
+    try {
+      await api.deleteMessages(convId, ids);
+      setState((prev) => ({
+        ...prev,
+        messages: prev.messages.filter((m) => !ids.includes(m.id)),
+      }));
+    } catch (err) {
+      setState((prev) => ({
+        ...prev,
+        messages: [
+          ...prev.messages,
+          {
+            id: `err-${Date.now()}`,
+            role: 'error' as const,
+            content: `删除失败: ${(err as Error).message}`,
+            timestamp: Date.now(),
+          },
+        ],
+      }));
+    }
+  }, [state.conversationId]);
+
   return {
     ...state,
     send,
@@ -359,6 +385,7 @@ export function useChatCore(options: UseChatCoreOptions) {
     setMessages,
     regenerateLast,
     editAndResend,
+    deleteMessages,
   };
 }
 

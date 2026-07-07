@@ -3,6 +3,8 @@ import { api } from '../api/client';
 import { useActiveVaultId } from '../stores/vaultStore';
 import { useI18n } from '../i18n';
 import { MessageToolbar, type ToolbarAction } from './MessageToolbar';
+import { useSelectMode } from '../stores/messageSelectionStore';
+import { MessageCheckbox } from './MessageCheckbox';
 import type { ChatMessage } from '../hooks/useChat';
 
 interface Props {
@@ -94,15 +96,17 @@ function renderContent(content: string, vaultId: string | null, t: (key: string)
 export function UserMessage({ message, isLast, onEdit, onRequestDelete, disabled }: Props) {
   const vaultId = useActiveVaultId();
   const { t } = useI18n();
+  const selectMode = useSelectMode();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message.content);
 
   const rendered = renderContent(message.content, vaultId, t);
 
   const startEdit = useCallback(() => {
+    if (selectMode) return;
     setDraft(message.content);
     setEditing(true);
-  }, [message.content]);
+  }, [message.content, selectMode]);
 
   const cancelEdit = useCallback(() => {
     setDraft(message.content);
@@ -161,13 +165,17 @@ export function UserMessage({ message, isLast, onEdit, onRequestDelete, disabled
       ) : (
         <>
           <div className="user-text">{rendered}</div>
-          <MessageToolbar
-            actions={actions}
-            overflow={onRequestDelete ? [{
-              key: 'delete', label: '删除', testid: 'overflow-item-delete',
-              text: '', onClick: () => onRequestDelete(message.id),
-            }] : undefined}
-          />
+          {selectMode
+            ? <MessageCheckbox id={message.id} />
+            : (
+              <MessageToolbar
+                actions={actions}
+                overflow={onRequestDelete ? [{
+                  key: 'delete', label: '删除', testid: 'overflow-item-delete',
+                  text: '', onClick: () => onRequestDelete(message.id),
+                }] : undefined}
+              />
+            )}
         </>
       )}
     </div>

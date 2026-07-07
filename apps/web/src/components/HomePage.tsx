@@ -4,6 +4,8 @@ import type { FileRef, PastedImage } from './ChatComposer';
 import { UserMessage } from './UserMessage';
 import { AssistantMessage } from './AssistantMessage';
 import { useI18n } from '../i18n';
+import { useSelectMode, messageSelectionStore } from '../stores/messageSelectionStore';
+import { SelectionConfirmBar } from './SelectionConfirmBar';
 import type { ChatMessage } from '../hooks/useChat';
 
 interface Props {
@@ -19,6 +21,7 @@ interface Props {
   onEdit?: (messageId: string, newContent: string) => void;
   onContinue?: () => void;
   onRequestDelete?: (id: string) => void;
+  onDeleteMessages?: (ids: string[]) => void;
 }
 
 export function HomePage({
@@ -34,14 +37,23 @@ export function HomePage({
   onEdit,
   onContinue,
   onRequestDelete,
+  onDeleteMessages,
 }: Props) {
   const { t } = useI18n();
   const logRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const selectMode = useSelectMode();
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length, messages[messages.length - 1]?.content]);
+
+  // Prune stale selected ids whenever the message set changes (streaming,
+  // regenerate, etc. may have removed a selected bubble).
+  useEffect(() => {
+    const present = new Set(messages.map((m) => m.id));
+    messageSelectionStore.pruneStale(present);
+  }, [messages]);
 
   // Find the last assistant message ID so only that card stays interactive
   const lastAssistantId = useMemo(() => {
@@ -112,6 +124,12 @@ export function HomePage({
 
         {/* Chat log */}
         <div className="home-chat-log" ref={logRef}>
+          {selectMode && (
+            <SelectionConfirmBar
+              onDelete={() => onDeleteMessages?.([...messageSelectionStore.getSelectedIds()])}
+              onCancel={() => messageSelectionStore.exit()}
+            />
+          )}
           {messages.map((msg) => {
             if (msg.role === 'user') {
               const isLastUser = (() => {

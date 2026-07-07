@@ -199,6 +199,22 @@ export async function mockRewindResend(
 // ── Cleanup ────────────────────────────────────────────────────────────
 
 /**
+ * Mock POST /api/conversations/:id/delete-messages — records the ids and
+ * returns a deleted count.
+ */
+export async function mockDeleteMessages(page: Page) {
+  await page.route('**/api/conversations/*/delete-messages', async (route) => {
+    const body = JSON.parse(route.request().postData() || '{}');
+    const ids: string[] = Array.isArray(body.ids) ? body.ids : [];
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ deleted: ids.length }),
+    });
+  });
+}
+
+/**
  * Remove all route intercepts installed by mockChatRun.
  * Call in afterEach() to prevent state leakage between tests.
  */
@@ -210,4 +226,5 @@ export async function unmockAll(page: Page) {
   await page.unroute('**/api/agents');
   await page.unroute('**/api/config');
   await page.unroute('**/api/conversations/*/rewind-resend');
+  await page.unroute('**/api/conversations/*/delete-messages');
 }

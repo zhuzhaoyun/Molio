@@ -1105,6 +1105,68 @@
   position: relative;
 }
 
+/* ─── Selection mode ─── */
+.msg-checkbox {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--bg-panel, #fff);
+  color: #fff;
+  cursor: pointer;
+  padding: 0;
+  z-index: 5;
+}
+.msg-checkbox.checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.msg-checkbox svg { display: block; }
+
+/* Position the checkbox relative to the message bubble. */
+.msg { position: relative; }
+
+.selection-confirm-bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  background: var(--bg-panel, #fff);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-sm, 0 2px 8px rgba(0,0,0,0.08));
+}
+.selection-count { font-size: 13px; color: var(--text-primary); font-weight: 500; }
+.selection-actions { display: flex; gap: 8px; }
+.selection-cancel, .selection-delete {
+  padding: 4px 14px;
+  font-size: 13px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-primary);
+}
+.selection-delete {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.selection-delete:disabled { opacity: 0.4; cursor: default; }
+.selection-delete:not(:disabled):hover { background: var(--accent-hover); }
+.selection-cancel:hover { background: var(--bg-hover); }
+
 /* ─── Overflow (⋯) menu ─── */
 .overflow-menu { position: relative; display: inline-flex; }
 .overflow-menu-dropdown {
