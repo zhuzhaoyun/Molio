@@ -8,7 +8,7 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import type { TreeNode } from '@molio/contracts';
 import { useKnowledge } from '../../hooks/useKnowledge';
 import type { KbChatState } from '../../hooks/useKbChat';
-import { useKbTabs } from '../../hooks/useKbTabs';
+import { useKbTabs, MAX_TABS } from '../../hooks/useKbTabs';
 import { kbTabsStore } from '../../stores/kbTabsStore';
 import { vaultStore } from '../../stores/vaultStore';
 import { KbFilePanel } from './KbFilePanel';
@@ -173,6 +173,14 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
     onKbChatOpenChange(true);
   }, [kb.selectedFile, kbChat]);
 
+  // ─── Save toast helper (used by file selection and other callbacks) ───
+
+  const showToast = useCallback((msg: string) => {
+    if (saveToastTimer.current) clearTimeout(saveToastTimer.current);
+    setSaveToast(msg);
+    saveToastTimer.current = setTimeout(() => setSaveToast(null), 2000);
+  }, []);
+
   // ─── Tab-aware file selection ───
 
   /**
@@ -209,21 +217,33 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
       const tabId = `file:${path}`;
       const existingTab = tabs.tabs.find(t => t.id === tabId);
       if (existingTab) {
-        // Already open in a tab — just activate it
         tabs.activateTab(tabId);
       } else {
-        // Open a new tab (openTab appends to the end and activates it)
-        tabs.openTab({ id: tabId, type: 'file', title: fileName });
+        const res = tabs.openTab({ id: tabId, type: 'file', title: fileName, vaultId: kb.activeVault?.id });
+        if (!res.opened && res.reason === 'limit') {
+          // Defensive: pre-check below should have caught this; never switch
+          // the viewed file or discard edits when blocked.
+          showToast(`已达 ${MAX_TABS} 个标签上限，请先关闭某个标签`);
+          return;
+        }
       }
       kb.selectFile(path);
     };
-    // Re-selecting the current file is a no-op — don't prompt.
+    // Limit pre-check BEFORE the discard prompt: avoids confirming "discard
+    // edits" only to have the open blocked by the cap. Re-opening an existing
+    // tab is exempt (activate != new open).
+    const tabId = `file:${path}`;
+    const existingTab = tabs.tabs.find(t => t.id === tabId);
+    if (!existingTab && tabs.tabs.length >= MAX_TABS) {
+      showToast(`已达 ${MAX_TABS} 个标签上限，请先关闭某个标签`);
+      return;
+    }
     if (path === kb.selectedFile) {
       action();
       return;
     }
     runOrConfirmDiscard(action);
-  }, [tabs, kb, runOrConfirmDiscard]);
+  }, [tabs, kb, runOrConfirmDiscard, showToast]);
 
   /** Open a file in a new tab — same semantics as handleSelectFile. */
   const handleOpenInNewTab = handleSelectFile;
@@ -262,15 +282,34 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
     });
   }, [tabs, kb, runOrConfirmDiscard]);
 
-  // Sync: when URL navigation resolves, open in tab
+  // When URL navigation resolves, open in tab. The path from external
+  // navigation (assistant links, molio://, graph) may omit the extension and/or
+  // wiki/ prefix, so ask the daemon to canonicalize it before opening — this
+  // keeps tab title, tree highlighting, and "在目录中定位" consistent with
+  // opening from the directory tree.
   useEffect(() => {
     if (!pendingUrlNav) return;
     if (kb.activeVault?.id !== pendingUrlNav.vaultId) return;
     if (kb.treeVaultId !== pendingUrlNav.vaultId) return;
     if (kb.tree.length === 0) return;
 
-    handleSelectFile(pendingUrlNav.filePath);
-    setPendingUrlNav(null);
+    const controller = new AbortController();
+    const { vaultId, filePath } = pendingUrlNav;
+    api.resolveFilePath(vaultId, filePath)
+      .then((canonical) => {
+        if (controller.signal.aborted) return;
+        handleSelectFile(canonical ?? filePath);
+      })
+      .catch(() => {
+        if (controller.signal.aborted) return;
+        // Daemon unreachable / resolve errored — degrade to raw path (pre-fix
+        // behavior for this click; file may still open via readFile fallback).
+        handleSelectFile(filePath);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setPendingUrlNav(null);
+      });
+    return () => controller.abort();
   }, [pendingUrlNav, kb.activeVault?.id, kb.treeVaultId, kb.tree, handleSelectFile]);
 
   // Sync: on mount & vault/tab change, restore active tab's file into selectedFile.
@@ -288,6 +327,29 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kb.activeVault?.id, tabs.activeTabId]);
+
+  // Reactive safety net: close tabs whose file no longer exists in the active vault's tree.
+  // Triggers on tree refresh (external deletes via VaultWatcher) and vault switches.
+  useEffect(() => {
+    const av = kb.activeVault;
+    if (!av || kb.treeVaultId !== av.id || kb.tree.length === 0) return;
+    const paths = new Set<string>();
+    const collect = (nodes: TreeNode[]) => {
+      for (const n of nodes) {
+        if (n.type === 'file') paths.add(n.path);
+        if (n.children) collect(n.children);
+      }
+    };
+    collect(kb.tree);
+    const staleIds = tabs.tabs
+      .filter(t => t.vaultId === av.id && t.id.startsWith('file:') && !paths.has(t.id.slice(5)))
+      .map(t => t.id);
+    if (staleIds.length) {
+      const staleSet = new Set(staleIds);
+      tabs.removeWhere(t => staleSet.has(t.id));
+      if (!tabs.activeTabId) kb.selectFile(null);
+    }
+  }, [kb.tree, kb.treeVaultId, kb.activeVault?.id, tabs.tabs, tabs.removeWhere, kb.selectFile]);
 
   // Panel resize drag handling
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
@@ -447,14 +509,6 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
     return () => document.removeEventListener('keydown', handler);
   }, [kb.selectedFile, kbChat]);
 
-  // ─── Save toast helper (defined early — used by callbacks below) ───
-
-  const showToast = useCallback((msg: string) => {
-    if (saveToastTimer.current) clearTimeout(saveToastTimer.current);
-    setSaveToast(msg);
-    saveToastTimer.current = setTimeout(() => setSaveToast(null), 2000);
-  }, []);
-
   // ─── New file / folder flows (React dialogs instead of window.prompt) ───
 
   const handleNewFile = useCallback((parentPath?: string) => {
@@ -521,6 +575,27 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
   const handleCloseCtxMenu = useCallback(() => {
     setCtxMenu(null);
   }, []);
+
+  const handleDeleteFile = useCallback(async (filePath: string) => {
+    try {
+      await kb.deleteFile(filePath);
+    } catch (err) {
+      showToast(`删除失败：${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
+    tabs.closeTab(`file:${filePath}`);
+  }, [kb, tabs, showToast]);
+
+  const handleDeleteFolder = useCallback(async (folderPath: string) => {
+    try {
+      await kb.deleteFolder(folderPath);
+    } catch (err) {
+      showToast(`删除失败：${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
+    const prefix = `file:${folderPath}/`;
+    tabs.removeWhere(t => t.vaultId === kb.activeVault?.id && t.id.startsWith(prefix));
+  }, [kb, tabs, showToast]);
 
   const getContextMenuItems = useCallback((): MenuItem[] => {
     if (!ctxMenu) return [];
@@ -606,11 +681,7 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
             danger: true,
             onConfirm: async () => {
               setConfirmDialog((prev) => ({ ...prev, show: false }));
-              try {
-                await kb.deleteFile(node.path);
-              } catch (err) {
-                showToast(`删除失败：${err instanceof Error ? err.message : String(err)}`);
-              }
+              await handleDeleteFile(node.path);
             },
           });
         },
@@ -628,11 +699,7 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
             danger: true,
             onConfirm: async () => {
               setConfirmDialog((prev) => ({ ...prev, show: false }));
-              try {
-                await kb.deleteFolder(node.path);
-              } catch (err) {
-                showToast(`删除失败：${err instanceof Error ? err.message : String(err)}`);
-              }
+              await handleDeleteFolder(node.path);
             },
           });
         },
@@ -640,7 +707,7 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
     }
 
     return items;
-  }, [ctxMenu, kb, showToast, handleNewFile, handleNewFolder, handleSelectFile, handleOpenInNewTab, kbChat]);
+  }, [ctxMenu, kb, showToast, handleNewFile, handleNewFolder, handleSelectFile, handleOpenInNewTab, handleDeleteFile, handleDeleteFolder, kbChat]);
 
   // ─── Inline rename ───
 
@@ -652,10 +719,14 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
     if (newPath === oldPath) return;
     try {
       await kb.renameFile(oldPath, newPath);
+      const newFileName = newPath.split('/').pop() ?? newPath;
+      const existingTabForNewPath = tabs.tabs.find(t => t.id === `file:${newPath}`);
+      if (existingTabForNewPath) tabs.closeTab(`file:${newPath}`);
+      tabs.updateTab(`file:${oldPath}`, { id: `file:${newPath}`, title: newFileName, vaultId: kb.activeVault?.id });
     } catch (err) {
       showToast(`重命名失败：${err instanceof Error ? err.message : String(err)}`);
     }
-  }, [kb.renameFile, showToast]);
+  }, [kb.renameFile, kb.activeVault?.id, tabs, showToast]);
 
   const handleRenameCancel = useCallback(() => {
     setRenamingPath(null);
@@ -685,10 +756,14 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
 
     try {
       await kb.renameFile(srcPath, newPath);
+      const newFileName = newPath.split('/').pop() ?? newPath;
+      const existingTabForNewPath = tabs.tabs.find(t => t.id === `file:${newPath}`);
+      if (existingTabForNewPath) tabs.closeTab(`file:${newPath}`);
+      tabs.updateTab(`file:${srcPath}`, { id: `file:${newPath}`, title: newFileName, vaultId: kb.activeVault?.id });
     } catch (err) {
       showToast(`移动文件失败：${err instanceof Error ? err.message : String(err)}`);
     }
-  }, [kb.activeVault, kb.tree, kb.renameFile, showToast]);
+  }, [kb.activeVault?.id, kb.tree, kb.renameFile, tabs, showToast]);
 
   const handleImportFiles = useCallback(async (files: File[], targetDir: string) => {
     if (!kb.activeVault) return;
@@ -1021,7 +1096,7 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
 
       {/* Save toast */}
       {saveToast && (
-        <div className="kb-save-toast">{saveToast}</div>
+        <div className="kb-save-toast" data-testid="kb-notice">{saveToast}</div>
       )}
 
       {/* Input dialog (replaces window.prompt) */}
