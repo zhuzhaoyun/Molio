@@ -140,9 +140,10 @@ export function UserMessage({ message, isLast, onEdit, onRequestDelete, disabled
       data-testid="user-message"
     >
       <div className="role">
-        {selectMode && <MessageCheckbox id={message.id} />}
         <span className="msg-time">{formatTime(message.timestamp)}</span>
       </div>
+
+      {selectMode && <MessageCheckbox id={message.id} />}
       {editing ? (
         <div className="user-edit">
           <textarea

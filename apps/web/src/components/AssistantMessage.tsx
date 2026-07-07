@@ -140,10 +140,13 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
       data-testid="assistant-message"
     >
       <div className="role">
-        {selectMode && !message.streaming && <MessageCheckbox id={message.id} />}
         <span>{t('assistant.label')}</span>
         <span className="msg-time">{formatTime(message.timestamp)}</span>
       </div>
+
+      {selectMode && !message.streaming && (
+        <MessageCheckbox id={message.id} />
+      )}
 
       {message.thinking && (
         <ThinkingBlock content={message.thinking} streaming={message.streaming && !message.content} />

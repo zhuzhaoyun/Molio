@@ -1106,23 +1106,27 @@
 }
 
 /* ─── Selection mode ─── */
-/* Checkbox lives inline at the start of the message's role row so it aligns
- * with the message's leading edge (left for assistant, right for user) and
- * stays adjacent to the bubble rather than floating in a far corner. */
+/* Checkbox pinned to the row's left gutter so every message's checkbox sits
+ * in the same vertical column (left-aligned), regardless of bubble alignment.
+ * The tinted row + accent stripe (below) ties the checkbox to its bubble. */
 .msg-checkbox {
+  position: absolute;
+  left: 6px;
+  /* No `top`: use the CSS static position so the checkbox lands at the same y
+   * as the bubble (it's placed right after the role label in markup), giving
+   * horizontal alignment with the bubble while staying in the left gutter. */
+  width: 20px;
+  height: 20px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-  align-self: center;
   border: 1.5px solid var(--border-strong);
   border-radius: 5px;
   background: var(--bg-panel, #fff);
   color: #fff;
   cursor: pointer;
   padding: 0;
+  z-index: 5;
 }
 .msg-checkbox.checked {
   background: var(--accent);
@@ -1132,9 +1136,8 @@
 
 .msg { position: relative; }
 
-/* Selected row: a calm neutral tint + a thin soft accent stripe (the solid
- * accent stripe was too harsh; accent-soft is lighter, 2px is enough). */
-.msg.select-mode { padding: 4px 10px; border-radius: 8px; }
+/* Selected row: calm neutral tint + thin soft accent stripe. */
+.msg.select-mode { padding: 4px 10px 4px 34px; border-radius: 8px; }
 .msg.select-mode.selected {
   background: var(--bg-subtle);
   box-shadow: inset 2px 0 0 var(--accent-soft);
