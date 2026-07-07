@@ -188,6 +188,7 @@ export default function App() {
                   onContinue={() => chat.send('继续')}
                   onRequestDelete={(id) => messageSelectionStore.enterSelection(id, chat.messages)}
                   onDeleteMessages={chat.deleteMessages}
+                  onEditAssistant={chat.editAssistant}
                 />
               }
             />

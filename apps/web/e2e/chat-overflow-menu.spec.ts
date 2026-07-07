@@ -22,6 +22,7 @@ test.describe('Chat — overflow menu', () => {
     await page.locator('[data-testid="assistant-message"] [data-testid="msg-overflow-btn"]').click();
     await expect(page.locator('[data-testid="overflow-menu"]')).toBeVisible();
     await expect(page.locator('[data-testid="overflow-item-delete"]')).toBeVisible();
+    await expect(page.locator('[data-testid="overflow-item-edit"]')).toBeVisible();
 
     // Outside click closes it.
     await page.locator('body').click({ position: { x: 10, y: 10 } });
@@ -50,5 +51,6 @@ test.describe('Chat — overflow menu', () => {
     await page.locator('[data-testid="user-message"]').hover();
     await page.locator('[data-testid="user-message"] [data-testid="msg-overflow-btn"]').click();
     await expect(page.locator('[data-testid="overflow-item-delete"]')).toBeVisible();
+    await expect(page.locator('[data-testid="user-message"] [data-testid="overflow-item-edit"]')).toHaveCount(0);
   });
 });

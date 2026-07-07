@@ -227,4 +227,13 @@ export async function unmockAll(page: Page) {
   await page.unroute('**/api/config');
   await page.unroute('**/api/conversations/*/rewind-resend');
   await page.unroute('**/api/conversations/*/delete-messages');
+  await page.unroute('**/api/conversations/*/messages/*');
+}
+
+/** Mock PUT /api/conversations/:id/messages/:msgId (edit-assistant). */
+export async function mockUpdateMessageContent(page: Page) {
+  await page.route('**/api/conversations/*/messages/*', async (route) => {
+    if (route.request().method() !== 'PUT') { await route.continue(); return; }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
+  });
 }

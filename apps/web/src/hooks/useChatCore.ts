@@ -376,6 +376,33 @@ export function useChatCore(options: UseChatCoreOptions) {
     }
   }, [state.conversationId]);
 
+  const editAssistant = useCallback(async (msgId: string, content: string) => {
+    const convId = state.conversationId;
+    if (!convId) return;
+    try {
+      await api.updateMessageContent(convId, msgId, content);
+      setState((prev) => ({
+        ...prev,
+        messages: prev.messages.map((m) =>
+          m.id === msgId ? { ...m, content } : m,
+        ),
+      }));
+    } catch (err) {
+      setState((prev) => ({
+        ...prev,
+        messages: [
+          ...prev.messages,
+          {
+            id: `err-${Date.now()}`,
+            role: 'error' as const,
+            content: `编辑失败: ${(err as Error).message}`,
+            timestamp: Date.now(),
+          },
+        ],
+      }));
+    }
+  }, [state.conversationId]);
+
   return {
     ...state,
     send,
@@ -386,6 +413,7 @@ export function useChatCore(options: UseChatCoreOptions) {
     regenerateLast,
     editAndResend,
     deleteMessages,
+    editAssistant,
   };
 }
 

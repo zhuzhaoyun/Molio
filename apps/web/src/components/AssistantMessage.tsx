@@ -1,4 +1,4 @@
-import { useMemo, useCallback } from 'react';
+import { useMemo, useCallback, useState } from 'react';
 import type { ChatMessage, ToolEvent } from '../hooks/useChat';
 import { renderMarkdown, splitContent } from '../utils/markdown';
 import { CodeBlock } from './CodeBlock';
@@ -72,11 +72,33 @@ interface Props {
   onContinue?: () => void;
   /** Request to delete (opens selection mode with this message's pair). */
   onRequestDelete?: (id: string) => void;
+  /** Manually edit this assistant reply's content (no rerun). */
+  onEditAssistant?: (msgId: string, content: string) => void;
 }
 
-export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitForm, onRegenerate, onContinue, onRequestDelete }: Props) {
+export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitForm, onRegenerate, onContinue, onRequestDelete, onEditAssistant }: Props) {
   const { t } = useI18n();
   const selectMode = useSelectMode();
+
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(message.content);
+
+  const startEdit = useCallback(() => {
+    setDraft(message.content);
+    setEditing(true);
+  }, [message.content]);
+
+  const cancelEdit = useCallback(() => {
+    setDraft(message.content);
+    setEditing(false);
+  }, [message.content]);
+
+  const saveEdit = useCallback(() => {
+    const trimmed = draft.trim();
+    if (!trimmed) return;
+    setEditing(false);
+    onEditAssistant?.(message.id, trimmed);
+  }, [draft, onEditAssistant, message.id]);
 
   // Check if the message has an AskUserQuestion tool — suppress the markdown
   // fallback text that duplicates the interactive card.
@@ -144,21 +166,47 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
         </div>
       )}
 
-      {displayContent && (
-        <div
-          className="assistant-prose"
-          data-testid="assistant-prose"
-          onClick={handleProseClick}
-          role="presentation"
-        >
-          {segments.map((seg, i) =>
-            seg.type === 'text' ? (
-              <div key={i} dangerouslySetInnerHTML={{ __html: renderMarkdown(seg.content) }} />
-            ) : (
-              <CodeBlock key={i} lang={seg.lang} code={seg.code} streaming={message.streaming} />
-            ),
-          )}
+      {editing && !selectMode ? (
+        <div className="user-edit">
+          <textarea
+            data-testid="msg-edit-assistant-textarea"
+            className="user-edit-input"
+            value={draft}
+            autoFocus
+            onChange={(e) => setDraft(e.target.value)}
+            rows={Math.min(16, Math.max(4, draft.split('\n').length))}
+          />
+          <div className="user-edit-actions">
+            <button data-testid="msg-edit-assistant-cancel" className="user-edit-cancel" onClick={cancelEdit}>
+              取消
+            </button>
+            <button
+              data-testid="msg-edit-assistant-save"
+              className="user-edit-save"
+              onClick={saveEdit}
+              disabled={!draft.trim()}
+            >
+              保存
+            </button>
+          </div>
         </div>
+      ) : (
+        displayContent && (
+          <div
+            className="assistant-prose"
+            data-testid="assistant-prose"
+            onClick={handleProseClick}
+            role="presentation"
+          >
+            {segments.map((seg, i) =>
+              seg.type === 'text' ? (
+                <div key={i} dangerouslySetInnerHTML={{ __html: renderMarkdown(seg.content) }} />
+              ) : (
+                <CodeBlock key={i} lang={seg.lang} code={seg.code} streaming={message.streaming} />
+              ),
+            )}
+          </div>
+        )
       )}
 
       {message.streaming && <span className="streaming-cursor" />}
@@ -195,10 +243,16 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
               : []),
           ]}
           extra={<SaveToKbButton content={message.content} />}
-          overflow={onRequestDelete ? [{
-            key: 'delete', label: '删除', testid: 'overflow-item-delete',
-            text: '', onClick: () => onRequestDelete(message.id),
-          }] : undefined}
+          overflow={(onRequestDelete || onEditAssistant) ? [
+            ...(onEditAssistant ? [{
+              key: 'edit-assistant' as const, label: '编辑', testid: 'overflow-item-edit',
+              text: '', onClick: startEdit,
+            }] : []),
+            ...(onRequestDelete ? [{
+              key: 'delete' as const, label: '删除', testid: 'overflow-item-delete',
+              text: '', onClick: () => onRequestDelete(message.id),
+            }] : []),
+          ] : undefined}
         />
       )}
     </div>

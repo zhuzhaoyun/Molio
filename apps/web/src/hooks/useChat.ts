@@ -125,5 +125,6 @@ export function useChat(options: UseChatOptions | string | null) {
     regenerateLast: core.regenerateLast,
     editAndResend: core.editAndResend,
     deleteMessages: core.deleteMessages,
+    editAssistant: core.editAssistant,
   };
 }

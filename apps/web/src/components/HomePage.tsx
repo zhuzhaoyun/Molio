@@ -22,6 +22,7 @@ interface Props {
   onContinue?: () => void;
   onRequestDelete?: (id: string) => void;
   onDeleteMessages?: (ids: string[]) => void;
+  onEditAssistant?: (msgId: string, content: string) => void;
 }
 
 export function HomePage({
@@ -38,6 +39,7 @@ export function HomePage({
   onContinue,
   onRequestDelete,
   onDeleteMessages,
+  onEditAssistant,
 }: Props) {
   const { t } = useI18n();
   const logRef = useRef<HTMLDivElement>(null);
@@ -164,6 +166,7 @@ export function HomePage({
                   onRegenerate={msg.id === lastAssistantId ? onRegenerate : undefined}
                   onContinue={msg.id === lastAssistantId ? onContinue : undefined}
                   onRequestDelete={onRequestDelete}
+                  onEditAssistant={onEditAssistant}
                 />
               );
             }
