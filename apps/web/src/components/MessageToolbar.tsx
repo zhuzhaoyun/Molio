@@ -1,7 +1,7 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
-import { CopyIcon, RegenerateIcon, EditIcon, CheckIcon } from './icons';
+import { useState, useCallback, useRef, useEffect, type ReactNode } from 'react';
+import { CopyIcon, RegenerateIcon, EditIcon, ContinueIcon, CheckIcon } from './icons';
 
-export type ToolbarActionKey = 'copy' | 'regenerate' | 'edit';
+export type ToolbarActionKey = 'copy' | 'regenerate' | 'edit' | 'continue';
 
 export interface ToolbarAction {
   key: ToolbarActionKey;
@@ -20,11 +20,14 @@ function ActionIcon({ k }: { k: ToolbarActionKey }) {
     case 'copy': return <CopyIcon />;
     case 'regenerate': return <RegenerateIcon />;
     case 'edit': return <EditIcon />;
+    case 'continue': return <ContinueIcon />;
   }
 }
 
 interface Props {
   actions: ToolbarAction[];
+  /** Extra button(s) rendered after the actions (e.g. save-to-KB). */
+  extra?: ReactNode;
 }
 
 async function copyText(text: string): Promise<boolean> {
@@ -53,7 +56,7 @@ async function copyText(text: string): Promise<boolean> {
  * Hover-revealed action bar for chat messages. The copy action has a transient
  * "copied" state; regenerate/edit delegate to the parent.
  */
-export function MessageToolbar({ actions }: Props) {
+export function MessageToolbar({ actions, extra }: Props) {
   const [copied, setCopied] = useState(false);
   const [failed, setFailed] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -104,6 +107,7 @@ export function MessageToolbar({ actions }: Props) {
           </button>
         );
       })}
+      {extra}
     </div>
   );
 }

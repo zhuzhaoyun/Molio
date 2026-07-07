@@ -8,6 +8,7 @@ import { useFileNavigation } from '../hooks/useFileNavigation';
 import { ToolCard } from './ToolCard';
 import { ToolGroup } from './ToolGroup';
 import { ThinkingBlock } from './ThinkingBlock';
+import { SaveToKbButton } from './SaveToKbButton';
 import { MessageToolbar } from './MessageToolbar';
 
 // Tools that should never be grouped (always shown individually)
@@ -65,9 +66,11 @@ interface Props {
   onSubmitForm?: (text: string) => void;
   /** Regenerate the last assistant reply. */
   onRegenerate?: () => void;
+  /** Continue generating on the last assistant reply (sends a "继续" follow-up). */
+  onContinue?: () => void;
 }
 
-export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitForm, onRegenerate }: Props) {
+export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitForm, onRegenerate, onContinue }: Props) {
   const { t } = useI18n();
 
   // Check if the message has an AskUserQuestion tool — suppress the markdown
@@ -164,18 +167,27 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
       )}
 
       {!message.streaming && (
-        <MessageToolbar actions={[
-          {
-            key: 'copy', label: '复制', testid: 'msg-copy-btn',
-            text: message.content, onClick: () => {},
-          },
-          ...(isLast && onRegenerate
-            ? [{
-                key: 'regenerate' as const, label: '重新生成', testid: 'msg-regenerate-btn',
-                text: '', onClick: onRegenerate,
-              }]
-            : []),
-        ]} />
+        <MessageToolbar
+          actions={[
+            {
+              key: 'copy', label: '复制', testid: 'msg-copy-btn',
+              text: message.content, onClick: () => {},
+            },
+            ...(isLast && onContinue
+              ? [{
+                  key: 'continue' as const, label: '继续生成', testid: 'msg-continue-btn',
+                  text: '', onClick: onContinue,
+                }]
+              : []),
+            ...(isLast && onRegenerate
+              ? [{
+                  key: 'regenerate' as const, label: '重新生成', testid: 'msg-regenerate-btn',
+                  text: '', onClick: onRegenerate,
+                }]
+              : []),
+          ]}
+          extra={<SaveToKbButton content={message.content} />}
+        />
       )}
     </div>
   );

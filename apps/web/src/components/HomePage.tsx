@@ -17,6 +17,7 @@ interface Props {
   onOpenConversation?: (conversationId: string) => void;
   onRegenerate?: () => void;
   onEdit?: (messageId: string, newContent: string) => void;
+  onContinue?: () => void;
 }
 
 export function HomePage({
@@ -30,6 +31,7 @@ export function HomePage({
   onOpenConversation,
   onRegenerate,
   onEdit,
+  onContinue,
 }: Props) {
   const { t } = useI18n();
   const logRef = useRef<HTMLDivElement>(null);
@@ -135,6 +137,7 @@ export function HomePage({
                   onAnswerToolUse={onSubmitToolResult ? onAnswerToolUse : undefined}
                   onSubmitForm={(text: string) => handleSend(text, [])}
                   onRegenerate={msg.id === lastAssistantId ? onRegenerate : undefined}
+                  onContinue={msg.id === lastAssistantId ? onContinue : undefined}
                 />
               );
             }

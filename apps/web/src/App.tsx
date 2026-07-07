@@ -184,6 +184,7 @@ export default function App() {
                   }}
                   onRegenerate={chat.regenerateLast}
                   onEdit={chat.editAndResend}
+                  onContinue={() => chat.send('继续')}
                 />
               }
             />

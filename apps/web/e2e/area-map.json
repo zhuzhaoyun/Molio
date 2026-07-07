@@ -13,6 +13,8 @@
         "apps/web/src/components/ToolGroup.*",
         "apps/web/src/components/ChatPane.*",
         "apps/web/src/components/CodeBlock.*",
+        "apps/web/src/components/SaveToKbButton.*",
+        "apps/web/src/components/icons.*",
         "apps/web/src/utils/markdown.*",
         "apps/web/src/hooks/useChat*",
         "apps/web/src/hooks/useChatCore*",
@@ -24,7 +26,7 @@
         "apps/daemon/src/core/conversations/run-starter.ts",
         "apps/daemon/src/streams/*"
       ],
-      "specs": ["chat-single", "chat-multi", "chat-streaming", "chat-copy", "chat-regenerate", "chat-edit-resend", "chat-codeblock"]
+      "specs": ["chat-single", "chat-multi", "chat-streaming", "chat-copy", "chat-regenerate", "chat-edit-resend", "chat-codeblock", "chat-continue", "chat-save-kb"]
     },
     "kb": {
       "paths": [

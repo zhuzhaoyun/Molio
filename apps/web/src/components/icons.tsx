@@ -73,3 +73,22 @@ export function ChevronIcon({ size = 14, className }: IconProps) {
     </svg>
   );
 }
+
+/** Two downward chevrons — "continue generating" (more content below). */
+export function ContinueIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg {...base(size)} className={className}>
+      <polyline points="7 6 12 11 17 6" />
+      <polyline points="7 13 12 18 17 13" />
+    </svg>
+  );
+}
+
+/** Bookmark ribbon — "save this reply into a knowledge base". */
+export function SaveIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg {...base(size)} className={className}>
+      <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+    </svg>
+  );
+}
