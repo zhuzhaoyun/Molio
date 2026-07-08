@@ -260,7 +260,6 @@ export class RunManager {
     const mergedEnv = buildAgentEnv(opts.agentId, agentConfig);
     const env = buildSpawnEnv(def, mergedEnv);
     env['MOLIO_RUN_ID'] = runId;
-
     const args = def.buildArgs(
       opts.message,
       {
@@ -295,6 +294,7 @@ export class RunManager {
       windowsVerbatimArguments: process.platform === 'win32' && !isCmd,
     });
     run.child = child;
+    run.binaryPath = result.binary;
 
     child.stdin?.on('error', (err: NodeJS.ErrnoException) => {
       if (err.code === 'EPIPE' || err.code === 'EOF') return;
@@ -323,7 +323,7 @@ export class RunManager {
           if (!TERMINAL_STATUSES.has(run.status)) {
             this.finishRun(run, 'failed', 1, null);
           }
-          this.emitEvent(run, { type: 'error', message: formatAcpInitFailure(err, run.lastStderrLine) });
+          this.emitEvent(run, { type: 'error', message: formatAcpInitFailure(err, run.lastStderrLine, run.binaryPath) });
         });
 
       child.stderr?.on('data', (chunk: Buffer) => {
@@ -633,8 +633,10 @@ export class RunManager {
           // when idle/absolute timeout fires, the error alone gives reporters
           // no clue what hermes was doing. The last stderr line is usually
           // "connecting to provider X" or similar, which is the actual cause.
+          // Also include the binary path so users can spot "wrong install" cases.
           const lastStderr = run.lastStderrLine ? ` (last stderr: "${run.lastStderrLine}")` : '';
-          this.emitEvent(run, { type: 'error', message: `prompt failed: ${err.message}${lastStderr}` });
+          const binarySuffix = run.binaryPath ? ` [binary: ${run.binaryPath}]` : '';
+          this.emitEvent(run, { type: 'error', message: `prompt failed: ${err.message}${lastStderr}${binarySuffix}` });
           // Without finishRun here, the run stays in 'running' until the 30-min
           // TTL cleanup fires — the UI shows a spinner forever after a prompt failure.
           this.finishRun(run, 'failed', 1, null);

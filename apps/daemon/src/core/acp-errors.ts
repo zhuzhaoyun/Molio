@@ -36,10 +36,20 @@ export function detectBrokenInstallHint(lastStderr: string | undefined): string 
  * Format the ACP init failure error message. If the last stderr line matches
  * a known broken-install pattern, prepend a friendly hint; otherwise keep
  * the raw error + last stderr (already useful for diagnosis).
+ *
+ * Always includes the binary path Molio spawned — when hermes works from
+ * terminal but fails through Molio, the most common cause is Molio finding
+ * a different (broken) install than `where hermes-acp` does. Surfacing the
+ * path lets users compare immediately without digging through events.jsonl.
  */
-export function formatAcpInitFailure(err: Error, lastStderr: string | undefined): string {
+export function formatAcpInitFailure(
+  err: Error,
+  lastStderr: string | undefined,
+  binaryPath: string | undefined,
+): string {
   const hint = detectBrokenInstallHint(lastStderr);
   const lastStderrSuffix = lastStderr ? ` (last stderr: "${lastStderr}")` : '';
-  const raw = `ACP init failed: ${err.message}${lastStderrSuffix}`;
+  const binarySuffix = binaryPath ? ` [binary: ${binaryPath}]` : '';
+  const raw = `ACP init failed: ${err.message}${lastStderrSuffix}${binarySuffix}`;
   return hint ? `${hint} — ${raw}` : raw;
 }

@@ -74,4 +74,8 @@ export interface RunState {
    *  timeout error messages so reporters can share what hermes logged right
    *  before going silent, without needing to find the JSONL log. */
   lastStderrLine?: string;
+  /** Absolute path of the spawned agent binary — surfaced in init/prompt failure
+   *  errors so users can compare it against `where <agent>` output from terminal
+   *  and immediately spot "Molio found the wrong install" cases. */
+  binaryPath?: string;
 }
