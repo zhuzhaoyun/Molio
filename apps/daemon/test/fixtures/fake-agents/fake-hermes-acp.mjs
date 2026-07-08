@@ -20,7 +20,11 @@
 //   - FAKE_HERMES_EXIT_DURING_PROMPT=1: exit mid-prompt after streaming some
 //     notifications but before responding — used to verify the close handler
 //     marks the run as 'failed' (not 'succeeded') when a prompt is in-flight
-//   - FAKE_HERMES_PROMPT_MODE=refusal: return stopReason 'refusal' for prompt
+//   - FAKE_HERMES_PROMPT_HANG_WITH_STDERR=1: print a few INFO stderr lines after
+//     session/prompt arrives, then go totally silent — simulates a real hermes
+//     hang where the agent connects to a provider and never gets a response.
+//     Used to verify (a) INFO logs land in events.jsonl as raw events, and
+//     (b) the idle-timeout error message includes the last stderr line.
 
 import readline from 'node:readline';
 
@@ -36,11 +40,17 @@ const INIT_HEARTBEAT = process.env['FAKE_HERMES_INIT_HEARTBEAT'] === '1';
 const EXIT_AFTER_INIT = process.env['FAKE_HERMES_EXIT_AFTER_INIT'] === '1';
 const EXIT_DURING_PROMPT = process.env['FAKE_HERMES_EXIT_DURING_PROMPT'] === '1';
 const PROMPT_MODE = process.env['FAKE_HERMES_PROMPT_MODE'] ?? 'normal';
+const PROMPT_HANG_WITH_STDERR = process.env['FAKE_HERMES_PROMPT_HANG_WITH_STDERR'] === '1';
 
 const SESSION_ID = 'fake-session-0001';
 
 function send(obj) {
   process.stdout.write(JSON.stringify(obj) + '\n');
+}
+
+/** Hermes-style timestamp: "YYYY-MM-DD HH:MM:SS" (matches handleAcpStderr regex). */
+function ts() {
+  return new Date().toISOString().replace('T', ' ').replace(/\.\d+Z$/, '');
 }
 
 function handleRequest(msg) {
@@ -106,6 +116,28 @@ function handleRequest(msg) {
   }
 
   if (msg.method === 'session/prompt') {
+    if (PROMPT_HANG_WITH_STDERR) {
+      // Simulate a real hermes hang: print a few INFO stderr lines that look
+      // like provider connection progress, then go totally silent. The idle
+      // timer fires after MOLIO_ACP_PROMPT_IDLE_TIMEOUT_MS with the last
+      // stderr line attached.
+      const lines = [
+        `${ts()} [INFO] hermes.models: selected model qwen3.7-max`,
+        `${ts()} [INFO] hermes.providers: connecting to https://api.example.com/v1`,
+        `${ts()} [INFO] hermes.providers: waiting for first token...`,
+      ];
+      let i = 0;
+      const ticker = setInterval(() => {
+        if (i < lines.length) {
+          process.stderr.write(lines[i] + '\n');
+          i++;
+        } else {
+          clearInterval(ticker);
+          // Go silent — no stdout, no more stderr. Idle timer should fire.
+        }
+      }, 50);
+      return;
+    }
     if (PROMPT_MODE === 'refusal') {
       send({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'refusal' } });
       return;

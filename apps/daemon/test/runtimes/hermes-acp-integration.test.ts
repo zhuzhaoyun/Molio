@@ -206,4 +206,61 @@ describe('RunManager ACP integration (Hermes)', () => {
       /ACP transport does not support host tool results/,
     );
   });
+
+  it('prompt idle timeout surfaces last stderr line and persists INFO logs', async () => {
+    // Reproduces the reporter scenario: hermes-acp prints a few INFO stderr
+    // lines during session/prompt (provider connection), then goes totally
+    // silent. The idle timer fires after MOLIO_ACP_PROMPT_IDLE_TIMEOUT_MS.
+    //
+    // Verifies two diagnostic fixes:
+    //  (a) handleAcpStderr emits INFO lines as `raw` events (not dropped) so
+    //      they land in events.jsonl for reporters to share.
+    //  (b) The timeout error message includes `last stderr: "..."` so a
+    //      screenshot of the chat error is enough to diagnose, no log file
+    //      needed.
+    process.env['MOLIO_ACP_PROMPT_IDLE_TIMEOUT_MS'] = '500';
+    process.env['FAKE_HERMES_PROMPT_HANG_WITH_STDERR'] = '1';
+
+    const runId = await runManager.createRun({ agentId: 'hermes', message: 'hi' });
+    await collectEvents(runId, (ev) => ev.type === 'models');
+
+    // Collect raw + error events through the idle-timeout window.
+    const rawLines: string[] = [];
+    let errorEvent: Extract<AgentEvent, { type: 'error' }> | null = null;
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('test timed out waiting for prompt-idle error')), 5000);
+      const unsub = runManager.onEvent(runId, (ev) => {
+        if (ev.type === 'raw') rawLines.push((ev as Extract<AgentEvent, { type: 'raw' }>).line);
+        if (ev.type === 'error' && ev.message.includes('prompt failed')) {
+          errorEvent = ev as Extract<AgentEvent, { type: 'error' }>;
+          clearTimeout(timer);
+          unsub?.();
+          resolve();
+        }
+      });
+      if (!unsub) {
+        clearTimeout(timer);
+        reject(new Error(`run ${runId} not found`));
+      }
+    });
+
+    // (a) INFO stderr lines should be captured as raw events
+    assert.ok(
+      rawLines.some((l) => l.includes('selected model qwen3.7-max')),
+      `expected INFO line about model selection in raw events, got: ${JSON.stringify(rawLines)}`,
+    );
+    assert.ok(
+      rawLines.some((l) => l.includes('connecting to https://api.example.com')),
+      `expected INFO line about provider connection in raw events, got: ${JSON.stringify(rawLines)}`,
+    );
+
+    // (b) Error message should include the last stderr line
+    assert.ok(errorEvent, 'expected an error event for prompt-idle timeout');
+    const errMsg = (errorEvent as Extract<AgentEvent, { type: 'error' }>)?.message ?? '';
+    assert.match(errMsg, /prompt failed: ACP idle timeout: session\/prompt/);
+    assert.match(errMsg, /last stderr:.*waiting for first token/);
+
+    delete process.env['MOLIO_ACP_PROMPT_IDLE_TIMEOUT_MS'];
+    delete process.env['FAKE_HERMES_PROMPT_HANG_WITH_STDERR'];
+  });
 });

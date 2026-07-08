@@ -322,7 +322,8 @@ export class RunManager {
           if (!TERMINAL_STATUSES.has(run.status)) {
             this.finishRun(run, 'failed', 1, null);
           }
-          this.emitEvent(run, { type: 'error', message: `ACP init failed: ${err.message}` });
+          const lastStderr = run.lastStderrLine ? ` (last stderr: "${run.lastStderrLine}")` : '';
+          this.emitEvent(run, { type: 'error', message: `ACP init failed: ${err.message}${lastStderr}` });
         });
 
       child.stderr?.on('data', (chunk: Buffer) => {
@@ -521,15 +522,32 @@ export class RunManager {
 
   /**
    * Hermes stderr is verbose (plugin registration, provider connection, MCP tools).
-   * Drop INFO/WARNING/DEBUG log lines; only surface ERROR + Python tracebacks as error events.
+   * Persist every line to events.jsonl (via `raw` events — frontend ignores them,
+   * but the log is shareable with reporters for diagnosis), and surface only
+   * ERROR / Python tracebacks as `error` events so the UI isn't spammed.
+   *
+   * Also tracks the last non-empty stderr line on the run so idle/absolute
+   * timeout error messages can include it — when hermes goes silent mid-prompt,
+   * the last stderr line is the only clue about what it was doing right before.
    */
   private handleAcpStderr(run: RunState, text: string): void {
-    const trimmed = text.trim();
-    if (!trimmed) return;
-    // Hermes log format: YYYY-MM-DD HH:MM:SS [LEVEL] logger: message
-    const isLogLevel = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \[(INFO|WARNING|DEBUG)\]/;
-    if (isLogLevel.test(trimmed)) return;
-    this.emitEvent(run, { type: 'error', message: trimmed });
+    if (!text) return;
+    const lines = text.split(/\r?\n/);
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line) continue;
+      run.lastStderrLine = line;
+      // Hermes log format: YYYY-MM-DD HH:MM:SS [LEVEL] logger: message
+      const isInfoLevel = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \[(INFO|WARNING|DEBUG)\]/;
+      if (isInfoLevel.test(line)) {
+        // Persist to events.jsonl as a raw event — frontend ignores `raw`,
+        // but the JSONL log is shareable for remote diagnosis.
+        this.emitEvent(run, { type: 'raw', line });
+      } else {
+        // ERROR / Python traceback / non-log stderr — surface in UI.
+        this.emitEvent(run, { type: 'error', message: line });
+      }
+    }
   }
 
   /**
@@ -611,7 +629,12 @@ export class RunManager {
         .catch((err: Error) => {
           // If the session was cancelled, the cancel flow already handles termination — don't spam errors.
           if (transport.isCancelled(sessionId)) return;
-          this.emitEvent(run, { type: 'error', message: `prompt failed: ${err.message}` });
+          // Append the last stderr line hermes printed before going silent —
+          // when idle/absolute timeout fires, the error alone gives reporters
+          // no clue what hermes was doing. The last stderr line is usually
+          // "connecting to provider X" or similar, which is the actual cause.
+          const lastStderr = run.lastStderrLine ? ` (last stderr: "${run.lastStderrLine}")` : '';
+          this.emitEvent(run, { type: 'error', message: `prompt failed: ${err.message}${lastStderr}` });
           // Without finishRun here, the run stays in 'running' until the 30-min
           // TTL cleanup fires — the UI shows a spinner forever after a prompt failure.
           this.finishRun(run, 'failed', 1, null);

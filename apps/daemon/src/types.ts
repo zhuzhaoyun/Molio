@@ -70,4 +70,8 @@ export interface RunState {
   acp?: RunAcpState;
   /** Models returned by session/new; pushed to frontend via SSE to replace fallbackModels. */
   acpModels?: AcpModelOption[];
+  /** Last non-empty stderr line from the agent process — surfaced in idle/absolute
+   *  timeout error messages so reporters can share what hermes logged right
+   *  before going silent, without needing to find the JSONL log. */
+  lastStderrLine?: string;
 }
