@@ -57,6 +57,7 @@ export function openDatabase(dataDir?: string): SqliteDb {
   db.pragma('foreign_keys = ON');
 
   migrate(db);
+  assertSqliteVersion(db);
   dbInstance = db;
   dbFile = file;
   return db;
@@ -155,12 +156,59 @@ function migrate(db: SqliteDb): void {
       ON conversations(channel_type, external_session_id)
       WHERE external_session_id IS NOT NULL AND closed_at IS NULL;
   `);
+
+  // vault_id on conversations (nullable; no FK — deleting a vault must not
+  // cascade-delete conversations). Surfaced as a history filter dimension.
+  addColumnIfMissing(db, 'conversations', 'vault_id', 'TEXT');
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_conversations_vault
+           ON conversations(vault_id, updated_at DESC)`);
+
+  // Full-text search over message content. trigram tokenizer: CJK substring
+  // friendly, case-insensitive, no external jieba dependency (SQLite >= 3.34).
+  db.exec(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+      content, conversation_id UNINDEXED, message_id UNINDEXED,
+      tokenize = 'trigram'
+    );
+
+    CREATE TRIGGER IF NOT EXISTS messages_fts_ai AFTER INSERT ON messages BEGIN
+      INSERT INTO messages_fts(content, conversation_id, message_id)
+        VALUES (new.content, new.conversation_id, new.id);
+    END;
+    CREATE TRIGGER IF NOT EXISTS messages_fts_ad AFTER DELETE ON messages BEGIN
+      DELETE FROM messages_fts WHERE message_id = old.id;
+    END;
+    CREATE TRIGGER IF NOT EXISTS messages_fts_au AFTER UPDATE ON messages BEGIN
+      DELETE FROM messages_fts WHERE message_id = old.id;
+      INSERT INTO messages_fts(content, conversation_id, message_id)
+        VALUES (new.content, new.conversation_id, new.id);
+    END;
+  `);
+
+  // One-time backfill of pre-existing messages. Guarded by kv flag so repeated
+  // openDatabase calls stay O(1). Disaster recovery uses POST /api/maintenance/rebuild-fts.
+  if (!getKv(db, 'fts_seeded')) {
+    db.exec(`INSERT INTO messages_fts(content, conversation_id, message_id)
+             SELECT content, conversation_id, id FROM messages;`);
+    setKv(db, 'fts_seeded', '1');
+  }
 }
 
 function addColumnIfMissing(db: SqliteDb, table: string, column: string, definition: string): void {
   const rows = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
   if (rows.some((row) => row.name === column)) return;
   db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+
+function assertSqliteVersion(db: SqliteDb): void {
+  const row = db.prepare('SELECT sqlite_version() AS v').get() as { v: string };
+  const [maj, min] = row.v.split('.').map(Number) as [number, number];
+  if (maj < 3 || (maj === 3 && min < 34)) {
+    throw new Error(
+      `SQLite >= 3.34 required for trigram FTS5 tokenizer (got ${row.v}). ` +
+      `Upgrade better-sqlite3 to a build bundling SQLite >= 3.34.`,
+    );
+  }
 }
 
 // ─── Project CRUD ───
