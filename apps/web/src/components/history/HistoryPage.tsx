@@ -23,7 +23,7 @@ export function HistoryPage({ onOpenConversation }: Props) {
     setLoading(true);
     setError(null);
     try {
-      setItems(await api.listConversationHistory());
+      setItems((await api.listConversationHistory()).items);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
