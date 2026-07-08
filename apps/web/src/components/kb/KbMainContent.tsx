@@ -6,6 +6,7 @@
  */
 
 import { useEffect, useState, useRef, useMemo, useCallback, lazy, Suspense } from 'react';
+import { MAX_ASK_SELECTION } from './kb-constants';
 import type { FileContent } from '@molio/contracts';
 import type { ThemeConfig } from './MdStylePanel';
 import { MdRenderer } from './MdRenderer';
@@ -32,12 +33,6 @@ const KbCodeMirrorViewer = lazy(() =>
 /** .md files at or below this size still render via doocs/md. Above → source mode. */
 const MD_RENDER_THRESHOLD = 1 * 1024 * 1024;
 const MD_EXTS = new Set(['.md', '.markdown']);
-/**
- * Max selection length sent to QA via "就此提问" (chars). Mirrors
- * KbCodeMirrorViewer.MAX_ASK_SELECTION — inlined here (rather than imported)
- * so the CodeMirror bundle stays in the lazy chunk and out of the main bundle.
- */
-const MAX_ASK_SELECTION = 50 * 1024;
 
 /**
  * Lazy singleton HTML→Markdown converter. Used by the copy action to write a
@@ -151,6 +146,7 @@ export function KbMainContent({
   const contentRef = useRef<HTMLDivElement>(null);
   const cmRef = useRef<KbCodeMirrorViewerHandle>(null);
   const [wrap, setWrap] = useState(false);
+  const [retryNonce, setRetryNonce] = useState(0);
   const [ctxMenu, setCtxMenu] = useState<
     { x: number; y: number; source: 'doocs' | 'codemirror'; selectedText?: string } | null
   >(null);
@@ -493,7 +489,8 @@ export function KbMainContent({
       ) : category === 'text' && isCmPath ? (
         <div className="kb-content-area kb-cm-area" ref={contentRef}>
           <ViewerErrorBoundary
-            onRetry={() => onForceLoad?.()}
+            key={retryNonce}
+            onRetry={() => { setRetryNonce((n) => n + 1); onForceLoad?.(); }}
             onOpenExternal={isElectron ? handleOpenExternal : undefined}
           >
             {isLargeMd && (
@@ -511,7 +508,6 @@ export function KbMainContent({
                 ref={cmRef}
                 content={rawContent}
                 fileName={fileName}
-                encoding={fileContent?.encoding}
                 wrap={wrap}
                 onRequestContextMenu={handleCmContextMenu}
               />

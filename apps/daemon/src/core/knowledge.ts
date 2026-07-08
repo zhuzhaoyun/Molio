@@ -99,10 +99,10 @@ export function readFile(vaultPath: string, relPath: string, opts: { force?: boo
   const mimeType = getMimeType(path.basename(real));
   const isText = isTextFile(real);
 
-  // Three-tier cap. Encoding is always detected from a 64KB sample so even
-  // tooLarge files report their encoding on the card.
+  // Three-tier cap. Encoding is detected from a 64KB sample for text files so
+  // even tooLarge text files report their encoding on the card.
   const strategy = decideReadStrategy(stat.size, opts.force === true);
-  const sample = readSample(real, ENCODING_SAMPLE_BYTES);
+  const sample = isText ? readSample(real, ENCODING_SAMPLE_BYTES) : Buffer.alloc(0);
   const encoding = isText ? detectEncoding(sample) : undefined;
 
   if (strategy === 'refuse') {

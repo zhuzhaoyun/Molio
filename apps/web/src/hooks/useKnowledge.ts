@@ -490,14 +490,18 @@ export function useKnowledge(): UseKnowledgeReturn {
     setEditedContent(null);
   }, [activeVaultId]);
 
+  const forceLoadingRef = useRef(false);
   const forceLoadFile = useCallback(async () => {
-    if (!activeVaultId || !selectedFile) return;
+    if (!activeVaultId || !selectedFile || forceLoadingRef.current) return;
+    forceLoadingRef.current = true;
     try {
       const content = await api.readFile(activeVaultId, selectedFile, { force: true });
       setFileContent(content);
       setFileLoadError(null);
     } catch (e) {
       setFileLoadError(e instanceof Error ? e.message : 'Force load failed');
+    } finally {
+      forceLoadingRef.current = false;
     }
   }, [activeVaultId, selectedFile]);
 

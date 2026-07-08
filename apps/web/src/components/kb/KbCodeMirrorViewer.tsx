@@ -1,5 +1,6 @@
 import { useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
 import { EditorState, EditorSelection, Compartment } from '@codemirror/state';
+import { MAX_ASK_SELECTION } from './kb-constants';
 import {
   EditorView, lineNumbers, highlightActiveLine, drawSelection, keymap,
 } from '@codemirror/view';
@@ -11,9 +12,6 @@ import { defaultKeymap } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
 import { json } from '@codemirror/lang-json';
 import { html } from '@codemirror/lang-html';
-
-/** Max selection length sent to QA via "就此提问" (chars). */
-export const MAX_ASK_SELECTION = 50 * 1024;
 
 export interface KbCodeMirrorViewerHandle {
   /** Scroll to a 1-based line number. */
@@ -29,7 +27,6 @@ export interface KbCodeMirrorViewerHandle {
 interface Props {
   content: string;
   fileName: string;
-  encoding?: string;
   wrap: boolean;
   onRequestContextMenu: (e: { x: number; y: number; selectedText: string; source: 'codemirror' }) => void;
 }
@@ -59,7 +56,7 @@ const molioTheme = EditorView.theme({
 });
 
 export const KbCodeMirrorViewer = forwardRef<KbCodeMirrorViewerHandle, Props>(function KbCodeMirrorViewer(
-  { content, fileName, encoding, wrap, onRequestContextMenu },
+  { content, fileName, wrap, onRequestContextMenu },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement>(null);

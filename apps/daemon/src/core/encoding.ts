@@ -1,9 +1,16 @@
 import { TextDecoder } from 'node:util';
 
+function parseEnvBytes(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
 /** Soft cap: files ≤ this load fully into CodeMirror. Env-overridable (tests). */
-export const MAX_VIEW_SIZE = Number(process.env.MOLIO_MAX_VIEW_SIZE) || 50 * 1024 * 1024;
+export const MAX_VIEW_SIZE = parseEnvBytes('MOLIO_MAX_VIEW_SIZE', 50 * 1024 * 1024);
 /** Hard cap: above this, daemon refuses content even with ?force. Env-overridable. */
-export const HARD_CAP = Number(process.env.MOLIO_HARD_CAP) || 256 * 1024 * 1024;
+export const HARD_CAP = parseEnvBytes('MOLIO_HARD_CAP', 256 * 1024 * 1024);
 
 /** Encodings tried, in order, after UTF-8 fails. gb18030 is a GBK superset. */
 const FALLBACK_ENCODINGS = ['gb18030', 'big5', 'shift_jis', 'euc-jp', 'euc-kr'];
