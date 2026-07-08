@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { mkdtempSync, rmSync } from 'node:fs';
-import { openDatabase, closeDatabase, createProject, createConversation, upsertMessage, deleteMessagesById } from '../../src/core/db.js';
+import { openDatabase, closeDatabase, createProject, createConversation, upsertMessage, deleteMessagesById, deleteKv } from '../../src/core/db.js';
 import type Database from 'better-sqlite3';
 
 function hitConvIds(db: Database.Database, q: string): string[] {
@@ -63,14 +63,26 @@ describe('messages_fts trigger sync', () => {
   });
 
   it('pre-existing messages backfilled into fts on migrate', () => {
-    // messages created before fts existed are seeded by the one-time backfill.
-    // After openDatabase already ran in before(), the backfill has executed.
-    // Verify by inserting a message then reopening the db.
+    // Simulate pre-migration state: insert a message, then wipe fts and the
+    // backfill flag so the next openDatabase() re-runs the one-time backfill
+    // from the messages table.
     const p = createProject(db, 'P5');
     const c = createConversation(db, p.id, 'C5');
-    upsertMessage(db, c.id, { id: 'm-seed', role: 'user', content: 'seed-marker-999', timestamp: Date.now() });
-    // Reopen — triggers already keep fts in sync, but backfill flag guards re-seed.
-    openDatabase(tempDir);
-    assert.ok(hitConvIds(db, 'seed-marker-999').includes(c.id));
+    const marker = 'backfill-marker-xyz';
+    upsertMessage(db, c.id, { id: 'm-seed', role: 'user', content: marker, timestamp: Date.now() });
+    // Verify it is in fts via the INSERT trigger (sanity check).
+    assert.ok(hitConvIds(db, marker).includes(c.id));
+
+    // Wipe fts content and reset the backfill guard flag.
+    db.exec('DELETE FROM messages_fts');
+    deleteKv(db, 'fts_seeded');
+    // Content should no longer be in fts.
+    assert.equal(hitConvIds(db, marker).length, 0);
+
+    // Close and reopen — migrate re-runs backfill because the flag was cleared.
+    closeDatabase();
+    db = openDatabase(tempDir);
+    // Backfill should have repopulated fts from the messages table.
+    assert.ok(hitConvIds(db, marker).includes(c.id));
   });
 });

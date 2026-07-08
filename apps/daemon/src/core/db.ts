@@ -56,8 +56,8 @@ export function openDatabase(dataDir?: string): SqliteDb {
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
 
-  migrate(db);
   assertSqliteVersion(db);
+  migrate(db);
   dbInstance = db;
   dbFile = file;
   return db;
