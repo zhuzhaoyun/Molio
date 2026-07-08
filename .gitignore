@@ -22,6 +22,6 @@ deliverables/
 # Superpowers docs (design specs, plans)
 docs/superpowers/
 .artifacts/
-test/
+/test/
 videos/
 .agents/
