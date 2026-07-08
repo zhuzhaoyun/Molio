@@ -1104,3 +1104,258 @@
 .composer-trigger-zone {
   position: relative;
 }
+
+/* ─── Selection mode ─── */
+/* Checkbox pinned to the row's left gutter so every message's checkbox sits
+ * in the same vertical column (left-aligned), regardless of bubble alignment.
+ * The tinted row + accent stripe (below) ties the checkbox to its bubble. */
+.msg-checkbox {
+  position: absolute;
+  left: 6px;
+  /* No `top`: use the CSS static position so the checkbox lands at the same y
+   * as the bubble (it's placed right after the role label in markup), giving
+   * horizontal alignment with the bubble while staying in the left gutter. */
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--bg-panel, #fff);
+  color: #fff;
+  cursor: pointer;
+  padding: 0;
+  z-index: 5;
+}
+.msg-checkbox.checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.msg-checkbox svg { display: block; }
+
+.msg { position: relative; }
+
+/* Selected row: calm neutral tint + thin soft accent stripe. */
+.msg.select-mode { padding: 4px 10px 4px 34px; border-radius: 8px; }
+.msg.select-mode.selected {
+  background: var(--bg-subtle);
+  box-shadow: inset 2px 0 0 var(--accent-soft);
+}
+
+/* Confirm bar lives in the composer's slot (input and delete are mutually
+ * exclusive) — the .home-composer-bar wrapper provides bg/border/centering,
+ * so this is just the inner flex row. */
+.selection-confirm-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  max-width: 900px;
+  padding: 6px 4px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  margin: 0;
+}
+.selection-count { font-size: 13px; color: var(--text-primary); font-weight: 500; }
+.selection-actions { display: flex; gap: 8px; }
+.selection-cancel, .selection-delete {
+  padding: 4px 14px;
+  font-size: 13px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-primary);
+}
+.selection-delete {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.selection-delete:disabled { opacity: 0.4; cursor: default; }
+.selection-delete:not(:disabled):hover { background: var(--accent-hover); }
+.selection-cancel:hover { background: var(--bg-hover); }
+
+/* ─── Overflow (⋯) menu ─── */
+.overflow-menu { position: relative; display: inline-flex; }
+.overflow-menu-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  min-width: 140px;
+  padding: 4px;
+  background: var(--bg-panel, #fff);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-sm, 0 4px 12px rgba(0,0,0,0.12));
+}
+/* Flip upward when there isn't room below (last message near composer). */
+.overflow-menu-dropdown[data-placement="above"] {
+  top: auto;
+  bottom: calc(100% + 4px);
+}
+/* Flip rightward when opening leftward would overflow the left edge
+ * (trigger near the left, e.g. a short non-last toolbar). */
+.overflow-menu-dropdown[data-align="start"] {
+  right: auto;
+  left: 0;
+}
+.overflow-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 13px;
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s ease, box-shadow 0.1s ease;
+}
+.overflow-menu-item:hover:not(:disabled) {
+  background: var(--bg-hover);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+}
+.overflow-menu-item:disabled { opacity: 0.4; cursor: default; }
+.overflow-menu-item svg { flex-shrink: 0; }
+
+/* ─── Message toolbar (hover-reveal) ─── */
+.message-toolbar {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  margin-top: 6px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  pointer-events: none;
+}
+.msg:hover .message-toolbar,
+.message-toolbar:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+/* Touch devices have no hover — keep toolbar visible. */
+@media (hover: none) {
+  .message-toolbar { opacity: 1; pointer-events: auto; }
+}
+
+/* Icon-only button, shared by the message toolbar and the code-block header.
+ * Square, low-contrast, muted; lifts to primary text color on hover. */
+.icon-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.icon-btn:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+  border-color: var(--border);
+}
+.icon-btn:active:not(:disabled) { transform: translateY(0.5px); }
+.icon-btn:disabled { opacity: 0.35; cursor: default; }
+.icon-btn.copied { color: var(--accent); }
+
+/* Copied micro-interaction: a brief accent pulse so the checkmark lands. */
+@keyframes icon-copied-pulse {
+  0%   { box-shadow: 0 0 0 0 var(--accent-tint); }
+  60%  { box-shadow: 0 0 0 5px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.icon-btn.copied { animation: icon-copied-pulse 0.6s ease-out; }
+
+/* Custom tooltip — the Chinese hint lives here, never as inline button text.
+ * Appears above the button so it doesn't overflow the message bottom edge. */
+.icon-btn[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  right: 50%;
+  bottom: calc(100% + 6px);
+  transform: translateX(50%) translateY(2px);
+  padding: 3px 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: nowrap;
+  color: #fff;
+  background: var(--text-primary, #1f1d1a);
+  border-radius: 5px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.14s ease 0.35s, transform 0.14s ease 0.35s;
+  z-index: 20;
+}
+.icon-btn[data-tip]:hover::after,
+.icon-btn[data-tip]:focus-visible::after {
+  opacity: 1;
+  transform: translateX(50%) translateY(0);
+}
+/* No tooltip delay for the copied/failed confirmation — show immediately. */
+.icon-btn.copied[data-tip]::after { transition-delay: 0s; }
+
+/* ─── User message edit mode ─── */
+.user-edit {
+  display: flex; flex-direction: column; gap: 6px;
+  /* Wider than the read-only bubble (which caps at 78%/560px) so editing
+   * longer text is comfortable. Right-aligned to match the user bubble. */
+  width: min(92%, 680px);
+  max-width: 100%;
+}
+.user-edit-input {
+  width: 100%; min-height: 88px; resize: vertical;
+  padding: 8px 10px; font: inherit; font-size: 13px; line-height: 1.5;
+  color: var(--text-primary);
+  background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px;
+}
+.user-edit-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.user-edit-save, .user-edit-cancel {
+  padding: 4px 12px; font-size: 13px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--border); background: transparent; color: var(--text-primary);
+}
+.user-edit-save:disabled { opacity: 0.4; cursor: default; }
+
+/* ─── CodeBlock ─── */
+.codeblock {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin: 8px 0;
+  background: var(--bg-code, #f6f8fa);
+  overflow: hidden;
+}
+.codeblock-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 4px 8px 4px 10px;
+  font-size: 12px; color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-code-header, rgba(0,0,0,0.03));
+}
+.codeblock-lang { text-transform: lowercase; letter-spacing: 0.3px; }
+/* codeblock-copy reuses .icon-btn; only size differs (slightly tighter). */
+.codeblock-copy { width: 24px; height: 24px; }
+.codeblock pre { margin: 0; padding: 10px 12px; overflow-x: auto; }
+.codeblock pre code { font-family: var(--font-mono, monospace); font-size: 13px; white-space: pre; }
+.codeblock-fold {
+  display: inline-flex; align-items: center; gap: 4px;
+  width: 100%; padding: 4px;
+  font-size: 12px; color: var(--text-secondary);
+  background: transparent; border: none; border-top: 1px solid var(--border);
+  cursor: pointer;
+}
+.codeblock-fold:hover { color: var(--text-primary); }
+.codeblock.streaming pre::after { content: '▋'; animation: cb-blink 1s steps(2) infinite; }
+@keyframes cb-blink { 50% { opacity: 0; } }

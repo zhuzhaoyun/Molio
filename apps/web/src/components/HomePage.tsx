@@ -4,6 +4,8 @@ import type { FileRef, PastedImage } from './ChatComposer';
 import { UserMessage } from './UserMessage';
 import { AssistantMessage } from './AssistantMessage';
 import { useI18n } from '../i18n';
+import { useSelectMode, messageSelectionStore } from '../stores/messageSelectionStore';
+import { SelectionConfirmBar } from './SelectionConfirmBar';
 import type { ChatMessage } from '../hooks/useChat';
 
 interface Props {
@@ -15,6 +17,11 @@ interface Props {
   onNewChat: () => void;
   onSubmitToolResult?: (toolUseId: string, content: string) => Promise<void>;
   onOpenConversation?: (conversationId: string) => void;
+  onRegenerate?: () => void;
+  onEdit?: (messageId: string, newContent: string) => void;
+  onContinue?: () => void;
+  onRequestDelete?: (id: string) => void;
+  onDeleteMessages?: (ids: string[]) => void;
 }
 
 export function HomePage({
@@ -26,14 +33,27 @@ export function HomePage({
   onNewChat,
   onSubmitToolResult,
   onOpenConversation,
+  onRegenerate,
+  onEdit,
+  onContinue,
+  onRequestDelete,
+  onDeleteMessages,
 }: Props) {
   const { t } = useI18n();
   const logRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const selectMode = useSelectMode();
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length, messages[messages.length - 1]?.content]);
+
+  // Prune stale selected ids whenever the message set changes (streaming,
+  // regenerate, etc. may have removed a selected bubble).
+  useEffect(() => {
+    const present = new Set(messages.map((m) => m.id));
+    messageSelectionStore.pruneStale(present);
+  }, [messages]);
 
   // Find the last assistant message ID so only that card stays interactive
   const lastAssistantId = useMemo(() => {
@@ -106,7 +126,22 @@ export function HomePage({
         <div className="home-chat-log" ref={logRef}>
           {messages.map((msg) => {
             if (msg.role === 'user') {
-              return <UserMessage key={msg.id} content={msg.content} timestamp={msg.timestamp} />;
+              const isLastUser = (() => {
+                for (let i = messages.length - 1; i >= 0; i--) {
+                  if (messages[i]!.role === 'user') return messages[i]!.id === msg.id;
+                }
+                return false;
+              })();
+              return (
+                <UserMessage
+                  key={msg.id}
+                  message={msg}
+                  isLast={isLastUser}
+                  onEdit={onEdit}
+                  disabled={isRunning}
+                  onRequestDelete={onRequestDelete}
+                />
+              );
             }
             if (msg.role === 'assistant') {
               return (
@@ -116,6 +151,9 @@ export function HomePage({
                   isLast={msg.id === lastAssistantId}
                   onAnswerToolUse={onSubmitToolResult ? onAnswerToolUse : undefined}
                   onSubmitForm={(text: string) => handleSend(text, [])}
+                  onRegenerate={msg.id === lastAssistantId ? onRegenerate : undefined}
+                  onContinue={msg.id === lastAssistantId ? onContinue : undefined}
+                  onRequestDelete={onRequestDelete}
                 />
               );
             }
@@ -131,17 +169,32 @@ export function HomePage({
           <div ref={bottomRef} />
         </div>
 
-        {/* Composer at the bottom */}
+        {/* Composer at the bottom — hidden in selection mode, replaced by the
+            confirm bar (input and delete are mutually exclusive). */}
         <div className="home-composer-bar">
-          <ChatComposer
-            composerKey="home"
-            isRunning={isRunning}
-            onSend={handleSend}
-            onCancel={onCancel}
-            disabled={!selectedAgentName}
-            disabledPlaceholder={t('home.noAgent')}
-            onOpenConversation={onOpenConversation}
-          />
+          {selectMode ? (
+            <SelectionConfirmBar
+              onDelete={async () => {
+                const ids = [...messageSelectionStore.getSelectedIds()];
+                try {
+                  await onDeleteMessages?.(ids);
+                } finally {
+                  messageSelectionStore.exit();
+                }
+              }}
+              onCancel={() => messageSelectionStore.exit()}
+            />
+          ) : (
+            <ChatComposer
+              composerKey="home"
+              isRunning={isRunning}
+              onSend={handleSend}
+              onCancel={onCancel}
+              disabled={!selectedAgentName}
+              disabledPlaceholder={t('home.noAgent')}
+              onOpenConversation={onOpenConversation}
+            />
+          )}
         </div>
       </div>
     );

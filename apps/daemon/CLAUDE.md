@@ -41,6 +41,7 @@ src/
       jsonl-parser.ts      JSONL 解析器
     conversations/
       service.ts       统一会话服务（跨渠道 conversation 管理）
+      run-starter.ts   共享"在已有会话上建 run"逻辑（runs + rewind-resend 复用：vault 系统提示 + append user + createRun + onTurnComplete）
     weixin/
       client.ts        微信消息收发
       message.ts       消息解析
@@ -92,7 +93,12 @@ pnpm typecheck    # tsc --noEmit
 | GET | `/api/config` | 读取配置 |
 | PUT | `/api/config` | 更新配置 |
 | GET/POST/PUT/DELETE | `/api/projects` | 项目 CRUD |
-| GET/POST | `/api/conversations` | 会话管理 |
+| GET | `/api/conversations` | 列出全局会话历史 |
+| GET | `/api/conversations/:id` | 查询单个会话 |
+| GET | `/api/conversations/:id/messages` | 列出会话全部消息 |
+| DELETE | `/api/conversations/:id` | 删除会话 |
+| POST | `/api/conversations/:id/rewind-resend` | 重新生成/编辑重发（回退到末条 user 消息重放建新 run） |
+| POST | `/api/conversations/:id/delete-messages` | 按 id 集合删除消息（勾选删除） |
 | GET/POST/PUT/DELETE | `/api/knowledge` | 知识库管理 |
 | POST | `/api/publish` | 发布到内容平台 |
 | GET | `/api/graph` | 知识图谱数据 |

@@ -289,6 +289,13 @@ export class RunManager {
     const stderrDecoder = createStderrDecoder();
 
     const parser = this.selectParser(def, (ev) => {
+      // Terminal guard: once the run is canceled/finished, ignore any late
+      // events parsed from buffered stdout of the dying child. This prevents
+      // a late turn_end from triggering emitEvent → turnText.flush() →
+      // onTurnComplete (which would append an orphan assistant reply after
+      // the conversation has been truncated + a new run started).
+      if (TERMINAL_STATUSES.has(run.status)) return;
+
       this.emitEvent(run, ev);
 
       if (run.stdinOpen && ev.type === 'tool_use' && ev.name === 'AskUserQuestion') {
@@ -415,6 +422,24 @@ export class RunManager {
     const run = this.runs.get(runId);
     if (!run) return;
 
+    // Synchronously mark the run terminal so that:
+    //  (a) isTerminal(runId) returns true immediately — lets callers (e.g.
+    //      rewind-resend) safely truncate + start a new run without a late
+    //      onTurnComplete from the dying run appending an orphan reply.
+    //  (b) the parser callback's terminal guard short-circuits any late
+    //      stream events (including turn_end → onTurnComplete) from buffered
+    //      stdout of the killed child.
+    // We do this BEFORE flushing so the defense-in-depth gate in
+    // run-starter.ts:onTurnComplete (which checks isTerminal) blocks the
+    // append. Local onTurnComplete callbacks that don't check isTerminal
+    // (e.g. the shutdown-flush path) still receive the buffered text.
+    const wasTerminal = TERMINAL_STATUSES.has(run.status);
+    if (!wasTerminal) {
+      run.status = 'canceled';
+      run.stdinOpen = false;
+      run.updatedAt = Date.now();
+    }
+
     // Flush any accumulated text before killing the process.
     run.turnText.flush();
 
@@ -429,6 +454,17 @@ export class RunManager {
     if (run.stdinOpen && run.child?.stdin?.writable) {
       try { run.child.stdin.end(); } catch { /* ignore */ }
       run.stdinOpen = false;
+    }
+
+    // Emit the canceled status event so SSE listeners (frontend EventSource)
+    // close cleanly. Mirror how finishRun emits succeeded/failed status. Only
+    // emit if we transitioned in this call (avoid duplicate on repeated cancel).
+    if (!wasTerminal) {
+      this.emitEvent(run, { type: 'status', label: 'canceled' });
+      // Close the JSONL log stream — the child's later 'close' handler will
+      // call finishRun, which short-circuits via the terminal guard.
+      try { run.eventsLogStream?.end(); } catch { /* ignore */ }
+      run.eventsLogStream = null;
     }
   }
 
