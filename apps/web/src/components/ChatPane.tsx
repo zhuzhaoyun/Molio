@@ -83,7 +83,7 @@ export function ChatPane({
           <>
             {messages.map((msg) => {
               if (msg.role === 'user') {
-                return <UserMessage key={msg.id} content={msg.content} timestamp={msg.timestamp} />;
+                return <UserMessage key={msg.id} message={msg} />;
               }
               if (msg.role === 'assistant') {
                 return <AssistantMessage key={msg.id} message={msg} />;

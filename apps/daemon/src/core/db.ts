@@ -62,7 +62,7 @@ export function openDatabase(dataDir?: string): SqliteDb {
   return db;
 }
 
-export function closeDatabase(): void {
+export function closeDatabase(_db?: SqliteDb): void {
   if (!dbInstance) return;
   dbInstance.close();
   dbInstance = null;
@@ -364,6 +364,67 @@ export function listMessages(db: SqliteDb, conversationId: string): ChatMessage[
     'SELECT * FROM messages WHERE conversation_id = ? ORDER BY position ASC'
   ).all(conversationId) as Array<Record<string, unknown>>;
   return rows.map(rowToMessage);
+}
+
+/**
+ * Find the rewind point for regenerate/edit: the position of the last user
+ * message, plus the run_id of the most recent assistant message after it
+ * (the conversation's currently-active run, if any).
+ */
+export function getRewindPoint(
+  db: SqliteDb,
+  conversationId: string,
+): { position: number; activeRunId: string | null } | null {
+  const userRow = db.prepare(
+    "SELECT position FROM messages WHERE conversation_id = ? AND role = 'user' ORDER BY position DESC LIMIT 1",
+  ).get(conversationId) as { position: number } | undefined;
+  if (!userRow) return null;
+  const assistantRow = db.prepare(
+    "SELECT run_id FROM messages WHERE conversation_id = ? AND position > ? AND role = 'assistant' ORDER BY position DESC LIMIT 1",
+  ).get(conversationId, userRow.position) as { run_id: string | null } | undefined;
+  return { position: userRow.position, activeRunId: assistantRow?.run_id ?? null };
+}
+
+/** Delete all messages with position >= `position` in the conversation. */
+export function deleteMessagesFromPosition(
+  db: SqliteDb,
+  conversationId: string,
+  position: number,
+): number {
+  const r = db
+    .prepare('DELETE FROM messages WHERE conversation_id = ? AND position >= ?')
+    .run(conversationId, position);
+  return r.changes;
+}
+
+/** List messages with position < `position` (i.e. the surviving history after a rewind). */
+export function listMessagesBefore(
+  db: SqliteDb,
+  conversationId: string,
+  position: number,
+): ChatMessage[] {
+  const rows = db
+    .prepare('SELECT * FROM messages WHERE conversation_id = ? AND position < ? ORDER BY position ASC')
+    .all(conversationId, position) as Array<Record<string, unknown>>;
+  return rows.map(rowToMessage);
+}
+
+/** Delete a set of messages by id within a conversation. Returns rows deleted. */
+export function deleteMessagesById(
+  db: SqliteDb,
+  conversationId: string,
+  ids: string[],
+): number {
+  if (ids.length === 0) return 0;
+  // Bind each id as a separate parameter; conversationId scopes the delete so
+  // an id from another conversation cannot be hit.
+  const placeholders = ids.map(() => '?').join(', ');
+  const r = db
+    .prepare(
+      `DELETE FROM messages WHERE conversation_id = ? AND id IN (${placeholders})`,
+    )
+    .run(conversationId, ...ids);
+  return r.changes;
 }
 
 /**

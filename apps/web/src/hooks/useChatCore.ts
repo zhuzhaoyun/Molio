@@ -2,15 +2,17 @@
  * useChatCore — shared chat logic for all chat-based UIs.
  *
  * Handles SSE subscription, event processing, message state, multi-turn,
- * cancel, tool result submission, and reset.
+ * cancel, tool result submission, reset, and rewind-resend.
  *
- * Callers provide a `createRun` function to decide which API endpoint to call.
+ * Callers provide a `createRun` function to decide which API endpoint to call
+ * and an optional `rewindResend` for regenerating/editing the last user turn.
  */
 
 import { useState, useCallback, useRef } from 'react';
 import type { AgentEvent } from '@molio/contracts';
 import { api } from '../api/client';
 import { subscribeToRun } from '../api/sse';
+import { messageSelectionStore } from '../stores/messageSelectionStore';
 
 export interface ToolEvent {
   id: string;
@@ -58,6 +60,8 @@ export interface CreateRunContext {
 export interface UseChatCoreOptions {
   /** Called to create a new run. Implementations decide which API to call. */
   createRun: (ctx: CreateRunContext) => Promise<RunResult>;
+  /** Called to rewind a conversation to its last user message and start a fresh run. */
+  rewindResend?: (ctx: { conversationId: string; newContent: string }) => Promise<RunResult>;
   /** Current agent ID — used to detect runtime switches and invalidate stale runs. */
   agentId?: string | null;
   /** Initial messages to pre-populate (e.g. from DB). */
@@ -72,7 +76,7 @@ let msgCounter = 0;
 function nextMsgId() { return `msg-${++msgCounter}-${Date.now()}`; }
 
 export function useChatCore(options: UseChatCoreOptions) {
-  const { createRun, agentId, initialMessages = [], initialConversationId = null, onComplete } = options;
+  const { createRun, rewindResend, agentId, initialMessages = [], initialConversationId = null, onComplete } = options;
 
   const [state, setState] = useState<ChatState>({
     messages: initialMessages,
@@ -89,6 +93,55 @@ export function useChatCore(options: UseChatCoreOptions) {
     esRef.current?.close();
     esRef.current = null;
   }, []);
+
+  const beginNewRun = useCallback(async (
+    result: RunResult,
+    assistantId: string,
+    optimisticMessages: ChatMessage[],
+  ) => {
+    const runId = result.runId;
+    const convId = result.conversationId ?? state.conversationId;
+
+    // The passed assistantId is the initial SSE event target. We set the ref
+    // here (instead of relying solely on callers) so the parameter is
+    // actually used and callers don't need an implicit set-ref-first contract.
+    // The ref — not the parameter — is read inside the callback so the
+    // multi-turn path (api.sendMessage on an existing run) can retarget
+    // events to a new assistant message without resubscribing.
+    assistantIdRef.current = assistantId;
+
+    setState((prev) => ({
+      ...prev,
+      messages: optimisticMessages,
+      runId,
+      runAgentId: agentId ?? null,
+      conversationId: convId,
+      isRunning: true,
+    }));
+
+    const es = subscribeToRun(
+      runId,
+      (event: AgentEvent) => {
+        const currentId = assistantIdRef.current;
+        if (!currentId) return;
+        setState((prev) => updateWithEvent(prev, currentId, event));
+      },
+      () => { /* SSE error — EventSource auto-retries */ },
+    );
+    esRef.current = es;
+
+    if (onComplete) {
+      const origOnEvent = es.onmessage;
+      es.onmessage = (msg) => {
+        origOnEvent?.call(es, msg);
+        try {
+          const envelope = JSON.parse(msg.data);
+          const ev = envelope.event;
+          if (ev.type === 'status' && ev.label === 'completed') onComplete();
+        } catch { /* ignore parse errors */ }
+      };
+    }
+  }, [state.conversationId, agentId, onComplete]);
 
   /**
    * Send a message — tries multi-turn on existing run first, falls back to createRun.
@@ -115,6 +168,8 @@ export function useChatCore(options: UseChatCoreOptions) {
       tools: [],
     };
 
+    const prevMessages = state.messages;
+
     setState((prev) => ({
       ...prev,
       messages: [...prev.messages, userMsg, assistantMsg],
@@ -136,7 +191,7 @@ export function useChatCore(options: UseChatCoreOptions) {
     }
 
     // Build history for transcript
-    const history = state.messages
+    const history = prevMessages
       .filter((m) => m.role === 'user' || m.role === 'assistant')
       .map((m) => ({
         id: m.id,
@@ -163,37 +218,7 @@ export function useChatCore(options: UseChatCoreOptions) {
         conversationId: state.conversationId,
       });
 
-      const runId = result.runId;
-      const convId = result.conversationId ?? state.conversationId;
-
-      setState((prev) => ({ ...prev, runId, runAgentId: agentId ?? null, conversationId: convId }));
-
-      const es = subscribeToRun(
-        runId,
-        (event: AgentEvent) => {
-          const currentId = assistantIdRef.current;
-          if (!currentId) return;
-          setState((prev) => updateWithEvent(prev, currentId, event));
-        },
-        () => { /* SSE error — EventSource auto-retries */ },
-      );
-
-      esRef.current = es;
-
-      // Listen for completion to trigger onComplete callback
-      if (onComplete) {
-        const origOnEvent = es.onmessage;
-        es.onmessage = (msg) => {
-          origOnEvent?.call(es, msg);
-          try {
-            const envelope = JSON.parse(msg.data);
-            const ev = envelope.event;
-            if (ev.type === 'status' && ev.label === 'completed') {
-              onComplete();
-            }
-          } catch { /* ignore parse errors */ }
-        };
-      }
+      await beginNewRun(result, newAssistantId, [...prevMessages, userMsg, assistantMsg]);
     } catch (err) {
       const errId = newAssistantId;
       setState((prev) => {
@@ -205,7 +230,72 @@ export function useChatCore(options: UseChatCoreOptions) {
         return { ...prev, messages, isRunning: false };
       });
     }
-  }, [state.runId, state.runAgentId, state.conversationId, state.messages, closeEventSource, createRun, agentId, onComplete]);
+  }, [state.runId, state.runAgentId, state.conversationId, state.messages, closeEventSource, createRun, agentId, onComplete, beginNewRun]);
+
+  const rewindAndResend = useCallback(async (newContent: string) => {
+    if (!rewindResend) return;
+    const convId = state.conversationId;
+    if (!convId) return;
+
+    // Find the last user message to build the optimistic truncated view.
+    const lastUserIdx = (() => {
+      for (let i = state.messages.length - 1; i >= 0; i--) {
+        if (state.messages[i]!.role === 'user') return i;
+      }
+      return -1;
+    })();
+    if (lastUserIdx < 0) return;
+
+    const prevMessages = state.messages.slice(0, lastUserIdx); // everything before last user msg
+    const newUserMsg: ChatMessage = {
+      id: nextMsgId(),
+      role: 'user',
+      content: newContent.trim(),
+      timestamp: Date.now(),
+    };
+    const newAssistantId = nextMsgId();
+    assistantIdRef.current = newAssistantId;
+    const newAssistantMsg: ChatMessage = {
+      id: newAssistantId,
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now(),
+      streaming: true,
+      tools: [],
+    };
+
+    closeEventSource();
+
+    try {
+      const result = await rewindResend({ conversationId: convId, newContent: newContent.trim() });
+      await beginNewRun(result, newAssistantId, [...prevMessages, newUserMsg, newAssistantMsg]);
+    } catch (err) {
+      setState((prev) => ({
+        ...prev,
+        messages: [...prev.messages, {
+          id: nextMsgId(),
+          role: 'error',
+          content: `Error: ${(err as Error).message}`,
+          timestamp: Date.now(),
+        } as ChatMessage],
+        isRunning: false,
+      }));
+    }
+  }, [rewindResend, state.conversationId, state.messages, closeEventSource, beginNewRun]);
+
+  const regenerateLast = useCallback(async () => {
+    // Reuse the last user message's content verbatim.
+    const lastUser = [...state.messages].reverse().find((m) => m.role === 'user');
+    if (!lastUser) return;
+    await rewindAndResend(lastUser.content);
+  }, [state.messages, rewindAndResend]);
+
+  const editAndResend = useCallback(async (messageId: string, newContent: string) => {
+    // Only the last user message is editable; guard against stale ids.
+    const lastUser = [...state.messages].reverse().find((m) => m.role === 'user');
+    if (!lastUser || lastUser.id !== messageId) return;
+    await rewindAndResend(newContent);
+  }, [state.messages, rewindAndResend]);
 
   const submitToolResult = useCallback(async (toolUseId: string, content: string) => {
     if (!state.runId) return;
@@ -243,6 +333,7 @@ export function useChatCore(options: UseChatCoreOptions) {
   const reset = useCallback(() => {
     closeEventSource();
     assistantIdRef.current = null;
+    messageSelectionStore.exit();
     setState({ messages: [], runId: null, runAgentId: null, isRunning: false, conversationId: null });
   }, [closeEventSource]);
 
@@ -252,6 +343,7 @@ export function useChatCore(options: UseChatCoreOptions) {
   const setMessages = useCallback((messages: ChatMessage[], conversationId?: string | null) => {
     closeEventSource();
     assistantIdRef.current = null;
+    messageSelectionStore.exit();
     setState({
       messages,
       runId: null,
@@ -261,6 +353,32 @@ export function useChatCore(options: UseChatCoreOptions) {
     });
   }, [closeEventSource]);
 
+  const deleteMessages = useCallback(async (ids: string[]) => {
+    if (!ids.length) return;
+    const convId = state.conversationId;
+    if (!convId) return;
+    try {
+      await api.deleteMessages(convId, ids);
+      setState((prev) => ({
+        ...prev,
+        messages: prev.messages.filter((m) => !ids.includes(m.id)),
+      }));
+    } catch (err) {
+      setState((prev) => ({
+        ...prev,
+        messages: [
+          ...prev.messages,
+          {
+            id: `err-${Date.now()}`,
+            role: 'error' as const,
+            content: `删除失败: ${(err as Error).message}`,
+            timestamp: Date.now(),
+          },
+        ],
+      }));
+    }
+  }, [state.conversationId]);
+
   return {
     ...state,
     send,
@@ -268,6 +386,9 @@ export function useChatCore(options: UseChatCoreOptions) {
     cancel,
     reset,
     setMessages,
+    regenerateLast,
+    editAndResend,
+    deleteMessages,
   };
 }
 
