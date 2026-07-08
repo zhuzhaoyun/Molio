@@ -418,14 +418,26 @@ export function createConversation(db: SqliteDb, projectId: string, title?: stri
   return { id, projectId, title: title ?? null, channelType: 'desktop', externalSessionId: null, createdAt: now, updatedAt: now };
 }
 
-export function createDesktopConversation(db: SqliteDb, title?: string, vaultId?: string | null): Conversation {
+export function createDesktopConversation(
+  db: SqliteDb,
+  title?: string,
+  vaultId?: string | null,
+): Conversation {
   ensureDesktopProject(db);
-  const conv = createConversation(db, DESKTOP_PROJECT_ID, title);
-  if (vaultId !== undefined) {
-    db.prepare('UPDATE conversations SET vault_id = ? WHERE id = ?').run(vaultId ?? null, conv.id);
-    return getConversation(db, conv.id)!;
-  }
-  return conv;
+  const id = randomUUID();
+  const now = Date.now();
+  db.prepare(
+    'INSERT INTO conversations (id, project_id, title, channel_type, vault_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).run(id, DESKTOP_PROJECT_ID, title ?? null, 'desktop', vaultId ?? null, now, now);
+  return {
+    id,
+    projectId: DESKTOP_PROJECT_ID,
+    title: title ?? null,
+    channelType: 'desktop',
+    externalSessionId: null,
+    createdAt: now,
+    updatedAt: now,
+  };
 }
 
 export interface ExternalConversationInput {
