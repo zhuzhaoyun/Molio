@@ -2576,3 +2576,12 @@
   color: var(--text-muted);
   line-height: 1.35;
 }
+
+/* ── CodeMirror large-text viewer ── */
+.kb-codemirror-viewer {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.kb-codemirror-viewer .cm-editor { height: 100%; }
+.kb-codemirror-viewer .cm-scroller { max-height: calc(100vh - 180px); }
