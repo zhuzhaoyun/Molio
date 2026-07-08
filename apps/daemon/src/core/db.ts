@@ -283,6 +283,29 @@ export function listConversations(db: SqliteDb, projectId: string): Conversation
   return rows.map(rowToConversation);
 }
 
+/**
+ * Search message content via the messages_fts trigram index. Returns the set
+ * of conversation_ids whose messages match `query` (substring / phrase match).
+ * Empty/whitespace query returns [] — the caller MUST short-circuit (skip the
+ * FTS subquery entirely) on empty so the plain filter path stays fast.
+ *
+ * The raw query is sanitized into an FTS5 string literal: internal double
+ * quotes are doubled, newlines become spaces, and the result is wrapped in
+ * double quotes so FTS5 operator characters (`*` `:` `"`) are treated as
+ * literal phrase content. With the trigram tokenizer a phrase match is a
+ * substring match.
+ */
+export function searchConversationIds(db: SqliteDb, query: string): string[] {
+  const trimmed = query.replace(/[\r\n]+/g, ' ').trim();
+  if (!trimmed) return [];
+  const truncated = trimmed.slice(0, 200);
+  const escaped = truncated.replace(/"/g, '""');
+  const rows = db
+    .prepare('SELECT DISTINCT conversation_id FROM messages_fts WHERE messages_fts MATCH ?')
+    .all(`"${escaped}"`) as Array<{ conversation_id: string }>;
+  return rows.map((r) => r.conversation_id);
+}
+
 export function listConversationHistory(
   db: SqliteDb,
   limit = 100,
