@@ -13,6 +13,7 @@ import { createClaudeStreamHandler } from './streams/claude-stream.js';
 import { createCodexStreamHandler } from './streams/codex-stream.js';
 import { createJsonEventStreamHandler } from './streams/json-event-stream.js';
 import { AcpTransport } from './streams/acp-transport.js';
+import { formatAcpInitFailure } from './acp-errors.js';
 import type { StreamHandler } from '@molio/contracts';
 import { createJsonlParser } from './streams/jsonl-parser.js';
 import { loadConfig, getAgentConfig, buildAgentEnv } from './config.js';
@@ -322,8 +323,7 @@ export class RunManager {
           if (!TERMINAL_STATUSES.has(run.status)) {
             this.finishRun(run, 'failed', 1, null);
           }
-          const lastStderr = run.lastStderrLine ? ` (last stderr: "${run.lastStderrLine}")` : '';
-          this.emitEvent(run, { type: 'error', message: `ACP init failed: ${err.message}${lastStderr}` });
+          this.emitEvent(run, { type: 'error', message: formatAcpInitFailure(err, run.lastStderrLine) });
         });
 
       child.stderr?.on('data', (chunk: Buffer) => {
