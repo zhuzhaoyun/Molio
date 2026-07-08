@@ -1,13 +1,17 @@
 import { useMemo, useCallback } from 'react';
 import type { ChatMessage, ToolEvent } from '../hooks/useChat';
-import { renderMarkdown } from '../utils/markdown';
+import { renderMarkdown, splitContent } from '../utils/markdown';
+import { CodeBlock } from './CodeBlock';
 import { useI18n } from '../i18n';
 import { useActiveVaultId } from '../stores/vaultStore';
 import { useFileNavigation } from '../hooks/useFileNavigation';
 import { ToolCard } from './ToolCard';
 import { ToolGroup } from './ToolGroup';
 import { ThinkingBlock } from './ThinkingBlock';
-import { FileOperationCard, isFileWriteTool, extractFilePath } from './FileOperationCard';
+import { SaveToKbButton } from './SaveToKbButton';
+import { MessageToolbar } from './MessageToolbar';
+import { useSelectMode, useIsSelected } from '../stores/messageSelectionStore';
+import { MessageCheckbox } from './MessageCheckbox';
 
 // Tools that should never be grouped (always shown individually)
 const UNGROUPABLE = new Set(['AskUserQuestion', 'ask_user_question']);
@@ -62,10 +66,18 @@ interface Props {
   onAnswerToolUse?: (toolUseId: string, content: string) => Promise<boolean | void> | boolean | void;
   /** Fallback: send the answer as a fresh user message. */
   onSubmitForm?: (text: string) => void;
+  /** Regenerate the last assistant reply. */
+  onRegenerate?: () => void;
+  /** Continue generating on the last assistant reply (sends a "继续" follow-up). */
+  onContinue?: () => void;
+  /** Request to delete (opens selection mode with this message's pair). */
+  onRequestDelete?: (id: string) => void;
 }
 
-export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitForm }: Props) {
+export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitForm, onRegenerate, onContinue, onRequestDelete }: Props) {
   const { t } = useI18n();
+  const selectMode = useSelectMode();
+  const selected = useIsSelected(message.id);
 
   // Check if the message has an AskUserQuestion tool — suppress the markdown
   // fallback text that duplicates the interactive card.
@@ -76,14 +88,9 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
     ? suppressAskUserQuestionFallback(message.content)
     : message.content;
 
-  const html = useMemo(() => renderMarkdown(displayContent), [displayContent]);
+  const segments = useMemo(() => splitContent(displayContent), [displayContent]);
   const toolItems = useMemo(
-    () => {
-      const displayTools = (message.tools || []).filter(
-        (t) => !(isFileWriteTool(t.name) && t.status === 'done')
-      );
-      return groupTools(displayTools);
-    },
+    () => groupTools(message.tools || []),
     [message.tools]
   );
 
@@ -106,11 +113,18 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
   );
 
   return (
-    <div className="msg assistant" data-testid="assistant-message">
+    <div
+      className={`msg assistant${selectMode ? ' select-mode' : ''}${selected ? ' selected' : ''}`}
+      data-testid="assistant-message"
+    >
       <div className="role">
         <span>{t('assistant.label')}</span>
         <span className="msg-time">{formatTime(message.timestamp)}</span>
       </div>
+
+      {selectMode && !message.streaming && (
+        <MessageCheckbox id={message.id} />
+      )}
 
       {message.thinking && (
         <ThinkingBlock content={message.thinking} streaming={message.streaming && !message.content} />
@@ -138,30 +152,21 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
         </div>
       )}
 
-      {/* File operation cards for completed write tools */}
-      {message.tools
-        ?.filter((t) => t.status === 'done' && isFileWriteTool(t.name))
-        .map((t) => {
-          const filePath = extractFilePath(t.input);
-          if (!filePath) return null;
-          return (
-            <FileOperationCard
-              key={`op-${t.id}`}
-              filePath={filePath}
-              toolName={t.name}
-              toolInput={t.input}
-            />
-          );
-        })}
-
       {displayContent && (
         <div
           className="assistant-prose"
           data-testid="assistant-prose"
           onClick={handleProseClick}
           role="presentation"
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
+        >
+          {segments.map((seg, i) =>
+            seg.type === 'text' ? (
+              <div key={i} dangerouslySetInnerHTML={{ __html: renderMarkdown(seg.content) }} />
+            ) : (
+              <CodeBlock key={i} lang={seg.lang} code={seg.code} streaming={message.streaming} />
+            ),
+          )}
+        </div>
       )}
 
       {message.streaming && <span className="streaming-cursor" />}
@@ -172,6 +177,34 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
           {message.usage.output != null && <span>{message.usage.output} out</span>}
           {message.usage.cost != null && <span>${message.usage.cost.toFixed(4)}</span>}
         </div>
+      )}
+
+      {!message.streaming && !selectMode && (
+        <MessageToolbar
+          actions={[
+            {
+              key: 'copy', label: '复制', testid: 'msg-copy-btn',
+              text: message.content, onClick: () => {},
+            },
+            ...(isLast && onContinue
+              ? [{
+                  key: 'continue' as const, label: '继续生成', testid: 'msg-continue-btn',
+                  text: '', onClick: onContinue,
+                }]
+              : []),
+            ...(isLast && onRegenerate
+              ? [{
+                  key: 'regenerate' as const, label: '重新生成', testid: 'msg-regenerate-btn',
+                  text: '', onClick: onRegenerate,
+                }]
+              : []),
+          ]}
+          extra={<SaveToKbButton content={message.content} />}
+          overflow={onRequestDelete ? [{
+            key: 'delete', label: '删除', testid: 'overflow-item-delete',
+            text: '', onClick: () => onRequestDelete(message.id),
+          }] : undefined}
+        />
       )}
     </div>
   );

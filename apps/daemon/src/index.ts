@@ -4,6 +4,7 @@ import { app, db, runManager, weixinService, vaultWatcher } from './server.js';
 import { listVaults } from './core/db.js';
 import { installBuiltinSkills } from './core/skill-installer.js';
 import { ensureWikiSysPromptFiles } from './core/wiki-prompts.js';
+import { isKillablePortOccupant } from './core/port-check.js';
 
 const port = Number(process.env['MOLIO_PORT'] ?? 3100);
 
@@ -50,11 +51,10 @@ function checkAndKillPortOccupant(port: number): void {
 
     if (!pid) return;
 
-    // 只自动杀掉 Node.js 进程（可能是上次没退出的 daemon）
-    const isNodeProcess = processName.toLowerCase().includes('node') ||
-                          processName.toLowerCase().includes('tsx');
-
-    if (isNodeProcess) {
+    // 只自动杀掉可能是上次没退出的 daemon（node/tsx 或打包后的
+    // Molio.exe / electron.exe，后者以 ELECTRON_RUN_AS_NODE=1 跑 daemon）。
+    // 其他进程不杀，避免误杀用户软件。
+    if (isKillablePortOccupant(processName)) {
       console.log(`Port ${port} occupied by Node process (PID ${pid}), killing it...`);
       try {
         process.kill(pid, 'SIGTERM');
@@ -129,3 +129,11 @@ function shutdown(): void {
 
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
+
+// [DEBUG] catch uncaught exceptions to diagnose daemon crashes
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL] uncaughtException:', err?.stack ?? err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[FATAL] unhandledRejection:', reason instanceof Error ? reason.stack : reason);
+});

@@ -15,45 +15,162 @@
     }
     h1 { color: #c96442; border-bottom: 2px solid #c96442; padding-bottom: 10px; }
     h2 { color: #333; margin-top: 30px; }
+    h3 { color: #555; margin-top: 20px; }
     a { color: #c96442; }
     .date { color: #666; font-size: 0.9em; }
     .highlight { background: #fff3e6; padding: 15px; border-radius: 6px; margin: 20px 0; }
+    table { border-collapse: collapse; width: 100%; margin: 15px 0; }
+    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; vertical-align: top; }
+    th { background: #f7f7f7; }
   </style>
 </head>
 <body>
   <h1>Molio Connect 隐私权政策</h1>
-  <p class="date">生效日期：2026年6月10日</p>
+  <p class="date">生效日期：2026年7月7日 &nbsp;|&nbsp; 最近更新：2026年7月7日</p>
 
   <div class="highlight">
-    <strong>核心原则：您的数据完全由您掌控。所有数据存储在本地，不会上传到任何第三方服务器。</strong>
+    <strong>核心承诺：</strong>Molio Connect 不会向任何远程服务器发送用户数据。所有剪藏内容、高亮标注、配置信息都仅保存在您的本地设备（本机浏览器 + 本机桌面应用），由您完全掌控。
   </div>
 
-  <h2>1. 我们收集的数据</h2>
-  <p>本扩展程序仅在本地收集以下数据：</p>
+  <h2>1. 概述</h2>
+  <p>Molio Connect 是一款浏览器扩展，用于将网页内容剪藏、高亮标注后保存到您本机运行的 <strong>Molio 桌面应用</strong>（一个本地知识库管理程序）中，作为您的个人知识库文档。</p>
+  <p>本隐私权政策详细说明本扩展如何收集、使用、处理和分享用户数据，涵盖扩展本身及其配套的本机桌面应用通信链路。</p>
+
+  <h2>2. 我们收集的数据</h2>
+  <p>本扩展仅在以下场景、出于以下目的读取或产生数据：</p>
+
+  <h3>2.1 您主动剪藏的网页内容</h3>
   <ul>
-    <li><strong>网页剪藏内容</strong>：您主动选择的网页正文、标题、URL</li>
-    <li><strong>用户配置</strong>：本地 Molio 服务端地址等设置项</li>
-    <li><strong>对话历史</strong>：您在侧边栏中与 AI 的问答记录</li>
+    <li><strong>触发条件</strong>：仅当您通过点击扩展图标、使用键盘快捷键、右键菜单、或打开侧边栏主动发起剪藏操作时，才会读取当前标签页的页面内容。</li>
+    <li><strong>读取范围</strong>：当前活动标签页的正文、标题、URL、以及您选择的高亮片段。</li>
+    <li><strong>不剪藏时不读取</strong>：在未触发剪藏操作的普通浏览过程中，扩展不会读取、记录或监听您访问的任何网页内容。</li>
   </ul>
 
-  <h2>2. 数据存储位置</h2>
-  <p>所有数据均存储在您的<strong>本地浏览器</strong>中（通过 Chrome Storage API）。<strong>我们不会将数据上传到任何远程服务器。</strong></p>
+  <h3>2.2 高亮标注数据</h3>
+  <p>您在网页上创建的文本高亮、批注，会由扩展读取并与该页面 URL 关联保存。</p>
 
-  <h2>3. 数据传输</h2>
-  <p>剪藏内容仅传输到<strong>您自己运行的本地 Molio 桌面应用</strong>（默认地址：http://localhost:3100）。您完全控制自己的数据，可随时删除。</p>
+  <h3>2.3 用户配置</h3>
+  <p>您在扩展选项页面设置的本地 Molio 服务端地址（默认为 <code>http://localhost:3100</code>）及其他偏好设置。</p>
 
-  <h2>4. 数据共享</h2>
-  <p><strong>我们不会将用户数据出售、共享或提供给任何第三方。</strong></p>
-
-  <h2>5. 您的权利</h2>
-  <p>您可以随时：</p>
+  <h3>2.4 不收集的数据</h3>
   <ul>
-    <li>在扩展设置中清除所有剪藏数据和配置</li>
-    <li>卸载扩展以彻底删除所有本地存储的数据</li>
-    <li>导出或备份您的数据</li>
+    <li>不收集浏览历史、cookies、表单填写内容、密码</li>
+    <li>不收集您的 IP 地址、设备指纹、地理位置</li>
+    <li>不收集个人身份信息（姓名、邮箱、电话等）</li>
+    <li>不收集任何遥测、崩溃日志、使用统计</li>
   </ul>
 
-  <h2>6. 联系我们</h2>
-  <p>如有隐私问题，请通过 GitHub Issues 联系我们：<a href="https://github.com/zhuzhaoyun/Molio/issues">https://github.com/zhuzhaoyun/Molio/issues</a></p>
+  <h2>3. Chrome 权限及其数据用途</h2>
+  <p>下表列出扩展申请的每项 Chrome 权限及其对应的数据操作，便于您了解每个权限的必要性：</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>权限</th>
+        <th>用途</th>
+        <th>涉及数据</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>activeTab</code></td>
+        <td>仅在用户触发剪藏时访问当前标签页</td>
+        <td>当前页面正文、标题、URL</td>
+      </tr>
+      <tr>
+        <td><code>clipboardWrite</code></td>
+        <td>将剪藏结果复制到系统剪贴板</td>
+        <td>剪藏后的文本</td>
+      </tr>
+      <tr>
+        <td><code>commands</code></td>
+        <td>支持键盘快捷键（Ctrl+Shift+O 等）触发剪藏 / 高亮 / 阅读模式</td>
+        <td>不涉及数据，仅响应按键</td>
+      </tr>
+      <tr>
+        <td><code>contextMenus</code></td>
+        <td>右键菜单一键剪藏</td>
+        <td>不涉及数据，仅注册菜单项</td>
+      </tr>
+      <tr>
+        <td><code>sidePanel</code></td>
+        <td>打开侧边栏显示剪藏 / 高亮操作界面</td>
+        <td>不涉及数据，仅 UI 载体</td>
+      </tr>
+      <tr>
+        <td><code>storage</code></td>
+        <td>保存用户配置（本地服务器地址等）和高亮数据</td>
+        <td>配置项、高亮元数据</td>
+      </tr>
+      <tr>
+        <td><code>scripting</code></td>
+        <td>向当前页面注入脚本，用于提取正文、渲染高亮</td>
+        <td>当前页面 DOM 片段</td>
+      </tr>
+      <tr>
+        <td><code>declarativeNetRequest</code></td>
+        <td>处理扩展与本机 Molio 桌面应用通信时的跨域请求</td>
+        <td>仅本机回环请求（localhost）</td>
+      </tr>
+      <tr>
+        <td><code>&lt;all_urls&gt;</code> (host_permissions)</td>
+        <td>允许您在任意网页上触发剪藏与高亮</td>
+        <td>您主动触发剪藏时的当前页面</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>4. 数据如何使用</h2>
+  <p>收集到的数据仅用于以下单一用途——<strong>将网页内容保存为您本机的知识库文档</strong>：</p>
+  <ol>
+    <li><strong>剪藏</strong>：提取当前网页正文 / 标题 / URL，传输到本机 Molio 桌面应用。</li>
+    <li><strong>高亮标注</strong>：保存您在网页上做的文本高亮，并与该 URL 关联。</li>
+    <li><strong>配置存储</strong>：记住您设置的本地 Molio 服务地址，用于后续通信。</li>
+  </ol>
+
+  <h2>5. 数据如何存储</h2>
+  <ul>
+    <li><strong>配置项</strong>：使用 Chrome Storage API 保存在浏览器本地，不离开您的设备。</li>
+    <li><strong>高亮数据</strong>：使用 Chrome Storage API 保存在浏览器本地，按 URL 索引。</li>
+    <li><strong>剪藏的网页文档</strong>：通过 HTTP 请求发送并保存在您本机运行的 Molio 桌面应用（默认地址 <code>http://localhost:3100</code>），存储于您本机文件系统。Molio 桌面应用不连接任何远程服务器。</li>
+  </ul>
+
+  <h2>6. 数据如何分享</h2>
+  <div class="highlight">
+    <strong>不向任何第三方分享用户数据。</strong>
+  </div>
+  <p>具体而言：</p>
+  <ul>
+    <li>剪藏内容、高亮数据仅发送给您本机的 Molio 桌面应用（localhost 回环网络请求），<strong>不经过互联网</strong>。</li>
+    <li>配置数据仅保存在本机浏览器 storage 中，<strong>不发送到任何外部服务</strong>。</li>
+    <li>我们<strong>不出售、不出租、不共享</strong>任何用户数据给任何第三方公司、组织或个人。</li>
+    <li>我们<strong>不使用</strong>任何第三方分析、广告、追踪服务。</li>
+    <li>我们<strong>不收集、不传输</strong>任何遥测或崩溃上报数据。</li>
+  </ul>
+
+  <h2>7. 数据保留与删除</h2>
+  <ul>
+    <li><strong>浏览器端</strong>：您可在扩展选项页面手动清除所有本地存储的配置和高亮数据；或卸载扩展时，浏览器会自动清除该扩展的所有 storage 数据。</li>
+    <li><strong>Molio 桌面端</strong>：剪藏的文档保存在您本机文件系统，由您自行管理。您可以在 Molio 应用内随时删除任意文档，卸载应用后数据不会保留。</li>
+    <li><strong>无云端</strong>：由于本扩展不使用任何云端服务，因此不存在云端数据保留期限的问题。</li>
+  </ul>
+
+  <h2>8. 儿童隐私</h2>
+  <p>Molio Connect 不面向 13 岁以下儿童设计，不会故意收集儿童个人信息。由于所有数据仅保存在用户本机、不上云，儿童隐私风险被降到最小。</p>
+
+  <h2>9. 本政策的变更</h2>
+  <p>如本隐私权政策有重大变更，我们将通过以下方式通知您：</p>
+  <ul>
+    <li>更新本页面顶部的"最近更新"日期；</li>
+    <li>在扩展下次更新时通过 Chrome Web Store 更新说明进行提示；</li>
+    <li>必要时在扩展内弹出显著通知。</li>
+  </ul>
+
+  <h2>10. 联系我们</h2>
+  <p>如对本隐私权政策或数据处理有任何疑问、请求行使数据权利，请通过以下方式联系我们：</p>
+  <ul>
+    <li>GitHub Issues：<a href="https://github.com/zhuzhaoyun/Molio/issues">https://github.com/zhuzhaoyun/Molio/issues</a></li>
+    <li>电子邮件：<a href="mailto:dlutyaol@qq.com">dlutyaol@qq.com</a></li>
+  </ul>
 </body>
 </html>

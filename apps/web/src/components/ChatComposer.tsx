@@ -56,6 +56,9 @@ export function buildAttachmentPrefix(fileRefs: FileRef[], pastedImages: PastedI
   return parts.length > 0 ? parts.join('\n\n') : '';
 }
 
+/** Module-level draft cache — survives component unmount during navigation. */
+const drafts = new Map<string, string>();
+
 interface Props {
   isRunning: boolean;
   onSend: (message: string, fileRefs: FileRef[], pastedImages: PastedImage[]) => void;
@@ -66,6 +69,8 @@ interface Props {
   initialFileRefs?: FileRef[];
   /** Callback when user selects a conversation from history. */
   onOpenConversation?: (conversationId: string) => void;
+  /** Stable key for persisting draft text across navigation. */
+  composerKey?: string;
 }
 
 export function ChatComposer({
@@ -76,9 +81,10 @@ export function ChatComposer({
   disabledPlaceholder,
   initialFileRefs,
   onOpenConversation,
+  composerKey,
 }: Props) {
   const { t } = useI18n();
-  const [text, setText] = useState('');
+  const [text, setText] = useState(() => (composerKey ? drafts.get(composerKey) ?? '' : ''));
   const [fileRefs, setFileRefs] = useState<FileRef[]>(initialFileRefs ?? []);
   const [pastedImages, setPastedImages] = useState<PastedImage[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -99,6 +105,16 @@ export function ChatComposer({
       el.style.height = Math.min(el.scrollHeight, 184) + 'px';
     }
   }, [text]);
+
+  // Persist draft text to module-level cache so it survives navigation
+  useEffect(() => {
+    if (!composerKey) return;
+    if (text) {
+      drafts.set(composerKey, text);
+    } else {
+      drafts.delete(composerKey);
+    }
+  }, [text, composerKey]);
 
   // Focus on mount and when run completes
   useEffect(() => {
@@ -183,6 +199,14 @@ export function ChatComposer({
     if (hasContent && !isRunning) {
       onSend(trimmed, fileRefs, doneImages);
       setText('');
+      // Clear the draft cache synchronously *before* the parent re-renders.
+      // On the home page, the first send flips HomePage from the landing
+      // branch to the chat-active branch, which unmounts this ChatComposer
+      // and mounts a fresh one. That unmount happens before the draft-sync
+      // effect (which depends on `text`) can run for the just-queued
+      // setText(''), so the new instance would otherwise rehydrate from the
+      // stale draft and the input would not be cleared.
+      if (composerKey) drafts.delete(composerKey);
       setFileRefs([]);
       // Revoke any remaining blob URLs (error/uploading thumbs) before clearing.
       for (const img of pastedImages) {

@@ -30,6 +30,10 @@ export type {
 export type {
   CreateRunRequest,
   CreateRunResponse,
+  RewindResendRequest,
+  RewindResendResponse,
+  DeleteMessagesRequest,
+  DeleteMessagesResponse,
   ToolResultRequest,
   AgentListResponse,
   RunListResponse,

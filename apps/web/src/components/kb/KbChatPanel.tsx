@@ -24,11 +24,14 @@ interface KbChatPanelProps {
   onCancelQueued: (id: string) => void;
   onSubmitToolResult: (toolUseId: string, content: string) => Promise<void>;
   onOpenConversation?: (conversationId: string) => void;
+  /** Stable key for persisting composer draft text across navigation. */
+  composerKey?: string;
 }
 
 export function KbChatPanel({
   mode, messages, isRunning, filePath, vaultId, selectedText, queuedOps,
   onSend, onCancel, onClose, onNewChat, onCancelQueued, onSubmitToolResult, onOpenConversation,
+  composerKey,
 }: KbChatPanelProps) {
   const { t } = useI18n();
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -156,7 +159,7 @@ export function KbChatPanel({
           <>
             {messages.map((msg) => {
               if (msg.role === 'user') {
-                return <UserMessage key={msg.id} content={msg.content} timestamp={msg.timestamp} />;
+                return <UserMessage key={msg.id} message={msg} />;
               }
               if (msg.role === 'assistant') {
                 return (
@@ -201,6 +204,7 @@ export function KbChatPanel({
       <div className="file-chat-input">
         <ChatComposer
           key={mode === 'qa' ? (filePath ?? undefined) : (mode ?? undefined)}
+          composerKey={composerKey}
           isRunning={isRunning}
           onSend={onSend}
           onCancel={onCancel}

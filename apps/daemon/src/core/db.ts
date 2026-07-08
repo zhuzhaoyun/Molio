@@ -62,7 +62,7 @@ export function openDatabase(dataDir?: string): SqliteDb {
   return db;
 }
 
-export function closeDatabase(): void {
+export function closeDatabase(_db?: SqliteDb): void {
   if (!dbInstance) return;
   dbInstance.close();
   dbInstance = null;
@@ -132,6 +132,12 @@ function migrate(db: SqliteDb): void {
 
     CREATE INDEX IF NOT EXISTS idx_kb_history_vault
       ON kb_history(vault_id, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS kv (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
   `);
 
   addColumnIfMissing(db, 'conversations', 'channel_type', "TEXT NOT NULL DEFAULT 'desktop'");
@@ -361,6 +367,67 @@ export function listMessages(db: SqliteDb, conversationId: string): ChatMessage[
 }
 
 /**
+ * Find the rewind point for regenerate/edit: the position of the last user
+ * message, plus the run_id of the most recent assistant message after it
+ * (the conversation's currently-active run, if any).
+ */
+export function getRewindPoint(
+  db: SqliteDb,
+  conversationId: string,
+): { position: number; activeRunId: string | null } | null {
+  const userRow = db.prepare(
+    "SELECT position FROM messages WHERE conversation_id = ? AND role = 'user' ORDER BY position DESC LIMIT 1",
+  ).get(conversationId) as { position: number } | undefined;
+  if (!userRow) return null;
+  const assistantRow = db.prepare(
+    "SELECT run_id FROM messages WHERE conversation_id = ? AND position > ? AND role = 'assistant' ORDER BY position DESC LIMIT 1",
+  ).get(conversationId, userRow.position) as { run_id: string | null } | undefined;
+  return { position: userRow.position, activeRunId: assistantRow?.run_id ?? null };
+}
+
+/** Delete all messages with position >= `position` in the conversation. */
+export function deleteMessagesFromPosition(
+  db: SqliteDb,
+  conversationId: string,
+  position: number,
+): number {
+  const r = db
+    .prepare('DELETE FROM messages WHERE conversation_id = ? AND position >= ?')
+    .run(conversationId, position);
+  return r.changes;
+}
+
+/** List messages with position < `position` (i.e. the surviving history after a rewind). */
+export function listMessagesBefore(
+  db: SqliteDb,
+  conversationId: string,
+  position: number,
+): ChatMessage[] {
+  const rows = db
+    .prepare('SELECT * FROM messages WHERE conversation_id = ? AND position < ? ORDER BY position ASC')
+    .all(conversationId, position) as Array<Record<string, unknown>>;
+  return rows.map(rowToMessage);
+}
+
+/** Delete a set of messages by id within a conversation. Returns rows deleted. */
+export function deleteMessagesById(
+  db: SqliteDb,
+  conversationId: string,
+  ids: string[],
+): number {
+  if (ids.length === 0) return 0;
+  // Bind each id as a separate parameter; conversationId scopes the delete so
+  // an id from another conversation cannot be hit.
+  const placeholders = ids.map(() => '?').join(', ');
+  const r = db
+    .prepare(
+      `DELETE FROM messages WHERE conversation_id = ? AND id IN (${placeholders})`,
+    )
+    .run(conversationId, ...ids);
+  return r.changes;
+}
+
+/**
  * Upsert a message. If the message id already exists, update it.
  * Otherwise, insert with auto-incremented position.
  */
@@ -469,6 +536,48 @@ export function createVault(db: SqliteDb, name: string, vaultPath: string, descr
 
 export function deleteVault(db: SqliteDb, id: string): void {
   db.prepare('DELETE FROM vaults WHERE id = ?').run(id);
+  // Clear active-vault if it pointed at the deleted vault.
+  if (getActiveVaultId(db) === id) {
+    setActiveVaultId(db, null);
+  }
+}
+
+// ─── Key/value store (active-vault etc.) ───
+
+export function getKv(db: SqliteDb, key: string): string | null {
+  const row = db.prepare('SELECT value FROM kv WHERE key = ?').get(key) as
+    | { value: string }
+    | undefined;
+  return row?.value ?? null;
+}
+
+export function setKv(db: SqliteDb, key: string, value: string): void {
+  db.prepare(
+    `INSERT INTO kv (key, value, updated_at) VALUES (?, ?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+  ).run(key, value, Date.now());
+}
+
+export function deleteKv(db: SqliteDb, key: string): void {
+  db.prepare('DELETE FROM kv WHERE key = ?').run(key);
+}
+
+// ─── Active vault ───
+
+const ACTIVE_VAULT_KEY = 'active_vault';
+
+/** Returns the id of the user's currently-selected vault, or null. */
+export function getActiveVaultId(db: SqliteDb): string | null {
+  return getKv(db, ACTIVE_VAULT_KEY);
+}
+
+/** Set/clear the active vault. Pass null to clear. */
+export function setActiveVaultId(db: SqliteDb, id: string | null): void {
+  if (id) {
+    setKv(db, ACTIVE_VAULT_KEY, id);
+  } else {
+    deleteKv(db, ACTIVE_VAULT_KEY);
+  }
 }
 
 // ─── KB History ───
