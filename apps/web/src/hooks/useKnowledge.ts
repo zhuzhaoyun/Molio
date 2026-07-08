@@ -129,6 +129,9 @@ interface UseKnowledgeReturn {
   // Edit mode actions
   toggleEditMode: () => void;
   setEditMode: (on: boolean) => void;
+
+  // Force load oversized files
+  forceLoadFile: () => Promise<void>;
 }
 
 export function useKnowledge(): UseKnowledgeReturn {
@@ -487,6 +490,17 @@ export function useKnowledge(): UseKnowledgeReturn {
     setEditedContent(null);
   }, [activeVaultId]);
 
+  const forceLoadFile = useCallback(async () => {
+    if (!activeVaultId || !selectedFile) return;
+    try {
+      const content = await api.readFile(activeVaultId, selectedFile, { force: true });
+      setFileContent(content);
+      setFileLoadError(null);
+    } catch (e) {
+      setFileLoadError(e instanceof Error ? e.message : 'Force load failed');
+    }
+  }, [activeVaultId, selectedFile]);
+
   // Typeset mode actions
   const toggleTypesetMode = useCallback(() => {
     setIsTypesetMode((prev) => !prev);
@@ -600,5 +614,6 @@ export function useKnowledge(): UseKnowledgeReturn {
     setShowCoseInstallPrompt,
     toggleEditMode,
     setEditMode,
+    forceLoadFile,
   };
 }
