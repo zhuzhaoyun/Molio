@@ -302,7 +302,11 @@ export const api = {
   },
 
   async deleteConversationById(conversationId: string): Promise<void> {
-    await fetch(`${BASE}/conversations/${conversationId}`, { method: 'DELETE' });
+    const res = await fetch(`${BASE}/conversations/${conversationId}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      throw new Error(err?.error?.message ?? `Failed to delete conversation: ${res.status}`);
+    }
   },
 
   async rewindResend(conversationId: string, req: { newContent: string; agentId?: string; cwd?: string }): Promise<{ runId: string; conversationId: string }> {

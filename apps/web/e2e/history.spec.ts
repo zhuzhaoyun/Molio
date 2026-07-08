@@ -189,11 +189,14 @@ test.describe('History', () => {
       await page.locator('[data-testid=history-refresh]').click();
       await page.waitForTimeout(500);
 
-      // Intercept DELETE to force a failure and verify rollback (row restored).
+      // Intercept DELETE to force an HTTP 500 failure and verify rollback (row restored).
       await page.route('**/api/conversations/*', (route) => {
         if (route.request().method() === 'DELETE') {
-          // Abort so fetch() rejects and the UI catch block runs.
-          return route.abort('failed');
+          return route.fulfill({
+            status: 500,
+            contentType: 'application/json',
+            body: JSON.stringify({ error: { code: 'FAIL', message: 'forced' } }),
+          });
         }
         return route.continue();
       });
