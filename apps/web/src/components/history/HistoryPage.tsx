@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ConversationHistoryItem, Vault, AgentInfo } from '@molio/contracts';
 import { api } from '../../api/client';
 import { useI18n } from '../../i18n';
@@ -21,6 +21,8 @@ export function HistoryPage({ onOpenConversation }: Props) {
   const { filters, setFilter, setQuery, items, loading, error, loadMore, refresh, hasMore, deleteConversationLocal } = useHistoryFilters();
   const [vaults, setVaults] = useState<Vault[]>([]);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const deleteErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     Promise.all([api.listVaults(), api.listAgents()]).then(([v, a]) => {
@@ -29,16 +31,39 @@ export function HistoryPage({ onOpenConversation }: Props) {
     }).catch(() => { /* best-effort */ });
   }, []);
 
+  // Clear any transient delete error on unmount.
+  useEffect(() => {
+    return () => {
+      if (deleteErrorTimer.current) clearTimeout(deleteErrorTimer.current);
+    };
+  }, []);
+
+  const clearFilters = () => {
+    setFilter('vaultId', '');
+    setFilter('channelType', '');
+    setFilter('agentId', '');
+    setQuery('');
+  };
+
   const onDelete = async (id: string) => {
     deleteConversationLocal(id);
     try {
       await api.deleteConversationById(id);
     } catch {
-      // rollback: re-fetch to restore
+      // rollback: re-fetch to restore (refresh kicks off an async fetch but
+      // returns void; the E2E polls for the row to reappear).
       refresh();
-      alert(t('history.deleteFailed'));
+      // Non-blocking transient error (spec §7.5): no alert(), which blocks the
+      // main thread and makes E2E fragile. Reuse the .history-error styling.
+      if (deleteErrorTimer.current) clearTimeout(deleteErrorTimer.current);
+      setDeleteError(t('history.deleteFailed'));
+      deleteErrorTimer.current = setTimeout(() => setDeleteError(null), 3000);
     }
   };
+
+  const isFilterActive = Boolean(
+    filters.vaultId || filters.channelType || filters.agentId || filters.query.trim(),
+  );
 
   return (
     <div className="history-shell">
@@ -101,16 +126,26 @@ export function HistoryPage({ onOpenConversation }: Props) {
 
       <main className="history-content">
         {error && <div className="history-error">{error}</div>}
+        {deleteError && (
+          <div className="history-error" data-testid="history-delete-error">{deleteError}</div>
+        )}
 
         {loading && items.length === 0 ? (
           <div className="rt-loading">{t('history.loading')}</div>
         ) : items.length === 0 ? (
-          <div className="rt-empty">
-            <div className="rt-empty__text">{t('history.noMatch')}</div>
-            <button className="history-clear-filters" data-testid="history-clear-filters" type="button" onClick={() => { setFilter('vaultId', ''); setFilter('channelType', ''); setFilter('agentId', ''); setQuery(''); }}>
-              {t('history.clearFilters')}
-            </button>
-          </div>
+          isFilterActive ? (
+            <div className="rt-empty">
+              <div className="rt-empty__text">{t('history.noMatch')}</div>
+              <button className="history-clear-filters" data-testid="history-clear-filters" type="button" onClick={clearFilters}>
+                {t('history.clearFilters')}
+              </button>
+            </div>
+          ) : (
+            <div className="rt-empty" data-testid="history-empty">
+              <div className="rt-empty__text">{t('history.empty')}</div>
+              <div className="rt-empty__hint">{t('history.emptyHint')}</div>
+            </div>
+          )
         ) : (
           <HistoryList items={items} onOpenConversation={onOpenConversation} onDelete={onDelete} t={t} />
         )}

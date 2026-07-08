@@ -202,11 +202,15 @@ test.describe('History', () => {
       });
 
       // Dismiss the alert that the UI shows on delete failure.
-      page.on('dialog', (dialog) => dialog.accept());
+      // (Removed: UI now uses a non-blocking transient error element.)
 
       const row = page.locator('.history-row', { hasText: 'Delete Me' }).first();
       await expect(row).toBeVisible({ timeout: 5_000 });
       await row.locator('[data-testid=history-row-delete]').click();
+
+      // Non-blocking transient error is shown (no alert() dialog).
+      await expect(page.locator('[data-testid=history-delete-error]')).toBeVisible({ timeout: 5_000 });
+
       // Rollback re-fetches → row reappears.
       await expect(page.locator('.history-row', { hasText: 'Delete Me' })).toBeVisible({ timeout: 5_000 });
     } finally {

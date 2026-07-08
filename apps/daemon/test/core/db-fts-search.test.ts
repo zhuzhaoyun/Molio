@@ -27,6 +27,23 @@ describe('searchConversationIds', () => {
     assert.ok(searchConversationIds(db, '凡人修').includes(c.id));
   });
 
+  it('2-char chinese query matches via LIKE fallback (trigram needs >=3)', () => {
+    const p = createProject(db, 'P-short');
+    const c = createConversation(db, p.id, 'C-short');
+    upsertMessage(db, c.id, { id: 'm-short', role: 'user', content: '凡人修仙传是一本小说', timestamp: Date.now() });
+    // "修仙" is 2 chars — trigram cannot match, LIKE fallback must.
+    assert.ok(searchConversationIds(db, '修仙').includes(c.id));
+  });
+
+  it('2-char query with LIKE wildcard chars is escaped', () => {
+    const p = createProject(db, 'P-wild');
+    const c = createConversation(db, p.id, 'C-wild');
+    upsertMessage(db, c.id, { id: 'm-wild', role: 'user', content: 'a%b_c', timestamp: Date.now() });
+    // "%" and "_" are literal in content; a 2-char query containing them must
+    // not be treated as wildcards.
+    assert.ok(searchConversationIds(db, '%b').includes(c.id));
+  });
+
   it('case-insensitive', () => {
     const p = createProject(db, 'P2');
     const c = createConversation(db, p.id, 'C2');

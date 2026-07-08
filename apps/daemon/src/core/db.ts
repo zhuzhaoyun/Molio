@@ -294,27 +294,55 @@ export function listConversations(db: SqliteDb, projectId: string): Conversation
  * double quotes so FTS5 operator characters (`*` `:` `"`) are treated as
  * literal phrase content. With the trigram tokenizer a phrase match is a
  * substring match.
+ *
+ * The trigram tokenizer requires ≥3 characters to form any trigram, so a
+ * 1- or 2-character query (e.g. the Chinese word "修仙") would match nothing
+ * even when the content contains "凡人修仙传". For sanitized queries shorter
+ * than 3 characters we fall back to a `LIKE '%q%'` scan over `messages.content`
+ * (acceptable: short queries are rare and yield small result sets). LIKE
+ * wildcards (`%` `_`) in the query are escaped with `ESCAPE '\'`. SQLite LIKE
+ * is case-insensitive for ASCII by default, which suffices for latin content;
+ * CJK has no case distinction.
  */
-/**
- * Rebuild the messages_fts index from scratch by repopulating from `messages`
- * (the source of truth). Used by POST /api/maintenance/rebuild-fts as a
- * disaster-recovery lever if the FTS index becomes corrupted/emptied.
- */
-export function rebuildMessagesFts(db: SqliteDb): void {
-  db.exec('DELETE FROM messages_fts');
-  db.exec(`INSERT INTO messages_fts(content, conversation_id, message_id)
-           SELECT content, conversation_id, id FROM messages`);
-}
-
 export function searchConversationIds(db: SqliteDb, query: string): string[] {
   const trimmed = query.replace(/[\r\n]+/g, ' ').trim();
   if (!trimmed) return [];
   const truncated = trimmed.slice(0, 200);
+
+  // Short-query fallback: trigram FTS5 cannot match < 3 chars. Use a LIKE
+  // scan over the source messages table instead.
+  if (truncated.length < 3) {
+    const escaped = truncated.replace(/[%_\\]/g, '\\$&');
+    const rows = db
+      .prepare(
+        "SELECT DISTINCT conversation_id FROM messages WHERE content LIKE ? ESCAPE '\\'",
+      )
+      .all(`%${escaped}%`) as Array<{ conversation_id: string }>;
+    return rows.map((r) => r.conversation_id);
+  }
+
   const escaped = truncated.replace(/"/g, '""');
   const rows = db
     .prepare('SELECT DISTINCT conversation_id FROM messages_fts WHERE messages_fts MATCH ?')
     .all(`"${escaped}"`) as Array<{ conversation_id: string }>;
   return rows.map((r) => r.conversation_id);
+}
+
+/**
+ * Rebuild the messages_fts index from scratch by repopulating from `messages`
+ * (the source of truth). Used by POST /api/maintenance/rebuild-fts as a
+ * disaster-recovery lever if the FTS index becomes corrupted/emptied.
+ *
+ * The DELETE + INSERT are wrapped in a transaction so a failure during
+ * repopulation rolls back the delete (the FTS index is never left emptied).
+ */
+export function rebuildMessagesFts(db: SqliteDb): void {
+  const rebuild = db.transaction(() => {
+    db.exec('DELETE FROM messages_fts');
+    db.exec(`INSERT INTO messages_fts(content, conversation_id, message_id)
+             SELECT content, conversation_id, id FROM messages`);
+  });
+  rebuild();
 }
 
 export function listConversationHistory(
