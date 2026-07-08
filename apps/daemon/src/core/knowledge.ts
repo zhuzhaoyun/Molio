@@ -128,10 +128,22 @@ function resolveWithFallbacks(vaultPath: string, relPath: string): string {
     const exact = resolveFilePath(vaultPath, baseRelPath);
     if (fs.existsSync(exact)) return exact;
 
-    // Strategy B: add .md extension
+    // Strategy B: add .md extension (preserve on-disk case by listing entries)
     if (!hasExt) {
       const md = resolveFilePath(vaultPath, baseRelPath + '.md');
-      if (fs.existsSync(md)) return md;
+      const mdDir = path.dirname(md);
+      const mdBase = path.basename(md);
+      try {
+        const mdEntries = fs.readdirSync(mdDir);
+        const mdMatch = mdEntries.find((e) => e.toLowerCase() === mdBase.toLowerCase());
+        if (mdMatch) {
+          const candidate = path.join(mdDir, mdMatch);
+          assertWithinVault(vaultPath, candidate);
+          return candidate;
+        }
+      } catch {
+        // directory not found — continue to next strategy
+      }
     }
 
     // Strategy C: case-insensitive search in the target directory
@@ -142,9 +154,19 @@ function resolveWithFallbacks(vaultPath: string, relPath: string): string {
       const entries = fs.readdirSync(targetDir);
       // Exact case-insensitive match
       let match = entries.find((e) => e.toLowerCase() === targetLower);
-      // Try with .md if original has no extension
+      // Try with .md if original has no extension (.md has priority over other exts)
       if (!match && !hasExt) {
         match = entries.find((e) => e.toLowerCase() === targetLower + '.md');
+      }
+      // Stem match for any other supported extension. .md was already tried
+      // above, so this only fires for non-md files (e.g. [[entities/报告]] →
+      // 报告.pdf). Mirrors the daemon-wide rule that .md is the primary format.
+      if (!match && !hasExt) {
+        match = entries.find((e) => {
+          const eExt = path.extname(e).toLowerCase();
+          if (eExt === '.md' || !ALLOWED_EXTS.includes(eExt)) return false;
+          return path.basename(e, eExt).toLowerCase() === targetLower;
+        });
       }
       if (match) {
         // Re-validate so a matched entry can never bypass the vault boundary
@@ -232,6 +254,37 @@ export function resolveFilePath(vaultPath: string, relPath: string): string {
 }
 
 /**
+ * Resolve a vault-relative path to its canonical vault-relative path (with the
+ * real on-disk extension), WITHOUT reading the file. Returns null if no file
+ * matches. Used by the resolve API so the frontend can normalize assistant /
+ * molio:// / wiki-link paths against the same logic readFile uses — keeping
+ * "open from chat link" consistent with "open from directory".
+ */
+export function resolveCanonicalPath(vaultPath: string, relPath: string): string | null {
+  if (!relPath) return null;
+  let resolved: string;
+  try {
+    resolved = resolveFilePath(vaultPath, relPath);
+    if (!fs.existsSync(resolved)) {
+      resolved = resolveWithFallbacks(vaultPath, relPath);
+    }
+  } catch {
+    return null;
+  }
+  if (!fs.existsSync(resolved)) return null;
+  try {
+    // Security: confirm the real path is still inside the vault (symlink-escape
+    // guard). We do NOT use the realpath for the relative path computation —
+    // scanTree stores paths relative to the (non-realpath) vaultPath, so we
+    // match that to keep tree node.path equality correct.
+    resolveRealWithinVault(vaultPath, resolved);
+  } catch {
+    return null;
+  }
+  return path.relative(path.resolve(vaultPath), resolved).split(path.sep).join('/');
+}
+
+/**
  * Verify an already-resolved absolute path stays inside the vault root.
  * Uses a trailing path separator so a sibling directory like
  * `/data/vault-secret` is NOT mistaken for `/data/vault`. The daemon has no
@@ -310,6 +363,14 @@ export function renamePath(vaultPath: string, oldRelPath: string, newRelPath: st
   assertWithinVault(vaultPath, absOld);
   assertWithinVault(vaultPath, absNew);
 
+  // Protected-dir guard: don't move files out of or into protected directories
+  if (isInsideProtected(oldRelPath)) {
+    throw new Error(`Cannot move files out of protected directory: ${oldRelPath}`);
+  }
+  if (isInsideProtected(newRelPath)) {
+    throw new Error(`Cannot move files into protected directory: ${newRelPath}`);
+  }
+
   if (!fs.existsSync(absOld)) {
     throw new Error(`Source not found: ${oldRelPath}`);
   }
@@ -358,13 +419,26 @@ function isSupportedFile(name: string): boolean {
 }
 
 /** Text file extensions — content read as UTF-8 */
-const TEXT_EXTS = ['.md', '.txt', '.html', '.htm', '.json', '.yaml', '.yml'];
+export const TEXT_EXTS = ['.md', '.txt', '.html', '.htm', '.json', '.yaml', '.yml'];
 
 /** Image file extensions — displayed inline via <img> */
-const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp', '.ico'];
+export const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp', '.ico'];
 
 /** Binary file extensions — opened via system default program */
-const BINARY_EXTS = ['.pdf', '.docx', '.doc', '.pptx', '.ppt', '.xlsx', '.xls'];
+export const BINARY_EXTS = ['.pdf', '.docx', '.doc', '.pptx', '.ppt', '.xlsx', '.xls'];
+
+/** Directories that reject external file imports and internal drag moves. */
+export const PROTECTED_DIRS = ['wiki', 'docling_output'];
+
+/** Union of all supported extensions — what scanTree displays == what imports accept. */
+export const ALLOWED_EXTS = [...TEXT_EXTS, ...IMAGE_EXTS, ...BINARY_EXTS];
+
+/** Check whether a relative path lies inside a protected directory or is one. */
+export function isInsideProtected(relPath: string): boolean {
+  return PROTECTED_DIRS.some(
+    d => relPath === d || relPath.startsWith(d + '/')
+  );
+}
 
 export function isTextFile(filePath: string): boolean {
   const ext = path.extname(filePath).toLowerCase();
@@ -374,6 +448,126 @@ export function isTextFile(filePath: string): boolean {
 function getMimeType(filePath: string): string {
   const ext = path.extname(filePath).toLowerCase();
   return MIME_TYPES[ext] ?? 'application/octet-stream';
+}
+
+/** Result of an importFiles call — per-file outcomes. */
+export interface ImportResult {
+  imported: string[];
+  renamed: Array<{ from: string; to: string }>;
+  skipped: string[];
+  errors: Array<{ file: string; reason: string }>;
+  /** Conflict files when conflict: "ask" — present ONLY when conflicts were detected.
+   *  Separated from `errors` so callers can distinguish "needs user decision"
+   *  from "permanently invalid" without coupling to reason strings. */
+  conflicts?: Array<{ file: string; reason: string }>;
+}
+
+/** ILLEGAL_CHARS: characters forbidden in filenames on Windows + macOS. */
+const ILLEGAL_CHARS = /[\\/:*?"<>|]/;
+
+/**
+ * Write multiple files into a vault, handling validation, protected-dir
+ * checks, and conflict resolution in a single pass.
+ */
+export function importFiles(
+  vaultPath: string,
+  files: Array<{ name: string; buffer: Buffer }>,
+  targetDir: string,
+  conflict: 'ask' | 'skip' | 'replace' | 'rename',
+): ImportResult {
+  const result: ImportResult = { imported: [], renamed: [], skipped: [], errors: [] };
+  const conflicts: ImportResult['errors'] = [];
+
+  // 1. Pre-validate all files (collect errors; don't write anything yet)
+  const valid: Array<{ name: string; buffer: Buffer; relPath: string }> = [];
+  for (const f of files) {
+    const ext = path.extname(f.name).toLowerCase();
+    if (!ALLOWED_EXTS.includes(ext)) {
+      result.errors.push({ file: f.name, reason: 'unsupported_format' });
+      continue;
+    }
+    if (ILLEGAL_CHARS.test(f.name)) {
+      result.errors.push({ file: f.name, reason: 'illegal_chars' });
+      continue;
+    }
+    const relPath = targetDir ? `${targetDir}/${f.name}` : f.name;
+    // protected-dir check on the TARGET
+    if (isInsideProtected(relPath)) {
+      result.errors.push({ file: f.name, reason: 'protected_dir' });
+      continue;
+    }
+    valid.push({ name: f.name, buffer: f.buffer, relPath });
+  }
+
+  // 2. For conflict: "ask", pre-check and return 409 if any conflicts exist.
+  //    The caller (route) uses this to decide the HTTP status.
+  if (conflict === 'ask') {
+    for (const f of valid) {
+      const absFile = path.resolve(path.join(vaultPath, f.relPath));
+      if (fs.existsSync(absFile)) {
+        conflicts.push({ file: f.name, reason: 'conflict' });
+      }
+    }
+    if (conflicts.length > 0) {
+      // Return early — the route will send 409 with the conflict list.
+      // Preserve validation errors (unsupported_format, etc.) collected in step 1
+      // alongside the conflict list so consumers can show a complete picture.
+      result.conflicts = conflicts;
+      return result;
+    }
+    // No conflicts — proceed with "rename" as safety net.
+  }
+
+  // 3. Write files
+  for (const f of valid) {
+    const absFile = path.resolve(path.join(vaultPath, f.relPath));
+    assertWithinVault(vaultPath, absFile);
+
+    let writePath = absFile;
+    let finalName = f.name;
+
+    if (fs.existsSync(absFile)) {
+      if (conflict === 'skip') {
+        result.skipped.push(f.relPath);
+        continue;
+      }
+      if (conflict === 'replace') {
+        // fall through to write (overwrites below)
+      }
+      if (conflict === 'rename' || conflict === 'ask') {
+        let seq = 1;
+        const dir = path.dirname(absFile);
+        const ext = path.extname(f.name);
+        const base = path.basename(f.name, ext);
+        while (seq <= 1000) {
+          const renamed = `${dir}${path.sep}${base} (${seq})${ext}`;
+          if (!fs.existsSync(renamed)) {
+            writePath = renamed;
+            finalName = `${base} (${seq})${ext}`;
+            break;
+          }
+          seq++;
+        }
+        if (seq > 1000) {
+          result.errors.push({ file: f.name, reason: 'rename_exhausted' });
+          continue;
+        }
+        result.renamed.push({
+          from: f.name,
+          to: finalName,
+        });
+      }
+    }
+
+    // Create parent directories and write
+    fs.mkdirSync(path.dirname(writePath), { recursive: true });
+    fs.writeFileSync(writePath, f.buffer);
+
+    const importedRelPath = targetDir ? `${targetDir}/${finalName}` : finalName;
+    result.imported.push(importedRelPath);
+  }
+
+  return result;
 }
 
 const MIME_TYPES: Record<string, string> = {

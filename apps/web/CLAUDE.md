@@ -28,6 +28,9 @@ src/
     useKbTabs.ts       知识库 Tab 状态管理
     useRuntimes.ts     运行时管理
     useWikiChat.ts     Wiki 对话状态管理
+  stores/
+    vaultStore.ts          活跃知识库选择（useSyncExternalStore，App + useKnowledge 共享）
+    messageSelectionStore.ts  消息删除勾选态（同模式 + 每气泡精准订阅）
   components/
     HomePage.tsx       主页：agent 选择 + 聊天面板
     NavRail.tsx        左侧导航栏
@@ -38,6 +41,13 @@ src/
     ThinkingBlock.tsx  思考过程折叠块
     ToolCard.tsx       工具调用卡片
     ToolGroup.tsx      工具调用分组
+    MessageToolbar.tsx 消息操作条（复制/重生成/继续/编辑/删除，hover 显隐）
+    OverflowMenu.tsx   ⋯ 溢出菜单（收纳低频动作）
+    CodeBlock.tsx      代码块（语言标签 + 复制 + 长代码折叠）
+    SaveToKbButton.tsx 一键保存助手回复到当前知识库
+    SelectionConfirmBar.tsx 删除勾选态顶部确认条
+    MessageCheckbox.tsx  勾选态下每气泡的方框
+    icons.tsx          聊天交互 SVG 线条图标
     UpdateNotification.tsx 更新通知
     graph/             知识图谱组件
       GraphPage.tsx    图谱主页面（Sigma.js + ForceAtlas2 力导向布局）
@@ -150,7 +160,7 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
 - **右上角按钮**: 默认模式有「排版」按钮；排版模式有「退出排版」「复制」「发布」「样式」按钮
 - **样式面板**: 右侧悬浮面板，支持主题、字体、字号、主题色、排版选项切换
 - **渲染引擎**: 基于 doocs/md (`marked` v18 + 扩展 + 主题系统)
-- **Tab 系统**: 支持多文件 Tab 切换
+- **Tab 系统**: 多文件 Tab 切换，上限 20（`MAX_TABS`，达上限拦截 + toast，不静默淘汰）；溢出时左右箭头 + `▾` 下拉收纳；active tab 自动滚入可见区；状态持久化到 localStorage
 - **统一聊天面板** (`KbChatPanel` + `useKbChat`)：`💬问答`（文档级，`kb-main-header`）/ `📚构建Wiki`·`🩺健康检查`（vault 级，`KbTabBar` 尾部）。任务运行中再点入口：问答不中断、wiki 类弹「中断/排队/取消」。排队复用 agent stdin 原生队列，详见 [docs/kb-chat-interrupt-queue.md](../../docs/kb-chat-interrupt-queue.md)。
 
 ### 知识图谱 (Graph View)
@@ -172,6 +182,8 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
 - **Shell 布局**: NavRail (左侧导航) + 主内容区
 - **聊天流程**: 选择 agent → 输入消息 → POST /api/runs → 订阅 SSE → 实时渲染事件
 - **消息模型**: user / assistant / error，assistant 消息包含 thinking、tools、usage
+- **消息级交互**（hover 显隐 toolbar）: 复制（消息/代码块）、重新生成（末条）、编辑用户消息重发（末条）、继续生成（末条）、保存到知识库（一键存为 KB 新文件）、删除（⋯ 菜单，配对绑定 + 勾选态 + 顶部确认条）
+- **代码块**: 拆分渲染——文本段走 `renderMarkdown`，fenced 代码段走 `<CodeBlock>`（语言标签 + 复制 + >20 行折叠）
 - **SSE**: 通过 `EventSource` 订阅 daemon 事件流，实时更新消息状态
 
 ## 与 daemon 的交互

@@ -17,12 +17,15 @@ import {
   deleteVault,
   listKbHistory,
   addKbHistory,
+  getActiveVaultId,
+  setActiveVaultId,
 } from '../core/db.js';
 import {
   scanTree,
   countFiles,
   readFile,
   resolveFilePath,
+  resolveCanonicalPath,
   writeFile,
   deleteFile,
   createDirectory,
@@ -30,6 +33,9 @@ import {
   renamePath,
   ensureVaultDir,
   searchFiles,
+  importFiles,
+  isInsideProtected,
+  type ImportResult,
 } from '../core/knowledge.js';
 import { annotateTreeStatus } from '../core/wiki-status.js';
 import { VAULT_TREE_CHANGED_EVENT, type VaultWatcher } from '../core/vault-watcher.js';
@@ -85,6 +91,42 @@ export function knowledgeRoutes(
     return c.body(null, 204);
   });
 
+  // ─── Active vault ───
+
+  // GET /api/knowledge/active-vault — the user's currently-selected vault.
+  // Used by external clients (e.g. the Molio-forked Web Clipper) to know which
+  // vault a new clip should land in, mirroring "save to the open vault".
+  app.get('/active-vault', (c) => {
+    const id = getActiveVaultId(db);
+    if (!id) {
+      return c.json({ vaultId: null, vault: null });
+    }
+    const vault = getVault(db, id);
+    if (!vault) {
+      // Stale pointer — vault was deleted out of band. Clear it.
+      setActiveVaultId(db, null);
+      return c.json({ vaultId: null, vault: null });
+    }
+    return c.json({ vaultId: id, vault: { ...vault, fileCount: countFilesSafe(vault.path) } });
+  });
+
+  // POST /api/knowledge/active-vault { id } — set the active vault.
+  // Called by the web/desktop UI whenever the user switches vault, so external
+  // clients reading GET /active-vault follow along.
+  app.post('/active-vault', async (c) => {
+    const body = await c.req.json<{ id: string | null }>();
+    if (body.id === null || body.id === undefined) {
+      setActiveVaultId(db, null);
+      return c.json({ ok: true, vaultId: null });
+    }
+    const vault = getVault(db, body.id);
+    if (!vault) {
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
+    }
+    setActiveVaultId(db, body.id);
+    return c.json({ ok: true, vaultId: body.id });
+  });
+
   // ─── File tree ───
 
   // GET /api/knowledge/vaults/:id/tree — scan vault directory tree
@@ -134,6 +176,31 @@ export function knowledgeRoutes(
       }
       return c.json({ error: { code: 'INTERNAL', message } }, 500);
     }
+  });
+
+  // GET /api/knowledge/vaults/:id/resolve/* — resolve a (possibly extension-less
+  // or wiki-prefix-less) path to its canonical vault-relative path. Used by the
+  // frontend when opening files from assistant links / molio:// / graph, so the
+  // tab title and tree highlight match the real on-disk file.
+  app.get('/vaults/:id/resolve/*', (c) => {
+    const vault = getVault(db, c.req.param('id'));
+    if (!vault) {
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
+    }
+
+    const fullPath = c.req.path;
+    const prefix = `/api/knowledge/vaults/${vault.id}/resolve/`;
+    const relPath = decodeURIComponent(fullPath.slice(prefix.length));
+
+    if (!relPath) {
+      return c.json({ error: { code: 'BAD_REQUEST', message: 'File path is required' } }, 400);
+    }
+
+    const canonical = resolveCanonicalPath(vault.path, relPath);
+    if (canonical === null) {
+      return c.json({ error: { code: 'NOT_FOUND', message: 'File not found' } }, 404);
+    }
+    return c.json({ path: canonical });
   });
 
   // POST /api/knowledge/vaults/:id/files/* — write/create a file
@@ -206,6 +273,13 @@ export function knowledgeRoutes(
       const body = await c.req.json<{ newPath: string }>();
       if (!body.newPath) {
         return c.json({ error: { code: 'BAD_REQUEST', message: 'newPath is required' } }, 400);
+      }
+      // Explicit protected-dir check for clearer error messaging
+      if (isInsideProtected(relPath)) {
+        return c.json({ error: { code: 'BAD_REQUEST', message: `Cannot move files out of protected directory: ${relPath}` } }, 400);
+      }
+      if (isInsideProtected(body.newPath)) {
+        return c.json({ error: { code: 'BAD_REQUEST', message: `Cannot move files into protected directory: ${body.newPath}` } }, 400);
       }
       renamePath(vault.path, relPath, body.newPath);
       addKbHistory(db, vault.id, 'edit', `Renamed "${relPath}" → "${body.newPath}"`);
@@ -350,6 +424,88 @@ export function knowledgeRoutes(
     } catch (err) {
       console.error('[knowledge] asset upload failed:', err);
       const message = err instanceof Error ? err.message : 'Failed to upload asset';
+      return c.json({ error: { code: 'INTERNAL', message } }, 500);
+    }
+  });
+
+  // ─── File import (drag-and-drop / ImportModal) ───
+
+  const MAX_IMPORT_SIZE = 50 * 1024 * 1024; // 50 MB
+
+  // POST /api/knowledge/vaults/:id/import — import files via multipart
+  app.post('/vaults/:id/import', async (c) => {
+    const vault = getVault(db, c.req.param('id'));
+    if (!vault) {
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
+    }
+
+    // Size guard via Content-Length (if present — FormData uses chunked encoding)
+    const rawLen = c.req.header('Content-Length');
+    if (rawLen != null) {
+      const contentLength = parseInt(rawLen, 10);
+      if (contentLength > MAX_IMPORT_SIZE) {
+        return c.json({ error: { code: 'PAYLOAD_TOO_LARGE', message: 'Upload too large (max 50MB)' } }, 413);
+      }
+    }
+
+    try {
+      const body = await c.req.parseBody({ all: true });
+      const targetDir = (typeof body['targetDir'] === 'string' ? body['targetDir'] : '').replace(/^\/+|\/+$/g, '');
+      const conflict = (typeof body['conflict'] === 'string' ? body['conflict'] : 'ask') as
+        'ask' | 'skip' | 'replace' | 'rename';
+
+      // Validation: targetDir must not be a protected directory
+      if (targetDir && isInsideProtected(targetDir)) {
+        return c.json(
+          { error: { code: 'BAD_REQUEST', message: `Cannot import into protected directory: ${targetDir}` } },
+          400,
+        );
+      }
+
+      // Collect files from the multipart body
+      const fileEntries: Array<{ name: string; buffer: Buffer }> = [];
+      const perFileErrors: ImportResult['errors'] = [];
+      for (const [key, value] of Object.entries(body)) {
+        if (!key.startsWith('files')) continue;
+        if (Array.isArray(value)) {
+          for (const item of value) {
+            if (item && typeof item === 'object' && 'arrayBuffer' in item) {
+              const file = item as File;
+              const buf = Buffer.from(await file.arrayBuffer());
+              if (buf.byteLength > MAX_IMPORT_SIZE) {
+                perFileErrors.push({ file: file.name, reason: 'file_too_large' });
+              } else {
+                fileEntries.push({ name: file.name, buffer: buf });
+              }
+            }
+          }
+        } else if (value && typeof value === 'object' && 'arrayBuffer' in value) {
+          const file = value as File;
+          const buf = Buffer.from(await file.arrayBuffer());
+          if (buf.byteLength > MAX_IMPORT_SIZE) {
+            perFileErrors.push({ file: file.name, reason: 'file_too_large' });
+          } else {
+            fileEntries.push({ name: file.name, buffer: buf });
+          }
+        }
+      }
+
+      if (fileEntries.length === 0) {
+        return c.json({ error: { code: 'BAD_REQUEST', message: 'No files provided' } }, 400);
+      }
+
+      const result = importFiles(vault.path, fileEntries, targetDir, conflict);
+      result.errors = [...perFileErrors, ...result.errors];
+
+      // If conflict: "ask" and conflicts were found, return 409
+      if (result.conflicts && result.conflicts.length > 0) {
+        return c.json(result, 409);
+      }
+
+      addKbHistory(db, vault.id, 'import', `${result.imported.length} file(s) imported`);
+      return c.json(result, 200);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to import files';
       return c.json({ error: { code: 'INTERNAL', message } }, 500);
     }
   });

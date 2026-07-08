@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { useAgents } from './hooks/useAgents';
 import { useChat } from './hooks/useChat';
+import { useKbChat, type KbChatState } from './hooks/useKbChat';
 import { HomePage } from './components/HomePage';
 
 import { NavRail } from './components/NavRail';
@@ -14,6 +15,7 @@ import { LanguageProvider } from './i18n/LanguageProvider';
 import type { Locale } from './i18n';
 import { api } from './api/client';
 import { useActiveVault, vaultStore } from './stores/vaultStore';
+import { messageSelectionStore } from './stores/messageSelectionStore';
 import './styles/rail.css';
 import './styles/home.css';
 import './styles/knowledge.css';
@@ -37,6 +39,21 @@ export default function App() {
   const [configLoaded, setConfigLoaded] = useState(false);
   const chat = useChat({ agentId: selectedAgent, cwd: activeVault?.path });
 
+  // KB Chat — lifted to App level so chat state survives route navigation
+  const kbChatOnCompleteRef = useRef<() => void>(() => {});
+  const kbChat = useKbChat({
+    agentId: selectedAgent,
+    vaultPath: activeVault?.path ?? null,
+    onComplete: () => kbChatOnCompleteRef.current(),
+  });
+  const [kbChatOpen, setKbChatOpen] = useState(false);
+
+  // Stable callback so KnowledgeBasePage's registerKbChatOnComplete effect
+  // doesn't re-run on every App render.
+  const registerKbChatOnComplete = useCallback((fn: () => void) => {
+    kbChatOnCompleteRef.current = fn;
+  }, []);
+
   // Persist current route on change
   useEffect(() => {
     try {
@@ -55,6 +72,22 @@ export default function App() {
       } catch { /* ignore */ }
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // In-page navigation from molio:// protocol (desktop main → renderer IPC).
+  // When a clip lands and molio://open/... fires while the app is already open,
+  // the main process sends `molio:navigate` instead of reloading the window,
+  // so we route to the file via React Router with no flash/state loss.
+  useEffect(() => {
+    const electron = window.__electron__;
+    if (!electron?.onNavigate) return; // absent in plain browser dev
+    const unsub = electron.onNavigate(({ vaultId, filePath }) => {
+      navigate('/knowledge', { state: { openFile: filePath, vaultId: vaultId ?? undefined } });
+    });
+    // Signal readiness so main flushes any molio://open that arrived during
+    // cold start (before this listener was registered) instead of dropping it.
+    electron.notifyReady?.();
+    return unsub;
+  }, [navigate]);
 
   // Load config to get defaultAgentId and locale
   useEffect(() => {
@@ -150,6 +183,11 @@ export default function App() {
                   onOpenConversation={(conversationId) => {
                     void chat.loadConversationById(conversationId);
                   }}
+                  onRegenerate={chat.regenerateLast}
+                  onEdit={chat.editAndResend}
+                  onContinue={() => chat.send('继续')}
+                  onRequestDelete={(id) => messageSelectionStore.enterSelection(id, chat.messages)}
+                  onDeleteMessages={chat.deleteMessages}
                 />
               }
             />
@@ -168,6 +206,11 @@ export default function App() {
             <Route path="/knowledge" element={
             <KnowledgeBasePage
               agentId={selectedAgent}
+              // KB Chat — owned by App for navigation persistence
+              kbChat={kbChat}
+              kbChatOpen={kbChatOpen}
+              onKbChatOpenChange={setKbChatOpen}
+              registerKbChatOnComplete={registerKbChatOnComplete}
               onOpenConversation={(conversationId) => {
                 void chat.loadConversationById(conversationId).then(() => {
                   navigate('/');

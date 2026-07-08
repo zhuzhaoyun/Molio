@@ -163,3 +163,49 @@ function escapeHtml(text: string): string {
 function escapeAttr(text: string): string {
   return text.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
+
+export type Segment =
+  | { type: 'text'; content: string }
+  | { type: 'code'; lang: string; code: string };
+
+/**
+ * Split message content into text and fenced-code segments. Text segments are
+ * rendered with renderMarkdown (preserving wiki-link/list/etc. logic); code
+ * segments are rendered as interactive <CodeBlock> React components.
+ *
+ * Handles unclosed fences (streaming mid-code-block) by treating the tail as a
+ * code segment.
+ */
+export function splitContent(content: string): Segment[] {
+  if (!content) return [];
+  const segments: Segment[] = [];
+  const fence = /```(\w*)\n?/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = fence.exec(content)) !== null) {
+    const lang = match[1] || '';
+    const codeStart = match.index + match[0].length;
+    // Find the closing fence (``` on its own, possibly trailing).
+    const closeIdx = content.indexOf('```', codeStart);
+    if (closeIdx === -1) {
+      // Unclosed (streaming): emit preceding text + trailing code segment.
+      if (match.index > lastIndex) {
+        segments.push({ type: 'text', content: content.slice(lastIndex, match.index) });
+      }
+      segments.push({ type: 'code', lang, code: content.slice(codeStart) });
+      return segments;
+    }
+    if (match.index > lastIndex) {
+      segments.push({ type: 'text', content: content.slice(lastIndex, match.index) });
+    }
+    segments.push({ type: 'code', lang, code: content.slice(codeStart, closeIdx) });
+    lastIndex = closeIdx + 3; // skip past closing ```
+    fence.lastIndex = lastIndex;
+  }
+
+  if (lastIndex < content.length) {
+    segments.push({ type: 'text', content: content.slice(lastIndex) });
+  }
+  return segments;
+}

@@ -297,6 +297,32 @@ export const api = {
     await fetch(`${BASE}/conversations/${conversationId}`, { method: 'DELETE' });
   },
 
+  async rewindResend(conversationId: string, req: { newContent: string; agentId?: string; cwd?: string }): Promise<{ runId: string; conversationId: string }> {
+    const res = await fetch(`${BASE}/conversations/${conversationId}/rewind-resend`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error?.message ?? `Failed to rewind-resend: ${res.status}`);
+    }
+    return res.json();
+  },
+
+  async deleteMessages(conversationId: string, ids: string[]): Promise<{ deleted: number }> {
+    const res = await fetch(`${BASE}/conversations/${conversationId}/delete-messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error?.message ?? `Failed to delete messages: ${res.status}`);
+    }
+    return res.json();
+  },
+
   // ─── Weixin ClawBot ───
 
   async getWeixinStatus(): Promise<WeixinStatus> {
@@ -353,6 +379,23 @@ export const api = {
     await fetch(`${BASE}/knowledge/vaults/${id}`, { method: 'DELETE' });
   },
 
+  /** Returns the user's currently-active vault (the one external clippers target). */
+  async getActiveVault(): Promise<{ vaultId: string | null; vault: (Vault & { fileCount: number }) | null }> {
+    const res = await fetch(`${BASE}/knowledge/active-vault`);
+    if (!res.ok) throw new Error(`Failed to fetch active vault: ${res.status}`);
+    return res.json();
+  },
+
+  /** Set the active vault. Pass null to clear. Fire-and-forget safe. */
+  async setActiveVault(id: string | null): Promise<void> {
+    const res = await fetch(`${BASE}/knowledge/active-vault`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+    if (!res.ok) throw new Error(`Failed to set active vault: ${res.status}`);
+  },
+
   async getFileTree(vaultId: string): Promise<TreeNode[]> {
     const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/tree`);
     if (!res.ok) throw new Error(`Failed to fetch file tree: ${res.status}`);
@@ -365,6 +408,22 @@ export const api = {
     const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/files/${encoded}`);
     if (!res.ok) throw new Error(`Failed to read file: ${res.status}`);
     return res.json();
+  },
+
+  /**
+   * Resolve a (possibly extension-less / wiki-prefix-less) file path to its
+   * canonical vault-relative path with the real on-disk extension. Returns
+   * null on 404 (no match); throws on other errors. Used when opening files
+   * from assistant links / molio:// / graph so the tab title and tree highlight
+   * match the real file.
+   */
+  async resolveFilePath(vaultId: string, filePath: string): Promise<string | null> {
+    const encoded = encodeURIComponent(filePath).replace(/%2F/g, '/');
+    const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/resolve/${encoded}`);
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`Failed to resolve file path: ${res.status}`);
+    const data = await res.json();
+    return data.path as string;
   },
 
   /** Build URL for raw file access (images, PDFs, etc.) */
@@ -395,6 +454,40 @@ export const api = {
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: { message: `Upload failed: ${res.status}` } }));
       throw new Error(err.error?.message ?? `Upload failed: ${res.status}`);
+    }
+    return res.json();
+  },
+
+  /** Import files (upload) to a vault directory. */
+  async importFiles(
+    vaultId: string,
+    files: File[],
+    targetDir = '',
+    conflict = 'ask',
+  ): Promise<{
+    imported: string[];
+    renamed: Array<{ from: string; to: string }>;
+    skipped: string[];
+    errors: Array<{ file: string; reason: string }>;
+    conflicts?: Array<{ file: string; reason: string }>;
+  }> {
+    const formData = new FormData();
+    for (const file of files) {
+      formData.append('files', file);
+    }
+    if (targetDir) {
+      formData.append('targetDir', targetDir);
+    }
+    formData.append('conflict', conflict);
+
+    const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/import`, {
+      method: 'POST',
+      body: formData,
+    });
+    // 409 = conflict: "ask" with conflicts — still valid JSON response
+    if (!res.ok && res.status !== 409) {
+      const err = await res.json().catch(() => ({ error: { message: `Import failed: ${res.status}` } }));
+      throw new Error(err.error?.message ?? `Import failed: ${res.status}`);
     }
     return res.json();
   },

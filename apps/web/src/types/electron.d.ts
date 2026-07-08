@@ -25,6 +25,10 @@ interface DesktopAPI {
   openPath: (filePath: string) => Promise<string>;
   showItemInFolder: (filePath: string) => Promise<void>;
   renameFile: (oldPath: string, newPath: string) => Promise<string>;
+  /** Subscribe to in-page navigation requests from molio:// (no full reload). */
+  onNavigate: (callback: (payload: { vaultId: string | null; filePath: string }) => void) => () => void;
+  /** Signal the renderer has mounted its onNavigate listener; main flushes any queued navigation. */
+  notifyReady: () => void;
 }
 
 declare global {
