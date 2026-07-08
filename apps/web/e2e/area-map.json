@@ -133,7 +133,7 @@
     "kb-large-file": { "priority": "P0", "file": "kb-large-file.spec.ts" },
     "kb-large-file-gbk": { "priority": "P0", "file": "kb-large-file-gbk.spec.ts" },
     "kb-large-file-15mb": { "priority": "P0", "file": "kb-large-file-15mb.spec.ts" },
-    "kb-large-file-too-large": { "priority": "P1", "file": "kb-large-file-too-large.spec.ts" },
+    "kb-large-file-too-large": { "priority": "P2", "file": "kb-large-file-too-large.spec.ts" },
         "markdown-render": { "priority": "P1", "file": "markdown-render.spec.ts" },
     "navigation": { "priority": "P1", "file": "navigation.spec.ts" },
     "publish-flow": { "priority": "P0", "file": "publish-flow.spec.ts" },
