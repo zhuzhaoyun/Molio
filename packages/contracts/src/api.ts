@@ -115,6 +115,8 @@ export interface ConversationHistoryItem {
   conversation: Conversation;
   lastMessage: ChatMessage | null;
   messageCount: number;
+  vaultId?: string | null;
+  vaultName?: string | null;
 }
 
 export interface ProjectListResponse {
@@ -127,6 +129,23 @@ export interface ConversationListResponse {
 
 export interface ConversationHistoryListResponse {
   conversations: ConversationHistoryItem[];
+}
+
+export interface ListHistoryQuery {
+  /** undefined/null = all conversations; '__none__' = only unassociated (vault_id IS NULL) */
+  vaultId?: string | null;
+  channelType?: string;
+  agentId?: string;
+  /** Full-text search over message content. Empty = skip FTS. */
+  query?: string;
+  /** updated_at cursor (exclusive). Omit for first page. */
+  before?: number;
+  limit?: number;
+}
+
+export interface ConversationHistoryPage {
+  items: ConversationHistoryItem[];
+  nextCursor: number | null;
 }
 
 export interface MessageListResponse {

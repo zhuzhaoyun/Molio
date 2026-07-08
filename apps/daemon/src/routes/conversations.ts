@@ -24,7 +24,7 @@ export function conversationRoutes(
 
   // GET /api/conversations — list global conversation history
   app.get('/', (c) => {
-    const conversations = listConversationHistory(db, 200);
+    const { items: conversations } = listConversationHistory(db, { limit: 200 });
     return c.json({ conversations });
   });
 

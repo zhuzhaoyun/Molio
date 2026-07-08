@@ -10,7 +10,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
-import type { ChatMessage, Project, Conversation, Vault, KbHistoryEntry } from '@molio/contracts';
+import type { ChatMessage, Project, Conversation, ConversationHistoryItem, ConversationHistoryPage, ListHistoryQuery, Vault, KbHistoryEntry } from '@molio/contracts';
 
 type SqliteDb = Database.Database;
 
@@ -308,11 +308,51 @@ export function searchConversationIds(db: SqliteDb, query: string): string[] {
 
 export function listConversationHistory(
   db: SqliteDb,
-  limit = 100,
-): Array<{ conversation: Conversation; lastMessage: ChatMessage | null; messageCount: number }> {
+  opts: ListHistoryQuery = {},
+): ConversationHistoryPage {
+  const limit = clampHistoryLimit(opts.limit);
+
+  // If a search query is provided, resolve matching conversation_ids first.
+  // Empty hit set → short-circuit (avoid `IN ()` syntax error and pointless scan).
+  let hitIds: string[] | null = null;
+  if (opts.query && opts.query.trim()) {
+    hitIds = searchConversationIds(db, opts.query);
+    if (hitIds.length === 0) return { items: [], nextCursor: null };
+  }
+
+  const where: string[] = [];
+  const params: unknown[] = [];
+
+  if (opts.vaultId === '__none__') {
+    where.push('c.vault_id IS NULL');
+  } else if (opts.vaultId) {
+    where.push('c.vault_id = ?');
+    params.push(opts.vaultId);
+  }
+  if (opts.channelType) {
+    where.push('c.channel_type = ?');
+    params.push(opts.channelType);
+  }
+  if (opts.agentId) {
+    where.push('c.id IN (SELECT DISTINCT conversation_id FROM messages WHERE agent_id = ?)');
+    params.push(opts.agentId);
+  }
+  if (hitIds) {
+    where.push(`c.id IN (${hitIds.map(() => '?').join(', ')})`);
+    params.push(...hitIds);
+  }
+  if (opts.before != null && !Number.isNaN(opts.before)) {
+    where.push('c.updated_at < ?');
+    params.push(opts.before);
+  }
+
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  params.push(limit);
+
   const rows = db.prepare(`
     SELECT
       c.*,
+      v.name AS vault_name,
       COALESCE(stats.message_count, 0) AS message_count,
       lm.id AS last_id,
       lm.role AS last_role,
@@ -322,6 +362,7 @@ export function listConversationHistory(
       lm.events_json AS last_events_json,
       lm.created_at AS last_created_at
     FROM conversations c
+    LEFT JOIN vaults v ON v.id = c.vault_id
     LEFT JOIN (
       SELECT conversation_id, COUNT(*) AS message_count, MAX(position) AS max_position
       FROM messages
@@ -329,11 +370,24 @@ export function listConversationHistory(
     ) stats ON stats.conversation_id = c.id
     LEFT JOIN messages lm
       ON lm.conversation_id = c.id AND lm.position = stats.max_position
+    ${whereSql}
     ORDER BY c.updated_at DESC
     LIMIT ?
-  `).all(limit) as Array<Record<string, unknown>>;
+  `).all(...params) as Array<Record<string, unknown>>;
 
-  return rows.map((row) => ({
+  const items = rows.map(rowToHistoryItem);
+  const lastItem = items.at(-1);
+  const nextCursor = items.length === limit && lastItem ? lastItem.conversation.updatedAt : null;
+  return { items, nextCursor };
+}
+
+function clampHistoryLimit(n: number | undefined): number {
+  if (n == null || Number.isNaN(n) || n < 1) return 50;
+  return Math.min(Math.floor(n), 100);
+}
+
+function rowToHistoryItem(row: Record<string, unknown>): ConversationHistoryItem {
+  return {
     conversation: rowToConversation(row),
     lastMessage: row.last_id ? rowToMessage({
       id: row.last_id,
@@ -345,7 +399,9 @@ export function listConversationHistory(
       created_at: row.last_created_at,
     }) : null,
     messageCount: Number(row.message_count ?? 0),
-  }));
+    vaultId: (row.vault_id as string | null) ?? null,
+    vaultName: (row.vault_name as string | null) ?? null,
+  };
 }
 
 export function getConversation(db: SqliteDb, id: string): Conversation | null {
@@ -362,9 +418,14 @@ export function createConversation(db: SqliteDb, projectId: string, title?: stri
   return { id, projectId, title: title ?? null, channelType: 'desktop', externalSessionId: null, createdAt: now, updatedAt: now };
 }
 
-export function createDesktopConversation(db: SqliteDb, title?: string): Conversation {
+export function createDesktopConversation(db: SqliteDb, title?: string, vaultId?: string | null): Conversation {
   ensureDesktopProject(db);
-  return createConversation(db, DESKTOP_PROJECT_ID, title);
+  const conv = createConversation(db, DESKTOP_PROJECT_ID, title);
+  if (vaultId !== undefined) {
+    db.prepare('UPDATE conversations SET vault_id = ? WHERE id = ?').run(vaultId ?? null, conv.id);
+    return getConversation(db, conv.id)!;
+  }
+  return conv;
 }
 
 export interface ExternalConversationInput {

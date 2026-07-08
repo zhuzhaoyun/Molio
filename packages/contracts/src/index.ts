@@ -46,6 +46,8 @@ export type {
   Project,
   Conversation,
   ConversationHistoryItem,
+  ListHistoryQuery,
+  ConversationHistoryPage,
   ProjectListResponse,
   ConversationListResponse,
   ConversationHistoryListResponse,
