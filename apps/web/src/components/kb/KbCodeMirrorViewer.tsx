@@ -22,6 +22,8 @@ export interface KbCodeMirrorViewerHandle {
   scrollToBottom: () => void;
   /** Current selection text (empty if none). */
   getSelectionText: () => string;
+  /** Select the entire document. */
+  selectAll: () => void;
 }
 
 interface Props {
@@ -29,8 +31,6 @@ interface Props {
   fileName: string;
   encoding?: string;
   wrap: boolean;
-  onCopyFromSelection: (text: string) => void;
-  onAskAboutSelection: (text: string) => void;
   onRequestContextMenu: (e: { x: number; y: number; selectedText: string; source: 'codemirror' }) => void;
 }
 
@@ -59,7 +59,7 @@ const molioTheme = EditorView.theme({
 });
 
 export const KbCodeMirrorViewer = forwardRef<KbCodeMirrorViewerHandle, Props>(function KbCodeMirrorViewer(
-  { content, fileName, encoding, wrap, onCopyFromSelection, onAskAboutSelection, onRequestContextMenu },
+  { content, fileName, encoding, wrap, onRequestContextMenu },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -124,6 +124,10 @@ export const KbCodeMirrorViewer = forwardRef<KbCodeMirrorViewerHandle, Props>(fu
       const v = viewRef.current; if (!v) return '';
       const sel = v.state.selection.main;
       return sel.from === sel.to ? '' : v.state.sliceDoc(sel.from, sel.to);
+    },
+    selectAll() {
+      const v = viewRef.current; if (!v) return;
+      v.dispatch({ selection: EditorSelection.range(0, v.state.doc.length) });
     },
   }));
 
