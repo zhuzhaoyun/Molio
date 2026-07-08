@@ -295,6 +295,17 @@ export function listConversations(db: SqliteDb, projectId: string): Conversation
  * literal phrase content. With the trigram tokenizer a phrase match is a
  * substring match.
  */
+/**
+ * Rebuild the messages_fts index from scratch by repopulating from `messages`
+ * (the source of truth). Used by POST /api/maintenance/rebuild-fts as a
+ * disaster-recovery lever if the FTS index becomes corrupted/emptied.
+ */
+export function rebuildMessagesFts(db: SqliteDb): void {
+  db.exec('DELETE FROM messages_fts');
+  db.exec(`INSERT INTO messages_fts(content, conversation_id, message_id)
+           SELECT content, conversation_id, id FROM messages`);
+}
+
 export function searchConversationIds(db: SqliteDb, query: string): string[] {
   const trimmed = query.replace(/[\r\n]+/g, ' ').trim();
   if (!trimmed) return [];
