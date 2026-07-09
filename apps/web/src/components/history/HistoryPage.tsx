@@ -223,13 +223,13 @@ function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDelet
   onDeleteConfirm: (id: string) => void;
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
-  const { conversation, lastMessage, vaultName, vaultExists } = item;
+  const { conversation, lastMessage, vaultName, vaultExists, vaultId } = item;
   const isConfirming = confirmingDeleteId === conversation.id;
 
-  // Vault badge: shows vault name. Gray = alive, red + ⚠ = vault deleted.
-  // No name → no badge (deleted vault warning can't show without a name to attach to).
+  // Vault badge: gray pill with name = alive, red pill with name + ⚠ = deleted.
+  // When vault is deleted and we lost the name (historical), show just a ⚠ icon.
   const vaultLabel = vaultName || undefined;
-  const vaultDeleted = vaultLabel != null && !vaultExists;
+  const vaultDeleted = vaultId != null && !vaultExists;
   const vaultBadgeCls = vaultLabel
     ? `history-vault-badge${vaultDeleted ? ' history-vault-badge--deleted' : ''}`
     : undefined;
@@ -265,7 +265,7 @@ function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDelet
         <span className="history-row__body">
           <span className="history-row__title-line">
             <span className="history-row__title">{conversation.title || t('history.untitled')}</span>
-            {vaultBadgeCls && (
+            {vaultBadgeCls ? (
               <span className={vaultBadgeCls}>
                 {vaultLabel}
                 {vaultDeleted && (
@@ -274,7 +274,11 @@ function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDelet
                   </span>
                 )}
               </span>
-            )}
+            ) : vaultDeleted ? (
+              <span className="history-vault-warn" title={t('history.vaultDeleted')} aria-label={t('history.vaultDeleted')}>
+                <WarnIcon />
+              </span>
+            ) : null}
           </span>
           <span className="history-row__summary">{lastMessage?.content || t('history.noMessage')}</span>
         </span>

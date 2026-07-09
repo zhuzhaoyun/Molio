@@ -560,6 +560,20 @@
   height: 13px;
 }
 
+/* Standalone warn icon — no vault name, just the icon */
+.history-vault-warn {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--red);
+  cursor: help;
+}
+
+.history-vault-warn svg {
+  width: 16px;
+  height: 16px;
+}
+
 .history-row__summary {
   color: var(--text-muted);
   font-size: 13px;
