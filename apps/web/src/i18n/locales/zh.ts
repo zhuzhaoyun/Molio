@@ -275,6 +275,7 @@ const zh: Record<string, string> = {
   'kb.wrap': '自动换行',
   'kb.gotoLine': '跳行',
   'kb.scrollToBottom': '滚到底部',
+  'kb.scrollToTop': '滚到顶部',
   'kb.fileChatContextPrefix': '关于文件中的以下选中内容：',
   'kb.fileChatDefaultPrompt': '请帮我分析以上选中内容。',
   'kb.outlineTitle': '文档大纲',

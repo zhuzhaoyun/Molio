@@ -275,6 +275,7 @@ const en: Record<string, string> = {
   'kb.wrap': 'Wrap',
   'kb.gotoLine': 'Go to line',
   'kb.scrollToBottom': 'Scroll to bottom',
+  'kb.scrollToTop': 'Scroll to top',
   'kb.fileChatContextPrefix': 'Regarding the following selection from the file:',
   'kb.fileChatDefaultPrompt': 'Please analyze the selection above.',
   'kb.outlineTitle': 'Outline',

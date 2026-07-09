@@ -309,9 +309,9 @@ export function KbMainContent({
                 data-testid="kb-btn-wrap"
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
-                  <polyline points="16 4 21 4 21 9" />
-                  <line x1="21" y1="4" x2="14" y2="11" />
-                  <path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5" />
+                  <path d="M4 6h12" />
+                  <polyline points="16 6 16 10 10 10" />
+                  <path d="M4 13h8" />
                 </svg>
               </button>
               <button
@@ -325,9 +325,21 @@ export function KbMainContent({
                 data-testid="kb-btn-goto"
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
-                  <path d="M4 7V4h16v3" />
-                  <path d="M9 20h6" />
-                  <path d="M12 4v16" />
+                  <path d="M10 4v16 M14 4v16" />
+                  <line x1="7" y1="9" x2="17" y2="9" />
+                  <line x1="7" y1="15" x2="17" y2="15" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className="kb-btn kb-btn-ghost"
+                onClick={() => cmRef.current?.scrollToTop()}
+                title={t('kb.scrollToTop')}
+                data-testid="kb-btn-top"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                  <line x1="12" y1="19" x2="12" y2="5" />
+                  <polyline points="5 12 12 5 19 12" />
                 </svg>
               </button>
               <button

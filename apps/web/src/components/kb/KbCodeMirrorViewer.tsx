@@ -18,6 +18,8 @@ export interface KbCodeMirrorViewerHandle {
   gotoLine: (n: number) => void;
   /** Scroll to the end of the document. */
   scrollToBottom: () => void;
+  /** Scroll to the top of the document. */
+  scrollToTop: () => void;
   /** Current selection text (empty if none). */
   getSelectionText: () => string;
   /** Select the entire document. */
@@ -116,6 +118,10 @@ export const KbCodeMirrorViewer = forwardRef<KbCodeMirrorViewerHandle, Props>(fu
     scrollToBottom() {
       const v = viewRef.current; if (!v) return;
       v.scrollDOM.scrollTop = v.scrollDOM.scrollHeight;
+    },
+    scrollToTop() {
+      const v = viewRef.current; if (!v) return;
+      v.scrollDOM.scrollTop = 0;
     },
     getSelectionText() {
       const v = viewRef.current; if (!v) return '';
