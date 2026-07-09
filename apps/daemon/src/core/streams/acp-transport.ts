@@ -63,6 +63,13 @@ export class AcpTransport {
     private readonly send: (json: string) => void,
     /** Emits a mapped Molio AgentEvent. */
     private readonly onEvent: (ev: AgentEvent) => void,
+    /**
+     * Kills the child process when a timeout fires or the transport enters a
+     * degraded state. Called AFTER the pending request is rejected so the run
+     * fails fast instead of leaking a hung process that only cancelRun or the
+     * 30-min TTL would clean up. Default no-op keeps tests/mocks simple.
+     */
+    private readonly killChild: () => void = () => {},
   ) {}
 
   /** Feed a chunk of stdout (string or Buffer) — splits newline-delimited JSON frames. */
@@ -70,23 +77,26 @@ export class AcpTransport {
     this.buffer += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
     // Any stdout data counts as activity — reset idle timers before parsing.
     this.noteActivity();
-    if (this.buffer.length > AcpTransport.MAX_BUFFER_SIZE) {
-      // Drop everything and surface as a raw event so it isn't silently lost.
-      // Continuing to parse a 10MB+ partial frame risks OOM and is almost
-      // certainly garbage (binary data, malformed JSON, or a hostile payload).
-      const dropped = this.buffer.length;
-      this.buffer = '';
-      this.onEvent({
-        type: 'raw',
-        line: `[AcpTransport buffer overflow — dropped ${dropped} bytes without a newline]`,
-      });
-      return;
-    }
+    // Parse all complete frames first — a large chunk that contains newlines
+    // is legitimate (batched notifications), so we shouldn't trigger overflow
+    // on the total chunk size, only on the leftover incomplete-frame tail.
     let nl: number;
     while ((nl = this.buffer.indexOf('\n')) !== -1) {
       const line = this.buffer.slice(0, nl).trim();
       this.buffer = this.buffer.slice(nl + 1);
       if (line) this.handleLine(line);
+    }
+    // If the remaining buffer (an incomplete frame with no trailing newline)
+    // exceeds the cap, the agent is spewing data without newlines — binary
+    // garbage, malformed JSON, or a hostile payload. Drop it, emit an error
+    // so the user sees the diagnostic, and reject the oldest pending request
+    // so the run fails fast instead of waiting for the 30-min absolute timeout.
+    if (this.buffer.length > AcpTransport.MAX_BUFFER_SIZE) {
+      const dropped = this.buffer.length;
+      this.buffer = '';
+      const msg = `ACP buffer overflow — dropped ${dropped} bytes without a complete newline`;
+      this.onEvent({ type: 'error', message: msg });
+      this.rejectOldestPending(new Error(msg));
     }
   }
 
@@ -121,6 +131,10 @@ export class AcpTransport {
           if (this.pending.delete(id)) {
             this.clearEntryTimers(entry);
             reject(new Error(`ACP absolute timeout: ${method} (${absoluteTimeoutMs}ms)`));
+            // Kill the child so a hung agent doesn't leak — without this the
+            // process keeps running until cancelRun or natural exit, which
+            // could be never on a true hang.
+            this.killChild();
           }
         }, absoluteTimeoutMs);
       }
@@ -160,6 +174,27 @@ export class AcpTransport {
     this.cancelledSessionIds.clear();
   }
 
+  /**
+   * Reject the oldest pending request (FIFO — Map preserves insertion order,
+   * and nextId increments so the first inserted is the oldest). Used when
+   * stdout delivers a frame that can't be associated with any specific request:
+   * non-JSON output (Python traceback to stdout) or buffer overflow. The
+   * caller has already decided the transport is degraded; rejecting the oldest
+   * request lets RunManager's catch handler surface the error and finish the
+   * run instead of waiting for the idle/absolute timeout.
+   *
+   * No-op when nothing is pending — the caller is responsible for emitting
+   * any standalone error event in that case (see feed() overflow path).
+   */
+  private rejectOldestPending(error: Error): void {
+    const first = this.pending.entries().next();
+    if (first.done) return;
+    const [id, entry] = first.value;
+    this.pending.delete(id);
+    this.clearEntryTimers(entry);
+    entry.reject(error);
+  }
+
   /** Test/inspection: are there any in-flight requests? Used by RunManager to
    *  decide whether a process exit was a mid-prompt crash or a clean shutdown. */
   hasPending(): boolean {
@@ -191,6 +226,9 @@ export class AcpTransport {
       if (this.pending.delete(id)) {
         this.clearEntryTimers(entry);
         entry.reject(new Error(`ACP idle timeout: ${method} (no activity for ${idleTimeoutMs}ms)`));
+        // Kill the child so a hung agent doesn't leak — same rationale as
+        // the absolute-timer path.
+        this.killChild();
       }
     }, idleTimeoutMs);
   }
@@ -207,8 +245,20 @@ export class AcpTransport {
     try {
       msg = JSON.parse(line);
     } catch {
-      // Not valid JSON — surface as a raw event so it isn't silently lost.
-      this.onEvent({ type: 'raw', line });
+      // Not valid JSON. Surface as a raw event so the line is preserved in
+      // events.jsonl for remote diagnosis. If a request is pending, the
+      // agent is likely spewing a Python traceback to stdout (instead of
+      // stderr) — reject the oldest pending request so RunManager's catch
+      // handler surfaces a diagnostic immediately, rather than the user
+      // waiting for the idle timeout (handshake 15s / prompt 5min) with
+      // no clue what went wrong. Truncate the raw line so a huge traceback
+      // doesn't bloat the event log.
+      this.onEvent({ type: 'raw', line: line.length > 500 ? line.slice(0, 500) + '…' : line });
+      this.rejectOldestPending(
+        new Error(
+          `ACP protocol violation: agent wrote non-JSON to stdout: ${line.slice(0, 120)}`,
+        ),
+      );
       return;
     }
 

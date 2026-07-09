@@ -110,6 +110,28 @@ describe('RunManager ACP integration (Hermes)', () => {
     assert.ok(events.some((e) => e.type === 'turn_end'));
   });
 
+  it('canAcceptMessage returns false while ACP session is initializing (P1-3)', async () => {
+    // P1-3: during initAcp, run.acp exists but sessionId is '' (session/new
+    // hasn't resolved). canAcceptMessage must return false so callers like
+    // WeixinService don't fire session/prompt at a half-initialized session.
+    process.env['FAKE_HERMES_SLOW_INIT_MS'] = '5000';
+    const runId = await runManager.createRun({ agentId: 'hermes', message: 'hi' });
+    // Let initAcp's sync part run (sets run.acp = { sessionId: '' }).
+    await new Promise((r) => setTimeout(r, 50));
+    assert.equal(runManager.canAcceptMessage(runId), false);
+    runManager.cancelRun(runId);
+  });
+
+  it('canAcceptMessage returns true after ACP session is initialized', async () => {
+    // After session/new resolves, sessionId is non-empty and stdin is open
+    // for multi-turn follow-ups. canAcceptMessage must return true so
+    // WeixinService can reuse the session instead of spawning a fresh run.
+    const runId = await runManager.createRun({ agentId: 'hermes', message: 'hi' });
+    await collectEvents(runId, (ev) => ev.type === 'models');
+    assert.equal(runManager.canAcceptMessage(runId), true);
+    runManager.cancelRun(runId);
+  });
+
   it('cancelRun marks session cancelled and terminates the process', async () => {
     const runId = await runManager.createRun({ agentId: 'hermes', message: 'hi' });
     await collectEvents(runId, (ev) => ev.type === 'models');

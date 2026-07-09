@@ -7,13 +7,14 @@ import type {
   AgentEvent, AgentInfo, RuntimeAgentDef, RunInfo, RunStatus, ChatMessage,
 } from '@molio/contracts';
 import { getAgentDef, listAgentDefs } from './runtimes/registry.js';
-import { resolveAgentBinary, probeVersion } from './runtimes/launch.js';
+import { resolveAgentBinary, probeVersion, needsShellOnWindows } from './runtimes/launch.js';
 import { buildSpawnEnv, createStderrDecoder } from './runtimes/env.js';
 import { createClaudeStreamHandler } from './streams/claude-stream.js';
 import { createCodexStreamHandler } from './streams/codex-stream.js';
 import { createJsonEventStreamHandler } from './streams/json-event-stream.js';
 import { AcpTransport } from './streams/acp-transport.js';
 import { formatAcpInitFailure } from './acp-errors.js';
+import { ensureAcpExtra, HermesRepairError } from './runtimes/hermes.js';
 import type { StreamHandler } from '@molio/contracts';
 import { createJsonlParser } from './streams/jsonl-parser.js';
 import { loadConfig, getAgentConfig, buildAgentEnv } from './config.js';
@@ -274,7 +275,7 @@ export class RunManager {
     );
 
     const stdinMode = def.promptViaStdin || def.transport === 'acp-jsonrpc' ? 'pipe' : 'ignore';
-    const isCmd = process.platform === 'win32' && (result.binary.endsWith('.cmd') || result.binary.endsWith('.bat'));
+    const isCmd = needsShellOnWindows(result.binary);
     // On Windows with shell: true, Node.js concatenates args with spaces.
     // Wrap args containing spaces in double quotes so they remain single arguments.
     const spawnArgs = isCmd
@@ -285,11 +286,37 @@ export class RunManager {
           return arg;
         })
       : args;
+
+    // ── Just-in-time [acp] extra auto-repair (Hermes) ──────────────────────
+    // Before spawning an ACP agent, probe `hermes-acp --check`. If the venv is
+    // missing the [acp] extra (agent-client-protocol), auto-install it into
+    // the venv so the user doesn't have to drop into a terminal. Other missing
+    // modules surface as an error with a copyable manual-fix command. See
+    // runtimes/hermes.ts:ensureAcpExtra for the full state machine.
+    if (def.transport === 'acp-jsonrpc') {
+      try {
+        await ensureAcpExtra(result.binary, {
+          onProgress: (message) => {
+            this.emitEvent(run, { type: 'repairing', message });
+          },
+        });
+      } catch (err) {
+        const message = err instanceof HermesRepairError
+          ? formatAcpInitFailure(err, undefined, result.binary)
+          : `ACP pre-spawn repair failed: ${err instanceof Error ? err.message : String(err)}`;
+        this.emitEvent(run, { type: 'error', message });
+        this.finishRun(run, 'failed', 1, null);
+        return runId;
+      }
+    }
+
     const child: ChildProcess = spawn(result.binary, spawnArgs, {
       env,
       stdio: [stdinMode, 'pipe', 'pipe'],
       cwd: opts.cwd || agentConfig.env?.['MOLIO_CWD'] || process.cwd(),
-      // On Windows, .cmd/.bat files must be spawned with shell: true to avoid EINVAL
+      // On Windows, .cmd/.bat shims and extensionless POSIX shims must be spawned
+      // with shell: true — see launch.ts:needsShellOnWindows. Without it,
+      // CreateProcess fails with EINVAL/ENOENT (D8 root cause).
       shell: isCmd,
       windowsVerbatimArguments: process.platform === 'win32' && !isCmd,
     });
@@ -462,6 +489,18 @@ export class RunManager {
         if (child.stdin?.writable) child.stdin.write(json, 'utf8');
       },
       (ev) => this.emitEvent(run, ev),
+      // On idle/absolute timeout the transport rejects the pending request,
+      // then calls this to kill the child so a hung hermes-acp doesn't leak
+      // until the 30-min TTL. SIGTERM → 5s → SIGKILL matches cancelRun's pattern.
+      () => {
+        if (child.killed) return;
+        try { child.kill('SIGTERM'); } catch { /* already dead */ }
+        setTimeout(() => {
+          if (!child.killed) {
+            try { child.kill('SIGKILL'); } catch { /* ignore */ }
+          }
+        }, 5000);
+      },
     );
 
     // Assign to run.acp early (sessionId filled in after session/new) so the
@@ -475,11 +514,13 @@ export class RunManager {
 
     const acp = def.acp!;
     // Test escape hatch: env overrides for ACP timeouts so integration tests
-    // don't have to wait the full 15s idle / 5min absolute defaults.
-    const idleTimeout = Number(process.env.MOLIO_ACP_IDLE_TIMEOUT_MS) ||
-      acp.idleTimeoutMs || 15000;
-    const absoluteTimeout = Number(process.env.MOLIO_ACP_ABSOLUTE_TIMEOUT_MS) ||
-      acp.absoluteTimeoutMs || 300000;
+    // don't have to wait the full 15s idle / 30min absolute defaults. Fallbacks
+    // match hermes.ts so a def missing an acp field still gets the right cap
+    // (previously absolute fell back to 5min, not 30min).
+    const envIdle = Number(process.env.MOLIO_ACP_IDLE_TIMEOUT_MS);
+    const idleTimeout = envIdle > 0 ? envIdle : (acp.idleTimeoutMs ?? 15000);
+    const envAbsolute = Number(process.env.MOLIO_ACP_ABSOLUTE_TIMEOUT_MS);
+    const absoluteTimeout = envAbsolute > 0 ? envAbsolute : (acp.absoluteTimeoutMs ?? 1800000);
 
     // initialize
     await transport.request(
@@ -517,6 +558,11 @@ export class RunManager {
       });
     }
 
+    // Session is live — stdin stays open for multi-turn follow-ups via
+    // sendMessage. Without this, canAcceptMessage would always return false
+    // for ACP runs (it checks stdinOpen), blocking WeixinService's session
+    // reuse path even on healthy long-running hermes processes.
+    run.stdinOpen = true;
     this.emitEvent(run, { type: 'status', label: 'running' });
   }
 
@@ -576,6 +622,12 @@ export class RunManager {
     if (TERMINAL_STATUSES.has(run.status)) return false;
     const def = getAgentDef(run.agentId);
     if (!def?.multiTurn) return false;
+    // ACP runs additionally require a live session — stdin can still be
+    // writable while the internal session is dead (process in a weird half-
+    // alive state). Without this check, sendMessage would fire session/prompt
+    // at a stale sessionId and the user wouldn't learn it's broken until the
+    // idle timeout fires 5min later.
+    if (def.transport === 'acp-jsonrpc' && !run.acp?.sessionId) return false;
     return run.stdinOpen && !!run.child?.stdin?.writable;
   }
 
@@ -604,11 +656,19 @@ export class RunManager {
       const acp = def.acp!;
       // Prompt phase uses a longer idle timeout than handshake — hermes goes
       // silent while waiting for the LLM to respond (compiling system prompt,
-      // loading tool defs, first-token latency).
-      const promptIdle = Number(process.env.MOLIO_ACP_PROMPT_IDLE_TIMEOUT_MS) ||
-        acp.promptIdleTimeoutMs || 60000;
-      const absoluteTimeout = Number(process.env.MOLIO_ACP_ABSOLUTE_TIMEOUT_MS) ||
-        acp.absoluteTimeoutMs || 300000;
+      // loading tool defs, first-token latency). Fallbacks match hermes.ts
+      // defaults (promptIdle 5min / absolute 30min) — the previous `|| 60000`
+      // fallback was a stale 1min value that tripped on any real workflow.
+      // `> 0` check preserves an explicit 0 from env (not that anyone would
+      // want 0, but `||` would coerce it to the fallback and hide intent).
+      const envPromptIdle = Number(process.env.MOLIO_ACP_PROMPT_IDLE_TIMEOUT_MS);
+      const promptIdle = envPromptIdle > 0
+        ? envPromptIdle
+        : (acp.promptIdleTimeoutMs ?? 300000);
+      const envAbsolute = Number(process.env.MOLIO_ACP_ABSOLUTE_TIMEOUT_MS);
+      const absoluteTimeout = envAbsolute > 0
+        ? envAbsolute
+        : (acp.absoluteTimeoutMs ?? 1800000);
       // Fire-and-forget: events flow in via session/update notifications during the await;
       // turn_end is emitted when the prompt response arrives.
       transport.request(

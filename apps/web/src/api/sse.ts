@@ -25,12 +25,17 @@ export function subscribeToRun(
 
   es.onerror = (err) => {
     onError?.(err);
-    // EventSource auto-reconnects by default
+    // If the daemon process exited (connection closed for good, not a
+    // transient network blip), readyState is CLOSED. The browser's default
+    // auto-reconnect would hammer /api/runs/:id/events forever with no
+    // server to reach — close it and signal completion so the UI can
+    // unlock the input. Transient failures (readyState still CONNECTING/
+    // OPEN) keep the default reconnect behavior.
+    if (es.readyState === EventSource.CLOSED) {
+      es.close();
+      onDone?.();
+    }
   };
-
-  // Listen for close via status changes
-  // The server sends an 'end' event through the agent events
-  // which the consumer can detect
 
   return es;
 }

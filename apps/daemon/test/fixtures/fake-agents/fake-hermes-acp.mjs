@@ -33,6 +33,15 @@ if (process.argv.includes('--version')) {
   process.exit(0);
 }
 
+// `hermes-acp --check` is the integrity probe RunManager runs before spawn
+// (see runtimes/hermes.ts:ensureAcpExtra). For tests, treat it as always OK
+// — the fake server has no real venv to repair. Tests that want to exercise
+// the repair path use the hermes-ensure-acp-extra.test.ts unit tests with
+// dependency injection, not this fixture.
+if (process.argv.includes('--check')) {
+  process.exit(0);
+}
+
 const NO_INIT = process.env['FAKE_HERMES_NO_INIT'] === '1';
 const INIT_ERROR = process.env['FAKE_HERMES_INIT_ERROR'] === '1';
 const SLOW_INIT_MS = Number(process.env['FAKE_HERMES_SLOW_INIT_MS'] ?? '0');

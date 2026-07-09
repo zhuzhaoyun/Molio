@@ -71,12 +71,14 @@ describe('AcpTransport', () => {
 
     it('idle timer resets on stdout activity (feed) — slow server stays pending', async () => {
       const { transport, sent } = harness();
-      // Idle timeout 60ms; we feed a non-JSON line every 30ms — should NOT time out.
+      // Idle timeout 60ms; we feed a JSON notification every 30ms — should NOT time out.
+      // (Using JSON, not raw text, because non-JSON stdout is now a protocol
+      // violation that rejects pending requests — see the "rejects oldest
+      // pending" test below.)
       const p = transport.request('slow-init', {}, { idleTimeoutMs: 60, absoluteTimeoutMs: 5000 });
       const start = Date.now();
       const feeder = setInterval(() => {
-        // Non-JSON stdout line — still counts as activity (feed resets idle timer).
-        transport.feed('loading plugin x\n');
+        feedLine(transport, { jsonrpc: '2.0', method: 'progress', params: { stage: 'loading' } });
       }, 30);
       // After 150ms (well past the 60ms idle), feed the actual response.
       setTimeout(() => {
@@ -147,6 +149,74 @@ describe('AcpTransport', () => {
       const { transport, events } = harness();
       transport.feed('this is not json\n');
       assert.deepEqual(events, [{ type: 'raw', line: 'this is not json' }]);
+    });
+
+    it('rejects oldest pending request when stdout delivers non-JSON (Python traceback to stdout)', async () => {
+      // D1 fix: previously, non-JSON stdout was a silent raw event and the
+      // request waited for the idle timeout (handshake 15s / prompt 5min)
+      // before the user saw a diagnostic. Now the oldest pending request is
+      // rejected immediately so RunManager's catch handler surfaces the error.
+      const { transport, events } = harness();
+      const p = transport.request('session/prompt', { x: 1 }, { absoluteTimeoutMs: 5000 });
+      // Simulate a Python traceback leaking to stdout (agent crashed, stderr
+      // went to stdout instead of stderr).
+      transport.feed('Traceback (most recent call last):\n  File "<stdin>", line 1\nModuleNotFoundError: No module named \'acp\'\n');
+      await assert.rejects(p, /ACP protocol violation: agent wrote non-JSON to stdout/);
+      // Raw event still emitted (truncated) so the line is preserved in events.jsonl for diagnosis.
+      const raw = events.find(e => e.type === 'raw' && typeof e.line === 'string' && e.line.includes('Traceback'));
+      assert.ok(raw, 'raw event with traceback line should be emitted for diagnosis');
+    });
+
+    it('truncates raw line for non-JSON stdout to 500 chars', () => {
+      const { transport, events } = harness();
+      const huge = 'x'.repeat(2000);
+      transport.feed(huge + '\n');
+      const raw = events.find(e => e.type === 'raw');
+      assert.ok(raw);
+      assert.ok((raw as any).line.length <= 501, 'raw line should be truncated to ≤500 chars + ellipsis');
+    });
+
+    it('buffer overflow rejects oldest pending and emits error', async () => {
+      // D4 fix: previously, buffer overflow dropped everything and only emitted
+      // a raw event — the request then waited for the 30-min absolute timeout.
+      // Now it rejects the oldest pending request immediately and emits an error.
+      const { transport, events } = harness();
+      const p = transport.request('session/prompt', {}, { absoluteTimeoutMs: 5000 });
+      // 11MB of garbage with no newline — well past the 10MB cap.
+      transport.feed('x'.repeat(11 * 1024 * 1024));
+      await assert.rejects(p, /ACP buffer overflow — dropped \d+ bytes/);
+      const err = events.find(e => e.type === 'error' && typeof e.message === 'string' && e.message.includes('buffer overflow'));
+      assert.ok(err, 'error event should be emitted for overflow');
+    });
+
+    it('buffer overflow does not trip on large batched frames with newlines', () => {
+      // Regression guard: a large chunk that DOES contain newlines is legitimate
+      // (batched notifications) and must not trigger overflow. Only the leftover
+      // incomplete-frame tail (no trailing newline) counts toward the cap.
+      const { transport, events } = harness();
+      // 11MB of valid JSON notification frames, each newline-terminated.
+      const frame = '{"jsonrpc":"2.0","method":"progress","params":{}}\n';
+      const big = frame.repeat(Math.ceil(11 * 1024 * 1024 / frame.length));
+      transport.feed(big);
+      // No overflow error — all frames parsed (progress is an unknown method,
+      // so no events emitted, but no error either).
+      const err = events.find(e => e.type === 'error');
+      assert.equal(err, undefined, 'batched frames with newlines should not trigger overflow');
+    });
+
+    it('buffer overflow preserves subsequent frames fed after overflow', () => {
+      // After overflow resets the buffer, subsequent valid frames must still
+      // parse normally — the transport isn't permanently broken.
+      const { transport, events } = harness();
+      // 11MB garbage with no newline — triggers overflow, buffer reset to ''.
+      transport.feed('x'.repeat(11 * 1024 * 1024));
+      // Now feed a valid frame — should parse normally.
+      feedLine(transport, {
+        jsonrpc: '2.0', method: 'session/update',
+        params: { sessionId: 's', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'after' } } },
+      });
+      assert.ok(events.some(e => e.type === 'text_delta' && (e as any).delta === 'after'),
+        'valid frame after overflow should produce text_delta');
     });
   });
 
@@ -292,6 +362,48 @@ describe('AcpTransport', () => {
       assert.equal(obj.method, 'some/method');
       assert.equal(obj.id, undefined);
       assert.deepEqual(obj.params, { x: 1 });
+    });
+  });
+
+  describe('killChild callback (P1-2)', () => {
+    function harnessWithKill() {
+      let killCalled = 0;
+      const transport = new AcpTransport(
+        () => {},
+        () => {},
+        () => { killCalled++; },
+      );
+      return { transport, killCalled: () => killCalled };
+    }
+
+    it('calls killChild on idle timeout so a hung agent does not leak', async () => {
+      const { transport, killCalled } = harnessWithKill();
+      const p = transport.request('slow', {}, { idleTimeoutMs: 50 });
+      await assert.rejects(p, /ACP idle timeout/);
+      assert.equal(killCalled(), 1, 'killChild should fire exactly once on idle timeout');
+    });
+
+    it('calls killChild on absolute timeout so a hung agent does not leak', async () => {
+      const { transport, killCalled } = harnessWithKill();
+      const p = transport.request('capped', {}, { absoluteTimeoutMs: 50 });
+      await assert.rejects(p, /ACP absolute timeout/);
+      assert.equal(killCalled(), 1, 'killChild should fire exactly once on absolute timeout');
+    });
+
+    it('does NOT call killChild on normal response resolution', async () => {
+      const { transport, killCalled } = harnessWithKill();
+      const p = transport.request('normal', {});
+      feedLine(transport, { jsonrpc: '2.0', id: 1, result: 'ok' });
+      await p;
+      assert.equal(killCalled(), 0, 'killChild must not fire on normal resolution');
+    });
+
+    it('does NOT call killChild on rejectAll (process exit owns that path)', async () => {
+      const { transport, killCalled } = harnessWithKill();
+      const p = transport.request('a', {}, { absoluteTimeoutMs: 5000 });
+      transport.rejectAll(new Error('process exited'));
+      await assert.rejects(p, /process exited/);
+      assert.equal(killCalled(), 0, 'killChild must not fire on rejectAll — child.on(close) handles the lifecycle');
     });
   });
 });

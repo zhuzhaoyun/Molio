@@ -1,6 +1,12 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { formatAcpInitFailure, detectBrokenInstallHint } from '../../src/core/acp-errors.js';
+import {
+  formatAcpInitFailure,
+  detectBrokenInstallHint,
+  extractMissingModuleName,
+  buildManualPipCommand,
+  buildRepairErrorMessage,
+} from '../../src/core/acp-errors.js';
 
 /**
  * Unit tests for acp-errors — the broken-install detection + friendly error
@@ -39,6 +45,20 @@ describe('acp-errors', () => {
       assert.equal(detectBrokenInstallHint(undefined), null);
       assert.equal(detectBrokenInstallHint(''), null);
       assert.equal(detectBrokenInstallHint('   '), null);
+    });
+
+    it('detects "No matching distribution" (pip install failure)', () => {
+      const hint = detectBrokenInstallHint('ERROR: No matching distribution found for agent-client-protocol==0.9.0');
+      assert.ok(hint);
+      assert.match(hint!, /无法安装.*agent-client-protocol==0.9.0/);
+      assert.match(hint!, /Python 版本不兼容或网络问题/);
+    });
+
+    it('detects SyntaxError (venv python too old)', () => {
+      const hint = detectBrokenInstallHint("SyntaxError: invalid syntax. Perhaps you forgot a ','?");
+      assert.ok(hint);
+      assert.match(hint!, /SyntaxError/);
+      assert.match(hint!, /venv Python 版本可能过低/);
     });
 
     it('returns null for non-install errors', () => {
@@ -86,6 +106,87 @@ describe('acp-errors', () => {
       // be defensive).
       const msg = formatAcpInitFailure(new Error('hermes-acp process exited (code=1)'), undefined, undefined);
       assert.equal(msg, 'ACP init failed: hermes-acp process exited (code=1)');
+    });
+
+    it('preserves copyable command block from ensureAcpExtra errors', () => {
+      // When ensureAcpExtra throws HermesRepairError, the message already
+      // contains a fenced code block with the manual pip command. The web UI
+      // detects ``` blocks and renders a 复制 button. formatAcpInitFailure
+      // must pass the block through verbatim and append only the binary path
+      // so users can compare installs.
+      const err = new Error(
+        'Hermes 自动修复失败（pip install 出错）。请手动运行以下命令修复（hermes-agent venv）：\n\n```\n& "C:\\py.exe" -m pip install agent-client-protocol==0.9.0\n```\n\n最后 stderr：\n```\nERROR: network down\n```',
+      );
+      const msg = formatAcpInitFailure(
+        err,
+        undefined,
+        'C:\\Users\\Administrator\\AppData\\Local\\hermes\\hermes-agent\\venv\\Scripts\\hermes-acp.exe',
+      );
+      // Fenced block preserved (use string includes, not regex, to avoid
+      // backslash-escaping confusion between source literal and regex)
+      assert.ok(msg.includes('```\n& "C:\\py.exe" -m pip install agent-client-protocol==0.9.0\n```'));
+      // Binary path appended for diagnosis
+      assert.ok(msg.includes('[binary:'));
+      assert.ok(msg.includes('hermes-acp.exe]'));
+      // No duplicate "ACP init failed:" prefix tacked on (would mangle the block)
+      assert.ok(!msg.startsWith('ACP init failed: Hermes'));
+    });
+  });
+
+  describe('extractMissingModuleName', () => {
+    it('extracts the module name from ModuleNotFoundError', () => {
+      assert.equal(extractMissingModuleName("ModuleNotFoundError: No module named 'acp'"), 'acp');
+      assert.equal(extractMissingModuleName("ModuleNotFoundError: No module named 'foo.bar'"), 'foo.bar');
+    });
+
+    it('extracts the name from ImportError cannot import name', () => {
+      assert.equal(extractMissingModuleName("ImportError: cannot import name 'X' from 'Y'"), 'X');
+    });
+
+    it('returns null for non-import errors and non-module patterns', () => {
+      // DistributionNotFoundError and SyntaxError are not missing-module
+      // categories — extractMissingModuleName must return null for them so
+      // ensureAcpExtra (hermes.ts) doesn't try to auto-repair them as if
+      // they were a missing `acp` module.
+      assert.equal(extractMissingModuleName('RuntimeError: foo'), null);
+      assert.equal(extractMissingModuleName('2026-07-08 10:00:00 [INFO] hermes: starting'), null);
+      assert.equal(
+        extractMissingModuleName('ERROR: No matching distribution found for agent-client-protocol==0.9.0'),
+        null,
+      );
+      assert.equal(extractMissingModuleName("SyntaxError: invalid syntax"), null);
+      assert.equal(extractMissingModuleName(undefined), null);
+      assert.equal(extractMissingModuleName(''), null);
+    });
+  });
+
+  describe('buildManualPipCommand', () => {
+    it('produces a PowerShell call-operator command on Windows', () => {
+      if (process.platform !== 'win32') return;
+      const cmd = buildManualPipCommand('C:\\Users\\test\\venv\\Scripts\\python.exe');
+      assert.equal(cmd, '& "C:\\Users\\test\\venv\\Scripts\\python.exe" -m pip install agent-client-protocol==0.9.0');
+    });
+
+    it('produces a quoted POSIX command on non-Windows', () => {
+      if (process.platform === 'win32') return;
+      const cmd = buildManualPipCommand('/home/test/venv/bin/python');
+      assert.equal(cmd, '"/home/test/venv/bin/python" -m pip install agent-client-protocol==0.9.0');
+    });
+  });
+
+  describe('buildRepairErrorMessage', () => {
+    it('wraps the copyable command in a fenced code block', () => {
+      const msg = buildRepairErrorMessage('自动修复失败', '/bin/python', undefined);
+      assert.ok(msg.startsWith('自动修复失败。请手动运行以下命令修复（hermes-agent venv）：\n\n```\n'));
+      assert.ok(msg.includes('pip install agent-client-protocol==0.9.0'));
+      assert.ok(msg.endsWith('\n```'));
+      // No trailing stderr when stderr is undefined
+      assert.ok(!msg.includes('最后 stderr'));
+    });
+
+    it('appends stderr fenced block when stderr is provided', () => {
+      const msg = buildRepairErrorMessage('修复失败', '/bin/python', 'ERROR: network down');
+      assert.ok(msg.includes('最后 stderr：\n```\nERROR: network down\n```'));
     });
   });
 });

@@ -130,6 +130,30 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
         <ThinkingBlock content={message.thinking} streaming={message.streaming && !message.content} />
       )}
 
+      {message.repairing && (
+        <div className="repairing-status" data-testid="repairing-status">
+          <span className="repairing-spinner" aria-hidden />
+          <span>{message.repairing}</span>
+        </div>
+      )}
+
+      {message.error && (
+        <div className="assistant-error" data-testid="assistant-error" role="alert">
+          <div className="assistant-error-header">
+            <span className="assistant-error-label">错误</span>
+          </div>
+          <div className="assistant-error-body">
+            {splitContent(message.error).map((seg, i) =>
+              seg.type === 'text' ? (
+                <div key={i} dangerouslySetInnerHTML={{ __html: renderMarkdown(seg.content) }} />
+              ) : (
+                <CodeBlock key={i} lang={seg.lang} code={seg.code} streaming={false} />
+              ),
+            )}
+          </div>
+        </div>
+      )}
+
       {toolItems.length > 0 && (
         <div className="tool-cards">
           {toolItems.map((item, idx) =>

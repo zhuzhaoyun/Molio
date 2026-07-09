@@ -19,6 +19,7 @@ export type AgentEvent =
   | { type: 'error'; message: string; raw?: string }
   | { type: 'turn_end'; stopReason: string }
   | { type: 'models'; models: { id: string; label: string }[]; currentModelId?: string }
+  | { type: 'repairing'; message: string }
   | { type: 'raw'; line: string };
 
 // ─── Stream handler interface ───

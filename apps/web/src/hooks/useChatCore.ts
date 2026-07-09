@@ -36,6 +36,13 @@ export interface ChatMessage {
   tools?: ToolEvent[];
   streaming?: boolean;
   usage?: { input?: number; output?: number; cost?: number };
+  /** Transient repair status (hermes [acp] extra auto-install). Cleared on
+   *  first real content (text/thinking/tool) or any terminal state. */
+  repairing?: string;
+  /** Error from the agent or run lifecycle (ACP timeout, spawn failure, etc).
+   *  Kept separate from `content` so saved messages don't carry an "Error:"
+   *  prefix — the UI renders this as a distinct banner above the prose. */
+  error?: string;
 }
 
 interface ChatState {
@@ -89,11 +96,24 @@ export function useChatCore(options: UseChatCoreOptions) {
 
   const esRef = useRef<EventSource | null>(null);
   const assistantIdRef = useRef<string | null>(null);
+  // P2-3: fallback timer that force-unlocks the input if the daemon hangs or
+  // the SSE dies without a terminal event. Aligned with daemon's
+  // promptIdleTimeoutMs (5min) — if no terminal status arrives by then, the
+  // user gets the input back instead of a permanently locked composer.
+  const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearFallbackTimer = useCallback(() => {
+    if (fallbackTimerRef.current) {
+      clearTimeout(fallbackTimerRef.current);
+      fallbackTimerRef.current = null;
+    }
+  }, []);
 
   const closeEventSource = useCallback(() => {
     esRef.current?.close();
     esRef.current = null;
-  }, []);
+    clearFallbackTimer();
+  }, [clearFallbackTimer]);
 
   const beginNewRun = useCallback(async (
     result: RunResult,
@@ -110,6 +130,7 @@ export function useChatCore(options: UseChatCoreOptions) {
     // multi-turn path (api.sendMessage on an existing run) can retarget
     // events to a new assistant message without resubscribing.
     assistantIdRef.current = assistantId;
+    clearFallbackTimer();
 
     setState((prev) => ({
       ...prev,
@@ -136,10 +157,53 @@ export function useChatCore(options: UseChatCoreOptions) {
           window.dispatchEvent(new CustomEvent(ACP_MODELS_UPDATED_EVENT, { detail }));
         }
         setState((prev) => updateWithEvent(prev, currentId, event));
+        // P2-3: terminal status clears the fallback timer — the run ended
+        // cleanly (success/failed/canceled), no need to force-unlock later.
+        if (event.type === 'status' && (event.label === 'completed' || event.label === 'failed' || event.label === 'canceled')) {
+          clearFallbackTimer();
+        }
       },
-      () => { /* SSE error — EventSource auto-retries */ },
+      () => { /* SSE error — EventSource auto-retries; onDone handles permanent close */ },
+      () => {
+        // P2-3: SSE closed for good (daemon exited, readyState === CLOSED).
+        // Auto-reconnect would hammer a dead endpoint forever — unlock the
+        // input so the user can re-send instead of staring at a locked composer.
+        setState((prev) => {
+          if (!prev.isRunning) return prev;
+          const messages = prev.messages.map((msg) =>
+            msg.streaming ? { ...msg, streaming: false } : msg
+          );
+          return { ...prev, messages, isRunning: false, runId: null, runAgentId: null };
+        });
+        clearFallbackTimer();
+      },
     );
     esRef.current = es;
+
+    // P2-3: fallback timer — if no terminal status arrives within 5min,
+    // force-unlock the input. Catches: daemon hang (SSE alive but no events),
+    // daemon crash without a close event, network blackhole. 5min aligns
+    // with daemon's promptIdleTimeoutMs so the frontend unlocks around when
+    // the daemon itself gives up.
+    //
+    // Test hook: `window.__MOLIO_TEST_FALLBACK_TIMEOUT_MS__` shortens the
+    // wait so E2E can exercise this path without sleeping 5min. Production
+    // never sets this.
+    const fallbackMs = (typeof window !== 'undefined' &&
+      (window as any).__MOLIO_TEST_FALLBACK_TIMEOUT_MS__) || 300_000;
+    fallbackTimerRef.current = setTimeout(() => {
+      setState((prev) => {
+        if (!prev.isRunning) return prev;
+        const messages = prev.messages.map((msg) =>
+          msg.id === assistantIdRef.current && msg.streaming
+            ? { ...msg, streaming: false, error: msg.error ?? '响应超时，请重试或检查 daemon 是否运行' }
+            : msg
+        );
+        return { ...prev, messages, isRunning: false, runId: null, runAgentId: null };
+      });
+      esRef.current?.close();
+      esRef.current = null;
+    }, fallbackMs);
 
     if (onComplete) {
       const origOnEvent = es.onmessage;
@@ -152,7 +216,7 @@ export function useChatCore(options: UseChatCoreOptions) {
         } catch { /* ignore parse errors */ }
       };
     }
-  }, [state.conversationId, agentId, onComplete]);
+  }, [state.conversationId, agentId, onComplete, clearFallbackTimer]);
 
   /**
    * Send a message — tries multi-turn on existing run first, falls back to createRun.
@@ -235,7 +299,7 @@ export function useChatCore(options: UseChatCoreOptions) {
       setState((prev) => {
         const messages = prev.messages.map((msg) =>
           msg.id === errId
-            ? { ...msg, content: `Error: ${(err as Error).message}`, streaming: false }
+            ? { ...msg, error: (err as Error).message, streaming: false }
             : msg
         );
         return { ...prev, messages, isRunning: false };
@@ -416,6 +480,15 @@ export function useChatCore(options: UseChatCoreOptions) {
  *    (serves as a fallback signal).
  *  - `status: completed/failed` means the child process exited → clear runId.
  */
+/**
+ * Clear the transient repairing status. Called by every case in updateWithEvent
+ * that delivers real content (text/thinking/tool) or reaches a terminal state,
+ * so the repairing spinner never lingers past the phase it represents.
+ */
+function clearRepairing(msg: ChatMessage): ChatMessage {
+  return msg.repairing === undefined ? msg : { ...msg, repairing: undefined };
+}
+
 function updateWithEvent(
   prev: ChatState,
   assistantId: string,
@@ -427,21 +500,30 @@ function updateWithEvent(
     switch (event.type) {
       case 'text_delta':
         if (!msg.streaming) return msg;
-        return { ...msg, content: msg.content + event.delta };
+        // First real content arrives — the repair phase is done, drop the
+        // transient status line so it doesn't linger in the saved message.
+        return clearRepairing({ ...msg, content: msg.content + event.delta });
 
       case 'thinking_delta':
         if (!msg.streaming) return msg;
-        return { ...msg, thinking: (msg.thinking ?? '') + event.delta };
+        return clearRepairing({ ...msg, thinking: (msg.thinking ?? '') + event.delta });
+
+      case 'repairing':
+        // Hermes [acp] extra auto-install status. Transient — cleared once
+        // real content (text_delta / thinking_delta) starts arriving, or on
+        // any terminal state (error/turn_end/usage) via clearRepairing.
+        if (!msg.streaming) return msg;
+        return { ...msg, repairing: event.message };
 
       case 'tool_use':
         if (!msg.streaming) return msg;
-        return {
+        return clearRepairing({
           ...msg,
           tools: [
             ...(msg.tools ?? []),
             { id: event.id, name: event.name, input: event.input, status: 'running' as const },
           ],
-        };
+        });
 
       case 'tool_result': {
         const tools = (msg.tools ?? []).map((t) =>
@@ -449,25 +531,29 @@ function updateWithEvent(
             ? { ...t, result: event.content, isError: event.isError, status: (event.isError ? 'error' : 'done') as ToolEvent['status'] }
             : t
         );
-        return { ...msg, tools };
+        return clearRepairing({ ...msg, tools });
       }
 
       case 'usage':
-        return {
+        return clearRepairing({
           ...msg,
           usage: {
             input: event.usage?.input_tokens,
             output: event.usage?.output_tokens,
             cost: event.costUsd,
           },
-        };
+        });
 
       case 'turn_end':
         if (event.stopReason === 'tool_use') return msg;
-        return { ...msg, streaming: false };
+        return clearRepairing({ ...msg, streaming: false });
 
       case 'error':
-        return { ...msg, content: msg.content + `\n\nError: ${event.message}`, streaming: false };
+        // Keep error separate from content so historical messages don't carry
+        // an "Error:" prefix that pollutes the saved text. The UI renders
+        // msg.error as a distinct banner above the prose. Also clear repairing
+        // so the spinner doesn't coexist with the error.
+        return clearRepairing({ ...msg, error: event.message, streaming: false });
 
       default:
         return msg;
