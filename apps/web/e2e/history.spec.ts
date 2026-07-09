@@ -246,4 +246,18 @@ test.describe('History', () => {
       await deleteProject(project.id);
     }
   });
+
+  test('filter toggle expands to reveal dropdowns', async ({ page }) => {
+    await gotoHome(page);
+    await clickNav(page, 'history');
+
+    // Search is the primary control; dropdowns are folded behind the toggle.
+    await expect(page.locator('[data-testid=history-search-input]')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid=history-filter-vault]')).toHaveCount(0);
+
+    await page.locator('[data-testid=history-filter-toggle]').click();
+    await expect(page.locator('[data-testid=history-filter-vault]')).toBeVisible({ timeout: 3_000 });
+    await expect(page.locator('[data-testid=history-filter-channel]')).toBeVisible();
+    await expect(page.locator('[data-testid=history-filter-agent]')).toBeVisible();
+  });
 });

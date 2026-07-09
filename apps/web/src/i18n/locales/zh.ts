@@ -181,6 +181,7 @@ const zh: Record<string, string> = {
   'history.filter.vault': '知识库',
   'history.filter.channel': '渠道',
   'history.filter.agent': 'Agent',
+  'history.filter.toggle': '筛选',
   'history.search.placeholder': '搜索消息内容…',
   'history.clearFilters': '清除筛选',
   'history.loadMore': '加载更多',

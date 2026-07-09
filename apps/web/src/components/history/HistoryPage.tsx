@@ -22,6 +22,7 @@ export function HistoryPage({ onOpenConversation }: Props) {
   const [vaults, setVaults] = useState<Vault[]>([]);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
   const deleteErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -64,6 +65,10 @@ export function HistoryPage({ onOpenConversation }: Props) {
   const isFilterActive = Boolean(
     filters.vaultId || filters.channelType || filters.agentId || filters.query.trim(),
   );
+  // Only the three selects are folded behind the toggle; search is always
+  // visible as the primary action. The count badge signals active filters
+  // without forcing the user to expand.
+  const foldedFilterCount = [filters.vaultId, filters.channelType, filters.agentId].filter(Boolean).length;
 
   return (
     <div className="history-shell">
@@ -78,59 +83,79 @@ export function HistoryPage({ onOpenConversation }: Props) {
       </header>
 
       <div className="history-filters">
-        <label className="history-filter-field">
-          <span className="history-filter-label">{t('history.filter.vault')}</span>
-          <select
-            className="history-filter-select"
-            data-testid="history-filter-vault"
-            value={filters.vaultId}
-            onChange={(e) => setFilter('vaultId', e.target.value)}
-          >
-            <option value="">{t('history.filter.all')}</option>
-            {vaults.map((v) => (
-              <option key={v.id} value={v.id}>{v.name}</option>
-            ))}
-            <option value="__none__">{t('history.filter.unassociated')}</option>
-          </select>
-        </label>
+        <div className="history-search-wrap">
+          <SearchIcon />
+          <input
+            className="history-search-input"
+            data-testid="history-search-input"
+            type="search"
+            placeholder={t('history.search.placeholder')}
+            value={filters.query}
+            onChange={(e) => setQuery(e.target.value)}
+            autoFocus
+          />
+        </div>
+        <button
+          type="button"
+          className="history-filter-toggle"
+          data-testid="history-filter-toggle"
+          onClick={() => setFiltersExpanded((v) => !v)}
+          aria-expanded={filtersExpanded}
+        >
+          {t('history.filter.toggle')}
+          <ChevronIcon expanded={filtersExpanded} />
+          {foldedFilterCount > 0 && (
+            <span className="history-filter-toggle__count">{foldedFilterCount}</span>
+          )}
+        </button>
+        {filtersExpanded && (
+          <div className="history-filter-row">
+            <label className="history-filter-field">
+              <span className="history-filter-label">{t('history.filter.vault')}</span>
+              <select
+                className="history-filter-select"
+                data-testid="history-filter-vault"
+                value={filters.vaultId}
+                onChange={(e) => setFilter('vaultId', e.target.value)}
+              >
+                <option value="">{t('history.filter.all')}</option>
+                {vaults.map((v) => (
+                  <option key={v.id} value={v.id}>{v.name}</option>
+                ))}
+                <option value="__none__">{t('history.filter.unassociated')}</option>
+              </select>
+            </label>
 
-        <label className="history-filter-field">
-          <span className="history-filter-label">{t('history.filter.channel')}</span>
-          <select
-            className="history-filter-select"
-            data-testid="history-filter-channel"
-            value={filters.channelType}
-            onChange={(e) => setFilter('channelType', e.target.value)}
-          >
-            {CHANNEL_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
-            ))}
-          </select>
-        </label>
+            <label className="history-filter-field">
+              <span className="history-filter-label">{t('history.filter.channel')}</span>
+              <select
+                className="history-filter-select"
+                data-testid="history-filter-channel"
+                value={filters.channelType}
+                onChange={(e) => setFilter('channelType', e.target.value)}
+              >
+                {CHANNEL_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
+                ))}
+              </select>
+            </label>
 
-        <label className="history-filter-field">
-          <span className="history-filter-label">{t('history.filter.agent')}</span>
-          <select
-            className="history-filter-select"
-            data-testid="history-filter-agent"
-            value={filters.agentId}
-            onChange={(e) => setFilter('agentId', e.target.value)}
-          >
-            <option value="">{t('history.filter.all')}</option>
-            {agents.map((a) => (
-              <option key={a.id} value={a.id}>{a.name}</option>
-            ))}
-          </select>
-        </label>
-
-        <input
-          className="history-search-input"
-          data-testid="history-search-input"
-          type="search"
-          placeholder={t('history.search.placeholder')}
-          value={filters.query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
+            <label className="history-filter-field">
+              <span className="history-filter-label">{t('history.filter.agent')}</span>
+              <select
+                className="history-filter-select"
+                data-testid="history-filter-agent"
+                value={filters.agentId}
+                onChange={(e) => setFilter('agentId', e.target.value)}
+              >
+                <option value="">{t('history.filter.all')}</option>
+                {agents.map((a) => (
+                  <option key={a.id} value={a.id}>{a.name}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+        )}
       </div>
 
       <main className="history-content">
@@ -276,6 +301,21 @@ function TrashIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m-9 0v14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V6" />
+    </svg>
+  );
+}
+function SearchIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="11" cy="11" r="8" />
+      <path d="m21 21-4.3-4.3" />
+    </svg>
+  );
+}
+function ChevronIcon({ expanded }: { expanded: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>
+      <path d="m6 9 6 6 6-6" />
     </svg>
   );
 }

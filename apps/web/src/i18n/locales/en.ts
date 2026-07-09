@@ -181,6 +181,7 @@ const en: Record<string, string> = {
   'history.filter.vault': 'Vault',
   'history.filter.channel': 'Channel',
   'history.filter.agent': 'Agent',
+  'history.filter.toggle': 'Filters',
   'history.search.placeholder': 'Search message content…',
   'history.clearFilters': 'Clear filters',
   'history.loadMore': 'Load more',
