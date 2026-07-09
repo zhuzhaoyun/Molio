@@ -70,7 +70,7 @@ export function HistoryPage({ onOpenConversation }: Props) {
       <header className="history-topbar">
         <div className="history-title">
           <span className="history-title__icon"><ChatIcon /></span>
-          <h1>{t('history.chatHistory')}</h1>
+          <h1>{t('nav.history')}</h1>
         </div>
         <button className="history-refresh" type="button" onClick={refresh} disabled={loading} data-testid="history-refresh">
           {loading ? t('history.loading') : t('history.refresh')}
@@ -78,41 +78,50 @@ export function HistoryPage({ onOpenConversation }: Props) {
       </header>
 
       <div className="history-filters">
-        <select
-          className="history-filter-select"
-          data-testid="history-filter-vault"
-          value={filters.vaultId}
-          onChange={(e) => setFilter('vaultId', e.target.value)}
-        >
-          <option value="">{t('history.filter.all')}</option>
-          {vaults.map((v) => (
-            <option key={v.id} value={v.id}>{v.name}</option>
-          ))}
-          <option value="__none__">{t('history.filter.unassociated')}</option>
-        </select>
+        <label className="history-filter-field">
+          <span className="history-filter-label">{t('history.filter.vault')}</span>
+          <select
+            className="history-filter-select"
+            data-testid="history-filter-vault"
+            value={filters.vaultId}
+            onChange={(e) => setFilter('vaultId', e.target.value)}
+          >
+            <option value="">{t('history.filter.all')}</option>
+            {vaults.map((v) => (
+              <option key={v.id} value={v.id}>{v.name}</option>
+            ))}
+            <option value="__none__">{t('history.filter.unassociated')}</option>
+          </select>
+        </label>
 
-        <select
-          className="history-filter-select"
-          data-testid="history-filter-channel"
-          value={filters.channelType}
-          onChange={(e) => setFilter('channelType', e.target.value)}
-        >
-          {CHANNEL_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
-          ))}
-        </select>
+        <label className="history-filter-field">
+          <span className="history-filter-label">{t('history.filter.channel')}</span>
+          <select
+            className="history-filter-select"
+            data-testid="history-filter-channel"
+            value={filters.channelType}
+            onChange={(e) => setFilter('channelType', e.target.value)}
+          >
+            {CHANNEL_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
+            ))}
+          </select>
+        </label>
 
-        <select
-          className="history-filter-select"
-          data-testid="history-filter-agent"
-          value={filters.agentId}
-          onChange={(e) => setFilter('agentId', e.target.value)}
-        >
-          <option value="">{t('history.filter.all')}</option>
-          {agents.map((a) => (
-            <option key={a.id} value={a.id}>{a.name}</option>
-          ))}
-        </select>
+        <label className="history-filter-field">
+          <span className="history-filter-label">{t('history.filter.agent')}</span>
+          <select
+            className="history-filter-select"
+            data-testid="history-filter-agent"
+            value={filters.agentId}
+            onChange={(e) => setFilter('agentId', e.target.value)}
+          >
+            <option value="">{t('history.filter.all')}</option>
+            {agents.map((a) => (
+              <option key={a.id} value={a.id}>{a.name}</option>
+            ))}
+          </select>
+        </label>
 
         <input
           className="history-search-input"

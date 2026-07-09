@@ -274,6 +274,17 @@
   padding: 0 36px 12px;
   flex-shrink: 0;
   flex-wrap: wrap;
+  align-items: center;
+}
+.history-filter-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.history-filter-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 .history-filter-select, .history-search-input {
   height: 30px;

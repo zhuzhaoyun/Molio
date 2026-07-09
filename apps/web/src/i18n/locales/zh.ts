@@ -165,7 +165,6 @@ const zh: Record<string, string> = {
   // ── History ──
   'history.title': '历史记录',
   'history.count': '{count} 个会话',
-  'history.chatHistory': '会话历史',
   'history.loading': '加载中…',
   'history.refresh': '刷新',
   'history.empty': '暂无会话记录',
