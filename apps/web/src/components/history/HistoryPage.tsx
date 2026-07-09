@@ -205,7 +205,16 @@ function HistoryRow({ item, onOpen, onDelete, t }: {
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
   const { conversation, lastMessage, vaultName, vaultId } = item;
-  const vaultLabel = vaultName ?? (vaultId ? t('history.vaultDeleted') : t('history.filter.unassociated'));
+  // Merge channel + vault into one provenance badge. The vault segment only
+  // appears when the conversation is (or was) associated with a KB —
+  // unassociated rows show just the channel, avoiding a screen full of
+  // "未关联" chips on legacy data.
+  const source = sourceLabel(t, conversation.channelType);
+  const vaultSegment = vaultName
+    ? ` · ${vaultName}`
+    : vaultId
+      ? ` · ${t('history.vaultDeleted')}`
+      : '';
   return (
     <div className="history-row">
       <button type="button" className="history-row__main" onClick={onOpen}>
@@ -217,9 +226,8 @@ function HistoryRow({ item, onOpen, onDelete, t }: {
           <span className="history-row__title-line">
             <span className="history-row__title">{conversation.title || t('history.untitled')}</span>
             <span className={`history-source-badge history-source-badge--${conversation.channelType ?? 'desktop'}`}>
-              {sourceLabel(t, conversation.channelType)}
+              {source}{vaultSegment}
             </span>
-            <span className="history-vault-badge">{vaultLabel}</span>
           </span>
           <span className="history-row__summary">{lastMessage?.content || t('history.noMessage')}</span>
         </span>
