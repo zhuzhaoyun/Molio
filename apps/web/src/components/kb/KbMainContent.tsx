@@ -309,9 +309,7 @@ export function KbMainContent({
                 data-testid="kb-btn-wrap"
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
-                  <path d="M4 6h12" />
-                  <polyline points="16 6 16 10 10 10" />
-                  <path d="M4 13h8" />
+                  <path d="M4 7h11v4h-7" />
                 </svg>
               </button>
               <button
@@ -325,9 +323,11 @@ export function KbMainContent({
                 data-testid="kb-btn-goto"
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
-                  <path d="M10 4v16 M14 4v16" />
-                  <line x1="7" y1="9" x2="17" y2="9" />
-                  <line x1="7" y1="15" x2="17" y2="15" />
+                  <circle cx="12" cy="12" r="7" />
+                  <line x1="12" y1="5" x2="12" y2="9" />
+                  <line x1="12" y1="15" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="9" y2="12" />
+                  <line x1="15" y1="12" x2="19" y2="12" />
                 </svg>
               </button>
               <button
