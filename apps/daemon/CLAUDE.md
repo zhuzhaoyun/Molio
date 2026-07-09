@@ -58,6 +58,7 @@ src/
     knowledge.ts      CRUD /api/knowledge — 知识库管理
     publish.ts        POST /api/publish — 发布到内容平台
     graph.ts          GET /api/graph — 知识图谱数据
+    maintenance.ts    POST /api/maintenance/rebuild-fts — 重建 FTS 索引（灾难恢复）
     weixin.ts         POST /api/weixin — 微信回调
   publish-bridge/
     bridge-page.ts    发布桥接页面逻辑
@@ -99,6 +100,7 @@ pnpm typecheck    # tsc --noEmit
 | DELETE | `/api/conversations/:id` | 删除会话 |
 | POST | `/api/conversations/:id/rewind-resend` | 重新生成/编辑重发（回退到末条 user 消息重放建新 run） |
 | POST | `/api/conversations/:id/delete-messages` | 按 id 集合删除消息（勾选删除） |
+| POST | `/api/maintenance/rebuild-fts` | 重建 messages_fts 索引（灾难恢复） |
 | GET/POST/PUT/DELETE | `/api/knowledge` | 知识库管理 |
 | POST | `/api/publish` | 发布到内容平台 |
 | GET | `/api/graph` | 知识图谱数据 |

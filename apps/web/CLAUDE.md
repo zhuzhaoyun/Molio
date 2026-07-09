@@ -130,6 +130,7 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
 | `src/components/graph/` | `e2e/graph-settings.spec.ts` |
 | `src/components/runtimes/` | `e2e/runtimes-page.spec.ts`, `e2e/runtime-provider-config.spec.ts` |
 | `src/components/settings/` | `e2e/runtimes-page.spec.ts`（RuntimesPanel 在此） |
+| `src/components/history/` | `e2e/history.spec.ts` |
 | `src/App.tsx`（路由变更） | `e2e/navigation.spec.ts`, `e2e/bootstrap.spec.ts` |
 
 **检查步骤**：
