@@ -551,27 +551,34 @@
 .history-vault-badge__warn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   margin-left: 3px;
-  color: inherit;
-}
-
-.history-vault-badge__warn svg {
-  width: 13px;
-  height: 13px;
-}
-
-/* Standalone warn icon — no vault name, just the icon */
-.history-vault-warn {
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-  color: var(--red);
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--red);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
   cursor: help;
 }
 
-.history-vault-warn svg {
-  width: 16px;
-  height: 16px;
+/* Standalone "?" — vault deleted, name lost (historical) */
+.history-vault-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--bg-muted);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: help;
 }
 
 .history-row__summary {

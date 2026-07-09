@@ -226,10 +226,14 @@ function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDelet
   const { conversation, lastMessage, vaultName, vaultExists, vaultId } = item;
   const isConfirming = confirmingDeleteId === conversation.id;
 
-  // Vault badge: gray pill with name = alive, red pill with name + ⚠ = deleted.
-  // When vault is deleted and we lost the name (historical), show just a ⚠ icon.
+  // Vault indicator — three mutually exclusive states:
+  // 1. Alive vault          → name badge (gray)
+  // 2. Deleted, name lost   → "?" icon, tooltip "知识库未匹配"
+  // 3. Deleted, name known  → name badge (red) + "!" icon, tooltip "知识库已删除"
+  // No vault (vaultId null) → nothing.
   const vaultLabel = vaultName || undefined;
   const vaultDeleted = vaultId != null && !vaultExists;
+  const vaultOrphan = vaultDeleted && !vaultLabel;
   const vaultBadgeCls = vaultLabel
     ? `history-vault-badge${vaultDeleted ? ' history-vault-badge--deleted' : ''}`
     : undefined;
@@ -265,18 +269,14 @@ function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDelet
         <span className="history-row__body">
           <span className="history-row__title-line">
             <span className="history-row__title">{conversation.title || t('history.untitled')}</span>
-            {vaultBadgeCls ? (
+            {vaultOrphan ? (
+              <span className="history-vault-icon" title={t('history.vaultUnmatched')} aria-label={t('history.vaultUnmatched')}>?</span>
+            ) : vaultBadgeCls ? (
               <span className={vaultBadgeCls}>
                 {vaultLabel}
                 {vaultDeleted && (
-                  <span className="history-vault-badge__warn" title={t('history.vaultDeleted')} aria-label={t('history.vaultDeleted')}>
-                    <WarnIcon />
-                  </span>
+                  <span className="history-vault-badge__warn" title={t('history.vaultDeleted')} aria-label={t('history.vaultDeleted')}>!</span>
                 )}
-              </span>
-            ) : vaultDeleted ? (
-              <span className="history-vault-warn" title={t('history.vaultDeleted')} aria-label={t('history.vaultDeleted')}>
-                <WarnIcon />
               </span>
             ) : null}
           </span>
@@ -350,15 +350,6 @@ function RefreshIcon() {
       <path d="M21 3v5h-5" />
       <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
       <path d="M3 21v-5h5" />
-    </svg>
-  );
-}
-function WarnIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-      <line x1="12" y1="9" x2="12" y2="13" />
-      <line x1="12" y1="17" x2="12.01" y2="17" />
     </svg>
   );
 }
