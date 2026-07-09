@@ -226,10 +226,12 @@ function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDelet
   const { conversation, lastMessage, vaultName, vaultExists } = item;
   const isConfirming = confirmingDeleteId === conversation.id;
 
-  // Vault badge: always shows vault name. Gray = alive, red = vault deleted.
-  const vaultLabel = vaultName ?? undefined;
+  // Vault badge: shows vault name. Gray = alive, red + ⚠ = vault deleted.
+  // No name → no badge (deleted vault warning can't show without a name to attach to).
+  const vaultLabel = vaultName || undefined;
+  const vaultDeleted = vaultLabel != null && !vaultExists;
   const vaultBadgeCls = vaultLabel
-    ? `history-vault-badge${vaultExists ? '' : ' history-vault-badge--deleted'}`
+    ? `history-vault-badge${vaultDeleted ? ' history-vault-badge--deleted' : ''}`
     : undefined;
 
   if (isConfirming) {
@@ -266,7 +268,7 @@ function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDelet
             {vaultBadgeCls && (
               <span className={vaultBadgeCls}>
                 {vaultLabel}
-                {!vaultExists && (
+                {vaultDeleted && (
                   <span className="history-vault-badge__warn" title={t('history.vaultDeleted')} aria-label={t('history.vaultDeleted')}>
                     <WarnIcon />
                   </span>
