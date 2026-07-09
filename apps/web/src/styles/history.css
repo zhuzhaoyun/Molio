@@ -390,7 +390,26 @@
   padding: 0 8px;
 }
 .history-row__main { flex: 1 1 auto; min-width: 0; display: flex; gap: 10px; align-items: center; background: none; border: none; cursor: pointer; text-align: left; padding: 14px 0; }
-.history-row__delete { background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 0 8px; opacity: 0; transition: opacity .15s; border-radius: var(--radius-sm); }
+.history-row__delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0.35;
+  transition: opacity .15s;
+  border-radius: var(--radius-sm);
+}
+.history-row__delete svg {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+}
 .history-row:hover .history-row__delete,
 .history-row:focus-within .history-row__delete { opacity: 1; }
 .history-row__delete:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; opacity: 1; }
