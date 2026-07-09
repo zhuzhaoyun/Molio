@@ -524,10 +524,10 @@
   border-color: var(--border);
 }
 
-.history-source-badge--vault-deleted {
-  color: var(--red);
-  background: var(--red-bg);
-  border-color: var(--red-border);
+.history-source-badge--agent {
+  color: var(--purple);
+  background: var(--purple-bg);
+  border-color: transparent;
 }
 
 .history-source-badge--weixin {

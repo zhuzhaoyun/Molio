@@ -210,6 +210,7 @@ export function HistoryPage({ onOpenConversation }: Props) {
             onDeleteRequest={setConfirmingDeleteId}
             onDeleteCancel={() => setConfirmingDeleteId(null)}
             onDeleteConfirm={executeDelete}
+            agents={agents}
             t={t}
           />
         )}
@@ -224,17 +225,22 @@ export function HistoryPage({ onOpenConversation }: Props) {
   );
 }
 
-function HistoryList({ items, onOpenConversation, confirmingDeleteId, onDeleteRequest, onDeleteCancel, onDeleteConfirm, t }: {
+function HistoryList({ items, onOpenConversation, confirmingDeleteId, onDeleteRequest, onDeleteCancel, onDeleteConfirm, agents, t }: {
   items: ConversationHistoryItem[];
   onOpenConversation: (id: string) => void;
   confirmingDeleteId: string | null;
   onDeleteRequest: (id: string) => void;
   onDeleteCancel: () => void;
   onDeleteConfirm: (id: string) => void;
+  agents: AgentInfo[];
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
   const groups = groupByDate(items);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+
+  const agentNames = useRef<Map<string, string>>(new Map());
+  agentNames.current.clear();
+  for (const a of agents) agentNames.current.set(a.id, a.name);
 
   const toggleGroup = (key: string) => {
     setCollapsed((prev) => {
@@ -273,6 +279,7 @@ function HistoryList({ items, onOpenConversation, confirmingDeleteId, onDeleteRe
                     onDeleteRequest={onDeleteRequest}
                     onDeleteCancel={onDeleteCancel}
                     onDeleteConfirm={onDeleteConfirm}
+                    agentName={item.lastMessage?.agentId ? (agentNames.current.get(item.lastMessage.agentId) ?? null) : null}
                     t={t}
                   />
                 ))}
@@ -285,26 +292,26 @@ function HistoryList({ items, onOpenConversation, confirmingDeleteId, onDeleteRe
   );
 }
 
-function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDeleteCancel, onDeleteConfirm, t }: {
+function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDeleteCancel, onDeleteConfirm, agentName, t }: {
   item: ConversationHistoryItem;
   onOpen: () => void;
   confirmingDeleteId: string | null;
   onDeleteRequest: (id: string) => void;
   onDeleteCancel: () => void;
   onDeleteConfirm: (id: string) => void;
+  agentName: string | null;
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
-  const { conversation, lastMessage, vaultName, vaultId } = item;
+  const { conversation, lastMessage, vaultName } = item;
   const isConfirming = confirmingDeleteId === conversation.id;
   const channelType = conversation.channelType;
-  // Only show channel badge for non-desktop (desktop is the default — no info value).
+  // Badges mirror the three filter dimensions: vault, channel, agent.
+  // Desktop is the default channel — no info value, skip it.
+  // Deleted vaults (vaultId exists but vaultName is null) are skipped —
+  // "已删除" is not a filter category, so it shouldn't be a badge.
+  const showVaultBadge = Boolean(vaultName);
   const showChannelBadge = Boolean(channelType && channelType !== 'desktop');
-  // Show vault badge when the conversation is or was associated with a KB.
-  const showVaultBadge = Boolean(vaultName || vaultId);
-  const vaultBadgeLabel = vaultName || t('history.vaultDeleted');
-  const vaultBadgeClass = vaultName
-    ? 'history-source-badge--vault'
-    : 'history-source-badge--vault-deleted';
+  const showAgentBadge = Boolean(agentName);
 
   if (isConfirming) {
     return (
@@ -338,12 +345,15 @@ function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDelet
           <span className="history-row__title-line">
             <span className="history-row__title">{conversation.title || t('history.untitled')}</span>
             {showVaultBadge && (
-              <span className={`history-source-badge ${vaultBadgeClass}`}>{vaultBadgeLabel}</span>
+              <span className="history-source-badge history-source-badge--vault">{vaultName}</span>
             )}
             {showChannelBadge && (
               <span className={`history-source-badge history-source-badge--${channelType}`}>
                 {sourceLabel(t, channelType!)}
               </span>
+            )}
+            {showAgentBadge && (
+              <span className="history-source-badge history-source-badge--agent">{agentName}</span>
             )}
           </span>
           <span className="history-row__summary">{lastMessage?.content || t('history.noMessage')}</span>
