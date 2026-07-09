@@ -531,6 +531,68 @@
   }
 }
 
+/* ── Delete Confirmation ── */
+.history-row--confirming {
+  background: var(--red-bg);
+  border-color: var(--red-border);
+  gap: 10px;
+}
+
+.history-row--confirming:hover {
+  background: var(--red-bg);
+}
+
+.history-row__confirm-text {
+  flex: 1 1 auto;
+  font-size: 14px;
+  color: var(--red);
+  font-weight: 500;
+}
+
+.history-row__confirm-yes {
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 14px;
+  border: 1px solid var(--red);
+  border-radius: var(--radius-sm);
+  background: var(--red);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: opacity 120ms ease;
+}
+
+.history-row__confirm-yes:hover {
+  opacity: 0.85;
+}
+
+.history-row__confirm-no {
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+
+.history-row__confirm-no:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
 /* ── Load More ── */
 .history-load-more {
   display: block;

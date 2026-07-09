@@ -174,7 +174,7 @@ test.describe('History', () => {
     }
   });
 
-  test('delete conversation removes row optimistically; rollback on failure', async ({ page }) => {
+  test('delete conversation shows confirmation, then removes row; rollback on failure', async ({ page }) => {
     const project = await createProject(`e2e-del-${Date.now()}`);
     const conv = await createConversation(project.id, 'Delete Me');
     await addMessage(project.id, conv.id, {
@@ -201,14 +201,18 @@ test.describe('History', () => {
         return route.continue();
       });
 
-      // Dismiss the alert that the UI shows on delete failure.
-      // (Removed: UI now uses a non-blocking transient error element.)
-
       const row = page.locator('.history-row', { hasText: 'Delete Me' }).first();
       await expect(row).toBeVisible({ timeout: 5_000 });
-      await row.locator('[data-testid=history-row-delete]').click();
 
-      // Non-blocking transient error is shown (no alert() dialog).
+      // Step 1: click delete → confirmation UI appears
+      await row.locator('[data-testid=history-row-delete]').click();
+      await expect(page.locator('[data-testid=history-row-delete-confirm]')).toBeVisible({ timeout: 3_000 });
+      await expect(page.locator('[data-testid=history-row-delete-cancel]')).toBeVisible();
+
+      // Step 2: click confirm → actual delete fires (HTTP 500 forced)
+      await page.locator('[data-testid=history-row-delete-confirm]').click();
+
+      // Non-blocking transient error is shown.
       await expect(page.locator('[data-testid=history-delete-error]')).toBeVisible({ timeout: 5_000 });
 
       // Rollback re-fetches → row reappears.

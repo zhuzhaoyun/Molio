@@ -23,6 +23,7 @@ export function HistoryPage({ onOpenConversation }: Props) {
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [filtersExpanded, setFiltersExpanded] = useState(false);
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
   const deleteErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -46,7 +47,8 @@ export function HistoryPage({ onOpenConversation }: Props) {
     setQuery('');
   };
 
-  const onDelete = async (id: string) => {
+  const executeDelete = async (id: string) => {
+    setConfirmingDeleteId(null);
     deleteConversationLocal(id);
     try {
       await api.deleteConversationById(id);
@@ -201,7 +203,15 @@ export function HistoryPage({ onOpenConversation }: Props) {
             </div>
           )
         ) : (
-          <HistoryList items={items} onOpenConversation={onOpenConversation} onDelete={onDelete} t={t} />
+          <HistoryList
+            items={items}
+            onOpenConversation={onOpenConversation}
+            confirmingDeleteId={confirmingDeleteId}
+            onDeleteRequest={setConfirmingDeleteId}
+            onDeleteCancel={() => setConfirmingDeleteId(null)}
+            onDeleteConfirm={executeDelete}
+            t={t}
+          />
         )}
 
         {hasMore && (
@@ -214,10 +224,13 @@ export function HistoryPage({ onOpenConversation }: Props) {
   );
 }
 
-function HistoryList({ items, onOpenConversation, onDelete, t }: {
+function HistoryList({ items, onOpenConversation, confirmingDeleteId, onDeleteRequest, onDeleteCancel, onDeleteConfirm, t }: {
   items: ConversationHistoryItem[];
   onOpenConversation: (id: string) => void;
-  onDelete: (id: string) => void;
+  confirmingDeleteId: string | null;
+  onDeleteRequest: (id: string) => void;
+  onDeleteCancel: () => void;
+  onDeleteConfirm: (id: string) => void;
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
   const groups = groupByDate(items);
@@ -232,7 +245,10 @@ function HistoryList({ items, onOpenConversation, onDelete, t }: {
                 key={item.conversation.id}
                 item={item}
                 onOpen={() => onOpenConversation(item.conversation.id)}
-                onDelete={() => onDelete(item.conversation.id)}
+                confirmingDeleteId={confirmingDeleteId}
+                onDeleteRequest={onDeleteRequest}
+                onDeleteCancel={onDeleteCancel}
+                onDeleteConfirm={onDeleteConfirm}
                 t={t}
               />
             ))}
@@ -243,13 +259,17 @@ function HistoryList({ items, onOpenConversation, onDelete, t }: {
   );
 }
 
-function HistoryRow({ item, onOpen, onDelete, t }: {
+function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDeleteCancel, onDeleteConfirm, t }: {
   item: ConversationHistoryItem;
   onOpen: () => void;
-  onDelete: () => void;
+  confirmingDeleteId: string | null;
+  onDeleteRequest: (id: string) => void;
+  onDeleteCancel: () => void;
+  onDeleteConfirm: (id: string) => void;
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
   const { conversation, lastMessage, vaultName, vaultId } = item;
+  const isConfirming = confirmingDeleteId === conversation.id;
   // Merge channel + vault into one provenance badge. The vault segment only
   // appears when the conversation is (or was) associated with a KB —
   // unassociated rows show just the channel, avoiding a screen full of
@@ -260,6 +280,31 @@ function HistoryRow({ item, onOpen, onDelete, t }: {
     : vaultId
       ? ` · ${t('history.vaultDeleted')}`
       : '';
+
+  if (isConfirming) {
+    return (
+      <div className="history-row history-row--confirming">
+        <span className="history-row__confirm-text">{t('history.deleteConfirm')}</span>
+        <button
+          type="button"
+          className="history-row__confirm-yes"
+          data-testid="history-row-delete-confirm"
+          onClick={() => onDeleteConfirm(conversation.id)}
+        >
+          {t('history.deleteConfirmYes')}
+        </button>
+        <button
+          type="button"
+          className="history-row__confirm-no"
+          data-testid="history-row-delete-cancel"
+          onClick={onDeleteCancel}
+        >
+          {t('history.deleteConfirmNo')}
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="history-row">
       <button type="button" className="history-row__main" onClick={onOpen}>
@@ -274,7 +319,7 @@ function HistoryRow({ item, onOpen, onDelete, t }: {
           <span className="history-row__summary">{lastMessage?.content || t('history.noMessage')}</span>
         </span>
       </button>
-      <button type="button" className="history-row__delete" data-testid="history-row-delete" onClick={onDelete} title={t('history.delete')}>
+      <button type="button" className="history-row__delete" data-testid="history-row-delete" onClick={() => onDeleteRequest(conversation.id)} title={t('history.delete')}>
         <TrashIcon />
       </button>
     </div>

@@ -190,6 +190,9 @@ const en: Record<string, string> = {
   'history.delete': 'Delete',
   'history.deleteFailed': 'Delete failed, please retry',
   'history.vaultDeleted': 'Deleted',
+  'history.deleteConfirm': 'Delete this conversation?',
+  'history.deleteConfirmYes': 'Delete',
+  'history.deleteConfirmNo': 'Cancel',
 
   // ── Settings ──
   'settings.title': 'Settings',
