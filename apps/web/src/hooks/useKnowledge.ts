@@ -133,6 +133,14 @@ interface UseKnowledgeReturn {
 
 export function useKnowledge(): UseKnowledgeReturn {
   const [vaults, setVaults] = useState<Vault[]>([]);
+  // Mirror vaults in a ref so async callbacks (create/open/delete) can compute
+  // the next list without reading a stale closure — and without putting the
+  // vaultStore sync *inside* the setVaults updater (that side effect runs in
+  // React's render phase and triggers "Cannot update App while rendering
+  // KnowledgeBasePage" because vaultStore.emit() forces an App re-render via
+  // useSyncExternalStore).
+  const vaultsRef = useRef<Vault[]>(vaults);
+  vaultsRef.current = vaults;
   // Read active vault ID from the shared store so App.tsx stays in sync.
   const activeVaultId = useActiveVaultId();
   const [tree, setTree] = useState<TreeNode[]>([]);
@@ -340,11 +348,9 @@ export function useKnowledge(): UseKnowledgeReturn {
 
   const createVault = useCallback(async (name: string, path: string, description?: string) => {
     const vault = await api.createVault({ name, path, description });
-    setVaults((prev) => {
-      const next = [vault, ...prev];
-      vaultStore.setVaults(next);
-      return next;
-    });
+    const next = [vault, ...vaultsRef.current];
+    setVaults(next);
+    vaultStore.setVaults(next);
     vaultStore.setActiveVaultId(vault.id);
     setShowAddVault(false);
   }, []);
@@ -353,21 +359,17 @@ export function useKnowledge(): UseKnowledgeReturn {
     // Derive a name from the last path segment
     const name = path.split(/[\/]/).pop() || '未命名仓库';
     const vault = await api.createVault({ name, path, description: `从本地文件夹打开: ${path}` });
-    setVaults((prev) => {
-      const next = [vault, ...prev];
-      vaultStore.setVaults(next);
-      return next;
-    });
+    const next = [vault, ...vaultsRef.current];
+    setVaults(next);
+    vaultStore.setVaults(next);
     vaultStore.setActiveVaultId(vault.id);
   }, []);
 
   const deleteVault = useCallback(async (id: string) => {
     await api.deleteVault(id);
-    setVaults((prev) => {
-      const next = prev.filter((v) => v.id !== id);
-      vaultStore.setVaults(next);
-      return next;
-    });
+    const next = vaultsRef.current.filter((v) => v.id !== id);
+    setVaults(next);
+    vaultStore.setVaults(next);
     if (activeVaultId === id) {
       vaultStore.setActiveVaultId(null);
       setTree([]);
