@@ -226,14 +226,12 @@ function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDelet
   const { conversation, lastMessage, vaultName, vaultExists, vaultId } = item;
   const isConfirming = confirmingDeleteId === conversation.id;
 
-  // Vault indicator — three mutually exclusive states:
+  // Vault indicator:
   // 1. Alive vault          → name badge (gray)
-  // 2. Deleted, name lost   → "?" icon, tooltip "知识库未匹配"
-  // 3. Deleted, name known  → name badge (red) + "!" icon, tooltip "知识库已删除"
+  // 2. Deleted vault        → name badge (red) + !, or just ! if name lost
   // No vault (vaultId null) → nothing.
   const vaultLabel = vaultName || undefined;
   const vaultDeleted = vaultId != null && !vaultExists;
-  const vaultOrphan = vaultDeleted && !vaultLabel;
   const vaultBadgeCls = vaultLabel
     ? `history-vault-badge${vaultDeleted ? ' history-vault-badge--deleted' : ''}`
     : undefined;
@@ -269,15 +267,15 @@ function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDelet
         <span className="history-row__body">
           <span className="history-row__title-line">
             <span className="history-row__title">{conversation.title || t('history.untitled')}</span>
-            {vaultOrphan ? (
-              <span className="history-vault-icon" title={t('history.vaultUnmatched')} aria-label={t('history.vaultUnmatched')}>?</span>
-            ) : vaultBadgeCls ? (
+            {vaultBadgeCls ? (
               <span className={vaultBadgeCls}>
                 {vaultLabel}
                 {vaultDeleted && (
                   <span className="history-vault-badge__warn" title={t('history.vaultDeleted')} aria-label={t('history.vaultDeleted')}>!</span>
                 )}
               </span>
+            ) : vaultDeleted ? (
+              <span className="history-vault-icon" title={t('history.vaultDeleted')} aria-label={t('history.vaultDeleted')}>!</span>
             ) : null}
           </span>
           <span className="history-row__summary">{lastMessage?.content || t('history.noMessage')}</span>
