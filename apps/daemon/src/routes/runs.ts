@@ -29,7 +29,7 @@ export function runsRoutes(
       const vault = body.cwd ? getVaultByPath(db, body.cwd) : null;
       const conversation = body.conversationId
         ? conversations.getConversation(body.conversationId)
-        : conversations.createDesktopConversation(convTitle, vault?.id ?? null);
+        : conversations.createDesktopConversation(convTitle, vault?.id ?? null, vault?.name ?? null);
       if (!conversation) {
         return c.json({
           error: { code: 'NOT_FOUND', message: 'Conversation not found' },

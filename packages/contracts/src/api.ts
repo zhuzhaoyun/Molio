@@ -117,6 +117,8 @@ export interface ConversationHistoryItem {
   messageCount: number;
   vaultId?: string | null;
   vaultName?: string | null;
+  /** False when the vault row is gone (vault deleted) but the denormalized name is still available. */
+  vaultExists?: boolean;
 }
 
 export interface ProjectListResponse {

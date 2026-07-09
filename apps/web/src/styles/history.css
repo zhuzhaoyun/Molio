@@ -234,7 +234,21 @@
   padding: 0 8px;
 }
 
-/* Inline vault select in the search row — matches search input height */
+/* Inline label + vault select in the search row */
+.history-filter-label--inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.history-filter-label__text {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* Inline vault select — matches search input height */
 .history-filter-select--vault {
   height: 36px;
   font-size: 14px;

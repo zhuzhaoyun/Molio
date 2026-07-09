@@ -160,6 +160,7 @@ function migrate(db: SqliteDb): void {
   // vault_id on conversations (nullable; no FK — deleting a vault must not
   // cascade-delete conversations). Surfaced as a history filter dimension.
   addColumnIfMissing(db, 'conversations', 'vault_id', 'TEXT');
+  addColumnIfMissing(db, 'conversations', 'vault_name', 'TEXT');
   db.exec(`CREATE INDEX IF NOT EXISTS idx_conversations_vault
            ON conversations(vault_id, updated_at DESC)`);
 
@@ -383,7 +384,8 @@ export function listConversationHistory(
   const rows = db.prepare(`
     SELECT
       c.*,
-      v.name AS vault_name,
+      COALESCE(v.name, c.vault_name) AS vault_name,
+      (v.name IS NOT NULL) AS vault_exists,
       COALESCE(stats.message_count, 0) AS message_count,
       lm.id AS last_id,
       lm.role AS last_role,
@@ -432,6 +434,7 @@ function rowToHistoryItem(row: Record<string, unknown>): ConversationHistoryItem
     messageCount: Number(row.message_count ?? 0),
     vaultId: (row.vault_id as string | null) ?? null,
     vaultName: (row.vault_name as string | null) ?? null,
+    vaultExists: Boolean(row.vault_exists),
   };
 }
 
@@ -453,13 +456,14 @@ export function createDesktopConversation(
   db: SqliteDb,
   title?: string,
   vaultId?: string | null,
+  vaultName?: string | null,
 ): Conversation {
   ensureDesktopProject(db);
   const id = randomUUID();
   const now = Date.now();
   db.prepare(
-    'INSERT INTO conversations (id, project_id, title, channel_type, vault_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-  ).run(id, DESKTOP_PROJECT_ID, title ?? null, 'desktop', vaultId ?? null, now, now);
+    'INSERT INTO conversations (id, project_id, title, channel_type, vault_id, vault_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(id, DESKTOP_PROJECT_ID, title ?? null, 'desktop', vaultId ?? null, vaultName ?? null, now, now);
   return {
     id,
     projectId: DESKTOP_PROJECT_ID,

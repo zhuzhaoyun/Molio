@@ -70,18 +70,21 @@ export function HistoryPage({ onOpenConversation }: Props) {
               autoFocus
             />
           </div>
-          <select
-            className="history-filter-select history-filter-select--vault"
-            data-testid="history-filter-vault"
-            value={filters.vaultId}
-            onChange={(e) => setFilter('vaultId', e.target.value)}
-          >
+          <label className="history-filter-label--inline">
+            <span className="history-filter-label__text">{t('history.filter.vault')}</span>
+            <select
+              className="history-filter-select history-filter-select--vault"
+              data-testid="history-filter-vault"
+              value={filters.vaultId}
+              onChange={(e) => setFilter('vaultId', e.target.value)}
+            >
             <option value="">{t('history.filter.all')}</option>
             {vaults.map((v) => (
               <option key={v.id} value={v.id}>{v.name}</option>
             ))}
             <option value="__none__">{t('history.filter.unassociated')}</option>
           </select>
+          </label>
           <button
             className={`history-refresh${loading ? ' history-refresh--loading' : ''}`}
             type="button"
@@ -228,14 +231,14 @@ function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDelet
   onDeleteConfirm: (id: string) => void;
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
-  const { conversation, lastMessage, vaultName, vaultId } = item;
+  const { conversation, lastMessage, vaultName, vaultExists } = item;
   const isConfirming = confirmingDeleteId === conversation.id;
 
-  // Vault badge: text label. Alive = muted, deleted = red.
-  const vaultLabel = vaultName ?? (vaultId ? t('history.vaultDeleted') : null);
-  const vaultBadgeCls = vaultName
-    ? 'history-vault-badge'
-    : 'history-vault-badge history-vault-badge--deleted';
+  // Vault badge: always shows vault name. Gray = alive, red = vault deleted.
+  const vaultLabel = vaultName ?? undefined;
+  const vaultBadgeCls = vaultLabel
+    ? `history-vault-badge${vaultExists ? '' : ' history-vault-badge--deleted'}`
+    : undefined;
 
   if (isConfirming) {
     return (
@@ -268,7 +271,7 @@ function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDelet
         <span className="history-row__body">
           <span className="history-row__title-line">
             <span className="history-row__title">{conversation.title || t('history.untitled')}</span>
-            {vaultLabel && (
+            {vaultBadgeCls && (
               <span className={vaultBadgeCls}>{vaultLabel}</span>
             )}
           </span>

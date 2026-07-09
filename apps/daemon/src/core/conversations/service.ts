@@ -21,8 +21,8 @@ export interface ExternalConversationKey {
 export class ConversationService {
   constructor(private readonly db: Database.Database) {}
 
-  createDesktopConversation(title?: string, vaultId?: string | null): Conversation {
-    return createDesktopConversation(this.db, title, vaultId);
+  createDesktopConversation(title?: string, vaultId?: string | null, vaultName?: string | null): Conversation {
+    return createDesktopConversation(this.db, title, vaultId, vaultName);
   }
 
   getConversation(conversationId: string): Conversation | null {
