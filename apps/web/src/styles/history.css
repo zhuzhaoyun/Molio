@@ -267,7 +267,6 @@
   flex-shrink: 0;
 }
 
-.history-legend__bar--alive   { background: var(--border); }
 .history-legend__bar--deleted { background: var(--red); }
 
 /* ── Content Area ── */

@@ -206,10 +206,6 @@ export function HistoryPage({ onOpenConversation }: Props) {
           <>
             <div className="history-legend" aria-label={t('history.legendLabel')}>
               <span className="history-legend__group">
-                <span className="history-legend__bar history-legend__bar--alive" />
-                {t('history.filter.vault')}
-              </span>
-              <span className="history-legend__group">
                 <span className="history-legend__bar history-legend__bar--deleted" />
                 {t('history.vaultDeleted')}
               </span>
@@ -221,11 +217,6 @@ export function HistoryPage({ onOpenConversation }: Props) {
               <span className="history-legend__group">
                 <span className="history-dot history-dot--feishu" />
                 {t('history.source.feishu')}
-              </span>
-              <span className="history-legend__sep" />
-              <span className="history-legend__group">
-                <span className="history-dot history-dot--agent" />
-                {t('history.filter.agent')}
               </span>
             </div>
             <HistoryList
