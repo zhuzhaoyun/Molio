@@ -386,8 +386,13 @@
   gap: 8px;
   width: 100%;
   padding: 10px 14px;
+  border-bottom: 1px solid var(--border-soft);
   border-radius: var(--radius-sm);
   transition: background 120ms ease;
+}
+
+.history-row:last-child {
+  border-bottom: none;
 }
 
 .history-row:hover {
