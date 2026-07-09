@@ -15,6 +15,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  width: 100%;
   max-width: 1120px;
   margin: 0 auto;
   padding: 24px 36px 14px;
@@ -54,8 +55,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 40px;
+  height: 40px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg-panel);
@@ -75,8 +76,8 @@
 }
 
 .history-refresh svg {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
 }
 
 .history-refresh--loading svg {
@@ -272,6 +273,7 @@
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+  width: 100%;
   max-width: 1120px;
   margin: 0 auto;
   padding: 0 36px 12px;
@@ -287,12 +289,12 @@
   position: relative;
   flex: 1;
   min-width: 200px;
-  display: flex;
-  align-items: center;
 }
 .history-search-wrap > svg {
   position: absolute;
+  top: 50%;
   left: 12px;
+  transform: translateY(-50%);
   width: 16px;
   height: 16px;
   color: var(--text-faint);

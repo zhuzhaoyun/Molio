@@ -77,17 +77,6 @@ export function HistoryPage({ onOpenConversation }: Props) {
           <span className="history-title__icon"><ChatIcon /></span>
           <h1>{t('nav.history')}</h1>
         </div>
-        <button
-          className={`history-refresh${loading ? ' history-refresh--loading' : ''}`}
-          type="button"
-          onClick={refresh}
-          disabled={loading}
-          data-testid="history-refresh"
-          aria-label={t('history.refresh')}
-          title={t('history.refresh')}
-        >
-          {loading ? <LoadingIcon /> : <RefreshIcon />}
-        </button>
       </header>
 
       <div className="history-filters">
@@ -116,6 +105,17 @@ export function HistoryPage({ onOpenConversation }: Props) {
           {foldedFilterCount > 0 && (
             <span className="history-filter-toggle__count">{foldedFilterCount}</span>
           )}
+        </button>
+        <button
+          className={`history-refresh${loading ? ' history-refresh--loading' : ''}`}
+          type="button"
+          onClick={refresh}
+          disabled={loading}
+          data-testid="history-refresh"
+          aria-label={t('history.refresh')}
+          title={t('history.refresh')}
+        >
+          {loading ? <LoadingIcon /> : <RefreshIcon />}
         </button>
         </div>
         {filtersExpanded && (
