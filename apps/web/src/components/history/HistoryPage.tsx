@@ -77,16 +77,25 @@ export function HistoryPage({ onOpenConversation }: Props) {
           <span className="history-title__icon"><ChatIcon /></span>
           <h1>{t('nav.history')}</h1>
         </div>
-        <button className="history-refresh" type="button" onClick={refresh} disabled={loading} data-testid="history-refresh">
-          {loading ? t('history.loading') : t('history.refresh')}
+        <button
+          className={`history-refresh${loading ? ' history-refresh--loading' : ''}`}
+          type="button"
+          onClick={refresh}
+          disabled={loading}
+          data-testid="history-refresh"
+          aria-label={t('history.refresh')}
+          title={t('history.refresh')}
+        >
+          {loading ? <LoadingIcon /> : <RefreshIcon />}
         </button>
       </header>
 
       <div className="history-filters">
-        <div className="history-search-wrap">
-          <SearchIcon />
-          <input
-            className="history-search-input"
+        <div className="history-search-row">
+          <div className="history-search-wrap">
+            <SearchIcon />
+            <input
+              className="history-search-input"
             data-testid="history-search-input"
             type="search"
             placeholder={t('history.search.placeholder')}
@@ -108,6 +117,7 @@ export function HistoryPage({ onOpenConversation }: Props) {
             <span className="history-filter-toggle__count">{foldedFilterCount}</span>
           )}
         </button>
+        </div>
         {filtersExpanded && (
           <div className="history-filter-row">
             <label className="history-filter-field">
@@ -313,6 +323,30 @@ function ChevronIcon({ expanded }: { expanded: boolean }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>
       <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
+function RefreshIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+      <path d="M21 3v5h-5" />
+      <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+      <path d="M3 21v-5h5" />
+    </svg>
+  );
+}
+function LoadingIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 2v4" />
+      <path d="M12 18v4" />
+      <path d="m4.9 4.9 2.8 2.8" />
+      <path d="m16.3 16.3 2.8 2.8" />
+      <path d="M2 12h4" />
+      <path d="M18 12h4" />
+      <path d="m4.9 19.1 2.8-2.8" />
+      <path d="m16.3 7.7 2.8-2.8" />
     </svg>
   );
 }

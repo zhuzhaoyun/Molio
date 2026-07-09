@@ -51,15 +51,17 @@
 }
 
 .history-refresh {
-  height: 30px;
-  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  color: var(--text-muted);
   background: var(--bg-panel);
-  font: inherit;
-  font-size: 12px;
+  color: var(--text-muted);
   cursor: pointer;
+  flex-shrink: 0;
 }
 
 .history-refresh:hover:not(:disabled) {
@@ -70,6 +72,23 @@
 .history-refresh:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.history-refresh svg {
+  width: 16px;
+  height: 16px;
+}
+
+.history-refresh--loading svg {
+  animation: history-refresh-spin 0.8s linear infinite;
+}
+
+@keyframes history-refresh-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .history-refresh--loading svg { animation: none; }
 }
 
 .history-content {
@@ -258,6 +277,12 @@
   padding: 0 36px 12px;
   flex-shrink: 0;
 }
+.history-search-row {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  align-items: center;
+}
 .history-search-wrap {
   position: relative;
   flex: 1;
@@ -302,6 +327,7 @@
   font-size: 13px;
   cursor: pointer;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 .history-filter-toggle:hover {
   color: var(--text);
@@ -335,13 +361,18 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  flex: 1 1 0;
+  min-width: 120px;
 }
 .history-filter-label {
   font-size: 12px;
   color: var(--text-muted);
   white-space: nowrap;
+  flex-shrink: 0;
 }
 .history-filter-select {
+  flex: 1 1 auto;
+  min-width: 0;
   height: 30px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);

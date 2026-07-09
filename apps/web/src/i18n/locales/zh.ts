@@ -189,7 +189,7 @@ const zh: Record<string, string> = {
   'history.noMatch': '没有匹配的对话',
   'history.delete': '删除',
   'history.deleteFailed': '删除失败，请重试',
-  'history.vaultDeleted': '已删除的知识库',
+  'history.vaultDeleted': '已删除',
 
   // ── Settings ──
   'settings.title': '设置',
