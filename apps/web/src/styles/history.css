@@ -488,6 +488,7 @@
 
 /* ── Delete Button ── */
 .history-row__delete {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -501,6 +502,30 @@
   opacity: 0;
   transition: opacity 120ms ease, color 120ms ease;
   border-radius: var(--radius-sm);
+}
+
+/* Tooltip above delete button */
+.history-row__delete::after {
+  content: attr(title);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 9px;
+  background: var(--text-strong);
+  color: var(--bg-panel);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+  border-radius: 6px;
+  box-shadow: var(--shadow-sm);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.history-row__delete:hover::after {
+  opacity: 1;
 }
 
 .history-row__delete svg {
