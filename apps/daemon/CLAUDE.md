@@ -94,7 +94,7 @@ pnpm typecheck    # tsc --noEmit
 | GET | `/api/config` | 读取配置 |
 | PUT | `/api/config` | 更新配置 |
 | GET/POST/PUT/DELETE | `/api/projects` | 项目 CRUD |
-| GET | `/api/conversations` | 列出全局会话历史 |
+| GET | `/api/conversations` | 列出会话历史（支持 ?vaultId=&query=&before=&limit= 游标分页 + 全文搜索 + vault 过滤） |
 | GET | `/api/conversations/:id` | 查询单个会话 |
 | GET | `/api/conversations/:id/messages` | 列出会话全部消息 |
 | DELETE | `/api/conversations/:id` | 删除会话 |
@@ -123,6 +123,7 @@ pnpm typecheck    # tsc --noEmit
 - **外部身份映射规则**：外部通道用 `channel_type + external_session_id` 定位同一个 conversation，例如 `weixin + fromUserId`、`feishu + openId`、`wecom + userId`。
 - **渠道模块保持干净独立**：`core/weixin` 不直接关心数据库表结构、不维护自有 session store；它通过公共 `ConversationService` 获取/创建会话、读取历史、追加用户和助手消息。
 - **系统渠道项目**：当前数据库仍要求 `conversations.project_id NOT NULL`，外部渠道会话挂到隐藏系统项目 `__molio_channels__` 下；项目列表接口应过滤系统项目，避免污染用户项目。
+- **Vault 归属**：创建 run 时通过 `body.cwd` → `getVaultByPath` 解析 vault，将 `vault_id` + `vault_name`（反范式化）写入 conversation。vault 删除后 `vault_name` 保留，历史记录仍可显示原名。无 FK 级联——删 vault 不删会话。
 
 ## 测试规范
 
