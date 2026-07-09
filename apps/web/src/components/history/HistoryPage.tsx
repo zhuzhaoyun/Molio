@@ -203,7 +203,32 @@ export function HistoryPage({ onOpenConversation }: Props) {
             </div>
           )
         ) : (
-          <HistoryList
+          <>
+            <div className="history-legend" aria-label={t('history.legendLabel')}>
+              <span className="history-legend__group">
+                <span className="history-legend__bar history-legend__bar--alive" />
+                {t('history.filter.vault')}
+              </span>
+              <span className="history-legend__group">
+                <span className="history-legend__bar history-legend__bar--deleted" />
+                {t('history.vaultDeleted')}
+              </span>
+              <span className="history-legend__sep" />
+              <span className="history-legend__group">
+                <span className="history-dot history-dot--weixin" />
+                {t('history.source.weixin')}
+              </span>
+              <span className="history-legend__group">
+                <span className="history-dot history-dot--feishu" />
+                {t('history.source.feishu')}
+              </span>
+              <span className="history-legend__sep" />
+              <span className="history-legend__group">
+                <span className="history-dot history-dot--agent" />
+                {t('history.filter.agent')}
+              </span>
+            </div>
+            <HistoryList
             items={items}
             onOpenConversation={onOpenConversation}
             confirmingDeleteId={confirmingDeleteId}
@@ -213,6 +238,7 @@ export function HistoryPage({ onOpenConversation }: Props) {
             agents={agents}
             t={t}
           />
+          </>
         )}
 
         {hasMore && (
