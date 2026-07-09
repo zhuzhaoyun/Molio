@@ -175,19 +175,29 @@ export function HistoryPage({ onOpenConversation }: Props) {
         )}
 
         {loading && items.length === 0 ? (
-          <div className="rt-loading">{t('history.loading')}</div>
+          <div className="history-skeleton" aria-busy="true" aria-label={t('history.loading')}>
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div className="history-skeleton__row" key={i}>
+                <span className="history-skeleton__time" />
+                <span className="history-skeleton__body">
+                  <span className="history-skeleton__title" />
+                  <span className="history-skeleton__summary" />
+                </span>
+              </div>
+            ))}
+          </div>
         ) : items.length === 0 ? (
           isFilterActive ? (
-            <div className="rt-empty">
-              <div className="rt-empty__text">{t('history.noMatch')}</div>
+            <div className="history-empty">
+              <p className="history-empty__text">{t('history.noMatch')}</p>
               <button className="history-clear-filters" data-testid="history-clear-filters" type="button" onClick={clearFilters}>
                 {t('history.clearFilters')}
               </button>
             </div>
           ) : (
-            <div className="rt-empty" data-testid="history-empty">
-              <div className="rt-empty__text">{t('history.empty')}</div>
-              <div className="rt-empty__hint">{t('history.emptyHint')}</div>
+            <div className="history-empty" data-testid="history-empty">
+              <p className="history-empty__text">{t('history.empty')}</p>
+              <p className="history-empty__hint">{t('history.emptyHint')}</p>
             </div>
           )
         ) : (
@@ -212,7 +222,7 @@ function HistoryList({ items, onOpenConversation, onDelete, t }: {
 }) {
   const groups = groupByDate(items);
   return (
-    <section className="history-card" aria-label={t('history.listLabel')}>
+    <div aria-label={t('history.listLabel')}>
       {groups.map((group) => (
         <div className="history-date-group" key={group.key}>
           <h2 className="history-date-title">{group.label}</h2>
@@ -229,7 +239,7 @@ function HistoryList({ items, onOpenConversation, onDelete, t }: {
           </div>
         </div>
       ))}
-    </section>
+    </div>
   );
 }
 
