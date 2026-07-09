@@ -503,38 +503,43 @@
   white-space: nowrap;
 }
 
-.history-source-badge {
+/* ── Vault Status Bar ── */
+.history-row__vault-bar {
+  width: 3px;
+  flex-shrink: 0;
+  align-self: stretch;
+  border-radius: 2px;
+  margin-right: 10px;
+}
+
+.history-row__vault-bar--alive {
+  background: var(--border);
+}
+
+.history-row__vault-bar--deleted {
+  background: var(--red);
+}
+
+/* ── Colored Dots (channel / agent) ── */
+.history-dots {
   display: inline-flex;
   align-items: center;
+  gap: 5px;
   flex-shrink: 0;
-  height: 22px;
-  padding: 0 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  background: var(--bg-muted);
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1;
 }
 
-.history-source-badge--vault {
-  color: var(--text-muted);
-  background: var(--bg-muted);
-  border-color: var(--border);
+.history-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 
-.history-source-badge--agent {
-  color: var(--purple);
-  background: var(--purple-bg);
-  border-color: transparent;
-}
-
-.history-source-badge--weixin {
-  color: var(--green);
-  background: var(--green-bg);
-  border-color: var(--green-border);
-}
+.history-dot--weixin { background: var(--green); }
+.history-dot--feishu { background: var(--blue); }
+.history-dot--wecom  { background: var(--blue); }
+.history-dot--agent   { background: var(--purple); }
 
 .history-row__summary {
   color: var(--text-muted);

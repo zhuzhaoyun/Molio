@@ -189,7 +189,7 @@ const zh: Record<string, string> = {
   'history.noMatch': '没有匹配的对话',
   'history.delete': '删除',
   'history.deleteFailed': '删除失败，请重试',
-  'history.vaultDeleted': '已删除',
+  'history.vaultDeleted': '知识库已删除',
   'history.deleteConfirm': '确认删除这条会话记录？',
   'history.deleteConfirmYes': '确认',
   'history.deleteConfirmNo': '取消',

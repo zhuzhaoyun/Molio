@@ -189,7 +189,7 @@ const en: Record<string, string> = {
   'history.noMatch': 'No matching conversations',
   'history.delete': 'Delete',
   'history.deleteFailed': 'Delete failed, please retry',
-  'history.vaultDeleted': 'Deleted',
+  'history.vaultDeleted': 'Vault deleted',
   'history.deleteConfirm': 'Delete this conversation?',
   'history.deleteConfirmYes': 'Delete',
   'history.deleteConfirmNo': 'Cancel',

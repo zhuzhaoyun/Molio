@@ -302,16 +302,28 @@ function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDelet
   agentName: string | null;
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
-  const { conversation, lastMessage, vaultName } = item;
+  const { conversation, lastMessage, vaultName, vaultId } = item;
   const isConfirming = confirmingDeleteId === conversation.id;
   const channelType = conversation.channelType;
-  // Badges mirror the three filter dimensions: vault, channel, agent.
-  // Desktop is the default channel — no info value, skip it.
-  // Deleted vaults (vaultId exists but vaultName is null) are skipped —
-  // "已删除" is not a filter category, so it shouldn't be a badge.
-  const showVaultBadge = Boolean(vaultName);
-  const showChannelBadge = Boolean(channelType && channelType !== 'desktop');
-  const showAgentBadge = Boolean(agentName);
+
+  // Vault status bar — gray for alive, red for deleted, none for unassociated.
+  const vaultBar = vaultName
+    ? { cls: 'history-row__vault-bar--alive', title: vaultName }
+    : vaultId
+      ? { cls: 'history-row__vault-bar--deleted', title: t('history.vaultDeleted') }
+      : null;
+
+  // Channel dot — only non-desktop. Green for weixin, blue for others.
+  const channelDot = (channelType && channelType !== 'desktop')
+    ? { cls: `history-dot--${channelType}`, title: sourceLabel(t, channelType) }
+    : null;
+
+  // Agent dot — purple.
+  const agentDot = agentName
+    ? { cls: 'history-dot--agent', title: agentName }
+    : null;
+
+  const hasDots = Boolean(channelDot || agentDot);
 
   if (isConfirming) {
     return (
@@ -339,21 +351,20 @@ function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDelet
 
   return (
     <div className="history-row">
+      {/* Vault status bar — colored vertical indicator, left edge */}
+      {vaultBar && (
+        <span className={`history-row__vault-bar ${vaultBar.cls}`} title={vaultBar.title} aria-label={vaultBar.title} />
+      )}
       <button type="button" className="history-row__main" onClick={onOpen}>
         <span className="history-row__time">{formatTime(conversation.updatedAt)}</span>
         <span className="history-row__body">
           <span className="history-row__title-line">
             <span className="history-row__title">{conversation.title || t('history.untitled')}</span>
-            {showVaultBadge && (
-              <span className="history-source-badge history-source-badge--vault">{vaultName}</span>
-            )}
-            {showChannelBadge && (
-              <span className={`history-source-badge history-source-badge--${channelType}`}>
-                {sourceLabel(t, channelType!)}
+            {hasDots && (
+              <span className="history-dots">
+                {channelDot && <span className={`history-dot ${channelDot.cls}`} title={channelDot.title} />}
+                {agentDot && <span className={`history-dot ${agentDot.cls}`} title={agentDot.title} />}
               </span>
-            )}
-            {showAgentBadge && (
-              <span className="history-source-badge history-source-badge--agent">{agentName}</span>
             )}
           </span>
           <span className="history-row__summary">{lastMessage?.content || t('history.noMessage')}</span>
