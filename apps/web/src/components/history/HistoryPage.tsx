@@ -270,16 +270,15 @@ function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDelet
 }) {
   const { conversation, lastMessage, vaultName, vaultId } = item;
   const isConfirming = confirmingDeleteId === conversation.id;
-  // Merge channel + vault into one provenance badge. The vault segment only
-  // appears when the conversation is (or was) associated with a KB —
-  // unassociated rows show just the channel, avoiding a screen full of
-  // "未关联" chips on legacy data.
-  const source = sourceLabel(t, conversation.channelType);
-  const vaultSegment = vaultName
-    ? ` · ${vaultName}`
-    : vaultId
-      ? ` · ${t('history.vaultDeleted')}`
-      : '';
+  const channelType = conversation.channelType;
+  // Only show channel badge for non-desktop (desktop is the default — no info value).
+  const showChannelBadge = Boolean(channelType && channelType !== 'desktop');
+  // Show vault badge when the conversation is or was associated with a KB.
+  const showVaultBadge = Boolean(vaultName || vaultId);
+  const vaultBadgeLabel = vaultName || t('history.vaultDeleted');
+  const vaultBadgeClass = vaultName
+    ? 'history-source-badge--vault'
+    : 'history-source-badge--vault-deleted';
 
   if (isConfirming) {
     return (
@@ -312,9 +311,14 @@ function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDelet
         <span className="history-row__body">
           <span className="history-row__title-line">
             <span className="history-row__title">{conversation.title || t('history.untitled')}</span>
-            <span className={`history-source-badge history-source-badge--${conversation.channelType ?? 'desktop'}`}>
-              {source}{vaultSegment}
-            </span>
+            {showVaultBadge && (
+              <span className={`history-source-badge ${vaultBadgeClass}`}>{vaultBadgeLabel}</span>
+            )}
+            {showChannelBadge && (
+              <span className={`history-source-badge history-source-badge--${channelType}`}>
+                {sourceLabel(t, channelType!)}
+              </span>
+            )}
           </span>
           <span className="history-row__summary">{lastMessage?.content || t('history.noMessage')}</span>
         </span>

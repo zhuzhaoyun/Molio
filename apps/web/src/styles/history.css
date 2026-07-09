@@ -465,10 +465,16 @@
   line-height: 1;
 }
 
-.history-source-badge--desktop {
-  color: var(--blue);
-  background: var(--blue-bg);
-  border-color: var(--blue-border);
+.history-source-badge--vault {
+  color: var(--text-muted);
+  background: var(--bg-muted);
+  border-color: var(--border);
+}
+
+.history-source-badge--vault-deleted {
+  color: var(--red);
+  background: var(--red-bg);
+  border-color: var(--red-border);
 }
 
 .history-source-badge--weixin {
