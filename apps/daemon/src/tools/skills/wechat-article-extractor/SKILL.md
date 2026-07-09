@@ -1,6 +1,7 @@
 ---
 name: wechat-article-extractor
 description: 提取微信公众号文章（mp.weixin.qq.com）内容为 Markdown。遇到 mp.weixin.qq.com 链接时使用此 skill，禁止使用 WebFetch。
+version: 1.0.0
 ---
 
 # WeChat Article Extractor

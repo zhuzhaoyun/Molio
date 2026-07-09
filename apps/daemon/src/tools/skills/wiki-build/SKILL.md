@@ -1,6 +1,7 @@
 ---
 name: wiki-build
 description: 构建/重建本地知识库的 Wiki。扫描 vault 中所有源文件，从中构建一个结构化的 wiki（源文件摘要、实体、概念、对比、概述页），创建 INDEX/log/hot，密集交叉链接。Triggers on: 构建 wiki, 重建 wiki, build wiki, 扫描源文件构建, 初始构建, 重新构建知识库, start wiki build.
+version: 1.1.0
 ---
 
 # wiki-build: 构建 Wiki

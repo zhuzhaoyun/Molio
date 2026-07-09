@@ -67,8 +67,15 @@ function readSkillVersion(skillDir: string): string | null {
 }
 
 /**
- * Check if two skills have different versions.
- * Returns true if versions differ or if one is missing.
+ * Check if the destination skill is out of date relative to the source.
+ *
+ * - dest missing → install
+ * - source unversioned → can't reason about staleness, skip (leave dest as-is)
+ * - dest unversioned but source versioned → dest predates versioning, update
+ *   (this is what lets a newly-versioned skill propagate to existing vaults;
+ *   without it, a skill that gained a `version:` field later would never reach
+ *   vaults that already had an older version-less copy installed)
+ * - both versioned → update iff versions differ
  */
 function shouldUpdateSkill(srcDir: string, destDir: string): boolean {
   if (!fs.existsSync(destDir)) return true; // dest doesn't exist, need to install
@@ -76,8 +83,8 @@ function shouldUpdateSkill(srcDir: string, destDir: string): boolean {
   const srcVersion = readSkillVersion(srcDir);
   const destVersion = readSkillVersion(destDir);
 
-  // If either has no version, compare by checking if dest exists (already checked above)
-  if (!srcVersion || !destVersion) return false; // assume up-to-date if no version info
+  if (!srcVersion) return false; // source unversioned — can't reason, assume up-to-date
+  if (!destVersion) return true; // dest predates versioning — update to versioned copy
 
   return srcVersion !== destVersion;
 }
