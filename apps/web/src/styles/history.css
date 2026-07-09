@@ -365,14 +365,67 @@
 }
 
 .history-date-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   margin: 0 0 8px;
-  padding: 0;
+  padding: 4px 8px 4px 4px;
   color: var(--text-muted);
   font-family: var(--serif);
   font-size: 14px;
   font-weight: 500;
   font-style: italic;
   letter-spacing: 0.02em;
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: color 120ms ease, background 120ms ease;
+}
+
+.history-date-title:hover {
+  color: var(--text);
+  background: var(--bg-subtle);
+}
+
+.history-date-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  color: var(--text-faint);
+  transition: transform 180ms ease;
+}
+
+.history-date-chevron svg {
+  width: 14px;
+  height: 14px;
+}
+
+.history-date-group--collapsed .history-date-chevron {
+  /* ChevronIcon already handles rotation via the expanded prop */
+}
+
+.history-date-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--bg-muted);
+  color: var(--text-faint);
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 600;
+  font-style: normal;
+  letter-spacing: 0;
+}
+
+.history-date-group--collapsed .history-date-title {
+  margin-bottom: 0;
 }
 
 /* ── Rows ── */

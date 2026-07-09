@@ -234,27 +234,53 @@ function HistoryList({ items, onOpenConversation, confirmingDeleteId, onDeleteRe
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
   const groups = groupByDate(items);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+
+  const toggleGroup = (key: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+
   return (
     <div aria-label={t('history.listLabel')}>
-      {groups.map((group) => (
-        <div className="history-date-group" key={group.key}>
-          <h2 className="history-date-title">{group.label}</h2>
-          <div className="history-date-list">
-            {group.items.map((item) => (
-              <HistoryRow
-                key={item.conversation.id}
-                item={item}
-                onOpen={() => onOpenConversation(item.conversation.id)}
-                confirmingDeleteId={confirmingDeleteId}
-                onDeleteRequest={onDeleteRequest}
-                onDeleteCancel={onDeleteCancel}
-                onDeleteConfirm={onDeleteConfirm}
-                t={t}
-              />
-            ))}
+      {groups.map((group) => {
+        const isCollapsed = collapsed.has(group.key);
+        return (
+          <div className={`history-date-group${isCollapsed ? ' history-date-group--collapsed' : ''}`} key={group.key}>
+            <button
+              type="button"
+              className="history-date-title"
+              onClick={() => toggleGroup(group.key)}
+              aria-expanded={!isCollapsed}
+            >
+              <span className={`history-date-chevron${isCollapsed ? '' : ' history-date-chevron--open'}`}>
+                <ChevronIcon expanded={!isCollapsed} />
+              </span>
+              {group.label}
+              <span className="history-date-count">{group.items.length}</span>
+            </button>
+            {!isCollapsed && (
+              <div className="history-date-list">
+                {group.items.map((item) => (
+                  <HistoryRow
+                    key={item.conversation.id}
+                    item={item}
+                    onOpen={() => onOpenConversation(item.conversation.id)}
+                    confirmingDeleteId={confirmingDeleteId}
+                    onDeleteRequest={onDeleteRequest}
+                    onDeleteCancel={onDeleteCancel}
+                    onDeleteConfirm={onDeleteConfirm}
+                    t={t}
+                  />
+                ))}
+              </div>
+            )}
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
