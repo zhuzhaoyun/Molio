@@ -15,6 +15,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  max-width: 1120px;
+  margin: 0 auto;
   padding: 24px 36px 14px;
   flex-shrink: 0;
 }
@@ -137,32 +139,15 @@
 }
 
 .history-row__time {
+  flex-shrink: 0;
   padding-top: 2px;
   color: var(--text-muted);
   font-size: 14px;
   font-variant-numeric: tabular-nums;
 }
 
-.history-row__source {
-  display: inline-flex;
-  width: 22px;
-  height: 22px;
-  align-items: center;
-  justify-content: center;
-  margin-top: 1px;
-  color: var(--text-strong);
-}
-
-.history-row__source svg {
-  width: 20px;
-  height: 20px;
-}
-
-.history-row__source--weixin {
-  color: var(--green);
-}
-
 .history-row__body {
+  flex: 1 1 auto;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -181,6 +166,8 @@
   font-size: 18px;
   font-weight: 600;
   line-height: 1.35;
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -266,6 +253,8 @@
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+  max-width: 1120px;
+  margin: 0 auto;
   padding: 0 36px 12px;
   flex-shrink: 0;
 }
@@ -362,7 +351,7 @@
   font-size: 12px;
   padding: 0 8px;
 }
-.history-row__main { flex: 1; display: flex; gap: 10px; align-items: center; background: none; border: none; cursor: pointer; text-align: left; padding: 14px 0; }
+.history-row__main { flex: 1 1 auto; min-width: 0; display: flex; gap: 10px; align-items: center; background: none; border: none; cursor: pointer; text-align: left; padding: 14px 0; }
 .history-row__delete { background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 0 8px; opacity: 0; transition: opacity .15s; border-radius: var(--radius-sm); }
 .history-row:hover .history-row__delete,
 .history-row:focus-within .history-row__delete { opacity: 1; }

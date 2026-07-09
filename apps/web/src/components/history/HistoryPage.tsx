@@ -244,9 +244,6 @@ function HistoryRow({ item, onOpen, onDelete, t }: {
     <div className="history-row">
       <button type="button" className="history-row__main" onClick={onOpen}>
         <span className="history-row__time">{formatTime(conversation.updatedAt)}</span>
-        <span className={`history-row__source history-row__source--${conversation.channelType ?? 'desktop'}`}>
-          <ChatIcon />
-        </span>
         <span className="history-row__body">
           <span className="history-row__title-line">
             <span className="history-row__title">{conversation.title || t('history.untitled')}</span>
