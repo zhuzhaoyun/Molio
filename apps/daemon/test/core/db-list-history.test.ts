@@ -49,27 +49,6 @@ describe('listConversationHistory filters + cursor', () => {
     assert.ok(!ids.includes(c1.id));
   });
 
-  it('filters by channelType', () => {
-    const p = createProject(db, 'P');
-    // createConversation defaults channel_type='desktop'
-    const c = createConversation(db, p.id, 'desktop-conv');
-    upsertMessage(db, c.id, { id: 'd1', role: 'user', content: 'hi', timestamp: Date.now() });
-    const page = listConversationHistory(db, { channelType: 'desktop' });
-    assert.ok(page.items.some((i) => i.conversation.id === c.id));
-    const none = listConversationHistory(db, { channelType: 'weixin' });
-    assert.ok(!none.items.some((i) => i.conversation.id === c.id));
-  });
-
-  it('filters by agentId', () => {
-    const p = createProject(db, 'P2');
-    const c = createConversation(db, p.id, 'agent-conv');
-    upsertMessage(db, c.id, { id: 'e1', role: 'assistant', content: 'hi', timestamp: Date.now(), agentId: 'claude' });
-    const page = listConversationHistory(db, { agentId: 'claude' });
-    assert.ok(page.items.some((i) => i.conversation.id === c.id));
-    const none = listConversationHistory(db, { agentId: 'codex' });
-    assert.ok(!none.items.some((i) => i.conversation.id === c.id));
-  });
-
   it('cursor pagination: limit=2 over 3 items', async () => {
     const p = createProject(db, 'P3');
     const convs = [];

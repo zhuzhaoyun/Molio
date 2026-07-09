@@ -38,8 +38,6 @@ export function conversationRoutes(
     }
     const page = listConversationHistory(db, {
       vaultId: q.vaultId,
-      channelType: q.channelType,
-      agentId: q.agentId,
       query: q.query,
       before,
       limit,

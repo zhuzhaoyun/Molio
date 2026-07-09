@@ -234,6 +234,15 @@
   padding: 0 8px;
 }
 
+/* Inline vault select in the search row — matches search input height */
+.history-filter-select--vault {
+  height: 36px;
+  font-size: 14px;
+  padding: 0 10px;
+  max-width: 180px;
+  flex-shrink: 0;
+}
+
 /* ── Legend ── */
 .history-legend {
   display: flex;
@@ -538,43 +547,27 @@
   white-space: nowrap;
 }
 
-/* ── Vault Status Bar ── */
-.history-row__vault-bar {
-  width: 3px;
-  flex-shrink: 0;
-  align-self: stretch;
-  border-radius: 2px;
-  margin-right: 10px;
-}
-
-.history-row__vault-bar--alive {
-  background: var(--border);
-}
-
-.history-row__vault-bar--deleted {
-  background: var(--red);
-}
-
-/* ── Colored Dots (channel / agent) ── */
-.history-dots {
+/* ── Vault Badge ── */
+.history-vault-badge {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
   flex-shrink: 0;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-muted);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
 }
 
-.history-dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
+.history-vault-badge--deleted {
+  color: var(--red);
+  background: var(--red-bg);
+  border-color: var(--red-border);
 }
-
-.history-dot--weixin { background: var(--green); }
-.history-dot--feishu { background: var(--blue); }
-.history-dot--wecom  { background: var(--blue); }
-.history-dot--agent   { background: var(--purple); }
 
 .history-row__summary {
   color: var(--text-muted);

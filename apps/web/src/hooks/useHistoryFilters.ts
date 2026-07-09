@@ -4,12 +4,10 @@ import { api } from '../api/client';
 
 export interface HistoryFilters {
   vaultId: string;      // '' = all
-  channelType: string;  // '' = all
-  agentId: string;      // '' = all
   query: string;        // '' = no search
 }
 
-const EMPTY_FILTERS: HistoryFilters = { vaultId: '', channelType: '', agentId: '', query: '' };
+const EMPTY_FILTERS: HistoryFilters = { vaultId: '', query: '' };
 const STALE_MS = 30_000;
 const PAGE_SIZE = 50;
 
@@ -29,8 +27,6 @@ export function useHistoryFilters() {
   const buildOpts = useCallback((f: HistoryFilters, before?: number | null): ListHistoryQuery => {
     const opts: ListHistoryQuery = { limit: PAGE_SIZE };
     if (f.vaultId) opts.vaultId = f.vaultId;
-    if (f.channelType) opts.channelType = f.channelType;
-    if (f.agentId) opts.agentId = f.agentId;
     if (f.query.trim()) opts.query = f.query.trim();
     if (before != null) opts.before = before;
     return opts;
@@ -73,7 +69,7 @@ export function useHistoryFilters() {
     }
   }, [nextCursor, loading, buildOpts]);
 
-  const setFilter = useCallback((key: keyof Omit<HistoryFilters, 'query'>, value: string) => {
+  const setFilter = useCallback((key: 'vaultId', value: string) => {
     setFilters((prev) => {
       const next = { ...prev, [key]: value };
       void fetchFirst(next);

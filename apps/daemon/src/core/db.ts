@@ -368,14 +368,6 @@ export function listConversationHistory(
     where.push('c.vault_id = ?');
     params.push(opts.vaultId);
   }
-  if (opts.channelType) {
-    where.push('c.channel_type = ?');
-    params.push(opts.channelType);
-  }
-  if (opts.agentId) {
-    where.push('c.id IN (SELECT DISTINCT conversation_id FROM messages WHERE agent_id = ?)');
-    params.push(opts.agentId);
-  }
   if (hitIds) {
     where.push(`c.id IN (${hitIds.map(() => '?').join(', ')})`);
     params.push(...hitIds);

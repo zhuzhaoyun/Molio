@@ -134,8 +134,6 @@ export interface ConversationHistoryListResponse {
 export interface ListHistoryQuery {
   /** undefined/null = all conversations; '__none__' = only unassociated (vault_id IS NULL) */
   vaultId?: string | null;
-  channelType?: string;
-  agentId?: string;
   /** Full-text search over message content. Empty = skip FTS. */
   query?: string;
   /** updated_at cursor (exclusive). Omit for first page. */

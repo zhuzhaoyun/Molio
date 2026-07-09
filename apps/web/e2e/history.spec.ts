@@ -251,17 +251,12 @@ test.describe('History', () => {
     }
   });
 
-  test('filter toggle expands to reveal dropdowns', async ({ page }) => {
+  test('vault filter is visible alongside search', async ({ page }) => {
     await gotoHome(page);
     await clickNav(page, 'history');
 
-    // Search is the primary control; dropdowns are folded behind the toggle.
+    // Vault dropdown is always visible next to the search input (only filter dimension).
     await expect(page.locator('[data-testid=history-search-input]')).toBeVisible({ timeout: 5_000 });
-    await expect(page.locator('[data-testid=history-filter-vault]')).toHaveCount(0);
-
-    await page.locator('[data-testid=history-filter-toggle]').click();
     await expect(page.locator('[data-testid=history-filter-vault]')).toBeVisible({ timeout: 3_000 });
-    await expect(page.locator('[data-testid=history-filter-channel]')).toBeVisible();
-    await expect(page.locator('[data-testid=history-filter-agent]')).toBeVisible();
   });
 });

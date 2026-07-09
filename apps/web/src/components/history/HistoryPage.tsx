@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ConversationHistoryItem, Vault, AgentInfo } from '@molio/contracts';
+import type { ConversationHistoryItem, Vault } from '@molio/contracts';
 import { api } from '../../api/client';
 import { useI18n } from '../../i18n';
 import { useHistoryFilters } from '../../hooks/useHistoryFilters';
@@ -8,29 +8,16 @@ interface Props {
   onOpenConversation: (conversationId: string) => void;
 }
 
-const CHANNEL_OPTIONS = [
-  { value: '', labelKey: 'history.filter.all' },
-  { value: 'desktop', labelKey: 'history.source.desktop' },
-  { value: 'weixin', labelKey: 'history.source.weixin' },
-  { value: 'feishu', labelKey: 'history.source.feishu' },
-  { value: 'wecom', labelKey: 'history.source.wecom' },
-];
-
 export function HistoryPage({ onOpenConversation }: Props) {
   const { t } = useI18n();
   const { filters, setFilter, setQuery, items, loading, error, loadMore, refresh, hasMore, deleteConversationLocal } = useHistoryFilters();
   const [vaults, setVaults] = useState<Vault[]>([]);
-  const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
   const deleteErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    Promise.all([api.listVaults(), api.listAgents()]).then(([v, a]) => {
-      setVaults(v);
-      setAgents(a);
-    }).catch(() => { /* best-effort */ });
+    api.listVaults().then(setVaults).catch(() => { /* best-effort */ });
   }, []);
 
   // Clear any transient delete error on unmount.
@@ -42,8 +29,6 @@ export function HistoryPage({ onOpenConversation }: Props) {
 
   const clearFilters = () => {
     setFilter('vaultId', '');
-    setFilter('channelType', '');
-    setFilter('agentId', '');
     setQuery('');
   };
 
@@ -53,24 +38,14 @@ export function HistoryPage({ onOpenConversation }: Props) {
     try {
       await api.deleteConversationById(id);
     } catch {
-      // rollback: re-fetch to restore (refresh kicks off an async fetch but
-      // returns void; the E2E polls for the row to reappear).
       refresh();
-      // Non-blocking transient error (spec §7.5): no alert(), which blocks the
-      // main thread and makes E2E fragile. Reuse the .history-error styling.
       if (deleteErrorTimer.current) clearTimeout(deleteErrorTimer.current);
       setDeleteError(t('history.deleteFailed'));
       deleteErrorTimer.current = setTimeout(() => setDeleteError(null), 3000);
     }
   };
 
-  const isFilterActive = Boolean(
-    filters.vaultId || filters.channelType || filters.agentId || filters.query.trim(),
-  );
-  // Only the three selects are folded behind the toggle; search is always
-  // visible as the primary action. The count badge signals active filters
-  // without forcing the user to expand.
-  const foldedFilterCount = [filters.vaultId, filters.channelType, filters.agentId].filter(Boolean).length;
+  const isFilterActive = Boolean(filters.vaultId || filters.query.trim());
 
   return (
     <div className="history-shell">
@@ -87,87 +62,38 @@ export function HistoryPage({ onOpenConversation }: Props) {
             <SearchIcon />
             <input
               className="history-search-input"
-            data-testid="history-search-input"
-            type="search"
-            placeholder={t('history.search.placeholder')}
-            value={filters.query}
-            onChange={(e) => setQuery(e.target.value)}
-            autoFocus
-          />
-        </div>
-        <button
-          type="button"
-          className="history-filter-toggle"
-          data-testid="history-filter-toggle"
-          onClick={() => setFiltersExpanded((v) => !v)}
-          aria-expanded={filtersExpanded}
-        >
-          {t('history.filter.toggle')}
-          <ChevronIcon expanded={filtersExpanded} />
-          {foldedFilterCount > 0 && (
-            <span className="history-filter-toggle__count">{foldedFilterCount}</span>
-          )}
-        </button>
-        <button
-          className={`history-refresh${loading ? ' history-refresh--loading' : ''}`}
-          type="button"
-          onClick={refresh}
-          disabled={loading}
-          data-testid="history-refresh"
-          aria-label={t('history.refresh')}
-          title={t('history.refresh')}
-        >
-          {loading ? <LoadingIcon /> : <RefreshIcon />}
-        </button>
-        </div>
-        {filtersExpanded && (
-          <div className="history-filter-row">
-            <label className="history-filter-field">
-              <span className="history-filter-label">{t('history.filter.vault')}</span>
-              <select
-                className="history-filter-select"
-                data-testid="history-filter-vault"
-                value={filters.vaultId}
-                onChange={(e) => setFilter('vaultId', e.target.value)}
-              >
-                <option value="">{t('history.filter.all')}</option>
-                {vaults.map((v) => (
-                  <option key={v.id} value={v.id}>{v.name}</option>
-                ))}
-                <option value="__none__">{t('history.filter.unassociated')}</option>
-              </select>
-            </label>
-
-            <label className="history-filter-field">
-              <span className="history-filter-label">{t('history.filter.channel')}</span>
-              <select
-                className="history-filter-select"
-                data-testid="history-filter-channel"
-                value={filters.channelType}
-                onChange={(e) => setFilter('channelType', e.target.value)}
-              >
-                {CHANNEL_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
-                ))}
-              </select>
-            </label>
-
-            <label className="history-filter-field">
-              <span className="history-filter-label">{t('history.filter.agent')}</span>
-              <select
-                className="history-filter-select"
-                data-testid="history-filter-agent"
-                value={filters.agentId}
-                onChange={(e) => setFilter('agentId', e.target.value)}
-              >
-                <option value="">{t('history.filter.all')}</option>
-                {agents.map((a) => (
-                  <option key={a.id} value={a.id}>{a.name}</option>
-                ))}
-              </select>
-            </label>
+              data-testid="history-search-input"
+              type="search"
+              placeholder={t('history.search.placeholder')}
+              value={filters.query}
+              onChange={(e) => setQuery(e.target.value)}
+              autoFocus
+            />
           </div>
-        )}
+          <select
+            className="history-filter-select history-filter-select--vault"
+            data-testid="history-filter-vault"
+            value={filters.vaultId}
+            onChange={(e) => setFilter('vaultId', e.target.value)}
+          >
+            <option value="">{t('history.filter.all')}</option>
+            {vaults.map((v) => (
+              <option key={v.id} value={v.id}>{v.name}</option>
+            ))}
+            <option value="__none__">{t('history.filter.unassociated')}</option>
+          </select>
+          <button
+            className={`history-refresh${loading ? ' history-refresh--loading' : ''}`}
+            type="button"
+            onClick={refresh}
+            disabled={loading}
+            data-testid="history-refresh"
+            aria-label={t('history.refresh')}
+            title={t('history.refresh')}
+          >
+            {loading ? <LoadingIcon /> : <RefreshIcon />}
+          </button>
+        </div>
       </div>
 
       <main className="history-content">
@@ -209,15 +135,6 @@ export function HistoryPage({ onOpenConversation }: Props) {
                 <span className="history-legend__bar history-legend__bar--deleted" />
                 {t('history.vaultDeleted')}
               </span>
-              <span className="history-legend__sep" />
-              <span className="history-legend__group">
-                <span className="history-dot history-dot--weixin" />
-                {t('history.source.weixin')}
-              </span>
-              <span className="history-legend__group">
-                <span className="history-dot history-dot--feishu" />
-                {t('history.source.feishu')}
-              </span>
             </div>
             <HistoryList
             items={items}
@@ -226,7 +143,6 @@ export function HistoryPage({ onOpenConversation }: Props) {
             onDeleteRequest={setConfirmingDeleteId}
             onDeleteCancel={() => setConfirmingDeleteId(null)}
             onDeleteConfirm={executeDelete}
-            agents={agents}
             t={t}
           />
           </>
@@ -242,22 +158,17 @@ export function HistoryPage({ onOpenConversation }: Props) {
   );
 }
 
-function HistoryList({ items, onOpenConversation, confirmingDeleteId, onDeleteRequest, onDeleteCancel, onDeleteConfirm, agents, t }: {
+function HistoryList({ items, onOpenConversation, confirmingDeleteId, onDeleteRequest, onDeleteCancel, onDeleteConfirm, t }: {
   items: ConversationHistoryItem[];
   onOpenConversation: (id: string) => void;
   confirmingDeleteId: string | null;
   onDeleteRequest: (id: string) => void;
   onDeleteCancel: () => void;
   onDeleteConfirm: (id: string) => void;
-  agents: AgentInfo[];
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
   const groups = groupByDate(items);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-
-  const agentNames = useRef<Map<string, string>>(new Map());
-  agentNames.current.clear();
-  for (const a of agents) agentNames.current.set(a.id, a.name);
 
   const toggleGroup = (key: string) => {
     setCollapsed((prev) => {
@@ -296,7 +207,6 @@ function HistoryList({ items, onOpenConversation, confirmingDeleteId, onDeleteRe
                     onDeleteRequest={onDeleteRequest}
                     onDeleteCancel={onDeleteCancel}
                     onDeleteConfirm={onDeleteConfirm}
-                    agentName={item.lastMessage?.agentId ? (agentNames.current.get(item.lastMessage.agentId) ?? null) : null}
                     t={t}
                   />
                 ))}
@@ -309,38 +219,23 @@ function HistoryList({ items, onOpenConversation, confirmingDeleteId, onDeleteRe
   );
 }
 
-function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDeleteCancel, onDeleteConfirm, agentName, t }: {
+function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDeleteCancel, onDeleteConfirm, t }: {
   item: ConversationHistoryItem;
   onOpen: () => void;
   confirmingDeleteId: string | null;
   onDeleteRequest: (id: string) => void;
   onDeleteCancel: () => void;
   onDeleteConfirm: (id: string) => void;
-  agentName: string | null;
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
   const { conversation, lastMessage, vaultName, vaultId } = item;
   const isConfirming = confirmingDeleteId === conversation.id;
-  const channelType = conversation.channelType;
 
-  // Vault status bar — gray for alive, red for deleted, none for unassociated.
-  const vaultBar = vaultName
-    ? { cls: 'history-row__vault-bar--alive', title: vaultName }
-    : vaultId
-      ? { cls: 'history-row__vault-bar--deleted', title: t('history.vaultDeleted') }
-      : null;
-
-  // Channel dot — only non-desktop. Green for weixin, blue for others.
-  const channelDot = (channelType && channelType !== 'desktop')
-    ? { cls: `history-dot--${channelType}`, title: sourceLabel(t, channelType) }
-    : null;
-
-  // Agent dot — purple.
-  const agentDot = agentName
-    ? { cls: 'history-dot--agent', title: agentName }
-    : null;
-
-  const hasDots = Boolean(channelDot || agentDot);
+  // Vault badge: text label. Alive = muted, deleted = red.
+  const vaultLabel = vaultName ?? (vaultId ? t('history.vaultDeleted') : null);
+  const vaultBadgeCls = vaultName
+    ? 'history-vault-badge'
+    : 'history-vault-badge history-vault-badge--deleted';
 
   if (isConfirming) {
     return (
@@ -368,20 +263,13 @@ function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDelet
 
   return (
     <div className="history-row">
-      {/* Vault status bar — colored vertical indicator, left edge */}
-      {vaultBar && (
-        <span className={`history-row__vault-bar ${vaultBar.cls}`} title={vaultBar.title} aria-label={vaultBar.title} />
-      )}
       <button type="button" className="history-row__main" onClick={onOpen}>
         <span className="history-row__time">{formatTime(conversation.updatedAt)}</span>
         <span className="history-row__body">
           <span className="history-row__title-line">
             <span className="history-row__title">{conversation.title || t('history.untitled')}</span>
-            {hasDots && (
-              <span className="history-dots">
-                {channelDot && <span className={`history-dot ${channelDot.cls}`} title={channelDot.title} />}
-                {agentDot && <span className={`history-dot ${agentDot.cls}`} title={agentDot.title} />}
-              </span>
+            {vaultLabel && (
+              <span className={vaultBadgeCls}>{vaultLabel}</span>
             )}
           </span>
           <span className="history-row__summary">{lastMessage?.content || t('history.noMessage')}</span>
@@ -413,12 +301,6 @@ function formatDateLabel(date: Date) {
 }
 function formatTime(value: number) {
   return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
-function sourceLabel(t: (key: string, params?: Record<string, string | number>) => string, channelType?: string) {
-  if (channelType === 'weixin') return t('history.source.weixin');
-  if (channelType === 'feishu') return t('history.source.feishu');
-  if (channelType === 'wecom') return t('history.source.wecom');
-  return t('history.source.desktop');
 }
 function ChatIcon() {
   return (
