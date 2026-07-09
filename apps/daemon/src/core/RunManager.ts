@@ -689,6 +689,14 @@ export class RunManager {
         .catch((err: Error) => {
           // If the session was cancelled, the cancel flow already handles termination — don't spam errors.
           if (transport.isCancelled(sessionId)) return;
+          // cancelRun sets run.status='canceled' synchronously, then the
+          // child exits and close handler's rejectAll rejects this prompt.
+          // By the time .catch runs, rejectAll has already cleared
+          // cancelledSessionIds (so isCancelled above returns false even for
+          // a cancelled session). Guard on terminal status to suppress the
+          // spurious "prompt failed: hermes-acp process exited" error event
+          // for runs the user already cancelled.
+          if (TERMINAL_STATUSES.has(run.status)) return;
           // Append the last stderr line hermes printed before going silent —
           // when idle/absolute timeout fires, the error alone gives reporters
           // no clue what hermes was doing. The last stderr line is usually

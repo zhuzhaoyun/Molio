@@ -150,6 +150,56 @@ describe('RunManager ACP integration (Hermes)', () => {
     });
   });
 
+  it('cancelRun + process exit does not emit spurious prompt-failed error', async () => {
+    // OCR fix: the close handler's rejectAll() clears cancelledSessionIds
+    // before the pending session/prompt's .catch runs. Without the
+    // TERMINAL_STATUSES guard, .catch sees isCancelled=false and emits a
+    // misleading "prompt failed: hermes-acp process exited" error event for
+    // a run the user already cancelled — polluting the UI with a red banner
+    // for an intentional action.
+    //
+    // Reproduce: hang the prompt so a session/prompt is genuinely pending
+    // when cancelRun fires. Without the fix, the .catch would emit the error.
+    process.env['FAKE_HERMES_PROMPT_HANG_WITH_STDERR'] = '1';
+
+    const runId = await runManager.createRun({ agentId: 'hermes', message: 'hi' });
+    await collectEvents(runId, (ev) => ev.type === 'models');
+    // Wait for the first stderr heartbeat so we know the prompt was received
+    // and is pending (the fake server prints one INFO line ~50ms after prompt).
+    await new Promise((r) => setTimeout(r, 120));
+
+    const errorMessages: string[] = [];
+    const unsub = runManager.onEvent(runId, (ev) => {
+      if (ev.type === 'error') errorMessages.push(ev.message);
+    });
+
+    runManager.cancelRun(runId);
+    // cancelRun sets run.status='canceled' synchronously, then SIGTERMs the
+    // child after session/cancel resolves. Wait for the process to exit and
+    // the close handler to fire — that's the path that triggers rejectAll.
+    await new Promise<void>((resolve) => {
+      const check = () => {
+        const info = runManager.getRunInfo(runId);
+        if (info && ['succeeded', 'failed', 'canceled'].includes(info.status)) resolve();
+        else setTimeout(check, 30);
+      };
+      check();
+    });
+    // Grace period for the close handler's rejectAll + .catch microtask to fire
+    // after the process actually exits.
+    await new Promise((r) => setTimeout(r, 200));
+    unsub?.();
+
+    const spurious = errorMessages.find(m => m.includes('prompt failed'));
+    assert.equal(
+      spurious,
+      undefined,
+      `cancelled run should not emit a "prompt failed" error, got: ${JSON.stringify(errorMessages)}`,
+    );
+
+    delete process.env['FAKE_HERMES_PROMPT_HANG_WITH_STDERR'];
+  });
+
   it('process exit mid-prompt is marked failed (not succeeded)', async () => {
     // Without the close-handler fix, a process exiting with code 0 while a
     // session/prompt is pending would be marked 'succeeded' — contradicting

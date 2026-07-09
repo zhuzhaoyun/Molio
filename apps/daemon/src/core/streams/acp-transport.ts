@@ -281,7 +281,21 @@ export class AcpTransport {
     if (msg.method === 'session/update' && msg.params) {
       const sessionId: string | undefined = msg.params.sessionId;
       if (sessionId && this.cancelledSessionIds.has(sessionId)) return;
-      this.mapUpdate(msg.params.update);
+      // mapUpdate touches an unstable ACP schema (tool calls, usage). A
+      // malformed update (circular ref in JSON.stringify, unexpected shape)
+      // would throw out of mapUpdate, escape the while loop in feed(), and
+      // silently drop any subsequent buffered frames. Surface it as a raw
+      // event so the line is preserved in events.jsonl for diagnosis, and
+      // keep processing the rest of the buffer.
+      try {
+        this.mapUpdate(msg.params.update);
+      } catch (err) {
+        const errMsg = (err as Error).message ?? String(err);
+        this.onEvent({
+          type: 'raw',
+          line: `[mapUpdate error] ${errMsg}: ${JSON.stringify(msg.params.update).slice(0, 400)}`,
+        });
+      }
       return;
     }
 

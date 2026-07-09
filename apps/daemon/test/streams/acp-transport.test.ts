@@ -302,6 +302,61 @@ describe('AcpTransport', () => {
       assert.equal(events.length, 1);
       assert.equal(events[0]!.type, 'raw');
     });
+
+    it('mapUpdate throwing does not break subsequent frames', () => {
+      // OCR fix: mapUpdate touches an unstable ACP schema. A throw inside it
+      // (e.g. downstream onEvent blowing up) used to escape the while loop in
+      // feed() and silently drop subsequent buffered frames. Now the throw is
+      // caught, surfaced as a raw [mapUpdate error] event for diagnosis, and
+      // the buffer keeps draining.
+      const events: AgentEvent[] = [];
+      const transport = new AcpTransport(
+        (_json) => {},
+        (ev) => {
+          // Inject a downstream consumer that throws on a specific delta.
+          // Real-world analog: emitEvent → eventsLogStream.write throwing
+          // after the stream errored out, or any other side effect.
+          if (ev.type === 'text_delta' && (ev as any).delta === 'TRIGGER_THROW') {
+            throw new Error('synthetic downstream throw');
+          }
+          events.push(ev);
+        },
+      );
+
+      // Frame 1: triggers text_delta with TRIGGER_THROW — onEvent throws
+      // INSIDE mapUpdate. Without the try/catch, this throw escapes feed()
+      // and frame 2 never gets parsed.
+      transport.feed(JSON.stringify({
+        jsonrpc: '2.0', method: 'session/update',
+        params: { sessionId: 's', update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'TRIGGER_THROW' },
+        } },
+      }) + '\n');
+
+      // Frame 2: normal frame — should still process, proving feed()'s while
+      // loop wasn't broken by the throw in frame 1.
+      transport.feed(JSON.stringify({
+        jsonrpc: '2.0', method: 'session/update',
+        params: { sessionId: 's', update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'after' },
+        } },
+      }) + '\n');
+
+      const mapUpdateErr = events.find(e =>
+        e.type === 'raw' && typeof e.line === 'string' && e.line.includes('[mapUpdate error]'));
+      assert.ok(mapUpdateErr, 'mapUpdate throw should be surfaced as a raw event for diagnosis');
+
+      const afterDelta = events.find(e =>
+        e.type === 'text_delta' && (e as any).delta === 'after');
+      assert.ok(afterDelta, 'subsequent frame after the throw should still produce text_delta');
+
+      const throwDelta = events.find(e =>
+        e.type === 'text_delta' && (e as any).delta === 'TRIGGER_THROW');
+      assert.equal(throwDelta, undefined,
+        'frame 1 text_delta should not be emitted (throw happened inside onEvent before push)');
+    });
   });
 
   describe('cancelledSessionIds', () => {
