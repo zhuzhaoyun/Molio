@@ -548,38 +548,6 @@
   border-color: var(--red-border);
 }
 
-.history-vault-badge__warn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin-left: 3px;
-  width: 15px;
-  height: 15px;
-  border-radius: 50%;
-  background: var(--red);
-  color: #fff;
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1;
-  cursor: help;
-}
-
-/* Standalone "!" — vault deleted, name lost (historical) */
-.history-vault-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--red);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1;
-  cursor: help;
-}
 
 .history-row__summary {
   color: var(--text-muted);

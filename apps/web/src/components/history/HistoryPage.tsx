@@ -267,16 +267,11 @@ function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDelet
         <span className="history-row__body">
           <span className="history-row__title-line">
             <span className="history-row__title">{conversation.title || t('history.untitled')}</span>
-            {vaultBadgeCls ? (
-              <span className={vaultBadgeCls}>
+            {vaultBadgeCls && (
+              <span className={vaultBadgeCls} title={vaultDeleted ? t('history.vaultDeleted') : vaultLabel}>
                 {vaultLabel}
-                {vaultDeleted && (
-                  <span className="history-vault-badge__warn" title={t('history.vaultDeleted')} aria-label={t('history.vaultDeleted')}>!</span>
-                )}
               </span>
-            ) : vaultDeleted ? (
-              <span className="history-vault-icon" title={t('history.vaultDeleted')} aria-label={t('history.vaultDeleted')}>!</span>
-            ) : null}
+            )}
           </span>
           <span className="history-row__summary">{lastMessage?.content || t('history.noMessage')}</span>
         </span>
