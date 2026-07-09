@@ -277,8 +277,6 @@ export const api = {
   async listConversationHistory(opts?: ListHistoryQuery): Promise<ConversationHistoryPage> {
     const params = new URLSearchParams();
     if (opts?.vaultId) params.set('vaultId', opts.vaultId);
-    if (opts?.channelType) params.set('channelType', opts.channelType);
-    if (opts?.agentId) params.set('agentId', opts.agentId);
     if (opts?.query) params.set('query', opts.query);
     if (opts?.before != null) params.set('before', String(opts.before));
     if (opts?.limit != null) params.set('limit', String(opts.limit));

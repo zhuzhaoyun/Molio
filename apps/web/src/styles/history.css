@@ -257,41 +257,6 @@
   flex-shrink: 0;
 }
 
-/* ── Legend ── */
-.history-legend {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  padding: 0 0 12px;
-  font-size: 11px;
-  color: var(--text-faint);
-  user-select: none;
-}
-
-.history-legend__group {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  white-space: nowrap;
-}
-
-.history-legend__sep {
-  width: 1px;
-  height: 10px;
-  background: var(--border);
-  margin: 0 2px;
-}
-
-.history-legend__bar {
-  width: 12px;
-  height: 3px;
-  border-radius: 2px;
-  flex-shrink: 0;
-}
-
-.history-legend__bar--deleted { background: var(--red); }
-
 /* ── Content Area ── */
 .history-content {
   flex: 1;
@@ -581,6 +546,18 @@
   color: var(--red);
   background: var(--red-bg);
   border-color: var(--red-border);
+}
+
+.history-vault-badge__warn {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 3px;
+  color: inherit;
+}
+
+.history-vault-badge__warn svg {
+  width: 13px;
+  height: 13px;
 }
 
 .history-row__summary {

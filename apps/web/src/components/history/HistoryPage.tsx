@@ -132,14 +132,7 @@ export function HistoryPage({ onOpenConversation }: Props) {
             </div>
           )
         ) : (
-          <>
-            <div className="history-legend" aria-label={t('history.legendLabel')}>
-              <span className="history-legend__group">
-                <span className="history-legend__bar history-legend__bar--deleted" />
-                {t('history.vaultDeleted')}
-              </span>
-            </div>
-            <HistoryList
+          <HistoryList
             items={items}
             onOpenConversation={onOpenConversation}
             confirmingDeleteId={confirmingDeleteId}
@@ -148,7 +141,6 @@ export function HistoryPage({ onOpenConversation }: Props) {
             onDeleteConfirm={executeDelete}
             t={t}
           />
-          </>
         )}
 
         {hasMore && (
@@ -272,7 +264,14 @@ function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDelet
           <span className="history-row__title-line">
             <span className="history-row__title">{conversation.title || t('history.untitled')}</span>
             {vaultBadgeCls && (
-              <span className={vaultBadgeCls}>{vaultLabel}</span>
+              <span className={vaultBadgeCls}>
+                {vaultLabel}
+                {!vaultExists && (
+                  <span className="history-vault-badge__warn" title={t('history.vaultDeleted')} aria-label={t('history.vaultDeleted')}>
+                    <WarnIcon />
+                  </span>
+                )}
+              </span>
             )}
           </span>
           <span className="history-row__summary">{lastMessage?.content || t('history.noMessage')}</span>
@@ -345,6 +344,15 @@ function RefreshIcon() {
       <path d="M21 3v5h-5" />
       <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
       <path d="M3 21v-5h5" />
+    </svg>
+  );
+}
+function WarnIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+      <line x1="12" y1="9" x2="12" y2="13" />
+      <line x1="12" y1="17" x2="12.01" y2="17" />
     </svg>
   );
 }
