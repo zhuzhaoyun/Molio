@@ -144,6 +144,26 @@ describe('Knowledge routes — file import', () => {
     assert.equal(errors[0]!.reason, 'unsupported_format');
   });
 
+  it('accepts CSV and TSV as text imports', async () => {
+    const fd = makeFormData({
+      files: [
+        makeFile('table.csv', 'a,b,c\n1,2,3'),
+        makeFile('data.tsv', 'a\tb\tc\n1\t2\t3'),
+      ],
+    });
+    const req = new Request(`http://localhost/api/knowledge/vaults/${vaultId}/import`, {
+      method: 'POST',
+      body: fd,
+    });
+    const res = await app.request(req);
+    assert.equal(res.status, 200);
+    const data = await json(res);
+    const imported = (data['imported'] as string[]).sort();
+    assert.deepEqual(imported, ['data.tsv', 'table.csv']);
+    const errors = data['errors'] as Array<{ file: string; reason: string }>;
+    assert.equal(errors.length, 0);
+  });
+
   // ─── size guard ───
 
   it('returns 413 when Content-Length exceeds 50MB', async () => {

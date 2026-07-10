@@ -440,7 +440,7 @@ function isSupportedFile(name: string): boolean {
 }
 
 /** Text file extensions — content read as UTF-8 */
-export const TEXT_EXTS = ['.md', '.txt', '.html', '.htm', '.json', '.yaml', '.yml'];
+export const TEXT_EXTS = ['.md', '.txt', '.html', '.htm', '.json', '.yaml', '.yml', '.csv', '.tsv'];
 
 /** Image file extensions — displayed inline via <img> */
 export const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp', '.ico'];
@@ -606,6 +606,8 @@ const MIME_TYPES: Record<string, string> = {
   '.json': 'application/json',
   '.yaml': 'text/yaml',
   '.yml': 'text/yaml',
+  '.csv': 'text/csv',
+  '.tsv': 'text/tab-separated-values',
   // Images
   '.png': 'image/png',
   '.jpg': 'image/jpeg',

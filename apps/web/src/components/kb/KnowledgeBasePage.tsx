@@ -159,6 +159,11 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
   // Pending import files for conflict retry (replaces fragile `as any` function-property hack)
   const pendingImportRef = useRef<{ files: File[]; targetDir: string; oversizedCount: number } | null>(null);
 
+  // Locate-request signal to KbFilePanel: after a successful import, set this
+  // to expand the imported file's ancestors and scroll it into view. Token
+  // dedup is handled inside KbFilePanel.
+  const [importedLocateRequest, setImportedLocateRequest] = useState<{ path: string; token: number } | null>(null);
+
   const handleOpenQa = useCallback(() => {
     if (!kb.selectedFile) return;
     setQaSelectedText(null);
@@ -821,6 +826,15 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
       // Refresh tree
       await kb.refreshTree();
 
+      // Reveal the first imported file in the tree (expand ancestors + scroll
+      // into view) so the user sees the result of the drop without having to
+      // manually hunt for it. Renamed-takes-precedence: if every file was
+      // renamed due to conflicts, scroll to the renamed path instead.
+      const firstImported = result.imported[0] ?? result.renamed[0]?.to;
+      if (firstImported) {
+        setImportedLocateRequest({ path: firstImported, token: Date.now() });
+      }
+
       // Show result toast
       const imported = result.imported.length;
       const renamed = result.renamed.length;
@@ -850,6 +864,12 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
     try {
       const result = await api.importFiles(kb.activeVault.id, Array.from(files), targetDir ?? '', strategy);
       await kb.refreshTree();
+
+      // Reveal the first imported/renamed file in the tree.
+      const firstImported = result.imported[0] ?? result.renamed[0]?.to;
+      if (firstImported) {
+        setImportedLocateRequest({ path: firstImported, token: Date.now() });
+      }
 
       const imported = result.imported.length;
       const renamed = result.renamed.length;
@@ -909,6 +929,7 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
         onRenameCancel={handleRenameCancel}
         onImportFiles={handleImportFiles}
         onMoveFile={handleMoveFile}
+        locateRequest={importedLocateRequest}
       >
         <div className="kb-resize-handle" onMouseDown={handleResizeStart} />
       </KbFilePanel>

@@ -29,6 +29,14 @@ interface KbFileTreeProps {
    * active.
    */
   revealToken?: number;
+  /**
+   * Path of a file the parent wants to scroll into view WITHOUT selecting it
+   * (e.g. a just-imported file). Paired with `revealToken` — when the token
+   * bumps and this matches a tree item's path, that item scrolls into view
+   * even if it isn't the active file. Lets the import flow reveal the new
+   * file without forcing a tab switch or discard-prompt on the user.
+   */
+  revealPath?: string | null;
   onTogglePath: (path: string) => void;
   onSelectFile: (path: string) => void;
   onAddToWiki?: (path: string, isDirectory: boolean) => void;
@@ -53,6 +61,7 @@ export function KbFileTree({
   searchQuery,
   expandedPaths,
   revealToken,
+  revealPath,
   onTogglePath,
   onSelectFile,
   onAddToWiki,
@@ -86,6 +95,7 @@ export function KbFileTree({
           searchQuery={searchQuery}
           expandedPaths={expandedPaths}
           revealToken={revealToken}
+          revealPath={revealPath}
           onTogglePath={onTogglePath}
           onSelectFile={onSelectFile}
           onAddToWiki={onAddToWiki}
@@ -110,6 +120,7 @@ interface TreeNodeItemProps {
   searchQuery: string;
   expandedPaths: Set<string>;
   revealToken?: number;
+  revealPath?: string | null;
   onTogglePath: (path: string) => void;
   onSelectFile: (path: string) => void;
   onAddToWiki?: (path: string, isDirectory: boolean) => void;
@@ -128,6 +139,7 @@ function TreeNodeItem({
   searchQuery,
   expandedPaths,
   revealToken,
+  revealPath,
   onTogglePath,
   onSelectFile,
   onAddToWiki,
@@ -271,6 +283,7 @@ function TreeNodeItem({
               searchQuery={searchQuery}
               expandedPaths={expandedPaths}
               revealToken={revealToken}
+              revealPath={revealPath}
               onTogglePath={onTogglePath}
               onSelectFile={onSelectFile}
               onAddToWiki={onAddToWiki}
@@ -323,6 +336,15 @@ function TreeNodeItem({
     if (!isActive) return;
     itemRef.current?.scrollIntoView({ block: 'nearest' });
   }, [isActive, revealToken]);
+
+  // Parent-triggered reveal for a non-active file (e.g. just-imported file
+  // that isn't selected yet — we don't want to force a tab switch / discard
+  // prompt, just visually scroll it into view). Fires when revealToken bumps
+  // AND this item's path matches `revealPath`.
+  useEffect(() => {
+    if (!revealPath || revealPath !== node.path) return;
+    itemRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [revealPath, revealToken, node.path]);
 
   const handleFileContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();

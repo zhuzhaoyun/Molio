@@ -286,6 +286,21 @@ describe('knowledge filesystem operations', () => {
       }
     });
 
+    it('should include CSV and TSV files (tabular text data)', () => {
+      const cleanVault = mkdtempSync(join(tmpdir(), 'molio-csv-'));
+      try {
+        writeFileSync(join(cleanVault, 'data.csv'), 'a,b,c\n1,2,3');
+        writeFileSync(join(cleanVault, 'data.tsv'), 'a\tb\tc\n1\t2\t3');
+        writeFileSync(join(cleanVault, 'notes.md'), 'ok');
+
+        const tree = scanTree(cleanVault);
+        const names = tree.map((n) => n.name).sort();
+        assert.deepEqual(names, ['data.csv', 'data.tsv', 'notes.md']);
+      } finally {
+        rmSync(cleanVault, { recursive: true, force: true });
+      }
+    });
+
     it('should return empty array for empty vault', () => {
       const cleanVault = mkdtempSync(join(tmpdir(), 'molio-empty-'));
       try {
@@ -332,6 +347,18 @@ describe('knowledge filesystem operations', () => {
       writeFile(vaultPath, 'config.yaml', 'key: val');
       const file = readFile(vaultPath, 'config.yaml');
       assert.equal(file.mimeType, 'text/yaml');
+    });
+
+    it('should detect CSV MIME type', () => {
+      writeFile(vaultPath, 'table.csv', 'a,b,c\n1,2,3');
+      const file = readFile(vaultPath, 'table.csv');
+      assert.equal(file.mimeType, 'text/csv');
+    });
+
+    it('should detect TSV MIME type', () => {
+      writeFile(vaultPath, 'table.tsv', 'a\tb\tc\n1\t2\t3');
+      const file = readFile(vaultPath, 'table.tsv');
+      assert.equal(file.mimeType, 'text/tab-separated-values');
     });
   });
 

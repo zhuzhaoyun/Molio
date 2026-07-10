@@ -38,6 +38,13 @@ interface KbFilePanelProps {
   onImportFiles?: (files: File[], targetDir: string) => void;
   /** Called when a file is dragged from one directory to another within the tree. */
   onMoveFile?: (srcPath: string, destDir: string) => void;
+  /**
+   * Parent-triggered locate request — expand the file's ancestor directories
+   * and scroll it into view. Bumping `token` re-triggers even for the same
+   * path (e.g. a second import of the same filename after rename). Used by
+   * the import flow to scroll the just-imported file into view.
+   */
+  locateRequest?: { path: string; token: number } | null;
   children?: ReactNode;
 }
 
@@ -59,6 +66,7 @@ export function KbFilePanel({
   onRenameCancel,
   onImportFiles,
   onMoveFile,
+  locateRequest,
   children,
 }: KbFilePanelProps) {
   const { t } = useI18n();
@@ -75,6 +83,10 @@ export function KbFilePanel({
   // Bumped each time the user hits "locate" — KbFileTree scrolls the active
   // file into view when this token changes (see TreeNodeItem effect).
   const [revealToken, setRevealToken] = useState(0);
+  // Path of the file the parent asked to scroll into view without selecting
+  // (e.g. just-imported file). Paired with revealToken — KbFileTree scrolls
+  // the matching item whenever the token bumps.
+  const [revealPath, setRevealPath] = useState<string | null>(null);
 
   // Drag-over state for external file import
   const [dragOver, setDragOver] = useState<{
@@ -100,21 +112,35 @@ export function KbFilePanel({
     [sortedTree],
   );
 
-  // Locate the currently selected file in the tree: expand every ancestor
-  // directory so the file item is rendered, then bump the reveal token so the
-  // item scrolls itself into view.
-  const locateFile = useCallback(() => {
-    if (!selectedFile) return;
+  // Expand every ancestor directory of `path` so the file item is rendered,
+  // then bump the reveal token + set revealPath so TreeNodeItem scrolls it
+  // into view. Called by the "locate" toolbar button (uses `selectedFile`)
+  // and by the `locateRequest` effect (uses an explicit path, e.g. a
+  // just-imported file that isn't selected yet).
+  const locateFile = useCallback((path?: string) => {
+    const target = path ?? selectedFile;
+    if (!target) return;
     setExpandedPaths((prev) => {
       const next = new Set(prev);
-      const parts = selectedFile.split('/');
+      const parts = target.split('/');
       for (let i = 1; i < parts.length; i++) {
         next.add(parts.slice(0, i).join('/'));
       }
       return next;
     });
+    setRevealPath(target);
     setRevealToken((n) => n + 1);
   }, [selectedFile]);
+
+  // Handle parent-triggered locate requests (e.g. after import). Dedup by
+  // token so the same request doesn't fire twice in StrictMode.
+  const lastLocateTokenRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!locateRequest) return;
+    if (locateRequest.token === lastLocateTokenRef.current) return;
+    lastLocateTokenRef.current = locateRequest.token;
+    locateFile(locateRequest.path);
+  }, [locateRequest, locateFile]);
 
   // ── External drag-and-drop handlers ──
 
@@ -162,30 +188,16 @@ export function KbFilePanel({
       el.classList.remove('drag-target');
     });
 
-    // Check for folders — if any item in the file list is a directory, reject
     const { files } = e.dataTransfer;
     if (files.length === 0) return;
 
-    // Determine target directory from drop position
-    // The KbFileTree directory nodes set a data attribute during dragOver
-    // We extract it from the event target
+    // Directory nodes annotate themselves with `data-drop-dir` so the drop
+    // handler can read the target directory from the closest ancestor.
     let targetDir = '';
     const target = e.target as HTMLElement;
     const dirEl = target.closest('[data-drop-dir]');
     if (dirEl) {
       targetDir = dirEl.getAttribute('data-drop-dir') ?? '';
-    }
-
-    // Reject folders (browser can't distinguish — check for empty type)
-    for (let i = 0; i < files.length; i++) {
-      if (files[i].type === '' && files[i].name.indexOf('.') === -1) {
-        // Likely a folder or file without extension — use size as heuristic:
-        // folders dragged in have size 0 or very small
-        // Actually, the browser gives us File objects for files only.
-        // Folders from the OS are NOT included in dataTransfer.files.
-        // So this check is moot — the browser already filters. Keep as safety.
-        break;
-      }
     }
 
     onImportFiles?.(Array.from(files), targetDir);
@@ -267,7 +279,7 @@ export function KbFilePanel({
         <button
           type="button"
           title={selectedFile ? t('kb.locateFile') : t('kb.locateFileNeedFile')}
-          onClick={locateFile}
+          onClick={() => locateFile()}
           disabled={!selectedFile}
           data-testid="kb-btn-locate"
         >
@@ -372,6 +384,7 @@ export function KbFilePanel({
           searchQuery={searchQuery}
           expandedPaths={expandedPaths}
           revealToken={revealToken}
+          revealPath={revealPath}
           onTogglePath={togglePath}
           onSelectFile={onSelectFile}
           onAddToWiki={onAddToWiki}
