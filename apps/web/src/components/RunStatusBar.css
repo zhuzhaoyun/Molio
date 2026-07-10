@@ -59,6 +59,6 @@
 }
 
 @keyframes status-glow {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--green) 30%, transparent); }
-  50%      { box-shadow: 0 0 0 4px color-mix(in srgb, var(--green) 0%, transparent); }
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--green) 0%, transparent); }
+  50%      { box-shadow: 0 0 0 4px color-mix(in srgb, var(--green) 30%, transparent); }
 }
