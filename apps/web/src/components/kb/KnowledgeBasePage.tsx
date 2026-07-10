@@ -985,6 +985,10 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
           showFileName={true}
           isEditMode={kb.isEditMode}
           onToggleEdit={kb.toggleEditMode}
+          onForceLoad={kb.forceLoadFile}
+          onCloseTab={() => {
+            if (tabs.activeTabId) handleCloseTab(tabs.activeTabId);
+          }}
         />
       </div>
 
