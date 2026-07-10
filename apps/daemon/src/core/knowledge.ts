@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import trash from 'trash';
 import type { TreeNode, FileContent, SearchResult } from '@molio/contracts';
+import { detectEncoding, decodeAll, decideReadStrategy, FileTooLargeError, ENCODING_SAMPLE_BYTES } from './encoding.js';
 
 /**
  * Scan a vault directory and return the file tree.
@@ -77,7 +78,7 @@ export function countFiles(vaultPath: string): number {
  * For text files, returns content as UTF-8 string.
  * For binary files (images, PDF, DOCX), content is empty — use raw file URL or openPath.
  */
-export function readFile(vaultPath: string, relPath: string): FileContent {
+export function readFile(vaultPath: string, relPath: string, opts: { force?: boolean } = {}): FileContent {
   let resolved = resolveFilePath(vaultPath, relPath);
 
   if (!fs.existsSync(resolved)) {
@@ -96,15 +97,35 @@ export function readFile(vaultPath: string, relPath: string): FileContent {
 
   const stat = fs.statSync(real);
   const mimeType = getMimeType(path.basename(real));
-  const content = isTextFile(real) ? fs.readFileSync(real, 'utf-8') : '';
+  const isText = isTextFile(real);
 
-  return {
-    path: relPath,
-    content,
-    size: stat.size,
-    modifiedAt: stat.mtimeMs,
-    mimeType,
-  };
+  // Three-tier cap. Encoding is detected from a 64KB sample for text files so
+  // even tooLarge text files report their encoding on the card.
+  const strategy = decideReadStrategy(stat.size, opts.force === true);
+  const sample = isText ? readSample(real, ENCODING_SAMPLE_BYTES) : Buffer.alloc(0);
+  const encoding = isText ? detectEncoding(sample) : undefined;
+
+  if (strategy === 'refuse') {
+    throw new FileTooLargeError(stat.size);
+  }
+  if (strategy === 'tooLarge') {
+    return { path: relPath, content: '', size: stat.size, modifiedAt: stat.mtimeMs, mimeType, encoding, tooLarge: true };
+  }
+
+  const content = isText ? decodeAll(fs.readFileSync(real), encoding ?? 'utf-8') : '';
+  return { path: relPath, content, size: stat.size, modifiedAt: stat.mtimeMs, mimeType, encoding };
+}
+
+/** Read up to `n` bytes from the start of a file (for encoding detection). */
+function readSample(filePath: string, n: number): Buffer {
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    const buf = Buffer.allocUnsafe(Math.min(n, fs.fstatSync(fd).size));
+    fs.readSync(fd, buf, 0, buf.length, 0);
+    return buf;
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
 /**

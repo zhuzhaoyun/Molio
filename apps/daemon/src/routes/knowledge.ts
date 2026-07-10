@@ -41,6 +41,7 @@ import { annotateTreeStatus } from '../core/wiki-status.js';
 import { VAULT_TREE_CHANGED_EVENT, type VaultWatcher } from '../core/vault-watcher.js';
 import type { RunManager } from '../core/RunManager.js';
 import { installBuiltinSkills } from '../core/skill-installer.js';
+import { FileTooLargeError } from '../core/encoding.js';
 
 export function knowledgeRoutes(
   db: Database.Database,
@@ -166,10 +167,14 @@ export function knowledgeRoutes(
     }
 
     try {
-      const file = readFile(vault.path, relPath);
+      const force = c.req.query('force') === '1';
+      const file = readFile(vault.path, relPath, { force });
       return c.json(file);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to read file';
+      if (err instanceof FileTooLargeError) {
+        return c.json({ error: { code: 'FILE_TOO_LARGE', message } }, 413);
+      }
       const code = (err as NodeJS.ErrnoException).code;
       if (code === 'ENOENT') {
         return c.json({ error: { code: 'NOT_FOUND', message } }, 404);
