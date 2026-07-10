@@ -25,7 +25,7 @@ interface KbFilePanelProps {
   onNewFile: (parentPath?: string) => void;
   onNewFolder: (parentPath?: string) => void;
   onVaultClick: () => void;
-  onAddToWiki?: (path: string) => void;
+  onAddToWiki?: (path: string, isDirectory: boolean) => void;
   /** Context menu handler — fired on right-click of any tree node */
   onContextMenu?: (node: TreeNode, e: React.MouseEvent) => void;
   /** Path of node being renamed (null = none) */

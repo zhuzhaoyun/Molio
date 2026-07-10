@@ -31,7 +31,7 @@ interface KbFileTreeProps {
   revealToken?: number;
   onTogglePath: (path: string) => void;
   onSelectFile: (path: string) => void;
-  onAddToWiki?: (path: string) => void;
+  onAddToWiki?: (path: string, isDirectory: boolean) => void;
   onContextMenu?: (node: TreeNode, e: React.MouseEvent) => void;
   /** Path of the node currently being renamed (null = not renaming) */
   renamingPath?: string | null;
@@ -112,7 +112,7 @@ interface TreeNodeItemProps {
   revealToken?: number;
   onTogglePath: (path: string) => void;
   onSelectFile: (path: string) => void;
-  onAddToWiki?: (path: string) => void;
+  onAddToWiki?: (path: string, isDirectory: boolean) => void;
   onContextMenu?: (node: TreeNode, e: React.MouseEvent) => void;
   renamingPath?: string | null;
   onRenameComplete?: (oldPath: string, newName: string) => void;
@@ -147,8 +147,8 @@ function TreeNodeItem({
 
   const handleAdd = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    onAddToWiki?.(node.path);
-  }, [onAddToWiki, node.path]);
+    onAddToWiki?.(node.path, node.type === 'directory');
+  }, [onAddToWiki, node.path, node.type]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
