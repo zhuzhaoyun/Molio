@@ -271,6 +271,21 @@ describe('knowledge filesystem operations', () => {
       }
     });
 
+    it('should include video and audio files (inline <video>/<audio> preview)', () => {
+      const cleanVault = mkdtempSync(join(tmpdir(), 'molio-media-'));
+      try {
+        writeFileSync(join(cleanVault, 'clip.mp4'), 'fake-video');
+        writeFileSync(join(cleanVault, 'voiceover.mp3'), 'fake-audio');
+        writeFileSync(join(cleanVault, 'notes.md'), 'ok');
+
+        const tree = scanTree(cleanVault);
+        const names = tree.map((n) => n.name).sort();
+        assert.deepEqual(names, ['clip.mp4', 'notes.md', 'voiceover.mp3']);
+      } finally {
+        rmSync(cleanVault, { recursive: true, force: true });
+      }
+    });
+
     it('should return empty array for empty vault', () => {
       const cleanVault = mkdtempSync(join(tmpdir(), 'molio-empty-'));
       try {
