@@ -4,6 +4,7 @@ import type { AgentInfo } from '@molio/contracts';
 import { UserMessage } from './UserMessage';
 import { AssistantMessage } from './AssistantMessage';
 import { ChatComposer } from './ChatComposer';
+import { RunStatusBar } from './RunStatusBar';
 
 interface Props {
   messages: ChatMessage[];
@@ -101,6 +102,9 @@ export function ChatPane({
           </>
         )}
       </div>
+
+      {/* 进度状态条 */}
+      <RunStatusBar messages={messages} isRunning={isRunning} />
 
       {/* Composer */}
       <ChatComposer
