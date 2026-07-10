@@ -30,6 +30,12 @@ export function ToolCard({ tool, isLast, onAnswerToolUse, onSubmitForm }: Props)
     );
   }
 
+  return <DefaultToolCard tool={tool} />;
+}
+
+// ── DefaultToolCard — all hooks live here at top level (Rules of Hooks) ──
+
+function DefaultToolCard({ tool }: { tool: ToolEvent }) {
   // ── Elapsed time + expand state ──
   const [elapsed, setElapsed] = useState(0);
   const [expanded, setExpanded] = useState(false);
@@ -74,11 +80,23 @@ export function ToolCard({ tool, isLast, onAnswerToolUse, onSubmitForm }: Props)
     ? ''
     : tool.isError ? '✗' : '✓';
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!hasOutput) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      toggleExpand();
+    }
+  };
+
   return (
     <div className="tool-card-wrapper">
       <div
         className={`tool-line${hasOutput ? ' has-output' : ''}`}
+        role={hasOutput ? 'button' : undefined}
+        tabIndex={hasOutput ? 0 : undefined}
+        aria-expanded={hasOutput ? expanded : undefined}
         onClick={hasOutput ? toggleExpand : undefined}
+        onKeyDown={handleKeyDown}
         data-testid="tool-line"
       >
         <span className="tool-line-arrow">{'⎿'}</span>
