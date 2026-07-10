@@ -283,6 +283,33 @@ describe('skill-installer migration', () => {
     );
   });
 
+  it('should update a version-less dest when the source gains a version', () => {
+    // Reproduces the wiki-large-source-file bug: a skill whose SKILL.md had no
+    // `version:` field was shipped to existing vaults, then later gained both
+    // new content AND a `version:` field. The old `shouldUpdateSkill` returned
+    // false whenever either side lacked a version, so the new content never
+    // reached existing vaults — only new ones. The fix: a versioned source
+    // must refresh a version-less dest.
+    const wikiBuildDir = path.join(skillsDir, 'wiki-build');
+    fs.mkdirSync(wikiBuildDir, { recursive: true });
+    // Simulate an old version-less install (pre-1.1.0, no `version:` line).
+    fs.writeFileSync(
+      path.join(wikiBuildDir, 'SKILL.md'),
+      ['# ---', 'name: wiki-build', 'description: old.', '---', '', '# old body'].join('\n'),
+    );
+
+    installBuiltinSkills(tmpVault);
+
+    const installed = fs.readFileSync(path.join(wikiBuildDir, 'SKILL.md'), 'utf-8');
+    // Must now carry a version line (proves the versioned source was copied in).
+    assert.match(installed, /^version:\s*1\.\d+\.\d+$/m, 'version-less dest should be updated to versioned source');
+    // And the current body content, not the stale old body.
+    assert.ok(
+      installed.includes('超长源文件处理'),
+      'dest should reflect current source content, not the stale version-less copy',
+    );
+  });
+
   it('should update skill when version differs, skip when same', () => {
     // First install
     installBuiltinSkills(tmpVault);

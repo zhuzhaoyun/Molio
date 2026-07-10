@@ -5,7 +5,8 @@
  * - Binary (pdf/docx/pptx): file info card + "open with system app" button
  */
 
-import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
+import { useEffect, useState, useRef, useMemo, useCallback, lazy, Suspense } from 'react';
+import { MAX_ASK_SELECTION } from './kb-constants';
 import type { FileContent } from '@molio/contracts';
 import type { ThemeConfig } from './MdStylePanel';
 import { MdRenderer } from './MdRenderer';
@@ -13,11 +14,25 @@ import { MdTypesetEditor } from './MdTypesetEditor';
 import { MdEditor } from './MdEditor';
 import { ContextMenu } from './ContextMenu';
 import type { MenuItem } from './ContextMenu';
+import { TooLargeCard } from './TooLargeCard';
+import { ViewerErrorBoundary } from './ViewerErrorBoundary';
+import type { KbCodeMirrorViewerHandle } from './KbCodeMirrorViewer';
+import { formatFileSize } from '../../utils/format';
 import { preprocessWikiEmbeds, proxyExternalImages, stripTrackingPixels } from '../../hooks/useKnowledge';
 import { api } from '../../api/client';
 import { useI18n } from '../../i18n';
 import TurndownService from 'turndown';
 import { gfm } from 'turndown-plugin-gfm';
+
+// Lazy-load the CodeMirror viewer (heavy CM bundle) only when a text file
+// actually takes the CM path (non-md / large md). Named export → default shape.
+const KbCodeMirrorViewer = lazy(() =>
+  import('./KbCodeMirrorViewer').then((m) => ({ default: m.KbCodeMirrorViewer })),
+);
+
+/** .md files at or below this size still render via doocs/md. Above → source mode. */
+const MD_RENDER_THRESHOLD = 1 * 1024 * 1024;
+const MD_EXTS = new Set(['.md', '.markdown']);
 
 /**
  * Lazy singleton HTML→Markdown converter. Used by the copy action to write a
@@ -50,12 +65,6 @@ function getFileCategory(fileName: string): FileCategory {
   if (AUDIO_EXTS.has(ext)) return 'audio';
   if (BINARY_EXTS.has(ext)) return 'binary';
   return 'text';
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 /** CJK character range + English word count. Returns "word count" (CJK each char = 1 + English word count). */
@@ -106,6 +115,10 @@ interface KbMainContentProps {
   onAskAboutFile?: () => void;
   /** 编辑后的内容（用于阅读模式显示未保存的更改） */
   editedContent?: string | null;
+  /** Force-load a too-large file past the safe cap (wired to useKnowledge.forceLoadFile). */
+  onForceLoad?: () => void;
+  /** Close the active tab (wired from useKbTabs by KnowledgeBasePage). */
+  onCloseTab?: () => void;
 }
 
 export function KbMainContent({
@@ -131,22 +144,56 @@ export function KbMainContent({
   onOpenOutline,
   onAskAboutFile,
   editedContent,
+  onForceLoad,
+  onCloseTab,
 }: KbMainContentProps) {
   const { t } = useI18n();
   const contentRef = useRef<HTMLDivElement>(null);
-  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const cmRef = useRef<KbCodeMirrorViewerHandle>(null);
+  const [wrap, setWrap] = useState(false);
+  const [retryNonce, setRetryNonce] = useState(0);
+  const [ctxMenu, setCtxMenu] = useState<
+    { x: number; y: number; source: 'doocs' | 'codemirror'; selectedText?: string } | null
+  >(null);
+
+  // Routing flags — computed from extension + size + tooLarge.
+  const fileName = selectedFile ? (selectedFile.split('/').pop() ?? selectedFile) : '';
+  const ext = fileName ? fileName.slice(fileName.lastIndexOf('.')).toLowerCase() : '';
+  const isMarkdown = MD_EXTS.has(ext);
+  const isLargeMd = isMarkdown && (fileContent?.size ?? 0) > MD_RENDER_THRESHOLD;
+  const isSmallMd = isMarkdown && !isLargeMd;
+  const category = fileName ? getFileCategory(fileName) : null;
+  // CM path: text category, not too-large, and (large md OR non-markdown).
+  const isCmPath = category === 'text' && !fileContent?.tooLarge && (isLargeMd || !isMarkdown);
+
+  // Raw text used by the CM viewer — NO doocs preprocessing (those transforms
+  // mutate HTML/rendered markdown, not raw source).
+  const rawContent = useMemo(
+    () => editedContent ?? fileContent?.content ?? '',
+    [editedContent, fileContent?.content],
+  );
 
   // Memoize the rendered markdown content so MdRenderer (wrapped in memo)
-  // doesn't see a new string prop on unrelated re-renders.
+  // doesn't see a new string prop on unrelated re-renders. Preprocessing only
+  // runs for the small-.md doocs path — never for the CM source view.
   const renderedContent = useMemo(
-    () => proxyExternalImages(preprocessWikiEmbeds(stripTrackingPixels(editedContent ?? fileContent?.content ?? ''), vaultId ?? '')),
-    [editedContent, fileContent?.content, vaultId],
+    () => isSmallMd
+      ? proxyExternalImages(preprocessWikiEmbeds(stripTrackingPixels(editedContent ?? fileContent?.content ?? ''), vaultId ?? ''))
+      : '',
+    [editedContent, fileContent?.content, vaultId, isSmallMd],
   );
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
-    setCtxMenu({ x: e.clientX, y: e.clientY });
+    setCtxMenu({ x: e.clientX, y: e.clientY, source: 'doocs' });
   }, []);
+
+  const handleCmContextMenu = useCallback(
+    (e: { x: number; y: number; selectedText: string; source: 'codemirror' }) => {
+      setCtxMenu({ x: e.x, y: e.y, source: 'codemirror', selectedText: e.selectedText });
+    },
+    [],
+  );
 
   const closeContextMenu = useCallback(() => setCtxMenu(null), []);
 
@@ -170,9 +217,6 @@ export function KbMainContent({
 
   // Compute file metadata null-safe so the header can render in empty states
   // (search / more-menu stay visible even when no file is open).
-  const fileName = selectedFile ? (selectedFile.split('/').pop() ?? selectedFile) : '';
-  const category = fileName ? getFileCategory(fileName) : null;
-
   // Build absolute path for shell.openPath (Electron only)
   const absolutePath = vaultPath && selectedFile
     ? `${vaultPath.replace(/[\\/]+$/, '')}/${selectedFile}`
@@ -200,8 +244,8 @@ export function KbMainContent({
           </div>
         )}
         <div className="kb-header-actions">
-          {/* ── File edit / output actions (text files only) ── */}
-          {category === 'text' && selectedFile && (
+          {/* ── File edit / output actions (text files only, small-.md doocs path) ── */}
+          {category === 'text' && selectedFile && !isCmPath && (
             <>
               {/* Save — only in editing modes (read mode has nothing to save) */}
               {onSave && (isEditMode || isTypesetMode) && (
@@ -259,6 +303,65 @@ export function KbMainContent({
             </>
           )}
 
+          {/* ── CodeMirror viewer actions (text files on the CM path only) ── */}
+          {category === 'text' && selectedFile && isCmPath && (
+            <>
+              <button
+                type="button"
+                className={`kb-btn kb-btn-ghost ${wrap ? 'is-active' : ''}`}
+                onClick={() => setWrap((w) => !w)}
+                title={t('kb.wrap')}
+                data-testid="kb-btn-wrap"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                  <path d="M4 7h11v4h-7" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className="kb-btn kb-btn-ghost"
+                onClick={() => {
+                  const n = Number(window.prompt(t('kb.gotoLine')));
+                  if (n) cmRef.current?.gotoLine(n);
+                }}
+                title={t('kb.gotoLine')}
+                data-testid="kb-btn-goto"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                  <circle cx="12" cy="12" r="7" />
+                  <line x1="12" y1="5" x2="12" y2="9" />
+                  <line x1="12" y1="15" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="9" y2="12" />
+                  <line x1="15" y1="12" x2="19" y2="12" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className="kb-btn kb-btn-ghost"
+                onClick={() => cmRef.current?.scrollToTop()}
+                title={t('kb.scrollToTop')}
+                data-testid="kb-btn-top"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                  <line x1="12" y1="19" x2="12" y2="5" />
+                  <polyline points="5 12 12 5 19 12" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className="kb-btn kb-btn-ghost"
+                onClick={() => cmRef.current?.scrollToBottom()}
+                title={t('kb.scrollToBottom')}
+                data-testid="kb-btn-bottom"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <polyline points="19 12 12 19 5 12" />
+                </svg>
+              </button>
+            </>
+          )}
+
           {/* Binary file: open with system app (Electron only) */}
           {category === 'binary' && isElectron && (
             <button type="button" className="kb-btn" onClick={handleOpenExternal}>
@@ -297,8 +400,8 @@ export function KbMainContent({
             </button>
           )}
 
-          {/* Edit / Read toggle — icon-only, grouped with search */}
-          {!isTypesetMode && (
+          {/* Edit / Read toggle — icon-only, grouped with search (doocs path only) */}
+          {!isTypesetMode && !isCmPath && (
             <button
               type="button"
               className={`kb-btn kb-btn-ghost ${isEditMode ? 'is-active' : ''}`}
@@ -366,7 +469,17 @@ export function KbMainContent({
           <p className="kb-load-error-path">{selectedFile}</p>
           <p className="kb-load-error-hint">{t('kb.fileNotFound')}</p>
         </div>
-      ) : category === 'text' && isTypesetMode ? (
+      ) : category === 'text' && fileContent?.tooLarge ? (
+        <TooLargeCard
+          fileName={fileName}
+          size={fileContent.size}
+          encoding={fileContent.encoding}
+          canForce={fileContent.size <= 256 * 1024 * 1024}
+          onForce={() => onForceLoad?.()}
+          onOpenExternal={isElectron ? handleOpenExternal : undefined}
+          onCloseTab={() => onCloseTab?.()}
+        />
+      ) : category === 'text' && isSmallMd && isTypesetMode ? (
         <MdTypesetEditor
           key={selectedFile}
           initialContent={fileContent?.content ?? ''}
@@ -374,14 +487,14 @@ export function KbMainContent({
           vaultId={vaultId ?? ''}
           selectedFile={selectedFile}
         />
-      ) : category === 'text' && isEditMode ? (
+      ) : category === 'text' && isSmallMd && isEditMode ? (
         // Edit mode: Milkdown WYSIWYG Markdown editor
         <MdEditor
           initialContent={fileContent?.content ?? ''}
           onContentChange={onContentChange}
           selectedFile={selectedFile}
         />
-      ) : category === 'text' ? (
+      ) : category === 'text' && isSmallMd ? (
         <div className="kb-content-area" ref={contentRef} onContextMenu={handleContextMenu}>
           {fileContent ? (
             // 优先使用编辑后的内容（未保存的更改），否则使用原始文件内容
@@ -389,6 +502,34 @@ export function KbMainContent({
           ) : (
             <div className="kb-empty-state"><p>Loading...</p></div>
           )}
+        </div>
+      ) : category === 'text' && isCmPath ? (
+        <div className="kb-content-area kb-cm-area" ref={contentRef}>
+          <ViewerErrorBoundary
+            key={retryNonce}
+            onRetry={() => { setRetryNonce((n) => n + 1); onForceLoad?.(); }}
+            onOpenExternal={isElectron ? handleOpenExternal : undefined}
+          >
+            {isLargeMd && (
+              <div className="kb-source-mode-notice">
+                {t('kb.largeFileSourceMode', { name: fileName, size: formatFileSize(fileContent?.size ?? 0) })}
+              </div>
+            )}
+            {fileContent?.encoding && fileContent.encoding !== 'utf-8' && (
+              <div className="kb-encoding-notice">
+                {t('kb.encodingDetected', { encoding: fileContent.encoding })}
+              </div>
+            )}
+            <Suspense fallback={<div className="kb-empty-state"><p>Loading...</p></div>}>
+              <KbCodeMirrorViewer
+                ref={cmRef}
+                content={rawContent}
+                fileName={fileName}
+                wrap={wrap}
+                onRequestContextMenu={handleCmContextMenu}
+              />
+            </Suspense>
+          </ViewerErrorBoundary>
         </div>
       ) : category === 'image' && vaultId ? (
         <div className="kb-content-area kb-image-viewer">
@@ -443,13 +584,14 @@ export function KbMainContent({
       {ctxMenu && (
         <ContextMenu
           items={(() => {
-            const sel = selectionText();
-            // Capture the selection's HTML at menu-open time so the copy
-            // handler can write rich text (text/html) — preserves table
-            // structure and inline formatting when pasting into rich editors.
-            // sel is captured by value too; clicking the menu item may clear
-            // the live selection before the async clipboard write resolves.
-            const selHtml = (() => {
+            // CM source: selection text captured at contextmenu-event time
+            // (stored in ctxMenu.selectedText). doocs source: read live
+            // window.getSelection() at menu-open.
+            const isCmSource = ctxMenu.source === 'codemirror';
+            const sel = isCmSource ? (ctxMenu.selectedText ?? '') : selectionText();
+            // Rich triple-slot copy (text/html + text/plain markdown) only for
+            // the doocs source — CM has raw text, no rendered HTML to convert.
+            const selHtml = isCmSource ? '' : (() => {
               const s = window.getSelection();
               if (!s || s.rangeCount === 0) return '';
               const div = document.createElement('div');
@@ -459,9 +601,6 @@ export function KbMainContent({
               div.querySelectorAll('style, script').forEach((el) => el.remove());
               return div.innerHTML;
             })();
-            // Markdown source for the text/plain slot — tables become pipe
-            // tables, lists/bold/links become Markdown. Falls back to flat
-            // selection text if conversion fails.
             const selMd = (() => {
               if (!selHtml) return sel;
               try {
@@ -477,17 +616,18 @@ export function KbMainContent({
                 disabled: !sel,
                 onClick: async () => {
                   if (!sel) return;
-                  // Triple-slot copy: text/plain = Markdown (Obsidian / md
-                  // editors / 记事本), text/html = rich text (Word / Notion /
-                  // email). Tables survive in both.
-                  try {
-                    const item = new ClipboardItem({
-                      'text/plain': new Blob([selMd], { type: 'text/plain' }),
-                      'text/html': new Blob([selHtml], { type: 'text/html' }),
-                    });
-                    await navigator.clipboard.write([item]);
-                    return;
-                  } catch { /* ClipboardItem/write unavailable — fall back */ }
+                  // doocs path: triple-slot copy (text/plain = Markdown +
+                  // text/html = rich). CM path: plain text only.
+                  if (!isCmSource && selHtml) {
+                    try {
+                      const item = new ClipboardItem({
+                        'text/plain': new Blob([selMd], { type: 'text/plain' }),
+                        'text/html': new Blob([selHtml], { type: 'text/html' }),
+                      });
+                      await navigator.clipboard.write([item]);
+                      return;
+                    } catch { /* ClipboardItem/write unavailable — fall back */ }
+                  }
                   try {
                     await navigator.clipboard.writeText(sel);
                   } catch {
@@ -506,6 +646,10 @@ export function KbMainContent({
               {
                 label: t('kb.ctxSelectAll'),
                 onClick: () => {
+                  if (isCmSource) {
+                    cmRef.current?.selectAll();
+                    return;
+                  }
                   const out = contentRef.current?.querySelector('#output');
                   if (!out) return;
                   const range = document.createRange();
@@ -519,10 +663,10 @@ export function KbMainContent({
               { divider: true },
               {
                 label: t('kb.askSelection'),
-                disabled: !sel,
+                disabled: !sel || sel.length > MAX_ASK_SELECTION,
+                title: sel.length > MAX_ASK_SELECTION ? t('kb.selectionTooLarge') : undefined,
                 onClick: () => {
-                  if (!sel) return;
-                  onAskAboutSelection?.(sel);
+                  if (sel && sel.length <= MAX_ASK_SELECTION) onAskAboutSelection?.(sel);
                 },
               },
             ];
@@ -533,18 +677,34 @@ export function KbMainContent({
         />
       )}
 
-      {/* Status bar: word count / char count / read time (text files only) */}
+      {/* Status bar: word count / char count / read time (small-.md doocs path).
+          CM path shows size/chars/encoding only — countWords would freeze on a
+          15MB document. */}
       {category === 'text' && (
         <div className="kb-status-bar" data-testid="kb-status-bar">
           {(() => {
             const text = editedContent ?? fileContent?.content ?? '';
+            if (isCmPath || text.length > 1_000_000) {
+              return (
+                <>
+                  <span>{t('kb.statsChars')}: {text.length.toLocaleString()}</span>
+                  <span className="kb-status-sep">/</span>
+                  <span>{formatFileSize(text.length)}</span>
+                  {fileContent?.encoding && fileContent.encoding !== 'utf-8' && (
+                    <>
+                      <span className="kb-status-sep">/</span>
+                      <span>{fileContent.encoding}</span>
+                    </>
+                  )}
+                </>
+              );
+            }
             const words = countWords(text);
-            const chars = text.length;
             return (
               <>
                 <span>{t('kb.statsWords')}: {words.toLocaleString()}</span>
                 <span className="kb-status-sep">/</span>
-                <span>{t('kb.statsChars')}: {chars.toLocaleString()}</span>
+                <span>{t('kb.statsChars')}: {text.length.toLocaleString()}</span>
                 <span className="kb-status-sep">/</span>
                 <span>{t('kb.statsReadTime')}: {formatReadTime(words, t('kb.statsReadTimeSuffix'))}</span>
               </>

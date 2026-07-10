@@ -9,7 +9,10 @@ const WIKI_PROMPTS: Record<'build' | 'lint', string> = {
   lint: '用 wiki-lint skill 检查 Wiki 健康状况：查孤立页/断链/frontmatter 缺失/内容矛盾等，生成 lint 报告。',
 };
 
-function WIKI_INGEST_PROMPT(filePath: string): string {
+function WIKI_INGEST_PROMPT(filePath: string, isDirectory = false): string {
+  if (isDirectory) {
+    return `用 wiki-ingest skill 把这个文件夹下的所有文件加入 Wiki：${filePath}（递归处理所有子文件夹和文件）`;
+  }
   return `用 wiki-ingest skill 把这个文件加入 Wiki：${filePath}`;
 }
 
@@ -33,9 +36,9 @@ export interface KbChatState {
    *  agent 处理完当前轮再处理这条。Pattern B（stdin 已关）会回退到 createRun。 */
   queueWikiOp: (type: 'build' | 'lint') => void;
   /** ingest：reset + 自动发送（中断）。 */
-  openIngest: (filePath: string) => void;
+  openIngest: (filePath: string, isDirectory?: boolean) => void;
   /** ingest 排队：同 queueWikiOp，写入运行中 agent 的 stdin。 */
-  queueIngest: (filePath: string) => void;
+  queueIngest: (filePath: string, isDirectory?: boolean) => void;
   send: (text: string) => void;
   cancel: () => void;
   submitToolResult: (toolUseId: string, content: string) => Promise<void>;
@@ -114,17 +117,17 @@ export function useKbChat(opts: UseKbChatOptions): KbChatState {
     chatRef.current.send(WIKI_PROMPTS[type]);
   }, []);
 
-  const openIngest = useCallback((filePath: string) => {
+  const openIngest = useCallback((filePath: string, isDirectory = false) => {
     reset();
     setMode('ingest');
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
-      chatRef.current.send(WIKI_INGEST_PROMPT(filePath));
+      chatRef.current.send(WIKI_INGEST_PROMPT(filePath, isDirectory));
     }, 50);
   }, [reset]);
 
-  const queueIngest = useCallback((filePath: string) => {
-    chatRef.current.send(WIKI_INGEST_PROMPT(filePath));
+  const queueIngest = useCallback((filePath: string, isDirectory = false) => {
+    chatRef.current.send(WIKI_INGEST_PROMPT(filePath, isDirectory));
   }, []);
 
   const close = useCallback(() => {

@@ -13,6 +13,8 @@ export interface MenuItem {
   danger?: boolean;
   /** Disabled (greyed out) */
   disabled?: boolean;
+  /** Native tooltip (e.g. to explain why an item is disabled). */
+  title?: string;
 }
 
 interface ContextMenuProps {
@@ -92,6 +94,7 @@ export function ContextMenu({ items, position, onClose }: ContextMenuProps) {
               type="button"
               className={`ctx-menu-item${item.danger ? ' is-danger' : ''}${item.disabled ? ' is-disabled' : ''}`}
               disabled={item.disabled}
+              title={item.title}
               onClick={() => {
                 item.onClick?.();
                 onClose();
