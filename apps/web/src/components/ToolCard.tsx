@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useI18n } from '../i18n';
 import type { ToolEvent } from '../hooks/useChat';
+import { CopyIcon } from './icons';
 
 interface Props {
   tool: ToolEvent;
@@ -29,17 +30,96 @@ export function ToolCard({ tool, isLast, onAnswerToolUse, onSubmitForm }: Props)
     );
   }
 
-  // Default: Claude Code style — minimal inline one-liner
+  // ── Elapsed time + expand state ──
+  const [elapsed, setElapsed] = useState(0);
+  const [expanded, setExpanded] = useState(false);
+  const startRef = useRef<number>(0);
+  const manualRef = useRef(false); // user manually toggled — disable auto open/close
+
+  // Elapsed-time timer
+  useEffect(() => {
+    if (tool.status === 'running') {
+      startRef.current = Date.now();
+      setElapsed(0);
+      const timer = setInterval(() => {
+        setElapsed(Math.round((Date.now() - startRef.current) / 1000));
+      }, 200);
+      return () => clearInterval(timer);
+    } else if (startRef.current) {
+      // record final elapsed
+      setElapsed(Math.round((Date.now() - startRef.current) / 1000));
+    }
+  }, [tool.status]);
+
+  // Smart auto-expand
+  useEffect(() => {
+    if (manualRef.current) return;
+    if (tool.status === 'running' && elapsed >= 5) setExpanded(true);
+    if (tool.status === 'error') setExpanded(true);
+    if (tool.status === 'done' && !tool.isError) setExpanded(false);
+  }, [tool.status, elapsed, tool.isError]);
+
+  const toggleExpand = () => {
+    manualRef.current = true;
+    setExpanded((prev) => !prev);
+  };
+
+  const hasOutput = tool.status !== 'running' && tool.result !== undefined;
+  const chevron = hasOutput ? (expanded ? '▾' : '▸') : '';
+
+  // ── Tool-line rendering ──
   const detail = formatToolInput(tool.input);
   const statusClass = tool.status === 'running' ? 'running' : tool.isError ? 'error' : 'done';
-  const statusLabel = tool.status === 'running' ? '…' : tool.isError ? '✗' : '✓';
+  const statusLabel = tool.status === 'running'
+    ? ''
+    : tool.isError ? '✗' : '✓';
 
   return (
-    <div className="tool-line">
-      <span className="tool-line-arrow">⎿</span>
-      <span className="tool-line-name">{tool.name}</span>
-      {detail && <span className="tool-line-arg">{detail}</span>}
-      <span className={`tool-line-status ${statusClass}`}>{statusLabel}</span>
+    <div className="tool-card-wrapper">
+      <div
+        className={`tool-line${hasOutput ? ' has-output' : ''}`}
+        onClick={hasOutput ? toggleExpand : undefined}
+        data-testid="tool-line"
+      >
+        <span className="tool-line-arrow">{'⎿'}</span>
+        <span className="tool-line-name">{tool.name}</span>
+        {detail && <span className="tool-line-arg">{detail}</span>}
+        {chevron && <span className="tool-line-chevron">{chevron}</span>}
+        <span className="tool-line-elapsed">
+          {tool.status === 'running' && `⏱ ${elapsed}s`}
+          {tool.status !== 'running' && elapsed > 0 && `⏱ ${elapsed}s`}
+        </span>
+        <span className={`tool-line-status ${statusClass}`}>{statusLabel}</span>
+      </div>
+
+      {/* ── Expandable output panel ── */}
+      {expanded && hasOutput && (
+        <div className="tool-output-panel" data-testid="tool-output-panel">
+          {!!tool.input && typeof tool.input === 'object' && 'command' in (tool.input as Record<string, unknown>) && (
+            <div className="tool-output-cmd">
+              $ {(tool.input as Record<string, unknown>).command as string}
+            </div>
+          )}
+          <pre className="tool-output-body">{tool.result}</pre>
+          {(tool.result && tool.result.length > 0) && (
+            <div className="tool-output-foot">
+              <button
+                type="button"
+                className="icon-btn"
+                data-testid="tool-output-copy-btn"
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  try {
+                    await navigator.clipboard.writeText(tool.result ?? '');
+                  } catch { /* noop */ }
+                }}
+              >
+                <CopyIcon />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
