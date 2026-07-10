@@ -41,6 +41,7 @@ function DefaultToolCard({ tool }: { tool: ToolEvent }) {
   const [expanded, setExpanded] = useState(false);
   const startRef = useRef<number>(0);
   const manualRef = useRef(false); // user manually toggled — disable auto open/close
+  const autoExpandedRef = useRef(false); // auto-expand triggered — keep open on done
 
   // Elapsed-time timer
   useEffect(() => {
@@ -57,12 +58,23 @@ function DefaultToolCard({ tool }: { tool: ToolEvent }) {
     }
   }, [tool.status]);
 
+  // Reset auto-expand flag when a new tool mounts
+  useEffect(() => {
+    autoExpandedRef.current = false;
+  }, [tool.id]);
+
   // Smart auto-expand
   useEffect(() => {
     if (manualRef.current) return;
-    if (tool.status === 'running' && elapsed >= 5) setExpanded(true);
+    if (tool.status === 'running' && elapsed >= 5) {
+      setExpanded(true);
+      autoExpandedRef.current = true;
+    }
     if (tool.status === 'error') setExpanded(true);
-    if (tool.status === 'done' && !tool.isError) setExpanded(false);
+    // Only auto-collapse on done if the user didn't expand or auto-expand didn't trigger
+    if (tool.status === 'done' && !tool.isError && !autoExpandedRef.current) {
+      setExpanded(false);
+    }
   }, [tool.status, elapsed, tool.isError]);
 
   const toggleExpand = () => {
