@@ -137,6 +137,7 @@ function DefaultToolCard({ tool }: { tool: ToolEvent }) {
                 type="button"
                 className="icon-btn"
                 data-testid="tool-output-copy-btn"
+                aria-label="复制输出内容"
                 onClick={async (e) => {
                   e.stopPropagation();
                   try {

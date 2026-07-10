@@ -41,7 +41,7 @@ export function derivePhase(messages: ChatMessage[], isRunning: boolean): RunPha
 /**
  * 从 messages 和 isRunning 推导当前阶段 + 全局耗时。
  * - phase 从 messages 推导（纯计算）
- * - elapsedMs 从 isRunning 变为 true 的时刻起算，每秒更新
+ * - elapsedMs 从 isRunning 变为 true 的时刻起算，每 200ms 更新
  */
 export function useRunPhase(
   messages: ChatMessage[],
