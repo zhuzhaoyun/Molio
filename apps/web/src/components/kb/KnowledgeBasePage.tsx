@@ -70,6 +70,52 @@ function summarizeErrors(errors: Array<{ file: string; reason: string }>): strin
   return parts.join('，');
 }
 
+/** Find a tree node by its path — searches the full (unfiltered) tree so we
+ *  get the real children even when ctxMenu.node came from a filtered view. */
+function findNodeByPath(tree: TreeNode[], targetPath: string): TreeNode | null {
+  const stack: TreeNode[] = [...tree];
+  while (stack.length) {
+    const n = stack.pop()!;
+    if (n.path === targetPath) return n;
+    if (n.type === 'directory' && n.children) stack.push(...n.children);
+  }
+  return null;
+}
+
+/** Count recursive descendants of a directory node — files and folders separately.
+ *  The node itself is not counted. */
+function countDescendants(node: TreeNode): { files: number; folders: number } {
+  let files = 0;
+  let folders = 0;
+  const walk = (n: TreeNode) => {
+    if (n.type === 'file') {
+      files++;
+    } else {
+      folders++;
+      n.children?.forEach(walk);
+    }
+  };
+  node.children?.forEach(walk);
+  return { files, folders };
+}
+
+/** Build a delete-confirmation message that surfaces the concrete file/folder
+ *  counts inside the folder, instead of the opaque "及其所有内容". */
+function buildFolderDeleteMessage(node: TreeNode, tree: TreeNode[]): string {
+  const full = findNodeByPath(tree, node.path) ?? node;
+  const { files, folders } = countDescendants(full);
+  if (files > 0 && folders > 0) {
+    return `确定删除文件夹 "${node.name}"？将一并删除 ${files} 个文件、${folders} 个子文件夹。`;
+  }
+  if (files > 0) {
+    return `确定删除文件夹 "${node.name}"？将一并删除 ${files} 个文件。`;
+  }
+  if (folders > 0) {
+    return `确定删除文件夹 "${node.name}"？将一并删除 ${folders} 个子文件夹。`;
+  }
+  return `确定删除空文件夹 "${node.name}"？`;
+}
+
 export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenChange, registerKbChatOnComplete, onOpenConversation }: KnowledgeBasePageProps) {
   const { t } = useI18n();
   const kb = useKnowledge();
@@ -700,7 +746,7 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
           setConfirmDialog({
             show: true,
             title: '删除文件夹',
-            message: `确定删除文件夹 "${node.name}" 及其所有内容？`,
+            message: buildFolderDeleteMessage(node, kb.tree),
             confirmLabel: '删除',
             danger: true,
             onConfirm: async () => {
@@ -742,32 +788,37 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
     if (!kb.activeVault) return;
     const fileName = srcPath.split('/').pop() ?? srcPath;
     const newPath = `${destDir}/${fileName}`;
+    const srcNode = findNodeByPath(kb.tree, srcPath);
+    const isDirMove = srcNode?.type === 'directory';
 
-    // Check for existing file at target
-    const targetExists = kb.tree.some((n) => {
-      const walk = (nodes: TreeNode[]): boolean => {
-        for (const node of nodes) {
-          if (node.path === newPath) return true;
-          if (node.type === 'directory' && node.children && walk(node.children)) return true;
-        }
-        return false;
-      };
-      return walk([n]);
-    });
-
-    if (targetExists) {
-      showToast('目标位置已存在同名文件');
+    // Conflict: any entry (file or folder) already at target path.
+    if (findNodeByPath(kb.tree, newPath)) {
+      showToast(isDirMove ? '目标位置已存在同名文件夹' : '目标位置已存在同名文件');
       return;
     }
 
     try {
       await kb.renameFile(srcPath, newPath);
-      const newFileName = newPath.split('/').pop() ?? newPath;
-      const existingTabForNewPath = tabs.tabs.find(t => t.id === `file:${newPath}`);
-      if (existingTabForNewPath) tabs.closeTab(`file:${newPath}`);
-      tabs.updateTab(`file:${srcPath}`, { id: `file:${newPath}`, title: newFileName, vaultId: kb.activeVault?.id });
+      if (!isDirMove) {
+        // Single-file move: re-point the one tab whose id matches srcPath.
+        const newFileName = newPath.split('/').pop() ?? newPath;
+        const existingTabForNewPath = tabs.tabs.find(t => t.id === `file:${newPath}`);
+        if (existingTabForNewPath) tabs.closeTab(`file:${newPath}`);
+        tabs.updateTab(`file:${srcPath}`, { id: `file:${newPath}`, title: newFileName, vaultId: kb.activeVault?.id });
+      } else {
+        // Directory move: re-prefix every open tab whose id sits under srcPath/.
+        const oldPrefix = `file:${srcPath}/`;
+        const newPrefix = `file:${newPath}/`;
+        const affectedTabs = tabs.tabs.filter(
+          t => t.vaultId === kb.activeVault?.id && t.id.startsWith(oldPrefix),
+        );
+        for (const tab of affectedTabs) {
+          const suffix = tab.id.slice(oldPrefix.length);
+          tabs.updateTab(tab.id, { id: `${newPrefix}${suffix}`, vaultId: kb.activeVault?.id });
+        }
+      }
     } catch (err) {
-      showToast(`移动文件失败：${err instanceof Error ? err.message : String(err)}`);
+      showToast(`移动${isDirMove ? '文件夹' : '文件'}失败：${err instanceof Error ? err.message : String(err)}`);
     }
   }, [kb.activeVault?.id, kb.tree, kb.renameFile, tabs, showToast]);
 

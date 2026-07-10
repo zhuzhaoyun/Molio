@@ -150,6 +150,35 @@ describe('knowledge filesystem operations', () => {
       assert.ok(existsSync(join(vaultPath, 'dir-new', 'inside.md')));
     });
 
+    it('should move a directory into another directory (preserving name + subtree)', () => {
+      createDirectory(vaultPath, 'srcdir');
+      createDirectory(vaultPath, 'destdir');
+      writeFile(vaultPath, 'srcdir/file.md', 'payload');
+      createDirectory(vaultPath, 'srcdir/sub');
+      writeFile(vaultPath, 'srcdir/sub/nested.md', 'nested');
+      // Move srcdir into destdir → destdir/srcdir/...
+      renamePath(vaultPath, 'srcdir', 'destdir/srcdir');
+      assert.ok(!existsSync(join(vaultPath, 'srcdir')));
+      assert.ok(existsSync(join(vaultPath, 'destdir', 'srcdir', 'file.md')));
+      assert.ok(existsSync(join(vaultPath, 'destdir', 'srcdir', 'sub', 'nested.md')));
+    });
+
+    it('should reject moving a directory into its own descendant (cycle)', () => {
+      // Build outer/inner/leaf
+      createDirectory(vaultPath, 'outer');
+      createDirectory(vaultPath, 'outer/inner');
+      writeFile(vaultPath, 'outer/inner/leaf.md', 'leaf');
+      // Trying to move outer → outer/inner/outer would put a parent inside its
+      // own descendant. fs.renameSync cannot perform this (destination is inside
+      // source), so renamePath must surface the error rather than silently
+      // succeed or corrupt the tree.
+      assert.throws(() => {
+        renamePath(vaultPath, 'outer', 'outer/inner/outer');
+      });
+      // Original structure intact.
+      assert.ok(existsSync(join(vaultPath, 'outer', 'inner', 'leaf.md')));
+    });
+
     it('should move a file to a different directory', () => {
       createDirectory(vaultPath, 'src');
       createDirectory(vaultPath, 'dst');

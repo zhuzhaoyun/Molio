@@ -162,6 +162,8 @@ function TreeNodeItem({
     // Determine drop acceptance for this directory.
     // Both external import and internal move targets need to be non-protected.
     const acceptsDrop = !nodeProtected;
+    // Directory is draggable unless protected (e.g. wiki/, docling_output/).
+    const canDrag = !nodeProtected;
 
     const handleDirDragOver = useCallback((e: React.DragEvent) => {
       if (!acceptsDrop) {
@@ -220,10 +222,35 @@ function TreeNodeItem({
       e.stopPropagation();
       const srcPath = e.dataTransfer.getData('text/plain');
       if (!srcPath || !acceptsDrop) return;
-      // Guard: don't drop on self or child directory
+      // Guard: don't drop on self or descendant — prevents moving a folder into itself.
       if (srcPath === node.path || node.path.startsWith(srcPath + '/')) return;
       onMoveFile?.(srcPath, node.path);
     }, [node.path, acceptsDrop, onMoveFile]);
+
+    // Drag a directory onto another directory — same payload shape as file drag
+    // (text/plain = node.path), so handleDirDrop on the target reads it unchanged.
+    const handleDirDragStart = useCallback((e: React.DragEvent) => {
+      if (!canDrag) {
+        e.preventDefault();
+        return;
+      }
+      e.dataTransfer.setData('text/plain', node.path);
+      e.dataTransfer.effectAllowed = 'move';
+
+      // Ghost = label only, so the children subtree doesn't paint into the drag image.
+      const group = e.currentTarget as HTMLElement;
+      const label = group.querySelector('.kb-tree-group-label') as HTMLElement | null;
+      if (label) {
+        const ghost = label.cloneNode(true) as HTMLElement;
+        ghost.style.position = 'fixed';
+        ghost.style.top = '-9999px';
+        ghost.style.left = '-9999px';
+        ghost.style.width = `${label.offsetWidth}px`;
+        document.body.appendChild(ghost);
+        e.dataTransfer.setDragImage(ghost, 0, 0);
+        requestAnimationFrame(() => ghost.remove());
+      }
+    }, [canDrag, node.path]);
 
     return (
       <div
@@ -232,6 +259,8 @@ function TreeNodeItem({
           onDragOver={handleDirDragOver}
           onDragLeave={handleDirDragLeave}
           onDrop={handleDirDrop}
+          draggable={canDrag}
+          onDragStart={handleDirDragStart}
         >
         <div
           className="kb-tree-group-label"

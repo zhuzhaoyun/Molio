@@ -107,7 +107,7 @@
         "apps/daemon/src/routes/knowledge.ts",
         "apps/daemon/src/core/knowledge.ts"
       ],
-      "specs": ["drag-drop-import"]
+      "specs": ["drag-drop-import", "kb-folder-ops"]
     }
   },
   "specs": {
@@ -140,6 +140,7 @@
     "runtime-provider-config": { "priority": "P1", "file": "runtime-provider-config.spec.ts" },
     "runtimes-page": { "priority": "P1", "file": "runtimes-page.spec.ts" },
     "settings": { "priority": "P1", "file": "settings.spec.ts" },
-    "drag-drop-import": { "priority": "P1", "file": "drag-drop-import.spec.ts" }
+    "drag-drop-import": { "priority": "P1", "file": "drag-drop-import.spec.ts" },
+    "kb-folder-ops": { "priority": "P1", "file": "kb-folder-ops.spec.ts" }
   }
 }
