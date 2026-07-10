@@ -83,6 +83,16 @@ export interface UseChatCoreOptions {
 let msgCounter = 0;
 function nextMsgId() { return `msg-${++msgCounter}-${Date.now()}`; }
 
+/**
+ * Idle window for the fallback unlock timer. Long enough to tolerate a single
+ * silent long-running tool call (e.g. remotion `npm install` of a large dep
+ * tree on a slow network) without a false "响应超时"; short enough that a
+ * genuinely hung run (daemon alive but no events) still surfaces in ~10min.
+ * The timer is idle-based — reset on every received event — so an ACTIVE run
+ * of any length never false-times-out.
+ */
+const FALLBACK_IDLE_MS = 10 * 60 * 1000; // 10 minutes
+
 export function useChatCore(options: UseChatCoreOptions) {
   const { createRun, rewindResend, agentId, initialMessages = [], initialConversationId = null, onComplete } = options;
 
@@ -107,6 +117,33 @@ export function useChatCore(options: UseChatCoreOptions) {
       clearTimeout(fallbackTimerRef.current);
       fallbackTimerRef.current = null;
     }
+  }, []);
+
+  /**
+   * Re-arm the idle fallback timer (clear + schedule). Called on every
+   * received AgentEvent so a long but active run never false-times-out; the
+   * timer only fires when the stream goes truly silent for FALLBACK_IDLE_MS.
+   * Terminal status clears (does not re-arm) via clearFallbackTimer.
+   */
+  const resetFallbackTimer = useCallback(() => {
+    if (fallbackTimerRef.current) {
+      clearTimeout(fallbackTimerRef.current);
+    }
+    const fallbackMs = (typeof window !== 'undefined' &&
+      (window as any).__MOLIO_TEST_FALLBACK_TIMEOUT_MS__) || FALLBACK_IDLE_MS;
+    fallbackTimerRef.current = setTimeout(() => {
+      setState((prev) => {
+        if (!prev.isRunning) return prev;
+        const messages = prev.messages.map((msg) =>
+          msg.id === assistantIdRef.current && msg.streaming
+            ? { ...msg, streaming: false, error: msg.error ?? '响应超时，请重试或检查 daemon 是否运行' }
+            : msg
+        );
+        return { ...prev, messages, isRunning: false, runId: null, runAgentId: null };
+      });
+      esRef.current?.close();
+      esRef.current = null;
+    }, fallbackMs);
   }, []);
 
   const closeEventSource = useCallback(() => {
@@ -157,10 +194,14 @@ export function useChatCore(options: UseChatCoreOptions) {
           window.dispatchEvent(new CustomEvent(ACP_MODELS_UPDATED_EVENT, { detail }));
         }
         setState((prev) => updateWithEvent(prev, currentId, event));
-        // P2-3: terminal status clears the fallback timer — the run ended
-        // cleanly (success/failed/canceled), no need to force-unlock later.
+        // Fallback timer is idle-based: any activity (text/tool/usage/etc.)
+        // resets the window so a long but active run never false-times-out.
+        // Terminal status clears it — the run ended cleanly, no need to
+        // force-unlock later.
         if (event.type === 'status' && (event.label === 'completed' || event.label === 'failed' || event.label === 'canceled')) {
           clearFallbackTimer();
+        } else {
+          resetFallbackTimer();
         }
       },
       () => { /* SSE error — EventSource auto-retries; onDone handles permanent close */ },
@@ -180,30 +221,17 @@ export function useChatCore(options: UseChatCoreOptions) {
     );
     esRef.current = es;
 
-    // P2-3: fallback timer — if no terminal status arrives within 5min,
-    // force-unlock the input. Catches: daemon hang (SSE alive but no events),
-    // daemon crash without a close event, network blackhole. 5min aligns
-    // with daemon's promptIdleTimeoutMs so the frontend unlocks around when
-    // the daemon itself gives up.
+    // Idle fallback timer — armed on run start and reset on every received
+    // event (see resetFallbackTimer). A long but ACTIVE run (remotion render,
+    // multi-turn chat, long tool calls) never false-times-out as long as
+    // events keep flowing; it only fires when the stream goes truly silent
+    // for FALLBACK_IDLE_MS — catching daemon hangs/crashes and network
+    // blackholes. Terminal status clears it.
     //
     // Test hook: `window.__MOLIO_TEST_FALLBACK_TIMEOUT_MS__` shortens the
-    // wait so E2E can exercise this path without sleeping 5min. Production
-    // never sets this.
-    const fallbackMs = (typeof window !== 'undefined' &&
-      (window as any).__MOLIO_TEST_FALLBACK_TIMEOUT_MS__) || 300_000;
-    fallbackTimerRef.current = setTimeout(() => {
-      setState((prev) => {
-        if (!prev.isRunning) return prev;
-        const messages = prev.messages.map((msg) =>
-          msg.id === assistantIdRef.current && msg.streaming
-            ? { ...msg, streaming: false, error: msg.error ?? '响应超时，请重试或检查 daemon 是否运行' }
-            : msg
-        );
-        return { ...prev, messages, isRunning: false, runId: null, runAgentId: null };
-      });
-      esRef.current?.close();
-      esRef.current = null;
-    }, fallbackMs);
+    // wait so E2E can exercise this path without sleeping. Production never
+    // sets this.
+    resetFallbackTimer();
 
     if (onComplete) {
       const origOnEvent = es.onmessage;
@@ -216,7 +244,7 @@ export function useChatCore(options: UseChatCoreOptions) {
         } catch { /* ignore parse errors */ }
       };
     }
-  }, [state.conversationId, agentId, onComplete, clearFallbackTimer]);
+  }, [state.conversationId, agentId, onComplete, clearFallbackTimer, resetFallbackTimer]);
 
   /**
    * Send a message — tries multi-turn on existing run first, falls back to createRun.
@@ -259,6 +287,11 @@ export function useChatCore(options: UseChatCoreOptions) {
     if (existingRunId && !agentChanged) {
       try {
         await api.sendMessage(existingRunId, text.trim());
+        // Multi-turn reuses the existing SSE subscription, which does NOT
+        // re-arm the fallback timer (beginNewRun isn't called). Re-arm here so
+        // a hung follow-up turn still force-unlocks instead of spinning
+        // forever. Events from this turn keep resetting it (idle semantics).
+        resetFallbackTimer();
         return; // SSE is still active, events route via assistantIdRef
       } catch {
         // Multi-turn failed — fall through to new run
@@ -305,7 +338,7 @@ export function useChatCore(options: UseChatCoreOptions) {
         return { ...prev, messages, isRunning: false };
       });
     }
-  }, [state.runId, state.runAgentId, state.conversationId, state.messages, closeEventSource, createRun, agentId, onComplete, beginNewRun]);
+  }, [state.runId, state.runAgentId, state.conversationId, state.messages, closeEventSource, createRun, agentId, onComplete, beginNewRun, resetFallbackTimer]);
 
   const rewindAndResend = useCallback(async (newContent: string) => {
     if (!rewindResend) return;
