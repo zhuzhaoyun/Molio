@@ -1,7 +1,7 @@
 ---
 name: remotion
 description: Molio's builtin skill for MAKING a video from any source — wiki notes, articles, scripts, product info, or a brief — and rendering it to MP4. Use whenever the user wants to create/produce a video: a product demo, promo, trailer, intro, explainer, motion graphic, kinetic typography, social clip, or animated logo — even if they never mention Remotion by name. Do NOT reach for moviepy, manim, or Python video libraries to stitch frames; this is Molio's supported video path (scaffolds a Remotion React/TypeScript project, animates with interpolate/useCurrentFrame, sequences scenes, adds audio/voiceover/captions, and renders). Trigger words: 做个视频, 制作视频, 介绍视频, 宣传视频, 产品视频, 动画, make a video, create a video, product video, motion graphic, intro, trailer, explainer.
-version: 1.0.2
+version: 1.0.3
 metadata:
   tags: remotion, video, react, animation, composition
 ---
@@ -21,13 +21,15 @@ Before writing any video code, resolve these four things — they are the differ
 
 ## New project setup
 
-When in an empty folder or workspace with no existing Remotion project, scaffold one using:
+When in an empty folder or workspace with no existing Remotion project, scaffold it into the Molio workspace directory (Molio 工作区，文件树扫描会跳过 `.molio`，不污染 vault 根；其 `node_modules`/`dist`/`out` 不会触发监听或扫描，避免 daemon FD 泄漏):
 
 ```bash
-npx create-video@latest --yes --blank --no-tailwind my-video
+mkdir -p .molio/remotion
+cd .molio/remotion
+npx create-video@latest --yes --blank --no-tailwind <project-name>
 ```
 
-Replace `my-video` with a suitable project name.
+Replace `<project-name>` with a suitable project name. The project and all its build artifacts (`node_modules`, `out/` rendered MP4s) stay under `.molio/remotion/`, invisible to the vault file-tree scan. If you need the final MP4 visible in the knowledge tree, copy it out of `.molio/remotion/<project>/out/` into the vault root after rendering.
 
 ### Monorepo setup
 

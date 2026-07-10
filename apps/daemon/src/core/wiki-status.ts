@@ -20,6 +20,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { TreeNode, IngestStatus } from '@molio/contracts';
+// Import from vault-prune (not knowledge) to avoid transitively loading encoding.ts.
+import { isPrunedDirName, MAX_DIR_ENTRIES } from './vault-prune.js';
 
 const LOG_REL = path.join('wiki', 'log.md');
 const SOURCES_DIR_REL = path.join('wiki', 'sources');
@@ -96,8 +98,9 @@ function walkWiki(wikiDir: string, out: ParsedWiki): void {
   const walk = (d: string) => {
     let entries: fs.Dirent[];
     try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+    if (entries.length > MAX_DIR_ENTRIES) return;
     for (const e of entries) {
-      if (e.name.startsWith('.')) continue;
+      if (isPrunedDirName(e.name)) continue;
       const p = path.join(d, e.name);
       if (e.isDirectory()) {
         walk(p);
