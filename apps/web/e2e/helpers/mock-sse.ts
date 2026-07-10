@@ -3,6 +3,7 @@
  * Eliminates the need for a real AI agent during E2E testing.
  */
 import type { Page } from '@playwright/test';
+import http from 'node:http';
 
 // ── SSE frame formatting ────────────────────────────────────────────────
 
@@ -72,9 +73,20 @@ export interface MockRunOptions {
   script?: readonly object[];
   /** Whether to also mock the multi-turn messages endpoint (default: true) */
   multiTurn?: boolean;
+  /** Delay (ms) between SSE frames. When set, frames are streamed via a
+   *  ReadableStream so React can render transient states (e.g. the `repairing`
+   *  spinner that's cleared by the next event). When unset, all frames are
+   *  delivered at once — fine for tests that only check the final state. */
+  frameDelay?: number;
 }
 
 // ── Main mock function ─────────────────────────────────────────────────
+
+/**
+ * Streaming SSE servers started by mockChatRun when frameDelay is set.
+ * unmockAll closes them so they don't leak across tests.
+ */
+const streamingServers: http.Server[] = [];
 
 /**
  * Intercept POST /api/runs, GET /api/runs/:id/events (SSE), and related endpoints.
@@ -100,18 +112,61 @@ export async function mockChatRun(page: Page, opts: MockRunOptions = {}) {
   });
 
   // 2) GET /api/runs/:id/events → SSE stream with scripted events
-  await page.route(`**/api/runs/${runId}/events**`, async (route) => {
-    const frames = script.map((evt, i) => sseFrame(i + 1, runId, evt)).join('');
-    await route.fulfill({
-      status: 200,
-      contentType: 'text/event-stream',
-      headers: {
+  if (opts.frameDelay && opts.frameDelay > 0) {
+    // Playwright's route.fulfill buffers the full body and sends it at once —
+    // fine for final-state tests but useless for transient states (the
+    // `repairing` spinner, tool-use spinner) which are cleared by the next
+    // event. For those, start a real HTTP server that streams frames with a
+    // delay and forward the SSE request to it via route.continue.
+    const connections = new Set<import('node:net').Socket>();
+    const streamingServer = http.createServer((req, res) => {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
         'Connection': 'keep-alive',
-      },
-      body: frames,
+        'Access-Control-Allow-Origin': '*',
+      });
+      // Track the socket so unmockAll can destroy it — server.close() alone
+      // waits for keep-alive connections to drain, which hangs forever on an
+      // EventSource that auto-reconnects.
+      const socket = res.socket;
+      if (socket) {
+        connections.add(socket);
+        socket.on('close', () => connections.delete(socket));
+      }
+      (async () => {
+        for (let i = 0; i < script.length; i++) {
+          res.write(sseFrame(i + 1, runId, script[i]!));
+          await new Promise((r) => setTimeout(r, opts.frameDelay));
+        }
+        res.end();
+      })();
     });
-  });
+    await new Promise<void>((resolve) => streamingServer.listen(0, '127.0.0.1', resolve));
+    const addr = streamingServer.address();
+    const port = typeof addr === 'object' && addr ? addr.port : 0;
+    streamingServers.push(streamingServer);
+    (streamingServer as any).__connections = connections;
+
+    await page.route(`**/api/runs/${runId}/events**`, async (route) => {
+      const url = new URL(route.request().url());
+      const target = `http://127.0.0.1:${port}${url.pathname}${url.search}`;
+      await route.continue({ url: target });
+    });
+  } else {
+    await page.route(`**/api/runs/${runId}/events**`, async (route) => {
+      const frames = script.map((evt, i) => sseFrame(i + 1, runId, evt)).join('');
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+        },
+        body: frames,
+      });
+    });
+  }
 
   // 3) POST /api/runs/:id/messages → multi-turn follow-up
   if (opts.multiTurn !== false) {
@@ -227,4 +282,14 @@ export async function unmockAll(page: Page) {
   await page.unroute('**/api/config');
   await page.unroute('**/api/conversations/*/rewind-resend');
   await page.unroute('**/api/conversations/*/delete-messages');
+  // Close any streaming SSE servers started with frameDelay so they don't
+  // leak sockets across tests. Destroy active connections first — EventSource
+  // keeps keep-alive connections open, and server.close() alone would hang
+  // waiting for them to drain.
+  for (const s of streamingServers) {
+    const conns = (s as any).__connections as Set<import('node:net').Socket> | undefined;
+    if (conns) for (const c of conns) c.destroy();
+  }
+  await Promise.all(streamingServers.map((s) => new Promise<void>((r) => s.close(() => r()))));
+  streamingServers.length = 0;
 }

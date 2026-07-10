@@ -30,7 +30,7 @@
         "apps/daemon/src/core/conversations/run-starter.ts",
         "apps/daemon/src/streams/*"
       ],
-      "specs": ["chat-single", "chat-multi", "chat-streaming", "chat-copy", "chat-regenerate", "chat-edit-resend", "chat-codeblock", "chat-continue", "chat-save-kb", "chat-overflow-menu", "chat-delete"]
+      "specs": ["chat-single", "chat-multi", "chat-streaming", "chat-copy", "chat-regenerate", "chat-edit-resend", "chat-codeblock", "chat-continue", "chat-save-kb", "chat-overflow-menu", "chat-delete", "chat-repairing", "chat-timeout-fallback"]
     },
     "kb": {
       "paths": [
@@ -121,6 +121,7 @@
     "chat-regenerate": { "priority": "P0", "file": "chat-regenerate.spec.ts" },
     "chat-edit-resend": { "priority": "P0", "file": "chat-edit-resend.spec.ts" },
     "chat-codeblock": { "priority": "P0", "file": "chat-codeblock.spec.ts" },
+    "chat-repairing": { "priority": "P1", "file": "chat-repairing.spec.ts" },
     "create-vault-form": { "priority": "P0", "file": "create-vault-form.spec.ts" },
     "graph": { "priority": "P1", "file": "graph.spec.ts" },
     "graph-settings": { "priority": "P2", "file": "graph-settings.spec.ts" },

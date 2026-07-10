@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveAgentBinary, probeVersion } from '../../src/core/runtimes/launch.js';
+import { resolveAgentBinary, probeVersion, needsShellOnWindows } from '../../src/core/runtimes/launch.js';
 import { claudeAgentDef } from '../../src/core/runtimes/claude.js';
 
 /**
@@ -62,5 +62,40 @@ describe('Windows .cmd binary resolution (error-driven)', () => {
       assert.notEqual(ext, result.binary,
         'Binary path should have a file extension on Windows');
     }
+  });
+});
+
+describe('needsShellOnWindows (D8: extensionless shim detection)', () => {
+  // Bug: Python venv creates an extensionless `hermes-acp` shim alongside the
+  // `.exe` for Git Bash compatibility. If resolveOnPath returns that shim
+  // (e.g. the `.exe` was deleted, or `where` only surfaced the extensionless
+  // entry), spawn/execFile without `shell: true` fails with ENOENT because
+  // CreateProcess only resolves `.exe` without PATHEXT lookup. needsShellOnWindows
+  // must return true for extensionless paths so callers set `shell: true`.
+
+  it('returns true for .cmd shims', () => {
+    if (process.platform !== 'win32') return;
+    assert.equal(needsShellOnWindows('C:\\Users\\test\\venv\\Scripts\\hermes-acp.cmd'), true);
+  });
+
+  it('returns true for .bat shims', () => {
+    if (process.platform !== 'win32') return;
+    assert.equal(needsShellOnWindows('C:\\Users\\test\\hermes-acp.bat'), true);
+  });
+
+  it('returns true for extensionless POSIX shim', () => {
+    if (process.platform !== 'win32') return;
+    assert.equal(needsShellOnWindows('C:\\Users\\test\\venv\\Scripts\\hermes-acp'), true);
+  });
+
+  it('returns false for .exe (real PE binary)', () => {
+    if (process.platform !== 'win32') return;
+    assert.equal(needsShellOnWindows('C:\\Users\\test\\venv\\Scripts\\hermes-acp.exe'), false);
+  });
+
+  it('returns false on non-Windows platforms', () => {
+    if (process.platform === 'win32') return;
+    assert.equal(needsShellOnWindows('/usr/local/bin/hermes-acp'), false);
+    assert.equal(needsShellOnWindows('/home/test/venv/bin/hermes-acp'), false);
   });
 });

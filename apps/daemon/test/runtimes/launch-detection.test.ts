@@ -23,6 +23,15 @@ describe('Well-known toolchain dirs detection', () => {
       );
       assert.ok(hasAppData, 'Windows should include AppData dirs');
 
+      // Hermes Agent — official installer puts hermes-acp.exe in this venv
+      // Scripts dir. Must be in well-known dirs so detection does not depend
+      // on PATH propagation (daemon may have started before the installer
+      // updated PATH, in which case the inherited PATH snapshot misses it).
+      const hasHermesVenv = dirs.some(d =>
+        d === path.join(home, 'AppData', 'Local', 'hermes', 'hermes-agent', 'venv', 'Scripts')
+      );
+      assert.ok(hasHermesVenv, 'Windows should include Hermes venv Scripts dir');
+
       // Should NOT include POSIX paths
       const hasHomebrew = dirs.some(d => d.includes('homebrew'));
       assert.ok(!hasHomebrew, 'Windows should not include homebrew paths');
