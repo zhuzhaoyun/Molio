@@ -823,7 +823,13 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
         );
         for (const tab of affectedTabs) {
           const suffix = tab.id.slice(oldPrefix.length);
-          tabs.updateTab(tab.id, { id: `${newPrefix}${suffix}`, vaultId: activeVault.id });
+          const newId = `${newPrefix}${suffix}`;
+          // Close any pre-existing tab at the new id (e.g. user previously
+          // opened the destination path) before renaming — updateTab would
+          // otherwise leave two tabs sharing the same id.
+          const existing = tabs.tabs.find(t => t.id === newId && t.id !== tab.id);
+          if (existing) tabs.closeTab(newId);
+          tabs.updateTab(tab.id, { id: newId, vaultId: activeVault.id });
         }
       }
       // After the tree refreshes, expand ancestors of the new path + scroll the

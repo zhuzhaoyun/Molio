@@ -103,6 +103,11 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
     },
   }), []);
 
+  // Stable callback — TreeNodeItem's reveal-cleanup effect depends on this
+  // reference; an inline arrow would reset its 1500ms timer on every render
+  // and never let the highlight clear.
+  const handleRevealConsumed = useCallback(() => setRevealPath(null), []);
+
   // Drag-over state for external file import
   const [dragOver, setDragOver] = useState<{
     type: 'root' | 'node';
@@ -195,7 +200,10 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
     // dropped on empty panel space.
     if (!e.dataTransfer.types.includes('Files')) {
       const srcPath = e.dataTransfer.getData('text/plain');
-      if (srcPath) onMoveFile?.(srcPath, '');
+      // Only fire if srcPath is a known tree node — otherwise an external
+      // text drag (e.g. selected text from another app) would land here as
+      // a bogus move with garbage path.
+      if (srcPath && findNodeByPath(tree, srcPath)) onMoveFile?.(srcPath, '');
       return;
     }
 
@@ -214,7 +222,7 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
     }
 
     onImportFiles?.(Array.from(files), targetDir);
-  }, [onImportFiles, onMoveFile]);
+  }, [onImportFiles, onMoveFile, tree]);
 
   // Called by KbFileTree directory nodes during dragOver to update the panel's
   // drag indicator state for "drop on a specific directory".
@@ -398,7 +406,7 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
           expandedPaths={expandedPaths}
           revealToken={revealToken}
           revealPath={revealPath}
-          onRevealConsumed={() => setRevealPath(null)}
+          onRevealConsumed={handleRevealConsumed}
           onTogglePath={togglePath}
           onSelectFile={onSelectFile}
           onAddToWiki={onAddToWiki}
@@ -444,6 +452,18 @@ function collectDirPaths(nodes: TreeNode[]): string[] {
   };
   walk(nodes);
   return paths;
+}
+
+/** Find a tree node by exact path (used to validate internal drag sources). */
+function findNodeByPath(nodes: TreeNode[], path: string): TreeNode | undefined {
+  for (const n of nodes) {
+    if (n.path === path) return n;
+    if (n.type === 'directory' && n.children) {
+      const found = findNodeByPath(n.children, path);
+      if (found) return found;
+    }
+  }
+  return undefined;
 }
 
 /**
