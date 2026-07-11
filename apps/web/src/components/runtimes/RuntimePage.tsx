@@ -23,6 +23,7 @@ const AGENT_ICONS: Record<string, string> = {
   codex: '🟢',
   gemini: '🔵',
   qwen: '🟠',
+  hermes: '🟤',
 };
 
 function getStatusLabels(locale: Locale): Record<string, { label: string; className: string }> {

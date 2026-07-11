@@ -545,6 +545,68 @@
   border-top: 1px solid var(--border-soft);
 }
 
+/* -------- Repairing status (Hermes [acp] extra auto-install) -------- */
+.repairing-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  margin: 6px 0;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  color: var(--text-soft);
+  font-size: 12px;
+}
+.repairing-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--border-soft);
+  border-top-color: var(--accent, #4a90e2);
+  border-radius: 50%;
+  animation: repairing-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes repairing-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* -------- Assistant error banner (agent/run errors kept separate from content) -------- */
+.assistant-error {
+  margin: 8px 0;
+  border: 1px solid var(--danger-border, #e8a8a8);
+  border-left: 3px solid var(--danger, #c62828);
+  border-radius: var(--radius-sm);
+  background: var(--danger-bg, #fdf2f2);
+  color: var(--danger-text, #8b2020);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow: hidden;
+}
+.assistant-error-header {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--danger-border, #e8a8a8);
+  background: var(--danger-bg-strong, #fbe5e5);
+}
+.assistant-error-label {
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: var(--radius-xs, 3px);
+  background: var(--danger, #c62828);
+  color: #fff;
+  font-size: 11px;
+}
+.assistant-error-body {
+  padding: 8px 12px;
+  word-break: break-word;
+}
+.assistant-error-body p:last-child {
+  margin-bottom: 0;
+}
+.assistant-error-body .code-block {
+  margin: 6px 0;
+}
+
 /* -------- Composer -------------------------------------------------- */
 .composer {
   border-top: 1px solid var(--border);
