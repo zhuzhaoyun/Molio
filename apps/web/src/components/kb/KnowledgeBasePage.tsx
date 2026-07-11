@@ -11,7 +11,7 @@ import type { KbChatState } from '../../hooks/useKbChat';
 import { useKbTabs, MAX_TABS } from '../../hooks/useKbTabs';
 import { kbTabsStore } from '../../stores/kbTabsStore';
 import { vaultStore } from '../../stores/vaultStore';
-import { KbFilePanel } from './KbFilePanel';
+import { KbFilePanel, type KbFilePanelHandle } from './KbFilePanel';
 import { KbTabBar } from './KbTabBar';
 import { KbMainContent } from './KbMainContent';
 import { KbChatPanel } from './KbChatPanel';
@@ -165,6 +165,9 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
   // Save toast state
   const [saveToast, setSaveToast] = useState<string | null>(null);
   const saveToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Ref to KbFilePanel for imperative "reveal path" calls (post-move locate).
+  const filePanelRef = useRef<KbFilePanelHandle>(null);
 
   // Input dialog state (replaces window.prompt)
   const [inputDialog, setInputDialog] = useState<{
@@ -785,9 +788,15 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
   }, []);
 
   const handleMoveFile = useCallback(async (srcPath: string, destDir: string) => {
-    if (!kb.activeVault) return;
+    // Read active vault from the synchronous store — the React `vaults` state
+    // lags one render pass behind `vaultStore.setVaults`, so `kb.activeVault`
+    // can still be null immediately after vault auto-selection even though the
+    // store has the vault. Reading from the store avoids the stale closure.
+    const activeVault = vaultStore.getActiveVault();
+    if (!activeVault) return;
     const fileName = srcPath.split('/').pop() ?? srcPath;
-    const newPath = `${destDir}/${fileName}`;
+    // destDir === '' means vault root — don't emit a leading '/'.
+    const newPath = destDir ? `${destDir}/${fileName}` : fileName;
     const srcNode = findNodeByPath(kb.tree, srcPath);
     const isDirMove = srcNode?.type === 'directory';
 
@@ -804,23 +813,27 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
         const newFileName = newPath.split('/').pop() ?? newPath;
         const existingTabForNewPath = tabs.tabs.find(t => t.id === `file:${newPath}`);
         if (existingTabForNewPath) tabs.closeTab(`file:${newPath}`);
-        tabs.updateTab(`file:${srcPath}`, { id: `file:${newPath}`, title: newFileName, vaultId: kb.activeVault?.id });
+        tabs.updateTab(`file:${srcPath}`, { id: `file:${newPath}`, title: newFileName, vaultId: activeVault.id });
       } else {
         // Directory move: re-prefix every open tab whose id sits under srcPath/.
         const oldPrefix = `file:${srcPath}/`;
         const newPrefix = `file:${newPath}/`;
         const affectedTabs = tabs.tabs.filter(
-          t => t.vaultId === kb.activeVault?.id && t.id.startsWith(oldPrefix),
+          t => t.vaultId === activeVault.id && t.id.startsWith(oldPrefix),
         );
         for (const tab of affectedTabs) {
           const suffix = tab.id.slice(oldPrefix.length);
-          tabs.updateTab(tab.id, { id: `${newPrefix}${suffix}`, vaultId: kb.activeVault?.id });
+          tabs.updateTab(tab.id, { id: `${newPrefix}${suffix}`, vaultId: activeVault.id });
         }
       }
+      // After the tree refreshes, expand ancestors of the new path + scroll the
+      // node into view + briefly flash it. Delay lets VaultWatcher push the
+      // updated tree to the client first.
+      setTimeout(() => filePanelRef.current?.revealPath(newPath), 50);
     } catch (err) {
       showToast(`移动${isDirMove ? '文件夹' : '文件'}失败：${err instanceof Error ? err.message : String(err)}`);
     }
-  }, [kb.activeVault?.id, kb.tree, kb.renameFile, tabs, showToast]);
+  }, [kb.tree, kb.renameFile, tabs, showToast]);
 
   const handleImportFiles = useCallback(async (files: File[], targetDir: string) => {
     if (!kb.activeVault) return;
@@ -943,6 +956,7 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
     <div className="kb-shell">
       {/* File Panel */}
       <KbFilePanel
+        ref={filePanelRef}
         width={kb.panelWidth}
         tree={kb.tree}
         selectedFile={kb.selectedFile}

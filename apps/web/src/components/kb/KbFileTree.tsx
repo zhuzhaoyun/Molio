@@ -29,6 +29,12 @@ interface KbFileTreeProps {
    * active.
    */
   revealToken?: number;
+  /** Path to reveal (folder or file) — set after a move/rename so the user can
+   *  see where the node landed. Cleared by KbFileTree after the highlight fades. */
+  revealPath?: string | null;
+  /** Called once the highlight has been applied so the parent can clear its
+   *  revealPath state (prevents the highlight from re-applying on re-renders). */
+  onRevealConsumed?: () => void;
   onTogglePath: (path: string) => void;
   onSelectFile: (path: string) => void;
   onAddToWiki?: (path: string, isDirectory: boolean) => void;
@@ -53,6 +59,8 @@ export function KbFileTree({
   searchQuery,
   expandedPaths,
   revealToken,
+  revealPath,
+  onRevealConsumed,
   onTogglePath,
   onSelectFile,
   onAddToWiki,
@@ -86,6 +94,8 @@ export function KbFileTree({
           searchQuery={searchQuery}
           expandedPaths={expandedPaths}
           revealToken={revealToken}
+          revealPath={revealPath}
+          onRevealConsumed={onRevealConsumed}
           onTogglePath={onTogglePath}
           onSelectFile={onSelectFile}
           onAddToWiki={onAddToWiki}
@@ -110,6 +120,8 @@ interface TreeNodeItemProps {
   searchQuery: string;
   expandedPaths: Set<string>;
   revealToken?: number;
+  revealPath?: string | null;
+  onRevealConsumed?: () => void;
   onTogglePath: (path: string) => void;
   onSelectFile: (path: string) => void;
   onAddToWiki?: (path: string, isDirectory: boolean) => void;
@@ -128,6 +140,8 @@ function TreeNodeItem({
   searchQuery,
   expandedPaths,
   revealToken,
+  revealPath,
+  onRevealConsumed,
   onTogglePath,
   onSelectFile,
   onAddToWiki,
@@ -157,6 +171,28 @@ function TreeNodeItem({
   }, [onContextMenu, node]);
 
   const isRenaming = renamingPath === node.path;
+
+  // Reveal-on-move: parent sets `revealPath` + bumps `revealToken` after a
+  // rename. When this node's path matches, scroll it into view and flash the
+  // .just-moved class. `revealPath` is cleared by the parent after the flash
+  // has had time to register (timer below). Folders use labelRef, files use
+  // itemRef — both declared here so a single effect handles both types.
+  const labelRef = useRef<HTMLDivElement>(null);
+  const itemRef = useRef<HTMLDivElement>(null);
+  const revealMatch = !!revealPath && revealPath === node.path;
+  const isActive = selectedFile === node.path;
+
+  useEffect(() => {
+    if (!(revealMatch || isActive)) return;
+    const el = node.type === 'directory' ? labelRef.current : itemRef.current;
+    el?.scrollIntoView({ block: 'nearest' });
+  }, [revealMatch, isActive, revealToken, node.type]);
+
+  useEffect(() => {
+    if (!revealMatch) return;
+    const t = setTimeout(() => onRevealConsumed?.(), 1500);
+    return () => clearTimeout(t);
+  }, [revealMatch, onRevealConsumed]);
 
   if (node.type === 'directory') {
     // Determine drop acceptance for this directory.
@@ -234,6 +270,10 @@ function TreeNodeItem({
         e.preventDefault();
         return;
       }
+      // Stop bubbling — otherwise an ancestor directory's dragStart handler also
+      // fires and overwrites text/plain with the ancestor's path, turning a
+      // subfolder drag into a parent-folder move.
+      e.stopPropagation();
       e.dataTransfer.setData('text/plain', node.path);
       e.dataTransfer.effectAllowed = 'move';
 
@@ -263,7 +303,8 @@ function TreeNodeItem({
           onDragStart={handleDirDragStart}
         >
         <div
-          className="kb-tree-group-label"
+          ref={labelRef}
+          className={`kb-tree-group-label ${revealMatch ? 'just-moved' : ''}`}
           onClick={() => onTogglePath(node.path)}
           onContextMenu={handleContextMenu}
         >
@@ -300,6 +341,8 @@ function TreeNodeItem({
               searchQuery={searchQuery}
               expandedPaths={expandedPaths}
               revealToken={revealToken}
+              revealPath={revealPath}
+              onRevealConsumed={onRevealConsumed}
               onTogglePath={onTogglePath}
               onSelectFile={onSelectFile}
               onAddToWiki={onAddToWiki}
@@ -318,8 +361,6 @@ function TreeNodeItem({
   }
 
   // File node
-  const isActive = selectedFile === node.path;
-  const itemRef = useRef<HTMLDivElement>(null);
   const canDrag = !nodeProtected;
 
   const handleDragStart = useCallback((e: React.DragEvent) => {
@@ -327,6 +368,9 @@ function TreeNodeItem({
       e.preventDefault();
       return;
     }
+    // Stop bubbling — otherwise the containing directory's dragStart handler
+    // fires too and overwrites text/plain with the directory's path.
+    e.stopPropagation();
     e.dataTransfer.setData('text/plain', node.path);
     e.dataTransfer.effectAllowed = 'move';
 
@@ -344,15 +388,6 @@ function TreeNodeItem({
     requestAnimationFrame(() => ghost.remove());
   }, [canDrag, node.path]);
 
-  // Scroll into view when the file becomes active, or when the parent bumps
-  // revealToken (the "locate" button) — needed because locating a file that
-  // is *already* active but buried under collapsed ancestors wouldn't fire
-  // the isActive branch on its own.
-  useEffect(() => {
-    if (!isActive) return;
-    itemRef.current?.scrollIntoView({ block: 'nearest' });
-  }, [isActive, revealToken]);
-
   const handleFileContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -362,7 +397,7 @@ function TreeNodeItem({
   return (
     <div
       ref={itemRef}
-      className={`kb-tree-item ${isActive ? 'is-active' : ''}`}
+      className={`kb-tree-item ${isActive ? 'is-active' : ''} ${revealMatch ? 'just-moved' : ''}`}
       onClick={() => !isRenaming && onSelectFile(node.path)}
       onContextMenu={handleFileContextMenu}
       draggable={canDrag}
