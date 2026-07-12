@@ -58,22 +58,25 @@ test.describe('KB folder operations', () => {
     ).toBeVisible({ timeout: 5_000 });
 
     // Synthetic drag-and-drop: dispatch dragstart on sourceDir, then
-    // dragover + drop on destDir. Headless Chromium can't carry dataTransfer
-    // data across separate synthetic events, so the move logic may not actually
-    // run — but we still verify the React handlers don't throw and the tree
-    // remains stable. (Mirrors the existing drag-drop-import.spec.ts pattern.)
+    // dragover + drop on destDir. Use a FRESH DataTransfer for the drop event
+    // so text/plain set by the dragstart React handler doesn't carry into the
+    // drop handler — otherwise onMoveFile actually fires and moves sourceDir
+    // into destDir on disk, polluting the shared vault state for the count
+    // test below. The point of this smoke test is just to verify the React
+    // handlers don't throw and the tree stays stable; functional move is
+    // covered by the daemon unit test for renamePath on directories.
     const result = await page.evaluate(() => {
       const groups = Array.from(document.querySelectorAll('[data-drop-dir]')) as HTMLElement[];
       const src = groups.find((el) => el.getAttribute('data-drop-dir') === 'sourceDir');
       const dest = groups.find((el) => el.getAttribute('data-drop-dir') === 'destDir');
       if (!src || !dest) return 'src-or-dest-not-found';
-      const dt = new DataTransfer();
-      // Pre-populate so .types includes text/plain (matches a real drag where
-      // dragstart set it). getData still returns '' in synthetic events.
-      try { dt.setData('text/plain', 'sourceDir'); } catch { /* ignore */ }
-      src.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt }));
-      dest.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }));
-      dest.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+      const dtStart = new DataTransfer();
+      src.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dtStart }));
+      // Fresh empty dt for drop → getData('text/plain') returns '' → onMoveFile
+      // early-returns without mutating disk state.
+      const dtDrop = new DataTransfer();
+      dest.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dtDrop }));
+      dest.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dtDrop }));
       return 'ok';
     });
     expect(result).toBe('ok');
