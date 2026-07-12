@@ -18,29 +18,45 @@ const DEBUG_OPEN_SILENT = typeof window !== 'undefined'
 
 export function subscribeToRun(
   runId: string,
-  onEvent: (event: AgentEvent) => void,
+  onEvent: (event: AgentEvent, seq?: number) => void,
   onError?: (error: Event) => void,
   onDone?: () => void,
+  afterSeq?: number,
+  onKeepalive?: () => void,
 ): EventSource {
-  const es = new EventSource(`/api/runs/${runId}/events`);
+  // afterSeq > 0 → reconnect: ask daemon to replay buffered events with id > afterSeq
+  // (events.ts:20 supports ?after=). Used by the watchdog to reconnect to the SAME run
+  // after a dead connection, recovering missed events without losing session context.
+  const url = afterSeq && afterSeq > 0
+    ? `/api/runs/${runId}/events?after=${afterSeq}`
+    : `/api/runs/${runId}/events`;
+  const es = new EventSource(url);
   // Snapshot the switch at subscribe time so toggling mid-run doesn't half-apply.
   const openSilent = DEBUG_OPEN_SILENT
     || (typeof window !== 'undefined'
       && (window as any).__MOLIO_DEBUG_SSE_OPEN_SILENT__ === true);
 
   es.onmessage = (msg) => {
-    // Diagnostic: confirm frames are reaching the browser. Pings (`:ping`) are SSE
-    // comment lines and do NOT trigger onmessage, so any log here is a real event frame.
+    // Diagnostic switch: drop every frame to simulate "events never reach the upper
+    // layer" — including ping, so the watchdog eventually fires. Used to verify the
+    // watchdog/reconnect path without waiting for a real 3h hang.
     if (openSilent) {
       console.warn('[sse] recv DROPPED (DEBUG_OPEN_SILENT) readyState=' + es.readyState);
+      return;
+    }
+    // Ping is a `data: ping` frame (daemon sse.ts). Recognize before JSON.parse and
+    // signal keepalive — this is the watchdog's heartbeat during turn gaps where no
+    // real chat events flow but the connection is still alive.
+    if (msg.data === 'ping') {
+      onKeepalive?.();
       return;
     }
     try {
       const envelope: SSEEnvelope = JSON.parse(msg.data);
       console.debug('[sse] recv readyState=' + es.readyState + ' seq=' + envelope.seq + ' type=' + envelope.event.type);
-      onEvent(envelope.event);
+      onEvent(envelope.event, envelope.seq);
     } catch {
-      // Ignore parse errors for keepalive pings
+      // Ignore parse errors for any non-JSON keepalive variant
     }
   };
 

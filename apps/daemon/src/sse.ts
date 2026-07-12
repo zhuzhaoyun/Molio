@@ -84,16 +84,23 @@ export function createSSEStream(
         }
       });
 
-      // Keepalive ping every 15 seconds
+      // Keepalive ping every 15 seconds. Sent as a `data:` frame (NOT an SSE
+      // comment line `:ping`) so the browser's EventSource onmessage fires — the
+      // frontend watchdog relies on receiving ping frames to tell "connection
+      // alive but idle" from "connection dead". No `id:` line → not buffered in
+      // run.events → replay won't flood the client with stale pings on reconnect.
+      // Test hook: MOLIO_TEST_SSE_PING_MS shortens the interval so unit tests can
+      // exercise the ping path without sleeping 15s. Production never sets it.
+      const pingMs = Number(process.env.MOLIO_TEST_SSE_PING_MS) || 15_000;
       pingInterval = setInterval(() => {
         try {
-          safeEnqueue(controller, encoder.encode(':ping\n\n'));
+          safeEnqueue(controller, encoder.encode('data: ping\n\n'));
         } catch {
           // Diagnostic: ping can't go out either — confirms the stream is dead from
           // the daemon side, not just a network issue.
           dbgLog(`ping enqueue FAILED runId=${runId} enqueueCount=${enqueueCount}`);
         }
-      }, 15_000);
+      }, pingMs);
     },
     cancel() {
       dbgLog(`stream cancel runId=${runId}`);
