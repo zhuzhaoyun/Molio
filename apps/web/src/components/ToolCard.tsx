@@ -114,12 +114,12 @@ function DefaultToolCard({ tool }: { tool: ToolEvent }) {
         <span className="tool-line-arrow">{'⎿'}</span>
         <span className="tool-line-name">{tool.name}</span>
         {detail && <span className="tool-line-arg">{detail}</span>}
-        {chevron && <span className="tool-line-chevron">{chevron}</span>}
+        <span className={`tool-line-status ${statusClass}`}>{statusLabel}</span>
         <span className="tool-line-elapsed">
           {tool.status === 'running' && `⏱ ${elapsed}s`}
           {tool.status !== 'running' && elapsed > 0 && `⏱ ${elapsed}s`}
         </span>
-        <span className={`tool-line-status ${statusClass}`}>{statusLabel}</span>
+        {chevron && <span className="tool-line-chevron">{chevron}</span>}
       </div>
 
       {/* ── Expandable output panel ── */}
