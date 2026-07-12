@@ -132,8 +132,12 @@ export function useChatCore(options: UseChatCoreOptions) {
     const fallbackMs = (typeof window !== 'undefined' &&
       (window as any).__MOLIO_TEST_FALLBACK_TIMEOUT_MS__) || FALLBACK_IDLE_MS;
     fallbackTimerRef.current = setTimeout(() => {
+      console.warn('[chat] idle fallback fired after ' + fallbackMs + 'ms — no SSE events received; force-unlocking. assistantId=' + (assistantIdRef.current ?? '(empty)'));
       setState((prev) => {
-        if (!prev.isRunning) return prev;
+        if (!prev.isRunning) {
+          console.debug('[chat] idle fallback noop — no longer running');
+          return prev;
+        }
         const messages = prev.messages.map((msg) =>
           msg.id === assistantIdRef.current && msg.streaming
             ? { ...msg, streaming: false, error: msg.error ?? '响应超时，请重试或检查 daemon 是否运行' }
@@ -182,7 +186,14 @@ export function useChatCore(options: UseChatCoreOptions) {
       runId,
       (event: AgentEvent) => {
         const currentId = assistantIdRef.current;
-        if (!currentId) return;
+        console.debug('[chat] event type=' + event.type + ' runId=' + runId + ' assistantId=' + (currentId ?? '(empty)'));
+        if (!currentId) {
+          // Diagnostic: event reached the browser but assistantIdRef is empty, so it
+          // can't be routed to any assistant message — surfaces the "event arrived but
+          // UI didn't update" failure mode (assumption 4 in the SSE diagnosis).
+          console.warn('[chat] event DROPPED — assistantIdRef empty, cannot route. type=' + event.type);
+          return;
+        }
         // ACP agents (Hermes) report their real model list via session/new.
         // Fan out to useAgents so the model picker updates dynamically.
         if (event.type === 'models' && agentId) {
@@ -209,6 +220,7 @@ export function useChatCore(options: UseChatCoreOptions) {
         // P2-3: SSE closed for good (daemon exited, readyState === CLOSED).
         // Auto-reconnect would hammer a dead endpoint forever — unlock the
         // input so the user can re-send instead of staring at a locked composer.
+        console.warn('[chat] SSE onDone (CLOSED) — force-unlocking. runId=' + runId);
         setState((prev) => {
           if (!prev.isRunning) return prev;
           const messages = prev.messages.map((msg) =>
