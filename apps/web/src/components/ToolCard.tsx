@@ -111,7 +111,7 @@ function DefaultToolCard({ tool, allTools }: { tool: ToolEvent; allTools: ToolEv
     setExpanded((prev) => !prev);
   };
 
-  const hasOutput = tool.status !== 'running' && tool.result !== undefined;
+  const hasOutput = tool.status !== 'running' && tool.result !== undefined && tool.result !== '';
   const chevron = hasOutput ? (expanded ? '▾' : '▸') : '';
 
   // ── Tool-line rendering ──
