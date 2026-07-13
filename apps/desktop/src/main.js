@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setupAutoUpdater } from './updater.js';
 import { log, getLogPath } from './logger.js';
+import { initMonitoring } from './monitoring-bundle.mjs';
 
 const errMsg = (err) => (err instanceof Error ? err.message : String(err));
 
@@ -397,17 +398,26 @@ app.whenReady().then(async () => {
       }
     }
   }
-  // ① Create window first (updater IPC needs getMainWindow reference)
+
+  // 监控初始化必须在 createWindow 之前——SDK autoInject 监听 web-contents-created
+  // 注入 Browser SDK，init 之前创建的窗口会错过注入。
+  await initMonitoring({
+    isDev: isDevMode(),
+    version: app.getVersion(),
+    log,
+  });
+
+  // ② Create window first (updater IPC needs getMainWindow reference)
   //    In production this shows splash.html while daemon starts.
   createWindow();
 
-  // ② Set up auto-updater IMMEDIATELY — before daemon.
+  // ③ Set up auto-updater IMMEDIATELY — before daemon.
   // Even if daemon fails to start, the updater must be operational
   // so we can push fixes to users.
   // Pass killDaemon so the updater can release file locks before install.
   setupAutoUpdater(() => mainWindow, killDaemon);
 
-  // ③ Start daemon last — failure here must not affect updater
+  // ④ Start daemon last — failure here must not affect updater
   if (!isDevMode()) {
     let daemonReady = false;
     try {
@@ -418,7 +428,7 @@ app.whenReady().then(async () => {
       // Daemon failure is not fatal for the updater.
     }
 
-    // ④ Only load the real app URL if daemon started successfully.
+    // ⑤ Only load the real app URL if daemon started successfully.
     // If launched via molio:// protocol, navigate to the target instead.
     if (daemonReady) {
       log('info', 'main', `process.argv: ${JSON.stringify(process.argv)}`);

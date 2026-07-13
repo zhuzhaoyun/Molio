@@ -22,6 +22,7 @@
     "test:e2e:headed": "npx playwright test --config e2e/playwright.config.ts --headed"
   },
   "dependencies": {
+    "@arms/rum-electron": "^0.0.5",
     "electron-updater": "^6.8.3"
   },
   "devDependencies": {

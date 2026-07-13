@@ -78,6 +78,44 @@ async function bundleDaemon() {
   console.log('Daemon bundled.');
 }
 
+/**
+ * Bundle monitoring.js (and its @arms/rum-electron dependency tree) into a
+ * single ESM file under src/.
+ *
+ * Why: electron-builder does not reliably traverse pnpm's .pnpm symlink tree
+ * to collect transitive deps like @babel/runtime — at runtime, the SDK's
+ * require('@babel/runtime/helpers/interopRequireDefault') fails inside app.asar.
+ * Bundling inlines all transitive deps into one file, sidestepping the issue.
+ *
+ * WASM (minidump processor) is Base64-embedded in the SDK JS, so no separate
+ * .wasm files need to be shipped.
+ */
+async function bundleMonitoring() {
+  console.log('Bundling monitoring...');
+
+  const entryPoint = join(desktopDir, 'src', 'monitoring.js');
+  const outfile = join(desktopDir, 'src', 'monitoring-bundle.mjs');
+
+  await build({
+    entryPoints: [entryPoint],
+    bundle: true,
+    platform: 'node',
+    target: 'node24',
+    format: 'esm',
+    outfile,
+    // Inline @arms/rum-electron and all its transitive deps (@arms/rum-core,
+    // @babel/runtime, etc.). Only `electron` stays external — it's provided
+    // by the Electron runtime.
+    external: ['electron'],
+    banner: {
+      js: `import { createRequire as __molioCreateRequire } from 'module'; const require = __molioCreateRequire(import.meta.url);`,
+    },
+    logLevel: 'info',
+  });
+
+  console.log('Monitoring bundled.');
+}
+
 function copyNativeDependencies() {
   console.log('Copying native dependencies...');
 
@@ -288,6 +326,7 @@ if (existsSync(resourcesDir)) {
 mkdirSync(resourcesDir, { recursive: true });
 
 await bundleDaemon();
+await bundleMonitoring();
 copyNativeDependencies();
 copyTrashBinaries();
 downloadElectronPrebuilds();

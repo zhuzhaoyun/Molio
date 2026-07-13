@@ -54,6 +54,9 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@arms/rum-electron':
+        specifier: ^0.0.5
+        version: 0.0.5(@babel/runtime@7.29.7)(electron@40.10.2)
       electron-updater:
         specifier: ^6.8.3
         version: 6.8.3
@@ -197,6 +200,21 @@ packages:
   7zip-bin@5.2.0:
     resolution: {integrity: sha512-ukTPVhqG4jNzMro2qA9HSCSSVJN3aN7tlb+hfqYCt3ER0yWroeA2VR38MNrOHLQ/cVj+DaIMad0kFCtWWowh/A==}
 
+  '@arms/rum-core@0.1.7':
+    resolution: {integrity: sha512-lQh/Nhv3pgbufXhkqnyVLsqphaDK61VBo8zvL0/lv/vDvAiAoFqC5xxZK3WdI3+m+i5xcLDOUTMtPKKqOwSPuQ==}
+    peerDependencies:
+      '@babel/runtime': ^7.24.5
+
+  '@arms/rum-electron@0.0.5':
+    resolution: {integrity: sha512-Sk1gpyjXE5EsBYrotmiuosUmGdfgoUpn1hMQu8IRX7iqNuuPorrulWAMDN07ZgZSR19mONID42/3hzuX1CIJ1A==}
+    engines: {node: '>=18.0.0'}
+    peerDependencies:
+      '@trpc/server': '*'
+      electron: '>=28.0.0'
+    peerDependenciesMeta:
+      '@trpc/server':
+        optional: true
+
   '@asamuzakjp/css-color@5.1.11':
     resolution: {integrity: sha512-KVw6qIiCTUQhByfTd78h2yD1/00waTmm9uy/R7Ck/ctUyAPj+AEDLkQIdJW0T8+qGgj3j5bpNKK7Q3G+LedJWg==}
     engines: {node: ^20.19.0 || ^22.12.0 || >=24.0.0}
@@ -282,6 +300,10 @@ packages:
     engines: {node: '>=6.9.0'}
     peerDependencies:
       '@babel/core': ^7.0.0-0
+
+  '@babel/runtime@7.29.7':
+    resolution: {integrity: sha512-Nq8OhGWiZIZGV6hLHoyAKLLcJihP/xFeBMGJoUrxTX2psI8dCifzLhZISFb+VWS3wFMRDmCGw5R+dOySCqPLhw==}
+    engines: {node: '>=6.9.0'}
 
   '@babel/template@7.29.7':
     resolution: {integrity: sha512-puq+Gf35oI24FeN11LkoUQFqv9uwNeWpxXZi/Ji3rRIoKAzKnxRaZ+Gkj0vKS9ZCiTESfng1N9LyOyXvo+m+Gg==}
@@ -3215,6 +3237,17 @@ snapshots:
 
   7zip-bin@5.2.0: {}
 
+  '@arms/rum-core@0.1.7(@babel/runtime@7.29.7)':
+    dependencies:
+      '@babel/runtime': 7.29.7
+
+  '@arms/rum-electron@0.0.5(@babel/runtime@7.29.7)(electron@40.10.2)':
+    dependencies:
+      '@arms/rum-core': 0.1.7(@babel/runtime@7.29.7)
+      electron: 40.10.2
+    transitivePeerDependencies:
+      - '@babel/runtime'
+
   '@asamuzakjp/css-color@5.1.11':
     dependencies:
       '@asamuzakjp/generational-cache': 1.0.1
@@ -3323,6 +3356,8 @@ snapshots:
     dependencies:
       '@babel/core': 7.29.7
       '@babel/helper-plugin-utils': 7.29.7
+
+  '@babel/runtime@7.29.7': {}
 
   '@babel/template@7.29.7':
     dependencies:
