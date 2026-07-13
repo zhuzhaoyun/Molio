@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {existsSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import test from 'node:test';
+import {createTikTokStyleCaptions} from '@remotion/captions';
 import * as content from '../src/content';
 
 test('content module exists', () => {
@@ -41,4 +42,18 @@ test('captions are ordered, non-overlapping, and concise', () => {
   );
   assert.ok(content.CAPTIONS.every((caption) => caption.text.replace(/\s/g, '').length <= 24));
   assert.ok(content.CAPTIONS.at(-1)!.endMs <= 150_000);
+});
+
+test('each scene maps to its own voiceover asset', () => {
+  assert.equal(content.voiceoverPath('problem'), 'audio/voiceover/problem.mp3');
+  assert.equal(content.voiceoverPath('summary'), 'audio/voiceover/summary.mp3');
+});
+
+test('caption paging keeps each authored phrase on its own page', () => {
+  assert.equal(content.CAPTION_COMBINE_MS, 50);
+  const {pages} = createTikTokStyleCaptions({
+    captions: [...content.CAPTIONS],
+    combineTokensWithinMilliseconds: content.CAPTION_COMBINE_MS,
+  });
+  assert.equal(pages.length, content.CAPTIONS.length);
 });

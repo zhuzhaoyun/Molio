@@ -2,8 +2,7 @@ import {createTikTokStyleCaptions, type Caption, type TikTokPage} from '@remotio
 import {useMemo} from 'react';
 import {AbsoluteFill, Sequence, useCurrentFrame, useVideoConfig} from 'remotion';
 import {FONT_FAMILY, PALETTE} from '../theme';
-
-const SWITCH_CAPTIONS_EVERY_MS = 1800;
+import {CAPTION_COMBINE_MS} from '../content';
 
 const CaptionPage = ({page}: {page: TikTokPage}) => {
   const frame = useCurrentFrame();
@@ -40,7 +39,7 @@ const CaptionPage = ({page}: {page: TikTokPage}) => {
 export const Captions = ({captions}: {captions: readonly Caption[]}) => {
   const {fps} = useVideoConfig();
   const {pages} = useMemo(
-    () => createTikTokStyleCaptions({captions: [...captions], combineTokensWithinMilliseconds: SWITCH_CAPTIONS_EVERY_MS}),
+    () => createTikTokStyleCaptions({captions: [...captions], combineTokensWithinMilliseconds: CAPTION_COMBINE_MS}),
     [captions],
   );
 
@@ -49,7 +48,7 @@ export const Captions = ({captions}: {captions: readonly Caption[]}) => {
       {pages.map((page, index) => {
         const nextPage = pages[index + 1];
         const startFrame = Math.round((page.startMs / 1000) * fps);
-        const finalMs = nextPage?.startMs ?? page.tokens.at(-1)?.toMs ?? page.startMs + SWITCH_CAPTIONS_EVERY_MS;
+        const finalMs = nextPage?.startMs ?? page.tokens.at(-1)?.toMs ?? page.startMs + 1800;
         const endFrame = Math.round((finalMs / 1000) * fps);
         const durationInFrames = Math.max(1, endFrame - startFrame);
         return (

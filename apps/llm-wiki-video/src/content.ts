@@ -2,6 +2,7 @@ import type {Caption} from '@remotion/captions';
 
 export const FPS = 30;
 export const TOTAL_FRAMES = 150 * FPS;
+export const CAPTION_COMBINE_MS = 50;
 
 export type SceneId =
   | 'problem'
@@ -18,6 +19,8 @@ export type SceneSpec = {
   title: string;
   narration: string;
 };
+
+export const voiceoverPath = (sceneId: SceneId) => `audio/voiceover/${sceneId}.mp3`;
 
 export const SCENES: readonly SceneSpec[] = [
   {
@@ -94,7 +97,7 @@ const captionsForScene = (scene: SceneSpec): Caption[] => {
   const slotMs = (sceneEndMs - sceneStartMs - insetMs * 2) / phrases.length;
 
   return phrases.map((text, index) => ({
-    text,
+    text: ` ${text}`,
     startMs: Math.round(sceneStartMs + insetMs + index * slotMs),
     endMs: Math.round(sceneStartMs + insetMs + (index + 1) * slotMs - 90),
     timestampMs: null,

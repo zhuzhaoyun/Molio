@@ -1,7 +1,7 @@
 import {Audio} from '@remotion/media';
 import {AbsoluteFill, interpolate, Sequence, staticFile, useCurrentFrame, useVideoConfig} from 'remotion';
 import {Captions} from './components/Captions';
-import {CAPTIONS, FPS, SCENES, TOTAL_FRAMES} from './content';
+import {CAPTIONS, FPS, SCENES, TOTAL_FRAMES, voiceoverPath} from './content';
 import {BuildScene} from './scenes/BuildScene';
 import {ComparisonScene} from './scenes/ComparisonScene';
 import {DefinitionScene} from './scenes/DefinitionScene';
@@ -55,7 +55,16 @@ export const LlmWikiVideo = () => {
           <LineWipe />
         </Sequence>
       ))}
-      <Audio src={staticFile('audio/voiceover.mp3')} volume={1} />
+      {SCENES.map((scene) => (
+        <Sequence
+          key={`voice-${scene.id}`}
+          from={scene.startFrame}
+          durationInFrames={scene.endFrame - scene.startFrame}
+          premountFor={FPS}
+        >
+          <Audio src={staticFile(voiceoverPath(scene.id))} volume={1} />
+        </Sequence>
+      ))}
       <Audio
         src={staticFile('audio/music.wav')}
         volume={(frame) =>

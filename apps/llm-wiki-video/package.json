@@ -8,7 +8,8 @@
     "test": "node --import tsx --test test/*.test.ts",
     "typecheck": "tsc --noEmit",
     "still": "remotion still src/index.ts LlmWikiExplainer",
-    "render": "remotion render src/index.ts LlmWikiExplainer out/llm-wiki-explainer.mp4 --codec h264"
+    "render": "remotion render src/index.ts LlmWikiExplainer out/llm-wiki-explainer.mp4 --codec h264",
+    "verify": "tsx scripts/verify-output.ts"
   },
   "dependencies": {
     "@remotion/captions": "4.0.488",
@@ -17,7 +18,8 @@
     "@remotion/transitions": "4.0.488",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "remotion": "4.0.488"
+    "remotion": "4.0.488",
+    "mediabunny": "1.50.8"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
