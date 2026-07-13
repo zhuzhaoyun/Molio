@@ -405,6 +405,31 @@
   padding-left: 18px;
 }
 
+/* ─── Batch group (time-window) ─── */
+.tool-batch-group {
+  margin: 2px 0;
+}
+
+.tool-batch-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+  font-family: var(--mono);
+  color: var(--text-soft);
+}
+
+.tool-batch-row:hover {
+  color: var(--text-muted);
+}
+
+.tool-batch-items {
+  padding-left: 18px;
+}
+
 /* -------- AskUserQuestion card -------------------------------------- */
 .ask-user-question .tool-card-header { padding-bottom: 4px; }
 .ask-question-body {

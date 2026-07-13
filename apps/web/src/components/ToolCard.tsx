@@ -11,9 +11,11 @@ interface Props {
   onAnswerToolUse?: (toolUseId: string, content: string) => Promise<boolean | void> | boolean | void;
   /** Fallback: sends the answer as a fresh user message. */
   onSubmitForm?: (text: string) => void;
+  /** Full tools array from the assistant message, used for hasRetrySucceeded check. */
+  allTools?: ToolEvent[];
 }
 
-export function ToolCard({ tool, isLast, onAnswerToolUse, onSubmitForm }: Props) {
+export function ToolCard({ tool, isLast, onAnswerToolUse, onSubmitForm, allTools }: Props) {
   // Dispatch to AskUserQuestionCard for interactive question handling
   if (tool.name === 'AskUserQuestion' || tool.name === 'ask_user_question') {
     return (
@@ -30,12 +32,26 @@ export function ToolCard({ tool, isLast, onAnswerToolUse, onSubmitForm }: Props)
     );
   }
 
-  return <DefaultToolCard tool={tool} />;
+  return <DefaultToolCard tool={tool} allTools={allTools ?? []} />;
 }
 
 // ── DefaultToolCard — all hooks live here at top level (Rules of Hooks) ──
 
-function DefaultToolCard({ tool }: { tool: ToolEvent }) {
+function hasRetrySucceeded(tools: ToolEvent[], toolIndex: number): boolean {
+  const current = tools[toolIndex];
+  if (!current || !current.isError) return false;
+  for (let i = toolIndex + 1; i < tools.length; i++) {
+    const later = tools[i];
+    if (later?.name === current.name && later.status === 'done' && !later.isError) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function DefaultToolCard({ tool, allTools }: { tool: ToolEvent; allTools: ToolEvent[] }) {
+  const toolIndex = allTools.findIndex(t => t.id === tool.id);
+  const retrySucceeded = hasRetrySucceeded(allTools, toolIndex);
   // ── Elapsed time + expand state ──
   const [elapsed, setElapsed] = useState(0);
   const [expanded, setExpanded] = useState(false);
@@ -66,16 +82,29 @@ function DefaultToolCard({ tool }: { tool: ToolEvent }) {
   // Smart auto-expand
   useEffect(() => {
     if (manualRef.current) return;
+
+    // ≥5s running → expand
     if (tool.status === 'running' && elapsed >= 5) {
       setExpanded(true);
       autoExpandedRef.current = true;
     }
-    if (tool.status === 'error') setExpanded(true);
-    // Only auto-collapse on done if the user didn't expand or auto-expand didn't trigger
+
+    // Final failure (no later retry succeeded) → expand to show error
+    if (tool.status === 'error' && !retrySucceeded) {
+      setExpanded(true);
+    }
+
+    // Intermediate failure (later retry succeeded) → collapse
+    if (tool.status === 'error' && retrySucceeded) {
+      setExpanded(false);
+      autoExpandedRef.current = false;
+    }
+
+    // Successfully done, not auto-expanded → collapse
     if (tool.status === 'done' && !tool.isError && !autoExpandedRef.current) {
       setExpanded(false);
     }
-  }, [tool.status, elapsed, tool.isError]);
+  }, [tool.status, elapsed, tool.isError, retrySucceeded]);
 
   const toggleExpand = () => {
     manualRef.current = true;
