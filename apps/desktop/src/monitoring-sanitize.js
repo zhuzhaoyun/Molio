@@ -43,7 +43,7 @@ export function sanitizeBundle(bundle) {
  * URL → view name：脱敏 vaultId 和文件路径参数。
  */
 export function sanitizeViewName(url) {
-  if (typeof url !== 'string' || url === '') return url || '';
+  if (typeof url !== 'string' || url === '') return '';
   try {
     const u = new URL(url, 'http://localhost');
     const pathname = u.pathname || '/';
@@ -58,7 +58,7 @@ export function sanitizeViewName(url) {
  * URL → resource name：取 pathname，路径段中的 vaultId 脱敏。
  */
 export function sanitizeResourceName(url) {
-  if (typeof url !== 'string' || url === '') return url || '';
+  if (typeof url !== 'string' || url === '') return '';
   try {
     const u = new URL(url, 'http://localhost');
     return (u.pathname || '/').replace(VAULT_ID_RE, '/vaults/[vaultId]');

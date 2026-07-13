@@ -54,13 +54,13 @@ importers:
 
   apps/desktop:
     dependencies:
-      '@arms/rum-electron':
-        specifier: ^0.0.5
-        version: 0.0.5(@babel/runtime@7.29.7)(electron@40.10.2)
       electron-updater:
         specifier: ^6.8.3
         version: 6.8.3
     devDependencies:
+      '@arms/rum-electron':
+        specifier: ^0.0.5
+        version: 0.0.5(@babel/runtime@7.29.7)(electron@40.10.2)
       '@molio/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts

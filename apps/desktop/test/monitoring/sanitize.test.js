@@ -101,6 +101,12 @@ describe('sanitizeViewName', () => {
     assert.equal(sanitizeViewName(''), '');
   });
 
+  it('returns empty string for non-string input', () => {
+    assert.equal(sanitizeViewName(42), '');
+    assert.equal(sanitizeViewName(null), '');
+    assert.equal(sanitizeViewName(undefined), '');
+  });
+
   it('redacts /vaults/<id> in pathname', () => {
     const url = 'http://localhost:3100/api/vaults/abc-123/files/x.md';
     const out = sanitizeViewName(url);
@@ -120,5 +126,11 @@ describe('sanitizeResourceName', () => {
 
   it('handles empty input', () => {
     assert.equal(sanitizeResourceName(''), '');
+  });
+
+  it('returns empty string for non-string input', () => {
+    assert.equal(sanitizeResourceName(42), '');
+    assert.equal(sanitizeResourceName(null), '');
+    assert.equal(sanitizeResourceName(undefined), '');
   });
 });
