@@ -132,6 +132,37 @@ test.describe('KB stale tab cleanup (reactive)', () => {
     // foreign-vault tab NOT cleaned (still 2 tabs)
     await expect(page.locator('.kb-wtab')).toHaveCount(2, { timeout: 5_000 });
   });
+
+  test('active tab belonging to another vault is not restored (no cross-vault 404)', async ({ page }) => {
+    // Reproduces the "切换时报错" bug: the persisted active tab points at a file
+    // in a *foreign* vault (e.g. `wiki/entities/墨大夫.md` open in vault A).
+    // On loading vault B, restoring that tab would call readFile on a path that
+    // doesn't exist here → a 404 GET + a "file not found" error UI. The fix
+    // skips restoration when the active tab's vaultId ≠ current vault, leaving
+    // selectedFile null and showing the empty state instead.
+    await page.addInitScript((vaultId) => {
+      localStorage.setItem('molio.kb.tabs', JSON.stringify([
+        { id: 'file:wiki/entities/墨大夫.md', type: 'file', title: '墨大夫.md', vaultId: 'vault-foreign' },
+        { id: 'file:real.md', type: 'file', title: 'real.md', vaultId },
+      ]));
+      localStorage.setItem('molio.kb.activeTabId', 'file:wiki/entities/墨大夫.md');
+    }, vault.id);
+
+    const foreignRequests: string[] = [];
+    page.on('request', (req) => {
+      if (req.url().includes('墨大夫')) foreignRequests.push(req.url());
+    });
+
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.kb-tree-item').filter({ hasText: 'real.md' })).toBeVisible({ timeout: 10_000 });
+
+    // No request for the foreign-vault file should have been issued.
+    expect(foreignRequests).toEqual([]);
+    // No "file not found" error UI — empty state is shown instead.
+    await expect(page.locator('.kb-load-error')).toHaveCount(0);
+    await expect(page.locator('.kb-empty-state')).toBeVisible();
+  });
 });
 
 test.describe('KB same-name tab disambiguation (#5)', () => {

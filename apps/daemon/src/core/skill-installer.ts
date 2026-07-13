@@ -23,6 +23,10 @@ const BUILTIN_SKILLS = [
   'wiki-ingest',
   'wiki-lint',
   'wiki-save',
+  // Remotion — programmatic video creation in React/TypeScript, rendered to
+  // MP4. Used by the /remotion command to scaffold video projects, animate
+  // with interpolate/spring, sequence scenes, add audio/captions, and render.
+  'remotion',
 ];
 
 /**
@@ -67,8 +71,15 @@ function readSkillVersion(skillDir: string): string | null {
 }
 
 /**
- * Check if two skills have different versions.
- * Returns true if versions differ or if one is missing.
+ * Check if the destination skill is out of date relative to the source.
+ *
+ * - dest missing → install
+ * - source unversioned → can't reason about staleness, skip (leave dest as-is)
+ * - dest unversioned but source versioned → dest predates versioning, update
+ *   (this is what lets a newly-versioned skill propagate to existing vaults;
+ *   without it, a skill that gained a `version:` field later would never reach
+ *   vaults that already had an older version-less copy installed)
+ * - both versioned → update iff versions differ
  */
 function shouldUpdateSkill(srcDir: string, destDir: string): boolean {
   if (!fs.existsSync(destDir)) return true; // dest doesn't exist, need to install
@@ -76,8 +87,8 @@ function shouldUpdateSkill(srcDir: string, destDir: string): boolean {
   const srcVersion = readSkillVersion(srcDir);
   const destVersion = readSkillVersion(destDir);
 
-  // If either has no version, compare by checking if dest exists (already checked above)
-  if (!srcVersion || !destVersion) return false; // assume up-to-date if no version info
+  if (!srcVersion) return false; // source unversioned — can't reason, assume up-to-date
+  if (!destVersion) return true; // dest predates versioning — update to versioned copy
 
   return srcVersion !== destVersion;
 }
@@ -136,13 +147,10 @@ const DOCLING_RULE_SENTINEL = '<!-- molio:docling-preference -->';
  */
 const DOCLING_RULE_BLOCK = [
   DOCLING_RULE_SENTINEL,
-  '## Document Processing — Always Use `docling`',
+  '## Document & Video Processing — Always Use `docling`',
   '',
-  'When processing office documents (`.pdf`, `.docx`, `.pptx`, `.xlsx`, `.doc`, `.ppt`, `.xls`)',
-  'or images containing text, **always use the `docling` skill**. Do NOT use the `docx`, `pdf`,',
-  '`pptx`, `xlsx`, or `paddleocr*` skills even if they are available — docling produces',
-  'higher-quality Markdown (GPU-accelerated OCR + layout detection + table structure).',
-  'Only fall back to other tools if docling fails or is not installed.',
+  '**Always use the `docling` skill** for documents (PDF, Office, images) and videos (MP4, MOV, etc.).',
+  'If docling encounters errors, retry with different parameters before falling back to other tools.',
 ].join('\n');
 
 /**
@@ -206,6 +214,32 @@ const WEB_FETCH_BLOCK = [
 ].join('\n');
 
 /**
+ * Sentinel for the remotion video-creation preference rule.
+ */
+const REMOTION_RULE_SENTINEL = '<!-- molio:remotion-preference -->';
+
+/**
+ * Rule that forces the agent to use the `remotion` skill for video creation
+ * instead of reaching for moviepy/manim/Python video libraries. Without this,
+ * the agent defaults to "I'll stitch frames with Python" even though the
+ * remotion skill is installed — the skill description alone is not enough to
+ * override the agent's general-knowledge default (the same reason docling
+ * needs a hard rule to win over legacy office skills). CLAUDE.md is loaded as
+ * system prompt, so it overrides skill-description-based selection.
+ *
+ * Kept short on purpose: the agent already knows how to make videos; this rule
+ * only encodes the behavioral default (use remotion, not Python video libs).
+ */
+const REMOTION_RULE_BLOCK = [
+  REMOTION_RULE_SENTINEL,
+  '## Video Creation — Always Use `remotion`',
+  '',
+  'When the user wants to make/create a video (介绍视频/宣传视频/产品视频/动画/motion graphic/intro/trailer/explainer),',
+  '**use the `remotion` skill** — do NOT reach for `moviepy`, `manim`, or Python video libraries.',
+  'This applies even when the source is wiki notes, articles, or scripts rather than code.',
+].join('\n');
+
+/**
  * All Molio-managed rule blocks injected into every vault's .claude/CLAUDE.md.
  * Each has a unique sentinel so injection is idempotent and individual rules
  * can be revised later without re-injecting stale copies.
@@ -213,6 +247,7 @@ const WEB_FETCH_BLOCK = [
 const MOILIO_RULES: Array<{ sentinel: string; block: string; label: string }> = [
   { sentinel: DOCLING_RULE_SENTINEL, block: DOCLING_RULE_BLOCK, label: 'docling preference' },
   { sentinel: ENV_SELF_HEAL_SENTINEL, block: ENV_SELF_HEAL_BLOCK, label: 'environment self-heal' },
+  { sentinel: REMOTION_RULE_SENTINEL, block: REMOTION_RULE_BLOCK, label: 'remotion preference' },
   { sentinel: WEB_FETCH_SENTINEL, block: WEB_FETCH_BLOCK, label: 'web fetch preference' },
 ];
 

@@ -176,6 +176,11 @@ export function getWellKnownToolchainDirs(): string[] {
       path.join(home, 'AppData', 'Local', 'Yarn', 'bin'),
       path.join(home, '.bun', 'bin'),
       path.join(home, '.local', 'bin'),
+      // Hermes Agent — official PowerShell installer (iex ...) drops the venv
+      // here. Resolving via well-known dir avoids depending on PATH propagation:
+      // a daemon started before the installer updated PATH can't see the new
+      // entry, since Windows processes inherit PATH as a startup snapshot.
+      path.join(home, 'AppData', 'Local', 'hermes', 'hermes-agent', 'venv', 'Scripts'),
     );
 
     // nvm4w default symlink — always add as candidate; findInWellKnownDirs
@@ -286,11 +291,29 @@ export interface ProbeResult {
   error?: string;
 }
 
+/**
+ * On Windows, `.cmd`/`.bat` shims and extensionless POSIX-style shims cannot
+ * be executed by Node's `execFile`/`spawn` directly — CreateProcess fails with
+ * EINVAL or ENOENT because it only resolves `.exe` without PATHEXT lookup.
+ * Such invocations need `shell: true` so cmd.exe resolves them via PATHEXT.
+ *
+ * Python venv creates an extensionless `hermes-acp` shim alongside the `.exe`
+ * for Git Bash / MSYS compatibility. If `resolveOnPath` returns that shim
+ * (e.g. the `.exe` was deleted, or `where` only surfaced the extensionless
+ * entry), spawning without `shell: true` fails with ENOENT — the D8 root cause.
+ *
+ * Real `.exe` binaries don't need shell.
+ */
+export function needsShellOnWindows(binaryPath: string): boolean {
+  if (process.platform !== 'win32') return false;
+  const lower = binaryPath.toLowerCase();
+  if (lower.endsWith('.cmd') || lower.endsWith('.bat')) return true;
+  return path.extname(binaryPath) === '';
+}
+
 export function probeVersion(bin: string, args: string[], timeoutMs = 5000): ProbeResult {
   try {
-    const needsShell = process.platform === 'win32' && (
-      bin.endsWith('.cmd') || bin.endsWith('.bat')
-    );
+    const needsShell = needsShellOnWindows(bin);
 
     const extraDirs = [path.dirname(bin), ...getWellKnownToolchainDirs()];
     const currentPath = process.env['PATH'] || '';

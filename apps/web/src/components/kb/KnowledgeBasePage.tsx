@@ -320,6 +320,12 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
     if (!tabs.activeTabId) return;
     const activeTab = tabs.tabs.find(t => t.id === tabs.activeTabId);
     if (activeTab && activeTab.id.startsWith('file:')) {
+      // Don't restore a tab that belongs to a different vault: its file path
+      // likely doesn't exist in the current vault, which would surface a 404
+      // (e.g. switching from vault A with `wiki/entities/墨大夫.md` open to
+      // vault B that lacks that file). The vault-switch tree effect already
+      // cleared selectedFile; leaving it null shows an empty state instead.
+      if (activeTab.vaultId && activeTab.vaultId !== kb.activeVault.id) return;
       const path = activeTab.id.slice(5);
       if (kb.selectedFile !== path) {
         kb.selectFile(path);
@@ -423,10 +429,10 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
     }
   }, [kbChat, confirmRunningOp]);
 
-  const handleIngestFile = useCallback((filePath: string) => {
+  const handleIngestFile = useCallback((filePath: string, isDirectory = false) => {
     if (!agentId) return;
-    const interrupt = () => { kbChat.openIngest(filePath); onKbChatOpenChange(true); };
-    const queue = () => { kbChat.queueIngest(filePath); onKbChatOpenChange(true); };
+    const interrupt = () => { kbChat.openIngest(filePath, isDirectory); onKbChatOpenChange(true); };
+    const queue = () => { kbChat.queueIngest(filePath, isDirectory); onKbChatOpenChange(true); };
     if (kbChat.isRunning) {
       confirmRunningOp({
         title: '当前任务进行中',
@@ -979,6 +985,10 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
           showFileName={true}
           isEditMode={kb.isEditMode}
           onToggleEdit={kb.toggleEditMode}
+          onForceLoad={kb.forceLoadFile}
+          onCloseTab={() => {
+            if (tabs.activeTabId) handleCloseTab(tabs.activeTabId);
+          }}
         />
       </div>
 

@@ -1,7 +1,7 @@
 ---
 name: docling
 description: PRIMARY skill for converting .pdf, .docx, .pptx, .xlsx, .doc, .ppt, .xls, images, and audio/video files (.mp3, .wav, .m4a, .mp4, .mov, etc.) to Markdown. Always prefer this over the docx/pdf/pptx/xlsx/paddleocr skills — docling uses GPU-accelerated OCR + layout detection + table structure extraction for documents, and Whisper ASR for speech-to-text on audio/video. Also supports LaTeX and VTT subtitle files.
-version: 1.1.3
+version: 1.2.0
 metadata:
   requires:
     bins: ["docling"]
@@ -93,34 +93,34 @@ First run is slow (downloading the model); subsequent runs are pure local infere
 
 ```bash
 # Auto-detect format (PDF, DOCX, PPTX, XLSX, image)
-docling "path/to/file.pdf" --to md --output ./output
+docling "path/to/file.pdf" --to md --output .molio/docling
 
 # Force a specific format when auto-detect fails
-docling "file.docx" --from docx --to md --output ./output
-docling "slides.pptx" --from pptx --to md --output ./output
-docling "report.xlsx" --from xlsx --to md --output ./output
+docling "file.docx" --from docx --to md --output .molio/docling
+docling "slides.pptx" --from pptx --to md --output .molio/docling
+docling "report.xlsx" --from xlsx --to md --output .molio/docling
 ```
 
-Output: creates a `.md` file in the specified output directory.
+Output: creates a `.md` file in the specified output directory. **统一用 `.molio/docling` 作为输出目录**（Molio 工作区，文件树扫描会跳过，不污染 vault 根）。
 
 ### PDF with specific options
 
 ```bash
 # PDF with OCR (for scanned documents)
-docling "scanned.pdf" --ocr --to md --output ./output
+docling "scanned.pdf" --ocr --to md --output .molio/docling
 
 # Use pypdfium2 backend (fallback when default parser fails)
-docling "problem.pdf" --pdf-backend pypdfium2 --to md --output ./output
+docling "problem.pdf" --pdf-backend pypdfium2 --to md --output .molio/docling
 
 # Force OCR even if text layer exists
-docling "mixed.pdf" --force-ocr --to md --output ./output
+docling "mixed.pdf" --force-ocr --to md --output .molio/docling
 ```
 
 ### OCR on images
 
 ```bash
-docling "screenshot.png" --from image --to md --output ./output
-docling "photo.jpg" --from image --ocr --to md --output ./output
+docling "screenshot.png" --from image --to md --output .molio/docling
+docling "photo.jpg" --from image --ocr --to md --output .molio/docling
 ```
 
 ### Audio / Video → Markdown (speech-to-text)
@@ -129,16 +129,16 @@ Uses Whisper ASR models to transcribe audio/video files into Markdown.
 
 ```bash
 # Audio file (default whisper_tiny — fast, lower accuracy)
-docling "recording.mp3" --from audio --to md --output ./output
+docling "recording.mp3" --from audio --to md --output .molio/docling
 
 # Video file with a more accurate model
-docling "meeting.mp4" --from audio --pipeline asr --asr-model whisper_large --to md --output ./output
+docling "meeting.mp4" --from audio --pipeline asr --asr-model whisper_large --to md --output .molio/docling
 
 # Apple Silicon: use MLX variant for faster local inference
-docling "interview.m4a" --from audio --pipeline asr --asr-model whisper_medium_mlx --to md --output ./output
+docling "interview.m4a" --from audio --pipeline asr --asr-model whisper_medium_mlx --to md --output .molio/docling
 
 # Parse an existing VTT subtitle file (no ASR, text-only)
-docling "captions.vtt" --from vtt --to md --output ./output
+docling "captions.vtt" --from vtt --to md --output .molio/docling
 ```
 
 **Model size guide**:
@@ -189,7 +189,7 @@ docling "file.pdf" --device cuda --to md
 **Fix**: Switch to the `pypdfium2` backend:
 
 ```bash
-docling "problem.pdf" --pdf-backend pypdfium2 --to md --output ./output
+docling "problem.pdf" --pdf-backend pypdfium2 --to md --output .molio/docling
 ```
 
 `pypdfium2` is more tolerant and will usually succeed.
@@ -207,7 +207,7 @@ set HF_ENDPOINT=https://hf-mirror.com       # CMD
 $env:HF_ENDPOINT="https://hf-mirror.com"    # PowerShell
 
 # Then retry
-docling "file.pdf" --to md --output ./output
+docling "file.pdf" --to md --output .molio/docling
 ```
 
 **Permanent fix** (recommended for Chinese users): add to shell profile (`~/.bashrc`, `~/.zshrc`, or system env):
@@ -262,17 +262,17 @@ If installed but not in PATH, use full path or add to PATH.
 ## Workflow Example
 
 ```bash
-# 1. Create output directory
-mkdir -p ./docling_output
+# 1. Create output directory (Molio 工作区，不污染 vault 根)
+mkdir -p .molio/docling
 
 # 2. Set HF mirror if in China (one-time)
 export HF_ENDPOINT=https://hf-mirror.com
 
 # 3. Convert document
-docling "合同.pdf" --to md --output ./docling_output
+docling "合同.pdf" --to md --output .molio/docling
 
 # 4. Read the generated markdown
-cat ./docling_output/合同.md
+cat .molio/docling/合同.md
 ```
 
 ## Security Notes

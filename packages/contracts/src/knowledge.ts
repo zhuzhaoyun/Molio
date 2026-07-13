@@ -36,10 +36,14 @@ export type IngestStatus = 'pending' | 'tracked-clean' | 'tracked-modified';
 
 export interface FileContent {
   path: string; // Relative path from vault root
-  content: string; // Empty for binary files (use raw file URL instead)
+  content: string; // Empty for binary files (use raw file URL instead); empty + tooLarge when over cap
   size: number;
   modifiedAt: number;
   mimeType?: string; // e.g. "image/png", "application/pdf"
+  /** Detected text encoding, e.g. 'utf-8' | 'gb18030' | 'big5' | 'shift-jis'. */
+  encoding?: string;
+  /** True when size > MAX_VIEW_SIZE — content is empty; UI shows a "too large" card. */
+  tooLarge?: boolean;
 }
 
 export interface KbHistoryEntry {

@@ -7,9 +7,12 @@
  * closes every watcher. Individual vault watchers are isolated — one failing
  * does not affect the others.
  *
- * `.git` and dotfiles are ignored: they aren't part of the displayed tree
- * (scanTree skips dotfiles), and ignoring `.git` prevents our own ingest
- * commits from self-triggering a refresh loop.
+ * `.git`, dotfiles, and build/dependency directories (node_modules, dist, …)
+ * are ignored via the shared `isPrunedDirName` predicate — keeping this in sync
+ * with scanTree, and preventing the FD-exhaustion root cause (chokidar held
+ * ~10k FDs from a vault's node_modules → posix_spawn EBADF → probeVersion
+ * failed → "agent unavailable"). A per-directory child counter backstops any
+ * non-pruned oversized directory so an unknown giant folder can't exhaust FDs.
  */
 import { EventEmitter } from 'node:events';
 import { realpathSync } from 'node:fs';
@@ -17,6 +20,9 @@ import path from 'node:path';
 import type Database from 'better-sqlite3';
 import chokidar, { type FSWatcher } from 'chokidar';
 import { listVaults } from './db.js';
+// Import from vault-prune (not knowledge) so this module does NOT transitively
+// pull in encoding.ts — tests tune encoding's size caps via env vars at load.
+import { isPrunedDirName, MAX_DIR_ENTRIES } from './vault-prune.js';
 
 export const VAULT_TREE_CHANGED_EVENT = 'tree-changed';
 
@@ -72,16 +78,34 @@ export class VaultWatcher extends EventEmitter {
         /* path may not exist yet — watch the original path */
       }
       const root = path.resolve(resolvedPath);
+
+      // Per-directory child counter — best-effort backstop so a non-pruned
+      // oversized directory (a folder the user dumped into the vault) can't
+      // exhaust file descriptors. chokidar calls `ignored` once per path it
+      // considers; once a single parent has been asked about more than
+      // MAX_DIR_ENTRIES children, ignore the rest. The vault root is never
+      // pruned (handled by the `resolved === root` check below), so this only
+      // bounds nested directories. Walk order is not guaranteed, so this is a
+      // hard cap on per-directory work, not a precise threshold.
+      const dirChildCounts = new Map<string, number>();
+
       const watcher = await chokidar.watch(resolvedPath, {
-        // Ignore dotfile entries (.git, .claude, .gitignore) — they aren't in
-        // the displayed tree (scanTree skips dotfiles) and watching .git would
-        // self-trigger on our own ingest commits. Never ignore the vault root
-        // itself, even if its name or an ancestor starts with a dot.
+        // Ignore dotfile entries (.git, .claude, .gitignore) and build/dependency
+        // directories (node_modules, dist, …) via the shared isPrunedDirName —
+        // same predicate scanTree uses, so the watcher and the displayed tree
+        // agree on what counts as knowledge. Never ignore the vault root itself,
+        // even if its name or an ancestor starts with a dot.
         ignored: (p) => {
           const resolved = path.resolve(p);
           if (resolved === root) return false;
           const base = resolved.split(/[/\\]/).pop() ?? '';
-          return base.startsWith('.') && base !== '.';
+          if (isPrunedDirName(base)) return true;
+          // Per-dir backstop: count how many children of this parent chokidar
+          // has asked about; once past the cap, ignore the overflow.
+          const parent = path.dirname(resolved);
+          const next = (dirChildCounts.get(parent) ?? 0) + 1;
+          dirChildCounts.set(parent, next);
+          return next > MAX_DIR_ENTRIES;
         },
         ignoreInitial: true,
         persistent: true,

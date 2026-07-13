@@ -3,12 +3,14 @@ import { claudeAgentDef } from './claude.js';
 import { codexAgentDef } from './codex.js';
 import { geminiAgentDef } from './gemini.js';
 import { qwenAgentDef } from './qwen.js';
+import { hermesAgentDef } from './hermes.js';
 
 const AGENT_DEFS: RuntimeAgentDef[] = [
   claudeAgentDef,
   codexAgentDef,
   geminiAgentDef,
   qwenAgentDef,
+  hermesAgentDef,
 ];
 
 const ids = new Set<string>();

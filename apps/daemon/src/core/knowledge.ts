@@ -7,31 +7,79 @@ import fs from 'node:fs';
 import path from 'node:path';
 import trash from 'trash';
 import type { TreeNode, FileContent, SearchResult } from '@molio/contracts';
+import { detectEncoding, decodeAll, decideReadStrategy, FileTooLargeError, ENCODING_SAMPLE_BYTES } from './encoding.js';
+// Pruning predicate + caps live in a dependency-free module so importing them
+// (e.g. from VaultWatcher) does not transitively load encoding.ts.
+export { PRUNE_DIR_NAMES, isPrunedDirName, MAX_DIR_ENTRIES, MAX_TOTAL } from './vault-prune.js';
+import { isPrunedDirName, MAX_DIR_ENTRIES, MAX_TOTAL } from './vault-prune.js';
+
+interface ScanCtx {
+  visited: number;
+  stopped: boolean;
+  maxDirEntries: number;
+  maxTotal: number;
+}
+
+/** Optional overrides for scanTree / countFiles caps (mainly for tests). */
+export interface ScanOpts {
+  maxDirEntries?: number;
+  maxTotal?: number;
+}
 
 /**
  * Scan a vault directory and return the file tree.
- * Only includes .md, .txt, .pdf, .docx, .html files and directories.
+ * Only includes supported file types (see ALLOWED_EXTS) and directories.
+ * Pruned directories (PRUNE_DIR_NAMES / oversized) are not descended into.
  */
-export function scanTree(vaultPath: string, relBase = ''): TreeNode[] {
+export function scanTree(vaultPath: string, relBase = '', opts: ScanOpts = {}): TreeNode[] {
+  return scanTreeInner(vaultPath, relBase, {
+    visited: 0,
+    stopped: false,
+    maxDirEntries: opts.maxDirEntries ?? MAX_DIR_ENTRIES,
+    maxTotal: opts.maxTotal ?? MAX_TOTAL,
+  });
+}
+
+function scanTreeInner(vaultPath: string, relBase: string, ctx: ScanCtx): TreeNode[] {
+  if (ctx.stopped) return [];
   const absDir = relBase ? path.join(vaultPath, relBase) : vaultPath;
-  const entries = fs.readdirSync(absDir, { withFileTypes: true });
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(absDir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
   const nodes: TreeNode[] = [];
 
-  for (const entry of entries) {
-    // Skip hidden files/dirs
-    if (entry.name.startsWith('.')) continue;
+  // Backstop: prune oversized subtrees instead of stat-ing thousands of files.
+  // Return empty children — the parent call still pushes a directory node (now
+  // empty), which surfaces the dir as pruned without stat-ing its contents.
+  if (entries.length > ctx.maxDirEntries) {
+    console.warn(
+      `[knowledge] scanTree pruned oversized directory (${entries.length} entries, limit ${ctx.maxDirEntries}): ${absDir}`,
+    );
+    return [];
+  }
 
+  for (const entry of entries) {
+    if (isPrunedDirName(entry.name)) continue;
     const relPath = relBase ? `${relBase}/${entry.name}` : entry.name;
 
     if (entry.isDirectory()) {
-      const children = scanTree(vaultPath, relPath);
-      nodes.push({
-        name: entry.name,
-        path: relPath,
-        type: 'directory',
-        children,
-      });
+      const children = scanTreeInner(vaultPath, relPath, ctx);
+      nodes.push({ name: entry.name, path: relPath, type: 'directory', children });
+      if (ctx.stopped) break;
     } else if (entry.isFile() && isSupportedFile(entry.name)) {
+      ctx.visited++;
+      if (ctx.visited > ctx.maxTotal) {
+        if (!ctx.stopped) {
+          ctx.stopped = true;
+          console.warn(
+            `[knowledge] scanTree hit MAX_TOTAL (${ctx.maxTotal}) file cap, truncating at ${absDir}`,
+          );
+        }
+        break;
+      }
       const absFile = path.join(absDir, entry.name);
       const stat = fs.statSync(absFile);
       nodes.push({
@@ -55,20 +103,51 @@ export function scanTree(vaultPath: string, relBase = ''): TreeNode[] {
 
 /**
  * Count all supported files in a vault directory (recursive).
+ * Pruned directories (PRUNE_DIR_NAMES / oversized) are not descended into.
  */
-export function countFiles(vaultPath: string): number {
-  let count = 0;
-  const entries = fs.readdirSync(vaultPath, { withFileTypes: true });
+export function countFiles(vaultPath: string, opts: ScanOpts = {}): number {
+  return countFilesInner(vaultPath, {
+    visited: 0,
+    stopped: false,
+    maxDirEntries: opts.maxDirEntries ?? MAX_DIR_ENTRIES,
+    maxTotal: opts.maxTotal ?? MAX_TOTAL,
+  });
+}
 
+function countFilesInner(dir: string, ctx: ScanCtx): number {
+  if (ctx.stopped) return 0;
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return 0;
+  }
+  if (entries.length > ctx.maxDirEntries) {
+    console.warn(
+      `[knowledge] countFiles pruned oversized directory (${entries.length} entries, limit ${ctx.maxDirEntries}): ${dir}`,
+    );
+    return 0;
+  }
+  let count = 0;
   for (const entry of entries) {
-    if (entry.name.startsWith('.')) continue;
+    if (isPrunedDirName(entry.name)) continue;
     if (entry.isDirectory()) {
-      count += countFiles(path.join(vaultPath, entry.name));
+      count += countFilesInner(path.join(dir, entry.name), ctx);
+      if (ctx.stopped) break;
     } else if (entry.isFile() && isSupportedFile(entry.name)) {
+      ctx.visited++;
+      if (ctx.visited > ctx.maxTotal) {
+        if (!ctx.stopped) {
+          ctx.stopped = true;
+          console.warn(
+            `[knowledge] countFiles hit MAX_TOTAL (${ctx.maxTotal}) file cap, truncating at ${dir}`,
+          );
+        }
+        break;
+      }
       count++;
     }
   }
-
   return count;
 }
 
@@ -77,7 +156,7 @@ export function countFiles(vaultPath: string): number {
  * For text files, returns content as UTF-8 string.
  * For binary files (images, PDF, DOCX), content is empty — use raw file URL or openPath.
  */
-export function readFile(vaultPath: string, relPath: string): FileContent {
+export function readFile(vaultPath: string, relPath: string, opts: { force?: boolean } = {}): FileContent {
   let resolved = resolveFilePath(vaultPath, relPath);
 
   if (!fs.existsSync(resolved)) {
@@ -96,15 +175,35 @@ export function readFile(vaultPath: string, relPath: string): FileContent {
 
   const stat = fs.statSync(real);
   const mimeType = getMimeType(path.basename(real));
-  const content = isTextFile(real) ? fs.readFileSync(real, 'utf-8') : '';
+  const isText = isTextFile(real);
 
-  return {
-    path: relPath,
-    content,
-    size: stat.size,
-    modifiedAt: stat.mtimeMs,
-    mimeType,
-  };
+  // Three-tier cap. Encoding is detected from a 64KB sample for text files so
+  // even tooLarge text files report their encoding on the card.
+  const strategy = decideReadStrategy(stat.size, opts.force === true);
+  const sample = isText ? readSample(real, ENCODING_SAMPLE_BYTES) : Buffer.alloc(0);
+  const encoding = isText ? detectEncoding(sample) : undefined;
+
+  if (strategy === 'refuse') {
+    throw new FileTooLargeError(stat.size);
+  }
+  if (strategy === 'tooLarge') {
+    return { path: relPath, content: '', size: stat.size, modifiedAt: stat.mtimeMs, mimeType, encoding, tooLarge: true };
+  }
+
+  const content = isText ? decodeAll(fs.readFileSync(real), encoding ?? 'utf-8') : '';
+  return { path: relPath, content, size: stat.size, modifiedAt: stat.mtimeMs, mimeType, encoding };
+}
+
+/** Read up to `n` bytes from the start of a file (for encoding detection). */
+function readSample(filePath: string, n: number): Buffer {
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    const buf = Buffer.allocUnsafe(Math.min(n, fs.fstatSync(fd).size));
+    fs.readSync(fd, buf, 0, buf.length, 0);
+    return buf;
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
 /**
@@ -220,8 +319,11 @@ function findFileByStem(
     } catch {
       return;
     }
+    // Don't descend into oversized directories — a wiki link target never
+    // lives inside a dumped dataset, and walking 50k entries is wasteful.
+    if (entries.length > MAX_DIR_ENTRIES) return;
     for (const entry of entries) {
-      if (entry.name.startsWith('.')) continue;
+      if (isPrunedDirName(entry.name)) continue;
       const abs = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         walk(abs);
@@ -415,7 +517,7 @@ export function ensureVaultDir(vaultPath: string): void {
 
 function isSupportedFile(name: string): boolean {
   const ext = path.extname(name).toLowerCase();
-  return [...TEXT_EXTS, ...IMAGE_EXTS, ...BINARY_EXTS].includes(ext);
+  return ALLOWED_EXTS.includes(ext);
 }
 
 /** Text file extensions — content read as UTF-8 */
@@ -424,6 +526,12 @@ export const TEXT_EXTS = ['.md', '.txt', '.html', '.htm', '.json', '.yaml', '.ym
 /** Image file extensions — displayed inline via <img> */
 export const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp', '.ico'];
 
+/** Video file extensions — displayed inline via <video> */
+export const VIDEO_EXTS = ['.mp4', '.mov', '.webm', '.mkv', '.avi'];
+
+/** Audio file extensions — displayed inline via <audio> */
+export const AUDIO_EXTS = ['.mp3', '.wav', '.m4a', '.flac', '.aac', '.ogg'];
+
 /** Binary file extensions — opened via system default program */
 export const BINARY_EXTS = ['.pdf', '.docx', '.doc', '.pptx', '.ppt', '.xlsx', '.xls'];
 
@@ -431,7 +539,7 @@ export const BINARY_EXTS = ['.pdf', '.docx', '.doc', '.pptx', '.ppt', '.xlsx', '
 export const PROTECTED_DIRS = ['wiki', 'docling_output'];
 
 /** Union of all supported extensions — what scanTree displays == what imports accept. */
-export const ALLOWED_EXTS = [...TEXT_EXTS, ...IMAGE_EXTS, ...BINARY_EXTS];
+export const ALLOWED_EXTS = [...TEXT_EXTS, ...IMAGE_EXTS, ...VIDEO_EXTS, ...AUDIO_EXTS, ...BINARY_EXTS];
 
 /** Check whether a relative path lies inside a protected directory or is one. */
 export function isInsideProtected(relPath: string): boolean {
@@ -601,7 +709,8 @@ const MIME_TYPES: Record<string, string> = {
 /**
  * 全文搜索 vault 内文本文件。遍历目录，对每个文本文件 String.includes 匹配，
  * 命中则截取关键词前后 30 字符作为 snippet。
- * - 跳过隐藏文件/目录（. 开头）
+ * - 跳过被剪枝的目录（isPrunedDirName：点号开头 + 构建产物目录名）
+ * - 跳过超大目录（> MAX_DIR_ENTRIES，避免对 dump 出来的大目录逐文件 readFileSync）
  * - 只搜 TEXT_EXTS 内的文件
  * - limit 截断，truncated 标记是否还有更多
  */
@@ -621,8 +730,11 @@ export function searchFiles(
     } catch {
       return;
     }
+    // Don't descend into oversized directories — searching inside a dumped
+    // dataset is wasteful (readFileSync per file) and a real hit never lives there.
+    if (entries.length > MAX_DIR_ENTRIES) return;
     for (const entry of entries) {
-      if (entry.name.startsWith('.')) continue;
+      if (isPrunedDirName(entry.name)) continue;
       const abs = path.join(absDir, entry.name);
       if (entry.isDirectory()) {
         walk(abs);

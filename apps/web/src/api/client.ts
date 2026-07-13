@@ -413,9 +413,10 @@ export const api = {
     return data.tree;
   },
 
-  async readFile(vaultId: string, filePath: string): Promise<FileContent> {
+  async readFile(vaultId: string, filePath: string, opts?: { force?: boolean }): Promise<FileContent> {
     const encoded = encodeURIComponent(filePath).replace(/%2F/g, '/');
-    const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/files/${encoded}`);
+    const query = opts?.force ? '?force=1' : '';
+    const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/files/${encoded}${query}`);
     if (!res.ok) throw new Error(`Failed to read file: ${res.status}`);
     return res.json();
   },

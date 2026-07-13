@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import type Database from 'better-sqlite3';
 import { openDatabase, closeDatabase, createVault } from '../../src/core/db.js';
 import { VaultWatcher, VAULT_TREE_CHANGED_EVENT } from '../../src/core/vault-watcher.js';
+import { MAX_DIR_ENTRIES } from '../../src/core/knowledge.js';
 
 /**
  * VaultWatcher integration tests (CLAUDE.md: state-machine/lifecycle services
@@ -122,6 +123,47 @@ describe('VaultWatcher', () => {
     await settle(1500);
     watcher.off(VAULT_TREE_CHANGED_EVENT, onEmit);
     assert.equal(emitted, false);
+  });
+
+  it('ignores node_modules changes (the FD-exhaustion root cause)', async () => {
+    let emitted = false;
+    const onEmit = () => { emitted = true; };
+    watcher.on(VAULT_TREE_CHANGED_EVENT, onEmit);
+
+    mkdirSync(join(vaultDir, 'node_modules', 'some-pkg'), { recursive: true });
+    writeFileSync(join(vaultDir, 'node_modules', 'some-pkg', 'index.js'), 'module.exports = 1');
+    writeFileSync(join(vaultDir, 'node_modules', 'added-later.js'), 'x');
+
+    await settle(1500);
+    watcher.off(VAULT_TREE_CHANGED_EVENT, onEmit);
+    assert.equal(emitted, false, 'node_modules writes must not trigger tree-changed');
+  });
+
+  it('per-dir backstop: a non-blacklisted oversized dir does not hang the watcher', async () => {
+    // Drop a directory with far more entries than MAX_DIR_ENTRIES that is NOT in
+    // the prune list. The watcher's per-dir child counter must ignore the
+    // overflow rather than trying to track thousands of paths.
+    mkdirSync(join(vaultDir, 'dump'), { recursive: true });
+    // A few hundred past the cap — enough to exercise the overflow path on every
+    // platform without making the test itself slow.
+    const overBy = 300;
+    for (let i = 0; i < MAX_DIR_ENTRIES + overBy; i++) {
+      writeFileSync(join(vaultDir, 'dump', `f${i}.md`), 'x');
+    }
+
+    // Re-watch with the oversized dir present. watch() must still resolve
+    // promptly — the backstop prunes the overflow instead of tracking every file.
+    const ready = watcher.watch(vaultId, vaultDir);
+    const settled = await Promise.race([
+      ready.then(() => true),
+      new Promise<boolean>((r) => setTimeout(() => r(false), 5000)),
+    ]);
+    assert.equal(settled, true, 'watch() should resolve within 5s even with an oversized dir');
+
+    // A normal knowledge file outside the dump still emits tree-changed.
+    const got = waitForTreeChanged(watcher, vaultId, 5000);
+    writeFileSync(join(vaultDir, 'outside.md'), 'x');
+    assert.equal(await got, true);
   });
 
   it('stop() tears down: no further emits after stop', async () => {

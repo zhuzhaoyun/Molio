@@ -2010,6 +2010,26 @@
   background: var(--bg-secondary, #f5f5f5);
 }
 
+.kb-media-viewer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--bg-secondary, #f5f5f5);
+}
+
+.kb-media-viewer video,
+.kb-media-viewer audio {
+  max-width: 100%;
+  max-height: calc(100vh - 140px);
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.kb-media-viewer audio {
+  max-height: 54px;
+}
+
 .kb-image-viewer img {
   max-width: 100%;
   max-height: calc(100vh - 140px);
@@ -2575,4 +2595,44 @@
   font-size: 11px;
   color: var(--text-muted);
   line-height: 1.35;
+}
+
+/* ── CodeMirror large-text viewer ── */
+.kb-codemirror-viewer {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.kb-codemirror-viewer .cm-editor { height: 100%; }
+.kb-codemirror-viewer .cm-scroller { max-height: calc(100vh - 180px); }
+
+/* ── CodeMirror content area + notices ── */
+.kb-cm-area {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+.kb-source-mode-notice,
+.kb-encoding-notice {
+  padding: 6px 16px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+/* TooLargeCard action / hint layout */
+.kb-file-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.kb-file-card-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 4px 0 0;
 }

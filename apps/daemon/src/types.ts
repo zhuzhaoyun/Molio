@@ -6,6 +6,7 @@ import type { ChildProcess } from 'node:child_process';
 import type { WriteStream } from 'node:fs';
 import type { AgentEvent, RunStatus } from '@molio/contracts';
 import type { TurnTextCollector } from './core/turn-text-collector.js';
+import type { AcpTransport } from './core/streams/acp-transport.js';
 
 /**
  * Buffered event record for SSE replay.
@@ -16,6 +17,24 @@ export interface BufferedEvent {
   event: string;
   data: unknown;
   timestamp: number;
+}
+
+/**
+ * ACP-specific state for runs using transport: 'acp-jsonrpc'.
+ * 1 Molio run = 1 AcpTransport = 1 ACP session = 1 long-running agent process.
+ */
+export interface RunAcpState {
+  transport: AcpTransport;
+  sessionId: string;
+}
+
+/**
+ * Model entry returned by `session/new` (ACP agents like Hermes).
+ * Replaces the static `fallbackModels` list after the first run initializes.
+ */
+export interface AcpModelOption {
+  modelId: string;
+  name: string;
 }
 
 export interface RunState {
@@ -45,4 +64,18 @@ export interface RunState {
   // --- Turn-complete persistence ---
   /** Manages per-turn text accumulation and persistence. */
   turnText: TurnTextCollector;
+
+  // --- ACP (Hermes) state ---
+  /** Present only when the agent uses transport: 'acp-jsonrpc'. */
+  acp?: RunAcpState;
+  /** Models returned by session/new; pushed to frontend via SSE to replace fallbackModels. */
+  acpModels?: AcpModelOption[];
+  /** Last non-empty stderr line from the agent process — surfaced in idle/absolute
+   *  timeout error messages so reporters can share what hermes logged right
+   *  before going silent, without needing to find the JSONL log. */
+  lastStderrLine?: string;
+  /** Absolute path of the spawned agent binary — surfaced in init/prompt failure
+   *  errors so users can compare it against `where <agent>` output from terminal
+   *  and immediately spot "Molio found the wrong install" cases. */
+  binaryPath?: string;
 }
