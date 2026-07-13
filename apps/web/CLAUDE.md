@@ -7,6 +7,11 @@ Vite + React 前端，消费 daemon SSE 事件流，提供聊天式 AI 交互界
 - **Framework**: React 19 + TypeScript
 - **Build**: Vite 6
 - **样式**: 纯 CSS (CSS Variables + 组件级 CSS 文件)
+
+**CSS 约定（强制）**：
+- `<select>` 元素设置背景色时**必须**使用 `background-color` 而非 `background` 简写。
+  `base.css` 全局给 `<select>` 定义了自定义下拉箭头（`background-image` / `background-repeat` / `background-position` / `background-size` 四个长写属性），`background` 简写会将它们全部复位为默认值，导致箭头丢失或出现多个箭头。
+  同理，任何想保留全局 base 样式的元素，覆盖背景色时一律用长写属性。
 - **状态管理**: React hooks (useState/useRef/useCallback)
 
 ## 目录结构
