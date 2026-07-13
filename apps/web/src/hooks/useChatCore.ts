@@ -83,6 +83,30 @@ export interface UseChatCoreOptions {
 let msgCounter = 0;
 function nextMsgId() { return `msg-${++msgCounter}-${Date.now()}`; }
 
+/**
+ * Idle window for the fallback unlock timer. Long enough to tolerate a single
+ * silent long-running tool call (e.g. remotion `npm install` of a large dep
+ * tree on a slow network) without a false "响应超时"; short enough that a
+ * genuinely hung run (daemon alive but no events) still surfaces in ~10min.
+ * The timer is idle-based — reset on every received event — so an ACTIVE run
+ * of any length never false-times-out.
+ */
+const FALLBACK_IDLE_MS = 10 * 60 * 1000; // 10 minutes
+
+/**
+ * Watchdog: if no SSE frame (event OR ping) arrives for this long, the
+ * connection is presumed dead. The 11.5-min abort bug leaves EventSource at
+ * readyState=OPEN but silent — onerror/onDone never fire. The watchdog then
+ * reconnects to the SAME run with ?after=<lastSeq> so daemon replays missed
+ * events (session/cache preserved, no createRun). 45s = 3× the 15s ping; only
+ * a truly dead connection (3 missed pings) trips it. Backoff per attempt;
+ * MAX_RECONNECT caps it, after which onDone fires (→ createRun next time).
+ *
+ * Test hook: `window.__MOLIO_TEST_WATCHDOG_MS__` shortens the wait for E2E.
+ */
+const WATCHDOG_MS = 45_000;
+const MAX_RECONNECT = 4;
+
 export function useChatCore(options: UseChatCoreOptions) {
   const { createRun, rewindResend, agentId, initialMessages = [], initialConversationId = null, onComplete } = options;
 
@@ -101,6 +125,52 @@ export function useChatCore(options: UseChatCoreOptions) {
   // promptIdleTimeoutMs (5min) — if no terminal status arrives by then, the
   // user gets the input back instead of a permanently locked composer.
   const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Last received SSE seq — used as ?after= when the watchdog reconnects, so
+  // daemon replays only the events missed during the dead connection.
+  const lastSeqRef = useRef<number>(0);
+  // Watchdog timer — fires when no frame (event or ping) arrives for WATCHDOG_MS.
+  const watchdogTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Scheduled reconnect (exponential backoff). Cleared on clean shutdown so a
+  // pending reconnect doesn't fire after cancel/reset.
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Reconnect attempt counter for exponential backoff + cap.
+  const reconnectAttemptRef = useRef<number>(0);
+  // The watchdog invokes this to reconnect; set inside beginNewRun so it
+  // closures the current run's callbacks + runId. Null when no active run.
+  const reconnectRef = useRef<(() => void) | null>(null);
+  // True while doReconnect is swapping the EventSource — onDoneCb from the OLD
+  // es (fired by its close()) must be ignored so it doesn't clear runId/isRunning
+  // mid-swap. Only the NEW es's onDone (or a genuine daemon exit) should unlock.
+  const reconnectingRef = useRef<boolean>(false);
+
+  const clearWatchdog = useCallback(() => {
+    if (watchdogTimerRef.current) {
+      clearTimeout(watchdogTimerRef.current);
+      watchdogTimerRef.current = null;
+    }
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+  }, []);
+
+  /**
+   * Re-arm the watchdog (clear + schedule). On timeout, invokes reconnectRef
+   * (set by beginNewRun) to re-subscribe to the SAME run with ?after=<lastSeq>.
+   * Called on every received event and every ping frame.
+   */
+  const armWatchdog = useCallback(() => {
+    if (watchdogTimerRef.current) {
+      clearTimeout(watchdogTimerRef.current);
+    }
+    const wdMs = (typeof window !== 'undefined' &&
+      (window as any).__MOLIO_TEST_WATCHDOG_MS__) || WATCHDOG_MS;
+    watchdogTimerRef.current = setTimeout(() => {
+      const cb = reconnectRef.current;
+      if (!cb) return;
+      cb();
+    }, wdMs);
+  }, []);
 
   const clearFallbackTimer = useCallback(() => {
     if (fallbackTimerRef.current) {
@@ -109,11 +179,44 @@ export function useChatCore(options: UseChatCoreOptions) {
     }
   }, []);
 
+  /**
+   * Re-arm the idle fallback timer (clear + schedule). Called on every
+   * received AgentEvent so a long but active run never false-times-out; the
+   * timer only fires when the stream goes truly silent for FALLBACK_IDLE_MS.
+   * Terminal status clears (does not re-arm) via clearFallbackTimer.
+   */
+  const resetFallbackTimer = useCallback(() => {
+    if (fallbackTimerRef.current) {
+      clearTimeout(fallbackTimerRef.current);
+    }
+    const fallbackMs = (typeof window !== 'undefined' &&
+      (window as any).__MOLIO_TEST_FALLBACK_TIMEOUT_MS__) || FALLBACK_IDLE_MS;
+    fallbackTimerRef.current = setTimeout(() => {
+      console.warn('[chat] idle fallback fired after ' + fallbackMs + 'ms — no SSE events received; force-unlocking. assistantId=' + (assistantIdRef.current ?? '(empty)'));
+      setState((prev) => {
+        if (!prev.isRunning) {
+          console.debug('[chat] idle fallback noop — no longer running');
+          return prev;
+        }
+        const messages = prev.messages.map((msg) =>
+          msg.id === assistantIdRef.current && msg.streaming
+            ? { ...msg, streaming: false, error: msg.error ?? '响应超时，请重试或检查 daemon 是否运行' }
+            : msg
+        );
+        return { ...prev, messages, isRunning: false, runId: null, runAgentId: null };
+      });
+      esRef.current?.close();
+      esRef.current = null;
+    }, fallbackMs);
+  }, []);
+
   const closeEventSource = useCallback(() => {
     esRef.current?.close();
     esRef.current = null;
     clearFallbackTimer();
-  }, [clearFallbackTimer]);
+    clearWatchdog();
+    reconnectRef.current = null;
+  }, [clearFallbackTimer, clearWatchdog]);
 
   const beginNewRun = useCallback(async (
     result: RunResult,
@@ -131,6 +234,9 @@ export function useChatCore(options: UseChatCoreOptions) {
     // events to a new assistant message without resubscribing.
     assistantIdRef.current = assistantId;
     clearFallbackTimer();
+    clearWatchdog();
+    reconnectAttemptRef.current = 0;
+    lastSeqRef.current = 0;
 
     setState((prev) => ({
       ...prev,
@@ -141,69 +247,65 @@ export function useChatCore(options: UseChatCoreOptions) {
       isRunning: true,
     }));
 
-    const es = subscribeToRun(
-      runId,
-      (event: AgentEvent) => {
-        const currentId = assistantIdRef.current;
-        if (!currentId) return;
-        // ACP agents (Hermes) report their real model list via session/new.
-        // Fan out to useAgents so the model picker updates dynamically.
-        if (event.type === 'models' && agentId) {
-          const detail: AcpModelsUpdatedDetail = {
-            agentId,
-            models: event.models,
-            currentModelId: event.currentModelId,
-          };
-          window.dispatchEvent(new CustomEvent(ACP_MODELS_UPDATED_EVENT, { detail }));
-        }
-        setState((prev) => updateWithEvent(prev, currentId, event));
-        // P2-3: terminal status clears the fallback timer — the run ended
-        // cleanly (success/failed/canceled), no need to force-unlock later.
-        if (event.type === 'status' && (event.label === 'completed' || event.label === 'failed' || event.label === 'canceled')) {
-          clearFallbackTimer();
-        }
-      },
-      () => { /* SSE error — EventSource auto-retries; onDone handles permanent close */ },
-      () => {
-        // P2-3: SSE closed for good (daemon exited, readyState === CLOSED).
-        // Auto-reconnect would hammer a dead endpoint forever — unlock the
-        // input so the user can re-send instead of staring at a locked composer.
-        setState((prev) => {
-          if (!prev.isRunning) return prev;
-          const messages = prev.messages.map((msg) =>
-            msg.streaming ? { ...msg, streaming: false } : msg
-          );
-          return { ...prev, messages, isRunning: false, runId: null, runAgentId: null };
-        });
+    // --- SSE callbacks (named so the watchdog can re-subscribe with the same
+    // callbacks + ?after=<lastSeq> on reconnect) ---
+    const onEventCb = (event: AgentEvent, seq?: number) => {
+      const currentId = assistantIdRef.current;
+      console.debug('[chat] event type=' + event.type + ' runId=' + runId + ' assistantId=' + (currentId ?? '(empty)'));
+      if (seq && seq > (lastSeqRef.current || 0)) lastSeqRef.current = seq;
+      // Any frame (event or ping) = connection alive: reset backoff + watchdog.
+      reconnectAttemptRef.current = 0;
+      armWatchdog();
+      if (!currentId) {
+        console.warn('[chat] event DROPPED — assistantIdRef empty, cannot route. type=' + event.type);
+        return;
+      }
+      if (event.type === 'models' && agentId) {
+        const detail: AcpModelsUpdatedDetail = {
+          agentId,
+          models: event.models,
+          currentModelId: event.currentModelId,
+        };
+        window.dispatchEvent(new CustomEvent(ACP_MODELS_UPDATED_EVENT, { detail }));
+      }
+      setState((prev) => updateWithEvent(prev, currentId, event));
+      if (event.type === 'status' && (event.label === 'completed' || event.label === 'failed' || event.label === 'canceled')) {
         clearFallbackTimer();
-      },
-    );
-    esRef.current = es;
-
-    // P2-3: fallback timer — if no terminal status arrives within 5min,
-    // force-unlock the input. Catches: daemon hang (SSE alive but no events),
-    // daemon crash without a close event, network blackhole. 5min aligns
-    // with daemon's promptIdleTimeoutMs so the frontend unlocks around when
-    // the daemon itself gives up.
-    //
-    // Test hook: `window.__MOLIO_TEST_FALLBACK_TIMEOUT_MS__` shortens the
-    // wait so E2E can exercise this path without sleeping 5min. Production
-    // never sets this.
-    const fallbackMs = (typeof window !== 'undefined' &&
-      (window as any).__MOLIO_TEST_FALLBACK_TIMEOUT_MS__) || 300_000;
-    fallbackTimerRef.current = setTimeout(() => {
+      } else {
+        resetFallbackTimer();
+      }
+    };
+    const onDoneCb = () => {
+      // During watchdog reconnect, closing the OLD es fires its onDone here —
+      // ignore it so we don't clear runId/isRunning mid-swap. Only the NEW es's
+      // onDone (or a genuine daemon exit) should unlock.
+      if (reconnectingRef.current) return;
+      console.warn('[chat] SSE onDone (CLOSED) — force-unlocking. runId=' + runId);
+      clearWatchdog();
+      reconnectRef.current = null;
       setState((prev) => {
         if (!prev.isRunning) return prev;
         const messages = prev.messages.map((msg) =>
-          msg.id === assistantIdRef.current && msg.streaming
-            ? { ...msg, streaming: false, error: msg.error ?? '响应超时，请重试或检查 daemon 是否运行' }
-            : msg
+          msg.streaming ? { ...msg, streaming: false } : msg
         );
         return { ...prev, messages, isRunning: false, runId: null, runAgentId: null };
       });
-      esRef.current?.close();
-      esRef.current = null;
-    }, fallbackMs);
+      clearFallbackTimer();
+    };
+    const onKeepaliveCb = () => {
+      // ping frame — connection alive. Same reset as a real event.
+      reconnectAttemptRef.current = 0;
+      armWatchdog();
+    };
+
+    const es = subscribeToRun(runId, onEventCb, undefined, onDoneCb, undefined, onKeepaliveCb);
+    esRef.current = es;
+
+    // Idle fallback (10min) + watchdog (45s). The watchdog fires first on a
+    // dead-but-OPEN connection and reconnects to the same run; the idle fallback
+    // is the older safety net for genuinely hung runs. Both re-armed per frame.
+    armWatchdog();
+    resetFallbackTimer();
 
     if (onComplete) {
       const origOnEvent = es.onmessage;
@@ -216,7 +318,54 @@ export function useChatCore(options: UseChatCoreOptions) {
         } catch { /* ignore parse errors */ }
       };
     }
-  }, [state.conversationId, agentId, onComplete, clearFallbackTimer]);
+
+    // Watchdog reconnect: re-subscribe to the SAME run with ?after=<lastSeq>
+    // so daemon replays missed events (session/cache preserved, no createRun).
+    // Closures the named callbacks above; reassigned every beginNewRun so it
+    // always reflects the current run's wiring. Exponential backoff per attempt;
+    // after MAX_RECONNECT, fall through to onDone (next send → createRun).
+    const doReconnect = (afterSeq: number) => {
+      // Guard: closing the old es fires its onDone — onDoneCb checks this flag
+      // and skips. Reset only after the NEW es is wired.
+      reconnectingRef.current = true;
+      esRef.current?.close();
+      esRef.current = null;
+      clearFallbackTimer();
+      clearWatchdog();
+      const newEs = subscribeToRun(runId, onEventCb, undefined, onDoneCb, afterSeq, onKeepaliveCb);
+      esRef.current = newEs;
+      armWatchdog();
+      resetFallbackTimer();
+      if (onComplete) {
+        const orig = newEs.onmessage;
+        newEs.onmessage = (msg) => {
+          orig?.call(newEs, msg);
+          try {
+            const envelope = JSON.parse(msg.data);
+            const ev = envelope.event;
+            if (ev.type === 'status' && ev.label === 'completed') onComplete();
+          } catch { /* ignore */ }
+        };
+      }
+      console.warn('[sse] watchdog reconnected runId=' + runId + ' afterSeq=' + afterSeq);
+      reconnectingRef.current = false;
+    };
+    reconnectRef.current = () => {
+      reconnectAttemptRef.current += 1;
+      const attempt = reconnectAttemptRef.current;
+      const wdMs = (typeof window !== 'undefined' &&
+        (window as any).__MOLIO_TEST_WATCHDOG_MS__) || WATCHDOG_MS;
+      if (attempt > MAX_RECONNECT) {
+        console.warn('[sse] watchdog gave up after ' + MAX_RECONNECT + ' reconnects — onDone (next send → createRun)');
+        reconnectRef.current = null;
+        onDoneCb();
+        return;
+      }
+      const delay = wdMs * 2 ** (attempt - 1);
+      console.warn('[sse] watchdog no frames for ' + wdMs + 'ms, reconnect attempt ' + attempt + ' in ' + delay + 'ms');
+      reconnectTimerRef.current = setTimeout(() => doReconnect(lastSeqRef.current), delay);
+    };
+  }, [state.conversationId, agentId, onComplete, clearFallbackTimer, clearWatchdog, armWatchdog, resetFallbackTimer]);
 
   /**
    * Send a message — tries multi-turn on existing run first, falls back to createRun.
@@ -259,6 +408,11 @@ export function useChatCore(options: UseChatCoreOptions) {
     if (existingRunId && !agentChanged) {
       try {
         await api.sendMessage(existingRunId, text.trim());
+        // Multi-turn reuses the existing SSE subscription, which does NOT
+        // re-arm the fallback timer (beginNewRun isn't called). Re-arm here so
+        // a hung follow-up turn still force-unlocks instead of spinning
+        // forever. Events from this turn keep resetting it (idle semantics).
+        resetFallbackTimer();
         return; // SSE is still active, events route via assistantIdRef
       } catch {
         // Multi-turn failed — fall through to new run
@@ -305,7 +459,7 @@ export function useChatCore(options: UseChatCoreOptions) {
         return { ...prev, messages, isRunning: false };
       });
     }
-  }, [state.runId, state.runAgentId, state.conversationId, state.messages, closeEventSource, createRun, agentId, onComplete, beginNewRun]);
+  }, [state.runId, state.runAgentId, state.conversationId, state.messages, closeEventSource, createRun, agentId, onComplete, beginNewRun, resetFallbackTimer]);
 
   const rewindAndResend = useCallback(async (newContent: string) => {
     if (!rewindResend) return;
