@@ -22,6 +22,23 @@ describe('sanitizeString', () => {
     assert.ok(out.includes('<local-path>'), `got: ${out}`);
   });
 
+  it('redacts Windows forward-slash paths', () => {
+    // Vite / Electron loader emit D:/code/foo (URL form) — the original regex
+    // only matched backslash paths, leaking this through to ARMS.
+    const input = 'failed to load D:/code/workspace/Molio/apps/web/src/main.tsx';
+    const out = sanitizeString(input);
+    assert.ok(!out.includes('D:/code'), `got: ${out}`);
+    assert.ok(out.includes('<local-path>'), `got: ${out}`);
+  });
+
+  it('redacts file:// URLs', () => {
+    const input = 'error loading resource file:///D:/code/workspace/Molio/index.html';
+    const out = sanitizeString(input);
+    assert.ok(!out.includes('file://'), `got: ${out}`);
+    assert.ok(!out.includes('D:/code'), `got: ${out}`);
+    assert.ok(out.includes('<file-url>'), `got: ${out}`);
+  });
+
   it('redacts macOS home paths', () => {
     const input = 'ENOENT: /Users/bob/Documents/vault/file.md';
     const out = sanitizeString(input);
@@ -113,6 +130,15 @@ describe('sanitizeViewName', () => {
     assert.ok(!out.includes('abc-123'), `got: ${out}`);
     assert.ok(out.includes('/vaults/[vaultId]'), `got: ${out}`);
   });
+
+  it('redacts local path in file:// view URL', () => {
+    // Electron loads file:// resources (splash, packaged assets) — pathname
+    // becomes /D:/code/... and must not leak the dev's home dir.
+    const url = 'file:///D:/code/workspace/Molio/apps/desktop/src/splash.html';
+    const out = sanitizeViewName(url);
+    assert.ok(!out.includes('D:/code'), `got: ${out}`);
+    assert.ok(out.includes('<local-path>'), `got: ${out}`);
+  });
 });
 
 describe('sanitizeResourceName', () => {
@@ -122,6 +148,16 @@ describe('sanitizeResourceName', () => {
     assert.ok(!out.includes('abc-123'), `got: ${out}`);
     assert.ok(out.includes('/vaults/[vaultId]'), `got: ${out}`);
     assert.ok(!out.includes('token=secret'), `got: ${out}`); // search not included
+  });
+
+  it('redacts local path in file:// resource URL', () => {
+    // ARMS resource panel was showing /file:///D:/code/workspacexxx —
+    // sanitizeResourceName only ran vaultId regex, missing the local path.
+    const url = 'file:///D:/code/workspace/Molio/apps/desktop/resources/web/index.html';
+    const out = sanitizeResourceName(url);
+    assert.ok(!out.includes('D:/code'), `got: ${out}`);
+    assert.ok(!out.includes('file://'), `got: ${out}`);
+    assert.ok(out.includes('<local-path>'), `got: ${out}`);
   });
 
   it('handles empty input', () => {

@@ -71,13 +71,34 @@ function startDaemonProduction() {
       }
     });
 
+    // Line-buffer daemon stderr: stderr 'data' events arrive as arbitrary chunks
+    // (not aligned to newlines), so we accumulate and split on \n. Each complete
+    // line is logged locally AND forwarded to ARMS via console.error — the SDK's
+    // consoleError collector auto-categorizes it into 异常统计, and the
+    // '[daemon]' prefix lets reviewers filter daemon-sourced errors from
+    // main-process ones in the ARMS console. try/catch guards against any SDK
+    // throw breaking daemon log handling.
+    let stderrBuf = '';
+    const flushDaemonLine = (line) => {
+      if (!line) return;
+      stderrChunks.push(line);
+      log('error', 'daemon', line);
+      try { console.error('[daemon] ' + line); } catch {}
+    };
     daemonProcess.stderr?.on('data', (data) => {
-      const msg = data.toString().trim();
-      stderrChunks.push(msg);
-      log('error', 'daemon', msg);
+      stderrBuf += data.toString();
+      let idx;
+      while ((idx = stderrBuf.indexOf('\n')) >= 0) {
+        const line = stderrBuf.slice(0, idx).trim();
+        stderrBuf = stderrBuf.slice(idx + 1);
+        flushDaemonLine(line);
+      }
     });
 
     daemonProcess.on('exit', (code, signal) => {
+      // Flush any trailing partial line left in the buffer.
+      flushDaemonLine(stderrBuf.trim());
+      stderrBuf = '';
       log('error', 'main', `daemon exited with code=${code} signal=${signal}`);
       if (code !== 0 && code !== null) {
         if (stdoutChunks.length > 0) {

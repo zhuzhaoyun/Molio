@@ -4,7 +4,10 @@
  * Molio 是知识库 + AI 对话应用，URL 里的 vaultId、堆栈里的本地路径必须脱敏后才上报。
  */
 
-const LOCAL_PATH_RE = /([A-Z]:\\[^\s'"<>)]+|\/Users\/[^\s'"<>)]+|\/home\/[^\s'"<>)]+)/g;
+// Windows paths can appear with either separator: D:\code\foo or D:/code/foo.
+// URL-form Windows paths also leak: new URL('file:///D:/code/foo').pathname = '/D:/code/foo'.
+const LOCAL_PATH_RE = /([A-Z]:[\\/][^\s'"<>)]+|\/Users\/[^\s'"<>)]+|\/home\/[^\s'"<>)]+)/g;
+const FILE_URL_RE = /file:\/\/[^\s'"<>)]+/g;
 const VAULT_ID_RE = /\/vaults\/[a-zA-Z0-9_-]+/g;
 const VAULT_QUERY_RE = /([?&])vault=[^&]+/g;
 const FILE_QUERY_RE = /([?&])(file|path)=([^&]+)/g;
@@ -15,6 +18,7 @@ const FILE_QUERY_RE = /([?&])(file|path)=([^&]+)/g;
 export function sanitizeString(input) {
   if (typeof input !== 'string') return input;
   return input
+    .replace(FILE_URL_RE, '<file-url>')
     .replace(LOCAL_PATH_RE, '<local-path>')
     .replace(VAULT_ID_RE, '/vaults/[vaultId]')
     .replace(VAULT_QUERY_RE, '$1vault=[vaultId]')
@@ -48,7 +52,9 @@ export function sanitizeViewName(url) {
     const u = new URL(url, 'http://localhost');
     const pathname = u.pathname || '/';
     const search = sanitizeString(u.search || '');
-    return `${pathname}${search}`.replace(VAULT_ID_RE, '/vaults/[vaultId]');
+    return `${pathname}${search}`
+      .replace(VAULT_ID_RE, '/vaults/[vaultId]')
+      .replace(LOCAL_PATH_RE, '<local-path>');
   } catch {
     return sanitizeString(url);
   }
@@ -61,7 +67,9 @@ export function sanitizeResourceName(url) {
   if (typeof url !== 'string' || url === '') return '';
   try {
     const u = new URL(url, 'http://localhost');
-    return (u.pathname || '/').replace(VAULT_ID_RE, '/vaults/[vaultId]');
+    return (u.pathname || '/')
+      .replace(VAULT_ID_RE, '/vaults/[vaultId]')
+      .replace(LOCAL_PATH_RE, '<local-path>');
   } catch {
     return sanitizeString(url);
   }
