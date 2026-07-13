@@ -162,7 +162,9 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
 - **筛选**: 仅 vault 一个维度（agent / channel 维度已移除），下拉框直接展示在搜索栏旁。
 - **搜索**: 全文搜索消息内容（FTS5 trigram + LIKE 回退），300ms debounce。
 - **分页**: 游标分页（cursor = updated_at），默认 50 条/页，加载更多 append。
-- **标签**: 每行显示 vault 名称 pill（灰色=存活，红色=已删除）。vault_name 反范式化存储，vault 删除后仍可显示原名。
+- **标签**: 
+  - vault pill：灰色=存活，红色=已删除。vault_name 反范式化存储，vault 删除后仍可显示原名。
+  - channel pill：仅非 desktop 渠道显示（绿色 `[微信]`、蓝色 `[飞书]` / `[企业微信]`）。
 - **日期组**: 按日期分组，serif 字体标题，可折叠/展开，标题右侧显示该组会话数量。
 - **删除**: 两步确认——点击删除 → 行变红色确认态 → 确认/取消。失败回滚 + 3 秒 transient error。
 - **缓存**: 30s stale cache，跨页切换不重复请求。
