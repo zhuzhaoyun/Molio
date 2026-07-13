@@ -1,0 +1,28 @@
+{
+  "name": "@molio/llm-wiki-video",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "test": "node --import tsx --test test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "still": "remotion still src/index.ts LlmWikiExplainer",
+    "render": "remotion render src/index.ts LlmWikiExplainer out/llm-wiki-explainer.mp4 --codec h264"
+  },
+  "dependencies": {
+    "@remotion/captions": "4.0.488",
+    "@remotion/cli": "4.0.488",
+    "@remotion/media": "4.0.488",
+    "@remotion/transitions": "4.0.488",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "remotion": "4.0.488"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.8.3"
+  }
+}
