@@ -548,6 +548,33 @@
   border-color: var(--red-border);
 }
 
+/* Channel badge — same pill shape, channel-specific colors */
+.history-source-badge {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.history-source-badge--weixin {
+  color: var(--green);
+  background: var(--green-bg);
+  border-color: var(--green-border);
+}
+
+.history-source-badge--feishu,
+.history-source-badge--wecom {
+  color: var(--blue);
+  background: var(--blue-bg);
+  border-color: var(--blue-border);
+}
+
 
 .history-row__summary {
   color: var(--text-muted);

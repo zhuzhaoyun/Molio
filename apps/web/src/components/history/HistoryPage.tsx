@@ -228,13 +228,17 @@ function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDelet
 
   // Vault indicator:
   // 1. Alive vault          → name badge (gray)
-  // 2. Deleted vault        → name badge (red) + !, or just ! if name lost
+  // 2. Deleted vault        → name badge (red)
   // No vault (vaultId null) → nothing.
   const vaultLabel = vaultName || undefined;
   const vaultDeleted = vaultId != null && !vaultExists;
   const vaultBadgeCls = vaultLabel
     ? `history-vault-badge${vaultDeleted ? ' history-vault-badge--deleted' : ''}`
     : undefined;
+
+  // Channel badge — only for non-desktop channels (desktop is the silent default).
+  const channelType = conversation.channelType;
+  const showChannelBadge = Boolean(channelType && channelType !== 'desktop');
 
   if (isConfirming) {
     return (
@@ -272,6 +276,11 @@ function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDelet
                 {vaultLabel}
               </span>
             )}
+            {showChannelBadge && (
+              <span className={`history-source-badge history-source-badge--${channelType}`}>
+                {sourceLabel(t, channelType!)}
+              </span>
+            )}
           </span>
           <span className="history-row__summary">{lastMessage?.content || t('history.noMessage')}</span>
         </span>
@@ -302,6 +311,12 @@ function formatDateLabel(date: Date) {
 }
 function formatTime(value: number) {
   return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+function sourceLabel(t: (key: string, params?: Record<string, string | number>) => string, channelType?: string) {
+  if (channelType === 'weixin') return t('history.source.weixin');
+  if (channelType === 'feishu') return t('history.source.feishu');
+  if (channelType === 'wecom') return t('history.source.wecom');
+  return t('history.source.desktop');
 }
 function ChatIcon() {
   return (
