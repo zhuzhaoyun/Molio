@@ -94,7 +94,6 @@ export function BatchGroup({ tools }: BatchGroupProps) {
   const [expanded, setExpanded] = useState(false);
   const runningCount = tools.filter(t => t.status === 'running').length;
   const errorCount = tools.filter(t => t.isError).length;
-  const doneCount = tools.filter(t => t.status === 'done' && !t.isError).length;
 
   const summary = `批量操作 · ${tools.length} 个工具`;
   const statusIcon = runningCount > 0 ? '' : errorCount > 0 ? ` · ${errorCount} 失败` : '';

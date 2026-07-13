@@ -48,6 +48,8 @@ function groupTools(tools: ToolEvent[]): ToolItem[] {
       // Don't batch if same name as the previous tool (shouldn't happen after pass1,
       // but guard against edge cases)
       if (nextTool.name === batchTools[batchTools.length - 1]!.name) break;
+      // Don't batch UNGROUPABLE tools — they need their interactive card
+      if (UNGROUPABLE.has(nextTool.name)) break;
       batchTools.push(nextTool);
       j++;
     }
