@@ -155,72 +155,6 @@
   .history-refresh--loading svg { animation: none; }
 }
 
-.history-filter-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 36px;
-  padding: 0 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg-panel);
-  color: var(--text-muted);
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-  white-space: nowrap;
-  flex-shrink: 0;
-  transition: color 120ms ease, border-color 120ms ease;
-}
-
-.history-filter-toggle:hover {
-  color: var(--text);
-  border-color: var(--border-strong);
-}
-
-.history-filter-toggle > svg {
-  width: 14px;
-  height: 14px;
-}
-
-.history-filter-toggle__count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 9px;
-  background: var(--accent);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 600;
-}
-
-/* ── Expanded Filter Row ── */
-.history-filter-row {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  width: 100%;
-  margin-top: 4px;
-}
-
-.history-filter-field {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex: 1 1 0;
-  min-width: 120px;
-}
-
-.history-filter-label {
-  font-size: 12px;
-  color: var(--text-muted);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
 .history-filter-select {
   flex: 1 1 auto;
   min-width: 0;
@@ -418,16 +352,11 @@
   width: 18px;
   height: 18px;
   color: var(--text-faint);
-  transition: transform 180ms ease;
 }
 
 .history-date-chevron svg {
   width: 14px;
   height: 14px;
-}
-
-.history-date-group--collapsed .history-date-chevron {
-  /* ChevronIcon already handles rotation via the expanded prop */
 }
 
 .history-date-count {

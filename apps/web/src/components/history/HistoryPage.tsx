@@ -185,7 +185,7 @@ function HistoryList({ items, onOpenConversation, confirmingDeleteId, onDeleteRe
               onClick={() => toggleGroup(group.key)}
               aria-expanded={!isCollapsed}
             >
-              <span className={`history-date-chevron${isCollapsed ? '' : ' history-date-chevron--open'}`}>
+              <span className="history-date-chevron">
                 <ChevronIcon expanded={!isCollapsed} />
               </span>
               {group.label}
