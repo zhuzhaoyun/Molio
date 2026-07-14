@@ -10,7 +10,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
-import type { ChatMessage, Project, Conversation, Vault, KbHistoryEntry } from '@molio/contracts';
+import type { ChatMessage, Project, Conversation, ConversationHistoryItem, ConversationHistoryPage, ListHistoryQuery, Vault, KbHistoryEntry } from '@molio/contracts';
 
 type SqliteDb = Database.Database;
 
@@ -56,6 +56,7 @@ export function openDatabase(dataDir?: string): SqliteDb {
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
 
+  assertSqliteVersion(db);
   migrate(db);
   dbInstance = db;
   dbFile = file;
@@ -155,12 +156,60 @@ function migrate(db: SqliteDb): void {
       ON conversations(channel_type, external_session_id)
       WHERE external_session_id IS NOT NULL AND closed_at IS NULL;
   `);
+
+  // vault_id on conversations (nullable; no FK — deleting a vault must not
+  // cascade-delete conversations). Surfaced as a history filter dimension.
+  addColumnIfMissing(db, 'conversations', 'vault_id', 'TEXT');
+  addColumnIfMissing(db, 'conversations', 'vault_name', 'TEXT');
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_conversations_vault
+           ON conversations(vault_id, updated_at DESC)`);
+
+  // Full-text search over message content. trigram tokenizer: CJK substring
+  // friendly, case-insensitive, no external jieba dependency (SQLite >= 3.34).
+  db.exec(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+      content, conversation_id UNINDEXED, message_id UNINDEXED,
+      tokenize = 'trigram'
+    );
+
+    CREATE TRIGGER IF NOT EXISTS messages_fts_ai AFTER INSERT ON messages BEGIN
+      INSERT INTO messages_fts(content, conversation_id, message_id)
+        VALUES (new.content, new.conversation_id, new.id);
+    END;
+    CREATE TRIGGER IF NOT EXISTS messages_fts_ad AFTER DELETE ON messages BEGIN
+      DELETE FROM messages_fts WHERE message_id = old.id;
+    END;
+    CREATE TRIGGER IF NOT EXISTS messages_fts_au AFTER UPDATE ON messages BEGIN
+      DELETE FROM messages_fts WHERE message_id = old.id;
+      INSERT INTO messages_fts(content, conversation_id, message_id)
+        VALUES (new.content, new.conversation_id, new.id);
+    END;
+  `);
+
+  // One-time backfill of pre-existing messages. Guarded by kv flag so repeated
+  // openDatabase calls stay O(1). Disaster recovery uses POST /api/maintenance/rebuild-fts.
+  if (!getKv(db, 'fts_seeded')) {
+    db.exec(`INSERT INTO messages_fts(content, conversation_id, message_id)
+             SELECT content, conversation_id, id FROM messages;`);
+    setKv(db, 'fts_seeded', '1');
+  }
 }
 
 function addColumnIfMissing(db: SqliteDb, table: string, column: string, definition: string): void {
   const rows = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
   if (rows.some((row) => row.name === column)) return;
   db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+
+function assertSqliteVersion(db: SqliteDb): void {
+  const row = db.prepare('SELECT sqlite_version() AS v').get() as { v: string };
+  const [maj, min] = row.v.split('.').map(Number) as [number, number];
+  if (maj < 3 || (maj === 3 && min < 34)) {
+    throw new Error(
+      `SQLite >= 3.34 required for trigram FTS5 tokenizer (got ${row.v}). ` +
+      `Upgrade better-sqlite3 to a build bundling SQLite >= 3.34.`,
+    );
+  }
 }
 
 // ─── Project CRUD ───
@@ -235,13 +284,108 @@ export function listConversations(db: SqliteDb, projectId: string): Conversation
   return rows.map(rowToConversation);
 }
 
+/**
+ * Search message content via the messages_fts trigram index. Returns the set
+ * of conversation_ids whose messages match `query` (substring / phrase match).
+ * Empty/whitespace query returns [] — the caller MUST short-circuit (skip the
+ * FTS subquery entirely) on empty so the plain filter path stays fast.
+ *
+ * The raw query is sanitized into an FTS5 string literal: internal double
+ * quotes are doubled, newlines become spaces, and the result is wrapped in
+ * double quotes so FTS5 operator characters (`*` `:` `"`) are treated as
+ * literal phrase content. With the trigram tokenizer a phrase match is a
+ * substring match.
+ *
+ * The trigram tokenizer requires ≥3 characters to form any trigram, so a
+ * 1- or 2-character query (e.g. the Chinese word "修仙") would match nothing
+ * even when the content contains "凡人修仙传". For sanitized queries shorter
+ * than 3 characters we fall back to a `LIKE '%q%'` scan over `messages.content`
+ * (acceptable: short queries are rare and yield small result sets). LIKE
+ * wildcards (`%` `_`) in the query are escaped with `ESCAPE '\'`. SQLite LIKE
+ * is case-insensitive for ASCII by default, which suffices for latin content;
+ * CJK has no case distinction.
+ */
+export function searchConversationIds(db: SqliteDb, query: string): string[] {
+  const trimmed = query.replace(/[\r\n]+/g, ' ').trim();
+  if (!trimmed) return [];
+  const truncated = trimmed.slice(0, 200);
+
+  // Short-query fallback: trigram FTS5 cannot match < 3 chars. Use a LIKE
+  // scan over the source messages table instead.
+  if (truncated.length < 3) {
+    const escaped = truncated.replace(/[%_\\]/g, '\\$&');
+    const rows = db
+      .prepare(
+        "SELECT DISTINCT conversation_id FROM messages WHERE content LIKE ? ESCAPE '\\'",
+      )
+      .all(`%${escaped}%`) as Array<{ conversation_id: string }>;
+    return rows.map((r) => r.conversation_id);
+  }
+
+  const escaped = truncated.replace(/"/g, '""');
+  const rows = db
+    .prepare('SELECT DISTINCT conversation_id FROM messages_fts WHERE messages_fts MATCH ?')
+    .all(`"${escaped}"`) as Array<{ conversation_id: string }>;
+  return rows.map((r) => r.conversation_id);
+}
+
+/**
+ * Rebuild the messages_fts index from scratch by repopulating from `messages`
+ * (the source of truth). Used by POST /api/maintenance/rebuild-fts as a
+ * disaster-recovery lever if the FTS index becomes corrupted/emptied.
+ *
+ * The DELETE + INSERT are wrapped in a transaction so a failure during
+ * repopulation rolls back the delete (the FTS index is never left emptied).
+ */
+export function rebuildMessagesFts(db: SqliteDb): void {
+  const rebuild = db.transaction(() => {
+    db.exec('DELETE FROM messages_fts');
+    db.exec(`INSERT INTO messages_fts(content, conversation_id, message_id)
+             SELECT content, conversation_id, id FROM messages`);
+  });
+  rebuild();
+}
+
 export function listConversationHistory(
   db: SqliteDb,
-  limit = 100,
-): Array<{ conversation: Conversation; lastMessage: ChatMessage | null; messageCount: number }> {
+  opts: ListHistoryQuery = {},
+): ConversationHistoryPage {
+  const limit = clampHistoryLimit(opts.limit);
+
+  // If a search query is provided, resolve matching conversation_ids first.
+  // Empty hit set → short-circuit (avoid `IN ()` syntax error and pointless scan).
+  let hitIds: string[] | null = null;
+  if (opts.query && opts.query.trim()) {
+    hitIds = searchConversationIds(db, opts.query);
+    if (hitIds.length === 0) return { items: [], nextCursor: null };
+  }
+
+  const where: string[] = [];
+  const params: unknown[] = [];
+
+  if (opts.vaultId === '__none__') {
+    where.push('c.vault_id IS NULL');
+  } else if (opts.vaultId) {
+    where.push('c.vault_id = ?');
+    params.push(opts.vaultId);
+  }
+  if (hitIds) {
+    where.push(`c.id IN (${hitIds.map(() => '?').join(', ')})`);
+    params.push(...hitIds);
+  }
+  if (opts.before != null && !Number.isNaN(opts.before)) {
+    where.push('c.updated_at < ?');
+    params.push(opts.before);
+  }
+
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  params.push(limit);
+
   const rows = db.prepare(`
     SELECT
       c.*,
+      COALESCE(v.name, c.vault_name) AS vault_name,
+      (v.name IS NOT NULL) AS vault_exists,
       COALESCE(stats.message_count, 0) AS message_count,
       lm.id AS last_id,
       lm.role AS last_role,
@@ -251,6 +395,7 @@ export function listConversationHistory(
       lm.events_json AS last_events_json,
       lm.created_at AS last_created_at
     FROM conversations c
+    LEFT JOIN vaults v ON v.id = c.vault_id
     LEFT JOIN (
       SELECT conversation_id, COUNT(*) AS message_count, MAX(position) AS max_position
       FROM messages
@@ -258,11 +403,24 @@ export function listConversationHistory(
     ) stats ON stats.conversation_id = c.id
     LEFT JOIN messages lm
       ON lm.conversation_id = c.id AND lm.position = stats.max_position
+    ${whereSql}
     ORDER BY c.updated_at DESC
     LIMIT ?
-  `).all(limit) as Array<Record<string, unknown>>;
+  `).all(...params) as Array<Record<string, unknown>>;
 
-  return rows.map((row) => ({
+  const items = rows.map(rowToHistoryItem);
+  const lastItem = items.at(-1);
+  const nextCursor = items.length === limit && lastItem ? lastItem.conversation.updatedAt : null;
+  return { items, nextCursor };
+}
+
+function clampHistoryLimit(n: number | undefined): number {
+  if (n == null || Number.isNaN(n) || n < 1) return 50;
+  return Math.min(Math.floor(n), 100);
+}
+
+function rowToHistoryItem(row: Record<string, unknown>): ConversationHistoryItem {
+  return {
     conversation: rowToConversation(row),
     lastMessage: row.last_id ? rowToMessage({
       id: row.last_id,
@@ -274,7 +432,10 @@ export function listConversationHistory(
       created_at: row.last_created_at,
     }) : null,
     messageCount: Number(row.message_count ?? 0),
-  }));
+    vaultId: (row.vault_id as string | null) ?? null,
+    vaultName: (row.vault_name as string | null) ?? null,
+    vaultExists: Boolean(row.vault_exists),
+  };
 }
 
 export function getConversation(db: SqliteDb, id: string): Conversation | null {
@@ -291,9 +452,27 @@ export function createConversation(db: SqliteDb, projectId: string, title?: stri
   return { id, projectId, title: title ?? null, channelType: 'desktop', externalSessionId: null, createdAt: now, updatedAt: now };
 }
 
-export function createDesktopConversation(db: SqliteDb, title?: string): Conversation {
+export function createDesktopConversation(
+  db: SqliteDb,
+  title?: string,
+  vaultId?: string | null,
+  vaultName?: string | null,
+): Conversation {
   ensureDesktopProject(db);
-  return createConversation(db, DESKTOP_PROJECT_ID, title);
+  const id = randomUUID();
+  const now = Date.now();
+  db.prepare(
+    'INSERT INTO conversations (id, project_id, title, channel_type, vault_id, vault_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(id, DESKTOP_PROJECT_ID, title ?? null, 'desktop', vaultId ?? null, vaultName ?? null, now, now);
+  return {
+    id,
+    projectId: DESKTOP_PROJECT_ID,
+    title: title ?? null,
+    channelType: 'desktop',
+    externalSessionId: null,
+    createdAt: now,
+    updatedAt: now,
+  };
 }
 
 export interface ExternalConversationInput {
