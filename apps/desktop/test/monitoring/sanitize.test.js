@@ -71,6 +71,32 @@ describe('sanitizeString', () => {
     assert.equal(sanitizeString(undefined), undefined);
     assert.equal(sanitizeString(42), 42);
   });
+
+  it('preserves basename + line:col in stack traces', () => {
+    // Without basename the ARMS record is useless for debugging. Path prefix
+    // (with username) is redacted, but main.js:10:1 stays so reviewers can
+    // locate the source.
+    const input = 'at readFile (D:\\code\\workspace\\src\\main.js:10:1)';
+    const out = sanitizeString(input);
+    assert.ok(!out.includes('D:\\code'), `got: ${out}`);
+    assert.ok(out.includes('main.js:10:1'), `got: ${out}`);
+    assert.ok(out.includes('<local-path>'), `got: ${out}`);
+  });
+
+  it('preserves basename of file:// URLs', () => {
+    const input = 'error loading resource file:///D:/code/workspace/Molio/apps/desktop/src/splash.html';
+    const out = sanitizeString(input);
+    assert.ok(!out.includes('file://'), `got: ${out}`);
+    assert.ok(!out.includes('D:/code'), `got: ${out}`);
+    assert.ok(out.includes('<file-url>/splash.html'), `got: ${out}`);
+  });
+
+  it('preserves basename of macOS path', () => {
+    const input = 'ENOENT: /Users/bob/Documents/vault/file.md';
+    const out = sanitizeString(input);
+    assert.ok(!out.includes('/Users/bob'), `got: ${out}`);
+    assert.ok(out.includes('file.md'), `got: ${out}`);
+  });
 });
 
 describe('sanitizeBundle', () => {
@@ -94,7 +120,7 @@ describe('sanitizeBundle', () => {
     assert.equal(sanitizeBundle(null), null);
     assert.equal(sanitizeBundle(0), 0);
     assert.equal(sanitizeBundle(true), true);
-    assert.deepEqual(sanitizeBundle([1, 'a', { x: 'D:\\z\\y.md' }]), [1, 'a', { x: '<local-path>' }]);
+    assert.deepEqual(sanitizeBundle([1, 'a', { x: 'D:\\z\\y.md' }]), [1, 'a', { x: '<local-path>\\y.md' }]);
   });
 
   it('returns input unchanged for non-string scalars', () => {

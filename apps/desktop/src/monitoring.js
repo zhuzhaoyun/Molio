@@ -58,6 +58,14 @@ export async function initMonitoring({ isDev, version, log }) {
         memory: false,
         anr: false,
       },
+      // Renderer-side Browser SDK collectors (autoInject-ed). Default has
+      // longTask: true, but LoAF attribution is empty for V8 native work
+      // (cold-start parse/compile of the 1MB+ JS bundle, GC) — the events
+      // are noise that can't be debugged. Disable until we have a real
+      // perf concern to chase.
+      browserCollectors: {
+        longTask: false,
+      },
       offlineQueue: {
         enable: true,
         maxAgeDays: 7,
