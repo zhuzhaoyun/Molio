@@ -21,6 +21,7 @@ import { loadConfig, getAgentConfig, buildAgentEnv } from './config.js';
 import { buildTranscript, type TranscriptMessage } from './transcript.js';
 import type { RunState, BufferedEvent } from '../types.js';
 import { TurnTextCollector } from './turn-text-collector.js';
+import { dbgLog } from './debug-log.js';
 
 const TERMINAL_STATUSES = new Set<RunStatus>(['succeeded', 'failed', 'canceled']);
 const MAX_EVENTS = 2_000;
@@ -183,7 +184,11 @@ export class RunManager {
     const run = this.runs.get(runId);
     if (!run) return null;
     run.eventListeners.add(callback);
-    return () => { run.eventListeners.delete(callback); };
+    dbgLog(`subscribe runId=${runId} listeners=${run.eventListeners.size}`);
+    return () => {
+      run.eventListeners.delete(callback);
+      dbgLog(`unsubscribe runId=${runId} listeners=${run.eventListeners.size}`);
+    };
   }
 
   /**
@@ -867,6 +872,14 @@ export class RunManager {
     this.ensureLogStream(run)?.write(JSON.stringify(record) + '\n');
 
     // Fan out to listeners
+    const listeners = run.eventListeners.size;
+    if (listeners === 0) {
+      // Diagnostic: an event was emitted but no SSE stream is subscribed. If this
+      // happens mid-run (not terminal cleanup), it's the smoking gun for assumption 3
+      // — the SSE listener was cleaned up (e.g. spurious abort) while the run is still
+      // active, so the frontend never receives this event.
+      dbgLog(`emit listeners=0 (NO SSE SUBSCRIBER) runId=${run.id} type=${event.type} status=${run.status}`);
+    }
     for (const listener of run.eventListeners) {
       try { listener(event); } catch { /* listener error, skip */ }
     }
