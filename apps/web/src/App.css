@@ -35,3 +35,73 @@
   font-size: 13px;
   color: var(--text-muted);
 }
+
+/* ─── Top navigation bar (back/forward + breadcrumb) ─── */
+
+.nav-topbar {
+  display: flex;
+  align-items: center;
+  height: 40px;
+  padding: 0 12px;
+  gap: 8px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border-soft);
+  flex-shrink: 0;
+}
+
+.nav-topbar__nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.nav-topbar__btn {
+  appearance: none;
+  width: 30px;
+  height: 30px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.nav-topbar__btn > svg {
+  width: 16px;
+  height: 16px;
+}
+
+.nav-topbar__btn:hover:not(:disabled) {
+  background: var(--bg-muted);
+  color: var(--text);
+}
+
+.nav-topbar__btn:disabled {
+  color: var(--text-faint);
+  cursor: default;
+}
+
+.nav-topbar__btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.nav-topbar__divider {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.nav-topbar__breadcrumb {
+  font-size: 13px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
