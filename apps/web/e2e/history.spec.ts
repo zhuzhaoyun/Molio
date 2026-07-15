@@ -9,7 +9,7 @@ import {
 
 /**
  * @area history
- * @priority P1
+ * @priority P0
  */
 
 /**
@@ -70,7 +70,7 @@ test.describe('History', () => {
 
       // The conversation should appear in the history list
       // Refresh to pick up newly created conversation
-      const refreshBtn = page.locator('.history-refresh');
+      const refreshBtn = page.locator('[data-testid=history-refresh]');
       if (await refreshBtn.isVisible()) {
         await refreshBtn.click();
         await page.waitForTimeout(500);
@@ -103,7 +103,7 @@ test.describe('History', () => {
       await expect(page.locator('.history-shell')).toBeVisible({ timeout: 5_000 });
 
       // Refresh
-      const refreshBtn = page.locator('.history-refresh');
+      const refreshBtn = page.locator('[data-testid=history-refresh]');
       if (await refreshBtn.isVisible()) {
         await refreshBtn.click();
         await page.waitForTimeout(500);
@@ -119,5 +119,144 @@ test.describe('History', () => {
     } finally {
       await deleteProject(project.id);
     }
+  });
+
+  test('search filters to matching conversations', async ({ page }) => {
+    const project = await createProject(`e2e-search-${Date.now()}`);
+    const conv = await createConversation(project.id, 'Search Target');
+    await addMessage(project.id, conv.id, {
+      id: `msg-search-${Date.now()}`,
+      role: 'user',
+      content: 'zzz-e2e-search-marker-12345',
+      timestamp: Date.now(),
+    });
+    try {
+      await gotoHome(page);
+      await clickNav(page, 'history');
+      await expect(page.locator('[data-testid=history-search-input]')).toBeVisible({ timeout: 5_000 });
+      await page.locator('[data-testid=history-search-input]').fill('zzz-e2e-search-marker-12345');
+      // wait for debounced fetch + render (300ms debounce + fetch)
+      await page.waitForTimeout(700);
+      const rows = page.locator('.history-row');
+      await expect(rows).toHaveCount(1, { timeout: 5_000 });
+    } finally {
+      await deleteProject(project.id);
+    }
+  });
+
+  test('load more appends next page when >50 conversations', async ({ page }) => {
+    const project = await createProject(`e2e-loadmore-${Date.now()}`);
+    try {
+      // Create 52 conversations to exceed one page (PAGE_SIZE=50).
+      for (let i = 0; i < 52; i++) {
+        const conv = await createConversation(project.id, `LM ${i}`);
+        await addMessage(project.id, conv.id, {
+          id: `msg-lm-${i}-${Date.now()}`,
+          role: 'user',
+          content: `load more item ${i}`,
+          timestamp: Date.now() + i,
+        });
+      }
+      await gotoHome(page);
+      await clickNav(page, 'history');
+      await page.locator('[data-testid=history-refresh]').click();
+      await page.waitForTimeout(800);
+
+      const loadMore = page.locator('[data-testid=history-load-more]');
+      await expect(loadMore).toBeVisible({ timeout: 10_000 });
+      const before = await page.locator('.history-row').count();
+      await loadMore.click();
+      await page.waitForTimeout(800);
+      const after = await page.locator('.history-row').count();
+      expect(after).toBeGreaterThan(before);
+    } finally {
+      await deleteProject(project.id);
+    }
+  });
+
+  test('delete conversation shows confirmation, then removes row; rollback on failure', async ({ page }) => {
+    const project = await createProject(`e2e-del-${Date.now()}`);
+    const conv = await createConversation(project.id, 'Delete Me');
+    await addMessage(project.id, conv.id, {
+      id: `msg-del-${Date.now()}`,
+      role: 'user',
+      content: 'to be deleted',
+      timestamp: Date.now(),
+    });
+    try {
+      await gotoHome(page);
+      await clickNav(page, 'history');
+      await page.locator('[data-testid=history-refresh]').click();
+      await page.waitForTimeout(500);
+
+      // Intercept DELETE to force an HTTP 500 failure and verify rollback (row restored).
+      await page.route('**/api/conversations/*', (route) => {
+        if (route.request().method() === 'DELETE') {
+          return route.fulfill({
+            status: 500,
+            contentType: 'application/json',
+            body: JSON.stringify({ error: { code: 'FAIL', message: 'forced' } }),
+          });
+        }
+        return route.continue();
+      });
+
+      const row = page.locator('.history-row', { hasText: 'Delete Me' }).first();
+      await expect(row).toBeVisible({ timeout: 5_000 });
+
+      // Step 1: click delete → confirmation UI appears
+      await row.locator('[data-testid=history-row-delete]').click();
+      await expect(page.locator('[data-testid=history-row-delete-confirm]')).toBeVisible({ timeout: 3_000 });
+      await expect(page.locator('[data-testid=history-row-delete-cancel]')).toBeVisible();
+
+      // Step 2: click confirm → actual delete fires (HTTP 500 forced)
+      await page.locator('[data-testid=history-row-delete-confirm]').click();
+
+      // Non-blocking transient error is shown.
+      await expect(page.locator('[data-testid=history-delete-error]')).toBeVisible({ timeout: 5_000 });
+
+      // Rollback re-fetches → row reappears.
+      await expect(page.locator('.history-row', { hasText: 'Delete Me' })).toBeVisible({ timeout: 5_000 });
+    } finally {
+      await page.unroute('**/api/conversations/*');
+      await deleteProject(project.id);
+    }
+  });
+
+  test('no-match shows clear-filters button and restores list', async ({ page }) => {
+    const project = await createProject(`e2e-nomatch-${Date.now()}`);
+    const conv = await createConversation(project.id, 'Nomatch Anchor');
+    await addMessage(project.id, conv.id, {
+      id: `msg-nomatch-${Date.now()}`,
+      role: 'user',
+      content: 'anchor conversation for clear filters test',
+      timestamp: Date.now(),
+    });
+    try {
+      await gotoHome(page);
+      await clickNav(page, 'history');
+      await page.locator('[data-testid=history-refresh]').click();
+      await page.waitForTimeout(500);
+
+      await page.locator('[data-testid=history-search-input]').fill('no-such-thing-xyzzy-9999');
+      await page.waitForTimeout(700);
+      await expect(page.locator('[data-testid=history-clear-filters]')).toBeVisible({ timeout: 5_000 });
+      await page.locator('[data-testid=history-clear-filters]').click();
+      await page.waitForTimeout(700);
+      // back to non-empty list with the anchor conversation visible
+      await expect(page.locator('.history-row', { hasText: 'Nomatch Anchor' })).toBeVisible({ timeout: 5_000 });
+      await expect(page.locator('[data-testid=history-clear-filters]')).toHaveCount(0);
+    } finally {
+      await deleteProject(project.id);
+    }
+  });
+
+  test('vault filter is visible alongside search', async ({ page }) => {
+    await gotoHome(page);
+    await clickNav(page, 'history');
+
+    // Vault dropdown is always visible next to the search input (only filter dimension).
+    await expect(page.locator('[data-testid=history-search-input]')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid=history-filter-vault]')).toBeVisible({ timeout: 3_000 });
   });
 });

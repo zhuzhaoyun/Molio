@@ -48,7 +48,7 @@ describe('listConversationHistory lastMessage', () => {
     upsertMessage(db, conv.id, userMsg);
     upsertMessage(db, conv.id, assistantMsg);
 
-    const history = listConversationHistory(db);
+    const history = listConversationHistory(db).items;
     const item = history.find((h) => h.conversation.id === conv.id);
 
     assert.ok(item, 'Conversation should be in history');
@@ -89,7 +89,7 @@ describe('listConversationHistory lastMessage', () => {
       timestamp: Date.now() + 3000,
     });
 
-    const history = listConversationHistory(db);
+    const history = listConversationHistory(db).items;
     const item = history.find((h) => h.conversation.id === conv.id);
 
     assert.ok(item, 'Conversation should be in history');

@@ -7,6 +7,7 @@ import { useI18n } from '../i18n';
 import { useSelectMode, messageSelectionStore } from '../stores/messageSelectionStore';
 import { SelectionConfirmBar } from './SelectionConfirmBar';
 import type { ChatMessage } from '../hooks/useChat';
+import { RunStatusBar } from './RunStatusBar';
 
 interface Props {
   selectedAgentName: string | null;
@@ -168,6 +169,9 @@ export function HomePage({
           })}
           <div ref={bottomRef} />
         </div>
+
+        {/* 进度状态条: 只在 run 运行时显示 */}
+        <RunStatusBar messages={messages} isRunning={isRunning} />
 
         {/* Composer at the bottom — hidden in selection mode, replaced by the
             confirm bar (input and delete are mutually exclusive). */}
