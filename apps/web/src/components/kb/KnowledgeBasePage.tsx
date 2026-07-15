@@ -10,6 +10,7 @@ import { useKnowledge } from '../../hooks/useKnowledge';
 import type { KbChatState } from '../../hooks/useKbChat';
 import { useKbTabs, MAX_TABS } from '../../hooks/useKbTabs';
 import { kbTabsStore } from '../../stores/kbTabsStore';
+import { navigationHistoryStore } from '../../stores/navigationHistoryStore';
 import { vaultStore } from '../../stores/vaultStore';
 import { KbFilePanel } from './KbFilePanel';
 import { KbTabBar } from './KbTabBar';
@@ -228,6 +229,14 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
         }
       }
       kb.selectFile(path);
+      // Push file open to navigation history
+      navigationHistoryStore.push({
+        type: 'file',
+        route: '/knowledge',
+        filePath: path,
+        vaultId: kb.activeVault?.id,
+        label: fileName,
+      });
     };
     // Limit pre-check BEFORE the discard prompt: avoids confirming "discard
     // edits" only to have the open blocked by the cap. Re-opening an existing
@@ -244,6 +253,26 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
     }
     runOrConfirmDiscard(action);
   }, [tabs, kb, runOrConfirmDiscard, showToast]);
+
+  // ─── Navigation history: register file opener for back/forward ───
+  const handleSelectFileRef = useRef(handleSelectFile);
+  handleSelectFileRef.current = handleSelectFile;
+  const locationRef = useRef(location);
+  locationRef.current = location;
+
+  useEffect(() => {
+    navigationHistoryStore.registerFileOpener((vaultId, filePath) => {
+      if (locationRef.current.pathname === '/knowledge') {
+        // Same page — only the file push needs suppressing
+        navigationHistoryStore.setSuppressCount(1);
+        handleSelectFileRef.current(filePath);
+      } else {
+        // Cross-page — suppress both route-change push and file-open push
+        navigationHistoryStore.setSuppressCount(2);
+        navigate('/knowledge', { state: { openFile: filePath, vaultId } });
+      }
+    });
+  }, [navigate]);
 
   /** Open a file in a new tab — same semantics as handleSelectFile. */
   const handleOpenInNewTab = handleSelectFile;
