@@ -1,0 +1,72 @@
+/* apps/web/src/components/RunStatusBar.css */
+
+/* ─── 布局 ─── */
+.run-status-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 16px;
+  font-size: 12px;
+  color: var(--text-soft);
+  background: var(--bg-subtle);
+  border-top: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--border-soft);
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.run-status-bar .run-status-label {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── 阶段指示圆点 ─── */
+.run-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 0;
+}
+
+/* 思考中：紫色慢呼吸 */
+.run-status-bar[data-phase="thinking"] .run-status-dot {
+  background: var(--purple);
+  animation: status-breathe 2s ease-in-out infinite;
+}
+
+/* 执行工具：琥珀色环形 spinner */
+.run-status-bar[data-phase="tool"] .run-status-dot {
+  background: transparent;
+  border: 2px solid var(--border-soft);
+  border-top-color: var(--amber);
+  animation: status-spin 0.8s linear infinite;
+}
+
+/* 生成回复：绿色柔光脉冲 */
+.run-status-bar[data-phase="generating"] .run-status-dot {
+  background: var(--green);
+  animation: status-glow 1.5s ease-in-out infinite;
+}
+
+/* ─── 动画 ─── */
+@keyframes status-breathe {
+  0%, 100% { opacity: 0.3; transform: scale(0.85); }
+  50%      { opacity: 1;   transform: scale(1); }
+}
+
+@keyframes status-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes status-glow {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--green) 0%, transparent); }
+  50%      { box-shadow: 0 0 0 4px color-mix(in srgb, var(--green) 30%, transparent); }
+}
+
+/* ─── Reduced motion ─── */
+@media (prefers-reduced-motion: reduce) {
+  .run-status-dot {
+    animation: none;
+  }
+}
