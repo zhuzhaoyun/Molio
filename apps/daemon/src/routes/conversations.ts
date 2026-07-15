@@ -22,10 +22,27 @@ export function conversationRoutes(
 ): Hono {
   const app = new Hono();
 
-  // GET /api/conversations — list global conversation history
+  // GET /api/conversations — list global conversation history with filters,
+  // full-text search, and cursor pagination. Response: { items, nextCursor }.
   app.get('/', (c) => {
-    const conversations = listConversationHistory(db, 200);
-    return c.json({ conversations });
+    const q = c.req.query();
+    const limitRaw = q.limit;
+    const limit = limitRaw == null ? undefined : Number(limitRaw);
+    if (limitRaw != null && Number.isNaN(limit)) {
+      return c.json({ error: { code: 'BAD_REQUEST', message: 'limit must be a number' } }, 400);
+    }
+    const beforeRaw = q.before;
+    const before = beforeRaw == null ? undefined : Number(beforeRaw);
+    if (beforeRaw != null && Number.isNaN(before)) {
+      return c.json({ error: { code: 'BAD_REQUEST', message: 'before must be a number' } }, 400);
+    }
+    const page = listConversationHistory(db, {
+      vaultId: q.vaultId,
+      query: q.query,
+      before,
+      limit,
+    });
+    return c.json(page);
   });
 
   // GET /api/conversations/:id — get a single conversation

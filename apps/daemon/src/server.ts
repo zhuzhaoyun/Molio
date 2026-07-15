@@ -17,6 +17,7 @@ import { publishRoutes, cleanupAllBridges } from './routes/publish.js';
 import { proxyRoutes } from './routes/proxy.js';
 import { graphRoutes } from './routes/graph.js';
 import { weixinRoutes } from './routes/weixin.js';
+import { maintenanceRoutes } from './routes/maintenance.js';
 import { WeixinService } from './core/weixin/service.js';
 import { ConversationService } from './core/conversations/service.js';
 import { VaultWatcher } from './core/vault-watcher.js';
@@ -76,6 +77,7 @@ app.route('/api/publish', publishRoutes());
 app.route('/api/proxy', proxyRoutes());
 app.route('/api/graph', graphRoutes(db));
 app.route('/api/weixin', weixinRoutes(weixinService));
+app.route('/api/maintenance', maintenanceRoutes(db));
 
 void weixinService.start();
 void vaultWatcher.start();

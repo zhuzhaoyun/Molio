@@ -331,7 +331,7 @@ export function ChatComposer({
       return;
     }
     try {
-      const items = await api.listConversationHistory();
+      const { items } = await api.listConversationHistory();
       setHistoryItems(items);
       setShowHistory(true);
     } catch {
