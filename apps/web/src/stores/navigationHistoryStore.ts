@@ -48,7 +48,13 @@ const MAX_ENTRIES = 50;
 let entries: NavEntry[] = [];
 let currentIndex = -1;
 let _suppressCount = 0;
+let _suppressTimer: ReturnType<typeof setTimeout> | null = null;
 const listeners = new Set<Listener>();
+
+function _scheduleSuppressReset() {
+  if (_suppressTimer) clearTimeout(_suppressTimer);
+  _suppressTimer = setTimeout(() => { _suppressCount = 0; _suppressTimer = null; }, 1000);
+}
 
 // Cached snapshot for useSyncExternalStore referential stability
 let _snapshot: HistorySnapshot;
@@ -108,6 +114,7 @@ export const navigationHistoryStore = {
    */
   setSuppressCount(n: number) {
     _suppressCount = n;
+    if (n > 0) _scheduleSuppressReset();
   },
 
   /**
@@ -120,6 +127,10 @@ export const navigationHistoryStore = {
   push(entry: NavEntry) {
     if (_suppressCount > 0) {
       _suppressCount--;
+      if (_suppressCount === 0 && _suppressTimer) {
+        clearTimeout(_suppressTimer);
+        _suppressTimer = null;
+      }
       return;
     }
 
@@ -154,6 +165,7 @@ export const navigationHistoryStore = {
     const entry = entries[currentIndex];
     if (entry.type === 'route') {
       _suppressCount = 1; // suppress the route-change push in App.tsx
+      _scheduleSuppressReset();
       _navigate?.(entry.route);
     } else if (entry.type === 'file' && entry.vaultId && entry.filePath) {
       // File opener sets suppressCount based on whether it needs a route change
@@ -169,6 +181,7 @@ export const navigationHistoryStore = {
     const entry = entries[currentIndex];
     if (entry.type === 'route') {
       _suppressCount = 1;
+      _scheduleSuppressReset();
       _navigate?.(entry.route);
     } else if (entry.type === 'file' && entry.vaultId && entry.filePath) {
       // File opener sets suppressCount based on whether it needs a route change
@@ -181,6 +194,7 @@ export const navigationHistoryStore = {
     entries = [];
     currentIndex = -1;
     _suppressCount = 0;
+    if (_suppressTimer) { clearTimeout(_suppressTimer); _suppressTimer = null; }
     _navigate = null;
     _openFile = null;
     listeners.clear();
