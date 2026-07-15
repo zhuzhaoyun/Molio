@@ -515,11 +515,13 @@ app.whenReady().then(async () => {
     // No windows at all — cold start on macOS, create one
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
-    } else if (mainWindow && !mainWindow.isVisible()) {
-      // Window was hidden via the hide-on-close handler — just show it.
-      // macOS does NOT automatically show hidden Electron windows on dock
-      // click, so we must do it explicitly.
-      mainWindow.show();
+    } else if (mainWindow) {
+      // Window exists but may be hidden (hide-on-close) or minimized.
+      // macOS does NOT automatically restore hidden/minimized Electron
+      // windows on dock click, so we must do it explicitly.
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      if (!mainWindow.isVisible()) mainWindow.show();
+      mainWindow.focus();
     }
   });
 });
