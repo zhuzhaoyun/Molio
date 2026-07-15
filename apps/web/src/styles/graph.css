@@ -1,15 +1,18 @@
 /* ── Graph Page Layout ── */
 
-/* When graph page is active, make .entry-main a positioning container */
+/* When graph page is active, stack content below the NavigationBar */
 .entry-main:has(.graph-page) {
-  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
   background: #FAFAFA;
 }
 
 .graph-page {
-  position: absolute;
-  inset: 0;
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: #FAFAFA;

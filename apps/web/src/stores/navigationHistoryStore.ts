@@ -50,23 +50,33 @@ let currentIndex = -1;
 let _suppressCount = 0;
 const listeners = new Set<Listener>();
 
-// Registered execution callbacks
-let _navigate: ((to: string, opts?: { replace?: boolean }) => void) | null = null;
-let _openFile: ((vaultId: string, filePath: string) => void) | null = null;
+// Cached snapshot for useSyncExternalStore referential stability
+let _snapshot: HistorySnapshot;
 
-function emit() {
-  for (const l of listeners) l();
-}
-
-function getSnapshot(): HistorySnapshot {
+function recomputeSnapshot() {
   const current = entries[currentIndex];
-  return {
+  _snapshot = {
     canGoBack: currentIndex > 0,
     canGoForward: currentIndex < entries.length - 1,
     currentLabel: current?.label ?? '',
     backLabel: currentIndex > 0 ? entries[currentIndex - 1].label : '',
     forwardLabel: currentIndex < entries.length - 1 ? entries[currentIndex + 1].label : '',
   };
+}
+
+recomputeSnapshot();
+
+// Registered execution callbacks
+let _navigate: ((to: string, opts?: { replace?: boolean }) => void) | null = null;
+let _openFile: ((vaultId: string, filePath: string) => void) | null = null;
+
+function emit() {
+  recomputeSnapshot();
+  for (const l of listeners) l();
+}
+
+function getSnapshot(): HistorySnapshot {
+  return _snapshot;
 }
 
 // ─── Store API ───
@@ -174,6 +184,7 @@ export const navigationHistoryStore = {
     _navigate = null;
     _openFile = null;
     listeners.clear();
+    recomputeSnapshot();
   },
 };
 
