@@ -257,12 +257,10 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
   // ─── Navigation history: register file opener for back/forward ───
   const handleSelectFileRef = useRef(handleSelectFile);
   handleSelectFileRef.current = handleSelectFile;
-  const locationRef = useRef(location);
-  locationRef.current = location;
 
   useEffect(() => {
     navigationHistoryStore.registerFileOpener((vaultId, filePath) => {
-      if (locationRef.current.pathname === '/knowledge') {
+      if (window.location.pathname === '/knowledge') {
         // Same page — only the file push needs suppressing
         navigationHistoryStore.setSuppressCount(1);
         handleSelectFileRef.current(filePath);
