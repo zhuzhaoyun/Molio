@@ -1,6 +1,7 @@
 import type {
   AgentInfo, InstallEvent, RunInfo, CreateRunRequest, ToolResultRequest,
   ChatMessage, Project, Conversation, ConversationHistoryItem,
+  ConversationHistoryPage, ListHistoryQuery,
   Vault, TreeNode, FileContent, KbHistoryEntry, CreateVaultRequest,
   WikiStatusResponse,
   GraphData, SearchResult, SearchResponse,
@@ -273,11 +274,16 @@ export const api = {
     if (!res.ok) throw new Error(`Failed to update agent config: ${res.status}`);
   },
 
-  async listConversationHistory(): Promise<ConversationHistoryItem[]> {
-    const res = await fetch(`${BASE}/conversations`);
+  async listConversationHistory(opts?: ListHistoryQuery): Promise<ConversationHistoryPage> {
+    const params = new URLSearchParams();
+    if (opts?.vaultId) params.set('vaultId', opts.vaultId);
+    if (opts?.query) params.set('query', opts.query);
+    if (opts?.before != null) params.set('before', String(opts.before));
+    if (opts?.limit != null) params.set('limit', String(opts.limit));
+    const qs = params.toString();
+    const res = await fetch(`${BASE}/conversations${qs ? `?${qs}` : ''}`);
     if (!res.ok) throw new Error(`Failed to fetch conversation history: ${res.status}`);
-    const data = await res.json();
-    return data.conversations;
+    return res.json();
   },
 
   async getConversation(conversationId: string): Promise<Conversation> {
@@ -294,7 +300,11 @@ export const api = {
   },
 
   async deleteConversationById(conversationId: string): Promise<void> {
-    await fetch(`${BASE}/conversations/${conversationId}`, { method: 'DELETE' });
+    const res = await fetch(`${BASE}/conversations/${conversationId}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      throw new Error(err?.error?.message ?? `Failed to delete conversation: ${res.status}`);
+    }
   },
 
   async rewindResend(conversationId: string, req: { newContent: string; agentId?: string; cwd?: string }): Promise<{ runId: string; conversationId: string }> {
