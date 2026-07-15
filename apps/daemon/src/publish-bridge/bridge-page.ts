@@ -334,7 +334,10 @@ export function generateBridgePage(data: BridgePageData): string {
       const copyBtn = document.getElementById('copy-btn');
       copyBtn.addEventListener('click', async function() {
         try {
-          const styledHtml = outputEl.innerHTML;
+          // Strip #output scope prefix from CSS selectors so the rules
+          // match elements in WeChat / paste targets that don't have
+          // an #output wrapper element.
+          const styledHtml = outputEl.innerHTML.replace(/#output\\s+/g, '');
           const blob = new Blob([styledHtml], { type: 'text/html' });
           const textBlob = new Blob([ARTICLE.markdown], { type: 'text/plain' });
           const item = new ClipboardItem({

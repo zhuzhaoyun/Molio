@@ -540,9 +540,20 @@ export function useKnowledge(): UseKnowledgeReturn {
     const outputEl = document.querySelector('#output');
     const html = outputEl?.innerHTML ?? '';
 
+    // Get resolved theme CSS from the injected <style> tag.
+    // Theme CSS is scoped to #output (by wrapCSSWithScope) for correct
+    // preview rendering, but the pasted HTML is #output.innerHTML —
+    // there is no #output wrapper in the paste target. Strip the scope
+    // prefix so CSS rules match elements in WeChat / editors.
+    const themeStyleEl = document.getElementById('md-theme');
+    const rawCss = themeStyleEl?.textContent ?? '';
+
     if (html) {
-      // Copy rich HTML + plain text fallback (for WeChat/paste targets)
-      await copyHtml(html, markdownSource);
+      const unscopedCss = rawCss ? rawCss.replace(/#output\s+/g, '') : '';
+      const styledHtml = unscopedCss
+        ? `<style>${unscopedCss}</style>${html}`
+        : html;
+      await copyHtml(styledHtml, markdownSource);
     } else {
       // Fallback: plain text only (no preview rendered yet)
       await copyHtml('', markdownSource);
