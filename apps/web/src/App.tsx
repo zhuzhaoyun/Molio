@@ -16,6 +16,8 @@ import type { Locale } from './i18n';
 import { api } from './api/client';
 import { useActiveVault, vaultStore } from './stores/vaultStore';
 import { messageSelectionStore } from './stores/messageSelectionStore';
+import { NavigationBar } from './components/NavigationBar';
+import { navigationHistoryStore, routeLabel } from './stores/navigationHistoryStore';
 import './styles/rail.css';
 import './styles/home.css';
 import './styles/knowledge.css';
@@ -156,6 +158,27 @@ export default function App() {
       .catch(() => {});
   }, [activeVault?.path]);
 
+  // ─── Navigation history: register navigator callback ───
+  useEffect(() => {
+    navigationHistoryStore.registerNavigator((to) => {
+      navigate(to);
+    });
+  }, [navigate]);
+
+  // ─── Navigation history: push route changes ───
+  const prevPathnameRef = useRef<string | null>(null);
+  useEffect(() => {
+    const current = location.pathname;
+    if (prevPathnameRef.current === null) {
+      // Initial seed — push the starting route
+      navigationHistoryStore.push({ type: 'route', route: current, label: routeLabel(current) });
+    } else if (prevPathnameRef.current !== current) {
+      // Route changed
+      navigationHistoryStore.push({ type: 'route', route: current, label: routeLabel(current) });
+    }
+    prevPathnameRef.current = current;
+  }, [location.pathname]);
+
   const handleNewChat = () => {
     chat.reset();
     setSelectedAgent(defaultAgentId ?? null);
@@ -168,6 +191,7 @@ export default function App() {
       <div className="entry-shell">
         <NavRail />
         <div className="entry-main">
+          <NavigationBar />
           <Routes>
             <Route
               path="/"
