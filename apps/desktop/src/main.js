@@ -42,6 +42,12 @@ let daemonProcess = null;
 let rendererReady = false;
 let pendingNavigation = null;
 
+// On macOS, closing the window hides it instead of destroying it, so the
+// user can reopen instantly from the dock. When the app is force-quitting
+// (Cmd+Q / dock-quit), this flag is set to true so the close handler lets
+// the window actually close.
+let forceQuit = false;
+
 /** Whether the app is running in development mode (not packaged) */
 function isDevMode() {
   return !app.isPackaged;
@@ -177,6 +183,24 @@ function createWindow() {
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: 'deny' };
+  });
+
+  // macOS: hide window instead of closing it. This preserves the full
+  // renderer state (SPA, daemon connection, chat history) so the user
+  // can reopen instantly from the dock without a splash→reload cycle.
+  // On Windows/Linux the default destroy-on-close behavior is correct
+  // because window-all-closed quits the app entirely.
+  mainWindow.on('close', (event) => {
+    if (process.platform === 'darwin' && !forceQuit) {
+      event.preventDefault();
+      mainWindow?.hide();
+    }
+  });
+
+  // Clean up the reference when the window is truly destroyed (quit or
+  // non-macOS close).
+  mainWindow.on('closed', () => {
+    mainWindow = null;
   });
 
   if (isDevMode()) {
@@ -386,6 +410,7 @@ if (!singleLock) {
     // Restore the existing window
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
+      if (!mainWindow.isVisible()) mainWindow.show();
       mainWindow.focus();
     }
     // Handle molio:// protocol URL for navigation (path-style — see
@@ -573,6 +598,9 @@ function forceKillDaemon(pid) {
 }
 
 app.on('before-quit', (event) => {
+  // Signal the window close handler to actually close the window instead
+  // of hiding it (macOS hide-on-close behavior).
+  forceQuit = true;
   if (daemonProcess) {
     // Prevent the default quit until daemon is fully terminated.
     // Without this, Electron may exit before the daemon releases its
