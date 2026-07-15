@@ -18,6 +18,17 @@ import { applyTheme } from '@molio/doocs-md/src/theme/themeApplicator';
 import type { IOpts } from '@molio/doocs-md/shared/types/common';
 import type { ThemeConfig } from './MdStylePanel';
 
+/**
+ * Append CSS to the #md-theme <style> element so publish/copy flows
+ * which read from #md-theme automatically include the appended styles.
+ */
+function appendToThemeStyle(css: string): void {
+  const el = document.getElementById('md-theme');
+  if (el) {
+    el.textContent += '\n' + css;
+  }
+}
+
 export interface MdRendererProps {
   /** Markdown content to render */
   content: string;
@@ -63,6 +74,9 @@ export const MdRenderer = memo(function MdRenderer({
 }: MdRendererProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [renderedHtml, setRenderedHtml] = useState('');
+  // Store the latest loaded code theme CSS so it can be re-appended
+  // after applyTheme overwrites #md-theme.
+  const codeThemeCssRef = useRef<string>('');
 
   // Build final renderer options (merging base + themeConfig overrides)
   const finalOptions = useMemo(() => buildRendererOptions(options, themeConfig), [options, themeConfig]);
@@ -94,8 +108,9 @@ export const MdRenderer = memo(function MdRenderer({
     }
   }, [content, renderer]);
 
-  // Apply theme CSS when themeConfig changes
-  // The doocs/md theme system handles all styles — do NOT inject styles manually
+  // Apply theme CSS when themeConfig changes.
+  // The doocs/md theme system handles all styles — do NOT inject styles manually.
+  // Re-append stored code theme CSS after applyTheme overwrites #md-theme.
   useEffect(() => {
     if (!themeConfig) return;
 
@@ -110,10 +125,43 @@ export const MdRenderer = memo(function MdRenderer({
         headingStyles: themeConfig.headingStyles,
       },
       customCSS: themeConfig.customCSS,
+    }).then(() => {
+      // applyTheme overwrites #md-theme — restore the code theme CSS
+      if (codeThemeCssRef.current) {
+        appendToThemeStyle(codeThemeCssRef.current);
+      }
     }).catch((err) => {
       console.error('Failed to apply theme:', err);
     });
   }, [themeConfig]);
+
+  // Load highlight.js code theme CSS when codeBlockTheme changes.
+  // Appends to #md-theme so the publish/copy flows (which read #md-theme)
+  // automatically include syntax-highlighting styles.
+  useEffect(() => {
+    const codeThemeUrl = themeConfig?.codeBlockTheme;
+    if (!codeThemeUrl) return;
+
+    let aborted = false;
+
+    fetch(codeThemeUrl)
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.text();
+      })
+      .then((css) => {
+        if (aborted) return;
+        codeThemeCssRef.current = css;
+        appendToThemeStyle(css);
+      })
+      .catch((err) => {
+        if (!aborted) console.error('Failed to load code theme CSS:', err);
+      });
+
+    return () => {
+      aborted = true;
+    };
+  }, [themeConfig?.codeBlockTheme]);
 
   return (
     <div

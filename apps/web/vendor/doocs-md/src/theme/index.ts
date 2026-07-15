@@ -1,5 +1,6 @@
 export * from './componentDarkVars'
 export * from './cssProcessor'
+export * from './cssScopeUtils'
 export * from './cssScopeWrapper'
 export * from './cssVariables'
 export * from './selectorMapping'
