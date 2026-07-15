@@ -112,6 +112,31 @@ describe('main.js: macOS hide-on-close (regression: dock reopen stuck on splash)
       'window-all-closed must call app.quit() on non-macOS'
     );
   });
+
+  it('activate should show hidden window instead of ignoring it', () => {
+    // The activate handler must handle the case where a window exists but
+    // is hidden (hide-on-close). Without this, macOS dock click does NOT
+    // automatically show hidden Electron windows — the user clicks the
+    // dock icon and nothing happens.
+    const activatePos = mainJs.indexOf("app.on('activate'");
+    assert.ok(activatePos !== -1, 'activate handler must exist');
+
+    const activateEnd = mainJs.indexOf('\n  });', activatePos + 10);
+    const activateBlock = mainJs.slice(activatePos, activateEnd > activatePos ? activateEnd : activatePos + 400);
+
+    assert.ok(
+      activateBlock.includes('!mainWindow.isVisible()'),
+      'activate must check if mainWindow is hidden and show it'
+    );
+    assert.ok(
+      activateBlock.includes('mainWindow.show()'),
+      'activate must call mainWindow.show() for hidden windows from hide-on-close'
+    );
+    assert.ok(
+      activateBlock.includes('BrowserWindow.getAllWindows().length === 0'),
+      'activate must still create a window when none exist (cold start)'
+    );
+  });
 });
 
 describe('main.js: second-instance must restore hidden windows (macOS hide-on-close compat)', () => {

@@ -512,8 +512,14 @@ app.whenReady().then(async () => {
   });
 
   app.on('activate', () => {
+    // No windows at all — cold start on macOS, create one
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
+    } else if (mainWindow && !mainWindow.isVisible()) {
+      // Window was hidden via the hide-on-close handler — just show it.
+      // macOS does NOT automatically show hidden Electron windows on dock
+      // click, so we must do it explicitly.
+      mainWindow.show();
     }
   });
 });
