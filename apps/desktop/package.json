@@ -25,6 +25,7 @@
     "electron-updater": "^6.8.3"
   },
   "devDependencies": {
+    "@arms/rum-electron": "^0.0.5",
     "@molio/contracts": "workspace:*",
     "@molio/daemon": "workspace:*",
     "@molio/web": "workspace:*",

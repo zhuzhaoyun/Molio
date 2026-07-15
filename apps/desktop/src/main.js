@@ -7,6 +7,20 @@ import { log, getLogPath } from './logger.js';
 
 const errMsg = (err) => (err instanceof Error ? err.message : String(err));
 
+// Dynamic import: monitoring-bundle.mjs is an esbuild-generated artifact
+// (gitignored, produced by scripts/prepare-resources.mjs). In dev mode the
+// file may not exist on a clean checkout before `prepare` runs, and a static
+// import would throw at module evaluation — before the Electron ready event — crashing
+// the app. This contradicts monitoring.js's design that "SDK init failure
+// must never block app startup". try/catch keeps monitoring optional.
+let initMonitoring = async () => false;
+try {
+  const mod = await import('./monitoring-bundle.mjs');
+  if (typeof mod.initMonitoring === 'function') initMonitoring = mod.initMonitoring;
+} catch (err) {
+  log('warn', 'monitoring', `monitoring bundle not loaded: ${errMsg(err)}`);
+}
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const PROTOCOL = 'molio';
@@ -70,13 +84,34 @@ function startDaemonProduction() {
       }
     });
 
+    // Line-buffer daemon stderr: stderr 'data' events arrive as arbitrary chunks
+    // (not aligned to newlines), so we accumulate and split on \n. Each complete
+    // line is logged locally AND forwarded to ARMS via console.error — the SDK's
+    // consoleError collector auto-categorizes it into 异常统计, and the
+    // '[daemon]' prefix lets reviewers filter daemon-sourced errors from
+    // main-process ones in the ARMS console. try/catch guards against any SDK
+    // throw breaking daemon log handling.
+    let stderrBuf = '';
+    const flushDaemonLine = (line) => {
+      if (!line) return;
+      stderrChunks.push(line);
+      log('error', 'daemon', line);
+      try { console.error('[daemon] ' + line); } catch {}
+    };
     daemonProcess.stderr?.on('data', (data) => {
-      const msg = data.toString().trim();
-      stderrChunks.push(msg);
-      log('error', 'daemon', msg);
+      stderrBuf += data.toString();
+      let idx;
+      while ((idx = stderrBuf.indexOf('\n')) >= 0) {
+        const line = stderrBuf.slice(0, idx).trim();
+        stderrBuf = stderrBuf.slice(idx + 1);
+        flushDaemonLine(line);
+      }
     });
 
     daemonProcess.on('exit', (code, signal) => {
+      // Flush any trailing partial line left in the buffer.
+      flushDaemonLine(stderrBuf.trim());
+      stderrBuf = '';
       log('error', 'main', `daemon exited with code=${code} signal=${signal}`);
       if (code !== 0 && code !== null) {
         if (stdoutChunks.length > 0) {
@@ -397,17 +432,26 @@ app.whenReady().then(async () => {
       }
     }
   }
-  // ① Create window first (updater IPC needs getMainWindow reference)
+
+  // 监控初始化必须在 createWindow 之前——SDK autoInject 监听 web-contents-created
+  // 注入 Browser SDK，init 之前创建的窗口会错过注入。
+  await initMonitoring({
+    isDev: isDevMode(),
+    version: app.getVersion(),
+    log,
+  });
+
+  // ② Create window first (updater IPC needs getMainWindow reference)
   //    In production this shows splash.html while daemon starts.
   createWindow();
 
-  // ② Set up auto-updater IMMEDIATELY — before daemon.
+  // ③ Set up auto-updater IMMEDIATELY — before daemon.
   // Even if daemon fails to start, the updater must be operational
   // so we can push fixes to users.
   // Pass killDaemon so the updater can release file locks before install.
   setupAutoUpdater(() => mainWindow, killDaemon);
 
-  // ③ Start daemon last — failure here must not affect updater
+  // ④ Start daemon last — failure here must not affect updater
   if (!isDevMode()) {
     let daemonReady = false;
     try {
@@ -418,7 +462,7 @@ app.whenReady().then(async () => {
       // Daemon failure is not fatal for the updater.
     }
 
-    // ④ Only load the real app URL if daemon started successfully.
+    // ⑤ Only load the real app URL if daemon started successfully.
     // If launched via molio:// protocol, navigate to the target instead.
     if (daemonReady) {
       log('info', 'main', `process.argv: ${JSON.stringify(process.argv)}`);
