@@ -27,20 +27,6 @@ interface HistorySnapshot {
 
 type Listener = () => void;
 
-// ─── Route label mapping ───
-
-const ROUTE_LABELS: Record<string, string> = {
-  '/': '首页',
-  '/knowledge': '知识库',
-  '/graph': '图谱',
-  '/history': '历史',
-  '/settings': '设置',
-};
-
-export function routeLabel(pathname: string): string {
-  return ROUTE_LABELS[pathname] ?? pathname;
-}
-
 // ─── Store state ───
 
 const MAX_ENTRIES = 50;

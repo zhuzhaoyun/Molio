@@ -9,6 +9,10 @@ const zh: Record<string, string> = {
   'nav.graph': '图谱',
   'nav.help': '帮助',
   'nav.settings': '设置',
+  'nav.back': '后退',
+  'nav.forward': '前进',
+  'nav.backTo': '后退到：{label}',
+  'nav.forwardTo': '前进到：{label}',
 
   // ── Common ──
   'common.save': '保存',

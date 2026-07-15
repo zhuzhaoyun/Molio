@@ -17,7 +17,7 @@ import { api } from './api/client';
 import { useActiveVault, vaultStore } from './stores/vaultStore';
 import { messageSelectionStore } from './stores/messageSelectionStore';
 import { NavigationBar } from './components/NavigationBar';
-import { navigationHistoryStore, routeLabel } from './stores/navigationHistoryStore';
+import { navigationHistoryStore } from './stores/navigationHistoryStore';
 import './styles/rail.css';
 import './styles/home.css';
 import './styles/knowledge.css';
@@ -170,11 +170,11 @@ export default function App() {
   useEffect(() => {
     const current = location.pathname;
     if (prevPathnameRef.current === null) {
-      // Initial seed — push the starting route
-      navigationHistoryStore.push({ type: 'route', route: current, label: routeLabel(current) });
+      // Initial seed — push the starting route; label resolved by NavigationBar via i18n
+      navigationHistoryStore.push({ type: 'route', route: current, label: current });
     } else if (prevPathnameRef.current !== current) {
-      // Route changed
-      navigationHistoryStore.push({ type: 'route', route: current, label: routeLabel(current) });
+      // Route changed; label resolved by NavigationBar via i18n
+      navigationHistoryStore.push({ type: 'route', route: current, label: current });
     }
     prevPathnameRef.current = current;
   }, [location.pathname]);

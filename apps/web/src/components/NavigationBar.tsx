@@ -1,8 +1,28 @@
 import { useNavigationHistory, navigationHistoryStore } from '../stores/navigationHistoryStore';
+import { useI18n } from '../i18n';
+
+const ROUTE_I18N_KEYS: Record<string, string> = {
+  '/': 'nav.home',
+  '/knowledge': 'nav.knowledge',
+  '/graph': 'nav.graph',
+  '/history': 'nav.history',
+  '/settings': 'nav.settings',
+};
+
+function resolveLabel(rawLabel: string, t: (key: string, params?: Record<string, string | number>) => string): string {
+  const i18nKey = ROUTE_I18N_KEYS[rawLabel];
+  if (i18nKey) return t(i18nKey);
+  return rawLabel;
+}
 
 export function NavigationBar() {
+  const { t } = useI18n();
   const { canGoBack, canGoForward, currentLabel, backLabel, forwardLabel } =
     useNavigationHistory();
+
+  const resolvedCurrent = resolveLabel(currentLabel, t);
+  const resolvedBack = resolveLabel(backLabel, t);
+  const resolvedForward = resolveLabel(forwardLabel, t);
 
   return (
     <div className="nav-topbar" data-testid="nav-topbar">
@@ -12,8 +32,8 @@ export function NavigationBar() {
           data-testid="nav-back"
           disabled={!canGoBack}
           onClick={() => navigationHistoryStore.back()}
-          title={canGoBack ? `后退到：${backLabel}` : undefined}
-          aria-label="后退"
+          title={canGoBack ? t('nav.backTo', { label: resolvedBack }) : undefined}
+          aria-label={t('nav.back')}
         >
           <svg
             viewBox="0 0 24 24"
@@ -31,8 +51,8 @@ export function NavigationBar() {
           data-testid="nav-forward"
           disabled={!canGoForward}
           onClick={() => navigationHistoryStore.forward()}
-          title={canGoForward ? `前进到：${forwardLabel}` : undefined}
-          aria-label="前进"
+          title={canGoForward ? t('nav.forwardTo', { label: resolvedForward }) : undefined}
+          aria-label={t('nav.forward')}
         >
           <svg
             viewBox="0 0 24 24"
@@ -47,7 +67,7 @@ export function NavigationBar() {
         </button>
       </div>
       <div className="nav-topbar__divider" />
-      <span className="nav-topbar__breadcrumb">{currentLabel}</span>
+      <span className="nav-topbar__breadcrumb">{resolvedCurrent}</span>
     </div>
   );
 }
