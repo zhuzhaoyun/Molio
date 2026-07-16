@@ -23,8 +23,11 @@ test.describe('Chat — overflow menu', () => {
     await expect(page.locator('[data-testid="overflow-menu"]')).toBeVisible();
     await expect(page.locator('[data-testid="overflow-item-delete"]')).toBeVisible();
 
-    // Outside click closes it.
-    await page.locator('body').click({ position: { x: 10, y: 10 } });
+    // Outside click closes it. Click at (200, 10) — well clear of the NavRail (56 px
+    // wide) so the mousedown lands on the empty chat-header area rather than on the
+    // Home NavLink, which in some environments (Ubuntu headless Chrome) can interfere
+    // with the mousedown-bubble path before the document listener fires.
+    await page.locator('body').click({ position: { x: 200, y: 10 } });
     await expect(page.locator('[data-testid="overflow-menu"]')).toHaveCount(0);
   });
 
