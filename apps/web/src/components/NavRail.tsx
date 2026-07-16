@@ -26,49 +26,50 @@ export function NavRail() {
 
   return (
     <nav className="entry-nav-rail">
-      {/* Navigation history — back / forward, side by side */}
-      <div className="entry-nav-rail__group entry-nav-rail__group--history">
-        <button
-          className="entry-nav-rail__btn entry-nav-rail__btn--sm"
-          data-testid="nav-back"
-          disabled={!canGoBack}
-          onClick={() => navigationHistoryStore.back()}
-          data-tooltip={canGoBack ? t('nav.backTo', { label: resolvedBack }) : undefined}
-          aria-label={t('nav.back')}
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
+      <div className="entry-nav-rail__section">
+        {/* Navigation history — back / forward, side by side */}
+        <div className="entry-nav-rail__group entry-nav-rail__group--history">
+          <button
+            className="entry-nav-rail__btn entry-nav-rail__btn--sm"
+            data-testid="nav-back"
+            disabled={!canGoBack}
+            onClick={() => navigationHistoryStore.back()}
+            data-tooltip={canGoBack ? t('nav.backTo', { label: resolvedBack }) : undefined}
+            aria-label={t('nav.back')}
           >
-            <polyline points="15 18 9 12 15 6" />
-          </svg>
-        </button>
-        <button
-          className="entry-nav-rail__btn entry-nav-rail__btn--sm"
-          data-testid="nav-forward"
-          disabled={!canGoForward}
-          onClick={() => navigationHistoryStore.forward()}
-          data-tooltip={canGoForward ? t('nav.forwardTo', { label: resolvedForward }) : undefined}
-          aria-label={t('nav.forward')}
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
+          </button>
+          <button
+            className="entry-nav-rail__btn entry-nav-rail__btn--sm"
+            data-testid="nav-forward"
+            disabled={!canGoForward}
+            onClick={() => navigationHistoryStore.forward()}
+            data-tooltip={canGoForward ? t('nav.forwardTo', { label: resolvedForward }) : undefined}
+            aria-label={t('nav.forward')}
           >
-            <polyline points="9 18 15 12 9 6" />
-          </svg>
-        </button>
-      </div>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+          </button>
+        </div>
 
-      <div className="entry-nav-rail__group">
+        <div className="entry-nav-rail__group">
         {/* Home — Create/Chat */}
         <NavLink
           to="/"
@@ -165,6 +166,7 @@ export function NavRail() {
           </svg>
         </NavLink>
       </div>
+      </div>{/* entry-nav-rail__section */}
 
       {/* Bottom group: Help + Settings */}
       <div className="entry-nav-rail__group">

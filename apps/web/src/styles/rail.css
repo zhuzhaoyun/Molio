@@ -32,6 +32,14 @@
   width: 100%;
 }
 
+.entry-nav-rail__section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
 /* History group — side by side row */
 .entry-nav-rail__group--history {
   flex-direction: row;
