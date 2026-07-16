@@ -6,17 +6,20 @@ import type Database from 'better-sqlite3';
 import type { RunManager } from '../RunManager.js';
 import type { ConversationService } from '../conversations/service.js';
 import { loadConfig, saveConfig, type WeixinConfig } from '../config.js';
+import { ChannelDispatcher } from '../channels/dispatcher.js';
+import type { ChannelSink } from '../channels/types.js';
 import { DEFAULT_BASE_URL, WeixinApi } from './client.js';
-import { WeixinRunDispatcher } from './dispatcher.js';
+import { buildMolioPrompt } from './message.js';
+import { wikiPromptFileFor } from './dispatcher.js';
 import { parseWeixinMessage } from './message.js';
 import { materializeAttachments } from './media.js';
 import type {
   ConnectionState,
-  OutboundMediaItem,
   ParsedWeixinMessage,
   WeixinCredentials,
   WeixinStatus,
 } from './types.js';
+import type { OutboundMediaItem } from '../channels/types.js';
 import { UploadMediaType } from './types.js';
 
 const SESSION_EXPIRED_CODE = -14;
@@ -82,7 +85,7 @@ async function toQrDataUrl(content: string): Promise<string> {
   });
 }
 
-export class WeixinService {
+export class WeixinService implements ChannelSink {
   private api: WeixinApi | null = null;
   private cursor = '';
   private connectionState: ConnectionState = 'idle';
@@ -92,7 +95,7 @@ export class WeixinService {
   private contextTokens = new Map<string, string>();
   private receivedMessageIds = new Map<string, number>();
   /** Multi-turn run reuse state machine (per-user run/queue/drain). */
-  private readonly dispatcher: WeixinRunDispatcher;
+  private readonly dispatcher: ChannelDispatcher;
   private status: WeixinStatus = {
     enabled: false,
     loginStatus: 'idle',
@@ -110,16 +113,17 @@ export class WeixinService {
     private readonly conversations: ConversationService,
     private readonly db?: Database.Database,
   ) {
-    // The dispatcher owns run/queue state; the channel owns the send path
-    // (it depends on `api` + `contextTokens`, which live here). Sinks capture
-    // `this` so dispatches always use the current api/context token.
-    this.dispatcher = new WeixinRunDispatcher({
+    // The shared dispatcher owns run/queue state; the channel owns the send
+    // path (it depends on `api` + `contextTokens`, which live here). `this` is
+    // the sink, so dispatches always use the current api/context token.
+    this.dispatcher = new ChannelDispatcher({
       runManager,
       conversations,
       db,
-      sendText: (toUserId, text) => this.sendText(toUserId, text),
-      sendMediaFile: (toUserId, item) => this.sendMediaFile(toUserId, item),
-      onActiveRun: (runId) => { this.status.activeRunId = runId; },
+      sink: this,
+      wikiPromptFileFor,
+      buildPrompt: buildMolioPrompt,
+      channelLabel: 'weixin',
     });
   }
 
@@ -499,7 +503,7 @@ export class WeixinService {
       // Hand off to the dispatcher: it decides reuse-vs-fresh-spawn, derives
       // the wiki system-prompt file at spawn time, and serializes turns.
       await this.dispatcher.dispatch({
-        fromUserId: message.fromUserId,
+        userId: message.fromUserId,
         conversationId: conversation.id,
         agentId,
         cwd,
@@ -515,7 +519,7 @@ export class WeixinService {
     }
   }
 
-  private async sendText(toUserId: string, text: string): Promise<void> {
+  async sendText(toUserId: string, text: string): Promise<void> {
     if (!this.api) return;
     const contextToken = this.contextTokens.get(toUserId);
     if (!contextToken) return;
@@ -537,7 +541,7 @@ export class WeixinService {
    * video message. Best-effort: failures are logged but never break the text
    * reply. Drops the context token on session expiry, mirroring sendText.
    */
-  private async sendMediaFile(toUserId: string, item: OutboundMediaItem): Promise<void> {
+  async sendMediaFile(toUserId: string, item: OutboundMediaItem): Promise<void> {
     if (!this.api) return;
     const contextToken = this.contextTokens.get(toUserId);
     if (!contextToken) return;
@@ -567,6 +571,11 @@ export class WeixinService {
         `[weixin-send-media] failed: ${err instanceof Error ? err.message : String(err)} file=${item.filePath}`,
       );
     }
+  }
+
+  /** ChannelSink: track the currently-active run for status display. */
+  onActiveRun(runId: string | null): void {
+    this.status.activeRunId = runId;
   }
 
   private splitText(text: string): string[] {
