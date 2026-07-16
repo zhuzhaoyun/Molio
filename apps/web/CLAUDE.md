@@ -228,10 +228,30 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
 
 ### 组件架构
 
-- **MdRenderer**: 封装 doocs/md 渲染引擎，提供 React 组件接口
+- **MdRenderer**: 封装 doocs/md 渲染引擎，提供 React 组件接口。负责：
+  - 调用 `applyTheme()` 生成主题 CSS，注入 `<style id="md-theme">`
+  - 加载 `codeBlockTheme` URL（highlight.js 主题），追加到同一 `#md-theme` 元素
 - **MdEditor**: Markdown 编辑组件
 - **MdTypesetEditor**: 左右分栏编辑器，左侧 Markdown 源码，右侧实时预览
 - **MdStylePanel**: 样式配置面板，支持主题、字体、字号、颜色、选项切换
+
+### CSS 注入与复制/发布流程
+
+**核心原则：所有排版 CSS 统一存放在 `<style id="md-theme">` 中。**
+
+- `applyTheme()` → `ThemeInjector.inject()` → 写入 `#md-theme`（主题 CSS + 标题样式 + 用户自定义）
+- `MdRenderer` → 加载 `codeBlockTheme` CSS → 追加到 `#md-theme`（代码高亮 CSS）
+- `copyToClipboard` / `publishToChrome` → 只读 `#md-theme` → 自动包含全部 CSS
+
+**`#output` 作用域处理：**
+
+- 预览时：CSS 规则使用 `#output h1 { ... }` 前缀（`wrapCSSWithScope`），防止污染 Molio UI
+- 导出时：剥离 `#output ` 前缀（`css.replace(/#output\s+/g, '')`），因为粘贴目标（微信等）没有 `#output` wrapper
+
+**不要做的事：**
+- 不要创建独立的 `<style>` 标签存放额外 CSS——publish/copy 只认识 `#md-theme`
+- 不要在 `copyToClipboard` / `publishToChrome` 中遗漏 CSS 的 `#output` 剥离
+- `base.css` 中的样式必须加 `#output` 前缀（与主题 CSS 一致）
 
 ### 依赖
 
