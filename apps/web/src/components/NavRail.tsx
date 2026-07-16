@@ -26,10 +26,10 @@ export function NavRail() {
 
   return (
     <nav className="entry-nav-rail">
-      {/* Navigation history — back / forward */}
-      <div className="entry-nav-rail__group">
+      {/* Navigation history — back / forward, side by side */}
+      <div className="entry-nav-rail__group entry-nav-rail__group--history">
         <button
-          className="entry-nav-rail__btn"
+          className="entry-nav-rail__btn entry-nav-rail__btn--sm"
           data-testid="nav-back"
           disabled={!canGoBack}
           onClick={() => navigationHistoryStore.back()}
@@ -48,7 +48,7 @@ export function NavRail() {
           </svg>
         </button>
         <button
-          className="entry-nav-rail__btn"
+          className="entry-nav-rail__btn entry-nav-rail__btn--sm"
           data-testid="nav-forward"
           disabled={!canGoForward}
           onClick={() => navigationHistoryStore.forward()}

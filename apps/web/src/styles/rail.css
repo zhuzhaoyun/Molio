@@ -32,6 +32,16 @@
   width: 100%;
 }
 
+/* History group — side by side row */
+.entry-nav-rail__group--history {
+  flex-direction: row;
+  justify-content: center;
+  gap: 2px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--border-soft);
+  margin-bottom: 3px;
+}
+
 .entry-nav-rail__divider {
   width: 28px;
   height: 1px;
@@ -106,8 +116,21 @@
   border-color: color-mix(in srgb, var(--accent) 12%, var(--bg-panel));
 }
 .entry-nav-rail__btn:disabled {
-  color: var(--text-faint);
+  color: var(--text-muted);
+  opacity: 0.25;
   cursor: default;
+}
+
+/* Small variant — for utility actions (back/forward) */
+.entry-nav-rail__btn--sm {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+}
+.entry-nav-rail__btn--sm > svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
 }
 .entry-nav-rail__btn:focus-visible {
   outline: 2px solid var(--accent);
