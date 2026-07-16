@@ -16,7 +16,7 @@ import type { Locale } from './i18n';
 import { api } from './api/client';
 import { useActiveVault, vaultStore } from './stores/vaultStore';
 import { messageSelectionStore } from './stores/messageSelectionStore';
-import { NavigationBar } from './components/NavigationBar';
+
 import { navigationHistoryStore } from './stores/navigationHistoryStore';
 import './styles/rail.css';
 import './styles/home.css';
@@ -170,10 +170,10 @@ export default function App() {
   useEffect(() => {
     const current = location.pathname;
     if (prevPathnameRef.current === null) {
-      // Initial seed — push the starting route; label resolved by NavigationBar via i18n
+      // Initial seed — push the starting route; label resolved by NavRail via i18n
       navigationHistoryStore.push({ type: 'route', route: current, label: current });
     } else if (prevPathnameRef.current !== current) {
-      // Route changed; label resolved by NavigationBar via i18n
+      // Route changed; label resolved by NavRail via i18n
       navigationHistoryStore.push({ type: 'route', route: current, label: current });
     }
     prevPathnameRef.current = current;
@@ -191,7 +191,6 @@ export default function App() {
       <div className="entry-shell">
         <NavRail />
         <div className="entry-main">
-          <NavigationBar />
           <Routes>
             <Route
               path="/"

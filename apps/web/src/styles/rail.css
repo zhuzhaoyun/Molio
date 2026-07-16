@@ -105,6 +105,10 @@
   background: color-mix(in srgb, var(--accent) 8%, var(--bg-panel));
   border-color: color-mix(in srgb, var(--accent) 12%, var(--bg-panel));
 }
+.entry-nav-rail__btn:disabled {
+  color: var(--text-faint);
+  cursor: default;
+}
 .entry-nav-rail__btn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;

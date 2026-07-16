@@ -1,11 +1,73 @@
 import { NavLink } from 'react-router-dom';
 import { useI18n } from '../i18n';
+import { useNavigationHistory, navigationHistoryStore } from '../stores/navigationHistoryStore';
+
+const ROUTE_I18N_KEYS: Record<string, string> = {
+  '/': 'nav.home',
+  '/knowledge': 'nav.knowledge',
+  '/graph': 'nav.graph',
+  '/history': 'nav.history',
+  '/settings': 'nav.settings',
+};
+
+function resolveLabel(rawLabel: string, t: (key: string, params?: Record<string, string | number>) => string): string {
+  const i18nKey = ROUTE_I18N_KEYS[rawLabel];
+  if (i18nKey) return t(i18nKey);
+  return rawLabel;
+}
 
 export function NavRail() {
   const { t } = useI18n();
+  const { canGoBack, canGoForward, backLabel, forwardLabel } =
+    useNavigationHistory();
+
+  const resolvedBack = resolveLabel(backLabel, t);
+  const resolvedForward = resolveLabel(forwardLabel, t);
 
   return (
     <nav className="entry-nav-rail">
+      {/* Navigation history — back / forward */}
+      <div className="entry-nav-rail__group">
+        <button
+          className="entry-nav-rail__btn"
+          data-testid="nav-back"
+          disabled={!canGoBack}
+          onClick={() => navigationHistoryStore.back()}
+          data-tooltip={canGoBack ? t('nav.backTo', { label: resolvedBack }) : undefined}
+          aria-label={t('nav.back')}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <polyline points="15 18 9 12 15 6" />
+          </svg>
+        </button>
+        <button
+          className="entry-nav-rail__btn"
+          data-testid="nav-forward"
+          disabled={!canGoForward}
+          onClick={() => navigationHistoryStore.forward()}
+          data-tooltip={canGoForward ? t('nav.forwardTo', { label: resolvedForward }) : undefined}
+          aria-label={t('nav.forward')}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        </button>
+      </div>
+
       <div className="entry-nav-rail__group">
         {/* Home — Create/Chat */}
         <NavLink

@@ -1,6 +1,6 @@
 /* ── Graph Page Layout ── */
 
-/* When graph page is active, stack content below the NavigationBar */
+/* When graph page is active, take full height in entry-main */
 .entry-main:has(.graph-page) {
   display: flex;
   flex-direction: column;
