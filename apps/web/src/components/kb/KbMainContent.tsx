@@ -205,12 +205,15 @@ export function KbMainContent({
     return sel ? sel.toString().trim() : '';
   }, []);
 
-  // Capture-phase click handler: intercept wiki link clicks.
-  // Prevents native <a href> navigation, checks if the file exists via
-  // API, and either opens it (exists) or shows a toast (not found).
+  // Capture-phase click handler: intercept wiki link clicks within the KB
+  // shell. Prevents native <a href> navigation, checks if the file exists
+  // via API, and either opens it (exists) or shows a toast (not found).
+  // Scoped to .kb-shell so it doesn't interfere with wiki links in chat.
   useEffect(() => {
     if (!onOpenFile || !vaultId) return;
     const handler = (e: MouseEvent) => {
+      // Only handle clicks inside the KB shell
+      if (!(e.target as HTMLElement).closest('.kb-shell')) return;
       const link = (e.target as HTMLElement).closest('.kb-wiki-link') as HTMLAnchorElement | null;
       if (!link) return;
       if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;

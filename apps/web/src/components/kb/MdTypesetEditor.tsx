@@ -40,6 +40,7 @@ export function MdTypesetEditor({
   useEffect(() => {
     if (!onOpenFile || !vaultId) return;
     const handler = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('.kb-shell')) return;
       const link = (e.target as HTMLElement).closest('.kb-wiki-link') as HTMLAnchorElement | null;
       if (!link) return;
       if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
