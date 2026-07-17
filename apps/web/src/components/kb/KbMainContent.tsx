@@ -19,7 +19,7 @@ import { ViewerErrorBoundary } from './ViewerErrorBoundary';
 import type { KbCodeMirrorViewerHandle } from './KbCodeMirrorViewer';
 import { KbFrontmatterCard } from './KbFrontmatterCard';
 import { formatFileSize } from '../../utils/format';
-import { preprocessWikiEmbeds, proxyExternalImages, stripTrackingPixels } from '../../hooks/useKnowledge';
+import { preprocessWikiLinks, preprocessWikiEmbeds, proxyExternalImages, stripTrackingPixels } from '../../hooks/useKnowledge';
 import { api } from '../../api/client';
 import { useI18n } from '../../i18n';
 import TurndownService from 'turndown';
@@ -184,7 +184,7 @@ export function KbMainContent({
   // runs for the small-.md doocs path — never for the CM source view.
   const renderedContent = useMemo(
     () => isSmallMd
-      ? proxyExternalImages(preprocessWikiEmbeds(stripTrackingPixels(editedContent ?? fileContent?.content ?? ''), vaultId ?? ''))
+      ? preprocessWikiLinks(proxyExternalImages(preprocessWikiEmbeds(stripTrackingPixels(editedContent ?? fileContent?.content ?? ''), vaultId ?? '')), vaultId ?? '')
       : '',
     [editedContent, fileContent?.content, vaultId, isSmallMd],
   );
@@ -301,6 +301,44 @@ export function KbMainContent({
     const sel = window.getSelection();
     return sel ? sel.toString().trim() : '';
   }, []);
+
+  // Capture-phase click handler: intercept wiki link clicks within the KB
+  // shell. Prevents native <a href> navigation, checks if the file exists
+  // via API, and either opens it (exists) or shows a toast (not found).
+  // Scoped to .kb-shell so it doesn't interfere with wiki links in chat.
+  useEffect(() => {
+    if (!onNavigateToFile || !vaultId) return;
+    const handler = (e: MouseEvent) => {
+      // Only handle clicks inside the KB shell
+      if (!(e.target as HTMLElement).closest('.kb-shell')) return;
+      const link = (e.target as HTMLElement).closest('.kb-wiki-link') as HTMLAnchorElement | null;
+      if (!link) return;
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      e.preventDefault();
+      const filePath = link.getAttribute('data-file-path') || link.textContent?.trim();
+      if (!filePath) return;
+
+      const apiUrl = `/api/knowledge/vaults/${vaultId}/resolve/${encodeURIComponent(filePath).replace(/%2F/g, '/')}`;
+      fetch(apiUrl)
+        .then((res) => {
+          if (res.status === 404) throw new Error('NOT_FOUND');
+          // File exists — strip .md extension for tree-stem search
+          const searchPath = filePath.replace(/\.md$/i, '');
+          onNavigateToFile(searchPath);
+        })
+        .catch((err) => {
+          if (err.message === 'NOT_FOUND') {
+            window.alert(`文件 "${filePath}" 不存在`);
+            return;
+          }
+          // Other error — still try to open
+          const searchPath = filePath.replace(/\.md$/i, '');
+          onNavigateToFile(searchPath);
+        });
+    };
+    document.addEventListener('click', handler, true);
+    return () => document.removeEventListener('click', handler, true);
+  }, [onNavigateToFile, vaultId]);
 
   // Ctrl+S / Cmd+S to save
   useEffect(() => {
@@ -612,6 +650,7 @@ export function KbMainContent({
           onContentChange={onContentChange}
           vaultId={vaultId ?? ''}
           selectedFile={selectedFile}
+          onNavigateToFile={onNavigateToFile}
         />
       ) : category === 'text' && isSmallMd && isEditMode ? (
         // Edit mode: Milkdown WYSIWYG Markdown editor

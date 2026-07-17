@@ -442,9 +442,23 @@
   text-decoration: none;
 }
 
+/* Wiki links inside the doocs/md rendered #output (from preprocessWikiLinks).
+   Match the assistant-prose .kb-wiki-link style in chat.css for consistency. */
+#output a.kb-wiki-link {
+  cursor: pointer;
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px dashed var(--accent);
+  transition: background 0.15s;
+}
+
+#output a.kb-wiki-link:hover {
+  background: var(--accent-tint);
+  border-bottom-style: solid;
+}
+
 /* ── Frontmatter Property Card ── */
 
-/* Inline collapsed content inside kb-main-header (zero extra vertical space) */
 .kb-fm-header-inline {
   display: flex;
   align-items: center;
@@ -456,7 +470,6 @@
   font-size: 12px;
 }
 
-/* Distilled document-type badge in collapsed header bar */
 .kb-fm-badge {
   display: inline-flex;
   align-items: center;
@@ -473,10 +486,7 @@
   overflow: hidden;
 }
 
-/* Dimmed variant when the expanded card is visible below */
-.kb-fm-badge-dimmed {
-  opacity: 0.5;
-}
+.kb-fm-badge-dimmed { opacity: 0.5; }
 
 .kb-fm-badge-secondary {
   background: transparent;
@@ -485,7 +495,6 @@
   font-size: 11px;
 }
 
-/* Tag pill — used inside expanded card (tags field) */
 .kb-fm-tag-pill {
   display: inline-flex;
   align-items: center;
@@ -513,10 +522,7 @@
   border-radius: 4px;
   cursor: pointer;
 }
-.kb-fm-expand-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text);
-}
+.kb-fm-expand-btn:hover { background: var(--bg-hover); color: var(--text); }
 
 .kb-fm-collapse-btn {
   flex-shrink: 0;
@@ -531,12 +537,8 @@
   align-items: center;
   gap: 2px;
 }
-.kb-fm-collapse-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text);
-}
+.kb-fm-collapse-btn:hover { background: var(--bg-hover); color: var(--text); }
 
-/* Clickable [[wikilink]] inside frontmatter values */
 .kb-fm-wikilink {
   color: var(--accent);
   background: none;
@@ -554,7 +556,6 @@
   text-decoration-style: solid;
 }
 
-/* Expanded card */
 .kb-frontmatter {
   background: var(--bg-subtle);
   border: 1px solid var(--border);
