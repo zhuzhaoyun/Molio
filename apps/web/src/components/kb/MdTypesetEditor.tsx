@@ -56,7 +56,7 @@ export function MdTypesetEditor({
         .then((data) => onOpenFile(data.path ?? filePath))
         .catch((err) => {
           if (err.message === 'NOT_FOUND') {
-            window.alert(`文件 "${filePath}" 不存在，可能是 AI 生成的错误引用`);
+            window.alert(`文件 "${filePath}" 不存在`);
             return;
           }
           onOpenFile(filePath);

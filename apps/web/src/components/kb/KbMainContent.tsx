@@ -228,7 +228,7 @@ export function KbMainContent({
         .catch((err) => {
           if (err.message === 'NOT_FOUND') {
             // File doesn't exist — stay on current page, inform user
-            window.alert(`文件 "${filePath}" 不存在，可能是 AI 生成的错误引用`);
+            window.alert(`文件 "${filePath}" 不存在`);
             return;
           }
           // Other error — still try to open the file
