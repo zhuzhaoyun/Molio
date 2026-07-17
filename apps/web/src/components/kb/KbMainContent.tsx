@@ -157,7 +157,7 @@ export function KbMainContent({
   const cmRef = useRef<KbCodeMirrorViewerHandle>(null);
   const [wrap, setWrap] = useState(false);
   const [retryNonce, setRetryNonce] = useState(0);
-  const [fmExpanded, setFmExpanded] = useState(false);
+  const [fmExpanded, setFmExpanded] = useState(true);
   const [ctxMenu, setCtxMenu] = useState<
     { x: number; y: number; source: 'doocs' | 'codemirror'; selectedText?: string } | null
   >(null);
