@@ -355,6 +355,13 @@
   max-width: 480px;
 }
 
+.channels-feishu-credentials-actions {
+  margin-top: 10px;
+  display: flex;
+  justify-content: flex-end;
+  max-width: 480px;
+}
+
 .channels-input {
   height: 32px;
   padding: 0 10px;

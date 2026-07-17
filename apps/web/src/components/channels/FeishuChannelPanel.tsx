@@ -152,6 +152,16 @@ export function FeishuChannelPanel() {
                     />
                   </label>
                 </div>
+                <div className="channels-feishu-credentials-actions">
+                  <button
+                    type="button"
+                    className="rt-btn rt-btn--sm"
+                    onClick={handleSave}
+                    disabled={busy}
+                  >
+                    {t('channels.feishu.save')}
+                  </button>
+                </div>
               </div>
             </li>
 
@@ -267,14 +277,6 @@ export function FeishuChannelPanel() {
         </div>
 
         <div className="channels-actions">
-          <button
-            className="rt-btn rt-btn--sm"
-            type="button"
-            onClick={handleSave}
-            disabled={busy}
-          >
-            {t('channels.feishu.save')}
-          </button>
           <button
             className="rt-btn rt-btn--sm"
             type="button"
