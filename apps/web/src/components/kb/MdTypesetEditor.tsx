@@ -38,18 +38,33 @@ export function MdTypesetEditor({
 
   // Capture-phase handler for wiki link clicks in the typeset preview.
   useEffect(() => {
-    if (!onOpenFile) return;
+    if (!onOpenFile || !vaultId) return;
     const handler = (e: MouseEvent) => {
       const link = (e.target as HTMLElement).closest('.kb-wiki-link') as HTMLAnchorElement | null;
       if (!link) return;
       if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
       e.preventDefault();
       const filePath = link.getAttribute('data-file-path') || link.textContent?.trim();
-      if (filePath) onOpenFile(filePath);
+      if (!filePath) return;
+
+      const apiUrl = `/api/knowledge/vaults/${vaultId}/resolve/${encodeURIComponent(filePath).replace(/%2F/g, '/')}`;
+      fetch(apiUrl)
+        .then((res) => {
+          if (res.status === 404) throw new Error('NOT_FOUND');
+          return res.json();
+        })
+        .then((data) => onOpenFile(data.path ?? filePath))
+        .catch((err) => {
+          if (err.message === 'NOT_FOUND') {
+            window.alert(`文件 "${filePath}" 不存在，可能是 AI 生成的错误引用`);
+            return;
+          }
+          onOpenFile(filePath);
+        });
     };
     document.addEventListener('click', handler, true);
     return () => document.removeEventListener('click', handler, true);
-  }, [onOpenFile]);
+  }, [onOpenFile, vaultId]);
 
   useEffect(() => {
     setContent(initialContent);

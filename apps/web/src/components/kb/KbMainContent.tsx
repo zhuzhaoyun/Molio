@@ -205,22 +205,39 @@ export function KbMainContent({
     return sel ? sel.toString().trim() : '';
   }, []);
 
-  // Capture-phase click handler: intercept wiki link clicks before the
-  // browser follows <a href>. Calls onOpenFile directly (bypassing URL
-  // params / pendingUrlNav), then prevents full page reload.
+  // Capture-phase click handler: intercept wiki link clicks.
+  // Prevents native <a href> navigation, checks if the file exists via
+  // API, and either opens it (exists) or shows a toast (not found).
   useEffect(() => {
-    if (!onOpenFile) return;
+    if (!onOpenFile || !vaultId) return;
     const handler = (e: MouseEvent) => {
       const link = (e.target as HTMLElement).closest('.kb-wiki-link') as HTMLAnchorElement | null;
       if (!link) return;
       if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
       e.preventDefault();
       const filePath = link.getAttribute('data-file-path') || link.textContent?.trim();
-      if (filePath) onOpenFile(filePath);
+      if (!filePath) return;
+
+      const apiUrl = `/api/knowledge/vaults/${vaultId}/resolve/${encodeURIComponent(filePath).replace(/%2F/g, '/')}`;
+      fetch(apiUrl)
+        .then((res) => {
+          if (res.status === 404) throw new Error('NOT_FOUND');
+          return res.json();
+        })
+        .then((data) => onOpenFile(data.path ?? filePath))
+        .catch((err) => {
+          if (err.message === 'NOT_FOUND') {
+            // File doesn't exist — stay on current page, inform user
+            window.alert(`文件 "${filePath}" 不存在，可能是 AI 生成的错误引用`);
+            return;
+          }
+          // Other error — still try to open the file
+          onOpenFile(filePath);
+        });
     };
     document.addEventListener('click', handler, true);
     return () => document.removeEventListener('click', handler, true);
-  }, [onOpenFile]);
+  }, [onOpenFile, vaultId]);
 
   // Ctrl+S / Cmd+S to save
   useEffect(() => {
