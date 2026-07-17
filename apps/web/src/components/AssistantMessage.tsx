@@ -152,9 +152,19 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
 
       e.preventDefault();
       const filePath = link.getAttribute('data-file-path') || link.textContent?.trim();
-      if (filePath) {
-        openFile(activeVaultId, filePath);
-      }
+      if (!filePath) return;
+
+      // Check if file exists before navigating (dead link handling)
+      const encoded = encodeURIComponent(filePath).replace(/%2F/g, '/');
+      fetch(`/api/knowledge/vaults/${activeVaultId}/resolve/${encoded}`)
+        .then((res) => {
+          if (res.status === 404) {
+            window.alert(`文件 "${filePath}" 不存在`);
+            return;
+          }
+          openFile(activeVaultId, filePath);
+        })
+        .catch(() => openFile(activeVaultId, filePath));
     },
     [openFile, activeVaultId],
   );
