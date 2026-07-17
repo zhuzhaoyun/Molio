@@ -33,9 +33,6 @@ export function MdTypesetEditor({
   const previewBodyRef = useRef<HTMLDivElement>(null);
   const syncingRef = useRef(false);
 
-  // Wiki link clicks are handled natively by the browser — preprocessWikiLinks
-  // generates <a href="/knowledge?vault=X&file=Y"> in the preview content.
-
   useEffect(() => {
     setContent(initialContent);
   }, [initialContent]);

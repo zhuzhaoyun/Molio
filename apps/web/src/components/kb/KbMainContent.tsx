@@ -202,9 +202,9 @@ export function KbMainContent({
     return sel ? sel.toString().trim() : '';
   }, []);
 
-  // Wiki link clicks are handled natively by the browser — preprocessWikiLinks
-  // generates <a href="/knowledge?vault=X&file=Y"> which triggers a full page
-  // navigation when clicked. No JS click handler needed.
+  // Wiki link clicks are handled natively by the browser via <a href>.
+  // preprocessWikiLinks generates full navigation URLs, and the browser
+  // handles the click naturally. No JS click handler needed.
 
   // Ctrl+S / Cmd+S to save
   useEffect(() => {
