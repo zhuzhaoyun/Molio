@@ -13,34 +13,43 @@ import { vaultStore, useActiveVaultId } from '../stores/vaultStore';
 
 const FILE_LOAD_RETRY_MS = 600;
 
-/* [MOLIO] Convert [[wikilink]] to inline HTML anchors with kb-wiki-link class,
- * so the doocs/md marked renderer preserves them (marked passes inline HTML through)
- * and the click handler can identify them via the class name.
+/* [MOLIO] Convert [[wikilink]] to navigable anchor tags that work via
+ * the browser's native <a href> — no JavaScript click handler needed.
  *
- * [[path]] → <a class="kb-wiki-link" data-file-path="path">path</a>
- * [[path|display]] → <a class="kb-wiki-link" data-file-path="path">display</a>
+ * [[path]] → <a class="kb-wiki-link" href="/knowledge?vault=X&file=...">path</a>
+ * [[path|display]] → <a class="kb-wiki-link" href="/knowledge?vault=X&file=...">display</a>
  * Skip directory paths (ending with /) — they are not files.
+ *
+ * When vaultId is provided, the href points to the full KB navigation URL
+ * so clicking the link triggers a normal browser page load.
+ * Without vaultId, generates an inert anchor (for contexts where vault isn't known).
  *
  * Note: doocs/md's link renderer suppresses links where href === text
  * (renderer-impl.ts:398-399), so we CANNOT use standard markdown [text](path) syntax.
  */
-export function preprocessWikiLinks(markdown: string): string {
-  // [[path|display]] → raw HTML anchor
+export function preprocessWikiLinks(markdown: string, vaultId?: string): string {
+  const maybeHref = (path: string): string => {
+    if (!vaultId) return '';
+    const encoded = encodeURIComponent(path).replace(/%2F/g, '/');
+    return ` href="/knowledge?vault=${encodeURIComponent(vaultId)}&file=${encoded}"`;
+  };
+
+  // [[path|display]] → raw anchor with href
   let result = markdown.replace(
     /\[\[([^\]|]+)\|([^\]]+)\]\]/g,
     (_m: string, path: string, display: string) => {
       if (path.endsWith('/')) return display;
       const safePath = path.trim().replace(/"/g, '&quot;');
-      return `<a class="kb-wiki-link" data-file-path="${safePath}">${display}</a>`;
+      return `<a class="kb-wiki-link"${maybeHref(path.trim())} data-file-path="${safePath}">${display}</a>`;
     },
   );
-  // [[path]] → raw HTML anchor
+  // [[path]] → raw anchor with href
   result = result.replace(
     /\[\[([^\]]+)\]\]/g,
     (_m: string, path: string) => {
       if (path.endsWith('/')) return path;
       const safePath = path.trim().replace(/"/g, '&quot;');
-      return `<a class="kb-wiki-link" data-file-path="${safePath}">${path}</a>`;
+      return `<a class="kb-wiki-link"${maybeHref(path.trim())} data-file-path="${safePath}">${path}</a>`;
     },
   );
   return result;

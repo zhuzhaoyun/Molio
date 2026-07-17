@@ -14,7 +14,6 @@ import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { MdRenderer } from './MdRenderer';
 import { MdStylePanel, defaultThemeConfig, type ThemeConfig } from './MdStylePanel';
 import { preprocessWikiLinks, preprocessWikiEmbeds, proxyExternalImages, stripTrackingPixels } from '../../hooks/useKnowledge';
-import { useNavigate } from 'react-router-dom';
 
 export interface MdTypesetEditorProps {
   initialContent: string;
@@ -33,23 +32,9 @@ export function MdTypesetEditor({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const previewBodyRef = useRef<HTMLDivElement>(null);
   const syncingRef = useRef(false);
-  const navigate = useNavigate();
 
-  /** Handle clicks on wiki links inside the typeset preview. */
-  const handlePreviewClick = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
-      const target = e.target as HTMLElement;
-      const link = target.closest('.kb-wiki-link') as HTMLAnchorElement | null;
-      if (!link || !vaultId) return;
-
-      e.preventDefault();
-      const filePath = link.getAttribute('data-file-path') || link.textContent?.trim();
-      if (filePath) {
-        navigate('/knowledge', { state: { openFile: filePath, vaultId } });
-      }
-    },
-    [vaultId, navigate],
-  );
+  // Wiki link clicks are handled natively by the browser — preprocessWikiLinks
+  // generates <a href="/knowledge?vault=X&file=Y"> in the preview content.
 
   useEffect(() => {
     setContent(initialContent);
@@ -116,7 +101,7 @@ export function MdTypesetEditor({
     const withEmbeds = vaultId
       ? proxyExternalImages(preprocessWikiEmbeds(stripped, vaultId))
       : proxyExternalImages(stripped);
-    return preprocessWikiLinks(withEmbeds);
+    return preprocessWikiLinks(withEmbeds, vaultId);
   }, [content, vaultId]);
 
   return (
@@ -140,7 +125,6 @@ export function MdTypesetEditor({
         <div
           ref={previewBodyRef}
           className={`kb-typeset-preview-body${themeConfig.previewWidth === 'mobile' ? ' kb-preview--mobile' : ''}`}
-          onClick={handlePreviewClick}
         >
           <MdRenderer content={previewContent} themeConfig={themeConfig} />
         </div>
