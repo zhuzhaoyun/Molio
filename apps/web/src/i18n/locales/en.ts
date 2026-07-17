@@ -302,6 +302,22 @@ const en: Record<string, string> = {
   'kb.outlineEmpty': 'No headings',
   'kb.close': 'Close',
 
+  // ── Frontmatter ──
+  'kb.frontmatter.title': 'Title',
+  'kb.frontmatter.source': 'Source',
+  'kb.frontmatter.author': 'Author',
+  'kb.frontmatter.created': 'Created',
+  'kb.frontmatter.updated': 'Updated',
+  'kb.frontmatter.published': 'Published',
+  'kb.frontmatter.description': 'Description',
+  'kb.frontmatter.tags': 'Tags',
+  'kb.frontmatter.related': 'Related',
+  'kb.frontmatter.sources': 'Sources',
+  'kb.frontmatter.category': 'Category',
+  'kb.frontmatter.expand': 'Show properties',
+  'kb.frontmatter.collapse': 'Hide properties',
+  'kb.frontmatter.properties': 'Properties',
+
   // ── FilePicker ──
   'filePicker.justNow': 'Just now',
   'filePicker.mAgo': '{n} min ago',

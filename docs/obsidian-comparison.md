@@ -90,7 +90,7 @@
 | **出站链接面板** | 显示当前页链接了谁 | 无 |
 | **链接建议** | 输入 `[[` 时自动补全 | **暂不支持** |
 | **标签系统** | `#tag` 自动收集，标签面板 | Wiki frontmatter 中的 `tags` 字段 |
-| **Properties (frontmatter)** | YAML frontmatter，支持表格视图 | frontmatter schema（type/title/created/updated/tags/related/sources） |
+| **Properties (frontmatter)** | YAML frontmatter，支持表格视图 + 内联编辑 | frontmatter schema + **可折叠属性卡片**（折叠态：类型标签；展开态：完整字段 + [[wikilink]] 跳转）<br>⚠️ 属性编辑：**待实现** — 需引入 `js-yaml` 做序列化回写 |
 | **页面关系图** | 基于链接的图 | 图谱构建 + 可视化 |
 
 ---

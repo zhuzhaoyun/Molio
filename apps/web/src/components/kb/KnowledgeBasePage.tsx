@@ -71,6 +71,26 @@ function summarizeErrors(errors: Array<{ file: string; reason: string }>): strin
   return parts.join('，');
 }
 
+/** Walk the file tree to find a file whose name or path matches `needle` (case-insensitive).
+ *  Wikilinks may be bare page names (`[[腾讯程序员]]`) or path-qualified (`[[写作/案例/放弃Dify爆款拆解]]`). */
+function findFileByStem(nodes: TreeNode[], needle: string): string | null {
+  for (const node of nodes) {
+    if (node.type === 'directory' && node.children) {
+      const found = findFileByStem(node.children, needle);
+      if (found) return found;
+    }
+    if (node.type === 'file') {
+      // Match against bare filename (stem only)
+      const stem = node.name.replace(/\.[^.]+$/, '');
+      if (stem.toLowerCase() === needle) return node.path;
+      // Match against full relative path (for path-qualified wikilinks)
+      const pathStem = node.path.replace(/\.[^.]+$/, '');
+      if (pathStem.toLowerCase() === needle || pathStem.toLowerCase().endsWith(`/${needle}`)) return node.path;
+    }
+  }
+  return null;
+}
+
 export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenChange, registerKbChatOnComplete, onOpenConversation }: KnowledgeBasePageProps) {
   const { t } = useI18n();
   const kb = useKnowledge();
@@ -274,6 +294,16 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
 
   /** Open a file in a new tab — same semantics as handleSelectFile. */
   const handleOpenInNewTab = handleSelectFile;
+
+  /** Navigate to a file by wikilink page name — opens in a new tab. */
+  const handleNavigateToFile = useCallback((pageName: string) => {
+    if (!kb.tree || !kb.treeVaultId) return;
+    const needle = pageName.toLowerCase();
+    const found = findFileByStem(kb.tree, needle);
+    if (found) {
+      handleSelectFile(found);
+    }
+  }, [kb.tree, kb.treeVaultId, handleSelectFile]);
 
   /** Switch to a tab and load its file. Prompts before discarding unsaved edits. */
   const handleActivateTab = useCallback((tabId: string) => {
@@ -1016,6 +1046,7 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
           onCloseTab={() => {
             if (tabs.activeTabId) handleCloseTab(tabs.activeTabId);
           }}
+          onNavigateToFile={handleNavigateToFile}
         />
       </div>
 
