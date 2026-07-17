@@ -52,15 +52,16 @@ export function MdTypesetEditor({
       fetch(apiUrl)
         .then((res) => {
           if (res.status === 404) throw new Error('NOT_FOUND');
-          return res.json();
+          const searchPath = filePath.replace(/\.md$/i, '');
+          onNavigateToFile(searchPath);
         })
-        .then((data) => onNavigateToFile(data.path ?? filePath))
         .catch((err) => {
           if (err.message === 'NOT_FOUND') {
             window.alert(`文件 "${filePath}" 不存在`);
             return;
           }
-          onNavigateToFile(filePath);
+          const searchPath = filePath.replace(/\.md$/i, '');
+          onNavigateToFile(searchPath);
         });
     };
     document.addEventListener('click', handler, true);

@@ -322,17 +322,18 @@ export function KbMainContent({
       fetch(apiUrl)
         .then((res) => {
           if (res.status === 404) throw new Error('NOT_FOUND');
-          return res.json();
+          // File exists — strip .md extension for tree-stem search
+          const searchPath = filePath.replace(/\.md$/i, '');
+          onNavigateToFile(searchPath);
         })
-        .then((data) => onNavigateToFile(data.path ?? filePath))
         .catch((err) => {
           if (err.message === 'NOT_FOUND') {
-            // File doesn't exist — stay on current page, inform user
             window.alert(`文件 "${filePath}" 不存在`);
             return;
           }
-          // Other error — still try to open the file
-          onNavigateToFile(filePath);
+          // Other error — still try to open
+          const searchPath = filePath.replace(/\.md$/i, '');
+          onNavigateToFile(searchPath);
         });
     };
     document.addEventListener('click', handler, true);
