@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, type WeixinStatus } from '../../api/client';
 import { useAgents } from '../../hooks/useAgents';
 import { useI18n } from '../../i18n';
+import { FeishuChannelPanel } from '../channels/FeishuChannelPanel';
 
 type ChannelId = 'weixin' | 'feishu' | 'wecom';
 
@@ -25,8 +26,8 @@ const CHANNELS: ChannelItem[] = [
     id: 'feishu',
     titleKey: 'channels.feishu.title',
     descKey: 'channels.feishu.desc',
-    statusKey: 'channels.status.planned',
-    available: false,
+    statusKey: 'channels.status.available',
+    available: true,
   },
   {
     id: 'wecom',
@@ -234,6 +235,8 @@ export function ChannelsPanel() {
         <main className="channels-panel">
           {activeChannel.id === 'weixin' ? (
             <WeixinChannelPanel />
+          ) : activeChannel.id === 'feishu' ? (
+            <FeishuChannelPanel />
           ) : (
             <PlannedChannelPanel channel={activeChannel} />
           )}
