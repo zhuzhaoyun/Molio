@@ -7,8 +7,25 @@
  * lives here so the dispatcher can be channel-agnostic.
  */
 
-/** Internal connection state machine states (shared across channels). */
-export type ConnectionState = 'idle' | 'connecting' | 'polling' | 'unhealthy' | 'expired';
+/**
+ * Internal connection state machine states (shared across channels).
+ *
+ * Not every channel uses every state:
+ * - weixin uses `idle/connecting/polling/unhealthy/expired` (poll-based).
+ * - feishu uses `idle/connecting/connected/reconnecting/error` (WS-based).
+ *
+ * The union is shared so the dispatcher and status types stay channel-agnostic;
+ * individual channels surface only the states they actually transition through.
+ */
+export type ConnectionState =
+  | 'idle'
+  | 'connecting'
+  | 'polling'
+  | 'unhealthy'
+  | 'expired'
+  | 'connected'
+  | 'reconnecting'
+  | 'error';
 
 /**
  * A local file the AI produced this turn that should be delivered to the IM
