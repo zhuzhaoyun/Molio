@@ -61,7 +61,8 @@ src/
       KnowledgeBasePage.tsx  知识库页面（shell 布局）
       KbFilePanel.tsx         文件面板（搜索、文件列表、vault 切换）
       KbFileTree.tsx          文件树组件
-      KbMainContent.tsx       主内容区（渲染 + 排版模式 + Tab 系统）
+      KbMainContent.tsx       主内容区（渲染 + 排版模式 + Tab 系统 + 属性卡片）
+      KbFrontmatterCard.tsx   可折叠 YAML frontmatter 属性卡片（折叠态标签 + 展开态完整字段 + wikilink 跳转）
       KbTabBar.tsx            Tab 栏
       KbModals.tsx            模态框（vault 创建/切换/导入/COSE 安装提示）
       MdRenderer.tsx          doocs/md 渲染引擎封装

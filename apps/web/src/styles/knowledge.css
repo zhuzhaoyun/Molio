@@ -443,8 +443,7 @@
 }
 
 /* Wiki links inside the doocs/md rendered #output (from preprocessWikiLinks).
-   Match the assistant-prose .kb-wiki-link style in chat.css for consistency
-   — same accent color, same dashed underline, same hover treatment. */
+   Match the assistant-prose .kb-wiki-link style in chat.css for consistency. */
 #output a.kb-wiki-link {
   cursor: pointer;
   color: var(--accent);
@@ -458,20 +457,156 @@
   border-bottom-style: solid;
 }
 
-/* Frontmatter */
+/* ── Frontmatter Property Card ── */
+
+.kb-fm-header-inline {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 35%;
+  overflow: hidden;
+  font-size: 12px;
+}
+
+.kb-fm-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 8px;
+  background: var(--bg-muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--text);
+  white-space: nowrap;
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.kb-fm-badge-dimmed { opacity: 0.5; }
+
+.kb-fm-badge-secondary {
+  background: transparent;
+  border: 1px dashed var(--border);
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.kb-fm-tag-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  background: var(--bg-muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.kb-fm-expand-btn {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.kb-fm-expand-btn:hover { background: var(--bg-hover); color: var(--text); }
+
+.kb-fm-collapse-btn {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 2px 8px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.kb-fm-collapse-btn:hover { background: var(--bg-hover); color: var(--text); }
+
+.kb-fm-wikilink {
+  color: var(--accent);
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-size: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+}
+.kb-fm-wikilink:hover {
+  color: var(--accent-hover, var(--accent));
+  text-decoration-style: solid;
+}
+
 .kb-frontmatter {
   background: var(--bg-subtle);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 12px 16px;
-  margin-bottom: 20px;
-  font-size: 12.5px;
-  font-family: var(--mono);
+  padding: 0;
+  margin: 12px 16px 0;
+  font-size: 13px;
+  overflow: hidden;
 }
 
-.kb-fm-line { display: flex; gap: 8px; padding: 1px 0; }
-.kb-fm-key { color: var(--text-muted); }
-.kb-fm-val { color: var(--text); }
+.kb-frontmatter-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+.kb-frontmatter-header:hover { background: var(--bg-hover); }
+
+.kb-frontmatter-body {
+  padding: 10px 16px;
+}
+
+.kb-fm-line { display: flex; gap: 8px; padding: 2px 0; align-items: baseline; }
+.kb-fm-key {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  min-width: 80px;
+  white-space: nowrap;
+}
+.kb-fm-val {
+  color: var(--text);
+  word-break: break-word;
+}
+.kb-fm-val a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.kb-fm-val a:hover { text-decoration: underline; }
+
+/* Tag pills inside expanded card */
+.kb-fm-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
 
 /* Sources section */
 .kb-sources {

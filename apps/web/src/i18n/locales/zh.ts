@@ -298,6 +298,22 @@ const zh: Record<string, string> = {
   'kb.outlineEmpty': '暂无标题',
   'kb.close': '关闭',
 
+  // ── Frontmatter ──
+  'kb.frontmatter.title': '标题',
+  'kb.frontmatter.source': '来源',
+  'kb.frontmatter.author': '作者',
+  'kb.frontmatter.created': '创建',
+  'kb.frontmatter.updated': '更新',
+  'kb.frontmatter.published': '发布',
+  'kb.frontmatter.description': '描述',
+  'kb.frontmatter.tags': '标签',
+  'kb.frontmatter.related': '相关页面',
+  'kb.frontmatter.sources': '信息来源',
+  'kb.frontmatter.category': '分类',
+  'kb.frontmatter.expand': '展开属性',
+  'kb.frontmatter.collapse': '收起属性',
+  'kb.frontmatter.properties': '文档属性',
+
   // ── FilePicker ──
   'filePicker.justNow': '刚刚',
   'filePicker.mAgo': '{n}分钟前',
