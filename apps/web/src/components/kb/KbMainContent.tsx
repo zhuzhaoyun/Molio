@@ -119,6 +119,8 @@ interface KbMainContentProps {
   onForceLoad?: () => void;
   /** Close the active tab (wired from useKbTabs by KnowledgeBasePage). */
   onCloseTab?: () => void;
+  /** Open a file in the KB directly (bypasses URL params / pendingUrlNav). */
+  onOpenFile?: (path: string) => void;
 }
 
 export function KbMainContent({
@@ -146,6 +148,7 @@ export function KbMainContent({
   editedContent,
   onForceLoad,
   onCloseTab,
+  onOpenFile,
 }: KbMainContentProps) {
   const { t } = useI18n();
   const contentRef = useRef<HTMLDivElement>(null);
@@ -202,9 +205,22 @@ export function KbMainContent({
     return sel ? sel.toString().trim() : '';
   }, []);
 
-  // Wiki link clicks are handled natively by the browser via <a href>.
-  // preprocessWikiLinks generates full navigation URLs, and the browser
-  // handles the click naturally. No JS click handler needed.
+  // Capture-phase click handler: intercept wiki link clicks before the
+  // browser follows <a href>. Calls onOpenFile directly (bypassing URL
+  // params / pendingUrlNav), then prevents full page reload.
+  useEffect(() => {
+    if (!onOpenFile) return;
+    const handler = (e: MouseEvent) => {
+      const link = (e.target as HTMLElement).closest('.kb-wiki-link') as HTMLAnchorElement | null;
+      if (!link) return;
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      e.preventDefault();
+      const filePath = link.getAttribute('data-file-path') || link.textContent?.trim();
+      if (filePath) onOpenFile(filePath);
+    };
+    document.addEventListener('click', handler, true);
+    return () => document.removeEventListener('click', handler, true);
+  }, [onOpenFile]);
 
   // Ctrl+S / Cmd+S to save
   useEffect(() => {
@@ -490,6 +506,7 @@ export function KbMainContent({
           onContentChange={onContentChange}
           vaultId={vaultId ?? ''}
           selectedFile={selectedFile}
+          onOpenFile={onOpenFile}
         />
       ) : category === 'text' && isSmallMd && isEditMode ? (
         // Edit mode: Milkdown WYSIWYG Markdown editor

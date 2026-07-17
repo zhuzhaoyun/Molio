@@ -989,6 +989,7 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
           onCloseTab={() => {
             if (tabs.activeTabId) handleCloseTab(tabs.activeTabId);
           }}
+          onOpenFile={handleSelectFile}
         />
       </div>
 

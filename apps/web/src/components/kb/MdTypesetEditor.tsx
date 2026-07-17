@@ -20,18 +20,36 @@ export interface MdTypesetEditorProps {
   onContentChange?: (content: string) => void;
   vaultId?: string;
   selectedFile?: string | null;
+  /** Open a file in the KB directly. */
+  onOpenFile?: (path: string) => void;
 }
 
 export function MdTypesetEditor({
   initialContent,
   onContentChange,
   vaultId,
+  onOpenFile,
 }: MdTypesetEditorProps) {
   const [content, setContent] = useState(initialContent);
   const [themeConfig, setThemeConfig] = useState<ThemeConfig>(defaultThemeConfig);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const previewBodyRef = useRef<HTMLDivElement>(null);
   const syncingRef = useRef(false);
+
+  // Capture-phase handler for wiki link clicks in the typeset preview.
+  useEffect(() => {
+    if (!onOpenFile) return;
+    const handler = (e: MouseEvent) => {
+      const link = (e.target as HTMLElement).closest('.kb-wiki-link') as HTMLAnchorElement | null;
+      if (!link) return;
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      e.preventDefault();
+      const filePath = link.getAttribute('data-file-path') || link.textContent?.trim();
+      if (filePath) onOpenFile(filePath);
+    };
+    document.addEventListener('click', handler, true);
+    return () => document.removeEventListener('click', handler, true);
+  }, [onOpenFile]);
 
   useEffect(() => {
     setContent(initialContent);
