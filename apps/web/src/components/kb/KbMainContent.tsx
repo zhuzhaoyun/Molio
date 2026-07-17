@@ -18,9 +18,10 @@ import { TooLargeCard } from './TooLargeCard';
 import { ViewerErrorBoundary } from './ViewerErrorBoundary';
 import type { KbCodeMirrorViewerHandle } from './KbCodeMirrorViewer';
 import { formatFileSize } from '../../utils/format';
-import { preprocessWikiEmbeds, proxyExternalImages, stripTrackingPixels } from '../../hooks/useKnowledge';
+import { preprocessWikiLinks, preprocessWikiEmbeds, proxyExternalImages, stripTrackingPixels } from '../../hooks/useKnowledge';
 import { api } from '../../api/client';
 import { useI18n } from '../../i18n';
+import { useNavigate } from 'react-router-dom';
 import TurndownService from 'turndown';
 import { gfm } from 'turndown-plugin-gfm';
 
@@ -148,6 +149,7 @@ export function KbMainContent({
   onCloseTab,
 }: KbMainContentProps) {
   const { t } = useI18n();
+  const navigate = useNavigate();
   const contentRef = useRef<HTMLDivElement>(null);
   const cmRef = useRef<KbCodeMirrorViewerHandle>(null);
   const [wrap, setWrap] = useState(false);
@@ -178,7 +180,7 @@ export function KbMainContent({
   // runs for the small-.md doocs path — never for the CM source view.
   const renderedContent = useMemo(
     () => isSmallMd
-      ? proxyExternalImages(preprocessWikiEmbeds(stripTrackingPixels(editedContent ?? fileContent?.content ?? ''), vaultId ?? ''))
+      ? preprocessWikiLinks(proxyExternalImages(preprocessWikiEmbeds(stripTrackingPixels(editedContent ?? fileContent?.content ?? ''), vaultId ?? '')))
       : '',
     [editedContent, fileContent?.content, vaultId, isSmallMd],
   );
@@ -201,6 +203,22 @@ export function KbMainContent({
     const sel = window.getSelection();
     return sel ? sel.toString().trim() : '';
   }, []);
+
+  /** Handle clicks on internal wiki / local-file links inside rendered markdown. */
+  const handleContentClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      const target = e.target as HTMLElement;
+      const link = target.closest('.kb-wiki-link') as HTMLAnchorElement | null;
+      if (!link || !vaultId) return;
+
+      e.preventDefault();
+      const filePath = link.getAttribute('data-file-path') || link.textContent?.trim();
+      if (filePath) {
+        navigate('/knowledge', { state: { openFile: filePath, vaultId } });
+      }
+    },
+    [vaultId, navigate],
+  );
 
   // Ctrl+S / Cmd+S to save
   useEffect(() => {
@@ -495,7 +513,7 @@ export function KbMainContent({
           selectedFile={selectedFile}
         />
       ) : category === 'text' && isSmallMd ? (
-        <div className="kb-content-area" ref={contentRef} onContextMenu={handleContextMenu}>
+        <div className="kb-content-area" ref={contentRef} onContextMenu={handleContextMenu} onClick={handleContentClick}>
           {fileContent ? (
             // 优先使用编辑后的内容（未保存的更改），否则使用原始文件内容
             <MdRenderer content={renderedContent} themeConfig={themeConfig} />

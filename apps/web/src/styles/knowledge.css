@@ -442,6 +442,22 @@
   text-decoration: none;
 }
 
+/* Wiki links inside the doocs/md rendered #output (from preprocessWikiLinks).
+   Match the assistant-prose .kb-wiki-link style in chat.css for consistency
+   — same accent color, same dashed underline, same hover treatment. */
+#output a.kb-wiki-link {
+  cursor: pointer;
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px dashed var(--accent);
+  transition: background 0.15s;
+}
+
+#output a.kb-wiki-link:hover {
+  background: var(--accent-tint);
+  border-bottom-style: solid;
+}
+
 /* Frontmatter */
 .kb-frontmatter {
   background: var(--bg-subtle);

@@ -13,6 +13,39 @@ import { vaultStore, useActiveVaultId } from '../stores/vaultStore';
 
 const FILE_LOAD_RETRY_MS = 600;
 
+/* [MOLIO] Convert [[wikilink]] to inline HTML anchors with kb-wiki-link class,
+ * so the doocs/md marked renderer preserves them (marked passes inline HTML through)
+ * and the click handler can identify them via the class name.
+ *
+ * [[path]] → <a class="kb-wiki-link" data-file-path="path">path</a>
+ * [[path|display]] → <a class="kb-wiki-link" data-file-path="path">display</a>
+ * Skip directory paths (ending with /) — they are not files.
+ *
+ * Note: doocs/md's link renderer suppresses links where href === text
+ * (renderer-impl.ts:398-399), so we CANNOT use standard markdown [text](path) syntax.
+ */
+export function preprocessWikiLinks(markdown: string): string {
+  // [[path|display]] → raw HTML anchor
+  let result = markdown.replace(
+    /\[\[([^\]|]+)\|([^\]]+)\]\]/g,
+    (_m: string, path: string, display: string) => {
+      if (path.endsWith('/')) return display;
+      const safePath = path.trim().replace(/"/g, '&quot;');
+      return `<a class="kb-wiki-link" data-file-path="${safePath}">${display}</a>`;
+    },
+  );
+  // [[path]] → raw HTML anchor
+  result = result.replace(
+    /\[\[([^\]]+)\]\]/g,
+    (_m: string, path: string) => {
+      if (path.endsWith('/')) return path;
+      const safePath = path.trim().replace(/"/g, '&quot;');
+      return `<a class="kb-wiki-link" data-file-path="${safePath}">${path}</a>`;
+    },
+  );
+  return result;
+}
+
 /* [MOLIO] Convert ![[...]] wiki embed syntax to standard markdown image syntax */
 export function preprocessWikiEmbeds(markdown: string, vaultId: string): string {
   // ![[image.png|300x200]] → ![image.png|300x200](raw-url)

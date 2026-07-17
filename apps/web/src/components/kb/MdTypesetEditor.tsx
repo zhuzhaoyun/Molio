@@ -13,7 +13,8 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { MdRenderer } from './MdRenderer';
 import { MdStylePanel, defaultThemeConfig, type ThemeConfig } from './MdStylePanel';
-import { preprocessWikiEmbeds, proxyExternalImages, stripTrackingPixels } from '../../hooks/useKnowledge';
+import { preprocessWikiLinks, preprocessWikiEmbeds, proxyExternalImages, stripTrackingPixels } from '../../hooks/useKnowledge';
+import { useNavigate } from 'react-router-dom';
 
 export interface MdTypesetEditorProps {
   initialContent: string;
@@ -32,6 +33,23 @@ export function MdTypesetEditor({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const previewBodyRef = useRef<HTMLDivElement>(null);
   const syncingRef = useRef(false);
+  const navigate = useNavigate();
+
+  /** Handle clicks on wiki links inside the typeset preview. */
+  const handlePreviewClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      const target = e.target as HTMLElement;
+      const link = target.closest('.kb-wiki-link') as HTMLAnchorElement | null;
+      if (!link || !vaultId) return;
+
+      e.preventDefault();
+      const filePath = link.getAttribute('data-file-path') || link.textContent?.trim();
+      if (filePath) {
+        navigate('/knowledge', { state: { openFile: filePath, vaultId } });
+      }
+    },
+    [vaultId, navigate],
+  );
 
   useEffect(() => {
     setContent(initialContent);
@@ -92,12 +110,13 @@ export function MdTypesetEditor({
   }, []);
 
   // Content for doocs/md themed preview (live-updating as user edits source).
-  // Memoized to avoid re-running three full-string regex scans on every keystroke.
+  // Memoized to avoid re-running full-string regex scans on every keystroke.
   const previewContent = useMemo(() => {
     const stripped = stripTrackingPixels(content);
-    return vaultId
+    const withEmbeds = vaultId
       ? proxyExternalImages(preprocessWikiEmbeds(stripped, vaultId))
       : proxyExternalImages(stripped);
+    return preprocessWikiLinks(withEmbeds);
   }, [content, vaultId]);
 
   return (
@@ -121,6 +140,7 @@ export function MdTypesetEditor({
         <div
           ref={previewBodyRef}
           className={`kb-typeset-preview-body${themeConfig.previewWidth === 'mobile' ? ' kb-preview--mobile' : ''}`}
+          onClick={handlePreviewClick}
         >
           <MdRenderer content={previewContent} themeConfig={themeConfig} />
         </div>
