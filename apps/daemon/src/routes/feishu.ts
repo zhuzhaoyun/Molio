@@ -1,32 +1,13 @@
-import { Hono } from 'hono';
+import type { Hono } from 'hono';
 import type { FeishuService } from '../core/feishu/service.js';
 import type { FeishuConfig } from '../core/config.js';
+import { channelRoutes } from './channel.js';
 
 /**
- * Feishu channel HTTP routes. No /login endpoint (feishu doesn't have a QR
- * login flow — saving app_id/app_secret via PUT /config triggers start()).
+ * Feishu channel HTTP routes. No /login endpoint (feishu doesn't have a
+ * QR login flow — saving app_id/app_secret via PUT /config triggers
+ * start()).
  */
 export function feishuRoutes(service: FeishuService): Hono {
-  const app = new Hono();
-
-  app.get('/status', (c) => c.json(service.getStatus()));
-
-  app.post('/start', async (c) => {
-    return c.json(await service.start());
-  });
-
-  app.post('/stop', async (c) => {
-    return c.json(await service.stop());
-  });
-
-  app.post('/disconnect', async (c) => {
-    return c.json(await service.disconnect());
-  });
-
-  app.put('/config', async (c) => {
-    const body = await c.req.json<FeishuConfig>();
-    return c.json(await service.updateConfig(body));
-  });
-
-  return app;
+  return channelRoutes<FeishuConfig>(service);
 }
