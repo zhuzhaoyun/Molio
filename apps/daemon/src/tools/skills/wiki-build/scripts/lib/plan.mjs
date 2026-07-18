@@ -95,7 +95,7 @@ export function validatePlan(candidate, inventory, inventoryDigest) {
   const topics = Array.isArray(candidate.topics) ? candidate.topics : [];
   if (!Array.isArray(candidate.topics)) issue(errors, 'TOPICS_INVALID');
 
-  const visitTopic = (topic, expectedDepth) => {
+  const visitTopic = (topic, expectedDepth, suppressDepth = false) => {
     if (!topic || typeof topic !== 'object') {
       issue(errors, 'TOPIC_INVALID');
       return;
@@ -109,8 +109,10 @@ export function validatePlan(candidate, inventory, inventoryDigest) {
       slugs.add(topic.slug);
       if (RESERVED_SLUGS.has(topic.slug.toLowerCase())) issue(errors, 'TOPIC_SLUG_RESERVED', { slug: topic.slug });
     }
-    if (topic.depth !== expectedDepth) issue(errors, 'TOPIC_DEPTH_INVALID', { id: topic.id });
-    if (topic.depth > capacity.maxTopicDepth) issue(errors, 'TOPIC_DEPTH_EXCEEDED', { id: topic.id });
+    if (!suppressDepth) {
+      if (topic.depth !== expectedDepth) issue(errors, 'TOPIC_DEPTH_INVALID', { id: topic.id });
+      if (topic.depth > capacity.maxTopicDepth) issue(errors, 'TOPIC_DEPTH_EXCEEDED', { id: topic.id });
+    }
 
     const children = Array.isArray(topic.children) ? topic.children : [];
     if (topic.kind === 'branch') {
@@ -126,14 +128,13 @@ export function validatePlan(candidate, inventory, inventoryDigest) {
       if (topic.splitReason === 'capacity' && !exceedsCapacity(topic, capacity)) {
         issue(errors, 'CAPACITY_SPLIT_BELOW_LIMIT', { id: topic.id });
       }
-      // Descendant and reference diagnostics would only repeat the invalid branch shape.
-      if (children.length >= 2) for (const child of children) visitTopic(child, expectedDepth + 1);
+      for (const child of children) visitTopic(child, expectedDepth + 1, suppressDepth || children.length < 2);
       return;
     }
     if (topic.kind !== 'leaf') issue(errors, 'TOPIC_KIND_INVALID', { id: topic.id });
     topicCounts.leaf += 1;
     if (!Array.isArray(topic.fileIds) || topic.fileIds.length === 0) issue(errors, 'LEAF_REQUIRES_FILE_IDS', { id: topic.id });
-    if (children.length) issue(errors, 'LEAF_HAS_CHILDREN', { id: topic.id });
+    if (Object.hasOwn(topic, 'children')) issue(errors, 'LEAF_HAS_CHILDREN', { id: topic.id });
     if (exceedsCapacity(topic, capacity) && topic.indexStrategy !== 'shards') {
       issue(errors, 'LEAF_EXCEEDS_CAPACITY', { id: topic.id });
     }
@@ -142,6 +143,15 @@ export function validatePlan(candidate, inventory, inventoryDigest) {
   for (const topic of topics) visitTopic(topic, 1);
 
   const inventoryIds = new Set(Array.isArray(inventory) ? inventory.map((record) => record.id) : []);
+  for (const [topicId, leaf] of leaves) {
+    const fileIds = Array.isArray(leaf.fileIds) ? leaf.fileIds : [];
+    const seen = new Set();
+    for (const fileId of fileIds) {
+      if (seen.has(fileId)) issue(errors, 'LEAF_FILE_ID_DUPLICATE', { topicId, fileId });
+      else seen.add(fileId);
+      if (!inventoryIds.has(fileId)) issue(errors, 'LEAF_FILE_ID_UNKNOWN', { topicId, fileId });
+    }
+  }
   const classifications = new Map();
   const classify = (fileId, source) => {
     if (typeof fileId !== 'string' || !fileId) {
@@ -154,6 +164,7 @@ export function validatePlan(candidate, inventory, inventoryDigest) {
   };
 
   const assignments = Array.isArray(candidate.assignments) ? candidate.assignments : [];
+  const primaryAssignments = new Map();
   if (!Array.isArray(candidate.assignments)) issue(errors, 'ASSIGNMENTS_INVALID');
   for (const assignment of assignments) {
     classify(assignment?.fileId, 'assignment');
@@ -161,9 +172,23 @@ export function validatePlan(candidate, inventory, inventoryDigest) {
     if (!leaf) {
       if (topologyValid) issue(errors, 'ASSIGNMENT_TOPIC_NOT_LEAF', { fileId: assignment?.fileId });
     } else if (!leaf.fileIds?.includes(assignment.fileId)) issue(errors, 'ASSIGNMENT_FILE_NOT_IN_TOPIC', { fileId: assignment.fileId });
+    if (typeof assignment?.fileId === 'string' && typeof assignment?.primaryTopicId === 'string'
+      && !primaryAssignments.has(assignment.fileId)) {
+      primaryAssignments.set(assignment.fileId, assignment.primaryTopicId);
+    }
   }
   for (const excluded of Array.isArray(candidate.excluded) ? candidate.excluded : []) classify(fileIdFrom(excluded), 'excluded');
   for (const undecided of Array.isArray(candidate.undecided) ? candidate.undecided : []) classify(fileIdFrom(undecided), 'undecided');
+  for (const [topicId, leaf] of leaves) {
+    const leafFileIds = new Set(leaf.fileIds ?? []);
+    const assignedFileIds = new Set([...primaryAssignments]
+      .filter(([, primaryTopicId]) => primaryTopicId === topicId)
+      .map(([fileId]) => fileId));
+    if (leafFileIds.size !== assignedFileIds.size
+      || [...leafFileIds].some((fileId) => !assignedFileIds.has(fileId))) {
+      issue(errors, 'LEAF_ASSIGNMENT_SET_MISMATCH', { topicId });
+    }
+  }
   for (const fileId of inventoryIds) {
     if (!classifications.has(fileId)) issue(errors, 'FILE_CLASSIFICATION_MISSING', { fileId });
   }
@@ -182,6 +207,7 @@ export function validatePlan(candidate, inventory, inventoryDigest) {
   const batches = Array.isArray(candidate.batches) ? candidate.batches : [];
   if (!Array.isArray(candidate.batches)) issue(errors, 'BATCHES_INVALID');
   const batchIds = new Set();
+  const batchFileCounts = new Map();
   for (let index = 0; index < batches.length; index += 1) {
     const batch = batches[index] ?? {};
     if (batch.order !== index + 1) issue(errors, 'BATCH_ORDER_INVALID', { id: batch.id });
@@ -191,11 +217,22 @@ export function validatePlan(candidate, inventory, inventoryDigest) {
     if (!Array.isArray(batch.fileIds)) issue(errors, 'BATCH_FILE_IDS_INVALID', { id: batch.id });
     else {
       if (batch.fileIds.length > 50 || (policy?.maxFiles && batch.fileIds.length > policy.maxFiles)) issue(errors, 'BATCH_TOO_MANY_FILES', { id: batch.id });
-      for (const fileId of batch.fileIds) if (!inventoryIds.has(fileId)) issue(errors, 'FILE_ID_UNKNOWN', { fileId, source: 'batch' });
+      for (const fileId of batch.fileIds) {
+        if (!inventoryIds.has(fileId)) issue(errors, 'FILE_ID_UNKNOWN', { fileId, source: 'batch' });
+        const count = (batchFileCounts.get(fileId) ?? 0) + 1;
+        batchFileCounts.set(fileId, count);
+        if (count > 1) issue(errors, 'BATCH_FILE_DUPLICATE', { fileId });
+        const primaryTopicId = primaryAssignments.get(fileId);
+        if (!primaryTopicId) issue(errors, 'BATCH_FILE_NOT_ASSIGNED', { fileId });
+        else if (primaryTopicId !== batch.topicId) issue(errors, 'BATCH_FILE_CROSS_TOPIC', { fileId, topicId: batch.topicId });
+      }
     }
     if (!Number.isInteger(batch.estimatedInputTokens) || batch.estimatedInputTokens > policy?.maxInputTokens) {
       issue(errors, 'BATCH_INPUT_TOKENS_EXCEEDED', { id: batch.id });
     }
+  }
+  for (const [fileId] of primaryAssignments) {
+    if (!batchFileCounts.has(fileId)) issue(errors, 'BATCH_ASSIGNMENT_MISSING', { fileId });
   }
   return { valid: errors.length === 0, errors, topicCounts };
 }
@@ -205,7 +242,25 @@ export function saveDraft(paths, candidate) {
   return paths.planDraft;
 }
 
-export function approvePlan(paths, candidate) {
+export function approvePlan(paths, candidate, { writeJson = atomicWriteJson } = {}) {
+  const historyPath = join(paths.planHistory, `plan-v${String(candidate.planVersion).padStart(4, '0')}.json`);
+  const approval = { ...candidate, status: 'approved' };
+  const planDigest = sha256(approval);
+  if (existsSync(historyPath)) {
+    const frozen = readJson(historyPath);
+    if (frozen.planDigest !== planDigest) {
+      const error = new Error(`Plan version ${candidate.planVersion} is already frozen with different content`);
+      error.code = 'PLAN_VERSION_FROZEN';
+      throw error;
+    }
+    if (existsSync(paths.plan)) {
+      const error = new Error(`Plan version ${candidate.planVersion} is already frozen`);
+      error.code = 'PLAN_VERSION_FROZEN';
+      throw error;
+    }
+    writeJson(paths.plan, frozen);
+    return frozen;
+  }
   const versions = readApprovedVersions(paths);
   const latest = versions.length ? Math.max(...versions) : 0;
   if (candidate.planVersion <= latest) {
@@ -218,9 +273,8 @@ export function approvePlan(paths, candidate) {
     error.code = 'PLAN_VERSION_NOT_INCREMENTED';
     throw error;
   }
-  const approved = { ...candidate, status: 'approved', approvedAt: new Date().toISOString() };
-  approved.planDigest = sha256(approved);
-  atomicWriteJson(paths.plan, approved);
-  atomicWriteJson(join(paths.planHistory, `plan-v${String(candidate.planVersion).padStart(4, '0')}.json`), approved);
+  const approved = { ...approval, approvedAt: new Date().toISOString(), planDigest };
+  writeJson(historyPath, approved);
+  writeJson(paths.plan, approved);
   return approved;
 }
