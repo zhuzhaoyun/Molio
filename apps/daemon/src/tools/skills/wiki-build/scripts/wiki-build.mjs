@@ -1,17 +1,28 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { assertPathWithinVault, readJson, resolveBuildPaths } from './lib/workspace.mjs';
+import { scanVault } from './lib/inventory.mjs';
+import { assertPathWithinVault, readJson, resolveBuildPaths, withMutationLock } from './lib/workspace.mjs';
 
 export function parseArgs(argv) {
-  const options = { command: undefined, json: false, vault: undefined, include: undefined };
+  const options = {
+    command: undefined, json: false, vault: undefined, include: [], contentHash: false,
+    maxDirEntries: undefined, maxTotal: undefined, sampleBytes: undefined,
+  };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === '--json') options.json = true;
-    else if (argument === '--vault' || argument === '--include') {
+    else if (argument === '--content-hash') options.contentHash = true;
+    else if (argument === '--vault' || argument === '--include' || argument === '--max-dir-entries'
+      || argument === '--max-total' || argument === '--sample-bytes') {
       const value = argv[index + 1];
       if (!value) throw new Error(`Missing value for ${argument}`);
-      options[argument.slice(2)] = value;
+      if (argument === '--include') options.include.push(value);
+      else if (argument === '--max-dir-entries' || argument === '--max-total' || argument === '--sample-bytes') {
+        const numericValue = Number(value);
+        if (!Number.isInteger(numericValue) || numericValue < 1) throw new Error(`${argument} must be a positive integer`);
+        options[argument.slice(2).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase())] = numericValue;
+      } else options[argument.slice(2)] = value;
       index += 1;
     } else if (!argument.startsWith('--') && !options.command) options.command = argument;
     else throw new Error(`Unknown argument: ${argument}`);
@@ -21,9 +32,8 @@ export function parseArgs(argv) {
   return options;
 }
 
-function assertIncludeInsideVault(vault, include) {
-  if (!include) return;
-  assertPathWithinVault(vault, resolve(vault, include));
+function assertIncludesInsideVault(vault, includes) {
+  for (const include of includes) assertPathWithinVault(vault, resolve(vault, include));
 }
 
 function status(paths) {
@@ -52,9 +62,21 @@ function main() {
     json = options.json;
     const vault = realpathSync(options.vault);
     const paths = resolveBuildPaths(vault);
-    assertIncludeInsideVault(vault, options.include);
+    assertIncludesInsideVault(vault, options.include);
     if (command === 'status') {
       emit({ ok: true, command, data: status(paths) }, json);
+      return;
+    }
+    if (command === 'scan') {
+      const result = withMutationLock(paths, () => scanVault({
+        vaultPath: vault,
+        includePaths: options.include.length ? options.include : undefined,
+        contentHash: options.contentHash,
+        maxDirEntries: options.maxDirEntries,
+        maxTotal: options.maxTotal,
+        sampleBytes: options.sampleBytes,
+      }));
+      emit({ ok: true, command, data: result }, json);
       return;
     }
     const error = new Error(`Unknown command: ${command}`);
