@@ -45,6 +45,9 @@ src/
     channels/         跨渠道共享抽象（weixin/feishu/wecom 都走这条 dispatcher）
       types.ts          ChannelSink 接口、ConnectionState 多态
       dispatcher.ts     ChannelDispatcher — 把外部消息→conversation→run 的样板抽出来
+      credentials-store.ts  跨渠道凭证文件读写（~/.molio/<channel>-credentials.json，原子写 + chmod 0o600）
+      message-dedup.ts     MessageDedup 类 — 按消息 id 去重，TTL + 可选 maxEntries 淘汰
+      text-chunker.ts      chunkText(text, limit) — 按 \n\n / \n / 硬切 三级切分
       outbound-media.ts 渠道回复中"图片/文件"出站协议
       media-helpers.ts  共享 media 下载/缓存工具
     weixin/
@@ -57,9 +60,12 @@ src/
       ws-client.ts     WebSocket 长连接 — 接收 im.message.receive_v1 事件
       message.ts       事件 payload 解析 → ParsedFeishuMessage
       media.ts         图片/文件下载到 raw/feishu/<date>/
-      service.ts       状态机 (idle/connecting/connected/reconnecting/error)
+      token-store.ts   FeishuTokenStore — tenant_access_token 内存缓存 + 磁盘持久化 + 100min 刷新定时器
+      service.ts       状态机 (idle/connecting/connected/reconnecting/error)，token 生命周期委托 token-store
       types.ts         FeishuStatus / FeishuConfig / FeishuRawEvent
   routes/
+    channel.ts        channelRoutes<TConfig>() 工厂 — 5 个标准渠道路由（status/start/stop/disconnect/config）
+
     agents.ts         GET /api/agents — 列出可用 agent
     runs.ts           POST /api/runs — 创建 run, GET 列出/查询
     events.ts         GET /api/runs/:id/events — SSE 事件流
