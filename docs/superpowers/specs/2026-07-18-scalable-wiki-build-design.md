@@ -21,12 +21,12 @@ Molio 当前沿用 llm-wiki 的 Markdown 工作流。`wiki-build` 是纯提示�
 
 - 用户手动触发 wiki-build。
 - 系统先做元数据清点和轻量采样，生成构建计划；用户批准前不写 Wiki。
-- Wiki 固定使用两级主题，构建任务按 token 预算继续拆批。
+- Wiki 主题最多两级。构建计划可使用一级或两级主题，任务按 token 预算继续拆批。
 - 构建支持中断、恢复、跳过、重试和单文件失败隔离。
 - query 优先检索编译后的 Wiki 页面，信息不足时才回溯原始文件。
 - 采用页面感知的 FTS5/BM25 检索，避免 query 加载完整页面目录。
 - 保留 llm-wiki 的持续编译、交叉链接、来源追踪和知识写回能力。
-- 首版以单 vault 10,000 个源文件为验收目标，50,000 个作为扩展压测目标。
+- 首版使用 `D:\work\articles-1` 做端到端验收，以扫描时的真实文件集合和数据规模为准。
 
 ## 3. 非目标
 
@@ -34,7 +34,7 @@ Molio 当前沿用 llm-wiki 的 Markdown 工作流。`wiki-build` 是纯提示�
 - 首版不自动移动、重命名或修改用户的原始文件。
 - 首版不自动重构已有的扁平 Wiki。
 - 首版不承诺解析 ZIP、RAR、IFC 或任意超大结构化文件。
-- 首版不让多个 Agent 并发修改同一个二级主题。
+- 首版不让多个 Agent 并发修改同一个叶主题。
 
 ## 4. 用户流程
 
@@ -43,7 +43,7 @@ Molio 当前沿用 llm-wiki 的 Markdown 工作流。`wiki-build` 是纯提示�
 1. 用户点击“构建 Wiki”。
 2. `wiki-build` Skill 调用确定性扫描工具。
 3. 扫描工具生成源文件 inventory，不创建 Wiki 页面。
-4. Agent 根据 inventory、目录名称、标题和轻量采样提出两级主题及构建批次。
+4. Agent 根据 inventory、目录名称、标题和轻量采样提出一级或两级主题及构建批次。
 5. Agent 在对话中展示主题、文件归属、排除项、风险和预计工作量。
 6. 用户要求修改或批准计划。
 7. Skill 冻结获批计划的版本，并开始执行。
@@ -52,13 +52,13 @@ Molio 当前沿用 llm-wiki 的 Markdown 工作流。`wiki-build` 是纯提示�
 
 ### 4.2 执行与恢复
 
-Skill 按二级主题执行构建。同一主题中的批次按顺序运行；不同主题在首版也串行执行。每个批次完成后，工具写入文件级和批次级检查点。
+Skill 按叶主题执行构建。叶主题可以是一级主题，也可以是二级主题。同一主题中的批次按顺序运行；不同主题在首版也串行执行。每个批次完成后，工具写入文件级和批次级检查点。
 
 用户取消或 Agent 退出后，下次触发 wiki-build 时，Skill 读取获批计划和检查点，展示剩余工作并请求继续。它不会重建已经成功且源文件指纹未变化的批次。
 
-## 5. Wiki 目录结构
+## 5. Wiki 目录约束与参考结构
 
-`topics/` 不作为额外目录。一级主题直接位于 `wiki/` 下。
+下面的目录树只说明层级关系，不是固定模板。`topics/` 不作为额外目录，一级主题直接位于 `wiki/` 下。
 
 ```text
 wiki/
@@ -81,17 +81,43 @@ wiki/
     └── 网络安全与算力/
 ```
 
-目录语义：
+固定约束：
 
 - `wiki/INDEX.md` 只列一级主题及短摘要。
-- 一级主题的 `INDEX.md` 只列二级主题及短摘要。
-- 二级主题的 `INDEX.md` 提供精选导航，不要求列出该主题的全部页面。
-- `sources`、`entities`、`concepts` 和 `comparisons` 只出现在二级主题内。
+- 一级主题需要拆分时，它的 `INDEX.md` 只列二级主题及短摘要；无需拆分时，它本身就是叶主题。
+- 叶主题的 `INDEX.md` 提供精选导航，不要求列出该主题的全部页面。
 - `log.md`、`hot.md`、`meta` 和 `INDEX.md` 是根目录保留名称。
 
-原始目录名称只作为分类信号。`raw`、`Clippings` 和 `项目文件` 这类来源目录不会自动成为知识主题。每个源文件拥有一个主二级主题，并可通过 related topics 关联其他主题；系统不移动原始文件。
+构建计划决定以下内容：
+
+- 一级、二级主题的名称和数量。
+- 是否需要二级主题。系统不为内容集中的知识库强制创建空层级。
+- 叶主题下使用哪些页面类型目录。`sources`、`entities`、`concepts`、`comparisons`、`questions` 和其他类型按内容需要创建，不要求每个主题具有相同目录。
+
+原始目录名称只作为分类信号。`raw`、`Clippings` 和 `项目文件` 这类来源目录不会自动成为知识主题。每个源文件拥有一个主叶主题，并可通过 related topics 关联其他主题；系统不移动原始文件。
 
 ## 6. wiki-build Skill 的职责
+
+### 6.1 当前 daemon 与 runtime 的关系
+
+Molio 当前使用 daemon 作为宿主和控制面：
+
+```text
+Web
+→ daemon API
+→ RunManager
+→ runtime agent CLI 子进程
+→ vault 文件系统和已安装 Skill
+
+runtime stdout/stderr
+→ RunManager
+→ SSE
+→ Web
+```
+
+daemon 把内置 Skill 安装到 vault 的 `.claude/skills/`，选择 Claude、Codex、Qwen、Gemini 或 Hermes runtime，设置 vault cwd，然后启动 Agent CLI 子进程。runtime agent 读取 Skill、操作文件并输出事件。daemon 负责进程生命周期、消息持久化、取消、多轮输入和事件转发。当前 runtime agent 不以调用 daemon API 作为常规执行路径。
+
+### 6.2 wiki-build 升级
 
 `wiki-build` 仍是用户和 Agent 的唯一构建入口。Skill 从纯提示词工作流升级为“工作流说明 + 确定性辅助工具”。
 
@@ -121,6 +147,12 @@ Skill 负责：
 - 请求 daemon 更新 Wiki FTS 索引。
 
 扫描和状态脚本使用 Node.js 标准库，随 Skill 一起安装。FTS5 由 daemon 管理，因为 Molio 已在 daemon 中使用 `better-sqlite3` 和 FTS5，且 query、ingest、文件监听都需要共享索引。
+
+### 6.3 新增的受限回调
+
+runtime agent 继续通过本地 Skill 脚本完成扫描、计划和 checkpoint。它不直接打开 daemon 的 SQLite 数据库。
+
+Wiki 检索和索引更新需要 daemon 持有的 FTS5 数据。Molio 为 Skill 提供一个本地 helper；helper 通过 loopback API 调用 daemon 的 Wiki search/reindex 接口。daemon 仍是父进程和索引所有者，runtime 只发起有边界的工具请求。vault watcher 也会在外部修改 Wiki 页面时触发 daemon 重建对应索引。
 
 ## 7. 构建状态与文件
 
@@ -152,7 +184,7 @@ Skill 负责：
 获批计划至少包含：
 
 - `planVersion`、创建时间和批准状态。
-- 一级主题、二级主题和主题说明。
+- 一级或两级主题树及主题说明。
 - 文件主主题、关联主题及预处理方式。
 - 批次顺序和每批 token 预算。
 - 排除文件、待用户决定的文件和原因。
@@ -182,7 +214,7 @@ pending → skipped
 - 大型 JSON 使用流式结构摘要、JSONL 分片或用户指定的字段提取策略。
 - ZIP、RAR、IFC 和未知格式进入待确认列表，不阻塞其余构建。
 
-每个批次先创建或更新 source 页面，再更新该主题的实体、概念和对比页面。二级主题完成后生成主题摘要；一级主题完成后只读取其二级主题摘要进行汇总。全局 `INDEX.md` 只读取一级主题摘要。
+每个批次先创建或更新 source 页面，再更新该主题的实体、概念和对比页面。二级主题完成后生成主题摘要；包含二级主题的一级主题只读取这些摘要进行汇总。没有二级主题时，一级主题直接汇总自己的叶页面。全局 `INDEX.md` 只读取一级主题摘要。
 
 ## 9. Wiki FTS5/BM25
 
@@ -194,7 +226,7 @@ Molio 已为会话历史实现 `messages_fts`，包含 trigram tokenizer、同�
 
 daemon 在现有 SQLite 数据库中新增独立的 Wiki 表，按 `vault_id` 隔离：
 
-- `wiki_pages`：页面路径、标题、页面类型、一级主题、二级主题、frontmatter、内容哈希和更新时间。
+- `wiki_pages`：页面路径、标题、页面类型、一级主题、可空的二级主题、frontmatter、内容哈希和更新时间。
 - `wiki_sections`：页面内章节、顺序、正文和来源映射。
 - `wiki_sections_fts`：使用 FTS5 trigram tokenizer 的章节全文索引。
 
@@ -215,7 +247,7 @@ query 使用以下顺序：
 用户问题
 → 全局主题路由
 → 一级主题
-→ 二级主题
+→ 二级主题（存在时）
 → FTS5/BM25 召回 Wiki 章节
 → 按 Wiki 页面聚合和重排
 → 加载 frontmatter、命中章节和关联页面
@@ -237,7 +269,7 @@ wiki-ingest 复用相同 manifest、主题路由和索引接口：
 3. 用户需要时可调整主题归属。
 4. Skill 更新 source 页面及相关知识页面。
 5. daemon 增量更新受影响的 Wiki 章节索引。
-6. Skill 更新二级和一级主题摘要，不重读全局页面目录。
+6. Skill 更新叶主题和一级主题摘要，不重读全局页面目录。
 
 ## 12. 兼容与迁移
 
@@ -245,7 +277,7 @@ wiki-ingest 复用相同 manifest、主题路由和索引接口：
 
 - legacy query 继续使用现有 `hot.md`、`INDEX.md` 和页面读取流程。
 - daemon 可以为 legacy Wiki 建立 FTS 索引，改善查询性能，不改变其目录。
-- 用户显式执行“按主题重建”后，wiki-build 才生成新的两级主题结构。
+- 用户显式执行“按主题重建”后，wiki-build 才生成新的主题结构。
 - 系统在重建前生成计划和冲突报告，不覆盖无法映射的用户页面。
 
 ## 13. 错误处理
@@ -264,7 +296,7 @@ wiki-ingest 复用相同 manifest、主题路由和索引接口：
 - 扫描过滤、目录上限、总文件上限和轻量采样。
 - 指纹、计划冻结、批次预算和状态转换。
 - 中断恢复、失败隔离和幂等 checkpoint。
-- 两级主题路径和保留名称校验。
+- 最多两级的主题路径和保留名称校验。
 - FTS 建表、回填、触发同步、删除同步和重建。
 - 中文 trigram 检索、BM25 排序、主题过滤和页面聚合。
 
@@ -278,17 +310,19 @@ wiki-ingest 复用相同 manifest、主题路由和索引接口：
 
 ### 14.3 容量验收
 
-- 10,000 个源文件可完成预扫描并生成计划。
-- 构建队列可跨进程恢复，已完成批次不重复执行。
-- FTS query 不遍历 vault 文件系统，返回时间不随源文件总数线性增长。
-- 50,000 个文件执行扫描和索引专项压测，但首版不把它列入正式支持承诺。
+- 使用 `D:\work\articles-1` 的扫描时快照执行验收，不把固定文件数量写死为产品承诺。
+- 预扫描覆盖全部可见文件；每个文件进入构建计划、排除列表或待用户决定列表，三者数量之和与 inventory 一致。
+- 获批计划可完成端到端构建；构建队列可跨进程恢复，已完成批次不重复执行。
+- 大型 JSON、Markdown、PPTX、DOCX、PDF 和不支持格式按计划处理，单文件失败不阻塞其他批次。
+- 构建完成后使用该库的代表性问题验证主题路由、Wiki-first 召回、来源回溯和 BM25 排序。
+- FTS query 不遍历 vault 文件系统。`MAX_TOTAL=50000` 继续作为扫描安全上限，不代表首版容量承诺。
 
 ## 15. 实施边界
 
 本设计涉及三个代码边界：
 
 - `wiki-build`/`wiki-ingest` Skill 及其纯 Node 辅助脚本。
-- daemon 的构建计划、状态和 Wiki FTS 服务及 API。
+- daemon 的构建计划、状态、Wiki FTS 服务和受限 loopback API。
 - Web 的计划审批、进度和失败展示。
 
 实施计划应拆成可独立验证的阶段：先完成 manifest 与 FTS 基础，再升级 Skill 工作流，最后接入审批和进度 UI。每个阶段保持 legacy Wiki 可用。
