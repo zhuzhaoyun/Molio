@@ -11,6 +11,8 @@ import {
   resolveCredentialsPath as resolveCredsPath,
   writeCredentials,
 } from '../channels/credentials-store.js';
+import { MessageDedup } from '../channels/message-dedup.js';
+import { chunkText } from '../channels/text-chunker.js';
 import { getVaultByPath } from '../db.js';
 import { FEISHU_SYS_PROMPT_FILE } from '../wiki-prompts.js';
 import { DEFAULT_BASE_URL, FeishuApi } from './client.js';
@@ -68,7 +70,7 @@ export class FeishuService implements ChannelSink {
   private wsClient: FeishuWSClient | null = null;
   private connectionState: ConnectionState = 'idle';
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
-  private receivedMessageIds = new Map<string, number>();
+  private readonly dedup = new MessageDedup({ ttlMs: DEDUP_TTL_MS, maxEntries: DEDUP_MAX_ENTRIES });
   /** Cached tenant_access_token + expiry (lives in-memory + on-disk). */
   private cachedToken: FeishuCredentials | null = null;
   /** Multi-turn run reuse state machine (per-user run/queue/drain). */
@@ -336,7 +338,7 @@ export class FeishuService implements ChannelSink {
 
   private async handleRawMessage(event: FeishuRawEvent): Promise<void> {
     const msgId = event.message?.message_id || event.event_id;
-    if (msgId && this.isDuplicate(msgId)) return;
+    if (msgId && this.dedup.check(msgId)) return;
 
     const parsed = parseFeishuMessage(event);
     if (!parsed) return;
@@ -421,7 +423,7 @@ export class FeishuService implements ChannelSink {
     if (!this.api) return;
     try {
       const token = await this.ensureToken();
-      for (const chunk of this.splitText(text)) {
+      for (const chunk of chunkText(text, TEXT_CHUNK_LIMIT)) {
         await this.api.sendText(token, toUserId, chunk);
       }
     } catch (err) {
@@ -457,40 +459,6 @@ export class FeishuService implements ChannelSink {
   }
 
   // ----- helpers ---------------------------------------------------------
-
-  private splitText(text: string): string[] {
-    if (text.length <= TEXT_CHUNK_LIMIT) return [text];
-    const chunks: string[] = [];
-    let rest = text;
-    while (rest) {
-      if (rest.length <= TEXT_CHUNK_LIMIT) {
-        chunks.push(rest);
-        break;
-      }
-      let cut = rest.lastIndexOf('\n\n', TEXT_CHUNK_LIMIT);
-      if (cut <= 0) cut = rest.lastIndexOf('\n', TEXT_CHUNK_LIMIT);
-      if (cut <= 0) cut = TEXT_CHUNK_LIMIT;
-      chunks.push(rest.slice(0, cut));
-      rest = rest.slice(cut).replace(/^\n+/, '');
-    }
-    return chunks;
-  }
-
-  private isDuplicate(messageId: string): boolean {
-    const now = Date.now();
-    for (const [id, ts] of this.receivedMessageIds) {
-      if (now - ts > DEDUP_TTL_MS) this.receivedMessageIds.delete(id);
-    }
-    if (this.receivedMessageIds.has(messageId)) return true;
-    // Hard cap: if the map has grown unbounded (long-lived quiet process),
-    // evict oldest entries by insertion order before inserting a new one.
-    if (this.receivedMessageIds.size >= DEDUP_MAX_ENTRIES) {
-      const firstKey = this.receivedMessageIds.keys().next().value;
-      if (firstKey !== undefined) this.receivedMessageIds.delete(firstKey);
-    }
-    this.receivedMessageIds.set(messageId, now);
-    return false;
-  }
 
   private getConfig(): FeishuConfig {
     return loadConfig().feishu ?? {};

@@ -12,6 +12,8 @@ import {
   resolveCredentialsPath as resolveCredsPath,
   writeCredentials,
 } from '../channels/credentials-store.js';
+import { MessageDedup } from '../channels/message-dedup.js';
+import { chunkText } from '../channels/text-chunker.js';
 import { DEFAULT_BASE_URL, WeixinApi } from './client.js';
 import { buildMolioPrompt } from './message.js';
 import { wikiPromptFileFor } from './dispatcher.js';
@@ -30,6 +32,8 @@ const SESSION_EXPIRED_CODE = -14;
 const QR_LOGIN_TIMEOUT_MS = 8 * 60 * 1000;
 const QR_MAX_REFRESHES = 10;
 const TEXT_CHUNK_LIMIT = 4000;
+/** Dedup window for received message_id (matches feishu). */
+const DEDUP_TTL_MS = 7 * 60 * 60 * 1000;
 /** Health probe interval when in unhealthy state (ms). */
 const HEALTH_PROBE_INTERVAL_MS = 30_000;
 
@@ -67,7 +71,7 @@ export class WeixinService implements ChannelSink {
   private pollAbort: AbortController | null = null;
   private healthTimer: ReturnType<typeof setInterval> | null = null;
   private contextTokens = new Map<string, string>();
-  private receivedMessageIds = new Map<string, number>();
+  private readonly dedup = new MessageDedup({ ttlMs: DEDUP_TTL_MS });
   /** Multi-turn run reuse state machine (per-user run/queue/drain). */
   private readonly dispatcher: ChannelDispatcher;
   private status: WeixinStatus = {
@@ -415,7 +419,7 @@ export class WeixinService implements ChannelSink {
 
   private async handleRawMessage(raw: Parameters<typeof parseWeixinMessage>[0]): Promise<void> {
     const msgId = String(raw.message_id ?? raw.seq ?? '');
-    if (msgId && this.isDuplicate(msgId)) return;
+    if (msgId && this.dedup.check(msgId)) return;
 
     const parsed = parseWeixinMessage(raw);
     if (!parsed) return;
@@ -498,7 +502,7 @@ export class WeixinService implements ChannelSink {
     const contextToken = this.contextTokens.get(toUserId);
     if (!contextToken) return;
 
-    for (const chunk of this.splitText(text)) {
+    for (const chunk of chunkText(text, TEXT_CHUNK_LIMIT)) {
       const response = await this.api.sendText(toUserId, chunk, contextToken);
       const ret = Number(response.ret ?? 0);
       const errcode = Number(response.errcode ?? 0);
@@ -552,40 +556,12 @@ export class WeixinService implements ChannelSink {
     this.status.activeRunId = runId;
   }
 
-  private splitText(text: string): string[] {
-    if (text.length <= TEXT_CHUNK_LIMIT) return [text];
-    const chunks: string[] = [];
-    let rest = text;
-    while (rest) {
-      if (rest.length <= TEXT_CHUNK_LIMIT) {
-        chunks.push(rest);
-        break;
-      }
-      let cut = rest.lastIndexOf('\n\n', TEXT_CHUNK_LIMIT);
-      if (cut <= 0) cut = rest.lastIndexOf('\n', TEXT_CHUNK_LIMIT);
-      if (cut <= 0) cut = TEXT_CHUNK_LIMIT;
-      chunks.push(rest.slice(0, cut));
-      rest = rest.slice(cut).replace(/^\n+/, '');
-    }
-    return chunks;
-  }
-
   private persistContextTokens(): void {
     const credentialsPath = resolveCredentialsPath(this.getConfig());
     const credentials = readCredentials(credentialsPath);
     if (!credentials) return;
     credentials.contextTokens = Object.fromEntries(this.contextTokens);
     writeCredentials(credentialsPath, credentials);
-  }
-
-  private isDuplicate(messageId: string): boolean {
-    const now = Date.now();
-    for (const [id, ts] of this.receivedMessageIds) {
-      if (now - ts > 7 * 60 * 60 * 1000) this.receivedMessageIds.delete(id);
-    }
-    if (this.receivedMessageIds.has(messageId)) return true;
-    this.receivedMessageIds.set(messageId, now);
-    return false;
   }
 
   private getConfig(): WeixinConfig {
