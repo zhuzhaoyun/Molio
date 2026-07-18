@@ -70,6 +70,7 @@ export function resolveBuildPaths(vaultPath) {
   return Object.freeze({
     root,
     inventory: join(root, 'inventory.jsonl'),
+    planDraft: join(root, 'plan-draft.json'),
     plan: join(root, 'plan.json'),
     state: join(root, 'state.json'),
     samples: join(root, 'samples'),

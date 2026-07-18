@@ -2,18 +2,20 @@
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { scanVault } from './lib/inventory.mjs';
-import { assertPathWithinVault, readJson, resolveBuildPaths, withMutationLock } from './lib/workspace.mjs';
+import { approvePlan, saveDraft, validatePlan } from './lib/plan.mjs';
+import { assertPathWithinVault, readJson, resolveBuildPaths, sha256, withMutationLock } from './lib/workspace.mjs';
 
 export function parseArgs(argv) {
   const options = {
     command: undefined, json: false, vault: undefined, include: [], contentHash: false,
     maxDirEntries: undefined, maxTotal: undefined, sampleBytes: undefined,
+    input: undefined, mode: undefined,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === '--json') options.json = true;
     else if (argument === '--content-hash') options.contentHash = true;
-    else if (argument === '--vault' || argument === '--include' || argument === '--max-dir-entries'
+    else if (argument === '--vault' || argument === '--include' || argument === '--input' || argument === '--mode' || argument === '--max-dir-entries'
       || argument === '--max-total' || argument === '--sample-bytes') {
       const value = argv[index + 1];
       if (!value) throw new Error(`Missing value for ${argument}`);
@@ -32,6 +34,10 @@ export function parseArgs(argv) {
   return options;
 }
 
+function readInventory(path) {
+  return readFileSync(path, 'utf8').trim().split('\n').filter(Boolean).map((line) => JSON.parse(line));
+}
+
 function assertIncludesInsideVault(vault, includes) {
   for (const include of includes) assertPathWithinVault(vault, resolve(vault, include));
 }
@@ -40,6 +46,10 @@ function status(paths) {
   if (existsSync(paths.state)) return readJson(paths.state);
   if (existsSync(paths.plan)) {
     readJson(paths.plan);
+    return { phase: 'approved' };
+  }
+  if (existsSync(paths.planDraft)) {
+    readJson(paths.planDraft);
     return { phase: 'draft' };
   }
   if (existsSync(paths.inventory)) {
@@ -79,6 +89,38 @@ function main() {
       emit({ ok: true, command, data: result }, json);
       return;
     }
+    if (command === 'plan') {
+      if (!['validate', 'approve'].includes(options.mode)) {
+        const error = new Error('plan requires validate or approve mode');
+        error.code = 'INVALID_ARGUMENT';
+        throw error;
+      }
+      if (!options.input) {
+        const error = new Error('--input is required for plan');
+        error.code = 'INVALID_ARGUMENT';
+        throw error;
+      }
+      const candidatePath = assertPathWithinVault(vault, resolve(vault, options.input));
+      if (!existsSync(paths.inventory)) {
+        const error = new Error('Scan the vault before planning');
+        error.code = 'INVENTORY_NOT_FOUND';
+        throw error;
+      }
+      const candidate = readJson(candidatePath);
+      const inventoryContents = readFileSync(paths.inventory, 'utf8');
+      const validation = validatePlan(candidate, readInventory(paths.inventory), sha256(inventoryContents));
+      if (!validation.valid) {
+        const error = new Error('Plan validation failed');
+        error.code = 'PLAN_VALIDATION_FAILED';
+        error.details = { codes: validation.errors.map(({ code }) => code), errors: validation.errors };
+        throw error;
+      }
+      const data = withMutationLock(paths, () => (options.mode === 'validate'
+        ? { topicCounts: validation.topicCounts, draftPath: saveDraft(paths, candidate) }
+        : approvePlan(paths, candidate)));
+      emit({ ok: true, command, data }, json);
+      return;
+    }
     const error = new Error(`Unknown command: ${command}`);
     error.code = 'UNKNOWN_COMMAND';
     throw error;
@@ -89,6 +131,7 @@ function main() {
       error: {
         code: error.code ?? 'INVALID_ARGUMENT',
         message: error.message,
+        ...(error.details ? { details: error.details } : {}),
       },
     }, json);
     process.exitCode = 2;
