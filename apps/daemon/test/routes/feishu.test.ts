@@ -26,6 +26,7 @@ describe('Feishu routes', () => {
   let service: FeishuService;
   let app: Hono;
   let originalUserprofile: string | undefined;
+  let originalHome: string | undefined;
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), 'molio-feishu-routes-'));
@@ -35,12 +36,16 @@ describe('Feishu routes', () => {
     app = new Hono();
     app.route('/api/feishu', feishuRoutes(service));
     originalUserprofile = process.env.USERPROFILE;
+    originalHome = process.env.HOME;
     process.env.USERPROFILE = tempDir;
+    process.env.HOME = tempDir;
   });
 
   afterEach(() => {
     if (originalUserprofile === undefined) delete process.env.USERPROFILE;
     else process.env.USERPROFILE = originalUserprofile;
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
     service.stop();
     closeDatabase();
     rmSync(tempDir, { recursive: true, force: true });

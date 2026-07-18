@@ -43,6 +43,7 @@ describe('FeishuService', () => {
   let service: FeishuService;
   let conversations: ConversationService;
   let originalUserprofile: string | undefined;
+  let originalHome: string | undefined;
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), 'molio-feishu-test-'));
@@ -50,12 +51,16 @@ describe('FeishuService', () => {
     conversations = new ConversationService(db);
     service = new FeishuService(createMockRunManager(), conversations, db);
     originalUserprofile = process.env.USERPROFILE;
+    originalHome = process.env.HOME;
     process.env.USERPROFILE = tempDir;
+    process.env.HOME = tempDir;
   });
 
   afterEach(() => {
     if (originalUserprofile === undefined) delete process.env.USERPROFILE;
     else process.env.USERPROFILE = originalUserprofile;
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
     service.stop();
     closeDatabase();
     rmSync(tempDir, { recursive: true, force: true });
@@ -161,19 +166,24 @@ describe('FeishuService token cache', () => {
   let db: Database.Database;
   let tempDir: string;
   let originalUserprofile: string | undefined;
+  let originalHome: string | undefined;
   let originalFetch: typeof fetch;
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), 'molio-feishu-token-'));
     db = openDatabase(tempDir);
     originalUserprofile = process.env.USERPROFILE;
+    originalHome = process.env.HOME;
     process.env.USERPROFILE = tempDir;
+    process.env.HOME = tempDir;
     originalFetch = globalThis.fetch;
   });
 
   afterEach(() => {
     if (originalUserprofile === undefined) delete process.env.USERPROFILE;
     else process.env.USERPROFILE = originalUserprofile;
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
     globalThis.fetch = originalFetch;
     closeDatabase();
     rmSync(tempDir, { recursive: true, force: true });
