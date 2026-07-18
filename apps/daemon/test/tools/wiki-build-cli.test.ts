@@ -36,12 +36,14 @@ describe('wiki-build CLI', () => {
     vault.cleanup();
   });
 
-  it('rejects forward-slash parent traversal outside the vault', () => {
+  it('rejects an absolute include path outside the vault', () => {
     const vault = makeVault();
-    const result = runWikiBuildCli(vault.path, ['scan', '--include', '../outside.md', '--json']);
+    const outside = makeVault();
+    const result = runWikiBuildCli(vault.path, ['scan', '--include', join(outside.path, 'outside.md'), '--json']);
     assert.equal(result.status, 2);
     assert.equal(result.json.error.code, 'PATH_OUTSIDE_VAULT');
     vault.cleanup();
+    outside.cleanup();
   });
 
   it('rejects an include that follows a vault symlink outside', (t) => {
@@ -51,6 +53,18 @@ describe('wiki-build CLI', () => {
     createDirectoryLink(outside.path, join(vault.path, 'linked-outside'), t.diagnostic.bind(t));
 
     const result = runWikiBuildCli(vault.path, ['scan', '--include', 'linked-outside/outside.md', '--json']);
+    assert.equal(result.status, 2);
+    assert.equal(result.json.error.code, 'PATH_OUTSIDE_VAULT');
+    vault.cleanup();
+    outside.cleanup();
+  });
+
+  it('rejects a missing include below a vault symlink that points outside', (t) => {
+    const vault = makeVault();
+    const outside = makeVault();
+    createDirectoryLink(outside.path, join(vault.path, 'linked-outside'), t.diagnostic.bind(t));
+
+    const result = runWikiBuildCli(vault.path, ['scan', '--include', 'linked-outside/new.md', '--json']);
     assert.equal(result.status, 2);
     assert.equal(result.json.error.code, 'PATH_OUTSIDE_VAULT');
     vault.cleanup();

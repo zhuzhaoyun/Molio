@@ -34,6 +34,16 @@ function nearestExistingRealpath(path) {
   return realpathSync(current);
 }
 
+export function assertPathWithinVault(vaultPath, path) {
+  const vault = realpathSync(vaultPath);
+  const candidate = assertWithin(vault, path);
+  const resolvedTarget = existsSync(candidate)
+    ? realpathSync(candidate)
+    : nearestExistingRealpath(candidate);
+  assertWithin(vault, resolvedTarget);
+  return candidate;
+}
+
 function findBuildRoot(path) {
   let current = resolve(path);
   while (true) {
@@ -51,12 +61,7 @@ function findBuildRoot(path) {
 function assertSafeMutationPath(root, path) {
   const vault = realpathSync(dirname(dirname(root)));
   const candidate = assertWithin(root, path);
-  assertWithin(vault, root);
-  const resolvedTarget = existsSync(candidate)
-    ? realpathSync(candidate)
-    : nearestExistingRealpath(dirname(candidate));
-  assertWithin(vault, resolvedTarget);
-  return candidate;
+  return assertPathWithinVault(vault, candidate);
 }
 
 export function resolveBuildPaths(vaultPath) {
