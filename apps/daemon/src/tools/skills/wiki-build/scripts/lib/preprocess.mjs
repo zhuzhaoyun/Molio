@@ -1,6 +1,7 @@
-import { createReadStream, existsSync, openSync, closeSync, readSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { createReadStream, existsSync, mkdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { createInterface } from 'node:readline';
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { Transform } from 'node:stream';
+import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { DEFAULT_PREPROCESS_POLICY } from './contracts.mjs';
 import { assertPathWithinVault, atomicWriteJson, sha256 } from './workspace.mjs';
 
@@ -31,17 +32,27 @@ function byteOffset(text, characterOffset) {
 }
 
 function boundedEnd(text, start, preferredEnd, policy) {
-  const maximumEnd = Math.min(text.length, preferredEnd);
+  let maximumEnd = Math.min(text.length, preferredEnd);
+  if (maximumEnd < text.length && isLowSurrogate(text.charCodeAt(maximumEnd))) maximumEnd -= 1;
   let end = start;
   for (let cursor = start; cursor < maximumEnd;) {
     const width = text.codePointAt(cursor) > 0xffff ? 2 : 1;
     const candidate = cursor + width;
+    if (candidate > maximumEnd && end !== start) break;
     if (estimateTokens(text.slice(start, candidate)) > policy.maxInputTokens) break;
     end = candidate;
     cursor = candidate;
   }
   if (end === start && start < text.length) throw codedError('WORK_ITEM_TOO_LARGE', 'A single character exceeds maxInputTokens');
   return end;
+}
+
+function isLowSurrogate(codeUnit) {
+  return codeUnit >= 0xdc00 && codeUnit <= 0xdfff;
+}
+
+function characterBoundaryBefore(text, index) {
+  return index > 0 && index < text.length && isLowSurrogate(text.charCodeAt(index)) ? index - 1 : index;
 }
 
 function windowChunks(text, policy, heading) {
@@ -59,7 +70,8 @@ function windowChunks(text, policy, heading) {
     });
     if (end === text.length) break;
     previousEnd = end;
-    start = Math.max(start + 1, end - policy.overlapChars);
+    const nextStart = characterBoundaryBefore(text, Math.max(start + 1, end - policy.overlapChars));
+    start = nextStart > start ? nextStart : end;
   }
   return chunks;
 }
@@ -97,97 +109,176 @@ export function chunkMarkdown(text, policy = {}) {
   return chunks;
 }
 
-function newlineWidth(path) {
-  const descriptor = openSync(path, 'r');
-  try {
-    const sample = Buffer.alloc(Math.min(statSync(path).size, 64 * 1024));
-    readSync(descriptor, sample, 0, sample.length, 0);
-    const newline = sample.indexOf(10);
-    return newline > 0 && sample[newline - 1] === 13 ? 2 : 1;
-  } finally {
-    closeSync(descriptor);
-  }
+function createLineRangeTracker() {
+  const ranges = [];
+  let offset = 0;
+  let lineStart = 0;
+  let pendingCarriageReturn = -1;
+  const emit = (end) => ranges.push({ byteStart: lineStart, byteEnd: end });
+  const processByte = (byte) => {
+    if (pendingCarriageReturn >= 0) {
+      if (byte === 10) {
+        emit(pendingCarriageReturn);
+        lineStart = offset + 1;
+        pendingCarriageReturn = -1;
+        offset += 1;
+        return;
+      }
+      emit(pendingCarriageReturn);
+      lineStart = pendingCarriageReturn + 1;
+      pendingCarriageReturn = -1;
+    }
+    if (byte === 13) pendingCarriageReturn = offset;
+    else if (byte === 10) {
+      emit(offset);
+      lineStart = offset + 1;
+    }
+    offset += 1;
+  };
+  return {
+    ranges,
+    stream: new Transform({
+      transform(chunk, _encoding, callback) {
+        for (const byte of chunk) processByte(byte);
+        callback(null, chunk);
+      },
+      flush(callback) {
+        if (pendingCarriageReturn >= 0) {
+          emit(pendingCarriageReturn);
+          lineStart = pendingCarriageReturn + 1;
+          pendingCarriageReturn = -1;
+        }
+        if (lineStart < offset) emit(offset);
+        callback();
+      },
+    }),
+  };
 }
 
 export async function chunkJsonl(path, policy = {}) {
   const resolved = mergePolicy(policy);
   const chunks = [];
-  const size = statSync(path).size;
-  const lineBreakBytes = newlineWidth(path);
-  let bytePosition = 0;
   let current = [];
   let currentStart = 0;
-  let currentBytes = 0;
+  let currentEnd = 0;
   const flush = () => {
     if (!current.length) return;
     const content = current.join('\n');
-    chunks.push({ content, byteStart: currentStart, byteEnd: currentStart + currentBytes, overlap: 0 });
+    chunks.push({ content, byteStart: currentStart, byteEnd: currentEnd, overlap: 0 });
     current = [];
-    currentBytes = 0;
   };
-  const input = createReadStream(path, { encoding: 'utf8' });
+  const tracker = createLineRangeTracker();
+  const input = createReadStream(path).pipe(tracker.stream);
   const lines = createInterface({ input, crlfDelay: Infinity });
   for await (const line of lines) {
-    const lineBytes = Buffer.byteLength(line, 'utf8');
-    const nextPosition = Math.min(size, bytePosition + lineBytes + lineBreakBytes);
+    const range = tracker.ranges.shift();
+    if (!range) throw codedError('JSONL_STREAM_INVALID', 'Missing byte range for JSONL line');
+    if (!line) continue;
     if (estimateTokens(line) > resolved.maxInputTokens) {
       flush();
       for (const item of windowChunks(line, resolved)) {
-        chunks.push({ ...item, byteStart: item.byteStart + bytePosition, byteEnd: item.byteEnd + bytePosition });
+        chunks.push({ ...item, byteStart: item.byteStart + range.byteStart, byteEnd: item.byteEnd + range.byteStart });
       }
     } else {
       const candidate = current.length ? `${current.join('\n')}\n${line}` : line;
       if (current.length && (current.length >= resolved.jsonlMaxLines || estimateTokens(candidate) > resolved.maxInputTokens)) flush();
-      if (!current.length) currentStart = bytePosition;
+      if (!current.length) currentStart = range.byteStart;
       current.push(line);
-      currentBytes = (bytePosition + lineBytes) - currentStart;
+      currentEnd = range.byteEnd;
     }
-    bytePosition = nextPosition;
   }
   flush();
   return chunks;
 }
 
+function approvedFields(fieldPolicy) {
+  if (fieldPolicy === undefined || fieldPolicy === null) {
+    throw codedError('JSON_FIELD_POLICY_REQUIRED', 'Large JSON objects require an approved fieldPolicy');
+  }
+  const prototype = typeof fieldPolicy === 'object' ? Object.getPrototypeOf(fieldPolicy) : undefined;
+  if (prototype !== Object.prototype || fieldPolicy.approved !== true || !Array.isArray(fieldPolicy.fields)
+    || fieldPolicy.fields.length === 0 || fieldPolicy.fields.some((field) => typeof field !== 'string' || !field)
+    || new Set(fieldPolicy.fields).size !== fieldPolicy.fields.length) {
+    throw codedError('JSON_FIELD_POLICY_INVALID', 'fieldPolicy must explicitly approve unique top-level fields');
+  }
+  return new Set(fieldPolicy.fields);
+}
+
 export async function summarizeJsonStream(path, fieldPolicy) {
+  const allowed = approvedFields(fieldPolicy);
   const keys = [];
-  let depth = 0;
+  const containers = [];
   let phase = 'start';
   let inString = false;
   let escaping = false;
-  let stringRole;
+  let stringRole = 'nested';
+  let stringLiteral = '';
   let key = '';
+  let primitive = '';
   const addType = (type) => {
-    keys.push({ key, type });
+    if (allowed.has(key)) keys.push({ key, type });
     phase = 'after-value';
+  };
+  const finishPrimitive = () => {
+    let value;
+    try {
+      value = JSON.parse(primitive);
+    } catch {
+      throw codedError('JSON_INVALID', 'Invalid top-level JSON primitive');
+    }
+    if (value === null) addType('null');
+    else if (typeof value === 'boolean') addType('boolean');
+    else if (typeof value === 'number') addType('number');
+    else throw codedError('JSON_INVALID', 'Invalid top-level JSON primitive');
+    primitive = '';
+  };
+  const closeContainer = (character) => {
+    const expected = character === '}' ? '{' : '[';
+    if (containers.at(-1) !== expected) throw codedError('JSON_INVALID', 'Mismatched JSON container');
+    containers.pop();
+    if (!containers.length) phase = 'done';
   };
   const stream = createReadStream(path, { encoding: 'utf8' });
   for await (const part of stream) {
     for (let index = 0; index < part.length; index += 1) {
       const character = part[index];
       if (inString) {
+        if (stringRole === 'key') stringLiteral += character;
         if (escaping) escaping = false;
         else if (character === '\\') escaping = true;
         else if (character === '"') {
           inString = false;
-          if (stringRole === 'key') phase = 'colon';
-          else if (stringRole === 'value') phase = 'after-value';
-          stringRole = undefined;
-        } else if (stringRole === 'key') key += character;
+          if (stringRole === 'key') {
+            try { key = JSON.parse(stringLiteral); } catch { throw codedError('JSON_INVALID', 'Invalid JSON key'); }
+            phase = 'colon';
+          }
+          if (stringRole === 'value') phase = 'after-value';
+          stringRole = 'nested';
+        }
         continue;
+      }
+      if (primitive) {
+        if (character === ',' || character === '}') {
+          finishPrimitive();
+        } else {
+          primitive += character;
+          continue;
+        }
       }
       if (/\s/.test(character)) continue;
       if (phase === 'start') {
         if (character !== '{') throw codedError('JSON_INVALID', 'Large JSON input must be an object');
-        depth = 1;
+        containers.push('{');
         phase = 'key';
         continue;
       }
+      if (phase === 'done') throw codedError('JSON_INVALID', 'Trailing content after JSON root');
       if (phase === 'key') {
-        if (character === '}') { depth -= 1; phase = 'done'; continue; }
+        if (character === '}') { closeContainer(character); continue; }
         if (character !== '"') throw codedError('JSON_INVALID', 'Expected top-level JSON key');
-        key = '';
         inString = true;
         stringRole = 'key';
+        stringLiteral = '"';
         continue;
       }
       if (phase === 'colon') {
@@ -197,27 +288,23 @@ export async function summarizeJsonStream(path, fieldPolicy) {
       }
       if (phase === 'value') {
         if (character === '"') { addType('string'); inString = true; stringRole = 'value'; }
-        else if (character === '{') { addType('object'); depth += 1; }
-        else if (character === '[') { addType('array'); depth += 1; }
-        else if (character === 't' || character === 'f') addType('boolean');
-        else if (character === 'n') addType('null');
-        else if (character === '-' || /\d/.test(character)) addType('number');
+        else if (character === '{') { addType('object'); containers.push('{'); }
+        else if (character === '[') { addType('array'); containers.push('['); }
+        else if (character === 't' || character === 'f' || character === 'n' || character === '-' || /\d/.test(character)) primitive = character;
         else throw codedError('JSON_INVALID', 'Unsupported JSON value');
         continue;
       }
       if (phase === 'after-value') {
-        if (character === '{' || character === '[') { depth += 1; continue; }
-        if (character === '}' || character === ']') {
-          depth -= 1;
-          if (depth === 0) phase = 'done';
-          continue;
-        }
-        if (character === ',' && depth === 1) phase = 'key';
+        if (character === '"') { inString = true; stringRole = 'nested'; continue; }
+        if (character === '{' || character === '[') { containers.push(character); continue; }
+        if (character === '}' || character === ']') { closeContainer(character); continue; }
+        if (character === ',' && containers.length === 1) { phase = 'key'; continue; }
+        if (containers.length === 1) throw codedError('JSON_INVALID', 'Expected top-level JSON delimiter');
       }
     }
   }
-  if (depth !== 0 || phase !== 'done') throw codedError('JSON_INVALID', 'Unterminated JSON object');
-  return { keys, approvedFields: Array.isArray(fieldPolicy) ? fieldPolicy : fieldPolicy?.fields ?? [] };
+  if (primitive || containers.length || phase !== 'done') throw codedError('JSON_INVALID', 'Unterminated JSON object');
+  return { keys, approvedFields: [...allowed] };
 }
 
 function vaultPathFrom(paths) {
@@ -251,6 +338,29 @@ function manifestFiles(inputManifest) {
   throw codedError('INPUT_MANIFEST_INVALID', 'Input manifest must contain files');
 }
 
+function safePathSegment(value) {
+  return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value);
+}
+
+function preparedOutputPath(paths, vault, batch) {
+  if (!safePathSegment(batch.id) || !safePathSegment(batch.attemptToken)) {
+    throw codedError('PREPARE_ARGUMENT_INVALID', 'batch id and attempt token must be safe path segments');
+  }
+  const prepared = paths.prepared ?? join(paths.root, 'prepared');
+  mkdirSync(prepared, { recursive: true });
+  assertPathWithinVault(vault, prepared);
+  const preparedRoot = realpathSync(prepared);
+  const buildRoot = realpathSync(paths.root);
+  const relation = relative(buildRoot, preparedRoot);
+  if (relation === '..' || relation.startsWith(`..${sep}`) || isAbsolute(relation)) {
+    throw codedError('PREPARED_PATH_INVALID', 'Prepared directory escapes wiki-build workspace');
+  }
+  const target = join(preparedRoot, `${batch.id}-${batch.attemptToken}.json`);
+  if (dirname(target) !== preparedRoot) throw codedError('PREPARED_PATH_INVALID', 'Prepared output must be a direct child');
+  assertPathWithinVault(vault, target);
+  return target;
+}
+
 function addItems(workItems, fileId, normalizedPath, chunks) {
   const startIndex = workItems.length;
   for (let index = 0; index < chunks.length; index += 1) {
@@ -278,6 +388,7 @@ export async function prepareWorkItems({ paths, batch, inputManifest, policy, ex
   const resolvedPolicy = mergePolicy(policy);
   if (!paths?.root || !batch?.id || !batch?.attemptToken) throw codedError('PREPARE_ARGUMENT_INVALID', 'paths, batch id, and attempt token are required');
   const vault = vaultPathFrom(paths);
+  const preparedPath = preparedOutputPath(paths, vault, batch);
   const files = manifestFiles(inputManifest);
   const wanted = new Set(batch.fileIds ?? files.map((record) => record.id));
   const externalByFile = new Map((external ?? []).map((record) => [record.fileId, record]));
@@ -304,7 +415,7 @@ export async function prepareWorkItems({ paths, batch, inputManifest, policy, ex
         normalizedHash: sha256(readFileSync(contentPath)),
       });
     }
-    const extension = (record.extension ?? '').toLowerCase();
+    const extension = (externalRecord ? extname(contentPath) : record.extension ?? '').toLowerCase();
     if (extension === '.jsonl') {
       const chunks = await chunkJsonl(contentPath, resolvedPolicy);
       for (const chunk of chunks) chunk.policy = resolvedPolicy;
@@ -313,11 +424,8 @@ export async function prepareWorkItems({ paths, batch, inputManifest, policy, ex
       continue;
     }
     if (extension === '.json') {
-      const bytes = readFileSync(contentPath);
-      const text = bytes.toString('utf8');
-      if (estimateTokens(text) > resolvedPolicy.maxInputTokens) {
+      if (Math.ceil(statSync(contentPath).size / 3) > resolvedPolicy.maxInputTokens) {
         const approved = fieldPolicy ?? resolvedPolicy.fieldPolicy;
-        if (!approved) throw codedError('JSON_FIELD_POLICY_REQUIRED', 'Large JSON objects require an approved fieldPolicy');
         const summary = await summarizeJsonStream(contentPath, approved);
         const summaryText = summary.keys.map((entry) => `${entry.key}: ${entry.type}`).join('\n');
         const chunks = chunkPlainText(summaryText, resolvedPolicy);
@@ -325,6 +433,8 @@ export async function prepareWorkItems({ paths, batch, inputManifest, policy, ex
         addItems(workItems, record.id, normalizedPath, chunks);
         continue;
       }
+      const text = readFileSync(contentPath, 'utf8');
+      try { JSON.parse(text); } catch { throw codedError('JSON_INVALID', 'Invalid JSON input'); }
       const chunks = chunkPlainText(text, resolvedPolicy);
       for (const chunk of chunks) chunk.policy = resolvedPolicy;
       addItems(workItems, record.id, normalizedPath, chunks);
@@ -345,7 +455,6 @@ export async function prepareWorkItems({ paths, batch, inputManifest, policy, ex
     normalized,
     workItems,
   };
-  const preparedPath = join(paths.prepared ?? join(paths.root, 'prepared'), `${batch.id}-${batch.attemptToken}.json`);
   atomicWriteJson(preparedPath, output);
   return { ...output, path: preparedPath };
 }

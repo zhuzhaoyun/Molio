@@ -20,11 +20,11 @@ function fixtureFile(vaultPath: string, relativePath: string, contents: string, 
   return { id: `file-${relativePath}`, path: relativePath, extension: `.${relativePath.split('.').pop()}`, processor };
 }
 
-function prepare(vaultPath: string, records: object[], policy: object, external?: object[]) {
+function prepare(vaultPath: string, records: object[], policy: object, external?: object[], batch?: object) {
   const paths = workspaceModule.resolveBuildPaths(vaultPath);
   return preprocessModule.prepareWorkItems({
     paths,
-    batch: { id: 'topic-001', attemptToken: 'attempt-001', fileIds: records.map((record: any) => record.id) },
+    batch: batch ?? { id: 'topic-001', attemptToken: 'attempt-001', fileIds: records.map((record: any) => record.id) },
     inputManifest: { files: records },
     policy,
     external,
@@ -79,11 +79,96 @@ describe('wiki-build preprocess', () => {
     }));
     const result = await prepare(vault.path, [record], {
       maxInputTokens: 80,
-      fieldPolicy: { fields: ['safe', 'count'] },
+      fieldPolicy: { approved: true, fields: ['safe', 'count'] },
     });
     assert.match(result.workItems[0].content, /safe: object/);
     assert.match(result.workItems[0].content, /count: number/);
     assert.doesNotMatch(result.workItems[0].content, /x{20}/);
+    vault.cleanup();
+  });
+
+  it('streams nested JSON strings safely and summarizes only approved top-level fields', async () => {
+    const vault = makeVault();
+    const record = fixtureFile(vault.path, 'nested.json', `{"safe":{"nested":"}\\\""},"count":2,"ignored":"${'x'.repeat(300)}"}`);
+    const result = await prepare(vault.path, [record], {
+      maxInputTokens: 80,
+      fieldPolicy: { approved: true, fields: ['safe', 'count'] },
+    });
+    assert.match(result.workItems[0].content, /^safe: object\ncount: number$/);
+    vault.cleanup();
+  });
+
+  it('rejects a non-explicit field policy for large JSON', async () => {
+    const vault = makeVault();
+    const record = fixtureFile(vault.path, 'large.json', JSON.stringify({ safe: 'x'.repeat(300) }));
+    await assert.rejects(
+      prepare(vault.path, [record], { maxInputTokens: 80, fieldPolicy: { fields: ['safe'] } }),
+      (error: any) => error.code === 'JSON_FIELD_POLICY_INVALID',
+    );
+    vault.cleanup();
+  });
+
+  it('rejects trailing non-whitespace after a streamed JSON root object', async () => {
+    const vault = makeVault();
+    const record = fixtureFile(vault.path, 'invalid.json', `{"safe":"${'x'.repeat(300)}"} trailing`);
+    await assert.rejects(
+      prepare(vault.path, [record], {
+        maxInputTokens: 80,
+        fieldPolicy: { approved: true, fields: ['safe'] },
+      }),
+      (error: any) => error.code === 'JSON_INVALID',
+    );
+    vault.cleanup();
+  });
+
+  it('keeps fallback chunks on UTF-8 and UTF-16 character boundaries', () => {
+    const source = 'A😀中BCDEF';
+    const chunks = preprocessModule.chunkPlainText(source, {
+      maxInputTokens: 2, fallbackWindowChars: 3, overlapChars: 1,
+    });
+    const bytes = Buffer.from(source, 'utf8');
+    for (const chunk of chunks) {
+      assert.doesNotMatch(chunk.content, /[\uD800-\uDBFF]$|^[\uDC00-\uDFFF]/);
+      assert.equal(bytes.subarray(chunk.byteStart, chunk.byteEnd).toString('utf8'), chunk.content);
+    }
+  });
+
+  it('tracks mixed JSONL newline byte ranges while streaming', async () => {
+    const vault = makeVault();
+    const contents = '{"a":1}\r\n{"b":2}\n{"c":3}\r\n';
+    const record = fixtureFile(vault.path, 'mixed.jsonl', contents);
+    const result = await prepare(vault.path, [record], { maxInputTokens: 80, jsonlMaxLines: 1 });
+    const bytes = Buffer.from(contents, 'utf8');
+    for (const item of result.workItems) {
+      assert.equal(bytes.subarray(item.byteStart, item.byteEnd).toString('utf8'), item.content);
+    }
+    vault.cleanup();
+  });
+
+  it('rejects unsafe batch path segments before writing prepared output', async () => {
+    const vault = makeVault();
+    const record = fixtureFile(vault.path, 'notes.md', '# Safe');
+    await assert.rejects(
+      prepare(vault.path, [record], { maxInputTokens: 80 }, undefined, {
+        id: '../injected', attemptToken: 'attempt-001', fileIds: [record.id],
+      }),
+      (error: any) => error.code === 'PREPARE_ARGUMENT_INVALID',
+    );
+    vault.cleanup();
+  });
+
+  it('chunks external normalized Markdown by its normalized extension', async () => {
+    const vault = makeVault();
+    const record = fixtureFile(vault.path, 'report.pptx', 'source bytes', 'docling');
+    const paths = workspaceModule.resolveBuildPaths(vault.path);
+    mkdirSync(paths.normalized, { recursive: true });
+    const normalized = join(paths.normalized, 'report.md');
+    writeFileSync(normalized, '# Normalized heading\n' + 'x'.repeat(120), 'utf8');
+    const result = await prepare(vault.path, [record], { maxInputTokens: 60 }, [{
+      fileId: record.id, sourcePath: record.path, normalizedPath: normalized,
+      processor: 'docling', processorVersion: '2.x',
+    }]);
+    assert.equal(result.workItems[0].heading, 'Normalized heading');
     vault.cleanup();
   });
 
