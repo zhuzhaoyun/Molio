@@ -6,10 +6,8 @@ import { loadConfig, saveConfig, type FeishuConfig } from '../config.js';
 import { ChannelDispatcher } from '../channels/dispatcher.js';
 import type { ChannelSink } from '../channels/types.js';
 import {
-  readCredentials as readCredFile,
   removeCredentials,
   resolveCredentialsPath as resolveCredsPath,
-  writeCredentials,
 } from '../channels/credentials-store.js';
 import { MessageDedup } from '../channels/message-dedup.js';
 import { chunkText } from '../channels/text-chunker.js';
@@ -17,11 +15,11 @@ import { getVaultByPath } from '../db.js';
 import { FEISHU_SYS_PROMPT_FILE } from '../wiki-prompts.js';
 import { DEFAULT_BASE_URL, FeishuApi } from './client.js';
 import { FeishuWSClient } from './ws-client.js';
+import { FeishuTokenStore } from './token-store.js';
 import { buildFeishuPrompt, parseFeishuMessage } from './message.js';
 import { materializeFeishuAttachments } from './media.js';
 import type {
   FeishuAttachment,
-  FeishuCredentials,
   FeishuRawEvent,
   FeishuStatus,
   ParsedFeishuMessage,
@@ -29,8 +27,6 @@ import type {
 import type { ConnectionState } from '../channels/types.js';
 import type { OutboundMediaItem } from '../channels/types.js';
 
-/** Refresh cadence: tenant_access_token is 2h valid; refresh at ~100min. */
-const TOKEN_REFRESH_INTERVAL_MS = 100 * 60 * 1000;
 /** Dedup window for received message_id (matches weixin). */
 const DEDUP_TTL_MS = 7 * 60 * 60 * 1000;
 /** Hard cap on the dedup map so a quiet-but-long-lived process can't leak
@@ -43,16 +39,6 @@ const FEISHU_CHANNEL_PREFIX = 'feishu';
 
 function resolveCredentialsPath(config?: FeishuConfig): string {
   return resolveCredsPath(config?.credentialsPath, FEISHU_CHANNEL_PREFIX);
-}
-
-function readCredentials(file: string): FeishuCredentials | null {
-  return readCredFile<FeishuCredentials>(file, (raw) => {
-    if (!raw || typeof raw !== 'object') return null;
-    const r = raw as Partial<FeishuCredentials>;
-    if (typeof r.tenantAccessToken !== 'string' || !r.tenantAccessToken) return null;
-    if (typeof r.expiresAt !== 'number' || !r.expiresAt) return null;
-    return { tenantAccessToken: r.tenantAccessToken, expiresAt: r.expiresAt };
-  });
 }
 
 /** Resolve the feishu-specific wiki system-prompt file for a fresh spawn. */
@@ -69,10 +55,9 @@ export class FeishuService implements ChannelSink {
   private api: FeishuApi | null = null;
   private wsClient: FeishuWSClient | null = null;
   private connectionState: ConnectionState = 'idle';
-  private refreshTimer: ReturnType<typeof setInterval> | null = null;
   private readonly dedup = new MessageDedup({ ttlMs: DEDUP_TTL_MS, maxEntries: DEDUP_MAX_ENTRIES });
-  /** Cached tenant_access_token + expiry (lives in-memory + on-disk). */
-  private cachedToken: FeishuCredentials | null = null;
+  /** tenant_access_token cache + periodic refresh — owns disk persistence. */
+  private readonly tokenStore: FeishuTokenStore;
   /** Multi-turn run reuse state machine (per-user run/queue/drain). */
   private readonly dispatcher: ChannelDispatcher;
   private status: FeishuStatus = {
@@ -92,6 +77,11 @@ export class FeishuService implements ChannelSink {
     private readonly conversations: ConversationService,
     private readonly db?: Database.Database,
   ) {
+    this.tokenStore = new FeishuTokenStore({
+      getApi: () => this.api,
+      getConfig: () => this.getConfig(),
+      onPersistError: (msg) => { this.status.lastError = msg; },
+    });
     this.dispatcher = new ChannelDispatcher({
       runManager,
       conversations,
@@ -128,7 +118,7 @@ export class FeishuService implements ChannelSink {
     // re-establish with the new identity.
     if (next.appId !== undefined || next.appSecret !== undefined) {
       removeCredentials(resolveCredentialsPath(config.feishu));
-      this.cachedToken = null;
+      this.tokenStore.invalidate();
       await this.stopWSClient();
     }
 
@@ -168,7 +158,7 @@ export class FeishuService implements ChannelSink {
 
     // Try to load a cached token; if it's stale, refresh now (proves creds work).
     try {
-      await this.ensureToken();
+      await this.tokenStore.getToken();
     } catch (err) {
       this.transitionTo('error');
       this.status.loginStatus = 'error';
@@ -178,16 +168,16 @@ export class FeishuService implements ChannelSink {
 
     // Start the WS long-connection. SDK handles reconnect/ping.
     await this.startWSClient();
-    this.startTokenRefresh();
+    this.tokenStore.startRefresh();
     return this.getStatus();
   }
 
   async stop(): Promise<FeishuStatus> {
-    this.stopTokenRefresh();
+    this.tokenStore.stopRefresh();
     await this.stopWSClient();
     this.dispatcher.cancelAll();
     this.api = null;
-    this.cachedToken = null;
+    this.tokenStore.invalidate();
     this.transitionTo('idle');
     this.status = {
       ...this.status,
@@ -208,69 +198,6 @@ export class FeishuService implements ChannelSink {
     };
     saveConfig(config);
     return this.getStatus();
-  }
-
-  // ----- token management -------------------------------------------------
-
-  /**
-   * Return a usable tenant_access_token, refreshing if the cached one is
-   * expired or about to expire. Throws if refresh fails (caller surfaces to
-   * status).
-   */
-  private async ensureToken(): Promise<string> {
-    if (!this.api) throw new Error('FeishuApi not initialized');
-    const cached = this.cachedToken ?? readCredentials(resolveCredentialsPath(this.getConfig()));
-    if (cached && this.api.isTokenValid(cached)) {
-      this.cachedToken = cached;
-      return cached.tenantAccessToken;
-    }
-    const refreshed = await this.api.fetchTenantAccessToken();
-    // Write to disk BEFORE updating the in-memory cache so a write failure
-    // doesn't leave the cache ahead of what's persisted (a subsequent daemon
-    // restart would lose the token otherwise).
-    try {
-      writeCredentials(resolveCredentialsPath(this.getConfig()), refreshed);
-    } catch (err) {
-      this.status.lastError = `Token 写盘失败：${err instanceof Error ? err.message : String(err)}`;
-      throw err;
-    }
-    this.cachedToken = refreshed;
-    return refreshed.tenantAccessToken;
-  }
-
-  private startTokenRefresh(): void {
-    this.stopTokenRefresh();
-    this.refreshTimer = setInterval(() => {
-      void this.refreshTokenSafe();
-    }, TOKEN_REFRESH_INTERVAL_MS);
-    this.refreshTimer.unref?.();
-  }
-
-  private stopTokenRefresh(): void {
-    if (this.refreshTimer !== null) {
-      clearInterval(this.refreshTimer);
-      this.refreshTimer = null;
-    }
-  }
-
-  private async refreshTokenSafe(): Promise<void> {
-    if (!this.api) return;
-    try {
-      const fresh = await this.api.fetchTenantAccessToken();
-      // Write to disk FIRST — if it fails, keep the prior cache so the next
-      // restart still has a usable token instead of an orphaned in-memory one.
-      try {
-        writeCredentials(resolveCredentialsPath(this.getConfig()), fresh);
-      } catch (err) {
-        this.status.lastError = `Token 写盘失败：${err instanceof Error ? err.message : String(err)}`;
-        return;
-      }
-      this.cachedToken = fresh;
-      this.status.lastError = null;
-    } catch (err) {
-      // Don't tear down the WS — the SDK keeps trying; just surface the error.
-      this.status.lastError = `Token 刷新失败：${err instanceof Error ? err.message : String(err)}`;
-    }
   }
 
   // ----- WS connection ----------------------------------------------------
@@ -410,7 +337,7 @@ export class FeishuService implements ChannelSink {
   /** Download a Feishu attachment (image or file) via the authenticated API. */
   private async downloadAttachment(att: FeishuAttachment): Promise<{ data: Buffer; contentType: string }> {
     if (!this.api) throw new Error('FeishuApi not initialized');
-    const token = await this.ensureToken();
+    const token = await this.tokenStore.getToken();
     if (att.kind === 'image') {
       return this.api.downloadImage(token, att.key);
     }
@@ -422,7 +349,7 @@ export class FeishuService implements ChannelSink {
   async sendText(toUserId: string, text: string): Promise<void> {
     if (!this.api) return;
     try {
-      const token = await this.ensureToken();
+      const token = await this.tokenStore.getToken();
       for (const chunk of chunkText(text, TEXT_CHUNK_LIMIT)) {
         await this.api.sendText(token, toUserId, chunk);
       }
@@ -434,7 +361,7 @@ export class FeishuService implements ChannelSink {
   async sendMediaFile(toUserId: string, item: OutboundMediaItem): Promise<void> {
     if (!this.api) return;
     try {
-      const token = await this.ensureToken();
+      const token = await this.tokenStore.getToken();
       // Feishu's image upload endpoint only accepts raster image types
       // (png/jpg/gif/webp/bmp). Videos and other binary kinds go through the
       // file endpoint — Feishu has no separate video upload for IM messages

@@ -1,12 +1,11 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type Database from 'better-sqlite3';
 import { openDatabase, closeDatabase, getConversationByExternalSession } from '../../../src/core/db.js';
 import { FeishuService } from '../../../src/core/feishu/service.js';
-import { FeishuApi, DEFAULT_BASE_URL } from '../../../src/core/feishu/client.js';
 import { ConversationService } from '../../../src/core/conversations/service.js';
 import type { FeishuRawEvent } from '../../../src/core/feishu/types.js';
 import { loadConfig, saveConfig, type AppConfig } from '../../../src/core/config.js';
@@ -159,93 +158,5 @@ describe('FeishuService', () => {
       await (service as unknown as { handleRawMessage: (e: FeishuRawEvent) => Promise<void> })
         .handleRawMessage(event);
     });
-  });
-});
-
-describe('FeishuService token cache', () => {
-  let db: Database.Database;
-  let tempDir: string;
-  let originalUserprofile: string | undefined;
-  let originalHome: string | undefined;
-  let originalFetch: typeof fetch;
-
-  beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), 'molio-feishu-token-'));
-    db = openDatabase(tempDir);
-    originalUserprofile = process.env.USERPROFILE;
-    originalHome = process.env.HOME;
-    process.env.USERPROFILE = tempDir;
-    process.env.HOME = tempDir;
-    originalFetch = globalThis.fetch;
-  });
-
-  afterEach(() => {
-    if (originalUserprofile === undefined) delete process.env.USERPROFILE;
-    else process.env.USERPROFILE = originalUserprofile;
-    if (originalHome === undefined) delete process.env.HOME;
-    else process.env.HOME = originalHome;
-    globalThis.fetch = originalFetch;
-    closeDatabase();
-    rmSync(tempDir, { recursive: true, force: true });
-  });
-
-  it('persists tenant_access_token to ~/.molio/feishu-credentials.json on refresh', async () => {
-    let tokenCalls = 0;
-    globalThis.fetch = (async (url: URL | string, init?: RequestInit) => {
-      const target = String(url);
-      if (target.includes('tenant_access_token/internal')) {
-        tokenCalls += 1;
-        return new Response(
-          JSON.stringify({ code: 0, tenant_access_token: `tok-${tokenCalls}`, expire: 7200 }),
-          { status: 200, headers: { 'content-type': 'application/json' } },
-        );
-      }
-      // No other endpoints should be hit in this test.
-      return new Response('not found', { status: 404 });
-    }) as typeof fetch;
-
-    saveConfig({
-      agents: {},
-      defaultAgentId: 'claude',
-      feishu: { enabled: true, appId: 'cli_x', appSecret: 'sec_x' },
-    } as AppConfig);
-
-    const conversations = new ConversationService(db);
-    const service = new FeishuService(
-      {
-        createRun: async () => 'mock-run-id',
-        onEvent: () => () => {},
-        cancelAll: () => {},
-        canAcceptMessage: () => true,
-      } as unknown as RunManager,
-      conversations,
-      db,
-    );
-
-    try {
-      // Inject the api directly — bypasses WSClient startup (which needs real
-      // network) so we can isolate token-cache behavior.
-      (service as unknown as { api: FeishuApi | null }).api = new FeishuApi(DEFAULT_BASE_URL, 'cli_x', 'sec_x');
-
-      // Call ensureToken twice via the private accessor — second call should hit
-      // the cache and not trigger another fetch.
-      const before = tokenCalls;
-      await (service as unknown as { ensureToken: () => Promise<string> }).ensureToken();
-      const afterFirst = tokenCalls;
-      await (service as unknown as { ensureToken: () => Promise<string> }).ensureToken();
-      const afterSecond = tokenCalls;
-
-      assert.equal(afterFirst - before, 1, 'first ensureToken should hit the token endpoint');
-      assert.equal(afterSecond, afterFirst, 'second ensureToken should be served from cache');
-
-      // Credentials file should now exist on disk with the token.
-      const credsPath = join(tempDir, '.molio', 'feishu-credentials.json');
-      assert.ok(existsSync(credsPath), 'credentials file should be written');
-      const stored = JSON.parse(readFileSync(credsPath, 'utf8'));
-      assert.equal(stored.tenantAccessToken, `tok-1`);
-      assert.equal(typeof stored.expiresAt, 'number');
-    } finally {
-      await service.stop();
-    }
   });
 });
