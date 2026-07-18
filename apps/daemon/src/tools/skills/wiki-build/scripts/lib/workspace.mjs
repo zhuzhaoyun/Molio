@@ -11,17 +11,52 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 function assertWithin(root, candidate) {
   const path = resolve(candidate);
   const relativePath = relative(root, path);
-  if (relativePath === '..' || relativePath.startsWith('..\\') || isAbsolute(relativePath)) {
+  if (relativePath === '..' || relativePath.startsWith(`..${sep}`) || isAbsolute(relativePath)) {
     const error = new Error(`Path is outside the vault: ${candidate}`);
     error.code = 'PATH_OUTSIDE_VAULT';
     throw error;
   }
   return path;
+}
+
+function nearestExistingRealpath(path) {
+  let current = resolve(path);
+  while (!existsSync(current)) {
+    const parent = dirname(current);
+    if (parent === current) throw new Error(`No existing parent for path: ${path}`);
+    current = parent;
+  }
+  return realpathSync(current);
+}
+
+function findBuildRoot(path) {
+  let current = resolve(path);
+  while (true) {
+    if (basename(current) === 'wiki-build' && basename(dirname(current)) === '.molio') return current;
+    const parent = dirname(current);
+    if (parent === current) {
+      const error = new Error(`Path is outside the wiki-build workspace: ${path}`);
+      error.code = 'PATH_OUTSIDE_VAULT';
+      throw error;
+    }
+    current = parent;
+  }
+}
+
+function assertSafeMutationPath(root, path) {
+  const vault = realpathSync(dirname(dirname(root)));
+  const candidate = assertWithin(root, path);
+  assertWithin(vault, root);
+  const resolvedTarget = existsSync(candidate)
+    ? realpathSync(candidate)
+    : nearestExistingRealpath(dirname(candidate));
+  assertWithin(vault, resolvedTarget);
+  return candidate;
 }
 
 export function resolveBuildPaths(vaultPath) {
@@ -41,9 +76,10 @@ export function resolveBuildPaths(vaultPath) {
 }
 
 function atomicWrite(path, contents) {
-  const directory = dirname(path);
+  const safePath = assertSafeMutationPath(findBuildRoot(path), path);
+  const directory = dirname(safePath);
   mkdirSync(directory, { recursive: true });
-  const temporaryPath = `${path}.tmp`;
+  const temporaryPath = `${safePath}.tmp`;
   const descriptor = openSync(temporaryPath, 'w');
   try {
     writeFileSync(descriptor, contents, 'utf8');
@@ -51,7 +87,7 @@ function atomicWrite(path, contents) {
   } finally {
     closeSync(descriptor);
   }
-  renameSync(temporaryPath, path);
+  renameSync(temporaryPath, safePath);
 }
 
 export function atomicWriteJson(path, value) {
@@ -75,6 +111,7 @@ export function sha256(value) {
 
 export function withMutationLock(paths, fn) {
   const lock = join(paths.root, '.lock');
+  assertSafeMutationPath(paths.root, lock);
   mkdirSync(paths.root, { recursive: true });
   const descriptor = openSync(lock, 'wx');
   try {

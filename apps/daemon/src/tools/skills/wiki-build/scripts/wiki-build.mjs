@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
-import { isAbsolute, relative, resolve } from 'node:path';
+import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { readJson, resolveBuildPaths } from './lib/workspace.mjs';
 
 export function parseArgs(argv) {
@@ -25,10 +25,19 @@ function assertIncludeInsideVault(vault, include) {
   if (!include) return;
   const target = resolve(vault, include);
   const relativePath = relative(vault, target);
-  if (relativePath === '..' || relativePath.startsWith('..\\') || isAbsolute(relativePath)) {
+  if (relativePath === '..' || relativePath.startsWith(`..${sep}`) || isAbsolute(relativePath)) {
     const error = new Error(`Path is outside the vault: ${include}`);
     error.code = 'PATH_OUTSIDE_VAULT';
     throw error;
+  }
+  if (existsSync(target)) {
+    const resolvedTarget = realpathSync(target);
+    const resolvedRelative = relative(vault, resolvedTarget);
+    if (resolvedRelative === '..' || resolvedRelative.startsWith(`..${sep}`) || isAbsolute(resolvedRelative)) {
+      const error = new Error(`Path is outside the vault: ${include}`);
+      error.code = 'PATH_OUTSIDE_VAULT';
+      throw error;
+    }
   }
 }
 
