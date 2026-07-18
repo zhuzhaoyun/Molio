@@ -74,21 +74,38 @@ export class FeishuWSClient {
         // SDK gives us a well-typed shape, but we keep the boundary loose and
         // parse defensively in `parseFeishuMessage` — the SDK occasionally
         // forwards extra fields between versions.
-        this.deps.onMessage(data as unknown as FeishuRawEvent);
+        try {
+          await this.deps.onMessage(data as unknown as FeishuRawEvent);
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.error(
+            `[feishu-ws] onMessage handler threw: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
       },
     });
-    await this.client.start({ eventDispatcher: dispatcher });
+    try {
+      await this.client.start({ eventDispatcher: dispatcher });
+    } catch (err) {
+      // Clear `this.client` so a subsequent start() can re-attempt — otherwise
+      // the `if (this.client) return` guard at the top would no-op forever.
+      this.client = null;
+      throw err;
+    }
   }
 
   /** Tear down the WS connection. Safe to call when not started. */
   async stop(): Promise<void> {
-    if (!this.client) return;
+    const client = this.client;
+    if (!client) return;
+    this.client = null;
     try {
-      this.client.close({ force: true });
+      // The SDK's close() may be async underneath; await so a follow-up
+      // start() doesn't race against the old connection's teardown.
+      await Promise.resolve(client.close({ force: true }));
     } catch {
       // Swallow — we're tearing down anyway; the SDK sometimes throws on
       // double-close during process shutdown.
     }
-    this.client = null;
   }
 }

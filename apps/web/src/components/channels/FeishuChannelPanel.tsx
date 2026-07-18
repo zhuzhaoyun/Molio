@@ -61,14 +61,15 @@ export function FeishuChannelPanel() {
     setBusy(true);
     setError(null);
     try {
+      // `fn` already returns the updated status — no need for a follow-up
+      // `refresh()` fetch (it would just re-set the same state + add latency).
       setStatus(await fn());
-      await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
-  }, [refresh]);
+  }, []);
 
   const handleSave = useCallback(() => {
     void runAction(() => api.updateFeishuConfig({

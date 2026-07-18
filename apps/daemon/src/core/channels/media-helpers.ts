@@ -26,8 +26,15 @@ export function imageExt(contentType: string, data: Buffer): string {
   return 'jpg';
 }
 
-/** Sanitize a filename to something safe for the local filesystem. */
+/**
+ * Sanitize a filename to something safe for the local filesystem.
+ * Strips path separators (both `/` and `\`), reserved chars, leading dots
+ * (so `..` or `.hidden` can't traverse out of the target dir), and trims.
+ */
 export function sanitizeFileName(name: string): string {
-  const cleaned = name.replace(/[\/:*?"<>| -]/g, '_').trim();
+  const cleaned = name
+    .replace(/[\\/:*?"<>| -]/g, '_')
+    .replace(/^\.+/, '')
+    .trim();
   return cleaned || 'attachment';
 }

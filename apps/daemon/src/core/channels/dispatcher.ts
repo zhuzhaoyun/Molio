@@ -6,6 +6,13 @@ import { extractOutboundMedia } from './outbound-media.js';
 import type { ChannelSink } from './types.js';
 
 const RUN_REPLY_TIMEOUT_MS = 5 * 60 * 1000;
+/**
+ * Hard cap on the per-user pending queue. The daemon is single-user local, so
+ * a flood of messages from one user is almost always a stuck agent rather
+ * than real traffic — cap the queue and drop the oldest pending message with
+ * a visible "queue overflow" reply so the user knows something was dropped.
+ */
+const QUEUE_MAX_PENDING = 16;
 
 /**
  * Resolve the wiki/vault role frame to inject as the agent's SYSTEM prompt
@@ -125,6 +132,20 @@ export class ChannelDispatcher {
     if (state && this.deps.runManager.canAcceptMessage(state.runId)) {
       if (state.busy) {
         // A turn is in flight — buffer and drain on its turn_end.
+        if (state.queue.length >= QUEUE_MAX_PENDING) {
+          const dropped = state.queue.shift()!;
+          // Don't await — overflow reply is fire-and-forget; we need to make
+          // room for the new message before pushing it.
+          void this.deps.sink.sendText(
+            userId,
+            'Molio 消息队列已满，最早一条排队消息被丢弃。',
+          ).catch(() => {});
+          this.deps.conversations.appendAssistantMessage(
+            dropped.conversationId,
+            'Molio 消息队列已满，此消息被丢弃。',
+            { agentId: dropped.agentId },
+          );
+        }
         state.queue.push({ userId, conversationId, agentId, cwd, rawUserText });
         return;
       }
@@ -138,7 +159,7 @@ export class ChannelDispatcher {
       this.deps.runManager.sendMessage(state.runId, runMessage);
       this.deps.sink.onActiveRun?.(state.runId);
       await this.deps.sink.sendText(userId, 'Molio 正在处理...');
-      void this.forwardRunReply(state.runId, userId, conversationId, agentId, cwd);
+      this.spawnForward(state.runId, userId, conversationId, agentId, cwd);
       return;
     }
 
@@ -162,7 +183,31 @@ export class ChannelDispatcher {
     this.userRuns.set(userId, { runId, busy: true, queue: [] });
     this.deps.sink.onActiveRun?.(runId);
     await this.deps.sink.sendText(userId, 'Molio 正在处理...');
-    void this.forwardRunReply(runId, userId, conversationId, agentId, cwd);
+    this.spawnForward(runId, userId, conversationId, agentId, cwd);
+  }
+
+  /**
+   * Fire-and-forget wrapper for `forwardRunReply` — guarantees that any
+   * rejection (failed createRun teardown, sendText throw, etc.) becomes a
+   * logged error + user-facing message instead of an unhandledRejection.
+   */
+  private spawnForward(
+    runId: string,
+    userId: string,
+    conversationId: string,
+    agentId: string,
+    cwd: string | undefined,
+  ): void {
+    this.forwardRunReply(runId, userId, conversationId, agentId, cwd).catch((err) => {
+      // eslint-disable-next-line no-console
+      console.error(
+        `[${this.deps.channelLabel}] forwardRunReply failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      void this.deps.sink.sendText(
+        userId,
+        `Molio 处理失败：${err instanceof Error ? err.message : String(err)}`,
+      ).catch(() => {});
+    });
   }
 
   /**
@@ -176,7 +221,19 @@ export class ChannelDispatcher {
     state.busy = false;
     const next = state.queue.shift();
     if (!next) return;
-    void this.dispatch({ ...next, history: [] });
+    // Wrap in a catch so a failing fresh-spawn dispatch never reaches
+    // process.unhandledRejection (the user's IM thread would otherwise
+    // hang with no reply at all).
+    this.dispatch({ ...next, history: [] }).catch((err) => {
+      // eslint-disable-next-line no-console
+      console.error(
+        `[${this.deps.channelLabel}] drainQueue dispatch failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      void this.deps.sink.sendText(
+        userId,
+        `Molio 处理排队消息失败：${err instanceof Error ? err.message : String(err)}`,
+      ).catch(() => {});
+    });
   }
 
   /** Cancel and forget the reusable run for a user (e.g. on /new or stop). */
@@ -228,6 +285,15 @@ export class ChannelDispatcher {
       }
       for (const item of items) {
         await this.deps.sink.sendMediaFile(userId, item);
+      }
+      // Stale-run cleanup: if the run is no longer receptive AND there's
+      // nothing queued to drain into a fresh spawn, drop the per-user entry
+      // now so it doesn't linger forever (the entry would otherwise sit in
+      // userRuns with a dead runId until the user sends the next message).
+      const state = this.userRuns.get(userId);
+      if (state && state.runId === runId && state.queue.length === 0
+          && !this.deps.runManager.canAcceptMessage(runId)) {
+        this.userRuns.delete(userId);
       }
       // Drain the next queued message (no-op if queue empty).
       this.drainQueue(userId);

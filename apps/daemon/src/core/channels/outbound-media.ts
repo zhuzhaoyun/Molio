@@ -47,7 +47,16 @@ function resolveDeliverable(
   cwd: string | undefined,
   seen: Set<string>,
 ): OutboundMediaItem | null {
-  const abs = path.resolve(cwd ?? process.cwd(), candidate);
+  // Reject path traversal: an AI prompted via inbound IM message could be
+  // tricked into emitting `<attach path="../../.ssh/id_rsa"/>` to exfiltrate
+  // files outside the project. Block any `..` segment in the candidate before
+  // resolution. Absolute paths (e.g. to a temp dir the AI wrote to) are still
+  // honored — the AI explicitly chose them.
+  const candidateSegments = candidate.split(/[\\/]/);
+  if (candidateSegments.includes('..')) return null;
+
+  const base = path.resolve(cwd ?? process.cwd());
+  const abs = path.resolve(base, candidate);
   if (seen.has(abs)) return null;
   let stat: fs.Stats;
   try {

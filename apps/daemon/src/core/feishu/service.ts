@@ -27,6 +27,9 @@ import type { OutboundMediaItem } from '../channels/types.js';
 const TOKEN_REFRESH_INTERVAL_MS = 100 * 60 * 1000;
 /** Dedup window for received message_id (matches weixin). */
 const DEDUP_TTL_MS = 7 * 60 * 60 * 1000;
+/** Hard cap on the dedup map so a quiet-but-long-lived process can't leak
+ * memory indefinitely. 7h TTL means ~10k entries at 1 msg/s sustained. */
+const DEDUP_MAX_ENTRIES = 10_000;
 /** Chunk size for sendText — Feishu's text limit is 4096 bytes; use 3000 chars for safety. */
 const TEXT_CHUNK_LIMIT = 3000;
 
@@ -157,7 +160,7 @@ export class FeishuService implements ChannelSink {
     if (config.feishu.enabled) {
       await this.start();
     } else {
-      this.stop();
+      await this.stop();
     }
 
     return this.getStatus();
@@ -204,9 +207,9 @@ export class FeishuService implements ChannelSink {
     return this.getStatus();
   }
 
-  stop(): FeishuStatus {
+  async stop(): Promise<FeishuStatus> {
     this.stopTokenRefresh();
-    void this.stopWSClient();
+    await this.stopWSClient();
     this.dispatcher.cancelAll();
     this.api = null;
     this.cachedToken = null;
@@ -220,8 +223,8 @@ export class FeishuService implements ChannelSink {
     return this.getStatus();
   }
 
-  disconnect(): FeishuStatus {
-    this.stop();
+  async disconnect(): Promise<FeishuStatus> {
+    await this.stop();
     removeCredentials(resolveCredentialsPath(this.getConfig()));
     const config = loadConfig();
     config.feishu = {
@@ -271,8 +274,15 @@ export class FeishuService implements ChannelSink {
     if (!this.api) return;
     try {
       const fresh = await this.api.fetchTenantAccessToken();
+      // Write to disk FIRST — if it fails, keep the prior cache so the next
+      // restart still has a usable token instead of an orphaned in-memory one.
+      try {
+        writeCredentials(resolveCredentialsPath(this.getConfig()), fresh);
+      } catch (err) {
+        this.status.lastError = `Token 写盘失败：${err instanceof Error ? err.message : String(err)}`;
+        return;
+      }
       this.cachedToken = fresh;
-      writeCredentials(resolveCredentialsPath(this.getConfig()), fresh);
       this.status.lastError = null;
     } catch (err) {
       // Don't tear down the WS — the SDK keeps trying; just surface the error.
@@ -307,6 +317,10 @@ export class FeishuService implements ChannelSink {
       onReconnecting: () => {
         this.transitionTo('reconnecting');
         this.status.connected = false;
+        // Keep loginStatus in sync — 'reconnecting' isn't a FeishuLoginStatus
+        // state, so we surface 'connecting' (which the UI already renders as
+        // a non-idle, non-error in-flight state).
+        this.status.loginStatus = 'connecting';
       },
       onReconnected: () => {
         this.transitionTo('connected');
@@ -433,6 +447,10 @@ export class FeishuService implements ChannelSink {
     if (!this.api) return;
     try {
       const token = await this.ensureToken();
+      // Feishu's image upload endpoint only accepts raster image types
+      // (png/jpg/gif/webp/bmp). Videos and other binary kinds go through the
+      // file endpoint — Feishu has no separate video upload for IM messages
+      // (video messages require a different message_type + upload flow).
       if (item.kind === 'image') {
         const imageKey = await this.api.uploadImage(token, item.filePath);
         await this.api.sendImage(token, toUserId, imageKey);
@@ -478,6 +496,12 @@ export class FeishuService implements ChannelSink {
       if (now - ts > DEDUP_TTL_MS) this.receivedMessageIds.delete(id);
     }
     if (this.receivedMessageIds.has(messageId)) return true;
+    // Hard cap: if the map has grown unbounded (long-lived quiet process),
+    // evict oldest entries by insertion order before inserting a new one.
+    if (this.receivedMessageIds.size >= DEDUP_MAX_ENTRIES) {
+      const firstKey = this.receivedMessageIds.keys().next().value;
+      if (firstKey !== undefined) this.receivedMessageIds.delete(firstKey);
+    }
     this.receivedMessageIds.set(messageId, now);
     return false;
   }

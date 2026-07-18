@@ -15,12 +15,12 @@ export function feishuRoutes(service: FeishuService): Hono {
     return c.json(await service.start());
   });
 
-  app.post('/stop', (c) => {
-    return c.json(service.stop());
+  app.post('/stop', async (c) => {
+    return c.json(await service.stop());
   });
 
-  app.post('/disconnect', (c) => {
-    return c.json(service.disconnect());
+  app.post('/disconnect', async (c) => {
+    return c.json(await service.disconnect());
   });
 
   app.put('/config', async (c) => {

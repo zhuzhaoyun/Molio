@@ -324,7 +324,7 @@
 }
 
 .channels-feishu-step--warn {
-  border-color: var(--red);
+  border-color: var(--red-border);
   background: var(--red-bg);
 }
 
@@ -416,7 +416,7 @@
   font-size: 11px;
   color: var(--red);
   background: var(--red-bg);
-  border: 1px solid var(--red);
+  border: 1px solid var(--red-border);
   border-radius: var(--radius-sm);
   line-height: 1.5;
 }

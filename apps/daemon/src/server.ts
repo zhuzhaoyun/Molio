@@ -54,11 +54,11 @@ app.get('/api/health', (c) => {
 
 // Graceful shutdown endpoint — called by the desktop shell before quitting
 // so we can flush in-flight assistant replies to the database.
-app.post('/api/shutdown', (c) => {
+app.post('/api/shutdown', async (c) => {
   console.log('Shutdown requested by desktop shell, flushing active runs...');
   cleanupAllBridges();
   weixinService.stop();
-  feishuService.stop();
+  await feishuService.stop();
   void vaultWatcher.stop();
   runManager.cancelAll();
   closeDatabase();
@@ -158,7 +158,7 @@ if (staticDir) {
 process.on('SIGINT', () => {
   cleanupAllBridges();
   weixinService.stop();
-  feishuService.stop();
+  void feishuService.stop();
   void vaultWatcher.stop();
   runManager.cancelAll();
   closeDatabase();
@@ -168,7 +168,7 @@ process.on('SIGINT', () => {
 process.on('SIGTERM', () => {
   cleanupAllBridges();
   weixinService.stop();
-  feishuService.stop();
+  void feishuService.stop();
   void vaultWatcher.stop();
   runManager.cancelAll();
   closeDatabase();

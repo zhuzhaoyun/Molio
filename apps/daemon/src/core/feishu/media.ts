@@ -29,7 +29,15 @@ export async function materializeFeishuAttachments(
   const dir = path.join(cwd, 'raw', 'feishu', todayDir());
   try {
     fs.mkdirSync(dir, { recursive: true });
-  } catch {
+  } catch (err) {
+    // Log + return — without the inbox dir we can't save any attachment, but
+    // we shouldn't proceed silently either (the caller would then dispatch
+    // with placeholder keys the AI can't read). Surface via console so the
+    // user sees why their attachments didn't materialize.
+    // eslint-disable-next-line no-console
+    console.error(
+      `[feishu-media] mkdir failed (${err instanceof Error ? err.message : String(err)}): ${dir}`,
+    );
     return;
   }
 

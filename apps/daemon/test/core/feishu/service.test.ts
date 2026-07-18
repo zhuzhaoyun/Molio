@@ -56,12 +56,12 @@ describe('FeishuService', () => {
     process.env.HOME = tempDir;
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     if (originalUserprofile === undefined) delete process.env.USERPROFILE;
     else process.env.USERPROFILE = originalUserprofile;
     if (originalHome === undefined) delete process.env.HOME;
     else process.env.HOME = originalHome;
-    service.stop();
+    await service.stop();
     closeDatabase();
     rmSync(tempDir, { recursive: true, force: true });
   });
@@ -99,8 +99,8 @@ describe('FeishuService', () => {
       assert.match(status.lastError ?? '', /appId\/appSecret/);
     });
 
-    it('stop() transitions to idle and clears active run', () => {
-      const status = service.stop();
+    it('stop() transitions to idle and clears active run', async () => {
+      const status = await service.stop();
       assert.equal(status.connectionState, 'idle');
       assert.equal(status.connected, false);
       assert.equal(status.loginStatus, 'idle');
@@ -109,7 +109,7 @@ describe('FeishuService', () => {
   });
 
   describe('disconnect', () => {
-    it('removes the credentials file and disables the channel', () => {
+    it('removes the credentials file and disables the channel', async () => {
       const credsPath = join(tempDir, '.molio', 'feishu-credentials.json');
       mkdirSync(join(tempDir, '.molio'), { recursive: true });
       writeFileSync(
@@ -120,7 +120,7 @@ describe('FeishuService', () => {
       saveConfig({ agents: {}, feishu: { enabled: true, appId: 'a', appSecret: 'b' } } as AppConfig);
       assert.ok(existsSync(credsPath));
 
-      service.disconnect();
+      await service.disconnect();
       assert.ok(!existsSync(credsPath));
       // Reload config to verify enabled=false was persisted.
       assert.equal(loadConfig().feishu?.enabled, false);
@@ -245,7 +245,7 @@ describe('FeishuService token cache', () => {
       assert.equal(stored.tenantAccessToken, `tok-1`);
       assert.equal(typeof stored.expiresAt, 'number');
     } finally {
-      service.stop();
+      await service.stop();
     }
   });
 });

@@ -41,12 +41,12 @@ describe('Feishu routes', () => {
     process.env.HOME = tempDir;
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     if (originalUserprofile === undefined) delete process.env.USERPROFILE;
     else process.env.USERPROFILE = originalUserprofile;
     if (originalHome === undefined) delete process.env.HOME;
     else process.env.HOME = originalHome;
-    service.stop();
+    await service.stop();
     closeDatabase();
     rmSync(tempDir, { recursive: true, force: true });
   });

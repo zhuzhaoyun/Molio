@@ -10,6 +10,9 @@ export const DEFAULT_BASE_URL = 'https://open.feishu.cn';
 
 /** Buffer of time before the token actually expires (ms) at which we refresh. */
 const TOKEN_REFRESH_SAFETY_MS = 5 * 60 * 1000;
+/** Hard cap on a single download's body size — prevents OOM on low-RAM
+ * dev machines when the daemon proxies a 100MB Feishu attachment. */
+const DOWNLOAD_MAX_BYTES = 64 * 1024 * 1024;
 
 function ensureTrailingSlash(url: string): string {
   return url.endsWith('/') ? url : `${url}/`;
@@ -214,12 +217,9 @@ export class FeishuApi {
         signal: controller.signal,
       });
       if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        throw new Error(`Feishu image download ${res.status}: ${text || res.statusText}`);
+        throw new Error(`Feishu image download ${res.status}: ${await this.formatErrorBody(res)}`);
       }
-      const data = Buffer.from(await res.arrayBuffer());
-      const contentType = res.headers.get('content-type') ?? '';
-      return { data, contentType };
+      return await this.readCappedBody(res);
     } finally {
       clearTimeout(timer);
     }
@@ -239,14 +239,58 @@ export class FeishuApi {
         signal: controller.signal,
       });
       if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        throw new Error(`Feishu file download ${res.status}: ${text || res.statusText}`);
+        throw new Error(`Feishu file download ${res.status}: ${await this.formatErrorBody(res)}`);
       }
-      const data = Buffer.from(await res.arrayBuffer());
-      const contentType = res.headers.get('content-type') ?? '';
-      return { data, contentType };
+      return await this.readCappedBody(res);
     } finally {
       clearTimeout(timer);
+    }
+  }
+
+  /**
+   * Read the response body into a Buffer, refusing to buffer more than
+   * DOWNLOAD_MAX_BYTES (default 64MB). Feishu allows 100MB file uploads —
+   * buffering that into a single Node Buffer can OOM a low-RAM dev machine
+   * running the daemon locally, so we cap and refuse with a clear error.
+   */
+  private async readCappedBody(res: Response, maxBytes = DOWNLOAD_MAX_BYTES): Promise<{ data: Buffer; contentType: string }> {
+    const contentLength = Number(res.headers.get('content-length') ?? 0);
+    if (contentLength && contentLength > maxBytes) {
+      throw new Error(`Feishu download too large: content-length=${contentLength} > ${maxBytes}`);
+    }
+    // Stream-read with a manual byte cap so a lying/missing Content-Length
+    // (or a malicious server streaming forever) still can't OOM us.
+    const reader = res.body?.getReader();
+    if (!reader) {
+      const buf = Buffer.from(await res.arrayBuffer());
+      if (buf.length > maxBytes) throw new Error(`Feishu download too large: ${buf.length} > ${maxBytes}`);
+      return { data: buf, contentType: res.headers.get('content-type') ?? '' };
+    }
+    const chunks: Buffer[] = [];
+    let total = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => {});
+        throw new Error(`Feishu download too large: streamed > ${maxBytes}`);
+      }
+      chunks.push(Buffer.from(value));
+    }
+    return { data: Buffer.concat(chunks), contentType: res.headers.get('content-type') ?? '' };
+  }
+
+  /** Parse a Feishu error response body (JSON with `msg` field) for logging. */
+  private async formatErrorBody(res: Response): Promise<string> {
+    const text = await res.text().catch(() => '');
+    if (!text) return res.statusText;
+    try {
+      const body = JSON.parse(text) as Record<string, unknown>;
+      const msg = typeof body.msg === 'string' && body.msg ? body.msg : text;
+      return msg;
+    } catch {
+      return text;
     }
   }
 }
