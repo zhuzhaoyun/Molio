@@ -91,11 +91,10 @@ export function validatePlan(candidate, inventory, inventoryDigest) {
   const slugs = new Set();
   const leaves = new Map();
   const topicCounts = { branch: 0, leaf: 0 };
-  let topologyValid = true;
   const topics = Array.isArray(candidate.topics) ? candidate.topics : [];
   if (!Array.isArray(candidate.topics)) issue(errors, 'TOPICS_INVALID');
 
-  const visitTopic = (topic, expectedDepth, suppressDepth = false) => {
+  const visitTopic = (topic, expectedDepth) => {
     if (!topic || typeof topic !== 'object') {
       issue(errors, 'TOPIC_INVALID');
       return;
@@ -109,17 +108,14 @@ export function validatePlan(candidate, inventory, inventoryDigest) {
       slugs.add(topic.slug);
       if (RESERVED_SLUGS.has(topic.slug.toLowerCase())) issue(errors, 'TOPIC_SLUG_RESERVED', { slug: topic.slug });
     }
-    if (!suppressDepth) {
-      if (topic.depth !== expectedDepth) issue(errors, 'TOPIC_DEPTH_INVALID', { id: topic.id });
-      if (topic.depth > capacity.maxTopicDepth) issue(errors, 'TOPIC_DEPTH_EXCEEDED', { id: topic.id });
-    }
+    if (topic.depth !== expectedDepth) issue(errors, 'TOPIC_DEPTH_INVALID', { id: topic.id });
+    if (topic.depth > capacity.maxTopicDepth) issue(errors, 'TOPIC_DEPTH_EXCEEDED', { id: topic.id });
 
     const children = Array.isArray(topic.children) ? topic.children : [];
     if (topic.kind === 'branch') {
       topicCounts.branch += 1;
       if (children.length < 2) {
         issue(errors, 'BRANCH_REQUIRES_TWO_CHILDREN', { id: topic.id });
-        topologyValid = false;
       }
       if (Object.hasOwn(topic, 'fileIds')) issue(errors, 'BRANCH_HAS_FILE_IDS', { id: topic.id });
       if (topic.splitReason !== undefined && topic.splitReason !== 'capacity' && topic.splitReason !== 'semantic') {
@@ -128,7 +124,7 @@ export function validatePlan(candidate, inventory, inventoryDigest) {
       if (topic.splitReason === 'capacity' && !exceedsCapacity(topic, capacity)) {
         issue(errors, 'CAPACITY_SPLIT_BELOW_LIMIT', { id: topic.id });
       }
-      for (const child of children) visitTopic(child, expectedDepth + 1, suppressDepth || children.length < 2);
+      for (const child of children) visitTopic(child, expectedDepth + 1);
       return;
     }
     if (topic.kind !== 'leaf') issue(errors, 'TOPIC_KIND_INVALID', { id: topic.id });
@@ -170,7 +166,7 @@ export function validatePlan(candidate, inventory, inventoryDigest) {
     classify(assignment?.fileId, 'assignment');
     const leaf = leaves.get(assignment?.primaryTopicId);
     if (!leaf) {
-      if (topologyValid) issue(errors, 'ASSIGNMENT_TOPIC_NOT_LEAF', { fileId: assignment?.fileId });
+      issue(errors, 'ASSIGNMENT_TOPIC_NOT_LEAF', { fileId: assignment?.fileId });
     } else if (!leaf.fileIds?.includes(assignment.fileId)) issue(errors, 'ASSIGNMENT_FILE_NOT_IN_TOPIC', { fileId: assignment.fileId });
     if (typeof assignment?.fileId === 'string' && typeof assignment?.primaryTopicId === 'string'
       && !primaryAssignments.has(assignment.fileId)) {
@@ -213,7 +209,7 @@ export function validatePlan(candidate, inventory, inventoryDigest) {
     if (batch.order !== index + 1) issue(errors, 'BATCH_ORDER_INVALID', { id: batch.id });
     if (batchIds.has(batch.id)) issue(errors, 'BATCH_ID_DUPLICATE', { id: batch.id });
     else batchIds.add(batch.id);
-    if (!leaves.has(batch.topicId) && topologyValid) issue(errors, 'BATCH_TOPIC_NOT_LEAF', { id: batch.id });
+    if (!leaves.has(batch.topicId)) issue(errors, 'BATCH_TOPIC_NOT_LEAF', { id: batch.id });
     if (!Array.isArray(batch.fileIds)) issue(errors, 'BATCH_FILE_IDS_INVALID', { id: batch.id });
     else {
       if (batch.fileIds.length > 50 || (policy?.maxFiles && batch.fileIds.length > policy.maxFiles)) issue(errors, 'BATCH_TOO_MANY_FILES', { id: batch.id });

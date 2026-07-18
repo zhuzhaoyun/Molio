@@ -49,7 +49,11 @@ describe('wiki-build plan', () => {
     const result = runPlan(fixture.vault, candidate, 'validate');
     assert.equal(result.status, 2);
     assert.deepEqual(result.json.error.details.codes, [
-      'BRANCH_REQUIRES_TWO_CHILDREN', 'CAPACITY_SPLIT_BELOW_LIMIT',
+      'BRANCH_REQUIRES_TWO_CHILDREN',
+      'CAPACITY_SPLIT_BELOW_LIMIT',
+      'TOPIC_DEPTH_INVALID',
+      'ASSIGNMENT_TOPIC_NOT_LEAF',
+      'BATCH_TOPIC_NOT_LEAF',
     ]);
     fixture.cleanup();
   });
@@ -149,6 +153,9 @@ describe('wiki-build plan', () => {
     assert.deepEqual(result.json.error.details.codes, [
       'BRANCH_REQUIRES_TWO_CHILDREN',
       'TOPIC_SLUG_RESERVED',
+      'TOPIC_DEPTH_INVALID',
+      'ASSIGNMENT_TOPIC_NOT_LEAF',
+      'BATCH_TOPIC_NOT_LEAF',
     ]);
     fixture.cleanup();
   });
@@ -160,6 +167,28 @@ describe('wiki-build plan', () => {
     const result = runPlan(fixture.vault, candidate, 'validate');
     assert.equal(result.status, 2);
     assert.deepEqual(result.json.error.details.codes, ['LEAF_HAS_CHILDREN']);
+    fixture.cleanup();
+  });
+
+  it('keeps independent depth and reference errors when another branch has one child', () => {
+    const fixture = makeScannedTwoFileVault();
+    const candidate = makePlanFixture(fixture.inventoryDigest);
+    candidate.topics = [{
+      id: 'single-root', name: '单子树', slug: '单子树', kind: 'branch', depth: 1,
+      splitReason: 'semantic', estimatedPages: 1, estimatedIndexTokens: 40,
+      children: [{ ...candidate.topics[0], depth: 7 }],
+    }];
+    candidate.assignments[1].primaryTopicId = 'missing-topic';
+    candidate.batches[1].topicId = 'missing-topic';
+    const result = runPlan(fixture.vault, candidate, 'validate');
+    assert.equal(result.status, 2);
+    assert.deepEqual(result.json.error.details.codes, [
+      'BRANCH_REQUIRES_TWO_CHILDREN',
+      'TOPIC_DEPTH_INVALID',
+      'TOPIC_DEPTH_EXCEEDED',
+      'ASSIGNMENT_TOPIC_NOT_LEAF',
+      'BATCH_TOPIC_NOT_LEAF',
+    ]);
     fixture.cleanup();
   });
 });
