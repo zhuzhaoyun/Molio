@@ -75,6 +75,7 @@ export function resolveBuildPaths(vaultPath) {
     state: join(root, 'state.json'),
     samples: join(root, 'samples'),
     normalized: join(root, 'normalized'),
+    prepared: join(root, 'prepared'),
     staging: join(root, 'staging'),
     journals: join(root, 'journals'),
     planHistory: join(root, 'plan-history'),

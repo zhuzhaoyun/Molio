@@ -17,6 +17,13 @@ export const DEFAULT_CAPACITY = Object.freeze({
   maxLeafIndexTokens: 12000,
   maxTopicDepth: 6,
 });
+export const DEFAULT_PREPROCESS_POLICY = Object.freeze({
+  maxInputTokens: 20000,
+  tokenEstimate: 'utf8-bytes-div-3',
+  fallbackWindowChars: 30000,
+  overlapChars: 1000,
+  jsonlMaxLines: 500,
+});
 export const FILE_STATUSES = Object.freeze([
   'pending', 'running', 'succeeded', 'failed', 'skipped',
 ]);
