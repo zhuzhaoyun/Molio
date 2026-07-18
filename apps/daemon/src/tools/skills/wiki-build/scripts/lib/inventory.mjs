@@ -65,8 +65,35 @@ function isPrunedDirectory(name) {
   return name.startsWith('.') || PRUNED_NAMES.has(name);
 }
 
-function sourcePaths(vaultPath, includePaths, errors, maxDirEntries) {
+function sourcePaths(vaultPath, includePaths, errors, maxDirEntries, maxTotal) {
   const files = [];
+  let totalLimitReached = false;
+
+  const addFile = (path) => {
+    if (files.length < maxTotal) {
+      files.push(path);
+      return false;
+    }
+    if (!totalLimitReached) {
+      errors.push({ code: 'TOTAL_LIMIT', limit: maxTotal });
+      totalLimitReached = true;
+    }
+    return true;
+  };
+
+  const hasPrunedAncestor = (path) => normalizedRelativePath(vaultPath, path)
+    .split('/')
+    .slice(0, -1)
+    .some(isPrunedDirectory);
+
+  const recordPrunedInclude = (path) => {
+    errors.push({
+      code: 'PRUNED_PATH',
+      path: normalizedRelativePath(vaultPath, path),
+      message: 'Include is under a pruned directory',
+    });
+  };
+
   const visit = (path) => {
     let entries;
     try {
@@ -77,7 +104,7 @@ function sourcePaths(vaultPath, includePaths, errors, maxDirEntries) {
         ));
     } catch (error) {
       errors.push({ code: 'DIRECTORY_READ_FAILED', path: normalizedRelativePath(vaultPath, path), message: error.message });
-      return;
+      return false;
     }
     if (entries.length > maxDirEntries) {
       errors.push({
@@ -86,24 +113,39 @@ function sourcePaths(vaultPath, includePaths, errors, maxDirEntries) {
         limit: maxDirEntries,
         entries: entries.length,
       });
-      return;
+      return false;
     }
     for (const entry of entries) {
       const entryPath = join(path, entry.name);
       if (entry.isDirectory()) {
-        if (!isPrunedDirectory(entry.name)) visit(entryPath);
+        if (!isPrunedDirectory(entry.name) && visit(entryPath)) return true;
       } else if (entry.isFile()) {
-        files.push(entryPath);
+        if (addFile(entryPath)) return true;
       }
     }
+    return false;
   };
 
   for (const includePath of includePaths ?? [vaultPath]) {
     const path = assertPathWithinVault(vaultPath, resolve(vaultPath, includePath));
-    if (!statSync(path).isDirectory()) {
-      files.push(path);
-    } else if (!isPrunedDirectory(basename(path))) {
-      visit(path);
+    if (includePaths && hasPrunedAncestor(path)) {
+      recordPrunedInclude(path);
+      continue;
+    }
+    try {
+      if (!statSync(path).isDirectory()) {
+        if (addFile(path)) break;
+      } else if (includePaths && isPrunedDirectory(basename(path))) {
+        recordPrunedInclude(path);
+      } else if (visit(path)) {
+        break;
+      }
+    } catch (error) {
+      errors.push({
+        code: 'INCLUDE_READ_FAILED',
+        path: normalizedRelativePath(vaultPath, path),
+        message: error.message,
+      });
     }
   }
   return files.sort((left, right) => comparePaths(
@@ -123,14 +165,10 @@ export function scanVault({
   const paths = resolveBuildPaths(vault);
   const errors = [];
   const records = [];
-  const sources = sourcePaths(vault, includePaths, errors, maxDirEntries);
+  const sources = sourcePaths(vault, includePaths, errors, maxDirEntries, maxTotal);
   const duplicates = new Map();
 
   for (const path of sources) {
-    if (records.length >= maxTotal) {
-      errors.push({ code: 'TOTAL_LIMIT', limit: maxTotal });
-      break;
-    }
     const relativePath = normalizedRelativePath(vault, path);
     try {
       const stats = statSync(path);

@@ -48,7 +48,7 @@ describe('wiki-build scan', () => {
     vault.cleanup();
   });
 
-  it('records directory and total limits without crashing', () => {
+  it('records directory limits without crashing', () => {
     const vault = makeVault();
     createFiles(vault.path, 'dump', 4);
     const result = runWikiBuildCli(vault.path, [
@@ -56,6 +56,25 @@ describe('wiki-build scan', () => {
     ]);
     assert.equal(result.status, 0);
     assert.ok(result.json.data.errors.some((error: { code: string }) => error.code === 'DIRECTORY_LIMIT'));
+    vault.cleanup();
+  });
+
+  it('stops at the total limit across ordinary directories', () => {
+    const vault = makeVault();
+    createFiles(vault.path, 'a', 2);
+    createFiles(vault.path, 'b', 2);
+    createFiles(vault.path, 'c', 2);
+
+    const result = runWikiBuildCli(vault.path, [
+      'scan', '--max-dir-entries', '4', '--max-total', '2', '--json',
+    ]);
+    assert.equal(result.status, 0);
+    assert.equal(result.json.data.counts.total, 2);
+    assert.deepEqual(readInventory(vault.path).map((record: { path: string }) => record.path), [
+      'a/0.md', 'a/1.md',
+    ]);
+    assert.ok(result.json.data.errors.some((error: { code: string }) => error.code === 'TOTAL_LIMIT'));
+    assert.equal(result.json.data.errors.some((error: { code: string }) => error.code === 'DIRECTORY_LIMIT'), false);
     vault.cleanup();
   });
 
@@ -82,6 +101,38 @@ describe('wiki-build scan', () => {
     const result = runWikiBuildCli(vault.path, ['scan', '--include', 'candidate.md', '--json']);
     assert.equal(result.status, 0);
     assert.equal(readFileSync(inventoryPath, 'utf8'), frozenInventory);
+    const candidates = readFileSync(join(vault.path, '.molio', 'wiki-build', 'ingest-candidate.jsonl'), 'utf8')
+      .trim().split('\n').map((line) => JSON.parse(line));
+    assert.deepEqual(candidates.map((record: { path: string }) => record.path), ['candidate.md']);
+    vault.cleanup();
+  });
+
+  it('skips explicit includes under pruned ancestors', () => {
+    const vault = makeVault();
+    writeFile(vault.path, 'wiki/old.md', '# Old');
+    writeFile(vault.path, '.molio/private.md', '# Private');
+    writeFile(vault.path, 'node_modules/example/index.md', '# Dependency');
+
+    const result = runWikiBuildCli(vault.path, [
+      'scan', '--include', 'wiki/old.md', '--include', '.molio/private.md',
+      '--include', 'node_modules/example/index.md', '--json',
+    ]);
+    assert.equal(result.status, 0);
+    assert.equal(result.json.data.counts.total, 0);
+    assert.equal(result.json.data.errors.filter((error: { code: string }) => error.code === 'PRUNED_PATH').length, 3);
+    assert.equal(readFileSync(join(vault.path, '.molio', 'wiki-build', 'ingest-candidate.jsonl'), 'utf8'), '');
+    vault.cleanup();
+  });
+
+  it('records inaccessible includes and continues scanning other candidates', () => {
+    const vault = makeVault();
+    writeFile(vault.path, 'candidate.md', '# Candidate');
+
+    const result = runWikiBuildCli(vault.path, [
+      'scan', '--include', 'missing.md', '--include', 'candidate.md', '--json',
+    ]);
+    assert.equal(result.status, 0);
+    assert.ok(result.json.data.errors.some((error: { code: string }) => error.code === 'INCLUDE_READ_FAILED'));
     const candidates = readFileSync(join(vault.path, '.molio', 'wiki-build', 'ingest-candidate.jsonl'), 'utf8')
       .trim().split('\n').map((line) => JSON.parse(line));
     assert.deepEqual(candidates.map((record: { path: string }) => record.path), ['candidate.md']);
