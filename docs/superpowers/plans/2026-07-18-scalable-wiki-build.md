@@ -1463,14 +1463,14 @@ git commit -m "test(wiki): verify build tool packaging"
 
 ---
 
-### Task 11: Document and run fixture plus articles-1 acceptance
+### Task 11: Document and run Molio-triggered articles-1 acceptance
 
 **Files:**
 - Create: docs/wiki-build-acceptance.md
 
 **Interfaces:**
-- Consumes the final CLI and Skill workflow.
-- Produces a reproducible acceptance record with inventory digest, counts by support class, recovery evidence, final coverage counts, and representative query results.
+- Consumes the final CLI, installed Skill, knowledge-base UI entry, daemon run path, and runtime Agent workflow.
+- Produces a reproducible acceptance record with the UI-triggered run identity, inventory digest, counts by support class, recovery evidence, final coverage counts, and representative query results.
 
 - [ ] **Step 1: Write the acceptance runbook**
 
@@ -1481,11 +1481,15 @@ $cli = "D:\work\02-code\Molio-wiki-build-scalable\apps\daemon\src\tools\skills\w
 $vault = "D:\work\articles-1"
 node $cli scan --vault $vault --json
 node $cli status --vault $vault --json
+
+Set-Location "D:\work\02-code\Molio-wiki-build-scalable"
+pnpm dev:desktop
 ~~~
 
 Record:
 
 - inventory digest,
+- Molio run/conversation id, selected runtime Agent, installed wiki-build Skill version, and the auto-sent wiki-build prompt,
 - total visible files,
 - supported, needs-confirmation, and scan-error counts,
 - total bytes by extension,
@@ -1523,9 +1527,20 @@ Run the two PowerShell commands from the runbook. Expected:
 
 Do not approve or execute the plan until the Agent displays the generated topic tree, assignments, risks, and workload to the user.
 
-- [ ] **Step 4: Execute the approved articles-1 plan and record results**
+- [ ] **Step 4: Trigger wiki-build from Molio and record results**
 
-Follow the installed wiki-build Skill. Interrupt after at least one succeeded batch, resume with status --recover, finish remaining batches, finalize indexes, and add the observed evidence to docs/wiki-build-acceptance.md.
+Start Molio with pnpm dev:desktop from this worktree, open or add D:\work\articles-1 as the selected knowledge base, select the runtime Agent under test, and click 构建 Wiki. Confirm that the chat auto-sends the wiki-build prompt and the runtime loads wiki-build Skill version 2.0.0 from the vault-installed Skill directory.
+
+Before approving the proposed plan, verify that:
+
+- the Agent displays the recursive topic tree, file assignments, exclusions, undecided files, risks, batch count, and estimated workload,
+- unrelated domains remain separate even when a topic contains one source file,
+- no wiki/ page exists yet,
+- all build process files stay under D:\work\articles-1\.molio\wiki-build.
+
+Approve the plan in chat. Let at least one batch reach a succeeded checkpoint, cancel the run from Molio, then click 构建 Wiki again. Confirm that the Agent reports remaining work, requests confirmation before recovery, obtains a new attempt token, and does not reclaim a succeeded batch. Resume, process the remaining batches, and finalize the indexes.
+
+Ask representative questions through the same knowledge-base chat. Record the index path, Wiki pages, related pages, and any source fallback used for each answer. Add the run ids, relevant chat transcript excerpts, state counts, final coverage, and observed failures to docs/wiki-build-acceptance.md.
 
 - [ ] **Step 5: Run final regression verification**
 
