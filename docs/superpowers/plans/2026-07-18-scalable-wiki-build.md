@@ -1,54 +1,54 @@
-# Scalable Wiki Build Implementation Plan
+# 可扩展 Wiki 构建实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **供执行 Agent 使用：** 必须使用 `superpowers:subagent-driven-development`（推荐）或 `superpowers:executing-plans` 子技能，逐项实施本计划。使用复选框（`- [ ]`）跟踪步骤。
 
-**Goal:** Build a deterministic, resumable Wiki build workflow that scans large vaults safely, freezes an approved semantic topic plan, executes bounded batches, and generates recursively layered indexes without adding a daemon API.
+**目标：** 构建一套确定性、可恢复的 Wiki 构建流程：安全扫描大型 vault，冻结用户批准的语义主题计划，按受限批次执行，并在不新增 daemon API 的前提下生成递归分层索引。
 
-**Architecture:** A pure Node.js CLI ships inside the built-in wiki-build Skill. The CLI owns inventory, plan validation, state transitions, checkpoint journals, and index generation under .molio/wiki-build; the runtime Agent owns semantic classification, document conversion, and Wiki prose. Existing daemon code continues to launch runtime agents, while the query prompt learns to walk recursive INDEX files.
+**架构：** 内置 `wiki-build` Skill 随附纯 Node.js CLI。CLI 负责 `.molio/wiki-build` 下的清单、计划校验、状态转换、检查点日志和索引生成；runtime Agent 负责语义分类、文档转换和 Wiki 正文。现有 daemon 继续启动 runtime Agent，查询提示词改为逐级读取递归 `INDEX` 文件。
 
-**Tech Stack:** Node.js 24 standard library, ECMAScript modules, TypeScript 5.8 tests, node:test, pnpm workspace scripts.
+**技术栈：** Node.js 24 标准库、ECMAScript 模块、TypeScript 5.8 测试、`node:test`、pnpm workspace 脚本。
 
-## Global Constraints
+## 全局约束
 
-- Installed Skill scripts may use only the Node.js standard library.
-- Store build working data under .molio/wiki-build; do not place process files in the vault root.
-- Do not write wiki pages or wiki indexes before the user approves the plan.
-- Preserve source files byte-for-byte; scanners and preprocessors may only read them.
-- Use semantic grouping before capacity splitting; unrelated single files may form separate leaf topics.
-- Default capacity values are maxLeafPages=200, maxLeafIndexTokens=12000, and maxTopicDepth=6.
-- A capacity split must create at least two children and use the fewest coherent children that satisfy the limits.
-- Use deterministic index shards when a topic cannot split or reaches depth six.
-- Do not reject a build solely because topic depth, page count, or INDEX size exceeds a leaf capacity limit.
-- Execute one batch at a time in phase one.
-- Keep legacy flat Wikis readable and queryable; do not migrate them automatically.
-- Keep MAX_DIR_ENTRIES=1000 and MAX_TOTAL=50000 aligned with apps/daemon/src/core/vault-prune.ts.
-- Do not add FTS5, BM25, vector search, a Wiki search API, or a runtime-to-daemon callback.
-- Do not add a daemon endpoint for build state; the CLI and files remain the execution boundary.
+- 已安装 Skill 的脚本只能使用 Node.js 标准库。
+- 构建工作数据统一存放在 `.molio/wiki-build`，vault 根目录不放置过程文件。
+- 用户批准计划之前，不得写入 Wiki 页面或 Wiki 索引。
+- 按字节保留源文件；扫描器和预处理器只能读取源文件。
+- 先做语义分组，再做容量细分；互不相关的单文件可以分别形成叶主题。
+- 默认容量值为 `maxLeafPages=200`、`maxLeafIndexTokens=12000`、`maxTopicDepth=6`。
+- 容量细分必须生成至少两个子主题，并使用满足限制的最少数量语义一致子主题。
+- 主题无法继续细分或到达第六级时，使用确定性索引分片。
+- 不得仅因主题深度、页面数量或 `INDEX` 大小超过叶容量上限而拒绝构建。
+- 一期每次只执行一个批次。
+- 保持 legacy 扁平 Wiki 可读、可查，不自动迁移。
+- `MAX_DIR_ENTRIES=1000` 和 `MAX_TOTAL=50000` 必须与 `apps/daemon/src/core/vault-prune.ts` 一致。
+- 不新增 FTS5、BM25、向量检索、Wiki 搜索 API 或 runtime 到 daemon 的回调。
+- 不新增构建状态 daemon 端点；CLI 和文件继续作为执行边界。
 
 ---
 
-## File Structure
+## 文件结构
 
-### New production files
+### 新增生产文件
 
 - apps/daemon/src/tools/skills/wiki-build/scripts/wiki-build.mjs
-  - CLI argument parsing, JSON output envelope, command dispatch, and exit codes.
+  - CLI 参数解析、JSON 输出信封、命令分发和退出码。
 - apps/daemon/src/tools/skills/wiki-build/scripts/lib/contracts.mjs
-  - Schema constants, JSDoc data contracts, extension support, capacity defaults, and state enums.
+  - 模式常量、JSDoc 数据契约、扩展名支持、容量默认值和状态枚举。
 - apps/daemon/src/tools/skills/wiki-build/scripts/lib/workspace.mjs
-  - Vault path validation, safe relative paths, atomic writes, JSON/JSONL helpers, hashing, and mutation locks.
+  - 知识库（vault）路径校验、安全相对路径、原子写入、JSON/JSONL 辅助函数、哈希和变更锁。
 - apps/daemon/src/tools/skills/wiki-build/scripts/lib/inventory.mjs
-  - Bounded traversal, filtering, lightweight samples, fingerprints, support detection, duplicate candidates, and inventory digest.
+  - 受限遍历、过滤、轻量采样、指纹、支持状态检测、重复候选和清单摘要。
 - apps/daemon/src/tools/skills/wiki-build/scripts/lib/plan.mjs
-  - Plan validation, topic-tree validation, file coverage, batch validation, version freeze, and approved-plan history.
+  - 计划校验、主题树校验、文件覆盖、批次校验、版本冻结和已批准计划历史。
 - apps/daemon/src/tools/skills/wiki-build/scripts/lib/preprocess.mjs
-  - Text, JSONL, large JSON, and externally normalized document work-item preparation with bounded chunks.
+  - 将文本、JSONL、大型 JSON 和外部标准化文档准备为受限分块工作项。
 - apps/daemon/src/tools/skills/wiki-build/scripts/lib/state.mjs
-  - Initial state, status, next-batch claim, attempt fencing, recovery, failure isolation, staging, commit journals, and idempotent checkpoint.
+  - 初始状态、状态查询、下一批领取、尝试隔离、恢复、失败隔离、暂存、提交日志和幂等检查点。
 - apps/daemon/src/tools/skills/wiki-build/scripts/lib/indexes.mjs
-  - Bottom-up topic summaries, leaf indexes, deterministic shards, ancestor indexes, final coverage checks, and targeted ingest reindexing.
+  - 自底向上的主题摘要、叶索引、确定性分片、祖先索引、最终覆盖检查和定向 ingest 重建索引。
 
-### New tests and documentation
+### 新增测试与文档
 
 - apps/daemon/test/tools/wiki-build-test-helpers.ts
 - apps/daemon/test/tools/wiki-build-cli.test.ts
@@ -62,7 +62,7 @@
 - apps/desktop/test/wiki-build-resources.test.js
 - docs/wiki-build-acceptance.md
 
-### Existing files to modify
+### 需要修改的现有文件
 
 - apps/daemon/src/tools/skills/wiki-build/SKILL.md
 - apps/daemon/src/tools/skills/wiki-ingest/SKILL.md
@@ -74,22 +74,22 @@
 
 ---
 
-### Task 1: Establish the CLI, contracts, and safe workspace primitives
+### 任务 1：建立 CLI、数据契约和安全工作区基础能力
 
-**Files:**
-- Create: apps/daemon/src/tools/skills/wiki-build/scripts/wiki-build.mjs
-- Create: apps/daemon/src/tools/skills/wiki-build/scripts/lib/contracts.mjs
-- Create: apps/daemon/src/tools/skills/wiki-build/scripts/lib/workspace.mjs
-- Create: apps/daemon/test/tools/wiki-build-test-helpers.ts
-- Create: apps/daemon/test/tools/wiki-build-cli.test.ts
+**文件：**
+- 新建：`apps/daemon/src/tools/skills/wiki-build/scripts/wiki-build.mjs`
+- 新建：`apps/daemon/src/tools/skills/wiki-build/scripts/lib/contracts.mjs`
+- 新建：`apps/daemon/src/tools/skills/wiki-build/scripts/lib/workspace.mjs`
+- 新建：`apps/daemon/test/tools/wiki-build-test-helpers.ts`
+- 新建：`apps/daemon/test/tools/wiki-build-cli.test.ts`
 
-**Interfaces:**
-- Produces: resolveBuildPaths(vaultPath) returning absolute paths for root, inventory, plan, state, samples, normalized, staging, journals, and planHistory.
-- Produces: atomicWriteJson(path, value), writeJsonLines(path, records), readJson(path), sha256(value), and withMutationLock(paths, fn).
-- Produces: runWikiBuildCli(vaultPath, args) test helper returning parsed stdout, stderr, and exit status.
-- Produces: CLI envelope { ok, command, data?, error?: { code, message, details? } }.
+**接口：**
+- 输出：`resolveBuildPaths(vaultPath)`，返回 `root`、`inventory`、`plan`、`state`、`samples`、`normalized`、`staging`、`journals` 和 `planHistory` 的绝对路径。
+- 输出：`atomicWriteJson(path, value)`、`writeJsonLines(path, records)`、`readJson(path)`、`sha256(value)` 和 `withMutationLock(paths, fn)`。
+- 输出：测试辅助函数 `runWikiBuildCli(vaultPath, args)`，返回解析后的 stdout、stderr 和退出状态。
+- 输出：CLI 信封 `{ ok, command, data?, error?: { code, message, details? } }`。
 
-- [ ] **Step 1: Write the failing CLI contract test**
+- [ ] **步骤 1：编写预期失败的 CLI 契约测试**
 
 ~~~ts
 import { describe, it } from 'node:test';
@@ -99,7 +99,7 @@ import { join } from 'node:path';
 import { makeVault, runWikiBuildCli } from './wiki-build-test-helpers.js';
 
 describe('wiki-build CLI', () => {
-  it('reports not_started without creating wiki/', () => {
+  it('在不创建 wiki/ 的情况下报告 not_started', () => {
     const vault = makeVault();
     const result = runWikiBuildCli(vault.path, ['status', '--json']);
     assert.equal(result.status, 0);
@@ -112,7 +112,7 @@ describe('wiki-build CLI', () => {
     vault.cleanup();
   });
 
-  it('rejects a vault-relative path that escapes the vault', () => {
+  it('拒绝逃逸 vault 的相对路径', () => {
     const vault = makeVault();
     const result = runWikiBuildCli(vault.path, ['scan', '--include', '../outside.md', '--json']);
     assert.equal(result.status, 2);
@@ -122,7 +122,7 @@ describe('wiki-build CLI', () => {
 });
 ~~~
 
-- [ ] **Step 2: Add the shared test helper**
+- [ ] **步骤 2：添加共享测试辅助函数**
 
 ~~~ts
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -162,20 +162,20 @@ export function runWikiBuildCli(vaultPath: string, args: string[]) {
 }
 ~~~
 
-- [ ] **Step 3: Run the test and verify the missing CLI failure**
+- [ ] **步骤 3：运行测试，确认因缺少 CLI 而失败**
 
-Run:
+运行：
 
 ~~~bash
 pnpm --filter @molio/daemon build
 node --test apps/daemon/dist/test/tools/wiki-build-cli.test.js
 ~~~
 
-Expected: FAIL because scripts/wiki-build.mjs does not exist.
+预期：失败，因为 `scripts/wiki-build.mjs` 尚不存在。
 
-- [ ] **Step 4: Implement contracts, safe paths, atomic writes, and status**
+- [ ] **步骤 4：实现数据契约、安全路径、原子写入和状态查询**
 
-Add these exact exported constants to contracts.mjs:
+在 `contracts.mjs` 中添加以下导出常量，名称和值必须保持一致：
 
 ~~~js
 export const SCHEMA_VERSION = 1;
@@ -196,29 +196,29 @@ export const BUILD_PHASES = Object.freeze([
 ]);
 ~~~
 
-Implement workspace.mjs so every mutation:
+实现 `workspace.mjs`，确保每次变更都执行以下操作：
 
-1. resolves the vault with realpath,
-2. rejects paths outside that root,
-3. writes a sibling .tmp file,
-4. fsyncs and renames the file,
-5. uses .molio/wiki-build/.lock with openSync(..., 'wx') around state mutations,
-6. removes the lock in a finally block.
+1. 使用 `realpath` 解析 vault；
+2. 拒绝根目录之外的路径；
+3. 写入同级 `.tmp` 文件；
+4. 对文件执行 `fsync` 后重命名；
+5. 变更状态时，通过 `openSync(..., 'wx')` 使用 `.molio/wiki-build/.lock`；
+6. 在 `finally` 中移除锁。
 
-Implement wiki-build.mjs with a parseArgs function and a status handler. Status reads state.json when present, then plan.json, then inventory.jsonl, and otherwise returns phase=not_started. Print one JSON object to stdout for --json; write errors to the same JSON envelope and exit with status 2.
+在 `wiki-build.mjs` 中实现 `parseArgs` 函数和 `status` 处理器。`status` 按顺序读取存在的 `state.json`、`plan.json`、`inventory.jsonl`；三者都不存在时返回 `phase=not_started`。使用 `--json` 时，向 stdout 输出一个 JSON 对象；错误也写入同一 JSON 信封，并以状态码 2 退出。
 
-- [ ] **Step 5: Run the focused test**
+- [ ] **步骤 5：运行聚焦测试**
 
-Run:
+运行：
 
 ~~~bash
 pnpm --filter @molio/daemon build
 node --test apps/daemon/dist/test/tools/wiki-build-cli.test.js
 ~~~
 
-Expected: 2 tests pass.
+预期：2 个测试通过。
 
-- [ ] **Step 6: Commit**
+- [ ] **步骤 6：提交**
 
 ~~~bash
 git add apps/daemon/src/tools/skills/wiki-build/scripts apps/daemon/test/tools/wiki-build-test-helpers.ts apps/daemon/test/tools/wiki-build-cli.test.ts
@@ -227,28 +227,28 @@ git commit -m "feat(wiki): add deterministic build cli"
 
 ---
 
-### Task 2: Generate a bounded inventory and lightweight samples
+### 任务 2：生成受限文件清单和轻量样本
 
-**Files:**
-- Create: apps/daemon/src/tools/skills/wiki-build/scripts/lib/inventory.mjs
-- Create: apps/daemon/test/tools/wiki-build-scan.test.ts
-- Modify: apps/daemon/src/tools/skills/wiki-build/scripts/wiki-build.mjs
+**文件：**
+- 新建：`apps/daemon/src/tools/skills/wiki-build/scripts/lib/inventory.mjs`
+- 新建：`apps/daemon/test/tools/wiki-build-scan.test.ts`
+- 修改：`apps/daemon/src/tools/skills/wiki-build/scripts/wiki-build.mjs`
 
-**Interfaces:**
-- Produces: scanVault({ vaultPath, includePaths?, contentHash?, maxDirEntries?, maxTotal?, sampleBytes? }).
-- Produces: InventoryRecord with id, path, extension, size, mtimeMs, quickFingerprint, contentHash?, title, encoding, samplePath?, processor, support, duplicateOf?, and risks.
-- Consumes: atomic JSONL and hashing helpers from Task 1.
+**接口：**
+- 输出：`scanVault({ vaultPath, includePaths?, contentHash?, maxDirEntries?, maxTotal?, sampleBytes? })`。
+- 输出：`InventoryRecord`，包含 `id`、`path`、`extension`、`size`、`mtimeMs`、`quickFingerprint`、`contentHash?`、`title`、`encoding`、`samplePath?`、`processor`、`support`、`duplicateOf?` 和 `risks`。
+- 依赖：任务 1 的原子 JSONL 和哈希辅助函数。
 
-- [ ] **Step 1: Write scanner tests for filtering, sampling, formats, and caps**
+- [ ] **步骤 1：编写扫描过滤、采样、格式和上限测试**
 
 ~~~ts
-it('writes deterministic inventory without reading wiki or hidden workspaces', () => {
+it('不读取 wiki 或隐藏工作区并写入确定性清单', () => {
   const vault = makeVault();
-  writeFile(vault.path, 'notes/economy.md', '# Economy\n' + 'x'.repeat(20_000));
-  writeFile(vault.path, 'slides.pptx', 'fake-office');
-  writeFile(vault.path, 'archive.zip', 'fake-zip');
-  writeFile(vault.path, 'wiki/old.md', 'ignore me');
-  writeFile(vault.path, '.molio/private.md', 'ignore me');
+  writeFile(vault.path, 'notes/economy.md', '# 经济\n' + 'x'.repeat(20_000));
+  writeFile(vault.path, 'slides.pptx', '模拟 Office');
+  writeFile(vault.path, 'archive.zip', '模拟 ZIP');
+  writeFile(vault.path, 'wiki/old.md', '应忽略');
+  writeFile(vault.path, '.molio/private.md', '应忽略');
 
   const result = runWikiBuildCli(vault.path, ['scan', '--json']);
   assert.equal(result.status, 0);
@@ -260,7 +260,7 @@ it('writes deterministic inventory without reading wiki or hidden workspaces', (
     'notes/economy.md',
     'slides.pptx',
   ]);
-  assert.equal(records[1].title, 'Economy');
+  assert.equal(records[1].title, '经济');
   assert.equal(records[1].processor, 'text');
   assert.equal(records[2].processor, 'docling');
   assert.equal(records[0].support, 'needs-confirmation');
@@ -268,7 +268,7 @@ it('writes deterministic inventory without reading wiki or hidden workspaces', (
   vault.cleanup();
 });
 
-it('records directory and total-limit errors instead of crashing', () => {
+it('记录目录和总量上限错误而不崩溃', () => {
   const vault = makeVault();
   createFiles(vault.path, 'dump', 4);
   const result = runWikiBuildCli(vault.path, [
@@ -280,22 +280,22 @@ it('records directory and total-limit errors instead of crashing', () => {
 });
 ~~~
 
-The local writeFile helper in this test must create parent directories before writing. readInventory parses inventory.jsonl line by line.
+此测试中的本地 `writeFile` 辅助函数必须先创建父目录再写入。`readInventory` 按行解析 `inventory.jsonl`。
 
-- [ ] **Step 2: Run the scanner tests and confirm failure**
+- [ ] **步骤 2：运行扫描测试并确认失败**
 
-Run:
+运行：
 
 ~~~bash
 pnpm --filter @molio/daemon build
 node --test apps/daemon/dist/test/tools/wiki-build-scan.test.js
 ~~~
 
-Expected: FAIL because the scan command is not registered.
+预期：失败，因为尚未注册 `scan` 命令。
 
-- [ ] **Step 3: Implement deterministic traversal and samples**
+- [ ] **步骤 3：实现确定性遍历和采样**
 
-Use these format groups in contracts.mjs:
+在 `contracts.mjs` 中使用以下格式分组：
 
 ~~~js
 export const TEXT_EXTENSIONS = new Set([
@@ -311,33 +311,33 @@ export const PRUNED_NAMES = new Set([
 ]);
 ~~~
 
-inventory.mjs must:
+`inventory.mjs` 必须：
 
-- sort directory entries by normalized relative path,
-- skip dot-prefixed directories and PRUNED_NAMES,
-- read at most sampleBytes from the head and sampleBytes from the tail,
-- validate UTF-8 with TextDecoder('utf-8', { fatal: true }),
-- detect the first Markdown heading as title and otherwise use the filename stem,
-- hash size, mtimeMs, head bytes, and tail bytes for quickFingerprint,
-- compute contentHash only when --content-hash is present,
-- mark same-size and same quickFingerprint records as duplicate candidates,
-- write inventory.jsonl and a SHA-256 digest over its exact bytes,
-- leave wiki/ absent.
+- 按规范化相对路径排序目录项；
+- 跳过点号开头的目录和 `PRUNED_NAMES`；
+- 文件头部最多读取 `sampleBytes`，尾部最多读取 `sampleBytes`；
+- 使用 `TextDecoder('utf-8', { fatal: true })` 校验 UTF-8；
+- 使用第一个 Markdown 标题作为标题，没有标题时使用文件名主干；
+- 对 `size`、`mtimeMs`、头部字节和尾部字节计算 `quickFingerprint`；
+- 仅在提供 `--content-hash` 时计算 `contentHash`；
+- 将大小和 `quickFingerprint` 都相同的记录标记为重复候选；
+- 写入 `inventory.jsonl`，并基于其精确字节计算 SHA-256 摘要；
+- 不创建 `wiki/`。
 
-Register scan in wiki-build.mjs. A full scan writes inventory.jsonl. scan --include PATH writes ingest-candidate.jsonl and must not replace the frozen inventory.
+在 `wiki-build.mjs` 中注册 `scan`。完整扫描写入 `inventory.jsonl`；`scan --include PATH` 写入 `ingest-candidate.jsonl`，不得替换冻结的清单。
 
-- [ ] **Step 4: Run focused and existing traversal tests**
+- [ ] **步骤 4：运行聚焦测试和现有遍历测试**
 
-Run:
+运行：
 
 ~~~bash
 pnpm --filter @molio/daemon build
 node --test apps/daemon/dist/test/tools/wiki-build-scan.test.js apps/daemon/dist/test/core/knowledge.test.js
 ~~~
 
-Expected: all selected tests pass.
+预期：选定测试全部通过。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ~~~bash
 git add apps/daemon/src/tools/skills/wiki-build/scripts apps/daemon/test/tools/wiki-build-scan.test.ts
@@ -346,23 +346,23 @@ git commit -m "feat(wiki): add bounded vault inventory"
 
 ---
 
-### Task 3: Validate, version, and freeze semantic topic plans
+### 任务 3：校验、版本化并冻结语义主题计划
 
-**Files:**
-- Create: apps/daemon/src/tools/skills/wiki-build/scripts/lib/plan.mjs
-- Create: apps/daemon/test/tools/wiki-build-plan.test.ts
-- Modify: apps/daemon/src/tools/skills/wiki-build/scripts/wiki-build.mjs
-- Modify: apps/daemon/test/tools/wiki-build-test-helpers.ts
+**文件：**
+- 新建：`apps/daemon/src/tools/skills/wiki-build/scripts/lib/plan.mjs`
+- 新建：`apps/daemon/test/tools/wiki-build-plan.test.ts`
+- 修改：`apps/daemon/src/tools/skills/wiki-build/scripts/wiki-build.mjs`
+- 修改：`apps/daemon/test/tools/wiki-build-test-helpers.ts`
 
-**Interfaces:**
-- Produces: validatePlan(candidate, inventory, inventoryDigest).
-- Produces: saveDraft(paths, candidate) and approvePlan(paths, candidate).
-- Produces: TopicNode, FileAssignment, and Batch contracts.
-- Consumes: DEFAULT_CAPACITY and safe atomic writers.
+**接口：**
+- 输出：`validatePlan(candidate, inventory, inventoryDigest)`。
+- 输出：`saveDraft(paths, candidate)` 和 `approvePlan(paths, candidate)`。
+- 输出：`TopicNode`、`FileAssignment` 和 `Batch` 契约。
+- 依赖：`DEFAULT_CAPACITY` 和安全原子写入函数。
 
-- [ ] **Step 1: Add exact plan fixture builders**
+- [ ] **步骤 1：添加精确的计划夹具构造器**
 
-Add makePlanFixture to wiki-build-test-helpers.ts. Its return value must use this shape:
+在 `wiki-build-test-helpers.ts` 中添加 `makePlanFixture`。返回值必须使用以下结构：
 
 ~~~ts
 {
@@ -423,10 +423,10 @@ Add makePlanFixture to wiki-build-test-helpers.ts. Its return value must use thi
 }
 ~~~
 
-- [ ] **Step 2: Write plan validation and freeze tests**
+- [ ] **步骤 2：编写计划校验和冻结测试**
 
 ~~~ts
-it('accepts unrelated single-file leaf topics', () => {
+it('接受互不相关的单文件叶主题', () => {
   const fixture = makeScannedTwoFileVault();
   const candidate = makePlanFixture(fixture.inventoryDigest);
   const result = runPlan(fixture.vault, candidate, 'validate');
@@ -435,7 +435,7 @@ it('accepts unrelated single-file leaf topics', () => {
   assert.equal(existsSync(join(fixture.vault, 'wiki')), false);
 });
 
-it('rejects a branch with one child and a capacity branch below its limit', () => {
+it('拒绝单子节点中间主题和未超限的容量细分主题', () => {
   const fixture = makeScannedTwoFileVault();
   const candidate = makePlanFixture(fixture.inventoryDigest);
   candidate.topics = [{
@@ -457,7 +457,7 @@ it('rejects a branch with one child and a capacity branch below its limit', () =
   ]);
 });
 
-it('freezes an approved version and refuses in-place overwrite', () => {
+it('冻结已批准版本并拒绝原地覆盖', () => {
   const fixture = makeScannedTwoFileVault();
   const candidate = makePlanFixture(fixture.inventoryDigest);
   assert.equal(runPlan(fixture.vault, candidate, 'approve').status, 0);
@@ -467,49 +467,49 @@ it('freezes an approved version and refuses in-place overwrite', () => {
 });
 ~~~
 
-- [ ] **Step 3: Run the plan tests and confirm failure**
+- [ ] **步骤 3：运行计划测试并确认失败**
 
-Run:
-
-~~~bash
-pnpm --filter @molio/daemon build
-node --test apps/daemon/dist/test/tools/wiki-build-plan.test.js
-~~~
-
-Expected: FAIL because the plan command is not registered.
-
-- [ ] **Step 4: Implement schema and structural validation**
-
-validatePlan must return all validation errors in one response and enforce:
-
-- inventoryDigest matches the scan,
-- planVersion is a positive integer,
-- each topic id and slug is unique,
-- topic depth matches its location and is at most maxTopicDepth,
-- branches have at least two children and no fileIds,
-- leaves have fileIds and no children,
-- single-file leaves are valid,
-- capacity branches declare splitReason=capacity and exceed a configured limit,
-- leaves over a limit either split or declare indexStrategy=shards,
-- reserved names INDEX.md, log.md, hot.md, and meta cannot be topic slugs,
-- every inventory file appears exactly once in assignments, excluded, or undecided,
-- every assignment points to a leaf,
-- batchPolicy.maxInputFraction is between 0.2 and 0.3, maxInputTokens equals floor(contextWindowTokens * maxInputFraction), batches are globally ordered, topic-local order is stable, file ids exist, ordinary batches contain at most 50 files, and estimatedInputTokens does not exceed maxInputTokens.
-
-validate mode writes plan-draft.json only. approve mode writes plan.json with status=approved, approvedAt, and planDigest; it also copies the immutable version to plan-history/plan-v0001.json. A later plan must increment planVersion and preserve the prior history file.
-
-- [ ] **Step 5: Run focused tests**
-
-Run:
+运行：
 
 ~~~bash
 pnpm --filter @molio/daemon build
 node --test apps/daemon/dist/test/tools/wiki-build-plan.test.js
 ~~~
 
-Expected: all plan tests pass.
+预期：失败，因为尚未注册 `plan` 命令。
 
-- [ ] **Step 6: Commit**
+- [ ] **步骤 4：实现模式和结构校验**
+
+`validatePlan` 必须在一次响应中返回全部校验错误，并强制执行以下规则：
+
+- `inventoryDigest` 与扫描结果一致；
+- `planVersion` 是正整数；
+- 每个主题的 `id` 和 `slug` 唯一；
+- 主题深度与所在位置一致，且不超过 `maxTopicDepth`；
+- 中间主题至少有两个子主题，且没有 `fileIds`；
+- 叶主题包含 `fileIds`，且没有子主题；
+- 单文件叶主题有效；
+- 容量细分产生的中间主题声明 `splitReason=capacity`，并且原主题确实超过配置上限；
+- 超过上限的叶主题必须继续细分，或声明 `indexStrategy=shards`；
+- 保留名称 `INDEX.md`、`log.md`、`hot.md` 和 `meta` 不能作为主题 `slug`；
+- 清单中的每个文件必须且只能出现在 `assignments`、`excluded` 或 `undecided` 中一次；
+- 每个文件分配都指向叶主题；
+- `batchPolicy.maxInputFraction` 介于 0.2 和 0.3，`maxInputTokens` 等于 `floor(contextWindowTokens * maxInputFraction)`；批次按全局顺序排列，主题内顺序稳定；文件 id 必须存在；普通批次最多包含 50 个文件；`estimatedInputTokens` 不得超过 `maxInputTokens`。
+
+`validate` 模式只写入 `plan-draft.json`。`approve` 模式写入 `plan.json`，其中包含 `status=approved`、`approvedAt` 和 `planDigest`；同时把不可变版本复制到 `plan-history/plan-v0001.json`。后续计划必须递增 `planVersion`，并保留旧的历史文件。
+
+- [ ] **步骤 5：运行聚焦测试**
+
+运行：
+
+~~~bash
+pnpm --filter @molio/daemon build
+node --test apps/daemon/dist/test/tools/wiki-build-plan.test.js
+~~~
+
+预期：计划测试全部通过。
+
+- [ ] **步骤 6：提交**
 
 ~~~bash
 git add apps/daemon/src/tools/skills/wiki-build/scripts apps/daemon/test/tools/wiki-build-plan.test.ts apps/daemon/test/tools/wiki-build-test-helpers.ts
@@ -518,23 +518,23 @@ git commit -m "feat(wiki): freeze validated topic plans"
 
 ---
 
-### Task 4: Prepare bounded work items for text, JSON, and normalized documents
+### 任务 4：为文本、JSON 和标准化文档准备受限工作项
 
-**Files:**
-- Create: apps/daemon/src/tools/skills/wiki-build/scripts/lib/preprocess.mjs
-- Create: apps/daemon/test/tools/wiki-build-preprocess.test.ts
-- Modify: apps/daemon/src/tools/skills/wiki-build/scripts/lib/contracts.mjs
+**文件：**
+- 新建：`apps/daemon/src/tools/skills/wiki-build/scripts/lib/preprocess.mjs`
+- 新建：`apps/daemon/test/tools/wiki-build-preprocess.test.ts`
+- 修改：`apps/daemon/src/tools/skills/wiki-build/scripts/lib/contracts.mjs`
 
-**Interfaces:**
-- Produces: prepareWorkItems({ paths, batch, inputManifest, policy }).
-- Produces: chunkMarkdown(text, policy), chunkPlainText(text, policy), chunkJsonl(path, policy), and summarizeJsonStream(path, fieldPolicy).
-- Consumes an external normalization entry { fileId, sourcePath, normalizedPath, processor, processorVersion } for PDF, PPTX, and DOCX.
-- Produces prepared work items with id, fileId, normalizedPath, byteStart, byteEnd, estimatedTokens, overlap, and contentHash.
+**接口：**
+- 输出：`prepareWorkItems({ paths, batch, inputManifest, policy })`。
+- 输出：`chunkMarkdown(text, policy)`、`chunkPlainText(text, policy)`、`chunkJsonl(path, policy)` 和 `summarizeJsonStream(path, fieldPolicy)`。
+- 输入：PDF、PPTX 和 DOCX 的外部标准化记录 `{ fileId, sourcePath, normalizedPath, processor, processorVersion }`。
+- 输出：准备后的工作项，包含 `id`、`fileId`、`normalizedPath`、`byteStart`、`byteEnd`、`estimatedTokens`、`overlap` 和 `contentHash`。
 
-- [ ] **Step 1: Write bounded preprocessing tests**
+- [ ] **步骤 1：编写受限预处理测试**
 
 ~~~ts
-it('splits Markdown on headings before using overlapping windows', () => {
+it('优先按标题切分 Markdown，再使用重叠窗口', () => {
   const fixture = markdownPreparationFixture([
     '# One',
     'a'.repeat(120),
@@ -548,7 +548,7 @@ it('splits Markdown on headings before using overlapping windows', () => {
   assert.ok(result.workItems.every((item) => item.estimatedTokens <= 60));
 });
 
-it('streams JSONL into bounded parts without loading the whole file', () => {
+it('不加载整个文件并将 JSONL 流式拆成受限分片', () => {
   const fixture = jsonlPreparationFixture(100, { maxInputTokens: 80 });
   const result = prepareWorkItems(fixture);
   assert.ok(result.workItems.length > 1);
@@ -556,7 +556,7 @@ it('streams JSONL into bounded parts without loading the whole file', () => {
   assert.ok(result.workItems.every((item) => item.byteEnd > item.byteStart));
 });
 
-it('requires a field policy for a large JSON object', () => {
+it('大型 JSON 对象必须提供字段策略', () => {
   const fixture = largeJsonPreparationFixture();
   assert.throws(
     () => prepareWorkItems(fixture),
@@ -564,10 +564,10 @@ it('requires a field policy for a large JSON object', () => {
   );
 });
 
-it('hashes and registers docling Markdown without changing the source', () => {
+it('不修改源文件并计算及登记 docling Markdown 哈希', () => {
   const fixture = officePreparationFixture('report.pptx');
   const before = readFileSync(fixture.source);
-  const normalized = writeNormalizedMarkdown(fixture.vault, '# Report');
+  const normalized = writeNormalizedMarkdown(fixture.vault, '# 报告');
   const result = prepareWorkItems({
     ...fixture,
     external: [{
@@ -583,20 +583,20 @@ it('hashes and registers docling Markdown without changing the source', () => {
 });
 ~~~
 
-- [ ] **Step 2: Run the preprocessing tests and verify failure**
+- [ ] **步骤 2：运行预处理测试并确认失败**
 
-Run:
+运行：
 
 ~~~bash
 pnpm --filter @molio/daemon build
 node --test apps/daemon/dist/test/tools/wiki-build-preprocess.test.js
 ~~~
 
-Expected: FAIL because lib/preprocess.mjs does not exist.
+预期：失败，因为 `lib/preprocess.mjs` 尚不存在。
 
-- [ ] **Step 3: Implement deterministic chunk preparation**
+- [ ] **步骤 3：实现确定性分块准备**
 
-Use this exact policy contract:
+使用以下精确策略契约：
 
 ~~~js
 {
@@ -608,33 +608,33 @@ Use this exact policy contract:
 }
 ~~~
 
-preprocess.mjs must:
+`preprocess.mjs` 必须：
 
-- calculate estimatedTokens as Math.ceil(Buffer.byteLength(text, 'utf8') / 3),
-- preserve heading text and source byte ranges for Markdown chunks,
-- use fallbackWindowChars with overlapChars when a heading section remains too large,
-- stream JSONL with node:readline and close each part before it exceeds maxInputTokens,
-- scan large JSON with a string/escape/depth state machine that records top-level keys and value types without retaining values,
-- require an approved fieldPolicy before extracting large JSON values,
-- verify external normalized paths live under .molio/wiki-build/normalized,
-- record processor name, version, source content hash, and normalized content hash,
-- write prepared/<batchId>-<attemptToken>.json atomically,
-- refuse any work item whose estimatedTokens exceeds maxInputTokens.
+- 使用 `Math.ceil(Buffer.byteLength(text, 'utf8') / 3)` 计算 `estimatedTokens`；
+- 为 Markdown 分块保留标题文本和源文件字节范围；
+- 标题分段仍然过大时，使用带 `overlapChars` 重叠的 `fallbackWindowChars` 窗口；
+- 使用 `node:readline` 流式读取 JSONL，并在分片超过 `maxInputTokens` 之前结束当前分片；
+- 使用字符串、转义和深度状态机扫描大型 JSON，只记录顶层键和值类型，不保留值；
+- 提取大型 JSON 值之前，要求提供已批准的 `fieldPolicy`；
+- 校验外部标准化路径位于 `.molio/wiki-build/normalized` 下；
+- 记录处理器名称、版本、源内容哈希和标准化内容哈希；
+- 原子写入 `prepared/<batchId>-<attemptToken>.json`；
+- 拒绝 `estimatedTokens` 超过 `maxInputTokens` 的工作项。
 
-Task 5 registers prepare --batch-id ID --attempt-token TOKEN --input MANIFEST --json after state.mjs can validate the active batch and attempt token.
+任务 5 会在 `state.mjs` 能够校验活动批次和尝试令牌后，注册 `prepare --batch-id ID --attempt-token TOKEN --input MANIFEST --json`。
 
-- [ ] **Step 4: Run preprocessing and scanner tests**
+- [ ] **步骤 4：运行预处理和扫描测试**
 
-Run:
+运行：
 
 ~~~bash
 pnpm --filter @molio/daemon build
 node --test apps/daemon/dist/test/tools/wiki-build-preprocess.test.js apps/daemon/dist/test/tools/wiki-build-scan.test.js
 ~~~
 
-Expected: all selected tests pass.
+预期：选定测试全部通过。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ~~~bash
 git add apps/daemon/src/tools/skills/wiki-build/scripts apps/daemon/test/tools/wiki-build-preprocess.test.ts
@@ -643,27 +643,27 @@ git commit -m "feat(wiki): prepare bounded build inputs"
 
 ---
 
-### Task 5: Add resumable state, fenced attempts, and idempotent checkpoint journals
+### 任务 5：添加可恢复状态、尝试隔离和幂等检查点日志
 
-**Files:**
-- Create: apps/daemon/src/tools/skills/wiki-build/scripts/lib/state.mjs
-- Create: apps/daemon/test/tools/wiki-build-state.test.ts
-- Modify: apps/daemon/src/tools/skills/wiki-build/scripts/wiki-build.mjs
-- Modify: apps/daemon/src/tools/skills/wiki-build/scripts/lib/plan.mjs
-- Modify: apps/daemon/src/tools/skills/wiki-build/scripts/lib/preprocess.mjs
+**文件：**
+- 新建：`apps/daemon/src/tools/skills/wiki-build/scripts/lib/state.mjs`
+- 新建：`apps/daemon/test/tools/wiki-build-state.test.ts`
+- 修改：`apps/daemon/src/tools/skills/wiki-build/scripts/wiki-build.mjs`
+- 修改：`apps/daemon/src/tools/skills/wiki-build/scripts/lib/plan.mjs`
+- 修改：`apps/daemon/src/tools/skills/wiki-build/scripts/lib/preprocess.mjs`
 
-**Interfaces:**
-- Produces: initializeState(plan), getStatus(paths), claimNextBatch(paths), recoverRunning(paths), and checkpointBatch(paths, result).
-- Produces: prepareClaimedBatch(paths, batchId, attemptToken, inputManifest), which validates the claim before calling prepareWorkItems.
-- Produces: skipFile(paths, fileId, reason) and retryFailedFile(paths, fileId).
-- next returns batchId, attemptToken, attempt, topicId, file records, and stagingDir.
-- checkpoint consumes { batchId, attemptToken, files, pages, error? }.
-- A page result contains path, topicId, type, title, summary, stagedPath, and sha256.
+**接口：**
+- 输出：`initializeState(plan)`、`getStatus(paths)`、`claimNextBatch(paths)`、`recoverRunning(paths)` 和 `checkpointBatch(paths, result)`。
+- 输出：`prepareClaimedBatch(paths, batchId, attemptToken, inputManifest)`；该函数先校验领取记录，再调用 `prepareWorkItems`。
+- 输出：`skipFile(paths, fileId, reason)` 和 `retryFailedFile(paths, fileId)`。
+- `next` 返回 `batchId`、`attemptToken`、`attempt`、`topicId`、文件记录和 `stagingDir`。
+- `checkpoint` 接收 `{ batchId, attemptToken, files, pages, error? }`。
+- 页面结果包含 `path`、`topicId`、`type`、`title`、`summary`、`stagedPath` 和 `sha256`。
 
-- [ ] **Step 1: Write state transition, failure isolation, and stale-attempt tests**
+- [ ] **步骤 1：编写状态转换、失败隔离和过期尝试测试**
 
 ~~~ts
-it('claims one batch and fences stale workers after recovery', () => {
+it('领取一个批次并在恢复后隔离过期工作进程', () => {
   const fixture = approveTwoBatchPlan();
   const first = runWikiBuildCli(fixture.vault, ['next', '--json']);
   assert.equal(first.json.data.batch.id, 'economy-001');
@@ -687,7 +687,7 @@ it('claims one batch and fences stale workers after recovery', () => {
   assert.equal(stale.json.error.code, 'STALE_ATTEMPT');
 });
 
-it('isolates one failed file and retries checkpoint without duplicate output', () => {
+it('隔离单个失败文件并重试检查点且不重复输出', () => {
   const fixture = approveOneBatchPlanWithTwoFiles();
   const claim = runWikiBuildCli(fixture.vault, ['next', '--json']).json.data;
   stagePage(fixture.vault, claim.stagingDir, 'wiki/经济/sources/经济.md', '# 经济');
@@ -697,7 +697,7 @@ it('isolates one failed file and retries checkpoint without duplicate output', (
     attemptToken: claim.attemptToken,
     files: [
       { fileId: 'economy-file', status: 'succeeded', contentHash: 'a'.repeat(64) },
-      { fileId: 'bad-file', status: 'failed', error: { code: 'PREPROCESS_FAILED', message: 'docling exit 1' } },
+      { fileId: 'bad-file', status: 'failed', error: { code: 'PREPROCESS_FAILED', message: 'docling 退出码 1' } },
     ],
     pages: [{
       path: 'wiki/经济/sources/经济.md',
@@ -715,10 +715,10 @@ it('isolates one failed file and retries checkpoint without duplicate output', (
   assert.equal(readState(fixture.vault).files['bad-file'].status, 'failed');
 });
 
-it('skips pending work and retries only the selected failed file', () => {
+it('跳过待处理工作并只重试选中的失败文件', () => {
   const fixture = approvedPlanWithFailedAndPendingFiles();
   const skipped = runWikiBuildCli(fixture.vault, [
-    'skip', '--file-id', 'pending-file', '--reason', 'unsupported format', '--json',
+    'skip', '--file-id', 'pending-file', '--reason', '不支持的格式', '--json',
   ]);
   assert.equal(skipped.status, 0);
   assert.equal(readState(fixture.vault).files['pending-file'].status, 'skipped');
@@ -732,9 +732,9 @@ it('skips pending work and retries only the selected failed file', () => {
   assert.equal(readState(fixture.vault).files['already-succeeded'].status, 'succeeded');
 });
 
-it('refuses a batch when a source changed after plan approval', () => {
+it('源文件在计划批准后变化时拒绝领取批次', () => {
   const fixture = approveOneBatchPlan();
-  appendFileSync(join(fixture.vault, 'economy.md'), '\nchanged after approval');
+  appendFileSync(join(fixture.vault, 'economy.md'), '\n批准后发生变化');
   const result = runWikiBuildCli(fixture.vault, ['next', '--json']);
   assert.equal(result.status, 2);
   assert.equal(result.json.error.code, 'SOURCE_CHANGED_SINCE_SCAN');
@@ -742,20 +742,20 @@ it('refuses a batch when a source changed after plan approval', () => {
 });
 ~~~
 
-- [ ] **Step 2: Run the state tests and verify failure**
+- [ ] **步骤 2：运行状态测试并确认失败**
 
-Run:
+运行：
 
 ~~~bash
 pnpm --filter @molio/daemon build
 node --test apps/daemon/dist/test/tools/wiki-build-state.test.js
 ~~~
 
-Expected: FAIL because next, recovery, and checkpoint are not registered.
+预期：失败，因为尚未注册 `next`、恢复和 `checkpoint`。
 
-- [ ] **Step 3: Implement initial state and serial claims**
+- [ ] **步骤 3：实现初始状态和串行批次领取**
 
-approvePlan must create state.json in the same mutation lock. State contains:
+`approvePlan` 必须在同一个变更锁中创建 `state.json`。状态结构如下：
 
 ~~~js
 {
@@ -785,48 +785,48 @@ approvePlan must create state.json in the same mutation lock. State contains:
 }
 ~~~
 
-claimNextBatch must refuse while activeBatchId is non-null, select the lowest pending global order, increment attempts, assign randomUUID() as attemptToken, create staging/<attemptToken>, and atomically persist state before returning.
+`activeBatchId` 非空时，`claimNextBatch` 必须拒绝领取；否则选择全局顺序最靠前的 pending 批次，递增 `attempts`，把 `randomUUID()` 分配给 `attemptToken`，创建 `staging/<attemptToken>`，并在返回前原子持久化状态。
 
-Before claiming, compare each source path, size, mtimeMs, and quick fingerprint with the approved inventory. Refuse the claim with SOURCE_CHANGED_SINCE_SCAN when a planned source changed or disappeared; do not substitute current content into the frozen plan.
+领取前，将每个源文件的路径、大小、`mtimeMs` 和快速指纹与已批准清单比较。计划内源文件发生变化或消失时，以 `SOURCE_CHANGED_SINCE_SCAN` 拒绝领取；不得用当前内容替换冻结计划中的内容。
 
-status --recover must change running batch and file states to pending, clear activeBatchId, and preserve attempt counts and errors. A recovered claim receives a new attemptToken.
+`status --recover` 必须把 running 批次和文件状态改回 pending，清除 `activeBatchId`，并保留尝试次数和错误。恢复后的领取必须获得新的 `attemptToken`。
 
-Register prepare in wiki-build.mjs. It must validate batchId and attemptToken, call prepareWorkItems, write prepared/<batchId>-<attemptToken>.json atomically, and return the bounded work items without changing the batch status.
+在 `wiki-build.mjs` 中注册 `prepare`。该命令必须校验 `batchId` 和 `attemptToken`，调用 `prepareWorkItems`，原子写入 `prepared/<batchId>-<attemptToken>.json`，并返回受限工作项，不改变批次状态。
 
-Register skip and retry in wiki-build.mjs. skip accepts pending or failed files, stores the reason, and marks a batch skipped when it has no remaining processable files. retry accepts a failed file, resets only that file to pending, and appends a one-file retry batch with a stable id retry-<fileId>-<nextAttempt>; it must not reset succeeded sibling files.
+在 `wiki-build.mjs` 中注册 `skip` 和 `retry`。`skip` 接受 pending 或 failed 文件，保存原因，并在批次没有剩余可处理文件时将批次标记为 skipped。`retry` 接受 failed 文件，只把该文件重置为 pending，并追加一个稳定 id 为 `retry-<fileId>-<nextAttempt>` 的单文件重试批次；不得重置同批次中已 succeeded 的文件。
 
-- [ ] **Step 4: Implement journaled checkpoint**
+- [ ] **步骤 4：实现带日志的检查点**
 
-checkpointBatch must:
+`checkpointBatch` 必须：
 
-1. hash the canonical payload and inspect an existing journal,
-2. return the stored result when a completed journal has the same payload hash,
-3. validate batchId and attemptToken for a new or unfinished journal,
-4. validate staged paths stay inside staging/<attemptToken>,
-5. compute page hashes itself,
-6. write journals/<batchId>.json with phase=prepared and the desired page map,
-7. atomically replace each destination Wiki page,
-8. write journal phase=applied,
-9. update file, batch, page-manifest, and build states atomically,
-10. write journal phase=completed,
-11. keep the staging files until the state write succeeds.
+1. 对规范化 payload 计算哈希，并检查现有日志；
+2. completed 日志的 payload 哈希相同时，返回已保存结果；
+3. 对新日志或未完成日志校验 `batchId` 和 `attemptToken`；
+4. 校验暂存路径位于 `staging/<attemptToken>` 内；
+5. 自行计算页面哈希；
+6. 写入 `journals/<batchId>.json`，其中 `phase=prepared`，并保存目标页面映射；
+7. 原子替换每个目标 Wiki 页面；
+8. 将日志阶段写为 `phase=applied`；
+9. 原子更新文件、批次、页面清单和构建状态；
+10. 将日志阶段写为 `phase=completed`；
+11. 状态写入成功之前保留暂存文件。
 
-If a completed journal receives the same payload, return the saved result. If a prepared or applied journal exists after a crash, replay files whose destination hash differs and finish the state transition. Reject a different payload for the same batch with CHECKPOINT_CONFLICT.
+completed 日志收到相同 payload 时，返回已保存结果。崩溃后存在 prepared 或 applied 日志时，只重放目标哈希不同的文件并完成状态转换。同一批次收到不同 payload 时，以 `CHECKPOINT_CONFLICT` 拒绝。
 
-Failed file results do not fail succeeded siblings. A batch with both statuses returns succeeded_with_errors in its result summary while its queue status becomes succeeded, allowing next to continue.
+单个 failed 文件不得连带标记 succeeded 同批文件失败。批次同时包含两种状态时，结果摘要返回 `succeeded_with_errors`，队列状态设为 succeeded，使 `next` 可以继续。
 
-- [ ] **Step 5: Run state and CLI tests**
+- [ ] **步骤 5：运行状态和 CLI 测试**
 
-Run:
+运行：
 
 ~~~bash
 pnpm --filter @molio/daemon build
 node --test apps/daemon/dist/test/tools/wiki-build-state.test.js apps/daemon/dist/test/tools/wiki-build-cli.test.js
 ~~~
 
-Expected: all selected tests pass.
+预期：选定测试全部通过。
 
-- [ ] **Step 6: Commit**
+- [ ] **步骤 6：提交**
 
 ~~~bash
 git add apps/daemon/src/tools/skills/wiki-build/scripts apps/daemon/test/tools/wiki-build-state.test.ts
@@ -835,23 +835,23 @@ git commit -m "feat(wiki): add resumable batch checkpoints"
 
 ---
 
-### Task 6: Generate recursive indexes, deterministic shards, and completion reports
+### 任务 6：生成递归索引、确定性分片和完成报告
 
-**Files:**
-- Create: apps/daemon/src/tools/skills/wiki-build/scripts/lib/indexes.mjs
-- Create: apps/daemon/test/tools/wiki-build-indexes.test.ts
-- Modify: apps/daemon/src/tools/skills/wiki-build/scripts/wiki-build.mjs
+**文件：**
+- 新建：`apps/daemon/src/tools/skills/wiki-build/scripts/lib/indexes.mjs`
+- 新建：`apps/daemon/test/tools/wiki-build-indexes.test.ts`
+- 修改：`apps/daemon/src/tools/skills/wiki-build/scripts/wiki-build.mjs`
 
-**Interfaces:**
-- Produces: estimateIndexTokens(markdown), buildIndexModel(plan, pages, summaries), writeIndexes(paths, model), verifyCoverage(model), and finalizeBuild(paths, summaries).
-- Produces: reindexTopicAndAncestors({ paths, plan, state, topicId, pageUpdates, summaries }).
-- finalize consumes a JSON map { [topicId]: { summary: string } }.
-- Produces: root, branch, leaf, and shard INDEX Markdown plus a structured completion report.
+**接口：**
+- 输出：`estimateIndexTokens(markdown)`、`buildIndexModel(plan, pages, summaries)`、`writeIndexes(paths, model)`、`verifyCoverage(model)` 和 `finalizeBuild(paths, summaries)`。
+- 输出：`reindexTopicAndAncestors({ paths, plan, state, topicId, pageUpdates, summaries })`。
+- `finalize` 接收 JSON 映射 `{ [topicId]: { summary: string } }`。
+- 输出：根、中间主题、叶主题和分片的 `INDEX` Markdown，以及结构化完成报告。
 
-- [ ] **Step 1: Write recursive hierarchy and shard tests**
+- [ ] **步骤 1：编写递归层级和分片测试**
 
 ~~~ts
-it('writes root, branch, and leaf indexes bottom-up', () => {
+it('自底向上写入根、中间主题和叶主题索引', () => {
   const fixture = completedThreeLevelBuild();
   const summaries = writeSummaries(fixture.vault, {
     engineering: { summary: '工程知识' },
@@ -867,7 +867,7 @@ it('writes root, branch, and leaf indexes bottom-up', () => {
   assert.match(readWiki(fixture.vault, '建筑工程/规范审查/消防规范/INDEX.md'), /sources\/消防规范/);
 });
 
-it('creates stable shards when actual leaf output exceeds capacity', () => {
+it('实际叶输出超过容量时创建稳定分片', () => {
   const fixture = completedLeafBuild({ maxLeafPages: 2, pageCount: 5 });
   const first = finalize(fixture);
   const firstFiles = listFiles(join(fixture.vault, 'wiki/topic/index-shards'));
@@ -878,14 +878,14 @@ it('creates stable shards when actual leaf output exceeds capacity', () => {
   assert.match(readWiki(fixture.vault, 'topic/INDEX.md'), /concept-0001/);
 });
 
-it('refuses completion when succeeded sources or index entries are missing', () => {
+it('缺少 succeeded 源页面或索引条目时拒绝完成', () => {
   const fixture = completedLeafBuild({ deleteSourcePage: true });
   const result = finalize(fixture);
   assert.equal(result.status, 2);
   assert.deepEqual(result.json.error.details.codes, ['SOURCE_PAGE_MISSING']);
 });
 
-it('registers ingest page metadata and rebuilds only its ancestor chain', () => {
+it('登记 ingest 页面元数据并只重建其祖先链', () => {
   const fixture = completedThreeLevelBuild();
   const beforeUnrelated = hashWiki(fixture.vault, '企业数字化/INDEX.md');
   const input = writeIngestResult(fixture.vault, {
@@ -908,44 +908,44 @@ it('registers ingest page metadata and rebuilds only its ancestor chain', () => 
 });
 ~~~
 
-- [ ] **Step 2: Run the index tests and verify failure**
+- [ ] **步骤 2：运行索引测试并确认失败**
 
-Run:
+运行：
 
 ~~~bash
 pnpm --filter @molio/daemon build
 node --test apps/daemon/dist/test/tools/wiki-build-indexes.test.js
 ~~~
 
-Expected: FAIL because finalize is not registered.
+预期：失败，因为尚未注册 `finalize`。
 
-- [ ] **Step 3: Implement bottom-up index models**
+- [ ] **步骤 3：实现自底向上的索引模型**
 
-Use Math.ceil(Buffer.byteLength(markdown, 'utf8') / 3) as the documented conservative token estimate. The index model must:
+使用 `Math.ceil(Buffer.byteLength(markdown, 'utf8') / 3)` 作为文档规定的保守 token 估算。索引模型必须：
 
-- map every page manifest record to one leaf topic,
-- group leaf pages by type in this order: sources, entities, concepts, comparisons, questions, then lexical type order,
-- sort entries by normalized title and relative path,
-- render each entry as a path-qualified wikilink plus one-line summary,
-- render branch indexes from direct child summaries only,
-- render wiki/INDEX.md from top-level summaries only,
-- require summaries for every topic,
-- avoid reading descendant page bodies when rendering ancestors.
+- 将页面清单中的每条记录映射到一个叶主题；
+- 按 `sources`、`entities`、`concepts`、`comparisons`、`questions` 的顺序按类型分组叶页面，其他类型按词法顺序排列；
+- 按规范化标题和相对路径排序条目；
+- 将每个条目渲染为带路径的 wikilink 加一句摘要；
+- 中间主题索引只读取直接子主题摘要；
+- `wiki/INDEX.md` 只读取顶层主题摘要；
+- 要求每个主题都有摘要；
+- 渲染祖先索引时不读取后代页面正文。
 
-When a leaf exceeds either capacity limit, write index-shards/<type>-NNNN.md. Split after rendering entries so each shard respects both page count and token limits. Leaf INDEX lists shard type, title range, count, and summary.
+叶主题超过任一容量上限时，写入 `index-shards/<type>-NNNN.md`。渲染条目后再分片，确保每个分片同时满足页面数量和 token 上限。叶主题 `INDEX` 列出分片类型、标题范围、条目数和摘要。
 
-- [ ] **Step 4: Implement completion validation and atomic output**
+- [ ] **步骤 4：实现完成条件校验和原子输出**
 
-finalize must reject pending or running batches. It may complete with failed or skipped files, but must:
+存在 pending 或 running 批次时，`finalize` 必须拒绝完成。构建可以包含 failed 或 skipped 文件，但必须：
 
-- report phase=completed_with_errors,
-- require a source page for every succeeded source file,
-- list every generated page exactly once across leaf indexes and shards,
-- reject duplicate paths, missing files, path escapes, and dead internal index links,
-- write all indexes through atomic text replacement,
-- update state phase only after all index files pass a post-write verification scan.
+- 报告 `phase=completed_with_errors`；
+- 每个 succeeded 源文件都存在 source 页面；
+- 每个生成页面在叶索引与分片中只出现一次；
+- 拒绝重复路径、缺失文件、路径逃逸和失效的内部索引链接；
+- 通过原子文本替换写入所有索引；
+- 全部索引文件通过写后校验扫描后，才更新状态阶段。
 
-Add a targeted reindex export for wiki-ingest:
+为 `wiki-ingest` 添加定向重建索引导出：
 
 ~~~js
 export async function reindexTopicAndAncestors({
@@ -962,20 +962,20 @@ export async function reindexTopicAndAncestors({
 }
 ~~~
 
-Register reindex --topic-id ID --input INGEST_RESULT --summaries SUMMARIES --json. Validate every page path exists, its hash matches, and its topicId equals the requested leaf before merging page metadata.
+注册 `reindex --topic-id ID --input INGEST_RESULT --summaries SUMMARIES --json`。合并页面元数据前，校验每个页面路径存在、哈希匹配，并且 `topicId` 等于请求的叶主题。
 
-- [ ] **Step 5: Run focused tests**
+- [ ] **步骤 5：运行聚焦测试**
 
-Run:
+运行：
 
 ~~~bash
 pnpm --filter @molio/daemon build
 node --test apps/daemon/dist/test/tools/wiki-build-indexes.test.js apps/daemon/dist/test/tools/wiki-build-state.test.js
 ~~~
 
-Expected: all selected tests pass.
+预期：选定测试全部通过。
 
-- [ ] **Step 6: Commit**
+- [ ] **步骤 6：提交**
 
 ~~~bash
 git add apps/daemon/src/tools/skills/wiki-build/scripts apps/daemon/test/tools/wiki-build-indexes.test.ts
@@ -984,25 +984,25 @@ git commit -m "feat(wiki): generate recursive topic indexes"
 
 ---
 
-### Task 7: Prove the complete CLI workflow with crash recovery
+### 任务 7：通过崩溃恢复验证完整 CLI 工作流
 
-**Files:**
-- Create: apps/daemon/test/tools/wiki-build-workflow.test.ts
-- Modify: apps/daemon/src/tools/skills/wiki-build/scripts/wiki-build.mjs
-- Modify: apps/daemon/src/tools/skills/wiki-build/scripts/lib/state.mjs
-- Modify: apps/daemon/src/tools/skills/wiki-build/scripts/lib/indexes.mjs
+**文件：**
+- 新建：`apps/daemon/test/tools/wiki-build-workflow.test.ts`
+- 修改：`apps/daemon/src/tools/skills/wiki-build/scripts/wiki-build.mjs`
+- 修改：`apps/daemon/src/tools/skills/wiki-build/scripts/lib/state.mjs`
+- 修改：`apps/daemon/src/tools/skills/wiki-build/scripts/lib/indexes.mjs`
 
-**Interfaces:**
-- Consumes every CLI command: scan, plan, status, next, prepare, checkpoint, skip, retry, reindex, and finalize.
-- Produces a stable command contract for both wiki-build and wiki-ingest Skill instructions.
+**接口：**
+- 依赖全部 CLI 命令：`scan`、`plan`、`status`、`next`、`prepare`、`checkpoint`、`skip`、`retry`、`reindex` 和 `finalize`。
+- 为 `wiki-build` 和 `wiki-ingest` Skill 说明输出稳定的命令契约。
 
-- [ ] **Step 1: Write an end-to-end fixture test**
+- [ ] **步骤 1：编写端到端夹具测试**
 
 ~~~ts
-it('runs scan through finalize and resumes after a simulated crash', () => {
+it('从 scan 运行到 finalize，并在模拟崩溃后恢复', () => {
   const vault = createWorkflowVault({
-    'economy.md': '# Economy\nMarkets',
-    'motorcycle.md': '# Motorcycle repair\nCarburetor',
+    'economy.md': '# 经济\n市场',
+    'motorcycle.md': '# 摩托车维修\n化油器',
   });
 
   assert.equal(runWikiBuildCli(vault.path, ['scan', '--json']).status, 0);
@@ -1040,29 +1040,29 @@ it('runs scan through finalize and resumes after a simulated crash', () => {
 });
 ~~~
 
-- [ ] **Step 2: Run the workflow test**
+- [ ] **步骤 2：运行工作流测试**
 
-Run:
+运行：
 
 ~~~bash
 pnpm --filter @molio/daemon build
 node --test apps/daemon/dist/test/tools/wiki-build-workflow.test.js
 ~~~
 
-Expected: PASS. Any failure indicates command names, state fields, preprocessing contracts, or finalization assumptions drifted in Tasks 1-6; correct the owning task before continuing.
+预期：通过。任何失败都说明命令名称、状态字段、预处理契约或完成条件与任务 1 至 6 发生偏差；继续之前应在对应任务中修正。
 
-- [ ] **Step 3: Run the complete tool test group**
+- [ ] **步骤 3：运行完整工具测试组**
 
-Run:
+运行：
 
 ~~~bash
 pnpm --filter @molio/daemon build
 node --test "apps/daemon/dist/test/tools/wiki-build-*.test.js"
 ~~~
 
-Expected: all wiki-build tool tests pass.
+预期：全部 `wiki-build` 工具测试通过。
 
-- [ ] **Step 4: Commit**
+- [ ] **步骤 4：提交**
 
 ~~~bash
 git add apps/daemon/src/tools/skills/wiki-build/scripts apps/daemon/test/tools/wiki-build-workflow.test.ts
@@ -1071,25 +1071,25 @@ git commit -m "test(wiki): cover resumable build workflow"
 
 ---
 
-### Task 8: Replace prompt-only build and ingest procedures with the CLI workflow
+### 任务 8：用 CLI 工作流替换纯提示词构建和 ingest 流程
 
-**Files:**
-- Modify: apps/daemon/src/tools/skills/wiki-build/SKILL.md
-- Modify: apps/daemon/src/tools/skills/wiki-ingest/SKILL.md
-- Modify: apps/daemon/test/tools/builtin-skills.test.ts
-- Modify: apps/daemon/test/core/skill-installer.test.ts
+**文件：**
+- 修改：`apps/daemon/src/tools/skills/wiki-build/SKILL.md`
+- 修改：`apps/daemon/src/tools/skills/wiki-ingest/SKILL.md`
+- 修改：`apps/daemon/test/tools/builtin-skills.test.ts`
+- 修改：`apps/daemon/test/core/skill-installer.test.ts`
 
-**Interfaces:**
-- Consumes the stable CLI commands from Task 7.
-- Produces wiki-build Skill version 2.0.0 and wiki-ingest Skill version 2.0.0.
-- wiki-ingest consumes inventory.jsonl, plan.json, state.json, and reindexTopicAndAncestors behavior through the CLI reindex command.
+**接口：**
+- 依赖任务 7 的稳定 CLI 命令。
+- 输出 `wiki-build` Skill 2.0.0 和 `wiki-ingest` Skill 2.0.0。
+- `wiki-ingest` 通过 CLI `reindex` 命令使用 `inventory.jsonl`、`plan.json`、`state.json` 和 `reindexTopicAndAncestors` 行为。
 
-- [ ] **Step 1: Write installed-Skill workflow assertions**
+- [ ] **步骤 1：编写已安装 Skill 的工作流断言**
 
-Add to builtin-skills.test.ts:
+在 `builtin-skills.test.ts` 中添加：
 
 ~~~ts
-it('installs the wiki build CLI and approval workflow', () => {
+it('安装 Wiki 构建 CLI 和审批工作流', () => {
   const buildDir = path.join(skillsDir, 'wiki-build');
   assert.ok(fs.existsSync(path.join(buildDir, 'scripts', 'wiki-build.mjs')));
   assert.ok(fs.existsSync(path.join(buildDir, 'scripts', 'lib', 'inventory.mjs')));
@@ -1102,7 +1102,7 @@ it('installs the wiki build CLI and approval workflow', () => {
   assert.match(build, /plan .*--mode approve/);
   assert.ok(
     build.indexOf('等待用户批准') < build.indexOf('--mode approve'),
-    'approval must precede plan freeze and wiki writes',
+    '必须先批准，再冻结计划和写入 Wiki',
   );
   assert.match(build, /status --recover/);
   assert.match(build, /checkpoint/);
@@ -1111,7 +1111,7 @@ it('installs the wiki build CLI and approval workflow', () => {
   assert.match(build, /finalize/);
 });
 
-it('installs recursive ingest instructions', () => {
+it('安装递归 ingest 说明', () => {
   const ingest = fs.readFileSync(path.join(skillsDir, 'wiki-ingest', 'SKILL.md'), 'utf8');
   assert.match(ingest, /^version:\s*2\.0\.0$/m);
   assert.match(ingest, /scan --include/);
@@ -1121,65 +1121,65 @@ it('installs recursive ingest instructions', () => {
 });
 ~~~
 
-- [ ] **Step 2: Run the Skill tests and confirm version/content failure**
+- [ ] **步骤 2：运行 Skill 测试，确认版本和内容不匹配**
 
-Run:
+运行：
 
 ~~~bash
 pnpm --filter @molio/daemon build
 node --test apps/daemon/dist/test/tools/builtin-skills.test.js apps/daemon/dist/test/core/skill-installer.test.js
 ~~~
 
-Expected: FAIL because the installed Skill is still version 1.4.0 and lacks CLI instructions.
+预期：失败，因为已安装 Skill 仍为 1.4.0，且缺少 CLI 说明。
 
-- [ ] **Step 3: Rewrite the wiki-build execution section**
+- [ ] **步骤 3：重写 wiki-build 执行章节**
 
-Keep existing page/frontmatter guidance, then replace the old scan-to-write steps with this mandatory order:
+保留现有页面和 frontmatter 指南，然后按以下强制顺序替换旧的扫描到写入流程：
 
 ~~~markdown
-1. Run node "<wiki-build-skill>/scripts/wiki-build.mjs" scan --json.
-2. Read inventory.jsonl and samples only; do not traverse or read the whole vault again.
-3. Group files by semantic domain. Unrelated files remain separate even when a topic contains one file.
-4. Apply capacity splitting and write the candidate plan JSON.
-5. Run plan --input "<candidate>" --mode validate --json.
-6. Show topics, assignments, exclusions, undecided files, risks, and workload in chat.
-7. 等待用户批准. Do not run approve and do not write wiki/ before explicit approval.
-8. Run plan --input "<candidate>" --mode approve --json.
-9. Run status --json. On a resumed session, show remaining work and obtain confirmation before status --recover.
-10. Loop next -> normalize bounded inputs -> write complete pages under returned stagingDir -> checkpoint.
-11. On user-directed exclusions run skip --file-id; on retryable failures run retry --file-id.
-12. Write topic-summaries.json and run finalize --summaries "<path>" --json.
-13. Report completed, failed, skipped, and unresolved files from the final JSON result.
+1. 运行 `node "<wiki-build-skill>/scripts/wiki-build.mjs" scan --json`。
+2. 只读取 `inventory.jsonl` 和样本，不得再次遍历或读取整个 vault。
+3. 按语义领域对文件分组。即使主题只有一个文件，互不相关的文件也必须分开。
+4. 应用容量细分并写入候选计划 JSON。
+5. 运行 `plan --input "<candidate>" --mode validate --json`。
+6. 在对话中展示主题、文件分配、排除项、待决定文件、风险和工作量。
+7. 等待用户批准。用户明确批准前，不得运行 `approve`，也不得写入 `wiki/`。
+8. 运行 `plan --input "<candidate>" --mode approve --json`。
+9. 运行 `status --json`。恢复会话时，先展示剩余工作，并在运行 `status --recover` 前取得确认。
+10. 循环执行 `next -> 标准化受限输入 -> 在返回的 stagingDir 下写入完整页面 -> checkpoint`。
+11. 用户要求排除文件时运行 `skip --file-id`；出现可重试失败时运行 `retry --file-id`。
+12. 写入 `topic-summaries.json`，然后运行 `finalize --summaries "<path>" --json`。
+13. 根据最终 JSON 结果报告已完成、失败、跳过和未解决的文件。
 ~~~
 
-Document docling output under .molio/wiki-build/normalized, text heading/window splitting, JSON streaming strategy, and unsupported-file confirmation. Require the attemptToken in checkpoint input.
+说明 docling 输出位于 `.molio/wiki-build/normalized`，并记录文本标题/窗口分块、JSON 流式策略和不支持文件的确认流程。`checkpoint` 输入必须包含 `attemptToken`。
 
-- [ ] **Step 4: Rewrite wiki-ingest for recursive Wikis**
+- [ ] **步骤 4：为递归 Wiki 重写 wiki-ingest**
 
-The Skill must:
+Skill 必须：
 
-- detect legacy flat Wiki and retain the old path,
-- call scan --include "<source>" --content-hash --json for a new file,
-- walk root and child INDEX files to propose a leaf topic,
-- allow the user to select a different topic,
-- allow a new single-file semantic topic,
-- update source and knowledge pages,
-- run reindex --topic-id "<id>" so the leaf or shards and every ancestor update,
-- avoid rebuilding unrelated topics,
-- preserve source files.
+- 检测 legacy 扁平 Wiki，并保留旧流程；
+- 对新文件调用 `scan --include "<source>" --content-hash --json`；
+- 逐级读取根和子主题 `INDEX`，提出叶主题建议；
+- 允许用户选择其他主题；
+- 允许新建单文件语义主题；
+- 更新 source 页面和知识页面；
+- 运行 `reindex --topic-id "<id>"`，更新叶主题或分片以及全部祖先；
+- 不重建无关主题；
+- 保留源文件。
 
-- [ ] **Step 5: Bump versions and verify installer upgrades**
+- [ ] **步骤 5：升级版本并验证安装器更新**
 
-Update the installer migration test so a version 1.4.0 destination is replaced by 2.0.0 and contains scripts/wiki-build.mjs. Then run:
+更新安装器迁移测试，确保目标中的 1.4.0 版本被 2.0.0 替换，并包含 `scripts/wiki-build.mjs`。然后运行：
 
 ~~~bash
 pnpm --filter @molio/daemon build
 node --test apps/daemon/dist/test/tools/builtin-skills.test.js apps/daemon/dist/test/core/skill-installer.test.js
 ~~~
 
-Expected: all selected tests pass.
+预期：选定测试全部通过。
 
-- [ ] **Step 6: Commit**
+- [ ] **步骤 6：提交**
 
 ~~~bash
 git add apps/daemon/src/tools/skills/wiki-build apps/daemon/src/tools/skills/wiki-ingest apps/daemon/test/tools/builtin-skills.test.ts apps/daemon/test/core/skill-installer.test.ts
@@ -1188,25 +1188,25 @@ git commit -m "feat(wiki): make build and ingest resumable"
 
 ---
 
-### Task 9: Teach the always-on query prompt to navigate recursive indexes
+### 任务 9：让常驻查询提示词逐级读取递归索引
 
-**Files:**
-- Modify: apps/daemon/src/core/wiki-prompts.ts
-- Modify: apps/daemon/src/routes/graph.ts
-- Modify: apps/daemon/test/core/weixin/wiki-sys-prompt-files.test.ts
-- Create: apps/daemon/test/routes/graph.test.ts
+**文件：**
+- 修改：`apps/daemon/src/core/wiki-prompts.ts`
+- 修改：`apps/daemon/src/routes/graph.ts`
+- 修改：`apps/daemon/test/core/weixin/wiki-sys-prompt-files.test.ts`
+- 新建：`apps/daemon/test/routes/graph.test.ts`
 
-**Interfaces:**
-- Produces an updated VAULT_STRUCTURE covering recursive and legacy layouts.
-- Produces a WIKI_QUERY_PROMPT loop from wiki/INDEX.md through branch, leaf, and shard indexes.
-- Produces exported buildGraph(vaultPath): GraphData for graph-route regression tests.
-- Resolves path-qualified wikilinks exactly before basename and fuzzy fallbacks.
-- Keeps QUERY_SYS_PROMPT_FILE and daemon run routing unchanged.
+**接口：**
+- 输出更新后的 `VAULT_STRUCTURE`，覆盖递归和 legacy 布局。
+- 输出 `WIKI_QUERY_PROMPT` 循环，从 `wiki/INDEX.md` 逐级读取中间主题、叶主题和分片索引。
+- 导出 `buildGraph(vaultPath): GraphData`，供图谱路由回归测试使用。
+- 在文件名和模糊回退之前，精确解析带路径的 wikilink。
+- 保持 `QUERY_SYS_PROMPT_FILE` 和 daemon 运行路由不变。
 
-- [ ] **Step 1: Write query prompt and path-qualified graph assertions**
+- [ ] **步骤 1：编写查询提示词和带路径图谱链接断言**
 
 ~~~ts
-it('the query frame walks recursive indexes and preserves legacy fallback', () => {
+it('查询框架逐级读取递归索引并保留 legacy 回退', () => {
   ensureWikiSysPromptFiles(dir);
   const query = readFileSync(join(dir, 'query.txt'), 'utf8');
   assert.match(query, /wiki\/INDEX\.md/);
@@ -1219,7 +1219,7 @@ it('the query frame walks recursive indexes and preserves legacy fallback', () =
 });
 ~~~
 
-Create apps/daemon/test/routes/graph.test.ts:
+新建 `apps/daemon/test/routes/graph.test.ts`：
 
 ~~~ts
 import { afterEach, describe, it } from 'node:test';
@@ -1243,8 +1243,8 @@ afterEach(() => {
   }
 });
 
-describe('buildGraph path-qualified wikilinks', () => {
-  it('resolves the exact nested page before duplicate-basename fallback', () => {
+describe('buildGraph 路径限定 wikilink', () => {
+  it('在同名文件回退前精确解析嵌套页面', () => {
     const root = mkdtempSync(join(tmpdir(), 'molio-graph-path-'));
     roots.push(root);
     write(root, 'wiki/INDEX.md',
@@ -1266,56 +1266,56 @@ describe('buildGraph path-qualified wikilinks', () => {
 });
 ~~~
 
-- [ ] **Step 2: Run the prompt test and verify failure**
+- [ ] **步骤 2：运行提示词测试并确认失败**
 
-Run:
+运行：
 
 ~~~bash
 pnpm --filter @molio/daemon build
 node --test apps/daemon/dist/test/core/weixin/wiki-sys-prompt-files.test.js apps/daemon/dist/test/routes/graph.test.js
 ~~~
 
-Expected: FAIL because the prompt still describes one flat INDEX and buildGraph is not exported.
+预期：失败，因为提示词仍描述单个扁平 `INDEX`，并且没有导出 `buildGraph`。
 
-- [ ] **Step 3: Update VAULT_STRUCTURE and WIKI_QUERY_PROMPT**
+- [ ] **步骤 3：更新 VAULT_STRUCTURE 和 WIKI_QUERY_PROMPT**
 
-Replace the flat-only directory claims with:
-
-~~~text
-- wiki/INDEX.md lists top-level topics in a recursive Wiki.
-- A branch INDEX lists direct child topics and summaries.
-- A leaf INDEX lists pages or links to index-shards/.
-- A legacy Wiki may still use one flat wiki/INDEX.md; follow it without migration.
-~~~
-
-Set the query sequence to:
+将仅支持扁平目录的说明替换为：
 
 ~~~text
-1. Read wiki/hot.md when present.
-2. Read wiki/INDEX.md.
-3. While the selected entry points to another topic INDEX, read that INDEX.
-4. At a leaf, read the relevant page entries or the relevant index shard.
-5. Open the most relevant Wiki pages and related pages.
-6. Read source files only when the Wiki lacks enough evidence.
+- `wiki/INDEX.md` 列出递归 Wiki 的顶层主题。
+- 中间主题 `INDEX` 列出直接子主题及其摘要。
+- 叶主题 `INDEX` 列出页面或指向 `index-shards/` 的链接。
+- legacy Wiki 可能继续使用单个扁平 `wiki/INDEX.md`；按原结构读取，不做迁移。
 ~~~
 
-Require path-qualified links with display aliases for nested pages and duplicate basenames, for example [[建筑工程/规范审查/消防规范/concepts/防火分区|防火分区]]. Bare links remain valid for unique legacy pages. Retain the current non-Wiki activity-query escape hatch and archive suggestion behavior.
+将查询顺序设为：
 
-- [ ] **Step 4: Resolve path-qualified graph links before basename fallback**
+~~~text
+1. 存在 `wiki/hot.md` 时先读取它。
+2. 读取 `wiki/INDEX.md`。
+3. 选中条目指向另一个主题 `INDEX` 时，继续读取该 `INDEX`。
+4. 到达叶主题后，读取相关页面条目或相关索引分片。
+5. 打开最相关的 Wiki 页面和关联页面。
+6. Wiki 证据不足时才读取源文件。
+~~~
 
-Export buildGraph, register a normalized lower-case alias for every Markdown path, and perform exact checks before reading nameIndex:
+嵌套页面和同名文件必须使用带显示别名的路径限定链接，例如 `[[建筑工程/规范审查/消防规范/concepts/防火分区|防火分区]]`。唯一的 legacy 页面仍可使用不带路径的链接。保留现有非 Wiki 活动查询的绕过逻辑和归档建议行为。
+
+- [ ] **步骤 4：在文件名回退前解析带路径的图谱链接**
+
+导出 `buildGraph`，为每个 Markdown 路径注册规范化小写别名，并在读取 `nameIndex` 前执行精确检查：
 
 ~~~ts
 export function buildGraph(vaultPath: string): GraphData {
-  // existing scan and index construction
+  // 现有扫描和索引构建逻辑
   for (const f of mdFiles) {
     const relPath = f.path;
     const key = relPath;
     pathToKey.set(relPath, key);
     pathToKey.set(relPath.replace(/\\/g, '/').toLowerCase(), key);
-    // existing basename, node type, and link-count setup
+    // 现有文件名、节点类型和链接计数初始化逻辑
   }
-  // existing edge and node construction
+  // 现有边和节点构建逻辑
 }
 
 function resolveLink(
@@ -1345,22 +1345,22 @@ function resolveLink(
   }
 
   const cleanName = normalizedTarget;
-  // retain the existing basename, fuzzy, same-directory, and first-match fallbacks
+  // 保留现有文件名、模糊匹配、同目录和首项匹配回退
 }
 ~~~
 
-- [ ] **Step 5: Run prompt, graph, and route regression tests**
+- [ ] **步骤 5：运行提示词、图谱和路由回归测试**
 
-Run:
+运行：
 
 ~~~bash
 pnpm --filter @molio/daemon build
 node --test apps/daemon/dist/test/core/weixin/wiki-sys-prompt-files.test.js apps/daemon/dist/test/routes/graph.test.js apps/daemon/dist/test/routes/runs-wiki-skill.test.js
 ~~~
 
-Expected: all selected tests pass; run routing still attaches QUERY_SYS_PROMPT_FILE without adding a daemon operation branch.
+预期：选定测试全部通过；运行路由仍会附加 `QUERY_SYS_PROMPT_FILE`，且不新增 daemon 操作分支。
 
-- [ ] **Step 6: Commit**
+- [ ] **步骤 6：提交**
 
 ~~~bash
 git add apps/daemon/src/core/wiki-prompts.ts apps/daemon/src/routes/graph.ts apps/daemon/test/core/weixin/wiki-sys-prompt-files.test.ts apps/daemon/test/routes/graph.test.ts
@@ -1369,19 +1369,19 @@ git commit -m "feat(wiki): navigate recursive topic indexes"
 
 ---
 
-### Task 10: Verify development, installed-vault, and packaged-resource copies
+### 任务 10：验证开发目录、vault 安装目录和打包资源副本
 
-**Files:**
-- Create: apps/desktop/test/wiki-build-resources.test.js
-- Modify: apps/daemon/test/tools/builtin-skills.test.ts
-- Modify: apps/daemon/test/core/skill-installer.test.ts
+**文件：**
+- 新建：`apps/desktop/test/wiki-build-resources.test.js`
+- 修改：`apps/daemon/test/tools/builtin-skills.test.ts`
+- 修改：`apps/daemon/test/core/skill-installer.test.ts`
 
-**Interfaces:**
-- Consumes recursive copyDirSync in skill-installer.ts.
-- Consumes recursive cpSync in apps/desktop/scripts/prepare-resources.mjs.
-- Produces regression coverage for every wiki-build script and lib module in installed and packaged layouts.
+**接口：**
+- 依赖 `skill-installer.ts` 中的递归 `copyDirSync`。
+- 依赖 `apps/desktop/scripts/prepare-resources.mjs` 中的递归 `cpSync`。
+- 为安装布局和打包布局中的每个 `wiki-build` 脚本及 lib 模块提供回归覆盖。
 
-- [ ] **Step 1: Add packaged-resource regression tests**
+- [ ] **步骤 1：添加打包资源回归测试**
 
 ~~~js
 import { describe, it } from 'node:test';
@@ -1396,12 +1396,12 @@ const prepareSource = readFileSync(
   'utf8',
 );
 
-describe('wiki-build packaged resources', () => {
-  it('uses recursive skill copying', () => {
+describe('wiki-build 打包资源', () => {
+  it('递归复制 Skill', () => {
     assert.match(prepareSource, /cpSync\(skillsSrc,\s*skillsDest,\s*\{\s*recursive:\s*true/);
   });
 
-  it('ships the CLI source and every required module', () => {
+  it('包含 CLI 源文件和全部必需模块', () => {
     const sourceRoot = resolve(
       repoRoot,
       'apps/daemon/src/tools/skills/wiki-build/scripts',
@@ -1420,7 +1420,7 @@ describe('wiki-build packaged resources', () => {
     }
   });
 
-  it('contains the scripts in packaged resources when prepare has run', () => {
+  it('运行资源准备后打包资源包含脚本', () => {
     const daemonBundle = resolve(desktopRoot, 'resources/daemon/daemon.mjs');
     if (!existsSync(daemonBundle)) return;
     assert.ok(existsSync(resolve(
@@ -1431,9 +1431,9 @@ describe('wiki-build packaged resources', () => {
 });
 ~~~
 
-- [ ] **Step 2: Run desktop and installer tests**
+- [ ] **步骤 2：运行桌面端和安装器测试**
 
-Run:
+运行：
 
 ~~~bash
 node --test apps/desktop/test/wiki-build-resources.test.js
@@ -1441,20 +1441,20 @@ pnpm --filter @molio/daemon build
 node --test apps/daemon/dist/test/tools/builtin-skills.test.js apps/daemon/dist/test/core/skill-installer.test.js
 ~~~
 
-Expected: all selected tests pass.
+预期：选定测试全部通过。
 
-- [ ] **Step 3: Run prepare-resources and verify the concrete packaged path**
+- [ ] **步骤 3：运行 prepare-resources 并验证实际打包路径**
 
-Run:
+运行：
 
 ~~~bash
 pnpm --filter @molio/desktop build
 node --test apps/desktop/test/wiki-build-resources.test.js
 ~~~
 
-Expected: the conditional packaged-resource test executes its assertion because resources/daemon/daemon.mjs exists.
+预期：由于 `resources/daemon/daemon.mjs` 已存在，条件式打包资源测试会执行对应断言。
 
-- [ ] **Step 4: Commit**
+- [ ] **步骤 4：提交**
 
 ~~~bash
 git add apps/desktop/test/wiki-build-resources.test.js apps/daemon/test/tools/builtin-skills.test.ts apps/daemon/test/core/skill-installer.test.ts
@@ -1463,18 +1463,18 @@ git commit -m "test(wiki): verify build tool packaging"
 
 ---
 
-### Task 11: Document and run Molio-triggered articles-1 acceptance
+### 任务 11：记录并执行由 Molio 触发的 articles-1 验收
 
-**Files:**
-- Create: docs/wiki-build-acceptance.md
+**文件：**
+- 新建：`docs/wiki-build-acceptance.md`
 
-**Interfaces:**
-- Consumes the final CLI, installed Skill, knowledge-base UI entry, daemon run path, and runtime Agent workflow.
-- Produces a reproducible acceptance record with the UI-triggered run identity, inventory digest, counts by support class, recovery evidence, final coverage counts, and representative query results.
+**接口：**
+- 依赖最终 CLI、已安装 Skill、知识库 UI 入口、daemon 运行链路和 runtime Agent 工作流。
+- 输出可复现的验收记录，包含 UI 触发的运行标识、清单摘要、各支持类别数量、恢复证据、最终覆盖数量和代表性查询结果。
 
-- [ ] **Step 1: Write the acceptance runbook**
+- [ ] **步骤 1：编写验收手册**
 
-docs/wiki-build-acceptance.md must contain these commands and expected evidence:
+`docs/wiki-build-acceptance.md` 必须包含以下命令和预期证据：
 
 ~~~powershell
 $cli = "D:\work\02-code\Molio-wiki-build-scalable\apps\daemon\src\tools\skills\wiki-build\scripts\wiki-build.mjs"
@@ -1486,27 +1486,27 @@ Set-Location "D:\work\02-code\Molio-wiki-build-scalable"
 pnpm dev:desktop
 ~~~
 
-Record:
+记录：
 
-- inventory digest,
-- Molio run/conversation id, selected runtime Agent, installed wiki-build Skill version, and the auto-sent wiki-build prompt,
-- total visible files,
-- supported, needs-confirmation, and scan-error counts,
-- total bytes by extension,
-- plan/excluded/undecided count equality with inventory,
-- approved plan version and digest,
-- batch count and maximum estimated token load,
-- a cancellation after at least one checkpoint,
-- recovery output proving completed batches were not reclaimed,
-- final succeeded, failed, and skipped file counts,
-- leaf/shard page coverage and dead-link count,
-- representative questions, selected index path, Wiki pages used, and source fallback used.
+- 清单摘要；
+- Molio 运行/会话 id、选定的 runtime Agent、已安装 `wiki-build` Skill 版本和自动发送的 `wiki-build` 提示词；
+- 可见文件总数；
+- supported、needs-confirmation 和 scan-error 数量；
+- 按扩展名统计的总字节数；
+- plan、excluded 和 undecided 数量之和与清单数量相等；
+- 已批准计划的版本和摘要；
+- 批次数量和最大估算 token 负载；
+- 至少完成一个检查点后的取消操作；
+- 证明已完成批次未被重新领取的恢复输出；
+- 最终 succeeded、failed 和 skipped 文件数量；
+- 叶索引/分片页面覆盖数和死链数量；
+- 代表性问题、选中的索引路径、使用的 Wiki 页面和源文件回退情况。
 
-The runbook must state that counts reflect the scan snapshot and are not product promises.
+验收手册必须说明：这些数量反映扫描快照，不构成产品容量承诺。
 
-- [ ] **Step 2: Run the complete automated verification suite**
+- [ ] **步骤 2：运行完整自动化验证套件**
 
-Run:
+运行：
 
 ~~~bash
 pnpm --filter @molio/daemon test
@@ -1514,37 +1514,37 @@ node --test apps/desktop/test/wiki-build-resources.test.js
 pnpm typecheck
 ~~~
 
-Expected: all tests pass and typecheck exits 0.
+预期：全部测试通过，`typecheck` 以状态码 0 退出。
 
-- [ ] **Step 3: Run the articles-1 pre-scan**
+- [ ] **步骤 3：运行 articles-1 预扫描**
 
-Run the two PowerShell commands from the runbook. Expected:
+运行验收手册中的两个 PowerShell 命令。预期：
 
-- exit status 0,
-- inventory count equals supported + needs-confirmation + scan-error file records,
-- no wiki/ directory is created by scan,
-- inventory and samples exist only under D:\work\articles-1\.molio\wiki-build.
+- 退出状态为 0；
+- 清单数量等于 supported、needs-confirmation 和 scan-error 文件记录之和；
+- 扫描不创建 `wiki/` 目录；
+- 清单和样本只存在于 `D:\work\articles-1\.molio\wiki-build` 下。
 
-Do not approve or execute the plan until the Agent displays the generated topic tree, assignments, risks, and workload to the user.
+Agent 向用户展示生成的主题树、文件分配、风险和工作量之前，不得批准或执行计划。
 
-- [ ] **Step 4: Trigger wiki-build from Molio and record results**
+- [ ] **步骤 4：从 Molio 触发 wiki-build 并记录结果**
 
-Start Molio with pnpm dev:desktop from this worktree, open or add D:\work\articles-1 as the selected knowledge base, select the runtime Agent under test, and click 构建 Wiki. Confirm that the chat auto-sends the wiki-build prompt and the runtime loads wiki-build Skill version 2.0.0 from the vault-installed Skill directory.
+在此 worktree 中运行 `pnpm dev:desktop` 启动 Molio，打开或添加 `D:\work\articles-1` 并将其选为知识库，选择待测试的 runtime Agent，然后点击“构建 Wiki”。确认对话自动发送 `wiki-build` 提示词，并且 runtime 从 vault 的 Skill 安装目录加载 `wiki-build` Skill 2.0.0。
 
-Before approving the proposed plan, verify that:
+批准候选计划前，确认：
 
-- the Agent displays the recursive topic tree, file assignments, exclusions, undecided files, risks, batch count, and estimated workload,
-- unrelated domains remain separate even when a topic contains one source file,
-- no wiki/ page exists yet,
-- all build process files stay under D:\work\articles-1\.molio\wiki-build.
+- Agent 展示递归主题树、文件分配、排除项、待决定文件、风险、批次数量和估算工作量；
+- 即使主题只包含一个源文件，互不相关的领域仍保持分开；
+- 此时尚未生成 `wiki/` 页面；
+- 全部构建过程文件都位于 `D:\work\articles-1\.molio\wiki-build` 下。
 
-Approve the plan in chat. Let at least one batch reach a succeeded checkpoint, cancel the run from Molio, then click 构建 Wiki again. Confirm that the Agent reports remaining work, requests confirmation before recovery, obtains a new attempt token, and does not reclaim a succeeded batch. Resume, process the remaining batches, and finalize the indexes.
+在对话中批准计划。等待至少一个批次到达 succeeded 检查点后，从 Molio 取消运行，再次点击“构建 Wiki”。确认 Agent 报告剩余工作，在恢复前请求确认，取得新的尝试令牌，并且不会重新领取 succeeded 批次。随后恢复运行、处理剩余批次并完成索引。
 
-Ask representative questions through the same knowledge-base chat. Record the index path, Wiki pages, related pages, and any source fallback used for each answer. Add the run ids, relevant chat transcript excerpts, state counts, final coverage, and observed failures to docs/wiki-build-acceptance.md.
+通过同一个知识库对话提出代表性问题。记录每个回答使用的索引路径、Wiki 页面、关联页面和源文件回退。在 `docs/wiki-build-acceptance.md` 中加入运行 id、相关对话摘录、状态数量、最终覆盖情况和观察到的失败。
 
-- [ ] **Step 5: Run final regression verification**
+- [ ] **步骤 5：运行最终回归验证**
 
-Run:
+运行：
 
 ~~~bash
 pnpm --filter @molio/daemon test
@@ -1554,9 +1554,9 @@ git diff --check
 git status --short
 ~~~
 
-Expected: tests and typecheck pass, git diff reports no whitespace errors, and status lists only the acceptance documentation changes intended for this task.
+预期：测试和 `typecheck` 通过，`git diff` 不报告空白错误，状态中只列出本任务预期的验收文档变更。
 
-- [ ] **Step 6: Commit**
+- [ ] **步骤 6：提交**
 
 ~~~bash
 git add docs/wiki-build-acceptance.md
@@ -1565,11 +1565,11 @@ git commit -m "docs: record scalable wiki build acceptance"
 
 ---
 
-## Execution Order and Review Gates
+## 执行顺序与审查关卡
 
-1. Tasks 1-4 establish bounded input handling and user-approved planning. Review that no wiki/ write occurs before approval.
-2. Tasks 5-7 establish resumable mutation. Review fencing, journal replay, and idempotency before allowing Skill execution.
-3. Tasks 8-10 expose the workflow to runtime Agents and packaged builds. Review legacy behavior and installed paths.
-4. Task 11 runs the real data acceptance only after all automated gates pass.
+1. 任务 1 至 4 建立受限输入处理和用户审批计划。审查用户批准前没有发生 `wiki/` 写入。
+2. 任务 5 至 7 建立可恢复变更。在允许 Skill 执行前，审查尝试隔离、日志重放和幂等性。
+3. 任务 8 至 10 向 runtime Agent 和打包版本开放工作流。审查 legacy 行为和安装路径。
+4. 全部自动化关卡通过后，任务 11 才运行真实数据验收。
 
-Each task must keep the branch buildable and end with the listed focused tests plus its commit. Do not combine commits across review gates.
+每个任务都必须保持分支可构建，并以列出的聚焦测试和提交结束。不同审查关卡之间不得合并提交。
