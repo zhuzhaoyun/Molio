@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, type FeishuStatus } from '../../api/client';
 import { useAgents } from '../../hooks/useAgents';
+import { useChannelStatus } from '../../hooks/useChannelStatus';
 import { useI18n } from '../../i18n';
 
 const FEISHU_OPEN_BASE = 'https://open.feishu.cn/app';
@@ -12,30 +13,12 @@ function openUrl(url: string) {
 export function FeishuChannelPanel() {
   const { t } = useI18n();
   const { agents } = useAgents();
-  const [status, setStatus] = useState<FeishuStatus | null>(null);
+  const { status, busy, error, runAction } = useChannelStatus<FeishuStatus>(
+    () => api.getFeishuStatus(),
+  );
   const [appId, setAppId] = useState('');
   const [appSecret, setAppSecret] = useState('');
   const [defaultAgentId, setDefaultAgentId] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let stopped = false;
-    const tick = async () => {
-      try {
-        const next = await api.getFeishuStatus();
-        if (!stopped) setStatus(next);
-      } catch {
-        // keep previous status visible
-      }
-    };
-    void tick();
-    const timer = window.setInterval(tick, 2_000);
-    return () => {
-      stopped = true;
-      window.clearInterval(timer);
-    };
-  }, []);
 
   useEffect(() => {
     api.getConfig()
@@ -50,20 +33,6 @@ export function FeishuChannelPanel() {
         );
       })
       .catch(() => {});
-  }, []);
-
-  const runAction = useCallback(async (fn: () => Promise<FeishuStatus>) => {
-    setBusy(true);
-    setError(null);
-    try {
-      // `fn` already returns the updated status — no need for a follow-up
-      // `refresh()` fetch (it would just re-set the same state + add latency).
-      setStatus(await fn());
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
   }, []);
 
   const handleSave = useCallback(() => {

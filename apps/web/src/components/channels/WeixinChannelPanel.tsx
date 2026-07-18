@@ -1,132 +1,21 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, type WeixinStatus } from '../../api/client';
 import { useAgents } from '../../hooks/useAgents';
+import { useChannelStatus } from '../../hooks/useChannelStatus';
 import { useI18n } from '../../i18n';
-import { FeishuChannelPanel } from './FeishuChannelPanel';
 
-type ChannelId = 'weixin' | 'feishu' | 'wecom';
-
-interface ChannelItem {
-  id: ChannelId;
-  titleKey: string;
-  descKey: string;
-  statusKey: string;
-  available: boolean;
-}
-
-const CHANNELS: ChannelItem[] = [
-  {
-    id: 'weixin',
-    titleKey: 'channels.weixin.title',
-    descKey: 'channels.weixin.desc',
-    statusKey: 'channels.status.available',
-    available: true,
-  },
-  {
-    id: 'feishu',
-    titleKey: 'channels.feishu.title',
-    descKey: 'channels.feishu.desc',
-    statusKey: 'channels.status.available',
-    available: true,
-  },
-  {
-    id: 'wecom',
-    titleKey: 'channels.wecom.title',
-    descKey: 'channels.wecom.desc',
-    statusKey: 'channels.status.planned',
-    available: false,
-  },
-];
-
-export function ChannelsPage() {
-  const { t } = useI18n();
-  const [active, setActive] = useState<ChannelId>('weixin');
-  const activeChannel = CHANNELS.find((channel) => channel.id === active) ?? CHANNELS[0];
-
-  return (
-    <div className="channels-shell">
-      <div className="channels-header">
-        <h1 className="channels-header__title">{t('channels.title')}</h1>
-      </div>
-
-      <div className="channels-layout">
-        <aside className="channels-list" aria-label={t('channels.listLabel')}>
-          {CHANNELS.map((channel) => (
-            <button
-              key={channel.id}
-              type="button"
-              className={`channels-list__item${active === channel.id ? ' is-active' : ''}`}
-              onClick={() => setActive(channel.id)}
-            >
-              <span className="channels-list__item-main">
-                <span className="channels-list__item-title">{t(channel.titleKey)}</span>
-                <span className="channels-list__item-desc">{t(channel.descKey)}</span>
-              </span>
-              <span className={`channels-badge${channel.available ? ' channels-badge--on' : ''}`}>
-                {t(channel.statusKey)}
-              </span>
-            </button>
-          ))}
-        </aside>
-
-        <main className="channels-panel">
-          {activeChannel.id === 'weixin' ? (
-            <WeixinChannelPanel />
-          ) : activeChannel.id === 'feishu' ? (
-            <FeishuChannelPanel />
-          ) : (
-            <PlannedChannelPanel channel={activeChannel} />
-          )}
-        </main>
-      </div>
-    </div>
-  );
-}
-
-function PlannedChannelPanel({ channel }: { channel: ChannelItem }) {
-  const { t } = useI18n();
-
-  return (
-    <section className="channels-card channels-card--empty">
-      <div>
-        <h2 className="channels-card__title">{t(channel.titleKey)}</h2>
-        <p className="channels-card__desc">{t(channel.descKey)}</p>
-      </div>
-      <span className="channels-empty-state">{t('channels.comingSoon')}</span>
-    </section>
-  );
-}
-
-function WeixinChannelPanel() {
+/**
+ * Weixin channel panel — QR login + polling status + default agent picker.
+ * Extracted from ChannelsPanel.tsx so it sits symmetrically with
+ * FeishuChannelPanel under components/channels/.
+ */
+export function WeixinChannelPanel() {
   const { t } = useI18n();
   const { agents } = useAgents();
-  const [status, setStatus] = useState<WeixinStatus | null>(null);
+  const { status, busy, error, runAction } = useChannelStatus<WeixinStatus>(
+    () => api.getWeixinStatus(),
+  );
   const [defaultAgentId, setDefaultAgentId] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const refresh = useCallback(async () => {
-    const next = await api.getWeixinStatus();
-    setStatus(next);
-  }, []);
-
-  useEffect(() => {
-    let stopped = false;
-    const tick = async () => {
-      try {
-        const next = await api.getWeixinStatus();
-        if (!stopped) setStatus(next);
-      } catch {
-        // keep the previous status visible
-      }
-    };
-    void tick();
-    const timer = window.setInterval(tick, 2_000);
-    return () => {
-      stopped = true;
-      window.clearInterval(timer);
-    };
-  }, []);
 
   useEffect(() => {
     api.getConfig()
@@ -136,19 +25,6 @@ function WeixinChannelPanel() {
       })
       .catch(() => {});
   }, []);
-
-  const runAction = useCallback(async (fn: () => Promise<WeixinStatus>) => {
-    setBusy(true);
-    setError(null);
-    try {
-      setStatus(await fn());
-      await refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  }, [refresh]);
 
   const handleLogin = useCallback(() => {
     void runAction(async () => {
