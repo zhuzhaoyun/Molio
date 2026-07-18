@@ -19,11 +19,6 @@ export function FeishuChannelPanel() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
-    const next = await api.getFeishuStatus();
-    setStatus(next);
-  }, []);
-
   useEffect(() => {
     let stopped = false;
     const tick = async () => {

@@ -262,6 +262,11 @@ export class FeishuApi {
     // (or a malicious server streaming forever) still can't OOM us.
     const reader = res.body?.getReader();
     if (!reader) {
+      // No streamable body — fall back to arrayBuffer(), but only after we
+      // already checked Content-Length above. If a server lies or omits the
+      // header, this read can still OOM; we accept the risk for the rare
+      // non-streaming response (Feishu always streams) and refuse post-hoc
+      // if the result exceeds the cap.
       const buf = Buffer.from(await res.arrayBuffer());
       if (buf.length > maxBytes) throw new Error(`Feishu download too large: ${buf.length} > ${maxBytes}`);
       return { data: buf, contentType: res.headers.get('content-type') ?? '' };

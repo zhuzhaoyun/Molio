@@ -155,22 +155,20 @@ if (staticDir) {
 }
 
 // Graceful shutdown
-process.on('SIGINT', () => {
+function gracefulShutdown(): void {
   cleanupAllBridges();
   weixinService.stop();
-  void feishuService.stop();
   void vaultWatcher.stop();
   runManager.cancelAll();
-  closeDatabase();
-  process.exit(0);
-});
+  // Feishu stop() is async (WSClient teardown); chain DB close + exit AFTER
+  // it resolves so we don't close the SQLite handle while a WS callback is
+  // mid-write. WeixinService.stop() is still sync (polling-based, no async
+  // teardown), so it's safe to call before the await.
+  void feishuService.stop().finally(() => {
+    closeDatabase();
+    process.exit(0);
+  });
+}
 
-process.on('SIGTERM', () => {
-  cleanupAllBridges();
-  weixinService.stop();
-  void feishuService.stop();
-  void vaultWatcher.stop();
-  runManager.cancelAll();
-  closeDatabase();
-  process.exit(0);
-});
+process.on('SIGINT', gracefulShutdown);
+process.on('SIGTERM', gracefulShutdown);

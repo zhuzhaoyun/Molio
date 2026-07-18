@@ -250,8 +250,16 @@ export class FeishuService implements ChannelSink {
       return cached.tenantAccessToken;
     }
     const refreshed = await this.api.fetchTenantAccessToken();
+    // Write to disk BEFORE updating the in-memory cache so a write failure
+    // doesn't leave the cache ahead of what's persisted (a subsequent daemon
+    // restart would lose the token otherwise).
+    try {
+      writeCredentials(resolveCredentialsPath(this.getConfig()), refreshed);
+    } catch (err) {
+      this.status.lastError = `Token 写盘失败：${err instanceof Error ? err.message : String(err)}`;
+      throw err;
+    }
     this.cachedToken = refreshed;
-    writeCredentials(resolveCredentialsPath(this.getConfig()), refreshed);
     return refreshed.tenantAccessToken;
   }
 
@@ -333,6 +341,11 @@ export class FeishuService implements ChannelSink {
     try {
       await this.wsClient.start();
     } catch (err) {
+      // Drop the failed client so the next start() can construct a fresh one.
+      // (FeishuWSClient.start clears `this.client` on throw, but the
+      // `if (this.wsClient) return` guard at the top of startWSClient would
+      // otherwise no-op a retry.)
+      this.wsClient = null;
       this.transitionTo('error');
       this.status.loginStatus = 'error';
       this.status.connected = false;

@@ -13,6 +13,13 @@ const RUN_REPLY_TIMEOUT_MS = 5 * 60 * 1000;
  * a visible "queue overflow" reply so the user knows something was dropped.
  */
 const QUEUE_MAX_PENDING = 16;
+/**
+ * Cap on the accumulated reply text. A stuck agent (e.g. infinite loop
+ * emitting `text_delta`s) could otherwise grow `reply` unbounded and OOM
+ * the daemon. Truncating at ~1MB still leaves the user a substantial reply
+ * to read; the agent's run itself is also timeout-bounded by RunManager.
+ */
+const REPLY_MAX_CHARS = 1_000_000;
 
 /**
  * Resolve the wiki/vault role frame to inject as the agent's SYSTEM prompt
@@ -301,7 +308,12 @@ export class ChannelDispatcher {
 
     const handleEvent = (event: AgentEvent) => {
       if (event.type === 'text_delta') {
-        reply += event.delta;
+        if (reply.length < REPLY_MAX_CHARS) {
+          reply += event.delta;
+          if (reply.length > REPLY_MAX_CHARS) {
+            reply = reply.slice(0, REPLY_MAX_CHARS) + '\n…[回复被截断：超过字符上限]';
+          }
+        }
         return;
       }
 
