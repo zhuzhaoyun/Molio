@@ -1,6 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import QRCode from 'qrcode';
 import type Database from 'better-sqlite3';
 import type { RunManager } from '../RunManager.js';
@@ -8,6 +6,12 @@ import type { ConversationService } from '../conversations/service.js';
 import { loadConfig, saveConfig, type WeixinConfig } from '../config.js';
 import { ChannelDispatcher } from '../channels/dispatcher.js';
 import type { ChannelSink } from '../channels/types.js';
+import {
+  readCredentials as readCredFile,
+  removeCredentials,
+  resolveCredentialsPath as resolveCredsPath,
+  writeCredentials,
+} from '../channels/credentials-store.js';
 import { DEFAULT_BASE_URL, WeixinApi } from './client.js';
 import { buildMolioPrompt } from './message.js';
 import { wikiPromptFileFor } from './dispatcher.js';
@@ -29,50 +33,20 @@ const TEXT_CHUNK_LIMIT = 4000;
 /** Health probe interval when in unhealthy state (ms). */
 const HEALTH_PROBE_INTERVAL_MS = 30_000;
 
-function configDir(): string {
-  return path.join(os.homedir(), '.molio');
-}
-
-function defaultCredentialsPath(): string {
-  return path.join(configDir(), 'weixin-credentials.json');
-}
+const WEIXIN_CHANNEL_PREFIX = 'weixin';
 
 function resolveCredentialsPath(config?: WeixinConfig): string {
-  const configured = config?.credentialsPath;
-  if (!configured) return defaultCredentialsPath();
-  if (configured.startsWith('~')) return path.join(os.homedir(), configured.slice(1));
-  return configured;
+  return resolveCredsPath(config?.credentialsPath, WEIXIN_CHANNEL_PREFIX);
 }
 
 function readCredentials(file: string): WeixinCredentials | null {
-  try {
-    if (!fs.existsSync(file)) return null;
-    const parsed = JSON.parse(fs.readFileSync(file, 'utf8')) as WeixinCredentials;
-    if (!parsed.token || !parsed.baseUrl) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-function writeCredentials(file: string, credentials: WeixinCredentials): void {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(credentials, null, 2), 'utf8');
-  try {
-    fs.chmodSync(tmp, 0o600);
-  } catch {
-    // Windows and some filesystems ignore POSIX modes.
-  }
-  fs.renameSync(tmp, file);
-}
-
-function removeCredentials(file: string): void {
-  try {
-    fs.rmSync(file, { force: true });
-  } catch {
-    // ignore
-  }
+  return readCredFile<WeixinCredentials>(file, (raw) => {
+    if (!raw || typeof raw !== 'object') return null;
+    const r = raw as Partial<WeixinCredentials>;
+    if (typeof r.token !== 'string' || !r.token) return null;
+    if (typeof r.baseUrl !== 'string' || !r.baseUrl) return null;
+    return { token: r.token, baseUrl: r.baseUrl, botId: r.botId, userId: r.userId, contextTokens: r.contextTokens };
+  });
 }
 
 async function toQrDataUrl(content: string): Promise<string> {

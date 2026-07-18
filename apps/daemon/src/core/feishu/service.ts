@@ -1,12 +1,16 @@
 import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import type Database from 'better-sqlite3';
 import type { RunManager } from '../RunManager.js';
 import type { ConversationService } from '../conversations/service.js';
 import { loadConfig, saveConfig, type FeishuConfig } from '../config.js';
 import { ChannelDispatcher } from '../channels/dispatcher.js';
 import type { ChannelSink } from '../channels/types.js';
+import {
+  readCredentials as readCredFile,
+  removeCredentials,
+  resolveCredentialsPath as resolveCredsPath,
+  writeCredentials,
+} from '../channels/credentials-store.js';
 import { getVaultByPath } from '../db.js';
 import { FEISHU_SYS_PROMPT_FILE } from '../wiki-prompts.js';
 import { DEFAULT_BASE_URL, FeishuApi } from './client.js';
@@ -33,51 +37,20 @@ const DEDUP_MAX_ENTRIES = 10_000;
 /** Chunk size for sendText — Feishu's text limit is 4096 bytes; use 3000 chars for safety. */
 const TEXT_CHUNK_LIMIT = 3000;
 
-function configDir(): string {
-  return path.join(os.homedir(), '.molio');
-}
-
-function defaultCredentialsPath(): string {
-  return path.join(configDir(), 'feishu-credentials.json');
-}
+const FEISHU_CHANNEL_PREFIX = 'feishu';
 
 function resolveCredentialsPath(config?: FeishuConfig): string {
-  const configured = config?.credentialsPath;
-  if (!configured) return defaultCredentialsPath();
-  if (configured.startsWith('~')) return path.join(os.homedir(), configured.slice(1));
-  return configured;
+  return resolveCredsPath(config?.credentialsPath, FEISHU_CHANNEL_PREFIX);
 }
 
 function readCredentials(file: string): FeishuCredentials | null {
-  try {
-    if (!fs.existsSync(file)) return null;
-    const parsed = JSON.parse(fs.readFileSync(file, 'utf8')) as Partial<FeishuCredentials>;
-    if (typeof parsed.tenantAccessToken !== 'string' || !parsed.tenantAccessToken) return null;
-    if (typeof parsed.expiresAt !== 'number' || !parsed.expiresAt) return null;
-    return { tenantAccessToken: parsed.tenantAccessToken, expiresAt: parsed.expiresAt };
-  } catch {
-    return null;
-  }
-}
-
-function writeCredentials(file: string, credentials: FeishuCredentials): void {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(credentials, null, 2), 'utf8');
-  try {
-    fs.chmodSync(tmp, 0o600);
-  } catch {
-    // Windows / non-POSIX filesystems ignore chmod.
-  }
-  fs.renameSync(tmp, file);
-}
-
-function removeCredentials(file: string): void {
-  try {
-    fs.rmSync(file, { force: true });
-  } catch {
-    // ignore
-  }
+  return readCredFile<FeishuCredentials>(file, (raw) => {
+    if (!raw || typeof raw !== 'object') return null;
+    const r = raw as Partial<FeishuCredentials>;
+    if (typeof r.tenantAccessToken !== 'string' || !r.tenantAccessToken) return null;
+    if (typeof r.expiresAt !== 'number' || !r.expiresAt) return null;
+    return { tenantAccessToken: r.tenantAccessToken, expiresAt: r.expiresAt };
+  });
 }
 
 /** Resolve the feishu-specific wiki system-prompt file for a fresh spawn. */
