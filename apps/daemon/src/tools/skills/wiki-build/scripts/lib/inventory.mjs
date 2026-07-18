@@ -1,4 +1,4 @@
-import { closeSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { closeSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { basename, extname, join, relative, resolve, sep } from 'node:path';
 import {
   CONFIRM_EXTENSIONS,
@@ -133,11 +133,15 @@ function sourcePaths(vaultPath, includePaths, errors, maxDirEntries, maxTotal) {
       continue;
     }
     try {
-      if (!statSync(path).isDirectory()) {
-        if (addFile(path)) break;
-      } else if (includePaths && isPrunedDirectory(basename(path))) {
+      const targetPath = realpathSync(path);
+      assertPathWithinVault(vaultPath, targetPath);
+      if (includePaths && hasPrunedAncestor(targetPath)) {
         recordPrunedInclude(path);
-      } else if (visit(path)) {
+      } else if (!statSync(targetPath).isDirectory()) {
+        if (addFile(targetPath)) break;
+      } else if (includePaths && isPrunedDirectory(basename(targetPath))) {
+        recordPrunedInclude(path);
+      } else if (visit(targetPath)) {
         break;
       }
     } catch (error) {

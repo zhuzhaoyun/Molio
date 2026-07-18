@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { describe, it } from 'node:test';
 import { makeVault, runWikiBuildCli } from './wiki-build-test-helpers.js';
@@ -13,6 +13,16 @@ function writeFile(vaultPath: string, relativePath: string, contents: string) {
 function createFiles(vaultPath: string, directory: string, count: number) {
   for (let index = 0; index < count; index += 1) {
     writeFile(vaultPath, join(directory, `${index}.md`), `# ${index}`);
+  }
+}
+
+function createDirectoryLink(target: string, path: string, diagnostic: (message: string) => void) {
+  try {
+    symlinkSync(target, path, 'dir');
+  } catch (error) {
+    if (process.platform !== 'win32' || (error as NodeJS.ErrnoException).code !== 'EPERM') throw error;
+    diagnostic(`Directory symlinks require unavailable privileges; using a junction: ${String(error)}`);
+    symlinkSync(target, path, 'junction');
   }
 }
 
@@ -136,6 +146,23 @@ describe('wiki-build scan', () => {
     const candidates = readFileSync(join(vault.path, '.molio', 'wiki-build', 'ingest-candidate.jsonl'), 'utf8')
       .trim().split('\n').map((line) => JSON.parse(line));
     assert.deepEqual(candidates.map((record: { path: string }) => record.path), ['candidate.md']);
+    vault.cleanup();
+  });
+
+  it('does not follow include links into pruned directories', (t) => {
+    const vault = makeVault();
+    writeFile(vault.path, '.molio/private.md', '# Private');
+    writeFile(vault.path, 'wiki/old.md', '# Old');
+    createDirectoryLink(join(vault.path, '.molio'), join(vault.path, 'shortcut-molio'), t.diagnostic.bind(t));
+    createDirectoryLink(join(vault.path, 'wiki'), join(vault.path, 'shortcut-wiki'), t.diagnostic.bind(t));
+
+    const result = runWikiBuildCli(vault.path, [
+      'scan', '--include', 'shortcut-molio/private.md', '--include', 'shortcut-wiki/old.md', '--json',
+    ]);
+    assert.equal(result.status, 0);
+    assert.equal(result.json.data.counts.total, 0);
+    assert.equal(result.json.data.errors.filter((error: { code: string }) => error.code === 'PRUNED_PATH').length, 2);
+    assert.equal(readFileSync(join(vault.path, '.molio', 'wiki-build', 'ingest-candidate.jsonl'), 'utf8'), '');
     vault.cleanup();
   });
 });
