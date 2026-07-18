@@ -17,12 +17,14 @@ import type { MenuItem } from './ContextMenu';
 import { TooLargeCard } from './TooLargeCard';
 import { ViewerErrorBoundary } from './ViewerErrorBoundary';
 import type { KbCodeMirrorViewerHandle } from './KbCodeMirrorViewer';
+import { KbFrontmatterCard } from './KbFrontmatterCard';
 import { formatFileSize } from '../../utils/format';
-import { preprocessWikiEmbeds, proxyExternalImages, stripTrackingPixels } from '../../hooks/useKnowledge';
+import { preprocessWikiLinks, preprocessWikiEmbeds, proxyExternalImages, stripTrackingPixels } from '../../hooks/useKnowledge';
 import { api } from '../../api/client';
 import { useI18n } from '../../i18n';
 import TurndownService from 'turndown';
 import { gfm } from 'turndown-plugin-gfm';
+import frontMatter from 'front-matter';
 
 // Lazy-load the CodeMirror viewer (heavy CM bundle) only when a text file
 // actually takes the CM path (non-md / large md). Named export → default shape.
@@ -119,6 +121,8 @@ interface KbMainContentProps {
   onForceLoad?: () => void;
   /** Close the active tab (wired from useKbTabs by KnowledgeBasePage). */
   onCloseTab?: () => void;
+  /** Navigate to another file in the same vault (for [[wikilink]] clicks). */
+  onNavigateToFile?: (filePath: string) => void;
 }
 
 export function KbMainContent({
@@ -146,12 +150,14 @@ export function KbMainContent({
   editedContent,
   onForceLoad,
   onCloseTab,
+  onNavigateToFile,
 }: KbMainContentProps) {
   const { t } = useI18n();
   const contentRef = useRef<HTMLDivElement>(null);
   const cmRef = useRef<KbCodeMirrorViewerHandle>(null);
   const [wrap, setWrap] = useState(false);
   const [retryNonce, setRetryNonce] = useState(0);
+  const [fmExpanded, setFmExpanded] = useState(true);
   const [ctxMenu, setCtxMenu] = useState<
     { x: number; y: number; source: 'doocs' | 'codemirror'; selectedText?: string } | null
   >(null);
@@ -178,10 +184,104 @@ export function KbMainContent({
   // runs for the small-.md doocs path — never for the CM source view.
   const renderedContent = useMemo(
     () => isSmallMd
-      ? proxyExternalImages(preprocessWikiEmbeds(stripTrackingPixels(editedContent ?? fileContent?.content ?? ''), vaultId ?? ''))
+      ? preprocessWikiLinks(proxyExternalImages(preprocessWikiEmbeds(stripTrackingPixels(editedContent ?? fileContent?.content ?? ''), vaultId ?? '')), vaultId ?? '')
       : '',
     [editedContent, fileContent?.content, vaultId, isSmallMd],
   );
+
+  // Parse YAML frontmatter from the raw source for the property card.
+  // Only meaningful for small .md files (doocs path).
+  const frontmatterData = useMemo(() => {
+    if (!isSmallMd) return {};
+    const raw = editedContent ?? fileContent?.content ?? '';
+    if (!raw) return {};
+    try {
+      const parsed = frontMatter(raw);
+      return (parsed.attributes as Record<string, unknown>) ?? {};
+    } catch {
+      return {};
+    }
+  }, [rawContent, isSmallMd]);
+
+  // Extract distilled badges (not raw frontmatter fields) for the collapsed header.
+  // The collapsed bar should answer "what kind of document is this?" at a glance.
+  const fmCollapsed = useMemo(() => {
+    const fm = frontmatterData;
+    if (Object.keys(fm).length === 0) return null;
+
+    const tags: string[] = (() => {
+      const raw = fm.tags;
+      if (!raw) return [];
+      if (Array.isArray(raw)) return raw.map((t) => String(t)).filter(Boolean);
+      if (typeof raw === 'string') return raw.split(/,\s*/).filter(Boolean);
+      return [];
+    })();
+
+    const source: string | null = (() => {
+      const raw = fm.source;
+      if (!raw) return null;
+      const s = String(raw);
+      return /^https?:\/\//i.test(s) ? s : null;
+    })();
+
+    const author: string | null = (() => {
+      const raw = fm.author;
+      if (!raw) return null;
+      if (Array.isArray(raw)) {
+        return raw.map((a) => String(a).replace(/^\[\[|\]\]$/g, '').trim()).filter(Boolean).join(', ');
+      }
+      return String(raw);
+    })();
+
+    const wikiType = typeof fm.type === 'string' ? fm.type : null;
+
+    const relatedCount = (() => {
+      const raw = fm.related;
+      if (!raw) return 0;
+      if (Array.isArray(raw)) return raw.length;
+      return 0;
+    })();
+
+    const isWeChat =
+      tags.includes('clippings') ||
+      (source !== null && source.includes('mp.weixin.qq.com'));
+
+    // Derive the primary badge (icon + label) from frontmatter properties.
+    interface Badge { icon: string; label: string; }
+    let primaryBadge: Badge | null = null;
+    let secondaryBadge: Badge | null = null;
+
+    if (wikiType) {
+      const typeBadges: Record<string, Badge> = {
+        entity: { icon: '📌', label: '实体' },
+        concept: { icon: '💡', label: '概念' },
+        source: { icon: '📰', label: '数据源' },
+        comparison: { icon: '⚖️', label: '对比' },
+        question: { icon: '❓', label: '问答' },
+      };
+      primaryBadge = typeBadges[wikiType] ?? null;
+      if (relatedCount > 0) {
+        secondaryBadge = { icon: '🔗', label: `${relatedCount}` };
+      }
+    } else if (isWeChat) {
+      primaryBadge = { icon: '📱', label: '微信' };
+      if (author) secondaryBadge = { icon: '✍️', label: author };
+    } else if (source) {
+      primaryBadge = { icon: '📎', label: '剪藏' };
+      if (author) secondaryBadge = { icon: '✍️', label: author };
+    } else if (tags.length > 0) {
+      primaryBadge = { icon: '📄', label: tags[0]! };
+    }
+
+    // Fallback: frontmatter exists but no badge pattern matched —
+    // show a generic "文档" badge so the collapsed bar & expand button stay accessible.
+    if (!primaryBadge) {
+      primaryBadge = { icon: '📄', label: '文档' };
+    }
+    return { primaryBadge, secondaryBadge };
+  }, [frontmatterData]);
+
+  const handleFmCollapse = useCallback(() => setFmExpanded(false), []);
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -201,6 +301,44 @@ export function KbMainContent({
     const sel = window.getSelection();
     return sel ? sel.toString().trim() : '';
   }, []);
+
+  // Capture-phase click handler: intercept wiki link clicks within the KB
+  // shell. Prevents native <a href> navigation, checks if the file exists
+  // via API, and either opens it (exists) or shows a toast (not found).
+  // Scoped to .kb-shell so it doesn't interfere with wiki links in chat.
+  useEffect(() => {
+    if (!onNavigateToFile || !vaultId) return;
+    const handler = (e: MouseEvent) => {
+      // Only handle clicks inside the KB shell
+      if (!(e.target as HTMLElement).closest('.kb-shell')) return;
+      const link = (e.target as HTMLElement).closest('.kb-wiki-link') as HTMLAnchorElement | null;
+      if (!link) return;
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      e.preventDefault();
+      const filePath = link.getAttribute('data-file-path') || link.textContent?.trim();
+      if (!filePath) return;
+
+      const apiUrl = `/api/knowledge/vaults/${vaultId}/resolve/${encodeURIComponent(filePath).replace(/%2F/g, '/')}`;
+      fetch(apiUrl)
+        .then((res) => {
+          if (res.status === 404) throw new Error('NOT_FOUND');
+          // File exists — strip .md extension for tree-stem search
+          const searchPath = filePath.replace(/\.md$/i, '');
+          onNavigateToFile(searchPath);
+        })
+        .catch((err) => {
+          if (err.message === 'NOT_FOUND') {
+            window.alert(`文件 "${filePath}" 不存在`);
+            return;
+          }
+          // Other error — still try to open
+          const searchPath = filePath.replace(/\.md$/i, '');
+          onNavigateToFile(searchPath);
+        });
+    };
+    document.addEventListener('click', handler, true);
+    return () => document.removeEventListener('click', handler, true);
+  }, [onNavigateToFile, vaultId]);
 
   // Ctrl+S / Cmd+S to save
   useEffect(() => {
@@ -235,6 +373,32 @@ export function KbMainContent({
       {/* Header — always rendered so view actions (search / more-menu) stay
           visible even in empty states. File actions only render when a file is open. */}
       <div className="kb-main-header">
+        {/* ── Frontmatter inline (small-md read mode) — always visible when frontmatter exists.
+              Collapsed: show distilled badges. Expanded: show collapse indicator. ▴/▾ in same spot. */}
+        {!isTypesetMode && !isEditMode && isSmallMd && fmCollapsed && (
+          <div className="kb-fm-header-inline">
+            {fmCollapsed.primaryBadge && (
+              <span className={'kb-fm-badge' + (fmExpanded ? ' kb-fm-badge-dimmed' : '')}>
+                <span aria-hidden="true">{fmCollapsed.primaryBadge.icon}</span>
+                <span>{fmCollapsed.primaryBadge.label}</span>
+              </span>
+            )}
+            {fmCollapsed.secondaryBadge && (
+              <span className={'kb-fm-badge kb-fm-badge-secondary' + (fmExpanded ? ' kb-fm-badge-dimmed' : '')}>
+                <span aria-hidden="true">{fmCollapsed.secondaryBadge.icon}</span>
+                <span>{fmCollapsed.secondaryBadge.label}</span>
+              </span>
+            )}
+            <button
+              type="button"
+              className="kb-fm-expand-btn"
+              onClick={() => setFmExpanded((prev) => !prev)}
+              title={fmExpanded ? t('kb.frontmatter.collapse') : t('kb.frontmatter.expand')}
+            >
+              {fmExpanded ? '▴' : '▾'}
+            </button>
+          </div>
+        )}
         {showFileName && selectedFile && (
           <div className="kb-header-filename-center">
             <span>
@@ -486,6 +650,7 @@ export function KbMainContent({
           onContentChange={onContentChange}
           vaultId={vaultId ?? ''}
           selectedFile={selectedFile}
+          onNavigateToFile={onNavigateToFile}
         />
       ) : category === 'text' && isSmallMd && isEditMode ? (
         // Edit mode: Milkdown WYSIWYG Markdown editor
@@ -495,14 +660,23 @@ export function KbMainContent({
           selectedFile={selectedFile}
         />
       ) : category === 'text' && isSmallMd ? (
-        <div className="kb-content-area" ref={contentRef} onContextMenu={handleContextMenu}>
-          {fileContent ? (
-            // 优先使用编辑后的内容（未保存的更改），否则使用原始文件内容
-            <MdRenderer content={renderedContent} themeConfig={themeConfig} />
-          ) : (
-            <div className="kb-empty-state"><p>Loading...</p></div>
+        <>
+          {fmExpanded && (
+            <KbFrontmatterCard
+              data={frontmatterData}
+              onNavigate={onNavigateToFile}
+              onCollapse={handleFmCollapse}
+            />
           )}
-        </div>
+          <div className="kb-content-area" ref={contentRef} onContextMenu={handleContextMenu}>
+            {fileContent ? (
+              // 优先使用编辑后的内容（未保存的更改），否则使用原始文件内容
+              <MdRenderer content={renderedContent} themeConfig={themeConfig} />
+            ) : (
+              <div className="kb-empty-state"><p>Loading...</p></div>
+            )}
+          </div>
+        </>
       ) : category === 'text' && isCmPath ? (
         <div className="kb-content-area kb-cm-area" ref={contentRef}>
           <ViewerErrorBoundary
