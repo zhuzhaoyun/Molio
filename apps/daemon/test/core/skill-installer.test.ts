@@ -302,10 +302,10 @@ describe('skill-installer migration', () => {
 
     const installed = fs.readFileSync(path.join(wikiBuildDir, 'SKILL.md'), 'utf-8');
     // Must now carry a version line (proves the versioned source was copied in).
-    assert.match(installed, /^version:\s*1\.\d+\.\d+$/m, 'version-less dest should be updated to versioned source');
+    assert.match(installed, /^version:\s*2\.\d+\.\d+$/m, 'version-less dest should be updated to versioned source');
     // And the current body content, not the stale old body.
     assert.ok(
-      installed.includes('超长源文件处理'),
+      installed.includes('CLI 工作流'),
       'dest should reflect current source content, not the stale version-less copy',
     );
   });

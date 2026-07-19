@@ -53,4 +53,35 @@ describe('builtin wiki operation skills', () => {
       });
     });
   }
+
+  it('installs wiki-build CLI and approval workflow', () => {
+    const buildDir = path.join(skillsDir, 'wiki-build');
+    assert.ok(fs.existsSync(path.join(buildDir, 'scripts', 'wiki-build.mjs')));
+    assert.ok(fs.existsSync(path.join(buildDir, 'scripts', 'lib', 'inventory.mjs')));
+
+    const build = fs.readFileSync(path.join(buildDir, 'SKILL.md'), 'utf8');
+    assert.match(build, /^version:\s*2\.0\.0$/m);
+    assert.match(build, /scan --json/);
+    assert.match(build, /plan .*--mode validate/);
+    assert.match(build, /等待用户批准/);
+    assert.match(build, /plan .*--mode approve/);
+    assert.ok(
+      build.indexOf('等待用户批准') < build.indexOf('--mode approve'),
+      'Must wait for approval before freezing plan and writing wiki',
+    );
+    assert.match(build, /status --recover/);
+    assert.match(build, /checkpoint/);
+    assert.match(build, /skip --file-id/);
+    assert.match(build, /retry --file-id/);
+    assert.match(build, /finalize/);
+  });
+
+  it('installs recursive ingest instructions', () => {
+    const ingest = fs.readFileSync(path.join(skillsDir, 'wiki-ingest', 'SKILL.md'), 'utf8');
+    assert.match(ingest, /^version:\s*2\.0\.0$/m);
+    assert.match(ingest, /scan --include/);
+    assert.match(ingest, /逐级读取/);
+    assert.match(ingest, /祖先 INDEX/);
+    assert.match(ingest, /legacy/);
+  });
 });
