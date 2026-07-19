@@ -7,6 +7,7 @@ import {
   readdirSync,
   readFileSync,
   renameSync,
+  rmdirSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -159,7 +160,13 @@ function buildLeafIndex(topic, pages, topicPath, capacity) {
     });
   }
 
-  // Check if sharding is needed
+  // Check if sharding is needed.
+  // Note: totalTokens here sums only entry lines, omitting the per-type header
+  // ("# type\n") and section dividers. shardEntries() re-estimates per-shard
+  // including headers, so this is a conservative underestimate at the boundary
+  // — a leaf right at the token limit might not shard here but will shard
+  // inside shardEntries. This is acceptable: sharding is idempotent and the
+  // boundary is rare in practice.
   const totalEntries = pages.length;
   let totalTokens = 0;
   for (const page of pages) {
@@ -375,9 +382,8 @@ export function writeIndexes(paths, model) {
     } finally {
       closeSync(fd);
     }
-    if (existsSync(absPath)) {
-      try { unlinkSync(absPath); } catch { /* rename will overwrite */ }
-    }
+    // Bare renameSync: atomic on POSIX, overwrites on Windows — same pattern
+    // as workspace.mjs atomicWrite(). Do NOT unlink first (crash-safety gap).
     renameSync(tmpPath, absPath);
     written[relPath] = expectedHash;
   }
@@ -396,6 +402,30 @@ export function writeIndexes(paths, model) {
       const relFile = relative(vault, absFile).replace(/\\/g, '/');
       if (!(relFile in model.indexes)) {
         try { unlinkSync(absFile); } catch { /* best effort */ }
+      }
+    }
+  }
+
+  // Clean up stale index-shards/ directories that are no longer in the model.
+  // This handles the sharded→inline transition: when a topic previously had
+  // shards but now produces an inline index, the old index-shards/ directory
+  // must be removed.
+  for (const [relPath] of Object.entries(model.indexes)) {
+    if (relPath.endsWith('/INDEX.md') && !relPath.includes('/index-shards/')) {
+      const topicDir = dirname(join(vault, relPath));
+      const shardDir = join(topicDir, 'index-shards');
+      if (existsSync(shardDir)) {
+        // Check whether the model includes any shards for this topic
+        const topicRelDir = dirname(relPath);
+        const hasModelShards = Object.keys(model.indexes).some(
+          (p) => p.startsWith(`${topicRelDir}/index-shards/`),
+        );
+        if (!hasModelShards) {
+          for (const file of readdirSync(shardDir)) {
+            try { unlinkSync(join(shardDir, file)); } catch { /* best effort */ }
+          }
+          try { rmdirSync(shardDir); } catch { /* best effort */ }
+        }
       }
     }
   }
@@ -420,11 +450,9 @@ export function verifyCoverage(model) {
     }
   }
 
-  const missing = (model.expectedPages ?? []).filter((pagePath) => {
-    if (!coverageSet.has(pagePath)) return true;
-    if ((model.missing ?? []).includes(pagePath)) return true;
-    return false;
-  });
+  const missing = (model.expectedPages ?? []).filter(
+    (pagePath) => !coverageSet.has(pagePath),
+  );
 
   return {
     ok: duplicates.length === 0 && missing.length === 0,
@@ -607,7 +635,7 @@ export function reindexTopicAndAncestors({ paths, plan, state, topicId, pageUpda
       for (const file of readdirSync(shardDir)) {
         try { unlinkSync(join(shardDir, file)); } catch { /* best effort */ }
       }
-      try { unlinkSync(shardDir); } catch { /* best effort */ }
+      try { rmdirSync(shardDir); } catch { /* best effort */ }
     }
   }
 

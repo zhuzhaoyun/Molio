@@ -104,6 +104,40 @@ describe('wiki-build indexes — deterministic sharding', () => {
 
     fixture.cleanup();
   });
+
+  it('removes stale index-shards/ when topic transitions from sharded to inline', () => {
+    const fixture = completedLeafBuild({ maxLeafPages: 2, pageCount: 5 });
+    const summariesPath = writeSummaries(fixture.vault, fixture.summaries);
+
+    // First finalize creates shards
+    const first = finalize(fixture.vault, summariesPath);
+    assert.equal(first.status, 0, first.stderr);
+    assert.ok(existsSync(join(fixture.vault, 'wiki/topic/index-shards')));
+
+    // Reduce page count below maxLeafPages by deleting pages from state
+    const statePath = join(fixture.vault, '.molio', 'wiki-build', 'state.json');
+    const state = JSON.parse(readFileSync(statePath, 'utf8'));
+    const pagePaths = Object.keys(state.pages);
+    // Keep only 2 pages (equal to maxLeafPages)
+    for (let index = 2; index < pagePaths.length; index += 1) {
+      const path = pagePaths[index]!;
+      delete state.pages[path];
+    }
+    // Reset phase back to running so finalize can run again
+    state.phase = 'running';
+    writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`);
+
+    // Re-finalize: should produce inline index and remove stale shards
+    const second = finalize(fixture.vault, summariesPath);
+    assert.equal(second.status, 0, second.stderr);
+    assert.equal(existsSync(join(fixture.vault, 'wiki/topic/index-shards')), false);
+
+    // Leaf INDEX.md should be inline (no shard references)
+    const leafIndex = readFileSync(join(fixture.vault, 'wiki/topic/INDEX.md'), 'utf8');
+    assert.doesNotMatch(leafIndex, /index-shards/);
+
+    fixture.cleanup();
+  });
 });
 
 describe('wiki-build indexes — source page missing', () => {
