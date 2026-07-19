@@ -1,6 +1,7 @@
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { DEFAULT_CAPACITY, SCHEMA_VERSION } from './contracts.mjs';
+import { initializeState } from './state.mjs';
 import { atomicWriteJson, readJson, sha256 } from './workspace.mjs';
 
 /**
@@ -255,6 +256,7 @@ export function approvePlan(paths, candidate, { writeJson = atomicWriteJson } = 
       throw error;
     }
     writeJson(paths.plan, frozen);
+    writeJson(paths.state, initializeState(frozen));
     return frozen;
   }
   const versions = readApprovedVersions(paths);
@@ -272,5 +274,6 @@ export function approvePlan(paths, candidate, { writeJson = atomicWriteJson } = 
   const approved = { ...approval, approvedAt: new Date().toISOString(), planDigest };
   writeJson(historyPath, approved);
   writeJson(paths.plan, approved);
+  writeJson(paths.state, initializeState(approved));
   return approved;
 }

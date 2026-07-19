@@ -1,0 +1,389 @@
+import assert from 'node:assert/strict';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { describe, it } from 'node:test';
+import { pathToFileURL } from 'node:url';
+import {
+  approveOneBatchPlan,
+  approveOneBatchPlanWithTwoFiles,
+  approveTwoBatchPlan,
+  approvedPlanWithFailedAndPendingFiles,
+  checkpoint,
+  makeVault,
+  readState,
+  runWikiBuildCli,
+  stagePage,
+} from './wiki-build-test-helpers.js';
+
+const daemonRoot = resolve(import.meta.dirname, '..', '..', '..');
+const stateModule = await import(pathToFileURL(join(
+  daemonRoot, 'src', 'tools', 'skills', 'wiki-build', 'scripts', 'lib', 'state.mjs',
+)).href);
+const workspaceModule = await import(pathToFileURL(join(
+  daemonRoot, 'src', 'tools', 'skills', 'wiki-build', 'scripts', 'lib', 'workspace.mjs',
+)).href);
+
+function journalPath(vaultPath: string, batchId: string) {
+  return join(vaultPath, '.molio', 'wiki-build', 'journals', `${batchId}.json`);
+}
+
+function claimNext(vaultPath: string) {
+  return runWikiBuildCli(vaultPath, ['next', '--json']);
+}
+
+function recover(vaultPath: string) {
+  return runWikiBuildCli(vaultPath, ['status', '--recover', '--json']);
+}
+
+describe('wiki-build state — plan scenarios', () => {
+  it('claims a batch and isolates a stale attempt after recovery', () => {
+    const fixture = approveTwoBatchPlan();
+    const first = claimNext(fixture.vault);
+    assert.equal(first.status, 0, first.stderr);
+    assert.equal(first.json.data.batch.id, 'economy-001');
+    assert.ok(first.json.data.attemptToken);
+    assert.equal(first.json.data.attempt, 1);
+
+    const blocked = claimNext(fixture.vault);
+    assert.equal(blocked.status, 2);
+    assert.equal(blocked.json.error.code, 'BATCH_ALREADY_RUNNING');
+
+    recover(fixture.vault);
+    const retried = claimNext(fixture.vault);
+    assert.equal(retried.status, 0);
+    assert.notEqual(retried.json.data.attemptToken, first.json.data.attemptToken);
+    assert.equal(retried.json.data.attempt, 2);
+
+    const stale = checkpoint(fixture.vault, {
+      batchId: 'economy-001',
+      attemptToken: first.json.data.attemptToken,
+      files: [],
+      pages: [],
+    });
+    assert.equal(stale.status, 2);
+    assert.equal(stale.json.error.code, 'STALE_ATTEMPT');
+
+    fixture.cleanup();
+  });
+
+  it('isolates a single failed file and retries checkpoint idempotently with no duplicate output', () => {
+    const fixture = approveOneBatchPlanWithTwoFiles();
+    const claim = claimNext(fixture.vault).json.data;
+    stagePage(fixture.vault, claim.stagingDir, 'wiki/经济/sources/经济.md', '# 经济');
+
+    const payload = {
+      batchId: claim.batch.id,
+      attemptToken: claim.attemptToken,
+      files: [
+        { fileId: 'economy-file', status: 'succeeded', contentHash: 'a'.repeat(64) },
+        { fileId: 'bad-file', status: 'failed', error: { code: 'PREPROCESS_FAILED', message: 'docling 退出码 1' } },
+      ],
+      pages: [{
+        path: 'wiki/经济/sources/经济.md',
+        topicId: 'economy',
+        type: 'source',
+        title: '经济',
+        summary: '经济摘要',
+        stagedPath: 'wiki/经济/sources/经济.md',
+      }],
+    };
+
+    assert.equal(checkpoint(fixture.vault, payload).status, 0);
+    assert.equal(checkpoint(fixture.vault, payload).status, 0);
+    assert.equal(readFileSync(join(fixture.vault, payload.pages[0]!.path), 'utf8'), '# 经济');
+    assert.equal(readState(fixture.vault).files['bad-file'].status, 'failed');
+    assert.equal(readState(fixture.vault).files['economy-file'].status, 'succeeded');
+
+    fixture.cleanup();
+  });
+
+  it('skips pending work and retries only selected failed files', () => {
+    const fixture = approvedPlanWithFailedAndPendingFiles();
+    const skipped = runWikiBuildCli(fixture.vault, [
+      'skip', '--file-id', 'pending-file', '--reason', '不支持的格式', '--json',
+    ]);
+    assert.equal(skipped.status, 0, skipped.stderr);
+    assert.equal(readState(fixture.vault).files['pending-file'].status, 'skipped');
+
+    const retried = runWikiBuildCli(fixture.vault, [
+      'retry', '--file-id', 'failed-file', '--json',
+    ]);
+    assert.equal(retried.status, 0, retried.stderr);
+    assert.equal(retried.json.data.batch.fileIds.length, 1);
+    assert.deepEqual(retried.json.data.batch.fileIds, ['failed-file']);
+    assert.match(retried.json.data.batch.id, /^retry-failed-file-/);
+    assert.equal(readState(fixture.vault).files['already-succeeded'].status, 'succeeded');
+    assert.equal(readState(fixture.vault).files['failed-file'].status, 'pending');
+
+    fixture.cleanup();
+  });
+
+  it('rejects claiming when a source file changed after plan approval', () => {
+    const fixture = approveOneBatchPlan();
+    appendFileSync(join(fixture.vault, 'economy.md'), '\n批准后发生变化');
+    const result = claimNext(fixture.vault);
+    assert.equal(result.status, 2);
+    assert.equal(result.json.error.code, 'SOURCE_CHANGED_SINCE_SCAN');
+    assert.equal(existsSync(join(fixture.vault, 'wiki')), false);
+    fixture.cleanup();
+  });
+});
+
+describe('wiki-build state — journal replay and conflict', () => {
+  it('replays a prepared journal by materializing only differing targets', async () => {
+    const fixture = approveOneBatchPlan();
+    const paths = workspaceModule.resolveBuildPaths(fixture.vault);
+    const claim = claimNext(fixture.vault).json.data;
+    stagePage(fixture.vault, claim.stagingDir, 'wiki/经济/sources/经济.md', '# 经济');
+
+    const payload = {
+      batchId: claim.batch.id,
+      attemptToken: claim.attemptToken,
+      files: [{ fileId: 'economy-file', status: 'succeeded', contentHash: 'a'.repeat(64) }],
+      pages: [{
+        path: 'wiki/经济/sources/经济.md',
+        topicId: 'economy',
+        type: 'source',
+        title: '经济',
+        summary: '经济摘要',
+        stagedPath: 'wiki/经济/sources/经济.md',
+      }],
+    };
+
+    // Write a prepared journal manually — simulating a crash after journal write
+    // but before any target move.
+    const stagedAbsolute = join(fixture.vault, claim.stagingDir, payload.pages[0]!.stagedPath);
+    const content = readFileSync(stagedAbsolute, 'utf8');
+    const targetPath = join(fixture.vault, payload.pages[0]!.path);
+    const pages = {
+      [payload.pages[0]!.path]: {
+        sha256: stateModule.computePageSha256(stagedAbsolute),
+        stagedPath: payload.pages[0]!.stagedPath,
+        topicId: payload.pages[0]!.topicId,
+        type: payload.pages[0]!.type,
+        title: payload.pages[0]!.title,
+        summary: payload.pages[0]!.summary,
+      },
+    };
+    const payloadHash = stateModule.computePayloadHash(payload);
+    mkdirSync(dirname(journalPath(fixture.vault, payload.batchId)), { recursive: true });
+    writeFileSync(journalPath(fixture.vault, payload.batchId), `${JSON.stringify({
+      batchId: payload.batchId,
+      attemptToken: payload.attemptToken,
+      payloadHash,
+      phase: 'prepared',
+      pages,
+      files: payload.files,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }, null, 2)}\n`);
+
+    assert.equal(existsSync(targetPath), false);
+    const result = await stateModule.checkpointBatch(paths, payload);
+    assert.equal(existsSync(targetPath), true);
+    assert.equal(readFileSync(targetPath, 'utf8'), content);
+
+    const journal = JSON.parse(readFileSync(journalPath(fixture.vault, payload.batchId), 'utf8'));
+    assert.equal(journal.phase, 'completed');
+    assert.equal(readState(fixture.vault).batches[payload.batchId].status, 'succeeded');
+    assert.equal(readState(fixture.vault).files['economy-file'].status, 'succeeded');
+    assert.equal(readState(fixture.vault).activeBatchId, null);
+    // Calling checkpointBatch again with the same payload is idempotent.
+    await stateModule.checkpointBatch(paths, payload);
+    assert.equal(readFileSync(targetPath, 'utf8'), content);
+    fixture.cleanup();
+  });
+
+  it('rejects a different payload after a completed journal with CHECKPOINT_CONFLICT', async () => {
+    const fixture = approveOneBatchPlan();
+    const paths = workspaceModule.resolveBuildPaths(fixture.vault);
+    const claim = claimNext(fixture.vault).json.data;
+    stagePage(fixture.vault, claim.stagingDir, 'wiki/经济/sources/经济.md', '# 经济 v1');
+
+    const payloadV1 = {
+      batchId: claim.batch.id,
+      attemptToken: claim.attemptToken,
+      files: [{ fileId: 'economy-file', status: 'succeeded', contentHash: 'a'.repeat(64) }],
+      pages: [{
+        path: 'wiki/经济/sources/经济.md',
+        topicId: 'economy',
+        type: 'source',
+        title: '经济',
+        summary: 'v1',
+        stagedPath: 'wiki/经济/sources/经济.md',
+      }],
+    };
+
+    assert.equal((await stateModule.checkpointBatch(paths, payloadV1)).summary, 'succeeded');
+
+    const payloadV2 = {
+      ...payloadV1,
+      pages: [{ ...payloadV1.pages[0], summary: 'v2' }],
+    };
+    await assert.rejects(
+      () => stateModule.checkpointBatch(paths, payloadV2),
+      (error: any) => error.code === 'CHECKPOINT_CONFLICT',
+    );
+    fixture.cleanup();
+  });
+
+  it('marks mixed succeeded+failed batches as succeeded in queue with succeeded_with_errors summary', async () => {
+    const fixture = approveOneBatchPlanWithTwoFiles();
+    const paths = workspaceModule.resolveBuildPaths(fixture.vault);
+    const claim = claimNext(fixture.vault).json.data;
+    stagePage(fixture.vault, claim.stagingDir, 'wiki/经济/sources/经济.md', '# 经济');
+
+    const payload = {
+      batchId: claim.batch.id,
+      attemptToken: claim.attemptToken,
+      files: [
+        { fileId: 'economy-file', status: 'succeeded', contentHash: 'a'.repeat(64) },
+        { fileId: 'bad-file', status: 'failed', error: { code: 'PREPROCESS_FAILED', message: 'fail' } },
+      ],
+      pages: [{
+        path: 'wiki/经济/sources/经济.md',
+        topicId: 'economy',
+        type: 'source',
+        title: '经济',
+        summary: '经济摘要',
+        stagedPath: 'wiki/经济/sources/经济.md',
+      }],
+    };
+
+    const result = await stateModule.checkpointBatch(paths, payload);
+    assert.equal(result.summary, 'succeeded_with_errors');
+    const state = readState(fixture.vault);
+    assert.equal(state.batches[claim.batch.id].status, 'succeeded');
+    assert.equal(state.files['economy-file'].status, 'succeeded');
+    assert.equal(state.files['bad-file'].status, 'failed');
+    assert.equal(state.activeBatchId, null);
+
+    // `next` should be able to proceed (no remaining pending batches → returns no-op).
+    const next = claimNext(fixture.vault);
+    assert.equal(next.status, 2);
+    assert.equal(next.json.error.code, 'NO_PENDING_BATCH');
+    fixture.cleanup();
+  });
+
+  it('does not blindly retry a running batch and clears activeBatchId after recovery', () => {
+    const fixture = approveTwoBatchPlan();
+    const first = claimNext(fixture.vault).json.data;
+    assert.equal(first.json?.data?.batch?.id ?? first.batch.id, 'economy-001');
+
+    // While running, a second claim must not advance the queue.
+    const blocked = claimNext(fixture.vault);
+    assert.equal(blocked.status, 2);
+    assert.equal(blocked.json.error.code, 'BATCH_ALREADY_RUNNING');
+
+    // Recovery must clear activeBatchId but preserve attempts.
+    recover(fixture.vault);
+    const state = readState(fixture.vault);
+    assert.equal(state.activeBatchId, null);
+    assert.equal(state.batches['economy-001'].status, 'pending');
+    assert.equal(state.batches['economy-001'].attempts, 1);
+    assert.equal(state.batches['economy-001'].attemptToken, null);
+    fixture.cleanup();
+  });
+
+  it('prepare validates the active claim before producing work items', async () => {
+    const fixture = approveOneBatchPlan();
+    const claim = claimNext(fixture.vault).json.data;
+    const manifestPath = join(fixture.vault, 'manifest.json');
+    writeFileSync(manifestPath, `${JSON.stringify({
+      files: [{ id: 'economy-file', path: 'economy.md', extension: '.md', processor: 'text' }],
+    })}\n`);
+
+    // Wrong attempt token must be rejected.
+    const wrong = runWikiBuildCli(fixture.vault, [
+      'prepare', '--batch-id', claim.batch.id, '--attempt-token', 'wrong-token',
+      '--input', manifestPath, '--json',
+    ]);
+    assert.equal(wrong.status, 2);
+    assert.equal(wrong.json.error.code, 'STALE_ATTEMPT');
+
+    const ok = runWikiBuildCli(fixture.vault, [
+      'prepare', '--batch-id', claim.batch.id, '--attempt-token', claim.attemptToken,
+      '--input', manifestPath, '--json',
+    ]);
+    assert.equal(ok.status, 0, ok.stderr);
+    assert.ok(ok.json.data.workItems.length >= 1);
+    // Batch status must remain 'running' after prepare.
+    assert.equal(readState(fixture.vault).batches[claim.batch.id].status, 'running');
+    fixture.cleanup();
+  });
+
+  it('marks a batch skipped when its last pending file is skipped', () => {
+    const fixture = approvedPlanWithFailedAndPendingFiles();
+    const skip = runWikiBuildCli(fixture.vault, [
+      'skip', '--file-id', 'pending-file', '--reason', '不支持的格式', '--json',
+    ]);
+    assert.equal(skip.status, 0, skip.stderr);
+    const state = readState(fixture.vault);
+    assert.equal(state.files['pending-file'].status, 'skipped');
+    assert.equal(state.batches['pending-file-001'].status, 'skipped');
+    // Skipping a failed file is also allowed.
+    const skipFailed = runWikiBuildCli(fixture.vault, [
+      'skip', '--file-id', 'failed-file', '--reason', '永远跳过', '--json',
+    ]);
+    assert.equal(skipFailed.status, 0);
+    assert.equal(readState(fixture.vault).files['failed-file'].status, 'skipped');
+    fixture.cleanup();
+  });
+
+  it('rejects retry on a non-failed file', () => {
+    const fixture = approvedPlanWithFailedAndPendingFiles();
+    const result = runWikiBuildCli(fixture.vault, [
+      'retry', '--file-id', 'pending-file', '--json',
+    ]);
+    assert.equal(result.status, 2);
+    assert.equal(result.json.error.code, 'FILE_NOT_FAILED');
+    fixture.cleanup();
+  });
+});
+
+describe('wiki-build state — initializeState contract', () => {
+  it('rejects initialization when the plan is not approved', () => {
+    assert.throws(
+      () => stateModule.initializeState({ schemaVersion: 1, planVersion: 1, status: 'draft' }),
+      (error: any) => error.code === 'PLAN_NOT_APPROVED',
+    );
+  });
+
+  it('rejects initialization when the plan lacks a digest', () => {
+    assert.throws(
+      () => stateModule.initializeState({ schemaVersion: 1, planVersion: 1, status: 'approved' }),
+      (error: any) => error.code === 'PLAN_DIGEST_MISSING',
+    );
+  });
+
+  it('builds the documented initial state shape', () => {
+    const plan = {
+      schemaVersion: 1, planVersion: 1, status: 'approved', planDigest: 'abc',
+      batches: [
+        { id: 'economy-001', topicId: 'economy', order: 1, fileIds: ['economy-file'], estimatedInputTokens: 500 },
+      ],
+    };
+    const state = stateModule.initializeState(plan);
+    assert.equal(state.schemaVersion, 1);
+    assert.equal(state.planVersion, 1);
+    assert.equal(state.planDigest, 'abc');
+    assert.equal(state.phase, 'approved');
+    assert.equal(state.activeBatchId, null);
+    assert.deepEqual(state.batches['economy-001'], {
+      status: 'pending', attempts: 0, attemptToken: null, lastError: null,
+    });
+    assert.deepEqual(state.files['economy-file'], {
+      status: 'pending', attempts: 0, contentHash: null, lastError: null,
+    });
+    assert.deepEqual(state.pages, {});
+    assert.ok(typeof state.updatedAt === 'string');
+  });
+
+  it('makeVault helper isolates state across runs', () => {
+    const vault = makeVault();
+    const result = runWikiBuildCli(vault.path, ['status', '--json']);
+    assert.equal(result.status, 0);
+    assert.equal(result.json.data.phase, 'not_started');
+    vault.cleanup();
+  });
+});
