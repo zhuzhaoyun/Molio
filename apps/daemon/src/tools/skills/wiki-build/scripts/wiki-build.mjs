@@ -1,22 +1,21 @@
 #!/usr/bin/env node
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, realpathSync, rmSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { scanVault } from './lib/inventory.mjs';
 import { approvePlan, saveDraft, validatePlan } from './lib/plan.mjs';
 import {
   checkpointBatch, claimNextBatch, recoverRunning, retryFailedFile, skipFile, prepareClaimedBatch,
 } from './lib/state.mjs';
-import { assertPathWithinVault, readJson, resolveBuildPaths, sha256, withMutationLock } from './lib/workspace.mjs';
+import {
+  acquireMutationLock, assertPathWithinVault, readJson, resolveBuildPaths, sha256, withMutationLock,
+} from './lib/workspace.mjs';
 
 async function withAsyncMutationLock(paths, fn) {
-  const lock = join(paths.root, '.lock');
-  mkdirSync(paths.root, { recursive: true });
-  const descriptor = openSync(lock, 'wx');
+  const release = acquireMutationLock(paths);
   try {
     return await fn();
   } finally {
-    closeSync(descriptor);
-    if (existsSync(lock)) rmSync(lock, { force: true });
+    release();
   }
 }
 

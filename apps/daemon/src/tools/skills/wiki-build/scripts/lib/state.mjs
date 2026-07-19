@@ -7,6 +7,7 @@ import {
   openSync,
   readFileSync,
   readSync,
+  realpathSync,
   renameSync,
   statSync,
   unlinkSync,
@@ -283,23 +284,32 @@ export function claimNextBatch(paths) {
 /**
  * Recover running batches and files back to pending. Preserves attempts and
  * lastError. Clears activeBatchId so the next claim gets a fresh attemptToken.
+ * Short-circuits the state write when nothing was running (no-op recovery).
  */
 export function recoverRunning(paths) {
   const state = readState(paths);
   const next = structuredClone(state);
-  next.activeBatchId = null;
+  let changed = false;
+  if (next.activeBatchId !== null) {
+    next.activeBatchId = null;
+    changed = true;
+  }
   for (const batchId of Object.keys(next.batches)) {
     const batch = next.batches[batchId];
     if (batch.status === 'running') {
       batch.status = 'pending';
       batch.attemptToken = null;
+      changed = true;
     }
   }
   for (const fileId of Object.keys(next.files)) {
     const file = next.files[fileId];
-    if (file.status === 'running') file.status = 'pending';
+    if (file.status === 'running') {
+      file.status = 'pending';
+      changed = true;
+    }
   }
-  writeState(paths, next);
+  if (changed) writeState(paths, next);
   return next;
 }
 
@@ -314,8 +324,14 @@ function validateStagedPath(paths, attemptToken, stagedPath) {
   if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
     throw codedError('STAGED_PATH_INVALID', `Staged path escapes staging dir: ${stagedPath}`, { stagedPath });
   }
+  // assertPathWithinVault validates the realpath stays inside the vault; return
+  // the realpath so a symlink planted in staging can't materialize arbitrary
+  // vault files through the subsequent readFileSync/move.
   assertPathWithinVault(vault, resolved);
-  return resolved;
+  if (!existsSync(resolved)) {
+    throw codedError('STAGED_PATH_INVALID', `Staged page not found: ${stagedPath}`, { stagedPath });
+  }
+  return realpathSync(resolved);
 }
 
 function atomicReplaceFile(targetPath, content) {
@@ -377,6 +393,12 @@ function pageEntriesToMap(pages) {
 /**
  * Apply a checkpoint result with crash-safe journaling. Idempotent for the
  * same payload; rejects conflicting payloads after completion.
+ *
+ * Crash recovery: when a `prepared` or `applied` journal already exists, its
+ * recorded `payloadHash` authorizes the replay — the `activeBatchId` /
+ * `attemptToken` guards are skipped because the state may already reflect the
+ * post-step-11 crash window (activeBatchId cleared). The materialize loop and
+ * state write are idempotent, so re-running them is safe.
  * @param {object} paths
  * @param {CheckpointPayload} result
  * @returns {Promise<{ summary: 'succeeded'|'failed'|'succeeded_with_errors', pages: object[], files: object[] }>}
@@ -395,18 +417,28 @@ export async function checkpointBatch(paths, result) {
     return existing.result;
   }
 
+  // Crash replay: a prepared/applied journal authorizes the replay via its own
+  // payloadHash — the activeBatchId/attemptToken guards must be skipped because
+  // the state may already have been advanced past step 11 (activeBatchId cleared).
+  const resuming = existing?.phase === 'prepared' || existing?.phase === 'applied';
+  if (resuming && existing.payloadHash !== payloadHash) {
+    throw codedError('CHECKPOINT_CONFLICT', `Batch ${result.batchId} already recorded a different payload`, { batchId: result.batchId });
+  }
+
   const state = readState(paths);
   const plan = readPlan(paths);
 
-  if (state.activeBatchId !== result.batchId) {
-    throw codedError('BATCH_NOT_ACTIVE', `Batch ${result.batchId} is not the active batch`, { activeBatchId: state.activeBatchId });
-  }
-  const batchState = state.batches[result.batchId];
-  if (!batchState) {
-    throw codedError('BATCH_NOT_FOUND', `Batch ${result.batchId} not in state`, { batchId: result.batchId });
-  }
-  if (batchState.attemptToken !== result.attemptToken) {
-    throw codedError('STALE_ATTEMPT', `Attempt token ${result.attemptToken} is stale for batch ${result.batchId}`, { batchId: result.batchId });
+  if (!resuming) {
+    if (state.activeBatchId !== result.batchId) {
+      throw codedError('BATCH_NOT_ACTIVE', `Batch ${result.batchId} is not the active batch`, { activeBatchId: state.activeBatchId });
+    }
+    const batchState = state.batches[result.batchId];
+    if (!batchState) {
+      throw codedError('BATCH_NOT_FOUND', `Batch ${result.batchId} not in state`, { batchId: result.batchId });
+    }
+    if (batchState.attemptToken !== result.attemptToken) {
+      throw codedError('STALE_ATTEMPT', `Attempt token ${result.attemptToken} is stale for batch ${result.batchId}`, { batchId: result.batchId });
+    }
   }
 
   const vault = vaultFromPaths(paths);
@@ -415,9 +447,6 @@ export async function checkpointBatch(paths, result) {
   const pages = {};
   for (const page of result.pages ?? []) {
     const stagedAbsolute = validateStagedPath(paths, result.attemptToken, page.stagedPath);
-    if (!existsSync(stagedAbsolute)) {
-      throw codedError('STAGED_PATH_INVALID', `Staged page not found: ${page.stagedPath}`, { stagedPath: page.stagedPath });
-    }
     const targetAbsolute = assertPathWithinVault(vault, resolve(vault, page.path));
     const pageSha = computePageSha256(stagedAbsolute);
     pages[page.path] = {
@@ -632,6 +661,10 @@ export function retryFailedFile(paths, fileId) {
   next.files[fileId].lastError = null;
   const nextAttempt = (next.files[fileId].attempts ?? 0) + 1;
   const retryId = `retry-${fileId}-${nextAttempt}`;
+  // Collision-resilience: the retry id is a stable (fileId, nextAttempt) pair,
+  // so concurrent retry calls for the same failed file dedupe instead of
+  // creating orphan retry batches. The idempotent guard below keeps state
+  // consistent if the same retry is requested twice.
   if (!next.batches[retryId]) {
     const assignment = plan.assignments?.find((item) => item.fileId === fileId);
     const topicId = assignment?.primaryTopicId ?? batchTopicIdForFile(state, plan, fileId);

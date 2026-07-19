@@ -117,14 +117,94 @@ export function sha256(value) {
 }
 
 export function withMutationLock(paths, fn) {
-  const lock = join(paths.root, '.lock');
-  assertSafeMutationPath(paths.root, lock);
-  mkdirSync(paths.root, { recursive: true });
-  const descriptor = openSync(lock, 'wx');
+  const release = acquireMutationLock(paths);
   try {
     return fn();
   } finally {
-    closeSync(descriptor);
-    if (existsSync(lock)) rmSync(lock, { force: true });
+    release();
   }
+}
+
+const LOCK_STALE_TTL_MS = 10 * 60 * 1000;
+
+function codedError(code, message, details) {
+  const error = new Error(message);
+  error.code = code;
+  if (details) error.details = details;
+  return error;
+}
+
+function isProcessAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    // ESRCH = no such process; anything else (e.g. EPERM on Windows) means alive.
+    return error.code !== 'ESRCH';
+  }
+}
+
+function readLockInfo(lock) {
+  try {
+    return JSON.parse(readFileSync(lock, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function lockIsStale(info) {
+  if (!info || !Number.isInteger(info.pid)) return true;
+  if (!isProcessAlive(info.pid)) return true;
+  const startedAt = info.startedAt ? Date.parse(info.startedAt) : NaN;
+  if (Number.isNaN(startedAt)) return true;
+  return Date.now() - startedAt > LOCK_STALE_TTL_MS;
+}
+
+function tryCreateLock(lock) {
+  try {
+    return openSync(lock, 'wx');
+  } catch (error) {
+    if (error.code !== 'EEXIST') throw error;
+    return null;
+  }
+}
+
+/**
+ * Acquire the wiki-build mutation lock. Self-heals when a previous holder died
+ * (pid no longer alive) or held the lock past the stale TTL. Returns a release
+ * function. Throws a coded `LOCK_BUSY` error when a live holder is within TTL.
+ */
+export function acquireMutationLock(paths) {
+  const lock = join(paths.root, '.lock');
+  assertSafeMutationPath(paths.root, lock);
+  mkdirSync(paths.root, { recursive: true });
+
+  let descriptor = tryCreateLock(lock);
+  if (descriptor === null) {
+    // Lock exists — check whether the holder is dead or stale before reclaiming.
+    if (lockIsStale(readLockInfo(lock))) {
+      rmSync(lock, { force: true });
+      descriptor = tryCreateLock(lock);
+    }
+    if (descriptor === null) {
+      throw codedError('LOCK_BUSY', 'Another wiki-build mutation is in progress', { lock });
+    }
+  }
+
+  const info = { pid: process.pid, startedAt: new Date().toISOString() };
+  writeFileSync(descriptor, `${JSON.stringify(info)}\n`);
+  fsyncSync(descriptor);
+
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    try {
+      closeSync(descriptor);
+    } catch {
+      /* descriptor already closed */
+    }
+    if (existsSync(lock)) rmSync(lock, { force: true });
+  };
 }

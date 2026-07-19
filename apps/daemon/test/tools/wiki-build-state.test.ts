@@ -194,6 +194,94 @@ describe('wiki-build state — journal replay and conflict', () => {
     fixture.cleanup();
   });
 
+  it('replays an applied journal after a crash between state-write and journal completion', async () => {
+    const fixture = approveOneBatchPlan();
+    const paths = workspaceModule.resolveBuildPaths(fixture.vault);
+    const claim = claimNext(fixture.vault).json.data;
+    stagePage(fixture.vault, claim.stagingDir, 'wiki/经济/sources/经济.md', '# 经济');
+
+    const payload = {
+      batchId: claim.batch.id,
+      attemptToken: claim.attemptToken,
+      files: [{ fileId: 'economy-file', status: 'succeeded', contentHash: 'a'.repeat(64) }],
+      pages: [{
+        path: 'wiki/经济/sources/经济.md',
+        topicId: 'economy',
+        type: 'source',
+        title: '经济',
+        summary: '经济摘要',
+        stagedPath: 'wiki/经济/sources/经济.md',
+      }],
+    };
+
+    // Mirror the post-step-11 crash state: target already materialized,
+    // state already mutated (batch succeeded, activeBatchId cleared), but
+    // the journal is still 'applied' (step 12 never ran).
+    const stagedAbsolute = join(fixture.vault, claim.stagingDir, payload.pages[0]!.stagedPath);
+    const targetPath = join(fixture.vault, payload.pages[0]!.path);
+    mkdirSync(dirname(targetPath), { recursive: true });
+    writeFileSync(targetPath, readFileSync(stagedAbsolute));
+    const pageSha = stateModule.computePageSha256(stagedAbsolute);
+    const payloadHash = stateModule.computePayloadHash(payload);
+    mkdirSync(paths.journals, { recursive: true });
+    writeFileSync(journalPath(fixture.vault, payload.batchId), `${JSON.stringify({
+      batchId: payload.batchId,
+      attemptToken: payload.attemptToken,
+      payloadHash,
+      phase: 'applied',
+      pages: {
+        [payload.pages[0]!.path]: {
+          sha256: pageSha,
+          stagedPath: payload.pages[0]!.stagedPath,
+          topicId: payload.pages[0]!.topicId,
+          type: payload.pages[0]!.type,
+          title: payload.pages[0]!.title,
+          summary: payload.pages[0]!.summary,
+        },
+      },
+      files: payload.files,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }, null, 2)}\n`);
+
+    // Advance state to post-step-11 shape: batch succeeded, activeBatchId null,
+    // file succeeded, pages manifest populated.
+    const state = readState(fixture.vault);
+    state.activeBatchId = null;
+    state.batches[payload.batchId].status = 'succeeded';
+    state.batches[payload.batchId].attemptToken = null;
+    state.files['economy-file'].status = 'succeeded';
+    state.files['economy-file'].contentHash = 'a'.repeat(64);
+    state.pages[payload.pages[0]!.path] = {
+      sha256: pageSha,
+      batchId: payload.batchId,
+      attemptToken: payload.attemptToken,
+      topicId: payload.pages[0]!.topicId,
+      type: payload.pages[0]!.type,
+      title: payload.pages[0]!.title,
+      summary: payload.pages[0]!.summary,
+      stagedPath: payload.pages[0]!.stagedPath,
+      updatedAt: new Date().toISOString(),
+    };
+    writeFileSync(paths.state, `${JSON.stringify(state, null, 2)}\n`);
+
+    // Re-call checkpoint via the CLI — must complete the journal without
+    // raising BATCH_NOT_ACTIVE despite state.activeBatchId being null.
+    const result = checkpoint(fixture.vault, payload);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.json.data.summary, 'succeeded');
+
+    const journal = JSON.parse(readFileSync(journalPath(fixture.vault, payload.batchId), 'utf8'));
+    assert.equal(journal.phase, 'completed');
+    const finalState = readState(fixture.vault);
+    assert.equal(finalState.batches[payload.batchId].status, 'succeeded');
+    assert.equal(finalState.files['economy-file'].status, 'succeeded');
+    assert.equal(finalState.activeBatchId, null);
+    // No duplicate file move: target content unchanged.
+    assert.equal(readFileSync(targetPath, 'utf8'), '# 经济');
+    fixture.cleanup();
+  });
+
   it('rejects a different payload after a completed journal with CHECKPOINT_CONFLICT', async () => {
     const fixture = approveOneBatchPlan();
     const paths = workspaceModule.resolveBuildPaths(fixture.vault);
@@ -385,5 +473,54 @@ describe('wiki-build state — initializeState contract', () => {
     assert.equal(result.status, 0);
     assert.equal(result.json.data.phase, 'not_started');
     vault.cleanup();
+  });
+});
+
+describe('wiki-build state — mutation lock self-healing', () => {
+  it('reclaims a stale lock whose pid is no longer alive', () => {
+    const fixture = approveOneBatchPlan();
+    const paths = workspaceModule.resolveBuildPaths(fixture.vault);
+    const lock = join(paths.root, '.lock');
+    mkdirSync(paths.root, { recursive: true });
+    writeFileSync(lock, `${JSON.stringify({
+      pid: 999999,
+      startedAt: new Date(Date.now() - 20 * 60 * 1000).toISOString(),
+    })}\n`);
+    const result = claimNext(fixture.vault);
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(result.json.data.batch.id, 'expected a claimed batch id');
+    fixture.cleanup();
+  });
+
+  it('rejects with LOCK_BUSY when a live holder is within TTL', () => {
+    const fixture = approveOneBatchPlan();
+    const paths = workspaceModule.resolveBuildPaths(fixture.vault);
+    const lock = join(paths.root, '.lock');
+    mkdirSync(paths.root, { recursive: true });
+    // Use the test runner's own pid — it is alive, and startedAt is recent.
+    writeFileSync(lock, `${JSON.stringify({
+      pid: process.pid,
+      startedAt: new Date().toISOString(),
+    })}\n`);
+    const result = claimNext(fixture.vault);
+    assert.equal(result.status, 2);
+    assert.equal(result.json.error.code, 'LOCK_BUSY');
+    assert.equal(result.json.error.details.lock, lock);
+    fixture.cleanup();
+  });
+
+  it('recovers via status --recover after a stale lock', () => {
+    const fixture = approveOneBatchPlan();
+    const paths = workspaceModule.resolveBuildPaths(fixture.vault);
+    const lock = join(paths.root, '.lock');
+    mkdirSync(paths.root, { recursive: true });
+    writeFileSync(lock, `${JSON.stringify({
+      pid: 999999,
+      startedAt: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+    })}\n`);
+    const result = recover(fixture.vault);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(existsSync(lock), false);
+    fixture.cleanup();
   });
 });
