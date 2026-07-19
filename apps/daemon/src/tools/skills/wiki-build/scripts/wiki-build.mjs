@@ -6,6 +6,7 @@ import { approvePlan, saveDraft, validatePlan } from './lib/plan.mjs';
 import {
   checkpointBatch, claimNextBatch, recoverRunning, retryFailedFile, skipFile, prepareClaimedBatch,
 } from './lib/state.mjs';
+import { finalizeBuild, reindexTopicAndAncestors } from './lib/indexes.mjs';
 import {
   acquireMutationLock, assertPathWithinVault, readJson, resolveBuildPaths, sha256, withMutationLock,
 } from './lib/workspace.mjs';
@@ -26,11 +27,13 @@ export function parseArgs(argv) {
     input: undefined, mode: undefined,
     recover: false, batchId: undefined, attemptToken: undefined,
     fileId: undefined, reason: undefined,
+    topicId: undefined, summaries: undefined,
   };
   const valueFlags = new Set([
     '--vault', '--include', '--input', '--mode',
     '--max-dir-entries', '--max-total', '--sample-bytes',
     '--batch-id', '--attempt-token', '--file-id', '--reason',
+    '--topic-id', '--summaries',
   ]);
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
@@ -185,6 +188,32 @@ function main() {
       withAsyncMutationLock(paths, () => checkpointBatch(paths, payload))
         .then((data) => emit({ ok: true, command, data }, json))
         .catch((error) => fail(command, json, error));
+      return;
+    }
+    if (command === 'finalize') {
+      if (!options.summaries) cliError(command, 'INVALID_ARGUMENT', '--summaries is required for finalize');
+      const summariesPath = assertPathWithinVault(vault, resolve(vault, options.summaries));
+      const summaries = readJson(summariesPath);
+      const data = withMutationLock(paths, () => finalizeBuild(paths, summaries));
+      emit({ ok: true, command, data }, json);
+      return;
+    }
+    if (command === 'reindex') {
+      const topicId = requireOption(options, command, 'topicId', '--topic-id');
+      if (!options.input) cliError(command, 'INVALID_ARGUMENT', '--input is required for reindex');
+      if (!options.summaries) cliError(command, 'INVALID_ARGUMENT', '--summaries is required for reindex');
+      const inputPath = assertPathWithinVault(vault, resolve(vault, options.input));
+      const summariesPath = assertPathWithinVault(vault, resolve(vault, options.summaries));
+      const ingestResult = readJson(inputPath);
+      const summaries = readJson(summariesPath);
+      const plan = readJson(paths.plan);
+      const state = readJson(paths.state);
+      const data = withMutationLock(paths, () => reindexTopicAndAncestors({
+        paths, plan, state, topicId,
+        pageUpdates: ingestResult.pageUpdates ?? [],
+        summaries,
+      }));
+      emit({ ok: true, command, data }, json);
       return;
     }
     cliError(command, 'UNKNOWN_COMMAND', `Unknown command: ${command}`);

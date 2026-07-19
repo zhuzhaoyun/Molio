@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 const daemonRoot = resolve(import.meta.dirname, '..', '..', '..');
 const cli = join(
@@ -269,4 +269,288 @@ export function checkpoint(vaultPath: string, payload: object) {
   const inputPath = join(vaultPath, 'checkpoint-input.json');
   writeFileSync(inputPath, `${JSON.stringify(payload)}\n`);
   return runWikiBuildCli(vaultPath, ['checkpoint', '--input', inputPath, '--json']);
+}
+
+/**
+ * Write state.json and materialize wiki page files for a completed build.
+ * Fast-forwards past the batch processing phase without running checkpoint.
+ */
+export function writeCompletedBuildState(
+  vaultPath: string,
+  plan: any,
+  pages: Array<{ path: string; topicId: string; type: string; title: string; summary: string; content: string }>,
+  options: { phase?: string; failedFileIds?: string[]; skippedFileIds?: string[] } = {},
+) {
+  const statePath = join(vaultPath, '.molio', 'wiki-build', 'state.json');
+  const currentState = JSON.parse(readFileSync(statePath, 'utf8'));
+  const failedFileIds = options.failedFileIds ?? [];
+  const skippedFileIds = options.skippedFileIds ?? [];
+  const batches: Record<string, any> = {};
+  for (const batch of plan.batches) {
+    batches[batch.id] = { status: 'succeeded', attempts: 1, attemptToken: null, lastError: null };
+  }
+  const files: Record<string, any> = {};
+  for (const assignment of plan.assignments) {
+    const isFailed = failedFileIds.includes(assignment.fileId);
+    const isSkipped = skippedFileIds.includes(assignment.fileId);
+    files[assignment.fileId] = {
+      status: isFailed ? 'failed' : isSkipped ? 'skipped' : 'succeeded',
+      attempts: isFailed || isSkipped ? 0 : 1,
+      contentHash: isFailed || isSkipped ? null : 'a'.repeat(64),
+      lastError: isFailed ? { code: 'PREPROCESS_FAILED', message: 'test failure' } : null,
+    };
+  }
+  const pagesMap: Record<string, any> = {};
+  for (const page of pages) {
+    pagesMap[page.path] = {
+      sha256: createHash('sha256').update(page.content).digest('hex'),
+      batchId: plan.batches[0]?.id ?? 'batch-001',
+      attemptToken: 'test-token',
+      topicId: page.topicId,
+      type: page.type,
+      title: page.title,
+      summary: page.summary,
+      stagedPath: `.molio/wiki-build/staging/test/${page.path}`,
+      updatedAt: new Date().toISOString(),
+    };
+    const filePath = join(vaultPath, page.path);
+    mkdirSync(dirname(filePath), { recursive: true });
+    writeFileSync(filePath, page.content);
+  }
+  currentState.phase = options.phase ?? 'running';
+  currentState.activeBatchId = null;
+  currentState.batches = batches;
+  currentState.files = files;
+  currentState.pages = pagesMap;
+  currentState.updatedAt = new Date().toISOString();
+  writeFileSync(statePath, `${JSON.stringify(currentState, null, 2)}\n`);
+}
+
+/**
+ * Create a three-level hierarchy: engineering → {review, fire}, digitalization → {standards}.
+ * All batches are succeeded, pages are materialized.
+ */
+export function completedThreeLevelBuild() {
+  const files = [
+    { filename: 'review-1.md', content: '# Design Review\n设计评审流程', id: 'review-file-1' },
+    { filename: 'fire-1.md', content: '# Fire Protection\n消防设计规范', id: 'fire-file-1' },
+    { filename: 'standards-1.md', content: '# Digital Standards\n数字化标准', id: 'standards-file-1' },
+    { filename: 'tools-1.md', content: '# Digital Tools\n数字化工具', id: 'tools-file-1' },
+  ];
+  const fixture = makeScannedVaultWithFiles(files);
+  const candidate = {
+    schemaVersion: 1,
+    planVersion: 1,
+    status: 'draft',
+    inventoryDigest: fixture.inventoryDigest,
+    createdAt: '2026-07-18T00:00:00.000Z',
+    capacity: { maxLeafPages: 200, maxLeafIndexTokens: 12000, maxTopicDepth: 6 },
+    topics: [
+      {
+        id: 'engineering', name: 'engineering', slug: 'engineering', kind: 'branch', depth: 1,
+        summary: 'Engineering topics', estimatedPages: 2, estimatedIndexTokens: 100,
+        children: [
+          {
+            id: 'review', name: 'review', slug: 'review', kind: 'leaf', depth: 2,
+            summary: 'Design review', estimatedPages: 1, estimatedIndexTokens: 40,
+            fileIds: ['review-file-1'], indexStrategy: 'inline',
+          },
+          {
+            id: 'fire', name: 'fire', slug: 'fire', kind: 'leaf', depth: 2,
+            summary: 'Fire protection', estimatedPages: 1, estimatedIndexTokens: 40,
+            fileIds: ['fire-file-1'], indexStrategy: 'inline',
+          },
+        ],
+      },
+      {
+        id: 'digitalization', name: 'digitalization', slug: 'digitalization', kind: 'branch', depth: 1,
+        summary: 'Digitalization topics', estimatedPages: 1, estimatedIndexTokens: 50,
+        children: [
+          {
+            id: 'standards', name: 'standards', slug: 'standards', kind: 'leaf', depth: 2,
+            summary: 'Digital standards', estimatedPages: 1, estimatedIndexTokens: 40,
+            fileIds: ['standards-file-1'], indexStrategy: 'inline',
+          },
+          {
+            id: 'tools', name: 'tools', slug: 'tools', kind: 'leaf', depth: 2,
+            summary: 'Digital tools', estimatedPages: 1, estimatedIndexTokens: 40,
+            fileIds: ['tools-file-1'], indexStrategy: 'inline',
+          },
+        ],
+      },
+    ],
+    assignments: [
+      { fileId: 'review-file-1', primaryTopicId: 'review', relatedTopicIds: [], processor: 'text' },
+      { fileId: 'fire-file-1', primaryTopicId: 'fire', relatedTopicIds: [], processor: 'text' },
+      { fileId: 'standards-file-1', primaryTopicId: 'standards', relatedTopicIds: [], processor: 'text' },
+      { fileId: 'tools-file-1', primaryTopicId: 'tools', relatedTopicIds: [], processor: 'text' },
+    ],
+    batches: [
+      { id: 'engineering-review-001', topicId: 'review', order: 1, fileIds: ['review-file-1'], estimatedInputTokens: 500 },
+      { id: 'engineering-fire-001', topicId: 'fire', order: 2, fileIds: ['fire-file-1'], estimatedInputTokens: 500 },
+      { id: 'digitalization-standards-001', topicId: 'standards', order: 3, fileIds: ['standards-file-1'], estimatedInputTokens: 500 },
+      { id: 'digitalization-tools-001', topicId: 'tools', order: 4, fileIds: ['tools-file-1'], estimatedInputTokens: 500 },
+    ],
+    batchPolicy: { maxFiles: 50, contextWindowTokens: 100000, maxInputFraction: 0.2, maxInputTokens: 20000 },
+    excluded: [],
+    undecided: [],
+  };
+  const planResult = runPlan(fixture.vault, candidate, 'approve');
+  if (planResult.status !== 0) throw new Error(`plan approve failed: ${planResult.stderr}`);
+  const pages = [
+    {
+      path: 'wiki/engineering/review/sources/Design Review.md',
+      topicId: 'review', type: 'sources', title: 'Design Review',
+      summary: '设计评审流程', content: '# Design Review\n设计评审流程',
+    },
+    {
+      path: 'wiki/engineering/fire/sources/Fire Protection.md',
+      topicId: 'fire', type: 'sources', title: 'Fire Protection',
+      summary: '消防设计规范', content: '# Fire Protection\n消防设计规范',
+    },
+    {
+      path: 'wiki/digitalization/standards/sources/Digital Standards.md',
+      topicId: 'standards', type: 'sources', title: 'Digital Standards',
+      summary: '数字化标准', content: '# Digital Standards\n数字化标准',
+    },
+    {
+      path: 'wiki/digitalization/tools/sources/Digital Tools.md',
+      topicId: 'tools', type: 'sources', title: 'Digital Tools',
+      summary: '数字化工具', content: '# Digital Tools\n数字化工具',
+    },
+  ];
+  writeCompletedBuildState(fixture.vault, candidate, pages);
+  return {
+    vault: fixture.vault,
+    cleanup: fixture.cleanup,
+    summaries: {
+      engineering: { summary: 'Engineering topics' },
+      review: { summary: 'Design review' },
+      fire: { summary: 'Fire protection' },
+      digitalization: { summary: 'Digitalization topics' },
+      standards: { summary: 'Digital standards' },
+      tools: { summary: 'Digital tools' },
+    },
+    topicIds: { engineering: 'engineering', review: 'review', fire: 'fire', digitalization: 'digitalization', standards: 'standards', tools: 'tools' },
+  };
+}
+
+/**
+ * Create a single-leaf build with configurable page count and capacity.
+ * Use maxLeafPages/maxLeafIndexTokens to test sharding thresholds.
+ */
+export function completedLeafBuild(options: {
+  maxLeafPages?: number; pageCount?: number; deleteSourcePage?: boolean;
+  maxLeafIndexTokens?: number; pageContentLength?: number;
+} = {}) {
+  const pageCount = options.pageCount ?? 3;
+  const maxLeafPages = options.maxLeafPages ?? 200;
+  const maxLeafIndexTokens = options.maxLeafIndexTokens ?? 12000;
+  const files: Array<{ filename: string; content: string; id: string }> = [];
+  for (let index = 0; index < pageCount; index += 1) {
+    const suffix = String(index + 1).padStart(2, '0');
+    const contentLength = options.pageContentLength ?? 100;
+    files.push({
+      filename: `concept-${suffix}.md`,
+      content: `# Concept ${index + 1}\n${'x'.repeat(contentLength)}`,
+      id: `concept-file-${suffix}`,
+    });
+  }
+  const fixture = makeScannedVaultWithFiles(files);
+  const needsShards = pageCount > maxLeafPages || (pageCount * 40) > maxLeafIndexTokens;
+  const candidate = {
+    schemaVersion: 1,
+    planVersion: 1,
+    status: 'draft',
+    inventoryDigest: fixture.inventoryDigest,
+    createdAt: '2026-07-18T00:00:00.000Z',
+    capacity: { maxLeafPages, maxLeafIndexTokens, maxTopicDepth: 6 },
+    topics: [{
+      id: 'topic', name: 'topic', slug: 'topic', kind: 'leaf', depth: 1,
+      summary: 'A topic', estimatedPages: pageCount, estimatedIndexTokens: pageCount * 40,
+      fileIds: files.map((file) => file.id),
+      indexStrategy: needsShards ? 'shards' : 'inline',
+    }],
+    assignments: files.map((file) => ({
+      fileId: file.id, primaryTopicId: 'topic', relatedTopicIds: [], processor: 'text',
+    })),
+    batches: files.map((file, index) => ({
+      id: `topic-${String(index + 1).padStart(3, '0')}`,
+      topicId: 'topic', order: index + 1, fileIds: [file.id], estimatedInputTokens: 500,
+    })),
+    batchPolicy: { maxFiles: 50, contextWindowTokens: 100000, maxInputFraction: 0.2, maxInputTokens: 20000 },
+    excluded: [],
+    undecided: [],
+  };
+  const planResult = runPlan(fixture.vault, candidate, 'approve');
+  if (planResult.status !== 0) throw new Error(`plan approve failed: ${planResult.stderr}`);
+  const pages = files.map((file, index) => ({
+    path: `wiki/topic/sources/Concept ${index + 1}.md`,
+    topicId: 'topic', type: 'sources', title: `Concept ${index + 1}`,
+    summary: `Summary for concept ${index + 1}`,
+    content: file.content,
+  }));
+  writeCompletedBuildState(fixture.vault, candidate, pages);
+  if (options.deleteSourcePage && pages.length > 0) {
+    const pageToDelete = pages[0]!;
+    const filePath = join(fixture.vault, pageToDelete.path);
+    rmSync(filePath, { force: true });
+  }
+  return {
+    vault: fixture.vault,
+    cleanup: fixture.cleanup,
+    summaries: { topic: { summary: 'A topic' } },
+    plan: candidate,
+    pages,
+  };
+}
+
+/**
+ * Create a build with one succeeded file (with a materialized page) and one
+ * failed file (no page). Used to test completed_with_errors phase.
+ */
+export function completedBuildWithMixedResults() {
+  const files = [
+    { filename: 'good.md', content: '# Good File\nGood content', id: 'good-file' },
+    { filename: 'bad.md', content: '# Bad File\nBad content', id: 'bad-file' },
+  ];
+  const fixture = makeScannedVaultWithFiles(files);
+  const candidate = {
+    schemaVersion: 1,
+    planVersion: 1,
+    status: 'draft',
+    inventoryDigest: fixture.inventoryDigest,
+    createdAt: '2026-07-18T00:00:00.000Z',
+    capacity: { maxLeafPages: 200, maxLeafIndexTokens: 12000, maxTopicDepth: 6 },
+    topics: [{
+      id: 'topic', name: 'topic', slug: 'topic', kind: 'leaf', depth: 1,
+      summary: 'A topic', estimatedPages: 1, estimatedIndexTokens: 40,
+      fileIds: ['good-file', 'bad-file'], indexStrategy: 'inline',
+    }],
+    assignments: [
+      { fileId: 'good-file', primaryTopicId: 'topic', relatedTopicIds: [], processor: 'text' },
+      { fileId: 'bad-file', primaryTopicId: 'topic', relatedTopicIds: [], processor: 'text' },
+    ],
+    batches: [{
+      id: 'topic-001', topicId: 'topic', order: 1,
+      fileIds: ['good-file', 'bad-file'], estimatedInputTokens: 500,
+    }],
+    batchPolicy: { maxFiles: 50, contextWindowTokens: 100000, maxInputFraction: 0.2, maxInputTokens: 20000 },
+    excluded: [],
+    undecided: [],
+  };
+  const planResult = runPlan(fixture.vault, candidate, 'approve');
+  if (planResult.status !== 0) throw new Error(`plan approve failed: ${planResult.stderr}`);
+  const pages = [{
+    path: 'wiki/topic/sources/Good File.md',
+    topicId: 'topic', type: 'sources', title: 'Good File',
+    summary: 'Good summary', content: '# Good File\nGood content',
+  }];
+  writeCompletedBuildState(fixture.vault, candidate, pages, { failedFileIds: ['bad-file'] });
+  return {
+    vault: fixture.vault,
+    cleanup: fixture.cleanup,
+    summaries: { topic: { summary: 'A topic' } },
+    plan: candidate,
+  };
 }
