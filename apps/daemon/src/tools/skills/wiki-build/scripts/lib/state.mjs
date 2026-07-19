@@ -684,7 +684,7 @@ export async function checkpointBatch(paths, result) {
     let topicName = topicId
     const findTopicName = (nodes) => {
       for (const node of nodes ?? []) {
-        if (node.id === topicId) { topicName = node.name; return true }
+        if (node.id === topicId) { topicName = node.name ?? node.slug ?? node.id; return true }
         if (node.children && findTopicName(node.children)) return true
       }
       return false

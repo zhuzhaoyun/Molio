@@ -33,6 +33,16 @@ function codedError(code, message, details) {
 }
 
 /**
+ * Get a human-readable topic name, falling back to slug then id.
+ * Plans may omit `name` (only slug/id are required by validation).
+ * @param {object} topic
+ * @returns {string}
+ */
+function topicDisplayName(topic) {
+  return topic.name ?? topic.slug ?? topic.id ?? 'unknown';
+}
+
+/**
  * Estimate token count of a markdown string using utf8-bytes / 3.
  * @param {string} markdown
  * @returns {number}
@@ -83,13 +93,17 @@ function buildTopicMaps(topics) {
 
 /**
  * Render a single page entry as a wikilink line.
+ * Derives the link target from page.path (e.g. "wiki/知识系统/LLM-Wiki.md"
+ * → "知识系统/LLM-Wiki") so the link matches the actual flat page location,
+ * NOT a type/title composite path that doesn't exist on disk.
  * @param {object} page
  * @param {string[]} topicPath
  * @returns {string}
  */
 function renderEntry(page, topicPath) {
-  const topicPathStr = topicPath.join('/');
-  return `- [[${topicPathStr}/${page.type}/${page.title}|${page.title}]] — ${page.summary}\n`;
+  // page.path is like "wiki/<topic>/.../<title>.md" — strip wiki/ prefix and .md suffix
+  const linkTarget = (page.path ?? '').replace(/^wiki\//, '').replace(/\.md$/i, '');
+  return `- [[${linkTarget}|${page.title}]] — ${page.summary}\n`;
 }
 
 /**
@@ -214,7 +228,7 @@ function buildLeafIndex(topic, pages, topicPath, capacity) {
     }
 
     // Render leaf index listing shards
-    const indexLines = [`# ${topic.name}\n`];
+    const indexLines = [`# ${topicDisplayName(topic)}\n`];
     let lastType = null;
     for (const info of shardInfo) {
       if (info.type !== lastType) {
@@ -229,7 +243,7 @@ function buildLeafIndex(topic, pages, topicPath, capacity) {
     indexes[indexPath] = indexLines.join('');
   } else {
     // Build inline index
-    const indexLines = [`# ${topic.name}\n`];
+    const indexLines = [`# ${topicDisplayName(topic)}\n`];
     for (const type of types) {
       const entries = byType.get(type) ?? [];
       if (entries.length === 0) continue;
@@ -251,11 +265,11 @@ function buildLeafIndex(topic, pages, topicPath, capacity) {
 function buildBranchIndex(topic, summaries, topicPath) {
   const topicPathStr = topicPath.join('/');
   const indexPath = `wiki/${topicPathStr}/INDEX.md`;
-  const lines = [`# ${topic.name}\n`];
+  const lines = [`# ${topicDisplayName(topic)}\n`];
   for (const child of (topic.children ?? [])) {
     const childSummary = summaries[child.id]?.summary ?? '';
     const childPath = [...topicPath, child.slug].join('/');
-    lines.push(`- [[${childPath}/INDEX|${child.name}]] — ${childSummary}\n`);
+    lines.push(`- [[${childPath}/INDEX|${topicDisplayName(child)}]] — ${childSummary}\n`);
   }
   return { [indexPath]: lines.join('') };
 }
@@ -267,7 +281,7 @@ function buildRootIndex(topics, summaries) {
   const lines = ['# Index\n'];
   for (const topic of topics) {
     const summary = summaries[topic.id]?.summary ?? '';
-    lines.push(`- [[${topic.slug}/INDEX|${topic.name}]] — ${summary}\n`);
+    lines.push(`- [[${topic.slug}/INDEX|${topicDisplayName(topic)}]] — ${summary}\n`);
   }
   return { 'wiki/INDEX.md': lines.join('') };
 }
