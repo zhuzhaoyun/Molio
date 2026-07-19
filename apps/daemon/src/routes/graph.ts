@@ -64,7 +64,7 @@ export function graphRoutes(db: Database.Database): Hono {
 /**
  * Scan all .md files in a vault, parse [[wikilinks]], and build a graph.
  */
-function buildGraph(vaultPath: string): GraphData {
+export function buildGraph(vaultPath: string): GraphData {
   const tree = scanTree(vaultPath);
 
   // Collect all .md files (nodes)
@@ -86,6 +86,7 @@ function buildGraph(vaultPath: string): GraphData {
     const relPath = f.path;
     const key = relPath; // Use relative path as unique key
     pathToKey.set(relPath, key);
+    pathToKey.set(relPath.replace(/\\/g, '/').toLowerCase(), key);
 
     // index by basename (no .md extension)
     const basename = f.name.replace(/\.md$/i, '').toLowerCase();
@@ -202,19 +203,30 @@ function resolveLink(
   nameIndex: Map<string, string[]>,
   pathToKey: Map<string, string>,
 ): string | null {
-  // Strip any .md extension from the link text
-  let cleanName = rawName.replace(/\.md$/i, '').trim().toLowerCase();
+  // Skip non-.md files
+  if (rawName.match(/\.(png|jpg|jpeg|gif|svg|webp|pdf|docx?|xlsx?)$/i)) return null;
 
-  // Skip non-.md files (images, etc.)
-  if (rawName.match(/\.(png|jpg|jpeg|gif|svg|webp|pdf|docx?|xlsx?)$/i)) {
-    return null;
+  const normalizedTarget = rawName
+    .trim()
+    .replace(/\\/g, '/')
+    .replace(/^\/+|^\.\//g, '')
+    .replace(/\.md$/i, '')
+    .toLowerCase();
+
+  // 1. Path-qualified exact match (before basename/fuzzy fallback)
+  const exactCandidates = [`${normalizedTarget}.md`];
+  if (sourcePath.startsWith('wiki/') && !normalizedTarget.startsWith('wiki/')) {
+    exactCandidates.push(`wiki/${normalizedTarget}.md`);
+  }
+  for (const candidate of exactCandidates) {
+    const exact = pathToKey.get(candidate);
+    if (exact) return exact;
   }
 
-  // Case 1: Look up by exact name in the index
+  // 2. Basename fallback (existing logic)
+  let cleanName = normalizedTarget;
   let candidates = nameIndex.get(cleanName);
   if (!candidates || candidates.length === 0) {
-    // Case 2: The link text may include a directory path like [[开发/概念/知识库五范式]].
-    // Extract just the basename (last segment) for matching.
     if (cleanName.includes('/')) {
       const baseOnly = cleanName.split('/').pop() ?? cleanName;
       if (baseOnly !== cleanName) {
@@ -222,10 +234,9 @@ function resolveLink(
       }
     }
   }
+
+  // 3. Fuzzy match
   if (!candidates || candidates.length === 0) {
-    // Case 3: Fuzzy match — strip spaces/dashes/underscores for comparison.
-    // AI-generated wikilinks like [[AI Safety]] may not match filename
-    // ai-safety.md with exact string comparison.
     const fuzzyKey = normalizeName(cleanName);
     for (const [key, paths] of nameIndex) {
       if (normalizeName(key) === fuzzyKey) {
@@ -241,19 +252,16 @@ function resolveLink(
     return first ? (pathToKey.get(first) ?? null) : null;
   }
 
-  // Multiple candidates — prefer same directory as source
+  // Same-directory preference
   const sourceDir = sourcePath.includes('/')
     ? sourcePath.slice(0, sourcePath.lastIndexOf('/'))
     : '';
 
   for (const c of candidates) {
     const candDir = c.includes('/') ? c.slice(0, c.lastIndexOf('/')) : '';
-    if (candDir === sourceDir) {
-      return pathToKey.get(c) ?? null;
-    }
+    if (candDir === sourceDir) return pathToKey.get(c) ?? null;
   }
 
-  // Fallback: return first candidate
   const fallback = candidates[0];
   return fallback ? (pathToKey.get(fallback) ?? null) : null;
 }

@@ -75,4 +75,16 @@ describe('ensureWikiSysPromptFiles', () => {
     assert.ok(WEIXIN_SYS_PROMPT_FILE.endsWith(join('.molio', 'sysprompt', 'weixin.txt')));
     assert.ok(QUERY_SYS_PROMPT_FILE.endsWith(join('.molio', 'sysprompt', 'query.txt')));
   });
+
+  it('the query frame navigates recursive indexes with legacy fallback', () => {
+    ensureWikiSysPromptFiles(dir);
+    const query = readFileSync(join(dir, 'query.txt'), 'utf8');
+    assert.match(query, /wiki\/INDEX\.md/);
+    assert.match(query, /逐级读取候选主题/);
+    assert.match(query, /叶主题/);
+    assert.match(query, /index-shards/);
+    assert.match(query, /legacy/);
+    assert.match(query, /路径限定/);
+    assert.match(query, /信息不足.*源文件/s);
+  });
 });
