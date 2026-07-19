@@ -384,7 +384,7 @@ function addItems(workItems, fileId, normalizedPath, chunks) {
   }
 }
 
-export async function prepareWorkItems({ paths, batch, inputManifest, policy, external = [], fieldPolicy }) {
+export async function prepareWorkItems({ paths, batch, inputManifest, policy, external = [], fieldPolicy, chunk = false }) {
   const resolvedPolicy = mergePolicy(policy);
   if (!paths?.root || !batch?.id || !batch?.attemptToken) throw codedError('PREPARE_ARGUMENT_INVALID', 'paths, batch id, and attempt token are required');
   const vault = vaultPathFrom(paths);
@@ -416,9 +416,26 @@ export async function prepareWorkItems({ paths, batch, inputManifest, policy, ex
       });
     }
     const extension = (externalRecord ? extname(contentPath) : record.extension ?? '').toLowerCase();
+
+    // File-level mode (default): emit one work item per file, no chunking.
+    if (!chunk) {
+      const raw = readFileSync(contentPath);
+      const estimatedTokens = estimateTokens(raw.toString('utf8'));
+      workItems.push({
+        id: record.id,
+        fileId: record.id,
+        path: normalizedPath,
+        contentHash: sha256(raw),
+        estimatedTokens,
+        tooLarge: estimatedTokens > resolvedPolicy.maxInputTokens,
+      });
+      continue;
+    }
+
+    // Chunked mode: only chunk when the file exceeds maxInputTokens.
     if (extension === '.jsonl') {
       const chunks = await chunkJsonl(contentPath, resolvedPolicy);
-      for (const chunk of chunks) chunk.policy = resolvedPolicy;
+      for (const c of chunks) c.policy = resolvedPolicy;
       addItems(workItems, record.id, normalizedPath, chunks);
       usedJsonl = true;
       continue;
@@ -429,28 +446,41 @@ export async function prepareWorkItems({ paths, batch, inputManifest, policy, ex
         const summary = await summarizeJsonStream(contentPath, approved);
         const summaryText = summary.keys.map((entry) => `${entry.key}: ${entry.type}`).join('\n');
         const chunks = chunkPlainText(summaryText, resolvedPolicy);
-        for (const chunk of chunks) chunk.policy = resolvedPolicy;
+        for (const c of chunks) c.policy = resolvedPolicy;
         addItems(workItems, record.id, normalizedPath, chunks);
         continue;
       }
       const text = readFileSync(contentPath, 'utf8');
       try { JSON.parse(text); } catch { throw codedError('JSON_INVALID', 'Invalid JSON input'); }
       const chunks = chunkPlainText(text, resolvedPolicy);
-      for (const chunk of chunks) chunk.policy = resolvedPolicy;
+      for (const c of chunks) c.policy = resolvedPolicy;
       addItems(workItems, record.id, normalizedPath, chunks);
       continue;
     }
     const text = readFileSync(contentPath, 'utf8');
+    const estimatedTokens = estimateTokens(text);
+    if (estimatedTokens <= resolvedPolicy.maxInputTokens) {
+      // File fits within the limit — emit as a single file-level item.
+      workItems.push({
+        id: record.id,
+        fileId: record.id,
+        path: normalizedPath,
+        contentHash: sha256(Buffer.from(text, 'utf8')),
+        estimatedTokens,
+        tooLarge: false,
+      });
+      continue;
+    }
     const chunks = extension === '.md' || extension === '.markdown'
       ? chunkMarkdown(text, resolvedPolicy)
       : chunkPlainText(text, resolvedPolicy);
-    for (const chunk of chunks) chunk.policy = resolvedPolicy;
+    for (const c of chunks) c.policy = resolvedPolicy;
     addItems(workItems, record.id, normalizedPath, chunks);
   }
   const output = {
     batchId: batch.id,
     attemptToken: batch.attemptToken,
-    strategy: usedJsonl ? 'jsonl-stream' : 'bounded-text',
+    strategy: usedJsonl ? 'jsonl-stream' : chunk ? 'bounded-text' : 'file-level',
     policy: resolvedPolicy,
     normalized,
     workItems,

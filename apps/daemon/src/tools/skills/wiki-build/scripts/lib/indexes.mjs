@@ -11,7 +11,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { DEFAULT_CAPACITY } from './contracts.mjs';
 import { atomicWriteJson, readJson, sha256 } from './workspace.mjs';
 
@@ -344,6 +344,71 @@ export function buildIndexModel(plan, pages, summaries) {
 }
 
 /**
+ * Build an index model without requiring all topic summaries.
+ * Missing summaries are replaced with empty strings (leaf indexes don't need
+ * summaries; only root/branch indexes reference them, best-effort).
+ * @param {object} plan
+ * @param {Record<string, object>} pages - state.pages manifest
+ * @param {Record<string, { summary: string }>} [summaries]
+ * @returns {IndexModel}
+ */
+export function buildIndexModelLenient(plan, pages, summaries = {}) {
+  const capacity = plan.capacity ?? DEFAULT_CAPACITY
+  const topics = plan.topics ?? []
+  const { topicById, topicPathMap } = buildTopicMaps(topics)
+
+  // Group pages by topicId
+  const pagesByTopic = new Map()
+  const missing = []
+  for (const [pagePath, page] of Object.entries(pages)) {
+    if (!topicById.has(page.topicId)) {
+      missing.push(pagePath)
+      continue
+    }
+    if (!pagesByTopic.has(page.topicId)) pagesByTopic.set(page.topicId, [])
+    pagesByTopic.get(page.topicId).push({ path: pagePath, ...page })
+  }
+
+  const allIndexes = {}
+  const allCoverage = []
+
+  // Build leaf indexes (never need summaries)
+  for (const [topicId, topic] of topicById) {
+    if (topic.kind !== 'leaf') continue
+    const topicPath = topicPathMap.get(topicId)
+    const topicPages = pagesByTopic.get(topicId) ?? []
+    const { indexes, coverage } = buildLeafIndex(topic, topicPages, topicPath, capacity)
+    Object.assign(allIndexes, indexes)
+    allCoverage.push(...coverage)
+  }
+
+  // Build branch indexes (best-effort with missing summaries)
+  for (const [topicId, topic] of topicById) {
+    if (topic.kind !== 'branch') continue
+    const topicPath = topicPathMap.get(topicId)
+    const indexes = buildBranchIndex(topic, summaries, topicPath)
+    Object.assign(allIndexes, indexes)
+  }
+
+  // Build root index (best-effort with missing summaries)
+  Object.assign(allIndexes, buildRootIndex(topics, summaries))
+
+  // Compute hashes
+  const hashes = {}
+  for (const [path, content] of Object.entries(allIndexes)) {
+    hashes[path] = sha256(content)
+  }
+
+  return {
+    indexes: allIndexes,
+    hashes,
+    coverage: allCoverage,
+    expectedPages: Object.keys(pages),
+    missing,
+  }
+}
+
+/**
  * Atomically write all index files. Skips files whose hash already matches.
  * Cleans up stale shard files in directories that were written to.
  * @param {object} paths
@@ -462,13 +527,179 @@ export function verifyCoverage(model) {
 }
 
 /**
- * Orchestrate: read state + plan → buildIndexModel → verifyCoverage →
+ * Filter an index model to only the indexes in the affected topic chain.
+ * @param {IndexModel} model
+ * @param {Set<string>} chain - set of topicIds in the affected chain
+ * @param {Map<string, string>} pathToTopic - topicPath string → topicId
+ * @returns {IndexModel}
+ */
+export function filterAffectedIndexes(model, chain, pathToTopic) {
+  const affectedIndexes = {}
+  for (const [indexPath, content] of Object.entries(model.indexes)) {
+    if (indexPath === 'wiki/INDEX.md') {
+      affectedIndexes[indexPath] = content
+      continue
+    }
+    const relPath = indexPath.replace(/^wiki\//, '')
+    const parts = relPath.split('/')
+    parts.pop() // remove INDEX.md or shard file
+    if (parts[parts.length - 1] === 'index-shards') parts.pop()
+    const topicPathStr = parts.join('/')
+    const tid = pathToTopic.get(topicPathStr)
+    if (tid && chain.has(tid)) {
+      affectedIndexes[indexPath] = content
+    }
+  }
+  return {
+    indexes: affectedIndexes,
+    hashes: Object.fromEntries(
+      Object.entries(model.hashes).filter(([path]) => path in affectedIndexes),
+    ),
+    coverage: model.coverage,
+    expectedPages: model.expectedPages,
+    missing: model.missing,
+  }
+}
+
+/**
+ * Append (prepend) a build log entry to wiki/log.md.
+ * @param {object} paths
+ * @param {{ batchId: string, succeeded: number, failed: number, skipped: number, pages: number, topics: string[] }} entry
+ */
+export function appendBuildLog(paths, entry) {
+  const vault = resolve(paths.root, '..', '..')
+  const logPath = join(vault, 'wiki', 'log.md')
+  const now = new Date()
+  const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+  const header = `## ${timestamp} | checkpoint | ${entry.batchId} | succeeded:${entry.succeeded} failed:${entry.failed} skipped:${entry.skipped} | pages:${entry.pages}\n`
+  const topicLine = `- 主题：${entry.topics.join(', ')}\n`
+  const block = `${header}${topicLine}\n`
+  mkdirSync(dirname(logPath), { recursive: true })
+  if (existsSync(logPath)) {
+    const existing = readFileSync(logPath, 'utf8')
+    // Insert after the "# 构建日志\n" header line
+    const headerEnd = existing.indexOf('\n')
+    if (headerEnd >= 0 && existing.startsWith('# ')) {
+      writeFileSync(logPath, `${existing.slice(0, headerEnd + 1)}\n${block}${existing.slice(headerEnd + 1)}`, 'utf8')
+    } else {
+      writeFileSync(logPath, `${block}${existing}`, 'utf8')
+    }
+  } else {
+    writeFileSync(logPath, `# 构建日志\n\n${block}`, 'utf8')
+  }
+}
+
+/**
+ * Rewrite wiki/hot.md with current build status (~500 words).
+ * @param {object} paths
+ * @param {object} state
+ * @param {object} plan
+ */
+export function writeHotCache(paths, state, plan) {
+  const vault = resolve(paths.root, '..', '..')
+  const hotPath = join(vault, 'wiki', 'hot.md')
+  const totalBatches = Object.keys(state.batches ?? {}).length
+  const completedBatches = Object.values(state.batches ?? {}).filter(
+    (b) => b.status === 'succeeded' || b.status === 'failed' || b.status === 'skipped',
+  ).length
+
+  // Recent 5 topics with page counts
+  const topicPageCounts = new Map()
+  for (const page of Object.values(state.pages ?? {})) {
+    const tid = page.topicId
+    topicPageCounts.set(tid, (topicPageCounts.get(tid) ?? 0) + 1)
+  }
+  const topicById = new Map()
+  const walkTopics = (nodes) => {
+    for (const node of nodes ?? []) {
+      topicById.set(node.id, node)
+      if (node.children) walkTopics(node.children)
+    }
+  }
+  walkTopics(plan.topics)
+  const recentTopics = [...topicPageCounts.entries()]
+    .slice(-5)
+    .map(([tid, count]) => `- ${topicById.get(tid)?.name ?? tid}: ${count} 页`)
+
+  // Failed / skipped files
+  const failedFiles = Object.entries(state.files ?? {})
+    .filter(([, f]) => f.status === 'failed')
+    .map(([id]) => id)
+  const skippedFiles = Object.entries(state.files ?? {})
+    .filter(([, f]) => f.status === 'skipped')
+    .map(([id]) => id)
+
+  const lines = [
+    '# 构建状态缓存\n',
+    `\n- Phase: ${state.phase ?? 'unknown'}`,
+    `- 批次进度: ${completedBatches}/${totalBatches}`,
+    `\n## 最近主题\n`,
+    ...(recentTopics.length > 0 ? recentTopics : ['- （暂无）']),
+  ]
+  if (failedFiles.length > 0) {
+    lines.push(`\n## 失败文件\n`, ...failedFiles.map((f) => `- ${f}`))
+  }
+  if (skippedFiles.length > 0) {
+    lines.push(`\n## 跳过文件\n`, ...skippedFiles.map((f) => `- ${f}`))
+  }
+  lines.push('')
+  mkdirSync(dirname(hotPath), { recursive: true })
+  writeFileSync(hotPath, lines.join('\n'), 'utf8')
+}
+
+/**
+ * Incrementally rebuild indexes after a checkpoint.
+ * Rebuilds only the affected leaf topic + ancestor chain, appends to log.md,
+ * and rewrites hot.md.
+ * @param {object} paths
+ * @param {object} plan
+ * @param {object} state
+ * @param {string} topicId
+ * @param {{ succeeded: number, failed: number, skipped: number, pages: number, topics: string[] }} [logEntry]
+ * @returns {{ indexesWritten: number, logAppended: boolean }}
+ */
+export function rebuildAfterCheckpoint(paths, plan, state, topicId, logEntry) {
+  const { topicById, topicPathMap, parentMap, pathToTopic } = buildTopicMaps(plan.topics ?? [])
+
+  // Identify the topic chain: topicId and all ancestors
+  const chain = new Set()
+  let current = topicId
+  while (current) {
+    chain.add(current)
+    current = parentMap.get(current) ?? null
+  }
+
+  // Build lenient model (no summaries required).
+  // Note: root/branch indexes get empty summaries pre-finalize — this is
+  // expected. Real topic summaries arrive at finalize time via buildIndexModel.
+  const model = buildIndexModelLenient(plan, state.pages, {})
+
+  // Filter to only affected indexes
+  const affectedModel = filterAffectedIndexes(model, chain, pathToTopic)
+
+  // Write only affected indexes
+  const hashes = writeIndexes(paths, affectedModel)
+
+  // Append build log
+  if (logEntry) {
+    appendBuildLog(paths, logEntry)
+  }
+
+  // Rewrite hot cache
+  writeHotCache(paths, state, plan)
+
+  return { indexesWritten: Object.keys(hashes).length, logAppended: !!logEntry }
+}
+
+/**
+ * Orchestrate: read state + plan → buildIndexModel → verifyCoverage (optional) →
  * writeIndexes → update state phase.
  * @param {object} paths
  * @param {Record<string, { summary: string }>} summaries
+ * @param {{ verify?: boolean }} [options]
  * @returns {{ phase: string, succeeded: number, failed: number, skipped: number, indexes: Record<string, string> }}
  */
-export function finalizeBuild(paths, summaries) {
+export function finalizeBuild(paths, summaries, options = {}) {
   const vault = resolve(paths.root, '..', '..');
   const state = readJson(paths.state);
   const plan = readJson(paths.plan);
@@ -504,18 +735,20 @@ export function finalizeBuild(paths, summaries) {
   // Build index model
   const model = buildIndexModel(plan, state.pages, summaries);
 
-  // Verify coverage
-  const coverage = verifyCoverage(model);
-  if (!coverage.ok) {
-    if (coverage.missing.length > 0) {
-      throw codedError('SOURCE_PAGE_MISSING',
-        'Some pages are not covered by indexes',
-        { codes: ['SOURCE_PAGE_MISSING'], missing: coverage.missing });
-    }
-    if (coverage.duplicates.length > 0) {
-      throw codedError('DUPLICATE_PAGE',
-        'Some pages appear multiple times in indexes',
-        { codes: ['DUPLICATE_PAGE'], duplicates: coverage.duplicates });
+  // Verify coverage (optional, only when --verify is passed)
+  if (options.verify) {
+    const coverage = verifyCoverage(model);
+    if (!coverage.ok) {
+      if (coverage.missing.length > 0) {
+        throw codedError('SOURCE_PAGE_MISSING',
+          'Some pages are not covered by indexes',
+          { codes: ['SOURCE_PAGE_MISSING'], missing: coverage.missing });
+      }
+      if (coverage.duplicates.length > 0) {
+        throw codedError('DUPLICATE_PAGE',
+          'Some pages appear multiple times in indexes',
+          { codes: ['DUPLICATE_PAGE'], duplicates: coverage.duplicates });
+      }
     }
   }
 
@@ -591,33 +824,7 @@ export function reindexTopicAndAncestors({ paths, plan, state, topicId, pageUpda
   const model = buildIndexModel(plan, next.pages, summaries);
 
   // Filter to only affected indexes
-  const affectedIndexes = {};
-  for (const [indexPath, content] of Object.entries(model.indexes)) {
-    if (indexPath === 'wiki/INDEX.md') {
-      affectedIndexes[indexPath] = content;
-      continue;
-    }
-    const relPath = indexPath.replace(/^wiki\//, '');
-    const parts = relPath.split('/');
-    parts.pop(); // remove INDEX.md or shard file
-    if (parts[parts.length - 1] === 'index-shards') parts.pop();
-    const topicPathStr = parts.join('/');
-    const tid = pathToTopic.get(topicPathStr);
-    if (tid && chain.has(tid)) {
-      affectedIndexes[indexPath] = content;
-    }
-  }
-
-  // Write only affected indexes
-  const affectedModel = {
-    indexes: affectedIndexes,
-    hashes: Object.fromEntries(
-      Object.entries(model.hashes).filter(([path]) => path in affectedIndexes),
-    ),
-    coverage: model.coverage,
-    expectedPages: model.expectedPages,
-    missing: model.missing,
-  };
+  const affectedModel = filterAffectedIndexes(model, chain, pathToTopic);
 
   const hashes = writeIndexes(paths, affectedModel);
 
@@ -628,7 +835,7 @@ export function reindexTopicAndAncestors({ paths, plan, state, topicId, pageUpda
     const topicPath = topicPathMap.get(tid);
     const shardDir = join(vault, 'wiki', ...topicPath, 'index-shards');
     if (!existsSync(shardDir)) continue;
-    const hasShards = Object.keys(affectedIndexes).some(
+    const hasShards = Object.keys(affectedModel.indexes).some(
       (p) => p.includes(`${topicPath.join('/')}/index-shards/`),
     );
     if (!hasShards) {

@@ -343,3 +343,99 @@ describe('wiki-build indexes — buildIndexModel', () => {
     );
   });
 });
+
+describe('wiki-build indexes — buildIndexModelLenient', () => {
+  it('does not throw when topic summaries are missing', () => {
+    const plan = {
+      capacity: { maxLeafPages: 200, maxLeafIndexTokens: 12000, maxTopicDepth: 6 },
+      topics: [{
+        id: 'topic-a', name: 'A', slug: 'a', kind: 'leaf', depth: 1,
+        fileIds: ['f1'], estimatedPages: 1, estimatedIndexTokens: 40,
+      }],
+    };
+    const pages = {
+      'wiki/a/sources/Page.md': { topicId: 'topic-a', type: 'sources', title: 'Page', summary: 'test' },
+    };
+    // Should not throw even with empty summaries
+    const model = indexesModule.buildIndexModelLenient(plan, pages, {});
+    assert.ok(model.indexes['wiki/a/INDEX.md']);
+    assert.ok(model.hashes['wiki/a/INDEX.md']);
+    assert.ok(model.coverage.includes('wiki/a/sources/Page.md'));
+  });
+});
+
+describe('wiki-build indexes — appendBuildLog', () => {
+  it('creates log.md with header when it does not exist', () => {
+    const fixture = completedLeafBuild({ pageCount: 1 });
+    const paths = workspaceModule.resolveBuildPaths(fixture.vault);
+    indexesModule.appendBuildLog(paths, {
+      batchId: 'batch-001', succeeded: 1, failed: 0, skipped: 0, pages: 1, topics: ['topic'],
+    });
+    const logPath = join(fixture.vault, 'wiki', 'log.md');
+    assert.ok(existsSync(logPath));
+    const content = readFileSync(logPath, 'utf8');
+    assert.match(content, /# 构建日志/);
+    assert.match(content, /checkpoint \| batch-001/);
+    assert.match(content, /succeeded:1/);
+    assert.match(content, /主题：topic/);
+    fixture.cleanup();
+  });
+
+  it('prepends new entries to existing log.md', () => {
+    const fixture = completedLeafBuild({ pageCount: 1 });
+    const paths = workspaceModule.resolveBuildPaths(fixture.vault);
+    indexesModule.appendBuildLog(paths, {
+      batchId: 'batch-001', succeeded: 1, failed: 0, skipped: 0, pages: 1, topics: ['topic'],
+    });
+    indexesModule.appendBuildLog(paths, {
+      batchId: 'batch-002', succeeded: 2, failed: 0, skipped: 0, pages: 2, topics: ['topic'],
+    });
+    const content = readFileSync(join(fixture.vault, 'wiki', 'log.md'), 'utf8');
+    // batch-002 should appear before batch-001 (prepended)
+    const idx2 = content.indexOf('batch-002');
+    const idx1 = content.indexOf('batch-001');
+    assert.ok(idx2 < idx1, 'newer entry should be prepended');
+    fixture.cleanup();
+  });
+});
+
+describe('wiki-build indexes — writeHotCache', () => {
+  it('generates hot.md from state', () => {
+    const fixture = completedLeafBuild({ pageCount: 1 });
+    const paths = workspaceModule.resolveBuildPaths(fixture.vault);
+    const state = readState(fixture.vault);
+    const plan = JSON.parse(readFileSync(join(fixture.vault, '.molio', 'wiki-build', 'plan.json'), 'utf8'));
+    indexesModule.writeHotCache(paths, state, plan);
+    const hotPath = join(fixture.vault, 'wiki', 'hot.md');
+    assert.ok(existsSync(hotPath));
+    const content = readFileSync(hotPath, 'utf8');
+    assert.match(content, /# 构建状态缓存/);
+    assert.match(content, /Phase/);
+    assert.match(content, /批次进度/);
+    fixture.cleanup();
+  });
+});
+
+describe('wiki-build indexes — rebuildAfterCheckpoint', () => {
+  it('rebuilds only the affected topic chain', () => {
+    const fixture = completedThreeLevelBuild();
+    const paths = workspaceModule.resolveBuildPaths(fixture.vault);
+    const state = readState(fixture.vault);
+    const plan = JSON.parse(readFileSync(join(fixture.vault, '.molio', 'wiki-build', 'plan.json'), 'utf8'));
+
+    const result = indexesModule.rebuildAfterCheckpoint(paths, plan, state, 'fire', {
+      batchId: 'test-batch', succeeded: 1, failed: 0, skipped: 0, pages: 1, topics: ['fire'],
+    });
+
+    assert.ok(result.indexesWritten > 0);
+    assert.equal(result.logAppended, true);
+
+    // fire INDEX.md should exist
+    assert.ok(existsSync(join(fixture.vault, 'wiki', 'engineering', 'fire', 'INDEX.md')));
+    // log.md and hot.md should exist
+    assert.ok(existsSync(join(fixture.vault, 'wiki', 'log.md')));
+    assert.ok(existsSync(join(fixture.vault, 'wiki', 'hot.md')));
+
+    fixture.cleanup();
+  });
+});

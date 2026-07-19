@@ -524,3 +524,207 @@ describe('wiki-build state — mutation lock self-healing', () => {
     fixture.cleanup();
   });
 });
+
+describe('wiki-build state — checkpoint --auto', () => {
+  function stagePageWithFrontmatter(vaultPath: string, stagingDir: string, relPath: string, fm: Record<string, string>, body: string) {
+    const lines = ['---'];
+    for (const [key, value] of Object.entries(fm)) {
+      lines.push(`${key}: ${value}`);
+    }
+    lines.push('---', '', body);
+    stagePage(vaultPath, stagingDir, relPath, lines.join('\n'));
+  }
+
+  it('assembles payload from frontmatter and checkpoints successfully', () => {
+    const fixture = approveOneBatchPlan();
+    const claim = claimNext(fixture.vault).json.data;
+    stagePageWithFrontmatter(fixture.vault, claim.stagingDir, 'wiki/economy/sources/经济.md', {
+      type: 'sources', title: '经济', topicId: 'economy', summary: '经济摘要',
+    }, '# 经济\n宏观经济');
+
+    const result = runWikiBuildCli(fixture.vault, [
+      'checkpoint', '--auto',
+      '--batch-id', claim.batch.id,
+      '--attempt-token', claim.attemptToken,
+      '--json',
+    ]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.json.data.summary, 'succeeded');
+    assert.equal(readState(fixture.vault).files['economy-file'].status, 'succeeded');
+    assert.equal(readState(fixture.vault).activeBatchId, null);
+    fixture.cleanup();
+  });
+
+  it('marks failed files via --failed-file', () => {
+    const fixture = approveOneBatchPlanWithTwoFiles();
+    const claim = claimNext(fixture.vault).json.data;
+    stagePageWithFrontmatter(fixture.vault, claim.stagingDir, 'wiki/经济/sources/经济.md', {
+      type: 'sources', title: '经济', topicId: 'economy', summary: '经济摘要',
+    }, '# 经济');
+
+    const result = runWikiBuildCli(fixture.vault, [
+      'checkpoint', '--auto',
+      '--batch-id', claim.batch.id,
+      '--attempt-token', claim.attemptToken,
+      '--failed-file', 'bad-file:PREPROCESS_FAILED:docling exit 1',
+      '--json',
+    ]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.json.data.summary, 'succeeded_with_errors');
+    assert.equal(readState(fixture.vault).files['economy-file'].status, 'succeeded');
+    assert.equal(readState(fixture.vault).files['bad-file'].status, 'failed');
+    fixture.cleanup();
+  });
+
+  it('rejects staged pages missing required frontmatter', () => {
+    const fixture = approveOneBatchPlan();
+    const claim = claimNext(fixture.vault).json.data;
+    // Stage a page without frontmatter
+    stagePage(fixture.vault, claim.stagingDir, 'wiki/economy/sources/经济.md', '# 经济\nNo frontmatter');
+
+    const result = runWikiBuildCli(fixture.vault, [
+      'checkpoint', '--auto',
+      '--batch-id', claim.batch.id,
+      '--attempt-token', claim.attemptToken,
+      '--json',
+    ]);
+    assert.equal(result.status, 2);
+    assert.equal(result.json.error.code, 'FRONTMATTER_MISSING');
+    fixture.cleanup();
+  });
+
+  it('updates incremental indexes after checkpoint', () => {
+    const fixture = approveOneBatchPlan();
+    const claim = claimNext(fixture.vault).json.data;
+    stagePageWithFrontmatter(fixture.vault, claim.stagingDir, 'wiki/economy-file/sources/经济.md', {
+      type: 'sources', title: '经济', topicId: 'economy-file', summary: '经济摘要',
+    }, '# 经济\n宏观经济');
+
+    const result = runWikiBuildCli(fixture.vault, [
+      'checkpoint', '--auto',
+      '--batch-id', claim.batch.id,
+      '--attempt-token', claim.attemptToken,
+      '--json',
+    ]);
+    assert.equal(result.status, 0, result.stderr);
+
+    // Leaf INDEX.md should exist and contain the new page
+    const indexPath = join(fixture.vault, 'wiki', 'economy-file', 'INDEX.md');
+    assert.ok(existsSync(indexPath), 'leaf INDEX.md should exist after checkpoint');
+    const indexContent = readFileSync(indexPath, 'utf8');
+    assert.match(indexContent, /经济/);
+    fixture.cleanup();
+  });
+
+  it('appends to log.md after checkpoint', () => {
+    const fixture = approveOneBatchPlan();
+    const claim = claimNext(fixture.vault).json.data;
+    stagePageWithFrontmatter(fixture.vault, claim.stagingDir, 'wiki/economy/sources/经济.md', {
+      type: 'sources', title: '经济', topicId: 'economy', summary: '经济摘要',
+    }, '# 经济');
+
+    runWikiBuildCli(fixture.vault, [
+      'checkpoint', '--auto',
+      '--batch-id', claim.batch.id,
+      '--attempt-token', claim.attemptToken,
+      '--json',
+    ]);
+
+    const logPath = join(fixture.vault, 'wiki', 'log.md');
+    assert.ok(existsSync(logPath), 'log.md should exist after checkpoint');
+    const logContent = readFileSync(logPath, 'utf8');
+    assert.match(logContent, /# 构建日志/);
+    assert.match(logContent, /checkpoint/);
+    assert.match(logContent, new RegExp(claim.batch.id));
+    fixture.cleanup();
+  });
+
+  it('rewrites hot.md after checkpoint', () => {
+    const fixture = approveOneBatchPlan();
+    const claim = claimNext(fixture.vault).json.data;
+    stagePageWithFrontmatter(fixture.vault, claim.stagingDir, 'wiki/economy/sources/经济.md', {
+      type: 'sources', title: '经济', topicId: 'economy', summary: '经济摘要',
+    }, '# 经济');
+
+    runWikiBuildCli(fixture.vault, [
+      'checkpoint', '--auto',
+      '--batch-id', claim.batch.id,
+      '--attempt-token', claim.attemptToken,
+      '--json',
+    ]);
+
+    const hotPath = join(fixture.vault, 'wiki', 'hot.md');
+    assert.ok(existsSync(hotPath), 'hot.md should exist after checkpoint');
+    const hotContent = readFileSync(hotPath, 'utf8');
+    assert.match(hotContent, /# 构建状态缓存/);
+    assert.match(hotContent, /Phase/);
+    fixture.cleanup();
+  });
+
+  it('rejects empty staging dir with NO_STAGED_PAGES', () => {
+    const fixture = approveOneBatchPlan();
+    const claim = claimNext(fixture.vault).json.data;
+    // Do NOT stage any pages — staging dir is empty
+
+    const result = runWikiBuildCli(fixture.vault, [
+      'checkpoint', '--auto',
+      '--batch-id', claim.batch.id,
+      '--attempt-token', claim.attemptToken,
+      '--json',
+    ]);
+    assert.equal(result.status, 2);
+    assert.equal(result.json.error.code, 'NO_STAGED_PAGES');
+    fixture.cleanup();
+  });
+
+  it('rejects --failed-file with unknown file id', () => {
+    const fixture = approveOneBatchPlan();
+    const claim = claimNext(fixture.vault).json.data;
+    stagePageWithFrontmatter(fixture.vault, claim.stagingDir, 'wiki/economy/sources/经济.md', {
+      type: 'sources', title: '经济', topicId: 'economy', summary: '经济摘要',
+    }, '# 经济');
+
+    const result = runWikiBuildCli(fixture.vault, [
+      'checkpoint', '--auto',
+      '--batch-id', claim.batch.id,
+      '--attempt-token', claim.attemptToken,
+      '--failed-file', 'nonexistent:ERR:some message',
+      '--json',
+    ]);
+    assert.equal(result.status, 2);
+    assert.equal(result.json.error.code, 'UNKNOWN_FILE_ID');
+    fixture.cleanup();
+  });
+
+  it('rejects --auto combined with --input', () => {
+    const fixture = approveOneBatchPlan();
+    const claim = claimNext(fixture.vault).json.data;
+
+    const result = runWikiBuildCli(fixture.vault, [
+      'checkpoint', '--auto', '--input', 'foo.json',
+      '--batch-id', claim.batch.id,
+      '--attempt-token', claim.attemptToken,
+      '--json',
+    ]);
+    assert.equal(result.status, 2);
+    assert.equal(result.json.error.code, 'INVALID_ARGUMENT');
+    assert.match(result.json.error.message, /mutually exclusive/);
+    fixture.cleanup();
+  });
+
+  it('rejects malformed --failed-file without colons', () => {
+    const fixture = approveOneBatchPlan();
+    const claim = claimNext(fixture.vault).json.data;
+
+    const result = runWikiBuildCli(fixture.vault, [
+      'checkpoint', '--auto',
+      '--batch-id', claim.batch.id,
+      '--attempt-token', claim.attemptToken,
+      '--failed-file', 'badformat',
+      '--json',
+    ]);
+    assert.equal(result.status, 2);
+    assert.equal(result.json.error.code, 'INVALID_ARGUMENT');
+    fixture.cleanup();
+  });
+});

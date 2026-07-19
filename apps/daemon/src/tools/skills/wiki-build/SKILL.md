@@ -120,13 +120,22 @@ wc -m 源文件          # 中文 1 字 ≈ 1.5 token，token ≈ 字符数 × 1
 6. 在对话中展示主题、文件分配、排除项、待决定文件、风险和工作量。
 7. 等待用户批准。用户明确批准前，不得运行 `approve`，也不得写入 `wiki/`。
 8. 运行 `plan --input "<candidate>" --mode approve --json`。
-9. 运行 `status --json`。恢复会话时，先展示剩余工作，并在运行 `status --recover` 前取得确认。
-10. 循环执行 `next -> 标准化受限输入 -> 在返回的 stagingDir 下写入完整页面 -> checkpoint`。
-11. 用户要求排除文件时运行 `skip --file-id`；出现可重试失败时运行 `retry --file-id`。
-12. 写入 `topic-summaries.json`，然后运行 `finalize --summaries "<path>" --json`。
-13. 根据最终 JSON 结果报告已完成、失败、跳过和未解决的文件。
+9. 循环执行（每批次 2 个命令）：
+   a. `next --json`（中断恢复时用 `run --resume --json` 代替，自动恢复孤儿 claim 并领取下一批次）
+   b. 读取 `next` 返回的 `files` 中的源文件（`prepare` 可选，仅超大文件需要 `prepare --chunk`）
+   c. 在返回的 `stagingDir` 下写入完整页面（**必须带 frontmatter**: `type`/`title`/`topicId`/`summary`）
+   d. `checkpoint --auto --batch-id <id> --attempt-token <token> --json`
+      （失败的文件用 `--failed-file fileId:code:msg` 标记，可重复）
+10. 用户要求排除文件时运行 `skip --file-id`；出现可重试失败时运行 `retry --file-id`。
+11. 写入 `topic-summaries.json`，然后运行 `finalize --summaries "<path>" --json`。
+12. 根据最终 JSON 结果报告已完成、失败、跳过和未解决的文件。
 
-**`checkpoint` 输入要求**：`checkpoint` 命令的输入 JSON 必须包含 `attemptToken` 字段（从 `next` 或 `prepare` 的返回值中获取），用于确保写入操作属于当前批次，防止过期批次覆盖新状态。
+**关键变化**：
+- 每批次从 4 命令（next/prepare/stage/checkpoint）降到 2 命令（next + checkpoint --auto）
+- `prepare` 降级为可选，默认返回文件级工作项；仅超大文件需要 `prepare --chunk`
+- `checkpoint --auto` 从页面 frontmatter 自动组装 payload，无需手写 JSON
+- `run --resume` 替代手动 `status --recover` + `next`
+- 每批次 checkpoint 后自动增量更新索引、追加 log.md、重写 hot.md
 
 ## wiki/INDEX.md 格式
 

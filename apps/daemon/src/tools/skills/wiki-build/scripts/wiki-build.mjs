@@ -5,6 +5,7 @@ import { scanVault } from './lib/inventory.mjs';
 import { approvePlan, saveDraft, validatePlan } from './lib/plan.mjs';
 import {
   checkpointBatch, claimNextBatch, recoverRunning, retryFailedFile, skipFile, prepareClaimedBatch,
+  assembleAutoPayload,
 } from './lib/state.mjs';
 import { finalizeBuild, reindexTopicAndAncestors } from './lib/indexes.mjs';
 import {
@@ -28,22 +29,28 @@ export function parseArgs(argv) {
     recover: false, batchId: undefined, attemptToken: undefined,
     fileId: undefined, reason: undefined,
     topicId: undefined, summaries: undefined,
+    auto: false, failedFile: [], resume: false, chunk: false, verify: false,
   };
   const valueFlags = new Set([
     '--vault', '--include', '--input', '--mode',
     '--max-dir-entries', '--max-total', '--sample-bytes',
     '--batch-id', '--attempt-token', '--file-id', '--reason',
-    '--topic-id', '--summaries',
+    '--topic-id', '--summaries', '--failed-file',
   ]);
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === '--json') options.json = true;
     else if (argument === '--content-hash') options.contentHash = true;
     else if (argument === '--recover') options.recover = true;
+    else if (argument === '--auto') options.auto = true;
+    else if (argument === '--resume') options.resume = true;
+    else if (argument === '--chunk') options.chunk = true;
+    else if (argument === '--verify') options.verify = true;
     else if (valueFlags.has(argument)) {
       const value = argv[index + 1];
       if (!value) throw new Error(`Missing value for ${argument}`);
       if (argument === '--include') options.include.push(value);
+      else if (argument === '--failed-file') options.failedFile.push(value);
       else if (argument === '--max-dir-entries' || argument === '--max-total' || argument === '--sample-bytes') {
         const numericValue = Number(value);
         if (!Number.isInteger(numericValue) || numericValue < 1) throw new Error(`${argument} must be a positive integer`);
@@ -176,13 +183,57 @@ function main() {
       if (!options.input) cliError(command, 'INVALID_ARGUMENT', '--input is required for prepare');
       const manifestPath = assertPathWithinVault(vault, resolve(vault, options.input));
       const manifest = readJson(manifestPath);
-      withAsyncMutationLock(paths, () => prepareClaimedBatch(paths, batchId, attemptToken, manifest))
+      withAsyncMutationLock(paths, () => prepareClaimedBatch(paths, batchId, attemptToken, manifest, { chunk: options.chunk }))
         .then((data) => emit({ ok: true, command, data }, json))
         .catch((error) => fail(command, json, error));
       return;
     }
+    if (command === 'run') {
+      if (options.resume) {
+        const data = withMutationLock(paths, () => {
+          recoverRunning(paths);
+          try {
+            return claimNextBatch(paths);
+          } catch (error) {
+            if (error.code === 'NO_PENDING_BATCH') {
+              const state = existsSync(paths.state) ? readJson(paths.state) : {};
+              return { phase: state.phase ?? 'completed', message: 'No pending batches' };
+            }
+            throw error;
+          }
+        });
+        emit({ ok: true, command, data }, json);
+        return;
+      }
+      cliError(command, 'INVALID_ARGUMENT', 'run requires --resume');
+      return;
+    }
     if (command === 'checkpoint') {
-      if (!options.input) cliError(command, 'INVALID_ARGUMENT', '--input is required for checkpoint');
+      if (options.auto && options.input) {
+        cliError(command, 'INVALID_ARGUMENT', 'checkpoint --auto and --input are mutually exclusive');
+      }
+      if (options.auto) {
+        const batchId = requireOption(options, command, 'batchId', '--batch-id');
+        const attemptToken = requireOption(options, command, 'attemptToken', '--attempt-token');
+        const failedFiles = (options.failedFile ?? []).map((entry) => {
+          const firstColon = entry.indexOf(':');
+          const secondColon = entry.indexOf(':', firstColon + 1);
+          if (firstColon < 0 || secondColon < 0) {
+            cliError(command, 'INVALID_ARGUMENT', '--failed-file format: fileId:code:message');
+          }
+          return {
+            fileId: entry.slice(0, firstColon),
+            code: entry.slice(firstColon + 1, secondColon),
+            message: entry.slice(secondColon + 1),
+          };
+        });
+        const payload = withMutationLock(paths, () => assembleAutoPayload(paths, batchId, attemptToken, failedFiles));
+        withAsyncMutationLock(paths, () => checkpointBatch(paths, payload))
+          .then((data) => emit({ ok: true, command, data }, json))
+          .catch((error) => fail(command, json, error));
+        return;
+      }
+      if (!options.input) cliError(command, 'INVALID_ARGUMENT', '--input is required for checkpoint (or use --auto)');
       const inputPath = assertPathWithinVault(vault, resolve(vault, options.input));
       const payload = readJson(inputPath);
       withAsyncMutationLock(paths, () => checkpointBatch(paths, payload))
@@ -194,7 +245,7 @@ function main() {
       if (!options.summaries) cliError(command, 'INVALID_ARGUMENT', '--summaries is required for finalize');
       const summariesPath = assertPathWithinVault(vault, resolve(vault, options.summaries));
       const summaries = readJson(summariesPath);
-      const data = withMutationLock(paths, () => finalizeBuild(paths, summaries));
+      const data = withMutationLock(paths, () => finalizeBuild(paths, summaries, { verify: options.verify }));
       emit({ ok: true, command, data }, json);
       return;
     }

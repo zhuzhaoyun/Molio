@@ -5,6 +5,7 @@ import {
   fsyncSync,
   mkdirSync,
   openSync,
+  readdirSync,
   readFileSync,
   readSync,
   realpathSync,
@@ -17,6 +18,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { SCHEMA_VERSION } from './contracts.mjs';
 import { assertPathWithinVault, atomicWriteJson, readJson, sha256 } from './workspace.mjs';
 import { prepareWorkItems } from './preprocess.mjs';
+import { rebuildAfterCheckpoint } from './indexes.mjs';
 
 /**
  * @typedef {object} PageResult
@@ -391,6 +393,135 @@ function pageEntriesToMap(pages) {
 }
 
 /**
+ * Parse YAML frontmatter from markdown content.
+ * Supports simple `key: value` pairs with optional quoted values.
+ * @param {string} content
+ * @returns {Record<string, string>}
+ */
+export function parseFrontmatter(content) {
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/)
+  if (!match) return {}
+  const result = {}
+  for (const line of match[1].split('\n')) {
+    const colonIndex = line.indexOf(':')
+    if (colonIndex < 1) continue
+    const key = line.slice(0, colonIndex).trim()
+    let value = line.slice(colonIndex + 1).trim()
+    // Strip surrounding quotes
+    if ((value.startsWith('"') && value.endsWith('"'))
+      || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1)
+    }
+    if (key) result[key] = value
+  }
+  return result
+}
+
+/**
+ * Recursively collect all .md files under a directory.
+ * @param {string} dir
+ * @param {string} base
+ * @returns {string[]} relative paths
+ */
+function collectMarkdownFiles(dir, base) {
+  const results = []
+  if (!existsSync(dir)) return results
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const fullPath = join(dir, entry.name)
+    if (entry.isDirectory()) {
+      results.push(...collectMarkdownFiles(fullPath, base))
+    } else if (entry.name.endsWith('.md')) {
+      results.push(relative(base, fullPath).split(sep).join('/'))
+    }
+  }
+  return results
+}
+
+/**
+ * Assemble a CheckpointPayload automatically from staged files.
+ * Scans staging/<attemptToken>/ for .md files, parses their frontmatter,
+ * and builds the payload. Files not marked as failed default to succeeded.
+ * @param {object} paths
+ * @param {string} batchId
+ * @param {string} attemptToken
+ * @param {Array<{ fileId: string, code: string, message: string }>} [failedFiles]
+ * @returns {CheckpointPayload}
+ */
+export function assembleAutoPayload(paths, batchId, attemptToken, failedFiles = []) {
+  const state = readState(paths)
+  const plan = readPlan(paths)
+
+  // Verify claim
+  if (state.activeBatchId !== batchId) {
+    throw codedError('BATCH_NOT_ACTIVE', `Batch ${batchId} is not the active batch`, { activeBatchId: state.activeBatchId })
+  }
+  const batchState = state.batches[batchId]
+  if (!batchState) {
+    throw codedError('BATCH_NOT_FOUND', `Batch ${batchId} not in state`, { batchId })
+  }
+  if (batchState.attemptToken !== attemptToken) {
+    throw codedError('STALE_ATTEMPT', `Attempt token ${attemptToken} is stale for batch ${batchId}`, { batchId })
+  }
+
+  const stagingRoot = stagingDirAbsolute(paths, attemptToken)
+  const vault = vaultFromPaths(paths)
+  const mdFiles = collectMarkdownFiles(stagingRoot, stagingRoot)
+
+  const pages = []
+  for (const stagedPath of mdFiles) {
+    const absPath = join(stagingRoot, stagedPath)
+    const content = readFileSync(absPath, 'utf8')
+    const fm = parseFrontmatter(content)
+    if (!fm.type || !fm.title || !fm.topicId) {
+      throw codedError('FRONTMATTER_MISSING',
+        `Staged page ${stagedPath} is missing required frontmatter (type, title, topicId)`,
+        { stagedPath, missing: ['type', 'title', 'topicId'].filter((k) => !fm[k]) })
+    }
+    // path relative to vault: stagedPath is relative to staging root,
+    // but the page path in vault is the wiki/... path from the staged file location
+    pages.push({
+      path: stagedPath,
+      topicId: fm.topicId,
+      type: fm.type,
+      title: fm.title,
+      summary: fm.summary ?? '',
+      stagedPath,
+    })
+  }
+
+  // Build file results: failed files are marked, rest default to succeeded
+  const failedMap = new Map(failedFiles.map((f) => [f.fileId, f]))
+  const fileIds = batchFileIds(state, plan, batchId)
+
+  // Validate that every --failed-file id is a member of the batch's fileIds
+  const unknownIds = [...failedMap.keys()].filter((id) => !fileIds.includes(id))
+  if (unknownIds.length > 0) {
+    throw codedError('UNKNOWN_FILE_ID',
+      `--failed-file references unknown file id(s): ${unknownIds.join(', ')}`,
+      { unknownIds })
+  }
+
+  const files = fileIds.map((fileId) => {
+    const fail = failedMap.get(fileId)
+    if (fail) {
+      return { fileId, status: 'failed', error: { code: fail.code, message: fail.message } }
+    }
+    return { fileId, status: 'succeeded', contentHash: null }
+  })
+
+  // Guard: if no pages were staged but some files are marked succeeded, that's
+  // almost certainly a mistake (empty staging dir).
+  const succeededCount = files.filter((f) => f.status === 'succeeded').length
+  if (pages.length === 0 && succeededCount > 0) {
+    throw codedError('NO_STAGED_PAGES',
+      `No staged pages found in staging dir for batch ${batchId}. Write pages with frontmatter before checkpointing.`,
+      { batchId, stagingDir: stagingDirRelative(attemptToken) })
+  }
+
+  return { batchId, attemptToken, files, pages }
+}
+
+/**
  * Apply a checkpoint result with crash-safe journaling. Idempotent for the
  * same payload; rejects conflicting payloads after completion.
  *
@@ -543,6 +674,34 @@ export async function checkpointBatch(paths, result) {
   next.phase = 'running';
   writeState(paths, next);
 
+  // Incremental index rebuild (step 9.5): rebuild affected topic chain indexes,
+  // append to log.md, rewrite hot.md. Failure must NOT block the checkpoint.
+  try {
+    const topicId = batchTopicId(next, plan, result.batchId)
+    const succeededCount = (result.files ?? []).filter((f) => f.status === 'succeeded').length
+    const failedCount = (result.files ?? []).filter((f) => f.status === 'failed').length
+    // Resolve human-readable topic name, recursing into nested children.
+    let topicName = topicId
+    const findTopicName = (nodes) => {
+      for (const node of nodes ?? []) {
+        if (node.id === topicId) { topicName = node.name; return true }
+        if (node.children && findTopicName(node.children)) return true
+      }
+      return false
+    }
+    findTopicName(plan.topics)
+    rebuildAfterCheckpoint(paths, plan, next, topicId, {
+      batchId: result.batchId,
+      succeeded: succeededCount,
+      failed: failedCount,
+      skipped: 0,
+      pages: (result.pages ?? []).length,
+      topics: [topicName],
+    })
+  } catch {
+    // Incremental index failure is non-fatal; checkpoint proceeds.
+  }
+
   const summary = anySucceeded && anyFailed
     ? 'succeeded_with_errors'
     : anyFailed
@@ -559,7 +718,7 @@ export async function checkpointBatch(paths, result) {
  * Validate the active claim, then produce bounded work items for the batch.
  * Delegates to {@link prepareWorkItems} after verifying batchId + attemptToken.
  */
-export async function prepareClaimedBatch(paths, batchId, attemptToken, inputManifest) {
+export async function prepareClaimedBatch(paths, batchId, attemptToken, inputManifest, options = {}) {
   const state = readState(paths);
   if (state.activeBatchId !== batchId) {
     throw codedError('BATCH_NOT_ACTIVE', `Batch ${batchId} is not the active batch`, { activeBatchId: state.activeBatchId });
@@ -577,6 +736,7 @@ export async function prepareClaimedBatch(paths, batchId, attemptToken, inputMan
     paths,
     batch: { id: batchId, attemptToken, fileIds },
     inputManifest,
+    chunk: options.chunk ?? false,
   });
 }
 

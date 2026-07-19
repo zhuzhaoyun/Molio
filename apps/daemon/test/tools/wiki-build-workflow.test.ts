@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   checkpoint,
@@ -383,6 +383,138 @@ describe('wiki-build workflow — E2E', () => {
     assert.equal(final.json.data.succeeded, 3);
     assert.equal(final.json.data.failed, 0);
     assert.equal(final.json.data.skipped, 0);
+
+    vault.cleanup();
+  });
+
+  it('runs E2E with checkpoint --auto (2-command loop)', () => {
+    const vault = createWorkflowVault({
+      'economy.md': '# 经济\n市场',
+      'motorcycle.md': '# 摩托车维修\n化油器',
+    });
+
+    // Approve plan
+    const candidate = writeTwoDomainPlan(vault.path);
+    assert.equal(runWikiBuildCli(vault.path, [
+      'plan', '--input', candidate, '--mode', 'approve', '--json',
+    ]).status, 0);
+
+    // Process economy batch: next → stage with frontmatter → checkpoint --auto
+    const economy = claim(vault.path);
+    assert.equal(economy.batch.id, 'economy-001');
+    stagePage(
+      vault.path,
+      economy.stagingDir,
+      'wiki/经济/sources/经济.md',
+      '---\ntype: sources\ntitle: 经济\ntopicId: economy\nsummary: 经济摘要\n---\n\n# 经济\n市场',
+    );
+    const cp1 = runWikiBuildCli(vault.path, [
+      'checkpoint', '--auto',
+      '--batch-id', economy.batch.id,
+      '--attempt-token', economy.attemptToken,
+      '--json',
+    ]);
+    assert.equal(cp1.status, 0, `checkpoint --auto failed: ${cp1.stderr}`);
+    assert.equal(cp1.json.data.summary, 'succeeded');
+
+    // Verify incremental artifacts exist after checkpoint
+    assert.ok(existsSync(join(vault.path, 'wiki', '经济', 'INDEX.md')), 'leaf INDEX should exist');
+    assert.ok(existsSync(join(vault.path, 'wiki', 'log.md')), 'log.md should exist');
+    assert.ok(existsSync(join(vault.path, 'wiki', 'hot.md')), 'hot.md should exist');
+
+    // Process motorcycle batch
+    const motorcycle = claim(vault.path);
+    stagePage(
+      vault.path,
+      motorcycle.stagingDir,
+      'wiki/摩托车维修/sources/摩托车维修.md',
+      '---\ntype: sources\ntitle: 摩托车维修\ntopicId: motorcycle\nsummary: 摩托车摘要\n---\n\n# 摩托车维修\n化油器',
+    );
+    const cp2 = runWikiBuildCli(vault.path, [
+      'checkpoint', '--auto',
+      '--batch-id', motorcycle.batch.id,
+      '--attempt-token', motorcycle.attemptToken,
+      '--json',
+    ]);
+    assert.equal(cp2.status, 0, cp2.stderr);
+
+    // Finalize
+    const summaries = writeTopicSummaries(vault.path, {
+      economy: { summary: '经济摘要' },
+      motorcycle: { summary: '摩托车摘要' },
+    });
+    const final = runWikiBuildCli(vault.path, [
+      'finalize', '--summaries', summaries, '--json',
+    ]);
+    assert.equal(final.status, 0, final.stderr);
+    assert.equal(final.json.data.phase, 'completed');
+
+    vault.cleanup();
+  });
+
+  it('run --resume recovers orphan claims and claims next batch', () => {
+    const vault = createWorkflowVault({
+      'economy.md': '# 经济\n市场',
+      'motorcycle.md': '# 摩托车维修\n化油器',
+    });
+
+    const candidate = writeTwoDomainPlan(vault.path);
+    assert.equal(runWikiBuildCli(vault.path, [
+      'plan', '--input', candidate, '--mode', 'approve', '--json',
+    ]).status, 0);
+
+    // Claim first batch, then simulate a crash (leave activeBatchId set)
+    const first = claim(vault.path);
+    assert.equal(first.batch.id, 'economy-001');
+    assert.equal(readState(vault.path).activeBatchId, 'economy-001');
+
+    // run --resume should recover and claim the same batch again
+    const resumed = runWikiBuildCli(vault.path, ['run', '--resume', '--json']);
+    assert.equal(resumed.status, 0, `run --resume failed: ${resumed.stderr}`);
+    assert.equal(resumed.json.data.batch.id, 'economy-001');
+    assert.ok(resumed.json.data.attemptToken);
+    // New attempt token after recovery
+    assert.notEqual(resumed.json.data.attemptToken, first.attemptToken);
+
+    vault.cleanup();
+  });
+
+  it('run --resume returns no-op message when no pending batches remain', () => {
+    const vault = createWorkflowVault({
+      'economy.md': '# 经济\n市场',
+    });
+
+    // Approve a single-batch plan and complete it
+    const fixture = makePlanFixture(inventoryDigest(vault.path));
+    // Keep only economy topic/batch
+    fixture.topics = [fixture.topics[0]];
+    fixture.assignments = [fixture.assignments[0]];
+    fixture.batches = [fixture.batches[0]];
+    const candidatePath = join(vault.path, 'candidate-plan.json');
+    writeFileSync(candidatePath, `${JSON.stringify(fixture)}\n`);
+    assert.equal(runWikiBuildCli(vault.path, [
+      'plan', '--input', candidatePath, '--mode', 'approve', '--json',
+    ]).status, 0);
+
+    const economy = claim(vault.path);
+    stagePage(
+      vault.path,
+      economy.stagingDir,
+      'wiki/经济/sources/经济.md',
+      '---\ntype: sources\ntitle: 经济\ntopicId: economy\nsummary: 经济摘要\n---\n\n# 经济',
+    );
+    const cp = runWikiBuildCli(vault.path, [
+      'checkpoint', '--auto',
+      '--batch-id', economy.batch.id,
+      '--attempt-token', economy.attemptToken,
+      '--json',
+    ]);
+    assert.equal(cp.status, 0, cp.stderr);
+
+    // No more pending batches
+    const resumed = runWikiBuildCli(vault.path, ['run', '--resume', '--json']);
+    assert.equal(resumed.status, 0, resumed.stderr);
+    assert.equal(resumed.json.data.message, 'No pending batches');
 
     vault.cleanup();
   });
