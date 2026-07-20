@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
+import type { ActivityInfo } from '@molio/contracts';
 import { useChatCore, type CreateRunContext, type ChatMessage } from './useChatCore';
 
 export type KbChatMode = 'qa' | 'build' | 'lint' | 'ingest';
@@ -27,6 +28,8 @@ export interface KbChatState {
   mode: KbChatMode | null;
   messages: ChatMessage[];
   isRunning: boolean;
+  /** Live background subagent/workflow activity (wiki build L1 等)。 */
+  activity: ActivityInfo | null;
   /** 问答：只切 mode（预载 @当前文档），不 reset、不 cancel、不中断在跑的 run。 */
   openQa: () => void;
   /** wiki：reset 线程 + 设 mode + 自动发送（中断在跑的 run，一键开干）。 */
@@ -138,6 +141,7 @@ export function useKbChat(opts: UseKbChatOptions): KbChatState {
     mode,
     messages: chat.messages,
     isRunning: chat.isRunning,
+    activity: chat.activity,
     openQa,
     openWikiOp,
     queueWikiOp,

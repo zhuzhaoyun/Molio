@@ -1030,6 +1030,7 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
           mode={kbChat.mode}
           messages={kbChat.messages}
           isRunning={kbChat.isRunning}
+          activity={kbChat.activity}
           filePath={kbChat.mode === 'qa' ? kb.selectedFile : null}
           vaultId={kb.activeVault?.id ?? null}
           selectedText={qaSelectedText}

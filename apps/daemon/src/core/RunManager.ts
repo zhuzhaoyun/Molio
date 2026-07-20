@@ -7,6 +7,7 @@ import type {
   AgentEvent, AgentInfo, RuntimeAgentDef, RunInfo, RunStatus, ChatMessage,
 } from '@molio/contracts';
 import { getAgentDef, listAgentDefs } from './runtimes/registry.js';
+import { TranscriptWatcher, claudeProjectDir } from './activity/transcript-watcher.js';
 import { resolveAgentBinary, probeVersion, needsShellOnWindows } from './runtimes/launch.js';
 import { buildSpawnEnv, createStderrDecoder } from './runtimes/env.js';
 import { createClaudeStreamHandler } from './streams/claude-stream.js';
@@ -442,6 +443,22 @@ export class RunManager {
 
       if (ev.type === 'usage') {
         this.maybeCloseStdin(run);
+      }
+
+      // The stream init event carries the Claude Code session id → start the
+      // transcript watcher so background subagent/workflow activity surfaces
+      // in the UI while the parent stream is silent. claude runtime only.
+      if (ev.type === 'status' && ev.sessionId && def.id === 'claude' && !run.activityWatcher) {
+        // Same cwd resolution as spawn() above — the transcript project dir is
+        // derived from the directory Claude Code was launched in.
+        const watchCwd = path.resolve(opts.cwd || agentConfig.env?.['MOLIO_CWD'] || process.cwd());
+        const watcher = new TranscriptWatcher(
+          claudeProjectDir(watchCwd),
+          `${ev.sessionId}.jsonl`,
+          (activity) => this.emitEvent(run, { type: 'activity', activity }),
+        );
+        run.activityWatcher = watcher;
+        watcher.start();
       }
     });
 
@@ -900,6 +917,17 @@ export class RunManager {
     run.exitCode = code;
     run.stdinOpen = false;
     run.updatedAt = Date.now();
+
+    // Stop subagent activity tracking; emit a final snapshot so the UI can
+    // flip running workers to their terminal state.
+    if (run.activityWatcher) {
+      const final = run.activityWatcher.finalize();
+      run.activityWatcher.stop();
+      run.activityWatcher = undefined;
+      if (final.agents.length > 0) {
+        this.emitEvent(run, { type: 'activity', activity: final });
+      }
+    }
 
     // If the run failed with a tracked error that hasn't been sent yet, emit it
     // so the frontend can display it. Skip if an error event was already emitted

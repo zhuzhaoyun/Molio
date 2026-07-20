@@ -20,6 +20,8 @@ export type {
   AgentEvent,
   UsageInfo,
   StreamHandler,
+  ActivityInfo,
+  SubagentActivity,
 } from './event.js';
 
 export type {
