@@ -19,6 +19,7 @@ import { useGraphSettings } from './useGraphSettings';
 import { GraphSettingsPanel } from './GraphSettingsPanel';
 import { getThemeColors } from './types';
 import { setupCameraInertia } from './useCameraInertia';
+import { NODE_TYPE_COLORS, nodeSize, nodeColor, interpolateColor } from './graph-utils';
 
 // ── Visual constants (Obsidian light theme, matching obsidian.png) ──
 // 浅色背景 + 深色节点，像纸张上的墨点
@@ -33,63 +34,6 @@ const EDGE_DEFAULT = '#D4D4D4';  // 连线：淡灰，清晰可见但不喧宾�
 const EDGE_HOVER = '#C4B5FD';    // hover 连线：淡紫
 const EDGE_SELECTED = '#8B5CF6'; // 选中连线：紫色
 const LABEL_DEFAULT = '#6B6B6B'; // 标签：灰色
-
-// 节点颜色 — 精简为 3 阶灰度 + 2 个强调色，降低视觉杂乱
-const NODE_TYPE_COLORS: Record<string, string> = {
-  // 中性色（文档类）
-  document:   '#8899AA',
-  source:     '#8899AA',
-  wiki:       '#7A8A99',
-  // 知识核心（紫色强调）
-  concept:    '#8B5CF6',
-  entity:     '#8B5CF6',
-  // 观点/对比（琥珀强调）
-  comparison: '#D97706',
-  question:   '#D97706',
-  // Legacy types
-  tag:        '#8B5CF6',
-  agent:      '#8B5CF6',
-  project:    '#8899AA',
-  workflow:   '#D97706',
-  aiModel:    '#D97706',
-};
-
-// 节点大小按连接数动态变化
-// Obsidian 风格：小节点 3px，大节点 9px，中心节点突出
-function nodeSize(linkCount: number, scale: number = 1.0): number {
-  const base = 2;
-  const maxSize = 8;
-  const calculated = (base + Math.sqrt(linkCount) * 1.2) * scale;
-  return Math.min(maxSize * scale, calculated);
-}
-
-function nodeColor(linkCount: number, nodeType?: string): string {
-  if (nodeType && NODE_TYPE_COLORS[nodeType]) {
-    return NODE_TYPE_COLORS[nodeType]!;
-  }
-  if (linkCount === 0) return NODE_ISOLATED;
-  return NODE_DEFAULT;
-}
-
-/** Interpolate between two hex colors by `t` (0→1). */
-function interpolateColor(a: string, b: string, t: number): string {
-  if (t <= 0) return a;
-  if (t >= 1) return b;
-  const parse = (c: string) => {
-    const h = c.replace('#', '');
-    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
-  };
-  try {
-    const [ar, ag, ab] = parse(a);
-    const [br, bg, bb] = parse(b);
-    const rr = Math.round(ar + (br - ar) * t);
-    const rg = Math.round(ag + (bg - ag) * t);
-    const rb = Math.round(ab + (bb - ab) * t);
-    return `#${rr.toString(16).padStart(2, '0')}${rg.toString(16).padStart(2, '0')}${rb.toString(16).padStart(2, '0')}`;
-  } catch {
-    return t > 0.5 ? b : a;
-  }
-}
 
 // ── 淡化参数（对齐 Obsidian：淡化但保持可读，非关联节点不缩成隐形点）──
 const FOCUS_DIM_SIZE_RATIO = 0.4;    // 选中聚焦：非关联节点尺寸保留 60%
