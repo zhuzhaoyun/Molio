@@ -24,8 +24,7 @@ src/
     db.ts              SQLite 数据库初始化
     transcript.ts      多轮对话 transcript 构建
     knowledge.ts       知识库管理（vault、文件树）
-    wiki-prompts.ts    Wiki 系统提示词模板（QUERY/WEIXIN always-on 角色帧，物化成 sysprompt 文件）
-    tools/skills/      Builtin Claude Code skills（wechat-article-extractor, docx/pdf/pptx/xlsx, wiki-build/ingest/lint/save）—— wiki 操作走 skills，agent 按动词 on-demand 调用，不再有 wikiOperation prepend
+    tools/skills/      Builtin Claude Code skills（wechat-article-extractor, docling, wiki-build/ingest/lint/save/query, remotion）—— wiki 操作走 skills，agent 按动词 on-demand 调用；知识库问答走 wiki-query skill（由 vault .claude/CLAUDE.md 常驻规则 + KB 面板确定性触发），不再有 system-prompt 注入
     runtimes/
       registry.ts      Agent 定义注册表 (claude, codex, gemini, qwen)
       claude.ts        Claude Code runtime 定义
@@ -44,7 +43,9 @@ src/
       run-starter.ts   共享"在已有会话上建 run"逻辑（runs + rewind-resend 复用：vault 系统提示 + append user + createRun + onTurnComplete）
     weixin/
       client.ts        微信消息收发
-      message.ts       消息解析
+      message.ts       消息解析 + buildWeixinFrameMessage（首轮前置 channel frame）
+      channel-frame.ts 微信通道角色帧（收件/URL提取/<attach/>回传/意图分流，问答路由到 wiki-query skill）
+      dispatcher.ts    微信多轮 run 复用/排队状态机
       service.ts       微信服务编排
       types.ts         微信类型定义
   routes/
@@ -130,7 +131,7 @@ pnpm typecheck    # tsc --noEmit
 遵循项目根目录 CLAUDE.md 中的**错误驱动测试**规则：每个 bug 在 `test/` 下按源码模块子目录添加复现测试用例。
 
 **目录映射**：测试子目录与 `src/` 源码模块一一对应：
-- `test/core/` → `src/core/`（config, db, transcript, RunManager, knowledge, conversations, weixin, wiki-prompts）
+- `test/core/` → `src/core/`（config, db, transcript, RunManager, knowledge, conversations, weixin）
 - `test/streams/` → `src/core/streams/`（流解析器）
 - `test/runtimes/` → `src/core/runtimes/`（agent 运行时、launch、env）
 - `test/routes/` → `src/routes/` + `src/sse.ts`（API 路由、SSE）

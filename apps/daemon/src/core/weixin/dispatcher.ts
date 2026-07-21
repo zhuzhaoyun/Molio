@@ -2,31 +2,11 @@ import type Database from 'better-sqlite3';
 import type { AgentEvent, ChatMessage } from '@molio/contracts';
 import type { RunManager } from '../RunManager.js';
 import type { ConversationService } from '../conversations/service.js';
-import { getVaultByPath } from '../db.js';
-import { WEIXIN_SYS_PROMPT_FILE } from '../wiki-prompts.js';
-import { buildMolioPrompt } from './message.js';
+import { buildMolioPrompt, buildWeixinFrameMessage } from './message.js';
 import { extractOutboundMedia } from './outbound-media.js';
 import type { OutboundMediaItem } from './types.js';
 
 const RUN_REPLY_TIMEOUT_MS = 5 * 60 * 1000;
-
-/**
- * Resolve the wiki/vault role frame to inject as the agent's SYSTEM prompt
- * (via `--append-system-prompt-file`) for a fresh spawn against `cwd`. Returns
- * the fixed file path when `cwd` is a registered vault, else undefined.
- *
- * Pure function of (db, cwd) — called at spawn time so the prompt is always
- * derived from the live cwd, never frozen at queue time. This is the single
- * place that decides whether a weixin run carries the wiki frame.
- */
-export function wikiPromptFileFor(
-  db: Database.Database | undefined,
-  cwd: string | undefined,
-): string | undefined {
-  if (!db || !cwd) return undefined;
-  const vault = getVaultByPath(db, cwd);
-  return vault ? WEIXIN_SYS_PROMPT_FILE : undefined;
-}
 
 /**
  * Dependencies the dispatcher needs from the weixin channel. The dispatcher
@@ -89,9 +69,9 @@ interface QueuedMessage {
  *
  * Owns the per-user run reuse state machine: reuse the active multi-turn run,
  * queue while a turn is in flight (drain on `turn_end`), or spawn a fresh run
- * when the prior one is no longer receptive. The wiki system-prompt file is
- * derived at spawn time from `cwd` (see `wikiPromptFileFor`), so a queued
- * message drained into a fresh spawn still carries the wiki role frame.
+ * when the prior one is no longer receptive. The weixin channel frame is
+ * prepended to the message on a fresh spawn (see `buildWeixinFrameMessage`), so
+ * a queued message drained into a fresh spawn still carries the channel frame.
  */
 export class WeixinRunDispatcher {
   private userRuns = new Map<string, UserRunState>();
@@ -126,8 +106,8 @@ export class WeixinRunDispatcher {
       // ordering stays correct (mirrors the desktop POST /:id/messages path).
       this.deps.runManager.flushPendingReply(state.runId);
       this.deps.conversations.appendUserMessage(conversationId, rawUserText);
-      // No appendSystemPromptFile here: sendMessage reuses the live process,
-      // which already carries the system prompt from spawn.
+      // No channel frame here: sendMessage reuses the live process, which
+      // already carries the frame prepended on its first (fresh-spawn) turn.
       this.deps.runManager.sendMessage(state.runId, runMessage);
       this.deps.onActiveRun?.(state.runId);
       await this.deps.sendText(fromUserId, 'Molio 正在处理...');
@@ -141,14 +121,12 @@ export class WeixinRunDispatcher {
       this.userRuns.delete(fromUserId);
     }
     this.deps.conversations.appendUserMessage(conversationId, rawUserText);
-    // Wiki frame is derived HERE (at spawn time), not frozen at queue time —
-    // a queued message drained into a fresh spawn still gets the wiki role.
-    const appendSystemPromptFile = wikiPromptFileFor(this.deps.db, cwd);
+    // The weixin channel frame is prepended HERE (fresh spawn only), not frozen
+    // at queue time — a queued message drained into a fresh spawn gets re-framed.
     const runId = await this.deps.runManager.createRun({
       agentId,
       cwd,
-      message: runMessage,
-      appendSystemPromptFile,
+      message: buildWeixinFrameMessage(rawUserText),
       conversationId,
       history,
     });

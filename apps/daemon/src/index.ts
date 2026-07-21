@@ -3,7 +3,6 @@ import { execSync } from 'node:child_process';
 import { app, db, runManager, weixinService, vaultWatcher } from './server.js';
 import { listVaults } from './core/db.js';
 import { installBuiltinSkills } from './core/skill-installer.js';
-import { ensureWikiSysPromptFiles } from './core/wiki-prompts.js';
 import { isKillablePortOccupant } from './core/port-check.js';
 
 const port = Number(process.env['MOLIO_PORT'] ?? 3100);
@@ -94,10 +93,6 @@ checkAndKillPortOccupant(port);
 for (const vault of listVaults(db)) {
   installBuiltinSkills(vault.path);
 }
-
-// Materialize the wiki system-prompt frames to fixed files under ~/.molio/sysprompt/
-// so the agent CLI can read them via --append-system-prompt-file (idempotent).
-ensureWikiSysPromptFiles();
 
 function startServer(): void {
   const server = serve({ fetch: app.fetch, port }, () => {

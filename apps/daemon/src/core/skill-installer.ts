@@ -17,12 +17,16 @@ const BUILTIN_SKILLS = [
   // all office→markdown conversions (GPU-accelerated OCR + layout + tables).
   'docling',
   // Wiki operations — on-demand skills the agent invokes by intent
-  // (构建/入库/健康检查/归档). Replaces the old wikiOperation prompt-prepend
+  // (构建/入库/健康检查/归档/问答). Replaces the old wikiOperation prompt-prepend
   // path so chat-typed verbs and UI buttons hit the same procedure.
   'wiki-build',
   'wiki-ingest',
   'wiki-lint',
   'wiki-save',
+  // wiki-query — 知识库问答检索流程。Replaces the broken --append-system-prompt-file
+  // injection (silently dropped by the CLI): retrieval now lives in an on-demand
+  // skill, triggered by the always-on CLAUDE.md rule below + the KB qa panel.
+  'wiki-query',
   // Remotion — programmatic video creation in React/TypeScript, rendered to
   // MP4. Used by the /remotion command to scaffold video projects, animate
   // with interpolate/spring, sequence scenes, add audio/captions, and render.
@@ -240,6 +244,41 @@ const REMOTION_RULE_BLOCK = [
 ].join('\n');
 
 /**
+ * Sentinel for the knowledge-base Q&A retrieval rule.
+ */
+const WIKI_QUERY_RULE_SENTINEL = '<!-- molio:wiki-query-preference -->';
+
+/**
+ * Always-on rule that makes the agent retrieve from the vault's wiki BEFORE
+ * answering content questions, instead of answering from training memory.
+ *
+ * This replaces the old WIKI_QUERY_PROMPT system-prompt injection, which rode
+ * `--append-system-prompt-file` — a flag the CLI silently drops in some
+ * environments (verified: the appended frame never reached the model, so vault
+ * Q&A was answered purely from memory, ignoring the built wiki). CLAUDE.md is
+ * loaded natively by the CLI and reliably reaches the model (same channel as
+ * the docling/remotion rules above), so the retrieval instruction actually lands.
+ *
+ * Kept behavioral and short, with an explicit escape hatch for non-vault
+ * questions (activity summaries via git log / mtimes) so it stays retrieval-safe
+ * and does not role-lock normal queries — the same always-on-background property
+ * the old A/B/C probe verified for the system-prompt QUERY frame.
+ */
+const WIKI_QUERY_RULE_BLOCK = [
+  WIKI_QUERY_RULE_SENTINEL,
+  '## Knowledge Base Q&A — Retrieve Before Answering',
+  '',
+  'In this knowledge base, **default to retrieve-first**. Before answering ANY substantive question,',
+  '**use the `wiki-query` skill** to read `wiki/INDEX.md` and the relevant wiki pages FIRST — **even if',
+  'you think you already know the answer**: this vault may hold a specific / curated / abridged version',
+  'that differs from your training data, and you cannot know what the vault contains without checking.',
+  'Then answer grounded in the vault with `[[wikilink]]` citations and source notes.',
+  '**Never answer a vault-content question from training memory** without first checking the wiki.',
+  'The ONLY questions to answer without wiki retrieval are those about the workspace\'s recent activity',
+  'or state (e.g. "总结今天的工作", "最近改了什么") — answer those with git log / file mtimes.',
+].join('\n');
+
+/**
  * All Molio-managed rule blocks injected into every vault's .claude/CLAUDE.md.
  * Each has a unique sentinel so injection is idempotent and individual rules
  * can be revised later without re-injecting stale copies.
@@ -249,6 +288,7 @@ const MOILIO_RULES: Array<{ sentinel: string; block: string; label: string }> = 
   { sentinel: ENV_SELF_HEAL_SENTINEL, block: ENV_SELF_HEAL_BLOCK, label: 'environment self-heal' },
   { sentinel: REMOTION_RULE_SENTINEL, block: REMOTION_RULE_BLOCK, label: 'remotion preference' },
   { sentinel: WEB_FETCH_SENTINEL, block: WEB_FETCH_BLOCK, label: 'web fetch preference' },
+  { sentinel: WIKI_QUERY_RULE_SENTINEL, block: WIKI_QUERY_RULE_BLOCK, label: 'wiki-query preference' },
 ];
 
 /**

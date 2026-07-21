@@ -84,13 +84,6 @@ export interface CreateRunOptions {
   history?: ChatMessage[];
   /** Called when a turn completes with accumulated text content. */
   onTurnComplete?: (text: string, runId: string) => void;
-  /**
-   * Path to a file whose contents are appended to the agent's built-in system
-   * prompt at spawn time (e.g. the wiki/vault role frame, materialized by
-   * `ensureWikiSysPromptFiles`). Only consumed on a fresh spawn — multi-turn
-   * follow-ups reuse the same process, which already carries it from turn 1.
-   */
-  appendSystemPromptFile?: string;
 }
 
 export class RunManager {
@@ -271,11 +264,6 @@ export class RunManager {
       opts.message,
       {
         model: opts.model,
-        // Path to a file with the wiki/vault role frame (materialized at
-        // daemon startup by ensureWikiSysPromptFiles). Passed as
-        // --append-system-prompt-file <path> — NOT inline text, which broke
-        // argv parsing on Windows and ate --dangerously-skip-permissions.
-        appendSystemPromptFile: opts.appendSystemPromptFile,
       },
       { cwd: opts.cwd },
     );

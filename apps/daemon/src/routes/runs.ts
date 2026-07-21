@@ -36,7 +36,7 @@ export function runsRoutes(
         }, 404);
       }
 
-      const runId = await startConversationRun(db, conversations, runManager, {
+      const runId = await startConversationRun(conversations, runManager, {
         agentId: body.agentId,
         message: body.message,
         conversationId: conversation.id,

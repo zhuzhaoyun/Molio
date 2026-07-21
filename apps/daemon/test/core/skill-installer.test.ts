@@ -197,6 +197,36 @@ describe('skill-installer migration', () => {
     );
   });
 
+  it('should inject wiki-query-preference rule into .claude/CLAUDE.md', () => {
+    installBuiltinSkills(tmpVault);
+
+    const content = fs.readFileSync(
+      path.join(tmpVault, '.claude', 'CLAUDE.md'),
+      'utf-8',
+    );
+    // Regression guard for the "知识库问答不读 wiki" bug: the old QUERY frame
+    // rode --append-system-prompt-file, which the CLI silently dropped, so the
+    // model answered vault questions from training memory. The retrieval
+    // instruction now lives in this always-on CLAUDE.md rule (loaded natively),
+    // which must reach the model and force retrieve-before-answer.
+    assert.ok(
+      content.includes('<!-- molio:wiki-query-preference -->'),
+      'should carry the wiki-query sentinel',
+    );
+    assert.ok(
+      content.includes('wiki-query'),
+      'should route content questions to the wiki-query skill',
+    );
+    assert.ok(
+      content.includes('wiki/INDEX.md'),
+      'should instruct reading the wiki index before answering',
+    );
+    assert.ok(
+      /never answer a vault-content question from training memory/i.test(content),
+      'should forbid answering vault-content questions from memory',
+    );
+  });
+
   it('should not overwrite existing user content in .claude/CLAUDE.md', () => {
     // Pre-create .claude/CLAUDE.md with user content
     const claudeDir = path.join(tmpVault, '.claude');
