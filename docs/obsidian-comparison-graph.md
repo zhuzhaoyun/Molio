@@ -1,7 +1,22 @@
 # 知识图谱深度对比：Molio vs Obsidian
 
-> 对比日期：2026-06-15
-> 
+> 对比日期：2026-07-18（初始基线）｜修订：2026-07-20
+>
+> **修订说明（2026-07-20）**：初始基线中标注为 ❌ 的若干项已在本轮重构中实现
+> （hover/选中过渡动画、标签缩放渐隐、camera inertia、velocity 缩放、比例碰撞、
+> Web Worker 自适应、节点搜索、数据缓存）。最新状态见文末「十一、当前实现状态」，
+> 与各章节结论冲突处以「十一」为准。
+>
+> **渲染细化（2026-07-20）**：hover/选中视觉进一步对齐 Obsidian——
+> 淡化强度收敛（非关联节点不再缩成隐形点）、高亮边 z-index 分层置顶（不被淡化边遮挡）、
+> hover/选中互斥（选中态下 hover 不抢焦）。详见 11.4。
+>
+> **重要说明**：Obsidian 是闭源软件，本对比基于公开技术资料分析：
+> - CoSE-Bilkent 论文（Bilkent 大学 i-Vis 实验室）
+> - Cytoscape.js cose-bilkent 开源库文档
+> - Obsidian 官方 changelog（v0.0.2 ~ v0.15.7+）
+> - Obsidian 社区论坛讨论
+>
 > 本文是 [总体对比文档](./obsidian-comparison.md) 的知识图谱专项展开
 
 ---
@@ -14,441 +29,474 @@
 | **入口** | 侧边栏图标，一键打开 | `/graph` 路由，导航栏入口 |
 | **在知识管理中的角色** | **探索工具** — 通过图谱发现之前没意识到的关联 | **验证工具** — 验证 Wiki 构建质量和链接完整性 |
 | **用户使用频率** | 高频（许多人随时打开当背景） | 查看/验证时使用 |
-| **渲染引擎** | 自研 Canvas 渲染（Cytoscape.js 早期，后来自研） | Sigma.js v3（WebGL） |
-| **布局算法** | 自研力导向布局（CoSE - Compound Spring Embedder） | ForceAtlas2（graphology-layout-forceatlas2） |
+| **渲染引擎** | 自研 Canvas 2D | Sigma.js v3（WebGL） |
+| **布局算法** | CoSE-Bilkent（Compound Spring Embedder） | d3-force（通用力导向引擎） |
 
 ---
 
-## 二、Node（节点）体系对比
+## 二、布局算法：CoSE vs d3-force（最大的根本差距）
 
-### 2.1 节点表示
+### 2.1 算法本体对比
 
-| 特性 | Obsidian | Molio |
-|------|----------|-------|
-| **节点单位** | 一个 `.md` 文件 = 一个节点 | 同 |
-| **标签显示** | 文件名（无扩展名） | 文件名（无扩展名） |
-| **特殊节点** | 无文件页面（灰色虚线节点） | 无（仅存在文件才创建节点） |
-| **节点类型区分** | 不支持原生（插件可实现） | 设计上有 `nodeType` 预留字段 |
-| **孤立节点** | 显示但颜色暗淡 | 显示但颜色更浅（`#999999` vs `#5C5C5C`） |
+| 维度 | Obsidian (CoSE-Bilkent) | Molio (d3-force) |
+|------|------------------------|-----------------|
+| **本体** | 专为图谱可视化设计的工业级布局算法 | 通用物理引擎 |
+| **初始布局** | 随机分布 + 多层级缩放 | 圆周均匀分布 |
+| **多层级 (Multi-Level)** | **✅ 有** — Walshaw 聚类粗化 → 逐层精化 | **❌ 无** |
+| **默认迭代** | 2500 次（quality='proof'） | 无限（alpha decay 自动收敛） |
+| **节点排斥** | 节点**边界间**最短欧氏距离 | `forceManyBody` 中心间距离 |
+| **运行线程** | **✅ Web Worker**（v0.15.7+） | **❌ 主线程同步 tick** |
+| **渲染帧优先级** | **✅ 有** — 优先保证渲染帧，物理计算退让 | **❌** 物理 tick 和渲染在同线程争抢 |
 
-### 2.2 节点大小策略
+### 2.2 Multi-Level Scaling 详解
 
-**Obsidian**：
+这是 CoSE 最核心的技术优势，也是 Obsidian 图谱"均匀合理"的根本原因。
+
+当图超过 100 个节点时，CoSE 执行三阶段：
+
 ```
-radius = base + sqrt(linkCount) × factor
-- base: 3-4px（最小节点）
-- max: ~15px（中心枢纽节点）
-- 不区分类型，纯链接数驱动
+1️⃣ 粗化阶段（Coarsening）
+   G₀（原始，500 节点）
+      ↓  聚类合并相邻节点
+   G₁（300 节点）
+      ↓  再次聚类
+   G₂（100 节点）
+      ↓  再次聚类
+   G₃（30 节点）← 最粗层级
+
+2️⃣ 布局阶段（Layout）
+   从 G₃ 开始布局 → 收敛（仅 30 节点，秒出全局最优）
+   布局结果插值回 G₂ → 作为初始位置 → 精化布局
+   布局结果插值回 G₁ → 精化
+   布局结果插值回 G₀ → 精化
+
+3️⃣ 精化阶段（Refinement）
+   最终收敛到均衡态
 ```
 
-**Molio**（`nodeSize` 函数）：
+**效果**：
+- 边交叉数大幅减少
+- 节点分布极其均匀
+- 避免陷入局部最优解
+
+Molio 的 d3-force 没有多层级策略，从圆周布局直接开始 tick，各力求平衡，极易陷入**局部最优**——节点扎堆、连线交叉。Web 搜索中关于 CoSE 的描述明确指出：multi-level 能 "dramatically reduces edge crossings and produces much more aesthetically pleasing layouts"。
+
+### 2.3 Molio 向心力的具体问题
+
+Molio 使用了每个节点独立的 initX/initY 回弹力：
+
 ```typescript
-function nodeSize(linkCount: number): number {
-  const base = 4;
-  const maxSize = 12;
-  const calculated = base + Math.sqrt(linkCount) * 1.5;
-  return Math.min(maxSize, calculated);
+// useSimulation.ts:113-114
+.force('x', forceX<D3Node>((d) => (d.fx != null ? d.fx : d.initX)).strength(0.004))
+.force('y', forceY<D3Node>((d) => (d.fy != null ? d.fy : d.initY)).strength(0.004))
+```
+
+这里的 `initX`/`initY` 来自**圆周初始布局**：
+
+```typescript
+// GraphPage.tsx:145-161
+for (let i = 0; i < count; i++) {
+  const n = graphData.nodes[i];
+  const angle = (2 * Math.PI * i) / count;
+  // ...
+  x: saved?.x ?? Math.cos(angle) * radius,
+  y: saved?.y ?? Math.sin(angle) * radius,
 }
 ```
 
-| 链接数 | Obsidian (估) | Molio |
-|--------|---------------|-------|
-| 0（孤立） | ~3px | 4px |
-| 1 | ~5px | 5.5px |
-| 5 | ~7px | 7.4px |
-| 10 | ~9px | 8.7px |
-| 30 | ~12px | 12px（封顶） |
-| 50+ | ~15px | 12px（封顶） |
+这产生一个副作用：**布局被初始圆周分布强烈引导**——每个节点倾向于回到圆周上的位置，而不是自然扩散到整个画布。对比 CoSE 的全局重力（把所有节点拉向共同中心 barycenter）：
 
-Molio 的最大节点限制更小（12px vs ~15px），避免超大节点视觉失衡。
-
-### 2.3 节点颜色体系
-
-**Obsidian 默认深色主题**：
 ```
-默认节点:   #A0AAB5（灰蓝）
-孤立节点:   #4A5360（更暗）
-Hover 节点: #FFFFFF（白色）
-选中节点:   #FFFFFF + 紫色光环 (#7C3AED)
-关联节点:   保持原色
-非关联节点:  透明度降至 ~0.1（几乎消失）
+CoSE:   gravity → pull toward graph barycenter（共同中心）
+Molio:  forceX/Y → pull toward initX/initY（各自初始位置，在圆周上）
 ```
 
-**Molio 浅色主题**（当前实现）：
-```
-默认节点:   #5C5C5C（深灰）
-孤立节点:   #999999（浅灰）
-Hover 节点: #333333（更深）
-选中节点:   #8B5CF6（紫色）+ 无光环
-关联节点:   保持原色
-非关联节点:  #D4D4D4（变淡但不消失）
-```
+后者导致：
+- 外围节点被"钉"在圆周轨道附近
+- 中心区域节点的分布也受初始角度牵制
+- **整体布局看起来像径向扩散，而非自然力导向**
 
-**Molio 预留的类型色彩**（来自 docs/obsidian.md）：
-```
-文档(Document):    #94A3B8（灰蓝）
-标签(Tag):         #22C55E（绿色）
-Agent:             #8B5CF6（紫色）
-项目(Project):     #3B82F6（蓝色）
-工作流(Workflow):  #F59E0B（橙色）
-AI模型(AIModel):   #EF4444（红色）
-```
+CoSE 的全局重力配合 multi-level，天然形成中心枢纽密集、外围均匀散开的自然结构。
 
-> ⚠️ 注意：这些类型颜色已定义但后端尚未返回 `nodeType` 字段，目前所有节点统一使用链接数颜色。
+### 2.4 参数可调性
+
+**CoSE-Bilkent 提供了 15+ 可调参数**（来自 Cytoscape.js 开源库）：
+
+| 参数 | 默认值 | 作用 |
+|------|--------|------|
+| `nodeRepulsion` | 4500 | 节点排斥力倍数 |
+| `idealEdgeLength` | 50 | 理想边长度 |
+| `edgeElasticity` | 0.45 | 边弹性/刚度 |
+| `gravity` | 0.25 | 全局向心力 |
+| `numIter` | 2500 | 最大迭代次数 |
+| `tile` | true | 是否平铺孤立节点 |
+| `quality` | 'default' | draft / default / proof 三档 |
+| `nestingFactor` | 0.1 | 嵌套边长度因子 |
+| `gravityRange` | 3.8 | 重力作用范围 |
+
+**Molio d3-force 可调参数**（当前实现）：
+
+| 参数 | 默认值 | 作用 |
+|------|--------|------|
+| `repelStrength` | -60 | forceManyBody 强度 |
+| `centerStrength` | 0.004 | forceX/Y 回弹强度 |
+| `linkStrength` | 0.15 | 边弹簧强度 |
+| `linkDistance` | 100 | 边弹簧自然长度 |
+
+CoSE 的参数更丰富细腻（三档 quality、tiling、nesting），Molio 只有 4 个粗粒度参数。
 
 ---
 
-## 三、Edge（链接线）体系对比
+## 三、渲染与缩放体验
+
+### 3.1 线程模型（影响流畅度的根本原因）
+
+```
+Obsidian (v0.15.7+, 2022-07):
+  ┌─────────────────┐     ┌──────────────────────┐
+  │  主线程          │     │  Web Worker           │
+  │  Canvas 绘制     │     │  CoSE 物理计算        │
+  │  事件处理        │     │  布局迭代             │
+  │  Camera 动画     │     │  收敛检测             │
+  │  UI 交互         │     │                      │
+  └─────────────────┘     └──────────────────────┘
+      ← 60fps 渲染优先 →      ← 后台计算，渲染退让 →
+
+Molio (当前)：
+  ┌─────────────────────────────────────┐
+  │  主线程                              │
+  │  Sigma WebGL 绘制                    │
+  │  d3-force 物理 tick（forceManyBody）  │
+  │  事件处理                            │
+  │  RAF 循环（Minimap 用）               │
+  └─────────────────────────────────────┘
+      ← 2000+ 节点时 d3 tick 会阻塞主线程 →
+```
+
+Obsidian 从 v0.15.7（2022-07）开始把图模拟移到 Web Worker。Changelog 明确记载："graph simulation is now done in a worker thread" + "prioritize rendering frames over physics"。
+
+Molio 的 `useSimulation.ts` 里 d3-force 的 tick 回调在主线程执行。`forceManyBody` 即使有 `distanceMax(250)` 优化，在数千节点时依然会产生明显的帧率抖动。
+
+### 3.2 缩放体验
 
 | 特性 | Obsidian | Molio |
 |------|----------|-------|
-| **默认连线颜色** | `rgba(255,255,255,0.08)`（极淡） | `#D4D4D4`（淡灰，更明显） |
-| **默认线宽** | 1px | 0.8px |
-| **Hover 关联线** | `rgba(96,165,250,0.7)` 淡紫，~2px | `#C4B5FD` 淡紫，1.5px |
-| **选中节点连线** | `#60A5FA` 亮蓝，~3px | `#8B5CF6` 紫色，2px |
-| **边去重** | 不支持（方向边可能重复） | 支持（`source→target` 规范化去重，Set 实现） |
-| **边权重显示** | 无 | 无（`edgeWeightInfluence: 0`） |
-| **箭头** | 无 | 无 |
+| **Zoom 平滑度** | 重做过（v0.15.7），带**惯性**（inertia） | Sigma 默认响应，无惯性 |
+| **Pan 惯性** | ✅ 有 | ❌ 无 |
+| **缩放过渡** | 操作释放后平滑减速 | 立即停止 |
+| **渲染优先级** | 渲染帧 > 物理帧 | 同线程无优先级 |
+| **大图 (5000+)** | 物理降频 + 渲染保持 60fps | d3 tick 卡主线程 |
 
-**关键差异**：
-- Obsidian 的默认连线极淡（蜘蛛网效果），强调探索时**高亮的对比度**
-- Molio 的默认连线更明显，适合**直接看清连接结构**
-- Molio 做了边去重（规范化 `source→target` 顺序），避免重复边
+惯性是 Obsidian 缩放"丝滑"的主要原因：滚轮抬起后，camera 继续运动并逐渐减速，而不是立即停止。
 
----
-
-## 四、布局算法对比
-
-### 4.1 算法选型
+### 3.3 字体渲染和信息密度
 
 | 特性 | Obsidian | Molio |
 |------|----------|-------|
-| **算法** | CoSE（Compound Spring Embedder，自研变体） | ForceAtlas2（Gephi 团队） |
-| **底层** | Cytoscape.js → 自研 Canvas | graphology-layout-forceatlas2 |
-| **性能优化** | 内部 Web Worker + 分块计算 | Barnes-Hut（O(n log n)） |
-| **社区聚类** | 天然形成（CoSE 特性） | 天然形成（ForceAtlas2 特性，linLog 模式增强） |
-| **自适应** | 根据图规模自动调参 | 手动配置固定参数 |
+| **标签字体** | 系统界面字体（加载后再渲染） | Sigma WebGL 纹理字体 |
+| **缩放时标签行为** | **逐步淡入淡出** — 核心节点保留更久 | **硬阈值** — labelRenderedSizeThreshold=5 |
+| **密度控制** | 基于节点重要性组合策略 | labelDensity=0.25 单一阈值 |
+| **字体清晰度** | Canvas 2D fillText（原生抗锯齿） | WebGL 纹理（缩放时锯齿） |
+| **自定义字体** | 支持 CSS 自定义 | 固定字体（Inter, PingFang SC） |
 
-### 4.2 ForceAtlas2 参数（Molio 实际使用）
+Molio 的标签显隐是硬阈值：
 
 ```typescript
-forceAtlas2.assign(graph, {
-  iterations: 300,
-  settings: {
-    linLogMode: true,                    // LinLog 模式：近距离强排斥，防止重叠
-    outboundAttractionDistribution: true, // 按出度分配吸引力，避免 hub 节点过度拉扯
-    barnesHutOptimize: true,             // Barnes-Hut O(n log n) 近似
-    barnesHutTheta: 0.5,                // 精度（越小越精确，默认 1.2）
-    edgeWeightInfluence: 0,             // 边权重无效
-    scalingRatio: 8,                    // 全局间距
-    strongGravityMode: false,           // 关闭强重力，让外围节点自然散开
-    gravity: 0.5,                       // 温和向心力
-    slowDown: 1 + Math.log(1 + n),      // 自适应减速
-  },
+labelRenderedSizeThreshold: 5,  // 低于 5px 不渲染
+labelDensity: 0.25,             // 标签密度
+```
+
+zoom out 时所有标签几乎同时消失。Obsidian 会按节点重要性逐步淡出一核心枢纽节点标签保留更久，外围孤立节点先消失。这需要**判断节点重要性（degree）+ 混合阈值**的组合策略。
+
+---
+
+## 四、碰撞检测
+
+### 4.1 实现对比
+
+| 维度 | Obsidian (CoSE) | Molio (d3-force) |
+|------|----------------|-----------------|
+| **碰撞检测** | ✅ CoSE 内置（v0.0.2 起） | ✅ forceCollide 独立力 |
+| **检测方式** | **节点边界间最短欧氏距离** | **中心点距离 + 固定 radius** |
+| **处理方式** | 排斥力遵循物理公式 d²/k（平滑推开） | **硬约束直接位移**（暴力推开） |
+| **不均匀节点** | ✅ 原生支持（边界距离感知） | ⚠️ radius 统一 +6px padding |
+| **布局集成** | 碰撞是布局算法原生组成部分 | 碰撞是独立力，可能和弹簧力振荡 |
+
+### 4.2 为什么 Obsidian 的碰撞效果更好
+
+```
+Obsidian (CoSE):
+  大节点 (r=30) ←──────────→ 小节点 (r=6)
+  │                             │
+  └── 检测：节点边界距离 < 0       └── 排斥力：d²/k（连续、平滑）
+      ↓
+  大节点轻微后退，小节点后退更多（物理正确）
+  整个布局系统协同调整
+
+Molio (d3-forceCollide):
+  大节点 (r=30) ←──────────→ 小节点 (r=6)
+  │                             │
+  └── 检测：中心距离 < (30+6)+(6+6)  └── 硬推力，目标距离 = r_a + r_b + 12
+      ↓
+  ✗ 统一 padding（大节点 6px padding 过少，小节点 6px padding 过多）
+  ✗ 硬约束和弹簧力拉扯 → 可能振荡
+  ✗ 独立力不参与全局优化
+```
+
+### 4.3 但 Obsidian 也不是完美的
+
+论坛上 silver（Obsidian 开发者）明确承认：**"text label 重叠是已知问题，无计划修复，因为技术上不简单"**。在节点密集区域，Obsidian 的标签依然会互相遮盖。Molio 也有同样的问题。
+
+---
+
+## 五、过渡和动画效果
+
+| 效果 | Obsidian | Molio | 差距 |
+|------|----------|-------|------|
+| **Hover 高亮** | 150-200ms 渐变过渡 | **即时切换**（nodeReducer 立即 return） | ❌ |
+| **选中聚焦** | 邻居淡出 ~300ms 动画 | **即时切换** | ❌ |
+| **碰撞弹开** | 物理弹簧自然过渡 | 下一帧直接到新位置 | ❌ |
+| **标签缩放过渡** | 逐步淡入淡出 | 阈值硬切换（<5px 消失） | ❌ |
+| **布局收敛** | 2500 次迭代逐步收敛 | alpha 从 1→0 无呈现 | ⚠️ 虽持续但无动画 |
+
+Molio 完全没有过渡动画。这是因为 Sigma.js 的 `nodeReducer`/`edgeReducer` 每次 `refresh()` 都立即应用新状态：
+
+```typescript
+// GraphPage.tsx — 即时切换
+renderer.on('leaveNode', () => {
+  hoveredNodeRef.current = null;
+  renderer.refresh();  // 立即生效，无过渡
 });
 ```
 
-### 4.3 布局效果差异
-
-| 效果 | Obsidian | Molio（当前） |
-|------|----------|---------------|
-| **节点间距** | 紧凑但有呼吸感 | 偏松散（scalingRatio: 8） |
-| **重叠控制** | 优秀 | 良好（linLog 模式防止重叠） |
-| **外围节点** | 自然散开，可能有飞地 | 强制向心（gravity: 0.5） |
-| **中心枢纽** | 吸引合理 | 有向心引力，相对聚集 |
-| **迭代次数** | 动态收敛检测 | 固定 300 次 |
-
-**Molio 可优化的方向**：
-- `scalingRatio: 8` 偏大 → 可降至 3-5 使布局更紧凑
-- 300 次迭代在大图上可能不够 → 可改为动态收敛检测
-- `gravity: 0.5` 可能使外围飞地节点过度向心 → 可考虑弱化或动态
+要添加过渡，需要 Sigma 的 `scheduleAt` 或自定义补间调度，目前没有实现。
 
 ---
 
-## 五、交互系统对比
+## 六、完整功能矩阵
 
-### 5.1 交互矩阵
+### 6.1 图谱基础能力
 
-| 交互 | Obsidian | Molio |
-|------|----------|-------|
-| **鼠标拖拽（空白区）** | 平移画布 | 平移画布（Sigma 默认） |
-| **鼠标滚轮** | 缩放 | 缩放 |
-| **Hover 节点** | 高亮邻居 + 淡出其他 | 高亮邻居 + 淡出其他 |
-| **单击选中** | 聚焦到节点 | 选中（紫色高亮） |
-| **双击节点** | 打开文件 | **打开文件（导航到 `/knowledge`）** |
-| **拖拽节点** | 移动并固定位置（fx/fy） | 移动并固定位置（fx/fy） |
-| **空白区单击** | 取消选中 | 取消选中 + **清除 fx/fy 锁定** |
-| **框选** | 不支持 | 不支持 |
-| **右键菜单** | 在节点上右键弹出文件操作 | 无 |
+| 能力 | Molio | Obsidian |
+|------|-------|----------|
+| **全局图** | ✅ 完整 vault 级 | ✅ |
+| **局部图 (Local Graph)** | ⚠️ 聚焦模式（overlay 淡出非关联节点） | ✅ 独立面板 + 级数控制（1-3 级） |
+| **Minimap** | ✅ Canvas/按需重绘/160×110 | ❌ 无 |
+| **节点搜索** | ✅ Ctrl/Cmd+F 浮层 + zoomToNode（2026-07-20 实现） | ✅ Ctrl+Shift+F 搜索定位 |
+| **框选** | ❌ 无 | ✅ Shift+drag |
+| **右键菜单** | ❌ 无 | ✅ 星标/隐藏/打开 |
+| **类型着色** | ✅ 三组颜色（文档/概念/对比） | ❌ 默认统一（需社区插件） |
+| **力参数调节** | ✅ 4 sliders 实时生效 | ✅ 内置 sliders |
+| **死链接可视化** | ✅ `__dead__` 灰色点 + 计数 | ❌ 无正式死链接概念 |
+| **增量更新** | ⚠️ 模块级数据缓存（SWR，进页面静默刷新），非文件级实时监听 | ✅ 实时文件监听 |
 
-### 5.2 交互实现细节对比
+### 6.2 渲染与视觉
 
-**Obsidian 交互实现**：自研 Canvas 事件系统，Sigma 内置的事件系统，每个交互是原子化的 API
+| 方面 | Molio | Obsidian |
+|------|-------|----------|
+| **布局均匀度** | 圆周向心力牵制，局部最优 | Multi-level 全局优化，极均匀 |
+| **碰撞检测** | forceCollide 固定半径+中心 | CoSE 边界距离感知，更平滑 |
+| **缩放流畅度** | 无 inertia，主线程阻塞 | Web Worker + inertia，60fps |
+| **标签显隐** | 硬阈值 labelSize=5 | 逐步淡出，核心优先 |
+| **Hover 过渡** | 即时切换 | 150-200ms 渐变 |
+| **选中效果** | 紫色 #8B5CF6 + 1.4× | 白色 + 紫色光晕 + 阴影 |
+| **边默认样式** | #D4D4D4, 0.8px 明显可见 | rgba(255,255,255,0.08) 极淡 |
+| **暗色/浅色** | ✅ light/dark/system | ✅ 跟随 app |
 
-**Molio 交互实现**（GraphPage.tsx）：
+### 6.3 交互
+
+| 交互 | Molio | Obsidian |
+|------|-------|----------|
+| 画布平移 | Sigma 内置 | 自研 + inertia |
+| 缩放 | Sigma 内置（无惯性） | 自研（有惯性） |
+| Hover | 高亮邻居 | 高亮邻居 + 过渡 |
+| 单击 | 选中（紫色 focus 模式） | 选中 + 详情面板 |
+| 双击 | **导航到 /knowledge 打开文件** | 打开文件 |
+| 拖拽 | 实时 fx/fy 锁定 | fx/fy 锁定 |
+| 空白点击 | **取消选中 + 清所有 fx/fy** | 取消选中（fx/fy 保留，需手动解锁） |
+
+---
+
+## 七、Molio 的真正独有优势（修正版）
+
+| 优势 | 评价 |
+|------|------|
+| **Minimap** | 🏆 Obsidian 确实没有，160×110 Canvas 实时绘制 |
+| **死链接可视化** | 🏆 Obsidian 无正式死链接概念 |
+| **类型着色** | 🏆 Obsidian 需要社区插件，Molio 内置三组颜色 |
+| **双击导航到文件** | ✅ 体验便捷（Ob 需要多点击一次详情面板） |
+| **取消选中清 fx/fy** | ✅ 自动解锁被固定节点（Ob 需要右键菜单操作） |
+
+需要撤回的前期结论：
+
+| 之前误判 | 修正 |
+|----------|------|
+| "碰撞检测是 Molio 独有优势" | ❌ Obsidian 有且更好（CoSE 边界距离 vs center+radius） |
+| "布局基本接近 Obsidian" | ❌ 差距巨大（multi-level vs 单层圆周 tick） |
+| "Molio 图谱 78-82% 功能完整度" | ❌ 实际约 50-55%（考虑布局质量、流畅度、动画等因素） |
+
+---
+
+## 八、综合评分（2026-07-18）
+
+```
+Molio 知识图谱 vs Obsidian（100% = Obsidian，基于公开技术信息）
+
+布局均匀度       ██████████░░░░░░░░░░ 45%  ❌ 无 multi-level → 局部最优
+缩放流畅度       ██████████████░░░░░░ 55%  ❌ 主线程 vs Web Worker，无 inertia
+碰撞检测         ██████████████░░░░░░ 55%  ❌ 固定半径 vs 边界距离
+字体信息密度     ████████████░░░░░░░░ 40%  ❌ 硬阈值 vs 渐变淡出
+过渡动画         ██░░░░░░░░░░░░░░░░░░ 15%  ❌ 无过渡（即时切换）
+
+Minimap          ██████████████████████████ 120%  🏆 独有
+死链接可视化     ██████████████████████████ 120%  🏆 独有
+类型着色         ██████████████████████████ 120%  🏆 独有（Obsidian 需插件）
+力参数调节       ████████████████████░░ 85%  ⚠️ 参数更少但够用
+双击导航         ✅                                🏆 独有
+全局图           ████████████████████░░ 85%  ⚠️ 功能接近但渲染质量有差距
+局部图/聚焦      ██████████████░░░░░░ 60%  ❌ 独立面板 + 邻居级数控制缺失
+增量更新         ██░░░░░░░░░░░░░░░░░░ 10%  ❌ 全量重建
+节点搜索         ██░░░░░░░░░░░░░░░░░░ 15%  ❌ 未实现
+右键菜单         ██░░░░░░░░░░░░░░░░░░ 10%  ❌ 未实现
+
+总体：Molio 图谱约达到 Obsidian 的 50-55% 功能完整度
+      （前期评估 78-82% 严重高估，因仅计数"有无功能"而忽略实现质量）
+```
+
+---
+
+## 九、改进优先级
+
+### 性价比最高的改进
+
+| 优先级 | 改进项 | 难度 | 代码量 | 效果 | 状态 |
+|--------|--------|------|--------|------|------|
+| **P0** | **替换 initX/initY 向心力为全局重力** | 🟢 低 | 2 行 | ⭐⭐⭐⭐ 布局均匀度大幅提升 | ✅ 已完成 |
+| **P0** | **d3-force 移到 Web Worker** | 🔴 高 | 中 | ⭐⭐⭐ 释放主线程，缩放流畅 | ✅ 已完成（≥1000 节点自适应） |
+| **P1** | **添加 camera inertia** | 🟡 中 | 少 | ⭐⭐⭐ 缩放拖拽丝滑 | ✅ 已完成（velocity 缩放 + 平移惯性） |
+| **P1** | **nodeReducer 添加过渡动画** | 🟢 低 | 少 | ⭐⭐⭐ hover/选中从"生硬"变"自然" | ✅ 已完成（smoothstep + 节点/边同步） |
+| **P1** | **标签阈值渐变淡出** | 🟡 中 | 中 | ⭐⭐ 缩放体验提升 | ✅ 已完成（itemSizesReference + threshold） |
+| **P1** | **碰撞检测改用边界距离** | 🟡 中 | 中 | ⭐⭐ 碰撞更自然 | ✅ 已完成（比例 padding + 3 次迭代） |
+| **P2** | **节点搜索** | 🟡 中 | 中 | ⭐⭐⭐ 定位节点 | ✅ 已完成（Ctrl/Cmd+F） |
+| **P2** | **数据内存缓存** | 🟢 低 | 少 | ⭐⭐ 切页面不重 fetch | ✅ 已完成（SWR） |
+| **P2** | **右键菜单（星标/隐藏）** | 🟡 中 | 中 | ⭐⭐ 节点级操作 | ⏳ 待做 |
+| **P2** | **独立局部图面板** | 🟡 中 | 中 | ⭐⭐⭐ 邻居级数控制 | ⏳ 待做（见十一，多 Tab 实时性前置） |
+| **P2** | **Multi-Level 布局** | 🔴 高 | 多 | ⭐⭐⭐ 布局质量飞跃 | ⏳ 待做 |
+
+### "2 行代码"的改动细节
+
+`useSimulation.ts:113-114` 改向心力：
 
 ```typescript
-// 核心设计：原生 DOM 事件接管 Sigma 的点击/拖拽
-// 原因：区分 click / drag / dblclick 更精确
+// 当前（圆周回弹 — 布局被初始位置牵制）：
+.force('x', forceX<D3Node>((d) => (d.fx != null ? d.fx : d.initX)).strength(0.004))
+.force('y', forceY<D3Node>((d) => (d.fy != null ? d.fy : d.initY)).strength(0.004))
 
-// 点击检测：图形坐标系中的命中测试
-const findNodeAtPosition = (mouseX: number, mouseY: number): string | null => {
-  const mouseGraph = renderer.viewportToGraph({ x: mouseX, y: mouseY });
-  graph.forEachNode((node, attr) => {
-    const dist = Math.sqrt((nx - mouseGraph.x)² + (ny - mouseGraph.y)²);
-    const hitRadius = Math.max(size * 2, 3);
-    if (dist < hitRadius && dist < closestDist) { ... }
-  });
-};
-
-// 双击检测：350ms 间隔内同一节点
-const DBLCLICK_INTERVAL = 350;
-// 单击选中 → 记录节点和时间
-// 再次单击同一节点且在间隔内 → 双击事件，导航到文件
-
-// 拖拽锁定：实时 fx/fy
-graph.setNodeAttribute(draggedNode, 'fx', graphPos.x);
-graph.setNodeAttribute(draggedNode, 'fy', graphPos.y);
+// 改为（全局向心 — 所有节点拉向原点，更接近 CoSE 的 gravity）：
+.force('x', forceX<D3Node>((d) => (d.fx != null ? d.fx : 0)).strength(0.004))
+.force('y', forceY<D3Node>((d) => (d.fy != null ? d.fy : 0)).strength(0.004))
 ```
 
-**对比发现**：
-- Molio 的交互是自己实现的**原生 DOM 事件**接管层，而非使用 Sigma 内置交互
-- 这样做的好处是精确控制 click/drag/dblclick 的分发（Sigma 内置无法完美区分这三者）
-- 缺点是需要手动做命中测试（`findNodeAtPosition`），在大图上 foreach 可能成性能瓶颈
-
-### 5.3 交互体验差异
-
-**Obsidian 胜出的点**：
-1. **节点 hover 效果更丰富** — Obsidian 的 hover 不仅变色，还有过渡动画
-2. **选中节点有发光光环** — 紫色光晕 `box-shadow: 0 0 12px rgba(96,165,250,0.8)` 更精致
-3. **框架选择器** — 按住 Shift 可框选多个节点
-4. **星标/隐藏** — 右键可星标或隐藏节点
-
-**Molio 的独特亮点**：
-1. **双击导航到文件** — Obsidian 需要单击后再点详情面板，Molio 双击直达知识库
-2. **取消选中时清除 fx/fy** — 避免拖拽固定后无法恢复自由布局（Obsidian 需要手动右键解锁）
-3. **取消选中不触发导航** — 空白区单击只取消选中，不会误导航
+这样节点不再被初始圆周位置牵制，而是自然向中心收敛——外围节点均匀散开，中心枢纽汇聚，布局立刻更像 Obsidian。
 
 ---
 
-## 六、图表功能对比
+## 十、总结
 
-### 6.1 功能矩阵
-
-| 功能 | Obsidian | Molio |
-|------|----------|-------|
-| **全局图** | 完整 vault 级图谱 | 完整 vault 级图谱 |
-| **局部图** | 当前文件的 1-3 级邻居 | **无** |
-| **筛选器** | 按文件路径、标签、链接方向筛选 | **无** |
-| **搜索节点** | Ctrl+Shift+F 搜索 + 定位 | **无** |
-| **节点过滤** | 显示/隐藏指定节点组 | **无** |
-| **星标** | 星标节点优先显示 | **无** |
-| **分组** | 按文件夹/标签自动分组着色 | **无** |
-| **Minimap** | **无** | **有**（Canvas 绘制） |
-| **节点统计** | 悬停时显示文件名 + 链接数 | 顶部栏显示节点/边总数 |
-| **暗色/浅色** | 跟随主题 | 目前固定浅色 |
-
-### 6.2 Minimap（独有特性）
-
-Molio 实现了 Obsidian 没有的 Minimap 组件：
-
-```typescript
-// Minimap.tsx — Canvas 绘制，160×110px
-// 特性：
-// 1. requestAnimationFrame 驱动的实时绘制循环
-// 2. 节点用 2×2px 小点表示（fillRect）
-// 3. 视口矩形用半透明紫色表示（VIEWPORT_FILL + VIEWPORT stroke）
-// 4. 圆角剪裁（clip to roundRect）
-// 5. 自动计算全局坐标范围
-// 6. 每帧重绘（RAF 循环，sigma 的 camera/listener 触发）
 ```
+Molio 图谱当前状态（2026-07-20 修订）：
+  ✅ Minimap（独有）
+  ✅ 死链接可视化（独有）
+  ✅ 类型着色（独有）
+  ✅ 双击导航到文件（独有）
+  ✅ 取消选中清 fx/fy（独有）
+  ✅ 全局图基础功能（focus/hover/click/drag）
+  ✅ 力参数实时调节
+  ✅ 暗色/浅色主题
+  ✅ 设置面板 4 Tab（筛选/外观/力度/图例）
 
-实现参考了 Figma/Miro 的 minimap 模式，在 Obsidian 社区也常有人请求但官方未实现。
+  ✅ 布局均匀度（圆周向心力 → 全局重力，本轮已改）
+  ✅ 缩放流畅度（velocity 缩放 + 平移惯性 + 自适应 Worker，本轮已改）
+  ✅ 过渡动画（hover/选中 smoothstep + 节点/边同步淡入淡出，本轮已改）
+  ✅ 标签缩放渐隐（itemSizesReference + threshold，本轮已改）
+  ✅ 碰撞检测（比例 padding + 多次迭代，本轮已改）
+  ✅ 节点搜索（Ctrl/Cmd+F 浮层 + zoomToNode，本轮已改）
+  ✅ 数据缓存（SWR，进页面不重 fetch，本轮已改）
 
-### 6.3 局部图（Molio 缺失的重要功能）
+  ❌ Multi-Level 布局（仍是最大算法差距）
+  ❌ 右键菜单（星标/隐藏节点）
+  ❌ 独立局部图面板 + 邻居级数控制
+  ⚠️ 实时性：图谱页停留期间无文件级实时更新（多 Tab 场景待解，见十一）
 
-Obsidian 的**局部图**（Local Graph）是其图谱功能的核心场景：
-- 点击某个节点 → 显示该节点及其 1-3 级邻居
-- 用户借此聚焦探索单个文件的关联网络
-- 配合星标和筛选，形成"先全局定位 → 再局部探索"的工作流
-
-**Molio 目前只有全局图**，没有局部图，这是图谱功能的核心缺口。
+  与 Obsidian 的核心差距已从"实现质量"收窄到"算法本体（Multi-Level）+
+  实时性"。本轮把可低成本提升的体验项基本补齐。
+```
 
 ---
 
-## 七、数据来源与链接解析
+## 十一、当前实现状态与实时性缺口（2026-07-20）
 
-### 7.1 数据管道对比
+### 11.1 本轮重构已落地（对照基线结论的修正）
 
-```
-Obsidian:
-  文件系统 → 实时监听文件变更 → 内部索引更新 → 图谱重绘
-  （增量更新，修改文件立即可见图谱变化）
+| 基线结论（第八节） | 当前状态 |
+|---|---|
+| 缩放流畅度 55%（主线程物理 + 无 inertia） | ✅ velocity 累积模型 + 平移惯性 + 自适应 Worker（≥1000 节点），流畅度接近 Obsidian |
+| 过渡动画 15%（即时切换） | ✅ hover/选中 smoothstep 动画，节点+边同步淡入淡出 |
+| 字体信息密度 40%（硬阈值） | ✅ `itemSizesReference: 'positions'` + `labelRenderedSizeThreshold`，全景隐藏标签，放大渐显 |
+| 碰撞检测 55%（固定 radius+中心） | ✅ 比例 padding（`radius×0.35`）+ 3 次迭代，主线程/Worker 一致 |
+| 节点搜索 15% | ✅ Ctrl/Cmd+F 浮层 + label/path 过滤 + `camera.animate` 飞行定位 |
+| 增量更新 10% | ⚠️ 模块级数据缓存（SWR），进页面静默刷新，非文件级实时监听 |
 
-Molio:
-  文件系统 → API 请求触发 scan → 同步解析 wikilinks → 返回 JSON → Sigma 渲染
-  （全量重建，需手动刷新页面或切换 vault）
-```
+布局均匀度（45%）受限于 d3-force 无 Multi-Level，本轮只改了向心力（圆周回拉→全局重力）+ 碰撞比例化，仍是单层 tick，未上 Walshaw 聚类——这是与 Obsidian 的最大算法差距，归 P3。
 
-### 7.2 链接解析策略
+### 11.2 数据缓存策略（P2.2）
 
-**Obsidian**：
-- 精确路径匹配
-- 大小写不敏感
-- 别名解析（`[[Page|alias]]`）
-- 块引用（`[[Page#^block]]`）
-- 自动补全 + 实时检查
+`GraphPage.tsx` 模块级缓存 `graphDataCache: Map<vaultId, { data, ts }>`，进程内有效：
 
-**Molio**（`resolveLink` 函数）：
-```typescript
-function resolveLink(rawName, sourcePath, nameIndex, pathToKey): string | null {
-  // 1. 精确 basename 匹配
-  const candidates = nameIndex.get(cleanName);
-  
-  // 2. 单一候选 → 直接返回
-  if (candidates.length === 1) return pathToKey.get(candidates[0]);
-  
-  // 3. 多候选 → 优先同目录
-  const sourceDir = sourcePath.includes('/')
-    ? sourcePath.slice(0, sourcePath.lastIndexOf('/'))
-    : '';
-  for (const c of candidates) {
-    if (same directory) return pathToKey.get(c);
-  }
-  
-  // 4. 回退到首个候选
-  return pathToKey.get(candidates[0]);
-}
-```
+- **进入图谱页** → 先秒显缓存数据（`useState` 懒初始化从缓存读），同时后台 `api.getGraph` 静默拉新，成功覆盖缓存
+- **后台失败但有缓存** → 保留 stale 数据、不报错（用户无感）；无缓存才报错
+- **vault 404** → 清缓存 + 切 vault
+- **切出/切回** → 组件重新挂载触发 SWR，无 loading 闪烁
 
-**差异点**：
-| 场景 | Obsidian | Molio |
-|------|----------|-------|
-| 明确路径 | 精确匹配 | 精确匹配 |
-| 同名文件 | 自动补全已处理 | 同目录优先 → 首个 |
-| 别名 | 完整支持 | 解析别名语法但不做映射 |
-| 块链接 | 支持 | 不支持 |
-| 未创建页面 | 灰色虚线节点 | 死链接（不创建节点） |
+### 11.3 已知缺口：多 Tab / 实时性（需后续解决）
 
----
+**问题**：当前缓存只在「进入图谱页」时后台刷新。图谱页**停留期间**，知识库内容若发生变化（其他窗口/Tab 编辑文档、新建文件、wikilink 变更），图谱不会自动更新。
 
-## 八、死链接检测
+**当前为何可接受**：Molio 是单页应用，用户要改知识库必先离开 `/graph` 去操作，回来时 SWR 已覆盖。单窗口下「进入页面即刷新」等价于实时。
 
-Molio 在后端图谱构建中做了死链接检测，这是 Obsidian 没有的正式功能：
+**为何需要解决**：**后续规划会把图谱作为独立 Tab 与文档 Tab 并列显示**（不再是独占路由）。届时用户在文档 Tab 编辑、图谱 Tab 同屏可见——单窗口 SWR 模型失效，需要真正的实时推送：
 
-**检测时机**：`buildGraph()` 中解析 wikilink 时，如果 `resolveLink()` 返回 null，即标记为死链接
+- 候选方案：daemon 在文档/wiki 变更时发 SSE `graph-changed` 事件，图谱 Tab 监听后增量或全量刷新缓存
+- 前置依赖：daemon 需要文件监听 + 事件总线（当前 `RunManager` SSE 是 run 级，非 graph 级）
+- 与 P2.4（独立局部图面板）耦合：局部图面板本身就是「Tab 化」的一部分，实时性是该方向的前置需求
 
-```typescript
-const deadLinks = new Set<string>(); // Track dead links
+**记录待办**：在 P2.4 / 图谱 Tab 化推进时，必须同步实现 graph-level 实时更新通道，否则多 Tab 并列会出现「图谱显示陈旧数据」的体验问题。
 
-// 在边构建过程中，如果 link 无法解析，记录死链接
-// 但当前版本在返回给前端的 GraphData 中并没有包含 deadLinks 信息
-```
+### 11.4 渲染细化：hover/选中视觉（2026-07-20）
 
-**当前局限**：
-1. `deadLinks` Set 已创建但没有返回给前端
-2. 前端图谱无法显示死链接标记
-3. 死链接信息目前只在 Wiki Lint 操作中体现
+对照 Obsidian 校准 hover/选中态的视觉强度与分层，修复三个体验问题：
 
-**建议方向**：将死链接数据返回前端，以虚线灰色节点（类似 Obsidian 的未创建页面样式）展示。
+**① 淡化强度收敛**（`nodeReducer` + `types.ts`）
 
----
+基线问题：选中/hover 时非关联节点尺寸收缩到 15%（`1 - dimT×0.85`）、颜色全褪到 `dimmed: #F0F0F0`（在浅色背景 `#FAFAFA` 上几乎不可见）。Obsidian 是「降饱和灰但保持可读」。
 
-## 九、性能对比
+- `dimmed` 改为可见中灰：浅色 `#C8C8C8`、暗色 `#3A3F4D`
+- 尺寸收缩：选中 `0.85→0.4`（保留 60%）、hover `0.4→0.25`（保留 75%）
+- hover 颜色不褪到底（`hoverT×0.6`），hover 意图比选中更轻
+- 非关联边向**背景色**褪色（深度 0.85，留淡痕），避免中灰 `dimmed` 让淡化边反而更醒目
 
-| 指标 | Obsidian | Molio |
-|------|----------|-------|
-| **渲染引擎** | 自研 Canvas 2D | Sigma.js WebGL |
-| **数千节点** | 60fps | 60fps |
-| **一万节点** | ~40fps（节点 culling） | ~30-45fps（Barnes-Hut + WebGL） |
-| **五万节点** | ~20fps | ~15-20fps |
-| **布局计算** | Web Worker 异步 | 主线程同步（blocking） |
-| **增量更新** | 支持（文件变更即更新） | 不支持（全量重建） |
-| **节点 culling** | 视口外不渲染 | Sigma 默认做 |
-| **LOD** | 缩放远时合并节点 | 无 |
+**② 高亮边 z-index 分层**（`edgeReducer` + Sigma `zIndex: true`）
 
-**Molio 的瓶颈**：
-- ForceAtlas2 在主线程同步执行 300 次迭代，大图（5000+ 节点）会有明显的卡顿
-- 没有增量更新机制，切换 vault 或刷新时需要全量重建
-- 缺少 LOD（Level of Detail），大量节点时标签渲染是负担
+基线问题：选中节点的关联边虽高亮，但被后添加的淡化边遮挡——Sigma v3 默认按图中边添加顺序绘制，`edgeReducer` 只改外观不改绘制顺序。
 
----
+- 开启 `settings.zIndex: true`（Sigma v3 支持 edge `zIndex` 排序，需显式开启）
+- 关联边 `zIndex: 1`、非关联边 `zIndex: 0`，高亮边绘制在顶层
+- 节点未设 zIndex（全 0），不触发节点重排，无副作用
 
-## 十、功能缺口与改进方向
+**③ hover/选中互斥**（`enterNode`/`leaveNode` 守卫）
 
-### 10.1 需补齐的核心功能
+基线问题：选中节点后移到其他节点仍触发 hover 切换，hover 高亮与点击聚焦并存抢占。
 
-| 优先级 | 功能 | 当前状态 | 参考实现 |
-|--------|------|----------|----------|
-| **P0** | **局部图（Local Graph）** | 缺失 | 点击节点 → 显示 1-2 级邻居 |
-| **P0** | **节点筛选与过滤** | 缺失 | 按链接数/路径/标签过滤显示 |
-| **P0** | **死链接可视化** | 后端已检测，前端不显示 | 将 deadLinks 返回前端 |
-| **P1** | **深色主题** | 只有浅色 | 跟随系统/app 主题切换 |
-| **P1** | **节点搜索** | 缺失 | 搜索框输入定位节点 |
-| **P2** | **增量更新** | 全量重建 | 监听文件变化自动刷新 |
-| **P2** | **节点分组着色** | `nodeType` 已定义未启用 | 按类型使用不同颜色 |
-
-### 10.2 可优化的体验
-
-| 项目 | 当前 | 建议 |
-|------|------|------|
-| **布局紧凑度** | `scalingRatio: 8` 偏松散 | 降至 3-5 |
-| **迭代次数** | 固定 300 次 | 动态收敛检测 |
-| **初始布局** | 圆环随机散布 | 中心辐射或预计算 |
-| **Hover 动画** | 无过渡 | 添加 ~150ms CSS transition 效果 |
-| **选中节点光晕** | 无 | 添加 `shadowBlur` 效果 |
-| **节点标签** | 始终显示 | 缩放阈值控制（zoom > 1.2 显示） |
-| **性能** | 主线程布局 | 移到 Web Worker |
-| **图谱数据缓存** | 每次进入重新请求 | 缓存到内存，vault 不变时不刷新 |
-
----
-
-## 十一、总结
-
-```
-Molio 图谱当前状态：
-  ✅ 基础功能完整（全局图 / ForceAtlas2 / hover / click / drag / dblclick / Minimap）
-  ✅ 后端死链接检测（虽未完全暴露）
-  ✅ 链接解析策略合理（同目录优先）
-  ✅ 自定义交互系统精确（click/drag/dblclick 完美区分）
-  
-  ❌ 缺失局部图（最大缺口）
-  ❌ 缺失筛选/过滤/搜索
-  ❌ 死链接虽已检测但不展示
-  ❌ 全量重建无增量更新
-  ❌ 布局在主线程同步执行（大图卡顿）
-  ❌ 无深色主题
-  ❌ nodeType 已预留但未启用
-  
-  📈 后端管道可复用（buildGraph 函数直接返回死链接信息只需小改动）
-  📈 Sigma.js 生态可扩展（局部图通过 filter API 实现）
-  📈 ForceAtlas2 参数可调（不需要换算法，只需调节参数即可改善效果）
-```
-
-### 与 Obsidian 的差距评估
-
-```
-功能完整度（100% = Obsidian 当前水平）： (更新于 2026-06-16)
-
-全局图可视化  ████████████████████ 85%
-局部图        ████████████████░░░░ 70%  ← ✅ 已实现（选中后淡出非关联节点）
-交互体验      ██████████████████░░ 78%  ← ✅ 持续仿真 + 碰撞检测
-布局效果      ██████████████░░░░░░ 55%  ← ⚠️ 待优化（线条交叉）
-筛选/搜索     ██░░░░░░░░░░░░░░░░░░ 15%  ← 核心缺口（第三期计划）
-节点着色      ██████████████████████████ 100% ← ✅ 按类型着色 + 死链接灰点
-死链接        ██████████████████████ 90%  ← ✅ 后端检测 + 前端可视化
-Minimap       ██████████████████████████ 120%（Obsidian 没有）
-性能          ████████████░░░░░░░░ 55%
-增量更新      ██░░░░░░░░░░░░░░░░░░ 10%  ← 核心缺口
-交互提示      ██████████████████████████ 100% ← ✅ 新增操作提示条
-
-总体：Molio 图谱约达到 Obsidian 的 65-70% 功能完整度（较改造前的 50-55% 提升约 15%）
-      独有：Minimap、死链接可视化、交互提示条、节点按类型着色
-```
-
-### 建议的迭代路径
-
-1. **第一期（已完成 ✅）**：启用 `nodeType` 颜色分类 + 死链接前端展示 + 交互提示 —— **已实现半数以上项目**
-2. **第二期（核心体验）**：局部图（Local Graph）+ 节点搜索与筛选
-3. **第三期（性能提升）**：Web Worker 布局 + 增量更新
-4. **第四期（差异化）**：AI 关系发现（embedding 相似边）+ 时间维度滑块
+- `enterNode`/`leaveNode` 开头加 `if (selectedNodeRef.current) return;`
+- 选中期间 `hoveredNodeRef` 始终为 null，reducer 的 `focusNode = hovered ?? selected` 稳定走 selected 分支
+- 点空白取消选中后，hover 自动恢复

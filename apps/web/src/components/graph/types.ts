@@ -35,10 +35,10 @@ export interface ThemeColors {
 }
 
 export const DEFAULT_FORCE_PARAMS: ForceParams = {
-  centerStrength: 0.004,
-  repelStrength: -60,
-  linkStrength: 0.15,
-  linkDistance: 100,
+  centerStrength: 0.002,   // 全局向心引力（减弱，配合 rest→0）
+  repelStrength: -100,     // 增强排斥力，节点更均匀散开
+  linkStrength: 0.2,       // 边弹簧拉力稍强，聚类更紧
+  linkDistance: 80,        // 边自然长度缩短，团的内部更紧凑
 };
 
 export const DEFAULT_SETTINGS: GraphSettings = {
@@ -63,7 +63,8 @@ export const LIGHT_THEME: ThemeColors = {
   edgeSelected: '#8B5CF6',
   label: '#6B6B6B',
   deadNode: '#D4D4D4',
-  dimmed: '#F0F0F0',
+  // 节点淡化色：可见的中灰（对齐 Obsidian「降饱和但保持可读」），不融于背景
+  dimmed: '#C8C8C8',
 };
 
 export const DARK_THEME: ThemeColors = {
@@ -78,7 +79,8 @@ export const DARK_THEME: ThemeColors = {
   edgeSelected: '#8B5CF6',
   label: '#9CA3AF',
   deadNode: '#4A5360',
-  dimmed: '#1A1D2A',
+  // 节点淡化色：可见的暗灰，不融于深色背景
+  dimmed: '#3A3F4D',
 };
 
 /** Resolve theme mode to actual colors, respecting system preference. */

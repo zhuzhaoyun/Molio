@@ -5,7 +5,7 @@
  * Colours match Obsidian's default dark theme CSS variables.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Graph from 'graphology';
 import type { GraphData } from '@molio/contracts';
@@ -18,6 +18,7 @@ import { useActiveVaultId, vaultStore } from '../../stores/vaultStore';
 import { useGraphSettings } from './useGraphSettings';
 import { GraphSettingsPanel } from './GraphSettingsPanel';
 import { getThemeColors } from './types';
+import { setupCameraInertia } from './useCameraInertia';
 
 // ── Visual constants (Obsidian light theme, matching obsidian.png) ──
 // 浅色背景 + 深色节点，像纸张上的墨点
@@ -70,6 +71,42 @@ function nodeColor(linkCount: number, nodeType?: string): string {
   return NODE_DEFAULT;
 }
 
+/** Interpolate between two hex colors by `t` (0→1). */
+function interpolateColor(a: string, b: string, t: number): string {
+  if (t <= 0) return a;
+  if (t >= 1) return b;
+  const parse = (c: string) => {
+    const h = c.replace('#', '');
+    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+  };
+  try {
+    const [ar, ag, ab] = parse(a);
+    const [br, bg, bb] = parse(b);
+    const rr = Math.round(ar + (br - ar) * t);
+    const rg = Math.round(ag + (bg - ag) * t);
+    const rb = Math.round(ab + (bb - ab) * t);
+    return `#${rr.toString(16).padStart(2, '0')}${rg.toString(16).padStart(2, '0')}${rb.toString(16).padStart(2, '0')}`;
+  } catch {
+    return t > 0.5 ? b : a;
+  }
+}
+
+// ── 淡化参数（对齐 Obsidian：淡化但保持可读，非关联节点不缩成隐形点）──
+const FOCUS_DIM_SIZE_RATIO = 0.4;    // 选中聚焦：非关联节点尺寸保留 60%
+const HOVER_DIM_SIZE_RATIO = 0.25;   // hover：非关联节点尺寸保留 75%
+const HOVER_DIM_COLOR_RATIO = 0.6;  // hover 颜色淡化深度（不全褪到 dimmed，hover 意图更轻）
+const EDGE_DIM_COLOR_RATIO = 0.85;  // 非关联边向背景褪色深度（保留淡痕，不喧宾夺主）
+const EDGE_DIM_SIZE_RATIO = 0.5;    // 非关联边尺寸收缩
+
+// ── 模块级图谱数据缓存 ──
+// 切出图谱页再回来时，先用上次缓存数据立即渲染（stale-while-revalidate），
+// 后台静默拉新。vault 维度缓存，进程内有效。
+interface GraphCacheEntry {
+  data: GraphData;
+  ts: number;
+}
+const graphDataCache = new Map<string, GraphCacheEntry>();
+
 // ── Main Page Component ──
 
 export function GraphPage() {
@@ -78,47 +115,89 @@ export function GraphPage() {
 
   // 跟随知识库的活跃 vault，知识库切换时图谱自动切换
   const activeVaultId = useActiveVaultId();
-  const [graphData, setGraphData] = useState<GraphData | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [graphData, setGraphData] = useState<GraphData | null>(() =>
+    activeVaultId ? graphDataCache.get(activeVaultId)?.data ?? null : null,
+  );
+  const [loading, setLoading] = useState(() =>
+    activeVaultId ? !graphDataCache.has(activeVaultId) : false,
+  );
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  // 节点搜索（Ctrl/Cmd+F）
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchActiveIndex, setSearchActiveIndex] = useState(0);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const sigmaRef = useRef<Sigma | null>(null);
   const graphRef = useRef<Graph | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  // 暴露 effect 内的 dim 动画函数给组件作用域（搜索选中时用）
+  const startDimAnimRef = useRef<((target: number, durationMs: number) => void) | null>(null);
 
   const hoveredNodeRef = useRef<string | null>(null);
   const selectedNodeRef = useRef<string | null>(null);
   // Persist node positions across graph rebuilds (theme change, nodeScale change)
   const savedPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
 
+  // ── Transition animation states ──
+  const focusDimRef = useRef(0);        // 0→1 animated for select focus
+  const hoverDimRef = useRef(0);        // 0→1 animated for hover
+  const hoverLingerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const simulation = useSimulation();
   const { settings, updateSettings, updateForce } = useGraphSettings();
   const themeColors = getThemeColors(settings.theme);
 
   // Fetch graph data when active vault changes
+  // stale-while-revalidate：有缓存立即显示，后台静默刷新
   useEffect(() => {
     if (!activeVaultId) return;
 
-    setLoading(true);
-    setError(null);
+    let cancelled = false;
+
+    // 立即用缓存数据（避免切回时 loading 闪烁）
+    const cached = graphDataCache.get(activeVaultId);
+    if (cached) {
+      setGraphData(cached.data);
+      setLoading(false);
+      setError(null);
+    } else {
+      setLoading(true);
+    }
+
+    // 后台静默拉新
     api.getGraph(activeVaultId)
       .then((data) => {
+        if (cancelled) return;
+        graphDataCache.set(activeVaultId, { data, ts: Date.now() });
         setGraphData(data);
+        setError(null);
+        setLoading(false);
       })
       .catch((err) => {
+        if (cancelled) return;
         if (err.message?.includes('404')) {
-          // Vault no longer exists in DB — clear stale selection.
+          // Vault no longer exists in DB — clear stale selection + cache.
           // App.tsx's setVaults() will auto-select a valid vault,
           // and this useEffect will re-fire with the new activeVaultId.
           vaultStore.setActiveVaultId(null);
+          graphDataCache.delete(activeVaultId);
           setError(null);
+          if (!cached) setGraphData(null);
         } else {
-          setError(err.message ?? 'Failed to load graph');
+          // 有缓存就保留 stale 数据不报错；没缓存才报错
+          if (cached) {
+            setError(null);
+          } else {
+            setError(err.message ?? 'Failed to load graph');
+            setGraphData(null);
+          }
         }
-        setGraphData(null);
-      })
-      .finally(() => setLoading(false));
+        setLoading(false);
+      });
+
+    return () => { cancelled = true; };
   }, [activeVaultId]);
 
   // Initialize Sigma when graph data is available
@@ -222,84 +301,95 @@ export function GraphPage() {
     });
 
     // ── Node reducer for hover/select ──
-    // 局部图模式：选中节点后聚焦邻居，非关联节点大幅淡出
     const nodeReducer = (node: string, data: Record<string, unknown>) => {
       const hovered = hoveredNodeRef.current;
       const selected = selectedNodeRef.current;
       const focusNode = hovered ?? selected;
       const isSelected = node === selected;
-      const isFocusMode = !!selected; // true when a node is locked by click
+      const isFocusMode = !!selected;
+      const dimT = focusDimRef.current;
+      const hoverT = hoverDimRef.current;
+      const baseSize = (data.size as number) ?? 6;
 
-      // 无 focus：默认显示所有节点
       if (!focusNode) {
-        return {
-          ...data,
-          color: (data.color as string) ?? themeColors.node,
-          size: (data.size as number) ?? 6,
-        };
+        return { ...data, color: (data.color as string) ?? themeColors.node, size: baseSize };
       }
 
-      // 当前 focus 节点：高亮
-      if (node === focusNode) {
-        const scale = isSelected ? 1.4 : 1.2;
-        return {
-          ...data,
-          size: ((data.size as number) ?? 6) * scale,
-          color: isSelected ? themeColors.selected : themeColors.hover,
-        };
-      }
-
-      // 关联节点（邻居）
+      const origColor = data.color as string;
       const isConnected = graph.hasEdge(focusNode, node) || graph.hasEdge(node, focusNode);
-      if (isConnected) {
+
+      if (node === focusNode) {
+        const targetScale = isSelected ? 1.4 : 1.2;
+        const t = isFocusMode ? dimT : hoverT;
+        const currentScale = 1 + (targetScale - 1) * t;
         return {
           ...data,
-          color: (data.color as string) ?? themeColors.node,
-          // 选中模式下邻居保持原始大小
-          size: isFocusMode ? (data.size as number) ?? 6 : undefined,
+          size: baseSize * currentScale,
+          color: isSelected
+            ? interpolateColor(origColor, themeColors.selected, t)
+            : interpolateColor(origColor, themeColors.hover, t),
+          forceLabel: true,
         };
       }
 
-      // 非关联节点：
-      if (isFocusMode) {
-        // 选中模式：大幅淡出（保留位置布局，但视觉上几乎消失）
-        return {
-          ...data,
-          color: themeColors.dimmed,
-          size: ((data.size as number) ?? 6) * 0.15,
-        };
+      if (isConnected) {
+        if (isFocusMode) {
+          return { ...data, color: origColor, size: baseSize };
+        }
+        const connectedScale = 1 - hoverT * 0.15;
+        return { ...data, color: origColor, size: baseSize * connectedScale };
       }
-      // 悬停模式：轻微变淡
-      return { ...data, color: themeColors.edge };
+
+      if (isFocusMode) {
+        const s = baseSize * (1 - dimT * FOCUS_DIM_SIZE_RATIO);
+        return { ...data, color: interpolateColor(origColor, themeColors.dimmed, dimT), size: s };
+      }
+      const s = baseSize * (1 - hoverT * HOVER_DIM_SIZE_RATIO);
+      return { ...data, color: interpolateColor(origColor, themeColors.dimmed, hoverT * HOVER_DIM_COLOR_RATIO), size: s };
     };
 
-    // ── Edge reducer ──
-    // Obsidian 风格：默认淡灰，hover 时关联线变紫
+    // ── Edge reducer (animated with hoverT/dimT) ──
     const edgeReducer = (edge: string, data: Record<string, unknown>) => {
       const hovered = hoveredNodeRef.current;
       const selected = selectedNodeRef.current;
       const focusNode = hovered ?? selected;
+      const hoverT = hoverDimRef.current;
+      const dimT = focusDimRef.current;
 
-      // 无 focus：默认淡灰细线
       if (!focusNode) {
         return { ...data, color: themeColors.edge, size: settings.edgeWidth };
       }
 
-      // Get source/target using graphology API
       const source = graph.source(edge);
       const target = graph.target(edge);
       const isConnected = source === focusNode || target === focusNode;
+      const origColor = (data.color as string) || themeColors.edge;
 
       if (isConnected) {
-        // 选中状态：粗紫线
         if (selected) {
-          return { ...data, color: themeColors.edgeSelected, size: 2 };
+          return {
+            ...data,
+            color: interpolateColor(origColor, themeColors.edgeSelected, dimT),
+            size: settings.edgeWidth + (2 - settings.edgeWidth) * dimT,
+            // 高亮边置顶，避免被后添加的淡化边遮挡
+            zIndex: 1,
+          };
         }
-        // hover：淡紫线
-        return { ...data, color: themeColors.edgeHover, size: 1.5 };
+        return {
+          ...data,
+          color: interpolateColor(origColor, themeColors.edgeHover, hoverT),
+          size: settings.edgeWidth + (1.5 - settings.edgeWidth) * hoverT,
+          zIndex: 1,
+        };
       }
-      // 非关联线：更淡
-      return { ...data, color: themeColors.dimmed, size: 0.5 };
+      const t = selected ? dimT : hoverT;
+      return {
+        ...data,
+        // 非关联边向背景色褪色，仅留淡痕（淡化但不融成完全不可见）
+        color: interpolateColor(origColor, themeColors.bg, t * EDGE_DIM_COLOR_RATIO),
+        size: settings.edgeWidth * (1 - t * EDGE_DIM_SIZE_RATIO),
+        zIndex: 0,
+      };
     };
 
     // ── Create Sigma ──
@@ -310,23 +400,31 @@ export function GraphPage() {
       defaultEdgeType: 'line',
       edgeLabelSize: 10,
       labelColor: { color: themeColors.label },
-      labelSize: 12,
+      labelSize: 14,
       labelFont: 'Inter, PingFang SC, -apple-system, sans-serif',
+      itemSizesReference: 'positions',
+      zoomingRatio: 1.08, // 小步长缩放，避免一滚跳太远
       // 标签按缩放级别自动显隐 — 缩小时只显示大节点标签
-      labelRenderedSizeThreshold: 5,
+      labelRenderedSizeThreshold: 16,
       labelDensity: 0.25,
       defaultNodeColor: themeColors.node,
       renderEdgeLabels: false,
       autoRescale: true,
       autoCenter: true,
       minCameraRatio: 0.2,
-      maxCameraRatio: 8,
+      maxCameraRatio: 80,
       stagePadding: 80,
+      // 开启 z-index 排序：高亮边（zIndex:1）绘制在淡化边（zIndex:0）之上，
+      // 避免选中节点的关联边被不相关边遮挡
+      zIndex: true,
       nodeReducer,
       edgeReducer,
     });
 
     sigmaRef.current = renderer;
+    // Set up camera inertia (smooth zoom/pan with decay)
+    const cleanupInertia = setupCameraInertia(renderer);
+
     renderer.refresh();
     // Start d3-force physics engine (positions sync on tick, rendering via interaction handlers)
     simulation.init(graph, renderer, () => {});
@@ -345,11 +443,78 @@ export function GraphPage() {
       });
     }
 
-    renderer.on('leaveNode', () => {
+    // ── Hover enter/leave with fade animation ──
+    renderer.on('enterNode', (e: { node: string }) => {
       if (draggedNode) return;
-      hoveredNodeRef.current = null;
-      renderer.refresh();
+      // 选中态下不触发 hover：避免 hover 高亮与点击聚焦并存/抢占
+      if (selectedNodeRef.current) return;
+      if (hoverLingerTimerRef.current) {
+        clearTimeout(hoverLingerTimerRef.current);
+        hoverLingerTimerRef.current = null;
+      }
+      hoveredNodeRef.current = e.node;
+      startHoverAnimation(1, 180);
     });
+
+    renderer.on('leaveNode', (e: { node: string }) => {
+      if (draggedNode) return;
+      if (selectedNodeRef.current) return;
+      const leavingNode = e.node;
+      if (hoverLingerTimerRef.current) clearTimeout(hoverLingerTimerRef.current);
+      hoverLingerTimerRef.current = setTimeout(() => {
+        // Start fade-out before clearing ref, so reducer still sees focusNode
+        startHoverAnimation(0, 250);
+        setTimeout(() => {
+          if (hoveredNodeRef.current === leavingNode) {
+            hoveredNodeRef.current = null;
+            renderer.refresh();
+          }
+        }, 250);
+      }, 150);
+    });
+
+    // ── Hover dim animation (RAF loop) ──
+    let hoverAnimFrame = 0;
+
+    function smoothstep(t: number) { return t * t * (3 - 2 * t); }
+
+    function startHoverAnimation(target: number, durationMs: number) {
+      cancelAnimationFrame(hoverAnimFrame);
+      const startVal = hoverDimRef.current;
+      const delta = target - startVal;
+      const startTime = performance.now();
+      if (Math.abs(delta) < 0.01) { hoverDimRef.current = target; return; }
+      function tick() {
+        const elapsed = performance.now() - startTime;
+        const t = Math.min(1, elapsed / durationMs);
+        hoverDimRef.current = startVal + delta * smoothstep(t);
+        if (t < 1) hoverAnimFrame = requestAnimationFrame(tick);
+        renderer.refresh();
+      }
+      requestAnimationFrame(tick);
+    }
+
+    // ── Focus dim animation (RAF loop) ──
+    let dimAnimFrame = 0;
+
+    function startDimAnimation(target: number, durationMs: number) {
+      cancelAnimationFrame(dimAnimFrame);
+      const startVal = focusDimRef.current;
+      const delta = target - startVal;
+      const startTime = performance.now();
+      if (Math.abs(delta) < 0.01) { focusDimRef.current = target; return; }
+      function tick() {
+        const elapsed = performance.now() - startTime;
+        const t = Math.min(1, elapsed / durationMs);
+        focusDimRef.current = startVal + delta * smoothstep(t);
+        if (t < 1) dimAnimFrame = requestAnimationFrame(tick);
+        renderer.refresh();
+      }
+      requestAnimationFrame(tick);
+    }
+
+    // 暴露 dim 动画给组件作用域（搜索选中节点时调用）
+    startDimAnimRef.current = startDimAnimation;
 
     // ── Click & Drag events ──
     // 使用原生鼠标事件处理节点交互；空白区域交给 Sigma 内置画布拖拽/缩放
@@ -358,7 +523,6 @@ export function GraphPage() {
     let lastClickTime = 0;
     let lastClickNode: string | null = null;
     const DRAG_THRESHOLD = 4;
-    const DBLCLICK_INTERVAL = 350;
     let dragStartMouse = { x: 0, y: 0 };
     const container = containerRef.current;
 
@@ -423,8 +587,14 @@ export function GraphPage() {
             d3Node.fx = null;
             d3Node.fy = null;
           }
-          selectedNodeRef.current = null;
-          renderer.refresh();
+          // Start restore animation before clearing ref
+          startDimAnimation(0, 200);
+          setTimeout(() => {
+            if (selectedNodeRef.current === prev) {
+              selectedNodeRef.current = null;
+              renderer.refresh();
+            }
+          }, 200);
         }
         // 不阻止默认行为 → Sigma 正常处理画布拖拽
       }
@@ -486,23 +656,23 @@ export function GraphPage() {
         // Small nudge for gradual convergence
         simulation.wake(0.1);
       } else {
-        // 点击（非拖拽）：检测双击
+        // 单击锁定聚焦（探索连接）；350ms 内再次单击同一节点 → 双击导航
         const now = Date.now();
-        const isDoubleClick =
-          node === lastClickNode && now - lastClickTime < DBLCLICK_INTERVAL;
+        const isDblClick = node === lastClickNode && now - lastClickTime < 350;
 
-        if (isDoubleClick) {
+        if (isDblClick) {
+          lastClickTime = 0;
+          lastClickNode = null;
           const path = graph.getNodeAttribute(node, 'path') as string | undefined;
           if (path) {
             navigate('/knowledge', { state: { openFile: path, vaultId: activeVaultId } });
           }
-          lastClickTime = 0;
-          lastClickNode = null;
         } else {
           selectedNodeRef.current = node;
           lastClickTime = now;
           lastClickNode = node;
-          renderer.refresh();
+          focusDimRef.current = 0;
+          startDimAnimation(1, 200);
         }
       }
 
@@ -525,6 +695,13 @@ export function GraphPage() {
       savedPositionsRef.current = positions;
 
       simulation.stop();
+      cleanupInertia();
+      startDimAnimRef.current = null;
+      cancelAnimationFrame(hoverAnimFrame);
+      if (hoverLingerTimerRef.current) {
+        clearTimeout(hoverLingerTimerRef.current);
+        hoverLingerTimerRef.current = null;
+      }
       container.removeEventListener('mousedown', handleMouseDown, { capture: true });
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
@@ -587,6 +764,76 @@ export function GraphPage() {
     });
     renderer.refresh();
   }, [settings.edgeWidth]);
+
+  // ── Node search (Ctrl/Cmd+F) ──
+  const searchMatches = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q || !graphData) return [];
+    return graphData.nodes
+      .filter((n) => n.label.toLowerCase().includes(q) || n.path.toLowerCase().includes(q))
+      .slice(0, 20);
+  }, [searchQuery, graphData]);
+
+  // 重置高亮索引当 matches 变化
+  useEffect(() => {
+    setSearchActiveIndex(0);
+  }, [searchMatches]);
+
+  const zoomToNode = useCallback((nodeKey: string) => {
+    const sigma = sigmaRef.current;
+    const graph = graphRef.current;
+    if (!sigma || !graph || !graph.hasNode(nodeKey)) return;
+    const attrs = graph.getNodeAttributes(nodeKey);
+    const x = (attrs.x as number) ?? 0;
+    const y = (attrs.y as number) ?? 0;
+    const camera = sigma.getCamera();
+    // 飞到节点：pan 到节点位置 + 缩放到能看清节点和邻居的级别
+    const targetRatio = Math.max(2.5, Math.min(camera.ratio, 4));
+    camera.animate({ x, y, ratio: targetRatio }, { duration: 600 });
+    // 选中高亮（带淡入动画）
+    selectedNodeRef.current = nodeKey;
+    focusDimRef.current = 0;
+    startDimAnimRef.current?.(1, 200);
+    sigma.refresh();
+  }, []);
+
+  const commitSearchResult = useCallback((nodeKey: string) => {
+    setSearchOpen(false);
+    setSearchQuery('');
+    zoomToNode(nodeKey);
+  }, [zoomToNode]);
+
+  // Ctrl/Cmd+F 打开搜索；Esc 关闭
+  useEffect(() => {
+    if (!graphData) return;
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        setSearchOpen(true);
+        setTimeout(() => searchInputRef.current?.focus(), 0);
+      } else if (e.key === 'Escape' && searchOpen) {
+        setSearchOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [graphData, searchOpen]);
+
+  const onSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && searchMatches.length > 0) {
+      e.preventDefault();
+      const match = searchMatches[Math.min(searchActiveIndex, searchMatches.length - 1)];
+      commitSearchResult(match.key);
+    } else if (e.key === 'ArrowDown' && searchMatches.length > 0) {
+      e.preventDefault();
+      setSearchActiveIndex((i) => (i + 1) % searchMatches.length);
+    } else if (e.key === 'ArrowUp' && searchMatches.length > 0) {
+      e.preventDefault();
+      setSearchActiveIndex((i) => (i - 1 + searchMatches.length) % searchMatches.length);
+    } else if (e.key === 'Escape') {
+      setSearchOpen(false);
+    }
+  };
 
   const nodeCount = graphData?.nodes.length ?? 0;
   const edgeCount = graphData?.edges.length ?? 0;
@@ -660,6 +907,54 @@ export function GraphPage() {
         )}
 
         <div ref={containerRef} className="graph-sigma" />
+
+        {/* 节点搜索浮层（Ctrl/Cmd+F 唤起） */}
+        {searchOpen && (
+          <div className="graph-search">
+            <div className="graph-search__box">
+              <svg className="graph-search__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="7" />
+                <line x1="16.5" y1="16.5" x2="21" y2="21" />
+              </svg>
+              <input
+                ref={searchInputRef}
+                className="graph-search__input"
+                placeholder="搜索节点…"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={onSearchKeyDown}
+                data-testid="graph-search-input"
+              />
+              <button
+                className="graph-search__close"
+                onClick={() => setSearchOpen(false)}
+                title="关闭 (Esc)"
+              >
+                ✕
+              </button>
+            </div>
+            {searchQuery.trim() && (
+              <div className="graph-search__results" data-testid="graph-search-results">
+                {searchMatches.length === 0 ? (
+                  <div className="graph-search__empty">无匹配节点</div>
+                ) : (
+                  searchMatches.map((n, i) => (
+                    <button
+                      key={n.key}
+                      className={`graph-search__result ${i === searchActiveIndex ? 'is-active' : ''}`}
+                      onMouseEnter={() => setSearchActiveIndex(i)}
+                      onClick={() => commitSearchResult(n.key)}
+                      data-testid="graph-search-result"
+                    >
+                      <span className="graph-search__result-label">{n.label}</span>
+                      {n.path && <span className="graph-search__result-path">{n.path}</span>}
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* 图谱设置面板 */}
         {graphData && showSettings && (
