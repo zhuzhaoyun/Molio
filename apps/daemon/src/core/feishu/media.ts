@@ -54,7 +54,9 @@ export async function materializeFeishuAttachments(
         ? sanitizeFileName(att.fileName)
         : `${stamp}-${index}.${ext}`;
       const outPath = path.join(dir, baseName);
-      fs.writeFileSync(outPath, data);
+      // Async write — writeFileSync would block the event loop for each
+      // attachment, stalling SSE/HTTP while a large file flushes to disk.
+      await fs.promises.writeFile(outPath, data);
 
       const label = att.kind === 'image' ? '图片' : '文件';
       const placeholder = att.kind === 'image'

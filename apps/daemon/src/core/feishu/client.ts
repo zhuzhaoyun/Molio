@@ -13,6 +13,13 @@ const TOKEN_REFRESH_SAFETY_MS = 5 * 60 * 1000;
 /** Hard cap on a single download's body size — prevents OOM on low-RAM
  * dev machines when the daemon proxies a 100MB Feishu attachment. */
 const DOWNLOAD_MAX_BYTES = 64 * 1024 * 1024;
+/** Hard cap on an upload's source file size. `resolveDeliverable` deliberately
+ * honors absolute paths in the AI's `<attach/>` marker, so the AI could point
+ * at an arbitrarily large file; `readFile` would buffer it fully and OOM the
+ * daemon before Feishu's own ~100MB file limit ever rejects it. Refuse up
+ * front with a clear error instead. Matches Feishu's max file size so no
+ * legitimate upload is lost. */
+const UPLOAD_MAX_BYTES = 100 * 1024 * 1024;
 
 function ensureTrailingSlash(url: string): string {
   return url.endsWith('/') ? url : `${url}/`;
@@ -114,11 +121,11 @@ export class FeishuApi {
   }
 
   /** Upload an image file (multipart) and return the `image_key`. */
-  async uploadImage(tenantAccessToken: string, filePath: string): Promise<string> {
+  async uploadImage(tenantAccessToken: string, filePath: string, maxBytes = UPLOAD_MAX_BYTES): Promise<string> {
     const url = `${ensureTrailingSlash(this.baseUrl)}open-apis/im/v1/images`;
     const form = new FormData();
     form.append('image_type', 'message');
-    const buf = await fs.promises.readFile(filePath);
+    const buf = await this.readFileCapped(filePath, maxBytes);
     const fileName = path.basename(filePath);
     form.append('image', new Blob([buf]), fileName);
 
@@ -140,12 +147,12 @@ export class FeishuApi {
   }
 
   /** Upload a file (multipart) and return the `file_key`. */
-  async uploadFile(tenantAccessToken: string, filePath: string): Promise<string> {
+  async uploadFile(tenantAccessToken: string, filePath: string, maxBytes = UPLOAD_MAX_BYTES): Promise<string> {
     const url = `${ensureTrailingSlash(this.baseUrl)}open-apis/im/v1/files`;
     const form = new FormData();
     form.append('file_type', 'stream');
     form.append('file_name', path.basename(filePath));
-    const buf = await fs.promises.readFile(filePath);
+    const buf = await this.readFileCapped(filePath, maxBytes);
     form.append('file', new Blob([buf]), path.basename(filePath));
 
     const res = await fetch(url, {
@@ -245,6 +252,21 @@ export class FeishuApi {
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  /**
+   * Read an upload's source file into a Buffer, refusing files larger than
+   * `maxBytes` (default `UPLOAD_MAX_BYTES`). Symmetric with `readCappedBody`
+   * on the download side — guards against the AI's `<attach/>` marker pointing
+   * at a multi-GB file that would otherwise be buffered fully and OOM the
+   * daemon before Feishu's own limit rejects it.
+   */
+  private async readFileCapped(filePath: string, maxBytes = UPLOAD_MAX_BYTES): Promise<Buffer> {
+    const stat = await fs.promises.stat(filePath);
+    if (stat.size > maxBytes) {
+      throw new Error(`Feishu upload file too large: ${stat.size} bytes > ${maxBytes}`);
+    }
+    return fs.promises.readFile(filePath);
   }
 
   /**
