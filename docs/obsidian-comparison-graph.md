@@ -379,7 +379,7 @@ Minimap          █████████████████████
 | **P1** | **碰撞检测改用边界距离** | 🟡 中 | 中 | ⭐⭐ 碰撞更自然 | ✅ 已完成（比例 padding + 3 次迭代） |
 | **P2** | **节点搜索** | 🟡 中 | 中 | ⭐⭐⭐ 定位节点 | ✅ 已完成（Ctrl/Cmd+F） |
 | **P2** | **数据内存缓存** | 🟢 低 | 少 | ⭐⭐ 切页面不重 fetch | ✅ 已完成（SWR） |
-| **P2** | **右键菜单（星标/隐藏）** | 🟡 中 | 中 | ⭐⭐ 节点级操作 | ⏳ 待做 |
+| **P2** | **右键菜单（星标/隐藏）** | 🟡 中 | 中 | ⭐⭐ 节点级操作 | ⏸️ 延后（详见 11.5） |
 | **P2** | **独立局部图面板** | 🟡 中 | 中 | ⭐⭐⭐ 邻居级数控制 | ⏳ 待做（见十一，多 Tab 实时性前置） |
 | **P2** | **Multi-Level 布局** | 🔴 高 | 多 | ⭐⭐⭐ 布局质量飞跃 | ⏳ 待做 |
 
@@ -424,7 +424,7 @@ Molio 图谱当前状态（2026-07-20 修订）：
   ✅ 数据缓存（SWR，进页面不重 fetch，本轮已改）
 
   ❌ Multi-Level 布局（仍是最大算法差距）
-  ❌ 右键菜单（星标/隐藏节点）
+  ⏸️ 右键菜单（星标/隐藏节点）— 延后（优先级不高，设计稿见 11.5）
   ❌ 独立局部图面板 + 邻居级数控制
   ⚠️ 实时性：图谱页停留期间无文件级实时更新（多 Tab 场景待解，见十一）
 
@@ -500,3 +500,32 @@ Molio 图谱当前状态（2026-07-20 修订）：
 - `enterNode`/`leaveNode` 开头加 `if (selectedNodeRef.current) return;`
 - 选中期间 `hoveredNodeRef` 始终为 null，reducer 的 `focusNode = hovered ?? selected` 稳定走 selected 分支
 - 点空白取消选中后，hover 自动恢复
+
+### 11.5 P2.3 右键菜单：延后决策与设计稿（2026-07-21）
+
+**决策**：P2.3 右键菜单**延后**。用户判断优先级不高（节点级操作非急需），当前聚焦实时性前置 + 布局本体。但设计稿留存，后续捡起不用重设计。
+
+**菜单设计**（基于节点属性 `key/label/path/linkCount/nodeType/deadLink` + 已有交互复用 `kb/ContextMenu.tsx`）：
+
+分 MVP / 进阶两档：
+
+- 🟢 **MVP**（纯前端、复用 `ContextMenu`、星标/隐藏用模块级 `Map<vaultId, Set<nodeKey>>`，跨 rebuild 保留、跨会话丢失）：
+
+  | 分组 | 项 | 实现 |
+  |---|---|---|
+  | 导航 | 打开文件 | 复用双击逻辑跳 `/knowledge?openFile=path` |
+  | 导航 | 复制路径 / 复制 wikilink `[[label]]` | `navigator.clipboard` |
+  | 聚焦 | 聚焦此节点 | 复用 `selectedNodeRef` |
+  | 聚焦 | 隐藏此节点 / 隐藏同类型 | `graph.setNodeAttribute(key,'hidden',true)` + 模块级 Set 记录，rebuild 后重新 apply |
+  | 星标 | 星标/取消星标 | nodeReducer 加 pinned 分支：forceLabel:true + 强调色 |
+  | 信息 | 节点信息 | 浮层显示 label/path/linkCount/nodeType/deadLink |
+
+  死链节点（无 `path`）菜单收敛为「查找同名文件」「新建文件 `targetName`」。
+
+- 🟡 **进阶**（留到 P2.4 或后续）：
+  - 隔离（只看此节点+邻居）、显示局部图（1/2/3 跳，实质即 P2.4）、星标/隐藏持久化（localStorage per vault）、重命名文件（需 daemon 改名+重写 wikilink，危险操作）
+
+**关键实现点**：
+- 星标/隐藏状态存哪：模块级 `Map<vaultId, Set<nodeKey>>`（推荐 MVP），和 `graphDataCache` 一套模式；持久化留进阶
+- 死链节点 key 形如 `__dead__xxx`，无 path，菜单按 `deadLink` flag 分支
+- 复用 `kb/ContextMenu.tsx` 的 `MenuItem` 接口（label/divider/onClick/danger/disabled/title）+ 边缘检测/Esc/点击外部关闭，触发源从文件树换成画布 `contextmenu` 事件
