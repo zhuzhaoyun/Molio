@@ -18,6 +18,7 @@ import { FeishuWSClient } from './ws-client.js';
 import { FeishuTokenStore } from './token-store.js';
 import { buildFeishuPrompt, parseFeishuMessage } from './message.js';
 import { materializeFeishuAttachments } from './media.js';
+import { materializeWikiLinks } from './wiki-fetcher.js';
 import type {
   FeishuAttachment,
   FeishuRawEvent,
@@ -131,11 +132,29 @@ export class FeishuService implements ChannelSink {
     return this.getStatus();
   }
 
-  async start(): Promise<FeishuStatus> {
-    const cfg = this.getConfig();
+  /**
+   * Bring the channel up.
+   *
+   * @param force Explicit-user-action semantics (the HTTP `POST /start`
+   *   button). When true, a disabled channel is re-enabled first (disconnect()
+   *   persists `enabled:false`) and any live/in-flight WS connection is torn
+   *   down so a fresh one is established — this is what powers "启动连接" after
+   *   a disconnect and "重新连接" while already connected. Boot auto-start and
+   *   the config-save path call `start()` WITHOUT force, so a disabled channel
+   *   still stays off across restarts and a healthy connection isn't disturbed.
+   */
+  async start(force = false): Promise<FeishuStatus> {
+    let cfg = this.getConfig();
     if (!cfg.enabled) {
-      this.status.enabled = false;
-      return this.getStatus();
+      if (!force) {
+        this.status.enabled = false;
+        return this.getStatus();
+      }
+      // Explicit "启动连接" — disconnect() disabled the channel, re-enable it.
+      const config = loadConfig();
+      config.feishu = { ...(config.feishu ?? {}), enabled: true };
+      saveConfig(config);
+      cfg = this.getConfig();
     }
     if (!cfg.appId || !cfg.appSecret) {
       this.transitionTo('idle');
@@ -145,9 +164,17 @@ export class FeishuService implements ChannelSink {
       return this.getStatus();
     }
 
-    // Already connected — let it continue.
-    if (this.connectionState === 'connected' && this.wsClient) return this.getStatus();
-    if (this.connectionState === 'connecting') return this.getStatus();
+    if (force) {
+      // "重新连接" — drop the existing WS client + token refresh so the code
+      // below re-establishes a fresh connection instead of no-op'ing on the
+      // already-connected guard.
+      await this.stopWSClient();
+      this.tokenStore.stopRefresh();
+    } else {
+      // Auto-start / config-save path — don't disturb a healthy connection.
+      if (this.connectionState === 'connected' && this.wsClient) return this.getStatus();
+      if (this.connectionState === 'connecting') return this.getStatus();
+    }
 
     this.transitionTo('connecting');
     this.status.loginStatus = 'connecting';
@@ -316,6 +343,19 @@ export class FeishuService implements ChannelSink {
         cwd,
         this.api ? (att: FeishuAttachment) => this.downloadAttachment(att) : undefined,
       );
+
+      // Pre-fetch feishu wiki/docx 正文 Markdown via the desktop-side
+      // BrowserView (env MOLIO_DESKTOP_FETCH_PORT points at the local HTTP
+      // server the Electron main process exposes). When port is unset (dev
+      // mode without Electron parent), this falls back to injecting a clear
+      // "未启用桌面端抓取" note alongside the URL — better than letting the
+      // agent try (and fail) to curl the URL through feishu's CDN edge wall.
+      // Must run BEFORE buildFeishuPrompt wraps the text so the prompt builder
+      // sees the injected markdown and reframes accordingly.
+      if (message.text) {
+        const wikiFetchPort = Number(process.env.MOLIO_DESKTOP_FETCH_PORT ?? '') || undefined;
+        message.text = await materializeWikiLinks(message.text, { port: wikiFetchPort });
+      }
 
       await this.dispatcher.dispatch({
         userId: message.fromUserId,

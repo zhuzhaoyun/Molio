@@ -16,7 +16,13 @@ type ChannelStatus = unknown;
  */
 interface ChannelServiceLike<TConfig> {
   getStatus(): ChannelStatus;
-  start(): ChannelStatus | Promise<ChannelStatus>;
+  /**
+   * `force` marks an explicit user action (the POST /start button) as opposed
+   * to boot auto-start. Channels may use it to re-enable a disabled channel /
+   * force a reconnect. Optional — services that don't need it (e.g. weixin,
+   * whose start takes no args) simply ignore the extra argument.
+   */
+  start(force?: boolean): ChannelStatus | Promise<ChannelStatus>;
   stop(): ChannelStatus | Promise<ChannelStatus>;
   disconnect(): ChannelStatus | Promise<ChannelStatus>;
   updateConfig(next: TConfig): ChannelStatus | Promise<ChannelStatus>;
@@ -35,7 +41,9 @@ export function channelRoutes<TConfig>(
 
   app.get('/status', (c) => c.json(service.getStatus()));
 
-  app.post('/start', async (c) => c.json(await service.start()));
+  // POST /start is the explicit user action — force=true so it re-enables a
+  // disconnected channel and reconnects even when already connected.
+  app.post('/start', async (c) => c.json(await service.start(true)));
 
   app.post('/stop', async (c) => c.json(await service.stop()));
 

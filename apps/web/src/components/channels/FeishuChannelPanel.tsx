@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, type FeishuStatus } from '../../api/client';
 import { useAgents } from '../../hooks/useAgents';
 import { useChannelStatus } from '../../hooks/useChannelStatus';
@@ -6,8 +6,26 @@ import { useI18n } from '../../i18n';
 
 const FEISHU_OPEN_BASE = 'https://open.feishu.cn/app';
 
+/** Poll cadence + cap while waiting for the login window to report success. */
+const LOGIN_POLL_INTERVAL_MS = 2000;
+const LOGIN_POLL_MAX_MS = 120_000;
+
 function openUrl(url: string) {
   window.open(url, '_blank', 'noopener,noreferrer');
+}
+
+interface FeishuLoginInfo {
+  loggedIn: boolean;
+}
+
+/** The subset of the Electron preload bridge this panel uses (absent in pure web/dev). */
+interface ElectronBridge {
+  openFeishuLogin?: (url?: string) => Promise<void>;
+  getFeishuLoginStatus?: () => Promise<FeishuLoginInfo>;
+}
+
+function getElectron(): ElectronBridge | undefined {
+  return (window as unknown as { __electron__?: ElectronBridge }).__electron__;
 }
 
 export function FeishuChannelPanel() {
@@ -19,6 +37,8 @@ export function FeishuChannelPanel() {
   const [appId, setAppId] = useState('');
   const [appSecret, setAppSecret] = useState('');
   const [defaultAgentId, setDefaultAgentId] = useState('');
+  const [loginInfo, setLoginInfo] = useState<FeishuLoginInfo | null>(null);
+  const loginPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     api.getConfig()
@@ -51,6 +71,49 @@ export function FeishuChannelPanel() {
   const handleDisconnect = useCallback(() => {
     void runAction(() => api.disconnectFeishu());
   }, [runAction]);
+
+  const stopLoginPoll = useCallback(() => {
+    if (loginPollRef.current) {
+      clearInterval(loginPollRef.current);
+      loginPollRef.current = null;
+    }
+  }, []);
+
+  const refreshLoginStatus = useCallback(async (): Promise<FeishuLoginInfo | null> => {
+    const electron = getElectron();
+    if (!electron?.getFeishuLoginStatus) return null;
+    try {
+      const info = await electron.getFeishuLoginStatus();
+      setLoginInfo(info);
+      return info;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  // Initial read + cleanup of any in-flight poll on unmount.
+  useEffect(() => {
+    void refreshLoginStatus();
+    return () => stopLoginPoll();
+  }, [refreshLoginStatus, stopLoginPoll]);
+
+  const handleLogin = useCallback(() => {
+    const electron = getElectron();
+    if (!electron?.openFeishuLogin) {
+      alert(t('channels.feishu.login.hint'));
+      return;
+    }
+    void electron.openFeishuLogin();
+    // Poll for login success (the login window auto-closes once detected); stop
+    // once loggedIn flips true or after a cap so we don't poll forever.
+    stopLoginPoll();
+    const startedAt = Date.now();
+    loginPollRef.current = setInterval(() => {
+      void refreshLoginStatus().then((info) => {
+        if (info?.loggedIn || Date.now() - startedAt > LOGIN_POLL_MAX_MS) stopLoginPoll();
+      });
+    }, LOGIN_POLL_INTERVAL_MS);
+  }, [refreshLoginStatus, stopLoginPoll, t]);
 
   const loginStatus = status?.loginStatus ?? 'idle';
   const connected = !!status?.connected;
@@ -116,11 +179,9 @@ export function FeishuChannelPanel() {
                       autoComplete="off"
                     />
                   </label>
-                </div>
-                <div className="channels-feishu-credentials-actions">
                   <button
                     type="button"
-                    className="rt-btn rt-btn--sm"
+                    className="rt-btn channels-feishu-save"
                     onClick={handleSave}
                     disabled={busy}
                   >
@@ -217,6 +278,48 @@ export function FeishuChannelPanel() {
               </div>
             </li>
           </ol>
+        </div>
+
+        <div className="channels-feishu-login">
+          <div className="channels-feishu-login__body">
+            <h3 className="channels-feishu-login__title">
+              {t('channels.feishu.login.title')}
+              <span className="channels-badge" data-testid="feishu-login-optional-badge">
+                {t('channels.feishu.login.optional')}
+              </span>
+            </h3>
+            <p className="channels-feishu-login__desc">{t('channels.feishu.login.desc')}</p>
+            <p className="channels-feishu-login__hint">{t('channels.feishu.login.hint')}</p>
+            {loginInfo && (
+              <div className="channels-feishu-login__status" data-testid="feishu-login-status">
+                {loginInfo.loggedIn ? (
+                  <span className="channels-feishu-login__status-on">
+                    {t('channels.feishu.login.status.loggedIn')}
+                  </span>
+                ) : (
+                  <span className="channels-feishu-login__status-off">
+                    {t('channels.feishu.login.status.notLoggedIn')}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  className="rt-btn rt-btn--xs rt-btn--ghost"
+                  data-testid="feishu-login-refresh-btn"
+                  onClick={() => void refreshLoginStatus()}
+                >
+                  {t('channels.feishu.login.refresh')}
+                </button>
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            className="rt-btn rt-btn--sm rt-btn--ghost"
+            data-testid="feishu-login-btn"
+            onClick={handleLogin}
+          >
+            {t('channels.feishu.login.button')}
+          </button>
         </div>
 
         {status?.lastMessageAt && (

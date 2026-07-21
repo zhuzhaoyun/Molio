@@ -142,4 +142,30 @@ describe('buildFeishuPrompt', () => {
     const text = '今天天气如何';
     assert.equal(buildFeishuPrompt(text), text);
   });
+
+  it('frames injected markdown (success path) — tells agent not to re-fetch', () => {
+    const text = [
+      '## 来源: https://geekbang.feishu.cn/wiki/AbC123',
+      '',
+      '# 飞书文档标题',
+      '',
+      '正文段落。',
+    ].join('\n');
+    const prompt = buildFeishuPrompt(text);
+    assert.ok(prompt.includes('已附带抓取好的 Markdown 正文'));
+    assert.ok(prompt.includes('不要再去 fetch'));
+    assert.ok(prompt.includes(text));
+  });
+
+  it('frames the fetch-failure note — tells agent to surface the reason', () => {
+    const text = [
+      'https://geekbang.feishu.cn/wiki/AbC123',
+      '',
+      '[注: 检测到未登录该飞书租户，请在 Molio 设置 → 飞书渠道 → 登录飞书账号，登录后重试]',
+    ].join('\n');
+    const prompt = buildFeishuPrompt(text);
+    assert.ok(prompt.includes('未能自动抓取其正文'));
+    assert.ok(prompt.includes('登录飞书账号'));
+    assert.ok(prompt.includes(text));
+  });
 });

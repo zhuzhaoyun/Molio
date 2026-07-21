@@ -115,8 +115,41 @@ export function looksLikeArticleUrl(text: string): boolean {
  * Wrap the raw user text with the feishu-channel context frame. Kept
  * symmetrical with `weixin/message.ts:buildMolioPrompt` so the wiki-article
  * extraction path stays identical across channels.
+ *
+ * Detects three shapes produced by `materializeWikiLinks` (daemon):
+ * 1. Wiki 正文已抓回 → text starts with `# <title>` or `## 来源: <url>`.
+ *    Frame the agent to read the embedded markdown (don't re-fetch the URL).
+ * 2. 抓取失败但有 [注: ...] 提示 → tell the agent to surface the failure
+ *    reason to the user.
+ * 3. Plain mp.weixin article URL (unchanged legacy path) → frame the agent
+ *    to fetch & summarize.
  */
 export function buildFeishuPrompt(text: string): string {
+  if (!text) return text;
+
+  // Case 1: materializeWikiLinks injected a Markdown body.
+  const hasInjectedMarkdown = /^#\s+\S/m.test(text) || /^##\s+来源:\s+https?/m.test(text);
+  if (hasInjectedMarkdown) {
+    return [
+      '这是从飞书通道收到的消息，已附带抓取好的 Markdown 正文。请直接基于正文内容回答用户问题、总结要点，并询问是否需要保存到知识库。',
+      '不要再去 fetch 链接 — 正文已经在下方提供。',
+      '',
+      text,
+    ].join('\n');
+  }
+
+  // Case 2: materializeWikiLinks injected a failure note like
+  // `<url>\n\n[注: ...]`. The note text starts with 「[注:」.
+  if (/\n\s*\[注:/m.test(text) && /feishu\.cn|larksuite\.com/i.test(text)) {
+    return [
+      '这是从飞书通道收到的文档链接，但 Molio 未能自动抓取其正文（具体原因见下方 [注: ...] 说明）。',
+      '请向用户简要说明发生了什么，并建议用户：① 在 Molio 设置 → 飞书渠道点击「登录飞书账号」登录对应租户，或 ② 在飞书内导出 Markdown / 截图后重发。',
+      '',
+      text,
+    ].join('\n');
+  }
+
+  // Case 3 (legacy): mp.weixin article URL — let the agent fetch & summarize.
   if (!looksLikeArticleUrl(text)) return text;
 
   return [

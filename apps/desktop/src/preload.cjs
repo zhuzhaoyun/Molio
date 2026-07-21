@@ -38,6 +38,21 @@ const desktopAPI = {
   restartApp: () => ipcRenderer.invoke('app:restart'),
 
   /**
+   * Open a visible BrowserWindow that shares the `feishu` session partition
+   * with the hidden wiki-fetcher window, so the user can log into a Feishu
+   * tenant (e.g. https://geekbang.feishu.cn). Cookies persist to disk and
+   * subsequent fetches by wiki-fetcher will carry them automatically.
+   * Optional targetUrl switches to a specific tenant domain.
+   */
+  openFeishuLogin: (targetUrl) => ipcRenderer.invoke('molio:open-feishu-login', targetUrl),
+
+  /**
+   * Read the Feishu login state from the shared `feishu` session partition
+   * (cookie-based, survives restarts). Returns { loggedIn, tenants }.
+   */
+  getFeishuLoginStatus: () => ipcRenderer.invoke('molio:get-feishu-login-status'),
+
+  /**
    * Subscribe to in-page navigation requests from the main process
    * (triggered by molio://open/... when the app is already running).
    * Avoids a full reload — the SPA routes to the file via React Router.

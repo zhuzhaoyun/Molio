@@ -126,6 +126,67 @@ describe('FeishuService', () => {
     });
   });
 
+  describe('start(force) — explicit user action', () => {
+    // An unreachable baseUrl makes the token fetch fail fast (ECONNREFUSED) so
+    // these tests exercise the connect path without real network access.
+    const UNREACHABLE = 'http://127.0.0.1:1';
+
+    it('bug: 启动连接 after disconnect re-enables the channel (force) but auto-start stays off', async () => {
+      saveConfig({
+        agents: {},
+        feishu: { enabled: true, appId: 'a', appSecret: 'b', baseUrl: UNREACHABLE },
+      } as AppConfig);
+
+      await service.disconnect();
+      assert.equal(loadConfig().feishu?.enabled, false, 'disconnect should disable the channel');
+
+      // Boot auto-start (no force) must NOT re-enable a disabled channel.
+      const autoStatus = await service.start();
+      assert.equal(loadConfig().feishu?.enabled, false, 'auto-start must leave a disabled channel off');
+      assert.equal(autoStatus.connectionState, 'idle');
+
+      // Explicit "启动连接" (force) re-enables and attempts to connect — it gets
+      // past the disabled guard and reaches the token step (error here only
+      // because the baseUrl is unreachable, NOT because it stayed idle/disabled).
+      const forcedStatus = await service.start(true);
+      assert.equal(loadConfig().feishu?.enabled, true, 'force start should re-enable the channel');
+      assert.notEqual(forcedStatus.connectionState, 'idle', 'force start should attempt a connection');
+    });
+
+    it('bug: 重新连接 while connected tears down the live WS client (force), auto-start no-ops', async () => {
+      saveConfig({
+        agents: {},
+        feishu: { enabled: true, appId: 'a', appSecret: 'b', baseUrl: UNREACHABLE },
+      } as AppConfig);
+
+      const s = service as unknown as {
+        connectionState: string;
+        status: { connected: boolean };
+        wsClient: { stop: () => Promise<void> } | null;
+      };
+
+      // Simulate an already-connected state with a live WS client.
+      let stoppedByAuto = false;
+      s.connectionState = 'connected';
+      s.status.connected = true;
+      s.wsClient = { stop: async () => { stoppedByAuto = true; } };
+
+      // Auto-start (no force) must leave the healthy connection untouched.
+      await service.start();
+      assert.equal(stoppedByAuto, false, 'auto-start must not tear down a healthy connection');
+      assert.ok(s.wsClient, 'auto-start must keep the existing wsClient');
+
+      // Explicit "重新连接" (force) must tear down the live client to reconnect.
+      let stoppedByForce = false;
+      s.connectionState = 'connected';
+      s.status.connected = true;
+      s.wsClient = { stop: async () => { stoppedByForce = true; } };
+      await service.start(true);
+      assert.equal(stoppedByForce, true, 'force start must tear down the live WS client to reconnect');
+      assert.equal(s.wsClient, null, 'force start should drop the old wsClient before re-establishing');
+    });
+  });
+
   describe('handleRawMessage — /new command', () => {
     it('closes the external session and cancels the reusable run on /new', async () => {
       const openId = 'ou_test_user';
