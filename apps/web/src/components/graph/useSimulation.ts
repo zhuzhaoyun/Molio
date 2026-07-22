@@ -174,6 +174,10 @@ export function useSimulation(): SimulationAPI {
   // ── Init ──
 
   const init = useCallback((graph: Graph, sigma: Sigma, _onTick?: () => void) => {
+    // Reset ML state in case init is called mid-ML
+    mlRunningRef.current = false;
+    mlOnProgressRef.current = null;
+
     // Kill previous
     const prevMode = modeRef.current;
     if (prevMode === 'worker' && workerRef.current) {
