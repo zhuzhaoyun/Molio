@@ -25,7 +25,7 @@ import {
 } from 'd3-force';
 import type Graph from 'graphology';
 import type Sigma from 'sigma';
-import type { ForceParams } from './types';
+import type { ForceParams, MultiLevelParams } from './types';
 import { DEFAULT_FORCE_PARAMS } from './types';
 
 // ── Constants ──
@@ -71,6 +71,7 @@ export interface SimulationAPI {
   stop: () => void;
   getNode: (id: string) => NodeHandle | undefined;
   setForceParam: (name: string, value: number) => void;
+  multiLevel: (params?: MultiLevelParams) => void;
 }
 
 // ── Hook ──
@@ -89,6 +90,10 @@ export function useSimulation(): SimulationAPI {
   // Worker specific
   const workerRef = useRef<Worker | null>(null);
 
+  // Multi-level layout state
+  const mlRunningRef = useRef(false);
+  const mlOnProgressRef = useRef<((phase: string, progress: number) => void) | null>(null);
+
   // ── Stop ──
 
   const stop = useCallback(() => {
@@ -106,7 +111,65 @@ export function useSimulation(): SimulationAPI {
     nodeHandlesRef.current.clear();
     graphRef.current = null;
     modeRef.current = null;
+    mlRunningRef.current = false;
+    mlOnProgressRef.current = null;
   }, []);
+
+  // ── Worker message handler ──
+
+  function createWorkerHandler() {
+    return (e: MessageEvent) => {
+      const data = e.data as {
+        type: string;
+        positions?: Record<string, { x: number; y: number }>;
+        phase?: string;
+        progress?: number;
+        error?: string;
+      };
+
+      const g = graphRef.current;
+      if (!g) return;
+
+      switch (data.type) {
+        case 'tick':
+          if (data.positions) {
+            for (const [id, pos] of Object.entries(data.positions)) {
+              if (g.hasNode(id)) g.setNodeAttribute(id, 'x', pos.x);
+              if (g.hasNode(id)) g.setNodeAttribute(id, 'y', pos.y);
+            }
+          }
+          break;
+
+        case 'multi-level-progress':
+          mlOnProgressRef.current?.(data.phase ?? '', data.progress ?? 0);
+          break;
+
+        case 'coarse-tick':
+          if (data.positions) {
+            for (const [id, pos] of Object.entries(data.positions)) {
+              if (g.hasNode(id)) g.setNodeAttribute(id, 'x', pos.x);
+              if (g.hasNode(id)) g.setNodeAttribute(id, 'y', pos.y);
+            }
+          }
+          break;
+
+        case 'multi-level-done':
+          if (data.positions) {
+            for (const [id, pos] of Object.entries(data.positions)) {
+              if (g.hasNode(id)) g.setNodeAttribute(id, 'x', pos.x);
+              if (g.hasNode(id)) g.setNodeAttribute(id, 'y', pos.y);
+            }
+          }
+          mlRunningRef.current = false;
+          break;
+
+        case 'multi-level-error':
+          console.warn('[worker] multi-level error:', data.error);
+          mlRunningRef.current = false;
+          break;
+      }
+    };
+  }
 
   // ── Init ──
 
@@ -215,23 +278,7 @@ export function useSimulation(): SimulationAPI {
     const worker = new Worker(new URL('./simulation.worker.ts', import.meta.url), { type: 'module' });
     workerRef.current = worker;
 
-    worker.onmessage = (e: MessageEvent) => {
-      const { type, positions } = e.data as {
-        type: string;
-        positions?: Record<string, { x: number; y: number }>;
-      };
-
-      if (type === 'tick' && positions) {
-        const g = graphRef.current;
-        if (!g) return;
-        for (const [id, pos] of Object.entries(positions)) {
-          if (g.hasNode(id)) {
-            g.setNodeAttribute(id, 'x', pos.x);
-            g.setNodeAttribute(id, 'y', pos.y);
-          }
-        }
-      }
-    };
+    worker.onmessage = createWorkerHandler();
 
     worker.postMessage({ type: 'init', nodes, links, params });
   }
@@ -283,7 +330,64 @@ export function useSimulation(): SimulationAPI {
     sim.alpha(0.3).restart();
   }, []);
 
-  return { init, wake, stop, getNode, setForceParam };
+  // ── Multi-Level Layout ──
+
+  const multiLevel = useCallback((params?: MultiLevelParams) => {
+    if (mlRunningRef.current) return;
+
+    const graph = graphRef.current;
+    if (!graph || graph.order === 0) return;
+
+    // Check skip conditions
+    const minNodes = params?.minNodes ?? 50;
+    if (graph.order < minNodes) return;
+
+    mlRunningRef.current = true;
+    mlOnProgressRef.current = params?.onProgress ?? null;
+
+    // Collect node data
+    const nodes: { id: string; x: number; y: number; radius: number }[] = [];
+    graph.forEachNode((key, attrs) => {
+      nodes.push({
+        id: key,
+        x: (attrs.x as number) ?? 0,
+        y: (attrs.y as number) ?? 0,
+        radius: Math.max((attrs.size as number) ?? 6, 4),
+      });
+    });
+
+    const links: { source: string; target: string }[] = [];
+    graph.forEachEdge((_key, _attrs, source, target) => {
+      links.push({ source: source as string, target: target as string });
+    });
+
+    // Ensure worker exists (if main-thread mode, create one for ML)
+    if (modeRef.current !== 'worker' || !workerRef.current) {
+      if (simRef.current) {
+        simRef.current.stop();
+        simRef.current = null;
+      }
+      const worker = new Worker(
+        new URL('./simulation.worker.ts', import.meta.url),
+        { type: 'module' },
+      );
+      workerRef.current = worker;
+      modeRef.current = 'worker';
+      worker.onmessage = createWorkerHandler();
+    }
+
+    workerRef.current.postMessage({
+      type: 'multi-level-init',
+      nodes,
+      links,
+      params: { ...initParamsRef.current },
+      maxLevels: params?.maxLevels ?? 5,
+      minFraction: params?.minSizeFraction ?? 0.05,
+      refineTicks: params?.refineTicks ?? 80,
+    });
+  }, []);
+
+  return { init, wake, stop, getNode, setForceParam, multiLevel };
 }
 
 // ── Main-Thread Node Handle ──
