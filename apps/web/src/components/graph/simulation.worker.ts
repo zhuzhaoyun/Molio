@@ -331,7 +331,7 @@ function coarseLayoutSync(
   edges: CoarseEdge[],
   params: ForceParams,
   onPositionUpdate: (positions: Record<string, { x: number; y: number }>) => void,
-): Map<number, { x: number; y: number }> {
+): Map<string, { x: number; y: number }> {
   // Build flat d3-force nodes (no members, just supernode IDs)
   const d3Nodes = supernodes.map((n) => ({
     id: n.id,
@@ -378,8 +378,8 @@ function coarseLayoutSync(
   }
   sim.stop();
 
-  const positions = new Map<number, { x: number; y: number }>();
-  for (const n of d3Nodes) positions.set(n.id, { x: n.x ?? 0, y: n.y ?? 0 });
+  const positions = new Map<string, { x: number; y: number }>();
+  for (const n of d3Nodes) positions.set(String(n.id), { x: n.x ?? 0, y: n.y ?? 0 });
   return positions;
 }
 
@@ -391,7 +391,7 @@ function coarseLayoutSync(
  */
 function prolongateAndRefine(
   levels: CoarseLevel[],
-  coarsestPositions: Map<number, { x: number; y: number }>,
+  coarsestPositions: Map<string, { x: number; y: number }>,
   originalNodes: { id: string; radius: number }[],
   originalEdges: { source: string; target: string }[],
   params: ForceParams,
@@ -399,7 +399,7 @@ function prolongateAndRefine(
 ): Record<string, { x: number; y: number }> {
   // Map keys transition from number (supernode IDs) to string (original node IDs)
   // during prolongation; type widened to support both.
-  let currentPositions: Map<any, { x: number; y: number }> = coarsestPositions as any;
+  let currentPositions: Map<string, { x: number; y: number }> = coarsestPositions;
 
   // Prolongate: coarsest → level[last - 1] → ... → level[0] (which maps to original nodes)
   for (let li = levels.length - 1; li >= 0; li--) {
@@ -407,7 +407,7 @@ function prolongateAndRefine(
     const nextPositions = new Map<string, { x: number; y: number }>();
 
     for (const sn of level.supernodes) {
-      const superPos = currentPositions.get(sn.id);
+      const superPos = currentPositions.get(String(sn.id));
       if (!superPos) continue;
       const scale = Math.max(2, sn.radius * 0.3);
       for (const memberId of sn.members) {
