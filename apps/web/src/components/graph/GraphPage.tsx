@@ -366,6 +366,10 @@ export function GraphPage() {
     });
 
     sigmaRef.current = renderer;
+    // 暴露给 E2E：WebGL 无 DOM 可查，测试通过 window.__sigma/__graph 检查
+    // 相机/节点渲染状态（如 graph-search.spec.ts 验证搜索后节点在视口内）。
+    (window as unknown as Record<string, unknown>).__sigma = renderer;
+    (window as unknown as Record<string, unknown>).__graph = graph;
     // Set up camera inertia (smooth zoom/pan with decay)
     const cleanupInertia = setupCameraInertia(renderer);
 
@@ -733,7 +737,13 @@ export function GraphPage() {
     const camera = sigma.getCamera();
     // 飞到节点：pan 到节点位置 + 缩放到能看清节点和邻居的级别
     const targetRatio = Math.max(2.5, Math.min(camera.ratio, 4));
-    camera.animate({ x, y, ratio: targetRatio }, { duration: 600 });
+    // Sigma 相机工作在归一化（framed）坐标空间：节点位置经 normalizationFunction
+    // 归一化到以 0.5 为中心、跨度约 1 的区间，相机的 x/y 也在这个空间里。
+    // attrs.x/y 是原始图坐标，不能直接喂给 camera.animate——否则相机会把原始值
+    // 当成归一化值，飞到 extent×ratio 远处，整张图渲染空白、交互失效。
+    // viewportToFramedGraph(graphToViewport(p)) 等价于 normalizationFunction(p)（公开 API）。
+    const framed = sigma.viewportToFramedGraph(sigma.graphToViewport({ x, y }));
+    camera.animate({ x: framed.x, y: framed.y, ratio: targetRatio }, { duration: 600 });
     // 选中高亮（带淡入动画）
     selectedNodeRef.current = nodeKey;
     focusDimRef.current = 0;
