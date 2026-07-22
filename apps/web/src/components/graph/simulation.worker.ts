@@ -361,23 +361,20 @@ function coarseLayoutSync(
   }));
 
   const sim = forceSimulation(d3Nodes as any)
-    .force(
-      'link',
-      forceLink(d3Links)
-        .id((d: any) => d.id)
-        .distance(params.linkDistance * 1.3)
-        .strength((d: any) => d.strength),
-    )
-    .force('charge', forceManyBody().strength(params.repelStrength * 1.3).distanceMax(300))
+    .force('link', forceLink(d3Links)
+      .id((d: any) => d.id)
+      .distance(params.linkDistance)
+      .strength((d: any) => d.strength))
+    .force('charge', forceManyBody().strength(params.repelStrength).distanceMax(250))
     .force('collide', forceCollide().radius((d: any) => d.radius * 1.35).iterations(3))
-    .force('x', forceX().strength(0.002))
-    .force('y', forceY().strength(0.002))
-    .alphaDecay(0.02)
+    .force('x', forceX().strength(params.centerStrength))
+    .force('y', forceY().strength(params.centerStrength))
+    .alphaDecay(0.03)
     .velocityDecay(0.35);
 
   let tickCount = 0;
   const MAX_TICKS = 2000;
-  const SEND_INTERVAL = 3;
+  const SEND_INTERVAL = 12;
 
   while (sim.alpha() >= 0.001 && tickCount < MAX_TICKS) {
     sim.tick();
@@ -422,7 +419,7 @@ function prolongateAndRefine(
     for (const sn of level.supernodes) {
       const superPos = currentPositions.get(String(sn.id));
       if (!superPos) continue;
-      const scale = Math.max(2, sn.radius * 0.3);
+      const scale = Math.max(1, sn.radius * 0.05);
       for (const memberId of sn.members) {
         nextPositions.set(memberId, {
           x: superPos.x + (Math.random() - 0.5) * scale,
@@ -450,12 +447,12 @@ function prolongateAndRefine(
   const sim = forceSimulation(d3Nodes as any)
     .force('link', forceLink(d3Links).id((d: any) => d.id)
       .distance(params.linkDistance).strength(params.linkStrength))
-    .force('charge', forceManyBody().strength(params.repelStrength * 0.2).distanceMax(100))
+    .force('charge', forceManyBody().strength(params.repelStrength).distanceMax(250))
     .force('collide', forceCollide().radius((d: any) => d.radius * 1.35).iterations(3))
-    .force('x', forceX().strength(0.002))
-    .force('y', forceY().strength(0.002))
-    .alphaDecay(0.08)
-    .velocityDecay(0.4);
+    .force('x', forceX().strength(params.centerStrength))
+    .force('y', forceY().strength(params.centerStrength))
+    .alphaDecay(0.03)
+    .velocityDecay(0.35);
 
   for (let i = 0; i < refineTicks; i++) sim.tick();
   sim.stop();
@@ -481,7 +478,7 @@ function handleMultiLevelInit(msg: {
   try {
     const maxLevels = msg.maxLevels ?? 5;
     const minFraction = msg.minFraction ?? 0.05;
-    const refineTicks = msg.refineTicks ?? 40;
+    const refineTicks = msg.refineTicks ?? 250;
     const origNodes = msg.nodes.map((n) => ({ id: n.id, radius: n.radius }));
     const origEdges = msg.links;
 
