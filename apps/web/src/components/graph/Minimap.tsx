@@ -52,7 +52,6 @@ export function Minimap({ sigma }: Props) {
 
     function draw() {
       const graph = sigma!.getGraph();
-      const camera = sigma!.getCamera();
       const dims = sigma!.getDimensions();
 
       // Collect node positions and compute bounds
@@ -98,12 +97,27 @@ export function Minimap({ sigma }: Props) {
         context.fillRect(x - 1, y - 1, 2, 2);
       });
 
-      const viewHW = dims.width / camera.ratio / 2;
-      const viewHH = dims.height / camera.ratio / 2;
-      const vx = (camera.x - viewHW) * scale + offsetX;
-      const vy = (camera.y - viewHH) * scale + offsetY;
-      const vw = viewHW * 2 * scale;
-      const vh = viewHH * 2 * scale;
+      // 视口框：camera.x/y 是归一化坐标，不能和原始图坐标混用（同 zoomToNode 的
+      // 坐标系坑）。改用 viewportToGraph 求四角的可视区域（原始图坐标），与
+      // 节点共用同一套 scale/offset 映射，视口框才落在正确位置。
+      const corners: [number, number][] = [
+        [0, 0],
+        [dims.width, 0],
+        [0, dims.height],
+        [dims.width, dims.height],
+      ];
+      let vMinX = Infinity, vMaxX = -Infinity, vMinY = Infinity, vMaxY = -Infinity;
+      for (const [px, py] of corners) {
+        const gp = sigma!.viewportToGraph({ x: px, y: py });
+        if (gp.x < vMinX) vMinX = gp.x;
+        if (gp.x > vMaxX) vMaxX = gp.x;
+        if (gp.y < vMinY) vMinY = gp.y;
+        if (gp.y > vMaxY) vMaxY = gp.y;
+      }
+      const vx = vMinX * scale + offsetX;
+      const vy = vMinY * scale + offsetY;
+      const vw = (vMaxX - vMinX) * scale;
+      const vh = (vMaxY - vMinY) * scale;
 
       context.fillStyle = VIEWPORT_FILL;
       context.fillRect(vx, vy, vw, vh);

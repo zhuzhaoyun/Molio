@@ -17,6 +17,7 @@ import { useI18n } from '../../i18n';
 import { useActiveVaultId, vaultStore } from '../../stores/vaultStore';
 import { useGraphSettings } from './useGraphSettings';
 import { GraphSettingsPanel } from './GraphSettingsPanel';
+import { Minimap } from './Minimap';
 import { getThemeColors } from './types';
 import { setupCameraInertia } from './useCameraInertia';
 import { NODE_TYPE_COLORS, nodeSize, nodeColor, interpolateColor } from './graph-utils';
@@ -74,6 +75,9 @@ export function GraphPage() {
 
   const containerRef = useRef<HTMLDivElement>(null);
   const sigmaRef = useRef<Sigma | null>(null);
+  // sigma 在 effect 里创建、存于 ref（不触发重渲染）。Minimap 需要 sigma 作 prop，
+  // 用 state 镜像让其在 sigma 就绪后挂载。
+  const [sigmaInstance, setSigmaInstance] = useState<Sigma | null>(null);
   const graphRef = useRef<Graph | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   // 暴露 effect 内的 dim 动画函数给组件作用域（搜索选中时用）
@@ -366,6 +370,7 @@ export function GraphPage() {
     });
 
     sigmaRef.current = renderer;
+    setSigmaInstance(renderer);
     // 暴露给 E2E：WebGL 无 DOM 可查，测试通过 window.__sigma/__graph 检查
     // 相机/节点渲染状态（如 graph-search.spec.ts 验证搜索后节点在视口内）。
     (window as unknown as Record<string, unknown>).__sigma = renderer;
@@ -658,6 +663,7 @@ export function GraphPage() {
         sigmaRef.current.kill();
         sigmaRef.current = null;
       }
+      setSigmaInstance(null);
       graphRef.current = null;
       hoveredNodeRef.current = null;
       selectedNodeRef.current = null;
@@ -861,6 +867,8 @@ export function GraphPage() {
         )}
 
         <div ref={containerRef} className="graph-sigma" />
+
+        {sigmaInstance && <Minimap sigma={sigmaInstance} />}
 
         {/* 节点搜索浮层（Ctrl/Cmd+F 唤起） */}
         {searchOpen && (
