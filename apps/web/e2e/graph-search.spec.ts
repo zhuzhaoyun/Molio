@@ -112,4 +112,50 @@ test.describe('Graph node search', () => {
 
     expect(inView).toBeGreaterThan(0);
   });
+
+  test('does not move camera when searched node is already in viewport', async ({ page }) => {
+    await gotoHome(page);
+    await clickNav(page, 'graph');
+    await page.waitForSelector('.graph-sigma canvas', { timeout: 15_000 });
+    await page.waitForTimeout(3000); // 等模拟沉降
+
+    // 先把相机对准 beta（归一化坐标），确保它落在「舒适可视区」内
+    const before = await page.evaluate(() => {
+      const s = (window as unknown as { __sigma?: any; __graph?: any }).__sigma;
+      const g = (window as unknown as { __sigma?: any; __graph?: any }).__graph;
+      if (!s || !g) return null;
+      const keys: string[] = [];
+      g.forEachNode((k: string) => keys.push(k));
+      const betaKey = keys.find((k) => k.includes('beta'));
+      if (!betaKey) return null;
+      const a = g.getNodeAttributes(betaKey);
+      const framed = s.viewportToFramedGraph(s.graphToViewport({ x: a.x, y: a.y }));
+      s.getCamera().setState({ x: framed.x, y: framed.y, ratio: 2 });
+      const c = s.getCamera().getState();
+      return { x: c.x, y: c.y, ratio: c.ratio };
+    });
+    expect(before).not.toBeNull();
+
+    // UI 搜索 beta 并点击结果
+    await page.waitForTimeout(500);
+    await page.keyboard.press('Control+f');
+    const input = page.locator('[data-testid="graph-search-input"]');
+    await expect(input).toBeVisible({ timeout: 5_000 });
+    await input.fill('beta');
+    const firstResult = page.locator('[data-testid="graph-search-result"]').first();
+    await expect(firstResult).toBeVisible({ timeout: 5_000 });
+    await firstResult.click();
+    await page.waitForTimeout(1200);
+
+    const after = await page.evaluate(() => {
+      const s = (window as unknown as { __sigma?: any }).__sigma;
+      const c = s.getCamera().getState();
+      return { x: c.x, y: c.y, ratio: c.ratio };
+    });
+
+    // 节点已在视口内 → 相机不应移动（只高亮不飞）
+    expect(after.ratio).toBeCloseTo(before!.ratio, 3);
+    expect(after.x).toBeCloseTo(before!.x, 3);
+    expect(after.y).toBeCloseTo(before!.y, 3);
+  });
 });

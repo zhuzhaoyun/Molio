@@ -741,16 +741,30 @@ export function GraphPage() {
     const x = (attrs.x as number) ?? 0;
     const y = (attrs.y as number) ?? 0;
     const camera = sigma.getCamera();
-    // 飞到节点：pan 到节点位置 + 缩放到能看清节点和邻居的级别
-    const targetRatio = Math.max(2.5, Math.min(camera.ratio, 4));
-    // Sigma 相机工作在归一化（framed）坐标空间：节点位置经 normalizationFunction
-    // 归一化到以 0.5 为中心、跨度约 1 的区间，相机的 x/y 也在这个空间里。
-    // attrs.x/y 是原始图坐标，不能直接喂给 camera.animate——否则相机会把原始值
-    // 当成归一化值，飞到 extent×ratio 远处，整张图渲染空白、交互失效。
-    // viewportToFramedGraph(graphToViewport(p)) 等价于 normalizationFunction(p)（公开 API）。
-    const framed = sigma.viewportToFramedGraph(sigma.graphToViewport({ x, y }));
-    camera.animate({ x: framed.x, y: framed.y, ratio: targetRatio }, { duration: 600 });
-    // 选中高亮（带淡入动画）
+
+    // 节点当前视口位置（基于当前相机，未动）
+    const vp = sigma.graphToViewport({ x, y });
+    const w = sigma.getContainer().clientWidth;
+    const h = sigma.getContainer().clientHeight;
+    // 视口内缩一圈作为「舒适可视区」：节点已在其中 → 只高亮不飞相机，避免晃动视角；
+    // 在视口外或贴边 → 才飞相机把它拉到中心。
+    const marginX = w * 0.08;
+    const marginY = h * 0.08;
+    const inView = vp.x >= marginX && vp.x <= w - marginX && vp.y >= marginY && vp.y <= h - marginY;
+
+    if (!inView) {
+      // 飞到节点：pan 到节点位置 + 缩放到能看清节点和邻居的级别
+      const targetRatio = Math.max(2.5, Math.min(camera.ratio, 4));
+      // Sigma 相机工作在归一化（framed）坐标空间：节点位置经 normalizationFunction
+      // 归一化到以 0.5 为中心、跨度约 1 的区间，相机的 x/y 也在这个空间里。
+      // attrs.x/y 是原始图坐标，不能直接喂给 camera.animate——否则相机会把原始值
+      // 当成归一化值，飞到 extent×ratio 远处，整张图渲染空白、交互失效。
+      // viewportToFramedGraph(graphToViewport(p)) 等价于 normalizationFunction(p)（公开 API）。
+      const framed = sigma.viewportToFramedGraph(vp);
+      camera.animate({ x: framed.x, y: framed.y, ratio: targetRatio }, { duration: 600 });
+    }
+
+    // 选中高亮（带淡入动画）——无论是否飞相机都做
     selectedNodeRef.current = nodeKey;
     focusDimRef.current = 0;
     startDimAnimRef.current?.(1, 200);
