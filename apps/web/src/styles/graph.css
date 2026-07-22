@@ -520,6 +520,35 @@
   }
 }
 
+/* ── Re-layout Button (Settings Panel) ── */
+
+.graph-settings__relayout {
+  padding: 12px 0;
+  border-top: 1px solid var(--border-color, #e5e5e5);
+  margin-top: 8px;
+}
+
+.graph-settings__relayout-btn {
+  width: 100%;
+  padding: 8px 16px;
+  border: 1px solid var(--border-color, #e5e5e5);
+  border-radius: 6px;
+  background: var(--bg-secondary, #f5f5f5);
+  color: var(--text-primary, #333);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.graph-settings__relayout-btn:hover:not(:disabled) {
+  background: var(--bg-hover, #e8e8e8);
+}
+
+.graph-settings__relayout-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 /* ── Node Search Overlay (Ctrl/Cmd+F) ── */
 
 .graph-search {

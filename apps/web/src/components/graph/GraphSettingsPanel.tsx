@@ -26,6 +26,10 @@ interface Props {
   onClose: () => void;
   // Node types present in the current graph data (for checkboxes)
   availableTypes: string[];
+  // Multi-level layout
+  mlRunning: boolean;
+  mlProgress: number;
+  onReLayout: () => void;
 }
 
 const TABS: { key: Tab; label: string }[] = [
@@ -47,7 +51,7 @@ function getTypeOptions(availableTypes: string[]): { key: string; label: string 
   return result;
 }
 
-export function GraphSettingsPanel({ settings, onUpdateSettings, onUpdateForce, onClose, availableTypes }: Props) {
+export function GraphSettingsPanel({ settings, onUpdateSettings, onUpdateForce, onClose, availableTypes, mlRunning, mlProgress, onReLayout }: Props) {
   const [tab, setTab] = useState<Tab>('filter');
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -234,6 +238,15 @@ export function GraphSettingsPanel({ settings, onUpdateSettings, onUpdateForce, 
               value={settings.forces.linkDistance}
               onChange={(v) => onUpdateForce({ linkDistance: v })}
             />
+            <div className="graph-settings__relayout">
+              <button
+                className="graph-settings__relayout-btn"
+                onClick={onReLayout}
+                disabled={mlRunning}
+              >
+                {mlRunning ? `布局中 ${Math.round(mlProgress * 100)}%` : '重新布局'}
+              </button>
+            </div>
           </div>
         )}
 

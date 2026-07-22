@@ -68,6 +68,8 @@ export function GraphPage() {
   );
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [mlRunning, setMlRunning] = useState(false);
+  const [mlProgress, setMlProgress] = useState(0);
   // 节点搜索（Ctrl/Cmd+F）
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -85,6 +87,15 @@ export function GraphPage() {
 
   const hoveredNodeRef = useRef<string | null>(null);
   const selectedNodeRef = useRef<string | null>(null);
+  // Multi-level layout progress callback (stable ref, updated each render)
+  const mlOnProgressRef = useRef<((phase: string, progress: number) => void) | null>(null);
+  mlOnProgressRef.current = (phase: string, progress: number) => {
+    setMlRunning(true);
+    setMlProgress(progress);
+    if (progress >= 0.99) {
+      setTimeout(() => setMlRunning(false), 500);
+    }
+  };
   // Persist node positions across graph rebuilds (theme change, nodeScale change)
   const savedPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
 
@@ -400,7 +411,7 @@ export function GraphPage() {
     const hasSavedPositions = savedPositionsRef.current.size > 0;
     if (!hasSavedPositions && graph.order >= 50) {
       setTimeout(() => {
-        simulation.multiLevel?.();
+        simulation.multiLevel?.({ onProgress: mlOnProgressRef.current! });
       }, 50);
     }
 
@@ -956,6 +967,9 @@ export function GraphPage() {
             availableTypes={graphData.nodes
               .map(n => n.nodeType)
               .filter((t): t is string => !!t)}
+            mlRunning={mlRunning}
+            mlProgress={mlProgress}
+            onReLayout={() => simulation.multiLevel?.({ onProgress: mlOnProgressRef.current! })}
           />
         )}
       </div>
