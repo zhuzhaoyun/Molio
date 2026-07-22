@@ -93,6 +93,9 @@ self.onmessage = function (e: MessageEvent) {
     case 'drag':
       handleDrag(e.data);
       break;
+    case 'multi-level-init':
+      handleMultiLevelInit(e.data);
+      break;
   }
 };
 
@@ -448,4 +451,65 @@ function prolongateAndRefine(
   const result: Record<string, { x: number; y: number }> = {};
   for (const n of d3Nodes) result[n.id] = { x: n.x ?? 0, y: n.y ?? 0 };
   return result;
+}
+
+// ── Multi-Level: Init Handler ──
+
+function handleMultiLevelInit(msg: {
+  nodes: { id: string; x: number; y: number; radius: number }[];
+  links: { source: string; target: string }[];
+  params: ForceParams;
+  maxLevels?: number;
+  minFraction?: number;
+  refineTicks?: number;
+}) {
+  if (mlRunning) return;
+  mlRunning = true;
+
+  try {
+    const maxLevels = msg.maxLevels ?? 5;
+    const minFraction = msg.minFraction ?? 0.05;
+    const refineTicks = msg.refineTicks ?? 80;
+    const origNodes = msg.nodes.map((n) => ({ id: n.id, radius: n.radius }));
+    const origEdges = msg.links;
+
+    // Phase 1: Coarsening
+    self.postMessage({ type: 'multi-level-progress', phase: 'coarsen', progress: 0.1 });
+    const { levels, coarsestNodes, coarsestEdges } = buildCoarseLevels(
+      origNodes, origEdges, maxLevels, minFraction,
+    );
+    self.postMessage({ type: 'multi-level-progress', phase: 'coarsen', progress: 0.3 });
+
+    // Phase 2: Coarse layout (sends coarse-tick during simulation)
+    self.postMessage({ type: 'multi-level-progress', phase: 'coarse-layout', progress: 0.35 });
+    const coarsePositions = coarseLayoutSync(
+      coarsestNodes, coarsestEdges, msg.params,
+      (pos) => {
+        // Map supernode positions to member IDs for progressive rendering
+        const mapped: Record<string, { x: number; y: number }> = {};
+        for (const sn of coarsestNodes) {
+          const p = pos[String(sn.id)];
+          if (p) for (const m of sn.members) mapped[m] = p;
+        }
+        self.postMessage({ type: 'coarse-tick', positions: mapped });
+      },
+    );
+    self.postMessage({ type: 'multi-level-progress', phase: 'coarse-layout', progress: 0.6 });
+
+    // Phase 3: Prolongation + Refinement
+    self.postMessage({ type: 'multi-level-progress', phase: 'refine', progress: 0.65 });
+    const finalPositions = prolongateAndRefine(
+      levels, coarsePositions, origNodes, origEdges, msg.params, refineTicks,
+    );
+    self.postMessage({ type: 'multi-level-progress', phase: 'refine', progress: 0.95 });
+
+    self.postMessage({ type: 'multi-level-done', positions: finalPositions });
+  } catch (err) {
+    self.postMessage({
+      type: 'multi-level-error',
+      error: err instanceof Error ? err.message : String(err),
+    });
+  } finally {
+    mlRunning = false;
+  }
 }
