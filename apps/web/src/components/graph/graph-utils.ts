@@ -1,5 +1,5 @@
 // apps/web/src/components/graph/graph-utils.ts
-// GraphPage 与 LocalGraphPanel 共享的颜色/尺寸/插值纯函数。
+// GraphPage 使用的颜色/尺寸/插值纯函数。
 
 // 节点颜色 — 3 阶灰度 + 2 强调色
 export const NODE_TYPE_COLORS: Record<string, string> = {
@@ -16,9 +16,6 @@ export const NODE_TYPE_COLORS: Record<string, string> = {
   workflow:   '#D97706',
   aiModel:    '#D97706',
 };
-
-// 局部图面板节点上限（深度 2-3 枢纽节点会爆量）
-export const MAX_LOCAL_NODES = 200;
 
 /** 节点大小按连接数动态变化（Obsidian 风格：小 3px 大 9px）。 */
 export function nodeSize(linkCount: number, scale: number = 1.0): number {
