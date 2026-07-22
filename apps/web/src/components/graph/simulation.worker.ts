@@ -43,7 +43,6 @@ interface CoarseNode {
   id: number;
   members: string[];
   radius: number;
-  edgeWeights: Map<number, number>;
   degree: number;
 }
 
@@ -69,7 +68,6 @@ let tickCount = 0;
 const TICK_THROTTLE = 3;
 
 // ── Multi-Level Layout State ──
-let mlLevels: CoarseLevel[] = [];
 let mlRunning = false;
 
 // ── Message Handler ──
@@ -251,7 +249,6 @@ function coarsen(
         id: superId,
         members: [vid, matchTarget],
         radius: Math.sqrt(r1 * r1 + r2 * r2),
-        edgeWeights: new Map(),
         degree: 0,
       });
     } else {
@@ -261,7 +258,6 @@ function coarsen(
         id: superId,
         members: [vid],
         radius: radii.get(vid) ?? 6,
-        edgeWeights: new Map(),
         degree: 0,
       });
     }

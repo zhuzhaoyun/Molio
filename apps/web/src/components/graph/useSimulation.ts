@@ -348,6 +348,13 @@ export function useSimulation(): SimulationAPI {
     const minNodes = params?.minNodes ?? 50;
     if (graph.order < minNodes) return;
 
+    // Skip for disconnected graphs (few edges relative to nodes)
+    const edgeRatio = graph.size / Math.max(1, graph.order);
+    if (edgeRatio < 0.2) {
+      mlRunningRef.current = false;
+      return;
+    }
+
     mlRunningRef.current = true;
     mlOnProgressRef.current = params?.onProgress ?? null;
 
@@ -380,6 +387,14 @@ export function useSimulation(): SimulationAPI {
       workerRef.current = worker;
       modeRef.current = 'worker';
       worker.onmessage = createWorkerHandler();
+
+      // Rebuild node handles for worker mode — existing handles from
+      // main-thread mode are stale (bound to old D3Nodes).
+      const newHandles = new Map<string, NodeHandle>();
+      graphRef.current?.forEachNode((key) => {
+        newHandles.set(key, createWorkerNodeHandle(key, workerRef));
+      });
+      nodeHandlesRef.current = newHandles;
     }
 
     workerRef.current.postMessage({
