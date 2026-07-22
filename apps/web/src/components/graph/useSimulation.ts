@@ -191,6 +191,10 @@ export function useSimulation(): SimulationAPI {
               links: initLinks,
               params: { ...initParamsRef.current },
             });
+            // Stop the continuous simulation immediately — ML already produced
+            // equilibrium positions. The simulation only runs when user drags
+            // (wake() restarts it for collision response), then stops again.
+            initW.postMessage({ type: 'stop' });
           }
           break;
 
