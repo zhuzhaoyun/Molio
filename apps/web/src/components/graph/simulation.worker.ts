@@ -319,3 +319,133 @@ function buildCoarseLevels(
   const last = levels[levels.length - 1];
   return { levels, coarsestNodes: last.supernodes, coarsestEdges: last.edges };
 }
+
+// ── Multi-Level: Coarse Layout ──
+
+/**
+ * Synchronous d3-force layout on the coarsest graph.
+ * Uses enhanced repulsion + weak centering for cluster separation.
+ */
+function coarseLayoutSync(
+  supernodes: CoarseNode[],
+  edges: CoarseEdge[],
+  params: ForceParams,
+  onPositionUpdate: (positions: Record<string, { x: number; y: number }>) => void,
+): Map<number, { x: number; y: number }> {
+  // Build flat d3-force nodes (no members, just supernode IDs)
+  const d3Nodes = supernodes.map((n) => ({
+    id: n.id,
+    x: (Math.random() - 0.5) * 50,
+    y: (Math.random() - 0.5) * 50,
+    radius: n.radius,
+  }));
+
+  const maxWeight = Math.max(1, ...edges.map((e) => e.weight));
+  const d3Links = edges.map((e) => ({
+    source: e.source,
+    target: e.target,
+    strength: (params.linkStrength * e.weight) / maxWeight,
+  }));
+
+  const sim = forceSimulation(d3Nodes as any)
+    .force(
+      'link',
+      forceLink(d3Links)
+        .id((d: any) => d.id)
+        .distance(params.linkDistance * 2)
+        .strength((d: any) => d.strength),
+    )
+    .force('charge', forceManyBody().strength(params.repelStrength * 3).distanceMax(1000))
+    .force('collide', forceCollide().radius((d: any) => d.radius * 1.35).iterations(3))
+    .force('x', forceX().strength(0.0005))
+    .force('y', forceY().strength(0.0005))
+    .alphaDecay(0.015)
+    .velocityDecay(0.4);
+
+  let tickCount = 0;
+  const MAX_TICKS = 2000;
+  const SEND_INTERVAL = 3;
+
+  while (sim.alpha() >= 0.001 && tickCount < MAX_TICKS) {
+    sim.tick();
+    tickCount++;
+
+    if (tickCount % SEND_INTERVAL === 0) {
+      const pos: Record<string, { x: number; y: number }> = {};
+      for (const n of d3Nodes) pos[String(n.id)] = { x: n.x ?? 0, y: n.y ?? 0 };
+      onPositionUpdate(pos);
+    }
+  }
+  sim.stop();
+
+  const positions = new Map<number, { x: number; y: number }>();
+  for (const n of d3Nodes) positions.set(n.id, { x: n.x ?? 0, y: n.y ?? 0 });
+  return positions;
+}
+
+// ── Multi-Level: Prolongation + Refinement ──
+
+/**
+ * Prolongate coarse positions level-by-level, then refine original graph.
+ * The final refinement uses weak repulsion (30 %) to avoid breaking cluster structure.
+ */
+function prolongateAndRefine(
+  levels: CoarseLevel[],
+  coarsestPositions: Map<number, { x: number; y: number }>,
+  originalNodes: { id: string; radius: number }[],
+  originalEdges: { source: string; target: string }[],
+  params: ForceParams,
+  refineTicks: number,
+): Record<string, { x: number; y: number }> {
+  // Map keys transition from number (supernode IDs) to string (original node IDs)
+  // during prolongation; type widened to support both.
+  let currentPositions: Map<any, { x: number; y: number }> = coarsestPositions as any;
+
+  // Prolongate: coarsest → level[last - 1] → ... → level[0] (which maps to original nodes)
+  for (let li = levels.length - 1; li >= 0; li--) {
+    const level = levels[li];
+    const nextPositions = new Map<string, { x: number; y: number }>();
+
+    for (const sn of level.supernodes) {
+      const superPos = currentPositions.get(sn.id);
+      if (!superPos) continue;
+      const scale = Math.max(2, sn.radius * 0.3);
+      for (const memberId of sn.members) {
+        nextPositions.set(memberId, {
+          x: superPos.x + (Math.random() - 0.5) * scale,
+          y: superPos.y + (Math.random() - 0.5) * scale,
+        });
+      }
+    }
+    currentPositions = nextPositions;
+  }
+
+  // Now currentPositions has positions for all original node IDs
+  // Run short refinement on the full graph
+  const d3Nodes = originalNodes.map((n) => {
+    const pos = currentPositions.get(n.id);
+    return {
+      id: n.id,
+      x: pos?.x ?? (Math.random() - 0.5) * 100,
+      y: pos?.y ?? (Math.random() - 0.5) * 100,
+      radius: n.radius,
+    };
+  });
+
+  const d3Links = originalEdges.map((e) => ({ source: e.source, target: e.target }));
+
+  const sim = forceSimulation(d3Nodes as any)
+    .force('link', forceLink(d3Links).id((d: any) => d.id)
+      .distance(params.linkDistance).strength(params.linkStrength))
+    .force('charge', forceManyBody().strength(params.repelStrength * 0.3).distanceMax(150))
+    .force('collide', forceCollide().radius((d: any) => d.radius * 1.35).iterations(3))
+    .alphaDecay(0.1)
+    .velocityDecay(0.5);
+
+  for (let i = 0; i < refineTicks; i++) sim.tick();
+  sim.stop();
+
+  const result: Record<string, { x: number; y: number }> = {};
+  for (const n of d3Nodes) result[n.id] = { x: n.x ?? 0, y: n.y ?? 0 };
+  return result;
+}
