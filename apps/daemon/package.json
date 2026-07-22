@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "main": "dist/src/index.js",
+  "files": ["dist", "src/tools/skills"],
   "scripts": {
     "dev": "tsx src/index.ts",
     "dev:watch": "tsx watch src/index.ts",

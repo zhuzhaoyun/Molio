@@ -1,0 +1,41 @@
+# ============================================================
+# Molio — NAS / 服务器一键部署
+#
+# 使用方式：
+#   1. cp .env.example .env  并填写 ANTHROPIC_API_KEY
+#   2. docker compose up -d --build
+#   3. 浏览器打开 http://<NAS-IP>:3100
+#
+# 知识库目录：
+#   在 .env 中设置 MOLIO_VAULT_PATH 指向 NAS 上的文档目录，
+#   该目录挂载到容器内 /vaults。
+#   在 Molio Web UI 创建 vault 时，路径填 /vaults/你的文件夹名。
+#
+#   如需挂载多个目录，直接在 volumes 中添加更多映射：
+#     - /volume1/documents:/vaults/documents
+#     - /volume2/notes:/vaults/notes
+# ============================================================
+
+services:
+  molio:
+    build: .
+    container_name: molio
+    ports:
+      - "${MOLIO_PORT:-3100}:3100"
+    volumes:
+      # 应用数据持久化（SQLite 数据库 + 配置文件）
+      - molio-data:/root/.molio
+      # Claude Code 认证和配置持久化
+      - molio-claude:/root/.claude
+      # 知识库文档目录（NAS 上的实际文件）
+      - ${MOLIO_VAULT_PATH:-./vaults}:/vaults
+    environment:
+      # Claude Code API Key（必填）
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      # 服务端口（容器内部端口，一般不需要改）
+      - MOLIO_PORT=3100
+    restart: unless-stopped
+
+volumes:
+  molio-data:
+  molio-claude:
