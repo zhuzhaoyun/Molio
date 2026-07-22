@@ -281,8 +281,8 @@ renderer.on('leaveNode', () => {
 |------|-------|----------|
 | **全局图** | ✅ 完整 vault 级 | ✅ |
 | **局部图 (Local Graph)** | ⚠️ 聚焦模式（overlay 淡出非关联节点） | ✅ 独立面板 + 级数控制（1-3 级） |
-| **Minimap** | ✅ Canvas/按需重绘/160×110 | ❌ 无 |
-| **节点搜索** | ✅ Ctrl/Cmd+F 浮层 + zoomToNode（2026-07-20 实现） | ✅ Ctrl+Shift+F 搜索定位 |
+| **Minimap** | ✅ Canvas/按需重绘/160×110（2026-07-22 正式挂载启用） | ❌ 无 |
+| **节点搜索** | ✅ Ctrl/Cmd+F 浮层 + zoomToNode（2026-07-22 修复归一化坐标系 bug + 视口内只高亮不飞相机） | ✅ Ctrl+Shift+F 搜索定位 |
 | **框选** | ❌ 无 | ✅ Shift+drag |
 | **右键菜单** | ❌ 无 | ✅ 星标/隐藏/打开 |
 | **类型着色** | ✅ 三组颜色（文档/概念/对比） | ❌ 默认统一（需社区插件） |
@@ -356,7 +356,7 @@ Minimap          █████████████████████
 全局图           ████████████████████░░ 85%  ⚠️ 功能接近但渲染质量有差距
 局部图/聚焦      ██████████████░░░░░░ 60%  ❌ 独立面板 + 邻居级数控制缺失
 增量更新         ██░░░░░░░░░░░░░░░░░░ 10%  ❌ 全量重建
-节点搜索         ██░░░░░░░░░░░░░░░░░░ 15%  ❌ 未实现
+节点搜索         ████████████░░░░░░░░ 60%  ✅ 已实现（2026-07-22 修复相机坐标系 bug + 视口内只高亮不飞）
 右键菜单         ██░░░░░░░░░░░░░░░░░░ 10%  ❌ 未实现
 
 总体：Molio 图谱约达到 Obsidian 的 50-55% 功能完整度
@@ -380,7 +380,7 @@ Minimap          █████████████████████
 | **P2** | **节点搜索** | 🟡 中 | 中 | ⭐⭐⭐ 定位节点 | ✅ 已完成（Ctrl/Cmd+F） |
 | **P2** | **数据内存缓存** | 🟢 低 | 少 | ⭐⭐ 切页面不重 fetch | ✅ 已完成（SWR） |
 | **P2** | **右键菜单（星标/隐藏）** | 🟡 中 | 中 | ⭐⭐ 节点级操作 | ⏸️ 延后（详见 11.5） |
-| **P2** | **独立局部图面板** | 🟡 中 | 中 | ⭐⭐⭐ 邻居级数控制 | ⏳ 待做（见十一，多 Tab 实时性前置） |
+| **P2** | **局部图（文档驱动 + kb Tab + 分屏）** | 🟡 中 | 中 | ⭐⭐⭐ 邻居级数控制 | 🔄 方向修正（2026-07-22）：改为对齐 Obsidian，文档驱动、kb 页 Tab、分屏前置，另起分支重做（见 `docs/2026-07-22-local-graph-redesign.md`） |
 | **P2** | **Multi-Level 布局** | 🔴 高 | 多 | ⭐⭐⭐ 布局质量飞跃 | ⏳ 待做 |
 
 ### "2 行代码"的改动细节
@@ -404,7 +404,7 @@ Minimap          █████████████████████
 ## 十、总结
 
 ```
-Molio 图谱当前状态（2026-07-20 修订）：
+Molio 图谱当前状态（2026-07-22 修订）：
   ✅ Minimap（独有）
   ✅ 死链接可视化（独有）
   ✅ 类型着色（独有）
@@ -420,7 +420,8 @@ Molio 图谱当前状态（2026-07-20 修订）：
   ✅ 过渡动画（hover/选中 smoothstep + 节点/边同步淡入淡出，本轮已改）
   ✅ 标签缩放渐隐（itemSizesReference + threshold，本轮已改）
   ✅ 碰撞检测（比例 padding + 多次迭代，本轮已改）
-  ✅ 节点搜索（Ctrl/Cmd+F 浮层 + zoomToNode，本轮已改）
+  ✅ 节点搜索（Ctrl/Cmd+F 浮层 + zoomToNode，2026-07-22 修复归一化坐标系 bug + 视口内只高亮不飞）
+  ✅ Minimap（2026-07-22 正式挂载启用、修复视口框坐标系混淆）
   ✅ 数据缓存（SWR，进页面不重 fetch，本轮已改）
 
   ❌ Multi-Level 布局（仍是最大算法差距）
@@ -529,3 +530,31 @@ Molio 图谱当前状态（2026-07-20 修订）：
 - 星标/隐藏状态存哪：模块级 `Map<vaultId, Set<nodeKey>>`（推荐 MVP），和 `graphDataCache` 一套模式；持久化留进阶
 - 死链节点 key 形如 `__dead__xxx`，无 path，菜单按 `deadLink` flag 分支
 - 复用 `kb/ContextMenu.tsx` 的 `MenuItem` 接口（label/divider/onClick/danger/disabled/title）+ 边缘检测/Esc/点击外部关闭，触发源从文件树换成画布 `contextmenu` 事件
+
+### 11.6 P2.1 节点搜索相机修复 + P2.4 Minimap 启用（2026-07-22）
+
+本会话完成：
+
+**① 节点搜索 zoomToNode 归一化坐标系 bug 修复（搜索→空白卡死）**
+
+根因：Sigma 相机工作在归一化（framed）坐标空间（归一化到以 0.5 为中心、跨度约 1 的区间），而 zoomToNode 把节点原始图坐标 attrs.x/y 直接喂给 camera.animate，相机飞到 extent×ratio（约 38 万）远处 → 视图空白、交互失效。
+
+修复：`sigma.viewportToFramedGraph(sigma.graphToViewport({x,y}))` 先把原始图坐标转成归一化坐标再喂相机。Playwright 实测验证：坏时节点映射到屏幕外（-82879,-39307）、inView=0；修后映射到视口中心（672,426）。
+
+**② 节点搜索：视口内只高亮不飞相机**
+
+之前搜索总是 camera.animate 飞相机（拉远到 ratio 2.5），即使节点已在视口内也晃动视角。改为先判断节点是否在「舒适可视区」（视口内缩 8%∋）：在其中则只高亮不动相机；在视口外/贴边才飞。
+
+**③ Minimap 正式挂载启用**
+
+Minimap.tsx 此前是未挂载的死代码（main 起就未在 GraphPage 渲染，也无样式）。本次：
+- 修复视口框坐标系混淆（同 zoomToNode 根因）：原算法混用归一化 camera.x 与原始图坐标，改用 viewportToGraph 求四角可视区域
+- 新增 `.graph-minimap` 样式（右下角悬浮，pointer-events:none 不挡交互）
+- 通过 sigmaInstance state 挂载到 GraphPage（sigma 在 effect 创建，ref 不触发重渲染）
+
+**E2E 覆盖**：
+- `graph-search.spec.ts`（2 用例）：搜索后节点在视口内 + 视口内搜索不动相机
+- `graph-minimap.spec.ts`（1 用例）：挂载可见 + 默认看全图视口框盖满 minimap
+- 全部 10/10 graph E2E 通过
+
+**受影响文件**：GraphPage.tsx（zoomToNode 修复 + 优化 + __sigma 暴露）、Minimap.tsx（坐标修复）、graph.css（minimap 样式）、graph-search.spec.ts（新增）、graph-minimap.spec.ts（新增）
