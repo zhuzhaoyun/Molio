@@ -41,6 +41,20 @@ export const DEFAULT_FORCE_PARAMS: ForceParams = {
   linkDistance: 80,        // 边自然长度缩短，团的内部更紧凑
 };
 
+/** Parameters for multi-level layout (Walshaw coarsening). */
+export interface MultiLevelParams {
+  /** Callback for progress reporting. phase: stage name, progress: 0-1. */
+  onProgress?: (phase: string, progress: number) => void;
+  /** Maximum coarsening rounds. Default 5. */
+  maxLevels?: number;
+  /** Stop when graph shrinks below this fraction. Default 0.05. */
+  minSizeFraction?: number;
+  /** Minimum node count to trigger ML. Below this uses regular d3-force. Default 50. */
+  minNodes?: number;
+  /** Refinement tick count on the original graph. Default 80. */
+  refineTicks?: number;
+}
+
 export const DEFAULT_SETTINGS: GraphSettings = {
   theme: 'light',
   nodeScale: 1.0,
