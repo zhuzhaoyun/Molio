@@ -161,6 +161,8 @@ export function useSimulation(): SimulationAPI {
             }
           }
           mlRunningRef.current = false;
+          // Signal GraphPage to animate camera
+          window.dispatchEvent(new CustomEvent('graph-ml-done'));
           break;
 
         case 'multi-level-error':

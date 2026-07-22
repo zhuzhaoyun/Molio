@@ -828,6 +828,18 @@ export function GraphPage() {
     }
   };
 
+  // ── Camera pulse after ML completes ──
+  useEffect(() => {
+    const handler = () => {
+      const sigma = sigmaRef.current;
+      if (!sigma) return;
+      const camera = sigma.getCamera();
+      camera.animate({ ratio: camera.ratio * 1.05 }, { duration: 300 });
+    };
+    window.addEventListener('graph-ml-done', handler);
+    return () => window.removeEventListener('graph-ml-done', handler);
+  }, []);
+
   const nodeCount = graphData?.nodes.length ?? 0;
   const edgeCount = graphData?.edges.length ?? 0;
 
