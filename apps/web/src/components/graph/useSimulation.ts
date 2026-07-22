@@ -161,15 +161,65 @@ export function useSimulation(): SimulationAPI {
             }
           }
           mlRunningRef.current = false;
-          // Signal GraphPage to animate camera
           window.dispatchEvent(new CustomEvent('graph-ml-done'));
 
-          // IMPORTANT: Re-initialize worker with current positions so that
-          // drag/collision/wake work after ML. ML's handleMultiLevelInit
-          // uses local simulations without setting the global `nodes`/`sim`,
-          // so the worker has no active state for post-ML interactions.
-          const initW = workerRef.current;
-          if (initW && g) {
+          // After ML, switch to the optimal simulation mode for smooth drag:
+          // small graphs (< WORKER_THRESHOLD) → main-thread simulation
+          // (zero postMessage latency during drag + collision)
+          // large graphs → worker mode (init + stop, wakes on drag)
+          const mlW = workerRef.current;
+          if (mlW && g && g.order < WORKER_THRESHOLD) {
+            mlW.terminate();
+            workerRef.current = null;
+            modeRef.current = 'main-thread';
+
+            const p = { ...initParamsRef.current };
+            const mtNodes: D3Node[] = [];
+            const mtLinks: D3Link[] = [];
+            const mtHandles = new Map<string, NodeHandle>();
+
+            g.forEachNode((key, attrs) => {
+              const node: D3Node = {
+                id: key,
+                x: (attrs.x as number) ?? 0,
+                y: (attrs.y as number) ?? 0,
+                radius: Math.max((attrs.size as number) ?? 6, 4),
+              };
+              mtNodes.push(node);
+              mtHandles.set(key, createMainThreadNodeHandle(node));
+            });
+            g.forEachEdge((_k, _attrs, source, target) => {
+              mtLinks.push({ source: source as string, target: target as string });
+            });
+
+            d3NodesRef.current = mtNodes;
+            nodeHandlesRef.current = mtHandles;
+
+            const mtSim = forceSimulation<D3Node>(mtNodes)
+              .force('link', forceLink<D3Node, D3Link>(mtLinks)
+                .id((d) => d.id)
+                .distance(p.linkDistance)
+                .strength(p.linkStrength))
+              .force('charge', forceManyBody<D3Node>().strength(p.repelStrength).distanceMax(250))
+              .force('collide', forceCollide<D3Node>()
+                .radius((d) => d.radius * (1 + COLLIDE_PADDING_RATIO))
+                .iterations(COLLIDE_ITERATIONS))
+              .force('x', forceX<D3Node>((d) => (d.fx != null ? d.fx : 0)).strength(p.centerStrength))
+              .force('y', forceY<D3Node>((d) => (d.fy != null ? d.fy : 0)).strength(p.centerStrength))
+              .alphaDecay(0.03)
+              .velocityDecay(0.35)
+              .on('tick', () => {
+                for (const d of mtNodes) {
+                  if (g.hasNode(d.id)) {
+                    g.setNodeAttribute(d.id, 'x', d.x);
+                    g.setNodeAttribute(d.id, 'y', d.y);
+                  }
+                }
+              });
+
+            simRef.current = mtSim;
+          } else if (mlW && g) {
+            // Large graph: keep worker mode, init for drag/collision
             const initNodes: {
               id: string; x: number; y: number; radius: number;
             }[] = [];
@@ -185,16 +235,13 @@ export function useSimulation(): SimulationAPI {
             g.forEachEdge((_k, _attrs, source, target) => {
               initLinks.push({ source: source as string, target: target as string });
             });
-            initW.postMessage({
+            mlW.postMessage({
               type: 'init',
               nodes: initNodes,
               links: initLinks,
               params: { ...initParamsRef.current },
             });
-            // Stop the continuous simulation immediately — ML already produced
-            // equilibrium positions. The simulation only runs when user drags
-            // (wake() restarts it for collision response), then stops again.
-            initW.postMessage({ type: 'stop' });
+            mlW.postMessage({ type: 'stop' });
           }
           break;
 
