@@ -354,10 +354,10 @@ function coarseLayoutSync(
         .distance(params.linkDistance * 2)
         .strength((d: any) => d.strength),
     )
-    .force('charge', forceManyBody().strength(params.repelStrength * 3).distanceMax(1000))
+    .force('charge', forceManyBody().strength(params.repelStrength * 2).distanceMax(500))
     .force('collide', forceCollide().radius((d: any) => d.radius * 1.35).iterations(3))
-    .force('x', forceX().strength(0.0005))
-    .force('y', forceY().strength(0.0005))
+    .force('x', forceX().strength(0.002))
+    .force('y', forceY().strength(0.002))
     .alphaDecay(0.015)
     .velocityDecay(0.4);
 
@@ -438,6 +438,8 @@ function prolongateAndRefine(
       .distance(params.linkDistance).strength(params.linkStrength))
     .force('charge', forceManyBody().strength(params.repelStrength * 0.3).distanceMax(150))
     .force('collide', forceCollide().radius((d: any) => d.radius * 1.35).iterations(3))
+    .force('x', forceX().strength(0.002))
+    .force('y', forceY().strength(0.002))
     .alphaDecay(0.1)
     .velocityDecay(0.5);
 
