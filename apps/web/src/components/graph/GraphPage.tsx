@@ -396,6 +396,14 @@ export function GraphPage() {
       });
     }
 
+    // Auto-trigger multi-level layout if no saved positions exist (first load only)
+    const hasSavedPositions = savedPositionsRef.current.size > 0;
+    if (!hasSavedPositions && graph.order >= 50) {
+      setTimeout(() => {
+        simulation.multiLevel?.();
+      }, 50);
+    }
+
     // ── Hover enter/leave with fade animation ──
     renderer.on('enterNode', (e: { node: string }) => {
       if (draggedNode) return;
