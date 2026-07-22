@@ -330,14 +330,28 @@ function coarseLayoutSync(
   edges: CoarseEdge[],
   params: ForceParams,
   onPositionUpdate: (positions: Record<string, { x: number; y: number }>) => void,
+  originalPositions?: Map<string, { x: number; y: number }>,
 ): Map<string, { x: number; y: number }> {
-  // Build flat d3-force nodes (no members, just supernode IDs)
-  const d3Nodes = supernodes.map((n) => ({
-    id: n.id,
-    x: (Math.random() - 0.5) * 50,
-    y: (Math.random() - 0.5) * 50,
-    radius: n.radius,
-  }));
+  // Build flat d3-force nodes using member centroids as initial positions.
+  // This preserves the existing layout structure (circular) and only
+  // lets the coarse layout improve cluster separation from a good start.
+  const d3Nodes = supernodes.map((n) => {
+    let cx = 0, cy = 0, cnt = 0;
+    const initPos = originalPositions;
+    if (initPos) {
+      for (const m of n.members) {
+        const p = initPos.get(m);
+        if (p) { cx += p.x; cy += p.y; cnt++; }
+      }
+    }
+    if (cnt > 0) { cx /= cnt; cy /= cnt; }
+    return {
+      id: n.id,
+      x: cnt > 0 ? cx : (Math.random() - 0.5) * 50,
+      y: cnt > 0 ? cy : (Math.random() - 0.5) * 50,
+      radius: n.radius,
+    };
+  });
 
   const maxWeight = Math.max(1, ...edges.map((e) => e.weight));
   const d3Links = edges.map((e) => ({
@@ -351,15 +365,15 @@ function coarseLayoutSync(
       'link',
       forceLink(d3Links)
         .id((d: any) => d.id)
-        .distance(params.linkDistance * 2)
+        .distance(params.linkDistance * 1.3)
         .strength((d: any) => d.strength),
     )
-    .force('charge', forceManyBody().strength(params.repelStrength * 2).distanceMax(500))
+    .force('charge', forceManyBody().strength(params.repelStrength * 1.3).distanceMax(300))
     .force('collide', forceCollide().radius((d: any) => d.radius * 1.35).iterations(3))
     .force('x', forceX().strength(0.002))
     .force('y', forceY().strength(0.002))
-    .alphaDecay(0.015)
-    .velocityDecay(0.4);
+    .alphaDecay(0.02)
+    .velocityDecay(0.35);
 
   let tickCount = 0;
   const MAX_TICKS = 2000;
@@ -436,12 +450,12 @@ function prolongateAndRefine(
   const sim = forceSimulation(d3Nodes as any)
     .force('link', forceLink(d3Links).id((d: any) => d.id)
       .distance(params.linkDistance).strength(params.linkStrength))
-    .force('charge', forceManyBody().strength(params.repelStrength * 0.3).distanceMax(150))
+    .force('charge', forceManyBody().strength(params.repelStrength * 0.2).distanceMax(100))
     .force('collide', forceCollide().radius((d: any) => d.radius * 1.35).iterations(3))
     .force('x', forceX().strength(0.002))
     .force('y', forceY().strength(0.002))
-    .alphaDecay(0.1)
-    .velocityDecay(0.5);
+    .alphaDecay(0.08)
+    .velocityDecay(0.4);
 
   for (let i = 0; i < refineTicks; i++) sim.tick();
   sim.stop();
@@ -467,7 +481,7 @@ function handleMultiLevelInit(msg: {
   try {
     const maxLevels = msg.maxLevels ?? 5;
     const minFraction = msg.minFraction ?? 0.05;
-    const refineTicks = msg.refineTicks ?? 80;
+    const refineTicks = msg.refineTicks ?? 40;
     const origNodes = msg.nodes.map((n) => ({ id: n.id, radius: n.radius }));
     const origEdges = msg.links;
 
@@ -480,6 +494,9 @@ function handleMultiLevelInit(msg: {
 
     // Phase 2: Coarse layout (sends coarse-tick during simulation)
     self.postMessage({ type: 'multi-level-progress', phase: 'coarse-layout', progress: 0.35 });
+    // Build original positions map for centroid-based initial positions
+    const origPositions = new Map<string, { x: number; y: number }>();
+    for (const n of msg.nodes) origPositions.set(n.id, { x: n.x, y: n.y });
     const coarsePositions = coarseLayoutSync(
       coarsestNodes, coarsestEdges, msg.params,
       (pos) => {
@@ -491,6 +508,7 @@ function handleMultiLevelInit(msg: {
         }
         self.postMessage({ type: 'coarse-tick', positions: mapped });
       },
+      origPositions,
     );
     self.postMessage({ type: 'multi-level-progress', phase: 'coarse-layout', progress: 0.6 });
 

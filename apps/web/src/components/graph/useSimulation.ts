@@ -163,6 +163,35 @@ export function useSimulation(): SimulationAPI {
           mlRunningRef.current = false;
           // Signal GraphPage to animate camera
           window.dispatchEvent(new CustomEvent('graph-ml-done'));
+
+          // IMPORTANT: Re-initialize worker with current positions so that
+          // drag/collision/wake work after ML. ML's handleMultiLevelInit
+          // uses local simulations without setting the global `nodes`/`sim`,
+          // so the worker has no active state for post-ML interactions.
+          const initW = workerRef.current;
+          if (initW && g) {
+            const initNodes: {
+              id: string; x: number; y: number; radius: number;
+            }[] = [];
+            g.forEachNode((key, attrs) => {
+              initNodes.push({
+                id: key,
+                x: (attrs.x as number) ?? 0,
+                y: (attrs.y as number) ?? 0,
+                radius: Math.max((attrs.size as number) ?? 6, 4),
+              });
+            });
+            const initLinks: { source: string; target: string }[] = [];
+            g.forEachEdge((_k, _attrs, source, target) => {
+              initLinks.push({ source: source as string, target: target as string });
+            });
+            initW.postMessage({
+              type: 'init',
+              nodes: initNodes,
+              links: initLinks,
+              params: { ...initParamsRef.current },
+            });
+          }
           break;
 
         case 'multi-level-error':
