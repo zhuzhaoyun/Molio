@@ -397,7 +397,7 @@ function prolongateAndRefine(
   params: ForceParams,
   refineTicks: number,
 ): Record<string, { x: number; y: number }> {
-  // Map keys transition from number (supernode IDs) to string (original node IDs)
+  // All positions stored with string keys consistently across levels
   // during prolongation; type widened to support both.
   let currentPositions: Map<string, { x: number; y: number }> = coarsestPositions;
 
