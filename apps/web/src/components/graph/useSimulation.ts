@@ -250,6 +250,18 @@ export function useSimulation(): SimulationAPI {
                 }
               });
 
+            // 防御：孤立节点(degree0)必须有 fx 才不会被排斥力径向外推、拖拽时
+            // 累积漂移（fx==null 是"边缘孤立点朝固定方向越拖越偏"的根因）。tile
+            // 通常已设 fx，但非 ML 路径/savedPositions 无 fx 时兜底钉在当前位置。
+            for (const n of mtNodes) {
+              if (n.degree === 0 && n.fx == null) {
+                n.fx = n.x ?? 0;
+                n.fy = n.y ?? 0;
+                // eslint-disable-next-line no-console
+                console.warn('[graph-fix] isolated node had null fx, pinned:', n.id);
+              }
+            }
+
             // ML 位置已收敛，禁止模拟自动重跑（否则连接节点会抖动、
             // 未固定的节点会被向心力拉移）。仅拖拽时 wake() 才跑。
             mtSim.stop();
@@ -380,6 +392,16 @@ export function useSimulation(): SimulationAPI {
           }
         }
       });
+
+    // 防御：同 mtSim，孤立节点(degree0)兜底钉住，防拖拽时排斥外推漂移
+    for (const n of d3Nodes) {
+      if (n.degree === 0 && n.fx == null) {
+        n.fx = n.x ?? 0;
+        n.fy = n.y ?? 0;
+        // eslint-disable-next-line no-console
+        console.warn('[graph-fix] isolated node had null fx, pinned (main-thread init):', n.id);
+      }
+    }
 
     simRef.current = simulation;
   }
