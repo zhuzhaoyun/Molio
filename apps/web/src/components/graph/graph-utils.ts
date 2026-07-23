@@ -156,9 +156,11 @@ export function tileIsolatedNodes(graph: Graph): void {
 // 推到中外围，度梯度自然形成。孤立点(degree 0)已被 fx/fy 固定，向心对其无效，
 // 故此函数对它们返回 0、不影响外围平铺。
 //
-// 映射 0.25·deg^0.6（封顶 3×）：deg1≈0.25×base（弱，外溢但不至于失控飞远），
-// deg≈10 回到 ~1×base，更高增强 hub 的中心性。base 取用户的 centerStrength。
+// 映射：低度区间(deg1~2)给 0.4×base 的向心平台，让它和所连的小 hub(deg2~3)
+// 用接近的向心、一起外溢到同一圈——否则叶子向心比 hub 弱、比 hub 多外溢一
+// 截，连接边会被拉长（"叶子离 hub 太远"）。高度区间随 0.25·deg^0.6 递增、
+// 封顶 3×，把 hub 钉在中心。base 取用户的 centerStrength。
 export function centerStrengthForDegree(degree: number, base: number): number {
   if (!degree || degree <= 0) return 0;
-  return base * Math.min(3, 0.25 * Math.pow(degree, 0.6));
+  return base * Math.max(0.4, Math.min(3, 0.25 * Math.pow(degree, 0.6)));
 }
