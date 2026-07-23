@@ -61,7 +61,8 @@ export function interpolateColor(a: string, b: string, t: number): string {
 // 和弱排斥力，最终随机散布。Obsidian 用 tile 把孤立/外围节点平铺成规整的
 // 外围结构。这里用一个**封顶的环形带**：以连接节点质心为中心，环带内/外
 // 半径都锁定为连接簇包围半径的固定倍数（rIn≈1.3×、rOut≈2.6×）。孤立节点
-// 在带内排成同心环；节点多时让环排密一点（缩小 spacing），而不是向外扩环。
+// 在带内用黄金角螺旋（phyllotaxis）排成均匀点云——不用同心环，因为同心环
+// 各环角度对齐会产生放射状辐条、不够均匀。节点再多也只在带内排密，不外扩。
 //
 // 为什么封顶：早期版本让环从 1.6× 起步、以固定间距无限外扩，结果当中心簇
 // 因连接距离短而收得很紧时，外围环膨胀到中心簇的好几倍，把整图包围盒撑得
@@ -74,10 +75,6 @@ export function interpolateColor(a: string, b: string, t: number): string {
 /** 环带内/外半径相对连接簇包围半径的倍数。 */
 const RING_IN_FACTOR = 1.3;
 const RING_OUT_FACTOR = 2.6;
-/** 期望环间距（graph units），用于决定环带内排几圈环。 */
-const RING_GAP = 12;
-/** 每环最少节点数下限：环数受此约束，防止每环只分到 1-2 个节点而退化成直线。 */
-const MIN_NODES_PER_RING = 8;
 
 /**
  * 把 degree=0 的可见节点平铺成围绕连接节点簇的封顶环形带，并固定 fx/fy。
@@ -128,46 +125,24 @@ export function tileIsolatedNodes(graph: Graph): void {
   const rIn = connected.length > 0 ? Math.max(maxR * RING_IN_FACTOR, 18) : 24;
   const rOut = connected.length > 0 ? Math.max(maxR * RING_OUT_FACTOR, 48) : 96;
 
-  // 环带内的环半径（线性分布在内/外半径之间，环间距≈RING_GAP）。
-  // 环数同时受环带宽度与"每环最少节点数"约束：后者杜绝环数过多、每环只
-  // 分到 1-2 个节点而退化成直线（角度只能取 0/π，点全落在水平轴上）。
-  const widthRings = Math.max(1, Math.floor((rOut - rIn) / RING_GAP) + 1);
-  const nRings = Math.min(widthRings, Math.max(1, Math.floor(isolated.length / MIN_NODES_PER_RING)));
-  const ringRadii: number[] = [];
-  for (let i = 0; i < nRings; i++) {
-    ringRadii.push(nRings > 1 ? rIn + (rOut - rIn) * (i / (nRings - 1)) : (rIn + rOut) / 2);
-  }
-
-  // 按各环周长比例把孤立节点分配到各环（最大余数法，保证总数精确 = n）。
-  // 外环周长大、分得多，内环分得少——重叠（节点过多时不可避免）尽量发生
-  // 在不显眼的外环，而非靠近中心的内环。节点再多也只让环排密/重叠，
-  // 绝不向外扩环，从而严格守住 rOut 这个包围盒上限。
+  // 黄金角螺旋（phyllotaxis，向日葵籽排布）：角度按黄金角逐点旋转、半径按
+  // 面积均匀外扩（r² 线性于序号），在封顶环带 [rIn, rOut] 内形成最均匀的
+  // 点云——既无同心环的"圈痕"，也无各环角度对齐造成的放射状辐条。
+  // 节点再多也只在带内排密，绝不向外扩，严格守住 rOut 这个包围盒上限。
   const n = isolated.length;
-  const circumferences = ringRadii.map((r) => 2 * Math.PI * r);
-  const totalCirc = circumferences.reduce((s, c) => s + c, 0);
-  const raw = circumferences.map((c) => (n * c) / totalCirc);
-  const perRing = raw.map((v) => Math.floor(v));
-  let allocated = perRing.reduce((s, c) => s + c, 0);
-  const remainderOrder = raw
-    .map((v, i) => ({ i, frac: v - Math.floor(v) }))
-    .sort((a, b) => b.frac - a.frac);
-  for (let j = 0; allocated < n; j++) perRing[remainderOrder[j % remainderOrder.length]!.i]++, allocated++;
-
-  let idx = 0;
-  for (let ri = 0; ri < nRings && idx < n; ri++) {
-    const r = ringRadii[ri]!;
-    const count = Math.min(perRing[ri]!, n - idx);
-    for (let i = 0; i < count; i++) {
-      const angle = (2 * Math.PI * i) / count;
-      const x = cx + r * Math.cos(angle);
-      const y = cy + r * Math.sin(angle);
-      const k = isolated[idx + i]!;
-      graph.setNodeAttribute(k, 'x', x);
-      graph.setNodeAttribute(k, 'y', y);
-      // 固定位置：阻止后续力模拟把孤立节点拉回中心，维持环形带结构
-      graph.setNodeAttribute(k, 'fx', x);
-      graph.setNodeAttribute(k, 'fy', y);
-    }
-    idx += count;
+  const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+  const rIn2 = rIn * rIn;
+  const rSpan2 = rOut * rOut - rIn2;
+  for (let i = 0; i < n; i++) {
+    const r = Math.sqrt(rIn2 + rSpan2 * ((i + 0.5) / n));
+    const angle = i * GOLDEN_ANGLE;
+    const x = cx + r * Math.cos(angle);
+    const y = cy + r * Math.sin(angle);
+    const k = isolated[i]!;
+    graph.setNodeAttribute(k, 'x', x);
+    graph.setNodeAttribute(k, 'y', y);
+    // 固定位置：阻止后续力模拟把孤立节点拉回中心，维持外围点云结构
+    graph.setNodeAttribute(k, 'fx', x);
+    graph.setNodeAttribute(k, 'fy', y);
   }
 }
