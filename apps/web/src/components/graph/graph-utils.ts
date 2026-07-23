@@ -164,3 +164,19 @@ export function centerStrengthForDegree(degree: number, base: number): number {
   if (!degree || degree <= 0) return 0;
   return base * Math.max(0.4, Math.min(3, 0.25 * Math.pow(degree, 0.6)));
 }
+
+/**
+ * 节点的"有效 degree"，用于按 degree 的向心力。纯叶子(degree=1)取其唯一邻居
+ * 的 degree，使叶子向心 = 它所连 hub 的向心——叶子跟随 hub 移动，而非按自身
+ * 低 degree 被外推。否则叶子(deg1 弱向心)会被推到外围、它连的 hub(deg 高强向心)
+ * 留在中心，连接边被拉长（"叶子离 hub 太远"）。degree>=2 用自身 degree（小 hub/
+ * 中间节点，该按自身度参与梯度）。degree=0 孤立点已被 fx/fy 固定，向心无效。
+ */
+export function effectiveDegree(graph: Graph, key: string): number {
+  const deg = graph.degree(key);
+  if (deg === 1) {
+    const nbrs = graph.neighbors(key);
+    if (nbrs.length === 1) return graph.degree(nbrs[0]!);
+  }
+  return deg;
+}

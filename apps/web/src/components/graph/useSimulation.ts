@@ -27,7 +27,7 @@ import type Graph from 'graphology';
 import type Sigma from 'sigma';
 import type { ForceParams, MultiLevelParams } from './types';
 import { DEFAULT_FORCE_PARAMS } from './types';
-import { tileIsolatedNodes, centerStrengthForDegree } from './graph-utils';
+import { tileIsolatedNodes, centerStrengthForDegree, effectiveDegree } from './graph-utils';
 
 // ── Constants ──
 
@@ -195,7 +195,7 @@ export function useSimulation(): SimulationAPI {
                 fx: (attrs.fx as number | undefined) ?? null,
                 fy: (attrs.fy as number | undefined) ?? null,
                 radius: Math.max((attrs.size as number) ?? 6, 4),
-                degree: g.degree(key),
+                degree: effectiveDegree(g, key),
               };
               mtNodes.push(node);
               mtHandles.set(key, createMainThreadNodeHandle(node));
@@ -249,7 +249,7 @@ export function useSimulation(): SimulationAPI {
                 fx: (attrs.fx as number | undefined) ?? null,
                 fy: (attrs.fy as number | undefined) ?? null,
                 radius: Math.max((attrs.size as number) ?? 6, 4),
-                degree: g.degree(key),
+                degree: effectiveDegree(g, key),
               });
             });
             const initLinks: { source: string; target: string }[] = [];
@@ -325,7 +325,7 @@ export function useSimulation(): SimulationAPI {
         fx: (attrs.fx as number | undefined) ?? null,
         fy: (attrs.fy as number | undefined) ?? null,
         radius: Math.max((attrs.size as number) ?? 6, 4),
-        degree: graph.degree(key),
+        degree: effectiveDegree(graph, key),
       };
       d3Nodes.push(node);
       handles.set(key, createMainThreadNodeHandle(node));
@@ -385,7 +385,7 @@ export function useSimulation(): SimulationAPI {
         fx: (attrs.fx as number | undefined) ?? null,
         fy: (attrs.fy as number | undefined) ?? null,
         radius: Math.max((attrs.size as number) ?? 6, 4),
-        degree: graph.degree(key),
+        degree: effectiveDegree(graph, key),
       });
       handles.set(key, createWorkerNodeHandle(key, workerRef));
     });
@@ -481,7 +481,7 @@ export function useSimulation(): SimulationAPI {
         x: (attrs.x as number) ?? 0,
         y: (attrs.y as number) ?? 0,
         radius: Math.max((attrs.size as number) ?? 6, 4),
-        degree: graph.degree(key),
+        degree: effectiveDegree(graph, key),
       });
     });
 
