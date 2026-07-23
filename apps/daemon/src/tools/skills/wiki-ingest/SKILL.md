@@ -1,7 +1,7 @@
 ---
 name: wiki-ingest
-description: 将源文件/资料增量导入（入库）到现有 wiki，使知识持续积累和演进。读取源文件，生成或更新 source 摘要页与实体/概念/对比等页面，建立交叉链接，检测矛盾，更新 INDEX/log/hot。支持显式文件路径、URL、或无显式目标时自动找最近 raw/wechat 暂存资料。Triggers on: 入库, 导入, 整理进知识库, 保存到知识库, 归档这个文件, ingest, add this to the wiki, process this source, 把这个文件加入 wiki, read and file this.
-version: 1.5.0
+description: 将源文件/资料增量导入（入库）到现有 wiki，使知识持续积累和演进。读取源文件，生成或更新 source 摘要页与实体/概念/对比等页面，建立交叉链接，检测矛盾，更新分层 INDEX/log/hot（旧单索引库首次入库时自动升级为分层索引）。支持显式文件路径、URL、或无显式目标时自动找最近 raw/wechat 暂存资料。Triggers on: 入库, 导入, 整理进知识库, 保存到知识库, 归档这个文件, ingest, add this to the wiki, process this source, 把这个文件加入 wiki, read and file this.
+version: 1.6.0
 ---
 
 # wiki-ingest: 增量导入（入库）
@@ -22,7 +22,8 @@ wiki 相关内容的目录结构：
 - `raw/` — 未处理的原始资料目录
 - `raw/wechat/` — 微信通道收到的网页、文件等原始资料统一先放在这里
 - `wiki/` — 所有 wiki 页面的根目录
-- `wiki/INDEX.md` — 主索引，列出所有页面及一句话摘要
+- `wiki/INDEX.md` — 根索引：只列目录级概览（各目录页数 + 覆盖范围）与概述入口页，不逐页罗列
+- `wiki/<dir>/INDEX.md` — 每个内容目录（sources/entities/concepts/comparisons/questions）自己的索引，列全该目录页面及一句话摘要
 - `wiki/log.md` — 按时间顺序记录的操作日志（最新条目在最上面）
 - `wiki/hot.md` — 近期上下文缓存（~500 字，每次操作后刷新）
 - `wiki/meta/` — 元数据目录（lint 报告等）
@@ -124,10 +125,20 @@ ingest 与 build 的差别：
 - **ingest 不要求全量**：候选可分批处理，剩余留未勾选（与 build 不同）；但本次认领的范围要处理完。
 - **完成自检（机械判定）**：`prep.mjs status <源文件> --vault .` —— 认领范围全部打勾即可收工。
 
+## 旧库索引自动升级（首触自愈）
+
+若 wiki 仍是旧单索引布局（根 `wiki/INDEX.md` 以 `- [[页面]] — 摘要` 逐页罗列、内容目录无 INDEX.md），**在本次入库前先自动完成索引分层迁移**（只重构索引，不动页面文件）：
+
+1. `find wiki/ -name '*.md'` 一次，建「页名 → 所在目录」映射
+2. 旧根 INDEX 的页面条目按映射分流写入各目录的 INDEX.md（保留原摘要；条目多则 `##` 分组）
+3. 根 INDEX.md 改写为分层结构：概述条目内联，其余目录各一行（目录链接 + 页数 + 覆盖范围）
+
+过程幂等（目录索引已存在即跳过）；执行后在回答末尾告知用户「索引布局已升级为分层」。布局规范详见 wiki-build SKILL.md「索引分层结构」节。
+
 ## 操作步骤
 
 1. **读取源文件**：读取目标源文件/资料，理解其内容。**超长文件走"超长源文件处理"路径，不要通读**
-2. **读取现有 wiki**：读取 `wiki/INDEX.md`，了解现有 wiki 结构和已覆盖的内容
+2. **读取现有 wiki**：读根 `wiki/INDEX.md` + 相关目录的 INDEX.md，了解现有结构和已覆盖内容；**若发现是旧单索引布局，先按上节完成索引升级再继续**
 3. **扫描相关页面**：读取与新内容最相关的已有 wiki 页面（3-5 个），了解已有知识
 4. **分析关联**：
    - 新内容有哪些重要洞察？
@@ -143,7 +154,7 @@ ingest 与 build 的差别：
    - 在两个页面中都添加 `> [!contradiction]` callout 标注
    - 说明矛盾的具体内容和可能的解决方向
    - 告知用户
-8. **更新 wiki/INDEX.md**：添加新页面，更新已修改页面的描述
+8. **更新索引**：新页面条目写入**所在目录的 INDEX.md**，已修改页面的描述同步更新；根 INDEX.md 的对应目录行更新页数与覆盖范围（新目录则补一行）
 9. **追加 wiki/log.md**（最新条目在最上面）：
    ```
    ## YYYY-MM-DD HH:MM | ingest | 文件名

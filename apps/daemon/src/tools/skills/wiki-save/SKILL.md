@@ -1,7 +1,7 @@
 ---
 name: wiki-save
-description: 将当前对话中有价值的内容归档为 wiki 页面，使知识持续积累。回顾对话，判断哪些内容值得归档（concept/comparison/question/session/entity），创建带完整 frontmatter 和交叉链接的归档页面，更新 INDEX/log/hot。Triggers on: 归档, 保存为 wiki 页面, save, 归档当前对话, 把这段对话存下来, archive this conversation, save this to wiki.
-version: 1.0.0
+description: 将当前对话中有价值的内容归档为 wiki 页面，使知识持续积累。回顾对话，判断哪些内容值得归档（concept/comparison/question/session/entity），创建带完整 frontmatter 和交叉链接的归档页面，更新分层 INDEX/log/hot（旧单索引库首次归档时自动升级为分层索引）。Triggers on: 归档, 保存为 wiki 页面, save, 归档当前对话, 把这段对话存下来, archive this conversation, save this to wiki.
+version: 1.6.0
 ---
 
 # wiki-save: 归档对话为 wiki 页面
@@ -19,7 +19,8 @@ version: 1.0.0
 vault 根目录就是当前工作目录。源文件在子目录中（如 raw/、notes/、docs/）。
 wiki 相关内容的目录结构：
 - `wiki/` — 所有 wiki 页面的根目录
-- `wiki/INDEX.md` — 主索引
+- `wiki/INDEX.md` — 根索引：只列目录级概览（各目录页数 + 覆盖范围）与概述入口页，不逐页罗列
+- `wiki/<dir>/INDEX.md` — 每个内容目录自己的索引，列全该目录页面及一句话摘要
 - `wiki/log.md` — 操作日志（最新条目在最上面）
 - `wiki/hot.md` — 近期上下文缓存
 - `wiki/concepts/` — 概念、模式、框架等
@@ -77,6 +78,10 @@ sources:
 - 尚未解决的问题或待跟进的事项
 ```
 
+## 旧库索引自动升级（首触自愈）
+
+若 wiki 仍是旧单索引布局（根 `wiki/INDEX.md` 以 `- [[页面]] — 摘要` 逐页罗列、内容目录无 INDEX.md），**在本次归档前先自动完成索引分层迁移**（只重构索引，不动页面文件）：`find wiki/ -name '*.md'` 建「页名 → 所在目录」映射 → 旧根 INDEX 条目按映射分流写入各目录 INDEX.md（保留原摘要）→ 根 INDEX.md 改写为分层结构（概述条目内联，其余目录各一行：目录链接 + 页数 + 覆盖范围）。过程幂等（目录索引已存在即跳过）；执行后在回答末尾告知用户「索引布局已升级为分层」。布局规范详见 wiki-build SKILL.md「索引分层结构」节。
+
 ## 操作步骤
 
 1. **分析对话内容**：回顾当前对话，判断哪些内容值得归档
@@ -86,14 +91,14 @@ sources:
    - **question** — 回答了一个有价值的问题
    - **session** — 一次有主题的工作会话记录
    - **entity** — 讨论了某个人物、组织或工具
-3. **读取现有 wiki**：读 `wiki/INDEX.md`，了解已有结构，避免重复创建
+3. **读取现有 wiki**：读根 `wiki/INDEX.md` + 相关目录的 INDEX.md，了解已有结构，避免重复创建；**若发现是旧单索引布局，先按上节完成索引升级再继续**
 4. **创建归档页面**：
    - 写入 `wiki/` 对应的子目录
    - 带完整 frontmatter
    - 用 `[[wiki 链接]]` 大量引用相关已有页面
    - 内容要精炼、有结构、有长期参考价值（不是对话记录的简单复制）
 5. **更新已有页面的交叉链接**：如果归档页面与已有页面相关，在已有页面中也添加链接
-6. **更新 wiki/INDEX.md**：添加新页面条目
+6. **更新索引**：新页面条目写入**所在目录的 INDEX.md**；根 INDEX.md 的对应目录行更新页数（新目录则补一行）
 7. **追加 wiki/log.md**（最新条目在最上面）：
    ```
    ## YYYY-MM-DD HH:MM | save | 页面标题

@@ -26,7 +26,8 @@ wiki 相关内容的目录结构：
 - \`raw/\` — 未处理的原始资料目录
 - \`raw/wechat/\` — 微信通道收到的网页、文件等原始资料统一先放在这里
 - \`wiki/\` — 所有 wiki 页面的根目录
-- \`wiki/INDEX.md\` — 主索引，列出所有页面及一句话摘要
+- \`wiki/INDEX.md\` — 根索引：只列目录级概览（各目录页数 + 覆盖范围）与概述入口页，不逐页罗列
+- \`wiki/<dir>/INDEX.md\` — 每个内容目录（sources/entities/concepts/comparisons/questions）自己的索引，列全该目录页面及一句话摘要
 - \`wiki/log.md\` — 按时间顺序记录的操作日志（最新条目在最上面）
 - \`wiki/hot.md\` — 近期上下文缓存（~500 字，每次操作后刷新）
 - \`wiki/meta/\` — 元数据目录（lint 报告等）
@@ -44,7 +45,7 @@ const WIKI_SKILLS_HINT = `
 - \`wiki-ingest\` — 入库/导入资料到 wiki（支持显式文件、URL、或自动找最近 raw/wechat 资料）
 - \`wiki-lint\` — 健康检查/审查 wiki
 - \`wiki-save\` — 归档当前对话为 wiki 页面
-- \`wiki-query\` — 知识库问答（先读 \`wiki/INDEX.md\` 检索相关页面再回答，禁止凭训练记忆作答）
+- \`wiki-query\` — 知识库问答（先读根 \`wiki/INDEX.md\` 与相关目录的 INDEX.md 检索相关页面再回答，禁止凭训练记忆作答）
 
 用户在对话里发「入库」「构建 wiki」「健康检查」「归档」等动词时调用对应 skill；发内容性问题时用 \`wiki-query\`。不要自行即兴处理这些流程。
 `;
@@ -92,7 +93,7 @@ daemon 在把微信消息交给你之前，已经把其中的文件/图片附件
 
 ## 问答与创作规则
 
-如果微信消息是问题、创作请求、检索请求或知识库维护请求：用 \`wiki-query\` skill 检索后回答——它会先读 \`wiki/hot.md\` → \`wiki/INDEX.md\` → 相关页面，必要时回溯 \`raw/\`、\`notes/\`、\`docs/\` 等源文件，并用 \`[[wikilink]]\` 标注来源。**不要凭训练记忆回答本库内容问题**。如果回答具有长期归档价值，向用户建议保存为 wiki 页面；等用户确认后再创建或更新 wiki 页面（或调用 \`wiki-save\` skill）。
+如果微信消息是问题、创作请求、检索请求或知识库维护请求：用 \`wiki-query\` skill 检索后回答——它会先读 \`wiki/hot.md\` → 根 \`wiki/INDEX.md\` → 相关目录的 INDEX.md → 相关页面，必要时回溯 \`raw/\`、\`notes/\`、\`docs/\` 等源文件，并用 \`[[wikilink]]\` 标注来源。**不要凭训练记忆回答本库内容问题**。如果回答具有长期归档价值，向用户建议保存为 wiki 页面；等用户确认后再创建或更新 wiki 页面（或调用 \`wiki-save\` skill）。
 
 ## 文件回传规则（重要）
 
