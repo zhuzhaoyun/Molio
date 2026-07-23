@@ -1,10 +1,18 @@
 # ============================================================
 # Molio — NAS / 服务器一键部署
 #
+# 支持平台：linux/amd64 + linux/arm64
+#   群晖 (Synology)、威联通 (QNAP)、铁威马 (TerraMaster)、
+#   TrueNAS、Unraid 等主流 NAS 均可使用。
+#
 # 使用方式：
-#   1. cp .env.example .env  并填写 ANTHROPIC_API_KEY
-#   2. docker compose up -d --build
+#   1. cp .env.example .env  并填写认证信息
+#   2. docker compose up -d
 #   3. 浏览器打开 http://<NAS-IP>:3100
+#
+# 本地开发构建（可选）：
+#   将下方 image 行注释掉，取消 build 行的注释，然后：
+#   docker compose up -d --build
 #
 # 知识库目录：
 #   在 .env 中设置 MOLIO_VAULT_PATH 指向 NAS 上的文档目录，
@@ -18,7 +26,8 @@
 
 services:
   molio:
-    build: .
+    image: registry.cn-guangzhou.aliyuncs.com/zzykj/molio:latest
+    # build: .  # 本地开发构建时取消注释
     container_name: molio
     ports:
       - "${MOLIO_PORT:-3100}:3100"
