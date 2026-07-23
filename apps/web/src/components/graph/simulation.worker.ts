@@ -17,7 +17,7 @@ import {
   type SimulationNodeDatum,
   type SimulationLinkDatum,
 } from 'd3-force';
-import { centerStrengthForDegree } from './graph-utils';
+import { centerStrengthForDegree, linkStrengthFor } from './graph-utils';
 
 // ── Types ──
 
@@ -119,7 +119,7 @@ function handleInit(msg: InitMessage) {
       forceLink<WorkerNode, WorkerLink>(links)
         .id((d) => d.id)
         .distance(p.linkDistance)
-        .strength(p.linkStrength),
+        .strength((link: WorkerLink) => linkStrengthFor(link, p.linkStrength)),
     )
     .force('charge', forceManyBody<WorkerNode>().strength(p.repelStrength))
     // 边界距离碰撞：padding 按半径比例 + 多次迭代，与主线程模式一致
@@ -450,7 +450,7 @@ function prolongateAndRefine(
 
   const sim = forceSimulation(d3Nodes as any)
     .force('link', forceLink(d3Links).id((d: any) => d.id)
-      .distance(params.linkDistance).strength(params.linkStrength))
+      .distance(params.linkDistance).strength((link: any) => linkStrengthFor(link, params.linkStrength)))
     .force('charge', forceManyBody().strength(params.repelStrength))
     .force('collide', forceCollide().radius((d: any) => d.radius * 1.5).iterations(3))
     .force('x', forceX().strength((d: any) => centerStrengthForDegree(d.degree ?? 0, params.centerStrength)))

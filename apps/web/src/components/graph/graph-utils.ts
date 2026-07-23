@@ -156,27 +156,26 @@ export function tileIsolatedNodes(graph: Graph): void {
 // 推到中外围，度梯度自然形成。孤立点(degree 0)已被 fx/fy 固定，向心对其无效，
 // 故此函数对它们返回 0、不影响外围平铺。
 //
-// 映射：低度区间(deg1~2)给 0.4×base 的向心平台，让它和所连的小 hub(deg2~3)
-// 用接近的向心、一起外溢到同一圈——否则叶子向心比 hub 弱、比 hub 多外溢一
-// 截，连接边会被拉长（"叶子离 hub 太远"）。高度区间随 0.25·deg^0.6 递增、
-// 封顶 3×，把 hub 钉在中心。base 取用户的 centerStrength。
+// 映射 0.25·deg^0.6（封顶 3×）：deg1≈0.25×base（弱，外溢但不至于失控飞远），
+// deg≈10 回到 ~1×base，更高增强 hub 的中心性。base 取用户的 centerStrength。
 export function centerStrengthForDegree(degree: number, base: number): number {
   if (!degree || degree <= 0) return 0;
-  return base * Math.max(0.4, Math.min(3, 0.25 * Math.pow(degree, 0.6)));
+  return base * Math.min(3, 0.25 * Math.pow(degree, 0.6));
 }
 
-/**
- * 节点的"有效 degree"，用于按 degree 的向心力。纯叶子(degree=1)取其唯一邻居
- * 的 degree，使叶子向心 = 它所连 hub 的向心——叶子跟随 hub 移动，而非按自身
- * 低 degree 被外推。否则叶子(deg1 弱向心)会被推到外围、它连的 hub(deg 高强向心)
- * 留在中心，连接边被拉长（"叶子离 hub 太远"）。degree>=2 用自身 degree（小 hub/
- * 中间节点，该按自身度参与梯度）。degree=0 孤立点已被 fx/fy 固定，向心无效。
- */
-export function effectiveDegree(graph: Graph, key: string): number {
-  const deg = graph.degree(key);
-  if (deg === 1) {
-    const nbrs = graph.neighbors(key);
-    if (nbrs.length === 1) return graph.degree(nbrs[0]!);
-  }
-  return deg;
+// ── 叶子边强度增强 ──
+//
+// 长边根因：d3-force 的 forceLink 默认 strength = 1/min(端点degree)——叶子边默认
+// 最强(≈1)，正是为把叶子钉在 hub 旁。但之前用固定 base 覆盖了默认，把叶子边从
+// 默认的强削到 base(0.3~0.4)，叶子被排斥推离 hub、边被拉长（"叶子离 hub 太远"）。
+// 这里 per-link 恢复"叶子边强"：任一端 degree<=1 视为叶子边，strength 放大并 clamp
+// 到 1 防止过高振荡；其他边用 base 不变。base 取用户 settings 的 linkStrength。
+// 注：link.source/target 在 d3 解析 link 后为节点对象（带 degree）；若尚未解析(字符串)
+// 则 degree 为 undefined→按叶子处理（安全降级，不会崩）。
+const LEAF_LINK_BOOST = 3;
+export function linkStrengthFor(link: { source: unknown; target: unknown }, base: number): number {
+  const s = (link.source as { degree?: number } | undefined)?.degree ?? 0;
+  const t = (link.target as { degree?: number } | undefined)?.degree ?? 0;
+  const isLeafEdge = s <= 1 || t <= 1;
+  return Math.min(1, base * (isLeafEdge ? LEAF_LINK_BOOST : 1));
 }

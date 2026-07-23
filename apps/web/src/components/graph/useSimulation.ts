@@ -27,7 +27,7 @@ import type Graph from 'graphology';
 import type Sigma from 'sigma';
 import type { ForceParams, MultiLevelParams } from './types';
 import { DEFAULT_FORCE_PARAMS } from './types';
-import { tileIsolatedNodes, centerStrengthForDegree, effectiveDegree } from './graph-utils';
+import { tileIsolatedNodes, centerStrengthForDegree, linkStrengthFor } from './graph-utils';
 
 // ── Constants ──
 
@@ -166,6 +166,25 @@ export function useSimulation(): SimulationAPI {
           mlRunningRef.current = false;
           window.dispatchEvent(new CustomEvent('graph-ml-done'));
 
+          // [临时诊断] ML 收敛后最长几条边的长度 + 端点 degree，定位长边根因：
+          // 是叶子(deg1)-hub 边被排斥拉长（→叶子边加硬方向），还是两个 hub 之间
+          // 的跨簇长边（→需另想办法）。验证后删除这段。
+          try {
+            const nm = new Map<string, { x: number; y: number; d: number }>();
+            g.forEachNode((k, a) => nm.set(k, {
+              x: (a.x as number) ?? 0, y: (a.y as number) ?? 0, d: g.degree(k),
+            }));
+            const lens: { len: number; sd: number; td: number }[] = [];
+            g.forEachEdge((_k, _a, s, t) => {
+              const sn = nm.get(s as string);
+              const tn = nm.get(t as string);
+              if (sn && tn) lens.push({ len: Math.hypot(sn.x - tn.x, sn.y - tn.y), sd: sn.d, td: tn.d });
+            });
+            lens.sort((a, b) => b.len - a.len);
+            // eslint-disable-next-line no-console
+            console.warn('[graph-ml-debug] longest edges (len, srcDeg, tgtDeg):', lens.slice(0, 8));
+          } catch { /* diag — ignore */ }
+
           // 把孤立节点平铺成外围圆环并固定（对齐 Obsidian tile）。
           // 必须在写 ML 位置之后、构建后续模拟之前——平铺用收敛后的连接
           // 节点位置算质心/半径，且平铺写入的 fx/fy 要被下面的模拟读到。
@@ -195,7 +214,7 @@ export function useSimulation(): SimulationAPI {
                 fx: (attrs.fx as number | undefined) ?? null,
                 fy: (attrs.fy as number | undefined) ?? null,
                 radius: Math.max((attrs.size as number) ?? 6, 4),
-                degree: effectiveDegree(g, key),
+                degree: g.degree(key),
               };
               mtNodes.push(node);
               mtHandles.set(key, createMainThreadNodeHandle(node));
@@ -211,7 +230,7 @@ export function useSimulation(): SimulationAPI {
               .force('link', forceLink<D3Node, D3Link>(mtLinks)
                 .id((d) => d.id)
                 .distance(p.linkDistance)
-                .strength(p.linkStrength))
+                .strength((link: D3Link) => linkStrengthFor(link, p.linkStrength)))
               // 不设 distanceMax：全局 Barnes-Hut 排斥让低度节点持续受中心
               // 累积推力，涌现"度越高越靠中心"的径向梯度（对齐 Obsidian）。
               .force('charge', forceManyBody<D3Node>().strength(p.repelStrength))
@@ -249,7 +268,7 @@ export function useSimulation(): SimulationAPI {
                 fx: (attrs.fx as number | undefined) ?? null,
                 fy: (attrs.fy as number | undefined) ?? null,
                 radius: Math.max((attrs.size as number) ?? 6, 4),
-                degree: effectiveDegree(g, key),
+                degree: g.degree(key),
               });
             });
             const initLinks: { source: string; target: string }[] = [];
@@ -325,7 +344,7 @@ export function useSimulation(): SimulationAPI {
         fx: (attrs.fx as number | undefined) ?? null,
         fy: (attrs.fy as number | undefined) ?? null,
         radius: Math.max((attrs.size as number) ?? 6, 4),
-        degree: effectiveDegree(graph, key),
+        degree: graph.degree(key),
       };
       d3Nodes.push(node);
       handles.set(key, createMainThreadNodeHandle(node));
@@ -342,7 +361,7 @@ export function useSimulation(): SimulationAPI {
       .force('link', forceLink<D3Node, D3Link>(d3Links)
         .id((d) => d.id)
         .distance(params.linkDistance)
-        .strength(params.linkStrength))
+        .strength((link: D3Link) => linkStrengthFor(link, params.linkStrength)))
       // 不设 distanceMax：全局排斥涌现度→半径梯度（见 multi-level-done 注释）
       .force('charge', forceManyBody<D3Node>().strength(params.repelStrength))
       // 边界距离碰撞：padding 按半径比例（大节点更大留白）+ 3 次迭代充分解析重叠
@@ -385,7 +404,7 @@ export function useSimulation(): SimulationAPI {
         fx: (attrs.fx as number | undefined) ?? null,
         fy: (attrs.fy as number | undefined) ?? null,
         radius: Math.max((attrs.size as number) ?? 6, 4),
-        degree: effectiveDegree(graph, key),
+        degree: graph.degree(key),
       });
       handles.set(key, createWorkerNodeHandle(key, workerRef));
     });
@@ -481,7 +500,7 @@ export function useSimulation(): SimulationAPI {
         x: (attrs.x as number) ?? 0,
         y: (attrs.y as number) ?? 0,
         radius: Math.max((attrs.size as number) ?? 6, 4),
-        degree: effectiveDegree(graph, key),
+        degree: graph.degree(key),
       });
     });
 
