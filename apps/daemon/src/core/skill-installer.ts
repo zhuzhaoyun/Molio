@@ -244,13 +244,13 @@ const REMOTION_RULE_BLOCK = [
 ].join('\n');
 
 /**
- * Sentinel for the knowledge-base Q&A retrieval rule.
+ * Sentinel for the knowledge-base-first retrieval rule.
  */
 const WIKI_QUERY_RULE_SENTINEL = '<!-- molio:wiki-query-preference -->';
 
 /**
  * Always-on rule that makes the agent retrieve from the vault's wiki BEFORE
- * answering content questions, instead of answering from training memory.
+ * any vault-topic work, instead of working from training memory.
  *
  * This replaces the old WIKI_QUERY_PROMPT system-prompt injection, which rode
  * `--append-system-prompt-file` — a flag the CLI silently drops in some
@@ -259,26 +259,29 @@ const WIKI_QUERY_RULE_SENTINEL = '<!-- molio:wiki-query-preference -->';
  * loaded natively by the CLI and reliably reaches the model (same channel as
  * the docling/remotion rules above), so the retrieval instruction actually lands.
  *
- * Scoped to vault-content questions: retrieval is mandatory for those, while
- * general questions (weather, coding, writing, chit-chat, workspace-activity
- * summaries via git log / mtimes, …) are explicitly exempt so the rule does
- * not role-lock normal queries — the same always-on-background property the
- * old A/B/C probe verified for the system-prompt QUERY frame.
+ * Deliberately ONLY a trigger policy (when to retrieve + that reading the cheap
+ * root index IS the relevance check + the exemption list). The HOW (drill-down
+ * flow, citations, grounding creation in vault material) lives in the wiki-query
+ * skill — duplicating it here is what made earlier revisions bloat to ~25 lines.
+ * Failure modes this wording guards, both real incidents: (1) Q&A-only framing
+ * with "writing" exempted let vault-topic creation skip retrieval — fixed by
+ * making the trigger form-agnostic (subject decides, not task type); (2) an
+ * a-priori "does the vault cover this?" gate forced a memory-based guess before
+ * any lookup — fixed by making the cheap index read the check itself.
  */
 const WIKI_QUERY_RULE_BLOCK = [
   WIKI_QUERY_RULE_SENTINEL,
-  '## Knowledge Base Q&A — Retrieve Before Answering',
+  '## 知识库优先',
   '',
-  'When a question is **about the contents of this knowledge base** (its documents, notes, or the',
-  'entities / events / topics they describe), **use the `wiki-query` skill** to read `wiki/INDEX.md`',
-  'and the relevant wiki pages FIRST — **even if you think you already know the answer**: this vault',
-  'may hold a specific / curated / abridged version that differs from your training data, and you',
-  'cannot know what the vault contains without checking. Then answer grounded in the vault with',
-  '`[[wikilink]]` citations and source notes.',
-  '**Never answer a vault-content question from training memory** without first checking the wiki.',
-  'Questions **unrelated to the vault\'s contents** — general knowledge, weather, coding, writing,',
-  'chit-chat, or the workspace\'s recent activity / state ("总结今天的工作", "最近改了什么" — use git log /',
-  'file mtimes for those) — need no wiki retrieval; answer them normally.',
+  '本库有一套整理好的 wiki —— Molio 的价值在于基于它工作，而不是凭训练记忆。',
+  '',
+  '**任何与本库内容不是明显无关的任务——无论形式（问答、写作、分析、咨询或其他任何形式）——先调用',
+  '`wiki-query` skill。** 凭记忆无法知道本库是否覆盖某主题；读 `wiki/hot.md` + 根 `wiki/INDEX.md`',
+  '本身就是判断方式，成本不过几十行。具体如何往下做（深入目录索引、基于库内材料产出、引用标注），',
+  'skill 里有完整流程。',
+  '',
+  '仅当任务与本库内容明显无关时跳过：天气、一般闲聊、纯机械活（代码语法、排版），以及工作区近期',
+  '活动/状态（"总结今天的工作"、"最近改了什么"——用 git log / 文件 mtime）。',
 ].join('\n');
 
 /**

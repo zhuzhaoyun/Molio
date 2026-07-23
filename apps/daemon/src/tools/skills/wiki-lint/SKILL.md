@@ -1,7 +1,7 @@
 ---
 name: wiki-lint
 description: 对本地知识库的 Wiki 做健康检查/质量审查。查孤立页、断链、断引用、frontmatter 缺失、空段落、内容矛盾、过时内容、INDEX 偏差、知识缺口，生成 lint 报告并给出补充方向建议。Triggers on: 健康检查, 检查 wiki 健康状况, lint, clean up wiki, wiki 维护, check the wiki, wiki audit, find orphans, 审查 wiki.
-version: 1.6.0
+version: 1.7.0
 ---
 
 # wiki-lint: Wiki 健康检查

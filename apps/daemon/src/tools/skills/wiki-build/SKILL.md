@@ -1,7 +1,7 @@
 ---
 name: wiki-build
 description: 构建/重建本地知识库的 Wiki。扫描 vault 中所有源文件，从中构建一个结构化的 wiki（源文件摘要、实体、概念、对比、概述页），创建分层 INDEX（根索引 + 各目录索引）/log/hot，密集交叉链接。支持超长源文件（百万字级小说等）：prep.mjs 确定性预处理 + 分层 digest 构建 + 断点续传。也能把旧单索引库的索引重构为分层布局。Triggers on: 构建 wiki, 重建 wiki, build wiki, 扫描源文件构建, 初始构建, 重新构建知识库, start wiki build, 重构索引, 索引分层, 索引迁移, restructure index.
-version: 1.6.0
+version: 1.7.0
 ---
 
 # wiki-build: 构建 Wiki
