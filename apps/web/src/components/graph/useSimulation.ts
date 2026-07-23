@@ -27,7 +27,7 @@ import type Graph from 'graphology';
 import type Sigma from 'sigma';
 import type { ForceParams, MultiLevelParams } from './types';
 import { DEFAULT_FORCE_PARAMS } from './types';
-import { tileIsolatedNodes } from './graph-utils';
+import { tileIsolatedNodes, centerStrengthForDegree } from './graph-utils';
 
 // ── Constants ──
 
@@ -46,6 +46,7 @@ const COLLIDE_ITERATIONS = 3;
 interface D3Node extends SimulationNodeDatum {
   id: string;
   radius: number;
+  degree: number;
 }
 
 interface D3Link extends SimulationLinkDatum<D3Node> {
@@ -194,6 +195,7 @@ export function useSimulation(): SimulationAPI {
                 fx: (attrs.fx as number | undefined) ?? null,
                 fy: (attrs.fy as number | undefined) ?? null,
                 radius: Math.max((attrs.size as number) ?? 6, 4),
+                degree: g.degree(key),
               };
               mtNodes.push(node);
               mtHandles.set(key, createMainThreadNodeHandle(node));
@@ -216,8 +218,8 @@ export function useSimulation(): SimulationAPI {
               .force('collide', forceCollide<D3Node>()
                 .radius((d) => d.radius * (1 + COLLIDE_PADDING_RATIO))
                 .iterations(COLLIDE_ITERATIONS))
-              .force('x', forceX<D3Node>((d) => (d.fx != null ? d.fx : 0)).strength(p.centerStrength))
-              .force('y', forceY<D3Node>((d) => (d.fy != null ? d.fy : 0)).strength(p.centerStrength))
+              .force('x', forceX<D3Node>((d) => (d.fx != null ? d.fx : 0)).strength((d) => centerStrengthForDegree(d.degree, p.centerStrength)))
+              .force('y', forceY<D3Node>((d) => (d.fy != null ? d.fy : 0)).strength((d) => centerStrengthForDegree(d.degree, p.centerStrength)))
               .alphaDecay(0.03)
               .velocityDecay(0.35)
               .on('tick', () => {
@@ -237,7 +239,7 @@ export function useSimulation(): SimulationAPI {
             // Large graph: keep worker mode, init for drag/collision
             const initNodes: {
               id: string; x: number; y: number; radius: number;
-              fx: number | null; fy: number | null;
+              fx: number | null; fy: number | null; degree: number;
             }[] = [];
             g.forEachNode((key, attrs) => {
               initNodes.push({
@@ -247,6 +249,7 @@ export function useSimulation(): SimulationAPI {
                 fx: (attrs.fx as number | undefined) ?? null,
                 fy: (attrs.fy as number | undefined) ?? null,
                 radius: Math.max((attrs.size as number) ?? 6, 4),
+                degree: g.degree(key),
               });
             });
             const initLinks: { source: string; target: string }[] = [];
@@ -322,6 +325,7 @@ export function useSimulation(): SimulationAPI {
         fx: (attrs.fx as number | undefined) ?? null,
         fy: (attrs.fy as number | undefined) ?? null,
         radius: Math.max((attrs.size as number) ?? 6, 4),
+        degree: graph.degree(key),
       };
       d3Nodes.push(node);
       handles.set(key, createMainThreadNodeHandle(node));
@@ -345,8 +349,8 @@ export function useSimulation(): SimulationAPI {
       .force('collide', forceCollide<D3Node>()
         .radius((d) => d.radius * (1 + COLLIDE_PADDING_RATIO))
         .iterations(COLLIDE_ITERATIONS))
-      .force('x', forceX<D3Node>((d) => (d.fx != null ? d.fx : 0)).strength(params.centerStrength))
-      .force('y', forceY<D3Node>((d) => (d.fy != null ? d.fy : 0)).strength(params.centerStrength))
+      .force('x', forceX<D3Node>((d) => (d.fx != null ? d.fx : 0)).strength((d) => centerStrengthForDegree(d.degree, params.centerStrength)))
+      .force('y', forceY<D3Node>((d) => (d.fy != null ? d.fy : 0)).strength((d) => centerStrengthForDegree(d.degree, params.centerStrength)))
       .alphaDecay(0.03)
       .velocityDecay(0.35)
       .on('tick', () => {
@@ -368,7 +372,7 @@ export function useSimulation(): SimulationAPI {
 
     const nodes: {
       id: string; x: number; y: number; radius: number;
-      fx: number | null; fy: number | null;
+      fx: number | null; fy: number | null; degree: number;
     }[] = [];
     const links: { source: string; target: string }[] = [];
     const handles = new Map<string, NodeHandle>();
@@ -381,6 +385,7 @@ export function useSimulation(): SimulationAPI {
         fx: (attrs.fx as number | undefined) ?? null,
         fy: (attrs.fy as number | undefined) ?? null,
         radius: Math.max((attrs.size as number) ?? 6, 4),
+        degree: graph.degree(key),
       });
       handles.set(key, createWorkerNodeHandle(key, workerRef));
     });
@@ -469,13 +474,14 @@ export function useSimulation(): SimulationAPI {
     mlOnProgressRef.current = params?.onProgress ?? null;
 
     // Collect node data
-    const nodes: { id: string; x: number; y: number; radius: number }[] = [];
+    const nodes: { id: string; x: number; y: number; radius: number; degree: number }[] = [];
     graph.forEachNode((key, attrs) => {
       nodes.push({
         id: key,
         x: (attrs.x as number) ?? 0,
         y: (attrs.y as number) ?? 0,
         radius: Math.max((attrs.size as number) ?? 6, 4),
+        degree: graph.degree(key),
       });
     });
 

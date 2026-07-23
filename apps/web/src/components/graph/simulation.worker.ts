@@ -17,12 +17,14 @@ import {
   type SimulationNodeDatum,
   type SimulationLinkDatum,
 } from 'd3-force';
+import { centerStrengthForDegree } from './graph-utils';
 
 // ── Types ──
 
 interface WorkerNode extends SimulationNodeDatum {
   id: string;
   radius: number;
+  degree: number;
 }
 
 interface WorkerLink extends SimulationLinkDatum<WorkerNode> {
@@ -124,8 +126,8 @@ function handleInit(msg: InitMessage) {
     .force('collide', forceCollide<WorkerNode>()
       .radius((d) => d.radius * (1 + 0.5))
       .iterations(3))
-    .force('x', forceX<WorkerNode>((d) => (d.fx != null ? d.fx : 0)).strength(p.centerStrength))
-    .force('y', forceY<WorkerNode>((d) => (d.fy != null ? d.fy : 0)).strength(p.centerStrength))
+    .force('x', forceX<WorkerNode>((d) => (d.fx != null ? d.fx : 0)).strength((d) => centerStrengthForDegree(d.degree, p.centerStrength)))
+    .force('y', forceY<WorkerNode>((d) => (d.fy != null ? d.fy : 0)).strength((d) => centerStrengthForDegree(d.degree, p.centerStrength)))
     .alphaDecay(0.03)
     .velocityDecay(0.35)
     .on('tick', onTick);
@@ -350,6 +352,7 @@ function coarseLayoutSync(
       x: cnt > 0 ? cx : (Math.random() - 0.5) * 50,
       y: cnt > 0 ? cy : (Math.random() - 0.5) * 50,
       radius: n.radius,
+      degree: n.degree,
     };
   });
 
@@ -367,8 +370,8 @@ function coarseLayoutSync(
       .strength((d: any) => d.strength))
     .force('charge', forceManyBody().strength(params.repelStrength))
     .force('collide', forceCollide().radius((d: any) => d.radius * 1.5).iterations(3))
-    .force('x', forceX().strength(params.centerStrength))
-    .force('y', forceY().strength(params.centerStrength))
+    .force('x', forceX().strength((d: any) => centerStrengthForDegree(d.degree ?? 0, params.centerStrength)))
+    .force('y', forceY().strength((d: any) => centerStrengthForDegree(d.degree ?? 0, params.centerStrength)))
     .alphaDecay(0.03)
     .velocityDecay(0.35);
 
@@ -402,7 +405,7 @@ function coarseLayoutSync(
 function prolongateAndRefine(
   levels: CoarseLevel[],
   coarsestPositions: Map<string, { x: number; y: number }>,
-  originalNodes: { id: string; radius: number }[],
+  originalNodes: { id: string; radius: number; degree: number }[],
   originalEdges: { source: string; target: string }[],
   params: ForceParams,
   refineTicks: number,
@@ -439,6 +442,7 @@ function prolongateAndRefine(
       x: pos?.x ?? (Math.random() - 0.5) * 100,
       y: pos?.y ?? (Math.random() - 0.5) * 100,
       radius: n.radius,
+      degree: n.degree,
     };
   });
 
@@ -449,8 +453,8 @@ function prolongateAndRefine(
       .distance(params.linkDistance).strength(params.linkStrength))
     .force('charge', forceManyBody().strength(params.repelStrength))
     .force('collide', forceCollide().radius((d: any) => d.radius * 1.5).iterations(3))
-    .force('x', forceX().strength(params.centerStrength))
-    .force('y', forceY().strength(params.centerStrength))
+    .force('x', forceX().strength((d: any) => centerStrengthForDegree(d.degree ?? 0, params.centerStrength)))
+    .force('y', forceY().strength((d: any) => centerStrengthForDegree(d.degree ?? 0, params.centerStrength)))
     .alphaDecay(0.03)
     .velocityDecay(0.35);
 
@@ -465,7 +469,7 @@ function prolongateAndRefine(
 // ── Multi-Level: Init Handler ──
 
 function handleMultiLevelInit(msg: {
-  nodes: { id: string; x: number; y: number; radius: number }[];
+  nodes: { id: string; x: number; y: number; radius: number; degree: number }[];
   links: { source: string; target: string }[];
   params: ForceParams;
   maxLevels?: number;
@@ -479,7 +483,7 @@ function handleMultiLevelInit(msg: {
     const maxLevels = msg.maxLevels ?? 5;
     const minFraction = msg.minFraction ?? 0.05;
     const refineTicks = msg.refineTicks ?? 250;
-    const origNodes = msg.nodes.map((n) => ({ id: n.id, radius: n.radius }));
+    const origNodes = msg.nodes.map((n) => ({ id: n.id, radius: n.radius, degree: n.degree }));
     const origEdges = msg.links;
 
     // Phase 1: Coarsening
