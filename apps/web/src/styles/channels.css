@@ -268,6 +268,226 @@
   justify-content: flex-end;
 }
 
+/* ─── Feishu panel — wizard + credentials ─── */
+
+.channels-card--feishu {
+  grid-template-columns: minmax(0, 1fr) 220px;
+}
+
+.channels-card__side--feishu {
+  gap: 16px;
+}
+
+.channels-feishu-wizard {
+  margin-top: 16px;
+  padding: 14px 16px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.channels-feishu-wizard__head {
+  margin-bottom: 10px;
+}
+
+.channels-feishu-wizard__title {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.channels-feishu-wizard__subtitle {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.channels-feishu-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.channels-feishu-step {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.channels-feishu-step--warn {
+  border-color: var(--red-border);
+  background: var(--red-bg);
+}
+
+.channels-feishu-step__body {
+  min-width: 0;
+  flex: 1;
+}
+
+.channels-feishu-step__title {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.channels-feishu-step__desc {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+.channels-feishu-login {
+  margin-top: 16px;
+  padding: 12px 16px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.channels-feishu-login__body {
+  min-width: 0;
+  flex: 1;
+}
+
+.channels-feishu-login__title {
+  margin: 0 0 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.channels-feishu-login__desc {
+  margin: 0 0 4px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+.channels-feishu-login__hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-muted);
+  opacity: 0.85;
+}
+
+.channels-feishu-login__status {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+
+.channels-feishu-login__status-on {
+  color: var(--green);
+  font-weight: 500;
+}
+
+.channels-feishu-login__status-off {
+  color: var(--text-muted);
+}
+
+.channels-feishu-credentials {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  margin-top: 6px;
+  max-width: 640px;
+}
+
+.channels-feishu-credentials .channels-field {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: none;
+}
+
+.channels-feishu-save {
+  flex-shrink: 0;
+  height: 32px;
+  box-sizing: border-box;
+  white-space: nowrap;
+}
+
+.channels-input {
+  height: 32px;
+  padding: 0 10px;
+  color: var(--text);
+  background-color: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.channels-input:focus {
+  border-color: var(--accent);
+}
+
+.channels-feishu-perms,
+.channels-feishu-event {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+.channels-feishu-perms code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  color: var(--accent);
+}
+
+.channels-feishu-event li {
+  padding-left: 12px;
+  position: relative;
+}
+
+.channels-feishu-event li::before {
+  content: '•';
+  position: absolute;
+  left: 0;
+  color: var(--text-faint);
+}
+
+.channels-feishu-warn {
+  margin-top: 4px;
+  padding: 6px 10px;
+  font-size: 11px;
+  color: var(--red);
+  background: var(--red-bg);
+  border: 1px solid var(--red-border);
+  border-radius: var(--radius-sm);
+  line-height: 1.5;
+}
+
 @media (max-width: 780px) {
   .channels-header {
     padding: 12px 16px 10px;
@@ -300,5 +520,18 @@
 
   .channels-actions {
     justify-content: flex-start;
+  }
+
+  .channels-feishu-credentials {
+    flex-wrap: wrap;
+  }
+
+  .channels-feishu-credentials .channels-field {
+    flex: 1 1 100%;
+  }
+
+  .channels-feishu-step {
+    flex-direction: column;
+    align-items: stretch;
   }
 }

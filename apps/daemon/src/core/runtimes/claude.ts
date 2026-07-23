@@ -26,6 +26,12 @@ export const claudeAgentDef: RuntimeAgentDef = {
     if (options.model && options.model !== 'default') {
       args.push('--model', options.model);
     }
+    // Role-frame file (feishu channel) — a file path, never inline text: inline
+    // broke argv parsing on Windows, silently dropping later flags (notably
+    // --dangerously-skip-permissions) and blocking all tool calls.
+    if (options.appendSystemPromptFile) {
+      args.push('--append-system-prompt-file', options.appendSystemPromptFile);
+    }
     args.push('--dangerously-skip-permissions');
     return args;
   },

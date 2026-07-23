@@ -9,6 +9,7 @@ import { openDatabase, closeDatabase, listMessages, createVault } from '../../..
 import { ConversationService } from '../../../src/core/conversations/service.js';
 import type { RunManager } from '../../../src/core/RunManager.js';
 import { WeixinRunDispatcher, type DispatchRequest } from '../../../src/core/weixin/dispatcher.js';
+import { buildWeixinFrameMessage } from '../../../src/core/weixin/message.js';
 
 /**
  * Integration tests for the weixin multi-turn run dispatcher.
@@ -119,8 +120,10 @@ describe('WeixinRunDispatcher multi-turn run reuse', () => {
       runManager: mock.asRunManager(),
       conversations,
       db,
-      sendText: async () => {},
-      sendMediaFile: async () => {},
+      sink: { sendText: async () => {}, sendMediaFile: async () => {} },
+      buildPrompt: (text) => text,
+      frameFirstTurn: buildWeixinFrameMessage,
+      channelLabel: 'weixin',
     });
     const conv = conversations.getOrCreateExternalConversation({
       channelType: 'weixin',
@@ -137,7 +140,7 @@ describe('WeixinRunDispatcher multi-turn run reuse', () => {
 
   function payload(text: string, history: ChatMessage[] = []): DispatchRequest {
     return {
-      fromUserId: 'u1',
+      userId: 'u1',
       conversationId,
       agentId: 'claude',
       cwd: cwdDir,

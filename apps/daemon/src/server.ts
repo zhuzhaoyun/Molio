@@ -17,8 +17,10 @@ import { publishRoutes, cleanupAllBridges } from './routes/publish.js';
 import { proxyRoutes } from './routes/proxy.js';
 import { graphRoutes } from './routes/graph.js';
 import { weixinRoutes } from './routes/weixin.js';
+import { feishuRoutes } from './routes/feishu.js';
 import { maintenanceRoutes } from './routes/maintenance.js';
 import { WeixinService } from './core/weixin/service.js';
+import { FeishuService } from './core/feishu/service.js';
 import { ConversationService } from './core/conversations/service.js';
 import { VaultWatcher } from './core/vault-watcher.js';
 
@@ -26,6 +28,7 @@ export const runManager = new RunManager();
 export const db: Database.Database = openDatabase();
 export const conversationService = new ConversationService(db);
 export const weixinService = new WeixinService(runManager, conversationService, db);
+export const feishuService = new FeishuService(runManager, conversationService, db);
 export const vaultWatcher = new VaultWatcher(db);
 
 export const app = new Hono();
@@ -51,10 +54,11 @@ app.get('/api/health', (c) => {
 
 // Graceful shutdown endpoint — called by the desktop shell before quitting
 // so we can flush in-flight assistant replies to the database.
-app.post('/api/shutdown', (c) => {
+app.post('/api/shutdown', async (c) => {
   console.log('Shutdown requested by desktop shell, flushing active runs...');
   cleanupAllBridges();
   weixinService.stop();
+  await feishuService.stop();
   void vaultWatcher.stop();
   runManager.cancelAll();
   closeDatabase();
@@ -77,9 +81,11 @@ app.route('/api/publish', publishRoutes());
 app.route('/api/proxy', proxyRoutes());
 app.route('/api/graph', graphRoutes(db));
 app.route('/api/weixin', weixinRoutes(weixinService));
+app.route('/api/feishu', feishuRoutes(feishuService));
 app.route('/api/maintenance', maintenanceRoutes(db));
 
 void weixinService.start();
+void feishuService.start();
 void vaultWatcher.start();
 
 // Static file serving (production / desktop mode)
@@ -149,20 +155,20 @@ if (staticDir) {
 }
 
 // Graceful shutdown
-process.on('SIGINT', () => {
+function gracefulShutdown(): void {
   cleanupAllBridges();
   weixinService.stop();
   void vaultWatcher.stop();
   runManager.cancelAll();
-  closeDatabase();
-  process.exit(0);
-});
+  // Feishu stop() is async (WSClient teardown); chain DB close + exit AFTER
+  // it resolves so we don't close the SQLite handle while a WS callback is
+  // mid-write. WeixinService.stop() is still sync (polling-based, no async
+  // teardown), so it's safe to call before the await.
+  void feishuService.stop().finally(() => {
+    closeDatabase();
+    process.exit(0);
+  });
+}
 
-process.on('SIGTERM', () => {
-  cleanupAllBridges();
-  weixinService.stop();
-  void vaultWatcher.stop();
-  runManager.cancelAll();
-  closeDatabase();
-  process.exit(0);
-});
+process.on('SIGINT', gracefulShutdown);
+process.on('SIGTERM', gracefulShutdown);
