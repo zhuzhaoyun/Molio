@@ -25,10 +25,10 @@ import {
 
 describe('DEFAULT_FORCE_PARAMS', () => {
   it('should have correct default force values', () => {
-    assert.strictEqual(DEFAULT_FORCE_PARAMS.centerStrength, 0.004);
-    assert.strictEqual(DEFAULT_FORCE_PARAMS.repelStrength, -60);
-    assert.strictEqual(DEFAULT_FORCE_PARAMS.linkStrength, 0.15);
-    assert.strictEqual(DEFAULT_FORCE_PARAMS.linkDistance, 100);
+    assert.strictEqual(DEFAULT_FORCE_PARAMS.centerStrength, 0.002);
+    assert.strictEqual(DEFAULT_FORCE_PARAMS.repelStrength, -100);
+    assert.strictEqual(DEFAULT_FORCE_PARAMS.linkStrength, 0.3);
+    assert.strictEqual(DEFAULT_FORCE_PARAMS.linkDistance, 55);
   });
 });
 

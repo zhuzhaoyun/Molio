@@ -37,8 +37,8 @@ export interface ThemeColors {
 export const DEFAULT_FORCE_PARAMS: ForceParams = {
   centerStrength: 0.002,   // 全局向心引力（减弱，配合 rest→0）
   repelStrength: -100,     // 增强排斥力，节点更均匀散开
-  linkStrength: 0.2,       // 边弹簧拉力稍强，聚类更紧
-  linkDistance: 80,        // 边自然长度缩短，团的内部更紧凑
+  linkStrength: 0.3,       // 边弹簧更硬：抵抗全局排斥，把相连节点拉近、簇内紧凑
+  linkDistance: 55,        // 边自然长度缩短：对齐 Obsidian 的紧凑连接距离
 };
 
 /** Parameters for multi-level layout (Walshaw coarsening). */
