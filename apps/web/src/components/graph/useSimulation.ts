@@ -27,6 +27,7 @@ import type Graph from 'graphology';
 import type Sigma from 'sigma';
 import type { ForceParams, MultiLevelParams } from './types';
 import { DEFAULT_FORCE_PARAMS } from './types';
+import { tileIsolatedNodes } from './graph-utils';
 
 // ── Constants ──
 
@@ -34,8 +35,9 @@ import { DEFAULT_FORCE_PARAMS } from './types';
 const WORKER_THRESHOLD = 1000;
 
 // ── 碰撞力参数 ──
-// padding 按半径比例，大节点留白更多（替代固定 +6），排布更均匀
-const COLLIDE_PADDING_RATIO = 0.35;
+// padding 按半径比例，大节点留白更多（替代固定 +6），排布更均匀。
+// 0.5 让相邻节点视觉边缘保留约一个半径的空隙，中心连线不至于糊成团。
+const COLLIDE_PADDING_RATIO = 0.5;
 // 多次迭代充分解析簇内重叠（默认 1 次常残留重叠）
 const COLLIDE_ITERATIONS = 3;
 
@@ -163,6 +165,11 @@ export function useSimulation(): SimulationAPI {
           mlRunningRef.current = false;
           window.dispatchEvent(new CustomEvent('graph-ml-done'));
 
+          // 把孤立节点平铺成外围圆环并固定（对齐 Obsidian tile）。
+          // 必须在写 ML 位置之后、构建后续模拟之前——平铺用收敛后的连接
+          // 节点位置算质心/半径，且平铺写入的 fx/fy 要被下面的模拟读到。
+          tileIsolatedNodes(g);
+
           // After ML, switch to the optimal simulation mode for smooth drag:
           // small graphs (< WORKER_THRESHOLD) → main-thread simulation
           // (zero postMessage latency during drag + collision)
@@ -183,6 +190,9 @@ export function useSimulation(): SimulationAPI {
                 id: key,
                 x: (attrs.x as number) ?? 0,
                 y: (attrs.y as number) ?? 0,
+                // 读平铺/拖拽固定的 fx/fy，让模拟尊重固定位置
+                fx: (attrs.fx as number | undefined) ?? null,
+                fy: (attrs.fy as number | undefined) ?? null,
                 radius: Math.max((attrs.size as number) ?? 6, 4),
               };
               mtNodes.push(node);
@@ -200,7 +210,9 @@ export function useSimulation(): SimulationAPI {
                 .id((d) => d.id)
                 .distance(p.linkDistance)
                 .strength(p.linkStrength))
-              .force('charge', forceManyBody<D3Node>().strength(p.repelStrength).distanceMax(250))
+              // 不设 distanceMax：全局 Barnes-Hut 排斥让低度节点持续受中心
+              // 累积推力，涌现"度越高越靠中心"的径向梯度（对齐 Obsidian）。
+              .force('charge', forceManyBody<D3Node>().strength(p.repelStrength))
               .force('collide', forceCollide<D3Node>()
                 .radius((d) => d.radius * (1 + COLLIDE_PADDING_RATIO))
                 .iterations(COLLIDE_ITERATIONS))
@@ -217,17 +229,23 @@ export function useSimulation(): SimulationAPI {
                 }
               });
 
+            // ML 位置已收敛，禁止模拟自动重跑（否则连接节点会抖动、
+            // 未固定的节点会被向心力拉移）。仅拖拽时 wake() 才跑。
+            mtSim.stop();
             simRef.current = mtSim;
           } else if (mlW && g) {
             // Large graph: keep worker mode, init for drag/collision
             const initNodes: {
               id: string; x: number; y: number; radius: number;
+              fx: number | null; fy: number | null;
             }[] = [];
             g.forEachNode((key, attrs) => {
               initNodes.push({
                 id: key,
                 x: (attrs.x as number) ?? 0,
                 y: (attrs.y as number) ?? 0,
+                fx: (attrs.fx as number | undefined) ?? null,
+                fy: (attrs.fy as number | undefined) ?? null,
                 radius: Math.max((attrs.size as number) ?? 6, 4),
               });
             });
@@ -300,6 +318,9 @@ export function useSimulation(): SimulationAPI {
       const node: D3Node = {
         id: key,
         x, y,
+        // 读 savedPositions 恢复的固定位置（孤立节点圆环 / 用户拖拽锁定）
+        fx: (attrs.fx as number | undefined) ?? null,
+        fy: (attrs.fy as number | undefined) ?? null,
         radius: Math.max((attrs.size as number) ?? 6, 4),
       };
       d3Nodes.push(node);
@@ -318,7 +339,8 @@ export function useSimulation(): SimulationAPI {
         .id((d) => d.id)
         .distance(params.linkDistance)
         .strength(params.linkStrength))
-      .force('charge', forceManyBody<D3Node>().strength(params.repelStrength).distanceMax(250))
+      // 不设 distanceMax：全局排斥涌现度→半径梯度（见 multi-level-done 注释）
+      .force('charge', forceManyBody<D3Node>().strength(params.repelStrength))
       // 边界距离碰撞：padding 按半径比例（大节点更大留白）+ 3 次迭代充分解析重叠
       .force('collide', forceCollide<D3Node>()
         .radius((d) => d.radius * (1 + COLLIDE_PADDING_RATIO))
@@ -344,14 +366,22 @@ export function useSimulation(): SimulationAPI {
   function initWorkerMode(graph: Graph, params: ForceParams) {
     modeRef.current = 'worker';
 
-    const nodes: { id: string; x: number; y: number; radius: number }[] = [];
+    const nodes: {
+      id: string; x: number; y: number; radius: number;
+      fx: number | null; fy: number | null;
+    }[] = [];
     const links: { source: string; target: string }[] = [];
     const handles = new Map<string, NodeHandle>();
 
     graph.forEachNode((key, attrs) => {
       const x = (attrs.x as number) ?? Math.random() * 100;
       const y = (attrs.y as number) ?? Math.random() * 100;
-      nodes.push({ id: key, x, y, radius: Math.max((attrs.size as number) ?? 6, 4) });
+      nodes.push({
+        id: key, x, y,
+        fx: (attrs.fx as number | undefined) ?? null,
+        fy: (attrs.fy as number | undefined) ?? null,
+        radius: Math.max((attrs.size as number) ?? 6, 4),
+      });
       handles.set(key, createWorkerNodeHandle(key, workerRef));
     });
 
@@ -484,7 +514,9 @@ export function useSimulation(): SimulationAPI {
       params: { ...initParamsRef.current },
       maxLevels: params?.maxLevels ?? 5,
       minFraction: params?.minSizeFraction ?? 0.05,
-      refineTicks: params?.refineTicks ?? 80,
+      // 精化需充分收敛才能让向心力/排斥力把节点推到平衡位置；
+      // 80 tick 在 alphaDecay 0.03 下 alpha 仍 ~0.09，远未收敛。
+      refineTicks: params?.refineTicks ?? 250,
     });
   }, []);
 

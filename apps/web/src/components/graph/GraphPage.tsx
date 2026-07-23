@@ -96,8 +96,12 @@ export function GraphPage() {
       setTimeout(() => setMlRunning(false), 500);
     }
   };
-  // Persist node positions across graph rebuilds (theme change, nodeScale change)
-  const savedPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
+  // Persist node positions across graph rebuilds (theme change, nodeScale change).
+  // fx/fy 一并保存：孤立节点的外围圆环固定、用户拖拽锁定，重建后需恢复，
+  // 否则重建后这些节点会失去固定、被向心力拉回中心。
+  const savedPositionsRef = useRef<
+    Map<string, { x: number; y: number; fx?: number; fy?: number }>
+  >(new Map());
 
   // ── Transition animation states ──
   const focusDimRef = useRef(0);        // 0→1 animated for select focus
@@ -195,6 +199,8 @@ export function GraphPage() {
         type: 'circle',
         x: saved?.x ?? Math.cos(angle) * radius,
         y: saved?.y ?? Math.sin(angle) * radius,
+        // 恢复固定位置（孤立节点圆环 / 拖拽锁定）；undefined 时不设属性
+        ...(saved?.fx != null ? { fx: saved.fx, fy: saved.fy } : {}),
       });
     }
 
@@ -225,6 +231,7 @@ export function GraphPage() {
             type: 'circle',
             x: saved?.x ?? (Math.random() - 0.5) * radius,
             y: saved?.y ?? (Math.random() - 0.5) * radius,
+            ...(saved?.fx != null ? { fx: saved.fx, fy: saved.fy } : {}),
           });
         } catch { /* node already exists */ }
       }
@@ -551,13 +558,16 @@ export function GraphPage() {
         draggedNode = null;
         if (selectedNodeRef.current) {
           const prev = selectedNodeRef.current;
-          graph.removeNodeAttribute(prev, 'fx');
-          graph.removeNodeAttribute(prev, 'fy');
-          // Also release d3 lock if any
-          const d3Node = simulation.getNode(prev);
-          if (d3Node) {
-            d3Node.fx = null;
-            d3Node.fy = null;
+          // 孤立节点保持固定：取消选中不解锁，否则外围圆环被破坏
+          if (!(graph.hasNode(prev) && graph.degree(prev) === 0)) {
+            graph.removeNodeAttribute(prev, 'fx');
+            graph.removeNodeAttribute(prev, 'fy');
+            // Also release d3 lock if any
+            const d3Node = simulation.getNode(prev);
+            if (d3Node) {
+              d3Node.fx = null;
+              d3Node.fy = null;
+            }
           }
           // Start restore animation before clearing ref
           startDimAnimation(0, 200);
@@ -617,13 +627,20 @@ export function GraphPage() {
       const wasDragging = isDragging;
 
       if (wasDragging) {
-        // Release d3 fx/fy lock → node settles naturally with damping
         const d3Node = simulation.getNode(node);
         if (d3Node) {
-          d3Node.fx = null;
-          d3Node.fy = null;
-          graph.removeNodeAttribute(node, 'fx');
-          graph.removeNodeAttribute(node, 'fy');
+          if (graph.hasNode(node) && graph.degree(node) === 0) {
+            // 孤立节点：拖拽后保持固定在新位置，维持外围平铺圆环。
+            // 不解锁——否则向心力会把它拉回中心，圆环出现缺角。
+            graph.setNodeAttribute(node, 'fx', d3Node.x);
+            graph.setNodeAttribute(node, 'fy', d3Node.y);
+          } else {
+            // Release d3 fx/fy lock → node settles naturally with damping
+            d3Node.fx = null;
+            d3Node.fy = null;
+            graph.removeNodeAttribute(node, 'fx');
+            graph.removeNodeAttribute(node, 'fy');
+          }
         }
         // Small nudge for gradual convergence
         simulation.wake(0.1);
@@ -658,10 +675,19 @@ export function GraphPage() {
 
     return () => {
       // Save positions before teardown so they persist across rebuilds (theme change, etc.)
-      const positions = new Map<string, { x: number; y: number }>();
+      const positions = new Map<string, { x: number; y: number; fx?: number; fy?: number }>();
       if (graphRef.current) {
         graphRef.current.forEachNode((key, attrs) => {
-          positions.set(key, { x: (attrs.x as number) ?? 0, y: (attrs.y as number) ?? 0 });
+          const entry: { x: number; y: number; fx?: number; fy?: number } = {
+            x: (attrs.x as number) ?? 0,
+            y: (attrs.y as number) ?? 0,
+          };
+          // 固定位置一并保存，重建后恢复（见 savedPositionsRef 注释）
+          const fx = attrs.fx as number | undefined;
+          const fy = attrs.fy as number | undefined;
+          if (fx != null) entry.fx = fx;
+          if (fy != null) entry.fy = fy;
+          positions.set(key, entry);
         });
       }
       savedPositionsRef.current = positions;
