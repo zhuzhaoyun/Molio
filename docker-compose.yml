@@ -24,14 +24,14 @@ services:
       - "${MOLIO_PORT:-3100}:3100"
     volumes:
       # 应用数据持久化（SQLite 数据库 + 配置文件）
-      - molio-data:/root/.molio
+      - molio-data:/home/molio/.molio
       # Claude Code 认证和配置持久化
-      - molio-claude:/root/.claude
+      - molio-claude:/home/molio/.claude
       # 知识库文档目录（NAS 上的实际文件）
       - ${MOLIO_VAULT_PATH:-./vaults}:/vaults
+    # .env 中所有变量透传给容器（ANTHROPIC_*、CLAUDE_CODE_* 等）
+    env_file: .env
     environment:
-      # Claude Code API Key（必填）
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       # 服务端口（容器内部端口，一般不需要改）
       - MOLIO_PORT=3100
     restart: unless-stopped
