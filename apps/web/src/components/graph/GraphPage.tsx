@@ -549,8 +549,12 @@ export function GraphPage() {
           d3Node.fx = (attrs.x as number) ?? 0;
           d3Node.fy = (attrs.y as number) ?? 0;
         }
+        // 拖拽时锁死相机：禁 autoRescale，否则每次 refresh 重算包围盒调相机，
+        // 相机以中心缩放→边缘节点径向视觉漂移（"孤立点朝固定方向越拖越偏"的
+        // 根因）。松手恢复。也满足"拖拽不改相机视角、节点不拖到无限远"。
+        renderer.setSetting('autoRescale', false);
         // 唤醒物理引擎——这次唤醒会持续 tick，拖拽过程中不需要重复唤醒
-        simulation.wake();
+        simulation.wake(0.3);
         e.preventDefault();
         e.stopPropagation();
       } else {
@@ -609,14 +613,17 @@ export function GraphPage() {
           graph.setNodeAttribute(draggedNode, 'x', graphPos.x);
           graph.setNodeAttribute(draggedNode, 'y', graphPos.y);
         }
-        // 轻柔保持引擎活跃——mousedown 的唤醒在 ~1s 后衰减殆尽
-        // 低 alpha 让邻居持续被弹簧拉动，不会闪烁（tick 已不再调用 refresh）
-        simulation.wake(0.06);
+        // 活跃模拟：让关联节点被边力牵引跟随、其他节点流动填补拖拽产生的空白
+        // （对齐 Obsidian「液体填补」）。alpha 0.3 衰减约百 tick，持续流动。
+        simulation.wake(0.3);
         renderer.refresh();
       }
     };
 
     const handleMouseUp = (_e: MouseEvent) => {
+      // 恢复 autoRescale（mousedown 命中节点时关了）。拖拽结束，让相机在
+      // 数据/尺寸变化时能重新 fit 全图。
+      renderer.setSetting('autoRescale', true);
       if (!draggedNode) {
         draggedNode = null;
         isDragging = false;
