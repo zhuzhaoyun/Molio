@@ -398,7 +398,8 @@ export function GraphPage() {
 
     renderer.refresh();
     // Start d3-force physics engine (positions sync on tick, rendering via interaction handlers)
-    simulation.init(graph, renderer, () => {});
+    // onTick=refresh：让 d3 tick 中其他节点的位置变化实时重绘（拖拽流体联动）
+    simulation.init(graph, renderer, () => renderer.refresh());
 
     // Apply stored force params to the fresh simulation
     const { forces, edgeWidth } = settings;

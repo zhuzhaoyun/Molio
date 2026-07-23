@@ -96,6 +96,9 @@ export function useSimulation(): SimulationAPI {
   // Multi-level layout state
   const mlRunningRef = useRef(false);
   const mlOnProgressRef = useRef<((phase: string, progress: number) => void) | null>(null);
+  // 每次 d3 tick 的回调（GraphPage 传 renderer.refresh），让模拟过程中其他节点
+  // 的位置变化实时重绘——否则拖拽时只看到被拖节点动、其他节点"不联动"。
+  const onTickRef = useRef<(() => void) | null>(null);
 
   // ── Stop ──
 
@@ -248,6 +251,9 @@ export function useSimulation(): SimulationAPI {
                     g.setNodeAttribute(d.id, 'y', d.y);
                   }
                 }
+                // 实时重绘：让拖拽时其他节点的位置变化可见（流体联动），
+                // 否则只有被拖节点动、其他"不联动"显得像漂移
+                onTickRef.current?.();
               });
 
             // 防御：孤立节点(degree0)必须有 fx 才不会被排斥力径向外推、拖拽时
@@ -307,10 +313,11 @@ export function useSimulation(): SimulationAPI {
 
   // ── Init ──
 
-  const init = useCallback((graph: Graph, sigma: Sigma, _onTick?: () => void) => {
+  const init = useCallback((graph: Graph, sigma: Sigma, onTick?: () => void) => {
     // Reset ML state in case init is called mid-ML
     mlRunningRef.current = false;
     mlOnProgressRef.current = null;
+    onTickRef.current = onTick ?? null;
 
     // Kill previous
     const prevMode = modeRef.current;
@@ -391,6 +398,8 @@ export function useSimulation(): SimulationAPI {
             graph.setNodeAttribute(d.id, 'y', d.y);
           }
         }
+        // 实时重绘：让模拟过程中节点位置变化可见（同 mtSim）
+        onTickRef.current?.();
       });
 
     // 防御：同 mtSim，孤立节点(degree0)兜底钉住，防拖拽时排斥外推漂移
