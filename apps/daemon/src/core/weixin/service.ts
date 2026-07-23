@@ -1,75 +1,56 @@
 import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import QRCode from 'qrcode';
 import type Database from 'better-sqlite3';
 import type { RunManager } from '../RunManager.js';
 import type { ConversationService } from '../conversations/service.js';
 import { loadConfig, saveConfig, type WeixinConfig } from '../config.js';
+import { ChannelDispatcher } from '../channels/dispatcher.js';
+import type { ChannelSink } from '../channels/types.js';
+import {
+  readCredentials as readCredFile,
+  removeCredentials,
+  resolveCredentialsPath as resolveCredsPath,
+  writeCredentials,
+} from '../channels/credentials-store.js';
+import { MessageDedup } from '../channels/message-dedup.js';
+import { chunkText } from '../channels/text-chunker.js';
 import { DEFAULT_BASE_URL, WeixinApi } from './client.js';
-import { WeixinRunDispatcher } from './dispatcher.js';
+import { buildMolioPrompt } from './message.js';
+import { wikiPromptFileFor } from './dispatcher.js';
 import { parseWeixinMessage } from './message.js';
 import { materializeAttachments } from './media.js';
 import type {
   ConnectionState,
-  OutboundMediaItem,
   ParsedWeixinMessage,
   WeixinCredentials,
   WeixinStatus,
 } from './types.js';
+import type { OutboundMediaItem } from '../channels/types.js';
 import { UploadMediaType } from './types.js';
 
 const SESSION_EXPIRED_CODE = -14;
 const QR_LOGIN_TIMEOUT_MS = 8 * 60 * 1000;
 const QR_MAX_REFRESHES = 10;
 const TEXT_CHUNK_LIMIT = 4000;
+/** Dedup window for received message_id (matches feishu). */
+const DEDUP_TTL_MS = 7 * 60 * 60 * 1000;
 /** Health probe interval when in unhealthy state (ms). */
 const HEALTH_PROBE_INTERVAL_MS = 30_000;
 
-function configDir(): string {
-  return path.join(os.homedir(), '.molio');
-}
-
-function defaultCredentialsPath(): string {
-  return path.join(configDir(), 'weixin-credentials.json');
-}
+const WEIXIN_CHANNEL_PREFIX = 'weixin';
 
 function resolveCredentialsPath(config?: WeixinConfig): string {
-  const configured = config?.credentialsPath;
-  if (!configured) return defaultCredentialsPath();
-  if (configured.startsWith('~')) return path.join(os.homedir(), configured.slice(1));
-  return configured;
+  return resolveCredsPath(config?.credentialsPath, WEIXIN_CHANNEL_PREFIX);
 }
 
 function readCredentials(file: string): WeixinCredentials | null {
-  try {
-    if (!fs.existsSync(file)) return null;
-    const parsed = JSON.parse(fs.readFileSync(file, 'utf8')) as WeixinCredentials;
-    if (!parsed.token || !parsed.baseUrl) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-function writeCredentials(file: string, credentials: WeixinCredentials): void {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(credentials, null, 2), 'utf8');
-  try {
-    fs.chmodSync(tmp, 0o600);
-  } catch {
-    // Windows and some filesystems ignore POSIX modes.
-  }
-  fs.renameSync(tmp, file);
-}
-
-function removeCredentials(file: string): void {
-  try {
-    fs.rmSync(file, { force: true });
-  } catch {
-    // ignore
-  }
+  return readCredFile<WeixinCredentials>(file, (raw) => {
+    if (!raw || typeof raw !== 'object') return null;
+    const r = raw as Partial<WeixinCredentials>;
+    if (typeof r.token !== 'string' || !r.token) return null;
+    if (typeof r.baseUrl !== 'string' || !r.baseUrl) return null;
+    return { token: r.token, baseUrl: r.baseUrl, botId: r.botId, userId: r.userId, contextTokens: r.contextTokens };
+  });
 }
 
 async function toQrDataUrl(content: string): Promise<string> {
@@ -82,7 +63,7 @@ async function toQrDataUrl(content: string): Promise<string> {
   });
 }
 
-export class WeixinService {
+export class WeixinService implements ChannelSink {
   private api: WeixinApi | null = null;
   private cursor = '';
   private connectionState: ConnectionState = 'idle';
@@ -90,9 +71,9 @@ export class WeixinService {
   private pollAbort: AbortController | null = null;
   private healthTimer: ReturnType<typeof setInterval> | null = null;
   private contextTokens = new Map<string, string>();
-  private receivedMessageIds = new Map<string, number>();
+  private readonly dedup = new MessageDedup({ ttlMs: DEDUP_TTL_MS });
   /** Multi-turn run reuse state machine (per-user run/queue/drain). */
-  private readonly dispatcher: WeixinRunDispatcher;
+  private readonly dispatcher: ChannelDispatcher;
   private status: WeixinStatus = {
     enabled: false,
     loginStatus: 'idle',
@@ -110,16 +91,17 @@ export class WeixinService {
     private readonly conversations: ConversationService,
     private readonly db?: Database.Database,
   ) {
-    // The dispatcher owns run/queue state; the channel owns the send path
-    // (it depends on `api` + `contextTokens`, which live here). Sinks capture
-    // `this` so dispatches always use the current api/context token.
-    this.dispatcher = new WeixinRunDispatcher({
+    // The shared dispatcher owns run/queue state; the channel owns the send
+    // path (it depends on `api` + `contextTokens`, which live here). `this` is
+    // the sink, so dispatches always use the current api/context token.
+    this.dispatcher = new ChannelDispatcher({
       runManager,
       conversations,
       db,
-      sendText: (toUserId, text) => this.sendText(toUserId, text),
-      sendMediaFile: (toUserId, item) => this.sendMediaFile(toUserId, item),
-      onActiveRun: (runId) => { this.status.activeRunId = runId; },
+      sink: this,
+      wikiPromptFileFor,
+      buildPrompt: buildMolioPrompt,
+      channelLabel: 'weixin',
     });
   }
 
@@ -437,7 +419,7 @@ export class WeixinService {
 
   private async handleRawMessage(raw: Parameters<typeof parseWeixinMessage>[0]): Promise<void> {
     const msgId = String(raw.message_id ?? raw.seq ?? '');
-    if (msgId && this.isDuplicate(msgId)) return;
+    if (msgId && this.dedup.check(msgId)) return;
 
     const parsed = parseWeixinMessage(raw);
     if (!parsed) return;
@@ -499,7 +481,7 @@ export class WeixinService {
       // Hand off to the dispatcher: it decides reuse-vs-fresh-spawn, derives
       // the wiki system-prompt file at spawn time, and serializes turns.
       await this.dispatcher.dispatch({
-        fromUserId: message.fromUserId,
+        userId: message.fromUserId,
         conversationId: conversation.id,
         agentId,
         cwd,
@@ -515,12 +497,12 @@ export class WeixinService {
     }
   }
 
-  private async sendText(toUserId: string, text: string): Promise<void> {
+  async sendText(toUserId: string, text: string): Promise<void> {
     if (!this.api) return;
     const contextToken = this.contextTokens.get(toUserId);
     if (!contextToken) return;
 
-    for (const chunk of this.splitText(text)) {
+    for (const chunk of chunkText(text, TEXT_CHUNK_LIMIT)) {
       const response = await this.api.sendText(toUserId, chunk, contextToken);
       const ret = Number(response.ret ?? 0);
       const errcode = Number(response.errcode ?? 0);
@@ -537,7 +519,7 @@ export class WeixinService {
    * video message. Best-effort: failures are logged but never break the text
    * reply. Drops the context token on session expiry, mirroring sendText.
    */
-  private async sendMediaFile(toUserId: string, item: OutboundMediaItem): Promise<void> {
+  async sendMediaFile(toUserId: string, item: OutboundMediaItem): Promise<void> {
     if (!this.api) return;
     const contextToken = this.contextTokens.get(toUserId);
     if (!contextToken) return;
@@ -569,22 +551,9 @@ export class WeixinService {
     }
   }
 
-  private splitText(text: string): string[] {
-    if (text.length <= TEXT_CHUNK_LIMIT) return [text];
-    const chunks: string[] = [];
-    let rest = text;
-    while (rest) {
-      if (rest.length <= TEXT_CHUNK_LIMIT) {
-        chunks.push(rest);
-        break;
-      }
-      let cut = rest.lastIndexOf('\n\n', TEXT_CHUNK_LIMIT);
-      if (cut <= 0) cut = rest.lastIndexOf('\n', TEXT_CHUNK_LIMIT);
-      if (cut <= 0) cut = TEXT_CHUNK_LIMIT;
-      chunks.push(rest.slice(0, cut));
-      rest = rest.slice(cut).replace(/^\n+/, '');
-    }
-    return chunks;
+  /** ChannelSink: track the currently-active run for status display. */
+  onActiveRun(runId: string | null): void {
+    this.status.activeRunId = runId;
   }
 
   private persistContextTokens(): void {
@@ -593,16 +562,6 @@ export class WeixinService {
     if (!credentials) return;
     credentials.contextTokens = Object.fromEntries(this.contextTokens);
     writeCredentials(credentialsPath, credentials);
-  }
-
-  private isDuplicate(messageId: string): boolean {
-    const now = Date.now();
-    for (const [id, ts] of this.receivedMessageIds) {
-      if (now - ts > 7 * 60 * 60 * 1000) this.receivedMessageIds.delete(id);
-    }
-    if (this.receivedMessageIds.has(messageId)) return true;
-    this.receivedMessageIds.set(messageId, now);
-    return false;
   }
 
   private getConfig(): WeixinConfig {
