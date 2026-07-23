@@ -76,6 +76,8 @@ const RING_IN_FACTOR = 1.3;
 const RING_OUT_FACTOR = 2.6;
 /** 期望环间距（graph units），用于决定环带内排几圈环。 */
 const RING_GAP = 12;
+/** 每环最少节点数下限：环数受此约束，防止每环只分到 1-2 个节点而退化成直线。 */
+const MIN_NODES_PER_RING = 8;
 
 /**
  * 把 degree=0 的可见节点平铺成围绕连接节点簇的封顶环形带，并固定 fx/fy。
@@ -103,14 +105,22 @@ export function tileIsolatedNodes(graph: Graph): void {
     cy /= connected.length;
   }
 
-  // 连接节点包围半径（质心到最远连接节点）
-  let maxR = 0;
+  // 连接节点"典型"包围半径：用 90 分位距离而非最大值。少数被长边甩远的
+  // 离群连接节点会把 max 撑得巨大，进而把环带半径和环数都带飞——曾导致
+  // 孤立节点每环只分到 2 个、退化成左右两条水平直线。分位数对离群点稳健。
+  const dists: number[] = [];
   for (const k of connected) {
     const x = (graph.getNodeAttribute(k, 'x') as number) ?? 0;
     const y = (graph.getNodeAttribute(k, 'y') as number) ?? 0;
-    const d = Math.hypot(x - cx, y - cy);
-    if (d > maxR) maxR = d;
+    dists.push(Math.hypot(x - cx, y - cy));
   }
+  dists.sort((a, b) => a - b);
+  const maxR =
+    dists.length === 0
+      ? 0
+      : dists.length < 10
+        ? dists[dists.length - 1]!
+        : dists[Math.floor(dists.length * 0.9)]!;
 
   // 封顶环带：内/外半径与中心簇成比例；无连接节点时退化为绝对小圈。
   // 关键——rOut 是包围盒半径的硬上限，绝不向外突破，否则中心簇会被
@@ -118,8 +128,11 @@ export function tileIsolatedNodes(graph: Graph): void {
   const rIn = connected.length > 0 ? Math.max(maxR * RING_IN_FACTOR, 18) : 24;
   const rOut = connected.length > 0 ? Math.max(maxR * RING_OUT_FACTOR, 48) : 96;
 
-  // 环带内的环半径（线性分布在内/外半径之间，环间距≈RING_GAP）
-  const nRings = Math.max(1, Math.floor((rOut - rIn) / RING_GAP) + 1);
+  // 环带内的环半径（线性分布在内/外半径之间，环间距≈RING_GAP）。
+  // 环数同时受环带宽度与"每环最少节点数"约束：后者杜绝环数过多、每环只
+  // 分到 1-2 个节点而退化成直线（角度只能取 0/π，点全落在水平轴上）。
+  const widthRings = Math.max(1, Math.floor((rOut - rIn) / RING_GAP) + 1);
+  const nRings = Math.min(widthRings, Math.max(1, Math.floor(isolated.length / MIN_NODES_PER_RING)));
   const ringRadii: number[] = [];
   for (let i = 0; i < nRings; i++) {
     ringRadii.push(nRings > 1 ? rIn + (rOut - rIn) * (i / (nRings - 1)) : (rIn + rOut) / 2);
