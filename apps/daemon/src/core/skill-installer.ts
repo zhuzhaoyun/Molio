@@ -259,23 +259,26 @@ const WIKI_QUERY_RULE_SENTINEL = '<!-- molio:wiki-query-preference -->';
  * loaded natively by the CLI and reliably reaches the model (same channel as
  * the docling/remotion rules above), so the retrieval instruction actually lands.
  *
- * Kept behavioral and short, with an explicit escape hatch for non-vault
- * questions (activity summaries via git log / mtimes) so it stays retrieval-safe
- * and does not role-lock normal queries — the same always-on-background property
- * the old A/B/C probe verified for the system-prompt QUERY frame.
+ * Scoped to vault-content questions: retrieval is mandatory for those, while
+ * general questions (weather, coding, writing, chit-chat, workspace-activity
+ * summaries via git log / mtimes, …) are explicitly exempt so the rule does
+ * not role-lock normal queries — the same always-on-background property the
+ * old A/B/C probe verified for the system-prompt QUERY frame.
  */
 const WIKI_QUERY_RULE_BLOCK = [
   WIKI_QUERY_RULE_SENTINEL,
   '## Knowledge Base Q&A — Retrieve Before Answering',
   '',
-  'In this knowledge base, **default to retrieve-first**. Before answering ANY substantive question,',
-  '**use the `wiki-query` skill** to read `wiki/INDEX.md` and the relevant wiki pages FIRST — **even if',
-  'you think you already know the answer**: this vault may hold a specific / curated / abridged version',
-  'that differs from your training data, and you cannot know what the vault contains without checking.',
-  'Then answer grounded in the vault with `[[wikilink]]` citations and source notes.',
+  'When a question is **about the contents of this knowledge base** (its documents, notes, or the',
+  'entities / events / topics they describe), **use the `wiki-query` skill** to read `wiki/INDEX.md`',
+  'and the relevant wiki pages FIRST — **even if you think you already know the answer**: this vault',
+  'may hold a specific / curated / abridged version that differs from your training data, and you',
+  'cannot know what the vault contains without checking. Then answer grounded in the vault with',
+  '`[[wikilink]]` citations and source notes.',
   '**Never answer a vault-content question from training memory** without first checking the wiki.',
-  'The ONLY questions to answer without wiki retrieval are those about the workspace\'s recent activity',
-  'or state (e.g. "总结今天的工作", "最近改了什么") — answer those with git log / file mtimes.',
+  'Questions **unrelated to the vault\'s contents** — general knowledge, weather, coding, writing,',
+  'chit-chat, or the workspace\'s recent activity / state ("总结今天的工作", "最近改了什么" — use git log /',
+  'file mtimes for those) — need no wiki retrieval; answer them normally.',
 ].join('\n');
 
 /**

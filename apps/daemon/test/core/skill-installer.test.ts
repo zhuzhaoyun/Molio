@@ -225,6 +225,14 @@ describe('skill-installer migration', () => {
       /never answer a vault-content question from training memory/i.test(content),
       'should forbid answering vault-content questions from memory',
     );
+    // Regression guard for the opposite failure mode: the rule must NOT
+    // role-lock general questions (weather, coding, chit-chat, …) into
+    // wiki retrieval — retrieval is scoped to vault-content questions.
+    assert.ok(
+      /unrelated to the vault's contents/i.test(content) &&
+        /need no wiki retrieval/i.test(content),
+      'should exempt general (non-vault) questions from wiki retrieval',
+    );
   });
 
   it('should not overwrite existing user content in .claude/CLAUDE.md', () => {
