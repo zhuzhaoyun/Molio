@@ -450,6 +450,14 @@ Molio 图谱当前状态（2026-07-22 修订）：
 
 布局均匀度（75%）✅ Walshaw multi-level 已实现（`feat/multi-level-layout` 分支），随机匹配粗化 + 粗化图布局 + 反投微调，力参数与主线程保持一致，ML 完成后切回主线程模拟保证拖拽流畅。仍在参数调优中。
 
+**Obsidian 布局对齐（2026-07-23，对照 Obsidian 截图补的两处结构性差距）：**
+
+1. **度→半径梯度**：Obsidian 把高连接度节点放在中心、低连接度推向外围，Molio 之前所有连接节点挤成一团、连线糊成"毛线团"。根因是 `forceManyBody.distanceMax(250)` 截断了远距排斥——低度节点被推出 250 后就失去中心累积推力、被向心力拉回，度梯度无法延伸到外围。**移除全部 `distanceMax`**（d3-force 仍走 Barnes-Hut，O(n log n)，无性能退化），让径向度梯度自然涌现。
+
+2. **孤立节点外围圆环（tile）**：Obsidian 的 CoSE 用 `tile` 把孤立节点平铺成规整的外围结构，Molio 之前孤立节点随机散布。新增 `tileIsolatedNodes()`：以连接节点质心为中心、在包围半径之外把 `degree=0` 节点按角度排成同心圆环，并用 `fx/fy` 固定，使其不被后续力模拟拉回中心；`savedPositions` 同步持久化 `fx/fy`，重建后恢复圆环；拖拽/取消选中孤立节点时保持固定，防止交互破坏圆环。圆环一旦建立，Sigma 的 `autoRescale` 把整图 fit 进视口，中心簇在画面中占比缩小，进一步缓解差异 1 的"糊"感。
+
+   配套：碰撞 padding `0.35→0.5`（相邻节点留约一个半径空隙）、ML 精化 `refineTicks 80→250`（80 tick 在 `alphaDecay 0.03` 下未收敛）、ML 后切回的主线程模拟立即 `stop()` 避免连接节点重跑抖动。
+
 ### 11.2 数据缓存策略（P2.2）
 
 `GraphPage.tsx` 模块级缓存 `graphDataCache: Map<vaultId, { data, ts }>`，进程内有效：
