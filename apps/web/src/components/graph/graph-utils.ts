@@ -59,22 +59,21 @@ export function interpolateColor(a: string, b: string, t: number): string {
 //
 // 力导向无法把 degree=0 的节点排成规整结构：它们没有边约束，只受向心力
 // 和弱排斥力，最终随机散布。Obsidian 用 tile 把孤立/外围节点平铺成规整的
-// 外围结构。这里用一个**封顶的环形带**：以连接节点质心为中心，环带内/外
-// 半径都锁定为连接簇包围半径的固定倍数（rIn≈1.3×、rOut≈2.6×）。孤立节点
-// 在带内用黄金角螺旋（phyllotaxis）排成均匀点云——不用同心环，因为同心环
-// 各环角度对齐会产生放射状辐条、不够均匀。节点再多也只在带内排密，不外扩。
+// 外围结构。这里以连接节点质心为中心，从中心簇外缘（rIn≈1.3× 包围半径）
+// 起，用黄金角螺旋（phyllotaxis）按**固定点间距**向外排成均匀密点云——
+// 不用同心环（各环角度对齐会产生放射状辐条）。点间距与中心簇尺度挂钩
+// （≈0.15× 包围半径），使外围密度始终和中心簇协调。
 //
-// 为什么封顶：早期版本让环从 1.6× 起步、以固定间距无限外扩，结果当中心簇
-// 因连接距离短而收得很紧时，外围环膨胀到中心簇的好几倍，把整图包围盒撑得
-// 巨大——Sigma 的 autoRescale fit 全图后，中心被压成一个小点，相机无法放大
-// 看节点细节。封顶后包围盒半径始终 ≈ 2.6× 中心簇半径，fit 后中心稳定占视口
-// 约 40%，可正常缩放查看。
+// 为什么固定间距而非"固定环带面积撒点"：后者环带面积由包围半径定、与孤立
+// 点数 n 无关，n 不够填满时就稀疏、还露出螺旋臂条纹。固定间距下外径随 n
+// 自适应——n 少环带窄（密且中心占比高），n 多外径按 sqrt(n) 慢增长（孤立
+// 点真多时外围本就该大，Obsidian 的网格 tile 也如此），故无需硬封顶。早期
+// "无限外扩同心环"曾把包围盒撑巨大、中心压成小点，固定间距+sqrt 增长不会。
 //
 // 所有平铺节点用 fx/fy 固定，使其不被后续力模拟拉回中心。
 
-/** 环带内/外半径相对连接簇包围半径的倍数。 */
+/** 外围点云内缘相对连接簇包围半径的倍数（在中心簇外留空隙）。 */
 const RING_IN_FACTOR = 1.3;
-const RING_OUT_FACTOR = 2.6;
 
 /**
  * 把 degree=0 的可见节点平铺成围绕连接节点簇的封顶环形带，并固定 fx/fy。
@@ -119,22 +118,24 @@ export function tileIsolatedNodes(graph: Graph): void {
         ? dists[dists.length - 1]!
         : dists[Math.floor(dists.length * 0.9)]!;
 
-  // 封顶环带：内/外半径与中心簇成比例；无连接节点时退化为绝对小圈。
-  // 关键——rOut 是包围盒半径的硬上限，绝不向外突破，否则中心簇会被
-  // autoRescale 压成小点、相机无法放大查看（见函数头注释）。
+  // 外围点云内缘：在中心簇之外留一点空隙；无连接节点时退化为绝对小圈。
   const rIn = connected.length > 0 ? Math.max(maxR * RING_IN_FACTOR, 18) : 24;
-  const rOut = connected.length > 0 ? Math.max(maxR * RING_OUT_FACTOR, 48) : 96;
+  // 点间距与中心簇尺度挂钩：maxR 大 → 中心簇节点间距大 → 外围也跟着疏一点，
+  // 使外围密度始终与中心簇协调。关键——用**固定间距、外径自适应**，而非上一版
+  // 的"固定环带面积撒点"：后者环带面积由 maxR 定、与孤立点数 n 无关，n 不够
+  // 填满时就稀疏、还露出螺旋臂条纹。固定间距下 n 少 → 环带自动收窄 → 既密、
+  // 中心占比又高；n 多 → 外径按 sqrt(n) 慢增长（孤立点真多时外围本就该大，
+  // Obsidian 的网格 tile 也是如此），因此不再需要硬封顶。
+  const spacing = Math.max(8, maxR * 0.15);
 
-  // 黄金角螺旋（phyllotaxis，向日葵籽排布）：角度按黄金角逐点旋转、半径按
-  // 面积均匀外扩（r² 线性于序号），在封顶环带 [rIn, rOut] 内形成最均匀的
-  // 点云——既无同心环的"圈痕"，也无各环角度对齐造成的放射状辐条。
-  // 节点再多也只在带内排密，绝不向外扩，严格守住 rOut 这个包围盒上限。
+  // 黄金角螺旋（phyllotaxis，向日葵籽排布）：角度按黄金角旋转、半径按面积
+  // 外扩（r² 每点增加 spacing²），形成均匀密点云——无圈痕、无放射状辐条。
   const n = isolated.length;
   const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
   const rIn2 = rIn * rIn;
-  const rSpan2 = rOut * rOut - rIn2;
+  const step = spacing * spacing;
   for (let i = 0; i < n; i++) {
-    const r = Math.sqrt(rIn2 + rSpan2 * ((i + 0.5) / n));
+    const r = Math.sqrt(rIn2 + i * step);
     const angle = i * GOLDEN_ANGLE;
     const x = cx + r * Math.cos(angle);
     const y = cy + r * Math.sin(angle);
