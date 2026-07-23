@@ -12,7 +12,11 @@
  *
  * Design: 2s-poll (a handful of files, cheap), incremental byte-offset parsing
  * (never re-reads), throttled emissions. The parent transcript supplies the
- * top-level calls (Task/Workflow spawns: label + running→done lifecycle);
+ * top-level calls (Task/Workflow spawns: label + lifecycle). Task/Agent are
+ * synchronous — their tool_result means done. Workflow is ASYNC — its
+ * tool_result returns immediately ("launched in background") and true
+ * completion arrives later as a <task-notification> user message in the same
+ * transcript; the spawn entry stays 'running' until that notification.
  * agent-<id> transcripts supply the workers (live lastAction from their most
  * recent tool call). Both render as one activity tree in the UI.
  */
@@ -61,6 +65,17 @@ function briefToolAction(name: string, input: unknown): string {
   return arg ? `${name} ${arg}` : name;
 }
 
+/**
+ * Normalize a user message's content to content-block shape. User messages
+ * appear both as plain strings and as block arrays in real transcripts;
+ * task-notifications can arrive in either shape.
+ */
+function userContentBlocks(content: unknown): Array<Record<string, unknown>> {
+  if (typeof content === 'string') return [{ type: 'text', text: content }];
+  if (Array.isArray(content)) return content as Array<Record<string, unknown>>;
+  return [];
+}
+
 /** Workflow label from its script's meta block (name/description). */
 function workflowLabel(input: unknown): string {
   const obj = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
@@ -79,6 +94,13 @@ function workflowLabel(input: unknown): string {
 export class TranscriptWatcher {
   private agents = new Map<string, SubagentActivity>();
   private offsets = new Map<string, number>();
+  /**
+   * Spawn entry ids (`spawn:<tool_use_id>`) created by the Workflow tool.
+   * Workflow is async: its tool_result only means "launched in background",
+   * so these entries stay 'running' until the <task-notification> arrives
+   * (unlike Task/Agent, whose tool_result means completion).
+   */
+  private workflowSpawns = new Set<string>();
   private emitTimer: ReturnType<typeof setTimeout> | null = null;
   private poller: ReturnType<typeof setInterval> | null = null;
   private dirty = false;
@@ -204,6 +226,7 @@ export class TranscriptWatcher {
           const name = String(block['name'] ?? '');
           if (!SPAWN_TOOLS.has(name)) continue;
           const id = `spawn:${String(block['id'] ?? `${name}-${now}`)}`;
+          if (name === 'Workflow') this.workflowSpawns.add(id);
           const input = block['input'];
           const label = name === 'Workflow'
             ? workflowLabel(input)
@@ -214,16 +237,50 @@ export class TranscriptWatcher {
           a.updatedAt = now;
         }
       }
-      if (type === 'user' && msg && Array.isArray(msg['content'])) {
-        for (const block of msg['content'] as Array<Record<string, unknown>>) {
+      if (type === 'user' && msg) {
+        for (const block of userContentBlocks(msg['content'])) {
+          // Background-task completion notifications arrive as user text
+          // blocks — the authoritative "done" signal for async Workflow
+          // spawns (see applyTaskNotifications).
+          if (block['type'] === 'text' && typeof block['text'] === 'string') {
+            this.applyTaskNotifications(block['text'] as string, now);
+            continue;
+          }
           if (block['type'] !== 'tool_result') continue;
           const id = `spawn:${String(block['tool_use_id'] ?? '')}`;
           const a = this.agents.get(id);
           if (!a) continue;
-          a.status = block['is_error'] ? 'error' : 'done';
-          a.lastAction = block['is_error'] ? 'failed' : 'completed';
+          if (block['is_error']) {
+            // Tool failure — also covers a Workflow that failed to launch.
+            a.status = 'error';
+            a.lastAction = 'failed';
+          } else if (this.workflowSpawns.has(id)) {
+            // Workflow's tool_result returns immediately ("launched in
+            // background") — it does NOT mean the workflow finished. Stay
+            // running until the <task-notification> arrives.
+            a.lastAction = 'running in background';
+          } else {
+            // Task/Agent are synchronous: tool_result means completion.
+            a.status = 'done';
+            a.lastAction = 'completed';
+          }
           a.updatedAt = now;
         }
+      }
+      // Queued background-task notifications: when a Workflow finishes while
+      // the model is mid-turn, Claude Code does NOT deliver the notification
+      // as a user message — it enqueues it (queue-operation) and attaches it
+      // to a later turn as a queued_command attachment. Scan both carriers so
+      // async spawns still flip to done/error (fast-path guard inside
+      // applyTaskNotifications ignores non-notification content).
+      if (type === 'attachment') {
+        const att = obj['attachment'] as Record<string, unknown> | undefined;
+        if (att && att['type'] === 'queued_command' && typeof att['prompt'] === 'string') {
+          this.applyTaskNotifications(att['prompt'] as string, now);
+        }
+      }
+      if (type === 'queue-operation' && typeof obj['content'] === 'string') {
+        this.applyTaskNotifications(obj['content'] as string, now);
       }
       return;
     }
@@ -263,6 +320,42 @@ export class TranscriptWatcher {
       a.updatedAt = now;
     }
     if (!a.label) a.label = fileKey; // fallback until the prompt line arrives
+  }
+
+  /**
+   * Parse <task-notification> blocks out of a parent user text line and apply
+   * them to the matching Workflow spawn entries. Format (verified on disk):
+   *
+   *   <task-notification>
+   *   <task-id>wszm3wyda</task-id>
+   *   <tool-use-id>toolu_xxx</tool-use-id>
+   *   ...
+   *   <status>completed|failed</status>
+   *   <summary>...</summary>
+   *   </task-notification>
+   *
+   * A notification is terminal by definition ("you will be notified when it
+   * completes"), so any status other than 'failed' maps to 'done' — leaving
+   * the entry 'running' on an unknown status would strand it until finalize().
+   * Notifications for ids without a spawn entry (e.g. background Bash) are
+   * ignored.
+   */
+  private applyTaskNotifications(text: string, now: number): void {
+    if (!text.includes('<task-notification>')) return;
+    for (const m of text.matchAll(/<task-notification>([\s\S]*?)<\/task-notification>/g)) {
+      const body = m[1] ?? '';
+      const toolUseId = /<tool-use-id>([\s\S]*?)<\/tool-use-id>/.exec(body)?.[1]?.trim();
+      if (!toolUseId) continue;
+      const a = this.agents.get(`spawn:${toolUseId}`);
+      if (!a) continue;
+      const status = /<status>([\s\S]*?)<\/status>/.exec(body)?.[1]?.trim();
+      const summary = /<summary>([\s\S]*?)<\/summary>/.exec(body)?.[1]?.trim();
+      a.status = status === 'failed' ? 'error' : 'done';
+      a.lastAction = summary
+        ? trunc(summary, 50)
+        : status === 'failed' ? 'failed' : 'completed';
+      a.updatedAt = now;
+    }
   }
 
   private subagentLabel(input: unknown): string {

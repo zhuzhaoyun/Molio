@@ -41,6 +41,36 @@ describe('TranscriptWatcher', () => {
   const agentLine = (file: string, obj: unknown) =>
     fs.appendFileSync(path.join(dir, file), JSON.stringify(obj) + '\n', 'utf8');
 
+  // ── Workflow fixtures ──
+  /** Real on-disk <task-notification> shape (newlines preserved after JSON.parse). */
+  const taskNotification = (toolUseId: string, status: string, summary = 'Dynamic workflow finished') =>
+    `<task-notification>\n<task-id>t1</task-id>\n<tool-use-id>${toolUseId}</tool-use-id>\n<output-file>C:\\x\\tasks\\t1.output</output-file>\n<status>${status}</status>\n<summary>${summary}</summary>\n</task-notification>`;
+  const wfSpawn = (id: string, description = 'demo workflow') => ({
+    type: 'assistant',
+    message: {
+      role: 'assistant',
+      content: [{
+        type: 'tool_use',
+        id,
+        name: 'Workflow',
+        input: { script: `export const meta = {\n  name: 'demo',\n  description: '${description}',\n};` },
+      }],
+    },
+  });
+  /** Workflow's immediate "launched in background" tool_result. */
+  const wfLaunchResult = (toolUseId: string, isError = false) => ({
+    type: 'user',
+    message: {
+      role: 'user',
+      content: [{
+        type: 'tool_result',
+        tool_use_id: toolUseId,
+        content: 'Workflow launched in background. Task ID: t1\nSummary: demo',
+        is_error: isError,
+      }],
+    },
+  });
+
   beforeEach(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-watcher-test-'));
     watcher = new TranscriptWatcher(dir, SESSION, () => {}, 10);
@@ -150,6 +180,165 @@ describe('TranscriptWatcher', () => {
     assert.equal(byId['spawn:toolu_1'], 'done');
     assert.equal(byId['spawn:toolu_2'], 'error');
     assert.equal(watcher.snapshot().active, false);
+  });
+
+  // ── Workflow async completion: tool_result ≠ done; task-notification = done ──
+
+  it('keeps a Workflow spawn running on tool_result, completes on task-notification', () => {
+    parentLine(wfSpawn('toolu_wf_1'));
+    watcher.scanOnce();
+    assert.equal(watcher.snapshot().agents[0]!.status, 'running');
+
+    // Immediate "launched in background" tool_result — must NOT flip to done.
+    parentLine(wfLaunchResult('toolu_wf_1'));
+    watcher.scanOnce();
+    const mid = watcher.snapshot();
+    assert.equal(mid.active, true, 'workflow still active after launch result');
+    assert.equal(mid.agents[0]!.status, 'running');
+    assert.equal(mid.agents[0]!.lastAction, 'running in background');
+
+    // The real completion signal: <task-notification> in the parent transcript.
+    parentLine({
+      type: 'user',
+      message: { role: 'user', content: [{ type: 'text', text: taskNotification('toolu_wf_1', 'completed') }] },
+    });
+    watcher.scanOnce();
+    const end = watcher.snapshot();
+    assert.equal(end.active, false);
+    assert.equal(end.agents[0]!.status, 'done');
+  });
+
+  it('task-notification with status=failed marks the Workflow spawn error', () => {
+    parentLine(wfSpawn('toolu_wf_1'));
+    parentLine(wfLaunchResult('toolu_wf_1'));
+    watcher.scanOnce();
+    parentLine({
+      type: 'user',
+      message: { role: 'user', content: [{ type: 'text', text: taskNotification('toolu_wf_1', 'failed', 'Dynamic workflow crashed') }] },
+    });
+    watcher.scanOnce();
+    const snap = watcher.snapshot();
+    assert.equal(snap.agents[0]!.status, 'error');
+    assert.equal(snap.agents[0]!.lastAction, 'Dynamic workflow crashed');
+    assert.equal(snap.active, false);
+  });
+
+  it('parses task-notification from string content (not block array)', () => {
+    parentLine(wfSpawn('toolu_wf_1'));
+    parentLine(wfLaunchResult('toolu_wf_1'));
+    watcher.scanOnce();
+    parentLine({
+      type: 'user',
+      message: { role: 'user', content: taskNotification('toolu_wf_1', 'completed') },
+    });
+    watcher.scanOnce();
+    assert.equal(watcher.snapshot().agents[0]!.status, 'done');
+    assert.equal(watcher.snapshot().active, false);
+  });
+
+  it('applies multiple task-notifications in one text block', () => {
+    parentLine(wfSpawn('toolu_wf_a'));
+    parentLine(wfSpawn('toolu_wf_b'));
+    parentLine(wfLaunchResult('toolu_wf_a'));
+    parentLine(wfLaunchResult('toolu_wf_b'));
+    watcher.scanOnce();
+    assert.equal(watcher.snapshot().active, true);
+    parentLine({
+      type: 'user',
+      message: {
+        role: 'user',
+        content: [{
+          type: 'text',
+          text: taskNotification('toolu_wf_a', 'completed') + '\n' + taskNotification('toolu_wf_b', 'failed'),
+        }],
+      },
+    });
+    watcher.scanOnce();
+    const byId = Object.fromEntries(watcher.snapshot().agents.map((a) => [a.id, a.status]));
+    assert.equal(byId['spawn:toolu_wf_a'], 'done');
+    assert.equal(byId['spawn:toolu_wf_b'], 'error');
+    assert.equal(watcher.snapshot().active, false);
+  });
+
+  it('ignores task-notification for an unknown tool_use_id', () => {
+    parentLine(wfSpawn('toolu_wf_1'));
+    parentLine(wfLaunchResult('toolu_wf_1'));
+    watcher.scanOnce();
+    parentLine({
+      type: 'user',
+      message: { role: 'user', content: [{ type: 'text', text: taskNotification('toolu_never_spawned', 'completed') }] },
+    });
+    watcher.scanOnce();
+    const snap = watcher.snapshot();
+    assert.equal(snap.agents.length, 1, 'no phantom entry');
+    assert.equal(snap.agents[0]!.status, 'running', 'unrelated notification must not touch the live spawn');
+  });
+
+  it('maps an unknown notification status to done (never strands running)', () => {
+    parentLine(wfSpawn('toolu_wf_1'));
+    parentLine(wfLaunchResult('toolu_wf_1'));
+    watcher.scanOnce();
+    parentLine({
+      type: 'user',
+      message: { role: 'user', content: [{ type: 'text', text: taskNotification('toolu_wf_1', 'cancelled') }] },
+    });
+    watcher.scanOnce();
+    assert.equal(watcher.snapshot().agents[0]!.status, 'done');
+    assert.equal(watcher.snapshot().active, false);
+  });
+
+  it('flips a Workflow spawn from a queued_command attachment (mid-turn failure)', () => {
+    // Real shape: a Workflow that fails while the model is still mid-turn
+    // never gets a user-message notification — it arrives attached to a
+    // later turn as a queued_command attachment.
+    parentLine(wfSpawn('toolu_wf_1'));
+    parentLine(wfLaunchResult('toolu_wf_1'));
+    watcher.scanOnce();
+    assert.equal(watcher.snapshot().agents[0]!.status, 'running');
+    parentLine({
+      type: 'attachment',
+      isSidechain: false,
+      attachment: { type: 'queued_command', prompt: taskNotification('toolu_wf_1', 'failed', 'Dynamic workflow failed') },
+    });
+    watcher.scanOnce();
+    const snap = watcher.snapshot();
+    assert.equal(snap.agents[0]!.status, 'error');
+    assert.equal(snap.active, false);
+  });
+
+  it('flips a Workflow spawn from a queue-operation enqueue line', () => {
+    parentLine(wfSpawn('toolu_wf_1'));
+    parentLine(wfLaunchResult('toolu_wf_1'));
+    watcher.scanOnce();
+    parentLine({
+      type: 'queue-operation',
+      operation: 'enqueue',
+      content: taskNotification('toolu_wf_1', 'completed'),
+    });
+    watcher.scanOnce();
+    assert.equal(watcher.snapshot().agents[0]!.status, 'done');
+    assert.equal(watcher.snapshot().active, false);
+  });
+
+  it('ignores queued content that is not a task-notification', () => {
+    parentLine(wfSpawn('toolu_wf_1'));
+    parentLine(wfLaunchResult('toolu_wf_1'));
+    watcher.scanOnce();
+    parentLine({ type: 'queue-operation', operation: 'enqueue', content: '用户排队发的普通消息' });
+    parentLine({ type: 'attachment', isSidechain: false, attachment: { type: 'queued_command', prompt: '另一条普通消息' } });
+    watcher.scanOnce();
+    assert.equal(watcher.snapshot().agents[0]!.status, 'running', 'non-notification queue content must not flip the spawn');
+  });
+
+  it('Workflow tool_result with is_error marks error without waiting for a notification', () => {
+    parentLine(wfSpawn('toolu_wf_1'));
+    watcher.scanOnce();
+    parentLine(wfLaunchResult('toolu_wf_1', true));
+    watcher.scanOnce();
+    const snap = watcher.snapshot();
+    assert.equal(snap.agents[0]!.status, 'error');
+    assert.equal(snap.agents[0]!.lastAction, 'failed');
+    assert.equal(snap.active, false);
   });
 
   it('parses incrementally — appended lines picked up, no double counting', () => {
