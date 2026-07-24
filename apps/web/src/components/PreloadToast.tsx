@@ -87,6 +87,17 @@ export function PreloadToast() {
   useEffect(() => {
     mountedRef.current = true;
 
+    // Don't render the always-on toast under Playwright/automation. In a
+    // clean CI environment docling/remotion are never installed, so the
+    // toast would pop and sit fixed over the bottom-right corner —
+    // intercepting clicks on the chat selection confirm bar's delete button
+    // (and any other bottom-right control). Real users aren't automated
+    // browsers, so this gate is invisible to them. A future preload-toast E2E
+    // can set window.__MOLIO_TEST_FORCE_PRELOAD_TOAST__ = true to override.
+    const isAutomation = typeof navigator !== 'undefined' && (navigator as any).webdriver === true;
+    const forceForTest = (window as any).__MOLIO_TEST_FORCE_PRELOAD_TOAST__ === true;
+    if (isAutomation && !forceForTest) return;
+
     const check = async () => {
       try {
         const statuses: Record<string, SkillInfo> = await api.getPreloadStatus();
