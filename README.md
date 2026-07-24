@@ -83,6 +83,42 @@ Download the latest release from [GitHub Releases](https://github.com/zhuzhaoyun
 
 Install and launch. On first run, you'll be guided to configure an AI runtime CLI (e.g., Claude Code, Codex, Gemini).
 
+### 🐳 Docker / NAS Deployment (self-hosted)
+
+Run Molio as a self-hosted web service on a NAS or server. A single container bundles the daemon, web UI, and Claude Code CLI, and works on both `linux/amd64` and `linux/arm64` — Synology, QNAP, TerraMaster, TrueNAS, Unraid, and most other NAS devices.
+
+**One-click install** (requires Docker + Docker Compose v2):
+
+```bash
+# China (recommended)
+curl -fsSL https://molio-releases.oss-cn-guangzhou.aliyuncs.com/script/install.sh | bash
+# Overseas
+curl -fsSL https://raw.githubusercontent.com/zhuzhaoyun/Molio/main/install.sh | bash
+# Offline (clone the repo first, then run the bundled script)
+bash install.sh
+```
+
+The script interactively asks for your AI provider credentials, knowledge-base directory, and port, then pulls the image and starts the service. When it finishes, open `http://<your-server-ip>:3100`. On first boot Molio **auto-creates a default knowledge base** on the mounted directory, so you land straight inside — no manual setup.
+
+**Manual install** (if you prefer plain `docker compose`):
+
+```bash
+git clone https://github.com/zhuzhaoyun/Molio.git && cd Molio
+cp .env.example .env      # fill in your AI provider credentials
+docker compose up -d      # then open http://<your-server-ip>:3100
+```
+
+**Everyday commands** (run inside the install directory, default `~/molio`):
+
+```bash
+docker compose logs -f                          # follow logs
+docker compose restart                          # restart
+docker compose pull && docker compose up -d     # update to the latest image
+docker compose down                             # stop
+```
+
+> Set `MOLIO_VAULT_PATH` in `.env` to mount your existing documents folder into the container (at `/vaults`). See [`install.sh`](install.sh) and [`.env.example`](.env.example) for every option.
+
 ### Development (from source)
 
 If you want to build from source or contribute to development:
