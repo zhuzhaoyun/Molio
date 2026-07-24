@@ -20,7 +20,7 @@ import { GraphSettingsPanel } from './GraphSettingsPanel';
 import { Minimap } from './Minimap';
 import { getThemeColors } from './types';
 import { setupCameraInertia } from './useCameraInertia';
-import { NODE_TYPE_COLORS, nodeSize, nodeColor, interpolateColor } from './graph-utils';
+import { NODE_TYPE_COLORS, nodeSize, nodeColor, interpolateColor, tileIsolatedNodes } from './graph-utils';
 
 // ── Visual constants (Obsidian light theme, matching obsidian.png) ──
 // 浅色背景 + 深色节点，像纸张上的墨点
@@ -543,7 +543,15 @@ export function GraphPage() {
         draggedNode = node;
         isDragging = false;
         dragStartMouse = { x: mouseX, y: mouseY };
-        // Lock d3 node position so collision doesn't push it away during drag
+        // 全流动：解锁所有节点（含外围孤立），让整图像液体一起流动填补空白
+        // （对齐 Obsidian）。被拖节点随后重新锁定为拖拽锚点；松手时再重铺外围。
+        graph.forEachNode((k) => {
+          graph.removeNodeAttribute(k, 'fx');
+          graph.removeNodeAttribute(k, 'fy');
+          const h = simulation.getNode(k);
+          if (h) { h.fx = null; h.fy = null; }
+        });
+        // Lock 被拖节点 position so collision doesn't push it away during drag
         const d3Node = simulation.getNode(node);
         if (d3Node) {
           const attrs = graph.getNodeAttributes(node);
@@ -637,21 +645,17 @@ export function GraphPage() {
       if (wasDragging) {
         const d3Node = simulation.getNode(node);
         if (d3Node) {
-          if (graph.hasNode(node) && graph.degree(node) === 0) {
-            // 孤立节点：拖拽后保持固定在新位置，维持外围平铺圆环。
-            // 不解锁——否则向心力会把它拉回中心，圆环出现缺角。
-            graph.setNodeAttribute(node, 'fx', d3Node.x);
-            graph.setNodeAttribute(node, 'fy', d3Node.y);
-          } else {
-            // Release d3 fx/fy lock → node settles naturally with damping
-            d3Node.fx = null;
-            d3Node.fy = null;
-            graph.removeNodeAttribute(node, 'fx');
-            graph.removeNodeAttribute(node, 'fy');
-          }
+          // 全流动：被拖节点也解锁，让它和全图一起收敛归位
+          d3Node.fx = null;
+          d3Node.fy = null;
+          graph.removeNodeAttribute(node, 'fx');
+          graph.removeNodeAttribute(node, 'fy');
         }
-        // Small nudge for gradual convergence
-        simulation.wake(0.1);
+        // 立即重新平铺外围孤立节点归位圆形（基于拖拽后的中心簇位置），
+        // 连接节点 wake 流动收敛到稳态；孤立节点被 tile 重新 fx 固定。
+        tileIsolatedNodes(graph);
+        simulation.wake(0.3);
+        renderer.refresh();
       } else {
         // 单击锁定聚焦（探索连接）；350ms 内再次单击同一节点 → 双击导航
         const now = Date.now();

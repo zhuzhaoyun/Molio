@@ -153,13 +153,16 @@ export function tileIsolatedNodes(graph: Graph): void {
 // 力导向默认所有节点用同一向心强度，结果中低度连接节点和 hub 一起挤在中心，
 // 度梯度弱、中心"杂"、外围"空"。Obsidian 的"中心=hub、外围=低度"分层很干脆。
 // 这里把向心强度做成 degree 的函数：hub 强向心留中心，低度弱向心→被全局排斥
-// 推到中外围，度梯度自然形成。孤立点(degree 0)已被 fx/fy 固定，向心对其无效，
-// 故此函数对它们返回 0、不影响外围平铺。
+// 推到中外围，度梯度自然形成。
+//
+// degree0（孤立点）给弱向心 0.3×base：布局时孤立点已被 fx/fy 固定、此值无效、
+// 不影响外围平铺；但拖拽"全流动"解锁 fx 后，弱向心防止孤立点被全局排斥甩飞、
+// 维持在中心附近流动，松手 tile 再精确归位外围圆形。
 //
 // 映射 0.25·deg^0.6（封顶 3×）：deg1≈0.25×base（弱，外溢但不至于失控飞远），
 // deg≈10 回到 ~1×base，更高增强 hub 的中心性。base 取用户的 centerStrength。
 export function centerStrengthForDegree(degree: number, base: number): number {
-  if (!degree || degree <= 0) return 0;
+  if (!degree || degree <= 0) return base * 0.3;
   return base * Math.min(3, 0.25 * Math.pow(degree, 0.6));
 }
 
