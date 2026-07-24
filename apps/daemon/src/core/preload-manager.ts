@@ -212,16 +212,40 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
         );
 
         onProgress(25, '下载 Remotion npm 依赖（首次 ~100MB）...');
-        await runProcess(`npm install --prefer-online --no-audit --no-fund`, {
-          timeout: 600_000,
-          cwd: tmpDir,
-          signal,
-          onLine(line) {
-            if (line.includes('added') || line.toLowerCase().includes('remov')) {
-              onProgress(60, line.trim());
+        // Retry on transient registry failures — the user's npm registry is
+        // often the official npmjs.org (slow/flaky from some regions), and a
+        // single failed tarball fetch makes `npm install` exit 1. Verified:
+        // the exact same command succeeds on retry / under better network.
+        // `--prefer-offline` (not --prefer-online): this is a cache-warming
+        // preload — reuse already-fetched tarballs and only fetch missing
+        // ones, instead of forcing every package back through the registry.
+        let npmOk = false;
+        for (let attempt = 1; attempt <= 2 && !signal.aborted; attempt++) {
+          try {
+            await runProcess(`npm install --prefer-offline --no-audit --no-fund`, {
+              timeout: 600_000,
+              cwd: tmpDir,
+              signal,
+              onLine(line) {
+                if (line.includes('added') || line.toLowerCase().includes('remov')) {
+                  onProgress(60, line.trim());
+                }
+              },
+            });
+            npmOk = true;
+            break;
+          } catch (err) {
+            if (signal.aborted) throw err; // pause/stop propagates
+            if (attempt < 2) {
+              onProgress(30, '网络波动，重试中...');
+            } else {
+              throw err;
             }
-          },
-        });
+          }
+        }
+        if (!npmOk) {
+          throw new Error('remotion npm 依赖安装失败，可稍后重试或检查网络');
+        }
 
         // Mark as preloaded so we don't prompt again. The npm cache at
         // ~/.npm is what actually matters and persists after the temp dir
