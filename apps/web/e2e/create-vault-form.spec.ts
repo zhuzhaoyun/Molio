@@ -67,6 +67,17 @@ test.describe('Create vault form', () => {
     expect(message).toContain('桌面客户端');
   });
 
+  test('shows container-path hint in browser (non-Electron) mode', async ({ page }) => {
+    await navigateToCreateForm(page);
+
+    // Without a native folder picker (browser / Docker / NAS), the form must
+    // guide users to the container-internal mount path so they don't type the
+    // NAS host path and silently write into the ephemeral container layer.
+    const hint = page.locator('.vm-form-hint');
+    await expect(hint).toBeVisible();
+    await expect(hint).toContainText('/vaults');
+  });
+
   test('create button should be disabled when path is empty, enabled when path is filled', async ({ page }) => {
     await navigateToCreateForm(page);
 

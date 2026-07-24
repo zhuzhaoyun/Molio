@@ -17,7 +17,10 @@
 # 知识库目录：
 #   在 .env 中设置 MOLIO_VAULT_PATH 指向 NAS 上的文档目录，
 #   该目录挂载到容器内 /vaults。
-#   在 Molio Web UI 创建 vault 时，路径填 /vaults/你的文件夹名。
+#
+#   首次启动（还没有任何知识库）时会自动创建默认知识库并指向 /vaults，
+#   打开 Web 即直接进入，无需手动创建。后续再添加知识库时，路径请填
+#   容器内路径 /vaults/你的文件夹名（不是 NAS 宿主机路径）。
 #
 #   如需挂载多个目录，直接在 volumes 中添加更多映射：
 #     - /volume1/documents:/vaults/documents

@@ -1868,6 +1868,21 @@
   flex: 1;
 }
 
+.vm-form-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
+.vm-form-hint code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--bg-panel);
+  color: var(--text-strong);
+}
+
 .vm-browse-btn {
   height: 38px;
   padding: 0 16px;
