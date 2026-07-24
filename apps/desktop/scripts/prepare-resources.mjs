@@ -65,12 +65,15 @@ async function bundleDaemon() {
     format: 'esm',
     outfile,
     external: ['better-sqlite3', 'qrcode'],
-    // Provide a createRequire shim so that CJS modules bundled into the ESM
-    // output (e.g. fast-glob via trash → globby) can call require() for
-    // Node.js built-in modules. Without this, esbuild's __require wrapper
-    // throws "Dynamic require of 'os' is not supported".
+    // Provide shims so that CJS modules bundled into the ESM output can call
+    // require() (for Node.js built-ins) and reference __dirname/__filename.
+    // Without __dirname, the Lark SDK's getSdkVersion() throws
+    // "ReferenceError: __dirname is not defined in ES module scope" at import
+    // time, crashing daemon startup. The SDK is fault-tolerant: when the
+    // resolved paths don't point at its own package.json, it falls back to
+    // 'unknown' — so pointing __dirname at daemon.mjs's directory is fine.
     banner: {
-      js: `import { createRequire as __molioCreateRequire } from 'module'; const require = __molioCreateRequire(import.meta.url);`,
+      js: `import { createRequire as __molioCreateRequire } from 'module'; import { fileURLToPath as __molioFileURLToPath } from 'url'; import { dirname as __molioDirname } from 'path'; const require = __molioCreateRequire(import.meta.url); const __filename = __molioFileURLToPath(import.meta.url); const __dirname = __molioDirname(__filename);`,
     },
     logLevel: 'info',
   });
@@ -108,7 +111,7 @@ async function bundleMonitoring() {
     // by the Electron runtime.
     external: ['electron'],
     banner: {
-      js: `import { createRequire as __molioCreateRequire } from 'module'; const require = __molioCreateRequire(import.meta.url);`,
+      js: `import { createRequire as __molioCreateRequire } from 'module'; import { fileURLToPath as __molioFileURLToPath } from 'url'; import { dirname as __molioDirname } from 'path'; const require = __molioCreateRequire(import.meta.url); const __filename = __molioFileURLToPath(import.meta.url); const __dirname = __molioDirname(__filename);`,
     },
     logLevel: 'info',
   });
