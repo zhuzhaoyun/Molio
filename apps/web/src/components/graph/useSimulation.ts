@@ -169,25 +169,6 @@ export function useSimulation(): SimulationAPI {
           mlRunningRef.current = false;
           window.dispatchEvent(new CustomEvent('graph-ml-done'));
 
-          // [临时诊断] ML 收敛后最长几条边的长度 + 端点 degree，定位长边根因：
-          // 是叶子(deg1)-hub 边被排斥拉长（→叶子边加硬方向），还是两个 hub 之间
-          // 的跨簇长边（→需另想办法）。验证后删除这段。
-          try {
-            const nm = new Map<string, { x: number; y: number; d: number }>();
-            g.forEachNode((k, a) => nm.set(k, {
-              x: (a.x as number) ?? 0, y: (a.y as number) ?? 0, d: g.degree(k),
-            }));
-            const lens: { len: number; sd: number; td: number }[] = [];
-            g.forEachEdge((_k, _a, s, t) => {
-              const sn = nm.get(s as string);
-              const tn = nm.get(t as string);
-              if (sn && tn) lens.push({ len: Math.hypot(sn.x - tn.x, sn.y - tn.y), sd: sn.d, td: tn.d });
-            });
-            lens.sort((a, b) => b.len - a.len);
-            // eslint-disable-next-line no-console
-            console.warn('[graph-ml-debug] longest edges (len, srcDeg, tgtDeg):', lens.slice(0, 8));
-          } catch { /* diag — ignore */ }
-
           // 把孤立节点平铺成外围圆环并固定（对齐 Obsidian tile）。
           // 必须在写 ML 位置之后、构建后续模拟之前——平铺用收敛后的连接
           // 节点位置算质心/半径，且平铺写入的 fx/fy 要被下面的模拟读到。
@@ -256,15 +237,13 @@ export function useSimulation(): SimulationAPI {
                 onTickRef.current?.();
               });
 
-            // 防御：孤立节点(degree0)必须有 fx 才不会被排斥力径向外推、拖拽时
-            // 累积漂移（fx==null 是"边缘孤立点朝固定方向越拖越偏"的根因）。tile
-            // 通常已设 fx，但非 ML 路径/savedPositions 无 fx 时兜底钉在当前位置。
+            // 防御：sim 创建时给 degree0 兜底固定（tile 通常已设 fx；非 ML 路径/
+            // savedPositions 无 fx 时钉到当前位置，防初始漂移）。拖拽"全流动"会临时
+            // 解锁它们让其流动，松手 tile 再固定。
             for (const n of mtNodes) {
               if (n.degree === 0 && n.fx == null) {
                 n.fx = n.x ?? 0;
                 n.fy = n.y ?? 0;
-                // eslint-disable-next-line no-console
-                console.warn('[graph-fix] isolated node had null fx, pinned:', n.id);
               }
             }
 
@@ -402,13 +381,11 @@ export function useSimulation(): SimulationAPI {
         onTickRef.current?.();
       });
 
-    // 防御：同 mtSim，孤立节点(degree0)兜底钉住，防拖拽时排斥外推漂移
+    // 防御：同 mtSim，sim 创建时给 degree0 兜底钉住，防初始漂移
     for (const n of d3Nodes) {
       if (n.degree === 0 && n.fx == null) {
         n.fx = n.x ?? 0;
         n.fy = n.y ?? 0;
-        // eslint-disable-next-line no-console
-        console.warn('[graph-fix] isolated node had null fx, pinned (main-thread init):', n.id);
       }
     }
 
