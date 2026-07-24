@@ -201,6 +201,20 @@ function createWindow() {
     return { action: 'deny' };
   });
 
+  // F12 / Ctrl+Shift+I toggles DevTools in production builds for debugging.
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return;
+    const isDevtoolsToggle =
+      (input.key === 'F12') ||
+      (input.key === 'I' && (input.control || input.meta) && input.shift);
+    if (!isDevtoolsToggle) return;
+    event.preventDefault();
+    const wc = mainWindow.webContents;
+    if (!wc || wc.isDestroyed()) return;
+    if (wc.isDevToolsOpened()) wc.closeDevTools();
+    else wc.openDevTools({ mode: 'detach' });
+  });
+
   // macOS: hide window instead of closing it. This preserves the full
   // renderer state (SPA, daemon connection, chat history) so the user
   // can reopen instantly from the dock without a splash→reload cycle.

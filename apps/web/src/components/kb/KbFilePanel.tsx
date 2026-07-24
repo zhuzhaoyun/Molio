@@ -5,7 +5,7 @@
  */
 
 import type { ReactNode } from 'react';
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, useCallback } from 'react';
 import type { TreeNode } from '@molio/contracts';
 import { useI18n } from '../../i18n';
 import { KbFileTree } from './KbFileTree';
@@ -41,7 +41,14 @@ interface KbFilePanelProps {
   children?: ReactNode;
 }
 
-export function KbFilePanel({
+/** Imperative API exposed via ref. */
+export interface KbFilePanelHandle {
+  /** Expand ancestors of `path`, scroll it into view, and briefly highlight it.
+   *  Used after a move/rename so the user can see where the node ended up. */
+  revealPath: (path: string) => void;
+}
+
+export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(function KbFilePanel({
   width,
   tree,
   selectedFile,
@@ -60,7 +67,7 @@ export function KbFilePanel({
   onImportFiles,
   onMoveFile,
   children,
-}: KbFilePanelProps) {
+}, ref) {
   const { t } = useI18n();
   // Expansion state is owned here so the toggle button can read it directly.
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
@@ -75,6 +82,31 @@ export function KbFilePanel({
   // Bumped each time the user hits "locate" — KbFileTree scrolls the active
   // file into view when this token changes (see TreeNodeItem effect).
   const [revealToken, setRevealToken] = useState(0);
+  // Path to reveal (folder or file) — set after a move/rename so the user can
+  // see where the node landed. Cleared by KbFileTree after the highlight fades.
+  const [revealPath, setRevealPath] = useState<string | null>(null);
+
+  useImperativeHandle(ref, () => ({
+    revealPath: (path: string) => {
+      if (!path) return;
+      // Expand every ancestor directory so the path is rendered.
+      setExpandedPaths((prev) => {
+        const next = new Set(prev);
+        const parts = path.split('/');
+        for (let i = 1; i < parts.length; i++) {
+          next.add(parts.slice(0, i).join('/'));
+        }
+        return next;
+      });
+      setRevealPath(path);
+      setRevealToken((n) => n + 1);
+    },
+  }), []);
+
+  // Stable callback — TreeNodeItem's reveal-cleanup effect depends on this
+  // reference; an inline arrow would reset its 1500ms timer on every render
+  // and never let the highlight clear.
+  const handleRevealConsumed = useCallback(() => setRevealPath(null), []);
 
   // Drag-over state for external file import
   const [dragOver, setDragOver] = useState<{
@@ -162,6 +194,19 @@ export function KbFilePanel({
       el.classList.remove('drag-target');
     });
 
+    // Internal drag (no Files type): drop on panel background = move to root.
+    // Drops on a specific directory's group are handled by that group's own
+    // onDrop (which calls stopPropagation), so reaching here means the user
+    // dropped on empty panel space.
+    if (!e.dataTransfer.types.includes('Files')) {
+      const srcPath = e.dataTransfer.getData('text/plain');
+      // Only fire if srcPath is a known tree node — otherwise an external
+      // text drag (e.g. selected text from another app) would land here as
+      // a bogus move with garbage path.
+      if (srcPath && findNodeByPath(tree, srcPath)) onMoveFile?.(srcPath, '');
+      return;
+    }
+
     // Check for folders — if any item in the file list is a directory, reject
     const { files } = e.dataTransfer;
     if (files.length === 0) return;
@@ -176,20 +221,8 @@ export function KbFilePanel({
       targetDir = dirEl.getAttribute('data-drop-dir') ?? '';
     }
 
-    // Reject folders (browser can't distinguish — check for empty type)
-    for (let i = 0; i < files.length; i++) {
-      if (files[i].type === '' && files[i].name.indexOf('.') === -1) {
-        // Likely a folder or file without extension — use size as heuristic:
-        // folders dragged in have size 0 or very small
-        // Actually, the browser gives us File objects for files only.
-        // Folders from the OS are NOT included in dataTransfer.files.
-        // So this check is moot — the browser already filters. Keep as safety.
-        break;
-      }
-    }
-
     onImportFiles?.(Array.from(files), targetDir);
-  }, [onImportFiles]);
+  }, [onImportFiles, onMoveFile, tree]);
 
   // Called by KbFileTree directory nodes during dragOver to update the panel's
   // drag indicator state for "drop on a specific directory".
@@ -372,6 +405,8 @@ export function KbFilePanel({
           searchQuery={searchQuery}
           expandedPaths={expandedPaths}
           revealToken={revealToken}
+          revealPath={revealPath}
+          onRevealConsumed={handleRevealConsumed}
           onTogglePath={togglePath}
           onSelectFile={onSelectFile}
           onAddToWiki={onAddToWiki}
@@ -402,7 +437,7 @@ export function KbFilePanel({
       {children}
     </aside>
   );
-}
+});
 
 /** Collect every directory path in the tree (for expand-all). */
 function collectDirPaths(nodes: TreeNode[]): string[] {
@@ -417,6 +452,18 @@ function collectDirPaths(nodes: TreeNode[]): string[] {
   };
   walk(nodes);
   return paths;
+}
+
+/** Find a tree node by exact path (used to validate internal drag sources). */
+function findNodeByPath(nodes: TreeNode[], path: string): TreeNode | undefined {
+  for (const n of nodes) {
+    if (n.path === path) return n;
+    if (n.type === 'directory' && n.children) {
+      const found = findNodeByPath(n.children, path);
+      if (found) return found;
+    }
+  }
+  return undefined;
 }
 
 /**
