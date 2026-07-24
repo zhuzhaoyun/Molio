@@ -129,6 +129,7 @@ function shutdown(): void {
   weixinService.stop();
   void vaultWatcher.stop();
   runManager.cancelAll();
+  preloadManager.stopAll();
   process.exit(0);
 }
 

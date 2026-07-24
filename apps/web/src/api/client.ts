@@ -727,6 +727,26 @@ export const api = {
     if (!res.ok) throw new Error(`Failed to undismiss preload: ${res.status}`);
   },
 
+  /** Pause in-progress preloads, keeping partial artifacts for resume. */
+  async pausePreload(skills: string[]): Promise<void> {
+    const res = await fetch(`${BASE}/preload/pause`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ skills }),
+    });
+    if (!res.ok) throw new Error(`Failed to pause preload: ${res.status}`);
+  },
+
+  /** Stop preloads AND delete partial artifacts (clean reset to missing). */
+  async stopPreload(skills: string[]): Promise<void> {
+    const res = await fetch(`${BASE}/preload/stop`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ skills }),
+    });
+    if (!res.ok) throw new Error(`Failed to stop preload: ${res.status}`);
+  },
+
   // ─── Graph ───
 
   async getGraph(vaultId: string): Promise<GraphData> {

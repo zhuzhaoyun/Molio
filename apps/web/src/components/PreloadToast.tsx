@@ -32,7 +32,7 @@ interface SkillInfo {
 
 interface ToastState {
   visible: boolean;
-  mode: 'prompt' | 'downloading' | 'done' | 'error';
+  mode: 'prompt' | 'downloading' | 'paused' | 'done' | 'error';
   skills: PreloadableSkill[];
   /** Per-skill progress 0–100 */
   progress: Record<string, number>;
@@ -84,6 +84,9 @@ export function PreloadToast() {
   const [dismissed, setDismissed] = useState(false);
   const mountedRef = useRef(true);
   const selectMode = useSelectMode();
+  /** Tracks an in-flight pause/stop intent so the streaming completion logic
+   *  doesn't override the mode the user just switched to. */
+  const userActionRef = useRef<'pause' | 'stop' | null>(null);
 
   // Yield the bottom-right corner to the chat selection confirm bar: when the
   // user enters message-deletion selection mode, collapse a downloading toast
@@ -169,12 +172,16 @@ export function PreloadToast() {
     }));
 
     // Track each skill's terminal outcome as progress events arrive. The
-    // SSE stream closes once every skill reaches completed/failed, but the
-    // stream closing alone does NOT mean success — a skill can emit status
-    // 'failed' and the stream still ends. Without tracking this, the toast
-    // would show green "完成" even when docling's pip install actually
-    // failed (verified: venv skeleton created but no docling binary).
+    // SSE stream closes once every skill reaches completed/failed/paused/
+    // stopped, but the stream closing alone does NOT mean success — a skill
+    // can emit 'failed' and the stream still ends. Without tracking this,
+    // the toast would show green "完成" even when docling's pip install
+    // actually failed (verified: venv skeleton created but no docling binary).
     const outcomes = new Map<string, { ok: boolean; message: string }>();
+    // Set when the user hits pause/stop so the post-stream logic doesn't
+    // override the mode the handler already switched to.
+    let userAction: 'pause' | 'stop' | null = null;
+    userActionRef.current = null;
 
     try {
       await api.startPreload(skills, (event) => {
@@ -182,7 +189,21 @@ export function PreloadToast() {
           outcomes.set(event.skill, { ok: true, message: event.message });
         } else if (event.status === 'failed') {
           outcomes.set(event.skill, { ok: false, message: event.message });
+        } else if (event.status === 'paused') {
+          // Daemon confirmed the pause. Switch to the paused view (the
+          // handler already set it optimistically; this re-affirms once the
+          // abort propagated through the stream).
+          userAction = 'pause';
+          setState((prev) => ({ ...prev, mode: 'paused', minimized: false }));
+          return;
+        } else if (event.status === 'stopped') {
+          userAction = 'stop';
+          setState((prev) => ({ ...prev, visible: false }));
+          return;
         }
+        // Don't let stray 'preloading' events un-pause a toast the user
+        // just asked to pause/stop.
+        if (userAction) return;
         setState((prev) => ({
           ...prev,
           mode: 'downloading',
@@ -190,6 +211,12 @@ export function PreloadToast() {
           messages: { ...prev.messages, [event.skill]: event.message },
         }));
       });
+
+      // If the user paused or stopped, the handler already set the right
+      // mode — don't clobber it with done/error.
+      if (userAction) {
+        return;
+      }
 
       // Decide done vs error from actual per-skill outcomes, not from the
       // stream having closed. Force open (un-minimize) either way so the
@@ -213,6 +240,7 @@ export function PreloadToast() {
         }, 5000);
       }
     } catch (err) {
+      if (userAction) return; // pause/stop surfaced via event, not a throw
       // Stream itself errored (network drop, daemon gone) — surface as error.
       setState((prev) => ({
         ...prev,
@@ -221,6 +249,30 @@ export function PreloadToast() {
         error: err instanceof Error ? err.message : '下载失败',
       }));
     }
+  }, [state.skills]);
+
+  /** Pause all in-progress downloads. Partial artifacts are kept on disk so
+   *  resume picks up where it left off (pip / HuggingFace / npm caches). */
+  const handlePause = useCallback(() => {
+    userActionRef.current = 'pause';
+    const skills = state.skills;
+    setState((prev) => ({ ...prev, mode: 'paused', minimized: false }));
+    api.pausePreload(skills).catch(() => {});
+  }, [state.skills]);
+
+  /** Resume a paused preload — just re-runs startPreload, which resumes via
+   *  the caches. */
+  const handleResume = useCallback(() => {
+    handleDownload();
+  }, [handleDownload]);
+
+  /** Stop all preloads AND delete partial artifacts (clean reset). Hides the
+   *  toast; on next check the skills show as missing again. */
+  const handleStop = useCallback(() => {
+    userActionRef.current = 'stop';
+    const skills = state.skills;
+    setState((prev) => ({ ...prev, visible: false }));
+    api.stopPreload(skills).catch(() => {});
   }, [state.skills]);
 
   /** Collapse the downloading toast to a small pill. The download keeps
@@ -291,7 +343,8 @@ export function PreloadToast() {
       </button>
 
       {state.mode === 'prompt' && <PromptView skills={state.skills} onDownload={handleDownload} onDismiss={handleDismiss} />}
-      {state.mode === 'downloading' && <DownloadingView skills={state.skills} progress={state.progress} messages={state.messages} onMinimize={handleMinimize} />}
+      {state.mode === 'downloading' && <DownloadingView skills={state.skills} progress={state.progress} messages={state.messages} onMinimize={handleMinimize} onPause={handlePause} onStop={handleStop} />}
+      {state.mode === 'paused' && <PausedView skills={state.skills} progress={state.progress} onResume={handleResume} onStop={handleStop} />}
       {state.mode === 'done' && <DoneView skills={state.skills} />}
       {state.mode === 'error' && <ErrorView error={state.error} onRetry={handleRetry} onDismiss={handleDismiss} />}
     </div>
@@ -346,11 +399,13 @@ function PromptView({ skills, onDownload, onDismiss }: {
   );
 }
 
-function DownloadingView({ skills, progress, messages, onMinimize }: {
+function DownloadingView({ skills, progress, messages, onMinimize, onPause, onStop }: {
   skills: string[];
   progress: Record<string, number>;
   messages: Record<string, string>;
   onMinimize: () => void;
+  onPause: () => void;
+  onStop: () => void;
 }) {
   return (
     <>
@@ -382,6 +437,40 @@ function DownloadingView({ skills, progress, messages, onMinimize }: {
             </div>
           );
         })}
+      </div>
+      <div className="preload-toast__actions">
+        <button className="rt-btn rt-btn--sm" onClick={onPause}>
+          暂停
+        </button>
+        <button className="rt-btn rt-btn--sm" onClick={onStop}>
+          停止
+        </button>
+      </div>
+    </>
+  );
+}
+
+function PausedView({ skills, progress, onResume, onStop }: {
+  skills: string[];
+  progress: Record<string, number>;
+  onResume: () => void;
+  onStop: () => void;
+}) {
+  // Best progress so far — shown frozen, since the download is paused.
+  const pct = computeOverallProgress(skills as PreloadableSkill[], progress);
+  return (
+    <>
+      <p className="preload-toast__title">已暂停</p>
+      <p className="preload-toast__subtitle">
+        进度已保留（{Math.round(pct)}%），继续将从断点接上
+      </p>
+      <div className="preload-toast__actions">
+        <button className="rt-btn rt-btn--sm preload-toast__primary" onClick={onResume}>
+          继续
+        </button>
+        <button className="rt-btn rt-btn--sm" onClick={onStop}>
+          停止（清除已下载内容）
+        </button>
       </div>
     </>
   );

@@ -37,13 +37,16 @@ export function preloadRoutes(preloadManager: PreloadManager): Hono {
       }
     }
 
-    // Partition skills into "already done" vs "needs preloading"
+    // Partition skills into "already done" vs "needs preloading".
+    // 'missing' (fresh) AND 'paused' (resume) both need startPreload — pip /
+    // HuggingFace / npm reuse their caches so a paused preload picks up where
+    // it left off.
     const needsStart: PreloadableSkill[] = [];
     const alreadyDone: PreloadableSkill[] = [];
 
     for (const sk of skills) {
       const s = preloadManager.getStatus(sk);
-      if (s.status === 'missing') {
+      if (s.status === 'missing' || s.status === 'paused') {
         needsStart.push(sk);
       } else {
         alreadyDone.push(sk);
@@ -83,12 +86,16 @@ export function preloadRoutes(preloadManager: PreloadManager): Hono {
               return;
             }
 
-            // Close the stream when all started skills are done
-            if (event.status === 'completed' || event.status === 'failed') {
+            // Close the stream when all started skills reach a terminal
+            // state. paused/stopped count as terminal (the user ended this
+            // run) so the client can react and stop awaiting.
+            if (event.status === 'completed' || event.status === 'failed'
+                || event.status === 'paused' || event.status === 'stopped') {
               const statuses = preloadManager.getStatuses();
               const allDone = needsStart.every((sk) => {
                 const s = statuses[sk];
-                return s.status === 'downloaded' || s.status === 'failed';
+                return s.status === 'downloaded' || s.status === 'failed'
+                  || s.status === 'paused' || s.status === 'missing';
               });
               if (allDone && !closed) {
                 closed = true;
@@ -98,8 +105,8 @@ export function preloadRoutes(preloadManager: PreloadManager): Hono {
           });
         });
 
-        // 4. Start preloading each missing skill (fire-and-forget — progress
-        //    events are delivered through the listener above).
+        // 4. Start preloading each missing/paused skill (fire-and-forget —
+        //    progress events are delivered through the listener above).
         for (const skill of needsStart) {
           preloadManager.startPreload(skill).catch(() => {});
         }
@@ -111,6 +118,43 @@ export function preloadRoutes(preloadManager: PreloadManager): Hono {
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
     });
+  });
+
+  // POST /api/preload/pause
+  // Abort in-progress preloads but KEEP partial artifacts (venv, downloaded
+  // packages, .incomplete models) so resume picks up where it left off.
+  // The abort surfaces to the client as a `paused` event on any open stream.
+  app.post('/pause', async (c) => {
+    const body = await c.req.json<{ skills: string[] }>();
+    const skills = body.skills as PreloadableSkill[];
+
+    if (!Array.isArray(skills)) {
+      return c.json({ error: 'skills array required' }, 400);
+    }
+
+    for (const sk of skills) {
+      preloadManager.pausePreload(sk);
+    }
+
+    return c.json({ ok: true });
+  });
+
+  // POST /api/preload/stop
+  // Abort in-progress preloads AND delete partial artifacts so the skill
+  // returns to a clean `missing` state. Works on running OR paused skills.
+  app.post('/stop', async (c) => {
+    const body = await c.req.json<{ skills: string[] }>();
+    const skills = body.skills as PreloadableSkill[];
+
+    if (!Array.isArray(skills)) {
+      return c.json({ error: 'skills array required' }, 400);
+    }
+
+    for (const sk of skills) {
+      preloadManager.stopPreload(sk);
+    }
+
+    return c.json({ ok: true });
   });
 
   // POST /api/preload/dismiss

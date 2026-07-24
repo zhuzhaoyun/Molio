@@ -12,7 +12,7 @@
  * annoy the user.
  */
 
-import { spawn, execSync } from 'node:child_process';
+import { spawn, execSync, type ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -42,11 +42,12 @@ export type SkillStatus =
   | { status: 'dismissed' }
   | { status: 'preloading'; progress: number; message: string }
   | { status: 'failed'; error: string }
+  | { status: 'paused' }
   | { status: 'downloaded' };
 
 export interface PreloadProgressEvent {
   skill: PreloadableSkill;
-  status: 'preloading' | 'completed' | 'failed';
+  status: 'preloading' | 'completed' | 'failed' | 'paused' | 'stopped';
   progress: number; // 0–100
   message: string;
 }
@@ -59,8 +60,11 @@ interface SkillMeta {
   /** Check if the tool is already available on the system. */
   detectInstalled(): boolean;
   /** Start the preload process (pip install, scaffold, etc.).
-   *  Returns an async generator that yields progress events. */
-  preload(onProgress: (pct: number, msg: string) => void): Promise<void>;
+   *  `signal` lets PreloadManager abort mid-run (pause/stop); the spawned
+   *  process tree is killed and the returned promise rejects with an
+   *  AbortError — PreloadManager's catch distinguishes pause vs stop vs
+   *  real failure via the intent sets. */
+  preload(onProgress: (pct: number, msg: string) => void, signal: AbortSignal): Promise<void>;
 }
 
 const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
@@ -87,7 +91,7 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
         return false;
       }
     },
-    async preload(onProgress) {
+    async preload(onProgress, signal) {
       // Phase 1: ensure a dedicated venv exists at ~/.molio/venv.
       // We install into it (not the system Python) so:
       //  - no PEP 668 "externally-managed-environment" rejections
@@ -101,7 +105,7 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
 
       if (!fs.existsSync(venvPy)) {
         onProgress(8, '创建隔离 Python 环境...');
-        await runProcess(`${py} -m venv ${venvRoot()}`, { timeout: 60_000 });
+        await runProcess(`${py} -m venv ${venvRoot()}`, { timeout: 60_000, signal });
         if (!fs.existsSync(venvPy)) {
           throw new Error('无法创建 Python venv，请确认已安装 python3');
         }
@@ -114,6 +118,7 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
       try {
         await runProcess(`${venvPip} install docling ${mirror}`, {
           timeout: 600_000,
+          signal,
           onLine(line) {
             if (line.includes('Downloading') || line.includes('Installing collected packages')) {
               onProgress(20, line.trim());
@@ -121,12 +126,14 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
           },
         });
         pipOk = true;
-      } catch {
+      } catch (err) {
+        if (signal.aborted) throw err; // pause/stop — don't fall through to retry
         // Fallback: default index (mirror may be down or package missing there)
         onProgress(40, '镜像失败，尝试默认源...');
         try {
           await runProcess(`${venvPip} install docling`, {
             timeout: 600_000,
+            signal,
             onLine(line) {
               if (line.includes('Downloading') || line.includes('Installing collected packages')) {
                 onProgress(45, line.trim());
@@ -134,7 +141,8 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
             },
           });
           pipOk = true;
-        } catch {
+        } catch (err2) {
+          if (signal.aborted) throw err2;
           pipOk = false;
         }
       }
@@ -149,18 +157,18 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
       onProgress(60, '下载 AI 模型（layout + table，~500MB）...');
       try {
         const discard = process.platform === 'win32' ? 'NUL' : '/dev/null';
-        const outDir = process.platform === 'win32'
-          ? path.join(os.tmpdir(), 'molio-docling-preload')
-          : path.join(os.tmpdir(), 'molio-docling-preload');
+        const outDir = path.join(os.tmpdir(), 'molio-docling-preload');
         await runProcess(`${doclingBinaryPath()} ${discard} --to md --output ${outDir} 2>&1`, {
           timeout: 600_000,
+          signal,
           onLine(line) {
             if (line.toLowerCase().includes('download') || line.toLowerCase().includes('model')) {
               onProgress(70, line.trim());
             }
           },
         });
-      } catch {
+      } catch (err) {
+        if (signal.aborted) throw err; // pause/stop propagates
         onProgress(95, '模型预热跳过（首次转换时会自动下载）');
       }
 
@@ -177,7 +185,7 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
       // The marker is written after a successful cache warmup.
       return fs.existsSync(remotionPreloadMarker());
     },
-    async preload(onProgress) {
+    async preload(onProgress, signal) {
       // Remotion's first real use is `npx create-video` inside the vault's
       // .molio/remotion/, which runs `npm install` for ~100MB of deps. We
       // can't reuse a skeleton project (the agent builds its own in the
@@ -207,6 +215,7 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
         await runProcess(`npm install --prefer-online --no-audit --no-fund`, {
           timeout: 600_000,
           cwd: tmpDir,
+          signal,
           onLine(line) {
             if (line.includes('added') || line.toLowerCase().includes('remov')) {
               onProgress(60, line.trim());
@@ -262,6 +271,36 @@ function remotionPreloadMarker(): string {
 }
 
 /**
+ * Delete a skill's partial preload artifacts — used by "stop" so the skill
+ * returns to a clean `missing` state. The npm cache (~/.npm) is intentionally
+ * NOT touched (shared across the whole pnpm/npm environment; deleting it would
+ * slow everything else down). Mirrors the cleanup in docs/preload-cleanup.md.
+ */
+function deletePartial(skill: PreloadableSkill): void {
+  try {
+    if (skill === 'docling') {
+      // The venv holds the partial pip install (packages + PyTorch).
+      fs.rmSync(venvRoot(), { recursive: true, force: true });
+      // Half-downloaded HuggingFace models live here. Only remove docling's
+      // model dirs (models--docling-project--*), not other tools' models.
+      const hub = path.join(os.homedir(), '.cache', 'huggingface', 'hub');
+      if (fs.existsSync(hub)) {
+        for (const entry of fs.readdirSync(hub)) {
+          if (entry.startsWith('models--docling-project--')) {
+            fs.rmSync(path.join(hub, entry), { recursive: true, force: true });
+          }
+        }
+      }
+    } else if (skill === 'remotion') {
+      // Marker is the only remotion-specific artifact; npm cache is shared.
+      fs.rmSync(remotionPreloadMarker(), { force: true });
+    }
+  } catch {
+    // best-effort — partial deletion failure shouldn't block the stop flow
+  }
+}
+
+/**
  * Resolve a usable Python binary. Tries python3, then python, then py.
  * (Windows often only has `python` / `py`; Unix usually has `python3`.)
  */
@@ -288,21 +327,35 @@ function resolvePython(): string {
 
 function runProcess(
   command: string,
-  opts: { timeout?: number; cwd?: string; onLine?: (line: string) => void } = {},
+  opts: { timeout?: number; cwd?: string; signal?: AbortSignal; onLine?: (line: string) => void } = {},
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const useShell = process.platform !== 'win32';
+    // detached:true puts the child in its own process group (Unix) / session
+    // so that on pause/stop we can kill the WHOLE tree (sh + pip + download
+    // subprocesses), not just the shell wrapper. Without it, killing `sh`
+    // would orphan `pip` / the in-flight download to keep running.
+    const spawnOpts: Parameters<typeof spawn>[2] = {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: opts.timeout,
+      cwd: opts.cwd,
+      detached: true,
+    };
     const proc = useShell
-      ? spawn('sh', ['-c', command], {
-          stdio: ['ignore', 'pipe', 'pipe'],
-          timeout: opts.timeout,
-          cwd: opts.cwd,
-        })
-      : spawn('cmd', ['/c', command], {
-          stdio: ['ignore', 'pipe', 'pipe'],
-          timeout: opts.timeout,
-          cwd: opts.cwd,
-        });
+      ? spawn('sh', ['-c', command], spawnOpts)
+      : spawn('cmd', ['/c', command], spawnOpts);
+
+    // Abort wiring: when PreloadManager aborts (pause/stop), kill the entire
+    // process tree. The 'close' handler then rejects with an AbortError so
+    // meta.preload propagates the interruption up to startPreload's catch.
+    const onAbort = () => killProcessTree(proc);
+    if (opts.signal) {
+      if (opts.signal.aborted) {
+        killProcessTree(proc);
+      } else {
+        opts.signal.addEventListener('abort', onAbort, { once: true });
+      }
+    }
 
     let stdoutBuf = '';
     proc.stdout?.on('data', (chunk: Buffer) => {
@@ -325,6 +378,11 @@ function runProcess(
     });
 
     proc.on('close', (code) => {
+      if (opts.signal) opts.signal.removeEventListener('abort', onAbort);
+      if (opts.signal?.aborted) {
+        reject(new Error('aborted'));
+        return;
+      }
       if (code === 0) {
         resolve();
       } else {
@@ -333,8 +391,31 @@ function runProcess(
       }
     });
 
-    proc.on('error', (err) => reject(err));
+    proc.on('error', (err) => {
+      if (opts.signal) opts.signal.removeEventListener('abort', onAbort);
+      reject(err);
+    });
   });
+}
+
+/**
+ * Kill an entire spawned process tree. `spawn(..., {detached:true})` makes the
+ * child a process-group leader on Unix, so `kill(-pid)` reaches the shell +
+ * pip + any download/compile subprocess it spawned. Windows has no negative-
+ * pid kill; fall back to `taskkill /T /F` which walks the tree.
+ * No-op (caught) if the process already exited.
+ */
+function killProcessTree(proc: ChildProcess): void {
+  if (!proc.pid) return;
+  try {
+    if (process.platform === 'win32') {
+      execSync(`taskkill /pid ${proc.pid} /T /F`, { stdio: ['ignore', 'ignore', 'ignore'] });
+    } else {
+      process.kill(-proc.pid, 'SIGTERM');
+    }
+  } catch {
+    // already exited — nothing to kill
+  }
 }
 
 // ─── PreloadManager ──────────────────────────────────────────────────────────
@@ -343,6 +424,12 @@ export class PreloadManager {
   private statuses = new Map<PreloadableSkill, SkillStatus>();
   private ee = new EventEmitter();
   private runningTasks = new Map<PreloadableSkill, AbortController>();
+  /** Skills the user asked to pause — checked in startPreload's catch so an
+   *  aborted run lands in 'paused' (partial kept) instead of 'failed'. */
+  private pauseRequested = new Set<PreloadableSkill>();
+  /** Skills the user asked to stop — checked in startPreload's catch so an
+   *  aborted run lands in 'missing' with partials deleted. */
+  private stopRequested = new Set<PreloadableSkill>();
 
   constructor() {
     for (const sk of PRELOADABLE_SKILLS) {
@@ -394,9 +481,10 @@ export class PreloadManager {
   }
 
   /**
-   * Start preloading a skill in the background.
-   * Emits PreloadProgressEvent via the onProgress listener.
-   * Throws if already running.
+   * Start (or resume) preloading a skill in the background.
+   * Resuming works because pip / HuggingFace / npm all reuse their caches —
+   * a re-run skips already-downloaded packages and resumes `.incomplete`
+   * model files. Throws only if already actively preloading.
    */
   async startPreload(skill: PreloadableSkill): Promise<void> {
     const current = this.statuses.get(skill);
@@ -414,21 +502,85 @@ export class PreloadManager {
 
     try {
       await meta.preload((pct, msg) => {
+        // If the user paused/stopped mid-run, stop updating progress — the
+        // catch block below sets the terminal status.
+        if (this.pauseRequested.has(skill) || this.stopRequested.has(skill)) return;
         this.statuses.set(skill, { status: 'preloading', progress: pct, message: msg });
         this.emitStatus();
         this.emitProgress({ skill, status: 'preloading', progress: pct, message: msg });
-      });
+      }, ac.signal);
 
       this.statuses.set(skill, { status: 'downloaded' });
       this.emitStatus();
       this.emitProgress({ skill, status: 'completed', progress: 100, message: `${skill} 预下载完成` });
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      this.statuses.set(skill, { status: 'failed', error: errMsg });
-      this.emitStatus();
-      this.emitProgress({ skill, status: 'failed', progress: 0, message: errMsg });
+      // Distinguish a user-initiated pause/stop from a real failure. The
+      // intent set was populated by pausePreload/stopPreload BEFORE aborting;
+      // the abort propagates here as a rejection, and we resolve into the
+      // user's chosen terminal state instead of marking it failed.
+      if (this.stopRequested.has(skill)) {
+        this.stopRequested.delete(skill);
+        // kill already happened via abort; now drop partial artifacts.
+        deletePartial(skill);
+        this.statuses.set(skill, { status: 'missing' });
+        this.emitStatus();
+        this.emitProgress({ skill, status: 'stopped', progress: 0, message: `${skill} 已停止` });
+      } else if (this.pauseRequested.has(skill)) {
+        this.pauseRequested.delete(skill);
+        // Keep partials on disk — resume reuses them.
+        this.statuses.set(skill, { status: 'paused' });
+        this.emitStatus();
+        this.emitProgress({ skill, status: 'paused', progress: 0, message: `${skill} 已暂停` });
+      } else {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        this.statuses.set(skill, { status: 'failed', error: errMsg });
+        this.emitStatus();
+        this.emitProgress({ skill, status: 'failed', progress: 0, message: errMsg });
+      }
     } finally {
       this.runningTasks.delete(skill);
+    }
+  }
+
+  /**
+   * Pause an in-progress preload: abort the running process tree but KEEP
+   * partial artifacts (venv, downloaded packages, `.incomplete` models) so
+   * resume picks up where it left off. No-op if not currently preloading.
+   * `paused` is a memory-only state — on daemon restart the skill shows as
+   * `missing` again (partials still on disk, so resume still works).
+   */
+  pausePreload(skill: PreloadableSkill): void {
+    this.pauseRequested.add(skill);
+    this.runningTasks.get(skill)?.abort();
+  }
+
+  /**
+   * Stop a preload: abort the running process AND delete partial artifacts
+   * so the skill is fully clean. Works on a running OR a paused skill
+   * (paused skill has no live task, so we clean up directly here).
+   */
+  stopPreload(skill: PreloadableSkill): void {
+    this.stopRequested.add(skill);
+    const ac = this.runningTasks.get(skill);
+    if (ac) {
+      // Running — abort; startPreload's catch will delete partials + set missing.
+      ac.abort();
+    } else {
+      // Not running (paused/failed/missing) — clean up directly here, since
+      // there's no live startPreload to catch the intent.
+      this.stopRequested.delete(skill);
+      deletePartial(skill);
+      this.statuses.set(skill, { status: 'missing' });
+      this.emitStatus();
+      this.emitProgress({ skill, status: 'stopped', progress: 0, message: `${skill} 已停止` });
+    }
+  }
+
+  /** Stop all running preloads. Called on daemon graceful shutdown so we
+   *  don't orphan detached child processes (pip/npm keep running otherwise). */
+  stopAll(): void {
+    for (const skill of this.runningTasks.keys()) {
+      this.stopPreload(skill);
     }
   }
 

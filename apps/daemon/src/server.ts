@@ -164,6 +164,9 @@ function gracefulShutdown(): void {
   weixinService.stop();
   void vaultWatcher.stop();
   runManager.cancelAll();
+  // Kill any in-progress preload subprocess trees so we don't orphan detached
+  // pip/npm children (they'd keep downloading after the daemon is gone).
+  preloadManager.stopAll();
   // Feishu stop() is async (WSClient teardown); chain DB close + exit AFTER
   // it resolves so we don't close the SQLite handle while a WS callback is
   // mid-write. WeixinService.stop() is still sync (polling-based, no async
