@@ -1,0 +1,498 @@
+/**
+ * PreloadManager — checks whether heavy skill tools are installed and manages
+ * background preloading so the user doesn't hit a long download when they first
+ * need docling, remotion, etc.
+ *
+ * Lifecycle:
+ *   daemon startup → checkSkills() → web UI queries status → user clicks
+ *   "download" → startPreload() → background child_process → progress via
+ *   onProgress listeners → UI updates.
+ *
+ * "Dismissed" state is persisted in config.json so repeated prompts don't
+ * annoy the user.
+ */
+
+import { spawn, execSync } from 'node:child_process';
+import { EventEmitter } from 'node:events';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as os from 'node:os';
+import { loadConfig, saveConfig, mergeConfig } from './config.js';
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+export type PreloadableSkill = 'docling' | 'remotion';
+
+export const PRELOADABLE_SKILLS: PreloadableSkill[] = ['docling', 'remotion'];
+
+/**
+ * Status of a preloadable skill.
+ * - unchecked: not yet checked (initial state on startup before checkSkills completes)
+ * - installed: the tool is available on the system (no preload needed)
+ * - missing: tool not found, needs preloading
+ * - dismissed: user said "don't show again"
+ * - preloading: download in progress
+ * - failed: download failed
+ * - downloaded: preload completed successfully
+ */
+export type SkillStatus =
+  | { status: 'unchecked' }
+  | { status: 'installed' }
+  | { status: 'missing' }
+  | { status: 'dismissed' }
+  | { status: 'preloading'; progress: number; message: string }
+  | { status: 'failed'; error: string }
+  | { status: 'downloaded' };
+
+export interface PreloadProgressEvent {
+  skill: PreloadableSkill;
+  status: 'preloading' | 'completed' | 'failed';
+  progress: number; // 0–100
+  message: string;
+}
+
+// ─── Skill metadata ─────────────────────────────────────────────────────────
+
+interface SkillMeta {
+  label: string;
+  description: string;
+  /** Check if the tool is already available on the system. */
+  detectInstalled(): boolean;
+  /** Start the preload process (pip install, scaffold, etc.).
+   *  Returns an async generator that yields progress events. */
+  preload(onProgress: (pct: number, msg: string) => void): Promise<void>;
+}
+
+const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
+  docling: {
+    label: 'docling',
+    description: '解析 PDF/Office 文档 → Markdown（需下载 AI 模型 ~500MB）',
+    detectInstalled(): boolean {
+      // 1. The Molio venv is the primary install location (created by
+      //    preload). Checking the binary directly is PATH-independent and
+      //    works even when the daemon itself wasn't launched from a login
+      //    shell (so ~/.molio/venv/bin isn't on the daemon's own PATH).
+      if (fs.existsSync(doclingBinaryPath())) return true;
+
+      // 2. Fall back to PATH lookup — covers systems where the user
+      //    installed docling globally themselves before Molio.
+      try {
+        execSync('docling --version', {
+          encoding: 'utf-8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+          timeout: 10_000,
+        });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    async preload(onProgress) {
+      // Phase 1: ensure a dedicated venv exists at ~/.molio/venv.
+      // We install into it (not the system Python) so:
+      //  - no PEP 668 "externally-managed-environment" rejections
+      //  - the CLI lands at a fixed path augmentPath exposes to the agent
+      //  - no pollution of / conflict with the user's other Python projects
+      onProgress(5, '准备 Python 环境...');
+      const py = resolvePython();
+      const venvBin = venvBinaryDir();
+      const venvPy = venvPythonPath();
+      const venvPip = venvPipPath();
+
+      if (!fs.existsSync(venvPy)) {
+        onProgress(8, '创建隔离 Python 环境...');
+        await runProcess(`${py} -m venv ${venvRoot()}`, { timeout: 60_000 });
+        if (!fs.existsSync(venvPy)) {
+          throw new Error('无法创建 Python venv，请确认已安装 python3');
+        }
+      }
+
+      // Phase 2: pip install docling (8 → 55)
+      const mirror = '-i https://pypi.tuna.tsinghua.edu.cn/simple';
+      onProgress(12, '正在安装 docling Python 包（含 PyTorch）...');
+      let pipOk = false;
+      try {
+        await runProcess(`${venvPip} install docling ${mirror}`, {
+          timeout: 600_000,
+          onLine(line) {
+            if (line.includes('Downloading') || line.includes('Installing collected packages')) {
+              onProgress(20, line.trim());
+            }
+          },
+        });
+        pipOk = true;
+      } catch {
+        // Fallback: default index (mirror may be down or package missing there)
+        onProgress(40, '镜像失败，尝试默认源...');
+        try {
+          await runProcess(`${venvPip} install docling`, {
+            timeout: 600_000,
+            onLine(line) {
+              if (line.includes('Downloading') || line.includes('Installing collected packages')) {
+                onProgress(45, line.trim());
+              }
+            },
+          });
+          pipOk = true;
+        } catch {
+          pipOk = false;
+        }
+      }
+      if (!pipOk || !fs.existsSync(path.join(venvBin, 'docling'))) {
+        throw new Error('docling 安装失败，请手动运行：~/.molio/venv/bin/pip install docling');
+      }
+
+      // Phase 3: Model warmup (55 → 100). Run a no-op conversion so docling
+      // downloads its layout + table models into ~/.cache/huggingface now,
+      // not on the user's first real conversion. Failure here is non-fatal —
+      // the models will download on first real use.
+      onProgress(60, '下载 AI 模型（layout + table，~500MB）...');
+      try {
+        const discard = process.platform === 'win32' ? 'NUL' : '/dev/null';
+        const outDir = process.platform === 'win32'
+          ? path.join(os.tmpdir(), 'molio-docling-preload')
+          : path.join(os.tmpdir(), 'molio-docling-preload');
+        await runProcess(`${doclingBinaryPath()} ${discard} --to md --output ${outDir} 2>&1`, {
+          timeout: 600_000,
+          onLine(line) {
+            if (line.toLowerCase().includes('download') || line.toLowerCase().includes('model')) {
+              onProgress(70, line.trim());
+            }
+          },
+        });
+      } catch {
+        onProgress(95, '模型预热跳过（首次转换时会自动下载）');
+      }
+
+      onProgress(100, 'docling 就绪');
+    },
+  },
+
+  remotion: {
+    label: 'Remotion',
+    description: 'React 视频制作框架（首次需下载 npm 依赖）',
+    detectInstalled(): boolean {
+      // "Installed" here means "already preloaded" — we don't claim remotion
+      // is present just because node exists (that led to never prompting).
+      // The marker is written after a successful cache warmup.
+      return fs.existsSync(remotionPreloadMarker());
+    },
+    async preload(onProgress) {
+      // Remotion's first real use is `npx create-video` inside the vault's
+      // .molio/remotion/, which runs `npm install` for ~100MB of deps. We
+      // can't reuse a skeleton project (the agent builds its own in the
+      // vault), so the only thing that carries over is the **npm cache**
+      // (~/.npm). We warm it by installing the core remotion packages into a
+      // throwaway temp dir, then delete the dir — leaving only the cache.
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-remotion-warmup-'));
+
+      try {
+        onProgress(10, '创建临时预热目录...');
+        // Minimal package.json so `npm install` knows what to resolve.
+        fs.writeFileSync(
+          path.join(tmpDir, 'package.json'),
+          JSON.stringify({
+            name: 'molio-remotion-warmup',
+            private: true,
+            dependencies: {
+              remotion: '*',
+              '@remotion/cli': '*',
+              '@remotion/bundler': '*',
+              '@remotion/renderer': '*',
+            },
+          }, null, 2),
+        );
+
+        onProgress(25, '下载 Remotion npm 依赖（首次 ~100MB）...');
+        await runProcess(`npm install --prefer-online --no-audit --no-fund`, {
+          timeout: 600_000,
+          cwd: tmpDir,
+          onLine(line) {
+            if (line.includes('added') || line.toLowerCase().includes('remov')) {
+              onProgress(60, line.trim());
+            }
+          },
+        });
+
+        // Mark as preloaded so we don't prompt again. The npm cache at
+        // ~/.npm is what actually matters and persists after the temp dir
+        // is deleted.
+        try {
+          fs.writeFileSync(remotionPreloadMarker(), new Date().toISOString());
+        } catch { /* best-effort */ }
+
+        onProgress(100, 'Remotion npm 缓存就绪');
+      } finally {
+        // Always clean up the throwaway project. Only the npm cache survives.
+        try {
+          fs.rmSync(tmpDir, { recursive: true, force: true });
+        } catch { /* best-effort */ }
+      }
+    },
+  },
+};
+
+// ─── Path helpers (venv layout, cross-platform) ─────────────────────────────
+
+function venvRoot(): string {
+  return path.join(os.homedir(), '.molio', 'venv');
+}
+function venvBinaryDir(): string {
+  return process.platform === 'win32'
+    ? path.join(venvRoot(), 'Scripts')
+    : path.join(venvRoot(), 'bin');
+}
+function venvPythonPath(): string {
+  return process.platform === 'win32'
+    ? path.join(venvBinaryDir(), 'python.exe')
+    : path.join(venvBinaryDir(), 'python');
+}
+function venvPipPath(): string {
+  return process.platform === 'win32'
+    ? path.join(venvBinaryDir(), 'pip.exe')
+    : path.join(venvBinaryDir(), 'pip');
+}
+function doclingBinaryPath(): string {
+  return process.platform === 'win32'
+    ? path.join(venvBinaryDir(), 'docling.exe')
+    : path.join(venvBinaryDir(), 'docling');
+}
+function remotionPreloadMarker(): string {
+  return path.join(os.homedir(), '.molio', '.remotion-preloaded');
+}
+
+/**
+ * Resolve a usable Python binary. Tries python3, then python, then py.
+ * (Windows often only has `python` / `py`; Unix usually has `python3`.)
+ */
+function resolvePython(): string {
+  const candidates = process.platform === 'win32'
+    ? ['python', 'py', 'python3']
+    : ['python3', 'python'];
+  for (const c of candidates) {
+    try {
+      execSync(`${c} --version`, {
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+        timeout: 5_000,
+      });
+      return c;
+    } catch {
+      continue;
+    }
+  }
+  return 'python3';
+}
+
+// ─── Helper: run a child process with timeout + line callback ────────────────
+
+function runProcess(
+  command: string,
+  opts: { timeout?: number; cwd?: string; onLine?: (line: string) => void } = {},
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const useShell = process.platform !== 'win32';
+    const proc = useShell
+      ? spawn('sh', ['-c', command], {
+          stdio: ['ignore', 'pipe', 'pipe'],
+          timeout: opts.timeout,
+          cwd: opts.cwd,
+        })
+      : spawn('cmd', ['/c', command], {
+          stdio: ['ignore', 'pipe', 'pipe'],
+          timeout: opts.timeout,
+          cwd: opts.cwd,
+        });
+
+    let stdoutBuf = '';
+    proc.stdout?.on('data', (chunk: Buffer) => {
+      stdoutBuf += chunk.toString();
+      const lines = stdoutBuf.split('\n');
+      stdoutBuf = lines.pop() ?? '';
+      for (const line of lines) {
+        opts.onLine?.(line);
+      }
+    });
+
+    let stderrBuf = '';
+    proc.stderr?.on('data', (chunk: Buffer) => {
+      stderrBuf += chunk.toString();
+      const lines = stderrBuf.split('\n');
+      stderrBuf = lines.pop() ?? '';
+      for (const line of lines) {
+        opts.onLine?.(line);
+      }
+    });
+
+    proc.on('close', (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        const errMsg = `进程退出码 ${code}: ${stderrBuf.slice(-200)}`;
+        reject(new Error(errMsg));
+      }
+    });
+
+    proc.on('error', (err) => reject(err));
+  });
+}
+
+// ─── PreloadManager ──────────────────────────────────────────────────────────
+
+export class PreloadManager {
+  private statuses = new Map<PreloadableSkill, SkillStatus>();
+  private ee = new EventEmitter();
+  private runningTasks = new Map<PreloadableSkill, AbortController>();
+
+  constructor() {
+    for (const sk of PRELOADABLE_SKILLS) {
+      this.statuses.set(sk, { status: 'unchecked' });
+    }
+  }
+
+  /**
+   * Check all preloadable skills and update their status.
+   * Called once at daemon startup.
+   */
+  checkSkills(): void {
+    const config = loadConfig();
+    const dismissed: string[] = (config as any).preload?.dismissed ?? [];
+
+    for (const sk of PRELOADABLE_SKILLS) {
+      if (dismissed.includes(sk)) {
+        this.statuses.set(sk, { status: 'dismissed' });
+        continue;
+      }
+
+      const meta = SKILL_META[sk];
+      const installed = meta.detectInstalled();
+      this.statuses.set(sk, installed
+        ? { status: 'installed' }
+        : { status: 'missing' },
+      );
+    }
+
+    this.emitStatus();
+  }
+
+  /**
+   * Get the current status of all skills.
+   */
+  getStatuses(): Record<PreloadableSkill, SkillStatus> {
+    const out: Record<string, SkillStatus> = {};
+    for (const sk of PRELOADABLE_SKILLS) {
+      out[sk] = this.statuses.get(sk) ?? { status: 'unchecked' };
+    }
+    return out as Record<PreloadableSkill, SkillStatus>;
+  }
+
+  /**
+   * Get the status of a single skill.
+   */
+  getStatus(skill: PreloadableSkill): SkillStatus {
+    return this.statuses.get(skill) ?? { status: 'unchecked' };
+  }
+
+  /**
+   * Start preloading a skill in the background.
+   * Emits PreloadProgressEvent via the onProgress listener.
+   * Throws if already running.
+   */
+  async startPreload(skill: PreloadableSkill): Promise<void> {
+    const current = this.statuses.get(skill);
+    if (current?.status === 'preloading') {
+      throw new Error(`${skill} 正在预下载中`);
+    }
+
+    const ac = new AbortController();
+    this.runningTasks.set(skill, ac);
+
+    const meta = SKILL_META[skill];
+    this.statuses.set(skill, { status: 'preloading', progress: 0, message: '准备中...' });
+    this.emitStatus();
+    this.emitProgress({ skill, status: 'preloading', progress: 0, message: '准备中...' });
+
+    try {
+      await meta.preload((pct, msg) => {
+        this.statuses.set(skill, { status: 'preloading', progress: pct, message: msg });
+        this.emitStatus();
+        this.emitProgress({ skill, status: 'preloading', progress: pct, message: msg });
+      });
+
+      this.statuses.set(skill, { status: 'downloaded' });
+      this.emitStatus();
+      this.emitProgress({ skill, status: 'completed', progress: 100, message: `${skill} 预下载完成` });
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      this.statuses.set(skill, { status: 'failed', error: errMsg });
+      this.emitStatus();
+      this.emitProgress({ skill, status: 'failed', progress: 0, message: errMsg });
+    } finally {
+      this.runningTasks.delete(skill);
+    }
+  }
+
+  /**
+   * Dismiss a skill — don't prompt the user about it again.
+   * Persisted to config.json.
+   */
+  dismissSkill(skill: PreloadableSkill): void {
+    this.statuses.set(skill, { status: 'dismissed' });
+    this.emitStatus();
+
+    // Persist to config
+    try {
+      const config = loadConfig();
+      const preload: { dismissed: string[] } = (config as any).preload ?? { dismissed: [] };
+      if (!preload.dismissed.includes(skill)) {
+        preload.dismissed.push(skill);
+      }
+      saveConfig(mergeConfig({ ...config, preload } as any));
+    } catch {
+      // Best-effort
+    }
+  }
+
+  /** Reset a dismissed skill so it shows as missing again (for settings page). */
+  undismissSkill(skill: PreloadableSkill): void {
+    const config = loadConfig();
+    const preload: { dismissed: string[] } = (config as any).preload ?? { dismissed: [] };
+    preload.dismissed = preload.dismissed.filter((s: string) => s !== skill);
+    try {
+      saveConfig(mergeConfig({ ...config, preload } as any));
+    } catch { /* best-effort */ }
+
+    // Re-check
+    const meta = SKILL_META[skill];
+    const installed = meta.detectInstalled();
+    this.statuses.set(skill, installed
+      ? { status: 'installed' }
+      : { status: 'missing' },
+    );
+    this.emitStatus();
+  }
+
+  // ─── Event helpers ─────────────────────────────────────────────────────
+
+  onProgress(cb: (event: PreloadProgressEvent) => void): () => void {
+    this.ee.on('progress', cb);
+    return () => { this.ee.off('progress', cb); };
+  }
+
+  onStatusChange(cb: () => void): () => void {
+    this.ee.on('status', cb);
+    return () => { this.ee.off('status', cb); };
+  }
+
+  private emitProgress(event: PreloadProgressEvent): void {
+    this.ee.emit('progress', event);
+  }
+
+  private emitStatus(): void {
+    this.ee.emit('status');
+  }
+}
+
+export function createPreloadManager(): PreloadManager {
+  return new PreloadManager();
+}

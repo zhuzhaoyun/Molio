@@ -1,6 +1,6 @@
 import { serve } from '@hono/node-server';
 import { execSync } from 'node:child_process';
-import { app, db, runManager, weixinService, vaultWatcher } from './server.js';
+import { app, db, runManager, weixinService, vaultWatcher, preloadManager } from './server.js';
 import { listVaults } from './core/db.js';
 import { installBuiltinSkills } from './core/skill-installer.js';
 import { ensureWikiSysPromptFiles } from './core/wiki-prompts.js';
@@ -98,6 +98,11 @@ for (const vault of listVaults(db)) {
 // Materialize the feishu wiki role frame (the only channel still delivered via
 // --append-system-prompt-file; weixin prepends its frame, see weixin/dispatcher).
 ensureWikiSysPromptFiles();
+
+// Check which heavy skill tools are already installed. Results are stored in
+// the PreloadManager and served via GET /api/preload/status so the web UI can
+// show a preload suggestion toast without blocking daemon startup.
+preloadManager.checkSkills();
 
 function startServer(): void {
   const server = serve({ fetch: app.fetch, port }, () => {

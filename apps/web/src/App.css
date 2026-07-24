@@ -35,3 +35,260 @@
   font-size: 13px;
   color: var(--text-muted);
 }
+
+/* ─── Preload Toast ──────────────────────────────────────────────────────── */
+
+.preload-toast {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 50;
+  width: 380px;
+  max-width: calc(100vw - 32px);
+  padding: 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-lg);
+  animation: preload-toast-in 200ms ease;
+  color: var(--text);
+}
+
+@keyframes preload-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.preload-toast__close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 4px;
+}
+.preload-toast__close:hover {
+  color: var(--text);
+}
+
+/* Minimize link inside the downloading subtitle — same row as the hint,
+   quiet so it doesn't compete with the progress. */
+.preload-toast__minimize-link {
+  margin-left: 8px;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12px;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.preload-toast__minimize-link:hover {
+  color: var(--accent-hover);
+}
+
+/* Minimized pill — a compact floating chip shown while a download runs in
+   the background. Clicking it re-expands the full progress card. Lives at
+   the same bottom-right anchor as the expanded toast. */
+.preload-toast__pill {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 50;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100vw - 32px);
+  padding: 8px 14px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+  color: var(--text);
+  font-size: 12.5px;
+  cursor: pointer;
+  animation: preload-toast-in 200ms ease;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+.preload-toast__pill:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-lg);
+}
+.preload-toast__pill-label {
+  color: var(--text-muted);
+}
+.preload-toast__pill-pct {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-strong);
+}
+/* Tiny spinning dot — indicates active download without a full progress bar. */
+.preload-toast__pill-spinner {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  animation: preload-spinner 700ms linear infinite;
+  flex-shrink: 0;
+}
+@keyframes preload-spinner {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .preload-toast__pill-spinner { animation: none; }
+}
+
+.preload-toast__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+  margin: 0 0 2px;
+}
+.preload-toast__title--done {
+  color: var(--green);
+}
+.preload-toast__title--error {
+  color: var(--red);
+}
+
+.preload-toast__subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0 0 10px;
+}
+
+/* Skill cards */
+.preload-toast__cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+.preload-toast__card {
+  padding: 10px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+}
+.preload-toast__card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.preload-toast__card-name {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-strong);
+}
+.preload-toast__card-size {
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.preload-toast__card-scenario {
+  font-size: 12.5px;
+  color: var(--text);
+  margin: 0 0 4px;
+  line-height: 1.45;
+}
+.preload-toast__card-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 0;
+  line-height: 1.5;
+}
+.preload-toast__card-dot {
+  margin: 0 6px;
+  opacity: 0.5;
+}
+
+.preload-toast__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+.preload-toast__primary {
+  background: var(--accent) !important;
+  color: #fff !important;
+  border-color: var(--accent) !important;
+}
+.preload-toast__primary:hover {
+  background: var(--accent-hover) !important;
+  border-color: var(--accent-hover) !important;
+}
+
+/* Downloading */
+.preload-toast__progress-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.preload-toast__progress-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.preload-toast__progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+}
+.preload-toast__progress-pct {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.preload-toast__progress-bar {
+  height: 6px;
+  background: var(--bg-subtle);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.preload-toast__progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: var(--radius-sm);
+  transition: width 300ms ease;
+}
+.preload-toast__progress-msg {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Done */
+.preload-toast__done-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+/* Error */
+.preload-toast__error-msg {
+  font-size: 13px;
+  color: var(--red);
+  margin: 0 0 8px;
+}

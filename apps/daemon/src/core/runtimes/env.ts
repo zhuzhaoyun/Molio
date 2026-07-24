@@ -87,8 +87,14 @@ export function buildSpawnEnv(
 }
 
 /**
- * Ensure the Molio user-level binary directory (~/.molio/bin) is in PATH.
- * This is where one-click install places downloaded agent binaries.
+ * Ensure the Molio user-level binary directories are in PATH:
+ * - ~/.molio/bin — one-click agent binary install location
+ * - ~/.molio/venv/bin (Unix) / ~/.molio/venv/Scripts (Windows) — the
+ *   dedicated venv where PreloadManager installs Python CLIs like docling.
+ *   Without this, the agent process (spawned without a login shell profile)
+ *   cannot find `docling` even though PreloadManager installed it.
+ * - ~/.local/bin (Unix) — fallback for `pip install --user` CLIs, in case
+ *   venv creation failed and preload fell back to a user install.
  */
 function augmentPath(env: NodeJS.ProcessEnv): void {
   const pathKey = process.platform === 'win32' ? 'Path' : 'PATH';
@@ -97,11 +103,19 @@ function augmentPath(env: NodeJS.ProcessEnv): void {
   const currentPath = (env[actualKey] as string) || '';
 
   const home = os.homedir();
+  const venvBin = process.platform === 'win32'
+    ? path.join(home, '.molio', 'venv', 'Scripts')
+    : path.join(home, '.molio', 'venv', 'bin');
   const molioBin = path.join(home, '.molio', 'bin');
+  const userLocalBin = process.platform === 'win32' ? null : path.join(home, '.local', 'bin');
 
-  // Only add if it exists and isn't already in PATH
-  if (fs.existsSync(molioBin) && !currentPath.toLowerCase().includes(molioBin.toLowerCase())) {
-    env[actualKey] = `${molioBin}${pathSep}${currentPath}`;
+  const candidates = [venvBin, molioBin, userLocalBin].filter((d): d is string => d !== null);
+
+  const lower = currentPath.toLowerCase();
+  const toAdd = candidates.filter((d) => fs.existsSync(d) && !lower.includes(d.toLowerCase()));
+
+  if (toAdd.length > 0) {
+    env[actualKey] = `${toAdd.join(pathSep)}${pathSep}${currentPath}`;
   }
 }
 

@@ -651,6 +651,82 @@ export const api = {
     return res.json();
   },
 
+  // ─── Preload ───
+
+  async getPreloadStatus(): Promise<Record<string, { status: string; progress?: number; message?: string; error?: string }>> {
+    const res = await fetch(`${BASE}/preload/status`);
+    if (!res.ok) throw new Error(`Failed to fetch preload status: ${res.status}`);
+    const data = await res.json();
+    return data.statuses;
+  },
+
+  /**
+   * Start preloading skills. Returns a ReadableStream of SSE progress events.
+   * Pass signal to allow cancellation.
+   */
+  async startPreload(
+    skills: string[],
+    onProgress: (event: { skill: string; status: string; progress: number; message: string }) => void,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const res = await fetch(`${BASE}/preload/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ skills }),
+      signal,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: `Preload start failed: ${res.status}` }));
+      throw new Error(err.error ?? `Preload start failed: ${res.status}`);
+    }
+
+    const reader = res.body?.getReader();
+    if (!reader) {
+      throw new Error('No response stream');
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const event = JSON.parse(line.slice(6));
+            onProgress(event);
+          } catch {
+            // Skip malformed
+          }
+        }
+      }
+    }
+  },
+
+  async dismissPreload(skills: string[]): Promise<void> {
+    const res = await fetch(`${BASE}/preload/dismiss`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ skills }),
+    });
+    if (!res.ok) throw new Error(`Failed to dismiss preload: ${res.status}`);
+  },
+
+  async undismissPreload(skills: string[]): Promise<void> {
+    const res = await fetch(`${BASE}/preload/undismiss`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ skills }),
+    });
+    if (!res.ok) throw new Error(`Failed to undismiss preload: ${res.status}`);
+  },
+
   // ─── Graph ───
 
   async getGraph(vaultId: string): Promise<GraphData> {
@@ -659,3 +735,4 @@ export const api = {
     return res.json();
   },
 };
+

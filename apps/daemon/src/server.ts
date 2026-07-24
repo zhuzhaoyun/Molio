@@ -23,6 +23,8 @@ import { WeixinService } from './core/weixin/service.js';
 import { FeishuService } from './core/feishu/service.js';
 import { ConversationService } from './core/conversations/service.js';
 import { VaultWatcher } from './core/vault-watcher.js';
+import { createPreloadManager } from './core/preload-manager.js';
+import { preloadRoutes } from './routes/preload.js';
 
 export const runManager = new RunManager();
 export const db: Database.Database = openDatabase();
@@ -30,6 +32,7 @@ export const conversationService = new ConversationService(db);
 export const weixinService = new WeixinService(runManager, conversationService, db);
 export const feishuService = new FeishuService(runManager, conversationService, db);
 export const vaultWatcher = new VaultWatcher(db);
+export const preloadManager = createPreloadManager();
 
 export const app = new Hono();
 
@@ -82,6 +85,7 @@ app.route('/api/proxy', proxyRoutes());
 app.route('/api/graph', graphRoutes(db));
 app.route('/api/weixin', weixinRoutes(weixinService));
 app.route('/api/feishu', feishuRoutes(feishuService));
+app.route('/api/preload', preloadRoutes(preloadManager));
 app.route('/api/maintenance', maintenanceRoutes(db));
 
 void weixinService.start();
