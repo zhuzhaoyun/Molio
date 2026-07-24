@@ -168,8 +168,21 @@ export function PreloadToast() {
       messages: Object.fromEntries(skills.map((s) => [s, '准备中...'])),
     }));
 
+    // Track each skill's terminal outcome as progress events arrive. The
+    // SSE stream closes once every skill reaches completed/failed, but the
+    // stream closing alone does NOT mean success — a skill can emit status
+    // 'failed' and the stream still ends. Without tracking this, the toast
+    // would show green "完成" even when docling's pip install actually
+    // failed (verified: venv skeleton created but no docling binary).
+    const outcomes = new Map<string, { ok: boolean; message: string }>();
+
     try {
       await api.startPreload(skills, (event) => {
+        if (event.status === 'completed') {
+          outcomes.set(event.skill, { ok: true, message: event.message });
+        } else if (event.status === 'failed') {
+          outcomes.set(event.skill, { ok: false, message: event.message });
+        }
         setState((prev) => ({
           ...prev,
           mode: 'downloading',
@@ -178,16 +191,29 @@ export function PreloadToast() {
         }));
       });
 
-      // All done — force the toast open (un-minimize) so the completion
-      // notification is always visible, even if the user had collapsed it.
-      setState((prev) => ({ ...prev, mode: 'done', minimized: false, error: undefined }));
-
-      // Auto-hide after 5 seconds
-      setTimeout(() => {
-        setState((prev) => ({ ...prev, visible: false }));
-      }, 5000);
+      // Decide done vs error from actual per-skill outcomes, not from the
+      // stream having closed. Force open (un-minimize) either way so the
+      // result is always seen.
+      const failed = [...outcomes.values()].filter((o) => !o.ok);
+      if (failed.length > 0) {
+        const names = skills
+          .filter((sk) => outcomes.get(sk)?.ok === false)
+          .map((sk) => SKILL_LABELS[sk as PreloadableSkill]?.label ?? sk);
+        setState((prev) => ({
+          ...prev,
+          mode: 'error',
+          minimized: false,
+          error: `${names.join('、')} 预下载失败：${failed[0]!.message}`,
+        }));
+      } else {
+        setState((prev) => ({ ...prev, mode: 'done', minimized: false, error: undefined }));
+        // Auto-hide only on full success. Errors stay until the user acts.
+        setTimeout(() => {
+          setState((prev) => ({ ...prev, visible: false }));
+        }, 5000);
+      }
     } catch (err) {
-      // On failure also surface the toast — the user needs to see it failed.
+      // Stream itself errored (network drop, daemon gone) — surface as error.
       setState((prev) => ({
         ...prev,
         mode: 'error',
