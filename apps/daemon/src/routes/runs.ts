@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import type { RunManager } from '../core/RunManager.js';
 import type { ConversationService } from '../core/conversations/service.js';
 import { startConversationRun } from '../core/conversations/run-starter.js';
+import { getVaultByPath } from '../core/db.js';
 
 export function runsRoutes(
   db: Database.Database,
@@ -25,9 +26,10 @@ export function runsRoutes(
 
     try {
       const convTitle = body.message.slice(0, 80);
+      const vault = body.cwd ? getVaultByPath(db, body.cwd) : null;
       const conversation = body.conversationId
         ? conversations.getConversation(body.conversationId)
-        : conversations.createDesktopConversation(convTitle);
+        : conversations.createDesktopConversation(convTitle, vault?.id ?? null, vault?.name ?? null);
       if (!conversation) {
         return c.json({
           error: { code: 'NOT_FOUND', message: 'Conversation not found' },

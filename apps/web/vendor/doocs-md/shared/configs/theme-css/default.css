@@ -17,11 +17,10 @@ h1 {
 }
 
 /* ==================== 二级标题 ==================== */
-/* [MOLIO] 缩小 h2 上下间距 */
 h2 {
   display: table;
   padding: 0 0.2em;
-  margin: 2em auto 1em;
+  margin: 4em auto 2em;
   color: #fff;
   background: var(--md-primary-color);
   font-size: calc(var(--md-font-size) * 1.2);
@@ -64,9 +63,9 @@ h6 {
 }
 
 /* ==================== 段落 ==================== */
-/* [MOLIO] 去掉侧边距和字间距，更适合中文阅读 */
 p {
-  margin: 1em 0;
+  margin: 1.5em 8px;
+  letter-spacing: 0.1em;
   color: hsl(var(--foreground));
 }
 
@@ -259,6 +258,114 @@ blockquote > p {
 .alert-icon-quote,
 .alert-icon-cite {
   fill: #9ca3af;
+}
+
+/* ==================== Academic environments (theorem, lemma, definition, …) ==================== */
+/* Title colors */
+.alert-title-theorem,
+.alert-title-lemma,
+.alert-title-corollary,
+.alert-title-proposition {
+  color: #986ee2;
+}
+
+.alert-title-definition {
+  color: #57ab5a;
+}
+
+.alert-title-axiom,
+.alert-title-postulate,
+.alert-title-assumption {
+  color: #478be6;
+}
+
+.alert-title-proof {
+  color: #9ca3af;
+}
+
+.alert-title-remark {
+  color: #c69026;
+}
+
+/* Icon colors */
+.alert-icon-theorem,
+.alert-icon-lemma,
+.alert-icon-corollary,
+.alert-icon-proposition {
+  fill: #986ee2;
+}
+
+.alert-icon-definition {
+  fill: #57ab5a;
+}
+
+.alert-icon-axiom,
+.alert-icon-postulate,
+.alert-icon-assumption {
+  fill: #478be6;
+}
+
+.alert-icon-proof {
+  fill: #9ca3af;
+}
+
+.alert-icon-remark {
+  fill: #c69026;
+}
+
+/* Full border on academic boxes (theorem-style appearance) */
+.markdown-alert-theorem,
+.markdown-alert-lemma,
+.markdown-alert-corollary,
+.markdown-alert-proposition {
+  border: 1px solid rgba(152, 110, 226, 0.35);
+  border-left: 4px solid #986ee2;
+}
+
+.markdown-alert-definition {
+  border: 1px solid rgba(87, 171, 90, 0.35);
+  border-left: 4px solid #57ab5a;
+}
+
+.markdown-alert-axiom,
+.markdown-alert-postulate,
+.markdown-alert-assumption {
+  border: 1px solid rgba(71, 139, 230, 0.35);
+  border-left: 4px solid #478be6;
+}
+
+.markdown-alert-proof {
+  border: 1px solid rgba(156, 163, 175, 0.35);
+  border-left: 4px solid #9ca3af;
+}
+
+.markdown-alert-remark {
+  border: 1px solid rgba(198, 144, 38, 0.35);
+  border-left: 4px solid #c69026;
+}
+
+/* Fallback for custom/unknown names: no icon, theme primary color */
+.alert-title-custom {
+  color: var(--md-primary-color);
+}
+
+.markdown-alert-custom {
+  border-left: 4px solid var(--md-primary-color);
+}
+
+/* Italic body text in academic environments (math convention) */
+.markdown-alert-theorem > :not(.markdown-alert-title),
+.markdown-alert-lemma > :not(.markdown-alert-title),
+.markdown-alert-corollary > :not(.markdown-alert-title),
+.markdown-alert-proposition > :not(.markdown-alert-title),
+.markdown-alert-definition > :not(.markdown-alert-title),
+.markdown-alert-axiom > :not(.markdown-alert-title),
+.markdown-alert-postulate > :not(.markdown-alert-title),
+.markdown-alert-assumption > :not(.markdown-alert-title),
+.markdown-alert-proof > :not(.markdown-alert-title),
+.markdown-alert-remark > :not(.markdown-alert-title),
+.markdown-alert-custom > :not(.markdown-alert-title) {
+  font-style: italic;
 }
 
 /* ==================== 代码块 ==================== */

@@ -42,12 +42,30 @@ src/
     conversations/
       service.ts       统一会话服务（跨渠道 conversation 管理）
       run-starter.ts   共享"在已有会话上建 run"逻辑（runs + rewind-resend 复用：vault 系统提示 + append user + createRun + onTurnComplete）
+    channels/         跨渠道共享抽象（weixin/feishu/wecom 都走这条 dispatcher）
+      types.ts          ChannelSink 接口、ConnectionState 多态
+      dispatcher.ts     ChannelDispatcher — 把外部消息→conversation→run 的样板抽出来
+      credentials-store.ts  跨渠道凭证文件读写（~/.molio/<channel>-credentials.json，原子写 + chmod 0o600）
+      message-dedup.ts     MessageDedup 类 — 按消息 id 去重，TTL + 可选 maxEntries 淘汰
+      text-chunker.ts      chunkText(text, limit) — 按 \n\n / \n / 硬切 三级切分
+      outbound-media.ts 渠道回复中"图片/文件"出站协议
+      media-helpers.ts  共享 media 下载/缓存工具
     weixin/
       client.ts        微信消息收发
       message.ts       消息解析
-      service.ts       微信服务编排
+      service.ts       微信服务编排 (implements ChannelSink)
       types.ts         微信类型定义
+    feishu/
+      client.ts        Lark REST API 包装 (tenant_access_token、im/v1 消息收发)
+      ws-client.ts     WebSocket 长连接 — 接收 im.message.receive_v1 事件
+      message.ts       事件 payload 解析 → ParsedFeishuMessage
+      media.ts         图片/文件下载到 raw/feishu/<date>/
+      token-store.ts   FeishuTokenStore — tenant_access_token 内存缓存 + 磁盘持久化 + 100min 刷新定时器
+      service.ts       状态机 (idle/connecting/connected/reconnecting/error)，token 生命周期委托 token-store
+      types.ts         FeishuStatus / FeishuConfig / FeishuRawEvent
   routes/
+    channel.ts        channelRoutes<TConfig>() 工厂 — 5 个标准渠道路由（status/start/stop/disconnect/config）
+
     agents.ts         GET /api/agents — 列出可用 agent
     runs.ts           POST /api/runs — 创建 run, GET 列出/查询
     events.ts         GET /api/runs/:id/events — SSE 事件流
@@ -58,14 +76,16 @@ src/
     knowledge.ts      CRUD /api/knowledge — 知识库管理
     publish.ts        POST /api/publish — 发布到内容平台
     graph.ts          GET /api/graph — 知识图谱数据
+    maintenance.ts    POST /api/maintenance/rebuild-fts — 重建 FTS 索引（灾难恢复）
     weixin.ts         POST /api/weixin — 微信回调
+    feishu.ts         GET/POST /api/feishu/* — 飞书渠道 (status/start/stop/disconnect/config)
   publish-bridge/
     bridge-page.ts    发布桥接页面逻辑
 test/                  测试用例 (node:test)，按源码模块子目录组织
-  core/               config, db, transcript, run-event-buffer, knowledge, conversations, weixin
+  core/               config, db, transcript, run-event-buffer, knowledge, conversations, weixin, feishu
   streams/            claude-stream, codex-stream, json-event-stream, jsonl-parser
   runtimes/           env, launch-detection, claude-permission-mode, windows-cmd-resolution
-  routes/             agent-test-multiturn, knowledge, publish, sse
+  routes/             agent-test-multiturn, knowledge, publish, sse, feishu
   compat/             esm-compat, port-check
 ```
 
@@ -93,16 +113,22 @@ pnpm typecheck    # tsc --noEmit
 | GET | `/api/config` | 读取配置 |
 | PUT | `/api/config` | 更新配置 |
 | GET/POST/PUT/DELETE | `/api/projects` | 项目 CRUD |
-| GET | `/api/conversations` | 列出全局会话历史 |
+| GET | `/api/conversations` | 列出会话历史（支持 ?vaultId=&query=&before=&limit= 游标分页 + 全文搜索 + vault 过滤） |
 | GET | `/api/conversations/:id` | 查询单个会话 |
 | GET | `/api/conversations/:id/messages` | 列出会话全部消息 |
 | DELETE | `/api/conversations/:id` | 删除会话 |
 | POST | `/api/conversations/:id/rewind-resend` | 重新生成/编辑重发（回退到末条 user 消息重放建新 run） |
 | POST | `/api/conversations/:id/delete-messages` | 按 id 集合删除消息（勾选删除） |
+| POST | `/api/maintenance/rebuild-fts` | 重建 messages_fts 索引（灾难恢复） |
 | GET/POST/PUT/DELETE | `/api/knowledge` | 知识库管理 |
 | POST | `/api/publish` | 发布到内容平台 |
 | GET | `/api/graph` | 知识图谱数据 |
 | POST | `/api/weixin` | 微信回调 |
+| GET | `/api/feishu/status` | 飞书通道状态 |
+| POST | `/api/feishu/start` | 启动飞书 WebSocket 长连接 |
+| POST | `/api/feishu/stop` | 停止飞书连接（不清理凭证） |
+| POST | `/api/feishu/disconnect` | 断开连接并清理 tenant_access_token 缓存 |
+| PUT | `/api/feishu/config` | 写 App ID/App Secret/默认 agent（写入 ~/.molio/config.json 的 feishu 字段，自动触发重连） |
 
 ## 关键设计
 
@@ -121,6 +147,7 @@ pnpm typecheck    # tsc --noEmit
 - **外部身份映射规则**：外部通道用 `channel_type + external_session_id` 定位同一个 conversation，例如 `weixin + fromUserId`、`feishu + openId`、`wecom + userId`。
 - **渠道模块保持干净独立**：`core/weixin` 不直接关心数据库表结构、不维护自有 session store；它通过公共 `ConversationService` 获取/创建会话、读取历史、追加用户和助手消息。
 - **系统渠道项目**：当前数据库仍要求 `conversations.project_id NOT NULL`，外部渠道会话挂到隐藏系统项目 `__molio_channels__` 下；项目列表接口应过滤系统项目，避免污染用户项目。
+- **Vault 归属**：创建 run 时通过 `body.cwd` → `getVaultByPath` 解析 vault，将 `vault_id` + `vault_name`（反范式化）写入 conversation。vault 删除后 `vault_name` 保留，历史记录仍可显示原名。无 FK 级联——删 vault 不删会话。
 
 ## 测试规范
 

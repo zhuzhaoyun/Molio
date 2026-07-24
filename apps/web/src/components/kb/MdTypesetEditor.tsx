@@ -13,25 +13,60 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { MdRenderer } from './MdRenderer';
 import { MdStylePanel, defaultThemeConfig, type ThemeConfig } from './MdStylePanel';
-import { preprocessWikiEmbeds, proxyExternalImages, stripTrackingPixels } from '../../hooks/useKnowledge';
+import { preprocessWikiLinks, preprocessWikiEmbeds, proxyExternalImages, stripTrackingPixels } from '../../hooks/useKnowledge';
 
 export interface MdTypesetEditorProps {
   initialContent: string;
   onContentChange?: (content: string) => void;
   vaultId?: string;
   selectedFile?: string | null;
+  /** Open a file in the KB directly. */
+  onNavigateToFile?: (path: string) => void;
 }
 
 export function MdTypesetEditor({
   initialContent,
   onContentChange,
   vaultId,
+  onNavigateToFile,
 }: MdTypesetEditorProps) {
   const [content, setContent] = useState(initialContent);
   const [themeConfig, setThemeConfig] = useState<ThemeConfig>(defaultThemeConfig);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const previewBodyRef = useRef<HTMLDivElement>(null);
   const syncingRef = useRef(false);
+
+  // Capture-phase handler for wiki link clicks in the typeset preview.
+  useEffect(() => {
+    if (!onNavigateToFile || !vaultId) return;
+    const handler = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('.kb-shell')) return;
+      const link = (e.target as HTMLElement).closest('.kb-wiki-link') as HTMLAnchorElement | null;
+      if (!link) return;
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      e.preventDefault();
+      const filePath = link.getAttribute('data-file-path') || link.textContent?.trim();
+      if (!filePath) return;
+
+      const apiUrl = `/api/knowledge/vaults/${vaultId}/resolve/${encodeURIComponent(filePath).replace(/%2F/g, '/')}`;
+      fetch(apiUrl)
+        .then((res) => {
+          if (res.status === 404) throw new Error('NOT_FOUND');
+          const searchPath = filePath.replace(/\.md$/i, '');
+          onNavigateToFile(searchPath);
+        })
+        .catch((err) => {
+          if (err.message === 'NOT_FOUND') {
+            window.alert(`文件 "${filePath}" 不存在`);
+            return;
+          }
+          const searchPath = filePath.replace(/\.md$/i, '');
+          onNavigateToFile(searchPath);
+        });
+    };
+    document.addEventListener('click', handler, true);
+    return () => document.removeEventListener('click', handler, true);
+  }, [onNavigateToFile, vaultId]);
 
   useEffect(() => {
     setContent(initialContent);
@@ -92,12 +127,13 @@ export function MdTypesetEditor({
   }, []);
 
   // Content for doocs/md themed preview (live-updating as user edits source).
-  // Memoized to avoid re-running three full-string regex scans on every keystroke.
+  // Memoized to avoid re-running full-string regex scans on every keystroke.
   const previewContent = useMemo(() => {
     const stripped = stripTrackingPixels(content);
-    return vaultId
+    const withEmbeds = vaultId
       ? proxyExternalImages(preprocessWikiEmbeds(stripped, vaultId))
       : proxyExternalImages(stripped);
+    return preprocessWikiLinks(withEmbeds, vaultId);
   }, [content, vaultId]);
 
   return (

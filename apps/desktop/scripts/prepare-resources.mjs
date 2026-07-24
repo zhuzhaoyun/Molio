@@ -65,17 +65,58 @@ async function bundleDaemon() {
     format: 'esm',
     outfile,
     external: ['better-sqlite3', 'qrcode'],
-    // Provide a createRequire shim so that CJS modules bundled into the ESM
-    // output (e.g. fast-glob via trash → globby) can call require() for
-    // Node.js built-in modules. Without this, esbuild's __require wrapper
-    // throws "Dynamic require of 'os' is not supported".
+    // Provide shims so that CJS modules bundled into the ESM output can call
+    // require() (for Node.js built-ins) and reference __dirname/__filename.
+    // Without __dirname, the Lark SDK's getSdkVersion() throws
+    // "ReferenceError: __dirname is not defined in ES module scope" at import
+    // time, crashing daemon startup. The SDK is fault-tolerant: when the
+    // resolved paths don't point at its own package.json, it falls back to
+    // 'unknown' — so pointing __dirname at daemon.mjs's directory is fine.
     banner: {
-      js: `import { createRequire as __molioCreateRequire } from 'module'; const require = __molioCreateRequire(import.meta.url);`,
+      js: `import { createRequire as __molioCreateRequire } from 'module'; import { fileURLToPath as __molioFileURLToPath } from 'url'; import { dirname as __molioDirname } from 'path'; const require = __molioCreateRequire(import.meta.url); const __filename = __molioFileURLToPath(import.meta.url); const __dirname = __molioDirname(__filename);`,
     },
     logLevel: 'info',
   });
 
   console.log('Daemon bundled.');
+}
+
+/**
+ * Bundle monitoring.js (and its @arms/rum-electron dependency tree) into a
+ * single ESM file under src/.
+ *
+ * Why: electron-builder does not reliably traverse pnpm's .pnpm symlink tree
+ * to collect transitive deps like @babel/runtime — at runtime, the SDK's
+ * require('@babel/runtime/helpers/interopRequireDefault') fails inside app.asar.
+ * Bundling inlines all transitive deps into one file, sidestepping the issue.
+ *
+ * WASM (minidump processor) is Base64-embedded in the SDK JS, so no separate
+ * .wasm files need to be shipped.
+ */
+async function bundleMonitoring() {
+  console.log('Bundling monitoring...');
+
+  const entryPoint = join(desktopDir, 'src', 'monitoring.js');
+  const outfile = join(desktopDir, 'src', 'monitoring-bundle.mjs');
+
+  await build({
+    entryPoints: [entryPoint],
+    bundle: true,
+    platform: 'node',
+    target: 'node24',
+    format: 'esm',
+    outfile,
+    // Inline @arms/rum-electron and all its transitive deps (@arms/rum-core,
+    // @babel/runtime, etc.). Only `electron` stays external — it's provided
+    // by the Electron runtime.
+    external: ['electron'],
+    banner: {
+      js: `import { createRequire as __molioCreateRequire } from 'module'; import { fileURLToPath as __molioFileURLToPath } from 'url'; import { dirname as __molioDirname } from 'path'; const require = __molioCreateRequire(import.meta.url); const __filename = __molioFileURLToPath(import.meta.url); const __dirname = __molioDirname(__filename);`,
+    },
+    logLevel: 'info',
+  });
+
+  console.log('Monitoring bundled.');
 }
 
 function copyNativeDependencies() {
@@ -288,6 +329,7 @@ if (existsSync(resourcesDir)) {
 mkdirSync(resourcesDir, { recursive: true });
 
 await bundleDaemon();
+await bundleMonitoring();
 copyNativeDependencies();
 copyTrashBinaries();
 downloadElectronPrebuilds();

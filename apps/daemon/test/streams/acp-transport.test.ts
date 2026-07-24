@@ -87,7 +87,12 @@ describe('AcpTransport', () => {
       }, 150);
       const result = await p;
       assert.equal(result, 'finally');
-      assert.ok(Date.now() - start >= 150, 'should have waited for the late response');
+      // Lower bound proves we waited for the 150ms response (not an early
+      // resolution), with tolerance for Windows CI clock granularity —
+      // Date.now() can read ~1ms behind libuv's timer clock, so a full 150ms
+      // wait may measure as 149. An early resolution (idle timeout at 60ms or
+      // immediate) still falls far below 140 and fails as intended.
+      assert.ok(Date.now() - start >= 140, 'should have waited for the late response');
     });
 
     it('idle timer resets on noteActivity() (stderr) — slow cold start stays pending', async () => {
@@ -101,7 +106,9 @@ describe('AcpTransport', () => {
         feedLine(transport, { jsonrpc: '2.0', id: 1, result: { ok: 1 } });
       }, 150);
       await p;
-      assert.ok(Date.now() - start >= 150, 'should have waited despite no stdout');
+      // >= 140 (not 150) for the same Windows clock-granularity reason as the
+      // feed-based test above.
+      assert.ok(Date.now() - start >= 140, 'should have waited despite no stdout');
     });
 
     it('drops response for unknown id (already timed out) without throwing', async () => {

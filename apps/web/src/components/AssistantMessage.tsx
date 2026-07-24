@@ -6,7 +6,7 @@ import { useI18n } from '../i18n';
 import { useActiveVaultId } from '../stores/vaultStore';
 import { useFileNavigation } from '../hooks/useFileNavigation';
 import { ToolCard } from './ToolCard';
-import { ToolGroup } from './ToolGroup';
+import { ToolGroup, BatchGroup } from './ToolGroup';
 import { ThinkingBlock } from './ThinkingBlock';
 import { SaveToKbButton } from './SaveToKbButton';
 import { MessageToolbar } from './MessageToolbar';
@@ -18,13 +18,60 @@ const UNGROUPABLE = new Set(['AskUserQuestion', 'ask_user_question']);
 
 type ToolItem =
   | { kind: 'single'; tool: ToolEvent }
-  | { kind: 'group'; toolName: string; tools: ToolEvent[] };
+  | { kind: 'group'; toolName: string; tools: ToolEvent[] }
+  | { kind: 'batch'; tools: ToolEvent[] };
 
 /**
- * Group consecutive same-type tool calls.
- * Only groups when ≥2 consecutive tools share the same name.
+ * Group consecutive same-type tool calls (≥2 same name), then group
+ * consecutive different-name singles into a batch when ≥3.
  */
 function groupTools(tools: ToolEvent[]): ToolItem[] {
+  // First pass: same-name grouping
+  const pass1 = groupSameName(tools);
+
+  // Second pass: merge consecutive different-name singles → batch when ≥3
+  const result: ToolItem[] = [];
+  let i = 0;
+  while (i < pass1.length) {
+    const item = pass1[i]!;
+    if (item.kind !== 'single') {
+      result.push(item);
+      i++;
+      continue;
+    }
+
+    // Collect consecutive singles with different names
+    const batchTools: ToolEvent[] = [item.tool];
+    let j = i + 1;
+    while (j < pass1.length && pass1[j]!.kind === 'single') {
+      const nextTool = (pass1[j] as { kind: 'single'; tool: ToolEvent }).tool;
+      // Don't batch if same name as the previous tool (shouldn't happen after pass1,
+      // but guard against edge cases)
+      if (nextTool.name === batchTools[batchTools.length - 1]!.name) break;
+      // Don't batch UNGROUPABLE tools — they need their interactive card
+      if (UNGROUPABLE.has(nextTool.name)) break;
+      batchTools.push(nextTool);
+      j++;
+    }
+
+    if (batchTools.length >= 3) {
+      result.push({ kind: 'batch', tools: batchTools });
+    } else {
+      for (const t of batchTools) {
+        result.push({ kind: 'single', tool: t });
+      }
+    }
+    i = j;
+  }
+
+  return result;
+}
+
+/**
+ * Group consecutive same-name tool calls.
+ * Only groups when ≥2 consecutive tools share the same name.
+ */
+function groupSameName(tools: ToolEvent[]): ToolItem[] {
   const result: ToolItem[] = [];
   let i = 0;
 
@@ -105,9 +152,19 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
 
       e.preventDefault();
       const filePath = link.getAttribute('data-file-path') || link.textContent?.trim();
-      if (filePath) {
-        openFile(activeVaultId, filePath);
-      }
+      if (!filePath) return;
+
+      // Check if file exists before navigating (dead link handling)
+      const encoded = encodeURIComponent(filePath).replace(/%2F/g, '/');
+      fetch(`/api/knowledge/vaults/${activeVaultId}/resolve/${encoded}`)
+        .then((res) => {
+          if (res.status === 404) {
+            window.alert(`文件 "${filePath}" 不存在`);
+            return;
+          }
+          openFile(activeVaultId, filePath);
+        })
+        .catch(() => openFile(activeVaultId, filePath));
     },
     [openFile, activeVaultId],
   );
@@ -157,7 +214,9 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
       {toolItems.length > 0 && (
         <div className="tool-cards">
           {toolItems.map((item, idx) =>
-            item.kind === 'group' ? (
+            item.kind === 'batch' ? (
+              <BatchGroup key={`batch-${idx}`} tools={item.tools} />
+            ) : item.kind === 'group' ? (
               <ToolGroup
                 key={`group-${idx}`}
                 tools={item.tools}
@@ -170,6 +229,7 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
                 isLast={isLast}
                 onAnswerToolUse={onAnswerToolUse}
                 onSubmitForm={onSubmitForm}
+                allTools={message.tools}
               />
             )
           )}

@@ -4,8 +4,24 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setupAutoUpdater } from './updater.js';
 import { log, getLogPath } from './logger.js';
+import { startFetchServer } from './wiki-fetcher.js';
+import { openFeishuLogin, getFeishuLoginStatus } from './wiki-fetcher-login.js';
 
 const errMsg = (err) => (err instanceof Error ? err.message : String(err));
+
+// Dynamic import: monitoring-bundle.mjs is an esbuild-generated artifact
+// (gitignored, produced by scripts/prepare-resources.mjs). In dev mode the
+// file may not exist on a clean checkout before `prepare` runs, and a static
+// import would throw at module evaluation — before the Electron ready event — crashing
+// the app. This contradicts monitoring.js's design that "SDK init failure
+// must never block app startup". try/catch keeps monitoring optional.
+let initMonitoring = async () => false;
+try {
+  const mod = await import('./monitoring-bundle.mjs');
+  if (typeof mod.initMonitoring === 'function') initMonitoring = mod.initMonitoring;
+} catch (err) {
+  log('warn', 'monitoring', `monitoring bundle not loaded: ${errMsg(err)}`);
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -28,30 +44,50 @@ let daemonProcess = null;
 let rendererReady = false;
 let pendingNavigation = null;
 
+// On macOS, closing the window hides it instead of destroying it, so the
+// user can reopen instantly from the dock. When the app is force-quitting
+// (Cmd+Q / dock-quit), this flag is set to true so the close handler lets
+// the window actually close.
+let forceQuit = false;
+
 /** Whether the app is running in development mode (not packaged) */
 function isDevMode() {
   return !app.isPackaged;
 }
 
 /** Start the daemon in production mode using Electron's embedded Node.js */
-function startDaemonProduction() {
+async function startDaemonProduction() {
   const daemonEntry = path.join(process.resourcesPath, 'daemon', 'daemon.mjs');
   const webStaticDir = path.join(process.resourcesPath, 'web');
 
   log('info', 'main', `Starting daemon: ${daemonEntry}`);
   log('info', 'main', `Using Electron binary: ${process.execPath}`);
 
+  // Start the wiki/docx fetcher HTTP server on a random 127.0.0.1 port.
+  // Port 0 → OS assigns a free port; we pass it to the daemon via env so the
+  // feishu service can pre-fetch wiki content before dispatching to the agent.
+  // Failure here is non-fatal — daemon simply skips the pre-fetch step and
+  // the agent sees the bare URL (with a "未启用桌面端抓取" note).
+  let wikiFetchPort = null;
+  try {
+    wikiFetchPort = await startFetchServer();
+  } catch (err) {
+    log('warn', 'main', `wiki fetch server failed to start: ${err?.message ?? err}`);
+  }
+
   return new Promise((resolve, reject) => {
     // Use Electron's embedded Node.js to run the daemon.
     // ELECTRON_RUN_AS_NODE=1 makes the Electron binary behave as a standard Node.js process,
     // eliminating the need for users to install Node.js separately.
+    const daemonEnv = {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: '1',
+      MOLIO_PORT: '3100',
+      MOLIO_STATIC_DIR: webStaticDir,
+    };
+    if (wikiFetchPort) daemonEnv.MOLIO_DESKTOP_FETCH_PORT = String(wikiFetchPort);
     daemonProcess = spawn(process.execPath, [daemonEntry], {
-      env: {
-        ...process.env,
-        ELECTRON_RUN_AS_NODE: '1',
-        MOLIO_PORT: '3100',
-        MOLIO_STATIC_DIR: webStaticDir,
-      },
+      env: daemonEnv,
       stdio: 'pipe',
     });
 
@@ -70,13 +106,34 @@ function startDaemonProduction() {
       }
     });
 
+    // Line-buffer daemon stderr: stderr 'data' events arrive as arbitrary chunks
+    // (not aligned to newlines), so we accumulate and split on \n. Each complete
+    // line is logged locally AND forwarded to ARMS via console.error — the SDK's
+    // consoleError collector auto-categorizes it into 异常统计, and the
+    // '[daemon]' prefix lets reviewers filter daemon-sourced errors from
+    // main-process ones in the ARMS console. try/catch guards against any SDK
+    // throw breaking daemon log handling.
+    let stderrBuf = '';
+    const flushDaemonLine = (line) => {
+      if (!line) return;
+      stderrChunks.push(line);
+      log('error', 'daemon', line);
+      try { console.error('[daemon] ' + line); } catch {}
+    };
     daemonProcess.stderr?.on('data', (data) => {
-      const msg = data.toString().trim();
-      stderrChunks.push(msg);
-      log('error', 'daemon', msg);
+      stderrBuf += data.toString();
+      let idx;
+      while ((idx = stderrBuf.indexOf('\n')) >= 0) {
+        const line = stderrBuf.slice(0, idx).trim();
+        stderrBuf = stderrBuf.slice(idx + 1);
+        flushDaemonLine(line);
+      }
     });
 
     daemonProcess.on('exit', (code, signal) => {
+      // Flush any trailing partial line left in the buffer.
+      flushDaemonLine(stderrBuf.trim());
+      stderrBuf = '';
       log('error', 'main', `daemon exited with code=${code} signal=${signal}`);
       if (code !== 0 && code !== null) {
         if (stdoutChunks.length > 0) {
@@ -156,6 +213,24 @@ function createWindow() {
     if (!wc || wc.isDestroyed()) return;
     if (wc.isDevToolsOpened()) wc.closeDevTools();
     else wc.openDevTools({ mode: 'detach' });
+  });
+
+  // macOS: hide window instead of closing it. This preserves the full
+  // renderer state (SPA, daemon connection, chat history) so the user
+  // can reopen instantly from the dock without a splash→reload cycle.
+  // On Windows/Linux the default destroy-on-close behavior is correct
+  // because window-all-closed quits the app entirely.
+  mainWindow.on('close', (event) => {
+    if (process.platform === 'darwin' && !forceQuit) {
+      event.preventDefault();
+      mainWindow?.hide();
+    }
+  });
+
+  // Clean up the reference when the window is truly destroyed (quit or
+  // non-macOS close).
+  mainWindow.on('closed', () => {
+    mainWindow = null;
   });
 
   if (isDevMode()) {
@@ -365,6 +440,7 @@ if (!singleLock) {
     // Restore the existing window
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
+      if (!mainWindow.isVisible()) mainWindow.show();
       mainWindow.focus();
     }
     // Handle molio:// protocol URL for navigation (path-style — see
@@ -411,17 +487,26 @@ app.whenReady().then(async () => {
       }
     }
   }
-  // ① Create window first (updater IPC needs getMainWindow reference)
+
+  // 监控初始化必须在 createWindow 之前——SDK autoInject 监听 web-contents-created
+  // 注入 Browser SDK，init 之前创建的窗口会错过注入。
+  await initMonitoring({
+    isDev: isDevMode(),
+    version: app.getVersion(),
+    log,
+  });
+
+  // ② Create window first (updater IPC needs getMainWindow reference)
   //    In production this shows splash.html while daemon starts.
   createWindow();
 
-  // ② Set up auto-updater IMMEDIATELY — before daemon.
+  // ③ Set up auto-updater IMMEDIATELY — before daemon.
   // Even if daemon fails to start, the updater must be operational
   // so we can push fixes to users.
   // Pass killDaemon so the updater can release file locks before install.
   setupAutoUpdater(() => mainWindow, killDaemon);
 
-  // ③ Start daemon last — failure here must not affect updater
+  // ④ Start daemon last — failure here must not affect updater
   if (!isDevMode()) {
     let daemonReady = false;
     try {
@@ -432,7 +517,7 @@ app.whenReady().then(async () => {
       // Daemon failure is not fatal for the updater.
     }
 
-    // ④ Only load the real app URL if daemon started successfully.
+    // ⑤ Only load the real app URL if daemon started successfully.
     // If launched via molio:// protocol, navigate to the target instead.
     if (daemonReady) {
       log('info', 'main', `process.argv: ${JSON.stringify(process.argv)}`);
@@ -457,8 +542,16 @@ app.whenReady().then(async () => {
   });
 
   app.on('activate', () => {
+    // No windows at all — cold start on macOS, create one
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
+    } else if (mainWindow) {
+      // Window exists but may be hidden (hide-on-close) or minimized.
+      // macOS does NOT automatically restore hidden/minimized Electron
+      // windows on dock click, so we must do it explicitly.
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      if (!mainWindow.isVisible()) mainWindow.show();
+      mainWindow.focus();
     }
   });
 });
@@ -543,6 +636,9 @@ function forceKillDaemon(pid) {
 }
 
 app.on('before-quit', (event) => {
+  // Signal the window close handler to actually close the window instead
+  // of hiding it (macOS hide-on-close behavior).
+  forceQuit = true;
   if (daemonProcess) {
     // Prevent the default quit until daemon is fully terminated.
     // Without this, Electron may exit before the daemon releases its
@@ -598,6 +694,21 @@ ipcMain.handle('open-path', async (_, filePath) => {
 // 在系统资源管理器中显示文件/文件夹
 ipcMain.handle('show-item-in-folder', async (_, filePath) => {
   return shell.showItemInFolder(filePath);
+});
+
+// 用户在 FeishuChannelPanel 点击「登录飞书账号」 → 打开可见 BrowserWindow
+// （feishu partition 跟 wiki-fetcher 共用），用户登录后 cookies 落到磁盘，
+// 跨重启复用。targetUrl 可指定具体租户域名（如 geekbang.feishu.cn），
+// 省略时打开 feishu.cn 让用户自行切换租户。
+ipcMain.handle('molio:open-feishu-login', async (_, targetUrl) => {
+  openFeishuLogin(typeof targetUrl === 'string' ? targetUrl : undefined);
+  return { ok: true };
+});
+
+// 读取 feishu partition 的登录态（cookie 判定），供 FeishuChannelPanel 展示
+// 「已登录 / 尚未登录」。跨重启准确（cookie 持久化在磁盘）。
+ipcMain.handle('molio:get-feishu-login-status', async () => {
+  return getFeishuLoginStatus();
 });
 
 // 重命名本地文件

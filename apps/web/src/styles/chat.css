@@ -405,6 +405,31 @@
   padding-left: 18px;
 }
 
+/* ─── Batch group (time-window) ─── */
+.tool-batch-group {
+  margin: 2px 0;
+}
+
+.tool-batch-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+  font-family: var(--mono);
+  color: var(--text-soft);
+}
+
+.tool-batch-row:hover {
+  color: var(--text-muted);
+}
+
+.tool-batch-items {
+  padding-left: 18px;
+}
+
 /* -------- AskUserQuestion card -------------------------------------- */
 .ask-user-question .tool-card-header { padding-bottom: 4px; }
 .ask-question-body {
@@ -1421,3 +1446,79 @@
 .codeblock-fold:hover { color: var(--text-primary); }
 .codeblock.streaming pre::after { content: '▋'; animation: cb-blink 1s steps(2) infinite; }
 @keyframes cb-blink { 50% { opacity: 0; } }
+
+/* ─── Tool card wrapper ─── */
+.tool-card-wrapper {
+  margin: 2px 0;
+}
+
+/* ─── Tool line: clickable when has output ─── */
+.tool-line.has-output {
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 2px 4px;
+  margin: 0 -4px;
+  transition: background 0.1s ease;
+}
+.tool-line.has-output:hover {
+  background: var(--bg-subtle);
+}
+
+.tool-line-elapsed {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  margin-right: 4px;
+}
+
+.tool-line-chevron {
+  font-size: 10px;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+/* ─── Tool output panel ─── */
+.tool-output-panel {
+  margin: 4px 0 4px 18px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  overflow: hidden;
+}
+
+.tool-output-cmd {
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.tool-output-body {
+  margin: 0;
+  padding: 8px 10px;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 300px;
+  overflow-y: auto;
+  color: var(--text);
+  background: transparent;
+  border: none;
+}
+
+.tool-output-foot {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 8px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.tool-output-foot .icon-btn {
+  width: 24px;
+  height: 24px;
+}

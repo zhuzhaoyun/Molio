@@ -6,7 +6,7 @@
 
 /* ==================== 容器 ==================== */
 section,
-container {
+#output .container {
   font-family: var(--md-font-family);
   font-size: var(--md-font-size);
   line-height: 1.75;
@@ -25,52 +25,52 @@ container {
 }
 
 /* ==================== 标题 h1-h6 ==================== */
-h1, h2, h3, h4, h5, h6 {
+#output h1, #output h2, #output h3, #output h4, #output h5, #output h6 {
   color: hsl(var(--foreground));
 }
 
 /* ==================== 段落 ==================== */
-p {
+#output p {
   margin: 1em 0;
   color: hsl(var(--foreground));
 }
 
 /* ==================== 行内元素 ==================== */
-strong {
+#output strong {
   color: var(--md-primary-color);
   font-weight: bold;
 }
 
-em {
+#output em {
   font-style: italic;
 }
 
-del, s {
+#output del, #output s {
   text-decoration: line-through;
   opacity: 0.7;
 }
 
-a {
+#output a {
   color: #576b95;
   text-decoration: none;
 }
 
 /* ==================== 表格 ==================== */
-.table-wrapper {
+#output .table-wrapper {
   max-width: 100%;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   margin: 1em 0;
 }
 
-.md-table {
+#output .md-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.95em;
   color: hsl(var(--foreground));
 }
 
-.md-table thead th {
+#output .md-table thead th {
   background: color-mix(in srgb, var(--md-primary-color) 12%, transparent);
   font-weight: 600;
   padding: 0.6em 0.8em;
@@ -79,25 +79,25 @@ a {
   white-space: nowrap;
 }
 
-.md-table tbody td {
+#output .md-table tbody td {
   padding: 0.5em 0.8em;
   border-bottom: 1px solid color-mix(in srgb, hsl(var(--foreground)) 10%, transparent);
 }
 
-.md-table tbody tr:nth-child(even) {
+#output .md-table tbody tr:nth-child(even) {
   background: color-mix(in srgb, hsl(var(--foreground)) 3%, transparent);
 }
 
-.md-table tbody tr:hover {
+#output .md-table tbody tr:hover {
   background: color-mix(in srgb, var(--md-primary-color) 6%, transparent);
 }
 
-.md-table tbody tr:last-child td {
+#output .md-table tbody tr:last-child td {
   border-bottom: none;
 }
 
 /* ==================== 图片 ==================== */
-img {
+#output img {
   display: block;
   max-width: 100%;
   height: auto;
@@ -105,56 +105,56 @@ img {
   margin: 0.5em auto;
 }
 
-img[data-error] {
+#output img[data-error] {
   background: color-mix(in srgb, hsl(var(--foreground)) 5%, transparent);
   min-height: 100px;
   border: 1px dashed color-mix(in srgb, hsl(var(--foreground)) 15%, transparent);
 }
 
-figure {
+#output figure {
   margin: 1.5em 0;
   color: hsl(var(--foreground));
 }
 
-figcaption,
-.md-figcaption {
+#output figcaption,
+#output .md-figcaption {
   text-align: center;
   color: color-mix(in srgb, hsl(var(--foreground)) 50%, transparent);
   font-size: 0.8em;
 }
 
 /* ==================== 列表 ==================== */
-ul, ol {
+#output ul, #output ol {
   padding-left: 2em;
   margin: 0.5em 0;
   color: hsl(var(--foreground));
 }
 
-li {
+#output li {
   display: list-item;
   margin: 0.1em 0;
 }
 
-li > ul,
-li > ol {
+#output li > ul,
+#output li > ol {
   margin-top: 0.2em;
   margin-bottom: 0.2em;
 }
 
 /* ==================== 任务列表 ==================== */
-.md-task-checkbox {
+#output .md-task-checkbox {
   margin-right: 0.5em;
   accent-color: var(--md-primary-color);
   pointer-events: none;
   vertical-align: middle;
 }
 
-li.task-list-item {
+#output li.task-list-item {
   list-style: none;
 }
 
 /* ==================== 引用块 ==================== */
-blockquote {
+#output blockquote {
   font-style: normal;
   padding: 1em;
   border-left: 4px solid var(--md-primary-color);
@@ -164,7 +164,7 @@ blockquote {
   margin-bottom: 1em;
 }
 
-blockquote > p {
+#output blockquote > p {
   display: block;
   font-size: 1em;
   color: hsl(var(--foreground));
@@ -172,55 +172,55 @@ blockquote > p {
 }
 
 /* ==================== GFM 警告块 ==================== */
-.alert-title-note, .alert-title-tip, .alert-title-info,
-.alert-title-important, .alert-title-warning, .alert-title-caution,
-.alert-title-abstract, .alert-title-summary, .alert-title-tldr,
-.alert-title-todo, .alert-title-success, .alert-title-done,
-.alert-title-question, .alert-title-help, .alert-title-faq,
-.alert-title-failure, .alert-title-fail, .alert-title-missing,
-.alert-title-danger, .alert-title-error, .alert-title-bug,
-.alert-title-example, .alert-title-quote, .alert-title-cite {
+#output .alert-title-note, #output .alert-title-tip, #output .alert-title-info,
+#output .alert-title-important, #output .alert-title-warning, #output .alert-title-caution,
+#output .alert-title-abstract, #output .alert-title-summary, #output .alert-title-tldr,
+#output .alert-title-todo, #output .alert-title-success, #output .alert-title-done,
+#output .alert-title-question, #output .alert-title-help, #output .alert-title-faq,
+#output .alert-title-failure, #output .alert-title-fail, #output .alert-title-missing,
+#output .alert-title-danger, #output .alert-title-error, #output .alert-title-bug,
+#output .alert-title-example, #output .alert-title-quote, #output .alert-title-cite {
   display: flex;
   align-items: center;
   gap: 0.5em;
   margin-bottom: 0.5em;
 }
 
-.alert-title-note { color: #478be6; }
-.alert-title-tip { color: #57ab5a; }
-.alert-title-info { color: #93c5fd; }
-.alert-title-important { color: #986ee2; }
-.alert-title-warning { color: #c69026; }
-.alert-title-caution { color: #e5534b; }
-.alert-title-abstract, .alert-title-summary, .alert-title-tldr { color: #00bfff; }
-.alert-title-todo { color: #478be6; }
-.alert-title-success, .alert-title-done { color: #57ab5a; }
-.alert-title-question, .alert-title-help, .alert-title-faq { color: #c69026; }
-.alert-title-failure, .alert-title-fail, .alert-title-missing { color: #e5534b; }
-.alert-title-danger, .alert-title-error { color: #e5534b; }
-.alert-title-bug { color: #e5534b; }
-.alert-title-example { color: #986ee2; }
-.alert-title-quote, .alert-title-cite { color: #9ca3af; }
+#output .alert-title-note { color: #478be6; }
+#output .alert-title-tip { color: #57ab5a; }
+#output .alert-title-info { color: #93c5fd; }
+#output .alert-title-important { color: #986ee2; }
+#output .alert-title-warning { color: #c69026; }
+#output .alert-title-caution { color: #e5534b; }
+#output .alert-title-abstract, #output .alert-title-summary, #output .alert-title-tldr { color: #00bfff; }
+#output .alert-title-todo { color: #478be6; }
+#output .alert-title-success, #output .alert-title-done { color: #57ab5a; }
+#output .alert-title-question, #output .alert-title-help, #output .alert-title-faq { color: #c69026; }
+#output .alert-title-failure, #output .alert-title-fail, #output .alert-title-missing { color: #e5534b; }
+#output .alert-title-danger, #output .alert-title-error { color: #e5534b; }
+#output .alert-title-bug { color: #e5534b; }
+#output .alert-title-example { color: #986ee2; }
+#output .alert-title-quote, #output .alert-title-cite { color: #9ca3af; }
 
-.alert-icon-note { fill: #478be6; }
-.alert-icon-tip { fill: #57ab5a; }
-.alert-icon-info { fill: #93c5fd; }
-.alert-icon-important { fill: #986ee2; }
-.alert-icon-warning { fill: #c69026; }
-.alert-icon-caution { fill: #e5534b; }
-.alert-icon-abstract, .alert-icon-summary, .alert-icon-tldr { fill: #00bfff; }
-.alert-icon-todo { fill: #478be6; }
-.alert-icon-success, .alert-icon-done { fill: #57ab5a; }
-.alert-icon-question, .alert-icon-help, .alert-icon-faq { fill: #c69026; }
-.alert-icon-failure, .alert-icon-fail, .alert-icon-missing { fill: #e5534b; }
-.alert-icon-danger, .alert-icon-error { fill: #e5534b; }
-.alert-icon-bug { fill: #e5534b; }
-.alert-icon-example { fill: #986ee2; }
-.alert-icon-quote, .alert-icon-cite { fill: #9ca3af; }
+#output .alert-icon-note { fill: #478be6; }
+#output .alert-icon-tip { fill: #57ab5a; }
+#output .alert-icon-info { fill: #93c5fd; }
+#output .alert-icon-important { fill: #986ee2; }
+#output .alert-icon-warning { fill: #c69026; }
+#output .alert-icon-caution { fill: #e5534b; }
+#output .alert-icon-abstract, #output .alert-icon-summary, #output .alert-icon-tldr { fill: #00bfff; }
+#output .alert-icon-todo { fill: #478be6; }
+#output .alert-icon-success, #output .alert-icon-done { fill: #57ab5a; }
+#output .alert-icon-question, #output .alert-icon-help, #output .alert-icon-faq { fill: #c69026; }
+#output .alert-icon-failure, #output .alert-icon-fail, #output .alert-icon-missing { fill: #e5534b; }
+#output .alert-icon-danger, #output .alert-icon-error { fill: #e5534b; }
+#output .alert-icon-bug { fill: #e5534b; }
+#output .alert-icon-example { fill: #986ee2; }
+#output .alert-icon-quote, #output .alert-icon-cite { fill: #9ca3af; }
 
 /* ==================== 代码块 ==================== */
-pre.code__pre,
-.hljs.code__pre {
+#output pre.code__pre,
+#output .hljs.code__pre {
   font-size: 90%;
   overflow-x: auto;
   border-radius: 8px;
@@ -229,8 +229,8 @@ pre.code__pre,
   margin: 10px 0;
 }
 
-pre.code__pre > code,
-.hljs.code__pre > code {
+#output pre.code__pre > code,
+#output .hljs.code__pre > code {
   display: -webkit-box;
   padding: 0.5em 1em 1em;
   overflow-x: auto;
@@ -242,7 +242,7 @@ pre.code__pre > code,
 }
 
 /* ==================== 行内代码 ==================== */
-.codespan {
+#output .codespan {
   font-size: 90%;
   color: var(--md-primary-color);
   background: color-mix(in srgb, var(--md-primary-color) 8%, transparent);
@@ -252,7 +252,7 @@ pre.code__pre > code,
 }
 
 /* ==================== 分隔线 ==================== */
-hr {
+#output hr {
   border-style: solid;
   border-width: 2px 0 0;
   border-color: rgba(0, 0, 0, 0.1);
@@ -265,19 +265,19 @@ hr {
 }
 
 /* ==================== 脚注 ==================== */
-p.footnotes {
+#output p.footnotes {
   margin: 0.5em 0;
   font-size: 80%;
   color: hsl(var(--foreground));
 }
 
 /* ==================== KaTeX ==================== */
-.katex-inline {
+#output .katex-inline {
   max-width: 100%;
   overflow-x: auto;
 }
 
-.katex-block {
+#output .katex-block {
   max-width: 100%;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
@@ -286,26 +286,26 @@ p.footnotes {
 }
 
 /* ==================== 标记扩展 ==================== */
-.markup-highlight {
+#output .markup-highlight {
   background-color: var(--md-primary-color);
   padding: 2px 4px;
   border-radius: 2px;
   color: #fff;
 }
 
-.markup-underline {
+#output .markup-underline {
   text-decoration: underline;
   text-decoration-color: var(--md-primary-color);
 }
 
-.markup-wavyline {
+#output .markup-wavyline {
   text-decoration: underline wavy;
   text-decoration-color: var(--md-primary-color);
   text-decoration-thickness: 2px;
 }
 
 /* ==================== Mermaid ==================== */
-.mermaid-diagram .nodeLabel p {
+#output .mermaid-diagram .nodeLabel p {
   color: unset !important;
   letter-spacing: unset !important;
 }

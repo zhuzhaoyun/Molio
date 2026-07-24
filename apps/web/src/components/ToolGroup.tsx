@@ -84,6 +84,53 @@ function groupUnit(toolName: string, t: TranslationFn): string {
   }
 }
 
+// ── BatchGroup — time-window grouping of different-type tools ──
+
+interface BatchGroupProps {
+  tools: ToolEvent[];
+}
+
+export function BatchGroup({ tools }: BatchGroupProps) {
+  const [expanded, setExpanded] = useState(false);
+  const runningCount = tools.filter(t => t.status === 'running').length;
+  const errorCount = tools.filter(t => t.isError).length;
+
+  const summary = `批量操作 · ${tools.length} 个工具`;
+  const statusIcon = runningCount > 0 ? '' : errorCount > 0 ? ` · ${errorCount} 失败` : '';
+
+  return (
+    <div className="tool-batch-group" data-testid="tool-batch-group">
+      <div
+        className="tool-batch-row"
+        onClick={() => setExpanded(e => !e)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => { if (e.key === 'Enter') setExpanded(v => !v); }}
+      >
+        <span className="tool-chevron">{expanded ? '▾' : '▸'}</span>
+        <span className="tool-group-label">{summary}{statusIcon}</span>
+      </div>
+      {expanded && (
+        <div className="tool-batch-items">
+          {tools.map((tool) => {
+            const detail = formatArg(tool);
+            return (
+              <div key={tool.id} className="tool-line">
+                <span className="tool-line-arrow">⎿</span>
+                <span className="tool-line-name">{tool.name}</span>
+                {detail && <span className="tool-line-arg">{detail}</span>}
+                <span className={`tool-line-status ${tool.status === 'running' ? 'running' : tool.isError ? 'error' : 'done'}`}>
+                  {tool.status === 'running' ? '' : tool.isError ? '✗' : '✓'}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function formatArg(tool: ToolEvent): string {
   const input = tool.input;
   if (typeof input === 'string') return truncate(input, 50);

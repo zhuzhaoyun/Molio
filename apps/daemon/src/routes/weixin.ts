@@ -1,32 +1,14 @@
 import { Hono } from 'hono';
 import type { WeixinService } from '../core/weixin/service.js';
 import type { WeixinConfig } from '../core/config.js';
+import { channelRoutes } from './channel.js';
 
+/**
+ * Weixin channel HTTP routes. Adds /login (weixin's QR login flow) on
+ * top of the 5 standard channel routes.
+ */
 export function weixinRoutes(service: WeixinService): Hono {
-  const app = new Hono();
-
-  app.get('/status', (c) => c.json(service.getStatus()));
-
-  app.post('/login', async (c) => {
-    return c.json(await service.beginLogin());
-  });
-
-  app.post('/start', async (c) => {
-    return c.json(await service.start());
-  });
-
-  app.post('/stop', (c) => {
-    return c.json(service.stop());
-  });
-
-  app.post('/disconnect', (c) => {
-    return c.json(service.disconnect());
-  });
-
-  app.put('/config', async (c) => {
-    const body = await c.req.json<WeixinConfig>();
-    return c.json(await service.updateConfig(body));
-  });
-
+  const app = channelRoutes<WeixinConfig>(service);
+  app.post('/login', async (c) => c.json(await service.beginLogin()));
   return app;
 }

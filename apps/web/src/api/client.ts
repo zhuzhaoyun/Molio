@@ -1,6 +1,7 @@
 import type {
   AgentInfo, InstallEvent, RunInfo, CreateRunRequest, ToolResultRequest,
   ChatMessage, Project, Conversation, ConversationHistoryItem,
+  ConversationHistoryPage, ListHistoryQuery,
   Vault, TreeNode, FileContent, KbHistoryEntry, CreateVaultRequest,
   WikiStatusResponse,
   GraphData, SearchResult, SearchResponse,
@@ -24,6 +25,30 @@ export interface WeixinConfig {
   enabled?: boolean;
   baseUrl?: string;
   cdnBaseUrl?: string;
+  credentialsPath?: string;
+  defaultAgentId?: string;
+  defaultCwd?: string;
+}
+
+export type FeishuLoginStatus = 'idle' | 'connecting' | 'connected' | 'error';
+
+export interface FeishuStatus {
+  enabled: boolean;
+  loginStatus: FeishuLoginStatus;
+  connected: boolean;
+  lastError: string | null;
+  lastMessageAt: number | null;
+  activeRunId: string | null;
+  hasCredentials: boolean;
+  hasAppConfig: boolean;
+  connectionState?: 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'error';
+}
+
+export interface FeishuConfig {
+  enabled?: boolean;
+  appId?: string;
+  appSecret?: string;
+  baseUrl?: string;
   credentialsPath?: string;
   defaultAgentId?: string;
   defaultCwd?: string;
@@ -273,11 +298,16 @@ export const api = {
     if (!res.ok) throw new Error(`Failed to update agent config: ${res.status}`);
   },
 
-  async listConversationHistory(): Promise<ConversationHistoryItem[]> {
-    const res = await fetch(`${BASE}/conversations`);
+  async listConversationHistory(opts?: ListHistoryQuery): Promise<ConversationHistoryPage> {
+    const params = new URLSearchParams();
+    if (opts?.vaultId) params.set('vaultId', opts.vaultId);
+    if (opts?.query) params.set('query', opts.query);
+    if (opts?.before != null) params.set('before', String(opts.before));
+    if (opts?.limit != null) params.set('limit', String(opts.limit));
+    const qs = params.toString();
+    const res = await fetch(`${BASE}/conversations${qs ? `?${qs}` : ''}`);
     if (!res.ok) throw new Error(`Failed to fetch conversation history: ${res.status}`);
-    const data = await res.json();
-    return data.conversations;
+    return res.json();
   },
 
   async getConversation(conversationId: string): Promise<Conversation> {
@@ -294,7 +324,11 @@ export const api = {
   },
 
   async deleteConversationById(conversationId: string): Promise<void> {
-    await fetch(`${BASE}/conversations/${conversationId}`, { method: 'DELETE' });
+    const res = await fetch(`${BASE}/conversations/${conversationId}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      throw new Error(err?.error?.message ?? `Failed to delete conversation: ${res.status}`);
+    }
   },
 
   async rewindResend(conversationId: string, req: { newContent: string; agentId?: string; cwd?: string }): Promise<{ runId: string; conversationId: string }> {
@@ -350,6 +384,42 @@ export const api = {
   async disconnectWeixin(): Promise<WeixinStatus> {
     const res = await fetch(`${BASE}/weixin/disconnect`, { method: 'POST' });
     if (!res.ok) throw new Error(`Failed to disconnect Weixin: ${res.status}`);
+    return res.json();
+  },
+
+  // ─── Feishu 自建应用 ───
+
+  async getFeishuStatus(): Promise<FeishuStatus> {
+    const res = await fetch(`${BASE}/feishu/status`);
+    if (!res.ok) throw new Error(`Failed to fetch Feishu status: ${res.status}`);
+    return res.json();
+  },
+
+  async updateFeishuConfig(config: FeishuConfig): Promise<FeishuStatus> {
+    const res = await fetch(`${BASE}/feishu/config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    });
+    if (!res.ok) throw new Error(`Failed to update Feishu config: ${res.status}`);
+    return res.json();
+  },
+
+  async startFeishu(): Promise<FeishuStatus> {
+    const res = await fetch(`${BASE}/feishu/start`, { method: 'POST' });
+    if (!res.ok) throw new Error(`Failed to start Feishu: ${res.status}`);
+    return res.json();
+  },
+
+  async stopFeishu(): Promise<FeishuStatus> {
+    const res = await fetch(`${BASE}/feishu/stop`, { method: 'POST' });
+    if (!res.ok) throw new Error(`Failed to stop Feishu: ${res.status}`);
+    return res.json();
+  },
+
+  async disconnectFeishu(): Promise<FeishuStatus> {
+    const res = await fetch(`${BASE}/feishu/disconnect`, { method: 'POST' });
+    if (!res.ok) throw new Error(`Failed to disconnect Feishu: ${res.status}`);
     return res.json();
   },
 

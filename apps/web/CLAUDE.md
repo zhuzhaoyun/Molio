@@ -7,6 +7,11 @@ Vite + React 前端，消费 daemon SSE 事件流，提供聊天式 AI 交互界
 - **Framework**: React 19 + TypeScript
 - **Build**: Vite 6
 - **样式**: 纯 CSS (CSS Variables + 组件级 CSS 文件)
+
+**CSS 约定（强制）**：
+- `<select>` 元素设置背景色时**必须**使用 `background-color` 而非 `background` 简写。
+  `base.css` 全局给 `<select>` 定义了自定义下拉箭头（`background-image` / `background-repeat` / `background-position` / `background-size` 四个长写属性），`background` 简写会将它们全部复位为默认值，导致箭头丢失或出现多个箭头。
+  同理，任何想保留全局 base 样式的元素，覆盖背景色时一律用长写属性。
 - **状态管理**: React hooks (useState/useRef/useCallback)
 
 ## 目录结构
@@ -28,6 +33,7 @@ src/
     useKbTabs.ts       知识库 Tab 状态管理
     useRuntimes.ts     运行时管理
     useWikiChat.ts     Wiki 对话状态管理
+    useChannelStatus.ts 渠道状态轮询 + busy/error/runAction（feishu/weixin 共用）
   stores/
     vaultStore.ts          活跃知识库选择（useSyncExternalStore，App + useKnowledge 共享）
     messageSelectionStore.ts  消息删除勾选态（同模式 + 每气泡精准订阅）
@@ -56,7 +62,8 @@ src/
       KnowledgeBasePage.tsx  知识库页面（shell 布局）
       KbFilePanel.tsx         文件面板（搜索、文件列表、vault 切换）
       KbFileTree.tsx          文件树组件
-      KbMainContent.tsx       主内容区（渲染 + 排版模式 + Tab 系统）
+      KbMainContent.tsx       主内容区（渲染 + 排版模式 + Tab 系统 + 属性卡片）
+      KbFrontmatterCard.tsx   可折叠 YAML frontmatter 属性卡片（折叠态标签 + 展开态完整字段 + wikilink 跳转）
       KbTabBar.tsx            Tab 栏
       KbModals.tsx            模态框（vault 创建/切换/导入/COSE 安装提示）
       MdRenderer.tsx          doocs/md 渲染引擎封装
@@ -70,7 +77,8 @@ src/
       VaultManager.tsx        Vault 管理器
       WikiChatPanel.tsx       Wiki 对话面板
     channels/          渠道组件
-      ChannelsPage.tsx 渠道管理页面
+      FeishuChannelPanel.tsx  飞书渠道面板（7 步引导 + appId/Secret 表单）
+      WeixinChannelPanel.tsx  微信渠道面板（扫码登录 + default agent）
     history/           历史组件
       HistoryPage.tsx  对话历史页面
     runtimes/          运行时组件
@@ -130,6 +138,7 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
 | `src/components/graph/` | `e2e/graph-settings.spec.ts` |
 | `src/components/runtimes/` | `e2e/runtimes-page.spec.ts`, `e2e/runtime-provider-config.spec.ts` |
 | `src/components/settings/` | `e2e/runtimes-page.spec.ts`（RuntimesPanel 在此） |
+| `src/components/history/` | `e2e/history.spec.ts` |
 | `src/App.tsx`（路由变更） | `e2e/navigation.spec.ts`, `e2e/bootstrap.spec.ts` |
 
 **检查步骤**：
@@ -150,6 +159,20 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
 | 历史 | `/history` | HistoryPage |
 | 设置 | `/settings` | SettingsPage（含 RuntimesPanel、ChannelsPanel） |
 | 图谱 | `/graph` | GraphPage, Minimap |
+
+### 历史记录 (History)
+
+- **筛选**: 仅 vault 一个维度（agent / channel 维度已移除），下拉框直接展示在搜索栏旁。
+- **搜索**: 全文搜索消息内容（FTS5 trigram + LIKE 回退），300ms debounce。
+- **分页**: 游标分页（cursor = updated_at），默认 50 条/页，加载更多 append。
+- **标签**: 
+  - vault pill：灰色=存活，红色=已删除。vault_name 反范式化存储，vault 删除后仍可显示原名。
+  - channel pill：仅非 desktop 渠道显示（绿色 `[微信]`、蓝色 `[飞书]` / `[企业微信]`）。
+- **日期组**: 按日期分组，serif 字体标题，可折叠/展开，标题右侧显示该组会话数量。
+- **删除**: 两步确认——点击删除 → 行变红色确认态 → 确认/取消。失败回滚 + 3 秒 transient error。
+- **缓存**: 30s stale cache，跨页切换不重复请求。
+- **骨架屏**: 初始加载显示 5 行 shimmer 占位。
+- **相关文件**: `hooks/useHistoryFilters.ts`（筛选/分页/缓存/乐观删除状态管理）
 
 ### 知识库 (Knowledge Base)
 
@@ -208,10 +231,30 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
 
 ### 组件架构
 
-- **MdRenderer**: 封装 doocs/md 渲染引擎，提供 React 组件接口
+- **MdRenderer**: 封装 doocs/md 渲染引擎，提供 React 组件接口。负责：
+  - 调用 `applyTheme()` 生成主题 CSS，注入 `<style id="md-theme">`
+  - 加载 `codeBlockTheme` URL（highlight.js 主题），追加到同一 `#md-theme` 元素
 - **MdEditor**: Markdown 编辑组件
 - **MdTypesetEditor**: 左右分栏编辑器，左侧 Markdown 源码，右侧实时预览
 - **MdStylePanel**: 样式配置面板，支持主题、字体、字号、颜色、选项切换
+
+### CSS 注入与复制/发布流程
+
+**核心原则：所有排版 CSS 统一存放在 `<style id="md-theme">` 中。**
+
+- `applyTheme()` → `ThemeInjector.inject()` → 写入 `#md-theme`（主题 CSS + 标题样式 + 用户自定义）
+- `MdRenderer` → 加载 `codeBlockTheme` CSS → 追加到 `#md-theme`（代码高亮 CSS）
+- `copyToClipboard` / `publishToChrome` → 只读 `#md-theme` → 自动包含全部 CSS
+
+**`#output` 作用域处理：**
+
+- 预览时：CSS 规则使用 `#output h1 { ... }` 前缀（`wrapCSSWithScope`），防止污染 Molio UI
+- 导出时：剥离 `#output ` 前缀（`css.replace(/#output\s+/g, '')`），因为粘贴目标（微信等）没有 `#output` wrapper
+
+**不要做的事：**
+- 不要创建独立的 `<style>` 标签存放额外 CSS——publish/copy 只认识 `#md-theme`
+- 不要在 `copyToClipboard` / `publishToChrome` 中遗漏 CSS 的 `#output` 剥离
+- `base.css` 中的样式必须加 `#output` 前缀（与主题 CSS 一致）
 
 ### 依赖
 

@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useI18n } from '../i18n';
 import type { ToolEvent } from '../hooks/useChat';
+import { CopyIcon } from './icons';
 
 interface Props {
   tool: ToolEvent;
@@ -10,9 +11,11 @@ interface Props {
   onAnswerToolUse?: (toolUseId: string, content: string) => Promise<boolean | void> | boolean | void;
   /** Fallback: sends the answer as a fresh user message. */
   onSubmitForm?: (text: string) => void;
+  /** Full tools array from the assistant message, used for hasRetrySucceeded check. */
+  allTools?: ToolEvent[];
 }
 
-export function ToolCard({ tool, isLast, onAnswerToolUse, onSubmitForm }: Props) {
+export function ToolCard({ tool, isLast, onAnswerToolUse, onSubmitForm, allTools }: Props) {
   // Dispatch to AskUserQuestionCard for interactive question handling
   if (tool.name === 'AskUserQuestion' || tool.name === 'ask_user_question') {
     return (
@@ -29,17 +32,154 @@ export function ToolCard({ tool, isLast, onAnswerToolUse, onSubmitForm }: Props)
     );
   }
 
-  // Default: Claude Code style — minimal inline one-liner
+  return <DefaultToolCard tool={tool} allTools={allTools ?? []} />;
+}
+
+// ── DefaultToolCard — all hooks live here at top level (Rules of Hooks) ──
+
+function hasRetrySucceeded(tools: ToolEvent[], toolIndex: number): boolean {
+  const current = tools[toolIndex];
+  if (!current || !current.isError) return false;
+  for (let i = toolIndex + 1; i < tools.length; i++) {
+    const later = tools[i];
+    if (later?.name === current.name && later.status === 'done' && !later.isError) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function DefaultToolCard({ tool, allTools }: { tool: ToolEvent; allTools: ToolEvent[] }) {
+  const toolIndex = allTools.findIndex(t => t.id === tool.id);
+  const retrySucceeded = hasRetrySucceeded(allTools, toolIndex);
+  // ── Elapsed time + expand state ──
+  const [elapsed, setElapsed] = useState(0);
+  const [expanded, setExpanded] = useState(false);
+  const startRef = useRef<number>(0);
+  const manualRef = useRef(false); // user manually toggled — disable auto open/close
+  const autoExpandedRef = useRef(false); // auto-expand triggered — keep open on done
+
+  // Elapsed-time timer
+  useEffect(() => {
+    if (tool.status === 'running') {
+      startRef.current = Date.now();
+      setElapsed(0);
+      const timer = setInterval(() => {
+        setElapsed(Math.round((Date.now() - startRef.current) / 1000));
+      }, 200);
+      return () => clearInterval(timer);
+    } else if (startRef.current) {
+      // record final elapsed
+      setElapsed(Math.round((Date.now() - startRef.current) / 1000));
+    }
+  }, [tool.status]);
+
+  // Reset auto-expand flag when a new tool mounts
+  useEffect(() => {
+    autoExpandedRef.current = false;
+  }, [tool.id]);
+
+  // Smart auto-expand
+  useEffect(() => {
+    if (manualRef.current) return;
+
+    // ≥5s running → expand
+    if (tool.status === 'running' && elapsed >= 5) {
+      setExpanded(true);
+      autoExpandedRef.current = true;
+    }
+
+    // Final failure (no later retry succeeded) → expand to show error
+    if (tool.status === 'error' && !retrySucceeded) {
+      setExpanded(true);
+    }
+
+    // Intermediate failure (later retry succeeded) → collapse
+    if (tool.status === 'error' && retrySucceeded) {
+      setExpanded(false);
+      autoExpandedRef.current = false;
+    }
+
+    // Successfully done, not auto-expanded → collapse
+    if (tool.status === 'done' && !tool.isError && !autoExpandedRef.current) {
+      setExpanded(false);
+    }
+  }, [tool.status, elapsed, tool.isError, retrySucceeded]);
+
+  const toggleExpand = () => {
+    manualRef.current = true;
+    setExpanded((prev) => !prev);
+  };
+
+  const hasOutput = tool.status !== 'running' && tool.result !== undefined && tool.result !== '';
+  const chevron = hasOutput ? (expanded ? '▾' : '▸') : '';
+
+  // ── Tool-line rendering ──
   const detail = formatToolInput(tool.input);
   const statusClass = tool.status === 'running' ? 'running' : tool.isError ? 'error' : 'done';
-  const statusLabel = tool.status === 'running' ? '…' : tool.isError ? '✗' : '✓';
+  const statusLabel = tool.status === 'running'
+    ? ''
+    : tool.isError ? '✗' : '✓';
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!hasOutput) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      toggleExpand();
+    }
+  };
 
   return (
-    <div className="tool-line">
-      <span className="tool-line-arrow">⎿</span>
-      <span className="tool-line-name">{tool.name}</span>
-      {detail && <span className="tool-line-arg">{detail}</span>}
-      <span className={`tool-line-status ${statusClass}`}>{statusLabel}</span>
+    <div className="tool-card-wrapper">
+      <div
+        className={`tool-line${hasOutput ? ' has-output' : ''}`}
+        role={hasOutput ? 'button' : undefined}
+        tabIndex={hasOutput ? 0 : undefined}
+        aria-expanded={hasOutput ? expanded : undefined}
+        onClick={hasOutput ? toggleExpand : undefined}
+        onKeyDown={handleKeyDown}
+        data-testid="tool-line"
+      >
+        <span className="tool-line-arrow">{'⎿'}</span>
+        <span className="tool-line-name">{tool.name}</span>
+        {detail && <span className="tool-line-arg">{detail}</span>}
+        <span className={`tool-line-status ${statusClass}`}>{statusLabel}</span>
+        <span className="tool-line-elapsed">
+          {tool.status === 'running' && `⏱ ${elapsed}s`}
+          {tool.status !== 'running' && elapsed > 0 && `⏱ ${elapsed}s`}
+        </span>
+        {chevron && <span className="tool-line-chevron">{chevron}</span>}
+      </div>
+
+      {/* ── Expandable output panel ── */}
+      {expanded && hasOutput && (
+        <div className="tool-output-panel" data-testid="tool-output-panel">
+          {!!tool.input && typeof tool.input === 'object' && 'command' in (tool.input as Record<string, unknown>) && (
+            <div className="tool-output-cmd">
+              $ {(tool.input as Record<string, unknown>).command as string}
+            </div>
+          )}
+          <pre className="tool-output-body">{tool.result}</pre>
+          {(tool.result && tool.result.length > 0) && (
+            <div className="tool-output-foot">
+              <button
+                type="button"
+                className="icon-btn"
+                data-testid="tool-output-copy-btn"
+                aria-label="复制输出内容"
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  try {
+                    await navigator.clipboard.writeText(tool.result ?? '');
+                  } catch { /* noop */ }
+                }}
+              >
+                <CopyIcon />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
