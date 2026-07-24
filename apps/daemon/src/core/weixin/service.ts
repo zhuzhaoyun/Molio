@@ -15,9 +15,7 @@ import {
 import { MessageDedup } from '../channels/message-dedup.js';
 import { chunkText } from '../channels/text-chunker.js';
 import { DEFAULT_BASE_URL, WeixinApi } from './client.js';
-import { buildMolioPrompt } from './message.js';
-import { wikiPromptFileFor } from './dispatcher.js';
-import { parseWeixinMessage } from './message.js';
+import { buildMolioPrompt, buildWeixinFrameMessage, parseWeixinMessage } from './message.js';
 import { materializeAttachments } from './media.js';
 import type {
   ConnectionState,
@@ -99,8 +97,11 @@ export class WeixinService implements ChannelSink {
       conversations,
       db,
       sink: this,
-      wikiPromptFileFor,
       buildPrompt: buildMolioPrompt,
+      // Role frame via message prepend (fresh spawns only) — the system-prompt
+      // path (--append-system-prompt-file) is silently dropped by the CLI in
+      // some environments; see ./dispatcher.ts header.
+      frameFirstTurn: buildWeixinFrameMessage,
       channelLabel: 'weixin',
     });
   }

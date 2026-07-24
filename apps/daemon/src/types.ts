@@ -37,6 +37,8 @@ export interface AcpModelOption {
   name: string;
 }
 
+import type { TranscriptWatcher } from './core/activity/transcript-watcher.js';
+
 export interface RunState {
   id: string;
   agentId: string;
@@ -78,4 +80,10 @@ export interface RunState {
    *  errors so users can compare it against `where <agent>` output from terminal
    *  and immediately spot "Molio found the wrong install" cases. */
   binaryPath?: string;
+
+  // --- Subagent activity tracking (claude runtime only) ---
+  /** Watches Claude Code transcript files to surface live subagent/workflow
+   *  activity while the parent stream is silent. Started on the stream init
+   *  event; finalized + stopped in finishRun. */
+  activityWatcher?: TranscriptWatcher;
 }

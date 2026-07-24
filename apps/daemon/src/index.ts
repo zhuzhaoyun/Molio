@@ -95,8 +95,8 @@ for (const vault of listVaults(db)) {
   installBuiltinSkills(vault.path);
 }
 
-// Materialize the wiki system-prompt frames to fixed files under ~/.molio/sysprompt/
-// so the agent CLI can read them via --append-system-prompt-file (idempotent).
+// Materialize the feishu wiki role frame (the only channel still delivered via
+// --append-system-prompt-file; weixin prepends its frame, see weixin/dispatcher).
 ensureWikiSysPromptFiles();
 
 function startServer(): void {

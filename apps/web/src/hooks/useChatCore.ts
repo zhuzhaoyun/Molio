@@ -9,7 +9,7 @@
  */
 
 import { useState, useCallback, useRef } from 'react';
-import type { AgentEvent } from '@molio/contracts';
+import type { AgentEvent, ActivityInfo } from '@molio/contracts';
 import { api } from '../api/client';
 import { subscribeToRun } from '../api/sse';
 import { ACP_MODELS_UPDATED_EVENT, type AcpModelsUpdatedDetail } from './useAgents';
@@ -52,6 +52,12 @@ interface ChatState {
   runAgentId: string | null;
   isRunning: boolean;
   conversationId: string | null;
+  /**
+   * Live background subagent/workflow activity (daemon transcript watcher).
+   * Independent of isRunning: after turn_end the input unlocks while a
+   * Workflow keeps running — this is what keeps the UI alive in that gap.
+   */
+  activity: ActivityInfo | null;
 }
 
 export interface RunResult {
@@ -116,6 +122,7 @@ export function useChatCore(options: UseChatCoreOptions) {
     runAgentId: null,
     isRunning: false,
     conversationId: initialConversationId,
+    activity: null,
   });
 
   const esRef = useRef<EventSource | null>(null);
@@ -245,6 +252,7 @@ export function useChatCore(options: UseChatCoreOptions) {
       runAgentId: agentId ?? null,
       conversationId: convId,
       isRunning: true,
+      activity: null,
     }));
 
     // --- SSE callbacks (named so the watchdog can re-subscribe with the same
@@ -288,7 +296,7 @@ export function useChatCore(options: UseChatCoreOptions) {
         const messages = prev.messages.map((msg) =>
           msg.streaming ? { ...msg, streaming: false } : msg
         );
-        return { ...prev, messages, isRunning: false, runId: null, runAgentId: null };
+        return { ...prev, messages, isRunning: false, runId: null, runAgentId: null, activity: null };
       });
       clearFallbackTimer();
     };
@@ -555,7 +563,7 @@ export function useChatCore(options: UseChatCoreOptions) {
       const messages = prev.messages.map((msg) =>
         msg.streaming ? { ...msg, streaming: false } : msg
       );
-      return { ...prev, messages, isRunning: false, runId: null, runAgentId: null };
+      return { ...prev, messages, isRunning: false, runId: null, runAgentId: null, activity: null };
     });
   }, [state.runId, closeEventSource]);
 
@@ -563,7 +571,7 @@ export function useChatCore(options: UseChatCoreOptions) {
     closeEventSource();
     assistantIdRef.current = null;
     messageSelectionStore.exit();
-    setState({ messages: [], runId: null, runAgentId: null, isRunning: false, conversationId: null });
+    setState({ messages: [], runId: null, runAgentId: null, isRunning: false, conversationId: null, activity: null });
   }, [closeEventSource]);
 
   /**
@@ -579,6 +587,7 @@ export function useChatCore(options: UseChatCoreOptions) {
       runAgentId: null,
       isRunning: false,
       conversationId: conversationId ?? null,
+      activity: null,
     });
   }, [closeEventSource]);
 
@@ -648,6 +657,11 @@ function updateWithEvent(
   assistantId: string,
   event: AgentEvent,
 ): ChatState {
+  // Run-level event — no message routing needed.
+  if (event.type === 'activity') {
+    return { ...prev, activity: event.activity };
+  }
+
   const messages = prev.messages.map((msg) => {
     if (msg.id !== assistantId) return msg;
 
@@ -731,7 +745,7 @@ function updateWithEvent(
     const finalized = messages.map((msg) =>
       msg.id === assistantId ? { ...msg, streaming: false } : msg
     );
-    return { ...prev, messages: finalized, isRunning, runId, runAgentId: null };
+    return { ...prev, messages: finalized, isRunning, runId, runAgentId: null, activity: null };
   }
 
   return { ...prev, messages, isRunning, runId };

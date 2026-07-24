@@ -28,9 +28,10 @@ const REPLY_MAX_CHARS = 1_000_000;
  * undefined.
  *
  * This signature is channel-agnostic: each channel injects its own resolver
- * (weixin passes `weixin/dispatcher.wikiPromptFileFor`, feishu will pass its
- * own) so the shared dispatcher doesn't need to know which wiki prompt file
- * belongs to which channel.
+ * (feishu passes its own pointing at FEISHU_SYS_PROMPT_FILE) so the shared
+ * dispatcher doesn't need to know which wiki prompt file belongs to which
+ * channel. (weixin deliberately does NOT use this path — its frame is a
+ * message prepend via `frameFirstTurn`, which reliably reaches the model.)
  */
 export type WikiPromptFileResolver = (
   db: Database.Database | undefined,
@@ -59,6 +60,16 @@ export interface ChannelDispatcherDeps {
   wikiPromptFileFor?: WikiPromptFileResolver;
   /** Wrap raw user text into the channel-specific prompt (default: identity). */
   buildPrompt?: PromptBuilder;
+  /**
+   * Wrap raw user text for a FRESH spawn ONLY (e.g. weixin prepends its channel
+   * role frame). Unlike `buildPrompt` (applied to every turn), this runs only
+   * when a new run is spawned — reuse turns must NOT re-carry the frame: the
+   * live process already holds it from its first turn. Prefer this over
+   * `wikiPromptFileFor` when the frame must reliably reach the model:
+   * --append-system-prompt-file is silently dropped by the CLI in some
+   * environments (verified on Claude Code), a message prepend always lands.
+   */
+  frameFirstTurn?: PromptBuilder;
   /** Channel label for diagnostics logs (e.g. 'weixin', 'feishu'). */
   channelLabel: string;
 }
@@ -176,13 +187,19 @@ export class ChannelDispatcher {
       this.userRuns.delete(userId);
     }
     this.deps.conversations.appendUserMessage(conversationId, rawUserText);
-    // Wiki frame is derived HERE (at spawn time), not frozen at queue time —
-    // a queued message drained into a fresh spawn still gets the wiki role.
+    // Fresh-spawn message: `frameFirstTurn` (e.g. weixin channel-frame prepend)
+    // applies HERE only — reuse turns keep the plain buildPrompt output. The
+    // wiki system-prompt file is likewise derived here (at spawn time), not
+    // frozen at queue time — a queued message drained into a fresh spawn still
+    // gets the channel frame / wiki role.
+    const spawnMessage = this.deps.frameFirstTurn
+      ? this.deps.frameFirstTurn(rawUserText)
+      : runMessage;
     const appendSystemPromptFile = this.deps.wikiPromptFileFor?.(this.deps.db, cwd);
     const runId = await this.deps.runManager.createRun({
       agentId,
       cwd,
-      message: runMessage,
+      message: spawnMessage,
       appendSystemPromptFile,
       conversationId,
       history,

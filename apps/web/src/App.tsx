@@ -176,6 +176,7 @@ export default function App() {
                   selectedAgentName={agents.find((a) => a.id === selectedAgent)?.name ?? null}
                   messages={chat.messages}
                   isRunning={chat.isRunning}
+                  activity={chat.activity}
                   onSend={chat.send}
                   onCancel={chat.cancel}
                   onNewChat={handleNewChat}

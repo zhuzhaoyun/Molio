@@ -1,0 +1,16 @@
+{
+  "name": "default",
+  "description": "通用 profile：markdown 标题分段，不做实体猜测。适用于笔记、文章、文档等一般源文件。",
+  "maxLineChars": 800,
+  "inlineSplitCores": [],
+  "segmentPatterns": [
+    { "name": "heading", "regex": "^\\s{0,3}#{1,6}\\s+\\S.{0,80}$" }
+  ],
+  "minSegmentChars": 200,
+  "chunkChars": 60000,
+  "rangeChars": 60000,
+  "censusTopN": 300,
+  "entityPatterns": [],
+  "excludeTerms": [],
+  "aliasPairRegexes": []
+}

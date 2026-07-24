@@ -115,7 +115,8 @@ function DefaultToolCard({ tool, allTools }: { tool: ToolEvent; allTools: ToolEv
   const chevron = hasOutput ? (expanded ? '▾' : '▸') : '';
 
   // ── Tool-line rendering ──
-  const detail = formatToolInput(tool.input);
+  const agentMeta = agentToolMeta(tool.name, tool.input);
+  const detail = agentMeta ? agentMeta.label : formatToolInput(tool.input);
   const statusClass = tool.status === 'running' ? 'running' : tool.isError ? 'error' : 'done';
   const statusLabel = tool.status === 'running'
     ? ''
@@ -142,6 +143,7 @@ function DefaultToolCard({ tool, allTools }: { tool: ToolEvent; allTools: ToolEv
       >
         <span className="tool-line-arrow">{'⎿'}</span>
         <span className="tool-line-name">{tool.name}</span>
+        {agentMeta?.badge && <span className="tool-line-badge">{agentMeta.badge}</span>}
         {detail && <span className="tool-line-arg">{detail}</span>}
         <span className={`tool-line-status ${statusClass}`}>{statusLabel}</span>
         <span className="tool-line-elapsed">
@@ -426,6 +428,56 @@ function formatToolInput(input: unknown): string {
     return truncate(JSON.stringify(input), 80);
   }
   return '';
+}
+
+// ── Agent-family tools (Task/Agent/Workflow/SendMessage) ──
+// Richer display than the generic fallback: a human label extracted from the
+// tool input (subagent description, workflow meta, message summary) plus an
+// optional badge (subagent_type). The raw Workflow script can be multi-KB —
+// formatToolInput would dump its head as JSON noise; this extracts the meta
+// block (name/description) the workflow author wrote for humans.
+
+const AGENT_TOOL_NAMES = new Set(['Task', 'Agent', 'SendMessage', 'Workflow']);
+
+interface AgentToolMeta {
+  label: string;
+  badge?: string;
+}
+
+function agentToolMeta(name: string, input: unknown): AgentToolMeta | null {
+  if (!AGENT_TOOL_NAMES.has(name)) return null;
+  const obj = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
+
+  if (name === 'Workflow') {
+    let wfName = '';
+    let label = '';
+    if (typeof obj['script'] === 'string') {
+      wfName = obj['script'].match(/name:\s*['"]([^'"]+)['"]/)?.[1] ?? '';
+      label = obj['script'].match(/description:\s*['"]([^'"]+)['"]/)?.[1] ?? wfName;
+    } else if (typeof obj['scriptPath'] === 'string') {
+      wfName = (obj['scriptPath'] as string).split(/[\\/]/).pop() ?? '';
+      label = wfName;
+    } else if (typeof obj['name'] === 'string') {
+      wfName = obj['name'] as string;
+      label = wfName;
+    }
+    return { label: truncate(label || 'workflow', 80), badge: wfName || undefined };
+  }
+
+  if (name === 'SendMessage') {
+    const to = typeof obj['to'] === 'string' ? (obj['to'] as string) : '';
+    const summary = typeof obj['summary'] === 'string'
+      ? (obj['summary'] as string)
+      : typeof obj['message'] === 'string' ? truncate(obj['message'] as string, 60) : '';
+    return { label: `${to ? '→ ' + to + '：' : ''}${summary}` };
+  }
+
+  // Task / Agent — subagent spawn
+  const desc = typeof obj['description'] === 'string'
+    ? (obj['description'] as string)
+    : typeof obj['prompt'] === 'string' ? truncate(obj['prompt'] as string, 80) : '';
+  const badge = typeof obj['subagent_type'] === 'string' ? (obj['subagent_type'] as string) : undefined;
+  return { label: desc, badge };
 }
 
 function truncate(s: string, max: number): string {

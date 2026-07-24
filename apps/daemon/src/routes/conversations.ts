@@ -118,7 +118,7 @@ export function conversationRoutes(
     deleteMessagesFromPosition(db, convId, point.position);
 
     try {
-      const runId = await startConversationRun(db, conversations, runManager, {
+      const runId = await startConversationRun(conversations, runManager, {
         agentId,
         message: body.newContent.trim(),
         conversationId: convId,

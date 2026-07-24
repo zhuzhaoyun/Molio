@@ -15,7 +15,7 @@ import { installBuiltinSkills } from '../../src/core/skill-installer.js';
  * wiki skill landed with valid frontmatter + trigger keywords.
  */
 
-const WIKI_SKILLS = ['wiki-build', 'wiki-ingest', 'wiki-lint', 'wiki-save'];
+const WIKI_SKILLS = ['wiki-build', 'wiki-ingest', 'wiki-lint', 'wiki-save', 'wiki-query'];
 
 describe('builtin wiki operation skills', () => {
   // Install synchronously at describe-registration time so the inner describe
