@@ -14,6 +14,49 @@
 | remotion | npm 依赖缓存 | `~/.npm/` | ❌ 不删（共享缓存，删了拖慢全局） |
 | 通用 | "不再提示" dismissed 状态 | `~/.molio/config.json` 的 `preload.dismissed` | 看情况 |
 
+## ⚠️ docling 可能装在两个不同位置（测试同事的"路径不一样"）
+
+docling 有**两个合法安装位置**，取决于谁装的。这是设计取舍，不是 bug，但清理时要删对地方：
+
+| 谁装的 | 装在哪 | 怎么来的 |
+|--------|--------|---------|
+| **预下载**（PreloadManager） | `~/.molio/venv/bin/docling`（隔离 venv） | 本功能的后台预下载 |
+| **手动 / agent 自愈**（按 SKILL.md 的 `pip install docling`） | 全局或用户 Python，如 `~/.local/bin/docling` + 用户 site-packages；或 homebrew/系统 python 的 Scripts | 用户或 agent 在首次用到 docling 时按 SKILL.md 指令自行安装 |
+
+两者**都被 agent 认可**：daemon 的 `augmentPath` 把 `~/.molio/venv/bin` 和 `~/.local/bin` 都加进 agent 的 PATH，`detectInstalled` 先查 venv 再查 PATH。所以全局装的 docling 照样能用，预下载也会识别成「已安装」不再重复装 venv。
+
+**怎么判断 docling 实际装在哪**：
+
+```bash
+# macOS/Linux
+which -a docling          # 列出 PATH 上所有 docling
+pip show docling          # 看装在哪个 site-packages
+ls ~/.molio/venv/bin/docling 2>/dev/null   # venv 里有没有
+# Windows (PowerShell)
+where.exe docling
+```
+
+**全局安装的清理**（如果要清掉同事/手动装的全局 docling 来重测）：
+
+```bash
+pip uninstall docling           # 或 pip3 / 对应的 python -m pip
+# 注意别误删 venv 里的：venv 的要用 ~/.molio/venv/bin/pip uninstall docling
+```
+
+## ⚠️ docling 预下载前提：Python ≥3.10
+
+docling 要求 **Python ≥3.10**。预下载会自动寻找 3.10+ 的解释器（版本名 `python3.12` 等、Homebrew 路径、`uv` 托管的 python）来建 venv。如果本机只有 3.9（老 macOS 常见），预下载会**直接报清晰错误**（不再像早期那样撞 pyobjc 编译失败给哑巴错）。这种情况需先装 3.10+：
+
+- macOS：`brew install python@3.12`（推荐，无需 sudo）或 python.org 安装包
+- Windows：python.org 安装包 / `winget install Python.Python.3.12`
+- Linux：`sudo apt install python3.12 python3.12-venv` 等
+
+> 注意：`brew install python@3.x` **不会**把无版本的 `python3` 软链放到 PATH 上（只在 `$(brew --prefix)/opt/python@3.x/libexec/bin`），所以 PATH 上的 `python3` 可能仍是 3.9——预下载是按**版本号**找 `python3.12` 的，不受影响。
+
+## ⚠️ remotion 没有"全局安装路径"这个概念
+
+remotion 是**每个项目各自的依赖**：agent 在 vault 里 `.molio/remotion/<项目>/node_modules` 安装。预下载**不装 remotion 本身**，只把它的 npm 包灌进共享缓存 `~/.npm/` 并写标记 `~/.molio/.remotion-preloaded`。所以「同事看到的 remotion 路径」是他 vault 里那个项目的 `node_modules`，跟预下载的 marker/缓存本来就不是一个东西，**无需也无法对齐**。重测 remotion 只需删 marker（见下表）；要连 npm 缓存一起冷测才用 `npm cache clean --force`（影响全局，谨慎）。
+
 ## 快速清理（一键脚本）
 
 ```bash

@@ -92,29 +92,56 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
       }
     },
     async preload(onProgress, signal) {
-      // Phase 1: ensure a dedicated venv exists at ~/.molio/venv.
-      // We install into it (not the system Python) so:
-      //  - no PEP 668 "externally-managed-environment" rejections
-      //  - the CLI lands at a fixed path augmentPath exposes to the agent
-      //  - no pollution of / conflict with the user's other Python projects
-      onProgress(5, '准备 Python 环境...');
-      const py = resolvePython();
       const venvBin = venvBinaryDir();
       const venvPy = venvPythonPath();
       const venvPip = venvPipPath();
 
+      // Phase 0: docling requires Python >=3.10. On a box whose only python3
+      // is 3.9 (older macOS), installing into a 3.9 venv fails inside
+      // pyobjc-core's source build on modern clang — a cryptic error that
+      // earlier swallowed the real cause. Detect up front and give an
+      // actionable message instead.
+      onProgress(2, '检测 Python 版本（docling 需要 ≥3.10）...');
+      const pyInfo = findPythonAtLeast(3, 10);
+      if (!pyInfo.bin) {
+        const have = pyInfo.version ? `${pyInfo.version[0]}.${pyInfo.version[1]}` : '未检测到 Python';
+        const how = process.platform === 'darwin'
+          ? 'brew install python@3.12（推荐，无需 sudo）或从 python.org 下载安装包'
+          : process.platform === 'win32'
+            ? '从 python.org 下载 3.12 安装包，或用 winget install Python.Python.3.12'
+            : 'sudo apt install python3.12 python3.12-venv（Debian/Ubuntu）或对应包管理器';
+        throw new Error(`docling 需要 Python ≥3.10，但本机最高只检测到 ${have}。请先安装 Python 3.10+：${how}，安装后重试即可。`);
+      }
+
+      // Phase 1: ensure a dedicated venv exists at ~/.molio/venv, built with a
+      // >=3.10 interpreter. If a stale venv from an older python (e.g. 3.9) is
+      // present, rebuild it — otherwise pip would target the wrong version.
+      // We install into a venv (not the system Python) so:
+      //  - no PEP 668 "externally-managed-environment" rejections
+      //  - the CLI lands at a fixed path augmentPath exposes to the agent
+      //  - no pollution of / conflict with the user's other Python projects
+      onProgress(5, `准备 Python ${pyInfo.version[0]}.${pyInfo.version[1]} 隔离环境...`);
+      const venvVer = fs.existsSync(venvPy) ? probePyVersion(venvPy) : null;
+      const venvStale = !venvVer || venvVer[0] < 3 || (venvVer[0] === 3 && venvVer[1] < 10);
+      if (fs.existsSync(venvRoot()) && venvStale) {
+        onProgress(6, '旧 Python 环境版本过低，重建中...');
+        fs.rmSync(venvRoot(), { recursive: true, force: true });
+      }
       if (!fs.existsSync(venvPy)) {
         onProgress(8, '创建隔离 Python 环境...');
-        await runProcess(`${py} -m venv ${venvRoot()}`, { timeout: 60_000, signal });
+        await runProcess(`${pyInfo.bin} -m venv ${venvRoot()}`, { timeout: 60_000, signal });
         if (!fs.existsSync(venvPy)) {
-          throw new Error('无法创建 Python venv，请确认已安装 python3');
+          throw new Error('无法创建 Python venv，请确认 Python 3.10+ 安装完整');
         }
       }
 
-      // Phase 2: pip install docling (8 → 55)
+      // Phase 2: pip install docling (8 → 55). Surface the REAL pip error so a
+      // future failure is diagnosable (earlier the build error was swallowed
+      // and only a generic hint showed).
       const mirror = '-i https://pypi.tuna.tsinghua.edu.cn/simple';
       onProgress(12, '正在安装 docling Python 包（含 PyTorch）...');
       let pipOk = false;
+      let lastPipErr = '';
       try {
         await runProcess(`${venvPip} install docling ${mirror}`, {
           timeout: 600_000,
@@ -128,6 +155,7 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
         pipOk = true;
       } catch (err) {
         if (signal.aborted) throw err; // pause/stop — don't fall through to retry
+        lastPipErr = err instanceof Error ? err.message : String(err);
         // Fallback: default index (mirror may be down or package missing there)
         onProgress(40, '镜像失败，尝试默认源...');
         try {
@@ -143,11 +171,13 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
           pipOk = true;
         } catch (err2) {
           if (signal.aborted) throw err2;
+          lastPipErr = err2 instanceof Error ? err2.message : String(err2);
           pipOk = false;
         }
       }
       if (!pipOk || !fs.existsSync(path.join(venvBin, 'docling'))) {
-        throw new Error('docling 安装失败，请手动运行：~/.molio/venv/bin/pip install docling');
+        const detail = lastPipErr ? `（${lastPipErr.slice(0, 240)}）` : '（未生成 docling 可执行文件）';
+        throw new Error(`docling 安装失败${detail}。可手动运行：${venvPip} install docling`);
       }
 
       // Phase 3: Model warmup (55 → 100). Run a no-op conversion so docling
@@ -324,27 +354,78 @@ function deletePartial(skill: PreloadableSkill): void {
   }
 }
 
+/** Parse `Python 3.12.1` → [3, 12]; null if it doesn't look like CPython. */
+function parsePyVersion(out: string): [number, number] | null {
+  const m = out.match(/Python\s+(\d+)\.(\d+)/);
+  if (!m || !m[1] || !m[2]) return null;
+  return [Number(m[1]), Number(m[2])];
+}
+
+/** Run `<bin> --version` and return its [major, minor], or null on any error. */
+function probePyVersion(bin: string): [number, number] | null {
+  try {
+    const out = execSync(`${bin} --version`, {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 5_000,
+    });
+    return parsePyVersion(out);
+  } catch {
+    return null;
+  }
+}
+
+const cmpVer = (a: [number, number], b: [number, number]) =>
+  a[0] !== b[0] ? a[0] - b[0] : a[1] - b[1];
+
 /**
- * Resolve a usable Python binary. Tries python3, then python, then py.
- * (Windows often only has `python` / `py`; Unix usually has `python3`.)
+ * Find a Python interpreter with version >= (minMajor.minMinor). docling needs
+ * >=3.10; on a system whose only `python3` is 3.9 (common on older macOS), a
+ * naive `python3` pick builds a 3.9 venv where docling's `pyobjc-core` fails to
+ * compile from source on modern clang — a cryptic build error. We instead hunt
+ * for a versioned 3.10+ binary so wheels install prebuilt.
+ *
+ * Search order: explicit versioned names + Homebrew opt paths (the unversioned
+ * `python3` symlink is intentionally NOT on PATH after `brew install python@3.x`)
+ * + uv-managed interpreters (`uv python find`) + plain python3/python/py last.
+ * Returns the highest version seen when nothing qualifies, for diagnostics.
  */
-function resolvePython(): string {
-  const candidates = process.platform === 'win32'
-    ? ['python', 'py', 'python3']
-    : ['python3', 'python'];
-  for (const c of candidates) {
+function findPythonAtLeast(
+  minMajor: number,
+  minMinor: number,
+): { bin: string; version: [number, number] } | { bin: null; version: [number, number] | null } {
+  const versions = ['3.13', '3.12', '3.11', '3.10'];
+  const candidates: string[] = [];
+  for (const v of versions) candidates.push(`python${v}`);
+  // Homebrew keeps versioned binaries on PATH but not the bare `python3`.
+  if (process.platform !== 'win32') {
+    for (const v of versions) {
+      candidates.push(`/opt/homebrew/bin/python${v}`, `/usr/local/bin/python${v}`);
+    }
+  }
+  // uv-managed interpreters aren't on PATH; ask uv directly (no-op if uv absent).
+  for (const v of versions) {
     try {
-      execSync(`${c} --version`, {
+      const p = execSync(`uv python find ${v}`, {
         encoding: 'utf-8',
         stdio: ['ignore', 'pipe', 'ignore'],
         timeout: 5_000,
-      });
-      return c;
-    } catch {
-      continue;
+      }).trim();
+      if (p) candidates.push(p);
+    } catch { /* uv not installed or no such version */ }
+  }
+  candidates.push(...(process.platform === 'win32' ? ['python', 'py', 'python3'] : ['python3', 'python']));
+
+  let best: { bin: string; version: [number, number] } | null = null;
+  for (const bin of candidates) {
+    const ver = probePyVersion(bin);
+    if (!ver) continue;
+    if (!best || cmpVer(ver, best.version) > 0) best = { bin, version: ver };
+    if (ver[0] > minMajor || (ver[0] === minMajor && ver[1] >= minMinor)) {
+      return { bin, version: ver };
     }
   }
-  return 'python3';
+  return { bin: null, version: best?.version ?? null };
 }
 
 // ─── Helper: run a child process with timeout + line callback ────────────────
