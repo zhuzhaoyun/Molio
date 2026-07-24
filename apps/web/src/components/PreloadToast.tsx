@@ -17,6 +17,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { api } from '../api/client';
+import { useSelectMode } from '../stores/messageSelectionStore';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -82,6 +83,24 @@ export function PreloadToast() {
   });
   const [dismissed, setDismissed] = useState(false);
   const mountedRef = useRef(true);
+  const selectMode = useSelectMode();
+
+  // Yield the bottom-right corner to the chat selection confirm bar: when the
+  // user enters message-deletion selection mode, collapse a downloading toast
+  // to the small pill so the confirm bar's delete button stays clickable. The
+  // pill is narrow and docks at the very corner, sitting to the right of the
+  // 900px-centered confirm bar on a typical viewport. We don't auto-restore on
+  // exit — the completion handler already force-expands when done, and the user
+  // can click the pill to re-expand whenever they like.
+  useEffect(() => {
+    if (!selectMode) return;
+    setState((prev) => {
+      // Only collapse a real, expanded, downloading toast — leave prompt /
+      // done / error modes (transient or non-overlapping) untouched.
+      if (prev.mode !== 'downloading' || !prev.visible || prev.minimized) return prev;
+      return { ...prev, minimized: true };
+    });
+  }, [selectMode]);
 
   // Fetch preload status on mount
   useEffect(() => {
