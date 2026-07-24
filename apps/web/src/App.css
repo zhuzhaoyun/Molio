@@ -81,20 +81,22 @@
   color: var(--text);
 }
 
-/* Minimize link inside the downloading subtitle — same row as the hint,
-   quiet so it doesn't compete with the progress. */
+/* Minimize control inside the downloading subtitle — same row as the hint.
+   Styled as a quiet text button (hover chip), NOT an underlined link, so it
+   reads as an action rather than navigation. */
 .preload-toast__minimize-link {
-  margin-left: 8px;
+  margin-left: 6px;
   background: none;
   border: none;
-  padding: 0;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
   font-size: 12px;
   color: var(--accent);
   cursor: pointer;
-  text-decoration: underline;
-  text-underline-offset: 2px;
+  transition: background 120ms ease, color 120ms ease;
 }
 .preload-toast__minimize-link:hover {
+  background: var(--accent-tint);
   color: var(--accent-hover);
 }
 
@@ -146,8 +148,28 @@
 @keyframes preload-spinner {
   to { transform: rotate(360deg); }
 }
+
+/* Inner content cross-fades on every mode change (prompt → downloading →
+   done → paused) so state swaps aren't a hard cut — keyed remount in the
+   component re-triggers this. The completion moment therefore arrives with
+   a soft settle instead of appearing flat. */
+.preload-toast__body {
+  animation: preload-view-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes preload-view-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.99); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .preload-toast__pill-spinner { animation: none; }
+  .preload-toast,
+  .preload-toast__pill,
+  .preload-toast__body,
+  .preload-toast__pill-spinner,
+  .preload-toast__progress-fill--active::after {
+    animation: none !important;
+    transition: none !important;
+  }
 }
 
 .preload-toast__title {
@@ -158,6 +180,14 @@
 }
 .preload-toast__title--done {
   color: var(--green);
+  /* One-shot settle so the completion payoff lands with a gentle emphasis
+     rather than reading as the same weight as a plain status line. */
+  animation: preload-done-pop 360ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes preload-done-pop {
+  0%   { transform: scale(0.92); opacity: 0.4; }
+  60%  { transform: scale(1.03); }
+  100% { transform: scale(1); opacity: 1; }
 }
 .preload-toast__title--error {
   color: var(--red);
@@ -190,8 +220,13 @@
   margin-bottom: 4px;
 }
 .preload-toast__card-name {
+  /* Mono encodes that docling / Remotion are package / CLI names — the
+     subject of this toast is installing developer tools, so a technical
+     artifact face gives the name a distinct identity vs the prose copy. */
+  font-family: var(--mono);
   font-weight: 600;
   font-size: 13px;
+  letter-spacing: -0.01em;
   color: var(--text-strong);
 }
 .preload-toast__card-size {
@@ -226,14 +261,16 @@
   gap: 8px;
   margin-top: 12px;
 }
-.preload-toast__primary {
-  background: var(--accent) !important;
-  color: #fff !important;
-  border-color: var(--accent) !important;
+/* Scope under .preload-toast so we beat `.rt-btn:hover:not(:disabled)`
+   (specificity 0,2,1) with structure instead of an !important hammer. */
+.preload-toast .preload-toast__primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
 }
-.preload-toast__primary:hover {
-  background: var(--accent-hover) !important;
-  border-color: var(--accent-hover) !important;
+.preload-toast .preload-toast__primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 
 /* Downloading */
@@ -265,10 +302,32 @@
   overflow: hidden;
 }
 .preload-toast__progress-fill {
+  position: relative;
   height: 100%;
   background: var(--accent);
   border-radius: var(--radius-sm);
   transition: width 300ms ease;
+  overflow: hidden;
+}
+/* Signature motion: a soft diagonal sheen sweeping across the fill conveys
+   "actively transferring" — the one place a download toast earns animation,
+   because progress-over-time is its entire reason for existing. Only the
+   active (downloading) variant sweeps; a paused bar stays still. */
+.preload-toast__progress-fill--active::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    rgba(255, 255, 255, 0.35) 50%,
+    transparent 80%
+  );
+  transform: translateX(-100%);
+  animation: preload-shimmer 1.6s ease-in-out infinite;
+}
+@keyframes preload-shimmer {
+  to { transform: translateX(100%); }
 }
 .preload-toast__progress-msg {
   font-size: 11px;

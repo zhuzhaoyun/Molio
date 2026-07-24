@@ -342,11 +342,16 @@ export function PreloadToast() {
         {isDownloading ? '—' : '✕'}
       </button>
 
-      {state.mode === 'prompt' && <PromptView skills={state.skills} onDownload={handleDownload} onDismiss={handleDismiss} />}
-      {state.mode === 'downloading' && <DownloadingView skills={state.skills} progress={state.progress} messages={state.messages} onMinimize={handleMinimize} onPause={handlePause} onStop={handleStop} />}
-      {state.mode === 'paused' && <PausedView skills={state.skills} progress={state.progress} onResume={handleResume} onStop={handleStop} />}
-      {state.mode === 'done' && <DoneView skills={state.skills} />}
-      {state.mode === 'error' && <ErrorView error={state.error} onRetry={handleRetry} onDismiss={handleDismiss} />}
+      {/* key={mode} remounts the body on every state change so the view-in
+          animation re-fires — gives prompt→downloading→done→paused a soft
+          settle instead of a hard content swap. */}
+      <div className="preload-toast__body" key={state.mode}>
+        {state.mode === 'prompt' && <PromptView skills={state.skills} onDownload={handleDownload} onDismiss={handleDismiss} />}
+        {state.mode === 'downloading' && <DownloadingView skills={state.skills} progress={state.progress} messages={state.messages} onMinimize={handleMinimize} onPause={handlePause} onStop={handleStop} />}
+        {state.mode === 'paused' && <PausedView skills={state.skills} progress={state.progress} onResume={handleResume} onStop={handleStop} />}
+        {state.mode === 'done' && <DoneView skills={state.skills} />}
+        {state.mode === 'error' && <ErrorView error={state.error} onRetry={handleRetry} onDismiss={handleDismiss} />}
+      </div>
     </div>
   );
 }
@@ -429,7 +434,7 @@ function DownloadingView({ skills, progress, messages, onMinimize, onPause, onSt
               </div>
               <div className="preload-toast__progress-bar">
                 <div
-                  className="preload-toast__progress-fill"
+                  className="preload-toast__progress-fill preload-toast__progress-fill--active"
                   style={{ width: `${pct}%` }}
                 />
               </div>
@@ -456,7 +461,8 @@ function PausedView({ skills, progress, onResume, onStop }: {
   onResume: () => void;
   onStop: () => void;
 }) {
-  // Best progress so far — shown frozen, since the download is paused.
+  // Best progress so far — shown frozen (no shimmer) so the stillness itself
+  // communicates "paused", in contrast to the sweeping active bar.
   const pct = computeOverallProgress(skills as PreloadableSkill[], progress);
   return (
     <>
@@ -464,6 +470,26 @@ function PausedView({ skills, progress, onResume, onStop }: {
       <p className="preload-toast__subtitle">
         进度已保留（{Math.round(pct)}%），继续将从断点接上
       </p>
+      <div className="preload-toast__progress-list">
+        {skills.map((sk) => {
+          const skPct = Math.min(progress[sk] ?? 0, 100);
+          const label = SKILL_LABELS[sk as PreloadableSkill]?.label ?? sk;
+          return (
+            <div key={sk} className="preload-toast__progress-item">
+              <div className="preload-toast__progress-header">
+                <span className="preload-toast__card-name">{label}</span>
+                <span className="preload-toast__progress-pct">{Math.round(skPct)}%</span>
+              </div>
+              <div className="preload-toast__progress-bar">
+                <div
+                  className="preload-toast__progress-fill"
+                  style={{ width: `${skPct}%` }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
       <div className="preload-toast__actions">
         <button className="rt-btn rt-btn--sm preload-toast__primary" onClick={onResume}>
           继续
