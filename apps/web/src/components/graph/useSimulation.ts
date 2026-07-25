@@ -20,6 +20,7 @@ import {
   type ForceY,
   type ForceManyBody,
   type ForceLink,
+  type ForceCollide,
   type SimulationNodeDatum,
   type SimulationLinkDatum,
 } from 'd3-force';
@@ -75,6 +76,8 @@ export interface SimulationAPI {
   getNode: (id: string) => NodeHandle | undefined;
   setForceParam: (name: string, value: number) => void;
   multiLevel: (params?: MultiLevelParams) => void;
+  /** 移动时降质：拖拽期间 collide 迭代 3→1（每 tick 最大 CPU 成本），松手恢复 */
+  setMotionMode: (active: boolean) => void;
 }
 
 // ── Hook ──
@@ -478,6 +481,22 @@ export function useSimulation(): SimulationAPI {
     sim.alpha(0.3).restart();
   }, []);
 
+  // ── Motion Mode ──
+  // 移动时降质：拖拽期间把 collide 迭代从 COLLIDE_ITERATIONS(3) 降到 1。
+  // collide 是每 tick 的最大 CPU 成本（四叉树 ×迭代数）；移动中允许近似解析，
+  // 松手后 wake(0.3) 的 tick 会以 3 次迭代解析残留重叠。
+
+  const setMotionMode = useCallback((active: boolean) => {
+    const iterations = active ? 1 : COLLIDE_ITERATIONS;
+
+    if (modeRef.current === 'worker') {
+      workerRef.current?.postMessage({ type: 'setCollideIterations', value: iterations });
+      return;
+    }
+
+    simRef.current?.force<ForceCollide<D3Node>>('collide')?.iterations(iterations);
+  }, []);
+
   // ── Multi-Level Layout ──
 
   const multiLevel = useCallback((params?: MultiLevelParams) => {
@@ -553,7 +572,7 @@ export function useSimulation(): SimulationAPI {
     });
   }, []);
 
-  return { init, wake, stop, getNode, setForceParam, multiLevel };
+  return { init, wake, stop, getNode, setForceParam, multiLevel, setMotionMode };
 }
 
 // ── Main-Thread Node Handle ──

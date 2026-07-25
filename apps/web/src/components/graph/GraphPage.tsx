@@ -612,9 +612,11 @@ export function GraphPage() {
       if (!isDragging && moveDist > DRAG_THRESHOLD) {
         isDragging = true;
         // 移动时降质（见 docs/superpowers/specs/2026-07-25-graph-motion-quality-design.md）：
-        // 隐藏标签——每帧渲染大头（文字测量 + 纹理上传），松手立即恢复。
-        // 超过阈值才降质，避免单击选中时标签闪烁。
+        // 1) 隐藏标签——每帧渲染大头（文字测量 + 纹理上传）；
+        // 2) collide 迭代 3→1——每 tick 最大 CPU 成本。
+        // 松手立即恢复。超过阈值才降质，避免单击选中时标签闪烁。
         renderer.setSetting('renderLabels', false);
+        simulation.setMotionMode(true);
       }
 
       if (isDragging) {
@@ -663,8 +665,10 @@ export function GraphPage() {
         // 连接节点 wake 流动收敛到稳态；孤立节点被 tile 重新 fx 固定。
         tileIsolatedNodes(graph);
         simulation.wake(0.3);
-        // 恢复移动时降质：先开标签，下面的 refresh() 让标签立即渲染回来
+        // 恢复移动时降质：标签回来 + collide 迭代回到 3；
+        // 先恢复再 refresh()，让标签立即渲染回来
         renderer.setSetting('renderLabels', true);
+        simulation.setMotionMode(false);
         renderer.refresh();
       } else {
         // 单击锁定聚焦（探索连接）；350ms 内再次单击同一节点 → 双击导航

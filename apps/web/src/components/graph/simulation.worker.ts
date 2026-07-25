@@ -16,6 +16,7 @@ import {
   forceY,
   type SimulationNodeDatum,
   type SimulationLinkDatum,
+  type ForceCollide,
 } from 'd3-force';
 import { centerStrengthForDegree, linkStrengthFor } from './graph-utils';
 
@@ -95,6 +96,9 @@ self.onmessage = function (e: MessageEvent) {
       break;
     case 'multi-level-init':
       handleMultiLevelInit(e.data);
+      break;
+    case 'setCollideIterations':
+      handleSetCollideIterations(e.data);
       break;
   }
 };
@@ -183,6 +187,13 @@ function handleSetForce(msg: { name: string; value: number }) {
       break;
   }
   sim.alpha(0.3).restart();
+}
+
+// ── Set Collide Iterations（移动时降质）──
+
+function handleSetCollideIterations(msg: { value: number }) {
+  // 仅作用于拖拽阶段的 sim；ML 阶段的各层模拟是独立变量，不受影响
+  (sim?.force('collide') as ForceCollide<WorkerNode> | undefined)?.iterations(msg.value);
 }
 
 // ── Drag ──
