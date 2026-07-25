@@ -377,7 +377,8 @@ export function GraphPage() {
       labelDensity: 0.25,
       defaultNodeColor: themeColors.node,
       renderEdgeLabels: false,
-      // 相机移动（平移/缩放）时标签自动隐藏、静止后恢复——sigma 原生支持，
+      // 相机移动（平移/缩放）时标签自动隐藏、静止后恢复——sigma 原生支持。
+      // 注意：sigma 3.0.3 默认 hideLabelsOnMove=false，此处为显式启用（必需，非冗余），
       // 避免移动中全量重测标签文字 + 纹理上传（低端设备渲染大头）。
       // 节点拖拽的标签降级在 handleMouseMove/handleMouseUp 中手动切换（拖拽锁相机，此开关不触发）。
       hideLabelsOnMove: true,
@@ -733,6 +734,9 @@ export function GraphPage() {
       container.removeEventListener('mousedown', handleMouseDown, { capture: true });
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
+      // 防拖拽越阈值后、mouseup 前 effect 重建（graphData refetch/切主题等）导致
+      // interactingRef 残留 true、新 Minimap 的 scheduleDraw 被永久跳过
+      interactingRef.current = false;
 
       if (sigmaRef.current) {
         sigmaRef.current.kill();

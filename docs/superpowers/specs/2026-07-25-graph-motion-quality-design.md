@@ -59,7 +59,7 @@ M5 Pro 单核约是中端 Windows 笔记本（11–13 代 Intel U 系列）的 3
 1. **节点拖拽**：mousedown 命中节点后，鼠标位移超过 `DRAG_THRESHOLD`（4px，已有常量）才视为拖拽开始。**阈值前不降质**——避免单击选中时标签闪烁；
 2. **相机移动**：平移 / 缩放 / 相机动画——由 sigma 内置 `hideLabelsOnMove` 原生覆盖，零代码。
 
-**不算移动**：松手后的沉降动画（`wake(0.1)`，约 1 秒）——标签在松手瞬间即恢复，与 Obsidian 手感一致，且保持恢复逻辑简单。
+**不算移动**：松手后的沉降动画（`wake(0.3)`，约 1 秒）——标签在松手瞬间即恢复，与 Obsidian 手感一致，且保持恢复逻辑简单。
 
 ### 2.2 降质矩阵
 
@@ -84,7 +84,7 @@ M5 Pro 单核约是中端 Windows 笔记本（11–13 代 Intel U 系列）的 3
 - **主线程模式**：`sim.force<ForceCollide<D3Node>>('collide')?.iterations(active ? 1 : COLLIDE_ITERATIONS)`；
 - **Worker 模式**：`postMessage({ type: 'setCollideIterations', value: n })`；`simulation.worker.ts` 的 `onmessage` 增加对应 case，内部 `sim.force('collide').iterations(n)`。
 
-collide 降到 1 的副作用（拖拽中邻居节点可能短暂轻微重叠）在松手后由 `wake(0.1)` 的恢复性 tick 解析，符合"移动中容忍近似、停止后收敛"的原则。
+collide 降到 1 的副作用（拖拽中邻居节点可能短暂轻微重叠）在松手后由 `wake(0.3)` 的恢复性 tick 解析，符合"移动中容忍近似、停止后收敛"的原则。
 
 ### 3.2 `GraphPage.tsx` — 拖拽起止接线
 
