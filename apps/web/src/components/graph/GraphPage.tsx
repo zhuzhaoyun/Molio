@@ -375,6 +375,10 @@ export function GraphPage() {
       labelDensity: 0.25,
       defaultNodeColor: themeColors.node,
       renderEdgeLabels: false,
+      // 相机移动（平移/缩放）时标签自动隐藏、静止后恢复——sigma 原生支持，
+      // 避免移动中全量重测标签文字 + 纹理上传（低端设备渲染大头）。
+      // 节点拖拽的标签降级在 handleMouseMove/handleMouseUp 中手动切换（拖拽锁相机，此开关不触发）。
+      hideLabelsOnMove: true,
       autoRescale: true,
       autoCenter: true,
       minCameraRatio: 0.2,
@@ -607,6 +611,10 @@ export function GraphPage() {
       );
       if (!isDragging && moveDist > DRAG_THRESHOLD) {
         isDragging = true;
+        // 移动时降质（见 docs/superpowers/specs/2026-07-25-graph-motion-quality-design.md）：
+        // 隐藏标签——每帧渲染大头（文字测量 + 纹理上传），松手立即恢复。
+        // 超过阈值才降质，避免单击选中时标签闪烁。
+        renderer.setSetting('renderLabels', false);
       }
 
       if (isDragging) {
@@ -655,6 +663,8 @@ export function GraphPage() {
         // 连接节点 wake 流动收敛到稳态；孤立节点被 tile 重新 fx 固定。
         tileIsolatedNodes(graph);
         simulation.wake(0.3);
+        // 恢复移动时降质：先开标签，下面的 refresh() 让标签立即渲染回来
+        renderer.setSetting('renderLabels', true);
         renderer.refresh();
       } else {
         // 单击锁定聚焦（探索连接）；350ms 内再次单击同一节点 → 双击导航
