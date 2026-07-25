@@ -87,6 +87,8 @@ export function GraphPage() {
 
   const hoveredNodeRef = useRef<string | null>(null);
   const selectedNodeRef = useRef<string | null>(null);
+  // 移动时降质标记：节点拖拽期间为 true，传给 Minimap 跳过重绘
+  const interactingRef = useRef(false);
   // Multi-level layout progress callback (stable ref, updated each render)
   const mlOnProgressRef = useRef<((phase: string, progress: number) => void) | null>(null);
   mlOnProgressRef.current = (phase: string, progress: number) => {
@@ -617,6 +619,7 @@ export function GraphPage() {
         // 松手立即恢复。超过阈值才降质，避免单击选中时标签闪烁。
         renderer.setSetting('renderLabels', false);
         simulation.setMotionMode(true);
+        interactingRef.current = true;
       }
 
       if (isDragging) {
@@ -669,6 +672,7 @@ export function GraphPage() {
         // 先恢复再 refresh()，让标签立即渲染回来
         renderer.setSetting('renderLabels', true);
         simulation.setMotionMode(false);
+        interactingRef.current = false; // 先于 refresh()：随后的 afterRender 能正常重绘 minimap
         renderer.refresh();
       } else {
         // 单击锁定聚焦（探索连接）；350ms 内再次单击同一节点 → 双击导航
@@ -965,7 +969,7 @@ export function GraphPage() {
 
         <div ref={containerRef} className="graph-sigma" />
 
-        {sigmaInstance && <Minimap sigma={sigmaInstance} />}
+        {sigmaInstance && <Minimap sigma={sigmaInstance} isInteracting={() => interactingRef.current} />}
 
         {/* 节点搜索浮层（Ctrl/Cmd+F 唤起） */}
         {searchOpen && (

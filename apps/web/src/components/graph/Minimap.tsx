@@ -25,9 +25,12 @@ const THROTTLE_MS = 60;
 
 interface Props {
   sigma: Sigma | null;
+  /** 节点拖拽中：跳过重绘，省每帧 ~1-2ms 主线程开销（慢机）；
+   *  松手后恢复时的 sigma afterRender 会触发正常重绘 */
+  isInteracting?: () => boolean;
 }
 
-export function Minimap({ sigma }: Props) {
+export function Minimap({ sigma, isInteracting }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -130,6 +133,7 @@ export function Minimap({ sigma }: Props) {
 
     // 按需 + 节流的重绘调度
     function scheduleDraw() {
+      if (isInteracting?.()) return; // 节点拖拽期间跳过（松手后的 afterRender 恢复重绘）
       if (scheduled) return;
       const elapsed = performance.now() - lastDraw;
       const delay = Math.max(0, THROTTLE_MS - elapsed);
