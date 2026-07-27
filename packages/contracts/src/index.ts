@@ -89,3 +89,15 @@ export type {
   SearchResult,
   SearchResponse,
 } from './knowledge.js';
+
+export type {
+  SkillManifestEntry,
+  CreateSkillRequest,
+  UpdateSkillRequest,
+  ImportSkillRequest,
+  PrefillRequest,
+  PrefillResult,
+  SkillListResponse,
+  SkillResponse,
+  PrefillResponse,
+} from './skill.js';

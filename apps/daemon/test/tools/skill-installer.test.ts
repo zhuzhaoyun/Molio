@@ -3,7 +3,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { installBuiltinSkills } from '../../src/core/skill-installer.js';
+import { installBuiltinSkills, resolveSkillsSourceDir } from '../../src/core/skill-installer.js';
 
 describe('installBuiltinSkills', () => {
   it('installs wechat-article-extractor skill to vault .claude/skills/', () => {
@@ -45,5 +45,17 @@ describe('installBuiltinSkills', () => {
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
+  });
+
+  // Regression: src/core/skills/ is ALSO a source module (the user skill library)
+  // that compiles to dist/src/core/skills/. The resolver must not mistake that
+  // module dir for the packaged built-in skills dir — it has to land on a dir
+  // that actually contains the shipped skills (wechat-article-extractor/SKILL.md).
+  it('resolves the real built-in skills dir, not a same-named module dir', () => {
+    const dir = resolveSkillsSourceDir();
+    assert.ok(
+      fs.existsSync(path.join(dir, 'wechat-article-extractor', 'SKILL.md')),
+      `resolved source dir should contain the built-in skills, got: ${dir}`,
+    );
   });
 });

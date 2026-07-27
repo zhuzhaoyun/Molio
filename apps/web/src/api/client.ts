@@ -5,6 +5,8 @@ import type {
   Vault, TreeNode, FileContent, KbHistoryEntry, CreateVaultRequest,
   WikiStatusResponse,
   GraphData, SearchResult, SearchResponse,
+  SkillManifestEntry, CreateSkillRequest, UpdateSkillRequest,
+  ImportSkillRequest, PrefillResult,
 } from '@molio/contracts';
 
 export type WeixinLoginStatus = 'idle' | 'waiting_scan' | 'scanned' | 'logged_in' | 'error';
@@ -769,6 +771,104 @@ export const api = {
     const res = await fetch(`${BASE}/graph/${vaultId}`);
     if (!res.ok) throw new Error(`Failed to fetch graph: ${res.status}`);
     return res.json();
+  },
+
+  // ─── Skills ───
+
+  async listSkills(): Promise<SkillManifestEntry[]> {
+    const res = await fetch(`${BASE}/skills`);
+    if (!res.ok) throw new Error(`Failed to fetch skills: ${res.status}`);
+    const data = await res.json();
+    return data.skills;
+  },
+
+  /** Fetch one skill with its instructions body (for the edit form). */
+  async getSkill(id: string): Promise<{ skill: SkillManifestEntry; instructions: string }> {
+    const res = await fetch(`${BASE}/skills/${id}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message ?? `Failed to fetch skill: ${res.status}`);
+    }
+    return res.json();
+  },
+
+  async createSkill(req: CreateSkillRequest): Promise<SkillManifestEntry> {
+    const res = await fetch(`${BASE}/skills`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error?.message ?? `Failed to create skill: ${res.status}`);
+    }
+    const data = await res.json();
+    return data.skill;
+  },
+
+  async updateSkill(id: string, req: UpdateSkillRequest): Promise<SkillManifestEntry> {
+    const res = await fetch(`${BASE}/skills/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error?.message ?? `Failed to update skill: ${res.status}`);
+    }
+    const data = await res.json();
+    return data.skill;
+  },
+
+  async toggleSkill(id: string, enabled: boolean): Promise<SkillManifestEntry> {
+    const res = await fetch(`${BASE}/skills/${id}/toggle`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error?.message ?? `Failed to toggle skill: ${res.status}`);
+    }
+    const data = await res.json();
+    return data.skill;
+  },
+
+  async deleteSkill(id: string): Promise<void> {
+    const res = await fetch(`${BASE}/skills/${id}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message ?? `Failed to delete skill: ${res.status}`);
+    }
+  },
+
+  async importSkill(req: ImportSkillRequest): Promise<SkillManifestEntry> {
+    const res = await fetch(`${BASE}/skills/import`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error?.message ?? `Failed to import skill: ${res.status}`);
+    }
+    const data = await res.json();
+    return data.skill;
+  },
+
+  /** One-shot AI call to prefill a skill form. Always resolves (fallback flag set on failure). */
+  async prefillSkill(content: string): Promise<PrefillResult> {
+    const res = await fetch(`${BASE}/skills/prefill`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error?.message ?? `Failed to prefill skill: ${res.status}`);
+    }
+    const data = await res.json();
+    return data.prefill;
   },
 };
 

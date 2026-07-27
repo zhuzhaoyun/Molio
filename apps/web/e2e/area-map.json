@@ -18,6 +18,8 @@
         "apps/web/src/components/ChatPane.*",
         "apps/web/src/components/CodeBlock.*",
         "apps/web/src/components/SaveToKbButton.*",
+        "apps/web/src/components/SaveAsSkillButton.*",
+        "apps/web/src/stores/skillPrefillStore.*",
         "apps/web/src/components/icons.*",
         "apps/web/src/utils/markdown.*",
         "apps/web/src/hooks/useChat*",
@@ -79,9 +81,13 @@
     "settings": {
       "paths": [
         "apps/web/src/components/settings/*",
-        "apps/web/src/styles/settings.css"
+        "apps/web/src/hooks/useSkills*",
+        "apps/web/src/stores/skillPrefillStore.*",
+        "apps/web/src/styles/settings.css",
+        "apps/daemon/src/core/skills/*",
+        "apps/daemon/src/routes/skills.ts"
       ],
-      "specs": ["settings"]
+      "specs": ["settings", "skills"]
     },
     "history": {
       "paths": [
@@ -143,6 +149,7 @@
     "runtime-provider-config": { "priority": "P1", "file": "runtime-provider-config.spec.ts" },
     "runtimes-page": { "priority": "P1", "file": "runtimes-page.spec.ts" },
     "settings": { "priority": "P1", "file": "settings.spec.ts" },
+    "skills": { "priority": "P1", "file": "skills.spec.ts" },
     "drag-drop-import": { "priority": "P1", "file": "drag-drop-import.spec.ts" },
     "kb-folder-ops": { "priority": "P1", "file": "kb-folder-ops.spec.ts" },
     "kb-folder-drag-real": { "priority": "P1", "file": "kb-folder-drag-real.spec.ts" },

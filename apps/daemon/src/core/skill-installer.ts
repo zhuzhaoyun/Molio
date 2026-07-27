@@ -47,26 +47,40 @@ const BUILTIN_SKILLS = [
 ];
 
 /**
+ * True if `dir` actually holds the shipped built-in skills (rather than being
+ * some unrelated directory that happens to be named "skills"). We probe for a
+ * known built-in skill's SKILL.md as the marker.
+ *
+ * This guard matters because `src/core/skills/` is ALSO a source-code module
+ * (the user skill library) that compiles to `dist/src/core/skills/`. A bare
+ * existence check on a "skills" directory would mistake that module dir for the
+ * packaged built-in skills dir and silently install nothing.
+ */
+function isBuiltinSkillsDir(dir: string): boolean {
+  return fs.existsSync(path.join(dir, 'wechat-article-extractor', 'SKILL.md'));
+}
+
+/**
  * Resolve the source directory for built-in skills.
  * In dev (tsx): __dirname = src/core/ → ../tools/skills/ exists
  * In prod (tsc): __dirname = dist/src/core/ → need to go to project root then src/tools/skills/
  * In packaged Electron: daemon.mjs runs from resources/daemon/, skills at resources/daemon/skills/
  */
-function resolveSkillsSourceDir(): string {
+export function resolveSkillsSourceDir(): string {
   // Dev mode: __dirname is src/core/, skills are at src/tools/skills/
   const devCandidate = path.join(__dirname, '..', 'tools', 'skills');
-  if (fs.existsSync(devCandidate)) return devCandidate;
+  if (isBuiltinSkillsDir(devCandidate)) return devCandidate;
 
   // Packaged Electron: daemon.mjs is at resources/daemon/daemon.mjs
   // but __dirname resolves to resources/daemon/ (the script's directory).
   // Skills are copied to resources/daemon/skills/ by prepare-resources.mjs.
   const packagedCandidate = path.join(__dirname, 'skills');
-  if (fs.existsSync(packagedCandidate)) return packagedCandidate;
+  if (isBuiltinSkillsDir(packagedCandidate)) return packagedCandidate;
 
   // Prod mode (tsc): __dirname is dist/src/core/, skills source is at ../../src/tools/skills/
   // (go up from dist/src/core → dist/src → dist → project root → src/tools/skills)
   const prodCandidate = path.join(__dirname, '..', '..', '..', 'src', 'tools', 'skills');
-  if (fs.existsSync(prodCandidate)) return prodCandidate;
+  if (isBuiltinSkillsDir(prodCandidate)) return prodCandidate;
 
   return devCandidate;
 }

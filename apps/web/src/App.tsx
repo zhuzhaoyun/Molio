@@ -17,6 +17,8 @@ import type { Locale } from './i18n';
 import { api } from './api/client';
 import { useActiveVault, vaultStore } from './stores/vaultStore';
 import { messageSelectionStore } from './stores/messageSelectionStore';
+import { usePendingPrefill, skillPrefillStore } from './stores/skillPrefillStore';
+import { SkillFormModal, type SkillFormValues } from './components/settings/SkillFormModal';
 import './styles/rail.css';
 import './styles/home.css';
 import './styles/knowledge.css';
@@ -39,6 +41,21 @@ export default function App() {
   const [locale, setLocale] = useState<Locale>('zh');
   const [configLoaded, setConfigLoaded] = useState(false);
   const chat = useChat({ agentId: selectedAgent, cwd: activeVault?.path });
+
+  // "Save as skill" — assistant-message buttons push a prefill into the store;
+  // the confirmation modal is hosted here (above the chat) to avoid prop-drilling.
+  const pendingPrefill = usePendingPrefill();
+  const [skillPrefillBusy, setSkillPrefillBusy] = useState(false);
+  const closePrefill = useCallback(() => skillPrefillStore.setPendingPrefill(null), []);
+  const savePrefillSkill = useCallback(async (values: SkillFormValues) => {
+    setSkillPrefillBusy(true);
+    try {
+      await api.createSkill(values);
+      skillPrefillStore.setPendingPrefill(null);
+    } finally {
+      setSkillPrefillBusy(false);
+    }
+  }, []);
 
   // KB Chat — lifted to App level so chat state survives route navigation
   const kbChatOnCompleteRef = useRef<() => void>(() => {});
@@ -226,6 +243,14 @@ export default function App() {
         </div>
         <UpdateNotification />
         <PreloadToast />
+        <SkillFormModal
+          show={pendingPrefill !== null}
+          mode="prefill"
+          prefillData={pendingPrefill}
+          busy={skillPrefillBusy}
+          onClose={closePrefill}
+          onSave={savePrefillSkill}
+        />
       </div>
     </LanguageProvider>
   );
