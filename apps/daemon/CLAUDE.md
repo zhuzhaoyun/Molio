@@ -57,7 +57,8 @@ src/
       service.ts       微信服务编排（implements ChannelSink）
       types.ts         微信类型定义
     feishu/
-      client.ts        Lark REST API 包装 (tenant_access_token、im/v1 消息收发)
+      client.ts        Lark REST API 包装 (tenant_access_token、im/v1 消息收发：text/interactive card/image/file 共享 postMessage)
+      card.ts          buildMarkdownCard — JSON 2.0 interactive 卡片（markdown 元素），回复包成卡片渲染 Markdown，发送失败降级纯文本
       ws-client.ts     WebSocket 长连接 — 接收 im.message.receive_v1 事件
       message.ts       事件 payload 解析 → ParsedFeishuMessage
       media.ts         图片/文件下载到 raw/feishu/<date>/
