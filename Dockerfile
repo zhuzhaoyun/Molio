@@ -61,8 +61,15 @@ ENV npm_config_registry=https://registry.npmmirror.com
 # 安装 Claude Code CLI（全局，自动匹配 linux-x64/arm64）
 RUN npm install -g @anthropic-ai/claude-code
 
+# gosu：entrypoint 以 root 启动（对齐 PUID/PGID + chown 命名卷），
+# 再用 gosu 降权到非 root 用户执行 daemon。
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends gosu && \
+    rm -rf /var/lib/apt/lists/*
+
 # Claude Code CLI 禁止 root 使用 --dangerously-skip-permissions，
-# 必须创建非 root 用户运行 daemon + agent 进程
+# 必须创建非 root 用户运行 daemon + agent 进程。
+# 构建期 UID 无关紧要：entrypoint 会在启动时按 PUID/PGID 重新对齐。
 RUN useradd -m -s /bin/bash molio
 
 WORKDIR /app
@@ -73,10 +80,13 @@ COPY --from=builder /prod/daemon .
 # 复制 web 构建产物（由 daemon 通过 MOLIO_STATIC_DIR 直接 serve）
 COPY --from=builder /app/apps/web/dist ./web
 
-# 确保 molio 用户拥有工作目录和 home 目录
 # 预创建 .molio / .claude 目录，Docker 首次挂载 volume 时继承正确的 ownership
 RUN mkdir -p /home/molio/.molio /home/molio/.claude && \
     chown -R molio:molio /app /home/molio
+
+# entrypoint：以 root 启动对齐 PUID/PGID + chown 命名卷，再降权到 molio
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 ENV MOLIO_STATIC_DIR=/app/web \
     MOLIO_PORT=3100 \
@@ -88,6 +98,7 @@ EXPOSE 3100
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD node -e "fetch('http://localhost:3100/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
 
-USER molio
-
+# 注意：不再写死 USER molio。entrypoint 需要 root 权限做 usermod/chown，
+# 随后用 gosu 降权到 molio 执行 CMD —— 最终进程仍是非 root（满足 Claude Code 要求）。
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["node", "dist/src/index.js"]
