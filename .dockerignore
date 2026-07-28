@@ -29,6 +29,10 @@ apps/web/e2e
 
 # 构建产物（容器内重新构建）
 **/dist
+# tsc 增量构建信息：composite 包（@molio/contracts）若被带进容器，
+# tsc 会误判"已是最新"而跳过输出，导致 dist 缺失、daemon 解析不到
+# @molio/contracts 类型（一整片 TS2307）。必须排除，强制容器内全量构建。
+**/*.tsbuildinfo
 
 # 文档（不影响构建，但 skills 目录除外——运行时需要）
 docs

@@ -87,6 +87,12 @@ Install and launch. On first run, you'll be guided to configure an AI runtime CL
 
 Run Molio as a self-hosted web service on a NAS or server. A single container bundles the daemon, web UI, and Claude Code CLI, and works on both `linux/amd64` and `linux/arm64` — Synology, QNAP, TerraMaster, TrueNAS, Unraid, and most other NAS devices.
 
+> **⚠️ How this differs from the desktop app (read before deploying)**
+>
+> - **Browser access only — there is no desktop client for this mode.** The Electron desktop app only ever talks to the daemon it launches locally (`localhost`); it **cannot** connect to a container running on a remote NAS/server.
+> - **The daemon runs inside the container and can only read/write directories mounted into it.** The desktop workflow of "pick any local folder as a knowledge base via a folder picker" does not apply here — the browser has no folder picker, so when you add a knowledge base you **type a container-internal path** (e.g. `/vaults/your-folder`, not the NAS host path).
+> - To expose folders as knowledge bases, mount them under `/vaults` in `docker-compose.yml` `volumes`. Your data still stays entirely yours (on your NAS) — only the access model changes, from "desktop app" to "browser + mounted volumes".
+
 **One-click install** (requires Docker + Docker Compose v2):
 
 ```bash
@@ -98,13 +104,13 @@ curl -fsSL https://raw.githubusercontent.com/zhuzhaoyun/Molio/main/install.sh | 
 bash install.sh
 ```
 
-The script interactively asks for your AI provider credentials, knowledge-base directory, and port, then pulls the image and starts the service. When it finishes, open `http://<your-server-ip>:3100`. On first boot Molio **auto-creates a default knowledge base** on the mounted directory, so you land straight inside — no manual setup.
+The script asks for your knowledge-base directory and port, then pulls the image and starts the service. When it finishes, open `http://<your-server-ip>:3100`, then go to **Settings → Runtimes** to configure your AI model and API key. On first boot Molio **auto-creates a default knowledge base** on the mounted directory, so you land straight inside — no manual setup.
 
 **Manual install** (if you prefer plain `docker compose`):
 
 ```bash
 git clone https://github.com/zhuzhaoyun/Molio.git && cd Molio
-cp .env.example .env      # fill in your AI provider credentials
+cp .env.example .env      # AI model is configured later in the web UI
 docker compose up -d      # then open http://<your-server-ip>:3100
 ```
 

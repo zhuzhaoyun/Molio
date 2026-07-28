@@ -155,9 +155,9 @@ cat > docker-compose.yml << 'COMPOSE_EOF'
 #   TrueNAS、Unraid 等主流 NAS 均可使用。
 #
 # 使用方式：
-#   1. cp .env.example .env  并填写认证信息
+#   1. cp .env.example .env  （AI 模型可留空，部署后在 Web 界面配置）
 #   2. docker compose up -d
-#   3. 浏览器打开 http://<NAS-IP>:3100
+#   3. 浏览器打开 http://<NAS-IP>:3100 → 设置 → 运行时 → 配置 AI 模型
 #
 # 知识库目录：
 #   在 .env 中设置 MOLIO_VAULT_PATH 指向 NAS 上的文档目录，
@@ -194,18 +194,21 @@ ok "docker-compose.yml 已就绪"
 # ── .env.example（始终释放，供参考）──
 cat > .env.example << 'ENV_EXAMPLE_EOF'
 # ============================================================
-# Molio Docker 部署环境变量
-# 复制此文件为 .env 并填写实际值：cp .env.example .env
+# Molio Docker 部署环境变量（可选）
+#
+# 推荐：AI 模型 / API Key 直接在 Web 界面「设置 → 运行时」中配置，
+#       无需编辑本文件。本文件主要用于高级用户 / 自动化部署。
+# 如确需用环境变量配置，复制为 .env 并填写：cp .env.example .env
 # ============================================================
 
-# ─── Claude Code 认证（任选其一） ───
+# ─── Claude Code 认证（可选，任选其一；也可在 Web 界面配置） ───
 
 # 方式 A：Anthropic 官方 API Key（国外）
 # ANTHROPIC_API_KEY=sk-ant-api03-...
 
-# 方式 B：阿里云百炼 Token Plan（国内推荐）
-ANTHROPIC_AUTH_TOKEN=sk-sp-你的token
-ANTHROPIC_BASE_URL=https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic
+# 方式 B：阿里云百炼 Token Plan（国内）
+# ANTHROPIC_AUTH_TOKEN=sk-sp-你的token
+# ANTHROPIC_BASE_URL=https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic
 
 # 方式 C：DeepSeek（国内，Anthropic 兼容端点）
 # 申请 API Key: https://platform.deepseek.com/api_keys
@@ -217,7 +220,7 @@ ANTHROPIC_BASE_URL=https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropi
 # ANTHROPIC_DEFAULT_OPUS_MODEL=deepseek-v4-pro[1M]
 # ANTHROPIC_DEFAULT_HAIKU_MODEL=deepseek-v4-flash
 
-# ─── 模型映射（可选，阿里云百炼时建议配置） ───
+# ─── 模型映射（可选） ───
 # ANTHROPIC_MODEL=qwen3.8-max-preview
 # ANTHROPIC_DEFAULT_SONNET_MODEL=qwen3.8-max-preview
 # ANTHROPIC_DEFAULT_OPUS_MODEL=qwen3.8-max-preview
@@ -235,98 +238,26 @@ ENV_EXAMPLE_EOF
 
 # ============================================================
 # 4. 交互式配置（.env 已存在则跳过）
+#    AI 模型 / API Key 不在此配置——部署完成后在 Web 界面
+#    「设置 → 运行时」中配置；高级用户也可手动往 .env 加 ANTHROPIC_* 变量。
 # ============================================================
 if [[ -f .env ]]; then
     ok ".env 已存在，跳过配置（如需重新配置，请删除 ${MOLIO_HOME}/.env 后重新运行）"
 else
     echo ""
-    info "首次安装，进行基础配置..."
+    info "首次安装，进行基础配置（AI 模型可稍后在 Web 界面配置）..."
     echo ""
 
-    prompt_choice AUTH_CHOICE "选择 AI 认证方式：" \
-        "阿里云百炼 Token Plan（国内推荐）" \
-        "Anthropic 官方 API Key（国外）" \
-        "DeepSeek（国内，api.deepseek.com）"
-
-    if [[ "$AUTH_CHOICE" == "2" ]]; then
-        # Anthropic 官方
-        prompt_read API_KEY "请输入 Anthropic API Key (sk-ant-...)" ""
-        if [[ -z "$API_KEY" ]]; then
-            warn "未输入 API Key，将生成空模板 .env，请稍后手动编辑"
-        fi
-        cat > .env << EOF
+    # 始终生成 .env（保证 docker compose 的 env_file 有效）
+    cat > .env << 'EOF'
 # Molio 配置 — 由 install.sh 自动生成
-ANTHROPIC_API_KEY=${API_KEY:-你的API_KEY}
+# AI 模型 / API Key 请在 Web 界面「设置 → 运行时」中配置。
+# 高级用户也可在此文件手动添加 ANTHROPIC_* 环境变量（见 .env.example）。
 EOF
-    elif [[ "$AUTH_CHOICE" == "3" ]]; then
-        # DeepSeek（Anthropic 兼容端点，配置与 Molio 运行时 DeepSeek 预设一致）
-        prompt_read DS_API_KEY "请输入 DeepSeek API Key (sk-...)，申请: https://platform.deepseek.com/api_keys" ""
-        if [[ -z "$DS_API_KEY" ]]; then
-            warn "未输入 API Key，将生成空模板 .env，请稍后手动编辑"
-        fi
-        prompt_choice DS_MODEL "选择 DeepSeek 主模型：" \
-            "DeepSeek V4 Pro（推荐，能力更强）" \
-            "DeepSeek V4 Flash（更快更省）"
-        if [[ "$DS_MODEL" == "2" ]]; then
-            DS_MAIN="deepseek-v4-flash"
-            DS_SONNET="deepseek-v4-flash"
-            DS_OPUS="deepseek-v4-flash"
-        else
-            DS_MAIN="deepseek-v4-pro"
-            # sonnet/opus 走 1M 上下文，与 providers.ts 的 useOneMContextSuffix 一致
-            DS_SONNET="deepseek-v4-pro[1M]"
-            DS_OPUS="deepseek-v4-pro[1M]"
-        fi
-        cat > .env << EOF
-# Molio 配置 — 由 install.sh 自动生成
-ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic
-ANTHROPIC_AUTH_TOKEN=${DS_API_KEY:-sk-你的API_KEY}
-ANTHROPIC_API_KEY=${DS_API_KEY:-sk-你的API_KEY}
-ANTHROPIC_MODEL=${DS_MAIN}
-ANTHROPIC_DEFAULT_SONNET_MODEL=${DS_SONNET}
-ANTHROPIC_DEFAULT_SONNET_MODEL_NAME=${DS_MAIN}
-ANTHROPIC_DEFAULT_OPUS_MODEL=${DS_OPUS}
-ANTHROPIC_DEFAULT_OPUS_MODEL_NAME=${DS_MAIN}
-ANTHROPIC_DEFAULT_HAIKU_MODEL=deepseek-v4-flash
-ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME=deepseek-v4-flash
-EOF
-    else
-        # 阿里云百炼
-        prompt_read AUTH_TOKEN "请输入阿里云百炼 Token (sk-sp-...)" ""
-        if [[ -z "$AUTH_TOKEN" ]]; then
-            warn "未输入 Token，将生成空模板 .env，请稍后手动编辑"
-        fi
-        prompt_read BASE_URL "百炼 Base URL" "https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic"
-
-        cat > .env << EOF
-# Molio 配置 — 由 install.sh 自动生成
-ANTHROPIC_AUTH_TOKEN=${AUTH_TOKEN:-sk-sp-你的token}
-ANTHROPIC_BASE_URL=${BASE_URL:-https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic}
-EOF
-
-        # 可选：模型映射
-        prompt_choice MODEL_CHOICE "是否配置模型映射？（百炼建议开启）" \
-            "是，使用推荐配置（qwen3.8-max-preview）" \
-            "否，跳过"
-        if [[ "$MODEL_CHOICE" == "1" ]]; then
-            cat >> .env << 'EOF'
-
-# 模型映射（阿里云百炼推荐配置）
-ANTHROPIC_MODEL=qwen3.8-max-preview
-ANTHROPIC_DEFAULT_SONNET_MODEL=qwen3.8-max-preview
-ANTHROPIC_DEFAULT_SONNET_MODEL_NAME=qwen3.8-max-preview
-ANTHROPIC_DEFAULT_OPUS_MODEL=qwen3.8-max-preview
-ANTHROPIC_DEFAULT_OPUS_MODEL_NAME=qwen3.8-max-preview
-ANTHROPIC_DEFAULT_HAIKU_MODEL=qwen3.8-max-preview
-ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME=qwen3.8-max-preview
-EOF
-        fi
-    fi
 
     # 可选：知识库路径
     prompt_read VAULT_PATH "知识库目录路径（留空使用默认 ./vaults）" ""
     if [[ -n "$VAULT_PATH" ]]; then
-        echo "" >> .env
         echo "MOLIO_VAULT_PATH=${VAULT_PATH}" >> .env
         mkdir -p "$VAULT_PATH"
         info "知识库目录: ${VAULT_PATH}"
@@ -388,6 +319,7 @@ echo -e "${BOLD}║     Molio 安装完成！                ║${NC}"
 echo -e "${BOLD}╚══════════════════════════════════════╝${NC}"
 echo ""
 echo -e "  访问地址:  ${GREEN}http://${LOCAL_IP}:${PORT_VAL}${NC}"
+echo -e "  下一步:    ${YELLOW}打开上面地址 → 设置 → 运行时 → 配置 AI 模型 / API Key${NC}"
 echo -e "  安装目录:  ${MOLIO_HOME}"
 echo -e "  配置文件:  ${MOLIO_HOME}/.env"
 echo ""

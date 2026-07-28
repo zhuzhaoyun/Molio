@@ -6,9 +6,9 @@
 #   TrueNAS、Unraid 等主流 NAS 均可使用。
 #
 # 使用方式：
-#   1. cp .env.example .env  并填写认证信息
+#   1. cp .env.example .env  （AI 模型可留空，部署后在 Web 界面配置）
 #   2. docker compose up -d
-#   3. 浏览器打开 http://<NAS-IP>:3100
+#   3. 浏览器打开 http://<NAS-IP>:3100 → 设置 → 运行时 → 配置 AI 模型
 #
 # 本地开发构建（可选）：
 #   将下方 image 行注释掉，取消 build 行的注释，然后：
