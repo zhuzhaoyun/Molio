@@ -141,4 +141,40 @@ describe('maybeCreateDefaultVault', () => {
       rmSync(base, { recursive: true, force: true });
     }
   });
+
+  // Regression: on NAS/Docker the mounted docs dir is often root-owned while
+  // the daemon runs unprivileged, so installing built-in skills into
+  // <vault>/.claude/skills throws EACCES. Previously that throw aborted
+  // provisioning AFTER createVault but BEFORE setActiveVaultId, leaving a vault
+  // in the DB that was never selected — the user saw the empty welcome screen
+  // and thought no knowledge base was created. Skill install failure must be a
+  // non-fatal warning: the vault still gets created, watched, and activated.
+  it('still creates + activates the vault when skill installation throws', () => {
+    const mount = mkdtempSync(join(tmpdir(), 'molio-skillfail-'));
+    const origWarn = console.warn;
+    const warnings: string[] = [];
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args.map(String).join(' '));
+    };
+    try {
+      const vault = maybeCreateDefaultVault(db, watcher, {
+        conventionPath: mount,
+        installSkills: () => {
+          throw new Error('EACCES: permission denied, mkdir .claude/skills');
+        },
+      });
+      assert.ok(vault, 'vault must still be created even though skill install failed');
+      assert.equal(vault.path, mount);
+      assert.equal(listVaults(db).length, 1);
+      assert.equal(getActiveVaultId(db), vault.id, 'vault must still be set active');
+      assert.deepEqual(watched, [[vault.id, mount]], 'watcher must still watch the new vault');
+      assert.ok(
+        warnings.some((w) => w.includes('skill installation failed')),
+        'expected a warning about the failed skill installation',
+      );
+    } finally {
+      console.warn = origWarn;
+      rmSync(mount, { recursive: true, force: true });
+    }
+  });
 });

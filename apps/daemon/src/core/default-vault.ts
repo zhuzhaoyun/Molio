@@ -40,6 +40,13 @@ export interface DefaultVaultOptions {
   name?: string;
   /** Optional description. */
   description?: string;
+  /**
+   * Skill installer override; defaults to installBuiltinSkills. Injectable so
+   * tests can simulate an installer failure without filesystem permission
+   * tricks (which are unreliable across platforms, e.g. Windows read-only
+   * attributes don't reliably deny the owner).
+   */
+  installSkills?: (vaultPath: string) => void;
 }
 
 const DEFAULT_CONVENTION_PATH = '/vaults';
@@ -79,10 +86,30 @@ export function maybeCreateDefaultVault(
   }
   if (!defaultPath) return null;
 
+  const installSkills = opts.installSkills ?? installBuiltinSkills;
+
   ensureVaultDir(defaultPath);
   const name = opts.name ?? DEFAULT_VAULT_NAME;
   const vault = createVault(db, name, defaultPath, opts.description ?? DEFAULT_VAULT_DESCRIPTION);
-  installBuiltinSkills(defaultPath);
+  // Skill installation writes into <vault>/.claude/skills. On NAS/Docker the
+  // mounted docs dir is frequently owned by root while the daemon runs
+  // unprivileged (the Dockerfile drops to a non-root user), so this can fail
+  // with EACCES. That must NOT abort provisioning: the vault row is already
+  // created above, and throwing here would skip setActiveVaultId below —
+  // leaving the user on the empty welcome screen even though the vault exists.
+  // Degrade to a warning and continue; skills can be (re)installed later once
+  // the mount permissions are fixed.
+  try {
+    installSkills(defaultPath);
+  } catch (err) {
+    console.warn(
+      `[default-vault] vault "${vault.name}" created at ${defaultPath}, but built-in skill ` +
+        `installation failed — likely a write-permission problem on the mounted directory ` +
+        `(make sure the daemon user can write to it). The vault is still usable; skills ` +
+        `will be installed on a later start. Cause:`,
+      err instanceof Error ? err.message : err,
+    );
+  }
   addKbHistory(db, vault.id, 'edit', `Default vault "${vault.name}" auto-created at ${defaultPath}`);
   void vaultWatcher.watch(vault.id, vault.path);
   // Select it so external clients (Web Clipper) and a fresh browser session
