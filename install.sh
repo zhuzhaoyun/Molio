@@ -231,12 +231,13 @@ cat > .env.example << 'ENV_EXAMPLE_EOF'
 # 首次启动会自动创建默认知识库指向 /vaults；如需指向其它 docker 内路径：
 # MOLIO_DEFAULT_VAULT_PATH=/vaults/notes
 
-# ─── 文件权限（Linux/NAS 需要，Docker Desktop 可忽略） ───
-# 容器以非 root 用户运行（Claude Code 要求）。在 Linux 上，/vaults 是从宿主机
-# bind mount 进来的，容器用户的 UID/GID 必须与该目录的宿主机属主一致，否则
-# 创建知识库/文件会报 EACCES: permission denied。
-# 查看宿主机目录属主：  stat -c '%u:%g' /你的/vaults/目录
-# 把下面的 1000:1000 改成上面命令输出的值（多数 Linux 首个用户就是 1000:1000）。
+# ─── 文件权限（通常无需配置，自动识别） ───
+# 容器以非 root 用户运行（Claude Code 要求）。启动时会自动读取 /vaults 目录的
+# 宿主机属主，并把容器用户对齐过去，所以 Linux/NAS 一键部署开箱即用、无需配置。
+# 仅在特殊情况下才需要手动指定 PUID/PGID（会覆盖自动识别），例如：
+#   - 挂载了多个目录且属主不同；
+#   - 知识库目录被 root 持有（sudo 创建的），想强制用某个普通用户身份写入。
+# 查看目录属主：  stat -c '%u:%g' /你的/vaults/目录
 # PUID=1000
 # PGID=1000
 
@@ -256,22 +257,16 @@ else
     info "首次安装，生成配置文件..."
 
     # 始终生成 .env（保证 docker compose 的 env_file 有效）
-    # 自动探测当前用户的 UID/GID 写入 PUID/PGID：Linux 上 /vaults 是从宿主机
-    # bind mount 进来的，容器用户必须与该目录属主一致才能写入，否则会报
-    # EACCES。本脚本以当前用户创建 ${MOLIO_HOME}/vaults，故 id -u/-g 即正确值。
-    _PUID="$(id -u)"
-    _PGID="$(id -g)"
-    cat > .env << EOF
+    # 文件权限无需在此配置：容器启动时会自动读取 /vaults 目录的宿主机属主并对齐
+    # （见 docker-entrypoint.sh），Linux/NAS 一键部署开箱即用。仅在多重挂载等特殊
+    # 场景才需手动往 .env 加 PUID/PGID（见 .env.example）。
+    cat > .env << 'EOF'
 # Molio 配置 — 由 install.sh 自动生成
 # AI 模型 / API Key 请在 Web 界面「设置 → 运行时」中配置。
 # 高级用户也可在此文件手动添加 ANTHROPIC_* 环境变量（见 .env.example）。
-
-# 文件权限：与知识库目录的宿主机属主保持一致（Linux/NAS 必需）
-PUID=${_PUID}
-PGID=${_PGID}
 EOF
 
-    ok ".env 已生成: ${MOLIO_HOME}/.env (PUID=${_PUID}, PGID=${_PGID})"
+    ok ".env 已生成: ${MOLIO_HOME}/.env"
 fi
 
 # ============================================================

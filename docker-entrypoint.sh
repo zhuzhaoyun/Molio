@@ -10,41 +10,77 @@
 #   EACCES when creating vaults / installing skills. Docker Desktop
 #   (Windows/macOS) hides this because its virtiofs share translates perms.
 #
-#   The NAS-standard fix (linuxserver.io convention): align the runtime user's
-#   UID/GID to the host owner via PUID/PGID, re-own the app-internal named
-#   volumes, then drop to that user before exec'ing the real command.
+# Zero-config fix (linuxserver.io-style PUID/PGID, but auto-detected):
+#   The entrypoint reads the ACTUAL owner of the mounted /vaults and aligns the
+#   runtime user to it — so one-click deploy "just works" with no .env editing.
+#   Explicit PUID/PGID env vars still win, for unusual layouts (multiple mounts,
+#   a root-owned dir, etc.).
 #
-# Env:
-#   PUID / PGID  UID/GID to run as (default 1000 — the typical first user on
-#                Linux/NAS). Set these to the owner of your host vault dir:
-#                    stat -c '%u:%g' /path/to/your/vaults
+# Flow:
+#   1. resolve effective UID/GID:  PUID/PGID env  >  owner of /vaults  >  1000
+#   2. align the `molio` user to that UID/GID (usermod/groupmod -o)
+#   3. re-own the app-internal named volumes (db/config, Claude auth)
+#   4. drop privileges via gosu and exec the real command (still non-root)
 # ============================================================
 set -eu
 
+# --- 1. resolve effective UID/GID -----------------------------------------
+# Remember whether the operator set PUID/PGID explicitly (for logging + so an
+# explicit override always beats auto-detection).
+explicit_puid="${PUID:-}"
+explicit_pgid="${PGID:-}"
+
+# Auto-detect the owner of the mounted docs dir. This is the host user who owns
+# the documents, and matching it is exactly what makes the daemon able to write.
+det_uid=""
+det_gid=""
+if [ -d /vaults ]; then
+    det_uid=$(stat -c '%u' /vaults 2>/dev/null || true)
+    det_gid=$(stat -c '%g' /vaults 2>/dev/null || true)
+fi
+
+PUID="${PUID:-$det_uid}"
 PUID="${PUID:-1000}"
+PGID="${PGID:-$det_gid}"
 PGID="${PGID:-1000}"
 
-# Fail loudly (and early) on non-numeric ids rather than silently running with
-# a broken user — a silent fallback here just reproduces the EACCES bug.
+# Never run as root. Claude Code refuses it; and a root-owned mount (typical on
+# Docker Desktop, where virtiofs reports root:root but world-writable) is
+# perfectly accessible as uid 1000, so fall back instead of becoming root.
+if [ "$PUID" = "0" ]; then PUID=1000; fi
+if [ "$PGID" = "0" ]; then PGID=1000; fi
+
+# Fail loudly on non-numeric ids rather than silently running with a broken
+# user — a silent fallback here just reproduces the EACCES bug.
 case "$PUID" in ''|*[!0-9]*) echo "[entrypoint] PUID must be numeric, got: '$PUID'" >&2; exit 1 ;; esac
 case "$PGID" in ''|*[!0-9]*) echo "[entrypoint] PGID must be numeric, got: '$PGID'" >&2; exit 1 ;; esac
 
-# Align the runtime user/group with the host owner of the bind mount.
+# --- 2. align the runtime user with the resolved UID/GID ------------------
 # `-o` permits a non-unique UID/GID: the base image already has a `node` user
 # at UID 1000, and we deliberately allow molio to share it.
 groupmod -o -g "$PGID" molio
 usermod  -o -u "$PUID" molio
 
-# The named volumes (SQLite db + config, Claude auth) were first populated
-# while owned by the build-time UID; re-own them so they stay readable/writable
-# under the new UID. These are app-internal, so chowning is always safe.
+# --- 3. re-own app-internal named volumes ---------------------------------
+# First populated while owned by the build-time UID; re-own so SQLite/config and
+# Claude auth stay readable/writable under the new UID. App-internal → always
+# safe to chown (we never chown the user's /vaults documents).
 chown -R "$PUID:$PGID" /home/molio/.molio /home/molio/.claude
 
-# /app (the daemon code + node_modules) is read-only at runtime; re-own it too
-# for good measure, but don't abort the container if a stray file resists.
+# /app (daemon code + node_modules) is read-only at runtime; re-own for good
+# measure, but don't abort the container if a stray file resists.
 chown -R "$PUID:$PGID" /app 2>/dev/null || true
 
-echo "[entrypoint] running as molio (uid=$PUID gid=$PGID)"
+# --- logging (helps debug permission issues on the NAS) -------------------
+if [ -n "$explicit_puid" ] || [ -n "$explicit_pgid" ]; then
+    echo "[entrypoint] using PUID/PGID from environment → uid=$PUID gid=$PGID"
+elif [ -n "$det_uid" ] && [ "$det_uid" != "0" ]; then
+    echo "[entrypoint] auto-detected /vaults owner (uid=$det_uid gid=$det_gid) → running as molio uid=$PUID gid=$PGID"
+elif [ -n "$det_uid" ]; then
+    echo "[entrypoint] /vaults owned by root; running as uid=$PUID gid=$PGID (set PUID/PGID to override)"
+else
+    echo "[entrypoint] no /vaults mount found → defaulting to uid=$PUID gid=$PGID"
+fi
 
-# Drop privileges and hand off to the CMD (node dist/src/index.js).
+# --- 4. drop privileges and hand off to CMD (node dist/src/index.js) ------
 exec gosu molio "$@"
