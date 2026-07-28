@@ -136,7 +136,7 @@ ok "Docker daemon 运行中"
 # 2. 安装目录
 # ============================================================
 MOLIO_HOME="${MOLIO_HOME:-$HOME/molio}"
-mkdir -p "$MOLIO_HOME"
+mkdir -p "$MOLIO_HOME/vaults"
 cd "$MOLIO_HOME"
 info "安装目录: ${MOLIO_HOME}"
 
@@ -148,22 +148,21 @@ info "安装目录: ${MOLIO_HOME}"
 # ⚠️ 此内容与项目根目录 docker-compose.yml 保持一致，变更时需同步更新
 cat > docker-compose.yml << 'COMPOSE_EOF'
 # ============================================================
-# Molio — NAS / 服务器一键部署
+# Molio — Docker 一键部署
 #
 # 支持平台：linux/amd64 + linux/arm64
-#   群晖 (Synology)、威联通 (QNAP)、铁威马 (TerraMaster)、
-#   TrueNAS、Unraid 等主流 NAS 均可使用。
+#   服务器、NAS（群晖/威联通/铁威马/TrueNAS/Unraid）均可使用。
 #
 # 使用方式：
 #   1. cp .env.example .env  （AI 模型可留空，部署后在 Web 界面配置）
 #   2. docker compose up -d
-#   3. 浏览器打开 http://<NAS-IP>:3100 → 设置 → 运行时 → 配置 AI 模型
+#   3. 浏览器打开 http://<IP>:3100 → 设置 → 运行时 → 配置 AI 模型
 #
 # 知识库目录：
-#   在 .env 中设置 MOLIO_VAULT_PATH 指向 NAS 上的文档目录，
-#   该目录挂载到容器内 /vaults。
+#   在 .env 中设置 MOLIO_VAULT_PATH 指向宿主机上的文档目录，
+#   该目录挂载到 docker 内 /vaults。
 #   首次启动会自动创建默认知识库并指向 /vaults，打开 Web 即直接进入；
-#   后续再添加知识库时路径请填容器内路径 /vaults/文件夹名。
+#   后续再添加知识库时路径请填 docker 内路径 /vaults/文件夹名。
 # ============================================================
 
 services:
@@ -177,7 +176,7 @@ services:
       - molio-data:/home/molio/.molio
       # Claude Code 认证和配置持久化
       - molio-claude:/home/molio/.claude
-      # 知识库文档目录（NAS 上的实际文件）
+      # 知识库文档目录（宿主机上的实际文件）
       - ${MOLIO_VAULT_PATH:-./vaults}:/vaults
     # .env 中所有变量透传给容器（ANTHROPIC_*、CLAUDE_CODE_* 等）
     env_file: .env
@@ -227,9 +226,9 @@ cat > .env.example << 'ENV_EXAMPLE_EOF'
 # ANTHROPIC_DEFAULT_HAIKU_MODEL=qwen3.8-max-preview
 
 # ─── 知识库目录（可选） ───
-# NAS 上的文档目录，挂载到容器内 /vaults，不设置时默认 ./vaults
-# MOLIO_VAULT_PATH=/volume1/docker/molio/vaults
-# 首次启动会自动创建默认知识库指向 /vaults；如需指向其它容器内路径：
+# 宿主机上的文档目录，挂载到 docker 内 /vaults，不设置时默认 ./vaults
+# MOLIO_VAULT_PATH=/data/molio/vaults
+# 首次启动会自动创建默认知识库指向 /vaults；如需指向其它 docker 内路径：
 # MOLIO_DEFAULT_VAULT_PATH=/vaults/notes
 
 # ─── Web 端口（可选，默认 3100） ───
@@ -245,8 +244,7 @@ if [[ -f .env ]]; then
     ok ".env 已存在，跳过配置（如需重新配置，请删除 ${MOLIO_HOME}/.env 后重新运行）"
 else
     echo ""
-    info "首次安装，进行基础配置（AI 模型可稍后在 Web 界面配置）..."
-    echo ""
+    info "首次安装，生成配置文件..."
 
     # 始终生成 .env（保证 docker compose 的 env_file 有效）
     cat > .env << 'EOF'
@@ -255,25 +253,39 @@ else
 # 高级用户也可在此文件手动添加 ANTHROPIC_* 环境变量（见 .env.example）。
 EOF
 
-    # 可选：知识库路径
-    prompt_read VAULT_PATH "知识库目录路径（留空使用默认 ./vaults）" ""
-    if [[ -n "$VAULT_PATH" ]]; then
-        echo "MOLIO_VAULT_PATH=${VAULT_PATH}" >> .env
-        mkdir -p "$VAULT_PATH"
-        info "知识库目录: ${VAULT_PATH}"
-    fi
-
-    # 可选：端口
-    prompt_read PORT "Web 端口" "3100"
-    if [[ "$PORT" != "3100" ]]; then
-        echo "MOLIO_PORT=${PORT}" >> .env
-    fi
-
     ok ".env 已生成: ${MOLIO_HOME}/.env"
 fi
 
 # ============================================================
-# 5. 拉取镜像 + 启动
+# 5. 确认挂载配置
+# ============================================================
+_VAULT_SHOW="${MOLIO_HOME}/vaults"
+if [[ -f .env ]]; then
+    _v=$(grep -E '^MOLIO_VAULT_PATH=' .env 2>/dev/null | cut -d= -f2 || true)
+    if [[ -n "$_v" ]]; then _VAULT_SHOW="$_v"; fi
+fi
+_PORT_SHOW="3100"
+if [[ -f .env ]]; then
+    _p=$(grep -E '^MOLIO_PORT=' .env 2>/dev/null | cut -d= -f2 || true)
+    if [[ -n "$_p" ]]; then _PORT_SHOW="$_p"; fi
+fi
+
+echo ""
+echo -e "${BOLD}请确认以下配置：${NC}"
+echo -e "  文档挂载目录:  ${GREEN}${_VAULT_SHOW}${NC}  →  docker 内 /vaults"
+echo -e "  Web 端口:      ${_PORT_SHOW}"
+echo ""
+echo -e "  你的文档需放入「文档挂载目录」，Molio 才能访问和使用。"
+echo -e "  如需修改，请编辑 ${MOLIO_HOME}/.env 后重新运行本脚本。"
+echo ""
+prompt_read CONFIRM "确认以上配置，开始安装？[Y/n]" "Y"
+if [[ "$CONFIRM" =~ ^[Nn] ]]; then
+    info "已取消。编辑 ${MOLIO_HOME}/.env 后重新运行即可。"
+    exit 0
+fi
+
+# ============================================================
+# 6. 拉取镜像 + 启动
 # ============================================================
 echo ""
 info "拉取最新镜像..."
@@ -283,7 +295,7 @@ info "启动 Molio..."
 docker compose up -d
 
 # ============================================================
-# 6. 健康检查
+# 7. 健康检查
 # ============================================================
 PORT_VAL="${MOLIO_PORT:-3100}"
 # 从 .env 读取端口（如果有）
@@ -311,7 +323,7 @@ else
 fi
 
 # 获取本机 IP 供提示
-LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "<NAS-IP>")
+LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "<IP>")
 
 echo ""
 echo -e "${BOLD}╔══════════════════════════════════════╗${NC}"
@@ -320,6 +332,17 @@ echo -e "${BOLD}╚════════════════════�
 echo ""
 echo -e "  访问地址:  ${GREEN}http://${LOCAL_IP}:${PORT_VAL}${NC}"
 echo -e "  下一步:    ${YELLOW}打开上面地址 → 设置 → 运行时 → 配置 AI 模型 / API Key${NC}"
+echo ""
+# 知识库挂载目录：优先读 .env 中的 MOLIO_VAULT_PATH，否则用默认值
+VAULT_DIR="${MOLIO_HOME}/vaults"
+if [[ -f .env ]]; then
+    _v=$(grep -E '^MOLIO_VAULT_PATH=' .env 2>/dev/null | cut -d= -f2 || true)
+    if [[ -n "$_v" ]]; then VAULT_DIR="$_v"; fi
+fi
+echo -e "  ${BOLD}文档目录:  ${GREEN}${VAULT_DIR}${NC}"
+echo -e "  将文档（Markdown / 文件夹）放入该目录，Molio 才能访问和使用。"
+echo -e "  新建知识库: 在该目录下创建子文件夹，然后在 Web 界面添加知识库，路径填 /vaults/子文件夹名"
+echo ""
 echo -e "  安装目录:  ${MOLIO_HOME}"
 echo -e "  配置文件:  ${MOLIO_HOME}/.env"
 echo ""
