@@ -84,7 +84,8 @@ COPY --from=builder /app/apps/web/dist ./web
 RUN mkdir -p /home/molio/.molio /home/molio/.claude && \
     chown -R molio:molio /app /home/molio
 
-# entrypoint：以 root 启动对齐 PUID/PGID + chown 命名卷，再降权到 molio
+# entrypoint：以 root 启动，自动探测知识库目录属主（或 PUID/PGID 覆盖）对齐容器
+# 用户 + chown 命名卷，再降权到 molio
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 

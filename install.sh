@@ -232,12 +232,14 @@ cat > .env.example << 'ENV_EXAMPLE_EOF'
 # MOLIO_DEFAULT_VAULT_PATH=/vaults/notes
 
 # ─── 文件权限（通常无需配置，自动识别） ───
-# 容器以非 root 用户运行（Claude Code 要求）。启动时会自动读取 /vaults 目录的
-# 宿主机属主，并把容器用户对齐过去，所以 Linux/NAS 一键部署开箱即用、无需配置。
-# 仅在特殊情况下才需要手动指定 PUID/PGID（会覆盖自动识别），例如：
+# 容器以非 root 用户运行（Claude Code 要求）。启动时会自动读取知识库目录
+# （默认 /vaults，或 MOLIO_DEFAULT_VAULT_PATH）的宿主机属主，并把容器用户对齐
+# 过去——任意 uid 都适用，Linux/NAS 一键部署开箱即用、无需配置。
+# 启动日志会打印它最终采用的 uid；若目录不可写（如被 root 以 755 持有），
+# 还会直接给出修复命令。仅在特殊情况下才需手动指定 PUID/PGID（会覆盖自动识别）：
 #   - 挂载了多个目录且属主不同；
-#   - 知识库目录被 root 持有（sudo 创建的），想强制用某个普通用户身份写入。
-# 查看目录属主：  stat -c '%u:%g' /你的/vaults/目录
+#   - 想强制用某个固定用户身份写入。
+# 查看目录属主：  stat -c '%u:%g' /你的/知识库/目录
 # PUID=1000
 # PGID=1000
 
