@@ -1,0 +1,44 @@
+# VCS
+.git
+.gitignore
+
+# Claude Code worktrees（构建无关）
+.claude
+
+# 依赖（容器内重新安装）
+**/node_modules
+
+# Electron 桌面端（Docker 不需要，但保留 package.json 供 pnpm workspace 解析）
+apps/desktop/src
+apps/desktop/e2e
+apps/desktop/scripts
+apps/desktop/test
+apps/desktop/dist
+apps/desktop/build
+
+# 官网落地页（非 workspace 包，无 package.json）
+apps/landing-page
+
+# E2E 测试（构建不需要）
+apps/web/e2e
+
+# 数据库文件
+**/*.sqlite
+**/*.sqlite-wal
+**/*.sqlite-shm
+
+# 构建产物（容器内重新构建）
+**/dist
+# tsc 增量构建信息：composite 包（@molio/contracts）若被带进容器，
+# tsc 会误判"已是最新"而跳过输出，导致 dist 缺失、daemon 解析不到
+# @molio/contracts 类型（一整片 TS2307）。必须排除，强制容器内全量构建。
+**/*.tsbuildinfo
+
+# 文档（不影响构建，但 skills 目录除外——运行时需要）
+docs
+scripts
+
+# 杂项
+*.log
+.DS_Store
+Thumbs.db

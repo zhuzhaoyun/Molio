@@ -23,6 +23,7 @@ import { WeixinService } from './core/weixin/service.js';
 import { FeishuService } from './core/feishu/service.js';
 import { ConversationService } from './core/conversations/service.js';
 import { VaultWatcher } from './core/vault-watcher.js';
+import { maybeCreateDefaultVault } from './core/default-vault.js';
 
 export const runManager = new RunManager();
 export const db: Database.Database = openDatabase();
@@ -87,6 +88,19 @@ app.route('/api/maintenance', maintenanceRoutes(db));
 void weixinService.start();
 void feishuService.start();
 void vaultWatcher.start();
+
+// First-boot provisioning for Docker/NAS one-click deploy: on an empty install,
+// auto-create the default vault pointing at the mounted docs dir (/vaults or
+// MOLIO_DEFAULT_VAULT_PATH) so users land inside a vault, not the welcome
+// screen. No-op once any vault exists. Failures must never crash the daemon.
+try {
+  const created = maybeCreateDefaultVault(db, vaultWatcher);
+  if (created) {
+    console.log(`[default-vault] auto-created default vault "${created.name}" at ${created.path}`);
+  }
+} catch (err) {
+  console.error('[default-vault] failed to auto-create default vault:', err);
+}
 
 // Static file serving (production / desktop mode)
 const staticDir = process.env['MOLIO_STATIC_DIR'];

@@ -41,6 +41,19 @@ pnpm package        # 完整打包
 
 生成的 `win-unpacked/` 目录包含可直接运行的 exe，无需安装。
 
+### Docker / NAS 一键部署
+
+自建 Web 服务（单容器：daemon + web + Claude Code CLI，amd64/arm64）相关文件：
+
+- `install.sh` — 一键安装脚本（`curl ... | bash`），自包含 docker-compose.yml 与 .env 模板，运行时仅拉镜像
+- `docker-compose.yml` — ACR 镜像 + volume + env_file 配置
+- `Dockerfile` — 多阶段构建（npmmirror + 非 root 用户）
+- `.env.example` — AI 认证 / 知识库路径 / 端口配置模板
+
+**首次启动自动建默认知识库**（`apps/daemon/src/core/default-vault.ts` 的 `maybeCreateDefaultVault`）：vault 表为空且检测到 `/vaults` 挂载（或 `MOLIO_DEFAULT_VAULT_PATH`）时自动建「我的知识库」并选中；已有任意 vault 时 no-op。
+
+> ⚠️ **维护提醒**：`install.sh` 内嵌了 `docker-compose.yml` 和 `.env.example` 的 heredoc 副本。修改这两个文件后，**必须同步更新 `install.sh` 中对应内容**，否则一键安装会释放出旧版配置。
+
 ## Chrome 扩展同步打开协议
 
 Molio Chrome 扩展保存剪藏时通过 `molio://` 唤起桌面端。协议约定：
