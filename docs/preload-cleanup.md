@@ -178,6 +178,8 @@ PreloadManager 跑完 remotion npm 缓存预热后写的 marker 文件。`checkS
 3. **docling 装了但模型下不动**：国内访问 HuggingFace 默认源常超时。docling SKILL.md 建议设 `HF_ENDPOINT=https://hf-mirror.com`。当前 PreloadManager 的模型预热**还没**自动注入这个镜像环境变量（待改进）。
 4. **路径含空格（Windows 用户名带空格等）失败**：已修复——python/pip/docling 调用现在走无 shell 的参数数组，不再因空格断命令。若仍异常，看 daemon 日志里的真实子进程退出码。
 5. **看 daemon 日志**：`pnpm dev:daemon` 的终端会打印 `[PreloadManager]` 的进度消息和子进程退出码。
+6. **remotion 报 `No matching version found for @remotion/xxx@4.0.y`（ETARGET）**：npm 源是镜像（如 npmmirror）且 remotion 刚发新版时会出现。remotion 每次联动发布约 20 个包，镜像对每个包**独立、按需同步**——常见主包（`@remotion/cli`）已同步、传递依赖（如 `@remotion/player`）还没同步，于是 `npm install` 报 ETARGET。预下载现在会**自动换源降级重试**：默认源（重试 2 次）→ 官方源 `registry.npmjs.org`（同步源头，版本永远齐全；国内慢但后台预下载可接受）→ npmmirror 兜底。进度消息里会出现「换下一个 npm 源」。若三个源全失败，错误信息会带步骤名 + 子进程输出尾部（不再是以前的空消息「进程退出码 1:」），按提示判断是网络还是版本问题。
+   > 历史教训：旧版本用 `npm install --prefer-offline`，它让 npm 跳过缓存元数据的过期检查——如果恰好在镜像同步完成**前**缓存了缺版本的 packument，同步完成后仍会一直 ETARGET。现已移除该参数（在线模式照样按 integrity 复用已缓存的 tarball，暖缓存效果不变）。
 
 ## 相关代码
 

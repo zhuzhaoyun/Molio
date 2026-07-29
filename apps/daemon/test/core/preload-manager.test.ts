@@ -197,3 +197,114 @@ describe('PreloadManager status state machine', () => {
     );
   });
 });
+
+// ─── npm registry fallback (remotion preload ETARGET regression) ───────────
+//
+// Error-driven context (2026-07-29): remotion 发版 4.0.501，create-video 脚手架
+// 把所有 @remotion/* 严格钉到该版本；但国内镜像（npmmirror）逐包独立、按需同步，
+// 主包 @remotion/cli 已同步而传递依赖 @remotion/player 未同步 → `npm install`
+// ETARGET 退出码 1。旧代码只会在**同一个源**上重试一次，镜像同步滞后以小时计，
+// 重试必然再次失败 → 预下载整体失败。修复：按 默认源 → 官方源（同步源头，版本
+// 永远齐全）→ npmmirror 的顺序降级换源重试；暂停/停止不打断语义保持不变。
+
+describe('runWithRegistryFallback (remotion preload ETARGET regression)', () => {
+  const mkSignal = () => new AbortController().signal;
+
+  it('default registry ETARGET failure falls back to the official registry', async () => {
+    const { runWithRegistryFallback } = await import('../../src/core/preload-manager.js');
+    const cmds: string[] = [];
+    await runWithRegistryFallback({
+      label: 'Remotion 依赖安装（npm install）',
+      signal: mkSignal(),
+      buildCmd: (flag) => `npm install ${flag} --no-audit --no-fund`.replace('  ', ' '),
+      run: async (cmd: string) => {
+        cmds.push(cmd);
+        // 模拟镜像未同步钉住版本：默认源 ETARGET，官方源放行
+        if (!cmd.includes('--registry=https://registry.npmjs.org')) {
+          throw new Error('进程退出码 1: npm error notarget No matching version found for @remotion/player@4.0.501.');
+        }
+      },
+    });
+    assert.ok(cmds.length >= 2, `expected multiple attempts, got ${cmds.length}`);
+    assert.ok(!cmds[0]?.includes('--registry'), 'first attempt must use the default registry (no --registry flag)');
+    assert.ok(
+      cmds.some((c) => c.includes('--registry=https://registry.npmjs.org')),
+      'must fall back to the official npm registry',
+    );
+  });
+
+  it('transient failure retries within the same registry before switching', async () => {
+    const { runWithRegistryFallback } = await import('../../src/core/preload-manager.js');
+    const cmds: string[] = [];
+    await runWithRegistryFallback({
+      label: 'step',
+      signal: mkSignal(),
+      buildCmd: (flag) => `cmd ${flag}`.trim(),
+      run: async (cmd: string) => {
+        cmds.push(cmd);
+        // 第一次（默认源）瞬态失败，第二次（仍默认源）成功 → 不应换源
+        if (cmds.length === 1) throw new Error('进程退出码 1: network hiccup');
+      },
+    });
+    assert.equal(cmds.length, 2, 'should retry once on the same registry then succeed');
+    assert.ok(cmds.every((c) => !c.includes('--registry')), 'no registry switch needed for a transient failure');
+  });
+
+  it('abort interrupts immediately without retry or registry switch', async () => {
+    const { runWithRegistryFallback } = await import('../../src/core/preload-manager.js');
+    const ac = new AbortController();
+    const cmds: string[] = [];
+    await assert.rejects(
+      runWithRegistryFallback({
+        label: 'step',
+        signal: ac.signal,
+        buildCmd: (flag) => `cmd ${flag}`.trim(),
+        run: async (cmd: string) => {
+          cmds.push(cmd);
+          ac.abort(); // 模拟用户暂停/停止
+          throw new Error('aborted');
+        },
+      }),
+      /aborted/,
+    );
+    assert.equal(cmds.length, 1, 'abort must not trigger retries or a registry switch');
+  });
+
+  it('final failure message includes the step label and the underlying output tail', async () => {
+    const { runWithRegistryFallback } = await import('../../src/core/preload-manager.js');
+    await assert.rejects(
+      runWithRegistryFallback({
+        label: 'Remotion 依赖安装（npm install）',
+        signal: mkSignal(),
+        buildCmd: (flag) => `cmd ${flag}`.trim(),
+        run: async () => {
+          throw new Error('进程退出码 1: npm error notarget No matching version found for @remotion/player@4.0.501.');
+        },
+      }),
+      (err: Error) => {
+        assert.match(err.message, /Remotion 依赖安装/, 'error must name the failing step');
+        assert.match(err.message, /notarget/, 'error must carry the underlying output tail');
+        return true;
+      },
+    );
+  });
+
+  it('scaffold/install command builders place the registry flag correctly', async () => {
+    const { remotionScaffoldCmd, remotionInstallCmd } = await import('../../src/core/preload-manager.js');
+    // 默认源：无 --registry，命令与 agent 的真实步骤一致
+    assert.equal(
+      remotionScaffoldCmd(''),
+      'npx --yes create-video@latest --yes --blank --no-tailwind warmup',
+    );
+    assert.equal(remotionInstallCmd(''), 'npm install --no-audit --no-fund');
+    // 降级源：--registry 注入到正确位置
+    assert.equal(
+      remotionScaffoldCmd('--registry=https://registry.npmjs.org'),
+      'npx --yes --registry=https://registry.npmjs.org create-video@latest --yes --blank --no-tailwind warmup',
+    );
+    assert.equal(
+      remotionInstallCmd('--registry=https://registry.npmjs.org'),
+      'npm install --registry=https://registry.npmjs.org --no-audit --no-fund',
+    );
+  });
+});

@@ -218,78 +218,99 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
       return fs.existsSync(remotionPreloadMarker());
     },
     async preload(onProgress, signal) {
-      // Goal: warm the FULL remotion dependency tree into ~/.npm so the agent's
-      // real `npx create-video` + `npm install` (in the vault) is mostly cache
-      // hits — fast AND resilient to the network hiccups that left earlier
-      // half-scaffolded projects (skeleton dir, no node_modules). The earlier
-      // approach only cached 4 core tarballs, which wasn't enough for an
-      // offline/full resolve (verified: `--prefer-offline` then failed with
-      // ETARGET on missing transitive metadata).
+      // Goal: warm the FULL remotion dependency tree into the npm cache so the
+      // agent's real `npx create-video` + `npm install` (in the vault) is
+      // mostly cache hits — fast AND resilient to the network hiccups that
+      // left earlier half-scaffolded projects (skeleton dir, no node_modules).
       //
       // We reproduce the agent's exact steps in a throwaway dir — scaffold a
       // real Remotion project, then install its real (transitive) deps — and
-      // delete the dir afterwards. Only the ~/.npm cache survives, which is
-      // exactly what the agent reuses.
+      // delete the dir afterwards. Only the npm cache survives, which is
+      // exactly what the agent reuses. NOTE: current create-video versions no
+      // longer auto-install deps (the scaffold only copies the template — it
+      // tells you to run `npm i` yourself), so the install step below is what
+      // downloads the whole tree.
       const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-remotion-warmup-'));
       const projDir = path.join(tmpDir, 'warmup');
 
-      // runWithRetry: transient registry failures (a single failed tarball →
-      // npm exit 1) are common; retry once. Pause/stop (signal.aborted) never
-      // retries — it propagates.
-      const runWithRetry = async (
+      // runStep: one shell command with transient retry AND npm-registry
+      // fallback (see runWithRegistryFallback). Registry fallback is the core
+      // of the 2026-07 ETARGET fix: remotion releases ~20 lockstep packages;
+      // mirrors (npmmirror et al.) sync them lazily per-package, so right
+      // after a release the scaffold's pinned version commonly exists for
+      // @remotion/cli but NOT for a transitive package like @remotion/player
+      // → `npm install` exits 1 with ETARGET, and retrying the SAME registry
+      // is pointless until the mirror catches up (minutes to hours). Falling
+      // back to the official registry (the sync source — always complete)
+      // makes the preload succeed regardless of mirror lag.
+      //
+      // Deliberately NO `--prefer-offline` on the install: it makes npm skip
+      // staleness checks on cached packuments, so a packument cached while the
+      // mirror still lacked the pinned version would keep throwing ETARGET
+      // even AFTER the mirror synced — turning transient lag into a
+      // persistent failure. Online mode still reuses cached tarballs via
+      // integrity matching, so cache-warming is unaffected.
+      // Pause/stop (signal.aborted) never retries — it propagates.
+      const runStep = async (
         label: string,
-        cmd: string,
+        buildCmd: (registryFlag: string) => string,
         cwd: string | undefined,
         pct: number,
       ) => {
-        for (let attempt = 1; attempt <= 2 && !signal.aborted; attempt++) {
-          try {
-            await runProcess(cmd, {
-              timeout: 600_000,
-              cwd,
-              signal,
-              onLine(line) {
-                if (line.includes('added') || line.toLowerCase().includes('package')) {
-                  onProgress(pct, line.trim());
-                }
-              },
-            });
-            return;
-          } catch (err) {
-            if (signal.aborted) throw err;
-            if (attempt < 2) onProgress(pct, `${label} 网络波动，重试中...`);
-            else throw err;
-          }
-        }
+        await runWithRegistryFallback({
+          label,
+          signal,
+          buildCmd,
+          onProgress: (msg) => onProgress(pct, msg),
+          // 900s (vs docling's 600s): the official-registry fallback stage can
+          // spend several minutes just resolving metadata from a slow CN link
+          // (measured: >240s for a packument-only dry run) before downloading
+          // ~hundreds of tarballs. A too-short timeout would neuter the
+          // fallback; and even if it DOES time out, the mirror-lag that forced
+          // the fallback typically self-heals within minutes (our stage-1
+          // requests trigger npmmirror's on-demand sync), so the final
+          // npmmirror stage — running ~20min after the first attempt — usually
+          // succeeds.
+          run: (cmd) => runProcess(cmd, {
+            timeout: 900_000,
+            cwd,
+            signal,
+            onLine(line) {
+              if (line.includes('added') || line.toLowerCase().includes('package')) {
+                onProgress(pct, line.trim());
+              }
+            },
+          }),
+        });
       };
 
       try {
         onProgress(10, '拉取 Remotion 脚手架（create-video）...');
-        // `create-video` scaffolds AND installs by default; --yes skips prompts.
-        await runWithRetry('scaffold', `npx --yes create-video@latest --yes --blank --no-tailwind warmup`, tmpDir, 30);
+        // `--yes` skips the interactive prompts; the scaffold only copies the
+        // template (no install — that's the next step).
+        await runStep('Remotion 脚手架（create-video）', remotionScaffoldCmd, tmpDir, 30);
 
         if (!fs.existsSync(projDir)) {
           throw new Error('Remotion 脚手架未生成（create-video 可能交互失败或网络中断）');
         }
 
         onProgress(55, '安装完整 Remotion 依赖树（暖缓存）...');
-        // Belt-and-suspenders: ensure the full tree is installed & cached even
-        // if the scaffold's own install was partial. `--prefer-offline` reuses
-        // what the scaffold step just fetched and only grabs the rest.
-        await runWithRetry('install', `npm install --prefer-offline --no-audit --no-fund`, projDir, 80);
+        // Install the full (transitive) tree so every tarball lands in the
+        // cache for the agent's later real install to reuse.
+        await runStep('Remotion 依赖安装（npm install）', remotionInstallCmd, projDir, 80);
 
         if (!fs.existsSync(path.join(projDir, 'node_modules', 'remotion'))) {
           throw new Error('Remotion 依赖树未装全（node_modules/remotion 缺失）');
         }
 
-        // Marker = "warmup done"; the ~/.npm cache is what actually persists.
+        // Marker = "warmup done"; the npm cache is what actually persists.
         try {
           fs.writeFileSync(remotionPreloadMarker(), new Date().toISOString());
         } catch { /* best-effort */ }
 
         onProgress(100, 'Remotion 依赖缓存就绪');
       } finally {
-        // Always delete the throwaway project; only ~/.npm survives.
+        // Always delete the throwaway project; only the npm cache survives.
         try {
           fs.rmSync(tmpDir, { recursive: true, force: true });
         } catch { /* best-effort */ }
@@ -297,6 +318,82 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
     },
   },
 };
+
+// ─── npm registry fallback (remotion preload) ───────────────────────────────
+
+/** Scaffold command for the remotion warmup. `registryFlag` is either empty
+ *  (user's default registry) or a full `--registry=<url>` flag; npx accepts
+ *  npm config flags before the package spec. */
+export function remotionScaffoldCmd(registryFlag: string): string {
+  const flag = registryFlag ? `${registryFlag} ` : '';
+  return `npx --yes ${flag}create-video@latest --yes --blank --no-tailwind warmup`;
+}
+
+/** Dependency-install command for the remotion warmup (warms the npm cache). */
+export function remotionInstallCmd(registryFlag: string): string {
+  const flag = registryFlag ? `${registryFlag} ` : '';
+  return `npm install ${flag}--no-audit --no-fund`;
+}
+
+/** Ordered npm registries to try: the user's default (empty flag — fast, and
+ *  whatever they've configured), then the official registry (the sync source:
+ *  version lists are always complete, so mirror sync lag can't cause a
+ *  persistent ETARGET; slower from mainland China but fine for a background
+ *  preload), then the npmmirror mirror (fast in China, helps users whose
+ *  default is the slow official registry). */
+export const NPM_REGISTRY_FALLBACKS: ReadonlyArray<{ label: string; flag: string }> = [
+  { label: '默认源', flag: '' },
+  { label: '官方源', flag: '--registry=https://registry.npmjs.org' },
+  { label: 'npmmirror 镜像', flag: '--registry=https://registry.npmmirror.com' },
+];
+
+export interface RegistryFallbackOpts {
+  /** Step name shown in progress + final error (e.g. "Remotion 依赖安装（npm install）"). */
+  label: string;
+  /** Build the shell command for a given registry flag (may be empty). */
+  buildCmd: (registryFlag: string) => string;
+  /** Execute a command; rejects on non-zero exit / timeout. Injectable for tests. */
+  run: (cmd: string) => Promise<void>;
+  signal: AbortSignal;
+  onProgress?: (msg: string) => void;
+  /** Transient retries per registry before switching. Default 2. */
+  attemptsPerRegistry?: number;
+}
+
+/**
+ * Run an npm-family command with transient retry per registry and fallback
+ * ACROSS registries (see NPM_REGISTRY_FALLBACKS). Same-registry retries cover
+ * network blips (a single failed tarball → npm exit 1); cross-registry
+ * fallback covers mirror sync lag (a lockstep release whose transitive
+ * packages haven't reached the mirror yet → ETARGET on every same-registry
+ * retry). Succeeds as soon as any attempt succeeds; throws only when every
+ * registry is exhausted, with the step label + last error (including the
+ * child's combined output tail) so the UI/log pinpoints the failure.
+ * Pause/stop (signal.aborted) aborts immediately with the original error —
+ * never retried, never switched.
+ */
+export async function runWithRegistryFallback(opts: RegistryFallbackOpts): Promise<void> {
+  if (opts.signal.aborted) throw new Error('aborted');
+  const attempts = opts.attemptsPerRegistry ?? 2;
+  let lastErr: unknown = null;
+  for (const source of NPM_REGISTRY_FALLBACKS) {
+    for (let attempt = 1; attempt <= attempts && !opts.signal.aborted; attempt++) {
+      try {
+        await opts.run(opts.buildCmd(source.flag));
+        return;
+      } catch (err) {
+        if (opts.signal.aborted) throw err; // pause/stop — propagate as-is
+        lastErr = err;
+        if (attempt < attempts) {
+          opts.onProgress?.(`${opts.label} 网络波动，重试中（${attempt}/${attempts - 1}）...`);
+        }
+      }
+    }
+    opts.onProgress?.(`${opts.label} ${source.label}失败，换下一个 npm 源...`);
+  }
+  const detail = lastErr instanceof Error ? lastErr.message : String(lastErr);
+  throw new Error(`${opts.label}失败：${detail}`);
+}
 
 // ─── Path helpers (venv layout, cross-platform) ─────────────────────────────
 
@@ -602,9 +699,20 @@ function runSpawned(proc: ChildProcess, opts: RunOpts): Promise<void> {
       }
     }
 
+    // Combined output tail for the failure message. stderr alone is NOT
+    // enough: CLIs like create-video print their errors to STDOUT, which made
+    // failures surface as a contentless "进程退出码 1:" that told the user (and
+    // us) nothing. Keep both streams' tails merged so the real error shows.
+    let combinedTail = '';
+    const pushCombined = (s: string) => {
+      combinedTail = (combinedTail + s).slice(-300);
+    };
+
     let stdoutBuf = '';
     proc.stdout?.on('data', (chunk: Buffer) => {
-      stdoutBuf += chunk.toString();
+      const text = chunk.toString();
+      pushCombined(text);
+      stdoutBuf += text;
       const lines = stdoutBuf.split('\n');
       stdoutBuf = lines.pop() ?? '';
       for (const line of lines) {
@@ -614,7 +722,9 @@ function runSpawned(proc: ChildProcess, opts: RunOpts): Promise<void> {
 
     let stderrBuf = '';
     proc.stderr?.on('data', (chunk: Buffer) => {
-      stderrBuf += chunk.toString();
+      const text = chunk.toString();
+      pushCombined(text);
+      stderrBuf += text;
       const lines = stderrBuf.split('\n');
       stderrBuf = lines.pop() ?? '';
       for (const line of lines) {
@@ -631,7 +741,7 @@ function runSpawned(proc: ChildProcess, opts: RunOpts): Promise<void> {
       if (code === 0) {
         resolve();
       } else {
-        const errMsg = `进程退出码 ${code}: ${stderrBuf.slice(-200)}`;
+        const errMsg = `进程退出码 ${code}: ${combinedTail.trim()}`;
         reject(new Error(errMsg));
       }
     });
