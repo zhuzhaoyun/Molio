@@ -24,8 +24,7 @@ src/
     db.ts              SQLite 数据库初始化
     transcript.ts      多轮对话 transcript 构建
     knowledge.ts       知识库管理（vault、文件树）
-    wiki-prompts.ts    Wiki 系统提示词模板（QUERY/WEIXIN always-on 角色帧，物化成 sysprompt 文件）
-    tools/skills/      Builtin Claude Code skills（wechat-article-extractor, docx/pdf/pptx/xlsx, wiki-build/ingest/lint/save）—— wiki 操作走 skills，agent 按动词 on-demand 调用，不再有 wikiOperation prepend
+    tools/skills/      Builtin Claude Code skills（wechat-article-extractor, docling, wiki-build/ingest/lint/save/query, remotion）—— wiki 操作走 skills，agent 按动词 on-demand 调用；知识库问答走 wiki-query skill（由 vault .claude/CLAUDE.md 常驻规则 + KB 面板确定性触发），不再有 system-prompt 注入。wiki-* 五件套（build/query/ingest/save/lint）同版本号共进：改任一 skill 时五个 version: 一起 bump 到同一版本（skill-installer 按版本差异同步到既有 vault）
     runtimes/
       registry.ts      Agent 定义注册表 (claude, codex, gemini, qwen)
       claude.ts        Claude Code runtime 定义
@@ -42,12 +41,32 @@ src/
     conversations/
       service.ts       统一会话服务（跨渠道 conversation 管理）
       run-starter.ts   共享"在已有会话上建 run"逻辑（runs + rewind-resend 复用：vault 系统提示 + append user + createRun + onTurnComplete）
+    channels/         跨渠道共享抽象（weixin/feishu/wecom 都走这条 dispatcher）
+      types.ts          ChannelSink 接口、ConnectionState 多态
+      dispatcher.ts     ChannelDispatcher — 把外部消息→conversation→run 的样板抽出来
+      credentials-store.ts  跨渠道凭证文件读写（~/.molio/<channel>-credentials.json，原子写 + chmod 0o600）
+      message-dedup.ts     MessageDedup 类 — 按消息 id 去重，TTL + 可选 maxEntries 淘汰
+      text-chunker.ts      chunkText(text, limit) — 按 \n\n / \n / 硬切 三级切分
+      outbound-media.ts 渠道回复中"图片/文件"出站协议
+      media-helpers.ts  共享 media 下载/缓存工具
     weixin/
       client.ts        微信消息收发
-      message.ts       消息解析
-      service.ts       微信服务编排
+      message.ts       消息解析 + buildWeixinFrameMessage（首轮前置 channel frame）
+      channel-frame.ts 微信通道角色帧（收件/URL提取/<attach/>回传/意图分流，问答路由到 wiki-query skill）
+      dispatcher.ts    微信多轮 run 复用/排队状态机
+      service.ts       微信服务编排（implements ChannelSink）
       types.ts         微信类型定义
+    feishu/
+      client.ts        Lark REST API 包装 (tenant_access_token、im/v1 消息收发)
+      ws-client.ts     WebSocket 长连接 — 接收 im.message.receive_v1 事件
+      message.ts       事件 payload 解析 → ParsedFeishuMessage
+      media.ts         图片/文件下载到 raw/feishu/<date>/
+      token-store.ts   FeishuTokenStore — tenant_access_token 内存缓存 + 磁盘持久化 + 100min 刷新定时器
+      service.ts       状态机 (idle/connecting/connected/reconnecting/error)，token 生命周期委托 token-store
+      types.ts         FeishuStatus / FeishuConfig / FeishuRawEvent
   routes/
+    channel.ts        channelRoutes<TConfig>() 工厂 — 5 个标准渠道路由（status/start/stop/disconnect/config）
+
     agents.ts         GET /api/agents — 列出可用 agent
     runs.ts           POST /api/runs — 创建 run, GET 列出/查询
     events.ts         GET /api/runs/:id/events — SSE 事件流
@@ -60,13 +79,14 @@ src/
     graph.ts          GET /api/graph — 知识图谱数据
     maintenance.ts    POST /api/maintenance/rebuild-fts — 重建 FTS 索引（灾难恢复）
     weixin.ts         POST /api/weixin — 微信回调
+    feishu.ts         GET/POST /api/feishu/* — 飞书渠道 (status/start/stop/disconnect/config)
   publish-bridge/
     bridge-page.ts    发布桥接页面逻辑
 test/                  测试用例 (node:test)，按源码模块子目录组织
-  core/               config, db, transcript, run-event-buffer, knowledge, conversations, weixin
+  core/               config, db, transcript, run-event-buffer, knowledge, conversations, weixin, feishu
   streams/            claude-stream, codex-stream, json-event-stream, jsonl-parser
   runtimes/           env, launch-detection, claude-permission-mode, windows-cmd-resolution
-  routes/             agent-test-multiturn, knowledge, publish, sse
+  routes/             agent-test-multiturn, knowledge, publish, sse, feishu
   compat/             esm-compat, port-check
 ```
 
@@ -105,6 +125,11 @@ pnpm typecheck    # tsc --noEmit
 | POST | `/api/publish` | 发布到内容平台 |
 | GET | `/api/graph` | 知识图谱数据 |
 | POST | `/api/weixin` | 微信回调 |
+| GET | `/api/feishu/status` | 飞书通道状态 |
+| POST | `/api/feishu/start` | 启动飞书 WebSocket 长连接 |
+| POST | `/api/feishu/stop` | 停止飞书连接（不清理凭证） |
+| POST | `/api/feishu/disconnect` | 断开连接并清理 tenant_access_token 缓存 |
+| PUT | `/api/feishu/config` | 写 App ID/App Secret/默认 agent（写入 ~/.molio/config.json 的 feishu 字段，自动触发重连） |
 
 ## 关键设计
 
@@ -130,7 +155,7 @@ pnpm typecheck    # tsc --noEmit
 遵循项目根目录 CLAUDE.md 中的**错误驱动测试**规则：每个 bug 在 `test/` 下按源码模块子目录添加复现测试用例。
 
 **目录映射**：测试子目录与 `src/` 源码模块一一对应：
-- `test/core/` → `src/core/`（config, db, transcript, RunManager, knowledge, conversations, weixin, wiki-prompts）
+- `test/core/` → `src/core/`（config, db, transcript, RunManager, knowledge, conversations, weixin）
 - `test/streams/` → `src/core/streams/`（流解析器）
 - `test/runtimes/` → `src/core/runtimes/`（agent 运行时、launch、env）
 - `test/routes/` → `src/routes/` + `src/sse.ts`（API 路由、SSE）

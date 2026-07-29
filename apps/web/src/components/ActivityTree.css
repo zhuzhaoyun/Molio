@@ -1,0 +1,96 @@
+.activity-tree {
+  margin: 8px 0;
+  border: 1px solid var(--border, #e2e2e2);
+  border-radius: 8px;
+  font-size: 12px;
+  overflow: hidden;
+}
+.activity-tree-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-soft, #666);
+  font-size: 12px;
+  text-align: left;
+}
+.activity-tree-header:hover {
+  background-color: var(--bg-hover, rgba(0, 0, 0, 0.04));
+}
+.activity-tree-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--green, #22c55e);
+  flex-shrink: 0;
+}
+.activity-tree-dot.active {
+  background-color: var(--accent, #6366f1);
+  animation: activity-pulse 1.6s ease-in-out infinite;
+}
+@keyframes activity-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.activity-tree-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.activity-tree-chevron {
+  color: var(--text-faint, #999);
+  flex-shrink: 0;
+}
+.activity-tree-list {
+  list-style: none;
+  margin: 0;
+  padding: 2px 0 6px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.activity-item {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 2px 12px 2px 10px;
+  font-family: var(--mono, monospace);
+  color: var(--text-soft, #666);
+}
+.activity-item-status {
+  flex-shrink: 0;
+  font-size: 9px;
+  width: 12px;
+  text-align: center;
+}
+.activity-item.running .activity-item-status {
+  color: var(--accent, #6366f1);
+  animation: activity-pulse 1.6s ease-in-out infinite;
+}
+.activity-item.done .activity-item-status { color: var(--green, #22c55e); }
+.activity-item.error .activity-item-status { color: var(--red, #ef4444); }
+.activity-item-label {
+  flex-shrink: 0;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted, #555);
+}
+.activity-item-action {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-faint, #999);
+}
+.activity-item.more {
+  color: var(--text-faint, #999);
+  font-style: italic;
+}

@@ -36,12 +36,13 @@
       "paths": [
         "apps/web/src/components/kb/*",
         "apps/web/src/hooks/useKnowledge*",
+        "apps/web/src/hooks/useKbChat*",
         "apps/web/src/hooks/useKbTabs*",
         "apps/daemon/src/core/knowledge.ts",
         "apps/daemon/src/core/db.ts",
         "apps/daemon/src/routes/knowledge.ts"
       ],
-      "specs": ["create-vault-form", "knowledge", "markdown-render", "kb-tree-sort-locate", "kb-chat-entry", "kb-tab-limit", "kb-tab-stale", "kb-large-file", "kb-large-file-gbk", "kb-large-file-15mb", "kb-large-file-too-large"]
+      "specs": ["create-vault-form", "knowledge", "markdown-render", "kb-tree-sort-locate", "kb-chat-entry", "kb-qa-trigger", "kb-tab-limit", "kb-tab-stale", "kb-large-file", "kb-large-file-gbk", "kb-large-file-15mb", "kb-large-file-too-large"]
     },
     "publish": {
       "paths": [
@@ -107,7 +108,7 @@
         "apps/daemon/src/routes/knowledge.ts",
         "apps/daemon/src/core/knowledge.ts"
       ],
-      "specs": ["drag-drop-import"]
+      "specs": ["drag-drop-import", "kb-folder-ops", "kb-folder-drag-real", "kb-file-drag-real", "kb-folder-root-drop"]
     }
   },
   "specs": {
@@ -129,6 +130,7 @@
     "knowledge": { "priority": "P0", "file": "knowledge.spec.ts" },
     "kb-tree-sort-locate": { "priority": "P1", "file": "kb-tree-sort-locate.spec.ts" },
     "kb-chat-entry": { "priority": "P1", "file": "kb-chat-entry.spec.ts" },
+    "kb-qa-trigger": { "priority": "P1", "file": "kb-qa-trigger.spec.ts" },
     "kb-tab-limit": { "priority": "P0", "file": "kb-tab-limit.spec.ts" },
     "kb-tab-stale": { "priority": "P1", "file": "kb-tab-stale.spec.ts" },
     "kb-large-file": { "priority": "P0", "file": "kb-large-file.spec.ts" },
@@ -141,6 +143,10 @@
     "runtime-provider-config": { "priority": "P1", "file": "runtime-provider-config.spec.ts" },
     "runtimes-page": { "priority": "P1", "file": "runtimes-page.spec.ts" },
     "settings": { "priority": "P1", "file": "settings.spec.ts" },
-    "drag-drop-import": { "priority": "P1", "file": "drag-drop-import.spec.ts" }
+    "drag-drop-import": { "priority": "P1", "file": "drag-drop-import.spec.ts" },
+    "kb-folder-ops": { "priority": "P1", "file": "kb-folder-ops.spec.ts" },
+    "kb-folder-drag-real": { "priority": "P1", "file": "kb-folder-drag-real.spec.ts" },
+    "kb-file-drag-real": { "priority": "P1", "file": "kb-file-drag-real.spec.ts" },
+    "kb-folder-root-drop": { "priority": "P1", "file": "kb-folder-root-drop.spec.ts" }
   }
 }

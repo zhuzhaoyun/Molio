@@ -1,4 +1,5 @@
 import type { ParsedWeixinMessage, WeixinAttachment, WeixinRawItem, WeixinRawMessage } from './types.js';
+import { WEIXIN_CHANNEL_FRAME } from './channel-frame.js';
 
 const ITEM_TEXT = 1;
 
@@ -156,4 +157,20 @@ export function buildMolioPrompt(text: string): string {
     '',
     text,
   ].join('\n');
+}
+
+/**
+ * Wrap a weixin user message with the channel role frame (收件/入库/问答/文件回传
+ * mechanics + wiki-query routing). Prepended on a FRESH spawn only — reuse turns
+ * (stdin sendMessage) keep the clean message because the live process already
+ * carries the frame from its first turn.
+ *
+ * This replaces the old `--append-system-prompt-file` injection of
+ * WIKI_WEIXIN_PROMPT, which the CLI silently dropped (the frame never reached
+ * the model). A message prepend always reaches the model, and weixin is a
+ * dedicated channel, so prepending the channel frame here has no cross-context
+ * role-lock risk.
+ */
+export function buildWeixinFrameMessage(text: string): string {
+  return [WEIXIN_CHANNEL_FRAME, '', '## 本次微信消息', '', buildMolioPrompt(text)].join('\n');
 }

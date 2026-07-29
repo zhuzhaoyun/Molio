@@ -4,6 +4,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setupAutoUpdater } from './updater.js';
 import { log, getLogPath } from './logger.js';
+import { startFetchServer } from './wiki-fetcher.js';
+import { openFeishuLogin, getFeishuLoginStatus } from './wiki-fetcher-login.js';
 
 const errMsg = (err) => (err instanceof Error ? err.message : String(err));
 
@@ -54,24 +56,38 @@ function isDevMode() {
 }
 
 /** Start the daemon in production mode using Electron's embedded Node.js */
-function startDaemonProduction() {
+async function startDaemonProduction() {
   const daemonEntry = path.join(process.resourcesPath, 'daemon', 'daemon.mjs');
   const webStaticDir = path.join(process.resourcesPath, 'web');
 
   log('info', 'main', `Starting daemon: ${daemonEntry}`);
   log('info', 'main', `Using Electron binary: ${process.execPath}`);
 
+  // Start the wiki/docx fetcher HTTP server on a random 127.0.0.1 port.
+  // Port 0 → OS assigns a free port; we pass it to the daemon via env so the
+  // feishu service can pre-fetch wiki content before dispatching to the agent.
+  // Failure here is non-fatal — daemon simply skips the pre-fetch step and
+  // the agent sees the bare URL (with a "未启用桌面端抓取" note).
+  let wikiFetchPort = null;
+  try {
+    wikiFetchPort = await startFetchServer();
+  } catch (err) {
+    log('warn', 'main', `wiki fetch server failed to start: ${err?.message ?? err}`);
+  }
+
   return new Promise((resolve, reject) => {
     // Use Electron's embedded Node.js to run the daemon.
     // ELECTRON_RUN_AS_NODE=1 makes the Electron binary behave as a standard Node.js process,
     // eliminating the need for users to install Node.js separately.
+    const daemonEnv = {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: '1',
+      MOLIO_PORT: '3100',
+      MOLIO_STATIC_DIR: webStaticDir,
+    };
+    if (wikiFetchPort) daemonEnv.MOLIO_DESKTOP_FETCH_PORT = String(wikiFetchPort);
     daemonProcess = spawn(process.execPath, [daemonEntry], {
-      env: {
-        ...process.env,
-        ELECTRON_RUN_AS_NODE: '1',
-        MOLIO_PORT: '3100',
-        MOLIO_STATIC_DIR: webStaticDir,
-      },
+      env: daemonEnv,
       stdio: 'pipe',
     });
 
@@ -183,6 +199,20 @@ function createWindow() {
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: 'deny' };
+  });
+
+  // F12 / Ctrl+Shift+I toggles DevTools in production builds for debugging.
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return;
+    const isDevtoolsToggle =
+      (input.key === 'F12') ||
+      (input.key === 'I' && (input.control || input.meta) && input.shift);
+    if (!isDevtoolsToggle) return;
+    event.preventDefault();
+    const wc = mainWindow.webContents;
+    if (!wc || wc.isDestroyed()) return;
+    if (wc.isDevToolsOpened()) wc.closeDevTools();
+    else wc.openDevTools({ mode: 'detach' });
   });
 
   // macOS: hide window instead of closing it. This preserves the full
@@ -664,6 +694,21 @@ ipcMain.handle('open-path', async (_, filePath) => {
 // 在系统资源管理器中显示文件/文件夹
 ipcMain.handle('show-item-in-folder', async (_, filePath) => {
   return shell.showItemInFolder(filePath);
+});
+
+// 用户在 FeishuChannelPanel 点击「登录飞书账号」 → 打开可见 BrowserWindow
+// （feishu partition 跟 wiki-fetcher 共用），用户登录后 cookies 落到磁盘，
+// 跨重启复用。targetUrl 可指定具体租户域名（如 geekbang.feishu.cn），
+// 省略时打开 feishu.cn 让用户自行切换租户。
+ipcMain.handle('molio:open-feishu-login', async (_, targetUrl) => {
+  openFeishuLogin(typeof targetUrl === 'string' ? targetUrl : undefined);
+  return { ok: true };
+});
+
+// 读取 feishu partition 的登录态（cookie 判定），供 FeishuChannelPanel 展示
+// 「已登录 / 尚未登录」。跨重启准确（cookie 持久化在磁盘）。
+ipcMain.handle('molio:get-feishu-login-status', async () => {
+  return getFeishuLoginStatus();
 });
 
 // 重命名本地文件

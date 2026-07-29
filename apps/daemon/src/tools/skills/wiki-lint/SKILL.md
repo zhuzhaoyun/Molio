@@ -1,7 +1,7 @@
 ---
 name: wiki-lint
 description: 对本地知识库的 Wiki 做健康检查/质量审查。查孤立页、断链、断引用、frontmatter 缺失、空段落、内容矛盾、过时内容、INDEX 偏差、知识缺口，生成 lint 报告并给出补充方向建议。Triggers on: 健康检查, 检查 wiki 健康状况, lint, clean up wiki, wiki 维护, check the wiki, wiki audit, find orphans, 审查 wiki.
-version: 1.0.0
+version: 1.7.0
 ---
 
 # wiki-lint: Wiki 健康检查
@@ -19,7 +19,8 @@ version: 1.0.0
 vault 根目录就是当前工作目录。源文件在子目录中（如 raw/、notes/、docs/）。
 wiki 相关内容的目录结构：
 - `wiki/` — 所有 wiki 页面的根目录
-- `wiki/INDEX.md` — 主索引
+- `wiki/INDEX.md` — 根索引：只列目录级概览（各目录页数 + 覆盖范围）与概述入口页，不逐页罗列
+- `wiki/<dir>/INDEX.md` — 每个内容目录自己的索引，列全该目录页面及一句话摘要
 - `wiki/log.md` — 操作日志（最新条目在最上面）
 - `wiki/hot.md` — 近期上下文缓存
 - `wiki/meta/` — 元数据目录（lint 报告等）
@@ -30,18 +31,19 @@ wiki 相关内容的目录结构：
 
 按以下顺序操作，尽量用最少的工具调用获取最多信息：
 
-1. 读取 `wiki/INDEX.md` — 获取所有页面的清单和摘要
+1. 读取根 `wiki/INDEX.md` — 了解目录级概览；分层布局下再读各内容目录的 `wiki/<dir>/INDEX.md`，获取所有页面的清单和摘要（旧单索引库的根 INDEX 本身逐页列全，直接用它即可，并记为检查项 13）
 2. 读取 `wiki/log.md` — 了解最近的构建和导入历史
 3. 使用 Bash 一次性提取所有 wiki 页面的 [[wiki 链接]]：
    ```bash
    grep -roh '\[\[[^]]*\]\]' wiki/ | sort | uniq -c | sort -rn
    ```
    这一步能同时得到：所有被引用的页面名、引用频次、用于检测孤立页面和缺失页面。
-4. 使用 Bash 检查实际文件与 INDEX.md 的一致性：
+4. 使用 Bash 检查实际文件与索引的一致性（两层对比）：
    ```bash
    find wiki/ -name '*.md' ! -name 'INDEX.md' ! -name 'log.md' ! -name 'hot.md' | sort
    ```
-   对比 INDEX.md 中的列表，找出未列入索引的页面和索引中存在但文件缺失的页面。
+   - 目录层：各目录 INDEX.md 条目 ↔ 目录内实际文件，找出未列入索引的页面和索引中存在但文件缺失的页面
+   - 根层：根 INDEX.md 的目录行 ↔ 实际存在的内容目录（目录缺失、页数严重不符、漏列目录）
 5. 如果上述批量检查发现可疑问题，再针对性地读取相关页面做深入检查。
 
 ## 检查清单
@@ -54,7 +56,8 @@ wiki 相关内容的目录结构：
 | 2 | 无出链页面 | info | 页面没有引用任何其他页面的 [[wiki 链接]] |
 | 3 | 断链 | warning | [[wiki 链接]] 指向不存在的页面 |
 | 4 | 缺失交叉引用 | info | 应该互相链接但没有链接的相关页面 |
-| 5 | INDEX.md 偏差 | warning | 存在但未列出的页面，或列出但不存在的页面 |
+| 5 | INDEX.md 偏差 | warning | 存在但未列出的页面，或列出但不存在的页面（目录索引与目录文件两层都查） |
+| 13 | 旧单索引布局 | warning | 根 INDEX.md 仍逐页罗列、内容目录无 INDEX.md。建议触发一次「入库/归档」自动升级，或显式说「重构索引」（见 wiki-build 的索引分层迁移） |
 
 ### 内容质量（深度检查）
 

@@ -23,7 +23,14 @@ export function createClaudeStreamHandler(
 
   function handleObject(obj: Record<string, unknown>): void {
     if (obj['type'] === 'system' && obj['subtype'] === 'init') {
-      onEvent({ type: 'status', label: 'initializing', model: obj['model'] as string });
+      onEvent({
+        type: 'status',
+        label: 'initializing',
+        model: obj['model'] as string,
+        // Carries the Claude Code session id → RunManager keys the transcript
+        // watcher (subagent activity) on ~/.claude/projects/<slug>/<id>.jsonl.
+        sessionId: typeof obj['session_id'] === 'string' ? (obj['session_id'] as string) : undefined,
+      });
       return;
     }
 

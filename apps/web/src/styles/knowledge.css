@@ -2663,6 +2663,21 @@
   cursor: pointer;
 }
 
+/* Brief highlight after a folder/file is moved — fades out so the user can
+   see at a glance where the node ended up. Animation duration matches the
+   1500ms onRevealConsumed timer in KbFileTree (clears the path state once the
+   flash has had time to register). */
+@keyframes kb-just-moved-flash {
+  0%   { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
+  70%  { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
+  100% { background: transparent; box-shadow: none; }
+}
+.kb-tree-group-label.just-moved,
+.kb-tree-item.just-moved {
+  animation: kb-just-moved-flash 1.5s ease-out;
+  border-radius: var(--radius-sm);
+}
+
 /* ── Conflict dialog ── */
 
 .conflict-desc {

@@ -59,6 +59,7 @@ describe('WeixinService state machine — basics', () => {
   let service: WeixinService;
   let conversations: ConversationService;
   let originalUserprofile: string | undefined;
+  let originalHome: string | undefined;
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), 'molio-weixin-sm-test-'));
@@ -67,13 +68,19 @@ describe('WeixinService state machine — basics', () => {
     service = new WeixinService(createMockRunManager(), conversations, db);
     // Point os.homedir() at the temp dir so start() cannot pick up the
     // developer's real ~/.molio/weixin-credentials.json (env-sensitive flake).
+    // Set both USERPROFILE (Windows) and HOME (macOS/Linux) since os.homedir()
+    // reads platform-specific env vars.
     originalUserprofile = process.env.USERPROFILE;
+    originalHome = process.env.HOME;
     process.env.USERPROFILE = tempDir;
+    process.env.HOME = tempDir;
   });
 
   afterEach(() => {
     if (originalUserprofile === undefined) delete process.env.USERPROFILE;
     else process.env.USERPROFILE = originalUserprofile;
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
     service.stop();
     closeDatabase();
     rmSync(tempDir, { recursive: true, force: true });

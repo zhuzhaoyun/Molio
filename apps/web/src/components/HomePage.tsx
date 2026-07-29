@@ -8,11 +8,15 @@ import { useSelectMode, messageSelectionStore } from '../stores/messageSelection
 import { SelectionConfirmBar } from './SelectionConfirmBar';
 import type { ChatMessage } from '../hooks/useChat';
 import { RunStatusBar } from './RunStatusBar';
+import { ActivityTree } from './ActivityTree';
+import type { ActivityInfo } from '@molio/contracts';
 
 interface Props {
   selectedAgentName: string | null;
   messages: ChatMessage[];
   isRunning: boolean;
+  /** Live background subagent/workflow activity (null = nothing to show). */
+  activity?: ActivityInfo | null;
   onSend: (message: string) => void;
   onCancel: () => void;
   onNewChat: () => void;
@@ -29,6 +33,7 @@ export function HomePage({
   selectedAgentName,
   messages,
   isRunning,
+  activity,
   onSend,
   onCancel,
   onNewChat,
@@ -169,6 +174,9 @@ export function HomePage({
           })}
           <div ref={bottomRef} />
         </div>
+
+        {/* 后台 subagent/workflow 活动树（activity SSE 事件驱动） */}
+        <ActivityTree activity={activity ?? null} />
 
         {/* 进度状态条: 只在 run 运行时显示 */}
         <RunStatusBar messages={messages} isRunning={isRunning} />
