@@ -182,9 +182,17 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
       try {
         const discard = process.platform === 'win32' ? 'NUL' : '/dev/null';
         const outDir = path.join(os.tmpdir(), 'molio-docling-preload');
+        // Default the model download to the HF mirror (default hf.co is slow /
+        // unreachable from mainland China, which made this warmup time out and
+        // skip — leaving the 500MB model to stall the user's first conversion).
+        // Only set when the user hasn't chosen their own HF_ENDPOINT, and only
+        // for this child process (env overlay, never touches the daemon env).
+        const hfEnv: Record<string, string> = {};
+        if (!process.env['HF_ENDPOINT']) hfEnv['HF_ENDPOINT'] = 'https://hf-mirror.com';
         await runArgv([doclingBinaryPath(), discard, '--to', 'md', '--output', outDir], {
           timeout: 600_000,
           signal,
+          env: hfEnv,
           onLine(line) {
             if (line.toLowerCase().includes('download') || line.toLowerCase().includes('model')) {
               onProgress(70, line.trim());
@@ -210,77 +218,78 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
       return fs.existsSync(remotionPreloadMarker());
     },
     async preload(onProgress, signal) {
-      // Remotion's first real use is `npx create-video` inside the vault's
-      // .molio/remotion/, which runs `npm install` for ~100MB of deps. We
-      // can't reuse a skeleton project (the agent builds its own in the
-      // vault), so the only thing that carries over is the **npm cache**
-      // (~/.npm). We warm it by installing the core remotion packages into a
-      // throwaway temp dir, then delete the dir — leaving only the cache.
+      // Goal: warm the FULL remotion dependency tree into ~/.npm so the agent's
+      // real `npx create-video` + `npm install` (in the vault) is mostly cache
+      // hits — fast AND resilient to the network hiccups that left earlier
+      // half-scaffolded projects (skeleton dir, no node_modules). The earlier
+      // approach only cached 4 core tarballs, which wasn't enough for an
+      // offline/full resolve (verified: `--prefer-offline` then failed with
+      // ETARGET on missing transitive metadata).
+      //
+      // We reproduce the agent's exact steps in a throwaway dir — scaffold a
+      // real Remotion project, then install its real (transitive) deps — and
+      // delete the dir afterwards. Only the ~/.npm cache survives, which is
+      // exactly what the agent reuses.
       const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-remotion-warmup-'));
+      const projDir = path.join(tmpDir, 'warmup');
 
-      try {
-        onProgress(10, '创建临时预热目录...');
-        // Minimal package.json so `npm install` knows what to resolve.
-        fs.writeFileSync(
-          path.join(tmpDir, 'package.json'),
-          JSON.stringify({
-            name: 'molio-remotion-warmup',
-            private: true,
-            dependencies: {
-              remotion: '*',
-              '@remotion/cli': '*',
-              '@remotion/bundler': '*',
-              '@remotion/renderer': '*',
-            },
-          }, null, 2),
-        );
-
-        onProgress(25, '下载 Remotion npm 依赖（首次 ~100MB）...');
-        // Retry on transient registry failures — the user's npm registry is
-        // often the official npmjs.org (slow/flaky from some regions), and a
-        // single failed tarball fetch makes `npm install` exit 1. Verified:
-        // the exact same command succeeds on retry / under better network.
-        // `--prefer-offline` (not --prefer-online): this is a cache-warming
-        // preload — reuse already-fetched tarballs and only fetch missing
-        // ones, instead of forcing every package back through the registry.
-        let npmOk = false;
+      // runWithRetry: transient registry failures (a single failed tarball →
+      // npm exit 1) are common; retry once. Pause/stop (signal.aborted) never
+      // retries — it propagates.
+      const runWithRetry = async (
+        label: string,
+        cmd: string,
+        cwd: string | undefined,
+        pct: number,
+      ) => {
         for (let attempt = 1; attempt <= 2 && !signal.aborted; attempt++) {
           try {
-            await runProcess(`npm install --prefer-offline --no-audit --no-fund`, {
+            await runProcess(cmd, {
               timeout: 600_000,
-              cwd: tmpDir,
+              cwd,
               signal,
               onLine(line) {
-                if (line.includes('added') || line.toLowerCase().includes('remov')) {
-                  onProgress(60, line.trim());
+                if (line.includes('added') || line.toLowerCase().includes('package')) {
+                  onProgress(pct, line.trim());
                 }
               },
             });
-            npmOk = true;
-            break;
+            return;
           } catch (err) {
-            if (signal.aborted) throw err; // pause/stop propagates
-            if (attempt < 2) {
-              onProgress(30, '网络波动，重试中...');
-            } else {
-              throw err;
-            }
+            if (signal.aborted) throw err;
+            if (attempt < 2) onProgress(pct, `${label} 网络波动，重试中...`);
+            else throw err;
           }
         }
-        if (!npmOk) {
-          throw new Error('remotion npm 依赖安装失败，可稍后重试或检查网络');
+      };
+
+      try {
+        onProgress(10, '拉取 Remotion 脚手架（create-video）...');
+        // `create-video` scaffolds AND installs by default; --yes skips prompts.
+        await runWithRetry('scaffold', `npx --yes create-video@latest --yes --blank --no-tailwind warmup`, tmpDir, 30);
+
+        if (!fs.existsSync(projDir)) {
+          throw new Error('Remotion 脚手架未生成（create-video 可能交互失败或网络中断）');
         }
 
-        // Mark as preloaded so we don't prompt again. The npm cache at
-        // ~/.npm is what actually matters and persists after the temp dir
-        // is deleted.
+        onProgress(55, '安装完整 Remotion 依赖树（暖缓存）...');
+        // Belt-and-suspenders: ensure the full tree is installed & cached even
+        // if the scaffold's own install was partial. `--prefer-offline` reuses
+        // what the scaffold step just fetched and only grabs the rest.
+        await runWithRetry('install', `npm install --prefer-offline --no-audit --no-fund`, projDir, 80);
+
+        if (!fs.existsSync(path.join(projDir, 'node_modules', 'remotion'))) {
+          throw new Error('Remotion 依赖树未装全（node_modules/remotion 缺失）');
+        }
+
+        // Marker = "warmup done"; the ~/.npm cache is what actually persists.
         try {
           fs.writeFileSync(remotionPreloadMarker(), new Date().toISOString());
         } catch { /* best-effort */ }
 
-        onProgress(100, 'Remotion npm 缓存就绪');
+        onProgress(100, 'Remotion 依赖缓存就绪');
       } finally {
-        // Always clean up the throwaway project. Only the npm cache survives.
+        // Always delete the throwaway project; only ~/.npm survives.
         try {
           fs.rmSync(tmpDir, { recursive: true, force: true });
         } catch { /* best-effort */ }
@@ -543,7 +552,22 @@ export function getPreloadLocations(): { docling: string | null; remotion: strin
 
 // ─── Helper: run a child process with timeout + line callback ────────────────
 
-type RunOpts = { timeout?: number; cwd?: string; signal?: AbortSignal; onLine?: (line: string) => void };
+type RunOpts = {
+  timeout?: number;
+  cwd?: string;
+  signal?: AbortSignal;
+  /** Extra env vars merged ON TOP of process.env for the child only — used to
+   *  inject e.g. HF_ENDPOINT for the docling model warmup without polluting the
+   *  daemon's own environment or the user's shell profile. */
+  env?: Record<string, string>;
+  onLine?: (line: string) => void;
+};
+
+/** Build the child env: inherit the daemon's env, overlay caller extras. */
+function childEnv(opts: RunOpts): NodeJS.ProcessEnv | undefined {
+  if (!opts.env) return undefined; // undefined → spawn inherits process.env as-is
+  return { ...process.env, ...opts.env };
+}
 
 /**
  * Quote a path/argument for safe interpolation into a SHELL command string
@@ -629,6 +653,7 @@ function runProcess(command: string, opts: RunOpts = {}): Promise<void> {
     stdio: ['ignore', 'pipe', 'pipe'],
     timeout: opts.timeout,
     cwd: opts.cwd,
+    env: childEnv(opts),
     detached: true,
   };
   const proc = useShell
@@ -647,6 +672,7 @@ function runArgv(argv: string[], opts: RunOpts = {}): Promise<void> {
     stdio: ['ignore', 'pipe', 'pipe'],
     timeout: opts.timeout,
     cwd: opts.cwd,
+    env: childEnv(opts),
     detached: true,
   });
   return runSpawned(proc, opts);
