@@ -11,7 +11,7 @@ import { detectEncoding, decodeAll, decideReadStrategy, FileTooLargeError, ENCOD
 // Pruning predicate + caps live in a dependency-free module so importing them
 // (e.g. from VaultWatcher) does not transitively load encoding.ts.
 export { PRUNE_DIR_NAMES, isPrunedDirName, MAX_DIR_ENTRIES, MAX_TOTAL } from './vault-prune.js';
-import { isPrunedDirName, MAX_DIR_ENTRIES, MAX_TOTAL } from './vault-prune.js';
+import { isPrunedDirName, MAX_DIR_ENTRIES, MAX_TOTAL, warnOversizedDir } from './vault-prune.js';
 
 interface ScanCtx {
   visited: number;
@@ -55,9 +55,7 @@ function scanTreeInner(vaultPath: string, relBase: string, ctx: ScanCtx): TreeNo
   // Return empty children — the parent call still pushes a directory node (now
   // empty), which surfaces the dir as pruned without stat-ing its contents.
   if (entries.length > ctx.maxDirEntries) {
-    console.warn(
-      `[knowledge] scanTree pruned oversized directory (${entries.length} entries, limit ${ctx.maxDirEntries}): ${absDir}`,
-    );
+    warnOversizedDir('scanTree', absDir, entries.length, ctx.maxDirEntries);
     return [];
   }
 
@@ -123,9 +121,7 @@ function countFilesInner(dir: string, ctx: ScanCtx): number {
     return 0;
   }
   if (entries.length > ctx.maxDirEntries) {
-    console.warn(
-      `[knowledge] countFiles pruned oversized directory (${entries.length} entries, limit ${ctx.maxDirEntries}): ${dir}`,
-    );
+    warnOversizedDir('countFiles', dir, entries.length, ctx.maxDirEntries);
     return 0;
   }
   let count = 0;

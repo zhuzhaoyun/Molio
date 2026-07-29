@@ -19,6 +19,7 @@ import {
   MAX_DIR_ENTRIES,
   MAX_TOTAL,
 } from '../../src/core/knowledge.js';
+import { resetOversizedDirWarnState } from '../../src/core/vault-prune.js';
 
 describe('readFile encoding + tiers', () => {
   let vp: string;
@@ -668,6 +669,51 @@ describe('vault scan pruning + bounded backstop', () => {
         // Only real.md counts — the dump subtree is pruned, not counted.
         assert.equal(countFiles(clean), 1);
       } finally {
+        rmSync(clean, { recursive: true, force: true });
+      }
+    });
+  });
+
+  // Regression: the oversized-directory warning used to fire on EVERY scan, so a
+  // vault with two large dirs that is rescanned many times a second (the UI
+  // refreshes on each `tree-changed` event) flooded stderr — which cloud log
+  // collectors classify as ERROR — producing thousands of false anomalies. The
+  // warning is now throttled per (source, dir); repeated scans warn once each.
+  describe('oversized-directory warning throttle (stderr noise)', () => {
+    let clean: string;
+    let warnings: string[];
+    let origWarn: typeof console.warn;
+
+    before(() => {
+      origWarn = console.warn;
+      console.warn = (...args: unknown[]) => {
+        warnings.push(args.map(String).join(' '));
+      };
+    });
+    after(() => {
+      console.warn = origWarn;
+    });
+
+    it('repeated scanTree + countFiles over the same oversized dir warn once per source', () => {
+      clean = mkdtempSync(join(tmpdir(), 'molio-prune-throttle-'));
+      warnings = [];
+      resetOversizedDirWarnState();
+      try {
+        mkdirSync(join(clean, 'dump'));
+        for (let i = 0; i <= MAX_DIR_ENTRIES; i++) {
+          writeFileSync(join(clean, 'dump', `f${i}.md`), 'x');
+        }
+        // Simulate the UI hammering the daemon: three tree refreshes + three counts.
+        for (let i = 0; i < 3; i++) scanTree(clean);
+        for (let i = 0; i < 3; i++) countFiles(clean);
+
+        const scanWarns = warnings.filter((w) => w.includes('scanTree pruned oversized'));
+        const countWarns = warnings.filter((w) => w.includes('countFiles pruned oversized'));
+        assert.equal(scanWarns.length, 1, `scanTree should warn once, got ${scanWarns.length}`);
+        assert.equal(countWarns.length, 1, `countFiles should warn once, got ${countWarns.length}`);
+        assert.equal(warnings.length, 2, `total warnings should be 2, got ${warnings.length}`);
+      } finally {
+        resetOversizedDirWarnState();
         rmSync(clean, { recursive: true, force: true });
       }
     });
