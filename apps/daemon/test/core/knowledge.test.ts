@@ -18,6 +18,7 @@ import {
   PRUNE_DIR_NAMES,
   MAX_DIR_ENTRIES,
   MAX_TOTAL,
+  resetMaxTotalWarnState,
 } from '../../src/core/knowledge.js';
 import { resetOversizedDirWarnState } from '../../src/core/vault-prune.js';
 
@@ -714,6 +715,47 @@ describe('vault scan pruning + bounded backstop', () => {
         assert.equal(warnings.length, 2, `total warnings should be 2, got ${warnings.length}`);
       } finally {
         resetOversizedDirWarnState();
+        rmSync(clean, { recursive: true, force: true });
+      }
+    });
+  });
+
+  // Regression: like the oversized-directory warning, the "hit MAX_TOTAL …
+  // truncating" warning used to fire on every scan, so a vault over the cap
+  // that is rescanned on each `tree-changed` event flooded stderr (→ SLS ERROR).
+  // It is now throttled per (source, dir); repeated scans warn once each.
+  describe('MAX_TOTAL truncation warning throttle (stderr noise)', () => {
+    let clean: string;
+    let warnings: string[];
+    let origWarn: typeof console.warn;
+
+    before(() => {
+      origWarn = console.warn;
+      console.warn = (...args: unknown[]) => {
+        warnings.push(args.map(String).join(' '));
+      };
+    });
+    after(() => {
+      console.warn = origWarn;
+    });
+
+    it('repeated scanTree + countFiles over an over-cap vault warn once per source', () => {
+      clean = mkdtempSync(join(tmpdir(), 'molio-maxtotal-throttle-'));
+      warnings = [];
+      resetMaxTotalWarnState();
+      try {
+        mkdirSync(join(clean, 'a'), { recursive: true });
+        for (let i = 0; i < 10; i++) writeFileSync(join(clean, 'a', `f${i}.md`), 'x');
+        // maxTotal=2 → every scan truncates and would warn un-throttled.
+        for (let i = 0; i < 3; i++) scanTree(clean, '', { maxTotal: 2 });
+        for (let i = 0; i < 3; i++) countFiles(clean, { maxTotal: 2 });
+
+        const scanWarns = warnings.filter((w) => w.includes('scanTree hit MAX_TOTAL'));
+        const countWarns = warnings.filter((w) => w.includes('countFiles hit MAX_TOTAL'));
+        assert.equal(scanWarns.length, 1, `scanTree should warn once, got ${scanWarns.length}`);
+        assert.equal(countWarns.length, 1, `countFiles should warn once, got ${countWarns.length}`);
+      } finally {
+        resetMaxTotalWarnState();
         rmSync(clean, { recursive: true, force: true });
       }
     });

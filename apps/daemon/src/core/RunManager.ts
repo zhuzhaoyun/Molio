@@ -23,6 +23,7 @@ import { buildTranscript, type TranscriptMessage } from './transcript.js';
 import type { RunState, BufferedEvent } from '../types.js';
 import { TurnTextCollector } from './turn-text-collector.js';
 import { dbgLog } from './debug-log.js';
+import { ThrottledWarn } from './throttled-warn.js';
 
 const TERMINAL_STATUSES = new Set<RunStatus>(['succeeded', 'failed', 'canceled']);
 const MAX_EVENTS = 2_000;
@@ -98,6 +99,9 @@ export interface CreateRunOptions {
 export class RunManager {
   private runs = new Map<string, RunState>();
   private runsLogDir: string;
+  // Throttles the per-event "emit listeners=0" diagnostic per run — kept on the
+  // dbgLog channel (stdout + debug file, NOT stderr) so it never reads as ERROR.
+  private readonly noSubscriberWarn = new ThrottledWarn({ sink: (m) => dbgLog(m) });
 
   constructor() {
     this.runsLogDir = path.join(os.homedir(), '.molio', 'runs');
@@ -896,8 +900,13 @@ export class RunManager {
       // Diagnostic: an event was emitted but no SSE stream is subscribed. If this
       // happens mid-run (not terminal cleanup), it's the smoking gun for assumption 3
       // — the SSE listener was cleaned up (e.g. spurious abort) while the run is still
-      // active, so the frontend never receives this event.
-      dbgLog(`emit listeners=0 (NO SSE SUBSCRIBER) runId=${run.id} type=${event.type} status=${run.status}`);
+      // active, so the frontend never receives this event. This is on the per-event
+      // hot path, so throttle per runId — a run that lost its subscriber would
+      // otherwise log this for every remaining event (throttled-warn.ts).
+      this.noSubscriberWarn.warn(
+        run.id,
+        `emit listeners=0 (NO SSE SUBSCRIBER) runId=${run.id} type=${event.type} status=${run.status}`,
+      );
     }
     for (const listener of run.eventListeners) {
       try { listener(event); } catch { /* listener error, skip */ }

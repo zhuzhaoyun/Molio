@@ -11,6 +11,7 @@
  * vars at their own module-load time, and a transitive load here would cache
  * the defaults before those vars are set.
  */
+import { ThrottledWarn } from './throttled-warn.js';
 
 /**
  * Directory names that are never part of the knowledge tree — they hold build
@@ -70,17 +71,13 @@ export const MAX_TOTAL = 50000;
 // The fix: warn at most once per (source, dir) per interval. Suppressed repeats
 // are folded into the next emitted warning so the volume stays visible without
 // flooding stderr. The warning still resurfaces periodically, so it is not
-// permanently hidden.
+// permanently hidden. The throttle machinery lives in throttled-warn.ts and is
+// shared with the other rate-limited daemon warnings.
 
 /** Re-warn for the same oversized directory at most this often. */
 export const OVERSIZED_DIR_WARN_INTERVAL_MS = 5 * 60 * 1000;
 
-interface PruneWarnState {
-  lastAt: number;
-  suppressed: number;
-}
-
-const pruneWarnState = new Map<string, PruneWarnState>();
+const oversizedDirWarn = new ThrottledWarn({ intervalMs: OVERSIZED_DIR_WARN_INTERVAL_MS });
 
 /**
  * Emit a "pruned oversized directory" warning at most once per
@@ -95,25 +92,14 @@ export function warnOversizedDir(
   limit: number,
   now: number = Date.now(),
 ): void {
-  const key = `${source}:${dir}`;
-  const state = pruneWarnState.get(key);
-  if (state && now - state.lastAt < OVERSIZED_DIR_WARN_INTERVAL_MS) {
-    state.suppressed++;
-    return;
-  }
-  const suppressed = state?.suppressed ?? 0;
-  // The key set is naturally tiny (one entry per distinct oversized directory
-  // ever seen), so no eviction is needed.
-  pruneWarnState.set(key, { lastAt: now, suppressed: 0 });
-  const suffix = suppressed > 0
-    ? ` (suppressed ${suppressed} repeat warning${suppressed === 1 ? '' : 's'} in the previous interval)`
-    : '';
-  console.warn(
-    `[knowledge] ${source} pruned oversized directory (${entries} entries, limit ${limit}): ${dir}${suffix}`,
+  oversizedDirWarn.warn(
+    `${source}:${dir}`,
+    `[knowledge] ${source} pruned oversized directory (${entries} entries, limit ${limit}): ${dir}`,
+    now,
   );
 }
 
 /** Reset throttle state — test hook so cases start from a clean slate. */
 export function resetOversizedDirWarnState(): void {
-  pruneWarnState.clear();
+  oversizedDirWarn.reset();
 }
