@@ -25,3 +25,7 @@ docs/superpowers/
 /test/
 videos/
 .agents/
+
+# 本地测试日志,不入仓
+log.txt
+log2.txt
