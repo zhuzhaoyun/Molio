@@ -220,4 +220,89 @@ describe('FeishuService', () => {
         .handleRawMessage(event);
     });
   });
+
+  describe('sendText — interactive card first, plain-text fallback', () => {
+    interface FakeApiRecorder {
+      cardChunks: string[];
+      textChunks: string[];
+    }
+
+    /**
+     * Inject a fake api + tokenStore into the service's private fields (same
+     * cast pattern as the start(force) tests above). `failCard` / `failText`
+     * make the respective send path throw to exercise the fallback chain.
+     */
+    function injectFakeApi(
+      svc: FeishuService,
+      opts: { failCard?: boolean; failText?: boolean } = {},
+    ): FakeApiRecorder {
+      const rec: FakeApiRecorder = { cardChunks: [], textChunks: [] };
+      const s = svc as unknown as {
+        api: unknown;
+        tokenStore: {
+          getToken: () => Promise<string>;
+          startRefresh: () => void;
+          stopRefresh: () => void;
+          invalidate: () => void;
+        };
+      };
+      s.api = {
+        sendCard: async (
+          _tok: string,
+          _openId: string,
+          card: { body: { elements: [{ content: string }] } },
+        ) => {
+          if (opts.failCard) throw new Error('card rejected');
+          rec.cardChunks.push(card.body.elements[0].content);
+          return 'om_card';
+        },
+        sendText: async (_tok: string, _openId: string, text: string) => {
+          if (opts.failText) throw new Error('text rejected');
+          rec.textChunks.push(text);
+          return 'om_text';
+        },
+      };
+      // stop() in the outer afterEach calls tokenStore.stopRefresh() +
+      // invalidate() — the fake must provide the full surface or teardown throws.
+      s.tokenStore = {
+        getToken: async () => 'tok',
+        startRefresh: () => {},
+        stopRefresh: () => {},
+        invalidate: () => {},
+      };
+      return rec;
+    }
+
+    it('sends short markdown text as one card, no plain-text call', async () => {
+      const rec = injectFakeApi(service);
+      await service.sendText('ou_user', '# 标题\n**正文**');
+      assert.deepEqual(rec.cardChunks, ['# 标题\n**正文**']);
+      assert.equal(rec.textChunks.length, 0);
+      assert.equal(service.getStatus().lastError, null);
+    });
+
+    it('falls back to plain text when card sending fails', async () => {
+      const rec = injectFakeApi(service, { failCard: true });
+      await service.sendText('ou_user', 'hello');
+      assert.equal(rec.cardChunks.length, 0, 'failed card is not recorded');
+      assert.deepEqual(rec.textChunks, ['hello'], 'same chunk must go out as plain text');
+      assert.equal(service.getStatus().lastError, null, 'successful fallback is not an error');
+    });
+
+    it('records lastError without throwing when both card and text fail', async () => {
+      injectFakeApi(service, { failCard: true, failText: true });
+      await service.sendText('ou_user', 'hello'); // must not throw
+      assert.match(service.getStatus().lastError ?? '', /发送消息失败/);
+    });
+
+    it('chunks long text into multiple cards (>3000 chars → 2 cards)', async () => {
+      const rec = injectFakeApi(service);
+      const long = 'a'.repeat(5000); // no paragraph/line breaks → hard cut at 3000
+      await service.sendText('ou_user', long);
+      assert.equal(rec.cardChunks.length, 2);
+      assert.equal(rec.cardChunks[0]?.length, 3000);
+      assert.equal(rec.cardChunks[1]?.length, 2000);
+      assert.equal(rec.textChunks.length, 0);
+    });
+  });
 });
