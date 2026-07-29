@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import type { FeishuCard } from './card.js';
 import type { FeishuCredentials } from './types.js';
 
 /**
@@ -98,26 +99,17 @@ export class FeishuApi {
    * on success; throws on API error.
    */
   async sendText(tenantAccessToken: string, openId: string, text: string): Promise<string> {
-    const url = `${ensureTrailingSlash(this.baseUrl)}open-apis/im/v1/messages?receive_id_type=open_id`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${tenantAccessToken}`,
-      },
-      body: JSON.stringify({
-        receive_id: openId,
-        msg_type: 'text',
-        content: JSON.stringify({ text }),
-      }),
-    });
-    const body = await readJson(res);
-    const code = Number(body.code ?? 0);
-    if (code !== 0) {
-      throw new Error(`Feishu sendText failed: ${feishuErrMessage(body, String(code))}`);
-    }
-    const msgId = (body.data as { message_id?: string } | undefined)?.message_id;
-    return typeof msgId === 'string' ? msgId : '';
+    return this.postMessage(tenantAccessToken, openId, 'text', { text }, 'sendText');
+  }
+
+  /**
+   * Send an interactive card (JSON 2.0) to a user. Feishu renders the card's
+   * markdown element, so agent Markdown output shows up formatted instead of
+   * raw symbols. Same endpoint and permissions as `sendText`; throws on API
+   * error (e.g. 300300 = card request body exceeds 30KB).
+   */
+  async sendCard(tenantAccessToken: string, openId: string, card: FeishuCard): Promise<string> {
+    return this.postMessage(tenantAccessToken, openId, 'interactive', card, 'sendCard');
   }
 
   /** Upload an image file (multipart) and return the `image_key`. */
@@ -188,6 +180,22 @@ export class FeishuApi {
     msgType: 'image' | 'file',
     content: Record<string, string>,
   ): Promise<string> {
+    return this.postMessage(tenantAccessToken, openId, msgType, content, `send${msgType}`);
+  }
+
+  /**
+   * Shared POST to `im/v1/messages` — sendText / sendCard / sendMedia all hit
+   * this endpoint with only `msg_type` and `content` differing. Per Feishu's
+   * double-encoding contract the outer request body is JSON and the `content`
+   * field is itself a JSON string, hence the nested `JSON.stringify`.
+   */
+  private async postMessage(
+    tenantAccessToken: string,
+    openId: string,
+    msgType: 'text' | 'image' | 'file' | 'interactive',
+    content: unknown,
+    opName: string,
+  ): Promise<string> {
     const url = `${ensureTrailingSlash(this.baseUrl)}open-apis/im/v1/messages?receive_id_type=open_id`;
     const res = await fetch(url, {
       method: 'POST',
@@ -204,7 +212,7 @@ export class FeishuApi {
     const body = await readJson(res);
     const code = Number(body.code ?? 0);
     if (code !== 0) {
-      throw new Error(`Feishu send${msgType} failed: ${feishuErrMessage(body, String(code))}`);
+      throw new Error(`Feishu ${opName} failed: ${feishuErrMessage(body, String(code))}`);
     }
     const msgId = (body.data as { message_id?: string } | undefined)?.message_id;
     return typeof msgId === 'string' ? msgId : '';

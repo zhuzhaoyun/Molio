@@ -13,6 +13,7 @@ import { MessageDedup } from '../channels/message-dedup.js';
 import { chunkText } from '../channels/text-chunker.js';
 import { getVaultByPath } from '../db.js';
 import { FEISHU_SYS_PROMPT_FILE } from '../wiki-prompts.js';
+import { buildMarkdownCard } from './card.js';
 import { DEFAULT_BASE_URL, FeishuApi } from './client.js';
 import { FeishuWSClient } from './ws-client.js';
 import { FeishuTokenStore } from './token-store.js';
@@ -33,7 +34,10 @@ const DEDUP_TTL_MS = 7 * 60 * 60 * 1000;
 /** Hard cap on the dedup map so a quiet-but-long-lived process can't leak
  * memory indefinitely. 7h TTL means ~10k entries at 1 msg/s sustained. */
 const DEDUP_MAX_ENTRIES = 10_000;
-/** Chunk size for sendText — Feishu's text limit is 4096 bytes; use 3000 chars for safety. */
+/** Chunk size for sendText — Feishu's text limit is 4096 bytes; use 3000
+ * chars for safety. Cards allow ~30KB per request, but replies are chunked at
+ * the text limit anyway: when card sending fails we fall back to plain text,
+ * which must stay within the 4096-byte bound without a separate chunk size. */
 const TEXT_CHUNK_LIMIT = 3000;
 
 const FEISHU_CHANNEL_PREFIX = 'feishu';
@@ -391,10 +395,18 @@ export class FeishuService implements ChannelSink {
     try {
       const token = await this.tokenStore.getToken();
       for (const chunk of chunkText(text, TEXT_CHUNK_LIMIT)) {
-        await this.api.sendText(token, toUserId, chunk);
+        try {
+          // Interactive card: Feishu renders the markdown element, so agent
+          // replies show up formatted instead of raw Markdown symbols.
+          await this.api.sendCard(token, toUserId, buildMarkdownCard(chunk));
+        } catch {
+          // Card rejected (ancient Feishu client / transient card-service
+          // hiccup) — fall back to plain text so the user never loses a reply.
+          await this.api.sendText(token, toUserId, chunk);
+        }
       }
     } catch (err) {
-      this.status.lastError = `发送文本失败：${err instanceof Error ? err.message : String(err)}`;
+      this.status.lastError = `发送消息失败：${err instanceof Error ? err.message : String(err)}`;
     }
   }
 
