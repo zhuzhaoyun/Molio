@@ -12,7 +12,7 @@
  * annoy the user.
  */
 
-import { spawn, execSync, type ChildProcess } from 'node:child_process';
+import { spawn, execSync, execFileSync, type ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -72,29 +72,19 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
     label: 'docling',
     description: '解析 PDF/Office 文档 → Markdown（需下载 AI 模型 ~500MB）',
     detectInstalled(): boolean {
-      // 1. The Molio venv is the primary install location (created by
-      //    preload). Checking the binary directly is PATH-independent and
-      //    works even when the daemon itself wasn't launched from a login
-      //    shell (so ~/.molio/venv/bin isn't on the daemon's own PATH).
-      if (fs.existsSync(doclingBinaryPath())) return true;
-
-      // 2. Fall back to PATH lookup — covers systems where the user
-      //    installed docling globally themselves before Molio.
-      try {
-        execSync('docling --version', {
-          encoding: 'utf-8',
-          stdio: ['ignore', 'pipe', 'ignore'],
-          timeout: 10_000,
-        });
-        return true;
-      } catch {
-        return false;
-      }
+      // Cross-platform: venv binary → PATH → every known python's scripts dir.
+      // Does NOT rely on the daemon's PATH, so a global/user/conda docling that
+      // isn't on PATH (common on Windows) is still detected → no re-install and
+      // the real location is reported via getPreloadLocations().
+      return computeLocateDocling() !== null;
     },
     async preload(onProgress, signal) {
       const venvBin = venvBinaryDir();
       const venvPy = venvPythonPath();
       const venvPip = venvPipPath();
+      // The located path can change as we install; keep the cache honest so the
+      // /status API reports the right place during/after this run.
+      invalidateDoclingLoc();
 
       // Phase 0: docling requires Python >=3.10. On a box whose only python3
       // is 3.9 (older macOS), installing into a 3.9 venv fails inside
@@ -108,7 +98,7 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
         const how = process.platform === 'darwin'
           ? 'brew install python@3.12（推荐，无需 sudo）或从 python.org 下载安装包'
           : process.platform === 'win32'
-            ? '从 python.org 下载 3.12 安装包，或用 winget install Python.Python.3.12'
+            ? '从 python.org 下载 3.12 安装包，或用 winget install Python.Python.3.12（安装时勾选 Add to PATH）'
             : 'sudo apt install python3.12 python3.12-venv（Debian/Ubuntu）或对应包管理器';
         throw new Error(`docling 需要 Python ≥3.10，但本机最高只检测到 ${have}。请先安装 Python 3.10+：${how}，安装后重试即可。`);
       }
@@ -120,8 +110,10 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
       //  - no PEP 668 "externally-managed-environment" rejections
       //  - the CLI lands at a fixed path augmentPath exposes to the agent
       //  - no pollution of / conflict with the user's other Python projects
+      // All python/pip/docling invocations use runArgv (no shell) so paths with
+      // spaces (Windows usernames, conda env dirs) never break the command.
       onProgress(5, `准备 Python ${pyInfo.version[0]}.${pyInfo.version[1]} 隔离环境...`);
-      const venvVer = fs.existsSync(venvPy) ? probePyVersion(venvPy) : null;
+      const venvVer = fs.existsSync(venvPy) ? versionOfAbs(venvPy) : null;
       const venvStale = !venvVer || venvVer[0] < 3 || (venvVer[0] === 3 && venvVer[1] < 10);
       if (fs.existsSync(venvRoot()) && venvStale) {
         onProgress(6, '旧 Python 环境版本过低，重建中...');
@@ -129,7 +121,7 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
       }
       if (!fs.existsSync(venvPy)) {
         onProgress(8, '创建隔离 Python 环境...');
-        await runProcess(`${pyInfo.bin} -m venv ${venvRoot()}`, { timeout: 60_000, signal });
+        await runArgv([pyInfo.bin, '-m', 'venv', venvRoot()], { timeout: 60_000, signal });
         if (!fs.existsSync(venvPy)) {
           throw new Error('无法创建 Python venv，请确认 Python 3.10+ 安装完整');
         }
@@ -138,12 +130,12 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
       // Phase 2: pip install docling (8 → 55). Surface the REAL pip error so a
       // future failure is diagnosable (earlier the build error was swallowed
       // and only a generic hint showed).
-      const mirror = '-i https://pypi.tuna.tsinghua.edu.cn/simple';
+      const mirrorArgs = ['-i', 'https://pypi.tuna.tsinghua.edu.cn/simple'];
       onProgress(12, '正在安装 docling Python 包（含 PyTorch）...');
       let pipOk = false;
       let lastPipErr = '';
       try {
-        await runProcess(`${venvPip} install docling ${mirror}`, {
+        await runArgv([venvPip, 'install', 'docling', ...mirrorArgs], {
           timeout: 600_000,
           signal,
           onLine(line) {
@@ -159,7 +151,7 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
         // Fallback: default index (mirror may be down or package missing there)
         onProgress(40, '镜像失败，尝试默认源...');
         try {
-          await runProcess(`${venvPip} install docling`, {
+          await runArgv([venvPip, 'install', 'docling'], {
             timeout: 600_000,
             signal,
             onLine(line) {
@@ -177,18 +169,20 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
       }
       if (!pipOk || !fs.existsSync(path.join(venvBin, 'docling'))) {
         const detail = lastPipErr ? `（${lastPipErr.slice(0, 240)}）` : '（未生成 docling 可执行文件）';
-        throw new Error(`docling 安装失败${detail}。可手动运行：${venvPip} install docling`);
+        throw new Error(`docling 安装失败${detail}。可手动运行：${q(venvPip)} install docling`);
       }
 
       // Phase 3: Model warmup (55 → 100). Run a no-op conversion so docling
       // downloads its layout + table models into ~/.cache/huggingface now,
       // not on the user's first real conversion. Failure here is non-fatal —
-      // the models will download on first real use.
+      // the models will download on first real use. (`/dev/null`/`NUL` is passed
+      // as a literal empty-input file argument; stderr is captured via the pipe,
+      // so no shell `2>&1` redirection is needed.)
       onProgress(60, '下载 AI 模型（layout + table，~500MB）...');
       try {
         const discard = process.platform === 'win32' ? 'NUL' : '/dev/null';
         const outDir = path.join(os.tmpdir(), 'molio-docling-preload');
-        await runProcess(`${doclingBinaryPath()} ${discard} --to md --output ${outDir} 2>&1`, {
+        await runArgv([doclingBinaryPath(), discard, '--to', 'md', '--output', outDir], {
           timeout: 600_000,
           signal,
           onLine(line) {
@@ -361,10 +355,11 @@ function parsePyVersion(out: string): [number, number] | null {
   return [Number(m[1]), Number(m[2])];
 }
 
-/** Run `<bin> --version` and return its [major, minor], or null on any error. */
-function probePyVersion(bin: string): [number, number] | null {
+/** Version of an already-resolved ABSOLUTE python executable. Uses execFileSync
+ *  (no shell) so paths with spaces (common in Windows usernames) are safe. */
+function versionOfAbs(exe: string): [number, number] | null {
   try {
-    const out = execSync(`${bin} --version`, {
+    const out = execFileSync(exe, ['--version'], {
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'ignore'],
       timeout: 5_000,
@@ -375,81 +370,202 @@ function probePyVersion(bin: string): [number, number] | null {
   }
 }
 
+/**
+ * Resolve a python "probe" — a bare name, an absolute path, or a `py -3.X`
+ * launcher invocation — to an ABSOLUTE executable path (or null). Returning an
+ * absolute path lets every downstream call site use runArgv (no shell, so
+ * spaces are a non-issue) and quote uniformly. Cross-platform:
+ *   - Win `py[-3.X]` → ask the launcher for sys.executable
+ *   - Win otherwise    → `where "<probe>"` (where.exe; PATHEXT resolves .exe)
+ *   - POSIX            → `command -v '<probe>'` (shell builtin, needs a shell)
+ */
+function resolveToAbs(probe: string): string | null {
+  try {
+    if (process.platform === 'win32') {
+      if (/^py(\.exe)?(\s|$)/.test(probe)) {
+        const out = execSync(`${probe} -c "import sys;print(sys.executable)"`, {
+          encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000,
+        }).trim();
+        return out.split(/\r?\n/)[0]?.trim() || null;
+      }
+      const out = execSync(`where ${q(probe)}`, {
+        encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000,
+      }).trim();
+      return out.split(/\r?\n/)[0]?.trim() || null;
+    }
+    const out = execSync(`command -v ${q(probe)}`, {
+      encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000,
+    }).trim();
+    return out.split(/\r?\n/)[0]?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
 const cmpVer = (a: [number, number], b: [number, number]) =>
   a[0] !== b[0] ? a[0] - b[0] : a[1] - b[1];
 
 /**
- * Find a Python interpreter with version >= (minMajor.minMinor). docling needs
- * >=3.10; on a system whose only `python3` is 3.9 (common on older macOS), a
- * naive `python3` pick builds a 3.9 venv where docling's `pyobjc-core` fails to
- * compile from source on modern clang — a cryptic build error. We instead hunt
- * for a versioned 3.10+ binary so wheels install prebuilt.
- *
- * Search order: explicit versioned names + Homebrew opt paths (the unversioned
- * `python3` symlink is intentionally NOT on PATH after `brew install python@3.x`)
- * + uv-managed interpreters (`uv python find`) + plain python3/python/py last.
+ * Ordered python probes for this platform — every realistic place a 3.10+
+ * could live, NOT just whatever happens to be on the daemon's PATH:
+ *  Win: `py -3.X` launcher (the reliable versioned selector), versioned
+ *       aliases, python.org / MS-Store / conda install dirs, uv-managed.
+ *  POSIX: versioned names, Homebrew + /usr/local + /usr/bin, conda, uv.
+ * This is what makes "need 3.10+" accurate on Windows (earlier we only tried
+ * bare `python3.12` + a trailing `py`, missing `py -3.12` and install dirs, so
+ * a Win box with 3.12 installed but a 3.9 default got a false "need 3.10+").
+ */
+function buildPyProbes(): string[] {
+  const vers = ['3.13', '3.12', '3.11', '3.10'];
+  const probes: string[] = [];
+  const env = process.env;
+  if (process.platform === 'win32') {
+    for (const v of vers) probes.push(`py -${v}`);
+    for (const v of vers) probes.push(`python${v}`);
+    const LA = env['LOCALAPPDATA'], PF = env['ProgramFiles'], PF86 = env['ProgramFiles(x86)'];
+    const PD = env['ProgramData'], UP = env['USERPROFILE'], AR = env['APPDATA'];
+    const dirs: string[] = [];
+    for (const v of vers) {
+      const d = v.replace('.', '');
+      if (LA) dirs.push(`${LA}\\Programs\\Python\\Python${d}\\python.exe`);
+      dirs.push(`C:\\Python${d}\\python.exe`);
+      if (PF) dirs.push(`${PF}\\Python${d}\\python.exe`);
+      if (PF86) dirs.push(`${PF86}\\Python${d}\\python.exe`);
+    }
+    if (PD) dirs.push(`${PD}\\anaconda3\\python.exe`, `${PD}\\miniconda3\\python.exe`, `${PD}\\miniforge3\\python.exe`);
+    if (UP) dirs.push(`${UP}\\anaconda3\\python.exe`, `${UP}\\miniconda3\\python.exe`, `${UP}\\miniforge3\\python.exe`);
+    if (AR) dirs.push(`${AR}\\anaconda3\\python.exe`, `${AR}\\miniconda3\\python.exe`);
+    probes.push(...dirs);
+    for (const v of vers) {
+      try {
+        const p = execSync(`uv python find ${v}`, { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000 }).trim();
+        if (p) probes.push(p);
+      } catch { /* no uv / no such version */ }
+    }
+    probes.push('python', 'py', 'python3');
+  } else {
+    for (const v of vers) probes.push(`python${v}`);
+    for (const v of vers) probes.push(`/opt/homebrew/bin/python${v}`, `/usr/local/bin/python${v}`, `/usr/bin/python${v}`);
+    const conda = ['/opt/anaconda3/bin/python3', '/opt/miniconda3/bin/python3', '/opt/miniforge3/bin/python3'];
+    if (env['HOME']) conda.push(`${env['HOME']}/anaconda3/bin/python3`, `${env['HOME']}/miniconda3/bin/python3`, `${env['HOME']}/miniforge3/bin/python3`);
+    probes.push(...conda);
+    for (const v of vers) {
+      try {
+        const p = execSync(`uv python find ${v}`, { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000 }).trim();
+        if (p) probes.push(p);
+      } catch { /* no uv / no such version */ }
+    }
+    probes.push('python3', 'python');
+  }
+  return probes;
+}
+
+/**
+ * Find a Python >= (minMajor.minMinor), returning its ABSOLUTE path so callers
+ * can runArgv it without shell/quoting concerns. docling needs >=3.10; on a box
+ * whose only `python3` is 3.9, a naive pick builds a 3.9 venv where docling's
+ * `pyobjc-core` fails to compile on modern clang — a cryptic error we now avoid
+ * by hunting for a real 3.10+ and otherwise failing loudly with guidance.
  * Returns the highest version seen when nothing qualifies, for diagnostics.
  */
 function findPythonAtLeast(
   minMajor: number,
   minMinor: number,
 ): { bin: string; version: [number, number] } | { bin: null; version: [number, number] | null } {
-  const versions = ['3.13', '3.12', '3.11', '3.10'];
-  const candidates: string[] = [];
-  for (const v of versions) candidates.push(`python${v}`);
-  // Homebrew keeps versioned binaries on PATH but not the bare `python3`.
-  if (process.platform !== 'win32') {
-    for (const v of versions) {
-      candidates.push(`/opt/homebrew/bin/python${v}`, `/usr/local/bin/python${v}`);
-    }
-  }
-  // uv-managed interpreters aren't on PATH; ask uv directly (no-op if uv absent).
-  for (const v of versions) {
-    try {
-      const p = execSync(`uv python find ${v}`, {
-        encoding: 'utf-8',
-        stdio: ['ignore', 'pipe', 'ignore'],
-        timeout: 5_000,
-      }).trim();
-      if (p) candidates.push(p);
-    } catch { /* uv not installed or no such version */ }
-  }
-  candidates.push(...(process.platform === 'win32' ? ['python', 'py', 'python3'] : ['python3', 'python']));
-
   let best: { bin: string; version: [number, number] } | null = null;
-  for (const bin of candidates) {
-    const ver = probePyVersion(bin);
+  for (const probe of buildPyProbes()) {
+    const exe = resolveToAbs(probe);
+    if (!exe) continue;
+    const ver = versionOfAbs(exe);
     if (!ver) continue;
-    if (!best || cmpVer(ver, best.version) > 0) best = { bin, version: ver };
+    if (!best || cmpVer(ver, best.version) > 0) best = { bin: exe, version: ver };
     if (ver[0] > minMajor || (ver[0] === minMajor && ver[1] >= minMinor)) {
-      return { bin, version: ver };
+      return { bin: exe, version: ver };
     }
   }
   return { bin: null, version: best?.version ?? null };
 }
 
+// ─── Locating an installed docling (cross-platform, cache-backed) ────────────
+//
+// docling can live in two places: the preload's own venv, OR a global/user
+// install done by the agent / SKILL.md / a manual `pip install` / an older
+// build. The global one is NOT reliably on the daemon's PATH (esp. Windows,
+// where `pip install --user` lands in `%APPDATA%\Python\…\Scripts`, and conda
+// envs aren't active). So detection must NOT depend on PATH alone — we also
+// look in the Scripts dir of every python we can find. The result is cached
+// (a locate scan does ~dozens of `where`/`command -v` execs); invalidate at
+// every point install state can change so the /status API stays cheap & fresh.
+
+let _doclingLocCache: string | null | undefined = undefined;
+export function invalidateDoclingLoc(): void { _doclingLocCache = undefined; }
+
+function findDoclingOnPath(): string | null {
+  try {
+    const out = process.platform === 'win32'
+      ? execSync('where docling', { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000 }).trim()
+      : execSync('command -v docling', { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000 }).trim();
+    return out.split(/\r?\n/)[0]?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+function computeLocateDocling(): string | null {
+  if (_doclingLocCache !== undefined) return _doclingLocCache;
+  const venv = doclingBinaryPath();
+  if (fs.existsSync(venv)) return (_doclingLocCache = venv);
+  const onPath = findDoclingOnPath();
+  if (onPath) return (_doclingLocCache = onPath);
+  // Not on PATH: look in each known python's scripts dir (Unix: same dir as the
+  // interpreter; Windows: the sibling `Scripts\`). This catches global/user/
+  // conda installs the daemon's PATH can't see.
+  const isWin = process.platform === 'win32';
+  for (const probe of buildPyProbes()) {
+    const exe = resolveToAbs(probe);
+    if (!exe) continue;
+    const scriptsDir = isWin ? path.join(path.dirname(exe), 'Scripts') : path.dirname(exe);
+    const cand = path.join(scriptsDir, isWin ? 'docling.exe' : 'docling');
+    if (fs.existsSync(cand)) return (_doclingLocCache = cand);
+  }
+  return (_doclingLocCache = null);
+}
+
+/** Real install locations — surfaced via /status so the UI/docs report the
+ *  truth (venv vs global vs conda vs …) instead of guessing. This is the core
+ *  of "兼容旧地址": the system introspects the actual path, whatever it is. */
+export function getPreloadLocations(): { docling: string | null; remotion: string | null } {
+  return {
+    docling: computeLocateDocling(),
+    remotion: fs.existsSync(remotionPreloadMarker()) ? remotionPreloadMarker() : null,
+  };
+}
+
 // ─── Helper: run a child process with timeout + line callback ────────────────
 
-function runProcess(
-  command: string,
-  opts: { timeout?: number; cwd?: string; signal?: AbortSignal; onLine?: (line: string) => void } = {},
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const useShell = process.platform !== 'win32';
-    // detached:true puts the child in its own process group (Unix) / session
-    // so that on pause/stop we can kill the WHOLE tree (sh + pip + download
-    // subprocesses), not just the shell wrapper. Without it, killing `sh`
-    // would orphan `pip` / the in-flight download to keep running.
-    const spawnOpts: Parameters<typeof spawn>[2] = {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      timeout: opts.timeout,
-      cwd: opts.cwd,
-      detached: true,
-    };
-    const proc = useShell
-      ? spawn('sh', ['-c', command], spawnOpts)
-      : spawn('cmd', ['/c', command], spawnOpts);
+type RunOpts = { timeout?: number; cwd?: string; signal?: AbortSignal; onLine?: (line: string) => void };
 
+/**
+ * Quote a path/argument for safe interpolation into a SHELL command string
+ * (only used by runProcess + the python-locator probes). runArgv below needs
+ * NO quoting because it bypasses the shell entirely — prefer runArgv whenever
+ * the command is a simple executable + args, since shell quoting of paths with
+ * spaces (common in Windows usernames, e.g. `C:\Users\Jane Doe\…`) is fragile
+ * and was the source of cross-platform breakage.
+ */
+function q(p: string): string {
+  if (process.platform === 'win32') {
+    // cmd.exe: wrap in double quotes; strip any embedded double quotes
+    // (paths containing " are effectively nonexistent).
+    return `"${p.replace(/"/g, '')}"`;
+  }
+  // POSIX sh: single-quote, escaping embedded single quotes.
+  return `'${p.replace(/'/g, `'\\''`)}'`;
+}
+
+/** Shared IO/abort/close wiring for a spawned child (shell or argv form). */
+function runSpawned(proc: ChildProcess, opts: RunOpts): Promise<void> {
+  return new Promise((resolve, reject) => {
     // Abort wiring: when PreloadManager aborts (pause/stop), kill the entire
     // process tree. The 'close' handler then rejects with an AbortError so
     // meta.preload propagates the interruption up to startPreload's catch.
@@ -503,6 +619,39 @@ function runProcess(
   });
 }
 
+/** Run a command THROUGH a shell (needed for `&&`/`||`/pipes, e.g. npm chains).
+ *  Callers must pre-quote any interpolated paths via q(). */
+function runProcess(command: string, opts: RunOpts = {}): Promise<void> {
+  const useShell = process.platform !== 'win32';
+  // detached:true puts the child in its own process group (Unix) / session so
+  // that on pause/stop we can kill the WHOLE tree, not just the shell wrapper.
+  const spawnOpts: Parameters<typeof spawn>[2] = {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: opts.timeout,
+    cwd: opts.cwd,
+    detached: true,
+  };
+  const proc = useShell
+    ? spawn('sh', ['-c', command], spawnOpts)
+    : spawn('cmd', ['/c', command], spawnOpts);
+  return runSpawned(proc, opts);
+}
+
+/** Run an executable + args WITHOUT a shell — immune to spaces in paths and
+ *  shell-injection. PREFERRED for python/pip/docling invocations. */
+function runArgv(argv: string[], opts: RunOpts = {}): Promise<void> {
+  const file = argv[0];
+  if (!file) return Promise.reject(new Error('runArgv: empty argv'));
+  const args = argv.slice(1);
+  const proc = spawn(file, args, {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: opts.timeout,
+    cwd: opts.cwd,
+    detached: true,
+  });
+  return runSpawned(proc, opts);
+}
+
 /**
  * Kill an entire spawned process tree. `spawn(..., {detached:true})` makes the
  * child a process-group leader on Unix, so `kill(-pid)` reaches the shell +
@@ -549,6 +698,9 @@ export class PreloadManager {
   checkSkills(): void {
     const config = loadConfig();
     const dismissed: string[] = (config as any).preload?.dismissed ?? [];
+    // Freshly resolve install locations (the cache may be stale across restarts
+    // or after an out-of-band install/uninstall).
+    invalidateDoclingLoc();
 
     for (const sk of PRELOADABLE_SKILLS) {
       if (dismissed.includes(sk)) {
@@ -596,6 +748,7 @@ export class PreloadManager {
     if (current?.status === 'preloading') {
       throw new Error(`${skill} 正在预下载中`);
     }
+    invalidateDoclingLoc(); // install state is about to change
 
     const ac = new AbortController();
     this.runningTasks.set(skill, ac);
@@ -644,6 +797,7 @@ export class PreloadManager {
       }
     } finally {
       this.runningTasks.delete(skill);
+      invalidateDoclingLoc(); // reflect newly installed/removed binary in /status
     }
   }
 
@@ -676,6 +830,7 @@ export class PreloadManager {
       this.stopRequested.delete(skill);
       deletePartial(skill);
       this.statuses.set(skill, { status: 'missing' });
+      invalidateDoclingLoc();
       this.emitStatus();
       this.emitProgress({ skill, status: 'stopped', progress: 0, message: `${skill} 已停止` });
     }
@@ -695,6 +850,7 @@ export class PreloadManager {
    */
   dismissSkill(skill: PreloadableSkill): void {
     this.statuses.set(skill, { status: 'dismissed' });
+    invalidateDoclingLoc();
     this.emitStatus();
 
     // Persist to config
@@ -720,6 +876,7 @@ export class PreloadManager {
     } catch { /* best-effort */ }
 
     // Re-check
+    invalidateDoclingLoc();
     const meta = SKILL_META[skill];
     const installed = meta.detectInstalled();
     this.statuses.set(skill, installed

@@ -28,6 +28,7 @@ interface SkillInfo {
   progress?: number;
   message?: string;
   error?: string;
+  path?: string | null;
 }
 
 interface ToastState {
@@ -38,6 +39,10 @@ interface ToastState {
   progress: Record<string, number>;
   /** Per-skill message */
   messages: Record<string, string>;
+  /** Real on-disk install location per skill (venv / global / conda / …), as
+   *  reported by the daemon. Surfaced so testers/users see WHERE a tool lives
+   *  (the core of the two-location story) and what "stop" will/won't clean. */
+  paths: Record<string, string | null>;
   /** Error message */
   error?: string;
   /** When true, a downloading toast collapses to a small pill so the user
@@ -79,6 +84,7 @@ export function PreloadToast() {
     skills: [],
     progress: {},
     messages: {},
+    paths: {},
     minimized: false,
   });
   const [dismissed, setDismissed] = useState(false);
@@ -126,7 +132,9 @@ export function PreloadToast() {
         if (!mountedRef.current) return;
 
         const missing: PreloadableSkill[] = [];
+        const paths: Record<string, string | null> = {};
         for (const [skill, info] of Object.entries(statuses)) {
+          paths[skill] = info.path ?? null;
           if (info.status === 'missing') {
             missing.push(skill as PreloadableSkill);
           }
@@ -139,6 +147,7 @@ export function PreloadToast() {
             skills: missing,
             progress: {},
             messages: {},
+            paths,
             minimized: false,
           });
           setDismissed(false);
@@ -346,9 +355,9 @@ export function PreloadToast() {
           animation re-fires — gives prompt→downloading→done→paused a soft
           settle instead of a hard content swap. */}
       <div className="preload-toast__body" key={state.mode}>
-        {state.mode === 'prompt' && <PromptView skills={state.skills} onDownload={handleDownload} onDismiss={handleDismiss} />}
+        {state.mode === 'prompt' && <PromptView skills={state.skills} paths={state.paths} onDownload={handleDownload} onDismiss={handleDismiss} />}
         {state.mode === 'downloading' && <DownloadingView skills={state.skills} progress={state.progress} messages={state.messages} onMinimize={handleMinimize} onPause={handlePause} onStop={handleStop} />}
-        {state.mode === 'paused' && <PausedView skills={state.skills} progress={state.progress} onResume={handleResume} onStop={handleStop} />}
+        {state.mode === 'paused' && <PausedView skills={state.skills} progress={state.progress} paths={state.paths} onResume={handleResume} onStop={handleStop} />}
         {state.mode === 'done' && <DoneView skills={state.skills} />}
         {state.mode === 'error' && <ErrorView error={state.error} onRetry={handleRetry} onDismiss={handleDismiss} />}
       </div>
@@ -366,11 +375,16 @@ function computeOverallProgress(skills: PreloadableSkill[], progress: Record<str
 
 // ─── Sub-views ──────────────────────────────────────────────────────────────
 
-function PromptView({ skills, onDownload, onDismiss }: {
+function PromptView({ skills, paths, onDownload, onDismiss }: {
   skills: PreloadableSkill[];
+  paths: Record<string, string | null>;
   onDownload: () => void;
   onDismiss: () => void;
 }) {
+  // Skills that ARE installed elsewhere (global/conda/…) but aren't in the
+  // missing list — surfaced so the two-location reality is visible, not hidden.
+  const installedElsewhere = (Object.keys(paths) as PreloadableSkill[])
+    .filter((sk) => paths[sk] && !skills.includes(sk));
   return (
     <>
       <p className="preload-toast__title">可预下载的工具</p>
@@ -392,6 +406,11 @@ function PromptView({ skills, onDownload, onDismiss }: {
           );
         })}
       </div>
+      {installedElsewhere.length > 0 && (
+        <p className="preload-toast__elsewhere">
+          另：{installedElsewhere.map((sk) => `${SKILL_LABELS[sk]?.label ?? sk} 已装在 ${paths[sk]}`).join('；')}（已识别，不会重复安装）
+        </p>
+      )}
       <div className="preload-toast__actions">
         <button className="rt-btn rt-btn--sm preload-toast__primary" onClick={onDownload}>
           后台下载
@@ -444,10 +463,14 @@ function DownloadingView({ skills, progress, messages, onMinimize, onPause, onSt
         })}
       </div>
       <div className="preload-toast__actions">
-        <button className="rt-btn rt-btn--sm" onClick={onPause}>
+        <button className="rt-btn rt-btn--sm" onClick={onPause} title="暂停下载，保留已下载部分，之后可继续">
           暂停
         </button>
-        <button className="rt-btn rt-btn--sm" onClick={onStop}>
+        <button
+          className="rt-btn rt-btn--sm"
+          onClick={onStop}
+          title="停止并删除本次预下载写入的内容（docling 的 venv+模型、remotion 的标记）；不会动你手动/全局安装的包"
+        >
           停止
         </button>
       </div>
@@ -455,9 +478,10 @@ function DownloadingView({ skills, progress, messages, onMinimize, onPause, onSt
   );
 }
 
-function PausedView({ skills, progress, onResume, onStop }: {
+function PausedView({ skills, progress, paths, onResume, onStop }: {
   skills: string[];
   progress: Record<string, number>;
+  paths: Record<string, string | null>;
   onResume: () => void;
   onStop: () => void;
 }) {
@@ -490,12 +514,21 @@ function PausedView({ skills, progress, onResume, onStop }: {
           );
         })}
       </div>
+      <p className="preload-toast__elsewhere">
+        停止将删除本次预下载写入的内容
+        {skills.some((sk) => paths[sk]) && `（${skills.filter((sk) => paths[sk]).map((sk) => paths[sk]).join('、')}）`}
+        ，不会动你手动/全局安装的包。
+      </p>
       <div className="preload-toast__actions">
         <button className="rt-btn rt-btn--sm preload-toast__primary" onClick={onResume}>
           继续
         </button>
-        <button className="rt-btn rt-btn--sm" onClick={onStop}>
-          停止（清除已下载内容）
+        <button
+          className="rt-btn rt-btn--sm"
+          onClick={onStop}
+          title="删除本次预下载写入的内容（docling 的 venv+模型、remotion 的标记）；不会动你手动/全局安装的包"
+        >
+          停止并清理预下载
         </button>
       </div>
     </>

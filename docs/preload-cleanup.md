@@ -57,40 +57,79 @@ docling 要求 **Python ≥3.10**。预下载会自动寻找 3.10+ 的解释器�
 
 remotion 是**每个项目各自的依赖**：agent 在 vault 里 `.molio/remotion/<项目>/node_modules` 安装。预下载**不装 remotion 本身**，只把它的 npm 包灌进共享缓存 `~/.npm/` 并写标记 `~/.molio/.remotion-preloaded`。所以「同事看到的 remotion 路径」是他 vault 里那个项目的 `node_modules`，跟预下载的 marker/缓存本来就不是一个东西，**无需也无法对齐**。重测 remotion 只需删 marker（见下表）；要连 npm 缓存一起冷测才用 `npm cache clean --force`（影响全局，谨慎）。
 
-## 快速清理（一键脚本）
+## 🔍 先定位，再卸载（跨平台，兼容旧/全局地址）
+
+docling 可能装在**两个地方**（venv 或全局），remotion 的「安装」又分**三种东西**（marker / npm 缓存 / 项目 node_modules）。**别假设路径**——先问系统「它到底在哪」，再删对应的那个。这也覆盖了「用旧版本/SKILL.md/手动 pip 装到全局」的历史安装。
+
+**docling 实际位置**（任一命中即「已安装」）：
 
 ```bash
-# 删 docling venv
-rm -rf ~/.molio/venv
-
-# 删 docling 的 HuggingFace 模型缓存（只删 docling-project 的，不动其他模型）
-rm -rf ~/.cache/huggingface/hub/models--docling-project--*
-
-# 删 remotion 预下载标记
-rm -f ~/.molio/.remotion-preloaded
-
-# （可选）如果之前点过「不再提示」，清掉 config 里的 dismissed 状态
-# 用编辑器打开 ~/.molio/config.json，删掉 "preload": { "dismissed": [...] } 字段
+# macOS / Linux
+which -a docling                 # PATH 上所有 docling（含 venv 与全局）
+ls -la ~/.molio/venv/bin/docling # 预下载的 venv 副本
+pip show docling                 # 看装在哪个 site-packages（全局/用户/conda）
+# Windows (PowerShell / CMD)
+where.exe docling                # PATHEXT 解析出 docling.exe 的所有位置
+dir %USERPROFILE%\.molio\venv\Scripts\docling.exe
+pip show docling
 ```
 
-> Windows PowerShell 对应：
-> ```powershell
-> Remove-Item -Recurse -Force $env:USERPROFILE\.molio\venv
-> Remove-Item -Recurse -Force $env:USERPROFILE\.cache\huggingface\hub\models--docling-project--*
-> Remove-Item -Force $env:USERPROFILE\.molio\.remotion-preloaded
-> ```
+> 全局 docling 的常见落点（`pip show` 的 Location 对应的 Scripts 目录）：
+> - macOS/Linux 用户级：`~/.local/bin/docling`
+> - **Windows 用户级**：`%APPDATA%\Python\Python3xx\Scripts\docling.exe`（**不是** `~/.local/bin`！）
+> - **Windows 安装目录**：`%LOCALAPPDATA%\Programs\Python\Python3xx\Scripts\docling.exe`
+> - conda：当前环境的 `<env>/bin` 或 `<env>\Scripts`（环境未激活时不在 PATH）
+>
+> daemon 的 `GET /api/preload/status` 现在会**直接返回每个工具的真实路径**（`statuses.<skill>.path`），web toast 也会显示「已装在 X」——所以不用猜，看 UI/接口即可。
+
+**remotion 实际「安装」在哪**：marker = `~/.molio/.remotion-preloaded`；npm 缓存 = `~/.npm`；项目 = `<vault>/.molio/remotion/<项目>/node_modules`。三者性质不同，按需删（见下）。
+
+## 快速清理 / 重测（一键脚本，跨平台）
+
+> ⚠️ **测试端复现的关键陷阱**：点过「不再提示」会写 `~/.molio/config.json` 的 `preload.dismissed`，**它在你删 venv/marker 之后仍然压着 toast**——清产物却不清 dismissed，重启后 toast 永不出现，你会以为「功能坏了」。所以下面脚本**同时清 dismissed**，缺一不可。
+
+**macOS / Linux**
+
+```bash
+# 1. docling：venv + HF 模型（只删 docling-project 的，不动其他模型）
+rm -rf ~/.molio/venv
+rm -rf ~/.cache/huggingface/hub/models--docling-project--*
+# 2. 若 docling 还装在全局/用户级（旧版本/手动 pip 装的），一并卸（按 pip show 的 Location 选）
+pip uninstall -y docling            # 系统/用户 python
+# ~/.local/bin 残留脚本（如有）：rm -f ~/.local/bin/docling
+# 3. remotion 标记
+rm -f ~/.molio/.remotion-preloaded
+# 4. ⚠️ 清「不再提示」，否则 toast 不会重弹（用 jq 安全删除该字段；无 jq 见下注）
+jq 'del(.preload.dismissed)' ~/.molio/config.json > /tmp/c.json && mv /tmp/c.json ~/.molio/config.json
+```
+
+> 无 `jq` 时：用编辑器打开 `~/.molio/config.json`，删掉 `"preload": { "dismissed": [...] }` 整段（注意逗号）。
+
+**Windows (PowerShell)**
+
+```powershell
+# 1. docling venv + HF 模型
+Remove-Item -Recurse -Force $env:USERPROFILE\.molio\venv
+Get-ChildItem $env:USERPROFILE\.cache\huggingface\hub -Filter "models--docling-project--*" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force
+# 2. 全局/用户级 docling（按 pip show 的 Location；用户级常见 %APPDATA%\Python\Python3xx\Scripts）
+pip uninstall -y docling
+# 3. remotion 标记
+Remove-Item -Force $env:USERPROFILE\.molio\.remotion-preloaded -ErrorAction SilentlyContinue
+# 4. ⚠️ 清「不再提示」（无 jq：用编辑器删 config.json 里 "preload":{ "dismissed":[...] } 整段）
+```
 
 ## 验证清理干净
 
 ```bash
-# 都应该输出「不存在」
+# macOS/Linux：以下都应输出「不存在 / ✓」
 ls -d ~/.molio/venv 2>/dev/null && echo "⚠ venv 还在" || echo "✓ venv 已清"
 ls ~/.cache/huggingface/hub/models--docling-project--* 2>/dev/null && echo "⚠ 模型还在" || echo "✓ docling 模型已清"
-ls ~/.molio/.remotion-preloaded 2>/dev/null && echo "⚠ marker 还在" || echo "✓ remotion marker 已清"
-grep preload ~/.molio/config.json 2>/dev/null && echo "⚠ config 有 dismissed" || echo "✓ config 无 dismiss"
+which docling 2>/dev/null && echo "⚠ PATH 上还有 docling（全局未卸）" || echo "✓ 无全局 docling"
+ls ~/.molio/.remotion-preloaded 2>/dev/null && echo "⚠ marker 还在" || echo "✓ marker 已清"
+grep -q '"dismissed"' ~/.molio/config.json 2>/dev/null && echo "⚠ config 仍有 dismissed（toast 不会重弹！）" || echo "✓ 无 dismissed"
 ```
 
-全绿后，`pnpm dev` 启动，daemon 的 `checkSkills()` 会判定 docling + remotion 都为 `missing`，web 端右下角会弹出预下载 toast。
+全绿后，**重启** `pnpm dev`（`checkSkills()` 只在启动跑一次），daemon 会判定 docling + remotion 都为 `missing`，右下角弹 toast。
 
 ## 关于 npm 缓存（remotion）
 
@@ -108,6 +147,8 @@ PreloadManager 用 `python -m venv` 创建的隔离环境，docling + PyTorch �
 - 成功装完：约 1.5–2 GB（PyTorch 占大头）
 - 只建了 venv 没装 docling：约 9 MB（空壳，说明 `pip install` 失败/超时）
 
+> ⚠️ toast 上的「停止」/「停止并清理预下载」**只删这个 venv + docling 的 HF 模型 + remotion marker**，**绝不会动全局/用户级/conda 里手动或旧版本装的 docling**（乱删用户全局包是危险的）。所以全局 docling 要靠上面的 `pip uninstall docling` 卸。
+
 ### `~/.cache/huggingface/`（docling AI 模型）
 
 docling 首次转换 PDF 时下载的 layout + table 模型，约 500 MB。目录结构：
@@ -115,6 +156,8 @@ docling 首次转换 PDF 时下载的 layout + table 模型，约 500 MB。目�
 - `hub/models--docling-project--docling-models/`（table，~342M）
 
 预下载的「模型预热」阶段（跑一次空 PDF）会主动触发这两个下载，让用户首次真正转换时不用等。⚠️ 这个目录是**共享**的——如果机器上还有别的 HuggingFace 工具（transformers 等），删的时候**只删 `models--docling-project--*`**，别 `rm -rf ~/.cache/huggingface` 整个删。
+
+> ⚠️ 装了 `hf-xet` 时，模型 blob 可能另存一份在 `~/.cache/huggingface/xet/`（全局内容寻址、跨模型共享）。**无法只删 docling 的那部分**——删 `hub/models--docling-project--*` 后这些 xet blob 会变成孤儿，仅占空间、不影响功能/复现，属 HuggingFace 的内在限制，可忽略或定期 `huggingface-cli scan-cache` 清理。
 
 ### `~/.molio/.remotion-preloaded`（remotion 标记文件）
 
@@ -124,12 +167,17 @@ PreloadManager 跑完 remotion npm 缓存预热后写的 marker 文件。`checkS
 
 如果清理后重测，发现 toast 弹了但点「后台下载」后 docling 一直卡住或失败：
 
-1. **venv 只有 ~9MB 空壳**：说明 `python -m venv` 成功但 `pip install docling` 失败/超时。常见原因：网络慢（PyTorch 很大）、清华镜像不通。可手动验证：
+1. **venv 只有 ~9MB 空壳**：说明 `python -m venv` 成功但 `pip install docling` 失败/超时。常见原因：网络慢（PyTorch 很大）、清华镜像不通。可手动验证（路径按平台）：
    ```bash
+   # macOS / Linux
    ~/.molio/venv/bin/pip install docling -i https://pypi.tuna.tsinghua.edu.cn/simple
+   # Windows (PowerShell)
+   & "$env:USERPROFILE\.molio\venv\Scripts\pip.exe" install docling -i https://pypi.tuna.tsinghua.edu.cn/simple
    ```
-2. **docling 装了但模型下不动**：国内访问 HuggingFace 默认源常超时。docling SKILL.md 建议设 `HF_ENDPOINT=https://hf-mirror.com`。当前 PreloadManager 的模型预热**还没**自动注入这个镜像环境变量（待改进）。
-3. **看 daemon 日志**：`pnpm dev:daemon` 的终端会打印 `[PreloadManager]` 的进度消息和子进程退出码。
+2. **报「docling 需要 Python ≥3.10」**：本机的 `python3` 是 3.9（老 macOS 常见），docling 在 3.9 上会撞 `pyobjc-core` 编译失败。预下载会自动找 3.10+（含 `py -3.X` 启动器、各安装目录、conda、uv）；若仍找不到，按提示装 3.10+（macOS `brew install python@3.12`；Windows python.org 安装包**勾选 Add to PATH**；Linux `apt install python3.12 python3.12-venv`）。
+3. **docling 装了但模型下不动**：国内访问 HuggingFace 默认源常超时。docling SKILL.md 建议设 `HF_ENDPOINT=https://hf-mirror.com`。当前 PreloadManager 的模型预热**还没**自动注入这个镜像环境变量（待改进）。
+4. **路径含空格（Windows 用户名带空格等）失败**：已修复——python/pip/docling 调用现在走无 shell 的参数数组，不再因空格断命令。若仍异常，看 daemon 日志里的真实子进程退出码。
+5. **看 daemon 日志**：`pnpm dev:daemon` 的终端会打印 `[PreloadManager]` 的进度消息和子进程退出码。
 
 ## 相关代码
 

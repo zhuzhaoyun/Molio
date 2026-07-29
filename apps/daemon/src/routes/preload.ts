@@ -9,14 +9,23 @@
 
 import { Hono } from 'hono';
 import type { PreloadManager, PreloadableSkill, PreloadProgressEvent } from '../core/preload-manager.js';
+import { getPreloadLocations } from '../core/preload-manager.js';
 
 export function preloadRoutes(preloadManager: PreloadManager): Hono {
   const app = new Hono();
 
-  // GET /api/preload/status
+  // GET /api/preload/status — each skill's status PLUS its real on-disk
+  // location (venv vs global vs conda vs …), so the UI/docs can show where a
+  // tool actually lives instead of assuming the venv path. This is what makes
+  // "兼容旧地址" visible: a global/legacy install reports its true path.
   app.get('/status', (c) => {
     const statuses = preloadManager.getStatuses();
-    return c.json({ statuses });
+    const loc = getPreloadLocations();
+    const enriched: Record<string, unknown> = {};
+    for (const [sk, st] of Object.entries(statuses)) {
+      enriched[sk] = { ...st, path: sk === 'docling' ? loc.docling : loc.remotion };
+    }
+    return c.json({ statuses: enriched });
   });
 
   // POST /api/preload/start

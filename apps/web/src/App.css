@@ -345,6 +345,16 @@
   margin: 0;
 }
 
+/* Transparency line: where a tool actually lives / what stop will clean. Kept
+   quiet (muted, small, breakable paths) so it informs without competing. */
+.preload-toast__elsewhere {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  margin: 0 0 10px;
+  word-break: break-all;
+}
+
 /* Error */
 .preload-toast__error-msg {
   font-size: 13px;
