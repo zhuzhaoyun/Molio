@@ -14,6 +14,7 @@ import {
   forceLink,
   forceManyBody,
   forceCollide,
+  forceCenter,
   forceX,
   forceY,
   type ForceX,
@@ -41,6 +42,25 @@ const WORKER_THRESHOLD = 1000;
 const COLLIDE_PADDING_RATIO = 0.5;
 // 多次迭代充分解析簇内重叠（默认 1 次常残留重叠）
 const COLLIDE_ITERATIONS = 3;
+
+// ── 拖拽期「拴绳」强度（路线 B：按距离门控 + 三类节点）──
+// 每个非拖拽节点被一根拉回「拖拽前锚点」的弹簧拴住，强度 = f(到被拖节点当前距离)，且按节点类别分档：
+//   直接邻居      → NEIGHBOR_TETHER（=0，完全自由，靠边力受牵引跟随被拖节点）
+//   连接非邻居    → 近 CONN_NEAR(=0，推开后就地重组、不弹回旧锚点) → 远 CONN_FAR(≈钉死)
+//   孤立节点      → 近 ISO_NEAR → 远 ISO_FAR（中等牵引绳：磁铁近时能被推开一点，绳子拽住防飞散）
+// 距离→强度在 [rInner, rOuter]（图坐标，GraphPage 按屏幕像素换算传入）线性插值。
+// 注：CONN_NEAR=0 是关键——若近节点也拴回旧锚点，被推开后会「回弹」(用户反馈的"回弹引力")。
+const NEIGHBOR_TETHER = 0;
+const CONN_NEAR = 0;
+const CONN_FAR = 0.85;
+const ISO_NEAR = 0.18;
+const ISO_FAR = 0.6;
+
+// ── 拖拽期「磁铁」排斥场强度（中程、平滑衰减，制造"未接触即避让"的磁铁手感）──
+// 以被拖节点为中心、rMagnet 为半径，场内节点受向外推力 ∝ (1-dist/rMagnet)²；
+// 近强远弱 → 节点像被磁铁犁开；场外不受影响（与"远节点不动"一致）。邻居除外（走牵引）。
+// 密集图节点被边/碰撞"焊"得硬，需较强磁铁才犁得动；过强会爆，由 E2E span 防爆断言兜底。
+const MAGNET_STRENGTH = 2.0;
 
 // ── Types ──
 
@@ -78,6 +98,14 @@ export interface SimulationAPI {
   multiLevel: (params?: MultiLevelParams) => void;
   /** 移动时降质：拖拽期间 collide 迭代 3→1（每 tick 最大 CPU 成本），松手恢复 */
   setMotionMode: (active: boolean) => void;
+  /** 质心锁：用 forceCenter 把整簇质心钉在 target，防整簇平移。现在仅用于「松手后沉降」阶段
+   *  （拖拽中改用 beginDrag 的拴绳保证局部性，不再用质心锁）。松手后由 onTick 在接近静止时自动解除。 */
+  setCentroidLock: (target: { x: number; y: number } | null) => void;
+  /** 进入拖拽：快照锚点、装按距离门控的三类拴绳 + 磁铁排斥场、关闭全局向心力（径向向心不抗旋转，
+   *  是整簇旋转帮凶）。rInner/rOuter/rMagnet 为图坐标半径（GraphPage 按屏幕像素 × 冻结映射换算）。 */
+  beginDrag: (draggedId: string, rInner: number, rOuter: number, rMagnet: number) => void;
+  /** 退出拖拽：撤拴绳、恢复全局向心力。 */
+  endDrag: () => void;
 }
 
 // ── Hook ──
@@ -88,6 +116,9 @@ export function useSimulation(): SimulationAPI {
   const nodeHandlesRef = useRef<Map<string, NodeHandle>>(new Map());
   const graphRef = useRef<Graph | null>(null);
   const initParamsRef = useRef<ForceParams>({ ...DEFAULT_FORCE_PARAMS });
+  // 是否处于「拖拽移动」中（setMotionMode 镜像）。onTick 据此判断能否自动解除质心锁：
+  // 拖拽中(含按住暂停)绝不解除，松手后运动模式关闭、接近静止时才解除。
+  const motionModeRef = useRef(false);
 
   // Main-thread specific
   const simRef = useRef<ReturnType<typeof forceSimulation<D3Node>> | null>(null);
@@ -229,6 +260,10 @@ export function useSimulation(): SimulationAPI {
               .alphaDecay(0.03)
               .velocityDecay(0.35)
               .on('tick', () => {
+                // 质心锁自动解除（见 initMainThreadMode 的同款注释）
+                if (!motionModeRef.current && mtSim.alpha() < 0.02 && mtSim.force('centroidLock')) {
+                  mtSim.force('centroidLock', null);
+                }
                 for (const d of mtNodes) {
                   if (g.hasNode(d.id)) {
                     g.setNodeAttribute(d.id, 'x', d.x);
@@ -374,6 +409,12 @@ export function useSimulation(): SimulationAPI {
       .alphaDecay(0.03)
       .velocityDecay(0.35)
       .on('tick', () => {
+        // 质心锁自动解除：拖拽中(motionModeRef true)绝不解除(含按住暂停，避免暂停后移动又滑移)；
+        // 松手后运动模式关闭、alpha 衰减到接近静止时移除 forceCenter，既无需脆弱定时器，
+        // 也不残留幽灵力去污染后续调力参数滑块等唤醒。
+        if (!motionModeRef.current && simulation.alpha() < 0.02 && simulation.force('centroidLock')) {
+          simulation.force('centroidLock', null);
+        }
         for (const d of d3Nodes) {
           if (graph.hasNode(d.id)) {
             graph.setNodeAttribute(d.id, 'x', d.x);
@@ -487,6 +528,7 @@ export function useSimulation(): SimulationAPI {
   // 松手后 wake(0.3) 的 tick 会以 3 次迭代解析残留重叠。
 
   const setMotionMode = useCallback((active: boolean) => {
+    motionModeRef.current = active; // 供 onTick 判断能否自动解除质心锁
     const iterations = active ? 1 : COLLIDE_ITERATIONS;
 
     if (modeRef.current === 'worker') {
@@ -495,6 +537,99 @@ export function useSimulation(): SimulationAPI {
     }
 
     simRef.current?.force<ForceCollide<D3Node>>('collide')?.iterations(iterations);
+  }, []);
+
+  // ── Centroid Lock（质心锁）──
+  // 拖拽「全流动」解锁全图后，被拖节点钉在光标处会跑到很远的图坐标，链接力把整簇质心一起拽过去；
+  // 相机被冻结不会跟随 → 整簇在屏幕上滑出视野。装一个 forceCenter 把质心硬钉在按下瞬间位置，
+  // 流体只能围绕固定质心局部填补，整簇不整体平移 → 图谱稳定停在视野中央。
+  // 解除时机不在这里硬清，而由 onTick 在「非拖拽 + 接近静止」时自动移除（见各 on('tick')）。
+  const setCentroidLock = useCallback((target: { x: number; y: number } | null) => {
+    if (modeRef.current === 'worker') {
+      workerRef.current?.postMessage({ type: 'setCentroidLock', target });
+      return;
+    }
+    const sim = simRef.current;
+    if (!sim) return;
+    sim.force('centroidLock', target ? forceCenter<D3Node>(target.x, target.y) : null);
+  }, []);
+
+  // ── 拖拽局部流体（路线 B）──
+  // 旧实现「全解锁 + 全程高温全局力松弛」会让整簇绕质心刚体旋转、远处节点也乱抖（与 Obsidian 差距大）。
+  // 现改为：拖拽期给每个非拖拽节点装一根拉回「拖拽前锚点」的拴绳，强度按到被拖节点当前距离门控
+  // （远=钉死、近=可流、邻居=0 受牵引），并关闭全局向心力——向心是径向力、对质心力矩为零，既不抗
+  // 旋转、又会和拴绳打架把远节点拽离锚点；拴绳本身已提供局部约束 + 抗旋转（每根拴绳都抵抗位移）。
+  // 这样碰撞/级联/动态距离/滞后全交给真实力模拟每 tick 在活位置上重算（collide/manyBody/link），
+  // 拴绳只回答「你这个节点允许离开锚点多远」——既保住流体观感，又让远节点纹丝不动。
+  const beginDrag = useCallback((draggedId: string, rInner: number, rOuter: number, rMagnet: number) => {
+    if (modeRef.current === 'worker') {
+      workerRef.current?.postMessage({ type: 'beginDrag', draggedId, rInner, rOuter, rMagnet });
+      return;
+    }
+    const sim = simRef.current;
+    const graph = graphRef.current;
+    if (!sim || !graph) return;
+
+    sim.force('centroidLock', null); // 清上一轮沉降残留，防与拴绳/磁铁打架
+
+    // 快照拖拽前锚点（用 d3 当前坐标）
+    const anchors = new Map<string, { x: number; y: number }>();
+    for (const n of d3NodesRef.current) anchors.set(n.id, { x: n.x ?? 0, y: n.y ?? 0 });
+    // 直接邻居集合（拓扑在拖拽期不变，算一次即可）
+    const neighbors = new Set<string>(graph.neighbors(draggedId));
+    // 被拖节点 handle：.x/.y getter 读 d3 实时坐标，供每 tick 取「被拖节点当前位置」
+    const dragHandle = nodeHandlesRef.current.get(draggedId);
+    const dragX = () => dragHandle?.x ?? 0;
+    const dragY = () => dragHandle?.y ?? 0;
+
+    // 注：不再关闭全局向心力——它与排斥/边力在平衡态相互抵消，拖拽期对局部气泡的影响可忽略；
+    // 松手后节点被就地钉死 + 停模拟，向心无从作用，故无需 disable/restore（少一处状态切换=少一处 bug）。
+
+    const tetherT = (d: D3Node): number => {
+      const dist = Math.hypot((d.x ?? 0) - dragX(), (d.y ?? 0) - dragY());
+      return rOuter > rInner ? Math.min(1, Math.max(0, (dist - rInner) / (rOuter - rInner))) : 1;
+    };
+    const strengthOf = (d: D3Node): number => {
+      if (d.id === draggedId) return 0;
+      if (neighbors.has(d.id)) return NEIGHBOR_TETHER; // 邻居：纯牵引跟随
+      const t = tetherT(d);
+      if (d.degree === 0) return ISO_NEAR + (ISO_FAR - ISO_NEAR) * t; // 孤立：中等牵引绳（防飞 + 能反应）
+      return CONN_NEAR + (CONN_FAR - CONN_NEAR) * t; // 连接：近自由(无回弹)、远钉死
+    };
+    sim.force('tetherX', forceX<D3Node>((d) => anchors.get(d.id)?.x ?? 0).strength(strengthOf));
+    sim.force('tetherY', forceY<D3Node>((d) => anchors.get(d.id)?.y ?? 0).strength(strengthOf));
+
+    // 磁铁排斥场：场内节点被平滑向外推（未接触即避让，磁铁手感）；邻居除外（走牵引）。
+    // 推力 ∝ (1-dist/rMagnet)² / dist，近强远弱、场外为 0；直接写 vx/vy，由 velocityDecay 阻尼。
+    const magnetForce = () => {
+      const fx = dragX();
+      const fy = dragY();
+      for (const n of d3NodesRef.current) {
+        if (n.id === draggedId || neighbors.has(n.id)) continue;
+        const dx = (n.x ?? 0) - fx;
+        const dy = (n.y ?? 0) - fy;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 1e-6 || dist > rMagnet) continue;
+        const fall = 1 - dist / rMagnet;
+        const f = (MAGNET_STRENGTH * fall * fall) / dist;
+        n.vx = (n.vx ?? 0) + dx * f;
+        n.vy = (n.vy ?? 0) + dy * f;
+      }
+    };
+    sim.force('magnet', magnetForce);
+  }, []);
+
+  const endDrag = useCallback(() => {
+    if (modeRef.current === 'worker') {
+      workerRef.current?.postMessage({ type: 'endDrag' });
+      return;
+    }
+    const sim = simRef.current;
+    if (!sim) return;
+    sim.force('tetherX', null);
+    sim.force('tetherY', null);
+    sim.force('magnet', null);
+    // 不恢复/不动向心力（见 beginDrag 注释）；松手后由 GraphPage 就地钉死 + 停模拟。
   }, []);
 
   // ── Multi-Level Layout ──
@@ -572,7 +707,7 @@ export function useSimulation(): SimulationAPI {
     });
   }, []);
 
-  return { init, wake, stop, getNode, setForceParam, multiLevel, setMotionMode };
+  return { init, wake, stop, getNode, setForceParam, multiLevel, setMotionMode, setCentroidLock, beginDrag, endDrag };
 }
 
 // ── Main-Thread Node Handle ──

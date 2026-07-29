@@ -193,7 +193,11 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
   - `barnesHutOptimize: true` — O(n log n) 性能优化
 - **交互系统**: 原生 DOM 事件，区分 click / drag / dblclick
   - 单击选中节点，双击跳转知识库文档
-  - 拖拽节点后通过 `fx`/`fy` 锁定位置
+  - 拖拽：被拖节点 `fx/fy` 跟手；拖拽期用「磁铁排斥场 + 按距离门控的三类拴绳」做局部流体
+    （邻居受牵引、近处未接触即避让、远处钉死，孤立用中等牵引绳防飞散）；**松手就地定格**
+    （pin 全部 + 停模拟，无沉降/回弹动画，故松手后外围孤立不自动归环，需重布局规整）。
+    相机侧用 `setCustomBBox` 冻结归一化，保证拖拽/松手视角不抖不滑。流体手感仍在调优，
+    设计详见 `docs/superpowers/specs/2026-07-28-graph-drag-camera-stability.md` §11。
   - Hover 高亮关联节点和边
 - **Minimap**: Canvas 绘制，右下角显示全局节点分布 + 当前视口矩形
 - **React 性能**: 坐标计算和渲染帧循环在 Sigma 内部闭环，交互状态用 `useRef`，零 React re-render

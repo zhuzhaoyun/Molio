@@ -12,6 +12,7 @@ import {
   forceLink,
   forceManyBody,
   forceCollide,
+  forceCenter,
   forceX,
   forceY,
   type SimulationNodeDatum,
@@ -69,6 +70,24 @@ let nodes: WorkerNode[] = [];
 let tickCount = 0;
 // Throttle: send every Nth tick to avoid flooding main thread
 const TICK_THROTTLE = 3;
+// 是否处于拖拽移动中（setCollideIterations value===1 镜像）。onTick 据此判断能否自动解除质心锁。
+let dragMotion = false;
+
+// ── 拖拽局部流体（路线 B）状态 ──
+let simLinks: WorkerLink[] = [];              // init 的 links（forceLink 解析后 source/target 为节点对象）
+let dragId: string | null = null;
+let dragNode: WorkerNode | null = null;
+let dragAnchors: Map<string, { x: number; y: number }> = new Map();
+let dragNeighbors: Set<string> = new Set();
+let dragRadii = { rInner: 0, rOuter: 1, rMagnet: 0 };
+
+// 拴绳强度 + 磁铁强度（与 useSimulation 同名常量保持一致；worker 为独立模块需各自定义）
+const NEIGHBOR_TETHER = 0;
+const CONN_NEAR = 0;
+const CONN_FAR = 0.85;
+const ISO_NEAR = 0.18;
+const ISO_FAR = 0.6;
+const MAGNET_STRENGTH = 2.0;
 
 // ── Multi-Level Layout State ──
 let mlRunning = false;
@@ -100,6 +119,15 @@ self.onmessage = function (e: MessageEvent) {
     case 'setCollideIterations':
       handleSetCollideIterations(e.data);
       break;
+    case 'setCentroidLock':
+      handleSetCentroidLock(e.data);
+      break;
+    case 'beginDrag':
+      handleBeginDrag(e.data);
+      break;
+    case 'endDrag':
+      handleEndDrag();
+      break;
   }
 };
 
@@ -114,13 +142,13 @@ interface InitMessage {
 
 function handleInit(msg: InitMessage) {
   nodes = msg.nodes;
-  const links: WorkerLink[] = msg.links;
+  simLinks = msg.links; // 存全局，供 beginDrag 查邻居（forceLink 解析后 source/target 变为节点对象）
   const p = msg.params;
 
   sim = forceSimulation<WorkerNode>(nodes)
     .force(
       'link',
-      forceLink<WorkerNode, WorkerLink>(links)
+      forceLink<WorkerNode, WorkerLink>(simLinks)
         .id((d) => d.id)
         .distance(p.linkDistance)
         .strength((link: WorkerLink) => linkStrengthFor(link, p.linkStrength)),
@@ -140,6 +168,11 @@ function handleInit(msg: InitMessage) {
 }
 
 function onTick() {
+  // 质心锁自动解除：拖拽中(dragMotion)绝不解除(含按住暂停)；松手后非拖拽、alpha 接近静止时
+  // 移除 forceCenter，避免残留力污染后续唤醒（与主线程 onTick 同款逻辑）。
+  if (!dragMotion && sim && sim.alpha() < 0.02 && sim.force('centroidLock')) {
+    sim.force('centroidLock', null);
+  }
   tickCount++;
   if (tickCount % TICK_THROTTLE !== 0) return;
 
@@ -193,7 +226,83 @@ function handleSetForce(msg: { name: string; value: number }) {
 
 function handleSetCollideIterations(msg: { value: number }) {
   // 仅作用于拖拽阶段的 sim；ML 阶段的各层模拟是独立变量，不受影响
+  dragMotion = msg.value === 1; // 1=拖拽降质中，3=空闲；供 onTick 判断能否解除质心锁
   (sim?.force('collide') as ForceCollide<WorkerNode> | undefined)?.iterations(msg.value);
+}
+
+// ── Centroid Lock（质心锁）──
+// 拖拽时把整簇质心钉在 target，防整簇平移导致冻相机下滑出视野；target=null 解除。
+// 自动解除由 onTick 在「非拖拽 + 接近静止」时完成（见 onTick）。
+function handleSetCentroidLock(msg: { target: { x: number; y: number } | null }) {
+  if (!sim) return;
+  sim.force('centroidLock', msg.target ? forceCenter<WorkerNode>(msg.target.x, msg.target.y) : null);
+}
+
+// ── 拖拽局部流体（路线 B，与主线程 beginDrag/endDrag 同款逻辑）──
+function handleBeginDrag(msg: { draggedId: string; rInner: number; rOuter: number; rMagnet: number }) {
+  if (!sim) return;
+  sim.force('centroidLock', null);
+  dragId = msg.draggedId;
+  dragRadii = { rInner: msg.rInner, rOuter: msg.rOuter, rMagnet: msg.rMagnet };
+  dragNode = nodes.find((n) => n.id === dragId) ?? null;
+  dragAnchors = new Map(nodes.map((n) => [n.id, { x: n.x ?? 0, y: n.y ?? 0 }]));
+  const nb = new Set<string>();
+  for (const l of simLinks) {
+    const s = (l.source as unknown as WorkerNode).id ?? (l.source as unknown as string);
+    const t = (l.target as unknown as WorkerNode).id ?? (l.target as unknown as string);
+    if (s === dragId) nb.add(String(t));
+    if (t === dragId) nb.add(String(s));
+  }
+  dragNeighbors = nb;
+
+  // 不关全局向心力（与 useSimulation 同款理由：平衡态抵消，松手钉死+停模拟后无从作用）
+
+  const dragX = () => dragNode?.x ?? 0;
+  const dragY = () => dragNode?.y ?? 0;
+  const tetherT = (d: WorkerNode): number => {
+    const dist = Math.hypot((d.x ?? 0) - dragX(), (d.y ?? 0) - dragY());
+    const { rInner, rOuter } = dragRadii;
+    return rOuter > rInner ? Math.min(1, Math.max(0, (dist - rInner) / (rOuter - rInner))) : 1;
+  };
+  const strengthOf = (d: WorkerNode): number => {
+    if (d.id === dragId) return 0;
+    if (dragNeighbors.has(d.id)) return NEIGHBOR_TETHER; // 邻居：纯牵引
+    const t = tetherT(d);
+    if (d.degree === 0) return ISO_NEAR + (ISO_FAR - ISO_NEAR) * t; // 孤立：中等牵引绳
+    return CONN_NEAR + (CONN_FAR - CONN_NEAR) * t; // 连接：近自由、远钉死
+  };
+  sim.force('tetherX', forceX<WorkerNode>((d) => dragAnchors.get(d.id)?.x ?? 0).strength(strengthOf));
+  sim.force('tetherY', forceY<WorkerNode>((d) => dragAnchors.get(d.id)?.y ?? 0).strength(strengthOf));
+
+  // 磁铁排斥场（与主线程同款）
+  const magnetForce = () => {
+    const fx = dragX();
+    const fy = dragY();
+    const { rMagnet } = dragRadii;
+    for (const n of nodes) {
+      if (n.id === dragId || dragNeighbors.has(n.id)) continue;
+      const dx = (n.x ?? 0) - fx;
+      const dy = (n.y ?? 0) - fy;
+      const dist = Math.hypot(dx, dy);
+      if (dist < 1e-6 || dist > rMagnet) continue;
+      const fall = 1 - dist / rMagnet;
+      const f = (MAGNET_STRENGTH * fall * fall) / dist;
+      n.vx = (n.vx ?? 0) + dx * f;
+      n.vy = (n.vy ?? 0) + dy * f;
+    }
+  };
+  sim.force('magnet', magnetForce);
+}
+
+function handleEndDrag() {
+  if (!sim) return;
+  sim.force('tetherX', null);
+  sim.force('tetherY', null);
+  sim.force('magnet', null);
+  dragId = null;
+  dragNode = null;
+  dragAnchors = new Map();
+  dragNeighbors = new Set();
 }
 
 // ── Drag ──

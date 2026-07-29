@@ -57,18 +57,19 @@ export function Minimap({ sigma, isInteracting }: Props) {
       const graph = sigma!.getGraph();
       const dims = sigma!.getDimensions();
 
-      // Collect node positions and compute bounds
-      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-      graph.forEachNode((_, attr) => {
-        const x = (attr.x as number) ?? 0;
-        const y = (attr.y as number) ?? 0;
-        if (x < minX) minX = x;
-        if (x > maxX) maxX = x;
-        if (y < minY) minY = y;
-        if (y > maxY) maxY = y;
-      });
+      // 世界框必须与主相机归一化用同一基准 = customBBox || nodeExtent。
+      // 关键坑：sigma.getBBox() 只返回实时 nodeExtent、无视 customBBox！拖拽时主相机被
+      // setCustomBBox 冻结（normalization 用 customBBox），但「全流动」解锁的孤立节点会飞散
+      // 撑大实时 nodeExtent → 若 minimap 用实时包围盒，世界框被撑大、中心簇缩成一小团 +
+      // 角落飞点（用户截图的图二）。改用 getCustomBBox() ?? getBBox()——与 normalizationFunction
+      // 同源：拖拽中用冻结 customBBox，世界框/视口框稳定，飞散节点画到框外被裁掉（=图一）。
+      const bbox = sigma!.getCustomBBox() ?? sigma!.getBBox();
+      const minX = bbox.x[0];
+      const maxX = bbox.x[1];
+      const minY = bbox.y[0];
+      const maxY = bbox.y[1];
 
-      if (!isFinite(minX)) return;
+      if (!isFinite(minX) || !isFinite(maxX)) return;
 
       const gW = maxX - minX || 1;
       const gH = maxY - minY || 1;

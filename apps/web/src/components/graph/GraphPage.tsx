@@ -20,7 +20,7 @@ import { GraphSettingsPanel } from './GraphSettingsPanel';
 import { Minimap } from './Minimap';
 import { getThemeColors } from './types';
 import { setupCameraInertia } from './useCameraInertia';
-import { NODE_TYPE_COLORS, nodeSize, nodeColor, interpolateColor, tileIsolatedNodes } from './graph-utils';
+import { NODE_TYPE_COLORS, nodeSize, nodeColor, interpolateColor } from './graph-utils';
 
 // ── Visual constants (Obsidian light theme, matching obsidian.png) ──
 // 浅色背景 + 深色节点，像纸张上的墨点
@@ -42,6 +42,16 @@ const HOVER_DIM_SIZE_RATIO = 0.25;   // hover：非关联节点尺寸保留 75%
 const HOVER_DIM_COLOR_RATIO = 0.6;  // hover 颜色淡化深度（不全褪到 dimmed，hover 意图更轻）
 const EDGE_DIM_COLOR_RATIO = 0.85;  // 非关联边向背景褪色深度（保留淡痕，不喧宾夺主）
 const EDGE_DIM_SIZE_RATIO = 0.5;    // 非关联边尺寸收缩
+
+// 拖拽局部流体（路线 B）半径，单位屏幕像素，用冻结映射换算成图坐标半径传入 beginDrag（拖拽期映射恒定）：
+//   INNER = 「无回弹自由区」半径：其内拴绳强度=0，节点被推开后就地停/重组、绝不弹回旧锚点。
+//           必须 ≥ 磁铁半径，否则被犁的节点落在拴绳>0 区 → 出现"回弹引力"。
+//   OUTER = 完全钉死起始半径：INNER..OUTER 之间拴绳 0→强 插值（中距离节点呈滞后微动）。
+//   MAGNET = 磁铁排斥场半径：场内未接触即被平滑推开（磁铁手感）；略大于 INNER，使 INNER..MAGNET
+//           这圈节点受弱推+部分拴绳 → 滞后微动（"远节点少量流体移动"）。
+const DRAG_FLOW_INNER_PX = 170;
+const DRAG_FLOW_OUTER_PX = 320;
+const DRAG_MAGNET_PX = 210;
 
 // ── 模块级图谱数据缓存 ──
 // 切出图谱页再回来时，先用上次缓存数据立即渲染（stale-while-revalidate），
@@ -111,6 +121,9 @@ export function GraphPage() {
   const hoverLingerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const simulation = useSimulation();
+  // 镜像 simulation 给独立 effect（ML 完成、筛选变化）用，便于在数据变化点显式清除质心锁
+  const simulationRef = useRef(simulation);
+  simulationRef.current = simulation;
   const { settings, updateSettings, updateForce } = useGraphSettings();
   const themeColors = getThemeColors(settings.theme);
 
@@ -550,8 +563,8 @@ export function GraphPage() {
         draggedNode = node;
         isDragging = false;
         dragStartMouse = { x: mouseX, y: mouseY };
-        // 全流动：解锁所有节点（含外围孤立），让整图像液体一起流动填补空白
-        // （对齐 Obsidian）。被拖节点随后重新锁定为拖拽锚点；松手时再重铺外围。
+        // 路线 B：解锁所有节点（含孤立）参与拖拽期流体。孤立不再硬钉——改由「中等牵引绳 + 磁铁场」
+        // 约束：磁铁近时能被推开一点、绳子拽住防飞散（用户要求孤立节点也要有反应）。被拖节点随后重锁。
         graph.forEachNode((k) => {
           graph.removeNodeAttribute(k, 'fx');
           graph.removeNodeAttribute(k, 'fy');
@@ -565,10 +578,32 @@ export function GraphPage() {
           d3Node.fx = (attrs.x as number) ?? 0;
           d3Node.fy = (attrs.y as number) ?? 0;
         }
-        // 拖拽时锁死相机：禁 autoRescale，否则每次 refresh 重算包围盒调相机，
-        // 相机以中心缩放→边缘节点径向视觉漂移（"孤立点朝固定方向越拖越偏"的
-        // 根因）。松手恢复。也满足"拖拽不改相机视角、节点不拖到无限远"。
-        renderer.setSetting('autoRescale', false);
+        // 拖拽全程锁死相机视角：用 setCustomBBox 把归一化包围盒冻结，使 sigma 每次 process()
+        // 不再用实时包围盒重算 normalizationFunction + getGraphDimensions（否则相机状态没变、
+        // 映射基准在变 → 逐帧漂移）。
+        // 关键——按下瞬间绝不能「重捕获」基准：松手后 customBBox 持久保留，空闲时相机是按
+        // 上一次冻结基准 E_prev 取景的，而实时包围盒已随沉降变成 E_idle（两者不等）。若此处
+        // setCustomBBox(null)+setCustomBBox(getBBox()) 把基准从 E_prev 切成 E_idle，相机 x/y/
+        // ratio 没动但映射变了 → 按下那一帧整张图「瞬间偏移」（第二次起每次拖拽都跳的根因）。
+        // 故只冻结到「相机当前正在用的基准」：已有冻结则保持不动（它本就是当前视图基准，零
+        // 跳变）；仅当尚无冻结（首次交互）才捕获当前实时包围盒（此时它==归一化基准，亦无跳变）。
+        // 冻结保留到松手之后（对齐 Obsidian：拖拽/单击都不动相机），仅 ML 重布局、筛选变化、
+        // 图谱重建等数据变化点清除。不再 toggle autoRescale——customBBox 设置时它被完全覆盖，
+        // 且留着 true 能保持 stagePadding 恒定。
+        if (!renderer.getCustomBBox()) {
+          renderer.setCustomBBox(renderer.getBBox());
+        }
+        // 路线 B 局部流体：把「近/远」反应区按屏幕像素定义（符合视觉直觉），用冻结映射换算成图坐标
+        // 半径（拖拽期映射恒定，一次换算全程有效），交 beginDrag 装按距离门控的拴绳 + 关闭向心。
+        // 平移轴改由「远节点被拴绳钉死」保证（不再依赖拖拽期 forceCenter）；缩放/包围盒轴仍由上面
+        // 的 customBBox 管。两轴各负其责 → 整簇不旋转/不平移，近处流体、邻居受牵引。
+        const gA = renderer.viewportToGraph({ x: 0, y: 0 });
+        const gB = renderer.viewportToGraph({ x: 100, y: 0 });
+        const graphUnitsPer100Px = Math.hypot(gB.x - gA.x, gB.y - gA.y) || 1;
+        const rInner = (DRAG_FLOW_INNER_PX * graphUnitsPer100Px) / 100;
+        const rOuter = (DRAG_FLOW_OUTER_PX * graphUnitsPer100Px) / 100;
+        const rMagnet = (DRAG_MAGNET_PX * graphUnitsPer100Px) / 100;
+        simulation.beginDrag(node, rInner, rOuter, rMagnet);
         // 唤醒物理引擎——这次唤醒会持续 tick，拖拽过程中不需要重复唤醒
         simulation.wake(0.3);
         e.preventDefault();
@@ -643,10 +678,22 @@ export function GraphPage() {
       }
     };
 
+    // 直接操纵模型：松手/点击后把所有可见节点「就地钉死」(fx/fy=当前坐标) 并停模拟 → 零后续运动。
+    // 不做沉降/回弹/重铺（那些都会造成"松手后还在动"的延迟动画，用户明确不要）。
+    const freezeAllNow = () => {
+      graph.forEachNode((k, a) => {
+        if (a.hidden) return;
+        const x = (a.x as number) ?? 0;
+        const y = (a.y as number) ?? 0;
+        graph.setNodeAttribute(k, 'fx', x);
+        graph.setNodeAttribute(k, 'fy', y);
+        const h = simulation.getNode(k);
+        if (h) { h.fx = x; h.fy = y; }
+      });
+      simulation.stop();
+    };
+
     const handleMouseUp = (_e: MouseEvent) => {
-      // 恢复 autoRescale（mousedown 命中节点时关了）。拖拽结束，让相机在
-      // 数据/尺寸变化时能重新 fit 全图。
-      renderer.setSetting('autoRescale', true);
       if (!draggedNode) {
         draggedNode = null;
         isDragging = false;
@@ -657,25 +704,22 @@ export function GraphPage() {
       const wasDragging = isDragging;
 
       if (wasDragging) {
-        const d3Node = simulation.getNode(node);
-        if (d3Node) {
-          // 全流动：被拖节点也解锁，让它和全图一起收敛归位
-          d3Node.fx = null;
-          d3Node.fy = null;
-          graph.removeNodeAttribute(node, 'fx');
-          graph.removeNodeAttribute(node, 'fy');
-        }
-        // 立即重新平铺外围孤立节点归位圆形（基于拖拽后的中心簇位置），
-        // 连接节点 wake 流动收敛到稳态；孤立节点被 tile 重新 fx 固定。
-        tileIsolatedNodes(graph);
-        simulation.wake(0.3);
-        // 恢复移动时降质：标签回来 + collide 迭代回到 3；
-        // 先恢复再 refresh()，让标签立即渲染回来
+        // 直接操纵模型：撤磁铁/拴绳 → 全部就地钉死 + 停模拟 → 松手瞬间定格，零后续运动。
+        // 不重铺孤立节点（那会让孤立弹回圆环 = 延迟动画）；外围圆环随多次拖拽缓慢变化可接受，
+        // 需规整可点重布局。
+        simulation.endDrag();
+        freezeAllNow();
+        // 恢复降质 + 重绘；interactingRef 先置 false 让 afterRender 能重绘 minimap
         renderer.setSetting('renderLabels', true);
         simulation.setMotionMode(false);
-        interactingRef.current = false; // 先于 refresh()：随后的 afterRender 能正常重绘 minimap
+        interactingRef.current = false;
         renderer.refresh();
+        // 相机冻结保留（customBBox 不清除），仅 ML/筛选/重建才清除。
       } else {
+        // 单击未拖拽：mousedown 解锁了全部 + 装了磁铁/拴绳，此处撤掉并就地钉死 + 停模拟，
+        // 使点击后也无任何残留运动。相机冻结不清除（防点击跳变）。
+        simulation.endDrag();
+        freezeAllNow();
         // 单击锁定聚焦（探索连接）；350ms 内再次单击同一节点 → 双击导航
         const now = Date.now();
         const isDblClick = node === lastClickNode && now - lastClickTime < 350;
@@ -783,6 +827,11 @@ export function GraphPage() {
       graph.setNodeAttribute(key, 'hidden', false);
     });
 
+    // 筛选改变了可见节点集合 → 清除拖拽遗留的冻结包围盒，让相机重新 fit 到可见内容
+    // （否则拖拽后 customBBox 仍冻结、筛选不 refit，图谱缩在旧框里）。同时清除可能残留的
+    // 质心锁（数据变化点不应保留拖拽期的质心约束）。
+    renderer.setCustomBBox(null);
+    simulationRef.current.setCentroidLock(null);
     renderer.refresh();
   }, [settings.showOrphans, settings.showDeadLinks, settings.visibleTypes]);
 
@@ -893,6 +942,9 @@ export function GraphPage() {
     const handler = () => {
       const sigma = sigmaRef.current;
       if (!sigma) return;
+      // ML 重布局大幅改变节点位置 → 清除拖拽遗留的冻结包围盒 + 质心锁，让相机 fit 到新布局
+      sigma.setCustomBBox(null);
+      simulationRef.current.setCentroidLock(null);
       const camera = sigma.getCamera();
       camera.animate({ ratio: camera.ratio * 1.05 }, { duration: 300 });
     };

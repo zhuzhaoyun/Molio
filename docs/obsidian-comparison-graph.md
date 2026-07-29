@@ -312,7 +312,7 @@ renderer.on('leaveNode', () => {
 | Hover | 高亮邻居 | 高亮邻居 + 过渡 |
 | 单击 | 选中（紫色 focus 模式） | 选中 + 详情面板 |
 | 双击 | **导航到 /knowledge 打开文件** | 打开文件 |
-| 拖拽 | 实时 fx/fy 锁定 | fx/fy 锁定 |
+| 拖拽 | 实时 fx/fy 锁定 | fx/fy 锁定 + 磁铁/拴绳局部流体 + 松手定格（相机稳定✅；流体手感🔄调优中，见 `docs/superpowers/specs/2026-07-28-graph-drag-camera-stability.md` §11） |
 | 空白点击 | **取消选中 + 清所有 fx/fy** | 取消选中（fx/fy 保留，需手动解锁） |
 
 ---
