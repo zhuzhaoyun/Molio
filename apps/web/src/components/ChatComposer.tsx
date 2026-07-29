@@ -260,19 +260,37 @@ export function ChatComposer({
   // Handle image paste (Ctrl+V / Cmd+V)
   const handlePaste = useCallback(
     async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-      const items = e.clipboardData?.items;
-      if (!items) return;
+      const dt = e.clipboardData;
+      if (!dt?.items) return;
 
+      const items = dt.items;
+
+      // Collect image payloads first — a paste without any image item is a
+      // plain text paste and needs no special handling.
+      const imageFiles: File[] = [];
       for (let i = 0; i < items.length; i++) {
         const item = items[i];
         if (!item || !item.type.startsWith('image/')) continue;
-
-        e.preventDefault();
         const file = item.getAsFile();
-        if (!file) continue;
-
-        uploadImage(file);
+        if (file) imageFiles.push(file);
       }
+      if (imageFiles.length === 0) return;
+
+      // Office apps (Excel / Word / PPT) put the text/HTML payload AND a
+      // rendered bitmap of the selection on the clipboard at the same time.
+      // Prefer the text payload so pasting cells inserts text instead of
+      // attaching a screenshot of them. Only treat the paste as an image
+      // when there is no usable text (e.g. a screenshot tool), or when the
+      // "text" is merely the path of an image file (copying a file in
+      // Explorer still attaches it).
+      const plain = dt.getData('text/plain').trim();
+      const hasHtml = dt.getData('text/html').trim().length > 0;
+      const looksLikeImagePath =
+        plain.length > 0 && !plain.includes('\n') && /\.(png|jpe?g|gif|webp)$/i.test(plain);
+      if ((plain.length > 0 || hasHtml) && !looksLikeImagePath) return;
+
+      e.preventDefault();
+      for (const file of imageFiles) uploadImage(file);
     },
     [uploadImage],
   );
