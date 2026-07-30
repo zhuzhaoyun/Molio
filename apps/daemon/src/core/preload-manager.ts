@@ -79,7 +79,6 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
       return computeLocateDocling() !== null;
     },
     async preload(onProgress, signal) {
-      const venvBin = venvBinaryDir();
       const venvPy = venvPythonPath();
       const venvPip = venvPipPath();
       // The located path can change as we install; keep the cache honest so the
@@ -167,7 +166,7 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
           pipOk = false;
         }
       }
-      if (!pipOk || !fs.existsSync(path.join(venvBin, 'docling'))) {
+      if (!pipOk || !doclingVenvBinaryPresent()) {
         const detail = lastPipErr ? `（${lastPipErr.slice(0, 240)}）` : '（未生成 docling 可执行文件）';
         throw new Error(`docling 安装失败${detail}。可手动运行：${q(venvPip)} install docling`);
       }
@@ -419,6 +418,19 @@ function doclingBinaryPath(): string {
   return process.platform === 'win32'
     ? path.join(venvBinaryDir(), 'docling.exe')
     : path.join(venvBinaryDir(), 'docling');
+}
+
+/** Whether the preload venv's docling launcher exists, using the platform-
+ *  correct name (`docling.exe` on Windows, `docling` elsewhere). Shared by the
+ *  post-install verification and install detection so the two can never
+ *  disagree. Exported for tests.
+ *
+ *  Error-driven (2026-07 Windows): the post-install check used to look for the
+ *  extensionless `docling`, which on Windows never matches pip's `docling.exe`
+ *  → a fully successful install was reported as "未生成 docling 可执行文件".
+ *  macOS was unaffected because its launcher really is extensionless. */
+export function doclingVenvBinaryPresent(): boolean {
+  return fs.existsSync(doclingBinaryPath());
 }
 function remotionPreloadMarker(): string {
   return path.join(os.homedir(), '.molio', '.remotion-preloaded');
@@ -755,20 +767,30 @@ function runSpawned(proc: ChildProcess, opts: RunOpts): Promise<void> {
 
 /** Run a command THROUGH a shell (needed for `&&`/`||`/pipes, e.g. npm chains).
  *  Callers must pre-quote any interpolated paths via q(). */
-function runProcess(command: string, opts: RunOpts = {}): Promise<void> {
-  const useShell = process.platform !== 'win32';
-  // detached:true puts the child in its own process group (Unix) / session so
-  // that on pause/stop we can kill the WHOLE tree, not just the shell wrapper.
-  const spawnOpts: Parameters<typeof spawn>[2] = {
+/** Shared spawn options for every preload child process. `detached:true` gives
+ *  Unix a process group we can `kill(-pid)` and lets the Windows child outlive
+ *  the parent so `taskkill /T` can walk the tree. `windowsHide:true` is the
+ *  Windows UX fix: without it, spawning console-subsystem children (cmd / npm /
+ *  python) under `detached` makes Windows pop a black console window PER child
+ *  — jarring inside an Electron app. macOS/Linux have no per-process console
+ *  window, so windowsHide is a harmless no-op there (which is exactly why the
+ *  popups were Windows-only). Exported for tests. */
+export function preloadSpawnOpts(opts: RunOpts): Parameters<typeof spawn>[2] {
+  return {
     stdio: ['ignore', 'pipe', 'pipe'],
     timeout: opts.timeout,
     cwd: opts.cwd,
     env: childEnv(opts),
     detached: true,
+    windowsHide: true,
   };
+}
+
+function runProcess(command: string, opts: RunOpts = {}): Promise<void> {
+  const useShell = process.platform !== 'win32';
   const proc = useShell
-    ? spawn('sh', ['-c', command], spawnOpts)
-    : spawn('cmd', ['/c', command], spawnOpts);
+    ? spawn('sh', ['-c', command], preloadSpawnOpts(opts))
+    : spawn('cmd', ['/c', command], preloadSpawnOpts(opts));
   return runSpawned(proc, opts);
 }
 
@@ -778,13 +800,7 @@ function runArgv(argv: string[], opts: RunOpts = {}): Promise<void> {
   const file = argv[0];
   if (!file) return Promise.reject(new Error('runArgv: empty argv'));
   const args = argv.slice(1);
-  const proc = spawn(file, args, {
-    stdio: ['ignore', 'pipe', 'pipe'],
-    timeout: opts.timeout,
-    cwd: opts.cwd,
-    env: childEnv(opts),
-    detached: true,
-  });
+  const proc = spawn(file, args, preloadSpawnOpts(opts));
   return runSpawned(proc, opts);
 }
 

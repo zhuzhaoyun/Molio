@@ -308,3 +308,90 @@ describe('runWithRegistryFallback (remotion preload ETARGET regression)', () => 
     );
   });
 });
+
+// ─── docling post-install binary check (Windows .exe regression) ───────────
+//
+// Error-driven (2026-07): 安装后校验曾写死无扩展名的 `docling`，Windows 上 pip
+// 生成的是 `docling.exe`，existsSync 恒 false → 装好也判失败。修复后校验与检测
+// 共用 doclingVenvBinaryPresent()（平台正确名）。这里钉住该判定，并防止反向错误
+// （在 Windows 上接受无扩展名 / 在 POSIX 上接受 .exe）。
+
+describe('doclingVenvBinaryPresent (Windows .exe regression)', () => {
+  const isWindows = process.platform === 'win32';
+  let savedHome: string | undefined;
+  let tmpHome: string;
+
+  beforeEach(() => {
+    savedHome = isWindows ? process.env['USERPROFILE'] : process.env['HOME'];
+    tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-docling-bin-'));
+    if (isWindows) process.env['USERPROFILE'] = tmpHome;
+    else process.env['HOME'] = tmpHome;
+  });
+  afterEach(() => {
+    if (savedHome !== undefined) {
+      if (isWindows) process.env['USERPROFILE'] = savedHome;
+      else process.env['HOME'] = savedHome;
+    } else {
+      if (isWindows) delete process.env['USERPROFILE'];
+      else delete process.env['HOME'];
+    }
+    try { fs.rmSync(tmpHome, { recursive: true, force: true }); } catch { /* ignore */ }
+  });
+
+  it('accepts the platform-correct launcher and rejects the wrong-platform name', async () => {
+    const { doclingVenvBinaryPresent } = await import('../../src/core/preload-manager.js');
+    const binDir = isWindows
+      ? path.join(tmpHome, '.molio', 'venv', 'Scripts')
+      : path.join(tmpHome, '.molio', 'venv', 'bin');
+    fs.mkdirSync(binDir, { recursive: true });
+    const correct = isWindows ? 'docling.exe' : 'docling';
+    const wrong = isWindows ? 'docling' : 'docling.exe';
+
+    // 只有「错误平台名」→ 不能算装好（这正是旧 bug：Windows 上只认 docling.exe，
+    // 旧代码却去找 docling，于是即便装好也 false；这里反过来锁住，确保不会退化）
+    fs.writeFileSync(path.join(binDir, wrong), '');
+    assert.equal(
+      doclingVenvBinaryPresent(),
+      false,
+      'the wrong-platform binary name must NOT satisfy the check',
+    );
+
+    // 放上平台正确名 → 装好
+    fs.writeFileSync(path.join(binDir, correct), '');
+    assert.equal(
+      doclingVenvBinaryPresent(),
+      true,
+      'the platform-correct launcher must satisfy the check',
+    );
+  });
+});
+
+// ─── preloadSpawnOpts (Windows console-window regression) ──────────────────
+//
+// Error-driven (2026-07): spawn 子进程带 detached 却没设 windowsHide，Windows
+// 给 cmd/npm/python 各弹一个黑控制台窗口。windowsHide:true 在 POSIX 是 no-op，
+// 故只影响 Windows 弹窗，跨平台安全。
+
+describe('preloadSpawnOpts (Windows console-window regression)', () => {
+  it('hides the child console window while keeping detached + piped stdio', async () => {
+    const { preloadSpawnOpts } = await import('../../src/core/preload-manager.js');
+    const o = preloadSpawnOpts({});
+    assert.equal(
+      o.windowsHide,
+      true,
+      'windowsHide must be set so Windows does not pop a console window per child',
+    );
+    assert.equal(o.detached, true, 'detached must stay for process-tree kill');
+    assert.deepEqual(o.stdio, ['ignore', 'pipe', 'pipe']);
+    assert.equal(o.env, undefined, 'no env overlay → inherit daemon env as-is');
+  });
+
+  it('overlays caller env on top of the inherited daemon env', async () => {
+    const { preloadSpawnOpts } = await import('../../src/core/preload-manager.js');
+    const o = preloadSpawnOpts({ env: { HF_ENDPOINT: 'https://hf-mirror.com' } });
+    const env = o.env as Record<string, string | undefined>;
+    assert.equal(env['HF_ENDPOINT'], 'https://hf-mirror.com');
+    // 仍继承 daemon 自身环境（如 PATH），不能丢
+    assert.ok(env['PATH'] !== undefined || env['Path'] !== undefined, 'inherited env (PATH) must survive the overlay');
+  });
+});

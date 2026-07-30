@@ -180,6 +180,8 @@ PreloadManager 跑完 remotion npm 缓存预热后写的 marker 文件。`checkS
 5. **看 daemon 日志**：`pnpm dev:daemon` 的终端会打印 `[PreloadManager]` 的进度消息和子进程退出码。
 6. **remotion 报 `No matching version found for @remotion/xxx@4.0.y`（ETARGET）**：npm 源是镜像（如 npmmirror）且 remotion 刚发新版时会出现。remotion 每次联动发布约 20 个包，镜像对每个包**独立、按需同步**——常见主包（`@remotion/cli`）已同步、传递依赖（如 `@remotion/player`）还没同步，于是 `npm install` 报 ETARGET。预下载现在会**自动换源降级重试**：默认源（重试 2 次）→ 官方源 `registry.npmjs.org`（同步源头，版本永远齐全；国内慢但后台预下载可接受）→ npmmirror 兜底。进度消息里会出现「换下一个 npm 源」。若三个源全失败，错误信息会带步骤名 + 子进程输出尾部（不再是以前的空消息「进程退出码 1:」），按提示判断是网络还是版本问题。
    > 历史教训：旧版本用 `npm install --prefer-offline`，它让 npm 跳过缓存元数据的过期检查——如果恰好在镜像同步完成**前**缓存了缺版本的 packument，同步完成后仍会一直 ETARGET。现已移除该参数（在线模式照样按 integrity 复用已缓存的 tarball，暖缓存效果不变）。
+7. **预下载时 Windows 弹黑色 cmd 窗口（macOS 不弹）**：旧版本 `spawn` 子进程带了 `detached` 却没设 `windowsHide`，Windows 会给 console 子系统的 cmd/npm/python 各分配一个控制台窗口；macOS/Linux 没有「每进程一个控制台窗口」的概念，所以不弹。已加 `windowsHide:true`（POSIX 上是 no-op），不再弹。此前功能也正常，只是难看。
+8. **docling 报「未生成 docling 可执行文件」但 venv 里其实装好了（Windows 专属）**：安装后校验曾写死无扩展名的 `docling`，匹配不到 pip 生成的 `docling.exe`，于是成功的安装被判失败（macOS 二进制本就无扩展名，不受影响）。已改用平台正确名校验，且与检测共用同一判定。若你撞上过：venv 里 docling 已装好，重启 daemon 即显示 installed，不必重下；想重测预下载流程才需删 venv。
 
 ## 相关代码
 
