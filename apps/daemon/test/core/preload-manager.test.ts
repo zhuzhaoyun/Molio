@@ -425,30 +425,50 @@ describe('preloadSpawnOpts (Windows console-window regression)', () => {
   });
 });
 
-// ─── docling warmup argv (Windows launcher→grandchild regression) ──────────
+// ─── docling warmup argv (Win launcher→grandchild + empty-input no-op) ─────
 //
 // Error-driven (2026-07): 模型预热若走 docling.exe，该 launcher 会再 spawn
 // python 作为带控制台窗口的孙进程。Windows 改走 `python -c <shim>` 让 python
 // 成为直跑子进程（windowsHide 隐藏），docling 在进程内运行，无孙进程。
+// Error-driven (2026-07, retrospective 开放遗留 #1): 预热若喂空输入(/dev/null /
+// NUL)，docling 在格式识别阶段就拒绝（format None），模型从不加载 → HF 缓存
+// 一直空、首次转换才下 ~500MB。故 warmup 必须喂一个真实合法文件 + `--from md`
+// 钉死格式，确保走到模型加载。
 
-describe('doclingWarmupArgv (Windows launcher→grandchild regression)', () => {
+describe('doclingWarmupArgv (Win launcher→grandchild + warmup-input regression)', () => {
   it('Windows runs docling via python -c shim (in-process, no launcher)', async () => {
     const { doclingWarmupArgv, DOCLING_CLI_SHIM } = await import('../../src/core/preload-manager.js');
-    const argv = doclingWarmupArgv(true, 'C:\\venv\\python.exe', 'NUL', 'C:\\out');
+    const argv = doclingWarmupArgv(true, 'C:\\venv\\python.exe', 'C:\\out\\warmup.pdf', 'C:\\out');
     assert.equal(argv[0], 'C:\\venv\\python.exe');
     assert.equal(argv[1], '-c');
     assert.equal(argv[2], DOCLING_CLI_SHIM);
     // 真实 CLI 参数作为 -c 之后的 argv 传入（无需把路径嵌进 -c 字符串）
-    assert.deepEqual(argv.slice(3), ['NUL', '--to', 'md', '--output', 'C:\\out']);
+    assert.deepEqual(argv.slice(3), ['C:\\out\\warmup.pdf', '--from', 'pdf', '--to', 'md', '--output', 'C:\\out']);
     assert.match(DOCLING_CLI_SHIM, /docling\.cli\.main import app/, 'shim must invoke the published entry point');
   });
 
   it('POSIX keeps the real docling launcher (no console concept there)', async () => {
     const { doclingWarmupArgv } = await import('../../src/core/preload-manager.js');
-    const argv = doclingWarmupArgv(false, '/venv/bin/python', '/dev/null', '/out');
+    const argv = doclingWarmupArgv(false, '/venv/bin/python', '/out/warmup.pdf', '/out');
     // POSIX 首参是 docling 二进制（bin/docling），不是 python -c
     assert.ok(!argv.includes('-c'), 'POSIX must not use the -c shim');
-    assert.deepEqual(argv.slice(1), ['/dev/null', '--to', 'md', '--output', '/out']);
+    assert.deepEqual(argv.slice(1), ['/out/warmup.pdf', '--from', 'pdf', '--to', 'md', '--output', '/out']);
+  });
+
+  it('warmup pins --from pdf and a real PDF input (md/empty skip model load)', async () => {
+    const { doclingWarmupArgv, DOCLING_WARMUP_PDF_B64 } = await import('../../src/core/preload-manager.js');
+    // bundled warmup PDF must decode to a real PDF (magic header %PDF-)
+    const pdf = Buffer.from(DOCLING_WARMUP_PDF_B64, 'base64');
+    assert.equal(pdf.slice(0, 5).toString(), '%PDF-', 'bundled warmup input must be a real PDF');
+    for (const isWin of [true, false]) {
+      const argv = doclingWarmupArgv(isWin, isWin ? 'py.exe' : '/bin/docling', '/in/warmup.pdf', '/out');
+      // markdown/empty input routes to SimplePipeline (no AI models); PDF forces
+      // StandardPdfPipeline which loads layout/table models at init.
+      assert.ok(argv.includes('--from'), 'must pass --from so the input is not mis-sniffed');
+      assert.equal(argv[argv.indexOf('--from') + 1], 'pdf', '--from must pin PDF (md would skip model load)');
+      assert.ok(argv.some((a) => a.endsWith('warmup.pdf')), 'must feed a real PDF, not /dev/null/NUL/.md');
+      assert.ok(!argv.includes('/dev/null') && !argv.includes('NUL'), 'empty input would skip model loading');
+    }
   });
 });
 

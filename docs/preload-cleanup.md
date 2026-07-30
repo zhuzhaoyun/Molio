@@ -131,6 +131,15 @@ grep -q '"dismissed"' ~/.molio/config.json 2>/dev/null && echo "⚠ config 仍�
 
 全绿后，**重启** `pnpm dev`（`checkSkills()` 只在启动跑一次），daemon 会判定 docling + remotion 都为 `missing`，右下角弹 toast。
 
+> ⚠️ **不想重启（运行中 daemon 复测）**：`/api/preload/status` 读的是 daemon **内存**状态——你删了 venv/marker，它仍记 `installed`，toast 不弹。删完产物后对**运行中**的 daemon 调一次 `undismiss` 触发 `detectInstalled` 重探测（或干脆重启）：
+> ```bash
+> curl -s -X POST http://localhost:3100/api/preload/undismiss \
+>   -H 'Content-Type: application/json' -d '{"skills":["docling","remotion"]}'
+> # 然后核对状态确为 missing：
+> curl -s http://localhost:3100/api/preload/status
+> ```
+> 注意 `undismiss` 只清「不再提示」标记并重探测；若你之前没点过「不再提示」，它仍会重探测一次，无害。最稳的还是重启。
+
 ## 关于 npm 缓存（remotion）
 
 remotion 预下载只是把 npm 包灌进 `~/.npm` 共享缓存，**不建独立项目**。所以：

@@ -177,18 +177,26 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
       // the models will download on first real use. (`/dev/null`/`NUL` is passed
       // as a literal empty-input file argument; stderr is captured via the pipe,
       // so no shell `2>&1` redirection is needed.)
-      onProgress(60, '下载 AI 模型（layout + table，~500MB）...');
+      onProgress(60, '预热 AI 模型（喂最小 PDF 触发 layout/table 模型下载，~500MB；部分镜像可能只下到一部分，属正常）...');
       try {
-        const discard = process.platform === 'win32' ? 'NUL' : '/dev/null';
         const outDir = path.join(os.tmpdir(), 'molio-docling-preload');
+        // Feed docling a minimal PDF (NOT markdown, NOT /dev/null). Empty input
+        // is rejected at format detection; markdown routes to SimplePipeline —
+        // neither loads the layout/table AI models (verified 2026-07: HF cache
+        // stayed empty). A PDF forces StandardPdfPipeline, which downloads the
+        // models at init — the whole point of warmup. The bundled base64 PDF
+        // keeps this dependency-free and cross-platform.
+        fs.mkdirSync(outDir, { recursive: true });
+        const warmupInput = path.join(outDir, 'warmup.pdf');
+        fs.writeFileSync(warmupInput, Buffer.from(DOCLING_WARMUP_PDF_B64, 'base64'));
         // Default the model download to the HF mirror (default hf.co is slow /
-        // unreachable from mainland China, which made this warmup time out and
-        // skip — leaving the 500MB model to stall the user's first conversion).
-        // Only set when the user hasn't chosen their own HF_ENDPOINT, and only
-        // for this child process (env overlay, never touches the daemon env).
+        // unreachable from mainland China). Only set when the user hasn't
+        // chosen their own HF_ENDPOINT, and only for this child process (env
+        // overlay, never touches the daemon env). Now that warmup truly loads
+        // models, this mirror actually gets exercised.
         const hfEnv: Record<string, string> = {};
         if (!process.env['HF_ENDPOINT']) hfEnv['HF_ENDPOINT'] = 'https://hf-mirror.com';
-        await runArgv(doclingWarmupArgv(isWin, venvPy, discard, outDir), {
+        await runArgv(doclingWarmupArgv(isWin, venvPy, warmupInput, outDir), {
           timeout: 600_000,
           signal,
           env: hfEnv,
@@ -515,18 +523,34 @@ export function doclingVenvBinaryPresent(): boolean {
 export const DOCLING_CLI_SHIM =
   'import sys; from docling.cli.main import app; sys.exit(app() or 0)';
 
-/** Build the model-warmup argv. Windows runs docling via `python -c <shim>`
- *  (in-process, no launcher → no console grandchild); POSIX keeps the real
- *  launcher (no console-window concept there). Exported for tests. */
+/** A minimal valid 1-page PDF (base64), used ONLY to trigger docling's
+ *  StandardPdfPipeline during model warmup. A markdown/empty input routes to
+ *  SimplePipeline and never loads the layout/table AI models (verified
+ *  2026-07); a PDF forces the standard pipeline, which downloads the models at
+ *  init time. The PDF content is irrelevant — we discard the conversion output
+ *  and only want the side effect of populating the model cache. */
+export const DOCLING_WARMUP_PDF_B64 =
+  'JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCAyMDAgMjAwXSAvQ29udGVudHMgNCAwIFIgL1Jlc291cmNlcyA8PCAvRm9udCA8PCAvRjEgNSAwIFIgPj4gPj4gPj4KZW5kb2JqCjQgMCBvYmoKPDwgL0xlbmd0aCA0NCA+PgpzdHJlYW0KQlQgL0YxIDEyIFRmIDIwIDEwMCBUZCAod2FybXVwKSBUaiBFVAplbmRzdHJlYW0KZW5kb2JqCjUgMCBvYmoKPDwgL1R5cGUgL0ZvbnQgL1N1YnR5cGUgL1R5cGUxIC9CYXNlRm9udCAvSGVsdmV0aWNhID4+CmVuZG9iagp4cmVmCjAgNgowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwMDkgMDAwMDAgbiAKMDAwMDAwMDA1OCAwMDAwMCBuIAowMDAwMDAwMTE1IDAwMDAwIG4gCjAwMDAwMDAyNDEgMDAwMDAgbiAKMDAwMDAwMDMyOCAwMDAwMCBuIAp0cmFpbGVyCjw8IC9TaXplIDYgL1Jvb3QgMSAwIFIgPj4Kc3RhcnR4cmVmCjM5OAolJUVPRgo=';
+
+/** Build the model-warmup argv. `inputPath` must be a real PDF (the caller
+ *  decodes DOCLING_WARMUP_PDF_B64) — markdown/empty input routes to
+ *  SimplePipeline and never loads the layout/table AI models (verified
+ *  2026-07), whereas a PDF forces StandardPdfPipeline, which downloads the
+ *  models at init. `--from pdf` pins the format. The conversion itself may
+ *  still exit non-zero (e.g. a model the HF mirror lacks) — that's fine, the
+ *  cache is populated at init and the caller treats warmup failure as
+ *  non-fatal. Windows runs docling via `python -c <shim>` (in-process, no
+ *  launcher → no console grandchild); POSIX keeps the real launcher. Exported
+ *  for tests. */
 export function doclingWarmupArgv(
   isWin: boolean,
   venvPy: string,
-  discard: string,
+  inputPath: string,
   outDir: string,
 ): string[] {
   return isWin
-    ? [venvPy, '-c', DOCLING_CLI_SHIM, discard, '--to', 'md', '--output', outDir]
-    : [doclingBinaryPath(), discard, '--to', 'md', '--output', outDir];
+    ? [venvPy, '-c', DOCLING_CLI_SHIM, inputPath, '--from', 'pdf', '--to', 'md', '--output', outDir]
+    : [doclingBinaryPath(), inputPath, '--from', 'pdf', '--to', 'md', '--output', outDir];
 }
 function remotionPreloadMarker(): string {
   return path.join(os.homedir(), '.molio', '.remotion-preloaded');
