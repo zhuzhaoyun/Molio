@@ -80,7 +80,7 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
     },
     async preload(onProgress, signal) {
       const venvPy = venvPythonPath();
-      const venvPip = venvPipPath();
+      const isWin = process.platform === 'win32';
       // The located path can change as we install; keep the cache honest so the
       // /status API reports the right place during/after this run.
       invalidateDoclingLoc();
@@ -134,7 +134,7 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
       let pipOk = false;
       let lastPipErr = '';
       try {
-        await runArgv([venvPip, 'install', 'docling', ...mirrorArgs], {
+        await runArgv([venvPy, '-m', 'pip', 'install', 'docling', ...mirrorArgs], {
           timeout: 600_000,
           signal,
           onLine(line) {
@@ -150,7 +150,7 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
         // Fallback: default index (mirror may be down or package missing there)
         onProgress(40, '镜像失败，尝试默认源...');
         try {
-          await runArgv([venvPip, 'install', 'docling'], {
+          await runArgv([venvPy, '-m', 'pip', 'install', 'docling'], {
             timeout: 600_000,
             signal,
             onLine(line) {
@@ -168,7 +168,7 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
       }
       if (!pipOk || !doclingVenvBinaryPresent()) {
         const detail = lastPipErr ? `（${lastPipErr.slice(0, 240)}）` : '（未生成 docling 可执行文件）';
-        throw new Error(`docling 安装失败${detail}。可手动运行：${q(venvPip)} install docling`);
+        throw new Error(`docling 安装失败${detail}。可手动运行：${q(venvPy)} -m pip install docling`);
       }
 
       // Phase 3: Model warmup (55 → 100). Run a no-op conversion so docling
@@ -188,7 +188,7 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
         // for this child process (env overlay, never touches the daemon env).
         const hfEnv: Record<string, string> = {};
         if (!process.env['HF_ENDPOINT']) hfEnv['HF_ENDPOINT'] = 'https://hf-mirror.com';
-        await runArgv([doclingBinaryPath(), discard, '--to', 'md', '--output', outDir], {
+        await runArgv(doclingWarmupArgv(isWin, venvPy, discard, outDir), {
           timeout: 600_000,
           signal,
           env: hfEnv,
@@ -232,11 +232,11 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
       const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-remotion-warmup-'));
       const projDir = path.join(tmpDir, 'warmup');
 
-      // runStep: one shell command with transient retry AND npm-registry
-      // fallback (see runWithRegistryFallback). Registry fallback is the core
-      // of the 2026-07 ETARGET fix: remotion releases ~20 lockstep packages;
-      // mirrors (npmmirror et al.) sync them lazily per-package, so right
-      // after a release the scaffold's pinned version commonly exists for
+      // runStep: run one step (scaffold or install) with transient retry AND
+      // npm-registry fallback (see runWithRegistryFallback). Registry fallback
+      // is the core of the 2026-07 ETARGET fix: remotion releases ~20 lockstep
+      // packages; mirrors (npmmirror et al.) sync them lazily per-package, so
+      // right after a release the pinned version commonly exists for
       // @remotion/cli but NOT for a transitive package like @remotion/player
       // → `npm install` exits 1 with ETARGET, and retrying the SAME registry
       // is pointless until the mirror catches up (minutes to hours). Falling
@@ -249,37 +249,62 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
       // even AFTER the mirror synced — turning transient lag into a
       // persistent failure. Online mode still reuses cached tarballs via
       // integrity matching, so cache-warming is unaffected.
+      //
+      // WINDOWS CONSOLE-WINDOW FIX: on Windows we do NOT run these through
+      // `cmd /c`. `cmd.exe` and the npm `.exe`/`.cmd` shims are console apps
+      // that re-spawn node as console-windowed grandchildren, and npm's own
+      // @npmcli/promise-spawn does NOT set windowsHide — so spawn options
+      // alone can't hide the tree. Instead we invoke node + the npm/npx JS
+      // entry directly (runArgv, hidden, in-process): `npm install` then runs
+      // with no grandchildren at all. resolveNpmEntry needs npm on PATH (dev);
+      // if it's absent (e.g. a packaged build without npm, where remotion
+      // preload is optional) we fall back to the shell form. POSIX has no
+      // per-process console window, so it keeps the simple shell form.
       // Pause/stop (signal.aborted) never retries — it propagates.
+      const isWin = process.platform === 'win32';
+      const nodeBin = process.execPath;
+      const npmJs = isWin ? resolveNpmEntry('npm') : null;
+      const npxJs = isWin ? resolveNpmEntry('npx') : null;
+      const runShellOrArgv = (cmd: string, argv: string[] | null, runOpts: RunOpts) =>
+        argv ? runArgv(argv, runOpts) : runProcess(cmd, runOpts);
+
       const runStep = async (
         label: string,
-        buildCmd: (registryFlag: string) => string,
+        kind: 'scaffold' | 'install',
         cwd: string | undefined,
         pct: number,
       ) => {
         await runWithRegistryFallback({
           label,
           signal,
-          buildCmd,
           onProgress: (msg) => onProgress(pct, msg),
-          // 900s (vs docling's 600s): the official-registry fallback stage can
-          // spend several minutes just resolving metadata from a slow CN link
-          // (measured: >240s for a packument-only dry run) before downloading
-          // ~hundreds of tarballs. A too-short timeout would neuter the
-          // fallback; and even if it DOES time out, the mirror-lag that forced
-          // the fallback typically self-heals within minutes (our stage-1
-          // requests trigger npmmirror's on-demand sync), so the final
-          // npmmirror stage — running ~20min after the first attempt — usually
-          // succeeds.
-          run: (cmd) => runProcess(cmd, {
-            timeout: 900_000,
-            cwd,
-            signal,
-            onLine(line) {
-              if (line.includes('added') || line.toLowerCase().includes('package')) {
-                onProgress(pct, line.trim());
-              }
-            },
-          }),
+          exec: (registryFlag) => {
+            const runOpts: RunOpts = {
+              // 900s (vs docling's 600s): the official-registry fallback stage
+              // can spend several minutes just resolving metadata from a slow
+              // CN link (measured: >240s for a packument-only dry run) before
+              // downloading hundreds of tarballs. A too-short timeout would
+              // neuter the fallback; and even if it DOES time out, the
+              // mirror-lag that forced the fallback typically self-heals within
+              // minutes (our stage-1 requests trigger npmmirror's on-demand
+              // sync), so the final npmmirror stage — ~20min after the first
+              // attempt — usually succeeds.
+              timeout: 900_000,
+              cwd,
+              signal,
+              onLine(line) {
+                if (line.includes('added') || line.toLowerCase().includes('package')) {
+                  onProgress(pct, line.trim());
+                }
+              },
+            };
+            if (kind === 'scaffold') {
+              const argv = isWin && npxJs ? remotionScaffoldArgv(nodeBin, npxJs, registryFlag) : null;
+              return runShellOrArgv(remotionScaffoldCmd(registryFlag), argv, runOpts);
+            }
+            const argv = isWin && npmJs ? remotionInstallArgv(nodeBin, npmJs, registryFlag) : null;
+            return runShellOrArgv(remotionInstallCmd(registryFlag), argv, runOpts);
+          },
         });
       };
 
@@ -287,7 +312,7 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
         onProgress(10, '拉取 Remotion 脚手架（create-video）...');
         // `--yes` skips the interactive prompts; the scaffold only copies the
         // template (no install — that's the next step).
-        await runStep('Remotion 脚手架（create-video）', remotionScaffoldCmd, tmpDir, 30);
+        await runStep('Remotion 脚手架（create-video）', 'scaffold', tmpDir, 30);
 
         if (!fs.existsSync(projDir)) {
           throw new Error('Remotion 脚手架未生成（create-video 可能交互失败或网络中断）');
@@ -296,7 +321,7 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
         onProgress(55, '安装完整 Remotion 依赖树（暖缓存）...');
         // Install the full (transitive) tree so every tarball lands in the
         // cache for the agent's later real install to reuse.
-        await runStep('Remotion 依赖安装（npm install）', remotionInstallCmd, projDir, 80);
+        await runStep('Remotion 依赖安装（npm install）', 'install', projDir, 80);
 
         if (!fs.existsSync(path.join(projDir, 'node_modules', 'remotion'))) {
           throw new Error('Remotion 依赖树未装全（node_modules/remotion 缺失）');
@@ -320,18 +345,67 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
 
 // ─── npm registry fallback (remotion preload) ───────────────────────────────
 
-/** Scaffold command for the remotion warmup. `registryFlag` is either empty
- *  (user's default registry) or a full `--registry=<url>` flag; npx accepts
- *  npm config flags before the package spec. */
+/** Scaffold command (POSIX shell form). `registryFlag` empty = user's default
+ *  registry, else a full `--registry=<url>`; npx accepts npm config flags
+ *  before the package spec. On Windows the argv form (remotionScaffoldArgv) is
+ *  preferred to avoid a console window; this shell form is the fallback. */
 export function remotionScaffoldCmd(registryFlag: string): string {
   const flag = registryFlag ? `${registryFlag} ` : '';
   return `npx --yes ${flag}create-video@latest --yes --blank --no-tailwind warmup`;
 }
 
-/** Dependency-install command for the remotion warmup (warms the npm cache). */
+/** Dependency-install command (POSIX shell form; warms the npm cache). */
 export function remotionInstallCmd(registryFlag: string): string {
   const flag = registryFlag ? `${registryFlag} ` : '';
   return `npm install ${flag}--no-audit --no-fund`;
+}
+
+/** Scaffold argv (Windows): node + npx JS entry run directly, no cmd.exe, so
+ *  npx runs in-process (hidden). create-video itself remains npx's child. */
+export function remotionScaffoldArgv(node: string, npxJs: string, registryFlag: string): string[] {
+  return [
+    node, npxJs,
+    ...(registryFlag ? [registryFlag] : []),
+    '--yes', 'create-video@latest', '--yes', '--blank', '--no-tailwind', 'warmup',
+  ];
+}
+
+/** Install argv (Windows): node + npm JS entry run directly → `npm install`
+ *  executes in-process with NO grandchildren → no console window. */
+export function remotionInstallArgv(node: string, npmJs: string, registryFlag: string): string[] {
+  return [node, npmJs, 'install', ...(registryFlag ? [registryFlag] : []), '--no-audit', '--no-fund'];
+}
+
+/** Map an npm/npx shim directory (the dir of the `npm`/`npx` found on PATH) to
+ *  its JS entry: `<shimDir>/node_modules/npm/bin/<name>-cli.js`. Pure (no IO)
+ *  so it's unit-testable; existence is checked by resolveNpmEntry. */
+export function npmCliJsFromDir(shimDir: string, name: 'npm' | 'npx'): string {
+  return path.join(shimDir, 'node_modules', 'npm', 'bin', `${name}-cli.js`);
+}
+
+let _npmEntryCache: Partial<Record<'npm' | 'npx', string | null>> = {};
+export function invalidateNpmEntryCache(): void { _npmEntryCache = {}; }
+
+/** Resolve the npm/npx JS entry from whatever `npm`/`npx` is on PATH (so nvm,
+ *  global, and Program-Files installs all work in dev). Returns null when npm
+ *  isn't on PATH (e.g. a packaged build that doesn't bundle it) — callers then
+ *  fall back to the shell form. Cached; invalidate when PATH may have changed. */
+export function resolveNpmEntry(name: 'npm' | 'npx'): string | null {
+  if (name in _npmEntryCache) return _npmEntryCache[name] ?? null;
+  let found: string | null = null;
+  try {
+    const probe = process.platform === 'win32' ? `where ${name}` : `command -v ${name}`;
+    const out = execSync(probe, {
+      encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000, windowsHide: true,
+    }).trim();
+    const first = out.split(/\r?\n/)[0]?.trim();
+    if (first) {
+      const cli = npmCliJsFromDir(path.dirname(first), name);
+      if (fs.existsSync(cli)) found = cli;
+    }
+  } catch { /* npm/npx not on PATH */ }
+  _npmEntryCache[name] = found;
+  return found;
 }
 
 /** Ordered npm registries to try: the user's default (empty flag — fast, and
@@ -347,12 +421,11 @@ export const NPM_REGISTRY_FALLBACKS: ReadonlyArray<{ label: string; flag: string
 ];
 
 export interface RegistryFallbackOpts {
-  /** Step name shown in progress + final error (e.g. "Remotion 依赖安装（npm install）"). */
+  /** Step name shown in progress + final error. */
   label: string;
-  /** Build the shell command for a given registry flag (may be empty). */
-  buildCmd: (registryFlag: string) => string;
-  /** Execute a command; rejects on non-zero exit / timeout. Injectable for tests. */
-  run: (cmd: string) => Promise<void>;
+  /** Run one attempt for a given registry flag (may be empty). The caller
+   *  decides shell-vs-argv per platform; rejects on non-zero exit / timeout. */
+  exec: (registryFlag: string) => Promise<void>;
   signal: AbortSignal;
   onProgress?: (msg: string) => void;
   /** Transient retries per registry before switching. Default 2. */
@@ -360,16 +433,15 @@ export interface RegistryFallbackOpts {
 }
 
 /**
- * Run an npm-family command with transient retry per registry and fallback
- * ACROSS registries (see NPM_REGISTRY_FALLBACKS). Same-registry retries cover
- * network blips (a single failed tarball → npm exit 1); cross-registry
- * fallback covers mirror sync lag (a lockstep release whose transitive
- * packages haven't reached the mirror yet → ETARGET on every same-registry
- * retry). Succeeds as soon as any attempt succeeds; throws only when every
- * registry is exhausted, with the step label + last error (including the
- * child's combined output tail) so the UI/log pinpoints the failure.
- * Pause/stop (signal.aborted) aborts immediately with the original error —
- * never retried, never switched.
+ * Run an npm-family step with transient retry per registry and fallback ACROSS
+ * registries (see NPM_REGISTRY_FALLBACKS). Same-registry retries cover network
+ * blips (a single failed tarball → npm exit 1); cross-registry fallback covers
+ * mirror sync lag (a lockstep release whose transitive packages haven't
+ * reached the mirror yet → ETARGET on every same-registry retry). Succeeds as
+ * soon as any attempt succeeds; throws only when every registry is exhausted,
+ * with the step label + last error (including the child's combined output
+ * tail) so the UI/log pinpoints the failure. Pause/stop (signal.aborted)
+ * aborts immediately with the original error — never retried, never switched.
  */
 export async function runWithRegistryFallback(opts: RegistryFallbackOpts): Promise<void> {
   if (opts.signal.aborted) throw new Error('aborted');
@@ -378,7 +450,7 @@ export async function runWithRegistryFallback(opts: RegistryFallbackOpts): Promi
   for (const source of NPM_REGISTRY_FALLBACKS) {
     for (let attempt = 1; attempt <= attempts && !opts.signal.aborted; attempt++) {
       try {
-        await opts.run(opts.buildCmd(source.flag));
+        await opts.exec(source.flag);
         return;
       } catch (err) {
         if (opts.signal.aborted) throw err; // pause/stop — propagate as-is
@@ -432,6 +504,30 @@ function doclingBinaryPath(): string {
 export function doclingVenvBinaryPresent(): boolean {
   return fs.existsSync(doclingBinaryPath());
 }
+
+/** `-c` shim that runs docling's CLI entry point in-process. Used on Windows so
+ *  the model-warmup step spawns `python` directly (hidden via windowsHide)
+ *  instead of the `docling.exe` launcher — which would otherwise re-spawn
+ *  python as a console-windowed grandchild (the launcher is a console app).
+ *  docling.cli.main:app is the published console_scripts target, so this is
+ *  exactly what the launcher invokes. Trailing CLI args are passed as argv
+ *  after `-c` (click/typer read sys.argv[1:]), so paths never need embedding. */
+export const DOCLING_CLI_SHIM =
+  'import sys; from docling.cli.main import app; sys.exit(app() or 0)';
+
+/** Build the model-warmup argv. Windows runs docling via `python -c <shim>`
+ *  (in-process, no launcher → no console grandchild); POSIX keeps the real
+ *  launcher (no console-window concept there). Exported for tests. */
+export function doclingWarmupArgv(
+  isWin: boolean,
+  venvPy: string,
+  discard: string,
+  outDir: string,
+): string[] {
+  return isWin
+    ? [venvPy, '-c', DOCLING_CLI_SHIM, discard, '--to', 'md', '--output', outDir]
+    : [doclingBinaryPath(), discard, '--to', 'md', '--output', outDir];
+}
 function remotionPreloadMarker(): string {
   return path.join(os.homedir(), '.molio', '.remotion-preloaded');
 }
@@ -481,6 +577,7 @@ function versionOfAbs(exe: string): [number, number] | null {
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'ignore'],
       timeout: 5_000,
+      windowsHide: true,
     });
     return parsePyVersion(out);
   } catch {
@@ -502,17 +599,17 @@ function resolveToAbs(probe: string): string | null {
     if (process.platform === 'win32') {
       if (/^py(\.exe)?(\s|$)/.test(probe)) {
         const out = execSync(`${probe} -c "import sys;print(sys.executable)"`, {
-          encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000,
+          encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000, windowsHide: true,
         }).trim();
         return out.split(/\r?\n/)[0]?.trim() || null;
       }
       const out = execSync(`where ${q(probe)}`, {
-        encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000,
+        encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000, windowsHide: true,
       }).trim();
       return out.split(/\r?\n/)[0]?.trim() || null;
     }
     const out = execSync(`command -v ${q(probe)}`, {
-      encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000,
+      encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000, windowsHide: true,
     }).trim();
     return out.split(/\r?\n/)[0]?.trim() || null;
   } catch {
@@ -556,7 +653,7 @@ function buildPyProbes(): string[] {
     probes.push(...dirs);
     for (const v of vers) {
       try {
-        const p = execSync(`uv python find ${v}`, { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000 }).trim();
+        const p = execSync(`uv python find ${v}`, { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000, windowsHide: true }).trim();
         if (p) probes.push(p);
       } catch { /* no uv / no such version */ }
     }
@@ -569,7 +666,7 @@ function buildPyProbes(): string[] {
     probes.push(...conda);
     for (const v of vers) {
       try {
-        const p = execSync(`uv python find ${v}`, { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000 }).trim();
+        const p = execSync(`uv python find ${v}`, { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000, windowsHide: true }).trim();
         if (p) probes.push(p);
       } catch { /* no uv / no such version */ }
     }
@@ -621,8 +718,8 @@ export function invalidateDoclingLoc(): void { _doclingLocCache = undefined; }
 function findDoclingOnPath(): string | null {
   try {
     const out = process.platform === 'win32'
-      ? execSync('where docling', { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000 }).trim()
-      : execSync('command -v docling', { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000 }).trim();
+      ? execSync('where docling', { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000, windowsHide: true }).trim()
+      : execSync('command -v docling', { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000, windowsHide: true }).trim();
     return out.split(/\r?\n/)[0]?.trim() || null;
   } catch {
     return null;
@@ -767,21 +864,25 @@ function runSpawned(proc: ChildProcess, opts: RunOpts): Promise<void> {
 
 /** Run a command THROUGH a shell (needed for `&&`/`||`/pipes, e.g. npm chains).
  *  Callers must pre-quote any interpolated paths via q(). */
-/** Shared spawn options for every preload child process. `detached:true` gives
- *  Unix a process group we can `kill(-pid)` and lets the Windows child outlive
- *  the parent so `taskkill /T` can walk the tree. `windowsHide:true` is the
- *  Windows UX fix: without it, spawning console-subsystem children (cmd / npm /
- *  python) under `detached` makes Windows pop a black console window PER child
- *  — jarring inside an Electron app. macOS/Linux have no per-process console
- *  window, so windowsHide is a harmless no-op there (which is exactly why the
- *  popups were Windows-only). Exported for tests. */
+/** Shared spawn options for every preload child process.
+ *  - `detached` is POSIX-ONLY: it gives Unix a process group for `kill(-pid)`.
+ *    On Windows, tree-kill goes through `taskkill /T` (parent→child walk) and
+ *    needs NO detached — and setting detached there is actively harmful: libuv
+ *    maps it to DETACHED_PROCESS, which (a) defeats `windowsHide` on the direct
+ *    child and (b) makes every console-subsystem grandchild (the node/python
+ *    that npm/pip launch) allocate its OWN visible console window. That
+ *    combination was the 2026-07 "black windows still pop after adding
+ *    windowsHide" bug.
+ *  - `windowsHide:true` everywhere: hides the direct child's console on
+ *    Windows; a no-op on POSIX (no per-process console window there).
+ *  Exported for tests. */
 export function preloadSpawnOpts(opts: RunOpts): Parameters<typeof spawn>[2] {
   return {
     stdio: ['ignore', 'pipe', 'pipe'],
     timeout: opts.timeout,
     cwd: opts.cwd,
     env: childEnv(opts),
-    detached: true,
+    detached: process.platform !== 'win32',
     windowsHide: true,
   };
 }

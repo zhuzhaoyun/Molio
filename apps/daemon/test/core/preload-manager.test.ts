@@ -209,65 +209,59 @@ describe('PreloadManager status state machine', () => {
 
 describe('runWithRegistryFallback (remotion preload ETARGET regression)', () => {
   const mkSignal = () => new AbortController().signal;
+  const OFFICIAL = '--registry=https://registry.npmjs.org';
 
   it('default registry ETARGET failure falls back to the official registry', async () => {
     const { runWithRegistryFallback } = await import('../../src/core/preload-manager.js');
-    const cmds: string[] = [];
+    const flags: string[] = [];
     await runWithRegistryFallback({
       label: 'Remotion 依赖安装（npm install）',
       signal: mkSignal(),
-      buildCmd: (flag) => `npm install ${flag} --no-audit --no-fund`.replace('  ', ' '),
-      run: async (cmd: string) => {
-        cmds.push(cmd);
+      exec: async (flag) => {
+        flags.push(flag);
         // 模拟镜像未同步钉住版本：默认源 ETARGET，官方源放行
-        if (!cmd.includes('--registry=https://registry.npmjs.org')) {
+        if (flag !== OFFICIAL) {
           throw new Error('进程退出码 1: npm error notarget No matching version found for @remotion/player@4.0.501.');
         }
       },
     });
-    assert.ok(cmds.length >= 2, `expected multiple attempts, got ${cmds.length}`);
-    assert.ok(!cmds[0]?.includes('--registry'), 'first attempt must use the default registry (no --registry flag)');
-    assert.ok(
-      cmds.some((c) => c.includes('--registry=https://registry.npmjs.org')),
-      'must fall back to the official npm registry',
-    );
+    assert.ok(flags.length >= 2, `expected multiple attempts, got ${flags.length}`);
+    assert.equal(flags[0], '', 'first attempt must use the default registry (empty flag)');
+    assert.ok(flags.includes(OFFICIAL), 'must fall back to the official npm registry');
   });
 
   it('transient failure retries within the same registry before switching', async () => {
     const { runWithRegistryFallback } = await import('../../src/core/preload-manager.js');
-    const cmds: string[] = [];
+    const flags: string[] = [];
     await runWithRegistryFallback({
       label: 'step',
       signal: mkSignal(),
-      buildCmd: (flag) => `cmd ${flag}`.trim(),
-      run: async (cmd: string) => {
-        cmds.push(cmd);
-        // 第一次（默认源）瞬态失败，第二次（仍默认源）成功 → 不应换源
-        if (cmds.length === 1) throw new Error('进程退出码 1: network hiccup');
+      exec: async (flag) => {
+        flags.push(flag);
+        if (flags.length === 1) throw new Error('进程退出码 1: network hiccup');
       },
     });
-    assert.equal(cmds.length, 2, 'should retry once on the same registry then succeed');
-    assert.ok(cmds.every((c) => !c.includes('--registry')), 'no registry switch needed for a transient failure');
+    assert.equal(flags.length, 2, 'should retry once on the same registry then succeed');
+    assert.ok(flags.every((f) => f === ''), 'no registry switch needed for a transient failure');
   });
 
   it('abort interrupts immediately without retry or registry switch', async () => {
     const { runWithRegistryFallback } = await import('../../src/core/preload-manager.js');
     const ac = new AbortController();
-    const cmds: string[] = [];
+    const flags: string[] = [];
     await assert.rejects(
       runWithRegistryFallback({
         label: 'step',
         signal: ac.signal,
-        buildCmd: (flag) => `cmd ${flag}`.trim(),
-        run: async (cmd: string) => {
-          cmds.push(cmd);
-          ac.abort(); // 模拟用户暂停/停止
+        exec: async (flag) => {
+          flags.push(flag);
+          ac.abort();
           throw new Error('aborted');
         },
       }),
       /aborted/,
     );
-    assert.equal(cmds.length, 1, 'abort must not trigger retries or a registry switch');
+    assert.equal(flags.length, 1, 'abort must not trigger retries or a registry switch');
   });
 
   it('final failure message includes the step label and the underlying output tail', async () => {
@@ -276,8 +270,7 @@ describe('runWithRegistryFallback (remotion preload ETARGET regression)', () => 
       runWithRegistryFallback({
         label: 'Remotion 依赖安装（npm install）',
         signal: mkSignal(),
-        buildCmd: (flag) => `cmd ${flag}`.trim(),
-        run: async () => {
+        exec: async () => {
           throw new Error('进程退出码 1: npm error notarget No matching version found for @remotion/player@4.0.501.');
         },
       }),
@@ -289,22 +282,48 @@ describe('runWithRegistryFallback (remotion preload ETARGET regression)', () => 
     );
   });
 
-  it('scaffold/install command builders place the registry flag correctly', async () => {
+  it('POSIX shell command builders place the registry flag correctly', async () => {
     const { remotionScaffoldCmd, remotionInstallCmd } = await import('../../src/core/preload-manager.js');
-    // 默认源：无 --registry，命令与 agent 的真实步骤一致
-    assert.equal(
-      remotionScaffoldCmd(''),
-      'npx --yes create-video@latest --yes --blank --no-tailwind warmup',
-    );
+    assert.equal(remotionScaffoldCmd(''), 'npx --yes create-video@latest --yes --blank --no-tailwind warmup');
     assert.equal(remotionInstallCmd(''), 'npm install --no-audit --no-fund');
-    // 降级源：--registry 注入到正确位置
     assert.equal(
-      remotionScaffoldCmd('--registry=https://registry.npmjs.org'),
+      remotionScaffoldCmd(OFFICIAL),
       'npx --yes --registry=https://registry.npmjs.org create-video@latest --yes --blank --no-tailwind warmup',
     );
     assert.equal(
-      remotionInstallCmd('--registry=https://registry.npmjs.org'),
+      remotionInstallCmd(OFFICIAL),
       'npm install --registry=https://registry.npmjs.org --no-audit --no-fund',
+    );
+  });
+
+  it('Windows argv builders invoke node + npm/npx JS entry directly (no cmd.exe)', async () => {
+    const { remotionScaffoldArgv, remotionInstallArgv } = await import('../../src/core/preload-manager.js');
+    const node = 'C:\\node.exe';
+    const npmJs = 'C:\\node_modules\\npm\\bin\\npm-cli.js';
+    const npxJs = 'C:\\node_modules\\npm\\bin\\npx-cli.js';
+    // install：node + npm-cli.js install，in-process，无孙进程 → 无控制台窗口
+    assert.deepEqual(remotionInstallArgv(node, npmJs, ''), [node, npmJs, 'install', '--no-audit', '--no-fund']);
+    assert.deepEqual(remotionInstallArgv(node, npmJs, OFFICIAL), [node, npmJs, 'install', OFFICIAL, '--no-audit', '--no-fund']);
+    // scaffold：node + npx-cli.js，create-video 仍是 npx 的子进程
+    assert.deepEqual(
+      remotionScaffoldArgv(node, npxJs, ''),
+      [node, npxJs, '--yes', 'create-video@latest', '--yes', '--blank', '--no-tailwind', 'warmup'],
+    );
+    assert.deepEqual(
+      remotionScaffoldArgv(node, npxJs, OFFICIAL),
+      [node, npxJs, OFFICIAL, '--yes', 'create-video@latest', '--yes', '--blank', '--no-tailwind', 'warmup'],
+    );
+  });
+
+  it('npmCliJsFromDir maps a PATH shim dir to the npm JS entry', async () => {
+    const { npmCliJsFromDir } = await import('../../src/core/preload-manager.js');
+    assert.equal(
+      npmCliJsFromDir('C:\\Program Files\\nodejs', 'npm'),
+      path.join('C:\\Program Files\\nodejs', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    );
+    assert.equal(
+      npmCliJsFromDir('/usr/local/bin', 'npx'),
+      path.join('/usr/local/bin', 'node_modules', 'npm', 'bin', 'npx-cli.js'),
     );
   });
 });
@@ -373,7 +392,9 @@ describe('doclingVenvBinaryPresent (Windows .exe regression)', () => {
 // 故只影响 Windows 弹窗，跨平台安全。
 
 describe('preloadSpawnOpts (Windows console-window regression)', () => {
-  it('hides the child console window while keeping detached + piped stdio', async () => {
+  const isWindows = process.platform === 'win32';
+
+  it('hides the child console window; detached only on POSIX', async () => {
     const { preloadSpawnOpts } = await import('../../src/core/preload-manager.js');
     const o = preloadSpawnOpts({});
     assert.equal(
@@ -381,7 +402,15 @@ describe('preloadSpawnOpts (Windows console-window regression)', () => {
       true,
       'windowsHide must be set so Windows does not pop a console window per child',
     );
-    assert.equal(o.detached, true, 'detached must stay for process-tree kill');
+    // detached on Windows maps to DETACHED_PROCESS in libuv, which defeats
+    // windowsHide and makes console grandchildren (node/python under npm/pip)
+    // each allocate a visible console window — exactly the bug being fixed.
+    // Tree-kill on Windows uses taskkill /T, so detached is not needed there.
+    assert.equal(
+      o.detached,
+      !isWindows,
+      'detached must be true on POSIX (process-group kill) and false on Windows',
+    );
     assert.deepEqual(o.stdio, ['ignore', 'pipe', 'pipe']);
     assert.equal(o.env, undefined, 'no env overlay → inherit daemon env as-is');
   });
@@ -393,5 +422,32 @@ describe('preloadSpawnOpts (Windows console-window regression)', () => {
     assert.equal(env['HF_ENDPOINT'], 'https://hf-mirror.com');
     // 仍继承 daemon 自身环境（如 PATH），不能丢
     assert.ok(env['PATH'] !== undefined || env['Path'] !== undefined, 'inherited env (PATH) must survive the overlay');
+  });
+});
+
+// ─── docling warmup argv (Windows launcher→grandchild regression) ──────────
+//
+// Error-driven (2026-07): 模型预热若走 docling.exe，该 launcher 会再 spawn
+// python 作为带控制台窗口的孙进程。Windows 改走 `python -c <shim>` 让 python
+// 成为直跑子进程（windowsHide 隐藏），docling 在进程内运行，无孙进程。
+
+describe('doclingWarmupArgv (Windows launcher→grandchild regression)', () => {
+  it('Windows runs docling via python -c shim (in-process, no launcher)', async () => {
+    const { doclingWarmupArgv, DOCLING_CLI_SHIM } = await import('../../src/core/preload-manager.js');
+    const argv = doclingWarmupArgv(true, 'C:\\venv\\python.exe', 'NUL', 'C:\\out');
+    assert.equal(argv[0], 'C:\\venv\\python.exe');
+    assert.equal(argv[1], '-c');
+    assert.equal(argv[2], DOCLING_CLI_SHIM);
+    // 真实 CLI 参数作为 -c 之后的 argv 传入（无需把路径嵌进 -c 字符串）
+    assert.deepEqual(argv.slice(3), ['NUL', '--to', 'md', '--output', 'C:\\out']);
+    assert.match(DOCLING_CLI_SHIM, /docling\.cli\.main import app/, 'shim must invoke the published entry point');
+  });
+
+  it('POSIX keeps the real docling launcher (no console concept there)', async () => {
+    const { doclingWarmupArgv } = await import('../../src/core/preload-manager.js');
+    const argv = doclingWarmupArgv(false, '/venv/bin/python', '/dev/null', '/out');
+    // POSIX 首参是 docling 二进制（bin/docling），不是 python -c
+    assert.ok(!argv.includes('-c'), 'POSIX must not use the -c shim');
+    assert.deepEqual(argv.slice(1), ['/dev/null', '--to', 'md', '--output', '/out']);
   });
 });
