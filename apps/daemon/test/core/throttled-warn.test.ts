@@ -68,6 +68,22 @@ describe('ThrottledWarn', () => {
     assert.equal(out.length, 2);
   });
 
+  it('delete(key) drops a single key so only it re-emits immediately', () => {
+    // Per-entity keys (e.g. RunManager's run UUIDs) need targeted cleanup when
+    // the entity is destroyed, otherwise the state map grows unbounded. delete()
+    // must free just that key while leaving other keys throttled.
+    const out: string[] = [];
+    const w = new ThrottledWarn({ intervalMs: 1000, sink: (m) => out.push(m) });
+    const t0 = 7_000_000;
+    w.warn('a', 'A', t0);
+    w.warn('b', 'B', t0);
+    assert.equal(w.warn('a', 'A', t0 + 1), false); // throttled inside interval
+    w.delete('a');
+    assert.equal(w.warn('a', 'A', t0 + 2), true); // freed → re-emits
+    assert.equal(w.warn('b', 'B', t0 + 2), false); // 'b' untouched, still throttled
+    assert.deepEqual(out, ['A', 'B', 'A']);
+  });
+
   it('defaults to console.warn (stderr), never console.log/error', () => {
     // The default sink must stay on the warning channel; the whole point is to
     // *reduce* volume, not to silently reroute real warnings to stdout.

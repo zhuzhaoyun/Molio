@@ -27,9 +27,15 @@ export interface ThrottledWarnOptions {
   /** Minimum gap between emissions for a given key. Default 5 minutes. */
   intervalMs?: number;
   /**
-   * Where the (already suffixed) message is written. Default `console.warn`.
-   * Pass `dbgLog` to keep a diagnostic on the stdout + debug-file channel
-   * instead of stderr.
+   * Where the (already suffixed) message is written. Default `console.warn`
+   * (stderr) — deliberate: these throttled messages describe *real, expected*
+   * conditions (oversized vault dir, flapping watcher, missing skills source)
+   * that an admin may legitimately want surfaced as warnings. Throttling caps
+   * the VOLUME (once per interval) so SLS/Logtail stop seeing a flood, while a
+   * once-per-interval line stays visible. Callers whose message is a *pure
+   * diagnostic* rather than a real warning (e.g. RunManager's "no SSE
+   * subscriber" smoking gun) should pass `dbgLog` to route to stdout + the
+   * debug file instead of stderr.
    */
   sink?: (message: string) => void;
 }
@@ -61,8 +67,10 @@ export class ThrottledWarn {
       return false;
     }
     const suppressed = existing?.suppressed ?? 0;
-    // The key set is naturally tiny (one entry per distinct condition ever
-    // seen), so no eviction is needed.
+    // For condition-name keys the set is naturally tiny (one entry per distinct
+    // condition ever seen). Callers that key by a per-entity id (e.g. RunManager
+    // keys by run UUID) must call delete(key) when the entity is destroyed, else
+    // the map grows unbounded in a long-lived process.
     this.state.set(key, { lastAt: now, suppressed: 0 });
     const suffix = suppressed > 0
       ? ` (suppressed ${suppressed} repeat warning${suppressed === 1 ? '' : 's'} in the previous interval)`
@@ -74,5 +82,14 @@ export class ThrottledWarn {
   /** Clear throttle state — test hook so cases start from a clean slate. */
   reset(): void {
     this.state.clear();
+  }
+
+  /**
+   * Drop throttle state for a single key — call when the entity a key refers to
+   * is destroyed (e.g. a run removed after its TTL), so callers that key by a
+   * per-entity id don't grow the state map unbounded in a long-lived process.
+   */
+  delete(key: string): void {
+    this.state.delete(key);
   }
 }

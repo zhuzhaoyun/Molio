@@ -966,6 +966,10 @@ export class RunManager {
     setTimeout(() => {
       if (TERMINAL_STATUSES.has(run.status)) {
         this.runs.delete(run.id);
+        // Drop this run's throttle state too — noSubscriberWarn is keyed by
+        // run.id (a UUID), so without this its state map grows unbounded over
+        // the daemon's lifetime (one entry per run that lost its subscriber).
+        this.noSubscriberWarn.delete(run.id);
       }
     }, RUN_TTL_MS).unref?.();
   }
