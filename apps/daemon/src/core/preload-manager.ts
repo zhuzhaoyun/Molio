@@ -1001,6 +1001,11 @@ export class PreloadManager {
     if (current?.status === 'preloading') {
       throw new Error(`${skill} 正在预下载中`);
     }
+    // A fresh start must not inherit a stale pause/stop intent from a previous
+    // run (e.g. pause→stop left pauseRequested set), else the onProgress guard
+    // above would mute this run and a failure would be mislabelled 'paused'.
+    this.pauseRequested.delete(skill);
+    this.stopRequested.delete(skill);
     invalidateDoclingLoc(); // install state is about to change
 
     const ac = new AbortController();
@@ -1031,6 +1036,7 @@ export class PreloadManager {
       // user's chosen terminal state instead of marking it failed.
       if (this.stopRequested.has(skill)) {
         this.stopRequested.delete(skill);
+        this.pauseRequested.delete(skill); // stop supersedes any pending pause
         // kill already happened via abort; now drop partial artifacts.
         deletePartial(skill);
         this.statuses.set(skill, { status: 'missing' });
@@ -1081,12 +1087,20 @@ export class PreloadManager {
       // Not running (paused/failed/missing) — clean up directly here, since
       // there's no live startPreload to catch the intent.
       this.stopRequested.delete(skill);
+      this.pauseRequested.delete(skill); // stop = full reset, drop pending pause too
       deletePartial(skill);
       this.statuses.set(skill, { status: 'missing' });
       invalidateDoclingLoc();
       this.emitStatus();
       this.emitProgress({ skill, status: 'stopped', progress: 0, message: `${skill} 已停止` });
     }
+  }
+
+  /** Test-only: whether a pause intent is lingering for `skill`. A lingering
+   *  intent after a stop would mute a subsequent run's progress and mislabel
+   *  its failure as 'paused' (the 2026-07 pause→stop latent bug). */
+  _testHasPauseIntent(skill: PreloadableSkill): boolean {
+    return this.pauseRequested.has(skill);
   }
 
   /** Stop all running preloads. Called on daemon graceful shutdown so we

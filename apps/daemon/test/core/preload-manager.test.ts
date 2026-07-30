@@ -451,3 +451,53 @@ describe('doclingWarmupArgv (Windows launcher→grandchild regression)', () => {
     assert.deepEqual(argv.slice(1), ['/dev/null', '--to', 'md', '--output', '/out']);
   });
 });
+
+// ─── pause→stop clears lingering pause intent (latent bug) ────────────────
+//
+// Error-driven (2026-07): 暂停→停止 后 stopRequested 被清，但 pauseRequested
+// 残留 → 下一次 startPreload 的 onProgress 被静音、失败被错标成 'paused'。
+// stop 是「完全重置」，必须连 pause 意图一起清。这里钉住该不变量。
+
+describe('pause→stop clears lingering pause intent (2026-07 latent bug)', () => {
+  const isWindows = process.platform === 'win32';
+  let savedHome: string | undefined;
+  let tmpHome: string;
+
+  beforeEach(() => {
+    savedHome = isWindows ? process.env['USERPROFILE'] : process.env['HOME'];
+    tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-preload-intent-'));
+    if (isWindows) process.env['USERPROFILE'] = tmpHome;
+    else process.env['HOME'] = tmpHome;
+  });
+  afterEach(() => {
+    if (savedHome !== undefined) {
+      if (isWindows) process.env['USERPROFILE'] = savedHome;
+      else process.env['HOME'] = savedHome;
+    } else {
+      if (isWindows) delete process.env['USERPROFILE'];
+      else delete process.env['HOME'];
+    }
+    try { fs.rmSync(tmpHome, { recursive: true, force: true }); } catch { /* ignore */ }
+  });
+
+  it('stop after pause leaves no pause intent that would corrupt the next run', async () => {
+    const { createPreloadManager } = await import('../../src/core/preload-manager.js');
+    const pm = createPreloadManager();
+    pm.checkSkills();
+    // remotion 在干净 tmp home 上恒为 missing（无 marker、无全局回退）
+    assert.equal(pm.getStatuses().remotion.status, 'missing');
+
+    // 在非运行态登记暂停意图（镜像 UI 的暂停动作）
+    pm.pausePreload('remotion');
+    assert.equal(pm._testHasPauseIntent('remotion'), true, 'pause must register the intent');
+
+    // 停止 > 暂停：必须把暂停意图一并清掉，否则下一次下载被静音/错标
+    pm.stopPreload('remotion');
+    assert.equal(
+      pm._testHasPauseIntent('remotion'),
+      false,
+      'stop must clear the pending pause intent (else next run is muted / mislabelled)',
+    );
+    assert.equal(pm.getStatuses().remotion.status, 'missing', 'stop resets the skill to missing');
+  });
+});

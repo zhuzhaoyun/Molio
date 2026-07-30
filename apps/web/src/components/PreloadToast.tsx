@@ -167,6 +167,41 @@ export function PreloadToast() {
     };
   }, []);
 
+  /** Re-fetch daemon status and, if any skill is `missing`, (re)show the
+   *  prompt card. This is what makes the toast re-appear after a clean stop
+   *  (the skills go back to `missing`): there is NO periodic re-check — only
+   *  the mount-time one — so without this the toast would stay hidden forever
+   *  after pause→stop, leaving the user no way to download again (the
+   *  2026-07 "can't re-download after pause→stop" bug). */
+  const refreshFromStatus = useCallback(async () => {
+    try {
+      const statuses: Record<string, SkillInfo> = await api.getPreloadStatus();
+      if (!mountedRef.current) return;
+      const missing: PreloadableSkill[] = [];
+      const paths: Record<string, string | null> = {};
+      for (const [skill, info] of Object.entries(statuses)) {
+        paths[skill] = info.path ?? null;
+        if (info.status === 'missing') missing.push(skill as PreloadableSkill);
+      }
+      if (missing.length > 0) {
+        setDismissed(false);
+        setState({
+          visible: true,
+          mode: 'prompt',
+          skills: missing,
+          progress: {},
+          messages: {},
+          paths,
+          minimized: false,
+        });
+      } else {
+        setState((prev) => ({ ...prev, visible: false }));
+      }
+    } catch {
+      // Daemon gone / unreachable — leave the toast as-is.
+    }
+  }, []);
+
   // Start preloading for all missing skills
   const handleDownload = useCallback(async () => {
     if (state.skills.length === 0) return;
@@ -207,7 +242,9 @@ export function PreloadToast() {
           return;
         } else if (event.status === 'stopped') {
           userAction = 'stop';
-          setState((prev) => ({ ...prev, visible: false }));
+          // Don't hide here. The post-await refresh re-shows the prompt when
+          // the skills are `missing` again (the usual case after a clean stop).
+          // Hiding with no re-show was the "can't re-download" bug.
           return;
         }
         // Don't let stray 'preloading' events un-pause a toast the user
@@ -221,9 +258,13 @@ export function PreloadToast() {
         }));
       });
 
-      // If the user paused or stopped, the handler already set the right
-      // mode — don't clobber it with done/error.
-      if (userAction) {
+      // If the user stopped, the skills are `missing` again — re-show the
+      // prompt so they can download again. If paused, keep the paused view.
+      if (userAction === 'stop') {
+        await refreshFromStatus();
+        return;
+      }
+      if (userAction === 'pause') {
         return;
       }
 
@@ -258,7 +299,7 @@ export function PreloadToast() {
         error: err instanceof Error ? err.message : '下载失败',
       }));
     }
-  }, [state.skills]);
+  }, [state.skills, refreshFromStatus]);
 
   /** Pause all in-progress downloads. Partial artifacts are kept on disk so
    *  resume picks up where it left off (pip / HuggingFace / npm caches). */
@@ -277,12 +318,21 @@ export function PreloadToast() {
 
   /** Stop all preloads AND delete partial artifacts (clean reset). Hides the
    *  toast; on next check the skills show as missing again. */
-  const handleStop = useCallback(() => {
+  const handleStop = useCallback(async () => {
     userActionRef.current = 'stop';
     const skills = state.skills;
+    // Optimistically hide the progress/paused card. refreshFromStatus below
+    // re-shows the prompt once the daemon confirms the clean reset (skills go
+    // back to `missing`) — so the user always has a working "download" button
+    // again instead of a toast that vanished with no way back.
     setState((prev) => ({ ...prev, visible: false }));
-    api.stopPreload(skills).catch(() => {});
-  }, [state.skills]);
+    try {
+      await api.stopPreload(skills);
+    } catch {
+      // best-effort — still try to refresh the prompt
+    }
+    await refreshFromStatus();
+  }, [state.skills, refreshFromStatus]);
 
   /** Collapse the downloading toast to a small pill. The download keeps
    *  running; completion will force it back open. */
