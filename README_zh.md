@@ -83,6 +83,48 @@ Molio 是一款**本地优先**的桌面应用，将知识管理、AI 写作和�
 
 安装后启动即可，首次使用会引导你配置 AI 运行时 CLI（如 Claude Code、Codex、Gemini 等）。
 
+### 🐳 Docker / NAS 部署（自建服务）
+
+把 Molio 作为自建 Web 服务跑在 NAS 或服务器上。单个容器内置 daemon、Web 界面和 Claude Code CLI，同时支持 `linux/amd64` 和 `linux/arm64` — 群晖、威联通、铁威马、TrueNAS、Unraid 等主流 NAS 均可使用。
+
+> **⚠️ 与桌面端的区别（部署前请先了解）**
+>
+> - **只能用浏览器访问**，没有桌面客户端。Electron 桌面端只会连接它自己在本地启动的 daemon（`localhost`），**无法**连接到远程 NAS/服务器上的容器。
+> - **daemon 跑在容器内，只能读写挂载进容器的目录**。桌面端那种"用文件夹选择器随便挑一个本地文件夹当知识库"的用法在这里不成立——浏览器里没有目录选择器，添加知识库时需要**手填容器内路径**（如 `/vaults/你的文件夹名`，不是 NAS 宿主机路径）。
+> - 想让哪些文件夹成为知识库，就在 `docker-compose.yml` 的 `volumes` 里把它们挂载到 `/vaults` 下。你的数据仍然完全在自己手里（存在你的 NAS 上），只是访问方式从"桌面应用"变成了"浏览器 + 挂载目录"。
+
+**一键安装**（需要 Docker + Docker Compose v2）：
+
+```bash
+# 国内（推荐）
+curl -fsSL https://molio-releases.oss-cn-guangzhou.aliyuncs.com/script/install.sh | bash
+# 海外
+curl -fsSL https://raw.githubusercontent.com/zhuzhaoyun/Molio/main/install.sh | bash
+# 离线（先克隆仓库，再运行内置脚本）
+bash install.sh
+```
+
+脚本会交互式引导你填写知识库目录和端口，然后自动拉取镜像并启动服务。完成后浏览器打开 `http://<你的服务器IP>:3100`，再到「设置 → 运行时」配置 AI 模型和 API Key 即可。首次启动会**自动创建默认知识库**并指向挂载目录，打开即直接进入，无需手动配置。
+
+**手动安装**（如果你更习惯直接用 `docker compose`）：
+
+```bash
+git clone https://github.com/zhuzhaoyun/Molio.git && cd Molio
+cp .env.example .env      # AI 模型稍后在 Web 界面配置
+docker compose up -d      # 然后打开 http://<你的服务器IP>:3100
+```
+
+**常用命令**（在安装目录下执行，默认 `~/molio`）：
+
+```bash
+docker compose logs -f                          # 查看日志
+docker compose restart                          # 重启服务
+docker compose pull && docker compose up -d     # 更新到最新版本
+docker compose down                             # 停止服务
+```
+
+> 在 `.env` 中设置 `MOLIO_VAULT_PATH` 可把你已有的文档目录挂载进容器（挂载点为 `/vaults`）。全部配置项见 [`install.sh`](install.sh) 和 [`.env.example`](.env.example)。
+
 ### 从源码构建（开发者）
 
 如果你想从源码构建或参与开发：

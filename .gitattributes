@@ -1,0 +1,7 @@
+# 容器构建/执行相关的文件必须保持 LF —— CRLF 会让 Linux 容器里的 #!/bin/sh 失效
+# （"no such file or directory"），也会破坏 Dockerfile 里 `RUN foo \` 的行续接。
+# 即使在 Windows 上 checkout 也强制 LF。
+Dockerfile           text eol=lf
+docker-entrypoint.sh text eol=lf
+install.sh           text eol=lf
+.env.example         text eol=lf

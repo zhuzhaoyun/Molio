@@ -13,6 +13,9 @@ playwright-report/
 .workbuddy/
 deliverables/
 
+# Environment variables (may contain API keys)
+.env
+
 # macOS
 .DS_Store
 
