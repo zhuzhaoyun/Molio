@@ -27,16 +27,16 @@ export const ARMS_ENDPOINT = 'https://j9lbfeoye3-default-cn.rum.aliyuncs.com/rum
  * 创建的窗口会错过注入。
  *
  * @param {{ isDev: boolean, version: string, log: Function }} opts
- * @returns {Promise<boolean>} 是否真正初始化了
+ * @returns {Promise<object|null>} 初始化成功返回 armsRum 实例（truthy），否则 null
  */
 export async function initMonitoring({ isDev, version, log }) {
   if (isDev && !process.env.MOLIO_ARMS_DEV) {
     log('info', 'monitoring', 'skip ARMS init in dev mode (set MOLIO_ARMS_DEV=1 to force)');
-    return false;
+    return null;
   }
   if (!ARMS_ENDPOINT || !/^https?:\/\//.test(ARMS_ENDPOINT)) {
     log('warn', 'monitoring', 'ARMS endpoint not configured. Visit ARMS console → 用户体验监控 → 应用列表 → 应用详情 to find the real endpoint URL.');
-    return false;
+    return null;
   }
   try {
     await armsRum.init({
@@ -55,8 +55,18 @@ export async function initMonitoring({ isDev, version, log }) {
         application: true,
         api: true,
         rpc: false,
-        memory: false,
-        anr: false,
+        // Memory snapshots: samples app.getAppMetrics() every 10s,
+        // aggregates into 30-min windows. Covers main process AND all
+        // child processes (daemon, Claude CLI) with per-process
+        // working_set / peak_working_set — essential for diagnosing
+        // "app uses 2-3GB" reports.
+        memory: true,
+        // ANR detection: reports when the main-process event loop is
+        // blocked 5s+. Includes a memory_pressure heuristic (system
+        // available memory < 15%) that directly correlates with the
+        // "machine freezes" symptom. Built-in rate limiting (same-source
+        // 120s debounce, global 30min/5-event cap) prevents flooding.
+        anr: true,
       },
       // Renderer-side Browser SDK collectors (autoInject-ed). Default has
       // longTask: true, but LoAF attribution is empty for V8 native work
@@ -69,14 +79,17 @@ export async function initMonitoring({ isDev, version, log }) {
       offlineQueue: {
         enable: true,
         maxAgeDays: 7,
-        maxQueueSize: 100,
+        // 100 was too small: daemon stderr noise (before tiered forwarding)
+        // could fill the queue and push out valuable PV/API/error events.
+        // 500 gives headroom for a full session's worth of events.
+        maxQueueSize: 500,
       },
     });
     log('info', 'monitoring', `ARMS initialized (env=${isDev ? 'daily' : 'prod'}, version=${version || '0.0.0'})`);
-    return true;
+    return armsRum;
   } catch (err) {
     log('error', 'monitoring', `init failed: ${err?.message ?? err}`);
     if (err?.stack) log('error', 'monitoring', err.stack);
-    return false;
+    return null;
   }
 }

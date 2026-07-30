@@ -6,6 +6,7 @@ import { setupAutoUpdater } from './updater.js';
 import { log, getLogPath } from './logger.js';
 import { startFetchServer } from './wiki-fetcher.js';
 import { openFeishuLogin, getFeishuLoginStatus } from './wiki-fetcher-login.js';
+import { startDaemonMetricsPolling } from './daemon-metrics.js';
 
 const errMsg = (err) => (err instanceof Error ? err.message : String(err));
 
@@ -15,7 +16,7 @@ const errMsg = (err) => (err instanceof Error ? err.message : String(err));
 // import would throw at module evaluation — before the Electron ready event — crashing
 // the app. This contradicts monitoring.js's design that "SDK init failure
 // must never block app startup". try/catch keeps monitoring optional.
-let initMonitoring = async () => false;
+let initMonitoring = async () => null;
 try {
   const mod = await import('./monitoring-bundle.mjs');
   if (typeof mod.initMonitoring === 'function') initMonitoring = mod.initMonitoring;
@@ -33,6 +34,7 @@ app.name = 'Molio';
 
 let mainWindow = null;
 let daemonProcess = null;
+let stopDaemonMetrics = null;
 
 // Whether the renderer has mounted and registered its `molio:navigate`
 // listener yet. On cold start the SPA doesn't mount until after the daemon is
@@ -107,18 +109,28 @@ async function startDaemonProduction() {
     });
 
     // Line-buffer daemon stderr: stderr 'data' events arrive as arbitrary chunks
-    // (not aligned to newlines), so we accumulate and split on \n. Each complete
-    // line is logged locally AND forwarded to ARMS via console.error — the SDK's
-    // consoleError collector auto-categorizes it into 异常统计, and the
-    // '[daemon]' prefix lets reviewers filter daemon-sourced errors from
-    // main-process ones in the ARMS console. try/catch guards against any SDK
-    // throw breaking daemon log handling.
+    // (not aligned to newlines), so we accumulate and split on \n.
+    //
+    // Tiered forwarding to reduce ARMS noise:
+    // - Lines containing real error indicators → console.error → ARMS
+    //   consoleError collector → 异常统计. '[daemon]' prefix for filtering.
+    // - Everything else (Node.js deprecation warnings, experimental API
+    //   notices, debug output) → console.log → local log only, NOT
+    //   captured by ARMS. This prevents non-actionable noise from
+    //   flooding 异常统计 and filling the offline queue.
+    // try/catch guards against any SDK throw breaking daemon log handling.
+    const ERROR_LINE_RE = /\b(Error|FATAL|Exception|panic|ECONNREFUSED|ECONNRESET|ENOMEM)\b/;
     let stderrBuf = '';
     const flushDaemonLine = (line) => {
       if (!line) return;
       stderrChunks.push(line);
-      log('error', 'daemon', line);
-      try { console.error('[daemon] ' + line); } catch {}
+      if (ERROR_LINE_RE.test(line)) {
+        log('error', 'daemon', line);
+        try { console.error('[daemon] ' + line); } catch {}
+      } else {
+        log('info', 'daemon', line);
+        try { console.log('[daemon] ' + line); } catch {}
+      }
     };
     daemonProcess.stderr?.on('data', (data) => {
       stderrBuf += data.toString();
@@ -161,7 +173,21 @@ async function startDaemonProduction() {
   });
 }
 
-/** Create the main application window (shows splash in production). */
+/**
+ * Create the main application window.
+ *
+ * In production the window stays hidden (show: false) until the daemon is
+ * ready and the real app URL has finished loading — then `loadApp()` shows
+ * it. We deliberately do NOT load splash.html first: the ARMS Browser SDK
+ * auto-injection uses a per-webContents WeakSet, so a splash → app
+ * navigation would inject the SDK into the splash page (whose JS context is
+ * destroyed on navigation) and skip the real app, leaving API monitoring,
+ * renderer JS errors, and interaction tracking all empty in the ARMS
+ * console. One navigation = one injection = correct behaviour.
+ *
+ * The `backgroundColor` matches the app's dark theme so the brief blank
+ * window (visible in the taskbar) doesn't flash white.
+ */
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -169,18 +195,14 @@ function createWindow() {
     minWidth: 900,
     minHeight: 600,
     title: 'Molio',
-    show: false, // Show after ready-to-show to avoid white flash
+    show: false,
+    backgroundColor: '#0d1117',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
       webSecurity: true,
     },
-  });
-
-  // Show window gracefully when ready
-  mainWindow.once('ready-to-show', () => {
-    mainWindow?.show();
   });
 
   // A full page load (cold-start loadApp, or any reload) recreates the
@@ -236,10 +258,9 @@ function createWindow() {
   if (isDevMode()) {
     mainWindow.webContents.openDevTools();
     mainWindow.loadURL('http://localhost:5173');
-  } else {
-    // Show splash while daemon starts — real URL is loaded in loadApp()
-    mainWindow.loadFile(path.join(__dirname, 'splash.html'));
   }
+  // Production: no URL loaded here — loadApp() does the single navigation
+  // once the daemon is ready. The window stays hidden until then.
 }
 
 /** Load the real app URL after daemon is ready (production only). */
@@ -247,6 +268,12 @@ function loadApp() {
   if (mainWindow && !mainWindow.isDestroyed()) {
     log('info', 'main', 'daemon ready — loading app');
     mainWindow.loadURL('http://localhost:3100');
+    // Show the window once the app has rendered. This is the first (and
+    // only) navigation for this webContents in production, so the ARMS
+    // Browser SDK injection fires on the real app — not a throwaway splash.
+    mainWindow.webContents.once('did-finish-load', () => {
+      mainWindow?.show();
+    });
   }
 }
 
@@ -270,13 +297,20 @@ function showDaemonErrorPage() {
   const errorPage = path.join(__dirname, 'daemon-error.html');
   const query = logPath ? { log: logPath } : undefined;
   mainWindow.loadFile(errorPage, query ? { query } : undefined);
+  mainWindow.webContents.once('did-finish-load', () => {
+    mainWindow?.show();
+  });
 }
 
-/** Whether the window is still showing the production splash screen. */
-function isShowingSplash() {
+/**
+ * Whether the app URL has not been loaded yet (window is blank / waiting
+ * for daemon). Formerly checked for splash.html; the splash page was
+ * removed to fix ARMS Browser SDK injection (see createWindow comment).
+ */
+function isWaitingForApp() {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
   const currentUrl = mainWindow.webContents.getURL();
-  return currentUrl === '' || currentUrl.includes('splash.html');
+  return currentUrl === '' || currentUrl === 'about:blank';
 }
 
 function parseMolioProtocolUrl(protocolUrl) {
@@ -350,7 +384,7 @@ function deliverNavigation(target) {
  * Supported formats:
  *   molio://open/vault/<vaultId>/file/<filePath> — navigate to KB page and open file
  *   molio://open/file/<filePath> — navigate using the active/default vault
- *   molio://launch — load app if still on splash; otherwise just bring window to front
+ *   molio://launch — load app if still waiting for daemon; otherwise just bring window to front
  */
 function navigateFromProtocolUrl(protocolUrl) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -358,16 +392,16 @@ function navigateFromProtocolUrl(protocolUrl) {
   try {
     const target = parseMolioProtocolUrl(protocolUrl);
     if (target?.action === 'open-file') {
-      // Splash, error page, or renderer not yet ready: the in-page IPC path
+      // App not yet loaded, or renderer not yet ready: the in-page IPC path
       // can't deliver (no SPA listener, or a non-SPA page like the daemon
       // error page that never sends molio:renderer-ready, so a queued nav
       // would be dropped and the just-saved file never opens). Fall back to
       // a full loadURL of the knowledge route — the SPA reads ?vault=&file=
       // and opens the file. Reload is fine here since the renderer is already
       // in a broken/transient state; the warm healthy path uses IPC below.
-      if (isShowingSplash() || !rendererReady) {
+      if (isWaitingForApp() || !rendererReady) {
         const appUrl = buildKnowledgeUrlFromProtocolTarget(target);
-        log('info', 'main', `navigating to ${appUrl} (renderer ${rendererReady ? 'on splash' : 'not ready'})`);
+        log('info', 'main', `navigating to ${appUrl} (renderer ${rendererReady ? 'waiting for app' : 'not ready'})`);
         pendingNavigation = null; // loadURL supersedes any stale queued nav
         mainWindow.loadURL(appUrl);
       } else {
@@ -376,10 +410,10 @@ function navigateFromProtocolUrl(protocolUrl) {
       return;
     }
 
-    // molio://launch — if this is the initial launch, replace splash with the app.
-    // For second-instance launches, the existing app window should keep its state.
+    // molio://launch — if the app hasn't loaded yet (daemon still starting),
+    // trigger loadApp(). For second-instance launches, keep existing state.
     if (target?.action === 'launch') {
-      if (isShowingSplash()) {
+      if (isWaitingForApp()) {
         loadApp();
       }
       return;
@@ -490,14 +524,14 @@ app.whenReady().then(async () => {
 
   // 监控初始化必须在 createWindow 之前——SDK autoInject 监听 web-contents-created
   // 注入 Browser SDK，init 之前创建的窗口会错过注入。
-  await initMonitoring({
+  const armsRum = await initMonitoring({
     isDev: isDevMode(),
     version: app.getVersion(),
     log,
   });
 
-  // ② Create window first (updater IPC needs getMainWindow reference)
-  //    In production this shows splash.html while daemon starts.
+  // ② Create window first (updater IPC needs getMainWindow reference).
+  //    In production the window stays hidden until the daemon is ready.
   createWindow();
 
   // ③ Set up auto-updater IMMEDIATELY — before daemon.
@@ -517,7 +551,12 @@ app.whenReady().then(async () => {
       // Daemon failure is not fatal for the updater.
     }
 
-    // ⑤ Only load the real app URL if daemon started successfully.
+    // ⑤ Bridge daemon memory metrics to ARMS (daemon has no ARMS SDK).
+    if (daemonReady && armsRum) {
+      stopDaemonMetrics = startDaemonMetricsPolling({ armsRum, log });
+    }
+
+    // ⑥ Only load the real app URL if daemon started successfully.
     // If launched via molio:// protocol, navigate to the target instead.
     if (daemonReady) {
       log('info', 'main', `process.argv: ${JSON.stringify(process.argv)}`);
@@ -639,6 +678,7 @@ app.on('before-quit', (event) => {
   // Signal the window close handler to actually close the window instead
   // of hiding it (macOS hide-on-close behavior).
   forceQuit = true;
+  if (stopDaemonMetrics) { stopDaemonMetrics(); stopDaemonMetrics = null; }
   if (daemonProcess) {
     // Prevent the default quit until daemon is fully terminated.
     // Without this, Electron may exit before the daemon releases its

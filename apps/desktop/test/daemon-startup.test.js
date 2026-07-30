@@ -86,14 +86,23 @@ describe('main.js: must load URL only after daemon is ready (not in createWindow
     );
   });
 
-  it('createWindow should load splash.html in production mode', () => {
+  it('createWindow should NOT load splash.html (ARMS Browser SDK injection fix)', () => {
+    // The splash page caused the ARMS Browser SDK to inject into the splash
+    // (whose JS context is destroyed on navigation) and skip the real app,
+    // because the SDK's WeakSet prevents re-injection on the same webContents.
+    // Production now keeps the window hidden until loadApp() navigates
+    // directly to localhost:3100 — one navigation = one correct injection.
     const fnStart = mainJs.indexOf('function createWindow()');
     const fnEnd = mainJs.indexOf('\nfunction ', fnStart + 1);
     const fnBody = mainJs.slice(fnStart, fnEnd);
 
     assert.ok(
-      fnBody.includes('splash.html'),
-      'createWindow must load splash.html while waiting for daemon'
+      !fnBody.includes('splash.html'),
+      'createWindow must NOT load splash.html — it breaks ARMS Browser SDK injection'
+    );
+    assert.ok(
+      fnBody.includes('show: false'),
+      'createWindow must keep the window hidden until loadApp() shows it'
     );
   });
 
@@ -130,7 +139,7 @@ describe('main.js: must load URL only after daemon is ready (not in createWindow
   });
 });
 
-describe('main.js: protocol launch should leave splash after daemon is ready', () => {
+describe('main.js: protocol launch should load app when daemon is not yet ready', () => {
   it('should parse molio://launch as a protocol target', () => {
     assert.ok(
       mainJs.includes('function parseMolioProtocolUrl'),
@@ -142,22 +151,22 @@ describe('main.js: protocol launch should leave splash after daemon is ready', (
     );
   });
 
-  it('should detect when the production splash page is still showing', () => {
+  it('should detect when the app has not loaded yet (waiting for daemon)', () => {
     assert.ok(
-      mainJs.includes('function isShowingSplash()'),
-      'main.js must be able to detect the splash page before handling molio://launch'
+      mainJs.includes('function isWaitingForApp()'),
+      'main.js must detect the blank-window state before handling molio://launch'
     );
     assert.ok(
-      mainJs.includes('splash.html'),
-      'splash detection must check for splash.html'
+      mainJs.includes('about:blank'),
+      'waiting detection must check for the initial blank page'
     );
     assert.ok(
       mainJs.includes('webContents.getURL()'),
-      'splash detection must inspect the current BrowserWindow URL'
+      'waiting detection must inspect the current BrowserWindow URL'
     );
   });
 
-  it('molio://launch should call loadApp when still on splash', () => {
+  it('molio://launch should call loadApp when app has not loaded yet', () => {
     const navigatePos = mainJs.indexOf('function navigateFromProtocolUrl');
     assert.ok(navigatePos !== -1, 'navigateFromProtocolUrl must exist');
 
@@ -170,12 +179,12 @@ describe('main.js: protocol launch should leave splash after daemon is ready', (
       'navigateFromProtocolUrl must handle parsed launch actions'
     );
     assert.ok(
-      navigateBlock.includes('isShowingSplash()'),
-      'molio://launch handling must check if the app is still showing splash'
+      navigateBlock.includes('isWaitingForApp()'),
+      'molio://launch handling must check if the app has not loaded yet'
     );
     assert.ok(
       navigateBlock.includes('loadApp()'),
-      'molio://launch handling must load the real app when launched from splash'
+      'molio://launch handling must load the real app when daemon is ready'
     );
   });
 
@@ -205,8 +214,8 @@ describe('main.js: protocol launch should leave splash after daemon is ready', (
       'open-file navigation must fall back to loadURL when the renderer is not ready'
     );
     assert.ok(
-      /isShowingSplash\(\)\s*\|\|\s*!rendererReady/.test(navigateBlock),
-      'the loadURL fallback condition must cover both splash and not-ready states'
+      /isWaitingForApp\(\)\s*\|\|\s*!rendererReady/.test(navigateBlock),
+      'the loadURL fallback condition must cover both waiting-for-app and not-ready states'
     );
   });
 });

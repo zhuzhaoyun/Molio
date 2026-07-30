@@ -187,6 +187,15 @@ export class RunManager {
     }));
   }
 
+  /** Number of runs that have not yet reached a terminal state. */
+  getActiveRunCount(): number {
+    let count = 0;
+    for (const run of this.runs.values()) {
+      if (!TERMINAL_STATUSES.has(run.status)) count++;
+    }
+    return count;
+  }
+
   onEvent(runId: string, callback: (event: AgentEvent) => void): (() => void) | null {
     const run = this.runs.get(runId);
     if (!run) return null;
