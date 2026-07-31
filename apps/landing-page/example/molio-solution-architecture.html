@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Molio × 勘察设计 · 数字员工解决方案架构</title>
+<style>
+:root{
+  --paper:#f4f6fb; --surface:#ffffff; --ink:#10172a; --muted:#5b6680; --faint:#8a93a8;
+  --blue:#1f4fd6; --blue-d:#16357f; --blue-dd:#0d224f; --blue-soft:#eaf0ff; --blue-line:#c7d4f7;
+  --amber:#e2620c; --amber-soft:#fff1e4; --amber-line:#f6c79c;
+  --teal:#0f8f86; --red:#d64545; --line:#e3e8f2;
+  --serif:"Songti SC","STSong","SimSun","Noto Serif SC",Georgia,serif;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei","Noto Sans SC",sans-serif;
+  --mono:"SF Mono",ui-monospace,"Cascadia Code",Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  font-family:var(--sans);color:var(--ink);line-height:1.65;-webkit-font-smoothing:antialiased;
+  background-color:var(--paper);
+  background-image:radial-gradient(rgba(31,79,214,.06) 1px,transparent 1px);
+  background-size:22px 22px;
+}
+.page{max-width:1180px;margin:0 auto;padding:48px 30px 64px}
+section{margin-bottom:58px}
+.kicker{font-size:12px;letter-spacing:.34em;color:var(--blue);font-weight:700;text-transform:uppercase;margin-bottom:12px}
+.kicker .sep{color:var(--faint);font-weight:400;margin:0 8px}
+h2.title{font-family:var(--serif);font-size:clamp(24px,3.4vw,36px);font-weight:700;letter-spacing:.01em;line-height:1.2;margin-bottom:8px}
+h2.title em{font-style:normal;color:var(--amber)}
+.note{font-size:13.5px;color:var(--muted);max-width:800px}
+.chip{display:inline-block;font-size:12.5px;font-weight:700;padding:3px 11px;border-radius:20px;background:var(--amber-soft);color:var(--amber);border:1px solid var(--amber-line);margin-left:4px;vertical-align:middle}
+
+/* masthead */
+.mast{display:flex;justify-content:space-between;align-items:flex-end;gap:28px;flex-wrap:wrap;padding-bottom:26px;border-bottom:2px solid var(--ink);position:relative}
+.mast::after{content:"";position:absolute;right:-30px;top:-30px;width:340px;height:240px;background:radial-gradient(closest-side,rgba(31,79,214,.10),transparent 70%);pointer-events:none}
+.mast .brand{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+.mast .mark{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--blue),var(--blue-d));display:grid;place-items:center;color:#fff;font-family:var(--serif);font-weight:700;font-size:19px;box-shadow:0 6px 16px rgba(22,53,127,.3)}
+.mast .markname{font-weight:800;letter-spacing:.04em;font-size:17px}
+.mast h1{font-family:var(--serif);font-size:clamp(34px,6vw,62px);line-height:1.04;font-weight:700;letter-spacing:.01em}
+.mast h1 .hl{color:var(--blue)}
+.mast .sub{font-size:clamp(15px,2vw,19px);color:var(--muted);margin-top:14px;max-width:660px}
+.mast .sub b{color:var(--ink);font-weight:700}
+.meta{text-align:right;font-size:12px;color:var(--faint);line-height:1.9;white-space:nowrap;position:relative}
+.meta b{color:var(--blue-d);font-weight:700;font-size:13px}
+
+/* background */
+.lead{font-size:clamp(16px,2.1vw,20px);line-height:1.7;max-width:960px;color:#26304a}
+.lead b{color:var(--blue-d)}
+.lead .am{color:var(--amber);font-weight:700}
+
+/* statband */
+.statband{display:grid;grid-template-columns:repeat(6,1fr);background:var(--surface);border:1px solid var(--line);border-radius:16px;overflow:hidden;margin-top:26px;box-shadow:0 18px 40px -30px rgba(16,23,42,.35)}
+.stat{padding:18px 10px;text-align:center;border-left:1px solid var(--line);transition:background .25s ease}
+.stat:first-child{border-left:none}
+.stat:hover{background:var(--blue-soft)}
+.stat .num{font-family:var(--mono);font-size:23px;font-weight:800;color:var(--blue-d);letter-spacing:-.02em;white-space:nowrap;transition:color .25s ease}
+.stat:hover .num{color:var(--amber)}
+.stat .num .tilde{color:var(--faint);font-weight:600}
+.stat .lab{font-size:11.5px;color:var(--muted);margin-top:3px}
+
+.twocol{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px}
+.colbox{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:20px 22px;transition:transform .25s ease,box-shadow .25s ease}
+.colbox:hover{transform:translateY(-3px);box-shadow:0 18px 38px -28px rgba(16,23,42,.4)}
+.colbox.do{border-top:3px solid var(--blue)}
+.colbox.dont{border-top:3px solid var(--faint)}
+.colbox h3{font-size:13px;letter-spacing:.16em;margin-bottom:12px}
+.colbox.do h3{color:var(--blue)} .colbox.dont h3{color:var(--faint)}
+.colbox li{list-style:none;font-size:14.5px;color:#33405c;padding:6px 0 6px 24px;position:relative}
+.colbox.do li::before{content:"";position:absolute;left:2px;top:13px;width:9px;height:5px;border-left:2.5px solid var(--blue);border-bottom:2.5px solid var(--blue);transform:rotate(-45deg)}
+.colbox.dont li::before{content:"";position:absolute;left:2px;top:13px;width:11px;height:11px;
+  background:linear-gradient(45deg,transparent 42%,var(--faint) 42%,var(--faint) 58%,transparent 58%),
+             linear-gradient(-45deg,transparent 42%,var(--faint) 42%,var(--faint) 58%,transparent 58%)}
+
+/* arch flow */
+.flowwrap{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:10px 6px 4px;box-shadow:0 22px 50px -34px rgba(16,23,42,.4);overflow-x:auto}
+.flowwrap svg{width:100%;min-width:780px;height:auto;display:block}
+.fwd{fill:none;stroke:var(--blue);stroke-width:2.4}
+.loop{fill:none;stroke:var(--amber);stroke-width:2.6;stroke-dasharray:9 7;animation:dash 1s linear infinite}
+@keyframes dash{to{stroke-dashoffset:-16}}
+
+/* sovereignty / hard boundaries */
+.sov{background:var(--ink);border-radius:20px;padding:30px 26px 26px;color:#e9eefb;position:relative;overflow:hidden}
+.sov::before{content:"";position:absolute;inset:0;background-image:radial-gradient(rgba(255,255,255,.045) 1px,transparent 1px);background-size:20px 20px;pointer-events:none}
+.sov .shead{font-family:var(--serif);font-size:21px;font-weight:700;margin-bottom:4px;position:relative}
+.sov .shead em{font-style:normal;color:var(--amber)}
+.sov .ssub{font-size:12.5px;color:#93a0bd;margin-bottom:20px;position:relative}
+.sgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;position:relative}
+.scard{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:18px 18px 16px;transition:transform .25s ease,border-color .25s ease,background .25s ease}
+.scard:hover{transform:translateY(-4px);border-color:var(--amber);background:rgba(226,98,12,.08)}
+.scard .ico{width:42px;height:42px;border-radius:11px;background:rgba(226,98,12,.16);border:1px solid rgba(226,98,12,.4);display:grid;place-items:center;color:#ffb27a;margin-bottom:12px;transition:transform .3s ease}
+.scard:hover .ico{transform:rotate(-6deg) scale(1.06)}
+.scard h4{font-size:17px;font-weight:800;color:#fff;margin-bottom:6px;letter-spacing:.01em}
+.scard p{font-size:13.5px;color:#c4cee6}
+.scard p b{color:#fff}
+.scard .why{margin-top:10px;font-size:12px;color:#ffb27a;border-top:1px dashed rgba(255,255,255,.14);padding-top:8px}
+
+/* cases */
+.casegrid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:22px}
+.case{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:20px;display:grid;grid-template-columns:158px 1fr;gap:18px;align-items:center;box-shadow:0 18px 40px -34px rgba(16,23,42,.35);transition:transform .25s ease,box-shadow .25s ease}
+.case:hover{transform:translateY(-4px);box-shadow:0 26px 50px -30px rgba(16,23,42,.45)}
+.case .art{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:8px}
+.case .art svg{width:100%;height:auto;display:block}
+.tg{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.08em;padding:2px 9px;border-radius:5px;margin-bottom:8px}
+.tg.block{background:#fdecec;color:var(--red);border:1px solid #f5b8b8}
+.tg.measure{background:var(--blue-soft);color:var(--blue-d);border:1px solid var(--blue-line)}
+.tg.asset{background:#e8f5f3;color:var(--teal);border:1px solid #b9ded9}
+.tg.floop{background:var(--amber-soft);color:var(--amber);border:1px solid var(--amber-line)}
+.case h4{font-size:16.5px;font-weight:800;margin-bottom:7px;letter-spacing:.01em}
+.case .cbody{font-size:13.5px;color:#46506a}
+.case .cbody b{color:var(--ink)}
+.case .punch{margin-top:9px;font-size:13px;font-weight:700;color:var(--ink);padding-left:10px;border-left:3px solid var(--amber)}
+.case .punch.red{border-left-color:var(--red)} .case .punch.blue{border-left-color:var(--blue)} .case .punch.teal{border-left-color:var(--teal)}
+.case .src{margin-top:9px;font-size:11px;color:var(--faint)}
+.case .src code{font-family:var(--mono);font-size:10.5px;background:var(--paper);border:1px solid var(--line);border-radius:4px;padding:1px 5px;color:var(--muted)}
+
+/* capability matrix */
+.matrix{background:linear-gradient(160deg,#0d224f,#16357f);border-radius:20px;padding:30px 26px 26px;color:#e9eefb;position:relative;overflow:hidden}
+.matrix::before{content:"";position:absolute;inset:0;background-image:radial-gradient(rgba(255,255,255,.05) 1px,transparent 1px);background-size:20px 20px;pointer-events:none}
+.matrix .mhead{font-family:var(--serif);font-size:21px;font-weight:700;margin-bottom:4px;position:relative}
+.matrix .msub{font-size:12.5px;color:#9fb2dd;margin-bottom:20px;position:relative}
+.mgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;position:relative}
+.mcol{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:13px;padding:15px 14px;transition:transform .25s ease,background .25s ease}
+.mcol:hover{transform:translateY(-3px);background:rgba(255,255,255,.08)}
+.mcol .mh{display:flex;align-items:center;gap:7px;font-size:11.5px;letter-spacing:.14em;color:#aebfe6;font-weight:700;margin-bottom:11px;padding-bottom:9px;border-bottom:1px solid rgba(255,255,255,.12)}
+.mcol .mh svg{flex:none;opacity:.9}
+.mcol ul{list-style:none}
+.mcol li{font-size:13px;color:#d7e0f5;padding:4px 0}
+.mcol.hlcol{background:linear-gradient(180deg,rgba(226,98,12,.2),rgba(226,98,12,.07));border-color:var(--amber)}
+.mcol.hlcol:hover{background:linear-gradient(180deg,rgba(226,98,12,.3),rgba(226,98,12,.12))}
+.mcol.hlcol .mh{color:#ffc896;border-bottom-color:rgba(226,98,12,.4)}
+.mcol.hlcol li{color:#ffe9d6}
+.mcol.hlcol li b{color:#fff}
+.tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:5px;background:rgba(226,98,12,.28);color:#ffd9b8;margin-left:5px}
+.mfoot{font-size:12px;color:#9fb2dd;margin-top:16px;position:relative}
+
+/* advantage */
+.advgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.adv{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--amber);border-radius:14px;padding:22px 22px 20px;position:relative;transition:transform .25s ease,box-shadow .25s ease,border-left-width .2s ease}
+.adv:hover{transform:translateY(-4px);box-shadow:0 22px 44px -30px rgba(16,23,42,.4);border-left-width:7px}
+.adv .ic{position:absolute;top:18px;right:18px;color:var(--amber);transition:transform .3s ease}
+.adv:hover .ic{transform:rotate(8deg) scale(1.08)}
+.adv .n{font-family:var(--mono);font-size:13px;color:var(--amber);font-weight:700}
+.adv h4{font-size:18px;margin:8px 0 9px;font-weight:800;letter-spacing:.01em}
+.adv p{font-size:14px;color:#46506a}
+.adv p b{color:var(--ink)}
+.adv .vs{margin-top:11px;font-size:12.5px;color:var(--faint);border-top:1px dashed var(--line);padding-top:9px}
+
+.foot{font-size:12px;color:var(--faint);border-top:1px solid var(--line);padding-top:18px;line-height:1.9}
+.foot b{color:var(--muted)}
+.foot code{font-family:var(--mono);font-size:11px;background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:0 4px}
+
+.reveal{opacity:0;transform:translateY(20px);transition:opacity .7s ease,transform .7s ease}
+.reveal.in{opacity:1;transform:none}
+html.static .reveal{opacity:1;transform:none}
+html.static .loop{animation:none}
+
+@media(max-width:960px){.casegrid{grid-template-columns:1fr}.sgrid{grid-template-columns:1fr}}
+@media(max-width:860px){.twocol,.advgrid{grid-template-columns:1fr}.mgrid{grid-template-columns:1fr 1fr}.statband{grid-template-columns:repeat(3,1fr)}.stat:nth-child(4){border-left:none}.mast{align-items:flex-start}.meta{text-align:left}}
+@media(max-width:560px){.mgrid{grid-template-columns:1fr}.case{grid-template-columns:1fr}.case .art{max-width:220px}.statband{grid-template-columns:1fr 1fr}.stat:nth-child(odd){border-left:none}}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- MASTHEAD -->
+  <header class="mast reveal">
+    <div>
+      <div class="brand"><div class="mark">M</div><div class="markname">MOLIO</div></div>
+      <h1>知识，<span class="hl">训成判断力</span></h1>
+      <p class="sub"><b>Molio 通用知识管理平台</b> × 勘察设计行业 · 数字员工解决方案架构</p>
+    </div>
+    <div class="meta">
+      <b>解决方案架构页</b><br>
+      对标形态：行业案例架构页<br>
+      V1.2 · 2026-07-29 · 含实测案例
+    </div>
+  </header>
+
+  <!-- BACKGROUND -->
+  <section class="reveal" style="margin-top:40px">
+    <div class="kicker">背景与目标<span class="sep">/</span>BACKGROUND</div>
+    <p class="lead">模型正变成水电煤——周周变强、权重白送，<b>"用更好的模型"撑不过三个月</b>。真正的缺口不在模型，在<span class="am">「教」</span>：把领域专家"一看就知道不对、却说不清为什么"的暗知识，训成数字员工的判断力。Molio 是承载这件事的<b>通用平台</b>，行业方案建在它之上——而且<b>数据不出你的院、模型不绑你的脖子、训出来的资产归你自己</b>。</p>
+
+    <div class="statband">
+      <div class="stat"><div class="num"><span class="cnt" data-to="620">620</span></div><div class="lab">Wiki 结构页</div></div>
+      <div class="stat"><div class="num"><span class="cnt" data-to="11801">11,801</span></div><div class="lab">双向链接边</div></div>
+      <div class="stat"><div class="num"><span class="cnt" data-to="58">58</span></div><div class="lab">语义库表</div></div>
+      <div class="stat"><div class="num"><span class="tilde">~</span><span class="cnt" data-to="185000">185,000</span></div><div class="lab">库内数据行</div></div>
+      <div class="stat"><div class="num"><span class="cnt" data-to="22632">22,632</span></div><div class="lab">校审规则 DRR</div></div>
+      <div class="stat"><div class="num"><span class="cnt" data-to="14">14</span></div><div class="lab">行业规则模板</div></div>
+    </div>
+
+    <div class="twocol">
+      <div class="colbox do">
+        <h3>我们做</h3>
+        <ul>
+          <li>把暗知识训成数字员工的判断力（认知界面效应）</li>
+          <li>语义层 + 知识图谱：让原始资料变成可推理的结构</li>
+          <li>四门禁 / T-GATE：把错的口径拦在出口</li>
+          <li>反馈闭环：每次纠错都回灌，数字员工越用越准</li>
+        </ul>
+      </div>
+      <div class="colbox dont">
+        <h3>我们不做</h3>
+        <ul>
+          <li>不卖软件许可证、不按 seats / 用量计价（非 SaaS）</li>
+          <li>不把"能检索能生成"包装成"智能设计"</li>
+          <li>不堆体量当质量——85GB 没治理就是负债</li>
+          <li>不替代人类签字 / 审批 / 法律 / 医疗判断</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ARCHITECTURE FLOW -->
+  <section class="reveal">
+    <div class="kicker">核心架构流<span class="sep">/</span>ARCHITECTURE</div>
+    <h2 class="title">一个解决方案工程师，<em>统揽全部应用</em></h2>
+    <p class="note" style="margin-bottom:18px">在勘察设计行业，派驻客户侧的就是<b>一个解决方案工程师</b>数字员工——问答、检索、校审、审核由它一肩挑。左→中→右是数据流；<span class="chip">橙色回线 = 反馈闭环</span> 是把"纠错"变成燃料的那条线，多数 RAG + 微调方案架构图里缺的正是它。</p>
+    <div class="flowwrap">
+      <svg viewBox="0 0 1200 560" role="img" aria-label="Molio 解决方案架构流：知识资产经 Molio 底座训出解决方案工程师，统揽四类应用，并由反馈闭环回线把纠错回灌知识资产">
+        <defs>
+          <marker id="ab" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#1f4fd6"/></marker>
+          <marker id="ao" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#e2620c"/></marker>
+          <linearGradient id="gb" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a5be0"/><stop offset="1" stop-color="#16357f"/></linearGradient>
+          <linearGradient id="ge" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2a5be0"/><stop offset="1" stop-color="#0d224f"/></linearGradient>
+          <linearGradient id="gp" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#eef3ff"/></linearGradient>
+        </defs>
+
+        <!-- column labels -->
+        <text x="155" y="44" text-anchor="middle" fill="#8a93a8" font-size="13" letter-spacing="2" font-weight="700">知识资产</text>
+        <text x="600" y="44" text-anchor="middle" fill="#8a93a8" font-size="13" letter-spacing="2" font-weight="700">MOLIO 底座 · 通用平台</text>
+        <text x="905" y="44" text-anchor="middle" fill="#8a93a8" font-size="13" letter-spacing="2" font-weight="700">数字员工</text>
+        <text x="1104" y="44" text-anchor="middle" fill="#8a93a8" font-size="13" letter-spacing="2" font-weight="700">应用</text>
+
+        <!-- forward arrows: assets → platform -->
+        <path class="fwd" d="M270 132 C350 132 360 180 430 180" marker-end="url(#ab)"/>
+        <path class="fwd" d="M270 262 C350 262 360 230 430 230" marker-end="url(#ab)"/>
+        <path class="fwd" d="M270 392 C350 392 360 290 430 290" marker-end="url(#ab)"/>
+        <!-- platform → employee (single) -->
+        <path class="fwd" d="M760 228 L808 228" marker-end="url(#ab)"/>
+        <!-- employee → apps (fan-out) -->
+        <path class="fwd" d="M1000 208 C1020 208 1022 112 1036 112" marker-end="url(#ab)"/>
+        <path class="fwd" d="M1000 224 C1020 224 1022 166 1036 166" marker-end="url(#ab)"/>
+        <path class="fwd" d="M1000 244 C1020 244 1022 266 1036 266" marker-end="url(#ab)"/>
+        <path class="fwd" d="M1000 262 C1020 262 1022 338 1036 338" marker-end="url(#ab)"/>
+
+        <!-- assets -->
+        <g>
+          <rect x="40" y="98" width="230" height="68" rx="11" fill="url(#gb)"/>
+          <text x="155" y="127" text-anchor="middle" fill="#fff" font-size="16" font-weight="700">Wiki 知识网络</text>
+          <text x="155" y="150" text-anchor="middle" fill="#cfe0ff" font-size="13.5" font-family="SF Mono,Consolas,monospace"><tspan class="cnt" data-to="620">620</tspan> 页 · <tspan class="cnt" data-to="11801">11801</tspan> 边</text>
+        </g>
+        <g>
+          <rect x="40" y="228" width="230" height="68" rx="11" fill="url(#gb)"/>
+          <text x="155" y="257" text-anchor="middle" fill="#fff" font-size="16" font-weight="700">语义数据库</text>
+          <text x="155" y="280" text-anchor="middle" fill="#cfe0ff" font-size="13.5" font-family="SF Mono,Consolas,monospace"><tspan class="cnt" data-to="58">58</tspan> 表 · ~185K 行</text>
+        </g>
+        <g>
+          <rect x="40" y="358" width="230" height="68" rx="11" fill="url(#gb)"/>
+          <text x="155" y="387" text-anchor="middle" fill="#fff" font-size="16" font-weight="700">校审规则库 DRR</text>
+          <text x="155" y="410" text-anchor="middle" fill="#cfe0ff" font-size="13.5" font-family="SF Mono,Consolas,monospace"><tspan class="cnt" data-to="22632">22632</tspan> 条 · 14 行业</text>
+        </g>
+
+        <!-- platform base -->
+        <g>
+          <rect x="440" y="92" width="320" height="252" rx="16" fill="url(#gp)" stroke="#1f4fd6" stroke-width="2"/>
+          <text x="600" y="124" text-anchor="middle" fill="#16357f" font-size="18" font-weight="800">Molio 运行时</text>
+          <text x="600" y="145" text-anchor="middle" fill="#5b6680" font-size="12.5">Wiki 引擎 · AI 运行时 · 多 Agent 治理</text>
+          <rect x="466" y="162" width="268" height="34" rx="8" fill="#eaf0ff"/>
+          <text x="600" y="184" text-anchor="middle" fill="#16357f" font-size="13.5" font-weight="700">语义层 · 六桥引擎 · 332 构件类型</text>
+          <rect x="466" y="204" width="268" height="34" rx="8" fill="#eaf0ff"/>
+          <text x="600" y="226" text-anchor="middle" fill="#16357f" font-size="13.5" font-weight="700">知识图谱 · 实体 / 关系 / 推理</text>
+          <rect x="466" y="246" width="268" height="34" rx="8" fill="#fff1e4" stroke="#f6c79c"/>
+          <text x="600" y="268" text-anchor="middle" fill="#b34d08" font-size="13.5" font-weight="700">四门禁 / T-GATE · 出口拦截</text>
+          <rect x="466" y="288" width="268" height="34" rx="8" fill="#eaf0ff"/>
+          <text x="600" y="310" text-anchor="middle" fill="#16357f" font-size="13.5" font-weight="700">认知界面效应 · 暗知识提取</text>
+        </g>
+
+        <!-- digital employee (single role for this industry) -->
+        <g>
+          <rect x="810" y="176" width="190" height="104" rx="13" fill="url(#ge)" stroke="#3f74f0" stroke-width="1.5"/>
+          <text x="905" y="206" text-anchor="middle" fill="#fff" font-size="16.5" font-weight="800">解决方案工程师</text>
+          <text x="905" y="229" text-anchor="middle" fill="#cfe0ff" font-size="12">一岗统揽 · 交付层 · 派驻客户侧</text>
+          <line x1="838" y1="240" x2="972" y2="240" stroke="#3f74f0" stroke-width="1" opacity=".6"/>
+          <text x="905" y="258" text-anchor="middle" fill="#bcd0ff" font-size="11.5">问答 · 检索 · 校审 · 审核</text>
+          <text x="905" y="273" text-anchor="middle" fill="#9db6ec" font-size="10.5">一人 = 一整套行业能力</text>
+        </g>
+
+        <!-- apps -->
+        <g>
+          <rect x="1038" y="92" width="132" height="40" rx="9" fill="#eaf0ff" stroke="#c7d4f7"/>
+          <text x="1104" y="117" text-anchor="middle" fill="#16357f" font-size="13.5" font-weight="700">知识问答</text>
+        </g>
+        <g>
+          <rect x="1038" y="146" width="132" height="40" rx="9" fill="#eaf0ff" stroke="#c7d4f7"/>
+          <text x="1104" y="171" text-anchor="middle" fill="#16357f" font-size="13.5" font-weight="700">规范检索</text>
+        </g>
+        <g>
+          <rect x="1038" y="246" width="132" height="40" rx="9" fill="#fff1e4" stroke="#f6c79c"/>
+          <text x="1104" y="271" text-anchor="middle" fill="#b34d08" font-size="13.5" font-weight="700">图纸校审</text>
+        </g>
+        <g>
+          <rect x="1038" y="318" width="132" height="40" rx="9" fill="#eaf0ff" stroke="#c7d4f7"/>
+          <text x="1104" y="343" text-anchor="middle" fill="#16357f" font-size="13.5" font-weight="700">方案审核</text>
+        </g>
+
+        <!-- feedback loop (the differentiator) -->
+        <path class="loop" d="M1104 362 L1104 486 L155 486 L155 430" marker-end="url(#ao)"/>
+        <rect x="430" y="471" width="352" height="30" rx="15" fill="#fff1e4" stroke="#f6c79c"/>
+        <text x="606" y="491" text-anchor="middle" fill="#b34d08" font-size="14" font-weight="800">↺ 反馈闭环 · 纠错即训练数据，越用越准</text>
+
+        <!-- legend -->
+        <line x1="40" y1="536" x2="74" y2="536" stroke="#1f4fd6" stroke-width="2.4"/>
+        <text x="82" y="540" fill="#5b6680" font-size="12.5">正向数据流</text>
+        <line x1="210" y1="536" x2="244" y2="536" stroke="#e2620c" stroke-width="2.6" stroke-dasharray="7 5"/>
+        <text x="252" y="540" fill="#5b6680" font-size="12.5">反馈闭环（差异化）</text>
+      </svg>
+    </div>
+  </section>
+
+  <!-- SOVEREIGNTY / HARD BOUNDARIES -->
+  <section class="reveal">
+    <div class="sov">
+      <div class="shead">三条硬边界 · 企业敢把核心知识交出来的<em>前提</em></div>
+      <div class="ssub">能力再强，过不了这三关，设计院也不敢用。这三条是部署形态与架构事实，不是营销话术。</div>
+      <div class="sgrid">
+        <div class="scard">
+          <div class="ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10.5" width="16" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/><circle cx="12" cy="15.5" r="1.4"/></svg></div>
+          <h4>数据不出域</h4>
+          <p>本地优先、私有部署。图纸、规范、项目资料<b>全程留在客户域内</b>，不经公有云、不做在线试用、不扫码上传。</p>
+          <div class="why">设计院的核心资产是图纸与规范——出域即失控，这是第一道红线。</div>
+        </div>
+        <div class="scard">
+          <div class="ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h9l-3-3"/><path d="M17 17H8l3 3"/><rect x="9.5" y="9.5" width="5" height="5" rx="1.2"/></svg></div>
+          <h4>模型不绑定</h4>
+          <p>知识沉淀在语义层与规则库，<b>不在模型权重里</b>。大模型可换、可降级、断网时仍能跑规则层；模型周周变强，能力不贬值。</p>
+          <div class="why">真缺口是"教"不是模型——所以换底座不掉能力，不被任何模型厂锁死。</div>
+        </div>
+        <div class="scard">
+          <div class="ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M12 12v4M10 14h4"/></svg></div>
+          <h4>资产归客户、不被锁</h4>
+          <p>语义层与知识库是<b>结构化文件资产</b>，可导出、可迁移、可审计。换平台不归零，知识始终是客户自己的。</p>
+          <div class="why">拒绝供应商锁定：你训出来的判断力，产权在你手里。</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CASES -->
+  <section class="reveal">
+    <div class="kicker">真实案例<span class="sep">/</span>MEASURED, NOT PROMISED</div>
+    <h2 class="title">这四件事，<em>真发生过</em></h2>
+    <p class="note">以下均非"签约客户成效"，是我们自己知识库里的实测记录，每条带来源——包括一条如实交代"做不到什么"的。敢报做不到的，才证明做得到的是真账。</p>
+
+    <div class="casegrid">
+
+      <div class="case">
+        <div class="art">
+          <svg viewBox="0 0 150 120" role="img" aria-label="示意图：文章引用旧规范，被废止台账以最高级拦下，指向现行规范">
+            <rect x="6" y="22" width="42" height="58" rx="4" fill="#fff" stroke="#c7d4f7"/>
+            <rect x="12" y="30" width="30" height="4" rx="2" fill="#1f4fd6" opacity=".85"/>
+            <rect x="12" y="40" width="30" height="3" rx="1.5" fill="#dfe6f5"/>
+            <rect x="12" y="47" width="24" height="3" rx="1.5" fill="#dfe6f5"/>
+            <rect x="12" y="54" width="28" height="3" rx="1.5" fill="#dfe6f5"/>
+            <rect x="12" y="61" width="20" height="3" rx="1.5" fill="#f5b8b8"/>
+            <text x="27" y="94" text-anchor="middle" font-size="8.5" fill="#8a93a8">某消防合规文章</text>
+            <path d="M52 51 H62 M58 47 L63 51 L58 55" fill="none" stroke="#1f4fd6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            <rect x="66" y="18" width="11" height="66" rx="3" fill="#e2620c"/>
+            <rect x="68.5" y="24" width="6" height="54" rx="2" fill="#fff" opacity=".22"/>
+            <rect x="86" y="24" width="58" height="21" rx="10.5" fill="#fdecec" stroke="#f5b8b8"/>
+            <text x="115" y="38" text-anchor="middle" font-size="9.5" font-weight="700" fill="#d64545">50016 ✕</text>
+            <text x="115" y="55" text-anchor="middle" font-size="7.5" fill="#8a93a8">2014 · 已废止</text>
+            <rect x="86" y="63" width="58" height="21" rx="10.5" fill="#e8f5f3" stroke="#b9ded9"/>
+            <text x="115" y="77" text-anchor="middle" font-size="9.5" font-weight="700" fill="#0f8f86">55037 ✓</text>
+            <text x="115" y="94" text-anchor="middle" font-size="7.5" fill="#8a93a8">2022 · 现行</text>
+            <text x="75" y="112" text-anchor="middle" font-size="8" fill="#8a93a8">compliance_std · 53 条废止映射 · 最高拦截级</text>
+          </svg>
+        </div>
+        <div>
+          <span class="tg block">拦截案例</span>
+          <h4>教审计的文章，自己先被审出来</h4>
+          <p class="cbody">一篇教人"怎么做标准合规可解释审计"的文章，三个演示案例全引 <b>GB 50016-2014</b>《建筑设计防火规范》。审核脚本比对库内"标准废止台账"：它已被 <b>GB 55037-2022</b>《建筑防火通用规范》替代（2023-06-01 生效），严重度为最高拦截级，当场报红旗。</p>
+          <p class="punch red">检索能找到旧标准号，但不知道它已作废——台账能。</p>
+          <p class="src">来源：<code>comparisons/audit-prescription-catches-self-violation</code>（2026-07-27 实测）</p>
+        </div>
+      </div>
+
+      <div class="case">
+        <div class="art">
+          <svg viewBox="0 0 150 120" role="img" aria-label="示意图：53 项检查点三轮实测，规则层 17/29、规范层 8/29，缺口集中在管网施工验收子群">
+            <text x="8" y="16" font-size="10" font-weight="800" fill="#16357f">53 项检查点 · 7 阶段</text>
+            <text x="8" y="36" font-size="9" fill="#5b6680">规则层</text>
+            <rect x="42" y="28" width="80" height="10" rx="5" fill="#e8edf8"/>
+            <rect x="42" y="28" width="47" height="10" rx="5" fill="#1f4fd6"/>
+            <text x="146" y="37" text-anchor="end" font-size="9" font-weight="800" fill="#16357f" font-family="SF Mono,Consolas,monospace">17/29</text>
+            <text x="8" y="58" font-size="9" fill="#5b6680">规范层</text>
+            <rect x="42" y="50" width="80" height="10" rx="5" fill="#e8edf8"/>
+            <rect x="42" y="50" width="22" height="10" rx="5" fill="#7fa3ee"/>
+            <text x="146" y="59" text-anchor="end" font-size="9" font-weight="800" fill="#16357f" font-family="SF Mono,Consolas,monospace">8/29</text>
+            <rect x="8" y="70" width="134" height="27" rx="6" fill="#fff1e4" stroke="#f6c79c"/>
+            <text x="14" y="82" font-size="8.5" font-weight="800" fill="#b34d08">缺口：室外管网施工验收子群</text>
+            <text x="14" y="92.5" font-size="7.5" fill="#b34d08">50289 / 50268 / 50242 / 23858 · 零规则</text>
+            <text x="8" y="112" font-size="8" fill="#8a93a8">三轮实测收口 · 2026-07-28</text>
+          </svg>
+        </div>
+        <div>
+          <span class="tg measure">实测案例</span>
+          <h4>室外小市政审核清单：能与不能，都摆出来</h4>
+          <p class="cbody">七阶段 <b>53 项检查点</b>，三轮实测：规则层覆盖 <b>17/29</b>，规范层落地 <b>8/29</b>；缺口不藏——集中在室外管网施工验收子群（四个标准号规则全为零）。我们当前的角色定位也如实标：<b>策展人 + 指针</b>，理得清的给结论，够不着的指路。</p>
+          <p class="punch blue">把"做不到"测出来公开，正是测量为真的证据。</p>
+          <p class="src">来源：<code>concepts/outdoor-municipal-pipeline-audit-checklist</code>（2026-07-28）</p>
+        </div>
+      </div>
+
+      <div class="case">
+        <div class="art">
+          <svg viewBox="0 0 150 120" role="img" aria-label="示意图：知识网络从 331 个原始文件长成 620 页、11801 条双向链接">
+            <g stroke="#c7d4f7" stroke-width="1.4">
+              <line x1="75" y1="46" x2="30" y2="24"/><line x1="75" y1="46" x2="118" y2="22"/>
+              <line x1="75" y1="46" x2="24" y2="66"/><line x1="75" y1="46" x2="126" y2="62"/>
+              <line x1="75" y1="46" x2="52" y2="86"/><line x1="75" y1="46" x2="100" y2="84"/>
+              <line x1="75" y1="46" x2="75" y2="12"/><line x1="30" y1="24" x2="75" y2="12"/>
+              <line x1="118" y1="22" x2="75" y2="12"/><line x1="52" y1="86" x2="100" y2="84"/>
+            </g>
+            <circle cx="75" cy="46" r="9" fill="#1f4fd6"/>
+            <circle cx="30" cy="24" r="5" fill="#7fa3ee"/><circle cx="118" cy="22" r="5" fill="#7fa3ee"/>
+            <circle cx="24" cy="66" r="5" fill="#7fa3ee"/><circle cx="126" cy="62" r="5" fill="#7fa3ee"/>
+            <circle cx="52" cy="86" r="5" fill="#7fa3ee"/><circle cx="100" cy="84" r="5" fill="#e2620c"/>
+            <circle cx="75" cy="12" r="4" fill="#7fa3ee"/>
+            <text x="75" y="106" text-anchor="middle" font-size="8.5" fill="#5b6680" font-family="SF Mono,Consolas,monospace">331 原始 → 620 页 → 11,801 边</text>
+            <text x="75" y="117" text-anchor="middle" font-size="7.5" fill="#8a93a8">+ 75,933 行变更日志（事件级留痕）</text>
+          </svg>
+        </div>
+        <div>
+          <span class="tg asset">资产案例</span>
+          <h4>从 331 个原始文件，到 11,801 条双向链接</h4>
+          <p class="cbody">知识网络的复利：331 份原始文件 → <b>620 个结构页</b> → <b>11,801 条双向链接</b>，另有 <b>75,933 行变更日志</b>（旧值 / 新值 / 操作人 / 时间，事件级留痕）；语义库底下是 58 表 · 约 18.5 万行、22,632 条校审规则覆盖 14 个行业。</p>
+          <p class="punch teal">没有留痕的体量是负债，有留痕的才是资产。</p>
+          <p class="src">来源：<code>sources/toutiao-keji-fengxiangbiao-retrieval-paradigms-20260702</code>（实测）+ <code>wiki/log.md</code></p>
+        </div>
+      </div>
+
+      <div class="case">
+        <div class="art">
+          <svg viewBox="0 0 150 120" role="img" aria-label="示意图：一次纠正沉淀为规则，全局扫描替换 77 处的反馈闭环">
+            <g fill="none" stroke="#e2620c" stroke-width="3" stroke-linecap="round">
+              <path d="M75 20 A32 32 0 0 1 106.5 46.4"/>
+              <path d="M102.7 68 A32 32 0 0 1 64.1 82.1"/>
+              <path d="M47.3 68 A32 32 0 0 1 54.4 27.5"/>
+            </g>
+            <polygon points="107.9,54.3 110.4,45.7 102.6,47.1" fill="#e2620c"/>
+            <polygon points="56.6,79.4 65.5,78.3 62.7,85.9" fill="#e2620c"/>
+            <polygon points="60.5,22.4 57,30.6 51.8,24.4" fill="#e2620c"/>
+            <text x="75" y="50" text-anchor="middle" font-size="21" font-weight="800" fill="#e2620c" font-family="SF Mono,Consolas,monospace">77</text>
+            <text x="75" y="63" text-anchor="middle" font-size="9" fill="#5b6680">处替换</text>
+            <text x="118" y="62" font-size="8.5" font-weight="700" fill="#b34d08">纠正</text>
+            <text x="42" y="96" text-anchor="middle" font-size="8.5" font-weight="700" fill="#b34d08">规则</text>
+            <text x="52" y="13" text-anchor="middle" font-size="8.5" font-weight="700" fill="#b34d08">扫描</text>
+            <text x="75" y="112" text-anchor="middle" font-size="8" fill="#8a93a8">纠错 → 沉淀规则 → 全局扫描（8 个文件）</text>
+          </svg>
+        </div>
+        <div>
+          <span class="tg floop">闭环案例</span>
+          <h4>一次纠正，换来 77 处替换</h4>
+          <p class="cbody">人类纠正了一处称呼口径——把同一对象的叫法统一规范、淘汰旧称。这次纠正没有停在当场：它沉淀成一条训练记忆规则；随后的全局扫描在 <b>8 个文件里自动替换 77 处</b>（案例研究 51、日志 8、数据治理 7……）。纠正只发生一次，规则长期站岗。</p>
+          <p class="punch">这就是飞轮的最小闭环：纠错即训练数据。</p>
+          <p class="src">来源：<code>wiki/log.md</code>（修正范围记录）+ 训练记忆条目</p>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- CAPABILITY MATRIX -->
+  <section class="reveal">
+    <div class="matrix">
+      <div class="mhead">企业级能力矩阵</div>
+      <div class="msub">镜像行业架构页的下半层；加粗橙色列 = Molio 真正多出来的部分</div>
+      <div class="mgrid">
+        <div class="mcol">
+          <div class="mh"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>GenAI 应用</div>
+          <ul><li>知识问答</li><li>规范检索</li><li>图纸校审</li><li>专家解读</li><li>方案审核</li></ul>
+        </div>
+        <div class="mcol">
+          <div class="mh"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 21V8l8-5 8 5v13"/><path d="M2 21h20"/><path d="M9 21v-6h6v6"/></svg>专业领域</div>
+          <ul><li>建筑</li><li>结构</li><li>消防</li><li>给水排水</li><li>暖通空调</li></ul>
+        </div>
+        <div class="mcol hlcol">
+          <div class="mh"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg>企业知识中枢 · 差异点</div>
+          <ul>
+            <li><b>反馈闭环</b><span class="tag">回灌</span></li>
+            <li><b>暗知识转移</b><span class="tag">界面涌现</span></li>
+            <li>语义层 · 知识图谱</li>
+            <li>四门禁 · 可解释校审</li>
+            <li>版本时效治理</li>
+          </ul>
+        </div>
+        <div class="mcol">
+          <div class="mh"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>数据与模型底座</div>
+          <ul><li>语义数据库</li><li>向量检索</li><li>对象存储</li><li>文档解析 / OCR</li><li><b>本地优先 · 私有部署</b></li><li><b>模型接口可换 · 不绑定</b></li></ul>
+        </div>
+      </div>
+      <div class="mfoot">注：Molio 以"语义层 = 单一权威"统一多源数据，而非物理上四库齐备——这是与"图/向量/对象/关系四库并列"不同的架构选择，非能力缺失。</div>
+    </div>
+  </section>
+
+  <!-- ADVANTAGE -->
+  <section class="reveal">
+    <div class="kicker">三个反超维度<span class="sep">/</span>WHERE WE GO DEEPER</div>
+    <h2 class="title">同样做"行业智能"，我们多走三步</h2>
+    <div class="advgrid" style="margin-top:20px">
+      <div class="adv">
+        <div class="ic"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg></div>
+        <div class="n">01</div>
+        <h4>反馈闭环</h4>
+        <p>数据飞轮把<b>每次纠错当唯一入口</b>回灌语义层，准确率随使用上升而非衰减。</p>
+        <div class="vs">对照：单向 RAG + 微调，上线即峰值，之后静默衰减。</div>
+      </div>
+      <div class="adv">
+        <div class="ic"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 21h4"/><path d="M12 3a6 6 0 0 1 4 10.5c-.8.7-1 1.5-1 2.5h-6c0-1-.2-1.8-1-2.5A6 6 0 0 1 12 3z"/></svg></div>
+        <div class="n">02</div>
+        <h4>暗知识转移</h4>
+        <p>用认知界面效应转移<b>"说不清的判断力"</b>，结构对齐不可复制，换人归零。</p>
+        <div class="vs">对照：微调只吃显性知识，暗知识转不进去。</div>
+      </div>
+      <div class="adv">
+        <div class="ic"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4" stroke-linecap="round"/></svg></div>
+        <div class="n">03</div>
+        <h4>可解释校审 + 门禁</h4>
+        <p>四门禁 / T-GATE 把错的口径<b>拦在出口</b>，校审带规范符合性推理链。</p>
+        <div class="vs">对照：检索 + 规则匹配，无推理链、无出口拦截。</div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="foot reveal">
+    <b>范畴说明：</b>本页为 Molio 通用平台 × 勘察设计行业的"解决方案架构"概念页，对标行业案例架构页之形态；面向行业交付视角，仅列<b>解决方案工程师</b>一岗（其统揽问答 / 检索 / 校审 / 审核等应用），平台完整数字员工名单见 <code>entities/molio/product-definition</code>。非签约客户案例，不含编造的客户名 / 成效百分比，亦不含任何具体机构名称。四条案例均为库内实测记录（逐条标注来源），非客户部署成效。<br>
+    <b>数据来源（库内实测）：</b>Wiki 620 页 / 11,801 边 / 75,933 行变更日志，见 <code>sources/toutiao-keji-fengxiangbiao-retrieval-paradigms-20260702</code>；语义库 58 表 / ~185K 行（2026-07-26 实测，主库 <code>semantic/db/meta_semantic.db</code>）；DRR 22,632 条、规则层 17/29、规范层 8/29，见 <code>wiki/log.md</code>（2026-07-28）与 <code>concepts/outdoor-municipal-pipeline-audit-checklist</code>；GB 50016→55037 最高级拦截，见 <code>comparisons/audit-prescription-catches-self-violation</code>（2026-07-27）；77 处替换闭环，见 <code>wiki/log.md</code> 修正记录；语义层 332 构件类型，见 <code>concepts/industrial-knowledge-graph</code>。"三条硬边界"中：数据不出域 / 本地优先见 <code>meta/constraint-manifest</code> 与 <code>entities/molio/product-definition</code>；模型不绑定见 <code>concepts/model-infrastructure-and-training-gap</code>；资产可迁移为"本地文件 + 语义层单一权威"之架构事实。客户 3（含勘察设计行业），见 <code>entities/molio/product-definition</code>。带 ~ 者为约数。
+  </footer>
+
+</div>
+
+<script>
+(function(){
+  var STATIC = /[?&]static=1/.test(location.search) ||
+    (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+  if(STATIC){ document.documentElement.classList.add('static'); }
+
+  // scroll reveal
+  if(!STATIC){
+    var io=new IntersectionObserver(function(es){
+      es.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target);} });
+    },{threshold:.12});
+    document.querySelectorAll('.reveal').forEach(function(el){io.observe(el);});
+  } else {
+    document.querySelectorAll('.reveal').forEach(function(el){el.classList.add('in');});
+  }
+
+  // count-up numbers
+  function fmt(el,to){ el.textContent=to.toLocaleString('en-US'); }
+  function animate(el){
+    var to=parseInt(el.getAttribute('data-to'),10), t0=null, dur=1300;
+    function step(ts){
+      if(!t0)t0=ts; var p=Math.min((ts-t0)/dur,1);
+      var e=1-Math.pow(1-p,3);
+      el.textContent=Math.round(to*e).toLocaleString('en-US');
+      if(p<1)requestAnimationFrame(step); else fmt(el,to);
+    }
+    requestAnimationFrame(step);
+  }
+  if(!STATIC){
+    var io2=new IntersectionObserver(function(es){
+      es.forEach(function(e){ if(e.isIntersecting){ animate(e.target); io2.unobserve(e.target);} });
+    },{threshold:.6});
+    document.querySelectorAll('.cnt').forEach(function(el){io2.observe(el);});
+  } else {
+    document.querySelectorAll('.cnt').forEach(function(el){ fmt(el, parseInt(el.getAttribute('data-to'),10)); });
+  }
+})();
+</script>
+</body>
+</html>
