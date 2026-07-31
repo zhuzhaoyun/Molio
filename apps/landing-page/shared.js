@@ -27,7 +27,7 @@
     const customQr = document.body.dataset.floatQr;
     const customCaption = document.body.dataset.floatCaption;
     const qrSrc = customQr ? (qrPrefix + customQr) : (qrPrefix + 'images/qrcode.png');
-    const caption = customCaption || '加好友交流';
+    const caption = customCaption || '加入用户群';
     const altText = customCaption ? (customCaption + '二维码') : 'Molio 墨流用户交流群二维码';
 
     const wrap = document.createElement('div');
