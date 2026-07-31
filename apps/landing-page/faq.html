@@ -18,7 +18,7 @@
 
 <link rel="icon" type="image/png" href="/images/favicon-32.png">
 <link rel="apple-touch-icon" href="/images/favicon-180.png">
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles.css?v=20260731">
 
 <!-- Open Graph -->
 <meta property="og:title" content="Molio 常见问题 FAQ — 使用、安装、故障排除">
@@ -45,7 +45,7 @@
     { "@type": "Question", "name": "Molio 和 Obsidian 有什么区别？", "acceptedAnswer": { "@type": "Answer", "text": "Molio 完全兼容 Obsidian Vault，可以直接打开你的 Obsidian 文件夹。区别在于 Molio 内置了 Claude Code 图形界面、微信 AI 助手、Web Clipper 和多平台发布功能，是一体化的知识管理工作台。" } },
     { "@type": "Question", "name": "Molio 是免费的吗？", "acceptedAnswer": { "@type": "Answer", "text": "Molio 是开源软件，可以免费使用。你需要自行配置 AI 助手（如 Claude Code）的 API Key，AI 使用的费用取决于你选择的模型提供商。" } },
     { "@type": "Question", "name": "如何安装 Molio？", "acceptedAnswer": { "@type": "Answer", "text": "访问 molio.cn/download.html 下载对应系统的安装包。Windows 用户下载 .exe 文件，macOS 用户下载 .dmg 文件。安装完成后，还需要安装并配置 AI 助手（如 Claude Code）才能使用 AI 功能。" } },
-    { "@type": "Question", "name": "Molio 支持哪些平台？", "acceptedAnswer": { "@type": "Answer", "text": "目前支持 Windows 和 macOS（Apple Silicon）。Linux 版本正在开发中。浏览器扩展支持 Chrome，可在 Chrome 网上应用店或本网站下载离线安装包。" } },
+    { "@type": "Question", "name": "Molio 支持哪些平台？", "acceptedAnswer": { "@type": "Answer", "text": "桌面客户端支持 Windows 和 macOS（Apple Silicon）；Linux、麒麟、统信 UOS、各类 NAS 可通过 Docker 一键自建部署，运行 Molio Web 服务（详见下载页）。浏览器扩展支持 Chrome，可在 Chrome 网上应用店或本网站下载离线安装包。" } },
     { "@type": "Question", "name": "如何使用 Claude Code？", "acceptedAnswer": { "@type": "Answer", "text": "在 Molio 中，进入「设置」→「运行时」，点击 Claude Code 旁的「一键安装」按钮。安装完成后配置 API Key，双击设置为默认助手即可使用。详细步骤请参考使用指南。" } },
     { "@type": "Question", "name": "Web Clipper 怎么用？", "acceptedAnswer": { "@type": "Answer", "text": "安装 Molio Connect Chrome 扩展后，在浏览网页时点击扩展图标，即可一键保存网页内容到你的 Molio 知识库。支持公众号文章、PDF、Markdown 等多种格式。" } },
     { "@type": "Question", "name": "如何排版微信公众号文章？", "acceptedAnswer": { "@type": "Answer", "text": "在 Molio 中打开 Markdown 文件，点击「排版」按钮进入三栏模式。在右侧样式面板调整主题、字体、颜色等，完成后点击「复制」按钮，直接粘贴到微信公众号编辑器即可。" } },
@@ -65,6 +65,7 @@
       <a href="help.html" class="nav-link">使用指南</a>
       <a href="faq.html" class="nav-link active">常见问题</a>
       <a href="blog/index.html" class="nav-link">博客</a>
+      <a href="enterprise.html" class="nav-link">企业服务</a>
       <a href="download.html" class="nav-link">下载</a>
      <a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer" class="nav-gh" aria-label="GitHub 仓库"><svg viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg></a></div>
   </div>
@@ -147,7 +148,8 @@
           <li>macOS 用户：下载 .dmg 文件（Apple Silicon）</li>
         </ul>
         <p><strong>步骤 2：安装 AI 助手</strong></p>
-        <p>安装完成后，还需要安装并配置 AI 助手（如 Claude Code）才能使用 AI 功能。详细步骤请参考 <a href="help.html">使用指南</a>。</p>
+        <p>安装完成后，还需要安装并配置 AI 助手（如 Claude Code）才能使用 AI 功能。详细步骤请参考 <a href="help.html">使用指南</a>
+      <a href="enterprise.html">企业服务</a>。</p>
         <p><strong>步骤 3：配置 API Key</strong></p>
         <p>在 Molio 运行时页面配置模型提供商的 API Key，即可开始使用。</p>
       </div>
@@ -160,8 +162,13 @@
         <ul>
           <li>Windows（64 位）</li>
           <li>macOS（Apple Silicon M1/M2/M3）</li>
-          <li>Linux（开发中）</li>
         </ul>
+        <p><strong>Docker 自建部署（Linux / NAS）：</strong></p>
+        <ul>
+          <li>麒麟、统信 UOS、Debian、Ubuntu、CentOS 等服务器系统</li>
+          <li>群晖、威联通、绿联、铁威马、TrueNAS、Unraid 等 NAS（amd64 / arm64）</li>
+        </ul>
+        <p>一条命令即可通过 Docker 自建 Molio Web 服务，详见 <a href="download.html">下载页的 Docker 安装说明</a>。</p>
         <p><strong>浏览器扩展：</strong></p>
         <ul>
           <li>Chrome（COSE 多平台发布扩展）</li>
@@ -185,7 +192,8 @@
           <li>在 API Keys 页面获取你的 API Key</li>
           <li>回到 Molio 运行时页面，点击 Claude Code 旁的「模型提供商」，粘贴 API Key 后点击「保存」</li>
         </ol>
-        <p>详细步骤请参考 <a href="help.html">使用指南</a>。</p>
+        <p>详细步骤请参考 <a href="help.html">使用指南</a>
+      <a href="enterprise.html">企业服务</a>。</p>
       </div>
     </div>
 
@@ -268,6 +276,7 @@
       <a href="index.html">首页</a>
       <a href="download.html">下载</a>
       <a href="help.html">使用指南</a>
+      <a href="enterprise.html">企业服务</a>
       <a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer">GitHub 开源</a>
     </div>
     <div class="footer-links">
@@ -291,7 +300,7 @@
   </div>
 </footer>
 
-<script src="shared.js"></script>
+<script src="shared.js?v=20260731"></script>
 
 <!-- Google Analytics 4 -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-X6LMX9VR0Y"></script>

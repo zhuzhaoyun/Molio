@@ -7,7 +7,7 @@
 
 <!-- SEO -->
 <title>Molio 下载 — 桌面客户端与浏览器扩展</title>
-<meta name="description" content="下载 Molio 桌面客户端（Windows / macOS）及 COSE、Molio Connect Chrome 扩展离线安装包。国内用户可直接下载离线包。">
+<meta name="description" content="下载 Molio 桌面客户端（Windows / macOS）及 COSE、Molio Connect Chrome 扩展离线安装包；麒麟、统信 UOS、NAS、Linux 等系统可通过 Docker 一键自建部署。国内用户可直接下载离线包。">
 <meta name="keywords" content="Molio 下载,Claude Code GUI,本地知识库,Web Clipper,Obsidian 替代">
 <meta name="robots" content="index, follow">
 <link rel="canonical" href="https://molio.cn/download.html">
@@ -19,7 +19,7 @@
 
 <link rel="icon" type="image/png" href="/images/favicon-32.png">
 <link rel="apple-touch-icon" href="/images/favicon-180.png">
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles.css?v=20260731">
 
 <!-- Open Graph -->
 <meta property="og:title" content="Molio 下载 — 桌面客户端与浏览器扩展">
@@ -43,7 +43,7 @@
   "@type": "SoftwareApplication",
   "name": "Molio 墨流",
   "applicationCategory": "KnowledgeManagementApplication",
-  "operatingSystem": "Windows, macOS",
+  "operatingSystem": "Windows, macOS, Linux (Docker)",
   "description": "兼容 Obsidian Vault 的本地知识库，内置 Claude Code 图形界面、微信 AI 助手和 Chrome Web Clipper。",
   "url": "https://molio.cn/download.html",
   "offers": {
@@ -65,6 +65,7 @@
       <a href="help.html" class="nav-link">使用指南</a>
       <a href="faq.html" class="nav-link">常见问题</a>
       <a href="blog/index.html" class="nav-link">博客</a>
+      <a href="enterprise.html" class="nav-link">企业服务</a>
       <a href="download.html" class="nav-link active">下载</a>
      <a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer" class="nav-gh" aria-label="GitHub 仓库"><svg viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg></a></div>
   </div>
@@ -94,15 +95,33 @@
         <a id="mac-download" href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases/v0.3.29/Molio-0.3.29-mac-arm64.dmg" class="download-btn primary">下载 macOS 版</a>
       </div>
     </div>
-    <div class="download-card reveal" style="opacity:0.6;">
-      
-      <div class="name">Linux 版</div>
-      <div class="desc">暂不支持</div>
-      <div class="meta">—</div>
+    <div class="download-card reveal">
+
+      <div class="name">麒麟 / NAS / Linux</div>
+      <div class="desc">Docker 自建 Web 服务，一条命令安装</div>
+      <div class="meta">install.sh · amd64 + arm64</div>
       <div class="btn-group">
-        <span class="download-btn" style="background:#B0A090;cursor:default;pointer-events:none;">暂不支持</span>
+        <a href="https://github.com/zhuzhaoyun/Molio#readme" target="_blank" rel="noopener noreferrer" class="download-btn primary">安装指南</a>
+        <a href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com/script/install.sh" target="_blank" rel="noopener noreferrer" class="download-btn secondary">安装脚本</a>
       </div>
     </div>
+  </div>
+
+  <div class="step-card reveal">
+    <h3 style="font-family:var(--font-display); font-size:18px; margin-bottom:14px;">🐳 麒麟 / NAS / Linux — Docker 一键安装</h3>
+    <p style="margin-bottom:14px;">群晖、威联通、绿联、铁威马、TrueNAS、Unraid 等 NAS，以及麒麟、统信 UOS、Debian、Ubuntu、CentOS 等服务器系统，都可以把 Molio 作为自建 Web 服务运行：单容器内置 daemon、Web 界面和 Claude Code CLI，同时支持 amd64 / arm64。</p>
+    <ol>
+      <li>准备一台装好 Docker + Docker Compose v2 的机器（脚本会自动补装缺失的依赖）</li>
+      <li>执行一键安装命令，脚本会交互式引导你填写知识库目录和端口，然后自动拉取镜像并启动服务：
+<pre class="cmd-block"><span class="c"># 国内（推荐）</span>
+curl -fsSL https://molio-releases.oss-cn-guangzhou.aliyuncs.com/script/install.sh | bash
+
+<span class="c"># 海外</span>
+curl -fsSL https://raw.githubusercontent.com/zhuzhaoyun/Molio/main/install.sh | bash</pre>
+      </li>
+      <li>完成后浏览器打开 <code>http://&lt;服务器 IP&gt;:3100</code>，到「设置 → 运行时」配置 AI 模型和 API Key 即可</li>
+    </ol>
+    <p style="font-size:13.5px; color:var(--ink-40); margin-top:14px;">注意：自建版只能通过浏览器访问（没有桌面客户端），知识库目录需挂载到容器内 <code>/vaults</code> 下。手动安装、更新与常用命令见 <a href="https://github.com/zhuzhaoyun/Molio#readme" target="_blank" rel="noopener noreferrer">README「Docker / NAS 部署」章节</a>。</p>
   </div>
 
   <h2 class="download-section-title"> Chrome 浏览器扩展</h2>
@@ -154,6 +173,7 @@
       <a href="index.html">首页</a>
       <a href="download.html">下载</a>
       <a href="help.html">使用指南</a>
+      <a href="enterprise.html">企业服务</a>
       <a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer">GitHub 开源</a>
     </div>
     <div class="footer-links">
@@ -177,7 +197,7 @@
   </div>
 </footer>
 
-<script src="shared.js"></script>
+<script src="shared.js?v=20260731"></script>
 <script>
 (function() {
   const OSS_BASE = 'https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases';

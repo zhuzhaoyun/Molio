@@ -31,6 +31,12 @@
     <changefreq>monthly</changefreq>
   </url>
   <url>
+    <loc>https://molio.cn/enterprise.html</loc>
+    <lastmod>2026-07-31</lastmod>
+    <priority>0.8</priority>
+    <changefreq>monthly</changefreq>
+  </url>
+  <url>
     <loc>https://molio.cn/blog/index.html</loc>
     <lastmod>2026-06-28</lastmod>
     <priority>0.8</priority>
