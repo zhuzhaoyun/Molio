@@ -1120,6 +1120,22 @@ p { margin-bottom: 0; }
   font-weight: 700;
 }
 
+.cmd-block {
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.8;
+  padding: 16px 20px;
+  border-radius: 3px;
+  overflow-x: auto;
+  margin: 12px 0;
+  white-space: pre;
+  text-align: left;
+}
+
+.cmd-block .c { color: var(--ink-20); }
+
 /* FAQ */
 .faq-content { max-width: 800px; }
 
