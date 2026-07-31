@@ -45,16 +45,29 @@ const COLLIDE_ITERATIONS = 3;
 
 // ── 拖拽期「拴绳」强度（路线 B：按距离门控 + 三类节点）──
 // 每个非拖拽节点被一根拉回「拖拽前锚点」的弹簧拴住，强度 = f(到被拖节点当前距离)，且按节点类别分档：
-//   直接邻居      → NEIGHBOR_TETHER（=0，完全自由，靠边力受牵引跟随被拖节点）
-//   连接非邻居    → 近 CONN_NEAR(=0，推开后就地重组、不弹回旧锚点) → 远 CONN_FAR(≈钉死)
+//   直接邻居      → NEIGHBOR_TETHER(0.3)：拖拽期被牵动但**部分**跟走(不完全跟随) → 松手时边存有残余张力。
+//                   配合「被拖节点松手放开」，使被拖节点弹回「落点↔原位」之间(弹回一截，既保留拖拽意义又有明显回弹)。
+//                   不能=0：=0 邻居完全跟走 → 松手无张力 → 无回弹；不能太高：太高邻居僵、且回弹趋近"完全弹回原位"。
+//   连接非邻居    → 近 CONN_NEAR(=0，磁铁推开后就地重组、不弹回旧锚点) → 远 CONN_FAR(≈钉死)
 //   孤立节点      → 近 ISO_NEAR → 远 ISO_FAR（中等牵引绳：磁铁近时能被推开一点，绳子拽住防飞散）
 // 距离→强度在 [rInner, rOuter]（图坐标，GraphPage 按屏幕像素换算传入）线性插值。
-// 注：CONN_NEAR=0 是关键——若近节点也拴回旧锚点，被推开后会「回弹」(用户反馈的"回弹引力")。
-const NEIGHBOR_TETHER = 0;
+// 注：CONN_NEAR=0 是关键——非邻居若也拴回旧锚点，被磁铁推开后会"回弹"(用户曾反馈的坏回弹引力)。
+// 历史教训：曾把被拖节点「钉死在落点」想做"落点定格+邻域回弹"，结果落点非平衡点→钉死造成永久张力→
+//   邻居围着矛盾点振荡=**抖动**，且被拖节点无法释放弹力=看不到回弹。物理正确的回弹必须放开被拖节点。
+const NEIGHBOR_TETHER = 0.3;
 const CONN_NEAR = 0;
 const CONN_FAR = 0.85;
 const ISO_NEAR = 0.18;
 const ISO_FAR = 0.6;
+
+// ── 回弹节奏（迭代六：用户反馈"回弹太快"→放慢，但绝不回到抖动/延迟动画）──
+// 放慢回弹 = 把同样的回弹位移"慢放"而非减小幅度：降低回弹期 alphaDecay 让弹簧力作用更久。
+// 阻尼略高于拖拽档(0.4>0.35)→ 慢滑且零 overshoot/抖动。alphaDecay 不可过低(<0.012)否则回弹拖成数秒=
+// 又成"延迟动画"。回弹档参数在 beginDrag 恢复拖拽档（init 字面量 0.03/0.35 与拖拽档同值）。
+const DAMP_DRAG = 0.35;
+const DAMP_REBOUND = 0.4;
+const DRAG_ALPHA_DECAY = 0.03;
+const REBOUND_ALPHA_DECAY = 0.018;
 
 // ── 拖拽期「磁铁」排斥场强度（中程、平滑衰减，制造"未接触即避让"的磁铁手感）──
 // 以被拖节点为中心、rMagnet 为半径，场内节点受向外推力 ∝ (1-dist/rMagnet)²；
@@ -93,6 +106,9 @@ export interface SimulationAPI {
   init: (graph: Graph, sigma: Sigma, _onTick?: () => void) => void;
   wake: (alpha?: number) => void;
   stop: () => void;
+  /** 非破坏性停 tick：仅停止物理 tick，保留 sim/worker/节点句柄/图引用，使下次拖拽仍能移动节点+跑流体。
+   *  供 GraphPage 松手定格使用。区别于 stop()（破坏性，用于卸载/重建：terminate worker + 清句柄）。 */
+  halt: () => void;
   getNode: (id: string) => NodeHandle | undefined;
   setForceParam: (name: string, value: number) => void;
   multiLevel: (params?: MultiLevelParams) => void;
@@ -153,6 +169,18 @@ export function useSimulation(): SimulationAPI {
     modeRef.current = null;
     mlRunningRef.current = false;
     mlOnProgressRef.current = null;
+  }, []);
+
+  // ── Halt（非破坏性停 tick）──
+  // 只停物理 tick，不动 simRef/workerRef/句柄/引用 → 下次 mousedown 的 getNode/beginDrag/wake 仍可用。
+  // worker 发 'stop'（worker 内 sim.stop()，不 terminate）；主线程 sim.stop() 停 timer 但 simRef 保留。
+  // 若误用 stop() 做松手定格，会清空句柄 → 之后拖拽 getNode=undefined → 被拖节点写坐标被跳过 → 拖不动。
+  const halt = useCallback(() => {
+    if (modeRef.current === 'worker') {
+      workerRef.current?.postMessage({ type: 'stop' });
+    } else if (simRef.current) {
+      simRef.current.stop();
+    }
   }, []);
 
   // ── Worker message handler ──
@@ -570,6 +598,8 @@ export function useSimulation(): SimulationAPI {
     const graph = graphRef.current;
     if (!sim || !graph) return;
 
+    sim.velocityDecay(DAMP_DRAG); // 恢复拖拽档阻尼/alpha 衰减（上一轮松手设了回弹慢放档）
+    sim.alphaDecay(DRAG_ALPHA_DECAY);
     sim.force('centroidLock', null); // 清上一轮沉降残留，防与拴绳/磁铁打架
 
     // 快照拖拽前锚点（用 d3 当前坐标）
@@ -591,7 +621,7 @@ export function useSimulation(): SimulationAPI {
     };
     const strengthOf = (d: D3Node): number => {
       if (d.id === draggedId) return 0;
-      if (neighbors.has(d.id)) return NEIGHBOR_TETHER; // 邻居：纯牵引跟随
+      if (neighbors.has(d.id)) return NEIGHBOR_TETHER; // 邻居：中等拴绳（牵动 + 为松手回弹蓄张力）
       const t = tetherT(d);
       if (d.degree === 0) return ISO_NEAR + (ISO_FAR - ISO_NEAR) * t; // 孤立：中等牵引绳（防飞 + 能反应）
       return CONN_NEAR + (CONN_FAR - CONN_NEAR) * t; // 连接：近自由(无回弹)、远钉死
@@ -626,10 +656,17 @@ export function useSimulation(): SimulationAPI {
     }
     const sim = simRef.current;
     if (!sim) return;
-    sim.force('tetherX', null);
-    sim.force('tetherY', null);
+    // 撤磁铁（拖拽专用，松手后不应继续往外推）。
     sim.force('magnet', null);
-    // 不恢复/不动向心力（见 beginDrag 注释）；松手后由 GraphPage 就地钉死 + 停模拟。
+    // 保留拴绳（不撤）：远节点(强拴绳)继续钉死 → 回弹时不产生"远节点松动"的整簇波纹；
+    // 近节点/被拖节点拴绳=0 → 自由，靠被拉长的边力做阻尼回弹（Obsidian 式拖拽后过渡动画 / spring-back）。
+    // 关闭全局向心：否则回弹期向心把整簇往 0 拽 = 用户讨厌的"整簇延迟动画"；
+    // 内力(link/repel/collide)质心守恒 → 整簇不漂，冻结相机仍有效。向心此后保持关闭（守恒故安全）。
+    sim.force<ForceX<D3Node>>('x')?.strength(0);
+    sim.force<ForceY<D3Node>>('y')?.strength(0);
+    // 回弹节奏：放慢回弹（降 alphaDecay 慢放 + 略高阻尼慢滑），均无 overshoot/抖动；beginDrag 恢复拖拽档。
+    sim.velocityDecay(DAMP_REBOUND);
+    sim.alphaDecay(REBOUND_ALPHA_DECAY);
   }, []);
 
   // ── Multi-Level Layout ──
@@ -707,7 +744,7 @@ export function useSimulation(): SimulationAPI {
     });
   }, []);
 
-  return { init, wake, stop, getNode, setForceParam, multiLevel, setMotionMode, setCentroidLock, beginDrag, endDrag };
+  return { init, wake, stop, halt, getNode, setForceParam, multiLevel, setMotionMode, setCentroidLock, beginDrag, endDrag };
 }
 
 // ── Main-Thread Node Handle ──

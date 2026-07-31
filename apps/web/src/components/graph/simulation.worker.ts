@@ -82,12 +82,17 @@ let dragNeighbors: Set<string> = new Set();
 let dragRadii = { rInner: 0, rOuter: 1, rMagnet: 0 };
 
 // 拴绳强度 + 磁铁强度（与 useSimulation 同名常量保持一致；worker 为独立模块需各自定义）
-const NEIGHBOR_TETHER = 0;
+const NEIGHBOR_TETHER = 0.3; // 部分跟随→松手弹回一截(落点与原位之间)；见 useSimulation 同名注释
 const CONN_NEAR = 0;
 const CONN_FAR = 0.85;
 const ISO_NEAR = 0.18;
 const ISO_FAR = 0.6;
 const MAGNET_STRENGTH = 2.0;
+// 回弹节奏（同 useSimulation：放慢回弹=降 alphaDecay 慢放+略高阻尼慢滑，无抖动；beginDrag 恢复拖拽档）
+const DAMP_DRAG = 0.35;
+const DAMP_REBOUND = 0.4;
+const DRAG_ALPHA_DECAY = 0.03;
+const REBOUND_ALPHA_DECAY = 0.018;
 
 // ── Multi-Level Layout State ──
 let mlRunning = false;
@@ -241,6 +246,8 @@ function handleSetCentroidLock(msg: { target: { x: number; y: number } | null })
 // ── 拖拽局部流体（路线 B，与主线程 beginDrag/endDrag 同款逻辑）──
 function handleBeginDrag(msg: { draggedId: string; rInner: number; rOuter: number; rMagnet: number }) {
   if (!sim) return;
+  sim.velocityDecay(DAMP_DRAG);
+  sim.alphaDecay(DRAG_ALPHA_DECAY);
   sim.force('centroidLock', null);
   dragId = msg.draggedId;
   dragRadii = { rInner: msg.rInner, rOuter: msg.rOuter, rMagnet: msg.rMagnet };
@@ -266,7 +273,7 @@ function handleBeginDrag(msg: { draggedId: string; rInner: number; rOuter: numbe
   };
   const strengthOf = (d: WorkerNode): number => {
     if (d.id === dragId) return 0;
-    if (dragNeighbors.has(d.id)) return NEIGHBOR_TETHER; // 邻居：纯牵引
+    if (dragNeighbors.has(d.id)) return NEIGHBOR_TETHER; // 邻居：中等拴绳（牵动 + 为回弹蓄张力）
     const t = tetherT(d);
     if (d.degree === 0) return ISO_NEAR + (ISO_FAR - ISO_NEAR) * t; // 孤立：中等牵引绳
     return CONN_NEAR + (CONN_FAR - CONN_NEAR) * t; // 连接：近自由、远钉死
@@ -296,13 +303,14 @@ function handleBeginDrag(msg: { draggedId: string; rInner: number; rOuter: numbe
 
 function handleEndDrag() {
   if (!sim) return;
-  sim.force('tetherX', null);
-  sim.force('tetherY', null);
-  sim.force('magnet', null);
-  dragId = null;
-  dragNode = null;
-  dragAnchors = new Map();
-  dragNeighbors = new Set();
+  sim.force('magnet', null); // 撤磁铁（拖拽专用）
+  // 保留拴绳（不撤、也不清 drag* 状态）：拴绳闭包引用模块级 dragAnchors/dragNeighbors/dragNode，
+  // 若清空它们，遗留拴绳会退化成"拉向原点"=整簇延迟动画。保留则远节点继续钉死(防回弹波纹)、
+  // 近/被拖(=0)自由回弹。关闭全局向心（同主线程：防整簇漂移；内力守恒故整簇不漂）。
+  (sim.force('x') as ReturnType<typeof forceX<WorkerNode>> | undefined)?.strength(0);
+  (sim.force('y') as ReturnType<typeof forceY<WorkerNode>> | undefined)?.strength(0);
+  sim.velocityDecay(DAMP_REBOUND); // 放慢回弹（慢滑+慢放），无抖动；beginDrag 恢复拖拽档
+  sim.alphaDecay(REBOUND_ALPHA_DECAY);
 }
 
 // ── Drag ──

@@ -218,10 +218,12 @@ test.describe('Graph drag auto-quality (移动时自动降质)', () => {
         if (x < minX) minX = x; if (x > maxX) maxX = x;
         if (y < minY) minY = y; if (y > maxY) maxY = y;
       });
+      const cst = (s.getCamera() as any).getState();
       return {
         bbox: s.getCustomBBox(),
         ref: s.viewportToGraph({ x: vp.x, y: vp.y }),
         span: Math.max(maxX - minX, maxY - minY),
+        cam: { x: cst.x, y: cst.y, ratio: cst.ratio },
       };
     }, { x: pos!.x, y: pos!.y });
     expect(down).not.toBeNull();
@@ -245,7 +247,8 @@ test.describe('Graph drag auto-quality (移动时自动降质)', () => {
         if (x < minX) minX = x; if (x > maxX) maxX = x;
         if (y < minY) minY = y; if (y > maxY) maxY = y;
       });
-      return { x: vp.x, y: vp.y, bbox: s.getCustomBBox(), span: Math.max(maxX - minX, maxY - minY) };
+      const cst = (s.getCamera() as any).getState();
+      return { x: vp.x, y: vp.y, bbox: s.getCustomBBox(), span: Math.max(maxX - minX, maxY - minY), cam: { x: cst.x, y: cst.y, ratio: cst.ratio } };
     }, down!.ref);
     expect(during).not.toBeNull();
     // 映射应仍落在按下时的视口点附近（零漂移；容差 1px 抗浮点噪声）
@@ -263,23 +266,45 @@ test.describe('Graph drag auto-quality (移动时自动降质)', () => {
     await page.mouse.up();
     const rightAfterUp = await page.evaluate(() => {
       const s = (window as unknown as { __sigma?: any }).__sigma;
-      return s ? s.getCustomBBox() : 'no-sigma';
+      if (!s) return null;
+      const cst = (s.getCamera() as any).getState();
+      return { bbox: s.getCustomBBox(), cam: { x: cst.x, y: cst.y, ratio: cst.ratio } };
     });
     expect(rightAfterUp).not.toBeNull();
+    expect(rightAfterUp!.bbox).not.toBeNull();
 
-    // 沉降完成后冻结仍保留（不 refit）→ customBBox 仍非空、视口映射依旧稳定，
-    // 证明相机在「拖拽中 + 松手沉降后」全程零漂移。
-    await page.waitForTimeout(1200);
+    // 回弹中段（节点正在弹回、位置剧烈变化）：相机 state 仍必须与按下时完全一致 →
+    // 证明「节点动」不会带动相机（customBBox 冻结 → 归一化不变 → 相机不漂）。
+    await page.waitForTimeout(600);
+    const midRebound = await page.evaluate(() => {
+      const s = (window as unknown as { __sigma?: any }).__sigma;
+      if (!s) return null;
+      const cst = (s.getCamera() as any).getState();
+      return { cam: { x: cst.x, y: cst.y, ratio: cst.ratio } };
+    });
+    expect(midRebound).not.toBeNull();
+
+    // 回弹结束后冻结仍保留（不 refit）→ customBBox 仍非空、视口映射依旧稳定。
+    await page.waitForTimeout(1900); // 累计 ~2.5s，覆盖慢放回弹全程
     const afterSettle = await page.evaluate((ref) => {
       const s = (window as unknown as { __sigma?: any }).__sigma;
       if (!s) return null;
       const vp = s.graphToViewport(ref);
-      return { x: vp.x, y: vp.y, bbox: s.getCustomBBox() };
+      const cst = (s.getCamera() as any).getState();
+      return { x: vp.x, y: vp.y, bbox: s.getCustomBBox(), cam: { x: cst.x, y: cst.y, ratio: cst.ratio } };
     }, down!.ref);
     expect(afterSettle).not.toBeNull();
     expect(afterSettle!.bbox).not.toBeNull();
     expect(afterSettle!.x).toBeCloseTo(pos!.x, 0);
     expect(afterSettle!.y).toBeCloseTo(pos!.y, 0);
+
+    // 相机视角全程零漂移：按下 / 拖拽中 / 松手瞬间 / 回弹中段 / 回弹结束 五点相机 state 完全一致。
+    // 这是相机稳定性的硬核断言——回弹期节点位置在变，若相机/归一化没冻住，这里必挂。
+    for (const sample of [during!, rightAfterUp!, midRebound!, afterSettle!]) {
+      expect(sample.cam.x).toBeCloseTo(down!.cam.x, 4);
+      expect(sample.cam.y).toBeCloseTo(down!.cam.y, 4);
+      expect(sample.cam.ratio).toBeCloseTo(down!.cam.ratio, 4);
+    }
   });
 
   // 注：minimap 世界框冻结（getCustomBBox() ?? getBBox()，与主相机归一化同源）的修复，无法在
@@ -288,4 +313,65 @@ test.describe('Graph drag auto-quality (移动时自动降质)', () => {
   // （用户截图的角落飞点）。故此处不写 flaky 的像素/发散断言，minimap 修复的正确性由
   // 「基准与 normalizationFunction 同源」+ typecheck + 浏览器实测保证；vault 内的孤立节点
   // (delta.md) 仍让 syncIsolatedToSim / tile 路径在上面的拖拽测试中被执行到。
+
+  // 回归：第一次松手后再拖，被拖节点仍必须跟手（守护 halt 的非破坏性）。
+  // 旧 bug：freezeAllNow 误用破坏性 stop() → 清空节点句柄 + terminate worker + modeRef=null →
+  // 第二次拖拽 getNode=undefined → handleMouseMove 写坐标被 if(d3Node) 跳过 → 节点拖不动；
+  // beginDrag/wake 也因 sim/mode 为 null 失效。单次拖拽的测试抓不到，故这里连做两次拖拽。
+  test('node still follows cursor on a second drag after release (halt non-destructive)', async ({ page }) => {
+    await page.addInitScript((id) => {
+      localStorage.setItem('molio.activeVaultId', id);
+    }, vaultId);
+    await gotoHome(page);
+    await clickNav(page, 'graph');
+    await page.waitForSelector('.graph-sigma canvas', { timeout: 15_000 });
+    await page.waitForTimeout(2000);
+
+    const canvas = page.locator('.graph-sigma canvas').first();
+    const box = await canvas.boundingBox();
+    expect(box).not.toBeNull();
+
+    // 首个可见节点 key + 视口坐标
+    const first = await page.evaluate(() => {
+      const w = window as unknown as { __sigma?: any; __graph?: any };
+      const s = w.__sigma; const g = w.__graph;
+      if (!s || !g) return null;
+      let key: string | null = null;
+      let vp: { x: number; y: number } | null = null;
+      g.forEachNode((k: string, a: { x: number; y: number; hidden?: boolean }) => {
+        if (key || a.hidden) return;
+        key = k; vp = s.graphToViewport({ x: a.x ?? 0, y: a.y ?? 0 });
+      });
+      return key && vp ? { key, vp } : null;
+    });
+    expect(first).not.toBeNull();
+
+    const readVp = (key: string) => page.evaluate((k) => {
+      const s = (window as unknown as { __sigma?: any }).__sigma;
+      const g = (window as unknown as { __graph?: any }).__graph;
+      if (!s || !g || !g.hasNode(k)) return null;
+      return s.graphToViewport({ x: g.getNodeAttribute(k, 'x'), y: g.getNodeAttribute(k, 'y') });
+    }, key);
+
+    const p0 = first!.vp!;
+    // 第一次拖拽 +40（首次拖拽在 bug/fix 下都能动）
+    await page.mouse.move(box!.x + p0.x, box!.y + p0.y);
+    await page.mouse.down();
+    await page.mouse.move(box!.x + p0.x + 40, box!.y + p0.y + 40, { steps: 8 });
+    await page.mouse.up();
+    // 物理回弹版：被拖节点松手后放开、弹回「落点↔原位」之间并停住；回弹已慢放(~2–2.5s)，
+    // 故等 2500ms 沉降再读静止位置 p1，第二次拖拽从 p1 抓起。p1 介于 p0 与 p0+40 之间。
+    await page.waitForTimeout(2500);
+    const p1 = (await readVp(first!.key!))!;
+
+    // 第二次拖拽：从 p1 再 +30，拖拽中读位置，必须真跟到 ≈ p1+30（bug 下会停在 p1 不动）
+    await page.mouse.move(box!.x + p1.x, box!.y + p1.y);
+    await page.mouse.down();
+    await page.mouse.move(box!.x + p1.x + 30, box!.y + p1.y + 30, { steps: 8 });
+    const p2 = (await readVp(first!.key!))!;
+    await page.mouse.up();
+
+    expect(Math.abs(p2.x - (p1.x + 30))).toBeLessThan(3);
+    expect(Math.abs(p2.y - (p1.y + 30))).toBeLessThan(3);
+  });
 });

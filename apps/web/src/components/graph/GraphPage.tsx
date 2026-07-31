@@ -678,8 +678,11 @@ export function GraphPage() {
       }
     };
 
-    // 直接操纵模型：松手/点击后把所有可见节点「就地钉死」(fx/fy=当前坐标) 并停模拟 → 零后续运动。
+    // 直接操纵模型：松手/点击后把所有可见节点「就地钉死」(fx/fy=当前坐标) 并停 tick → 零后续运动。
     // 不做沉降/回弹/重铺（那些都会造成"松手后还在动"的延迟动画，用户明确不要）。
+    // 关键：这里必须用 halt()（非破坏性，仅停 tick）而非 stop()——stop() 会 terminate worker + 清空
+    // 节点句柄 + 把 modeRef 置 null，导致「第一次松手后再拖，getNode 全返回 undefined → 被拖节点
+    // 坐标写入被 if(d3Node) 跳过 → 拖不动」，beginDrag/wake 也因 sim/mode 为 null 而失效。
     const freezeAllNow = () => {
       graph.forEachNode((k, a) => {
         if (a.hidden) return;
@@ -690,7 +693,7 @@ export function GraphPage() {
         const h = simulation.getNode(k);
         if (h) { h.fx = x; h.fy = y; }
       });
-      simulation.stop();
+      simulation.halt();
     };
 
     const handleMouseUp = (_e: MouseEvent) => {
@@ -704,12 +707,22 @@ export function GraphPage() {
       const wasDragging = isDragging;
 
       if (wasDragging) {
-        // 直接操纵模型：撤磁铁/拴绳 → 全部就地钉死 + 停模拟 → 松手瞬间定格，零后续运动。
-        // 不重铺孤立节点（那会让孤立弹回圆环 = 延迟动画）；外围圆环随多次拖拽缓慢变化可接受，
-        // 需规整可点重布局。
+        // 拖拽后回弹（物理正确版）：放开被拖节点(解锁 fx/fy)，让拖拽时拉长的边所存的弹力把整个局部簇
+        // 阻尼松弛回平衡——被拖节点自己滑回「落点↔原位」之间并停住(邻居被 0.3 拴绳部分牵住 → 弹回一截，
+        // 既保留拖拽意义又有明显回弹)。先前「钉死在落点」是错的：落点≠平衡点 → 钉死造成永久张力 →
+        // 邻居围着矛盾点振荡 = 抖动，且被拖节点无法释放弹力 = 看不到回弹。
+        const d3Node = simulation.getNode(node);
+        if (d3Node) {
+          d3Node.fx = null;
+          d3Node.fy = null;
+          graph.removeNodeAttribute(node, 'fx');
+          graph.removeNodeAttribute(node, 'fy');
+        }
+        // endDrag 撤磁铁 + 保留拴绳(远钉死防波纹) + 关向心(防整簇漂) + 设回弹慢放档(慢滑+慢放，无抖动)；
+        // wake 用较低能量 0.3(去起始快冲)让回弹柔和可见。不重铺孤立(否则弹回圆环=延迟动画)。
         simulation.endDrag();
-        freezeAllNow();
-        // 恢复降质 + 重绘；interactingRef 先置 false 让 afterRender 能重绘 minimap
+        simulation.wake(0.3);
+        // 恢复降质 + 重绘；interactingRef 先置 false 让 afterRender 能重绘 minimap（回弹过程可见）
         renderer.setSetting('renderLabels', true);
         simulation.setMotionMode(false);
         interactingRef.current = false;
