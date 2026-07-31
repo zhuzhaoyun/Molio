@@ -799,8 +799,19 @@
 
 .kb-modal-close:hover { background: var(--bg-subtle); color: var(--text); }
 
-.kb-modal-body { padding: 18px 24px; }
-.kb-modal-footer { padding: 14px 24px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 8px; }
+/* The modal is capped at 80vh with overflow:hidden — the body must be the
+   scroll container, otherwise long content (e.g. the vault skills list) is
+   silently clipped with no scrollbar. min-height:0 lets the flex item shrink
+   below its content height so overflow-y can kick in; header/footer must not
+   shrink so only the body scrolls. */
+.kb-modal-header { flex: none; }
+.kb-modal-body {
+  padding: 18px 24px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+.kb-modal-footer { flex: none; padding: 14px 24px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 8px; }
 
 .kb-form-field { margin-bottom: 14px; }
 .kb-form-field label {

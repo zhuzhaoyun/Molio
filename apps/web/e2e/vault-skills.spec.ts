@@ -133,6 +133,29 @@ test.describe('Per-vault skill configuration', () => {
     await expect(reopened.locator('input[type="checkbox"]')).toBeChecked({ timeout: 5_000 });
   });
 
+  test('long skill list scrolls inside the modal instead of being clipped', async ({ page }) => {
+    const overlay = await openSkillsModal(page);
+    const body = overlay.locator('.kb-modal-body');
+    await expect(body.locator('.sk-row').first()).toBeVisible({ timeout: 5_000 });
+    const lastRow = body.locator('.sk-row').last();
+
+    // Regression: .kb-modal is capped at 80vh with overflow:hidden; the body
+    // used to have no overflow-y, so a long list overflowed the cap and the
+    // tail rows were clipped with no scrollbar. Now the body must be the
+    // scroll container: when content overflows, scrolling to the bottom must
+    // bring the last row fully inside the modal's visible box.
+    const overflows = await body.evaluate((el) => el.scrollHeight > el.clientHeight);
+    if (overflows) {
+      await body.evaluate((el) => { el.scrollTop = el.scrollHeight; });
+    }
+    const modalBox = await overlay.locator('.kb-modal').boundingBox();
+    const rowBox = await lastRow.boundingBox();
+    expect(modalBox).not.toBeNull();
+    expect(rowBox).not.toBeNull();
+    expect(rowBox!.y).toBeGreaterThanOrEqual(modalBox!.y - 1);
+    expect(rowBox!.y + rowBox!.height).toBeLessThanOrEqual(modalBox!.y + modalBox!.height + 1);
+  });
+
   test('a globally-disabled skill renders greyed and locked', async ({ page }) => {
     const overlay = await openSkillsModal(page);
 
