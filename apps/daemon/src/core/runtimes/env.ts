@@ -87,8 +87,19 @@ export function buildSpawnEnv(
 }
 
 /**
- * Ensure the Molio user-level binary directory (~/.molio/bin) is in PATH.
- * This is where one-click install places downloaded agent binaries.
+ * Ensure the Molio user-level binary directories are in PATH:
+ * - ~/.molio/bin — one-click agent binary install location
+ * - ~/.molio/venv/bin (Unix) / ~/.molio/venv/Scripts (Windows) — the
+ *   dedicated venv where PreloadManager installs Python CLIs like docling.
+ *   Without this, the agent process (spawned without a login shell profile)
+ *   cannot find `docling` even though PreloadManager installed it.
+ * - ~/.local/bin (Unix) — fallback for `pip install --user` CLIs, in case
+ *   venv creation failed and preload fell back to a user install.
+ * - Windows global/user Scripts dirs (e.g. `%APPDATA%\Python\Python312\Scripts`,
+ *   `%LOCALAPPDATA%\Programs\Python\Python312\Scripts`) — discovered via a cheap
+ *   directory scan (NO exec, so safe to run on every spawn). Without this the
+ *   agent can't find a globally/user-installed docling that isn't already on
+ *   the system PATH (a common Windows gap that broke cross-platform use).
  */
 function augmentPath(env: NodeJS.ProcessEnv): void {
   const pathKey = process.platform === 'win32' ? 'Path' : 'PATH';
@@ -97,12 +108,49 @@ function augmentPath(env: NodeJS.ProcessEnv): void {
   const currentPath = (env[actualKey] as string) || '';
 
   const home = os.homedir();
+  const isWin = process.platform === 'win32';
+  const venvBin = isWin
+    ? path.join(home, '.molio', 'venv', 'Scripts')
+    : path.join(home, '.molio', 'venv', 'bin');
   const molioBin = path.join(home, '.molio', 'bin');
+  const userLocalBin = isWin ? null : path.join(home, '.local', 'bin');
 
-  // Only add if it exists and isn't already in PATH
-  if (fs.existsSync(molioBin) && !currentPath.toLowerCase().includes(molioBin.toLowerCase())) {
-    env[actualKey] = `${molioBin}${pathSep}${currentPath}`;
+  const candidates: string[] = [venvBin, molioBin, userLocalBin].filter((d): d is string => d !== null);
+  if (isWin) candidates.push(...windowsPythonScriptsDirs());
+
+  const lower = currentPath.toLowerCase();
+  const toAdd = candidates.filter((d) => fs.existsSync(d) && !lower.includes(d.toLowerCase()));
+
+  if (toAdd.length > 0) {
+    env[actualKey] = `${toAdd.join(pathSep)}${pathSep}${currentPath}`;
   }
+}
+
+/** Cheap (readdir-only, no exec) discovery of Windows python Scripts dirs that
+ *  hold globally/`--user`-installed CLIs like docling. Covers the python.org /
+ *  MS-Store layout (`%LOCALAPPDATA%\Programs\Python\Python3xx\Scripts`) and the
+ *  `--user` layout (`%APPDATA%\Python\…\Scripts`), versioned or not. */
+function windowsPythonScriptsDirs(): string[] {
+  const found: string[] = [];
+  const bases = [
+    process.env['LOCALAPPDATA'] && path.join(process.env['LOCALAPPDATA'], 'Programs', 'Python'),
+    process.env['APPDATA'] && path.join(process.env['APPDATA'], 'Python'),
+  ].filter((b): b is string => !!b);
+  for (const base of bases) {
+    if (!fs.existsSync(base)) continue;
+    // The base's own Scripts (unversioned --user layout) …
+    const baseScripts = path.join(base, 'Scripts');
+    if (fs.existsSync(baseScripts)) found.push(baseScripts);
+    // … and each versioned Python3xx\Scripts subdir.
+    let entries: string[] = [];
+    try { entries = fs.readdirSync(base); } catch { continue; }
+    for (const e of entries) {
+      if (!/^Python3\d+$/.test(e)) continue;
+      const sc = path.join(base, e, 'Scripts');
+      if (fs.existsSync(sc)) found.push(sc);
+    }
+  }
+  return found;
 }
 
 /**

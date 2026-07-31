@@ -64,6 +64,10 @@ export interface AppConfig {
   locale?: string;
   weixin?: WeixinConfig;
   feishu?: FeishuConfig;
+  /** Preloading preferences — dismissed skills the user doesn't want prompted about. */
+  preload?: {
+    dismissed: string[];
+  };
 }
 
 const DEFAULT_CONFIG: AppConfig = {
@@ -129,6 +133,9 @@ export function mergeConfig(partial: Partial<AppConfig>): AppConfig {
     feishu: partial.feishu !== undefined
       ? { ...(existing.feishu ?? {}), ...partial.feishu }
       : existing.feishu,
+    preload: partial.preload !== undefined
+      ? { ...(existing.preload ?? { dismissed: [] }), ...partial.preload }
+      : existing.preload,
   };
 }
 
