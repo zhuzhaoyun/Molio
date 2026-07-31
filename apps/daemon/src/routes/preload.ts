@@ -9,7 +9,7 @@
 
 import { Hono } from 'hono';
 import type { PreloadManager, PreloadableSkill, PreloadProgressEvent } from '../core/preload-manager.js';
-import { getPreloadLocations } from '../core/preload-manager.js';
+import { getPreloadLocations, skillsNeedingStart } from '../core/preload-manager.js';
 
 export function preloadRoutes(preloadManager: PreloadManager): Hono {
   const app = new Hono();
@@ -46,21 +46,17 @@ export function preloadRoutes(preloadManager: PreloadManager): Hono {
       }
     }
 
-    // Partition skills into "already done" vs "needs preloading".
-    // 'missing' (fresh) AND 'paused' (resume) both need startPreload — pip /
-    // HuggingFace / npm reuse their caches so a paused preload picks up where
-    // it left off.
-    const needsStart: PreloadableSkill[] = [];
-    const alreadyDone: PreloadableSkill[] = [];
-
-    for (const sk of skills) {
-      const s = preloadManager.getStatus(sk);
-      if (s.status === 'missing' || s.status === 'paused') {
-        needsStart.push(sk);
-      } else {
-        alreadyDone.push(sk);
-      }
-    }
+    // Partition skills into "already done" vs "needs (re)preloading". 'missing'
+    // (fresh), 'paused' (resume) AND 'failed' (retry) all need startPreload —
+    // pip / HuggingFace / npm reuse their caches so a paused/failed preload
+    // picks up where it left off. Including 'failed' is what makes the error
+    // toast's 重试 button actually re-run the download (the 2026-07 retry no-op
+    // bug: 'failed' used to fall through to alreadyDone → a fake "already
+    // installed" completion → the toast vanished without re-downloading).
+    const { needsStart, alreadyDone } = skillsNeedingStart(
+      (sk) => preloadManager.getStatus(sk),
+      skills,
+    );
 
     // Create a stream that fires progress events for ACTIVE preloads only
     const stream = new ReadableStream<Uint8Array>({

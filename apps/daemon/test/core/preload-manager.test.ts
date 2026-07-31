@@ -521,3 +521,257 @@ describe('pause→stop clears lingering pause intent (2026-07 latent bug)', () =
     assert.equal(pm.getStatuses().remotion.status, 'missing', 'stop resets the skill to missing');
   });
 });
+
+// ─── skillsNeedingStart (retry-button no-op regression) ────────────────────
+//
+// Error-driven (2026-07): 下载失败后 skill 状态为 'failed'，但 /start 路由只把
+// 'missing'/'paused' 当作需要重启 → 'failed' 掉进 alreadyDone → 路由伪造一条
+// "already installed" 完成事件 → 错误卡片的「重试」按钮点了等于没点（toast 闪一下
+// 就消失，根本没重新下载）。修复：把判定抽成 skillsNeedingStart 并把 'failed' 归入
+// needsStart。这里钉住每种状态的归类，防止路由再退化。
+
+describe('skillsNeedingStart (retry-button no-op regression)', () => {
+  const of = (status: string) => async () => {
+    const { skillsNeedingStart } = await import('../../src/core/preload-manager.js');
+    return skillsNeedingStart(() => ({ status } as any), ['docling']);
+  };
+
+  it('re-launches a FAILED skill (this is the retry fix)', async () => {
+    const { needsStart, alreadyDone } = await of('failed')();
+    assert.deepEqual(needsStart, ['docling'], 'a failed skill must be re-started so 重试 re-downloads');
+    assert.deepEqual(alreadyDone, []);
+  });
+
+  it('re-launches missing and paused skills', async () => {
+    for (const status of ['missing', 'paused']) {
+      const { needsStart } = await of(status)();
+      assert.deepEqual(needsStart, ['docling'], `${status} must be re-started`);
+    }
+  });
+
+  it('treats done / not-actionable states as already-done (no reinstall, no double-start)', async () => {
+    for (const status of ['downloaded', 'installed', 'dismissed', 'preloading', 'unchecked']) {
+      const { needsStart, alreadyDone } = await of(status)();
+      assert.deepEqual(needsStart, [], `${status} must NOT be re-started`);
+      assert.deepEqual(alreadyDone, ['docling'], `${status} must be treated as already-done`);
+    }
+  });
+});
+
+// ─── docling pip index fallback (CN ConnectTimeoutError regression) ────────
+//
+// Error-driven (2026-07): docling pip 旧逻辑「单镜像 → 裸默认源、15s connect timeout、
+// 不重试」。国内机器上清华镜像一抖动，就退回 files.pythonhosted.org（连不上）→
+// ConnectTimeoutError(connect timeout=15)。修复：和 npm 同款的 runPipInstallWithFallback
+// （同源重试 + 跨国内镜像降级 + 官方源兜底），每次 --timeout 60 抬升 connect timeout。
+
+describe('runPipInstallWithFallback (docling CN-timeout regression)', () => {
+  const mkSignal = () => new AbortController().signal;
+
+  it('a failing mirror falls back across CN mirrors before the official source', async () => {
+    const { runPipInstallWithFallback, PIP_INDEX_FALLBACKS } = await import('../../src/core/preload-manager.js');
+    const seen: string[][] = [];
+    await runPipInstallWithFallback({
+      label: 'docling pip 安装',
+      signal: mkSignal(),
+      attemptsPerIndex: 1,
+      exec: async (indexArgs) => {
+        seen.push(indexArgs);
+        // 前两个镜像失败，第三个放行
+        if (seen.length <= 2) throw new Error('进程退出码 1: ConnectTimeoutError connect timeout=15');
+      },
+    });
+    assert.equal(seen.length, 3, 'should try mirrors in order until one succeeds');
+    assert.deepEqual(seen[0], PIP_INDEX_FALLBACKS[0]!.args, 'first attempt uses the first CN mirror');
+    assert.deepEqual(seen[1], PIP_INDEX_FALLBACKS[1]!.args, 'second attempt switches to the next mirror');
+    assert.deepEqual(seen[2], PIP_INDEX_FALLBACKS[2]!.args, 'third attempt uses the third mirror');
+  });
+
+  it('transient failure retries within the same index before switching', async () => {
+    const { runPipInstallWithFallback, PIP_INDEX_FALLBACKS } = await import('../../src/core/preload-manager.js');
+    const seen: string[][] = [];
+    await runPipInstallWithFallback({
+      label: 'step',
+      signal: mkSignal(),
+      exec: async (indexArgs) => {
+        seen.push(indexArgs);
+        if (seen.length === 1) throw new Error('进程退出码 1: network hiccup');
+      },
+    });
+    assert.equal(seen.length, 2, 'should retry once on the same index then succeed');
+    assert.deepEqual(seen[0], PIP_INDEX_FALLBACKS[0]!.args, 'first attempt uses the first mirror');
+    assert.deepEqual(seen[1], PIP_INDEX_FALLBACKS[0]!.args, 'the retry must stay on the same mirror (no index switch)');
+  });
+
+  it('abort interrupts immediately without retry or index switch', async () => {
+    const { runPipInstallWithFallback } = await import('../../src/core/preload-manager.js');
+    const ac = new AbortController();
+    const seen: string[][] = [];
+    await assert.rejects(
+      runPipInstallWithFallback({
+        label: 'step',
+        signal: ac.signal,
+        exec: async (indexArgs) => {
+          seen.push(indexArgs);
+          ac.abort();
+          throw new Error('aborted');
+        },
+      }),
+      /aborted/,
+    );
+    assert.equal(seen.length, 1, 'abort must not trigger retries or an index switch');
+  });
+
+  it('final failure message names the step and carries the underlying error tail', async () => {
+    const { runPipInstallWithFallback } = await import('../../src/core/preload-manager.js');
+    await assert.rejects(
+      runPipInstallWithFallback({
+        label: 'docling pip 安装',
+        signal: mkSignal(),
+        attemptsPerIndex: 1,
+        exec: async () => {
+          throw new Error('进程退出码 1: ConnectTimeoutError connect timeout=15 files.pythonhosted.org');
+        },
+      }),
+      (err: Error) => {
+        assert.match(err.message, /docling pip 安装/, 'error must name the failing step');
+        assert.match(err.message, /ConnectTimeoutError/, 'error must carry the underlying output tail');
+        return true;
+      },
+    );
+  });
+
+  it('CN mirrors come before the official source, and none pin the CN-blocked host', async () => {
+    const { PIP_INDEX_FALLBACKS } = await import('../../src/core/preload-manager.js');
+    const labels = PIP_INDEX_FALLBACKS.map((s) => s.label);
+    assert.equal(labels[labels.length - 1], '官方源', 'official index must be the last resort');
+    // every non-last entry must be an explicit CN mirror (-i <url>), never empty
+    for (const s of PIP_INDEX_FALLBACKS.slice(0, -1)) {
+      assert.equal(s.args[0], '-i', 'CN fallback entries must pass an explicit -i index');
+      assert.ok(s.args[1] && !/pythonhosted\.org|pypi\.org/.test(s.args[1]), `mirror ${s.label} must not point at the CN-blocked host`);
+    }
+    assert.equal(PIP_INDEX_FALLBACKS[PIP_INDEX_FALLBACKS.length - 1]!.args.length, 0, 'official entry uses pip default (empty args)');
+  });
+});
+
+describe('doclingPipInstallArgv (pip --timeout regression)', () => {
+  it('appends a generous --timeout (>15s) so the connect timeout is not the 15s default', async () => {
+    const { doclingPipInstallArgv, PIP_CONNECT_TIMEOUT_SECS } = await import('../../src/core/preload-manager.js');
+    assert.ok(PIP_CONNECT_TIMEOUT_SECS > 15, `timeout must exceed pip's 15s default, got ${PIP_CONNECT_TIMEOUT_SECS}`);
+    const argv = doclingPipInstallArgv('C:\\venv\\python.exe', ['-i', 'https://pypi.tuna.tsinghua.edu.cn/simple']);
+    assert.equal(argv[0], 'C:\\venv\\python.exe');
+    assert.ok(argv.includes('docling'), 'must install the docling package');
+    const t = argv.indexOf('--timeout');
+    assert.ok(t >= 0, 'must pass --timeout');
+    assert.equal(Number(argv[t + 1]), PIP_CONNECT_TIMEOUT_SECS, '--timeout value must equal PIP_CONNECT_TIMEOUT_SECS');
+    // -i <url> must be present (the index fragment is threaded through verbatim)
+    const i = argv.indexOf('-i');
+    assert.equal(argv[i + 1], 'https://pypi.tuna.tsinghua.edu.cn/simple');
+  });
+
+  it('works with the official (empty) index fragment too', async () => {
+    const { doclingPipInstallArgv } = await import('../../src/core/preload-manager.js');
+    const argv = doclingPipInstallArgv('/venv/bin/python', []);
+    assert.ok(!argv.includes('-i'), 'empty index fragment must not inject a stray -i');
+    assert.ok(argv.includes('--timeout'), 'timeout is always applied');
+  });
+});
+
+// ─── cleanup closure (stop keeps shared cache, removes only own artifacts) ──
+//
+// 闭环加固（2026-07）：保证「清理失效部分 / 保留必要内容」稳定且闭环。语义分工：
+//   重试 = 续传复用（startPreload 不调 deletePartial，不删任何东西）
+//   停止 = 彻底清理（deletePartial，回到 missing）
+// 这里钉住「停止」一侧的磁盘语义，防止未来把清理写「过宽」（误删共享 ~/.npm 或别的 HF
+// 模型）或「过窄」（漏删本次产物），从而破坏闭环：
+//   docling : 删 ~/.molio/venv + 仅删 models--docling-project--* ；保留其它 HF 模型 + ~/.npm
+//   remotion: 删标记文件；保留 ~/.npm
+// 重试侧「复用有效 venv」由 venv 守卫 + 路由测试（failed 必被重启）保证，不在无 pip 的单测里
+// 跑真实安装（若要把它也变成可单测的纯函数，见 skillsNeedingStart 同款的 venv 判定抽取）。
+
+describe('preload cleanup closure (stop keeps shared cache, removes only own artifacts)', () => {
+  const isWindows = process.platform === 'win32';
+  let savedHome: string | undefined;
+  let savedUserProfile: string | undefined;
+  let tmpHome: string;
+
+  beforeEach(() => {
+    savedHome = process.env['HOME'];
+    savedUserProfile = process.env['USERPROFILE'];
+    tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-preload-cleanup-'));
+    if (isWindows) process.env['USERPROFILE'] = tmpHome;
+    else process.env['HOME'] = tmpHome;
+  });
+  afterEach(() => {
+    if (savedHome !== undefined) process.env['HOME'] = savedHome; else delete process.env['HOME'];
+    if (savedUserProfile !== undefined) process.env['USERPROFILE'] = savedUserProfile; else delete process.env['USERPROFILE'];
+    try { fs.rmSync(tmpHome, { recursive: true, force: true }); } catch { /* ignore */ }
+  });
+
+  it('docling stop: removes venv + docling HF models, keeps other HF models AND ~/.npm', async () => {
+    const { createPreloadManager } = await import('../../src/core/preload-manager.js');
+    const venvRoot = path.join(tmpHome, '.molio', 'venv');
+    const hub = path.join(tmpHome, '.cache', 'huggingface', 'hub');
+    const doclingModel = path.join(hub, 'models--docling-project--docling-layout-heron');
+    const otherModel = path.join(hub, 'models--some-other--model');
+    const npmCache = path.join(tmpHome, '.npm');
+    // 模拟一次失败后留下的产物：半成品 venv + 半下载 HF 模型
+    fs.mkdirSync(path.join(venvRoot, 'Lib', 'site-packages'), { recursive: true });
+    fs.writeFileSync(path.join(venvRoot, 'pyvenv.cfg'), '');
+    fs.mkdirSync(doclingModel, { recursive: true });
+    fs.writeFileSync(path.join(doclingModel, 'partial.incomplete'), 'x');
+    // 必须保留的：别的工具的 HF 模型 + 共享 npm 缓存
+    fs.mkdirSync(otherModel, { recursive: true });
+    fs.writeFileSync(path.join(otherModel, 'keep.bin'), 'y');
+    fs.mkdirSync(path.join(npmCache, '_cacache'), { recursive: true });
+    fs.writeFileSync(path.join(npmCache, '_cacache', 'shared.tar'), 'z');
+
+    const pm = createPreloadManager();
+    pm.checkSkills();
+    pm.stopPreload('docling'); // 非运行态 → 走 deletePartial 直接清理
+
+    assert.equal(fs.existsSync(venvRoot), false, 'venv (partial pip install) must be removed');
+    assert.equal(fs.existsSync(doclingModel), false, "docling's own HF model dir must be removed");
+    assert.equal(fs.existsSync(otherModel), true, "other tools' HF models must be preserved");
+    assert.equal(fs.existsSync(path.join(otherModel, 'keep.bin')), true, 'preserved model contents must stay intact');
+    assert.equal(fs.existsSync(npmCache), true, 'shared ~/.npm must NOT be touched by docling cleanup');
+    assert.equal(fs.existsSync(path.join(npmCache, '_cacache', 'shared.tar')), true, 'shared npm cache contents must stay intact');
+    // stop 后必须是「可重新提示/可用」的终态，不能卡在 failed/preloading/paused。
+    // （installed 仅当宿主机另有全局 docling 时出现，那也是合法终态，与本次清理无关。）
+    const st = pm.getStatuses().docling.status;
+    assert.ok(st === 'missing' || st === 'installed', `stop must resolve docling to a non-broken state, got ${st}`);
+  });
+
+  it('remotion stop: removes the marker but keeps shared ~/.npm', async () => {
+    const { createPreloadManager } = await import('../../src/core/preload-manager.js');
+    const marker = path.join(tmpHome, '.molio', '.remotion-preloaded');
+    const npmCache = path.join(tmpHome, '.npm');
+    fs.mkdirSync(path.dirname(marker), { recursive: true });
+    fs.writeFileSync(marker, new Date().toISOString());
+    fs.mkdirSync(path.join(npmCache, '_cacache'), { recursive: true });
+    fs.writeFileSync(path.join(npmCache, '_cacache', 'shared.tar'), 'z');
+
+    const pm = createPreloadManager();
+    pm.checkSkills();
+    pm.stopPreload('remotion');
+
+    assert.equal(fs.existsSync(marker), false, 'remotion marker must be removed');
+    assert.equal(fs.existsSync(npmCache), true, 'shared ~/.npm must NOT be touched by remotion cleanup');
+    assert.equal(fs.existsSync(path.join(npmCache, '_cacache', 'shared.tar')), true, 'shared npm cache contents must stay intact');
+    assert.equal(pm.getStatuses().remotion.status, 'missing', 'stop must return remotion to a promptable missing state');
+  });
+
+  it('stop on an already-missing skill is an idempotent, safe escape hatch', async () => {
+    const { createPreloadManager } = await import('../../src/core/preload-manager.js');
+    const npmCache = path.join(tmpHome, '.npm');
+    fs.mkdirSync(npmCache, { recursive: true });
+    const pm = createPreloadManager();
+    pm.checkSkills();
+    assert.equal(pm.getStatuses().remotion.status, 'missing');
+    // 反复按「停止」（闭环的逃生舱）不能抛、不能误删共享缓存
+    pm.stopPreload('remotion');
+    pm.stopPreload('remotion');
+    assert.equal(fs.existsSync(npmCache), true, 'idempotent stop must still not touch ~/.npm');
+    assert.equal(pm.getStatuses().remotion.status, 'missing');
+  });
+});

@@ -126,45 +126,41 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
         }
       }
 
-      // Phase 2: pip install docling (8 → 55). Surface the REAL pip error so a
-      // future failure is diagnosable (earlier the build error was swallowed
-      // and only a generic hint showed).
-      const mirrorArgs = ['-i', 'https://pypi.tuna.tsinghua.edu.cn/simple'];
-      onProgress(12, '正在安装 docling Python 包（含 PyTorch）...');
+      // Phase 2: pip install docling (8 → 55). We install through a chain of
+      // PyPI mirrors with per-mirror retry (runPipInstallWithFallback) — the
+      // same defence-in-depth the remotion preload uses for npm. The previous
+      // code tried ONE mirror then fell straight back to pip's DEFAULT index
+      // (pypi.org / files.pythonhosted.org) with pip's 15s connect timeout and
+      // no retry; on mainland-China boxes that default host is routinely
+      // unreachable, so a single transient mirror hiccup cascaded into a
+      // ConnectTimeoutError and the whole preload failed. The chain tries
+      // several CN mirrors (each retried — they host the wheels too, so pip
+      // never touches the blocked default host while a mirror works) before the
+      // official source, and every attempt uses a generous --timeout so a
+      // slow-but-alive host isn't killed at 15s.
+      onProgress(12, '正在安装 docling Python 包（含 PyTorch，国内源优先、失败自动换源重试）...');
       let pipOk = false;
       let lastPipErr = '';
       try {
-        await runArgv([venvPy, '-m', 'pip', 'install', 'docling', ...mirrorArgs], {
-          timeout: 600_000,
+        await runPipInstallWithFallback({
+          label: 'docling pip 安装',
           signal,
-          onLine(line) {
-            if (line.includes('Downloading') || line.includes('Installing collected packages')) {
-              onProgress(20, line.trim());
-            }
-          },
-        });
-        pipOk = true;
-      } catch (err) {
-        if (signal.aborted) throw err; // pause/stop — don't fall through to retry
-        lastPipErr = err instanceof Error ? err.message : String(err);
-        // Fallback: default index (mirror may be down or package missing there)
-        onProgress(40, '镜像失败，尝试默认源...');
-        try {
-          await runArgv([venvPy, '-m', 'pip', 'install', 'docling'], {
+          onProgress: (msg) => onProgress(30, msg),
+          exec: (indexArgs) => runArgv(doclingPipInstallArgv(venvPy, indexArgs), {
             timeout: 600_000,
             signal,
             onLine(line) {
               if (line.includes('Downloading') || line.includes('Installing collected packages')) {
-                onProgress(45, line.trim());
+                onProgress(20, line.trim());
               }
             },
-          });
-          pipOk = true;
-        } catch (err2) {
-          if (signal.aborted) throw err2;
-          lastPipErr = err2 instanceof Error ? err2.message : String(err2);
-          pipOk = false;
-        }
+          }),
+        });
+        pipOk = true;
+      } catch (err) {
+        if (signal.aborted) throw err; // pause/stop — don't swallow as a pip failure
+        lastPipErr = err instanceof Error ? err.message : String(err);
+        pipOk = false;
       }
       if (!pipOk || !doclingVenvBinaryPresent()) {
         const detail = lastPipErr ? `（${lastPipErr.slice(0, 240)}）` : '（未生成 docling 可执行文件）';
@@ -472,6 +468,116 @@ export async function runWithRegistryFallback(opts: RegistryFallbackOpts): Promi
   }
   const detail = lastErr instanceof Error ? lastErr.message : String(lastErr);
   throw new Error(`${opts.label}失败：${detail}`);
+}
+
+// ─── pip index fallback (docling preload CN-timeout regression) ─────────────
+//
+// Error-driven (2026-07): docling 预下载在国内机器上失败——pip 先试清华镜像，一旦
+// 该镜像临时抖动，旧代码直接退回 pip 的**默认源**（pypi.org / files.pythonhosted.org）
+// 且用 pip 默认 15s connect timeout、不重试；而默认源在国内经常连不上 →
+// ConnectTimeoutError(connect timeout=15) → 整个预下载失败。修复：和 remotion 的 npm
+// 走同一套「同源重试 + 跨源降级」防御（runPipInstallWithFallback），先试多个国内镜像
+// （它们也托管 wheel 文件，故镜像可用时 pip 根本不碰 files.pythonhosted.org），官方源
+// 兜底；每次都用宽松的 --timeout，避免慢但活着的源被 15s 误杀。
+
+/** Per-connection socket timeout (seconds) passed to pip via `--timeout`. pip
+ *  forwards this to `requests` as a single value applied to BOTH connect and
+ *  read, so it also raises the connect timeout — pip's default 15s was exactly
+ *  the `connect timeout=15` seen in the 2026-07 CN failure. 60s tolerates a
+ *  slow-but-alive mirror without making a truly-dead host wait forever. */
+export const PIP_CONNECT_TIMEOUT_SECS = 60;
+
+/** Ordered PyPI indices to try for the docling install. CN mirrors first — they
+ *  host the wheel files too, so while any mirror works pip never touches the
+ *  CN-blocked files.pythonhosted.org; the official index last as the
+ *  always-complete sync source. Each is retried `attemptsPerIndex` times for
+ *  transient blips before switching (see runPipInstallWithFallback). `args` is
+ *  the `-i <url>` fragment (empty = pip's own default index). */
+export const PIP_INDEX_FALLBACKS: ReadonlyArray<{ label: string; args: string[] }> = [
+  { label: '清华源', args: ['-i', 'https://pypi.tuna.tsinghua.edu.cn/simple'] },
+  { label: '阿里云源', args: ['-i', 'https://mirrors.aliyun.com/pypi/simple'] },
+  { label: '中科大源', args: ['-i', 'https://pypi.mirrors.ustc.edu.cn/simple'] },
+  { label: '官方源', args: [] },
+];
+
+/** Build the `pip install docling` argv for one index attempt: the index
+ *  fragment (if any) plus a generous `--timeout` so connect/read aren't killed
+ *  at pip's 15s default. Pure + exported for tests. */
+export function doclingPipInstallArgv(venvPy: string, indexArgs: string[]): string[] {
+  return [
+    venvPy, '-m', 'pip', 'install', 'docling',
+    ...indexArgs,
+    '--timeout', String(PIP_CONNECT_TIMEOUT_SECS),
+  ];
+}
+
+export interface PipFallbackOpts {
+  /** Step name shown in progress + final error. */
+  label: string;
+  signal: AbortSignal;
+  onProgress?: (msg: string) => void;
+  /** Run one `pip install docling` attempt for a given index argv fragment (the
+   *  `-i <url>` pair, or [] for pip's default index). Rejects on non-zero exit
+   *  / timeout. */
+  exec: (indexArgs: string[]) => Promise<void>;
+  /** Transient retries per index before switching. Default 2. */
+  attemptsPerIndex?: number;
+}
+
+/**
+ * Run the docling pip install with transient retry per index AND fallback ACROSS
+ * indices (see PIP_INDEX_FALLBACKS). Mirrors runWithRegistryFallback: same-index
+ * retries cover a single dropped wheel / network blip; cross-index fallback
+ * covers a mirror that's down or lagging. Succeeds as soon as any attempt
+ * succeeds; throws only when every index is exhausted, with the label + last
+ * error so the UI/log pinpoints the failure. Pause/stop (signal.aborted) aborts
+ * immediately with the original error — never retried, never switched.
+ */
+export async function runPipInstallWithFallback(opts: PipFallbackOpts): Promise<void> {
+  if (opts.signal.aborted) throw new Error('aborted');
+  const attempts = opts.attemptsPerIndex ?? 2;
+  let lastErr: unknown = null;
+  for (const source of PIP_INDEX_FALLBACKS) {
+    for (let attempt = 1; attempt <= attempts && !opts.signal.aborted; attempt++) {
+      try {
+        await opts.exec(source.args);
+        return;
+      } catch (err) {
+        if (opts.signal.aborted) throw err; // pause/stop — propagate as-is
+        lastErr = err;
+        if (attempt < attempts) {
+          opts.onProgress?.(`${opts.label} 网络波动，重试中（${attempt}/${attempts - 1}）...`);
+        }
+      }
+    }
+    opts.onProgress?.(`${opts.label} ${source.label}失败，换下一个 pip 源...`);
+  }
+  const detail = lastErr instanceof Error ? lastErr.message : String(lastErr);
+  throw new Error(`${opts.label}失败：${detail}`);
+}
+
+/**
+ * Decide which skills a /start request should (re)launch vs treat as
+ * already-installed. A skill needs (re)starting when it is `missing` (fresh),
+ * `paused` (resume), OR `failed` (retry a failed download). `failed` was absent
+ * from this decision originally, so the error toast's 重试 button became a
+ * silent no-op: the route treated the failed skill as "already done", emitted a
+ * fake completion, and the toast just vanished without re-downloading.
+ * `downloaded`/`installed`/`dismissed`/`preloading`/`unchecked` are treated as
+ * done so we neither reinstall nor double-start. Pure + exported for tests.
+ */
+export function skillsNeedingStart(
+  statusOf: (sk: PreloadableSkill) => SkillStatus,
+  skills: PreloadableSkill[],
+): { needsStart: PreloadableSkill[]; alreadyDone: PreloadableSkill[] } {
+  const needsStart: PreloadableSkill[] = [];
+  const alreadyDone: PreloadableSkill[] = [];
+  for (const sk of skills) {
+    const st = statusOf(sk).status;
+    if (st === 'missing' || st === 'paused' || st === 'failed') needsStart.push(sk);
+    else alreadyDone.push(sk);
+  }
+  return { needsStart, alreadyDone };
 }
 
 // ─── Path helpers (venv layout, cross-platform) ─────────────────────────────
