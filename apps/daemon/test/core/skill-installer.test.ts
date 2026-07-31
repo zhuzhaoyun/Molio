@@ -3,7 +3,18 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { installBuiltinSkills } from '../../src/core/skill-installer.js';
+import { reconcileBundledSync, BUILTIN_SKILLS } from '../../src/core/skill-installer.js';
+
+/**
+ * "Install everything" — the equivalent of the old installBuiltinSkills(vault):
+ * every bundled skill is both effective (installed) and managed, so all rules
+ * are active. Used by the rule/migration/idempotency tests below; the per-vault
+ * enable/disable behavior is covered separately in bundled-reconcile.test.ts.
+ */
+const ALL_BUNDLED = new Set<string>(BUILTIN_SKILLS);
+function installAll(vaultPath: string): void {
+  reconcileBundledSync(ALL_BUNDLED, ALL_BUNDLED, vaultPath);
+}
 
 describe('skill-installer migration', () => {
   let tmpVault: string;
@@ -45,7 +56,7 @@ describe('skill-installer migration', () => {
     fs.writeFileSync(path.join(wikiDir, 'SKILL.md'), '# Wiki build skill');
 
     // Run the installer
-    installBuiltinSkills(tmpVault);
+    installAll(tmpVault);
 
     // Verify deprecated skills are removed
     for (const skill of deprecatedSkills) {
@@ -85,7 +96,7 @@ describe('skill-installer migration', () => {
     fs.writeFileSync(path.join(userPdfDir, 'custom-script.py'), '# User script');
 
     // Run the installer
-    installBuiltinSkills(tmpVault);
+    installAll(tmpVault);
 
     // Verify user-created skill is preserved
     assert.strictEqual(
@@ -101,7 +112,7 @@ describe('skill-installer migration', () => {
   });
 
   it('should inject docling-preference rule into .claude/CLAUDE.md', () => {
-    installBuiltinSkills(tmpVault);
+    installAll(tmpVault);
 
     const claudeMd = path.join(tmpVault, '.claude', 'CLAUDE.md');
     assert.strictEqual(fs.existsSync(claudeMd), true, '.claude/CLAUDE.md should exist');
@@ -115,7 +126,7 @@ describe('skill-installer migration', () => {
   });
 
   it('should inject environment self-healing rule into .claude/CLAUDE.md', () => {
-    installBuiltinSkills(tmpVault);
+    installAll(tmpVault);
 
     const content = fs.readFileSync(
       path.join(tmpVault, '.claude', 'CLAUDE.md'),
@@ -140,7 +151,7 @@ describe('skill-installer migration', () => {
   });
 
   it('should inject web-fetch preference rule into .claude/CLAUDE.md', () => {
-    installBuiltinSkills(tmpVault);
+    installAll(tmpVault);
 
     const content = fs.readFileSync(
       path.join(tmpVault, '.claude', 'CLAUDE.md'),
@@ -171,7 +182,7 @@ describe('skill-installer migration', () => {
   });
 
   it('should inject remotion-preference rule into .claude/CLAUDE.md', () => {
-    installBuiltinSkills(tmpVault);
+    installAll(tmpVault);
 
     const content = fs.readFileSync(
       path.join(tmpVault, '.claude', 'CLAUDE.md'),
@@ -198,7 +209,7 @@ describe('skill-installer migration', () => {
   });
 
   it('should inject wiki-query-preference rule into .claude/CLAUDE.md', () => {
-    installBuiltinSkills(tmpVault);
+    installAll(tmpVault);
 
     const content = fs.readFileSync(
       path.join(tmpVault, '.claude', 'CLAUDE.md'),
@@ -256,7 +267,7 @@ describe('skill-installer migration', () => {
     const userContent = '# My Vault Rules\n\nThis is my personal vault.\n';
     fs.writeFileSync(path.join(claudeDir, 'CLAUDE.md'), userContent);
 
-    installBuiltinSkills(tmpVault);
+    installAll(tmpVault);
 
     const content = fs.readFileSync(path.join(claudeDir, 'CLAUDE.md'), 'utf-8');
     // User content must be preserved
@@ -267,13 +278,13 @@ describe('skill-installer migration', () => {
   });
 
   it('should be idempotent — running twice does not duplicate the rule', () => {
-    installBuiltinSkills(tmpVault);
+    installAll(tmpVault);
     const afterFirst = fs.readFileSync(
       path.join(tmpVault, '.claude', 'CLAUDE.md'),
       'utf-8',
     );
 
-    installBuiltinSkills(tmpVault);
+    installAll(tmpVault);
     const afterSecond = fs.readFileSync(
       path.join(tmpVault, '.claude', 'CLAUDE.md'),
       'utf-8',
@@ -284,7 +295,7 @@ describe('skill-installer migration', () => {
 
   it('should replace outdated rule blocks in place when content changes', () => {
     // First pass: inject current rules
-    installBuiltinSkills(tmpVault);
+    installAll(tmpVault);
     const claudeMd = path.join(tmpVault, '.claude', 'CLAUDE.md');
     const original = fs.readFileSync(claudeMd, 'utf-8');
 
@@ -315,7 +326,7 @@ describe('skill-installer migration', () => {
     assert.ok(withOld.includes('OLD VERBOSE VERSION'), 'old version should be present');
 
     // Second pass: should replace the old verbose block with current version
-    installBuiltinSkills(tmpVault);
+    installAll(tmpVault);
     const afterUpdate = fs.readFileSync(claudeMd, 'utf-8');
 
     // Old content should be gone
@@ -350,7 +361,7 @@ describe('skill-installer migration', () => {
       ['# ---', 'name: wiki-build', 'description: old.', '---', '', '# old body'].join('\n'),
     );
 
-    installBuiltinSkills(tmpVault);
+    installAll(tmpVault);
 
     const installed = fs.readFileSync(path.join(wikiBuildDir, 'SKILL.md'), 'utf-8');
     // Must now carry a version line (proves the versioned source was copied in).
@@ -364,7 +375,7 @@ describe('skill-installer migration', () => {
 
   it('should update skill when version differs, skip when same', () => {
     // First install
-    installBuiltinSkills(tmpVault);
+    installAll(tmpVault);
     const doclingMd = path.join(skillsDir, 'docling', 'SKILL.md');
     const currentContent = fs.readFileSync(doclingMd, 'utf-8');
 
@@ -383,14 +394,14 @@ describe('skill-installer migration', () => {
     );
 
     // Second pass: version differs, should update
-    installBuiltinSkills(tmpVault);
+    installAll(tmpVault);
     assert.ok(
       fs.readFileSync(doclingMd, 'utf-8').includes(`version: ${currentVersion}`),
       'skill should be updated to current version',
     );
 
     // Third pass: version is same, should not rewrite (no error either)
-    installBuiltinSkills(tmpVault);
+    installAll(tmpVault);
     assert.ok(
       fs.readFileSync(doclingMd, 'utf-8').includes(`version: ${currentVersion}`),
       'skill should remain at current version',

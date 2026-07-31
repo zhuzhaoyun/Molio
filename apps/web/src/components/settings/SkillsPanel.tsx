@@ -45,15 +45,21 @@ function SkillRow({
       <div className="sk-row__body">
         <div className="sk-row__header">
           <span className="sk-row__name">{skill.name}</span>
-          {skill.builtIn && <span className="sk-badge sk-badge--builtin">{t('skills.builtIn')}</span>}
+          {skill.kind === 'bundled' ? (
+            <span className="sk-badge sk-badge--bundled">{t('skills.bundled')}</span>
+          ) : (
+            skill.builtIn && <span className="sk-badge sk-badge--builtin">{t('skills.builtIn')}</span>
+          )}
         </div>
         {skill.description && <div className="sk-row__desc">{skill.description}</div>}
       </div>
 
       <div className="sk-row__actions">
-        <button className="rt-btn rt-btn--sm rt-btn--ghost" data-testid={`skill-edit-${skill.id}`} onClick={onEdit}>
-          {t('skills.edit')}
-        </button>
+        {skill.kind !== 'bundled' && (
+          <button className="rt-btn rt-btn--sm rt-btn--ghost" data-testid={`skill-edit-${skill.id}`} onClick={onEdit}>
+            {t('skills.edit')}
+          </button>
+        )}
         {confirmingDelete ? (
           <>
             <button className="rt-btn rt-btn--sm rt-btn--danger" data-testid={`skill-delete-confirm-${skill.id}`} onClick={onDeleteConfirm}>

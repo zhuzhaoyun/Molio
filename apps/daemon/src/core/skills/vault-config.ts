@@ -1,0 +1,137 @@
+/**
+ * Per-vault skill enablement + sync.
+ *
+ * The global skill library (the daemon's `skills` table) is the master switch:
+ * a globally-enabled skill is meant to be available in every vault by default.
+ * Each vault may opt out via a sparse override row in `vault_skills`. The
+ * effective set for a vault is therefore:
+ *
+ *     (globally-enabled OR core)  AND  not disabled in this vault
+ *
+ * `core` skills (the writing trio) are exempt from both the global switch and
+ * per-vault overrides — they are always effective (hidden but behavior kept).
+ *
+ * Sync splits the effective set by kind:
+ *  - **library + core** → `reconcileSync` (sync.ts) pointed at `<vault>/.claude`,
+ *    writing single-file `molio--<id>/SKILL.md` dirs (keeps the molio-- red line
+ *    + orphan cleanup for free);
+ *  - **bundled** → `reconcileBundledSync` (skill-installer.ts), syncing whole
+ *    multi-file directories under their plain names and converging the CLAUDE.md
+ *    rule blocks.
+ * Every supported runtime (Claude Code / Codex / Gemini / Qwen) reads
+ * `<cwd>/.claude/skills/`.
+ *
+ * All filesystem sync is best-effort: on NAS/Docker the mounted docs dir is
+ * often root-owned while the daemon runs unprivileged, so an EACCES there must
+ * degrade to a warning, never abort vault provisioning (see default-vault.ts).
+ */
+import path from 'node:path';
+import type Database from 'better-sqlite3';
+import type { SkillManifestEntry, Vault } from '@molio/contracts';
+import { listVaults } from '../db.js';
+import { listSkills } from './store.js';
+import { reconcileSync } from './sync.js';
+import { reconcileBundledSync } from '../skill-installer.js';
+import type { SkillPathsOpts } from './paths.js';
+
+/** Read this vault's sparse overrides. Absence of a key = inherit global state. */
+export function getVaultSkillOverrides(db: Database.Database, vaultId: string): Map<string, boolean> {
+  const rows = db
+    .prepare('SELECT skill_id, enabled FROM vault_skills WHERE vault_id = ?')
+    .all(vaultId) as Array<{ skill_id: string; enabled: number }>;
+  const map = new Map<string, boolean>();
+  for (const row of rows) map.set(row.skill_id, row.enabled !== 0);
+  return map;
+}
+
+/** Upsert a per-vault override row (enable or disable a skill in one vault). */
+export function setVaultSkillEnabled(
+  db: Database.Database,
+  vaultId: string,
+  skillId: string,
+  enabled: boolean,
+): void {
+  db.prepare(
+    `INSERT INTO vault_skills (vault_id, skill_id, enabled) VALUES (?, ?, ?)
+     ON CONFLICT(vault_id, skill_id) DO UPDATE SET enabled = excluded.enabled`,
+  ).run(vaultId, skillId, enabled ? 1 : 0);
+}
+
+/**
+ * Effective skill entries for a vault: core skills always count (exempt from the
+ * global switch and per-vault overrides); everything else needs to be globally
+ * enabled AND not disabled in this vault.
+ */
+export function getEffectiveSkills(db: Database.Database, vaultId: string): SkillManifestEntry[] {
+  const overrides = getVaultSkillOverrides(db, vaultId);
+  return listSkills(db).filter(
+    (s) => s.core || (s.enabled && overrides.get(s.id) !== false),
+  );
+}
+
+/** Effective skill ids for a vault (see getEffectiveSkills). */
+export function getEffectiveSkillIds(db: Database.Database, vaultId: string): string[] {
+  return getEffectiveSkills(db, vaultId).map((s) => s.id);
+}
+
+/**
+ * Reconcile one vault's `<vault.path>/.claude/skills/` against its effective
+ * skill set, splitting by kind:
+ *  - library + core → `reconcileSync` (single-file `molio--<id>/SKILL.md`);
+ *  - bundled → `reconcileBundledSync` (whole multi-file dirs, plain names, plus
+ *    CLAUDE.md rule convergence).
+ * Best-effort: an EACCES on the mounted dir logs and returns rather than
+ * throwing, so callers (vault creation, startup fan-out) are never aborted.
+ */
+export function reconcileVault(db: Database.Database, vault: Vault, opts?: SkillPathsOpts): void {
+  try {
+    const effective = getEffectiveSkills(db, vault.id);
+
+    // library + core → molio-- single-file sync (orphan cleanup included).
+    const singleFileIds = effective.filter((s) => s.kind !== 'bundled').map((s) => s.id);
+    reconcileSync(singleFileIds, { ...opts, claudeHome: path.join(vault.path, '.claude') });
+
+    // bundled → whole-dir sync. Managed = every bundled row the DB knows about
+    // (so a toggled-off one gets removed); effective = the subset that's on.
+    const allSkills = listSkills(db);
+    const managedBundled = new Set(allSkills.filter((s) => s.kind === 'bundled').map((s) => s.id));
+    const effectiveBundled = new Set(effective.filter((s) => s.kind === 'bundled').map((s) => s.id));
+    reconcileBundledSync(effectiveBundled, managedBundled, vault.path);
+  } catch (err) {
+    console.warn(
+      `[skills] Failed to reconcile skills into vault "${vault.name}" (${vault.path}) — ` +
+        `likely a write-permission problem on the directory. The vault is still usable. Cause:`,
+      err instanceof Error ? err.message : err,
+    );
+  }
+}
+
+/** Reconcile every vault; one vault failing never blocks the others. */
+export function reconcileAllVaults(db: Database.Database, opts?: SkillPathsOpts): void {
+  for (const vault of listVaults(db)) {
+    reconcileVault(db, vault, opts);
+  }
+}
+
+/**
+ * Remove the legacy global `~/.claude/skills/molio--*` sync left over from the
+ * pre-per-vault design. Idempotent and safe to run on every startup. `opts` is
+ * injectable so tests can point it at a temp `claudeHome` (never the real home).
+ */
+export function cleanupLegacyGlobalSync(opts?: SkillPathsOpts): void {
+  reconcileSync([], opts ?? {});
+}
+
+/**
+ * Facade for skills routes: call after ANY global library mutation (create /
+ * update / toggle / import / delete) so every vault's sync catches up. Keeping
+ * this in one place means a new mutation endpoint can't forget to re-sync.
+ */
+export function afterGlobalSkillMutation(db: Database.Database, opts?: SkillPathsOpts): void {
+  reconcileAllVaults(db, opts);
+}
+
+/** Drop all per-vault override rows for a skill (called when it's deleted globally). */
+export function deleteVaultSkillOverrides(db: Database.Database, skillId: string): void {
+  db.prepare('DELETE FROM vault_skills WHERE skill_id = ?').run(skillId);
+}

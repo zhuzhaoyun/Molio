@@ -134,6 +134,35 @@ function migrate(db: SqliteDb): void {
     CREATE INDEX IF NOT EXISTS idx_kb_history_vault
       ON kb_history(vault_id, created_at DESC);
 
+    -- Global skill library: metadata + the master switch (replaces the old
+    -- ~/.molio/skills/manifest.json). kind: 'bundled' (multi-file, shipped) |
+    -- 'library' (single-file, user-managed). core=1 marks the writing trio --
+    -- hidden, always-on, not configurable (exempt from enabled + per-vault
+    -- overrides). A skill body stays a file; this table only holds config.
+    CREATE TABLE IF NOT EXISTS skills (
+      id          TEXT PRIMARY KEY,
+      name        TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      kind        TEXT NOT NULL DEFAULT 'library',
+      core        INTEGER NOT NULL DEFAULT 0,
+      built_in    INTEGER NOT NULL DEFAULT 0,
+      enabled     INTEGER NOT NULL DEFAULT 1,
+      created_at  INTEGER NOT NULL,
+      updated_at  INTEGER NOT NULL
+    );
+
+    -- Per-vault skill enablement overrides (sparse). The global skill library
+    -- (the skills table) is the master switch; a row here only records a
+    -- per-vault opt-out (enabled=0). Absence = inherit global state. Effective
+    -- set = (globally-enabled OR core) AND not disabled in this vault.
+    CREATE TABLE IF NOT EXISTS vault_skills (
+      vault_id TEXT NOT NULL,
+      skill_id TEXT NOT NULL,
+      enabled  INTEGER NOT NULL DEFAULT 1,
+      PRIMARY KEY (vault_id, skill_id),
+      FOREIGN KEY(vault_id) REFERENCES vaults(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS kv (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL,

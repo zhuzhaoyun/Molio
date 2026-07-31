@@ -3,8 +3,10 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import type Database from 'better-sqlite3';
+import { openDatabase, closeDatabase } from '../../../src/core/db.js';
 import {
-  loadManifest,
+  listSkills,
   createSkill,
   updateSkill,
   toggleSkill,
@@ -17,32 +19,41 @@ import type { SkillPathsOpts } from '../../../src/core/skills/paths.js';
 
 let molioHome: string;
 let claudeHome: string;
+let dbDir: string;
+let db: Database.Database;
 let opts: SkillPathsOpts;
 
 beforeEach(() => {
   molioHome = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-skills-store-home-'));
   claudeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-skills-store-claude-'));
+  dbDir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-skills-store-db-'));
+  db = openDatabase(dbDir);
   opts = { molioHome, claudeHome };
 });
 
 afterEach(() => {
+  closeDatabase();
   fs.rmSync(molioHome, { recursive: true, force: true });
   fs.rmSync(claudeHome, { recursive: true, force: true });
+  fs.rmSync(dbDir, { recursive: true, force: true });
 });
 
 describe('skills/store', () => {
-  it('loadManifest returns empty when manifest missing', () => {
-    assert.deepEqual(loadManifest(opts), { skills: [] });
+  it('listSkills is empty for a fresh database', () => {
+    assert.deepEqual(listSkills(db), []);
   });
 
-  it('createSkill writes SKILL.md with frontmatter + body and records manifest entry', () => {
+  it('createSkill writes SKILL.md with frontmatter + body and records a DB row', () => {
     const entry = createSkill(
+      db,
       { name: '写文章', description: '写一篇文章', enabled: false, builtIn: false },
       '先列大纲再展开。',
       opts,
     );
     assert.ok(entry.id, 'should assign an id');
     assert.equal(entry.builtIn, false);
+    assert.equal(entry.kind, 'library', 'defaults to library');
+    assert.equal(entry.core, false);
 
     const md = fs.readFileSync(path.join(molioHome, 'skills', entry.id, 'SKILL.md'), 'utf8');
     assert.ok(md.startsWith('---\n'), 'starts with frontmatter fence');
@@ -51,106 +62,118 @@ describe('skills/store', () => {
     assert.match(md, /^version: 1\.0\.0$/m);
     assert.ok(md.includes('先列大纲再展开。'), 'body present');
 
-    const manifest = loadManifest(opts);
-    assert.equal(manifest.skills.length, 1);
-    assert.equal(manifest.skills[0]?.id, entry.id);
+    const rows = listSkills(db);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]?.id, entry.id);
+    assert.equal(rows[0]?.enabled, false, 'enabled flag persisted');
   });
 
   it('createSkill uses provided id for built-ins', () => {
     const entry = createSkill(
+      db,
       { id: 'my-builtin', name: 'X', description: '', enabled: false, builtIn: true },
       'body',
       opts,
     );
     assert.equal(entry.id, 'my-builtin');
+    assert.equal(getSkill(db, 'my-builtin')?.builtIn, true);
   });
 
-  it('createSkill with enabled=true syncs to ~/.claude/skills/molio--<id>', () => {
+  it('createSkill with kind=bundled writes NO content dir (content ships with the app)', () => {
     const entry = createSkill(
+      db,
+      { id: 'docling', name: 'docling', description: '', enabled: true, builtIn: true, kind: 'bundled' },
+      '',
+      opts,
+    );
+    assert.equal(entry.kind, 'bundled');
+    assert.ok(!fs.existsSync(path.join(molioHome, 'skills', entry.id)), 'no library content dir for bundled');
+    assert.equal(getSkill(db, 'docling')?.kind, 'bundled');
+  });
+
+  it('createSkill with core=true marks the row as core', () => {
+    const entry = createSkill(
+      db,
+      { id: 'write-article', name: '写文章', description: '', enabled: true, builtIn: true, core: true },
+      'body',
+      opts,
+    );
+    assert.equal(entry.core, true);
+    assert.equal(getSkill(db, 'write-article')?.core, true);
+  });
+
+  // store.ts is pure catalog CRUD — it never writes to .claude/skills.
+  // Per-vault sync lives in vault-config.ts (see vault-config.test.ts).
+  it('createSkill does NOT sync anywhere (sync moved to vault-config)', () => {
+    const entry = createSkill(
+      db,
       { name: 'S', description: '', enabled: true, builtIn: false },
       'body',
       opts,
     );
-    const synced = path.join(claudeHome, 'skills', `molio--${entry.id}`, 'SKILL.md');
-    assert.ok(fs.existsSync(synced), 'synced SKILL.md should exist');
-  });
-
-  it('createSkill with enabled=false does NOT sync', () => {
-    const entry = createSkill(
-      { name: 'S', description: '', enabled: false, builtIn: false },
-      'body',
-      opts,
-    );
     const syncedDir = path.join(claudeHome, 'skills', `molio--${entry.id}`);
-    assert.ok(!fs.existsSync(syncedDir), 'should not be synced when disabled');
-  });
-
-  it('createSkill leaves no .tmp file behind (atomic write)', () => {
-    createSkill({ name: 'S', description: '', enabled: false, builtIn: false }, 'body', opts);
-    const tmp = path.join(molioHome, 'skills', 'manifest.json.tmp');
-    assert.ok(!fs.existsSync(tmp), 'tmp file should be renamed away');
+    assert.ok(!fs.existsSync(syncedDir), 'store must not write to .claude/skills');
   });
 
   it('updateSkill rewrites frontmatter (name) and keeps instructions', () => {
     const entry = createSkill(
+      db,
       { name: 'Old', description: 'd', enabled: true, builtIn: false },
       'KEEP-ME',
       opts,
     );
-    updateSkill(entry.id, { name: 'New' }, opts);
+    updateSkill(db, entry.id, { name: 'New' }, opts);
 
     assert.equal(readInstructions(entry.id, opts), 'KEEP-ME');
     const md = fs.readFileSync(path.join(molioHome, 'skills', entry.id, 'SKILL.md'), 'utf8');
     assert.match(md, /^name: New$/m);
-    // synced copy updated too
-    const synced = fs.readFileSync(path.join(claudeHome, 'skills', `molio--${entry.id}`, 'SKILL.md'), 'utf8');
-    assert.match(synced, /^name: New$/m);
+    assert.equal(getSkill(db, entry.id)?.name, 'New', 'name persisted to DB');
   });
 
   it('updateSkill changes instructions body', () => {
     const entry = createSkill(
+      db,
       { name: 'S', description: '', enabled: false, builtIn: false },
       'old body',
       opts,
     );
-    updateSkill(entry.id, { instructions: 'new body' }, opts);
+    updateSkill(db, entry.id, { instructions: 'new body' }, opts);
     assert.equal(readInstructions(entry.id, opts), 'new body');
   });
 
   it('updateSkill on unknown id throws SkillNotFoundError', () => {
-    assert.throws(() => updateSkill('nope', { name: 'x' }, opts), SkillNotFoundError);
+    assert.throws(() => updateSkill(db, 'nope', { name: 'x' }, opts), SkillNotFoundError);
   });
 
-  it('toggleSkill false removes sync dir, true re-adds it', () => {
+  it('toggleSkill flips the DB enabled flag (no sync side effects)', () => {
     const entry = createSkill(
+      db,
       { name: 'S', description: '', enabled: true, builtIn: false },
       'body',
       opts,
     );
-    const syncedDir = path.join(claudeHome, 'skills', `molio--${entry.id}`);
-    assert.ok(fs.existsSync(syncedDir));
+    toggleSkill(db, entry.id, false);
+    assert.equal(getSkill(db, entry.id)?.enabled, false);
 
-    toggleSkill(entry.id, false, opts);
-    assert.ok(!fs.existsSync(syncedDir), 'disabled removes sync dir');
-    assert.equal(getSkill(entry.id, opts)?.enabled, false);
-
-    toggleSkill(entry.id, true, opts);
-    assert.ok(fs.existsSync(path.join(syncedDir, 'SKILL.md')), 're-enabled re-syncs');
-  });
-
-  it('deleteSkill removes content dir, sync dir, and manifest entry', () => {
-    const entry = createSkill(
-      { name: 'S', description: '', enabled: true, builtIn: false },
-      'body',
-      opts,
-    );
-    deleteSkill(entry.id, opts);
-    assert.ok(!fs.existsSync(path.join(molioHome, 'skills', entry.id)));
+    toggleSkill(db, entry.id, true);
+    assert.equal(getSkill(db, entry.id)?.enabled, true);
+    // store never writes to .claude/skills
     assert.ok(!fs.existsSync(path.join(claudeHome, 'skills', `molio--${entry.id}`)));
-    assert.equal(loadManifest(opts).skills.length, 0);
+  });
+
+  it('deleteSkill removes content dir and DB row', () => {
+    const entry = createSkill(
+      db,
+      { name: 'S', description: '', enabled: true, builtIn: false },
+      'body',
+      opts,
+    );
+    deleteSkill(db, entry.id, opts);
+    assert.ok(!fs.existsSync(path.join(molioHome, 'skills', entry.id)));
+    assert.equal(listSkills(db).length, 0);
   });
 
   it('deleteSkill on unknown id is a no-op', () => {
-    assert.doesNotThrow(() => deleteSkill('nope', opts));
+    assert.doesNotThrow(() => deleteSkill(db, 'nope', opts));
   });
 });

@@ -1,9 +1,17 @@
 /**
- * Skills API routes — the user-managed global skill library.
- * Source of truth: ~/.molio/skills/ ; enabled skills sync to ~/.claude/skills/molio--*.
+ * Skills API routes — the user-managed skill library (global master switch).
+ * Source of truth: the daemon's `skills` table. After any mutation we re-sync
+ * every vault's `<vault>/.claude/skills/` via afterGlobalSkillMutation
+ * (vault-config.ts).
+ *
+ * Visibility/guards:
+ *  - core skills (writing trio) are never exposed (filtered from GET, 404 by id);
+ *  - bundled skills are shown + toggleable but NOT editable (PATCH 400);
+ *  - builtIn/core skills cannot be deleted.
  */
 import { Hono } from 'hono';
 import type { Context } from 'hono';
+import type Database from 'better-sqlite3';
 import type {
   CreateSkillRequest,
   UpdateSkillRequest,
@@ -12,7 +20,7 @@ import type {
 } from '@molio/contracts';
 import type { RunManager } from '../core/RunManager.js';
 import {
-  loadManifest,
+  listSkills,
   getSkill,
   readInstructions,
   createSkill,
@@ -21,27 +29,29 @@ import {
   deleteSkill,
   SkillNotFoundError,
 } from '../core/skills/store.js';
+import { afterGlobalSkillMutation, deleteVaultSkillOverrides } from '../core/skills/vault-config.js';
 import { importFromRaw, importFromFolder, SkillImportError } from '../core/skills/importer.js';
 import { prefillFromContent } from '../core/skills/prefill.js';
 
-export function skillsRoutes(runManager: RunManager): Hono {
+export function skillsRoutes(db: Database.Database, runManager: RunManager): Hono {
   const app = new Hono();
 
-  // GET /api/skills — list all skills
+  // GET /api/skills — list all non-core skills (core = hidden app functionality)
   app.get('/', (c) => {
-    return c.json({ skills: loadManifest().skills });
+    return c.json({ skills: listSkills(db).filter((s) => !s.core) });
   });
 
-  // GET /api/skills/:id — one skill + its instructions (for the edit form)
+  // GET /api/skills/:id — one skill + its instructions (for the edit form).
+  // Core skills are treated as not found (they're never shown/editable).
   app.get('/:id', (c) => {
-    const skill = getSkill(c.req.param('id'));
-    if (!skill) {
+    const skill = getSkill(db, c.req.param('id'));
+    if (!skill || skill.core) {
       return c.json({ error: { code: 'NOT_FOUND', message: 'Skill not found' } }, 404);
     }
     return c.json({ skill, instructions: readInstructions(skill.id) });
   });
 
-  // POST /api/skills — create a user skill (enabled by default)
+  // POST /api/skills — create a user (library) skill, enabled by default
   app.post('/', async (c) => {
     const body = await c.req.json<CreateSkillRequest>();
     if (!body.name || !body.name.trim() || !body.instructions || !body.instructions.trim()) {
@@ -49,51 +59,69 @@ export function skillsRoutes(runManager: RunManager): Hono {
     }
     try {
       const skill = createSkill(
+        db,
         { name: body.name.trim(), description: (body.description ?? '').trim(), enabled: true, builtIn: false },
         body.instructions,
       );
+      afterGlobalSkillMutation(db);
       return c.json({ skill }, 201);
     } catch (err) {
       return c.json({ error: { code: 'INTERNAL', message: errMessage(err) } }, 500);
     }
   });
 
-  // PATCH /api/skills/:id — update name/description/instructions (built-ins editable too)
+  // PATCH /api/skills/:id — update name/description/instructions.
+  // bundled (content ships with the app) and core are not editable.
   app.patch('/:id', async (c) => {
+    const existing = getSkill(db, c.req.param('id'));
+    if (!existing || existing.core) {
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Skill not found' } }, 404);
+    }
+    if (existing.kind === 'bundled') {
+      return c.json({ error: { code: 'BAD_REQUEST', message: '内置技能不可编辑' } }, 400);
+    }
     const body = await c.req.json<UpdateSkillRequest>();
     try {
-      const skill = updateSkill(c.req.param('id'), body);
+      const skill = updateSkill(db, c.req.param('id'), body);
+      afterGlobalSkillMutation(db);
       return c.json({ skill });
     } catch (err) {
       return mapStoreError(c, err);
     }
   });
 
-  // PATCH /api/skills/:id/toggle — enable/disable
+  // PATCH /api/skills/:id/toggle — enable/disable (bundled allowed, core blocked)
   app.patch('/:id/toggle', async (c) => {
+    const existing = getSkill(db, c.req.param('id'));
+    if (!existing || existing.core) {
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Skill not found' } }, 404);
+    }
     const body = await c.req.json<{ enabled: boolean }>();
     if (typeof body.enabled !== 'boolean') {
       return c.json({ error: { code: 'BAD_REQUEST', message: 'enabled must be a boolean' } }, 400);
     }
     try {
-      const skill = toggleSkill(c.req.param('id'), body.enabled);
+      const skill = toggleSkill(db, c.req.param('id'), body.enabled);
+      afterGlobalSkillMutation(db);
       return c.json({ skill });
     } catch (err) {
       return mapStoreError(c, err);
     }
   });
 
-  // DELETE /api/skills/:id — delete (built-ins cannot be deleted, only disabled)
+  // DELETE /api/skills/:id — delete (builtIn/core cannot be deleted, only disabled)
   app.delete('/:id', (c) => {
     const id = c.req.param('id');
-    const existing = getSkill(id);
-    if (!existing) {
+    const existing = getSkill(db, id);
+    if (!existing || existing.core) {
       return c.json({ error: { code: 'NOT_FOUND', message: 'Skill not found' } }, 404);
     }
     if (existing.builtIn) {
       return c.json({ error: { code: 'BAD_REQUEST', message: '内置技能不可删除，可禁用' } }, 400);
     }
-    deleteSkill(id);
+    deleteSkill(db, id);
+    deleteVaultSkillOverrides(db, id);
+    afterGlobalSkillMutation(db);
     return c.body(null, 204);
   });
 
@@ -109,7 +137,8 @@ export function skillsRoutes(runManager: RunManager): Hono {
       );
     }
     try {
-      const skill = hasRaw ? importFromRaw(body.raw!) : importFromFolder(body.folderPath!);
+      const skill = hasRaw ? importFromRaw(db, body.raw!) : importFromFolder(db, body.folderPath!);
+      afterGlobalSkillMutation(db);
       return c.json({ skill }, 201);
     } catch (err) {
       if (err instanceof SkillImportError) {

@@ -24,7 +24,7 @@ import type { Vault } from '@molio/contracts';
 import type Database from 'better-sqlite3';
 import { listVaults, createVault, addKbHistory, setActiveVaultId } from './db.js';
 import { ensureVaultDir } from './knowledge.js';
-import { installBuiltinSkills } from './skill-installer.js';
+import { reconcileVault } from './skills/vault-config.js';
 
 /** Minimal watcher surface needed to start watching the new vault. */
 interface VaultWatcherLike {
@@ -41,12 +41,12 @@ export interface DefaultVaultOptions {
   /** Optional description. */
   description?: string;
   /**
-   * Skill installer override; defaults to installBuiltinSkills. Injectable so
-   * tests can simulate an installer failure without filesystem permission
-   * tricks (which are unreliable across platforms, e.g. Windows read-only
-   * attributes don't reliably deny the owner).
+   * Skill sync override; defaults to reconcileVault (bundled + library/core +
+   * CLAUDE.md rules, all best-effort). Injectable so tests can simulate a sync
+   * failure without filesystem permission tricks (which are unreliable across
+   * platforms, e.g. Windows read-only attributes don't reliably deny the owner).
    */
-  installSkills?: (vaultPath: string) => void;
+  reconcileSkills?: (db: Database.Database, vault: Vault) => void;
 }
 
 const DEFAULT_CONVENTION_PATH = '/vaults';
@@ -86,27 +86,28 @@ export function maybeCreateDefaultVault(
   }
   if (!defaultPath) return null;
 
-  const installSkills = opts.installSkills ?? installBuiltinSkills;
+  const reconcileSkills = opts.reconcileSkills ?? reconcileVault;
 
   ensureVaultDir(defaultPath);
   const name = opts.name ?? DEFAULT_VAULT_NAME;
   const vault = createVault(db, name, defaultPath, opts.description ?? DEFAULT_VAULT_DESCRIPTION);
-  // Skill installation writes into <vault>/.claude/skills. On NAS/Docker the
-  // mounted docs dir is frequently owned by root while the daemon runs
-  // unprivileged (the Dockerfile drops to a non-root user), so this can fail
-  // with EACCES. That must NOT abort provisioning: the vault row is already
-  // created above, and throwing here would skip setActiveVaultId below —
-  // leaving the user on the empty welcome screen even though the vault exists.
-  // Degrade to a warning and continue; skills can be (re)installed later once
-  // the mount permissions are fixed.
+  // Skill sync writes into <vault>/.claude/skills (bundled whole-dirs + library/
+  // core molio-- files + CLAUDE.md rules). On NAS/Docker the mounted docs dir is
+  // frequently owned by root while the daemon runs unprivileged (the Dockerfile
+  // drops to a non-root user), so this can fail with EACCES. reconcileVault
+  // already swallows EACCES; this try/catch is a second safety net so a failure
+  // here can NEVER abort provisioning — the vault row is already created above,
+  // and throwing would skip setActiveVaultId below, leaving the user on the empty
+  // welcome screen even though the vault exists. Degrade to a warning and
+  // continue; skills sync on a later start once mount permissions are fixed.
   try {
-    installSkills(defaultPath);
+    reconcileSkills(db, vault);
   } catch (err) {
     console.warn(
-      `[default-vault] vault "${vault.name}" created at ${defaultPath}, but built-in skill ` +
-        `installation failed — likely a write-permission problem on the mounted directory ` +
+      `[default-vault] vault "${vault.name}" created at ${defaultPath}, but skill sync ` +
+        `failed — likely a write-permission problem on the mounted directory ` +
         `(make sure the daemon user can write to it). The vault is still usable; skills ` +
-        `will be installed on a later start. Cause:`,
+        `will be synced on a later start. Cause:`,
       err instanceof Error ? err.message : err,
     );
   }

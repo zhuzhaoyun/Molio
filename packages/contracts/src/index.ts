@@ -91,6 +91,7 @@ export type {
 } from './knowledge.js';
 
 export type {
+  SkillKind,
   SkillManifestEntry,
   CreateSkillRequest,
   UpdateSkillRequest,
@@ -100,4 +101,7 @@ export type {
   SkillListResponse,
   SkillResponse,
   PrefillResponse,
+  VaultSkillEntry,
+  VaultSkillListResponse,
+  VaultSkillToggleRequest,
 } from './skill.js';

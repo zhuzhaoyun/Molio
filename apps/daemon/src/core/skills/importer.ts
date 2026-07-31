@@ -4,6 +4,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import type Database from 'better-sqlite3';
 import type { SkillManifestEntry } from '@molio/contracts';
 import type { SkillPathsOpts } from './paths.js';
 import { parseSkillMd } from './skillmd.js';
@@ -23,7 +24,7 @@ function deriveName(parsed: { name: string }, fallback: string): string {
 }
 
 /** Import from pasted SKILL.md content (frontmatter parsed if present). */
-export function importFromRaw(raw: string, opts?: SkillPathsOpts): SkillManifestEntry {
+export function importFromRaw(db: Database.Database, raw: string, opts?: SkillPathsOpts): SkillManifestEntry {
   if (!raw || !raw.trim()) {
     throw new SkillImportError('BAD_REQUEST', '导入内容为空');
   }
@@ -32,6 +33,7 @@ export function importFromRaw(raw: string, opts?: SkillPathsOpts): SkillManifest
     throw new SkillImportError('BAD_REQUEST', '未能从内容中解析出技能指令');
   }
   return createSkill(
+    db,
     { name: deriveName(parsed, '导入的技能'), description: parsed.description, enabled: true, builtIn: false },
     parsed.instructions,
     opts,
@@ -39,7 +41,7 @@ export function importFromRaw(raw: string, opts?: SkillPathsOpts): SkillManifest
 }
 
 /** Import from a local folder containing a SKILL.md. */
-export function importFromFolder(folderPath: string, opts?: SkillPathsOpts): SkillManifestEntry {
+export function importFromFolder(db: Database.Database, folderPath: string, opts?: SkillPathsOpts): SkillManifestEntry {
   if (!folderPath || !folderPath.trim()) {
     throw new SkillImportError('BAD_REQUEST', '文件夹路径为空');
   }
@@ -54,6 +56,7 @@ export function importFromFolder(folderPath: string, opts?: SkillPathsOpts): Ski
   }
   const fallbackName = path.basename(path.resolve(folderPath));
   return createSkill(
+    db,
     { name: deriveName(parsed, fallbackName), description: parsed.description, enabled: true, builtIn: false },
     parsed.instructions,
     opts,

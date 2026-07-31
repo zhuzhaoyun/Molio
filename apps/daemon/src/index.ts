@@ -1,9 +1,8 @@
 import { serve } from '@hono/node-server';
 import { execSync } from 'node:child_process';
 import { app, db, runManager, weixinService, vaultWatcher, preloadManager } from './server.js';
-import { listVaults } from './core/db.js';
-import { installBuiltinSkills } from './core/skill-installer.js';
 import { initSkillLibrary } from './core/skills/builtin.js';
+import { reconcileAllVaults, cleanupLegacyGlobalSync } from './core/skills/vault-config.js';
 import { ensureWikiSysPromptFiles } from './core/wiki-prompts.js';
 import { isKillablePortOccupant } from './core/port-check.js';
 import { startMemoryMonitor } from './core/memory-monitor.js';
@@ -93,10 +92,10 @@ function checkAndKillPortOccupant(port: number): void {
 
 checkAndKillPortOccupant(port);
 
-// Ensure all existing vaults have built-in skills installed (idempotent, <1ms per vault if already installed).
-for (const vault of listVaults(db)) {
-  installBuiltinSkills(vault.path);
-}
+// 1. Seed built-in skills into the `skills` table — the master switch source
+//    (bundled: docling/wiki-*/remotion/wechat; core: writing trio). Must run
+//    before reconcileAllVaults reads the table.
+initSkillLibrary(db);
 
 // Delete per-run JSONL logs older than 7 days (nothing cleaned them up
 // before; they accumulate indefinitely under ~/.molio/runs). Best-effort and
@@ -107,9 +106,14 @@ pruneRunLogs();
 // --append-system-prompt-file; weixin prepends its frame, see weixin/dispatcher).
 ensureWikiSysPromptFiles();
 
-// Seed built-in skills into the global user library + reconcile the
-// ~/.claude/skills/molio--* sync (idempotent; never touches user skills).
-initSkillLibrary();
+// 2. Fan the effective skills into every vault's <vault>/.claude/skills/ —
+//    bundled (whole-dir) + library/core (molio-- single file) + CLAUDE.md rules.
+//    Per-vault, best-effort. Covers what the old installBuiltinSkills loop did.
+reconcileAllVaults(db);
+
+// 3. Remove the legacy global ~/.claude/skills/molio--* sync left over from the
+//    pre-per-vault design (idempotent; safe to run every startup).
+cleanupLegacyGlobalSync();
 
 // Check which heavy skill tools are already installed. Results are stored in
 // the PreloadManager and served via GET /api/preload/status so the web UI can

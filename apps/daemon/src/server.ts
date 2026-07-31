@@ -93,7 +93,7 @@ app.route('/api/runs', runsRoutes(db, runManager, conversationService));
 app.route('/api/runs', eventsRoutes(runManager));
 app.route('/api/runs', toolResultRoutes(runManager));
 app.route('/api/config', configRoutes());
-app.route('/api/skills', skillsRoutes(runManager));
+app.route('/api/skills', skillsRoutes(db, runManager));
 app.route('/api/conversations', conversationRoutes(db, runManager, conversationService));
 app.route('/api/projects', projectRoutes(db));
 app.route('/api/knowledge', knowledgeRoutes(db, runManager, vaultWatcher));

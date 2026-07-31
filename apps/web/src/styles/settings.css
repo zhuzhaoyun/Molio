@@ -471,6 +471,15 @@
   border-color: var(--border-strong);
 }
 
+/* A skill that's globally disabled: greyed out, switch locked off (per-vault modal). */
+.sk-row--off {
+  opacity: 0.55;
+}
+
+.sk-row--off .sk-switch {
+  cursor: not-allowed;
+}
+
 .sk-row__body {
   flex: 1;
   min-width: 0;
@@ -521,11 +530,18 @@
   padding: 2px 7px;
   border-radius: var(--radius-pill);
   white-space: nowrap;
+  color: var(--text-muted);
+  background: var(--bg-hover, rgba(127, 127, 127, 0.12));
 }
 
 .sk-badge--builtin {
   color: var(--accent);
   background: var(--accent-soft);
+}
+
+.sk-badge--bundled {
+  color: var(--blue);
+  background: var(--blue-bg);
 }
 
 /* ── Toggle Switch ── */

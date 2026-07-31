@@ -9,6 +9,8 @@ import path from 'node:path';
 import type Database from 'better-sqlite3';
 import type {
   CreateVaultRequest,
+  VaultSkillEntry,
+  VaultSkillToggleRequest,
 } from '@molio/contracts';
 import {
   listVaults,
@@ -40,7 +42,12 @@ import {
 import { annotateTreeStatus } from '../core/wiki-status.js';
 import { VAULT_TREE_CHANGED_EVENT, type VaultWatcher } from '../core/vault-watcher.js';
 import type { RunManager } from '../core/RunManager.js';
-import { installBuiltinSkills } from '../core/skill-installer.js';
+import { getSkill, listSkills } from '../core/skills/store.js';
+import {
+  getVaultSkillOverrides,
+  setVaultSkillEnabled,
+  reconcileVault,
+} from '../core/skills/vault-config.js';
 import { FileTooLargeError } from '../core/encoding.js';
 
 export function knowledgeRoutes(
@@ -71,7 +78,10 @@ export function knowledgeRoutes(
     try {
       ensureVaultDir(body.path);
       const vault = createVault(db, body.name, body.path, body.description);
-      installBuiltinSkills(body.path);
+      // Fan the effective skills into the new vault — bundled (whole-dir) +
+      // library/core (molio-- single file) + CLAUDE.md rules. Best-effort:
+      // reconcileVault swallows EACCES so provisioning is never aborted.
+      reconcileVault(db, vault);
       addKbHistory(db, vault.id, 'edit', `Vault "${vault.name}" created`);
       void vaultWatcher.watch(vault.id, vault.path);
       return c.json({ ...vault, fileCount: 0 }, 201);
@@ -90,6 +100,70 @@ export function knowledgeRoutes(
     deleteVault(db, c.req.param('id'));
     void vaultWatcher.unwatch(c.req.param('id'));
     return c.body(null, 204);
+  });
+
+  // ─── Per-vault skills ───
+
+  // GET /api/knowledge/vaults/:id/skills — every non-core skill with its
+  // effective state in this vault. globalEnabled = master switch; vaultEnabled
+  // = globalEnabled && not opted-out here (a globally-off skill is greyed).
+  // Core skills (writing trio) are hidden — never listed.
+  app.get('/vaults/:id/skills', (c) => {
+    const vault = getVault(db, c.req.param('id'));
+    if (!vault) {
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
+    }
+    const overrides = getVaultSkillOverrides(db, vault.id);
+    const skills: VaultSkillEntry[] = listSkills(db)
+      .filter((s) => !s.core)
+      .map((s) => ({
+        id: s.id,
+        name: s.name,
+        description: s.description,
+        builtIn: s.builtIn,
+        kind: s.kind,
+        globalEnabled: s.enabled,
+        vaultEnabled: s.enabled && overrides.get(s.id) !== false,
+        createdAt: s.createdAt,
+        updatedAt: s.updatedAt,
+      }));
+    return c.json({ skills });
+  });
+
+  // PATCH /api/knowledge/vaults/:id/skills/:skillId { enabled } — opt a skill
+  // in/out of this vault, then re-sync the vault's .claude/skills immediately.
+  // Core skills are exempt from per-vault overrides (404, they're hidden).
+  app.patch('/vaults/:id/skills/:skillId', async (c) => {
+    const vault = getVault(db, c.req.param('id'));
+    if (!vault) {
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
+    }
+    const skillId = c.req.param('skillId');
+    const entry = getSkill(db, skillId);
+    if (!entry || entry.core) {
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Skill not found' } }, 404);
+    }
+    const body = await c.req.json<VaultSkillToggleRequest>();
+    if (typeof body.enabled !== 'boolean') {
+      return c.json({ error: { code: 'BAD_REQUEST', message: 'enabled must be a boolean' } }, 400);
+    }
+
+    setVaultSkillEnabled(db, vault.id, skillId, body.enabled);
+    reconcileVault(db, vault);
+
+    const overrides = getVaultSkillOverrides(db, vault.id);
+    const skill: VaultSkillEntry = {
+      id: entry.id,
+      name: entry.name,
+      description: entry.description,
+      builtIn: entry.builtIn,
+      kind: entry.kind,
+      globalEnabled: entry.enabled,
+      vaultEnabled: entry.enabled && overrides.get(skillId) !== false,
+      createdAt: entry.createdAt,
+      updatedAt: entry.updatedAt,
+    };
+    return c.json({ skill });
   });
 
   // ─── Active vault ───

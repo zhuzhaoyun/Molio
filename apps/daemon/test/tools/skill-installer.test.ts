@@ -3,13 +3,19 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { installBuiltinSkills, resolveSkillsSourceDir } from '../../src/core/skill-installer.js';
+import { reconcileBundledSync, resolveSkillsSourceDir, BUILTIN_SKILLS } from '../../src/core/skill-installer.js';
 
-describe('installBuiltinSkills', () => {
+/** Install every bundled skill (all effective + managed) — the old installBuiltinSkills behavior. */
+const ALL_BUNDLED = new Set<string>(BUILTIN_SKILLS);
+function installAll(vaultPath: string): void {
+  reconcileBundledSync(ALL_BUNDLED, ALL_BUNDLED, vaultPath);
+}
+
+describe('reconcileBundledSync (whole-dir install)', () => {
   it('installs wechat-article-extractor skill to vault .claude/skills/', () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-skill-test-'));
     try {
-      installBuiltinSkills(tmpDir);
+      installAll(tmpDir);
 
       const skillDir = path.join(tmpDir, '.claude', 'skills', 'wechat-article-extractor');
       assert.ok(fs.existsSync(skillDir), 'skill directory should exist');
@@ -34,11 +40,11 @@ describe('installBuiltinSkills', () => {
   it('is idempotent — second call does not overwrite', () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-skill-test-'));
     try {
-      installBuiltinSkills(tmpDir);
+      installAll(tmpDir);
       const skillMd = path.join(tmpDir, '.claude', 'skills', 'wechat-article-extractor', 'SKILL.md');
       const stat1 = fs.statSync(skillMd);
 
-      installBuiltinSkills(tmpDir);
+      installAll(tmpDir);
       const stat2 = fs.statSync(skillMd);
 
       assert.equal(stat1.mtimeMs, stat2.mtimeMs, 'file should not be overwritten');

@@ -1,22 +1,24 @@
 /**
- * Skill library store — manifest CRUD + SKILL.md materialization.
+ * Skill library store — DB-backed CRUD + SKILL.md materialization.
  *
- * The manifest (`~/.molio/skills/manifest.json`) is the source of truth for
- * metadata + enabled state; each skill's instructions live in
- * `~/.molio/skills/<id>/SKILL.md`. Mutations keep the `~/.claude/skills/molio--*`
- * sync in sync (see sync.ts).
+ * The daemon's SQLite `skills` table is the source of truth for metadata + the
+ * global enabled state (master switch); each library/core skill's instructions
+ * still live in `~/.molio/skills/<id>/SKILL.md`. Bundled skills keep their
+ * content under the app resources (`tools/skills/<id>/`), so no content file is
+ * written for them — only a metadata row.
+ *
+ * This module is pure catalog CRUD and does NOT sync anywhere. Propagating
+ * enabled skills into each vault's `<vault>/.claude/skills/` is handled by
+ * vault-config.ts (bundled → whole-dir, library/core → molio-- single file) and
+ * triggered by the routes after a mutation.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { SkillManifestEntry } from '@molio/contracts';
-import { manifestPath, skillContentDir, type SkillPathsOpts } from './paths.js';
+import type Database from 'better-sqlite3';
+import type { SkillKind, SkillManifestEntry } from '@molio/contracts';
+import { skillContentDir, type SkillPathsOpts } from './paths.js';
 import { generateSkillMd, stripFrontmatter } from './skillmd.js';
-import { syncSkill, removeSkillSyncDir, reconcileSync } from './sync.js';
-
-export interface SkillManifest {
-  skills: SkillManifestEntry[];
-}
 
 export class SkillNotFoundError extends Error {
   constructor(id: string) {
@@ -25,43 +27,56 @@ export class SkillNotFoundError extends Error {
   }
 }
 
-export function loadManifest(opts?: SkillPathsOpts): SkillManifest {
-  try {
-    const file = manifestPath(opts);
-    if (!fs.existsSync(file)) return { skills: [] };
-    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
-    if (!parsed || !Array.isArray(parsed.skills)) return { skills: [] };
-    return { skills: parsed.skills };
-  } catch (err) {
-    console.error('[skills] Failed to load manifest:', err instanceof Error ? err.message : err);
-    return { skills: [] };
-  }
+/** Shape of a row in the `skills` table. */
+interface SkillRow {
+  id: string;
+  name: string;
+  description: string;
+  kind: string;
+  core: number;
+  built_in: number;
+  enabled: number;
+  created_at: number;
+  updated_at: number;
 }
 
-/** Atomic write: mkdir -p + write to .tmp + rename (mirrors config.ts saveConfig). */
-function writeJsonAtomic(filePath: string, data: unknown): void {
-  const dir = path.dirname(filePath);
-  fs.mkdirSync(dir, { recursive: true });
-  const tmp = filePath + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf8');
-  fs.renameSync(tmp, filePath);
+function rowToEntry(row: SkillRow): SkillManifestEntry {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    kind: (row.kind === 'bundled' ? 'bundled' : 'library') satisfies SkillKind,
+    core: row.core !== 0,
+    builtIn: row.built_in !== 0,
+    enabled: row.enabled !== 0,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
 }
 
-export function saveManifest(manifest: SkillManifest, opts?: SkillPathsOpts): void {
-  writeJsonAtomic(manifestPath(opts), manifest);
+export function listSkills(db: Database.Database): SkillManifestEntry[] {
+  const rows = db.prepare('SELECT * FROM skills ORDER BY created_at ASC').all() as SkillRow[];
+  return rows.map(rowToEntry);
 }
 
-export function getSkill(id: string, opts?: SkillPathsOpts): SkillManifestEntry | null {
-  return loadManifest(opts).skills.find((s) => s.id === id) ?? null;
+export function getSkill(db: Database.Database, id: string): SkillManifestEntry | null {
+  const row = db.prepare('SELECT * FROM skills WHERE id = ?').get(id) as SkillRow | undefined;
+  return row ? rowToEntry(row) : null;
 }
 
-function writeSkillMd(id: string, name: string, description: string, instructions: string, opts?: SkillPathsOpts): void {
+function writeSkillMd(
+  id: string,
+  name: string,
+  description: string,
+  instructions: string,
+  opts?: SkillPathsOpts,
+): void {
   const dir = skillContentDir(id, opts);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'SKILL.md'), generateSkillMd(name, description, instructions), 'utf8');
 }
 
-/** Read a skill's current instructions body from its SKILL.md. */
+/** Read a skill's current instructions body from its SKILL.md ('' for bundled, which have no library file). */
 export function readInstructions(id: string, opts?: SkillPathsOpts): string {
   const md = path.join(skillContentDir(id, opts), 'SKILL.md');
   if (!fs.existsSync(md)) return '';
@@ -69,30 +84,63 @@ export function readInstructions(id: string, opts?: SkillPathsOpts): string {
 }
 
 export interface CreateSkillInput {
-  /** Stable id for built-in seeds; a UUID is generated when omitted. */
+  /** Stable id for built-in/bundled seeds; a UUID is generated when omitted. */
   id?: string;
   name: string;
   description: string;
   enabled: boolean;
   builtIn: boolean;
+  /** 'bundled' (multi-file, shipped) or 'library' (single-file). Defaults to 'library'. */
+  kind?: SkillKind;
+  /** Core app functionality (writing trio): hidden + always-on + not configurable. */
+  core?: boolean;
 }
 
-export function createSkill(input: CreateSkillInput, instructions: string, opts?: SkillPathsOpts): SkillManifestEntry {
+/**
+ * Create a skill row (+ its SKILL.md content file for library/core skills).
+ * Bundled skills have their content shipped under `tools/skills/<id>/`, so no
+ * content file is written for them — only the metadata row.
+ */
+export function createSkill(
+  db: Database.Database,
+  input: CreateSkillInput,
+  instructions: string,
+  opts?: SkillPathsOpts,
+): SkillManifestEntry {
   const now = Date.now();
+  const kind: SkillKind = input.kind ?? 'library';
+  const core = input.core ?? false;
   const entry: SkillManifestEntry = {
     id: input.id ?? randomUUID(),
     name: input.name,
     description: input.description,
+    kind,
+    core,
     enabled: input.enabled,
     builtIn: input.builtIn,
     createdAt: now,
     updatedAt: now,
   };
-  writeSkillMd(entry.id, entry.name, entry.description, instructions, opts);
-  const manifest = loadManifest(opts);
-  manifest.skills.push(entry);
-  saveManifest(manifest, opts);
-  if (entry.enabled) syncSkill(entry.id, opts);
+
+  // Library + core skills carry their body in a SKILL.md under ~/.molio/skills.
+  if (kind !== 'bundled') {
+    writeSkillMd(entry.id, entry.name, entry.description, instructions, opts);
+  }
+
+  db.prepare(
+    `INSERT INTO skills (id, name, description, kind, core, built_in, enabled, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    entry.id,
+    entry.name,
+    entry.description,
+    kind,
+    core ? 1 : 0,
+    entry.builtIn ? 1 : 0,
+    entry.enabled ? 1 : 0,
+    entry.createdAt,
+    entry.updatedAt,
+  );
   return entry;
 }
 
@@ -102,52 +150,58 @@ export interface UpdateSkillPatch {
   instructions?: string;
 }
 
-export function updateSkill(id: string, patch: UpdateSkillPatch, opts?: SkillPathsOpts): SkillManifestEntry {
-  const manifest = loadManifest(opts);
-  const entry = manifest.skills.find((s) => s.id === id);
+/** Update name/description (+ instructions body for library/core). Bundled skills are not editable (guarded by the route). */
+export function updateSkill(
+  db: Database.Database,
+  id: string,
+  patch: UpdateSkillPatch,
+  opts?: SkillPathsOpts,
+): SkillManifestEntry {
+  const entry = getSkill(db, id);
   if (!entry) throw new SkillNotFoundError(id);
 
   if (patch.name !== undefined) entry.name = patch.name;
   if (patch.description !== undefined) entry.description = patch.description;
   entry.updatedAt = Date.now();
 
-  // name/description live in the frontmatter, so rewrite SKILL.md whenever any
-  // field changes; instructions come from the patch or the existing file body.
-  const instructions = patch.instructions ?? readInstructions(id, opts);
-  writeSkillMd(entry.id, entry.name, entry.description, instructions, opts);
+  // Library/core carry their body in SKILL.md; rewrite it when any field changes.
+  if (entry.kind !== 'bundled') {
+    const instructions = patch.instructions ?? readInstructions(id, opts);
+    writeSkillMd(entry.id, entry.name, entry.description, instructions, opts);
+  }
 
-  saveManifest(manifest, opts);
-  if (entry.enabled) syncSkill(entry.id, opts);
+  db.prepare(
+    'UPDATE skills SET name = ?, description = ?, updated_at = ? WHERE id = ?',
+  ).run(entry.name, entry.description, entry.updatedAt, id);
   return entry;
 }
 
-export function toggleSkill(id: string, enabled: boolean, opts?: SkillPathsOpts): SkillManifestEntry {
-  const manifest = loadManifest(opts);
-  const entry = manifest.skills.find((s) => s.id === id);
+/** Flip the global master switch for a skill. */
+export function toggleSkill(
+  db: Database.Database,
+  id: string,
+  enabled: boolean,
+): SkillManifestEntry {
+  const entry = getSkill(db, id);
   if (!entry) throw new SkillNotFoundError(id);
 
   entry.enabled = enabled;
   entry.updatedAt = Date.now();
-  saveManifest(manifest, opts);
-
-  if (enabled) syncSkill(id, opts);
-  else removeSkillSyncDir(id, opts);
+  db.prepare('UPDATE skills SET enabled = ?, updated_at = ? WHERE id = ?').run(
+    enabled ? 1 : 0,
+    entry.updatedAt,
+    id,
+  );
   return entry;
 }
 
-export function deleteSkill(id: string, opts?: SkillPathsOpts): void {
-  const manifest = loadManifest(opts);
-  const idx = manifest.skills.findIndex((s) => s.id === id);
-  if (idx < 0) return; // idempotent
+/** Delete a skill row + its library content dir (bundled content is app-owned and left alone). Idempotent. */
+export function deleteSkill(db: Database.Database, id: string, opts?: SkillPathsOpts): void {
+  const entry = getSkill(db, id);
+  if (!entry) return; // idempotent
 
-  removeSkillSyncDir(id, opts);
-  fs.rmSync(skillContentDir(id, opts), { recursive: true, force: true });
-  manifest.skills.splice(idx, 1);
-  saveManifest(manifest, opts);
-}
-
-/** Full reconcile of `~/.claude/skills/` against the manifest (startup + drift repair). */
-export function reconcile(opts?: SkillPathsOpts): void {
-  const manifest = loadManifest(opts);
-  reconcileSync(manifest.skills.filter((s) => s.enabled).map((s) => s.id), opts);
+  if (entry.kind !== 'bundled') {
+    fs.rmSync(skillContentDir(id, opts), { recursive: true, force: true });
+  }
+  db.prepare('DELETE FROM skills WHERE id = ?').run(id);
 }
