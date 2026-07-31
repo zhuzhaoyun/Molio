@@ -39,6 +39,43 @@ describe('skills/sync', () => {
     assert.ok(fs.readFileSync(synced, 'utf8').includes('body'));
   });
 
+  it('syncSkill mirrors a multi-file skill (SKILL.md + siblings) into molio--<id>/', () => {
+    // Build a multi-file source dir and import it verbatim as the skill content.
+    const srcDir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-skills-sync-src-'));
+    try {
+      fs.writeFileSync(path.join(srcDir, 'SKILL.md'), '---\nname: M\n---\n\nsee references/g.md\n', 'utf8');
+      fs.mkdirSync(path.join(srcDir, 'references'));
+      fs.writeFileSync(path.join(srcDir, 'references', 'g.md'), 'guide\n', 'utf8');
+
+      const entry = createSkill(
+        db,
+        { name: 'M', description: '', enabled: true, builtIn: false, sourceDir: srcDir },
+        '',
+        opts,
+      );
+      syncSkill(entry.id, opts);
+
+      const dest = path.join(claudeHome, 'skills', `molio--${entry.id}`);
+      assert.ok(fs.existsSync(path.join(dest, 'SKILL.md')), 'SKILL.md synced');
+      assert.ok(fs.existsSync(path.join(dest, 'references', 'g.md')), 'nested sibling synced');
+      assert.equal(fs.readFileSync(path.join(dest, 'references', 'g.md'), 'utf8'), 'guide\n');
+    } finally {
+      fs.rmSync(srcDir, { recursive: true, force: true });
+    }
+  });
+
+  it('syncSkill drops stale siblings on re-sync (rm-first converge)', () => {
+    const entry = createSkill(db, { name: 'S', description: '', enabled: true, builtIn: false }, 'body', opts);
+    syncSkill(entry.id, opts);
+    const dest = path.join(claudeHome, 'skills', `molio--${entry.id}`);
+    // Simulate an old version having synced an extra sibling that no longer exists.
+    fs.writeFileSync(path.join(dest, 'stale.txt'), 'old', 'utf8');
+
+    syncSkill(entry.id, opts);
+    assert.ok(!fs.existsSync(path.join(dest, 'stale.txt')), 'stale sibling removed on re-sync');
+    assert.ok(fs.existsSync(path.join(dest, 'SKILL.md')), 'SKILL.md still present');
+  });
+
   it('removeSkillSyncDir removes only the namespaced dir', () => {
     const entry = createSkill(db, { name: 'S', description: '', enabled: true, builtIn: false }, 'body', opts);
     removeSkillSyncDir(entry.id, opts);

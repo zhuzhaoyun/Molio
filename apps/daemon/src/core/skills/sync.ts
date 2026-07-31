@@ -15,14 +15,22 @@ import {
   skillContentDir,
   type SkillPathsOpts,
 } from './paths.js';
+import { copyDirSync } from '../skill-installer.js';
 
-/** Write the library skill's SKILL.md into its namespaced `~/.claude/skills/molio--<id>/` dir. */
+/**
+ * Mirror the library skill's whole content dir into its namespaced
+ * `~/.claude/skills/molio--<id>/` dir. A single-file skill copies just its
+ * SKILL.md; a multi-file (imported) skill copies SKILL.md + every sibling so
+ * references/scripts the SKILL.md points at actually reach the runtime. The dest
+ * is rebuilt from scratch each sync so stale siblings from an older version
+ * don't linger.
+ */
 export function syncSkill(id: string, opts?: SkillPathsOpts): void {
-  const srcMd = path.join(skillContentDir(id, opts), 'SKILL.md');
-  if (!fs.existsSync(srcMd)) return; // nothing to sync
+  const srcDir = skillContentDir(id, opts);
+  if (!fs.existsSync(srcDir)) return; // nothing to sync
   const dest = molioSkillDir(id, opts);
-  fs.mkdirSync(dest, { recursive: true });
-  fs.copyFileSync(srcMd, path.join(dest, 'SKILL.md'));
+  fs.rmSync(dest, { recursive: true, force: true });
+  copyDirSync(srcDir, dest);
 }
 
 /** Remove a skill's namespaced dir from `~/.claude/skills/`. Never touches non-molio dirs. */

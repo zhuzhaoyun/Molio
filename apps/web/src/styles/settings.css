@@ -654,6 +654,21 @@
   font-size: 12px;
 }
 
+/* SKILL.md 编辑器（新增/编辑）——让正文编辑器成为弹窗主体。 */
+.sk-field--grow {
+  flex: 1 1 auto;
+  margin-bottom: 0;
+  min-height: 0;
+}
+
+.sk-field__textarea--md {
+  min-height: 380px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  tab-size: 2;
+}
+
 .sk-import-switch {
   display: inline-flex;
   gap: 2px;
@@ -680,6 +695,35 @@
   background: var(--bg-panel);
   color: var(--text);
   box-shadow: var(--shadow-xs);
+}
+
+/* 本地路径输入框 + 浏览按钮一行（选文件夹 / 选 SKILL.md）。 */
+.sk-import-row {
+  display: flex;
+  gap: 8px;
+}
+
+.sk-import-row .sk-field__input {
+  flex: 1;
+  min-width: 0;
+}
+
+.sk-browse-btn {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 120ms ease;
+}
+
+.sk-browse-btn:hover {
+  background: var(--bg-subtle);
 }
 
 .sk-form-error {

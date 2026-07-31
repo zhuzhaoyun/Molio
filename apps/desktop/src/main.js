@@ -744,6 +744,20 @@ ipcMain.handle('show-directory-picker', async () => {
   return result.filePaths[0];
 });
 
+// 技能导入：选择一个 SKILL.md 文件（区别于上面的目录选择）。文件夹导入复用
+// show-directory-picker；这里专门挑单个 .md 文件，过滤其它类型。
+ipcMain.handle('show-skill-file-picker', async () => {
+  const focusedWindow = BrowserWindow.getFocusedWindow();
+  if (!focusedWindow) return null;
+  const result = await dialog.showOpenDialog(focusedWindow, {
+    properties: ['openFile'],
+    title: '选择 SKILL.md',
+    filters: [{ name: 'SKILL.md', extensions: ['md'] }],
+  });
+  if (result.canceled || result.filePaths.length === 0) return null;
+  return result.filePaths[0];
+});
+
 ipcMain.handle('open-path', async (_, filePath) => {
   return shell.openPath(filePath);
 });

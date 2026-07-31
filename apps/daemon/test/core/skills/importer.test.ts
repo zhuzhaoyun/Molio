@@ -7,7 +7,7 @@ import type Database from 'better-sqlite3';
 import { openDatabase, closeDatabase } from '../../../src/core/db.js';
 import { importFromRaw, importFromFolder, SkillImportError } from '../../../src/core/skills/importer.js';
 import { readInstructions } from '../../../src/core/skills/store.js';
-import type { SkillPathsOpts } from '../../../src/core/skills/paths.js';
+import { skillContentDir, type SkillPathsOpts } from '../../../src/core/skills/paths.js';
 
 let molioHome: string;
 let claudeHome: string;
@@ -74,6 +74,88 @@ describe('skills/importer', () => {
       });
     } finally {
       fs.rmSync(folder, { recursive: true, force: true });
+    }
+  });
+
+  it('importFromFolder accepts a direct .md file path (not a folder)', () => {
+    // Regression: pasting a file path like `.../SKILL (1).md` must NOT have
+    // `\SKILL.md` appended to it.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-skill-file-'));
+    const file = path.join(dir, 'SKILL (1).md');
+    try {
+      fs.writeFileSync(file, '---\nname: 直接文件\ndescription: df\n---\n\nfile body\n', 'utf8');
+      const entry = importFromFolder(db, file, opts);
+      assert.equal(entry.name, '直接文件');
+      assert.equal(entry.description, 'df');
+      assert.equal(readInstructions(entry.id, opts), 'file body');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('importFromFolder falls back to the file basename (sans .md) when no frontmatter name', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-skill-file2-'));
+    const file = path.join(dir, 'My Cool Skill.md');
+    try {
+      fs.writeFileSync(file, 'no frontmatter, just body\n', 'utf8');
+      const entry = importFromFolder(db, file, opts);
+      assert.equal(entry.name, 'My Cool Skill');
+      assert.equal(readInstructions(entry.id, opts), 'no frontmatter, just body');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('importFromFolder reports the file path itself when a .md path does not exist', () => {
+    const missing = path.join(os.tmpdir(), 'definitely-not-here-SKILL (1).md');
+    assert.throws(() => importFromFolder(db, missing, opts), (err: unknown) => {
+      return (
+        err instanceof SkillImportError &&
+        err.code === 'NOT_FOUND' &&
+        err.message.includes(missing) &&
+        !err.message.includes(path.join(missing, 'SKILL.md'))
+      );
+    });
+  });
+
+  it('importFromFolder copies a whole multi-file directory (SKILL.md + siblings)', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-skill-multi-'));
+    try {
+      fs.writeFileSync(
+        path.join(dir, 'SKILL.md'),
+        '---\nname: 多文件\ndescription: multi\n---\n\n见 references/guide.md\n',
+        'utf8',
+      );
+      fs.mkdirSync(path.join(dir, 'references'));
+      fs.writeFileSync(path.join(dir, 'references', 'guide.md'), 'detailed guide\n', 'utf8');
+      fs.writeFileSync(path.join(dir, 'run.py'), 'print("hi")\n', 'utf8');
+
+      const entry = importFromFolder(db, dir, opts);
+      assert.equal(entry.name, '多文件');
+      assert.equal(readInstructions(entry.id, opts), '见 references/guide.md');
+
+      // Siblings must be copied verbatim into the skill content dir.
+      const contentDir = skillContentDir(entry.id, opts);
+      assert.ok(fs.existsSync(path.join(contentDir, 'references', 'guide.md')), 'nested sibling copied');
+      assert.equal(
+        fs.readFileSync(path.join(contentDir, 'references', 'guide.md'), 'utf8'),
+        'detailed guide\n',
+      );
+      assert.ok(fs.existsSync(path.join(contentDir, 'run.py')), 'root sibling copied');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('importFromFolder throws NOT_FOUND for a directory without a root SKILL.md', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-skill-noskillmd-'));
+    try {
+      fs.writeFileSync(path.join(dir, 'README.md'), 'no skill here\n', 'utf8');
+      assert.throws(() => importFromFolder(db, dir, opts), (err: unknown) => {
+        return err instanceof SkillImportError && err.code === 'NOT_FOUND';
+      });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
     }
   });
 });

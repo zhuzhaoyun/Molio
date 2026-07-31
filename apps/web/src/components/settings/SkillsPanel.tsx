@@ -4,10 +4,13 @@ import { useSkills } from '../../hooks/useSkills';
 import { useI18n } from '../../i18n';
 import { api } from '../../api/client';
 import { SkillFormModal, type SkillFormMode, type SkillFormValues } from './SkillFormModal';
+import { serializeSkillMd } from '../../utils/skillmd';
 
 interface ModalState {
   mode: SkillFormMode;
   skill: SkillManifestEntry | null;
+  /** Prefilled SKILL.md for create (duplicate) / edit. */
+  initialMarkdown?: string;
 }
 
 /** A single skill row: name/description, built-in badge, toggle, edit, delete. */
@@ -16,6 +19,7 @@ function SkillRow({
   confirmingDelete,
   onToggle,
   onEdit,
+  onDuplicate,
   onDeleteRequest,
   onDeleteConfirm,
   onDeleteCancel,
@@ -24,6 +28,7 @@ function SkillRow({
   confirmingDelete: boolean;
   onToggle: (enabled: boolean) => void;
   onEdit: () => void;
+  onDuplicate: () => void;
   onDeleteRequest: () => void;
   onDeleteConfirm: () => void;
   onDeleteCancel: () => void;
@@ -55,6 +60,9 @@ function SkillRow({
       </div>
 
       <div className="sk-row__actions">
+        <button className="rt-btn rt-btn--sm rt-btn--ghost" data-testid={`skill-duplicate-${skill.id}`} onClick={onDuplicate}>
+          {t('skills.duplicate')}
+        </button>
         {skill.kind !== 'bundled' && (
           <button className="rt-btn rt-btn--sm rt-btn--ghost" data-testid={`skill-edit-${skill.id}`} onClick={onEdit}>
             {t('skills.edit')}
@@ -93,30 +101,42 @@ export function SkillsPanel() {
   } = useSkills();
 
   const [modal, setModal] = useState<ModalState | null>(null);
-  const [editInstructions, setEditInstructions] = useState('');
+  const [editMarkdown, setEditMarkdown] = useState('');
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const enabledCount = skills.filter((s) => s.enabled).length;
 
-  const openCreate = useCallback(() => {
+  // Single "新建技能" entry point: the dialog itself distinguishes pasting a new
+  // SKILL.md (create) from importing a local file / folder.
+  const openNew = useCallback(() => {
     setFormError(null);
-    setModal({ mode: 'create', skill: null });
-  }, []);
-
-  const openImport = useCallback(() => {
-    setFormError(null);
-    setModal({ mode: 'import', skill: null });
+    setModal({ mode: 'new', skill: null });
   }, []);
 
   const openEdit = useCallback(async (skill: SkillManifestEntry) => {
     setFormError(null);
-    setEditInstructions('');
+    setEditMarkdown('');
     setModal({ mode: 'edit', skill });
     try {
       const { instructions } = await api.getSkill(skill.id);
-      setEditInstructions(instructions);
+      setEditMarkdown(serializeSkillMd(skill.name, skill.description, instructions));
+    } catch (err) {
+      setFormError((err as Error).message);
+    }
+  }, []);
+
+  const openDuplicate = useCallback(async (skill: SkillManifestEntry) => {
+    setFormError(null);
+    setModal({ mode: 'create', skill: null });
+    try {
+      const { instructions } = await api.getSkill(skill.id);
+      setModal({
+        mode: 'create',
+        skill: null,
+        initialMarkdown: serializeSkillMd(`${skill.name} 副本`, skill.description, instructions),
+      });
     } catch (err) {
       setFormError((err as Error).message);
     }
@@ -124,7 +144,7 @@ export function SkillsPanel() {
 
   const closeModal = useCallback(() => {
     setModal(null);
-    setEditInstructions('');
+    setEditMarkdown('');
   }, []);
 
   const handleSave = useCallback(async (values: SkillFormValues) => {
@@ -185,10 +205,7 @@ export function SkillsPanel() {
           </span>
         </div>
         <div className="sk-header__actions">
-          <button className="rt-btn rt-btn--ghost" data-testid="skill-import-btn" onClick={openImport}>
-            {t('skills.import')}
-          </button>
-          <button className="rt-btn" data-testid="skill-new-btn" onClick={openCreate}>
+          <button className="rt-btn" data-testid="skill-new-btn" onClick={openNew}>
             {t('skills.new')}
           </button>
         </div>
@@ -224,6 +241,7 @@ export function SkillsPanel() {
                 confirmingDelete={confirmDeleteId === skill.id}
                 onToggle={(enabled) => handleToggle(skill.id, enabled)}
                 onEdit={() => openEdit(skill)}
+                onDuplicate={() => openDuplicate(skill)}
                 onDeleteRequest={() => setConfirmDeleteId(skill.id)}
                 onDeleteConfirm={() => handleDeleteConfirm(skill.id)}
                 onDeleteCancel={() => setConfirmDeleteId(null)}
@@ -239,7 +257,7 @@ export function SkillsPanel() {
         show={modal !== null}
         mode={modal?.mode ?? 'create'}
         skill={modal?.skill}
-        initialInstructions={modal?.mode === 'edit' ? editInstructions : undefined}
+        initialMarkdown={modal?.mode === 'edit' ? editMarkdown : modal?.initialMarkdown}
         busy={busy}
         onClose={closeModal}
         onSave={handleSave}

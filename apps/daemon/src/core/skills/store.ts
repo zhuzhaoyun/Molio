@@ -2,10 +2,12 @@
  * Skill library store — DB-backed CRUD + SKILL.md materialization.
  *
  * The daemon's SQLite `skills` table is the source of truth for metadata + the
- * global enabled state (master switch); each library/core skill's instructions
- * still live in `~/.molio/skills/<id>/SKILL.md`. Bundled skills keep their
- * content under the app resources (`tools/skills/<id>/`), so no content file is
- * written for them — only a metadata row.
+ * global enabled state (master switch); each library/core skill's content lives
+ * in `~/.molio/skills/<id>/`. A library skill is usually a single generated
+ * `SKILL.md`, but an IMPORTED skill may be a whole multi-file directory (SKILL.md
+ * + reference/script siblings) copied in verbatim — sync.ts mirrors the entire
+ * directory either way. Bundled skills keep their content under the app resources
+ * (`tools/skills/<id>/`), so no content file is written for them — only a row.
  *
  * This module is pure catalog CRUD and does NOT sync anywhere. Propagating
  * enabled skills into each vault's `<vault>/.claude/skills/` is handled by
@@ -19,6 +21,7 @@ import type Database from 'better-sqlite3';
 import type { SkillKind, SkillManifestEntry } from '@molio/contracts';
 import { skillContentDir, type SkillPathsOpts } from './paths.js';
 import { generateSkillMd, stripFrontmatter } from './skillmd.js';
+import { copyDirSync } from '../skill-installer.js';
 
 export class SkillNotFoundError extends Error {
   constructor(id: string) {
@@ -94,6 +97,13 @@ export interface CreateSkillInput {
   kind?: SkillKind;
   /** Core app functionality (writing trio): hidden + always-on + not configurable. */
   core?: boolean;
+  /**
+   * Import a whole existing directory as the skill's content (multi-file skill:
+   * SKILL.md + siblings copied verbatim). When set for a non-bundled skill it
+   * replaces the generated-SKILL.md path — `instructions` is then ignored for
+   * writing (the directory already carries its own SKILL.md).
+   */
+  sourceDir?: string;
 }
 
 /**
@@ -122,9 +132,15 @@ export function createSkill(
     updatedAt: now,
   };
 
-  // Library + core skills carry their body in a SKILL.md under ~/.molio/skills.
+  // Library + core skills carry their content under ~/.molio/skills/<id>.
   if (kind !== 'bundled') {
-    writeSkillMd(entry.id, entry.name, entry.description, instructions, opts);
+    if (input.sourceDir) {
+      // Multi-file import: copy the whole source tree verbatim (its own SKILL.md
+      // + any reference/script siblings). Fresh UUID dir → no stale files.
+      copyDirSync(input.sourceDir, skillContentDir(entry.id, opts));
+    } else {
+      writeSkillMd(entry.id, entry.name, entry.description, instructions, opts);
+    }
   }
 
   db.prepare(
