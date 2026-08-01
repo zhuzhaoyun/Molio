@@ -308,8 +308,17 @@ test.describe('History', () => {
       // transient hint appears; stays in edit mode; title untouched
       await expect(page.locator('[data-testid=history-row-title-error]')).toBeVisible({ timeout: 3_000 });
       await expect(page.locator('[data-testid=history-row-title-input]')).toBeVisible();
-      // .history-row__title only renders outside edit mode; cancel edit to
-      // confirm the empty rename was rejected and the original title is intact.
+      // Blur path: clearing the title and clicking away must ALSO show the hint
+      // and stay in edit mode (not silently cancel). `.history-topbar` is neutral
+      // — it doesn't close the menu or navigate.
+      await input.fill('');
+      await page.locator('.history-topbar').click();
+      await expect(page.locator('[data-testid=history-row-title-error]')).toBeVisible({ timeout: 3_000 });
+      await expect(page.locator('[data-testid=history-row-title-input]')).toBeVisible();
+      // .history-row__title only renders outside edit mode; refocus the input
+      // (the topbar click blurred it) then cancel edit to confirm the empty
+      // rename was rejected and the original title is intact.
+      await input.focus();
       await page.keyboard.press('Escape');
       await expect(rowByTitle(page, 'Keep Name').locator('.history-row__title')).toHaveText('Keep Name');
     } finally {

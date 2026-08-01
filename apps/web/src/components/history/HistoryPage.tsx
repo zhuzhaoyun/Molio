@@ -394,7 +394,7 @@ function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDelet
                 onBlur={(e) => {
                   const v = e.target.value.trim();
                   if (v) onCommitEdit(conversation.id, v);
-                  else onCancelEdit();
+                  else setTitleError(true);
                 }}
               />
               {vaultBadgeCls && (
