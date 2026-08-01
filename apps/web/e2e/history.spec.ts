@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { gotoHome, clickNav } from './helpers/navigation';
 import {
   createProject,
@@ -11,6 +11,29 @@ import {
  * @area history
  * @priority P0
  */
+
+/** Escape regex special characters in a conversation title. */
+const escRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Locate a history row whose title span matches `title` exactly. Scoping to
+ * the title span (instead of a row-level `hasText`) keeps the lookup hermetic:
+ * other conversations' summaries in a dirty dev DB cannot collide via substring.
+ */
+function rowByTitle(page: Page, title: string) {
+  return page
+    .locator('.history-row')
+    .filter({ has: page.locator('.history-row__title', { hasText: new RegExp(`^${escRegex(title)}$`) }) })
+    .first();
+}
+
+/** Same as `rowByTitle`, but restricted to the pinned section. */
+function pinnedRowByTitle(page: Page, title: string) {
+  return page
+    .locator('.history-pinned .history-row')
+    .filter({ has: page.locator('.history-row__title', { hasText: new RegExp(`^${escRegex(title)}$`) }) })
+    .first();
+}
 
 /**
  * E2E tests for the conversation history page.
@@ -238,7 +261,7 @@ test.describe('History', () => {
       await page.locator('[data-testid=history-refresh]').click();
       await page.waitForTimeout(500);
 
-      const row = page.locator('.history-row', { hasText: 'Original Name' }).first();
+      const row = rowByTitle(page, 'Original Name');
       await expect(row).toBeVisible({ timeout: 5_000 });
       await row.hover();
       await row.locator('[data-testid=history-row-overflow]').click();
@@ -250,12 +273,12 @@ test.describe('History', () => {
       await expect(input).toBeVisible({ timeout: 3_000 });
       await input.fill('Renamed Title');
       await input.press('Enter');
-      await expect(page.locator('.history-row', { hasText: 'Renamed Title' }).first().locator('.history-row__title')).toHaveText('Renamed Title', { timeout: 3_000 });
+      await expect(rowByTitle(page, 'Renamed Title').locator('.history-row__title')).toHaveText('Renamed Title', { timeout: 3_000 });
 
       // persists after refresh
       await page.locator('[data-testid=history-refresh]').click();
       await page.waitForTimeout(500);
-      await expect(page.locator('.history-row', { hasText: 'Renamed Title' })).toBeVisible({ timeout: 5_000 });
+      await expect(rowByTitle(page, 'Renamed Title')).toBeVisible({ timeout: 5_000 });
     } finally {
       await deleteProject(project.id);
     }
@@ -273,7 +296,7 @@ test.describe('History', () => {
       await clickNav(page, 'history');
       await page.locator('[data-testid=history-refresh]').click();
       await page.waitForTimeout(500);
-      const row = page.locator('.history-row', { hasText: 'Keep Name' }).first();
+      const row = rowByTitle(page, 'Keep Name');
       await expect(row).toBeVisible({ timeout: 5_000 });
       await row.hover();
       await row.locator('[data-testid=history-row-overflow]').click();
@@ -288,7 +311,7 @@ test.describe('History', () => {
       // .history-row__title only renders outside edit mode; cancel edit to
       // confirm the empty rename was rejected and the original title is intact.
       await page.keyboard.press('Escape');
-      await expect(page.locator('.history-row', { hasText: 'Keep Name' }).first().locator('.history-row__title')).toHaveText('Keep Name');
+      await expect(rowByTitle(page, 'Keep Name').locator('.history-row__title')).toHaveText('Keep Name');
     } finally {
       await deleteProject(project.id);
     }
@@ -306,26 +329,28 @@ test.describe('History', () => {
       await page.locator('[data-testid=history-refresh]').click();
       await page.waitForTimeout(500);
 
-      // no pinned section initially
-      await expect(page.locator('.history-pinned')).toHaveCount(0);
+      // target must not be inside the pinned section yet (scoped to the test
+      // conversation — a dirty dev DB may hold other pinned conversations)
+      await expect(pinnedRowByTitle(page, 'Pin Target')).toHaveCount(0);
 
       // pin the target row
-      const row = page.locator('.history-row', { hasText: 'Pin Target' }).first();
+      const row = rowByTitle(page, 'Pin Target');
       await row.hover();
       await row.locator('[data-testid=history-row-overflow]').click();
       await row.locator('[data-testid=history-row-pin]').click();
 
       const pinned = page.locator('.history-pinned');
       await expect(pinned).toBeVisible({ timeout: 5_000 });
-      await expect(pinned.locator('.history-row', { hasText: 'Pin Target' })).toBeVisible();
+      await expect(pinnedRowByTitle(page, 'Pin Target')).toBeVisible();
 
       // unpin from pinned section
-      const pinnedRow = pinned.locator('.history-row', { hasText: 'Pin Target' });
+      const pinnedRow = pinnedRowByTitle(page, 'Pin Target');
       await pinnedRow.hover();
       await pinnedRow.locator('[data-testid=history-row-overflow]').click();
       await pinnedRow.locator('[data-testid=history-row-pin]').click();
-      await expect(page.locator('.history-pinned')).toHaveCount(0, { timeout: 5_000 });
-      await expect(page.locator('.history-row', { hasText: 'Pin Target' })).toBeVisible();
+      // unpinned: target no longer inside the pinned section, still in the list
+      await expect(pinnedRowByTitle(page, 'Pin Target')).toHaveCount(0, { timeout: 5_000 });
+      await expect(rowByTitle(page, 'Pin Target')).toBeVisible();
     } finally {
       await deleteProject(project.id);
     }
@@ -344,7 +369,7 @@ test.describe('History', () => {
       await page.locator('[data-testid=history-refresh]').click();
       await page.waitForTimeout(500);
       const pin = async (title: string) => {
-        const r = page.locator('.history-row', { hasText: title }).first();
+        const r = rowByTitle(page, title);
         await r.hover();
         await r.locator('[data-testid=history-row-overflow]').click();
         await r.locator('[data-testid=history-row-pin]').click();
@@ -353,9 +378,14 @@ test.describe('History', () => {
       await pin('Pin Newer');
       const pinned = page.locator('.history-pinned');
       await expect(pinned).toBeVisible({ timeout: 5_000 });
-      const titles = pinned.locator('.history-row__title');
-      await expect(titles.first()).toHaveText('Pin Newer', { timeout: 3_000 }); // newer updated_at first
-      await expect(pinned.locator('.history-pinned-count')).toHaveText('2');
+      // Scoped to our two test conversations: both must be pinned and ordered
+      // (newer updated_at first), independent of any other pinned data in a
+      // dirty dev DB.
+      const mine = pinned.locator('.history-row').filter({
+        has: page.locator('.history-row__title', { hasText: /^Pin (Older|Newer)$/ }),
+      });
+      await expect(mine).toHaveCount(2);
+      await expect(mine.locator('.history-row__title').first()).toHaveText('Pin Newer', { timeout: 3_000 });
     } finally {
       await deleteProject(project.id);
     }
