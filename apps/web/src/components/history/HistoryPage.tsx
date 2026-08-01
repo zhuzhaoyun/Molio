@@ -171,7 +171,7 @@ export function HistoryPage({ onOpenConversation }: Props) {
               </div>
             ))}
           </div>
-        ) : items.length === 0 ? (
+        ) : items.length === 0 && pinnedItems.length === 0 ? (
           isFilterActive ? (
             <div className="history-empty">
               <p className="history-empty__text">{t('history.noMatch')}</p>
