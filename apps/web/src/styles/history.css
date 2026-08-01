@@ -710,3 +710,51 @@
     padding: 60px 16px;
   }
 }
+
+/* ── Pinned Section ── */
+.history-pinned { margin-bottom: 28px; }
+.history-pinned:last-child { margin-bottom: 0; }
+.history-pinned-title {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin: 0 0 8px; padding: 4px 8px 4px 4px;
+  color: var(--text-muted);
+  font-family: var(--serif); font-size: 14px; font-weight: 500; font-style: italic;
+  letter-spacing: 0.02em;
+  background: none; border: none; cursor: pointer; border-radius: var(--radius-sm);
+  transition: color 120ms ease, background 120ms ease;
+}
+.history-pinned-title:hover { color: var(--text); background: var(--bg-subtle); }
+.history-pinned-chevron { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; color: var(--text-faint); }
+.history-pinned-chevron svg { width: 14px; height: 14px; }
+.history-pinned-glyph { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; color: var(--accent); }
+.history-pinned-glyph svg { width: 14px; height: 14px; }
+.history-pinned-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px;
+  background: var(--bg-muted); color: var(--text-faint);
+  font-family: var(--sans); font-size: 11px; font-weight: 600; font-style: normal; letter-spacing: 0;
+}
+
+/* ── Row ⋯ overflow (hover reveal) ── */
+.history-row .overflow-menu { opacity: 0; transition: opacity 120ms ease; }
+.history-row:hover .overflow-menu,
+.history-row:focus-within .overflow-menu { opacity: 1; }
+@media (hover: none) { .history-row .overflow-menu { opacity: 1; } }
+
+/* chat.css 未定义变量(--text-primary/--bg-hover)的 history 作用域覆盖 */
+.history-row .overflow-menu-item { color: var(--text); }
+.history-row .overflow-menu-item:hover:not(:disabled) { background: var(--bg-subtle); box-shadow: none; }
+.history-row .overflow-menu-item--danger { color: var(--red); }
+.history-row .overflow-menu-item--danger:hover:not(:disabled) { background: var(--red-bg); box-shadow: none; }
+
+/* ── Inline rename edit ── */
+.history-row__title-input {
+  flex: 1 1 auto; min-width: 0; height: 30px;
+  padding: 0 8px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--bg-panel); color: var(--text-strong);
+  font: inherit; font-size: 15px; font-weight: 600; line-height: 1.35;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.history-row__title-input:focus { outline: none; border-color: var(--selected); box-shadow: 0 0 0 3px var(--selected-soft); }
+.history-row__title-input::placeholder { color: var(--text-faint); font-weight: 400; }
+.history-row__title-error { color: var(--red); font-size: 12px; margin-top: 2px; }

@@ -248,6 +248,14 @@ const en: Record<string, string> = {
   'history.deleteConfirm': 'Delete this conversation?',
   'history.deleteConfirmYes': 'Delete',
   'history.deleteConfirmNo': 'Cancel',
+  'history.more': 'More',
+  'history.pin': 'Pin',
+  'history.unpin': 'Unpin',
+  'history.pinned': 'Pinned',
+  'history.rename': 'Rename',
+  'history.renameFailed': 'Rename failed, please retry',
+  'history.renameEmpty': 'Title cannot be empty',
+  'history.pinFailed': 'Action failed, please retry',
 
   // ── Settings ──
   'settings.title': 'Settings',

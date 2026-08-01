@@ -3,6 +3,7 @@ import type { ConversationHistoryItem, Vault } from '@molio/contracts';
 import { api } from '../../api/client';
 import { useI18n } from '../../i18n';
 import { useHistoryFilters } from '../../hooks/useHistoryFilters';
+import { OverflowMenu, type OverflowItem } from '../../components/OverflowMenu';
 
 interface Props {
   onOpenConversation: (conversationId: string) => void;
@@ -10,11 +11,15 @@ interface Props {
 
 export function HistoryPage({ onOpenConversation }: Props) {
   const { t } = useI18n();
-  const { filters, setFilter, setQuery, items, loading, error, loadMore, refresh, hasMore, deleteConversationLocal } = useHistoryFilters();
+  const { filters, setFilter, setQuery, items, pinnedItems, loading, error, loadMore, refresh, hasMore, deleteConversationLocal, updateConversationLocal } = useHistoryFilters();
   const [vaults, setVaults] = useState<Vault[]>([]);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
   const deleteErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [pinnedCollapsed, setPinnedCollapsed] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const actionErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     api.listVaults().then(setVaults).catch(() => { /* best-effort */ });
@@ -42,6 +47,34 @@ export function HistoryPage({ onOpenConversation }: Props) {
       if (deleteErrorTimer.current) clearTimeout(deleteErrorTimer.current);
       setDeleteError(t('history.deleteFailed'));
       deleteErrorTimer.current = setTimeout(() => setDeleteError(null), 3000);
+    }
+  };
+
+  // 先卸载输入框（setEditingId(null)），防止 Enter 触发的 blur 二次提交。
+  const commitRename = async (id: string, raw: string) => {
+    setEditingId(null);
+    const title = raw.trim();
+    if (!title) return; // 空标题被输入框拦截，这里只作兜底
+    updateConversationLocal(id, { title });
+    try {
+      await api.updateConversation(id, { title });
+    } catch {
+      refresh();
+      setActionError(t('history.renameFailed'));
+      if (actionErrorTimer.current) clearTimeout(actionErrorTimer.current);
+      actionErrorTimer.current = setTimeout(() => setActionError(null), 3000);
+    }
+  };
+
+  const togglePin = async (id: string, currentlyPinned: boolean) => {
+    updateConversationLocal(id, { pinned: !currentlyPinned });
+    try {
+      await api.updateConversation(id, { pinned: !currentlyPinned });
+    } catch {
+      refresh();
+      setActionError(t('history.pinFailed'));
+      if (actionErrorTimer.current) clearTimeout(actionErrorTimer.current);
+      actionErrorTimer.current = setTimeout(() => setActionError(null), 3000);
     }
   };
 
@@ -104,6 +137,27 @@ export function HistoryPage({ onOpenConversation }: Props) {
         {deleteError && (
           <div className="history-error" data-testid="history-delete-error">{deleteError}</div>
         )}
+        {actionError && (
+          <div className="history-error" data-testid="history-action-error">{actionError}</div>
+        )}
+        {pinnedItems.length > 0 && (
+          <PinnedGroup
+            items={pinnedItems}
+            collapsed={pinnedCollapsed}
+            onToggleCollapse={() => setPinnedCollapsed((v) => !v)}
+            onOpenConversation={onOpenConversation}
+            confirmingDeleteId={confirmingDeleteId}
+            onDeleteRequest={setConfirmingDeleteId}
+            onDeleteCancel={() => setConfirmingDeleteId(null)}
+            onDeleteConfirm={executeDelete}
+            editingId={editingId}
+            onStartEdit={setEditingId}
+            onCommitEdit={commitRename}
+            onCancelEdit={() => setEditingId(null)}
+            onTogglePin={togglePin}
+            t={t}
+          />
+        )}
 
         {loading && items.length === 0 ? (
           <div className="history-skeleton" aria-busy="true" aria-label={t('history.loading')}>
@@ -139,6 +193,11 @@ export function HistoryPage({ onOpenConversation }: Props) {
             onDeleteRequest={setConfirmingDeleteId}
             onDeleteCancel={() => setConfirmingDeleteId(null)}
             onDeleteConfirm={executeDelete}
+            editingId={editingId}
+            onStartEdit={setEditingId}
+            onCommitEdit={commitRename}
+            onCancelEdit={() => setEditingId(null)}
+            onTogglePin={togglePin}
             t={t}
           />
         )}
@@ -153,13 +212,18 @@ export function HistoryPage({ onOpenConversation }: Props) {
   );
 }
 
-function HistoryList({ items, onOpenConversation, confirmingDeleteId, onDeleteRequest, onDeleteCancel, onDeleteConfirm, t }: {
+function HistoryList({ items, onOpenConversation, confirmingDeleteId, onDeleteRequest, onDeleteCancel, onDeleteConfirm, editingId, onStartEdit, onCommitEdit, onCancelEdit, onTogglePin, t }: {
   items: ConversationHistoryItem[];
   onOpenConversation: (id: string) => void;
   confirmingDeleteId: string | null;
   onDeleteRequest: (id: string) => void;
   onDeleteCancel: () => void;
   onDeleteConfirm: (id: string) => void;
+  editingId: string | null;
+  onStartEdit: (id: string) => void;
+  onCommitEdit: (id: string, title: string) => void;
+  onCancelEdit: () => void;
+  onTogglePin: (id: string, currentlyPinned: boolean) => void;
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
   const groups = groupByDate(items);
@@ -202,6 +266,11 @@ function HistoryList({ items, onOpenConversation, confirmingDeleteId, onDeleteRe
                     onDeleteRequest={onDeleteRequest}
                     onDeleteCancel={onDeleteCancel}
                     onDeleteConfirm={onDeleteConfirm}
+                    editingId={editingId}
+                    onStartEdit={onStartEdit}
+                    onCommitEdit={onCommitEdit}
+                    onCancelEdit={onCancelEdit}
+                    onTogglePin={onTogglePin}
                     t={t}
                   />
                 ))}
@@ -214,17 +283,29 @@ function HistoryList({ items, onOpenConversation, confirmingDeleteId, onDeleteRe
   );
 }
 
-function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDeleteCancel, onDeleteConfirm, t }: {
+function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDeleteCancel, onDeleteConfirm, editingId, onStartEdit, onCommitEdit, onCancelEdit, onTogglePin, t }: {
   item: ConversationHistoryItem;
   onOpen: () => void;
   confirmingDeleteId: string | null;
   onDeleteRequest: (id: string) => void;
   onDeleteCancel: () => void;
   onDeleteConfirm: (id: string) => void;
+  editingId: string | null;
+  onStartEdit: (id: string) => void;
+  onCommitEdit: (id: string, title: string) => void;
+  onCancelEdit: () => void;
+  onTogglePin: (id: string, currentlyPinned: boolean) => void;
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
   const { conversation, lastMessage, vaultName, vaultExists, vaultId } = item;
   const isConfirming = confirmingDeleteId === conversation.id;
+  const isEditing = editingId === conversation.id;
+  const [titleError, setTitleError] = useState(false);
+
+  // 空标题提示是瞬时的：每次进入编辑态都重置，避免上一次会话残留的提示在新会话中再次出现。
+  useEffect(() => {
+    if (isEditing) setTitleError(false);
+  }, [isEditing]);
 
   // Vault indicator:
   // 1. Alive vault          → name badge (gray)
@@ -239,6 +320,28 @@ function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDelet
   // Channel badge — only for non-desktop channels (desktop is the silent default).
   const channelType = conversation.channelType;
   const showChannelBadge = Boolean(channelType && channelType !== 'desktop');
+
+  const overflowItems: OverflowItem[] = [
+    {
+      icon: conversation.pinnedAt ? <PinIconFilled /> : <PinIcon />,
+      label: conversation.pinnedAt ? t('history.unpin') : t('history.pin'),
+      testid: 'history-row-pin',
+      onClick: () => onTogglePin(conversation.id, Boolean(conversation.pinnedAt)),
+    },
+    {
+      icon: <RenameIcon />,
+      label: t('history.rename'),
+      testid: 'history-row-rename',
+      onClick: () => onStartEdit(conversation.id),
+    },
+    {
+      icon: <TrashIcon />,
+      label: t('history.delete'),
+      testid: 'history-row-delete',
+      danger: true,
+      onClick: () => onDeleteRequest(conversation.id),
+    },
+  ];
 
   if (isConfirming) {
     return (
@@ -266,28 +369,139 @@ function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDelet
 
   return (
     <div className="history-row">
-      <button type="button" className="history-row__main" onClick={onOpen}>
-        <span className="history-row__time">{formatTime(conversation.updatedAt)}</span>
-        <span className="history-row__body">
-          <span className="history-row__title-line">
-            <span className="history-row__title">{conversation.title || t('history.untitled')}</span>
-            {vaultBadgeCls && (
-              <span className={vaultBadgeCls} title={vaultDeleted ? t('history.vaultDeleted') : vaultLabel}>
-                {vaultLabel}
+      {isEditing ? (
+        <div className="history-row__main">
+          <span className="history-row__time">{formatTime(conversation.updatedAt)}</span>
+          <span className="history-row__body">
+            <span className="history-row__title-line">
+              <input
+                className="history-row__title-input"
+                data-testid="history-row-title-input"
+                defaultValue={conversation.title ?? ''}
+                placeholder={t('history.untitled')}
+                autoFocus
+                onChange={() => titleError && setTitleError(false)}
+                onKeyDown={(e) => {
+                  const v = (e.target as HTMLInputElement).value.trim();
+                  if (e.key === 'Enter') {
+                    if (v) onCommitEdit(conversation.id, v);
+                    else setTitleError(true);
+                  } else if (e.key === 'Escape') {
+                    onCancelEdit();
+                  }
+                }}
+                onBlur={(e) => {
+                  const v = e.target.value.trim();
+                  if (v) onCommitEdit(conversation.id, v);
+                  else onCancelEdit();
+                }}
+              />
+              {vaultBadgeCls && (
+                <span className={vaultBadgeCls} title={vaultDeleted ? t('history.vaultDeleted') : vaultLabel}>
+                  {vaultLabel}
+                </span>
+              )}
+              {showChannelBadge && (
+                <span className={`history-source-badge history-source-badge--${channelType}`}>
+                  {sourceLabel(t, channelType!)}
+                </span>
+              )}
+            </span>
+            {titleError && (
+              <span className="history-row__title-error" data-testid="history-row-title-error">
+                {t('history.renameEmpty')}
               </span>
             )}
-            {showChannelBadge && (
-              <span className={`history-source-badge history-source-badge--${channelType}`}>
-                {sourceLabel(t, channelType!)}
-              </span>
-            )}
+            <span className="history-row__summary">{lastMessage?.content || t('history.noMessage')}</span>
           </span>
-          <span className="history-row__summary">{lastMessage?.content || t('history.noMessage')}</span>
+        </div>
+      ) : (
+        <button type="button" className="history-row__main" onClick={onOpen}>
+          <span className="history-row__time">{formatTime(conversation.updatedAt)}</span>
+          <span className="history-row__body">
+            <span className="history-row__title-line">
+              <span className="history-row__title">{conversation.title || t('history.untitled')}</span>
+              {vaultBadgeCls && (
+                <span className={vaultBadgeCls} title={vaultDeleted ? t('history.vaultDeleted') : vaultLabel}>
+                  {vaultLabel}
+                </span>
+              )}
+              {showChannelBadge && (
+                <span className={`history-source-badge history-source-badge--${channelType}`}>
+                  {sourceLabel(t, channelType!)}
+                </span>
+              )}
+            </span>
+            <span className="history-row__summary">{lastMessage?.content || t('history.noMessage')}</span>
+          </span>
+        </button>
+      )}
+      {!isEditing && (
+        <OverflowMenu
+          triggerTestid="history-row-overflow"
+          triggerLabel={t('history.more')}
+          items={overflowItems}
+        />
+      )}
+    </div>
+  );
+}
+
+function PinnedGroup({ items, collapsed, onToggleCollapse, onOpenConversation, confirmingDeleteId, onDeleteRequest, onDeleteCancel, onDeleteConfirm, editingId, onStartEdit, onCommitEdit, onCancelEdit, onTogglePin, t }: {
+  items: ConversationHistoryItem[];
+  collapsed: boolean;
+  onToggleCollapse: () => void;
+  onOpenConversation: (id: string) => void;
+  confirmingDeleteId: string | null;
+  onDeleteRequest: (id: string) => void;
+  onDeleteCancel: () => void;
+  onDeleteConfirm: (id: string) => void;
+  editingId: string | null;
+  onStartEdit: (id: string) => void;
+  onCommitEdit: (id: string, title: string) => void;
+  onCancelEdit: () => void;
+  onTogglePin: (id: string, currentlyPinned: boolean) => void;
+  t: (key: string, params?: Record<string, string | number>) => string;
+}) {
+  return (
+    <div className="history-pinned">
+      <button
+        type="button"
+        className="history-pinned-title"
+        data-testid="history-pinned-title"
+        onClick={onToggleCollapse}
+        aria-expanded={!collapsed}
+      >
+        <span className="history-pinned-chevron">
+          <ChevronIcon expanded={!collapsed} />
         </span>
+        <span className="history-pinned-glyph">
+          <PinIconFilled />
+        </span>
+        {t('history.pinned')}
+        <span className="history-pinned-count">{items.length}</span>
       </button>
-      <button type="button" className="history-row__delete" data-testid="history-row-delete" onClick={() => onDeleteRequest(conversation.id)} title={t('history.delete')}>
-        <TrashIcon />
-      </button>
+      {!collapsed && (
+        <div className="history-date-list">
+          {items.map((item) => (
+            <HistoryRow
+              key={item.conversation.id}
+              item={item}
+              onOpen={() => onOpenConversation(item.conversation.id)}
+              confirmingDeleteId={confirmingDeleteId}
+              onDeleteRequest={onDeleteRequest}
+              onDeleteCancel={onDeleteCancel}
+              onDeleteConfirm={onDeleteConfirm}
+              editingId={editingId}
+              onStartEdit={onStartEdit}
+              onCommitEdit={onCommitEdit}
+              onCancelEdit={onCancelEdit}
+              onTogglePin={onTogglePin}
+              t={t}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -372,6 +586,29 @@ function LoadingIcon() {
       <path d="M18 12h4" />
       <path d="m4.9 19.1 2.8-2.8" />
       <path d="m16.3 7.7 2.8-2.8" />
+    </svg>
+  );
+}
+function PinIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11z" />
+      <circle cx="12" cy="10" r="2.6" />
+    </svg>
+  );
+}
+function PinIconFilled() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11z" />
+      <circle cx="12" cy="10" r="2.6" fill="var(--bg-panel)" />
+    </svg>
+  );
+}
+function RenameIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M17 3a2.8 2.8 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5z" />
     </svg>
   );
 }
