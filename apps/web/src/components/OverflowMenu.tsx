@@ -7,13 +7,13 @@ export interface OverflowItem {
   testid: string;
   onClick: () => void;
   disabled?: boolean;
-  danger?: boolean;      // NEW
+  danger?: boolean;
 }
 
 interface Props {
   items: OverflowItem[];
-  triggerTestid?: string;  // NEW: default 'msg-overflow-btn'
-  triggerLabel?: string;   // NEW: default '更多'
+  triggerTestid?: string;  // default 'msg-overflow-btn'
+  triggerLabel?: string;   // default '更多'
 }
 
 /**

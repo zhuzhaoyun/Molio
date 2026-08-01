@@ -25,10 +25,11 @@ export function HistoryPage({ onOpenConversation }: Props) {
     api.listVaults().then(setVaults).catch(() => { /* best-effort */ });
   }, []);
 
-  // Clear any transient delete error on unmount.
+  // Clear any transient delete/action errors on unmount.
   useEffect(() => {
     return () => {
       if (deleteErrorTimer.current) clearTimeout(deleteErrorTimer.current);
+      if (actionErrorTimer.current) clearTimeout(actionErrorTimer.current);
     };
   }, []);
 
