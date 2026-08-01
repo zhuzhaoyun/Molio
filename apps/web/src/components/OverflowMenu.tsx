@@ -7,10 +7,13 @@ export interface OverflowItem {
   testid: string;
   onClick: () => void;
   disabled?: boolean;
+  danger?: boolean;      // NEW
 }
 
 interface Props {
   items: OverflowItem[];
+  triggerTestid?: string;  // NEW: default 'msg-overflow-btn'
+  triggerLabel?: string;   // NEW: default '更多'
 }
 
 /**
@@ -20,7 +23,9 @@ interface Props {
  * Auto-flips upward when there isn't enough room below (e.g. the last message
  * near the composer) so the menu isn't clipped or covered by the input bar.
  */
-export function OverflowMenu({ items }: Props) {
+export function OverflowMenu({ items, triggerTestid, triggerLabel }: Props) {
+  const testid = triggerTestid ?? 'msg-overflow-btn';
+  const label = triggerLabel ?? '更多';
   const [open, setOpen] = useState(false);
   const [placement, setPlacement] = useState<'below' | 'above'>('below');
   const [align, setAlign] = useState<'end' | 'start'>('end');
@@ -51,7 +56,7 @@ export function OverflowMenu({ items }: Props) {
   useLayoutEffect(() => {
     if (!open || !ref.current) return;
     const root = ref.current;
-    const btn = root.querySelector<HTMLElement>('[data-testid="msg-overflow-btn"]');
+    const btn = root.querySelector<HTMLElement>(`[data-testid="${testid}"]`);
     const dd = root.querySelector<HTMLElement>('.overflow-menu-dropdown');
     if (!btn || !dd) return;
     let scrollParent: HTMLElement | null = null;
@@ -84,9 +89,9 @@ export function OverflowMenu({ items }: Props) {
       <button
         type="button"
         className="icon-btn"
-        data-testid="msg-overflow-btn"
-        data-tip="更多"
-        aria-label="更多"
+        data-testid={testid}
+        data-tip={label}
+        aria-label={label}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
@@ -107,7 +112,7 @@ export function OverflowMenu({ items }: Props) {
               type="button"
               role="menuitem"
               data-testid={it.testid}
-              className="overflow-menu-item"
+              className={`overflow-menu-item${it.danger ? ' overflow-menu-item--danger' : ''}`}
               disabled={it.disabled}
               onClick={() => {
                 setOpen(false);
