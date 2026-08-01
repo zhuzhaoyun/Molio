@@ -164,6 +164,10 @@ function migrate(db: SqliteDb): void {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_conversations_vault
            ON conversations(vault_id, updated_at DESC)`);
 
+  addColumnIfMissing(db, 'conversations', 'pinned_at', 'INTEGER');
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_conversations_pinned_at
+           ON conversations(pinned_at) WHERE pinned_at IS NOT NULL`);
+
   // Full-text search over message content. trigram tokenizer: CJK substring
   // friendly, case-insensitive, no external jieba dependency (SQLite >= 3.34).
   db.exec(`
@@ -357,7 +361,7 @@ export function listConversationHistory(
   let hitIds: string[] | null = null;
   if (opts.query && opts.query.trim()) {
     hitIds = searchConversationIds(db, opts.query);
-    if (hitIds.length === 0) return { items: [], nextCursor: null };
+    if (hitIds.length === 0) return { pinnedItems: [], items: [], nextCursor: null };
   }
 
   const where: string[] = [];
@@ -411,7 +415,7 @@ export function listConversationHistory(
   const items = rows.map(rowToHistoryItem);
   const lastItem = items.at(-1);
   const nextCursor = items.length === limit && lastItem ? lastItem.conversation.updatedAt : null;
-  return { items, nextCursor };
+  return { pinnedItems: [], items, nextCursor };
 }
 
 function clampHistoryLimit(n: number | undefined): number {
@@ -441,6 +445,29 @@ function rowToHistoryItem(row: Record<string, unknown>): ConversationHistoryItem
 export function getConversation(db: SqliteDb, id: string): Conversation | null {
   const row = db.prepare('SELECT * FROM conversations WHERE id = ?').get(id) as Record<string, unknown> | undefined;
   return row ? rowToConversation(row) : null;
+}
+
+export function updateConversation(
+  db: SqliteDb,
+  id: string,
+  patch: { title?: string; pinned?: boolean },
+): Conversation | null {
+  const sets: string[] = [];
+  const params: unknown[] = [];
+  if (patch.title !== undefined) {
+    const title = patch.title.trim();
+    if (!title) throw new Error('Title must be a non-empty string');
+    sets.push('title = ?');
+    params.push(title);
+  }
+  if (patch.pinned !== undefined) {
+    sets.push('pinned_at = ?');
+    params.push(patch.pinned ? Date.now() : null);
+  }
+  if (sets.length === 0) return getConversation(db, id);
+  params.push(id);
+  db.prepare(`UPDATE conversations SET ${sets.join(', ')} WHERE id = ?`).run(...params);
+  return getConversation(db, id);
 }
 
 export function createConversation(db: SqliteDb, projectId: string, title?: string): Conversation {
@@ -796,6 +823,7 @@ function rowToConversation(row: Record<string, unknown>): Conversation {
     metadata: row.metadata_json ? JSON.parse(row.metadata_json as string) : undefined,
     createdAt: row.created_at as number,
     updatedAt: row.updated_at as number,
+    pinnedAt: (row.pinned_at as number | null) ?? null,
   };
 }
 
