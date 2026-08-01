@@ -81,4 +81,25 @@ describe('PATCH /api/conversations/:id', () => {
     });
     assert.equal(res.status, 400);
   });
+
+  it('title with wrong type → 400', async () => {
+    const p = createProject(db, 'PU6');
+    const c = createConversation(db, p.id, 'type-title');
+    const { status } = await callPatch(app, c.id, { title: 123 });
+    assert.equal(status, 400);
+  });
+
+  it('pinned with wrong type → 400', async () => {
+    const p = createProject(db, 'PU7');
+    const c = createConversation(db, p.id, 'type-pinned');
+    const { status } = await callPatch(app, c.id, { pinned: 'yes' });
+    assert.equal(status, 400);
+  });
+
+  it('literal null body → 400', async () => {
+    const p = createProject(db, 'PU8');
+    const c = createConversation(db, p.id, 'null-body');
+    const { status } = await callPatch(app, c.id, null);
+    assert.equal(status, 400);
+  });
 });

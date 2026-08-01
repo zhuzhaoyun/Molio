@@ -74,10 +74,13 @@ export function conversationRoutes(
     if (!getConversation(db, convId)) {
       return c.json({ error: { code: 'NOT_FOUND', message: 'Conversation not found' } }, 404);
     }
-    let body: UpdateConversationRequest;
+    let body: UpdateConversationRequest | null;
     try {
       body = await c.req.json<UpdateConversationRequest>();
     } catch {
+      return c.json({ error: { code: 'BAD_REQUEST', message: 'Invalid JSON body' } }, 400);
+    }
+    if (body == null || typeof body !== 'object') {
       return c.json({ error: { code: 'BAD_REQUEST', message: 'Invalid JSON body' } }, 400);
     }
     if (body.title === undefined && body.pinned === undefined) {
