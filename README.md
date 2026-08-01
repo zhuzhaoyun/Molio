@@ -220,7 +220,7 @@ Thanks to the authors and communities of these projects!
 
 File an issue on [GitHub](https://github.com/zhuzhaoyun/Molio/issues), or scan the QR code below to join our WeChat community:
 
-<img src="docs/img/qrcode.png" alt="WeChat Community QR Code" width="200" />
+<img src="apps/landing-page/images/qrcode.png" alt="WeChat Community QR Code" width="200" />
 
 ## 📄 License
 
