@@ -83,6 +83,7 @@ describe('listConversationHistory filters + cursor', () => {
     const page = listConversationHistory(db, { query: 'no-such-token-xyzzy' });
     assert.equal(page.items.length, 0);
     assert.equal(page.nextCursor, null);
+    assert.equal(page.pinnedItems.length, 0);
   });
 
   it('vaultName surfaced via LEFT JOIN; null when vault deleted', () => {
