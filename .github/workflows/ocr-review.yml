@@ -14,6 +14,10 @@
 # Optional secrets:
 #   OCR_LLM_MODEL         - Model name (default: gpt-4o)
 #   OCR_LLM_USE_ANTHROPIC - Set to 'true' if using Anthropic Claude models
+#   OCR_LLM_EXTRA_BODY    - JSON extra_body override. Defaults to {} (no override).
+#                           Set e.g. {"thinking":{"type":"disabled"}} only for models
+#                           that need it — thinking models (qwen3 etc.) reject a forced
+#                           disabled-thinking config with HTTP 400.
 #
 # Optional variables (for retry/delay tuning, see retry strategy in the post-comments step):
 #   OCR_RETRY_BASE_DELAY, OCR_RETRY_MAX_DELAY, OCR_MAX_RETRIES,
@@ -100,7 +104,16 @@ jobs:
           if [ -n "${{ secrets.OCR_LLM_USE_ANTHROPIC }}" ]; then
             ocr config set llm.use_anthropic "${{ secrets.OCR_LLM_USE_ANTHROPIC }}"
           fi
-          ocr config set llm.extra_body '{"thinking": {"type": "disabled"}}'
+          # extra_body defaults to empty so models that reject a forced thinking
+          # config (e.g. qwen3 thinking models, which require enable_thinking=True)
+          # work out of the box. Override via OCR_LLM_EXTRA_BODY for models that need
+          # explicit JSON. Previously hardcoded to {"thinking":{"type":"disabled"}},
+          # which returned HTTP 400 on every file for such models.
+          if [ -n "${{ secrets.OCR_LLM_EXTRA_BODY }}" ]; then
+            ocr config set llm.extra_body '${{ secrets.OCR_LLM_EXTRA_BODY }}'
+          else
+            ocr config set llm.extra_body '{}'
+          fi
 
       - name: Run OpenCodeReview
         id: review
