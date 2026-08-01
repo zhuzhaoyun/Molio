@@ -743,6 +743,7 @@
 
 /* chat.css 未定义变量(--text-primary/--bg-hover)的 history 作用域覆盖 */
 .history-row .overflow-menu-item { color: var(--text); }
+.history-row .overflow-menu-item svg { width: 16px; height: 16px; flex-shrink: 0; }
 .history-row .overflow-menu-item:hover:not(:disabled) { background: var(--bg-subtle); box-shadow: none; }
 .history-row .overflow-menu-item--danger { color: var(--red); }
 .history-row .overflow-menu-item--danger:hover:not(:disabled) { background: var(--red-bg); box-shadow: none; }
