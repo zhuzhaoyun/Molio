@@ -207,7 +207,7 @@ export function HistoryPage({ onOpenConversation }: Props) {
         )}
       </main>
 
-      <RenameDialog target={renameTarget} onClose={() => setRenameTarget(null)} onConfirm={confirmRename} t={t} />
+      <RenameDialog key={renameTarget?.id ?? 'closed'} target={renameTarget} onClose={() => setRenameTarget(null)} onConfirm={confirmRename} t={t} />
     </div>
   );
 }
@@ -387,11 +387,11 @@ function RenameDialog({ target, onClose, onConfirm, t }: {
   onConfirm: (id: string, title: string) => void;
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
-  const [value, setValue] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
   const [emptyError, setEmptyError] = useState(false);
-  // Reset when the dialog opens for a new target.
+  // Reset the error when the dialog opens for a new target.
   useEffect(() => {
-    if (target) { setValue(target.title ?? ''); setEmptyError(false); }
+    if (target) setEmptyError(false);
   }, [target]);
   if (!target) return null;
   return (
@@ -408,10 +408,11 @@ function RenameDialog({ target, onClose, onConfirm, t }: {
               id="history-rename-input"
               data-testid="history-rename-input"
               type="text"
-              value={value}
+              ref={inputRef}
+              defaultValue={target.title ?? ''}
               placeholder={t('history.untitled')}
               autoFocus
-              onChange={(e) => { setValue(e.target.value); if (emptyError) setEmptyError(false); }}
+              onChange={() => setEmptyError(false)}
               onKeyDown={(e) => { if (e.key === 'Enter') submit(); else if (e.key === 'Escape') onClose(); }}
             />
             {emptyError && (
@@ -427,7 +428,7 @@ function RenameDialog({ target, onClose, onConfirm, t }: {
     </div>
   );
   function submit() {
-    const v = value.trim();
+    const v = (inputRef.current?.value ?? '').trim();
     if (!v) { setEmptyError(true); return; }
     if (!target) return;
     onConfirm(target.id, v);
