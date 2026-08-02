@@ -248,7 +248,7 @@ test.describe('History', () => {
     }
   });
 
-  test('rename conversation via ⋯ menu, persists after refresh', async ({ page }) => {
+  test('rename conversation via modal, persists after refresh', async ({ page }) => {
     const project = await createProject(`e2e-rn-${Date.now()}`);
     const conv = await createConversation(project.id, 'Original Name');
     await addMessage(project.id, conv.id, {
@@ -267,12 +267,15 @@ test.describe('History', () => {
       await row.locator('[data-testid=history-row-overflow]').click();
       await row.locator('[data-testid=history-row-rename]').click();
 
-      // Only one row edits at a time; locate the input at page level since the
-      // row's title span (which the filter matched on) is replaced by the input.
-      const input = page.locator('[data-testid=history-row-title-input]');
-      await expect(input).toBeVisible({ timeout: 3_000 });
+      // Modal opens, prefilled with the current title.
+      const dialog = page.locator('[data-testid=history-rename-dialog]');
+      await expect(dialog).toBeVisible({ timeout: 3_000 });
+      const input = page.locator('[data-testid=history-rename-input]');
+      await expect(input).toHaveValue('Original Name');
+
       await input.fill('Renamed Title');
-      await input.press('Enter');
+      await page.locator('[data-testid=history-rename-confirm]').click();
+      await expect(dialog).toHaveCount(0);
       await expect(rowByTitle(page, 'Renamed Title').locator('.history-row__title')).toHaveText('Renamed Title', { timeout: 3_000 });
 
       // persists after refresh
@@ -284,7 +287,7 @@ test.describe('History', () => {
     }
   });
 
-  test('empty rename shows transient hint and keeps editing', async ({ page }) => {
+  test('empty rename shows error and keeps modal open; cancel leaves title unchanged', async ({ page }) => {
     const project = await createProject(`e2e-rn2-${Date.now()}`);
     const conv = await createConversation(project.id, 'Keep Name');
     await addMessage(project.id, conv.id, {
@@ -301,27 +304,60 @@ test.describe('History', () => {
       await row.hover();
       await row.locator('[data-testid=history-row-overflow]').click();
       await row.locator('[data-testid=history-row-rename]').click();
-      const input = page.locator('[data-testid=history-row-title-input]');
-      await expect(input).toBeVisible({ timeout: 3_000 });
+
+      const dialog = page.locator('[data-testid=history-rename-dialog]');
+      await expect(dialog).toBeVisible({ timeout: 3_000 });
+      const input = page.locator('[data-testid=history-rename-input]');
       await input.fill('');
-      await input.press('Enter');
-      // transient hint appears; stays in edit mode; title untouched
-      await expect(page.locator('[data-testid=history-row-title-error]')).toBeVisible({ timeout: 3_000 });
-      await expect(page.locator('[data-testid=history-row-title-input]')).toBeVisible();
-      // Blur path: clearing the title and clicking away must ALSO show the hint
-      // and stay in edit mode (not silently cancel). `.history-topbar` is neutral
-      // — it doesn't close the menu or navigate.
-      await input.fill('');
-      await page.locator('.history-topbar').click();
-      await expect(page.locator('[data-testid=history-row-title-error]')).toBeVisible({ timeout: 3_000 });
-      await expect(page.locator('[data-testid=history-row-title-input]')).toBeVisible();
-      // .history-row__title only renders outside edit mode; refocus the input
-      // (the topbar click blurred it) then cancel edit to confirm the empty
-      // rename was rejected and the original title is intact.
-      await input.focus();
-      await page.keyboard.press('Escape');
+      await page.locator('[data-testid=history-rename-confirm]').click();
+      // error hint appears; modal stays open; title untouched
+      await expect(page.locator('[data-testid=history-rename-error]')).toBeVisible({ timeout: 3_000 });
+      await expect(dialog).toBeVisible();
+
+      // cancel closes the modal without committing the (rejected) empty rename
+      await page.locator('[data-testid=history-rename-cancel]').click();
+      await expect(dialog).toHaveCount(0);
       await expect(rowByTitle(page, 'Keep Name').locator('.history-row__title')).toHaveText('Keep Name');
     } finally {
+      await deleteProject(project.id);
+    }
+  });
+
+  test('cancel rename closes modal without sending a PATCH', async ({ page }) => {
+    const project = await createProject(`e2e-rn3-${Date.now()}`);
+    const conv = await createConversation(project.id, 'Cancel Me');
+    await addMessage(project.id, conv.id, {
+      id: `msg-rn3-${Date.now()}`,
+      role: 'user', content: 'x', timestamp: Date.now(),
+    });
+    try {
+      await gotoHome(page);
+      await clickNav(page, 'history');
+      await page.locator('[data-testid=history-refresh]').click();
+      await page.waitForTimeout(500);
+
+      // Count PATCH requests to /api/conversations/* — the rename path.
+      let patches = 0;
+      await page.route('**/api/conversations/*', (route) => {
+        if (route.request().method() === 'PATCH') patches += 1;
+        return route.continue();
+      });
+
+      const row = rowByTitle(page, 'Cancel Me');
+      await expect(row).toBeVisible({ timeout: 5_000 });
+      await row.hover();
+      await row.locator('[data-testid=history-row-overflow]').click();
+      await row.locator('[data-testid=history-row-rename]').click();
+
+      const dialog = page.locator('[data-testid=history-rename-dialog]');
+      await expect(dialog).toBeVisible({ timeout: 3_000 });
+      await page.locator('[data-testid=history-rename-cancel]').click();
+      await expect(dialog).toHaveCount(0);
+      await expect(rowByTitle(page, 'Cancel Me').locator('.history-row__title')).toHaveText('Cancel Me');
+
+      expect(patches).toBe(0);
+    } finally {
+      await page.unroute('**/api/conversations/*');
       await deleteProject(project.id);
     }
   });
