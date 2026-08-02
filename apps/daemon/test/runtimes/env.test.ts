@@ -284,6 +284,99 @@ describe('buildSpawnEnv', () => {
     });
   });
 
+  describe('PATH augmentation for Molio-installed CLIs', () => {
+    // Bug: PreloadManager installs docling into ~/.molio/venv/bin, but the
+    // agent process is spawned without a login shell, so ~/.molio/venv/bin
+    // is not on its PATH. The agent then can't find `docling` and the
+    // preload was wasted. augmentPath must add the venv bin dir.
+    const isWindows = process.platform === 'win32';
+    let savedHome: string | undefined;
+    let savedUserProfile: string | undefined;
+    let tmpHome: string;
+
+    beforeEach(() => {
+      if (isWindows) {
+        savedUserProfile = process.env['USERPROFILE'];
+        tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-env-test-'));
+        process.env['USERPROFILE'] = tmpHome;
+      } else {
+        savedHome = process.env['HOME'];
+        tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-env-test-'));
+        process.env['HOME'] = tmpHome;
+      }
+    });
+
+    afterEach(() => {
+      if (isWindows) {
+        if (savedUserProfile !== undefined) process.env['USERPROFILE'] = savedUserProfile;
+        else delete process.env['USERPROFILE'];
+      } else {
+        if (savedHome !== undefined) process.env['HOME'] = savedHome;
+        else delete process.env['HOME'];
+      }
+      try { fs.rmSync(tmpHome, { recursive: true, force: true }); } catch { /* ignore */ }
+    });
+
+    it('should add ~/.molio/venv/bin to PATH when the venv exists', { skip: isWindows ? 'Unix venv path layout' : undefined }, () => {
+      const venvBin = path.join(tmpHome, '.molio', 'venv', 'bin');
+      fs.mkdirSync(venvBin, { recursive: true });
+
+      const def = makeDef({ id: 'generic' });
+      const env = buildSpawnEnv(def, { PATH: '/usr/bin' });
+
+      assert.ok(
+        (env['PATH'] ?? '').includes(venvBin),
+        `PATH should contain venv bin, got: ${env['PATH']}`,
+      );
+    });
+
+    it('should add ~/.molio/venv/Scripts to PATH on Windows', { skip: !isWindows ? 'Windows venv path layout' : undefined }, () => {
+      const venvScripts = path.join(tmpHome, '.molio', 'venv', 'Scripts');
+      fs.mkdirSync(venvScripts, { recursive: true });
+
+      const def = makeDef({ id: 'generic' });
+      const env = buildSpawnEnv(def, { Path: 'C:\\Windows\\System32' });
+
+      assert.ok(
+        (env['Path'] ?? '').toLowerCase().includes(venvScripts.toLowerCase()),
+        `Path should contain venv Scripts, got: ${env['Path']}`,
+      );
+    });
+
+    it('should add ~/.local/bin as fallback for pip --user installs (Unix)', { skip: isWindows ? 'Unix only' : undefined }, () => {
+      const userLocalBin = path.join(tmpHome, '.local', 'bin');
+      fs.mkdirSync(userLocalBin, { recursive: true });
+
+      const def = makeDef({ id: 'generic' });
+      const env = buildSpawnEnv(def, { PATH: '/usr/bin' });
+
+      assert.ok(
+        (env['PATH'] ?? '').includes(userLocalBin),
+        `PATH should contain ~/.local/bin, got: ${env['PATH']}`,
+      );
+    });
+
+    it('should not add dirs that do not exist', () => {
+      // No ~/.molio/venv or ~/.local/bin created → PATH unchanged
+      const def = makeDef({ id: 'generic' });
+      const env = buildSpawnEnv(def, { PATH: '/usr/bin' });
+
+      assert.equal(env['PATH'], '/usr/bin');
+    });
+
+    it('should not duplicate dirs already on PATH', { skip: isWindows ? 'Unix only' : undefined }, () => {
+      const venvBin = path.join(tmpHome, '.molio', 'venv', 'bin');
+      fs.mkdirSync(venvBin, { recursive: true });
+
+      const def = makeDef({ id: 'generic' });
+      const env = buildSpawnEnv(def, { PATH: `${venvBin}:/usr/bin` });
+
+      // venvBin should appear only once
+      const occurrences = (env['PATH'] ?? '').split(':').filter((p) => p === venvBin).length;
+      assert.equal(occurrences, 1, `venv bin should appear once, got: ${env['PATH']}`);
+    });
+  });
+
   describe('case-insensitive base URL detection', () => {
     it('should detect lowercase base URL key', () => {
       const def = makeDef({ id: 'claude' });

@@ -11,6 +11,7 @@ import { SettingsPage } from './components/settings/SettingsPage';
 import { HistoryPage } from './components/history/HistoryPage';
 import { GraphPage } from './components/graph/GraphPage';
 import { UpdateNotification } from './components/UpdateNotification';
+import { PreloadToast } from './components/PreloadToast';
 import { LanguageProvider } from './i18n/LanguageProvider';
 import type { Locale } from './i18n';
 import { api } from './api/client';
@@ -224,6 +225,7 @@ export default function App() {
           </Routes>
         </div>
         <UpdateNotification />
+        <PreloadToast />
       </div>
     </LanguageProvider>
   );

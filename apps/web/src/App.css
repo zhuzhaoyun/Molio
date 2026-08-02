@@ -35,3 +35,329 @@
   font-size: 13px;
   color: var(--text-muted);
 }
+
+/* ─── Preload Toast ──────────────────────────────────────────────────────── */
+
+.preload-toast {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 50;
+  width: 380px;
+  max-width: calc(100vw - 32px);
+  padding: 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-lg);
+  animation: preload-toast-in 200ms ease;
+  color: var(--text);
+}
+
+@keyframes preload-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.preload-toast__close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 4px;
+}
+.preload-toast__close:hover {
+  color: var(--text);
+}
+
+/* Minimize control inside the downloading subtitle — same row as the hint.
+   Styled as a quiet text button (hover chip), NOT an underlined link, so it
+   reads as an action rather than navigation. */
+.preload-toast__minimize-link {
+  margin-left: 6px;
+  background: none;
+  border: none;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--accent);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+.preload-toast__minimize-link:hover {
+  background: var(--accent-tint);
+  color: var(--accent-hover);
+}
+
+/* Minimized pill — a compact floating chip shown while a download runs in
+   the background. Clicking it re-expands the full progress card. Lives at
+   the same bottom-right anchor as the expanded toast. */
+.preload-toast__pill {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 50;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100vw - 32px);
+  padding: 8px 14px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+  color: var(--text);
+  font-size: 12.5px;
+  cursor: pointer;
+  animation: preload-toast-in 200ms ease;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+.preload-toast__pill:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-lg);
+}
+.preload-toast__pill-label {
+  color: var(--text-muted);
+}
+.preload-toast__pill-pct {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-strong);
+}
+/* Tiny spinning dot — indicates active download without a full progress bar. */
+.preload-toast__pill-spinner {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  animation: preload-spinner 700ms linear infinite;
+  flex-shrink: 0;
+}
+@keyframes preload-spinner {
+  to { transform: rotate(360deg); }
+}
+
+/* Inner content cross-fades on every mode change (prompt → downloading →
+   done → paused) so state swaps aren't a hard cut — keyed remount in the
+   component re-triggers this. The completion moment therefore arrives with
+   a soft settle instead of appearing flat. */
+.preload-toast__body {
+  animation: preload-view-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes preload-view-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.99); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .preload-toast,
+  .preload-toast__pill,
+  .preload-toast__body,
+  .preload-toast__pill-spinner,
+  .preload-toast__progress-fill--active::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+.preload-toast__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+  margin: 0 0 2px;
+}
+.preload-toast__title--done {
+  color: var(--green);
+  /* One-shot settle so the completion payoff lands with a gentle emphasis
+     rather than reading as the same weight as a plain status line. */
+  animation: preload-done-pop 360ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes preload-done-pop {
+  0%   { transform: scale(0.92); opacity: 0.4; }
+  60%  { transform: scale(1.03); }
+  100% { transform: scale(1); opacity: 1; }
+}
+.preload-toast__title--error {
+  color: var(--red);
+}
+
+.preload-toast__subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0 0 10px;
+}
+
+/* Skill cards */
+.preload-toast__cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+.preload-toast__card {
+  padding: 10px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+}
+.preload-toast__card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.preload-toast__card-name {
+  /* Mono encodes that docling / Remotion are package / CLI names — the
+     subject of this toast is installing developer tools, so a technical
+     artifact face gives the name a distinct identity vs the prose copy. */
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: -0.01em;
+  color: var(--text-strong);
+}
+.preload-toast__card-size {
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.preload-toast__card-scenario {
+  font-size: 12.5px;
+  color: var(--text);
+  margin: 0 0 4px;
+  line-height: 1.45;
+}
+.preload-toast__card-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 0;
+  line-height: 1.5;
+}
+.preload-toast__card-dot {
+  margin: 0 6px;
+  opacity: 0.5;
+}
+
+.preload-toast__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+/* Scope under .preload-toast so we beat `.rt-btn:hover:not(:disabled)`
+   (specificity 0,2,1) with structure instead of an !important hammer. */
+.preload-toast .preload-toast__primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.preload-toast .preload-toast__primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+/* Downloading */
+.preload-toast__progress-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.preload-toast__progress-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.preload-toast__progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+}
+.preload-toast__progress-pct {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.preload-toast__progress-bar {
+  height: 6px;
+  background: var(--bg-subtle);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.preload-toast__progress-fill {
+  position: relative;
+  height: 100%;
+  background: var(--accent);
+  border-radius: var(--radius-sm);
+  transition: width 300ms ease;
+  overflow: hidden;
+}
+/* Signature motion: a soft diagonal sheen sweeping across the fill conveys
+   "actively transferring" — the one place a download toast earns animation,
+   because progress-over-time is its entire reason for existing. Only the
+   active (downloading) variant sweeps; a paused bar stays still. */
+.preload-toast__progress-fill--active::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    rgba(255, 255, 255, 0.35) 50%,
+    transparent 80%
+  );
+  transform: translateX(-100%);
+  animation: preload-shimmer 1.6s ease-in-out infinite;
+}
+@keyframes preload-shimmer {
+  to { transform: translateX(100%); }
+}
+.preload-toast__progress-msg {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Done */
+.preload-toast__done-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+/* Transparency line: where a tool actually lives / what stop will clean. Kept
+   quiet (muted, small, breakable paths) so it informs without competing. */
+.preload-toast__elsewhere {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  margin: 0 0 10px;
+  word-break: break-all;
+}
+
+/* Error */
+.preload-toast__error-msg {
+  font-size: 13px;
+  color: var(--red);
+  margin: 0 0 8px;
+}

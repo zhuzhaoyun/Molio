@@ -23,6 +23,8 @@ import { WeixinService } from './core/weixin/service.js';
 import { FeishuService } from './core/feishu/service.js';
 import { ConversationService } from './core/conversations/service.js';
 import { VaultWatcher } from './core/vault-watcher.js';
+import { createPreloadManager } from './core/preload-manager.js';
+import { preloadRoutes } from './routes/preload.js';
 import { maybeCreateDefaultVault } from './core/default-vault.js';
 
 export const runManager = new RunManager();
@@ -31,6 +33,7 @@ export const conversationService = new ConversationService(db);
 export const weixinService = new WeixinService(runManager, conversationService, db);
 export const feishuService = new FeishuService(runManager, conversationService, db);
 export const vaultWatcher = new VaultWatcher(db);
+export const preloadManager = createPreloadManager();
 
 export const app = new Hono();
 
@@ -97,6 +100,7 @@ app.route('/api/proxy', proxyRoutes());
 app.route('/api/graph', graphRoutes(db));
 app.route('/api/weixin', weixinRoutes(weixinService));
 app.route('/api/feishu', feishuRoutes(feishuService));
+app.route('/api/preload', preloadRoutes(preloadManager));
 app.route('/api/maintenance', maintenanceRoutes(db));
 
 void weixinService.start();
@@ -188,6 +192,9 @@ function gracefulShutdown(): void {
   weixinService.stop();
   void vaultWatcher.stop();
   runManager.cancelAll();
+  // Kill any in-progress preload subprocess trees so we don't orphan detached
+  // pip/npm children (they'd keep downloading after the daemon is gone).
+  preloadManager.stopAll();
   // Feishu stop() is async (WSClient teardown); chain DB close + exit AFTER
   // it resolves so we don't close the SQLite handle while a WS callback is
   // mid-write. WeixinService.stop() is still sync (polling-based, no async

@@ -53,6 +53,20 @@ pnpm package        # 完整打包
 **首次启动自动建默认知识库**（`apps/daemon/src/core/default-vault.ts` 的 `maybeCreateDefaultVault`）：vault 表为空且检测到 `/vaults` 挂载（或 `MOLIO_DEFAULT_VAULT_PATH`）时自动建「我的知识库」并选中；已有任意 vault 时 no-op。
 
 > ⚠️ **维护提醒**：`install.sh` 内嵌了 `docker-compose.yml` 和 `.env.example` 的 heredoc 副本。修改这两个文件后，**必须同步更新 `install.sh` 中对应内容**，否则一键安装会释放出旧版配置。
+>
+> ⚠️ **环境依赖安装原则**：用户是非技术人群，`install.sh` 中的 Docker / Compose 等依赖自动安装必须保持**多级回退**（官方安装脚本 → 发行版软件包 → 静态二进制），绝不能假设目标机配置了某个第三方软件源（如发行版 `docker.io` 包环境没有 Docker 官方 apt 源，`docker-compose-plugin` 包不存在，Debian/Ubuntu 自带包叫 `docker-compose-v2`）。见 `.learnings/ERRORS.md` ERR-20260730-001。
+>
+> ⚠️ **信创/政企内网原则**：麒麟、统信 UOS 等信创机器多为**内网或白名单网络**——GitHub、ghfast 等境外/第三方地址普遍不通，但**阿里云域名（`*.aliyun.com` / `*.aliyuncs.com`）通常放行**。`install.sh` 补装依赖的下载源优先级必须是：**阿里云 docker-ce 镜像源（`mirrors.aliyun.com/docker-ce`，官方 deb 包 + `dpkg -x` 解包，版本自动维护）→ 自家 OSS 托管二进制 → ghfast/GitHub 兜底**。永远不要把境外源作为唯一路径。
+>
+> **OSS 依赖文件**（`oss://molio-releases/deps/`，手动上传/更新，CI 不管）：
+>
+> | 文件 | 内容 | 更新方式 |
+> |---|---|---|
+> | `deps/docker-compose-linux-x86_64` | Docker Compose v2 静态二进制 (amd64) | 从 https://github.com/docker/compose/releases 下载对应架构文件，OSS 控制台覆盖上传 |
+> | `deps/docker-compose-linux-aarch64` | 同上 (arm64) | 同上 |
+> | `deps/docker-compose-linux-armv7` | 同上 (armv7) | 同上 |
+>
+> 同理，`script/install.sh` 也是手动上传的——**改了 `install.sh` 必须同步上传 OSS**，否则客户一键命令装的还是旧版。
 
 ## Chrome 扩展同步打开协议
 
