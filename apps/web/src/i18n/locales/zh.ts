@@ -255,6 +255,10 @@ const zh: Record<string, string> = {
   'history.rename': '重命名',
   'history.renameFailed': '重命名失败，请重试',
   'history.renameEmpty': '标题不能为空',
+  'history.renameDialogTitle': '重命名会话',
+  'history.titleLabel': '标题',
+  'history.confirm': '确认',
+  'history.cancel': '取消',
   'history.pinFailed': '操作失败，请重试',
 
   // ── Settings ──

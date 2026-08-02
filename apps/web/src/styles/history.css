@@ -678,14 +678,5 @@
 .history-row .overflow-menu-item--danger { color: var(--red); }
 .history-row .overflow-menu-item--danger:hover:not(:disabled) { background: var(--red-bg); box-shadow: none; }
 
-/* ── Inline rename edit ── */
-.history-row__title-input {
-  flex: 1 1 auto; min-width: 0; height: 30px;
-  padding: 0 8px; border: 1px solid var(--border); border-radius: var(--radius-sm);
-  background: var(--bg-panel); color: var(--text-strong);
-  font: inherit; font-size: 15px; font-weight: 600; line-height: 1.35;
-  transition: border-color 120ms ease, box-shadow 120ms ease;
-}
-.history-row__title-input:focus { outline: none; border-color: var(--selected); box-shadow: 0 0 0 3px var(--selected-soft); }
-.history-row__title-input::placeholder { color: var(--text-faint); font-weight: 400; }
-.history-row__title-error { color: var(--red); font-size: 12px; margin-top: 2px; }
+/* ── Rename dialog (modal) ── */
+.history-rename-error { color: var(--red); font-size: 12px; margin-top: 6px; display: block; }

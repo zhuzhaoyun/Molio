@@ -17,7 +17,7 @@ export function HistoryPage({ onOpenConversation }: Props) {
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
   const deleteErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [pinnedCollapsed, setPinnedCollapsed] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [renameTarget, setRenameTarget] = useState<{ id: string; title: string | null } | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const actionErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -51,20 +51,23 @@ export function HistoryPage({ onOpenConversation }: Props) {
     }
   };
 
-  // 先卸载输入框（setEditingId(null)），防止 Enter 触发的 blur 二次提交。
-  const commitRename = async (id: string, raw: string) => {
-    setEditingId(null);
-    const title = raw.trim();
-    if (!title) return; // 空标题被输入框拦截，这里只作兜底
-    updateConversationLocal(id, { title });
+  const confirmRename = async (id: string, title: string) => {
+    const trimmed = title.trim();
+    if (!trimmed) return; // 空标题在弹窗内处理（保持弹窗打开）
+    setRenameTarget(null); // 关闭弹窗
+    updateConversationLocal(id, { title: trimmed });
     try {
-      await api.updateConversation(id, { title });
+      await api.updateConversation(id, { title: trimmed });
     } catch {
       refresh();
       setActionError(t('history.renameFailed'));
       if (actionErrorTimer.current) clearTimeout(actionErrorTimer.current);
       actionErrorTimer.current = setTimeout(() => setActionError(null), 3000);
     }
+  };
+
+  const startRename = (item: ConversationHistoryItem) => {
+    setRenameTarget({ id: item.conversation.id, title: item.conversation.title });
   };
 
   const togglePin = async (id: string, currentlyPinned: boolean) => {
@@ -151,10 +154,7 @@ export function HistoryPage({ onOpenConversation }: Props) {
             onDeleteRequest={setConfirmingDeleteId}
             onDeleteCancel={() => setConfirmingDeleteId(null)}
             onDeleteConfirm={executeDelete}
-            editingId={editingId}
-            onStartEdit={setEditingId}
-            onCommitEdit={commitRename}
-            onCancelEdit={() => setEditingId(null)}
+            onStartRename={startRename}
             onTogglePin={togglePin}
             t={t}
           />
@@ -194,10 +194,7 @@ export function HistoryPage({ onOpenConversation }: Props) {
             onDeleteRequest={setConfirmingDeleteId}
             onDeleteCancel={() => setConfirmingDeleteId(null)}
             onDeleteConfirm={executeDelete}
-            editingId={editingId}
-            onStartEdit={setEditingId}
-            onCommitEdit={commitRename}
-            onCancelEdit={() => setEditingId(null)}
+            onStartRename={startRename}
             onTogglePin={togglePin}
             t={t}
           />
@@ -209,21 +206,20 @@ export function HistoryPage({ onOpenConversation }: Props) {
           </button>
         )}
       </main>
+
+      <RenameDialog target={renameTarget} onClose={() => setRenameTarget(null)} onConfirm={confirmRename} t={t} />
     </div>
   );
 }
 
-function HistoryList({ items, onOpenConversation, confirmingDeleteId, onDeleteRequest, onDeleteCancel, onDeleteConfirm, editingId, onStartEdit, onCommitEdit, onCancelEdit, onTogglePin, t }: {
+function HistoryList({ items, onOpenConversation, confirmingDeleteId, onDeleteRequest, onDeleteCancel, onDeleteConfirm, onStartRename, onTogglePin, t }: {
   items: ConversationHistoryItem[];
   onOpenConversation: (id: string) => void;
   confirmingDeleteId: string | null;
   onDeleteRequest: (id: string) => void;
   onDeleteCancel: () => void;
   onDeleteConfirm: (id: string) => void;
-  editingId: string | null;
-  onStartEdit: (id: string) => void;
-  onCommitEdit: (id: string, title: string) => void;
-  onCancelEdit: () => void;
+  onStartRename: (item: ConversationHistoryItem) => void;
   onTogglePin: (id: string, currentlyPinned: boolean) => void;
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
@@ -267,10 +263,7 @@ function HistoryList({ items, onOpenConversation, confirmingDeleteId, onDeleteRe
                     onDeleteRequest={onDeleteRequest}
                     onDeleteCancel={onDeleteCancel}
                     onDeleteConfirm={onDeleteConfirm}
-                    editingId={editingId}
-                    onStartEdit={onStartEdit}
-                    onCommitEdit={onCommitEdit}
-                    onCancelEdit={onCancelEdit}
+                    onStartRename={onStartRename}
                     onTogglePin={onTogglePin}
                     t={t}
                   />
@@ -284,29 +277,19 @@ function HistoryList({ items, onOpenConversation, confirmingDeleteId, onDeleteRe
   );
 }
 
-function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDeleteCancel, onDeleteConfirm, editingId, onStartEdit, onCommitEdit, onCancelEdit, onTogglePin, t }: {
+function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDeleteCancel, onDeleteConfirm, onStartRename, onTogglePin, t }: {
   item: ConversationHistoryItem;
   onOpen: () => void;
   confirmingDeleteId: string | null;
   onDeleteRequest: (id: string) => void;
   onDeleteCancel: () => void;
   onDeleteConfirm: (id: string) => void;
-  editingId: string | null;
-  onStartEdit: (id: string) => void;
-  onCommitEdit: (id: string, title: string) => void;
-  onCancelEdit: () => void;
+  onStartRename: (item: ConversationHistoryItem) => void;
   onTogglePin: (id: string, currentlyPinned: boolean) => void;
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
   const { conversation, lastMessage, vaultName, vaultExists, vaultId } = item;
   const isConfirming = confirmingDeleteId === conversation.id;
-  const isEditing = editingId === conversation.id;
-  const [titleError, setTitleError] = useState(false);
-
-  // 空标题提示是瞬时的：每次进入编辑态都重置，避免上一次会话残留的提示在新会话中再次出现。
-  useEffect(() => {
-    if (isEditing) setTitleError(false);
-  }, [isEditing]);
 
   // Vault indicator:
   // 1. Alive vault          → name badge (gray)
@@ -333,7 +316,7 @@ function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDelet
       icon: <RenameIcon />,
       label: t('history.rename'),
       testid: 'history-row-rename',
-      onClick: () => onStartEdit(conversation.id),
+      onClick: () => onStartRename(item),
     },
     {
       icon: <TrashIcon />,
@@ -370,85 +353,88 @@ function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDelet
 
   return (
     <div className="history-row">
-      {isEditing ? (
-        <div className="history-row__main">
-          <span className="history-row__time">{formatTime(conversation.updatedAt)}</span>
-          <span className="history-row__body">
-            <span className="history-row__title-line">
-              <input
-                className="history-row__title-input"
-                data-testid="history-row-title-input"
-                defaultValue={conversation.title ?? ''}
-                placeholder={t('history.untitled')}
-                autoFocus
-                onChange={() => titleError && setTitleError(false)}
-                onKeyDown={(e) => {
-                  const v = (e.target as HTMLInputElement).value.trim();
-                  if (e.key === 'Enter') {
-                    if (v) onCommitEdit(conversation.id, v);
-                    else setTitleError(true);
-                  } else if (e.key === 'Escape') {
-                    onCancelEdit();
-                  }
-                }}
-                onBlur={(e) => {
-                  const v = e.target.value.trim();
-                  if (v) onCommitEdit(conversation.id, v);
-                  else setTitleError(true);
-                }}
-              />
-              {vaultBadgeCls && (
-                <span className={vaultBadgeCls} title={vaultDeleted ? t('history.vaultDeleted') : vaultLabel}>
-                  {vaultLabel}
-                </span>
-              )}
-              {showChannelBadge && (
-                <span className={`history-source-badge history-source-badge--${channelType}`}>
-                  {sourceLabel(t, channelType!)}
-                </span>
-              )}
-            </span>
-            {titleError && (
-              <span className="history-row__title-error" data-testid="history-row-title-error">
-                {t('history.renameEmpty')}
+      <button type="button" className="history-row__main" onClick={onOpen}>
+        <span className="history-row__time">{formatTime(conversation.updatedAt)}</span>
+        <span className="history-row__body">
+          <span className="history-row__title-line">
+            <span className="history-row__title">{conversation.title || t('history.untitled')}</span>
+            {vaultBadgeCls && (
+              <span className={vaultBadgeCls} title={vaultDeleted ? t('history.vaultDeleted') : vaultLabel}>
+                {vaultLabel}
               </span>
             )}
-            <span className="history-row__summary">{lastMessage?.content || t('history.noMessage')}</span>
+            {showChannelBadge && (
+              <span className={`history-source-badge history-source-badge--${channelType}`}>
+                {sourceLabel(t, channelType!)}
+              </span>
+            )}
           </span>
-        </div>
-      ) : (
-        <button type="button" className="history-row__main" onClick={onOpen}>
-          <span className="history-row__time">{formatTime(conversation.updatedAt)}</span>
-          <span className="history-row__body">
-            <span className="history-row__title-line">
-              <span className="history-row__title">{conversation.title || t('history.untitled')}</span>
-              {vaultBadgeCls && (
-                <span className={vaultBadgeCls} title={vaultDeleted ? t('history.vaultDeleted') : vaultLabel}>
-                  {vaultLabel}
-                </span>
-              )}
-              {showChannelBadge && (
-                <span className={`history-source-badge history-source-badge--${channelType}`}>
-                  {sourceLabel(t, channelType!)}
-                </span>
-              )}
-            </span>
-            <span className="history-row__summary">{lastMessage?.content || t('history.noMessage')}</span>
-          </span>
-        </button>
-      )}
-      {!isEditing && (
-        <OverflowMenu
-          triggerTestid="history-row-overflow"
-          triggerLabel={t('history.more')}
-          items={overflowItems}
-        />
-      )}
+          <span className="history-row__summary">{lastMessage?.content || t('history.noMessage')}</span>
+        </span>
+      </button>
+      <OverflowMenu
+        triggerTestid="history-row-overflow"
+        triggerLabel={t('history.more')}
+        items={overflowItems}
+      />
     </div>
   );
 }
 
-function PinnedGroup({ items, collapsed, onToggleCollapse, onOpenConversation, confirmingDeleteId, onDeleteRequest, onDeleteCancel, onDeleteConfirm, editingId, onStartEdit, onCommitEdit, onCancelEdit, onTogglePin, t }: {
+function RenameDialog({ target, onClose, onConfirm, t }: {
+  target: { id: string; title: string | null } | null;
+  onClose: () => void;
+  onConfirm: (id: string, title: string) => void;
+  t: (key: string, params?: Record<string, string | number>) => string;
+}) {
+  const [value, setValue] = useState('');
+  const [emptyError, setEmptyError] = useState(false);
+  // Reset when the dialog opens for a new target.
+  useEffect(() => {
+    if (target) { setValue(target.title ?? ''); setEmptyError(false); }
+  }, [target]);
+  if (!target) return null;
+  return (
+    <div className="kb-overlay show" data-testid="history-rename-dialog" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="kb-modal" style={{ width: 420 }}>
+        <div className="kb-modal-header">
+          <h2>{t('history.renameDialogTitle')}</h2>
+          <button className="kb-modal-close" onClick={onClose}>&times;</button>
+        </div>
+        <div className="kb-modal-body">
+          <div className="kb-form-field">
+            <label htmlFor="history-rename-input">{t('history.titleLabel')}</label>
+            <input
+              id="history-rename-input"
+              data-testid="history-rename-input"
+              type="text"
+              value={value}
+              placeholder={t('history.untitled')}
+              autoFocus
+              onChange={(e) => { setValue(e.target.value); if (emptyError) setEmptyError(false); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') submit(); else if (e.key === 'Escape') onClose(); }}
+            />
+            {emptyError && (
+              <span className="history-rename-error" data-testid="history-rename-error">{t('history.renameEmpty')}</span>
+            )}
+          </div>
+        </div>
+        <div className="kb-modal-footer">
+          <button className="kb-btn kb-btn-ghost" data-testid="history-rename-cancel" onClick={onClose}>{t('history.cancel')}</button>
+          <button className="kb-btn kb-btn-primary" data-testid="history-rename-confirm" onClick={submit}>{t('history.confirm')}</button>
+        </div>
+      </div>
+    </div>
+  );
+  function submit() {
+    const v = value.trim();
+    if (!v) { setEmptyError(true); return; }
+    if (!target) return;
+    onConfirm(target.id, v);
+  }
+}
+
+function PinnedGroup({ items, collapsed, onToggleCollapse, onOpenConversation, confirmingDeleteId, onDeleteRequest, onDeleteCancel, onDeleteConfirm, onStartRename, onTogglePin, t }: {
   items: ConversationHistoryItem[];
   collapsed: boolean;
   onToggleCollapse: () => void;
@@ -457,10 +443,7 @@ function PinnedGroup({ items, collapsed, onToggleCollapse, onOpenConversation, c
   onDeleteRequest: (id: string) => void;
   onDeleteCancel: () => void;
   onDeleteConfirm: (id: string) => void;
-  editingId: string | null;
-  onStartEdit: (id: string) => void;
-  onCommitEdit: (id: string, title: string) => void;
-  onCancelEdit: () => void;
+  onStartRename: (item: ConversationHistoryItem) => void;
   onTogglePin: (id: string, currentlyPinned: boolean) => void;
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
@@ -493,10 +476,7 @@ function PinnedGroup({ items, collapsed, onToggleCollapse, onOpenConversation, c
               onDeleteRequest={onDeleteRequest}
               onDeleteCancel={onDeleteCancel}
               onDeleteConfirm={onDeleteConfirm}
-              editingId={editingId}
-              onStartEdit={onStartEdit}
-              onCommitEdit={onCommitEdit}
-              onCancelEdit={onCancelEdit}
+              onStartRename={onStartRename}
               onTogglePin={onTogglePin}
               t={t}
             />
