@@ -16,6 +16,32 @@ const MAX_LOG_SIZE = 1024 * 1024; // 1 MB
 let customLogDir = null;
 let logDir = null;
 let logFile = null;
+/** Tracked size of the live log file — avoids a statSync per write. */
+let currentSize = 0;
+/** Cached console-mirror decision (null = not resolved yet). */
+let mirrorConsole = null;
+
+/**
+ * Mirror log lines to the console ONLY in development. In packaged builds
+ * the main-process console goes nowhere useful, and error-level lines get
+ * captured by the ARMS consoleError collector — flooding 异常统计 with
+ * routine daemon stderr forwards. File logging (with rotation) remains the
+ * single source of truth in production.
+ *
+ * Plain Node.js (tests, scripts) has no electron — fall back to mirroring
+ * so the dev/test experience keeps console output.
+ */
+function shouldMirrorConsole() {
+  if (mirrorConsole !== null) return mirrorConsole;
+  try {
+    const require = createRequire(import.meta.url);
+    const { app } = require('electron');
+    mirrorConsole = !app.isPackaged;
+  } catch {
+    mirrorConsole = true;
+  }
+  return mirrorConsole;
+}
 
 /**
  * Override the log directory (for testing or custom deployments).
@@ -49,12 +75,20 @@ function ensureLogPath() {
 
   // Rotate if existing log is too large
   try {
-    if (existsSync(logFile) && statSync(logFile).size > MAX_LOG_SIZE) {
-      const rotated = logFile + '.old';
-      renameSync(logFile, rotated);
+    if (existsSync(logFile)) {
+      const size = statSync(logFile).size;
+      if (size > MAX_LOG_SIZE) {
+        renameSync(logFile, logFile + '.old');
+        currentSize = 0;
+      } else {
+        currentSize = size;
+      }
+    } else {
+      currentSize = 0;
     }
   } catch {
     // Ignore rotation errors — just keep appending
+    currentSize = 0;
   }
 }
 
@@ -68,13 +102,24 @@ export function log(level, tag, message) {
   const ts = new Date().toISOString();
   const line = `[${ts}] [${level.toUpperCase()}] [${tag}] ${message}\n`;
 
-  // Always mirror to console for dev experience
-  const consoleFn = level === 'error' ? console.error : console.log;
-  consoleFn(line.trimEnd());
+  // Console mirror: dev only (see shouldMirrorConsole). Production keeps
+  // everything in the rotated log file.
+  if (shouldMirrorConsole()) {
+    const consoleFn = level === 'error' ? console.error : console.log;
+    consoleFn(line.trimEnd());
+  }
 
   try {
     ensureLogPath();
+    // In-session rotation: the startup-only check let a long-running session
+    // (a day of daemon log forwards) grow the file unbounded. Track size in
+    // memory — no extra statSync per write.
+    if (currentSize > MAX_LOG_SIZE) {
+      renameSync(logFile, logFile + '.old');
+      currentSize = 0;
+    }
     appendFileSync(logFile, line, 'utf-8');
+    currentSize += Buffer.byteLength(line, 'utf-8');
   } catch {
     // File logging failure must never crash the app
   }
@@ -94,4 +139,6 @@ export function _reset() {
   customLogDir = null;
   logDir = null;
   logFile = null;
+  currentSize = 0;
+  mirrorConsole = null;
 }

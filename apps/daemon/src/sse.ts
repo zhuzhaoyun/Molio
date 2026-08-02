@@ -29,6 +29,32 @@ export function createSSEStream(
   let unsub: (() => void) | null = null;
   let pingInterval: ReturnType<typeof setInterval> | null = null;
   let enqueueCount = 0;
+  // Backpressure: counts consecutive ping ticks where the consumer hasn't
+  // drained the stream (desiredSize <= 0 — the client stopped reading, e.g.
+  // a minimized/throttled renderer while a run keeps emitting). Previously
+  // pings and live events were enqueued unconditionally, so a stalled client
+  // made the daemon buffer the entire run's output in memory. After
+  // MAX_STALLED_PINGS (≈60s at the 15s ping interval) we close the stream;
+  // the client's EventSource auto-reconnects / watchdog re-subscribes with
+  // ?after=<lastSeq> and the daemon replays buffered events — no data loss.
+  // Test hook: MOLIO_TEST_SSE_STALL_TICKS lowers the tick count.
+  const maxStalledTicks = Number(process.env.MOLIO_TEST_SSE_STALL_TICKS) || 4;
+  let stalledTicks = 0;
+
+  /** Whether the consumer is keeping up (safe to enqueue). */
+  const consumerReady = (controller: ReadableStreamDefaultController<Uint8Array>): boolean =>
+    controller.desiredSize !== null && controller.desiredSize > 0;
+
+  /** Stop the subscription + ping timer. Idempotent — safe from cancel,
+   * cleanup, AND the stall-close path. */
+  const teardown = (): void => {
+    unsub?.();
+    unsub = null;
+    if (pingInterval) {
+      clearInterval(pingInterval);
+      pingInterval = null;
+    }
+  };
 
   // Wrap controller.enqueue so the fault-injection switch can simulate a dead
   // stream mid-connection. Throwing here is caught by the call-site try/catch,
@@ -71,6 +97,11 @@ export function createSSEStream(
 
       // Phase 3: Subscribe to live events
       unsub = runManager.onEvent(runId, (event: AgentEvent) => {
+        // Backpressure: skip enqueueing while the consumer is stalled. The
+        // event stays in run.events (cap 2000) and is replayed when the
+        // client reconnects — either via its own watchdog or the stall-close
+        // below — so skipping here loses nothing.
+        if (!consumerReady(controller)) return;
         const lastId = runManager.getLastEventId(runId);
         const envelope = { seq: lastId, runId, event };
         const frame = `id: ${lastId}\ndata: ${JSON.stringify(envelope)}\n\n`;
@@ -93,6 +124,21 @@ export function createSSEStream(
       // exercise the ping path without sleeping 15s. Production never sets it.
       const pingMs = Number(process.env.MOLIO_TEST_SSE_PING_MS) || 15_000;
       pingInterval = setInterval(() => {
+        if (!consumerReady(controller)) {
+          stalledTicks++;
+          if (stalledTicks >= maxStalledTicks) {
+            dbgLog(
+              `stream stalled ${stalledTicks} ticks — client not reading, closing ` +
+              `(client reconnect replays buffered events) runId=${runId}`,
+            );
+            teardown();
+            try { controller.close(); } catch { /* already closed */ }
+          }
+          // A keepalive ping is worthless to a consumer that isn't reading —
+          // never buffer it.
+          return;
+        }
+        stalledTicks = 0;
         try {
           safeEnqueue(controller, encoder.encode('data: ping\n\n'));
         } catch {
@@ -104,12 +150,7 @@ export function createSSEStream(
     },
     cancel() {
       dbgLog(`stream cancel runId=${runId}`);
-      unsub?.();
-      unsub = null;
-      if (pingInterval) {
-        clearInterval(pingInterval);
-        pingInterval = null;
-      }
+      teardown();
     },
   });
 
@@ -117,12 +158,7 @@ export function createSSEStream(
     stream,
     cleanup: () => {
       dbgLog(`stream cleanup runId=${runId}`);
-      unsub?.();
-      unsub = null;
-      if (pingInterval) {
-        clearInterval(pingInterval);
-        pingInterval = null;
-      }
+      teardown();
     },
   };
 }
