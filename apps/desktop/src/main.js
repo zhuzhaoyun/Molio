@@ -268,12 +268,25 @@ function loadApp() {
   if (mainWindow && !mainWindow.isDestroyed()) {
     log('info', 'main', 'daemon ready — loading app');
     mainWindow.loadURL('http://localhost:3100');
+    const wc = mainWindow.webContents;
     // Show the window once the app has rendered. This is the first (and
     // only) navigation for this webContents in production, so the ARMS
     // Browser SDK injection fires on the real app — not a throwaway splash.
-    mainWindow.webContents.once('did-finish-load', () => {
+    const onFinish = () => {
+      wc.removeListener('did-fail-load', onFail);
       mainWindow?.show();
-    });
+    };
+    // If the load fails — e.g. the daemon crashes between the readiness check
+    // and the page actually loading, or a transient network error — Electron
+    // fires did-fail-load instead of did-finish-load. Without this handler the
+    // window would stay hidden forever with no feedback (the app looks dead).
+    const onFail = (_event, code, desc) => {
+      wc.removeListener('did-finish-load', onFinish);
+      log('error', 'main', `app load failed: code=${code} desc=${desc}`);
+      showDaemonErrorPage();
+    };
+    wc.once('did-finish-load', onFinish);
+    wc.once('did-fail-load', onFail);
   }
 }
 

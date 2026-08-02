@@ -338,3 +338,31 @@ describe('main.js: graceful daemon shutdown to preserve last assistant reply', (
     );
   });
 });
+
+describe('main.js: loadApp must handle did-fail-load so a failed load never leaves a dead hidden window', () => {
+  // Regression: loadApp() only listened for did-finish-load before showing the
+  // window. If loadURL fails (daemon crashes between the readiness check and
+  // the page loading, or a transient network error), Electron fires
+  // did-fail-load instead — so the window stayed hidden forever with no
+  // feedback and the app appeared completely dead.
+  function loadAppBody() {
+    const fnStart = mainJs.indexOf('function loadApp()');
+    assert.ok(fnStart !== -1, 'loadApp function must exist');
+    const fnEnd = mainJs.indexOf('\nfunction ', fnStart + 1);
+    return mainJs.slice(fnStart, fnEnd > fnStart ? fnEnd : fnStart + 1000);
+  }
+
+  it('loadApp should register a did-fail-load handler', () => {
+    assert.ok(
+      loadAppBody().includes('did-fail-load'),
+      'loadApp must handle did-fail-load — otherwise a failed loadURL leaves the window hidden forever'
+    );
+  });
+
+  it('did-fail-load handler should surface the daemon error page', () => {
+    assert.ok(
+      loadAppBody().includes('showDaemonErrorPage'),
+      'on load failure loadApp must show the daemon error page so the user gets feedback instead of a dead window'
+    );
+  });
+});
