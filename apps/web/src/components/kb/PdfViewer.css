@@ -126,3 +126,41 @@
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.02em;
 }
+
+.pdf-searchbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+
+.pdf-searchbar-input {
+  width: 220px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.pdf-searchbar-input:focus { border-color: var(--accent); }
+
+.pdf-search-count {
+  min-width: 48px;
+  text-align: center;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* 文本层搜索高亮（span 透明，仅高亮背景可见） */
+.pdf-search-hl { background: var(--selected-soft); }
+.pdf-search-hl-current { background: var(--accent-tint); outline: 1px solid var(--accent); outline-offset: -1px; }

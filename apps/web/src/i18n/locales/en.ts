@@ -378,6 +378,12 @@ const en: Record<string, string> = {
   'kb.pdf.loadFailed': 'Failed to load the PDF.',
   'kb.pdf.retry': 'Retry',
   'kb.pdf.pageIndicator': 'Page {current} / {total} · {percent}%',
+  'kb.pdf.search': 'Search',
+  'kb.pdf.searchPlaceholder': 'Search in PDF',
+  'kb.pdf.prevMatch': 'Previous match',
+  'kb.pdf.nextMatch': 'Next match',
+  'kb.pdf.searching': 'Searching…',
+  'kb.pdf.noMatches': 'No matches',
 
   // ── Frontmatter ──
   'kb.frontmatter.title': 'Title',

@@ -378,6 +378,12 @@ const zh: Record<string, string> = {
   'kb.pdf.loadFailed': 'PDF 加载失败。',
   'kb.pdf.retry': '重试',
   'kb.pdf.pageIndicator': '第 {current} / {total} 页 · {percent}%',
+  'kb.pdf.search': '搜索',
+  'kb.pdf.searchPlaceholder': '在 PDF 中搜索',
+  'kb.pdf.prevMatch': '上一个匹配',
+  'kb.pdf.nextMatch': '下一个匹配',
+  'kb.pdf.searching': '搜索中…',
+  'kb.pdf.noMatches': '无匹配',
 
   // ── Frontmatter ──
   'kb.frontmatter.title': '标题',

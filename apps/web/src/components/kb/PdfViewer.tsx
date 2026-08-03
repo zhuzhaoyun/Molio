@@ -4,6 +4,9 @@ import {
 } from 'react';
 import { loadPdfjs, pdfCMapOptions, type PDFDocumentProxy } from './pdfjs-setup';
 import { PdfPageView } from './PdfPageView';
+import type { PdfSearchHit } from './PdfPageView';
+import { PdfSearchBar } from './PdfSearchBar';
+import { buildPageText, searchAll, type PdfMatch } from './pdf-search';
 import { useI18n } from '../../i18n';
 import { formatFileSize } from '../../utils/format';
 import './PdfViewer.css';
@@ -16,6 +19,7 @@ export interface PdfViewerHandle {
   fitWidth: () => void;
   fitPage: () => void;
   selectAll: () => void;
+  toggleSearch: () => void;
 }
 
 interface PdfViewerProps {
@@ -64,6 +68,13 @@ export const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
     const [scale, setScale] = useState(1);
     const [baseHeights, setBaseHeights] = useState<number[]>([]); // 各页在 scale=1 下的高度
     const [windowRange, setWindowRange] = useState<[number, number]>([1, 0]);
+
+    const [searchVisible, setSearchVisible] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [searching, setSearching] = useState(false);
+    const [matches, setMatches] = useState<PdfMatch[]>([]);
+    const [activeIndex, setActiveIndex] = useState(-1);
+    const textIndexRef = useRef<Map<number, Awaited<ReturnType<typeof buildPageText>>>>(new Map());
 
     const baseWidth1Ref = useRef(0);
     const baseHeight1Ref = useRef(0);
@@ -155,11 +166,66 @@ export const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
       s.addRange(range);
     }, [currentPage]);
 
+    /** 单页文本索引缓存（跨搜索复用，切换文件时清空）。 */
+    const getTextCached = useCallback(async (n: number) => {
+      const cache = textIndexRef.current;
+      let t = cache.get(n);
+      if (!t) {
+        const page = await doc!.getPage(n);
+        t = await buildPageText(page);
+        cache.set(n, t);
+      }
+      return t;
+    }, [doc]);
+
+    const goToMatch = useCallback((i: number) => {
+      if (!matches.length) return;
+      const idx = ((i % matches.length) + matches.length) % matches.length;
+      setActiveIndex(idx);
+      scrollToPage(matches[idx].pageNum);
+    }, [matches, scrollToPage]);
+
+    // 搜索执行：300ms debounce，空查询清除
+    useEffect(() => {
+      if (!doc) return;
+      const q = searchQuery.trim();
+      if (!q) {
+        setMatches([]); setActiveIndex(-1); setSearching(false);
+        return;
+      }
+      let cancelled = false;
+      const timer = setTimeout(async () => {
+        setSearching(true);
+        try {
+          const found = await searchAll(doc, q, getTextCached);
+          if (cancelled) return;
+          setMatches(found);
+          setActiveIndex(found.length ? 0 : -1);
+          if (found.length) scrollToPage(found[0].pageNum);
+        } finally {
+          if (!cancelled) setSearching(false);
+        }
+      }, 300);
+      return () => { cancelled = true; clearTimeout(timer); };
+    }, [searchQuery, doc, getTextCached, scrollToPage]);
+
+    /** 每页命中（按 itemIndex 分组，跨 item 的匹配由 searchAll 切分好）。 */
+    const hitsByPage = useMemo(() => {
+      const map = new Map<number, PdfSearchHit[]>();
+      matches.forEach((m, i) => {
+        const arr = map.get(m.pageNum) ?? [];
+        arr.push({ itemIndex: m.itemIndex, fromInItem: m.fromInItem, toInItem: m.toInItem, current: i === activeIndex });
+        map.set(m.pageNum, arr);
+      });
+      return map;
+    }, [matches, activeIndex]);
+
     useImperativeHandle(ref, () => ({
       nextPage, prevPage,
       zoomIn: () => zoomBy(ZOOM_STEP),
       zoomOut: () => zoomBy(1 / ZOOM_STEP),
       fitWidth, fitPage, selectAll,
+      toggleSearch: () => setSearchVisible((v) => !v),
     }), [nextPage, prevPage, zoomBy, fitWidth, fitPage, selectAll]);
 
     const handleKeyDown = useCallback((e: KeyboardEvent<HTMLDivElement>) => {
@@ -186,6 +252,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
           if (disposed) { void pdfDoc.loadingTask.destroy(); return; }
           loadedDoc = pdfDoc;
           setDoc(pdfDoc);
+          textIndexRef.current.clear(); // 切换文件：丢弃旧文档的文本索引缓存
           // 并行预取各页基准尺寸（scale=1）——避免大 PDF 串行 getPage 阻塞首屏
           const pageObjs = await Promise.all(
             Array.from({ length: pdfDoc.numPages }, (_, i) => pdfDoc.getPage(i + 1)),
@@ -241,12 +308,12 @@ export const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
             height={baseHeights[n - 1] * scale}
             testId={`pdf-page-${n}`}
           >
-            {inWindow && doc ? <PdfPageView doc={doc} pageNum={n} scale={scale} /> : null}
+            {inWindow && doc ? <PdfPageView doc={doc} pageNum={n} scale={scale} hits={hitsByPage.get(n) ?? []} /> : null}
           </PageSlot>,
         );
       }
       return arr;
-    }, [baseHeights, pageCount, scale, windowRange, doc]);
+    }, [baseHeights, pageCount, scale, windowRange, doc, hitsByPage]);
 
     const readout = t('kb.pdf.pageIndicator', {
       current: String(currentPage).padStart(String(pageCount).length, '0'),
@@ -256,6 +323,18 @@ export const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
 
     return (
       <div className="pdf-viewer" data-testid="pdf-viewer">
+        {status === 'ready' && searchVisible && (
+          <PdfSearchBar
+            query={searchQuery}
+            onQueryChange={setSearchQuery}
+            total={matches.length}
+            activeIndex={activeIndex}
+            searching={searching}
+            onPrev={() => goToMatch(activeIndex - 1)}
+            onNext={() => goToMatch(activeIndex + 1)}
+            onClose={() => { setSearchVisible(false); setMatches([]); setActiveIndex(-1); setSearchQuery(''); }}
+          />
+        )}
         <div
           className="pdf-scroll"
           ref={scrollRef}
