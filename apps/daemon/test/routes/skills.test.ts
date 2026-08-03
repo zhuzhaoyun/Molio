@@ -249,6 +249,27 @@ describe('Skills routes', () => {
     }
   });
 
+  it('GET /:id on a bundled skill returns its shipped SKILL.md body (duplicate prefill)', async () => {
+    // Bundled skills have no library content dir, so the route must fall back to
+    // the shipped app-resources SKILL.md — otherwise "duplicate" prefills empty.
+    // Use a real slug so resolveSkillsSourceDir finds the shipped content.
+    const bundled = createSkill(
+      db,
+      { id: 'docling', name: 'docling', description: '', enabled: true, builtIn: true, kind: 'bundled' },
+      '',
+    );
+    try {
+      const res = await app.request(`/api/skills/${bundled.id}`);
+      assert.equal(res.status, 200);
+      const body = await json(res);
+      const instructions = body['instructions'];
+      assert.equal(typeof instructions, 'string');
+      assert.ok((instructions as string).trim().length > 0, 'bundled body must not be empty');
+    } finally {
+      db.prepare('DELETE FROM skills WHERE id = ?').run(bundled.id);
+    }
+  });
+
   it('core skills are hidden from GET and 404 on by-id routes', async () => {
     const core = createSkill(
       db,

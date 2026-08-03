@@ -32,6 +32,7 @@ import {
 import { afterGlobalSkillMutation, deleteVaultSkillOverrides } from '../core/skills/vault-config.js';
 import { importFromRaw, importFromFolder, SkillImportError } from '../core/skills/importer.js';
 import { prefillFromContent } from '../core/skills/prefill.js';
+import { readBundledInstructions } from '../core/skills/builtin.js';
 
 export function skillsRoutes(db: Database.Database, runManager: RunManager): Hono {
   const app = new Hono();
@@ -41,14 +42,18 @@ export function skillsRoutes(db: Database.Database, runManager: RunManager): Hon
     return c.json({ skills: listSkills(db).filter((s) => !s.core) });
   });
 
-  // GET /api/skills/:id — one skill + its instructions (for the edit form).
-  // Core skills are treated as not found (they're never shown/editable).
+  // GET /api/skills/:id — one skill + its instructions (for the edit/duplicate
+  // form). Core skills are treated as not found (they're never shown/editable).
+  // Bundled skills have no library content dir, so their body is read from the
+  // shipped SKILL.md (lets "duplicate" prefill a real copy).
   app.get('/:id', (c) => {
     const skill = getSkill(db, c.req.param('id'));
     if (!skill || skill.core) {
       return c.json({ error: { code: 'NOT_FOUND', message: 'Skill not found' } }, 404);
     }
-    return c.json({ skill, instructions: readInstructions(skill.id) });
+    const instructions =
+      skill.kind === 'bundled' ? readBundledInstructions(skill.id) : readInstructions(skill.id);
+    return c.json({ skill, instructions });
   });
 
   // POST /api/skills — create a user (library) skill, enabled by default

@@ -64,6 +64,35 @@ describe('skills/sync', () => {
     }
   });
 
+  it('syncSkill is a read-only no-op when dest already mirrors src', () => {
+    const entry = createSkill(db, { name: 'S', description: '', enabled: true, builtIn: false }, 'body', opts);
+    syncSkill(entry.id, opts);
+    const dest = path.join(claudeHome, 'skills', `molio--${entry.id}`);
+    const skillMd = path.join(dest, 'SKILL.md');
+    const before = fs.statSync(skillMd).mtimeMs;
+
+    // Second sync with unchanged source must not rewrite (short-circuit).
+    syncSkill(entry.id, opts);
+    assert.equal(fs.statSync(skillMd).mtimeMs, before, 'unchanged source → no rewrite');
+    // And it must not leave temp dirs behind in the skills root.
+    const leftovers = fs
+      .readdirSync(path.join(claudeHome, 'skills'))
+      .filter((n) => n.includes('.tmp-'));
+    assert.deepEqual(leftovers, [], 'no leftover temp dirs');
+  });
+
+  it('syncSkill rewrites when source content changed', () => {
+    const entry = createSkill(db, { name: 'S', description: '', enabled: true, builtIn: false }, 'v1', opts);
+    syncSkill(entry.id, opts);
+    const skillMd = path.join(claudeHome, 'skills', `molio--${entry.id}`, 'SKILL.md');
+    assert.ok(fs.readFileSync(skillMd, 'utf8').includes('v1'));
+
+    // Change the library source, re-sync → dest converges to the new content.
+    fs.writeFileSync(path.join(molioHome, 'skills', entry.id, 'SKILL.md'), 'v2 changed\n', 'utf8');
+    syncSkill(entry.id, opts);
+    assert.ok(fs.readFileSync(skillMd, 'utf8').includes('v2 changed'), 'dest updated on change');
+  });
+
   it('syncSkill drops stale siblings on re-sync (rm-first converge)', () => {
     const entry = createSkill(db, { name: 'S', description: '', enabled: true, builtIn: false }, 'body', opts);
     syncSkill(entry.id, opts);

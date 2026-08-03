@@ -25,6 +25,11 @@ interface SkillFormModalProps {
    */
   initialMarkdown?: string;
   busy?: boolean;
+  /**
+   * Error from the host (e.g. the save request failed) — shown alongside
+   * inline validation errors. The host clears it on close / retry.
+   */
+  externalError?: string | null;
   onClose: () => void;
   /** create / edit / prefill / new(paste) → save a skill from form values. */
   onSave?: (values: SkillFormValues) => void | Promise<void>;
@@ -65,6 +70,7 @@ export function SkillFormModal({
   prefillData,
   initialMarkdown,
   busy,
+  externalError,
   onClose,
   onSave,
   onImport,
@@ -315,7 +321,9 @@ export function SkillFormModal({
             </>
           )}
 
-          {fieldError && <div className="sk-form-error" data-testid="skill-form-error">{fieldError}</div>}
+          {(fieldError || externalError) && (
+            <div className="sk-form-error" data-testid="skill-form-error">{fieldError || externalError}</div>
+          )}
         </div>
         <div className="kb-modal-footer">
           <button className="kb-btn kb-btn-ghost" onClick={onClose} disabled={busy}>

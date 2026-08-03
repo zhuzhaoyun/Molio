@@ -14,6 +14,12 @@
  *    Synced to `<vault>/.claude/skills/molio--<id>/SKILL.md`.
  *  - core (`core: true`): the writing trio — Molio's core job. NOT shown, NOT
  *    configurable, always enabled; synced like a library skill.
+ *
+ * Scope: sync writes ONLY into each registered vault's `.claude/skills/`, so
+ * skills reach runs whose cwd is inside a vault. Runs without a vault (home
+ * chat before any vault exists, channels whose defaultCwd isn't a vault path)
+ * get no library/bundled/core skills — "always enabled" means "always enabled
+ * within vault-scoped runs".
  */
 
 export type SkillKind = 'bundled' | 'library';
@@ -48,8 +54,11 @@ export interface UpdateSkillRequest {
 }
 
 /**
- * Import a skill from pasted SKILL.md raw text OR a local folder path
- * (daemon reads `<folderPath>/SKILL.md`). Exactly one must be provided.
+ * Import a skill from pasted SKILL.md raw text OR a local path. Despite the
+ * name, `folderPath` accepts EITHER a directory whose ROOT holds a SKILL.md
+ * (imported as a whole multi-file skill) or a direct path to a .md file
+ * (imported as a single-file skill). Exactly one of raw/folderPath must be
+ * provided.
  */
 export interface ImportSkillRequest {
   raw?: string;
@@ -77,6 +86,16 @@ export interface SkillListResponse {
 
 export interface SkillResponse {
   skill: SkillManifestEntry;
+}
+
+/**
+ * One skill + its SKILL.md body (GET /api/skills/:id, for the edit/duplicate
+ * form). Bundled skills have no library file, so their body is read from the
+ * shipped app-resources SKILL.md ('' only if that is unreadable).
+ */
+export interface SkillDetailResponse {
+  skill: SkillManifestEntry;
+  instructions: string;
 }
 
 export interface PrefillResponse {

@@ -6,6 +6,7 @@
  * starts with `molio--`. The user's own skills in `~/.claude/skills/` are never
  * touched. reconcileSync removes only orphaned `molio--*` dirs.
  */
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
@@ -18,19 +19,73 @@ import {
 import { copyDirSync } from '../skill-installer.js';
 
 /**
+ * Content hash of a directory tree (sorted relative paths + file bytes).
+ * Symlinks are skipped here but copied by copyDirSync, so a tree containing
+ * them simply never short-circuits (always rebuilds) — never a wrong result.
+ */
+function hashDir(dir: string): string {
+  const hash = crypto.createHash('sha256');
+  const walk = (d: string, rel: string): void => {
+    const entries = fs
+      .readdirSync(d, { withFileTypes: true })
+      .sort((a, b) => a.name.localeCompare(b.name));
+    for (const entry of entries) {
+      const p = path.join(d, entry.name);
+      const r = rel ? `${rel}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        hash.update(`d:${r}\n`);
+        walk(p, r);
+      } else if (entry.isFile()) {
+        hash.update(`f:${r}\n`);
+        hash.update(fs.readFileSync(p));
+        hash.update('\n');
+      }
+    }
+  };
+  walk(dir, '');
+  return hash.digest('hex');
+}
+
+/** True when `destDir` exists and byte-for-byte mirrors `srcDir`. */
+function isAlreadySynced(srcDir: string, destDir: string): boolean {
+  if (!fs.existsSync(destDir)) return false;
+  try {
+    return hashDir(srcDir) === hashDir(destDir);
+  } catch {
+    return false; // unreadable dest → rebuild
+  }
+}
+
+/**
  * Mirror the library skill's whole content dir into its namespaced
  * `~/.claude/skills/molio--<id>/` dir. A single-file skill copies just its
  * SKILL.md; a multi-file (imported) skill copies SKILL.md + every sibling so
- * references/scripts the SKILL.md points at actually reach the runtime. The dest
- * is rebuilt from scratch each sync so stale siblings from an older version
- * don't linger.
+ * references/scripts the SKILL.md points at actually reach the runtime.
+ *
+ * Two optimizations over a blind rm+copy:
+ *  - Short-circuit: when dest already mirrors src (content hash match) nothing
+ *    is written. Startup fans out to every vault on each boot, so this keeps
+ *    the steady state read-only — especially important on NAS-mounted vaults.
+ *    Dest pollution (extra/missing files) breaks the hash match → rebuild, so
+ *    convergence is preserved.
+ *  - Atomic swap: the rebuild copies into a temp dir first, then renames it
+ *    into place, so a concurrent agent CLI never reads a half-copied skill dir.
  */
 export function syncSkill(id: string, opts?: SkillPathsOpts): void {
   const srcDir = skillContentDir(id, opts);
   if (!fs.existsSync(srcDir)) return; // nothing to sync
   const dest = molioSkillDir(id, opts);
-  fs.rmSync(dest, { recursive: true, force: true });
-  copyDirSync(srcDir, dest);
+  if (isAlreadySynced(srcDir, dest)) return;
+
+  const tmp = `${dest}.tmp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  try {
+    copyDirSync(srcDir, tmp);
+    fs.rmSync(dest, { recursive: true, force: true });
+    fs.renameSync(tmp, dest);
+  } catch (err) {
+    fs.rmSync(tmp, { recursive: true, force: true });
+    throw err;
+  }
 }
 
 /** Remove a skill's namespaced dir from `~/.claude/skills/`. Never touches non-molio dirs. */

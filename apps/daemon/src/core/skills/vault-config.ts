@@ -11,6 +11,11 @@
  * `core` skills (the writing trio) are exempt from both the global switch and
  * per-vault overrides — they are always effective (hidden but behavior kept).
  *
+ * Scope: sync targets ONLY registered vaults' `<vault.path>/.claude/skills/`,
+ * so skills reach runs whose cwd resolves to a vault. Runs without a vault
+ * (pre-vault home chat, channels whose defaultCwd is not a vault path) do not
+ * see library/bundled/core skills.
+ *
  * Sync splits the effective set by kind:
  *  - **library + core** → `reconcileSync` (sync.ts) pointed at `<vault>/.claude`,
  *    writing single-file `molio--<id>/SKILL.md` dirs (keeps the molio-- red line

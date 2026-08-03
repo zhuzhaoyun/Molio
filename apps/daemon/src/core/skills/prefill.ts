@@ -122,6 +122,13 @@ export async function prefillFromContent(
         onTurnComplete: (text) => settle(parsePrefillResponse(text, content)),
       })
       .then((rid) => {
+        // Race guard: if the timeout (or a spawn-side failure) already settled
+        // this prefill while createRun was still pending, the run is an orphan —
+        // cancel it right away instead of leaking the agent process.
+        if (settled) {
+          try { runManager.cancelRun(rid); } catch { /* ignore */ }
+          return;
+        }
         runId = rid;
         unsubscribe =
           runManager.onEvent(rid, (event) => {

@@ -61,6 +61,23 @@ function readBundledMeta(slug: string, sourceDir: string): { name: string; descr
   }
 }
 
+/**
+ * Read a bundled skill's shipped SKILL.md body ('' when unreadable). Bundled
+ * skills have NO library content dir (content ships under the app resources),
+ * so `readInstructions` returns '' for them — the "duplicate" flow uses this
+ * instead so copying a bundled skill prefills its real instructions.
+ * `sourceDir` is injectable for tests.
+ */
+export function readBundledInstructions(slug: string, sourceDir?: string): string {
+  try {
+    const md = path.join(sourceDir ?? resolveSkillsSourceDir(), slug, 'SKILL.md');
+    if (!fs.existsSync(md)) return '';
+    return parseSkillMd(fs.readFileSync(md, 'utf8')).instructions;
+  } catch {
+    return '';
+  }
+}
+
 /** The writing trio — Molio's core job. Hidden, always-on, not configurable. */
 export interface CoreSeed {
   id: string;
@@ -163,14 +180,16 @@ export function seedBuiltinSkills(db: Database.Database, opts?: SkillPathsOpts):
   }
 }
 
-/** Update only name/description (+updatedAt) of an existing row — never enabled/core. */
+/**
+ * Update only name/description of an existing row — never enabled/core. The
+ * WHERE clause makes it a no-op when nothing changed, so re-seeding on every
+ * startup doesn't churn `updated_at` for identical metadata.
+ */
 function refreshMeta(db: Database.Database, id: string, name: string, description: string): void {
-  db.prepare('UPDATE skills SET name = ?, description = ?, updated_at = ? WHERE id = ?').run(
-    name,
-    description,
-    Date.now(),
-    id,
-  );
+  db.prepare(
+    `UPDATE skills SET name = ?, description = ?, updated_at = ?
+     WHERE id = ? AND (name != ? OR description != ?)`,
+  ).run(name, description, Date.now(), id, name, description);
 }
 
 /** Total number of built-in skills seeded (bundled + core) — handy for tests/diagnostics. */
@@ -183,11 +202,18 @@ export function countSeededBuiltins(db: Database.Database): number {
  * source). Idempotent. Per-vault sync is a separate step (see index.ts:
  * reconcileAllVaults after this, then cleanupLegacyGlobalSync) — seeding never
  * touches any vault.
+ *
+ * Returns false when seeding failed. Callers MUST skip the per-vault fan-out in
+ * that case: reconciling against a (partially) empty table would treat the
+ * missing rows as disabled and DELETE skills that earlier starts already
+ * synced into every vault.
  */
-export function initSkillLibrary(db: Database.Database, opts?: SkillPathsOpts): void {
+export function initSkillLibrary(db: Database.Database, opts?: SkillPathsOpts): boolean {
   try {
     seedBuiltinSkills(db, opts);
+    return true;
   } catch (err) {
     console.error('[skills] Failed to initialize skill library:', err instanceof Error ? err.message : err);
+    return false;
   }
 }

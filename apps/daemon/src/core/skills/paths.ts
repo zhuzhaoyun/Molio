@@ -1,10 +1,14 @@
 /**
  * Path helpers for the global user skill library.
  *
- * Source of truth: `~/.molio/skills/<id>/SKILL.md` + `manifest.json`.
- * Effect (sync):    `~/.claude/skills/molio--<id>/SKILL.md` — the `molio--`
- *                   prefix namespaces Molio-owned skills so we never touch the
- *                   user's own skills living in `~/.claude/skills/`.
+ * Source of truth: `~/.molio/skills/<id>/SKILL.md` (library/core content) +
+ *                   the daemon's `skills` table (metadata + master switch).
+ * Effect (sync):    `<vault>/.claude/skills/molio--<id>/SKILL.md` — per-vault
+ *                   fan-out driven by vault-config.ts (claudeHome is pointed at
+ *                   the vault's `.claude`). The `molio--` prefix namespaces
+ *                   Molio-owned skills so we never touch the user's own skills.
+ * Legacy:           pre-per-vault builds synced to `~/.claude/skills/molio--*`;
+ *                   startup cleanup removes those (cleanupLegacyGlobalSync).
  *
  * Every helper accepts optional `molioHome` / `claudeHome` overrides so tests
  * can point them at temp directories (no HOME monkey-patching needed).

@@ -22,12 +22,13 @@ function singleLine(value: string): string {
   return value.replace(/\r?\n/g, ' ').trim();
 }
 
-/** 拼出 SKILL.md（frontmatter + 正文），镜像 daemon generateSkillMd。 */
+/** 拼出 SKILL.md（frontmatter + 正文），镜像 daemon generateSkillMd（含 version 行）。 */
 export function serializeSkillMd(name: string, description: string, instructions: string): string {
   return (
     `---\n` +
     `name: ${singleLine(name)}\n` +
     `description: ${singleLine(description)}\n` +
+    `version: 1.0.0\n` +
     `---\n\n` +
     `${instructions.trim()}\n`
   );

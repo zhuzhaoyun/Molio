@@ -17,6 +17,7 @@ interface ModalState {
 function SkillRow({
   skill,
   confirmingDelete,
+  fetching,
   onToggle,
   onEdit,
   onDuplicate,
@@ -26,6 +27,8 @@ function SkillRow({
 }: {
   skill: SkillManifestEntry;
   confirmingDelete: boolean;
+  /** True while this row's edit/duplicate content is loading (buttons disabled). */
+  fetching: boolean;
   onToggle: (enabled: boolean) => void;
   onEdit: () => void;
   onDuplicate: () => void;
@@ -60,11 +63,11 @@ function SkillRow({
       </div>
 
       <div className="sk-row__actions">
-        <button className="rt-btn rt-btn--sm rt-btn--ghost" data-testid={`skill-duplicate-${skill.id}`} onClick={onDuplicate}>
+        <button className="rt-btn rt-btn--sm rt-btn--ghost" data-testid={`skill-duplicate-${skill.id}`} onClick={onDuplicate} disabled={fetching}>
           {t('skills.duplicate')}
         </button>
         {skill.kind !== 'bundled' && (
-          <button className="rt-btn rt-btn--sm rt-btn--ghost" data-testid={`skill-edit-${skill.id}`} onClick={onEdit}>
+          <button className="rt-btn rt-btn--sm rt-btn--ghost" data-testid={`skill-edit-${skill.id}`} onClick={onEdit} disabled={fetching}>
             {t('skills.edit')}
           </button>
         )}
@@ -101,10 +104,13 @@ export function SkillsPanel() {
   } = useSkills();
 
   const [modal, setModal] = useState<ModalState | null>(null);
-  const [editMarkdown, setEditMarkdown] = useState('');
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  // Row whose edit/duplicate content is loading — its action buttons stay
+  // disabled and the modal only opens ONCE the content is ready, so the editor
+  // never opens empty then overwrites what the user already typed.
+  const [fetchingId, setFetchingId] = useState<string | null>(null);
 
   const enabledCount = skills.filter((s) => s.enabled).length;
 
@@ -117,19 +123,24 @@ export function SkillsPanel() {
 
   const openEdit = useCallback(async (skill: SkillManifestEntry) => {
     setFormError(null);
-    setEditMarkdown('');
-    setModal({ mode: 'edit', skill });
+    setFetchingId(skill.id);
     try {
       const { instructions } = await api.getSkill(skill.id);
-      setEditMarkdown(serializeSkillMd(skill.name, skill.description, instructions));
+      setModal({
+        mode: 'edit',
+        skill,
+        initialMarkdown: serializeSkillMd(skill.name, skill.description, instructions),
+      });
     } catch (err) {
       setFormError((err as Error).message);
+    } finally {
+      setFetchingId(null);
     }
   }, []);
 
   const openDuplicate = useCallback(async (skill: SkillManifestEntry) => {
     setFormError(null);
-    setModal({ mode: 'create', skill: null });
+    setFetchingId(skill.id);
     try {
       const { instructions } = await api.getSkill(skill.id);
       setModal({
@@ -139,12 +150,13 @@ export function SkillsPanel() {
       });
     } catch (err) {
       setFormError((err as Error).message);
+    } finally {
+      setFetchingId(null);
     }
   }, []);
 
   const closeModal = useCallback(() => {
     setModal(null);
-    setEditMarkdown('');
   }, []);
 
   const handleSave = useCallback(async (values: SkillFormValues) => {
@@ -239,6 +251,7 @@ export function SkillsPanel() {
                 key={skill.id}
                 skill={skill}
                 confirmingDelete={confirmDeleteId === skill.id}
+                fetching={fetchingId === skill.id}
                 onToggle={(enabled) => handleToggle(skill.id, enabled)}
                 onEdit={() => openEdit(skill)}
                 onDuplicate={() => openDuplicate(skill)}
@@ -257,7 +270,7 @@ export function SkillsPanel() {
         show={modal !== null}
         mode={modal?.mode ?? 'create'}
         skill={modal?.skill}
-        initialMarkdown={modal?.mode === 'edit' ? editMarkdown : modal?.initialMarkdown}
+        initialMarkdown={modal?.initialMarkdown}
         busy={busy}
         onClose={closeModal}
         onSave={handleSave}

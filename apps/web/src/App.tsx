@@ -46,12 +46,21 @@ export default function App() {
   // the confirmation modal is hosted here (above the chat) to avoid prop-drilling.
   const pendingPrefill = usePendingPrefill();
   const [skillPrefillBusy, setSkillPrefillBusy] = useState(false);
-  const closePrefill = useCallback(() => skillPrefillStore.setPendingPrefill(null), []);
+  const [skillPrefillError, setSkillPrefillError] = useState<string | null>(null);
+  const closePrefill = useCallback(() => {
+    skillPrefillStore.setPendingPrefill(null);
+    setSkillPrefillError(null);
+  }, []);
   const savePrefillSkill = useCallback(async (values: SkillFormValues) => {
     setSkillPrefillBusy(true);
+    setSkillPrefillError(null);
     try {
       await api.createSkill(values);
       skillPrefillStore.setPendingPrefill(null);
+    } catch (err) {
+      // Keep the modal open with the values so the user can retry; surface the
+      // failure inline instead of swallowing it as an unhandled rejection.
+      setSkillPrefillError((err as Error).message);
     } finally {
       setSkillPrefillBusy(false);
     }
@@ -248,6 +257,7 @@ export default function App() {
           mode="prefill"
           prefillData={pendingPrefill}
           busy={skillPrefillBusy}
+          externalError={skillPrefillError}
           onClose={closePrefill}
           onSave={savePrefillSkill}
         />

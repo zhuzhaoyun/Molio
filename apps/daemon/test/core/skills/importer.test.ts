@@ -5,7 +5,12 @@ import path from 'node:path';
 import os from 'node:os';
 import type Database from 'better-sqlite3';
 import { openDatabase, closeDatabase } from '../../../src/core/db.js';
-import { importFromRaw, importFromFolder, SkillImportError } from '../../../src/core/skills/importer.js';
+import {
+  importFromRaw,
+  importFromFolder,
+  SkillImportError,
+  MAX_IMPORT_BYTES,
+} from '../../../src/core/skills/importer.js';
 import { readInstructions } from '../../../src/core/skills/store.js';
 import { skillContentDir, type SkillPathsOpts } from '../../../src/core/skills/paths.js';
 
@@ -29,6 +34,13 @@ afterEach(() => {
   fs.rmSync(claudeHome, { recursive: true, force: true });
   fs.rmSync(dbDir, { recursive: true, force: true });
 });
+
+/** Count skill content dirs under the temp library (`~/.molio/skills/<id>`). */
+function listContentDirs(): number {
+  const root = path.join(molioHome, 'skills');
+  if (!fs.existsSync(root)) return 0;
+  return fs.readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory()).length;
+}
 
 describe('skills/importer', () => {
   it('importFromRaw parses frontmatter + body', () => {
@@ -142,6 +154,30 @@ describe('skills/importer', () => {
         'detailed guide\n',
       );
       assert.ok(fs.existsSync(path.join(contentDir, 'run.py')), 'root sibling copied');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('importFromFolder rejects a folder exceeding the byte limit (BAD_REQUEST)', () => {
+    // A sparse file reports its full size to stat without occupying disk, so we
+    // can trip the byte limit cheaply.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-skill-big-'));
+    try {
+      fs.writeFileSync(path.join(dir, 'SKILL.md'), '---\nname: Big\n---\n\nbody\n', 'utf8');
+      const big = path.join(dir, 'model.bin');
+      fs.writeFileSync(big, '', 'utf8');
+      fs.truncateSync(big, MAX_IMPORT_BYTES + 1);
+
+      assert.throws(() => importFromFolder(db, dir, opts), (err: unknown) => {
+        return (
+          err instanceof SkillImportError &&
+          err.code === 'BAD_REQUEST' &&
+          err.message.includes('超过上限')
+        );
+      });
+      // And nothing was written into the library on failure.
+      assert.equal(listContentDirs(), 0, 'no partial skill dir left behind');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

@@ -95,7 +95,7 @@ checkAndKillPortOccupant(port);
 // 1. Seed built-in skills into the `skills` table — the master switch source
 //    (bundled: docling/wiki-*/remotion/wechat; core: writing trio). Must run
 //    before reconcileAllVaults reads the table.
-initSkillLibrary(db);
+const skillsSeeded = initSkillLibrary(db);
 
 // Delete per-run JSONL logs older than 7 days (nothing cleaned them up
 // before; they accumulate indefinitely under ~/.molio/runs). Best-effort and
@@ -109,7 +109,15 @@ ensureWikiSysPromptFiles();
 // 2. Fan the effective skills into every vault's <vault>/.claude/skills/ —
 //    bundled (whole-dir) + library/core (molio-- single file) + CLAUDE.md rules.
 //    Per-vault, best-effort. Covers what the old installBuiltinSkills loop did.
-reconcileAllVaults(db);
+//    Guarded on a successful seed: reconciling against a (partially) empty table
+//    would treat missing built-ins as disabled and delete already-synced skills.
+if (skillsSeeded) {
+  reconcileAllVaults(db);
+} else {
+  console.warn(
+    '[skills] Seeding failed — skipping vault skill fan-out; vaults keep their previously synced skills.',
+  );
+}
 
 // 3. Remove the legacy global ~/.claude/skills/molio--* sync left over from the
 //    pre-per-vault design (idempotent; safe to run every startup).

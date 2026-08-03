@@ -100,6 +100,7 @@ export type {
   PrefillResult,
   SkillListResponse,
   SkillResponse,
+  SkillDetailResponse,
   PrefillResponse,
   VaultSkillEntry,
   VaultSkillListResponse,

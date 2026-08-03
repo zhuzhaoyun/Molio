@@ -5,7 +5,12 @@ import path from 'node:path';
 import os from 'node:os';
 import type Database from 'better-sqlite3';
 import { openDatabase, closeDatabase } from '../../../src/core/db.js';
-import { seedBuiltinSkills, initSkillLibrary, CORE_SKILLS_SEEDS } from '../../../src/core/skills/builtin.js';
+import {
+  seedBuiltinSkills,
+  initSkillLibrary,
+  readBundledInstructions,
+  CORE_SKILLS_SEEDS,
+} from '../../../src/core/skills/builtin.js';
 import { listSkills, toggleSkill } from '../../../src/core/skills/store.js';
 import { BUILTIN_SKILLS } from '../../../src/core/skill-installer.js';
 import type { SkillPathsOpts } from '../../../src/core/skills/paths.js';
@@ -113,11 +118,44 @@ describe('skills/builtin', () => {
   });
 
   it('initSkillLibrary only seeds the DB — it never syncs (per-vault sync is separate)', () => {
-    initSkillLibrary(db, opts);
+    assert.equal(initSkillLibrary(db, opts), true, 'returns true on success');
     assert.equal(listSkills(db).length, EXPECTED_TOTAL);
     // nothing written to .claude/skills by seeding
     const skillsRoot = path.join(claudeHome, 'skills');
     const entries = fs.existsSync(skillsRoot) ? fs.readdirSync(skillsRoot) : [];
     assert.equal(entries.filter((e) => e.startsWith('molio--')).length, 0, 'no molio-- sync dirs');
+  });
+
+  it('re-seeding does not bump updated_at when metadata is unchanged', () => {
+    seedBuiltinSkills(db, opts);
+    const first = listSkills(db).find((s) => s.id === 'docling');
+    assert.ok(first);
+    const stamp = first!.updatedAt;
+
+    seedBuiltinSkills(db, opts); // identical metadata → conditional UPDATE is a no-op
+    const second = listSkills(db).find((s) => s.id === 'docling');
+    assert.equal(second?.updatedAt, stamp, 'updated_at must not churn when nothing changed');
+  });
+
+  it('readBundledInstructions returns the shipped SKILL.md body for a bundled slug', () => {
+    // Build a fake shipped-skills tree so the test doesn't depend on repo layout.
+    const sourceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-skills-bundled-src-'));
+    try {
+      fs.mkdirSync(path.join(sourceDir, 'fake-skill'));
+      fs.writeFileSync(
+        path.join(sourceDir, 'fake-skill', 'SKILL.md'),
+        '---\nname: Fake\ndescription: d\nversion: 1.0.0\n---\n\nthe shipped body\n',
+        'utf8',
+      );
+
+      assert.equal(
+        readBundledInstructions('fake-skill', sourceDir),
+        'the shipped body',
+        'bundled duplicate prefill must read the shipped body',
+      );
+      assert.equal(readBundledInstructions('missing-skill', sourceDir), '', 'unknown slug → empty');
+    } finally {
+      fs.rmSync(sourceDir, { recursive: true, force: true });
+    }
   });
 });

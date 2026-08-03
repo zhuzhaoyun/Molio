@@ -181,6 +181,10 @@ export function updateSkill(
   entry.updatedAt = Date.now();
 
   // Library/core carry their body in SKILL.md; rewrite it when any field changes.
+  // NOTE: imported multi-file skills may ship extra frontmatter fields
+  // (allowed-tools, license, ...); generateSkillMd regenerates the frontmatter
+  // with name/description/version only, so such extra fields are dropped on
+  // edit. Accepted in v1 — the UI only edits these three fields.
   if (entry.kind !== 'bundled') {
     const instructions = patch.instructions ?? readInstructions(id, opts);
     writeSkillMd(entry.id, entry.name, entry.description, instructions, opts);

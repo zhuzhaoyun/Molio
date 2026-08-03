@@ -5,7 +5,7 @@ import type {
   Vault, TreeNode, FileContent, KbHistoryEntry, CreateVaultRequest,
   WikiStatusResponse,
   GraphData, SearchResult, SearchResponse,
-  SkillManifestEntry, CreateSkillRequest, UpdateSkillRequest,
+  SkillManifestEntry, SkillDetailResponse, CreateSkillRequest, UpdateSkillRequest,
   ImportSkillRequest, PrefillResult, VaultSkillEntry,
 } from '@molio/contracts';
 
@@ -783,7 +783,7 @@ export const api = {
   },
 
   /** Fetch one skill with its instructions body (for the edit form). */
-  async getSkill(id: string): Promise<{ skill: SkillManifestEntry; instructions: string }> {
+  async getSkill(id: string): Promise<SkillDetailResponse> {
     const res = await fetch(`${BASE}/skills/${id}`);
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));

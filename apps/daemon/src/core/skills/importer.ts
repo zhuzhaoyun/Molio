@@ -19,6 +19,51 @@ export class SkillImportError extends Error {
   }
 }
 
+/**
+ * Safety limits for folder imports. The daemon copies the chosen directory
+ * VERBATIM into the library, so a path pointing at a huge tree (e.g. a whole
+ * drive by mistake) would otherwise fill the disk. Skills are text-heavy; the
+ * limits are far above any realistic skill yet stop catastrophic foot-guns.
+ */
+export const MAX_IMPORT_FILES = 1000;
+export const MAX_IMPORT_BYTES = 100 * 1024 * 1024; // 100 MB
+
+/** Walk `dir` and reject it when it exceeds the import limits. */
+function assertFolderWithinLimits(dir: string): void {
+  let files = 0;
+  let bytes = 0;
+  const walk = (d: string): void => {
+    for (const entry of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, entry.name);
+      if (entry.isDirectory()) {
+        walk(p);
+        continue;
+      }
+      let size = 0;
+      try {
+        size = fs.statSync(p).size; // follows symlinks, like copyDirSync does
+      } catch {
+        continue; // broken symlink etc. — copyDirSync will skip/fail on it later
+      }
+      files += 1;
+      bytes += size;
+      if (files > MAX_IMPORT_FILES) {
+        throw new SkillImportError(
+          'BAD_REQUEST',
+          `导入文件夹包含的文件数超过上限（最多 ${MAX_IMPORT_FILES} 个文件）`,
+        );
+      }
+      if (bytes > MAX_IMPORT_BYTES) {
+        throw new SkillImportError(
+          'BAD_REQUEST',
+          `导入文件夹总大小超过上限（最大 ${Math.round(MAX_IMPORT_BYTES / 1024 / 1024)} MB）`,
+        );
+      }
+    }
+  };
+  walk(dir);
+}
+
 function deriveName(parsed: { name: string }, fallback: string): string {
   return parsed.name.trim() || fallback;
 }
@@ -95,6 +140,9 @@ export function importFromFolder(db: Database.Database, folderPath: string, opts
     throw new SkillImportError('BAD_REQUEST', '文件夹路径为空');
   }
   const src = resolveSource(folderPath.trim());
+  // Multi-file imports copy the whole tree — enforce size limits before any
+  // bytes are written (a lone .md file is trivially small, skip the walk).
+  if (src.type === 'dir') assertFolderWithinLimits(src.dir);
   const raw = fs.readFileSync(src.skillMd, 'utf8');
   const parsed = parseSkillMd(raw);
   if (!parsed.instructions.trim()) {

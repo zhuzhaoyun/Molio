@@ -365,6 +365,11 @@ function ruleBlockExtent(content: string, sentinel: string): [number, number] | 
  * - Active + sentinel absent → block APPENDED.
  * - Inactive + sentinel present → block REMOVED (skill toggled off in this vault).
  * - User content before the first Molio sentinel is never touched.
+ *
+ * Caveat: a block's extent runs from its sentinel to the NEXT sentinel (or EOF
+ * for the last block), so anything written BETWEEN or AFTER Molio blocks is
+ * treated as part of the preceding block and replaced/removed with it. Custom
+ * content belongs before the first Molio sentinel.
  */
 export function ensureMolioRules(claudeDir: string, effectiveBundledSlugs?: Set<string>): void {
   const claudeMd = path.join(claudeDir, 'CLAUDE.md');
