@@ -164,3 +164,63 @@
 /* 文本层搜索高亮（span 透明，仅高亮背景可见） */
 .pdf-search-hl { background: var(--selected-soft); }
 .pdf-search-hl-current { background: var(--accent-tint); outline: 1px solid var(--accent); outline-offset: -1px; }
+
+/* ══════════ PDF 侧栏（大纲 / 缩略图） ══════════ */
+
+.pdf-body { flex: 1; display: flex; min-height: 0; position: relative; }
+
+.pdf-sidebar {
+  width: 230px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+
+.pdf-sidebar-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pdf-sidebar-tabs .kb-btn { flex: 1; height: 26px; font-size: 12px; }
+
+.pdf-sidebar-scroll { flex: 1; overflow-y: auto; padding: 6px; }
+
+.pdf-outline-item {
+  display: block;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pdf-outline-item:hover { background: var(--bg-subtle); }
+
+.pdf-thumbs { display: flex; flex-direction: column; gap: 8px; }
+
+.pdf-thumb {
+  border: 2px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: 2px;
+  cursor: pointer;
+  background: #fff;
+  box-shadow: var(--shadow-sm);
+}
+
+.pdf-thumb:hover { border-color: var(--border-strong); }
+
+.pdf-thumb-current { border-color: var(--accent) !important; }
+
+.pdf-thumb canvas { display: block; width: 100%; height: auto; }

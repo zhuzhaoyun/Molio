@@ -384,6 +384,10 @@ const en: Record<string, string> = {
   'kb.pdf.nextMatch': 'Next match',
   'kb.pdf.searching': 'Searching…',
   'kb.pdf.noMatches': 'No matches',
+  'kb.pdf.sidebar': 'Sidebar',
+  'kb.pdf.outline': 'Outline',
+  'kb.pdf.thumbnails': 'Thumbnails',
+  'kb.pdf.noOutline': 'No outline for this PDF',
 
   // ── Frontmatter ──
   'kb.frontmatter.title': 'Title',

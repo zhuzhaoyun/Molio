@@ -6,6 +6,7 @@ import { loadPdfjs, pdfCMapOptions, type PDFDocumentProxy } from './pdfjs-setup'
 import { PdfPageView, EMPTY_HITS } from './PdfPageView';
 import type { PdfSearchHit } from './PdfPageView';
 import { PdfSearchBar } from './PdfSearchBar';
+import { PdfSidebar } from './PdfSidebar';
 import { buildPageText, searchAll, type PdfMatch, type PdfPageText } from './pdf-search';
 import { useI18n } from '../../i18n';
 import { formatFileSize } from '../../utils/format';
@@ -20,6 +21,7 @@ export interface PdfViewerHandle {
   fitPage: () => void;
   selectAll: () => void;
   toggleSearch: () => void;
+  toggleSidebar: () => void;
 }
 
 interface PdfViewerProps {
@@ -74,6 +76,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
     const [searching, setSearching] = useState(false);
     const [matches, setMatches] = useState<PdfMatch[]>([]);
     const [activeIndex, setActiveIndex] = useState(-1);
+    const [sidebarOpen, setSidebarOpen] = useState(false);
     // 文本索引缓存按 doc 身份隔离：切换文件后旧文档的在途 searchAll 不会污染新缓存。
     const textIndexRef = useRef<{ doc: PDFDocumentProxy; map: Map<number, PdfPageText> } | null>(null);
 
@@ -237,6 +240,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
       zoomOut: () => zoomBy(1 / ZOOM_STEP),
       fitWidth, fitPage, selectAll,
       toggleSearch: () => setSearchVisible((v) => !v),
+      toggleSidebar: () => setSidebarOpen((v) => !v),
     }), [nextPage, prevPage, zoomBy, fitWidth, fitPage, selectAll]);
 
     const handleKeyDown = useCallback((e: KeyboardEvent<HTMLDivElement>) => {
@@ -346,17 +350,22 @@ export const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
             onClose={() => { setSearchVisible(false); setMatches([]); setActiveIndex(-1); setSearchQuery(''); }}
           />
         )}
-        <div
-          className="pdf-scroll"
-          ref={scrollRef}
-          onScroll={onScroll}
-          tabIndex={0}
-          onKeyDown={handleKeyDown}
-          data-testid="pdf-scroll"
-        >
-          <div className="pdf-scroll-inner" ref={contentRef}>
-            {baseHeights.length ? pages : null}
+        <div className="pdf-body">
+          <div
+            className="pdf-scroll"
+            ref={scrollRef}
+            onScroll={onScroll}
+            tabIndex={0}
+            onKeyDown={handleKeyDown}
+            data-testid="pdf-scroll"
+          >
+            <div className="pdf-scroll-inner" ref={contentRef}>
+              {baseHeights.length ? pages : null}
+            </div>
           </div>
+          {sidebarOpen && doc && (
+            <PdfSidebar doc={doc} currentPage={currentPage} onJumpToPage={scrollToPage} />
+          )}
         </div>
 
         {status === 'loading' && (
