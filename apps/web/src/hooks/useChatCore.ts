@@ -259,7 +259,12 @@ export function useChatCore(options: UseChatCoreOptions) {
     // callbacks + ?after=<lastSeq> on reconnect) ---
     const onEventCb = (event: AgentEvent, seq?: number) => {
       const currentId = assistantIdRef.current;
-      console.debug('[chat] event type=' + event.type + ' runId=' + runId + ' assistantId=' + (currentId ?? '(empty)'));
+      // DEBUG-level, dev only: fires per SSE event. In production this would
+      // accumulate in Chromium's console buffer whenever DevTools is open —
+      // a real contributor to the renderer's day-long memory growth.
+      if (import.meta.env.DEV) {
+        console.debug('[chat] event type=' + event.type + ' runId=' + runId + ' assistantId=' + (currentId ?? '(empty)'));
+      }
       if (seq && seq > (lastSeqRef.current || 0)) lastSeqRef.current = seq;
       // Any frame (event or ping) = connection alive: reset backoff + watchdog.
       reconnectAttemptRef.current = 0;
