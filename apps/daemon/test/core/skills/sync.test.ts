@@ -5,7 +5,7 @@ import path from 'node:path';
 import os from 'node:os';
 import type Database from 'better-sqlite3';
 import { openDatabase, closeDatabase } from '../../../src/core/db.js';
-import { syncSkill, removeSkillSyncDir, reconcileSync } from '../../../src/core/skills/sync.js';
+import { syncSkill, reconcileSync } from '../../../src/core/skills/sync.js';
 import { createSkill } from '../../../src/core/skills/store.js';
 import type { SkillPathsOpts } from '../../../src/core/skills/paths.js';
 
@@ -103,12 +103,6 @@ describe('skills/sync', () => {
     syncSkill(entry.id, opts);
     assert.ok(!fs.existsSync(path.join(dest, 'stale.txt')), 'stale sibling removed on re-sync');
     assert.ok(fs.existsSync(path.join(dest, 'SKILL.md')), 'SKILL.md still present');
-  });
-
-  it('removeSkillSyncDir removes only the namespaced dir', () => {
-    const entry = createSkill(db, { name: 'S', description: '', enabled: true, builtIn: false }, 'body', opts);
-    removeSkillSyncDir(entry.id, opts);
-    assert.ok(!fs.existsSync(path.join(claudeHome, 'skills', `molio--${entry.id}`)));
   });
 
   it('reconcileSync preserves user (non-molio) skills, removes orphan molio dirs, syncs enabled', () => {

@@ -295,7 +295,7 @@ const zh: Record<string, string> = {
   'skills.duplicate': '复制',
   'skills.delete': '删除',
   'skills.deleteConfirm': '确定删除技能「{name}」？此操作不可撤销。',
-  'skills.claudeOnlyNote': '技能对所有支持的运行时生效（Claude Code / Codex / Gemini / Qwen 均读取知识库技能）。',
+  'skills.runtimeNote': '技能对所有支持的运行时生效（Claude Code / Codex / Gemini / Qwen 均读取知识库技能）。',
   'skills.form.createTitle': '新建技能',
   'skills.form.editTitle': '编辑技能',
   'skills.form.prefillTitle': '存为技能',

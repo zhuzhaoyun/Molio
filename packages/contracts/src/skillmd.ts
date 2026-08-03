@@ -1,9 +1,10 @@
 /**
  * SKILL.md primitives — generate and parse the markdown+frontmatter format that
- * Claude Code's skill discovery reads. Shared by store (generate/strip) and
- * importer (parse) so there's a single source of truth for the format.
+ * runtime CLIs' skill discovery reads. Shared by the daemon (store generate/strip,
+ * importer parse) and the web UI (the SKILL.md editor), so the format has a
+ * single source of truth.
  *
- * Format (matches the vault-installed skills in src/tools/skills/):
+ * Format (matches the vault-installed skills in apps/daemon/src/tools/skills/):
  *   ---
  *   name: <single line>
  *   description: <single line>

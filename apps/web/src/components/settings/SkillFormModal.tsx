@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
+import { parseSkillMd } from '@molio/contracts';
 import type { SkillManifestEntry, PrefillResult, ImportSkillRequest } from '@molio/contracts';
 import { useI18n } from '../../i18n';
-import { parseSkillMd } from '../../utils/skillmd';
 
 export type SkillFormMode = 'create' | 'edit' | 'prefill' | 'new';
 

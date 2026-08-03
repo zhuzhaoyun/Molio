@@ -22,9 +22,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type Database from 'better-sqlite3';
+import { parseSkillMd } from '@molio/contracts';
 import type { SkillPathsOpts } from './paths.js';
-import { parseSkillMd } from './skillmd.js';
-import { createSkill, getSkill, listSkills } from './store.js';
+import { createSkill, getSkill } from './store.js';
 import { BUILTIN_SKILLS, resolveSkillsSourceDir } from '../skill-installer.js';
 
 /** Fallback display metadata for bundled skills if the shipped SKILL.md can't be read. */
@@ -190,11 +190,6 @@ function refreshMeta(db: Database.Database, id: string, name: string, descriptio
     `UPDATE skills SET name = ?, description = ?, updated_at = ?
      WHERE id = ? AND (name != ? OR description != ?)`,
   ).run(name, description, Date.now(), id, name, description);
-}
-
-/** Total number of built-in skills seeded (bundled + core) — handy for tests/diagnostics. */
-export function countSeededBuiltins(db: Database.Database): number {
-  return listSkills(db).filter((s) => s.builtIn).length;
 }
 
 /**

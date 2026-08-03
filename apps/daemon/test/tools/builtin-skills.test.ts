@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { reconcileBundledSync, BUILTIN_SKILLS } from '../../src/core/skill-installer.js';
+import { installAll } from '../helpers/install-all.js';
 
 /**
  * The wiki operations (build/ingest/lint/save) are shipped as builtin Claude
@@ -16,12 +16,6 @@ import { reconcileBundledSync, BUILTIN_SKILLS } from '../../src/core/skill-insta
  */
 
 const WIKI_SKILLS = ['wiki-build', 'wiki-ingest', 'wiki-lint', 'wiki-save', 'wiki-query'];
-
-/** Install every bundled skill (all effective + managed) — the old installBuiltinSkills behavior. */
-const ALL_BUNDLED = new Set<string>(BUILTIN_SKILLS);
-function installAll(vaultPath: string): void {
-  reconcileBundledSync(ALL_BUNDLED, ALL_BUNDLED, vaultPath);
-}
 
 describe('builtin wiki operation skills', () => {
   // Install synchronously at describe-registration time so the inner describe

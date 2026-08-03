@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ThrottledWarn } from './throttled-warn.js';
+import { mirrorDirIfChanged } from './skills/dirsync.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -90,63 +91,6 @@ export function resolveSkillsSourceDir(): string {
   if (isBuiltinSkillsDir(prodCandidate)) return prodCandidate;
 
   return devCandidate;
-}
-
-/**
- * Recursively copy a directory, skipping if destination already exists (idempotent).
- */
-/**
- * Read the version from a skill's SKILL.md file.
- * Returns null if the file doesn't exist or has no version field.
- */
-function readSkillVersion(skillDir: string): string | null {
-  const skillMd = path.join(skillDir, 'SKILL.md');
-  if (!fs.existsSync(skillMd)) return null;
-
-  const content = fs.readFileSync(skillMd, 'utf-8');
-  const match = content.match(/^version:\s*(.+)$/m);
-  return match && match[1] ? match[1].trim() : null;
-}
-
-/**
- * Check if the destination skill is out of date relative to the source.
- *
- * - dest missing → install
- * - source unversioned → can't reason about staleness, skip (leave dest as-is)
- * - dest unversioned but source versioned → dest predates versioning, update
- *   (this is what lets a newly-versioned skill propagate to existing vaults;
- *   without it, a skill that gained a `version:` field later would never reach
- *   vaults that already had an older version-less copy installed)
- * - both versioned → update iff versions differ
- */
-export function shouldUpdateSkill(srcDir: string, destDir: string): boolean {
-  if (!fs.existsSync(destDir)) return true; // dest doesn't exist, need to install
-
-  const srcVersion = readSkillVersion(srcDir);
-  const destVersion = readSkillVersion(destDir);
-
-  if (!srcVersion) return false; // source unversioned — can't reason, assume up-to-date
-  if (!destVersion) return true; // dest predates versioning — update to versioned copy
-
-  return srcVersion !== destVersion;
-}
-
-/**
- * Recursively copy a directory, overwriting files to keep them in sync.
- */
-export function copyDirSync(src: string, dest: string): void {
-  fs.mkdirSync(dest, { recursive: true });
-
-  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
-    const srcPath = path.join(src, entry.name);
-    const destPath = path.join(dest, entry.name);
-
-    if (entry.isDirectory()) {
-      copyDirSync(srcPath, destPath);
-    } else {
-      fs.copyFileSync(srcPath, destPath);
-    }
-  }
 }
 
 /**
@@ -504,8 +448,10 @@ export function reconcileBundledSync(
       }
 
       try {
-        if (shouldUpdateSkill(skillSrc, skillDest)) {
-          copyDirSync(skillSrc, skillDest);
+        // Content-hash mirror (dirsync): installs when missing, updates on any
+        // drift (version bump, edited/corrupted dest), no-op when already in
+        // sync — same convergence guarantees as library/core skill sync.
+        if (mirrorDirIfChanged(skillSrc, skillDest)) {
           console.log(`[skill-installer] Installed/updated skill "${skillName}" → ${skillDest}`);
         }
       } catch (err) {

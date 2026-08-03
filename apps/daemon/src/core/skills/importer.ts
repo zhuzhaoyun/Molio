@@ -5,9 +5,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type Database from 'better-sqlite3';
+import { parseSkillMd } from '@molio/contracts';
 import type { SkillManifestEntry } from '@molio/contracts';
 import type { SkillPathsOpts } from './paths.js';
-import { parseSkillMd } from './skillmd.js';
 import { createSkill } from './store.js';
 
 export class SkillImportError extends Error {

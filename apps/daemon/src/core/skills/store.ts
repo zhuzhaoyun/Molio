@@ -18,10 +18,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
+import { generateSkillMd, stripFrontmatter } from '@molio/contracts';
 import type { SkillKind, SkillManifestEntry } from '@molio/contracts';
 import { skillContentDir, type SkillPathsOpts } from './paths.js';
-import { generateSkillMd, stripFrontmatter } from './skillmd.js';
-import { copyDirSync } from '../skill-installer.js';
+import { copyDirSync } from './dirsync.js';
 
 export class SkillNotFoundError extends Error {
   constructor(id: string) {

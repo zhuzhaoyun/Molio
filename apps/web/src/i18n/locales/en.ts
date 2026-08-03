@@ -295,7 +295,7 @@ const en: Record<string, string> = {
   'skills.duplicate': 'Duplicate',
   'skills.delete': 'Delete',
   'skills.deleteConfirm': 'Delete skill "{name}"? This cannot be undone.',
-  'skills.claudeOnlyNote': 'Skills work with every supported runtime (Claude Code / Codex / Gemini / Qwen all read knowledge-base skills).',
+  'skills.runtimeNote': 'Skills work with every supported runtime (Claude Code / Codex / Gemini / Qwen all read knowledge-base skills).',
   'skills.form.createTitle': 'New Skill',
   'skills.form.editTitle': 'Edit Skill',
   'skills.form.prefillTitle': 'Save as Skill',

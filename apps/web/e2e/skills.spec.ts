@@ -34,14 +34,14 @@ async function gotoSkillsTab(page: import('@playwright/test').Page) {
 }
 
 test.describe('Skills library', () => {
-  test('tab shows the library with bundled skills and the Claude-only note', async ({ page }) => {
+  test('tab shows the library with bundled skills and the runtime note', async ({ page }) => {
     await gotoSkillsTab(page);
 
     // Bundled skills are seeded on daemon startup → at least one bundled badge.
     await expect(page.locator('.sk-badge--bundled').first()).toBeVisible({ timeout: 5_000 });
     // A known seeded bundled skill is present.
     await expect(page.locator('.sk-row', { hasText: 'docling' }).first()).toBeVisible();
-    // Claude-only footnote.
+    // All-runtimes footnote.
     await expect(page.locator('.sk-note')).toBeVisible();
   });
 

@@ -9,6 +9,7 @@ import path from 'node:path';
 import type Database from 'better-sqlite3';
 import type {
   CreateVaultRequest,
+  SkillManifestEntry,
   VaultSkillEntry,
   VaultSkillToggleRequest,
 } from '@molio/contracts';
@@ -49,6 +50,21 @@ import {
   reconcileVault,
 } from '../core/skills/vault-config.js';
 import { FileTooLargeError } from '../core/encoding.js';
+
+/** Project a library skill into its per-vault view (global switch + local override). */
+function toVaultSkillEntry(entry: SkillManifestEntry, overrides: Map<string, boolean>): VaultSkillEntry {
+  return {
+    id: entry.id,
+    name: entry.name,
+    description: entry.description,
+    builtIn: entry.builtIn,
+    kind: entry.kind,
+    globalEnabled: entry.enabled,
+    vaultEnabled: entry.enabled && overrides.get(entry.id) !== false,
+    createdAt: entry.createdAt,
+    updatedAt: entry.updatedAt,
+  };
+}
 
 export function knowledgeRoutes(
   db: Database.Database,
@@ -116,17 +132,7 @@ export function knowledgeRoutes(
     const overrides = getVaultSkillOverrides(db, vault.id);
     const skills: VaultSkillEntry[] = listSkills(db)
       .filter((s) => !s.core)
-      .map((s) => ({
-        id: s.id,
-        name: s.name,
-        description: s.description,
-        builtIn: s.builtIn,
-        kind: s.kind,
-        globalEnabled: s.enabled,
-        vaultEnabled: s.enabled && overrides.get(s.id) !== false,
-        createdAt: s.createdAt,
-        updatedAt: s.updatedAt,
-      }));
+      .map((s) => toVaultSkillEntry(s, overrides));
     return c.json({ skills });
   });
 
@@ -152,17 +158,7 @@ export function knowledgeRoutes(
     reconcileVault(db, vault);
 
     const overrides = getVaultSkillOverrides(db, vault.id);
-    const skill: VaultSkillEntry = {
-      id: entry.id,
-      name: entry.name,
-      description: entry.description,
-      builtIn: entry.builtIn,
-      kind: entry.kind,
-      globalEnabled: entry.enabled,
-      vaultEnabled: entry.enabled && overrides.get(skillId) !== false,
-      createdAt: entry.createdAt,
-      updatedAt: entry.updatedAt,
-    };
+    const skill = toVaultSkillEntry(entry, overrides);
     return c.json({ skill });
   });
 

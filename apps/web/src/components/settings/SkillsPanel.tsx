@@ -1,10 +1,10 @@
 import { useState, useCallback } from 'react';
+import { generateSkillMd } from '@molio/contracts';
 import type { SkillManifestEntry, ImportSkillRequest } from '@molio/contracts';
 import { useSkills } from '../../hooks/useSkills';
 import { useI18n } from '../../i18n';
 import { api } from '../../api/client';
 import { SkillFormModal, type SkillFormMode, type SkillFormValues } from './SkillFormModal';
-import { serializeSkillMd } from '../../utils/skillmd';
 
 interface ModalState {
   mode: SkillFormMode;
@@ -129,7 +129,7 @@ export function SkillsPanel() {
       setModal({
         mode: 'edit',
         skill,
-        initialMarkdown: serializeSkillMd(skill.name, skill.description, instructions),
+        initialMarkdown: generateSkillMd(skill.name, skill.description, instructions),
       });
     } catch (err) {
       setFormError((err as Error).message);
@@ -146,7 +146,7 @@ export function SkillsPanel() {
       setModal({
         mode: 'create',
         skill: null,
-        initialMarkdown: serializeSkillMd(`${skill.name} 副本`, skill.description, instructions),
+        initialMarkdown: generateSkillMd(`${skill.name} 副本`, skill.description, instructions),
       });
     } catch (err) {
       setFormError((err as Error).message);
@@ -263,7 +263,7 @@ export function SkillsPanel() {
           </div>
         )}
 
-        <p className="sk-note">{t('skills.claudeOnlyNote')}</p>
+        <p className="sk-note">{t('skills.runtimeNote')}</p>
       </div>
 
       <SkillFormModal

@@ -42,11 +42,6 @@ export function skillContentDir(id: string, opts?: SkillPathsOpts): string {
   return path.join(skillsDir(opts), id);
 }
 
-/** `~/.molio/skills/manifest.json` */
-export function manifestPath(opts?: SkillPathsOpts): string {
-  return path.join(skillsDir(opts), 'manifest.json');
-}
-
 /** `~/.claude/skills` */
 export function claudeSkillsDir(opts?: SkillPathsOpts): string {
   return path.join(opts?.claudeHome ?? defaultClaudeHome(), 'skills');

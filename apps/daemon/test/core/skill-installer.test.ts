@@ -3,18 +3,8 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { reconcileBundledSync, BUILTIN_SKILLS } from '../../src/core/skill-installer.js';
-
-/**
- * "Install everything" — the equivalent of the old installBuiltinSkills(vault):
- * every bundled skill is both effective (installed) and managed, so all rules
- * are active. Used by the rule/migration/idempotency tests below; the per-vault
- * enable/disable behavior is covered separately in bundled-reconcile.test.ts.
- */
-const ALL_BUNDLED = new Set<string>(BUILTIN_SKILLS);
-function installAll(vaultPath: string): void {
-  reconcileBundledSync(ALL_BUNDLED, ALL_BUNDLED, vaultPath);
-}
+import { resolveSkillsSourceDir } from '../../src/core/skill-installer.js';
+import { installAll } from '../helpers/install-all.js';
 
 describe('skill-installer migration', () => {
   let tmpVault: string;
@@ -349,10 +339,11 @@ describe('skill-installer migration', () => {
   it('should update a version-less dest when the source gains a version', () => {
     // Reproduces the wiki-large-source-file bug: a skill whose SKILL.md had no
     // `version:` field was shipped to existing vaults, then later gained both
-    // new content AND a `version:` field. The old `shouldUpdateSkill` returned
+    // new content AND a `version:` field. The old version-compare returned
     // false whenever either side lacked a version, so the new content never
-    // reached existing vaults — only new ones. The fix: a versioned source
-    // must refresh a version-less dest.
+    // reached existing vaults — only new ones. Content-hash mirroring
+    // (dirsync.mirrorDirIfChanged) fixes this structurally: any content drift
+    // breaks the hash match and rebuilds the dest.
     const wikiBuildDir = path.join(skillsDir, 'wiki-build');
     fs.mkdirSync(wikiBuildDir, { recursive: true });
     // Simulate an old version-less install (pre-1.1.0, no `version:` line).
@@ -405,6 +396,63 @@ describe('skill-installer migration', () => {
     assert.ok(
       fs.readFileSync(doclingMd, 'utf-8').includes(`version: ${currentVersion}`),
       'skill should remain at current version',
+    );
+  });
+});
+
+// Merged from test/tools/skill-installer.test.ts — whole-dir install semantics
+// of reconcileBundledSync (multi-file bundled skills + source-dir resolution).
+describe('reconcileBundledSync (whole-dir install)', () => {
+  it('installs wechat-article-extractor skill to vault .claude/skills/', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-skill-test-'));
+    try {
+      installAll(tmpDir);
+
+      const skillDir = path.join(tmpDir, '.claude', 'skills', 'wechat-article-extractor');
+      assert.ok(fs.existsSync(skillDir), 'skill directory should exist');
+
+      const files = fs.readdirSync(skillDir);
+      assert.ok(files.includes('SKILL.md'), 'should contain SKILL.md');
+      assert.ok(files.includes('extract.js'), 'should contain extract.js');
+      assert.ok(files.includes('package.json'), 'should contain package.json');
+
+      const libDir = path.join(skillDir, 'lib');
+      assert.ok(fs.existsSync(libDir), 'lib directory should exist');
+      const libFiles = fs.readdirSync(libDir);
+      assert.ok(libFiles.includes('errors.js'), 'should contain lib/errors.js');
+      assert.ok(libFiles.includes('fetch.js'), 'should contain lib/fetch.js');
+      assert.ok(libFiles.includes('parser.js'), 'should contain lib/parser.js');
+      assert.ok(libFiles.includes('converter.js'), 'should contain lib/converter.js');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('is idempotent — second call does not overwrite', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-skill-test-'));
+    try {
+      installAll(tmpDir);
+      const skillMd = path.join(tmpDir, '.claude', 'skills', 'wechat-article-extractor', 'SKILL.md');
+      const stat1 = fs.statSync(skillMd);
+
+      installAll(tmpDir);
+      const stat2 = fs.statSync(skillMd);
+
+      assert.equal(stat1.mtimeMs, stat2.mtimeMs, 'file should not be overwritten');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  // Regression: src/core/skills/ is ALSO a source module (the user skill library)
+  // that compiles to dist/src/core/skills/. The resolver must not mistake that
+  // module dir for the packaged built-in skills dir — it has to land on a dir
+  // that actually contains the shipped skills (wechat-article-extractor/SKILL.md).
+  it('resolves the real built-in skills dir, not a same-named module dir', () => {
+    const dir = resolveSkillsSourceDir();
+    assert.ok(
+      fs.existsSync(path.join(dir, 'wechat-article-extractor', 'SKILL.md')),
+      `resolved source dir should contain the built-in skills, got: ${dir}`,
     );
   });
 });

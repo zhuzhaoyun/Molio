@@ -4,15 +4,15 @@ import type {
   CreateSkillRequest,
   UpdateSkillRequest,
   ImportSkillRequest,
-  PrefillResult,
 } from '@molio/contracts';
 import { api } from '../api/client';
 
 /**
  * Global skill library state. Mirrors useRuntimes: loads on mount, exposes
  * CRUD actions that update the daemon and then reconcile local state from the
- * authoritative response (no blind optimistic writes — the daemon owns sync to
- * ~/.claude/skills, so we trust the entry it returns).
+ * authoritative response (no blind optimistic writes — the daemon owns the
+ * per-vault sync into each `<vault>/.claude/skills/`, so we trust the entry it
+ * returns).
  */
 export function useSkills() {
   const [skills, setSkills] = useState<SkillManifestEntry[]>([]);
@@ -81,10 +81,6 @@ export function useSkills() {
     return skill;
   }, [upsert]);
 
-  const prefill = useCallback(async (content: string): Promise<PrefillResult> => {
-    return api.prefillSkill(content);
-  }, []);
-
   return {
     skills,
     loading,
@@ -95,6 +91,5 @@ export function useSkills() {
     toggleSkill,
     deleteSkill,
     importSkill,
-    prefill,
   };
 }
