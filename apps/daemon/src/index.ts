@@ -6,6 +6,7 @@ import { installBuiltinSkills } from './core/skill-installer.js';
 import { ensureWikiSysPromptFiles } from './core/wiki-prompts.js';
 import { isKillablePortOccupant } from './core/port-check.js';
 import { startMemoryMonitor } from './core/memory-monitor.js';
+import { pruneRunLogs } from './core/runs-log-prune.js';
 
 const port = Number(process.env['MOLIO_PORT'] ?? 3100);
 
@@ -95,6 +96,11 @@ checkAndKillPortOccupant(port);
 for (const vault of listVaults(db)) {
   installBuiltinSkills(vault.path);
 }
+
+// Delete per-run JSONL logs older than 7 days (nothing cleaned them up
+// before; they accumulate indefinitely under ~/.molio/runs). Best-effort and
+// fast — a readdir + stat sweep over the run-id directories.
+pruneRunLogs();
 
 // Materialize the feishu wiki role frame (the only channel still delivered via
 // --append-system-prompt-file; weixin prepends its frame, see weixin/dispatcher).

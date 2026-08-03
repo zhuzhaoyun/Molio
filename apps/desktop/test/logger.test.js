@@ -7,7 +7,7 @@
 
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync, existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { log, getLogPath, setLogDir, _reset } from '../src/logger.js';
@@ -98,6 +98,22 @@ describe('log rotation', () => {
     const newContent = readFileSync(logPath, 'utf-8');
     assert.ok(newContent.includes('after rotation'));
     assert.ok(!newContent.includes('xxxxx'), 'new file should not contain old content');
+  });
+
+  it('should rotate within a long session, not only at startup', () => {
+    // Regression: rotation used to run once in ensureLogPath at first use, so
+    // a session running for a day (heavy daemon stderr forwarding) grew the
+    // log file without bound. log() must rotate mid-session past 1MB.
+    const logPath = path.join(tmpDir, 'updater.log');
+    const payload = 'y'.repeat(1000);
+    // ~1200 lines × ~1060 bytes ≈ 1.24MB → comfortably past the 1MB cap.
+    for (let i = 0; i < 1200; i++) {
+      log('info', 'daemon', `line ${i} ${payload}`);
+    }
+
+    assert.ok(existsSync(logPath + '.old'), 'mid-session rotation should produce .old');
+    const size = statSync(logPath).size;
+    assert.ok(size < 1024 * 1024, `live log (${size} bytes) should be back under the cap`);
   });
 });
 

@@ -7,6 +7,7 @@ import { log, getLogPath } from './logger.js';
 import { startFetchServer } from './wiki-fetcher.js';
 import { openFeishuLogin, getFeishuLoginStatus } from './wiki-fetcher-login.js';
 import { startDaemonMetricsPolling } from './daemon-metrics.js';
+import { CappedBuffer } from './capped-buffer.js';
 
 const errMsg = (err) => (err instanceof Error ? err.message : String(err));
 
@@ -93,9 +94,12 @@ async function startDaemonProduction() {
       stdio: 'pipe',
     });
 
-    // Collect stderr/stdout for diagnostics if daemon fails to start
-    const stderrChunks = [];
-    const stdoutChunks = [];
+    // Collect stderr/stdout for diagnostics if daemon fails to start.
+    // Capped buffers: the previous plain arrays pushed every line forever,
+    // so a day of runtime left a day of daemon output sitting in main
+    // process memory. The tail (200 lines) is all exit diagnostics need.
+    const stderrChunks = new CappedBuffer(200);
+    const stdoutChunks = new CappedBuffer(200);
     let started = false;
 
     daemonProcess.stdout?.on('data', (data) => {
@@ -149,10 +153,10 @@ async function startDaemonProduction() {
       log('error', 'main', `daemon exited with code=${code} signal=${signal}`);
       if (code !== 0 && code !== null) {
         if (stdoutChunks.length > 0) {
-          log('error', 'main', `daemon stdout tail:\n${stdoutChunks.slice(-20).join('\n')}`);
+          log('error', 'main', `daemon stdout tail:\n${stdoutChunks.toArray().join('\n')}`);
         }
         if (stderrChunks.length > 0) {
-          log('error', 'main', `daemon stderr:\n${stderrChunks.join('\n')}`);
+          log('error', 'main', `daemon stderr tail:\n${stderrChunks.toArray().join('\n')}`);
         }
       }
       daemonProcess = null;
