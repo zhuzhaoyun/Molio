@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type Database from 'better-sqlite3';
-import type { RewindResendRequest, DeleteMessagesRequest } from '@molio/contracts';
+import type { RewindResendRequest, DeleteMessagesRequest, UpdateConversationRequest } from '@molio/contracts';
 import type { RunManager } from '../core/RunManager.js';
 import type { ConversationService } from '../core/conversations/service.js';
 import { startConversationRun } from '../core/conversations/run-starter.js';
@@ -13,6 +13,7 @@ import {
   listMessagesBefore,
   listConversationHistory,
   listMessages,
+  updateConversation,
 } from '../core/db.js';
 
 export function conversationRoutes(
@@ -64,6 +65,35 @@ export function conversationRoutes(
   app.delete('/:id', (c) => {
     deleteConversation(db, c.req.param('id'));
     return c.body(null, 204);
+  });
+
+  // PATCH /api/conversations/:id — update metadata (title / pin). Does NOT
+  // touch updated_at: rename & pin are metadata ops, not activity.
+  app.patch('/:id', async (c) => {
+    const convId = c.req.param('id');
+    if (!getConversation(db, convId)) {
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Conversation not found' } }, 404);
+    }
+    let body: UpdateConversationRequest | null;
+    try {
+      body = await c.req.json<UpdateConversationRequest>();
+    } catch {
+      return c.json({ error: { code: 'BAD_REQUEST', message: 'Invalid JSON body' } }, 400);
+    }
+    if (body == null || typeof body !== 'object') {
+      return c.json({ error: { code: 'BAD_REQUEST', message: 'Invalid JSON body' } }, 400);
+    }
+    if (body.title === undefined && body.pinned === undefined) {
+      return c.json({ error: { code: 'BAD_REQUEST', message: 'title or pinned required' } }, 400);
+    }
+    if (body.title !== undefined && (typeof body.title !== 'string' || !body.title.trim())) {
+      return c.json({ error: { code: 'BAD_REQUEST', message: 'title must be a non-empty string' } }, 400);
+    }
+    if (body.pinned !== undefined && typeof body.pinned !== 'boolean') {
+      return c.json({ error: { code: 'BAD_REQUEST', message: 'pinned must be a boolean' } }, 400);
+    }
+    const updated = updateConversation(db, convId, { title: body.title, pinned: body.pinned });
+    return c.json(updated);
   });
 
   // POST /api/conversations/:id/rewind-resend — regenerate or edit-and-resend

@@ -109,6 +109,7 @@ export interface Conversation {
   metadata?: Record<string, unknown>;
   createdAt: number;
   updatedAt: number;
+  pinnedAt?: number | null;
 }
 
 export interface ConversationHistoryItem {
@@ -144,8 +145,14 @@ export interface ListHistoryQuery {
 }
 
 export interface ConversationHistoryPage {
+  pinnedItems: ConversationHistoryItem[];
   items: ConversationHistoryItem[];
   nextCursor: number | null;
+}
+
+export interface UpdateConversationRequest {
+  title?: string;
+  pinned?: boolean;
 }
 
 export interface MessageListResponse {
