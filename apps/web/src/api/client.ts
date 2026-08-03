@@ -331,6 +331,22 @@ export const api = {
     }
   },
 
+  async updateConversation(
+    conversationId: string,
+    patch: { title?: string; pinned?: boolean },
+  ): Promise<Conversation> {
+    const res = await fetch(`${BASE}/conversations/${conversationId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      throw new Error(err?.error?.message ?? `Failed to update conversation: ${res.status}`);
+    }
+    return res.json();
+  },
+
   async rewindResend(conversationId: string, req: { newContent: string; agentId?: string; cwd?: string }): Promise<{ runId: string; conversationId: string }> {
     const res = await fetch(`${BASE}/conversations/${conversationId}/rewind-resend`, {
       method: 'POST',
