@@ -65,7 +65,7 @@ const ISO_FAR = 0.6;
 // 阻尼略高于拖拽档(0.4>0.35)→ 慢滑且零 overshoot/抖动。alphaDecay 不可过低(<0.012)否则回弹拖成数秒=
 // 又成"延迟动画"。回弹档参数在 beginDrag 恢复拖拽档（init 字面量 0.03/0.35 与拖拽档同值）。
 const DAMP_DRAG = 0.35;
-const DAMP_REBOUND = 0.4;
+const DAMP_REBOUND = 0.3; // 回弹阻尼：略低于拖拽档，回弹更可见、带轻微回弹（过高=回弹消失）
 const DRAG_ALPHA_DECAY = 0.03;
 const REBOUND_ALPHA_DECAY = 0.018;
 
@@ -103,12 +103,16 @@ export interface NodeHandle {
 type SimulationMode = 'main-thread' | 'worker';
 
 export interface SimulationAPI {
-  init: (graph: Graph, sigma: Sigma, _onTick?: () => void) => void;
+  init: (graph: Graph, sigma: Sigma, _onTick?: () => void, autoRun?: boolean) => void;
   wake: (alpha?: number) => void;
   stop: () => void;
   /** 非破坏性停 tick：仅停止物理 tick，保留 sim/worker/节点句柄/图引用，使下次拖拽仍能移动节点+跑流体。
    *  供 GraphPage 松手定格使用。区别于 stop()（破坏性，用于卸载/重建：terminate worker + 清句柄）。 */
   halt: () => void;
+  /** 冷加载小图：同步预结算 iters 步（停 timer + 手动 tick，不渲染），把终态写进 graph。 */
+  preSettle: (iterations: number) => void;
+  /** 把 graph 当前坐标同步进 sim 内部并停 sim（暖加载/入场后调用，防首次拖拽 1 帧抖动）。 */
+  syncToGraph: () => void;
   getNode: (id: string) => NodeHandle | undefined;
   setForceParam: (name: string, value: number) => void;
   multiLevel: (params?: MultiLevelParams) => void;
@@ -289,8 +293,12 @@ export function useSimulation(): SimulationAPI {
               .velocityDecay(0.35)
               .on('tick', () => {
                 // 质心锁自动解除（见 initMainThreadMode 的同款注释）
-                if (!motionModeRef.current && mtSim.alpha() < 0.02 && mtSim.force('centroidLock')) {
-                  mtSim.force('centroidLock', null);
+                if (!motionModeRef.current && mtSim.alpha() < 0.02) {
+                  if (mtSim.force('centroidLock')) mtSim.force('centroidLock', null);
+                  if (mtSim.force('tetherX')) {
+                    mtSim.force('tetherX', null);
+                    mtSim.force('tetherY', null);
+                  }
                 }
                 for (const d of mtNodes) {
                   if (g.hasNode(d.id)) {
@@ -358,7 +366,7 @@ export function useSimulation(): SimulationAPI {
 
   // ── Init ──
 
-  const init = useCallback((graph: Graph, sigma: Sigma, onTick?: () => void) => {
+  const init = useCallback((graph: Graph, sigma: Sigma, onTick?: () => void, autoRun = true) => {
     // Reset ML state in case init is called mid-ML
     mlRunningRef.current = false;
     mlOnProgressRef.current = null;
@@ -386,6 +394,12 @@ export function useSimulation(): SimulationAPI {
       initWorkerMode(graph, params);
     } else {
       initMainThreadMode(graph, params);
+    }
+
+    // 入场默认不自动跑（避免初始抖动）；布局由 GraphPage 显式驱动（preSettle / ML / 缓存终态）。
+    if (!autoRun) {
+      if (modeRef.current === 'worker') workerRef.current?.postMessage({ type: 'stop' });
+      else simRef.current?.stop();
     }
   }, []);
 
@@ -440,8 +454,14 @@ export function useSimulation(): SimulationAPI {
         // 质心锁自动解除：拖拽中(motionModeRef true)绝不解除(含按住暂停，避免暂停后移动又滑移)；
         // 松手后运动模式关闭、alpha 衰减到接近静止时移除 forceCenter，既无需脆弱定时器，
         // 也不残留幽灵力去污染后续调力参数滑块等唤醒。
-        if (!motionModeRef.current && simulation.alpha() < 0.02 && simulation.force('centroidLock')) {
-          simulation.force('centroidLock', null);
+        if (!motionModeRef.current && simulation.alpha() < 0.02) {
+          if (simulation.force('centroidLock')) simulation.force('centroidLock', null);
+          // 沉降接近静止后撤拴绳：alpha≈0 此刻不产生位移；撤拴绳后向心(保持开启)接管，布局回到可交互态
+          // （孤立节点另有 fx 硬钉保圆环，不会被向心拉走）。
+          if (simulation.force('tetherX')) {
+            simulation.force('tetherX', null);
+            simulation.force('tetherY', null);
+          }
         }
         for (const d of d3Nodes) {
           if (graph.hasNode(d.id)) {
@@ -600,7 +620,15 @@ export function useSimulation(): SimulationAPI {
 
     sim.velocityDecay(DAMP_DRAG); // 恢复拖拽档阻尼/alpha 衰减（上一轮松手设了回弹慢放档）
     sim.alphaDecay(DRAG_ALPHA_DECAY);
-    sim.force('centroidLock', null); // 清上一轮沉降残留，防与拴绳/磁铁打架
+    // §12.2 第 1 层：装「按下瞬间质心锁」= forceCenter(全部 d3 节点均值)。
+    // 替换旧的 sim.force('centroidLock', null)（只清残留、不装锁 → 磁铁每 tick 写 vx/vy 的净动量
+    // 每次拖拽都把整簇推走 = 漂移主因，终端机判别实验确认）。
+    // 质心与 forceCenter 内部同集（全部节点），自洽；装锁后磁铁/拴绳只绕固定质心做局部流动，整簇不平移。
+    // 不硬清：拖拽期 + 回弹期都保留，由 onTick 在 alpha<0.02 且非拖拽时自动解除（§6.3 生命周期）。
+    let cx = 0, cy = 0, cn = 0;
+    for (const n of d3NodesRef.current) { cx += n.x ?? 0; cy += n.y ?? 0; cn++; }
+    if (cn > 0) { cx /= cn; cy /= cn; }
+    sim.force('centroidLock', forceCenter<D3Node>(cx, cy));
 
     // 快照拖拽前锚点（用 d3 当前坐标）
     const anchors = new Map<string, { x: number; y: number }>();
@@ -658,13 +686,12 @@ export function useSimulation(): SimulationAPI {
     if (!sim) return;
     // 撤磁铁（拖拽专用，松手后不应继续往外推）。
     sim.force('magnet', null);
-    // 保留拴绳（不撤）：远节点(强拴绳)继续钉死 → 回弹时不产生"远节点松动"的整簇波纹；
-    // 近节点/被拖节点拴绳=0 → 自由，靠被拉长的边力做阻尼回弹（Obsidian 式拖拽后过渡动画 / spring-back）。
-    // 关闭全局向心：否则回弹期向心把整簇往 0 拽 = 用户讨厌的"整簇延迟动画"；
-    // 内力(link/repel/collide)质心守恒 → 整簇不漂，冻结相机仍有效。向心此后保持关闭（守恒故安全）。
-    sim.force<ForceX<D3Node>>('x')?.strength(0);
-    sim.force<ForceY<D3Node>>('y')?.strength(0);
-    // 回弹节奏：放慢回弹（降 alphaDecay 慢放 + 略高阻尼慢滑），均无 overshoot/抖动；beginDrag 恢复拖拽档。
+    // 撤拴绳：让被拖节点 + 邻居在松手后靠内部力做自然回弹（=用户要的"回弹效果"）。
+    // 先前"保留拴绳+钉死被拖节点"会把邻居拴在锚点、被拖节点也弹不回 → 回弹效果消失。
+    // 向心保持开启：与内部力一起把整簇稳在中心附近（布局紧凑，回居中位移很小）；孤立另有 fx 硬钉不飞。
+    sim.force('tetherX', null);
+    sim.force('tetherY', null);
+    // 回弹节奏：放慢回弹（降 alphaDecay 慢放 + 阻尼 0.3 带轻微回弹）。
     sim.velocityDecay(DAMP_REBOUND);
     sim.alphaDecay(REBOUND_ALPHA_DECAY);
   }, []);
@@ -744,7 +771,57 @@ export function useSimulation(): SimulationAPI {
     });
   }, []);
 
-  return { init, wake, stop, halt, getNode, setForceParam, multiLevel, setMotionMode, setCentroidLock, beginDrag, endDrag };
+  // ── 冷加载小图：同步预结算（不渲染）拿终态，消除"圆形中间态"──
+  const preSettle = useCallback((iterations: number) => {
+    if (modeRef.current !== 'main-thread') return; // <WORKER_THRESHOLD 才走主线程，cold-small 必为主线程
+    const sim = simRef.current;
+    const g = graphRef.current;
+    if (!sim || !g) return;
+    sim.stop();
+    // 注意：手动 sim.tick() 不触发 onTick 监听，循环结束后必须手动把 d3 终态写回 graph，
+    // 否则 graph 停在初始聚团 → 入场 bloom 无展开 → 归一化框极小 → 节点被放大成巨球。
+    for (let i = 0; i < iterations; i++) sim.tick();
+    for (const d of d3NodesRef.current) {
+      if (g.hasNode(d.id)) {
+        g.setNodeAttribute(d.id, 'x', d.x ?? 0);
+        g.setNodeAttribute(d.id, 'y', d.y ?? 0);
+      }
+    }
+    sim.stop();
+  }, []);
+
+  // ── 把 graph 当前坐标(+fx/fy)同步进 sim 内部并停 sim（暖加载/入场后，防首次拖拽 1 帧抖动）──
+  const syncToGraph = useCallback(() => {
+    const g = graphRef.current;
+    if (modeRef.current === 'worker') {
+      if (!g) return;
+      const positions: Record<string, { x: number; y: number; fx: number | null; fy: number | null }> = {};
+      g.forEachNode((k, a) => {
+        positions[k] = {
+          x: (a.x as number) ?? 0,
+          y: (a.y as number) ?? 0,
+          fx: (a.fx as number | undefined) ?? null,
+          fy: (a.fy as number | undefined) ?? null,
+        };
+      });
+      workerRef.current?.postMessage({ type: 'sync', positions });
+      return;
+    }
+    const sim = simRef.current;
+    if (!sim || !g) return;
+    for (const d of d3NodesRef.current) {
+      if (!g.hasNode(d.id)) continue;
+      d.x = (g.getNodeAttribute(d.id, 'x') as number) ?? d.x;
+      d.y = (g.getNodeAttribute(d.id, 'y') as number) ?? d.y;
+      d.fx = (g.getNodeAttribute(d.id, 'fx') as number | undefined) ?? null;
+      d.fy = (g.getNodeAttribute(d.id, 'fy') as number | undefined) ?? null;
+      d.vx = 0;
+      d.vy = 0;
+    }
+    sim.stop();
+  }, []);
+
+  return { init, wake, stop, halt, preSettle, syncToGraph, getNode, setForceParam, multiLevel, setMotionMode, setCentroidLock, beginDrag, endDrag };
 }
 
 // ── Main-Thread Node Handle ──

@@ -188,18 +188,38 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
 
 - **渲染引擎**: Sigma.js v3 (WebGL)，通过 `useRef` + `useEffect` 手动绑定
 - **图数据结构**: Graphology
-- **力导向布局**: `graphology-layout-forceatlas2`（ForceAtlas2 算法）
-  - `linLogMode: true` — 近距离强排斥，防止节点重叠
-  - `barnesHutOptimize: true` — O(n log n) 性能优化
+- **力导向布局**: d3-force（`useSimulation.ts`，自适应主线程 <1000 / Web Worker ≥1000），
+  大图（≥50 节点）首次加载自动跑 Walshaw 多层级布局（`simulation.worker.ts`，粗化→粗层布局→反投精化），
+  也可在设置面板手动「重新布局」。孤立节点平铺成外围螺旋并 `fx/fy` 固定。
+- **入场过渡**: 冷加载（无缓存）节点聚团 → bloom 绽放 + 去模糊 + 淡入（`INTRO_BLOOM_MS` 800ms，
+  径向错峰涟漪）；暖加载（导航回来/刷新命中模块缓存 + sessionStorage）快速淡入，不重 bloom。
+  冷小图（<50 节点）同步 `preSettle` 预结算拿终态，消除"圆形中间态"。入场完成标记
+  `window.__graphIntroDone`（E2E 据此等待）。见 `graph.css` `.graph-intro*`。
+  ⚠️ 入场终态非精确力平衡（暖加载缓存快照=上次交互后的非平衡态；冷加载 ML `refineTicks 250` 近收敛不精确）
+  经终端机判别实验确认只是**次要一次性残差**，漂移主因在力层磁铁净动量——已由质心锁修复（§12.2），
+  入场侧无需额外改动。见 `docs/superpowers/specs/2026-07-28-graph-drag-camera-stability.md` §12.2。
+- **位置持久化**: 节点坐标（含 `fx/fy`）跨导航存模块级 `graphPositionsCache`、跨刷新存
+  `sessionStorage`（key `molio.graphPositions.<vaultId>`），刷新/切回不随机重排。
 - **交互系统**: 原生 DOM 事件，区分 click / drag / dblclick
   - 单击选中节点，双击跳转知识库文档
   - 拖拽：被拖节点 `fx/fy` 跟手；拖拽期用「磁铁排斥场 + 按距离门控的三类拴绳」做局部流体
-    （邻居受牵引、近处未接触即避让、远处钉死，孤立用中等牵引绳防飞散）；**松手就地定格**
-    （pin 全部 + 停模拟，无沉降/回弹动画，故松手后外围孤立不自动归环，需重布局规整）。
-    相机侧用 `setCustomBBox` 冻结归一化，保证拖拽/松手视角不抖不滑。流体手感仍在调优，
-    设计详见 `docs/superpowers/specs/2026-07-28-graph-drag-camera-stability.md` §11。
-  - Hover 高亮关联节点和边
-- **Minimap**: Canvas 绘制，右下角显示全局节点分布 + 当前视口矩形
+    （邻居 `NEIGHBOR_TETHER=0.3` 部分跟走、近处未接触即避让、远处钉死，孤立用中等牵引绳防飞散）；
+    **松手自然回弹**——放开被拖节点（`fx=null`）+ `endDrag` 撤磁铁/拴绳 + 向心保持开启，
+    靠被拉长边的弹力阻尼滑回，回弹慢放档 `REBOUND_ALPHA_DECAY=0.018`。单击（未拖拽）分支仍
+    `freezeAllNow`（`halt()` 非破坏性停 tick + pin 全部）定格。相机侧用 `setCustomBBox` 冻结归一化，
+    保证拖拽/松手视角不抖不滑。**拖拽后整簇漂移已修复 ✅**（2026-08-03）：终端机判别实验定位主因
+    是**力层磁铁净动量**（磁铁直接写 `vx/vy`，每次拖拽注入、整簇被推离；入场非平衡只是次要残差），
+    修复 = `beginDrag` 装 `forceCenter(按下瞬间全部节点均值)` 锁住整簇（主线程 + worker 各一份），
+    `freezeAllNow` 末尾清锁（单点分支）；E2E 质心锁断言守护（§12.4）。详见
+    `docs/superpowers/specs/2026-07-28-graph-drag-camera-stability.md` §12.2。
+    **单击选中不抖动 ✅**（2026-08-03）：拖拽流体（`beginDrag` + `wake`）从 mousedown 延后到
+    handleMouseMove 超过 `DRAG_THRESHOLD` 处——mousedown 只「解锁全部 + 锁被拖节点 + 冻结相机」，
+    单击路径零力，点击不"呼吸"（§12.5）。
+  - 拖拽/移动时自动降质：藏标签（`renderLabels=false` + `hideLabelsOnMove`）、collide 迭代 3→1、
+    minimap 跳过重绘；松手恢复。
+  - Hover 高亮关联节点和边（smoothstep 动画）
+- **Minimap**: Canvas 绘制，右下角显示全局节点分布 + 当前视口矩形；世界框与主相机同源
+  （`getCustomBBox() ?? getBBox()`），拖拽期稳定
 - **React 性能**: 坐标计算和渲染帧循环在 Sigma 内部闭环，交互状态用 `useRef`，零 React re-render
 
 ### 聊天 (Chat)

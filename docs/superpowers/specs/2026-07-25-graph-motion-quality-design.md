@@ -153,6 +153,25 @@ collide 降到 1 的副作用（拖拽中邻居节点可能短暂轻微重叠）
 
 ---
 
+### 5.3 入场 blur 在低档机的代价（2026-08-03 补充）
+
+入场过渡（`graph.css` `.graph-intro*`）对 WebGL 画布施加 `filter: blur(5px)` + `opacity` + `transform`。
+blur 虽走 GPU 合成层，但**对实时重绘的 WebGL canvas 而言，低档机（弱核显 + 高 DPI）上 blur 仍可能掉帧**——
+这正是 §1.1 里"标签渲染是渲染域大头"之外的第二个渲染域成本。入场仅持续 ~360–800ms 且只触发一次
+（冷加载 bloom / 暖加载淡入），故不列入拖拽降质矩阵；但**若后续在低档机上观察到入场卡顿**，候选措施：
+- 入场时临时 `pixelRatio` 封顶（合成层面积随 DPR 平方增长）；
+- 低档机降级：检测到 `devicePixelRatio ≥ 2` 且 GPU 弱时跳过 blur（仅保留 opacity+transform）；
+- 暖加载 soft 分支本就不带 blur（仅淡入+极轻缩放），代价集中在冷加载 bloom 一次。
+
+拖拽降质矩阵本身不受入场影响（入场在可交互前完成；`mousedown` 命中节点时会取消未完成的 bloom 并同步坐标，见 `GraphPage.tsx` `introRafRef` 分支）。
+
+> **2026-08-03 补充 2（后续）**：入场收尾与「入场刚结束的首次拖拽」撞车（bloom 结束 `renderLabels=true`
+> + 全量 `refresh()`，首次拖拽又关/开标签）曾怀疑是卡顿来源——**终端机复测卡顿已不明显**，此修复降级为可选
+> （若要根治仍可做：bloom 结束延迟恢复标签到首次空闲 / `will-change` 收敛到入场期间）。
+> 根因追踪：`docs/superpowers/specs/2026-07-28-graph-drag-camera-stability.md` §12.2。
+
+---
+
 ## 六、不做的事（YAGNI）
 
 - **三档画质设置 / 二元性能模式**：本次不做；若 Windows 复测仍卡，单独立项（候选旋钮：pixelRatio 封顶、标签密度、minimap 常关）；

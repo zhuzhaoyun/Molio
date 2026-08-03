@@ -100,6 +100,28 @@
 .graph-sigma {
   width: 100% !important;
   height: 100% !important;
+  /* 入场：opacity+transform 走 GPU 合成层(不占主线程)；blur 用中等半径+短时长(5px/360ms)——
+     因为 bloom 已隐藏标签 + skipIndexation 变便宜，blur 现在负担得起，于是恢复"模糊→清晰"的强表现力，
+     又比旧版(6px/450ms + 带标签 bloom)更顺。scale .88→1 给"由中心向外铺开"的展开感。 */
+  transition:
+    opacity 480ms ease,
+    transform 660ms cubic-bezier(0.16, 0.84, 0.32, 1),
+    filter 360ms cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: opacity, transform, filter;
+  transform-origin: center center;
+}
+/* 冷加载入场隐藏：透明 + 模糊 + 略缩小；transition:none 立即隐藏(不闪)，移除后由 base 过渡揭示 */
+.graph-sigma.graph-intro {
+  opacity: 0;
+  filter: blur(5px);
+  transform: scale(0.88);
+  transition: none;
+}
+/* 暖加载(导航回来/同挂载重建)：仅淡入 + 极轻微缩放，快速揭示已排好的终态 */
+.graph-sigma.graph-intro-soft {
+  opacity: 0;
+  transform: scale(0.985);
+  transition: none;
 }
 
 /* ── Minimap：右下角全局概览 + 视口指示 ── */

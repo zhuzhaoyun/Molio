@@ -20,7 +20,7 @@ import { GraphSettingsPanel } from './GraphSettingsPanel';
 import { Minimap } from './Minimap';
 import { getThemeColors } from './types';
 import { setupCameraInertia } from './useCameraInertia';
-import { NODE_TYPE_COLORS, nodeSize, nodeColor, interpolateColor } from './graph-utils';
+import { NODE_TYPE_COLORS, nodeSize, nodeColor, interpolateColor, tileIsolatedNodes } from './graph-utils';
 
 // ── Visual constants (Obsidian light theme, matching obsidian.png) ──
 // 浅色背景 + 深色节点，像纸张上的墨点
@@ -61,6 +61,76 @@ interface GraphCacheEntry {
   ts: number;
 }
 const graphDataCache = new Map<string, GraphCacheEntry>();
+
+// ── 模块级节点位置缓存（跨导航复用 → 导航回来不闪、不重 bloom，只快速淡入）──
+// 注意：刷新整页会清空（JS 内存），故刷新/首次走"冷加载 bloom"。
+const graphPositionsCache = new Map<string, Map<string, { x: number; y: number; fx?: number; fy?: number }>>();
+
+// ── 入场过渡参数（看不见画面，提成常量便于目测微调）──
+const INTRO_BLOOM_MS = 800;        // 冷加载：节点 聚团→终态 绽放时长（easeOutCubic，先快后缓）
+// 径向错峰：按终态到质心的归一化半径给每节点延迟，形成"由中心向外涟漪绽放"，比统一 ease 更"活"。
+// 0=无错峰(统一)；越大波纹越明显。开销不变（仅每节点多算一个 localT）。
+const INTRO_STAGGER = 0.6;
+const INTRO_FADE_MS = 350;         // 画布 opacity 0→1（与 CSS .graph-intro* 的 transition 对齐）
+const INTRO_PRESETTLE_TICKS = 300; // 冷加载小图：同步预结算 tick 数（拿终态，避免"中间态"）
+const INTRO_SPIRAL_STEP = 7;       // 入场聚团黄金角螺旋点间距（图坐标，越小聚得越紧）
+const INTRO_GUESS_R_FACTOR = 35;   // 冷加载大图 ML 完成前占位包围盒半径系数（sqrt(n)*k+120）
+
+function easeOutCubic(t: number): number { const u = 1 - t; return 1 - u * u * u; }
+
+/** 节点坐标（fx/fy 可选）；统一类型避免 Map 值类型不变性报错。 */
+type Pos = { x: number; y: number; fx?: number; fy?: number };
+
+/** 可见节点的包围盒（图坐标）；空图返回 null。
+ *  回退"现状"的全量包围盒、不做离群点裁剪——裁剪会放大缩放、改变"现状"的间距观感
+ *  （用户反馈"节点之间距离变大"）。若个别离群点撑大视图，应由布局本身解决（如孤立平铺），而非 fit 裁剪。 */
+function computeBounds(graph: Graph): { x: [number, number]; y: [number, number] } | null {
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  graph.forEachNode((_k, a) => {
+    if (a.hidden) return;
+    const x = (a.x as number) ?? 0, y = (a.y as number) ?? 0;
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
+  });
+  if (!isFinite(minX)) return null;
+  if (maxX - minX < 1e-6) { minX -= 1; maxX += 1; }
+  if (maxY - minY < 1e-6) { minY -= 1; maxY += 1; }
+  return { x: [minX, maxX], y: [minY, maxY] };
+}
+
+/** 读当前图坐标为 Map（不含 fx/fy，供 bloom 终点）。 */
+function toPosMap(graph: Graph): Map<string, Pos> {
+  const m = new Map<string, Pos>();
+  graph.forEachNode((k, a) => m.set(k, { x: (a.x as number) ?? 0, y: (a.y as number) ?? 0 }));
+  return m;
+}
+
+// ── 位置缓存读写：模块缓存(跨导航) + sessionStorage(跨刷新) ──
+// 刷新整页会清空 JS 内存 → 用 sessionStorage 恢复同一布局，避免"刷新后位置随机/重排"
+// （对齐 Obsidian 按 vault 持久化图谱位置）。读取时只复用仍存在的节点（多余键忽略，缺失节点走初始布局）。
+const POS_CACHE_KEY = (vaultId: string) => `molio.graphPositions.${vaultId}`;
+function readPositionsCache(vaultId: string): Map<string, Pos> | null {
+  const mem = graphPositionsCache.get(vaultId);
+  if (mem && mem.size > 0) return mem;
+  try {
+    const raw = sessionStorage.getItem(POS_CACHE_KEY(vaultId));
+    if (!raw) return null;
+    const obj = JSON.parse(raw) as Record<string, Pos>;
+    const m = new Map<string, Pos>();
+    for (const k of Object.keys(obj)) m.set(k, obj[k]);
+    if (m.size > 0) { graphPositionsCache.set(vaultId, m); return m; }
+  } catch { /* 损坏 / 隐私模式：忽略，走冷加载 */ }
+  return null;
+}
+function writePositionsCache(vaultId: string, positions: Map<string, Pos>) {
+  if (positions.size === 0) return;
+  graphPositionsCache.set(vaultId, positions);
+  try {
+    const obj: Record<string, Pos> = {};
+    positions.forEach((v, k) => { obj[k] = v; });
+    sessionStorage.setItem(POS_CACHE_KEY(vaultId), JSON.stringify(obj));
+  } catch { /* 配额 / 隐私模式：忽略 */ }
+}
 
 // ── Main Page Component ──
 
@@ -108,12 +178,11 @@ export function GraphPage() {
       setTimeout(() => setMlRunning(false), 500);
     }
   };
-  // Persist node positions across graph rebuilds (theme change, nodeScale change).
-  // fx/fy 一并保存：孤立节点的外围圆环固定、用户拖拽锁定，重建后需恢复，
-  // 否则重建后这些节点会失去固定、被向心力拉回中心。
-  const savedPositionsRef = useRef<
-    Map<string, { x: number; y: number; fx?: number; fy?: number }>
-  >(new Map());
+  // 入场过渡状态：clusterStart=冷加载入场聚团坐标(bloom 起点)；pendingCold=是否冷加载(待 bloom)；
+  // introRaf=bloom 的 RAF id(卸载/重建时取消)。节点位置跨导航缓存见模块级 graphPositionsCache。
+  const clusterStartRef = useRef<Map<string, Pos> | null>(null);
+  const pendingColdRef = useRef(false);
+  const introRafRef = useRef(0);
 
   // ── Transition animation states ──
   const focusDimRef = useRef(0);        // 0→1 animated for select focus
@@ -181,9 +250,17 @@ export function GraphPage() {
   // Initialize Sigma when graph data is available
   useEffect(() => {
     if (!graphData || graphData.nodes.length === 0 || !containerRef.current) return;
+    if (!activeVaultId) return;
 
-    // Use saved positions from previous build (theme change, nodeScale change)
-    const savedPositions = savedPositionsRef.current;
+    // 入场完成标记复位（E2E 据此等待入场结束）
+    (window as unknown as Record<string, unknown>).__graphIntroDone = false;
+
+    // 暖=缓存命中(模块缓存/ sessionStorage，导航回来或刷新)→ 用缓存终态 + 快速淡入；
+    // 冷=真正首次 → 入场聚团 + bloom。
+    const savedPositions = readPositionsCache(activeVaultId);
+    const warm = !!savedPositions;
+    // 入场隐藏类：暖=轻模糊淡入；冷=重模糊(遮住"尚未排好"，兼作加载态)
+    containerRef.current.classList.add(warm ? 'graph-intro-soft' : 'graph-intro');
 
     if (sigmaRef.current) {
       sigmaRef.current.kill();
@@ -195,13 +272,25 @@ export function GraphPage() {
     graphRef.current = graph;
 
     const count = graphData.nodes.length;
-    // 均匀正圆形初始布局 — 替代随机散布，让图谱从干净整洁的圆形开始
-    const radius = Math.sqrt(count) * 35 + 120;
+    const guessR = Math.sqrt(count) * INTRO_GUESS_R_FACTOR + 120; // 冷大图 ML 完成前占位包围盒半径
+    // 冷加载入场聚团（黄金角螺旋，围绕原点=力布局中心）= bloom 起点
+    const GOLDEN = Math.PI * (3 - Math.sqrt(5));
+    // spiral 聚团：冷加载作 bloom 起点；暖加载作"缓存缺键节点"的兜底初始位（避免堆在原点 0,0）
+    const clusterStart = new Map<string, Pos>();
+    graphData.nodes.forEach((n, i) => {
+      const r = INTRO_SPIRAL_STEP * Math.sqrt(i + 1);
+      const a = i * GOLDEN;
+      clusterStart.set(n.key, { x: Math.cos(a) * r, y: Math.sin(a) * r });
+    });
+    clusterStartRef.current = warm ? null : clusterStart;
+    pendingColdRef.current = !warm;
 
+    // 初始布局回退"现状"的圆形散布：螺旋初始会改变力布局/ML 的收敛结果（节点间距变大、回弹变味），
+    // 故圆形仅用于"布局起点"；螺旋(clusterStart)只留给 bloom 当视觉起点，不影响布局/间距/回弹。
     for (let i = 0; i < count; i++) {
       const n = graphData.nodes[i];
+      const saved = savedPositions?.get(n.key);
       const angle = (2 * Math.PI * i) / count;
-      const saved = savedPositions.get(n.key);
       graph.addNode(n.key, {
         label: n.label,
         path: n.path,
@@ -212,10 +301,10 @@ export function GraphPage() {
           ? NODE_TYPE_COLORS[n.nodeType]
           : (n.linkCount === 0 ? themeColors.isolated : themeColors.node),
         type: 'circle',
-        x: saved?.x ?? Math.cos(angle) * radius,
-        y: saved?.y ?? Math.sin(angle) * radius,
-        // 恢复固定位置（孤立节点圆环 / 拖拽锁定）；undefined 时不设属性
-        ...(saved?.fx != null ? { fx: saved.fx, fy: saved.fy } : {}),
+        x: saved?.x ?? Math.cos(angle) * guessR,
+        y: saved?.y ?? Math.sin(angle) * guessR,
+        // 暖：恢复缓存的固定位置（孤立圆环/拖拽锁定）；冷：入场阶段不固定
+        ...(warm && saved?.fx != null ? { fx: saved.fx, fy: saved.fy } : {}),
       });
     }
 
@@ -227,14 +316,18 @@ export function GraphPage() {
     }
 
     // ── Dead link nodes ──
-    // Render unresolved wikilinks as small semi-transparent nodes
     if (graphData.deadLinks && graphData.deadLinks.length > 0) {
       const seen = new Set<string>();
-      for (const dl of graphData.deadLinks) {
-        if (seen.has(dl.targetName)) continue;
+      graphData.deadLinks.forEach((dl, i) => {
+        if (seen.has(dl.targetName)) return;
         seen.add(dl.targetName);
         const deadKey = `__dead__${dl.targetName}`;
-        const saved = savedPositions.get(deadKey);
+        const saved = savedPositions?.get(deadKey);
+        const di = count + i;
+        const sp = clusterStart.get(deadKey) ?? {
+          x: Math.cos(di * GOLDEN) * INTRO_SPIRAL_STEP * Math.sqrt(di + 1),
+          y: Math.sin(di * GOLDEN) * INTRO_SPIRAL_STEP * Math.sqrt(di + 1),
+        };
         try {
           graph.addNode(deadKey, {
             label: `${dl.targetName} (?)`,
@@ -244,12 +337,12 @@ export function GraphPage() {
             size: 4 * settings.nodeScale,
             color: themeColors.deadNode,
             type: 'circle',
-            x: saved?.x ?? (Math.random() - 0.5) * radius,
-            y: saved?.y ?? (Math.random() - 0.5) * radius,
-            ...(saved?.fx != null ? { fx: saved.fx, fy: saved.fy } : {}),
+            x: saved?.x ?? sp.x,
+            y: saved?.y ?? sp.y,
+            ...(warm && saved?.fx != null ? { fx: saved.fx, fy: saved.fy } : {}),
           });
         } catch { /* node already exists */ }
-      }
+      });
     }
 
     // ── Apply filter settings ──
@@ -417,9 +510,8 @@ export function GraphPage() {
     const cleanupInertia = setupCameraInertia(renderer);
 
     renderer.refresh();
-    // Start d3-force physics engine (positions sync on tick, rendering via interaction handlers)
-    // onTick=refresh：让 d3 tick 中其他节点的位置变化实时重绘（拖拽流体联动）
-    simulation.init(graph, renderer, () => renderer.refresh());
+    // 初始不自动跑力模拟（避免入场抖动）；布局由各路径显式驱动：暖=缓存终态、冷小图=同步预结算、冷大图=ML。
+    simulation.init(graph, renderer, () => renderer.refresh(), false);
 
     // Apply stored force params to the fresh simulation
     const { forces, edgeWidth } = settings;
@@ -435,9 +527,129 @@ export function GraphPage() {
       });
     }
 
-    // Auto-trigger multi-level layout if no saved positions exist (first load only)
-    const hasSavedPositions = savedPositionsRef.current.size > 0;
-    if (!hasSavedPositions && graph.order >= 50) {
+    // ── 入场编排 ──
+    // 把相机 fit 到给定包围盒（customBBox 冻结 → 同时是拖拽稳定所需的冻结基准）。
+    const fitToBounds = (bounds: { x: [number, number]; y: [number, number] }) => {
+      renderer.setCustomBBox(bounds);
+      renderer.getCamera().setState({ x: 0.5, y: 0.5, ratio: 1, angle: 0 });
+    };
+    // 把一组坐标写进 graph（withFx：是否一并写 fx/fy，没有则清除）。
+    const writePositions = (
+      m: Map<string, Pos>,
+      withFx: boolean,
+    ) => {
+      graph.forEachNode((k) => {
+        const p = m.get(k);
+        if (!p) return;
+        graph.setNodeAttribute(k, 'x', p.x);
+        graph.setNodeAttribute(k, 'y', p.y);
+        if (withFx && p.fx != null && p.fy != null) {
+          graph.setNodeAttribute(k, 'fx', p.fx);
+          graph.setNodeAttribute(k, 'fy', p.fy);
+        } else {
+          graph.removeNodeAttribute(k, 'fx');
+          graph.removeNodeAttribute(k, 'fy');
+        }
+      });
+    };
+    // 揭示动画。soft=暖加载快速淡入(无 bloom)；bloom=冷加载 聚团→终态 绽放+去模糊+淡入。
+    // bloom 起点写入时画布仍重模糊，故"终态→聚团"的瞬间跳变不可见；随后去模糊与绽放同步进行。
+    const reveal = (
+      mode: 'bloom' | 'soft',
+      from: Map<string, Pos> | null,
+      to: Map<string, Pos>,
+      bounds: { x: [number, number]; y: [number, number] },
+    ) => {
+      cancelAnimationFrame(introRafRef.current);
+      introRafRef.current = 0;
+      if (mode === 'soft') {
+        writePositions(to, true);
+        fitToBounds(bounds);
+        renderer.refresh();
+        simulation.syncToGraph(); // sim 内部同步到终态并停，防首次拖拽 1 帧抖动
+        requestAnimationFrame(() => containerRef.current?.classList.remove('graph-intro-soft'));
+        setTimeout(() => { (window as unknown as Record<string, unknown>).__graphIntroDone = true; }, INTRO_FADE_MS);
+        return;
+      }
+      // 绽放期隐藏标签 + 跳过索引重建：标签文字测量 + 标签网格重建是逐帧开销大头，藏掉 +
+      // skipIndexation 让绽放跑满帧率；绽放结束一次性恢复标签（一次出现，优于逐帧布局）。
+      renderer.setSetting('renderLabels', false);
+      writePositions(from!, false); // 跳回聚团（此刻画布透明+缩放，不可见）
+      fitToBounds(bounds);          // 归一化冻结到终态 → 绽放"中心→铺开"才可见
+      renderer.refresh({ skipIndexation: true });
+      requestAnimationFrame(() => containerRef.current?.classList.remove('graph-intro'));
+      // 径向错峰：按终态到质心的归一化半径给每节点延迟 → 由中心向外涟漪绽放（更"活"）。
+      let bcx = 0, bcy = 0, bn = 0;
+      to.forEach((p) => { bcx += p.x; bcy += p.y; bn++; });
+      if (bn > 0) { bcx /= bn; bcy /= bn; }
+      let maxD = 1;
+      to.forEach((p) => { const d = Math.hypot(p.x - bcx, p.y - bcy); if (d > maxD) maxD = d; });
+      const t0 = performance.now();
+      const step = () => {
+        const t = Math.min(1, (performance.now() - t0) / INTRO_BLOOM_MS);
+        graph.forEachNode((k) => {
+          const a = from!.get(k);
+          const b = to.get(k);
+          if (!a || !b) return;
+          const rn = Math.hypot(b.x - bcx, b.y - bcy) / maxD; // 0=中心 1=最外
+          const lt = Math.max(0, Math.min(1, t * (1 + INTRO_STAGGER) - rn * INTRO_STAGGER));
+          const e = easeOutCubic(lt);
+          graph.setNodeAttribute(k, 'x', a.x + (b.x - a.x) * e);
+          graph.setNodeAttribute(k, 'y', a.y + (b.y - a.y) * e);
+        });
+        renderer.refresh({ skipIndexation: true });
+        if (t < 1) {
+          introRafRef.current = requestAnimationFrame(step);
+        } else {
+          writePositions(to, true);
+          renderer.setSetting('renderLabels', true); // 绽放结束恢复标签
+          renderer.refresh();
+          simulation.syncToGraph(); // sim 内部=终态且停，供后续拖拽
+          introRafRef.current = 0; // 标记 bloom 已结束，避免后续 mousedown 误触发取消逻辑
+          (window as unknown as Record<string, unknown>).__graphIntroDone = true;
+        }
+      };
+      introRafRef.current = requestAnimationFrame(step);
+    };
+
+    // ML 完成回调（放在 init effect 内以闭包访问 reveal/clusterStart 等）。
+    // 冷加载首次：bloom 聚团→终态（worker 已把终态写入 graph，含孤立平铺）；
+    // 重布局：节点已被 worker 渐进 morph 到终态，仅做一次平滑相机 fit（无节点 snap）。
+    const onMlDone = () => {
+      const g = graphRef.current;
+      const r = sigmaRef.current;
+      if (!g || !r) return;
+      simulationRef.current.setCentroidLock(null);
+      if (pendingColdRef.current) {
+        const finals = toPosMap(g);
+        const bounds = computeBounds(g);
+        if (bounds) reveal('bloom', clusterStartRef.current, finals, bounds);
+        pendingColdRef.current = false;
+      } else {
+        const bounds = computeBounds(g);
+        if (bounds) {
+          r.setCustomBBox(bounds);
+          r.getCamera().animate({ x: 0.5, y: 0.5, ratio: 1, angle: 0 }, { duration: 500 });
+        }
+      }
+    };
+    window.addEventListener('graph-ml-done', onMlDone);
+
+    if (warm) {
+      const bounds = computeBounds(graph);
+      if (bounds) reveal('soft', null, savedPositions!, bounds);
+    } else if (graph.order < 50) {
+      // 冷小图：同步预结算拿终态（消除"圆形中间态"），再 bloom
+      simulation.preSettle(INTRO_PRESETTLE_TICKS);
+      // 孤立节点平铺到外围圆环（确定性）：否则弱向心下它们被力布局甩成离群点 → 撑大包围盒 → 坏视角。
+      tileIsolatedNodes(graph);
+      const finals = toPosMap(graph);
+      const bounds = computeBounds(graph);
+      if (bounds) reveal('bloom', clusterStart, finals, bounds);
+    } else {
+      // 冷大图：占位包围盒 + 相机 fit，聚团在重模糊下显示；ML 完成后在 graph-ml-done 里 bloom
+      fitToBounds({ x: [-guessR, guessR], y: [-guessR, guessR] });
+      renderer.refresh();
       setTimeout(() => {
         simulation.multiLevel?.({ onProgress: mlOnProgressRef.current! });
       }, 50);
@@ -563,6 +775,14 @@ export function GraphPage() {
         draggedNode = node;
         isDragging = false;
         dragStartMouse = { x: mouseX, y: mouseY };
+        // 若入场 bloom 仍在跑，立即取消并把当前坐标同步进 sim，避免 bloom 与拖拽争抢写坐标
+        if (introRafRef.current) {
+          cancelAnimationFrame(introRafRef.current);
+          introRafRef.current = 0;
+          containerRef.current?.classList.remove('graph-intro', 'graph-intro-soft');
+          simulation.syncToGraph();
+          (window as unknown as Record<string, unknown>).__graphIntroDone = true;
+        }
         // 路线 B：解锁所有节点（含孤立）参与拖拽期流体。孤立不再硬钉——改由「中等牵引绳 + 磁铁场」
         // 约束：磁铁近时能被推开一点、绳子拽住防飞散（用户要求孤立节点也要有反应）。被拖节点随后重锁。
         graph.forEachNode((k) => {
@@ -593,19 +813,10 @@ export function GraphPage() {
         if (!renderer.getCustomBBox()) {
           renderer.setCustomBBox(renderer.getBBox());
         }
-        // 路线 B 局部流体：把「近/远」反应区按屏幕像素定义（符合视觉直觉），用冻结映射换算成图坐标
-        // 半径（拖拽期映射恒定，一次换算全程有效），交 beginDrag 装按距离门控的拴绳 + 关闭向心。
-        // 平移轴改由「远节点被拴绳钉死」保证（不再依赖拖拽期 forceCenter）；缩放/包围盒轴仍由上面
-        // 的 customBBox 管。两轴各负其责 → 整簇不旋转/不平移，近处流体、邻居受牵引。
-        const gA = renderer.viewportToGraph({ x: 0, y: 0 });
-        const gB = renderer.viewportToGraph({ x: 100, y: 0 });
-        const graphUnitsPer100Px = Math.hypot(gB.x - gA.x, gB.y - gA.y) || 1;
-        const rInner = (DRAG_FLOW_INNER_PX * graphUnitsPer100Px) / 100;
-        const rOuter = (DRAG_FLOW_OUTER_PX * graphUnitsPer100Px) / 100;
-        const rMagnet = (DRAG_MAGNET_PX * graphUnitsPer100Px) / 100;
-        simulation.beginDrag(node, rInner, rOuter, rMagnet);
-        // 唤醒物理引擎——这次唤醒会持续 tick，拖拽过程中不需要重复唤醒
-        simulation.wake(0.3);
+        // 注意：拖拽流体（beginDrag：磁铁/拴绳/质心锁）**不在 mousedown 安装**——单击选中不应触发
+        // 任何全局力（否则每次点击图都抖一下，§12.2 卡顿/抖动）。mousedown 只做：解锁全部 + 锁定
+        // 被拖节点 + 冻结相机；真正装流体 + wake 延后到 handleMouseMove 超过 DRAG_THRESHOLD 处。
+        // 因此单击（未过阈值）路径：mouseup 时 selectedNode 选中 + freezeAllNow 定格，全程无运动。
         e.preventDefault();
         e.stopPropagation();
       } else {
@@ -656,6 +867,18 @@ export function GraphPage() {
         renderer.setSetting('renderLabels', false);
         simulation.setMotionMode(true);
         interactingRef.current = true;
+        // 超过阈值才装拖拽流体（路线 B 局部流体：磁铁/拴绳/质心锁）+ 唤醒物理引擎。
+        // 延后到此刻而非 mousedown：单击选中（未过阈值）不触发任何全局力 → 无点击抖动。
+        // 半径按屏幕像素定义（符合视觉直觉），用冻结映射换算成图坐标（拖拽期映射恒定，
+        // 一次换算全程有效）；平移轴由质心锁保证（beginDrag 内部装 forceCenter 按下瞬间均值）。
+        const gA = renderer.viewportToGraph({ x: 0, y: 0 });
+        const gB = renderer.viewportToGraph({ x: 100, y: 0 });
+        const graphUnitsPer100Px = Math.hypot(gB.x - gA.x, gB.y - gA.y) || 1;
+        const rInner = (DRAG_FLOW_INNER_PX * graphUnitsPer100Px) / 100;
+        const rOuter = (DRAG_FLOW_OUTER_PX * graphUnitsPer100Px) / 100;
+        const rMagnet = (DRAG_MAGNET_PX * graphUnitsPer100Px) / 100;
+        simulation.beginDrag(draggedNode, rInner, rOuter, rMagnet);
+        simulation.wake(0.3);
       }
 
       if (isDragging) {
@@ -694,6 +917,9 @@ export function GraphPage() {
         if (h) { h.fx = x; h.fy = y; }
       });
       simulation.halt();
+      // 单点不需要质心锁：清掉 mousedown beginDrag 装的锁，防残留的"幽灵力"在
+      // 之后调力参数滑块 → wake 时把整簇拉到旧按下质心（§6.3 警告的污染路径）。
+      simulation.setCentroidLock(null);
     };
 
     const handleMouseUp = (_e: MouseEvent) => {
@@ -707,19 +933,24 @@ export function GraphPage() {
       const wasDragging = isDragging;
 
       if (wasDragging) {
-        // 拖拽后回弹（物理正确版）：放开被拖节点(解锁 fx/fy)，让拖拽时拉长的边所存的弹力把整个局部簇
-        // 阻尼松弛回平衡——被拖节点自己滑回「落点↔原位」之间并停住(邻居被 0.3 拴绳部分牵住 → 弹回一截，
-        // 既保留拖拽意义又有明显回弹)。先前「钉死在落点」是错的：落点≠平衡点 → 钉死造成永久张力 →
-        // 邻居围着矛盾点振荡 = 抖动，且被拖节点无法释放弹力 = 看不到回弹。
-        const d3Node = simulation.getNode(node);
-        if (d3Node) {
-          d3Node.fx = null;
-          d3Node.fy = null;
-          graph.removeNodeAttribute(node, 'fx');
-          graph.removeNodeAttribute(node, 'fy');
-        }
-        // endDrag 撤磁铁 + 保留拴绳(远钉死防波纹) + 关向心(防整簇漂) + 设回弹慢放档(慢滑+慢放，无抖动)；
-        // wake 用较低能量 0.3(去起始快冲)让回弹柔和可见。不重铺孤立(否则弹回圆环=延迟动画)。
+        // 放开被拖节点：松手后靠被拉长的边做自然回弹（=用户要的"回弹效果"）。
+        // 先前"钉死在落点"会让被拖节点弹不回 → 回弹消失；邻居的拴绳也在 endDrag 撤掉，一起回弹。
+        const dn = simulation.getNode(node);
+        if (dn) { dn.fx = null; dn.fy = null; }
+        graph.removeNodeAttribute(node, 'fx');
+        graph.removeNodeAttribute(node, 'fy');
+        // 重铺孤立节点到外围圆环，并同步钉进 sim（fx/fy）→ 回弹期不飞散、圆环不丢。
+        tileIsolatedNodes(graph);
+        graph.forEachNode((k, a) => {
+          if (a.hidden || graph.degree(k) !== 0) return;
+          const h = simulation.getNode(k);
+          if (!h) return;
+          const fx = (a.fx as number) ?? (a.x as number) ?? 0;
+          const fy = (a.fy as number) ?? (a.y as number) ?? 0;
+          h.x = fx; h.y = fy; h.fx = fx; h.fy = fy;
+        });
+        // endDrag 撤磁铁 + 保留拴绳(回弹弹簧) + 回弹慢放档；向心保持开启，与拴绳一起稳住整簇/孤立。
+        // 沉降接近静止时 onTick 自动撤拴绳（alpha≈0 不产生位移）→ 布局随后稳定、无延迟动画。
         simulation.endDrag();
         simulation.wake(0.3);
         // 恢复降质 + 重绘；interactingRef 先置 false 让 afterRender 能重绘 minimap（回弹过程可见）
@@ -770,7 +1001,6 @@ export function GraphPage() {
             x: (attrs.x as number) ?? 0,
             y: (attrs.y as number) ?? 0,
           };
-          // 固定位置一并保存，重建后恢复（见 savedPositionsRef 注释）
           const fx = attrs.fx as number | undefined;
           const fy = attrs.fy as number | undefined;
           if (fx != null) entry.fx = fx;
@@ -778,8 +1008,16 @@ export function GraphPage() {
           positions.set(key, entry);
         });
       }
-      savedPositionsRef.current = positions;
+      // 写入模块级位置缓存：导航回来/同挂载重建即"暖加载"（快速淡入、不重 bloom）。
+      // 仅当本次入场已完成(__graphIntroDone)才缓存——否则(如 React StrictMode 被中止的首挂载，
+      // graph 还停在入场聚团)会把"聚团"误存为终态，导致下次"暖加载"显示未展开的聚团(节点被放大成巨球)。
+      if (activeVaultId && (window as unknown as Record<string, unknown>).__graphIntroDone) {
+        writePositionsCache(activeVaultId, positions); // 模块缓存 + sessionStorage（刷新可恢复）
+      }
 
+      cancelAnimationFrame(introRafRef.current);
+      containerRef.current?.classList.remove('graph-intro', 'graph-intro-soft');
+      window.removeEventListener('graph-ml-done', onMlDone);
       simulation.stop();
       cleanupInertia();
       startDimAnimRef.current = null;
@@ -950,20 +1188,8 @@ export function GraphPage() {
     }
   };
 
-  // ── Camera pulse after ML completes ──
-  useEffect(() => {
-    const handler = () => {
-      const sigma = sigmaRef.current;
-      if (!sigma) return;
-      // ML 重布局大幅改变节点位置 → 清除拖拽遗留的冻结包围盒 + 质心锁，让相机 fit 到新布局
-      sigma.setCustomBBox(null);
-      simulationRef.current.setCentroidLock(null);
-      const camera = sigma.getCamera();
-      camera.animate({ ratio: camera.ratio * 1.05 }, { duration: 300 });
-    };
-    window.addEventListener('graph-ml-done', handler);
-    return () => window.removeEventListener('graph-ml-done', handler);
-  }, []);
+  // 注：graph-ml-done 的处理已搬进初始化 effect 闭包（需要 reveal/clusterStart 等闭包变量），
+  // 冷加载首次走 bloom、重布局走平滑相机 fit。见初始化 effect 内的 onMlDone。
 
   const nodeCount = graphData?.nodes.length ?? 0;
   const edgeCount = graphData?.edges.length ?? 0;

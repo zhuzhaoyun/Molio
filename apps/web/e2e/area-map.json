@@ -64,7 +64,7 @@
         "apps/web/src/components/graph/*",
         "apps/web/src/styles/graph.css"
       ],
-      "specs": ["graph", "graph-settings"]
+      "specs": ["graph", "graph-minimap", "graph-search", "graph-settings"]
     },
     "navigation": {
       "paths": [
@@ -124,6 +124,8 @@
     "chat-repairing": { "priority": "P1", "file": "chat-repairing.spec.ts" },
     "create-vault-form": { "priority": "P0", "file": "create-vault-form.spec.ts" },
     "graph": { "priority": "P1", "file": "graph.spec.ts" },
+    "graph-minimap": { "priority": "P1", "file": "graph-minimap.spec.ts" },
+    "graph-search": { "priority": "P1", "file": "graph-search.spec.ts" },
     "graph-settings": { "priority": "P2", "file": "graph-settings.spec.ts" },
     "history": { "priority": "P1", "file": "history.spec.ts" },
     "knowledge": { "priority": "P0", "file": "knowledge.spec.ts" },

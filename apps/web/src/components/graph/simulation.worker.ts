@@ -112,6 +112,9 @@ self.onmessage = function (e: MessageEvent) {
     case 'stop':
       handleStop();
       break;
+    case 'sync':
+      handleSync(e.data);
+      break;
     case 'setForce':
       handleSetForce(e.data);
       break;
@@ -175,8 +178,9 @@ function handleInit(msg: InitMessage) {
 function onTick() {
   // 质心锁自动解除：拖拽中(dragMotion)绝不解除(含按住暂停)；松手后非拖拽、alpha 接近静止时
   // 移除 forceCenter，避免残留力污染后续唤醒（与主线程 onTick 同款逻辑）。
-  if (!dragMotion && sim && sim.alpha() < 0.02 && sim.force('centroidLock')) {
-    sim.force('centroidLock', null);
+  if (!dragMotion && sim && sim.alpha() < 0.02) {
+    if (sim.force('centroidLock')) sim.force('centroidLock', null);
+    if (sim.force('tetherX')) { sim.force('tetherX', null); sim.force('tetherY', null); }
   }
   tickCount++;
   if (tickCount % TICK_THROTTLE !== 0) return;
@@ -200,6 +204,19 @@ function handleWake(msg: { alpha: number }) {
 
 function handleStop() {
   if (sim) sim.stop();
+}
+
+// 把主线程 graph 坐标(+fx/fy)同步进 worker sim 内部并停 sim（暖加载/入场后调用，防首次拖拽 1 帧抖动）
+function handleSync(msg: {
+  positions: Record<string, { x: number; y: number; fx: number | null; fy: number | null }>;
+}) {
+  if (!sim) return;
+  for (const n of nodes) {
+    const p = msg.positions[n.id];
+    if (!p) continue;
+    n.x = p.x; n.y = p.y; n.fx = p.fx; n.fy = p.fy; n.vx = 0; n.vy = 0;
+  }
+  sim.stop();
 }
 
 // ── Set Force Param ──
@@ -248,7 +265,13 @@ function handleBeginDrag(msg: { draggedId: string; rInner: number; rOuter: numbe
   if (!sim) return;
   sim.velocityDecay(DAMP_DRAG);
   sim.alphaDecay(DRAG_ALPHA_DECAY);
-  sim.force('centroidLock', null);
+  // §12.2 第 1 层：装「按下瞬间质心锁」= forceCenter(全部 worker 节点均值)。
+  // 同主线程 useSimulation.beginDrag：替换旧的 sim.force('centroidLock', null)，
+  // 让磁铁/拴绳只绕固定质心局部流动、整簇不平移；不硬清，由 onTick alpha<0.02 自动解除。
+  let cx = 0, cy = 0, cn = 0;
+  for (const n of nodes) { cx += n.x ?? 0; cy += n.y ?? 0; cn++; }
+  if (cn > 0) { cx /= cn; cy /= cn; }
+  sim.force('centroidLock', forceCenter<WorkerNode>(cx, cy));
   dragId = msg.draggedId;
   dragRadii = { rInner: msg.rInner, rOuter: msg.rOuter, rMagnet: msg.rMagnet };
   dragNode = nodes.find((n) => n.id === dragId) ?? null;
@@ -304,12 +327,10 @@ function handleBeginDrag(msg: { draggedId: string; rInner: number; rOuter: numbe
 function handleEndDrag() {
   if (!sim) return;
   sim.force('magnet', null); // 撤磁铁（拖拽专用）
-  // 保留拴绳（不撤、也不清 drag* 状态）：拴绳闭包引用模块级 dragAnchors/dragNeighbors/dragNode，
-  // 若清空它们，遗留拴绳会退化成"拉向原点"=整簇延迟动画。保留则远节点继续钉死(防回弹波纹)、
-  // 近/被拖(=0)自由回弹。关闭全局向心（同主线程：防整簇漂移；内力守恒故整簇不漂）。
-  (sim.force('x') as ReturnType<typeof forceX<WorkerNode>> | undefined)?.strength(0);
-  (sim.force('y') as ReturnType<typeof forceY<WorkerNode>> | undefined)?.strength(0);
-  sim.velocityDecay(DAMP_REBOUND); // 放慢回弹（慢滑+慢放），无抖动；beginDrag 恢复拖拽档
+  // 撤拴绳（同主线程）：让被拖节点+邻居自然回弹；向心保持开启稳住整簇，孤立另有 fx 硬钉。
+  sim.force('tetherX', null);
+  sim.force('tetherY', null);
+  sim.velocityDecay(DAMP_REBOUND); // 放慢回弹（慢滑+轻微回弹）；beginDrag 恢复拖拽档
   sim.alphaDecay(REBOUND_ALPHA_DECAY);
 }
 

@@ -181,7 +181,16 @@ test.describe('Graph drag auto-quality (移动时自动降质)', () => {
     await gotoHome(page);
     await clickNav(page, 'graph');
     await page.waitForSelector('.graph-sigma canvas', { timeout: 15_000 });
-    await page.waitForTimeout(2000); // 等模拟沉降
+    // 等入场过渡（模糊→清晰+淡入 / bloom）完成，再交互；并断言揭示类已移除（入场真的结束、非卡住）
+    await page.waitForFunction(
+      () => (window as unknown as { __graphIntroDone?: boolean }).__graphIntroDone === true,
+      null,
+      { timeout: 10_000 },
+    );
+    // 吸收 React StrictMode 二次挂载 / SWR 后台 refetch 触发的二次重建+软入场，确保图谱稳定后再交互
+    // （否则测试抓到的节点引用可能与重建后的可见图错位，造成"二次拖拽不跟手"的假失败）。
+    await page.waitForTimeout(1500);
+    await expect(page.locator('.graph-sigma')).not.toHaveClass(/graph-intro/);
 
     const pos = await page.evaluate(() => {
       const s = (window as unknown as { __sigma?: any; __graph?: any }).__sigma;
@@ -205,33 +214,44 @@ test.describe('Graph drag auto-quality (移动时自动降质)', () => {
     await page.mouse.move(startX, startY);
     await page.mouse.down();
 
-    // 按下瞬间：customBBox 应被冻结（非 null），记录固定参考点的图坐标 + 整图包围盒 span
+    // 按下瞬间：customBBox 应被冻结（非 null），记录固定参考点的图坐标 + 整图包围盒 span + 整簇质心。
+    // 质心 = 可见节点图坐标均值 → 视口坐标（§12.2 质心锁的守护：拖拽期 forceCenter 把质心钉在按下瞬间位置，
+    // 松手回弹后整簇不漂移；若质心锁失效/被移除，磁铁净动量会把质心推走 10px+，此断言必挂）。
     const down = await page.evaluate((vp) => {
       const w = window as unknown as { __sigma?: any; __graph?: any };
       const s = w.__sigma;
       const g = w.__graph;
       if (!s || !g) return null;
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      let sx = 0, sy = 0, n = 0;
       g.forEachNode((_k: string, a: { x: number; y: number; hidden?: boolean }) => {
         if (a.hidden) return;
         const x = a.x ?? 0, y = a.y ?? 0;
         if (x < minX) minX = x; if (x > maxX) maxX = x;
         if (y < minY) minY = y; if (y > maxY) maxY = y;
+        sx += x; sy += y; n++;
       });
       const cst = (s.getCamera() as any).getState();
+      const centroid = n > 0 ? s.graphToViewport({ x: sx / n, y: sy / n }) : null;
       return {
         bbox: s.getCustomBBox(),
         ref: s.viewportToGraph({ x: vp.x, y: vp.y }),
         span: Math.max(maxX - minX, maxY - minY),
         cam: { x: cst.x, y: cst.y, ratio: cst.ratio },
+        centroid,
       };
     }, { x: pos!.x, y: pos!.y });
     expect(down).not.toBeNull();
     expect(down!.bbox).not.toBeNull();
     expect(down!.span).toBeGreaterThan(0);
+    expect(down!.centroid).not.toBeNull();
 
     // 拖拽中持续移动（模拟持续 wake、节点流动）
     await page.mouse.move(startX + 40, startY + 40, { steps: 10 });
+    // 按住停顿 700ms：让磁铁注入的速度被 forceCenter 收敛（质心残差由 mean(vx) 决定，小图需多
+    // tick 才能把均值拉回 C0；一到位立刻测量会拿到瞬态 8px+ 误报）。按住停顿=真实拖拽场景。
+    // 流体在过阈值处才安装（§12.5 单击修复），sim 启动比旧版晚，故停顿需略长于 400ms。
+    await page.waitForTimeout(700);
 
     // 固定图坐标点的视口映射必须恒定（缩放/包围盒轴冻结 + 相机冻结）
     const during = await page.evaluate((ref) => {
@@ -241,20 +261,30 @@ test.describe('Graph drag auto-quality (移动时自动降质)', () => {
       if (!s || !g) return null;
       const vp = s.graphToViewport(ref);
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      let sx = 0, sy = 0, n = 0;
       g.forEachNode((_k: string, a: { x: number; y: number; hidden?: boolean }) => {
         if (a.hidden) return;
         const x = a.x ?? 0, y = a.y ?? 0;
         if (x < minX) minX = x; if (x > maxX) maxX = x;
         if (y < minY) minY = y; if (y > maxY) maxY = y;
+        sx += x; sy += y; n++;
       });
       const cst = (s.getCamera() as any).getState();
-      return { x: vp.x, y: vp.y, bbox: s.getCustomBBox(), span: Math.max(maxX - minX, maxY - minY), cam: { x: cst.x, y: cst.y, ratio: cst.ratio } };
+      const centroid = n > 0 ? s.graphToViewport({ x: sx / n, y: sy / n }) : null;
+      return { x: vp.x, y: vp.y, bbox: s.getCustomBBox(), span: Math.max(maxX - minX, maxY - minY), cam: { x: cst.x, y: cst.y, ratio: cst.ratio }, centroid };
     }, down!.ref);
     expect(during).not.toBeNull();
     // 映射应仍落在按下时的视口点附近（零漂移；容差 1px 抗浮点噪声）
     expect(during!.x).toBeCloseTo(pos!.x, 0);
     expect(during!.y).toBeCloseTo(pos!.y, 0);
     expect(during!.bbox).not.toBeNull();
+    // 质心锁守护（§12.2 第 1 层）：拖拽中 forceCenter 把整簇质心钉在按下瞬间位置，
+    // 磁铁净动量不能移动整簇。容差 4px = §7 的 forceCenter+钉住节点残差(~1.4px)留余量；
+    // 无质心锁时磁铁把质心推走 10px+，必挂。注意断言放「拖拽中」而非「回弹结束后」——
+    // 回弹结束后质心锁已被 onTick 自动解除、被拖节点停在半路，质心移动是正常布局调整。
+    expect(during!.centroid).not.toBeNull();
+    expect(Math.abs(during!.centroid!.x - down!.centroid!.x)).toBeLessThan(4);
+    expect(Math.abs(during!.centroid!.y - down!.centroid!.y)).toBeLessThan(4);
     // 路线 B 烟检：拖拽期整图包围盒不得爆炸式撑大 / 出现 NaN（磁铁写错→速度 runaway 的标志）。
     // 阈值放宽到 20×：4 节点小图上"正常拖拽"（被拖节点本身位移 + 强磁铁推开孤立节点）span 也会数倍
     // 变化，紧阈值会误报；真正的飞散/失控是数百倍以上。流体的"浓淡/手感"无法在小图像素级断言，
@@ -373,5 +403,83 @@ test.describe('Graph drag auto-quality (移动时自动降质)', () => {
 
     expect(Math.abs(p2.x - (p1.x + 30))).toBeLessThan(3);
     expect(Math.abs(p2.y - (p1.y + 30))).toBeLessThan(3);
+  });
+
+  // 回归：单击选中节点（按下→松手，未超过 DRAG_THRESHOLD=4px）时图谱不得有任何运动。
+  // 旧 bug：mousedown 命中节点就立刻 beginDrag + wake(0.3)，即使鼠标没动也激活磁铁/拴绳/质心锁，
+  // 整图"呼吸"一下直到 mouseup 的 freezeAllNow 才停 = 每次点击都抖动。修复：把流体安装延后到
+  // handleMouseMove 超过拖拽阈值处，单击路径全程零力（§12.5 点击抖动修复）。
+  test('single-click selects a node without moving the graph (no click jitter)', async ({ page }) => {
+    await page.addInitScript((id) => {
+      localStorage.setItem('molio.activeVaultId', id);
+    }, vaultId);
+    await gotoHome(page);
+    await clickNav(page, 'graph');
+    await page.waitForSelector('.graph-sigma canvas', { timeout: 15_000 });
+    await page.waitForFunction(
+      () => (window as unknown as { __graphIntroDone?: boolean }).__graphIntroDone === true,
+      null,
+      { timeout: 10_000 },
+    );
+    await page.waitForTimeout(1500);
+
+    // 记录点击前整簇质心（可见节点均值 → 视口）+ 相机 state
+    const snapshot = await page.evaluate(() => {
+      const w = window as unknown as { __sigma?: any; __graph?: any };
+      const s = w.__sigma, g = w.__graph;
+      if (!s || !g) return null;
+      let sx = 0, sy = 0, n = 0;
+      g.forEachNode((_k: string, a: { x: number; y: number; hidden?: boolean }) => {
+        if (a.hidden) return;
+        sx += a.x ?? 0; sy += a.y ?? 0; n++;
+      });
+      const cst = (s.getCamera() as any).getState();
+      return n > 0 ? { centroid: s.graphToViewport({ x: sx / n, y: sy / n }), cam: { x: cst.x, y: cst.y, ratio: cst.ratio } } : null;
+    });
+    expect(snapshot).not.toBeNull();
+
+    // 取首个可见节点位置，模拟单击（按下→原地松手，无位移）
+    const clickAt = await page.evaluate(() => {
+      const w = window as unknown as { __sigma?: any; __graph?: any };
+      const s = w.__sigma, g = w.__graph;
+      if (!s || !g) return null;
+      let vp: { x: number; y: number } | null = null;
+      g.forEachNode((_k: string, a: { x: number; y: number; hidden?: boolean }) => {
+        if (vp) return;
+        vp = s.graphToViewport({ x: a.x ?? 0, y: a.y ?? 0 });
+      });
+      return vp;
+    });
+    expect(clickAt).not.toBeNull();
+
+    const canvas = page.locator('.graph-sigma canvas').first();
+    const box = await canvas.boundingBox();
+    expect(box).not.toBeNull();
+    await page.mouse.move(box!.x + clickAt!.x, box!.y + clickAt!.y);
+    await page.mouse.down();
+    await page.mouse.up();
+
+    // 单击后等一小段（若有 bug 的 wake 抖动，此刻应该已产生位移），再对比质心 + 相机
+    await page.waitForTimeout(400);
+    const afterClick = await page.evaluate(() => {
+      const w = window as unknown as { __sigma?: any; __graph?: any };
+      const s = w.__sigma, g = w.__graph;
+      if (!s || !g) return null;
+      let sx = 0, sy = 0, n = 0;
+      g.forEachNode((_k: string, a: { x: number; y: number; hidden?: boolean }) => {
+        if (a.hidden) return;
+        sx += a.x ?? 0; sy += a.y ?? 0; n++;
+      });
+      const cst = (s.getCamera() as any).getState();
+      return n > 0 ? { centroid: s.graphToViewport({ x: sx / n, y: sy / n }), cam: { x: cst.x, y: cst.y, ratio: cst.ratio } } : null;
+    });
+    expect(afterClick).not.toBeNull();
+    // 单击后整簇质心不动（容差 1px 抗浮点噪声；若有 mousedown 即 wake 的抖动会移动数 px）
+    expect(Math.abs(afterClick!.centroid!.x - snapshot!.centroid!.x)).toBeLessThan(1);
+    expect(Math.abs(afterClick!.centroid!.y - snapshot!.centroid!.y)).toBeLessThan(1);
+    // 相机不动
+    expect(afterClick!.cam.x).toBeCloseTo(snapshot!.cam.x, 4);
+    expect(afterClick!.cam.y).toBeCloseTo(snapshot!.cam.y, 4);
+    expect(afterClick!.cam.ratio).toBeCloseTo(snapshot!.cam.ratio, 4);
   });
 });
