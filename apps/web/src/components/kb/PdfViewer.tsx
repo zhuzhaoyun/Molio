@@ -243,9 +243,10 @@ export const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
         setDoc(null);
         setPageCount(0);
         setBaseHeights([]);
-        const pdfjs = await loadPdfjs();
-        if (disposed) return;
+        let pdfjs: typeof import('pdfjs-dist') | null = null;
         try {
+          pdfjs = await loadPdfjs();
+          if (disposed) return;
           const task = pdfjs.getDocument({ url, ...pdfCMapOptions() });
           const pdfDoc = await task.promise;
           if (disposed) { void pdfDoc.loadingTask.destroy(); return; }
@@ -277,8 +278,8 @@ export const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
           if (disposed) return;
           setDoc(null);
           const kind: PdfErrorKind =
-            err instanceof pdfjs.PasswordException ? 'password'
-            : err instanceof pdfjs.InvalidPDFException ? 'invalid'
+            pdfjs && err instanceof pdfjs.PasswordException ? 'password'
+            : pdfjs && err instanceof pdfjs.InvalidPDFException ? 'invalid'
             : 'load';
           setError({ kind, message: err instanceof Error ? err.message : String(err) });
           setStatus('error');

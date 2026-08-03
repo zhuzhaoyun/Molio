@@ -16,10 +16,16 @@ let pdfjsPromise: Promise<PdfjsModule> | null = null;
 /** 惰性加载 pdfjs-dist 并设置 worker 源（幂等）。 */
 export function loadPdfjs(): Promise<PdfjsModule> {
   if (!pdfjsPromise) {
-    pdfjsPromise = import('pdfjs-dist').then((m) => {
-      m.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
-      return m;
-    });
+    pdfjsPromise = import('pdfjs-dist')
+      .then((m) => {
+        m.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+        return m;
+      })
+      .catch((err) => {
+        // 失败不缓存：允许 reloadNonce 触发的新加载重试
+        pdfjsPromise = null;
+        throw err;
+      });
   }
   return pdfjsPromise;
 }
