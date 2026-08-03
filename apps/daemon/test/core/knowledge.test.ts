@@ -40,6 +40,26 @@ describe('readFile encoding + tiers', () => {
     assert.equal(f.content, 'hi');
   });
 
+  // Regression (2026-08-03): a 116KB UTF-8-BOM 国标 .md showed mojibake — the
+  // 64KB detection sample cut a 3-byte CJK char in half, strict UTF-8 failed,
+  // and the file was decoded as gb18030.
+  it('large utf-8 .md with 64KB boundary splitting a multibyte char → utf-8, intact content', () => {
+    const char = Buffer.from('的', 'utf8'); // e7 9a 84 — straddles byte 65536
+    const tail = '可燃气体探测器';
+    const body = Buffer.concat([
+      Buffer.alloc(65531, 0x61),           // 'a' × 65531 → with 3-byte BOM, char starts at 65534
+      char,                                 // occupies 65534-65536 (last byte past the cut)
+      Buffer.from(tail, 'utf8'),
+    ]);
+    writeFileSync(join(vp, 'big-split.md'), Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), body]));
+    const f = readFile(vp, 'big-split.md');
+    assert.equal(f.encoding, 'utf-8');
+    assert.ok(f.content.startsWith('aaaa'), 'content decoded, not mojibake');
+    assert.ok(f.content.includes('的'), 'split char intact');
+    assert.ok(f.content.endsWith(tail), 'tail intact');
+    assert.ok(!f.content.includes('锘'), 'no BOM-as-gb18030 mojibake marker');
+  });
+
   it('returns tooLarge (no content) when over soft cap, with encoding from sample', () => {
     // Lower the caps via env by writing a file just over MOLIO_MAX_VIEW_SIZE.
     // We instead test via a real >cap file using a sparse write is avoided:
