@@ -19,7 +19,7 @@ interface PdfPageViewProps {
 interface TextItemLike { str?: string; transform?: number[]; hasEOL?: boolean; }
 
 /** 稳定空引用：避免 `hits = []` 默认参数每次渲染新建数组，破坏 effect deps 稳定性。 */
-const EMPTY_HITS: PdfSearchHit[] = [];
+export const EMPTY_HITS: PdfSearchHit[] = [];
 
 /** 2D 仿射矩阵组合 m1 ∘ m2（pdf.js Util.transform 等价）。 */
 function compose(m1: number[], m2: number[]): number[] {

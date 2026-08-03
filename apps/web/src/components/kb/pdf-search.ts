@@ -1,18 +1,18 @@
 import type { PDFDocumentProxy } from './pdfjs-setup';
 import type { PDFPageProxy } from 'pdfjs-dist';
 
-export interface PdfTextItem { str: string; transform: number[]; start: number; }
+export interface PdfTextItem { str: string; transform: number[]; start: number; rawIndex: number; }
 export interface PdfPageText { items: PdfTextItem[]; fullText: string; }
 export interface PdfMatch { pageNum: number; itemIndex: number; fromInItem: number; toInItem: number; }
 
-/** 构建单页文本索引：fullText 含 hasEOL 换行，item.start 记录字符起点。 */
+/** 构建单页文本索引：fullText 含 hasEOL 换行，item.start 记录字符起点，rawIndex 记录原始 content.items 下标。 */
 export async function buildPageText(page: PDFPageProxy): Promise<PdfPageText> {
   const content = await page.getTextContent();
   const items: PdfTextItem[] = [];
   let fullText = '';
-  for (const it of content.items as Array<{ str?: string; transform?: number[]; hasEOL?: boolean }>) {
+  for (const [rawIndex, it] of (content.items as Array<{ str?: string; transform?: number[]; hasEOL?: boolean }>).entries()) {
     if (!it.str) continue;
-    items.push({ str: it.str, transform: it.transform ?? [1, 0, 0, 1, 0, 0], start: fullText.length });
+    items.push({ str: it.str, transform: it.transform ?? [1, 0, 0, 1, 0, 0], start: fullText.length, rawIndex });
     fullText += it.str;
     if (it.hasEOL) fullText += '\n';
   }
@@ -47,7 +47,7 @@ export function mapRangeToItems(
     if (itemEnd <= start || itemStart >= end) continue;
     const from = Math.max(start, itemStart) - itemStart;
     const to = Math.min(end, itemEnd) - itemStart;
-    if (to > from) result.push({ itemIndex: i, fromInItem: from, toInItem: to });
+    if (to > from) result.push({ itemIndex: item.rawIndex, fromInItem: from, toInItem: to });
   }
   return result;
 }

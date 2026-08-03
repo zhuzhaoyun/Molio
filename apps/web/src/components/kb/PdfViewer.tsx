@@ -3,10 +3,10 @@ import {
   useMemo, useRef, useState, type KeyboardEvent, type ReactNode,
 } from 'react';
 import { loadPdfjs, pdfCMapOptions, type PDFDocumentProxy } from './pdfjs-setup';
-import { PdfPageView } from './PdfPageView';
+import { PdfPageView, EMPTY_HITS } from './PdfPageView';
 import type { PdfSearchHit } from './PdfPageView';
 import { PdfSearchBar } from './PdfSearchBar';
-import { buildPageText, searchAll, type PdfMatch } from './pdf-search';
+import { buildPageText, searchAll, type PdfMatch, type PdfPageText } from './pdf-search';
 import { useI18n } from '../../i18n';
 import { formatFileSize } from '../../utils/format';
 import './PdfViewer.css';
@@ -74,7 +74,8 @@ export const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
     const [searching, setSearching] = useState(false);
     const [matches, setMatches] = useState<PdfMatch[]>([]);
     const [activeIndex, setActiveIndex] = useState(-1);
-    const textIndexRef = useRef<Map<number, Awaited<ReturnType<typeof buildPageText>>>>(new Map());
+    // 文本索引缓存按 doc 身份隔离：切换文件后旧文档的在途 searchAll 不会污染新缓存。
+    const textIndexRef = useRef<{ doc: PDFDocumentProxy; map: Map<number, PdfPageText> } | null>(null);
 
     const baseWidth1Ref = useRef(0);
     const baseHeight1Ref = useRef(0);
@@ -166,9 +167,14 @@ export const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
       s.addRange(range);
     }, [currentPage]);
 
-    /** 单页文本索引缓存（跨搜索复用，切换文件时清空）。 */
+    /** 单页文本索引缓存（跨搜索复用，按 doc 身份隔离，切换文件即丢弃）。 */
     const getTextCached = useCallback(async (n: number) => {
-      const cache = textIndexRef.current;
+      let entry = textIndexRef.current;
+      if (!entry || entry.doc !== doc) {
+        entry = { doc: doc!, map: new Map() };
+        textIndexRef.current = entry;
+      }
+      const cache = entry.map;
       let t = cache.get(n);
       if (!t) {
         const page = await doc!.getPage(n);
@@ -202,6 +208,11 @@ export const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
           setMatches(found);
           setActiveIndex(found.length ? 0 : -1);
           if (found.length) scrollToPage(found[0].pageNum);
+        } catch (err) {
+          console.error('[PdfViewer] search failed', err);
+          setMatches([]);
+          setActiveIndex(-1);
+          setSearching(false);
         } finally {
           if (!cancelled) setSearching(false);
         }
@@ -252,7 +263,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
           if (disposed) { void pdfDoc.loadingTask.destroy(); return; }
           loadedDoc = pdfDoc;
           setDoc(pdfDoc);
-          textIndexRef.current.clear(); // 切换文件：丢弃旧文档的文本索引缓存
+          textIndexRef.current = null; // 切换文件：丢弃旧文档的文本索引缓存
           // 并行预取各页基准尺寸（scale=1）——避免大 PDF 串行 getPage 阻塞首屏
           const pageObjs = await Promise.all(
             Array.from({ length: pdfDoc.numPages }, (_, i) => pdfDoc.getPage(i + 1)),
@@ -308,7 +319,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
             height={baseHeights[n - 1] * scale}
             testId={`pdf-page-${n}`}
           >
-            {inWindow && doc ? <PdfPageView doc={doc} pageNum={n} scale={scale} hits={hitsByPage.get(n) ?? []} /> : null}
+            {inWindow && doc ? <PdfPageView doc={doc} pageNum={n} scale={scale} hits={hitsByPage.get(n) ?? EMPTY_HITS} /> : null}
           </PageSlot>,
         );
       }
