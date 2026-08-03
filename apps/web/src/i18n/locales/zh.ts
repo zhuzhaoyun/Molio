@@ -365,6 +365,20 @@ const zh: Record<string, string> = {
   'kb.outlineEmpty': '暂无标题',
   'kb.close': '关闭',
 
+  // ── PDF Preview ──
+  'kb.pdf.prevPage': '上一页',
+  'kb.pdf.nextPage': '下一页',
+  'kb.pdf.zoomIn': '放大',
+  'kb.pdf.zoomOut': '缩小',
+  'kb.pdf.fitWidth': '适合宽度',
+  'kb.pdf.fitPage': '适合页面',
+  'kb.pdf.loading': '正在加载 PDF…',
+  'kb.pdf.passwordProtected': '这个 PDF 已加密，暂时无法预览。可以试试用外部程序打开。',
+  'kb.pdf.invalidFile': '这个 PDF 文件已损坏或格式无效，无法预览。',
+  'kb.pdf.loadFailed': 'PDF 加载失败。',
+  'kb.pdf.retry': '重试',
+  'kb.pdf.pageIndicator': '第 {current} / {total} 页 · {percent}%',
+
   // ── Frontmatter ──
   'kb.frontmatter.title': '标题',
   'kb.frontmatter.source': '来源',

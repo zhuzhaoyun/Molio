@@ -365,6 +365,20 @@ const en: Record<string, string> = {
   'kb.outlineEmpty': 'No headings',
   'kb.close': 'Close',
 
+  // ── PDF Preview ──
+  'kb.pdf.prevPage': 'Previous page',
+  'kb.pdf.nextPage': 'Next page',
+  'kb.pdf.zoomIn': 'Zoom in',
+  'kb.pdf.zoomOut': 'Zoom out',
+  'kb.pdf.fitWidth': 'Fit to width',
+  'kb.pdf.fitPage': 'Fit to page',
+  'kb.pdf.loading': 'Loading PDF…',
+  'kb.pdf.passwordProtected': "This PDF is password-protected and can't be previewed here.",
+  'kb.pdf.invalidFile': "This PDF is corrupted or invalid and can't be previewed.",
+  'kb.pdf.loadFailed': 'Failed to load the PDF.',
+  'kb.pdf.retry': 'Retry',
+  'kb.pdf.pageIndicator': 'Page {current} / {total} · {percent}%',
+
   // ── Frontmatter ──
   'kb.frontmatter.title': 'Title',
   'kb.frontmatter.source': 'Source',
