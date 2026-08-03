@@ -1,6 +1,19 @@
-import { describe, it, beforeEach, afterEach } from 'node:test';
+import { describe, it, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { startMemoryMonitor } from '../../src/core/memory-monitor.js';
+import { mkdtempSync, rmSync } from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+
+// Samples are emitted through dbgLog, which is gated behind MOLIO_DEBUG=1
+// (silent in production — see debug-log-gating.test.ts). Enable it here so
+// the sampler actually logs; the channel contract under test is that samples
+// go through console.log (stdout), never stderr. MOLIO_DEBUG_LOG_DIR is read
+// at module load of debug-log, so env must be set BEFORE the import.
+const tmpDir = mkdtempSync(path.join(os.tmpdir(), 'molio-memmon-test-'));
+process.env['MOLIO_DEBUG'] = '1';
+process.env['MOLIO_DEBUG_LOG_DIR'] = tmpDir;
+
+const { startMemoryMonitor } = await import('../../src/core/memory-monitor.js');
 
 describe('memory-monitor', () => {
   let stop: (() => void) | null = null;
@@ -8,6 +21,10 @@ describe('memory-monitor', () => {
   afterEach(() => {
     stop?.();
     stop = null;
+  });
+
+  after(() => {
+    try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
   });
 
   it('should return a stop function', () => {
