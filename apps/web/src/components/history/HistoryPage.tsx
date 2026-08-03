@@ -3,6 +3,7 @@ import type { ConversationHistoryItem, Vault } from '@molio/contracts';
 import { api } from '../../api/client';
 import { useI18n } from '../../i18n';
 import { useHistoryFilters } from '../../hooks/useHistoryFilters';
+import { OverflowMenu, type OverflowItem } from '../../components/OverflowMenu';
 
 interface Props {
   onOpenConversation: (conversationId: string) => void;
@@ -10,20 +11,25 @@ interface Props {
 
 export function HistoryPage({ onOpenConversation }: Props) {
   const { t } = useI18n();
-  const { filters, setFilter, setQuery, items, loading, error, loadMore, refresh, hasMore, deleteConversationLocal } = useHistoryFilters();
+  const { filters, setFilter, setQuery, items, pinnedItems, loading, error, loadMore, refresh, hasMore, deleteConversationLocal, updateConversationLocal } = useHistoryFilters();
   const [vaults, setVaults] = useState<Vault[]>([]);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
   const deleteErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [pinnedCollapsed, setPinnedCollapsed] = useState(false);
+  const [renameTarget, setRenameTarget] = useState<{ id: string; title: string | null } | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const actionErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     api.listVaults().then(setVaults).catch(() => { /* best-effort */ });
   }, []);
 
-  // Clear any transient delete error on unmount.
+  // Clear any transient delete/action errors on unmount.
   useEffect(() => {
     return () => {
       if (deleteErrorTimer.current) clearTimeout(deleteErrorTimer.current);
+      if (actionErrorTimer.current) clearTimeout(actionErrorTimer.current);
     };
   }, []);
 
@@ -42,6 +48,37 @@ export function HistoryPage({ onOpenConversation }: Props) {
       if (deleteErrorTimer.current) clearTimeout(deleteErrorTimer.current);
       setDeleteError(t('history.deleteFailed'));
       deleteErrorTimer.current = setTimeout(() => setDeleteError(null), 3000);
+    }
+  };
+
+  const confirmRename = async (id: string, title: string) => {
+    const trimmed = title.trim();
+    if (!trimmed) return; // 空标题在弹窗内处理（保持弹窗打开）
+    setRenameTarget(null); // 关闭弹窗
+    updateConversationLocal(id, { title: trimmed });
+    try {
+      await api.updateConversation(id, { title: trimmed });
+    } catch {
+      refresh();
+      setActionError(t('history.renameFailed'));
+      if (actionErrorTimer.current) clearTimeout(actionErrorTimer.current);
+      actionErrorTimer.current = setTimeout(() => setActionError(null), 3000);
+    }
+  };
+
+  const startRename = (item: ConversationHistoryItem) => {
+    setRenameTarget({ id: item.conversation.id, title: item.conversation.title });
+  };
+
+  const togglePin = async (id: string, currentlyPinned: boolean) => {
+    updateConversationLocal(id, { pinned: !currentlyPinned });
+    try {
+      await api.updateConversation(id, { pinned: !currentlyPinned });
+    } catch {
+      refresh();
+      setActionError(t('history.pinFailed'));
+      if (actionErrorTimer.current) clearTimeout(actionErrorTimer.current);
+      actionErrorTimer.current = setTimeout(() => setActionError(null), 3000);
     }
   };
 
@@ -104,6 +141,24 @@ export function HistoryPage({ onOpenConversation }: Props) {
         {deleteError && (
           <div className="history-error" data-testid="history-delete-error">{deleteError}</div>
         )}
+        {actionError && (
+          <div className="history-error" data-testid="history-action-error">{actionError}</div>
+        )}
+        {pinnedItems.length > 0 && (
+          <PinnedGroup
+            items={pinnedItems}
+            collapsed={pinnedCollapsed}
+            onToggleCollapse={() => setPinnedCollapsed((v) => !v)}
+            onOpenConversation={onOpenConversation}
+            confirmingDeleteId={confirmingDeleteId}
+            onDeleteRequest={setConfirmingDeleteId}
+            onDeleteCancel={() => setConfirmingDeleteId(null)}
+            onDeleteConfirm={executeDelete}
+            onStartRename={startRename}
+            onTogglePin={togglePin}
+            t={t}
+          />
+        )}
 
         {loading && items.length === 0 ? (
           <div className="history-skeleton" aria-busy="true" aria-label={t('history.loading')}>
@@ -117,7 +172,7 @@ export function HistoryPage({ onOpenConversation }: Props) {
               </div>
             ))}
           </div>
-        ) : items.length === 0 ? (
+        ) : items.length === 0 && pinnedItems.length === 0 ? (
           isFilterActive ? (
             <div className="history-empty">
               <p className="history-empty__text">{t('history.noMatch')}</p>
@@ -139,6 +194,8 @@ export function HistoryPage({ onOpenConversation }: Props) {
             onDeleteRequest={setConfirmingDeleteId}
             onDeleteCancel={() => setConfirmingDeleteId(null)}
             onDeleteConfirm={executeDelete}
+            onStartRename={startRename}
+            onTogglePin={togglePin}
             t={t}
           />
         )}
@@ -149,17 +206,21 @@ export function HistoryPage({ onOpenConversation }: Props) {
           </button>
         )}
       </main>
+
+      <RenameDialog key={renameTarget?.id ?? 'closed'} target={renameTarget} onClose={() => setRenameTarget(null)} onConfirm={confirmRename} t={t} />
     </div>
   );
 }
 
-function HistoryList({ items, onOpenConversation, confirmingDeleteId, onDeleteRequest, onDeleteCancel, onDeleteConfirm, t }: {
+function HistoryList({ items, onOpenConversation, confirmingDeleteId, onDeleteRequest, onDeleteCancel, onDeleteConfirm, onStartRename, onTogglePin, t }: {
   items: ConversationHistoryItem[];
   onOpenConversation: (id: string) => void;
   confirmingDeleteId: string | null;
   onDeleteRequest: (id: string) => void;
   onDeleteCancel: () => void;
   onDeleteConfirm: (id: string) => void;
+  onStartRename: (item: ConversationHistoryItem) => void;
+  onTogglePin: (id: string, currentlyPinned: boolean) => void;
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
   const groups = groupByDate(items);
@@ -202,6 +263,8 @@ function HistoryList({ items, onOpenConversation, confirmingDeleteId, onDeleteRe
                     onDeleteRequest={onDeleteRequest}
                     onDeleteCancel={onDeleteCancel}
                     onDeleteConfirm={onDeleteConfirm}
+                    onStartRename={onStartRename}
+                    onTogglePin={onTogglePin}
                     t={t}
                   />
                 ))}
@@ -214,13 +277,15 @@ function HistoryList({ items, onOpenConversation, confirmingDeleteId, onDeleteRe
   );
 }
 
-function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDeleteCancel, onDeleteConfirm, t }: {
+function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDeleteCancel, onDeleteConfirm, onStartRename, onTogglePin, t }: {
   item: ConversationHistoryItem;
   onOpen: () => void;
   confirmingDeleteId: string | null;
   onDeleteRequest: (id: string) => void;
   onDeleteCancel: () => void;
   onDeleteConfirm: (id: string) => void;
+  onStartRename: (item: ConversationHistoryItem) => void;
+  onTogglePin: (id: string, currentlyPinned: boolean) => void;
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
   const { conversation, lastMessage, vaultName, vaultExists, vaultId } = item;
@@ -239,6 +304,28 @@ function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDelet
   // Channel badge — only for non-desktop channels (desktop is the silent default).
   const channelType = conversation.channelType;
   const showChannelBadge = Boolean(channelType && channelType !== 'desktop');
+
+  const overflowItems: OverflowItem[] = [
+    {
+      icon: conversation.pinnedAt ? <PinIconFilled /> : <PinIcon />,
+      label: conversation.pinnedAt ? t('history.unpin') : t('history.pin'),
+      testid: 'history-row-pin',
+      onClick: () => onTogglePin(conversation.id, Boolean(conversation.pinnedAt)),
+    },
+    {
+      icon: <RenameIcon />,
+      label: t('history.rename'),
+      testid: 'history-row-rename',
+      onClick: () => onStartRename(item),
+    },
+    {
+      icon: <TrashIcon />,
+      label: t('history.delete'),
+      testid: 'history-row-delete',
+      danger: true,
+      onClick: () => onDeleteRequest(conversation.id),
+    },
+  ];
 
   if (isConfirming) {
     return (
@@ -285,9 +372,118 @@ function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDelet
           <span className="history-row__summary">{lastMessage?.content || t('history.noMessage')}</span>
         </span>
       </button>
-      <button type="button" className="history-row__delete" data-testid="history-row-delete" onClick={() => onDeleteRequest(conversation.id)} title={t('history.delete')}>
-        <TrashIcon />
+      <OverflowMenu
+        triggerTestid="history-row-overflow"
+        triggerLabel={t('history.more')}
+        items={overflowItems}
+      />
+    </div>
+  );
+}
+
+function RenameDialog({ target, onClose, onConfirm, t }: {
+  target: { id: string; title: string | null } | null;
+  onClose: () => void;
+  onConfirm: (id: string, title: string) => void;
+  t: (key: string, params?: Record<string, string | number>) => string;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [emptyError, setEmptyError] = useState(false);
+  // Reset the error when the dialog opens for a new target.
+  useEffect(() => {
+    if (target) setEmptyError(false);
+  }, [target]);
+  if (!target) return null;
+  return (
+    <div className="kb-overlay show" data-testid="history-rename-dialog" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="kb-modal" style={{ width: 420 }}>
+        <div className="kb-modal-header">
+          <h2>{t('history.renameDialogTitle')}</h2>
+          <button className="kb-modal-close" onClick={onClose}>&times;</button>
+        </div>
+        <div className="kb-modal-body">
+          <div className="kb-form-field">
+            <label htmlFor="history-rename-input">{t('history.titleLabel')}</label>
+            <input
+              id="history-rename-input"
+              data-testid="history-rename-input"
+              type="text"
+              ref={inputRef}
+              defaultValue={target.title ?? ''}
+              placeholder={t('history.untitled')}
+              autoFocus
+              onChange={() => setEmptyError(false)}
+              onKeyDown={(e) => { if (e.key === 'Enter') submit(); else if (e.key === 'Escape') onClose(); }}
+            />
+            {emptyError && (
+              <span className="history-rename-error" data-testid="history-rename-error">{t('history.renameEmpty')}</span>
+            )}
+          </div>
+        </div>
+        <div className="kb-modal-footer">
+          <button className="kb-btn kb-btn-ghost" data-testid="history-rename-cancel" onClick={onClose}>{t('history.cancel')}</button>
+          <button className="kb-btn kb-btn-primary" data-testid="history-rename-confirm" onClick={submit}>{t('history.confirm')}</button>
+        </div>
+      </div>
+    </div>
+  );
+  function submit() {
+    const v = (inputRef.current?.value ?? '').trim();
+    if (!v) { setEmptyError(true); return; }
+    if (!target) return;
+    onConfirm(target.id, v);
+  }
+}
+
+function PinnedGroup({ items, collapsed, onToggleCollapse, onOpenConversation, confirmingDeleteId, onDeleteRequest, onDeleteCancel, onDeleteConfirm, onStartRename, onTogglePin, t }: {
+  items: ConversationHistoryItem[];
+  collapsed: boolean;
+  onToggleCollapse: () => void;
+  onOpenConversation: (id: string) => void;
+  confirmingDeleteId: string | null;
+  onDeleteRequest: (id: string) => void;
+  onDeleteCancel: () => void;
+  onDeleteConfirm: (id: string) => void;
+  onStartRename: (item: ConversationHistoryItem) => void;
+  onTogglePin: (id: string, currentlyPinned: boolean) => void;
+  t: (key: string, params?: Record<string, string | number>) => string;
+}) {
+  return (
+    <div className="history-pinned">
+      <button
+        type="button"
+        className="history-pinned-title"
+        data-testid="history-pinned-title"
+        onClick={onToggleCollapse}
+        aria-expanded={!collapsed}
+      >
+        <span className="history-pinned-chevron">
+          <ChevronIcon expanded={!collapsed} />
+        </span>
+        <span className="history-pinned-glyph">
+          <PinIconFilled />
+        </span>
+        {t('history.pinned')}
+        <span className="history-pinned-count">{items.length}</span>
       </button>
+      {!collapsed && (
+        <div className="history-date-list">
+          {items.map((item) => (
+            <HistoryRow
+              key={item.conversation.id}
+              item={item}
+              onOpen={() => onOpenConversation(item.conversation.id)}
+              confirmingDeleteId={confirmingDeleteId}
+              onDeleteRequest={onDeleteRequest}
+              onDeleteCancel={onDeleteCancel}
+              onDeleteConfirm={onDeleteConfirm}
+              onStartRename={onStartRename}
+              onTogglePin={onTogglePin}
+              t={t}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -372,6 +568,29 @@ function LoadingIcon() {
       <path d="M18 12h4" />
       <path d="m4.9 19.1 2.8-2.8" />
       <path d="m16.3 7.7 2.8-2.8" />
+    </svg>
+  );
+}
+function PinIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z" />
+      <path d="M12 17v5" />
+    </svg>
+  );
+}
+function PinIconFilled() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z" fill="currentColor" />
+      <path d="M12 17v5" />
+    </svg>
+  );
+}
+function RenameIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M17 3a2.8 2.8 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5z" />
     </svg>
   );
 }

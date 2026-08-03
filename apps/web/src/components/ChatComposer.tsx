@@ -349,8 +349,8 @@ export function ChatComposer({
       return;
     }
     try {
-      const { items } = await api.listConversationHistory();
-      setHistoryItems(items);
+      const { items, pinnedItems } = await api.listConversationHistory();
+      setHistoryItems([...pinnedItems, ...items]);
       setShowHistory(true);
     } catch {
       // silently fail

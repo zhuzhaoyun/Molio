@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { gotoHome, clickNav } from './helpers/navigation';
 import {
   createProject,
@@ -11,6 +11,29 @@ import {
  * @area history
  * @priority P0
  */
+
+/** Escape regex special characters in a conversation title. */
+const escRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Locate a history row whose title span matches `title` exactly. Scoping to
+ * the title span (instead of a row-level `hasText`) keeps the lookup hermetic:
+ * other conversations' summaries in a dirty dev DB cannot collide via substring.
+ */
+function rowByTitle(page: Page, title: string) {
+  return page
+    .locator('.history-row')
+    .filter({ has: page.locator('.history-row__title', { hasText: new RegExp(`^${escRegex(title)}$`) }) })
+    .first();
+}
+
+/** Same as `rowByTitle`, but restricted to the pinned section. */
+function pinnedRowByTitle(page: Page, title: string) {
+  return page
+    .locator('.history-pinned .history-row')
+    .filter({ has: page.locator('.history-row__title', { hasText: new RegExp(`^${escRegex(title)}$`) }) })
+    .first();
+}
 
 /**
  * E2E tests for the conversation history page.
@@ -204,7 +227,9 @@ test.describe('History', () => {
       const row = page.locator('.history-row', { hasText: 'Delete Me' }).first();
       await expect(row).toBeVisible({ timeout: 5_000 });
 
-      // Step 1: click delete → confirmation UI appears
+      // Step 1: delete action lives in the row's ⋯ overflow menu
+      await row.hover();
+      await row.locator('[data-testid=history-row-overflow]').click();
       await row.locator('[data-testid=history-row-delete]').click();
       await expect(page.locator('[data-testid=history-row-delete-confirm]')).toBeVisible({ timeout: 3_000 });
       await expect(page.locator('[data-testid=history-row-delete-cancel]')).toBeVisible();
@@ -219,6 +244,194 @@ test.describe('History', () => {
       await expect(page.locator('.history-row', { hasText: 'Delete Me' })).toBeVisible({ timeout: 5_000 });
     } finally {
       await page.unroute('**/api/conversations/*');
+      await deleteProject(project.id);
+    }
+  });
+
+  test('rename conversation via modal, persists after refresh', async ({ page }) => {
+    const project = await createProject(`e2e-rn-${Date.now()}`);
+    const conv = await createConversation(project.id, 'Original Name');
+    await addMessage(project.id, conv.id, {
+      id: `msg-rn-${Date.now()}`,
+      role: 'user', content: 'rename me', timestamp: Date.now(),
+    });
+    try {
+      await gotoHome(page);
+      await clickNav(page, 'history');
+      await page.locator('[data-testid=history-refresh]').click();
+      await page.waitForTimeout(500);
+
+      const row = rowByTitle(page, 'Original Name');
+      await expect(row).toBeVisible({ timeout: 5_000 });
+      await row.hover();
+      await row.locator('[data-testid=history-row-overflow]').click();
+      await row.locator('[data-testid=history-row-rename]').click();
+
+      // Modal opens, prefilled with the current title.
+      const dialog = page.locator('[data-testid=history-rename-dialog]');
+      await expect(dialog).toBeVisible({ timeout: 3_000 });
+      const input = page.locator('[data-testid=history-rename-input]');
+      await expect(input).toHaveValue('Original Name');
+
+      await input.fill('Renamed Title');
+      await page.locator('[data-testid=history-rename-confirm]').click();
+      await expect(dialog).toHaveCount(0);
+      await expect(rowByTitle(page, 'Renamed Title').locator('.history-row__title')).toHaveText('Renamed Title', { timeout: 3_000 });
+
+      // persists after refresh
+      await page.locator('[data-testid=history-refresh]').click();
+      await page.waitForTimeout(500);
+      await expect(rowByTitle(page, 'Renamed Title')).toBeVisible({ timeout: 5_000 });
+    } finally {
+      await deleteProject(project.id);
+    }
+  });
+
+  test('empty rename shows error and keeps modal open; cancel leaves title unchanged', async ({ page }) => {
+    const project = await createProject(`e2e-rn2-${Date.now()}`);
+    const conv = await createConversation(project.id, 'Keep Name');
+    await addMessage(project.id, conv.id, {
+      id: `msg-rn2-${Date.now()}`,
+      role: 'user', content: 'x', timestamp: Date.now(),
+    });
+    try {
+      await gotoHome(page);
+      await clickNav(page, 'history');
+      await page.locator('[data-testid=history-refresh]').click();
+      await page.waitForTimeout(500);
+      const row = rowByTitle(page, 'Keep Name');
+      await expect(row).toBeVisible({ timeout: 5_000 });
+      await row.hover();
+      await row.locator('[data-testid=history-row-overflow]').click();
+      await row.locator('[data-testid=history-row-rename]').click();
+
+      const dialog = page.locator('[data-testid=history-rename-dialog]');
+      await expect(dialog).toBeVisible({ timeout: 3_000 });
+      const input = page.locator('[data-testid=history-rename-input]');
+      await input.fill('');
+      await page.locator('[data-testid=history-rename-confirm]').click();
+      // error hint appears; modal stays open; title untouched
+      await expect(page.locator('[data-testid=history-rename-error]')).toBeVisible({ timeout: 3_000 });
+      await expect(dialog).toBeVisible();
+
+      // cancel closes the modal without committing the (rejected) empty rename
+      await page.locator('[data-testid=history-rename-cancel]').click();
+      await expect(dialog).toHaveCount(0);
+      await expect(rowByTitle(page, 'Keep Name').locator('.history-row__title')).toHaveText('Keep Name');
+    } finally {
+      await deleteProject(project.id);
+    }
+  });
+
+  test('cancel rename closes modal without sending a PATCH', async ({ page }) => {
+    const project = await createProject(`e2e-rn3-${Date.now()}`);
+    const conv = await createConversation(project.id, 'Cancel Me');
+    await addMessage(project.id, conv.id, {
+      id: `msg-rn3-${Date.now()}`,
+      role: 'user', content: 'x', timestamp: Date.now(),
+    });
+    try {
+      await gotoHome(page);
+      await clickNav(page, 'history');
+      await page.locator('[data-testid=history-refresh]').click();
+      await page.waitForTimeout(500);
+
+      // Count PATCH requests to /api/conversations/* — the rename path.
+      let patches = 0;
+      await page.route('**/api/conversations/*', (route) => {
+        if (route.request().method() === 'PATCH') patches += 1;
+        return route.continue();
+      });
+
+      const row = rowByTitle(page, 'Cancel Me');
+      await expect(row).toBeVisible({ timeout: 5_000 });
+      await row.hover();
+      await row.locator('[data-testid=history-row-overflow]').click();
+      await row.locator('[data-testid=history-row-rename]').click();
+
+      const dialog = page.locator('[data-testid=history-rename-dialog]');
+      await expect(dialog).toBeVisible({ timeout: 3_000 });
+      await page.locator('[data-testid=history-rename-cancel]').click();
+      await expect(dialog).toHaveCount(0);
+      await expect(rowByTitle(page, 'Cancel Me').locator('.history-row__title')).toHaveText('Cancel Me');
+
+      expect(patches).toBe(0);
+    } finally {
+      await page.unroute('**/api/conversations/*');
+      await deleteProject(project.id);
+    }
+  });
+
+  test('pin moves row to pinned section; unpin returns it', async ({ page }) => {
+    const project = await createProject(`e2e-pin-${Date.now()}`);
+    const c1 = await createConversation(project.id, 'Pin Target');
+    const c2 = await createConversation(project.id, 'Normal One');
+    await addMessage(project.id, c1.id, { id: `m1-${Date.now()}`, role: 'user', content: 'pin a', timestamp: Date.now() });
+    await addMessage(project.id, c2.id, { id: `m2-${Date.now()}`, role: 'user', content: 'pin b', timestamp: Date.now() + 1 });
+    try {
+      await gotoHome(page);
+      await clickNav(page, 'history');
+      await page.locator('[data-testid=history-refresh]').click();
+      await page.waitForTimeout(500);
+
+      // target must not be inside the pinned section yet (scoped to the test
+      // conversation — a dirty dev DB may hold other pinned conversations)
+      await expect(pinnedRowByTitle(page, 'Pin Target')).toHaveCount(0);
+
+      // pin the target row
+      const row = rowByTitle(page, 'Pin Target');
+      await row.hover();
+      await row.locator('[data-testid=history-row-overflow]').click();
+      await row.locator('[data-testid=history-row-pin]').click();
+
+      const pinned = page.locator('.history-pinned');
+      await expect(pinned).toBeVisible({ timeout: 5_000 });
+      await expect(pinnedRowByTitle(page, 'Pin Target')).toBeVisible();
+
+      // unpin from pinned section
+      const pinnedRow = pinnedRowByTitle(page, 'Pin Target');
+      await pinnedRow.hover();
+      await pinnedRow.locator('[data-testid=history-row-overflow]').click();
+      await pinnedRow.locator('[data-testid=history-row-pin]').click();
+      // unpinned: target no longer inside the pinned section, still in the list
+      await expect(pinnedRowByTitle(page, 'Pin Target')).toHaveCount(0, { timeout: 5_000 });
+      await expect(rowByTitle(page, 'Pin Target')).toBeVisible();
+    } finally {
+      await deleteProject(project.id);
+    }
+  });
+
+  test('pinned section shows count and orders by updated_at', async ({ page }) => {
+    const project = await createProject(`e2e-pin2-${Date.now()}`);
+    const c1 = await createConversation(project.id, 'Pin Older');
+    const c2 = await createConversation(project.id, 'Pin Newer');
+    await addMessage(project.id, c1.id, { id: `a-${Date.now()}`, role: 'user', content: 'older', timestamp: Date.now() });
+    await new Promise((r) => setTimeout(r, 50));
+    await addMessage(project.id, c2.id, { id: `b-${Date.now()}`, role: 'user', content: 'newer', timestamp: Date.now() });
+    try {
+      await gotoHome(page);
+      await clickNav(page, 'history');
+      await page.locator('[data-testid=history-refresh]').click();
+      await page.waitForTimeout(500);
+      const pin = async (title: string) => {
+        const r = rowByTitle(page, title);
+        await r.hover();
+        await r.locator('[data-testid=history-row-overflow]').click();
+        await r.locator('[data-testid=history-row-pin]').click();
+      };
+      await pin('Pin Older');
+      await pin('Pin Newer');
+      const pinned = page.locator('.history-pinned');
+      await expect(pinned).toBeVisible({ timeout: 5_000 });
+      // Scoped to our two test conversations: both must be pinned and ordered
+      // (newer updated_at first), independent of any other pinned data in a
+      // dirty dev DB.
+      const mine = pinned.locator('.history-row').filter({
+        has: page.locator('.history-row__title', { hasText: /^Pin (Older|Newer)$/ }),
+      });
+      await expect(mine).toHaveCount(2);
+      await expect(mine.locator('.history-row__title').first()).toHaveText('Pin Newer', { timeout: 3_000 });
+    } finally {
       await deleteProject(project.id);
     }
   });

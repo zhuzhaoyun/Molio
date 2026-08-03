@@ -56,6 +56,7 @@ export type {
   MessageListResponse,
   CreateProjectRequest,
   CreateConversationRequest,
+  UpdateConversationRequest,
 } from './api.js';
 
 export type { SSEEnvelope } from './sse.js';
