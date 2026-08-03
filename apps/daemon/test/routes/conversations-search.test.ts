@@ -40,6 +40,8 @@ describe('GET /api/conversations filters + pagination', () => {
     assert.equal(status, 200);
     assert.ok(Array.isArray(body.items));
     assert.equal(body.nextCursor, null); // single item < limit
+    assert.ok(Array.isArray(body.pinnedItems));
+    assert.equal(body.pinnedItems.length, 0);
   });
 
   it('filters by query + vaultId together', async () => {

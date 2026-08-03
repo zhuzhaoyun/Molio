@@ -164,6 +164,10 @@ function migrate(db: SqliteDb): void {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_conversations_vault
            ON conversations(vault_id, updated_at DESC)`);
 
+  addColumnIfMissing(db, 'conversations', 'pinned_at', 'INTEGER');
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_conversations_pinned_at
+           ON conversations(pinned_at) WHERE pinned_at IS NOT NULL`);
+
   // Full-text search over message content. trigram tokenizer: CJK substring
   // friendly, case-insensitive, no external jieba dependency (SQLite >= 3.34).
   db.exec(`
@@ -353,35 +357,34 @@ export function listConversationHistory(
   const limit = clampHistoryLimit(opts.limit);
 
   // If a search query is provided, resolve matching conversation_ids first.
-  // Empty hit set → short-circuit (avoid `IN ()` syntax error and pointless scan).
   let hitIds: string[] | null = null;
   if (opts.query && opts.query.trim()) {
     hitIds = searchConversationIds(db, opts.query);
-    if (hitIds.length === 0) return { items: [], nextCursor: null };
+    if (hitIds.length === 0) return { pinnedItems: [], items: [], nextCursor: null };
   }
 
-  const where: string[] = [];
-  const params: unknown[] = [];
+  // Shared filter builder: vault + search hit set (+ optional before cursor).
+  const buildFilters = (withBefore: boolean): { where: string[]; params: unknown[] } => {
+    const where: string[] = [];
+    const params: unknown[] = [];
+    if (opts.vaultId === '__none__') {
+      where.push('c.vault_id IS NULL');
+    } else if (opts.vaultId) {
+      where.push('c.vault_id = ?');
+      params.push(opts.vaultId);
+    }
+    if (hitIds) {
+      where.push(`c.id IN (${hitIds.map(() => '?').join(', ')})`);
+      params.push(...hitIds);
+    }
+    if (withBefore && opts.before != null && !Number.isNaN(opts.before)) {
+      where.push('c.updated_at < ?');
+      params.push(opts.before);
+    }
+    return { where, params };
+  };
 
-  if (opts.vaultId === '__none__') {
-    where.push('c.vault_id IS NULL');
-  } else if (opts.vaultId) {
-    where.push('c.vault_id = ?');
-    params.push(opts.vaultId);
-  }
-  if (hitIds) {
-    where.push(`c.id IN (${hitIds.map(() => '?').join(', ')})`);
-    params.push(...hitIds);
-  }
-  if (opts.before != null && !Number.isNaN(opts.before)) {
-    where.push('c.updated_at < ?');
-    params.push(opts.before);
-  }
-
-  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
-  params.push(limit);
-
-  const rows = db.prepare(`
+  const baseSelect = `
     SELECT
       c.*,
       COALESCE(v.name, c.vault_name) AS vault_name,
@@ -403,15 +406,27 @@ export function listConversationHistory(
     ) stats ON stats.conversation_id = c.id
     LEFT JOIN messages lm
       ON lm.conversation_id = c.id AND lm.position = stats.max_position
-    ${whereSql}
-    ORDER BY c.updated_at DESC
-    LIMIT ?
-  `).all(...params) as Array<Record<string, unknown>>;
+  `;
+
+  // Pinned: full set, filtered, ordered by recency. Not paginated (small).
+  const pinnedF = buildFilters(false);
+  pinnedF.where.push('c.pinned_at IS NOT NULL');
+  const pinnedRows = db.prepare(
+    `${baseSelect} WHERE ${pinnedF.where.join(' AND ')} ORDER BY c.updated_at DESC`
+  ).all(...pinnedF.params) as Array<Record<string, unknown>>;
+  const pinnedItems = pinnedRows.map(rowToHistoryItem);
+
+  // Regular (unpinned): cursor-paginated as before.
+  const regF = buildFilters(true);
+  regF.where.push('c.pinned_at IS NULL');
+  const rows = db.prepare(
+    `${baseSelect} WHERE ${regF.where.join(' AND ')} ORDER BY c.updated_at DESC LIMIT ?`
+  ).all(...regF.params, limit) as Array<Record<string, unknown>>;
 
   const items = rows.map(rowToHistoryItem);
   const lastItem = items.at(-1);
   const nextCursor = items.length === limit && lastItem ? lastItem.conversation.updatedAt : null;
-  return { items, nextCursor };
+  return { pinnedItems, items, nextCursor };
 }
 
 function clampHistoryLimit(n: number | undefined): number {
@@ -441,6 +456,29 @@ function rowToHistoryItem(row: Record<string, unknown>): ConversationHistoryItem
 export function getConversation(db: SqliteDb, id: string): Conversation | null {
   const row = db.prepare('SELECT * FROM conversations WHERE id = ?').get(id) as Record<string, unknown> | undefined;
   return row ? rowToConversation(row) : null;
+}
+
+export function updateConversation(
+  db: SqliteDb,
+  id: string,
+  patch: { title?: string; pinned?: boolean },
+): Conversation | null {
+  const sets: string[] = [];
+  const params: unknown[] = [];
+  if (patch.title !== undefined) {
+    const title = patch.title.trim();
+    if (!title) throw new Error('Title must be a non-empty string');
+    sets.push('title = ?');
+    params.push(title);
+  }
+  if (patch.pinned !== undefined) {
+    sets.push('pinned_at = ?');
+    params.push(patch.pinned ? Date.now() : null);
+  }
+  if (sets.length === 0) return getConversation(db, id);
+  params.push(id);
+  db.prepare(`UPDATE conversations SET ${sets.join(', ')} WHERE id = ?`).run(...params);
+  return getConversation(db, id);
 }
 
 export function createConversation(db: SqliteDb, projectId: string, title?: string): Conversation {
@@ -796,6 +834,7 @@ function rowToConversation(row: Record<string, unknown>): Conversation {
     metadata: row.metadata_json ? JSON.parse(row.metadata_json as string) : undefined,
     createdAt: row.created_at as number,
     updatedAt: row.updated_at as number,
+    pinnedAt: (row.pinned_at as number | null) ?? null,
   };
 }
 
