@@ -166,7 +166,7 @@ export function KbMainContent({
   const [retryNonce, setRetryNonce] = useState(0);
   const [fmExpanded, setFmExpanded] = useState(true);
   const [ctxMenu, setCtxMenu] = useState<
-    { x: number; y: number; source: 'doocs' | 'codemirror'; selectedText?: string } | null
+    { x: number; y: number; source: 'doocs' | 'codemirror' | 'pdf'; selectedText?: string } | null
   >(null);
 
   // Routing flags — computed from extension + size + tooLarge.
@@ -301,6 +301,11 @@ export function KbMainContent({
     },
     [],
   );
+
+  const handlePdfContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setCtxMenu({ x: e.clientX, y: e.clientY, source: 'pdf' });
+  }, []);
 
   const closeContextMenu = useCallback(() => setCtxMenu(null), []);
 
@@ -817,7 +822,7 @@ export function KbMainContent({
           </audio>
         </div>
       ) : category === 'pdf' && vaultId ? (
-        <div className="kb-content-area kb-pdf-area">
+        <div className="kb-content-area kb-pdf-area" onContextMenu={handlePdfContextMenu}>
           <ViewerErrorBoundary
             key={retryNonce}
             onRetry={() => { setRetryNonce((n) => n + 1); onForceLoad?.(); }}
@@ -861,13 +866,15 @@ export function KbMainContent({
         <ContextMenu
           items={(() => {
             // CM source: selection text captured at contextmenu-event time
-            // (stored in ctxMenu.selectedText). doocs source: read live
+            // (stored in ctxMenu.selectedText). doocs/pdf source: read live
             // window.getSelection() at menu-open.
             const isCmSource = ctxMenu.source === 'codemirror';
+            const isPdfSource = ctxMenu.source === 'pdf';
             const sel = isCmSource ? (ctxMenu.selectedText ?? '') : selectionText();
             // Rich triple-slot copy (text/html + text/plain markdown) only for
             // the doocs source — CM has raw text, no rendered HTML to convert.
-            const selHtml = isCmSource ? '' : (() => {
+            // PDF 文本层 span 透明 + transform：复制必须纯文本，禁止 rich HTML 三槽路径。
+            const selHtml = isCmSource || isPdfSource ? '' : (() => {
               const s = window.getSelection();
               if (!s || s.rangeCount === 0) return '';
               const div = document.createElement('div');
@@ -924,6 +931,10 @@ export function KbMainContent({
                 onClick: () => {
                   if (isCmSource) {
                     cmRef.current?.selectAll();
+                    return;
+                  }
+                  if (isPdfSource) {
+                    pdfRef.current?.selectAll();
                     return;
                   }
                   const out = contentRef.current?.querySelector('#output');

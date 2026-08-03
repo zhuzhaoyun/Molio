@@ -15,6 +15,7 @@ export interface PdfViewerHandle {
   zoomOut: () => void;
   fitWidth: () => void;
   fitPage: () => void;
+  selectAll: () => void;
 }
 
 interface PdfViewerProps {
@@ -142,12 +143,24 @@ export const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
       ));
     }, []);
 
+    /** 选中当前页文本层全部文本（选区菜单「选择全部」用）。 */
+    const selectAll = useCallback(() => {
+      const layer = document.querySelector(`[data-testid="pdf-text-layer-${currentPage}"]`) as HTMLElement | null;
+      if (!layer) return;
+      const range = document.createRange();
+      range.selectNodeContents(layer);
+      const s = window.getSelection();
+      if (!s) return;
+      s.removeAllRanges();
+      s.addRange(range);
+    }, [currentPage]);
+
     useImperativeHandle(ref, () => ({
       nextPage, prevPage,
       zoomIn: () => zoomBy(ZOOM_STEP),
       zoomOut: () => zoomBy(1 / ZOOM_STEP),
-      fitWidth, fitPage,
-    }), [nextPage, prevPage, zoomBy, fitWidth, fitPage]);
+      fitWidth, fitPage, selectAll,
+    }), [nextPage, prevPage, zoomBy, fitWidth, fitPage, selectAll]);
 
     const handleKeyDown = useCallback((e: KeyboardEvent<HTMLDivElement>) => {
       if (e.key === 'ArrowLeft') { e.preventDefault(); prevPage(); }
