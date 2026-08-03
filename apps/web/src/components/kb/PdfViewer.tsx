@@ -189,7 +189,10 @@ export const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
     const scrollToPage = useCallback((n: number) => {
       const el = scrollRef.current;
       if (!el || !pageTops.length) return;
-      el.scrollTop = pageTops[Math.min(pageCount, Math.max(1, n)) - 1];
+      // ceil：浏览器 scrollTop 按整像素截断，页顶边界为小数时（常见于 fit-width 缩放）
+      // 直接赋值会被截到边界前 1px，导致 pageAtScroll 判回上一页、页码指示不前进。
+      // 向上取整保证落点严格越过页顶边界。
+      el.scrollTop = Math.ceil(pageTops[Math.min(pageCount, Math.max(1, n)) - 1]);
     }, [pageTops, pageCount]);
 
     const nextPage = useCallback(() => scrollToPage(currentPage + 1), [scrollToPage, currentPage]);
