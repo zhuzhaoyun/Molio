@@ -32,6 +32,10 @@ const KbCodeMirrorViewer = lazy(() =>
   import('./KbCodeMirrorViewer').then((m) => ({ default: m.KbCodeMirrorViewer })),
 );
 
+import type { PdfViewerHandle } from './PdfViewer';
+
+const PdfViewer = lazy(() => import('./PdfViewer').then((m) => ({ default: m.PdfViewer })));
+
 /** .md files at or below this size still render via doocs/md. Above → source mode. */
 const MD_RENDER_THRESHOLD = 1 * 1024 * 1024;
 const MD_EXTS = new Set(['.md', '.markdown']);
@@ -52,12 +56,13 @@ function getTurndown(): TurndownService {
 }
 
 /** File categories for rendering strategy */
-type FileCategory = 'text' | 'image' | 'video' | 'audio' | 'binary';
+type FileCategory = 'text' | 'image' | 'video' | 'audio' | 'binary' | 'pdf';
 
 const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp', '.ico']);
 const VIDEO_EXTS = new Set(['.mp4', '.mov', '.webm', '.mkv', '.avi']);
 const AUDIO_EXTS = new Set(['.mp3', '.wav', '.m4a', '.flac', '.aac', '.ogg']);
-const BINARY_EXTS = new Set(['.pdf', '.docx', '.doc', '.pptx', '.ppt', '.xlsx', '.xls']);
+const PDF_EXTS = new Set(['.pdf']);
+const BINARY_EXTS = new Set(['.docx', '.doc', '.pptx', '.ppt', '.xlsx', '.xls']);
 
 function getFileCategory(fileName: string): FileCategory {
   const lastDot = fileName.lastIndexOf('.');
@@ -65,6 +70,7 @@ function getFileCategory(fileName: string): FileCategory {
   if (IMAGE_EXTS.has(ext)) return 'image';
   if (VIDEO_EXTS.has(ext)) return 'video';
   if (AUDIO_EXTS.has(ext)) return 'audio';
+  if (PDF_EXTS.has(ext)) return 'pdf';
   if (BINARY_EXTS.has(ext)) return 'binary';
   return 'text';
 }
@@ -155,6 +161,7 @@ export function KbMainContent({
   const { t } = useI18n();
   const contentRef = useRef<HTMLDivElement>(null);
   const cmRef = useRef<KbCodeMirrorViewerHandle>(null);
+  const pdfRef = useRef<PdfViewerHandle>(null);
   const [wrap, setWrap] = useState(false);
   const [retryNonce, setRetryNonce] = useState(0);
   const [fmExpanded, setFmExpanded] = useState(true);
@@ -526,8 +533,85 @@ export function KbMainContent({
             </>
           )}
 
+          {/* PDF viewer: 翻页 / 缩放 / 适配（命令式走 pdfRef） */}
+          {category === 'pdf' && selectedFile && (
+            <>
+              <button
+                type="button"
+                className="kb-btn kb-btn-ghost"
+                onClick={() => pdfRef.current?.prevPage()}
+                title={t('kb.pdf.prevPage')}
+                data-testid="kb-btn-pdf-prev"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="15" height="15">
+                  <polyline points="15 18 9 12 15 6" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className="kb-btn kb-btn-ghost"
+                onClick={() => pdfRef.current?.nextPage()}
+                title={t('kb.pdf.nextPage')}
+                data-testid="kb-btn-pdf-next"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="15" height="15">
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+              </button>
+              <span className="kb-header-actions-divider" />
+              <button
+                type="button"
+                className="kb-btn kb-btn-ghost"
+                onClick={() => pdfRef.current?.zoomOut()}
+                title={t('kb.pdf.zoomOut')}
+                data-testid="kb-btn-pdf-zoom-out"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="15" height="15">
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className="kb-btn kb-btn-ghost"
+                onClick={() => pdfRef.current?.zoomIn()}
+                title={t('kb.pdf.zoomIn')}
+                data-testid="kb-btn-pdf-zoom-in"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="15" height="15">
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+              </button>
+              <span className="kb-header-actions-divider" />
+              <button
+                type="button"
+                className="kb-btn kb-btn-ghost"
+                onClick={() => pdfRef.current?.fitWidth()}
+                title={t('kb.pdf.fitWidth')}
+                data-testid="kb-btn-pdf-fit-width"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="15" height="15">
+                  <polyline points="18 8 22 12 18 16" />
+                  <polyline points="6 8 2 12 6 16" />
+                  <line x1="2" y1="12" x2="22" y2="12" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className="kb-btn kb-btn-ghost"
+                onClick={() => pdfRef.current?.fitPage()}
+                title={t('kb.pdf.fitPage')}
+                data-testid="kb-btn-pdf-fit-page"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="15" height="15">
+                  <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+                </svg>
+              </button>
+            </>
+          )}
+
           {/* Binary file: open with system app (Electron only) */}
-          {category === 'binary' && isElectron && (
+          {(category === 'binary' || category === 'pdf') && isElectron && (
             <button type="button" className="kb-btn" onClick={handleOpenExternal}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
                 <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
@@ -731,6 +815,24 @@ export function KbMainContent({
           >
             Your browser does not support audio playback.
           </audio>
+        </div>
+      ) : category === 'pdf' && vaultId ? (
+        <div className="kb-content-area kb-pdf-area">
+          <ViewerErrorBoundary
+            key={retryNonce}
+            onRetry={() => { setRetryNonce((n) => n + 1); onForceLoad?.(); }}
+            onOpenExternal={isElectron ? handleOpenExternal : undefined}
+          >
+            <Suspense fallback={<div className="kb-empty-state"><p>Loading...</p></div>}>
+              <PdfViewer
+                ref={pdfRef}
+                url={api.rawFileUrl(vaultId, selectedFile)}
+                fileName={fileName}
+                fileSize={fileContent?.size}
+                onOpenExternal={isElectron ? handleOpenExternal : undefined}
+              />
+            </Suspense>
+          </ViewerErrorBoundary>
         </div>
       ) : category === 'binary' ? (
         <div className="kb-content-area">
