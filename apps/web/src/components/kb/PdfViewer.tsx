@@ -212,6 +212,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
           setActiveIndex(found.length ? 0 : -1);
           if (found.length) scrollToPage(found[0].pageNum);
         } catch (err) {
+          if (cancelled) return;
           console.error('[PdfViewer] search failed', err);
           setMatches([]);
           setActiveIndex(-1);

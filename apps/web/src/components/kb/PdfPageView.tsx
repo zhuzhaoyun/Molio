@@ -73,6 +73,8 @@ export const PdfPageView = forwardRef<HTMLDivElement, PdfPageViewProps>(
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const textLayerRef = useRef<HTMLDivElement>(null);
 
+    // Effect A：canvas 位图渲染。deps 不含 hits —— 搜索 prev/next（仅 activeIndex 变化）不会
+    // 重绘整页位图，消除白闪与多余渲染。
     useEffect(() => {
       let cancelled = false;
       let renderTask: { cancel: () => void } | null = null;
@@ -83,8 +85,7 @@ export const PdfPageView = forwardRef<HTMLDivElement, PdfPageViewProps>(
           if (cancelled) return;
           const viewport = page.getViewport({ scale });
           const canvas = canvasRef.current;
-          const textLayer = textLayerRef.current;
-          if (!canvas || !textLayer) return;
+          if (!canvas) return;
           const ctx = canvas.getContext('2d');
           if (!ctx) return;
 
@@ -98,7 +99,30 @@ export const PdfPageView = forwardRef<HTMLDivElement, PdfPageViewProps>(
           const task = page.render({ canvas, canvasContext: ctx, viewport });
           renderTask = task;
           await task.promise;
+        } catch (err) {
+          if (!cancelled) console.error(`[PdfViewer] page ${pageNum} render failed`, err);
+        }
+      })();
+
+      return () => {
+        cancelled = true;
+        renderTask?.cancel();
+        const canvas = canvasRef.current;
+        if (canvas) { canvas.width = 0; canvas.height = 0; }
+      };
+    }, [doc, pageNum, scale]);
+
+    // Effect B：文本层重建（含搜索高亮）。仅当 hits 变化时重跑，不触碰 canvas。
+    useEffect(() => {
+      let cancelled = false;
+
+      (async () => {
+        try {
+          const page = await doc.getPage(pageNum);
           if (cancelled) return;
+          const viewport = page.getViewport({ scale });
+          const textLayer = textLayerRef.current;
+          if (!textLayer) return;
 
           const textContent = await page.getTextContent();
           if (cancelled) return;
@@ -125,16 +149,11 @@ export const PdfPageView = forwardRef<HTMLDivElement, PdfPageViewProps>(
             }
           });
         } catch (err) {
-          if (!cancelled) console.error(`[PdfViewer] page ${pageNum} render failed`, err);
+          if (!cancelled) console.error(`[PdfViewer] page ${pageNum} text layer failed`, err);
         }
       })();
 
-      return () => {
-        cancelled = true;
-        renderTask?.cancel();
-        const canvas = canvasRef.current;
-        if (canvas) { canvas.width = 0; canvas.height = 0; }
-      };
+      return () => { cancelled = true; };
     }, [doc, pageNum, scale, hits]);
 
     return (
