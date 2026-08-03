@@ -3,6 +3,7 @@ import {
   useMemo, useRef, useState, type KeyboardEvent, type ReactNode,
 } from 'react';
 import { loadPdfjs, pdfCMapOptions, type PDFDocumentProxy } from './pdfjs-setup';
+import { PdfPageView } from './PdfPageView';
 import { useI18n } from '../../i18n';
 import { formatFileSize } from '../../utils/format';
 import './PdfViewer.css';
@@ -33,11 +34,6 @@ const ZOOM_STEP = 1.2;
 const PAGE_MARGIN = 16;     // 页间纵向间距 (px)
 const PAGE_PADDING_X = 48;  // 滚动区内水平留白 (px)
 
-interface TextItemLike {
-  str?: string;
-  transform?: number[];
-}
-
 /** 每页占位槽 —— 白纸 + 阴影；只有窗口内的页挂载 canvas/文本层。 */
 const PageSlot = memo(function PageSlot({ height, testId, children }: {
   height: number;
@@ -50,81 +46,6 @@ const PageSlot = memo(function PageSlot({ height, testId, children }: {
     </div>
   );
 });
-
-interface PdfPageViewProps {
-  doc: PDFDocumentProxy;
-  pageNum: number;
-  scale: number;
-}
-
-/** 单页：canvas 位图 + 透明文本层（选择/复制）。卸载或缩放时取消渲染、清空 canvas。 */
-const PdfPageView = forwardRef<HTMLDivElement, PdfPageViewProps>(
-  function PdfPageView({ doc, pageNum, scale }, _ref) {
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-    const textLayerRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-      let cancelled = false;
-      let renderTask: { cancel: () => void } | null = null;
-
-      (async () => {
-        try {
-          const page = await doc.getPage(pageNum);
-          if (cancelled) return;
-          const viewport = page.getViewport({ scale });
-          const canvas = canvasRef.current;
-          const textLayer = textLayerRef.current;
-          if (!canvas || !textLayer) return;
-          const ctx = canvas.getContext('2d');
-          if (!ctx) return;
-
-          // HiDPI 清晰渲染：backing store 用 devicePixelRatio，CSS 尺寸保持 viewport 逻辑值
-          const outputScale = window.devicePixelRatio || 1;
-          canvas.width = Math.floor(viewport.width * outputScale);
-          canvas.height = Math.floor(viewport.height * outputScale);
-          canvas.style.width = `${viewport.width}px`;
-          canvas.style.height = `${viewport.height}px`;
-          ctx.setTransform(outputScale, 0, 0, outputScale, 0, 0);
-
-          const task = page.render({ canvas, canvasContext: ctx, viewport });
-          renderTask = task;
-          await task.promise;
-          if (cancelled) return;
-
-          // 文本层：手动构建 span，translate 坐标乘 scale 与 canvas 对齐
-          const textContent = await page.getTextContent();
-          if (cancelled) return;
-          textLayer.innerHTML = '';
-          for (const item of textContent.items as TextItemLike[]) {
-            if (!item.str) continue;
-            const [a, b, , , e, f] = item.transform ?? [1, 0, 0, 1, 0, 0];
-            const span = document.createElement('span');
-            span.textContent = item.str;
-            span.style.transform = `translate(${e * scale}px, ${f * scale}px)`;
-            span.style.fontSize = `${Math.hypot(a, b) * scale}px`;
-            textLayer.appendChild(span);
-          }
-        } catch (err) {
-          if (!cancelled) console.error(`[PdfViewer] page ${pageNum} render failed`, err);
-        }
-      })();
-
-      return () => {
-        cancelled = true;
-        renderTask?.cancel();
-        const canvas = canvasRef.current;
-        if (canvas) { canvas.width = 0; canvas.height = 0; }
-      };
-    }, [doc, pageNum, scale]);
-
-    return (
-      <>
-        <canvas ref={canvasRef} data-testid={`pdf-canvas-${pageNum}`} />
-        <div ref={textLayerRef} className="pdf-text-layer" data-testid={`pdf-text-layer-${pageNum}`} />
-      </>
-    );
-  },
-);
 
 export const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
   function PdfViewer({ url, fileName, fileSize, onOpenExternal }, ref) {
@@ -252,17 +173,15 @@ export const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
           if (disposed) { void pdfDoc.loadingTask.destroy(); return; }
           loadedDoc = pdfDoc;
           setDoc(pdfDoc);
-          // 预取各页基准尺寸（scale=1）：滚动数学与 fit 需要
-          const heights: number[] = [];
-          let w1 = 0, h1 = 0;
-          for (let n = 1; n <= pdfDoc.numPages; n++) {
-            const page = await pdfDoc.getPage(n);
-            if (disposed) return;
-            const vp = page.getViewport({ scale: 1 });
-            heights.push(vp.height);
-            if (n === 1) { w1 = vp.width; h1 = vp.height; }
-          }
+          // 并行预取各页基准尺寸（scale=1）——避免大 PDF 串行 getPage 阻塞首屏
+          const pageObjs = await Promise.all(
+            Array.from({ length: pdfDoc.numPages }, (_, i) => pdfDoc.getPage(i + 1)),
+          );
           if (disposed) return;
+          const viewports = pageObjs.map((p) => p.getViewport({ scale: 1 }));
+          const heights = viewports.map((v) => v.height);
+          const w1 = viewports[0]?.width ?? 0;
+          const h1 = heights[0] ?? 0;
           baseWidth1Ref.current = w1;
           baseHeight1Ref.current = h1;
           setBaseHeights(heights);
