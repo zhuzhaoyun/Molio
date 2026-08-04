@@ -654,15 +654,22 @@
   font-size: 12px;
 }
 
-/* SKILL.md 编辑器（新增/编辑）——让正文编辑器成为弹窗主体。 */
+/* SKILL.md 编辑器（新增/编辑）——让正文编辑器成为编辑页主体，撑满剩余高度。 */
 .sk-field--grow {
   flex: 1 1 auto;
   margin-bottom: 0;
   min-height: 0;
 }
 
+.sk-field--grow .sk-field__textarea {
+  flex: 1 1 auto;
+  min-height: 0;
+  resize: none;
+}
+
 .sk-field__textarea--md {
-  min-height: 380px;
+  min-height: 160px;
+  font-family: var(--mono);
   font-size: 12.5px;
   line-height: 1.7;
   white-space: pre-wrap;
@@ -734,4 +741,90 @@
   background: var(--red-bg);
   border: 1px solid var(--red-border);
   border-radius: var(--radius-sm);
+}
+
+/* ── Fullscreen Skill Editor（取代旧的 520px 弹框，整屏接管）── */
+.sk-editor {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+.sk-editor__bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.sk-editor__back {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.sk-editor__back:hover {
+  background: var(--bg-subtle);
+  color: var(--text);
+}
+
+.sk-editor__back:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.sk-editor__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.sk-editor__actions {
+  flex: none;
+  display: flex;
+  gap: 8px;
+}
+
+.sk-editor__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 20px clamp(20px, 6vw, 64px) 24px;
+  overflow-y: auto;
+}
+
+/* 名称 / 描述并排一行，窄屏折为单列。 */
+.sk-editor__meta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+  gap: 16px;
+}
+
+@media (max-width: 720px) {
+  .sk-editor__meta {
+    grid-template-columns: 1fr;
+  }
 }

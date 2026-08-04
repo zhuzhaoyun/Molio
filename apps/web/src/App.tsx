@@ -18,7 +18,7 @@ import { api } from './api/client';
 import { useActiveVault, vaultStore } from './stores/vaultStore';
 import { messageSelectionStore } from './stores/messageSelectionStore';
 import { usePendingPrefill, skillPrefillStore } from './stores/skillPrefillStore';
-import { SkillFormModal, type SkillFormValues } from './components/settings/SkillFormModal';
+import { SkillEditor, type SkillFormValues } from './components/settings/SkillEditor';
 import './styles/rail.css';
 import './styles/home.css';
 import './styles/knowledge.css';
@@ -43,7 +43,7 @@ export default function App() {
   const chat = useChat({ agentId: selectedAgent, cwd: activeVault?.path });
 
   // "Save as skill" — assistant-message buttons push a prefill into the store;
-  // the confirmation modal is hosted here (above the chat) to avoid prop-drilling.
+  // the fullscreen editor is hosted here (above the chat) to avoid prop-drilling.
   const pendingPrefill = usePendingPrefill();
   const [skillPrefillBusy, setSkillPrefillBusy] = useState(false);
   const [skillPrefillError, setSkillPrefillError] = useState<string | null>(null);
@@ -58,7 +58,7 @@ export default function App() {
       await api.createSkill(values);
       skillPrefillStore.setPendingPrefill(null);
     } catch (err) {
-      // Keep the modal open with the values so the user can retry; surface the
+      // Keep the editor open with the values so the user can retry; surface the
       // failure inline instead of swallowing it as an unhandled rejection.
       setSkillPrefillError((err as Error).message);
     } finally {
@@ -252,7 +252,7 @@ export default function App() {
         </div>
         <UpdateNotification />
         <PreloadToast />
-        <SkillFormModal
+        <SkillEditor
           show={pendingPrefill !== null}
           mode="prefill"
           prefillData={pendingPrefill}

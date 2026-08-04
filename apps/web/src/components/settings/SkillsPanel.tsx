@@ -3,7 +3,7 @@ import type { SkillManifestEntry, ImportSkillRequest } from '@molio/contracts';
 import { useSkills } from '../../hooks/useSkills';
 import { useI18n } from '../../i18n';
 import { api } from '../../api/client';
-import { SkillFormModal, type SkillFormMode, type SkillFormValues } from './SkillFormModal';
+import { SkillEditor, type SkillFormMode, type SkillFormValues } from './SkillEditor';
 
 interface ModalState {
   mode: SkillFormMode;
@@ -107,13 +107,13 @@ export function SkillsPanel() {
   const [formError, setFormError] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   // Row whose edit/duplicate content is loading — its action buttons stay
-  // disabled and the modal only opens ONCE the content is ready, so the editor
-  // never opens empty then overwrites what the user already typed.
+  // disabled and the editor only opens ONCE the content is ready, so it never
+  // opens empty then overwrites what the user already typed.
   const [fetchingId, setFetchingId] = useState<string | null>(null);
 
   const enabledCount = skills.filter((s) => s.enabled).length;
 
-  // Single "新建技能" entry point: the dialog itself distinguishes pasting a new
+  // Single "新建技能" entry point: the editor itself distinguishes pasting a new
   // SKILL.md (create) from importing a local file / folder.
   const openNew = useCallback(() => {
     setFormError(null);
@@ -265,7 +265,7 @@ export function SkillsPanel() {
         <p className="sk-note">{t('skills.runtimeNote')}</p>
       </div>
 
-      <SkillFormModal
+      <SkillEditor
         show={modal !== null}
         mode={modal?.mode ?? 'create'}
         skill={modal?.skill}

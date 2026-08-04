@@ -126,7 +126,7 @@ test.describe('Skills library', () => {
     const src = page.locator('.sk-row', { hasText: 'docling' }).first();
     await expect(src).toBeVisible({ timeout: 5_000 });
 
-    // Duplicate opens a create modal prefilled with the source skill's fields.
+    // Duplicate opens the create editor prefilled with the source skill's fields.
     await src.locator('[data-testid^="skill-duplicate-"]').click();
     await expect(page.getByTestId('skill-form-overlay')).toBeVisible();
     // Prefill loads async and carries the "副本" suffix on the name.
@@ -167,14 +167,16 @@ test.describe('Skills library', () => {
     await page.getByTestId('skill-form-submit').click();
     await expect(page.getByTestId('skill-form-error')).toBeVisible();
 
-    // A stray backdrop click must NOT wipe the typed fields — only Cancel / ×
-    // close the dialog. Click a corner of the overlay so the event target is
-    // the backdrop itself, not the modal card.
-    await page.getByTestId('skill-form-overlay').click({ position: { x: 5, y: 5 } });
+    // A stray click on empty space must NOT wipe the typed fields — only the
+    // Back / Cancel buttons close the editor. Click the bottom-left padding
+    // region of the fullscreen editor (clear of the top bar and all fields).
+    const overlay = page.getByTestId('skill-form-overlay');
+    const box = await overlay.boundingBox();
+    await overlay.click({ position: { x: 5, y: (box?.height ?? 600) - 5 } });
     await expect(page.getByTestId('skill-form-overlay')).toBeVisible();
     await expect(page.getByTestId('skill-name-input')).toHaveValue('只有名字');
 
-    await page.locator('.kb-modal-close').click();
+    await page.getByTestId('skill-form-cancel').click();
     await expect(page.getByTestId('skill-form-overlay')).toHaveCount(0);
   });
 
@@ -201,7 +203,7 @@ test.describe('Skills library', () => {
     await expect(page.getByTestId('skill-instructions-input')).toHaveValue('卡兹克公众号长文写作\n这是正文第一行。');
 
     // Nothing was saved → just close via Cancel, no cleanup needed.
-    await page.locator('.kb-modal-close').click();
+    await page.getByTestId('skill-form-cancel').click();
     await expect(page.getByTestId('skill-form-overlay')).toHaveCount(0);
   });
 
@@ -234,12 +236,12 @@ test.describe('Skills library', () => {
     await expect(row).toHaveCount(0, { timeout: 5_000 });
   });
 
-  test('save failure shows the error inside the modal, not hidden behind the overlay', async ({ page }) => {
+  test('save failure shows the error inside the editor, keeping it open', async ({ page }) => {
     await gotoSkillsTab(page);
 
-    // Force the create request to fail. The modal must stay open and surface
+    // Force the create request to fail. The editor must stay open and surface
     // the daemon's error message itself — before the fix the error rendered
-    // only in the panel banner BEHIND the modal overlay, invisible to the user.
+    // only in the panel banner BEHIND the overlay, invisible to the user.
     await page.route('**/api/skills', (route) => {
       if (route.request().method() !== 'POST') return route.continue();
       return route.fulfill({
@@ -257,15 +259,15 @@ test.describe('Skills library', () => {
       await page.getByTestId('skill-instructions-input').fill('这是正文。');
       await page.getByTestId('skill-form-submit').click(); // → save (fails)
 
-      // The error text appears inside the modal and the modal stays open.
+      // The error text appears inside the editor and the editor stays open.
       await expect(page.getByTestId('skill-form-error')).toHaveText('E2E模拟保存失败', { timeout: 10_000 });
       await expect(page.getByTestId('skill-form-overlay')).toBeVisible();
     } finally {
       await page.unroute('**/api/skills');
     }
 
-    // Nothing was created, so nothing to clean up — just close the modal.
-    await page.locator('.kb-modal-close').click();
+    // Nothing was created, so nothing to clean up — just close the editor.
+    await page.getByTestId('skill-form-cancel').click();
     await expect(page.getByTestId('skill-form-overlay')).toHaveCount(0);
   });
 
