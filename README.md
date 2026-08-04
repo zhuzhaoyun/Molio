@@ -2,7 +2,7 @@
 
 # 📚 Molio
 
-**Build your local second brain — AI-powered, your data stays yours.**
+**AI that knows your work. Local-first, and every byte stays yours.**
 
 [English](README.md) · [中文](README_zh.md) · [🌐 Official Website](https://molio.cn/)
 
@@ -15,7 +15,7 @@
 
 ---
 
-Molio is a **local-first** desktop application that unifies knowledge management, AI writing, and content publishing. Open your existing Obsidian vault, write with Claude Code / Codex / Gemini in a beautiful graphical interface, and publish to 30+ platforms — all your data stays on your machine, never touching third-party servers.
+Generic chatbots draw on the internet at large. Molio draws on your library. It is a **local-first** workbench that plugs Claude Code, Codex, and other AI runtimes into your Obsidian vault: they read what you have accumulated, research, analyze, and create, then write the results back into the vault. The longer you use it, the better it knows you. Everything runs on your machine, never through a third-party server.
 
 ### 🌟 Why Molio?
 
@@ -36,7 +36,7 @@ A single Molio instance can serve multiple channels in parallel. Most channels c
 |---------|:----:|:-----:|:----:|:-----:|:-----:|
 | **Web Console** *(default)* | ✅ | ✅ | ✅ | ✅ | — |
 | **WeChat** | ✅ | ✅ | ✅ | ⏳ | ⏳ |
-| **Feishu** | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ |
+| **Feishu** | ✅ | ✅ | ✅ | ⏳ | ✅ |
 | Telegram | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ |
 | Slack | ⏳ | ⏳ | ⏳ | — | ⏳ |
 | Discord | ⏳ | ⏳ | ⏳ | — | ⏳ |

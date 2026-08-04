@@ -25,7 +25,7 @@
 <meta property="og:description" content="Molio 墨流常见问题解答：Molio 是什么、如何安装、与 Obsidian 的区别、数据安全等。">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://molio.cn/faq.html">
-<meta property="og:image" content="https://molio.cn/images/brand.webp">
+<meta property="og:image" content="https://molio.cn/images/brand.png">
 <meta property="og:site_name" content="Molio 墨流">
 <meta property="og:locale" content="zh_CN">
 
@@ -33,7 +33,7 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Molio 常见问题 FAQ — 使用、安装、故障排除">
 <meta name="twitter:description" content="Molio 墨流常见问题解答：Molio 是什么、如何安装、与 Obsidian 的区别、数据安全等。">
-<meta name="twitter:image" content="https://molio.cn/images/brand.webp">
+<meta name="twitter:image" content="https://molio.cn/images/brand.png">
 
 <!-- JSON-LD FAQPage -->
 <script type="application/ld+json">
@@ -41,8 +41,8 @@
   "@context": "https://schema.org",
   "@type": "FAQPage",
   "mainEntity": [
-    { "@type": "Question", "name": "Molio 是什么？", "acceptedAnswer": { "@type": "Answer", "text": "Molio 墨流是兼容 Obsidian Vault 的本地知识库应用，内置 Claude Code 图形界面、微信 AI 助手和 Chrome Web Clipper。数据全在本地，不经过任何第三方服务器。" } },
-    { "@type": "Question", "name": "Molio 和 Obsidian 有什么区别？", "acceptedAnswer": { "@type": "Answer", "text": "Molio 完全兼容 Obsidian Vault，可以直接打开你的 Obsidian 文件夹。区别在于 Molio 内置了 Claude Code 图形界面、微信 AI 助手、Web Clipper 和多平台发布功能，是一体化的知识管理工作台。" } },
+    { "@type": "Question", "name": "Molio 是什么？", "acceptedAnswer": { "@type": "Answer", "text": "Molio 墨流是懂你事情的 AI 工作伙伴：把 Claude Code 等 AI runtime 接到兼容 Obsidian Vault 的本地知识库上，做研究、分析、创作，产出回写入库。数据全在本地，不经过任何第三方服务器。" } },
+    { "@type": "Question", "name": "Molio 和 Obsidian 有什么区别？", "acceptedAnswer": { "@type": "Answer", "text": "Molio 完全兼容 Obsidian Vault，可以直接打开你的 Obsidian 文件夹。区别在于 Molio 让 AI 读库工作——研究、分析、创作，产出回写入库、越用越懂你；并附带微信 AI 助手、Web Clipper 和多平台发布等出口。" } },
     { "@type": "Question", "name": "Molio 是免费的吗？", "acceptedAnswer": { "@type": "Answer", "text": "Molio 是开源软件，可以免费使用。你需要自行配置 AI 助手（如 Claude Code）的 API Key，AI 使用的费用取决于你选择的模型提供商。" } },
     { "@type": "Question", "name": "如何安装 Molio？", "acceptedAnswer": { "@type": "Answer", "text": "访问 molio.cn/download.html 下载对应系统的安装包。Windows 用户下载 .exe 文件，macOS 用户下载 .dmg 文件。安装完成后，还需要安装并配置 AI 助手（如 Claude Code）才能使用 AI 功能。" } },
     { "@type": "Question", "name": "Molio 支持哪些平台？", "acceptedAnswer": { "@type": "Answer", "text": "桌面客户端支持 Windows 和 macOS（Apple Silicon）；Linux、麒麟、统信 UOS、各类 NAS 可通过 Docker 一键自建部署，运行 Molio Web 服务（详见下载页）。浏览器扩展支持 Chrome，可在 Chrome 网上应用店或本网站下载离线安装包。" } },
@@ -95,14 +95,15 @@
     <div class="faq-item reveal" id="q1">
       <h2 class="faq-question">Molio 是什么？</h2>
       <div class="faq-answer">
-        <p>Molio 墨流是兼容 Obsidian Vault 的本地知识库应用，内置 Claude Code 图形界面、微信 AI 助手和 Chrome Web Clipper。</p>
+        <p>Molio 墨流是懂你事情的 AI 工作伙伴：把 Claude Code 等 AI runtime 接到你的本地知识库上，做研究、分析、创作，产出回写入库，越用越懂你。</p>
         <p><strong>核心特点：</strong></p>
         <ul>
           <li>兼容 Obsidian Vault，直接打开已有知识库</li>
-          <li>Claude Code / Codex / Gemini CLI 图形界面</li>
+          <li>AI 读库工作：研究、分析、创作，产出回写入库</li>
+          <li>Wiki 一键构建，AI 自动生成索引与摘要</li>
           <li>微信扫码连上个人微信，手机里跟知识库对话</li>
           <li>Chrome Web Clipper 一键剪藏网页</li>
-          <li>内置 doocs/md 排版，一键发布到 30+ 平台</li>
+          <li>想发布时：内置 doocs/md 排版，一键发布到 30+ 平台</li>
           <li>数据全在本地，不经过任何第三方服务器</li>
         </ul>
       </div>
@@ -114,10 +115,10 @@
         <p>Molio 完全兼容 Obsidian Vault，可以直接打开你的 Obsidian 文件夹，无需迁移。</p>
         <p><strong>主要区别：</strong></p>
         <ul>
-          <li><strong>AI 集成</strong>：Molio 内置 Claude Code 图形界面，Obsidian 需要插件</li>
+          <li><strong>AI 在库上工作</strong>：Molio 把 Claude Code 等 runtime 接到知识库，研究、分析、创作且产出回写入库；Obsidian 的 AI 依赖插件，不成闭环</li>
           <li><strong>微信助手</strong>：Molio 支持微信扫码对话，Obsidian 无此功能</li>
           <li><strong>Web Clipper</strong>：Molio 内置浏览器剪藏，Obsidian 需要插件</li>
-          <li><strong>多平台发布</strong>：Molio 内置 doocs/cose，一键发布 30+ 平台</li>
+          <li><strong>发布出口</strong>：Molio 内置 doocs/md 排版与多平台发布，作为产出的出口之一</li>
         </ul>
         <p>如果你已经是 Obsidian 用户，Molio 可以作为补充工具，或者直接替代 Obsidian 使用。</p>
       </div>
@@ -255,7 +256,7 @@
     <div class="related-links reveal">
       <h2>相关资源</h2>
       <ul>
-        <li><a href="help.html">使用指南 — 从安装到发布的完整教程</a></li>
+        <li><a href="help.html">使用指南 — 从安装到让 AI 为你工作的完整教程</a></li>
         <li><a href="download.html">下载页面 — 获取最新版本的 Molio</a></li>
         <li><a href="blog/index.html">博客 — 知识管理技巧与产品更新</a></li>
         <li><a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer">GitHub 仓库 — 提交 Issue 或参与开发</a></li>
@@ -269,7 +270,7 @@
   <div class="footer-inner">
     <div class="footer-brand">
       <a href="index.html" class="footer-logo"><span class="logo-icon-sm">M</span> Molio</a>
-      <p>兼容 Obsidian 的本地 AI 知识库。内置 Claude Code 图形界面、微信 AI 助手和 Chrome Web Clipper，数据全在你自己电脑上。</p>
+      <p>懂你事情的 AI 工作伙伴。把 Claude Code 等 AI runtime 接到你的本地知识库上，研究、分析、创作，产出回写入库，数据全在你自己电脑上。</p>
     </div>
     <div class="footer-links">
       <h4>产品</h4>
@@ -296,7 +297,7 @@
   </div>
   <div class="footer-bottom">
     <span>© 2026 Molio 墨流. 基于 MIT 协议开源.</span>
-    <span>Molio 墨流 — 兼容 Obsidian 的本地知识库 + Claude Code GUI + 微信 AI 助手，数据全在你自己电脑上</span>
+    <span>Molio 墨流 — 懂你事情的 AI 工作伙伴：本地知识库 × AI runtime，产出回写入库，越用越懂你，数据全在你自己电脑上</span>
   </div>
 </footer>
 
