@@ -57,6 +57,7 @@ test.describe('Settings', () => {
     await expect(page.locator('[data-testid="theme-light"]')).toBeVisible();
     await expect(page.locator('[data-testid="theme-dark"]')).toBeVisible();
     await expect(page.locator('[data-testid="theme-system"]')).toHaveClass(/is-active/);
+    await expect(page.locator('[data-testid^="theme-"].is-active')).toHaveCount(1);
   });
 
   test('selecting dark theme applies data-theme=dark to html', async ({ page }) => {
