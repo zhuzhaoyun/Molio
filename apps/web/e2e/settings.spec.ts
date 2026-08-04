@@ -46,4 +46,61 @@ test.describe('Settings', () => {
       await expect(page.locator(`[data-testid="${testid}"]`)).toHaveClass(/is-active/);
     }
   });
+
+  test('theme section shows three options with system active by default', async ({ page }) => {
+    await gotoHome(page);
+    await clickNav(page, 'settings');
+
+    await expect(page.locator('.settings-shell')).toBeVisible({ timeout: 5_000 });
+
+    await expect(page.locator('[data-testid="theme-system"]')).toBeVisible();
+    await expect(page.locator('[data-testid="theme-light"]')).toBeVisible();
+    await expect(page.locator('[data-testid="theme-dark"]')).toBeVisible();
+    await expect(page.locator('[data-testid="theme-system"]')).toHaveClass(/is-active/);
+  });
+
+  test('selecting dark theme applies data-theme=dark to html', async ({ page }) => {
+    await gotoHome(page);
+    await clickNav(page, 'settings');
+
+    await expect(page.locator('.settings-shell')).toBeVisible({ timeout: 5_000 });
+
+    await page.locator('[data-testid="theme-dark"]').click();
+    await expect(page.locator('[data-testid="theme-dark"]')).toHaveClass(/is-active/);
+    const attr = await page.evaluate(() =>
+      document.documentElement.getAttribute('data-theme'),
+    );
+    expect(attr).toBe('dark');
+  });
+
+  test('selecting light theme applies data-theme=light to html', async ({ page }) => {
+    await gotoHome(page);
+    await clickNav(page, 'settings');
+
+    await expect(page.locator('.settings-shell')).toBeVisible({ timeout: 5_000 });
+
+    await page.locator('[data-testid="theme-light"]').click();
+    await expect(page.locator('[data-testid="theme-light"]')).toHaveClass(/is-active/);
+    const attr = await page.evaluate(() =>
+      document.documentElement.getAttribute('data-theme'),
+    );
+    expect(attr).toBe('light');
+  });
+
+  test('selecting system theme removes data-theme attribute', async ({ page }) => {
+    await gotoHome(page);
+    await clickNav(page, 'settings');
+
+    await expect(page.locator('.settings-shell')).toBeVisible({ timeout: 5_000 });
+
+    // 先锁定深色，再切回跟随系统
+    await page.locator('[data-testid="theme-dark"]').click();
+    await expect(page.locator('[data-testid="theme-dark"]')).toHaveClass(/is-active/);
+    await page.locator('[data-testid="theme-system"]').click();
+    await expect(page.locator('[data-testid="theme-system"]')).toHaveClass(/is-active/);
+    const attr = await page.evaluate(() =>
+      document.documentElement.getAttribute('data-theme'),
+    );
+    expect(attr).toBeNull();
+  });
 });
