@@ -43,6 +43,9 @@
   display: block;
   width: 100%;
   height: 100%;
+  /* 禁止把 canvas 当图片拖拽——否则拖到页面空白处会触发图片拖动，干扰文本选择 */
+  -webkit-user-drag: none;
+  user-select: none;
 }
 
 /* 文本层 = pdf.js 官方 TextLayer 布局（ascent 补偿 / 宽度缩放 / 旋转均由其 CSS 变量驱动）。
@@ -53,6 +56,9 @@
   overflow: hidden;
   line-height: 1;
   transform-origin: 0 0;
+  /* 选择只能从文字 span 开始：容器空白处不产生选区，避免拖到空白时怪异选中 */
+  -webkit-user-select: none;
+  user-select: none;
   --scale-factor: 1;
   --user-unit: 1;
   --total-scale-factor: calc(var(--scale-factor) * var(--user-unit));

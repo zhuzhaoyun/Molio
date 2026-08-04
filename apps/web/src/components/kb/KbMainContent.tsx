@@ -658,8 +658,8 @@ export function KbMainContent({
           )}
 
           {/* ── View / command actions ── */}
-          {/* Document outline (file-scoped) */}
-          {onOpenOutline && selectedFile && (
+          {/* Document outline (markdown 专属 —— PDF 大纲在侧边栏里，不重复显示) */}
+          {category === 'text' && onOpenOutline && selectedFile && (
             <button
               type="button"
               className="kb-btn kb-btn-ghost"
@@ -678,8 +678,8 @@ export function KbMainContent({
             </button>
           )}
 
-          {/* Edit / Read toggle — icon-only, grouped with search (doocs path only) */}
-          {!isTypesetMode && !isCmPath && (
+          {/* Edit / Read toggle — markdown 专属（PDF 不支持编辑，不显示） */}
+          {category === 'text' && !isTypesetMode && !isCmPath && (
             <button
               type="button"
               className={`kb-btn kb-btn-ghost ${isEditMode ? 'is-active' : ''}`}
