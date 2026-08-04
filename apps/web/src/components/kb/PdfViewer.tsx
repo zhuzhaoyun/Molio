@@ -60,6 +60,8 @@ export const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
 
     const scrollRef = useRef<HTMLDivElement>(null);
     const contentRef = useRef<HTMLDivElement>(null);
+    // 匹配导航后：等目标页 mark 渲染完成，再细滚到匹配位置（而非停在页顶）。
+    const pendingScrollToMatchRef = useRef(false);
 
     const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
     const [status, setStatus] = useState<Status>('loading');
@@ -193,7 +195,26 @@ export const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
       const idx = ((i % matchGroups.length) + matchGroups.length) % matchGroups.length;
       setActiveIndex(idx);
       scrollToPage(matchGroups[idx].pageNum);
+      pendingScrollToMatchRef.current = true; // 滚到匹配位置而非页顶
     }, [matchGroups, scrollToPage]);
+
+    /** 把当前匹配（.pdf-search-hl-current）滚到视口约 1/3 处。mark 未渲染时返回 false。 */
+    const scrollToMatchPosition = useCallback((): boolean => {
+      const scroller = scrollRef.current;
+      const group = matchGroups[activeIndex];
+      if (!scroller || !group) return true;
+      const pageSlot = scroller.querySelector(`[data-testid="pdf-page-${group.pageNum}"]`);
+      const mark = scroller.querySelector(`[data-testid="pdf-text-layer-${group.pageNum}"] .pdf-search-hl-current`);
+      if (!pageSlot || !mark) return false;
+      const markOffsetInPage = mark.getBoundingClientRect().top - pageSlot.getBoundingClientRect().top;
+      // 目标不低于本页顶部：匹配靠近页顶时不回滚到上一页区域
+      const target = Math.max(
+        pageTops[group.pageNum - 1],
+        pageTops[group.pageNum - 1] + markOffsetInPage - scroller.clientHeight * 0.3,
+      );
+      scroller.scrollTop = Math.ceil(target);
+      return true;
+    }, [matchGroups, activeIndex, pageTops]);
 
     // 搜索执行：300ms debounce，空查询清除
     useEffect(() => {
@@ -211,7 +232,10 @@ export const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
           if (cancelled) return;
           setMatchGroups(groups);
           setActiveIndex(groups.length ? 0 : -1);
-          if (groups.length) scrollToPage(groups[0].pageNum);
+          if (groups.length) {
+            scrollToPage(groups[0].pageNum);
+            pendingScrollToMatchRef.current = true; // 滚到首匹配位置
+          }
         } catch (err) {
           if (cancelled) return;
           console.error('[PdfViewer] search failed', err);
@@ -240,6 +264,23 @@ export const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
       });
       return map;
     }, [matchGroups, activeIndex]);
+
+    // 匹配导航 / 搜索完成后：轮询等目标页 mark 渲染，然后细滚到匹配位置（而非停在页顶）。
+    useEffect(() => {
+      if (!pendingScrollToMatchRef.current) return;
+      let attempts = 0;
+      let raf = 0;
+      const tryScroll = () => {
+        if (scrollToMatchPosition()) {
+          pendingScrollToMatchRef.current = false;
+          return;
+        }
+        if (++attempts < 40) raf = requestAnimationFrame(tryScroll);
+        else pendingScrollToMatchRef.current = false;
+      };
+      raf = requestAnimationFrame(tryScroll);
+      return () => cancelAnimationFrame(raf);
+    }, [activeIndex, matchGroups, hitsByPage, scrollToMatchPosition]);
 
     useImperativeHandle(ref, () => ({
       nextPage, prevPage,

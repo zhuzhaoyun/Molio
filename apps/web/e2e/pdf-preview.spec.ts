@@ -113,6 +113,17 @@ test.describe('知识库 PDF 预览', () => {
     await expect(page.getByTestId('pdf-statusbar')).toContainText('第 2 / 3');
     // 导航后当前匹配移到页2
     await expect(page.locator('[data-testid="pdf-text-layer-2"] .pdf-search-hl-current')).toHaveCount(1);
+    // 回归：当前匹配必须出现在视口内（issue 2 —— 跳页后能看到匹配内容，而非停在页顶）
+    await expect
+      .poll(() => page.evaluate(() => {
+        const scroller = document.querySelector('[data-testid="pdf-scroll"]') as HTMLElement | null;
+        const mark = document.querySelector('.pdf-search-hl-current') as HTMLElement | null;
+        if (!scroller || !mark) return false;
+        const sr = scroller.getBoundingClientRect();
+        const mr = mark.getBoundingClientRect();
+        return mr.top >= sr.top && mr.bottom <= sr.bottom + 5;
+      }))
+      .toBe(true);
   });
 
   test('大纲与缩略图侧栏', async ({ page }) => {

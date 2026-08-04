@@ -19,18 +19,30 @@ export async function buildPageText(page: PDFPageProxy): Promise<PdfPageText> {
   return { items, fullText };
 }
 
-/** 大小写不敏感子串查找。 */
+/** 转义正则特殊字符。 */
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * 大小写不敏感子串查找。
+ * 用正则 `i` 标志在**原串**上匹配，返回原串下标——避免 `toLocaleLowerCase()` 改变字符串长度
+ * （如 `İ`→`i̇`）导致小写化后的下标与原串错位（表现为匹配整体偏移 1 字符）。
+ */
 export function findMatches(fullText: string, query: string): Array<{ start: number; end: number }> {
   const out: Array<{ start: number; end: number }> = [];
-  const q = query.toLocaleLowerCase();
+  const q = query.trim();
   if (!q) return out;
-  const text = fullText.toLocaleLowerCase();
-  let idx = 0;
-  for (;;) {
-    const found = text.indexOf(q, idx);
-    if (found === -1) break;
-    out.push({ start: found, end: found + q.length });
-    idx = found + q.length;
+  let re: RegExp;
+  try {
+    re = new RegExp(escapeRegExp(q), 'gi');
+  } catch {
+    return out;
+  }
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(fullText)) !== null) {
+    out.push({ start: m.index, end: m.index + m[0].length });
+    if (m.index === re.lastIndex) re.lastIndex++; // 空匹配保护，防死循环
   }
   return out;
 }
