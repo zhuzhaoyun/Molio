@@ -61,6 +61,11 @@ test.describe('知识库 PDF 预览', () => {
     const before = await page.getByTestId('pdf-statusbar').textContent();
     await page.getByTestId('kb-btn-pdf-zoom-in').click();
     await expect(page.getByTestId('pdf-statusbar')).not.toHaveText(before ?? '');
+    // 头栏缩放读数（− % + 之间）随缩放更新
+    const zoomReadout = page.getByTestId('pdf-zoom-readout');
+    const zoomBefore = await zoomReadout.textContent();
+    await page.getByTestId('kb-btn-pdf-zoom-in').click();
+    await expect(zoomReadout).not.toHaveText(zoomBefore ?? '');
   });
 
   test('选区右键复制为纯文本', async ({ page }) => {

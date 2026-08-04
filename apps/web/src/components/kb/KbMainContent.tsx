@@ -162,6 +162,8 @@ export function KbMainContent({
   const contentRef = useRef<HTMLDivElement>(null);
   const cmRef = useRef<KbCodeMirrorViewerHandle>(null);
   const pdfRef = useRef<PdfViewerHandle>(null);
+  // 头部缩放宽显示：PdfViewer 通过 onZoomChange 上报当前缩放比例
+  const [pdfZoom, setPdfZoom] = useState(100);
   const [wrap, setWrap] = useState(false);
   const [retryNonce, setRetryNonce] = useState(0);
   const [fmExpanded, setFmExpanded] = useState(true);
@@ -575,6 +577,7 @@ export function KbMainContent({
                   <line x1="5" y1="12" x2="19" y2="12" />
                 </svg>
               </button>
+              <span className="pdf-zoom-readout" data-testid="pdf-zoom-readout">{pdfZoom}%</span>
               <button
                 type="button"
                 className="kb-btn kb-btn-ghost"
@@ -860,6 +863,7 @@ export function KbMainContent({
                 fileName={fileName}
                 fileSize={fileContent?.size}
                 onOpenExternal={isElectron ? handleOpenExternal : undefined}
+                onZoomChange={setPdfZoom}
               />
             </Suspense>
           </ViewerErrorBoundary>

@@ -29,6 +29,8 @@ interface PdfViewerProps {
   fileName: string;
   fileSize?: number;
   onOpenExternal?: () => void;
+  /** 缩放比例变化时上报（整数百分比），供头栏显示当前缩放宽。 */
+  onZoomChange?: (pct: number) => void;
 }
 
 type Status = 'loading' | 'ready' | 'error';
@@ -55,7 +57,7 @@ const PageSlot = memo(function PageSlot({ height, testId, children }: {
 });
 
 export const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
-  function PdfViewer({ url, fileName, fileSize, onOpenExternal }, ref) {
+  function PdfViewer({ url, fileName, fileSize, onOpenExternal, onZoomChange }, ref) {
     const { t } = useI18n();
 
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -360,6 +362,11 @@ export const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
       updateWindow();
     }, [status, baseHeights, scale, pageCount, updateWindow]);
 
+    // 缩放比例上报（头栏显示当前 %）
+    useEffect(() => {
+      onZoomChange?.(Math.round(scale * 100));
+    }, [scale, onZoomChange]);
+
     const pages = useMemo(() => {
       const [first, last] = windowRange;
       const arr: ReactNode[] = [];
@@ -412,7 +419,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
             </div>
           </div>
           {sidebarOpen && doc && (
-            <PdfSidebar doc={doc} currentPage={currentPage} onJumpToPage={scrollToPage} />
+            <PdfSidebar doc={doc} currentPage={currentPage} onJumpToPage={scrollToPage} onClose={() => setSidebarOpen(false)} />
           )}
         </div>
 

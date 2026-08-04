@@ -6,32 +6,46 @@ interface PdfSidebarProps {
   doc: PDFDocumentProxy;
   currentPage: number;
   onJumpToPage: (n: number) => void;
+  /** 关闭侧栏（与 markdown 大纲浮层的 ✕ 关闭交互一致） */
+  onClose: () => void;
 }
 
 type Tab = 'outline' | 'thumbs';
 
-export function PdfSidebar({ doc, currentPage, onJumpToPage }: PdfSidebarProps) {
+export function PdfSidebar({ doc, currentPage, onJumpToPage, onClose }: PdfSidebarProps) {
   const { t } = useI18n();
   const [tab, setTab] = useState<Tab>('outline');
 
   return (
     <div className="pdf-sidebar" data-testid="pdf-sidebar">
-      <div className="pdf-sidebar-tabs">
+      {/* 头栏骨架与 markdown 大纲浮层统一：左侧 tabs，右侧 ✕ 关闭 */}
+      <div className="pdf-sidebar-header">
+        <div className="pdf-sidebar-tabs">
+          <button
+            type="button"
+            className={`kb-btn kb-btn-ghost ${tab === 'outline' ? 'is-active' : ''}`}
+            onClick={() => setTab('outline')}
+            data-testid="pdf-sidebar-tab-outline"
+          >
+            {t('kb.pdf.outline')}
+          </button>
+          <button
+            type="button"
+            className={`kb-btn kb-btn-ghost ${tab === 'thumbs' ? 'is-active' : ''}`}
+            onClick={() => setTab('thumbs')}
+            data-testid="pdf-sidebar-tab-thumbs"
+          >
+            {t('kb.pdf.thumbnails')}
+          </button>
+        </div>
         <button
           type="button"
-          className={`kb-btn kb-btn-ghost ${tab === 'outline' ? 'is-active' : ''}`}
-          onClick={() => setTab('outline')}
-          data-testid="pdf-sidebar-tab-outline"
+          className="pdf-sidebar-close"
+          data-testid="pdf-sidebar-close"
+          onClick={onClose}
+          aria-label={t('kb.close')}
         >
-          {t('kb.pdf.outline')}
-        </button>
-        <button
-          type="button"
-          className={`kb-btn kb-btn-ghost ${tab === 'thumbs' ? 'is-active' : ''}`}
-          onClick={() => setTab('thumbs')}
-          data-testid="pdf-sidebar-tab-thumbs"
-        >
-          {t('kb.pdf.thumbnails')}
+          ✕
         </button>
       </div>
       <div className="pdf-sidebar-scroll">
@@ -60,7 +74,7 @@ function renderOutline(nodes: OutlineNode[], depth: number, doc: PDFDocumentProx
         type="button"
         className="pdf-outline-item"
         data-testid="pdf-outline-item"
-        style={{ paddingLeft: 8 + depth * 12 }}
+        style={{ paddingLeft: 14 + depth * 12 }}
         onClick={() => {
           void (async () => {
             const n = await destToPageNum(doc, node.dest);
