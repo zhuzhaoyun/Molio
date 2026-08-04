@@ -19,12 +19,6 @@
     <changefreq>monthly</changefreq>
   </url>
   <url>
-    <loc>https://molio.cn/faq.html</loc>
-    <lastmod>2026-06-28</lastmod>
-    <priority>0.8</priority>
-    <changefreq>monthly</changefreq>
-  </url>
-  <url>
     <loc>https://molio.cn/privacy.html</loc>
     <lastmod>2026-06-28</lastmod>
     <priority>0.5</priority>
