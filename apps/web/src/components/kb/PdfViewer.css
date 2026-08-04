@@ -84,7 +84,8 @@
   color: transparent;
 }
 
-/* 搜索高亮：在 pdf.js textDiv 内包的 <mark>（文字保持透明，仅背景可见，不干扰选区/复制） */
+/* 搜索高亮：在 pdf.js textDiv 内包的 <mark>（文字保持透明，仅背景可见，不干扰选区/复制）。
+   背景必须半透明——文本层叠在 canvas 之上，不透明背景会盖住页面文字。 */
 .pdf-search-hl {
   color: transparent;
   background: var(--selected-soft);
@@ -92,7 +93,8 @@
 
 .pdf-search-hl-current {
   color: transparent;
-  background: var(--accent-tint);
+  /* 半透明 accent 强调（不透明 tint 会遮挡正文），描边区分当前匹配 */
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
   outline: 1px solid var(--accent);
   outline-offset: -1px;
 }
