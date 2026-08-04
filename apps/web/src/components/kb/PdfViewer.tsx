@@ -7,7 +7,7 @@ import { PdfPageView, EMPTY_HITS } from './PdfPageView';
 import type { PdfSearchHit } from './PdfPageView';
 import { PdfSearchBar } from './PdfSearchBar';
 import { PdfSidebar } from './PdfSidebar';
-import { buildPageText, searchAll, type PdfMatch, type PdfPageText } from './pdf-search';
+import { buildPageText, searchAll, type PdfMatchGroup, type PdfPageText } from './pdf-search';
 import { useI18n } from '../../i18n';
 import { formatFileSize } from '../../utils/format';
 import './PdfViewer.css';
@@ -74,7 +74,8 @@ export const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
     const [searchVisible, setSearchVisible] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [searching, setSearching] = useState(false);
-    const [matches, setMatches] = useState<PdfMatch[]>([]);
+    // 按「整次匹配」分组（一次匹配跨 item 时多个片段归一组）；activeIndex 指向组下标。
+    const [matchGroups, setMatchGroups] = useState<PdfMatchGroup[]>([]);
     const [activeIndex, setActiveIndex] = useState(-1);
     const [sidebarOpen, setSidebarOpen] = useState(false);
     // 文本索引缓存按 doc 身份隔离：切换文件后旧文档的在途 searchAll 不会污染新缓存。
@@ -188,33 +189,33 @@ export const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
     }, [doc]);
 
     const goToMatch = useCallback((i: number) => {
-      if (!matches.length) return;
-      const idx = ((i % matches.length) + matches.length) % matches.length;
+      if (!matchGroups.length) return;
+      const idx = ((i % matchGroups.length) + matchGroups.length) % matchGroups.length;
       setActiveIndex(idx);
-      scrollToPage(matches[idx].pageNum);
-    }, [matches, scrollToPage]);
+      scrollToPage(matchGroups[idx].pageNum);
+    }, [matchGroups, scrollToPage]);
 
     // 搜索执行：300ms debounce，空查询清除
     useEffect(() => {
       if (!doc) return;
       const q = searchQuery.trim();
       if (!q) {
-        setMatches([]); setActiveIndex(-1); setSearching(false);
+        setMatchGroups([]); setActiveIndex(-1); setSearching(false);
         return;
       }
       let cancelled = false;
       const timer = setTimeout(async () => {
         setSearching(true);
         try {
-          const found = await searchAll(doc, q, getTextCached);
+          const groups = await searchAll(doc, q, getTextCached);
           if (cancelled) return;
-          setMatches(found);
-          setActiveIndex(found.length ? 0 : -1);
-          if (found.length) scrollToPage(found[0].pageNum);
+          setMatchGroups(groups);
+          setActiveIndex(groups.length ? 0 : -1);
+          if (groups.length) scrollToPage(groups[0].pageNum);
         } catch (err) {
           if (cancelled) return;
           console.error('[PdfViewer] search failed', err);
-          setMatches([]);
+          setMatchGroups([]);
           setActiveIndex(-1);
           setSearching(false);
         } finally {
@@ -224,16 +225,21 @@ export const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
       return () => { cancelled = true; clearTimeout(timer); };
     }, [searchQuery, doc, getTextCached, scrollToPage]);
 
-    /** 每页命中（按 itemIndex 分组，跨 item 的匹配由 searchAll 切分好）。 */
+    /**
+     * 每页命中。current 按「整次匹配」（PdfMatchGroup）应用：同一匹配跨 item 的所有片段
+     * 共享 current 标记，避免同一次匹配的片段被不同样式拆开。
+     */
     const hitsByPage = useMemo(() => {
       const map = new Map<number, PdfSearchHit[]>();
-      matches.forEach((m, i) => {
-        const arr = map.get(m.pageNum) ?? [];
-        arr.push({ itemIndex: m.itemIndex, fromInItem: m.fromInItem, toInItem: m.toInItem, current: i === activeIndex });
-        map.set(m.pageNum, arr);
+      matchGroups.forEach((group, g) => {
+        for (const m of group.segments) {
+          const arr = map.get(m.pageNum) ?? [];
+          arr.push({ itemIndex: m.itemIndex, fromInItem: m.fromInItem, toInItem: m.toInItem, current: g === activeIndex });
+          map.set(m.pageNum, arr);
+        }
       });
       return map;
-    }, [matches, activeIndex]);
+    }, [matchGroups, activeIndex]);
 
     useImperativeHandle(ref, () => ({
       nextPage, prevPage,
@@ -343,12 +349,12 @@ export const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
           <PdfSearchBar
             query={searchQuery}
             onQueryChange={setSearchQuery}
-            total={matches.length}
+            total={matchGroups.length}
             activeIndex={activeIndex}
             searching={searching}
             onPrev={() => goToMatch(activeIndex - 1)}
             onNext={() => goToMatch(activeIndex + 1)}
-            onClose={() => { setSearchVisible(false); setMatches([]); setActiveIndex(-1); setSearchQuery(''); }}
+            onClose={() => { setSearchVisible(false); setMatchGroups([]); setActiveIndex(-1); setSearchQuery(''); }}
           />
         )}
         <div className="pdf-body">

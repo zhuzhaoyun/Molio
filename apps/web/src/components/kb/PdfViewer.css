@@ -93,10 +93,8 @@
 
 .pdf-search-hl-current {
   color: transparent;
-  /* 半透明 accent 强调（不透明 tint 会遮挡正文），描边区分当前匹配 */
-  background: color-mix(in srgb, var(--accent) 28%, transparent);
-  outline: 1px solid var(--accent);
-  outline-offset: -1px;
+  /* 半透明 accent 强调（不透明 tint 会遮挡正文），更浓填充区分当前匹配；不用描边避免「框」感 */
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
 .pdf-viewer-overlay {

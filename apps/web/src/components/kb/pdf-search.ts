@@ -52,22 +52,35 @@ export function mapRangeToItems(
   return result;
 }
 
-/** 全文档搜索。getText 返回（可缓存的）单页文本。 */
+/**
+ * 一次匹配（一次 findMatches 命中）跨 item 时，会切成多个 `PdfMatch` 片段。
+ * 把这些片段归入一个 `PdfMatchGroup`，使「当前匹配」高亮/计数以「整次匹配」为单位，
+ * 而非按片段——避免跨 item 匹配的片段被不同样式拆开。
+ */
+export interface PdfMatchGroup {
+  pageNum: number;
+  /** 本次匹配覆盖的 item 片段（跨 item 时多个，通常同一行）。 */
+  segments: PdfMatch[];
+}
+
+/** 全文档搜索。getText 返回（可缓存的）单页文本。返回按「整次匹配」分组的结果。 */
 export async function searchAll(
   doc: PDFDocumentProxy,
   query: string,
   getText: (pageNum: number) => Promise<PdfPageText>,
-): Promise<PdfMatch[]> {
-  const matches: PdfMatch[] = [];
+): Promise<PdfMatchGroup[]> {
+  const groups: PdfMatchGroup[] = [];
   const q = query.trim();
-  if (!q) return matches;
+  if (!q) return groups;
   for (let n = 1; n <= doc.numPages; n++) {
     const pageText = await getText(n);
     for (const { start, end } of findMatches(pageText.fullText, q)) {
+      const segments: PdfMatch[] = [];
       for (const part of mapRangeToItems(pageText, start, end)) {
-        matches.push({ pageNum: n, ...part });
+        segments.push({ pageNum: n, ...part });
       }
+      if (segments.length) groups.push({ pageNum: n, segments });
     }
   }
-  return matches;
+  return groups;
 }
