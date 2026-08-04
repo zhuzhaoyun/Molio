@@ -15,7 +15,7 @@
 
 ---
 
-聊天机器人每次对话都从零开始，Molio 从你的知识库开始。它把 Claude Code / Codex / Gemini CLI 接到你的 Obsidian 库上：读你的积累，做研究、写文章、答问题，再把产出写回库，越用越懂你。所有内容存在你自己的电脑上，不经过任何第三方服务器。
+聊天机器人每次对话都从零开始，Molio 从你的知识库开始。它把 Claude Code / Codex 等 AI runtime 接到你的 Obsidian 库上：读你的积累，做研究、分析、创作，再把产出写回库，越用越懂你。所有内容存在你自己的电脑上，不经过任何第三方服务器。
 
 ### 🌟 核心能力
 
@@ -36,7 +36,7 @@
 |------|:----:|:----:|:----:|:----:|:----:|
 | **Web 控制台** *(默认)* | ✅ | ✅ | ✅ | ✅ | — |
 | **微信** | ✅ | ✅ | ✅ | ⏳ | ⏳ |
-| **飞书** | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ |
+| **飞书** | ✅ | ✅ | ✅ | ⏳ | ✅ |
 | Telegram | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ |
 | Slack | ⏳ | ⏳ | ⏳ | — | ⏳ |
 | Discord | ⏳ | ⏳ | ⏳ | — | ⏳ |
@@ -214,7 +214,7 @@ sudo xattr -d com.apple.quarantine /Applications/Molio.app
 
 扫码加入微信群，反馈问题、交流使用、参与讨论：
 
-<img src="docs/img/qrcode.png" alt="用户交流群二维码" width="200" />
+<img src="apps/landing-page/images/qrcode.png" alt="用户交流群二维码" width="200" />
 
 ## ❤️ 致谢
 

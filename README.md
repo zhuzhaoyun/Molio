@@ -15,7 +15,7 @@
 
 ---
 
-Generic chatbots draw on the internet at large. Molio draws on your library. It is a **local-first** workbench that plugs Claude Code, Codex, and Gemini CLI into your Obsidian vault: they read what you have accumulated, research, write, and answer, then write the results back into the vault. The longer you use it, the better it knows you. Everything runs on your machine, never through a third-party server.
+Generic chatbots draw on the internet at large. Molio draws on your library. It is a **local-first** workbench that plugs Claude Code, Codex, and other AI runtimes into your Obsidian vault: they read what you have accumulated, research, analyze, and create, then write the results back into the vault. The longer you use it, the better it knows you. Everything runs on your machine, never through a third-party server.
 
 ### 🌟 Why Molio?
 
@@ -36,7 +36,7 @@ A single Molio instance can serve multiple channels in parallel. Most channels c
 |---------|:----:|:-----:|:----:|:-----:|:-----:|
 | **Web Console** *(default)* | ✅ | ✅ | ✅ | ✅ | — |
 | **WeChat** | ✅ | ✅ | ✅ | ⏳ | ⏳ |
-| **Feishu** | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ |
+| **Feishu** | ✅ | ✅ | ✅ | ⏳ | ✅ |
 | Telegram | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ |
 | Slack | ⏳ | ⏳ | ⏳ | — | ⏳ |
 | Discord | ⏳ | ⏳ | ⏳ | — | ⏳ |
