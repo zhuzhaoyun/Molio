@@ -51,9 +51,23 @@ app.use('*', cors({
   },
 }));
 
-// Health check
+// Health check — includes process metrics so the desktop shell can bridge
+// daemon memory data to ARMS (the daemon has no ARMS SDK of its own).
 app.get('/api/health', (c) => {
-  return c.json({ status: 'ok' as const, version: '0.1.0' });
+  const mem = process.memoryUsage();
+  return c.json({
+    status: 'ok' as const,
+    version: '0.1.0',
+    memory: {
+      rss: mem.rss,
+      heapTotal: mem.heapTotal,
+      heapUsed: mem.heapUsed,
+      external: mem.external,
+      arrayBuffers: mem.arrayBuffers,
+    },
+    activeRuns: runManager.getActiveRunCount(),
+    uptime: Math.floor(process.uptime()),
+  });
 });
 
 // Graceful shutdown endpoint — called by the desktop shell before quitting

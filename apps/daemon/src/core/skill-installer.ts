@@ -7,8 +7,21 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ThrottledWarn } from './throttled-warn.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// The "skills source not found" warnings can fire once per skill for every
+// vault on each sync when the packaged skills dir is missing/broken — bounded
+// per run but multiplied by (skills × vaults). Throttle per source path so a
+// broken install surfaces once, not once-per-skill-per-vault (see
+// throttled-warn.ts). Genuine per-skill install failures stay on console.error.
+const skillWarn = new ThrottledWarn();
+
+/** Reset the skills throttle — test hook so cases start from a clean slate. */
+export function resetSkillWarnState(): void {
+  skillWarn.reset();
+}
 
 /** Built-in skills shipped with Molio. */
 const BUILTIN_SKILLS = [
@@ -384,7 +397,7 @@ export function installBuiltinSkills(vaultPath: string): void {
   const sourceDir = resolveSkillsSourceDir();
 
   if (!fs.existsSync(sourceDir)) {
-    console.warn(`[skill-installer] Skills source directory not found: ${sourceDir}`);
+    skillWarn.warn(`source-dir:${sourceDir}`, `[skill-installer] Skills source directory not found: ${sourceDir}`);
     return;
   }
 
@@ -425,7 +438,7 @@ export function installBuiltinSkills(vaultPath: string): void {
     const skillDest = path.join(claudeSkillsDir, skillName);
 
     if (!fs.existsSync(skillSrc)) {
-      console.warn(`[skill-installer] Skill source not found: ${skillSrc}`);
+      skillWarn.warn(`skill-src:${skillSrc}`, `[skill-installer] Skill source not found: ${skillSrc}`);
       continue;
     }
 

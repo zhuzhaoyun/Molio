@@ -23,6 +23,7 @@ import { listVaults } from './db.js';
 // Import from vault-prune (not knowledge) so this module does NOT transitively
 // pull in encoding.ts — tests tune encoding's size caps via env vars at load.
 import { isPrunedDirName, MAX_DIR_ENTRIES } from './vault-prune.js';
+import { ThrottledWarn } from './throttled-warn.js';
 
 export const VAULT_TREE_CHANGED_EVENT = 'tree-changed';
 
@@ -32,6 +33,9 @@ export class VaultWatcher extends EventEmitter {
   private watchers = new Map<string, FSWatcher>();
   private timers = new Map<string, ReturnType<typeof setTimeout>>();
   private started = false;
+  // Throttles the chokidar 'error' warning per vault — a flapping watched path
+  // can fire it continuously (see throttled-warn.ts for the stderr-noise rationale).
+  private readonly warn = new ThrottledWarn();
 
   constructor(private readonly db: Database.Database) {
     super();
@@ -132,7 +136,10 @@ export class VaultWatcher extends EventEmitter {
       watcher.on('addDir', handleChange);
       watcher.on('unlinkDir', handleChange);
       watcher.on('error', (err) => {
-        console.warn(`[vault-watcher] error for ${vaultId} (${vaultPath}):`, (err as Error).message);
+        this.warn.warn(
+          `error:${vaultId}`,
+          `[vault-watcher] error for ${vaultId} (${vaultPath}): ${(err as Error).message}`,
+        );
       });
 
       this.watchers.set(vaultId, watcher);
