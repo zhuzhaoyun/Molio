@@ -34,6 +34,42 @@ export interface PruneRunLogsResult {
   kept: number;
 }
 
+/** Decide and act on a single entry. Shared by the sync and async sweeps. */
+function pruneEntry(
+  dir: string,
+  name: string,
+  now: number,
+  maxAgeMs: number,
+  result: PruneRunLogsResult,
+): void {
+  const target = path.join(dir, name);
+  try {
+    const st = fs.statSync(target);
+    if (!st.isDirectory()) {
+      result.kept++;
+      return;
+    }
+    if (now - st.mtimeMs <= maxAgeMs) {
+      result.kept++;
+      return;
+    }
+    fs.rmSync(target, { recursive: true, force: true });
+    result.removed++;
+  } catch {
+    // A locked or vanished directory must never abort the sweep.
+    result.failed++;
+  }
+}
+
+function logPruneSummary(result: PruneRunLogsResult, dir: string): void {
+  if (result.removed > 0) {
+    console.log(
+      `[runs-log-prune] removed ${result.removed} expired run log directories ` +
+      `(kept ${result.kept}, failed ${result.failed}) from ${dir}`,
+    );
+  }
+}
+
 export function pruneRunLogs(opts: PruneRunLogsOptions = {}): PruneRunLogsResult {
   const dir = opts.dir ?? DEFAULT_RUNS_LOG_DIR;
   const now = opts.now ?? Date.now();
@@ -50,30 +86,51 @@ export function pruneRunLogs(opts: PruneRunLogsOptions = {}): PruneRunLogsResult
   }
 
   for (const name of entries) {
-    const target = path.join(dir, name);
-    try {
-      const st = fs.statSync(target);
-      if (!st.isDirectory()) {
-        result.kept++;
-        continue;
-      }
-      if (now - st.mtimeMs <= maxAgeMs) {
-        result.kept++;
-        continue;
-      }
-      fs.rmSync(target, { recursive: true, force: true });
-      result.removed++;
-    } catch {
-      // A locked or vanished directory must never abort the sweep.
-      result.failed++;
+    pruneEntry(dir, name, now, maxAgeMs, result);
+  }
+
+  logPruneSummary(result, dir);
+  return result;
+}
+
+/**
+ * Entries processed before yielding to the event loop in pruneRunLogsAsync.
+ * A real machine had ~600 run dirs; stat+rm over all of them took ~4s of
+ * straight event-loop blocking on a cold disk cache.
+ */
+const ASYNC_CHUNK_SIZE = 64;
+
+/**
+ * Async variant of pruneRunLogs for daemon startup: identical semantics, but
+ * yields to the event loop every ASYNC_CHUNK_SIZE entries so the sweep cannot
+ * starve HTTP handling (it runs right after the server starts listening).
+ */
+export async function pruneRunLogsAsync(
+  opts: PruneRunLogsOptions = {},
+): Promise<PruneRunLogsResult> {
+  const dir = opts.dir ?? DEFAULT_RUNS_LOG_DIR;
+  const now = opts.now ?? Date.now();
+  const maxAgeMs = (opts.maxAgeDays ?? DEFAULT_MAX_AGE_DAYS) * 24 * 60 * 60 * 1000;
+
+  const result: PruneRunLogsResult = { removed: 0, failed: 0, kept: 0 };
+
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(dir);
+  } catch {
+    // Directory doesn't exist yet (fresh install) — nothing to do.
+    return result;
+  }
+
+  let processed = 0;
+  for (const name of entries) {
+    pruneEntry(dir, name, now, maxAgeMs, result);
+    processed++;
+    if (processed % ASYNC_CHUNK_SIZE === 0 && processed < entries.length) {
+      await new Promise<void>((resolve) => setImmediate(resolve));
     }
   }
 
-  if (result.removed > 0) {
-    console.log(
-      `[runs-log-prune] removed ${result.removed} expired run log directories ` +
-      `(kept ${result.kept}, failed ${result.failed}) from ${dir}`,
-    );
-  }
+  logPruneSummary(result, dir);
   return result;
 }

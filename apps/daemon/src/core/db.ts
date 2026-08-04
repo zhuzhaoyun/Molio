@@ -781,6 +781,11 @@ export function createVault(db: SqliteDb, name: string, vaultPath: string, descr
 }
 
 export function deleteVault(db: SqliteDb, id: string): void {
+  // Drop the vault's per-vault skill overrides explicitly instead of relying on
+  // the FK CASCADE: DBs created before vault_skills carried the foreign key
+  // keep a FK-less table (CREATE TABLE IF NOT EXISTS never retrofits it), and
+  // its rows would otherwise be orphaned.
+  db.prepare('DELETE FROM vault_skills WHERE vault_id = ?').run(id);
   db.prepare('DELETE FROM vaults WHERE id = ?').run(id);
   // Clear active-vault if it pointed at the deleted vault.
   if (getActiveVaultId(db) === id) {

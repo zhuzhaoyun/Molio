@@ -3,8 +3,8 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import type Database from 'better-sqlite3';
-import { openDatabase, closeDatabase, createVault } from '../../../src/core/db.js';
+import Database from 'better-sqlite3';
+import { openDatabase, closeDatabase, createVault, deleteVault } from '../../../src/core/db.js';
 import { createSkill } from '../../../src/core/skills/store.js';
 import type { SkillPathsOpts } from '../../../src/core/skills/paths.js';
 import {
@@ -13,6 +13,7 @@ import {
   getEffectiveSkillIds,
   reconcileVault,
   reconcileAllVaults,
+  reconcileAllVaultsAsync,
   cleanupLegacyGlobalSync,
   deleteVaultSkillOverrides,
 } from '../../../src/core/skills/vault-config.js';
@@ -197,5 +198,121 @@ describe('skills/vault-config', () => {
 
     fs.rmSync(v1.dir, { recursive: true, force: true });
     fs.rmSync(v2.dir, { recursive: true, force: true });
+  });
+
+  // ── vault deletion cleans up overrides ──
+
+  it('deleteVault removes that vault\'s override rows, keeping other vaults\'', () => {
+    const v1 = makeVault('V1');
+    const v2 = makeVault('V2');
+    setVaultSkillEnabled(db, v1.vault.id, 's1', false);
+    setVaultSkillEnabled(db, v2.vault.id, 's1', false);
+
+    deleteVault(db, v1.vault.id);
+
+    const orphans = db
+      .prepare('SELECT COUNT(*) AS n FROM vault_skills WHERE vault_id = ?')
+      .get(v1.vault.id) as { n: number };
+    assert.equal(orphans.n, 0, 'deleted vault leaves no override rows');
+    assert.equal(getVaultSkillOverrides(db, v2.vault.id).get('s1'), false, 'other vault\'s override kept');
+
+    fs.rmSync(v1.dir, { recursive: true, force: true });
+    fs.rmSync(v2.dir, { recursive: true, force: true });
+  });
+
+  it('deleteVault cleans overrides even on legacy DBs whose vault_skills has no FK', () => {
+    // Regression: DBs created before vault_skills carried
+    // FOREIGN KEY(vault_id) ... ON DELETE CASCADE never cascade, and
+    // CREATE TABLE IF NOT EXISTS cannot retrofit the FK into the existing
+    // table — so deleteVault must delete the rows itself, not rely on the FK.
+    const legacyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-vc-legacydb-'));
+    const legacyFile = path.join(legacyDir, 'app.sqlite');
+    // Pre-create the tables as the old schema had them — WITHOUT the FK.
+    const raw = new Database(legacyFile);
+    raw.exec(`
+      CREATE TABLE vaults (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        path TEXT NOT NULL UNIQUE,
+        description TEXT,
+        created_at INTEGER NOT NULL
+      );
+      CREATE TABLE vault_skills (
+        vault_id TEXT NOT NULL,
+        skill_id TEXT NOT NULL,
+        enabled  INTEGER NOT NULL DEFAULT 1,
+        PRIMARY KEY (vault_id, skill_id)
+      );
+    `);
+    raw.close();
+
+    // migrate() skips existing tables (IF NOT EXISTS) → FK-less table stays.
+    const legacyDb = openDatabase(legacyDir);
+    const vaultDir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-vc-legacyvault-'));
+    try {
+      const fk = legacyDb
+        .prepare("SELECT COUNT(*) AS n FROM pragma_foreign_key_list('vault_skills')")
+        .get() as { n: number };
+      assert.equal(fk.n, 0, 'legacy table really has no FK (no cascade possible)');
+
+      const vault = createVault(legacyDb, 'Legacy', vaultDir, '');
+      setVaultSkillEnabled(legacyDb, vault.id, 's1', false);
+
+      deleteVault(legacyDb, vault.id);
+
+      const orphans = legacyDb
+        .prepare('SELECT COUNT(*) AS n FROM vault_skills WHERE vault_id = ?')
+        .get(vault.id) as { n: number };
+      assert.equal(orphans.n, 0, 'no orphan override rows on a legacy (FK-less) db');
+    } finally {
+      closeDatabase(); // release the singleton (openDatabase auto-closed the beforeEach db)
+      fs.rmSync(legacyDir, { recursive: true, force: true });
+      fs.rmSync(vaultDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('skills/vault-config: reconcileAllVaultsAsync (startup fan-out must not block)', () => {
+  // Regression: the daemon's startup fan-out ran fully synchronously; with
+  // ~1.2s of fs work per vault on a cold cache (13+ vaults ≈ 16s) the event
+  // loop was blocked until long after the desktop shell's startup timeout —
+  // "后端服务启动失败" on every first launch after packaging.
+
+  it('fans out to every vault like the sync variant', async () => {
+    const v1 = makeVault('V1');
+    const v2 = makeVault('V2');
+    createSkill(db, { id: 'all', name: 'All', description: '', enabled: true, builtIn: false }, 'body', opts);
+
+    await reconcileAllVaultsAsync(db, opts);
+
+    assert.ok(fs.existsSync(path.join(molioDirIn(v1.dir, 'all'), 'SKILL.md')));
+    assert.ok(fs.existsSync(path.join(molioDirIn(v2.dir, 'all'), 'SKILL.md')));
+
+    fs.rmSync(v1.dir, { recursive: true, force: true });
+    fs.rmSync(v2.dir, { recursive: true, force: true });
+  });
+
+  it('yields to the event loop between vaults', async () => {
+    const vaults = [makeVault('V1'), makeVault('V2'), makeVault('V3')];
+    createSkill(db, { id: 's', name: 'S', description: '', enabled: true, builtIn: false }, 'body', opts);
+
+    let ticks = 0;
+    let ticking = true;
+    const tick = (): void => {
+      if (!ticking) return;
+      ticks++;
+      setImmediate(tick);
+    };
+    setImmediate(tick);
+
+    await reconcileAllVaultsAsync(db, opts);
+    ticking = false;
+
+    // 3 vaults → 3 inter-vault yields → at least 2 interleaved ticks.
+    assert.ok(ticks >= 2, `expected >= 2 interleaved event-loop ticks, got ${ticks}`);
+
+    for (const v of vaults) {
+      fs.rmSync(v.dir, { recursive: true, force: true });
+    }
   });
 });

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync, utimesSync, symlinkSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { pruneRunLogs } from '../../src/core/runs-log-prune.js';
+import { pruneRunLogs, pruneRunLogsAsync } from '../../src/core/runs-log-prune.js';
 
 /**
  * Regression test: per-run JSONL logs (~/.molio/runs/<runId>/) were never
@@ -124,5 +124,53 @@ describe('pruneRunLogs', () => {
     assert.equal(result.removed, 2, 'both aged run dirs should be removed');
     assert.ok(existsSync(path.join(tmpDir, 'run-a')) === false);
     assert.ok(existsSync(path.join(tmpDir, 'run-b')) === false);
+  });
+});
+
+describe('pruneRunLogsAsync', () => {
+  it('should behave identically to the sync variant (remove old, keep recent)', async () => {
+    const now = Date.now();
+    const old = makeRunDir('run-old', 10, now);
+    const recent = makeRunDir('run-recent', 2, now);
+
+    const result = await pruneRunLogsAsync({ dir: tmpDir, now });
+
+    assert.equal(result.removed, 1);
+    assert.equal(result.kept, 1);
+    assert.equal(existsSync(old), false, 'old run dir should be deleted');
+    assert.ok(existsSync(recent), 'recent run dir should survive');
+  });
+
+  it('should tolerate a missing directory (fresh install)', async () => {
+    const result = await pruneRunLogsAsync({ dir: path.join(tmpDir, 'does-not-exist') });
+    assert.deepEqual(result, { removed: 0, failed: 0, kept: 0 });
+  });
+
+  it('should yield to the event loop while sweeping many entries', async () => {
+    // Regression: the synchronous sweep blocked the daemon's event loop for ~4s
+    // over ~600 run dirs, delaying HTTP listen on the first launch after
+    // packaging ("后端服务启动失败"). The async variant must interleave other
+    // callbacks while it works.
+    const now = Date.now();
+    for (let i = 0; i < 200; i++) {
+      makeRunDir(`run-${i}`, 30, now);
+    }
+
+    let ticks = 0;
+    let ticking = true;
+    const tick = (): void => {
+      if (!ticking) return;
+      ticks++;
+      setImmediate(tick);
+    };
+    setImmediate(tick);
+
+    const result = await pruneRunLogsAsync({ dir: tmpDir, now });
+    ticking = false;
+
+    assert.equal(result.removed, 200);
+    // 200 entries at chunk size 64 → yields after entries 64, 128, 192 → at
+    // least 3 interleaved ticks must have run during the sweep.
+    assert.ok(ticks >= 3, `expected >= 3 interleaved event-loop ticks, got ${ticks}`);
   });
 });

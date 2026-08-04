@@ -2,11 +2,11 @@ import { serve } from '@hono/node-server';
 import { execSync } from 'node:child_process';
 import { app, db, runManager, weixinService, vaultWatcher, preloadManager } from './server.js';
 import { initSkillLibrary } from './core/skills/builtin.js';
-import { reconcileAllVaults, cleanupLegacyGlobalSync } from './core/skills/vault-config.js';
+import { reconcileAllVaultsAsync, cleanupLegacyGlobalSync } from './core/skills/vault-config.js';
 import { ensureWikiSysPromptFiles } from './core/wiki-prompts.js';
 import { isKillablePortOccupant } from './core/port-check.js';
 import { startMemoryMonitor } from './core/memory-monitor.js';
-import { pruneRunLogs } from './core/runs-log-prune.js';
+import { pruneRunLogsAsync } from './core/runs-log-prune.js';
 
 const port = Number(process.env['MOLIO_PORT'] ?? 3100);
 
@@ -92,45 +92,68 @@ function checkAndKillPortOccupant(port: number): void {
 
 checkAndKillPortOccupant(port);
 
-// 1. Seed built-in skills into the `skills` table — the master switch source
-//    (bundled: docling/wiki-*/remotion/wechat; core: writing trio). Must run
-//    before reconcileAllVaults reads the table.
+// Seed built-in skills into the `skills` table — the master switch source
+// (bundled: docling/wiki-*/remotion/wechat; core: writing trio). Must run
+// before any vault reconcile reads the table. Fast (SQLite upserts) and kept
+// before listen so API requests never observe an unseeded library.
 const skillsSeeded = initSkillLibrary(db);
-
-// Delete per-run JSONL logs older than 7 days (nothing cleaned them up
-// before; they accumulate indefinitely under ~/.molio/runs). Best-effort and
-// fast — a readdir + stat sweep over the run-id directories.
-pruneRunLogs();
 
 // Materialize the feishu wiki role frame (the only channel still delivered via
 // --append-system-prompt-file; weixin prepends its frame, see weixin/dispatcher).
+// One small file write — keep before listen so an early feishu run never reads
+// a missing frame.
 ensureWikiSysPromptFiles();
 
-// 2. Fan the effective skills into every vault's <vault>/.claude/skills/ —
-//    bundled (whole-dir) + library/core (molio-- single file) + CLAUDE.md rules.
-//    Per-vault, best-effort. Covers what the old installBuiltinSkills loop did.
-//    Guarded on a successful seed: reconciling against a (partially) empty table
-//    would treat missing built-ins as disabled and delete already-synced skills.
-if (skillsSeeded) {
-  reconcileAllVaults(db);
-} else {
-  console.warn(
-    '[skills] Seeding failed — skipping vault skill fan-out; vaults keep their previously synced skills.',
-  );
+// ⚠️ Everything below that is HEAVY (run-log prune, per-vault skill fan-out,
+// legacy cleanup, preload detection) runs in runDeferredStartupChores AFTER the
+// port is bound. Regression context: on a first launch after packaging, a cold
+// prune sweep (~600 run dirs ≈ 4s) plus skill fan-out into every vault
+// (≈1.2s/vault) pushed "listening" past the desktop shell's startup timeout,
+// showing "后端服务启动失败" even though the daemon would have come up seconds
+// later. Bind first, then catch up.
+async function runDeferredStartupChores(): Promise<void> {
+  // Delete per-run JSONL logs older than 7 days (nothing cleaned them up
+  // before; they accumulate indefinitely under ~/.molio/runs). Best-effort;
+  // the async variant yields to the event loop in chunks.
+  await pruneRunLogsAsync();
+
+  // Fan the effective skills into every vault's <vault>/.claude/skills/ —
+  // bundled (whole-dir) + library/core (molio-- single file) + CLAUDE.md rules.
+  // Per-vault, best-effort, yielding between vaults. Covers what the old
+  // installBuiltinSkills loop did. Guarded on a successful seed: reconciling
+  // against a (partially) empty table would treat missing built-ins as disabled
+  // and delete already-synced skills.
+  if (skillsSeeded) {
+    await reconcileAllVaultsAsync(db);
+  } else {
+    console.warn(
+      '[skills] Seeding failed — skipping vault skill fan-out; vaults keep their previously synced skills.',
+    );
+  }
+
+  // Remove the legacy global ~/.claude/skills/molio--* sync left over from the
+  // pre-per-vault design (idempotent; safe to run every startup).
+  cleanupLegacyGlobalSync();
+
+  // Check which heavy skill tools are already installed. Results are stored in
+  // the PreloadManager and served via GET /api/preload/status so the web UI can
+  // show a preload suggestion toast; not needed for readiness.
+  preloadManager.checkSkills();
 }
-
-// 3. Remove the legacy global ~/.claude/skills/molio--* sync left over from the
-//    pre-per-vault design (idempotent; safe to run every startup).
-cleanupLegacyGlobalSync();
-
-// Check which heavy skill tools are already installed. Results are stored in
-// the PreloadManager and served via GET /api/preload/status so the web UI can
-// show a preload suggestion toast without blocking daemon startup.
-preloadManager.checkSkills();
 
 function startServer(): void {
   const server = serve({ fetch: app.fetch, port }, () => {
     console.log(`Molio daemon listening on http://localhost:${port}`);
+    // The desktop shell gates readiness on the "listening on" line above —
+    // heavy chores must only start after it is printed.
+    setImmediate(() => {
+      runDeferredStartupChores().catch((err) => {
+        console.error(
+          '[startup] deferred chores failed:',
+          err instanceof Error ? err.stack : err,
+        );
+      });
+    });
   });
 
   server.on('error', (err: NodeJS.ErrnoException) => {

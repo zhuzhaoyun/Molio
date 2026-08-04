@@ -119,6 +119,23 @@ export function reconcileAllVaults(db: Database.Database, opts?: SkillPathsOpts)
 }
 
 /**
+ * Async variant of reconcileAllVaults for the startup fan-out and mutation
+ * routes: yields to the event loop between vaults so HTTP stays responsive
+ * while a many-vault sync runs. The fully synchronous version blocked the
+ * daemon for >10s on a cold cache (13+ vaults × ~1.2s each), which pushed the
+ * packaged app's first launch past the desktop shell's startup timeout.
+ */
+export async function reconcileAllVaultsAsync(
+  db: Database.Database,
+  opts?: SkillPathsOpts,
+): Promise<void> {
+  for (const vault of listVaults(db)) {
+    reconcileVault(db, vault, opts);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+}
+
+/**
  * Remove the legacy global `~/.claude/skills/molio--*` sync left over from the
  * pre-per-vault design. Idempotent and safe to run on every startup. `opts` is
  * injectable so tests can point it at a temp `claudeHome` (never the real home).
@@ -131,9 +148,14 @@ export function cleanupLegacyGlobalSync(opts?: SkillPathsOpts): void {
  * Facade for skills routes: call after ANY global library mutation (create /
  * update / toggle / import / delete) so every vault's sync catches up. Keeping
  * this in one place means a new mutation endpoint can't forget to re-sync.
+ * Async (yields between vaults) so a many-vault fan-out doesn't freeze every
+ * in-flight HTTP request for the whole sync duration.
  */
-export function afterGlobalSkillMutation(db: Database.Database, opts?: SkillPathsOpts): void {
-  reconcileAllVaults(db, opts);
+export async function afterGlobalSkillMutation(
+  db: Database.Database,
+  opts?: SkillPathsOpts,
+): Promise<void> {
+  await reconcileAllVaultsAsync(db, opts);
 }
 
 /** Drop all per-vault override rows for a skill (called when it's deleted globally). */

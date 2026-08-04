@@ -310,6 +310,28 @@ describe('main.js: daemon startup failure must show an error page, not spin fore
   });
 });
 
+describe('main.js: daemon startup timeout must tolerate slow first launches', () => {
+  // Regression: the first launch after packaging hit the old 10s timeout while
+  // the daemon did cold-cache startup work before binding its port, showing
+  // "后端服务启动失败" even though the daemon came up seconds later — a restart
+  // "fixed" it. The gate must stay generous (>= 30s).
+  it('should wait at least 30s for the daemon before rejecting', () => {
+    const timeoutMatch = mainJs.match(/daemon startup timeout[\s\S]{0,200}?\},\s*(\d+)\)/);
+    assert.ok(timeoutMatch, 'startup timeout fallback must exist');
+    assert.ok(
+      Number(timeoutMatch[1]) >= 30000,
+      `startup timeout is ${timeoutMatch[1]}ms — must be >= 30000ms`
+    );
+  });
+
+  it('should clear the startup timer once the daemon is ready', () => {
+    assert.ok(
+      mainJs.includes('clearTimeout(startupTimer)'),
+      'the startup timer must be cleared when "listening on" arrives'
+    );
+  });
+});
+
 describe('main.js: graceful daemon shutdown to preserve last assistant reply', () => {
   it('should request /api/shutdown before force-killing daemon', () => {
     assert.ok(

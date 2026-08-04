@@ -68,7 +68,7 @@ export function skillsRoutes(db: Database.Database, runManager: RunManager): Hon
         { name: body.name.trim(), description: (body.description ?? '').trim(), enabled: true, builtIn: false },
         body.instructions,
       );
-      afterGlobalSkillMutation(db);
+      await afterGlobalSkillMutation(db);
       return c.json({ skill }, 201);
     } catch (err) {
       return c.json({ error: { code: 'INTERNAL', message: errMessage(err) } }, 500);
@@ -88,7 +88,7 @@ export function skillsRoutes(db: Database.Database, runManager: RunManager): Hon
     const body = await c.req.json<UpdateSkillRequest>();
     try {
       const skill = updateSkill(db, c.req.param('id'), body);
-      afterGlobalSkillMutation(db);
+      await afterGlobalSkillMutation(db);
       return c.json({ skill });
     } catch (err) {
       return mapStoreError(c, err);
@@ -107,7 +107,7 @@ export function skillsRoutes(db: Database.Database, runManager: RunManager): Hon
     }
     try {
       const skill = toggleSkill(db, c.req.param('id'), body.enabled);
-      afterGlobalSkillMutation(db);
+      await afterGlobalSkillMutation(db);
       return c.json({ skill });
     } catch (err) {
       return mapStoreError(c, err);
@@ -115,7 +115,7 @@ export function skillsRoutes(db: Database.Database, runManager: RunManager): Hon
   });
 
   // DELETE /api/skills/:id — delete (builtIn/core cannot be deleted, only disabled)
-  app.delete('/:id', (c) => {
+  app.delete('/:id', async (c) => {
     const id = c.req.param('id');
     const existing = getSkill(db, id);
     if (!existing || existing.core) {
@@ -126,7 +126,7 @@ export function skillsRoutes(db: Database.Database, runManager: RunManager): Hon
     }
     deleteSkill(db, id);
     deleteVaultSkillOverrides(db, id);
-    afterGlobalSkillMutation(db);
+    await afterGlobalSkillMutation(db);
     return c.body(null, 204);
   });
 
@@ -143,7 +143,7 @@ export function skillsRoutes(db: Database.Database, runManager: RunManager): Hon
     }
     try {
       const skill = hasRaw ? importFromRaw(db, body.raw!) : importFromFolder(db, body.folderPath!);
-      afterGlobalSkillMutation(db);
+      await afterGlobalSkillMutation(db);
       return c.json({ skill }, 201);
     } catch (err) {
       if (err instanceof SkillImportError) {

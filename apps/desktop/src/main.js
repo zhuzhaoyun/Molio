@@ -101,6 +101,7 @@ async function startDaemonProduction() {
     const stderrChunks = new CappedBuffer(200);
     const stdoutChunks = new CappedBuffer(200);
     let started = false;
+    let startupTimer = null;
 
     daemonProcess.stdout?.on('data', (data) => {
       const msg = data.toString().trim();
@@ -108,6 +109,7 @@ async function startDaemonProduction() {
       log('info', 'daemon', msg);
       if (msg.includes('listening on')) {
         started = true;
+        clearTimeout(startupTimer);
         resolve();
       }
     });
@@ -167,13 +169,17 @@ async function startDaemonProduction() {
       reject(err);
     });
 
-    // Timeout fallback — reject so caller can skip loadApp()
-    setTimeout(() => {
+    // Timeout fallback — reject so caller can skip loadApp().
+    // 30s (was 10s): on a first launch after packaging, cold-cache startup work
+    // (port-occupant kill, Node bundle load, DB init) can legitimately take
+    // several seconds before the daemon prints "listening on". 10s produced
+    // false "后端服务启动失败" error pages that a restart "fixed".
+    startupTimer = setTimeout(() => {
       if (!started) {
-        log('warn', 'main', 'daemon startup timeout (10s) — rejecting');
+        log('warn', 'main', 'daemon startup timeout (30s) — rejecting');
         reject(new Error('Daemon startup timeout'));
       }
-    }, 10000);
+    }, 30000);
   });
 }
 
