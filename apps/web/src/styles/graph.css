@@ -228,6 +228,15 @@
   font-size: 11px;
 }
 
+/* Explicit dark theme (manual 深色 selection, regardless of OS) */
+[data-theme="dark"] .graph-legend__label {
+  color: #AAA;
+}
+
+[data-theme="dark"] .graph-hint {
+  color: #999;
+}
+
 @media (prefers-color-scheme: dark) {
   html:not([data-theme]) .graph-legend__label {
     color: #AAA;
@@ -262,6 +271,20 @@
   background: #F5F3FF;
   border-color: #8B5CF6;
   color: #8B5CF6;
+}
+
+/* Explicit dark theme (manual 深色 selection, regardless of OS) */
+[data-theme="dark"] .graph-settings-btn {
+  background: rgba(40, 40, 50, 0.8);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #AAA;
+}
+
+[data-theme="dark"] .graph-settings-btn:hover,
+[data-theme="dark"] .graph-settings-btn.is-active {
+  background: rgba(80, 60, 120, 0.3);
+  border-color: rgba(139, 92, 246, 0.6);
+  color: #C4B5FD;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -444,6 +467,69 @@
 }
 
 /* ── Dark Mode ── */
+
+/* Explicit dark theme (manual 深色 selection, regardless of OS) */
+[data-theme="dark"] .graph-settings-panel {
+  background: rgba(24, 24, 34, 0.94);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+}
+
+[data-theme="dark"] .graph-settings__tabs {
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+}
+
+[data-theme="dark"] .graph-settings__tab {
+  color: #777;
+}
+
+[data-theme="dark"] .graph-settings__tab:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: #AAA;
+}
+
+[data-theme="dark"] .graph-settings__tab.is-active {
+  background: rgba(139, 92, 246, 0.15);
+  color: #A78BFA;
+}
+
+[data-theme="dark"] .graph-settings__group-title {
+  color: #777;
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+}
+
+[data-theme="dark"] .graph-settings__label {
+  color: #AAA;
+}
+
+[data-theme="dark"] .graph-settings__checkbox {
+  color: #BBB;
+}
+
+[data-theme="dark"] .graph-settings__checkbox:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+[data-theme="dark"] .graph-settings__search {
+  background: #1A1A2E;
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #CCC;
+}
+
+[data-theme="dark"] .graph-settings__search:focus {
+  border-color: #A78BFA;
+  background: #1E1E32;
+}
+
+[data-theme="dark"] .graph-settings__select {
+  background: #1A1A2E;
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #CCC;
+}
+
+[data-theme="dark"] .graph-settings__select:focus {
+  border-color: #A78BFA;
+}
 
 @media (prefers-color-scheme: dark) {
   html:not([data-theme]) .graph-settings-panel {
