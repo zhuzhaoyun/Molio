@@ -142,6 +142,10 @@ export const PdfPageView = forwardRef<HTMLDivElement, PdfPageViewProps>(
           // 保证 rawIndex → textDiv 对齐。UserUnit 极罕见，但按 page 取更稳。
           el.style.setProperty('--scale-factor', String(scale));
           el.style.setProperty('--user-unit', String(page.userUnit ?? 1));
+          // 文本层容器显式设为 canvas 尺寸：pdf.js 文本层按 viewport 宽高的百分比定位，
+          // 容器必须恰好等于 canvas，否则随窗口宽度偏离字形（用户反馈的宽度相关偏移）。
+          el.style.width = `${viewport.width}px`;
+          el.style.height = `${viewport.height}px`;
           layer = new TextLayer({ textContentSource: textContent, container: el, viewport });
           await layer.render();
           if (cancelled) { layer.cancel(); return; }

@@ -28,6 +28,8 @@
 
 .pdf-page-slot {
   position: relative;
+  /* 收缩到 canvas 宽度并居中——否则槽撑满滚动区，文本层 inset:0 会随窗口宽度偏离 canvas */
+  width: fit-content;
   margin: 0 auto 16px;
   background: #fff;
   box-shadow: var(--shadow-md);
