@@ -14,8 +14,14 @@ import { gotoHome, clickNav } from './helpers/navigation';
  * The daemon seeds bundled skills (docling / wiki-* / wechat-article-extractor /
  * remotion) into the real ~/.molio/skills on startup; the old writing trio
  * (写文章 / 总结提炼 / 润色改写) is hidden as `core`, so these tests assert against
- * the bundled set. The lifecycle test deletes the skill it creates to avoid
+ * the bundled set. Tests that create skills delete them again to avoid
  * polluting the library.
+ *
+ * Authoring is the three-field form (name / description / instructions); the
+ * instructions box accepts a whole pasted SKILL.md and auto-extracts the
+ * frontmatter into the name / description fields. The paste event is
+ * dispatched synthetically (ClipboardEvent + DataTransfer) so the test does not
+ * depend on the OS clipboard.
  *
  * The "存为技能" chat-button prefill flow needs a live Claude run, so it is NOT
  * covered here (P2 placeholder by design); the daemon prefill parser + fallback
@@ -31,6 +37,15 @@ async function gotoSkillsTab(page: import('@playwright/test').Page) {
   // doubles every call + default-vault auto-select writes) has settled before we
   // interact — otherwise a later POST can be queued behind it and look "stuck".
   await expect(page.locator('.sk-row').first()).toBeVisible({ timeout: 10_000 });
+}
+
+/** Dispatch a synthetic paste of `text` into the instructions textarea. */
+async function pasteIntoInstructions(page: import('@playwright/test').Page, text: string) {
+  await page.getByTestId('skill-instructions-input').evaluate((el, value) => {
+    const dt = new DataTransfer();
+    dt.setData('text/plain', value);
+    el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+  }, text);
 }
 
 test.describe('Skills library', () => {
@@ -59,11 +74,12 @@ test.describe('Skills library', () => {
 
     const unique = `E2E技能${Date.now()}`;
 
-    // ── Create (single SKILL.md editor) ──
+    // ── Create (three-field form → save) ──
     await page.locator('[data-testid="skill-new-btn"]').click();
     await expect(page.getByTestId('skill-form-overlay')).toBeVisible();
-    const createMd = `---\nname: ${unique}\ndescription: 自动化测试用技能\n---\n\n这是测试指令正文。`;
-    await page.getByTestId('skill-markdown-input').fill(createMd);
+    await page.getByTestId('skill-name-input').fill(unique);
+    await page.getByTestId('skill-description-input').fill('自动化测试用技能');
+    await page.getByTestId('skill-instructions-input').fill('这是测试指令正文。');
     await page.getByTestId('skill-form-submit').click();
 
     // The row only appears once the create response is processed, so it is the
@@ -82,15 +98,15 @@ test.describe('Skills library', () => {
     await row.locator('.sk-switch__track').click();
     await expect(checkbox).not.toBeChecked({ timeout: 5_000 });
 
-    // ── Edit (rename via the markdown editor) ──
+    // ── Edit (rename) ──
     const renamed = `${unique}-改`;
     await row.locator('[data-testid^="skill-edit-"]').click();
     await expect(page.getByTestId('skill-form-overlay')).toBeVisible();
-    // Edit prefills the skill's serialized SKILL.md (loads async) — wait for it.
-    await expect(page.getByTestId('skill-markdown-input')).toHaveValue(new RegExp(unique), { timeout: 10_000 });
-    await expect(page.getByTestId('skill-markdown-input')).toHaveValue(/这是测试指令正文。/, { timeout: 10_000 });
-    const renamedMd = `---\nname: ${renamed}\ndescription: 自动化测试用技能\n---\n\n这是测试指令正文。`;
-    await page.getByTestId('skill-markdown-input').fill(renamedMd);
+    // Edit prefills the three fields (loads async) — wait for them.
+    await expect(page.getByTestId('skill-name-input')).toHaveValue(unique, { timeout: 10_000 });
+    await expect(page.getByTestId('skill-description-input')).toHaveValue('自动化测试用技能', { timeout: 10_000 });
+    await expect(page.getByTestId('skill-instructions-input')).toHaveValue('这是测试指令正文。', { timeout: 10_000 });
+    await page.getByTestId('skill-name-input').fill(renamed);
     await page.getByTestId('skill-form-submit').click();
 
     const renamedRow = page.locator('.sk-row', { hasText: renamed });
@@ -110,15 +126,16 @@ test.describe('Skills library', () => {
     const src = page.locator('.sk-row', { hasText: 'docling' }).first();
     await expect(src).toBeVisible({ timeout: 5_000 });
 
-    // Duplicate opens a create modal prefilled with the source SKILL.md.
+    // Duplicate opens a create modal prefilled with the source skill's fields.
     await src.locator('[data-testid^="skill-duplicate-"]').click();
     await expect(page.getByTestId('skill-form-overlay')).toBeVisible();
     // Prefill loads async and carries the "副本" suffix on the name.
-    await expect(page.getByTestId('skill-markdown-input')).toHaveValue(/副本/, { timeout: 10_000 });
+    await expect(page.getByTestId('skill-name-input')).toHaveValue(/副本/, { timeout: 10_000 });
+    await expect(page.getByTestId('skill-description-input')).not.toHaveValue('', { timeout: 10_000 });
+    await expect(page.getByTestId('skill-instructions-input')).not.toHaveValue('', { timeout: 10_000 });
 
     // Rename to something unique and save.
-    const md = `---\nname: ${unique}\ndescription: 复制测试\n---\n\n复制来的指令。`;
-    await page.getByTestId('skill-markdown-input').fill(md);
+    await page.getByTestId('skill-name-input').fill(unique);
     await page.getByTestId('skill-form-submit').click();
 
     const row = page.locator('.sk-row', { hasText: unique });
@@ -130,22 +147,124 @@ test.describe('Skills library', () => {
     await expect(row).toHaveCount(0, { timeout: 5_000 });
   });
 
-  test('create form validates required name and instructions', async ({ page }) => {
+  test('create form validates the required fields before saving', async ({ page }) => {
     await gotoSkillsTab(page);
 
     await page.locator('[data-testid="skill-new-btn"]').click();
     await expect(page.getByTestId('skill-form-overlay')).toBeVisible();
 
-    // Submit empty → inline error (missing name), modal stays open.
+    // All empty → name error.
     await page.getByTestId('skill-form-submit').click();
     await expect(page.getByTestId('skill-form-error')).toBeVisible();
+
+    // Name only → description error (the model matches skills by description).
+    await page.getByTestId('skill-name-input').fill('只有名字');
+    await page.getByTestId('skill-form-submit').click();
+    await expect(page.getByTestId('skill-form-error')).toBeVisible();
+
+    // Name + description but no instructions → instructions error.
+    await page.getByTestId('skill-description-input').fill('只有描述');
+    await page.getByTestId('skill-form-submit').click();
+    await expect(page.getByTestId('skill-form-error')).toBeVisible();
+
+    // A stray backdrop click must NOT wipe the typed fields — only Cancel / ×
+    // close the dialog. Click a corner of the overlay so the event target is
+    // the backdrop itself, not the modal card.
+    await page.getByTestId('skill-form-overlay').click({ position: { x: 5, y: 5 } });
+    await expect(page.getByTestId('skill-form-overlay')).toBeVisible();
+    await expect(page.getByTestId('skill-name-input')).toHaveValue('只有名字');
+
+    await page.locator('.kb-modal-close').click();
+    await expect(page.getByTestId('skill-form-overlay')).toHaveCount(0);
+  });
+
+  test('pasting a platform copy whose frontmatter collapsed onto one line still extracts', async ({ page }) => {
+    await gotoSkillsTab(page);
+
+    await page.locator('[data-testid="skill-new-btn"]').click();
     await expect(page.getByTestId('skill-form-overlay')).toBeVisible();
 
-    // Frontmatter but no body → still an error (missing instructions).
-    await page.getByTestId('skill-markdown-input').fill('---\nname: 只有名字\ndescription: 无正文\n---\n\n');
-    await page.getByTestId('skill-form-submit').click();
-    await expect(page.getByTestId('skill-form-error')).toBeVisible();
+    // Regression (user report): platform copies lose the newlines between
+    // frontmatter lines — `name: …` and `description: | …` land on ONE line.
+    // Extraction must split them again instead of swallowing everything after
+    // `name:` into the name field and leaving description empty.
+    const description = '数字生命卡兹克（Khazix）的公众号长文写作skill。当用户需要撰写公众号文章、写稿子时使用。';
+    const collapsed = [
+      `name: khazix-writer description: | ${description}`,
+      '卡兹克公众号长文写作',
+      '这是正文第一行。',
+    ].join('\n');
+    await pasteIntoInstructions(page, collapsed);
 
+    await expect(page.getByTestId('skill-name-input')).toHaveValue('khazix-writer');
+    await expect(page.getByTestId('skill-description-input')).toHaveValue(description);
+    await expect(page.getByTestId('skill-instructions-input')).toHaveValue('卡兹克公众号长文写作\n这是正文第一行。');
+
+    // Nothing was saved → just close via Cancel, no cleanup needed.
+    await page.locator('.kb-modal-close').click();
+    await expect(page.getByTestId('skill-form-overlay')).toHaveCount(0);
+  });
+
+  test('pasting a full SKILL.md auto-fills name and description', async ({ page }) => {
+    await gotoSkillsTab(page);
+
+    const unique = `E2E粘贴提取${Date.now()}`;
+    await page.locator('[data-testid="skill-new-btn"]').click();
+    await expect(page.getByTestId('skill-form-overlay')).toBeVisible();
+
+    // Paste a whole SKILL.md into the instructions box → the frontmatter is
+    // extracted into the name / description fields and stripped from the body.
+    const md = `---\nname: ${unique}\ndescription: 粘贴提取测试\n---\n\n这是粘贴来的指令正文。`;
+    await pasteIntoInstructions(page, md);
+
+    await expect(page.getByTestId('skill-name-input')).toHaveValue(unique);
+    await expect(page.getByTestId('skill-description-input')).toHaveValue('粘贴提取测试');
+    await expect(page.getByTestId('skill-instructions-input')).toHaveValue('这是粘贴来的指令正文。');
+
+    // Everything extracted → a single click saves.
+    await page.getByTestId('skill-form-submit').click();
+
+    const row = page.locator('.sk-row', { hasText: unique });
+    await expect(row).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('skill-form-overlay')).toHaveCount(0);
+
+    // Cleanup.
+    await row.locator('[data-testid^="skill-delete-"]').first().click();
+    await row.locator('[data-testid^="skill-delete-confirm-"]').first().click();
+    await expect(row).toHaveCount(0, { timeout: 5_000 });
+  });
+
+  test('save failure shows the error inside the modal, not hidden behind the overlay', async ({ page }) => {
+    await gotoSkillsTab(page);
+
+    // Force the create request to fail. The modal must stay open and surface
+    // the daemon's error message itself — before the fix the error rendered
+    // only in the panel banner BEHIND the modal overlay, invisible to the user.
+    await page.route('**/api/skills', (route) => {
+      if (route.request().method() !== 'POST') return route.continue();
+      return route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: { code: 'INTERNAL', message: 'E2E模拟保存失败' } }),
+      });
+    });
+
+    try {
+      await page.locator('[data-testid="skill-new-btn"]').click();
+      await expect(page.getByTestId('skill-form-overlay')).toBeVisible();
+      await page.getByTestId('skill-name-input').fill('E2E失败可见性');
+      await page.getByTestId('skill-description-input').fill('错误显示测试');
+      await page.getByTestId('skill-instructions-input').fill('这是正文。');
+      await page.getByTestId('skill-form-submit').click(); // → save (fails)
+
+      // The error text appears inside the modal and the modal stays open.
+      await expect(page.getByTestId('skill-form-error')).toHaveText('E2E模拟保存失败', { timeout: 10_000 });
+      await expect(page.getByTestId('skill-form-overlay')).toBeVisible();
+    } finally {
+      await page.unroute('**/api/skills');
+    }
+
+    // Nothing was created, so nothing to clean up — just close the modal.
     await page.locator('.kb-modal-close').click();
     await expect(page.getByTestId('skill-form-overlay')).toHaveCount(0);
   });

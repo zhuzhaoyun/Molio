@@ -59,6 +59,12 @@ describe('skills/importer', () => {
     assert.equal(readInstructions(entry.id, opts), 'just some instructions here');
   });
 
+  it('importFromRaw derives the name from the first heading when frontmatter lacks one', () => {
+    const entry = importFromRaw(db, '# 周报助手\n\n按以下步骤生成周报……', opts);
+    assert.equal(entry.name, '周报助手');
+    assert.equal(readInstructions(entry.id, opts), '# 周报助手\n\n按以下步骤生成周报……');
+  });
+
   it('importFromRaw rejects empty content', () => {
     assert.throws(() => importFromRaw(db,'   ', opts), (err: unknown) => {
       return err instanceof SkillImportError && err.code === 'BAD_REQUEST';
@@ -105,6 +111,24 @@ describe('skills/importer', () => {
     }
   });
 
+  it('importFromFolder reads the name field of an unfenced .md file', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-skill-unfenced-'));
+    const file = path.join(dir, 'khazix-writer.md');
+    try {
+      fs.writeFileSync(
+        file,
+        'name: khazix-writer\ndescription: |\n  公众号长文写作skill。\n\n写作步骤……\n',
+        'utf8',
+      );
+      const entry = importFromFolder(db, file, opts);
+      assert.equal(entry.name, 'khazix-writer');
+      assert.equal(entry.description, '公众号长文写作skill。');
+      assert.equal(readInstructions(entry.id, opts), '写作步骤……');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('importFromFolder falls back to the file basename (sans .md) when no frontmatter name', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-skill-file2-'));
     const file = path.join(dir, 'My Cool Skill.md');
@@ -116,6 +140,16 @@ describe('skills/importer', () => {
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it('importFromRaw parses an unfenced field block (platform paste without ---)', () => {
+    // Regression: pasted content that lost its `---` fences used to import with
+    // the first-10-chars junk name "name: khaz" instead of the real name field.
+    const raw = 'name: khazix-writer\ndescription: |\n  数字生命卡兹克的写作skill。\n\n正文内容';
+    const entry = importFromRaw(db, raw, opts);
+    assert.equal(entry.name, 'khazix-writer');
+    assert.equal(entry.description, '数字生命卡兹克的写作skill。');
+    assert.equal(readInstructions(entry.id, opts), '正文内容');
   });
 
   it('importFromFolder reports the file path itself when a .md path does not exist', () => {

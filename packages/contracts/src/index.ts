@@ -108,5 +108,5 @@ export type {
 } from './skill.js';
 
 // SKILL.md generate/parse primitives (runtime values, shared daemon ↔ web).
-export { generateSkillMd, stripFrontmatter, parseSkillMd } from './skillmd.js';
+export { generateSkillMd, stripFrontmatter, parseSkillMd, deriveSkillName } from './skillmd.js';
 export type { ParsedSkillMd } from './skillmd.js';

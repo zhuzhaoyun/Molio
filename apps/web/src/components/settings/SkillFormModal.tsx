@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type ClipboardEvent } from 'react';
 import { parseSkillMd } from '@molio/contracts';
 import type { SkillManifestEntry, PrefillResult, ImportSkillRequest } from '@molio/contracts';
 import { useI18n } from '../../i18n';
@@ -19,11 +19,10 @@ interface SkillFormModalProps {
   /** Prefilled values (prefill mode). */
   prefillData?: PrefillResult | null;
   /**
-   * Initial SKILL.md text for create / edit modes (edit prefills the skill's
-   * serialized SKILL.md; duplicate prefills a copy; blank create leaves it empty
-   * so the example placeholder shows).
+   * Initial field values for create / edit modes (edit prefills the skill's
+   * current values; duplicate prefills a copy with a "副本" name suffix).
    */
-  initialMarkdown?: string;
+  initialValues?: Partial<SkillFormValues> | null;
   busy?: boolean;
   /**
    * Error from the host (e.g. the save request failed) — shown alongside
@@ -53,22 +52,26 @@ function titleKey(mode: SkillFormMode): string {
  * Reusable skill form modal. Reuses the generic kb-overlay / kb-modal chrome
  * (defined in knowledge.css) and .sk-form-* field styles (settings.css).
  *
- * Authoring surface:
+ * Authoring surface — three explicit fields (name / description / instructions):
  *   - new           → the single "新建技能" dialog: a source switch at the top
- *                     toggles between pasting a SKILL.md (→ create via onSave) and
- *                     importing a local file / folder path (→ onImport). Pasting is
- *                     creating; only a file/folder counts as an import.
- *   - create / edit → a single SKILL.md markdown editor (frontmatter + body).
- *                     `create` is reused by "duplicate" (prefilled with a copy).
- *   - prefill       → three separate fields (name / description / instructions),
- *                     since the AI-extracted parts are easier to tweak individually.
+ *                     toggles between the three-field form (→ create via onSave)
+ *                     and importing a local file / folder path (→ onImport).
+ *   - create / edit → the same three fields; `create` is reused by "duplicate"
+ *                     (prefilled copy).
+ *   - prefill       → three fields prefilled from the AI extraction of an
+ *                     assistant reply ("存为技能").
+ *
+ * Pasting a complete SKILL.md into the instructions field auto-extracts the
+ * frontmatter into the name / description fields (stripping it from the body),
+ * so the convenience of a whole-document paste never hides what will actually
+ * be saved — extraction only ever FILLS the editable fields.
  */
 export function SkillFormModal({
   show,
   mode,
   skill,
   prefillData,
-  initialMarkdown,
+  initialValues,
   busy,
   externalError,
   onClose,
@@ -77,9 +80,6 @@ export function SkillFormModal({
 }: SkillFormModalProps) {
   const { t } = useI18n();
 
-  // create / edit share a single SKILL.md editor.
-  const [markdown, setMarkdown] = useState('');
-  // prefill keeps three discrete fields.
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [instructions, setInstructions] = useState('');
@@ -93,30 +93,22 @@ export function SkillFormModal({
     setFieldError(null);
     setSource('paste');
     setFolderPath('');
-    if (mode === 'create' || mode === 'edit' || mode === 'new') {
-      setMarkdown(initialMarkdown ?? '');
-      setName('');
-      setDescription('');
-      setInstructions('');
-    } else if (mode === 'prefill' && prefillData) {
+    if (mode === 'prefill' && prefillData) {
       setName(prefillData.name);
       setDescription(prefillData.description);
       setInstructions(prefillData.instructions);
-      setMarkdown('');
     } else {
-      setName('');
-      setDescription('');
-      setInstructions('');
-      setMarkdown('');
+      setName(initialValues?.name ?? '');
+      setDescription(initialValues?.description ?? '');
+      setInstructions(initialValues?.instructions ?? '');
     }
-  }, [show, mode, skill, prefillData, initialMarkdown]);
+  }, [show, mode, skill, prefillData, initialValues]);
 
   if (!show) return null;
 
   // The new-skill dialog imports only when its source switch is on "import";
-  // otherwise (and for standalone create/edit) it authors via the markdown editor.
+  // otherwise (and for standalone create/edit) it authors via the three fields.
   const isImportSource = mode === 'new' && source === 'import';
-  const isMarkdown = mode === 'create' || mode === 'edit' || (mode === 'new' && source === 'paste');
   // The desktop app exposes native pickers; a browser (Docker/NAS) does not, so
   // there we hide the browse buttons and let the user type the container path.
   const isDesktop = Boolean(window.__electron__?.showDirectoryPicker);
@@ -131,10 +123,39 @@ export function SkillFormModal({
     if (picked) setFolderPath(picked);
   };
 
-  /** Validate the prefill three-field form. */
+  /**
+   * Pasting a complete SKILL.md into the instructions field auto-extracts it:
+   * frontmatter name / description fill their own fields and the frontmatter is
+   * stripped, leaving only the instruction body. Plain text (nothing
+   * extractable) pastes through untouched. The results land in EDITABLE fields,
+   * so a wrong extraction is always visible + correctable before saving.
+   */
+  const handleInstructionsPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+    const text = e.clipboardData.getData('text/plain');
+    if (!text) return;
+    const parsed = parseSkillMd(text);
+    const extractedName = parsed.name.trim();
+    const extractedDesc = parsed.description.trim();
+    if (!extractedName && !extractedDesc) return;
+    e.preventDefault();
+    if (extractedName) setName(extractedName);
+    if (extractedDesc) setDescription(extractedDesc);
+    setInstructions(parsed.instructions);
+  };
+
+  /**
+   * All three fields are REQUIRED: the description is the only thing the agent
+   * sees when deciding whether to invoke the skill, so saving without one ships
+   * a skill that never matches — exactly the silent breakage this form exists
+   * to prevent.
+   */
   const validateFields = (): boolean => {
     if (!name.trim()) {
       setFieldError(t('skills.form.nameRequired'));
+      return false;
+    }
+    if (!description.trim()) {
+      setFieldError(t('skills.form.descriptionRequired'));
       return false;
     }
     if (!instructions.trim()) {
@@ -143,25 +164,6 @@ export function SkillFormModal({
     }
     setFieldError(null);
     return true;
-  };
-
-  /** Parse + validate the SKILL.md editor; returns fields or null on error. */
-  const validateMarkdown = (): SkillFormValues | null => {
-    const parsed = parseSkillMd(markdown);
-    if (!parsed.name.trim()) {
-      setFieldError(t('skills.form.nameRequired'));
-      return null;
-    }
-    if (!parsed.instructions.trim()) {
-      setFieldError(t('skills.form.instructionsRequired'));
-      return null;
-    }
-    setFieldError(null);
-    return {
-      name: parsed.name.trim(),
-      description: parsed.description.trim(),
-      instructions: parsed.instructions,
-    };
   };
 
   const handleSubmit = () => {
@@ -175,13 +177,6 @@ export function SkillFormModal({
       void onImport?.({ folderPath: folder });
       return;
     }
-    if (isMarkdown) {
-      const values = validateMarkdown();
-      if (!values) return;
-      void onSave?.(values);
-      return;
-    }
-    // prefill
     if (!validateFields()) return;
     void onSave?.({ name: name.trim(), description: description.trim(), instructions });
   };
@@ -192,15 +187,12 @@ export function SkillFormModal({
     <div
       className="kb-overlay show"
       data-testid="skill-form-overlay"
-      onClick={(e) => {
-        // The import source carries a long file path that is easy to lose on a
-        // stray backdrop click — only close it via the Cancel / × buttons. Other
-        // modes keep the click-outside-to-close UX.
-        if (isImportSource) return;
-        if (e.target === e.currentTarget) onClose();
-      }}
+      // NO click-outside-to-close: every mode of this form carries content that
+      // is painful to lose — a pasted/typed name + description + instructions,
+      // or a long import path. A stray backdrop click must not wipe it; only
+      // the Cancel / × buttons close the dialog.
     >
-      <div className="kb-modal" style={{ width: isMarkdown ? 640 : 520 }}>
+      <div className="kb-modal" style={{ width: 520 }}>
         <div className="kb-modal-header">
           <h2>{t(titleKey(mode))}</h2>
           <button className="kb-modal-close" onClick={onClose} aria-label="close">&times;</button>
@@ -270,17 +262,6 @@ export function SkillFormModal({
                 <p className="sk-form-hint">{t('skills.form.browseDesktopOnly')}</p>
               )}
             </div>
-          ) : isMarkdown ? (
-            <label className="sk-field sk-field--grow">
-              <span className="sk-field__label">SKILL.md</span>
-              <textarea
-                className="sk-field__textarea sk-field__textarea--code sk-field__textarea--md"
-                data-testid="skill-markdown-input"
-                value={markdown}
-                placeholder={t('skills.form.markdownPlaceholder')}
-                onChange={(e) => setMarkdown(e.target.value)}
-              />
-            </label>
           ) : (
             <>
               <label className="sk-field">
@@ -296,7 +277,7 @@ export function SkillFormModal({
               </label>
 
               <label className="sk-field">
-                <span className="sk-field__label">{t('skills.form.description')}</span>
+                <span className="sk-field__label">{t('skills.form.description')} *</span>
                 <input
                   className="sk-field__input"
                   data-testid="skill-description-input"
@@ -316,8 +297,12 @@ export function SkillFormModal({
                   value={instructions}
                   placeholder={t('skills.form.instructionsPlaceholder')}
                   onChange={(e) => setInstructions(e.target.value)}
+                  onPaste={handleInstructionsPaste}
                 />
               </label>
+              {mode !== 'prefill' && (
+                <p className="sk-form-hint">{t('skills.form.pasteHint')}</p>
+              )}
             </>
           )}
 

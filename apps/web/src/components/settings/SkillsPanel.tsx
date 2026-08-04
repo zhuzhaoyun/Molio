@@ -1,5 +1,4 @@
 import { useState, useCallback } from 'react';
-import { generateSkillMd } from '@molio/contracts';
 import type { SkillManifestEntry, ImportSkillRequest } from '@molio/contracts';
 import { useSkills } from '../../hooks/useSkills';
 import { useI18n } from '../../i18n';
@@ -9,8 +8,8 @@ import { SkillFormModal, type SkillFormMode, type SkillFormValues } from './Skil
 interface ModalState {
   mode: SkillFormMode;
   skill: SkillManifestEntry | null;
-  /** Prefilled SKILL.md for create (duplicate) / edit. */
-  initialMarkdown?: string;
+  /** Prefilled fields for create (duplicate) / edit. */
+  initialValues?: Partial<SkillFormValues>;
 }
 
 /** A single skill row: name/description, built-in badge, toggle, edit, delete. */
@@ -129,7 +128,7 @@ export function SkillsPanel() {
       setModal({
         mode: 'edit',
         skill,
-        initialMarkdown: generateSkillMd(skill.name, skill.description, instructions),
+        initialValues: { name: skill.name, description: skill.description, instructions },
       });
     } catch (err) {
       setFormError((err as Error).message);
@@ -146,7 +145,7 @@ export function SkillsPanel() {
       setModal({
         mode: 'create',
         skill: null,
-        initialMarkdown: generateSkillMd(`${skill.name} 副本`, skill.description, instructions),
+        initialValues: { name: `${skill.name} 副本`, description: skill.description, instructions },
       });
     } catch (err) {
       setFormError((err as Error).message);
@@ -270,8 +269,9 @@ export function SkillsPanel() {
         show={modal !== null}
         mode={modal?.mode ?? 'create'}
         skill={modal?.skill}
-        initialMarkdown={modal?.initialMarkdown}
+        initialValues={modal?.initialValues}
         busy={busy}
+        externalError={formError}
         onClose={closeModal}
         onSave={handleSave}
         onImport={handleImport}
