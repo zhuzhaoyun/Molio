@@ -107,9 +107,11 @@ test.describe('知识库 PDF 预览', () => {
     const input = page.getByTestId('pdf-search-input');
     await input.fill('Hello');
     await expect(page.getByTestId('pdf-search-count')).toContainText('1 / 2', { timeout: 10_000 });
+    // 页1 当前匹配 → 包了 <mark class="pdf-search-hl">（含 -current）
     await expect(page.locator('[data-testid="pdf-text-layer-1"] .pdf-search-hl')).toHaveCount(1);
     await page.getByTestId('pdf-search-next').click();
     await expect(page.getByTestId('pdf-statusbar')).toContainText('第 2 / 3');
+    // 导航后当前匹配移到页2
     await expect(page.locator('[data-testid="pdf-text-layer-2"] .pdf-search-hl-current')).toHaveCount(1);
   });
 
@@ -135,7 +137,8 @@ test.describe('知识库 PDF 预览', () => {
     await expect(page.locator('[data-testid="pdf-viewer"]')).toBeVisible({ timeout: 15_000 });
     await page.locator('[data-testid="pdf-scroll"]').evaluate((el) => { el.scrollTop = el.scrollHeight; });
     await expect(page.locator('[data-testid="pdf-text-layer-3"] span').first()).toBeVisible();
-    const transform = await page.locator('[data-testid="pdf-text-layer-3"] span').first().evaluate((el) => (el as HTMLElement).style.transform);
-    expect(transform).toContain('rotate(');
+    // pdf.js 文本层用 --rotate CSS 变量驱动旋转（非 inline transform）
+    const rot = await page.locator('[data-testid="pdf-text-layer-3"] span').first().evaluate((el) => (el as HTMLElement).style.getPropertyValue('--rotate'));
+    expect(rot.trim()).not.toBe('');
   });
 });

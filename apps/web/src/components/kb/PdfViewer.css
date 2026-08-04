@@ -43,27 +43,58 @@
   height: 100%;
 }
 
+/* 文本层 = pdf.js 官方 TextLayer 布局（ascent 补偿 / 宽度缩放 / 旋转均由其 CSS 变量驱动）。
+   JS 在渲染时把 --scale-factor 设为当前缩放、--user-unit 设为页面 UserUnit。 */
 .pdf-text-layer {
   position: absolute;
   inset: 0;
   overflow: hidden;
   line-height: 1;
-  color: transparent;
-  user-select: text;
-  -webkit-user-select: text;
-  cursor: text;
+  transform-origin: 0 0;
+  --scale-factor: 1;
+  --user-unit: 1;
+  --total-scale-factor: calc(var(--scale-factor) * var(--user-unit));
+  --min-font-size: 1;
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
 }
 
-.pdf-text-layer span {
-  position: absolute;
-  transform-origin: 0 0;
-  white-space: pre;
+.pdf-text-layer :is(span, br) {
   color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.pdf-text-layer > :not(.markedContent),
+.pdf-text-layer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x));
 }
 
 .pdf-text-layer ::selection {
   background: var(--selected-soft);
   color: transparent;
+}
+
+/* 搜索高亮：在 pdf.js textDiv 内包的 <mark>（文字保持透明，仅背景可见，不干扰选区/复制） */
+.pdf-search-hl {
+  color: transparent;
+  background: var(--selected-soft);
+}
+
+.pdf-search-hl-current {
+  color: transparent;
+  background: var(--accent-tint);
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
 }
 
 .pdf-viewer-overlay {
@@ -160,10 +191,6 @@
   font-size: 12px;
   color: var(--text-muted);
 }
-
-/* 文本层搜索高亮（span 透明，仅高亮背景可见） */
-.pdf-search-hl { background: var(--selected-soft); }
-.pdf-search-hl-current { background: var(--accent-tint); outline: 1px solid var(--accent); outline-offset: -1px; }
 
 /* ══════════ PDF 侧栏（大纲 / 缩略图） ══════════ */
 

@@ -1,4 +1,5 @@
-import { forwardRef, useEffect, useRef } from 'react';
+import { forwardRef, useCallback, useEffect, useRef } from 'react';
+import { TextLayer } from 'pdfjs-dist';
 import type { PDFDocumentProxy } from './pdfjs-setup';
 
 export interface PdfSearchHit {
@@ -16,62 +17,71 @@ interface PdfPageViewProps {
   hits?: PdfSearchHit[];
 }
 
-interface TextItemLike { str?: string; transform?: number[]; hasEOL?: boolean; }
+interface TextItemLike { str?: string; }
 
 /** 稳定空引用：避免 `hits = []` 默认参数每次渲染新建数组，破坏 effect deps 稳定性。 */
 export const EMPTY_HITS: PdfSearchHit[] = [];
-
-/** 2D 仿射矩阵组合 m1 ∘ m2（pdf.js Util.transform 等价）。 */
-function compose(m1: number[], m2: number[]): number[] {
-  return [
-    m1[0] * m2[0] + m1[2] * m2[1],
-    m1[1] * m2[0] + m1[3] * m2[1],
-    m1[0] * m2[2] + m1[2] * m2[3],
-    m1[1] * m2[2] + m1[3] * m2[3],
-    m1[0] * m2[4] + m1[2] * m2[5] + m1[4],
-    m1[1] * m2[4] + m1[3] * m2[5] + m1[5],
-  ];
-}
-
-function applyTransform(
-  span: HTMLSpanElement, e: number, f: number, angle: number, fontSize: number, scaleY: number,
-) {
-  span.style.transform = `translate(${e}px, ${f}px) rotate(${angle}rad) scaleY(${scaleY})`;
-  span.style.fontSize = `${fontSize}px`;
-}
-
-function makeSpan(
-  text: string, isHit: boolean, current: boolean,
-  e: number, f: number, angle: number, fontSize: number, scaleY: number,
-) {
-  const span = document.createElement('span');
-  span.textContent = text;
-  if (isHit) span.className = current ? 'pdf-search-hl pdf-search-hl-current' : 'pdf-search-hl';
-  applyTransform(span, e, f, angle, fontSize, scaleY);
-  return span;
-}
-
-/** 把含命中的 item 切成 [普通][命中][普通] 片段。hits 需按 fromInItem 升序。 */
-function appendSegmented(
-  layer: HTMLElement, str: string, hits: PdfSearchHit[],
-  e: number, f: number, angle: number, fontSize: number, scaleY: number,
-) {
-  const sorted = [...hits].sort((x, y) => x.fromInItem - y.fromInItem);
-  let cursor = 0;
-  for (const hit of sorted) {
-    const from = Math.max(0, hit.fromInItem);
-    const to = Math.min(str.length, hit.toInItem);
-    if (from > cursor) layer.appendChild(makeSpan(str.slice(cursor, from), false, false, e, f, angle, fontSize, scaleY));
-    if (to > from) layer.appendChild(makeSpan(str.slice(from, to), true, hit.current, e, f, angle, fontSize, scaleY));
-    cursor = Math.max(cursor, to);
-  }
-  if (cursor < str.length) layer.appendChild(makeSpan(str.slice(cursor), false, false, e, f, angle, fontSize, scaleY));
-}
 
 export const PdfPageView = forwardRef<HTMLDivElement, PdfPageViewProps>(
   function PdfPageView({ doc, pageNum, scale, hits = EMPTY_HITS }, _ref) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const textLayerRef = useRef<HTMLDivElement>(null);
+    const layerRef = useRef<TextLayer | null>(null);
+    const itemsRef = useRef<TextItemLike[]>([]);
+    const hitsRef = useRef<PdfSearchHit[]>(hits);
+
+    // 把命中映射到 pdf.js textDivs，在 div 内包 <mark class="pdf-search-hl">。
+    // 每页高亮只写本页 DOM（无全局竞态）；用 item.str 重建命中项内容，规避 text 节点切分。
+    const applyHighlights = useCallback(() => {
+      const layer = layerRef.current;
+      const items = itemsRef.current;
+      const hitsNow = hitsRef.current;
+      const container = textLayerRef.current;
+      if (!container) return;
+      // 清除上一轮 mark（还原为纯文本），再重建
+      container.querySelectorAll('.pdf-search-hl, .pdf-search-hl-current').forEach((m) => {
+        m.replaceWith(document.createTextNode(m.textContent ?? ''));
+      });
+      if (!layer || !items.length) return;
+      // rawIndex → textDiv 下标：str === undefined（标记内容）不产生 div；'' 占位但不在 DOM
+      let divIdx = 0;
+      const divByRaw = new Map<number, number>();
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].str === undefined) continue;
+        if (items[i].str) divByRaw.set(i, divIdx);
+        divIdx++;
+      }
+      // 按 item 分组命中，逐项重建 div 内容为 [文本][mark]... 片段
+      const byItem = new Map<number, PdfSearchHit[]>();
+      for (const h of hitsNow) {
+        const arr = byItem.get(h.itemIndex) ?? [];
+        arr.push(h);
+        byItem.set(h.itemIndex, arr);
+      }
+      for (const [itemIndex, itemHits] of byItem) {
+        const div = layer.textDivs[divByRaw.get(itemIndex) ?? -1];
+        const str = items[itemIndex]?.str;
+        if (!div || !str) continue;
+        const sorted = [...itemHits].sort((a, b) => a.fromInItem - b.fromInItem);
+        const frag = document.createDocumentFragment();
+        let cursor = 0;
+        for (const h of sorted) {
+          const from = Math.max(0, Math.min(str.length, h.fromInItem));
+          const to = Math.max(from, Math.min(str.length, h.toInItem));
+          if (to > from) {
+            if (from > cursor) frag.append(document.createTextNode(str.slice(cursor, from)));
+            const mark = document.createElement('mark');
+            mark.className = h.current ? 'pdf-search-hl pdf-search-hl-current' : 'pdf-search-hl';
+            mark.textContent = str.slice(from, to);
+            frag.append(mark);
+            cursor = to;
+          }
+        }
+        if (cursor < str.length) frag.append(document.createTextNode(str.slice(cursor)));
+        div.textContent = '';
+        div.append(frag);
+      }
+    }, []);
 
     // Effect A：canvas 位图渲染。deps 不含 hits —— 搜索 prev/next（仅 activeIndex 变化）不会
     // 重绘整页位图，消除白闪与多余渲染。
@@ -112,49 +122,49 @@ export const PdfPageView = forwardRef<HTMLDivElement, PdfPageViewProps>(
       };
     }, [doc, pageNum, scale]);
 
-    // Effect B：文本层重建（含搜索高亮）。仅当 hits 变化时重跑，不触碰 canvas。
+    // Effect B：文本层 —— 用 pdf.js 官方 TextLayer（ascent/宽度缩放/旋转全部正确，解决
+    // 手写文本层的选区错位）。deps 不含 hits：搜索导航只重应用高亮（Effect C），不重建文本层。
     useEffect(() => {
       let cancelled = false;
+      let layer: TextLayer | null = null;
 
       (async () => {
         try {
           const page = await doc.getPage(pageNum);
           if (cancelled) return;
           const viewport = page.getViewport({ scale });
-          const textLayer = textLayerRef.current;
-          if (!textLayer) return;
-
+          const el = textLayerRef.current;
+          if (!el) return;
+          el.innerHTML = '';
           const textContent = await page.getTextContent();
           if (cancelled) return;
-          textLayer.innerHTML = '';
-          const items = textContent.items as TextItemLike[];
-          const hitByItem = new Map<number, PdfSearchHit[]>();
-          for (const hit of hits) {
-            const arr = hitByItem.get(hit.itemIndex) ?? [];
-            arr.push(hit);
-            hitByItem.set(hit.itemIndex, arr);
-          }
-          items.forEach((item, itemIndex) => {
-            if (!item.str) return;
-            // 组合 viewport×item 变换：包含旋转/倾斜（c/d 分量），fontSize 已含 scale
-            const [a, b, c, d, e, f] = compose(viewport.transform, item.transform ?? [1, 0, 0, 1, 0, 0]);
-            const angle = Math.atan2(b, a);
-            const fontSize = Math.hypot(a, b);
-            const scaleY = Math.hypot(c, d) / (fontSize || 1);
-            const itemHits = hitByItem.get(itemIndex);
-            if (itemHits?.length) {
-              appendSegmented(textLayer, item.str, itemHits, e, f, angle, fontSize, scaleY);
-            } else {
-              textLayer.appendChild(makeSpan(item.str, false, false, e, f, angle, fontSize, scaleY));
-            }
-          });
+          // 与搜索索引（pdf-search.ts buildPageText 用普通 getTextContent）保持同一 item 序，
+          // 保证 rawIndex → textDiv 对齐。UserUnit 极罕见，但按 page 取更稳。
+          el.style.setProperty('--scale-factor', String(scale));
+          el.style.setProperty('--user-unit', String(page.userUnit ?? 1));
+          layer = new TextLayer({ textContentSource: textContent, container: el, viewport });
+          await layer.render();
+          if (cancelled) { layer.cancel(); return; }
+          layerRef.current = layer;
+          itemsRef.current = textContent.items as TextItemLike[];
+          applyHighlights();
         } catch (err) {
           if (!cancelled) console.error(`[PdfViewer] page ${pageNum} text layer failed`, err);
         }
       })();
 
-      return () => { cancelled = true; };
-    }, [doc, pageNum, scale, hits]);
+      return () => {
+        cancelled = true;
+        layer?.cancel();
+        layerRef.current = null;
+      };
+    }, [doc, pageNum, scale, applyHighlights]);
+
+    // Effect C：搜索高亮。hits 变化时只重应用高亮，不重建文本层/canvas。
+    useEffect(() => {
+      hitsRef.current = hits;
+      applyHighlights();
+    }, [hits, applyHighlights]);
 
     return (
       <>
