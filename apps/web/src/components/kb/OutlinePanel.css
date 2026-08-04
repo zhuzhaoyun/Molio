@@ -1,7 +1,8 @@
 .kb-outline-panel {
   position: fixed;
   right: 0;
-  top: 0;
+  /* top 由组件动态设为头栏底部（避免遮挡头栏按钮），80px 为兜底 */
+  top: 80px;
   bottom: 0;
   width: 280px;
   background: var(--bg);

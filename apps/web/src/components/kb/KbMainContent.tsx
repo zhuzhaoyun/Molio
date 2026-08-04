@@ -162,8 +162,16 @@ export function KbMainContent({
   const contentRef = useRef<HTMLDivElement>(null);
   const cmRef = useRef<KbCodeMirrorViewerHandle>(null);
   const pdfRef = useRef<PdfViewerHandle>(null);
-  // 头部缩放宽显示：PdfViewer 通过 onZoomChange 上报当前缩放比例
+  // 头部缩放宽显示：PdfViewer 通过 onZoomChange 上报当前缩放比例；点击读数进入输入态
   const [pdfZoom, setPdfZoom] = useState(100);
+  const [pdfZoomEditing, setPdfZoomEditing] = useState(false);
+  const [pdfZoomInput, setPdfZoomInput] = useState('');
+
+  const applyPdfZoom = useCallback(() => {
+    setPdfZoomEditing(false);
+    const v = Number(pdfZoomInput);
+    if (Number.isFinite(v) && v > 0) pdfRef.current?.setZoom(v);
+  }, [pdfZoomInput]);
   const [wrap, setWrap] = useState(false);
   const [retryNonce, setRetryNonce] = useState(0);
   const [fmExpanded, setFmExpanded] = useState(true);
@@ -577,7 +585,38 @@ export function KbMainContent({
                   <line x1="5" y1="12" x2="19" y2="12" />
                 </svg>
               </button>
-              <span className="pdf-zoom-readout" data-testid="pdf-zoom-readout">{pdfZoom}%</span>
+              {pdfZoomEditing ? (
+                <input
+                  className="pdf-zoom-input"
+                  data-testid="pdf-zoom-input"
+                  type="number"
+                  min={25}
+                  max={400}
+                  value={pdfZoomInput}
+                  autoFocus
+                  onChange={(e) => setPdfZoomInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') applyPdfZoom();
+                    else if (e.key === 'Escape') setPdfZoomEditing(false);
+                  }}
+                  onBlur={applyPdfZoom}
+                />
+              ) : (
+                <span
+                  className="pdf-zoom-readout"
+                  data-testid="pdf-zoom-readout"
+                  role="button"
+                  tabIndex={0}
+                  title={t('kb.pdf.zoomInputHint')}
+                  onClick={() => { setPdfZoomInput(String(pdfZoom)); setPdfZoomEditing(true); }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      setPdfZoomInput(String(pdfZoom));
+                      setPdfZoomEditing(true);
+                    }
+                  }}
+                >{pdfZoom}%</span>
+              )}
               <button
                 type="button"
                 className="kb-btn kb-btn-ghost"

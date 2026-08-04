@@ -19,6 +19,8 @@ export interface PdfViewerHandle {
   zoomOut: () => void;
   fitWidth: () => void;
   fitPage: () => void;
+  /** 设置任意缩放比例（整数百分比，25-400）。 */
+  setZoom: (pct: number) => void;
   selectAll: () => void;
   toggleSearch: () => void;
   toggleSidebar: () => void;
@@ -284,14 +286,18 @@ export const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(
       return () => cancelAnimationFrame(raf);
     }, [activeIndex, matchGroups, hitsByPage, scrollToMatchPosition]);
 
+    const setZoom = useCallback((pct: number) => {
+      setScale(Math.min(MAX_SCALE, Math.max(MIN_SCALE, pct / 100)));
+    }, []);
+
     useImperativeHandle(ref, () => ({
       nextPage, prevPage,
       zoomIn: () => zoomBy(ZOOM_STEP),
       zoomOut: () => zoomBy(1 / ZOOM_STEP),
-      fitWidth, fitPage, selectAll,
+      fitWidth, fitPage, setZoom, selectAll,
       toggleSearch: () => setSearchVisible((v) => !v),
       toggleSidebar: () => setSidebarOpen((v) => !v),
-    }), [nextPage, prevPage, zoomBy, fitWidth, fitPage, selectAll]);
+    }), [nextPage, prevPage, zoomBy, fitWidth, fitPage, setZoom, selectAll]);
 
     const handleKeyDown = useCallback((e: KeyboardEvent<HTMLDivElement>) => {
       if (e.key === 'ArrowLeft') { e.preventDefault(); prevPage(); }

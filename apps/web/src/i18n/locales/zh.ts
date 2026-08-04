@@ -385,6 +385,7 @@ const zh: Record<string, string> = {
   'kb.pdf.searching': '搜索中…',
   'kb.pdf.noMatches': '无匹配',
   'kb.pdf.sidebar': '侧栏',
+  'kb.pdf.zoomInputHint': '点击输入缩放比例',
   'kb.pdf.outline': '大纲',
   'kb.pdf.thumbnails': '缩略图',
   'kb.pdf.noOutline': '该 PDF 没有大纲',

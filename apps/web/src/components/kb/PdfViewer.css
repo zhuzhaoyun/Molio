@@ -200,7 +200,7 @@
   color: var(--text-muted);
 }
 
-/* 头栏缩放比例读数（− % + 之间）——与底部状态条读数同款仪器感 */
+/* 头栏缩放比例读数（− % + 之间）——与底部状态条读数同款仪器感；点击进入输入态 */
 .pdf-zoom-readout {
   min-width: 40px;
   text-align: center;
@@ -209,6 +209,26 @@
   font-size: 12px;
   color: var(--text-muted);
   user-select: none;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  padding: 2px 4px;
+}
+
+.pdf-zoom-readout:hover { background: var(--bg-subtle); color: var(--text); }
+
+.pdf-zoom-input {
+  width: 52px;
+  height: 24px;
+  padding: 0 4px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  color: var(--text);
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  text-align: center;
+  outline: none;
 }
 
 /* ══════════ PDF 侧栏（大纲 / 缩略图） ══════════ */
