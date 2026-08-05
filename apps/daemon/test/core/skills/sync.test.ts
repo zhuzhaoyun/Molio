@@ -6,6 +6,7 @@ import os from 'node:os';
 import type Database from 'better-sqlite3';
 import { openDatabase, closeDatabase } from '../../../src/core/db.js';
 import { syncSkill, reconcileSync } from '../../../src/core/skills/sync.js';
+import { copyDirSync, isAlreadySynced } from '../../../src/core/skills/dirsync.js';
 import { createSkill } from '../../../src/core/skills/store.js';
 import type { SkillPathsOpts } from '../../../src/core/skills/paths.js';
 
@@ -137,6 +138,91 @@ describe('skills/sync', () => {
     // Content identical even if rewritten.
     assert.ok(fs.readFileSync(synced, 'utf8').includes('body'));
     assert.ok(typeof mtime1 === 'number');
+  });
+
+  it('syncSkill removes the stale mirror when the library source dir vanished', () => {
+    // Regression: the source dir can vanish (manual deletion, disk cleanup,
+    // corrupted home) while the DB row lives on. The id stays in enabledIds,
+    // so the orphan cleanup SKIPS it — without an explicit removal the outdated
+    // copy stays in every vault and runtime CLIs load it forever.
+    const entry = createSkill(db, { name: 'S', description: '', enabled: true, builtIn: false }, 'body', opts);
+    syncSkill(entry.id, opts);
+    const dest = path.join(claudeHome, 'skills', `molio--${entry.id}`);
+    assert.ok(fs.existsSync(dest), 'mirror created first');
+
+    fs.rmSync(path.join(molioHome, 'skills', entry.id), { recursive: true, force: true });
+    syncSkill(entry.id, opts);
+
+    assert.ok(!fs.existsSync(dest), 'stale mirror removed when the source is gone');
+  });
+
+  it('reconcileSync sweeps stale mirror staging dirs but keeps fresh ones', () => {
+    // A daemon killed mid-mirror leaves `.tmp-*`/`.bak-*` staging dirs inside
+    // the scanned skills dir — runtime CLIs would load a half-copied skill.
+    const skillsDir = path.join(claudeHome, 'skills');
+    fs.mkdirSync(skillsDir, { recursive: true });
+    const staleTmp = path.join(skillsDir, 'molio--x.tmp-1700000000000-aaa111');
+    const staleBak = path.join(skillsDir, 'molio--y.bak-1700000000000-bbb222');
+    const freshTmp = path.join(skillsDir, `molio--z.tmp-${Date.now()}-ccc333`);
+    for (const d of [staleTmp, staleBak, freshTmp]) {
+      fs.mkdirSync(d);
+      fs.writeFileSync(path.join(d, 'SKILL.md'), 'staging\n', 'utf8');
+    }
+    // Backdate the stale pair past the 5-minute in-flight grace window.
+    const oldSec = (Date.now() - 10 * 60 * 1000) / 1000;
+    fs.utimesSync(staleTmp, oldSec, oldSec);
+    fs.utimesSync(staleBak, oldSec, oldSec);
+
+    reconcileSync([], opts);
+
+    assert.ok(!fs.existsSync(staleTmp), 'stale .tmp staging dir swept');
+    assert.ok(!fs.existsSync(staleBak), 'stale .bak staging dir swept');
+    assert.ok(fs.existsSync(freshTmp), 'fresh staging dir (possibly in flight) kept');
+  });
+
+  it('reconcileSync ignores non-directory molio-- entries without crashing', () => {
+    // NAS mounts can surface stray files/junctions; the orphan scan is
+    // directory-only and must skip anything else silently.
+    const skillsDir = path.join(claudeHome, 'skills');
+    fs.mkdirSync(skillsDir, { recursive: true });
+    const stray = path.join(skillsDir, 'molio--stray-file');
+    fs.writeFileSync(stray, 'x', 'utf8');
+
+    const entry = createSkill(db, { name: 'S', description: '', enabled: true, builtIn: false }, 'body', opts);
+    reconcileSync([entry.id], opts); // must not throw
+
+    assert.ok(fs.existsSync(stray), 'non-directory entries are left alone');
+    assert.ok(fs.existsSync(path.join(skillsDir, `molio--${entry.id}`, 'SKILL.md')));
+  });
+
+  it('mirroring skips symlinks entirely (no follow, no copy, hash parity kept)', (t) => {
+    // Symlinks must never be followed into the mirror: a link to a directory
+    // used to crash copyFileSync (EISDIR) and a link out would leak external
+    // content into the vault. Skipping them keeps hash parity, so the
+    // short-circuit still works.
+    const src = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-skills-symlink-src-'));
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-skills-symlink-out-'));
+    try {
+      fs.writeFileSync(path.join(src, 'SKILL.md'), 'body\n', 'utf8');
+      const external = path.join(outside, 'external.txt');
+      fs.writeFileSync(external, 'external content\n', 'utf8');
+      try {
+        fs.symlinkSync(external, path.join(src, 'link.txt'));
+      } catch {
+        t.skip('symlink creation needs elevated privileges on this platform');
+        return;
+      }
+
+      const dest = path.join(outside, 'mirror');
+      copyDirSync(src, dest);
+
+      assert.ok(fs.existsSync(path.join(dest, 'SKILL.md')), 'regular files copied');
+      assert.ok(!fs.existsSync(path.join(dest, 'link.txt')), 'symlink NOT copied');
+      assert.ok(isAlreadySynced(src, dest), 'hash parity holds despite the skipped symlink');
+    } finally {
+      fs.rmSync(src, { recursive: true, force: true });
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
   });
 
   it('reconcileSync with empty enabled set removes all molio dirs but keeps user dirs', () => {

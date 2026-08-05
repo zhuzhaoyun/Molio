@@ -79,11 +79,21 @@ function writeSkillMd(
   fs.writeFileSync(path.join(dir, 'SKILL.md'), generateSkillMd(name, description, instructions), 'utf8');
 }
 
-/** Read a skill's current instructions body from its SKILL.md ('' for bundled, which have no library file). */
+/**
+ * Read a skill's current instructions body from its SKILL.md ('' for bundled,
+ * which have no library file). Never throws: an unreadable/vanished file (EACCES
+ * on the skills dir, file removed between existsSync and readFileSync) degrades
+ * to '' like a missing one, so GET /api/skills/:id serves the edit/duplicate
+ * form instead of a 500.
+ */
 export function readInstructions(id: string, opts?: SkillPathsOpts): string {
-  const md = path.join(skillContentDir(id, opts), 'SKILL.md');
-  if (!fs.existsSync(md)) return '';
-  return stripFrontmatter(fs.readFileSync(md, 'utf8')).trim();
+  try {
+    const md = path.join(skillContentDir(id, opts), 'SKILL.md');
+    if (!fs.existsSync(md)) return '';
+    return stripFrontmatter(fs.readFileSync(md, 'utf8')).trim();
+  } catch {
+    return '';
+  }
 }
 
 export interface CreateSkillInput {

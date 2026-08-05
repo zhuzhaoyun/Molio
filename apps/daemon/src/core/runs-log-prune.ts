@@ -62,11 +62,31 @@ function pruneEntry(
 }
 
 function logPruneSummary(result: PruneRunLogsResult, dir: string): void {
-  if (result.removed > 0) {
-    console.log(
+  // Log on failures too: if every expired dir is locked (EACCES / Windows file
+  // locks) nothing is removed and the disk fills up silently — the startup
+  // caller discards the result, so this line is the only diagnostic.
+  if (result.removed > 0 || result.failed > 0) {
+    const logFn = result.failed > 0 ? console.warn : console.log;
+    logFn(
       `[runs-log-prune] removed ${result.removed} expired run log directories ` +
       `(kept ${result.kept}, failed ${result.failed}) from ${dir}`,
     );
+  }
+}
+
+/**
+ * Read the prune dir's entries. Returns null when the dir is missing (fresh
+ * install — nothing to do, silent); logs and returns null on any OTHER error
+ * (an unreadable ~/.molio/runs must be diagnosable, not silently "empty").
+ */
+function readPruneEntries(dir: string): string[] | null {
+  try {
+    return fs.readdirSync(dir);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      console.warn(`[runs-log-prune] cannot read ${dir}:`, err instanceof Error ? err.message : err);
+    }
+    return null;
   }
 }
 
@@ -77,13 +97,8 @@ export function pruneRunLogs(opts: PruneRunLogsOptions = {}): PruneRunLogsResult
 
   const result: PruneRunLogsResult = { removed: 0, failed: 0, kept: 0 };
 
-  let entries: string[];
-  try {
-    entries = fs.readdirSync(dir);
-  } catch {
-    // Directory doesn't exist yet (fresh install) — nothing to do.
-    return result;
-  }
+  const entries = readPruneEntries(dir);
+  if (!entries) return result;
 
   for (const name of entries) {
     pruneEntry(dir, name, now, maxAgeMs, result);
@@ -114,13 +129,8 @@ export async function pruneRunLogsAsync(
 
   const result: PruneRunLogsResult = { removed: 0, failed: 0, kept: 0 };
 
-  let entries: string[];
-  try {
-    entries = fs.readdirSync(dir);
-  } catch {
-    // Directory doesn't exist yet (fresh install) — nothing to do.
-    return result;
-  }
+  const entries = readPruneEntries(dir);
+  if (!entries) return result;
 
   let processed = 0;
   for (const name of entries) {

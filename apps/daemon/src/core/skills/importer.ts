@@ -140,9 +140,20 @@ export function importFromFolder(db: Database.Database, folderPath: string, opts
     throw new SkillImportError('BAD_REQUEST', '文件夹路径为空');
   }
   const src = resolveSource(folderPath.trim());
-  // Multi-file imports copy the whole tree — enforce size limits before any
-  // bytes are written (a lone .md file is trivially small, skip the walk).
-  if (src.type === 'dir') assertFolderWithinLimits(src.dir);
+  // Enforce size limits BEFORE reading any bytes: multi-file imports walk the
+  // whole tree; a lone file is stat-checked. Pointing the import at a multi-GB
+  // file would otherwise buffer it fully into memory via readFileSync (OOM).
+  if (src.type === 'dir') {
+    assertFolderWithinLimits(src.dir);
+  } else {
+    const size = fs.statSync(src.skillMd).size;
+    if (size > MAX_IMPORT_BYTES) {
+      throw new SkillImportError(
+        'BAD_REQUEST',
+        `导入文件大小超过上限（最大 ${Math.round(MAX_IMPORT_BYTES / 1024 / 1024)} MB）`,
+      );
+    }
+  }
   const raw = fs.readFileSync(src.skillMd, 'utf8');
   const parsed = parseSkillMd(raw);
   if (!parsed.instructions.trim()) {

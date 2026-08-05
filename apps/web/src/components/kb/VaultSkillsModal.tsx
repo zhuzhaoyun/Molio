@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { VaultSkillEntry } from '@molio/contracts';
 import { useI18n } from '../../i18n';
 import { useVaultSkills } from '../../hooks/useVaultSkills';
@@ -60,6 +61,9 @@ function VaultSkillRow({
 export function VaultSkillsModal({ show, vaultId, onClose }: VaultSkillsModalProps) {
   const { t } = useI18n();
   const { skills, loading, error, refresh, toggle } = useVaultSkills(vaultId);
+  // toggle rethrows on failure (the hook already rolled back + re-synced);
+  // catch it here so a failed switch is VISIBLE and not an unhandled rejection.
+  const [toggleError, setToggleError] = useState<string | null>(null);
 
   if (!show) return null;
 
@@ -85,6 +89,12 @@ export function VaultSkillsModal({ show, vaultId, onClose }: VaultSkillsModalPro
             </div>
           )}
 
+          {toggleError && (
+            <div className="rt-error">
+              <span>{toggleError}</span>
+            </div>
+          )}
+
           {loading ? (
             <div className="rt-loading">{t('skills.loading')}</div>
           ) : skills.length === 0 ? (
@@ -98,7 +108,10 @@ export function VaultSkillsModal({ show, vaultId, onClose }: VaultSkillsModalPro
                 <VaultSkillRow
                   key={skill.id}
                   skill={skill}
-                  onToggle={(enabled) => void toggle(skill.id, enabled)}
+                  onToggle={(enabled) => {
+                    setToggleError(null);
+                    toggle(skill.id, enabled).catch((err) => setToggleError((err as Error).message));
+                  }}
                 />
               ))}
             </div>

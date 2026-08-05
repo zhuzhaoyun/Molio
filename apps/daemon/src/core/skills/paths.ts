@@ -32,6 +32,32 @@ export function defaultClaudeHome(): string {
   return path.join(os.homedir(), '.claude');
 }
 
+/**
+ * True when `id` is a single safe path segment (no separators, no `.`/`..`,
+ * bounded length). Skill ids are interpolated into filesystem paths; enforcing
+ * the invariant HERE — the module that owns the path layout — means no caller
+ * (DB row, route param, imported filename) can ever escape the skills dirs.
+ */
+export function isValidSkillId(id: string): boolean {
+  return (
+    typeof id === 'string' &&
+    id.length > 0 &&
+    id.length <= 128 &&
+    id !== '.' &&
+    id !== '..' &&
+    !id.includes('/') &&
+    !id.includes('\\') &&
+    id === path.basename(id)
+  );
+}
+
+/** Throw when `id` is not a safe skill id (see isValidSkillId). */
+export function assertSafeSkillId(id: string): void {
+  if (!isValidSkillId(id)) {
+    throw new Error(`Invalid skill id: ${JSON.stringify(id)}`);
+  }
+}
+
 /** `~/.molio/skills` */
 export function skillsDir(opts?: SkillPathsOpts): string {
   return path.join(opts?.molioHome ?? defaultMolioHome(), 'skills');
@@ -39,6 +65,7 @@ export function skillsDir(opts?: SkillPathsOpts): string {
 
 /** `~/.molio/skills/<id>` */
 export function skillContentDir(id: string, opts?: SkillPathsOpts): string {
+  assertSafeSkillId(id);
   return path.join(skillsDir(opts), id);
 }
 
@@ -49,6 +76,7 @@ export function claudeSkillsDir(opts?: SkillPathsOpts): string {
 
 /** `~/.claude/skills/molio--<id>` */
 export function molioSkillDir(id: string, opts?: SkillPathsOpts): string {
+  assertSafeSkillId(id);
   return path.join(claudeSkillsDir(opts), `${MOLIO_PREFIX}${id}`);
 }
 

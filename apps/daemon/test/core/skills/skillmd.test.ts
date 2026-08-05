@@ -57,6 +57,15 @@ describe('parseSkillMd', () => {
     assert.equal(parseSkillMd('# `代码`名\n正文').name, '代码名');
   });
 
+  it('keeps underscores in heading text (file-style titles)', () => {
+    // Regression: the emphasis-strip character class used to include `_`,
+    // which collapsed `# my_file_guide` into `myfileguide`. Underscores are
+    // far more common in real titles than `_emphasis_` headings.
+    assert.equal(parseSkillMd('# my_file_guide\n正文').name, 'my_file_guide');
+    // Genuine emphasis marks still strip.
+    assert.equal(parseSkillMd('# *starred* title\n正文').name, 'starred title');
+  });
+
   it('returns an empty name when nothing is extractable', () => {
     assert.equal(parseSkillMd('一段没有任何标题的纯文本。').name, '');
     assert.equal(parseSkillMd('').name, '');
@@ -135,6 +144,17 @@ describe('parseSkillMd — messy real-world pastes', () => {
   it('tolerates a BOM before the opening fence (Windows editors)', () => {
     const parsed = parseSkillMd('﻿---\nname: BOM名\n---\n正文');
     assert.equal(parsed.name, 'BOM名');
+    assert.equal(parsed.instructions, '正文');
+  });
+
+  it('tolerates a BOM built from the char code (escape-safe regression check)', () => {
+    // Same guarantee as above, but constructed via String.fromCharCode so the
+    // test itself never carries an invisible literal that an editor could drop.
+    const bom = String.fromCharCode(0xfeff);
+    assert.equal(parseSkillMd(bom + '---\nname: 码点BOM\n---\n正文').name, '码点BOM');
+    // Unfenced block after a BOM must also be recognized.
+    const parsed = parseSkillMd(bom + 'name: 无围栏BOM\ndescription: d\n正文');
+    assert.equal(parsed.name, '无围栏BOM');
     assert.equal(parsed.instructions, '正文');
   });
 

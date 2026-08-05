@@ -7,6 +7,7 @@
  * editable form. The throwaway run is cancelled on settle to avoid orphan procs.
  */
 import fs from 'node:fs';
+import os from 'node:os';
 import type { PrefillResult } from '@molio/contracts';
 import type { RunManager } from '../RunManager.js';
 import { scratchDir, type SkillPathsOpts } from './paths.js';
@@ -78,8 +79,16 @@ export function parsePrefillResponse(rawText: string, fallbackContent: string): 
 
 function ensureScratchCwd(opts?: SkillPathsOpts): string {
   const dir = scratchDir(opts);
-  fs.mkdirSync(dir, { recursive: true });
-  return dir;
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    return dir;
+  } catch {
+    // Non-fatal: this runs inside the prefill promise executor, so throwing
+    // here would reject the promise and break the "always resolves" contract
+    // (the route has no try/catch → 500 instead of the editable fallback form).
+    // Fall back to the OS temp dir when ~/.molio is unwritable.
+    return os.tmpdir();
+  }
 }
 
 export async function prefillFromContent(

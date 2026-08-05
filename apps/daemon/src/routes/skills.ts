@@ -34,6 +34,23 @@ import { importFromRaw, importFromFolder, SkillImportError } from '../core/skill
 import { prefillFromContent } from '../core/skills/prefill.js';
 import { readBundledInstructions } from '../core/skills/builtin.js';
 
+/**
+ * Parse the request body as a JSON object. Returns null for malformed JSON,
+ * a missing/empty body, or valid JSON that is NOT an object (`null`, `[1]`,
+ * `"str"`) — all of which would otherwise throw inside the handler and surface
+ * as an opaque 500 (or a TypeError on `body.x`) instead of a clean 400.
+ */
+async function readJsonObject(c: Context): Promise<Record<string, unknown> | null> {
+  try {
+    const body: unknown = await c.req.json();
+    return body !== null && typeof body === 'object' && !Array.isArray(body)
+      ? (body as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export function skillsRoutes(db: Database.Database, runManager: RunManager): Hono {
   const app = new Hono();
 
@@ -58,8 +75,8 @@ export function skillsRoutes(db: Database.Database, runManager: RunManager): Hon
 
   // POST /api/skills — create a user (library) skill, enabled by default
   app.post('/', async (c) => {
-    const body = await c.req.json<CreateSkillRequest>();
-    if (!body.name || !body.name.trim() || !body.instructions || !body.instructions.trim()) {
+    const body = (await readJsonObject(c)) as CreateSkillRequest | null;
+    if (!body || !body.name || !body.name.trim() || !body.instructions || !body.instructions.trim()) {
       return c.json({ error: { code: 'BAD_REQUEST', message: 'name and instructions are required' } }, 400);
     }
     try {
@@ -85,7 +102,10 @@ export function skillsRoutes(db: Database.Database, runManager: RunManager): Hon
     if (existing.kind === 'bundled') {
       return c.json({ error: { code: 'BAD_REQUEST', message: '内置技能不可编辑' } }, 400);
     }
-    const body = await c.req.json<UpdateSkillRequest>();
+    const body = (await readJsonObject(c)) as UpdateSkillRequest | null;
+    if (!body) {
+      return c.json({ error: { code: 'BAD_REQUEST', message: 'request body must be a JSON object' } }, 400);
+    }
     try {
       const skill = updateSkill(db, c.req.param('id'), body);
       await afterGlobalSkillMutation(db);
@@ -101,8 +121,8 @@ export function skillsRoutes(db: Database.Database, runManager: RunManager): Hon
     if (!existing || existing.core) {
       return c.json({ error: { code: 'NOT_FOUND', message: 'Skill not found' } }, 404);
     }
-    const body = await c.req.json<{ enabled: boolean }>();
-    if (typeof body.enabled !== 'boolean') {
+    const body = (await readJsonObject(c)) as { enabled: boolean } | null;
+    if (!body || typeof body.enabled !== 'boolean') {
       return c.json({ error: { code: 'BAD_REQUEST', message: 'enabled must be a boolean' } }, 400);
     }
     try {
@@ -132,9 +152,9 @@ export function skillsRoutes(db: Database.Database, runManager: RunManager): Hon
 
   // POST /api/skills/import — import from pasted SKILL.md raw text OR a local folder path
   app.post('/import', async (c) => {
-    const body = await c.req.json<ImportSkillRequest>();
-    const hasRaw = typeof body.raw === 'string' && body.raw.trim().length > 0;
-    const hasFolder = typeof body.folderPath === 'string' && body.folderPath.trim().length > 0;
+    const body = (await readJsonObject(c)) as ImportSkillRequest | null;
+    const hasRaw = !!body && typeof body.raw === 'string' && body.raw.trim().length > 0;
+    const hasFolder = !!body && typeof body.folderPath === 'string' && body.folderPath.trim().length > 0;
     if (hasRaw === hasFolder) {
       return c.json(
         { error: { code: 'BAD_REQUEST', message: 'provide exactly one of: raw, folderPath' } },
@@ -142,7 +162,9 @@ export function skillsRoutes(db: Database.Database, runManager: RunManager): Hon
       );
     }
     try {
-      const skill = hasRaw ? importFromRaw(db, body.raw!) : importFromFolder(db, body.folderPath!);
+      // body! is safe: a null body makes hasRaw === hasFolder (both false)
+      // and the guard above already returned 400.
+      const skill = hasRaw ? importFromRaw(db, body.raw!) : importFromFolder(db, body!.folderPath!);
       await afterGlobalSkillMutation(db);
       return c.json({ skill }, 201);
     } catch (err) {
@@ -157,8 +179,8 @@ export function skillsRoutes(db: Database.Database, runManager: RunManager): Hon
   // POST /api/skills/prefill — run a one-shot Claude call to prefill a skill form.
   // Always resolves (fallback result on any failure) so the UI can show an editable form.
   app.post('/prefill', async (c) => {
-    const body = await c.req.json<PrefillRequest>();
-    if (!body.content || !body.content.trim()) {
+    const body = (await readJsonObject(c)) as PrefillRequest | null;
+    if (!body || !body.content || !body.content.trim()) {
       return c.json({ error: { code: 'BAD_REQUEST', message: 'content is required' } }, 400);
     }
     const prefill = await prefillFromContent(body.content, runManager);

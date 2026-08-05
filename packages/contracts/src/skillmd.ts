@@ -103,7 +103,11 @@ function firstChars(text: string, n: number): string {
 
 /** Strip a BOM and leading blank lines so frontmatter detection survives Windows pastes. */
 function trimLeadingNoise(content: string): string {
-  return content.replace(/^﻿/, '').replace(/^(?:[ \t]*\r?\n)+/, '');
+  // BOM strip uses charCodeAt rather than a regex literal: an invisible
+  // U+FEFF char inside a regex can be lost to an editor/encoding round-trip
+  // and silently break BOM handling.
+  const withoutBom = content.charCodeAt(0) === 0xfeff ? content.slice(1) : content;
+  return withoutBom.replace(/^(?:[ \t]*\r?\n)+/, '');
 }
 
 /** First-line keys that mark an UNfenced frontmatter block (the standard skill fields). */
@@ -283,11 +287,15 @@ function firstHeadingText(body: string): string {
   return '';
 }
 
-/** Strip inline markdown syntax from a heading: `[label](url)` → label, drop emphasis/code marks. */
+/**
+ * Strip inline markdown syntax from a heading: `[label](url)` → label, drop
+ * emphasis/code marks. Underscores are kept on purpose: `my_file_guide` style
+ * titles are common and must not collapse into `myfileguide`.
+ */
 function cleanInlineHeading(text: string): string {
   return text
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1') // ![alt](url) → alt
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1') // [label](url) → label
-    .replace(/[*_`~]+/g, '')
+    .replace(/[*`~]+/g, '')
     .trim();
 }

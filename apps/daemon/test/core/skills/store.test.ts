@@ -176,4 +176,14 @@ describe('skills/store', () => {
   it('deleteSkill on unknown id is a no-op', () => {
     assert.doesNotThrow(() => deleteSkill(db, 'nope', opts));
   });
+
+  it('readInstructions degrades to "" for traversal/invalid ids instead of throwing', () => {
+    // Regression: skill ids are interpolated into paths; a bad id (route param,
+    // corrupted DB row) made skillContentDir throw INSIDE readInstructions and
+    // the GET /:id route 500'd. The guard throws, readInstructions catches → ''.
+    assert.equal(readInstructions('../..', opts), '');
+    assert.equal(readInstructions('..\\skills', opts), '');
+    assert.equal(readInstructions('', opts), '');
+    assert.equal(readInstructions('a/b', opts), '');
+  });
 });

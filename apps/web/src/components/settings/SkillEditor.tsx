@@ -71,7 +71,6 @@ function titleKey(mode: SkillFormMode): string {
 export function SkillEditor({
   show,
   mode,
-  skill,
   prefillData,
   initialValues,
   busy,
@@ -89,9 +88,20 @@ export function SkillEditor({
   const [folderPath, setFolderPath] = useState('');
   const [fieldError, setFieldError] = useState<string | null>(null);
 
-  // Reset fields whenever the editor (re)opens for a given mode/target.
+  // Reset fields exactly at the closed→open transition. Two hazards guarded:
+  //  - resetting on ANY prop change while open would let a parent re-render
+  //    (fresh initialValues/prefillData object identity) wipe what the user
+  //    is typing mid-edit;
+  //  - keying only on `show` would still reset correctly, but the transition
+  //    ref makes the "already open → ignore" intent explicit and lint-proof.
+  const wasOpenRef = useRef(false);
   useEffect(() => {
-    if (!show) return;
+    if (!show) {
+      wasOpenRef.current = false;
+      return;
+    }
+    if (wasOpenRef.current) return; // already open — never reset mid-edit
+    wasOpenRef.current = true;
     setFieldError(null);
     setSource('paste');
     setFolderPath('');
@@ -104,7 +114,7 @@ export function SkillEditor({
       setDescription(initialValues?.description ?? '');
       setInstructions(initialValues?.instructions ?? '');
     }
-  }, [show, mode, skill, prefillData, initialValues]);
+  }, [show, mode, prefillData, initialValues]);
 
   // The new-skill surface imports only when its source switch is on "import";
   // otherwise (and for standalone create/edit) it authors via the three fields.

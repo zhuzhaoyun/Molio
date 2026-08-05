@@ -112,10 +112,17 @@ ensureWikiSysPromptFiles();
 // showing "后端服务启动失败" even though the daemon would have come up seconds
 // later. Bind first, then catch up.
 async function runDeferredStartupChores(): Promise<void> {
+  // Every chore is best-effort and ISOLATED: one failing must never skip the
+  // rest (a throwing prune used to silently kill fan-out + cleanup + preload).
+
   // Delete per-run JSONL logs older than 7 days (nothing cleaned them up
-  // before; they accumulate indefinitely under ~/.molio/runs). Best-effort;
-  // the async variant yields to the event loop in chunks.
-  await pruneRunLogsAsync();
+  // before; they accumulate indefinitely under ~/.molio/runs). The async
+  // variant yields to the event loop in chunks.
+  try {
+    await pruneRunLogsAsync();
+  } catch (err) {
+    console.error('[startup] run-log prune failed:', err instanceof Error ? err.message : err);
+  }
 
   // Fan the effective skills into every vault's <vault>/.claude/skills/ —
   // bundled (whole-dir) + library/core (molio-- single file) + CLAUDE.md rules.
@@ -124,21 +131,37 @@ async function runDeferredStartupChores(): Promise<void> {
   // against a (partially) empty table would treat missing built-ins as disabled
   // and delete already-synced skills.
   if (skillsSeeded) {
-    await reconcileAllVaultsAsync(db);
+    try {
+      await reconcileAllVaultsAsync(db);
+    } catch (err) {
+      console.error('[startup] vault skill fan-out failed:', err instanceof Error ? err.message : err);
+    }
+
+    // Remove the legacy global ~/.claude/skills/molio--* sync left over from
+    // the pre-per-vault design — ONLY now that the per-vault replacement is in
+    // place. When seeding fails the fan-out above is skipped, and deleting the
+    // legacy sync too would leave the user with NO skills at all until the
+    // next successful restart.
+    try {
+      cleanupLegacyGlobalSync();
+    } catch (err) {
+      console.error('[startup] legacy skill cleanup failed:', err instanceof Error ? err.message : err);
+    }
   } else {
     console.warn(
-      '[skills] Seeding failed — skipping vault skill fan-out; vaults keep their previously synced skills.',
+      '[skills] Seeding failed — skipping vault skill fan-out and legacy cleanup; ' +
+        'vaults keep their previously synced skills.',
     );
   }
-
-  // Remove the legacy global ~/.claude/skills/molio--* sync left over from the
-  // pre-per-vault design (idempotent; safe to run every startup).
-  cleanupLegacyGlobalSync();
 
   // Check which heavy skill tools are already installed. Results are stored in
   // the PreloadManager and served via GET /api/preload/status so the web UI can
   // show a preload suggestion toast; not needed for readiness.
-  preloadManager.checkSkills();
+  try {
+    preloadManager.checkSkills();
+  } catch (err) {
+    console.error('[startup] preload check failed:', err instanceof Error ? err.message : err);
+  }
 }
 
 function startServer(): void {

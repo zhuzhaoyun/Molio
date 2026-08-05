@@ -217,6 +217,29 @@ describe('skills/importer', () => {
     }
   });
 
+  it('importFromFolder rejects a single oversized .md file BEFORE reading it', () => {
+    // Regression: the direct-file path used to readFileSync first and check the
+    // size afterwards — a multi-GB paste would explode daemon memory before the
+    // limit could reject it. stat must gate the read. A sparse file reports its
+    // full size to stat without occupying disk, tripping the limit cheaply.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-skill-bigfile-'));
+    const file = path.join(dir, 'huge.md');
+    try {
+      fs.writeFileSync(file, '', 'utf8');
+      fs.truncateSync(file, MAX_IMPORT_BYTES + 1);
+      assert.throws(() => importFromFolder(db, file, opts), (err: unknown) => {
+        return (
+          err instanceof SkillImportError &&
+          err.code === 'BAD_REQUEST' &&
+          err.message.includes('超过上限')
+        );
+      });
+      assert.equal(listContentDirs(), 0, 'no partial skill dir left behind');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('importFromFolder throws NOT_FOUND for a directory without a root SKILL.md', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-skill-noskillmd-'));
     try {

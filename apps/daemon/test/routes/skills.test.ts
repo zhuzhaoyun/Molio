@@ -348,4 +348,80 @@ describe('Skills routes', () => {
     assert.equal(prefill['fallback'], true);
     assert.equal(prefill['instructions'], '一段助手回复');
   });
+
+  // ── malformed bodies: every JSON-reading handler must 400, never 500 ──
+
+  it('POST / with a non-JSON body → 400 (not a parse-crash 500)', async () => {
+    const res = await app.request('/api/skills', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: 'not json',
+    });
+    assert.equal(res.status, 400);
+  });
+
+  it('POST / with a JSON null/array body → 400', async () => {
+    const nul = await app.request('/api/skills', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: 'null',
+    });
+    assert.equal(nul.status, 400);
+
+    const arr = await app.request('/api/skills', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '[1,2]',
+    });
+    assert.equal(arr.status, 400);
+  });
+
+  it('PATCH /:id and /:id/toggle with malformed bodies → 400', async () => {
+    const created = await app.request('/api/skills', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'MalBody', description: '', instructions: 'body' }),
+    });
+    const skill = (await json(created))['skill'] as SkillManifestEntry;
+    try {
+      const patchNotJson = await app.request(`/api/skills/${skill.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: 'not json',
+      });
+      assert.equal(patchNotJson.status, 400);
+
+      const toggleEmptyObj = await app.request(`/api/skills/${skill.id}/toggle`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      assert.equal(toggleEmptyObj.status, 400, 'toggle demands a boolean enabled');
+
+      const toggleNotJson = await app.request(`/api/skills/${skill.id}/toggle`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: 'not json',
+      });
+      assert.equal(toggleNotJson.status, 400);
+    } finally {
+      await app.request(`/api/skills/${skill.id}`, { method: 'DELETE' });
+    }
+  });
+
+  it('POST /import and /prefill with non-JSON bodies → 400', async () => {
+    const imp = await app.request('/api/skills/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: 'not json',
+    });
+    assert.equal(imp.status, 400);
+
+    const pre = await app.request('/api/skills/prefill', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: 'not json',
+    });
+    assert.equal(pre.status, 400);
+  });
 });

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import type { SkillManifestEntry, ImportSkillRequest } from '@molio/contracts';
 import { useSkills } from '../../hooks/useSkills';
 import { useI18n } from '../../i18n';
@@ -113,44 +113,60 @@ export function SkillsPanel() {
 
   const enabledCount = skills.filter((s) => s.enabled).length;
 
+  // Sequence guard for editor opens: the edit/duplicate content fetch is async
+  // (fetchingId only disables the ONE row loading), so overlapping actions can
+  // race — click Edit on A then Duplicate on B and the slower response used to
+  // open the editor with the WRONG skill's content. Whichever open happened
+  // LAST wins; stale responses are dropped. openNew bumps the counter too so a
+  // pending fetch can't pop an editor over the fresh "new" form.
+  const openSeqRef = useRef(0);
+
   // Single "新建技能" entry point: the editor itself distinguishes pasting a new
   // SKILL.md (create) from importing a local file / folder.
   const openNew = useCallback(() => {
+    openSeqRef.current += 1; // any in-flight open-fetch is now stale
     setFormError(null);
+    setFetchingId(null);
     setModal({ mode: 'new', skill: null });
   }, []);
 
   const openEdit = useCallback(async (skill: SkillManifestEntry) => {
+    const seq = ++openSeqRef.current;
     setFormError(null);
     setFetchingId(skill.id);
     try {
       const { instructions } = await api.getSkill(skill.id);
+      if (openSeqRef.current !== seq) return; // superseded by a newer open
       setModal({
         mode: 'edit',
         skill,
         initialValues: { name: skill.name, description: skill.description, instructions },
       });
     } catch (err) {
+      if (openSeqRef.current !== seq) return;
       setFormError((err as Error).message);
     } finally {
-      setFetchingId(null);
+      if (openSeqRef.current === seq) setFetchingId(null);
     }
   }, []);
 
   const openDuplicate = useCallback(async (skill: SkillManifestEntry) => {
+    const seq = ++openSeqRef.current;
     setFormError(null);
     setFetchingId(skill.id);
     try {
       const { instructions } = await api.getSkill(skill.id);
+      if (openSeqRef.current !== seq) return; // superseded by a newer open
       setModal({
         mode: 'create',
         skill: null,
         initialValues: { name: `${skill.name} 副本`, description: skill.description, instructions },
       });
     } catch (err) {
+      if (openSeqRef.current !== seq) return;
       setFormError((err as Error).message);
     } finally {
-      setFetchingId(null);
+      if (openSeqRef.current === seq) setFetchingId(null);
     }
   }, []);
 

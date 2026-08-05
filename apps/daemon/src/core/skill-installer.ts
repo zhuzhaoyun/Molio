@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ThrottledWarn } from './throttled-warn.js';
-import { mirrorDirIfChanged } from './skills/dirsync.js';
+import { isAlreadySynced, mirrorDirIfChanged } from './skills/dirsync.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -279,41 +279,94 @@ const MOILIO_RULES: Array<{ sentinel: string; block: string; label: string; gate
   { sentinel: WIKI_QUERY_RULE_SENTINEL, block: WIKI_QUERY_RULE_BLOCK, label: 'wiki-query preference', gateSlug: 'wiki-query' },
 ];
 
-/**
- * Find the extent of a rule's block: from its sentinel to the start of the
- * nearest OTHER sentinel after it (or end of string). Returns [start, end).
- */
-function ruleBlockExtent(content: string, sentinel: string): [number, number] | null {
-  const start = content.indexOf(sentinel);
-  if (start < 0) return null;
-  const afterSentinel = content.slice(start + sentinel.length);
-  let end = content.length;
+/** Closing sentinel of a rule block: `<!-- molio:x -->` → `<!-- /molio:x -->`. */
+function endSentinelOf(sentinel: string): string {
+  return sentinel.replace(/^<!--\s*/, '<!-- /');
+}
+
+/** The full wrapped block text as written into CLAUDE.md (BEGIN…body…END). */
+function wrapRule(rule: { sentinel: string; block: string }): string {
+  return `${rule.block}\n${endSentinelOf(rule.sentinel)}`;
+}
+
+/** Index of the nearest OTHER rule's sentinel at/after `from`, or -1. */
+function nextOtherSentinelIndex(content: string, sentinel: string, from: number): number {
+  let next = -1;
   for (const other of MOILIO_RULES) {
     if (other.sentinel === sentinel) continue;
-    const idx = afterSentinel.indexOf(other.sentinel);
-    if (idx >= 0 && start + sentinel.length + idx < end) {
-      end = start + sentinel.length + idx;
-    }
+    const idx = content.indexOf(other.sentinel, from);
+    if (idx >= 0 && (next < 0 || idx < next)) next = idx;
   }
-  return [start, end];
+  return next;
+}
+
+interface RuleExtent {
+  /** Start of the sentinel's line. */
+  start: number;
+  /** Exclusive end (includes the END sentinel line's trailing newline). */
+  end: number;
+  /** True when the block carries the new BEGIN/END wrapping. */
+  wrapped: boolean;
+}
+
+/**
+ * Locate a rule's block in `content`.
+ *
+ * New format: BEGIN sentinel … END sentinel (`<!-- /molio:x -->`) — the extent
+ * is exactly those lines, so removal/replacement can never touch content the
+ * user wrote after the block.
+ *
+ * Legacy format (single sentinel, written by pre-dual-sentinel builds): the
+ * extent runs from the sentinel to the start of the nearest OTHER sentinel (or
+ * EOF). Callers use that knowledge to migrate conservatively (see
+ * ensureMolioRules) instead of blindly re-applying the old semantics.
+ */
+function findRuleExtent(content: string, sentinel: string): RuleExtent | null {
+  const startIdx = content.indexOf(sentinel);
+  if (startIdx < 0) return null;
+  const start = content.lastIndexOf('\n', startIdx) + 1; // 0 when on first line
+  const afterBegin = startIdx + sentinel.length;
+
+  const endIdx = content.indexOf(endSentinelOf(sentinel), afterBegin);
+  const nextBegin = nextOtherSentinelIndex(content, sentinel, afterBegin);
+  if (endIdx >= 0 && (nextBegin < 0 || endIdx < nextBegin)) {
+    const lineEnd = content.indexOf('\n', endIdx);
+    return { start, end: lineEnd < 0 ? content.length : lineEnd + 1, wrapped: true };
+  }
+
+  // Legacy: sentinel → nearest other sentinel (or EOF).
+  return { start, end: nextBegin < 0 ? content.length : nextBegin, wrapped: false };
 }
 
 /**
  * Ensure the vault's .claude/CLAUDE.md reflects the effective set of Molio rule
- * blocks. Each rule is identified by a sentinel comment.
+ * blocks. Each rule is wrapped in BEGIN/END sentinel comments:
+ *
+ *     <!-- molio:x-preference -->        ← BEGIN (the rule.sentinel)
+ *     ## …rule body…
+ *     <!-- /molio:x-preference -->       ← END
  *
  * - A rule is ACTIVE when it has no gate, or its `gateSlug` is in
  *   `effectiveBundledSlugs`. (Passing no set treats every rule as active — the
  *   pre-per-vault behavior.)
- * - Active + sentinel present → block REPLACED in place (revise across versions).
- * - Active + sentinel absent → block APPENDED.
- * - Inactive + sentinel present → block REMOVED (skill toggled off in this vault).
- * - User content before the first Molio sentinel is never touched.
+ * - Active + block present → block REPLACED in place (revise across versions).
+ * - Active + block absent → block APPENDED.
+ * - Inactive + block present → block REMOVED (skill toggled off in this vault).
  *
- * Caveat: a block's extent runs from its sentinel to the NEXT sentinel (or EOF
- * for the last block), so anything written BETWEEN or AFTER Molio blocks is
- * treated as part of the preceding block and replaced/removed with it. Custom
- * content belongs before the first Molio sentinel.
+ * Because removal/replacement operate on the exact BEGIN..END extent, content
+ * the user wrote AFTER (or between) blocks is never touched — the old
+ * sentinel-to-next-sentinel extent silently deleted whatever followed the last
+ * block when a gated rule (e.g. wiki-query) was toggled off.
+ *
+ * LEGACY MIGRATION: blocks written by pre-dual-sentinel builds carry only the
+ * BEGIN sentinel; their extent is unknowable in general (it used to run to the
+ * next sentinel / EOF). Migration is conservative:
+ *  - stored text equals/starts with the CURRENT rule.block → the boundary is
+ *    provable: wrap the block and KEEP everything after it;
+ *  - anything else (older revision, unknown additions) → replace/remove the
+ *    whole legacy extent, i.e. exactly the pre-migration behavior, one last
+ *    time. Either way the file converges to the wrapped format, after which
+ *    user content anywhere is safe.
  */
 export function ensureMolioRules(claudeDir: string, effectiveBundledSlugs?: Set<string>): void {
   const claudeMd = path.join(claudeDir, 'CLAUDE.md');
@@ -333,25 +386,66 @@ export function ensureMolioRules(claudeDir: string, effectiveBundledSlugs?: Set<
     // Each pass re-searches `content`, so operating rule-by-rule in array order
     // is safe regardless of appends/removals shifting positions.
     for (const rule of MOILIO_RULES) {
-      const extent = ruleBlockExtent(content, rule.sentinel);
+      const extent = findRuleExtent(content, rule.sentinel);
+      const wrapped = wrapRule(rule);
+      const replacement = `${wrapped}\n`;
 
       if (!isActive(rule)) {
-        if (extent) {
-          content = content.slice(0, extent[0]) + content.slice(extent[1]);
+        if (!extent) continue;
+        const rangeText = content.slice(extent.start, extent.end);
+        if (extent.wrapped || rangeText.trimEnd() === rule.block) {
+          // Precise removal: wrapped extent is exact; an unambiguous legacy
+          // block (identical to the current one) covers exactly its extent.
+          content = content.slice(0, extent.start) + content.slice(extent.end);
+          changed = true;
+        } else if (rangeText.startsWith(rule.block)) {
+          // Unrevised legacy block with trailing content (typically user text
+          // appended after the LAST block): strip only the block's own lines —
+          // the old extent removal would have deleted the trailing content too.
+          let prefixEnd = extent.start + rule.block.length;
+          while (content[prefixEnd] === '\n' || content[prefixEnd] === '\r') prefixEnd++;
+          content = content.slice(0, extent.start) + content.slice(prefixEnd);
+          changed = true;
+        } else {
+          // Revised legacy block — boundary between old block text and any
+          // extras is unknowable; fall back to the legacy extent removal.
+          content = content.slice(0, extent.start) + content.slice(extent.end);
           changed = true;
         }
         continue;
       }
 
-      if (extent) {
-        const oldBlock = content.slice(extent[0], extent[1]).trimEnd();
-        if (oldBlock === rule.block) continue; // already up to date
-        content = content.slice(0, extent[0]) + rule.block + '\n' + content.slice(extent[1]);
+      if (!extent) {
+        content = content.trimEnd()
+          ? `${content.trimEnd()}\n\n${replacement}`
+          : replacement;
+        changed = true;
+        continue;
+      }
+
+      const oldText = content.slice(extent.start, extent.end);
+      if (extent.wrapped) {
+        if (oldText.trimEnd() === wrapped) continue; // already up to date
+        content = content.slice(0, extent.start) + replacement + content.slice(extent.end);
+        changed = true;
+        continue;
+      }
+
+      // Legacy block, rule active: migrate into the wrapped format.
+      if (oldText.trimEnd() === rule.block) {
+        // Clean: stored block equals the current revision, nothing extra.
+        content = content.slice(0, extent.start) + replacement + content.slice(extent.end);
+        changed = true;
+      } else if (oldText.startsWith(rule.block)) {
+        // Unrevised block + trailing content: wrap the block, KEEP the rest
+        // (the old replace-the-extent path would have silently deleted it).
+        const rest = oldText.slice(rule.block.length).replace(/^[\r\n]+/, '');
+        content = content.slice(0, extent.start) + (rest ? `${wrapped}\n\n${rest}` : replacement) + content.slice(extent.end);
         changed = true;
       } else {
-        content = content.trimEnd()
-          ? `${content.trimEnd()}\n\n${rule.block}\n`
-          : `${rule.block}\n`;
+        // Drift (older revision ± unknown additions): boundary unknowable —
+        // replace the whole legacy extent, as the pre-migration code did.
+        content = content.slice(0, extent.start) + replacement + content.slice(extent.end);
         changed = true;
       }
     }
@@ -384,8 +478,10 @@ export interface BundledSyncOpts {
  *  1. install/update every EFFECTIVE bundled slug (whole directory — these
  *     skills are multi-file and SKILL.md depends on its siblings);
  *  2. remove every MANAGED-but-not-effective slug's directory (a bundled skill
- *     toggled off, globally or for this vault). Removal is guarded by a SKILL.md
- *     check so an unmanaged/user directory of the same name is never touched;
+ *     toggled off, globally or for this vault). Removal demands OWNERSHIP
+ *     PROOF — the dir must byte-for-byte mirror Molio's own source for that
+ *     slug — so a user's own same-named skill (which always has a SKILL.md of
+ *     its own) is never deleted;
  *  3. clean up deprecated skills from previous Molio versions (unconditional);
  *  4. converge the .claude/CLAUDE.md rule blocks to the effective set.
  *
@@ -468,9 +564,16 @@ export function reconcileBundledSync(
     if (effectiveSlugs.has(skillName)) continue;
     const skillDest = path.join(claudeSkillsDir, skillName);
     if (!fs.existsSync(skillDest)) continue;
-    // Guard: only remove dirs that look Molio-installed (have a SKILL.md), so a
-    // user's own same-named directory is never deleted.
-    if (!fs.existsSync(path.join(skillDest, 'SKILL.md'))) continue;
+    // Ownership PROOF, not guesswork: the old "has a SKILL.md" guard was
+    // inverted — a user's own same-named skill ALWAYS has a SKILL.md, so it
+    // would be rm -rf'd the moment the bundled skill toggled off. Only delete
+    // when the dir byte-for-byte mirrors Molio's source for this slug (which a
+    // user-authored skill cannot). Without a readable source we cannot prove
+    // ownership → skip deletion and let the dir stay.
+    const skillSrc = path.join(sourceDir, skillName);
+    if (!sourceExists || !fs.existsSync(skillSrc) || !isAlreadySynced(skillSrc, skillDest)) {
+      continue;
+    }
     try {
       fs.rmSync(skillDest, { recursive: true, force: true });
       console.log(`[skill-installer] Removed disabled skill "${skillName}"`);

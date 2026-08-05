@@ -9,7 +9,10 @@
  *
  * Safety red line: we ONLY ever create/modify/delete directories whose name
  * starts with `molio--`. The user's own skills are never touched —
- * reconcileSync removes only orphaned `molio--*` dirs.
+ * reconcileSync removes only orphaned `molio--*` dirs. Ownership contract:
+ * the `molio--` prefix itself is Molio's namespace claim; anything bearing it
+ * inside a managed skills dir is treated as Molio-managed by definition, so
+ * users must not create their own `molio--*` directories there.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -20,7 +23,7 @@ import {
   skillContentDir,
   type SkillPathsOpts,
 } from './paths.js';
-import { mirrorDirIfChanged } from './dirsync.js';
+import { mirrorDirIfChanged, sweepStaleMirrorArtifacts, isMirrorArtifactName } from './dirsync.js';
 
 /**
  * Mirror the library skill's whole content dir into its namespaced
@@ -31,7 +34,14 @@ import { mirrorDirIfChanged } from './dirsync.js';
  */
 export function syncSkill(id: string, opts?: SkillPathsOpts): void {
   const srcDir = skillContentDir(id, opts);
-  if (!fs.existsSync(srcDir)) return; // nothing to sync
+  if (!fs.existsSync(srcDir)) {
+    // Source vanished (manual deletion, disk cleanup, corrupted home) while
+    // the DB row lives on: remove the stale mirror too. The id is still in
+    // enabledIds, so the orphan cleanup below would SKIP it — without this the
+    // outdated copy stays in every vault and runtime CLIs load it forever.
+    fs.rmSync(molioSkillDir(id, opts), { recursive: true, force: true });
+    return;
+  }
   mirrorDirIfChanged(srcDir, molioSkillDir(id, opts));
 }
 
@@ -53,13 +63,39 @@ export function reconcileSync(enabledIds: string[], opts?: SkillPathsOpts): void
   const dir = claudeSkillsDir(opts);
   if (!fs.existsSync(dir)) return;
 
+  // Remove staging dirs a killed daemon left inside the scanned skills dir
+  // (best-effort, age-guarded; see dirsync.sweepStaleMirrorArtifacts).
+  sweepStaleMirrorArtifacts(dir);
+
+  // Orphan cleanup — fully tolerant: this runs against NAS-mounted vaults
+  // where any single fs call can hit EACCES/EBUSY, and it is also called from
+  // cleanupLegacyGlobalSync WITHOUT an outer try/catch. One locked entry must
+  // degrade to a warning, never abort the rest of the reconciliation.
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch (err) {
+    console.warn('[skills] Orphan cleanup scan failed:', err instanceof Error ? err.message : err);
+    return;
+  }
   const enabledSet = new Set(enabledIds);
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+  for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     if (!entry.name.startsWith(MOLIO_PREFIX)) continue; // never touch user skills
+    // Staging artifacts (`molio--<id>.tmp/bak-…`) belong to the sweep's
+    // age-guarded domain: an in-flight mirror of a FRESH artifact would be
+    // rm -rf'd under the other process if the orphan scan claimed it here.
+    if (isMirrorArtifactName(entry.name)) continue;
     const id = entry.name.slice(MOLIO_PREFIX.length);
     if (!enabledSet.has(id)) {
-      fs.rmSync(path.join(dir, entry.name), { recursive: true, force: true });
+      try {
+        fs.rmSync(path.join(dir, entry.name), { recursive: true, force: true });
+      } catch (err) {
+        console.warn(
+          `[skills] Failed to remove orphan skill dir "${entry.name}":`,
+          err instanceof Error ? err.message : err,
+        );
+      }
     }
   }
 }

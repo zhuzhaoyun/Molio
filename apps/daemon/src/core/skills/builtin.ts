@@ -23,7 +23,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type Database from 'better-sqlite3';
 import { parseSkillMd } from '@molio/contracts';
-import type { SkillPathsOpts } from './paths.js';
+import { assertSafeSkillId, type SkillPathsOpts } from './paths.js';
 import { createSkill, getSkill } from './store.js';
 import { BUILTIN_SKILLS, resolveSkillsSourceDir } from '../skill-installer.js';
 
@@ -70,6 +70,11 @@ function readBundledMeta(slug: string, sourceDir: string): { name: string; descr
  */
 export function readBundledInstructions(slug: string, sourceDir?: string): string {
   try {
+    // Defense in depth: this is an exported file-read entry point (GET
+    // /api/skills/:id). Callers pass DB-derived slugs today, but a traversal
+    // id like '../..' must never build a path — assertSafeSkillId throws and
+    // the catch below degrades to ''.
+    assertSafeSkillId(slug);
     const md = path.join(sourceDir ?? resolveSkillsSourceDir(), slug, 'SKILL.md');
     if (!fs.existsSync(md)) return '';
     return parseSkillMd(fs.readFileSync(md, 'utf8')).instructions;

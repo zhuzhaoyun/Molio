@@ -104,6 +104,15 @@ describe('pruneRunLogs', () => {
     assert.deepEqual(result, { removed: 0, failed: 0, kept: 0 });
   });
 
+  it('should tolerate the prune dir being a regular file (ENOTDIR ≠ ENOENT)', () => {
+    // A corrupted ~/.molio (file where the dir should be) must not crash the
+    // startup sweep — readdir throws ENOTDIR, which is logged, not rethrown.
+    const filePath = path.join(tmpDir, 'runs-is-a-file');
+    writeFileSync(filePath, 'x');
+    const result = pruneRunLogs({ dir: filePath });
+    assert.deepEqual(result, { removed: 0, failed: 0, kept: 0 });
+  });
+
   it('should keep sweeping when one entry fails', () => {
     const now = Date.now();
     makeRunDir('run-a', 20, now);

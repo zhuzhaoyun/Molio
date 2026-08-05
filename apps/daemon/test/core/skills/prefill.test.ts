@@ -1,6 +1,10 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { parsePrefillResponse } from '../../../src/core/skills/prefill.js';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { parsePrefillResponse, prefillFromContent } from '../../../src/core/skills/prefill.js';
+import type { RunManager } from '../../../src/core/RunManager.js';
 
 const FALLBACK_CONTENT = 'original message content';
 
@@ -52,5 +56,46 @@ describe('skills/prefill parsePrefillResponse', () => {
     const result = parsePrefillResponse(raw, FALLBACK_CONTENT);
     assert.equal(result.name, 'N');
     assert.equal(result.instructions, FALLBACK_CONTENT);
+  });
+});
+
+describe('skills/prefill prefillFromContent', () => {
+  it('falls back to os.tmpdir() as the run cwd when the scratch dir is uncreatable', async () => {
+    // Regression: a corrupted ~/.molio (a regular FILE where the dir should be)
+    // made mkdirSync throw ENOTDIR inside the promise executor — the throw
+    // rejected the prefill promise and the route 500'd instead of returning the
+    // editable fallback form. ensureScratchCwd must degrade to os.tmpdir().
+    const blockedHome = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-prefill-block-'));
+    const blockedAsFile = path.join(blockedHome, 'molio');
+    fs.writeFileSync(blockedAsFile, 'blocked', 'utf8'); // a file, not a dir
+    try {
+      let capturedCwd: string | undefined;
+      const cancelled: string[] = [];
+      const runManager = {
+        createRun: (o: { cwd?: string; onTurnComplete?: (text: string) => void }) => {
+          capturedCwd = o.cwd;
+          o.onTurnComplete?.(JSON.stringify({ name: 'N', description: 'D', instructions: 'I' }));
+          return Promise.resolve('run-1');
+        },
+        onEvent: () => () => {},
+        cancelRun: (id: string) => {
+          cancelled.push(id);
+        },
+      } as unknown as RunManager;
+
+      const result = await prefillFromContent('content', runManager, { molioHome: blockedAsFile });
+      // The orphan-cancel runs in createRun().then() — a microtask behind the
+      // settle; drain the queue before asserting on it.
+      await new Promise((r) => setImmediate(r));
+
+      assert.equal(capturedCwd, os.tmpdir(), 'scratch cwd falls back to os.tmpdir()');
+      assert.equal(result.name, 'N');
+      assert.equal(result.instructions, 'I');
+      assert.ok(!result.fallback, 'a good AI reply still parses');
+      // settle() cancels the throwaway run once it has an id.
+      assert.deepEqual(cancelled, ['run-1']);
+    } finally {
+      fs.rmSync(blockedHome, { recursive: true, force: true });
+    }
   });
 });

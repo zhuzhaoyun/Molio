@@ -1149,12 +1149,16 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
         />
       )}
 
-      {/* Per-vault Skills Modal */}
-      <VaultSkillsModal
-        show={showVaultSkills}
-        vaultId={kb.activeVault?.id ?? null}
-        onClose={() => setShowVaultSkills(false)}
-      />
+      {/* Per-vault Skills Modal — mounted only while open: its hook fetches on
+          mount/vault-change, so an always-mounted instance would hit the daemon
+          on every vault switch even though the modal is never opened. */}
+      {showVaultSkills && (
+        <VaultSkillsModal
+          show={showVaultSkills}
+          vaultId={kb.activeVault?.id ?? null}
+          onClose={() => setShowVaultSkills(false)}
+        />
+      )}
 
       {/* Vault Manager Modal */}
       <VaultManagerModal

@@ -133,3 +133,146 @@ describe('reconcileBundledSync', () => {
     assert.match(fs.readFileSync(destSkill, 'utf8'), /version: 2\.0\.0/, 'version bump propagated');
   });
 });
+
+/**
+ * Step-3 removal guard: deletion demands OWNERSHIP PROOF (byte-for-byte mirror
+ * of Molio's source). The previous "has a SKILL.md" guard was inverted — a
+ * user's own same-named skill ALWAYS has a SKILL.md and would have been
+ * rm -rf'd the moment the bundled skill toggled off.
+ */
+describe('reconcileBundledSync — ownership-proof removal', () => {
+  it('NEVER deletes a user skill sharing a managed slug (user content differs from source)', () => {
+    makeSourceSkill('docling');
+    // The user's own `docling`, present while the DB has docling managed.
+    const userDir = skillDirInVault('docling');
+    fs.mkdirSync(userDir, { recursive: true });
+    fs.writeFileSync(path.join(userDir, 'SKILL.md'), 'my own docling setup\n', 'utf8');
+
+    // Toggled off: managed but not effective → the old guard would rm -rf here.
+    reconcileBundledSync(new Set(), new Set(['docling']), vaultDir, { sourceDir });
+
+    assert.ok(fs.existsSync(path.join(userDir, 'SKILL.md')), 'user same-name dir survives toggle-off');
+    assert.equal(
+      fs.readFileSync(path.join(userDir, 'SKILL.md'), 'utf8'),
+      'my own docling setup\n',
+      'user content untouched',
+    );
+  });
+
+  it('keeps a managed dir when the source is unreadable (no proof, no deletion)', () => {
+    makeSourceSkill('docling');
+    reconcileBundledSync(new Set(['docling']), new Set(['docling']), vaultDir, { sourceDir });
+    assert.ok(fs.existsSync(skillDirInVault('docling')));
+
+    // Source vanishes (corrupted app resources): ownership is unprovable.
+    fs.rmSync(path.join(sourceDir, 'docling'), { recursive: true, force: true });
+    reconcileBundledSync(new Set(), new Set(['docling']), vaultDir, { sourceDir });
+
+    assert.ok(fs.existsSync(skillDirInVault('docling')), 'without source there is no proof → no deletion');
+  });
+});
+
+/** Strip END sentinels to reconstruct a pre-dual-sentinel (legacy) CLAUDE.md. */
+function stripEndSentinels(md: string): string {
+  return md.replace(/<!-- \/molio:[a-z0-9-]+ -->\r?\n/g, '');
+}
+
+/**
+ * Rule blocks are wrapped in BEGIN/END sentinels so removal/replacement can
+ * never touch user content written after (or between) blocks — the legacy
+ * sentinel-to-next-sentinel extent deleted everything after the LAST block
+ * (wiki-query) when it was toggled off.
+ */
+describe('reconcileBundledSync — BEGIN/END sentinel rule blocks', () => {
+  it('writes rule blocks wrapped in BEGIN and END sentinels', () => {
+    makeSourceSkill('docling');
+    reconcileBundledSync(new Set(['docling']), new Set(['docling']), vaultDir, { sourceDir });
+    const md = readClaudeMd();
+    assert.ok(md.includes('<!-- molio:docling-preference -->'), 'BEGIN present');
+    assert.ok(md.includes('<!-- /molio:docling-preference -->'), 'END present');
+    assert.ok(md.includes('<!-- /molio:env-self-heal -->'), 'always-on rule wrapped too');
+    assert.ok(
+      md.indexOf('<!-- /molio:docling-preference -->') > md.indexOf('<!-- molio:docling-preference -->'),
+      'END comes after BEGIN',
+    );
+  });
+
+  it('keeps user content written AFTER the last rule block when the gated rule toggles off', () => {
+    makeSourceSkill('wiki-query');
+    reconcileBundledSync(new Set(['wiki-query']), new Set(['wiki-query']), vaultDir, { sourceDir });
+    // wiki-query's rule is the LAST block — the EOF-dangerous spot.
+    fs.appendFileSync(
+      path.join(vaultDir, '.claude', 'CLAUDE.md'),
+      '\n## My own project rules\n\nDo not touch the legacy module.\n',
+      'utf8',
+    );
+
+    reconcileBundledSync(new Set(), new Set(['wiki-query']), vaultDir, { sourceDir });
+
+    const md = readClaudeMd();
+    assert.ok(!md.includes('<!-- molio:wiki-query-preference -->'), 'gated rule removed');
+    assert.ok(md.includes('## My own project rules'), 'user content after the last block survives');
+    assert.ok(md.includes('Do not touch the legacy module.'));
+  });
+
+  it('legacy migration: toggling OFF an exact legacy block strips only the block, keeps trailing user content', () => {
+    makeSourceSkill('wiki-query');
+    reconcileBundledSync(new Set(['wiki-query']), new Set(['wiki-query']), vaultDir, { sourceDir });
+    const mdPath = path.join(vaultDir, '.claude', 'CLAUDE.md');
+    // Revert to legacy format (END sentinels gone) + user content after the last block.
+    fs.writeFileSync(
+      mdPath,
+      stripEndSentinels(fs.readFileSync(mdPath, 'utf8')) + '\n## My rules\nkeep me\n',
+      'utf8',
+    );
+
+    reconcileBundledSync(new Set(), new Set(['wiki-query']), vaultDir, { sourceDir });
+
+    const md = readClaudeMd();
+    assert.ok(!md.includes('<!-- molio:wiki-query-preference -->'), 'legacy block removed');
+    assert.ok(md.includes('## My rules'), 'user content after the legacy block survives');
+    assert.ok(md.includes('keep me'));
+  });
+
+  it('legacy migration: an active exact legacy block becomes wrapped and keeps trailing user content', () => {
+    makeSourceSkill('wiki-query');
+    reconcileBundledSync(new Set(['wiki-query']), new Set(['wiki-query']), vaultDir, { sourceDir });
+    const mdPath = path.join(vaultDir, '.claude', 'CLAUDE.md');
+    fs.writeFileSync(
+      mdPath,
+      stripEndSentinels(fs.readFileSync(mdPath, 'utf8')) + '\nUser notes after.\n',
+      'utf8',
+    );
+
+    // Same effective set → migration pass into the wrapped format.
+    reconcileBundledSync(new Set(['wiki-query']), new Set(['wiki-query']), vaultDir, { sourceDir });
+
+    const md = readClaudeMd();
+    assert.ok(md.includes('<!-- /molio:wiki-query-preference -->'), 'END sentinel added by migration');
+    assert.ok(md.includes('User notes after.'), 'trailing user content survives migration');
+    // Once migrated, toggling off is precise (wrapped extent) — content still safe.
+    reconcileBundledSync(new Set(), new Set(['wiki-query']), vaultDir, { sourceDir });
+    const after = readClaudeMd();
+    assert.ok(!after.includes('<!-- molio:wiki-query-preference -->'));
+    assert.ok(after.includes('User notes after.'), 'content still safe after migrated toggle-off');
+  });
+
+  it('legacy migration: a DRIFTED legacy block is replaced wholesale once (unknowable boundary)', () => {
+    makeSourceSkill('docling');
+    reconcileBundledSync(new Set(['docling']), new Set(['docling']), vaultDir, { sourceDir });
+    const mdPath = path.join(vaultDir, '.claude', 'CLAUDE.md');
+    // Legacy format + user text injected INSIDE the docling block → drift: the
+    // block boundary is unknowable, so the whole legacy extent is replaced once.
+    const legacy = stripEndSentinels(fs.readFileSync(mdPath, 'utf8')).replace(
+      '<!-- molio:docling-preference -->',
+      '<!-- molio:docling-preference -->\nuser injected line',
+    );
+    fs.writeFileSync(mdPath, legacy, 'utf8');
+
+    reconcileBundledSync(new Set(['docling']), new Set(['docling']), vaultDir, { sourceDir });
+
+    const md = readClaudeMd();
+    assert.ok(!md.includes('user injected line'), 'drifted legacy extent replaced');
+    assert.ok(md.includes('<!-- /molio:docling-preference -->'), 'converged to wrapped format');
+  });
+});

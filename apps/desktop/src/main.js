@@ -152,7 +152,16 @@ async function startDaemonProduction() {
       // Flush any trailing partial line left in the buffer.
       flushDaemonLine(stderrBuf.trim());
       stderrBuf = '';
+      clearTimeout(startupTimer);
       log('error', 'main', `daemon exited with code=${code} signal=${signal}`);
+      if (!started) {
+        // The daemon died before printing "listening on". Reject right away:
+        // without this the startup promise would sit out the full 30s timer
+        // before failing, leaving the window blank/spinning for half a minute
+        // with zero feedback. (A post-ready exit is killDaemon's territory —
+        // the promise is long settled, so this only affects the startup race.)
+        reject(new Error(`daemon exited early (code=${code}, signal=${signal})`));
+      }
       if (code !== 0 && code !== null) {
         if (stdoutChunks.length > 0) {
           log('error', 'main', `daemon stdout tail:\n${stdoutChunks.toArray().join('\n')}`);
@@ -165,6 +174,7 @@ async function startDaemonProduction() {
     });
 
     daemonProcess.on('error', (err) => {
+      clearTimeout(startupTimer);
       log('error', 'main', `daemon spawn error: ${err?.message ?? err}`);
       reject(err);
     });
