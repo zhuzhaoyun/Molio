@@ -1,6 +1,14 @@
 packages:
   - "packages/*"
   - "apps/*"
+# Node.js 24.16.0~24.17.x 存在 streams 回归（nodejs/node#63487），
+# 导致 electron postinstall 的解压链（extract-zip@2 → yauzl@2 → fd-slicer@1）
+# 在大文件条目上背压死锁、静默退出 0，electron.exe 装不出来，
+# pnpm dev:desktop 报 ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL /
+# "Electron failed to install correctly"。yauzl 3.3.1 修复了该流处理缺陷，
+# 覆盖后无需锁定 Node 小版本（Node >=26 同样受益）。
+overrides:
+  yauzl: ^3.3.1
 onlyBuiltDependencies:
   - electron
   - esbuild
