@@ -48,7 +48,8 @@ permissions:
 jobs:
   code-review:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 大 diff（60+ 文件）逐文件 LLM 审查需要 25-40 分钟，15 分钟会超时被杀（PR #190 两次实测）。
+    timeout-minutes: 60
     # Run on PR events from the same repo (skip forks to protect LLM quota),
     # or on explicit /open-code-review | @open-code-review comments on any PR.
     # Draft PRs are skipped on auto-trigger; comment trigger still works.
