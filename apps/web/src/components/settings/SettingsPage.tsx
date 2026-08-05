@@ -4,6 +4,7 @@ import { ChannelsPanel } from './ChannelsPanel';
 import { SkillsPanel } from './SkillsPanel';
 import { useI18n } from '../../i18n';
 import { LanguageSettings } from './LanguageSettings';
+import { ThemeSettings } from './ThemeSettings';
 import { UpdateSettings } from './UpdateSettings';
 
 type Tab = 'general' | 'runtimes' | 'skills' | 'channels';
@@ -57,6 +58,7 @@ export function SettingsPage() {
         {activeTab === 'general' && (
           <>
             <LanguageSettings />
+            <ThemeSettings />
             <UpdateSettings />
           </>
         )}

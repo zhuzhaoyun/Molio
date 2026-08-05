@@ -1,8 +1,8 @@
 import { useI18n } from '../../i18n';
 
 const LANG_OPTIONS = [
-  { value: 'zh', label: '中文' },
-  { value: 'en', label: 'English' },
+  { value: 'zh', label: '中文', testid: 'lang-zh' },
+  { value: 'en', label: 'English', testid: 'lang-en' },
 ] as const;
 
 export function LanguageSettings() {
@@ -11,13 +11,14 @@ export function LanguageSettings() {
   return (
     <section className="settings-section">
       <h2 className="rt-section-title">{t('settings.language')}</h2>
-      <div className="settings-language-card">
-        <div className="settings-lang-pills">
+      <div className="settings-choice-card">
+        <div className="settings-choice-pills">
           {LANG_OPTIONS.map((opt) => (
             <button
               key={opt.value}
               type="button"
-              className={`settings-lang-pill${locale === opt.value ? ' is-active' : ''}`}
+              data-testid={opt.testid}
+              className={`settings-choice-pill${locale === opt.value ? ' is-active' : ''}`}
               onClick={() => setLocale(opt.value)}
             >
               {opt.label}

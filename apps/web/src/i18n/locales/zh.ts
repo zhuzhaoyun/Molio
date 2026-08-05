@@ -264,6 +264,10 @@ const zh: Record<string, string> = {
   // ── Settings ──
   'settings.title': '设置',
   'settings.language': '语言',
+  'settings.theme': '主题',
+  'settings.themeSystem': '跟随系统',
+  'settings.themeLight': '浅色',
+  'settings.themeDark': '深色',
   'settings.versionSection': '版本与更新',
   'settings.currentVersion': '当前版本',
   'settings.checkUpdate': '检查更新',
