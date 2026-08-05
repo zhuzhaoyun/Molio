@@ -69,11 +69,33 @@ describe('electron binary install guard (Node 24.16~24.17 zip deadlock)', () => 
         '(the yauzl override in pnpm-workspace.yaml repairs extraction);\n' +
         '  long term: upgrade Node.js to >=24.18.0.'
     );
-    const size = statSync(binaryPath).size;
+    // Truncation check must target the heavy payload, which differs by
+    // platform: on Windows/Linux the path.txt entry IS the monolithic
+    // binary (>100MB); on macOS it is a small launcher stub (~30KB) and
+    // the engine lives in Electron Framework.framework.
+    const heavyRel =
+      process.platform === 'darwin'
+        ? path.join(
+            'Electron.app',
+            'Contents',
+            'Frameworks',
+            'Electron Framework.framework',
+            'Versions',
+            'A',
+            'Electron Framework'
+          )
+        : binaryRel;
+    const heavyPath = path.join(electronDir, 'dist', heavyRel);
+    assert.ok(
+      existsSync(heavyPath),
+      `electron payload missing: ${heavyRel} — truncated extraction, ` +
+        'delete node_modules and reinstall (nodejs/node#63487)'
+    );
+    const size = statSync(heavyPath).size;
     assert.ok(
       size > 1024 * 1024,
-      `electron binary is only ${size} bytes — truncated extraction, ` +
-        'delete node_modules and reinstall (nodejs/node#63487)'
+      `electron payload ${heavyRel} is only ${size} bytes — truncated ` +
+        'extraction, delete node_modules and reinstall (nodejs/node#63487)'
     );
   });
 });
