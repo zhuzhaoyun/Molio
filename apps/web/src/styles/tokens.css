@@ -106,6 +106,11 @@
   --shadow-lg: 0 20px 50px rgba(0, 0, 0, 0.5), 0 6px 12px rgba(0, 0, 0, 0.25);
 }
 
+/* Explicit light theme — native widgets follow the light page */
+[data-theme="light"] {
+  color-scheme: light;
+}
+
 /* System mode: follow OS preference */
 @media (prefers-color-scheme: dark) {
   html:not([data-theme]) {

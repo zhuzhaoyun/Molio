@@ -5,6 +5,7 @@ import { listVaults } from './core/db.js';
 import { installBuiltinSkills } from './core/skill-installer.js';
 import { ensureWikiSysPromptFiles } from './core/wiki-prompts.js';
 import { isKillablePortOccupant } from './core/port-check.js';
+import { startMemoryMonitor } from './core/memory-monitor.js';
 import { pruneRunLogs } from './core/runs-log-prune.js';
 
 const port = Number(process.env['MOLIO_PORT'] ?? 3100);
@@ -129,9 +130,18 @@ function startServer(): void {
 
 startServer();
 
+// Periodic memory sampling → ~/.molio/debug/sse-debug.log + stdout.
+// Threshold configurable via MOLIO_MEMORY_THRESHOLD_MB (default 1024).
+const thresholdMB = Number(process.env['MOLIO_MEMORY_THRESHOLD_MB']) || undefined;
+const stopMemoryMonitor = startMemoryMonitor({
+  thresholdMB,
+  getContext: () => `activeRuns=${runManager.getActiveRunCount()}`,
+});
+
 // Graceful shutdown
 function shutdown(): void {
   console.log('\nShutting down, canceling active runs...');
+  stopMemoryMonitor();
   weixinService.stop();
   void vaultWatcher.stop();
   runManager.cancelAll();

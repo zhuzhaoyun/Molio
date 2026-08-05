@@ -11,6 +11,7 @@
  * vars at their own module-load time, and a transitive load here would cache
  * the defaults before those vars are set.
  */
+import { ThrottledWarn } from './throttled-warn.js';
 
 /**
  * Directory names that are never part of the knowledge tree — they hold build
@@ -55,3 +56,50 @@ export const MAX_DIR_ENTRIES = 1000;
  * knowledge bases stay well under this; artifacts are already pruned by name.
  */
 export const MAX_TOTAL = 50000;
+
+// ─── throttled "oversized directory" warning ───
+//
+// scanTree / countFiles walk the whole vault and prune any directory above
+// MAX_DIR_ENTRIES. The UI re-scans the vault on every `tree-changed` event
+// (debounced at only 300ms), and `GET /vaults` / `GET /active-vault` re-count on
+// mount and vault switch — so during an active agent run (wiki-build writes many
+// files) the same oversized directory is re-pruned many times a second. Each
+// prune used to emit a fresh console.warn; Node writes console.warn to stderr,
+// and cloud log collectors (Logtail/SLS) classify every stderr line as an ERROR,
+// turning a stable, expected condition into thousands of false anomalies.
+//
+// The fix: warn at most once per (source, dir) per interval. Suppressed repeats
+// are folded into the next emitted warning so the volume stays visible without
+// flooding stderr. The warning still resurfaces periodically, so it is not
+// permanently hidden. The throttle machinery lives in throttled-warn.ts and is
+// shared with the other rate-limited daemon warnings.
+
+/** Re-warn for the same oversized directory at most this often. */
+export const OVERSIZED_DIR_WARN_INTERVAL_MS = 5 * 60 * 1000;
+
+const oversizedDirWarn = new ThrottledWarn({ intervalMs: OVERSIZED_DIR_WARN_INTERVAL_MS });
+
+/**
+ * Emit a "pruned oversized directory" warning at most once per
+ * {@link OVERSIZED_DIR_WARN_INTERVAL_MS} for a given (source, dir) pair.
+ * Repeats inside the window are counted and reported in the next emitted
+ * warning. `now` is injectable for deterministic tests.
+ */
+export function warnOversizedDir(
+  source: string,
+  dir: string,
+  entries: number,
+  limit: number,
+  now: number = Date.now(),
+): void {
+  oversizedDirWarn.warn(
+    `${source}:${dir}`,
+    `[knowledge] ${source} pruned oversized directory (${entries} entries, limit ${limit}): ${dir}`,
+    now,
+  );
+}
+
+/** Reset throttle state — test hook so cases start from a clean slate. */
+export function resetOversizedDirWarnState(): void {
+  oversizedDirWarn.reset();
+}

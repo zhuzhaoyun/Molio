@@ -145,4 +145,22 @@ test.describe('Graph Settings Panel', () => {
     // The old .graph-info-btn should NOT exist
     await expect(page.locator('.graph-info-btn')).not.toBeAttached({ timeout: 3_000 });
   });
+
+  test('settings button follows explicit dark theme on a light OS', async ({ page }) => {
+    // Force explicit 深色 before the app loads, so graph chrome must go dark
+    // even though Playwright's default OS color scheme is light.
+    await page.addInitScript(() => {
+      localStorage.setItem('molio.theme', 'dark');
+    });
+    await gotoHome(page);
+    await clickNav(page, 'graph');
+    await expect(page.locator('.graph-page')).toBeVisible({ timeout: 5_000 });
+
+    const btn = page.locator('.graph-settings-btn');
+    await expect(btn).toBeVisible({ timeout: 10_000 });
+
+    // Dark chrome from the [data-theme="dark"] graph rules, not the light default
+    const bg = await btn.evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(bg).toBe('rgba(40, 40, 50, 0.8)');
+  });
 });

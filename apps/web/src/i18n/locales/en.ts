@@ -264,6 +264,10 @@ const en: Record<string, string> = {
   // ── Settings ──
   'settings.title': 'Settings',
   'settings.language': 'Language',
+  'settings.theme': 'Theme',
+  'settings.themeSystem': 'System',
+  'settings.themeLight': 'Light',
+  'settings.themeDark': 'Dark',
   'settings.versionSection': 'Version & Updates',
   'settings.currentVersion': 'Current version',
   'settings.checkUpdate': 'Check for updates',

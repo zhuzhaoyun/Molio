@@ -40,21 +40,21 @@
   margin-bottom: 24px;
 }
 
-/* ── Language Selector ── */
-.settings-language-card {
+/* ── Choice Selector (shared by language & theme) ── */
+.settings-choice-card {
   padding: 8px 16px;
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
 }
 
-.settings-lang-pills {
+.settings-choice-pills {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
 }
 
-.settings-lang-pill {
+.settings-choice-pill {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -72,12 +72,12 @@
   user-select: none;
 }
 
-.settings-lang-pill:hover {
+.settings-choice-pill:hover {
   border-color: var(--accent);
   color: var(--text-strong);
 }
 
-.settings-lang-pill.is-active {
+.settings-choice-pill.is-active {
   color: var(--accent);
   border-color: var(--accent);
   background: var(--accent-tint);

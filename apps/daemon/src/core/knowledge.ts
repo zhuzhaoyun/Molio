@@ -11,7 +11,21 @@ import { detectEncoding, decodeAll, decideReadStrategy, FileTooLargeError, ENCOD
 // Pruning predicate + caps live in a dependency-free module so importing them
 // (e.g. from VaultWatcher) does not transitively load encoding.ts.
 export { PRUNE_DIR_NAMES, isPrunedDirName, MAX_DIR_ENTRIES, MAX_TOTAL } from './vault-prune.js';
-import { isPrunedDirName, MAX_DIR_ENTRIES, MAX_TOTAL } from './vault-prune.js';
+import { isPrunedDirName, MAX_DIR_ENTRIES, MAX_TOTAL, warnOversizedDir } from './vault-prune.js';
+import { ThrottledWarn } from './throttled-warn.js';
+
+// The "hit MAX_TOTAL … truncating" warning fires at most once per scan, but the
+// UI rescans the vault on every `tree-changed` event and on mount/vault-switch —
+// so a vault that genuinely exceeds the cap re-triggers it many times a second.
+// Throttle per (fn, dir); suppressed repeats fold into the next emission (see
+// throttled-warn.ts). Same stderr→SLS-ERROR noise rationale as the
+// oversized-directory warning.
+const maxTotalWarn = new ThrottledWarn();
+
+/** Reset the MAX_TOTAL throttle — test hook so cases start from a clean slate. */
+export function resetMaxTotalWarnState(): void {
+  maxTotalWarn.reset();
+}
 
 interface ScanCtx {
   visited: number;
@@ -55,9 +69,7 @@ function scanTreeInner(vaultPath: string, relBase: string, ctx: ScanCtx): TreeNo
   // Return empty children — the parent call still pushes a directory node (now
   // empty), which surfaces the dir as pruned without stat-ing its contents.
   if (entries.length > ctx.maxDirEntries) {
-    console.warn(
-      `[knowledge] scanTree pruned oversized directory (${entries.length} entries, limit ${ctx.maxDirEntries}): ${absDir}`,
-    );
+    warnOversizedDir('scanTree', absDir, entries.length, ctx.maxDirEntries);
     return [];
   }
 
@@ -74,7 +86,8 @@ function scanTreeInner(vaultPath: string, relBase: string, ctx: ScanCtx): TreeNo
       if (ctx.visited > ctx.maxTotal) {
         if (!ctx.stopped) {
           ctx.stopped = true;
-          console.warn(
+          maxTotalWarn.warn(
+            `scanTree:${absDir}`,
             `[knowledge] scanTree hit MAX_TOTAL (${ctx.maxTotal}) file cap, truncating at ${absDir}`,
           );
         }
@@ -123,9 +136,7 @@ function countFilesInner(dir: string, ctx: ScanCtx): number {
     return 0;
   }
   if (entries.length > ctx.maxDirEntries) {
-    console.warn(
-      `[knowledge] countFiles pruned oversized directory (${entries.length} entries, limit ${ctx.maxDirEntries}): ${dir}`,
-    );
+    warnOversizedDir('countFiles', dir, entries.length, ctx.maxDirEntries);
     return 0;
   }
   let count = 0;
@@ -139,7 +150,8 @@ function countFilesInner(dir: string, ctx: ScanCtx): number {
       if (ctx.visited > ctx.maxTotal) {
         if (!ctx.stopped) {
           ctx.stopped = true;
-          console.warn(
+          maxTotalWarn.warn(
+            `countFiles:${dir}`,
             `[knowledge] countFiles hit MAX_TOTAL (${ctx.maxTotal}) file cap, truncating at ${dir}`,
           );
         }

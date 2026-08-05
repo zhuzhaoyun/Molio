@@ -86,14 +86,23 @@ describe('main.js: must load URL only after daemon is ready (not in createWindow
     );
   });
 
-  it('createWindow should load splash.html in production mode', () => {
+  it('createWindow should NOT load splash.html (ARMS Browser SDK injection fix)', () => {
+    // The splash page caused the ARMS Browser SDK to inject into the splash
+    // (whose JS context is destroyed on navigation) and skip the real app,
+    // because the SDK's WeakSet prevents re-injection on the same webContents.
+    // Production now keeps the window hidden until loadApp() navigates
+    // directly to localhost:3100 — one navigation = one correct injection.
     const fnStart = mainJs.indexOf('function createWindow()');
     const fnEnd = mainJs.indexOf('\nfunction ', fnStart + 1);
     const fnBody = mainJs.slice(fnStart, fnEnd);
 
     assert.ok(
-      fnBody.includes('splash.html'),
-      'createWindow must load splash.html while waiting for daemon'
+      !fnBody.includes('splash.html'),
+      'createWindow must NOT load splash.html — it breaks ARMS Browser SDK injection'
+    );
+    assert.ok(
+      fnBody.includes('show: false'),
+      'createWindow must keep the window hidden until loadApp() shows it'
     );
   });
 
@@ -130,7 +139,7 @@ describe('main.js: must load URL only after daemon is ready (not in createWindow
   });
 });
 
-describe('main.js: protocol launch should leave splash after daemon is ready', () => {
+describe('main.js: protocol launch should load app when daemon is not yet ready', () => {
   it('should parse molio://launch as a protocol target', () => {
     assert.ok(
       mainJs.includes('function parseMolioProtocolUrl'),
@@ -142,22 +151,22 @@ describe('main.js: protocol launch should leave splash after daemon is ready', (
     );
   });
 
-  it('should detect when the production splash page is still showing', () => {
+  it('should detect when the app has not loaded yet (waiting for daemon)', () => {
     assert.ok(
-      mainJs.includes('function isShowingSplash()'),
-      'main.js must be able to detect the splash page before handling molio://launch'
+      mainJs.includes('function isWaitingForApp()'),
+      'main.js must detect the blank-window state before handling molio://launch'
     );
     assert.ok(
-      mainJs.includes('splash.html'),
-      'splash detection must check for splash.html'
+      mainJs.includes('about:blank'),
+      'waiting detection must check for the initial blank page'
     );
     assert.ok(
       mainJs.includes('webContents.getURL()'),
-      'splash detection must inspect the current BrowserWindow URL'
+      'waiting detection must inspect the current BrowserWindow URL'
     );
   });
 
-  it('molio://launch should call loadApp when still on splash', () => {
+  it('molio://launch should call loadApp when app has not loaded yet', () => {
     const navigatePos = mainJs.indexOf('function navigateFromProtocolUrl');
     assert.ok(navigatePos !== -1, 'navigateFromProtocolUrl must exist');
 
@@ -170,12 +179,12 @@ describe('main.js: protocol launch should leave splash after daemon is ready', (
       'navigateFromProtocolUrl must handle parsed launch actions'
     );
     assert.ok(
-      navigateBlock.includes('isShowingSplash()'),
-      'molio://launch handling must check if the app is still showing splash'
+      navigateBlock.includes('isWaitingForApp()'),
+      'molio://launch handling must check if the app has not loaded yet'
     );
     assert.ok(
       navigateBlock.includes('loadApp()'),
-      'molio://launch handling must load the real app when launched from splash'
+      'molio://launch handling must load the real app when daemon is ready'
     );
   });
 
@@ -205,8 +214,8 @@ describe('main.js: protocol launch should leave splash after daemon is ready', (
       'open-file navigation must fall back to loadURL when the renderer is not ready'
     );
     assert.ok(
-      /isShowingSplash\(\)\s*\|\|\s*!rendererReady/.test(navigateBlock),
-      'the loadURL fallback condition must cover both splash and not-ready states'
+      /isWaitingForApp\(\)\s*\|\|\s*!rendererReady/.test(navigateBlock),
+      'the loadURL fallback condition must cover both waiting-for-app and not-ready states'
     );
   });
 });
@@ -326,6 +335,34 @@ describe('main.js: graceful daemon shutdown to preserve last assistant reply', (
     assert.ok(
       killDaemonBlock.includes('forceTimer'),
       'killDaemon must clear the fallback timer once the daemon exits'
+    );
+  });
+});
+
+describe('main.js: loadApp must handle did-fail-load so a failed load never leaves a dead hidden window', () => {
+  // Regression: loadApp() only listened for did-finish-load before showing the
+  // window. If loadURL fails (daemon crashes between the readiness check and
+  // the page loading, or a transient network error), Electron fires
+  // did-fail-load instead — so the window stayed hidden forever with no
+  // feedback and the app appeared completely dead.
+  function loadAppBody() {
+    const fnStart = mainJs.indexOf('function loadApp()');
+    assert.ok(fnStart !== -1, 'loadApp function must exist');
+    const fnEnd = mainJs.indexOf('\nfunction ', fnStart + 1);
+    return mainJs.slice(fnStart, fnEnd > fnStart ? fnEnd : fnStart + 1000);
+  }
+
+  it('loadApp should register a did-fail-load handler', () => {
+    assert.ok(
+      loadAppBody().includes('did-fail-load'),
+      'loadApp must handle did-fail-load — otherwise a failed loadURL leaves the window hidden forever'
+    );
+  });
+
+  it('did-fail-load handler should surface the daemon error page', () => {
+    assert.ok(
+      loadAppBody().includes('showDaemonErrorPage'),
+      'on load failure loadApp must show the daemon error page so the user gets feedback instead of a dead window'
     );
   });
 });

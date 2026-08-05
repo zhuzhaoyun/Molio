@@ -1,9 +1,9 @@
-# Molio — 本地知识管理 + AI 写作 + 多平台发布
+# Molio — 懂你事情的 AI 工作伙伴
 
-知识管理、文档创建、排版、多平台发布的一站式本地应用：
+本地优先应用：把 AI runtime（Claude Code / Codex 等）接到你的本地知识库上，AI 读你的积累做研究、写作、问答，产出回写入库、沉淀为资产；排版与多平台发布只是产出出口之一。
 1. 管理本地知识库（类 Obsidian + LLM Wiki），支持 weknora 知识库
-2. 调用 Claude Code / Codex 等 AI runtime 创作或编写文档
-3. 使用 doocs/md 排版，doocs/cose 进行多平台发布
+2. 调用 Claude Code / Codex 等 AI runtime 基于知识库做研究、写作、咨询等
+3. 产出可经 doocs/md 排版、doocs/cose 多平台发布（出口之一）
 
 ## Project Structure (pnpm Monorepo)
 
