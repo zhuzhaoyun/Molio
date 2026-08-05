@@ -2,6 +2,14 @@
 
 > 本文档记录 `fix/weixin-multiturn-reuse` 分支对微信通道与 Claude Code agent 交互方式的三项修改及其设计依据，供后续维护参考。
 
+> ⚠️ **本文档为历史记录。§2「wiki 提示词走 system prompt（`--append-system-prompt-file`）」描述的注入机制已被取代。**
+> 后续实测发现 `--append-system-prompt-file` 在部分环境（Claude Code 2.1.187 + qwen 中转）被 CLI **静默丢弃**——标记实验确认注入内容根本到不了模型，导致知识库问答凭训练记忆作答、不读 `wiki/INDEX.md`。现已改用以下**能稳定送达模型**的渠道，并彻底移除 `appendSystemPromptFile` 链路与 `wiki-prompts.ts`（见 **PR #177** / `feat/wiki-query-skill`）：
+> - **知识库问答** → `wiki-query` skill（`src/tools/skills/wiki-query/SKILL.md`）+ 每个 vault `.claude/CLAUDE.md` 的常驻「检索优先」规则（`skill-installer.ts` 注入，CLI 原生加载）+ KB 问答面板确定性触发（`web/useKbChat.ts`）。
+> - **微信通道帧** → 首轮消息前置（`weixin/channel-frame.ts` + `message.ts` 的 `buildWeixinFrameMessage`），保留收件/URL 提取/`<attach/>` 回传/意图分流，问答路由到 `wiki-query`。
+>
+> §2 原文保留作演进参考——其中「inline 大文本 argv 在 Windows 有解析风险」的教训仍然有效；只是 `-file` 方案本身后来被发现在某些环境不生效，最终让位给 skill + CLAUDE.md。§1（多轮复用）、§3（`<attach/>` 投递）仍然有效。
+
+
 ## 核心原则
 
 **利用 Claude Code 自身的智能化，代码只做通道机械。** 凡是"何时做多轮连续""用什么检索路径回答""是否要把文件发给用户"这类**意图判断**，都交给 agent（由提示词引导）决定；daemon 代码只负责通道适配（收发消息、spawn 进程、解析标记、投递附件），不替 agent 猜意图、不在代码里堆场景逻辑。下面三项修改都是把原本"代码在猜"的逻辑交还给 agent。
@@ -82,14 +90,14 @@ Claude Code 原生支持 multiTurn（`stdin` 保持打开，跨轮复用同一 s
 
 **教训：inline 大文本 argv 在 Windows 有解析风险，大 prompt 一律走 `-file`；冒烟要用真实最大/最敌意的输入（WEIXIN prompt），别只用较小的 QUERY prompt。**
 
-### 代码落点
-- `packages/contracts/src/agent.ts`：`RuntimeBuildOptions.appendSystemPromptFile?: string`（路径）。
-- `apps/daemon/src/core/wiki-prompts.ts`：`WIKI_*_PROMPT` 常量（内容 source of truth）、`WEIXIN_SYS_PROMPT_FILE` / `QUERY_SYS_PROMPT_FILE`（固定路径）、`ensureWikiSysPromptFiles()`（启动时写文件）。
-- `apps/daemon/src/index.ts`：启动时调 `ensureWikiSysPromptFiles()`。
-- `apps/daemon/src/core/RunManager.ts`：`CreateRunOptions.appendSystemPromptFile?`（路径，caller 传）、createRun 直接转发给 buildArgs（不做转换）。
-- `apps/daemon/src/core/runtimes/claude.ts`：`buildArgs` push `--append-system-prompt-file`。
-- `apps/daemon/src/core/weixin/service.ts`：`buildWeixinRunMessage`（返回 `{message, appendSystemPromptFile?}`）、`QueuedMessage`、`createMolioRun`、`dispatchMessage`。
-- `apps/daemon/src/routes/runs.ts`：`query` 操作 + vault 分支。
+### 代码落点（⚠️ PR #177 后本节涉及的注入链路已全部移除/改写）
+- ~~`packages/contracts/src/agent.ts`：`RuntimeBuildOptions.appendSystemPromptFile?: string`~~ —— 已删除。
+- ~~`apps/daemon/src/core/wiki-prompts.ts`~~ —— 文件已删除；微信帧迁至 `weixin/channel-frame.ts`，查询帧变为 `wiki-query` skill。
+- ~~`apps/daemon/src/index.ts`：启动时调 `ensureWikiSysPromptFiles()`~~ —— 已删除（改为启动时对所有 vault 跑 `installBuiltinSkills`，装 skill + 注入 CLAUDE.md 规则）。
+- ~~`apps/daemon/src/core/RunManager.ts`：`CreateRunOptions.appendSystemPromptFile?`~~ —— 已删除。
+- ~~`apps/daemon/src/core/runtimes/claude.ts`：`buildArgs` push `--append-system-prompt-file`~~ —— 已删除。
+- `apps/daemon/src/core/weixin/dispatcher.ts` + `message.ts`：fresh-spawn 改为 `buildWeixinFrameMessage(rawUserText)` 消息前置（不再传 `appendSystemPromptFile`）。
+- `apps/daemon/src/core/conversations/run-starter.ts`：不再注入 QUERY 帧（检索交给 `wiki-query` skill + CLAUDE.md 规则）。
 
 ---
 
@@ -129,6 +137,6 @@ Claude Code 原生支持 multiTurn（`stdin` 保持打开，跨轮复用同一 s
 
 ## 不改的
 
-- `WIKI_WEIXIN_PROMPT` / `WIKI_QUERY_PROMPT` 文本内容不动（位置改了就够，实测验证）；它们是 always-on 角色帧，留 system prompt，**不**做成 skill（见上）。
-- `build/ingest/lint/save` 流程内容不动，但载体从「message prepend」改成 `wiki-*` skills（on-demand），流程文本原样搬进各 `SKILL.md`。
+- ~~`WIKI_WEIXIN_PROMPT` / `WIKI_QUERY_PROMPT` 留 system prompt、不做成 skill~~ —— **已被 PR #177 推翻**：`--append-system-prompt-file` 在部分环境被静默丢弃，查询帧已改为 `wiki-query` skill（on-demand）+ vault `.claude/CLAUDE.md` 常驻「检索优先」规则；微信帧改为首轮消息前置（`weixin/channel-frame.ts`）。"always-on 背景不压原生检索"的结论仍成立，只是载体从坏掉的 system-prompt 注入换成同样 always-on 的 CLAUDE.md 规则。
+- `build/ingest/lint/save` 流程内容不动，载体为 `wiki-*` skills（on-demand），流程文本在各 `SKILL.md`。
 - session jsonl 转录本不碰（跨会话总结靠 git + 文件系统 mtime，与 session 文件无关）。

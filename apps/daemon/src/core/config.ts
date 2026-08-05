@@ -2,10 +2,24 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 
-const CONFIG_DIR = path.join(os.homedir(), '.molio');
-const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
-const CLAUDE_DIR = path.join(os.homedir(), '.claude');
-const CLAUDE_SETTINGS_FILE = path.join(CLAUDE_DIR, 'settings.json');
+/**
+ * Compute config paths lazily so tests that override `process.env.USERPROFILE`
+ * (to point at a temp dir) actually redirect reads/writes — evaluating these
+ * at module-load time would freeze them to the developer's real home before
+ * the test's beforeEach runs.
+ */
+function configDir(): string {
+  return path.join(os.homedir(), '.molio');
+}
+function configFile(): string {
+  return path.join(configDir(), 'config.json');
+}
+function claudeDir(): string {
+  return path.join(os.homedir(), '.claude');
+}
+function claudeSettingsFile(): string {
+  return path.join(claudeDir(), 'settings.json');
+}
 const CLAUDE_MANAGED_ENV_KEYS = new Set([
   'ANTHROPIC_BASE_URL',
   'ANTHROPIC_AUTH_TOKEN',
@@ -32,12 +46,28 @@ export interface WeixinConfig {
   defaultCwd?: string;
 }
 
+export interface FeishuConfig {
+  enabled?: boolean;
+  appId?: string;
+  appSecret?: string;
+  /** Default https://open.feishu.cn — override only for Lark int'l / self-hosted gateways. */
+  baseUrl?: string;
+  credentialsPath?: string;
+  defaultAgentId?: string;
+  defaultCwd?: string;
+}
+
 export interface AppConfig {
   agents: Record<string, AgentConfig>;
   defaultCwd?: string;
   defaultAgentId?: string;
   locale?: string;
   weixin?: WeixinConfig;
+  feishu?: FeishuConfig;
+  /** Preloading preferences — dismissed skills the user doesn't want prompted about. */
+  preload?: {
+    dismissed: string[];
+  };
 }
 
 const DEFAULT_CONFIG: AppConfig = {
@@ -51,10 +81,11 @@ interface ClaudeSettingsFile {
 
 export function loadConfig(): AppConfig {
   try {
-    if (!fs.existsSync(CONFIG_FILE)) {
+    const file = configFile();
+    if (!fs.existsSync(file)) {
       return { ...DEFAULT_CONFIG };
     }
-    const raw = fs.readFileSync(CONFIG_FILE, 'utf8');
+    const raw = fs.readFileSync(file, 'utf8');
     const parsed = JSON.parse(raw);
     return {
       ...DEFAULT_CONFIG,
@@ -69,12 +100,14 @@ export function loadConfig(): AppConfig {
 
 export function saveConfig(config: AppConfig): void {
   try {
-    if (!fs.existsSync(CONFIG_DIR)) {
-      fs.mkdirSync(CONFIG_DIR, { recursive: true });
+    const dir = configDir();
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
     }
-    const tmpFile = CONFIG_FILE + '.tmp';
+    const file = configFile();
+    const tmpFile = file + '.tmp';
     fs.writeFileSync(tmpFile, JSON.stringify(config, null, 2), 'utf8');
-    fs.renameSync(tmpFile, CONFIG_FILE);
+    fs.renameSync(tmpFile, file);
   } catch (err) {
     console.error('Failed to save config:', err);
     throw err;
@@ -97,6 +130,12 @@ export function mergeConfig(partial: Partial<AppConfig>): AppConfig {
     weixin: partial.weixin !== undefined
       ? { ...(existing.weixin ?? {}), ...partial.weixin }
       : existing.weixin,
+    feishu: partial.feishu !== undefined
+      ? { ...(existing.feishu ?? {}), ...partial.feishu }
+      : existing.feishu,
+    preload: partial.preload !== undefined
+      ? { ...(existing.preload ?? { dismissed: [] }), ...partial.preload }
+      : existing.preload,
   };
 }
 
@@ -155,7 +194,7 @@ export function buildAgentEnv(agentId: string, agentConfig: AgentConfig): Record
 }
 
 function loadClaudeSettingsEnv(): Record<string, string> | null {
-  const settings = readJsonFile<ClaudeSettingsFile>(CLAUDE_SETTINGS_FILE);
+  const settings = readJsonFile<ClaudeSettingsFile>(claudeSettingsFile());
   if (!settings?.env || typeof settings.env !== 'object') return null;
 
   const env: Record<string, string> = {};
@@ -167,7 +206,8 @@ function loadClaudeSettingsEnv(): Record<string, string> | null {
 }
 
 function saveClaudeSettingsEnv(agentEnv: Record<string, string>): void {
-  const settings = readJsonFile<ClaudeSettingsFile>(CLAUDE_SETTINGS_FILE) ?? {};
+  const settingsFile = claudeSettingsFile();
+  const settings = readJsonFile<ClaudeSettingsFile>(settingsFile) ?? {};
   const existingEnv = settings.env && typeof settings.env === 'object'
     ? { ...settings.env }
     : {};
@@ -190,7 +230,7 @@ function saveClaudeSettingsEnv(agentEnv: Record<string, string>): void {
     delete nextSettings.env;
   }
 
-  writeJsonFileAtomic(CLAUDE_SETTINGS_FILE, nextSettings, CLAUDE_DIR);
+  writeJsonFileAtomic(settingsFile, nextSettings, claudeDir());
 }
 
 function pickClaudeManagedEnv(env?: Record<string, string>): Record<string, string> {

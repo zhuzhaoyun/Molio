@@ -513,76 +513,6 @@
   white-space: nowrap;
 }
 
-/* ── Delete Button ── */
-.history-row__delete {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  flex-shrink: 0;
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 120ms ease, color 120ms ease;
-  border-radius: var(--radius-sm);
-}
-
-/* Tooltip above delete button */
-.history-row__delete::after {
-  content: attr(title);
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 4px 9px;
-  background: var(--text-strong);
-  color: var(--bg-panel);
-  font-size: 12px;
-  line-height: 1.4;
-  white-space: nowrap;
-  border-radius: 6px;
-  box-shadow: var(--shadow-sm);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 120ms ease;
-}
-
-.history-row__delete:hover::after {
-  opacity: 1;
-}
-
-.history-row__delete svg {
-  flex: 0 0 16px;
-  width: 16px;
-  height: 16px;
-}
-
-.history-row:hover .history-row__delete,
-.history-row:focus-within .history-row__delete {
-  opacity: 1;
-}
-
-.history-row__delete:hover {
-  color: var(--red);
-  background: var(--red-bg);
-}
-
-.history-row__delete:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-  opacity: 1;
-}
-
-@media (hover: none) {
-  .history-row__delete {
-    opacity: 1;
-  }
-}
-
 /* ── Delete Confirmation ── */
 .history-row--confirming {
   background: var(--red-bg);
@@ -710,3 +640,43 @@
     padding: 60px 16px;
   }
 }
+
+/* ── Pinned Section ── */
+.history-pinned { margin-bottom: 28px; }
+.history-pinned:last-child { margin-bottom: 0; }
+.history-pinned-title {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin: 0 0 8px; padding: 4px 8px 4px 4px;
+  color: var(--text-muted);
+  font-family: var(--serif); font-size: 14px; font-weight: 500; font-style: italic;
+  letter-spacing: 0.02em;
+  background: none; border: none; cursor: pointer; border-radius: var(--radius-sm);
+  transition: color 120ms ease, background 120ms ease;
+}
+.history-pinned-title:hover { color: var(--text); background: var(--bg-subtle); }
+.history-pinned-chevron { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; color: var(--text-faint); }
+.history-pinned-chevron svg { width: 14px; height: 14px; }
+.history-pinned-glyph { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; color: var(--accent); }
+.history-pinned-glyph svg { width: 14px; height: 14px; }
+.history-pinned-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px;
+  background: var(--bg-muted); color: var(--text-faint);
+  font-family: var(--sans); font-size: 11px; font-weight: 600; font-style: normal; letter-spacing: 0;
+}
+
+/* ── Row ⋯ overflow (hover reveal) ── */
+.history-row .overflow-menu { opacity: 0; transition: opacity 120ms ease; }
+.history-row:hover .overflow-menu,
+.history-row:focus-within .overflow-menu { opacity: 1; }
+@media (hover: none) { .history-row .overflow-menu { opacity: 1; } }
+
+/* chat.css 未定义变量(--text-primary/--bg-hover)的 history 作用域覆盖 */
+.history-row .overflow-menu-item { color: var(--text); }
+.history-row .overflow-menu-item svg { width: 16px; height: 16px; flex-shrink: 0; }
+.history-row .overflow-menu-item:hover:not(:disabled) { background: var(--bg-subtle); box-shadow: none; }
+.history-row .overflow-menu-item--danger { color: var(--red); }
+.history-row .overflow-menu-item--danger:hover:not(:disabled) { background: var(--red-bg); box-shadow: none; }
+
+/* ── Rename dialog (modal) ── */
+.history-rename-error { color: var(--red); font-size: 12px; margin-top: 6px; display: block; }

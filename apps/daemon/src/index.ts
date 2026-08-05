@@ -1,10 +1,12 @@
 import { serve } from '@hono/node-server';
 import { execSync } from 'node:child_process';
-import { app, db, runManager, weixinService, vaultWatcher } from './server.js';
+import { app, db, runManager, weixinService, vaultWatcher, preloadManager } from './server.js';
 import { listVaults } from './core/db.js';
 import { installBuiltinSkills } from './core/skill-installer.js';
 import { ensureWikiSysPromptFiles } from './core/wiki-prompts.js';
 import { isKillablePortOccupant } from './core/port-check.js';
+import { startMemoryMonitor } from './core/memory-monitor.js';
+import { pruneRunLogs } from './core/runs-log-prune.js';
 
 const port = Number(process.env['MOLIO_PORT'] ?? 3100);
 
@@ -95,9 +97,19 @@ for (const vault of listVaults(db)) {
   installBuiltinSkills(vault.path);
 }
 
-// Materialize the wiki system-prompt frames to fixed files under ~/.molio/sysprompt/
-// so the agent CLI can read them via --append-system-prompt-file (idempotent).
+// Delete per-run JSONL logs older than 7 days (nothing cleaned them up
+// before; they accumulate indefinitely under ~/.molio/runs). Best-effort and
+// fast — a readdir + stat sweep over the run-id directories.
+pruneRunLogs();
+
+// Materialize the feishu wiki role frame (the only channel still delivered via
+// --append-system-prompt-file; weixin prepends its frame, see weixin/dispatcher).
 ensureWikiSysPromptFiles();
+
+// Check which heavy skill tools are already installed. Results are stored in
+// the PreloadManager and served via GET /api/preload/status so the web UI can
+// show a preload suggestion toast without blocking daemon startup.
+preloadManager.checkSkills();
 
 function startServer(): void {
   const server = serve({ fetch: app.fetch, port }, () => {
@@ -118,12 +130,22 @@ function startServer(): void {
 
 startServer();
 
+// Periodic memory sampling → ~/.molio/debug/sse-debug.log + stdout.
+// Threshold configurable via MOLIO_MEMORY_THRESHOLD_MB (default 1024).
+const thresholdMB = Number(process.env['MOLIO_MEMORY_THRESHOLD_MB']) || undefined;
+const stopMemoryMonitor = startMemoryMonitor({
+  thresholdMB,
+  getContext: () => `activeRuns=${runManager.getActiveRunCount()}`,
+});
+
 // Graceful shutdown
 function shutdown(): void {
   console.log('\nShutting down, canceling active runs...');
+  stopMemoryMonitor();
   weixinService.stop();
   void vaultWatcher.stop();
   runManager.cancelAll();
+  preloadManager.stopAll();
   process.exit(0);
 }
 

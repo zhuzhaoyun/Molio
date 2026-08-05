@@ -4,6 +4,8 @@ import type { KbChatMode } from '../../hooks/useKbChat';
 import { UserMessage } from '../UserMessage';
 import { AssistantMessage } from '../AssistantMessage';
 import { ChatComposer, type FileRef, type PastedImage } from '../ChatComposer';
+import { ActivityTree } from '../ActivityTree';
+import type { ActivityInfo } from '@molio/contracts';
 import { useI18n } from '../../i18n';
 import './KbChatPanel.css';
 
@@ -11,6 +13,8 @@ interface KbChatPanelProps {
   mode: KbChatMode | null;
   messages: ChatMessage[];
   isRunning: boolean;
+  /** Live background subagent/workflow activity (wiki build etc.). */
+  activity?: ActivityInfo | null;
   /** qa 模式下预载为 @-ref 的当前文件（相对 vault 根）。 */
   filePath: string | null;
   vaultId: string | null;
@@ -26,7 +30,7 @@ interface KbChatPanelProps {
 }
 
 export function KbChatPanel({
-  mode, messages, isRunning, filePath, vaultId, selectedText,
+  mode, messages, isRunning, activity, filePath, vaultId, selectedText,
   onSend, onCancel, onClose, onSubmitToolResult, onOpenConversation, composerKey,
 }: KbChatPanelProps) {
   const { t } = useI18n();
@@ -158,6 +162,7 @@ export function KbChatPanel({
         )}
       </div>
 
+      <ActivityTree activity={activity ?? null} />
       <div className="file-chat-input">
         <ChatComposer
           key={mode === 'qa' ? (filePath ?? undefined) : (mode ?? undefined)}

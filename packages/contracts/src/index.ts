@@ -20,6 +20,8 @@ export type {
   AgentEvent,
   UsageInfo,
   StreamHandler,
+  ActivityInfo,
+  SubagentActivity,
 } from './event.js';
 
 export type {
@@ -54,6 +56,7 @@ export type {
   MessageListResponse,
   CreateProjectRequest,
   CreateConversationRequest,
+  UpdateConversationRequest,
 } from './api.js';
 
 export type { SSEEnvelope } from './sse.js';

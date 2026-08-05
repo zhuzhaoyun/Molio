@@ -9,7 +9,7 @@ import { openDatabase, closeDatabase, listMessages, createVault } from '../../..
 import { ConversationService } from '../../../src/core/conversations/service.js';
 import type { RunManager } from '../../../src/core/RunManager.js';
 import { WeixinRunDispatcher, type DispatchRequest } from '../../../src/core/weixin/dispatcher.js';
-import { WEIXIN_SYS_PROMPT_FILE } from '../../../src/core/wiki-prompts.js';
+import { buildWeixinFrameMessage } from '../../../src/core/weixin/message.js';
 
 /**
  * Integration tests for the weixin multi-turn run dispatcher.
@@ -30,7 +30,7 @@ class MockRunManager {
   private created = new Set<string>();
   private nonReceptive = new Set<string>();
   private listeners = new Map<string, (ev: AgentEvent) => void>();
-  readonly createRunCalls: Array<{ runId: string; agentId: string; cwd?: string; message: string; appendSystemPromptFile?: string }> = [];
+  readonly createRunCalls: Array<{ runId: string; agentId: string; cwd?: string; message: string }> = [];
   readonly sendMessageCalls: Array<{ runId: string; message: string }> = [];
   readonly flushCalls: string[] = [];
   readonly cancelCalls: string[] = [];
@@ -41,7 +41,6 @@ class MockRunManager {
     cwd?: string;
     conversationId?: string;
     history?: ChatMessage[];
-    appendSystemPromptFile?: string;
   }): Promise<string> => {
     const runId = `run-${this.nextId++}`;
     this.created.add(runId);
@@ -50,7 +49,6 @@ class MockRunManager {
       agentId: opts.agentId,
       cwd: opts.cwd,
       message: opts.message,
-      appendSystemPromptFile: opts.appendSystemPromptFile,
     });
     return runId;
   };
@@ -113,8 +111,8 @@ describe('WeixinRunDispatcher multi-turn run reuse', () => {
     cwdDir = join(tempDir, 'work');
     mkdirSync(cwdDir, { recursive: true });
     db = openDatabase(tempDir);
-    // Register cwdDir as a vault so wikiPromptFileFor(db, cwdDir) resolves to
-    // the weixin system-prompt file on fresh spawns.
+    // Register cwdDir as a vault (realistic setup). The weixin channel frame is
+    // prepended to the first message on every fresh spawn regardless of vault.
     createVault(db, 'Test Vault', cwdDir);
     conversations = new ConversationService(db);
     mock = new MockRunManager();
@@ -122,8 +120,10 @@ describe('WeixinRunDispatcher multi-turn run reuse', () => {
       runManager: mock.asRunManager(),
       conversations,
       db,
-      sendText: async () => {},
-      sendMediaFile: async () => {},
+      sink: { sendText: async () => {}, sendMediaFile: async () => {} },
+      buildPrompt: (text) => text,
+      frameFirstTurn: buildWeixinFrameMessage,
+      channelLabel: 'weixin',
     });
     const conv = conversations.getOrCreateExternalConversation({
       channelType: 'weixin',
@@ -140,7 +140,7 @@ describe('WeixinRunDispatcher multi-turn run reuse', () => {
 
   function payload(text: string, history: ChatMessage[] = []): DispatchRequest {
     return {
-      fromUserId: 'u1',
+      userId: 'u1',
       conversationId,
       agentId: 'claude',
       cwd: cwdDir,
@@ -247,34 +247,42 @@ describe('WeixinRunDispatcher multi-turn run reuse', () => {
     assert.ok(mock.flushCalls.includes(run1), 'should flush pending reply before next user msg');
   });
 
-  it('passes the wiki prompt file to createRun on fresh spawn, not to sendMessage on reuse', async () => {
-    // Fresh spawn: the dispatcher derives appendSystemPromptFile from (db, cwd)
-    // at spawn time and keeps the user message clean — the wiki frame lives in
-    // the system prompt file, NOT prepended to the message.
-    await dispatch(payload('总结今天的工作'));
+  it('prepends the weixin channel frame on fresh spawn, not on reuse sendMessage', async () => {
+    // Fresh spawn: the dispatcher wraps the message with the channel frame
+    // (收件/入库/问答/文件回传 mechanics + wiki-query routing). The frame replaced
+    // the old --append-system-prompt-file injection that the CLI silently
+    // dropped — a message prepend always reaches the model.
+    await dispatch(payload('介绍一下韩立'));
     assert.equal(mock.createRunCalls.length, 1);
-    assert.equal(mock.createRunCalls[0]!.appendSystemPromptFile, WEIXIN_SYS_PROMPT_FILE);
-    assert.equal(mock.createRunCalls[0]!.message, '总结今天的工作');
-    assert.doesNotMatch(mock.createRunCalls[0]!.message, /sysprompt/);
+    assert.ok(
+      mock.createRunCalls[0]!.message.includes('微信入口助手'),
+      'fresh-spawn message must carry the weixin channel frame',
+    );
+    assert.ok(
+      mock.createRunCalls[0]!.message.includes('介绍一下韩立'),
+      'fresh-spawn message must still contain the user text',
+    );
 
     const run1 = mock.createRunCalls[0]!.runId;
     mock.emit(run1, { type: 'turn_end', stopReason: 'end_turn' });
     await settle();
 
-    // Reuse: sendMessage gets the clean message only. The prompt file is
-    // intentionally NOT re-passed — the live process already carries it.
+    // Reuse: sendMessage gets the clean message only. The frame is intentionally
+    // NOT re-prepended — the live process already carries it from its first turn.
     await dispatch(payload('再问一个'));
     assert.equal(mock.createRunCalls.length, 1, 'reuse must not spawn a new run');
     assert.equal(mock.sendMessageCalls.length, 1);
-    assert.equal(mock.sendMessageCalls[0]!.message, '再问一个');
+    assert.equal(mock.sendMessageCalls[0]!.message, '再问一个', 'reuse message must be clean (no frame)');
+    assert.ok(
+      !mock.sendMessageCalls[0]!.message.includes('微信入口助手'),
+      'reuse message must not re-carry the frame',
+    );
   });
 
-  it('re-derives the wiki prompt file when a queued message drains into a fresh spawn', async () => {
-    // Regression: a queued follow-up used to carry appendSystemPromptFile=
-    // undefined (frozen at queue time), so if it drained into a fresh spawn
-    // (run died / timed out) the new process lost the wiki role frame. The
-    // dispatcher now derives the file at spawn time, so the fresh spawn still
-    // gets it.
+  it('re-frames the message when a queued message drains into a fresh spawn', async () => {
+    // Regression analog: a queued follow-up that drains into a fresh spawn (run
+    // died / timed out) must get the channel frame re-prepended — the new
+    // process does NOT carry the frame from the dead one.
     await dispatch(payload('first'));
     const run1 = mock.createRunCalls[0]!.runId;
 
@@ -288,11 +296,11 @@ describe('WeixinRunDispatcher multi-turn run reuse', () => {
     await settle(); // let drainQueue → fresh-spawn dispatch run
 
     assert.equal(mock.createRunCalls.length, 2, 'queued msg drained into a fresh spawn');
-    assert.equal(
-      mock.createRunCalls[1]!.appendSystemPromptFile,
-      WEIXIN_SYS_PROMPT_FILE,
-      'fresh spawn from a drained queue must still carry the wiki prompt file',
+    assert.ok(
+      mock.createRunCalls[1]!.message.includes('微信入口助手'),
+      'fresh spawn from a drained queue must re-carry the channel frame',
     );
+    assert.ok(mock.createRunCalls[1]!.message.includes('second'));
     assert.equal(mock.sendMessageCalls.length, 0, 'dead run is not sent a message');
   });
 

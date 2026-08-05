@@ -2,7 +2,7 @@
 
 # 📚 Molio
 
-**Build your local second brain — AI-powered, your data stays yours.**
+**AI that knows your work. Local-first, and every byte stays yours.**
 
 [English](README.md) · [中文](README_zh.md) · [🌐 Official Website](https://molio.cn/)
 
@@ -15,7 +15,7 @@
 
 ---
 
-Molio is a **local-first** desktop application that unifies knowledge management, AI writing, and content publishing. Open your existing Obsidian vault, write with Claude Code / Codex / Gemini in a beautiful graphical interface, and publish to 30+ platforms — all your data stays on your machine, never touching third-party servers.
+Generic chatbots draw on the internet at large. Molio draws on your library. It is a **local-first** workbench that plugs Claude Code, Codex, and other AI runtimes into your Obsidian vault: they read what you have accumulated, research, analyze, and create, then write the results back into the vault. The longer you use it, the better it knows you. Everything runs on your machine, never through a third-party server.
 
 ### 🌟 Why Molio?
 
@@ -36,7 +36,7 @@ A single Molio instance can serve multiple channels in parallel. Most channels c
 |---------|:----:|:-----:|:----:|:-----:|:-----:|
 | **Web Console** *(default)* | ✅ | ✅ | ✅ | ✅ | — |
 | **WeChat** | ✅ | ✅ | ✅ | ⏳ | ⏳ |
-| **Feishu** | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ |
+| **Feishu** | ✅ | ✅ | ✅ | ⏳ | ✅ |
 | Telegram | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ |
 | Slack | ⏳ | ⏳ | ⏳ | — | ⏳ |
 | Discord | ⏳ | ⏳ | ⏳ | — | ⏳ |
@@ -82,6 +82,48 @@ Download the latest release from [GitHub Releases](https://github.com/zhuzhaoyun
 - **macOS**: `Molio-x.x.x.dmg`
 
 Install and launch. On first run, you'll be guided to configure an AI runtime CLI (e.g., Claude Code, Codex, Gemini).
+
+### 🐳 Docker / NAS Deployment (self-hosted)
+
+Run Molio as a self-hosted web service on a NAS or server. A single container bundles the daemon, web UI, and Claude Code CLI, and works on both `linux/amd64` and `linux/arm64` — Synology, QNAP, TerraMaster, TrueNAS, Unraid, and most other NAS devices.
+
+> **⚠️ How this differs from the desktop app (read before deploying)**
+>
+> - **Browser access only — there is no desktop client for this mode.** The Electron desktop app only ever talks to the daemon it launches locally (`localhost`); it **cannot** connect to a container running on a remote NAS/server.
+> - **The daemon runs inside the container and can only read/write directories mounted into it.** The desktop workflow of "pick any local folder as a knowledge base via a folder picker" does not apply here — the browser has no folder picker, so when you add a knowledge base you **type a container-internal path** (e.g. `/vaults/your-folder`, not the NAS host path).
+> - To expose folders as knowledge bases, mount them under `/vaults` in `docker-compose.yml` `volumes`. Your data still stays entirely yours (on your NAS) — only the access model changes, from "desktop app" to "browser + mounted volumes".
+
+**One-click install** (requires Docker + Docker Compose v2):
+
+```bash
+# China (recommended)
+curl -fsSL https://molio-releases.oss-cn-guangzhou.aliyuncs.com/script/install.sh | bash
+# Overseas
+curl -fsSL https://raw.githubusercontent.com/zhuzhaoyun/Molio/main/install.sh | bash
+# Offline (clone the repo first, then run the bundled script)
+bash install.sh
+```
+
+The script asks for your knowledge-base directory and port, then pulls the image and starts the service. When it finishes, open `http://<your-server-ip>:3100`, then go to **Settings → Runtimes** to configure your AI model and API key. On first boot Molio **auto-creates a default knowledge base** on the mounted directory, so you land straight inside — no manual setup.
+
+**Manual install** (if you prefer plain `docker compose`):
+
+```bash
+git clone https://github.com/zhuzhaoyun/Molio.git && cd Molio
+cp .env.example .env      # AI model is configured later in the web UI
+docker compose up -d      # then open http://<your-server-ip>:3100
+```
+
+**Everyday commands** (run inside the install directory, default `~/molio`):
+
+```bash
+docker compose logs -f                          # follow logs
+docker compose restart                          # restart
+docker compose pull && docker compose up -d     # update to the latest image
+docker compose down                             # stop
+```
+
+> Set `MOLIO_VAULT_PATH` in `.env` to mount your existing documents folder into the container (at `/vaults`). See [`install.sh`](install.sh) and [`.env.example`](.env.example) for every option.
 
 ### Development (from source)
 
@@ -178,7 +220,7 @@ Thanks to the authors and communities of these projects!
 
 File an issue on [GitHub](https://github.com/zhuzhaoyun/Molio/issues), or scan the QR code below to join our WeChat community:
 
-<img src="docs/img/qrcode.png" alt="WeChat Community QR Code" width="200" />
+<img src="apps/landing-page/images/qrcode.png" alt="WeChat Community QR Code" width="200" />
 
 ## 📄 License
 

@@ -115,6 +115,7 @@ export function useChat(options: UseChatOptions | string | null) {
     messages: core.messages,
     runId: core.runId,
     isRunning: core.isRunning,
+    activity: core.activity,
     conversationId: core.conversationId,
     send: core.send,
     submitToolResult: core.submitToolResult,

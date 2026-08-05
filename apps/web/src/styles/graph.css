@@ -261,12 +261,21 @@
   font-size: 11px;
 }
 
+/* Explicit dark theme (manual 深色 selection, regardless of OS) */
+[data-theme="dark"] .graph-legend__label {
+  color: #AAA;
+}
+
+[data-theme="dark"] .graph-hint {
+  color: #999;
+}
+
 @media (prefers-color-scheme: dark) {
-  .graph-legend__label {
+  html:not([data-theme]) .graph-legend__label {
     color: #AAA;
   }
 
-  .graph-hint {
+  html:not([data-theme]) .graph-hint {
     color: #999;
   }
 }
@@ -297,15 +306,29 @@
   color: #8B5CF6;
 }
 
+/* Explicit dark theme (manual 深色 selection, regardless of OS) */
+[data-theme="dark"] .graph-settings-btn {
+  background: rgba(40, 40, 50, 0.8);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #AAA;
+}
+
+[data-theme="dark"] .graph-settings-btn:hover,
+[data-theme="dark"] .graph-settings-btn.is-active {
+  background: rgba(80, 60, 120, 0.3);
+  border-color: rgba(139, 92, 246, 0.6);
+  color: #C4B5FD;
+}
+
 @media (prefers-color-scheme: dark) {
-  .graph-settings-btn {
+  html:not([data-theme]) .graph-settings-btn {
     background: rgba(40, 40, 50, 0.8);
     border-color: rgba(255, 255, 255, 0.1);
     color: #AAA;
   }
 
-  .graph-settings-btn:hover,
-  .graph-settings-btn.is-active {
+  html:not([data-theme]) .graph-settings-btn:hover,
+  html:not([data-theme]) .graph-settings-btn.is-active {
     background: rgba(80, 60, 120, 0.3);
     border-color: rgba(139, 92, 246, 0.6);
     color: #C4B5FD;
@@ -478,66 +501,129 @@
 
 /* ── Dark Mode ── */
 
+/* Explicit dark theme (manual 深色 selection, regardless of OS) */
+[data-theme="dark"] .graph-settings-panel {
+  background: rgba(24, 24, 34, 0.94);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+}
+
+[data-theme="dark"] .graph-settings__tabs {
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+}
+
+[data-theme="dark"] .graph-settings__tab {
+  color: #777;
+}
+
+[data-theme="dark"] .graph-settings__tab:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: #AAA;
+}
+
+[data-theme="dark"] .graph-settings__tab.is-active {
+  background: rgba(139, 92, 246, 0.15);
+  color: #A78BFA;
+}
+
+[data-theme="dark"] .graph-settings__group-title {
+  color: #777;
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+}
+
+[data-theme="dark"] .graph-settings__label {
+  color: #AAA;
+}
+
+[data-theme="dark"] .graph-settings__checkbox {
+  color: #BBB;
+}
+
+[data-theme="dark"] .graph-settings__checkbox:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+[data-theme="dark"] .graph-settings__search {
+  background: #1A1A2E;
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #CCC;
+}
+
+[data-theme="dark"] .graph-settings__search:focus {
+  border-color: #A78BFA;
+  background: #1E1E32;
+}
+
+[data-theme="dark"] .graph-settings__select {
+  background: #1A1A2E;
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #CCC;
+}
+
+[data-theme="dark"] .graph-settings__select:focus {
+  border-color: #A78BFA;
+}
+
 @media (prefers-color-scheme: dark) {
-  .graph-settings-panel {
+  html:not([data-theme]) .graph-settings-panel {
     background: rgba(24, 24, 34, 0.94);
     border-color: rgba(255, 255, 255, 0.08);
     box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
   }
 
-  .graph-settings__tabs {
+  html:not([data-theme]) .graph-settings__tabs {
     border-bottom-color: rgba(255, 255, 255, 0.06);
   }
 
-  .graph-settings__tab {
+  html:not([data-theme]) .graph-settings__tab {
     color: #777;
   }
 
-  .graph-settings__tab:hover {
+  html:not([data-theme]) .graph-settings__tab:hover {
     background: rgba(255, 255, 255, 0.04);
     color: #AAA;
   }
 
-  .graph-settings__tab.is-active {
+  html:not([data-theme]) .graph-settings__tab.is-active {
     background: rgba(139, 92, 246, 0.15);
     color: #A78BFA;
   }
 
-  .graph-settings__group-title {
+  html:not([data-theme]) .graph-settings__group-title {
     color: #777;
     border-bottom-color: rgba(255, 255, 255, 0.06);
   }
 
-  .graph-settings__label {
+  html:not([data-theme]) .graph-settings__label {
     color: #AAA;
   }
 
-  .graph-settings__checkbox {
+  html:not([data-theme]) .graph-settings__checkbox {
     color: #BBB;
   }
 
-  .graph-settings__checkbox:hover {
+  html:not([data-theme]) .graph-settings__checkbox:hover {
     background: rgba(255, 255, 255, 0.03);
   }
 
-  .graph-settings__search {
+  html:not([data-theme]) .graph-settings__search {
     background: #1A1A2E;
     border-color: rgba(255, 255, 255, 0.1);
     color: #CCC;
   }
 
-  .graph-settings__search:focus {
+  html:not([data-theme]) .graph-settings__search:focus {
     border-color: #A78BFA;
     background: #1E1E32;
   }
 
-  .graph-settings__select {
+  html:not([data-theme]) .graph-settings__select {
     background: #1A1A2E;
     border-color: rgba(255, 255, 255, 0.1);
     color: #CCC;
   }
 
-  .graph-settings__select:focus {
+  html:not([data-theme]) .graph-settings__select:focus {
     border-color: #A78BFA;
   }
 

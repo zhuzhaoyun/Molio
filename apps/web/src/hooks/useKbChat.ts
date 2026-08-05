@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
+import type { ActivityInfo } from '@molio/contracts';
 import { useChatCore, type CreateRunContext, type ChatMessage } from './useChatCore';
 
 export type KbChatMode = 'qa' | 'build' | 'lint' | 'ingest';
@@ -16,6 +17,21 @@ function WIKI_INGEST_PROMPT(filePath: string, isDirectory = false): string {
   return `用 wiki-ingest skill 把这个文件加入 Wiki：${filePath}`;
 }
 
+/**
+ * qa 模式确定性触发：KB 问答面板里用户输入的问题是知识库问题，包一层显式触发语，
+ * 确保 agent 走 wiki-query skill 检索而非凭记忆作答。
+ *
+ * 只在会话首轮包裹（见 send）：后续多轮 follow-up（「再详细点」「继续」）的上下文
+ * 里已经有首轮触发语 + agent 正在执行的 wiki-query 流程，每轮重复包裹只会让消息都
+ * 顶着「（知识库问答：…）」前缀、污染对话历史。
+ *
+ * 这是主界面的双保险——vault 的 .claude/CLAUDE.md 还有一条常驻 wiki-query 规则
+ * （skill-installer 注入）覆盖通用/微信场景；此处针对专用 KB 问答面板再加确定性触发。
+ */
+function WIKI_QUERY_TRIGGER(question: string): string {
+  return `（知识库问答：请用 wiki-query skill，先读 wiki/INDEX.md 检索相关页面再回答，不要凭训练记忆作答）\n${question}`;
+}
+
 export interface UseKbChatOptions {
   agentId: string | null;
   vaultPath: string | null;
@@ -27,6 +43,8 @@ export interface KbChatState {
   mode: KbChatMode | null;
   messages: ChatMessage[];
   isRunning: boolean;
+  /** Live background subagent/workflow activity (wiki build L1 等)。 */
+  activity: ActivityInfo | null;
   /** 问答：只切 mode（预载 @当前文档），不 reset、不 cancel、不中断在跑的 run。 */
   openQa: () => void;
   /** wiki：reset 线程 + 设 mode + 自动发送（中断在跑的 run，一键开干）。 */
@@ -134,16 +152,27 @@ export function useKbChat(opts: UseKbChatOptions): KbChatState {
     reset();
   }, [reset]);
 
+  // qa 模式：用户自由输入且必为知识库问题 → 包显式 wiki-query 触发语（确定性触发）。
+  // 仅会话首轮包裹：conversationIdRef 在新会话（初始 / reset 后）为 null，首轮
+  // createRun 成功后置位——之后发出的消息都是同一会话的多轮 follow-up，不再包裹。
+  // 其它 mode（build/lint/ingest）的自动发送走各自 prompt，用户在这些 mode 手输的
+  // 消息按原样发出，不改写。
+  const send = useCallback((text: string) => {
+    const isFirstTurn = conversationIdRef.current == null;
+    chat.send(mode === 'qa' && isFirstTurn ? WIKI_QUERY_TRIGGER(text) : text);
+  }, [chat, mode]);
+
   return {
     mode,
     messages: chat.messages,
     isRunning: chat.isRunning,
+    activity: chat.activity,
     openQa,
     openWikiOp,
     queueWikiOp,
     openIngest,
     queueIngest,
-    send: chat.send,
+    send,
     cancel: chat.cancel,
     submitToolResult: chat.submitToolResult,
     close,

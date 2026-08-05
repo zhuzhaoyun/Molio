@@ -359,6 +359,16 @@
   color: var(--text-muted);
   flex-shrink: 0;
 }
+.tool-line-badge {
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  background-color: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-radius: 4px;
+  padding: 0 5px;
+  font-size: 10px;
+  line-height: 1.5;
+  flex-shrink: 0;
+}
 .tool-line-arg {
   color: var(--text-soft);
   overflow: hidden;

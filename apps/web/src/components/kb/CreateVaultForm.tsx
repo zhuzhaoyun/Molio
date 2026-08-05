@@ -21,6 +21,10 @@ export function CreateVaultForm({ onCreate, onCancel, isLoading }: CreateVaultFo
   const [name, setName] = useState('');
   const [vaultPath, setVaultPath] = useState('');
   const [description, setDescription] = useState('');
+  // The desktop app exposes a native folder picker; in a browser
+  // (Docker/NAS deploy) it does not, so we guide the user to type the
+  // container-internal mount path instead.
+  const isDesktop = Boolean(window.__electron__?.showDirectoryPicker);
 
   const handleBrowse = useCallback(async () => {
     if (!window.__electron__?.showDirectoryPicker) {
@@ -85,7 +89,7 @@ export function CreateVaultForm({ onCreate, onCancel, isLoading }: CreateVaultFo
           <input
             className="vm-form-input"
             type="text"
-            placeholder="指定新仓库的存放位置"
+            placeholder={isDesktop ? '指定新仓库的存放位置' : '挂载进容器的路径，例如 /vaults/笔记'}
             value={vaultPath}
             onChange={(e) => setVaultPath(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -94,6 +98,12 @@ export function CreateVaultForm({ onCreate, onCancel, isLoading }: CreateVaultFo
             浏览
           </button>
         </div>
+        {!isDesktop && (
+          <p className="vm-form-hint">
+            服务器 / NAS 部署请填写挂载进容器的路径（如 <code>/vaults</code> 或{' '}
+            <code>/vaults/笔记</code>），而不是 NAS 宿主机路径——否则文件会写进容器临时层，重建后丢失。
+          </p>
+        )}
       </div>
 
       <div className="vm-form-group">

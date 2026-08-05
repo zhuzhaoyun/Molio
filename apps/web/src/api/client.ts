@@ -30,6 +30,30 @@ export interface WeixinConfig {
   defaultCwd?: string;
 }
 
+export type FeishuLoginStatus = 'idle' | 'connecting' | 'connected' | 'error';
+
+export interface FeishuStatus {
+  enabled: boolean;
+  loginStatus: FeishuLoginStatus;
+  connected: boolean;
+  lastError: string | null;
+  lastMessageAt: number | null;
+  activeRunId: string | null;
+  hasCredentials: boolean;
+  hasAppConfig: boolean;
+  connectionState?: 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'error';
+}
+
+export interface FeishuConfig {
+  enabled?: boolean;
+  appId?: string;
+  appSecret?: string;
+  baseUrl?: string;
+  credentialsPath?: string;
+  defaultAgentId?: string;
+  defaultCwd?: string;
+}
+
 const BASE = '/api';
 
 export const api = {
@@ -307,6 +331,22 @@ export const api = {
     }
   },
 
+  async updateConversation(
+    conversationId: string,
+    patch: { title?: string; pinned?: boolean },
+  ): Promise<Conversation> {
+    const res = await fetch(`${BASE}/conversations/${conversationId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      throw new Error(err?.error?.message ?? `Failed to update conversation: ${res.status}`);
+    }
+    return res.json();
+  },
+
   async rewindResend(conversationId: string, req: { newContent: string; agentId?: string; cwd?: string }): Promise<{ runId: string; conversationId: string }> {
     const res = await fetch(`${BASE}/conversations/${conversationId}/rewind-resend`, {
       method: 'POST',
@@ -360,6 +400,42 @@ export const api = {
   async disconnectWeixin(): Promise<WeixinStatus> {
     const res = await fetch(`${BASE}/weixin/disconnect`, { method: 'POST' });
     if (!res.ok) throw new Error(`Failed to disconnect Weixin: ${res.status}`);
+    return res.json();
+  },
+
+  // ─── Feishu 自建应用 ───
+
+  async getFeishuStatus(): Promise<FeishuStatus> {
+    const res = await fetch(`${BASE}/feishu/status`);
+    if (!res.ok) throw new Error(`Failed to fetch Feishu status: ${res.status}`);
+    return res.json();
+  },
+
+  async updateFeishuConfig(config: FeishuConfig): Promise<FeishuStatus> {
+    const res = await fetch(`${BASE}/feishu/config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    });
+    if (!res.ok) throw new Error(`Failed to update Feishu config: ${res.status}`);
+    return res.json();
+  },
+
+  async startFeishu(): Promise<FeishuStatus> {
+    const res = await fetch(`${BASE}/feishu/start`, { method: 'POST' });
+    if (!res.ok) throw new Error(`Failed to start Feishu: ${res.status}`);
+    return res.json();
+  },
+
+  async stopFeishu(): Promise<FeishuStatus> {
+    const res = await fetch(`${BASE}/feishu/stop`, { method: 'POST' });
+    if (!res.ok) throw new Error(`Failed to stop Feishu: ${res.status}`);
+    return res.json();
+  },
+
+  async disconnectFeishu(): Promise<FeishuStatus> {
+    const res = await fetch(`${BASE}/feishu/disconnect`, { method: 'POST' });
+    if (!res.ok) throw new Error(`Failed to disconnect Feishu: ${res.status}`);
     return res.json();
   },
 
@@ -591,6 +667,102 @@ export const api = {
     return res.json();
   },
 
+  // ─── Preload ───
+
+  async getPreloadStatus(): Promise<Record<string, { status: string; progress?: number; message?: string; error?: string }>> {
+    const res = await fetch(`${BASE}/preload/status`);
+    if (!res.ok) throw new Error(`Failed to fetch preload status: ${res.status}`);
+    const data = await res.json();
+    return data.statuses;
+  },
+
+  /**
+   * Start preloading skills. Returns a ReadableStream of SSE progress events.
+   * Pass signal to allow cancellation.
+   */
+  async startPreload(
+    skills: string[],
+    onProgress: (event: { skill: string; status: string; progress: number; message: string }) => void,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const res = await fetch(`${BASE}/preload/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ skills }),
+      signal,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: `Preload start failed: ${res.status}` }));
+      throw new Error(err.error ?? `Preload start failed: ${res.status}`);
+    }
+
+    const reader = res.body?.getReader();
+    if (!reader) {
+      throw new Error('No response stream');
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const event = JSON.parse(line.slice(6));
+            onProgress(event);
+          } catch {
+            // Skip malformed
+          }
+        }
+      }
+    }
+  },
+
+  async dismissPreload(skills: string[]): Promise<void> {
+    const res = await fetch(`${BASE}/preload/dismiss`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ skills }),
+    });
+    if (!res.ok) throw new Error(`Failed to dismiss preload: ${res.status}`);
+  },
+
+  async undismissPreload(skills: string[]): Promise<void> {
+    const res = await fetch(`${BASE}/preload/undismiss`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ skills }),
+    });
+    if (!res.ok) throw new Error(`Failed to undismiss preload: ${res.status}`);
+  },
+
+  /** Pause in-progress preloads, keeping partial artifacts for resume. */
+  async pausePreload(skills: string[]): Promise<void> {
+    const res = await fetch(`${BASE}/preload/pause`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ skills }),
+    });
+    if (!res.ok) throw new Error(`Failed to pause preload: ${res.status}`);
+  },
+
+  /** Stop preloads AND delete partial artifacts (clean reset to missing). */
+  async stopPreload(skills: string[]): Promise<void> {
+    const res = await fetch(`${BASE}/preload/stop`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ skills }),
+    });
+    if (!res.ok) throw new Error(`Failed to stop preload: ${res.status}`);
+  },
+
   // ─── Graph ───
 
   async getGraph(vaultId: string): Promise<GraphData> {
@@ -599,3 +771,4 @@ export const api = {
     return res.json();
   },
 };
+

@@ -7,6 +7,7 @@ import type {
   AgentEvent, AgentInfo, RuntimeAgentDef, RunInfo, RunStatus, ChatMessage,
 } from '@molio/contracts';
 import { getAgentDef, listAgentDefs } from './runtimes/registry.js';
+import { TranscriptWatcher, claudeProjectDir } from './activity/transcript-watcher.js';
 import { resolveAgentBinary, probeVersion, needsShellOnWindows } from './runtimes/launch.js';
 import { buildSpawnEnv, createStderrDecoder } from './runtimes/env.js';
 import { createClaudeStreamHandler } from './streams/claude-stream.js';
@@ -22,6 +23,7 @@ import { buildTranscript, type TranscriptMessage } from './transcript.js';
 import type { RunState, BufferedEvent } from '../types.js';
 import { TurnTextCollector } from './turn-text-collector.js';
 import { dbgLog } from './debug-log.js';
+import { ThrottledWarn } from './throttled-warn.js';
 
 const TERMINAL_STATUSES = new Set<RunStatus>(['succeeded', 'failed', 'canceled']);
 const MAX_EVENTS = 2_000;
@@ -84,10 +86,12 @@ export interface CreateRunOptions {
   /** Called when a turn completes with accumulated text content. */
   onTurnComplete?: (text: string, runId: string) => void;
   /**
-   * Path to a file whose contents are appended to the agent's built-in system
-   * prompt at spawn time (e.g. the wiki/vault role frame, materialized by
-   * `ensureWikiSysPromptFiles`). Only consumed on a fresh spawn — multi-turn
-   * follow-ups reuse the same process, which already carries it from turn 1.
+   * Path to a file with the channel's always-on role frame, appended to the
+   * agent's system prompt on fresh spawns. Only used by channels that still
+   * deliver their frame via --append-system-prompt-file (feishu); weixin
+   * prepends its frame to the first message instead (see core/weixin/
+   * dispatcher.ts). Multi-turn: only the fresh spawn carries it — follow-ups
+   * reuse the same process, which already carries it from turn 1.
    */
   appendSystemPromptFile?: string;
 }
@@ -95,6 +99,9 @@ export interface CreateRunOptions {
 export class RunManager {
   private runs = new Map<string, RunState>();
   private runsLogDir: string;
+  // Throttles the per-event "emit listeners=0" diagnostic per run — kept on the
+  // dbgLog channel (stdout + debug file, NOT stderr) so it never reads as ERROR.
+  private readonly noSubscriberWarn = new ThrottledWarn({ sink: (m) => dbgLog(m) });
 
   constructor() {
     this.runsLogDir = path.join(os.homedir(), '.molio', 'runs');
@@ -178,6 +185,15 @@ export class RunManager {
       lastStopReason: run.lastStopReason,
       error: run.error,
     }));
+  }
+
+  /** Number of runs that have not yet reached a terminal state. */
+  getActiveRunCount(): number {
+    let count = 0;
+    for (const run of this.runs.values()) {
+      if (!TERMINAL_STATUSES.has(run.status)) count++;
+    }
+    return count;
   }
 
   onEvent(runId: string, callback: (event: AgentEvent) => void): (() => void) | null {
@@ -270,8 +286,8 @@ export class RunManager {
       opts.message,
       {
         model: opts.model,
-        // Path to a file with the wiki/vault role frame (materialized at
-        // daemon startup by ensureWikiSysPromptFiles). Passed as
+        // Path to a file with the channel role frame (materialized at daemon
+        // startup by ensureWikiSysPromptFiles). Passed as
         // --append-system-prompt-file <path> — NOT inline text, which broke
         // argv parsing on Windows and ate --dangerously-skip-permissions.
         appendSystemPromptFile: opts.appendSystemPromptFile,
@@ -442,6 +458,22 @@ export class RunManager {
 
       if (ev.type === 'usage') {
         this.maybeCloseStdin(run);
+      }
+
+      // The stream init event carries the Claude Code session id → start the
+      // transcript watcher so background subagent/workflow activity surfaces
+      // in the UI while the parent stream is silent. claude runtime only.
+      if (ev.type === 'status' && ev.sessionId && def.id === 'claude' && !run.activityWatcher) {
+        // Same cwd resolution as spawn() above — the transcript project dir is
+        // derived from the directory Claude Code was launched in.
+        const watchCwd = path.resolve(opts.cwd || agentConfig.env?.['MOLIO_CWD'] || process.cwd());
+        const watcher = new TranscriptWatcher(
+          claudeProjectDir(watchCwd),
+          `${ev.sessionId}.jsonl`,
+          (activity) => this.emitEvent(run, { type: 'activity', activity }),
+        );
+        run.activityWatcher = watcher;
+        watcher.start();
       }
     });
 
@@ -877,8 +909,13 @@ export class RunManager {
       // Diagnostic: an event was emitted but no SSE stream is subscribed. If this
       // happens mid-run (not terminal cleanup), it's the smoking gun for assumption 3
       // — the SSE listener was cleaned up (e.g. spurious abort) while the run is still
-      // active, so the frontend never receives this event.
-      dbgLog(`emit listeners=0 (NO SSE SUBSCRIBER) runId=${run.id} type=${event.type} status=${run.status}`);
+      // active, so the frontend never receives this event. This is on the per-event
+      // hot path, so throttle per runId — a run that lost its subscriber would
+      // otherwise log this for every remaining event (throttled-warn.ts).
+      this.noSubscriberWarn.warn(
+        run.id,
+        `emit listeners=0 (NO SSE SUBSCRIBER) runId=${run.id} type=${event.type} status=${run.status}`,
+      );
     }
     for (const listener of run.eventListeners) {
       try { listener(event); } catch { /* listener error, skip */ }
@@ -900,6 +937,17 @@ export class RunManager {
     run.exitCode = code;
     run.stdinOpen = false;
     run.updatedAt = Date.now();
+
+    // Stop subagent activity tracking; emit a final snapshot so the UI can
+    // flip running workers to their terminal state.
+    if (run.activityWatcher) {
+      const final = run.activityWatcher.finalize();
+      run.activityWatcher.stop();
+      run.activityWatcher = undefined;
+      if (final.agents.length > 0) {
+        this.emitEvent(run, { type: 'activity', activity: final });
+      }
+    }
 
     // If the run failed with a tracked error that hasn't been sent yet, emit it
     // so the frontend can display it. Skip if an error event was already emitted
@@ -927,6 +975,10 @@ export class RunManager {
     setTimeout(() => {
       if (TERMINAL_STATUSES.has(run.status)) {
         this.runs.delete(run.id);
+        // Drop this run's throttle state too — noSubscriberWarn is keyed by
+        // run.id (a UUID), so without this its state map grows unbounded over
+        // the daemon's lifetime (one entry per run that lost its subscriber).
+        this.noSubscriberWarn.delete(run.id);
       }
     }, RUN_TTL_MS).unref?.();
   }

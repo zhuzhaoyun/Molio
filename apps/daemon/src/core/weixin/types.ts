@@ -1,7 +1,11 @@
 export type WeixinLoginStatus = 'idle' | 'waiting_scan' | 'scanned' | 'logged_in' | 'error';
 
-/** Internal connection state machine states. */
-export type ConnectionState = 'idle' | 'connecting' | 'polling' | 'unhealthy' | 'expired';
+// ConnectionState and OutboundMediaItem are shared across channels — re-export
+// from the cross-channel types module so existing callers keep importing from
+// 'weixin/types' without breakage. New code should import from
+// 'core/channels/types' directly.
+import type { ConnectionState } from '../channels/types.js';
+export type { ConnectionState, OutboundMediaItem } from '../channels/types.js';
 
 /** Weixin CDN base URL for media upload/download. */
 export const CDN_BASE_URL = 'https://novac2c.cdn.weixin.qq.com/c2c';
@@ -43,16 +47,6 @@ export interface UploadedFileInfo {
   fileSize: number;
   /** Ciphertext file size (AES-128-ECB + PKCS7); used for hd_size/mid_size. */
   fileSizeCiphertext: number;
-}
-
-/** A local file the AI produced this turn that should be delivered to Weixin. */
-export interface OutboundMediaItem {
-  /** Absolute local file path. */
-  filePath: string;
-  /** Best-effort file name (basename). */
-  fileName: string;
-  /** Delivery channel: image, file, or video. */
-  kind: 'image' | 'file' | 'video';
 }
 
 export interface WeixinCredentials {

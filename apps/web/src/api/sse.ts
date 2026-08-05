@@ -53,7 +53,13 @@ export function subscribeToRun(
     }
     try {
       const envelope: SSEEnvelope = JSON.parse(msg.data);
-      console.debug('[sse] recv readyState=' + es.readyState + ' seq=' + envelope.seq + ' type=' + envelope.event.type);
+      // DEBUG-level: dev only. This fires per SSE frame — in a production
+      // build with DevTools open, Chromium retains every console message for
+      // the session, so per-frame debug output grows renderer memory without
+      // bound over a day of use. Vite strips this block from prod builds.
+      if (import.meta.env.DEV) {
+        console.debug('[sse] recv readyState=' + es.readyState + ' seq=' + envelope.seq + ' type=' + envelope.event.type);
+      }
       onEvent(envelope.event, envelope.seq);
     } catch {
       // Ignore parse errors for any non-JSON keepalive variant
@@ -77,7 +83,9 @@ export function subscribeToRun(
   };
 
   // Log open lifecycle once so we can see when a subscription is (re)established.
-  console.debug('[sse] subscribe runId=' + runId + ' openSilent=' + openSilent);
+  if (import.meta.env.DEV) {
+    console.debug('[sse] subscribe runId=' + runId + ' openSilent=' + openSilent);
+  }
 
   return es;
 }

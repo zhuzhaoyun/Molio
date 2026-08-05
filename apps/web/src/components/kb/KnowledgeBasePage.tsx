@@ -11,7 +11,7 @@ import type { KbChatState } from '../../hooks/useKbChat';
 import { useKbTabs, MAX_TABS } from '../../hooks/useKbTabs';
 import { kbTabsStore } from '../../stores/kbTabsStore';
 import { vaultStore } from '../../stores/vaultStore';
-import { KbFilePanel } from './KbFilePanel';
+import { KbFilePanel, type KbFilePanelHandle } from './KbFilePanel';
 import { KbTabBar } from './KbTabBar';
 import { KbMainContent } from './KbMainContent';
 import { KbChatPanel } from './KbChatPanel';
@@ -70,6 +70,18 @@ function summarizeErrors(errors: Array<{ file: string; reason: string }>): strin
   return parts.join('，');
 }
 
+/** Find a tree node by its path — searches the full (unfiltered) tree so we
+ *  get the real children even when ctxMenu.node came from a filtered view. */
+function findNodeByPath(tree: TreeNode[], targetPath: string): TreeNode | null {
+  const stack: TreeNode[] = [...tree];
+  while (stack.length) {
+    const n = stack.pop()!;
+    if (n.path === targetPath) return n;
+    if (n.type === 'directory' && n.children) stack.push(...n.children);
+  }
+  return null;
+}
+
 /** Walk the file tree to find a file whose name or path matches `needle` (case-insensitive).
  *  Wikilinks may be bare page names (`[[腾讯程序员]]`) or path-qualified (`[[写作/案例/放弃Dify爆款拆解]]`). */
 function findFileByStem(nodes: TreeNode[], needle: string): string | null {
@@ -88,6 +100,40 @@ function findFileByStem(nodes: TreeNode[], needle: string): string | null {
     }
   }
   return null;
+}
+
+/** Count recursive descendants of a directory node — files and folders separately.
+ *  The node itself is not counted. */
+function countDescendants(node: TreeNode): { files: number; folders: number } {
+  let files = 0;
+  let folders = 0;
+  const walk = (n: TreeNode) => {
+    if (n.type === 'file') {
+      files++;
+    } else {
+      folders++;
+      n.children?.forEach(walk);
+    }
+  };
+  node.children?.forEach(walk);
+  return { files, folders };
+}
+
+/** Build a delete-confirmation message that surfaces the concrete file/folder
+ *  counts inside the folder, instead of the opaque "及其所有内容". */
+function buildFolderDeleteMessage(node: TreeNode, tree: TreeNode[]): string {
+  const full = findNodeByPath(tree, node.path) ?? node;
+  const { files, folders } = countDescendants(full);
+  if (files > 0 && folders > 0) {
+    return `确定删除文件夹 "${node.name}"？将一并删除 ${files} 个文件、${folders} 个子文件夹。`;
+  }
+  if (files > 0) {
+    return `确定删除文件夹 "${node.name}"？将一并删除 ${files} 个文件。`;
+  }
+  if (folders > 0) {
+    return `确定删除文件夹 "${node.name}"？将一并删除 ${folders} 个子文件夹。`;
+  }
+  return `确定删除空文件夹 "${node.name}"？`;
 }
 
 export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenChange, registerKbChatOnComplete, onOpenConversation }: KnowledgeBasePageProps) {
@@ -139,6 +185,9 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
   // Save toast state
   const [saveToast, setSaveToast] = useState<string | null>(null);
   const saveToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Ref to KbFilePanel for imperative "reveal path" calls (post-move locate).
+  const filePanelRef = useRef<KbFilePanelHandle>(null);
 
   // Input dialog state (replaces window.prompt)
   const [inputDialog, setInputDialog] = useState<{
@@ -730,7 +779,7 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
           setConfirmDialog({
             show: true,
             title: '删除文件夹',
-            message: `确定删除文件夹 "${node.name}" 及其所有内容？`,
+            message: buildFolderDeleteMessage(node, kb.tree),
             confirmLabel: '删除',
             danger: true,
             onConfirm: async () => {
@@ -769,37 +818,58 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
   }, []);
 
   const handleMoveFile = useCallback(async (srcPath: string, destDir: string) => {
-    if (!kb.activeVault) return;
+    // Read active vault from the synchronous store — the React `vaults` state
+    // lags one render pass behind `vaultStore.setVaults`, so `kb.activeVault`
+    // can still be null immediately after vault auto-selection even though the
+    // store has the vault. Reading from the store avoids the stale closure.
+    const activeVault = vaultStore.getActiveVault();
+    if (!activeVault) return;
     const fileName = srcPath.split('/').pop() ?? srcPath;
-    const newPath = `${destDir}/${fileName}`;
+    // destDir === '' means vault root — don't emit a leading '/'.
+    const newPath = destDir ? `${destDir}/${fileName}` : fileName;
+    const srcNode = findNodeByPath(kb.tree, srcPath);
+    const isDirMove = srcNode?.type === 'directory';
 
-    // Check for existing file at target
-    const targetExists = kb.tree.some((n) => {
-      const walk = (nodes: TreeNode[]): boolean => {
-        for (const node of nodes) {
-          if (node.path === newPath) return true;
-          if (node.type === 'directory' && node.children && walk(node.children)) return true;
-        }
-        return false;
-      };
-      return walk([n]);
-    });
-
-    if (targetExists) {
-      showToast('目标位置已存在同名文件');
+    // Conflict: any entry (file or folder) already at target path.
+    if (findNodeByPath(kb.tree, newPath)) {
+      showToast(isDirMove ? '目标位置已存在同名文件夹' : '目标位置已存在同名文件');
       return;
     }
 
     try {
       await kb.renameFile(srcPath, newPath);
-      const newFileName = newPath.split('/').pop() ?? newPath;
-      const existingTabForNewPath = tabs.tabs.find(t => t.id === `file:${newPath}`);
-      if (existingTabForNewPath) tabs.closeTab(`file:${newPath}`);
-      tabs.updateTab(`file:${srcPath}`, { id: `file:${newPath}`, title: newFileName, vaultId: kb.activeVault?.id });
+      if (!isDirMove) {
+        // Single-file move: re-point the one tab whose id matches srcPath.
+        const newFileName = newPath.split('/').pop() ?? newPath;
+        const existingTabForNewPath = tabs.tabs.find(t => t.id === `file:${newPath}`);
+        if (existingTabForNewPath) tabs.closeTab(`file:${newPath}`);
+        tabs.updateTab(`file:${srcPath}`, { id: `file:${newPath}`, title: newFileName, vaultId: activeVault.id });
+      } else {
+        // Directory move: re-prefix every open tab whose id sits under srcPath/.
+        const oldPrefix = `file:${srcPath}/`;
+        const newPrefix = `file:${newPath}/`;
+        const affectedTabs = tabs.tabs.filter(
+          t => t.vaultId === activeVault.id && t.id.startsWith(oldPrefix),
+        );
+        for (const tab of affectedTabs) {
+          const suffix = tab.id.slice(oldPrefix.length);
+          const newId = `${newPrefix}${suffix}`;
+          // Close any pre-existing tab at the new id (e.g. user previously
+          // opened the destination path) before renaming — updateTab would
+          // otherwise leave two tabs sharing the same id.
+          const existing = tabs.tabs.find(t => t.id === newId && t.id !== tab.id);
+          if (existing) tabs.closeTab(newId);
+          tabs.updateTab(tab.id, { id: newId, vaultId: activeVault.id });
+        }
+      }
+      // After the tree refreshes, expand ancestors of the new path + scroll the
+      // node into view + briefly flash it. Delay lets VaultWatcher push the
+      // updated tree to the client first.
+      setTimeout(() => filePanelRef.current?.revealPath(newPath), 50);
     } catch (err) {
-      showToast(`移动文件失败：${err instanceof Error ? err.message : String(err)}`);
+      showToast(`移动${isDirMove ? '文件夹' : '文件'}失败：${err instanceof Error ? err.message : String(err)}`);
     }
-  }, [kb.activeVault?.id, kb.tree, kb.renameFile, tabs, showToast]);
+  }, [kb.tree, kb.renameFile, tabs, showToast]);
 
   const handleImportFiles = useCallback(async (files: File[], targetDir: string) => {
     if (!kb.activeVault) return;
@@ -922,6 +992,7 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
     <div className="kb-shell">
       {/* File Panel */}
       <KbFilePanel
+        ref={filePanelRef}
         width={kb.panelWidth}
         tree={kb.tree}
         selectedFile={kb.selectedFile}
@@ -1030,6 +1101,7 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
           mode={kbChat.mode}
           messages={kbChat.messages}
           isRunning={kbChat.isRunning}
+          activity={kbChat.activity}
           filePath={kbChat.mode === 'qa' ? kb.selectedFile : null}
           vaultId={kb.activeVault?.id ?? null}
           selectedText={qaSelectedText}

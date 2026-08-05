@@ -7,8 +7,21 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ThrottledWarn } from './throttled-warn.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// The "skills source not found" warnings can fire once per skill for every
+// vault on each sync when the packaged skills dir is missing/broken — bounded
+// per run but multiplied by (skills × vaults). Throttle per source path so a
+// broken install surfaces once, not once-per-skill-per-vault (see
+// throttled-warn.ts). Genuine per-skill install failures stay on console.error.
+const skillWarn = new ThrottledWarn();
+
+/** Reset the skills throttle — test hook so cases start from a clean slate. */
+export function resetSkillWarnState(): void {
+  skillWarn.reset();
+}
 
 /** Built-in skills shipped with Molio. */
 const BUILTIN_SKILLS = [
@@ -17,12 +30,16 @@ const BUILTIN_SKILLS = [
   // all office→markdown conversions (GPU-accelerated OCR + layout + tables).
   'docling',
   // Wiki operations — on-demand skills the agent invokes by intent
-  // (构建/入库/健康检查/归档). Replaces the old wikiOperation prompt-prepend
+  // (构建/入库/健康检查/归档/问答). Replaces the old wikiOperation prompt-prepend
   // path so chat-typed verbs and UI buttons hit the same procedure.
   'wiki-build',
   'wiki-ingest',
   'wiki-lint',
   'wiki-save',
+  // wiki-query — 知识库问答检索流程。Replaces the broken --append-system-prompt-file
+  // injection (silently dropped by the CLI): retrieval now lives in an on-demand
+  // skill, triggered by the always-on CLAUDE.md rule below + the KB qa panel.
+  'wiki-query',
   // Remotion — programmatic video creation in React/TypeScript, rendered to
   // MP4. Used by the /remotion command to scaffold video projects, animate
   // with interpolate/spring, sequence scenes, add audio/captions, and render.
@@ -240,6 +257,47 @@ const REMOTION_RULE_BLOCK = [
 ].join('\n');
 
 /**
+ * Sentinel for the knowledge-base-first retrieval rule.
+ */
+const WIKI_QUERY_RULE_SENTINEL = '<!-- molio:wiki-query-preference -->';
+
+/**
+ * Always-on rule that makes the agent retrieve from the vault's wiki BEFORE
+ * any vault-topic work, instead of working from training memory.
+ *
+ * This replaces the old WIKI_QUERY_PROMPT system-prompt injection, which rode
+ * `--append-system-prompt-file` — a flag the CLI silently drops in some
+ * environments (verified: the appended frame never reached the model, so vault
+ * Q&A was answered purely from memory, ignoring the built wiki). CLAUDE.md is
+ * loaded natively by the CLI and reliably reaches the model (same channel as
+ * the docling/remotion rules above), so the retrieval instruction actually lands.
+ *
+ * Deliberately ONLY a trigger policy (when to retrieve + that reading the cheap
+ * root index IS the relevance check + the exemption list). The HOW (drill-down
+ * flow, citations, grounding creation in vault material) lives in the wiki-query
+ * skill — duplicating it here is what made earlier revisions bloat to ~25 lines.
+ * Failure modes this wording guards, both real incidents: (1) Q&A-only framing
+ * with "writing" exempted let vault-topic creation skip retrieval — fixed by
+ * making the trigger form-agnostic (subject decides, not task type); (2) an
+ * a-priori "does the vault cover this?" gate forced a memory-based guess before
+ * any lookup — fixed by making the cheap index read the check itself.
+ */
+const WIKI_QUERY_RULE_BLOCK = [
+  WIKI_QUERY_RULE_SENTINEL,
+  '## 知识库优先',
+  '',
+  '本库有一套整理好的 wiki —— Molio 的价值在于基于它工作，而不是凭训练记忆。',
+  '',
+  '**任何与本库内容不是明显无关的任务——无论形式（问答、写作、分析、咨询或其他任何形式）——先调用',
+  '`wiki-query` skill。** 凭记忆无法知道本库是否覆盖某主题；读 `wiki/hot.md` + 根 `wiki/INDEX.md`',
+  '本身就是判断方式，成本不过几十行。具体如何往下做（深入目录索引、基于库内材料产出、引用标注），',
+  'skill 里有完整流程。',
+  '',
+  '仅当任务与本库内容明显无关时跳过：天气、一般闲聊、纯机械活（代码语法、排版），以及工作区近期',
+  '活动/状态（"总结今天的工作"、"最近改了什么"——用 git log / 文件 mtime）。',
+].join('\n');
+
+/**
  * All Molio-managed rule blocks injected into every vault's .claude/CLAUDE.md.
  * Each has a unique sentinel so injection is idempotent and individual rules
  * can be revised later without re-injecting stale copies.
@@ -249,6 +307,7 @@ const MOILIO_RULES: Array<{ sentinel: string; block: string; label: string }> = 
   { sentinel: ENV_SELF_HEAL_SENTINEL, block: ENV_SELF_HEAL_BLOCK, label: 'environment self-heal' },
   { sentinel: REMOTION_RULE_SENTINEL, block: REMOTION_RULE_BLOCK, label: 'remotion preference' },
   { sentinel: WEB_FETCH_SENTINEL, block: WEB_FETCH_BLOCK, label: 'web fetch preference' },
+  { sentinel: WIKI_QUERY_RULE_SENTINEL, block: WIKI_QUERY_RULE_BLOCK, label: 'wiki-query preference' },
 ];
 
 /**
@@ -338,7 +397,7 @@ export function installBuiltinSkills(vaultPath: string): void {
   const sourceDir = resolveSkillsSourceDir();
 
   if (!fs.existsSync(sourceDir)) {
-    console.warn(`[skill-installer] Skills source directory not found: ${sourceDir}`);
+    skillWarn.warn(`source-dir:${sourceDir}`, `[skill-installer] Skills source directory not found: ${sourceDir}`);
     return;
   }
 
@@ -379,7 +438,7 @@ export function installBuiltinSkills(vaultPath: string): void {
     const skillDest = path.join(claudeSkillsDir, skillName);
 
     if (!fs.existsSync(skillSrc)) {
-      console.warn(`[skill-installer] Skill source not found: ${skillSrc}`);
+      skillWarn.warn(`skill-src:${skillSrc}`, `[skill-installer] Skill source not found: ${skillSrc}`);
       continue;
     }
 

@@ -18,7 +18,9 @@ import {
   PRUNE_DIR_NAMES,
   MAX_DIR_ENTRIES,
   MAX_TOTAL,
+  resetMaxTotalWarnState,
 } from '../../src/core/knowledge.js';
+import { resetOversizedDirWarnState } from '../../src/core/vault-prune.js';
 
 describe('readFile encoding + tiers', () => {
   let vp: string;
@@ -38,6 +40,26 @@ describe('readFile encoding + tiers', () => {
     const f = readFile(vp, 'bom.txt');
     assert.equal(f.encoding, 'utf-8');
     assert.equal(f.content, 'hi');
+  });
+
+  // Regression (2026-08-03): a 116KB UTF-8-BOM 国标 .md showed mojibake — the
+  // 64KB detection sample cut a 3-byte CJK char in half, strict UTF-8 failed,
+  // and the file was decoded as gb18030.
+  it('large utf-8 .md with 64KB boundary splitting a multibyte char → utf-8, intact content', () => {
+    const char = Buffer.from('的', 'utf8'); // e7 9a 84 — straddles byte 65536
+    const tail = '可燃气体探测器';
+    const body = Buffer.concat([
+      Buffer.alloc(65531, 0x61),           // 'a' × 65531 → with 3-byte BOM, char starts at 65534
+      char,                                 // occupies 65534-65536 (last byte past the cut)
+      Buffer.from(tail, 'utf8'),
+    ]);
+    writeFileSync(join(vp, 'big-split.md'), Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), body]));
+    const f = readFile(vp, 'big-split.md');
+    assert.equal(f.encoding, 'utf-8');
+    assert.ok(f.content.startsWith('aaaa'), 'content decoded, not mojibake');
+    assert.ok(f.content.includes('的'), 'split char intact');
+    assert.ok(f.content.endsWith(tail), 'tail intact');
+    assert.ok(!f.content.includes('锘'), 'no BOM-as-gb18030 mojibake marker');
   });
 
   it('returns tooLarge (no content) when over soft cap, with encoding from sample', () => {
@@ -152,6 +174,35 @@ describe('knowledge filesystem operations', () => {
       renamePath(vaultPath, 'dir-old', 'dir-new');
       assert.ok(!existsSync(join(vaultPath, 'dir-old')));
       assert.ok(existsSync(join(vaultPath, 'dir-new', 'inside.md')));
+    });
+
+    it('should move a directory into another directory (preserving name + subtree)', () => {
+      createDirectory(vaultPath, 'srcdir');
+      createDirectory(vaultPath, 'destdir');
+      writeFile(vaultPath, 'srcdir/file.md', 'payload');
+      createDirectory(vaultPath, 'srcdir/sub');
+      writeFile(vaultPath, 'srcdir/sub/nested.md', 'nested');
+      // Move srcdir into destdir → destdir/srcdir/...
+      renamePath(vaultPath, 'srcdir', 'destdir/srcdir');
+      assert.ok(!existsSync(join(vaultPath, 'srcdir')));
+      assert.ok(existsSync(join(vaultPath, 'destdir', 'srcdir', 'file.md')));
+      assert.ok(existsSync(join(vaultPath, 'destdir', 'srcdir', 'sub', 'nested.md')));
+    });
+
+    it('should reject moving a directory into its own descendant (cycle)', () => {
+      // Build outer/inner/leaf
+      createDirectory(vaultPath, 'outer');
+      createDirectory(vaultPath, 'outer/inner');
+      writeFile(vaultPath, 'outer/inner/leaf.md', 'leaf');
+      // Trying to move outer → outer/inner/outer would put a parent inside its
+      // own descendant. fs.renameSync cannot perform this (destination is inside
+      // source), so renamePath must surface the error rather than silently
+      // succeed or corrupt the tree.
+      assert.throws(() => {
+        renamePath(vaultPath, 'outer', 'outer/inner/outer');
+      });
+      // Original structure intact.
+      assert.ok(existsSync(join(vaultPath, 'outer', 'inner', 'leaf.md')));
     });
 
     it('should move a file to a different directory', () => {
@@ -639,6 +690,92 @@ describe('vault scan pruning + bounded backstop', () => {
         // Only real.md counts — the dump subtree is pruned, not counted.
         assert.equal(countFiles(clean), 1);
       } finally {
+        rmSync(clean, { recursive: true, force: true });
+      }
+    });
+  });
+
+  // Regression: the oversized-directory warning used to fire on EVERY scan, so a
+  // vault with two large dirs that is rescanned many times a second (the UI
+  // refreshes on each `tree-changed` event) flooded stderr — which cloud log
+  // collectors classify as ERROR — producing thousands of false anomalies. The
+  // warning is now throttled per (source, dir); repeated scans warn once each.
+  describe('oversized-directory warning throttle (stderr noise)', () => {
+    let clean: string;
+    let warnings: string[];
+    let origWarn: typeof console.warn;
+
+    before(() => {
+      origWarn = console.warn;
+      console.warn = (...args: unknown[]) => {
+        warnings.push(args.map(String).join(' '));
+      };
+    });
+    after(() => {
+      console.warn = origWarn;
+    });
+
+    it('repeated scanTree + countFiles over the same oversized dir warn once per source', () => {
+      clean = mkdtempSync(join(tmpdir(), 'molio-prune-throttle-'));
+      warnings = [];
+      resetOversizedDirWarnState();
+      try {
+        mkdirSync(join(clean, 'dump'));
+        for (let i = 0; i <= MAX_DIR_ENTRIES; i++) {
+          writeFileSync(join(clean, 'dump', `f${i}.md`), 'x');
+        }
+        // Simulate the UI hammering the daemon: three tree refreshes + three counts.
+        for (let i = 0; i < 3; i++) scanTree(clean);
+        for (let i = 0; i < 3; i++) countFiles(clean);
+
+        const scanWarns = warnings.filter((w) => w.includes('scanTree pruned oversized'));
+        const countWarns = warnings.filter((w) => w.includes('countFiles pruned oversized'));
+        assert.equal(scanWarns.length, 1, `scanTree should warn once, got ${scanWarns.length}`);
+        assert.equal(countWarns.length, 1, `countFiles should warn once, got ${countWarns.length}`);
+        assert.equal(warnings.length, 2, `total warnings should be 2, got ${warnings.length}`);
+      } finally {
+        resetOversizedDirWarnState();
+        rmSync(clean, { recursive: true, force: true });
+      }
+    });
+  });
+
+  // Regression: like the oversized-directory warning, the "hit MAX_TOTAL …
+  // truncating" warning used to fire on every scan, so a vault over the cap
+  // that is rescanned on each `tree-changed` event flooded stderr (→ SLS ERROR).
+  // It is now throttled per (source, dir); repeated scans warn once each.
+  describe('MAX_TOTAL truncation warning throttle (stderr noise)', () => {
+    let clean: string;
+    let warnings: string[];
+    let origWarn: typeof console.warn;
+
+    before(() => {
+      origWarn = console.warn;
+      console.warn = (...args: unknown[]) => {
+        warnings.push(args.map(String).join(' '));
+      };
+    });
+    after(() => {
+      console.warn = origWarn;
+    });
+
+    it('repeated scanTree + countFiles over an over-cap vault warn once per source', () => {
+      clean = mkdtempSync(join(tmpdir(), 'molio-maxtotal-throttle-'));
+      warnings = [];
+      resetMaxTotalWarnState();
+      try {
+        mkdirSync(join(clean, 'a'), { recursive: true });
+        for (let i = 0; i < 10; i++) writeFileSync(join(clean, 'a', `f${i}.md`), 'x');
+        // maxTotal=2 → every scan truncates and would warn un-throttled.
+        for (let i = 0; i < 3; i++) scanTree(clean, '', { maxTotal: 2 });
+        for (let i = 0; i < 3; i++) countFiles(clean, { maxTotal: 2 });
+
+        const scanWarns = warnings.filter((w) => w.includes('scanTree hit MAX_TOTAL'));
+        const countWarns = warnings.filter((w) => w.includes('countFiles hit MAX_TOTAL'));
+        assert.equal(scanWarns.length, 1, `scanTree should warn once, got ${scanWarns.length}`);
+        assert.equal(countWarns.length, 1, `countFiles should warn once, got ${countWarns.length}`);
+      } finally {
+        resetMaxTotalWarnState();
         rmSync(clean, { recursive: true, force: true });
       }
     });

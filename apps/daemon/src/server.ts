@@ -17,16 +17,23 @@ import { publishRoutes, cleanupAllBridges } from './routes/publish.js';
 import { proxyRoutes } from './routes/proxy.js';
 import { graphRoutes } from './routes/graph.js';
 import { weixinRoutes } from './routes/weixin.js';
+import { feishuRoutes } from './routes/feishu.js';
 import { maintenanceRoutes } from './routes/maintenance.js';
 import { WeixinService } from './core/weixin/service.js';
+import { FeishuService } from './core/feishu/service.js';
 import { ConversationService } from './core/conversations/service.js';
 import { VaultWatcher } from './core/vault-watcher.js';
+import { createPreloadManager } from './core/preload-manager.js';
+import { preloadRoutes } from './routes/preload.js';
+import { maybeCreateDefaultVault } from './core/default-vault.js';
 
 export const runManager = new RunManager();
 export const db: Database.Database = openDatabase();
 export const conversationService = new ConversationService(db);
 export const weixinService = new WeixinService(runManager, conversationService, db);
+export const feishuService = new FeishuService(runManager, conversationService, db);
 export const vaultWatcher = new VaultWatcher(db);
+export const preloadManager = createPreloadManager();
 
 export const app = new Hono();
 
@@ -44,17 +51,32 @@ app.use('*', cors({
   },
 }));
 
-// Health check
+// Health check — includes process metrics so the desktop shell can bridge
+// daemon memory data to ARMS (the daemon has no ARMS SDK of its own).
 app.get('/api/health', (c) => {
-  return c.json({ status: 'ok' as const, version: '0.1.0' });
+  const mem = process.memoryUsage();
+  return c.json({
+    status: 'ok' as const,
+    version: '0.1.0',
+    memory: {
+      rss: mem.rss,
+      heapTotal: mem.heapTotal,
+      heapUsed: mem.heapUsed,
+      external: mem.external,
+      arrayBuffers: mem.arrayBuffers,
+    },
+    activeRuns: runManager.getActiveRunCount(),
+    uptime: Math.floor(process.uptime()),
+  });
 });
 
 // Graceful shutdown endpoint — called by the desktop shell before quitting
 // so we can flush in-flight assistant replies to the database.
-app.post('/api/shutdown', (c) => {
+app.post('/api/shutdown', async (c) => {
   console.log('Shutdown requested by desktop shell, flushing active runs...');
   cleanupAllBridges();
   weixinService.stop();
+  await feishuService.stop();
   void vaultWatcher.stop();
   runManager.cancelAll();
   closeDatabase();
@@ -77,10 +99,26 @@ app.route('/api/publish', publishRoutes());
 app.route('/api/proxy', proxyRoutes());
 app.route('/api/graph', graphRoutes(db));
 app.route('/api/weixin', weixinRoutes(weixinService));
+app.route('/api/feishu', feishuRoutes(feishuService));
+app.route('/api/preload', preloadRoutes(preloadManager));
 app.route('/api/maintenance', maintenanceRoutes(db));
 
 void weixinService.start();
+void feishuService.start();
 void vaultWatcher.start();
+
+// First-boot provisioning for Docker/NAS one-click deploy: on an empty install,
+// auto-create the default vault pointing at the mounted docs dir (/vaults or
+// MOLIO_DEFAULT_VAULT_PATH) so users land inside a vault, not the welcome
+// screen. No-op once any vault exists. Failures must never crash the daemon.
+try {
+  const created = maybeCreateDefaultVault(db, vaultWatcher);
+  if (created) {
+    console.log(`[default-vault] auto-created default vault "${created.name}" at ${created.path}`);
+  }
+} catch (err) {
+  console.error('[default-vault] failed to auto-create default vault:', err);
+}
 
 // Static file serving (production / desktop mode)
 const staticDir = process.env['MOLIO_STATIC_DIR'];
@@ -149,20 +187,23 @@ if (staticDir) {
 }
 
 // Graceful shutdown
-process.on('SIGINT', () => {
+function gracefulShutdown(): void {
   cleanupAllBridges();
   weixinService.stop();
   void vaultWatcher.stop();
   runManager.cancelAll();
-  closeDatabase();
-  process.exit(0);
-});
+  // Kill any in-progress preload subprocess trees so we don't orphan detached
+  // pip/npm children (they'd keep downloading after the daemon is gone).
+  preloadManager.stopAll();
+  // Feishu stop() is async (WSClient teardown); chain DB close + exit AFTER
+  // it resolves so we don't close the SQLite handle while a WS callback is
+  // mid-write. WeixinService.stop() is still sync (polling-based, no async
+  // teardown), so it's safe to call before the await.
+  void feishuService.stop().finally(() => {
+    closeDatabase();
+    process.exit(0);
+  });
+}
 
-process.on('SIGTERM', () => {
-  cleanupAllBridges();
-  weixinService.stop();
-  void vaultWatcher.stop();
-  runManager.cancelAll();
-  closeDatabase();
-  process.exit(0);
-});
+process.on('SIGINT', gracefulShutdown);
+process.on('SIGTERM', gracefulShutdown);

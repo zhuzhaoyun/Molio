@@ -197,6 +197,58 @@ describe('skill-installer migration', () => {
     );
   });
 
+  it('should inject wiki-query-preference rule into .claude/CLAUDE.md', () => {
+    installBuiltinSkills(tmpVault);
+
+    const content = fs.readFileSync(
+      path.join(tmpVault, '.claude', 'CLAUDE.md'),
+      'utf-8',
+    );
+    // Regression guard for the "知识库问答不读 wiki" bug: the old QUERY frame
+    // rode --append-system-prompt-file, which the CLI silently dropped, so the
+    // model answered vault questions from training memory. The retrieval
+    // instruction now lives in this always-on CLAUDE.md rule (loaded natively),
+    // which must reach the model and force retrieve-before-answer.
+    assert.ok(
+      content.includes('<!-- molio:wiki-query-preference -->'),
+      'should carry the wiki-query sentinel',
+    );
+    assert.ok(
+      content.includes('wiki-query'),
+      'should route content questions to the wiki-query skill',
+    );
+    assert.ok(
+      content.includes('wiki/INDEX.md'),
+      'should instruct reading the wiki index before answering',
+    );
+    assert.ok(
+      content.includes('而不是凭训练记忆'),
+      'should forbid working from training memory for vault topics',
+    );
+    // Regression guard for a real failure: the rule used to be framed as
+    // Q&A-only and listed "writing" among the exemptions, so an article about
+    // the vault's own subject was written without consulting the wiki. The
+    // trigger must be form-agnostic — the subject decides, not the task type.
+    assert.ok(
+      content.includes('无论形式'),
+      'should require retrieval for any task form (not just Q&A)',
+    );
+    // Regression guard for the a-priori-gate failure: the model cannot know
+    // from memory whether the vault covers a topic, so the cheap index read
+    // must BE the relevance check, not something gated behind a guess.
+    assert.ok(
+      content.includes('本身就是判断方式'),
+      'should make the index read the relevance check itself',
+    );
+    // Regression guard for the opposite failure mode: the rule must NOT
+    // role-lock tasks unrelated to the vault (weather, chit-chat, pure
+    // mechanics, …) into wiki retrieval.
+    assert.ok(
+      content.includes('明显无关'),
+      'should exempt clearly-unrelated tasks from wiki retrieval',
+    );
+  });
+
   it('should not overwrite existing user content in .claude/CLAUDE.md', () => {
     // Pre-create .claude/CLAUDE.md with user content
     const claudeDir = path.join(tmpVault, '.claude');

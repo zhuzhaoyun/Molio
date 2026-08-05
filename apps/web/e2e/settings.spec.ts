@@ -16,7 +16,7 @@ test.describe('Settings', () => {
     await clickNav(page, 'settings');
 
     await expect(page.locator('.settings-shell')).toBeVisible({ timeout: 5_000 });
-    await expect(page.locator('.settings-language-card')).toBeVisible();
+    await expect(page.locator('[data-testid="lang-zh"]')).toBeVisible();
   });
 
   test('language pills are displayed with one active', async ({ page }) => {
@@ -25,13 +25,9 @@ test.describe('Settings', () => {
 
     await expect(page.locator('.settings-shell')).toBeVisible({ timeout: 5_000 });
 
-    // Should have at least 2 language pills (zh and en)
-    const pills = page.locator('.settings-lang-pill');
-    await expect(pills).toHaveCount(2, { timeout: 5_000 });
-
-    // Exactly one should be active
-    const activePill = page.locator('.settings-lang-pill.is-active');
-    await expect(activePill).toHaveCount(1);
+    // Language pills: zh + en, exactly one active
+    await expect(page.locator('[data-testid^="lang-"]')).toHaveCount(2, { timeout: 5_000 });
+    await expect(page.locator('[data-testid^="lang-"].is-active')).toHaveCount(1);
   });
 
   test('switching language changes active pill', async ({ page }) => {
@@ -40,17 +36,72 @@ test.describe('Settings', () => {
 
     await expect(page.locator('.settings-shell')).toBeVisible({ timeout: 5_000 });
 
-    // Find the currently inactive pill and click it
-    const pills = page.locator('.settings-lang-pill');
-    const inactivePill = pills.filter({ hasNot: page.locator('.is-active') }).first();
-
-    if (await inactivePill.isVisible()) {
-      const inactiveText = await inactivePill.textContent();
-      await inactivePill.click();
+    const inactiveLang = page.locator('[data-testid^="lang-"]:not(.is-active)').first();
+    if (await inactiveLang.isVisible()) {
+      const testid = await inactiveLang.getAttribute('data-testid');
+      await inactiveLang.click();
       await page.waitForTimeout(500);
 
       // The clicked pill should now be active
-      await expect(inactivePill).toHaveClass(/is-active/);
+      await expect(page.locator(`[data-testid="${testid}"]`)).toHaveClass(/is-active/);
     }
+  });
+
+  test('theme section shows three options with system active by default', async ({ page }) => {
+    await gotoHome(page);
+    await clickNav(page, 'settings');
+
+    await expect(page.locator('.settings-shell')).toBeVisible({ timeout: 5_000 });
+
+    await expect(page.locator('[data-testid="theme-system"]')).toBeVisible();
+    await expect(page.locator('[data-testid="theme-light"]')).toBeVisible();
+    await expect(page.locator('[data-testid="theme-dark"]')).toBeVisible();
+    await expect(page.locator('[data-testid="theme-system"]')).toHaveClass(/is-active/);
+    await expect(page.locator('[data-testid^="theme-"].is-active')).toHaveCount(1);
+  });
+
+  test('selecting dark theme applies data-theme=dark to html', async ({ page }) => {
+    await gotoHome(page);
+    await clickNav(page, 'settings');
+
+    await expect(page.locator('.settings-shell')).toBeVisible({ timeout: 5_000 });
+
+    await page.locator('[data-testid="theme-dark"]').click();
+    await expect(page.locator('[data-testid="theme-dark"]')).toHaveClass(/is-active/);
+    const attr = await page.evaluate(() =>
+      document.documentElement.getAttribute('data-theme'),
+    );
+    expect(attr).toBe('dark');
+  });
+
+  test('selecting light theme applies data-theme=light to html', async ({ page }) => {
+    await gotoHome(page);
+    await clickNav(page, 'settings');
+
+    await expect(page.locator('.settings-shell')).toBeVisible({ timeout: 5_000 });
+
+    await page.locator('[data-testid="theme-light"]').click();
+    await expect(page.locator('[data-testid="theme-light"]')).toHaveClass(/is-active/);
+    const attr = await page.evaluate(() =>
+      document.documentElement.getAttribute('data-theme'),
+    );
+    expect(attr).toBe('light');
+  });
+
+  test('selecting system theme removes data-theme attribute', async ({ page }) => {
+    await gotoHome(page);
+    await clickNav(page, 'settings');
+
+    await expect(page.locator('.settings-shell')).toBeVisible({ timeout: 5_000 });
+
+    // 先锁定深色，再切回跟随系统
+    await page.locator('[data-testid="theme-dark"]').click();
+    await expect(page.locator('[data-testid="theme-dark"]')).toHaveClass(/is-active/);
+    await page.locator('[data-testid="theme-system"]').click();
+    await expect(page.locator('[data-testid="theme-system"]')).toHaveClass(/is-active/);
+    const attr = await page.evaluate(() =>
+      document.documentElement.getAttribute('data-theme'),
+    );
+    expect(attr).toBeNull();
   });
 });

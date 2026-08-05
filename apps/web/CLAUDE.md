@@ -33,6 +33,7 @@ src/
     useKbTabs.ts       知识库 Tab 状态管理
     useRuntimes.ts     运行时管理
     useWikiChat.ts     Wiki 对话状态管理
+    useChannelStatus.ts 渠道状态轮询 + busy/error/runAction（feishu/weixin 共用）
   stores/
     vaultStore.ts          活跃知识库选择（useSyncExternalStore，App + useKnowledge 共享）
     messageSelectionStore.ts  消息删除勾选态（同模式 + 每气泡精准订阅）
@@ -76,7 +77,8 @@ src/
       VaultManager.tsx        Vault 管理器
       WikiChatPanel.tsx       Wiki 对话面板
     channels/          渠道组件
-      ChannelsPage.tsx 渠道管理页面
+      FeishuChannelPanel.tsx  飞书渠道面板（7 步引导 + appId/Secret 表单）
+      WeixinChannelPanel.tsx  微信渠道面板（扫码登录 + default agent）
     history/           历史组件
       HistoryPage.tsx  对话历史页面
     runtimes/          运行时组件
