@@ -3,6 +3,7 @@ import { RuntimesPanel } from './RuntimesPanel';
 import { ChannelsPanel } from './ChannelsPanel';
 import { useI18n } from '../../i18n';
 import { LanguageSettings } from './LanguageSettings';
+import { ThemeSettings } from './ThemeSettings';
 import { UpdateSettings } from './UpdateSettings';
 
 type Tab = 'general' | 'runtimes' | 'channels';
@@ -48,6 +49,7 @@ export function SettingsPage() {
         {activeTab === 'general' && (
           <>
             <LanguageSettings />
+            <ThemeSettings />
             <UpdateSettings />
           </>
         )}
