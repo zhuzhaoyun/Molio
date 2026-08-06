@@ -59,6 +59,12 @@ export function buildAttachmentPrefix(fileRefs: FileRef[], pastedImages: PastedI
 /** Module-level draft cache — survives component unmount during navigation. */
 const drafts = new Map<string, string>();
 
+/**
+ * 输入框自动伸缩的上限（px）。与 chat.css 的 `.composer textarea { max-height }`
+ * 保持一致——JS 用 inline height，CSS 用 max-height，两者都要一起改。
+ */
+const COMPOSER_MAX_HEIGHT = 280;
+
 interface Props {
   isRunning: boolean;
   onSend: (message: string, fileRefs: FileRef[], pastedImages: PastedImage[]) => void;
@@ -93,12 +99,12 @@ export function ChatComposer({
   // FilePicker trigger: @ start index in textarea value
   const [triggerStartIdx, setTriggerStartIdx] = useState<number | null>(null);
 
-  // Auto-resize textarea
+  // Auto-resize textarea：随内容增长，上限 COMPOSER_MAX_HEIGHT（与 CSS max-height 同步）
   useEffect(() => {
     const el = textareaRef.current;
     if (el) {
       el.style.height = 'auto';
-      el.style.height = Math.min(el.scrollHeight, 184) + 'px';
+      el.style.height = Math.min(el.scrollHeight, COMPOSER_MAX_HEIGHT) + 'px';
     }
   }, [text]);
 

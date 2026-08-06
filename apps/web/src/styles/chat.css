@@ -670,8 +670,9 @@
   box-shadow: var(--shadow-sm);
 }
 .composer textarea {
-  min-height: 88px;
-  max-height: min(184px, 34vh);
+  /* 默认 2 行（44px），随输入自动增长到 COMPOSER_MAX_HEIGHT（chat.css 与 ChatComposer.tsx 同步） */
+  min-height: 44px;
+  max-height: min(280px, 40vh);
   border: none;
   background: transparent;
   padding: 4px 4px;
