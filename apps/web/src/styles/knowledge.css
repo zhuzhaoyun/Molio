@@ -2922,6 +2922,7 @@
   padding: 6px 8px 6px 10px;
   border-bottom: 1px solid var(--border-soft);
   flex-shrink: 0;
+  position: relative; /* 历史下拉的定位容器（向下展开横跨标签栏） */
 }
 .chat-session-tabs {
   display: flex;
@@ -3058,6 +3059,12 @@
 .chat-session-tab-history:hover { background: var(--bg-subtle); color: var(--text); }
 .chat-session-tab-history:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
 
+/* 顶栏 SVG 图标显式禁止 flex 收缩（否则宽度被压成 0，图标不可见） */
+.chat-session-tab-history svg,
+.chat-session-tab-close-panel svg {
+  flex-shrink: 0;
+}
+
 /* 收起面板按钮（钉在栏尾最右） */
 .chat-session-tab-close-panel {
   flex-shrink: 0;
@@ -3076,16 +3083,12 @@
 .chat-session-tab-close-panel:hover { background: var(--bg-subtle); color: var(--text); }
 .chat-session-tab-close-panel:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
 
-/* 历史下拉在顶栏的定位容器 + 向下展开（输入框里默认向上展开，样式不变） */
-.conversation-history-menu { position: relative; }
+/* 历史下拉向下展开：以标签栏为定位容器，横跨标签栏宽度（输入框里默认向上展开，样式不变） */
 .composer-history-dropdown.open-down {
   bottom: auto;
   top: 100%;
   margin-top: 6px;
   margin-bottom: 0;
-  left: auto;
-  right: 0;
-  min-width: 280px;
 }
 
 @media (prefers-reduced-motion: reduce) {
