@@ -1040,25 +1040,12 @@
   overflow: hidden;
 }
 
-/* Header */
-.composer-history-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 16px 10px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-strong);
-  flex-shrink: 0;
-  border-bottom: 1px solid var(--border-soft);
-}
-
-/* 搜索框（daemon FTS 全文搜索，300ms 防抖） */
+/* 搜索框（daemon FTS 全文搜索，300ms 防抖；无标题栏，下拉直接从搜索开始） */
 .composer-history-search {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 12px;
+  padding: 10px 12px 8px;
   border-bottom: 1px solid var(--border-soft);
   flex-shrink: 0;
 }

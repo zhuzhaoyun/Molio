@@ -140,9 +140,6 @@ export function ConversationHistoryMenu({
           className={`composer-history-dropdown${align === 'down' ? ' open-down' : ''}`}
           data-testid="composer-history-dropdown"
         >
-          <div className="composer-history-header">
-            <span>{t('composer.history')}</span>
-          </div>
           <div className="composer-history-search">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <circle cx="11" cy="11" r="8" />
