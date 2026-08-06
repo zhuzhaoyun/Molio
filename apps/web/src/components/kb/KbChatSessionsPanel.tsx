@@ -35,6 +35,9 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
 
   const [panelWidth, setPanelWidth] = useState(360);
   const [pendingSelection, setPendingSelection] = useState<string | null>(null);
+  // #5: pendingSelection 归属的会话 id（null = 无）。只投给目标会话，避免广播给所有空会话、
+  // 被任意会话的首条消息消费。
+  const [pendingSelectionSessionId, setPendingSelectionSessionId] = useState<string | null>(null);
   const [runningMap, setRunningMap] = useState<Record<string, boolean>>({});
   const [confirmDialog, setConfirmDialog] = useState<{ show: boolean; title: string; message: string }>({ show: false, title: '', message: '' });
   const [toast, setToast] = useState<string | null>(null);
@@ -46,6 +49,9 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   // 新开的 wiki 会话尚未 mount（API 未注册）时缓存待自动发送的提示词，registerApi 时补发
   const pendingAutoSendRef = useRef(new Map<string, string>());
   const closePendingRef = useRef<string | null>(null);
+  // #1: 待关闭会话是否为 wiki 模式。wiki 关闭确认只允许「中断并关闭/取消」——
+  // 杜绝「后台继续并关闭」让已移除标签的 run 逃过 anyWikiRunning 单例守卫（D3 并发写同一 vault）。
+  const closePendingIsWikiRef = useRef(false);
   // 拖拽 resize 状态（照搬旧 KbChatPanel）
   const resizingRef = useRef<{ startX: number; startWidth: number } | null>(null);
 
@@ -58,9 +64,22 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
       a.send(prompt);
     }
   }, []);
-  const unregisterApi = useCallback((id: string) => { sessionApisRef.current.delete(id); }, []);
+  const unregisterApi = useCallback((id: string) => {
+    sessionApisRef.current.delete(id);
+    // #7: 会话在 mount 前就被关闭 → 清掉缓存的待自动发送提示词，避免泄漏
+    pendingAutoSendRef.current.delete(id);
+  }, []);
   const handleRunningChange = useCallback((id: string, running: boolean) => {
     setRunningMap((prev) => (prev[id] === running ? prev : { ...prev, [id]: running }));
+  }, []);
+  // #7: 会话关闭时同步清理 runningMap，防止残留条目误判互斥/关闭态
+  const pruneRunning = useCallback((id: string) => {
+    setRunningMap((prev) => {
+      if (!(id in prev)) return prev;
+      const n = { ...prev };
+      delete n[id];
+      return n;
+    });
   }, []);
 
   const activeSession = sessions.find((s) => s.id === activeSessionId) ?? null;
@@ -182,16 +201,35 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
 
   const openQa = useCallback((opts: { filePath: string | null; vaultId: string | null; selectedText?: string | null }) => {
     const active = kbChatSessionsStore.getActiveSession();
-    if (opts.selectedText) setPendingSelection(opts.selectedText);
+    if (opts.selectedText) {
+      // #5: pendingSelection 只投给目标会话（活跃 qa 会话，或新建的 qa 会话），
+      // 不再面板级广播给所有空会话。
+      setPendingSelection(opts.selectedText);
+      setPendingSelectionSessionId(active?.mode === 'qa' ? active.id : null);
+    }
     if (active && active.mode === 'qa') {
       kbChatSessionsStore.setPanelOpen(true);
+      // #4: 用户对「新选中的文件」再次 💬问答 → 把活跃 qa 会话的 @上下文指向该文件，
+      // 否则 composer badge 仍显示旧文档（D7「每个会话记忆自己的文档」依然成立——
+      // 显式问答动作把会话重新指向当前文件，恢复旧单会话行为）。
+      kbChatSessionsStore.updateSession(active.id, {
+        filePath: opts.filePath,
+        vaultId: opts.vaultId ?? active.vaultId,
+      });
       return;
     }
     const res = kbChatSessionsStore.openSession({
       mode: 'qa', title: '新会话', conversationId: null,
       vaultId: opts.vaultId ?? undefined, filePath: opts.filePath,
     });
-    if (!res.opened && res.reason === 'limit') showToast(`已达 ${MAX_CHAT_SESSIONS} 个会话标签上限`);
+    if (res.opened && res.tab) {
+      if (opts.selectedText) setPendingSelectionSessionId(res.tab.id);
+    } else if (!res.opened && res.reason === 'limit') {
+      // 创建失败（达上限）→ 放弃这次 pendingSelection，避免悬空预览
+      setPendingSelection(null);
+      setPendingSelectionSessionId(null);
+      showToast(`已达 ${MAX_CHAT_SESSIONS} 个会话标签上限`);
+    }
   }, [showToast]);
 
   useImperativeHandle(ref, () => ({ runWikiOp, openQa }), [runWikiOp, openQa]);
@@ -208,31 +246,41 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   const handleCloseTab = useCallback((id: string) => {
     if (runningMap[id]) {
       closePendingRef.current = id;
+      // #1: 记录被关闭会话的模式 —— wiki 模式只允许「中断并关闭/取消」。
+      closePendingIsWikiRef.current =
+        kbChatSessionsStore.getSessions().find((s) => s.id === id)?.mode !== 'qa';
       setClosePendingOpen(true);
       return;
     }
     kbChatSessionsStore.closeSession(id);
-  }, [runningMap]);
+    pruneRunning(id);
+  }, [runningMap, pruneRunning]);
 
   const handleCloseConfirm = useCallback((interrupt: boolean) => {
     const id = closePendingRef.current;
     closePendingRef.current = null;
+    closePendingIsWikiRef.current = false;
     setClosePendingOpen(false);
     if (!id) return;
     if (interrupt) sessionApisRef.current.get(id)?.cancel();
     kbChatSessionsStore.closeSession(id);
-  }, []);
+    pruneRunning(id);
+  }, [pruneRunning]);
 
   const handleOpenConversation = useCallback((conversationId: string) => {
     const res = kbChatSessionsStore.openConversation(conversationId);
     if (!res.opened && res.reason === 'limit') showToast(`已达 ${MAX_CHAT_SESSIONS} 个会话标签上限`);
   }, [showToast]);
 
-  const handleLoadError = useCallback(() => {
+  const handleLoadError = useCallback((sessionId: string) => {
     showToast('该会话已不存在或无法加载，已关闭标签');
-    const active = kbChatSessionsStore.getActiveSession();
-    if (active) kbChatSessionsStore.closeSession(active.id);
-  }, [showToast]);
+    // #2: 只关「报错的那个」会话标签（可能是隐藏标签），不误关当前活跃标签。
+    // closeSession 内部已守卫不存在；这里仍做一次存在性校验以免误 toast 后无标签可关。
+    if (kbChatSessionsStore.getSessions().some((s) => s.id === sessionId)) {
+      kbChatSessionsStore.closeSession(sessionId);
+      pruneRunning(sessionId);
+    }
+  }, [showToast, pruneRunning]);
 
   // 面板头部活动会话的模式标签
   const activeContextLabel = (session: ChatSessionTab): string => {
@@ -279,8 +327,8 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
             active={s.id === activeSessionId}
             agentId={agentId}
             vaultPath={vaultPath}
-            selectedText={pendingSelection}
-            onSelectedTextConsumed={() => setPendingSelection(null)}
+            selectedText={pendingSelectionSessionId === s.id ? pendingSelection : null}
+            onSelectedTextConsumed={() => { setPendingSelection(null); setPendingSelectionSessionId(null); }}
             onRunningChange={handleRunningChange}
             onComplete={onWikiComplete}
             onLoadError={handleLoadError}
@@ -304,17 +352,19 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
         onTertiary={() => handleConfirmDialog('queue')}
         onCancel={() => { setConfirmDialog((p) => ({ ...p, show: false })); pendingWikiRef.current = null; }}
       />
-      {/* 关闭运行中会话：中断并关闭 / 后台继续并关闭 */}
+      {/* 关闭运行中会话：qa 会话 → 中断并关闭 / 后台继续并关闭；wiki 会话 → 只有中断并关闭/取消（#1） */}
       <ConfirmDialog
         show={closePendingOpen}
         title="任务正在运行"
-        message="关闭该会话前，请选择对正在运行任务的处理："
+        message={closePendingIsWikiRef.current
+          ? '关闭该会话将中断正在运行的 Wiki 任务，Wiki 任务不支持后台继续。'
+          : '关闭该会话前，请选择对正在运行任务的处理：'}
         confirmLabel="中断并关闭"
-        tertiaryLabel="后台继续并关闭"
+        tertiaryLabel={closePendingIsWikiRef.current ? undefined : '后台继续并关闭'}
         danger
         onConfirm={() => handleCloseConfirm(true)}
-        onTertiary={() => handleCloseConfirm(false)}
-        onCancel={() => { closePendingRef.current = null; setClosePendingOpen(false); }}
+        onTertiary={closePendingIsWikiRef.current ? undefined : () => handleCloseConfirm(false)}
+        onCancel={() => { closePendingRef.current = null; closePendingIsWikiRef.current = false; setClosePendingOpen(false); }}
       />
     </aside>
   );

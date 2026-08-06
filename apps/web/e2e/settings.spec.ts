@@ -11,6 +11,13 @@ import { gotoHome, clickNav } from './helpers/navigation';
  */
 
 test.describe('Settings', () => {
+  // #3: 语言切换测试会把切换后的 locale 持久化到共享 daemon config。若不恢复，
+  // 后续断言中文文案的 spec 只有在 config=zh 时才绿 → 全量套件变成顺序相关。
+  // 这里统一恢复为默认 zh，保证「full green」可复现。测试自身断言不受影响。
+  test.afterEach(async ({ request }) => {
+    await request.put('/api/config', { data: { locale: 'zh' } }).catch(() => {});
+  });
+
   test('page loads with language section visible', async ({ page }) => {
     await gotoHome(page);
     await clickNav(page, 'settings');

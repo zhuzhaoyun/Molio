@@ -155,6 +155,35 @@ test.describe('KB chat sessions', () => {
     expect(cancelRequests).toBe(0);
   });
 
+  test('关闭运行中的 WIKI 会话：无「后台继续并关闭」，只能中断并关闭（cancel run）', async ({ page }) => {
+    // D3 单例守卫不能开洞：wiki 任务关闭只能「中断并关闭/取消」。「后台继续并关闭」会让
+    // 已移除标签的 run 逃过 anyWikiRunning 守卫 → 下一个构建并发写同一 vault。
+    await mockChatRun(page, { frameDelay: 400 });
+    // 记录对 /api/runs 的 DELETE（= cancelRun）。wiki 关闭确认只剩「中断并关闭」→ 必须发出
+    let cancelRequests = 0;
+    page.on('request', (req) => {
+      if (req.method() === 'DELETE' && req.url().includes('/api/runs/')) cancelRequests++;
+    });
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+
+    // 启动构建 → ⚙️ wiki 标签 + 自动发送；等进入 running（header 显示运行状态）
+    await page.locator('[data-testid="kb-btn-build-wiki"]').click();
+    await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(1);
+    await expect(page.locator('[data-testid="kb-chat-panel"] .file-chat-status')).toBeVisible({ timeout: 5_000 });
+
+    // 关闭运行中的 wiki 标签 → 确认框必须不含「后台继续并关闭」
+    await page.locator('[data-testid="kb-chat-session-tab-close"]').click();
+    const dialog = page.locator('.kb-modal', { hasText: '任务正在运行' });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator('.kb-modal-footer button').filter({ hasText: '后台继续并关闭' })).toHaveCount(0);
+
+    // 只剩「中断并关闭」→ cancel 旧 run + 关标签
+    await dialog.locator('.kb-modal-footer button').filter({ hasText: '中断并关闭' }).click();
+    await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(0);
+    await expect.poll(() => cancelRequests).toBe(1);
+  });
+
   test('构建中再点构建 → 三选一；中断后新构建开始（cancel 旧 run）', async ({ page }) => {
     // frameDelay 400ms × 5 帧 ≈ 1.2s 内第一个构建保持 running，第二次点击才能命中三选一
     await mockChatRun(page, { frameDelay: 400 });

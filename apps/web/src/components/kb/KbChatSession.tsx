@@ -31,7 +31,8 @@ interface KbChatSessionProps {
   onRunningChange: (sessionId: string, running: boolean) => void;
   /** wiki 完成 → tree refresh */
   onComplete?: () => void;
-  onLoadError?: () => void;
+  /** 历史加载失败（如 404）→ 传入本会话 id，让面板只关报错的那个标签 */
+  onLoadError?: (sessionId: string) => void;
   registerApi: (sessionId: string, api: KbChatSessionApi) => void;
   unregisterApi: (sessionId: string) => void;
   /** 从 composer 历史下拉打开会话 */
@@ -88,6 +89,11 @@ export function KbChatSession({
 
   const chat = useChatCore({ agentId, createRun, onComplete: session.mode === 'qa' ? undefined : onComplete });
 
+  // #6: 追踪最新消息数。DB 历史加载是异步的——若加载完成前用户已发送消息（乐观消息已入列），
+  // 迟到的 setMessages 会覆盖掉乐观消息（conversationId 守卫拦不住：id 未变），这里用它做守卫。
+  const messageCountRef = useRef(chat.messages.length);
+  messageCountRef.current = chat.messages.length;
+
   // 挂载时从 DB 加载历史（异步，不用 initialMessages）。
   // 注意：不能用 loadedRef 挡住第二次执行 —— dev 下 StrictMode 会 mount→cleanup→mount，
   // 第一次调用被 cleanup 的 cancelled 丢弃后，第二次必须重跑 fetch，否则历史永远加载不出来。
@@ -99,6 +105,9 @@ export function KbChatSession({
     api.listConversationMessages(loadedConversationId)
       .then((msgs) => {
         if (cancelled) return;
+        // #6: 用户在加载完成前已发送消息（messageCount > 0）→ 迟到的 setMessages 会覆盖乐观
+        // 消息，直接丢弃 DB 历史（conversationId 守卫拦不住：id 未变）。
+        if (messageCountRef.current > 0) return;
         // 竞态守卫：加载期间会话被 clear（conversationId 置 null）或指向新会话 → 丢弃迟到结果
         const cur = kbChatSessionsStore.getSessions().find((s) => s.id === session.id);
         if (!cur || cur.conversationId !== loadedConversationId) return;
@@ -108,7 +117,7 @@ export function KbChatSession({
           kbChatSessionsStore.updateSession(session.id, { title: firstUser.content.slice(0, 24) });
         }
       })
-      .catch(() => { if (!cancelled) onLoadError?.(); });
+      .catch(() => { if (!cancelled) onLoadError?.(session.id); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
