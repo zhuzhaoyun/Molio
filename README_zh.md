@@ -2,7 +2,7 @@
 
 # 📚 Molio (墨流)
 
-**让你的积累，成为 AI 的长期能力。数据全为你所有。**
+**让你的积累，在 AI 时代持续产生价值。数据全为你所有。**
 
 [English](README.md) · [中文](README_zh.md) · [🌐 官网](https://molio.cn/)
 

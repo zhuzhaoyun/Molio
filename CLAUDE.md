@@ -1,4 +1,4 @@
-# Molio — 让你的积累，成为 AI 的长期能力
+# Molio — 让你的积累，在 AI 时代持续产生价值
 
 本地优先应用：把 AI runtime（Claude Code / Codex 等）接到你的本地知识库上，AI 读你的积累做研究、写作、问答，产出回写入库、沉淀为资产；排版与多平台发布只是产出出口之一。
 1. 管理本地知识库（类 Obsidian + LLM Wiki），支持 weknora 知识库
