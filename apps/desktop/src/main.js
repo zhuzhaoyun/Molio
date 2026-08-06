@@ -260,6 +260,19 @@ function createWindow() {
   });
 
   if (isDevMode()) {
+    // Dev-only show path. Production shows the window in loadApp() /
+    // showDaemonErrorPage() after the single app navigation (ARMS SDK
+    // auto-injection requires one navigation = one injection), but dev
+    // skips ARMS entirely, so showing as soon as the page is ready is
+    // correct here. Without this handler nothing ever calls show() in dev
+    // mode — the window stays hidden forever while the process looks
+    // healthy (renderer ready, DevTools docked inside a hidden window).
+    // This was the #183 regression: removing the shared ready-to-show
+    // handler fixed production splash→app double injection but silently
+    // dropped the only dev-mode show path.
+    mainWindow.once('ready-to-show', () => {
+      mainWindow?.show();
+    });
     mainWindow.webContents.openDevTools();
     mainWindow.loadURL('http://localhost:5173');
   }
