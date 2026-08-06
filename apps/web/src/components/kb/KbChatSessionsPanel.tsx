@@ -123,7 +123,11 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     // 杀旧 agent 进程，杜绝新旧构建并发写 vault），再清空、再自动发送。
     // api.cancel 在无 run 时是安全的 no-op；await 确保 cancel 的收尾 setState
     // 不会覆盖随后新 run 的 running 状态。
-    await a.cancel();
+    // cancel 的网络失败不中止中断（同 useChatCore.send 里 api.cancelRun().catch(() => {}) 模式）：
+    // 旧进程可能没杀掉，但 clear + 新 run 照常进行，避免中断无响应。
+    try {
+      await a.cancel();
+    } catch { /* cancel 失败仍继续 clear + send */ }
     a.clear();
     a.send(wikiPrompt(opts));
   }, [wikiPrompt]);

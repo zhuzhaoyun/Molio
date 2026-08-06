@@ -125,6 +125,13 @@ export function useChatCore(options: UseChatCoreOptions) {
     activity: null,
   });
 
+  // 最新已提交 state 的 ref（每次渲染同步）。事件处理器里读「当前状态」必须走它，而不是渲染闭包——
+  // 否则 clear()/cancel() 后紧接着 send()（中间无渲染）时，send 会拿到清空前的旧 messages/
+  // conversationId，把被清掉的旧消息复活、并续上旧会话（D3 清标签语义被破坏）。这是中断重发
+  // （clearAndSend: cancel → clear → send）能读到「已清空」状态的保证。
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
   const esRef = useRef<EventSource | null>(null);
   const assistantIdRef = useRef<string | null>(null);
   // P2-3: fallback timer that force-unlocks the input if the daemon hangs or
@@ -405,7 +412,10 @@ export function useChatCore(options: UseChatCoreOptions) {
       tools: [],
     };
 
-    const prevMessages = state.messages;
+    // 读最新已提交 state（stateRef 而非渲染闭包）：clear()/cancel() 在同一微任务里同步改过
+    // stateRef 后，紧跟的 send() 必须看到清空后的 messages/conversationId（D3 清标签语义）。
+    const cur = stateRef.current;
+    const prevMessages = cur.messages;
 
     setState((prev) => ({
       ...prev,
@@ -416,8 +426,8 @@ export function useChatCore(options: UseChatCoreOptions) {
     // Try multi-turn on existing run — but only if the agent hasn't changed.
     // When the user switches runtime (e.g. Claude → Qwen), the existing run
     // belongs to the old agent; sending a follow-up would go to the wrong process.
-    const existingRunId = state.runId;
-    const agentChanged = agentId != null && state.runAgentId != null && agentId !== state.runAgentId;
+    const existingRunId = cur.runId;
+    const agentChanged = agentId != null && cur.runAgentId != null && agentId !== cur.runAgentId;
     if (existingRunId && !agentChanged) {
       try {
         await api.sendMessage(existingRunId, text.trim());
@@ -457,7 +467,7 @@ export function useChatCore(options: UseChatCoreOptions) {
       const result = await createRun({
         message: text.trim(),
         history,
-        conversationId: state.conversationId,
+        conversationId: cur.conversationId,
       });
 
       await beginNewRun(result, newAssistantId, [...prevMessages, userMsg, assistantMsg]);
@@ -472,7 +482,7 @@ export function useChatCore(options: UseChatCoreOptions) {
         return { ...prev, messages, isRunning: false };
       });
     }
-  }, [state.runId, state.runAgentId, state.conversationId, state.messages, closeEventSource, createRun, agentId, onComplete, beginNewRun, resetFallbackTimer]);
+  }, [closeEventSource, createRun, agentId, onComplete, beginNewRun, resetFallbackTimer]);
 
   const rewindAndResend = useCallback(async (newContent: string) => {
     if (!rewindResend) return;
@@ -558,42 +568,50 @@ export function useChatCore(options: UseChatCoreOptions) {
   }, [state.runId]);
 
   const cancel = useCallback(async () => {
-    if (state.runId) {
-      await api.cancelRun(state.runId);
+    if (stateRef.current.runId) {
+      await api.cancelRun(stateRef.current.runId);
     }
     closeEventSource();
     assistantIdRef.current = null;
 
-    setState((prev) => {
-      const messages = prev.messages.map((msg) =>
-        msg.streaming ? { ...msg, streaming: false } : msg
-      );
-      return { ...prev, messages, isRunning: false, runId: null, runAgentId: null, activity: null };
-    });
-  }, [state.runId, closeEventSource]);
+    // 同步更新 stateRef：调用方（clearAndSend 中断路径）可能在同一事件循环里紧跟 send()，
+    // 必须让 send 读到「已取消、runId 已清」的最新状态。
+    const prev = stateRef.current;
+    const messages = prev.messages.map((msg) =>
+      msg.streaming ? { ...msg, streaming: false } : msg
+    );
+    const next = { ...prev, messages, isRunning: false, runId: null, runAgentId: null, activity: null };
+    stateRef.current = next;
+    setState(next);
+  }, [closeEventSource]);
 
   const reset = useCallback(() => {
     closeEventSource();
     assistantIdRef.current = null;
     messageSelectionStore.exit();
-    setState({ messages: [], runId: null, runAgentId: null, isRunning: false, conversationId: null, activity: null });
+    const next = { messages: [], runId: null, runAgentId: null, isRunning: false, conversationId: null, activity: null };
+    stateRef.current = next;
+    setState(next);
   }, [closeEventSource]);
 
   /**
    * Replace messages and conversationId (used by loadConversation in useChat).
+   * 同步更新 stateRef —— 调用方（clearAndSend）在同一次 clear→send 里必须先看到清空结果。
    */
   const setMessages = useCallback((messages: ChatMessage[], conversationId?: string | null) => {
     closeEventSource();
     assistantIdRef.current = null;
     messageSelectionStore.exit();
-    setState({
+    const next = {
       messages,
       runId: null,
       runAgentId: null,
       isRunning: false,
       conversationId: conversationId ?? null,
       activity: null,
-    });
+    };
+    stateRef.current = next;
+    setState(next);
   }, [closeEventSource]);
 
   const deleteMessages = useCallback(async (ids: string[]) => {

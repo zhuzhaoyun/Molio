@@ -136,8 +136,12 @@ test.describe('KB chat sessions', () => {
     await mockChatRun(page, { frameDelay: 400 });
     // 记录对 /api/runs 的 DELETE（= cancelRun）；「中断并立即执行」必须发出恰好 1 次
     let cancelRequests = 0;
+    // 记录 POST /api/runs（= createRun）。中断后新建构必须再 createRun 一次（共 2 次）——
+    // 若发送被旧 run 的多轮续传吃掉（mock 的 messages 路由总是 200），或复活旧消息，此断言会失败。
+    let createRunRequests = 0;
     page.on('request', (req) => {
       if (req.method() === 'DELETE' && req.url().includes('/api/runs/')) cancelRequests++;
+      if (req.method() === 'POST' && new URL(req.url()).pathname.endsWith('/api/runs')) createRunRequests++;
     });
 
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
@@ -158,7 +162,11 @@ test.describe('KB chat sessions', () => {
 
     // D3 语义：中断必须先 cancel 旧 run（DELETE /api/runs/:id），再清空、再自动发送
     await expect.poll(() => cancelRequests).toBe(1);
-    // 新构建的 wiki-build 提示词自动出现（原标签被清空后重发）
-    await expect(page.locator('[data-testid="kb-chat-panel"] .file-chat-messages')).toContainText(/wiki-build/, { timeout: 10_000 });
+    // 新建构走 createRun（第 2 次 POST /api/runs）且旧提示词被清掉（user 消息只剩 1 条）
+    const msgs = page.locator('[data-testid="kb-chat-panel"] .file-chat-session:visible .file-chat-messages');
+    await expect.poll(async () => ({ runs: createRunRequests, users: await msgs.locator('.msg.user').count() }))
+      .toEqual({ runs: 2, users: 1 });
+    // 新建构的 wiki-build 提示词自动出现（原标签被清空后重发）
+    await expect(msgs.locator('.msg.user')).toContainText(/wiki-build/, { timeout: 10_000 });
   });
 });
