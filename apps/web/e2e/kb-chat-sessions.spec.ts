@@ -343,4 +343,48 @@ test.describe('KB chat sessions', () => {
     await expect(page.locator('[data-testid="composer-history-item"]')).toHaveCount(1, { timeout: 5_000 });
     await expect(page.locator('[data-testid="composer-history-item"]')).toContainText('匹配的会话');
   });
+
+  test('历史下拉 hover 支持重命名与两步删除', async ({ page }) => {
+    await mockChatRun(page);
+    await mockHistoryConv(page);
+    // PATCH（重命名）与 DELETE（删除）conv-h
+    await page.route('**/api/conversations/conv-h', async (route) => {
+      if (route.request().method() === 'PATCH') {
+        const body = JSON.parse(route.request().postData() ?? '{}');
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: 'conv-h', title: body.title }) });
+      } else if (route.request().method() === 'DELETE') {
+        await route.fulfill({ status: 204, body: '' });
+      } else {
+        await route.continue();
+      }
+    });
+
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await page.locator('[data-testid="kb-btn-ask"]').click();
+    await page.locator('[data-testid="kb-chat-session-history"]').click();
+
+    const item = page.locator('[data-testid="composer-history-item"]');
+    await expect(item).toHaveCount(1);
+
+    // hover → 动作按钮出现
+    await item.hover();
+    await expect(item.locator('[data-testid="composer-history-rename"]')).toBeVisible();
+    await expect(item.locator('[data-testid="composer-history-delete"]')).toBeVisible();
+
+    // 重命名：✏️ → 输入框 → 新标题 → Enter → 标题更新
+    await item.locator('[data-testid="composer-history-rename"]').click();
+    const input = item.locator('[data-testid="composer-history-rename-input"]');
+    await expect(input).toBeVisible();
+    await input.fill('改后的标题');
+    await input.press('Enter');
+    await expect(item.locator('.composer-history-title')).toHaveText('改后的标题');
+
+    // 删除：🗑️ → 两步确认 → 行消失
+    await item.hover();
+    await item.locator('[data-testid="composer-history-delete"]').click();
+    await expect(item.locator('[data-testid="composer-history-delete"]')).toHaveText('确认?');
+    await item.locator('[data-testid="composer-history-delete"]').click();
+    await expect(page.locator('[data-testid="composer-history-item"]')).toHaveCount(0);
+  });
 });

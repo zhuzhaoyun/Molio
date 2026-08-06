@@ -30,6 +30,9 @@ export function ConversationHistoryMenu({
   const [show, setShow] = useState(false);
   const [items, setItems] = useState<ConversationHistoryItem[]>([]);
   const [search, setSearch] = useState('');
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -64,6 +67,8 @@ export function ConversationHistoryMenu({
       return;
     }
     setSearch('');
+    setRenamingId(null);
+    setConfirmDeleteId(null);
     setShow(true);
     await load('');
   }, [show, load]);
@@ -77,8 +82,43 @@ export function ConversationHistoryMenu({
 
   const select = useCallback((conversationId: string) => {
     setShow(false);
+    setConfirmDeleteId(null);
     onSelect(conversationId);
   }, [onSelect]);
+
+  // ── hover 操作：重命名 ──
+  const startRename = useCallback((item: ConversationHistoryItem) => {
+    setConfirmDeleteId(null);
+    setRenamingId(item.conversation.id);
+    setRenameValue(item.conversation.title ?? '');
+  }, []);
+
+  const commitRename = useCallback(async () => {
+    const id = renamingId;
+    const title = renameValue.trim();
+    setRenamingId(null);
+    if (!id || !title) return;
+    try {
+      await api.updateConversation(id, { title });
+      setItems((prev) => prev.map((it) =>
+        it.conversation.id === id ? { ...it, conversation: { ...it.conversation, title } } : it,
+      ));
+    } catch { /* 静默 */ }
+  }, [renamingId, renameValue]);
+
+  const cancelRename = useCallback(() => setRenamingId(null), []);
+
+  // ── hover 操作：删除（两步确认，避免误删） ──
+  const handleDeleteClick = useCallback((id: string) => {
+    if (confirmDeleteId !== id) {
+      setConfirmDeleteId(id);
+      return;
+    }
+    setConfirmDeleteId(null);
+    void api.deleteConversationById(id)
+      .then(() => setItems((prev) => prev.filter((it) => it.conversation.id !== id)))
+      .catch(() => { /* 静默 */ });
+  }, [confirmDeleteId]);
 
   return (
     // 默认（输入框）不设定位，下拉沿用原 containing block；顶栏变体加定位容器 + 向下展开
@@ -126,32 +166,84 @@ export function ConversationHistoryMenu({
               groupedHistory(items).map((group) => (
                 <div key={group.label}>
                   <div className="composer-history-group">{group.label}</div>
-                  {group.items.map((item) => (
-                    <button
-                      key={item.conversation.id}
-                      type="button"
-                      className="composer-history-item"
-                      data-testid="composer-history-item"
-                      onClick={() => select(item.conversation.id)}
-                    >
-                      <div className="composer-history-item-body">
-                        <span className="composer-history-title">
-                          {item.conversation.title || t('composer.untitled')}
-                        </span>
-                        <span className="composer-history-meta">
-                          {item.messageCount} 条消息
-                          {item.conversation.channelType && item.conversation.channelType !== 'desktop' && (
-                            <span className="composer-history-channel">
-                              {item.conversation.channelType === 'weixin' ? '微信' : item.conversation.channelType}
-                            </span>
-                          )}
-                        </span>
+                  {group.items.map((item) => {
+                    const id = item.conversation.id;
+                    const isRenaming = renamingId === id;
+                    const channelType = item.conversation.channelType;
+                    return (
+                      <div
+                        key={id}
+                        className={`composer-history-item${isRenaming ? ' is-renaming' : ''}`}
+                        data-testid="composer-history-item"
+                      >
+                        {isRenaming ? (
+                          <input
+                            className="composer-history-rename-input"
+                            data-testid="composer-history-rename-input"
+                            value={renameValue}
+                            onChange={(e) => setRenameValue(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') void commitRename();
+                              if (e.key === 'Escape') cancelRename();
+                            }}
+                            onBlur={() => void commitRename()}
+                            autoFocus
+                          />
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              className="composer-history-item-main"
+                              data-testid="composer-history-item-main"
+                              onClick={() => select(id)}
+                            >
+                              <span className="composer-history-title">
+                                {item.conversation.title || t('composer.untitled')}
+                              </span>
+                              {channelType && channelType !== 'desktop' && (
+                                <span className="composer-history-channel">
+                                  {channelType === 'weixin' ? '微信' : channelType}
+                                </span>
+                              )}
+                              <span className="composer-history-time">
+                                {formatHistoryTime(item.conversation.updatedAt)}
+                              </span>
+                            </button>
+                            <div className="composer-history-actions">
+                              <button
+                                type="button"
+                                className="composer-history-action"
+                                data-testid="composer-history-rename"
+                                aria-label="重命名"
+                                title="重命名"
+                                onClick={() => startRename(item)}
+                              >
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M12 20h9" />
+                                  <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                                </svg>
+                              </button>
+                              <button
+                                type="button"
+                                className={`composer-history-action danger${confirmDeleteId === id ? ' is-confirming' : ''}`}
+                                data-testid="composer-history-delete"
+                                aria-label={confirmDeleteId === id ? '确认删除' : '删除'}
+                                title={confirmDeleteId === id ? '再次点击确认删除' : '删除'}
+                                onClick={() => handleDeleteClick(id)}
+                              >
+                                {confirmDeleteId === id ? '确认?' : (
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <polyline points="3 6 5 6 21 6" />
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                                  </svg>
+                                )}
+                              </button>
+                            </div>
+                          </>
+                        )}
                       </div>
-                      <span className="composer-history-time">
-                        {formatHistoryTime(item.conversation.updatedAt)}
-                      </span>
-                    </button>
-                  ))}
+                    );
+                  })}
                 </div>
               ))
             )}
