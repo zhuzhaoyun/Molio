@@ -19,18 +19,20 @@ interface Props {
 
 /**
  * 会话标签栏 — 复用 kb-wtab 的滚动模型：内部 .chat-session-tabs 是隐藏滚动条的
- * 横向滚动容器，历史 / + 新建 / 收起 三个按钮钉在栏尾始终可见；标签溢出时显示
- * 右滚指示箭头；激活标签变化时自动滚入可见区。运行中的会话标签显示指示点。
+ * 横向滚动容器；溢出时显示 ‹ › 左右翻页箭头（无原生滚动条）；历史 / + 新建 / 收起
+ * 三个按钮钉在栏尾始终可见；激活标签变化时自动滚入可见区。运行中的会话标签显示指示点。
  */
 export function ChatSessionTabBar({ sessions, activeSessionId, runningSessionIds, onActivate, onClose, onNewSession, onOpenConversation, onClosePanel }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<HTMLDivElement>(null);
-  const [canScrollRight, setCanScrollRight] = useState(false);
+  const [canLeft, setCanLeft] = useState(false);
+  const [canRight, setCanRight] = useState(false);
 
   const recompute = () => {
     const el = scrollRef.current;
     if (!el) return;
-    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
+    setCanLeft(el.scrollLeft > 0);
+    setCanRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
   };
 
   // Recompute overflow on mount, tab changes, and resize.
@@ -48,17 +50,27 @@ export function ChatSessionTabBar({ sessions, activeSessionId, runningSessionIds
     activeRef.current?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
   }, [activeSessionId, sessions.length]);
 
-  const scrollToEnd = () => {
+  const scrollBy = (dir: 1 | -1) => {
     const el = scrollRef.current;
     if (!el) return;
     const reduced =
       typeof window !== 'undefined' &&
       window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    el.scrollTo({ left: el.scrollWidth, behavior: reduced ? 'auto' : 'smooth' });
+    el.scrollBy({ left: dir * el.clientWidth * 0.8, behavior: reduced ? 'auto' : 'smooth' });
   };
 
   return (
     <div className="chat-session-tabbar" data-testid="kb-chat-session-tabbar">
+      <button
+        type="button"
+        className="chat-session-tab-arrow"
+        data-testid="kb-chat-session-tab-arrow-left"
+        hidden={!canLeft}
+        aria-label="向左滚动"
+        onClick={() => scrollBy(-1)}
+      >
+        ‹
+      </button>
       <div className="chat-session-tabs" ref={scrollRef} onScroll={recompute}>
         {sessions.map((s) => {
           const isActive = s.id === activeSessionId;
@@ -99,17 +111,16 @@ export function ChatSessionTabBar({ sessions, activeSessionId, runningSessionIds
           );
         })}
       </div>
-      {canScrollRight && (
-        <button
-          type="button"
-          className="chat-session-tab-more"
-          data-testid="kb-chat-session-tab-more"
-          aria-label="向右滚动"
-          onClick={scrollToEnd}
-        >
-          ›
-        </button>
-      )}
+      <button
+        type="button"
+        className="chat-session-tab-arrow"
+        data-testid="kb-chat-session-tab-arrow-right"
+        hidden={!canRight}
+        aria-label="向右滚动"
+        onClick={() => scrollBy(1)}
+      >
+        ›
+      </button>
       <ConversationHistoryMenu
         onSelect={onOpenConversation}
         align="down"

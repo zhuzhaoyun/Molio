@@ -2988,24 +2988,24 @@
 }
 .chat-session-tab-close:hover { background: var(--bg-muted); color: var(--text); }
 
-/* 溢出右滚指示（标签溢出时出现，点击滚到末尾） */
-.chat-session-tab-more {
+/* 溢出左右翻页箭头（标签溢出时出现；隐藏滚动条方案，与 kb-wtab 一致） */
+.chat-session-tab-arrow {
   flex-shrink: 0;
-  width: 22px;
+  width: 20px;
   height: 22px;
-  margin-left: 2px;
   border: none;
   background: transparent;
   border-radius: 6px;
   color: var(--text-muted);
-  font-size: 16px;
+  font-size: 14px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
 }
-.chat-session-tab-more:hover { background: var(--bg-subtle); color: var(--text); }
-.chat-session-tab-more:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+.chat-session-tab-arrow:hover { background: var(--bg-subtle); color: var(--text); }
+.chat-session-tab-arrow:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+.chat-session-tab-arrow[hidden] { display: none; }
 
 /* + 新建会话：钉在栏尾，永不随标签滚动消失 */
 .chat-session-tab-add {
