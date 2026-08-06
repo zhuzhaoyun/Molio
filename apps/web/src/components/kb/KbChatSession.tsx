@@ -14,6 +14,8 @@ import { WIKI_QUERY_TRIGGER } from './kbChatPrompts';
 export interface KbChatSessionApi {
   send: (text: string) => void;
   clear: () => void;
+  /** 就地切换：把本会话内容替换为目标会话（更新 store conversationId + 清空 + 从 DB 加载）。 */
+  loadConversation: (conversationId: string) => void;
   /** 中断正在跑的 run（daemon 侧 DELETE）。无 run 时是安全的 no-op。
    *  返回 Promise 以便调用方可 await —— 中断后立即重发时，必须先等 cancel 完成，
    *  否则 cancel 的收尾 setState 会覆盖新 run 的 running 状态（D3 并发写风险）。 */
@@ -134,8 +136,26 @@ export function KbChatSession({
       setMessagesRef.current([], null);
       kbChatSessionsStore.updateSession(session.id, { conversationId: null });
     },
+    // 就地切换（历史打开不走新标签）：更新 store conversationId → 清空当前 → 从 DB 加载。
+    // store 的 openConversation 已把 conversationId 换成目标值，这里负责真正加载内容。
+    loadConversation: (conversationId) => {
+      kbChatSessionsStore.updateSession(session.id, { conversationId, title: '加载中…' });
+      setMessagesRef.current([], conversationId);
+      api.listConversationMessages(conversationId)
+        .then((msgs) => {
+          // 竞态守卫：切换期间又被切换/清除 → 丢弃迟到结果
+          const cur = kbChatSessionsStore.getSessions().find((s) => s.id === session.id);
+          if (!cur || cur.conversationId !== conversationId) return;
+          chat.setMessages(msgs.map(toChatMessage), conversationId);
+          const firstUser = msgs.find((m) => m.role === 'user');
+          if (firstUser) {
+            kbChatSessionsStore.updateSession(session.id, { title: firstUser.content.slice(0, 24) });
+          }
+        })
+        .catch(() => onLoadError?.(session.id));
+    },
     cancel: () => cancelRef.current(),
-  }), [session.id]);
+  }), [session.id, onLoadError]);
   useEffect(() => {
     registerApi(session.id, apiObj);
     return () => unregisterApi(session.id);

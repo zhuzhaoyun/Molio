@@ -26,6 +26,8 @@ export interface OpenSessionResult {
   opened: boolean;
   reason?: 'limit';
   tab?: ChatSessionTab;
+  /** 就地切换：把活动 qa 会话的内容替换为目标会话（不新建标签）。调用方需触发加载。 */
+  switched?: boolean;
 }
 
 function readPersistedSessions(): ChatSessionTab[] {
@@ -142,7 +144,11 @@ export const kbChatSessionsStore = {
     if (changed) emit({ ...state, sessions });
   },
 
-  /** 打开历史对话：按 conversationId 去重；否则新建「加载中…」标签并开面板。 */
+  /**
+   * 打开历史对话（切不像 VS Code Claude Code）：按 conversationId 去重激活；
+   * 否则若有活动 qa 会话则「就地切换」其内容（不新建标签，返回 switched）；
+   * 否则新建 qa 标签。目标是避免历史打开把标签越开越多。
+   */
   openConversation(conversationId: string): OpenSessionResult {
     const existing = state.sessions.find((s) => s.conversationId === conversationId);
     if (existing) {
@@ -150,6 +156,16 @@ export const kbChatSessionsStore = {
         emit({ ...state, activeSessionId: existing.id, panelOpen: true });
       }
       return { opened: false, tab: existing };
+    }
+    // 就地切换：活动会话是 qa 时，把它的 conversationId 换成目标会话（标题占位）。
+    // 切换本身不加载——由调用方（面板 handleOpenConversation）触发该会话的加载。
+    const active = state.sessions.find((s) => s.id === state.activeSessionId);
+    if (active && active.mode === 'qa') {
+      const sessions = state.sessions.map((s) =>
+        s.id === active.id ? { ...s, conversationId, title: '加载中…' } : s,
+      );
+      emit({ ...state, sessions, panelOpen: true });
+      return { opened: false, tab: { ...active, conversationId, title: '加载中…' }, switched: true };
     }
     if (state.sessions.length >= MAX_CHAT_SESSIONS) {
       return { opened: false, reason: 'limit' };

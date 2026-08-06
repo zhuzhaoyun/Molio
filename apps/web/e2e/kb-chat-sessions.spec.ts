@@ -223,7 +223,7 @@ test.describe('KB chat sessions', () => {
     await expect(msgs.locator('.msg.user')).toContainText(/wiki-build/, { timeout: 10_000 });
   });
 
-  test('历史下拉打开会话：新建标签、标题从消息回填、同会话去重', async ({ page }) => {
+  test('历史下拉打开会话：就地切换当前会话（不新建标签）、标题从消息回填、同会话去重', async ({ page }) => {
     await mockChatRun(page);
     await mockHistoryConv(page);
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
@@ -233,25 +233,63 @@ test.describe('KB chat sessions', () => {
     await page.locator('[data-testid="kb-btn-ask"]').click();
     await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(1);
 
-    // 从 composer 历史下拉打开 conv-h → 新建第 2 个标签（非去重），标题从消息回填
+    // 从历史下拉打开 conv-h → 就地切换：不新建标签，仍 1 个；标题从消息回填为「历史问题」
     await page.locator('[data-testid="kb-chat-session-history"]').click();
     await page.locator('[data-testid="kb-chat-panel"] [data-testid="composer-history-item"]')
       .filter({ hasText: '历史问题' }).click();
-    await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(2);
+    await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(1, { timeout: 5_000 });
     await expect(page.locator('[data-testid="kb-chat-session-tab"] .chat-session-tab-title'))
-      .toHaveText(['新会话', '历史问题'], { timeout: 5_000 });
+      .toHaveText(['历史问题'], { timeout: 5_000 });
     await expect(activeMessages(page)).toContainText('历史问题');
     // 不跳主页，仍落在知识库页
     expect(page.url()).toContain('/knowledge');
 
-    // 再次从下拉打开同一会话 → 去重激活，不新增标签（仍 2 个）
+    // 再次从下拉打开同一会话 → 去重激活，不新增标签（仍 1 个）
     await page.locator('[data-testid="kb-chat-session-history"]').click();
     await page.locator('[data-testid="kb-chat-panel"] [data-testid="composer-history-item"]')
       .filter({ hasText: '历史问题' }).click();
-    await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(2);
+    await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(1);
     await expect(page.locator('[data-testid="kb-chat-session-tab"] .chat-session-tab-title'))
-      .toHaveText(['新会话', '历史问题']);
+      .toHaveText(['历史问题']);
     await expect(activeMessages(page)).toContainText('历史问题');
+  });
+
+  test('多会话时历史打开 → 切换活动会话，不新增标签', async ({ page }) => {
+    await mockChatRun(page);
+    // 列表含一个尚未打开的新会话 conv-new
+    await page.route(/\/api\/conversations(?:\?|$)/, async (route) => {
+      await route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({
+          pinnedItems: [],
+          items: [{ conversation: { id: 'conv-new', title: '新历史会话', updatedAt: Date.now() }, lastMessage: null, messageCount: 1 }],
+          nextCursor: null,
+        }),
+      });
+    });
+    await page.route('**/api/conversations/conv-new/messages', (route) =>
+      route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({ messages: [{ id: 'm1', role: 'user', content: '新历史会话内容', timestamp: Date.now() }] }),
+      }));
+
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await page.locator('[data-testid="kb-btn-ask"]').click();
+    await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(1);
+    // 再开一个会话 → 2 个
+    await page.locator('[data-testid="kb-chat-session-new"]').click();
+    await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(2);
+
+    // 打开新历史会话 → 切换当前活动（第 2 个）会话，不新增标签 → 仍 2 个
+    await page.locator('[data-testid="kb-chat-session-history"]').click();
+    await page.locator('[data-testid="kb-chat-panel"] [data-testid="composer-history-item"]')
+      .filter({ hasText: '新历史会话' }).click();
+    await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(2, { timeout: 5_000 });
+    // 活动标签内容被切换为新历史会话（标题从首条 user 消息回填）
+    await expect(page.locator('[data-testid="kb-chat-session-tab"] .chat-session-tab-title'))
+      .toHaveText(['新会话', '新历史会话内容'], { timeout: 5_000 });
+    await expect(activeMessages(page)).toContainText('新历史会话内容');
   });
 
   test('全局历史页打开会话 → 落知识库页，标题从消息回填', async ({ page }) => {

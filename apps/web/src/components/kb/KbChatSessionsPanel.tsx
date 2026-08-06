@@ -270,7 +270,14 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
 
   const handleOpenConversation = useCallback((conversationId: string) => {
     const res = kbChatSessionsStore.openConversation(conversationId);
-    if (!res.opened && res.reason === 'limit') showToast(`已达 ${MAX_CHAT_SESSIONS} 个会话标签上限`);
+    if (res.reason === 'limit') {
+      showToast(`已达 ${MAX_CHAT_SESSIONS} 个会话标签上限`);
+      return;
+    }
+    // 就地切换（不新建标签）：store 已更新活动会话的 conversationId，这里触发它真正加载
+    if (res.switched && res.tab) {
+      sessionApisRef.current.get(res.tab.id)?.loadConversation?.(conversationId);
+    }
   }, [showToast]);
 
   const handleLoadError = useCallback((sessionId: string) => {
