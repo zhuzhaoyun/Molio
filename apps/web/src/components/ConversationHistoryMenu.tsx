@@ -29,7 +29,9 @@ export function ConversationHistoryMenu({
   const { t } = useI18n();
   const [show, setShow] = useState(false);
   const [items, setItems] = useState<ConversationHistoryItem[]>([]);
+  const [search, setSearch] = useState('');
   const ref = useRef<HTMLDivElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 点击外部关闭
   useEffect(() => {
@@ -41,19 +43,37 @@ export function ConversationHistoryMenu({
     return () => document.removeEventListener('mousedown', handler);
   }, [show]);
 
+  // 卸载时清理搜索防抖定时器
+  useEffect(() => () => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+  }, []);
+
+  const load = useCallback(async (query: string) => {
+    try {
+      // query 为空时传 undefined，等价原来的全量列表
+      const { items: list, pinnedItems } = await api.listConversationHistory(query ? { query } : undefined);
+      setItems([...pinnedItems, ...list]);
+    } catch {
+      // silently fail
+    }
+  }, []);
+
   const toggle = useCallback(async () => {
     if (show) {
       setShow(false);
       return;
     }
-    try {
-      const { items: list, pinnedItems } = await api.listConversationHistory();
-      setItems([...pinnedItems, ...list]);
-      setShow(true);
-    } catch {
-      // silently fail
-    }
-  }, [show]);
+    setSearch('');
+    setShow(true);
+    await load('');
+  }, [show, load]);
+
+  // 输入搜索词 → 300ms 防抖后按 query 拉取（daemon FTS 全文搜索）
+  const handleSearchChange = useCallback((value: string) => {
+    setSearch(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => { void load(value); }, 300);
+  }, [load]);
 
   const select = useCallback((conversationId: string) => {
     setShow(false);
@@ -83,9 +103,25 @@ export function ConversationHistoryMenu({
           <div className="composer-history-header">
             <span>{t('composer.history')}</span>
           </div>
+          <div className="composer-history-search">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <input
+              type="search"
+              data-testid="composer-history-search"
+              placeholder={t('composer.historySearchPlaceholder')}
+              value={search}
+              onChange={(e) => handleSearchChange(e.target.value)}
+              autoFocus
+            />
+          </div>
           <div className="composer-history-list">
             {items.length === 0 ? (
-              <div className="composer-history-empty">{t('composer.noHistory')}</div>
+              <div className="composer-history-empty">
+                {search ? t('composer.noSearchResults') : t('composer.noHistory')}
+              </div>
             ) : (
               groupedHistory(items).map((group) => (
                 <div key={group.label}>

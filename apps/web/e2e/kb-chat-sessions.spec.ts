@@ -276,4 +276,33 @@ test.describe('KB chat sessions', () => {
       .toHaveText(['历史问题'], { timeout: 5_000 });
     await expect(activeMessages(page)).toContainText('历史问题');
   });
+
+  test('历史下拉支持搜索：输入关键词按 query 过滤', async ({ page }) => {
+    await mockChatRun(page);
+    // 搜索感知 mock：有 query 时只返回命中项（模拟 daemon FTS），否则返回全量
+    await page.route(/\/api\/conversations(?:\?|$)/, async (route) => {
+      const url = new URL(route.request().url());
+      const q = url.searchParams.get('query') ?? '';
+      const items = q
+        ? [{ conversation: { id: 'hit', title: '匹配的会话', updatedAt: Date.now() }, lastMessage: null, messageCount: 1 }]
+        : [
+            { conversation: { id: 'c1', title: '第一条历史', updatedAt: Date.now() }, lastMessage: null, messageCount: 2 },
+            { conversation: { id: 'c2', title: '第二条历史', updatedAt: Date.now() - 86400000 * 2 }, lastMessage: null, messageCount: 3 },
+          ];
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pinnedItems: [], items, nextCursor: null }) });
+    });
+
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await page.locator('[data-testid="kb-btn-ask"]').click();
+
+    await page.locator('[data-testid="kb-chat-session-history"]').click();
+    await expect(page.locator('[data-testid="composer-history-dropdown"]')).toBeVisible();
+    await expect(page.locator('[data-testid="composer-history-item"]')).toHaveCount(2);
+
+    // 输入搜索词 → 防抖后按 query 过滤（daemon 返回命中的 1 条）
+    await page.locator('[data-testid="composer-history-search"]').fill('匹配');
+    await expect(page.locator('[data-testid="composer-history-item"]')).toHaveCount(1, { timeout: 5_000 });
+    await expect(page.locator('[data-testid="composer-history-item"]')).toContainText('匹配的会话');
+  });
 });

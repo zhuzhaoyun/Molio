@@ -1053,6 +1053,31 @@
   border-bottom: 1px solid var(--border-soft);
 }
 
+/* 搜索框（daemon FTS 全文搜索，300ms 防抖） */
+.composer-history-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-soft);
+  flex-shrink: 0;
+}
+.composer-history-search svg {
+  flex-shrink: 0;
+  color: var(--text-soft);
+}
+.composer-history-search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 13px;
+  color: var(--text);
+}
+.composer-history-search input::placeholder { color: var(--text-faint); }
+.composer-history-search input::-webkit-search-cancel-button { cursor: pointer; }
+
 .composer-history-list {
   overflow-y: auto;
   flex: 1;

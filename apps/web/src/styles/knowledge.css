@@ -2998,7 +2998,7 @@
   background: transparent;
   border-radius: 6px;
   color: var(--text-muted);
-  font-size: 14px;
+  font-size: 16px;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -3061,8 +3061,15 @@
 
 /* 顶栏 SVG 图标显式禁止 flex 收缩（否则宽度被压成 0，图标不可见） */
 .chat-session-tab-history svg,
+.chat-session-tab-add svg,
 .chat-session-tab-close-panel svg {
   flex-shrink: 0;
+}
+
+/* 顶栏三个图标统一 16px（共享组件的时钟默认 20px，顶栏变体收紧到 16 与新会话/关闭一致） */
+.chat-session-tab-history svg {
+  width: 16px;
+  height: 16px;
 }
 
 /* 收起面板按钮（钉在栏尾最右） */
