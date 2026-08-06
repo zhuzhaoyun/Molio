@@ -130,4 +130,35 @@ test.describe('KB chat sessions', () => {
     await page.waitForTimeout(500);
     expect(cancelRequests).toBe(0);
   });
+
+  test('构建中再点构建 → 三选一；中断后新构建开始（cancel 旧 run）', async ({ page }) => {
+    // frameDelay 400ms × 5 帧 ≈ 1.2s 内第一个构建保持 running，第二次点击才能命中三选一
+    await mockChatRun(page, { frameDelay: 400 });
+    // 记录对 /api/runs 的 DELETE（= cancelRun）；「中断并立即执行」必须发出恰好 1 次
+    let cancelRequests = 0;
+    page.on('request', (req) => {
+      if (req.method() === 'DELETE' && req.url().includes('/api/runs/')) cancelRequests++;
+    });
+
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+
+    // 第一次点构建 → ⚙️ 标签创建 + 自动发送；等 run 进入 running（header 显示运行状态）
+    await page.locator('[data-testid="kb-btn-build-wiki"]').click();
+    await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(1);
+    await expect(page.locator('[data-testid="kb-chat-panel"] .file-chat-status')).toBeVisible({ timeout: 5_000 });
+
+    // 构建在跑再点 → 三选一确认框（data-testid=confirm-dialog）
+    await page.locator('[data-testid="kb-btn-build-wiki"]').click();
+    const dialog = page.locator('[data-testid="confirm-dialog"]');
+    await expect(dialog).toBeVisible();
+    // 选「中断并立即执行」
+    await dialog.getByRole('button', { name: '中断并立即执行' }).click();
+    await expect(dialog).not.toBeVisible();
+
+    // D3 语义：中断必须先 cancel 旧 run（DELETE /api/runs/:id），再清空、再自动发送
+    await expect.poll(() => cancelRequests).toBe(1);
+    // 新构建的 wiki-build 提示词自动出现（原标签被清空后重发）
+    await expect(page.locator('[data-testid="kb-chat-panel"] .file-chat-messages')).toContainText(/wiki-build/, { timeout: 10_000 });
+  });
 });

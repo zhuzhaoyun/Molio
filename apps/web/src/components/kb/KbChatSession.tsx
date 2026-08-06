@@ -14,7 +14,10 @@ import { WIKI_QUERY_TRIGGER } from './kbChatPrompts';
 export interface KbChatSessionApi {
   send: (text: string) => void;
   clear: () => void;
-  cancel: () => void;
+  /** 中断正在跑的 run（daemon 侧 DELETE）。无 run 时是安全的 no-op。
+   *  返回 Promise 以便调用方可 await —— 中断后立即重发时，必须先等 cancel 完成，
+   *  否则 cancel 的收尾 setState 会覆盖新 run 的 running 状态（D3 并发写风险）。 */
+  cancel: () => void | Promise<void>;
 }
 
 interface KbChatSessionProps {

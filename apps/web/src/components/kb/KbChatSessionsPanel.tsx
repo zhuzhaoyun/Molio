@@ -112,13 +112,18 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     return WIKI_INGEST_PROMPT(opts.filePath ?? '', opts.isDirectory);
   }, []);
 
-  const clearAndSend = useCallback((sessionId: string, opts: WikiOpOpts) => {
+  const clearAndSend = useCallback(async (sessionId: string, opts: WikiOpOpts) => {
     const a = sessionApisRef.current.get(sessionId);
     if (!a) {
       // 会话刚 open、尚未 mount（API 未注册）→ 缓存提示词，registerApi 时补发
       pendingAutoSendRef.current.set(sessionId, wikiPrompt(opts));
       return;
     }
+    // D3「新构建停旧构建」：先 cancel 该会话正在跑的 run（daemon 侧 DELETE /api/runs/:id，
+    // 杀旧 agent 进程，杜绝新旧构建并发写 vault），再清空、再自动发送。
+    // api.cancel 在无 run 时是安全的 no-op；await 确保 cancel 的收尾 setState
+    // 不会覆盖随后新 run 的 running 状态。
+    await a.cancel();
     a.clear();
     a.send(wikiPrompt(opts));
   }, [wikiPrompt]);
