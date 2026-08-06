@@ -390,6 +390,31 @@ p { margin-bottom: 0; }
   flex-wrap: wrap;
 }
 
+.hero-sublinks {
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--ink-40);
+}
+
+.hero-sublinks a {
+  color: var(--ink-60);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--rule);
+  transition: color 0.2s var(--ease), text-decoration-color 0.2s var(--ease);
+}
+
+.hero-sublinks a:hover {
+  color: var(--seal-dark);
+  text-decoration-color: var(--seal-dark);
+}
+
+.hero-sublinks-sep { color: var(--ink-20); }
+
 /* Staggered reveal for hero children */
 .hero .reveal {
   opacity: 0;
@@ -1120,6 +1145,186 @@ p { margin-bottom: 0; }
 .download-btn.secondary:hover {
   border-color: var(--ink);
   color: var(--ink);
+}
+
+.install-details {
+  border: 1px solid var(--hair);
+  border-radius: 2px;
+  background: var(--paper-2);
+  font-size: 14.5px;
+}
+
+.install-details summary {
+  cursor: pointer;
+  padding: 14px 20px;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink-60);
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.install-details summary::-webkit-details-marker { display: none; }
+
+.install-details summary::before {
+  content: '▸';
+  color: var(--ink-40);
+  transition: transform 0.2s var(--ease);
+}
+
+.install-details[open] summary::before { transform: rotate(90deg); }
+
+.install-details summary:hover { color: var(--ink); }
+
+.install-details ol {
+  padding: 0 20px 18px 44px;
+  color: var(--ink-60);
+  line-height: 2;
+}
+
+.install-details code {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  background: var(--paper-3);
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+/* Resource vault section — marketplace style */
+.res-intro {
+  color: var(--ink-40);
+  font-size: 15px;
+  line-height: 1.8;
+  max-width: 760px;
+  margin: -8px 0 28px;
+}
+
+.res-tabs {
+  display: flex;
+  justify-content: center;
+  gap: 44px;
+  margin-bottom: 28px;
+}
+
+.res-tab {
+  background: none;
+  border: none;
+  font-family: var(--font-body);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink-40);
+  padding: 6px 2px 10px;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 0.25s var(--ease), border-color 0.25s var(--ease);
+}
+
+.res-tab:hover { color: var(--ink); }
+
+.res-tab.active {
+  color: var(--ink);
+  border-bottom-color: var(--ink);
+}
+
+.res-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 20px;
+  margin-bottom: 32px;
+}
+
+.res-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  background: var(--paper-2);
+  border: 1px solid var(--hair);
+  border-radius: 4px;
+  padding: 20px;
+  text-align: left;
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.3s var(--ease), box-shadow 0.3s var(--ease), border-color 0.3s var(--ease);
+}
+
+.res-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.06);
+  border-color: var(--rule);
+}
+
+.res-icon {
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+}
+
+.res-body { flex: 1; min-width: 0; }
+
+.res-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.res-name {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.res-price {
+  flex: none;
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  padding: 2px 9px;
+  border-radius: 999px;
+}
+
+.res-price.free {
+  color: var(--seal-dark);
+  border: 1px solid var(--seal-dark);
+  background: rgba(196, 30, 36, 0.06);
+}
+
+.res-price.paid {
+  color: var(--paper);
+  background: var(--ink);
+}
+
+.res-file {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-20);
+  margin-bottom: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.res-desc {
+  font-size: 13px;
+  color: var(--ink-40);
+  line-height: 1.7;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .ai-tools-table {

@@ -31,7 +31,7 @@ Generic chatbots draw on the internet at large. Molio draws on your library. It 
 |---------|-------------|
 | 🗂️ **Obsidian-Compatible** | Point Molio at your existing Obsidian vault — zero migration, pure Markdown, no vendor lock-in |
 | 🤖 **Multi-Agent + Local-First** | Use Claude Code, Codex, Gemini CLI, Qwen Code in a unified GUI with streaming output — all data stays on your machine, never touching third-party servers |
-| ✂️ **[Web Clipper](https://chromewebstore.google.com/detail/pjdacbbkjpegfkogoieejajljplngbik)** | Chrome extension clips web pages to your vault with one click, auto-opens the desktop app. [Chrome Web Store](https://chromewebstore.google.com/detail/pjdacbbkjpegfkogoieejajljplngbik) \| [Other Browsers](https://molio.cn/download.html) |
+| ✂️ **[Web Clipper](https://chromewebstore.google.com/detail/pjdacbbkjpegfkogoieejajljplngbik)** | Chrome extension clips web pages to your vault with one click, auto-opens the desktop app. [Chrome Web Store](https://chromewebstore.google.com/detail/pjdacbbkjpegfkogoieejajljplngbik) \| [Other Browsers](https://molio.cn/#download) |
 | 📝 **Editor → Publish** | Split-pane Markdown editor with real-time preview, typesetting powered by [doocs/md](https://github.com/doocs/md), one-click publishing to 30+ platforms via [doocs/cose](https://github.com/doocs/cose) |
 | 💬 **Messaging Integration** | Mobile chat with your knowledge base via WeChat (regional integration) |
 | 📖 **Knowledge Graph** | Visual browsing of your knowledge connections and relationships |
