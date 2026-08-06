@@ -1183,18 +1183,21 @@
   flex-shrink: 0;
 }
 
-/* hover 动作（重命名/删除） — 默认隐藏，hover / focus 显示 */
+/* hover 动作（重命名/删除） — 默认不占位，hover / focus 时替代时间位置显示 */
 .composer-history-actions {
-  display: flex;
+  display: none;
   align-items: center;
   gap: 2px;
   flex-shrink: 0;
-  opacity: 0;
-  transition: opacity 120ms ease;
 }
 .composer-history-item:hover .composer-history-actions,
 .composer-history-item:focus-within .composer-history-actions {
-  opacity: 1;
+  display: flex;
+}
+/* hover 时隐藏时间，把右侧位置让给动作按钮（无独立常驻区域） */
+.composer-history-item:hover .composer-history-time,
+.composer-history-item:focus-within .composer-history-time {
+  display: none;
 }
 
 .composer-history-action {
@@ -1212,7 +1215,11 @@
 }
 .composer-history-action:hover { background: var(--bg-muted); color: var(--text); }
 .composer-history-action.danger:hover { background: var(--accent-tint); color: var(--accent-strong); }
+/* 修复 SVG 图标被 flex 压成 0 宽（logo 不可见） */
+.composer-history-action svg { flex-shrink: 0; }
 .composer-history-action.danger.is-confirming {
+  width: auto;
+  padding: 0 6px;
   background: var(--accent-tint);
   color: var(--accent-strong);
   font-size: 11px;
