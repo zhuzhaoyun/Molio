@@ -9,7 +9,7 @@ import { AssistantMessage } from '../AssistantMessage';
 import { ChatComposer, type FileRef, type PastedImage, buildAttachmentPrefix } from '../ChatComposer';
 import { ActivityTree } from '../ActivityTree';
 import { useI18n } from '../../i18n';
-import { WIKI_PROMPTS, WIKI_QUERY_TRIGGER, WIKI_INGEST_PROMPT } from './kbChatPrompts';
+import { WIKI_QUERY_TRIGGER } from './kbChatPrompts';
 
 export interface KbChatSessionApi {
   send: (text: string) => void;
@@ -90,12 +90,16 @@ export function KbChatSession({
   useEffect(() => {
     if (loadedRef.current) return;
     loadedRef.current = true;
-    if (!session.conversationId) return;
+    const loadedConversationId = session.conversationId;
+    if (!loadedConversationId) return;
     let cancelled = false;
-    api.listConversationMessages(session.conversationId)
+    api.listConversationMessages(loadedConversationId)
       .then((msgs) => {
         if (cancelled) return;
-        chat.setMessages(msgs.map(toChatMessage), session.conversationId);
+        // 竞态守卫：加载期间会话被 clear（conversationId 置 null）或指向新会话 → 丢弃迟到结果
+        const cur = kbChatSessionsStore.getSessions().find((s) => s.id === session.id);
+        if (!cur || cur.conversationId !== loadedConversationId) return;
+        chat.setMessages(msgs.map(toChatMessage), loadedConversationId);
         const firstUser = msgs.find((m) => m.role === 'user');
         if (firstUser) {
           kbChatSessionsStore.updateSession(session.id, { title: firstUser.content.slice(0, 24) });
@@ -113,6 +117,7 @@ export function KbChatSession({
   const sendRef = useRef(chat.send); sendRef.current = chat.send;
   const setMessagesRef = useRef(chat.setMessages); setMessagesRef.current = chat.setMessages;
   const cancelRef = useRef(chat.cancel); cancelRef.current = chat.cancel;
+  const resetRef = useRef(chat.reset); resetRef.current = chat.reset;
   const apiObj = useMemo<KbChatSessionApi>(() => ({
     send: (text) => sendRef.current(text),
     clear: () => {
@@ -125,6 +130,9 @@ export function KbChatSession({
     registerApi(session.id, apiObj);
     return () => unregisterApi(session.id);
   }, [session.id, apiObj, registerApi, unregisterApi]);
+
+  // 卸载时关闭 SSE（不 cancel run —— 后台任务继续跑，仅断开订阅，防 EventSource 泄漏/卸载后 setState）
+  useEffect(() => () => { resetRef.current(); }, []);
 
   // 消息更新时滚到底部（照搬旧 KbChatPanel）
   useEffect(() => {

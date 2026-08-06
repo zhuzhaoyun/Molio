@@ -3,7 +3,7 @@ import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState,
 import { useI18n } from '../../i18n';
 import {
   kbChatSessionsStore, useKbChatSessions, useKbChatActiveSessionId,
-  MAX_CHAT_SESSIONS, type ChatSessionMode, type ChatSessionTab,
+  MAX_CHAT_SESSIONS, type ChatSessionTab,
 } from '../../stores/kbChatSessionsStore';
 import { ChatSessionTabBar } from './ChatSessionTabBar';
 import { KbChatSession, type KbChatSessionApi } from './KbChatSession';
@@ -137,6 +137,8 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
       tab = res.tab;
     } else {
       kbChatSessionsStore.activateSession(tab.id);
+      // 已存在的 wiki 标签：重新打开可能已被收起的面板，保证点击构建/检查必有反馈
+      kbChatSessionsStore.setPanelOpen(true);
     }
     if (!tab) return;
     // 2) 任意 wiki 任务在跑 → 三选一
@@ -187,11 +189,12 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
 
   // ─── 面板级事件 ───
   const handleNewSession = useCallback(() => {
-    kbChatSessionsStore.openSession({
+    const res = kbChatSessionsStore.openSession({
       mode: 'qa', title: '新会话', conversationId: null,
       vaultId: currentVaultId ?? undefined, filePath: currentFilePath,
     });
-  }, [currentFilePath, currentVaultId]);
+    if (!res.opened && res.reason === 'limit') showToast(`已达 ${MAX_CHAT_SESSIONS} 个会话标签上限`);
+  }, [currentFilePath, currentVaultId, showToast]);
 
   const handleCloseTab = useCallback((id: string) => {
     if (runningMap[id]) {
@@ -300,8 +303,8 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
         confirmLabel="中断并关闭"
         tertiaryLabel="后台继续并关闭"
         danger
-        onConfirm={() => { setConfirmDialog((p) => ({ ...p, show: false })); handleCloseConfirm(true); }}
-        onTertiary={() => { setConfirmDialog((p) => ({ ...p, show: false })); handleCloseConfirm(false); }}
+        onConfirm={() => handleCloseConfirm(true)}
+        onTertiary={() => handleCloseConfirm(false)}
         onCancel={() => { closePendingRef.current = null; setClosePendingOpen(false); }}
       />
     </aside>

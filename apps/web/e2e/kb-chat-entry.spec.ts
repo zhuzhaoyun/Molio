@@ -47,6 +47,13 @@ test.describe('KB chat entry (scoped buttons)', () => {
     await expect(panel.locator('.file-chat-label')).toContainText(/构建|Wiki|Build/);
     // a user message (the skill prompt) appears
     await expect(panel.locator('.file-chat-messages')).toContainText(/wiki-build/, { timeout: 10_000 });
+
+    // Regression: clicking build again after closing the panel reopens it
+    // (existing tab must call setPanelOpen(true), not just activate).
+    await page.locator('[data-testid="kb-chat-close"]').click();
+    await expect(panel).toBeHidden();
+    await page.locator('[data-testid="kb-btn-build-wiki"]').click();
+    await expect(panel).toBeVisible();
   });
 
   test('💬问答 while a build is active opens a separate qa tab — build tab keeps its thread', async ({ page }) => {
