@@ -176,3 +176,89 @@ describe('FeishuApi message sending (postMessage)', () => {
     );
   });
 });
+
+/**
+ * downloadMessageResource — the user-sent attachment download path.
+ *
+ * Regression: user-sent files were downloaded via `im/v1/files/{file_key}`,
+ * which only serves app-uploaded resources; Feishu answered with 400
+ * "The app is not the resource sender" (code 234008). The fix routes inbound
+ * attachments through `im/v1/messages/{message_id}/resources/{file_key}?type=…`.
+ */
+describe('FeishuApi.downloadMessageResource', () => {
+  let originalFetch: typeof fetch;
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it('GETs messages/{messageId}/resources/{fileKey}?type=… with the Bearer token', async () => {
+    let seenUrl = '';
+    let seenAuth = '';
+    const bytes = Buffer.from([1, 2, 3, 4]);
+    globalThis.fetch = (async (url: URL | string, init?: RequestInit) => {
+      seenUrl = String(url);
+      seenAuth = ((init?.headers ?? {}) as Record<string, string>).Authorization ?? '';
+      return new Response(bytes, {
+        status: 200,
+        headers: { 'content-type': 'application/octet-stream' },
+      });
+    }) as typeof fetch;
+
+    const api = new FeishuApi('https://open.feishu.cn', 'cli_x', 'sec_x');
+    const { data, contentType } = await api.downloadMessageResource(
+      'tok_abc', 'om_msg_1', 'file_v3_001', 'file',
+    );
+    assert.equal(
+      seenUrl,
+      'https://open.feishu.cn/open-apis/im/v1/messages/om_msg_1/resources/file_v3_001?type=file',
+    );
+    assert.equal(seenAuth, 'Bearer tok_abc');
+    assert.deepEqual(data, bytes);
+    assert.equal(contentType, 'application/octet-stream');
+  });
+
+  it('passes type=image through the query string', async () => {
+    let seenUrl = '';
+    globalThis.fetch = (async (url: URL | string) => {
+      seenUrl = String(url);
+      return new Response(Buffer.from([9]), { status: 200 });
+    }) as typeof fetch;
+
+    const api = new FeishuApi('https://open.feishu.cn', 'cli_x', 'sec_x');
+    await api.downloadMessageResource('tok', 'om_msg_2', 'img_v3_9', 'image');
+    assert.ok(seenUrl.endsWith('/resources/img_v3_9?type=image'), seenUrl);
+  });
+
+  it('throws with the Feishu msg on 400 (234008 repro: "The app is not the resource sender")', async () => {
+    globalThis.fetch = (async () => new Response(
+      JSON.stringify({ code: 400, msg: 'The app is not the resource sender' }),
+      { status: 400, headers: { 'content-type': 'application/json' } },
+    )) as typeof fetch;
+
+    const api = new FeishuApi('https://open.feishu.cn', 'cli_x', 'sec_x');
+    await assert.rejects(
+      () => api.downloadMessageResource('tok', 'om_msg_1', 'file_v3_001', 'file'),
+      /message resource download 400: The app is not the resource sender/,
+    );
+  });
+
+  it('throws BEFORE any network call when messageId is empty', async () => {
+    let called = false;
+    globalThis.fetch = (async () => {
+      called = true;
+      return new Response('x', { status: 200 });
+    }) as typeof fetch;
+
+    const api = new FeishuApi('https://open.feishu.cn', 'cli_x', 'sec_x');
+    await assert.rejects(
+      () => api.downloadMessageResource('tok', '', 'file_v3_001', 'file'),
+      /messageId is required/,
+    );
+    assert.equal(called, false, 'no request may go out without a messageId');
+  });
+});

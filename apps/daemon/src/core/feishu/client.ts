@@ -221,6 +221,10 @@ export class FeishuApi {
   /**
    * Download an image by `image_key`. Returns raw bytes + content-type.
    * Feishu serves image bytes directly (no AES decryption needed, unlike weixin).
+   *
+   * ⚠️ This endpoint only serves resources the APP itself uploaded. To download
+   * a user-sent image, use `downloadMessageResource` — this one fails with 400
+   * "The app is not the resource sender" (code 234008) otherwise.
    */
   async downloadImage(tenantAccessToken: string, imageKey: string, timeoutMs = 60_000): Promise<{ data: Buffer; contentType: string }> {
     const url = `${ensureTrailingSlash(this.baseUrl)}open-apis/im/v1/images/${encodeURIComponent(imageKey)}`;
@@ -243,6 +247,10 @@ export class FeishuApi {
   /**
    * Download a file by `file_key`. Same shape as `downloadImage`.
    * Note: file downloads require the `im:resource` permission scope.
+   *
+   * ⚠️ This endpoint only serves resources the APP itself uploaded. To download
+   * a user-sent file, use `downloadMessageResource` — this one fails with 400
+   * "The app is not the resource sender" (code 234008) otherwise.
    */
   async downloadFile(tenantAccessToken: string, fileKey: string, timeoutMs = 60_000): Promise<{ data: Buffer; contentType: string }> {
     const url = `${ensureTrailingSlash(this.baseUrl)}open-apis/im/v1/files/${encodeURIComponent(fileKey)}`;
@@ -255,6 +263,53 @@ export class FeishuApi {
       });
       if (!res.ok) {
         throw new Error(`Feishu file download ${res.status}: ${await this.formatErrorBody(res)}`);
+      }
+      return await this.readCappedBody(res);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
+   * Download a message resource (file or image) that a USER sent, addressed
+   * by the event's `message_id` + the resource key:
+   *
+   *   GET /open-apis/im/v1/messages/{message_id}/resources/{file_key}?type=file|image
+   *
+   * This is the only endpoint that serves user-sent resources — the plain
+   * `im/v1/files|images` endpoints only serve resources the app itself
+   * uploaded and answer a user-sent key with 400 / code 234008
+   * ("The app is not the resource sender"). Requires the `im:resource`
+   * permission scope. Returns raw bytes + content-type, same shape as
+   * `downloadFile`/`downloadImage`.
+   */
+  async downloadMessageResource(
+    tenantAccessToken: string,
+    messageId: string,
+    fileKey: string,
+    type: 'file' | 'image',
+    timeoutMs = 60_000,
+  ): Promise<{ data: Buffer; contentType: string }> {
+    if (!messageId) {
+      throw new Error('Feishu downloadMessageResource: messageId is required (the im/v1/messages/{id}/resources endpoint is the only one that serves user-sent files)');
+    }
+    if (!fileKey) {
+      throw new Error('Feishu downloadMessageResource: fileKey is required');
+    }
+    const url = `${ensureTrailingSlash(this.baseUrl)}open-apis/im/v1/messages/${encodeURIComponent(messageId)}/resources/${encodeURIComponent(fileKey)}?type=${type}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      // Note: community reports some Feishu gateways want `Content-Length: 0`
+      // on this GET, but undici's fetch strips that header (forbidden name) —
+      // verified against a local server. The live repro downloaded fine
+      // without it, so we don't fight it here.
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${tenantAccessToken}` },
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        throw new Error(`Feishu message resource download ${res.status}: ${await this.formatErrorBody(res)}`);
       }
       return await this.readCappedBody(res);
     } finally {

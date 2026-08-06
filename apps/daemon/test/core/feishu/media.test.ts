@@ -47,8 +47,8 @@ describe('materializeFeishuAttachments', () => {
     });
 
     const message = makeMessage('image_key: img_key_1\nfile_key: file_key_1', [
-      { kind: 'image', key: 'img_key_1' }, // no fileName → generated name, png sniffed
-      { kind: 'file', key: 'file_key_1', fileName: 'report.pdf' },
+      { kind: 'image', key: 'img_key_1', messageId: 'om_test' }, // no fileName → generated name, png sniffed
+      { kind: 'file', key: 'file_key_1', messageId: 'om_test', fileName: 'report.pdf' },
     ]);
 
     await materializeFeishuAttachments(message, cwd, downloadFn);
@@ -72,7 +72,7 @@ describe('materializeFeishuAttachments', () => {
   });
 
   it('is a no-op when there is no cwd (downloadFn never runs)', async () => {
-    const message = makeMessage('image_key: x', [{ kind: 'image', key: 'x' }]);
+    const message = makeMessage('image_key: x', [{ kind: 'image', key: 'x', messageId: 'om_test' }]);
     let called = false;
     await materializeFeishuAttachments(message, undefined, async () => {
       called = true;
@@ -82,11 +82,35 @@ describe('materializeFeishuAttachments', () => {
     assert.equal(message.text, 'image_key: x');
   });
 
-  it('leaves the placeholder intact when a download fails (graceful fallback)', async () => {
-    const message = makeMessage('file_key: bad', [{ kind: 'file', key: 'bad', fileName: 'x.bin' }]);
+  /**
+   * 234008 regression: before the fix a failed download left the dead
+   * `file_key: ...` placeholder in the dispatched text, so the agent had no
+   * way to tell the user what happened. The placeholder must now be replaced
+   * by a `[文件下载失败: ...]` / `[图片下载失败: ...]` marker carrying the
+   * reason, and the raw key placeholder must not survive.
+   */
+  it('replaces the placeholder with a failure marker when a download fails', async () => {
+    const message = makeMessage('file_key: bad', [{ kind: 'file', key: 'bad', messageId: 'om_test', fileName: 'x.bin' }]);
+    await materializeFeishuAttachments(message, cwd, async () => {
+      throw new Error('Feishu message resource download 400: The app is not the resource sender');
+    });
+    assert.ok(
+      message.text.includes('[文件下载失败:'),
+      `expected a 文件下载失败 marker, got:\n${message.text}`,
+    );
+    assert.ok(
+      message.text.includes('The app is not the resource sender'),
+      'failure marker should carry the underlying reason',
+    );
+    assert.ok(!message.text.includes('file_key: bad'), 'dead key placeholder must not survive');
+  });
+
+  it('replaces the placeholder with a 图片下载失败 marker for image failures', async () => {
+    const message = makeMessage('[图片] image_key: img_bad', [{ kind: 'image', key: 'img_bad', messageId: 'om_test' }]);
     await materializeFeishuAttachments(message, cwd, async () => {
       throw new Error('boom');
     });
-    assert.ok(message.text.includes('file_key: bad'), 'failed download keeps the original descriptor');
+    assert.ok(message.text.includes('[图片下载失败: boom]'));
+    assert.ok(!message.text.includes('image_key: img_bad'));
   });
 });
