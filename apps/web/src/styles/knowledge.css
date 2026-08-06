@@ -2955,25 +2955,134 @@
 
 /* ─── KB Chat multi-session panel ─── */
 
-/* 会话标签栏 */
+/* 会话标签栏 — 复用 kb-wtab 滚动模型：内部滚动容器 + 栏尾钉住的 + 新建按钮 */
 .chat-session-tabbar {
-  display: flex; align-items: center; gap: 4px;
-  padding: 6px 10px; border-bottom: 1px solid var(--border-soft);
-  overflow-x: auto; flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 8px 6px 10px;
+  border-bottom: 1px solid var(--border-soft);
+  flex-shrink: 0;
 }
+.chat-session-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.chat-session-tabs::-webkit-scrollbar { display: none; }
+
 .chat-session-tab {
-  display: flex; align-items: center; gap: 6px;
-  padding: 4px 8px; border-radius: 6px;
-  font-size: 12px; color: var(--text-muted); cursor: pointer;
-  white-space: nowrap; max-width: 160px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 160px;
+  min-width: 0;
+  flex-shrink: 0;
+  transition: background 80ms ease, color 80ms ease;
 }
-.chat-session-tab.is-active { background: var(--bg-subtle); color: var(--text); }
+.chat-session-tab:hover { background: var(--bg-subtle); color: var(--text); }
+.chat-session-tab.is-active {
+  background: var(--bg-muted);
+  color: var(--text-strong);
+  border-color: var(--border);
+}
+.chat-session-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
 .chat-session-tab-icon { flex-shrink: 0; }
-.chat-session-tab-title { overflow: hidden; text-overflow: ellipsis; }
-.chat-session-tab-close { border: none; background: none; color: var(--text-muted); cursor: pointer; font-size: 14px; line-height: 1; padding: 0 2px; }
-.chat-session-tab-close:hover { color: var(--text); }
-.chat-session-tab-add { border: none; background: none; color: var(--text-muted); font-size: 16px; cursor: pointer; padding: 2px 6px; border-radius: 6px; }
+.chat-session-tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* 关闭按钮：常显（窄栏内比 hover 显隐更易用），hover 加深 */
+.chat-session-tab-close {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  color: var(--text-faint);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.chat-session-tab-close:hover { background: var(--bg-muted); color: var(--text); }
+
+/* 溢出右滚指示（标签溢出时出现，点击滚到末尾） */
+.chat-session-tab-more {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  margin-left: 2px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.chat-session-tab-more:hover { background: var(--bg-subtle); color: var(--text); }
+.chat-session-tab-more:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+/* + 新建会话：钉在栏尾，永不随标签滚动消失 */
+.chat-session-tab-add {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  margin-left: 2px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 .chat-session-tab-add:hover { background: var(--bg-subtle); color: var(--text); }
+.chat-session-tab-add:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-session-tab { transition: none; }
+}
+
+/* 全部会话关闭后的空态 */
+.file-chat-sessions-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 16px;
+}
 
 /* 会话体（每个会话 flex 填充） */
 .file-chat-session { display: flex; flex-direction: column; flex: 1; min-height: 0; }

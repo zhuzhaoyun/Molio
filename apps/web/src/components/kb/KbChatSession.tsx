@@ -146,9 +146,12 @@ export function KbChatSession({
   // 卸载时关闭 SSE（不 cancel run —— 后台任务继续跑，仅断开订阅，防 EventSource 泄漏/卸载后 setState）
   useEffect(() => () => { resetRef.current(); }, []);
 
-  // 消息更新时滚到底部（照搬旧 KbChatPanel）
+  // 消息更新时滚到底部（照搬旧 KbChatPanel；尊重 prefers-reduced-motion）
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const reduced =
+      typeof window !== 'undefined' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    bottomRef.current?.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth' });
   }, [chat.messages.length, chat.messages[chat.messages.length - 1]?.content]);
 
   const handleSend = useCallback((text: string, fileRefs?: FileRef[], pastedImages?: PastedImage[]) => {

@@ -320,23 +320,33 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
         onNewSession={handleNewSession}
       />
       <div className="file-chat-session-stack">
-        {sessions.map((s) => (
-          <KbChatSession
-            key={s.id}
-            session={s}
-            active={s.id === activeSessionId}
-            agentId={agentId}
-            vaultPath={vaultPath}
-            selectedText={pendingSelectionSessionId === s.id ? pendingSelection : null}
-            onSelectedTextConsumed={() => { setPendingSelection(null); setPendingSelectionSessionId(null); }}
-            onRunningChange={handleRunningChange}
-            onComplete={onWikiComplete}
-            onLoadError={handleLoadError}
-            registerApi={registerApi}
-            unregisterApi={unregisterApi}
-            onOpenConversation={handleOpenConversation}
-          />
-        ))}
+        {sessions.length === 0 ? (
+          <div className="file-chat-sessions-empty" data-testid="kb-chat-sessions-empty">
+            <div className="file-chat-empty-icon">💬</div>
+            <p>还没有会话，点右侧「+」新建一个问答</p>
+            <button type="button" className="kb-btn kb-btn-ghost" onClick={handleNewSession}>
+              + 新建会话
+            </button>
+          </div>
+        ) : (
+          sessions.map((s) => (
+            <KbChatSession
+              key={s.id}
+              session={s}
+              active={s.id === activeSessionId}
+              agentId={agentId}
+              vaultPath={vaultPath}
+              selectedText={pendingSelectionSessionId === s.id ? pendingSelection : null}
+              onSelectedTextConsumed={() => { setPendingSelection(null); setPendingSelectionSessionId(null); }}
+              onRunningChange={handleRunningChange}
+              onComplete={onWikiComplete}
+              onLoadError={handleLoadError}
+              registerApi={registerApi}
+              unregisterApi={unregisterApi}
+              onOpenConversation={handleOpenConversation}
+            />
+          ))
+        )}
       </div>
       {toast && <div className="kb-save-toast" data-testid="kb-notice">{toast}</div>}
 
