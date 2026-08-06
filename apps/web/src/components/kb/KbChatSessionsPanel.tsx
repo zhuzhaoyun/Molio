@@ -31,7 +31,7 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   const sessions = useKbChatSessions();
   const activeSessionId = useKbChatActiveSessionId();
 
-  const [panelWidth, setPanelWidth] = useState(360);
+  const [panelWidth, setPanelWidth] = useState(500);
   const [pendingSelection, setPendingSelection] = useState<string | null>(null);
   // #5: pendingSelection 归属的会话 id（null = 无）。只投给目标会话，避免广播给所有空会话、
   // 被任意会话的首条消息消费。
