@@ -1,21 +1,28 @@
 // apps/web/src/components/kb/ChatSessionTabBar.tsx
 import { useEffect, useRef, useState } from 'react';
 import type { ChatSessionTab } from '../../stores/kbChatSessionsStore';
+import { ConversationHistoryMenu } from '../ConversationHistoryMenu';
 
 interface Props {
   sessions: ChatSessionTab[];
   activeSessionId: string | null;
+  /** 正在运行的会话 id（驱动标签上的运行指示点） */
+  runningSessionIds: ReadonlySet<string>;
   onActivate: (id: string) => void;
   onClose: (id: string) => void;
   onNewSession: () => void;
+  /** 从历史下拉打开会话（去重入标签） */
+  onOpenConversation: (conversationId: string) => void;
+  /** 收起面板（保留标签，后台任务继续） */
+  onClosePanel: () => void;
 }
 
 /**
  * 会话标签栏 — 复用 kb-wtab 的滚动模型：内部 .chat-session-tabs 是隐藏滚动条的
- * 横向滚动容器，+ 新建按钮钉在栏尾始终可见；标签溢出时显示右滚指示箭头；
- * 激活标签变化时自动滚入可见区。
+ * 横向滚动容器，历史 / + 新建 / 收起 三个按钮钉在栏尾始终可见；标签溢出时显示
+ * 右滚指示箭头；激活标签变化时自动滚入可见区。运行中的会话标签显示指示点。
  */
-export function ChatSessionTabBar({ sessions, activeSessionId, onActivate, onClose, onNewSession }: Props) {
+export function ChatSessionTabBar({ sessions, activeSessionId, runningSessionIds, onActivate, onClose, onNewSession, onOpenConversation, onClosePanel }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<HTMLDivElement>(null);
   const [canScrollRight, setCanScrollRight] = useState(false);
@@ -55,10 +62,11 @@ export function ChatSessionTabBar({ sessions, activeSessionId, onActivate, onClo
       <div className="chat-session-tabs" ref={scrollRef} onScroll={recompute}>
         {sessions.map((s) => {
           const isActive = s.id === activeSessionId;
+          const isRunning = runningSessionIds.has(s.id);
           return (
             <div
               key={s.id}
-              className={`chat-session-tab${isActive ? ' is-active' : ''}`}
+              className={`chat-session-tab${isActive ? ' is-active' : ''}${isRunning ? ' is-running' : ''}`}
               data-testid="kb-chat-session-tab"
               data-session-id={s.id}
               ref={isActive ? activeRef : null}
@@ -74,6 +82,7 @@ export function ChatSessionTabBar({ sessions, activeSessionId, onActivate, onClo
                 }
               }}
             >
+              {isRunning && <span className="chat-session-tab-running" data-testid="kb-chat-session-running" />}
               <span className="chat-session-tab-icon">{s.mode === 'qa' ? '💬' : '⚙️'}</span>
               <span className="chat-session-tab-title">{s.title}</span>
               <button
@@ -101,6 +110,12 @@ export function ChatSessionTabBar({ sessions, activeSessionId, onActivate, onClo
           ›
         </button>
       )}
+      <ConversationHistoryMenu
+        onSelect={onOpenConversation}
+        align="down"
+        buttonClassName="chat-session-tab-history"
+        buttonTestId="kb-chat-session-history"
+      />
       <button
         type="button"
         className="chat-session-tab-add"
@@ -109,6 +124,19 @@ export function ChatSessionTabBar({ sessions, activeSessionId, onActivate, onClo
         onClick={onNewSession}
       >
         +
+      </button>
+      <button
+        type="button"
+        className="chat-session-tab-close-panel"
+        data-testid="kb-chat-close"
+        aria-label="收起面板"
+        title="收起面板"
+        onClick={onClosePanel}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+          <line x1="18" y1="6" x2="6" y2="18" />
+          <line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
       </button>
     </div>
   );

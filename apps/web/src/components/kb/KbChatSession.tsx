@@ -35,8 +35,6 @@ interface KbChatSessionProps {
   onLoadError?: (sessionId: string) => void;
   registerApi: (sessionId: string, api: KbChatSessionApi) => void;
   unregisterApi: (sessionId: string) => void;
-  /** 从 composer 历史下拉打开会话 */
-  onOpenConversation?: (conversationId: string) => void;
 }
 
 function toChatMessage(m: ContractChatMessage): ChatMessage {
@@ -54,7 +52,7 @@ function toChatMessage(m: ContractChatMessage): ChatMessage {
 
 export function KbChatSession({
   session, active, agentId, vaultPath, selectedText, onSelectedTextConsumed,
-  onRunningChange, onComplete, onLoadError, registerApi, unregisterApi, onOpenConversation,
+  onRunningChange, onComplete, onLoadError, registerApi, unregisterApi,
 }: KbChatSessionProps) {
   const { t } = useI18n();
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -231,7 +229,6 @@ export function KbChatSession({
           onSend={handleSend}
           onCancel={chat.cancel}
           initialFileRefs={initialFileRefs}
-          onOpenConversation={onOpenConversation}
         />
       </div>
     </div>

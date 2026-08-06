@@ -30,8 +30,8 @@ test.describe('KB chat entry (scoped buttons)', () => {
 
     const panel = page.locator('[data-testid="kb-chat-panel"]');
     await expect(panel).toBeVisible();
-    // qa mode uses a fixed title (NOT the document name)
-    await expect(panel.locator('.file-chat-label')).not.toContainText('doc.md');
+    // qa 会话标签标题固定为「新会话」，不含文档名（顶栏标题已移除）
+    await expect(panel.locator('[data-testid="kb-chat-session-tab"] .chat-session-tab-title')).not.toContainText('doc.md');
     // composer seeded with the file as a @ ref (chip / mention present)
     await expect(panel.locator('.file-chat-input')).toContainText(/doc\.md/);
   });
@@ -44,7 +44,7 @@ test.describe('KB chat entry (scoped buttons)', () => {
 
     const panel = page.locator('[data-testid="kb-chat-panel"]');
     await expect(panel).toBeVisible();
-    await expect(panel.locator('.file-chat-label')).toContainText(/构建|Wiki|Build/);
+    await expect(panel.locator('[data-testid="kb-chat-session-tab"] .chat-session-tab-title')).toContainText(/构建|Wiki|Build/);
     // a user message (the skill prompt) appears
     await expect(panel.locator('.file-chat-messages')).toContainText(/wiki-build/, { timeout: 10_000 });
 

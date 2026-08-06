@@ -1,9 +1,8 @@
 // apps/web/src/components/kb/KbChatSessionsPanel.tsx
 import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, forwardRef } from 'react';
-import { useI18n } from '../../i18n';
 import {
   kbChatSessionsStore, useKbChatSessions, useKbChatActiveSessionId,
-  MAX_CHAT_SESSIONS, type ChatSessionTab,
+  MAX_CHAT_SESSIONS,
 } from '../../stores/kbChatSessionsStore';
 import { ChatSessionTabBar } from './ChatSessionTabBar';
 import { KbChatSession, type KbChatSessionApi } from './KbChatSession';
@@ -29,7 +28,6 @@ interface Props {
 export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(function KbChatSessionsPanel(
   { agentId, vaultPath, currentFilePath, currentVaultId, onWikiComplete }, ref,
 ) {
-  const { t } = useI18n();
   const sessions = useKbChatSessions();
   const activeSessionId = useKbChatActiveSessionId();
 
@@ -82,8 +80,11 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     });
   }, []);
 
-  const activeSession = sessions.find((s) => s.id === activeSessionId) ?? null;
-  const activeIsRunning = activeSession ? !!runningMap[activeSession.id] : false;
+  // 传给标签栏：哪些会话在运行（驱动标签上的运行指示点）
+  const runningSessionIds = useMemo(
+    () => new Set(Object.entries(runningMap).filter(([, v]) => v).map(([k]) => k)),
+    [runningMap],
+  );
   const anyWikiRunning = useMemo(
     () => sessions.some((s) => s.mode !== 'qa' && runningMap[s.id]),
     [sessions, runningMap],
@@ -283,13 +284,6 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   }, [showToast, pruneRunning]);
 
   // 面板头部活动会话的模式标签
-  const activeContextLabel = (session: ChatSessionTab): string => {
-    if (session.mode === 'qa') return t('kb.askButton');
-    if (session.mode === 'build') return t('kb.chatContextBuildWiki');
-    if (session.mode === 'lint') return t('kb.chatContextLintWiki');
-    return t('kb.askButton'); // ingest 兜底
-  };
-
   return (
     <aside
       className="file-chat-panel"
@@ -297,33 +291,21 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
       style={{ width: panelWidth, minWidth: 280, maxWidth: '50vw' }}
     >
       <div className="file-chat-resize-handle" onMouseDown={startResize} />
-      <div className="file-chat-header">
-        <div className="file-chat-header-left">
-          <span className="file-chat-label">
-            {activeSession ? activeContextLabel(activeSession) : t('kb.askButton')}
-          </span>
-          {activeIsRunning && <span className="file-chat-status">{t('fileChat.running')}</span>}
-        </div>
-        <button type="button" className="file-chat-close" data-testid="kb-chat-close"
-          onClick={() => kbChatSessionsStore.setPanelOpen(false)} title={t('fileChat.close')}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
-        </button>
-      </div>
       <ChatSessionTabBar
         sessions={sessions}
         activeSessionId={activeSessionId}
+        runningSessionIds={runningSessionIds}
         onActivate={kbChatSessionsStore.activateSession}
         onClose={handleCloseTab}
         onNewSession={handleNewSession}
+        onOpenConversation={handleOpenConversation}
+        onClosePanel={() => kbChatSessionsStore.setPanelOpen(false)}
       />
       <div className="file-chat-session-stack">
         {sessions.length === 0 ? (
           <div className="file-chat-sessions-empty" data-testid="kb-chat-sessions-empty">
             <div className="file-chat-empty-icon">💬</div>
-            <p>还没有会话，点右侧「+」新建一个问答</p>
+            <p>还没有会话，点右侧「+」新建一个会话</p>
             <button type="button" className="kb-btn kb-btn-ghost" onClick={handleNewSession}>
               + 新建会话
             </button>
@@ -343,7 +325,6 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
               onLoadError={handleLoadError}
               registerApi={registerApi}
               unregisterApi={unregisterApi}
-              onOpenConversation={handleOpenConversation}
             />
           ))
         )}

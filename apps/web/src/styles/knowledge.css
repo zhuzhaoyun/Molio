@@ -2849,47 +2849,6 @@
   background: var(--accent-tint);
 }
 
-.file-chat-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border-soft);
-  flex-shrink: 0;
-}
-
-.file-chat-header-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.file-chat-status {
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-.file-chat-close {
-  flex-shrink: 0;
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  background: none;
-  color: var(--text);
-  cursor: pointer;
-  border-radius: 6px;
-  transition: background 0.15s, color 0.15s;
-}
-
-.file-chat-close:hover {
-  background: var(--bg-subtle);
-  color: var(--accent);
-}
-
 .file-chat-messages {
   flex: 1;
   overflow-y: auto;
@@ -3067,8 +3026,71 @@
 .chat-session-tab-add:hover { background: var(--bg-subtle); color: var(--text); }
 .chat-session-tab-add:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
 
+/* 运行指示点：运行中的会话标签前的小圆点 */
+.chat-session-tab-running {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: chat-session-running-pulse 1.6s ease-in-out infinite;
+}
+@keyframes chat-session-running-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+/* 历史按钮（顶栏变体，向下展开） */
+.chat-session-tab-history {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  margin-left: 2px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.chat-session-tab-history:hover { background: var(--bg-subtle); color: var(--text); }
+.chat-session-tab-history:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+/* 收起面板按钮（钉在栏尾最右） */
+.chat-session-tab-close-panel {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  margin-left: 2px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.chat-session-tab-close-panel:hover { background: var(--bg-subtle); color: var(--text); }
+.chat-session-tab-close-panel:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+/* 历史下拉在顶栏的定位容器 + 向下展开（输入框里默认向上展开，样式不变） */
+.conversation-history-menu { position: relative; }
+.composer-history-dropdown.open-down {
+  bottom: auto;
+  top: 100%;
+  margin-top: 6px;
+  margin-bottom: 0;
+  left: auto;
+  right: 0;
+  min-width: 280px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .chat-session-tab { transition: none; }
+  .chat-session-tab-running { animation: none; }
 }
 
 /* 全部会话关闭后的空态 */

@@ -140,7 +140,7 @@ test.describe('KB chat sessions', () => {
     await input.fill('后台继续测试');
     await page.locator('[data-testid="composer-send"]').click();
     // 等 run 进入 running（header 显示运行状态）再关闭
-    await expect(page.locator('[data-testid="kb-chat-panel"] .file-chat-status')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid="kb-chat-panel"] [data-testid="kb-chat-session-running"]')).toBeVisible({ timeout: 5_000 });
 
     // 点会话标签的 × → 关闭确认对话框
     await page.locator('[data-testid="kb-chat-session-tab-close"]').click();
@@ -170,7 +170,7 @@ test.describe('KB chat sessions', () => {
     // 启动构建 → ⚙️ wiki 标签 + 自动发送；等进入 running（header 显示运行状态）
     await page.locator('[data-testid="kb-btn-build-wiki"]').click();
     await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(1);
-    await expect(page.locator('[data-testid="kb-chat-panel"] .file-chat-status')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid="kb-chat-panel"] [data-testid="kb-chat-session-running"]')).toBeVisible({ timeout: 5_000 });
 
     // 关闭运行中的 wiki 标签 → 确认框必须不含「后台继续并关闭」
     await page.locator('[data-testid="kb-chat-session-tab-close"]').click();
@@ -203,7 +203,7 @@ test.describe('KB chat sessions', () => {
     // 第一次点构建 → ⚙️ 标签创建 + 自动发送；等 run 进入 running（header 显示运行状态）
     await page.locator('[data-testid="kb-btn-build-wiki"]').click();
     await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(1);
-    await expect(page.locator('[data-testid="kb-chat-panel"] .file-chat-status')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid="kb-chat-panel"] [data-testid="kb-chat-session-running"]')).toBeVisible({ timeout: 5_000 });
 
     // 构建在跑再点 → 三选一确认框（data-testid=confirm-dialog）
     await page.locator('[data-testid="kb-btn-build-wiki"]').click();
@@ -234,8 +234,8 @@ test.describe('KB chat sessions', () => {
     await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(1);
 
     // 从 composer 历史下拉打开 conv-h → 新建第 2 个标签（非去重），标题从消息回填
-    await page.locator('.file-chat-session:visible [data-testid="composer-history-btn"]').click();
-    await page.locator('.file-chat-session:visible [data-testid="composer-history-item"]')
+    await page.locator('[data-testid="kb-chat-session-history"]').click();
+    await page.locator('[data-testid="kb-chat-panel"] [data-testid="composer-history-item"]')
       .filter({ hasText: '历史问题' }).click();
     await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(2);
     await expect(page.locator('[data-testid="kb-chat-session-tab"] .chat-session-tab-title'))
@@ -245,8 +245,8 @@ test.describe('KB chat sessions', () => {
     expect(page.url()).toContain('/knowledge');
 
     // 再次从下拉打开同一会话 → 去重激活，不新增标签（仍 2 个）
-    await page.locator('.file-chat-session:visible [data-testid="composer-history-btn"]').click();
-    await page.locator('.file-chat-session:visible [data-testid="composer-history-item"]')
+    await page.locator('[data-testid="kb-chat-session-history"]').click();
+    await page.locator('[data-testid="kb-chat-panel"] [data-testid="composer-history-item"]')
       .filter({ hasText: '历史问题' }).click();
     await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(2);
     await expect(page.locator('[data-testid="kb-chat-session-tab"] .chat-session-tab-title'))
