@@ -20,6 +20,30 @@ function activeMessages(page: import('@playwright/test').Page) {
   return page.locator('[data-testid="kb-chat-panel"] .file-chat-session:visible .file-chat-messages');
 }
 
+/**
+ * 预置一条历史会话 conv-h（标题「历史问题」+ 1 条 user 消息）。composer 历史下拉
+ * 与全局历史页共用。列表路由须同时匹配带查询串（历史页 ?limit=50）与不带（composer）
+ * 两种 URL，但不能命中 /api/conversations/:id/messages —— 用正则限定 ? 或结尾即可。
+ */
+async function mockHistoryConv(page: import('@playwright/test').Page) {
+  const listBody = JSON.stringify({
+    pinnedItems: [],
+    items: [{
+      conversation: { id: 'conv-h', title: '历史问题', updatedAt: Date.now() },
+      lastMessage: null,
+      messageCount: 1,
+    }],
+    nextCursor: null,
+  });
+  await page.route(/\/api\/conversations(?:\?|$)/, (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: listBody }));
+  await page.route('**/api/conversations/conv-h/messages', (route) =>
+    route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ messages: [{ id: 'm1', role: 'user', content: '历史问题', timestamp: Date.now() }] }),
+    }));
+}
+
 let vault: TempVault;
 
 test.describe('KB chat sessions', () => {
@@ -168,5 +192,59 @@ test.describe('KB chat sessions', () => {
       .toEqual({ runs: 2, users: 1 });
     // 新建构的 wiki-build 提示词自动出现（原标签被清空后重发）
     await expect(msgs.locator('.msg.user')).toContainText(/wiki-build/, { timeout: 10_000 });
+  });
+
+  test('历史下拉打开会话：新建标签、标题从消息回填、同会话去重', async ({ page }) => {
+    await mockChatRun(page);
+    await mockHistoryConv(page);
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+
+    // 打开问答面板 → 1 个空会话标签（conversationId null，标题「新会话」）
+    await page.locator('[data-testid="kb-btn-ask"]').click();
+    await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(1);
+
+    // 从 composer 历史下拉打开 conv-h → 新建第 2 个标签（非去重），标题从消息回填
+    await page.locator('.file-chat-session:visible [data-testid="composer-history-btn"]').click();
+    await page.locator('.file-chat-session:visible [data-testid="composer-history-item"]')
+      .filter({ hasText: '历史问题' }).click();
+    await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(2);
+    await expect(page.locator('[data-testid="kb-chat-session-tab"] .chat-session-tab-title'))
+      .toHaveText(['新会话', '历史问题'], { timeout: 5_000 });
+    await expect(activeMessages(page)).toContainText('历史问题');
+    // 不跳主页，仍落在知识库页
+    expect(page.url()).toContain('/knowledge');
+
+    // 再次从下拉打开同一会话 → 去重激活，不新增标签（仍 2 个）
+    await page.locator('.file-chat-session:visible [data-testid="composer-history-btn"]').click();
+    await page.locator('.file-chat-session:visible [data-testid="composer-history-item"]')
+      .filter({ hasText: '历史问题' }).click();
+    await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(2);
+    await expect(page.locator('[data-testid="kb-chat-session-tab"] .chat-session-tab-title'))
+      .toHaveText(['新会话', '历史问题']);
+    await expect(activeMessages(page)).toContainText('历史问题');
+  });
+
+  test('全局历史页打开会话 → 落知识库页，标题从消息回填', async ({ page }) => {
+    await mockChatRun(page);
+    await mockHistoryConv(page);
+
+    // 先落 /knowledge 建立活跃 vault（写 localStorage），供打开会话后跳回 /knowledge 用
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+
+    // 历史页列出 conv-h → 点击行打开
+    await page.goto('http://localhost:5173/history');
+    await expect(page.locator('.history-shell')).toBeVisible({ timeout: 5_000 });
+    const row = page.locator('.history-row', { hasText: '历史问题' }).first();
+    await expect(row).toBeVisible({ timeout: 5_000 });
+    await row.locator('.history-row__main').click();
+
+    // App 回调：openConversation + navigate('/knowledge') → 会话以标签呈现，标题回填
+    await expect(page).toHaveURL(/\/knowledge/, { timeout: 5_000 });
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid="kb-chat-session-tab"] .chat-session-tab-title'))
+      .toHaveText(['历史问题'], { timeout: 5_000 });
+    await expect(activeMessages(page)).toContainText('历史问题');
   });
 });

@@ -88,11 +88,11 @@ export function KbChatSession({
 
   const chat = useChatCore({ agentId, createRun, onComplete: session.mode === 'qa' ? undefined : onComplete });
 
-  // 挂载时从 DB 加载历史（异步，不用 initialMessages）
-  const loadedRef = useRef(false);
+  // 挂载时从 DB 加载历史（异步，不用 initialMessages）。
+  // 注意：不能用 loadedRef 挡住第二次执行 —— dev 下 StrictMode 会 mount→cleanup→mount，
+  // 第一次调用被 cleanup 的 cancelled 丢弃后，第二次必须重跑 fetch，否则历史永远加载不出来。
+  // 用 per-effect 的 cancelled 标志即可：StrictMode 下第二次调用是新 fetch 并正常完成。
   useEffect(() => {
-    if (loadedRef.current) return;
-    loadedRef.current = true;
     const loadedConversationId = session.conversationId;
     if (!loadedConversationId) return;
     let cancelled = false;
