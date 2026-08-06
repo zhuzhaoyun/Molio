@@ -137,8 +137,8 @@ function migrate(db: SqliteDb): void {
     -- Global skill library: metadata + the master switch (replaces the old
     -- ~/.molio/skills/manifest.json). kind: 'bundled' (multi-file, shipped) |
     -- 'library' (single-file, user-managed). core=1 marks the writing trio --
-    -- hidden, always-on, not configurable (exempt from enabled + per-vault
-    -- overrides). A skill body stays a file; this table only holds config.
+    -- hidden, always-on, not configurable (exempt from the enabled switch).
+    -- A skill body stays a file; this table only holds config.
     CREATE TABLE IF NOT EXISTS skills (
       id          TEXT PRIMARY KEY,
       name        TEXT NOT NULL,
@@ -149,18 +149,6 @@ function migrate(db: SqliteDb): void {
       enabled     INTEGER NOT NULL DEFAULT 1,
       created_at  INTEGER NOT NULL,
       updated_at  INTEGER NOT NULL
-    );
-
-    -- Per-vault skill enablement overrides (sparse). The global skill library
-    -- (the skills table) is the master switch; a row here only records a
-    -- per-vault opt-out (enabled=0). Absence = inherit global state. Effective
-    -- set = (globally-enabled OR core) AND not disabled in this vault.
-    CREATE TABLE IF NOT EXISTS vault_skills (
-      vault_id TEXT NOT NULL,
-      skill_id TEXT NOT NULL,
-      enabled  INTEGER NOT NULL DEFAULT 1,
-      PRIMARY KEY (vault_id, skill_id),
-      FOREIGN KEY(vault_id) REFERENCES vaults(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS kv (
@@ -781,11 +769,6 @@ export function createVault(db: SqliteDb, name: string, vaultPath: string, descr
 }
 
 export function deleteVault(db: SqliteDb, id: string): void {
-  // Drop the vault's per-vault skill overrides explicitly instead of relying on
-  // the FK CASCADE: DBs created before vault_skills carried the foreign key
-  // keep a FK-less table (CREATE TABLE IF NOT EXISTS never retrofits it), and
-  // its rows would otherwise be orphaned.
-  db.prepare('DELETE FROM vault_skills WHERE vault_id = ?').run(id);
   db.prepare('DELETE FROM vaults WHERE id = ?').run(id);
   // Clear active-vault if it pointed at the deleted vault.
   if (getActiveVaultId(db) === id) {

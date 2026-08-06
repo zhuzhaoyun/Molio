@@ -102,9 +102,6 @@ export type {
   SkillResponse,
   SkillDetailResponse,
   PrefillResponse,
-  VaultSkillEntry,
-  VaultSkillListResponse,
-  VaultSkillToggleRequest,
 } from './skill.js';
 
 // SKILL.md generate/parse primitives (runtime values, shared daemon ↔ web).

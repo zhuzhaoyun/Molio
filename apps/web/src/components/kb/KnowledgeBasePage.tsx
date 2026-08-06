@@ -17,7 +17,6 @@ import { KbMainContent } from './KbMainContent';
 import { KbChatPanel } from './KbChatPanel';
 import { OutlinePanel } from './OutlinePanel';
 import { SearchPanel } from './SearchPanel';
-import { VaultSkillsModal } from './VaultSkillsModal';
 import { VaultManagerModal } from './VaultManager';
 import { ImportModal, CoseInstallPrompt, InputDialog, ConfirmDialog } from './KbModals';
 import { ImportConflictDialog } from './ImportConflictDialog';
@@ -149,7 +148,6 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
   const [pendingUrlNav, setPendingUrlNav] = useState<UrlFileNavigation | null>(null);
   const [showOutline, setShowOutline] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
-  const [showVaultSkills, setShowVaultSkills] = useState(false);
 
   // Handle ?vault=<vaultId>&file=<filePath> query params for external navigation
   // (e.g. from molio:// protocol triggered by Chrome extension after clip save)
@@ -1053,20 +1051,6 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
               <button
                 type="button"
                 className="kb-btn kb-btn-ghost"
-                onClick={() => setShowVaultSkills(true)}
-                disabled={!kb.activeVault}
-                title={kb.activeVault ? t('kb.vaultSkills') : t('kb.cmdNeedsVault')}
-                data-testid="kb-btn-skills"
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
-                  <path d="M12 2 2 7l10 5 10-5-10-5z" />
-                  <path d="m2 17 10 5 10-5" />
-                  <path d="m2 12 10 5 10-5" />
-                </svg>
-              </button>
-              <button
-                type="button"
-                className="kb-btn kb-btn-ghost"
                 onClick={() => setShowSearch(true)}
                 title={`${t('kb.moreMenuSearch')} (Ctrl/Cmd+F)`}
                 data-testid="kb-btn-search"
@@ -1146,17 +1130,6 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
             handleSelectFile(p);
           }}
           onClose={() => setShowSearch(false)}
-        />
-      )}
-
-      {/* Per-vault Skills Modal — mounted only while open: its hook fetches on
-          mount/vault-change, so an always-mounted instance would hit the daemon
-          on every vault switch even though the modal is never opened. */}
-      {showVaultSkills && (
-        <VaultSkillsModal
-          show={showVaultSkills}
-          vaultId={kb.activeVault?.id ?? null}
-          onClose={() => setShowVaultSkills(false)}
         />
       )}
 

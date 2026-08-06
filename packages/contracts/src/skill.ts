@@ -101,34 +101,3 @@ export interface SkillDetailResponse {
 export interface PrefillResponse {
   prefill: PrefillResult;
 }
-
-// ─── Per-vault skill enablement ───
-
-/**
- * A skill as seen from one vault. The global manifest `enabled` flag is the
- * master switch (`globalEnabled`); a vault may opt out, so the effective state
- * is `vaultEnabled = globalEnabled && !vaultOptOut`. A globally-disabled skill
- * surfaces greyed-out and cannot be enabled at the vault level.
- */
-export interface VaultSkillEntry {
-  id: string;
-  name: string;
-  description: string;
-  builtIn: boolean;
-  /** 'bundled' or 'library' (see SkillManifestEntry). */
-  kind?: SkillKind;
-  /** Master switch from the global skill library. */
-  globalEnabled: boolean;
-  /** Effective state in this vault = globalEnabled && not disabled here. */
-  vaultEnabled: boolean;
-  createdAt: number; // epoch ms
-  updatedAt: number; // epoch ms
-}
-
-export interface VaultSkillListResponse {
-  skills: VaultSkillEntry[];
-}
-
-export interface VaultSkillToggleRequest {
-  enabled: boolean;
-}

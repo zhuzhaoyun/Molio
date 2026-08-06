@@ -29,7 +29,7 @@ import {
   deleteSkill,
   SkillNotFoundError,
 } from '../core/skills/store.js';
-import { afterGlobalSkillMutation, deleteVaultSkillOverrides } from '../core/skills/vault-config.js';
+import { afterGlobalSkillMutation } from '../core/skills/vault-config.js';
 import { importFromRaw, importFromFolder, SkillImportError } from '../core/skills/importer.js';
 import { prefillFromContent } from '../core/skills/prefill.js';
 import { readBundledInstructions } from '../core/skills/builtin.js';
@@ -145,7 +145,6 @@ export function skillsRoutes(db: Database.Database, runManager: RunManager): Hon
       return c.json({ error: { code: 'BAD_REQUEST', message: '内置技能不可删除，可禁用' } }, 400);
     }
     deleteSkill(db, id);
-    deleteVaultSkillOverrides(db, id);
     await afterGlobalSkillMutation(db);
     return c.body(null, 204);
   });

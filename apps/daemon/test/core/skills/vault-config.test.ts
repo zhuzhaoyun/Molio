@@ -4,18 +4,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import Database from 'better-sqlite3';
-import { openDatabase, closeDatabase, createVault, deleteVault } from '../../../src/core/db.js';
-import { createSkill } from '../../../src/core/skills/store.js';
+import { openDatabase, closeDatabase, createVault } from '../../../src/core/db.js';
+import { createSkill, toggleSkill } from '../../../src/core/skills/store.js';
 import type { SkillPathsOpts } from '../../../src/core/skills/paths.js';
 import {
-  getVaultSkillOverrides,
-  setVaultSkillEnabled,
   getEffectiveSkillIds,
   reconcileVault,
   reconcileAllVaults,
   reconcileAllVaultsAsync,
   cleanupLegacyGlobalSync,
-  deleteVaultSkillOverrides,
 } from '../../../src/core/skills/vault-config.js';
 
 /**
@@ -58,41 +55,18 @@ function molioDirIn(vaultDir: string, id: string): string {
 }
 
 describe('skills/vault-config', () => {
-  // ── overrides ──
+  // ── effective set: globally-enabled OR core, same for every vault ──
 
-  it('getVaultSkillOverrides is empty for a fresh vault', () => {
-    const { vault } = makeVault('V');
-    assert.equal(getVaultSkillOverrides(db, vault.id).size, 0);
-  });
-
-  it('setVaultSkillEnabled upserts (one row per skill, latest value wins)', () => {
-    const { vault } = makeVault('V');
-    setVaultSkillEnabled(db, vault.id, 's1', false);
-    setVaultSkillEnabled(db, vault.id, 's1', false); // repeat — no duplicate
-    setVaultSkillEnabled(db, vault.id, 's1', true); // flip
-
-    const overrides = getVaultSkillOverrides(db, vault.id);
-    assert.equal(overrides.size, 1, 'still a single row');
-    assert.equal(overrides.get('s1'), true, 'latest value wins');
-  });
-
-  // ── effective set (four-cell precedence matrix) ──
-
-  it('getEffectiveSkillIds: globally-enabled AND not disabled in vault', () => {
+  it('getEffectiveSkillIds: globally-enabled OR core (core ignores the switch)', () => {
     const { vault } = makeVault('V');
     createSkill(db, { id: 'a', name: 'A', description: '', enabled: true, builtIn: false }, 'body', opts);
-    createSkill(db, { id: 'b', name: 'B', description: '', enabled: true, builtIn: false }, 'body', opts);
-    createSkill(db, { id: 'c', name: 'C', description: '', enabled: false, builtIn: false }, 'body', opts);
-    createSkill(db, { id: 'd', name: 'D', description: '', enabled: false, builtIn: false }, 'body', opts);
+    createSkill(db, { id: 'b', name: 'B', description: '', enabled: false, builtIn: false }, 'body', opts);
+    createSkill(db, { id: 'c', name: 'C', description: '', enabled: false, builtIn: false, core: true }, 'body', opts);
 
-    setVaultSkillEnabled(db, vault.id, 'b', false); // vault disables a global-on skill
-    setVaultSkillEnabled(db, vault.id, 'c', true); // vault tries to enable a global-off skill
-
-    // a: global on, no override → in
-    // b: global on, vault off → out
-    // c: global off, vault on → out (global wins — can't enable what's globally off)
-    // d: global off, no override → out
-    assert.deepEqual(getEffectiveSkillIds(db, vault.id), ['a']);
+    // a: global on → in
+    // b: global off → out
+    // c: core → in even though globally disabled (hidden but always effective)
+    assert.deepEqual(getEffectiveSkillIds(db, vault.id), ['a', 'c']);
   });
 
   // ── reconcileVault ──
@@ -139,9 +113,9 @@ describe('skills/vault-config', () => {
     reconcileVault(db, vault, opts);
     assert.ok(fs.existsSync(molioDirIn(dir, 'y')));
 
-    setVaultSkillEnabled(db, vault.id, 'y', false);
+    toggleSkill(db, 'y', false);
     reconcileVault(db, vault, opts);
-    assert.ok(!fs.existsSync(molioDirIn(dir, 'y')), 'per-vault disable removes the dir');
+    assert.ok(!fs.existsSync(molioDirIn(dir, 'y')), 'global disable removes the dir');
   });
 
   // ── reconcileAllVaults ──
@@ -178,96 +152,6 @@ describe('skills/vault-config', () => {
       assert.ok(fs.existsSync(path.join(legacySkills, 'user-skill')), 'user skill untouched');
     } finally {
       fs.rmSync(legacyHome, { recursive: true, force: true });
-    }
-  });
-
-  // ── deleteVaultSkillOverrides ──
-
-  it('deleteVaultSkillOverrides drops a skill\'s overrides across all vaults', () => {
-    const v1 = makeVault('V1');
-    const v2 = makeVault('V2');
-    setVaultSkillEnabled(db, v1.vault.id, 'gone', false);
-    setVaultSkillEnabled(db, v2.vault.id, 'gone', false);
-    setVaultSkillEnabled(db, v1.vault.id, 'stays', false);
-
-    deleteVaultSkillOverrides(db, 'gone');
-
-    assert.equal(getVaultSkillOverrides(db, v1.vault.id).has('gone'), false);
-    assert.equal(getVaultSkillOverrides(db, v2.vault.id).has('gone'), false);
-    assert.equal(getVaultSkillOverrides(db, v1.vault.id).get('stays'), false, 'unrelated override kept');
-
-    fs.rmSync(v1.dir, { recursive: true, force: true });
-    fs.rmSync(v2.dir, { recursive: true, force: true });
-  });
-
-  // ── vault deletion cleans up overrides ──
-
-  it('deleteVault removes that vault\'s override rows, keeping other vaults\'', () => {
-    const v1 = makeVault('V1');
-    const v2 = makeVault('V2');
-    setVaultSkillEnabled(db, v1.vault.id, 's1', false);
-    setVaultSkillEnabled(db, v2.vault.id, 's1', false);
-
-    deleteVault(db, v1.vault.id);
-
-    const orphans = db
-      .prepare('SELECT COUNT(*) AS n FROM vault_skills WHERE vault_id = ?')
-      .get(v1.vault.id) as { n: number };
-    assert.equal(orphans.n, 0, 'deleted vault leaves no override rows');
-    assert.equal(getVaultSkillOverrides(db, v2.vault.id).get('s1'), false, 'other vault\'s override kept');
-
-    fs.rmSync(v1.dir, { recursive: true, force: true });
-    fs.rmSync(v2.dir, { recursive: true, force: true });
-  });
-
-  it('deleteVault cleans overrides even on legacy DBs whose vault_skills has no FK', () => {
-    // Regression: DBs created before vault_skills carried
-    // FOREIGN KEY(vault_id) ... ON DELETE CASCADE never cascade, and
-    // CREATE TABLE IF NOT EXISTS cannot retrofit the FK into the existing
-    // table — so deleteVault must delete the rows itself, not rely on the FK.
-    const legacyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-vc-legacydb-'));
-    const legacyFile = path.join(legacyDir, 'app.sqlite');
-    // Pre-create the tables as the old schema had them — WITHOUT the FK.
-    const raw = new Database(legacyFile);
-    raw.exec(`
-      CREATE TABLE vaults (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        path TEXT NOT NULL UNIQUE,
-        description TEXT,
-        created_at INTEGER NOT NULL
-      );
-      CREATE TABLE vault_skills (
-        vault_id TEXT NOT NULL,
-        skill_id TEXT NOT NULL,
-        enabled  INTEGER NOT NULL DEFAULT 1,
-        PRIMARY KEY (vault_id, skill_id)
-      );
-    `);
-    raw.close();
-
-    // migrate() skips existing tables (IF NOT EXISTS) → FK-less table stays.
-    const legacyDb = openDatabase(legacyDir);
-    const vaultDir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-vc-legacyvault-'));
-    try {
-      const fk = legacyDb
-        .prepare("SELECT COUNT(*) AS n FROM pragma_foreign_key_list('vault_skills')")
-        .get() as { n: number };
-      assert.equal(fk.n, 0, 'legacy table really has no FK (no cascade possible)');
-
-      const vault = createVault(legacyDb, 'Legacy', vaultDir, '');
-      setVaultSkillEnabled(legacyDb, vault.id, 's1', false);
-
-      deleteVault(legacyDb, vault.id);
-
-      const orphans = legacyDb
-        .prepare('SELECT COUNT(*) AS n FROM vault_skills WHERE vault_id = ?')
-        .get(vault.id) as { n: number };
-      assert.equal(orphans.n, 0, 'no orphan override rows on a legacy (FK-less) db');
-    } finally {
-      closeDatabase(); // release the singleton (openDatabase auto-closed the beforeEach db)
-      fs.rmSync(legacyDir, { recursive: true, force: true });
-      fs.rmSync(vaultDir, { recursive: true, force: true });
     }
   });
 });

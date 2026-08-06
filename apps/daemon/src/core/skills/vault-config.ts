@@ -1,15 +1,18 @@
 /**
- * Per-vault skill enablement + sync.
+ * Per-vault skill sync.
  *
  * The global skill library (the daemon's `skills` table) is the master switch:
- * a globally-enabled skill is meant to be available in every vault by default.
- * Each vault may opt out via a sparse override row in `vault_skills`. The
- * effective set for a vault is therefore:
+ * a globally-enabled skill is available in every vault. The effective set for
+ * a vault is therefore:
  *
- *     (globally-enabled OR core)  AND  not disabled in this vault
+ *     globally-enabled OR core
  *
- * `core` skills (the writing trio) are exempt from both the global switch and
- * per-vault overrides — they are always effective (hidden but behavior kept).
+ * `core` skills (the writing trio) are exempt from the global switch — they
+ * are always effective (hidden but behavior kept).
+ *
+ * NOTE: the API stays per-vault (`getEffectiveSkills(db, vaultId)`) on purpose.
+ * If per-vault opt-outs ever become a real need again, re-add them as a filter
+ * here — the sync layer below already fans out per vault and wouldn't change.
  *
  * Scope: sync targets ONLY registered vaults' `<vault.path>/.claude/skills/`,
  * so skills reach runs whose cwd resolves to a vault. Runs without a vault
@@ -39,39 +42,14 @@ import { reconcileSync } from './sync.js';
 import { reconcileBundledSync } from '../skill-installer.js';
 import type { SkillPathsOpts } from './paths.js';
 
-/** Read this vault's sparse overrides. Absence of a key = inherit global state. */
-export function getVaultSkillOverrides(db: Database.Database, vaultId: string): Map<string, boolean> {
-  const rows = db
-    .prepare('SELECT skill_id, enabled FROM vault_skills WHERE vault_id = ?')
-    .all(vaultId) as Array<{ skill_id: string; enabled: number }>;
-  const map = new Map<string, boolean>();
-  for (const row of rows) map.set(row.skill_id, row.enabled !== 0);
-  return map;
-}
-
-/** Upsert a per-vault override row (enable or disable a skill in one vault). */
-export function setVaultSkillEnabled(
-  db: Database.Database,
-  vaultId: string,
-  skillId: string,
-  enabled: boolean,
-): void {
-  db.prepare(
-    `INSERT INTO vault_skills (vault_id, skill_id, enabled) VALUES (?, ?, ?)
-     ON CONFLICT(vault_id, skill_id) DO UPDATE SET enabled = excluded.enabled`,
-  ).run(vaultId, skillId, enabled ? 1 : 0);
-}
-
 /**
- * Effective skill entries for a vault: core skills always count (exempt from the
- * global switch and per-vault overrides); everything else needs to be globally
- * enabled AND not disabled in this vault.
+ * Effective skill entries for a vault: core skills always count (exempt from
+ * the global switch); everything else needs to be globally enabled. `_vaultId`
+ * is kept in the signature so per-vault filtering can be re-added without
+ * touching callers (see module note).
  */
-export function getEffectiveSkills(db: Database.Database, vaultId: string): SkillManifestEntry[] {
-  const overrides = getVaultSkillOverrides(db, vaultId);
-  return listSkills(db).filter(
-    (s) => s.core || (s.enabled && overrides.get(s.id) !== false),
-  );
+export function getEffectiveSkills(db: Database.Database, _vaultId: string): SkillManifestEntry[] {
+  return listSkills(db).filter((s) => s.core || s.enabled);
 }
 
 /** Effective skill ids for a vault (see getEffectiveSkills). */
@@ -156,9 +134,4 @@ export async function afterGlobalSkillMutation(
   opts?: SkillPathsOpts,
 ): Promise<void> {
   await reconcileAllVaultsAsync(db, opts);
-}
-
-/** Drop all per-vault override rows for a skill (called when it's deleted globally). */
-export function deleteVaultSkillOverrides(db: Database.Database, skillId: string): void {
-  db.prepare('DELETE FROM vault_skills WHERE skill_id = ?').run(skillId);
 }

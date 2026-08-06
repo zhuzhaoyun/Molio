@@ -6,7 +6,7 @@ import type {
   WikiStatusResponse,
   GraphData, SearchResult, SearchResponse,
   SkillManifestEntry, SkillDetailResponse, CreateSkillRequest, UpdateSkillRequest,
-  ImportSkillRequest, PrefillResult, VaultSkillEntry,
+  ImportSkillRequest, PrefillResult,
 } from '@molio/contracts';
 
 export type WeixinLoginStatus = 'idle' | 'waiting_scan' | 'scanned' | 'logged_in' | 'error';
@@ -869,34 +869,6 @@ export const api = {
     }
     const data = await res.json();
     return data.prefill;
-  },
-
-  // ─── Per-vault skills ───
-
-  /** Every library skill with its effective state in one vault. */
-  async listVaultSkills(vaultId: string): Promise<VaultSkillEntry[]> {
-    const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/skills`);
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error?.message ?? `Failed to fetch vault skills: ${res.status}`);
-    }
-    const data = await res.json();
-    return data.skills;
-  },
-
-  /** Opt a skill in/out of one vault; returns the updated entry. */
-  async setVaultSkillEnabled(vaultId: string, skillId: string, enabled: boolean): Promise<VaultSkillEntry> {
-    const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/skills/${skillId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error?.message ?? `Failed to update vault skill: ${res.status}`);
-    }
-    const data = await res.json();
-    return data.skill;
   },
 };
 
