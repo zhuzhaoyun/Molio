@@ -646,7 +646,7 @@ test.describe('multi-window vault isolation', () => {
 
     // Window A switches to vault B via the vault manager modal.
     await pageA.locator('.kb-vault-bar').click();
-    await pageA.locator('.kb-vault-option', { hasText: 'mw-b' }).click();
+    await pageA.locator('.vm-vault-item', { hasText: 'mw-b' }).click();
     await expect(pageA.locator('.kb-vault-bar__name')).toHaveText('mw-b');
 
     // URL in window A now carries the new vault.
@@ -673,7 +673,7 @@ test.describe('multi-window vault isolation', () => {
 
     // Page A 切到 vault B → 写共享 localStorage.activeVaultId=B、URL ?vault=B
     await pageA.locator('.kb-vault-bar').click();
-    await pageA.locator('.kb-vault-option', { hasText: 'mw-b' }).click();
+    await pageA.locator('.vm-vault-item', { hasText: 'mw-b' }).click();
     await expect(pageA.locator('.kb-vault-bar__name')).toHaveText('mw-b');
     await expect.poll(async () => new URL(pageA.url()).searchParams.get('vault')).toBe(vaultBId);
 
@@ -1087,7 +1087,7 @@ test('KB chat does not continue the old vault conversation after switching vault
 
   // Switch to vault B and send again.
   await page.locator('.kb-vault-bar').click();
-  await page.locator('.kb-vault-option', { hasText: 'mw-b' }).click();
+  await page.locator('.vm-vault-item', { hasText: 'mw-b' }).click();
   await expect(page.locator('.kb-vault-bar__name')).toHaveText('mw-b');
   await page.locator('.kb-tree-item', { hasText: 'gamma.md' }).first().click();
   await page.locator('[data-testid="kb-btn-ask-file"]').click();
