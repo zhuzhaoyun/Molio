@@ -32,6 +32,10 @@ const KbCodeMirrorViewer = lazy(() =>
   import('./KbCodeMirrorViewer').then((m) => ({ default: m.KbCodeMirrorViewer })),
 );
 
+import type { PdfViewerHandle } from './PdfViewer';
+
+const PdfViewer = lazy(() => import('./PdfViewer').then((m) => ({ default: m.PdfViewer })));
+
 /** .md files at or below this size still render via doocs/md. Above → source mode. */
 const MD_RENDER_THRESHOLD = 1 * 1024 * 1024;
 const MD_EXTS = new Set(['.md', '.markdown']);
@@ -52,12 +56,13 @@ function getTurndown(): TurndownService {
 }
 
 /** File categories for rendering strategy */
-type FileCategory = 'text' | 'image' | 'video' | 'audio' | 'binary';
+type FileCategory = 'text' | 'image' | 'video' | 'audio' | 'binary' | 'pdf';
 
 const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp', '.ico']);
 const VIDEO_EXTS = new Set(['.mp4', '.mov', '.webm', '.mkv', '.avi']);
 const AUDIO_EXTS = new Set(['.mp3', '.wav', '.m4a', '.flac', '.aac', '.ogg']);
-const BINARY_EXTS = new Set(['.pdf', '.docx', '.doc', '.pptx', '.ppt', '.xlsx', '.xls']);
+const PDF_EXTS = new Set(['.pdf']);
+const BINARY_EXTS = new Set(['.docx', '.doc', '.pptx', '.ppt', '.xlsx', '.xls']);
 
 function getFileCategory(fileName: string): FileCategory {
   const lastDot = fileName.lastIndexOf('.');
@@ -65,6 +70,7 @@ function getFileCategory(fileName: string): FileCategory {
   if (IMAGE_EXTS.has(ext)) return 'image';
   if (VIDEO_EXTS.has(ext)) return 'video';
   if (AUDIO_EXTS.has(ext)) return 'audio';
+  if (PDF_EXTS.has(ext)) return 'pdf';
   if (BINARY_EXTS.has(ext)) return 'binary';
   return 'text';
 }
@@ -155,11 +161,22 @@ export function KbMainContent({
   const { t } = useI18n();
   const contentRef = useRef<HTMLDivElement>(null);
   const cmRef = useRef<KbCodeMirrorViewerHandle>(null);
+  const pdfRef = useRef<PdfViewerHandle>(null);
+  // 头部缩放宽显示：PdfViewer 通过 onZoomChange 上报当前缩放比例；点击读数进入输入态
+  const [pdfZoom, setPdfZoom] = useState(100);
+  const [pdfZoomEditing, setPdfZoomEditing] = useState(false);
+  const [pdfZoomInput, setPdfZoomInput] = useState('');
+
+  const applyPdfZoom = useCallback(() => {
+    setPdfZoomEditing(false);
+    const v = Number(pdfZoomInput);
+    if (Number.isFinite(v) && v > 0) pdfRef.current?.setZoom(v);
+  }, [pdfZoomInput]);
   const [wrap, setWrap] = useState(false);
   const [retryNonce, setRetryNonce] = useState(0);
   const [fmExpanded, setFmExpanded] = useState(true);
   const [ctxMenu, setCtxMenu] = useState<
-    { x: number; y: number; source: 'doocs' | 'codemirror'; selectedText?: string } | null
+    { x: number; y: number; source: 'doocs' | 'codemirror' | 'pdf'; selectedText?: string } | null
   >(null);
 
   // Routing flags — computed from extension + size + tooLarge.
@@ -294,6 +311,11 @@ export function KbMainContent({
     },
     [],
   );
+
+  const handlePdfContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setCtxMenu({ x: e.clientX, y: e.clientY, source: 'pdf' });
+  }, []);
 
   const closeContextMenu = useCallback(() => setCtxMenu(null), []);
 
@@ -526,8 +548,142 @@ export function KbMainContent({
             </>
           )}
 
+          {/* PDF viewer: 翻页 / 缩放 / 适配（命令式走 pdfRef） */}
+          {category === 'pdf' && selectedFile && (
+            <>
+              <button
+                type="button"
+                className="kb-btn kb-btn-ghost"
+                onClick={() => pdfRef.current?.prevPage()}
+                title={t('kb.pdf.prevPage')}
+                data-testid="kb-btn-pdf-prev"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="15" height="15">
+                  <polyline points="15 18 9 12 15 6" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className="kb-btn kb-btn-ghost"
+                onClick={() => pdfRef.current?.nextPage()}
+                title={t('kb.pdf.nextPage')}
+                data-testid="kb-btn-pdf-next"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="15" height="15">
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+              </button>
+              <span className="kb-header-actions-divider" />
+              <button
+                type="button"
+                className="kb-btn kb-btn-ghost"
+                onClick={() => pdfRef.current?.zoomOut()}
+                title={t('kb.pdf.zoomOut')}
+                data-testid="kb-btn-pdf-zoom-out"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="15" height="15">
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+              </button>
+              {pdfZoomEditing ? (
+                <input
+                  className="pdf-zoom-input"
+                  data-testid="pdf-zoom-input"
+                  type="number"
+                  min={25}
+                  max={400}
+                  value={pdfZoomInput}
+                  autoFocus
+                  onChange={(e) => setPdfZoomInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') applyPdfZoom();
+                    else if (e.key === 'Escape') setPdfZoomEditing(false);
+                  }}
+                  onBlur={applyPdfZoom}
+                />
+              ) : (
+                <span
+                  className="pdf-zoom-readout"
+                  data-testid="pdf-zoom-readout"
+                  role="button"
+                  tabIndex={0}
+                  title={t('kb.pdf.zoomInputHint')}
+                  onClick={() => { setPdfZoomInput(String(pdfZoom)); setPdfZoomEditing(true); }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      setPdfZoomInput(String(pdfZoom));
+                      setPdfZoomEditing(true);
+                    }
+                  }}
+                >{pdfZoom}%</span>
+              )}
+              <button
+                type="button"
+                className="kb-btn kb-btn-ghost"
+                onClick={() => pdfRef.current?.zoomIn()}
+                title={t('kb.pdf.zoomIn')}
+                data-testid="kb-btn-pdf-zoom-in"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="15" height="15">
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+              </button>
+              <span className="kb-header-actions-divider" />
+              <button
+                type="button"
+                className="kb-btn kb-btn-ghost"
+                onClick={() => pdfRef.current?.fitWidth()}
+                title={t('kb.pdf.fitWidth')}
+                data-testid="kb-btn-pdf-fit-width"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="15" height="15">
+                  <polyline points="18 8 22 12 18 16" />
+                  <polyline points="6 8 2 12 6 16" />
+                  <line x1="2" y1="12" x2="22" y2="12" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className="kb-btn kb-btn-ghost"
+                onClick={() => pdfRef.current?.fitPage()}
+                title={t('kb.pdf.fitPage')}
+                data-testid="kb-btn-pdf-fit-page"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="15" height="15">
+                  <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+                </svg>
+              </button>
+              <span className="kb-header-actions-divider" />
+              <button
+                type="button"
+                className="kb-btn kb-btn-ghost"
+                onClick={() => pdfRef.current?.toggleSearch()}
+                title={t('kb.pdf.search')}
+                data-testid="kb-btn-pdf-search"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="15" height="15">
+                  <circle cx="11" cy="11" r="7" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className="kb-btn kb-btn-ghost"
+                onClick={() => pdfRef.current?.toggleSidebar()}
+                title={t('kb.pdf.sidebar')}
+                data-testid="kb-btn-pdf-sidebar"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="15" height="15">
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <line x1="15" y1="3" x2="15" y2="21" />
+                </svg>
+              </button>
+            </>
+          )}
+
           {/* Binary file: open with system app (Electron only) */}
-          {category === 'binary' && isElectron && (
+          {(category === 'binary' || category === 'pdf') && isElectron && (
             <button type="button" className="kb-btn" onClick={handleOpenExternal}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
                 <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
@@ -544,8 +700,8 @@ export function KbMainContent({
           )}
 
           {/* ── View / command actions ── */}
-          {/* Document outline (file-scoped) */}
-          {onOpenOutline && selectedFile && (
+          {/* Document outline (markdown 专属 —— PDF 大纲在侧边栏里，不重复显示) */}
+          {category === 'text' && onOpenOutline && selectedFile && (
             <button
               type="button"
               className="kb-btn kb-btn-ghost"
@@ -564,8 +720,8 @@ export function KbMainContent({
             </button>
           )}
 
-          {/* Edit / Read toggle — icon-only, grouped with search (doocs path only) */}
-          {!isTypesetMode && !isCmPath && (
+          {/* Edit / Read toggle — markdown 专属（PDF 不支持编辑，不显示） */}
+          {category === 'text' && !isTypesetMode && !isCmPath && (
             <button
               type="button"
               className={`kb-btn kb-btn-ghost ${isEditMode ? 'is-active' : ''}`}
@@ -732,6 +888,25 @@ export function KbMainContent({
             Your browser does not support audio playback.
           </audio>
         </div>
+      ) : category === 'pdf' && vaultId ? (
+        <div className="kb-content-area kb-pdf-area" onContextMenu={handlePdfContextMenu}>
+          <ViewerErrorBoundary
+            key={retryNonce}
+            onRetry={() => { setRetryNonce((n) => n + 1); onForceLoad?.(); }}
+            onOpenExternal={isElectron ? handleOpenExternal : undefined}
+          >
+            <Suspense fallback={<div className="kb-empty-state"><p>Loading...</p></div>}>
+              <PdfViewer
+                ref={pdfRef}
+                url={api.rawFileUrl(vaultId, selectedFile)}
+                fileName={fileName}
+                fileSize={fileContent?.size}
+                onOpenExternal={isElectron ? handleOpenExternal : undefined}
+                onZoomChange={setPdfZoom}
+              />
+            </Suspense>
+          </ViewerErrorBoundary>
+        </div>
       ) : category === 'binary' ? (
         <div className="kb-content-area">
           <div className="kb-file-card">
@@ -759,13 +934,15 @@ export function KbMainContent({
         <ContextMenu
           items={(() => {
             // CM source: selection text captured at contextmenu-event time
-            // (stored in ctxMenu.selectedText). doocs source: read live
+            // (stored in ctxMenu.selectedText). doocs/pdf source: read live
             // window.getSelection() at menu-open.
             const isCmSource = ctxMenu.source === 'codemirror';
+            const isPdfSource = ctxMenu.source === 'pdf';
             const sel = isCmSource ? (ctxMenu.selectedText ?? '') : selectionText();
             // Rich triple-slot copy (text/html + text/plain markdown) only for
             // the doocs source — CM has raw text, no rendered HTML to convert.
-            const selHtml = isCmSource ? '' : (() => {
+            // PDF 文本层 span 透明 + transform：复制必须纯文本，禁止 rich HTML 三槽路径。
+            const selHtml = isCmSource || isPdfSource ? '' : (() => {
               const s = window.getSelection();
               if (!s || s.rangeCount === 0) return '';
               const div = document.createElement('div');
@@ -822,6 +999,10 @@ export function KbMainContent({
                 onClick: () => {
                   if (isCmSource) {
                     cmRef.current?.selectAll();
+                    return;
+                  }
+                  if (isPdfSource) {
+                    pdfRef.current?.selectAll();
                     return;
                   }
                   const out = contentRef.current?.querySelector('#output');
