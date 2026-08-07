@@ -658,6 +658,30 @@ test.describe('multi-window vault isolation', () => {
     await ctxB.close();
   });
 
+  test('two pages SHARING localStorage (real Electron windows) stay vault-independent via ?vault=', async ({ browser }) => {
+    // Electron 多窗口同一 session → 共享 localStorage。真实场景：⌘N 克隆窗口
+    // 后两窗同在 vault A，用户把一窗切到 B。要防的是：A 页切 vault 写共享
+    // `molio.activeVaultId=B` 后，B 页（模块级 store 已按自己 URL=?vault=A 初始化）
+    // 不被串扰弹到 B。一个 context 里两个 page 模拟共享 localStorage。
+    const ctx = await browser.newContext();
+    const pageA = await ctx.newPage();
+    const pageB = await ctx.newPage();
+    await pageA.goto(`${WEB}/knowledge?vault=${vaultAId}`);
+    await pageB.goto(`${WEB}/knowledge?vault=${vaultAId}`); // 克隆场景：两窗同 vault A
+    await expect(pageA.locator('.kb-vault-bar__name')).toHaveText('mw-a');
+    await expect(pageB.locator('.kb-vault-bar__name')).toHaveText('mw-a');
+
+    // Page A 切到 vault B → 写共享 localStorage.activeVaultId=B、URL ?vault=B
+    await pageA.locator('.kb-vault-bar').click();
+    await pageA.locator('.kb-vault-option', { hasText: 'mw-b' }).click();
+    await expect(pageA.locator('.kb-vault-bar__name')).toHaveText('mw-b');
+    await expect.poll(async () => new URL(pageA.url()).searchParams.get('vault')).toBe(vaultBId);
+
+    // Page B 仍绑定自己的 URL ?vault=A，不被共享 localStorage 的写串扰
+    await expect(pageB.locator('.kb-vault-bar__name')).toHaveText('mw-a');
+    await ctx.close();
+  });
+
   test('?file= external navigation keeps ?vault= and opens the file', async ({ browser }) => {
     const ctx = await browser.newContext();
     const page = await ctx.newPage();
