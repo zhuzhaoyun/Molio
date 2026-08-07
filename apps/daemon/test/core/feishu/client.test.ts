@@ -261,4 +261,106 @@ describe('FeishuApi.downloadMessageResource', () => {
     );
     assert.equal(called, false, 'no request may go out without a messageId');
   });
+
+  /**
+   * Download timeout semantics. The old implementation armed ONE timer for
+   * the whole request (headers + body), so a large file on a slow uplink
+   * (64MB cap ÷ <~1MB/s) was aborted mid-body and surfaced to the user as
+   * "下载失败" although the transfer was merely slow. The timeout is now an
+   * INACTIVITY timeout: it bounds the header phase and resets on every chunk
+   * that arrives, aborting only connections that go silent.
+   */
+
+  /**
+   * Stream `chunks` with a `delayMs` network latency before each chunk.
+   * `init.signal` is wired to the stream the way real (undici) fetch does it:
+   * aborting the signal errors the body stream, so a pending `reader.read()`
+   * rejects with the AbortError — without this wiring a mock stream would
+   * happily keep delivering chunks after the abort fired.
+   */
+  function slowStreamResponse(chunks: Array<{ data: Buffer; delayMs: number }>, init?: RequestInit): Response {
+    const signal = init?.signal;
+    let i = 0;
+    let underlying: ReadableStreamDefaultController<Uint8Array> | undefined;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        underlying = controller;
+      },
+      async pull(controller) {
+        if (i >= chunks.length) {
+          controller.close();
+          return;
+        }
+        const chunk = chunks[i]!;
+        i += 1;
+        await new Promise((resolve) => setTimeout(resolve, chunk.delayMs));
+        if (signal?.aborted) return; // already errored via the abort listener
+        controller.enqueue(chunk.data);
+      },
+    });
+    signal?.addEventListener('abort', () => {
+      underlying?.error(signal.reason ?? new Error('aborted'));
+    });
+    return new Response(stream, {
+      status: 200,
+      headers: { 'content-type': 'application/octet-stream' },
+    });
+  }
+
+  it('survives a slow-but-steady stream whose TOTAL time exceeds the timeout (inactivity reset per chunk)', async () => {
+    // 4 chunks × 120ms latency = ~480ms total, well over the 300ms timeout —
+    // but each individual gap (120ms) stays under it, so the download must
+    // complete. Under the old total-timeout implementation this aborted
+    // mid-body at ~300ms.
+    globalThis.fetch = (async (_url: URL | string, init?: RequestInit) => slowStreamResponse([
+      { data: Buffer.from('aaaa'), delayMs: 120 },
+      { data: Buffer.from('bbbb'), delayMs: 120 },
+      { data: Buffer.from('cccc'), delayMs: 120 },
+      { data: Buffer.from('dddd'), delayMs: 120 },
+    ], init)) as typeof fetch;
+
+    const api = new FeishuApi('https://open.feishu.cn', 'cli_x', 'sec_x');
+    const started = Date.now();
+    const { data } = await api.downloadMessageResource('tok', 'om_msg_1', 'file_v3_001', 'file', 300);
+    assert.equal(data.toString(), 'aaaabbbbccccdddd');
+    assert.ok(Date.now() - started > 400, 'stream actually took longer than the timeout — proof the timer reset');
+  });
+
+  it('aborts a STALLED stream once no chunk arrives within the timeout', async () => {
+    // First chunk arrives quickly, then the connection goes silent for 600ms —
+    // far beyond the 150ms inactivity window, so the download must abort.
+    globalThis.fetch = (async (_url: URL | string, init?: RequestInit) => slowStreamResponse([
+      { data: Buffer.from('head'), delayMs: 30 },
+      { data: Buffer.from('never'), delayMs: 600 },
+    ], init)) as typeof fetch;
+
+    const api = new FeishuApi('https://open.feishu.cn', 'cli_x', 'sec_x');
+    const started = Date.now();
+    await assert.rejects(
+      () => api.downloadMessageResource('tok', 'om_msg_1', 'file_v3_001', 'file', 150),
+      (err: unknown) => (err as Error).name === 'AbortError',
+    );
+    assert.ok(Date.now() - started < 500, 'abort must fire at the inactivity window, not when the stream finally delivers');
+  });
+
+  it('still bounds the HEADER phase: no response at all within the timeout aborts', async () => {
+    // A mock fetch that honors the signal: resolves only after 500ms, rejects
+    // as soon as the abort signal fires. With a 100ms timeout the request must
+    // abort during the header wait, long before the mock would resolve.
+    globalThis.fetch = ((_url: URL | string, init?: RequestInit) => new Promise<Response>((resolve, reject) => {
+      const late = setTimeout(() => resolve(new Response(Buffer.from('too late'), { status: 200 })), 500);
+      init?.signal?.addEventListener('abort', () => {
+        clearTimeout(late);
+        reject(init?.signal?.reason ?? new Error('aborted'));
+      });
+    })) as typeof fetch;
+
+    const api = new FeishuApi('https://open.feishu.cn', 'cli_x', 'sec_x');
+    const started = Date.now();
+    await assert.rejects(
+      () => api.downloadMessageResource('tok', 'om_msg_1', 'file_v3_001', 'file', 100),
+      (err: unknown) => (err as Error).name === 'AbortError',
+    );
+    assert.ok(Date.now() - started < 400, 'header-phase abort must fire near the timeout, not at 500ms');
+  });
 });

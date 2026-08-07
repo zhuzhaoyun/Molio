@@ -73,7 +73,10 @@ export async function materializeFeishuAttachments(
 
       const localDesc = `[${label}] 已下载到本地：${outPath}`;
       if (message.text.includes(placeholder)) {
-        message.text = message.text.replace(placeholder, outPath);
+        // Function replacement: with a string replacement `$` sequences in the
+        // replacement (`$&`, `$'`, `$1`, …) are special patterns — `outPath`
+        // can contain them (sanitizeFileName keeps `$`) and would be corrupted.
+        message.text = message.text.replace(placeholder, () => outPath);
       }
       if (!message.text.includes(outPath)) {
         message.text = `${message.text}\n${localDesc}`;
@@ -89,7 +92,10 @@ export async function materializeFeishuAttachments(
       // Case 2, which also requires a feishu.cn/larksuite.com URL in the text.
       const failureDesc = `[${label}下载失败: ${reason}]`;
       if (message.text.includes(placeholder)) {
-        message.text = message.text.replace(placeholder, failureDesc);
+        // Function replacement: `reason` is external input (Feishu API msg /
+        // network error) and a string replacement would interpret `$&`, `$'`,
+        // `$1`, … inside it as substitution patterns, corrupting the marker.
+        message.text = message.text.replace(placeholder, () => failureDesc);
       } else {
         message.text = message.text ? `${message.text}\n${failureDesc}` : failureDesc;
       }

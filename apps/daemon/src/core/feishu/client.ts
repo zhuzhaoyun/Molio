@@ -26,6 +26,26 @@ function ensureTrailingSlash(url: string): string {
   return url.endsWith('/') ? url : `${url}/`;
 }
 
+/**
+ * Abort signal driven by INACTIVITY rather than total elapsed time. The
+ * initial timer covers the header phase (no response at all within
+ * `timeoutMs` aborts); every `kick()` call resets the countdown, so a large
+ * file streaming slowly-but-steadily is never aborted mid-body — only a
+ * connection that goes silent for `timeoutMs` is. A plain total timeout
+ * would kill a 64MB download on a slow uplink and surface it to the user as
+ * "下载失败" even though the transfer was merely slow. `dispose()` clears the
+ * pending timer once the download finishes (success or failure).
+ */
+function inactivityAbort(timeoutMs: number): { signal: AbortSignal; kick: () => void; dispose: () => void } {
+  const controller = new AbortController();
+  let timer = setTimeout(() => controller.abort(), timeoutMs);
+  const kick = (): void => {
+    clearTimeout(timer);
+    timer = setTimeout(() => controller.abort(), timeoutMs);
+  };
+  return { signal: controller.signal, kick, dispose: () => clearTimeout(timer) };
+}
+
 async function readJson(res: Response): Promise<Record<string, unknown>> {
   if (!res.ok) {
     const text = await res.text().catch(() => '');
@@ -225,27 +245,31 @@ export class FeishuApi {
    * ⚠️ This endpoint only serves resources the APP itself uploaded. To download
    * a user-sent image, use `downloadMessageResource` — this one fails with 400
    * "The app is not the resource sender" (code 234008) otherwise.
+   *
+   * `timeoutMs` is an INACTIVITY timeout: it bounds the header phase and
+   * resets whenever a body chunk arrives, so a slow-but-steady stream is
+   * never aborted mid-body.
    */
   async downloadImage(tenantAccessToken: string, imageKey: string, timeoutMs = 60_000): Promise<{ data: Buffer; contentType: string }> {
     const url = `${ensureTrailingSlash(this.baseUrl)}open-apis/im/v1/images/${encodeURIComponent(imageKey)}`;
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const { signal, kick, dispose } = inactivityAbort(timeoutMs);
     try {
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${tenantAccessToken}` },
-        signal: controller.signal,
+        signal,
       });
       if (!res.ok) {
         throw new Error(`Feishu image download ${res.status}: ${await this.formatErrorBody(res)}`);
       }
-      return await this.readCappedBody(res);
+      return await this.readCappedBody(res, DOWNLOAD_MAX_BYTES, kick);
     } finally {
-      clearTimeout(timer);
+      dispose();
     }
   }
 
   /**
-   * Download a file by `file_key`. Same shape as `downloadImage`.
+   * Download a file by `file_key`. Same shape as `downloadImage` (including
+   * the inactivity-timeout semantics — see its JSDoc).
    * Note: file downloads require the `im:resource` permission scope.
    *
    * ⚠️ This endpoint only serves resources the APP itself uploaded. To download
@@ -254,19 +278,18 @@ export class FeishuApi {
    */
   async downloadFile(tenantAccessToken: string, fileKey: string, timeoutMs = 60_000): Promise<{ data: Buffer; contentType: string }> {
     const url = `${ensureTrailingSlash(this.baseUrl)}open-apis/im/v1/files/${encodeURIComponent(fileKey)}`;
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const { signal, kick, dispose } = inactivityAbort(timeoutMs);
     try {
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${tenantAccessToken}` },
-        signal: controller.signal,
+        signal,
       });
       if (!res.ok) {
         throw new Error(`Feishu file download ${res.status}: ${await this.formatErrorBody(res)}`);
       }
-      return await this.readCappedBody(res);
+      return await this.readCappedBody(res, DOWNLOAD_MAX_BYTES, kick);
     } finally {
-      clearTimeout(timer);
+      dispose();
     }
   }
 
@@ -281,7 +304,8 @@ export class FeishuApi {
    * uploaded and answer a user-sent key with 400 / code 234008
    * ("The app is not the resource sender"). Requires the `im:resource`
    * permission scope. Returns raw bytes + content-type, same shape as
-   * `downloadFile`/`downloadImage`.
+   * `downloadFile`/`downloadImage` (including the inactivity-timeout
+   * semantics — see `downloadImage`'s JSDoc).
    */
   async downloadMessageResource(
     tenantAccessToken: string,
@@ -297,8 +321,7 @@ export class FeishuApi {
       throw new Error('Feishu downloadMessageResource: fileKey is required');
     }
     const url = `${ensureTrailingSlash(this.baseUrl)}open-apis/im/v1/messages/${encodeURIComponent(messageId)}/resources/${encodeURIComponent(fileKey)}?type=${type}`;
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const { signal, kick, dispose } = inactivityAbort(timeoutMs);
     try {
       // Note: community reports some Feishu gateways want `Content-Length: 0`
       // on this GET, but undici's fetch strips that header (forbidden name) —
@@ -306,14 +329,14 @@ export class FeishuApi {
       // without it, so we don't fight it here.
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${tenantAccessToken}` },
-        signal: controller.signal,
+        signal,
       });
       if (!res.ok) {
         throw new Error(`Feishu message resource download ${res.status}: ${await this.formatErrorBody(res)}`);
       }
-      return await this.readCappedBody(res);
+      return await this.readCappedBody(res, DOWNLOAD_MAX_BYTES, kick);
     } finally {
-      clearTimeout(timer);
+      dispose();
     }
   }
 
@@ -337,8 +360,14 @@ export class FeishuApi {
    * DOWNLOAD_MAX_BYTES (default 64MB). Feishu allows 100MB file uploads —
    * buffering that into a single Node Buffer can OOM a low-RAM dev machine
    * running the daemon locally, so we cap and refuse with a clear error.
+   *
+   * `kick`, when given, is invoked after every chunk that arrives — the
+   * download methods pass their inactivity-timer reset so a slow-but-steady
+   * stream is never aborted mid-body (only a stalled one is). The
+   * non-streaming fallback below reads in one shot, so the caller's INITIAL
+   * timer still bounds it.
    */
-  private async readCappedBody(res: Response, maxBytes = DOWNLOAD_MAX_BYTES): Promise<{ data: Buffer; contentType: string }> {
+  private async readCappedBody(res: Response, maxBytes = DOWNLOAD_MAX_BYTES, kick?: () => void): Promise<{ data: Buffer; contentType: string }> {
     const contentLength = Number(res.headers.get('content-length') ?? 0);
     if (contentLength && contentLength > maxBytes) {
       throw new Error(`Feishu download too large: content-length=${contentLength} > ${maxBytes}`);
@@ -361,6 +390,7 @@ export class FeishuApi {
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
+      kick?.(); // bytes arrived → reset the inactivity countdown
       total += value.byteLength;
       if (total > maxBytes) {
         await reader.cancel().catch(() => {});

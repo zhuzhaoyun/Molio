@@ -113,4 +113,44 @@ describe('materializeFeishuAttachments', () => {
     assert.ok(message.text.includes('[图片下载失败: boom]'));
     assert.ok(!message.text.includes('image_key: img_bad'));
   });
+
+  /**
+   * `String.prototype.replace(str, str)` treats `$&`, `$'`, `` $` ``, `$1`…
+   * in the REPLACEMENT as substitution patterns. The failure reason is
+   * external input (Feishu API msg / network error), so it must be inserted
+   * literally — a function replacement — or a reason containing `$` sequences
+   * would silently corrupt the marker.
+   */
+  it('keeps $ sequences in the failure reason literal (no replace-pattern expansion)', async () => {
+    const message = makeMessage('file_key: bad', [{ kind: 'file', key: 'bad', messageId: 'om_test' }]);
+    await materializeFeishuAttachments(message, cwd, async () => {
+      throw new Error("gateway said $& then $' and $1");
+    });
+    assert.ok(
+      message.text.includes("[文件下载失败: gateway said $& then $' and $1]"),
+      `failure marker must carry the reason verbatim, got:\n${message.text}`,
+    );
+    assert.ok(!message.text.includes('file_key: bad'), 'dead key placeholder must not survive');
+  });
+
+  /**
+   * Same `$`-pattern hazard on the SUCCESS path: `sanitizeFileName` keeps `$`,
+   * so a user-sent file named e.g. `price$&list.md` yields an `outPath` with
+   * `$&` in it. A string replacement would expand `$&` back to the matched
+   * placeholder, resurrecting the dead key inside the rewritten text.
+   */
+  it('keeps $ sequences in the downloaded file path literal (no replace-pattern expansion)', async () => {
+    const message = makeMessage('file_key: k1', [{ kind: 'file', key: 'k1', messageId: 'om_test', fileName: 'a$&b.md' }]);
+    await materializeFeishuAttachments(message, cwd, async () => ({
+      data: Buffer.from('dollar bytes'),
+      contentType: 'text/markdown',
+    }));
+    const pathLine = message.text.split('\n').find((l) => l.endsWith('a$&b.md'));
+    assert.ok(pathLine, `expected the literal $& path in rewritten text, got:\n${message.text}`);
+    assert.ok(existsSync(pathLine!), 'file with $& in its name should land on disk');
+    assert.deepEqual(readFileSync(pathLine!), Buffer.from('dollar bytes'));
+    // Before the fix `$&` expanded to the matched placeholder itself, so the
+    // dead key survived inside the corrupted path.
+    assert.ok(!message.text.includes('file_key: k1'), 'placeholder must not be resurrected by $& expansion');
+  });
 });
