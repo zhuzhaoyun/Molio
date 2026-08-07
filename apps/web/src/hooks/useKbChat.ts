@@ -67,6 +67,11 @@ export interface KbChatState {
 export function useKbChat(opts: UseKbChatOptions): KbChatState {
   const { agentId, vaultPath, onComplete } = opts;
   const conversationIdRef = useRef<string | null>(null);
+  // A conversation is bound to a vault (cwd). Switching vault must not continue
+  // the previous vault's thread — reset the lineage so the next send starts fresh.
+  useEffect(() => {
+    conversationIdRef.current = null;
+  }, [vaultPath]);
   const [mode, setMode] = useState<KbChatMode | null>(null);
 
   const createRun = useCallback(async (ctx: CreateRunContext) => {
@@ -92,6 +97,20 @@ export function useKbChat(opts: UseKbChatOptions): KbChatState {
   }, [agentId, vaultPath]);
 
   const chat = useChatCore({ createRun, agentId, onComplete });
+
+  // The conversation lineage also lives in useChatCore's state (state.conversationId),
+  // which survives vault switches and is passed back in as ctx.conversationId on the
+  // next createRun — the ref reset above alone would still leak the old vault's thread
+  // (verified by the vault-switch E2E). Reset the whole chat core state so the new vault
+  // truly starts a fresh conversation: messages cleared, conversationId + runId nulled,
+  // SSE closed. (It does NOT cancel the daemon process — that is close()'s job; a leftover
+  // run on an abandoned vault is the same behavior as closing the panel mid-run.)
+  // chat.reset is stable (useCallback([]) chain), so this effect only fires on vaultPath
+  // change, not every render.
+  const chatReset = chat.reset;
+  useEffect(() => {
+    chatReset();
+  }, [vaultPath, chatReset]);
 
   const chatRef = useRef(chat);
   chatRef.current = chat;

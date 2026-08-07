@@ -131,6 +131,63 @@ test.describe('multi-window vault isolation', () => {
     await ctx.close();
   });
 
+  test('KB chat does not continue the old vault conversation after switching vault', async ({ browser }) => {
+    // Deterministic: mock POST /api/runs so conversationIdRef is populated
+    // without a real agent (daemon returns conversationId synchronously on run
+    // creation). The SSE subscription to the mock run id hits the real daemon,
+    // 404s, and force-unlocks the composer — so the second send creates a fresh
+    // POST /api/runs rather than a multi-turn follow-up.
+    const ctx = await browser.newContext();
+    const page = await ctx.newPage();
+    const runs: Array<{ cwd?: string; conversationId?: string }> = [];
+    let mockRunCounter = 0;
+    await page.route('**/api/runs', async (route) => {
+      if (route.request().method() === 'POST') {
+        const body = route.request().postDataJSON();
+        runs.push({ cwd: body.cwd, conversationId: body.conversationId });
+        mockRunCounter += 1;
+        await route.fulfill({
+          status: 201,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            runId: `mock-run-${mockRunCounter}`,
+            conversationId: `mock-conv-${mockRunCounter}`,
+          }),
+        });
+      } else {
+        await route.continue();
+      }
+    });
+
+    await page.goto(`${WEB}/knowledge?vault=${vaultAId}`);
+    await expect(page.locator('.kb-vault-bar__name')).toHaveText('mw-a');
+    await page.locator('.kb-tree-item', { hasText: 'alpha.md' }).first().click();
+    await page.locator('[data-testid="kb-btn-ask"]').click();
+    const input = page.locator('[data-testid="kb-chat-panel"] [data-testid="composer-input"]');
+    await input.fill('hello');
+    await input.press('Enter');
+    await expect.poll(() => runs.length).toBeGreaterThanOrEqual(1);
+    const firstRun = runs[0]!;
+
+    // Switch to vault B and send again.
+    await page.locator('.kb-vault-bar').click();
+    await page.locator('.vm-vault-item', { hasText: 'mw-b' }).click();
+    await expect(page.locator('.kb-vault-bar__name')).toHaveText('mw-b');
+    await page.locator('.kb-tree-item', { hasText: 'gamma.md' }).first().click();
+    await page.locator('[data-testid="kb-btn-ask"]').click();
+    const input2 = page.locator('[data-testid="kb-chat-panel"] [data-testid="composer-input"]');
+    await input2.fill('hello again');
+    await input2.press('Enter');
+    await expect.poll(() => runs.length).toBeGreaterThanOrEqual(2);
+    const secondRun = runs[1]!;
+
+    // The second run re-targets the new vault's cwd.
+    expect(secondRun.cwd).toContain('molio-e2e-mw-b');
+    // And must NOT continue the first run's conversation thread.
+    expect(secondRun.conversationId).toBeFalsy();
+    await ctx.close();
+  });
+
   test('tabs are scoped per vault across windows', async ({ browser }) => {
     const ctxA = await browser.newContext();
     const ctxB = await browser.newContext();
