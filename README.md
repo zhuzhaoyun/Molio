@@ -19,9 +19,9 @@ Generic chatbots draw on the internet at large. Molio draws on your library. It 
 
 <div align="center">
 
-<video src="https://molio.cn/videos/zizhitongjian-overview.mp4" controls width="100%"></video>
+[<img src="docs/img/video-poster.webp" alt="Zizhi Tongjian knowledge base demo" width="100%" style="border-radius: 8px;" />](https://molio.cn/videos/zizhitongjian-overview.mp4)
 
-<sub>One book, one knowledge universe — 1,362 years of history from the *Zizhi Tongjian*, organized by Molio into an AI-explorable knowledge system</sub>
+**▶ Click to watch the demo** — one book, one knowledge universe: 1,362 years of history from the *Zizhi Tongjian*, organized by Molio into an AI-explorable knowledge system
 
 </div>
 

@@ -19,9 +19,9 @@
 
 <div align="center">
 
-<video src="https://molio.cn/videos/zizhitongjian-overview.mp4" controls width="100%"></video>
+[<img src="docs/img/video-poster.webp" alt="资治通鉴知识库演示" width="100%" style="border-radius: 8px;" />](https://molio.cn/videos/zizhitongjian-overview.mp4)
 
-<sub>一本书，一个知识宇宙 —《资治通鉴》1362 年史料 · 由 Molio 整理成 AI 可探索的知识体系</sub>
+**▶ 点击播放演示** — 一本书，一个知识宇宙：《资治通鉴》1362 年史料 · 由 Molio 整理成 AI 可探索的知识体系
 
 </div>
 
