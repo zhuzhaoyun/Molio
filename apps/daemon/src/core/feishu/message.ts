@@ -25,18 +25,21 @@ function textContent(content: string): string {
 /**
  * Extract downloadable attachments (image/file) from a Feishu message payload.
  * Feishu returns `image_key`/`file_key` rather than direct URLs; download
- * goes through the authenticated `im/v1/images` / `im/v1/files` endpoints.
+ * goes through the authenticated message-resource endpoint
+ * (`im/v1/messages/{message_id}/resources/{key}`), so each attachment carries
+ * the event's `message_id`.
  */
 function extractAttachments(event: FeishuRawEvent): FeishuAttachment[] {
   const msg = event.message;
   const parsed = parseContent(msg.content);
   if (!parsed) return [];
   const out: FeishuAttachment[] = [];
+  const messageId = typeof msg.message_id === 'string' ? msg.message_id : '';
 
   if (msg.message_type === 'image') {
     const key = parsed.image_key;
     if (typeof key === 'string' && key) {
-      out.push({ kind: 'image', key });
+      out.push({ kind: 'image', key, messageId });
     }
     return out;
   }
@@ -48,6 +51,7 @@ function extractAttachments(event: FeishuRawEvent): FeishuAttachment[] {
     out.push({
       kind: 'file',
       key,
+      messageId,
       fileName: typeof fileName === 'string' ? fileName : undefined,
     });
     return out;

@@ -55,6 +55,9 @@ describe('parseFeishuMessage', () => {
     const att = parsed?.attachments?.[0];
     assert.equal(att?.kind, 'image');
     assert.equal(att?.key, 'img_test_key');
+    // messageId is required to download user-sent resources via the
+    // message-resource endpoint (234008 fix) — must survive parsing.
+    assert.equal(att?.messageId, 'msg-2');
     assert.match(parsed?.text ?? '', /img_test_key/);
   });
 
@@ -76,6 +79,7 @@ describe('parseFeishuMessage', () => {
     assert.equal(att?.kind, 'file');
     assert.equal(att?.key, 'file_test_key');
     assert.equal(att?.fileName, 'report.pdf');
+    assert.equal(att?.messageId, 'msg-3');
     assert.match(parsed?.text ?? '', /report\.pdf/);
     assert.match(parsed?.text ?? '', /file_test_key/);
   });
