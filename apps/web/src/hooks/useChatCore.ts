@@ -149,7 +149,7 @@ export function useChatCore(options: UseChatCoreOptions) {
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Reconnect attempt counter for exponential backoff + cap.
   const reconnectAttemptRef = useRef<number>(0);
-  // The watchdog invokes this to reconnect; set inside beginNewRun so it
+  // The watchdog invokes this to reconnect; set inside attachRun so it
   // closures the current run's callbacks + runId. Null when no active run.
   const reconnectRef = useRef<(() => void) | null>(null);
   // True while doReconnect is swapping the EventSource — onDoneCb from the OLD
@@ -170,7 +170,7 @@ export function useChatCore(options: UseChatCoreOptions) {
 
   /**
    * Re-arm the watchdog (clear + schedule). On timeout, invokes reconnectRef
-   * (set by beginNewRun) to re-subscribe to the SAME run with ?after=<lastSeq>.
+   * (set by attachRun) to re-subscribe to the SAME run with ?after=<lastSeq>.
    * Called on every received event and every ping frame.
    */
   const armWatchdog = useCallback(() => {
@@ -232,14 +232,12 @@ export function useChatCore(options: UseChatCoreOptions) {
     reconnectRef.current = null;
   }, [clearFallbackTimer, clearWatchdog]);
 
-  const beginNewRun = useCallback(async (
-    result: RunResult,
+  const attachRun = useCallback(async (
+    runId: string,
+    conversationId: string | null,
     assistantId: string,
     optimisticMessages: ChatMessage[],
   ) => {
-    const runId = result.runId;
-    const convId = result.conversationId ?? state.conversationId;
-
     // The passed assistantId is the initial SSE event target. We set the ref
     // here (instead of relying solely on callers) so the parameter is
     // actually used and callers don't need an implicit set-ref-first contract.
@@ -257,7 +255,7 @@ export function useChatCore(options: UseChatCoreOptions) {
       messages: optimisticMessages,
       runId,
       runAgentId: agentId ?? null,
-      conversationId: convId,
+      conversationId,
       isRunning: true,
       activity: null,
     }));
@@ -341,7 +339,7 @@ export function useChatCore(options: UseChatCoreOptions) {
 
     // Watchdog reconnect: re-subscribe to the SAME run with ?after=<lastSeq>
     // so daemon replays missed events (session/cache preserved, no createRun).
-    // Closures the named callbacks above; reassigned every beginNewRun so it
+    // Closures the named callbacks above; reassigned every attachRun so it
     // always reflects the current run's wiring. Exponential backoff per attempt;
     // after MAX_RECONNECT, fall through to onDone (next send → createRun).
     const doReconnect = (afterSeq: number) => {
@@ -385,7 +383,7 @@ export function useChatCore(options: UseChatCoreOptions) {
       console.warn('[sse] watchdog no frames for ' + wdMs + 'ms, reconnect attempt ' + attempt + ' in ' + delay + 'ms');
       reconnectTimerRef.current = setTimeout(() => doReconnect(lastSeqRef.current), delay);
     };
-  }, [state.conversationId, agentId, onComplete, clearFallbackTimer, clearWatchdog, armWatchdog, resetFallbackTimer]);
+  }, [agentId, onComplete, clearFallbackTimer, clearWatchdog, armWatchdog, resetFallbackTimer]);
 
   /**
    * Send a message — tries multi-turn on existing run first, falls back to createRun.
@@ -432,7 +430,7 @@ export function useChatCore(options: UseChatCoreOptions) {
       try {
         await api.sendMessage(existingRunId, text.trim());
         // Multi-turn reuses the existing SSE subscription, which does NOT
-        // re-arm the fallback timer (beginNewRun isn't called). Re-arm here so
+        // re-arm the fallback timer (attachRun isn't called). Re-arm here so
         // a hung follow-up turn still force-unlocks instead of spinning
         // forever. Events from this turn keep resetting it (idle semantics).
         resetFallbackTimer();
@@ -470,7 +468,7 @@ export function useChatCore(options: UseChatCoreOptions) {
         conversationId: cur.conversationId,
       });
 
-      await beginNewRun(result, newAssistantId, [...prevMessages, userMsg, assistantMsg]);
+      await attachRun(result.runId, result.conversationId ?? cur.conversationId, newAssistantId, [...prevMessages, userMsg, assistantMsg]);
     } catch (err) {
       const errId = newAssistantId;
       setState((prev) => {
@@ -482,7 +480,7 @@ export function useChatCore(options: UseChatCoreOptions) {
         return { ...prev, messages, isRunning: false };
       });
     }
-  }, [closeEventSource, createRun, agentId, onComplete, beginNewRun, resetFallbackTimer]);
+  }, [closeEventSource, createRun, agentId, onComplete, attachRun, resetFallbackTimer]);
 
   const rewindAndResend = useCallback(async (newContent: string) => {
     if (!rewindResend) return;
@@ -520,7 +518,7 @@ export function useChatCore(options: UseChatCoreOptions) {
 
     try {
       const result = await rewindResend({ conversationId: convId, newContent: newContent.trim() });
-      await beginNewRun(result, newAssistantId, [...prevMessages, newUserMsg, newAssistantMsg]);
+      await attachRun(result.runId, result.conversationId ?? convId, newAssistantId, [...prevMessages, newUserMsg, newAssistantMsg]);
     } catch (err) {
       setState((prev) => ({
         ...prev,
@@ -533,7 +531,31 @@ export function useChatCore(options: UseChatCoreOptions) {
         isRunning: false,
       }));
     }
-  }, [rewindResend, state.conversationId, state.messages, closeEventSource, beginNewRun]);
+  }, [rewindResend, state.conversationId, state.messages, closeEventSource, attachRun]);
+
+  /**
+   * Resume an in-progress run after the chat was remounted / conversation switched
+   * (KB 会话切页返回、历史切换)。守卫：消息列表最后一条必须是 user —— 说明本轮
+   * assistant 回复尚未持久化、正在生成；最后一条是 assistant = 本轮已结束并入库，
+   * 恢复会重复，跳过。
+   * subscribeToRun 不带 after → daemon 从 seq 0 回放全部 buffer 事件（上限 2000），
+   * 重建进行中的回复并在回放结束后继续直播（run 在 daemon 侧一直活着）。
+   */
+  const resumeRun = useCallback((opts: { runId: string }) => {
+    const msgs = stateRef.current.messages;
+    const last = msgs[msgs.length - 1];
+    if (!last || last.role !== 'user') return; // 本轮已结束并持久化 → 恢复会重复
+    const newAssistantId = nextMsgId();
+    const assistantMsg: ChatMessage = {
+      id: newAssistantId,
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now(),
+      streaming: true,
+      tools: [],
+    };
+    void attachRun(opts.runId, stateRef.current.conversationId, newAssistantId, [...msgs, assistantMsg]);
+  }, [attachRun]);
 
   const regenerateLast = useCallback(async () => {
     // Reuse the last user message's content verbatim.
@@ -643,6 +665,7 @@ export function useChatCore(options: UseChatCoreOptions) {
   return {
     ...state,
     send,
+    resumeRun,
     submitToolResult,
     cancel,
     reset,

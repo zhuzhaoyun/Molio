@@ -41,9 +41,24 @@ export function createSSEStream(
   const maxStalledTicks = Number(process.env.MOLIO_TEST_SSE_STALL_TICKS) || 4;
   let stalledTicks = 0;
 
+  /**
+   * Seq of the last event actually delivered to this consumer. Phase 1 replay
+   * and live enqueues advance it; events the backpressure gate skips while the
+   * consumer is stalled DON'T advance it, so `pull()` can replay the gap from
+   * the run buffer once the consumer drains. Without this, a resume/reconnect
+   * connection that replays a burst then loses the live tail (agent emitting
+   * while the client is still draining the replay) would silently truncate the
+   * reply — the daemon-side root cause of "切页返回后只有当前显示的会话在继续".
+   */
+  let lastDeliveredId = afterId;
+
   /** Whether the consumer is keeping up (safe to enqueue). */
   const consumerReady = (controller: ReadableStreamDefaultController<Uint8Array>): boolean =>
     controller.desiredSize !== null && controller.desiredSize > 0;
+
+  /** Encode an SSE frame for a buffered/live event. */
+  const frameFor = (seq: number, event: AgentEvent): Uint8Array =>
+    encoder.encode(`id: ${seq}\ndata: ${JSON.stringify({ seq, runId, event })}\n\n`);
 
   /** Stop the subscription + ping timer. Idempotent — safe from cancel,
    * cleanup, AND the stall-close path. */
@@ -77,10 +92,9 @@ export function createSSEStream(
       const buffered = runManager.getBufferedEvents(runId, afterId);
       if (buffered) {
         for (const record of buffered) {
-          const envelope = { seq: record.id, runId, event: record.data as AgentEvent };
-          const frame = `id: ${record.id}\ndata: ${JSON.stringify(envelope)}\n\n`;
           try {
-            safeEnqueue(controller, encoder.encode(frame));
+            safeEnqueue(controller, frameFor(record.id, record.data as AgentEvent));
+            lastDeliveredId = record.id;
           } catch {
             dbgLog(`replay enqueue FAILED (broken stream) runId=${runId} seq=${record.id}`);
             return; // Stream closed during replay
@@ -97,16 +111,21 @@ export function createSSEStream(
 
       // Phase 3: Subscribe to live events
       unsub = runManager.onEvent(runId, (event: AgentEvent) => {
+        const lastId = runManager.getLastEventId(runId);
         // Backpressure: skip enqueueing while the consumer is stalled. The
         // event stays in run.events (cap 2000) and is replayed when the
         // client reconnects — either via its own watchdog or the stall-close
         // below — so skipping here loses nothing.
         if (!consumerReady(controller)) return;
-        const lastId = runManager.getLastEventId(runId);
-        const envelope = { seq: lastId, runId, event };
-        const frame = `id: ${lastId}\ndata: ${JSON.stringify(envelope)}\n\n`;
+        // If the consumer stalled mid-stream, events were skipped and the
+        // delivery seq has a gap. Enqueueing this event directly would jump
+        // lastDeliveredId past the skipped ones — leaving them unrecoverable.
+        // Leave the whole gap to pull(), which replays it in order from the
+        // run buffer once the consumer drains.
+        if (lastId > lastDeliveredId + 1) return;
         try {
-          safeEnqueue(controller, encoder.encode(frame));
+          safeEnqueue(controller, frameFor(lastId, event));
+          lastDeliveredId = lastId;
         } catch {
           // Diagnostic: emitEvent fan-out reached this listener but enqueue failed —
           // the stream is dead. This is the smoking gun for assumption 2.
@@ -147,6 +166,27 @@ export function createSSEStream(
           dbgLog(`ping enqueue FAILED runId=${runId} enqueueCount=${enqueueCount}`);
         }
       }, pingMs);
+    },
+    // The consumer drained the queue (a read completed, desiredSize recovered).
+    // Replay anything the backpressure gate skipped while it was stalled. The
+    // pace is bounded by consumerReady — one frame fits (HWM 1), then pull is
+    // re-invoked as the consumer reads on, so a genuinely stalled consumer
+    // never accumulates an unbounded controller queue (that's what the
+    // stall-close below guards).
+    pull(controller) {
+      if (!consumerReady(controller)) return;
+      if (lastDeliveredId >= runManager.getLastEventId(runId)) return; // nothing missed
+      const missed = runManager.getBufferedEvents(runId, lastDeliveredId);
+      if (!missed) return;
+      for (const record of missed) {
+        if (!consumerReady(controller)) break; // queue full again — pace to next pull
+        try {
+          safeEnqueue(controller, frameFor(record.id, record.data as AgentEvent));
+          lastDeliveredId = record.id;
+        } catch {
+          return; // stream dead mid-flush
+        }
+      }
     },
     cancel() {
       dbgLog(`stream cancel runId=${runId}`);

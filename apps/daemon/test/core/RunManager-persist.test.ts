@@ -86,4 +86,34 @@ describe('RunManager persists assistant reply on successful run', () => {
     assert.equal(assistantMessages.length, 1);
     assert.equal(assistantMessages[0]!.content, 'Hello from fake Claude!');
   });
+
+  it('should expose conversationId on getRunInfo and listRuns', async () => {
+    // KB 会话重挂载恢复依赖 GET /api/runs 里的 conversationId 定位活跃 run ——
+    // 没有它，web 端无法在切页返回后恢复进行中的回复。
+    const conv = conversations.createDesktopConversation('Test conversation');
+    const runId = await runManager.createRun({
+      agentId: 'claude',
+      message: 'Say hello',
+      conversationId: conv.id,
+    });
+
+    // 等 run 结束，保证快照稳定
+    await new Promise<void>((resolve) => {
+      const check = () => {
+        const info = runManager.getRunInfo(runId);
+        if (info?.status === 'succeeded' || info?.status === 'failed') resolve();
+        else setTimeout(check, 50);
+      };
+      check();
+    });
+
+    const info = runManager.getRunInfo(runId);
+    assert.ok(info, 'getRunInfo should return a run');
+    assert.equal(info.conversationId, conv.id);
+
+    const runs = runManager.listRuns();
+    const found = runs.find((r) => r.id === runId);
+    assert.ok(found, 'run should appear in listRuns');
+    assert.equal(found.conversationId, conv.id);
+  });
 });

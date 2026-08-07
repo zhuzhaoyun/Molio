@@ -164,6 +164,7 @@ export class RunManager {
       createdAt: run.createdAt,
       lastStopReason: run.lastStopReason,
       error: run.error,
+      conversationId: run.conversationId,
     };
   }
 
@@ -184,6 +185,7 @@ export class RunManager {
       createdAt: run.createdAt,
       lastStopReason: run.lastStopReason,
       error: run.error,
+      conversationId: run.conversationId,
     }));
   }
 

@@ -269,6 +269,20 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   }, [pruneRunning]);
 
   const handleOpenConversation = useCallback((conversationId: string) => {
+    const active = kbChatSessionsStore.getActiveSession();
+    const activeRunning = active ? runningMap[active.id] : false;
+    if (activeRunning) {
+      // 运行中会话禁止就地切换 —— 开新标签保留直播中的会话（切历史不中断回复）。
+      // openSession 已按 conversationId 去重（目标会话已在其他标签 → 激活，不重复建标签）；
+      // 新建标签 mount 时自动从 DB 加载 + 恢复活跃 run。
+      const res = kbChatSessionsStore.openSession({
+        mode: 'qa', title: '加载中…', conversationId, filePath: null,
+      });
+      if (!res.opened && res.reason === 'limit') {
+        showToast(`已达 ${MAX_CHAT_SESSIONS} 个会话标签上限`);
+      }
+      return;
+    }
     const res = kbChatSessionsStore.openConversation(conversationId);
     if (res.reason === 'limit') {
       showToast(`已达 ${MAX_CHAT_SESSIONS} 个会话标签上限`);
@@ -278,7 +292,7 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     if (res.switched && res.tab) {
       sessionApisRef.current.get(res.tab.id)?.loadConversation?.(conversationId);
     }
-  }, [showToast]);
+  }, [runningMap, showToast]);
 
   const handleLoadError = useCallback((sessionId: string) => {
     showToast('该会话已不存在或无法加载，已关闭标签');

@@ -112,6 +112,8 @@ export function KbChatSession({
         const cur = kbChatSessionsStore.getSessions().find((s) => s.id === session.id);
         if (!cur || cur.conversationId !== loadedConversationId) return;
         chat.setMessages(msgs.map(toChatMessage), loadedConversationId);
+        // 该会话存在活跃 run（回复进行中）→ 重新订阅回放直播，避免 UI 把 run 弄丢
+        void maybeResume(loadedConversationId);
         const firstUser = msgs.find((m) => m.role === 'user');
         if (firstUser) {
           kbChatSessionsStore.updateSession(session.id, { title: firstUser.content.slice(0, 24) });
@@ -130,6 +132,21 @@ export function KbChatSession({
   const setMessagesRef = useRef(chat.setMessages); setMessagesRef.current = chat.setMessages;
   const cancelRef = useRef(chat.cancel); cancelRef.current = chat.cancel;
   const resetRef = useRef(chat.reset); resetRef.current = chat.reset;
+  const resumeRef = useRef(chat.resumeRun); resumeRef.current = chat.resumeRun;
+  // 防卸载后异步回调（maybeResume 的 listRuns）触发订阅
+  const mountedRef = useRef(false);
+  // 重挂载/切历史恢复：DB 加载后若该会话存在活跃 run（running/pending），重新订阅回放直播。
+  // listRuns 失败 → 退化为静态历史（不阻塞加载）。守卫条件（末条是 user）在 resumeRun 内部。
+  const maybeResume = useCallback(async (conversationId: string) => {
+    try {
+      const runs = await api.listRuns();
+      if (!mountedRef.current) return;
+      const active = runs.find((r) =>
+        r.conversationId === conversationId && (r.status === 'running' || r.status === 'pending'));
+      if (active) resumeRef.current({ runId: active.id });
+    } catch { /* listRuns 失败 → 退化为静态历史 */ }
+  }, []);
+
   const apiObj = useMemo<KbChatSessionApi>(() => ({
     send: (text) => sendRef.current(text),
     clear: () => {
@@ -147,6 +164,8 @@ export function KbChatSession({
           const cur = kbChatSessionsStore.getSessions().find((s) => s.id === session.id);
           if (!cur || cur.conversationId !== conversationId) return;
           chat.setMessages(msgs.map(toChatMessage), conversationId);
+          // 切到的历史会话若正在生成 → 恢复直播（与重挂载同一启发式）
+          void maybeResume(conversationId);
           const firstUser = msgs.find((m) => m.role === 'user');
           if (firstUser) {
             kbChatSessionsStore.updateSession(session.id, { title: firstUser.content.slice(0, 24) });
@@ -155,14 +174,20 @@ export function KbChatSession({
         .catch(() => onLoadError?.(session.id));
     },
     cancel: () => cancelRef.current(),
-  }), [session.id, onLoadError]);
+  }), [session.id, onLoadError, maybeResume]);
   useEffect(() => {
     registerApi(session.id, apiObj);
     return () => unregisterApi(session.id);
   }, [session.id, apiObj, registerApi, unregisterApi]);
 
   // 卸载时关闭 SSE（不 cancel run —— 后台任务继续跑，仅断开订阅，防 EventSource 泄漏/卸载后 setState）
-  useEffect(() => () => { resetRef.current(); }, []);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      resetRef.current();
+    };
+  }, []);
 
   // 消息更新时滚到底部（照搬旧 KbChatPanel；尊重 prefers-reduced-motion）
   useEffect(() => {
