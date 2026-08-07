@@ -3,9 +3,12 @@
  * worker 与 CJK cmaps 在此集中配置。
  */
 import type { PDFDocumentProxy } from 'pdfjs-dist';
+// ES2025 Map polyfill —— 必须在 pdfjs-dist 求值前安装（Electron 40 / Chromium 144 缺失）。
+import { installMapPolyfills } from './map-polyfills';
 
-// `?url` 让 Vite 构建期把 worker 作为资产发射；dev/build 路径稳定，pnpm 下不依赖 node_modules 猜测。
-import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+// `?worker&url` 让 Vite 把 pdf-worker.mjs（包装入口：先装 polyfill 再加载真实 worker）按 worker 打包并返回 URL。
+// 真实 worker（pdfjs-dist/build/pdf.worker.min.mjs）仍作为独立 `?url` 资产发射。
+import pdfWorkerUrl from './pdf-worker.mjs?worker&url';
 
 export type { PDFDocumentProxy };
 
@@ -16,6 +19,9 @@ let pdfjsPromise: Promise<PdfjsModule> | null = null;
 /** 惰性加载 pdfjs-dist 并设置 worker 源（幂等）。 */
 export function loadPdfjs(): Promise<PdfjsModule> {
   if (!pdfjsPromise) {
+    // 防御性重装：即使 Map 方法被运行时移除（或启动顺序变化），pdfjs 求值前仍保证 polyfill 在位。
+    // 幂等 —— 原生实现存在时跳过。
+    installMapPolyfills();
     pdfjsPromise = import('pdfjs-dist')
       .then((m) => {
         m.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;

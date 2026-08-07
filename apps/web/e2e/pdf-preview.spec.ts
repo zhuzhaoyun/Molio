@@ -157,4 +157,64 @@ test.describe('知识库 PDF 预览', () => {
     const rot = await page.locator('[data-testid="pdf-text-layer-3"] span').first().evaluate((el) => (el as HTMLElement).style.getPropertyValue('--rotate'));
     expect(rot.trim()).not.toBe('');
   });
+
+  test('ES2025 Map 方法缺失时 polyfill 补齐且语义正确（Electron 40 / Chromium 144 兼容）', async ({ page }) => {
+    // pdf.js v6 依赖 ES2025 `Map.prototype.getOrInsert` / `getOrInsertComputed`，
+    // 而 Electron 40（Chromium 144）尚未实现 —— 无 polyfill 时主线程 display 层与
+    // worker 的 chunked stream / 渲染管线会抛
+    // `this._requestsByChunk.getOrInsertComputed is not a function`，所有 PDF 加载失败。
+    //
+    // 注意：addInitScript 跑在 isolated world（与 app 的 main world 各自独立 realm），
+    // 删不到 app 的 Map.prototype；playwright 的 Chromium 148 worker 自带原生实现，也
+    // 无法在 worker 里模拟缺失。这里在 main world 删除方法，直接验证 map-polyfills.ts
+    // 补齐后的行为契约（幂等、presence 优先、callback 收到 key、只算一次）。
+    await page.goto(`/knowledge?vault=${vault.id}`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 10_000 });
+
+    await page.evaluate(async () => {
+      const { installMapPolyfills } = await import('/src/components/kb/map-polyfills.ts');
+      if (typeof installMapPolyfills !== 'function') {
+        throw new Error('map-polyfills 模块缺少 installMapPolyfills 导出');
+      }
+      // 模拟运行时缺失（Chromium 144）
+      // @ts-expect-error 模拟缺失
+      delete Map.prototype.getOrInsert;
+      // @ts-expect-error
+      delete Map.prototype.getOrInsertComputed;
+      if (typeof Map.prototype.getOrInsertComputed !== 'undefined') {
+        throw new Error('模拟失败：Map.prototype.getOrInsertComputed 未能删除');
+      }
+      // 幂等安装
+      installMapPolyfills();
+      installMapPolyfills();
+      if (typeof Map.prototype.getOrInsertComputed !== 'function') {
+        throw new Error('polyfill 未补齐 getOrInsertComputed');
+      }
+      if (typeof Map.prototype.getOrInsert !== 'function') {
+        throw new Error('polyfill 未补齐 getOrInsert');
+      }
+      // getOrInsert：现值优先，不覆盖
+      const a = new Map();
+      if (a.getOrInsert('k', 1) !== 1) throw new Error('getOrInsert 插入值错误');
+      if (a.getOrInsert('k', 2) !== 1) throw new Error('getOrInsert 应保留现值');
+      if (a.size !== 1) throw new Error('getOrInsert 不应重复插入');
+      // getOrInsertComputed：仅 key 缺失时计算一次，回调收到 key
+      const b = new Map();
+      let calls = 0;
+      let seenKey: unknown = null;
+      const cb = (key: unknown) => { calls++; seenKey = key; return 'v'; };
+      if (b.getOrInsertComputed('k', cb) !== 'v') throw new Error('getOrInsertComputed 返回值错误');
+      if (b.getOrInsertComputed('k', cb) !== 'v') throw new Error('getOrInsertComputed 应命中缓存');
+      if (calls !== 1) throw new Error('getOrInsertComputed 不应重复计算');
+      if (seenKey !== 'k') throw new Error('getOrInsertComputed 回调应收到 key');
+      if (b.size !== 1) throw new Error('getOrInsertComputed 不应重复插入');
+    });
+
+    // 用补齐后的方法实际加载 PDF，不应失败（无错误卡片）
+    await page.locator('.kb-tree-item').filter({ hasText: 'sample.pdf' }).click({ timeout: 10_000 });
+    const viewer = page.locator('[data-testid="pdf-viewer"]');
+    await expect(viewer).toBeVisible({ timeout: 15_000 });
+    await expect(viewer.getByTestId('pdf-statusbar')).toContainText('第 1 / 3');
+    await expect(viewer.locator('[data-testid="pdf-canvas-1"]')).toBeVisible();
+  });
 });

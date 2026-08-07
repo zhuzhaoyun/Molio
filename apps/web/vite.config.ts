@@ -18,6 +18,11 @@ export default defineConfig({
       '@molio/doocs-md': path.resolve(__dirname, 'vendor/doocs-md'),
     },
   },
+  // pdf-worker.mjs（pdf.js worker 包装入口）被 pdf.js 以 `type: "module"` 创建，
+  // `?worker&url` 的打包产物必须是 ES module（iife 无法作为模块 worker 实例化）。
+  worker: {
+    format: 'es',
+  },
   server: {
     port: 5173,
     strictPort: true,
