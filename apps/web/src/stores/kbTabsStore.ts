@@ -1,14 +1,14 @@
 /**
- * Global KB Tabs Store — persists workspace tabs across page navigation and app restarts.
+ * Per-Vault KB Tabs Store factory — persists workspace tabs across page
+ * navigation and app restarts, scoped to a single vault.
+ *
+ * Use `createTabsStore(vaultId)` to get a store for a given vault. Each store
+ * owns its own state, listeners and localStorage keys
+ * (`molio.kb.tabs.<vaultId>` / `molio.kb.activeTabId.<vaultId>`) so multiple
+ * windows/vaults never clobber each other.
  *
  * Uses useSyncExternalStore for tear-safe access from any component.
- * State is persisted to localStorage on every change.
  */
-
-import { useSyncExternalStore } from 'react';
-
-const STORAGE_KEY_TABS = 'molio.kb.tabs';
-const STORAGE_KEY_ACTIVE_TAB = 'molio.kb.activeTabId';
 
 /** Maximum number of simultaneously open document tabs. Cap-only, not configurable. */
 export const MAX_TABS = 20;
@@ -23,149 +23,143 @@ export interface WorkspaceTab {
   data?: Record<string, unknown>;
 }
 
-type Listener = () => void;
+export type Listener = () => void;
 
-// ─── Persistence helpers ───
+// ─── Persistence helpers (keyed per vault) ───
 
-function readPersistedTabs(): WorkspaceTab[] {
+function readPersistedTabs(storageKey: string): WorkspaceTab[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY_TABS);
+    const raw = localStorage.getItem(storageKey);
     if (raw) return JSON.parse(raw);
   } catch { /* ignore */ }
   return [];
 }
 
-function readPersistedActiveTabId(): string | null {
+function readPersistedActiveTabId(storageKey: string): string | null {
   try {
-    return localStorage.getItem(STORAGE_KEY_ACTIVE_TAB);
+    return localStorage.getItem(storageKey);
   } catch { /* ignore */ }
   return null;
 }
 
-function persistState(tabs: WorkspaceTab[], activeTabId: string | null) {
+function persistState(tabsKey: string, activeKey: string, tabs: WorkspaceTab[], activeTabId: string | null) {
   try {
-    localStorage.setItem(STORAGE_KEY_TABS, JSON.stringify(tabs));
-    if (activeTabId) {
-      localStorage.setItem(STORAGE_KEY_ACTIVE_TAB, activeTabId);
-    } else {
-      localStorage.removeItem(STORAGE_KEY_ACTIVE_TAB);
-    }
+    localStorage.setItem(tabsKey, JSON.stringify(tabs));
+    if (activeTabId) localStorage.setItem(activeKey, activeTabId);
+    else localStorage.removeItem(activeKey);
   } catch { /* storage unavailable */ }
 }
 
-// ─── Store state ───
+// ─── Factory ───
 
-let tabs: WorkspaceTab[] = readPersistedTabs();
-let activeTabId: string | null = readPersistedActiveTabId();
-const listeners = new Set<Listener>();
-
-function emit() {
-  persistState(tabs, activeTabId);
-  for (const l of listeners) l();
+export interface KbTabsStore {
+  subscribe(cb: Listener): () => void;
+  getTabs(): WorkspaceTab[];
+  getActiveTabId(): string | null;
+  getActiveTab(): WorkspaceTab | undefined;
+  openTab(tab: Omit<WorkspaceTab, 'id'> & { id?: string }): { opened: boolean; reason?: 'limit' };
+  closeTab(id: string): void;
+  removeWhere(predicate: (t: WorkspaceTab) => boolean): string[];
+  activateTab(id: string): void;
+  updateTab(id: string, patch: Partial<WorkspaceTab>): void;
+  /** Release listeners when the owning window/vault store is unmounted. */
+  destroy(): void;
 }
 
-// ─── Store API ───
+export function createTabsStore(vaultId: string): KbTabsStore {
+  const tabsKey = `molio.kb.tabs.${vaultId}`;
+  const activeKey = `molio.kb.activeTabId.${vaultId}`;
+  let tabs: WorkspaceTab[] = readPersistedTabs(tabsKey);
+  let activeTabId: string | null = readPersistedActiveTabId(activeKey);
+  const listeners = new Set<Listener>();
 
-export const kbTabsStore = {
-  subscribe(cb: Listener) {
-    listeners.add(cb);
-    return () => { listeners.delete(cb); };
-  },
+  function emit() {
+    persistState(tabsKey, activeKey, tabs, activeTabId);
+    for (const l of listeners) l();
+  }
 
-  getTabs() { return tabs; },
-  getActiveTabId() { return activeTabId; },
+  return {
+    subscribe(cb: Listener) {
+      listeners.add(cb);
+      return () => { listeners.delete(cb); };
+    },
 
-  getActiveTab(): WorkspaceTab | undefined {
-    return tabs.find((t) => t.id === activeTabId);
-  },
+    getTabs() { return tabs; },
+    getActiveTabId() { return activeTabId; },
 
-  openTab(tabInput: Omit<WorkspaceTab, 'id'> & { id?: string }): { opened: boolean; reason?: 'limit' } {
-    const id = tabInput.id ?? `${tabInput.type}:${Math.random().toString(36).slice(2, 9)}`;
-    const existing = tabs.find((t) => t.id === id);
-    if (existing) {
-      // Already exists — just activate; not a new open.
+    getActiveTab(): WorkspaceTab | undefined {
+      return tabs.find((t) => t.id === activeTabId);
+    },
+
+    openTab(tabInput: Omit<WorkspaceTab, 'id'> & { id?: string }): { opened: boolean; reason?: 'limit' } {
+      const id = tabInput.id ?? `${tabInput.type}:${Math.random().toString(36).slice(2, 9)}`;
+      const existing = tabs.find((t) => t.id === id);
+      if (existing) {
+        if (activeTabId !== id) {
+          activeTabId = id;
+          emit();
+        }
+        return { opened: false };
+      }
+      if (tabs.length >= MAX_TABS) {
+        return { opened: false, reason: 'limit' };
+      }
+      const newTab: WorkspaceTab = { ...tabInput, id };
+      tabs = [...tabs, newTab];
+      activeTabId = id;
+      emit();
+      return { opened: true };
+    },
+
+    closeTab(id: string) {
+      const idx = tabs.findIndex((t) => t.id === id);
+      if (idx === -1) return;
+      const next = tabs.filter((t) => t.id !== id);
+      tabs = next;
+      if (activeTabId === id) {
+        const newActive = next[idx - 1] ?? next[0] ?? null;
+        activeTabId = newActive?.id ?? null;
+      }
+      emit();
+    },
+
+    removeWhere(predicate: (t: WorkspaceTab) => boolean): string[] {
+      const removed = tabs.filter(predicate);
+      if (removed.length === 0) return [];
+      const removedIds = new Set(removed.map((t) => t.id));
+      const survivors = tabs.filter((t) => !removedIds.has(t.id));
+      tabs = survivors;
+      if (activeTabId && removedIds.has(activeTabId)) {
+        activeTabId = survivors[0]?.id ?? null;
+      }
+      emit();
+      return removed.map((t) => t.id);
+    },
+
+    activateTab(id: string) {
+      if (!tabs.some((t) => t.id === id)) return;
       if (activeTabId !== id) {
         activeTabId = id;
         emit();
       }
-      return { opened: false };
-    }
-    // Cap: do not mutate state or emit; caller surfaces a notice.
-    if (tabs.length >= MAX_TABS) {
-      return { opened: false, reason: 'limit' };
-    }
-    const newTab: WorkspaceTab = { ...tabInput, id };
-    tabs = [...tabs, newTab];
-    activeTabId = id;
-    emit();
-    return { opened: true };
-  },
+    },
 
-  closeTab(id: string) {
-    const idx = tabs.findIndex((t) => t.id === id);
-    if (idx === -1) return;
-    const next = tabs.filter((t) => t.id !== id);
-    tabs = next;
-    if (activeTabId === id) {
-      const newActive = next[idx - 1] ?? next[0] ?? null;
-      activeTabId = newActive?.id ?? null;
-    }
-    emit();
-  },
-
-  removeWhere(predicate: (t: WorkspaceTab) => boolean): string[] {
-    const removed = tabs.filter(predicate);
-    if (removed.length === 0) return [];
-    const removedIds = new Set(removed.map((t) => t.id));
-    const survivors = tabs.filter((t) => !removedIds.has(t.id));
-    tabs = survivors;
-    if (activeTabId && removedIds.has(activeTabId)) {
-      activeTabId = survivors[0]?.id ?? null;
-    }
-    emit();
-    return removed.map((t) => t.id);
-  },
-
-  activateTab(id: string) {
-    if (!tabs.some((t) => t.id === id)) return;
-    if (activeTabId !== id) {
-      activeTabId = id;
-      emit();
-    }
-  },
-
-  updateTab(id: string, patch: Partial<WorkspaceTab>) {
-    let changed = false;
-    const newId = patch.id;
-    tabs = tabs.map((t) => {
-      if (t.id === id) {
-        changed = true;
-        return { ...t, ...patch };
+    updateTab(id: string, patch: Partial<WorkspaceTab>) {
+      let changed = false;
+      const newId = patch.id;
+      tabs = tabs.map((t) => {
+        if (t.id === id) {
+          changed = true;
+          return { ...t, ...patch };
+        }
+        return t;
+      });
+      if (changed && newId && activeTabId === id && id !== newId) {
+        activeTabId = newId;
       }
-      return t;
-    });
-    // If the active tab's id changed, update activeTabId too
-    if (changed && newId && activeTabId === id && id !== newId) {
-      activeTabId = newId;
-    }
-    if (changed) emit();
-  },
-};
+      if (changed) emit();
+    },
 
-// ─── React hooks ───
-
-export function useKbTabsData(): WorkspaceTab[] {
-  return useSyncExternalStore(
-    kbTabsStore.subscribe,
-    kbTabsStore.getTabs,
-    kbTabsStore.getTabs,
-  );
-}
-
-export function useKbActiveTabId(): string | null {
-  return useSyncExternalStore(
-    kbTabsStore.subscribe,
-    kbTabsStore.getActiveTabId,
-    kbTabsStore.getActiveTabId,
-  );
+    destroy() { listeners.clear(); },
+  };
 }

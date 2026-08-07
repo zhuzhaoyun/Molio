@@ -102,11 +102,11 @@ test.describe('KB stale tab cleanup (reactive)', () => {
   test('a tab whose path no longer exists in the tree gets cleaned on load', async ({ page }) => {
     // seed a stale tab pointing at a non-existent path, but with the correct vaultId
     await page.addInitScript((vaultId) => {
-      localStorage.setItem('molio.kb.tabs', JSON.stringify([
+      localStorage.setItem(`molio.kb.tabs.${vaultId}`, JSON.stringify([
         { id: 'file:ghost.md', type: 'file', title: 'ghost.md', vaultId },
         { id: 'file:real.md', type: 'file', title: 'real.md', vaultId },
       ]));
-      localStorage.setItem('molio.kb.activeTabId', 'file:ghost.md');
+      localStorage.setItem(`molio.kb.activeTabId.${vaultId}`, 'file:ghost.md');
     }, vault.id);
 
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
@@ -120,11 +120,11 @@ test.describe('KB stale tab cleanup (reactive)', () => {
   test('tabs belonging to another vault are not cleaned when this vault loads', async ({ page }) => {
     // seed a tab with a foreign vaultId
     await page.addInitScript((vaultId) => {
-      localStorage.setItem('molio.kb.tabs', JSON.stringify([
+      localStorage.setItem(`molio.kb.tabs.${vaultId}`, JSON.stringify([
         { id: 'file:other-vault-file.md', type: 'file', title: 'other-vault-file.md', vaultId: 'vault-foreign' },
         { id: 'file:real.md', type: 'file', title: 'real.md', vaultId },
       ]));
-      localStorage.setItem('molio.kb.activeTabId', 'file:real.md');
+      localStorage.setItem(`molio.kb.activeTabId.${vaultId}`, 'file:real.md');
     }, vault.id);
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
@@ -141,11 +141,11 @@ test.describe('KB stale tab cleanup (reactive)', () => {
     // skips restoration when the active tab's vaultId ≠ current vault, leaving
     // selectedFile null and showing the empty state instead.
     await page.addInitScript((vaultId) => {
-      localStorage.setItem('molio.kb.tabs', JSON.stringify([
+      localStorage.setItem(`molio.kb.tabs.${vaultId}`, JSON.stringify([
         { id: 'file:wiki/entities/墨大夫.md', type: 'file', title: '墨大夫.md', vaultId: 'vault-foreign' },
         { id: 'file:real.md', type: 'file', title: 'real.md', vaultId },
       ]));
-      localStorage.setItem('molio.kb.activeTabId', 'file:wiki/entities/墨大夫.md');
+      localStorage.setItem(`molio.kb.activeTabId.${vaultId}`, 'file:wiki/entities/墨大夫.md');
     }, vault.id);
 
     const foreignRequests: string[] = [];

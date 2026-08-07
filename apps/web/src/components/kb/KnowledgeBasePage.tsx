@@ -9,7 +9,6 @@ import type { TreeNode } from '@molio/contracts';
 import { useKnowledge } from '../../hooks/useKnowledge';
 import type { KbChatState } from '../../hooks/useKbChat';
 import { useKbTabs, MAX_TABS } from '../../hooks/useKbTabs';
-import { kbTabsStore } from '../../stores/kbTabsStore';
 import { vaultStore } from '../../stores/vaultStore';
 import { KbFilePanel, type KbFilePanelHandle } from './KbFilePanel';
 import { KbTabBar } from './KbTabBar';
@@ -139,7 +138,7 @@ function buildFolderDeleteMessage(node: TreeNode, tree: TreeNode[]): string {
 export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenChange, registerKbChatOnComplete, onOpenConversation }: KnowledgeBasePageProps) {
   const { t } = useI18n();
   const kb = useKnowledge();
-  const tabs = useKbTabs();
+  const tabs = useKbTabs(kb.activeVault?.id ?? null);
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -364,7 +363,7 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
       tabs.closeTab(tabId);
       // After close, the store has already set a new activeTabId.
       // Sync selectedFile with the newly active tab.
-      const newActive = kbTabsStore.getActiveTab();
+      const newActive = tabs.getActiveTab();
       if (newActive && newActive.id.startsWith('file:')) {
         kb.selectFile(newActive.id.slice(5));
       } else {

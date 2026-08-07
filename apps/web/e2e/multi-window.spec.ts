@@ -130,4 +130,33 @@ test.describe('multi-window vault isolation', () => {
     await expect.poll(() => new URL(page.url()).searchParams.get('file')).toBeNull();
     await ctx.close();
   });
+
+  test('tabs are scoped per vault across windows', async ({ browser }) => {
+    const ctxA = await browser.newContext();
+    const ctxB = await browser.newContext();
+    const pageA = await ctxA.newPage();
+    const pageB = await ctxB.newPage();
+    await pageA.goto(`${WEB}/knowledge?vault=${vaultAId}`);
+    await pageB.goto(`${WEB}/knowledge?vault=${vaultBId}`);
+    await expect(pageA.locator('.kb-vault-bar__name')).toHaveText('mw-a');
+    await expect(pageB.locator('.kb-vault-bar__name')).toHaveText('mw-b');
+
+    // Open alpha.md in window A and gamma.md in window B.
+    await pageA.locator('.kb-tree-item', { hasText: 'alpha.md' }).first().click();
+    await expect(pageA.locator('.kb-wtab', { hasText: 'alpha.md' })).toBeVisible();
+    await pageB.locator('.kb-tree-item', { hasText: 'gamma.md' }).first().click();
+    await expect(pageB.locator('.kb-wtab', { hasText: 'gamma.md' })).toBeVisible();
+
+    // Each window only sees its own vault's tab.
+    await expect(pageA.locator('.kb-wtab', { hasText: 'gamma.md' })).toHaveCount(0);
+    await expect(pageB.locator('.kb-wtab', { hasText: 'alpha.md' })).toHaveCount(0);
+
+    // Storage is keyed per vault.
+    const keysA = await pageA.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('molio.kb.tabs')));
+    const keysB = await pageB.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('molio.kb.tabs')));
+    expect(keysA).toContain(`molio.kb.tabs.${vaultAId}`);
+    expect(keysB).toContain(`molio.kb.tabs.${vaultBId}`);
+    await ctxA.close();
+    await ctxB.close();
+  });
 });
