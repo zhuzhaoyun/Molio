@@ -223,6 +223,43 @@ test.describe('KB chat sessions', () => {
     await expect(msgs.locator('.msg.user')).toContainText(/wiki-build/, { timeout: 10_000 });
   });
 
+  test('构建中点健康检查 → 三选一「中断」：cancel 的是正在跑的 build run（跨 mode 不漏 cancel）', async ({ page }) => {
+    // 跨 mode 中断是 D3 漏洞：build 在跑 + 点 lint 时，interrupt 分支 find 的是
+    // 「新任务要落地的 lint tab」，cancel 它没有 run（no-op），正在跑的 build run
+    // 没被杀 → 两个 wiki run 并发写同一 vault。必须 cancel 所有真正在跑的 wiki 会话。
+    await mockChatRun(page, { frameDelay: 400 });
+    // 健康检查按钮需 wikiInitialized=true 才可点 —— mock wiki status 为已初始化
+    await page.route('**/api/knowledge/vaults/*/wiki/status', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ initialized: true }) }));
+    let cancelRequests = 0;
+    let createRunRequests = 0;
+    page.on('request', (req) => {
+      if (req.method() === 'DELETE' && req.url().includes('/api/runs/')) cancelRequests++;
+      if (req.method() === 'POST' && new URL(req.url()).pathname.endsWith('/api/runs')) createRunRequests++;
+    });
+
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+
+    // 第一次点构建 → ⚙️ 标签 + 自动发送；等 run 进入 running
+    await page.locator('[data-testid="kb-btn-build-wiki"]').click();
+    await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(1);
+    await expect(page.locator('[data-testid="kb-chat-panel"] [data-testid="kb-chat-session-running"]')).toBeVisible({ timeout: 5_000 });
+
+    // 构建在跑时点健康检查 → 新建 lint 标签 + 三选一确认框
+    await page.locator('[data-testid="kb-btn-lint-wiki"]').click();
+    await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(2);
+    const dialog = page.locator('[data-testid="confirm-dialog"]');
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: '中断并立即执行' }).click();
+    await expect(dialog).not.toBeVisible();
+
+    // D3 语义：中断必须先 cancel「正在跑的」build run（DELETE 恰好 1 次），
+    // 再对新 lint 标签发送（第 2 次 createRun）—— 不能漏 cancel 并发写 vault
+    await expect.poll(() => cancelRequests).toBe(1);
+    await expect.poll(() => createRunRequests).toBe(2);
+  });
+
   test('历史下拉打开会话：就地切换当前会话（不新建标签）、标题从消息回填、同会话去重', async ({ page }) => {
     await mockChatRun(page);
     await mockHistoryConv(page);

@@ -184,12 +184,25 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     clearAndSend(tab.id, opts);
   }, [sessions, anyWikiRunning, clearAndSend, showToast]);
 
-  const handleConfirmDialog = useCallback((action: 'interrupt' | 'queue') => {
+  const handleConfirmDialog = useCallback(async (action: 'interrupt' | 'queue') => {
     setConfirmDialog((prev) => ({ ...prev, show: false }));
     const opts = pendingWikiRef.current;
     pendingWikiRef.current = null;
     if (!opts) return;
     if (action === 'interrupt') {
+      // D3「新构建停旧构建」：中断的语义是「停掉正在跑的那个任务」，不是「停掉新任务要
+      // 落地的那个 tab」。当正在跑的 tab 和用户点的新任务 tab 是不同 mode（build 在跑 +
+      // 点 lint）时，只 cancel 目标 tab 会落空 → 旧 run 进程没被杀，新旧两个 wiki run
+      // 并发写同一 vault（D3 hazard）。先逐个 cancel 所有真正在跑的 wiki 会话并 await，
+      // 再对新目标 tab 做 clear + send。
+      const running = kbChatSessionsStore.getSessions()
+        .filter((s) => s.mode !== 'qa' && runningMap[s.id]);
+      await Promise.all(running.map((s) => {
+        const api = sessionApisRef.current.get(s.id);
+        if (!api) return undefined;
+        // cancel 类型是 void | Promise<void> —— 归一化成 Promise 以便 Promise.all 与 .catch
+        return Promise.resolve(api.cancel()).catch(() => { /* cancel 失败仍继续新任务 */ });
+      }));
       const tab = kbChatSessionsStore.getSessions().find((s) => s.mode === opts.mode);
       if (tab) clearAndSend(tab.id, opts);
     } else {
