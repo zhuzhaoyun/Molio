@@ -108,14 +108,16 @@ export function useKbChat(opts: UseKbChatOptions): KbChatState {
   // chat.reset is stable (useCallback([]) chain), so this effect only fires on vaultPath
   // change, not every render.
   const chatReset = chat.reset;
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
+    // A pending wiki auto-send (openWikiOp/openIngest fire within 50ms) must not
+    // bleed into the new vault's fresh chat — clear it along with chat.reset().
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
     chatReset();
   }, [vaultPath, chatReset]);
 
   const chatRef = useRef(chat);
   chatRef.current = chat;
-
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => () => {
     if (timerRef.current) clearTimeout(timerRef.current);

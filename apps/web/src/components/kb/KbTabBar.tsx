@@ -128,6 +128,8 @@ export function KbTabBar({ tabs, activeTabId, onActivate, onClose, onOpenInNewWi
               ref={isActive ? activeRef : null}
               onClick={() => onActivate(tab.id)}
               onContextMenu={(e) => {
+                // Right-click on the close × shouldn't pop the tab's context menu.
+                if ((e.target as HTMLElement).closest('.kb-wtab-close')) return;
                 e.preventDefault();
                 setCtxMenu({ tab, x: e.clientX, y: e.clientY });
               }}

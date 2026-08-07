@@ -165,6 +165,53 @@ test.describe('KB stale tab cleanup (reactive)', () => {
   });
 });
 
+test.describe('KB legacy global tab keys migration (multi-window P2)', () => {
+  test.beforeAll(async () => {
+    vault = await createTempVault('e2e-kb-legacy-migrate');
+    fs.unlinkSync(path.join(vault.path, 'test.md'));
+    fs.writeFileSync(path.join(vault.path, 'alpha.md'), '# Alpha\n');
+    fs.writeFileSync(path.join(vault.path, 'beta.md'), '# Beta\n');
+  });
+  test.afterAll(async () => { if (vault) await cleanupTempVault(vault); });
+
+  test('legacy molio.kb.tabs are migrated into the per-vault key once', async ({ page }) => {
+    // Seed ONLY the pre-multi-window global keys (the previous release's format) —
+    // no per-vault key, so the migration must run on load.
+    await page.addInitScript((vaultId) => {
+      localStorage.setItem('molio.kb.tabs', JSON.stringify([
+        { id: 'file:alpha.md', type: 'file', title: 'alpha.md' },
+        { id: 'file:beta.md', type: 'file', title: 'beta.md' },
+      ]));
+      localStorage.setItem('molio.kb.activeTabId', 'file:alpha.md');
+      // Ensure a fresh context for this vault (no leftover per-vault key).
+      localStorage.removeItem(`molio.kb.tabs.${vaultId}`);
+      localStorage.removeItem(`molio.kb.activeTabId.${vaultId}`);
+    }, vault.id);
+
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.kb-tree-item').filter({ hasText: 'alpha.md' })).toBeVisible({ timeout: 10_000 });
+
+    // Legacy tabs appear in the tab bar (migrated into this vault's store).
+    await expect(page.locator('.kb-wtab')).toHaveCount(2, { timeout: 5_000 });
+    await expect(page.locator('.kb-wtab').filter({ hasText: 'alpha.md' })).toBeVisible();
+    await expect(page.locator('.kb-wtab').filter({ hasText: 'beta.md' })).toBeVisible();
+
+    // Legacy global keys are gone (migration ran once, keys cleaned up).
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('molio.kb.tabs'))).toBeNull();
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('molio.kb.activeTabId'))).toBeNull();
+
+    // Per-vault key is populated with the migrated tabs + active tab.
+    const perVaultTabs = await page.evaluate((vid) => localStorage.getItem(`molio.kb.tabs.${vid}`), vault.id);
+    expect(perVaultTabs).not.toBeNull();
+    const parsed = JSON.parse(perVaultTabs!);
+    expect(parsed.map((t: { id: string }) => t.id)).toEqual(['file:alpha.md', 'file:beta.md']);
+    await expect.poll(() =>
+      page.evaluate((vid) => localStorage.getItem(`molio.kb.activeTabId.${vid}`), vault.id),
+    ).toBe('file:alpha.md');
+  });
+});
+
 test.describe('KB same-name tab disambiguation (#5)', () => {
   test.beforeAll(async () => {
     vault = await createTempVault('e2e-kb-samename');

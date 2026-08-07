@@ -261,15 +261,19 @@ function createWindow({ url = '' } = {}) {
   });
 
   appWindows.add(win);
+  // webContents.id is stable for the life of this window; capture it once so the
+  // closed/did-start-loading handlers below don't touch win.webContents after
+  // destruction (reading webContents.id post-destroy is unreliable).
+  const wcId = win.webContents.id;
   win.on('focus', () => { lastFocusedAppWindow = win; });
   win.on('closed', () => {
     appWindows.delete(win);
     if (lastFocusedAppWindow === win) lastFocusedAppWindow = null;
-    rendererStates.delete(win.webContents.id);
+    rendererStates.delete(wcId);
   });
 
   win.webContents.on('did-start-loading', () => {
-    rendererStates.delete(win.webContents.id);
+    rendererStates.delete(wcId);
   });
 
   // Intercept window.open() — open in system browser instead of Electron
@@ -770,6 +774,14 @@ ipcMain.handle('app:restart', () => {
 // 渲染进程请求新开窗口（KB 标签「在新窗口打开」经 preload 到达）。
 ipcMain.handle('app:new-window', (_event, payload) => {
   const url = typeof payload?.url === 'string' ? payload.url : '';
+  // Mirror the menu path's guard (openNewWindowFromFocused): before the daemon
+  // is up a new window would stay blank (show:false, never loaded) — an
+  // invisible taskbar window with no feedback. Focus an existing window instead.
+  if (!isDevMode() && !daemonReady) {
+    const win = lastFocusedAppWindow ?? appWindows.values().next().value;
+    if (win && !win.isDestroyed()) { win.show(); win.focus(); }
+    return { ok: true };
+  }
   const win = createWindow({ url });
   if (!isDevMode() && daemonReady) loadAppWindow(win, url);
   return { ok: true };

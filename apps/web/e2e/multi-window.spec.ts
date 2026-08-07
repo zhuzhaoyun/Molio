@@ -128,6 +128,8 @@ test.describe('multi-window vault isolation', () => {
     await expect.poll(() => new URL(page.url()).searchParams.get('vault')).toBe(vaultAId);
     // Transient ?file= is dropped from the URL (held in pendingUrlNav state).
     await expect.poll(() => new URL(page.url()).searchParams.get('file')).toBeNull();
+    // The file content actually renders in the main area (alpha.md is `# Alpha`).
+    await expect(page.locator('.kb-main')).toContainText('Alpha', { timeout: 10_000 });
     await ctx.close();
   });
 
@@ -167,7 +169,6 @@ test.describe('multi-window vault isolation', () => {
     await input.fill('hello');
     await input.press('Enter');
     await expect.poll(() => runs.length).toBeGreaterThanOrEqual(1);
-    const firstRun = runs[0]!;
 
     // Switch to vault B and send again.
     await page.locator('.kb-vault-bar').click();
@@ -220,8 +221,6 @@ test.describe('multi-window vault isolation', () => {
   test('tab context menu opens the file in a new window', async ({ browser }) => {
     const ctx = await browser.newContext();
     const page = await ctx.newPage();
-    let popupUrl: string | null = null;
-    page.on('popup', (p) => { popupUrl = p.url(); });
 
     await page.goto(`${WEB}/knowledge?vault=${vaultAId}`);
     await expect(page.locator('.kb-vault-bar__name')).toHaveText('mw-a');
@@ -229,11 +228,16 @@ test.describe('multi-window vault isolation', () => {
     await expect(page.locator('.kb-wtab', { hasText: 'alpha.md' })).toBeVisible();
 
     // Right-click the tab → 在新窗口打开 (browser fallback = window.open → popup).
+    const popupPromise = page.waitForEvent('popup');
     await page.locator('.kb-wtab', { hasText: 'alpha.md' }).click({ button: 'right' });
     await page.locator('[data-testid="tab-open-in-new-window"]').click();
 
-    await expect.poll(() => popupUrl).toContain(`vault=${vaultAId}`);
-    await expect.poll(() => popupUrl).toContain('alpha.md');
+    // Wait for the popup to actually navigate to the knowledge route before
+    // reading its URL (a synchronous popup-handler capture can catch about:blank).
+    const popup = await popupPromise;
+    await popup.waitForURL(/vault=/);
+    expect(popup.url()).toContain(`vault=${vaultAId}`);
+    expect(popup.url()).toContain('alpha.md');
     await ctx.close();
   });
 });

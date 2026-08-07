@@ -14,6 +14,7 @@ describe('main.js new-window entry (P2)', () => {
     assert.match(mainSource, /新窗口/);
     assert.match(mainSource, /CmdOrCtrl\+N/);
     assert.ok(mainSource.includes('editMenu') && mainSource.includes('windowMenu'), 'standard roles must be kept');
+    assert.ok(mainSource.includes("role: 'appMenu'"), 'macOS app menu must be retained');
   });
 
   it('registers app:new-window IPC creating a window with a url', () => {

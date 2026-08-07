@@ -27,12 +27,50 @@ export type Listener = () => void;
 
 // ─── Persistence helpers (keyed per vault) ───
 
+/** Pre-multi-window global keys (previous release) — migrated once on first read. */
+const LEGACY_TABS_KEY = 'molio.kb.tabs';
+const LEGACY_ACTIVE_KEY = 'molio.kb.activeTabId';
+
 function readPersistedTabs(storageKey: string): WorkspaceTab[] {
   try {
     const raw = localStorage.getItem(storageKey);
     if (raw) return JSON.parse(raw);
   } catch { /* ignore */ }
   return [];
+}
+
+/**
+ * Migrate the pre-multi-window global tab keys into this vault's per-vault
+ * keys. The previous release persisted `molio.kb.tabs` / `molio.kb.activeTabId`
+ * globally; those keys are now orphaned, so without this an upgrading user
+ * silently loses their open-tab layout.
+ *
+ * Runs exactly once per vault: only when the per-vault key is absent AND the
+ * legacy key exists. After migrating, the legacy keys are removed so a second
+ * window / reload never re-migrates. Returns the migrated state, or null when
+ * there is nothing to migrate (malformed legacy data is left untouched).
+ *
+ * A migrated `WorkspaceTab` may lack a `vaultId` field — that is fine. KB-page
+ * logic that filters `t.vaultId === activeVault.id` (e.g. stale-tab cleanup)
+ * simply skips untagged tabs, and because the store is per-vault now they still
+ * show in this window.
+ */
+function migrateLegacyTabs(tabsKey: string, activeKey: string): { tabs: WorkspaceTab[]; activeTabId: string | null } | null {
+  try {
+    if (localStorage.getItem(tabsKey) != null) return null; // per-vault data already present
+    const rawLegacy = localStorage.getItem(LEGACY_TABS_KEY);
+    if (rawLegacy == null) return null; // no legacy data
+    const legacyTabs = JSON.parse(rawLegacy) as WorkspaceTab[];
+    if (!Array.isArray(legacyTabs)) return null;
+    const legacyActive = readPersistedActiveTabId(LEGACY_ACTIVE_KEY);
+    localStorage.setItem(tabsKey, JSON.stringify(legacyTabs));
+    if (legacyActive) localStorage.setItem(activeKey, legacyActive);
+    else localStorage.removeItem(activeKey);
+    localStorage.removeItem(LEGACY_TABS_KEY);
+    localStorage.removeItem(LEGACY_ACTIVE_KEY);
+    return { tabs: legacyTabs, activeTabId: legacyActive };
+  } catch { /* storage unavailable / malformed JSON — leave keys for a later attempt */ }
+  return null;
 }
 
 function readPersistedActiveTabId(storageKey: string): string | null {
@@ -69,8 +107,9 @@ export interface KbTabsStore {
 export function createTabsStore(vaultId: string): KbTabsStore {
   const tabsKey = `molio.kb.tabs.${vaultId}`;
   const activeKey = `molio.kb.activeTabId.${vaultId}`;
-  let tabs: WorkspaceTab[] = readPersistedTabs(tabsKey);
-  let activeTabId: string | null = readPersistedActiveTabId(activeKey);
+  const migrated = migrateLegacyTabs(tabsKey, activeKey);
+  let tabs: WorkspaceTab[] = migrated?.tabs ?? readPersistedTabs(tabsKey);
+  let activeTabId: string | null = migrated ? migrated.activeTabId : readPersistedActiveTabId(activeKey);
   const listeners = new Set<Listener>();
 
   function emit() {

@@ -45,7 +45,7 @@ export function useKbTabs(vaultId: string | null): UseKbTabsReturn {
   const activeTabId = useSyncExternalStore(subscribe, getActiveTabId, getActiveTabId);
 
   const openTab = useCallback(
-    (tab: Omit<WorkspaceTab, 'id'> & { id?: string }) => store?.openTab(tab) ?? { opened: false, reason: 'limit' as const },
+    (tab: Omit<WorkspaceTab, 'id'> & { id?: string }) => store?.openTab(tab) ?? { opened: false },
     [store],
   );
   const closeTab = useCallback((id: string) => store?.closeTab(id), [store]);
