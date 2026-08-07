@@ -149,17 +149,30 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
   const [showOutline, setShowOutline] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
 
-  // Handle ?vault=<vaultId>&file=<filePath> query params for external navigation
-  // (e.g. from molio:// protocol triggered by Chrome extension after clip save)
+  // URL → store: the window's ?vault= is the per-window source of truth. Fresh
+  // loads are handled by vaultStore module init; this catches in-app navigation
+  // that carries a vault param (graph double-click, new-window clone, protocol nav).
+  useEffect(() => {
+    const urlVault = searchParams.get('vault');
+    if (urlVault) vaultStore.setActiveVaultId(urlVault);
+  }, [searchParams, setSearchParams]);
+
+  // External file navigation (?vault=A&file=B): open the file, keep ?vault=,
+  // drop the transient ?file= (it is held in pendingUrlNav state).
   useEffect(() => {
     const nav = resolveUrlFileNavigation(searchParams, kb);
     if (!nav) return;
-
     setPendingUrlNav(nav);
-    vaultStore.setActiveVaultId(nav.vaultId);
-    // Clear query params after handling (keeps URL clean)
-    setSearchParams({}, { replace: true });
+    setSearchParams({ vault: nav.vaultId }, { replace: true });
   }, [searchParams, kb.vaults, kb.activeVault?.id, setSearchParams]);
+
+  // Store → URL mirror: whenever this window's active vault changes (switch,
+  // create, import, delete), reflect it into ?vault= so the URL stays an
+  // accurate serialization of the window. Must come AFTER the file-nav effect.
+  useEffect(() => {
+    if (!kb.activeVault?.id) return;
+    setSearchParams({ vault: kb.activeVault.id }, { replace: true });
+  }, [kb.activeVault?.id, setSearchParams]);
 
   // Handle location.state for in-app navigation (e.g., from graph double-click)
   useEffect(() => {

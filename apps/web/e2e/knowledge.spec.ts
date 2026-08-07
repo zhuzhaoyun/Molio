@@ -114,8 +114,10 @@ test.describe('Knowledge Base', () => {
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=test.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
-    // Wait for file tree to load and file to be selected (and cleared from URL)
-    await expect(page).toHaveURL(/knowledge$/, { timeout: 10_000 });
+    // Wait for file tree to load and file to be selected — the transient ?file=
+    // is dropped while ?vault= (the per-window authority) is kept in the URL.
+    await expect.poll(() => new URL(page.url()).searchParams.get('vault'), { timeout: 10_000 }).toBe(vault.id);
+    await expect.poll(() => new URL(page.url()).searchParams.get('file')).toBeNull();
 
     // The file content should be rendered in the main area
     const mainContent = page.locator('.kb-main');
