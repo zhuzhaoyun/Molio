@@ -33,19 +33,20 @@ const PROTOCOL = 'molio';
 // shown in Windows protocol association dialogs ("要打开 Molio 吗?").
 app.name = 'Molio';
 
-let mainWindow = null;
+/** All open application windows (feishu login windows are NOT tracked here). */
+const appWindows = new Set();
+/** Most recently focused application window — target for second-instance/activate. */
+let lastFocusedAppWindow = null;
+/**
+ * Per-webContents renderer readiness. A full page load (cold-start loadApp or
+ * any reload) recreates the renderer context, so the previous molio:navigate
+ * listener is gone and molio:renderer-ready fires again once the SPA re-mounts.
+ * Map<webContentsId, { ready: boolean, pending: { vaultId, filePath } | null }>
+ */
+const rendererStates = new Map();
 let daemonProcess = null;
 let stopDaemonMetrics = null;
-
-// Whether the renderer has mounted and registered its `molio:navigate`
-// listener yet. On cold start the SPA doesn't mount until after the daemon is
-// up and loadApp() runs — which is *after* the clipper's /api/health poll
-// already reports ready. So a molio://open/... that fires right after launch
-// (warm second-instance path) would reach a renderer that isn't listening yet
-// and the IPC would be dropped, leaving the just-saved file unopened. We queue
-// such navigations and flush them once the renderer signals readiness.
-let rendererReady = false;
-let pendingNavigation = null;
+let daemonReady = false;
 
 // On macOS, closing the window hides it instead of destroying it, so the
 // user can reopen instantly from the dock. When the app is force-quitting
@@ -178,12 +179,12 @@ async function startDaemonProduction() {
 }
 
 /**
- * Create the main application window.
+ * Create an application window.
  *
  * In production the window stays hidden (show: false) until the daemon is
- * ready and the real app URL has finished loading — then `loadApp()` shows
- * it. We deliberately do NOT load splash.html first: the ARMS Browser SDK
- * auto-injection uses a per-webContents WeakSet, so a splash → app
+ * ready and the real app URL has finished loading — then `loadAppWindow()`
+ * shows it. We deliberately do NOT load splash.html first: the ARMS Browser
+ * SDK auto-injection uses a per-webContents WeakSet, so a splash → app
  * navigation would inject the SDK into the splash page (whose JS context is
  * destroyed on navigation) and skip the real app, leaving API monitoring,
  * renderer JS errors, and interaction tracking all empty in the ARMS
@@ -191,9 +192,12 @@ async function startDaemonProduction() {
  *
  * The `backgroundColor` matches the app's dark theme so the brief blank
  * window (visible in the taskbar) doesn't flash white.
+ *
+ * `url` is the SPA path to load (e.g. "/knowledge?vault=abc"); dev mode
+ * appends it to the Vite dev server, production passes it to loadAppWindow().
  */
-function createWindow() {
-  mainWindow = new BrowserWindow({
+function createWindow({ url = '' } = {}) {
+  const win = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 900,
@@ -209,102 +213,85 @@ function createWindow() {
     },
   });
 
-  // A full page load (cold-start loadApp, or any reload) recreates the
-  // renderer context, so the previous molio:navigate listener is gone and
-  // molio:renderer-ready will fire again once the SPA re-mounts. Re-arm on
-  // every did-start-loading so a queued navigation never gets delivered to a
-  // stale listener that no longer exists.
-  mainWindow.webContents.on('did-start-loading', () => {
-    rendererReady = false;
+  appWindows.add(win);
+  win.on('focus', () => { lastFocusedAppWindow = win; });
+  win.on('closed', () => {
+    appWindows.delete(win);
+    if (lastFocusedAppWindow === win) lastFocusedAppWindow = null;
+    rendererStates.delete(win.webContents.id);
+  });
+
+  win.webContents.on('did-start-loading', () => {
+    rendererStates.delete(win.webContents.id);
   });
 
   // Intercept window.open() — open in system browser instead of Electron
   // This is critical for the COSE publish flow: the bridge page must run
   // in the user's real Chrome (where the COSE extension is installed),
   // not in Electron's embedded Chromium.
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+  win.webContents.setWindowOpenHandler(({ url: targetUrl }) => {
+    shell.openExternal(targetUrl);
     return { action: 'deny' };
   });
 
   // F12 / Ctrl+Shift+I toggles DevTools in production builds for debugging.
-  mainWindow.webContents.on('before-input-event', (event, input) => {
+  win.webContents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return;
     const isDevtoolsToggle =
       (input.key === 'F12') ||
       (input.key === 'I' && (input.control || input.meta) && input.shift);
     if (!isDevtoolsToggle) return;
     event.preventDefault();
-    const wc = mainWindow.webContents;
+    const wc = win.webContents;
     if (!wc || wc.isDestroyed()) return;
     if (wc.isDevToolsOpened()) wc.closeDevTools();
     else wc.openDevTools({ mode: 'detach' });
   });
 
-  // macOS: hide window instead of closing it. This preserves the full
-  // renderer state (SPA, daemon connection, chat history) so the user
-  // can reopen instantly from the dock without a splash→reload cycle.
-  // On Windows/Linux the default destroy-on-close behavior is correct
-  // because window-all-closed quits the app entirely.
-  mainWindow.on('close', (event) => {
+  // macOS: hide instead of close to preserve renderer state.
+  win.on('close', (event) => {
     if (process.platform === 'darwin' && !forceQuit) {
       event.preventDefault();
-      mainWindow?.hide();
+      win.hide();
     }
   });
 
-  // Clean up the reference when the window is truly destroyed (quit or
-  // non-macOS close).
-  mainWindow.on('closed', () => {
-    mainWindow = null;
-  });
-
   if (isDevMode()) {
-    // Dev-only show path. Production shows the window in loadApp() /
-    // showDaemonErrorPage() after the single app navigation (ARMS SDK
-    // auto-injection requires one navigation = one injection), but dev
-    // skips ARMS entirely, so showing as soon as the page is ready is
-    // correct here. Without this handler nothing ever calls show() in dev
-    // mode — the window stays hidden forever while the process looks
-    // healthy (renderer ready, DevTools docked inside a hidden window).
-    // This was the #183 regression: removing the shared ready-to-show
-    // handler fixed production splash→app double injection but silently
-    // dropped the only dev-mode show path.
-    mainWindow.once('ready-to-show', () => {
-      mainWindow?.show();
-    });
-    mainWindow.webContents.openDevTools();
-    mainWindow.loadURL('http://localhost:5173');
+    // Dev-only show path (ARMS injection only matters in prod — see original
+    // comment). Without this the window stays hidden forever in dev.
+    win.once('ready-to-show', () => win.show());
+    win.webContents.openDevTools();
+    win.loadURL('http://localhost:5173' + url);
   }
-  // Production: no URL loaded here — loadApp() does the single navigation
-  // once the daemon is ready. The window stays hidden until then.
+  // Production: first window is loaded by loadAppWindow() once daemon is ready;
+  // additional windows load the same way (daemon already up → show immediately).
+  return win;
 }
 
 /** Load the real app URL after daemon is ready (production only). */
-function loadApp() {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    log('info', 'main', 'daemon ready — loading app');
-    mainWindow.loadURL('http://localhost:3100');
-    const wc = mainWindow.webContents;
-    // Show the window once the app has rendered. This is the first (and
-    // only) navigation for this webContents in production, so the ARMS
-    // Browser SDK injection fires on the real app — not a throwaway splash.
-    const onFinish = () => {
-      wc.removeListener('did-fail-load', onFail);
-      mainWindow?.show();
-    };
-    // If the load fails — e.g. the daemon crashes between the readiness check
-    // and the page actually loading, or a transient network error — Electron
-    // fires did-fail-load instead of did-finish-load. Without this handler the
-    // window would stay hidden forever with no feedback (the app looks dead).
-    const onFail = (_event, code, desc) => {
-      wc.removeListener('did-finish-load', onFinish);
-      log('error', 'main', `app load failed: code=${code} desc=${desc}`);
-      showDaemonErrorPage();
-    };
-    wc.once('did-finish-load', onFinish);
-    wc.once('did-fail-load', onFail);
-  }
+function loadAppWindow(win, url = '') {
+  if (!win || win.isDestroyed()) return;
+  log('info', 'main', `daemon ready — loading app window url=${url}`);
+  win.loadURL('http://localhost:3100' + url);
+  const wc = win.webContents;
+  // Show the window once the app has rendered. This is the first (and
+  // only) navigation for this webContents in production, so the ARMS
+  // Browser SDK injection fires on the real app — not a throwaway splash.
+  const onFinish = () => {
+    wc.removeListener('did-fail-load', onFail);
+    win.show();
+  };
+  // If the load fails — e.g. the daemon crashes between the readiness check
+  // and the page actually loading, or a transient network error — Electron
+  // fires did-fail-load instead of did-finish-load. Without this handler the
+  // window would stay hidden forever with no feedback (the app looks dead).
+  const onFail = (_event, code, desc) => {
+    wc.removeListener('did-finish-load', onFinish);
+    log('error', 'main', `app load failed: code=${code} desc=${desc}`);
+    showDaemonErrorPage(win);
+  };
+  wc.once('did-finish-load', onFinish);
+  wc.once('did-fail-load', onFail);
 }
 
 /**
@@ -315,8 +302,8 @@ function loadApp() {
  * The log path is passed via query string so the page can display it without
  * needing Node integration.
  */
-function showDaemonErrorPage() {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
+function showDaemonErrorPage(win) {
+  if (!win || win.isDestroyed()) return;
   let logPath = null;
   try {
     logPath = getLogPath();
@@ -326,9 +313,9 @@ function showDaemonErrorPage() {
   log('error', 'main', `showing daemon error page (log=${logPath})`);
   const errorPage = path.join(__dirname, 'daemon-error.html');
   const query = logPath ? { log: logPath } : undefined;
-  mainWindow.loadFile(errorPage, query ? { query } : undefined);
-  mainWindow.webContents.once('did-finish-load', () => {
-    mainWindow?.show();
+  win.loadFile(errorPage, query ? { query } : undefined);
+  win.webContents.once('did-finish-load', () => {
+    win.show();
   });
 }
 
@@ -337,9 +324,9 @@ function showDaemonErrorPage() {
  * for daemon). Formerly checked for splash.html; the splash page was
  * removed to fix ARMS Browser SDK injection (see createWindow comment).
  */
-function isWaitingForApp() {
-  if (!mainWindow || mainWindow.isDestroyed()) return false;
-  const currentUrl = mainWindow.webContents.getURL();
+function isWaitingForApp(win) {
+  if (!win || win.isDestroyed()) return false;
+  const currentUrl = win.webContents.getURL();
   return currentUrl === '' || currentUrl === 'about:blank';
 }
 
@@ -388,19 +375,17 @@ function buildKnowledgeUrlFromProtocolTarget(target) {
  * the IPC would be delivered before the listener exists and the just-saved
  * file would never open.
  */
-function deliverNavigation(target) {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  if (rendererReady) {
+function deliverNavigation(win, target) {
+  if (!win || win.isDestroyed()) return;
+  const state = rendererStates.get(win.webContents.id);
+  if (state?.ready) {
     log('info', 'main', `in-page navigate: vault=${target.vaultId ?? '(active)'} file=${target.filePath}`);
-    mainWindow.webContents.send('molio:navigate', {
+    win.webContents.send('molio:navigate', {
       vaultId: target.vaultId,
       filePath: target.filePath,
     });
   } else {
-    pendingNavigation = {
-      vaultId: target.vaultId,
-      filePath: target.filePath,
-    };
+    rendererStates.set(win.webContents.id, { ready: false, pending: { ...target } });
     log('info', 'main', `renderer not ready — queued navigate: vault=${target.vaultId ?? '(active)'} file=${target.filePath}`);
   }
 }
@@ -416,12 +401,14 @@ function deliverNavigation(target) {
  *   molio://open/file/<filePath> — navigate using the active/default vault
  *   molio://launch — load app if still waiting for daemon; otherwise just bring window to front
  */
-function navigateFromProtocolUrl(protocolUrl) {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
+function navigateFromProtocolUrl(protocolUrl, win) {
+  const targetWin = win && !win.isDestroyed() ? win : lastFocusedAppWindow ?? appWindows.values().next().value;
+  if (!targetWin || targetWin.isDestroyed()) return;
 
   try {
     const target = parseMolioProtocolUrl(protocolUrl);
     if (target?.action === 'open-file') {
+      const state = rendererStates.get(targetWin.webContents.id);
       // App not yet loaded, or renderer not yet ready: the in-page IPC path
       // can't deliver (no SPA listener, or a non-SPA page like the daemon
       // error page that never sends molio:renderer-ready, so a queued nav
@@ -429,22 +416,22 @@ function navigateFromProtocolUrl(protocolUrl) {
       // a full loadURL of the knowledge route — the SPA reads ?vault=&file=
       // and opens the file. Reload is fine here since the renderer is already
       // in a broken/transient state; the warm healthy path uses IPC below.
-      if (isWaitingForApp() || !rendererReady) {
+      if (isWaitingForApp(targetWin) || !state?.ready) {
         const appUrl = buildKnowledgeUrlFromProtocolTarget(target);
-        log('info', 'main', `navigating to ${appUrl} (renderer ${rendererReady ? 'waiting for app' : 'not ready'})`);
-        pendingNavigation = null; // loadURL supersedes any stale queued nav
-        mainWindow.loadURL(appUrl);
+        log('info', 'main', `navigating to ${appUrl} (renderer ${state?.ready ? 'waiting for app' : 'not ready'})`);
+        rendererStates.set(targetWin.webContents.id, { ready: false, pending: null }); // loadURL supersedes stale queued nav
+        targetWin.loadURL(appUrl);
       } else {
-        deliverNavigation(target);
+        deliverNavigation(targetWin, target);
       }
       return;
     }
 
     // molio://launch — if the app hasn't loaded yet (daemon still starting),
-    // trigger loadApp(). For second-instance launches, keep existing state.
+    // trigger loadAppWindow(). For second-instance launches, keep existing state.
     if (target?.action === 'launch') {
-      if (isWaitingForApp()) {
-        loadApp();
+      if (isWaitingForApp(targetWin)) {
+        loadAppWindow(targetWin);
       }
       return;
     }
@@ -501,11 +488,12 @@ if (!singleLock) {
 } else {
   app.on('second-instance', (_event, commandLine) => {
     // Someone tried to launch via molio:// or double-click while app is running
-    // Restore the existing window
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      if (!mainWindow.isVisible()) mainWindow.show();
-      mainWindow.focus();
+    // Restore the existing (last-focused) window
+    const win = lastFocusedAppWindow ?? appWindows.values().next().value;
+    if (win && !win.isDestroyed()) {
+      if (win.isMinimized()) win.restore();
+      if (!win.isVisible()) win.show();
+      win.focus();
     }
     // Handle molio:// protocol URL for navigation (path-style — see
     // parseMolioProtocolUrl; query-param form was abandoned due to Windows
@@ -513,7 +501,7 @@ if (!singleLock) {
     const protocolUrl = commandLine.find(arg => arg.startsWith('molio://'));
     if (protocolUrl) {
       log('info', 'main', `second-instance triggered via ${protocolUrl}`);
-      navigateFromProtocolUrl(protocolUrl);
+      navigateFromProtocolUrl(protocolUrl, win);
     }
   });
 }
@@ -560,19 +548,18 @@ app.whenReady().then(async () => {
     log,
   });
 
-  // ② Create window first (updater IPC needs getMainWindow reference).
+  // ② Create window first (updater IPC needs a window reference).
   //    In production the window stays hidden until the daemon is ready.
-  createWindow();
+  const firstWindow = createWindow();
 
   // ③ Set up auto-updater IMMEDIATELY — before daemon.
   // Even if daemon fails to start, the updater must be operational
   // so we can push fixes to users.
   // Pass killDaemon so the updater can release file locks before install.
-  setupAutoUpdater(() => mainWindow, killDaemon);
+  setupAutoUpdater(() => lastFocusedAppWindow ?? (appWindows.values().next().value ?? null), killDaemon);
 
   // ④ Start daemon last — failure here must not affect updater
   if (!isDevMode()) {
-    let daemonReady = false;
     try {
       await startDaemonProduction();
       daemonReady = true;
@@ -594,12 +581,12 @@ app.whenReady().then(async () => {
       if (protocolUrl) {
         log('info', 'main', `detected protocol URL in argv: ${protocolUrl}`);
         // Defer navigation slightly to ensure daemon is fully ready
-        setTimeout(() => navigateFromProtocolUrl(protocolUrl), 500);
+        setTimeout(() => navigateFromProtocolUrl(protocolUrl, firstWindow), 500);
       } else {
-        loadApp();
+        loadAppWindow(firstWindow);
       }
     } else {
-      showDaemonErrorPage();
+      showDaemonErrorPage(firstWindow);
     }
   }
 
@@ -611,17 +598,16 @@ app.whenReady().then(async () => {
   });
 
   app.on('activate', () => {
-    // No windows at all — cold start on macOS, create one
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    } else if (mainWindow) {
-      // Window exists but may be hidden (hide-on-close) or minimized.
-      // macOS does NOT automatically restore hidden/minimized Electron
-      // windows on dock click, so we must do it explicitly.
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      if (!mainWindow.isVisible()) mainWindow.show();
-      mainWindow.focus();
+    if (appWindows.size === 0) {
+      const win = createWindow();
+      if (!isDevMode() && daemonReady) loadAppWindow(win);
+      return;
     }
+    const win = lastFocusedAppWindow ?? appWindows.values().next().value;
+    if (!win || win.isDestroyed()) return;
+    if (win.isMinimized()) win.restore();
+    if (!win.isVisible()) win.show();
+    win.focus();
   });
 });
 
@@ -734,13 +720,15 @@ ipcMain.handle('app:restart', () => {
 // listener. Flush any navigation that was queued during cold start (before the
 // listener existed), so a molio://open/... fired right after launch still
 // opens the just-saved file instead of being dropped.
-ipcMain.on('molio:renderer-ready', () => {
-  rendererReady = true;
-  if (pendingNavigation && mainWindow && !mainWindow.isDestroyed()) {
-    const nav = pendingNavigation;
-    pendingNavigation = null;
+ipcMain.on('molio:renderer-ready', (event) => {
+  const wc = event.sender;
+  const id = wc.id;
+  const state = rendererStates.get(id) ?? { ready: false, pending: null };
+  const nav = state.pending;
+  rendererStates.set(id, { ready: true, pending: null });
+  if (nav && !wc.isDestroyed()) {
     log('info', 'main', `renderer ready — flushing queued navigate: vault=${nav.vaultId ?? '(active)'} file=${nav.filePath}`);
-    mainWindow.webContents.send('molio:navigate', nav);
+    wc.send('molio:navigate', nav);
   } else {
     log('info', 'main', 'renderer ready (no queued navigation to flush)');
   }

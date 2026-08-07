@@ -42,10 +42,11 @@ describe('main.js window.open handler (regression #18)', () => {
   });
 
   it('should extract url from handler params', () => {
-    // Verify the handler destructures { url } from the params
+    // Verify the handler destructures { url } from the params (aliased to
+    // targetUrl since the loop variable shadows the field name).
     assert.match(
       mainSource,
-      /setWindowOpenHandler\s*\(\s*\(\s*\{\s*url\s*\}/,
+      /setWindowOpenHandler\s*\(\s*\(\s*\{\s*url\s*:\s*targetUrl\s*\}/,
       'setWindowOpenHandler should destructure { url } from the handler params',
     );
   });
