@@ -15,6 +15,7 @@
     "package": "pnpm build && pnpm --filter @molio/desktop package",
     "package:dir": "pnpm build && pnpm --filter @molio/desktop package:dir",
     "desktop:run": "pnpm build && pnpm --filter @molio/desktop run:unpacked",
+    "postinstall": "node scripts/fix-electron-install.mjs",
     "test": "pnpm --filter @molio/daemon test && pnpm --filter @molio/desktop test",
     "test:e2e": "pnpm --filter @molio/web test:e2e",
     "typecheck": "pnpm -r typecheck"
