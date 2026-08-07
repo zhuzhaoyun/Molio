@@ -17,6 +17,14 @@
 
 Generic chatbots draw on the internet at large. Molio draws on your library. It is a **local-first** workbench that plugs Claude Code, Codex, and other AI runtimes into your Obsidian vault: they read what you have accumulated, research, analyze, and create, then write the results back into the vault. The longer you use it, the better it knows you. Everything runs on your machine, never through a third-party server.
 
+<div align="center">
+
+<video src="https://molio.cn/videos/zizhitongjian-overview.mp4" controls width="100%"></video>
+
+<sub>One book, one knowledge universe — 1,362 years of history from the *Zizhi Tongjian*, organized by Molio into an AI-explorable knowledge system</sub>
+
+</div>
+
 ### 🌟 Why Molio?
 
 | Feature | Description |
@@ -53,16 +61,16 @@ A single Molio instance can serve multiple channels in parallel. Most channels c
       <sub>AI Chat: Multi-agent support with streaming responses</sub>
     </td>
     <td width="50%" align="center">
-      <img src="docs/img/wiki_knowledge.png" alt="Knowledge Base" width="100%" style="border-radius: 8px;" />
+      <img src="apps/landing-page/images/wiki_knowledge.webp" alt="Knowledge Base" width="100%" style="border-radius: 8px;" />
       <br/>
       <sub>Knowledge Base: Vault file tree with Markdown rendering</sub>
     </td>
   </tr>
   <tr>
     <td width="50%" align="center">
-      <img src="docs/img/Layout%20.png" alt="Editor" width="100%" style="border-radius: 8px;" />
+      <img src="apps/landing-page/images/kg-graph.webp" alt="Knowledge Graph" width="100%" style="border-radius: 8px;" />
       <br/>
-      <sub>Editor: Split-pane with real-time preview</sub>
+      <sub>Knowledge Graph: Visual map of your knowledge connections</sub>
     </td>
     <td width="50%" align="center">
       <img src="docs/img/publish.png" alt="Publishing" width="100%" style="border-radius: 8px;" />

@@ -17,6 +17,14 @@
 
 别再和每一个 AI 从零开始。Molio 把你的笔记、文档和项目经验变成一个会成长的知识空间：Claude Code / Codex 等 Agent 带着你的背景研究、写作、问答、分析，产出写回库，越用越懂你的事。所有内容存在你自己的电脑上，不经过任何第三方服务器。
 
+<div align="center">
+
+<video src="https://molio.cn/videos/zizhitongjian-overview.mp4" controls width="100%"></video>
+
+<sub>一本书，一个知识宇宙 —《资治通鉴》1362 年史料 · 由 Molio 整理成 AI 可探索的知识体系</sub>
+
+</div>
+
 ### 🌟 核心能力
 
 | 功能 | 说明 |
@@ -53,16 +61,16 @@
       <sub>AI 对话：多 Agent 支持，流式响应</sub>
     </td>
     <td width="50%" align="center">
-      <img src="docs/img/wiki_knowledge.png" alt="知识库" width="100%" style="border-radius: 8px;" />
+      <img src="apps/landing-page/images/wiki_knowledge.webp" alt="知识库" width="100%" style="border-radius: 8px;" />
       <br/>
       <sub>知识库：Vault 文件树管理与 Markdown 渲染</sub>
     </td>
   </tr>
   <tr>
     <td width="50%" align="center">
-      <img src="docs/img/Layout%20.png" alt="排版编辑器" width="100%" style="border-radius: 8px;" />
+      <img src="apps/landing-page/images/kg-graph.webp" alt="知识图谱" width="100%" style="border-radius: 8px;" />
       <br/>
-      <sub>排版编辑器：左右分栏实时预览，主题/字体/颜色可调</sub>
+      <sub>知识图谱：可视化浏览知识关联与结构</sub>
     </td>
     <td width="50%" align="center">
       <img src="docs/img/publish.png" alt="多平台发布" width="100%" style="border-radius: 8px;" />
