@@ -15,6 +15,8 @@ export interface MenuItem {
   disabled?: boolean;
   /** Native tooltip (e.g. to explain why an item is disabled). */
   title?: string;
+  /** data-testid for stable E2E selection */
+  testid?: string;
 }
 
 interface ContextMenuProps {
@@ -92,6 +94,7 @@ export function ContextMenu({ items, position, onClose }: ContextMenuProps) {
             <button
               key={i}
               type="button"
+              data-testid={item.testid}
               className={`ctx-menu-item${item.danger ? ' is-danger' : ''}${item.disabled ? ' is-disabled' : ''}`}
               disabled={item.disabled}
               title={item.title}

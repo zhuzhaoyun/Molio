@@ -216,4 +216,24 @@ test.describe('multi-window vault isolation', () => {
     await ctxA.close();
     await ctxB.close();
   });
+
+  test('tab context menu opens the file in a new window', async ({ browser }) => {
+    const ctx = await browser.newContext();
+    const page = await ctx.newPage();
+    let popupUrl: string | null = null;
+    page.on('popup', (p) => { popupUrl = p.url(); });
+
+    await page.goto(`${WEB}/knowledge?vault=${vaultAId}`);
+    await expect(page.locator('.kb-vault-bar__name')).toHaveText('mw-a');
+    await page.locator('.kb-tree-item', { hasText: 'alpha.md' }).first().click();
+    await expect(page.locator('.kb-wtab', { hasText: 'alpha.md' })).toBeVisible();
+
+    // Right-click the tab → 在新窗口打开 (browser fallback = window.open → popup).
+    await page.locator('.kb-wtab', { hasText: 'alpha.md' }).click({ button: 'right' });
+    await page.locator('[data-testid="tab-open-in-new-window"]').click();
+
+    await expect.poll(() => popupUrl).toContain(`vault=${vaultAId}`);
+    await expect.poll(() => popupUrl).toContain('alpha.md');
+    await ctx.close();
+  });
 });

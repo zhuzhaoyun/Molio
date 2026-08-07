@@ -6,12 +6,15 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { WorkspaceTab } from '../../hooks/useKbTabs';
+import { ContextMenu } from './ContextMenu';
 
 interface KbTabBarProps {
   tabs: WorkspaceTab[];
   activeTabId: string | null;
   onActivate: (id: string) => void;
   onClose: (id: string) => void;
+  /** Right-click a tab → open it in a new window (Electron IPC or browser popup). */
+  onOpenInNewWindow?: (tab: WorkspaceTab) => void;
   actions?: ReactNode;
 }
 
@@ -39,12 +42,13 @@ function tabDisplayTitle(tab: WorkspaceTab, allTabs: WorkspaceTab[]): { display:
   return { display: stillCollide ? relPath : candidate, tooltip };
 }
 
-export function KbTabBar({ tabs, activeTabId, onActivate, onClose, actions }: KbTabBarProps) {
+export function KbTabBar({ tabs, activeTabId, onActivate, onClose, onOpenInNewWindow, actions }: KbTabBarProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<HTMLDivElement>(null);
   const [canLeft, setCanLeft] = useState(false);
   const [canRight, setCanRight] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [ctxMenu, setCtxMenu] = useState<{ tab: WorkspaceTab; x: number; y: number } | null>(null);
   const moreRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -123,6 +127,10 @@ export function KbTabBar({ tabs, activeTabId, onActivate, onClose, actions }: Kb
               className={`kb-wtab ${isActive ? 'is-active' : ''}`}
               ref={isActive ? activeRef : null}
               onClick={() => onActivate(tab.id)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setCtxMenu({ tab, x: e.clientX, y: e.clientY });
+              }}
               onMouseDown={(e) => {
                 if (e.button === 1) {
                   e.preventDefault();
@@ -190,6 +198,15 @@ export function KbTabBar({ tabs, activeTabId, onActivate, onClose, actions }: Kb
         </div>
       )}
       {actions && <div className="kb-wtab-actions">{actions}</div>}
+      {ctxMenu && (
+        <ContextMenu
+          items={[
+            { label: '在新窗口打开', testid: 'tab-open-in-new-window', onClick: () => onOpenInNewWindow?.(ctxMenu.tab) },
+          ]}
+          position={{ x: ctxMenu.x, y: ctxMenu.y }}
+          onClose={() => setCtxMenu(null)}
+        />
+      )}
     </div>
   );
 }

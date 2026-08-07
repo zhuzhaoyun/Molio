@@ -8,7 +8,7 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import type { TreeNode } from '@molio/contracts';
 import { useKnowledge } from '../../hooks/useKnowledge';
 import type { KbChatState } from '../../hooks/useKbChat';
-import { useKbTabs, MAX_TABS } from '../../hooks/useKbTabs';
+import { useKbTabs, MAX_TABS, type WorkspaceTab } from '../../hooks/useKbTabs';
 import { vaultStore } from '../../stores/vaultStore';
 import { KbFilePanel, type KbFilePanelHandle } from './KbFilePanel';
 import { KbTabBar } from './KbTabBar';
@@ -24,6 +24,7 @@ import type { FileRef, PastedImage } from '../ChatComposer';
 import { buildAttachmentPrefix } from '../ChatComposer';
 import { useI18n } from '../../i18n';
 import { api } from '../../api/client';
+import { openInNewWindow } from '../../utils/openWindow';
 
 interface KnowledgeBasePageProps {
   agentId: string | null;
@@ -372,6 +373,15 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
       }
     });
   }, [tabs, kb, runOrConfirmDiscard]);
+
+  /** Open the tab's file in a new window (Electron IPC or browser popup). */
+  const handleOpenInNewWindow = useCallback((tab: WorkspaceTab) => {
+    const vaultId = kb.activeVault?.id;
+    if (!vaultId) return;
+    const filePath = tab.id.startsWith('file:') ? tab.id.slice(5) : undefined;
+    const url = `/knowledge?vault=${vaultId}${filePath ? `&file=${encodeURIComponent(filePath)}` : ''}`;
+    openInNewWindow(url);
+  }, [kb.activeVault?.id]);
 
   // When URL navigation resolves, open in tab. The path from external
   // navigation (assistant links, molio://, graph) may omit the extension and/or
@@ -1033,6 +1043,7 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
           activeTabId={tabs.activeTabId}
           onActivate={handleActivateTab}
           onClose={handleCloseTab}
+          onOpenInNewWindow={handleOpenInNewWindow}
           actions={
             <>
               <button
