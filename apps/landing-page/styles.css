@@ -272,7 +272,7 @@ p { margin-bottom: 0; }
 
 .hero-inner {
   display: grid;
-  grid-template-columns: 1.05fr 0.95fr;
+  grid-template-columns: 0.95fr 1.05fr;
   gap: 80px;
   align-items: center;
   max-width: var(--max-w);
@@ -290,7 +290,7 @@ p { margin-bottom: 0; }
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 36px;
+  margin-bottom: 24px;
   font-family: var(--font-body);
   font-size: 16px;
   font-weight: 600;
@@ -310,7 +310,7 @@ p { margin-bottom: 0; }
   font-size: clamp(36px, 5.2vw, 62px);
   line-height: 1.2;
   letter-spacing: -0.02em;
-  margin-bottom: 32px;
+  margin-bottom: 26px;
   font-weight: 700;
 }
 
@@ -488,6 +488,60 @@ p { margin-bottom: 0; }
   line-height: 1.8;
   max-width: 580px;
   margin: 0 auto;
+}
+
+/* ---------- Hero 视频题注 ---------- */
+.hero-video-caption {
+  margin-top: 18px;
+  text-align: center;
+  font-size: 14px;
+  letter-spacing: 1px;
+  color: var(--ink-40);
+}
+
+/* ---------- Showcase section (知识宇宙视频) ---------- */
+.section-showcase { padding: 140px 0; }
+
+.showcase-inner {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 0 24px;
+  text-align: center;
+}
+
+.showcase-inner h2 {
+  font-size: clamp(36px, 5.5vw, 64px);
+  line-height: 1.1;
+  margin-bottom: 24px;
+}
+
+.showcase-sub {
+  font-size: 18px;
+  line-height: 1.8;
+  max-width: 620px;
+  margin: 0 auto 48px;
+}
+
+.showcase-video-frame {
+  position: relative;
+  border-radius: 2px;
+  overflow: hidden;
+  box-shadow:
+    0 1px 2px rgba(0,0,0,0.3),
+    0 24px 64px rgba(0,0,0,0.5);
+}
+
+.showcase-video-frame video {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.section-showcase .showcase-caption {
+  margin-top: 20px;
+  font-size: 14px;
+  letter-spacing: 1px;
+  color: rgba(245,240,232,0.4);
 }
 
 /* ---------- Feature sections ---------- */
