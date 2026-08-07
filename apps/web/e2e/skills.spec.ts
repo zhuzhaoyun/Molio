@@ -37,8 +37,9 @@ async function gotoSkillsTab(page: import('@playwright/test').Page) {
   // bundled skills are hidden, so with no user skills there are NO rows) so the
   // initial load storm (StrictMode doubles every call + default-vault auto-select
   // writes) has settled before we interact — otherwise a later POST can be queued
-  // behind it and look "stuck".
-  await expect(page.locator('.sk-list, .sk-empty').first()).toBeVisible({ timeout: 10_000 });
+  // behind it and look "stuck". The empty state reuses the shared `.rt-empty`
+  // class (there is no `.sk-empty`), so wait on `.sk-list, .rt-empty`.
+  await expect(page.locator('.sk-list, .rt-empty').first()).toBeVisible({ timeout: 10_000 });
 }
 
 /** Dispatch a synthetic paste of `text` into the instructions textarea. */
