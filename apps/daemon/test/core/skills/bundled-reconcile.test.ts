@@ -8,10 +8,13 @@ import { reconcileBundledSync, DEPRECATED_SKILLS } from '../../../src/core/skill
 /**
  * reconcileBundledSync is the bundled-skill owner (skill-installer.ts). It is
  * driven entirely by the effective/managed slug sets computed from the `skills`
- * table (vault-config.ts). These tests use an INJECTED temp source dir so they
- * never depend on the real shipped skills, and pin:
+ * table (vault-config.ts). Bundled skills themselves are always effective now
+ * (hidden + always-on, see vault-config.ts), so the managed-but-not-effective
+ * removal path only fires for skill deprecation/row deletion — the tests below
+ * still drive it directly via injected sets. They use an INJECTED temp source
+ * dir so they never depend on the real shipped skills, and pin:
  *   - whole-directory install (SKILL.md + sibling files),
- *   - removal of a managed-but-not-effective skill (toggled off),
+ *   - removal of a managed-but-not-effective skill (deprecation/row deletion),
  *   - the RED LINE: a slug NOT in the managed set is never touched, even with
  *     the same name as a real bundled skill (user's own dir is sacred),
  *   - deprecated-skill cleanup,
@@ -63,15 +66,15 @@ describe('reconcileBundledSync', () => {
     assert.ok(fs.existsSync(path.join(dest, 'scripts', 'run.mjs')), 'sibling files copied');
   });
 
-  it('removes a managed skill that is no longer effective (toggled off)', () => {
+  it('removes a managed skill that is no longer effective (deprecation/row deletion)', () => {
     makeSourceSkill('docling');
-    // First on: installed.
+    // First effective: installed.
     reconcileBundledSync(new Set(['docling']), new Set(['docling']), vaultDir, { sourceDir });
     assert.ok(fs.existsSync(skillDirInVault('docling')));
 
-    // Then off (managed but not effective): removed.
+    // Then dropped from the effective set (managed but not effective): removed.
     reconcileBundledSync(new Set(), new Set(['docling']), vaultDir, { sourceDir });
-    assert.ok(!fs.existsSync(skillDirInVault('docling')), 'disabled bundled dir removed');
+    assert.ok(!fs.existsSync(skillDirInVault('docling')), 'non-effective bundled dir removed');
   });
 
   it('RED LINE: never touches a dir whose slug is not in the managed set (user dir)', () => {
@@ -116,7 +119,7 @@ describe('reconcileBundledSync', () => {
     // Drop docling from effective → its gated rule is removed, remotion stays.
     reconcileBundledSync(new Set(['remotion']), new Set(['docling', 'remotion']), vaultDir, { sourceDir });
     md = readClaudeMd();
-    assert.ok(!md.includes('<!-- molio:docling-preference -->'), 'docling rule removed when toggled off');
+    assert.ok(!md.includes('<!-- molio:docling-preference -->'), 'docling rule removed when not effective');
     assert.ok(md.includes('<!-- molio:remotion-preference -->'), 'remotion rule kept');
     assert.ok(md.includes('<!-- molio:env-self-heal -->'), 'always-on rule kept');
   });
@@ -138,7 +141,7 @@ describe('reconcileBundledSync', () => {
  * Step-3 removal guard: deletion demands OWNERSHIP PROOF (byte-for-byte mirror
  * of Molio's source). The previous "has a SKILL.md" guard was inverted — a
  * user's own same-named skill ALWAYS has a SKILL.md and would have been
- * rm -rf'd the moment the bundled skill toggled off.
+ * rm -rf'd the moment the bundled skill left the effective set.
  */
 describe('reconcileBundledSync — ownership-proof removal', () => {
   it('NEVER deletes a user skill sharing a managed slug (user content differs from source)', () => {
@@ -148,10 +151,10 @@ describe('reconcileBundledSync — ownership-proof removal', () => {
     fs.mkdirSync(userDir, { recursive: true });
     fs.writeFileSync(path.join(userDir, 'SKILL.md'), 'my own docling setup\n', 'utf8');
 
-    // Toggled off: managed but not effective → the old guard would rm -rf here.
+    // Managed but not effective (deprecation path) → the old guard would rm -rf here.
     reconcileBundledSync(new Set(), new Set(['docling']), vaultDir, { sourceDir });
 
-    assert.ok(fs.existsSync(path.join(userDir, 'SKILL.md')), 'user same-name dir survives toggle-off');
+    assert.ok(fs.existsSync(path.join(userDir, 'SKILL.md')), 'user same-name dir survives removal');
     assert.equal(
       fs.readFileSync(path.join(userDir, 'SKILL.md'), 'utf8'),
       'my own docling setup\n',
@@ -181,7 +184,7 @@ function stripEndSentinels(md: string): string {
  * Rule blocks are wrapped in BEGIN/END sentinels so removal/replacement can
  * never touch user content written after (or between) blocks — the legacy
  * sentinel-to-next-sentinel extent deleted everything after the LAST block
- * (wiki-query) when it was toggled off.
+ * (wiki-query) when it was removed.
  */
 describe('reconcileBundledSync — BEGIN/END sentinel rule blocks', () => {
   it('writes rule blocks wrapped in BEGIN and END sentinels', () => {
@@ -197,7 +200,7 @@ describe('reconcileBundledSync — BEGIN/END sentinel rule blocks', () => {
     );
   });
 
-  it('keeps user content written AFTER the last rule block when the gated rule toggles off', () => {
+  it('keeps user content written AFTER the last rule block when the gated rule is removed', () => {
     makeSourceSkill('wiki-query');
     reconcileBundledSync(new Set(['wiki-query']), new Set(['wiki-query']), vaultDir, { sourceDir });
     // wiki-query's rule is the LAST block — the EOF-dangerous spot.
@@ -215,7 +218,7 @@ describe('reconcileBundledSync — BEGIN/END sentinel rule blocks', () => {
     assert.ok(md.includes('Do not touch the legacy module.'));
   });
 
-  it('legacy migration: toggling OFF an exact legacy block strips only the block, keeps trailing user content', () => {
+  it('legacy migration: removing an exact legacy block strips only the block, keeps trailing user content', () => {
     makeSourceSkill('wiki-query');
     reconcileBundledSync(new Set(['wiki-query']), new Set(['wiki-query']), vaultDir, { sourceDir });
     const mdPath = path.join(vaultDir, '.claude', 'CLAUDE.md');
@@ -250,11 +253,11 @@ describe('reconcileBundledSync — BEGIN/END sentinel rule blocks', () => {
     const md = readClaudeMd();
     assert.ok(md.includes('<!-- /molio:wiki-query-preference -->'), 'END sentinel added by migration');
     assert.ok(md.includes('User notes after.'), 'trailing user content survives migration');
-    // Once migrated, toggling off is precise (wrapped extent) — content still safe.
+    // Once migrated, removal is precise (wrapped extent) — content still safe.
     reconcileBundledSync(new Set(), new Set(['wiki-query']), vaultDir, { sourceDir });
     const after = readClaudeMd();
     assert.ok(!after.includes('<!-- molio:wiki-query-preference -->'));
-    assert.ok(after.includes('User notes after.'), 'content still safe after migrated toggle-off');
+    assert.ok(after.includes('User notes after.'), 'content still safe after migrated removal');
   });
 
   it('legacy migration: a DRIFTED legacy block is replaced wholesale once (unknowable boundary)', () => {

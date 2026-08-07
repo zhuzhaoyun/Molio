@@ -1,14 +1,18 @@
 /**
  * Per-vault skill sync.
  *
- * The global skill library (the daemon's `skills` table) is the master switch:
- * a globally-enabled skill is available in every vault. The effective set for
- * a vault is therefore:
+ * The global skill library (the daemon's `skills` table) is the master switch
+ * for USER (library) skills: a globally-enabled one is available in every
+ * vault. The effective set for a vault is therefore:
  *
- *     globally-enabled OR core
+ *     globally-enabled OR core OR bundled
  *
- * `core` skills (the writing trio) are exempt from the global switch — they
- * are always effective (hidden but behavior kept).
+ * `core` skills (the writing trio) and `bundled` skills (shipped with the app:
+ * docling / wiki-* / remotion / wechat-article-extractor) are exempt from the
+ * global switch — always effective. Both are app-owned functionality hidden
+ * from the settings UI (routes/skills.ts 404s them) because they back
+ * deterministic app paths (KB panel wiki actions, channel routing, preload);
+ * the `enabled` flag on their rows is ignored.
  *
  * NOTE: the API stays per-vault (`getEffectiveSkills(db, vaultId)`) on purpose.
  * If per-vault opt-outs ever become a real need again, re-add them as a filter
@@ -43,13 +47,13 @@ import { reconcileBundledSync } from '../skill-installer.js';
 import type { SkillPathsOpts } from './paths.js';
 
 /**
- * Effective skill entries for a vault: core skills always count (exempt from
- * the global switch); everything else needs to be globally enabled. `_vaultId`
- * is kept in the signature so per-vault filtering can be re-added without
- * touching callers (see module note).
+ * Effective skill entries for a vault: core and bundled skills always count
+ * (app-owned, exempt from the global switch); everything else needs to be
+ * globally enabled. `_vaultId` is kept in the signature so per-vault filtering
+ * can be re-added without touching callers (see module note).
  */
 export function getEffectiveSkills(db: Database.Database, _vaultId: string): SkillManifestEntry[] {
-  return listSkills(db).filter((s) => s.core || s.enabled);
+  return listSkills(db).filter((s) => s.core || s.kind === 'bundled' || s.enabled);
 }
 
 /** Effective skill ids for a vault (see getEffectiveSkills). */
@@ -74,8 +78,10 @@ export function reconcileVault(db: Database.Database, vault: Vault, opts?: Skill
     const singleFileIds = effective.filter((s) => s.kind !== 'bundled').map((s) => s.id);
     reconcileSync(singleFileIds, { ...opts, claudeHome: path.join(vault.path, '.claude') });
 
-    // bundled → whole-dir sync. Managed = every bundled row the DB knows about
-    // (so a toggled-off one gets removed); effective = the subset that's on.
+    // bundled → whole-dir sync. Managed = every bundled row the DB knows about;
+    // effective = the always-on subset (bundled ignore the switch). The two are
+    // equal in practice — the removal path stays for skill deprecation/row
+    // deletion, no longer user toggling.
     const allSkills = listSkills(db);
     const managedBundled = new Set(allSkills.filter((s) => s.kind === 'bundled').map((s) => s.id));
     const effectiveBundled = new Set(effective.filter((s) => s.kind === 'bundled').map((s) => s.id));

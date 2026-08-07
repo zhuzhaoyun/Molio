@@ -2,18 +2,20 @@
  * Built-in skills shipped with Molio, seeded idempotently into the daemon's
  * `skills` table on startup.
  *
- * Two flavors are seeded here:
- *  - **bundled** (docling / wiki-* / remotion / wechat-article-extractor): the
- *    real "skills" users see and toggle. Their content is multi-file and lives
- *    under the app resources (`tools/skills/<slug>/`); only a metadata row is
- *    inserted (createSkill skips writing a library SKILL.md for kind='bundled').
- *    name/description are read from the shipped SKILL.md frontmatter so the UI
- *    stays in sync with what the agent actually gets; hardcoded fallbacks cover
- *    a missing/unreadable source dir.
- *  - **core** (writing trio): Molio's core job. Hidden + always-on + not
- *    configurable, but their behavior is preserved — the body is written to
- *    `~/.molio/skills/<id>/SKILL.md` and synced into every vault like a library
- *    skill (see vault-config.ts).
+ * Both flavors are app-owned functionality: hidden from the settings UI and
+ * always effective regardless of the `enabled` flag (see vault-config.ts +
+ * routes/skills.ts). They differ only in content + sync shape:
+ *  - **bundled** (docling / wiki-* / remotion / wechat-article-extractor):
+ *    multi-file content under the app resources (`tools/skills/<slug>/`); only
+ *    a metadata row is inserted (createSkill skips writing a library SKILL.md
+ *    for kind='bundled'); synced whole-dir by reconcileBundledSync. Back
+ *    deterministic app paths (KB panel wiki actions, channel routing, docling
+ *    preload), hence not user-toggleable. name/description are read from the
+ *    shipped SKILL.md frontmatter; hardcoded fallbacks cover a missing/
+ *    unreadable source dir.
+ *  - **core** (writing trio): Molio's core job. The body is written to
+ *    `~/.molio/skills/<id>/SKILL.md` and synced into every vault like a
+ *    library skill (single-file `molio--<id>` dirs).
  *
  * Seeding is idempotent: an existing row (by id) only gets its name/description
  * refreshed — `enabled`/`core` are NEVER overwritten, so the user's toggle state
@@ -145,7 +147,7 @@ export const CORE_SKILLS_SEEDS: CoreSeed[] = [
 export function seedBuiltinSkills(db: Database.Database, opts?: SkillPathsOpts): void {
   const sourceDir = resolveSkillsSourceDir();
 
-  // 1. Bundled skills (multi-file, shipped) — shown + configurable.
+  // 1. Bundled skills (multi-file, shipped) — hidden + always-on (app-owned).
   for (const slug of BUILTIN_SKILLS) {
     const meta = readBundledMeta(slug, sourceDir);
     const existing = getSkill(db, slug);

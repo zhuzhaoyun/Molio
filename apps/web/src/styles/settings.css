@@ -524,30 +524,6 @@
   flex-shrink: 0;
 }
 
-/* ── Badge ── */
-.sk-badge {
-  display: inline-flex;
-  align-items: center;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  padding: 2px 7px;
-  border-radius: var(--radius-pill);
-  white-space: nowrap;
-  color: var(--text-muted);
-  background: var(--bg-hover, rgba(127, 127, 127, 0.12));
-}
-
-.sk-badge--builtin {
-  color: var(--accent);
-  background: var(--accent-soft);
-}
-
-.sk-badge--bundled {
-  color: var(--blue);
-  background: var(--blue-bg);
-}
-
 /* ── Toggle Switch ── */
 .sk-switch {
   position: relative;

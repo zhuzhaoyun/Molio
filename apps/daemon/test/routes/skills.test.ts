@@ -215,7 +215,11 @@ describe('Skills routes', () => {
 
   // ── bundled / core guards ──
 
-  it('bundled skills are listed (kind=bundled) but not editable (PATCH 400), yet toggleable', async () => {
+  it('bundled skills are hidden from GET and 404 on by-id routes (always-on app functionality)', async () => {
+    // Bundled skills back deterministic app paths (KB panel wiki actions,
+    // channel routing, docling preload), so they are hidden + unconfigurable
+    // exactly like core skills — toggling them would silently break UI that
+    // still shows the feature entry points.
     const bundled = createSkill(
       db,
       { id: 'bundled-route-x', name: 'bundled', description: '', enabled: true, builtIn: true, kind: 'bundled' },
@@ -223,49 +227,25 @@ describe('Skills routes', () => {
     );
     try {
       const list = (await json(await app.request('/api/skills')))['skills'] as SkillManifestEntry[];
-      const found = list.find((s) => s.id === bundled.id);
-      assert.ok(found, 'bundled skill should be listed');
-      assert.equal(found!.kind, 'bundled');
+      assert.ok(!list.some((s) => s.id === bundled.id), 'bundled skill must not be listed');
 
-      // Not editable.
-      const patched = await app.request(`/api/skills/${bundled.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: 'hacked' }),
-      });
-      assert.equal(patched.status, 400);
+      for (const [method, suffix, body] of [
+        ['GET', '', undefined],
+        ['PATCH', '', JSON.stringify({ name: 'x' })],
+        ['PATCH', '/toggle', JSON.stringify({ enabled: false })],
+      ] as const) {
+        const res = await app.request(`/api/skills/${bundled.id}${suffix}`, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body,
+        });
+        assert.equal(res.status, 404, `${method} ${suffix} on bundled should be 404`);
+      }
 
-      // But toggleable.
-      const off = await app.request(`/api/skills/${bundled.id}/toggle`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled: false }),
-      });
-      assert.equal(off.status, 200);
-      assert.equal(((await json(off))['skill'] as SkillManifestEntry).enabled, false);
+      const del = await app.request(`/api/skills/${bundled.id}`, { method: 'DELETE' });
+      assert.equal(del.status, 404, 'DELETE on bundled should be 404');
     } finally {
       // Remove the row directly so it doesn't pollute later tests.
-      db.prepare('DELETE FROM skills WHERE id = ?').run(bundled.id);
-    }
-  });
-
-  it('GET /:id on a bundled skill returns its shipped SKILL.md body (duplicate prefill)', async () => {
-    // Bundled skills have no library content dir, so the route must fall back to
-    // the shipped app-resources SKILL.md — otherwise "duplicate" prefills empty.
-    // Use a real slug so resolveSkillsSourceDir finds the shipped content.
-    const bundled = createSkill(
-      db,
-      { id: 'docling', name: 'docling', description: '', enabled: true, builtIn: true, kind: 'bundled' },
-      '',
-    );
-    try {
-      const res = await app.request(`/api/skills/${bundled.id}`);
-      assert.equal(res.status, 200);
-      const body = await json(res);
-      const instructions = body['instructions'];
-      assert.equal(typeof instructions, 'string');
-      assert.ok((instructions as string).trim().length > 0, 'bundled body must not be empty');
-    } finally {
       db.prepare('DELETE FROM skills WHERE id = ?').run(bundled.id);
     }
   });

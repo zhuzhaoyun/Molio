@@ -5,9 +5,14 @@
  * (vault-config.ts).
  *
  * Visibility/guards:
- *  - core skills (writing trio) are never exposed (filtered from GET, 404 by id);
- *  - bundled skills are shown + toggleable but NOT editable (PATCH 400);
- *  - builtIn/core skills cannot be deleted.
+ *  - core skills (writing trio) and bundled skills (shipped with the app) are
+ *    app-owned functionality: hidden from the list, 404 on every by-id route,
+ *    and always effective regardless of the `enabled` flag (vault-config.ts).
+ *    They are wired into deterministic app paths (KB panel wiki actions,
+ *    channel intent routing, docling preload), so letting users toggle them
+ *    would silently break UI that still shows the feature entry points.
+ *  - builtIn rows that somehow aren't core/bundled still can't be deleted;
+ *  - library (user-created/imported) skills get full CRUD + toggle.
  */
 import { Hono } from 'hono';
 import type { Context } from 'hono';
@@ -32,7 +37,6 @@ import {
 import { afterGlobalSkillMutation } from '../core/skills/vault-config.js';
 import { importFromRaw, importFromFolder, SkillImportError } from '../core/skills/importer.js';
 import { prefillFromContent } from '../core/skills/prefill.js';
-import { readBundledInstructions } from '../core/skills/builtin.js';
 
 /**
  * Parse the request body as a JSON object. Returns null for malformed JSON,
@@ -54,23 +58,21 @@ async function readJsonObject(c: Context): Promise<Record<string, unknown> | nul
 export function skillsRoutes(db: Database.Database, runManager: RunManager): Hono {
   const app = new Hono();
 
-  // GET /api/skills — list all non-core skills (core = hidden app functionality)
+  // GET /api/skills — list user-managed skills only (core + bundled are hidden
+  // app functionality, always effective and not configurable).
   app.get('/', (c) => {
-    return c.json({ skills: listSkills(db).filter((s) => !s.core) });
+    return c.json({ skills: listSkills(db).filter((s) => !s.core && s.kind !== 'bundled') });
   });
 
   // GET /api/skills/:id — one skill + its instructions (for the edit/duplicate
-  // form). Core skills are treated as not found (they're never shown/editable).
-  // Bundled skills have no library content dir, so their body is read from the
-  // shipped SKILL.md (lets "duplicate" prefill a real copy).
+  // form). Core and bundled skills are treated as not found (hidden app
+  // functionality, never shown/editable).
   app.get('/:id', (c) => {
     const skill = getSkill(db, c.req.param('id'));
-    if (!skill || skill.core) {
+    if (!skill || skill.core || skill.kind === 'bundled') {
       return c.json({ error: { code: 'NOT_FOUND', message: 'Skill not found' } }, 404);
     }
-    const instructions =
-      skill.kind === 'bundled' ? readBundledInstructions(skill.id) : readInstructions(skill.id);
-    return c.json({ skill, instructions });
+    return c.json({ skill, instructions: readInstructions(skill.id) });
   });
 
   // POST /api/skills — create a user (library) skill, enabled by default
@@ -93,14 +95,11 @@ export function skillsRoutes(db: Database.Database, runManager: RunManager): Hon
   });
 
   // PATCH /api/skills/:id — update name/description/instructions.
-  // bundled (content ships with the app) and core are not editable.
+  // bundled (content ships with the app) and core are hidden → 404.
   app.patch('/:id', async (c) => {
     const existing = getSkill(db, c.req.param('id'));
-    if (!existing || existing.core) {
+    if (!existing || existing.core || existing.kind === 'bundled') {
       return c.json({ error: { code: 'NOT_FOUND', message: 'Skill not found' } }, 404);
-    }
-    if (existing.kind === 'bundled') {
-      return c.json({ error: { code: 'BAD_REQUEST', message: '内置技能不可编辑' } }, 400);
     }
     const body = (await readJsonObject(c)) as UpdateSkillRequest | null;
     if (!body) {
@@ -115,10 +114,11 @@ export function skillsRoutes(db: Database.Database, runManager: RunManager): Hon
     }
   });
 
-  // PATCH /api/skills/:id/toggle — enable/disable (bundled allowed, core blocked)
+  // PATCH /api/skills/:id/toggle — enable/disable library skills. core and
+  // bundled are always effective (hidden → 404, the `enabled` flag is ignored).
   app.patch('/:id/toggle', async (c) => {
     const existing = getSkill(db, c.req.param('id'));
-    if (!existing || existing.core) {
+    if (!existing || existing.core || existing.kind === 'bundled') {
       return c.json({ error: { code: 'NOT_FOUND', message: 'Skill not found' } }, 404);
     }
     const body = (await readJsonObject(c)) as { enabled: boolean } | null;
@@ -134,15 +134,16 @@ export function skillsRoutes(db: Database.Database, runManager: RunManager): Hon
     }
   });
 
-  // DELETE /api/skills/:id — delete (builtIn/core cannot be deleted, only disabled)
+  // DELETE /api/skills/:id — delete (core/bundled hidden → 404; other builtIn
+  // rows are app-owned and cannot be deleted).
   app.delete('/:id', async (c) => {
     const id = c.req.param('id');
     const existing = getSkill(db, id);
-    if (!existing || existing.core) {
+    if (!existing || existing.core || existing.kind === 'bundled') {
       return c.json({ error: { code: 'NOT_FOUND', message: 'Skill not found' } }, 404);
     }
     if (existing.builtIn) {
-      return c.json({ error: { code: 'BAD_REQUEST', message: '内置技能不可删除，可禁用' } }, 400);
+      return c.json({ error: { code: 'BAD_REQUEST', message: '内置技能不可删除' } }, 400);
     }
     deleteSkill(db, id);
     await afterGlobalSkillMutation(db);

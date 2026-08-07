@@ -11,11 +11,11 @@ import { gotoHome, clickNav } from './helpers/navigation';
  * E2E tests for the Skills library (Settings → 技能 tab).
  *
  * Prerequisites: `pnpm dev` running (daemon :3100, web :5173).
- * The daemon seeds bundled skills (docling / wiki-* / wechat-article-extractor /
- * remotion) into the real ~/.molio/skills on startup; the old writing trio
- * (写文章 / 总结提炼 / 润色改写) is hidden as `core`, so these tests assert against
- * the bundled set. Tests that create skills delete them again to avoid
- * polluting the library.
+ * The panel lists USER (library) skills only: bundled skills (docling / wiki-* /
+ * wechat-article-extractor / remotion) and the writing trio (core) are app-owned,
+ * hidden by the API, and always effective — so these tests assert their ABSENCE
+ * and otherwise work with self-created skills. Tests that create skills delete
+ * them again to avoid polluting the library.
  *
  * Authoring is the three-field form (name / description / instructions); the
  * instructions box accepts a whole pasted SKILL.md and auto-extracts the
@@ -33,10 +33,12 @@ async function gotoSkillsTab(page: import('@playwright/test').Page) {
   await clickNav(page, 'settings');
   await page.locator('[data-testid="settings-tab-skills"]').click();
   await expect(page.locator('.sk-shell')).toBeVisible({ timeout: 5_000 });
-  // Wait for the seeded library to render so the initial load storm (StrictMode
-  // doubles every call + default-vault auto-select writes) has settled before we
-  // interact — otherwise a later POST can be queued behind it and look "stuck".
-  await expect(page.locator('.sk-row').first()).toBeVisible({ timeout: 10_000 });
+  // Wait for the library to finish loading (either the list or the empty state —
+  // bundled skills are hidden, so with no user skills there are NO rows) so the
+  // initial load storm (StrictMode doubles every call + default-vault auto-select
+  // writes) has settled before we interact — otherwise a later POST can be queued
+  // behind it and look "stuck".
+  await expect(page.locator('.sk-list, .sk-empty').first()).toBeVisible({ timeout: 10_000 });
 }
 
 /** Dispatch a synthetic paste of `text` into the instructions textarea. */
@@ -49,27 +51,23 @@ async function pasteIntoInstructions(page: import('@playwright/test').Page, text
 }
 
 test.describe('Skills library', () => {
-  test('tab shows the library with bundled skills and the runtime note', async ({ page }) => {
+  test('bundled skills are hidden from the library; runtime note shown', async ({ page }) => {
     await gotoSkillsTab(page);
 
-    // Bundled skills are seeded on daemon startup → at least one bundled badge.
-    await expect(page.locator('.sk-badge--bundled').first()).toBeVisible({ timeout: 5_000 });
-    // A known seeded bundled skill is present.
-    await expect(page.locator('.sk-row', { hasText: 'docling' }).first()).toBeVisible();
+    // Bundled skills are app-owned + always effective → hidden by the API, no
+    // rows or badges for them (a docling row here would mean a regression to
+    // the toggleable design that silently breaks KB panel / channel features).
+    await expect(page.locator('.sk-badge--bundled')).toHaveCount(0);
+    await expect(page.locator('.sk-row', { hasText: 'docling' })).toHaveCount(0);
+    await expect(page.locator('.sk-row', { hasText: 'wiki-query' })).toHaveCount(0);
     // All-runtimes footnote.
     await expect(page.locator('.sk-note')).toBeVisible();
   });
 
-  test('bundled skills cannot be deleted (delete button disabled)', async ({ page }) => {
-    await gotoSkillsTab(page);
-
-    const bundledRow = page.locator('.sk-row', { hasText: 'docling' }).first();
-    await expect(bundledRow).toBeVisible({ timeout: 5_000 });
-    const deleteBtn = bundledRow.locator('[data-testid^="skill-delete-"]').first();
-    await expect(deleteBtn).toBeDisabled();
-  });
-
   test('full lifecycle: create → toggle → edit → delete', async ({ page }) => {
+    // 4 mutations, each response waits for the per-vault fan-out — needs a
+    // wider window than the default 30s on a many-vault install.
+    test.slow();
     await gotoSkillsTab(page);
 
     const unique = `E2E技能${Date.now()}`;
@@ -116,15 +114,35 @@ test.describe('Skills library', () => {
     // ── Delete (two-step confirm) ──
     await renamedRow.locator('[data-testid^="skill-delete-"]').first().click();
     await renamedRow.locator('[data-testid^="skill-delete-confirm-"]').click();
-    await expect(renamedRow).toHaveCount(0, { timeout: 5_000 });
+    // The DELETE response waits for afterGlobalSkillMutation's per-vault fan-out
+    // (~5s warm with 14 vaults, slower cold), so the row-disappearance assertion
+    // needs the same generous window as the create assertions above.
+    await expect(renamedRow).toHaveCount(0, { timeout: 15_000 });
   });
 
   test('duplicate prefills a copy from an existing skill', async ({ page }) => {
+    // create + duplicate-save + 2 deletes, each waiting for the per-vault
+    // fan-out — needs a wider window than the default 30s on many-vault installs.
+    test.slow();
     await gotoSkillsTab(page);
 
+    // Bundled skills are hidden, so duplicate from a self-created source.
+    const srcName = `E2E源技能${Date.now()}`;
     const unique = `E2E副本${Date.now()}`;
-    const src = page.locator('.sk-row', { hasText: 'docling' }).first();
-    await expect(src).toBeVisible({ timeout: 5_000 });
+
+    // ── Create the source skill (three-field form → save) ──
+    await page.locator('[data-testid="skill-new-btn"]').click();
+    await expect(page.getByTestId('skill-form-overlay')).toBeVisible();
+    await page.getByTestId('skill-name-input').fill(srcName);
+    await page.getByTestId('skill-description-input').fill('复制测试的源技能');
+    await page.getByTestId('skill-instructions-input').fill('这是源技能的指令正文。');
+    await page.getByTestId('skill-form-submit').click();
+
+    // Row appearance is the real success signal (generous timeout for the
+    // dev-server request-queue stall).
+    const src = page.locator('.sk-row', { hasText: srcName });
+    await expect(src).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('skill-form-overlay')).toHaveCount(0);
 
     // Duplicate opens the create editor prefilled with the source skill's fields.
     await src.locator('[data-testid^="skill-duplicate-"]').click();
@@ -141,10 +159,13 @@ test.describe('Skills library', () => {
     const row = page.locator('.sk-row', { hasText: unique });
     await expect(row).toBeVisible({ timeout: 15_000 });
 
-    // Cleanup.
+    // Cleanup: delete the copy, then the source.
     await row.locator('[data-testid^="skill-delete-"]').first().click();
     await row.locator('[data-testid^="skill-delete-confirm-"]').click();
-    await expect(row).toHaveCount(0, { timeout: 5_000 });
+    await expect(row).toHaveCount(0, { timeout: 15_000 });
+    await src.locator('[data-testid^="skill-delete-"]').first().click();
+    await src.locator('[data-testid^="skill-delete-confirm-"]').click();
+    await expect(src).toHaveCount(0, { timeout: 15_000 });
   });
 
   test('create form validates the required fields before saving', async ({ page }) => {
@@ -233,7 +254,7 @@ test.describe('Skills library', () => {
     // Cleanup.
     await row.locator('[data-testid^="skill-delete-"]').first().click();
     await row.locator('[data-testid^="skill-delete-confirm-"]').first().click();
-    await expect(row).toHaveCount(0, { timeout: 5_000 });
+    await expect(row).toHaveCount(0, { timeout: 15_000 });
   });
 
   test('save failure shows the error inside the editor, keeping it open', async ({ page }) => {
@@ -305,7 +326,7 @@ test.describe('Skills library', () => {
       // Cleanup: delete the imported skill (mirrors the lifecycle test pattern).
       await row.locator('[data-testid^="skill-delete-"]').first().click();
       await row.locator('[data-testid^="skill-delete-confirm-"]').first().click();
-      await expect(row).toHaveCount(0, { timeout: 5_000 });
+      await expect(row).toHaveCount(0, { timeout: 15_000 });
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

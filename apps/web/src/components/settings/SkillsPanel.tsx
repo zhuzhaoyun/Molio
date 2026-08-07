@@ -12,7 +12,11 @@ interface ModalState {
   initialValues?: Partial<SkillFormValues>;
 }
 
-/** A single skill row: name/description, built-in badge, toggle, edit, delete. */
+/**
+ * A single skill row: toggle, name/description, duplicate, edit, delete.
+ * Only user-managed (library) skills are listed — bundled/core skills are
+ * app-owned, hidden by the API, and always effective.
+ */
 function SkillRow({
   skill,
   confirmingDelete,
@@ -52,11 +56,6 @@ function SkillRow({
       <div className="sk-row__body">
         <div className="sk-row__header">
           <span className="sk-row__name">{skill.name}</span>
-          {skill.kind === 'bundled' ? (
-            <span className="sk-badge sk-badge--bundled">{t('skills.bundled')}</span>
-          ) : (
-            skill.builtIn && <span className="sk-badge sk-badge--builtin">{t('skills.builtIn')}</span>
-          )}
         </div>
         {skill.description && <div className="sk-row__desc">{skill.description}</div>}
       </div>
@@ -65,11 +64,9 @@ function SkillRow({
         <button className="rt-btn rt-btn--sm rt-btn--ghost" data-testid={`skill-duplicate-${skill.id}`} onClick={onDuplicate} disabled={fetching}>
           {t('skills.duplicate')}
         </button>
-        {skill.kind !== 'bundled' && (
-          <button className="rt-btn rt-btn--sm rt-btn--ghost" data-testid={`skill-edit-${skill.id}`} onClick={onEdit} disabled={fetching}>
-            {t('skills.edit')}
-          </button>
-        )}
+        <button className="rt-btn rt-btn--sm rt-btn--ghost" data-testid={`skill-edit-${skill.id}`} onClick={onEdit} disabled={fetching}>
+          {t('skills.edit')}
+        </button>
         {confirmingDelete ? (
           <>
             <button className="rt-btn rt-btn--sm rt-btn--danger" data-testid={`skill-delete-confirm-${skill.id}`} onClick={onDeleteConfirm}>
@@ -84,8 +81,6 @@ function SkillRow({
             className="rt-btn rt-btn--sm rt-btn--ghost"
             data-testid={`skill-delete-${skill.id}`}
             onClick={onDeleteRequest}
-            disabled={skill.builtIn}
-            title={skill.builtIn ? t('skills.deleteConfirm', { name: skill.name }) : undefined}
           >
             {t('skills.delete')}
           </button>
