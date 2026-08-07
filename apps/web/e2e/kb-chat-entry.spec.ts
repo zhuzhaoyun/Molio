@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { createTempVault, cleanupTempVault, type TempVault } from './helpers/cleanup';
+import { mockChatRun, unmockAll } from './helpers/mock-sse';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -21,6 +22,7 @@ test.describe('KB chat entry (scoped buttons)', () => {
     fs.writeFileSync(path.join(vault.path, 'doc.md'), '# Doc\n');
   });
   test.afterAll(async () => { if (vault) await cleanupTempVault(vault); });
+  test.afterEach(async ({ page }) => { await unmockAll(page); });
 
   test('💬问答 opens chat in qa mode with @当前文档 (one click)', async ({ page }) => {
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
@@ -37,6 +39,9 @@ test.describe('KB chat entry (scoped buttons)', () => {
   });
 
   test('📚构建Wiki opens chat + auto-sends (run starts)', async ({ page }) => {
+    // mockChatRun 同时 mock /api/agents → 模拟已配置 agent。真实 CI daemon 无 agent，
+    // 否则 handleBuildWiki 的 `if (!agentId) return` 会静默拦截，面板永不打开（回归）。
+    await mockChatRun(page);
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
@@ -57,6 +62,8 @@ test.describe('KB chat entry (scoped buttons)', () => {
   });
 
   test('💬问答 while a build is active opens a separate qa tab — build tab keeps its thread', async ({ page }) => {
+    // 同上：mock /api/agents → 模拟已配置 agent，否则 build 被 agentId guard 拦截、面板不开。
+    await mockChatRun(page);
     // Open with a file so the 💬问答 (document-scoped) button is available.
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
