@@ -29,6 +29,8 @@ interface DesktopAPI {
   onNavigate: (callback: (payload: { vaultId: string | null; filePath: string }) => void) => () => void;
   /** Signal the renderer has mounted its onNavigate listener; main flushes any queued navigation. */
   notifyReady: () => void;
+  /** Open a new Electron window loading the given SPA path (e.g. "/knowledge?vault=abc"). */
+  openNewWindow: (url: string) => Promise<void>;
 }
 
 declare global {

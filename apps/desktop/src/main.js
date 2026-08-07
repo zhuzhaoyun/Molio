@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell, Menu } from 'electron';
 import { spawn, execSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -176,6 +176,53 @@ async function startDaemonProduction() {
       }
     }, 10000);
   });
+}
+
+/**
+ * Build the application menu. Multi-window replaces the default menu, so the
+ * standard Edit/View/Window roles are kept (copy/paste/DevTools depend on
+ * them). New Window (⌘N / Ctrl+N) clones the focused window's URL — the
+ * daemon is per-process, so every window shares one backend.
+ */
+function buildAppMenu() {
+  const isMac = process.platform === 'darwin';
+  const template = [
+    ...(isMac ? [{ role: 'appMenu' }] : []),
+    {
+      label: '文件',
+      submenu: [
+        { label: '新窗口', accelerator: 'CmdOrCtrl+N', click: () => openNewWindowFromFocused() },
+        ...(isMac ? [] : [{ role: 'quit', label: '退出' }]),
+      ],
+    },
+    { role: 'editMenu' },
+    { role: 'viewMenu' },
+    { role: 'windowMenu' },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+/** Open a new window that clones the focused window's current path+query. */
+function openNewWindowFromFocused() {
+  const win = lastFocusedAppWindow ?? appWindows.values().next().value;
+  // Before the daemon is up there is nothing useful to clone and the window
+  // would stay blank — focus the first window instead.
+  if (!isDevMode() && !daemonReady) {
+    if (win && !win.isDestroyed()) { win.show(); win.focus(); }
+    return;
+  }
+  let url = '';
+  if (win && !win.isDestroyed()) {
+    try {
+      const current = win.webContents.getURL();
+      if (current) {
+        const u = new URL(current);
+        url = u.pathname + u.search;
+      }
+    } catch { url = ''; }
+  }
+  const newWin = createWindow({ url });
+  if (!isDevMode() && daemonReady) loadAppWindow(newWin, url);
 }
 
 /**
@@ -548,17 +595,21 @@ app.whenReady().then(async () => {
     log,
   });
 
-  // ② Create window first (updater IPC needs a window reference).
+  // ② Build the app menu (New Window ⌘N/Ctrl+N etc.) before creating windows —
+  //    the menu's New Window click handler references lastFocusedAppWindow.
+  buildAppMenu();
+
+  // ③ Create window first (updater IPC needs a window reference).
   //    In production the window stays hidden until the daemon is ready.
   const firstWindow = createWindow();
 
-  // ③ Set up auto-updater IMMEDIATELY — before daemon.
+  // ④ Set up auto-updater IMMEDIATELY — before daemon.
   // Even if daemon fails to start, the updater must be operational
   // so we can push fixes to users.
   // Pass killDaemon so the updater can release file locks before install.
   setupAutoUpdater(() => lastFocusedAppWindow ?? (appWindows.values().next().value ?? null), killDaemon);
 
-  // ④ Start daemon last — failure here must not affect updater
+  // ⑤ Start daemon last — failure here must not affect updater
   if (!isDevMode()) {
     try {
       await startDaemonProduction();
@@ -568,12 +619,12 @@ app.whenReady().then(async () => {
       // Daemon failure is not fatal for the updater.
     }
 
-    // ⑤ Bridge daemon memory metrics to ARMS (daemon has no ARMS SDK).
+    // ⑥ Bridge daemon memory metrics to ARMS (daemon has no ARMS SDK).
     if (daemonReady && armsRum) {
       stopDaemonMetrics = startDaemonMetricsPolling({ armsRum, log });
     }
 
-    // ⑥ Only load the real app URL if daemon started successfully.
+    // ⑦ Only load the real app URL if daemon started successfully.
     // If launched via molio:// protocol, navigate to the target instead.
     if (daemonReady) {
       log('info', 'main', `process.argv: ${JSON.stringify(process.argv)}`);
@@ -714,6 +765,14 @@ ipcMain.handle('app:restart', () => {
   log('info', 'main', 'app:restart requested — relaunching');
   app.relaunch();
   app.exit(0);
+});
+
+// 渲染进程请求新开窗口（KB 标签「在新窗口打开」经 preload 到达）。
+ipcMain.handle('app:new-window', (_event, payload) => {
+  const url = typeof payload?.url === 'string' ? payload.url : '';
+  const win = createWindow({ url });
+  if (!isDevMode() && daemonReady) loadAppWindow(win, url);
+  return { ok: true };
 });
 
 // Renderer signals it has mounted and registered its `molio:navigate`

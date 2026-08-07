@@ -71,6 +71,13 @@ const desktopAPI = {
    * molio://open/... fired right after launch still opens the target file.
    */
   notifyReady: () => ipcRenderer.send('molio:renderer-ready'),
+
+  /**
+   * Open a new Electron window loading the given SPA path (e.g. "/knowledge?vault=abc").
+   * Used by the web layer's "在新窗口打开" action; in a plain browser the web
+   * layer falls back to window.open().
+   */
+  openNewWindow: (url) => ipcRenderer.invoke('app:new-window', { url }),
 };
 
 // Updater API — event listeners + actions
