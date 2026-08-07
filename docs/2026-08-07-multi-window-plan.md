@@ -1114,7 +1114,7 @@ Expected: FAIL——当前 `conversationIdRef` 不重置，切 vault 后 `POST /
 
 - [ ] **Step 3: 实现 — useKbChat 重置**
 
-`apps/web/src/hooks/useKbChat.ts` 在 `conversationIdRef` 定义（约 69 行）之后加：
+`apps/web/src/hooks/useKbChat.ts` 在 `conversationIdRef` 定义（约 69 行）之后加 ref 重置：
 
 ```ts
 // A conversation is bound to a vault (cwd). Switching vault must not continue
@@ -1122,6 +1122,19 @@ Expected: FAIL——当前 `conversationIdRef` 不重置，切 vault 后 `POST /
 useEffect(() => {
   conversationIdRef.current = null;
 }, [vaultPath]);
+```
+
+> ⚠️ **重要（T5 实测发现）**：仅重置 `conversationIdRef` **不够**——`useKbChat.createRun` 的请求体 `conversationId: ctx.conversationId ?? conversationIdRef.current`，而 `ctx.conversationId` 来自 `useChatCore` 的 `state.conversationId`（首次 `beginNewRun` 设置，跨 vault 存活、优先级更高）。必须同时重置 chat core：在 `const chat = useChatCore(...)` 之后加
+
+```ts
+// 会话血缘还存于 useChatCore 的 state（state.conversationId），跨 vault 存活且在
+// 下次 createRun 作为 ctx.conversationId 传回——只重置 ref 仍会泄漏旧 vault 线程
+// （vault 切换 E2E 已证实）。整体重置 chat core：清消息、清 conversationId/runId、
+// 关 SSE。不取消 daemon 进程（那是 close() 的职责，遗留 run 与中途关面板同行为）。
+const chatReset = chat.reset;
+useEffect(() => {
+  chatReset();
+}, [vaultPath, chatReset]);
 ```
 
 （`useEffect` 已在文件顶部 import；`vaultPath` 来自 `opts` 解构。）
