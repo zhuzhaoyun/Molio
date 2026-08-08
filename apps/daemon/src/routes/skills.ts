@@ -22,6 +22,7 @@ import type {
   UpdateSkillRequest,
   ImportSkillRequest,
   PrefillRequest,
+  InstallHubSkillRequest,
 } from '@molio/contracts';
 import type { RunManager } from '../core/RunManager.js';
 import {
@@ -37,6 +38,14 @@ import {
 import { afterGlobalSkillMutation } from '../core/skills/vault-config.js';
 import { importFromRaw, importFromFolder, SkillImportError } from '../core/skills/importer.js';
 import { prefillFromContent } from '../core/skills/prefill.js';
+import {
+  fetchHubSkills,
+  fetchHubCategories,
+  installHubSkill,
+  listHubInstalls,
+  removeHubInstallBySkillId,
+  HubError,
+} from '../core/skills/hub.js';
 
 /**
  * Parse the request body as a JSON object. Returns null for malformed JSON,
@@ -62,6 +71,72 @@ export function skillsRoutes(db: Database.Database, runManager: RunManager): Hon
   // app functionality, always effective and not configurable).
   app.get('/', (c) => {
     return c.json({ skills: listSkills(db).filter((s) => !s.core && s.kind !== 'bundled') });
+  });
+
+  // ─── Skill hub (skillhub.cn marketplace, proxied by the daemon) ───
+  // Registered BEFORE the by-id routes: /hub/* are catalog operations, never a
+  // skill id lookup.
+
+  // GET /api/skills/hub/skills — browse/search the hub catalog, annotated with
+  // the local install state (installed / installedVersion) from hub_skill_installs.
+  app.get('/hub/skills', async (c) => {
+    try {
+      const q = c.req.query();
+      const page = Number(q['page']);
+      const pageSize = Number(q['pageSize']);
+      const result = await fetchHubSkills({
+        page: Number.isFinite(page) && page > 0 ? Math.floor(page) : undefined,
+        pageSize: Number.isFinite(pageSize) && pageSize > 0 ? Math.floor(pageSize) : undefined,
+        keyword: q['keyword'],
+        category: q['category'],
+      });
+      const installs = new Map(listHubInstalls(db).map((r) => [r.slug, r]));
+      const skills = result.skills.map((s) => {
+        const rec = installs.get(s.slug);
+        // An install record whose skill row vanished (manual DB edits) is stale:
+        // don't claim "installed" for it — the next install re-creates cleanly.
+        if (!rec || !getSkill(db, rec.skill_id)) return s;
+        return { ...s, installed: true, installedVersion: rec.version };
+      });
+      return c.json({ skills, total: result.total, page: result.page, pageSize: result.pageSize });
+    } catch (err) {
+      return mapHubError(c, err);
+    }
+  });
+
+  // GET /api/skills/hub/categories — hub category list for the store filter.
+  app.get('/hub/categories', async (c) => {
+    try {
+      const categories = await fetchHubCategories();
+      return c.json({ categories });
+    } catch (err) {
+      return mapHubError(c, err);
+    }
+  });
+
+  // POST /api/skills/hub/install — download a hub skill and import it into the
+  // library (or refresh it in place when the slug is already installed), then
+  // fan out to every vault like any other skill mutation.
+  app.post('/hub/install', async (c) => {
+    const body = (await readJsonObject(c)) as InstallHubSkillRequest | null;
+    if (!body || typeof body.slug !== 'string' || !body.slug.trim()) {
+      return c.json({ error: { code: 'BAD_REQUEST', message: 'slug is required' } }, 400);
+    }
+    try {
+      const result = await installHubSkill(db, {
+        slug: body.slug,
+        version: typeof body.version === 'string' ? body.version : undefined,
+        namespace: typeof body.namespace === 'string' ? body.namespace : undefined,
+      });
+      await afterGlobalSkillMutation(db);
+      return c.json({ skill: result.skill, updated: result.updated, version: result.version }, 201);
+    } catch (err) {
+      if (err instanceof SkillImportError) {
+        const status = err.code === 'NOT_FOUND' ? 404 : 400;
+        return c.json({ error: { code: err.code, message: err.message } }, status);
+      }
+      return mapHubError(c, err);
+    }
   });
 
   // GET /api/skills/:id — one skill + its instructions (for the edit/duplicate
@@ -146,6 +221,8 @@ export function skillsRoutes(db: Database.Database, runManager: RunManager): Hon
       return c.json({ error: { code: 'BAD_REQUEST', message: '内置技能不可删除' } }, 400);
     }
     deleteSkill(db, id);
+    // Drop the hub mapping too, so the store shows this slug as installable again.
+    removeHubInstallBySkillId(db, id);
     await afterGlobalSkillMutation(db);
     return c.body(null, 204);
   });
@@ -198,6 +275,24 @@ function errMessage(err: unknown): string {
 function mapStoreError(c: Context, err: unknown) {
   if (err instanceof SkillNotFoundError) {
     return c.json({ error: { code: 'NOT_FOUND', message: 'Skill not found' } }, 404);
+  }
+  return c.json({ error: { code: 'INTERNAL', message: errMessage(err) } }, 500);
+}
+
+/**
+ * Map hub-layer errors to HTTP: unreachable hub / bad envelope → 502 (the UI
+ * shows the message verbatim), unknown slug → 404, invalid input/package → 400.
+ */
+function mapHubError(c: Context, err: unknown) {
+  if (err instanceof HubError) {
+    switch (err.code) {
+      case 'NOT_FOUND':
+        return c.json({ error: { code: err.code, message: err.message } }, 404);
+      case 'BAD_REQUEST':
+        return c.json({ error: { code: err.code, message: err.message } }, 400);
+      case 'HUB_UNAVAILABLE':
+        return c.json({ error: { code: err.code, message: err.message } }, 502);
+    }
   }
   return c.json({ error: { code: 'INTERNAL', message: errMessage(err) } }, 500);
 }

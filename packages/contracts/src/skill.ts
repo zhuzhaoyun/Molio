@@ -101,3 +101,72 @@ export interface SkillDetailResponse {
 export interface PrefillResponse {
   prefill: PrefillResult;
 }
+
+// ─── Skill hub (marketplace) types ───
+//
+// The daemon proxies the public skillhub.cn catalog (browse/search) and
+// installs a hub skill by downloading its zip and importing it through the
+// same pipeline as a local folder import — an installed hub skill is just a
+// library skill plus a row in the daemon's `hub_skill_installs` table.
+
+/** One catalog entry from the hub, mapped to the fields the UI needs. */
+export interface HubSkillSummary {
+  /** Unique hub slug — the key for the download endpoint. */
+  slug: string;
+  name: string;
+  /** Chinese description when the hub has one, else the original. */
+  description: string;
+  version: string;
+  downloads: number;
+  /** Author handle (the hub namespace owner). */
+  ownerName: string;
+  /** Hub namespace handle — passed back to the download endpoint when present. */
+  namespace?: string;
+  category: string;
+  /** Author/skill verified by the hub. */
+  verified: boolean;
+  /** Skill needs an external API key to be useful (labels.requires_api_key). */
+  requiresApiKey: boolean;
+  updatedAt: number; // epoch ms
+  /** Annotated by the daemon: this slug is already installed locally. */
+  installed?: boolean;
+  /** Version recorded at install/update time (only when installed). */
+  installedVersion?: string;
+}
+
+export interface HubSkillsQuery {
+  page?: number;
+  pageSize?: number;
+  keyword?: string;
+  category?: string;
+}
+
+export interface HubSkillsListResponse {
+  skills: HubSkillSummary[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface HubCategory {
+  key: string;
+  name: string;
+}
+
+export interface HubCategoriesResponse {
+  categories: HubCategory[];
+}
+
+export interface InstallHubSkillRequest {
+  slug: string;
+  version?: string;
+  namespace?: string;
+}
+
+export interface InstallHubSkillResponse {
+  skill: SkillManifestEntry;
+  /** True when the slug was already installed and its content was refreshed. */
+  updated: boolean;
+  /** The version actually installed (read from the downloaded package). */
+  version: string;
+}

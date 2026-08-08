@@ -82,12 +82,14 @@
       "paths": [
         "apps/web/src/components/settings/*",
         "apps/web/src/hooks/useSkills*",
+        "apps/web/src/hooks/useSkillHub*",
         "apps/web/src/stores/skillPrefillStore.*",
         "apps/web/src/styles/settings.css",
+        "apps/web/e2e/skill-hub.spec.ts",
         "apps/daemon/src/core/skills/*",
         "apps/daemon/src/routes/skills.ts"
       ],
-      "specs": ["settings", "skills"]
+      "specs": ["settings", "skills", "skill-hub"]
     },
     "history": {
       "paths": [
@@ -150,6 +152,7 @@
     "runtimes-page": { "priority": "P1", "file": "runtimes-page.spec.ts" },
     "settings": { "priority": "P1", "file": "settings.spec.ts" },
     "skills": { "priority": "P1", "file": "skills.spec.ts" },
+    "skill-hub": { "priority": "P1", "file": "skill-hub.spec.ts" },
     "drag-drop-import": { "priority": "P1", "file": "drag-drop-import.spec.ts" },
     "kb-folder-ops": { "priority": "P1", "file": "kb-folder-ops.spec.ts" },
     "kb-folder-drag-real": { "priority": "P1", "file": "kb-folder-drag-real.spec.ts" },

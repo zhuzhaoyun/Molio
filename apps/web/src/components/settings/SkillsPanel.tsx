@@ -4,6 +4,7 @@ import { useSkills } from '../../hooks/useSkills';
 import { useI18n } from '../../i18n';
 import { api } from '../../api/client';
 import { SkillEditor, type SkillFormMode, type SkillFormValues } from './SkillEditor';
+import { SkillHubPanel } from './SkillHubPanel';
 
 interface ModalState {
   mode: SkillFormMode;
@@ -96,6 +97,11 @@ export function SkillsPanel() {
     skills, loading, error,
     refresh, createSkill, updateSkill, toggleSkill, deleteSkill, importSkill,
   } = useSkills();
+
+  // Segmented view: '我的技能' (library) vs '技能商店' (skillhub.cn catalog).
+  // Kept local to the panel — no route/NavRail change, and switching back to
+  // 'mine' after an install shows the freshly refreshed library list.
+  const [view, setView] = useState<'mine' | 'hub'>('mine');
 
   const [modal, setModal] = useState<ModalState | null>(null);
   const [busy, setBusy] = useState(false);
@@ -227,54 +233,79 @@ export function SkillsPanel() {
           </span>
         </div>
         <div className="sk-header__actions">
-          <button className="rt-btn" data-testid="skill-new-btn" onClick={openNew}>
-            {t('skills.new')}
-          </button>
+          {view === 'mine' && (
+            <button className="rt-btn" data-testid="skill-new-btn" onClick={openNew}>
+              {t('skills.new')}
+            </button>
+          )}
         </div>
       </div>
 
-      <div className="sk-content">
-        {error && (
-          <div className="rt-error">
-            <span>{error}</span>
-            <button className="rt-btn rt-btn--sm rt-btn--ghost" onClick={refresh}>{t('skills.retry')}</button>
-          </div>
-        )}
-        {formError && (
-          <div className="rt-error">
-            <span>{formError}</span>
-          </div>
-        )}
-
-        {loading ? (
-          <div className="rt-loading">{t('skills.loading')}</div>
-        ) : skills.length === 0 ? (
-          <div className="rt-empty">
-            <div className="rt-empty__icon">🧩</div>
-            <div className="rt-empty__text">{t('skills.empty')}</div>
-            <div className="rt-empty__hint">{t('skills.emptyHint')}</div>
-          </div>
-        ) : (
-          <div className="sk-list">
-            {skills.map((skill) => (
-              <SkillRow
-                key={skill.id}
-                skill={skill}
-                confirmingDelete={confirmDeleteId === skill.id}
-                fetching={fetchingId === skill.id}
-                onToggle={(enabled) => handleToggle(skill.id, enabled)}
-                onEdit={() => openEdit(skill)}
-                onDuplicate={() => openDuplicate(skill)}
-                onDeleteRequest={() => setConfirmDeleteId(skill.id)}
-                onDeleteConfirm={() => handleDeleteConfirm(skill.id)}
-                onDeleteCancel={() => setConfirmDeleteId(null)}
-              />
-            ))}
-          </div>
-        )}
-
-        <p className="sk-note">{t('skills.runtimeNote')}</p>
+      <div className="sk-seg">
+        <button
+          className={`sk-seg__item${view === 'mine' ? ' sk-seg__item--active' : ''}`}
+          data-testid="skills-view-mine"
+          onClick={() => setView('mine')}
+        >
+          {t('skills.viewMine')}
+        </button>
+        <button
+          className={`sk-seg__item${view === 'hub' ? ' sk-seg__item--active' : ''}`}
+          data-testid="skills-view-hub"
+          onClick={() => setView('hub')}
+        >
+          {t('skills.viewHub')}
+        </button>
       </div>
+
+      {view === 'hub' ? (
+        <div className="sk-content">
+          <SkillHubPanel onInstalled={() => refresh()} />
+        </div>
+      ) : (
+        <div className="sk-content">
+          {error && (
+            <div className="rt-error">
+              <span>{error}</span>
+              <button className="rt-btn rt-btn--sm rt-btn--ghost" onClick={refresh}>{t('skills.retry')}</button>
+            </div>
+          )}
+          {formError && (
+            <div className="rt-error">
+              <span>{formError}</span>
+            </div>
+          )}
+
+          {loading ? (
+            <div className="rt-loading">{t('skills.loading')}</div>
+          ) : skills.length === 0 ? (
+            <div className="rt-empty">
+              <div className="rt-empty__icon">🧩</div>
+              <div className="rt-empty__text">{t('skills.empty')}</div>
+              <div className="rt-empty__hint">{t('skills.emptyHint')}</div>
+            </div>
+          ) : (
+            <div className="sk-list">
+              {skills.map((skill) => (
+                <SkillRow
+                  key={skill.id}
+                  skill={skill}
+                  confirmingDelete={confirmDeleteId === skill.id}
+                  fetching={fetchingId === skill.id}
+                  onToggle={(enabled) => handleToggle(skill.id, enabled)}
+                  onEdit={() => openEdit(skill)}
+                  onDuplicate={() => openDuplicate(skill)}
+                  onDeleteRequest={() => setConfirmDeleteId(skill.id)}
+                  onDeleteConfirm={() => handleDeleteConfirm(skill.id)}
+                  onDeleteCancel={() => setConfirmDeleteId(null)}
+                />
+              ))}
+            </div>
+          )}
+
+          <p className="sk-note">{t('skills.runtimeNote')}</p>
+        </div>
+      )}
 
       <SkillEditor
         show={modal !== null}

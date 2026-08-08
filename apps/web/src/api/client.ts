@@ -7,6 +7,8 @@ import type {
   GraphData, SearchResult, SearchResponse,
   SkillManifestEntry, SkillDetailResponse, CreateSkillRequest, UpdateSkillRequest,
   ImportSkillRequest, PrefillResult,
+  HubSkillsQuery, HubSkillsListResponse, HubCategoriesResponse,
+  InstallHubSkillRequest, InstallHubSkillResponse,
 } from '@molio/contracts';
 
 export type WeixinLoginStatus = 'idle' | 'waiting_scan' | 'scanned' | 'logged_in' | 'error';
@@ -869,6 +871,47 @@ export const api = {
     }
     const data = await res.json();
     return data.prefill;
+  },
+
+  // ─── Skill hub (store) ───
+
+  /** Browse/search the hub catalog (proxied by the daemon), with install state. */
+  async listHubSkills(query: HubSkillsQuery = {}): Promise<HubSkillsListResponse> {
+    const params = new URLSearchParams();
+    if (query.page) params.set('page', String(query.page));
+    if (query.pageSize) params.set('pageSize', String(query.pageSize));
+    if (query.keyword?.trim()) params.set('keyword', query.keyword.trim());
+    if (query.category?.trim()) params.set('category', query.category.trim());
+    const qs = params.toString();
+    const res = await fetch(`${BASE}/skills/hub/skills${qs ? `?${qs}` : ''}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message ?? `Failed to fetch hub skills: ${res.status}`);
+    }
+    return res.json();
+  },
+
+  async hubCategories(): Promise<HubCategoriesResponse> {
+    const res = await fetch(`${BASE}/skills/hub/categories`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message ?? `Failed to fetch hub categories: ${res.status}`);
+    }
+    return res.json();
+  },
+
+  /** Install (or refresh) a hub skill; the daemon downloads and imports it. */
+  async installHubSkill(req: InstallHubSkillRequest): Promise<InstallHubSkillResponse> {
+    const res = await fetch(`${BASE}/skills/hub/install`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message ?? `Failed to install hub skill: ${res.status}`);
+    }
+    return res.json();
   },
 };
 

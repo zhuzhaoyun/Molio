@@ -818,3 +818,216 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Segmented view switch — 我的技能 / 技能商店
+   ═══════════════════════════════════════════════════════════ */
+
+.sk-seg {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 2px;
+  padding: 3px;
+  margin: 12px 24px 0;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  flex-shrink: 0;
+}
+
+.sk-seg__item {
+  padding: 6px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.sk-seg__item:hover {
+  color: var(--text-strong);
+}
+
+.sk-seg__item--active {
+  background: var(--bg-panel);
+  color: var(--text-strong);
+  box-shadow: var(--shadow-xs);
+}
+
+.sk-seg__item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Skill Hub (.hub-*) — 技能商店 (skillhub.cn catalog)
+   ═══════════════════════════════════════════════════════════ */
+
+.hub-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.hub-toolbar {
+  display: flex;
+  gap: 8px;
+}
+
+.hub-search {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Long-hand background-color (NOT the shorthand): base.css paints the custom
+   <select> arrow via background-image/* and the shorthand would wipe it. */
+.hub-category {
+  flex: 0 0 auto;
+  max-width: 200px;
+  padding: 8px 28px 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text);
+  background-color: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color 120ms ease;
+}
+
+.hub-category:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* Transient install feedback banner (success auto-hides). */
+.hub-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  border-radius: var(--radius-sm);
+}
+
+.hub-notice--success {
+  background: var(--green-bg);
+  border: 1px solid var(--green-border);
+  color: var(--green);
+}
+
+.hub-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.hub-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color 120ms ease;
+}
+
+.hub-card:hover {
+  border-color: var(--border-strong);
+}
+
+.hub-card__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.hub-card__name {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hub-badge {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.hub-badge--verified {
+  color: var(--green);
+  border-color: var(--green-border);
+  background: var(--green-bg);
+}
+
+.hub-card__desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  /* Fixed two-line slot keeps card heights aligned across the grid. */
+  min-height: 36px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.hub-card__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.hub-card__author {
+  max-width: 40%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hub-card__actions {
+  display: flex;
+  margin-top: auto;
+}
+
+.hub-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding-top: 8px;
+}
+
+.hub-footer__total {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.hub-shell .sk-note a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.hub-shell .sk-note a:hover {
+  text-decoration: underline;
+}

@@ -102,6 +102,13 @@ export type {
   SkillResponse,
   SkillDetailResponse,
   PrefillResponse,
+  HubSkillSummary,
+  HubSkillsQuery,
+  HubSkillsListResponse,
+  HubCategory,
+  HubCategoriesResponse,
+  InstallHubSkillRequest,
+  InstallHubSkillResponse,
 } from './skill.js';
 
 // SKILL.md generate/parse primitives (runtime values, shared daemon ↔ web).

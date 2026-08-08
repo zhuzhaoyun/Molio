@@ -156,6 +156,20 @@ function migrate(db: SqliteDb): void {
       value TEXT NOT NULL,
       updated_at INTEGER NOT NULL
     );
+
+    -- Skill-hub (skillhub.cn) install registry: which hub slugs are installed
+    -- and which local skill row they became. Lets the store UI show an
+    -- "installed/update" state and lets reinstall refresh the same skill id in
+    -- place (keeping the master-switch state). Deleting the skill row removes
+    -- the mapping (routes/skills.ts DELETE handler).
+    CREATE TABLE IF NOT EXISTS hub_skill_installs (
+      slug         TEXT PRIMARY KEY,
+      skill_id     TEXT NOT NULL,
+      version      TEXT NOT NULL DEFAULT '',
+      namespace    TEXT NOT NULL DEFAULT '',
+      installed_at INTEGER NOT NULL,
+      updated_at   INTEGER NOT NULL
+    );
   `);
 
   addColumnIfMissing(db, 'conversations', 'channel_type', "TEXT NOT NULL DEFAULT 'desktop'");
