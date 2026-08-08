@@ -61,8 +61,10 @@ test.describe('Skills library', () => {
     await expect(page.locator('.sk-badge--bundled')).toHaveCount(0);
     await expect(page.locator('.sk-row', { hasText: 'docling' })).toHaveCount(0);
     await expect(page.locator('.sk-row', { hasText: 'wiki-query' })).toHaveCount(0);
-    // All-runtimes footnote.
-    await expect(page.locator('.sk-note')).toBeVisible();
+    // All-runtimes footnote. Scoped to the mine pane: both panes stay mounted
+    // now (keep-alive for hub search state), so the hub pane's source note is
+    // also in the DOM and an unscoped `.sk-note` matches two elements.
+    await expect(page.getByTestId('skills-pane-mine').locator('.sk-note')).toBeVisible();
   });
 
   test('full lifecycle: create → toggle → edit → delete', async ({ page }) => {

@@ -66,7 +66,12 @@ function fakeHubFetch(opts: { failAll?: boolean } = {}): typeof fetch {
                 labels: { requires_api_key: 'false' },
                 updated_at: 1786000000000,
               },
-              { slug: 'beta-skill', name: 'Beta', description: 'beta skill' },
+              {
+                slug: 'beta-skill',
+                name: 'Beta',
+                description: 'beta skill',
+                namespace: { handle: 'bob' },
+              },
             ],
           },
         }),
@@ -80,12 +85,14 @@ function fakeHubFetch(opts: { failAll?: boolean } = {}): typeof fetch {
       );
     }
     if (url.includes('/api/v1/download')) {
-      if (!url.includes('slug=alpha-skill')) {
+      const slugMatch = /slug=([\w.-]+)/.exec(url);
+      const slug = slugMatch?.[1];
+      if (slug !== 'alpha-skill' && slug !== 'beta-skill') {
         return new Response('missing', { status: 404 });
       }
       const zip = zipOf({
         'SKILL.md': SKILL_MD('商店技能正文', '1.0.0'),
-        '_meta.json': JSON.stringify({ slug: 'alpha-skill', version: '1.0.0' }),
+        '_meta.json': JSON.stringify({ slug, version: '1.0.0' }),
       });
       return new Response(zip, { status: 200, headers: { 'Content-Type': 'application/zip' } });
     }
@@ -212,6 +219,47 @@ describe('Skills hub routes', () => {
     assert.equal(del.status, 204);
 
     const hub = (await json(await app.request('/api/skills/hub/skills'))) as unknown as HubSkillsListResponse;
+    const alpha = hub.skills.find((s) => s.slug === 'alpha-skill');
+    assert.ok(alpha);
+    assert.notEqual(alpha.installed, true);
+  });
+
+  it('install registry keys on (namespace, slug): same slug coexists across namespaces', async () => {
+    // beta's catalog entry carries namespace 'bob'; install it under bob…
+    const r1 = await app.request('/api/skills/hub/install', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slug: 'beta-skill', namespace: 'bob' }),
+    });
+    assert.equal(r1.status, 201);
+    const b1 = (await json(r1)) as unknown as InstallHubSkillResponse;
+    assert.equal(b1.updated, false);
+
+    // …and under a second namespace: same slug, but a separate skill row
+    // (a slug-only registry would have silently refreshed bob's install).
+    const r2 = await app.request('/api/skills/hub/install', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slug: 'beta-skill', namespace: 'carol' }),
+    });
+    assert.equal(r2.status, 201);
+    const b2 = (await json(r2)) as unknown as InstallHubSkillResponse;
+    assert.equal(b2.updated, false);
+    assert.notEqual(b1.skill.id, b2.skill.id);
+
+    // A namespaced install of alpha must NOT annotate the namespace-less
+    // catalog entry — the annotation key is (namespace, slug) too.
+    const r3 = await app.request('/api/skills/hub/install', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slug: 'alpha-skill', namespace: 'alice' }),
+    });
+    assert.equal(r3.status, 201);
+
+    const hub = (await json(await app.request('/api/skills/hub/skills'))) as unknown as HubSkillsListResponse;
+    const beta = hub.skills.find((s) => s.slug === 'beta-skill');
+    assert.ok(beta);
+    assert.equal(beta.installed, true); // bob's record matches the catalog entry's namespace
     const alpha = hub.skills.find((s) => s.slug === 'alpha-skill');
     assert.ok(alpha);
     assert.notEqual(alpha.installed, true);

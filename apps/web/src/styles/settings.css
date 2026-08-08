@@ -453,6 +453,12 @@
   padding: 16px 24px 24px;
 }
 
+/* Both skill panes stay mounted for state preservation; the inactive one is
+   hidden rather than unmounted (see SkillsPanel). */
+.sk-content--hidden {
+  display: none;
+}
+
 .sk-list {
   display: flex;
   flex-direction: column;
@@ -876,11 +882,15 @@
 
 .hub-toolbar {
   display: flex;
+  /* Narrow windows: let the category select drop below the search field
+     instead of squeezing the search input to zero / overflowing the row. */
+  flex-wrap: wrap;
   gap: 8px;
 }
 
 .hub-search {
-  flex: 1;
+  /* 160px basis: once the row can't hold search + select, wrap kicks in. */
+  flex: 1 1 160px;
   min-width: 0;
 }
 

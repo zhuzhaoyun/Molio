@@ -8,9 +8,12 @@
  * the SAME pipeline as a local folder import (importer.importFromFolder →
  * createSkill with sourceDir), so an installed hub skill is just a library
  * skill — toggle / edit / delete / per-vault sync all reuse the existing
- * machinery. The `hub_skill_installs` table remembers slug → skill id so the
- * store can show "installed" and a reinstall refreshes the same skill in place
- * (keeping its master-switch state) instead of duplicating it.
+ * machinery. The `hub_skill_installs` table remembers (namespace, slug) →
+ * skill id so the store can show "installed" and a reinstall refreshes the
+ * same skill in place (keeping its master-switch state) instead of
+ * duplicating it. Slugs are NOT globally unique on the hub — the namespace
+ * is part of the identity, so same-slug skills from different authors
+ * coexist as separate installs.
  *
  * The hub API needs no auth for browse/download:
  *   GET <base>/api/skills?page=&pageSize=&keyword=&category=   catalog list
@@ -22,7 +25,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { unzipSync } from 'fflate';
+import { Unzip, UnzipInflate } from 'fflate';
 import type Database from 'better-sqlite3';
 import { parseSkillMd } from '@molio/contracts';
 import type {
@@ -33,7 +36,7 @@ import type {
   SkillManifestEntry,
 } from '@molio/contracts';
 import { MAX_IMPORT_FILES, MAX_IMPORT_BYTES, importFromFolder } from './importer.js';
-import { copyDirSync } from './dirsync.js';
+import { mirrorDirIfChanged } from './dirsync.js';
 import { skillContentDir, type SkillPathsOpts } from './paths.js';
 import { getSkill } from './store.js';
 
@@ -252,31 +255,81 @@ async function downloadHubZip(
   });
 }
 
+/** Test/limit-injection knob for extractSkillZip (defaults = import limits). */
+export interface ZipExtractLimits {
+  maxFiles: number;
+  /** Cumulative UNCOMPRESSED bytes across all entries. */
+  maxBytes: number;
+}
+
+/**
+ * Total entry count recorded in the zip's end-of-central-directory record, or
+ * null when the record is missing (truncated / not a zip). The streaming
+ * decoder below stops silently at some structural corruptions, so this is the
+ * integrity check: extracted entry count must match the declared count.
+ */
+function zipDeclaredEntryCount(zipBytes: Uint8Array): number | null {
+  const len = zipBytes.length;
+  if (len < 22) return null; // smallest possible EOCD
+  // EOCD sits at the very end, except for an optional comment (≤ 65535 bytes).
+  const scanFrom = Math.max(0, len - 22 - 65535);
+  for (let i = len - 22; i >= scanFrom; i -= 1) {
+    if (
+      zipBytes[i] === 0x50 && zipBytes[i + 1] === 0x4b &&
+      zipBytes[i + 2] === 0x05 && zipBytes[i + 3] === 0x06
+    ) {
+      return (zipBytes[i + 10] ?? 0) | ((zipBytes[i + 11] ?? 0) << 8);
+    }
+  }
+  return null;
+}
+
 /**
  * Extract a skill zip into `destDir` with the two untrusted-archive defenses:
  *  - zip-slip: entry paths are normalized, must stay relative, and their
  *    resolved target must remain inside destDir (rejects `../` and absolute
  *    paths, including Windows drive-letter paths);
- *  - zip bomb: cumulative file count / uncompressed bytes are bounded by the
- *    same limits folder imports enforce (MAX_IMPORT_FILES / MAX_IMPORT_BYTES).
+ *  - zip bomb: the caps are enforced on the bytes ACTUALLY produced by
+ *    decompression, entry by entry, via fflate's streaming Unzip. This
+ *    matters because the download cap bounds the COMPRESSED stream only — a
+ *    high-ratio archive (e.g. repeated zeros) can expand to many times that,
+ *    and a one-shot unzipSync would materialize all of it in memory before
+ *    any size check could run. Here a cap violation aborts mid-stream with
+ *    memory bounded by the cap itself. Header-declared sizes are NOT trusted
+ *    (they can lie); the cumulative count of real decompressed bytes is the
+ *    source of truth. `limits` overrides the caps for tests.
+ *
+ * Synchronous: UnzipInflate is the sync decoder, so every file event fires
+ * inside push() and cap errors propagate directly to the caller.
  */
-export function extractSkillZip(zipBytes: Uint8Array, destDir: string): void {
+export function extractSkillZip(zipBytes: Uint8Array, destDir: string, limits?: ZipExtractLimits): void {
+  const maxFiles = limits?.maxFiles ?? MAX_IMPORT_FILES;
+  const maxBytes = limits?.maxBytes ?? MAX_IMPORT_BYTES;
+
   if (zipBytes.length < 2 || zipBytes[0] !== 0x50 || zipBytes[1] !== 0x4b) {
     throw new HubError('BAD_REQUEST', '下载的内容不是有效的 zip 技能包');
   }
-  let entries: Record<string, Uint8Array>;
-  try {
-    entries = unzipSync(zipBytes);
-  } catch (err) {
-    throw new HubError('BAD_REQUEST', `技能包解压失败：${errMsg(err)}`);
+  const declaredEntries = zipDeclaredEntryCount(zipBytes);
+  if (declaredEntries === null) {
+    throw new HubError('BAD_REQUEST', '下载的内容不是有效的 zip 技能包');
   }
 
   const destAbs = path.resolve(destDir);
   fs.mkdirSync(destAbs, { recursive: true });
+  let seenEntries = 0;
   let files = 0;
   let bytes = 0;
-  for (const [rawName, data] of Object.entries(entries)) {
-    if (rawName.endsWith('/')) continue; // directory entry
+  let fd: number | null = null;
+
+  const unzipper = new Unzip();
+  unzipper.register(UnzipInflate);
+  unzipper.onfile = (file) => {
+    seenEntries += 1;
+    const rawName = file.name;
+    if (rawName.endsWith('/')) {
+      file.terminate(); // directory entry — nothing to write
+      return;
+    }
     const rel = rawName.replace(/\\/g, '/').replace(/^\/+/, '');
     const segments = rel.split('/');
     if (!rel || segments.some((seg) => seg === '' || seg === '.' || seg === '..')) {
@@ -287,15 +340,50 @@ export function extractSkillZip(zipBytes: Uint8Array, destDir: string): void {
       throw new HubError('BAD_REQUEST', `技能包包含不安全的文件路径：${rawName}`);
     }
     files += 1;
-    bytes += data.byteLength;
-    if (files > MAX_IMPORT_FILES) {
-      throw new HubError('BAD_REQUEST', `技能包文件数超过上限（最多 ${MAX_IMPORT_FILES} 个文件）`);
-    }
-    if (bytes > MAX_IMPORT_BYTES) {
-      throw new HubError('BAD_REQUEST', `技能包解压后过大（最大 ${Math.round(MAX_IMPORT_BYTES / 1024 / 1024)} MB）`);
+    if (files > maxFiles) {
+      throw new HubError('BAD_REQUEST', `技能包文件数超过上限（最多 ${maxFiles} 个文件）`);
     }
     fs.mkdirSync(path.dirname(target), { recursive: true });
-    fs.writeFileSync(target, data);
+    fd = fs.openSync(target, 'w');
+    file.ondata = (err, chunk, final) => {
+      if (err) {
+        throw new HubError('BAD_REQUEST', `技能包解压失败：${errMsg(err)}`);
+      }
+      bytes += chunk.byteLength;
+      if (bytes > maxBytes) {
+        throw new HubError(
+          'BAD_REQUEST',
+          `技能包解压后过大（最大 ${Math.round(maxBytes / 1024 / 1024)} MB）`,
+        );
+      }
+      if (chunk.byteLength > 0 && fd !== null) fs.writeSync(fd, chunk);
+      if (final && fd !== null) {
+        fs.closeSync(fd);
+        fd = null;
+      }
+    };
+    file.start();
+  };
+
+  try {
+    unzipper.push(zipBytes, true);
+  } catch (err) {
+    if (err instanceof HubError) throw err;
+    throw new HubError('BAD_REQUEST', `技能包解压失败：${errMsg(err)}`);
+  } finally {
+    if (fd !== null) {
+      try {
+        fs.closeSync(fd);
+      } catch {
+        // best-effort: extraction is aborting anyway
+      }
+    }
+  }
+
+  // 0xffff marks a zip64 archive; those are far beyond the file cap anyway
+  // (which would have fired during push), so skip the comparison there.
+  if (declaredEntries < 0xffff && seenEntries !== declaredEntries) {
+    throw new HubError('BAD_REQUEST', '技能包不完整或已损坏，请重试');
   }
   if (files === 0) {
     throw new HubError('BAD_REQUEST', '技能包是空的');
@@ -324,6 +412,9 @@ function readPackageVersion(dir: string): string {
 }
 
 // ─── Install registry (hub_skill_installs) ───
+//
+// Identity is (namespace, slug) — the hub allows the same slug under
+// different namespaces. `namespace` is '' for catalog entries without one.
 
 export interface HubInstallRecord {
   slug: string;
@@ -334,12 +425,22 @@ export interface HubInstallRecord {
   updated_at: number;
 }
 
+/** Map key shared by the in-memory annotation map and the in-flight guard. */
+export function hubInstallKey(slug: string, namespace: string | null | undefined): string {
+  return `${(namespace ?? '').trim()}/${slug}`;
+}
+
 export function listHubInstalls(db: Database.Database): HubInstallRecord[] {
   return db.prepare('SELECT * FROM hub_skill_installs').all() as HubInstallRecord[];
 }
 
-export function getHubInstall(db: Database.Database, slug: string): HubInstallRecord | null {
-  return (db.prepare('SELECT * FROM hub_skill_installs WHERE slug = ?').get(slug) as HubInstallRecord | undefined) ?? null;
+/** `namespace` must already be normalized ('' when the entry has none). */
+export function getHubInstall(db: Database.Database, slug: string, namespace: string): HubInstallRecord | null {
+  return (
+    db
+      .prepare('SELECT * FROM hub_skill_installs WHERE namespace = ? AND slug = ?')
+      .get(namespace, slug) as HubInstallRecord | undefined
+  ) ?? null;
 }
 
 /** Remove the hub mapping when the underlying skill row is deleted (routes/skills.ts). */
@@ -357,36 +458,68 @@ export interface InstallHubSkillResult {
   version: string;
 }
 
-/** Hub slugs are simple path-safe names; validate before interpolating into URLs/dirs. */
+/** Hub slugs/namespaces are simple path-safe names; validate before interpolating into URLs/dirs. */
 const SAFE_SLUG = /^[\w.-]+$/;
 
 /**
- * Download + install (or refresh) a hub skill.
- *
- * Fresh slug   → extract → importFromFolder (shared limits/parsing pipeline)
- *                → record slug → skill id in hub_skill_installs.
- * Known slug   → overwrite the existing skill's content dir in place and update
- *                its name/description metadata. The SKILL.md itself is NOT
- *                regenerated (updateSkill would rewrite the frontmatter and drop
- *                extra fields like allowed-tools), and the skill id / enabled
- *                state are preserved, so "reinstall" behaves like an update.
+ * In-flight installs keyed by hubInstallKey(namespace, slug). Concurrent
+ * requests for the SAME skill share one download+import run instead of
+ * racing the check-then-act on the registry (which used to create duplicate
+ * skills / interleave rm+copy on one content dir). Requests for DIFFERENT
+ * (namespace, slug) pairs still run concurrently.
  */
-export async function installHubSkill(
+const inflightInstalls = new Map<string, Promise<InstallHubSkillResult>>();
+
+/**
+ * Download + install (or refresh) a hub skill, serialized per
+ * (namespace, slug) — see inflightInstalls.
+ *
+ * Fresh (namespace, slug) → extract → importFromFolder (shared limits/parsing
+ *                pipeline) → record (namespace, slug) → skill id.
+ * Known (namespace, slug) → atomically swap the existing skill's content dir
+ *                and update its name/description metadata. The SKILL.md itself
+ *                is NOT regenerated (updateSkill would rewrite the frontmatter
+ *                and drop extra fields like allowed-tools), and the skill id /
+ *                enabled state are preserved, so "reinstall" behaves like an
+ *                update.
+ */
+export function installHubSkill(
   db: Database.Database,
   req: InstallHubSkillRequest,
   opts?: SkillPathsOpts,
 ): Promise<InstallHubSkillResult> {
   const slug = (req.slug ?? '').trim();
   if (!slug || !SAFE_SLUG.test(slug) || slug.length > 128) {
-    throw new HubError('BAD_REQUEST', '无效的技能标识（slug）');
+    return Promise.reject(new HubError('BAD_REQUEST', '无效的技能标识（slug）'));
+  }
+  // '' when absent — it is part of the registry key.
+  const namespace = (req.namespace ?? '').trim();
+  if (namespace && (!SAFE_SLUG.test(namespace) || namespace.length > 128)) {
+    return Promise.reject(new HubError('BAD_REQUEST', '无效的技能命名空间（namespace）'));
   }
   const version = req.version?.trim() || undefined;
-  const namespace = req.namespace?.trim() || undefined;
 
+  const key = hubInstallKey(slug, namespace);
+  const running = inflightInstalls.get(key);
+  if (running) return running;
+  const task = runInstallHubSkill(db, slug, version, namespace, opts).finally(() => {
+    inflightInstalls.delete(key);
+  });
+  inflightInstalls.set(key, task);
+  return task;
+}
+
+async function runInstallHubSkill(
+  db: Database.Database,
+  slug: string,
+  version: string | undefined,
+  namespace: string,
+  opts?: SkillPathsOpts,
+): Promise<InstallHubSkillResult> {
   const zipPath = path.join(os.tmpdir(), `molio-hub-${Date.now()}-${Math.random().toString(36).slice(2)}.zip`);
   const extractDir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-hub-skill-'));
   try {
-    await downloadHubZip(slug, version, namespace, zipPath);
+    await downloadHubZip(slug, version, namespace || undefined, zipPath);
     extractSkillZip(new Uint8Array(fs.readFileSync(zipPath)), extractDir);
     if (!fs.existsSync(path.join(extractDir, 'SKILL.md'))) {
       throw new HubError('BAD_REQUEST', '技能包根目录缺少 SKILL.md');
@@ -394,12 +527,14 @@ export async function installHubSkill(
     const pkgVersion = readPackageVersion(extractDir);
     const now = Date.now();
 
-    const existing = getHubInstall(db, slug);
+    const existing = getHubInstall(db, slug, namespace);
     if (existing && getSkill(db, existing.skill_id)) {
-      // Refresh in place: wipe + re-copy content, keep row id + enabled state.
+      // Refresh in place, keeping row id + enabled state. mirrorDirIfChanged
+      // stages into a temp dir and swaps with rename + rollback, so a failure
+      // mid-copy can never wipe the previously installed content (the old
+      // rm-then-copy left the skill dir gone on any copy/parse error).
       const contentDir = skillContentDir(existing.skill_id, opts);
-      fs.rmSync(contentDir, { recursive: true, force: true });
-      copyDirSync(extractDir, contentDir);
+      mirrorDirIfChanged(extractDir, contentDir);
       const parsed = parseSkillMd(fs.readFileSync(path.join(contentDir, 'SKILL.md'), 'utf8'));
       db.prepare('UPDATE skills SET name = ?, description = ?, updated_at = ? WHERE id = ?').run(
         parsed.name.trim() || existing.skill_id,
@@ -407,12 +542,9 @@ export async function installHubSkill(
         now,
         existing.skill_id,
       );
-      db.prepare('UPDATE hub_skill_installs SET version = ?, namespace = ?, updated_at = ? WHERE slug = ?').run(
-        pkgVersion,
-        namespace ?? '',
-        now,
-        slug,
-      );
+      db.prepare(
+        'UPDATE hub_skill_installs SET version = ?, updated_at = ? WHERE namespace = ? AND slug = ?',
+      ).run(pkgVersion, now, namespace, slug);
       const skill = getSkill(db, existing.skill_id);
       if (!skill) throw new HubError('HUB_UNAVAILABLE', '技能记录更新失败，请重试');
       return { skill, updated: true, version: pkgVersion };
@@ -423,7 +555,7 @@ export async function installHubSkill(
     db.prepare(
       `INSERT OR REPLACE INTO hub_skill_installs (slug, skill_id, version, namespace, installed_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
-    ).run(slug, skill.id, pkgVersion, namespace ?? '', now, now);
+    ).run(slug, skill.id, pkgVersion, namespace, now, now);
     return { skill, updated: false, version: pkgVersion };
   } finally {
     fs.rmSync(extractDir, { recursive: true, force: true });

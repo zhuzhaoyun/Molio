@@ -43,6 +43,7 @@ import {
   fetchHubCategories,
   installHubSkill,
   listHubInstalls,
+  hubInstallKey,
   removeHubInstallBySkillId,
   HubError,
 } from '../core/skills/hub.js';
@@ -90,9 +91,11 @@ export function skillsRoutes(db: Database.Database, runManager: RunManager): Hon
         keyword: q['keyword'],
         category: q['category'],
       });
-      const installs = new Map(listHubInstalls(db).map((r) => [r.slug, r]));
+      // Keyed by (namespace, slug) — same slug in different namespaces are
+      // separate installs (hubInstallKey normalizes a missing namespace to '').
+      const installs = new Map(listHubInstalls(db).map((r) => [hubInstallKey(r.slug, r.namespace), r]));
       const skills = result.skills.map((s) => {
-        const rec = installs.get(s.slug);
+        const rec = installs.get(hubInstallKey(s.slug, s.namespace));
         // An install record whose skill row vanished (manual DB edits) is stale:
         // don't claim "installed" for it — the next install re-creates cleanly.
         if (!rec || !getSkill(db, rec.skill_id)) return s;
@@ -115,8 +118,8 @@ export function skillsRoutes(db: Database.Database, runManager: RunManager): Hon
   });
 
   // POST /api/skills/hub/install — download a hub skill and import it into the
-  // library (or refresh it in place when the slug is already installed), then
-  // fan out to every vault like any other skill mutation.
+  // library (or refresh it in place when the (namespace, slug) pair is already
+  // installed), then fan out to every vault like any other skill mutation.
   app.post('/hub/install', async (c) => {
     const body = (await readJsonObject(c)) as InstallHubSkillRequest | null;
     if (!body || typeof body.slug !== 'string' || !body.slug.trim()) {

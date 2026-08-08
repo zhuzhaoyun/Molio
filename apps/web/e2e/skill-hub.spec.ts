@@ -182,9 +182,12 @@ test.describe('Skill store (skillhub.cn)', () => {
     await expect(page.getByTestId('hub-card-pdf-tools')).toBeVisible();
     await expect(page.getByTestId('hub-card-code-reviewer')).toHaveCount(0);
 
-    // A keyword that matches nothing shows the empty state.
+    // A keyword that matches nothing shows the empty state. Scoped to the hub
+    // pane: the library pane stays mounted (keep-alive) and renders its own
+    // `.rt-empty` whenever the library is empty — an unscoped match would hit
+    // both and trip strict mode.
     await page.getByTestId('hub-search').fill('zzz-不存在');
-    await expect(page.locator('.rt-empty')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId('skills-pane-hub').locator('.rt-empty')).toBeVisible({ timeout: 10_000 });
     await page.getByTestId('hub-search').fill('');
 
     // Category filter works the same way.
@@ -218,6 +221,52 @@ test.describe('Skill store (skillhub.cn)', () => {
     // The daemon received the right install request.
     expect(state.installRequests).toHaveLength(1);
     expect(state.installRequests[0]).toMatchObject({ slug: 'pdf-tools', version: '1.2.0' });
+  });
+
+  test('one install at a time: every install button is gated while one is in flight', async ({ page }) => {
+    const state: HubMockState = { failList: false, installDelayMs: 800, installRequests: [] };
+    await setupHubMocks(page, state);
+
+    await gotoSkillsHub(page);
+    await expect(page.getByTestId('hub-card-pdf-tools')).toBeVisible({ timeout: 10_000 });
+
+    await page.getByTestId('hub-install-pdf-tools').click();
+
+    // While the install is in flight, ALL install buttons are disabled — not
+    // just the clicked one (a single indicator slot can't track two installs,
+    // and a second install could race the first on the daemon).
+    await expect(page.getByTestId('hub-install-pdf-tools')).toBeDisabled();
+    await expect(page.getByTestId('hub-install-code-reviewer')).toBeDisabled();
+
+    await expect(page.getByTestId('hub-notice')).toBeVisible({ timeout: 10_000 });
+
+    // Re-enabled afterwards; exactly one install request reached the daemon.
+    await expect(page.getByTestId('hub-install-pdf-tools')).toBeEnabled();
+    await expect(page.getByTestId('hub-install-code-reviewer')).toBeEnabled();
+    expect(state.installRequests).toHaveLength(1);
+  });
+
+  test('hub browsing state survives switching to the library tab and back', async ({ page }) => {
+    const state: HubMockState = { failList: false, installDelayMs: 0, installRequests: [] };
+    await setupHubMocks(page, state);
+
+    await gotoSkillsHub(page);
+    await expect(page.getByTestId('hub-card-pdf-tools')).toBeVisible({ timeout: 10_000 });
+
+    // Narrow the catalog down to one card…
+    await page.getByTestId('hub-search').fill('pdf');
+    await expect(page.getByTestId('hub-card-pdf-tools')).toBeVisible();
+    await expect(page.getByTestId('hub-card-code-reviewer')).toHaveCount(0);
+
+    // …flip to the library tab and back. The panel stays mounted, so the
+    // keyword and the filtered result survive without a refetch.
+    await page.getByTestId('skills-view-mine').click();
+    await expect(page.getByTestId('skill-new-btn')).toBeVisible();
+    await page.getByTestId('skills-view-hub').click();
+
+    await expect(page.getByTestId('hub-search')).toHaveValue('pdf');
+    await expect(page.getByTestId('hub-card-pdf-tools')).toBeVisible();
+    await expect(page.getByTestId('hub-card-code-reviewer')).toHaveCount(0);
   });
 
   test('hub unreachable shows the error banner; retry recovers', async ({ page }) => {

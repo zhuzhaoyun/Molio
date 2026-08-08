@@ -129,6 +129,41 @@ describe('skills/hub — extractSkillZip', () => {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('caps UNCOMPRESSED bytes mid-stream (zip-bomb guard)', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-hub-extract-'));
+    try {
+      // 200 KB of zeros compresses to a few hundred bytes — far under any
+      // download cap — but must still be rejected once the cumulative
+      // decompressed size crosses the limit. This is the exact shape of a
+      // zip bomb, and the check runs on bytes actually produced, not on the
+      // (forgeable) size fields in the zip header.
+      const bomb = zipSync({ 'SKILL.md': new Uint8Array(200 * 1024) });
+      assert.ok(bomb.length < 5 * 1024); // sanity: compression ratio is huge
+      assert.throws(
+        () => extractSkillZip(bomb, dir, { maxFiles: 100, maxBytes: 10 * 1024 }),
+        (err: unknown) => {
+          return err instanceof HubError && err.code === 'BAD_REQUEST' && /过大/.test(err.message);
+        },
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a truncated archive (silent partial decode guard)', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-hub-extract-'));
+    try {
+      const zip = zipOf({ 'SKILL.md': 'ok', 'references/guide.md': 'guide content' });
+      // Chop the tail: kills the end-of-central-directory record.
+      const truncated = zip.subarray(0, Math.floor(zip.length / 2));
+      assert.throws(() => extractSkillZip(truncated, dir), (err: unknown) => {
+        return err instanceof HubError && err.code === 'BAD_REQUEST';
+      });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('skills/hub — installHubSkill', () => {
@@ -152,8 +187,8 @@ describe('skills/hub — installHubSkill', () => {
     assert.ok(fs.existsSync(path.join(contentDir, 'SKILL.md')));
     assert.equal(fs.readFileSync(path.join(contentDir, 'references', 'guide.md'), 'utf8'), 'detailed guide');
 
-    // Install registry maps slug → skill id.
-    const rec = getHubInstall(db, 'demo');
+    // Install registry maps (namespace, slug) → skill id ('' namespace here).
+    const rec = getHubInstall(db, 'demo', '');
     assert.ok(rec);
     assert.equal(rec.skill_id, result.skill.id);
     assert.equal(rec.version, '2.0.0');
@@ -163,6 +198,7 @@ describe('skills/hub — installHubSkill', () => {
     _setHubFetchForTests(serveZip(zipOf({
       'SKILL.md': SKILL_MD('旧版正文', '1.0.0'),
       '_meta.json': JSON.stringify({ slug: 'demo', version: '1.0.0' }),
+      'references/stale.md': 'only in the old version',
     })));
     const first = await installHubSkill(db, { slug: 'demo' }, opts);
     // The user disables the skill, then an update arrives — the state must survive.
@@ -183,11 +219,71 @@ describe('skills/hub — installHubSkill', () => {
     const contentDir = skillContentDir(first.skill.id, opts);
     assert.match(fs.readFileSync(path.join(contentDir, 'SKILL.md'), 'utf8'), /新版正文/);
     assert.ok(fs.existsSync(path.join(contentDir, 'references', 'new.md')));
+    // Whole-tree mirror: files that vanished from the package vanish too.
+    assert.ok(!fs.existsSync(path.join(contentDir, 'references', 'stale.md')));
 
     // Still exactly one install record and one skill row for the slug.
-    assert.ok(getHubInstall(db, 'demo'));
+    assert.ok(getHubInstall(db, 'demo', ''));
     const rows = db.prepare("SELECT COUNT(*) AS n FROM skills").get() as { n: number };
     assert.equal(rows.n, 1);
+  });
+
+  it('same slug in different namespaces installs as two separate skills', async () => {
+    // The download stub varies the package by namespace so each install's
+    // content is distinguishable.
+    _setHubFetchForTests((async (input: unknown) => {
+      const url = String(input);
+      if (!url.includes('/api/v1/download')) return new Response('not found', { status: 404 });
+      const ns = new URL(url).searchParams.get('namespace') ?? 'unnamed';
+      const zip = zipOf({
+        'SKILL.md': SKILL_MD(`正文来自 ${ns}`, '1.0.0'),
+        '_meta.json': JSON.stringify({ slug: 'demo', version: '1.0.0' }),
+      });
+      return new Response(zip, { status: 200, headers: { 'Content-Type': 'application/zip' } });
+    }) as typeof fetch);
+
+    const alice = await installHubSkill(db, { slug: 'demo', namespace: 'alice' }, opts);
+    const bob = await installHubSkill(db, { slug: 'demo', namespace: 'bob' }, opts);
+    assert.equal(alice.updated, false);
+    assert.equal(bob.updated, false);
+    assert.notEqual(alice.skill.id, bob.skill.id); // no silent overwrite
+
+    assert.ok(getHubInstall(db, 'demo', 'alice'));
+    assert.ok(getHubInstall(db, 'demo', 'bob'));
+    assert.equal(getHubInstall(db, 'demo', ''), null); // namespaces don't leak
+
+    // Refreshing alice's install leaves bob's content untouched.
+    const again = await installHubSkill(db, { slug: 'demo', namespace: 'alice' }, opts);
+    assert.equal(again.updated, true);
+    assert.equal(again.skill.id, alice.skill.id);
+    const bobDir = skillContentDir(bob.skill.id, opts);
+    assert.match(fs.readFileSync(path.join(bobDir, 'SKILL.md'), 'utf8'), /正文来自 bob/);
+  });
+
+  it('concurrent installs of the same (namespace, slug) share one run', async () => {
+    _setHubFetchForTests(serveZip(zipOf({
+      'SKILL.md': SKILL_MD('并发安装', '1.0.0'),
+      '_meta.json': JSON.stringify({ slug: 'demo', version: '1.0.0' }),
+    })));
+
+    // Fired back-to-back without awaiting: the second call must join the
+    // in-flight run instead of racing the install registry.
+    const [r1, r2] = await Promise.all([
+      installHubSkill(db, { slug: 'demo', namespace: 'alice' }, opts),
+      installHubSkill(db, { slug: 'demo', namespace: 'alice' }, opts),
+    ]);
+    assert.equal(r1.skill.id, r2.skill.id);
+    assert.equal(r1.updated, false);
+
+    const rows = db.prepare("SELECT COUNT(*) AS n FROM skills").get() as { n: number };
+    assert.equal(rows.n, 1); // exactly one skill row, no orphaned duplicate
+  });
+
+  it('rejects invalid namespaces', async () => {
+    await assert.rejects(
+      installHubSkill(db, { slug: 'demo', namespace: '../evil' }, opts),
+      (err: unknown) => err instanceof HubError && err.code === 'BAD_REQUEST',
+    );
   });
 
   it('rejects invalid slugs and packages without SKILL.md', async () => {

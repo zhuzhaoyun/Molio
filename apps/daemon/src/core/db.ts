@@ -157,20 +157,47 @@ function migrate(db: SqliteDb): void {
       updated_at INTEGER NOT NULL
     );
 
-    -- Skill-hub (skillhub.cn) install registry: which hub slugs are installed
-    -- and which local skill row they became. Lets the store UI show an
-    -- "installed/update" state and lets reinstall refresh the same skill id in
-    -- place (keeping the master-switch state). Deleting the skill row removes
-    -- the mapping (routes/skills.ts DELETE handler).
+    -- Skill-hub (skillhub.cn) install registry: which hub skills are installed
+    -- and which local skill row they became. Identity is (namespace, slug) —
+    -- hub slugs are NOT globally unique, same-slug skills from different
+    -- namespaces coexist. Lets the store UI show an "installed/update" state
+    -- and lets reinstall refresh the same skill id in place (keeping the
+    -- master-switch state). Deleting the skill row removes the mapping
+    -- (routes/skills.ts DELETE handler).
     CREATE TABLE IF NOT EXISTS hub_skill_installs (
-      slug         TEXT PRIMARY KEY,
+      slug         TEXT NOT NULL,
       skill_id     TEXT NOT NULL,
       version      TEXT NOT NULL DEFAULT '',
       namespace    TEXT NOT NULL DEFAULT '',
       installed_at INTEGER NOT NULL,
-      updated_at   INTEGER NOT NULL
+      updated_at   INTEGER NOT NULL,
+      PRIMARY KEY (namespace, slug)
     );
   `);
+
+  // hub_skill_installs was first shipped (pre-release) with slug alone as the
+  // PRIMARY KEY; rebuild it with the composite (namespace, slug) PK while
+  // preserving rows. Detection: in the old schema namespace carries pk=0.
+  const hubCols = db.prepare('PRAGMA table_info(hub_skill_installs)').all() as Array<{ name: string; pk: number }>;
+  const hubNsCol = hubCols.find((c) => c.name === 'namespace');
+  if (hubNsCol && hubNsCol.pk === 0) {
+    db.exec(`
+      CREATE TABLE hub_skill_installs_new (
+        slug         TEXT NOT NULL,
+        skill_id     TEXT NOT NULL,
+        version      TEXT NOT NULL DEFAULT '',
+        namespace    TEXT NOT NULL DEFAULT '',
+        installed_at INTEGER NOT NULL,
+        updated_at   INTEGER NOT NULL,
+        PRIMARY KEY (namespace, slug)
+      );
+      INSERT OR REPLACE INTO hub_skill_installs_new
+        (slug, skill_id, version, namespace, installed_at, updated_at)
+        SELECT slug, skill_id, version, namespace, installed_at, updated_at FROM hub_skill_installs;
+      DROP TABLE hub_skill_installs;
+      ALTER TABLE hub_skill_installs_new RENAME TO hub_skill_installs;
+    `);
+  }
 
   addColumnIfMissing(db, 'conversations', 'channel_type', "TEXT NOT NULL DEFAULT 'desktop'");
   addColumnIfMissing(db, 'conversations', 'external_session_id', 'TEXT');

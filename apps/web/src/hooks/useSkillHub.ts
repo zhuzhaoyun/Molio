@@ -25,6 +25,10 @@ export function useSkillHub() {
 
   const pageRef = useRef(1);
   const seqRef = useRef(0);
+  // Ref mirror of installingSlug for a same-tick re-entrancy guard (a rapid
+  // double-click can fire the handler twice before the disabled attribute
+  // commits). Reads are stable without adding deps to install().
+  const installingRef = useRef<string | null>(null);
 
   const load = useCallback(
     async (page: number, reset: boolean) => {
@@ -92,8 +96,14 @@ export function useSkillHub() {
    * Install (or refresh) one hub skill. Resolves with the daemon's response;
    * throws on failure so the caller can surface the message. Local installed
    * state is updated immediately on success.
+   *
+   * One install at a time: resolves null (no-op) when another install is
+   * already in flight — the UI disables every install button meanwhile, this
+   * is only the same-tick race backstop.
    */
-  const install = useCallback(async (skill: HubSkillSummary): Promise<InstallHubSkillResponse> => {
+  const install = useCallback(async (skill: HubSkillSummary): Promise<InstallHubSkillResponse | null> => {
+    if (installingRef.current) return null;
+    installingRef.current = skill.slug;
     setInstallingSlug(skill.slug);
     try {
       const res = await api.installHubSkill({
@@ -101,13 +111,22 @@ export function useSkillHub() {
         version: skill.version || undefined,
         namespace: skill.namespace,
       });
+      // Invalidate any in-flight list query: its `installed` annotations were
+      // computed before this install landed, so letting it resolve would
+      // clobber the local patch below (skill flips back to "not installed").
+      seqRef.current += 1;
       setSkills((prev) =>
         prev.map((s) =>
-          s.slug === skill.slug ? { ...s, installed: true, installedVersion: res.version } : s,
+          // Match the full identity: same slug in a different namespace is a
+          // different skill and must keep its own installed state.
+          s.slug === skill.slug && (s.namespace ?? '') === (skill.namespace ?? '')
+            ? { ...s, installed: true, installedVersion: res.version }
+            : s,
         ),
       );
       return res;
     } finally {
+      installingRef.current = null;
       setInstallingSlug(null);
     }
   }, []);

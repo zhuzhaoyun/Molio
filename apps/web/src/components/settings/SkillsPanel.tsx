@@ -102,6 +102,10 @@ export function SkillsPanel() {
   // Kept local to the panel — no route/NavRail change, and switching back to
   // 'mine' after an install shows the freshly refreshed library list.
   const [view, setView] = useState<'mine' | 'hub'>('mine');
+  // The hub pane mounts LAZILY on first visit, then stays mounted (keep-alive):
+  // library-only visits never fire the catalog requests, but once the store
+  // has been opened its search/category/pagination state survives tab flips.
+  const [hubVisited, setHubVisited] = useState(false);
 
   const [modal, setModal] = useState<ModalState | null>(null);
   const [busy, setBusy] = useState(false);
@@ -252,18 +256,16 @@ export function SkillsPanel() {
         <button
           className={`sk-seg__item${view === 'hub' ? ' sk-seg__item--active' : ''}`}
           data-testid="skills-view-hub"
-          onClick={() => setView('hub')}
+          onClick={() => { setHubVisited(true); setView('hub'); }}
         >
           {t('skills.viewHub')}
         </button>
       </div>
 
-      {view === 'hub' ? (
-        <div className="sk-content">
-          <SkillHubPanel onInstalled={() => refresh()} />
-        </div>
-      ) : (
-        <div className="sk-content">
+      {/* Once visited, the hub pane stays mounted; the inactive pane is hidden
+          with CSS. Unmounting SkillHubPanel on every tab flip would lose its
+          search keyword / category / pagination state and refetch the catalog. */}
+      <div data-testid="skills-pane-mine" className={`sk-content${view === 'hub' ? ' sk-content--hidden' : ''}`}>
           {error && (
             <div className="rt-error">
               <span>{error}</span>
@@ -304,6 +306,11 @@ export function SkillsPanel() {
           )}
 
           <p className="sk-note">{t('skills.runtimeNote')}</p>
+      </div>
+
+      {hubVisited && (
+        <div data-testid="skills-pane-hub" className={`sk-content${view === 'mine' ? ' sk-content--hidden' : ''}`}>
+          <SkillHubPanel onInstalled={() => refresh()} />
         </div>
       )}
 

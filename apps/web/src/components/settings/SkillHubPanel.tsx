@@ -13,11 +13,17 @@ function formatDownloads(n: number, zh: boolean): string {
 function HubCard({
   skill,
   installing,
+  busy,
   zh,
   onInstall,
 }: {
   skill: HubSkillSummary;
+  /** This card's install is in flight (shows the busy label). */
   installing: boolean;
+  /** ANY install is in flight — all install buttons stay disabled so only
+   *  one install runs at a time (the daemon serializes per slug, and the
+   *  single-slot indicator can't represent two concurrent installs). */
+  busy: boolean;
   zh: boolean;
   onInstall: () => void;
 }) {
@@ -52,7 +58,7 @@ function HubCard({
           className={`rt-btn rt-btn--sm${skill.installed ? ' rt-btn--ghost' : ''}`}
           data-testid={`hub-install-${skill.slug}`}
           onClick={onInstall}
-          disabled={installing}
+          disabled={busy}
           title={skill.installed ? t('hub.update') : undefined}
         >
           {installing ? t('hub.installing') : skill.installed ? t('hub.update') : t('hub.install')}
@@ -100,9 +106,13 @@ export function SkillHubPanel({ onInstalled }: { onInstalled: (res: InstallHubSk
 
   const handleInstall = useCallback(
     async (skill: HubSkillSummary) => {
+      // One install at a time (buttons are disabled too — this guards the
+      // same-tick race before the disabled attribute commits).
+      if (installingSlug) return;
       setNotice(null);
       try {
         const res = await install(skill);
+        if (!res) return; // lost the race against another install — no-op
         setNotice({
           kind: 'success',
           text: res.updated ? t('hub.updatedTip') : t('hub.installedTip'),
@@ -112,7 +122,7 @@ export function SkillHubPanel({ onInstalled }: { onInstalled: (res: InstallHubSk
         setNotice({ kind: 'error', text: (err as Error).message });
       }
     },
-    [install, onInstalled, t],
+    [install, installingSlug, onInstalled, t],
   );
 
   return (
@@ -171,9 +181,12 @@ export function SkillHubPanel({ onInstalled }: { onInstalled: (res: InstallHubSk
           <div className="hub-grid" data-testid="hub-grid">
             {skills.map((skill) => (
               <HubCard
-                key={skill.slug}
+                // Full identity — the same slug can appear under different
+                // namespaces and must not collide as a React key.
+                key={`${skill.namespace ?? ''}/${skill.slug}`}
                 skill={skill}
                 installing={installingSlug === skill.slug}
+                busy={installingSlug !== null}
                 zh={zh}
                 onInstall={() => void handleInstall(skill)}
               />
