@@ -324,8 +324,6 @@ const zh: Record<string, string> = {
   'kb.newFolder': '新建子文件夹',
   'kb.create': '新建',
   'kb.newWindow': '新窗口',
-  'kb.chooseVault': '选择知识库',
-  'kb.noVaults': '暂无知识库',
   'kb.collapseAll': '折叠全部',
   'kb.expandAll': '展开全部',
   'kb.save': '保存',

@@ -324,8 +324,6 @@ const en: Record<string, string> = {
   'kb.newFolder': 'New folder',
   'kb.create': 'New',
   'kb.newWindow': 'New Window',
-  'kb.chooseVault': 'Choose a vault',
-  'kb.noVaults': 'No knowledge bases',
   'kb.collapseAll': 'Collapse all',
   'kb.expandAll': 'Expand all',
   'kb.save': 'Save',

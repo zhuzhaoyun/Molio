@@ -256,25 +256,21 @@ test.describe('multi-window vault isolation', () => {
     await ctx.close();
   });
 
-  test('新建 → 新窗口 lets the user pick which vault opens in the new window', async ({ browser }) => {
+  test('新建 → 新窗口 opens a fresh window without forcing a vault', async ({ browser }) => {
     const ctx = await browser.newContext();
     const page = await ctx.newPage();
 
-    // Start in vault A — the new window should open to the CHOSEN vault (B),
-    // not clone the current one.
+    // Start in vault A — the new window must open to the app landing view with
+    // NO vault forced; the user picks a vault in the new window via normal nav.
     await page.goto(`${WEB}/knowledge?vault=${vaultAId}`);
     await expect(page.locator('.kb-vault-bar__name')).toHaveText('mw-a');
 
+    const popupPromise = page.waitForEvent('popup');
     await page.locator('[data-testid="kb-btn-create"]').click();
     await page.locator('[data-testid="kb-create-window"]').click();
-    await expect(page.locator('[data-testid="kb-vault-pick"]')).toBeVisible();
-    await expect(page.locator(`[data-testid="kb-vault-pick-${vaultBId}"]`)).toBeVisible();
-
-    const popupPromise = page.waitForEvent('popup');
-    await page.locator(`[data-testid="kb-vault-pick-${vaultBId}"]`).click();
     const popup = await popupPromise;
-    await popup.waitForURL(/vault=/);
-    expect(popup.url()).toContain(`vault=${vaultBId}`);
+    await popup.waitForURL((url) => url.pathname === '/');
+    expect(popup.url()).not.toContain('vault=');
     await ctx.close();
   });
 });

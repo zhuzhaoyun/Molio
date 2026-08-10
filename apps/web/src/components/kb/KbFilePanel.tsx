@@ -6,7 +6,7 @@
 
 import type { ReactNode } from 'react';
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, useCallback } from 'react';
-import type { TreeNode, Vault } from '@molio/contracts';
+import type { TreeNode } from '@molio/contracts';
 import { useI18n } from '../../i18n';
 import { KbFileTree } from './KbFileTree';
 import { OpenNewWindowIcon } from '../icons';
@@ -22,8 +22,6 @@ interface KbFilePanelProps {
   selectedFile: string | null;
   searchQuery: string;
   vaultName: string;
-  /** All vaults — the 新建 → 新窗口 submenu lets the user pick which one opens. */
-  vaults: Vault[];
   onSearchChange: (q: string) => void;
   onSelectFile: (path: string) => void;
   onNewFile: (parentPath?: string) => void;
@@ -58,7 +56,6 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
   selectedFile,
   searchQuery,
   vaultName,
-  vaults,
   onSearchChange,
   onSelectFile,
   onNewFile,
@@ -84,10 +81,24 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const sortRef = useRef<HTMLDivElement>(null);
 
-  // Unified 新建 dropdown — note / folder / new-window (pick a vault).
+  // Unified 新建 dropdown — note / folder / new-window. Positioned with
+  // position:fixed computed from the trigger, so the file panel's overflow:hidden
+  // can't clip it at narrow panel widths.
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const createRef = useRef<HTMLDivElement>(null);
-  const [newWinOpen, setNewWinOpen] = useState(false);
+  const createBtnRef = useRef<HTMLButtonElement>(null);
+  const [createMenuPos, setCreateMenuPos] = useState<{ left: number; top: number } | null>(null);
+
+  const toggleCreateMenu = () => {
+    const next = !createMenuOpen;
+    if (next && createBtnRef.current) {
+      const r = createBtnRef.current.getBoundingClientRect();
+      setCreateMenuPos({ left: r.left, top: r.bottom + 6 });
+    } else {
+      setCreateMenuPos(null);
+    }
+    setCreateMenuOpen(next);
+  };
 
   /** Parent dir for create actions — the selected file's directory (or root). */
   const createParentDir = () =>
@@ -265,19 +276,26 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
     };
   }, [sortMenuOpen]);
 
-  // Same for the unified 新建 dropdown (and its vault-picker submenu).
+  // Same for the unified 新建 dropdown — close on outside click / ESC, and on
+  // scroll/resize (the fixed-position menu would otherwise drift out of place).
   useEffect(() => {
     if (!createMenuOpen) return;
-    const closeAll = () => { setCreateMenuOpen(false); setNewWinOpen(false); };
+    const closeAll = () => { setCreateMenuOpen(false); setCreateMenuPos(null); };
     const onDown = (e: MouseEvent) => {
       if (createRef.current && !createRef.current.contains(e.target as Node)) closeAll();
     };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closeAll(); };
+    const onScroll = () => closeAll();
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
+    // capture=true so scrolling inside the tree (which bubbles) still closes it.
+    document.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onScroll);
     return () => {
       document.removeEventListener('mousedown', onDown);
       document.removeEventListener('keydown', onKey);
+      document.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onScroll);
     };
   }, [createMenuOpen]);
 
@@ -310,13 +328,14 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
     >
       {/* Toolbar */}
       <div className="kb-file-toolbar">
-        {/* 新建 — unified create menu: note / folder / new-window (pick a vault) */}
+        {/* 新建 — unified create menu: note / folder / new-window */}
         <div className="kb-create-menu" ref={createRef}>
           <button
             type="button"
+            ref={createBtnRef}
             className="kb-create-btn"
             title={t('kb.create')}
-            onClick={() => { setCreateMenuOpen((o) => !o); setNewWinOpen(false); }}
+            onClick={toggleCreateMenu}
             data-testid="kb-btn-create"
             aria-haspopup="menu"
             aria-expanded={createMenuOpen}
@@ -329,13 +348,18 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
           </button>
 
           {createMenuOpen && (
-            <div className="kb-create-dropdown" data-testid="kb-create-dropdown" role="menu">
+            <div
+              className="kb-create-dropdown"
+              style={createMenuPos ?? undefined}
+              data-testid="kb-create-dropdown"
+              role="menu"
+            >
               <button
                 type="button"
                 className="kb-create-item"
                 role="menuitem"
                 data-testid="kb-create-note"
-                onClick={() => { setCreateMenuOpen(false); onNewFile(createParentDir()); }}
+                onClick={() => { setCreateMenuOpen(false); setCreateMenuPos(null); onNewFile(createParentDir()); }}
               >
                 {/* file-plus */}
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -351,7 +375,7 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
                 className="kb-create-item"
                 role="menuitem"
                 data-testid="kb-create-folder"
-                onClick={() => { setCreateMenuOpen(false); onNewFolder(createParentDir()); }}
+                onClick={() => { setCreateMenuOpen(false); setCreateMenuPos(null); onNewFolder(createParentDir()); }}
               >
                 {/* folder-plus */}
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -364,55 +388,18 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
 
               <div className="kb-create-divider" />
 
-              {/* 新窗口 — click to expand the vault picker (pick which vault opens) */}
-              <div className="kb-create-window-wrap">
-                <button
-                  type="button"
-                  className="kb-create-item"
-                  role="menuitem"
-                  data-testid="kb-create-window"
-                  aria-haspopup="menu"
-                  aria-expanded={newWinOpen}
-                  onClick={() => setNewWinOpen((o) => !o)}
-                >
-                  <OpenNewWindowIcon size={15} />
-                  <span>{t('kb.newWindow')}</span>
-                  {/* chevron-right */}
-                  <svg className="kb-create-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="9 18 15 12 9 6" />
-                  </svg>
-                </button>
-
-                {newWinOpen && (
-                  <div className="kb-vault-pick" data-testid="kb-vault-pick" role="menu">
-                    <div className="kb-vault-pick__title">{t('kb.chooseVault')}</div>
-                    {vaults.length === 0 ? (
-                      <div className="kb-vault-pick__empty">{t('kb.noVaults')}</div>
-                    ) : (
-                      vaults.map((v) => (
-                        <button
-                          key={v.id}
-                          type="button"
-                          className="kb-vault-pick__item"
-                          role="menuitem"
-                          data-testid={`kb-vault-pick-${v.id}`}
-                          onClick={() => {
-                            setNewWinOpen(false);
-                            setCreateMenuOpen(false);
-                            openInNewWindow(`/knowledge?vault=${encodeURIComponent(v.id)}`);
-                          }}
-                        >
-                          {/* folder */}
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-                          </svg>
-                          <span className="kb-vault-pick__name">{v.name}</span>
-                        </button>
-                      ))
-                    )}
-                  </div>
-                )}
-              </div>
+              {/* 新窗口 — opens a fresh desktop window with no vault forced;
+                  the user picks a vault in the new window via the normal nav. */}
+              <button
+                type="button"
+                className="kb-create-item"
+                role="menuitem"
+                data-testid="kb-create-window"
+                onClick={() => { setCreateMenuOpen(false); setCreateMenuPos(null); openInNewWindow('/'); }}
+              >
+                <OpenNewWindowIcon size={15} />
+                <span>{t('kb.newWindow')}</span>
+              </button>
             </div>
           )}
         </div>

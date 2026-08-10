@@ -37,7 +37,7 @@
 /* Toolbar icon buttons. `:not(.kb-sort-item)` keeps the 28×28 sizing off the
    sort dropdown's menu items, which live inside the toolbar but need their
    own full-width layout (see .kb-sort-item). */
-.kb-file-toolbar button:not(.kb-sort-item):not(.kb-create-item):not(.kb-vault-pick__item) {
+.kb-file-toolbar button:not(.kb-sort-item):not(.kb-create-item) {
   width: 26px;
   height: 26px;
   padding: 0;
@@ -52,12 +52,12 @@
   transition: all 120ms ease;
 }
 
-.kb-file-toolbar button:not(.kb-sort-item):not(.kb-create-item):not(.kb-vault-pick__item) svg {
+.kb-file-toolbar button:not(.kb-sort-item):not(.kb-create-item) svg {
   width: 15px;
   height: 15px;
 }
 
-.kb-file-toolbar button:not(.kb-sort-item):not(.kb-create-item):not(.kb-vault-pick__item):hover {
+.kb-file-toolbar button:not(.kb-sort-item):not(.kb-create-item):hover {
   background: var(--bg-subtle);
   color: var(--text);
 }
@@ -128,18 +128,18 @@
   position: relative;
   flex-shrink: 0;
 }
-/* Dropdown — elevated panel matching ctx-menu, warm hover throughout. */
+/* Dropdown — elevated panel matching ctx-menu, warm hover throughout.
+   position:fixed + inline left/top (computed from the trigger on open) so the
+   file panel's overflow:hidden can't clip it at narrow panel widths. */
 .kb-create-dropdown {
-  position: absolute;
-  left: 0;
-  top: calc(100% + 6px);
+  position: fixed;
   min-width: 184px;
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), 0 1px 4px rgba(0, 0, 0, 0.08);
   padding: 4px;
-  z-index: 40;
+  z-index: 300;
   display: flex;
   flex-direction: column;
   animation: ctx-menu-in 90ms ease;
@@ -179,75 +179,6 @@
   height: 1px;
   margin: 4px 8px;
   background: var(--border-soft);
-}
-.kb-create-item .kb-create-caret {
-  margin-left: auto;
-  width: 13px;
-  height: 13px;
-  color: var(--text-faint);
-}
-.kb-create-item:hover .kb-create-caret { color: var(--accent); }
-/* 新窗口 → vault-picker submenu, opens beside the item. */
-.kb-create-window-wrap {
-  position: relative;
-}
-.kb-vault-pick {
-  position: absolute;
-  left: calc(100% + 2px);
-  top: 0;
-  min-width: 184px;
-  max-height: 320px;
-  overflow-y: auto;
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), 0 1px 4px rgba(0, 0, 0, 0.08);
-  padding: 4px;
-  z-index: 41;
-  display: flex;
-  flex-direction: column;
-  animation: ctx-menu-in 90ms ease;
-}
-.kb-vault-pick__title {
-  padding: 5px 10px 4px;
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  color: var(--text-faint);
-}
-.kb-vault-pick__item {
-  background: none;
-  border: none;
-  text-align: left;
-  padding: 7px 10px;
-  font: inherit;
-  font-size: 13px;
-  color: var(--text);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  box-sizing: border-box;
-  border-radius: 6px;
-  transition: background 90ms ease, color 90ms ease;
-}
-.kb-vault-pick__item svg {
-  width: 15px;
-  height: 15px;
-  flex-shrink: 0;
-  color: var(--text-muted);
-  transition: color 90ms ease;
-}
-.kb-vault-pick .kb-vault-pick__item:hover {
-  background: var(--accent-tint);
-  color: var(--accent);
-}
-.kb-vault-pick .kb-vault-pick__item:hover svg { color: var(--accent); }
-.kb-vault-pick__name { overflow: hidden; text-overflow: ellipsis; }
-.kb-vault-pick__empty {
-  padding: 10px 12px;
-  font-size: 13px;
-  color: var(--text-faint);
 }
 
 /* Vault bar at bottom */
