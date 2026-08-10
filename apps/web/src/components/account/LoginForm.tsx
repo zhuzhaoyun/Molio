@@ -1,0 +1,193 @@
+/**
+ * 验证码登录表单（两步：邮箱 → 验证码）。注册 = 登录（云端隐式建号）。
+ * 只跟 daemon 本地镜像端点说话（设计 §五）；devCode 仅 daily/local 云端返回，
+ * UI 不展示（E2E 直接从 /api/auth/start 响应取）。
+ */
+
+import { useEffect, useRef, useState } from 'react';
+import { useI18n } from '../../i18n';
+import { api } from '../../api/client';
+import { authErrorRef } from './authErrors';
+
+interface LoginFormProps {
+  /** 登录成功后回调（父组件刷新 authStore 并切回主视图）。 */
+  onSuccess: () => void;
+  /** 返回上一层（账号面板主视图）。 */
+  onBack: () => void;
+}
+
+type Step = 'email' | 'code';
+
+export function LoginForm({ onSuccess, onBack }: LoginFormProps) {
+  const { t } = useI18n();
+  const [step, setStep] = useState<Step>('email');
+  const [email, setEmail] = useState('');
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [resendSec, setResendSec] = useState(0);
+  const timerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current !== null) window.clearInterval(timerRef.current);
+    };
+  }, []);
+
+  function startCountdown(sec: number) {
+    if (timerRef.current !== null) window.clearInterval(timerRef.current);
+    setResendSec(sec > 0 ? sec : 60);
+    timerRef.current = window.setInterval(() => {
+      setResendSec((s) => {
+        if (s <= 1) {
+          if (timerRef.current !== null) window.clearInterval(timerRef.current);
+          timerRef.current = null;
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
+  }
+
+  async function sendCode(fromStep: Step) {
+    const trimmed = email.trim();
+    if (!trimmed || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await api.authSendCode(trimmed);
+      if (fromStep === 'email') setStep('code');
+      setNotice(t('login.codeSent'));
+      startCountdown(res.resendAfterSec ?? 60);
+    } catch (e) {
+      const ref = authErrorRef(e);
+      setError(t(ref.key, ref.params));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleVerify() {
+    const trimmedCode = code.trim();
+    if (!trimmedCode || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.authVerify(email.trim(), trimmedCode);
+      onSuccess();
+    } catch (e) {
+      const ref = authErrorRef(e);
+      setError(t(ref.key, ref.params));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="account-login-form">
+      {step === 'email' ? (
+        <>
+          <p className="account-intro">{t('account.loginIntro')}</p>
+          <div className="account-field">
+            <label htmlFor="account-email">{t('login.emailLabel')}</label>
+            <input
+              id="account-email"
+              data-testid="account-email-input"
+              type="email"
+              value={email}
+              placeholder={t('login.emailPlaceholder')}
+              autoComplete="email"
+              onChange={(e) => setEmail(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void sendCode('email');
+              }}
+            />
+          </div>
+          <div className="account-form-actions">
+            <button
+              type="button"
+              className="kb-btn kb-btn-primary"
+              data-testid="account-send-code-btn"
+              disabled={busy || email.trim() === ''}
+              onClick={() => void sendCode('email')}
+            >
+              {busy ? t('account.busy') : t('login.sendCode')}
+            </button>
+            <button
+              type="button"
+              className="account-link-btn"
+              data-testid="account-back-btn"
+              onClick={onBack}
+            >
+              {t('account.cancel')}
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          {notice && (
+            <p className="account-note account-note-info" data-testid="account-notice">
+              {notice}
+            </p>
+          )}
+          <div className="account-field">
+            <label htmlFor="account-code">{t('login.codeLabel')}</label>
+            <input
+              id="account-code"
+              data-testid="account-code-input"
+              type="text"
+              inputMode="numeric"
+              maxLength={6}
+              value={code}
+              placeholder={t('login.codePlaceholder')}
+              autoComplete="one-time-code"
+              onChange={(e) => setCode(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void handleVerify();
+              }}
+            />
+          </div>
+          <div className="account-form-actions">
+            <button
+              type="button"
+              className="kb-btn kb-btn-primary"
+              data-testid="account-verify-btn"
+              disabled={busy || code.trim() === ''}
+              onClick={() => void handleVerify()}
+            >
+              {busy ? t('account.busy') : t('login.verify')}
+            </button>
+            <button
+              type="button"
+              className="account-link-btn"
+              data-testid="account-resend-btn"
+              disabled={busy || resendSec > 0}
+              onClick={() => void sendCode('code')}
+            >
+              {resendSec > 0 ? t('login.resendIn', { sec: resendSec }) : t('login.resend')}
+            </button>
+            <button
+              type="button"
+              className="account-link-btn"
+              data-testid="account-change-email-btn"
+              disabled={busy}
+              onClick={() => {
+                setStep('email');
+                setCode('');
+                setError(null);
+              }}
+            >
+              {t('login.back')}
+            </button>
+          </div>
+        </>
+      )}
+      {error && (
+        <p className="account-error" data-testid="account-error">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}

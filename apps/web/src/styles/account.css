@@ -1,0 +1,187 @@
+/* ============================================================
+   Account — 账号面板模态框 + 登录表单（设计 §7.4）
+   复用 kb-overlay / kb-modal / kb-btn 基础件（knowledge.css）
+   ============================================================ */
+
+.account-modal {
+  width: 400px;
+  max-width: calc(100vw - 40px);
+}
+
+/* ── NavRail 账号按钮：已登录绿点 ─────────────────────────── */
+.entry-nav-rail__btn.is-logged-in {
+  color: var(--text);
+}
+.entry-nav-rail__dot {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--green);
+  pointer-events: none;
+}
+
+/* ── 文本块 ─────────────────────────────────────────────── */
+.account-intro {
+  margin: 0 0 14px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.account-note {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-muted);
+  background: var(--bg-subtle);
+}
+.account-note-info {
+  color: var(--blue);
+  background: var(--blue-bg);
+  border: 1px solid var(--blue-border);
+}
+.account-note-warn {
+  color: var(--amber);
+  background: var(--amber-bg);
+  border: 1px solid color-mix(in srgb, var(--amber) 25%, transparent);
+}
+
+.account-error {
+  margin: 12px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--red);
+}
+
+.account-hint {
+  font-size: 11.5px;
+  color: var(--text-soft);
+}
+
+/* ── 登录态主视图 ───────────────────────────────────────── */
+.account-profile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.account-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-tint);
+  color: var(--accent);
+  font-size: 17px;
+  font-weight: 600;
+  flex: 0 0 40px;
+}
+
+.account-logged-email {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+  overflow-wrap: anywhere;
+}
+
+.account-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.account-danger-zone {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+/* ── 注销确认视图 ───────────────────────────────────────── */
+.account-warning {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--red);
+  background: var(--red-bg);
+  border: 1px solid var(--red-border);
+}
+
+.account-ack-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  cursor: pointer;
+}
+.account-ack-row input {
+  margin-top: 2px;
+  accent-color: var(--accent);
+}
+
+/* ── 登录表单（两步：邮箱 → 验证码） ─────────────────────── */
+.account-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.account-field label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.account-field input {
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+}
+.account-field input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.account-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* 链接式按钮（重发 / 返回修改邮箱 / 取消） */
+.account-link-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 4px 2px;
+  font-size: 12.5px;
+  color: var(--accent);
+  cursor: pointer;
+}
+.account-link-btn:hover:not(:disabled) {
+  text-decoration: underline;
+}
+.account-link-btn:disabled {
+  color: var(--text-faint);
+  cursor: not-allowed;
+}

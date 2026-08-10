@@ -37,6 +37,7 @@ src/
   stores/
     vaultStore.ts          活跃知识库选择（useSyncExternalStore，App + useKnowledge 共享）
     messageSelectionStore.ts  消息删除勾选态（同模式 + 每气泡精准订阅）
+    authStore.ts           登录态快照（同模式；镜像 daemon GET /api/auth/status，App 挂载拉取 + 30s 轮询 + focus 刷新；refresh 永不抛错）
   components/
     HomePage.tsx       主页：agent 选择 + 聊天面板
     NavRail.tsx        左侧导航栏
@@ -76,6 +77,10 @@ src/
       VaultList.tsx           Vault 列表
       VaultManager.tsx        Vault 管理器
       WikiChatPanel.tsx       Wiki 对话面板
+    account/           账号组件（用户模块 M3）
+      AccountModal.tsx     账号面板模态框（登录态展示 + 退出登录 + 注销账号二次确认；main/login/delete 三视图）
+      LoginForm.tsx        验证码登录表单（邮箱 → 验证码两步 + 重发倒计时；注册=登录）
+      authErrors.ts        daemon /api/auth 错误码 → i18n 文案映射
     channels/          渠道组件
       FeishuChannelPanel.tsx  飞书渠道面板（7 步引导 + appId/Secret 表单）
       WeixinChannelPanel.tsx  微信渠道面板（扫码登录 + default agent）
@@ -98,6 +103,7 @@ src/
     history.css    历史页面样式
     runtimes.css   运行时页面样式
     settings.css   设置页面样式
+    account.css    账号面板 + 登录表单样式（复用 kb-overlay/kb-modal/kb-btn）
   e2e/
     *.spec.ts       Playwright 自动化测试（需先 pnpm dev）
     helpers/        mock-sse.ts 等测试辅助
@@ -133,7 +139,8 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
 | 触发目录 | 对应 E2E 测试 |
 |---------|-------------|
 | `src/components/HomePage.tsx` | `e2e/bootstrap.spec.ts` |
-| `src/components/NavRail.tsx` | `e2e/bootstrap.spec.ts`, `e2e/navigation.spec.ts` |
+| `src/components/NavRail.tsx` | `e2e/bootstrap.spec.ts`, `e2e/navigation.spec.ts`, `e2e/auth.spec.ts` |
+| `src/components/account/`, `src/stores/authStore.ts` | `e2e/auth.spec.ts` |
 | `src/components/kb/` | `e2e/publish-flow.spec.ts` |
 | `src/components/graph/` | `e2e/graph-settings.spec.ts` |
 | `src/components/runtimes/` | `e2e/runtimes-page.spec.ts`, `e2e/runtime-provider-config.spec.ts` |

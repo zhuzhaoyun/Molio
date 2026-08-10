@@ -9,6 +9,7 @@ const zh: Record<string, string> = {
   'nav.graph': '图谱',
   'nav.help': '帮助',
   'nav.settings': '设置',
+  'nav.account': '账号',
 
   // ── Common ──
   'common.save': '保存',
@@ -426,6 +427,46 @@ const zh: Record<string, string> = {
 
   // ── HomePage ──
   'home.fileContextFallback': '请根据以上内容帮我分析。',
+
+  // ── 账号 / 登录（用户模块 M3） ──
+  'account.title': '账号',
+  'account.loading': '加载中…',
+  'account.notConfigured': '登录服务尚未配置。在部署端配置云端地址（MOLIO_AUTH_URL）后即可登录。本地功能不受影响。',
+  'account.loginIntro': '登录 Molio 账号可解锁云端权益。所有本地功能无需登录即可使用。',
+  'account.loginCta': '登录 / 注册',
+  'account.stale': '云端暂不可达，当前展示本地缓存数据',
+  'account.loginExpired': '登录已过期，请重新登录',
+  'account.relogin': '重新登录',
+  'account.logout': '退出登录',
+  'account.logoutHint': '仅退出本机登录，不影响账号',
+  'account.delete': '注销账号',
+  'account.deleteHint': '永久删除账号与云端数据',
+  'account.deleteTitle': '确认注销账号',
+  'account.deleteWarning': '注销后账号及云端数据将被删除，且不可恢复。此后使用同一邮箱注册将创建全新账号，历史数据无法找回。',
+  'account.deleteAck': '我已了解上述后果，确认注销',
+  'account.deleteConfirm': '确认注销',
+  'account.cancel': '取消',
+  'account.busy': '处理中…',
+  'account.logoutFailed': '退出登录失败，请重试',
+  'account.deleteFailed': '注销失败：{code}。云端不可达时无法注销，请稍后重试',
+  'login.emailLabel': '邮箱',
+  'login.emailPlaceholder': '请输入邮箱地址',
+  'login.sendCode': '发送验证码',
+  'login.codeSent': '验证码已发送，请查收邮件。若未收到，请检查垃圾邮件文件夹。',
+  'login.codeLabel': '验证码',
+  'login.codePlaceholder': '6 位验证码',
+  'login.verify': '登录',
+  'login.resend': '重新发送',
+  'login.resendIn': '{sec} 秒后可重发',
+  'login.back': '返回修改邮箱',
+  'login.errInvalidEmail': '邮箱格式不正确',
+  'login.errRateLimited': '发送过于频繁，请 {sec} 秒后再试',
+  'login.errInvalidCode': '验证码不正确，请重试',
+  'login.errLocked': '错误次数过多，该验证码已锁定，请重新发送',
+  'login.errUnreachable': '无法连接登录服务，请检查网络后重试',
+  'login.errNotConfigured': '登录服务尚未配置',
+  'login.errExpired': '登录已过期，请重新登录',
+  'login.errGeneric': '操作失败，请稍后重试（{code}）',
 };
 
 export default zh;

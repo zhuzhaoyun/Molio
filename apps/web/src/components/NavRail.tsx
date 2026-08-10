@@ -1,10 +1,16 @@
+import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useI18n } from '../i18n';
+import { useAuthStatus } from '../stores/authStore';
+import { AccountModal } from './account/AccountModal';
 
 export function NavRail() {
   const { t } = useI18n();
+  const auth = useAuthStatus();
+  const [accountOpen, setAccountOpen] = useState(false);
 
   return (
+    <>
     <nav className="entry-nav-rail">
       <div className="entry-nav-rail__group">
         {/* Home — Create/Chat */}
@@ -104,8 +110,31 @@ export function NavRail() {
         </NavLink>
       </div>
 
-      {/* Bottom group: Help + Settings */}
+      {/* Bottom group: Account + Help + Settings */}
       <div className="entry-nav-rail__group">
+        {/* Account — 登录态入口（绿点 = 已登录），打开账号面板（设计 §7.4） */}
+        <button
+          type="button"
+          className={`entry-nav-rail__btn ${auth?.loggedIn ? 'is-logged-in' : ''}`}
+          data-view="account"
+          data-testid="nav-account-btn"
+          data-tooltip={t('nav.account')}
+          onClick={() => setAccountOpen(true)}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+            <circle cx="12" cy="7" r="4" />
+          </svg>
+          {auth?.loggedIn && <span className="entry-nav-rail__dot" />}
+        </button>
+
         {/* Help — external link to online docs */}
         <a
           href="https://molio.cn/help.html"
@@ -151,5 +180,7 @@ export function NavRail() {
         </NavLink>
       </div>
     </nav>
+    <AccountModal show={accountOpen} onClose={() => setAccountOpen(false)} />
+    </>
   );
 }

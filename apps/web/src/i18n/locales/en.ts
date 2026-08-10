@@ -9,6 +9,7 @@ const en: Record<string, string> = {
   'nav.graph': 'Graph',
   'nav.help': 'Help',
   'nav.settings': 'Settings',
+  'nav.account': 'Account',
 
   // ── Common ──
   'common.save': 'Save',
@@ -426,6 +427,46 @@ const en: Record<string, string> = {
 
   // ── HomePage ──
   'home.fileContextFallback': 'Please analyze the above content.',
+
+  // ── Account / Login (user module M3) ──
+  'account.title': 'Account',
+  'account.loading': 'Loading…',
+  'account.notConfigured': 'Sign-in service is not configured yet. Set the cloud URL (MOLIO_AUTH_URL) on the deployment side to enable sign-in. Local features are unaffected.',
+  'account.loginIntro': 'Sign in to your Molio account to unlock cloud benefits. All local features work without signing in.',
+  'account.loginCta': 'Sign in / Register',
+  'account.stale': 'Cloud unreachable — showing locally cached data',
+  'account.loginExpired': 'Your session has expired. Please sign in again.',
+  'account.relogin': 'Sign in again',
+  'account.logout': 'Sign out',
+  'account.logoutHint': 'Signs out on this device only; your account is unaffected',
+  'account.delete': 'Delete account',
+  'account.deleteHint': 'Permanently delete your account and cloud data',
+  'account.deleteTitle': 'Confirm account deletion',
+  'account.deleteWarning': 'Deleting your account removes your cloud data and cannot be undone. Registering again with the same email creates a brand-new account; previous data cannot be recovered.',
+  'account.deleteAck': 'I understand the consequences and confirm deletion',
+  'account.deleteConfirm': 'Delete account',
+  'account.cancel': 'Cancel',
+  'account.busy': 'Working…',
+  'account.logoutFailed': 'Failed to sign out. Please try again.',
+  'account.deleteFailed': 'Deletion failed: {code}. Account cannot be deleted while the cloud is unreachable; try again later.',
+  'login.emailLabel': 'Email',
+  'login.emailPlaceholder': 'Enter your email address',
+  'login.sendCode': 'Send code',
+  'login.codeSent': 'Verification code sent. Check your inbox (and spam folder if not received).',
+  'login.codeLabel': 'Verification code',
+  'login.codePlaceholder': '6-digit code',
+  'login.verify': 'Sign in',
+  'login.resend': 'Resend',
+  'login.resendIn': 'Resend in {sec}s',
+  'login.back': 'Back to edit email',
+  'login.errInvalidEmail': 'Invalid email address',
+  'login.errRateLimited': 'Too many requests. Try again in {sec}s.',
+  'login.errInvalidCode': 'Incorrect code. Please try again.',
+  'login.errLocked': 'Too many failed attempts. This code is locked — request a new one.',
+  'login.errUnreachable': 'Cannot reach the sign-in service. Check your network and retry.',
+  'login.errNotConfigured': 'Sign-in service is not configured',
+  'login.errExpired': 'Your session has expired. Please sign in again.',
+  'login.errGeneric': 'Operation failed. Please try again later. ({code})',
 };
 
 export default en;

@@ -153,8 +153,9 @@ Token 规格：
 |---|---|---|
 | POST | `/api/auth/start` `{email}` | 转发云端 send-code |
 | POST | `/api/auth/verify` `{email, code}` | 转发云端 verify，token 落本地存储 |
-| GET | `/api/auth/status` | 登录态 + 用户 + 权益快照（Web UI 渲染用；离线时返回缓存快照 + `stale: true`） |
+| GET | `/api/auth/status` | 登录态 + 用户 + 权益快照（Web UI 渲染用；离线时返回缓存快照 + `stale: true`；`configured` 标记 MOLIO_AUTH_URL 是否已配置，未配置时 Web 隐藏登录表单） |
 | POST | `/api/auth/logout` | 云端吊销 + 清本地 token |
+| DELETE | `/api/auth/account` | 注销账号（§7.4）：云端软删除 + 吊销全部 session 成功后才清本地 token；云端不可达 → 502 且保留本地 token 供重试（与 logout 的本地优先语义相反） |
 
 ## 七、核心流程
 
@@ -236,7 +237,7 @@ App 启动 → daemon 读本地 token
 | 模块 | 改动 |
 |---|---|
 | `packages/contracts` | 新增 `User` / `Entitlement` / `AuthStatus` 类型。⚠️ daemon 测试吃 contracts dist，改后须先 build |
-| `apps/daemon` | 新增 `core/auth/`：`auth-client.ts`（云端 API + 重试退避，复用 retry 模式）、`token-store.ts`、`entitlement-cache.ts`；`routes/auth.ts`（4 个本地端点）；`MOLIO_AUTH_URL` 环境变量 |
+| `apps/daemon` | 新增 `core/auth/`：`auth-client.ts`（云端 API + 重试退避，复用 retry 模式）、`token-store.ts`、`entitlement-cache.ts`；`routes/auth.ts`（5 个本地端点：start/verify/status/logout/account）；`MOLIO_AUTH_URL` 环境变量 |
 | `apps/web` | 登录页（邮箱 + 验证码两步）、账户设置面板、登录态 store；关键交互元素加 `data-testid`，同步 E2E |
 | `apps/desktop` | `safeStorage` token 持久化 IPC；登录后 ARMS 注入 userId |
 | Docker 部署 | `.env.example` / `install.sh` 内嵌模板加 `MOLIO_AUTH_URL`（⚠️ install.sh heredoc 同步规则） |

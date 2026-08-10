@@ -16,6 +16,7 @@ import { LanguageProvider } from './i18n/LanguageProvider';
 import type { Locale } from './i18n';
 import { api } from './api/client';
 import { useActiveVault, vaultStore } from './stores/vaultStore';
+import { authStore } from './stores/authStore';
 import { messageSelectionStore } from './stores/messageSelectionStore';
 import './styles/rail.css';
 import './styles/home.css';
@@ -25,6 +26,7 @@ import './styles/settings.css';
 import './styles/channels.css';
 import './styles/history.css';
 import './styles/graph.css';
+import './styles/account.css';
 import './App.css';
 
 const STORAGE_KEY_LAST_ROUTE = 'molio.lastRoute';
@@ -143,6 +145,20 @@ export default function App() {
     api.listVaults()
       .then((list) => vaultStore.setVaults(list))
       .catch(() => {});
+  }, []);
+
+  // Auth status snapshot — restore on mount, then keep fresh with a light
+  // 30s poll + focus refresh. refresh() never throws: a down daemon keeps
+  // the last snapshot (local-first — auth UI degrades, never blocks).
+  useEffect(() => {
+    void authStore.refresh();
+    const timer = window.setInterval(() => { void authStore.refresh(); }, 30_000);
+    const onFocus = () => { void authStore.refresh(); };
+    window.addEventListener('focus', onFocus);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', onFocus);
+    };
   }, []);
 
   // Keep daemon-side defaultCwd aligned with the active knowledge vault

@@ -33,11 +33,22 @@ export default defineConfig({
     },
   ],
   webServer: [
+    /* 云端认证服务（M1）— 必须先于 daemon 起来，daemon 拿 MOLIO_AUTH_URL 指向它。
+       本地 MOLIO_ENV=local：内存 store + 响应带 devCode，E2E 直接从
+       /api/auth/start 取验证码（UI 不展示 devCode）。 */
+    {
+      command: 'pnpm --filter @molio/cloud dev',
+      url: 'http://localhost:3200/health',
+      reuseExistingServer: !isCI,
+      timeout: 60_000,
+      env: { MOLIO_ENV: 'local' },
+    },
     {
       command: 'pnpm --filter @molio/daemon dev',
       url: 'http://localhost:3100/api/health',
       reuseExistingServer: !isCI,
       timeout: 60_000,
+      env: { MOLIO_AUTH_URL: 'http://localhost:3200' },
     },
     {
       command: 'pnpm --filter @molio/web dev',

@@ -97,6 +97,18 @@
       ],
       "specs": []
     },
+    "auth": {
+      "paths": [
+        "apps/web/src/components/account/*",
+        "apps/web/src/stores/authStore*",
+        "apps/web/src/styles/account.css",
+        "apps/web/src/api/client.*",
+        "apps/daemon/src/core/auth/*",
+        "apps/daemon/src/routes/auth.ts",
+        "apps/cloud/src/*"
+      ],
+      "specs": ["auth"]
+    },
     "kb-import": {
       "paths": [
         "apps/web/src/components/kb/KbFilePanel.*",
@@ -112,6 +124,7 @@
     }
   },
   "specs": {
+    "auth": { "priority": "P1", "file": "auth.spec.ts" },
     "bootstrap": { "priority": "P0", "file": "bootstrap.spec.ts" },
     "chat-single": { "priority": "P0", "file": "chat-single.spec.ts" },
     "chat-multi": { "priority": "P0", "file": "chat-multi.spec.ts" },
