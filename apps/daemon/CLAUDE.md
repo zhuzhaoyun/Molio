@@ -65,6 +65,10 @@ src/
       token-store.ts   FeishuTokenStore — tenant_access_token 内存缓存 + 磁盘持久化 + 100min 刷新定时器
       service.ts       状态机 (idle/connecting/connected/reconnecting/error)，token 生命周期委托 token-store
       types.ts         FeishuStatus / FeishuConfig / FeishuRawEvent
+    auth/             云端认证 client（用户模块 M2；Web UI 永不直连云端，一切经 daemon）
+      token-store.ts   ~/.molio/auth-tokens.json 读写（复用 credentials-store 原子写 + chmod 0o600）；解码 access JWT exp；token 不进 config.json
+      auth-client.ts   AuthClient — 唯一云端通信方（MOLIO_AUTH_URL env，未配置时端点回 503）：sendCode/verify/logout、single-flight refresh、401→刷新→重试一次、<2min 主动刷新、refresh 被拒不盲试、启动恢复 restoreSession
+      entitlement-cache.ts  EntitlementCache — 权益快照 ~/.molio/entitlement-cache.json + 7 天离线宽限（MOLIO_AUTH_GRACE_DAYS 可配）
   routes/
     channel.ts        channelRoutes<TConfig>() 工厂 — 5 个标准渠道路由（status/start/stop/disconnect/config）
 
@@ -81,10 +85,11 @@ src/
     maintenance.ts    POST /api/maintenance/rebuild-fts — 重建 FTS 索引（灾难恢复）
     weixin.ts         POST /api/weixin — 微信回调
     feishu.ts         GET/POST /api/feishu/* — 飞书渠道 (status/start/stop/disconnect/config)
+    auth.ts           POST /api/auth/start|verify|logout + GET /status — 云端认证本地镜像（start 原样透传云端响应含 daily devCode）
   publish-bridge/
     bridge-page.ts    发布桥接页面逻辑
 test/                  测试用例 (node:test)，按源码模块子目录组织
-  core/               config, db, transcript, run-event-buffer, knowledge, conversations, weixin, feishu
+  core/               config, db, transcript, run-event-buffer, knowledge, conversations, weixin, feishu, auth（mock-cloud.ts 是行为可编程 mock 云端）
   streams/            claude-stream, codex-stream, json-event-stream, jsonl-parser
   runtimes/           env, launch-detection, claude-permission-mode, windows-cmd-resolution
   routes/             agent-test-multiturn, knowledge, publish, sse, feishu
@@ -131,6 +136,10 @@ pnpm typecheck    # tsc --noEmit
 | POST | `/api/feishu/stop` | 停止飞书连接（不清理凭证） |
 | POST | `/api/feishu/disconnect` | 断开连接并清理 tenant_access_token 缓存 |
 | PUT | `/api/feishu/config` | 写 App ID/App Secret/默认 agent（写入 ~/.molio/config.json 的 feishu 字段，自动触发重连） |
+| POST | `/api/auth/start` | 发送验证码（转发云端 send-code，响应原样透传，daily/local 含 devCode） |
+| POST | `/api/auth/verify` | 验证码登录（注册=登录），token 落 ~/.molio/auth-tokens.json |
+| GET | `/api/auth/status` | 登录态快照（离线时 stale=true；refresh 失效 loginExpired=true） |
+| POST | `/api/auth/logout` | 云端吊销尽力而为 + 本地必清 token/权益快照 |
 
 ## 关键设计
 

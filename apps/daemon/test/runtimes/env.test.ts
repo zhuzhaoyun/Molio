@@ -292,16 +292,24 @@ describe('buildSpawnEnv', () => {
     const isWindows = process.platform === 'win32';
     let savedHome: string | undefined;
     let savedUserProfile: string | undefined;
+    let savedLocalAppData: string | undefined;
+    let savedAppData: string | undefined;
     let tmpHome: string;
 
     beforeEach(() => {
+      tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-env-test-'));
       if (isWindows) {
         savedUserProfile = process.env['USERPROFILE'];
-        tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-env-test-'));
         process.env['USERPROFILE'] = tmpHome;
+        // Windows 上 augmentPath 还会扫 %LOCALAPPDATA%/%APPDATA% 下的 Python
+        // Scripts 目录（windowsPythonScriptsDirs）——不重定向的话，装了 Python
+        // 的开发机会把真实目录带进 PATH，"不存在则不加"断言必挂。
+        savedLocalAppData = process.env['LOCALAPPDATA'];
+        savedAppData = process.env['APPDATA'];
+        process.env['LOCALAPPDATA'] = path.join(tmpHome, 'AppData', 'Local');
+        process.env['APPDATA'] = path.join(tmpHome, 'AppData', 'Roaming');
       } else {
         savedHome = process.env['HOME'];
-        tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-env-test-'));
         process.env['HOME'] = tmpHome;
       }
     });
@@ -310,6 +318,10 @@ describe('buildSpawnEnv', () => {
       if (isWindows) {
         if (savedUserProfile !== undefined) process.env['USERPROFILE'] = savedUserProfile;
         else delete process.env['USERPROFILE'];
+        if (savedLocalAppData !== undefined) process.env['LOCALAPPDATA'] = savedLocalAppData;
+        else delete process.env['LOCALAPPDATA'];
+        if (savedAppData !== undefined) process.env['APPDATA'] = savedAppData;
+        else delete process.env['APPDATA'];
       } else {
         if (savedHome !== undefined) process.env['HOME'] = savedHome;
         else delete process.env['HOME'];
