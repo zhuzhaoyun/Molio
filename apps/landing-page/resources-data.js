@@ -1,36 +1,36 @@
 /**
- * Molio 知识库资源库 — 列表页 (resources.html) 与详情页 (resource.html) 共享数据。
+ * Molio Knowledge Base Resource Library — shared data for the list page (resources.html) and detail page (resource.html).
  *
- * 上架新资源：往 MOLIO_RESOURCES 追加一条即可，两页同时生效。
- * - 付费资源（price: N，当前全部收费）：
- *   · payUrl 非空 → 详情页按钮跳外部支付页（面包多/虎皮椒等商品链接）；
- *   · payUrl 空且 MOLIO_PAY_BASE 已配置 → 走微信官方 Native 支付（后端在独立私有仓库 wxpay-fc，不公开）；
- *   · 两者都空 → 降级为“联系购买”（enterprise.html#contact）。
- *   注意：改价时需同步 OSS 上 molio-pay/config/products.json（服务端权威定价，FC 从 OSS 读取）。
- * - preview：专属效果预览图路径数组；空数组 → 详情页兜底显示通用应用截图。
- * - 文案规范：对外内容不用直角引号，一律标准引号 “” / ‘’。
+ * Publishing new resources: just append an entry to MOLIO_RESOURCES, it will take effect on both pages simultaneously.
+ * - Paid resource (price: N, currently all paid):
+ *   · payUrl not empty → the detail page button jumps to an external payment page (product links from mianbaoduo/hupijiao, etc.);
+ *   · payUrl empty and MOLIO_PAY_BASE configured → uses WeChat official Native payment (backend in a separate private repo wxpay-fc, not public);
+ *   · both empty → downgrades to "contact to purchase" (enterprise.html#contact).
+ *   Note: when changing prices, sync with config/products.json on OSS molio-pay (authoritative server-side pricing, FC reads from OSS).
+ * - preview: array of dedicated preview image paths; empty array → the detail page falls back to displaying common app screenshots.
+ * - Writing conventions: do not use corner brackets for public-facing content, use standard quotes “” / ‘’ uniformly.
  */
 (function () {
   'use strict';
 
-  // 微信支付后端地址（部署 wxpay-fc 后端函数并绑定域名后改为 'https://pay.molio.cn'）。
-  // 留空则付费资源降级为“联系购买”。测试可用 add_init_script 注入 localhost 覆盖。
-  window.MOLIO_PAY_BASE = window.MOLIO_PAY_BASE || 'https://wxpay-lgbessjewn.cn-shenzhen.fcapp.run';
+  // WeChat payment backend address (official domain, already bound to the wxpay-fc function).
+  // If left empty, paid resources downgrade to "contact to purchase". For testing, you can override with localhost injection via add_init_script.
+  window.MOLIO_PAY_BASE = window.MOLIO_PAY_BASE || 'https://pay.molio.cn';
 
   window.MOLIO_RES_BASE = 'https://molio-releases.oss-cn-guangzhou.aliyuncs.com/resources';
 
   window.MOLIO_RESOURCES = [
     {
       id: 'zizhi-tongjian',
-      icon: '📖', tint: '#E8EDF2', name: '资治通鉴',
-      desc: '《资治通鉴》整理版 Markdown 知识库，下载解压即用',
+      icon: '📖', tint: '#E8EDF2', name: 'Zizhi Tongjian (Erta Chronicles)',
+      desc: '《Zizhi Tongjian》organized version Markdown knowledge base, ready to use after download and extraction',
       file: 'zizhi-tongjian-vault.zip', price: 0.99,
-      tags: ['经典', '历史'],
+      tags: ['Classics', 'History'],
       overview: [
-        '《资治通鉴》全文整理版 Markdown 知识库：按卷次结构化为笔记，覆盖从三家分晋到五代末的一千三百六十二年史事，编年脉络清晰。',
-        '长时段编年史最适合交给 AI 检索：问某年发生了什么、某项制度如何演变，都能基于知识库给出带出处的梳理，而不是泛泛而谈。',
+        '《Zizhi Tongjian》full-text organized version Markdown knowledge base: structured into notes by volume, covering 1,362 years of historical events from the Partition of Jin by the Three Families to the end of the Five Dynasties, with a clear chronological thread.',
+        'Long-span chronological history is best suited for AI search: when asked what happened in a certain year or how a certain institution evolved, it can provide organized answers with sources based on the knowledge base, rather than vague generalities.',
       ],
-      highlights: ['全文按卷结构化，编年线索不断', '与史记知识库互补：一为纪传，一为编年', 'Molio / Obsidian 均可直接加载'],
+      highlights: ['Full text structured by volume, unbroken chronological clues', 'Complementary to the Shiji knowledge base: one biographical-chronological, one chronological', 'Directly loadable in Molio / Obsidian'],
       preview: [
         'images/previews/zizhi-tongjian/1.png',
         'images/previews/zizhi-tongjian/2.png',
@@ -40,57 +40,57 @@
     },
     {
       id: 'low-altitude-economy',
-      icon: '🚁', tint: '#E3F0E7', name: '低空经济',
-      desc: '低空经济产业精选资料库，政策与研究一网打尽',
+      icon: '🚁', tint: '#E3F0E7', name: 'Low-altitude Economy',
+      desc: 'Low-altitude economy industry curated materials library, policies and research all covered',
       file: 'low-altitude-economy-vault.zip', price: 59,
-      tags: ['产业', '研究'],
+      tags: ['Industry', 'Research'],
       overview: [
-        '低空经济产业精选资料库：政策法规、产业研究、企业案例分专题归档，把一个快速演进的新兴行业装进一个知识库。',
-        '适合从业者、研究者与投资人：问政策边界、产业链拆解、公司对比，AI 的回答都基于库内整理过的资料，而非网上碎片信息。',
+        'Low-altitude economy industry curated materials library: policies and regulations, industry research, and corporate case studies archived by topic, packing a rapidly evolving emerging industry into a single knowledge base.',
+        'Suitable for practitioners, researchers, and investors: when asked about policy boundaries, industry chain breakdowns, or company comparisons, AI answers are based on organized materials within the library, not fragmented information online.',
       ],
-      highlights: ['政策、研究、案例一站式收录', '专题归档，脉络清楚', '从业者与投资者的产业外脑'],
+      highlights: ['One-stop collection of policies, research, and case studies', 'Topic-based archiving with clear threads', 'An industry think-tank for practitioners and investors'],
       preview: [],
       payUrl: '',
     },
     {
       id: 'qianzhongshu-shougao',
-      icon: '🖋️', tint: '#F0E8DC', name: '钱钟书手稿库',
-      desc: '钱钟书手稿资料整理版知识库，文献专题归档',
+      icon: '🖋️', tint: '#F0E8DC', name: 'Qian Zhongshu Manuscript Library',
+      desc: 'Qian Zhongshu manuscript materials organized version knowledge base, literature topic archive',
       file: 'qianzhongshu-shougao-vault.zip', price: 69,
-      tags: ['文献', '手稿'],
+      tags: ['Literature', 'Manuscripts'],
       overview: [
-        '钱钟书手稿资料整理版知识库：手稿目录、文本考订、研究文献分专题归档为 Markdown 笔记，检索与引用都方便。',
-        '适合做现代文学与学术史研究的人：让 AI 基于整理过的资料做专题梳理、引文核对，而不是在散乱资料里翻找。',
+        'Qian Zhongshu manuscript materials organized version knowledge base: manuscript catalogs, textual research, and research literature archived by topic into Markdown notes, convenient for search and citation.',
+        'For those doing modern literature and academic history research: have AI organize topics and verify citations based on organized materials, rather than rummaging through scattered materials.',
       ],
-      highlights: ['手稿文献分专题归档', '结构化 Markdown，AI 可引用', '研究与写作的查证底库'],
+      highlights: ['Manuscript literature archived by topic', 'Structured Markdown, AI-citable', 'A research and writing verification base library'],
       preview: [],
       payUrl: '',
     },
     {
       id: 'zhenyan-yifang-gekuo',
-      icon: '🌿', tint: '#E8F0E4', name: '诊验医方歌括',
-      desc: '医方歌括整理版知识库，方剂歌诀便于记诵应用',
+      icon: '🌿', tint: '#E8F0E4', name: 'Zhenyan Medical Prescriptions in Verse',
+      desc: 'Medical prescription verse organized version knowledge base, prescription mnemonic verses easy to memorize and apply',
       file: 'zhenyan-yifang-gekuo-vault.zip', price: 99,
-      tags: ['中医', '方剂'],
+      tags: ['Traditional Chinese Medicine', 'Prescriptions'],
       overview: [
-        '诊验医方歌括整理版知识库：以歌括体例整理方剂，方名、组成、功效、主治以歌诀形式呈现，朗朗上口，便于记忆。',
-        '既适合按方背诵，也方便临床、写作时快速检索方剂出处——问一味药的配伍、一首方的化裁，AI 的回答都有库内整理过的依据。',
+        'Zhenyan Medical Prescriptions in Verse organized version knowledge base: prescriptions organized in verse form, with prescription names, compositions, effects, and indications presented as mnemonic verses, rhythmic and easy to memorize.',
+        'Suitable for both reciting prescription by prescription and for quick searching of prescription sources during clinical practice or writing — when asked about the combination of a certain medicinal herb or the modification of a certain prescription, AI answers have organized grounds within the library.',
       ],
-      highlights: ['方剂以歌括体例整理', '歌诀朗朗上口，便于记诵', '方名、组成、主治可检索'],
+      highlights: ['Prescriptions organized in verse form', 'Mnemonic verses rhythmic and easy to memorize', 'Searchable by prescription name, composition, and indication'],
       preview: [],
       payUrl: '',
     },
     {
       id: 'mingshi',
-      icon: '🏯', tint: '#E9E2D4', name: '明史',
-      desc: '《明史》整理版 Markdown 知识库，下载解压即用',
+      icon: '🏯', tint: '#E9E2D4', name: 'History of Ming',
+      desc: '《History of Ming》organized version Markdown knowledge base, ready to use after download and extraction',
       file: 'mingshi-vault.zip', price: 9.9,
-      tags: ['经典', '历史'],
+      tags: ['Classics', 'History'],
       overview: [
-        '《明史》整理版 Markdown 知识库：按本纪、志、表、列传结构化为独立笔记，原文与线索完整保留，并建立人物、事件的交叉链接。',
-        '与资治通鉴、史记衔接：编年有通鉴，纪传有明史，交给 AI 做专题研读、人物梳理，回答都有原文可溯。',
+        '《History of Ming》organized version Markdown knowledge base: structured into independent notes by basic annals, treatises, tables, and biographies, with original text and clues fully preserved, and cross-links established for persons and events.',
+        'Linked with Zizhi Tongjian and Shiji: chronological in Tongjian, biographical-chronological in History of Ming — hand it to AI for specialized study and person organization, and answers have original text to trace back to.',
       ],
-      highlights: ['本纪、志、表、列传结构化', '人物与事件交叉链接', 'Molio / Obsidian 均可直接加载'],
+      highlights: ['Basic annals, treatises, tables, biographies structured', 'Cross-links for persons and events', 'Directly loadable in Molio / Obsidian'],
       preview: [],
       payUrl: '',
     },
