@@ -23,14 +23,14 @@
     {
       id: 'zizhi-tongjian',
       icon: '📖', tint: '#E8EDF2', name: '资治通鉴',
-      desc: '《资治通鉴》整理版 Markdown 知识库，下载解压即用',
+      desc: '1362 年的人物、事件互链成关系图谱，让 AI 梳理因果脉络、人物网络，一目了然',
       file: 'zizhi-tongjian-vault.zip', price: 0.99,
       tags: ['经典', '历史'],
       overview: [
-        '《资治通鉴》全文整理版 Markdown 知识库：按卷次结构化为笔记，覆盖从三家分晋到五代末的一千三百六十二年史事，编年脉络清晰。',
-        '长时段编年史最适合交给 AI 检索：问某年发生了什么、某项制度如何演变，都能基于知识库给出带出处的梳理，而不是泛泛而谈。',
+        '《资治通鉴》全文整理版 Markdown 知识库：按卷次结构化为笔记，覆盖从三家分晋到五代末的一千三百六十二年史事，人物、事件互链成关系图谱。',
+        '这张关系图谱正是 PDF 给不了的：让 AI 梳理某个人物周围的人物网络、某个事件的因果脉络，给出的不是泛泛而谈，而是基于图谱的清晰线索。',
       ],
-      highlights: ['全文按卷结构化，编年线索不断', '与史记知识库互补：一为纪传，一为编年', 'Molio / Obsidian 均可直接加载'],
+      highlights: ['全文按卷结构化，人物事件互链成图谱', '与史记知识库互补：一为纪传，一为编年', 'Molio / Obsidian 均可直接加载'],
       preview: [
         'images/previews/zizhi-tongjian/1.png',
         'images/previews/zizhi-tongjian/2.png',
@@ -41,7 +41,7 @@
     {
       id: 'ronganguan-zhaji',
       icon: '🖋️', tint: '#F0E8DC', name: '容安馆札记',
-      desc: '钱钟书《容安馆札记》整理版知识库，学术笔记专题归档',
+      desc: '钱钟书读书札记分专题整理成 wiki 条目，研究与写作的查证、引文核对交给 AI',
       file: 'ronganguan-zhaji-vault.zip', price: 69,
       tags: ['文献', '札记'],
       overview: [
@@ -55,7 +55,7 @@
     {
       id: 'zhenyan-yifang-gekuo',
       icon: '🌿', tint: '#E8F0E4', name: '诊验医方歌括',
-      desc: '医方歌括整理版知识库，方剂歌诀便于记诵应用',
+      desc: '医方以歌括体例整理成 wiki 条目，问 AI 方剂组成、主治，歌诀脱口而出',
       file: 'zhenyan-yifang-gekuo-vault.zip', price: 99,
       tags: ['中医', '方剂'],
       overview: [
@@ -69,14 +69,14 @@
     {
       id: 'shiji',
       icon: '📜', tint: '#F5E9D3', name: '史记',
-      desc: '《史记》整理版 Markdown 知识库，下载解压即用',
+      desc: '五体整理成 wiki 条目，同一人物的事迹跨篇互链，让 AI 汇总生平、拼出全貌',
       file: 'shiji-vault.zip', price: 9.9,
       tags: ['经典', '历史'],
       overview: [
-        '《史记》全文整理版 Markdown 知识库：本纪、表、书、世家、列传五体结构化为独立笔记，原文完整保留，并建立篇目间的交叉链接。',
-        '你可以把它当一部全文可读的电子版循序阅读，也可以让 AI 基于它做专题研读——人物生平汇总、事件始末梳理、各篇观点对比，回答都有原文可溯。',
+        '《史记》全文整理版 Markdown 知识库：本纪、表、书、世家、列传五体结构化为独立笔记，原文完整保留，同一人物、同一事件的事迹跨篇互链。',
+        '纪传体把一个人的事迹散在本纪、世家、列传里，PDF 时代永远串不起来；现在互链把它们连成完整生平。让 AI 汇总人物生平、梳理事件始末，回答跨篇互证、原文可溯。',
       ],
-      highlights: ['全文覆盖本纪、表、书、世家、列传五体', '篇目独立成笔记，AI 引用、跳转方便', 'Obsidian 可直接打开，图谱视图同样好用'],
+      highlights: ['全文覆盖本纪、表、书、世家、列传五体', '同一人物事迹跨篇互链，生平可汇总成全貌', 'Obsidian 可直接打开，图谱视图同样好用'],
       preview: [],
       payUrl: '',
     },
