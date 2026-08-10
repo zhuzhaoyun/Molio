@@ -384,24 +384,33 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
                   </svg>
                 </button>
 
-                {newWinOpen && vaults.length > 0 && (
+                {newWinOpen && (
                   <div className="kb-vault-pick" data-testid="kb-vault-pick" role="menu">
-                    {vaults.map((v) => (
-                      <button
-                        key={v.id}
-                        type="button"
-                        className="kb-vault-pick__item"
-                        role="menuitem"
-                        data-testid={`kb-vault-pick-${v.id}`}
-                        onClick={() => {
-                          setNewWinOpen(false);
-                          setCreateMenuOpen(false);
-                          openInNewWindow(`/knowledge?vault=${encodeURIComponent(v.id)}`);
-                        }}
-                      >
-                        <span className="kb-vault-pick__name">{v.name}</span>
-                      </button>
-                    ))}
+                    <div className="kb-vault-pick__title">{t('kb.chooseVault')}</div>
+                    {vaults.length === 0 ? (
+                      <div className="kb-vault-pick__empty">{t('kb.noVaults')}</div>
+                    ) : (
+                      vaults.map((v) => (
+                        <button
+                          key={v.id}
+                          type="button"
+                          className="kb-vault-pick__item"
+                          role="menuitem"
+                          data-testid={`kb-vault-pick-${v.id}`}
+                          onClick={() => {
+                            setNewWinOpen(false);
+                            setCreateMenuOpen(false);
+                            openInNewWindow(`/knowledge?vault=${encodeURIComponent(v.id)}`);
+                          }}
+                        >
+                          {/* folder */}
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                          </svg>
+                          <span className="kb-vault-pick__name">{v.name}</span>
+                        </button>
+                      ))
+                    )}
                   </div>
                 )}
               </div>
