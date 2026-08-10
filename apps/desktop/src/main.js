@@ -298,6 +298,11 @@ function throttleRefreshDockMenu() {
 
 /** Windows taskbar Jump List: a "New Window" task (launcher-style, Windows only). */
 function buildJumpList() {
+  // Dev mode: process.execPath is node_modules/electron/dist/electron.exe, NOT the
+  // packaged Molio.exe. A task whose program points at it launches bare Electron
+  // (no app path) → the Electron default page, and the primary instance never sees
+  // a second-instance event. The task only makes sense against the packaged exe.
+  if (isDevMode()) return;
   if (process.platform !== 'win32' || typeof app.setUserTasks !== 'function') return;
   app.setUserTasks([
     {

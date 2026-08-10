@@ -84,6 +84,18 @@ describe('main.js Windows taskbar Jump List', () => {
     const seg = mainSource.slice(mainSource.indexOf("app.on('second-instance'"), mainSource.indexOf("app.on('second-instance'") + 900);
     assert.ok(seg.includes('openNewWindowFromFocused()'), 'second-instance --new-window must call openNewWindowFromFocused');
   });
+
+  it('is skipped in dev mode — program: process.execPath is electron.exe, the task would launch a bare Electron default page', () => {
+    // Dev mode: process.execPath points at node_modules/electron/dist/electron.exe
+    // (not the packaged Molio.exe), so a Jump List task program pointing at it
+    // launches bare Electron with no app path → the Electron default page, and
+    // the primary instance never sees a second-instance event. The task only
+    // makes sense against the packaged exe.
+    const start = mainSource.indexOf('function buildJumpList(');
+    const end = mainSource.indexOf('function initVaultRecency(');
+    const jumpListSection = mainSource.slice(start, end);
+    assert.match(jumpListSection, /isDevMode\(\)/, 'buildJumpList must bail out in dev mode');
+  });
 });
 
 describe('main.js vault-recency wiring', () => {
