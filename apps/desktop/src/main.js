@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, shell, Menu } from 'electron';
 import { spawn, execSync } from 'node:child_process';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setupAutoUpdater } from './updater.js';
@@ -8,6 +9,7 @@ import { startFetchServer } from './wiki-fetcher.js';
 import { openFeishuLogin, getFeishuLoginStatus } from './wiki-fetcher-login.js';
 import { startDaemonMetricsPolling } from './daemon-metrics.js';
 import { CappedBuffer } from './capped-buffer.js';
+import { createVaultRecency } from './vault-recency.js';
 
 const errMsg = (err) => (err instanceof Error ? err.message : String(err));
 
@@ -29,6 +31,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const PROTOCOL = 'molio';
 
+/** Base URL of the local daemon (dev and production both bind :3100). */
+const DAEMON_BASE = 'http://localhost:3100';
+
+/** Rebuild the macOS dock menu at most this often (vault list changes live in the web layer). */
+const DOCK_REFRESH_THROTTLE_MS = 3000;
+
 // Set app name before any other app API calls — this controls the display name
 // shown in Windows protocol association dialogs ("要打开 Molio 吗?").
 app.name = 'Molio';
@@ -47,6 +55,10 @@ const rendererStates = new Map();
 let daemonProcess = null;
 let stopDaemonMetrics = null;
 let daemonReady = false;
+/** Recently-opened vault LRU (macOS dock 「最近使用的知识库」). Created on ready. */
+let vaultRecency = null;
+/** Last epoch-ms the dock menu was rebuilt — throttle guard for focus-refresh. */
+let lastDockRefresh = 0;
 
 // On macOS, closing the window hides it instead of destroying it, so the
 // user can reopen instantly from the dock. When the app is force-quitting
@@ -202,6 +214,13 @@ function buildAppMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+/** Open a new window loading the given SPA path ('' = the app landing view). */
+function openNewWindowAt(path = '') {
+  const newWin = createWindow({ url: path });
+  if (!isDevMode() && daemonReady) loadAppWindow(newWin, path);
+  return newWin;
+}
+
 /** Open a new window that clones the focused window's current path+query. */
 function openNewWindowFromFocused() {
   const win = lastFocusedAppWindow ?? appWindows.values().next().value;
@@ -221,8 +240,93 @@ function openNewWindowFromFocused() {
       }
     } catch { url = ''; }
   }
-  const newWin = createWindow({ url });
-  if (!isDevMode() && daemonReady) loadAppWindow(newWin, url);
+  openNewWindowAt(url);
+}
+
+/** Open a new window directly into a vault (dock 「最近使用的知识库」 click). */
+function openVaultInNewWindow(vaultId) {
+  if (typeof vaultId !== 'string' || vaultId.length === 0) return;
+  vaultRecency?.touch(vaultId);
+  openNewWindowAt(`/knowledge?vault=${encodeURIComponent(vaultId)}`);
+}
+
+/** Build the macOS dock menu template: New Window + recently-used vaults. */
+function buildDockMenu(vaults) {
+  const vaultItems = vaults.length > 0
+    ? vaults.map((v) => ({ label: v.name || v.id, click: () => openVaultInNewWindow(v.id) }))
+    : [{ label: '暂无知识库', enabled: false }];
+  return Menu.buildFromTemplate([
+    { label: '新窗口', click: () => openNewWindowFromFocused() },
+    { type: 'separator' },
+    { label: '最近使用的知识库', submenu: vaultItems },
+  ]);
+}
+
+/**
+ * Fetch the vault list from the daemon and (re)build the dock menu.
+ * Best-effort: daemon not up yet / fetch failure leaves the current menu in
+ * place (the initial build keeps 「新窗口」 usable even with no vaults).
+ */
+async function refreshDockMenu() {
+  if (process.platform !== 'darwin' || !app.dock || !vaultRecency) return;
+  let vaults = [];
+  try {
+    const res = await fetch(`${DAEMON_BASE}/api/knowledge/vaults`, { signal: AbortSignal.timeout(2500) });
+    if (res.ok) {
+      const body = await res.json();
+      vaults = Array.isArray(body.vaults) ? body.vaults : [];
+    }
+  } catch {
+    // Daemon unreachable — keep whatever menu is already set.
+  }
+  // Rank by recency: vaults the user actually opened first, then the rest.
+  const recent = new Set(vaultRecency.orderedIds());
+  const ranked = [
+    ...vaults.filter((v) => recent.has(v.id)),
+    ...vaults.filter((v) => !recent.has(v.id)),
+  ];
+  app.dock.setMenu(buildDockMenu(ranked));
+}
+
+/** Throttled refresh — vault list changes happen inside web windows we can't observe. */
+function throttleRefreshDockMenu() {
+  const now = Date.now();
+  if (now - lastDockRefresh < DOCK_REFRESH_THROTTLE_MS) return;
+  lastDockRefresh = now;
+  void refreshDockMenu();
+}
+
+/** Windows taskbar Jump List: a "New Window" task (launcher-style, Windows only). */
+function buildJumpList() {
+  if (process.platform !== 'win32' || typeof app.setUserTasks !== 'function') return;
+  app.setUserTasks([
+    {
+      program: process.execPath,
+      arguments: '--new-window',
+      title: '新窗口',
+      description: '打开一个新窗口',
+      iconPath: process.execPath,
+      iconIndex: 0,
+    },
+  ]);
+}
+
+/** Wire the recency LRU to a small JSON file under userData (best-effort IO). */
+function initVaultRecency() {
+  const recencyFile = path.join(app.getPath('userData'), 'vault-recency.json');
+  vaultRecency = createVaultRecency({
+    read: () => {
+      try { return JSON.parse(readFileSync(recencyFile, 'utf-8')); } catch { return null; }
+    },
+    write: (entries) => {
+      try {
+        mkdirSync(path.dirname(recencyFile), { recursive: true });
+        writeFileSync(recencyFile, JSON.stringify(entries), 'utf-8');
+      } catch (err) {
+        log('warn', 'main', `vault-recency persist failed: ${errMsg(err)}`);
+      }
+    },
+  });
 }
 
 /**
@@ -284,6 +388,18 @@ function createWindow({ url = '' } = {}) {
     shell.openExternal(targetUrl);
     return { action: 'deny' };
   });
+
+  // Feed the macOS dock 「最近使用的知识库」 menu. Record the vault in the URL on
+  // ANY navigation: full loads (did-navigate — initial open, molio://, cloned
+  // ⌘N windows) and SPA vault switches (did-navigate-in-page — pushState).
+  const recordVaultNavigation = (_event, url, isMainFrame) => {
+    if (!isMainFrame || !vaultRecency) return;
+    let vaultId = null;
+    try { vaultId = new URL(url).searchParams.get('vault'); } catch { return; }
+    if (vaultId) vaultRecency.touch(vaultId);
+  };
+  win.webContents.on('did-navigate', recordVaultNavigation);
+  win.webContents.on('did-navigate-in-page', recordVaultNavigation);
 
   // F12 / Ctrl+Shift+I toggles DevTools in production builds for debugging.
   win.webContents.on('before-input-event', (event, input) => {
@@ -538,6 +654,13 @@ if (!singleLock) {
   app.quit();
 } else {
   app.on('second-instance', (_event, commandLine) => {
+    // Windows taskbar Jump List "New Window" relaunches the exe with a flag;
+    // the single-instance lock funnels it here — open a window, don't navigate.
+    if (commandLine.includes('--new-window')) {
+      log('info', 'main', 'second-instance triggered via --new-window');
+      openNewWindowFromFocused();
+      return;
+    }
     // Someone tried to launch via molio:// or double-click while app is running
     // Restore the existing (last-focused) window
     const win = lastFocusedAppWindow ?? appWindows.values().next().value;
@@ -602,6 +725,16 @@ app.whenReady().then(async () => {
   // ② Build the app menu (New Window ⌘N/Ctrl+N etc.) before creating windows —
   //    the menu's New Window click handler references lastFocusedAppWindow.
   buildAppMenu();
+
+  // macOS dock menu + Windows taskbar Jump List — OS-level "New Window" entries.
+  buildJumpList();
+  initVaultRecency();
+  throttleRefreshDockMenu();
+  if (process.platform === 'darwin') {
+    // Vault list changes happen inside web windows we can't observe; refresh
+    // the dock menu when a window gains focus (throttled to one fetch/3s).
+    app.on('browser-window-focus', throttleRefreshDockMenu);
+  }
 
   // ③ Create window first (updater IPC needs a window reference).
   //    In production the window stays hidden until the daemon is ready.
