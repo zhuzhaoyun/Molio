@@ -17,3 +17,5 @@ allowBuilds:
   electron: true
   esbuild: true
   protobufjs: true
+patchedDependencies:
+  '@arms/rum-electron@0.0.5': patches/@arms__rum-electron@0.0.5.patch
