@@ -1,15 +1,8 @@
 import { NavLink } from 'react-router-dom';
 import { useI18n } from '../i18n';
-import { OpenNewWindowIcon } from './icons';
-import { openInNewWindow } from '../utils/openWindow';
 
 export function NavRail() {
   const { t } = useI18n();
-
-  /** Clone the current view into a new window (Electron IPC / browser popup). */
-  const handleNewWindow = () => {
-    openInNewWindow(`${window.location.pathname}${window.location.search}`);
-  };
 
   return (
     <nav className="entry-nav-rail">
@@ -111,22 +104,8 @@ export function NavRail() {
         </NavLink>
       </div>
 
-      {/* Bottom group: New Window + Help + Settings */}
+      {/* Bottom group: Help + Settings */}
       <div className="entry-nav-rail__group">
-        {/* New Window — clone the current view into another window/tab */}
-        <button
-          type="button"
-          data-testid="nav-new-window-btn"
-          data-view="new-window"
-          data-tooltip={t('nav.newWindow')}
-          className="entry-nav-rail__btn"
-          onClick={handleNewWindow}
-        >
-          <OpenNewWindowIcon size={18} />
-        </button>
-
-        <div className="entry-nav-rail__divider" />
-
         {/* Help — external link to online docs */}
         <a
           href="https://molio.cn/help.html"

@@ -241,20 +241,40 @@ test.describe('multi-window vault isolation', () => {
     await ctx.close();
   });
 
-  test('NavRail new-window button clones the current view', async ({ browser }) => {
+  test('unified 新建 dropdown offers note, folder, and new-window', async ({ browser }) => {
     const ctx = await browser.newContext();
     const page = await ctx.newPage();
 
     await page.goto(`${WEB}/knowledge?vault=${vaultAId}`);
     await expect(page.locator('.kb-vault-bar__name')).toHaveText('mw-a');
 
-    // The standalone button clones the current path+query into a new window
-    // (browser fallback = window.open → popup).
+    await page.locator('[data-testid="kb-btn-create"]').click();
+    await expect(page.locator('[data-testid="kb-create-dropdown"]')).toBeVisible();
+    await expect(page.locator('[data-testid="kb-create-note"]')).toBeVisible();
+    await expect(page.locator('[data-testid="kb-create-folder"]')).toBeVisible();
+    await expect(page.locator('[data-testid="kb-create-window"]')).toBeVisible();
+    await ctx.close();
+  });
+
+  test('新建 → 新窗口 lets the user pick which vault opens in the new window', async ({ browser }) => {
+    const ctx = await browser.newContext();
+    const page = await ctx.newPage();
+
+    // Start in vault A — the new window should open to the CHOSEN vault (B),
+    // not clone the current one.
+    await page.goto(`${WEB}/knowledge?vault=${vaultAId}`);
+    await expect(page.locator('.kb-vault-bar__name')).toHaveText('mw-a');
+
+    await page.locator('[data-testid="kb-btn-create"]').click();
+    await page.locator('[data-testid="kb-create-window"]').click();
+    await expect(page.locator('[data-testid="kb-vault-pick"]')).toBeVisible();
+    await expect(page.locator(`[data-testid="kb-vault-pick-${vaultBId}"]`)).toBeVisible();
+
     const popupPromise = page.waitForEvent('popup');
-    await page.locator('[data-testid="nav-new-window-btn"]').click();
+    await page.locator(`[data-testid="kb-vault-pick-${vaultBId}"]`).click();
     const popup = await popupPromise;
     await popup.waitForURL(/vault=/);
-    expect(popup.url()).toContain(`vault=${vaultAId}`);
+    expect(popup.url()).toContain(`vault=${vaultBId}`);
     await ctx.close();
   });
 });

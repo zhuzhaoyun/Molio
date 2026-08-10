@@ -37,7 +37,7 @@
 /* Toolbar icon buttons. `:not(.kb-sort-item)` keeps the 28×28 sizing off the
    sort dropdown's menu items, which live inside the toolbar but need their
    own full-width layout (see .kb-sort-item). */
-.kb-file-toolbar button:not(.kb-sort-item) {
+.kb-file-toolbar button:not(.kb-sort-item):not(.kb-create-btn):not(.kb-create-item) {
   width: 26px;
   height: 26px;
   padding: 0;
@@ -52,12 +52,12 @@
   transition: all 120ms ease;
 }
 
-.kb-file-toolbar button:not(.kb-sort-item) svg {
+.kb-file-toolbar button:not(.kb-sort-item):not(.kb-create-btn):not(.kb-create-item) svg {
   width: 15px;
   height: 15px;
 }
 
-.kb-file-toolbar button:not(.kb-sort-item):hover {
+.kb-file-toolbar button:not(.kb-sort-item):not(.kb-create-btn):not(.kb-create-item):hover {
   background: var(--bg-subtle);
   color: var(--text);
 }
@@ -119,6 +119,112 @@
   justify-content: center;
   font-size: 12px;
 }
+
+/* Unified 新建 dropdown (left tree toolbar) — note / folder / new-window */
+.kb-create-menu {
+  position: relative;
+  flex-shrink: 0;
+}
+/* The labeled "＋新建" trigger — a wider ghost button (not the 26px square) */
+.kb-file-toolbar .kb-create-btn {
+  width: auto;
+  height: 26px;
+  padding: 0 9px;
+  gap: 5px;
+  font-size: 13px;
+  color: var(--accent);
+}
+.kb-create-btn:hover {
+  background: var(--bg-subtle);
+  color: var(--accent);
+}
+.kb-create-dropdown {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 4px);
+  min-width: 176px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  padding: 4px 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+}
+.kb-create-item {
+  background: none;
+  border: none;
+  text-align: left;
+  padding: 7px 12px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+.kb-create-item svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+.kb-create-item:hover { background: var(--bg-subtle); }
+.kb-create-divider {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--border);
+}
+.kb-create-item .kb-create-caret {
+  margin-left: auto;
+  width: 13px;
+  height: 13px;
+  color: var(--text-muted);
+}
+/* 新窗口 → vault-picker submenu, opens to the right of the item */
+.kb-create-window-wrap {
+  position: relative;
+}
+.kb-vault-pick {
+  position: absolute;
+  left: calc(100% - 4px);
+  top: -4px;
+  min-width: 168px;
+  max-height: 300px;
+  overflow-y: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  padding: 4px 0;
+  z-index: 41;
+  display: flex;
+  flex-direction: column;
+}
+.kb-vault-pick__item {
+  background: none;
+  border: none;
+  text-align: left;
+  padding: 7px 12px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  white-space: nowrap;
+}
+.kb-vault-pick__item:hover { background: var(--bg-subtle); }
+.kb-vault-pick__name { overflow: hidden; text-overflow: ellipsis; }
 
 /* Vault bar at bottom */
 .kb-vault-bar {

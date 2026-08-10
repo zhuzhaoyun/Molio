@@ -9,7 +9,6 @@ const en: Record<string, string> = {
   'nav.graph': 'Graph',
   'nav.help': 'Help',
   'nav.settings': 'Settings',
-  'nav.newWindow': 'New Window',
 
   // ── Common ──
   'common.save': 'Save',
@@ -323,6 +322,8 @@ const en: Record<string, string> = {
   'kb.locateFileNeedFile': 'Open a file first',
   'kb.newNote': 'New note',
   'kb.newFolder': 'New folder',
+  'kb.create': 'New',
+  'kb.newWindow': 'New Window',
   'kb.collapseAll': 'Collapse all',
   'kb.expandAll': 'Expand all',
   'kb.save': 'Save',

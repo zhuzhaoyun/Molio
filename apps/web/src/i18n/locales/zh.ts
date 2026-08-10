@@ -9,7 +9,6 @@ const zh: Record<string, string> = {
   'nav.graph': '图谱',
   'nav.help': '帮助',
   'nav.settings': '设置',
-  'nav.newWindow': '新窗口',
 
   // ── Common ──
   'common.save': '保存',
@@ -323,6 +322,8 @@ const zh: Record<string, string> = {
   'kb.locateFileNeedFile': '请先打开一个文件',
   'kb.newNote': '新建笔记',
   'kb.newFolder': '新建子文件夹',
+  'kb.create': '新建',
+  'kb.newWindow': '新窗口',
   'kb.collapseAll': '折叠全部',
   'kb.expandAll': '展开全部',
   'kb.save': '保存',

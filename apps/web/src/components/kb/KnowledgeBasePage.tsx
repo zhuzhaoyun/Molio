@@ -1020,6 +1020,7 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
         selectedFile={kb.selectedFile}
         searchQuery={kb.searchQuery}
         vaultName={kb.activeVault?.name ?? ''}
+        vaults={kb.vaults}
         onSearchChange={kb.setSearchQuery}
         onSelectFile={handleSelectFile}
         onNewFile={handleNewFile}
