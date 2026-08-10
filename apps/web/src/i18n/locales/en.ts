@@ -447,8 +447,6 @@ const en: Record<string, string> = {
   'account.deleteConfirm': 'Delete account',
   'account.cancel': 'Cancel',
   'account.busy': 'Working…',
-  'account.logoutFailed': 'Failed to sign out. Please try again.',
-  'account.deleteFailed': 'Deletion failed: {code}. Account cannot be deleted while the cloud is unreachable; try again later.',
   'login.emailLabel': 'Email',
   'login.emailPlaceholder': 'Enter your email address',
   'login.sendCode': 'Send code',

@@ -447,8 +447,6 @@ const zh: Record<string, string> = {
   'account.deleteConfirm': '确认注销',
   'account.cancel': '取消',
   'account.busy': '处理中…',
-  'account.logoutFailed': '退出登录失败，请重试',
-  'account.deleteFailed': '注销失败：{code}。云端不可达时无法注销，请稍后重试',
   'login.emailLabel': '邮箱',
   'login.emailPlaceholder': '请输入邮箱地址',
   'login.sendCode': '发送验证码',
