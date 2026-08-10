@@ -61,7 +61,7 @@ localStorage `molio.activeVaultId` 降级为「无 URL 参数的新窗口的默�
 
 | 决策点 | 结论 |
 |---|---|
-| 1. 新窗口入口 | 菜单栏「文件 → 新窗口」+ ⌘N/Ctrl+N 快捷键 + **KB 标签右键「在新窗口打开」**（P4 标签拖出基座）；不加 NavRail 按钮 |
+| 1. 新窗口入口 | ① 菜单栏「文件 → 新窗口」+ ⌘N/Ctrl+N 快捷键 ② **KB 标签右键「在新窗口打开」** ③ **NavRail 底部独立「新窗口」按钮**（2026-08-10 UX 迭代补充，克隆当前视图）④ **macOS Dock 右键「新窗口」+「最近使用的知识库」子菜单**（vault-recency LRU，`userData/vault-recency.json` 持久化，focus 3s 节流刷新）⑤ **Windows 任务栏 Jump List「新窗口」**（`--new-window` → 单实例锁 → second-instance；机制限制无动态子菜单） |
 | 2. 窗口-vault 关系 | **一窗一 vault**（语义清晰；一窗多 vault = P3 分屏，另论） |
 | 3. daemon `active_vault` 语义 | **最后激活窗口的 vault**（每窗口切换时已同步；Clipper 协议零改动） |
 | 4. 开工时机 | **现在开工**；tabs 分片视 P1 进度——已合并则直接用 `createTabsStore()`，否则本地同形工厂、P1 合并后 rebase 对齐 |
