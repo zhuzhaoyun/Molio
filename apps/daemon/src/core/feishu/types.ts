@@ -14,8 +14,16 @@ export interface FeishuCredentials {
 /** Per-message parsed Feishu attachment (image/file) extracted from `im.message.receive_v1`. */
 export interface FeishuAttachment {
   kind: 'file' | 'image';
-  /** Feishu file_key or image_key — used to download via im/v1/files or im/v1/images. */
+  /** Feishu file_key or image_key — used to download via the message-resource endpoint. */
   key: string;
+  /**
+   * message_id of the event this attachment came from. Required to download
+   * user-sent resources via `im/v1/messages/{message_id}/resources/{key}` —
+   * the plain `im/v1/files|images` endpoints only serve resources the app
+   * itself uploaded, so a user-sent file there fails with 234008
+   * "The app is not the resource sender".
+   */
+  messageId: string;
   /** Best-effort file name (may be missing for images). */
   fileName?: string;
 }

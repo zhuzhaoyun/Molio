@@ -378,14 +378,22 @@ export class FeishuService implements ChannelSink {
     }
   }
 
-  /** Download a Feishu attachment (image or file) via the authenticated API. */
+  /**
+   * Download a Feishu attachment (image or file) that a user sent, via the
+   * message-resource endpoint `im/v1/messages/{message_id}/resources/{key}`.
+   * The plain `im/v1/files|images` endpoints only serve app-uploaded
+   * resources and fail user-sent keys with 234008 — see client.ts. No
+   * fallback to the legacy endpoints: without `messageId` they are
+   * guaranteed to 400 for user files, so an explicit error is better than
+   * false hope.
+   */
   private async downloadAttachment(att: FeishuAttachment): Promise<{ data: Buffer; contentType: string }> {
     if (!this.api) throw new Error('FeishuApi not initialized');
-    const token = await this.tokenStore.getToken();
-    if (att.kind === 'image') {
-      return this.api.downloadImage(token, att.key);
+    if (!att.messageId) {
+      throw new Error('attachment has no messageId — cannot download user-sent resource');
     }
-    return this.api.downloadFile(token, att.key);
+    const token = await this.tokenStore.getToken();
+    return this.api.downloadMessageResource(token, att.messageId, att.key, att.kind);
   }
 
   // ----- ChannelSink implementation --------------------------------------
