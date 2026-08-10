@@ -729,8 +729,12 @@ app.whenReady().then(async () => {
   // macOS dock menu + Windows taskbar Jump List — OS-level "New Window" entries.
   buildJumpList();
   initVaultRecency();
-  throttleRefreshDockMenu();
-  if (process.platform === 'darwin') {
+  if (process.platform === 'darwin' && app.dock) {
+    // Set a 新窗口-only menu synchronously so right-click works even before the
+    // daemon is reachable (production spawns it later in this handler); the
+    // immediate refresh fills in the vaults submenu once the daemon answers.
+    app.dock.setMenu(buildDockMenu([]));
+    void refreshDockMenu(); // first build may race the daemon — not throttled
     // Vault list changes happen inside web windows we can't observe; refresh
     // the dock menu when a window gains focus (throttled to one fetch/3s).
     app.on('browser-window-focus', throttleRefreshDockMenu);

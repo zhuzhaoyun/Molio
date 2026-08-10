@@ -21,6 +21,10 @@ describe('main.js macOS dock menu', () => {
   it('builds the dock menu and sets it via app.dock.setMenu', () => {
     assert.match(mainSource, /app\.dock\.setMenu\(/);
     assert.ok(mainSource.includes('function buildDockMenu('));
+    assert.ok(
+      mainSource.includes('buildDockMenu([])'),
+      'must set a 新窗口-only fallback synchronously before the daemon is reachable',
+    );
   });
 
   it('dock menu has a New Window item wired to openNewWindowFromFocused', () => {
