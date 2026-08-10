@@ -240,4 +240,21 @@ test.describe('multi-window vault isolation', () => {
     expect(popup.url()).toContain('alpha.md');
     await ctx.close();
   });
+
+  test('NavRail new-window button clones the current view', async ({ browser }) => {
+    const ctx = await browser.newContext();
+    const page = await ctx.newPage();
+
+    await page.goto(`${WEB}/knowledge?vault=${vaultAId}`);
+    await expect(page.locator('.kb-vault-bar__name')).toHaveText('mw-a');
+
+    // The standalone button clones the current path+query into a new window
+    // (browser fallback = window.open → popup).
+    const popupPromise = page.waitForEvent('popup');
+    await page.locator('[data-testid="nav-new-window-btn"]').click();
+    const popup = await popupPromise;
+    await popup.waitForURL(/vault=/);
+    expect(popup.url()).toContain(`vault=${vaultAId}`);
+    await ctx.close();
+  });
 });

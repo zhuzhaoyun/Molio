@@ -9,6 +9,7 @@ const zh: Record<string, string> = {
   'nav.graph': '图谱',
   'nav.help': '帮助',
   'nav.settings': '设置',
+  'nav.newWindow': '新窗口',
 
   // ── Common ──
   'common.save': '保存',

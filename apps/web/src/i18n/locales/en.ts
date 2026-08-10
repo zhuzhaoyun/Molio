@@ -9,6 +9,7 @@ const en: Record<string, string> = {
   'nav.graph': 'Graph',
   'nav.help': 'Help',
   'nav.settings': 'Settings',
+  'nav.newWindow': 'New Window',
 
   // ── Common ──
   'common.save': 'Save',
