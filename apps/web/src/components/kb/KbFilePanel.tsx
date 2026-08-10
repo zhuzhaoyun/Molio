@@ -321,12 +321,11 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
             aria-haspopup="menu"
             aria-expanded={createMenuOpen}
           >
-            {/* plus — the universal "new" glyph, paired with a text label */}
+            {/* plus — the universal "new" glyph (tooltip = 新建) */}
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M5 12h14" />
               <path d="M12 5v14" />
             </svg>
-            <span>{t('kb.create')}</span>
           </button>
 
           {createMenuOpen && (

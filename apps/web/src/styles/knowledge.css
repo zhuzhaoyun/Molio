@@ -128,15 +128,16 @@
   position: relative;
   flex-shrink: 0;
 }
-/* The 「＋新建」 trigger — an accent-tinted chip. It is the one warm element in
-   an otherwise neutral toolbar, so it reads instantly as "start here". */
+/* The 「＋」 trigger — an accent-tinted icon chip (tooltip = 新建). It is the
+   one warm element in an otherwise neutral toolbar, so it reads instantly as
+   "start here" even without a label. */
 .kb-file-toolbar .kb-create-btn {
-  width: auto;
+  width: 28px;
   height: 28px;
-  padding: 0 10px;
-  gap: 6px;
-  font-size: 13px;
-  font-weight: 500;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--accent);
   background: var(--accent-tint);
   border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
