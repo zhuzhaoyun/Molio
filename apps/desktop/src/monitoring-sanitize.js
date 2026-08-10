@@ -99,8 +99,9 @@ export function sanitizeViewName(url) {
  * 上报请求失败（undici 网络层 TypeError: fetch failed）时，`U.finally(...)` 产生的
  * 镜像 promise 无人处理 → 进程级 unhandledRejection → SDK 自己的 exception
  * collector 又把它当应用异常上报，形成「监控上报失败 → 上报这个失败」的自报噪音。
- * 根治见 patches/@arms__rum-electron@0.0.5.patch；本函数是兜底，防止 SDK 升级后
- * 同类泄漏再次污染异常统计。
+ * 上游 0.0.7 已修复（catch 吞错入离线队列，不再 rethrow），本地 patch 已随升级撤掉；
+ * 本函数保留为兜底，防止 SDK 未来版本同类泄漏再次污染异常统计
+ * （回归防线见 test/monitoring/arms-sdk-fetch-leak.test.js）。
  *
  * 不会误伤真实错误：
  * - 桌面主进程所有 fetch 调用点（daemon-metrics 健康轮询、/api/shutdown）都有 catch；

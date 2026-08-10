@@ -9,12 +9,12 @@
  *    SDK 初始化失败写日志后吞掉，绝不影响应用启动。
  * 3. 脱敏层在 `monitoring-sanitize.js`（纯函数，可单测）。
  * 4. SDK 默认不采集 fetch/XHR body，对话内容不会上报。
- * 5. SDK 0.0.5 的 electron-reporter.request() 有 promise 泄漏：上报请求失败会
+ * 5. SDK 0.0.5 的 electron-reporter.request() 曾有 promise 泄漏：上报请求失败
  *    触发 unhandledRejection，被 SDK 自己的异常采集器再次上报（"TypeError:
- *    fetch failed" 自报噪音）。根治靠 `patches/@arms__rum-electron@0.0.5.patch`
- *    （pnpm patchedDependencies 在 install 时打入 node_modules）；beforeReport
- *    里的 dropFetchFailedNoise 是兜底过滤。校验测试见
- *    `test/monitoring/arms-sdk-patch.test.js`。
+ *    fetch failed" 自报噪音）。上游 0.0.7 已修复（fetch 链的 catch 改为吞错入
+ *    离线队列重试，不再 rethrow），本地 pnpm patch 已随升级撤掉；beforeReport
+ *    里的 dropFetchFailedNoise 保留为兜底过滤。回归防线见
+ *    `test/monitoring/arms-sdk-fetch-leak.test.js`。
  *
  * 单测见 `test/monitoring/sanitize.test.js`，只 import 纯函数（不 import 本文件，
  * 避免 SDK 加载链在测试环境下失败）。
