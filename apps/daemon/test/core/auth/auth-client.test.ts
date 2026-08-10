@@ -84,6 +84,7 @@ describe('AuthClient', () => {
 
     assert.deepEqual(client.getStatus(), {
       loggedIn: true,
+      configured: true,
       user: mock.user,
       entitlement: { plan: 'free' },
       stale: false,
@@ -148,7 +149,7 @@ describe('AuthClient', () => {
     assert.equal(readAuthTokens(), null, 'token 已清');
     assert.equal(client.entitlementCache.read(), null, '权益快照已清');
     assert.equal(client.isLoginExpired(), true);
-    assert.deepEqual(client.getStatus(), { loggedIn: false, loginExpired: true });
+    assert.deepEqual(client.getStatus(), { loggedIn: false, configured: true, loginExpired: true });
 
     // 关键负面断言：不再盲目打云端 refresh
     const refreshCalls = mock.countCalls('POST', '/auth/refresh');
@@ -220,7 +221,7 @@ describe('AuthClient', () => {
     await client.logout(); // 不抛
     assert.equal(readAuthTokens(), null);
     assert.equal(client.entitlementCache.read(), null);
-    assert.deepEqual(client.getStatus(), { loggedIn: false });
+    assert.deepEqual(client.getStatus(), { loggedIn: false, configured: true });
   });
 
   it('logout 云端可达时云端吊销 + 本地清除', async () => {
@@ -232,7 +233,49 @@ describe('AuthClient', () => {
     assert.equal((del?.body as { refreshToken?: string })?.refreshToken, 'refresh-1');
     assert.ok(del?.auth?.startsWith('Bearer '));
     assert.equal(readAuthTokens(), null);
-    assert.deepEqual(client.getStatus(), { loggedIn: false });
+    assert.deepEqual(client.getStatus(), { loggedIn: false, configured: true });
+  });
+
+  // ── 注销账号（§7.4 个保法；云端权威操作，与 logout 语义不同） ─────
+
+  it('deleteAccount: 云端软删除 + 本地清除', async () => {
+    await client.verify('user@example.com', '123456');
+    mock.calls.length = 0;
+    await client.deleteAccount();
+    assert.equal(mock.countCalls('DELETE', '/auth/account'), 1);
+    assert.ok(mock.lastCall('DELETE', '/auth/account')?.auth?.startsWith('Bearer '));
+    assert.equal(readAuthTokens(), null);
+    assert.equal(client.entitlementCache.read(), null);
+    assert.deepEqual(client.getStatus(), { loggedIn: false, configured: true });
+  });
+
+  it('deleteAccount 未登录 → no_session，不打云端', async () => {
+    await assert.rejects(
+      () => client.deleteAccount(),
+      (e: AuthCloudError) => e.status === 0 && e.code === 'no_session',
+    );
+    assert.equal(mock.calls.length, 0);
+  });
+
+  it('deleteAccount 云端不可达 → 抛错且本地 token 保留（账号还在，供重试）', async () => {
+    await client.verify('user@example.com', '123456');
+    mock.setMode('down');
+    await assert.rejects(
+      () => client.deleteAccount(),
+      (e: AuthCloudError) => e.status === 0 && e.code === 'cloud_unreachable',
+    );
+    assert.ok(readAuthTokens(), 'token 保留，与 logout 的本地必清语义不同');
+    assert.equal(client.getStatus().loggedIn, true);
+  });
+
+  it('deleteAccount 首次 401 → 刷新后重试一次成功', async () => {
+    await client.verify('user@example.com', '123456');
+    mock.invalidateAccess(); // 本地看没过期、云端已失效
+    mock.calls.length = 0;
+    await client.deleteAccount();
+    assert.equal(mock.countCalls('POST', '/auth/refresh'), 1);
+    assert.equal(mock.countCalls('DELETE', '/auth/account'), 2, '401 后重试一次');
+    assert.equal(readAuthTokens(), null);
   });
 
   // ── 启动恢复（§7.3） ──────────────────────────────────────────────
@@ -277,13 +320,13 @@ describe('AuthClient', () => {
 
     assert.equal(readAuthTokens(), null);
     assert.equal(restarted.isLoginExpired(), true);
-    assert.deepEqual(restarted.getStatus(), { loggedIn: false, loginExpired: true });
+    assert.deepEqual(restarted.getStatus(), { loggedIn: false, configured: true, loginExpired: true });
   });
 
   it('从未登录时 restoreSession 零网络调用（存量用户零感知）', async () => {
     await makeClient().restoreSession();
     assert.equal(mock.calls.length, 0);
-    assert.deepEqual(client.getStatus(), { loggedIn: false });
+    assert.deepEqual(client.getStatus(), { loggedIn: false, configured: true });
   });
 
   // ── 配置 ──────────────────────────────────────────────────────────
@@ -321,6 +364,7 @@ describe('AuthClient', () => {
     assert.equal(mock.calls.length, 0);
     const status = unconfigured.getStatus();
     assert.equal(status.loggedIn, true);
+    assert.equal(status.configured, false, 'Web UI 靠这个字段隐藏登录表单');
     assert.equal(status.stale, true, '未验证过云端 → stale');
   });
 });

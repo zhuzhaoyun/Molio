@@ -67,7 +67,7 @@ src/
       types.ts         FeishuStatus / FeishuConfig / FeishuRawEvent
     auth/             云端认证 client（用户模块 M2；Web UI 永不直连云端，一切经 daemon）
       token-store.ts   ~/.molio/auth-tokens.json 读写（复用 credentials-store 原子写 + chmod 0o600）；解码 access JWT exp；token 不进 config.json
-      auth-client.ts   AuthClient — 唯一云端通信方（MOLIO_AUTH_URL env，未配置时端点回 503）：sendCode/verify/logout、single-flight refresh、401→刷新→重试一次、<2min 主动刷新、refresh 被拒不盲试、启动恢复 restoreSession
+      auth-client.ts   AuthClient — 唯一云端通信方（MOLIO_AUTH_URL env，未配置时端点回 503）：sendCode/verify/logout/deleteAccount（注销云端优先：云端失败抛错不清本地）、single-flight refresh、401→刷新→重试一次、<2min 主动刷新、refresh 被拒不盲试、启动恢复 restoreSession、status 带 configured 标记
       entitlement-cache.ts  EntitlementCache — 权益快照 ~/.molio/entitlement-cache.json + 7 天离线宽限（MOLIO_AUTH_GRACE_DAYS 可配）
   routes/
     channel.ts        channelRoutes<TConfig>() 工厂 — 5 个标准渠道路由（status/start/stop/disconnect/config）
@@ -85,7 +85,7 @@ src/
     maintenance.ts    POST /api/maintenance/rebuild-fts — 重建 FTS 索引（灾难恢复）
     weixin.ts         POST /api/weixin — 微信回调
     feishu.ts         GET/POST /api/feishu/* — 飞书渠道 (status/start/stop/disconnect/config)
-    auth.ts           POST /api/auth/start|verify|logout + GET /status — 云端认证本地镜像（start 原样透传云端响应含 daily devCode）
+    auth.ts           POST /api/auth/start|verify|logout + GET /status + DELETE /account — 云端认证本地镜像（start 原样透传云端响应含 daily devCode；account 注销云端优先，云端不可达抛 502 不清本地）
   publish-bridge/
     bridge-page.ts    发布桥接页面逻辑
 test/                  测试用例 (node:test)，按源码模块子目录组织
@@ -140,6 +140,7 @@ pnpm typecheck    # tsc --noEmit
 | POST | `/api/auth/verify` | 验证码登录（注册=登录），token 落 ~/.molio/auth-tokens.json |
 | GET | `/api/auth/status` | 登录态快照（离线时 stale=true；refresh 失效 loginExpired=true） |
 | POST | `/api/auth/logout` | 云端吊销尽力而为 + 本地必清 token/权益快照 |
+| DELETE | `/api/auth/account` | 注销账号：云端软删除 + 吊销全部 session；云端不可达 → 502 且保留本地 token（与 logout 语义相反） |
 
 ## 关键设计
 

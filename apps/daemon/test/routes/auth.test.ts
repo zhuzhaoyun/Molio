@@ -14,6 +14,7 @@ import { makeMockCloud, type MockCloud } from '../core/auth/mock-cloud.js';
  * - 云端错误码透传（429 rate_limited 带 resendAfterSec）
  * - 断网 → 502 cloud_unreachable；未配置 → 503 auth_not_configured
  * - logout 本地必成功（local-first 红线）
+ * - 注销账号是云端权威操作：断网抛 502 且本地 token 保留（与 logout 语义不同）
  */
 describe('auth routes', () => {
   let tempHome: string;
@@ -129,14 +130,15 @@ describe('auth routes', () => {
     it('未登录 → {loggedIn:false}', async () => {
       const res = await app.request('/api/auth/status');
       assert.equal(res.status, 200);
-      assert.deepEqual(await res.json(), { loggedIn: false });
+      assert.deepEqual(await res.json(), { loggedIn: false, configured: true });
     });
 
-    it('登录后 → loggedIn + user + stale:false', async () => {
+    it('登录后 → loggedIn + user + stale:false + configured', async () => {
       await post('/api/auth/verify', { email: 'user@example.com', code: '123456' });
       const res = await app.request('/api/auth/status');
       const body = (await res.json()) as Record<string, unknown>;
       assert.equal(body.loggedIn, true);
+      assert.equal(body.configured, true);
       assert.equal(body.stale, false);
       assert.deepEqual(body.user, mock.user);
       assert.deepEqual(body.entitlement, { plan: 'free' });
@@ -152,7 +154,7 @@ describe('auth routes', () => {
       assert.equal(mock.countCalls('DELETE', '/auth/session'), 1);
 
       const status = await app.request('/api/auth/status');
-      assert.deepEqual(await status.json(), { loggedIn: false });
+      assert.deepEqual(await status.json(), { loggedIn: false, configured: true });
     });
 
     it('云端断网也登出成功（本地必清）', async () => {
@@ -161,7 +163,46 @@ describe('auth routes', () => {
       const res = await post('/api/auth/logout', {});
       assert.equal(res.status, 200);
       const status = await app.request('/api/auth/status');
-      assert.deepEqual(await status.json(), { loggedIn: false });
+      assert.deepEqual(await status.json(), { loggedIn: false, configured: true });
+    });
+  });
+
+  describe('DELETE /account（注销账号，§7.4）', () => {
+    async function del(path: string): Promise<Response> {
+      return app.request(path, { method: 'DELETE' });
+    }
+
+    it('登录后注销 → {ok:true}，status 回未登录（configured 仍 true）', async () => {
+      await post('/api/auth/verify', { email: 'user@example.com', code: '123456' });
+      const res = await del('/api/auth/account');
+      assert.equal(res.status, 200);
+      assert.deepEqual(await res.json(), { ok: true });
+      assert.equal(mock.countCalls('DELETE', '/auth/account'), 1);
+
+      const status = await app.request('/api/auth/status');
+      assert.deepEqual(await status.json(), { loggedIn: false, configured: true });
+    });
+
+    it('未登录 → 401 no_session，不打云端', async () => {
+      const res = await del('/api/auth/account');
+      assert.equal(res.status, 401);
+      assert.deepEqual(await res.json(), { error: 'no_session' });
+      assert.equal(mock.calls.length, 0);
+    });
+
+    it('云端断网 → 502 cloud_unreachable，本地登录态保留（与 logout 不同）', async () => {
+      await post('/api/auth/verify', { email: 'user@example.com', code: '123456' });
+      mock.setMode('down');
+      const res = await del('/api/auth/account');
+      assert.equal(res.status, 502);
+      assert.deepEqual(await res.json(), { error: 'cloud_unreachable' });
+
+      const status = await app.request('/api/auth/status');
+      assert.equal(
+        ((await status.json()) as { loggedIn: boolean }).loggedIn,
+        true,
+        '账号还在云端，token 保留供重试',
+      );
     });
   });
 

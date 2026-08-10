@@ -118,11 +118,12 @@ export class AuthClient {
 
   /** 本地登录态快照（不发网络请求；/api/auth/status 用）。 */
   getStatus(): AuthStatus {
+    const configured = this.isConfigured();
     const cur = this.currentTokens();
     if (!cur) {
       return this.loginExpired
-        ? { loggedIn: false, loginExpired: true }
-        : { loggedIn: false };
+        ? { loggedIn: false, configured, loginExpired: true }
+        : { loggedIn: false, configured };
     }
     const snap = this.entitlementCache.read();
     const cloudOk = this.cloudState === 'ok';
@@ -131,6 +132,7 @@ export class AuthClient {
       snap !== null && (cloudOk || this.entitlementCache.isWithinGrace(snap, this.now()));
     return {
       loggedIn: true,
+      configured,
       user: cur.user,
       entitlement: entitlementUsable && snap ? snap.entitlement : undefined,
       stale: !cloudOk,
@@ -186,6 +188,31 @@ export class AuthClient {
         // 云端不可达 / token 已失效 → 仍本地登出
       }
     }
+    this.clearSession({ expired: false });
+  }
+
+  /**
+   * 注销账号（设计 §7.4，个保法硬要求）：云端 DELETE /auth/account 软删除 +
+   * 吊销全部 session，成功后清本地 token/权益。
+   * 与 logout 的语义差异：注销是云端权威操作——云端不可达时**抛错不清本地**
+   * （账号还在，token 保留以便重试）；logout 则本地必清。
+   * 无本地会话抛 AuthCloudError(0, 'no_session')。
+   */
+  async deleteAccount(): Promise<void> {
+    let accessToken = await this.getAccessToken();
+    let resp = await this.fetchFromCloud('/auth/account', {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    if (resp.status === 401) {
+      const fresh = await this.refresh();
+      accessToken = fresh.accessToken;
+      resp = await this.fetchFromCloud('/auth/account', {
+        method: 'DELETE',
+        headers: { authorization: `Bearer ${accessToken}` },
+      });
+    }
+    if (!resp.ok) await this.throwCloudError(resp);
     this.clearSession({ expired: false });
   }
 

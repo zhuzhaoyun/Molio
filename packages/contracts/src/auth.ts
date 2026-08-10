@@ -19,9 +19,11 @@ export interface Entitlement {
   [key: string]: unknown;
 }
 
-/** daemon 本地登录态快照（GET /api/auth/status，M2 使用） */
+/** daemon 本地登录态快照（GET /api/auth/status，M2/M3 使用） */
 export interface AuthStatus {
   loggedIn: boolean;
+  /** MOLIO_AUTH_URL 已配置（云端可达前提）；未配置时 Web UI 隐藏登录表单、只给说明 */
+  configured: boolean;
   user?: User;
   entitlement?: Entitlement;
   /** 云端不可达，数据来自本地缓存 */

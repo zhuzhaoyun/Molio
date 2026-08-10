@@ -58,6 +58,17 @@ export function authRoutes(client: AuthClient): Hono {
     return c.json({ ok: true });
   });
 
+  // 注销账号（设计 §7.4 个保法硬要求）：云端软删除 + 吊销全部 session。
+  // 与 logout 不同：云端不可达时抛错不清本地（账号还在，保留 token 供重试）。
+  app.delete('/account', async (c) => {
+    try {
+      await client.deleteAccount();
+      return c.json({ ok: true });
+    } catch (e) {
+      return cloudError(c, e);
+    }
+  });
+
   return app;
 }
 

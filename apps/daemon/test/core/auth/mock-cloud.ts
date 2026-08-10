@@ -42,6 +42,8 @@ export interface MockCloud {
   setRefreshOutcome(outcome: 'ok' | 'invalid'): void;
   /** invalid_code = /auth/verify 一律 401。 */
   setVerifyOutcome(outcome: 'ok' | 'invalid_code'): void;
+  /** invalid_token = /auth/account 一律 401（模拟 token 已被吊销）。 */
+  setAccountOutcome(outcome: 'ok' | 'invalid_token'): void;
   /** 清空已签发 access 的有效性（模拟过期/吊销；本地 exp 看起来仍有效）。 */
   invalidateAccess(): void;
   /** 预排一个响应（按入队顺序消费）；'network-error' = 该次请求 fetch 抛错。 */
@@ -70,6 +72,7 @@ export function makeMockCloud(opts: MockCloudOptions = {}): MockCloud {
   let mode: 'ok' | 'down' = 'ok';
   let refreshOutcome: 'ok' | 'invalid' = 'ok';
   let verifyOutcome: 'ok' | 'invalid_code' = 'ok';
+  let accountOutcome: 'ok' | 'invalid_token' = 'ok';
   let refreshCounter = 0;
   let currentRefresh: string | null = null;
   const validAccess = new Set<string>();
@@ -165,6 +168,15 @@ export function makeMockCloud(opts: MockCloudOptions = {}): MockCloud {
       return json(200, { ok: true });
     }
 
+    if (method === 'DELETE' && path === '/auth/account') {
+      if (accountOutcome === 'invalid_token') return json(401, { error: 'invalid_token' });
+      const token = auth?.startsWith('Bearer ') ? auth.slice('Bearer '.length) : null;
+      if (!token || !validAccess.has(token)) return json(401, { error: 'invalid_token' });
+      // 云端注销后该用户全部 access 失效（吊销全部 session 语义）
+      validAccess.clear();
+      return json(200, { ok: true });
+    }
+
     return json(404, { error: 'not_found' });
   }) as typeof fetch;
 
@@ -182,6 +194,9 @@ export function makeMockCloud(opts: MockCloudOptions = {}): MockCloud {
     },
     setVerifyOutcome: (o) => {
       verifyOutcome = o;
+    },
+    setAccountOutcome: (o) => {
+      accountOutcome = o;
     },
     invalidateAccess: () => {
       validAccess.clear();
