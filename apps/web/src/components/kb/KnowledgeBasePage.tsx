@@ -7,33 +7,25 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import type { TreeNode } from '@molio/contracts';
 import { useKnowledge } from '../../hooks/useKnowledge';
-import type { KbChatState } from '../../hooks/useKbChat';
 import { useKbTabs, MAX_TABS, type WorkspaceTab } from '../../hooks/useKbTabs';
 import { vaultStore } from '../../stores/vaultStore';
+import { kbChatSessionsStore, useKbChatPanelOpen } from '../../stores/kbChatSessionsStore';
 import { KbFilePanel, type KbFilePanelHandle } from './KbFilePanel';
 import { KbTabBar } from './KbTabBar';
 import { KbMainContent } from './KbMainContent';
-import { KbChatPanel } from './KbChatPanel';
+import { KbChatSessionsPanel, type KbChatSessionsPanelHandle } from './KbChatSessionsPanel';
 import { OutlinePanel } from './OutlinePanel';
 import { SearchPanel } from './SearchPanel';
 import { VaultManagerModal } from './VaultManager';
 import { ImportModal, CoseInstallPrompt, InputDialog, ConfirmDialog } from './KbModals';
 import { ImportConflictDialog } from './ImportConflictDialog';
 import { ContextMenu, type MenuItem } from './ContextMenu';
-import type { FileRef, PastedImage } from '../ChatComposer';
-import { buildAttachmentPrefix } from '../ChatComposer';
 import { useI18n } from '../../i18n';
 import { api } from '../../api/client';
 import { openInNewWindow } from '../../utils/openWindow';
 
 interface KnowledgeBasePageProps {
   agentId: string | null;
-  // KB Chat — owned by App for navigation persistence
-  kbChat: KbChatState;
-  kbChatOpen: boolean;
-  onKbChatOpenChange: (open: boolean) => void;
-  registerKbChatOnComplete: (fn: () => void) => void;
-  onOpenConversation?: (conversationId: string) => void;
 }
 
 interface UrlFileNavigation {
@@ -136,7 +128,7 @@ function buildFolderDeleteMessage(node: TreeNode, tree: TreeNode[]): string {
   return `确定删除空文件夹 "${node.name}"？`;
 }
 
-export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenChange, registerKbChatOnComplete, onOpenConversation }: KnowledgeBasePageProps) {
+export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
   const { t } = useI18n();
   const kb = useKnowledge();
   const tabs = useKbTabs(kb.activeVault?.id ?? null);
@@ -144,7 +136,8 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
   const location = useLocation();
   const navigate = useNavigate();
 
-  const [qaSelectedText, setQaSelectedText] = useState<string | null>(null);
+  const panelRef = useRef<KbChatSessionsPanelHandle>(null);
+  const panelOpen = useKbChatPanelOpen();
   const [pendingUrlNav, setPendingUrlNav] = useState<UrlFileNavigation | null>(null);
   const [showOutline, setShowOutline] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
@@ -225,12 +218,10 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
     onConfirm: () => void;
   }>({ show: false, title: '', message: '', onConfirm: () => {} });
 
-  // Register onComplete callback with App so wiki builds trigger tree refresh.
-  // Cleanup resets to noop when this page unmounts.
+  // vault 切换：清空所有会话的 @文件上下文（旧库引用失效）
   useEffect(() => {
-    registerKbChatOnComplete(() => { kb.refreshTree(); });
-    return () => registerKbChatOnComplete(() => {});
-  }, [kb.refreshTree, registerKbChatOnComplete]);
+    kbChatSessionsStore.clearFilePaths();
+  }, [kb.activeVault?.id]);
 
   // Import conflict dialog state
   const [conflictDialog, setConflictDialog] = useState<{
@@ -243,17 +234,13 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
 
   const handleOpenQa = useCallback(() => {
     if (!kb.selectedFile) return;
-    setQaSelectedText(null);
-    kbChat.openQa();
-    onKbChatOpenChange(true);
-  }, [kb.selectedFile, kbChat]);
+    panelRef.current?.openQa({ filePath: kb.selectedFile, vaultId: kb.activeVault?.id ?? null, selectedText: null });
+  }, [kb.selectedFile, kb.activeVault?.id]);
 
   const handleAskAboutSelection = useCallback((selectedText: string) => {
     if (!kb.selectedFile) return;
-    setQaSelectedText(selectedText);
-    kbChat.openQa();
-    onKbChatOpenChange(true);
-  }, [kb.selectedFile, kbChat]);
+    panelRef.current?.openQa({ filePath: kb.selectedFile, vaultId: kb.activeVault?.id ?? null, selectedText });
+  }, [kb.selectedFile, kb.activeVault?.id]);
 
   // ─── Save toast helper (used by file selection and other callbacks) ───
 
@@ -486,87 +473,21 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
     document.addEventListener('mouseup', onUp);
   }, [kb.panelWidth, kb.setPanelWidth]);
 
-  // Wiki operation handlers
-  // 3-button confirm for "run a wiki op while a task is running":
-  // 中断并立即执行 / 排队等当前完成 / 取消。排队走 agent stdin 原生队列。
-  const confirmRunningOp = useCallback((opts: {
-    title: string;
-    message: string;
-    onInterrupt: () => void;
-    onQueue: () => void;
-  }) => {
-    setConfirmDialog({
-      show: true,
-      title: opts.title,
-      message: opts.message,
-      confirmLabel: '中断并立即执行',
-      tertiaryLabel: '排队等当前完成',
-      danger: true,
-      onConfirm: () => {
-        setConfirmDialog((prev) => ({ ...prev, show: false }));
-        opts.onInterrupt();
-      },
-      onTertiary: () => {
-        setConfirmDialog((prev) => ({ ...prev, show: false }));
-        opts.onQueue();
-      },
-    });
-  }, []);
-
-  const handleOpenWikiOp = useCallback((type: 'build' | 'lint') => {
-    const interrupt = () => { kbChat.openWikiOp(type); onKbChatOpenChange(true); };
-    const queue = () => { kbChat.queueWikiOp(type); onKbChatOpenChange(true); };
-    if (kbChat.isRunning) {
-      confirmRunningOp({
-        title: '当前任务进行中',
-        message: type === 'build'
-          ? '构建 Wiki 会作为新任务发送。选择如何处理当前正在运行的任务：'
-          : 'Wiki 健康检查会作为新任务发送。选择如何处理当前正在运行的任务：',
-        onInterrupt: interrupt,
-        onQueue: queue,
-      });
-    } else {
-      interrupt();
-    }
-  }, [kbChat, confirmRunningOp]);
-
+  // Wiki operation handlers — 通过 panel 的 runWikiOp 入口下发（互斥/排队在 panel 内部处理）
+  const handleBuildWiki = useCallback(() => {
+    if (!kb.activeVault) return;
+    if (!agentId) return;
+    panelRef.current?.runWikiOp({ mode: 'build' });
+  }, [kb.activeVault, agentId]);
+  const handleLintWiki = useCallback(() => {
+    if (!kb.activeVault || !kb.wikiInitialized) return;
+    if (!agentId) return;
+    panelRef.current?.runWikiOp({ mode: 'lint' });
+  }, [kb.activeVault, kb.wikiInitialized, agentId]);
   const handleIngestFile = useCallback((filePath: string, isDirectory = false) => {
     if (!agentId) return;
-    const interrupt = () => { kbChat.openIngest(filePath, isDirectory); onKbChatOpenChange(true); };
-    const queue = () => { kbChat.queueIngest(filePath, isDirectory); onKbChatOpenChange(true); };
-    if (kbChat.isRunning) {
-      confirmRunningOp({
-        title: '当前任务进行中',
-        message: `把 ${filePath} 加入 Wiki 会作为新任务发送。选择如何处理当前正在运行的任务：`,
-        onInterrupt: interrupt,
-        onQueue: queue,
-      });
-    } else {
-      interrupt();
-    }
-  }, [agentId, kbChat, confirmRunningOp]);
-
-  const handleCloseChat = useCallback(() => {
-    kbChat.close();
-    onKbChatOpenChange(false);
-  }, [kbChat, onKbChatOpenChange]);
-
-  // Wrap send to prepend selected text as context for QA mode
-  const handleKbChatSend = useCallback(
-    (text: string, fileRefs?: FileRef[], pastedImages?: PastedImage[]) => {
-      const prefix = buildAttachmentPrefix(fileRefs ?? [], pastedImages ?? []);
-      let message = text;
-      if (prefix) {
-        message = `${prefix}\n\n${message || t('home.fileContextFallback')}`;
-      }
-      if (qaSelectedText) {
-        message = `${t('kb.fileChatContextPrefix')}\n> ${qaSelectedText}\n\n${message || t('kb.fileChatDefaultPrompt')}`;
-        setQaSelectedText(null); // only prepend once
-      }
-      kbChat.send(message);
-    },
-    [qaSelectedText, kbChat, t],
-  );
+    panelRef.current?.runWikiOp({ mode: 'ingest', filePath, isDirectory });
+  }, [agentId]);
 
   // Ctrl/Cmd+F — 打开全文搜索（仅 KB 页面）
   useEffect(() => {
@@ -588,14 +509,12 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
         if (tag === 'INPUT' || tag === 'TEXTAREA') return;
         e.preventDefault();
         if (!kb.selectedFile) return;
-        setQaSelectedText(null);
-        kbChat.openQa();
-        onKbChatOpenChange(true);
+        panelRef.current?.openQa({ filePath: kb.selectedFile, vaultId: kb.activeVault?.id ?? null, selectedText: null });
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [kb.selectedFile, kbChat]);
+  }, [kb.selectedFile, kb.activeVault?.id]);
 
   // Ctrl+L / Cmd+L — open file chat for current file (legacy shortcut, now opens QA)
   useEffect(() => {
@@ -607,14 +526,12 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') {
         e.preventDefault();
         if (!kb.selectedFile) return;
-        setQaSelectedText(null);
-        kbChat.openQa();
-        onKbChatOpenChange(true);
+        panelRef.current?.openQa({ filePath: kb.selectedFile, vaultId: kb.activeVault?.id ?? null, selectedText: null });
       }
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [kb.selectedFile, kbChat]);
+  }, [kb.selectedFile, kb.activeVault?.id]);
 
   // ─── New file / folder flows (React dialogs instead of window.prompt) ───
 
@@ -726,9 +643,7 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
           if (kb.selectedFile !== node.path) {
             handleSelectFile(node.path);
           }
-          setQaSelectedText(null);
-          kbChat.openQa();
-          onKbChatOpenChange(true);
+          panelRef.current?.openQa({ filePath: node.path, vaultId: kb.activeVault?.id ?? null, selectedText: null });
         },
       });
     } else {
@@ -814,7 +729,7 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
     }
 
     return items;
-  }, [ctxMenu, kb, showToast, handleNewFile, handleNewFolder, handleSelectFile, handleOpenInNewTab, handleDeleteFile, handleDeleteFolder, kbChat]);
+  }, [ctxMenu, kb, showToast, handleNewFile, handleNewFolder, handleSelectFile, handleOpenInNewTab, handleDeleteFile, handleDeleteFolder]);
 
   // ─── Inline rename ───
 
@@ -1049,7 +964,7 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
               <button
                 type="button"
                 className="kb-btn kb-btn-ghost"
-                onClick={() => handleOpenWikiOp('build')}
+                onClick={handleBuildWiki}
                 disabled={!kb.activeVault}
                 title={kb.activeVault ? t('kb.buildWiki') : t('kb.cmdNeedsVault')}
                 data-testid="kb-btn-build-wiki"
@@ -1062,7 +977,7 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
               <button
                 type="button"
                 className="kb-btn kb-btn-ghost"
-                onClick={() => handleOpenWikiOp('lint')}
+                onClick={handleLintWiki}
                 disabled={!kb.activeVault || !kb.wikiInitialized}
                 title={kb.activeVault && kb.wikiInitialized ? t('kb.lintWiki') : t('kb.cmdNeedsVault')}
                 data-testid="kb-btn-lint-wiki"
@@ -1102,7 +1017,7 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
           onSave={handleSave}
           onCopy={kb.copyToClipboard}
           onPublish={kb.publishToChrome}
-          onBuildWiki={() => handleOpenWikiOp('build')}
+          onBuildWiki={handleBuildWiki}
           onAskAboutSelection={handleAskAboutSelection}
           onOpenOutline={() => setShowOutline(true)}
           onAskAboutFile={kb.selectedFile ? handleOpenQa : undefined}
@@ -1117,24 +1032,17 @@ export function KnowledgeBasePage({ agentId, kbChat, kbChatOpen, onKbChatOpenCha
         />
       </div>
 
-      {/* Unified KB Chat Panel (right side) */}
-      {kbChatOpen && (
-        <KbChatPanel
-          composerKey="kb"
-          mode={kbChat.mode}
-          messages={kbChat.messages}
-          isRunning={kbChat.isRunning}
-          activity={kbChat.activity}
-          filePath={kbChat.mode === 'qa' ? kb.selectedFile : null}
-          vaultId={kb.activeVault?.id ?? null}
-          selectedText={qaSelectedText}
-          onSend={handleKbChatSend}
-          onCancel={kbChat.cancel}
-          onClose={handleCloseChat}
-          onSubmitToolResult={kbChat.submitToolResult}
-          onOpenConversation={onOpenConversation}
+      {/* Unified KB Chat Panel — 常驻保持后台任务；收起仅隐藏 */}
+      <div className={`kb-chat-panel-slot${panelOpen ? '' : ' is-hidden'}`}>
+        <KbChatSessionsPanel
+          ref={panelRef}
+          agentId={agentId}
+          vaultPath={kb.activeVault?.path ?? null}
+          currentFilePath={kb.selectedFile}
+          currentVaultId={kb.activeVault?.id ?? null}
+          onWikiComplete={() => kb.refreshTree()}
         />
-      )}
+      </div>
 
       {/* Outline Panel */}
       {showOutline && (

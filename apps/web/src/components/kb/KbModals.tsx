@@ -560,7 +560,7 @@ export function ConfirmDialog({
   if (!show) return null;
 
   return (
-    <div className={`kb-overlay ${show ? 'show' : ''}`} onClick={(e) => e.target === e.currentTarget && onCancel()}>
+    <div className={`kb-overlay ${show ? 'show' : ''}`} data-testid="confirm-dialog" onClick={(e) => e.target === e.currentTarget && onCancel()}>
       <div className="kb-modal" style={{ width: 400 }}>
         <div className="kb-modal-header">
           <h2>{title}</h2>

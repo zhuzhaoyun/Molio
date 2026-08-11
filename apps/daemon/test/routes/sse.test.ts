@@ -32,7 +32,15 @@ class MockRunManager {
     this.lastEventIds.set(runId, id);
   }
 
+  /** Emit a live event AND buffer it (mirrors RunManager.emitEvent: buffer
+   *  first with an id from lastEventId+1, then fan out — so getLastEventId and
+   *  getBufferedEvents stay consistent with what the SSE stream has replayed). */
   emitLiveEvent(runId: string, event: AgentEvent): void {
+    const id = (this.lastEventIds.get(runId) ?? 0) + 1;
+    this.lastEventIds.set(runId, id);
+    const list = this.bufferedEvents.get(runId) ?? [];
+    list.push({ id, event: String(event.type), data: event, timestamp: Date.now() });
+    this.bufferedEvents.set(runId, list);
     const listeners = this.eventListeners.get(runId);
     if (listeners) {
       for (const listener of listeners) {
@@ -168,14 +176,28 @@ describe('SSE stream', () => {
   describe('live event subscription', () => {
     it('should subscribe to live events for non-terminal runs', async () => {
       const mock = new MockRunManager();
-      mock.setBufferedEvents('run-5', []);
+      // Consistent with real RunManager: the run already emitted events 1-4
+      // (buffered), lastEventId=4, so the next live event is seq 5. getLastEventId
+      // must be the source of the frame's seq — NOT a counter inside createSSEStream.
+      mock.setBufferedEvents('run-5', [
+        { id: 1, event: 'status', data: { type: 'status', label: 'running' }, timestamp: 1 },
+        { id: 2, event: 'text_delta', data: { type: 'text_delta', delta: 'A' }, timestamp: 2 },
+        { id: 3, event: 'text_delta', data: { type: 'text_delta', delta: 'B' }, timestamp: 3 },
+        { id: 4, event: 'text_delta', data: { type: 'text_delta', delta: 'C' }, timestamp: 4 },
+      ]);
       mock.setTerminal('run-5', false);
-      mock.setLastEventId('run-5', 5);
+      mock.setLastEventId('run-5', 4);
 
       const { stream, cleanup } = createSSEStream(mock as unknown as RunManager, 'run-5', 0);
       const reader = stream.getReader();
 
-      // Emit a live event
+      // Drain the replayed events (1-4)
+      for (let i = 0; i < 4; i++) {
+        const { done } = await reader.read();
+        if (done) break;
+      }
+
+      // Emit a live event → seq 5
       mock.emitLiveEvent('run-5', { type: 'text_delta', delta: 'Live update' });
 
       // Read the event
