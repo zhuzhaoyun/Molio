@@ -210,6 +210,12 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
     kbChatSessionsStore.clearFilePaths();
   }, [kb.activeVault?.id]);
 
+  // wiki 任务完成 → 刷新文件树（方案 D：onWikiComplete 改 store 事件总线，KB 页挂载时订阅）
+  useEffect(() => {
+    const unsub = kbChatSessionsStore.subscribeWikiComplete(() => { void kb.refreshTree(); });
+    return unsub;
+  }, [kb.refreshTree]);
+
   // Import conflict dialog state
   const [conflictDialog, setConflictDialog] = useState<{
     show: boolean;
@@ -1009,15 +1015,12 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
         />
       </div>
 
-      {/* Unified KB Chat Panel — 常驻保持后台任务；收起仅隐藏 */}
+      {/* Unified KB Chat Panel — 常驻保持后台任务；收起仅隐藏
+          （方案 D：上下文改从全局 currentContextStore 读，onWikiComplete 改 store 事件总线） */}
       <div className={`kb-chat-panel-slot${panelOpen ? '' : ' is-hidden'}`}>
         <KbChatSessionsPanel
           ref={panelRef}
           agentId={agentId}
-          vaultPath={kb.activeVault?.path ?? null}
-          currentFilePath={kb.selectedFile}
-          currentVaultId={kb.activeVault?.id ?? null}
-          onWikiComplete={() => kb.refreshTree()}
         />
       </div>
 

@@ -1,13 +1,15 @@
 // apps/web/src/components/kb/KbChatSessionsPanel.tsx
-import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, forwardRef } from 'react';
+import { useCallback, useImperativeHandle, useMemo, useRef, useState, forwardRef } from 'react';
 import {
-  kbChatSessionsStore, useKbChatSessions, useKbChatActiveSessionId,
+  kbChatSessionsStore, useKbChatSessions, useKbChatActiveSessionId, useKbChatPanelOpen,
   MAX_CHAT_SESSIONS,
 } from '../../stores/kbChatSessionsStore';
+import { useCurrentContext } from '../../stores/currentContextStore';
 import { ChatSessionTabBar } from './ChatSessionTabBar';
 import { KbChatSession, type KbChatSessionApi } from './KbChatSession';
 import { WIKI_PROMPTS, WIKI_INGEST_PROMPT, WIKI_TITLES } from './kbChatPrompts';
 import { ConfirmDialog } from './KbModals';
+import './KbChatSessionsPanel.css';
 
 export interface KbChatSessionsPanelHandle {
   runWikiOp: (opts: { mode: 'build' | 'lint' | 'ingest'; filePath?: string; isDirectory?: boolean }) => void;
@@ -18,20 +20,20 @@ interface WikiOpOpts { mode: 'build' | 'lint' | 'ingest'; filePath?: string; isD
 
 interface Props {
   agentId: string | null;
-  vaultPath: string | null;
-  /** 当前选中文件，供新 QA 会话快照 @上下文 */
-  currentFilePath: string | null;
-  currentVaultId: string | null;
-  onWikiComplete?: () => void;
 }
 
 export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(function KbChatSessionsPanel(
-  { agentId, vaultPath, currentFilePath, currentVaultId, onWikiComplete }, ref,
+  { agentId }, ref,
 ) {
   const sessions = useKbChatSessions();
   const activeSessionId = useKbChatActiveSessionId();
+  // 上下文改从全局 store 读（方案 D：面板常驻 App 层，任意页面可用，不依赖 KB 页 props）
+  const { vault, filePath } = useCurrentContext();
+  const panelOpen = useKbChatPanelOpen();
+  const vaultPath = vault?.path ?? null;
+  const currentVaultId = vault?.id ?? null;
+  const currentFilePath = filePath;
 
-  const [panelWidth, setPanelWidth] = useState(500);
   const [pendingSelection, setPendingSelection] = useState<string | null>(null);
   // #5: pendingSelection 归属的会话 id（null = 无）。只投给目标会话，避免广播给所有空会话、
   // 被任意会话的首条消息消费。
@@ -50,8 +52,6 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   // #1: 待关闭会话是否为 wiki 模式。wiki 关闭确认只允许「中断并关闭/取消」——
   // 杜绝「后台继续并关闭」让已移除标签的 run 逃过 anyWikiRunning 单例守卫（D3 并发写同一 vault）。
   const closePendingIsWikiRef = useRef(false);
-  // 拖拽 resize 状态（照搬旧 KbChatPanel）
-  const resizingRef = useRef<{ startX: number; startWidth: number } | null>(null);
 
   const registerApi = useCallback((id: string, a: KbChatSessionApi) => {
     sessionApisRef.current.set(id, a);
@@ -93,37 +93,6 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   const showToast = useCallback((msg: string) => {
     setToast(msg);
     window.setTimeout(() => setToast(null), 2000);
-  }, []);
-
-  // ─── 拖拽 resize（照搬旧 KbChatPanel 第 41–69 行） ───
-  const startResize = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    resizingRef.current = { startX: e.clientX, startWidth: panelWidth };
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
-  }, [panelWidth]);
-
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!resizingRef.current) return;
-      const delta = resizingRef.current.startX - e.clientX;
-      const newWidth = Math.min(
-        Math.max(resizingRef.current.startWidth + delta, 280),
-        window.innerWidth * 0.5,
-      );
-      setPanelWidth(newWidth);
-    };
-    const handleMouseUp = () => {
-      resizingRef.current = null;
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-    };
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
   }, []);
 
   // ─── 命令下发 ───
@@ -319,12 +288,10 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
 
   // 面板头部活动会话的模式标签
   return (
-    <aside
-      className="file-chat-panel"
+    <div
+      className={`floating-chat-panel${panelOpen ? '' : ' floating-chat-panel--closed'}`}
       data-testid="kb-chat-panel"
-      style={{ width: panelWidth, minWidth: 280, maxWidth: '50vw' }}
     >
-      <div className="file-chat-resize-handle" onMouseDown={startResize} />
       <ChatSessionTabBar
         sessions={sessions}
         activeSessionId={activeSessionId}
@@ -355,7 +322,7 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
               selectedText={pendingSelectionSessionId === s.id ? pendingSelection : null}
               onSelectedTextConsumed={() => { setPendingSelection(null); setPendingSelectionSessionId(null); }}
               onRunningChange={handleRunningChange}
-              onComplete={onWikiComplete}
+              onComplete={() => kbChatSessionsStore.notifyWikiComplete()}
               onLoadError={handleLoadError}
               registerApi={registerApi}
               unregisterApi={unregisterApi}
@@ -391,6 +358,6 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
         onTertiary={closePendingIsWikiRef.current ? undefined : () => handleCloseConfirm(false)}
         onCancel={() => { closePendingRef.current = null; closePendingIsWikiRef.current = false; setClosePendingOpen(false); }}
       />
-    </aside>
+    </div>
   );
 });

@@ -1,0 +1,20 @@
+/* 方案 D：全局悬浮对话面板（App 层常驻挂载，CSS 隐藏而非条件渲染 —— 保 ref 恒有效） */
+.floating-chat-panel {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  top: 72px;
+  width: 500px;
+  max-width: min(90vw, 50vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+  z-index: 1000;
+  overflow: hidden;
+}
+.floating-chat-panel--closed {
+  display: none;
+}
