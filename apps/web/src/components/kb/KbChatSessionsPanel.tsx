@@ -121,8 +121,10 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   const [morphing, setMorphing] = useState(false);
   const morphTimerRef = useRef<number | null>(null);
   const panelElRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
-  const heightDragRef = useRef<{ startY: number; startHeight: number } | null>(null);
+  // handleEl 记录手柄元素：is-dragging 加在手柄上（pointerdown 的 e.currentTarget），
+  // 结束/兜底时须从「同一个手柄」移除（此前误从面板移除 → is-dragging 永远残留）。
+  const dragRef = useRef<{ startX: number; startWidth: number; handleEl: HTMLElement } | null>(null);
+  const heightDragRef = useRef<{ startY: number; startHeight: number; handleEl: HTMLElement } | null>(null);
   // 头部拖拽移动悬浮位置（moveRef 真值源：拖动中直接写 DOM，release 时提交 floatPos）
   const moveRef = useRef<{ grabX: number; grabY: number; fromDock: boolean } | null>(null);
 
@@ -173,9 +175,10 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     e.preventDefault();
     const el = panelElRef.current;
     if (!el) return;
-    dragRef.current = { startX: e.clientX, startWidth: panelWidth };
-    (e.currentTarget as HTMLElement).classList.add('is-dragging');
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    const handleEl = e.currentTarget as HTMLElement;
+    dragRef.current = { startX: e.clientX, startWidth: panelWidth, handleEl };
+    handleEl.classList.add('is-dragging');
+    handleEl.setPointerCapture(e.pointerId);
     document.body.classList.add('kb-resizing');
   }, [panelWidth]);
   const onResizePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
@@ -189,6 +192,8 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     const el = panelElRef.current;
     const d = dragRef.current;
     dragRef.current = null;
+    // is-dragging 是加在手柄上的（见 pointerdown），必须从同一手柄移除；面板兜底。
+    d?.handleEl.classList.remove('is-dragging');
     if (el) {
       el.classList.remove('is-dragging');
       const w = clampPanelWidth(parseFloat(el.style.width) || panelWidth);
@@ -212,12 +217,14 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     e.preventDefault();
     const el = panelElRef.current;
     if (!el) return;
+    const handleEl = e.currentTarget as HTMLElement;
     heightDragRef.current = {
       startY: e.clientY,
       startHeight: panelHeight ?? Math.max(window.innerHeight - 96, PANEL_HEIGHT_MIN),
+      handleEl,
     };
-    (e.currentTarget as HTMLElement).classList.add('is-dragging');
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    handleEl.classList.add('is-dragging');
+    handleEl.setPointerCapture(e.pointerId);
     document.body.classList.add('kb-resizing-v');
   }, [panelHeight]);
   const onResizeHeightPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
@@ -231,6 +238,8 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     const el = panelElRef.current;
     const d = heightDragRef.current;
     heightDragRef.current = null;
+    // is-dragging 是加在手柄上的（见 pointerdown），必须从同一手柄移除；面板兜底。
+    d?.handleEl.classList.remove('is-dragging');
     if (el) {
       el.classList.remove('is-dragging');
       const h = clampPanelHeight(parseFloat(el.style.height) || (panelHeight ?? Math.max(window.innerHeight - 96, PANEL_HEIGHT_MIN)));
@@ -244,6 +253,30 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     if (e.key === 'ArrowUp') { e.preventDefault(); commitHeight(cur - 20); }
     if (e.key === 'ArrowDown') { e.preventDefault(); commitHeight(cur + 20); }
   }, [panelHeight, commitHeight]);
+
+  // 拖拽兜底清理：任何 pointerup/pointercancel（气泡阶段，目标处理器已先跑、幂等）或窗口失焦，
+  // 都清掉全部拖拽状态与 body 光标类。覆盖 pointerup 丢失的真实路径 —— 手柄 capture 被异常释放、
+  // 拖动中元素被移除、OS 手势/失焦抢走指针。此前这类路径会让 body 保持 ns-resize/col-resize
+  // 光标（「鼠标卡在拖拽调节状态」）。header 拖拽（moveRef）也一并清理。
+  useEffect(() => {
+    const endAllDrags = () => {
+      dragRef.current?.handleEl.classList.remove('is-dragging');
+      heightDragRef.current?.handleEl.classList.remove('is-dragging');
+      dragRef.current = null;
+      heightDragRef.current = null;
+      moveRef.current = null;
+      panelElRef.current?.classList.remove('is-dragging');
+      document.body.classList.remove('kb-resizing', 'kb-resizing-v');
+    };
+    window.addEventListener('pointerup', endAllDrags);
+    window.addEventListener('pointercancel', endAllDrags);
+    window.addEventListener('blur', endAllDrags);
+    return () => {
+      window.removeEventListener('pointerup', endAllDrags);
+      window.removeEventListener('pointercancel', endAllDrags);
+      window.removeEventListener('blur', endAllDrags);
+    };
+  }, []);
 
   // ─── 形态切换（悬浮 / 停靠侧边栏） ───
   const setDockMode = useCallback((mode: 'float' | 'dock') => {

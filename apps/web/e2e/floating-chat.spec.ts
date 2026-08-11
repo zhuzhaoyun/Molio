@@ -166,6 +166,17 @@ test.describe('Floating chat (方案 D)', () => {
     const after = (await panel.boundingBox())!.height;
     expect(after).toBeLessThan(before - 90);
 
+    // 拖拽结束必须清理干净：手柄不留 is-dragging、body 不留拖拽光标类
+    // （回归：此前 is-dragging 加在手柄却从面板移除 → 残留；cursor 一直显示 ns-resize）
+    const dragState = await page.evaluate(() => ({
+      hCls: document.querySelector('[data-testid="kb-chat-resize-handle-h"]')?.className ?? '',
+      wCls: document.querySelector('[data-testid="kb-chat-resize-handle"]')?.className ?? '',
+      body: document.body.className,
+    }));
+    expect(dragState.hCls).not.toContain('is-dragging');
+    expect(dragState.wCls).not.toContain('is-dragging');
+    expect(dragState.body).not.toContain('kb-resizing');
+
     // 重载后高度保留（localStorage 持久化）
     await page.reload();
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
