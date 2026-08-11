@@ -1,6 +1,6 @@
 # 用户模块（云端认证服务）设计
 
-> 状态: **实施中**（2026-08-07 重启；附录 B 的 FC 评估结论已折回正文）
+> 状态: **实施中**（2026-08-07 重启；2026-08-11 M5 完成 = Docker 配置 + cloud CI + 协议/隐私合规 + 文档；M0 备案/DirectMail 待用户启动；附录 B 的 FC 评估结论已折回正文）
 > 日期: 2026-08-07
 > 范围: 第一期 = 身份层（注册/登录/token）；**不含**多端同步、支付、设备管理
 
@@ -240,7 +240,7 @@ App 启动 → daemon 读本地 token
 | `apps/daemon` | 新增 `core/auth/`：`auth-client.ts`（云端 API + 重试退避，复用 retry 模式）、`token-store.ts`、`entitlement-cache.ts`；`routes/auth.ts`（5 个本地端点：start/verify/status/logout/account）；`MOLIO_AUTH_URL` 环境变量 |
 | `apps/web` | 登录页（邮箱 + 验证码两步）、账户设置面板、登录态 store；关键交互元素加 `data-testid`，同步 E2E |
 | `apps/desktop` | `safeStorage` token 持久化 IPC；登录后 ARMS 注入 userId。**M4 已实现（2026-08-11）**：主进程起 `crypto-server.js`（127.0.0.1 随机端口 HTTP，端口经 `MOLIO_DESKTOP_CRYPTO_PORT` 注入 daemon，先例 = wiki-fetcher 的 `MOLIO_DESKTOP_FETCH_PORT`）；daemon 侧 `core/auth/desktop-crypto.ts` fetch 客户端（2s 超时、从不抛错）；token 文件信封格式 `{v:1, encrypted:<base64>}`（内层 AuthTokens JSON），明文格式照旧兼容并自动升级；登录态轮询器 `auth-status-watch.js` 维护 userId 供 ARMS beforeReport 注入。`isEncryptionAvailable()=false`（Linux 无 keychain）时不起 crypto server、落明文基线（D3） |
-| Docker 部署 | `.env.example` / `install.sh` 内嵌模板加 `MOLIO_AUTH_URL`（⚠️ install.sh heredoc 同步规则） |
+| Docker 部署 | `.env.example` / `install.sh` 内嵌模板加 `MOLIO_AUTH_URL`（⚠️ install.sh heredoc 同步规则）。**M5 已实现（2026-08-11）**：两处均为注释占位（官方云端地址待 M0 备案后公布；env_file 透传，compose 无需改） |
 
 ## 十一、监控接入
 
@@ -258,6 +258,8 @@ App 启动 → daemon 读本地 token
 3. **注销账号**：API + UI 入口齐全（个保法硬要求），软删除 + 法定最短保留期后清除
 4. **数据最小化**：第一期只收集邮箱，不收集手机号/实名信息
 
+> **M5 落实（2026-08-11）**：① 隐私政策更新在**应用官网政策页** `apps/landing-page/privacy.html`（molio.cn/privacy.html）——新增「可选账号登录」章节（邮箱用途、验证码/凭证存储、ARMS 匿名 userId 声明、注销权利、注销后再注册 = 新账号、数据最小化）；`docs/privacy.html` 是 Molio Connect 扩展的政策页，与账号功能无关不改。② 用户协议新建 `apps/landing-page/terms.html`，LoginForm 邮箱步加「我已阅读并同意」勾选框（未勾选禁发验证码），链接 molio.cn/terms.html + /privacy.html，E2E 同步。③ 注销入口 M3 已齐（云端 DELETE /account + Web 面板二次确认）。④ 数据最小化已实现（仅邮箱）。
+
 ## 十三、部署
 
 | 项 | 方案 |
@@ -270,7 +272,7 @@ App 启动 → daemon 读本地 token
 | 域名 | **需 ICP 备案，周期 1-2 周，最先启动**；FC 自定义域名同样要备案，且「备案服务号」FC 可申请但有数量限制，M0 先确认 |
 | 环境 | daily / prod 双环境（对齐 ARMS 的 env 概念）；daily 环境验证码写日志不发真邮件 |
 | 本地开发 | cloud 可本地跑（`pnpm dev:cloud`，tsx + MemoryAuthStore，无 DATABASE_URL 时自动内存模式）；daemon 以 `MOLIO_AUTH_URL=http://localhost:3200` 指向本地 cloud；web E2E 走这条链路（验证码获取方式见 §十四，待定） |
-| CI | 新增 `cloud.yml`：typecheck + node:test；部署流程第一期可手动，稳定后再自动化 |
+| CI | 新增 `cloud.yml`：typecheck + node:test（**M5 已实现**，`.github/workflows/cloud.yml`）；部署流程第一期手动，稳定后再自动化 |
 
 ## 十四、测试策略
 

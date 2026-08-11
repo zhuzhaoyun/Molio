@@ -11,11 +11,12 @@
 
 ```
 packages/
-  contracts/    @molio/contracts  — shared types (AgentEvent, RunInfo, API types, SSE)
+  contracts/    @molio/contracts  — shared types (AgentEvent, RunInfo, API types, SSE, auth)
 apps/
   daemon/       @molio/daemon    — Hono HTTP server, RunManager, SSE transport (→ apps/daemon/CLAUDE.md)
   web/          @molio/web       — Vite + React web UI, consuming daemon SSE (→ apps/web/CLAUDE.md)
   desktop/      @molio/desktop   — Electron shell (→ apps/desktop/CLAUDE.md)
+  cloud/        @molio/cloud     — 云端认证服务（用户模块；邮箱验证码登录，独立部署，不进应用镜像）(→ apps/cloud/CLAUDE.md)
 ```
 
 ## Build & Dev Commands
@@ -25,8 +26,9 @@ pnpm dev          # daemon (tsx watch :3100) + web (vite :5173)
 pnpm dev:daemon   # daemon only
 pnpm dev:web      # web only
 pnpm dev:desktop  # daemon + web + electron (需确保 5173/3100 端口未被占用)
+pnpm dev:cloud    # cloud auth service only (tsx :3200, 无 DATABASE_URL 自动内存模式)
 pnpm build        # build all packages
-pnpm test         # run daemon + desktop tests (node:test)
+pnpm test         # run cloud + daemon + desktop tests (node:test)
 pnpm test:e2e     # run web E2E tests (Playwright, 需先 pnpm dev)
 pnpm typecheck    # typecheck all packages
 ```
@@ -102,6 +104,7 @@ const child = spawn(binary, args, {
 | daemon bug | `apps/daemon/test/<module>/xxx.test.ts` | node:test |
 | desktop bug | `apps/desktop/test/<module>/xxx.test.js` | node:test |
 | web bug | `apps/web/e2e/xxx.spec.ts` | Playwright |
+| cloud bug | `apps/cloud/test/xxx.test.ts` | node:test |
 
 典型流程：`遇到报错 → 写测试复现 → 确认测试失败 → 修复 → 确认测试通过 → 提交`
 
