@@ -96,8 +96,8 @@ test.describe('multi-window vault isolation', () => {
   });
 
   test('two pages SHARING localStorage (real Electron windows) stay vault-independent via ?vault=', async ({ browser }) => {
-    // Electron 多窗口同一 session → 共享 localStorage。真实场景：⌘N 克隆窗口
-    // 后两窗同在 vault A，用户把一窗切到 B。要防的是：A 页切 vault 写共享
+    // Electron 多窗口同一 session → 共享 localStorage。真实场景：克隆一个
+    // 窗口后两窗同在 vault A，用户把一窗切到 B。要防的是：A 页切 vault 写共享
     // `molio.activeVaultId=B` 后，B 页（模块级 store 已按自己 URL=?vault=A 初始化）
     // 不被串扰弹到 B。一个 context 里两个 page 模拟共享 localStorage。
     const ctx = await browser.newContext();

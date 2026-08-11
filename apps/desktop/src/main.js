@@ -193,20 +193,18 @@ async function startDaemonProduction() {
 /**
  * Build the application menu. Multi-window replaces the default menu, so the
  * standard Edit/View/Window roles are kept (copy/paste/DevTools depend on
- * them). New Window (⌘N / Ctrl+N) clones the focused window's URL — the
- * daemon is per-process, so every window shares one backend.
+ * them). There is deliberately NO global "新窗口" item / ⌘N accelerator: a
+ * bare one-key window-open on every page was judged too aggressive — new-window
+ * entries are contextual instead (KB dropdown, tab context menu, macOS Dock,
+ * Windows Jump List). Page-specific shortcuts come later.
  */
 function buildAppMenu() {
   const isMac = process.platform === 'darwin';
   const template = [
     ...(isMac ? [{ role: 'appMenu' }] : []),
-    {
-      label: '文件',
-      submenu: [
-        { label: '新窗口', accelerator: 'CmdOrCtrl+N', click: () => openNewWindowFromFocused() },
-        ...(isMac ? [] : [{ role: 'quit', label: '退出' }]),
-      ],
-    },
+    // Windows/Linux: minimal File menu for Quit (macOS has no File menu — its
+    // only former item, 新窗口, was removed with the ⌘N accelerator).
+    ...(isMac ? [] : [{ label: '文件', submenu: [{ role: 'quit', label: '退出' }] }]),
     { role: 'editMenu' },
     { role: 'viewMenu' },
     { role: 'windowMenu' },
@@ -396,7 +394,7 @@ function createWindow({ url = '' } = {}) {
 
   // Feed the macOS dock 「最近使用的知识库」 menu. Record the vault in the URL on
   // ANY navigation: full loads (did-navigate — initial open, molio://, cloned
-  // ⌘N windows) and SPA vault switches (did-navigate-in-page — pushState).
+  // windows) and SPA vault switches (did-navigate-in-page — pushState).
   const recordVaultNavigation = (_event, url, isMainFrame) => {
     if (!isMainFrame || !vaultRecency) return;
     let vaultId = null;
@@ -727,8 +725,8 @@ app.whenReady().then(async () => {
     log,
   });
 
-  // ② Build the app menu (New Window ⌘N/Ctrl+N etc.) before creating windows —
-  //    the menu's New Window click handler references lastFocusedAppWindow.
+  // ② Build the app menu (standard roles only — the former New Window ⌘N item
+  //    was removed; see buildAppMenu) before creating windows.
   buildAppMenu();
 
   // macOS dock menu + Windows taskbar Jump List — OS-level "New Window" entries.

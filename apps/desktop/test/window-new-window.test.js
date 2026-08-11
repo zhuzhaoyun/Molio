@@ -9,10 +9,12 @@ const mainSource = readFileSync(path.join(__dirname, '..', 'src', 'main.js'), 'u
 const preloadSource = readFileSync(path.join(__dirname, '..', 'src', 'preload.cjs'), 'utf-8');
 
 describe('main.js new-window entry (P2)', () => {
-  it('builds an application menu with a New Window item + accelerator', () => {
-    assert.ok(mainSource.includes('Menu.setApplicationMenu'), 'must set an app menu');
-    assert.match(mainSource, /新窗口/);
-    assert.match(mainSource, /CmdOrCtrl\+N/);
+  it('does not bind a global ⌘N/Ctrl+N new-window accelerator (page shortcuts deferred)', () => {
+    assert.ok(mainSource.includes('Menu.setApplicationMenu'), 'must still set an app menu');
+    assert.ok(
+      !mainSource.includes('CmdOrCtrl+N'),
+      'the global New Window accelerator must be removed — no one-key new-window on any page',
+    );
     assert.ok(mainSource.includes('editMenu') && mainSource.includes('windowMenu'), 'standard roles must be kept');
     assert.ok(mainSource.includes("role: 'appMenu'"), 'macOS app menu must be retained');
   });
