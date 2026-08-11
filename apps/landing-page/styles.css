@@ -1641,6 +1641,47 @@ p { margin-bottom: 0; }
   color: var(--ink-20);
 }
 
+.res-preview-grid a { cursor: zoom-in; }
+
+/* 灯箱：预览图点击放大，再点或 Esc 关闭 */
+.res-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: rgba(13, 13, 13, 0.88);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  cursor: zoom-out;
+}
+
+.res-lightbox[hidden] { display: none; }
+
+.res-lightbox img {
+  max-width: min(1200px, 92vw);
+  max-height: 88vh;
+  border-radius: 6px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
+}
+
+.res-lightbox-close {
+  position: absolute;
+  top: 18px;
+  right: 22px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.res-lightbox-close:hover { background: rgba(255, 255, 255, 0.18); }
+
 .res-side {
   position: sticky;
   top: calc(var(--nav-h) + 24px);
@@ -2234,7 +2275,7 @@ p { margin-bottom: 0; }
 }
 
 /* ============================================================
-   Enterprise page — 企业服务
+   Enterprise page — 定制服务
    沿用 Ink & Paper token；新增：印章簇、知识栈剖面、案例行、硬边界门、扫码印卡、首页横幅。
    ============================================================ */
 

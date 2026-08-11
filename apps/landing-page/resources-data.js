@@ -24,7 +24,7 @@
       id: 'zizhi-tongjian',
       icon: '📖', tint: '#E8EDF2', name: '资治通鉴',
       desc: '1362 年的人物、事件互链成关系图谱，让 AI 梳理因果脉络、人物网络，一目了然',
-      file: 'zizhi-tongjian-vault.zip', price: 0.99,
+      file: 'zizhi-tongjian-vault.zip', price: 2.9,
       tags: ['经典', '历史'],
       overview: [
         '《资治通鉴》全文整理版 Markdown 知识库：按卷次结构化为笔记，覆盖从三家分晋到五代末的一千三百六十二年史事，人物、事件互链成关系图谱。',
@@ -42,14 +42,17 @@
       id: 'ronganguan-zhaji',
       icon: '🖋️', tint: '#F0E8DC', name: '容安馆札记',
       desc: '钱钟书读书札记分专题整理成 wiki 条目，研究与写作的查证、引文核对交给 AI',
-      file: 'ronganguan-zhaji-vault.zip', price: 69,
+      file: 'ronganguan-zhaji-vault.zip', price: 19.9,
       tags: ['文献', '札记'],
       overview: [
         '《容安馆札记》整理版知识库：钱钟书先生的读书札记与文献考订内容，分专题归档为 Markdown 笔记，检索与引用都方便。',
         '适合做古典文学与学术史研究的人：让 AI 基于整理过的资料做专题梳理、引文核对，而不是在散乱资料里翻找。',
       ],
       highlights: ['学术笔记分专题归档', '结构化 Markdown，AI 可引用', '研究与写作的查证底库'],
-      preview: [],
+      preview: [
+        'images/previews/ronganguan-zhaji/1.png',
+        'images/previews/ronganguan-zhaji/2.png',
+      ],
       payUrl: '',
     },
     {
@@ -63,7 +66,11 @@
         '既适合按方背诵，也方便临床、写作时快速检索方剂出处——问一味药的配伍、一首方的化裁，AI 的回答都有库内整理过的依据。',
       ],
       highlights: ['方剂以歌括体例整理', '歌诀朗朗上口，便于记诵', '方名、组成、主治可检索'],
-      preview: [],
+      preview: [
+        'images/previews/zhenyan-yifang-gekuo/1.png',
+        'images/previews/zhenyan-yifang-gekuo/2.png',
+        'images/previews/zhenyan-yifang-gekuo/3.png',
+      ],
       payUrl: '',
     },
     {
@@ -77,7 +84,11 @@
         '纪传体把一个人的事迹散在本纪、世家、列传里，PDF 时代永远串不起来；现在互链把它们连成完整生平。让 AI 汇总人物生平、梳理事件始末，回答跨篇互证、原文可溯。',
       ],
       highlights: ['全文覆盖本纪、表、书、世家、列传五体', '同一人物事迹跨篇互链，生平可汇总成全貌', 'Obsidian 可直接打开，图谱视图同样好用'],
-      preview: [],
+      preview: [
+        'images/previews/shiji/1.png',
+        'images/previews/shiji/2.png',
+        'images/previews/shiji/3.png',
+      ],
       payUrl: '',
     },
   ];

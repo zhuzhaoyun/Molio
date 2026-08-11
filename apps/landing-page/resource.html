@@ -17,7 +17,7 @@
 
 <link rel="icon" type="image/png" href="images/favicon-32.png">
 <link rel="apple-touch-icon" href="images/favicon-180.png">
-<link rel="stylesheet" href="styles.css?v=20260810e">
+<link rel="stylesheet" href="styles.css?v=20260811f">
 
 <!-- Open Graph -->
 <meta property="og:title" content="Molio 知识库资源 — 资源详情">
@@ -43,7 +43,7 @@
       <a href="index.html" class="nav-link">首页</a>
       <a href="help.html" class="nav-link">使用指南</a>
       <a href="blog/index.html" class="nav-link">博客</a>
-      <a href="enterprise.html" class="nav-link">企业服务</a>
+      <a href="enterprise.html" class="nav-link">定制服务</a>
       <a href="resources.html" class="nav-link active">资源</a>
      <a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer" class="nav-gh" aria-label="GitHub 仓库"><svg viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.102 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg></a></div>
   </div>
@@ -53,10 +53,16 @@
   <div id="res-detail"></div>
 </main>
 
+<!-- 灯箱：预览图点击放大，点击任意处或 Esc 关闭 -->
+<div class="res-lightbox" id="res-lightbox" hidden role="dialog" aria-modal="true" aria-label="效果预览大图">
+  <button type="button" class="res-lightbox-close" aria-label="关闭">×</button>
+  <img src="" alt="效果预览大图">
+</div>
+
 <!-- 数据 + 二维码库 + 支付弹窗（pay.js 动态创建）+ 详情渲染（须在 shared.js 之前，保证 .reveal 被入场动画接管） -->
-<script src="resources-data.js?v=20260810e"></script>
+<script src="resources-data.js?v=20260811f"></script>
 <script src="vendor/qrcode.min.js"></script>
-<script src="pay.js?v=20260810e"></script>
+<script src="pay.js?v=20260811f"></script>
 <script>
 (function () {
   'use strict';
@@ -173,6 +179,29 @@
   if (payBtn) {
     payBtn.addEventListener('click', function () { window.MolioPay.open(r); });
   }
+
+  /* ---------- 灯箱：预览图点击放大，点击任意处或 Esc 关闭（JS 失效时退回新标签页） ---------- */
+  var lb = document.getElementById('res-lightbox');
+  var lbImg = lb.querySelector('img');
+  function closeLb() {
+    lb.hidden = true;
+    lbImg.src = '';
+    document.body.style.overflow = '';
+  }
+  root.addEventListener('click', function (e) {
+    var a = e.target.closest('.res-preview-grid a');
+    if (!a) return;
+    e.preventDefault();
+    var thumb = a.querySelector('img');
+    lbImg.src = a.getAttribute('href');
+    lbImg.alt = thumb ? thumb.alt : '';
+    lb.hidden = false;
+    document.body.style.overflow = 'hidden';
+  });
+  lb.addEventListener('click', closeLb);
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !lb.hidden) closeLb();
+  });
 })();
 </script>
 
@@ -188,7 +217,7 @@
       <a href="index.html">首页</a>
       <a href="resources.html">资源</a>
       <a href="help.html">使用指南</a>
-      <a href="enterprise.html">企业服务</a>
+      <a href="enterprise.html">定制服务</a>
       <a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer">GitHub 开源</a>
     </div>
     <div class="footer-links">
@@ -211,7 +240,7 @@
   </div>
 </footer>
 
-<script src="shared.js?v=20260810e"></script>
+<script src="shared.js?v=20260811f"></script>
 <!-- Google Analytics 4 -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-X6LMX9VR0Y"></script>
 <script>
