@@ -193,18 +193,22 @@ async function startDaemonProduction() {
 /**
  * Build the application menu. Multi-window replaces the default menu, so the
  * standard Edit/View/Window roles are kept (copy/paste/DevTools depend on
- * them). There is deliberately NO global "新窗口" item / ⌘N accelerator: a
- * bare one-key window-open on every page was judged too aggressive — new-window
- * entries are contextual instead (KB dropdown, tab context menu, macOS Dock,
- * Windows Jump List). Page-specific shortcuts come later.
+ * them). 「文件 → 新窗口」 is a click-only menu item — deliberately NO ⌘N/Ctrl+N
+ * accelerator, so a bare one-key press on any page can't open a window.
+ * Contextual new-window entries remain (KB dropdown, tab context menu, macOS
+ * Dock, Windows Jump List); page-specific shortcuts come later.
  */
 function buildAppMenu() {
   const isMac = process.platform === 'darwin';
   const template = [
     ...(isMac ? [{ role: 'appMenu' }] : []),
-    // Windows/Linux: minimal File menu for Quit (macOS has no File menu — its
-    // only former item, 新窗口, was removed with the ⌘N accelerator).
-    ...(isMac ? [] : [{ label: '文件', submenu: [{ role: 'quit', label: '退出' }] }]),
+    {
+      label: '文件',
+      submenu: [
+        { label: '新窗口', click: () => openNewWindowFromFocused() },
+        ...(isMac ? [] : [{ role: 'quit', label: '退出' }]),
+      ],
+    },
     { role: 'editMenu' },
     { role: 'viewMenu' },
     { role: 'windowMenu' },
@@ -725,8 +729,8 @@ app.whenReady().then(async () => {
     log,
   });
 
-  // ② Build the app menu (standard roles only — the former New Window ⌘N item
-  //    was removed; see buildAppMenu) before creating windows.
+  // ② Build the app menu (文件 → 新窗口, click-only — no ⌘N accelerator)
+  //    before creating windows.
   buildAppMenu();
 
   // macOS dock menu + Windows taskbar Jump List — OS-level "New Window" entries.

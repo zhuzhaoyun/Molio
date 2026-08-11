@@ -61,7 +61,7 @@ localStorage `molio.activeVaultId` 降级为「无 URL 参数的新窗口的默�
 
 | 决策点 | 结论 |
 |---|---|
-| 1. 新窗口入口 | ① **KB 文件面板统一「＋新建」下拉**（新建笔记/新建文件夹/新窗口三合一；「新窗口」= **打开干净的新桌面端**，落地应用着陆视图、不强制任何知识库，用户自行选择）② **KB 标签右键「在新窗口打开」** ③ **macOS Dock 右键「新窗口」+「最近使用的知识库」子菜单**（vault-recency LRU，`userData/vault-recency.json` 持久化，focus 3s 节流刷新）④ **Windows 任务栏 Jump List「新窗口」**（`--new-window` → 单实例锁 → second-instance；机制限制无动态子菜单）。~~菜单栏「文件→新窗口」⌘N/Ctrl+N~~ 已于 2026-08-11 **移除**（全局单键开窗权限过高、任意页面立即触发；页面级快捷操作用户后续另行设计） |
+| 1. 新窗口入口 | ① **菜单栏「文件 → 新窗口」**（2026-08-11 恢复，**仅鼠标点击、无快捷键**——原先的 ⌘N/Ctrl+N 全局单键开窗权限过高已去掉加速键；页面级快捷操作用户后续另行设计）② **KB 文件面板统一「＋新建」下拉**（新建笔记/新建文件夹/新窗口三合一；「新窗口」= **打开干净的新桌面端**，落地应用着陆视图、不强制任何知识库，用户自行选择）③ **KB 标签右键「在新窗口打开」** ④ **macOS Dock 右键「新窗口」+「最近使用的知识库」子菜单**（vault-recency LRU，`userData/vault-recency.json` 持久化，focus 3s 节流刷新）⑤ **Windows 任务栏 Jump List「新窗口」**（`--new-window` → 单实例锁 → second-instance；机制限制无动态子菜单） |
 | 2. 窗口-vault 关系 | **一窗一 vault**（语义清晰；一窗多 vault = P3 分屏，另论） |
 | 3. daemon `active_vault` 语义 | **最后激活窗口的 vault**（每窗口切换时已同步；Clipper 协议零改动） |
 | 4. 开工时机 | **现在开工**；tabs 分片视 P1 进度——已合并则直接用 `createTabsStore()`，否则本地同形工厂、P1 合并后 rebase 对齐 |
