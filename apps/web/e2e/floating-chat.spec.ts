@@ -187,6 +187,68 @@ test.describe('Floating chat (方案 D)', () => {
     expect(Math.abs(persisted - after)).toBeLessThan(5);
   });
 
+  test('边缘跟随光标：移动面板后拖宽/拖高，被拖边动、对侧固定', async ({ page }) => {
+    await mockChatRun(page);
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+
+    await page.locator('[data-testid="kb-btn-ask"]').click();
+    const panel = page.locator('[data-testid="kb-chat-panel"]');
+    await expect(panel).toBeVisible();
+    await page.waitForTimeout(250);
+
+    // 先通过 header 拖拽移动面板（floatPos 生效、inline left/top 固定）——
+    // 这正是旧逻辑出错的前提：被拖的边被钉死、对侧外扩（反直觉）。
+    const tb = (await page.locator('[data-testid="kb-chat-session-tabbar"]').boundingBox())!;
+    const sx = tb.x + tb.width - 150;
+    const sy = tb.y + 16;
+    await page.mouse.move(sx, sy);
+    await page.mouse.down();
+    await page.mouse.move(sx - 80, sy - 60, { steps: 5 });
+    await page.mouse.up();
+    await page.waitForTimeout(100);
+
+    // ── 拖左缘（宽度手柄）：左缘跟随光标左移、右缘钉死不动 ──
+    const wBefore = (await panel.boundingBox())!;
+    const rightPinned = wBefore.x + wBefore.width;
+    const wh = await page.locator('[data-testid="kb-chat-resize-handle"]').boundingBox();
+    await page.mouse.move(wh.x + 4, wh.y + 300);
+    await page.mouse.down();
+    await page.mouse.move(wh.x - 100, wh.y + 300, { steps: 5 });
+    await page.mouse.up();
+    await page.waitForTimeout(100);
+    const wAfter = (await panel.boundingBox())!;
+    expect(wAfter.width).toBeGreaterThan(wBefore.width + 80); // 变宽
+    expect(wAfter.x).toBeLessThan(wBefore.x - 80); // 左缘跟随光标左移
+    expect(Math.abs(wAfter.x + wAfter.width - rightPinned)).toBeLessThan(4); // 右缘钉死
+
+    // ── 拖顶缘（高度手柄）：先向下收矮（顶缘下移、下缘钉死），再向上拉高（顶缘上移、下缘仍钉死）──
+    const hBefore = (await panel.boundingBox())!;
+    const bottomPinned = hBefore.y + hBefore.height;
+    let hh = await page.locator('[data-testid="kb-chat-resize-handle-h"]').boundingBox();
+    await page.mouse.move(hh.x + 300, hh.y + 4);
+    await page.mouse.down();
+    await page.mouse.move(hh.x + 300, hh.y + 90, { steps: 5 }); // 向下拖 → 变矮
+    await page.mouse.up();
+    await page.waitForTimeout(100);
+    const hShrunk = (await panel.boundingBox())!;
+    expect(hShrunk.height).toBeLessThan(hBefore.height - 70);
+    expect(hShrunk.y).toBeGreaterThan(hBefore.y + 70); // 顶缘跟随光标下移
+    expect(Math.abs(hShrunk.y + hShrunk.height - bottomPinned)).toBeLessThan(4); // 下缘钉死
+
+    // 再向上拉回 → 变高、顶缘上移、下缘仍钉死
+    hh = await page.locator('[data-testid="kb-chat-resize-handle-h"]').boundingBox();
+    await page.mouse.move(hh.x + 300, hh.y + 4);
+    await page.mouse.down();
+    await page.mouse.move(hh.x + 300, hh.y - 90, { steps: 5 });
+    await page.mouse.up();
+    await page.waitForTimeout(100);
+    const hGrown = (await panel.boundingBox())!;
+    expect(hGrown.height).toBeGreaterThan(hShrunk.height + 70);
+    expect(hGrown.y).toBeLessThan(hShrunk.y - 70);
+    expect(Math.abs(hGrown.y + hGrown.height - bottomPinned)).toBeLessThan(4);
+  });
+
   test('停靠切换按钮：悬浮 ⇄ 页内分栏（带形态过渡），停靠时文档区让出宽度、拖宽联动', async ({ page }) => {
     await mockChatRun(page);
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);

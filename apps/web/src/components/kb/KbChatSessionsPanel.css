@@ -193,6 +193,11 @@ body.kb-resizing-v {
   cursor: ns-resize;
   user-select: none;
 }
+/* 头部拖拽移动面板期间：抓取光标 + 禁止选中文本（与文本预览器的文字选择冲突） */
+body.kb-moving {
+  cursor: grabbing;
+  user-select: none;
+}
 
 /* 暗色面板：近黑底上 0.18 黑阴影几乎不可见，靠更深阴影 + 边框保持与页面分离 */
 [data-theme="dark"] .floating-chat-panel {

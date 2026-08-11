@@ -123,8 +123,10 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   const panelElRef = useRef<HTMLDivElement>(null);
   // handleEl 记录手柄元素：is-dragging 加在手柄上（pointerdown 的 e.currentTarget），
   // 结束/兜底时须从「同一个手柄」移除（此前误从面板移除 → is-dragging 永远残留）。
-  const dragRef = useRef<{ startX: number; startWidth: number; handleEl: HTMLElement } | null>(null);
-  const heightDragRef = useRef<{ startY: number; startHeight: number; handleEl: HTMLElement } | null>(null);
+  // opposite = 被拖边的对侧边缘（宽度=右缘、高度=下缘）：拖动期间钉死对侧、被拖边跟随光标，
+  // 不依赖 CSS 锚在 left/right（面板被移动后 inline left 固定时，旧逻辑会让被拖边钉死、对侧外扩）。
+  const dragRef = useRef<{ startX: number; startWidth: number; opposite: number; handleEl: HTMLElement } | null>(null);
+  const heightDragRef = useRef<{ startY: number; startHeight: number; opposite: number; handleEl: HTMLElement } | null>(null);
   // 头部拖拽移动悬浮位置（moveRef 真值源：拖动中直接写 DOM，release 时提交 floatPos）
   const moveRef = useRef<{ grabX: number; grabY: number; fromDock: boolean } | null>(null);
 
@@ -170,23 +172,28 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     setPanelWidth(clamped);
     try { localStorage.setItem(STORAGE_KEY_WIDTH, String(clamped)); } catch { /* storage unavailable */ }
   }, []);
-  // 面板右锚定：向左拖（clientX 减小）→ 变宽。拖动中直接写 DOM 避免每帧 setState 重渲染。
+  // 边缘跟随光标：拖左缘向左 → 变宽、向右 → 变窄，右缘始终钉死、左缘跟随光标。
+  // 拖动中直接写 DOM 避免每帧 setState 重渲染。用几何记录对侧边缘，而非依赖 CSS 锚点
+  // （面板被移动后 inline left 固定，若只改 width 会让「被拖的边钉死、对侧外扩」反直觉）。
   const onResizePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
     const el = panelElRef.current;
     if (!el) return;
+    const rect = el.getBoundingClientRect();
     const handleEl = e.currentTarget as HTMLElement;
-    dragRef.current = { startX: e.clientX, startWidth: panelWidth, handleEl };
+    dragRef.current = { startX: e.clientX, startWidth: rect.width, opposite: rect.right, handleEl };
     handleEl.classList.add('is-dragging');
     handleEl.setPointerCapture(e.pointerId);
     document.body.classList.add('kb-resizing');
-  }, [panelWidth]);
+  }, []);
   const onResizePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     const d = dragRef.current;
     const el = panelElRef.current;
     if (!d || !el) return;
     const w = clampPanelWidth(d.startWidth + (d.startX - e.clientX));
     el.style.width = `${w}px`;
+    // over-constrained 时 left 生效：显式左缘 = 对侧右缘 - 宽 → 右缘钉死、左缘跟随光标
+    el.style.left = `${d.opposite - w}px`;
   }, []);
   const onResizePointerEnd = useCallback(() => {
     const el = panelElRef.current;
@@ -197,11 +204,20 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     if (el) {
       el.classList.remove('is-dragging');
       const w = clampPanelWidth(parseFloat(el.style.width) || panelWidth);
-      el.style.width = ''; // 交还给 React 受控 width（值相同，无跳变）
+      const left = parseFloat(el.style.left);
+      el.style.width = '';
+      el.style.left = '';
       commitWidth(w);
+      // 悬浮且面板被移动过（floatPos 生效）：左缘此刻是拖拽终点，同步进 floatPos，
+      // 否则重渲染会把 left 跳回旧位置（左缘钉死、右缘外扩的反直觉行为）。
+      if (!docked && floatPos && Number.isFinite(left)) {
+        const p = { left: Math.round(left), top: floatPos.top };
+        setFloatPos(p);
+        try { localStorage.setItem(STORAGE_KEY_FLOAT_POS, JSON.stringify(p)); } catch { /* storage unavailable */ }
+      }
     }
     document.body.classList.remove('kb-resizing');
-  }, [panelWidth, commitWidth]);
+  }, [panelWidth, commitWidth, docked, floatPos, setFloatPos]);
   const onResizeKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.key === 'ArrowLeft') { e.preventDefault(); commitWidth(panelWidth - 20); }
     if (e.key === 'ArrowRight') { e.preventDefault(); commitWidth(panelWidth + 20); }
@@ -213,26 +229,32 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     try { localStorage.setItem(STORAGE_KEY_HEIGHT, String(clamped)); } catch { /* storage unavailable */ }
   }, []);
   // 面板下锚定：向上拖（clientY 减小）→ 变高。拖动中直接写 DOM 避免每帧 setState 重渲染。
+  // 边缘跟随光标：拖顶缘向上 → 变高、向下 → 变矮，下缘始终钉死、顶缘跟随光标。
+  // 与宽度同理用几何记录对侧下缘，避免面板移动后 inline top 固定导致「被拖的边钉死」。
   const onResizeHeightPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
     const el = panelElRef.current;
     if (!el) return;
+    const rect = el.getBoundingClientRect();
     const handleEl = e.currentTarget as HTMLElement;
     heightDragRef.current = {
       startY: e.clientY,
-      startHeight: panelHeight ?? Math.max(window.innerHeight - 96, PANEL_HEIGHT_MIN),
+      startHeight: rect.height,
+      opposite: rect.bottom,
       handleEl,
     };
     handleEl.classList.add('is-dragging');
     handleEl.setPointerCapture(e.pointerId);
     document.body.classList.add('kb-resizing-v');
-  }, [panelHeight]);
+  }, []);
   const onResizeHeightPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     const d = heightDragRef.current;
     const el = panelElRef.current;
     if (!d || !el) return;
     const h = clampPanelHeight(d.startHeight + (d.startY - e.clientY));
     el.style.height = `${h}px`;
+    // over-constrained 时 top 生效：显式顶缘 = 对侧下缘 - 高 → 下缘钉死、顶缘跟随光标
+    el.style.top = `${d.opposite - h}px`;
   }, []);
   const onResizeHeightPointerEnd = useCallback(() => {
     const el = panelElRef.current;
@@ -243,11 +265,19 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     if (el) {
       el.classList.remove('is-dragging');
       const h = clampPanelHeight(parseFloat(el.style.height) || (panelHeight ?? Math.max(window.innerHeight - 96, PANEL_HEIGHT_MIN)));
-      el.style.height = ''; // 交还给 React 受控 height（值相同，无跳变）
+      const top = parseFloat(el.style.top);
+      el.style.height = '';
+      el.style.top = '';
       commitHeight(h);
+      // 悬浮且面板被移动过：顶缘同步进 floatPos，避免重渲染跳回旧位置
+      if (!docked && floatPos && Number.isFinite(top)) {
+        const p = { left: floatPos.left, top: Math.round(top) };
+        setFloatPos(p);
+        try { localStorage.setItem(STORAGE_KEY_FLOAT_POS, JSON.stringify(p)); } catch { /* storage unavailable */ }
+      }
     }
     document.body.classList.remove('kb-resizing-v');
-  }, [panelHeight, commitHeight]);
+  }, [panelHeight, commitHeight, docked, floatPos, setFloatPos]);
   const onResizeHeightKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
     const cur = panelHeight ?? Math.max(window.innerHeight - 96, PANEL_HEIGHT_MIN);
     if (e.key === 'ArrowUp') { e.preventDefault(); commitHeight(cur - 20); }
@@ -266,7 +296,7 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
       heightDragRef.current = null;
       moveRef.current = null;
       panelElRef.current?.classList.remove('is-dragging');
-      document.body.classList.remove('kb-resizing', 'kb-resizing-v');
+      document.body.classList.remove('kb-resizing', 'kb-resizing-v', 'kb-moving');
     };
     window.addEventListener('pointerup', endAllDrags);
     window.addEventListener('pointercancel', endAllDrags);
@@ -326,6 +356,8 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     } else {
       moveRef.current = { grabX, grabY, fromDock: false };
     }
+    // 拖动中禁止选中文本：header 拖动与文本预览器的文字选择冲突（用户拖顶移动时误选文档文字）
+    document.body.classList.add('kb-moving');
     return true;
   }, [dockMode, setDockMode, clampMoveX, clampMoveY]);
   const onHeaderDragMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
@@ -339,6 +371,8 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     const d = moveRef.current;
     const el = panelElRef.current;
     moveRef.current = null;
+    // 无论是否有有效拖拽，先移除拖动中光标/禁选中（防止中途 abort 后残留）
+    document.body.classList.remove('kb-moving');
     if (!d || !el) return;
     const left = parseFloat(el.style.left);
     const top = parseFloat(el.style.top);
