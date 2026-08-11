@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electron';
 import { spawn, execSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,6 +7,8 @@ import { log, getLogPath } from './logger.js';
 import { startFetchServer } from './wiki-fetcher.js';
 import { openFeishuLogin, getFeishuLoginStatus } from './wiki-fetcher-login.js';
 import { startDaemonMetricsPolling } from './daemon-metrics.js';
+import { startCryptoServer } from './crypto-server.js';
+import { startAuthStatusPolling } from './auth-status-watch.js';
 import { CappedBuffer } from './capped-buffer.js';
 
 const errMsg = (err) => (err instanceof Error ? err.message : String(err));
@@ -36,6 +38,13 @@ app.name = 'Molio';
 let mainWindow = null;
 let daemonProcess = null;
 let stopDaemonMetrics = null;
+let stopAuthStatusPolling = null;
+
+// 当前登录的 Molio userId（ULID，未登录为 null）。由 auth-status-watch 轮询
+// daemon /api/auth/status 维护，经 initMonitoring 的 getUserId 注入 ARMS
+// beforeReport → bundle.user.id。SDK 无 setUser API，这是唯一注入点。
+// 刻意只存 id 不存邮箱——监控归因不带 PII。
+let molioUserId = null;
 
 // Whether the renderer has mounted and registered its `molio:navigate`
 // listener yet. On cold start the SPA doesn't mount until after the daemon is
@@ -78,6 +87,28 @@ async function startDaemonProduction() {
     log('warn', 'main', `wiki fetch server failed to start: ${err?.message ?? err}`);
   }
 
+  // Start the safeStorage crypto HTTP server on a random 127.0.0.1 port.
+  // daemon (ELECTRON_RUN_AS_NODE) has no Electron API, so it RPC's us to
+  // encrypt/decrypt the auth token file (Win=DPAPI / mac=Keychain).
+  // Only start when encryption is actually available — on Linux without a
+  // keychain we deliberately fall back to the plaintext baseline (设计 §八 D3)
+  // by NOT setting the port env, instead of advertising crypto that 503s
+  // every call (which would leave tokens unpersisted).
+  let cryptoPort = null;
+  try {
+    if (safeStorage.isEncryptionAvailable()) {
+      cryptoPort = await startCryptoServer({
+        isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
+        encryptString: (plaintext) => safeStorage.encryptString(plaintext),
+        decryptString: (data) => safeStorage.decryptString(data),
+      });
+    } else {
+      log('info', 'main', 'safeStorage encryption unavailable — auth tokens use plaintext baseline (D3)');
+    }
+  } catch (err) {
+    log('warn', 'main', `crypto server failed to start: ${err?.message ?? err}`);
+  }
+
   return new Promise((resolve, reject) => {
     // Use Electron's embedded Node.js to run the daemon.
     // ELECTRON_RUN_AS_NODE=1 makes the Electron binary behave as a standard Node.js process,
@@ -89,6 +120,7 @@ async function startDaemonProduction() {
       MOLIO_STATIC_DIR: webStaticDir,
     };
     if (wikiFetchPort) daemonEnv.MOLIO_DESKTOP_FETCH_PORT = String(wikiFetchPort);
+    if (cryptoPort) daemonEnv.MOLIO_DESKTOP_CRYPTO_PORT = String(cryptoPort);
     daemonProcess = spawn(process.execPath, [daemonEntry], {
       env: daemonEnv,
       stdio: 'pipe',
@@ -558,6 +590,8 @@ app.whenReady().then(async () => {
     isDev: isDevMode(),
     version: app.getVersion(),
     log,
+    // 闭包读模块级 molioUserId（由下方 auth-status-watch 轮询维护）。
+    getUserId: () => molioUserId,
   });
 
   // ② Create window first (updater IPC needs getMainWindow reference).
@@ -582,8 +616,18 @@ app.whenReady().then(async () => {
     }
 
     // ⑤ Bridge daemon memory metrics to ARMS (daemon has no ARMS SDK).
+    //    Also poll login state so ARMS events carry the Molio userId.
+    //    Both are gated on daemonReady && armsRum: no daemon → nothing to
+    //    poll; no ARMS (dev mode) → nothing to inject into.
     if (daemonReady && armsRum) {
       stopDaemonMetrics = startDaemonMetricsPolling({ armsRum, log });
+      stopAuthStatusPolling = startAuthStatusPolling({
+        daemonPort: 3100,
+        log,
+        onUser: (userId) => {
+          molioUserId = userId;
+        },
+      });
     }
 
     // ⑥ Only load the real app URL if daemon started successfully.
@@ -709,6 +753,7 @@ app.on('before-quit', (event) => {
   // of hiding it (macOS hide-on-close behavior).
   forceQuit = true;
   if (stopDaemonMetrics) { stopDaemonMetrics(); stopDaemonMetrics = null; }
+  if (stopAuthStatusPolling) { stopAuthStatusPolling(); stopAuthStatusPolling = null; }
   if (daemonProcess) {
     // Prevent the default quit until daemon is fully terminated.
     // Without this, Electron may exit before the daemon releases its

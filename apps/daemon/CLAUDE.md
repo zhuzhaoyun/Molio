@@ -65,9 +65,10 @@ src/
       token-store.ts   FeishuTokenStore — tenant_access_token 内存缓存 + 磁盘持久化 + 100min 刷新定时器
       service.ts       状态机 (idle/connecting/connected/reconnecting/error)，token 生命周期委托 token-store
       types.ts         FeishuStatus / FeishuConfig / FeishuRawEvent
-    auth/             云端认证 client（用户模块 M2；Web UI 永不直连云端，一切经 daemon）
-      token-store.ts   ~/.molio/auth-tokens.json 读写（复用 credentials-store 原子写 + chmod 0o600）；解码 access JWT exp；token 不进 config.json
-      auth-client.ts   AuthClient — 唯一云端通信方（MOLIO_AUTH_URL env，未配置时端点回 503）：sendCode/verify/logout/deleteAccount（注销云端优先：云端失败抛错不清本地）、single-flight refresh、401→刷新→重试一次、<2min 主动刷新、refresh 被拒不盲试、启动恢复 restoreSession、status 带 configured 标记
+    auth/             云端认证 client（用户模块 M2/M4；Web UI 永不直连云端，一切经 daemon）
+      token-store.ts   ~/.molio/auth-tokens.json 异步读写（复用 credentials-store 原子写 + chmod 0o600）；两种落盘格式按字段判别：明文 AuthTokens JSON（基线，D3）/ 信封 {v:1, encrypted:<base64>}（桌面模式 safeStorage 加密）；读失败（损坏/解密失败/未配置 crypto 遇信封）一律 null **不删文件**；写降级按模式判定：配置 crypto 但加密失败 → 跳过落盘保内存（绝不静默明文），未配置 → 明文；crypto provider 模块级可注入（setTokenCryptoProvider，测试用）；解码 access JWT exp；token 不进 config.json
+      desktop-crypto.ts 桌面端加密 RPC 客户端 — daemon 以 ELECTRON_RUN_AS_NODE 运行无 Electron API，fetch 主进程 crypto-server（端口 env MOLIO_DESKTOP_CRYPTO_PORT，先例 = wiki-fetcher 的 MOLIO_DESKTOP_FETCH_PORT）；2s 超时、**从不抛错**（任何失败返回 null，token-store 据此降级）；env 缺失 = 未配置（dev/Docker/独立 daemon → 明文基线）
+      auth-client.ts   AuthClient — 唯一云端通信方（MOLIO_AUTH_URL env，未配置时端点回 503）：sendCode/verify/logout/deleteAccount（注销云端优先：云端失败抛错不清本地）、single-flight refresh、401→刷新→重试一次、<2min 主动刷新、refresh 被拒不盲试、启动恢复 restoreSession、status 带 configured 标记。token 读写异步化后 currentTokens/getStatus/adoptTokens 均为 async；加密失败跳过落盘时内存仍更新（先写盘后缓存不变量的唯一例外，有 log warn）
       entitlement-cache.ts  EntitlementCache — 权益快照 ~/.molio/entitlement-cache.json + 7 天离线宽限（MOLIO_AUTH_GRACE_DAYS 可配）
   routes/
     channel.ts        channelRoutes<TConfig>() 工厂 — 5 个标准渠道路由（status/start/stop/disconnect/config）

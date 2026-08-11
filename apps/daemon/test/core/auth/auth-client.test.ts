@@ -82,7 +82,7 @@ describe('AuthClient', () => {
     const snap = client.entitlementCache.read();
     assert.deepEqual(snap?.entitlement, { plan: 'free' });
 
-    assert.deepEqual(client.getStatus(), {
+    assert.deepEqual(await client.getStatus(), {
       loggedIn: true,
       configured: true,
       user: mock.user,
@@ -104,7 +104,7 @@ describe('AuthClient', () => {
       (e: AuthCloudError) => e.status === 401 && e.code === 'invalid_code',
     );
     assert.equal(mock.countCalls('POST', '/auth/verify'), 1);
-    assert.equal(readAuthTokens(), null, '失败的 verify 不落盘');
+    assert.equal(await readAuthTokens(), null, '失败的 verify 不落盘');
   });
 
   // ── 401 → 刷新 → 重试一次（§7.2） ─────────────────────────────────
@@ -119,7 +119,7 @@ describe('AuthClient', () => {
     assert.equal(mock.countCalls('POST', '/auth/refresh'), 1);
     assert.equal(mock.countCalls('GET', '/auth/me'), 2, '401 一次 + 重试一次');
     // 轮换后的新 refresh token 已落盘（旧 token 重放会被云端判泄漏）
-    assert.equal(readAuthTokens()?.refreshToken, 'refresh-2');
+    assert.equal((await readAuthTokens())?.refreshToken, 'refresh-2');
   });
 
   it('并发 me 撞 401 时 refresh 只发一次（single-flight，防 D1 轮换竞争）', async () => {
@@ -132,7 +132,7 @@ describe('AuthClient', () => {
     assert.deepEqual(b.user, mock.user);
     assert.equal(mock.countCalls('POST', '/auth/refresh'), 1, '并发只刷一次');
     // 两个调用都拿到成功的 me 结果（各自重试或直接用新 token）
-    assert.equal(readAuthTokens()?.refreshToken, 'refresh-2');
+    assert.equal((await readAuthTokens())?.refreshToken, 'refresh-2');
   });
 
   it('refresh 被云端拒绝 → 清本地 + loginExpired，之后不盲试云端', async () => {
@@ -146,10 +146,10 @@ describe('AuthClient', () => {
       (e: AuthCloudError) => e.status === 401 && e.code === 'invalid_token',
     );
 
-    assert.equal(readAuthTokens(), null, 'token 已清');
+    assert.equal(await readAuthTokens(), null, 'token 已清');
     assert.equal(client.entitlementCache.read(), null, '权益快照已清');
     assert.equal(client.isLoginExpired(), true);
-    assert.deepEqual(client.getStatus(), { loggedIn: false, configured: true, loginExpired: true });
+    assert.deepEqual(await client.getStatus(), { loggedIn: false, configured: true, loginExpired: true });
 
     // 关键负面断言：不再盲目打云端 refresh
     const refreshCalls = mock.countCalls('POST', '/auth/refresh');
@@ -166,21 +166,21 @@ describe('AuthClient', () => {
     await client.verify('user@example.com', '123456');
     mock.calls.length = 0;
     const token = await client.getAccessToken();
-    assert.equal(token, readAuthTokens()?.accessToken);
+    assert.equal(token, (await readAuthTokens())?.accessToken);
     assert.equal(mock.countCalls('POST', '/auth/refresh'), 0);
   });
 
   it('access 剩余 <2min 时 getAccessToken 先刷新', async () => {
     await client.verify('user@example.com', '123456');
     mock.calls.length = 0;
-    const before = readAuthTokens()?.accessToken;
+    const before = (await readAuthTokens())?.accessToken;
 
     fakeNow += (900 - 60) * 1000; // 剩 60s < 2min
     const token = await client.getAccessToken();
 
     assert.equal(mock.countCalls('POST', '/auth/refresh'), 1);
     assert.notEqual(token, before);
-    assert.equal(readAuthTokens()?.accessToken, token);
+    assert.equal((await readAuthTokens())?.accessToken, token);
   });
 
   // ── 退避重试 ──────────────────────────────────────────────────────
@@ -212,16 +212,16 @@ describe('AuthClient', () => {
       (e: AuthCloudError) => e.status === 0 && e.code === 'cloud_unreachable',
     );
     assert.equal(client.getCloudState(), 'unreachable');
-    assert.equal(readAuthTokens(), null);
+    assert.equal(await readAuthTokens(), null);
   });
 
   it('logout 云端不可达时本地仍登出成功（本地登出必须可用）', async () => {
     await client.verify('user@example.com', '123456');
     mock.setMode('down');
     await client.logout(); // 不抛
-    assert.equal(readAuthTokens(), null);
+    assert.equal(await readAuthTokens(), null);
     assert.equal(client.entitlementCache.read(), null);
-    assert.deepEqual(client.getStatus(), { loggedIn: false, configured: true });
+    assert.deepEqual(await client.getStatus(), { loggedIn: false, configured: true });
   });
 
   it('logout 云端可达时云端吊销 + 本地清除', async () => {
@@ -232,8 +232,8 @@ describe('AuthClient', () => {
     const del = mock.lastCall('DELETE', '/auth/session');
     assert.equal((del?.body as { refreshToken?: string })?.refreshToken, 'refresh-1');
     assert.ok(del?.auth?.startsWith('Bearer '));
-    assert.equal(readAuthTokens(), null);
-    assert.deepEqual(client.getStatus(), { loggedIn: false, configured: true });
+    assert.equal(await readAuthTokens(), null);
+    assert.deepEqual(await client.getStatus(), { loggedIn: false, configured: true });
   });
 
   // ── 注销账号（§7.4 个保法；云端权威操作，与 logout 语义不同） ─────
@@ -244,9 +244,9 @@ describe('AuthClient', () => {
     await client.deleteAccount();
     assert.equal(mock.countCalls('DELETE', '/auth/account'), 1);
     assert.ok(mock.lastCall('DELETE', '/auth/account')?.auth?.startsWith('Bearer '));
-    assert.equal(readAuthTokens(), null);
+    assert.equal(await readAuthTokens(), null);
     assert.equal(client.entitlementCache.read(), null);
-    assert.deepEqual(client.getStatus(), { loggedIn: false, configured: true });
+    assert.deepEqual(await client.getStatus(), { loggedIn: false, configured: true });
   });
 
   it('deleteAccount 未登录 → no_session，不打云端', async () => {
@@ -264,8 +264,8 @@ describe('AuthClient', () => {
       () => client.deleteAccount(),
       (e: AuthCloudError) => e.status === 0 && e.code === 'cloud_unreachable',
     );
-    assert.ok(readAuthTokens(), 'token 保留，与 logout 的本地必清语义不同');
-    assert.equal(client.getStatus().loggedIn, true);
+    assert.ok(await readAuthTokens(), 'token 保留，与 logout 的本地必清语义不同');
+    assert.equal((await client.getStatus()).loggedIn, true);
   });
 
   it('deleteAccount 首次 401 → 刷新后重试一次成功', async () => {
@@ -275,7 +275,7 @@ describe('AuthClient', () => {
     await client.deleteAccount();
     assert.equal(mock.countCalls('POST', '/auth/refresh'), 1);
     assert.equal(mock.countCalls('DELETE', '/auth/account'), 2, '401 后重试一次');
-    assert.equal(readAuthTokens(), null);
+    assert.equal(await readAuthTokens(), null);
   });
 
   // ── 启动恢复（§7.3） ──────────────────────────────────────────────
@@ -289,8 +289,8 @@ describe('AuthClient', () => {
 
     assert.equal(mock.countCalls('POST', '/auth/refresh'), 1);
     assert.equal(mock.countCalls('GET', '/auth/me'), 1);
-    assert.equal(readAuthTokens()?.refreshToken, 'refresh-2', '轮换后的 token 落盘');
-    const status = restarted.getStatus();
+    assert.equal((await readAuthTokens())?.refreshToken, 'refresh-2', '轮换后的 token 落盘');
+    const status = await restarted.getStatus();
     assert.equal(status.loggedIn, true);
     assert.equal(status.stale, false);
     assert.deepEqual(status.entitlement, { plan: 'free' });
@@ -303,9 +303,9 @@ describe('AuthClient', () => {
     const restarted = makeClient();
     await restarted.restoreSession(); // 静默，不抛
 
-    assert.ok(readAuthTokens(), 'token 保留');
+    assert.ok(await readAuthTokens(), 'token 保留');
     assert.equal(restarted.getCloudState(), 'unreachable');
-    const status = restarted.getStatus();
+    const status = await restarted.getStatus();
     assert.equal(status.loggedIn, true);
     assert.equal(status.stale, true);
     assert.deepEqual(status.entitlement, { plan: 'free' }, '宽限期内权益仍可用');
@@ -318,15 +318,15 @@ describe('AuthClient', () => {
     const restarted = makeClient();
     await restarted.restoreSession();
 
-    assert.equal(readAuthTokens(), null);
+    assert.equal(await readAuthTokens(), null);
     assert.equal(restarted.isLoginExpired(), true);
-    assert.deepEqual(restarted.getStatus(), { loggedIn: false, configured: true, loginExpired: true });
+    assert.deepEqual(await restarted.getStatus(), { loggedIn: false, configured: true, loginExpired: true });
   });
 
   it('从未登录时 restoreSession 零网络调用（存量用户零感知）', async () => {
     await makeClient().restoreSession();
     assert.equal(mock.calls.length, 0);
-    assert.deepEqual(client.getStatus(), { loggedIn: false, configured: true });
+    assert.deepEqual(await client.getStatus(), { loggedIn: false, configured: true });
   });
 
   // ── 配置 ──────────────────────────────────────────────────────────
@@ -362,7 +362,7 @@ describe('AuthClient', () => {
     mock.calls.length = 0;
     await unconfigured.restoreSession();
     assert.equal(mock.calls.length, 0);
-    const status = unconfigured.getStatus();
+    const status = await unconfigured.getStatus();
     assert.equal(status.loggedIn, true);
     assert.equal(status.configured, false, 'Web UI 靠这个字段隐藏登录表单');
     assert.equal(status.stale, true, '未验证过云端 → stale');

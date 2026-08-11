@@ -12,7 +12,7 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { sanitizeString, sanitizeBundle, sanitizeViewName, sanitizeResourceName } from '../../src/monitoring-sanitize.js';
+import { sanitizeString, sanitizeBundle, sanitizeViewName, sanitizeResourceName, injectUserId } from '../../src/monitoring-sanitize.js';
 
 describe('sanitizeString', () => {
   it('redacts Windows absolute paths', () => {
@@ -128,6 +128,49 @@ describe('sanitizeBundle', () => {
     assert.equal(out.n, 42);
     assert.equal(out.b, true);
     assert.ok(!out.s.includes('/Users/x'));
+  });
+});
+
+describe('injectUserId', () => {
+  // ARMS SDK（0.0.5–0.0.7）无 setUser API：bundle.user.id 只取内部匿名设备
+  // UID，config.user.id 被显式跳过。beforeReport 注入是唯一路径——这组用例
+  // 守护"登录用户的 ULID 替换匿名 uid"的注入契约。
+
+  it('sets user.id when bundle has no user field', () => {
+    const bundle = { type: 'pv', view: { name: '/' } };
+    const out = injectUserId(bundle, '01HXYZUSER');
+    assert.deepEqual(out.user, { id: '01HXYZUSER' });
+    assert.equal(out.type, 'pv');
+  });
+
+  it('overrides anonymous uid but keeps other user fields', () => {
+    const bundle = { user: { id: 'anon-device-uid', name: 'x' }, type: 'api' };
+    const out = injectUserId(bundle, '01HXYZUSER');
+    assert.equal(out.user.id, '01HXYZUSER');
+    assert.equal(out.user.name, 'x');
+  });
+
+  it('does not mutate the input bundle', () => {
+    const bundle = { user: { id: 'anon' } };
+    const out = injectUserId(bundle, '01HXYZUSER');
+    assert.equal(bundle.user.id, 'anon');
+    assert.notEqual(out, bundle);
+    assert.notEqual(out.user, bundle.user);
+  });
+
+  it('returns bundle unchanged when logged out (null/empty/non-string userId)', () => {
+    const bundle = { user: { id: 'anon' }, type: 'pv' };
+    assert.equal(injectUserId(bundle, null), bundle);
+    assert.equal(injectUserId(bundle, ''), bundle);
+    assert.equal(injectUserId(bundle, undefined), bundle);
+    assert.equal(injectUserId(bundle, 42), bundle);
+  });
+
+  it('handles non-object bundle shapes without throwing', () => {
+    assert.equal(injectUserId(null, 'u1'), null);
+    assert.equal(injectUserId('str', 'u1'), 'str');
+    const arr = [1, 2];
+    assert.equal(injectUserId(arr, 'u1'), arr);
   });
 });
 

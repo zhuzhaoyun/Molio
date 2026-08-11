@@ -76,6 +76,29 @@ export function sanitizeBundle(bundle) {
 }
 
 /**
+ * 把 Molio userId 注入 bundle 的 `user.id`（用户模块 M4，设计 §十一）。
+ *
+ * ARMS SDK（0.0.5–0.0.7）没有 setUser API：reporter 组 bundle 时 `user.id`
+ * 只取内部 session 生成的匿名设备 UID，`config.user.id` 被显式跳过。
+ * beforeReport 钩子是唯一干净注入点。
+ *
+ * - userId 为真（非空字符串）时：浅拷贝 bundle，置 `user.id = userId`
+ *   （保留 bundle.user 上其他字段；无 user 字段则新建 `{ id }`）。
+ * - userId 为空/非字符串（未登录）时：原样返回 bundle，保留 SDK 匿名 uid 兜底。
+ * - userId 只允许 ULID（daemon 侧 user.id），**绝不含邮箱**——监控归因不带 PII。
+ */
+export function injectUserId(bundle, userId) {
+  if (typeof userId !== 'string' || userId === '') return bundle;
+  if (bundle === null || typeof bundle !== 'object' || Array.isArray(bundle)) return bundle;
+  const existing = bundle.user;
+  const user =
+    existing !== null && typeof existing === 'object' && !Array.isArray(existing)
+      ? { ...existing, id: userId }
+      : { id: userId };
+  return { ...bundle, user };
+}
+
+/**
  * URL → view name：脱敏 vaultId 和文件路径参数。
  */
 export function sanitizeViewName(url) {

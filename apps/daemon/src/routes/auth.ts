@@ -50,7 +50,7 @@ export function authRoutes(client: AuthClient): Hono {
   });
 
   // 登录态快照（不发网络请求；离线时 stale=true，数据来自本地缓存）。
-  app.get('/status', (c) => c.json(client.getStatus()));
+  app.get('/status', async (c) => c.json(await client.getStatus()));
 
   // 登出：云端吊销尽力而为，本地必清（local-first 红线）。
   app.post('/logout', async (c) => {

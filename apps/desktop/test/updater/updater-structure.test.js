@@ -237,8 +237,9 @@ describe('updater.js: must kill daemon before spawning installer', () => {
     const beforeQuitPos = mainJs.indexOf("app.on('before-quit'");
     assert.ok(beforeQuitPos !== -1, 'before-quit handler must exist');
 
-    // Get the before-quit handler block (~600 chars to cover the entire handler)
-    const handlerBlock = mainJs.slice(beforeQuitPos, beforeQuitPos + 600);
+    // Get the before-quit handler block (~1000 chars to cover the entire
+    // handler, incl. the metrics/auth-status poller cleanup lines added in M4)
+    const handlerBlock = mainJs.slice(beforeQuitPos, beforeQuitPos + 1000);
 
     assert.ok(
       handlerBlock.includes('killDaemon'),

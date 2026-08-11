@@ -37,8 +37,18 @@ src/
   retry.js         重试退避策略
   logger.js        文件日志
   splash.html      启动画面 (daemon 启动时显示)
+  monitoring.js    ARMS SDK 接入（initMonitoring；getUserId 参参 → beforeReport 注入 user.id）
+  monitoring-sanitize.js  脱敏 + userId 注入纯函数（sanitizeBundle/injectUserId，可单测）
+  crypto-server.js safeStorage 加密 HTTP 服务（用户模块 M4；127.0.0.1 随机端口，经 MOLIO_DESKTOP_CRYPTO_PORT 注入 daemon；safeStorage 经构造参数注入便于测试）
+  auth-status-watch.js  轮询 daemon /api/auth/status（15s）维护 Molio userId，供 ARMS 注入
+  daemon-metrics.js     轮询 daemon /api/health 上报内存指标到 ARMS
+  wiki-fetcher.js / wiki-fetcher-login.js  飞书 wiki 抓取隐藏窗口 + 本机 HTTP server（crypto-server 的先例）
 test/               测试用例 (node:test)，按源码模块子目录组织
   updater/         retry, updater-state-machine, updater-structure
+  monitoring/      sanitize（含 injectUserId）
+  crypto-server/   mock safeStorage + 真 http server（成功/503/400/413 矩阵）
+  auth-status-watch/  mock fetch 驱动登录/登出/daemon 宕机状态转换
+  daemon-metrics/  mock fetch 轮询行为
   logger.test.js
   daemon-startup.test.js
   window-open-handler.test.js
@@ -47,6 +57,11 @@ scripts/
   package.mjs            打包脚本
   fix-exe-metadata.mjs   修复 exe 元数据
 ```
+
+### 用户模块 M4：token 加密 + ARMS userId（2026-08-11）
+
+- **token 加密链路**：daemon 以 `ELECTRON_RUN_AS_NODE=1` 运行，无 Electron API。主进程起 `crypto-server.js`（端口 env 注入 daemon），daemon 侧 `core/auth/desktop-crypto.ts` RPC 加解密，落盘信封格式 `{v:1, encrypted}`。**`safeStorage.isEncryptionAvailable()=false`（Linux 无 keychain）时不起 server** → daemon 无 env → 明文基线（设计 §八 D3），避免"配置了 crypto 但每次加密都 503"导致 token 永不落盘。
+- **ARMS userId**：SDK 无 setUser API（0.0.5–0.0.7 spike 验证），唯一注入点 = `beforeReport` 钩子置 `bundle.user.id`。`auth-status-watch.js` 轮询维护 userId（只在变化时回调；daemon 不可达不误判登出）。dev 模式 ARMS 整体跳过 → 轮询器也不起。
 
 ## 构建流程
 

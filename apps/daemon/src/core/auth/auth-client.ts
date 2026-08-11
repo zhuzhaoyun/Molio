@@ -116,10 +116,10 @@ export class AuthClient {
     return this.loginExpired;
   }
 
-  /** 本地登录态快照（不发网络请求；/api/auth/status 用）。 */
-  getStatus(): AuthStatus {
+  /** 本地登录态快照（不发网络请求；/api/auth/status 用）。异步：首读需落盘解码（桌面模式含解密 RPC）。 */
+  async getStatus(): Promise<AuthStatus> {
     const configured = this.isConfigured();
-    const cur = this.currentTokens();
+    const cur = await this.currentTokens();
     if (!cur) {
       return this.loginExpired
         ? { loggedIn: false, configured, loginExpired: true }
@@ -159,7 +159,7 @@ export class AuthClient {
     });
     if (!resp.ok) await this.throwCloudError(resp);
     const body = (await this.parseBody(resp)) as unknown as VerifyResponse;
-    this.adoptTokens(body.accessToken, body.refreshToken, body.user);
+    await this.adoptTokens(body.accessToken, body.refreshToken, body.user);
     this.loginExpired = false;
     // 快照拉取失败不影响登录成功本身（只影响 stale 展示）
     try {
@@ -175,7 +175,7 @@ export class AuthClient {
    * 云端不可达时本地登出必须成功（local-first 红线）。
    */
   async logout(): Promise<void> {
-    const cur = this.currentTokens();
+    const cur = await this.currentTokens();
     if (cur && this.isConfigured()) {
       try {
         const accessToken = await this.getAccessToken();
@@ -223,7 +223,7 @@ export class AuthClient {
    * - 云端不可达 → 保留 token 静默降级（本地功能零影响）
    */
   async restoreSession(): Promise<void> {
-    const cur = this.currentTokens();
+    const cur = await this.currentTokens();
     if (!cur) return; // 从未登录：存量用户零感知
     if (!this.isConfigured()) return; // 云端未配置：保持本地 token，不做网络尝试
     try {
@@ -246,7 +246,7 @@ export class AuthClient {
    * 无本地会话抛 AuthCloudError(0, 'no_session')。
    */
   async getAccessToken(): Promise<string> {
-    const cur = this.currentTokens();
+    const cur = await this.currentTokens();
     if (!cur) throw new AuthCloudError(0, 'no_session');
     if (
       cur.accessExpiresAt !== undefined &&
@@ -299,7 +299,7 @@ export class AuthClient {
   // ── 内部 ──────────────────────────────────────────────────────────
 
   private async doRefresh(): Promise<AuthTokens> {
-    const cur = this.currentTokens();
+    const cur = await this.currentTokens();
     if (!cur) throw new AuthCloudError(0, 'no_session');
     const resp = await this.fetchFromCloud('/auth/refresh', {
       method: 'POST',
@@ -318,12 +318,16 @@ export class AuthClient {
       await this.throwCloudError(resp);
     }
     const body = (await this.parseBody(resp)) as unknown as RefreshResponse;
-    this.adoptTokens(body.accessToken, body.refreshToken, cur.user);
+    await this.adoptTokens(body.accessToken, body.refreshToken, cur.user);
     return this.tokens as AuthTokens;
   }
 
-  /** 收新 token 对：先写盘再更新内存（写失败抛出，避免内存领先磁盘；同 FeishuTokenStore 约定）。 */
-  private adoptTokens(accessToken: string, refreshToken: string, user: User): void {
+  /**
+   * 收新 token 对：先写盘再更新内存（fs 写失败抛出，避免内存领先磁盘；同 FeishuTokenStore 约定）。
+   * 例外：桌面模式加密失败（crypto 服务暂挂）→ token-store 返回 written:false，
+   * 此时仍更新内存（token 本身有效，只是未落盘；重启才会丢，属可接受降级）。
+   */
+  private async adoptTokens(accessToken: string, refreshToken: string, user: User): Promise<void> {
     const tokens: AuthTokens = {
       accessToken,
       refreshToken,
@@ -332,7 +336,12 @@ export class AuthClient {
     };
     const exp = decodeAccessExp(accessToken);
     if (exp !== null) tokens.accessExpiresAt = exp;
-    writeAuthTokens(tokens);
+    const result = await writeAuthTokens(tokens);
+    if (!result.written) {
+      console.warn(
+        'auth: desktop crypto encrypt failed — tokens kept in memory, disk write skipped',
+      );
+    }
     this.tokens = tokens;
   }
 
@@ -343,9 +352,9 @@ export class AuthClient {
     this.entitlementCache.clear();
   }
 
-  private currentTokens(): AuthTokens | null {
+  private async currentTokens(): Promise<AuthTokens | null> {
     if (this.tokens === undefined) {
-      this.tokens = readAuthTokens();
+      this.tokens = await readAuthTokens();
     }
     return this.tokens;
   }

@@ -239,12 +239,15 @@ App 启动 → daemon 读本地 token
 | `packages/contracts` | 新增 `User` / `Entitlement` / `AuthStatus` 类型。⚠️ daemon 测试吃 contracts dist，改后须先 build |
 | `apps/daemon` | 新增 `core/auth/`：`auth-client.ts`（云端 API + 重试退避，复用 retry 模式）、`token-store.ts`、`entitlement-cache.ts`；`routes/auth.ts`（5 个本地端点：start/verify/status/logout/account）；`MOLIO_AUTH_URL` 环境变量 |
 | `apps/web` | 登录页（邮箱 + 验证码两步）、账户设置面板、登录态 store；关键交互元素加 `data-testid`，同步 E2E |
-| `apps/desktop` | `safeStorage` token 持久化 IPC；登录后 ARMS 注入 userId |
+| `apps/desktop` | `safeStorage` token 持久化 IPC；登录后 ARMS 注入 userId。**M4 已实现（2026-08-11）**：主进程起 `crypto-server.js`（127.0.0.1 随机端口 HTTP，端口经 `MOLIO_DESKTOP_CRYPTO_PORT` 注入 daemon，先例 = wiki-fetcher 的 `MOLIO_DESKTOP_FETCH_PORT`）；daemon 侧 `core/auth/desktop-crypto.ts` fetch 客户端（2s 超时、从不抛错）；token 文件信封格式 `{v:1, encrypted:<base64>}`（内层 AuthTokens JSON），明文格式照旧兼容并自动升级；登录态轮询器 `auth-status-watch.js` 维护 userId 供 ARMS beforeReport 注入。`isEncryptionAvailable()=false`（Linux 无 keychain）时不起 crypto server、落明文基线（D3） |
 | Docker 部署 | `.env.example` / `install.sh` 内嵌模板加 `MOLIO_AUTH_URL`（⚠️ install.sh heredoc 同步规则） |
 
 ## 十一、监控接入
 
-- **ARMS**：登录态变化后注入 userId（需先验证 `@arms/rum-electron` 的用户打标 API）。注入时机：登录成功、启动恢复登录态、登出清除
+- **ARMS**：上报事件的 `user.id` 注入 Molio userId（ULID，**不含邮箱**）。
+  - **Spike 结论（2026-08-11，M4 前置，已验证）**：`@arms/rum-electron` 0.0.5–0.0.7 **没有 setUser API**——rum-core reporter 组 bundle 时 `user.id` 只取内部 session 生成的匿名设备 UID，且 `config.user.id` 被显式跳过（`if (key==='user' && k==='id') return`）。渲染进程事件也经主进程 reporter 上报（ArmsEventBridge→processEvents），所以**唯一干净注入点 = 主进程 `beforeReport(bundle)` 钩子**，在此置 `bundle.user.id`（0.0.5/0.0.7 两版通用，与未合的 ARMS 升级 PR 无冲突）。
+  - **实现**：`monitoring-sanitize.js` 纯函数 `injectUserId(bundle, userId)`（userId 为真时浅拷贝置 `user.id`，否则原样返回）；`monitoring.js` 的 `initMonitoring` 增 `getUserId` 参参，组 `beforeReport = (b) => injectUserId(sanitizeBundle(b), getUserId?.())`；`main.js` 模块级 `molioUserId` 由 `auth-status-watch.js` 轮询 daemon `GET /api/auth/status`（15s，纯本地快照、无网络）维护，**只在变化时**回调（登录/登出/切号），daemon 不可达不误判登出。
+  - **时序**：注入时机不再是"登录成功/登出"两个离散事件，而是轮询驱动的连续状态——daemon 重启、启动恢复登录态都天然覆盖。
 - **云端日志**：所有请求日志带 userId（SLS），支撑按用户排障
 - **隐私**：userId 上报必须在隐私政策中明确声明（见下节）
 
@@ -301,7 +304,7 @@ App 启动 → daemon 读本地 token
 | ICP 备案周期 | 1-2 周，卡上线 | M0 立即启动；同时确认 FC 备案服务号可申请 |
 | 验证码轰炸 | 邮件通道也会被刷（成本 + 骚扰） | 三层限频先行（DB 查询实现，见 §五），观察后决定是否加图形验证码 |
 | FC 冷启动 | VPC 连 PG 拉长冷启动，首次登录请求可能 1-2s | 登录低频可接受；介意可设单实例并发（摊薄冷启动）或少量预留实例 |
-| ARMS 用户打标 API | 未验证 SDK 支持程度 | M4 开工前先 spike 验证 |
+| ARMS 用户打标 API | ~~未验证 SDK 支持程度~~ **已 spike（2026-08-11）**：0.0.5–0.0.7 无 setUser API，`config.user.id` 被显式跳过 | 唯一干净注入点 = 主进程 `beforeReport(bundle)` 钩子置 `user.id`，已在 M4 实现（见 §十一） |
 | 权益 schema 未定 | 取决于第二期商业模式（订阅 vs 功能包） | 第一期只留 JSONB 桩，不做任何付费判断逻辑 |
 | 邮件送达率 | DirectMail 进垃圾箱风险 | 发信域名 SPF/DKIM 配好；文案引导"检查垃圾邮件" |
 | NAS 长期离线 | 超过宽限期后付费功能降级，用户可能不满 | 降级提示说明原因；宽限时长可配置 |
