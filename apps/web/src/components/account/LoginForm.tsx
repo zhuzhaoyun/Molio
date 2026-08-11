@@ -23,6 +23,8 @@ export function LoginForm({ onSuccess, onBack }: LoginFormProps) {
   const [step, setStep] = useState<Step>('email');
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
+  // 用户协议/隐私政策勾选（个保法上线前置，设计 §十二）。未勾选禁止发送验证码。
+  const [agreed, setAgreed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -52,7 +54,7 @@ export function LoginForm({ onSuccess, onBack }: LoginFormProps) {
 
   async function sendCode(fromStep: Step) {
     const trimmed = email.trim();
-    if (!trimmed || busy) return;
+    if (!trimmed || busy || !agreed) return;
     setBusy(true);
     setError(null);
     try {
@@ -104,12 +106,40 @@ export function LoginForm({ onSuccess, onBack }: LoginFormProps) {
               }}
             />
           </div>
+          <div className="account-agree-row">
+            <label className="account-agree-label">
+              <input
+                type="checkbox"
+                checked={agreed}
+                onChange={(e) => setAgreed(e.target.checked)}
+                data-testid="account-agree-checkbox"
+              />
+              <span>
+                {t('login.agreePrefix')}{' '}
+                <a
+                  href="https://molio.cn/terms.html"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {t('login.agreeTerms')}
+                </a>{' '}
+                {t('login.agreeAnd')}{' '}
+                <a
+                  href="https://molio.cn/privacy.html"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {t('login.agreePrivacy')}
+                </a>
+              </span>
+            </label>
+          </div>
           <div className="account-form-actions">
             <button
               type="button"
               className="kb-btn kb-btn-primary"
               data-testid="account-send-code-btn"
-              disabled={busy || email.trim() === ''}
+              disabled={busy || email.trim() === '' || !agreed}
               onClick={() => void sendCode('email')}
             >
               {busy ? t('account.busy') : t('login.sendCode')}

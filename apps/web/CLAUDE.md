@@ -77,9 +77,9 @@ src/
       VaultList.tsx           Vault 列表
       VaultManager.tsx        Vault 管理器
       WikiChatPanel.tsx       Wiki 对话面板
-    account/           账号组件（用户模块 M3）
+    account/           账号组件（用户模块 M3；合规勾选 M5）
       AccountModal.tsx     账号面板模态框（登录态展示 + 退出登录 + 注销账号二次确认；main/login/delete 三视图）
-      LoginForm.tsx        验证码登录表单（邮箱 → 验证码两步 + 重发倒计时；注册=登录）
+      LoginForm.tsx        验证码登录表单（邮箱 → 验证码两步 + 重发倒计时；注册=登录）；发送验证码前须勾选「用户协议 + 隐私政策」（个保法前置，链接 molio.cn/terms|privacy）
       authErrors.ts        daemon /api/auth 错误码 → i18n 文案映射
     channels/          渠道组件
       FeishuChannelPanel.tsx  飞书渠道面板（7 步引导 + appId/Secret 表单）

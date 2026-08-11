@@ -37,6 +37,10 @@ async function openAccount(page: Page) {
  */
 async function sendCodeAndVerify(page: Page, email: string) {
   await page.locator('[data-testid="account-email-input"]').fill(email);
+  // Terms consent gates the login flow (design §12 compliance):
+  // send-code stays disabled until the checkbox is ticked
+  await expect(page.locator('[data-testid="account-send-code-btn"]')).toBeDisabled();
+  await page.locator('[data-testid="account-agree-checkbox"]').check();
   const startResp = page.waitForResponse(
     (r) => r.url().includes('/api/auth/start') && r.request().method() === 'POST',
   );
@@ -99,6 +103,7 @@ test.describe('Login chain (requires configured daemon)', () => {
     await page.locator('[data-testid="account-login-btn"]').click();
 
     await page.locator('[data-testid="account-email-input"]').fill(email);
+    await page.locator('[data-testid="account-agree-checkbox"]').check();
     const startResp = page.waitForResponse(
       (r) => r.url().includes('/api/auth/start') && r.request().method() === 'POST',
     );

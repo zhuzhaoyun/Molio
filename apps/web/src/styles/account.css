@@ -168,6 +168,32 @@
   flex-wrap: wrap;
 }
 
+/* ── 用户协议 / 隐私政策勾选（登录前置，设计 §十二） ───────── */
+.account-agree-row {
+  margin-bottom: 14px;
+}
+.account-agree-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.account-agree-label input {
+  margin-top: 2px;
+  accent-color: var(--accent);
+  flex: 0 0 auto;
+}
+.account-agree-label a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.account-agree-label a:hover {
+  text-decoration: underline;
+}
+
 /* 链接式按钮（重发 / 返回修改邮箱 / 取消） */
 .account-link-btn {
   appearance: none;

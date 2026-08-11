@@ -25,6 +25,12 @@
     <changefreq>monthly</changefreq>
   </url>
   <url>
+    <loc>https://molio.cn/terms.html</loc>
+    <lastmod>2026-08-11</lastmod>
+    <priority>0.5</priority>
+    <changefreq>monthly</changefreq>
+  </url>
+  <url>
     <loc>https://molio.cn/enterprise.html</loc>
     <lastmod>2026-07-31</lastmod>
     <priority>0.8</priority>
