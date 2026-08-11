@@ -329,11 +329,11 @@ test.describe('KB chat sessions', () => {
     await expect(activeMessages(page)).toContainText('新历史会话内容');
   });
 
-  test('全局历史页打开会话 → 落知识库页，标题从消息回填', async ({ page }) => {
+  test('全局历史页打开会话 → 就地打开悬浮面板，标题从消息回填', async ({ page }) => {
     await mockChatRun(page);
     await mockHistoryConv(page);
 
-    // 先落 /knowledge 建立活跃 vault（写 localStorage），供打开会话后跳回 /knowledge 用
+    // 先落 /knowledge 建立活跃 vault（面板读取全局上下文 currentContextStore）
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
@@ -344,9 +344,9 @@ test.describe('KB chat sessions', () => {
     await expect(row).toBeVisible({ timeout: 5_000 });
     await row.locator('.history-row__main').click();
 
-    // App 回调：openConversation + navigate('/knowledge') → 会话以标签呈现，标题回填
-    await expect(page).toHaveURL(/\/knowledge/, { timeout: 5_000 });
-    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    // 方案 D：不再跳转知识库页 —— 停留在 /history，悬浮面板就地打开（openConversation 建标签），标题回填
+    await expect(page).toHaveURL(/\/history$/, { timeout: 5_000 });
+    await expect(page.locator('[data-testid="kb-chat-panel"]')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('[data-testid="kb-chat-session-tab"] .chat-session-tab-title'))
       .toHaveText(['历史问题'], { timeout: 5_000 });
     await expect(activeMessages(page)).toContainText('历史问题');
