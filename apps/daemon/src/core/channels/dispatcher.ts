@@ -70,6 +70,19 @@ export interface ChannelDispatcherDeps {
    * environments (verified on Claude Code), a message prepend always lands.
    */
   frameFirstTurn?: PromptBuilder;
+  /**
+   * Wrap raw user text for REUSE turns ONLY — the counterpart to
+   * `frameFirstTurn`. A reused multi-turn run carries the first-turn frame in
+   * its history, but long sessions get context-compacted: the frame's
+   * mechanics (notably the `<attach/>` file-delivery protocol) are summarized
+   * away and the model starts telling users it "has no way to send files"
+   * (verified incident 2026-08-11). A compact per-turn reminder keeps the
+   * protocol known for the whole life of the run. Like `frameFirstTurn`, this
+   * SUBSUMES `buildPrompt` — implementations wrap the raw text themselves.
+   * Keep it SHORT: it rides every reuse turn, and a full-frame re-prepend
+   * would re-trigger ingestion/routing behavior on every message.
+   */
+  reuseTurnReminder?: PromptBuilder;
   /** Channel label for diagnostics logs (e.g. 'weixin', 'feishu'). */
   channelLabel: string;
 }
@@ -173,8 +186,14 @@ export class ChannelDispatcher {
       this.deps.runManager.flushPendingReply(state.runId);
       this.deps.conversations.appendUserMessage(conversationId, rawUserText);
       // No appendSystemPromptFile here: sendMessage reuses the live process,
-      // which already carries the system prompt from spawn.
-      this.deps.runManager.sendMessage(state.runId, runMessage);
+      // which already carries the system prompt from spawn. The optional
+      // `reuseTurnReminder` re-anchors protocol bits the first-turn frame
+      // taught (e.g. weixin's <attach/> file delivery) — long sessions lose
+      // the frame to context compaction, the reminder survives it.
+      const reuseMessage = this.deps.reuseTurnReminder
+        ? this.deps.reuseTurnReminder(rawUserText)
+        : runMessage;
+      this.deps.runManager.sendMessage(state.runId, reuseMessage);
       this.deps.sink.onActiveRun?.(state.runId);
       await this.deps.sink.sendText(userId, 'Molio 正在处理...');
       this.spawnForward(state.runId, userId, conversationId, agentId, cwd);
