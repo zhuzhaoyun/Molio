@@ -1,10 +1,10 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useI18n } from '../i18n';
-import type { ConversationHistoryItem } from '@molio/contracts';
 import { vaultStore } from '../stores/vaultStore';
 import { api } from '../api/client';
 import { FilePicker } from './FilePicker';
 import { FolderIcon, FileDocIcon } from './FileIcons';
+import { ConversationHistoryMenu } from './ConversationHistoryMenu';
 
 export interface FileRef {
   vaultId: string;
@@ -59,6 +59,12 @@ export function buildAttachmentPrefix(fileRefs: FileRef[], pastedImages: PastedI
 /** Module-level draft cache — survives component unmount during navigation. */
 const drafts = new Map<string, string>();
 
+/**
+ * 输入框自动伸缩的上限（px）。与 chat.css 的 `.composer textarea { max-height }`
+ * 保持一致——JS 用 inline height，CSS 用 max-height，两者都要一起改。
+ */
+const COMPOSER_MAX_HEIGHT = 280;
+
 interface Props {
   isRunning: boolean;
   onSend: (message: string, fileRefs: FileRef[], pastedImages: PastedImage[]) => void;
@@ -90,19 +96,15 @@ export function ChatComposer({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // History picker state
-  const [showHistory, setShowHistory] = useState(false);
-  const [historyItems, setHistoryItems] = useState<ConversationHistoryItem[]>([]);
-
   // FilePicker trigger: @ start index in textarea value
   const [triggerStartIdx, setTriggerStartIdx] = useState<number | null>(null);
 
-  // Auto-resize textarea
+  // Auto-resize textarea：随内容增长，上限 COMPOSER_MAX_HEIGHT（与 CSS max-height 同步）
   useEffect(() => {
     const el = textareaRef.current;
     if (el) {
       el.style.height = 'auto';
-      el.style.height = Math.min(el.scrollHeight, 184) + 'px';
+      el.style.height = Math.min(el.scrollHeight, COMPOSER_MAX_HEIGHT) + 'px';
     }
   }, [text]);
 
@@ -316,20 +318,6 @@ export function ChatComposer({
     fileInputRef.current?.click();
   }, []);
 
-  // History picker
-  const historyRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!showHistory) return;
-    const handler = (e: MouseEvent) => {
-      if (historyRef.current && !historyRef.current.contains(e.target as Node)) {
-        setShowHistory(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [showHistory]);
-
   // Keep a ref of the latest pastedImages so the unmount cleanup (registered
   // once) can revoke any still-pending blob URLs — otherwise images left in
   // 'uploading' or 'error' state on unmount leak their object URLs.
@@ -342,28 +330,6 @@ export function ChatComposer({
       }
     };
   }, []);
-
-  const handleHistoryClick = useCallback(async () => {
-    if (showHistory) {
-      setShowHistory(false);
-      return;
-    }
-    try {
-      const { items, pinnedItems } = await api.listConversationHistory();
-      setHistoryItems([...pinnedItems, ...items]);
-      setShowHistory(true);
-    } catch {
-      // silently fail
-    }
-  }, [showHistory]);
-
-  const handleSelectConversation = useCallback(
-    (convId: string) => {
-      setShowHistory(false);
-      onOpenConversation?.(convId);
-    },
-    [onOpenConversation],
-  );
 
   // Remove a pasted image
   const removePastedImage = useCallback((id: string) => {
@@ -559,65 +525,7 @@ export function ChatComposer({
                 </svg>
               </button>
               {onOpenConversation && (
-                <>
-                  <button
-                    type="button"
-                    className="composer-upload-btn"
-                    data-testid="composer-history-btn"
-                    onClick={handleHistoryClick}
-                    title={t('composer.history')}
-                  >
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <circle cx="12" cy="12" r="10" />
-                      <polyline points="12 6 12 12 16 14" />
-                    </svg>
-                  </button>
-                  {/* History dropdown */}
-                  {showHistory && (
-                    <div className="composer-history-dropdown" data-testid="composer-history-dropdown" ref={historyRef}>
-                      <div className="composer-history-header">
-                        <span>{t('composer.history')}</span>
-                      </div>
-                      <div className="composer-history-list">
-                        {historyItems.length === 0 ? (
-                          <div className="composer-history-empty">{t('composer.noHistory')}</div>
-                        ) : (
-                          groupedHistory(historyItems).map((group) => (
-                            <div key={group.label}>
-                              <div className="composer-history-group">{group.label}</div>
-                              {group.items.map((item) => (
-                                <button
-                                  key={item.conversation.id}
-                                  type="button"
-                                  className="composer-history-item"
-                                  data-testid="composer-history-item"
-                                  onClick={() => handleSelectConversation(item.conversation.id)}
-                                >
-                                  <div className="composer-history-item-body">
-                                    <span className="composer-history-title">
-                                      {item.conversation.title || t('composer.untitled')}
-                                    </span>
-                                    <span className="composer-history-meta">
-                                      {item.messageCount} 条消息
-                                      {item.conversation.channelType && item.conversation.channelType !== 'desktop' && (
-                                        <span className="composer-history-channel">
-                                          {item.conversation.channelType === 'weixin' ? '微信' : item.conversation.channelType}
-                                        </span>
-                                      )}
-                                    </span>
-                                  </div>
-                                  <span className="composer-history-time">
-                                    {formatHistoryTime(item.conversation.updatedAt)}
-                                  </span>
-                                </button>
-                              ))}
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </>
+                <ConversationHistoryMenu onSelect={onOpenConversation} />
               )}
               <span className="composer-spacer" />
               <button
@@ -646,50 +554,4 @@ export function ChatComposer({
       </div>
     </div>
   );
-}
-
-interface HistoryGroup {
-  label: string;
-  items: ConversationHistoryItem[];
-}
-
-function groupedHistory(items: ConversationHistoryItem[]): HistoryGroup[] {
-  const now = new Date();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const yesterdayStart = todayStart - 86400000;
-  const weekStart = todayStart - 7 * 86400000;
-
-  const groups: Record<string, ConversationHistoryItem[]> = {};
-
-  for (const item of items) {
-    const ts = item.conversation.updatedAt;
-    let key: string;
-    if (ts >= todayStart) {
-      key = '今天';
-    } else if (ts >= yesterdayStart) {
-      key = '昨天';
-    } else if (ts >= weekStart) {
-      key = '本周';
-    } else {
-      key = '更早';
-    }
-    if (!groups[key]) groups[key] = [];
-    groups[key].push(item);
-  }
-
-  const order = ['今天', '昨天', '本周', '更早'];
-  return order.filter((k) => groups[k]).map((label) => ({ label, items: groups[label] }));
-}
-
-function formatHistoryTime(ts: number): string {
-  const now = new Date();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  if (ts >= todayStart) {
-    return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  }
-  const thisYearStart = new Date(now.getFullYear(), 0, 1).getTime();
-  if (ts >= thisYearStart) {
-    return new Date(ts).toLocaleDateString([], { month: 'short', day: 'numeric' });
-  }
-  return new Date(ts).toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' });
 }

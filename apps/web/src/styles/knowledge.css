@@ -2828,3 +2828,309 @@
   color: var(--text-muted);
   margin: 4px 0 0;
 }
+
+/* ─── File Chat Panel (right-side sliding Q&A for KB files) ─── */
+
+.file-chat-panel {
+  display: flex;
+  flex-direction: column;
+  width: 360px;
+  min-width: 280px;
+  max-width: 50vw;
+  height: 100%;
+  border-left: 1px solid var(--border);
+  background: var(--bg-panel);
+  overflow: hidden;
+  position: relative;
+}
+
+/* Resize handle on left border */
+.file-chat-resize-handle {
+  position: absolute;
+  top: 0;
+  left: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 10;
+  transition: background 0.15s;
+}
+
+.file-chat-resize-handle:hover {
+  background: var(--accent-tint);
+}
+
+.file-chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 14px;
+}
+
+.file-chat-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-muted);
+  text-align: center;
+  gap: 8px;
+}
+
+.file-chat-empty-icon {
+  font-size: 36px;
+}
+
+/* Selected text preview in empty state */
+.file-chat-selected-preview {
+  width: 100%;
+  margin-top: 12px;
+  text-align: left;
+}
+
+.file-chat-selected-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+
+.file-chat-selected-preview blockquote {
+  margin: 0;
+  padding: 8px 12px;
+  background: var(--bg-subtle);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text);
+  max-height: 120px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.file-chat-input {
+  flex-shrink: 0;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border-soft);
+}
+
+/* Compact hint: only show kbd badges, hide text descriptions */
+.file-chat-input .composer-hint .hint-desc {
+  display: none;
+}
+
+/* ─── KB Chat multi-session panel ─── */
+
+/* 会话标签栏 — 复用 kb-wtab 滚动模型：内部滚动容器 + 栏尾钉住的 + 新建按钮 */
+.chat-session-tabbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 8px 6px 10px;
+  border-bottom: 1px solid var(--border-soft);
+  flex-shrink: 0;
+  position: relative; /* 历史下拉的定位容器（向下展开横跨标签栏） */
+}
+.chat-session-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.chat-session-tabs::-webkit-scrollbar { display: none; }
+
+.chat-session-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 160px;
+  min-width: 0;
+  flex-shrink: 0;
+  transition: background 80ms ease, color 80ms ease;
+}
+.chat-session-tab:hover { background: var(--bg-subtle); color: var(--text); }
+.chat-session-tab.is-active {
+  background: var(--bg-muted);
+  color: var(--text-strong);
+  border-color: var(--border);
+}
+.chat-session-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+.chat-session-tab-icon { flex-shrink: 0; }
+.chat-session-tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* 关闭按钮：常显（窄栏内比 hover 显隐更易用），hover 加深 */
+.chat-session-tab-close {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  color: var(--text-faint);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.chat-session-tab-close:hover { background: var(--bg-muted); color: var(--text); }
+
+/* 溢出左右翻页箭头（标签溢出时出现；隐藏滚动条方案，与 kb-wtab 一致） */
+.chat-session-tab-arrow {
+  flex-shrink: 0;
+  width: 20px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.chat-session-tab-arrow:hover { background: var(--bg-subtle); color: var(--text); }
+.chat-session-tab-arrow:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+.chat-session-tab-arrow[hidden] { display: none; }
+
+/* + 新建会话：钉在栏尾，永不随标签滚动消失 */
+.chat-session-tab-add {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  margin-left: 2px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.chat-session-tab-add:hover { background: var(--bg-subtle); color: var(--text); }
+.chat-session-tab-add:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+/* 运行指示点：运行中的会话标签前的小圆点 */
+.chat-session-tab-running {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: chat-session-running-pulse 1.6s ease-in-out infinite;
+}
+@keyframes chat-session-running-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+/* 历史按钮（顶栏变体，向下展开） */
+.chat-session-tab-history {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  margin-left: 2px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.chat-session-tab-history:hover { background: var(--bg-subtle); color: var(--text); }
+.chat-session-tab-history:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+/* 顶栏 SVG 图标显式禁止 flex 收缩（否则宽度被压成 0，图标不可见） */
+.chat-session-tab-history svg,
+.chat-session-tab-add svg,
+.chat-session-tab-close-panel svg {
+  flex-shrink: 0;
+}
+
+/* 顶栏三个图标统一 16px（共享组件的时钟默认 20px，顶栏变体收紧到 16 与新会话/关闭一致） */
+.chat-session-tab-history svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* 收起面板按钮（钉在栏尾最右） */
+.chat-session-tab-close-panel {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  margin-left: 2px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.chat-session-tab-close-panel:hover { background: var(--bg-subtle); color: var(--text); }
+.chat-session-tab-close-panel:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+/* 历史下拉向下展开：以标签栏为定位容器，横跨标签栏宽度（输入框里默认向上展开，样式不变） */
+.composer-history-dropdown.open-down {
+  bottom: auto;
+  top: 100%;
+  margin-top: 6px;
+  margin-bottom: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-session-tab { transition: none; }
+  .chat-session-tab-running { animation: none; }
+}
+
+/* 全部会话关闭后的空态 */
+.file-chat-sessions-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 16px;
+}
+
+/* 会话体（每个会话 flex 填充） */
+.file-chat-session { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.file-chat-session-stack { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+
+/* 面板收起 */
+.kb-chat-panel-slot { height: 100%; display: flex; }
+.kb-chat-panel-slot.is-hidden { display: none; }

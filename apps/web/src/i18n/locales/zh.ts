@@ -38,6 +38,8 @@ const zh: Record<string, string> = {
   'composer.uploadRetryHint': '请重新粘贴图片',
   'composer.history': '历史记录',
   'composer.noHistory': '暂无历史记录',
+  'composer.historySearchPlaceholder': '搜索历史会话',
+  'composer.noSearchResults': '没有匹配的会话',
   'composer.untitled': '未命名对话',
 
   // ── AssistantMessage ──

@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { useAgents } from './hooks/useAgents';
 import { useChat } from './hooks/useChat';
-import { useKbChat, type KbChatState } from './hooks/useKbChat';
 import { HomePage } from './components/HomePage';
+import { kbChatSessionsStore } from './stores/kbChatSessionsStore';
 
 import { NavRail } from './components/NavRail';
 import { KnowledgeBasePage } from './components/kb/KnowledgeBasePage';
@@ -64,21 +64,6 @@ export default function App() {
     } finally {
       setSkillPrefillBusy(false);
     }
-  }, []);
-
-  // KB Chat — lifted to App level so chat state survives route navigation
-  const kbChatOnCompleteRef = useRef<() => void>(() => {});
-  const kbChat = useKbChat({
-    agentId: selectedAgent,
-    vaultPath: activeVault?.path ?? null,
-    onComplete: () => kbChatOnCompleteRef.current(),
-  });
-  const [kbChatOpen, setKbChatOpen] = useState(false);
-
-  // Stable callback so KnowledgeBasePage's registerKbChatOnComplete effect
-  // doesn't re-run on every App render.
-  const registerKbChatOnComplete = useCallback((fn: () => void) => {
-    kbChatOnCompleteRef.current = fn;
   }, []);
 
   // Persist current route on change
@@ -224,27 +209,14 @@ export default function App() {
               element={
                 <HistoryPage
                   onOpenConversation={(conversationId) => {
-                    void chat.loadConversationById(conversationId).then(() => {
-                      navigate('/');
-                    });
+                    kbChatSessionsStore.openConversation(conversationId);
+                    navigate('/knowledge');
                   }}
                 />
               }
             />
             <Route path="/knowledge" element={
-            <KnowledgeBasePage
-              agentId={selectedAgent}
-              // KB Chat — owned by App for navigation persistence
-              kbChat={kbChat}
-              kbChatOpen={kbChatOpen}
-              onKbChatOpenChange={setKbChatOpen}
-              registerKbChatOnComplete={registerKbChatOnComplete}
-              onOpenConversation={(conversationId) => {
-                void chat.loadConversationById(conversationId).then(() => {
-                  navigate('/');
-                });
-              }}
-            />
+            <KnowledgeBasePage agentId={selectedAgent} />
           } />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/graph" element={<GraphPage />} />

@@ -38,13 +38,13 @@
       "paths": [
         "apps/web/src/components/kb/*",
         "apps/web/src/hooks/useKnowledge*",
-        "apps/web/src/hooks/useKbChat*",
         "apps/web/src/hooks/useKbTabs*",
+        "apps/web/src/stores/kbChatSessionsStore*",
         "apps/daemon/src/core/knowledge.ts",
         "apps/daemon/src/core/db.ts",
         "apps/daemon/src/routes/knowledge.ts"
       ],
-      "specs": ["create-vault-form", "knowledge", "markdown-render", "kb-tree-sort-locate", "kb-chat-entry", "kb-qa-trigger", "kb-tab-limit", "kb-tab-stale", "kb-large-file", "kb-large-file-gbk", "kb-large-file-15mb", "kb-large-file-too-large", "pdf-preview"]
+      "specs": ["create-vault-form", "knowledge", "markdown-render", "kb-tree-sort-locate", "kb-chat-entry", "kb-chat-sessions", "kb-qa-trigger", "file-chat-panel", "kb-tab-limit", "kb-tab-stale", "kb-large-file", "kb-large-file-gbk", "kb-large-file-15mb", "kb-large-file-too-large", "pdf-preview"]
     },
     "publish": {
       "paths": [
@@ -138,7 +138,9 @@
     "knowledge": { "priority": "P0", "file": "knowledge.spec.ts" },
     "kb-tree-sort-locate": { "priority": "P1", "file": "kb-tree-sort-locate.spec.ts" },
     "kb-chat-entry": { "priority": "P1", "file": "kb-chat-entry.spec.ts" },
+    "kb-chat-sessions": { "priority": "P1", "file": "kb-chat-sessions.spec.ts" },
     "kb-qa-trigger": { "priority": "P1", "file": "kb-qa-trigger.spec.ts" },
+    "file-chat-panel": { "priority": "P1", "file": "file-chat-panel.spec.ts" },
     "kb-tab-limit": { "priority": "P0", "file": "kb-tab-limit.spec.ts" },
     "kb-tab-stale": { "priority": "P1", "file": "kb-tab-stale.spec.ts" },
     "kb-large-file": { "priority": "P0", "file": "kb-large-file.spec.ts" },

@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { createTempVault, cleanupTempVault, type TempVault } from './helpers/cleanup';
+import { mockChatRun, unmockAll } from './helpers/mock-sse';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -21,6 +22,7 @@ test.describe('KB chat entry (scoped buttons)', () => {
     fs.writeFileSync(path.join(vault.path, 'doc.md'), '# Doc\n');
   });
   test.afterAll(async () => { if (vault) await cleanupTempVault(vault); });
+  test.afterEach(async ({ page }) => { await unmockAll(page); });
 
   test('💬问答 opens chat in qa mode with @当前文档 (one click)', async ({ page }) => {
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
@@ -30,13 +32,16 @@ test.describe('KB chat entry (scoped buttons)', () => {
 
     const panel = page.locator('[data-testid="kb-chat-panel"]');
     await expect(panel).toBeVisible();
-    // qa mode uses a fixed title (NOT the document name)
-    await expect(panel.locator('.file-chat-label')).not.toContainText('doc.md');
+    // qa 会话标签标题固定为「新会话」，不含文档名（顶栏标题已移除）
+    await expect(panel.locator('[data-testid="kb-chat-session-tab"] .chat-session-tab-title')).not.toContainText('doc.md');
     // composer seeded with the file as a @ ref (chip / mention present)
     await expect(panel.locator('.file-chat-input')).toContainText(/doc\.md/);
   });
 
   test('📚构建Wiki opens chat + auto-sends (run starts)', async ({ page }) => {
+    // mockChatRun 同时 mock /api/agents → 模拟已配置 agent。真实 CI daemon 无 agent，
+    // 否则 handleBuildWiki 的 `if (!agentId) return` 会静默拦截，面板永不打开（回归）。
+    await mockChatRun(page);
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
@@ -44,29 +49,44 @@ test.describe('KB chat entry (scoped buttons)', () => {
 
     const panel = page.locator('[data-testid="kb-chat-panel"]');
     await expect(panel).toBeVisible();
-    await expect(panel.locator('.file-chat-label')).toContainText(/构建|Wiki|Build/);
+    await expect(panel.locator('[data-testid="kb-chat-session-tab"] .chat-session-tab-title')).toContainText(/构建|Wiki|Build/);
     // a user message (the skill prompt) appears
     await expect(panel.locator('.file-chat-messages')).toContainText(/wiki-build/, { timeout: 10_000 });
+
+    // Regression: clicking build again after closing the panel reopens it
+    // (existing tab must call setPanelOpen(true), not just activate).
+    await page.locator('[data-testid="kb-chat-close"]').click();
+    await expect(panel).toBeHidden();
+    await page.locator('[data-testid="kb-btn-build-wiki"]').click();
+    await expect(panel).toBeVisible();
   });
 
-  test('💬问答 while a build is active does NOT interrupt — keeps thread + seeds @当前文档', async ({ page }) => {
+  test('💬问答 while a build is active opens a separate qa tab — build tab keeps its thread', async ({ page }) => {
+    // 同上：mock /api/agents → 模拟已配置 agent，否则 build 被 agentId guard 拦截、面板不开。
+    await mockChatRun(page);
     // Open with a file so the 💬问答 (document-scoped) button is available.
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
-    // Start a wiki build (auto-sends the skill prompt).
+    // Start a wiki build — it lives in its OWN ⚙️ session tab (auto-sends the skill prompt).
     await page.locator('[data-testid="kb-btn-build-wiki"]').click();
     const panel = page.locator('[data-testid="kb-chat-panel"]');
     await expect(panel).toBeVisible();
     await expect(panel.locator('.file-chat-messages')).toContainText(/wiki-build/, { timeout: 10_000 });
+    await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(1);
 
-    // Click 💬问答 — it only activates + seeds @当前文档; it must NOT reset the
-    // thread or cancel the run (问答 is not an "operation", just opens the panel).
+    // Click 💬问答 — a SECOND 💬 session tab opens; its active view is empty with
+    // @当前文档 seeded (问答不重置 build 标签，也绝不中断 build 的 run).
     await page.locator('[data-testid="kb-btn-ask"]').click();
-    // The build prompt is still there (no reset).
-    await expect(panel.locator('.file-chat-messages')).toContainText(/wiki-build/);
-    // qa mode: composer seeded with @当前文档.
-    await expect(panel.locator('.file-chat-input')).toContainText(/doc\.md/);
+    await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(2);
+    const activeSession = panel.locator('[data-testid="kb-chat-session"]:visible');
+    await expect(activeSession.locator('.file-chat-empty')).toBeVisible();
+    await expect(activeSession.locator('.file-chat-input')).toContainText(/doc\.md/);
+
+    // Switch back to the build tab — the wiki-build prompt is still there (no reset).
+    await page.locator('[data-testid="kb-chat-session-tab"]').first().click();
+    const activeBuild = panel.locator('[data-testid="kb-chat-session"]:visible');
+    await expect(activeBuild.locator('.file-chat-messages')).toContainText(/wiki-build/);
   });
 
   test('🩺健康检查 disabled when wiki not initialized', async ({ page }) => {
