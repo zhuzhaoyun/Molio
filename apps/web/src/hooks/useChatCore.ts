@@ -125,6 +125,13 @@ export function useChatCore(options: UseChatCoreOptions) {
     activity: null,
   });
 
+  // 最新已提交 state 的 ref（每次渲染同步）。事件处理器里读「当前状态」必须走它，而不是渲染闭包——
+  // 否则 clear()/cancel() 后紧接着 send()（中间无渲染）时，send 会拿到清空前的旧 messages/
+  // conversationId，把被清掉的旧消息复活、并续上旧会话（D3 清标签语义被破坏）。这是中断重发
+  // （clearAndSend: cancel → clear → send）能读到「已清空」状态的保证。
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
   const esRef = useRef<EventSource | null>(null);
   const assistantIdRef = useRef<string | null>(null);
   // P2-3: fallback timer that force-unlocks the input if the daemon hangs or
@@ -142,7 +149,7 @@ export function useChatCore(options: UseChatCoreOptions) {
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Reconnect attempt counter for exponential backoff + cap.
   const reconnectAttemptRef = useRef<number>(0);
-  // The watchdog invokes this to reconnect; set inside beginNewRun so it
+  // The watchdog invokes this to reconnect; set inside attachRun so it
   // closures the current run's callbacks + runId. Null when no active run.
   const reconnectRef = useRef<(() => void) | null>(null);
   // True while doReconnect is swapping the EventSource — onDoneCb from the OLD
@@ -163,7 +170,7 @@ export function useChatCore(options: UseChatCoreOptions) {
 
   /**
    * Re-arm the watchdog (clear + schedule). On timeout, invokes reconnectRef
-   * (set by beginNewRun) to re-subscribe to the SAME run with ?after=<lastSeq>.
+   * (set by attachRun) to re-subscribe to the SAME run with ?after=<lastSeq>.
    * Called on every received event and every ping frame.
    */
   const armWatchdog = useCallback(() => {
@@ -225,14 +232,12 @@ export function useChatCore(options: UseChatCoreOptions) {
     reconnectRef.current = null;
   }, [clearFallbackTimer, clearWatchdog]);
 
-  const beginNewRun = useCallback(async (
-    result: RunResult,
+  const attachRun = useCallback(async (
+    runId: string,
+    conversationId: string | null,
     assistantId: string,
     optimisticMessages: ChatMessage[],
   ) => {
-    const runId = result.runId;
-    const convId = result.conversationId ?? state.conversationId;
-
     // The passed assistantId is the initial SSE event target. We set the ref
     // here (instead of relying solely on callers) so the parameter is
     // actually used and callers don't need an implicit set-ref-first contract.
@@ -250,7 +255,7 @@ export function useChatCore(options: UseChatCoreOptions) {
       messages: optimisticMessages,
       runId,
       runAgentId: agentId ?? null,
-      conversationId: convId,
+      conversationId,
       isRunning: true,
       activity: null,
     }));
@@ -334,7 +339,7 @@ export function useChatCore(options: UseChatCoreOptions) {
 
     // Watchdog reconnect: re-subscribe to the SAME run with ?after=<lastSeq>
     // so daemon replays missed events (session/cache preserved, no createRun).
-    // Closures the named callbacks above; reassigned every beginNewRun so it
+    // Closures the named callbacks above; reassigned every attachRun so it
     // always reflects the current run's wiring. Exponential backoff per attempt;
     // after MAX_RECONNECT, fall through to onDone (next send → createRun).
     const doReconnect = (afterSeq: number) => {
@@ -378,7 +383,7 @@ export function useChatCore(options: UseChatCoreOptions) {
       console.warn('[sse] watchdog no frames for ' + wdMs + 'ms, reconnect attempt ' + attempt + ' in ' + delay + 'ms');
       reconnectTimerRef.current = setTimeout(() => doReconnect(lastSeqRef.current), delay);
     };
-  }, [state.conversationId, agentId, onComplete, clearFallbackTimer, clearWatchdog, armWatchdog, resetFallbackTimer]);
+  }, [agentId, onComplete, clearFallbackTimer, clearWatchdog, armWatchdog, resetFallbackTimer]);
 
   /**
    * Send a message — tries multi-turn on existing run first, falls back to createRun.
@@ -405,7 +410,10 @@ export function useChatCore(options: UseChatCoreOptions) {
       tools: [],
     };
 
-    const prevMessages = state.messages;
+    // 读最新已提交 state（stateRef 而非渲染闭包）：clear()/cancel() 在同一微任务里同步改过
+    // stateRef 后，紧跟的 send() 必须看到清空后的 messages/conversationId（D3 清标签语义）。
+    const cur = stateRef.current;
+    const prevMessages = cur.messages;
 
     setState((prev) => ({
       ...prev,
@@ -416,13 +424,13 @@ export function useChatCore(options: UseChatCoreOptions) {
     // Try multi-turn on existing run — but only if the agent hasn't changed.
     // When the user switches runtime (e.g. Claude → Qwen), the existing run
     // belongs to the old agent; sending a follow-up would go to the wrong process.
-    const existingRunId = state.runId;
-    const agentChanged = agentId != null && state.runAgentId != null && agentId !== state.runAgentId;
+    const existingRunId = cur.runId;
+    const agentChanged = agentId != null && cur.runAgentId != null && agentId !== cur.runAgentId;
     if (existingRunId && !agentChanged) {
       try {
         await api.sendMessage(existingRunId, text.trim());
         // Multi-turn reuses the existing SSE subscription, which does NOT
-        // re-arm the fallback timer (beginNewRun isn't called). Re-arm here so
+        // re-arm the fallback timer (attachRun isn't called). Re-arm here so
         // a hung follow-up turn still force-unlocks instead of spinning
         // forever. Events from this turn keep resetting it (idle semantics).
         resetFallbackTimer();
@@ -457,10 +465,10 @@ export function useChatCore(options: UseChatCoreOptions) {
       const result = await createRun({
         message: text.trim(),
         history,
-        conversationId: state.conversationId,
+        conversationId: cur.conversationId,
       });
 
-      await beginNewRun(result, newAssistantId, [...prevMessages, userMsg, assistantMsg]);
+      await attachRun(result.runId, result.conversationId ?? cur.conversationId, newAssistantId, [...prevMessages, userMsg, assistantMsg]);
     } catch (err) {
       const errId = newAssistantId;
       setState((prev) => {
@@ -472,7 +480,7 @@ export function useChatCore(options: UseChatCoreOptions) {
         return { ...prev, messages, isRunning: false };
       });
     }
-  }, [state.runId, state.runAgentId, state.conversationId, state.messages, closeEventSource, createRun, agentId, onComplete, beginNewRun, resetFallbackTimer]);
+  }, [closeEventSource, createRun, agentId, onComplete, attachRun, resetFallbackTimer]);
 
   const rewindAndResend = useCallback(async (newContent: string) => {
     if (!rewindResend) return;
@@ -510,7 +518,7 @@ export function useChatCore(options: UseChatCoreOptions) {
 
     try {
       const result = await rewindResend({ conversationId: convId, newContent: newContent.trim() });
-      await beginNewRun(result, newAssistantId, [...prevMessages, newUserMsg, newAssistantMsg]);
+      await attachRun(result.runId, result.conversationId ?? convId, newAssistantId, [...prevMessages, newUserMsg, newAssistantMsg]);
     } catch (err) {
       setState((prev) => ({
         ...prev,
@@ -523,7 +531,31 @@ export function useChatCore(options: UseChatCoreOptions) {
         isRunning: false,
       }));
     }
-  }, [rewindResend, state.conversationId, state.messages, closeEventSource, beginNewRun]);
+  }, [rewindResend, state.conversationId, state.messages, closeEventSource, attachRun]);
+
+  /**
+   * Resume an in-progress run after the chat was remounted / conversation switched
+   * (KB 会话切页返回、历史切换)。守卫：消息列表最后一条必须是 user —— 说明本轮
+   * assistant 回复尚未持久化、正在生成；最后一条是 assistant = 本轮已结束并入库，
+   * 恢复会重复，跳过。
+   * subscribeToRun 不带 after → daemon 从 seq 0 回放全部 buffer 事件（上限 2000），
+   * 重建进行中的回复并在回放结束后继续直播（run 在 daemon 侧一直活着）。
+   */
+  const resumeRun = useCallback((opts: { runId: string }) => {
+    const msgs = stateRef.current.messages;
+    const last = msgs[msgs.length - 1];
+    if (!last || last.role !== 'user') return; // 本轮已结束并持久化 → 恢复会重复
+    const newAssistantId = nextMsgId();
+    const assistantMsg: ChatMessage = {
+      id: newAssistantId,
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now(),
+      streaming: true,
+      tools: [],
+    };
+    void attachRun(opts.runId, stateRef.current.conversationId, newAssistantId, [...msgs, assistantMsg]);
+  }, [attachRun]);
 
   const regenerateLast = useCallback(async () => {
     // Reuse the last user message's content verbatim.
@@ -558,42 +590,50 @@ export function useChatCore(options: UseChatCoreOptions) {
   }, [state.runId]);
 
   const cancel = useCallback(async () => {
-    if (state.runId) {
-      await api.cancelRun(state.runId);
+    if (stateRef.current.runId) {
+      await api.cancelRun(stateRef.current.runId);
     }
     closeEventSource();
     assistantIdRef.current = null;
 
-    setState((prev) => {
-      const messages = prev.messages.map((msg) =>
-        msg.streaming ? { ...msg, streaming: false } : msg
-      );
-      return { ...prev, messages, isRunning: false, runId: null, runAgentId: null, activity: null };
-    });
-  }, [state.runId, closeEventSource]);
+    // 同步更新 stateRef：调用方（clearAndSend 中断路径）可能在同一事件循环里紧跟 send()，
+    // 必须让 send 读到「已取消、runId 已清」的最新状态。
+    const prev = stateRef.current;
+    const messages = prev.messages.map((msg) =>
+      msg.streaming ? { ...msg, streaming: false } : msg
+    );
+    const next = { ...prev, messages, isRunning: false, runId: null, runAgentId: null, activity: null };
+    stateRef.current = next;
+    setState(next);
+  }, [closeEventSource]);
 
   const reset = useCallback(() => {
     closeEventSource();
     assistantIdRef.current = null;
     messageSelectionStore.exit();
-    setState({ messages: [], runId: null, runAgentId: null, isRunning: false, conversationId: null, activity: null });
+    const next = { messages: [], runId: null, runAgentId: null, isRunning: false, conversationId: null, activity: null };
+    stateRef.current = next;
+    setState(next);
   }, [closeEventSource]);
 
   /**
    * Replace messages and conversationId (used by loadConversation in useChat).
+   * 同步更新 stateRef —— 调用方（clearAndSend）在同一次 clear→send 里必须先看到清空结果。
    */
   const setMessages = useCallback((messages: ChatMessage[], conversationId?: string | null) => {
     closeEventSource();
     assistantIdRef.current = null;
     messageSelectionStore.exit();
-    setState({
+    const next = {
       messages,
       runId: null,
       runAgentId: null,
       isRunning: false,
       conversationId: conversationId ?? null,
       activity: null,
-    });
+    };
+    stateRef.current = next;
+    setState(next);
   }, [closeEventSource]);
 
   const deleteMessages = useCallback(async (ids: string[]) => {
@@ -625,6 +665,7 @@ export function useChatCore(options: UseChatCoreOptions) {
   return {
     ...state,
     send,
+    resumeRun,
     submitToolResult,
     cancel,
     reset,

@@ -38,6 +38,8 @@ const en: Record<string, string> = {
   'composer.uploadRetryHint': 'Please paste the image again',
   'composer.history': 'History',
   'composer.noHistory': 'No conversation history',
+  'composer.historySearchPlaceholder': 'Search conversations',
+  'composer.noSearchResults': 'No matching conversations',
   'composer.untitled': 'Untitled',
 
   // ── AssistantMessage ──
