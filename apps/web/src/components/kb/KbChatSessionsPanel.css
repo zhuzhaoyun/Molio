@@ -18,3 +18,27 @@
 .floating-chat-panel--closed {
   display: none;
 }
+
+/* 全局悬浮对话按钮（面板收起时显示） */
+.floating-chat-btn {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  font-size: 22px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  z-index: 1000;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.floating-chat-btn:hover {
+  filter: brightness(1.08);
+}
+
