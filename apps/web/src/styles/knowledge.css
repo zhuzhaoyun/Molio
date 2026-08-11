@@ -4,11 +4,14 @@
    ═══════════════════════════════════════════════════════════ */
 
 /* ── Shell: 3-column layout ──
-   FilePanel (260px) | Content (flex) | ActionBar (220px) */
+   FilePanel (260px) | Content (flex) | ActionBar (220px)
+   停靠问答形态（--kb-dock-w 由悬浮面板拖宽实时驱动）：右缘让出等宽给问答列，
+   文档区随之重排（分栏而非覆盖）。浮动形态下该变量为 0，无任何影响。 */
 .kb-shell {
   display: flex;
   height: 100%;
   overflow: hidden;
+  padding-right: var(--kb-dock-w, 0px);
 }
 
 /* ══════════ Column 2: File Panel ══════════ */
@@ -3031,9 +3034,29 @@
 .chat-session-tab-history:hover { background: var(--bg-subtle); color: var(--text); }
 .chat-session-tab-history:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
 
+/* 停靠/悬浮切换按钮（顶栏变体）：停靠态以 accent 着色示意「已停靠」 */
+.chat-session-tab-dock {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  margin-left: 2px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.chat-session-tab-dock:hover { background: var(--bg-subtle); color: var(--text); }
+.chat-session-tab-dock:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+.chat-session-tab-dock[aria-pressed="true"] { color: var(--accent); }
+
 /* 顶栏 SVG 图标显式禁止 flex 收缩（否则宽度被压成 0，图标不可见） */
 .chat-session-tab-history svg,
 .chat-session-tab-add svg,
+.chat-session-tab-dock svg,
 .chat-session-tab-close-panel svg {
   flex-shrink: 0;
 }

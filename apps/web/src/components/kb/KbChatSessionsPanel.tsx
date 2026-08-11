@@ -1,5 +1,5 @@
 // apps/web/src/components/kb/KbChatSessionsPanel.tsx
-import { useCallback, useImperativeHandle, useMemo, useRef, useState, forwardRef } from 'react';
+import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, forwardRef } from 'react';
 import {
   kbChatSessionsStore, useKbChatSessions, useKbChatActiveSessionId, useKbChatPanelOpen,
   MAX_CHAT_SESSIONS,
@@ -20,6 +20,70 @@ export interface KbChatSessionsPanelHandle {
 
 interface WikiOpOpts { mode: 'build' | 'lint' | 'ingest'; filePath?: string; isDirectory?: boolean }
 
+/* 面板宽度：默认 500，可拖拽 320–720 并持久化（超视口时由 CSS max-width:min(90vw,720px) 收住） */
+const PANEL_WIDTH_DEFAULT = 500;
+const PANEL_WIDTH_MIN = 320;
+const PANEL_WIDTH_MAX = 720;
+const STORAGE_KEY_WIDTH = 'molio.kb.chatPanelWidth';
+
+function clampPanelWidth(w: number): number {
+  return Math.min(PANEL_WIDTH_MAX, Math.max(PANEL_WIDTH_MIN, Math.round(w)));
+}
+function readPanelWidth(): number {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_WIDTH);
+    if (raw) {
+      const n = Number(raw);
+      if (Number.isFinite(n)) return clampPanelWidth(n);
+    }
+  } catch { /* storage unavailable */ }
+  return PANEL_WIDTH_DEFAULT;
+}
+
+/* 面板高度：默认撑满视口（CSS calc(100vh-96px)，null = 未自定义 → 用 CSS 默认随视口自适应），
+   顶缘可拖拽 320–视口高-96 并持久化（超视口时由 CSS max-height 收住）。 */
+const PANEL_HEIGHT_MIN = 320;
+const STORAGE_KEY_HEIGHT = 'molio.kb.chatPanelHeight';
+
+function clampPanelHeight(h: number): number {
+  const max = Math.max(window.innerHeight - 96, PANEL_HEIGHT_MIN);
+  return Math.min(max, Math.max(PANEL_HEIGHT_MIN, Math.round(h)));
+}
+function readPanelHeight(): number | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_HEIGHT);
+    if (raw) {
+      const n = Number(raw);
+      if (Number.isFinite(n)) return clampPanelHeight(n);
+    }
+  } catch { /* storage unavailable */ }
+  return null;
+}
+
+/* 双形态：悬浮（默认，可拖拽位置/尺寸）与停靠侧边栏（页头之下、右缘、可拖宽）。
+   形态与悬浮位置均持久化；形态切换经按钮（带过渡动画）或拖拽（瞬时）。 */
+const STORAGE_KEY_DOCK_MODE = 'molio.kb.chatDockMode';
+const STORAGE_KEY_FLOAT_POS = 'molio.kb.chatFloatPos';
+
+function readDockMode(): 'float' | 'dock' {
+  try {
+    if (localStorage.getItem(STORAGE_KEY_DOCK_MODE) === 'dock') return 'dock';
+  } catch { /* storage unavailable */ }
+  return 'float';
+}
+function readFloatPos(): { left: number; top: number } | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_FLOAT_POS);
+    if (raw) {
+      const p = JSON.parse(raw) as { left?: unknown; top?: unknown };
+      if (typeof p.left === 'number' && typeof p.top === 'number') {
+        return { left: p.left, top: p.top };
+      }
+    }
+  } catch { /* storage unavailable */ }
+  return null;
+}
+
 interface Props {
   agentId: string | null;
 }
@@ -30,7 +94,7 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   const sessions = useKbChatSessions();
   const activeSessionId = useKbChatActiveSessionId();
   // 上下文改从全局 store 读（方案 D：面板常驻 App 层，任意页面可用，不依赖 KB 页 props）
-  const { vault, filePath } = useCurrentContext();
+  const { vault, filePath, page } = useCurrentContext();
   const panelOpen = useKbChatPanelOpen();
   const vaultPath = vault?.path ?? null;
   const currentVaultId = vault?.id ?? null;
@@ -45,6 +109,220 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   const [toast, setToast] = useState<string | null>(null);
   // 关闭「运行中会话」的确认态（ref 作真值源，state 触发渲染）
   const [closePendingOpen, setClosePendingOpen] = useState(false);
+  // 面板宽度：初值从 localStorage 读，拖拽后持久化（宽度自适应由 CSS max-width 兜底）
+  const [panelWidth, setPanelWidth] = useState<number>(readPanelWidth);
+  // 面板高度：null = 未自定义 → CSS 默认（calc(100vh-96px) 随视口自适应），拖拽后持久化
+  const [panelHeight, setPanelHeight] = useState<number | null>(readPanelHeight);
+  // 形态：'float' 悬浮（可拖位置/尺寸）| 'dock' 停靠侧边栏（可拖宽）。持久化。
+  const [dockMode, setDockModeState] = useState<'float' | 'dock'>(readDockMode);
+  // 悬浮位置（left/top）。null = 未移动过 → CSS 默认右下角。持久化。
+  const [floatPos, setFloatPos] = useState<{ left: number; top: number } | null>(readFloatPos);
+  // 形态切换过渡：切换瞬间加 --morphing 启用几何过渡，260ms 后移除
+  const [morphing, setMorphing] = useState(false);
+  const morphTimerRef = useRef<number | null>(null);
+  const panelElRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  const heightDragRef = useRef<{ startY: number; startHeight: number } | null>(null);
+  // 头部拖拽移动悬浮位置（moveRef 真值源：拖动中直接写 DOM，release 时提交 floatPos）
+  const moveRef = useRef<{ grabX: number; grabY: number; fromDock: boolean } | null>(null);
+
+  const docked = dockMode === 'dock';
+  // 知识库页停靠 = 还原改动前的「页内分栏」：面板从页顶占满整高、贴右缘，
+  // 文档区经 --kb-dock-w 让出等宽 → 问答与文档分栏而非覆盖。其他页面停靠仍是
+  // 页头之下的悬浮式侧边栏（--dock 基础几何）。
+  const dockKb = docked && page === 'knowledge';
+  // 停靠形态不应用高度/位置 inline（几何交给 --dock）；悬浮形态应用自定义高度与位置
+  const panelStyle: React.CSSProperties = { width: panelWidth };
+  if (!docked) {
+    panelStyle.height = panelHeight ?? undefined;
+    if (floatPos) {
+      panelStyle.left = floatPos.left;
+      panelStyle.top = floatPos.top;
+    }
+  }
+
+  // 停靠形态的文档区联动：把面板当前宽度同步到根节点的 --kb-dock-w，
+  // .kb-shell 的 padding-right 消费它 → 文档区实时重排（拖宽时逐帧跟随，无需逐帧 setState）。
+  // ResizeObserver 监听面板宽度变化（拖拽/提交/重载初始化都覆盖），只在
+  // 「停靠 + 打开 + KB 页」时生效，其余情况置 0（文档区恢复全宽）。
+  const syncDockVar = useCallback(() => {
+    const el = panelElRef.current;
+    if (!el) return;
+    const active = dockMode === 'dock' && panelOpen && page === 'knowledge';
+    document.documentElement.style.setProperty('--kb-dock-w', active ? `${el.offsetWidth}px` : '0px');
+  }, [dockMode, panelOpen, page]);
+  useEffect(() => {
+    const el = panelElRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => syncDockVar());
+    ro.observe(el);
+    syncDockVar();
+    return () => {
+      ro.disconnect();
+      document.documentElement.style.setProperty('--kb-dock-w', '0px');
+    };
+  }, [syncDockVar]);
+
+  const commitWidth = useCallback((w: number) => {
+    const clamped = clampPanelWidth(w);
+    setPanelWidth(clamped);
+    try { localStorage.setItem(STORAGE_KEY_WIDTH, String(clamped)); } catch { /* storage unavailable */ }
+  }, []);
+  // 面板右锚定：向左拖（clientX 减小）→ 变宽。拖动中直接写 DOM 避免每帧 setState 重渲染。
+  const onResizePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const el = panelElRef.current;
+    if (!el) return;
+    dragRef.current = { startX: e.clientX, startWidth: panelWidth };
+    (e.currentTarget as HTMLElement).classList.add('is-dragging');
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    document.body.classList.add('kb-resizing');
+  }, [panelWidth]);
+  const onResizePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const d = dragRef.current;
+    const el = panelElRef.current;
+    if (!d || !el) return;
+    const w = clampPanelWidth(d.startWidth + (d.startX - e.clientX));
+    el.style.width = `${w}px`;
+  }, []);
+  const onResizePointerEnd = useCallback(() => {
+    const el = panelElRef.current;
+    const d = dragRef.current;
+    dragRef.current = null;
+    if (el) {
+      el.classList.remove('is-dragging');
+      const w = clampPanelWidth(parseFloat(el.style.width) || panelWidth);
+      el.style.width = ''; // 交还给 React 受控 width（值相同，无跳变）
+      commitWidth(w);
+    }
+    document.body.classList.remove('kb-resizing');
+  }, [panelWidth, commitWidth]);
+  const onResizeKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'ArrowLeft') { e.preventDefault(); commitWidth(panelWidth - 20); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); commitWidth(panelWidth + 20); }
+  }, [panelWidth, commitWidth]);
+
+  const commitHeight = useCallback((h: number) => {
+    const clamped = clampPanelHeight(h);
+    setPanelHeight(clamped);
+    try { localStorage.setItem(STORAGE_KEY_HEIGHT, String(clamped)); } catch { /* storage unavailable */ }
+  }, []);
+  // 面板下锚定：向上拖（clientY 减小）→ 变高。拖动中直接写 DOM 避免每帧 setState 重渲染。
+  const onResizeHeightPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const el = panelElRef.current;
+    if (!el) return;
+    heightDragRef.current = {
+      startY: e.clientY,
+      startHeight: panelHeight ?? Math.max(window.innerHeight - 96, PANEL_HEIGHT_MIN),
+    };
+    (e.currentTarget as HTMLElement).classList.add('is-dragging');
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    document.body.classList.add('kb-resizing-v');
+  }, [panelHeight]);
+  const onResizeHeightPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const d = heightDragRef.current;
+    const el = panelElRef.current;
+    if (!d || !el) return;
+    const h = clampPanelHeight(d.startHeight + (d.startY - e.clientY));
+    el.style.height = `${h}px`;
+  }, []);
+  const onResizeHeightPointerEnd = useCallback(() => {
+    const el = panelElRef.current;
+    const d = heightDragRef.current;
+    heightDragRef.current = null;
+    if (el) {
+      el.classList.remove('is-dragging');
+      const h = clampPanelHeight(parseFloat(el.style.height) || (panelHeight ?? Math.max(window.innerHeight - 96, PANEL_HEIGHT_MIN)));
+      el.style.height = ''; // 交还给 React 受控 height（值相同，无跳变）
+      commitHeight(h);
+    }
+    document.body.classList.remove('kb-resizing-v');
+  }, [panelHeight, commitHeight]);
+  const onResizeHeightKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    const cur = panelHeight ?? Math.max(window.innerHeight - 96, PANEL_HEIGHT_MIN);
+    if (e.key === 'ArrowUp') { e.preventDefault(); commitHeight(cur - 20); }
+    if (e.key === 'ArrowDown') { e.preventDefault(); commitHeight(cur + 20); }
+  }, [panelHeight, commitHeight]);
+
+  // ─── 形态切换（悬浮 / 停靠侧边栏） ───
+  const setDockMode = useCallback((mode: 'float' | 'dock') => {
+    setDockModeState(mode);
+    try { localStorage.setItem(STORAGE_KEY_DOCK_MODE, mode); } catch { /* storage unavailable */ }
+  }, []);
+  // 清掉拖拽时手动写入的 inline left/top，把几何交还给 React / CSS 控制
+  const clearInlinePos = useCallback(() => {
+    const el = panelElRef.current;
+    if (!el) return;
+    el.style.left = '';
+    el.style.top = '';
+  }, []);
+  const startMorph = useCallback(() => {
+    setMorphing(true);
+    if (morphTimerRef.current) window.clearTimeout(morphTimerRef.current);
+    morphTimerRef.current = window.setTimeout(() => setMorphing(false), 260);
+  }, []);
+  useEffect(() => () => { if (morphTimerRef.current) window.clearTimeout(morphTimerRef.current); }, []);
+  // 按钮切换：先交还几何（含手动 inline），再切形态并启用过渡动画
+  const toggleDock = useCallback(() => {
+    clearInlinePos();
+    setDockMode(dockMode === 'dock' ? 'float' : 'dock');
+    startMorph();
+  }, [dockMode, clearInlinePos, setDockMode, startMorph]);
+
+  // 头部拖拽：悬浮移动 / 停靠时拖离（脱离停靠跟随光标）。拖动中直接写 DOM。
+  const clampMoveX = useCallback((x: number) => {
+    const w = panelWidth;
+    return Math.min(Math.max(Math.round(x), -(w - 80)), window.innerWidth - 80);
+  }, [panelWidth]);
+  const clampMoveY = useCallback((y: number) => {
+    return Math.min(Math.max(Math.round(y), 8), window.innerHeight - 48);
+  }, []);
+  const onHeaderDragStart = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const el = panelElRef.current;
+    if (!el) return false;
+    const rect = el.getBoundingClientRect();
+    const grabX = e.clientX - rect.left;
+    const grabY = e.clientY - rect.top;
+    if (dockMode === 'dock') {
+      // 脱离停靠：立即切为悬浮并让面板跟随光标（瞬时，无过渡）
+      setDockMode('float');
+      moveRef.current = { grabX, grabY, fromDock: true };
+      el.style.left = `${clampMoveX(e.clientX - grabX)}px`;
+      el.style.top = `${clampMoveY(e.clientY - grabY)}px`;
+    } else {
+      moveRef.current = { grabX, grabY, fromDock: false };
+    }
+    return true;
+  }, [dockMode, setDockMode, clampMoveX, clampMoveY]);
+  const onHeaderDragMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const d = moveRef.current;
+    const el = panelElRef.current;
+    if (!d || !el) return;
+    el.style.left = `${clampMoveX(e.clientX - d.grabX)}px`;
+    el.style.top = `${clampMoveY(e.clientY - d.grabY)}px`;
+  }, [clampMoveX, clampMoveY]);
+  const onHeaderDragEnd = useCallback(() => {
+    const d = moveRef.current;
+    const el = panelElRef.current;
+    moveRef.current = null;
+    if (!d || !el) return;
+    const left = parseFloat(el.style.left);
+    const top = parseFloat(el.style.top);
+    const moved = Number.isFinite(left) && Number.isFinite(top);
+    // 先取几何（此刻 inline 位置仍生效）再决定停靠
+    const rect = el.getBoundingClientRect();
+    const snapDock = !d.fromDock && moved && (window.innerWidth - rect.right) <= 8;
+    // 停靠时不提交该位置（此时面板大半在屏外，提交会让之后取消停靠回到屏外）
+    if (moved && !snapDock) {
+      setFloatPos({ left, top });
+      try { localStorage.setItem(STORAGE_KEY_FLOAT_POS, JSON.stringify({ left, top })); } catch { /* storage unavailable */ }
+    }
+    if (snapDock) {
+      clearInlinePos(); // 停靠几何交给 --dock（right:0 / top:72）
+      setDockMode('dock');
+    }
+  }, [clearInlinePos, setDockMode]);
 
   const sessionApisRef = useRef(new Map<string, KbChatSessionApi>());
   const pendingWikiRef = useRef<WikiOpOpts | null>(null);
@@ -291,9 +569,43 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   // 面板头部活动会话的模式标签
   return (
     <div
-      className={`floating-chat-panel${panelOpen ? '' : ' floating-chat-panel--closed'}`}
+      ref={panelElRef}
+      className={
+        `floating-chat-panel` +
+        (panelOpen ? '' : ' floating-chat-panel--closed') +
+        (docked ? ' floating-chat-panel--dock' : '') +
+        (dockKb ? ' floating-chat-panel--dock-kb' : '') +
+        (morphing ? ' floating-chat-panel--morphing' : '')
+      }
       data-testid="kb-chat-panel"
+      style={panelStyle}
     >
+      <div
+        className="floating-chat-resize-handle"
+        data-testid="kb-chat-resize-handle"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="调整面板宽度"
+        tabIndex={0}
+        onPointerDown={onResizePointerDown}
+        onPointerMove={onResizePointerMove}
+        onPointerUp={onResizePointerEnd}
+        onPointerCancel={onResizePointerEnd}
+        onKeyDown={onResizeKeyDown}
+      />
+      <div
+        className="floating-chat-resize-handle--h"
+        data-testid="kb-chat-resize-handle-h"
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label="调整面板高度"
+        tabIndex={0}
+        onPointerDown={onResizeHeightPointerDown}
+        onPointerMove={onResizeHeightPointerMove}
+        onPointerUp={onResizeHeightPointerEnd}
+        onPointerCancel={onResizeHeightPointerEnd}
+        onKeyDown={onResizeHeightKeyDown}
+      />
       <ChatSessionTabBar
         sessions={sessions}
         activeSessionId={activeSessionId}
@@ -303,12 +615,17 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
         onNewSession={handleNewSession}
         onOpenConversation={handleOpenConversation}
         onClosePanel={() => kbChatSessionsStore.setPanelOpen(false)}
+        docked={docked}
+        onToggleDock={toggleDock}
+        onHeaderDragStart={onHeaderDragStart}
+        onHeaderDragMove={onHeaderDragMove}
+        onHeaderDragEnd={onHeaderDragEnd}
       />
       <div className="file-chat-session-stack">
         {sessions.length === 0 ? (
           <div className="file-chat-sessions-empty" data-testid="kb-chat-sessions-empty">
             <div className="file-chat-empty-icon">💬</div>
-            <p>还没有会话，点右侧「+」新建一个会话</p>
+            <p>还没有会话</p>
             <button type="button" className="kb-btn kb-btn-ghost" onClick={handleNewSession}>
               + 新建会话
             </button>
