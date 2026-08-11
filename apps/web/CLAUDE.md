@@ -184,7 +184,7 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
 - **样式面板**: 右侧悬浮面板，支持主题、字体、字号、主题色、排版选项切换
 - **渲染引擎**: 基于 doocs/md (`marked` v18 + 扩展 + 主题系统)
 - **Tab 系统**: 多文件 Tab 切换，上限 20（`MAX_TABS`，达上限拦截 + toast，不静默淘汰）；溢出时左右箭头 + `▾` 下拉收纳；active tab 自动滚入可见区；状态持久化到 localStorage
-- **统一聊天面板** (`KbChatPanel` + `useKbChat`)：`💬问答`（文档级，`kb-main-header`）/ `📚构建Wiki`·`🩺健康检查`（vault 级，`KbTabBar` 尾部）。任务运行中再点入口：问答不中断、wiki 类弹「中断/排队/取消」。排队复用 agent stdin 原生队列，详见 [docs/kb-chat-interrupt-queue.md](../../docs/kb-chat-interrupt-queue.md)。
+- **全局悬浮对话面板** (`KbChatSessionsPanel` + `kbChatSessionsStore`)：App 层常驻挂载、任意页面可用（右下角 `FloatingChatButton` 开合）。KB 页 `💬问答`（`kb-btn-ask`）/ `📚构建Wiki`（`kb-btn-build-wiki`）/ `🩺健康检查`（`kb-btn-lint-wiki`）及树右键「加入 Wiki」经 `chatPanelRef.openQa/runWikiOp` 下发，打开/激活**会话标签**（上限 `MAX_CHAT_SESSIONS`=10，达上限 toast 拦截）。双形态：**悬浮**（右下角，可拖移/拖宽/拖高，宽度高度位置持久化）/ **停靠侧边栏**（KB 页 = 页内分栏：文档区经 `--kb-dock-w` 让出等宽、拖宽联动重排，其余页面 = 页头下悬浮式侧边栏）。任务运行中再点入口：问答不中断（另开/激活 qa 标签）、wiki 类弹「中断/排队/取消」；关闭运行中 wiki 会话仅允许「中断并关闭」（`anyWikiRunning` 单例守卫，防 D3 并发写同一 vault）。排队复用 agent stdin 原生队列，详见 [docs/kb-chat-interrupt-queue.md](../../docs/kb-chat-interrupt-queue.md)。
 
 ### 知识图谱 (Graph View)
 
