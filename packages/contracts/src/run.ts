@@ -14,4 +14,6 @@ export interface RunInfo {
   createdAt: number;
   lastStopReason: string | null;
   error?: string | null;
+  /** 所属会话。null = 非会话型 run（如 agent 测试）。KB 会话重挂载时用它定位活跃 run 并恢复直播流。 */
+  conversationId: string | null;
 }
