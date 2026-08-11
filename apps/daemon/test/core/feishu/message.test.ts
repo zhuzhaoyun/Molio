@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildFeishuPrompt,
+  buildFeishuReminderMessage,
   looksLikeArticleUrl,
   parseFeishuMessage,
 } from '../../../src/core/feishu/message.js';
@@ -171,5 +172,44 @@ describe('buildFeishuPrompt', () => {
     assert.ok(prompt.includes('未能自动抓取其正文'));
     assert.ok(prompt.includes('登录飞书账号'));
     assert.ok(prompt.includes(text));
+  });
+});
+
+/**
+ * Feishu's full role frame rides --append-system-prompt-file (silently dropped
+ * by the CLI in some environments) and is additionally lost to context
+ * compaction in long sessions — the same failure class as the weixin incident
+ * of 2026-08-11. The compact reminder is feishu's reliable carrier of the
+ * <attach/> protocol and rides EVERY turn (fresh spawn + reuse).
+ */
+describe('buildFeishuReminderMessage — attach re-anchor', () => {
+  it('teaches the <attach/> delivery protocol and preserves the user text', () => {
+    const out = buildFeishuReminderMessage('把那份报告发给我');
+    assert.ok(out.includes('<attach path='), 'carries the marker format');
+    assert.ok(out.includes('附件'), 'explains the file becomes a real attachment');
+    assert.ok(out.includes('飞书'), 'reminder is feishu-worded');
+    assert.ok(out.includes('把那份报告发给我'), 'preserves the user text');
+    assert.ok(
+      out.indexOf('飞书通道机制提醒') < out.indexOf('把那份报告发给我'),
+      'reminder comes before the user text',
+    );
+  });
+
+  it('stays minimal — no full-frame routing/ingestion content', () => {
+    // Rides every turn; must not re-trigger the frame's 收件/入库/问答 routing.
+    const out = buildFeishuReminderMessage('随便聊两句');
+    assert.ok(!out.includes('wiki-query'), 'no wiki routing');
+    assert.ok(!out.includes('raw/feishu'), 'no ingestion rules');
+    assert.ok(!out.includes('文件回传规则（重要）'), 'not the full frame section');
+    assert.ok(out.length < 600, 'reminder stays short');
+  });
+
+  it('composes with the injected-markdown reframing from buildFeishuPrompt', () => {
+    // materializeWikiLinks case 1: text starts with a fetched markdown body.
+    const text = '# 某篇飞书文档标题\n\n正文内容…';
+    const out = buildFeishuReminderMessage(text);
+    assert.ok(out.includes('已附带抓取好的 Markdown 正文'), 'prompt reframing present');
+    assert.ok(out.includes('飞书通道机制提醒'), 'reminder present');
+    assert.ok(out.includes(text), 'the markdown body is preserved');
   });
 });

@@ -17,7 +17,7 @@ import { buildMarkdownCard } from './card.js';
 import { DEFAULT_BASE_URL, FeishuApi } from './client.js';
 import { FeishuWSClient } from './ws-client.js';
 import { FeishuTokenStore } from './token-store.js';
-import { buildFeishuPrompt, parseFeishuMessage } from './message.js';
+import { buildFeishuPrompt, buildFeishuReminderMessage, parseFeishuMessage } from './message.js';
 import { materializeFeishuAttachments } from './media.js';
 import { materializeWikiLinks } from './wiki-fetcher.js';
 import type {
@@ -94,6 +94,14 @@ export class FeishuService implements ChannelSink {
       sink: this,
       wikiPromptFileFor,
       buildPrompt: buildFeishuPrompt,
+      // Feishu's full frame rides --append-system-prompt-file, which the CLI
+      // silently drops in some environments — so unlike weixin (whose frame is
+      // a reliable first-turn message prepend) feishu cannot trust the fresh
+      // spawn to carry the <attach/> protocol. Anchor it on EVERY turn: the
+      // reminder wraps both fresh spawns (frameFirstTurn) and reuse turns
+      // (reuseTurnReminder, which also survives context compaction).
+      frameFirstTurn: buildFeishuReminderMessage,
+      reuseTurnReminder: buildFeishuReminderMessage,
       channelLabel: 'feishu',
     });
   }
