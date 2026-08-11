@@ -102,6 +102,13 @@ export function KbChatSession({
     const loadedConversationId = session.conversationId;
     if (!loadedConversationId) return;
     let cancelled = false;
+    // 全量导航/刷新（桌面端 reload、浏览器刷新）不会执行 React cleanup —— 在途的历史
+    // 加载 fetch 会被中断并 reject，若此时触发 onLoadError → closeSession，会把正在恢复的
+    // 会话标签永久清掉（persist 先于新页面写入空列表）。pagehide 在导航/刷新时必然触发，
+    // 用它兜底把 cancelled 置真，中断的加载一律丢弃、不误关标签（方案 D 面板任意页面
+    // 常驻挂载，恢复加载可能在任意页面进行）。
+    const onPageHide = () => { cancelled = true; };
+    window.addEventListener('pagehide', onPageHide);
     api.listConversationMessages(loadedConversationId)
       .then((msgs) => {
         if (cancelled) return;
@@ -120,7 +127,10 @@ export function KbChatSession({
         }
       })
       .catch(() => { if (!cancelled) onLoadError?.(session.id); });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      window.removeEventListener('pagehide', onPageHide);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
