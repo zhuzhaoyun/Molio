@@ -14,6 +14,10 @@ describe('main.js new-window entry (P2)', () => {
     const end = mainSource.indexOf('function openNewWindowAt(');
     const menuSection = mainSource.slice(start, end);
     assert.ok(menuSection.includes('Menu.setApplicationMenu'), 'must set an app menu');
+    assert.ok(
+      menuSection.includes("role: 'fileMenu'"),
+      'File menu must be role-based so its label follows the system language (no lone hardcoded 文件)',
+    );
     assert.match(menuSection, /label:\s*['"]新窗口['"]/, 'File menu must keep the New Window item');
     assert.ok(menuSection.includes('openNewWindowFromFocused'), 'New Window item must open via openNewWindowFromFocused');
     assert.ok(

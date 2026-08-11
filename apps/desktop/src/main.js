@@ -203,7 +203,10 @@ function buildAppMenu() {
   const template = [
     ...(isMac ? [{ role: 'appMenu' }] : []),
     {
-      label: '文件',
+      // role:fileMenu → the label follows the system language (File/文件), so it
+      // stays consistent with the role-based Edit/View/Window menus (hardcoding
+      // label:'文件' would leave a lone Chinese item on English systems).
+      role: 'fileMenu',
       submenu: [
         { label: '新窗口', click: () => openNewWindowFromFocused() },
         ...(isMac ? [] : [{ role: 'quit', label: '退出' }]),
