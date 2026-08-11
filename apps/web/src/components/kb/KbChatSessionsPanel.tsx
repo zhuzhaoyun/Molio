@@ -14,6 +14,8 @@ import './KbChatSessionsPanel.css';
 export interface KbChatSessionsPanelHandle {
   runWikiOp: (opts: { mode: 'build' | 'lint' | 'ingest'; filePath?: string; isDirectory?: boolean }) => void;
   openQa: (opts: { filePath: string | null; vaultId: string | null; selectedText?: string | null }) => void;
+  /** 打开历史会话（方案 D：任意页面就地打开，不跳转知识库页）。 */
+  openConversation: (conversationId: string) => void;
 }
 
 interface WikiOpOpts { mode: 'build' | 'lint' | 'ingest'; filePath?: string; isDirectory?: boolean }
@@ -215,8 +217,6 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     }
   }, [showToast]);
 
-  useImperativeHandle(ref, () => ({ runWikiOp, openQa }), [runWikiOp, openQa]);
-
   // ─── 面板级事件 ───
   const handleNewSession = useCallback(() => {
     const res = kbChatSessionsStore.openSession({
@@ -285,6 +285,8 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
       pruneRunning(sessionId);
     }
   }, [showToast, pruneRunning]);
+
+  useImperativeHandle(ref, () => ({ runWikiOp, openQa, openConversation: handleOpenConversation }), [runWikiOp, openQa, handleOpenConversation]);
 
   // 面板头部活动会话的模式标签
   return (

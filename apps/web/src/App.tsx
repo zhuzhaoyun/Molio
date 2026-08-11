@@ -3,7 +3,6 @@ import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { useAgents } from './hooks/useAgents';
 import { useChat } from './hooks/useChat';
 import { HomePage } from './components/HomePage';
-import { kbChatSessionsStore } from './stores/kbChatSessionsStore';
 
 import { NavRail } from './components/NavRail';
 import { KnowledgeBasePage } from './components/kb/KnowledgeBasePage';
@@ -197,8 +196,10 @@ export default function App() {
               element={
                 <HistoryPage
                   onOpenConversation={(conversationId) => {
-                    kbChatSessionsStore.openConversation(conversationId);
-                    navigate('/knowledge');
+                    // 方案 D：面板常驻 App 层，历史会话任意页面就地打开（不再跳转知识库页）。
+                    // openConversation 走面板 handle（运行中去重/就地切换/加载都由它负责），
+                    // openConversation 内部已 setPanelOpen(true)。
+                    kbChatPanelRef.current?.openConversation(conversationId);
                   }}
                 />
               }
