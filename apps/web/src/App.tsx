@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { useAgents } from './hooks/useAgents';
 import { useChat } from './hooks/useChat';
@@ -7,6 +7,8 @@ import { kbChatSessionsStore } from './stores/kbChatSessionsStore';
 
 import { NavRail } from './components/NavRail';
 import { KnowledgeBasePage } from './components/kb/KnowledgeBasePage';
+import { FloatingChatButton } from './components/kb/FloatingChatButton';
+import { KbChatSessionsPanel, type KbChatSessionsPanelHandle } from './components/kb/KbChatSessionsPanel';
 import { SettingsPage } from './components/settings/SettingsPage';
 import { HistoryPage } from './components/history/HistoryPage';
 import { GraphPage } from './components/graph/GraphPage';
@@ -40,6 +42,8 @@ export default function App() {
   const [locale, setLocale] = useState<Locale>('zh');
   const [configLoaded, setConfigLoaded] = useState(false);
   const chat = useChat({ agentId: selectedAgent, cwd: activeVault?.path });
+  // 全局悬浮对话面板句柄（App 层常驻挂载，ref 下发给 KB 页触发 runWikiOp/openQa）
+  const kbChatPanelRef = useRef<KbChatSessionsPanelHandle | null>(null);
 
   // Persist current route on change
   useEffect(() => {
@@ -200,12 +204,19 @@ export default function App() {
               }
             />
             <Route path="/knowledge" element={
-            <KnowledgeBasePage agentId={selectedAgent} />
+            <KnowledgeBasePage agentId={selectedAgent} chatPanelRef={kbChatPanelRef} />
           } />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/graph" element={<GraphPage />} />
           </Routes>
         </div>
+        {/* 全局悬浮对话（方案 D）：面板常驻挂载 + CSS --closed 隐藏，保 ref 恒有效。
+            按钮在面板收起时显示，点击展开面板。任意页面可用。 */}
+        <FloatingChatButton />
+        <KbChatSessionsPanel
+          ref={kbChatPanelRef}
+          agentId={selectedAgent}
+        />
         <UpdateNotification />
         <PreloadToast />
       </div>

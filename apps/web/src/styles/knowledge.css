@@ -2820,35 +2820,7 @@
 
 /* ─── File Chat Panel (right-side sliding Q&A for KB files) ─── */
 
-.file-chat-panel {
-  display: flex;
-  flex-direction: column;
-  width: 360px;
-  min-width: 280px;
-  max-width: 50vw;
-  height: 100%;
-  border-left: 1px solid var(--border);
-  background: var(--bg-panel);
-  overflow: hidden;
-  position: relative;
-}
-
-/* Resize handle on left border */
-.file-chat-resize-handle {
-  position: absolute;
-  top: 0;
-  left: -3px;
-  width: 6px;
-  height: 100%;
-  cursor: col-resize;
-  z-index: 10;
-  transition: background 0.15s;
-}
-
-.file-chat-resize-handle:hover {
-  background: var(--accent-tint);
-}
-
+/* 悬浮面板根样式见 KbChatSessionsPanel.css（.floating-chat-panel） */
 .file-chat-messages {
   flex: 1;
   overflow-y: auto;
@@ -3120,6 +3092,3 @@
 .file-chat-session { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .file-chat-session-stack { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 
-/* 面板收起 */
-.kb-chat-panel-slot { height: 100%; display: flex; }
-.kb-chat-panel-slot.is-hidden { display: none; }

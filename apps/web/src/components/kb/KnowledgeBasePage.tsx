@@ -10,11 +10,11 @@ import { useKnowledge } from '../../hooks/useKnowledge';
 import { useKbTabs, MAX_TABS } from '../../hooks/useKbTabs';
 import { kbTabsStore } from '../../stores/kbTabsStore';
 import { vaultStore } from '../../stores/vaultStore';
-import { kbChatSessionsStore, useKbChatPanelOpen } from '../../stores/kbChatSessionsStore';
+import { kbChatSessionsStore } from '../../stores/kbChatSessionsStore';
 import { KbFilePanel, type KbFilePanelHandle } from './KbFilePanel';
 import { KbTabBar } from './KbTabBar';
 import { KbMainContent } from './KbMainContent';
-import { KbChatSessionsPanel, type KbChatSessionsPanelHandle } from './KbChatSessionsPanel';
+import type { KbChatSessionsPanelHandle } from './KbChatSessionsPanel';
 import { OutlinePanel } from './OutlinePanel';
 import { SearchPanel } from './SearchPanel';
 import { VaultManagerModal } from './VaultManager';
@@ -26,6 +26,8 @@ import { api } from '../../api/client';
 
 interface KnowledgeBasePageProps {
   agentId: string | null;
+  /** App 层持有的悬浮面板句柄（KbChatSessionsPanel 常驻 App，ref 由 App 下发） */
+  chatPanelRef?: React.RefObject<KbChatSessionsPanelHandle | null>;
 }
 
 interface UrlFileNavigation {
@@ -128,7 +130,7 @@ function buildFolderDeleteMessage(node: TreeNode, tree: TreeNode[]): string {
   return `确定删除空文件夹 "${node.name}"？`;
 }
 
-export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
+export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePageProps) {
   const { t } = useI18n();
   const kb = useKnowledge();
   const tabs = useKbTabs();
@@ -136,8 +138,9 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const panelRef = useRef<KbChatSessionsPanelHandle>(null);
-  const panelOpen = useKbChatPanelOpen();
+  // 方案 D：面板移出 KB 页、常驻 App 层，ref 由 App 下发。这里别名成 panelRef，
+  // 下方 panelRef.current?.openQa/runWikiOp 调用点一行不改。
+  const panelRef = chatPanelRef ?? useRef<KbChatSessionsPanelHandle>(null);
   const [pendingUrlNav, setPendingUrlNav] = useState<UrlFileNavigation | null>(null);
   const [showOutline, setShowOutline] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
@@ -1012,15 +1015,6 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
             if (tabs.activeTabId) handleCloseTab(tabs.activeTabId);
           }}
           onNavigateToFile={handleNavigateToFile}
-        />
-      </div>
-
-      {/* Unified KB Chat Panel — 常驻保持后台任务；收起仅隐藏
-          （方案 D：上下文改从全局 currentContextStore 读，onWikiComplete 改 store 事件总线） */}
-      <div className={`kb-chat-panel-slot${panelOpen ? '' : ' is-hidden'}`}>
-        <KbChatSessionsPanel
-          ref={panelRef}
-          agentId={agentId}
         />
       </div>
 
