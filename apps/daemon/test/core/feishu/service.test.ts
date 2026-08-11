@@ -307,28 +307,40 @@ describe('FeishuService', () => {
     });
   });
 
-  describe('attach reminder wiring — every turn carries the <attach/> re-anchor', () => {
+  describe('frame + reminder wiring — full frame on fresh spawn, <attach/> re-anchor on reuse turns', () => {
     /**
-     * Feishu's full role frame rides --append-system-prompt-file
-     * (FEISHU_SYS_PROMPT_FILE), which the CLI silently drops in some
-     * environments — and even when it lands, context compaction in long
-     * sessions summarizes it away (the same failure class as the weixin
-     * incident of 2026-08-11: long run generates a file, then claims it has
-     * no way to deliver it). So unlike weixin (frame on fresh spawn,
-     * reminder on reuse turns only), feishu wires the compact reminder onto
-     * EVERY turn: frameFirstTurn AND reuseTurnReminder.
+     * Feishu mirrors weixin: the full role frame rides the FIRST-TURN message
+     * prepend — the reliable carrier. The old --append-system-prompt-file
+     * path was silently dropped by the CLI in some environments (the frame
+     * never reached the model), and even when it landed, context compaction
+     * in long sessions summarized it away (the 2026-08-11 failure class:
+     * long run generates a file, then claims no way to deliver it). Reuse
+     * turns carry the compact reminder so the <attach/> protocol survives
+     * compaction without re-triggering the frame's 收件/入库/问答 routing.
      */
     class CapturingRunManager {
       private nextId = 1;
       private created = new Set<string>();
       private listeners = new Map<string, (ev: AgentEvent) => void>();
-      readonly createRunCalls: Array<{ runId: string; message: string }> = [];
+      readonly createRunCalls: Array<{
+        runId: string;
+        message: string;
+        appendSystemPromptFile?: string;
+      }> = [];
       readonly sendMessageCalls: Array<{ runId: string; message: string }> = [];
 
-      createRun = async (opts: { agentId: string; message: string }): Promise<string> => {
+      createRun = async (opts: {
+        agentId: string;
+        message: string;
+        appendSystemPromptFile?: string;
+      }): Promise<string> => {
         const runId = `feishu-run-${this.nextId++}`;
         this.created.add(runId);
-        this.createRunCalls.push({ runId, message: opts.message });
+        this.createRunCalls.push({
+          runId,
+          message: opts.message,
+          appendSystemPromptFile: opts.appendSystemPromptFile,
+        });
         return runId;
       };
 
@@ -385,17 +397,23 @@ describe('FeishuService', () => {
       (svc as unknown as { handleRawMessage: (e: FeishuRawEvent) => Promise<void> })
         .handleRawMessage(makeTextEvent(openId, text, messageId));
 
-    it('anchors the <attach/> protocol on the fresh spawn AND the reuse turn', async () => {
+    it('carries the FULL frame on fresh spawn, the compact reminder on the reuse turn', async () => {
       const openId = 'ou_attach_user';
       await handle(openId, '把那份报告发给我', 'msg-attach-1');
 
       assert.equal(mock.createRunCalls.length, 1, 'first message spawns a run');
-      const spawnMsg = mock.createRunCalls[0]!.message;
-      assert.ok(spawnMsg.includes('飞书通道机制提醒'), 'fresh-spawn message carries the reminder');
-      assert.ok(spawnMsg.includes('<attach path='), 'fresh-spawn message teaches the marker format');
-      assert.ok(spawnMsg.includes('把那份报告发给我'), 'fresh-spawn message preserves the user text');
+      const spawn = mock.createRunCalls[0]!;
+      assert.equal(
+        spawn.appendSystemPromptFile,
+        undefined,
+        'no system-prompt file — the frame rides the message, which always reaches the model',
+      );
+      assert.ok(spawn.message.includes('本地知识库的飞书入口助手'), 'fresh-spawn message carries the FULL frame');
+      assert.ok(spawn.message.includes('raw/feishu/'), 'fresh-spawn message carries the ingestion rules');
+      assert.ok(spawn.message.includes('<attach path='), 'fresh-spawn message teaches the marker format');
+      assert.ok(spawn.message.includes('把那份报告发给我'), 'fresh-spawn message preserves the user text');
 
-      const run1 = mock.createRunCalls[0]!.runId;
+      const run1 = spawn.runId;
       mock.emit(run1, { type: 'turn_end', stopReason: 'end_turn' });
       await settle();
 
@@ -406,6 +424,7 @@ describe('FeishuService', () => {
       const reuseMsg = mock.sendMessageCalls[0]!.message;
       assert.ok(reuseMsg.includes('飞书通道机制提醒'), 'reuse message re-anchors the reminder');
       assert.ok(reuseMsg.includes('<attach path='), 'reuse message teaches the marker format');
+      assert.ok(!reuseMsg.includes('本地知识库的飞书入口助手'), 'reuse message does NOT re-carry the full frame');
       assert.ok(reuseMsg.includes('再发一份'), 'reuse message preserves the user text');
     });
 

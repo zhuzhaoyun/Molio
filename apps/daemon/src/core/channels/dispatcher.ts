@@ -22,23 +22,6 @@ const QUEUE_MAX_PENDING = 16;
 const REPLY_MAX_CHARS = 1_000_000;
 
 /**
- * Resolve the wiki/vault role frame to inject as the agent's SYSTEM prompt
- * (via `--append-system-prompt-file`) for a fresh spawn against `cwd`. Returns
- * the channel-specific fixed file path when `cwd` is a registered vault, else
- * undefined.
- *
- * This signature is channel-agnostic: each channel injects its own resolver
- * (feishu passes its own pointing at FEISHU_SYS_PROMPT_FILE) so the shared
- * dispatcher doesn't need to know which wiki prompt file belongs to which
- * channel. (weixin deliberately does NOT use this path — its frame is a
- * message prepend via `frameFirstTurn`, which reliably reaches the model.)
- */
-export type WikiPromptFileResolver = (
-  db: Database.Database | undefined,
-  cwd: string | undefined,
-) => string | undefined;
-
-/**
  * Wrap raw user text into a channel-specific prompt (e.g. weixin wraps
  * mp.weixin URLs with an article-summary preface). Falls through to identity
  * when the channel has no special preface for this message.
@@ -56,18 +39,17 @@ export interface ChannelDispatcherDeps {
   db?: Database.Database;
   /** Push replies back to the user (text + media attachments). */
   sink: ChannelSink;
-  /** Resolve the channel-specific wiki system-prompt file for fresh spawns. */
-  wikiPromptFileFor?: WikiPromptFileResolver;
   /** Wrap raw user text into the channel-specific prompt (default: identity). */
   buildPrompt?: PromptBuilder;
   /**
-   * Wrap raw user text for a FRESH spawn ONLY (e.g. weixin prepends its channel
-   * role frame). Unlike `buildPrompt` (applied to every turn), this runs only
-   * when a new run is spawned — reuse turns must NOT re-carry the frame: the
-   * live process already holds it from its first turn. Prefer this over
-   * `wikiPromptFileFor` when the frame must reliably reach the model:
+   * Wrap raw user text for a FRESH spawn ONLY (e.g. weixin/feishu prepend
+   * their channel role frame). Unlike `buildPrompt` (applied to every turn),
+   * this runs only when a new run is spawned — reuse turns must NOT re-carry
+   * the frame: the live process already holds it from its first turn. A
+   * message prepend is the ONLY reliable way to deliver a channel frame:
    * --append-system-prompt-file is silently dropped by the CLI in some
-   * environments (verified on Claude Code), a message prepend always lands.
+   * environments (verified on Claude Code), and long sessions lose even a
+   * delivered frame to context compaction.
    */
   frameFirstTurn?: PromptBuilder;
   /**
@@ -133,10 +115,9 @@ interface QueuedMessage {
  *
  * Owns the per-user run reuse state machine: reuse the active multi-turn run,
  * queue while a turn is in flight (drain on `turn_end`), or spawn a fresh run
- * when the prior one is no longer receptive. The wiki system-prompt file is
- * derived at spawn time from `cwd` via the channel-provided `wikiPromptFileFor`,
- * so a queued message drained into a fresh spawn still carries the wiki role
- * frame.
+ * when the prior one is no longer receptive. The channel role frame is applied
+ * at spawn time via `frameFirstTurn`, so a queued message drained into a
+ * fresh spawn still carries the frame.
  */
 export class ChannelDispatcher {
   private userRuns = new Map<string, UserRunState>();
@@ -185,11 +166,11 @@ export class ChannelDispatcher {
       // ordering stays correct (mirrors the desktop POST /:id/messages path).
       this.deps.runManager.flushPendingReply(state.runId);
       this.deps.conversations.appendUserMessage(conversationId, rawUserText);
-      // No appendSystemPromptFile here: sendMessage reuses the live process,
-      // which already carries the system prompt from spawn. The optional
+      // No frame here: sendMessage reuses the live process, which already
+      // carries the first-turn frame in its history. The optional
       // `reuseTurnReminder` re-anchors protocol bits the first-turn frame
-      // taught (e.g. weixin's <attach/> file delivery) — long sessions lose
-      // the frame to context compaction, the reminder survives it.
+      // taught (e.g. the <attach/> file delivery) — long sessions lose the
+      // frame to context compaction, the reminder survives it.
       const reuseMessage = this.deps.reuseTurnReminder
         ? this.deps.reuseTurnReminder(rawUserText)
         : runMessage;
@@ -206,20 +187,18 @@ export class ChannelDispatcher {
       this.userRuns.delete(userId);
     }
     this.deps.conversations.appendUserMessage(conversationId, rawUserText);
-    // Fresh-spawn message: `frameFirstTurn` (e.g. weixin channel-frame prepend)
-    // applies HERE only — reuse turns keep the plain buildPrompt output. The
-    // wiki system-prompt file is likewise derived here (at spawn time), not
+    // Fresh-spawn message: `frameFirstTurn` (e.g. weixin/feishu channel-frame
+    // prepend) applies HERE only — reuse turns keep the plain buildPrompt
+    // output (or the compact `reuseTurnReminder`). Applied at spawn time, not
     // frozen at queue time — a queued message drained into a fresh spawn still
-    // gets the channel frame / wiki role.
+    // gets the channel frame.
     const spawnMessage = this.deps.frameFirstTurn
       ? this.deps.frameFirstTurn(rawUserText)
       : runMessage;
-    const appendSystemPromptFile = this.deps.wikiPromptFileFor?.(this.deps.db, cwd);
     const runId = await this.deps.runManager.createRun({
       agentId,
       cwd,
       message: spawnMessage,
-      appendSystemPromptFile,
       conversationId,
       history,
     });

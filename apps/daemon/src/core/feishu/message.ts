@@ -1,3 +1,4 @@
+import { FEISHU_ATTACH_REMINDER, FEISHU_CHANNEL_FRAME } from './channel-frame.js';
 import type { FeishuAttachment, FeishuRawEvent, ParsedFeishuMessage } from './types.js';
 
 /**
@@ -165,26 +166,34 @@ export function buildFeishuPrompt(text: string): string {
 }
 
 /**
- * Compact re-anchor of the `<attach/>` file-delivery protocol, carried on
- * EVERY feishu turn (fresh spawn via `frameFirstTurn`, reuse via
- * `reuseTurnReminder` — see FeishuService wiring).
+ * Wrap a feishu user message with the channel role frame (收件/入库/问答/文件回传
+ * mechanics + wiki skill routing). Prepended on a FRESH spawn only — reuse
+ * turns carry the compact attach reminder instead (see
+ * `buildFeishuReminderMessage`), because the live process already holds the
+ * frame from its first turn.
  *
- * Feishu needs this even more than weixin: its full role frame rides
- * `--append-system-prompt-file` (FEISHU_SYS_PROMPT_FILE), which the CLI
- * silently drops in some environments, and even when it lands, long sessions
- * lose it to context compaction — the same failure class as the weixin
- * incident of 2026-08-11 (long run generates a file, then claims it has no
- * way to deliver it). This reminder is the reliable carrier of the protocol.
- *
- * Deliberately SHORT and scoped to delivery: it rides every turn, and must
- * not re-trigger the full frame's 收件/入库/问答 routing.
+ * This replaces the old `--append-system-prompt-file` injection of
+ * WIKI_FEISHU_PROMPT, which the CLI silently dropped in some environments
+ * (the frame never reached the model — see channel-frame.ts header). A
+ * message prepend always reaches the model, and feishu is a dedicated
+ * channel the daemon fully controls, so prepending the channel frame here
+ * has no cross-context role-lock risk. Symmetric with weixin's
+ * `buildWeixinFrameMessage`.
  */
-export const FEISHU_ATTACH_REMINDER = `【飞书通道机制提醒】你具备给飞书用户发送文件的能力：当用户希望获得文件本体（"发给我/给我一份/发个文件/下载"等）时，在回复中对每个要发送的文件写附件标记 \`<attach path="文件的本地路径"/>\`，Molio 会把文件作为真实附件发到飞书，并自动把标记从文字中剔除。直接发原文件、不转换格式；不要在文字里写本地路径或粘贴文件内容。本次消息不涉及发文件时忽略本提醒。`;
+export function buildFeishuFrameMessage(text: string): string {
+  return [FEISHU_CHANNEL_FRAME, '', '## 本次飞书消息', '', buildFeishuPrompt(text)].join('\n');
+}
 
 /**
- * Wrap any feishu turn (fresh spawn or reuse) with the attach re-anchor.
- * Subsumes `buildPrompt` — wraps via buildFeishuPrompt, mirroring weixin's
- * `buildWeixinReuseMessage` (which likewise subsumes buildMolioPrompt).
+ * Wrap a REUSE-turn feishu message with the compact attach re-anchor.
+ *
+ * Counterpart to `buildFeishuFrameMessage` (fresh spawns only): the
+ * first-turn frame teaches the `<attach/>` file-delivery protocol, but long
+ * sessions get context-compacted and lose it — the 2026-08-11 failure class
+ * (long run produces a file, then claims no delivery capability). This short
+ * reminder rides every reuse turn so the protocol survives the whole life of
+ * the run. Like the frame builder it SUBSUMES `buildPrompt` (wraps via
+ * buildFeishuPrompt), mirroring weixin's `buildWeixinReuseMessage`.
  */
 export function buildFeishuReminderMessage(text: string): string {
   return [FEISHU_ATTACH_REMINDER, '', buildFeishuPrompt(text)].join('\n');

@@ -11,13 +11,16 @@ import {
 } from '../channels/credentials-store.js';
 import { MessageDedup } from '../channels/message-dedup.js';
 import { chunkText } from '../channels/text-chunker.js';
-import { getVaultByPath } from '../db.js';
-import { FEISHU_SYS_PROMPT_FILE } from '../wiki-prompts.js';
 import { buildMarkdownCard } from './card.js';
 import { DEFAULT_BASE_URL, FeishuApi } from './client.js';
 import { FeishuWSClient } from './ws-client.js';
 import { FeishuTokenStore } from './token-store.js';
-import { buildFeishuPrompt, buildFeishuReminderMessage, parseFeishuMessage } from './message.js';
+import {
+  buildFeishuFrameMessage,
+  buildFeishuPrompt,
+  buildFeishuReminderMessage,
+  parseFeishuMessage,
+} from './message.js';
 import { materializeFeishuAttachments } from './media.js';
 import { materializeWikiLinks } from './wiki-fetcher.js';
 import type {
@@ -44,16 +47,6 @@ const FEISHU_CHANNEL_PREFIX = 'feishu';
 
 function resolveCredentialsPath(config?: FeishuConfig): string {
   return resolveCredsPath(config?.credentialsPath, FEISHU_CHANNEL_PREFIX);
-}
-
-/** Resolve the feishu-specific wiki system-prompt file for a fresh spawn. */
-function wikiPromptFileFor(
-  db: Database.Database | undefined,
-  cwd: string | undefined,
-): string | undefined {
-  if (!db || !cwd) return undefined;
-  const vault = getVaultByPath(db, cwd);
-  return vault ? FEISHU_SYS_PROMPT_FILE : undefined;
 }
 
 export class FeishuService implements ChannelSink {
@@ -92,15 +85,15 @@ export class FeishuService implements ChannelSink {
       conversations,
       db,
       sink: this,
-      wikiPromptFileFor,
       buildPrompt: buildFeishuPrompt,
-      // Feishu's full frame rides --append-system-prompt-file, which the CLI
-      // silently drops in some environments — so unlike weixin (whose frame is
-      // a reliable first-turn message prepend) feishu cannot trust the fresh
-      // spawn to carry the <attach/> protocol. Anchor it on EVERY turn: the
-      // reminder wraps both fresh spawns (frameFirstTurn) and reuse turns
-      // (reuseTurnReminder, which also survives context compaction).
-      frameFirstTurn: buildFeishuReminderMessage,
+      // Symmetric with weixin: the full role frame rides the FIRST-TURN
+      // message prepend (frameFirstTurn) — the reliable carrier. The old
+      // --append-system-prompt-file path was silently dropped by the CLI in
+      // some environments (the frame never reached the model). Reuse turns
+      // carry only the compact attach reminder: it keeps the <attach/>
+      // protocol alive across context compaction without re-triggering the
+      // full frame's 收件/入库/问答 routing on every message.
+      frameFirstTurn: buildFeishuFrameMessage,
       reuseTurnReminder: buildFeishuReminderMessage,
       channelLabel: 'feishu',
     });

@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  buildFeishuFrameMessage,
   buildFeishuPrompt,
   buildFeishuReminderMessage,
   looksLikeArticleUrl,
@@ -176,11 +177,41 @@ describe('buildFeishuPrompt', () => {
 });
 
 /**
- * Feishu's full role frame rides --append-system-prompt-file (silently dropped
- * by the CLI in some environments) and is additionally lost to context
- * compaction in long sessions — the same failure class as the weixin incident
- * of 2026-08-11. The compact reminder is feishu's reliable carrier of the
- * <attach/> protocol and rides EVERY turn (fresh spawn + reuse).
+ * The full feishu role frame used to ride --append-system-prompt-file, which
+ * the CLI silently drops in some environments (the frame never reached the
+ * model). It is now prepended to the FIRST message of a fresh run — a message
+ * prepend always reaches the model (symmetric with weixin's
+ * buildWeixinFrameMessage).
+ */
+describe('buildFeishuFrameMessage — fresh-spawn full frame', () => {
+  it('prepends the full role frame and preserves the user text', () => {
+    const out = buildFeishuFrameMessage('帮我总结这篇文章');
+    assert.ok(out.includes('本地知识库的飞书入口助手'), 'frame identity present');
+    assert.ok(out.includes('raw/feishu/'), 'ingestion rules present');
+    assert.ok(out.includes('wiki-query'), 'wiki Q&A routing present');
+    assert.ok(out.includes('<attach path='), 'delivery protocol taught by the frame');
+    assert.ok(out.includes('## 本次飞书消息'), 'user-message section header present');
+    assert.ok(out.includes('帮我总结这篇文章'), 'preserves the user text');
+    assert.ok(
+      out.indexOf('本地知识库的飞书入口助手') < out.indexOf('帮我总结这篇文章'),
+      'frame comes before the user text',
+    );
+  });
+
+  it('composes with the injected-markdown reframing from buildFeishuPrompt', () => {
+    const text = '# 某篇飞书文档标题\n\n正文内容…';
+    const out = buildFeishuFrameMessage(text);
+    assert.ok(out.includes('已附带抓取好的 Markdown 正文'), 'prompt reframing present');
+    assert.ok(out.includes(text), 'the markdown body is preserved');
+  });
+});
+
+/**
+ * The first-turn frame teaches the <attach/> protocol, but long sessions get
+ * context-compacted and lose it — the 2026-08-11 failure class (long run
+ * generates a file, then claims no delivery capability). The compact reminder
+ * rides every REUSE turn so the protocol survives the whole life of the run
+ * (the fresh spawn carries the full frame instead, see above).
  */
 describe('buildFeishuReminderMessage — attach re-anchor', () => {
   it('teaches the <attach/> delivery protocol and preserves the user text', () => {
