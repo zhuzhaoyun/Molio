@@ -10,6 +10,7 @@ import type { ThemeConfig } from '../components/kb/MdStylePanel';
 import { defaultThemeConfig } from '../components/kb/MdStylePanel';
 import { copyHtml } from '@molio/doocs-md/shared/utils/clipboard';
 import { vaultStore, useActiveVaultId } from '../stores/vaultStore';
+import { currentContextStore } from '../stores/currentContextStore';
 
 const FILE_LOAD_RETRY_MS = 600;
 
@@ -215,6 +216,14 @@ export function useKnowledge(): UseKnowledgeReturn {
   // Wiki state
   const [wikiInitialized, setWikiInitialized] = useState(false);
   const fileLoadRetryRef = useRef<{ key: string; timer: ReturnType<typeof setTimeout> | null }>({ key: '', timer: null });
+
+  // 选中文件变化 → 全局悬浮对话的 @上下文跟随当前文件；hook 卸载（离开 KB 页）→ 置空（vault 保留全局）
+  useEffect(() => {
+    currentContextStore.set({ filePath: selectedFile, page: 'knowledge' });
+    return () => {
+      currentContextStore.set({ filePath: null, page: 'other' });
+    };
+  }, [selectedFile]);
 
   const clearFileLoadRetry = useCallback(() => {
     if (fileLoadRetryRef.current.timer) {

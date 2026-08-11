@@ -16,6 +16,7 @@ import { LanguageProvider } from './i18n/LanguageProvider';
 import type { Locale } from './i18n';
 import { api } from './api/client';
 import { useActiveVault, vaultStore } from './stores/vaultStore';
+import { currentContextStore, type CurrentContext } from './stores/currentContextStore';
 import { messageSelectionStore } from './stores/messageSelectionStore';
 import './styles/rail.css';
 import './styles/home.css';
@@ -45,6 +46,15 @@ export default function App() {
     try {
       localStorage.setItem(STORAGE_KEY_LAST_ROUTE, location.pathname);
     } catch { /* ignore */ }
+  }, [location.pathname]);
+
+  // 路由切换 → 悬浮对话读取当前页面
+  useEffect(() => {
+    const page = location.pathname.replace('/', '') as CurrentContext['page'];
+    const known: CurrentContext['page'][] = ['knowledge', 'home', 'history', 'graph', 'settings'];
+    currentContextStore.set({
+      page: known.includes(page) ? page : 'other',
+    });
   }, [location.pathname]);
 
   // On mount, restore last route (only if at root "/")
