@@ -17,13 +17,21 @@
 
 别再和每一个 AI 从零开始。Molio 把你的笔记、文档和项目经验变成一个会成长的知识空间：Claude Code / Codex 等 Agent 带着你的背景研究、写作、问答、分析，产出写回库，越用越懂你的事。所有内容存在你自己的电脑上，不经过任何第三方服务器。
 
+<div align="center">
+
+[<img src="docs/img/video-poster.webp" alt="资治通鉴知识库演示" width="100%" style="border-radius: 8px;" />](https://molio.cn/videos/zizhitongjian-overview.mp4)
+
+**▶ 点击播放演示** — 一本书，一个知识宇宙：《资治通鉴》1362 年史料 · 由 Molio 整理成 AI 可探索的知识体系
+
+</div>
+
 ### 🌟 核心能力
 
 | 功能 | 说明 |
 |------|------|
 | 🗂️ **Obsidian 兼容** | 直接打开你的 Obsidian 目录，零迁移；纯 Markdown 文件，无厂商锁定，随时切回 |
 | 🤖 **多 Agent + 本地优先** | 在统一界面里使用 Claude Code、Codex、Gemini CLI、Qwen Code，支持流式输出 — 知识库、AI 对话、所有设置全在本地，不经过任何第三方服务器 |
-| ✂️ **[Web Clipper](https://chromewebstore.google.com/detail/pjdacbbkjpegfkogoieejajljplngbik)** | Chrome 扩展一键剪藏网页到知识库，自动唤起桌面端定位到刚保存的文件。[Chrome 应用商店](https://chromewebstore.google.com/detail/pjdacbbkjpegfkogoieejajljplngbik) \| [其他浏览器](https://molio.cn/download.html) |
+| ✂️ **[Web Clipper](https://chromewebstore.google.com/detail/pjdacbbkjpegfkogoieejajljplngbik)** | Chrome 扩展一键剪藏网页到知识库，自动唤起桌面端定位到刚保存的文件。[Chrome 应用商店](https://chromewebstore.google.com/detail/pjdacbbkjpegfkogoieejajljplngbik) \| [其他浏览器](https://molio.cn/#download) |
 | 📝 **编辑 → 发布** | 左右分栏 Markdown 编辑器，实时预览；基于 [doocs/md](https://github.com/doocs/md) 排版，[doocs/cose](https://github.com/doocs/cose) 一键发布到 30+ 平台 |
 | 💬 **微信 AI 助手** | 扫码连接个人微信，手机上和你的知识库对话；发公众号链接自动总结并存入知识库 |
 | 📖 **知识图谱** | 可视化浏览知识关联与结构 |
@@ -53,16 +61,16 @@
       <sub>AI 对话：多 Agent 支持，流式响应</sub>
     </td>
     <td width="50%" align="center">
-      <img src="docs/img/wiki_knowledge.png" alt="知识库" width="100%" style="border-radius: 8px;" />
+      <img src="apps/landing-page/images/wiki_knowledge.webp" alt="知识库" width="100%" style="border-radius: 8px;" />
       <br/>
       <sub>知识库：Vault 文件树管理与 Markdown 渲染</sub>
     </td>
   </tr>
   <tr>
     <td width="50%" align="center">
-      <img src="docs/img/Layout%20.png" alt="排版编辑器" width="100%" style="border-radius: 8px;" />
+      <img src="apps/landing-page/images/kg-graph.webp" alt="知识图谱" width="100%" style="border-radius: 8px;" />
       <br/>
-      <sub>排版编辑器：左右分栏实时预览，主题/字体/颜色可调</sub>
+      <sub>知识图谱：可视化浏览知识关联与结构</sub>
     </td>
     <td width="50%" align="center">
       <img src="docs/img/publish.png" alt="多平台发布" width="100%" style="border-radius: 8px;" />
