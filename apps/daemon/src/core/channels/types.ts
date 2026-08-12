@@ -53,6 +53,3 @@ export interface ChannelSink {
   /** Notify the channel when the active run changes (e.g. for status display). */
   onActiveRun?(runId: string | null): void;
 }
-
-/** Which channel a wiki system-prompt file applies to (parameterizes `wikiPromptFileFor`). */
-export type ChannelKind = 'weixin' | 'feishu';
