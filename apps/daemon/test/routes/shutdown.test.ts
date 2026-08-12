@@ -71,7 +71,7 @@ describe('Shutdown route', () => {
 
     const conversation = conversationService.createDesktopConversation('shutdown test');
 
-    await runManager.createRun({
+    const runId = await runManager.createRun({
       agentId: 'claude',
       message: 'Say hello',
       conversationId: conversation.id,
@@ -87,8 +87,28 @@ describe('Shutdown route', () => {
       },
     });
 
-    // Wait briefly so the fake agent emits text and is still alive
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    // Wait until the fake agent has ACTUALLY emitted text. A fixed sleep here
+    // raced the child on slow machines: cmd shim + node startup can take longer
+    // than the sleep, so shutdown cancelled the run before any text was
+    // buffered and the flush (correctly) produced nothing.
+    await new Promise<void>((resolve, reject) => {
+      // Already buffered (createRun is await-free on this path today, but be
+      // robust against a future refactor that yields before returning)?
+      if ((runManager.getBufferedEvents(runId) ?? []).some((ev) => ev.event === 'text_delta')) {
+        resolve();
+        return;
+      }
+      const timer = setTimeout(
+        () => reject(new Error('fake agent emitted no text within 10s')),
+        10_000,
+      );
+      runManager.onEvent(runId, (ev) => {
+        if (ev.type === 'text_delta') {
+          clearTimeout(timer);
+          resolve();
+        }
+      });
+    });
 
     // At this point the fake agent has emitted text_deltas and is waiting for
     // more stdin. The turn text is buffered and not yet flushed.

@@ -93,6 +93,16 @@ export function SaveIcon({ size = 16, className }: IconProps) {
   );
 }
 
+/** Four-point sparkle — "save as skill" (AI-distilled capability). */
+export function SparkleIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg {...base(size)} className={className}>
+      <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" />
+      <path d="M19 15l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z" />
+    </svg>
+  );
+}
+
 /** Three horizontal dots — the "more" overflow trigger. */
 export function MoreIcon({ size = 16 }: { size?: number }) {
   return (

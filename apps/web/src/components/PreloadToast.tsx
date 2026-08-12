@@ -1,6 +1,6 @@
 /**
  * PreloadToast — bottom-right toast that prompts the user to download heavy
- * skill tools (docling, remotion) in the background before they're first needed.
+ * skill tools (docling) in the background before they're first needed.
  *
  * States:
  *   - hidden: all skills installed or dismissed
@@ -21,7 +21,7 @@ import { useSelectMode } from '../stores/messageSelectionStore';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type PreloadableSkill = 'docling' | 'remotion';
+type PreloadableSkill = 'docling';
 
 interface SkillInfo {
   status: string;
@@ -66,13 +66,6 @@ const SKILL_LABELS: Record<PreloadableSkill, {
     size: '约 1.5 GB',
     time: '5–15 分钟',
   },
-  remotion: {
-    label: 'Remotion',
-    scenario: '用 React 生成视频、动画、动效',
-    includes: 'npm 依赖 + 项目骨架（复用本地浏览器，无需另下 Chrome）',
-    size: '约 100 MB',
-    time: '1–3 分钟',
-  },
 };
 
 // ─── Component ──────────────────────────────────────────────────────────────
@@ -116,7 +109,7 @@ export function PreloadToast() {
     mountedRef.current = true;
 
     // Don't render the always-on toast under Playwright/automation. In a
-    // clean CI environment docling/remotion are never installed, so the
+    // clean CI environment docling is never installed, so the
     // toast would pop and sit fixed over the bottom-right corner —
     // intercepting clicks on the chat selection confirm bar's delete button
     // (and any other bottom-right control). Real users aren't automated
@@ -302,7 +295,7 @@ export function PreloadToast() {
   }, [state.skills, refreshFromStatus]);
 
   /** Pause all in-progress downloads. Partial artifacts are kept on disk so
-   *  resume picks up where it left off (pip / HuggingFace / npm caches). */
+   *  resume picks up where it left off (pip / HuggingFace caches). */
   const handlePause = useCallback(() => {
     userActionRef.current = 'pause';
     const skills = state.skills;
@@ -519,7 +512,7 @@ function DownloadingView({ skills, progress, messages, onMinimize, onPause, onSt
         <button
           className="rt-btn rt-btn--sm"
           onClick={onStop}
-          title="停止并删除本次预下载写入的内容（docling 的 venv+模型、remotion 的标记）；不会动你手动/全局安装的包"
+          title="停止并删除本次预下载写入的内容（docling 的 venv+模型）；不会动你手动/全局安装的包"
         >
           停止
         </button>
@@ -576,7 +569,7 @@ function PausedView({ skills, progress, paths, onResume, onStop }: {
         <button
           className="rt-btn rt-btn--sm"
           onClick={onStop}
-          title="删除本次预下载写入的内容（docling 的 venv+模型、remotion 的标记）；不会动你手动/全局安装的包"
+          title="删除本次预下载写入的内容（docling 的 venv+模型）；不会动你手动/全局安装的包"
         >
           停止并清理预下载
         </button>

@@ -7,9 +7,7 @@ import { stream } from 'hono/streaming';
 import { createReadStream, existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type Database from 'better-sqlite3';
-import type {
-  CreateVaultRequest,
-} from '@molio/contracts';
+import type { CreateVaultRequest } from '@molio/contracts';
 import {
   listVaults,
   getVault,
@@ -40,7 +38,7 @@ import {
 import { annotateTreeStatus } from '../core/wiki-status.js';
 import { VAULT_TREE_CHANGED_EVENT, type VaultWatcher } from '../core/vault-watcher.js';
 import type { RunManager } from '../core/RunManager.js';
-import { installBuiltinSkills } from '../core/skill-installer.js';
+import { reconcileVault } from '../core/skills/vault-config.js';
 import { FileTooLargeError } from '../core/encoding.js';
 
 export function knowledgeRoutes(
@@ -71,7 +69,10 @@ export function knowledgeRoutes(
     try {
       ensureVaultDir(body.path);
       const vault = createVault(db, body.name, body.path, body.description);
-      installBuiltinSkills(body.path);
+      // Fan the effective skills into the new vault — bundled (whole-dir) +
+      // library/core (molio-- single file) + CLAUDE.md rules. Best-effort:
+      // reconcileVault swallows EACCES so provisioning is never aborted.
+      reconcileVault(db, vault);
       addKbHistory(db, vault.id, 'edit', `Vault "${vault.name}" created`);
       void vaultWatcher.watch(vault.id, vault.path);
       return c.json({ ...vault, fileCount: 0 }, 201);
