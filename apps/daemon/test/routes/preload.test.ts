@@ -19,7 +19,7 @@ import type { PreloadManager, PreloadableSkill, SkillStatus } from '../../src/co
 function fakeManager(status: SkillStatus, started: PreloadableSkill[]): PreloadManager {
   return {
     getStatus: () => status,
-    getStatuses: () => ({ docling: status, remotion: status }) as Record<PreloadableSkill, SkillStatus>,
+    getStatuses: () => ({ docling: status }) as Record<PreloadableSkill, SkillStatus>,
     onProgress: () => () => { /* no-op unsub; /start never closes the stream in these stubs */ },
     startPreload: async (sk: PreloadableSkill) => { started.push(sk); },
     // not used by /start — present only to satisfy the type

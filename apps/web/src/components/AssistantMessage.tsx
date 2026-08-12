@@ -9,6 +9,7 @@ import { ToolCard } from './ToolCard';
 import { ToolGroup, BatchGroup } from './ToolGroup';
 import { ThinkingBlock } from './ThinkingBlock';
 import { SaveToKbButton } from './SaveToKbButton';
+import { SaveAsSkillButton } from './SaveAsSkillButton';
 import { MessageToolbar } from './MessageToolbar';
 import { useSelectMode, useIsSelected } from '../stores/messageSelectionStore';
 import { MessageCheckbox } from './MessageCheckbox';
@@ -283,7 +284,12 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
                 }]
               : []),
           ]}
-          extra={<SaveToKbButton content={message.content} />}
+          extra={
+            <>
+              <SaveToKbButton content={message.content} />
+              <SaveAsSkillButton content={message.content} />
+            </>
+          }
           overflow={onRequestDelete ? [{
             key: 'delete', label: '删除', testid: 'overflow-item-delete',
             text: '', onClick: () => onRequestDelete(message.id),

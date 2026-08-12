@@ -220,9 +220,9 @@
   margin-bottom: 4px;
 }
 .preload-toast__card-name {
-  /* Mono encodes that docling / Remotion are package / CLI names — the
-     subject of this toast is installing developer tools, so a technical
-     artifact face gives the name a distinct identity vs the prose copy. */
+  /* Mono encodes that docling is a package / CLI name — the subject of this
+     toast is installing developer tools, so a technical artifact face gives
+     the name a distinct identity vs the prose copy. */
   font-family: var(--mono);
   font-weight: 600;
   font-size: 13px;

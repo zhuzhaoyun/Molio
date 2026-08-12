@@ -101,6 +101,7 @@ async function startDaemonProduction() {
     const stderrChunks = new CappedBuffer(200);
     const stdoutChunks = new CappedBuffer(200);
     let started = false;
+    let startupTimer = null;
 
     daemonProcess.stdout?.on('data', (data) => {
       const msg = data.toString().trim();
@@ -108,6 +109,7 @@ async function startDaemonProduction() {
       log('info', 'daemon', msg);
       if (msg.includes('listening on')) {
         started = true;
+        clearTimeout(startupTimer);
         resolve();
       }
     });
@@ -150,7 +152,16 @@ async function startDaemonProduction() {
       // Flush any trailing partial line left in the buffer.
       flushDaemonLine(stderrBuf.trim());
       stderrBuf = '';
+      clearTimeout(startupTimer);
       log('error', 'main', `daemon exited with code=${code} signal=${signal}`);
+      if (!started) {
+        // The daemon died before printing "listening on". Reject right away:
+        // without this the startup promise would sit out the full 30s timer
+        // before failing, leaving the window blank/spinning for half a minute
+        // with zero feedback. (A post-ready exit is killDaemon's territory —
+        // the promise is long settled, so this only affects the startup race.)
+        reject(new Error(`daemon exited early (code=${code}, signal=${signal})`));
+      }
       if (code !== 0 && code !== null) {
         if (stdoutChunks.length > 0) {
           log('error', 'main', `daemon stdout tail:\n${stdoutChunks.toArray().join('\n')}`);
@@ -163,17 +174,22 @@ async function startDaemonProduction() {
     });
 
     daemonProcess.on('error', (err) => {
+      clearTimeout(startupTimer);
       log('error', 'main', `daemon spawn error: ${err?.message ?? err}`);
       reject(err);
     });
 
-    // Timeout fallback — reject so caller can skip loadApp()
-    setTimeout(() => {
+    // Timeout fallback — reject so caller can skip loadApp().
+    // 30s (was 10s): on a first launch after packaging, cold-cache startup work
+    // (port-occupant kill, Node bundle load, DB init) can legitimately take
+    // several seconds before the daemon prints "listening on". 10s produced
+    // false "后端服务启动失败" error pages that a restart "fixed".
+    startupTimer = setTimeout(() => {
       if (!started) {
-        log('warn', 'main', 'daemon startup timeout (10s) — rejecting');
+        log('warn', 'main', 'daemon startup timeout (30s) — rejecting');
         reject(new Error('Daemon startup timeout'));
       }
-    }, 10000);
+    }, 30000);
   });
 }
 
@@ -752,6 +768,20 @@ ipcMain.handle('show-directory-picker', async () => {
   const result = await dialog.showOpenDialog(focusedWindow, {
     properties: ['openDirectory'],
     title: '选择本地仓库文件夹',
+  });
+  if (result.canceled || result.filePaths.length === 0) return null;
+  return result.filePaths[0];
+});
+
+// 技能导入：选择一个 SKILL.md 文件（区别于上面的目录选择）。文件夹导入复用
+// show-directory-picker；这里专门挑单个 .md 文件，过滤其它类型。
+ipcMain.handle('show-skill-file-picker', async () => {
+  const focusedWindow = BrowserWindow.getFocusedWindow();
+  if (!focusedWindow) return null;
+  const result = await dialog.showOpenDialog(focusedWindow, {
+    properties: ['openFile'],
+    title: '选择 SKILL.md',
+    filters: [{ name: 'SKILL.md', extensions: ['md'] }],
   });
   if (result.canceled || result.filePaths.length === 0) return null;
   return result.filePaths[0];

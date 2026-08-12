@@ -292,16 +292,26 @@ describe('buildSpawnEnv', () => {
     const isWindows = process.platform === 'win32';
     let savedHome: string | undefined;
     let savedUserProfile: string | undefined;
+    let savedLocalAppData: string | undefined;
+    let savedAppData: string | undefined;
     let tmpHome: string;
 
     beforeEach(() => {
+      tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-env-test-'));
       if (isWindows) {
         savedUserProfile = process.env['USERPROFILE'];
-        tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-env-test-'));
         process.env['USERPROFILE'] = tmpHome;
+        // augmentPath also scans %LOCALAPPDATA%\Programs\Python and
+        // %APPDATA%\Python for globally/`--user`-installed CLIs (docling).
+        // Point them under the empty tmp home too, otherwise a real Python
+        // install on the host machine leaks into PATH and breaks the
+        // "should not add dirs that do not exist" assertion.
+        savedLocalAppData = process.env['LOCALAPPDATA'];
+        savedAppData = process.env['APPDATA'];
+        process.env['LOCALAPPDATA'] = path.join(tmpHome, 'AppData', 'Local');
+        process.env['APPDATA'] = path.join(tmpHome, 'AppData', 'Roaming');
       } else {
         savedHome = process.env['HOME'];
-        tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-env-test-'));
         process.env['HOME'] = tmpHome;
       }
     });
@@ -310,6 +320,10 @@ describe('buildSpawnEnv', () => {
       if (isWindows) {
         if (savedUserProfile !== undefined) process.env['USERPROFILE'] = savedUserProfile;
         else delete process.env['USERPROFILE'];
+        if (savedLocalAppData !== undefined) process.env['LOCALAPPDATA'] = savedLocalAppData;
+        else delete process.env['LOCALAPPDATA'];
+        if (savedAppData !== undefined) process.env['APPDATA'] = savedAppData;
+        else delete process.env['APPDATA'];
       } else {
         if (savedHome !== undefined) process.env['HOME'] = savedHome;
         else delete process.env['HOME'];
@@ -356,8 +370,28 @@ describe('buildSpawnEnv', () => {
       );
     });
 
+    it('should add Windows per-user Python Scripts dirs to PATH', { skip: !isWindows ? 'Windows Python layout' : undefined }, () => {
+      // python.org / MS-Store layout: %LOCALAPPDATA%\Programs\Python\Python3xx\Scripts
+      // A globally/`--user`-installed docling lives here but is NOT on the
+      // system PATH — augmentPath must discover it via a dir scan so the
+      // spawned agent can find it.
+      const pyScripts = path.join(
+        process.env['LOCALAPPDATA'] as string, 'Programs', 'Python', 'Python312', 'Scripts',
+      );
+      fs.mkdirSync(pyScripts, { recursive: true });
+
+      const def = makeDef({ id: 'generic' });
+      const env = buildSpawnEnv(def, { Path: 'C:\\Windows\\System32' });
+
+      assert.ok(
+        (env['Path'] ?? '').toLowerCase().includes(pyScripts.toLowerCase()),
+        `Path should contain per-user Python Scripts, got: ${env['Path']}`,
+      );
+    });
+
     it('should not add dirs that do not exist', () => {
-      // No ~/.molio/venv or ~/.local/bin created → PATH unchanged
+      // No ~/.molio/venv, ~/.local/bin, or per-user Python Scripts created
+      // (LOCALAPPDATA/APPDATA point at the empty tmp home) → PATH unchanged.
       const def = makeDef({ id: 'generic' });
       const env = buildSpawnEnv(def, { PATH: '/usr/bin' });
 

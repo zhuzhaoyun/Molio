@@ -1,5 +1,7 @@
 # 预下载 Windows 健壮性修复复盘（2026-07-29 ~ 07-30）
 
+> ⚠️ **2026-08 更新**：remotion 已不再是内置技能，其预下载连同 npm 注册表回退那一整套（`runWithRegistryFallback` / `remotionScaffoldCmd` 等）**已全部移除**，视频创作改由技能商店 `am-will/remotion` 按需安装、首次使用现装依赖。预下载现在只剩 **docling**。本文作为历史复盘保留——其中 remotion / npm 侧的结论只反映当时实现，docling / pip / Windows 进程侧的经验仍然有效。
+
 > 分支：`feat/dependency-preload`（已推送 `origin`，未开 PR）
 > 配对文档：操作/清理侧见 [`preload-cleanup.md`](./preload-cleanup.md)；本文是**调试与修复复盘**侧。
 > 涉及 commit：`67a9638` → `9a2b5c8` → `36cdeac` → `450ac7c`（基于 `8504b4f`）。
