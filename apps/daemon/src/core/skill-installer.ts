@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ThrottledWarn } from './throttled-warn.js';
+import { isAlreadySynced, mirrorDirIfChanged } from './skills/dirsync.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -23,8 +24,15 @@ export function resetSkillWarnState(): void {
   skillWarn.reset();
 }
 
-/** Built-in skills shipped with Molio. */
-const BUILTIN_SKILLS = [
+/**
+ * Bundled skills shipped with Molio. These are the real "skills" users see and
+ * toggle in the skill library UI (kind='bundled' in the `skills` table). Their
+ * content is multi-file and lives under `tools/skills/<slug>/`; the whole
+ * directory is synced to `<vault>/.claude/skills/<slug>/` (plain name, no
+ * `molio--` prefix — wiki-save references wiki-build/scripts by path, and the
+ * CLAUDE.md rules below reference these skills by name).
+ */
+export const BUILTIN_SKILLS = [
   'wechat-article-extractor',
   // docling replaces the old docx/pdf/pptx/xlsx skills — one unified skill for
   // all office→markdown conversions (GPU-accelerated OCR + layout + tables).
@@ -40,11 +48,44 @@ const BUILTIN_SKILLS = [
   // injection (silently dropped by the CLI): retrieval now lives in an on-demand
   // skill, triggered by the always-on CLAUDE.md rule below + the KB qa panel.
   'wiki-query',
-  // Remotion — programmatic video creation in React/TypeScript, rendered to
-  // MP4. Used by the /remotion command to scaffold video projects, animate
-  // with interpolate/spring, sequence scenes, add audio/captions, and render.
+  // NOTE: remotion used to be bundled here. It was retired (see
+  // RETIRED_BUNDLED_SKILLS): users who want video creation install the
+  // third-party `am-will/remotion` skill from the skill hub instead — a
+  // regular toggleable/deletable library skill, no app-owned preload.
+];
+
+/**
+ * Bundled skills that Molio no longer ships but that may still exist in
+ * vaults synced by older versions. They are listed here (in addition to being
+ * deleted from the `skills` table on startup — see builtin.ts) so
+ * reconcileVault can include them in the MANAGED set passed to
+ * reconcileBundledSync: step 3 then removes the stale `<vault>/.claude/skills/<slug>/`
+ * copy — but only with the usual byte-for-byte ownership proof, which is why
+ * the shipped source directory (`tools/skills/<slug>/`) is deliberately KEPT
+ * in the app resources even though nothing installs from it anymore.
+ */
+export const RETIRED_BUNDLED_SKILLS = [
+  // Video creation moved to the skill hub's `am-will/remotion` (installed as a
+  // normal library skill on demand). The bundled Molio-customized variant (CN
+  // browser preflight, trigger-word rule) is no longer maintained in-app, and
+  // its npm-dependency preload was removed along with it — first use installs
+  // deps on the spot (the hub skill's own preflight covers that).
   'remotion',
 ];
+
+/**
+ * True if `dir` actually holds the shipped built-in skills (rather than being
+ * some unrelated directory that happens to be named "skills"). We probe for a
+ * known built-in skill's SKILL.md as the marker.
+ *
+ * This guard matters because `src/core/skills/` is ALSO a source-code module
+ * (the user skill library) that compiles to `dist/src/core/skills/`. A bare
+ * existence check on a "skills" directory would mistake that module dir for the
+ * packaged built-in skills dir and silently install nothing.
+ */
+function isBuiltinSkillsDir(dir: string): boolean {
+  return fs.existsSync(path.join(dir, 'wechat-article-extractor', 'SKILL.md'));
+}
 
 /**
  * Resolve the source directory for built-in skills.
@@ -52,80 +93,23 @@ const BUILTIN_SKILLS = [
  * In prod (tsc): __dirname = dist/src/core/ → need to go to project root then src/tools/skills/
  * In packaged Electron: daemon.mjs runs from resources/daemon/, skills at resources/daemon/skills/
  */
-function resolveSkillsSourceDir(): string {
+export function resolveSkillsSourceDir(): string {
   // Dev mode: __dirname is src/core/, skills are at src/tools/skills/
   const devCandidate = path.join(__dirname, '..', 'tools', 'skills');
-  if (fs.existsSync(devCandidate)) return devCandidate;
+  if (isBuiltinSkillsDir(devCandidate)) return devCandidate;
 
   // Packaged Electron: daemon.mjs is at resources/daemon/daemon.mjs
   // but __dirname resolves to resources/daemon/ (the script's directory).
   // Skills are copied to resources/daemon/skills/ by prepare-resources.mjs.
   const packagedCandidate = path.join(__dirname, 'skills');
-  if (fs.existsSync(packagedCandidate)) return packagedCandidate;
+  if (isBuiltinSkillsDir(packagedCandidate)) return packagedCandidate;
 
   // Prod mode (tsc): __dirname is dist/src/core/, skills source is at ../../src/tools/skills/
   // (go up from dist/src/core → dist/src → dist → project root → src/tools/skills)
   const prodCandidate = path.join(__dirname, '..', '..', '..', 'src', 'tools', 'skills');
-  if (fs.existsSync(prodCandidate)) return prodCandidate;
+  if (isBuiltinSkillsDir(prodCandidate)) return prodCandidate;
 
   return devCandidate;
-}
-
-/**
- * Recursively copy a directory, skipping if destination already exists (idempotent).
- */
-/**
- * Read the version from a skill's SKILL.md file.
- * Returns null if the file doesn't exist or has no version field.
- */
-function readSkillVersion(skillDir: string): string | null {
-  const skillMd = path.join(skillDir, 'SKILL.md');
-  if (!fs.existsSync(skillMd)) return null;
-
-  const content = fs.readFileSync(skillMd, 'utf-8');
-  const match = content.match(/^version:\s*(.+)$/m);
-  return match && match[1] ? match[1].trim() : null;
-}
-
-/**
- * Check if the destination skill is out of date relative to the source.
- *
- * - dest missing → install
- * - source unversioned → can't reason about staleness, skip (leave dest as-is)
- * - dest unversioned but source versioned → dest predates versioning, update
- *   (this is what lets a newly-versioned skill propagate to existing vaults;
- *   without it, a skill that gained a `version:` field later would never reach
- *   vaults that already had an older version-less copy installed)
- * - both versioned → update iff versions differ
- */
-function shouldUpdateSkill(srcDir: string, destDir: string): boolean {
-  if (!fs.existsSync(destDir)) return true; // dest doesn't exist, need to install
-
-  const srcVersion = readSkillVersion(srcDir);
-  const destVersion = readSkillVersion(destDir);
-
-  if (!srcVersion) return false; // source unversioned — can't reason, assume up-to-date
-  if (!destVersion) return true; // dest predates versioning — update to versioned copy
-
-  return srcVersion !== destVersion;
-}
-
-/**
- * Recursively copy a directory, overwriting files to keep them in sync.
- */
-function copyDirSync(src: string, dest: string): void {
-  fs.mkdirSync(dest, { recursive: true });
-
-  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
-    const srcPath = path.join(src, entry.name);
-    const destPath = path.join(dest, entry.name);
-
-    if (entry.isDirectory()) {
-      copyDirSync(srcPath, destPath);
-    } else {
-      fs.copyFileSync(srcPath, destPath);
-    }
-  }
 }
 
 /**
@@ -137,7 +121,7 @@ function copyDirSync(src: string, dest: string): void {
  * their original contents). User-created skills with the same name in other
  * directories are unaffected.
  */
-const DEPRECATED_SKILLS = [
+export const DEPRECATED_SKILLS = [
   // v1.1.0: docling replaces the old docx/pdf/pptx/xlsx skills. docling handles
   // all office formats with GPU-accelerated OCR + layout + tables, producing much
   // higher quality markdown than the old skills (which taught the agent to
@@ -236,16 +220,18 @@ const WEB_FETCH_BLOCK = [
 const REMOTION_RULE_SENTINEL = '<!-- molio:remotion-preference -->';
 
 /**
- * Rule that forces the agent to use the `remotion` skill for video creation
- * instead of reaching for moviepy/manim/Python video libraries. Without this,
- * the agent defaults to "I'll stitch frames with Python" even though the
- * remotion skill is installed — the skill description alone is not enough to
- * override the agent's general-knowledge default (the same reason docling
- * needs a hard rule to win over legacy office skills). CLAUDE.md is loaded as
- * system prompt, so it overrides skill-description-based selection.
+ * RETIRED: the remotion skill is no longer bundled (see RETIRED_BUNDLED_SKILLS),
+ * so this rule's gateSlug ('remotion') is never in any vault's effective set and
+ * ensureMolioRules REMOVES the block (by sentinel) from every vault it
+ * reconciles. The entry + exact block text are deliberately KEPT: removal of
+ * legacy single-sentinel blocks compares against rule.block, and deleting the
+ * entry would both leave stale rules in user vaults forever and force the
+ * unknowable-extent fallback that can eat user content after the block.
  *
- * Kept short on purpose: the agent already knows how to make videos; this rule
- * only encodes the behavioral default (use remotion, not Python video libs).
+ * Original purpose (for context): force the agent to use the `remotion` skill
+ * for video creation instead of moviepy/manim/Python video libraries — the
+ * skill description alone doesn't override the agent's general-knowledge
+ * default (same reason docling needs a hard rule over legacy office skills).
  */
 const REMOTION_RULE_BLOCK = [
   REMOTION_RULE_SENTINEL,
@@ -270,7 +256,7 @@ const WIKI_QUERY_RULE_SENTINEL = '<!-- molio:wiki-query-preference -->';
  * environments (verified: the appended frame never reached the model, so vault
  * Q&A was answered purely from memory, ignoring the built wiki). CLAUDE.md is
  * loaded natively by the CLI and reliably reaches the model (same channel as
- * the docling/remotion rules above), so the retrieval instruction actually lands.
+ * the docling rule above), so the retrieval instruction actually lands.
  *
  * Deliberately ONLY a trigger policy (when to retrieve + that reading the cheap
  * root index IS the relevance check + the exemption list). The HOW (drill-down
@@ -301,26 +287,112 @@ const WIKI_QUERY_RULE_BLOCK = [
  * All Molio-managed rule blocks injected into every vault's .claude/CLAUDE.md.
  * Each has a unique sentinel so injection is idempotent and individual rules
  * can be revised later without re-injecting stale copies.
+ *
+ * `gateSlug` ties a rule to a bundled skill: the rule is present only while that
+ * skill is effective in the vault, and removed (by sentinel) when it's toggled
+ * off. Rules without a gate (env-self-heal, web-fetch) are always on.
  */
-const MOILIO_RULES: Array<{ sentinel: string; block: string; label: string }> = [
-  { sentinel: DOCLING_RULE_SENTINEL, block: DOCLING_RULE_BLOCK, label: 'docling preference' },
+const MOILIO_RULES: Array<{ sentinel: string; block: string; label: string; gateSlug?: string }> = [
+  { sentinel: DOCLING_RULE_SENTINEL, block: DOCLING_RULE_BLOCK, label: 'docling preference', gateSlug: 'docling' },
   { sentinel: ENV_SELF_HEAL_SENTINEL, block: ENV_SELF_HEAL_BLOCK, label: 'environment self-heal' },
-  { sentinel: REMOTION_RULE_SENTINEL, block: REMOTION_RULE_BLOCK, label: 'remotion preference' },
+  // Retired — gateSlug never effective anymore; the entry survives only so the
+  // block is removed (by sentinel) from vaults that still carry it. See the
+  // REMOTION_RULE_BLOCK comment.
+  { sentinel: REMOTION_RULE_SENTINEL, block: REMOTION_RULE_BLOCK, label: 'remotion preference (retired)', gateSlug: 'remotion' },
   { sentinel: WEB_FETCH_SENTINEL, block: WEB_FETCH_BLOCK, label: 'web fetch preference' },
-  { sentinel: WIKI_QUERY_RULE_SENTINEL, block: WIKI_QUERY_RULE_BLOCK, label: 'wiki-query preference' },
+  { sentinel: WIKI_QUERY_RULE_SENTINEL, block: WIKI_QUERY_RULE_BLOCK, label: 'wiki-query preference', gateSlug: 'wiki-query' },
 ];
 
+/** Closing sentinel of a rule block: `<!-- molio:x -->` → `<!-- /molio:x -->`. */
+function endSentinelOf(sentinel: string): string {
+  return sentinel.replace(/^<!--\s*/, '<!-- /');
+}
+
+/** The full wrapped block text as written into CLAUDE.md (BEGIN…body…END). */
+function wrapRule(rule: { sentinel: string; block: string }): string {
+  return `${rule.block}\n${endSentinelOf(rule.sentinel)}`;
+}
+
+/** Index of the nearest OTHER rule's sentinel at/after `from`, or -1. */
+function nextOtherSentinelIndex(content: string, sentinel: string, from: number): number {
+  let next = -1;
+  for (const other of MOILIO_RULES) {
+    if (other.sentinel === sentinel) continue;
+    const idx = content.indexOf(other.sentinel, from);
+    if (idx >= 0 && (next < 0 || idx < next)) next = idx;
+  }
+  return next;
+}
+
+interface RuleExtent {
+  /** Start of the sentinel's line. */
+  start: number;
+  /** Exclusive end (includes the END sentinel line's trailing newline). */
+  end: number;
+  /** True when the block carries the new BEGIN/END wrapping. */
+  wrapped: boolean;
+}
+
 /**
- * Ensure the vault's .claude/CLAUDE.md contains the latest version of all
- * Molio-managed rule blocks. Each rule is identified by a sentinel comment.
+ * Locate a rule's block in `content`.
  *
- * - If a rule's sentinel is already present, its block is REPLACED in place
- *   with the current content (so we can revise rules across Molio versions
- *   without leaving stale copies behind).
- * - If a rule's sentinel is absent, the block is APPENDED to the end.
- * - User content before the first Molio sentinel is never touched.
+ * New format: BEGIN sentinel … END sentinel (`<!-- /molio:x -->`) — the extent
+ * is exactly those lines, so removal/replacement can never touch content the
+ * user wrote after the block.
+ *
+ * Legacy format (single sentinel, written by pre-dual-sentinel builds): the
+ * extent runs from the sentinel to the start of the nearest OTHER sentinel (or
+ * EOF). Callers use that knowledge to migrate conservatively (see
+ * ensureMolioRules) instead of blindly re-applying the old semantics.
  */
-function ensureMolioRules(claudeDir: string): void {
+function findRuleExtent(content: string, sentinel: string): RuleExtent | null {
+  const startIdx = content.indexOf(sentinel);
+  if (startIdx < 0) return null;
+  const start = content.lastIndexOf('\n', startIdx) + 1; // 0 when on first line
+  const afterBegin = startIdx + sentinel.length;
+
+  const endIdx = content.indexOf(endSentinelOf(sentinel), afterBegin);
+  const nextBegin = nextOtherSentinelIndex(content, sentinel, afterBegin);
+  if (endIdx >= 0 && (nextBegin < 0 || endIdx < nextBegin)) {
+    const lineEnd = content.indexOf('\n', endIdx);
+    return { start, end: lineEnd < 0 ? content.length : lineEnd + 1, wrapped: true };
+  }
+
+  // Legacy: sentinel → nearest other sentinel (or EOF).
+  return { start, end: nextBegin < 0 ? content.length : nextBegin, wrapped: false };
+}
+
+/**
+ * Ensure the vault's .claude/CLAUDE.md reflects the effective set of Molio rule
+ * blocks. Each rule is wrapped in BEGIN/END sentinel comments:
+ *
+ *     <!-- molio:x-preference -->        ← BEGIN (the rule.sentinel)
+ *     ## …rule body…
+ *     <!-- /molio:x-preference -->       ← END
+ *
+ * - A rule is ACTIVE when it has no gate, or its `gateSlug` is in
+ *   `effectiveBundledSlugs`. (Passing no set treats every rule as active — the
+ *   pre-per-vault behavior.)
+ * - Active + block present → block REPLACED in place (revise across versions).
+ * - Active + block absent → block APPENDED.
+ * - Inactive + block present → block REMOVED (skill toggled off in this vault).
+ *
+ * Because removal/replacement operate on the exact BEGIN..END extent, content
+ * the user wrote AFTER (or between) blocks is never touched — the old
+ * sentinel-to-next-sentinel extent silently deleted whatever followed the last
+ * block when a gated rule (e.g. wiki-query) was toggled off.
+ *
+ * LEGACY MIGRATION: blocks written by pre-dual-sentinel builds carry only the
+ * BEGIN sentinel; their extent is unknowable in general (it used to run to the
+ * next sentinel / EOF). Migration is conservative:
+ *  - stored text equals/starts with the CURRENT rule.block → the boundary is
+ *    provable: wrap the block and KEEP everything after it;
+ *  - anything else (older revision, unknown additions) → replace/remove the
+ *    whole legacy extent, i.e. exactly the pre-migration behavior, one last
+ *    time. Either way the file converges to the wrapped format, after which
+ *    user content anywhere is safe.
+ */
+export function ensureMolioRules(claudeDir: string, effectiveBundledSlugs?: Set<string>): void {
   const claudeMd = path.join(claudeDir, 'CLAUDE.md');
 
   try {
@@ -332,40 +404,72 @@ function ensureMolioRules(claudeDir: string): void {
     }
 
     let changed = false;
+    const isActive = (rule: { gateSlug?: string }): boolean =>
+      !rule.gateSlug || (effectiveBundledSlugs?.has(rule.gateSlug) ?? true);
 
-    // Process in reverse order so appending later rules doesn't shift the
-    // position of earlier sentinels we haven't processed yet.
-    for (let i = MOILIO_RULES.length - 1; i >= 0; i--) {
-      const rule = MOILIO_RULES[i];
-      if (!rule) continue;
-      const sentinelIdx = content.indexOf(rule.sentinel);
+    // Each pass re-searches `content`, so operating rule-by-rule in array order
+    // is safe regardless of appends/removals shifting positions.
+    for (const rule of MOILIO_RULES) {
+      const extent = findRuleExtent(content, rule.sentinel);
+      const wrapped = wrapRule(rule);
+      const replacement = `${wrapped}\n`;
 
-      if (sentinelIdx >= 0) {
-        // Sentinel found — replace the existing block in place.
-        // Block runs from the sentinel to the start of the next sentinel
-        // (or end of file if this is the last rule).
-        const afterSentinel = content.slice(sentinelIdx + rule.sentinel.length);
-        let blockEnd = content.length;
-        for (const other of MOILIO_RULES) {
-          if (other.sentinel === rule.sentinel) continue;
-          const otherIdx = afterSentinel.indexOf(other.sentinel);
-          if (otherIdx >= 0 && sentinelIdx + rule.sentinel.length + otherIdx < blockEnd) {
-            blockEnd = sentinelIdx + rule.sentinel.length + otherIdx;
-          }
+      if (!isActive(rule)) {
+        if (!extent) continue;
+        const rangeText = content.slice(extent.start, extent.end);
+        if (extent.wrapped || rangeText.trimEnd() === rule.block) {
+          // Precise removal: wrapped extent is exact; an unambiguous legacy
+          // block (identical to the current one) covers exactly its extent.
+          content = content.slice(0, extent.start) + content.slice(extent.end);
+          changed = true;
+        } else if (rangeText.startsWith(rule.block)) {
+          // Unrevised legacy block with trailing content (typically user text
+          // appended after the LAST block): strip only the block's own lines —
+          // the old extent removal would have deleted the trailing content too.
+          let prefixEnd = extent.start + rule.block.length;
+          while (content[prefixEnd] === '\n' || content[prefixEnd] === '\r') prefixEnd++;
+          content = content.slice(0, extent.start) + content.slice(prefixEnd);
+          changed = true;
+        } else {
+          // Revised legacy block — boundary between old block text and any
+          // extras is unknowable; fall back to the legacy extent removal.
+          content = content.slice(0, extent.start) + content.slice(extent.end);
+          changed = true;
         }
+        continue;
+      }
 
-        // Trim any trailing whitespace from the old block before replacing
-        const oldBlock = content.slice(sentinelIdx, blockEnd).trimEnd();
-        const newBlock = rule.block;
-        if (oldBlock === newBlock) continue; // already up to date
+      if (!extent) {
+        content = content.trimEnd()
+          ? `${content.trimEnd()}\n\n${replacement}`
+          : replacement;
+        changed = true;
+        continue;
+      }
 
-        content = content.slice(0, sentinelIdx) + newBlock + '\n' + content.slice(blockEnd);
+      const oldText = content.slice(extent.start, extent.end);
+      if (extent.wrapped) {
+        if (oldText.trimEnd() === wrapped) continue; // already up to date
+        content = content.slice(0, extent.start) + replacement + content.slice(extent.end);
+        changed = true;
+        continue;
+      }
+
+      // Legacy block, rule active: migrate into the wrapped format.
+      if (oldText.trimEnd() === rule.block) {
+        // Clean: stored block equals the current revision, nothing extra.
+        content = content.slice(0, extent.start) + replacement + content.slice(extent.end);
+        changed = true;
+      } else if (oldText.startsWith(rule.block)) {
+        // Unrevised block + trailing content: wrap the block, KEEP the rest
+        // (the old replace-the-extent path would have silently deleted it).
+        const rest = oldText.slice(rule.block.length).replace(/^[\r\n]+/, '');
+        content = content.slice(0, extent.start) + (rest ? `${wrapped}\n\n${rest}` : replacement) + content.slice(extent.end);
         changed = true;
       } else {
-        // Sentinel not found — append this rule at the end.
-        content = content.trimEnd()
-          ? `${content.trimEnd()}\n\n${rule.block}\n`
-          : `${rule.block}\n`;
+        // Drift (older revision ± unknown additions): boundary unknowable —
+        // replace the whole legacy extent, as the pre-migration code did.
+        content = content.slice(0, extent.start) + replacement + content.slice(extent.end);
         changed = true;
       }
     }
@@ -385,23 +489,43 @@ function ensureMolioRules(claudeDir: string): void {
   }
 }
 
+export interface BundledSyncOpts {
+  /** Injectable source dir for tests; defaults to resolveSkillsSourceDir(). */
+  sourceDir?: string;
+}
+
 /**
- * Install all built-in Molio skills into the given vault path.
- * Safe to call multiple times — existing skills are skipped.
- * Also removes any deprecated skills from previous versions so the agent
- * doesn't see overlapping skill choices.
+ * Reconcile a vault's `<vault>/.claude/skills/` for the DB-registered bundled
+ * skills, driven entirely by the effective/managed sets computed from the
+ * `skills` table (vault-config.ts):
  *
- * @param vaultPath - Absolute path to the vault root directory
+ *  1. install/update every EFFECTIVE bundled slug (whole directory — these
+ *     skills are multi-file and SKILL.md depends on its siblings);
+ *  2. remove every MANAGED-but-not-effective slug's directory (a bundled skill
+ *     toggled off, globally or for this vault). Removal demands OWNERSHIP
+ *     PROOF — the dir must byte-for-byte mirror Molio's own source for that
+ *     slug — so a user's own same-named skill (which always has a SKILL.md of
+ *     its own) is never deleted;
+ *  3. clean up deprecated skills from previous Molio versions (unconditional);
+ *  4. converge the .claude/CLAUDE.md rule blocks to the effective set.
+ *
+ * `managedSlugs` is the universe of bundled slugs the DB knows about; removal
+ * only ever applies within it. A directory whose slug is NOT in `managedSlugs`
+ * (e.g. a user's own `wiki-query`, or a bundled skill not yet seeded in a test
+ * DB) is left strictly alone — this is the red line vault-config.test.ts guards.
  */
-export function installBuiltinSkills(vaultPath: string): void {
-  const sourceDir = resolveSkillsSourceDir();
-
-  if (!fs.existsSync(sourceDir)) {
-    skillWarn.warn(`source-dir:${sourceDir}`, `[skill-installer] Skills source directory not found: ${sourceDir}`);
-    return;
-  }
-
+export function reconcileBundledSync(
+  effectiveSlugs: Set<string>,
+  managedSlugs: Set<string>,
+  vaultPath: string,
+  opts?: BundledSyncOpts,
+): void {
+  const sourceDir = opts?.sourceDir ?? resolveSkillsSourceDir();
   const claudeSkillsDir = path.join(vaultPath, '.claude', 'skills');
+  const sourceExists = fs.existsSync(sourceDir);
+  if (!sourceExists) {
+    skillWarn.warn(`source-dir:${sourceDir}`, `[skill-installer] Skills source directory not found: ${sourceDir}`);
+  }
 
   // --- Step 1: remove deprecated skills from previous Molio versions -------
   if (fs.existsSync(claudeSkillsDir)) {
@@ -432,32 +556,59 @@ export function installBuiltinSkills(vaultPath: string): void {
     }
   }
 
-  // --- Step 2: install current built-in skills -----------------------------
-  for (const skillName of BUILTIN_SKILLS) {
-    const skillSrc = path.join(sourceDir, skillName);
-    const skillDest = path.join(claudeSkillsDir, skillName);
+  // --- Step 2: install/update effective bundled skills ---------------------
+  if (sourceExists) {
+    for (const skillName of effectiveSlugs) {
+      const skillSrc = path.join(sourceDir, skillName);
+      const skillDest = path.join(claudeSkillsDir, skillName);
 
-    if (!fs.existsSync(skillSrc)) {
-      skillWarn.warn(`skill-src:${skillSrc}`, `[skill-installer] Skill source not found: ${skillSrc}`);
+      if (!fs.existsSync(skillSrc)) {
+        skillWarn.warn(`skill-src:${skillSrc}`, `[skill-installer] Skill source not found: ${skillSrc}`);
+        continue;
+      }
+
+      try {
+        // Content-hash mirror (dirsync): installs when missing, updates on any
+        // drift (version bump, edited/corrupted dest), no-op when already in
+        // sync — same convergence guarantees as library/core skill sync.
+        if (mirrorDirIfChanged(skillSrc, skillDest)) {
+          console.log(`[skill-installer] Installed/updated skill "${skillName}" → ${skillDest}`);
+        }
+      } catch (err) {
+        console.error(
+          `[skill-installer] Failed to install skill "${skillName}":`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+  }
+
+  // --- Step 3: remove managed bundled skills that are no longer effective --
+  for (const skillName of managedSlugs) {
+    if (effectiveSlugs.has(skillName)) continue;
+    const skillDest = path.join(claudeSkillsDir, skillName);
+    if (!fs.existsSync(skillDest)) continue;
+    // Ownership PROOF, not guesswork: the old "has a SKILL.md" guard was
+    // inverted — a user's own same-named skill ALWAYS has a SKILL.md, so it
+    // would be rm -rf'd the moment the bundled skill toggled off. Only delete
+    // when the dir byte-for-byte mirrors Molio's source for this slug (which a
+    // user-authored skill cannot). Without a readable source we cannot prove
+    // ownership → skip deletion and let the dir stay.
+    const skillSrc = path.join(sourceDir, skillName);
+    if (!sourceExists || !fs.existsSync(skillSrc) || !isAlreadySynced(skillSrc, skillDest)) {
       continue;
     }
-
     try {
-      if (shouldUpdateSkill(skillSrc, skillDest)) {
-        copyDirSync(skillSrc, skillDest);
-        console.log(`[skill-installer] Installed/updated skill "${skillName}" → ${skillDest}`);
-      }
+      fs.rmSync(skillDest, { recursive: true, force: true });
+      console.log(`[skill-installer] Removed disabled skill "${skillName}"`);
     } catch (err) {
       console.error(
-        `[skill-installer] Failed to install skill "${skillName}":`,
+        `[skill-installer] Failed to remove disabled skill "${skillName}":`,
         err instanceof Error ? err.message : err,
       );
     }
   }
 
-  // --- Step 3: inject Molio rules into .claude/CLAUDE.md -------------------
-  // (a) prefer docling over legacy office skills
-  // (b) auto-install missing runtimes (node/python/etc.) instead of bailing
-  // See ensureMolioRules.
-  ensureMolioRules(path.join(vaultPath, '.claude'));
+  // --- Step 4: converge .claude/CLAUDE.md rule blocks to the effective set --
+  ensureMolioRules(path.join(vaultPath, '.claude'), effectiveSlugs);
 }

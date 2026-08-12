@@ -134,12 +134,79 @@ function migrate(db: SqliteDb): void {
     CREATE INDEX IF NOT EXISTS idx_kb_history_vault
       ON kb_history(vault_id, created_at DESC);
 
+    -- Global skill library: metadata + the master switch (replaces the old
+    -- ~/.molio/skills/manifest.json). kind: 'bundled' (multi-file, shipped) |
+    -- 'library' (single-file, user-managed). core=1 marks the writing trio --
+    -- hidden, always-on, not configurable (exempt from the enabled switch).
+    -- A skill body stays a file; this table only holds config.
+    CREATE TABLE IF NOT EXISTS skills (
+      id          TEXT PRIMARY KEY,
+      name        TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      kind        TEXT NOT NULL DEFAULT 'library',
+      core        INTEGER NOT NULL DEFAULT 0,
+      built_in    INTEGER NOT NULL DEFAULT 0,
+      enabled     INTEGER NOT NULL DEFAULT 1,
+      created_at  INTEGER NOT NULL,
+      updated_at  INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS kv (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL,
       updated_at INTEGER NOT NULL
     );
+
+    -- Skill-hub (skillhub.cn) install registry: which hub skills are installed
+    -- and which local skill row they became. Identity is (namespace, slug) —
+    -- hub slugs are NOT globally unique, same-slug skills from different
+    -- namespaces coexist. Lets the store UI show an "installed/update" state
+    -- and lets reinstall refresh the same skill id in place (keeping the
+    -- master-switch state). Deleting the skill row removes the mapping
+    -- (routes/skills.ts DELETE handler).
+    CREATE TABLE IF NOT EXISTS hub_skill_installs (
+      slug         TEXT NOT NULL,
+      skill_id     TEXT NOT NULL,
+      version      TEXT NOT NULL DEFAULT '',
+      namespace    TEXT NOT NULL DEFAULT '',
+      installed_at INTEGER NOT NULL,
+      updated_at   INTEGER NOT NULL,
+      PRIMARY KEY (namespace, slug)
+    );
   `);
+
+  // hub_skill_installs was first shipped (pre-release) with slug alone as the
+  // PRIMARY KEY; rebuild it with the composite (namespace, slug) PK while
+  // preserving rows. Detection: in the old schema namespace carries pk=0.
+  const hubCols = db.prepare('PRAGMA table_info(hub_skill_installs)').all() as Array<{ name: string; pk: number }>;
+  const hubNsCol = hubCols.find((c) => c.name === 'namespace');
+  if (hubNsCol && hubNsCol.pk === 0) {
+    // All-or-nothing: better-sqlite3 autocommits each exec statement, so a
+    // crash mid-rebuild used to strand the registry — rows orphaned in
+    // hub_skill_installs_new after a DROP-without-RENAME, or a leftover _new
+    // table making the next startup throw "table ... already exists" out of
+    // migrate(). Transaction rolls back cleanly; the DROP IF EXISTS makes a
+    // rerun after such a crash self-heal.
+    db.transaction(() => {
+      db.exec(`
+        DROP TABLE IF EXISTS hub_skill_installs_new;
+        CREATE TABLE hub_skill_installs_new (
+          slug         TEXT NOT NULL,
+          skill_id     TEXT NOT NULL,
+          version      TEXT NOT NULL DEFAULT '',
+          namespace    TEXT NOT NULL DEFAULT '',
+          installed_at INTEGER NOT NULL,
+          updated_at   INTEGER NOT NULL,
+          PRIMARY KEY (namespace, slug)
+        );
+        INSERT OR REPLACE INTO hub_skill_installs_new
+          (slug, skill_id, version, namespace, installed_at, updated_at)
+          SELECT slug, skill_id, version, namespace, installed_at, updated_at FROM hub_skill_installs;
+        DROP TABLE hub_skill_installs;
+        ALTER TABLE hub_skill_installs_new RENAME TO hub_skill_installs;
+      `);
+    })();
+  }
 
   addColumnIfMissing(db, 'conversations', 'channel_type', "TEXT NOT NULL DEFAULT 'desktop'");
   addColumnIfMissing(db, 'conversations', 'external_session_id', 'TEXT');

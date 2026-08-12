@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { useAgents } from './hooks/useAgents';
 import { useChat } from './hooks/useChat';
@@ -17,6 +17,8 @@ import type { Locale } from './i18n';
 import { api } from './api/client';
 import { useActiveVault, vaultStore } from './stores/vaultStore';
 import { messageSelectionStore } from './stores/messageSelectionStore';
+import { usePendingPrefill, skillPrefillStore } from './stores/skillPrefillStore';
+import { SkillEditor, type SkillFormValues } from './components/settings/SkillEditor';
 import './styles/rail.css';
 import './styles/home.css';
 import './styles/knowledge.css';
@@ -39,6 +41,30 @@ export default function App() {
   const [locale, setLocale] = useState<Locale>('zh');
   const [configLoaded, setConfigLoaded] = useState(false);
   const chat = useChat({ agentId: selectedAgent, cwd: activeVault?.path });
+
+  // "Save as skill" — assistant-message buttons push a prefill into the store;
+  // the fullscreen editor is hosted here (above the chat) to avoid prop-drilling.
+  const pendingPrefill = usePendingPrefill();
+  const [skillPrefillBusy, setSkillPrefillBusy] = useState(false);
+  const [skillPrefillError, setSkillPrefillError] = useState<string | null>(null);
+  const closePrefill = useCallback(() => {
+    skillPrefillStore.setPendingPrefill(null);
+    setSkillPrefillError(null);
+  }, []);
+  const savePrefillSkill = useCallback(async (values: SkillFormValues) => {
+    setSkillPrefillBusy(true);
+    setSkillPrefillError(null);
+    try {
+      await api.createSkill(values);
+      skillPrefillStore.setPendingPrefill(null);
+    } catch (err) {
+      // Keep the editor open with the values so the user can retry; surface the
+      // failure inline instead of swallowing it as an unhandled rejection.
+      setSkillPrefillError((err as Error).message);
+    } finally {
+      setSkillPrefillBusy(false);
+    }
+  }, []);
 
   // Persist current route on change
   useEffect(() => {
@@ -198,6 +224,15 @@ export default function App() {
         </div>
         <UpdateNotification />
         <PreloadToast />
+        <SkillEditor
+          show={pendingPrefill !== null}
+          mode="prefill"
+          prefillData={pendingPrefill}
+          busy={skillPrefillBusy}
+          externalError={skillPrefillError}
+          onClose={closePrefill}
+          onSave={savePrefillSkill}
+        />
       </div>
     </LanguageProvider>
   );
