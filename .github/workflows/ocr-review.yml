@@ -118,6 +118,15 @@ jobs:
 
       - name: Run OpenCodeReview
         id: review
+        env:
+          # Pass the PR title via an env var instead of inline ${{ }} expansion.
+          # Actions expands ${{ }} as plain text BEFORE the shell runs, so a title
+          # containing double quotes (e.g. `消除 ARMS "fetch failed" 自报噪音`,
+          # PR #206) breaks the shell quoting around --background: the leftover
+          # words become positional args and cobra rejects them with
+          # `unknown command "..." for "ocr review"`. Env vars are set by the
+          # runner without shell parsing, so any title characters are safe.
+          PR_TITLE: ${{ github.event.pull_request.title || github.event.issue.title }}
         run: |
           # Get base ref and head SHA from PR context (different for comment triggers)
           # Note: We use HEAD_SHA instead of origin/${HEAD_REF} to support fork PRs,
@@ -138,7 +147,7 @@ jobs:
             --to "${HEAD_SHA}" \
             --format json \
             --audience agent \
-            --background "${{ github.event.pull_request.title || github.event.issue.title }}" \
+            --background "${PR_TITLE}" \
             > /tmp/ocr-result.json 2>/tmp/ocr-stderr.log || true
 
           echo "OCR review completed. Output:"
