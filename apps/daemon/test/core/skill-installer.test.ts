@@ -171,30 +171,47 @@ describe('skill-installer migration', () => {
     );
   });
 
-  it('should inject remotion-preference rule into .claude/CLAUDE.md', () => {
+  it('retired remotion rule: never injected, and any legacy block is removed', () => {
+    // remotion is no longer a bundled skill (video creation moved to the skill
+    // hub's am-will/remotion), so its gateSlug is never in the effective set
+    // and ensureMolioRules must REMOVE the block instead of injecting it. The
+    // MOILIO_RULES entry survives precisely so legacy vaults get cleaned up.
+    const claudeDir = path.join(tmpVault, '.claude');
+    fs.mkdirSync(claudeDir, { recursive: true });
+    const claudeMd = path.join(claudeDir, 'CLAUDE.md');
+    // Simulate a vault that got the (wrapped) rule before the retirement,
+    // with user content AFTER the block that must survive the removal.
+    fs.writeFileSync(claudeMd, [
+      '# My Vault Rules',
+      '',
+      '<!-- molio:remotion-preference -->',
+      '## Video Creation — Always Use `remotion`',
+      '',
+      'When the user wants to make/create a video (介绍视频/宣传视频/产品视频/动画/motion graphic/intro/trailer/explainer),',
+      '**use the `remotion` skill** — do NOT reach for `moviepy`, `manim`, or Python video libraries.',
+      'This applies even when the source is wiki notes, articles, or scripts rather than code.',
+      '<!-- /molio:remotion-preference -->',
+      '',
+      'User notes written after the block.',
+    ].join('\n'), 'utf-8');
+
     installAll(tmpVault);
 
-    const content = fs.readFileSync(
-      path.join(tmpVault, '.claude', 'CLAUDE.md'),
-      'utf-8',
-    );
-    // Core directive: route video creation to the remotion skill, not Python
-    // video libraries. Without this rule the agent defaults to moviepy/ffmpeg
-    // even though the remotion skill is installed — same reason docling needs
-    // a hard rule to win over legacy office skills.
+    const content = fs.readFileSync(claudeMd, 'utf-8');
     assert.ok(
-      content.includes('remotion'),
-      'should mention the remotion skill',
+      !content.includes('<!-- molio:remotion-preference -->'),
+      'legacy remotion block must be removed by sentinel on reconcile',
     );
     assert.ok(
-      content.includes('moviepy') || content.includes('manim'),
-      'should explicitly call out the Python video libraries to avoid',
+      !content.includes('Video Creation — Always Use'),
+      'legacy remotion block body must not linger',
     );
-    // Chinese trigger types must be listed so 介绍视频/宣传视频-style requests
-    // route to the rule via keyword match in the system prompt.
+    // Only remotion was retired — everything else keeps working.
+    assert.ok(content.includes('docling'), 'docling rule must still be injected');
+    assert.ok(content.includes('My Vault Rules'), 'user content before the block must be preserved');
     assert.ok(
-      content.includes('介绍视频') || content.includes('宣传视频'),
-      'should list Chinese video-type triggers',
+      content.includes('User notes written after the block.'),
+      'user content after the removed block must be preserved',
     );
   });
 

@@ -24,7 +24,7 @@ src/
     db.ts              SQLite 数据库初始化
     transcript.ts      多轮对话 transcript 构建
     knowledge.ts       知识库管理（vault、文件树）
-    tools/skills/      Builtin Claude Code skills（wechat-article-extractor, docling, wiki-build/ingest/lint/save/query, remotion）—— wiki 操作走 skills，agent 按动词 on-demand 调用；知识库问答走 wiki-query skill（由 vault .claude/CLAUDE.md 常驻规则 + KB 面板确定性触发），不再有 system-prompt 注入。wiki-* 五件套（build/query/ingest/save/lint）同版本号共进：改任一 skill 时五个 version: 一起 bump 到同一版本（同步本身按内容哈希镜像到既有 vault，version 只作诊断/约定）
+    tools/skills/      Builtin Claude Code skills（wechat-article-extractor, docling, wiki-build/ingest/lint/save/query）—— wiki 操作走 skills，agent 按动词 on-demand 调用；知识库问答走 wiki-query skill（由 vault .claude/CLAUDE.md 常驻规则 + KB 面板确定性触发），不再有 system-prompt 注入。wiki-* 五件套（build/query/ingest/save/lint）同版本号共进：改任一 skill 时五个 version: 一起 bump 到同一版本（同步本身按内容哈希镜像到既有 vault，version 只作诊断/约定）。remotion 已退役（见 skill-installer.ts 的 RETIRED_BUNDLED_SKILLS）：视频创作改由技能商店 am-will/remotion 按需安装；本目录下的 remotion/ 源文件刻意保留，作为清理旧 vault 副本时的字节级权属证明
     runtimes/
       registry.ts      Agent 定义注册表 (claude, codex, gemini, qwen)
       claude.ts        Claude Code runtime 定义

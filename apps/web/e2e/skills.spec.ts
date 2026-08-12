@@ -12,10 +12,13 @@ import { gotoHome, clickNav } from './helpers/navigation';
  *
  * Prerequisites: `pnpm dev` running (daemon :3100, web :5173).
  * The panel lists USER (library) skills only: bundled skills (docling / wiki-* /
- * wechat-article-extractor / remotion) and the writing trio (core) are app-owned,
+ * wechat-article-extractor) and the writing trio (core) are app-owned,
  * hidden by the API, and always effective — so these tests assert their ABSENCE
  * and otherwise work with self-created skills. Tests that create skills delete
- * them again to avoid polluting the library.
+ * them again to avoid polluting the library. (remotion used to be bundled but
+ * was retired — users install the hub's am-will/remotion instead; a remotion
+ * row may legitimately exist on machines where it was hub-installed, so no
+ * absence assertion for it here.)
  *
  * Authoring is the three-field form (name / description / instructions); the
  * instructions box accepts a whole pasted SKILL.md and auto-extracts the

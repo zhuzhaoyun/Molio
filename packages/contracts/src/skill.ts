@@ -7,9 +7,9 @@
  * bundled skills ship their content under the app resources (`tools/skills/<id>/`).
  *
  * Three kinds:
- *  - `bundled`: multi-file skills shipped with Molio (docling / wiki-* / remotion /
- *    wechat). Shown + configurable. Synced whole-dir to `<vault>/.claude/skills/<id>/`
- *    (plain dir name, no `molio--` prefix).
+ *  - `bundled`: multi-file skills shipped with Molio (docling / wiki-* / wechat).
+ *    Hidden from the settings UI and always effective (app-owned). Synced whole-dir
+ *    to `<vault>/.claude/skills/<id>/` (plain dir name, no `molio--` prefix).
  *  - `library`: user-created/imported single-file skills. Shown + configurable.
  *    Synced to `<vault>/.claude/skills/molio--<id>/SKILL.md`.
  *  - core (`core: true`): the writing trio — Molio's core job. NOT shown, NOT

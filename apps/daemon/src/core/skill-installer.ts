@@ -48,9 +48,28 @@ export const BUILTIN_SKILLS = [
   // injection (silently dropped by the CLI): retrieval now lives in an on-demand
   // skill, triggered by the always-on CLAUDE.md rule below + the KB qa panel.
   'wiki-query',
-  // Remotion — programmatic video creation in React/TypeScript, rendered to
-  // MP4. Used by the /remotion command to scaffold video projects, animate
-  // with interpolate/spring, sequence scenes, add audio/captions, and render.
+  // NOTE: remotion used to be bundled here. It was retired (see
+  // RETIRED_BUNDLED_SKILLS): users who want video creation install the
+  // third-party `am-will/remotion` skill from the skill hub instead — a
+  // regular toggleable/deletable library skill, no app-owned preload.
+];
+
+/**
+ * Bundled skills that Molio no longer ships but that may still exist in
+ * vaults synced by older versions. They are listed here (in addition to being
+ * deleted from the `skills` table on startup — see builtin.ts) so
+ * reconcileVault can include them in the MANAGED set passed to
+ * reconcileBundledSync: step 3 then removes the stale `<vault>/.claude/skills/<slug>/`
+ * copy — but only with the usual byte-for-byte ownership proof, which is why
+ * the shipped source directory (`tools/skills/<slug>/`) is deliberately KEPT
+ * in the app resources even though nothing installs from it anymore.
+ */
+export const RETIRED_BUNDLED_SKILLS = [
+  // Video creation moved to the skill hub's `am-will/remotion` (installed as a
+  // normal library skill on demand). The bundled Molio-customized variant (CN
+  // browser preflight, trigger-word rule) is no longer maintained in-app, and
+  // its npm-dependency preload was removed along with it — first use installs
+  // deps on the spot (the hub skill's own preflight covers that).
   'remotion',
 ];
 
@@ -201,16 +220,18 @@ const WEB_FETCH_BLOCK = [
 const REMOTION_RULE_SENTINEL = '<!-- molio:remotion-preference -->';
 
 /**
- * Rule that forces the agent to use the `remotion` skill for video creation
- * instead of reaching for moviepy/manim/Python video libraries. Without this,
- * the agent defaults to "I'll stitch frames with Python" even though the
- * remotion skill is installed — the skill description alone is not enough to
- * override the agent's general-knowledge default (the same reason docling
- * needs a hard rule to win over legacy office skills). CLAUDE.md is loaded as
- * system prompt, so it overrides skill-description-based selection.
+ * RETIRED: the remotion skill is no longer bundled (see RETIRED_BUNDLED_SKILLS),
+ * so this rule's gateSlug ('remotion') is never in any vault's effective set and
+ * ensureMolioRules REMOVES the block (by sentinel) from every vault it
+ * reconciles. The entry + exact block text are deliberately KEPT: removal of
+ * legacy single-sentinel blocks compares against rule.block, and deleting the
+ * entry would both leave stale rules in user vaults forever and force the
+ * unknowable-extent fallback that can eat user content after the block.
  *
- * Kept short on purpose: the agent already knows how to make videos; this rule
- * only encodes the behavioral default (use remotion, not Python video libs).
+ * Original purpose (for context): force the agent to use the `remotion` skill
+ * for video creation instead of moviepy/manim/Python video libraries — the
+ * skill description alone doesn't override the agent's general-knowledge
+ * default (same reason docling needs a hard rule over legacy office skills).
  */
 const REMOTION_RULE_BLOCK = [
   REMOTION_RULE_SENTINEL,
@@ -235,7 +256,7 @@ const WIKI_QUERY_RULE_SENTINEL = '<!-- molio:wiki-query-preference -->';
  * environments (verified: the appended frame never reached the model, so vault
  * Q&A was answered purely from memory, ignoring the built wiki). CLAUDE.md is
  * loaded natively by the CLI and reliably reaches the model (same channel as
- * the docling/remotion rules above), so the retrieval instruction actually lands.
+ * the docling rule above), so the retrieval instruction actually lands.
  *
  * Deliberately ONLY a trigger policy (when to retrieve + that reading the cheap
  * root index IS the relevance check + the exemption list). The HOW (drill-down
@@ -274,7 +295,10 @@ const WIKI_QUERY_RULE_BLOCK = [
 const MOILIO_RULES: Array<{ sentinel: string; block: string; label: string; gateSlug?: string }> = [
   { sentinel: DOCLING_RULE_SENTINEL, block: DOCLING_RULE_BLOCK, label: 'docling preference', gateSlug: 'docling' },
   { sentinel: ENV_SELF_HEAL_SENTINEL, block: ENV_SELF_HEAL_BLOCK, label: 'environment self-heal' },
-  { sentinel: REMOTION_RULE_SENTINEL, block: REMOTION_RULE_BLOCK, label: 'remotion preference', gateSlug: 'remotion' },
+  // Retired — gateSlug never effective anymore; the entry survives only so the
+  // block is removed (by sentinel) from vaults that still carry it. See the
+  // REMOTION_RULE_BLOCK comment.
+  { sentinel: REMOTION_RULE_SENTINEL, block: REMOTION_RULE_BLOCK, label: 'remotion preference (retired)', gateSlug: 'remotion' },
   { sentinel: WEB_FETCH_SENTINEL, block: WEB_FETCH_BLOCK, label: 'web fetch preference' },
   { sentinel: WIKI_QUERY_RULE_SENTINEL, block: WIKI_QUERY_RULE_BLOCK, label: 'wiki-query preference', gateSlug: 'wiki-query' },
 ];

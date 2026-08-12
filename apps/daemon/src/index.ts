@@ -92,7 +92,7 @@ function checkAndKillPortOccupant(port: number): void {
 checkAndKillPortOccupant(port);
 
 // Seed built-in skills into the `skills` table — the master switch source
-// (bundled: docling/wiki-*/remotion/wechat; core: writing trio). Must run
+// (bundled: docling/wiki-*/wechat; core: writing trio). Must run
 // before any vault reconcile reads the table. Fast (SQLite upserts) and kept
 // before listen so API requests never observe an unseeded library.
 const skillsSeeded = initSkillLibrary(db);

@@ -39,10 +39,10 @@ afterEach(() => {
 });
 
 describe('skills/builtin', () => {
-  it('seeds 8 bundled + 3 core built-ins, all flagged builtIn', () => {
+  it('seeds 7 bundled + 3 core built-ins, all flagged builtIn', () => {
     seedBuiltinSkills(db, opts);
     const skills = listSkills(db);
-    assert.equal(skills.length, EXPECTED_TOTAL, '8 bundled + 3 core');
+    assert.equal(skills.length, EXPECTED_TOTAL, '7 bundled + 3 core');
     for (const s of skills) {
       assert.equal(s.builtIn, true);
     }
@@ -91,6 +91,36 @@ describe('skills/builtin', () => {
     seedBuiltinSkills(db, opts);
     seedBuiltinSkills(db, opts);
     assert.equal(listSkills(db).length, EXPECTED_TOTAL);
+  });
+
+  it('upgrade migration: deletes a legacy bundled remotion row, never a same-id user skill', () => {
+    // Phase 1 — DB left behind by an older version that still seeded remotion
+    // as a bundled skill. The startup delete must retire the row.
+    const now = Date.now();
+    db.prepare(
+      `INSERT INTO skills (id, name, description, kind, core, built_in, enabled, created_at, updated_at)
+       VALUES ('remotion', 'remotion', 'legacy bundled row', 'bundled', 0, 1, 1, ?, ?)`,
+    ).run(now, now);
+
+    seedBuiltinSkills(db, opts);
+    assert.ok(
+      !listSkills(db).some((s) => s.id === 'remotion'),
+      'the retired bundled row must be deleted on upgrade',
+    );
+    assert.equal(listSkills(db).length, EXPECTED_TOTAL);
+
+    // Phase 2 — the user later installs a library skill with the same id (e.g.
+    // the hub's am-will/remotion). The kind='bundled' guard must protect it
+    // from the still-running idempotent delete.
+    db.prepare(
+      `INSERT INTO skills (id, name, description, kind, core, built_in, enabled, created_at, updated_at)
+       VALUES ('remotion', 'remotion', 'user library skill', 'library', 0, 0, 1, ?, ?)`,
+    ).run(now, now);
+
+    seedBuiltinSkills(db, opts);
+    const remotion = listSkills(db).find((s) => s.id === 'remotion');
+    assert.ok(remotion, 'a user library skill with the retired id must survive re-seeding');
+    assert.equal(remotion!.kind, 'library');
   });
 
   it('seeding preserves the user toggle state of an existing skill', () => {

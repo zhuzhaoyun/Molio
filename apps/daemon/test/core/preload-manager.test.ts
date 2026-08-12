@@ -6,10 +6,10 @@ import * as os from 'node:os';
 
 /**
  * Tests for PreloadManager path helpers, status state machine, and dismiss
- * persistence. The actual pip/npm downloads are NOT exercised here — they
- * are slow, network-dependent, and belong to manual verification. What we
- * verify here is the logic that decides *where* things install and *when*
- * the user gets prompted.
+ * persistence. The actual pip downloads are NOT exercised here — they are
+ * slow, network-dependent, and belong to manual verification. What we verify
+ * here is the logic that decides *where* things install and *when* the user
+ * gets prompted.
  *
  * Error-driven context:
  * - Bug: docling installed via preload landed in an unpredictable pip
@@ -17,9 +17,12 @@ import * as os from 'node:os';
  *   ~/.molio/venv, with augmentPath exposing its bin dir (tested in
  *   env.test.ts). These tests pin the venv path layout so future edits
  *   don't silently move the install location.
- * - Bug: remotion "detectInstalled" returned true whenever `node` existed,
- *   so the toast never prompted. Fix: detectInstalled now checks a marker
- *   file written after a successful cache warmup.
+ *
+ * Note: remotion used to be preloadable too (npm cache warmup + marker file).
+ * Both were retired together with the bundled skill — users install the hub's
+ * `am-will/remotion` on demand and deps install on first use. The
+ * PRELOADABLE_SKILLS assertions below pin that the preload universe is now
+ * docling-only, so a regression re-adding the prompt/download path fails.
  */
 
 // ─── Path layout (where preload installs things) ───────────────────────────
@@ -103,27 +106,20 @@ describe('PreloadManager path layout', () => {
     );
   });
 
-  it('remotion detectInstalled returns true only when marker exists', async () => {
-    const { createPreloadManager } = await import('../../src/core/preload-manager.js');
-    const marker = path.join(tmpHome, '.molio', '.remotion-preloaded');
+  it('the preload universe is docling-only (remotion preload is retired)', async () => {
+    const { createPreloadManager, PRELOADABLE_SKILLS } = await import('../../src/core/preload-manager.js');
+    // Regression guard: the bundled remotion skill and its npm-cache preload
+    // were retired together. Re-adding ANY preloadable skill re-introduces a
+    // background download + prompt the user no longer sees — pin the universe
+    // so that decision can only change deliberately.
+    assert.deepEqual(PRELOADABLE_SKILLS, ['docling']);
 
-    const pm1 = createPreloadManager();
-    pm1.checkSkills();
-    assert.equal(
-      pm1.getStatuses().remotion.status,
-      'missing',
-      'remotion should be missing before any preload (no marker)',
-    );
-
-    fs.mkdirSync(path.dirname(marker), { recursive: true });
-    fs.writeFileSync(marker, new Date().toISOString());
-
-    const pm2 = createPreloadManager();
-    pm2.checkSkills();
-    assert.equal(
-      pm2.getStatuses().remotion.status,
-      'installed',
-      'remotion should be installed once the marker exists',
+    const pm = createPreloadManager();
+    pm.checkSkills();
+    assert.deepEqual(
+      Object.keys(pm.getStatuses()),
+      ['docling'],
+      'statuses must contain exactly docling — no remotion entry',
     );
   });
 });
@@ -153,15 +149,18 @@ describe('PreloadManager status state machine', () => {
     try { fs.rmSync(tmpHome, { recursive: true, force: true }); } catch { /* ignore */ }
   });
 
-  it('checkSkills marks missing skills as missing', async () => {
+  it('checkSkills resolves docling to missing or installed (never a broken state)', async () => {
     const { createPreloadManager } = await import('../../src/core/preload-manager.js');
     const pm = createPreloadManager();
     pm.checkSkills();
     const s = pm.getStatuses();
-    // On a clean tmpHome, both should be missing (no venv, no marker).
-    // (A CI host with global docling/node could flip docling to installed;
-    //  remotion has no global fallback so it must be missing.)
-    assert.equal(s.remotion.status, 'missing');
+    // On a clean tmpHome docling is missing (no venv). A CI host with a
+    // global docling flips it to installed via the PATH/scripts-dir fallback
+    // — that IS the correct real-world behavior, so both are accepted.
+    assert.ok(
+      s.docling.status === 'missing' || s.docling.status === 'installed',
+      `docling should resolve to missing or installed, got: ${s.docling.status}`,
+    );
   });
 
   it('dismissSkill persists to config and prevents re-prompting', async () => {
@@ -169,161 +168,34 @@ describe('PreloadManager status state machine', () => {
     const pm = createPreloadManager();
     pm.checkSkills();
 
-    pm.dismissSkill('remotion');
-    assert.equal(pm.getStatuses().remotion.status, 'dismissed');
+    pm.dismissSkill('docling');
+    assert.equal(pm.getStatuses().docling.status, 'dismissed');
 
     // A fresh instance should read the persisted dismissed state.
     const pm2 = createPreloadManager();
     pm2.checkSkills();
     assert.equal(
-      pm2.getStatuses().remotion.status,
+      pm2.getStatuses().docling.status,
       'dismissed',
       'dismiss should persist across instances via config.json',
     );
   });
 
-  it('undismissSkill re-checks and returns the skill to missing', async () => {
+  it('undismissSkill re-checks and returns the skill to a checkable state', async () => {
     const { createPreloadManager } = await import('../../src/core/preload-manager.js');
     const pm = createPreloadManager();
     pm.checkSkills();
-    pm.dismissSkill('remotion');
-    assert.equal(pm.getStatuses().remotion.status, 'dismissed');
+    pm.dismissSkill('docling');
+    assert.equal(pm.getStatuses().docling.status, 'dismissed');
 
-    pm.undismissSkill('remotion');
-    assert.equal(
-      pm.getStatuses().remotion.status,
-      'missing',
-      'undismiss should restore the skill to a checkable state',
-    );
-  });
-});
-
-// ─── npm registry fallback (remotion preload ETARGET regression) ───────────
-//
-// Error-driven context (2026-07-29): remotion 发版 4.0.501，create-video 脚手架
-// 把所有 @remotion/* 严格钉到该版本；但国内镜像（npmmirror）逐包独立、按需同步，
-// 主包 @remotion/cli 已同步而传递依赖 @remotion/player 未同步 → `npm install`
-// ETARGET 退出码 1。旧代码只会在**同一个源**上重试一次，镜像同步滞后以小时计，
-// 重试必然再次失败 → 预下载整体失败。修复：按 默认源 → 官方源（同步源头，版本
-// 永远齐全）→ npmmirror 的顺序降级换源重试；暂停/停止不打断语义保持不变。
-
-describe('runWithRegistryFallback (remotion preload ETARGET regression)', () => {
-  const mkSignal = () => new AbortController().signal;
-  const OFFICIAL = '--registry=https://registry.npmjs.org';
-
-  it('default registry ETARGET failure falls back to the official registry', async () => {
-    const { runWithRegistryFallback } = await import('../../src/core/preload-manager.js');
-    const flags: string[] = [];
-    await runWithRegistryFallback({
-      label: 'Remotion 依赖安装（npm install）',
-      signal: mkSignal(),
-      exec: async (flag) => {
-        flags.push(flag);
-        // 模拟镜像未同步钉住版本：默认源 ETARGET，官方源放行
-        if (flag !== OFFICIAL) {
-          throw new Error('进程退出码 1: npm error notarget No matching version found for @remotion/player@4.0.501.');
-        }
-      },
-    });
-    assert.ok(flags.length >= 2, `expected multiple attempts, got ${flags.length}`);
-    assert.equal(flags[0], '', 'first attempt must use the default registry (empty flag)');
-    assert.ok(flags.includes(OFFICIAL), 'must fall back to the official npm registry');
-  });
-
-  it('transient failure retries within the same registry before switching', async () => {
-    const { runWithRegistryFallback } = await import('../../src/core/preload-manager.js');
-    const flags: string[] = [];
-    await runWithRegistryFallback({
-      label: 'step',
-      signal: mkSignal(),
-      exec: async (flag) => {
-        flags.push(flag);
-        if (flags.length === 1) throw new Error('进程退出码 1: network hiccup');
-      },
-    });
-    assert.equal(flags.length, 2, 'should retry once on the same registry then succeed');
-    assert.ok(flags.every((f) => f === ''), 'no registry switch needed for a transient failure');
-  });
-
-  it('abort interrupts immediately without retry or registry switch', async () => {
-    const { runWithRegistryFallback } = await import('../../src/core/preload-manager.js');
-    const ac = new AbortController();
-    const flags: string[] = [];
-    await assert.rejects(
-      runWithRegistryFallback({
-        label: 'step',
-        signal: ac.signal,
-        exec: async (flag) => {
-          flags.push(flag);
-          ac.abort();
-          throw new Error('aborted');
-        },
-      }),
-      /aborted/,
-    );
-    assert.equal(flags.length, 1, 'abort must not trigger retries or a registry switch');
-  });
-
-  it('final failure message includes the step label and the underlying output tail', async () => {
-    const { runWithRegistryFallback } = await import('../../src/core/preload-manager.js');
-    await assert.rejects(
-      runWithRegistryFallback({
-        label: 'Remotion 依赖安装（npm install）',
-        signal: mkSignal(),
-        exec: async () => {
-          throw new Error('进程退出码 1: npm error notarget No matching version found for @remotion/player@4.0.501.');
-        },
-      }),
-      (err: Error) => {
-        assert.match(err.message, /Remotion 依赖安装/, 'error must name the failing step');
-        assert.match(err.message, /notarget/, 'error must carry the underlying output tail');
-        return true;
-      },
-    );
-  });
-
-  it('POSIX shell command builders place the registry flag correctly', async () => {
-    const { remotionScaffoldCmd, remotionInstallCmd } = await import('../../src/core/preload-manager.js');
-    assert.equal(remotionScaffoldCmd(''), 'npx --yes create-video@latest --yes --blank --no-tailwind warmup');
-    assert.equal(remotionInstallCmd(''), 'npm install --no-audit --no-fund');
-    assert.equal(
-      remotionScaffoldCmd(OFFICIAL),
-      'npx --yes --registry=https://registry.npmjs.org create-video@latest --yes --blank --no-tailwind warmup',
-    );
-    assert.equal(
-      remotionInstallCmd(OFFICIAL),
-      'npm install --registry=https://registry.npmjs.org --no-audit --no-fund',
-    );
-  });
-
-  it('Windows argv builders invoke node + npm/npx JS entry directly (no cmd.exe)', async () => {
-    const { remotionScaffoldArgv, remotionInstallArgv } = await import('../../src/core/preload-manager.js');
-    const node = 'C:\\node.exe';
-    const npmJs = 'C:\\node_modules\\npm\\bin\\npm-cli.js';
-    const npxJs = 'C:\\node_modules\\npm\\bin\\npx-cli.js';
-    // install：node + npm-cli.js install，in-process，无孙进程 → 无控制台窗口
-    assert.deepEqual(remotionInstallArgv(node, npmJs, ''), [node, npmJs, 'install', '--no-audit', '--no-fund']);
-    assert.deepEqual(remotionInstallArgv(node, npmJs, OFFICIAL), [node, npmJs, 'install', OFFICIAL, '--no-audit', '--no-fund']);
-    // scaffold：node + npx-cli.js，create-video 仍是 npx 的子进程
-    assert.deepEqual(
-      remotionScaffoldArgv(node, npxJs, ''),
-      [node, npxJs, '--yes', 'create-video@latest', '--yes', '--blank', '--no-tailwind', 'warmup'],
-    );
-    assert.deepEqual(
-      remotionScaffoldArgv(node, npxJs, OFFICIAL),
-      [node, npxJs, OFFICIAL, '--yes', 'create-video@latest', '--yes', '--blank', '--no-tailwind', 'warmup'],
-    );
-  });
-
-  it('npmCliJsFromDir maps a PATH shim dir to the npm JS entry', async () => {
-    const { npmCliJsFromDir } = await import('../../src/core/preload-manager.js');
-    assert.equal(
-      npmCliJsFromDir('C:\\Program Files\\nodejs', 'npm'),
-      path.join('C:\\Program Files\\nodejs', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
-    );
-    assert.equal(
-      npmCliJsFromDir('/usr/local/bin', 'npx'),
-      path.join('/usr/local/bin', 'node_modules', 'npm', 'bin', 'npx-cli.js'),
+    pm.undismissSkill('docling');
+    // Undismiss re-runs detectInstalled: normally 'missing', but a CI host
+    // with a global docling legitimately resolves to 'installed'. Either way
+    // the skill is checkable again (no longer 'dismissed').
+    const st = pm.getStatuses().docling.status;
+    assert.ok(
+      st === 'missing' || st === 'installed',
+      `undismiss should restore the skill to a checkable state, got: ${st}`,
     );
   });
 });
@@ -403,8 +275,8 @@ describe('preloadSpawnOpts (Windows console-window regression)', () => {
       'windowsHide must be set so Windows does not pop a console window per child',
     );
     // detached on Windows maps to DETACHED_PROCESS in libuv, which defeats
-    // windowsHide and makes console grandchildren (node/python under npm/pip)
-    // each allocate a visible console window — exactly the bug being fixed.
+    // windowsHide and makes console grandchildren (python under pip) each
+    // allocate a visible console window — exactly the bug being fixed.
     // Tree-kill on Windows uses taskkill /T, so detached is not needed there.
     assert.equal(
       o.detached,
@@ -504,21 +376,24 @@ describe('pause→stop clears lingering pause intent (2026-07 latent bug)', () =
     const { createPreloadManager } = await import('../../src/core/preload-manager.js');
     const pm = createPreloadManager();
     pm.checkSkills();
-    // remotion 在干净 tmp home 上恒为 missing（无 marker、无全局回退）
-    assert.equal(pm.getStatuses().remotion.status, 'missing');
+    // 干净 tmp home 上 docling 通常是 missing（宿主机有全局 docling 时是 installed，
+    // 两者都不影响本测试关注的意图清理语义）
+    const before = pm.getStatuses().docling.status;
+    assert.ok(before === 'missing' || before === 'installed', `unexpected pre-stop status: ${before}`);
 
     // 在非运行态登记暂停意图（镜像 UI 的暂停动作）
-    pm.pausePreload('remotion');
-    assert.equal(pm._testHasPauseIntent('remotion'), true, 'pause must register the intent');
+    pm.pausePreload('docling');
+    assert.equal(pm._testHasPauseIntent('docling'), true, 'pause must register the intent');
 
     // 停止 > 暂停：必须把暂停意图一并清掉，否则下一次下载被静音/错标
-    pm.stopPreload('remotion');
+    pm.stopPreload('docling');
     assert.equal(
-      pm._testHasPauseIntent('remotion'),
+      pm._testHasPauseIntent('docling'),
       false,
       'stop must clear the pending pause intent (else next run is muted / mislabelled)',
     );
-    assert.equal(pm.getStatuses().remotion.status, 'missing', 'stop resets the skill to missing');
+    // stopPreload 的非运行态分支无条件置 missing（彻底重置语义）
+    assert.equal(pm.getStatuses().docling.status, 'missing', 'stop resets the skill to missing');
   });
 });
 
@@ -685,7 +560,6 @@ describe('doclingPipInstallArgv (pip --timeout regression)', () => {
 // 这里钉住「停止」一侧的磁盘语义，防止未来把清理写「过宽」（误删共享 ~/.npm 或别的 HF
 // 模型）或「过窄」（漏删本次产物），从而破坏闭环：
 //   docling : 删 ~/.molio/venv + 仅删 models--docling-project--* ；保留其它 HF 模型 + ~/.npm
-//   remotion: 删标记文件；保留 ~/.npm
 // 重试侧「复用有效 venv」由 venv 守卫 + 路由测试（failed 必被重启）保证，不在无 pip 的单测里
 // 跑真实安装（若要把它也变成可单测的纯函数，见 skillsNeedingStart 同款的 venv 判定抽取）。
 
@@ -742,36 +616,19 @@ describe('preload cleanup closure (stop keeps shared cache, removes only own art
     assert.ok(st === 'missing' || st === 'installed', `stop must resolve docling to a non-broken state, got ${st}`);
   });
 
-  it('remotion stop: removes the marker but keeps shared ~/.npm', async () => {
-    const { createPreloadManager } = await import('../../src/core/preload-manager.js');
-    const marker = path.join(tmpHome, '.molio', '.remotion-preloaded');
-    const npmCache = path.join(tmpHome, '.npm');
-    fs.mkdirSync(path.dirname(marker), { recursive: true });
-    fs.writeFileSync(marker, new Date().toISOString());
-    fs.mkdirSync(path.join(npmCache, '_cacache'), { recursive: true });
-    fs.writeFileSync(path.join(npmCache, '_cacache', 'shared.tar'), 'z');
-
-    const pm = createPreloadManager();
-    pm.checkSkills();
-    pm.stopPreload('remotion');
-
-    assert.equal(fs.existsSync(marker), false, 'remotion marker must be removed');
-    assert.equal(fs.existsSync(npmCache), true, 'shared ~/.npm must NOT be touched by remotion cleanup');
-    assert.equal(fs.existsSync(path.join(npmCache, '_cacache', 'shared.tar')), true, 'shared npm cache contents must stay intact');
-    assert.equal(pm.getStatuses().remotion.status, 'missing', 'stop must return remotion to a promptable missing state');
-  });
-
-  it('stop on an already-missing skill is an idempotent, safe escape hatch', async () => {
+  it('stop on an already-stopped skill is an idempotent, safe escape hatch', async () => {
     const { createPreloadManager } = await import('../../src/core/preload-manager.js');
     const npmCache = path.join(tmpHome, '.npm');
     fs.mkdirSync(npmCache, { recursive: true });
     const pm = createPreloadManager();
     pm.checkSkills();
-    assert.equal(pm.getStatuses().remotion.status, 'missing');
+    const before = pm.getStatuses().docling.status;
+    assert.ok(before === 'missing' || before === 'installed', `unexpected pre-stop status: ${before}`);
     // 反复按「停止」（闭环的逃生舱）不能抛、不能误删共享缓存
-    pm.stopPreload('remotion');
-    pm.stopPreload('remotion');
+    pm.stopPreload('docling');
+    pm.stopPreload('docling');
     assert.equal(fs.existsSync(npmCache), true, 'idempotent stop must still not touch ~/.npm');
-    assert.equal(pm.getStatuses().remotion.status, 'missing');
+    // stopPreload 的非运行态分支无条件置 missing（彻底重置语义）
+    assert.equal(pm.getStatuses().docling.status, 'missing');
   });
 });

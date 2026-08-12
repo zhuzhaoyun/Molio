@@ -1,7 +1,14 @@
 /**
  * PreloadManager — checks whether heavy skill tools are installed and manages
  * background preloading so the user doesn't hit a long download when they first
- * need docling, remotion, etc.
+ * need docling.
+ *
+ * History: remotion used to be preloaded here too (npm cache warmup via a
+ * throwaway scaffold + install). Both the bundled remotion skill and its
+ * preload were retired — users install the hub's `am-will/remotion` on demand
+ * and its dependencies install on first use (the skill's own preflight covers
+ * that). The npm-registry fallback machinery was remotion-only and went with
+ * it; docling keeps its pip-index fallback (runPipInstallWithFallback).
  *
  * Lifecycle:
  *   daemon startup → checkSkills() → web UI queries status → user clicks
@@ -21,9 +28,9 @@ import { loadConfig, saveConfig, mergeConfig } from './config.js';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export type PreloadableSkill = 'docling' | 'remotion';
+export type PreloadableSkill = 'docling';
 
-export const PRELOADABLE_SKILLS: PreloadableSkill[] = ['docling', 'remotion'];
+export const PRELOADABLE_SKILLS: PreloadableSkill[] = ['docling'];
 
 /**
  * Status of a preloadable skill.
@@ -127,8 +134,8 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
       }
 
       // Phase 2: pip install docling (8 → 55). We install through a chain of
-      // PyPI mirrors with per-mirror retry (runPipInstallWithFallback) — the
-      // same defence-in-depth the remotion preload uses for npm. The previous
+      // PyPI mirrors with per-mirror retry (runPipInstallWithFallback) —
+      // same-source retry plus cross-source fallback. The previous
       // code tried ONE mirror then fell straight back to pip's DEFAULT index
       // (pypi.org / files.pythonhosted.org) with pip's 15s connect timeout and
       // no retry; on mainland-China boxes that default host is routinely
@@ -210,275 +217,17 @@ const SKILL_META: Record<PreloadableSkill, SkillMeta> = {
       onProgress(100, 'docling 就绪');
     },
   },
-
-  remotion: {
-    label: 'Remotion',
-    description: 'React 视频制作框架（首次需下载 npm 依赖）',
-    detectInstalled(): boolean {
-      // "Installed" here means "already preloaded" — we don't claim remotion
-      // is present just because node exists (that led to never prompting).
-      // The marker is written after a successful cache warmup.
-      return fs.existsSync(remotionPreloadMarker());
-    },
-    async preload(onProgress, signal) {
-      // Goal: warm the FULL remotion dependency tree into the npm cache so the
-      // agent's real `npx create-video` + `npm install` (in the vault) is
-      // mostly cache hits — fast AND resilient to the network hiccups that
-      // left earlier half-scaffolded projects (skeleton dir, no node_modules).
-      //
-      // We reproduce the agent's exact steps in a throwaway dir — scaffold a
-      // real Remotion project, then install its real (transitive) deps — and
-      // delete the dir afterwards. Only the npm cache survives, which is
-      // exactly what the agent reuses. NOTE: current create-video versions no
-      // longer auto-install deps (the scaffold only copies the template — it
-      // tells you to run `npm i` yourself), so the install step below is what
-      // downloads the whole tree.
-      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-remotion-warmup-'));
-      const projDir = path.join(tmpDir, 'warmup');
-
-      // runStep: run one step (scaffold or install) with transient retry AND
-      // npm-registry fallback (see runWithRegistryFallback). Registry fallback
-      // is the core of the 2026-07 ETARGET fix: remotion releases ~20 lockstep
-      // packages; mirrors (npmmirror et al.) sync them lazily per-package, so
-      // right after a release the pinned version commonly exists for
-      // @remotion/cli but NOT for a transitive package like @remotion/player
-      // → `npm install` exits 1 with ETARGET, and retrying the SAME registry
-      // is pointless until the mirror catches up (minutes to hours). Falling
-      // back to the official registry (the sync source — always complete)
-      // makes the preload succeed regardless of mirror lag.
-      //
-      // Deliberately NO `--prefer-offline` on the install: it makes npm skip
-      // staleness checks on cached packuments, so a packument cached while the
-      // mirror still lacked the pinned version would keep throwing ETARGET
-      // even AFTER the mirror synced — turning transient lag into a
-      // persistent failure. Online mode still reuses cached tarballs via
-      // integrity matching, so cache-warming is unaffected.
-      //
-      // WINDOWS CONSOLE-WINDOW FIX: on Windows we do NOT run these through
-      // `cmd /c`. `cmd.exe` and the npm `.exe`/`.cmd` shims are console apps
-      // that re-spawn node as console-windowed grandchildren, and npm's own
-      // @npmcli/promise-spawn does NOT set windowsHide — so spawn options
-      // alone can't hide the tree. Instead we invoke node + the npm/npx JS
-      // entry directly (runArgv, hidden, in-process): `npm install` then runs
-      // with no grandchildren at all. resolveNpmEntry needs npm on PATH (dev);
-      // if it's absent (e.g. a packaged build without npm, where remotion
-      // preload is optional) we fall back to the shell form. POSIX has no
-      // per-process console window, so it keeps the simple shell form.
-      // Pause/stop (signal.aborted) never retries — it propagates.
-      const isWin = process.platform === 'win32';
-      const nodeBin = process.execPath;
-      const npmJs = isWin ? resolveNpmEntry('npm') : null;
-      const npxJs = isWin ? resolveNpmEntry('npx') : null;
-      const runShellOrArgv = (cmd: string, argv: string[] | null, runOpts: RunOpts) =>
-        argv ? runArgv(argv, runOpts) : runProcess(cmd, runOpts);
-
-      const runStep = async (
-        label: string,
-        kind: 'scaffold' | 'install',
-        cwd: string | undefined,
-        pct: number,
-      ) => {
-        await runWithRegistryFallback({
-          label,
-          signal,
-          onProgress: (msg) => onProgress(pct, msg),
-          exec: (registryFlag) => {
-            const runOpts: RunOpts = {
-              // 900s (vs docling's 600s): the official-registry fallback stage
-              // can spend several minutes just resolving metadata from a slow
-              // CN link (measured: >240s for a packument-only dry run) before
-              // downloading hundreds of tarballs. A too-short timeout would
-              // neuter the fallback; and even if it DOES time out, the
-              // mirror-lag that forced the fallback typically self-heals within
-              // minutes (our stage-1 requests trigger npmmirror's on-demand
-              // sync), so the final npmmirror stage — ~20min after the first
-              // attempt — usually succeeds.
-              timeout: 900_000,
-              cwd,
-              signal,
-              onLine(line) {
-                if (line.includes('added') || line.toLowerCase().includes('package')) {
-                  onProgress(pct, line.trim());
-                }
-              },
-            };
-            if (kind === 'scaffold') {
-              const argv = isWin && npxJs ? remotionScaffoldArgv(nodeBin, npxJs, registryFlag) : null;
-              return runShellOrArgv(remotionScaffoldCmd(registryFlag), argv, runOpts);
-            }
-            const argv = isWin && npmJs ? remotionInstallArgv(nodeBin, npmJs, registryFlag) : null;
-            return runShellOrArgv(remotionInstallCmd(registryFlag), argv, runOpts);
-          },
-        });
-      };
-
-      try {
-        onProgress(10, '拉取 Remotion 脚手架（create-video）...');
-        // `--yes` skips the interactive prompts; the scaffold only copies the
-        // template (no install — that's the next step).
-        await runStep('Remotion 脚手架（create-video）', 'scaffold', tmpDir, 30);
-
-        if (!fs.existsSync(projDir)) {
-          throw new Error('Remotion 脚手架未生成（create-video 可能交互失败或网络中断）');
-        }
-
-        onProgress(55, '安装完整 Remotion 依赖树（暖缓存）...');
-        // Install the full (transitive) tree so every tarball lands in the
-        // cache for the agent's later real install to reuse.
-        await runStep('Remotion 依赖安装（npm install）', 'install', projDir, 80);
-
-        if (!fs.existsSync(path.join(projDir, 'node_modules', 'remotion'))) {
-          throw new Error('Remotion 依赖树未装全（node_modules/remotion 缺失）');
-        }
-
-        // Marker = "warmup done"; the npm cache is what actually persists.
-        try {
-          fs.writeFileSync(remotionPreloadMarker(), new Date().toISOString());
-        } catch { /* best-effort */ }
-
-        onProgress(100, 'Remotion 依赖缓存就绪');
-      } finally {
-        // Always delete the throwaway project; only the npm cache survives.
-        try {
-          fs.rmSync(tmpDir, { recursive: true, force: true });
-        } catch { /* best-effort */ }
-      }
-    },
-  },
 };
-
-// ─── npm registry fallback (remotion preload) ───────────────────────────────
-
-/** Scaffold command (POSIX shell form). `registryFlag` empty = user's default
- *  registry, else a full `--registry=<url>`; npx accepts npm config flags
- *  before the package spec. On Windows the argv form (remotionScaffoldArgv) is
- *  preferred to avoid a console window; this shell form is the fallback. */
-export function remotionScaffoldCmd(registryFlag: string): string {
-  const flag = registryFlag ? `${registryFlag} ` : '';
-  return `npx --yes ${flag}create-video@latest --yes --blank --no-tailwind warmup`;
-}
-
-/** Dependency-install command (POSIX shell form; warms the npm cache). */
-export function remotionInstallCmd(registryFlag: string): string {
-  const flag = registryFlag ? `${registryFlag} ` : '';
-  return `npm install ${flag}--no-audit --no-fund`;
-}
-
-/** Scaffold argv (Windows): node + npx JS entry run directly, no cmd.exe, so
- *  npx runs in-process (hidden). create-video itself remains npx's child. */
-export function remotionScaffoldArgv(node: string, npxJs: string, registryFlag: string): string[] {
-  return [
-    node, npxJs,
-    ...(registryFlag ? [registryFlag] : []),
-    '--yes', 'create-video@latest', '--yes', '--blank', '--no-tailwind', 'warmup',
-  ];
-}
-
-/** Install argv (Windows): node + npm JS entry run directly → `npm install`
- *  executes in-process with NO grandchildren → no console window. */
-export function remotionInstallArgv(node: string, npmJs: string, registryFlag: string): string[] {
-  return [node, npmJs, 'install', ...(registryFlag ? [registryFlag] : []), '--no-audit', '--no-fund'];
-}
-
-/** Map an npm/npx shim directory (the dir of the `npm`/`npx` found on PATH) to
- *  its JS entry: `<shimDir>/node_modules/npm/bin/<name>-cli.js`. Pure (no IO)
- *  so it's unit-testable; existence is checked by resolveNpmEntry. */
-export function npmCliJsFromDir(shimDir: string, name: 'npm' | 'npx'): string {
-  return path.join(shimDir, 'node_modules', 'npm', 'bin', `${name}-cli.js`);
-}
-
-let _npmEntryCache: Partial<Record<'npm' | 'npx', string | null>> = {};
-export function invalidateNpmEntryCache(): void { _npmEntryCache = {}; }
-
-/** Resolve the npm/npx JS entry from whatever `npm`/`npx` is on PATH (so nvm,
- *  global, and Program-Files installs all work in dev). Returns null when npm
- *  isn't on PATH (e.g. a packaged build that doesn't bundle it) — callers then
- *  fall back to the shell form. Cached; invalidate when PATH may have changed. */
-export function resolveNpmEntry(name: 'npm' | 'npx'): string | null {
-  if (name in _npmEntryCache) return _npmEntryCache[name] ?? null;
-  let found: string | null = null;
-  try {
-    const probe = process.platform === 'win32' ? `where ${name}` : `command -v ${name}`;
-    const out = execSync(probe, {
-      encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000, windowsHide: true,
-    }).trim();
-    const first = out.split(/\r?\n/)[0]?.trim();
-    if (first) {
-      const cli = npmCliJsFromDir(path.dirname(first), name);
-      if (fs.existsSync(cli)) found = cli;
-    }
-  } catch { /* npm/npx not on PATH */ }
-  _npmEntryCache[name] = found;
-  return found;
-}
-
-/** Ordered npm registries to try: the user's default (empty flag — fast, and
- *  whatever they've configured), then the official registry (the sync source:
- *  version lists are always complete, so mirror sync lag can't cause a
- *  persistent ETARGET; slower from mainland China but fine for a background
- *  preload), then the npmmirror mirror (fast in China, helps users whose
- *  default is the slow official registry). */
-export const NPM_REGISTRY_FALLBACKS: ReadonlyArray<{ label: string; flag: string }> = [
-  { label: '默认源', flag: '' },
-  { label: '官方源', flag: '--registry=https://registry.npmjs.org' },
-  { label: 'npmmirror 镜像', flag: '--registry=https://registry.npmmirror.com' },
-];
-
-export interface RegistryFallbackOpts {
-  /** Step name shown in progress + final error. */
-  label: string;
-  /** Run one attempt for a given registry flag (may be empty). The caller
-   *  decides shell-vs-argv per platform; rejects on non-zero exit / timeout. */
-  exec: (registryFlag: string) => Promise<void>;
-  signal: AbortSignal;
-  onProgress?: (msg: string) => void;
-  /** Transient retries per registry before switching. Default 2. */
-  attemptsPerRegistry?: number;
-}
-
-/**
- * Run an npm-family step with transient retry per registry and fallback ACROSS
- * registries (see NPM_REGISTRY_FALLBACKS). Same-registry retries cover network
- * blips (a single failed tarball → npm exit 1); cross-registry fallback covers
- * mirror sync lag (a lockstep release whose transitive packages haven't
- * reached the mirror yet → ETARGET on every same-registry retry). Succeeds as
- * soon as any attempt succeeds; throws only when every registry is exhausted,
- * with the step label + last error (including the child's combined output
- * tail) so the UI/log pinpoints the failure. Pause/stop (signal.aborted)
- * aborts immediately with the original error — never retried, never switched.
- */
-export async function runWithRegistryFallback(opts: RegistryFallbackOpts): Promise<void> {
-  if (opts.signal.aborted) throw new Error('aborted');
-  const attempts = opts.attemptsPerRegistry ?? 2;
-  let lastErr: unknown = null;
-  for (const source of NPM_REGISTRY_FALLBACKS) {
-    for (let attempt = 1; attempt <= attempts && !opts.signal.aborted; attempt++) {
-      try {
-        await opts.exec(source.flag);
-        return;
-      } catch (err) {
-        if (opts.signal.aborted) throw err; // pause/stop — propagate as-is
-        lastErr = err;
-        if (attempt < attempts) {
-          opts.onProgress?.(`${opts.label} 网络波动，重试中（${attempt}/${attempts - 1}）...`);
-        }
-      }
-    }
-    opts.onProgress?.(`${opts.label} ${source.label}失败，换下一个 npm 源...`);
-  }
-  const detail = lastErr instanceof Error ? lastErr.message : String(lastErr);
-  throw new Error(`${opts.label}失败：${detail}`);
-}
 
 // ─── pip index fallback (docling preload CN-timeout regression) ─────────────
 //
 // Error-driven (2026-07): docling 预下载在国内机器上失败——pip 先试清华镜像，一旦
 // 该镜像临时抖动，旧代码直接退回 pip 的**默认源**（pypi.org / files.pythonhosted.org）
 // 且用 pip 默认 15s connect timeout、不重试；而默认源在国内经常连不上 →
-// ConnectTimeoutError(connect timeout=15) → 整个预下载失败。修复：和 remotion 的 npm
-// 走同一套「同源重试 + 跨源降级」防御（runPipInstallWithFallback），先试多个国内镜像
-// （它们也托管 wheel 文件，故镜像可用时 pip 根本不碰 files.pythonhosted.org），官方源
-// 兜底；每次都用宽松的 --timeout，避免慢但活着的源被 15s 误杀。
+// ConnectTimeoutError(connect timeout=15) → 整个预下载失败。修复：「同源重试 + 跨源
+// 降级」防御（runPipInstallWithFallback），先试多个国内镜像（它们也托管 wheel 文件，
+// 故镜像可用时 pip 根本不碰 files.pythonhosted.org），官方源兜底；每次都用宽松的
+// --timeout，避免慢但活着的源被 15s 误杀。
 
 /** Per-connection socket timeout (seconds) passed to pip via `--timeout`. pip
  *  forwards this to `requests` as a single value applied to BOTH connect and
@@ -526,9 +275,9 @@ export interface PipFallbackOpts {
 
 /**
  * Run the docling pip install with transient retry per index AND fallback ACROSS
- * indices (see PIP_INDEX_FALLBACKS). Mirrors runWithRegistryFallback: same-index
- * retries cover a single dropped wheel / network blip; cross-index fallback
- * covers a mirror that's down or lagging. Succeeds as soon as any attempt
+ * indices (see PIP_INDEX_FALLBACKS): same-index retries cover a single dropped
+ * wheel / network blip; cross-index fallback covers a mirror that's down or
+ * lagging. Succeeds as soon as any attempt
  * succeeds; throws only when every index is exhausted, with the label + last
  * error so the UI/log pinpoints the failure. Pause/stop (signal.aborted) aborts
  * immediately with the original error — never retried, never switched.
@@ -658,15 +407,10 @@ export function doclingWarmupArgv(
     ? [venvPy, '-c', DOCLING_CLI_SHIM, inputPath, '--from', 'pdf', '--to', 'md', '--output', outDir]
     : [doclingBinaryPath(), inputPath, '--from', 'pdf', '--to', 'md', '--output', outDir];
 }
-function remotionPreloadMarker(): string {
-  return path.join(os.homedir(), '.molio', '.remotion-preloaded');
-}
-
 /**
  * Delete a skill's partial preload artifacts — used by "stop" so the skill
- * returns to a clean `missing` state. The npm cache (~/.npm) is intentionally
- * NOT touched (shared across the whole pnpm/npm environment; deleting it would
- * slow everything else down). Mirrors the cleanup in docs/preload-cleanup.md.
+ * returns to a clean `missing` state. Mirrors the cleanup in
+ * docs/preload-cleanup.md.
  */
 function deletePartial(skill: PreloadableSkill): void {
   try {
@@ -683,9 +427,6 @@ function deletePartial(skill: PreloadableSkill): void {
           }
         }
       }
-    } else if (skill === 'remotion') {
-      // Marker is the only remotion-specific artifact; npm cache is shared.
-      fs.rmSync(remotionPreloadMarker(), { force: true });
     }
   } catch {
     // best-effort — partial deletion failure shouldn't block the stop flow
@@ -879,10 +620,9 @@ function computeLocateDocling(): string | null {
 /** Real install locations — surfaced via /status so the UI/docs report the
  *  truth (venv vs global vs conda vs …) instead of guessing. This is the core
  *  of "兼容旧地址": the system introspects the actual path, whatever it is. */
-export function getPreloadLocations(): { docling: string | null; remotion: string | null } {
+export function getPreloadLocations(): { docling: string | null } {
   return {
     docling: computeLocateDocling(),
-    remotion: fs.existsSync(remotionPreloadMarker()) ? remotionPreloadMarker() : null,
   };
 }
 
@@ -907,11 +647,11 @@ function childEnv(opts: RunOpts): NodeJS.ProcessEnv | undefined {
 
 /**
  * Quote a path/argument for safe interpolation into a SHELL command string
- * (only used by runProcess + the python-locator probes). runArgv below needs
- * NO quoting because it bypasses the shell entirely — prefer runArgv whenever
- * the command is a simple executable + args, since shell quoting of paths with
- * spaces (common in Windows usernames, e.g. `C:\Users\Jane Doe\…`) is fragile
- * and was the source of cross-platform breakage.
+ * (only used by the python-locator probes). runArgv below needs NO quoting
+ * because it bypasses the shell entirely — prefer runArgv whenever the command
+ * is a simple executable + args, since shell quoting of paths with spaces
+ * (common in Windows usernames, e.g. `C:\Users\Jane Doe\…`) is fragile and was
+ * the source of cross-platform breakage.
  */
 function q(p: string): string {
   if (process.platform === 'win32') {
@@ -992,15 +732,13 @@ function runSpawned(proc: ChildProcess, opts: RunOpts): Promise<void> {
   });
 }
 
-/** Run a command THROUGH a shell (needed for `&&`/`||`/pipes, e.g. npm chains).
- *  Callers must pre-quote any interpolated paths via q(). */
 /** Shared spawn options for every preload child process.
  *  - `detached` is POSIX-ONLY: it gives Unix a process group for `kill(-pid)`.
  *    On Windows, tree-kill goes through `taskkill /T` (parent→child walk) and
  *    needs NO detached — and setting detached there is actively harmful: libuv
  *    maps it to DETACHED_PROCESS, which (a) defeats `windowsHide` on the direct
- *    child and (b) makes every console-subsystem grandchild (the node/python
- *    that npm/pip launch) allocate its OWN visible console window. That
+ *    child and (b) makes every console-subsystem grandchild (the python that
+ *    pip launches) allocate its OWN visible console window. That
  *    combination was the 2026-07 "black windows still pop after adding
  *    windowsHide" bug.
  *  - `windowsHide:true` everywhere: hides the direct child's console on
@@ -1017,16 +755,9 @@ export function preloadSpawnOpts(opts: RunOpts): Parameters<typeof spawn>[2] {
   };
 }
 
-function runProcess(command: string, opts: RunOpts = {}): Promise<void> {
-  const useShell = process.platform !== 'win32';
-  const proc = useShell
-    ? spawn('sh', ['-c', command], preloadSpawnOpts(opts))
-    : spawn('cmd', ['/c', command], preloadSpawnOpts(opts));
-  return runSpawned(proc, opts);
-}
-
 /** Run an executable + args WITHOUT a shell — immune to spaces in paths and
- *  shell-injection. PREFERRED for python/pip/docling invocations. */
+ *  shell-injection. All preload invocations (python/pip/docling) run this
+ *  way. */
 function runArgv(argv: string[], opts: RunOpts = {}): Promise<void> {
   const file = argv[0];
   if (!file) return Promise.reject(new Error('runArgv: empty argv'));
@@ -1122,9 +853,9 @@ export class PreloadManager {
 
   /**
    * Start (or resume) preloading a skill in the background.
-   * Resuming works because pip / HuggingFace / npm all reuse their caches —
-   * a re-run skips already-downloaded packages and resumes `.incomplete`
-   * model files. Throws only if already actively preloading.
+   * Resuming works because pip / HuggingFace reuse their caches — a re-run
+   * skips already-downloaded packages and resumes `.incomplete` model files.
+   * Throws only if already actively preloading.
    */
   async startPreload(skill: PreloadableSkill): Promise<void> {
     const current = this.statuses.get(skill);
@@ -1234,7 +965,7 @@ export class PreloadManager {
   }
 
   /** Stop all running preloads. Called on daemon graceful shutdown so we
-   *  don't orphan detached child processes (pip/npm keep running otherwise). */
+   *  don't orphan detached child processes (pip keeps running otherwise). */
   stopAll(): void {
     for (const skill of this.runningTasks.keys()) {
       this.stopPreload(skill);

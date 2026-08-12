@@ -5,7 +5,7 @@
  * Both flavors are app-owned functionality: hidden from the settings UI and
  * always effective regardless of the `enabled` flag (see vault-config.ts +
  * routes/skills.ts). They differ only in content + sync shape:
- *  - **bundled** (docling / wiki-* / remotion / wechat-article-extractor):
+ *  - **bundled** (docling / wiki-* / wechat-article-extractor):
  *    multi-file content under the app resources (`tools/skills/<slug>/`); only
  *    a metadata row is inserted (createSkill skips writing a library SKILL.md
  *    for kind='bundled'); synced whole-dir by reconcileBundledSync. Back
@@ -27,7 +27,7 @@ import type Database from 'better-sqlite3';
 import { parseSkillMd } from '@molio/contracts';
 import { assertSafeSkillId, type SkillPathsOpts } from './paths.js';
 import { createSkill, getSkill } from './store.js';
-import { BUILTIN_SKILLS, resolveSkillsSourceDir } from '../skill-installer.js';
+import { BUILTIN_SKILLS, RETIRED_BUNDLED_SKILLS, resolveSkillsSourceDir } from '../skill-installer.js';
 
 /** Fallback display metadata for bundled skills if the shipped SKILL.md can't be read. */
 const BUNDLED_FALLBACK: Record<string, { name: string; description: string }> = {
@@ -44,7 +44,6 @@ const BUNDLED_FALLBACK: Record<string, { name: string; description: string }> = 
   'wiki-lint': { name: 'wiki-lint', description: '对知识库 Wiki 做健康检查/质量审查。' },
   'wiki-save': { name: 'wiki-save', description: '将当前对话中有价值的内容归档为 wiki 页面。' },
   'wiki-query': { name: 'wiki-query', description: '基于已构建的 wiki 和源文件回答库内问题/为库内任务提供依据。' },
-  remotion: { name: 'remotion', description: '用 React/TypeScript 制作视频并渲染为 MP4。' },
 };
 
 /** Read a bundled skill's display name/description from its shipped SKILL.md frontmatter. */
@@ -146,6 +145,19 @@ export const CORE_SKILLS_SEEDS: CoreSeed[] = [
  */
 export function seedBuiltinSkills(db: Database.Database, opts?: SkillPathsOpts): void {
   const sourceDir = resolveSkillsSourceDir();
+
+  // 0. Retired bundled skills (shipped by older versions, no longer bundled):
+  //    drop their rows so they stop counting as app-owned always-on skills.
+  //    Runs on every startup (idempotent). The kind='bundled' guard only ever
+  //    touches Molio's own seeded rows — a user library skill with a
+  //    coincidentally identical id is left alone. Removing the row is half the
+  //    migration: reconcileVault additionally unions RETIRED_BUNDLED_SKILLS
+  //    into the managed set so the per-vault `<vault>/.claude/skills/<slug>/`
+  //    copies converge away too (vault-config.ts).
+  const deleteRetired = db.prepare(`DELETE FROM skills WHERE id = ? AND kind = 'bundled'`);
+  for (const slug of RETIRED_BUNDLED_SKILLS) {
+    deleteRetired.run(slug);
+  }
 
   // 1. Bundled skills (multi-file, shipped) — hidden + always-on (app-owned).
   for (const slug of BUILTIN_SKILLS) {

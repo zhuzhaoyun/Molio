@@ -105,22 +105,22 @@ describe('reconcileBundledSync', () => {
 
   it('converges CLAUDE.md rule blocks to the effective set (gate off removes, gate on adds)', () => {
     makeSourceSkill('docling');
-    makeSourceSkill('remotion');
+    makeSourceSkill('wiki-query');
 
     // Both effective → both gated rule blocks present (plus always-on rules).
-    reconcileBundledSync(new Set(['docling', 'remotion']), new Set(['docling', 'remotion']), vaultDir, {
+    reconcileBundledSync(new Set(['docling', 'wiki-query']), new Set(['docling', 'wiki-query']), vaultDir, {
       sourceDir,
     });
     let md = readClaudeMd();
     assert.ok(md.includes('<!-- molio:docling-preference -->'), 'docling rule present when effective');
-    assert.ok(md.includes('<!-- molio:remotion-preference -->'), 'remotion rule present when effective');
+    assert.ok(md.includes('<!-- molio:wiki-query-preference -->'), 'wiki-query rule present when effective');
     assert.ok(md.includes('<!-- molio:env-self-heal -->'), 'always-on rule present');
 
-    // Drop docling from effective → its gated rule is removed, remotion stays.
-    reconcileBundledSync(new Set(['remotion']), new Set(['docling', 'remotion']), vaultDir, { sourceDir });
+    // Drop docling from effective → its gated rule is removed, wiki-query stays.
+    reconcileBundledSync(new Set(['wiki-query']), new Set(['docling', 'wiki-query']), vaultDir, { sourceDir });
     md = readClaudeMd();
     assert.ok(!md.includes('<!-- molio:docling-preference -->'), 'docling rule removed when not effective');
-    assert.ok(md.includes('<!-- molio:remotion-preference -->'), 'remotion rule kept');
+    assert.ok(md.includes('<!-- molio:wiki-query-preference -->'), 'wiki-query rule kept');
     assert.ok(md.includes('<!-- molio:env-self-heal -->'), 'always-on rule kept');
   });
 

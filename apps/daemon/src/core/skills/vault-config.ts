@@ -8,7 +8,7 @@
  *     globally-enabled OR core OR bundled
  *
  * `core` skills (the writing trio) and `bundled` skills (shipped with the app:
- * docling / wiki-* / remotion / wechat-article-extractor) are exempt from the
+ * docling / wiki-* / wechat-article-extractor) are exempt from the
  * global switch — always effective. Both are app-owned functionality hidden
  * from the settings UI (routes/skills.ts 404s them) because they back
  * deterministic app paths (KB panel wiki actions, channel routing, preload);
@@ -43,7 +43,7 @@ import type { SkillManifestEntry, Vault } from '@molio/contracts';
 import { listVaults } from '../db.js';
 import { listSkills } from './store.js';
 import { reconcileSync } from './sync.js';
-import { reconcileBundledSync } from '../skill-installer.js';
+import { reconcileBundledSync, RETIRED_BUNDLED_SKILLS } from '../skill-installer.js';
 import type { SkillPathsOpts } from './paths.js';
 
 /**
@@ -78,12 +78,17 @@ export function reconcileVault(db: Database.Database, vault: Vault, opts?: Skill
     const singleFileIds = effective.filter((s) => s.kind !== 'bundled').map((s) => s.id);
     reconcileSync(singleFileIds, { ...opts, claudeHome: path.join(vault.path, '.claude') });
 
-    // bundled → whole-dir sync. Managed = every bundled row the DB knows about;
-    // effective = the always-on subset (bundled ignore the switch). The two are
-    // equal in practice — the removal path stays for skill deprecation/row
-    // deletion, no longer user toggling.
+    // bundled → whole-dir sync. Managed = every bundled row the DB knows about
+    // PLUS the retired bundled slugs: their DB rows are deleted on startup
+    // (builtin.ts), so without the union their stale per-vault copies would
+    // fall outside the managed set and never be removed. Effective = the
+    // always-on subset (bundled ignore the switch) — retired slugs are never
+    // effective, so they only ever hit the removal path (ownership-proofed).
     const allSkills = listSkills(db);
-    const managedBundled = new Set(allSkills.filter((s) => s.kind === 'bundled').map((s) => s.id));
+    const managedBundled = new Set([
+      ...allSkills.filter((s) => s.kind === 'bundled').map((s) => s.id),
+      ...RETIRED_BUNDLED_SKILLS,
+    ]);
     const effectiveBundled = new Set(effective.filter((s) => s.kind === 'bundled').map((s) => s.id));
     reconcileBundledSync(effectiveBundled, managedBundled, vault.path);
   } catch (err) {

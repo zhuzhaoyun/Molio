@@ -14,6 +14,8 @@ import {
   reconcileAllVaultsAsync,
   cleanupLegacyGlobalSync,
 } from '../../../src/core/skills/vault-config.js';
+import { resolveSkillsSourceDir } from '../../../src/core/skill-installer.js';
+
 
 /**
  * Per-vault skill config tests. Everything is isolated in temp dirs:
@@ -201,5 +203,76 @@ describe('skills/vault-config: reconcileAllVaultsAsync (startup fan-out must not
     for (const v of vaults) {
       fs.rmSync(v.dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('skills/vault-config: retired bundled skill cleanup (remotion)', () => {
+  // remotion is no longer bundled (video creation moved to the skill hub's
+  // am-will/remotion). Vaults synced by older versions still carry the
+  // app-owned copy under .claude/skills/remotion/ PLUS the gated CLAUDE.md
+  // rule block — reconcileVault must clean up both:
+  //  - the DB row is deleted on startup (builtin.ts step 0), but
+  //    RETIRED_BUNDLED_SKILLS keeps the slug in the MANAGED set so the
+  //    step-3 removal fires (with the usual byte-for-byte ownership proof);
+  //  - the rule's gateSlug is never effective, so ensureMolioRules strips
+  //    the block by sentinel.
+
+  it('removes the stale per-vault remotion dir and its CLAUDE.md rule block', () => {
+    const { dir, vault } = makeVault('V');
+    // Post-upgrade DB shape: the usual bundled rows exist, remotion's is gone
+    // (deleted by builtin.ts step 0). Seed docling so the test can also prove
+    // the rest of the bundled sync keeps working alongside the cleanup.
+    const now = Date.now();
+    db.prepare(
+      `INSERT INTO skills (id, name, description, kind, core, built_in, enabled, created_at, updated_at)
+       VALUES ('docling', 'docling', '', 'bundled', 0, 1, 1, ?, ?)`,
+    ).run(now, now);
+    const sourceDir = resolveSkillsSourceDir();
+    const remotionSrc = path.join(sourceDir, 'remotion');
+    assert.ok(
+      fs.existsSync(path.join(remotionSrc, 'SKILL.md')),
+      'the shipped remotion source dir must be KEPT — it is the ownership proof for removal',
+    );
+
+    // Simulate an old-version install: a byte-for-byte copy of the app-owned
+    // skill + the wrapped rule block in CLAUDE.md.
+    const staleDir = path.join(dir, '.claude', 'skills', 'remotion');
+    fs.cpSync(remotionSrc, staleDir, { recursive: true });
+    const claudeDir = path.join(dir, '.claude');
+    fs.writeFileSync(path.join(claudeDir, 'CLAUDE.md'), [
+      '# Vault rules',
+      '',
+      '<!-- molio:remotion-preference -->',
+      'legacy remotion block body',
+      '<!-- /molio:remotion-preference -->',
+      '',
+      'User content after the block.',
+    ].join('\n'), 'utf-8');
+
+    reconcileVault(db, vault, opts);
+
+    assert.ok(!fs.existsSync(staleDir), 'stale bundled remotion copy must be removed (ownership proven)');
+    const md = fs.readFileSync(path.join(claudeDir, 'CLAUDE.md'), 'utf-8');
+    assert.ok(!md.includes('<!-- molio:remotion-preference -->'), 'legacy rule block removed by sentinel');
+    assert.ok(md.includes('User content after the block.'), 'user content survives the cleanup');
+    // The rest of the bundled system keeps working.
+    assert.ok(
+      fs.existsSync(path.join(dir, '.claude', 'skills', 'docling', 'SKILL.md')),
+      'docling is still synced',
+    );
+  });
+
+  it('never removes a USER remotion dir (no ownership proof)', () => {
+    const { dir, vault } = makeVault('V');
+    const userDir = path.join(dir, '.claude', 'skills', 'remotion');
+    fs.mkdirSync(userDir, { recursive: true });
+    fs.writeFileSync(path.join(userDir, 'SKILL.md'), 'my own remotion setup\n', 'utf-8');
+
+    reconcileVault(db, vault, opts);
+
+    assert.ok(
+      fs.existsSync(path.join(userDir, 'SKILL.md')),
+      'user same-name dir survives — its content differs from the shipped source',
+    );
   });
 });
