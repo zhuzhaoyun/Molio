@@ -263,6 +263,10 @@ describe('skills/sync', () => {
       return;
     }
     const src = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-skills-fifo-src-'));
+    // dest MUST live outside src: copyDirSync walks src recursively, and a
+    // dest inside src copies the mirror into itself until ENAMETOOLONG
+    // (that is what the first version of this test did, and macOS CI proved it).
+    const dest = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-skills-fifo-dest-'));
     try {
       fs.writeFileSync(path.join(src, 'SKILL.md'), 'body\n', 'utf8');
       const fifo = path.join(src, 'pipe');
@@ -272,7 +276,6 @@ describe('skills/sync', () => {
         return;
       }
 
-      const dest = path.join(src, 'mirror');
       copyDirSync(src, dest);
 
       assert.ok(fs.existsSync(path.join(dest, 'SKILL.md')), 'regular files copied');
@@ -281,6 +284,7 @@ describe('skills/sync', () => {
       assert.ok(isAlreadySynced(src, dest), 'hash parity holds despite the skipped FIFO');
     } finally {
       fs.rmSync(src, { recursive: true, force: true });
+      fs.rmSync(dest, { recursive: true, force: true });
     }
   });
 
