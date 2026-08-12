@@ -10,6 +10,8 @@ import { KnowledgeBasePage } from './components/kb/KnowledgeBasePage';
 import { SettingsPage } from './components/settings/SettingsPage';
 import { HistoryPage } from './components/history/HistoryPage';
 import { GraphPage } from './components/graph/GraphPage';
+import { ResourcesPage } from './components/resources/ResourcesPage';
+import { ResourceDetailPage } from './components/resources/ResourceDetailPage';
 import { UpdateNotification } from './components/UpdateNotification';
 import { PreloadToast } from './components/PreloadToast';
 import { LanguageProvider } from './i18n/LanguageProvider';
@@ -27,6 +29,7 @@ import './styles/settings.css';
 import './styles/channels.css';
 import './styles/history.css';
 import './styles/graph.css';
+import './styles/resources.css';
 import './App.css';
 
 const STORAGE_KEY_LAST_ROUTE = 'molio.lastRoute';
@@ -220,6 +223,8 @@ export default function App() {
           } />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/graph" element={<GraphPage />} />
+            <Route path="/resources" element={<ResourcesPage />} />
+            <Route path="/resources/:id" element={<ResourceDetailPage />} />
           </Routes>
         </div>
         <UpdateNotification />

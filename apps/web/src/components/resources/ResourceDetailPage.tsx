@@ -1,0 +1,214 @@
+/**
+ * 资源详情页（/resources/:id）—— 对应官网 resource.html：
+ * 面包屑返回 + head（图标/名称/价格/格式说明/tags）+ 左主栏（概述/效果预览灯箱/导入说明）
+ * + 右侧动作卡与信息卡。预览图为官网相对路径拼绝对 URL，加载失败整图跳过。
+ */
+import { useEffect, useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
+import { useI18n } from '../../i18n';
+import {
+  isPaid,
+  PAY_BASE,
+  previewUrl,
+  RESOURCES,
+  type MolioResource,
+} from '../../data/resources';
+import { useResourcePay } from '../../hooks/useResourcePay';
+import { ResourcePayModal } from './ResourcePayModal';
+import { startResourcePurchase } from './resourceAction';
+
+export function ResourceDetailPage() {
+  const { t } = useI18n();
+  const { id } = useParams<{ id: string }>();
+  const r = RESOURCES.find((x) => x.id === id);
+  const pay = useResourcePay();
+  const [lightbox, setLightbox] = useState<string | null>(null);
+  const [failedImgs, setFailedImgs] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!lightbox) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setLightbox(null);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [lightbox]);
+
+  if (!r) {
+    return (
+      <div className="resources-shell">
+        <div className="resources-scroll">
+          <div className="resources-breadcrumb">
+            <Link to="/resources" data-testid="resources-back">
+              {t('resources.backToList')}
+            </Link>
+          </div>
+          <h1 className="resources-page-title">{t('resources.notFound')}</h1>
+          <div className="resources-tip-box">{t('resources.notFoundHint')}</div>
+        </div>
+      </div>
+    );
+  }
+
+  const paid = isPaid(r);
+  const previews = r.preview.map(previewUrl).filter((src) => !failedImgs.has(src));
+
+  const sideNote = !paid
+    ? t('resources.sideNote.free')
+    : r.payUrl
+      ? t('resources.sideNote.payUrl')
+      : PAY_BASE
+        ? t('resources.sideNote.paid')
+        : t('resources.sideNote.noBase');
+
+  const actionLabel = !paid
+    ? t('resources.downloadZip')
+    : r.payUrl || !PAY_BASE
+      ? t('resources.buy', { price: r.price })
+      : t('resources.pay.wechat', { price: r.price });
+
+  return (
+    <div className="resources-shell">
+      <div className="resources-scroll">
+        <div className="resources-breadcrumb">
+          <Link to="/resources" data-testid="resources-back">
+            {t('resources.backToList')}
+          </Link>
+          <span className="resources-breadcrumb__sep">/</span>
+          <span>{r.name}</span>
+        </div>
+
+        <div className="resources-detail-head">
+          <div className="resources-icon" style={{ backgroundColor: r.tint }} aria-hidden="true">
+            {r.icon}
+          </div>
+          <div>
+            <div className="resources-detail-title">
+              <h1>{r.name}</h1>
+              <span className={`resources-price ${paid ? 'is-paid' : 'is-free'}`}>
+                {paid ? `¥${r.price}` : t('resources.free')}
+              </span>
+            </div>
+            <div className="resources-meta-line">{t('resources.metaLine')}</div>
+            {r.tags.length > 0 && (
+              <div className="resources-tags">
+                {r.tags.map((tag) => (
+                  <span key={tag}>{tag}</span>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="resources-detail-grid">
+          <div className="resources-main">
+            <h2 className="resources-section-title">{t('resources.overview')}</h2>
+            <div className="resources-article">
+              {r.overview.map((p, i) => (
+                <p key={i}>{p}</p>
+              ))}
+              {r.highlights.length > 0 && (
+                <ul>
+                  {r.highlights.map((h, i) => (
+                    <li key={i}>
+                      <strong>{h}</strong>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            {previews.length > 0 && (
+              <>
+                <h2 className="resources-section-title">{t('resources.preview')}</h2>
+                <div className="resources-preview-grid">
+                  {previews.map((src) => (
+                    <figure key={src}>
+                      <button
+                        type="button"
+                        className="resources-preview-btn"
+                        data-testid="resources-preview-btn"
+                        onClick={() => setLightbox(src)}
+                      >
+                        <img
+                          src={src}
+                          alt={t('resources.previewAlt', { name: r.name })}
+                          loading="lazy"
+                          onError={() =>
+                            setFailedImgs((prev) => new Set(prev).add(src))
+                          }
+                        />
+                      </button>
+                    </figure>
+                  ))}
+                </div>
+              </>
+            )}
+
+            <h2 className="resources-section-title">{t('resources.importGuide')}</h2>
+            <div className="resources-step-card">
+              <ol>
+                <li>{t('resources.import.step1')}</li>
+                <li>{t('resources.import.step2')}</li>
+                <li>{t('resources.import.step3')}</li>
+              </ol>
+              <Link to="/knowledge" className="resources-open-kb" data-testid="resources-open-kb">
+                {t('resources.openKnowledge')} →
+              </Link>
+            </div>
+          </div>
+
+          <aside className="resources-side">
+            <div className="resources-side-card">
+              <button
+                type="button"
+                className="resources-buy-btn"
+                data-testid={`resource-buy-${r.id}`}
+                onClick={() => startResourcePurchase(r, pay.open)}
+              >
+                {actionLabel}
+              </button>
+              <p className="resources-side-note">{sideNote}</p>
+            </div>
+            <div className="resources-side-card">
+              <div className="resources-info-row">
+                <span className="k">{t('resources.info.format')}</span>
+                <span className="v">{t('resources.info.formatValue')}</span>
+              </div>
+              <div className="resources-info-row">
+                <span className="k">{t('resources.info.compat')}</span>
+                <span className="v">{t('resources.info.compatValue')}</span>
+              </div>
+              <div className="resources-info-row">
+                <span className="k">{t('resources.info.price')}</span>
+                <span className="v">{paid ? `¥${r.price}` : t('resources.free')}</span>
+              </div>
+              <div className="resources-info-row">
+                <span className="k">{t('resources.info.file')}</span>
+                <span className="v">{r.file}</span>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </div>
+
+      {lightbox && (
+        <div
+          className="resources-lightbox"
+          role="dialog"
+          aria-modal="true"
+          aria-label={t('resources.preview')}
+          data-testid="resources-lightbox"
+          onClick={() => setLightbox(null)}
+        >
+          <button type="button" className="resources-lightbox__close" aria-label={t('common.close')}>
+            ×
+          </button>
+          <img src={lightbox} alt={t('resources.previewAlt', { name: r.name })} />
+        </div>
+      )}
+
+      {pay.phase !== 'idle' && <ResourcePayModal pay={pay} />}
+    </div>
+  );
+}
