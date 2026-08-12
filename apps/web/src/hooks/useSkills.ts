@@ -54,13 +54,20 @@ export function useSkills() {
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  /** Replace one entry in the local list (or append if new). */
+  /**
+   * Replace one entry in the local list (or append if new). Re-applies the
+   * in-flight toggle intent when one exists for this id: a create/update
+   * response can land MID-toggle carrying the pre-toggle `enabled`, and
+   * writing it verbatim would revert the optimistic flip.
+   */
   const upsert = useCallback((entry: SkillManifestEntry) => {
+    const desired = desiredRef.current.get(entry.id);
+    const effective = desired === undefined ? entry : { ...entry, enabled: desired };
     setSkills((prev) => {
       const idx = prev.findIndex((s) => s.id === entry.id);
-      if (idx === -1) return [...prev, entry];
+      if (idx === -1) return [...prev, effective];
       const next = prev.slice();
-      next[idx] = entry;
+      next[idx] = effective;
       return next;
     });
   }, []);
@@ -90,6 +97,11 @@ export function useSkills() {
       // (an earlier toggle that resolved late) must not undo the newer state.
       if (seqs.get(id) === seq) {
         desiredRef.current.delete(id);
+        // Invalidate any in-flight list refresh: its snapshot predates this
+        // commit and would revert the flip. The superseded refresh's
+        // seq-guarded finally then never clears `loading` — clear it here.
+        refreshSeqRef.current++;
+        setLoading(false);
         upsert(skill);
       }
     } catch (err) {
@@ -98,8 +110,10 @@ export function useSkills() {
         // Latest intent failed: re-sync from the server — it is the only
         // authority on the actual state, so no blind flip-back guess.
         void refresh();
+        throw err;
       }
-      throw err;
+      // Stale failure: a newer toggle already owns this id's state. Surfacing
+      // the error would show a banner for a request the user superseded.
     }
   }, [upsert, refresh]);
 

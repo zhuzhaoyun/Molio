@@ -115,6 +115,11 @@ export function useSkillHub() {
       // computed before this install landed, so letting it resolve would
       // clobber the local patch below (skill flips back to "not installed").
       seqRef.current += 1;
+      // The superseded query's seq-guarded finally won't reset its loading
+      // flags — do it here, otherwise a loadMore in flight during an install
+      // leaves loadingMore=true forever and pagination is permanently stuck.
+      setLoading(false);
+      setLoadingMore(false);
       setSkills((prev) =>
         prev.map((s) =>
           // Match the full identity: same slug in a different namespace is a

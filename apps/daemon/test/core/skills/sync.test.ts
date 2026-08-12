@@ -1,5 +1,6 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -156,6 +157,33 @@ describe('skills/sync', () => {
     assert.ok(!fs.existsSync(dest), 'stale mirror removed when the source is gone');
   });
 
+  it('syncSkill keeps the mirror when the source is merely unreadable (EACCES)', (t) => {
+    // Regression: existsSync reports false on EACCES too, so a transient NAS
+    // permission blip used to delete a healthy, enabled skill's mirror out of
+    // every vault. Only a proven ENOENT may trigger removal.
+    if (process.platform === 'win32') {
+      t.skip('chmod-based access denial is not reliable on Windows');
+      return;
+    }
+    if (process.getuid?.() === 0) {
+      t.skip('root bypasses permission bits');
+      return;
+    }
+    const entry = createSkill(db, { name: 'S', description: '', enabled: true, builtIn: false }, 'body', opts);
+    syncSkill(entry.id, opts);
+    const dest = path.join(claudeHome, 'skills', `molio--${entry.id}`);
+    assert.ok(fs.existsSync(dest), 'mirror created first');
+
+    const libraryDir = path.join(molioHome, 'skills');
+    fs.chmodSync(libraryDir, 0o000); // lstat of <library>/<id> now fails EACCES
+    try {
+      syncSkill(entry.id, opts);
+      assert.ok(fs.existsSync(path.join(dest, 'SKILL.md')), 'mirror kept on EACCES');
+    } finally {
+      fs.chmodSync(libraryDir, 0o755); // restore so afterEach cleanup works
+    }
+  });
+
   it('reconcileSync sweeps stale mirror staging dirs but keeps fresh ones', () => {
     // A daemon killed mid-mirror leaves `.tmp-*`/`.bak-*` staging dirs inside
     // the scanned skills dir — runtime CLIs would load a half-copied skill.
@@ -222,6 +250,37 @@ describe('skills/sync', () => {
     } finally {
       fs.rmSync(src, { recursive: true, force: true });
       fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('mirroring skips FIFOs instead of blocking on them', { timeout: 5000 }, (t) => {
+    // copyFileSync opening a FIFO with no writer blocks forever — the daemon
+    // used to freeze on startup fan-out and re-freeze on every restart.
+    // POSIX-only: Windows has no mkfifo. The timeout turns a regression into
+    // a failure instead of a hang.
+    if (process.platform === 'win32') {
+      t.skip('FIFOs do not exist on Windows');
+      return;
+    }
+    const src = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-skills-fifo-src-'));
+    try {
+      fs.writeFileSync(path.join(src, 'SKILL.md'), 'body\n', 'utf8');
+      const fifo = path.join(src, 'pipe');
+      const res = spawnSync('mkfifo', [fifo]);
+      if (res.status !== 0) {
+        t.skip('mkfifo unavailable on this platform');
+        return;
+      }
+
+      const dest = path.join(src, 'mirror');
+      copyDirSync(src, dest);
+
+      assert.ok(fs.existsSync(path.join(dest, 'SKILL.md')), 'regular files copied');
+      assert.ok(!fs.existsSync(path.join(dest, 'pipe')), 'FIFO NOT copied');
+      // hashDir skips non-regular files too, so parity (short-circuit) holds.
+      assert.ok(isAlreadySynced(src, dest), 'hash parity holds despite the skipped FIFO');
+    } finally {
+      fs.rmSync(src, { recursive: true, force: true });
     }
   });
 

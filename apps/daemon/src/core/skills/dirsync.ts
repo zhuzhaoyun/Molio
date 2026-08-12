@@ -14,11 +14,13 @@ import path from 'node:path';
 
 /**
  * Recursively copy a directory, overwriting files to keep them in sync.
- * Symlinks are SKIPPED — consistent with hashDir (which ignores them), so a
- * tree containing symlinks still hash-matches its copy and the short-circuit
- * works. Following them (the old behavior) could crash the mirror (a link to a
- * directory makes copyFileSync throw EISDIR) or leak external file content
- * into the vault.
+ * Only plain files and directories are copied; symlinks and special entries
+ * (FIFOs, sockets, devices) are SKIPPED — consistent with hashDir (which only
+ * hashes isFile entries), so a tree containing them still hash-matches its
+ * copy and the short-circuit works. Following symlinks could crash the mirror
+ * (a link to a directory makes copyFileSync throw EISDIR) or leak external
+ * file content into the vault; copying a FIFO blocks copyFileSync forever
+ * once the read end opens it (a daemon freeze that recurs on every startup).
  */
 export function copyDirSync(src: string, dest: string): void {
   fs.mkdirSync(dest, { recursive: true });
@@ -29,11 +31,10 @@ export function copyDirSync(src: string, dest: string): void {
 
     if (entry.isDirectory()) {
       copyDirSync(srcPath, destPath);
-    } else if (entry.isSymbolicLink()) {
-      // Skip (see doc comment) — never follow links into or out of the vault.
-    } else {
+    } else if (entry.isFile()) {
       fs.copyFileSync(srcPath, destPath);
     }
+    // Symlinks / FIFOs / sockets / devices: skip (see doc comment).
   }
 }
 

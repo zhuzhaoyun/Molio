@@ -34,12 +34,26 @@ import { mirrorDirIfChanged, sweepStaleMirrorArtifacts, isMirrorArtifactName } f
  */
 export function syncSkill(id: string, opts?: SkillPathsOpts): void {
   const srcDir = skillContentDir(id, opts);
-  if (!fs.existsSync(srcDir)) {
-    // Source vanished (manual deletion, disk cleanup, corrupted home) while
-    // the DB row lives on: remove the stale mirror too. The id is still in
-    // enabledIds, so the orphan cleanup below would SKIP it — without this the
-    // outdated copy stays in every vault and runtime CLIs load it forever.
-    fs.rmSync(molioSkillDir(id, opts), { recursive: true, force: true });
+  try {
+    fs.lstatSync(srcDir);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT' || code === 'ENOTDIR') {
+      // Source vanished (manual deletion, disk cleanup, corrupted home) while
+      // the DB row lives on: remove the stale mirror too. The id is still in
+      // enabledIds, so the orphan cleanup below would SKIP it — without this
+      // the outdated copy stays in every vault and runtime CLIs load it
+      // forever. (existsSync was NOT enough here: it also reports false on
+      // EACCES, so a NAS permission blip deleted healthy mirrors.)
+      fs.rmSync(molioSkillDir(id, opts), { recursive: true, force: true });
+      return;
+    }
+    // Any other error (EACCES/EBUSY/…) means "can't tell", not "gone": keep
+    // the last good mirror instead of rm -rf'ing an enabled skill out of the
+    // vault on a transient glitch.
+    console.warn(
+      `[skills] Cannot stat skill source "${srcDir}" (${code}); keeping existing mirror`,
+    );
     return;
   }
   mirrorDirIfChanged(srcDir, molioSkillDir(id, opts));

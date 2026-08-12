@@ -181,22 +181,31 @@ function migrate(db: SqliteDb): void {
   const hubCols = db.prepare('PRAGMA table_info(hub_skill_installs)').all() as Array<{ name: string; pk: number }>;
   const hubNsCol = hubCols.find((c) => c.name === 'namespace');
   if (hubNsCol && hubNsCol.pk === 0) {
-    db.exec(`
-      CREATE TABLE hub_skill_installs_new (
-        slug         TEXT NOT NULL,
-        skill_id     TEXT NOT NULL,
-        version      TEXT NOT NULL DEFAULT '',
-        namespace    TEXT NOT NULL DEFAULT '',
-        installed_at INTEGER NOT NULL,
-        updated_at   INTEGER NOT NULL,
-        PRIMARY KEY (namespace, slug)
-      );
-      INSERT OR REPLACE INTO hub_skill_installs_new
-        (slug, skill_id, version, namespace, installed_at, updated_at)
-        SELECT slug, skill_id, version, namespace, installed_at, updated_at FROM hub_skill_installs;
-      DROP TABLE hub_skill_installs;
-      ALTER TABLE hub_skill_installs_new RENAME TO hub_skill_installs;
-    `);
+    // All-or-nothing: better-sqlite3 autocommits each exec statement, so a
+    // crash mid-rebuild used to strand the registry — rows orphaned in
+    // hub_skill_installs_new after a DROP-without-RENAME, or a leftover _new
+    // table making the next startup throw "table ... already exists" out of
+    // migrate(). Transaction rolls back cleanly; the DROP IF EXISTS makes a
+    // rerun after such a crash self-heal.
+    db.transaction(() => {
+      db.exec(`
+        DROP TABLE IF EXISTS hub_skill_installs_new;
+        CREATE TABLE hub_skill_installs_new (
+          slug         TEXT NOT NULL,
+          skill_id     TEXT NOT NULL,
+          version      TEXT NOT NULL DEFAULT '',
+          namespace    TEXT NOT NULL DEFAULT '',
+          installed_at INTEGER NOT NULL,
+          updated_at   INTEGER NOT NULL,
+          PRIMARY KEY (namespace, slug)
+        );
+        INSERT OR REPLACE INTO hub_skill_installs_new
+          (slug, skill_id, version, namespace, installed_at, updated_at)
+          SELECT slug, skill_id, version, namespace, installed_at, updated_at FROM hub_skill_installs;
+        DROP TABLE hub_skill_installs;
+        ALTER TABLE hub_skill_installs_new RENAME TO hub_skill_installs;
+      `);
+    })();
   }
 
   addColumnIfMissing(db, 'conversations', 'channel_type', "TEXT NOT NULL DEFAULT 'desktop'");

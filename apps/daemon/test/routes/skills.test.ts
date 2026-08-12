@@ -389,6 +389,62 @@ describe('Skills routes', () => {
     }
   });
 
+  it('POST / and PATCH with non-string fields → 400 (not a .trim() TypeError 500)', async () => {
+    // Regression (OCR review): {"name": 123} passed truthiness and then threw
+    // on .trim() outside the handler's try/catch — an opaque 500.
+    const created = await app.request('/api/skills', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 123, description: '', instructions: 'body' }),
+    });
+    assert.equal(created.status, 400);
+
+    const badDesc = await app.request('/api/skills', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'N', description: 42, instructions: 'body' }),
+    });
+    assert.equal(badDesc.status, 400);
+
+    const ok = await app.request('/api/skills', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'NonStringPatch', description: '', instructions: 'body' }),
+    });
+    const skill = (await json(ok))['skill'] as SkillManifestEntry;
+    try {
+      const patchNumName = await app.request(`/api/skills/${skill.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 99 }),
+      });
+      assert.equal(patchNumName.status, 400);
+
+      const patchEmptyName = await app.request(`/api/skills/${skill.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: '   ' }),
+      });
+      assert.equal(patchEmptyName.status, 400, 'blank name must not silently clear it');
+
+      const patchNumInstructions = await app.request(`/api/skills/${skill.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ instructions: ['not', 'a', 'string'] }),
+      });
+      assert.equal(patchNumInstructions.status, 400);
+    } finally {
+      await app.request(`/api/skills/${skill.id}`, { method: 'DELETE' });
+    }
+
+    const prefillNum = await app.request('/api/skills/prefill', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: 123 }),
+    });
+    assert.equal(prefillNum.status, 400);
+  });
+
   it('POST /import and /prefill with non-JSON bodies → 400', async () => {
     const imp = await app.request('/api/skills/import', {
       method: 'POST',

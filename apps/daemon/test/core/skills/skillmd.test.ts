@@ -229,6 +229,71 @@ describe('parseSkillMd — fields collapsed onto one line', () => {
   });
 });
 
+/**
+ * Regression (OCR review): generateSkillMd interpolated name/description into
+ * frontmatter UNESCAPED, so values starting with YAML indicators (`- x`, `#t`,
+ * `@h`), containing `: ` / ` #`, or shaped like bools/numbers produced
+ * frontmatter the runtime CLIs' real YAML parser misread (values truncated,
+ * retyped, or rejected). Such values must be emitted double-quoted, and the
+ * tolerant parser must unescape them so edit mode round-trips.
+ */
+describe('generateSkillMd — YAML escaping', () => {
+  const roundTrip = (name: string, description: string) => {
+    const parsed = parseSkillMd(generateSkillMd(name, description, '正文'));
+    assert.equal(parsed.name, name);
+    assert.equal(parsed.description, description);
+  };
+
+  it('plain values stay unquoted', () => {
+    const md = generateSkillMd('普通名字', 'a plain description', '正文');
+    assert.ok(md.includes('name: 普通名字\n'));
+    assert.ok(md.includes('description: a plain description\n'));
+  });
+
+  it('quotes values starting with YAML indicators', () => {
+    for (const v of ['- dash entry', '#hashtag', '@at', '`tick', '|pipe', '>fold', "'single", '"double', '&anchor', '*alias', '!tag', '%directive', '?key', ':colon']) {
+      roundTrip(v, 'd');
+      roundTrip('n', v);
+    }
+  });
+
+  it('quotes values containing ": " or " #"', () => {
+    roundTrip('用法 see: 文档', 'd');
+    roundTrip('n', 'note # not a comment');
+    roundTrip('http://example.com stays plain', 'd'); // colon w/o space is fine unquoted…
+    const md = generateSkillMd('http://example.com stays plain', 'd', '正文');
+    assert.ok(md.includes('name: http://example.com stays plain\n')); // …and stays unquoted
+  });
+
+  it('quotes bool/null/number lookalikes but not versions', () => {
+    for (const v of ['true', 'False', 'null', 'NO', '~', '123', '1.5', '1e3', '+42', '-7']) {
+      roundTrip(v, 'd');
+    }
+    roundTrip('1.0.0', 'd'); // multi-dot = not a number
+    const md = generateSkillMd('1.0.0', 'd', '正文');
+    assert.ok(md.includes('name: 1.0.0\n'));
+  });
+
+  it('escapes embedded quotes and backslashes', () => {
+    roundTrip('say "hi"', 'path C:\\skills\\dir');
+    roundTrip('edge\\"case', 'd'); // literal backslash+quote in the value
+  });
+
+  it('quotes the empty value', () => {
+    const md = generateSkillMd('n', '', '正文');
+    assert.ok(md.includes('description: ""\n'));
+    assert.equal(parseSkillMd(md).description, '');
+  });
+
+  it('a quoted value containing a field-key word is not re-split', () => {
+    // expandCollapsedFields used to split on ` description:` even inside quotes.
+    const name = 'tricky description: inside';
+    const parsed = parseSkillMd(generateSkillMd(name, 'd', '正文'));
+    assert.equal(parsed.name, name);
+    assert.equal(parsed.description, 'd');
+  });
+});
+
 describe('deriveSkillName', () => {
   it('prefers the parsed name above all else', () => {
     assert.equal(deriveSkillName(parseSkillMd('---\nname: 真名\ndescription: d\n---\n\n正文')), '真名');

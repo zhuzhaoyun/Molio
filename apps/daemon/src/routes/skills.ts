@@ -156,8 +156,20 @@ export function skillsRoutes(db: Database.Database, runManager: RunManager): Hon
   // POST /api/skills — create a user (library) skill, enabled by default
   app.post('/', async (c) => {
     const body = (await readJsonObject(c)) as CreateSkillRequest | null;
-    if (!body || !body.name || !body.name.trim() || !body.instructions || !body.instructions.trim()) {
+    // typeof guards: a non-string field (e.g. {"name": 123}) passes plain
+    // truthiness and then throws on .trim() — OUTSIDE the try/catch — which
+    // surfaced as an opaque 500 instead of a 400.
+    if (
+      !body ||
+      typeof body.name !== 'string' ||
+      !body.name.trim() ||
+      typeof body.instructions !== 'string' ||
+      !body.instructions.trim()
+    ) {
       return c.json({ error: { code: 'BAD_REQUEST', message: 'name and instructions are required' } }, 400);
+    }
+    if (body.description != null && typeof body.description !== 'string') {
+      return c.json({ error: { code: 'BAD_REQUEST', message: 'description must be a string' } }, 400);
     }
     try {
       const skill = createSkill(
@@ -182,6 +194,18 @@ export function skillsRoutes(db: Database.Database, runManager: RunManager): Hon
     const body = (await readJsonObject(c)) as UpdateSkillRequest | null;
     if (!body) {
       return c.json({ error: { code: 'BAD_REQUEST', message: 'request body must be a JSON object' } }, 400);
+    }
+    // Same typeof contract as POST: non-string fields flow into updateSkill →
+    // generateSkillMd and throw deep in the write path instead of 400ing here.
+    if (
+      (body.name !== undefined && (typeof body.name !== 'string' || !body.name.trim())) ||
+      (body.description !== undefined && typeof body.description !== 'string') ||
+      (body.instructions !== undefined && typeof body.instructions !== 'string')
+    ) {
+      return c.json(
+        { error: { code: 'BAD_REQUEST', message: 'name/description/instructions must be strings' } },
+        400,
+      );
     }
     try {
       const skill = updateSkill(db, c.req.param('id'), body);
@@ -260,7 +284,7 @@ export function skillsRoutes(db: Database.Database, runManager: RunManager): Hon
   // Always resolves (fallback result on any failure) so the UI can show an editable form.
   app.post('/prefill', async (c) => {
     const body = (await readJsonObject(c)) as PrefillRequest | null;
-    if (!body || !body.content || !body.content.trim()) {
+    if (!body || typeof body.content !== 'string' || !body.content.trim()) {
       return c.json({ error: { code: 'BAD_REQUEST', message: 'content is required' } }, 400);
     }
     const prefill = await prefillFromContent(body.content, runManager);

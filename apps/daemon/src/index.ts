@@ -115,6 +115,19 @@ async function runDeferredStartupChores(): Promise<void> {
   // Every chore is best-effort and ISOLATED: one failing must never skip the
   // rest (a throwing prune used to silently kill fan-out + cleanup + preload).
 
+  // Check which heavy skill tools are already installed. Results are stored in
+  // the PreloadManager and served via GET /api/preload/status so the web UI can
+  // show a preload suggestion toast. Runs FIRST: the UI fetches the status once
+  // (+ one retry after 3s) and ignores 'unchecked', so the check must land
+  // before that window closes — it used to run after prune (~4s cold) + fan-out
+  // (~1.2s/vault), so multi-vault cold starts never showed the toast.
+  // Independent of the skills table/fan-out (probes system binaries only).
+  try {
+    preloadManager.checkSkills();
+  } catch (err) {
+    console.error('[startup] preload check failed:', err instanceof Error ? err.message : err);
+  }
+
   // Delete per-run JSONL logs older than 7 days (nothing cleaned them up
   // before; they accumulate indefinitely under ~/.molio/runs). The async
   // variant yields to the event loop in chunks.
@@ -152,15 +165,6 @@ async function runDeferredStartupChores(): Promise<void> {
       '[skills] Seeding failed — skipping vault skill fan-out and legacy cleanup; ' +
         'vaults keep their previously synced skills.',
     );
-  }
-
-  // Check which heavy skill tools are already installed. Results are stored in
-  // the PreloadManager and served via GET /api/preload/status so the web UI can
-  // show a preload suggestion toast; not needed for readiness.
-  try {
-    preloadManager.checkSkills();
-  } catch (err) {
-    console.error('[startup] preload check failed:', err instanceof Error ? err.message : err);
   }
 }
 

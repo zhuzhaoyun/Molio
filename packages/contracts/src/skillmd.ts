@@ -13,6 +13,9 @@
  *
  *   <instructions body>
  *
+ * Generation quotes name/description values that YAML would misread as plain
+ * scalars (see yamlEscape); parsing understands the quoted form back.
+ *
  * Parsing is deliberately tolerant of real-world pastes:
  *   - a BOM / leading blank lines before the opening `---` (Windows editors),
  *   - missing `---` fences entirely – content that starts straight with
@@ -37,12 +40,51 @@ function singleLine(value: string): string {
 export function generateSkillMd(name: string, description: string, instructions: string): string {
   return (
     `---\n` +
-    `name: ${singleLine(name)}\n` +
-    `description: ${singleLine(description)}\n` +
+    `name: ${yamlEscape(singleLine(name))}\n` +
+    `description: ${yamlEscape(singleLine(description))}\n` +
     `version: 1.0.0\n` +
     `---\n\n` +
     `${instructions.trim()}\n`
   );
+}
+
+/** Chars that make a leading position a YAML indicator (breaks plain scalars). */
+const YAML_INDICATOR_START = /^[-?:,[\]{}#&*!|>'"%@`]/;
+/** Bool/null-ish literals YAML 1.1 types away from strings. */
+const YAML_AMBIGUOUS_LITERAL = /^(true|false|null|yes|no|on|off|~)$/i;
+/** Integer/float/exponent shapes YAML types as numbers (1.0.0 is NOT matched). */
+const YAML_NUMBER_LIKE = /^[+-]?(\d[\d_]*(\.[\d_]*)?|\.\d+)([eE][+-]?\d+)?$/;
+
+/**
+ * Quote a frontmatter value when YAML would misread it as a plain scalar:
+ * leading indicator chars, inner `: ` (mapping) or ` #` (comment), a trailing
+ * colon, bool/null/number lookalikes, the empty string, or ANY quote char
+ * (mid-value quotes are legal YAML, but the tolerant parser below strips
+ * unbalanced edge quotes, so quoting them keeps generate → parse exact).
+ * Quoted output uses double quotes with `\` and `"` escaped —
+ * frontmatterField reverses it, so even pathological values round-trip.
+ */
+function yamlEscape(value: string): string {
+  const needsQuotes =
+    value === '' ||
+    YAML_INDICATOR_START.test(value) ||
+    /:\s/.test(value) ||
+    /\s#/.test(value) ||
+    value.endsWith(':') ||
+    /\s$/.test(value) ||
+    value.includes('"') ||
+    value.includes("'") ||
+    YAML_AMBIGUOUS_LITERAL.test(value) ||
+    YAML_NUMBER_LIKE.test(value);
+  if (!needsQuotes) return value;
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
+/** Undo the double-quote escaping yamlEscape emits (`\"` → `"`, `\\` → `\`). */
+function unescapeDoubleQuoted(body: string): string {
+  // Single pass so `\\"` (escaped backslash + closing quote already stripped)
+  // resolves to `\"` instead of being double-unescaped.
+  return body.replace(/\\(.)/g, (m, ch: string) => (ch === '"' || ch === '\\' ? ch : m));
 }
 
 /**
@@ -117,12 +159,43 @@ const FIELD_LINE = /^([A-Za-z][A-Za-z0-9_-]*)\s*:/;
 /** A YAML block-scalar indicator as a whole value: `|`, `|-`, `>+`, … */
 const BLOCK_SCALAR = /^[|>][+-]?$/;
 /**
- * The point inside a field line where a platform copy jammed the NEXT known
+ * A position inside a field line where a platform copy jammed the NEXT known
  * field onto the same line (`name: x␣description: y`). Splitting here restores
  * one line per field. Only the known skill keys count as boundaries — a value
  * that happens to contain some other `word:` (e.g. "see: docs") stays intact.
  */
-const COLLAPSED_FIELD = /[ \t]+(?=(?:name|description|version)\s*:)/;
+const COLLAPSED_BOUNDARY = /^(?:name|description|version)\s*:/;
+
+/**
+ * Split a line at collapsed field boundaries (whitespace before a known field
+ * key). Quote-aware: a boundary INSIDE a double-quoted value (what yamlEscape
+ * emits for e.g. a name containing ` description: x`) is data, not a split
+ * point. Handles `\"` / `\\` escapes so an escaped quote doesn't end the span.
+ */
+function splitCollapsedFields(line: string): string[] {
+  const parts: string[] = [];
+  let start = 0;
+  let inQuotes = false;
+  let i = 0;
+  while (i < line.length) {
+    const ch = line[i];
+    if (inQuotes && ch === '\\') {
+      i += 2; // skip the escaped char
+      continue;
+    }
+    if (ch === '"') inQuotes = !inQuotes;
+    if (!inQuotes && (ch === ' ' || ch === '\t') && COLLAPSED_BOUNDARY.test(line.slice(i + 1))) {
+      parts.push(line.slice(start, i));
+      i += 1;
+      while (i < line.length && (line[i] === ' ' || line[i] === '\t')) i++;
+      start = i;
+      continue;
+    }
+    i++;
+  }
+  parts.push(line.slice(start));
+  return parts;
+}
 
 /** The value part of a `key: value` line ('' when the line is not a field). */
 function fieldValue(line: string): string {
@@ -173,7 +246,7 @@ function splitFrontmatter(content: string): FrontmatterSplit {
     i += 1;
     // A platform copy may have jammed several fields onto this one line;
     // re-split so each field is read on its own line.
-    const parts = line.split(COLLAPSED_FIELD);
+    const parts = splitCollapsedFields(line);
     fieldLines.push(...parts);
     const lastValue = fieldValue(parts[parts.length - 1] ?? '');
     if (BLOCK_SCALAR.test(lastValue)) {
@@ -214,7 +287,7 @@ function expandCollapsedFields(frontmatter: string): string {
       out.push(line);
       continue;
     }
-    const parts = line.split(COLLAPSED_FIELD);
+    const parts = splitCollapsedFields(line);
     out.push(...parts);
     if (BLOCK_SCALAR.test(fieldValue(parts[parts.length - 1] ?? ''))) inScalar = true;
   }
@@ -237,8 +310,17 @@ function frontmatterField(frontmatter: string | null, key: string): string | nul
     if (BLOCK_SCALAR.test(raw)) {
       return readBlockScalar(lines, idx + 1, raw.startsWith('>'));
     }
-    // Strip a collapsed block-scalar prefix (`| text` on one line) and quotes.
-    return raw.replace(/^[|>][+-]?\s+/, '').replace(/^["']|["']$/g, '');
+    // Strip a collapsed block-scalar prefix (`| text` on one line), then quotes.
+    const value = raw.replace(/^[|>][+-]?\s+/, '');
+    // Double-quoted is what generateSkillMd emits via yamlEscape — unescape so
+    // generate → parse round-trips. Single-quoted follows YAML's `''` escape.
+    if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
+      return unescapeDoubleQuoted(value.slice(1, -1));
+    }
+    if (value.length >= 2 && value.startsWith("'") && value.endsWith("'")) {
+      return value.slice(1, -1).replace(/''/g, "'");
+    }
+    return value.replace(/^["']|["']$/g, '');
   }
   return null;
 }
