@@ -78,6 +78,9 @@ export interface MockRunOptions {
    *  spinner that's cleared by the next event). When unset, all frames are
    *  delivered at once — fine for tests that only check the final state. */
   frameDelay?: number;
+  /** 已持久化的会话历史消息（DB 加载 / 重挂载恢复用）。默认 [] —— 避免真实 daemon
+   *  对未知 conv 404 → onLoadError 关标签。响应结构对齐 daemon：`{ messages: [...] }`。 */
+  persistedMessages?: Array<{ id: string; role: 'user' | 'assistant'; content: string; timestamp: number }>;
 }
 
 // ── Main mock function ─────────────────────────────────────────────────
@@ -107,7 +110,23 @@ export async function mockChatRun(page: Page, opts: MockRunOptions = {}) {
         body: JSON.stringify({ runId, conversationId: convId }),
       });
     } else {
-      await route.continue();
+      // GET（listRuns）→ 返回活跃 run（含 conversationId）。KB 会话重挂载/切历史时
+      // 用它定位活跃 run 并恢复直播（maybeResume → resumeRun）。对现有测试无影响：
+      // 无消息的会话 → resumeRun 空消息守卫拦截；convId 不匹配的历史会话 → 不恢复。
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          runs: [{
+            id: runId,
+            agentId: 'claude',
+            status: 'running',
+            createdAt: 0,
+            lastStopReason: null,
+            conversationId: convId,
+          }],
+        }),
+      });
     }
   });
 
@@ -221,6 +240,16 @@ export async function mockChatRun(page: Page, opts: MockRunOptions = {}) {
       }),
     });
   });
+
+  // 7) GET /api/conversations/:convId/messages → persisted session history
+  //    （重挂载恢复的 DB 加载源；默认空历史避免真实 daemon 对未知 conv 404 → onLoadError）
+  await page.route(`**/api/conversations/${convId}/messages`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ messages: opts.persistedMessages ?? [] }),
+    });
+  });
 }
 
 /**
@@ -280,6 +309,7 @@ export async function unmockAll(page: Page) {
   await page.unroute('**/api/runs/*/tool-result');
   await page.unroute('**/api/agents');
   await page.unroute('**/api/config');
+  await page.unroute('**/api/conversations/*/messages');
   await page.unroute('**/api/conversations/*/rewind-resend');
   await page.unroute('**/api/conversations/*/delete-messages');
   // Close any streaming SSE servers started with frameDelay so they don't

@@ -31,7 +31,7 @@
 |------|------|
 | 🗂️ **Obsidian 兼容** | 直接打开你的 Obsidian 目录，零迁移；纯 Markdown 文件，无厂商锁定，随时切回 |
 | 🤖 **多 Agent + 本地优先** | 在统一界面里使用 Claude Code、Codex、Gemini CLI、Qwen Code，支持流式输出 — 知识库、AI 对话、所有设置全在本地，不经过任何第三方服务器 |
-| ✂️ **[Web Clipper](https://chromewebstore.google.com/detail/pjdacbbkjpegfkogoieejajljplngbik)** | Chrome 扩展一键剪藏网页到知识库，自动唤起桌面端定位到刚保存的文件。[Chrome 应用商店](https://chromewebstore.google.com/detail/pjdacbbkjpegfkogoieejajljplngbik) \| [其他浏览器](https://molio.cn/download.html) |
+| ✂️ **[Web Clipper](https://chromewebstore.google.com/detail/pjdacbbkjpegfkogoieejajljplngbik)** | Chrome 扩展一键剪藏网页到知识库，自动唤起桌面端定位到刚保存的文件。[Chrome 应用商店](https://chromewebstore.google.com/detail/pjdacbbkjpegfkogoieejajljplngbik) \| [其他浏览器](https://molio.cn/#download) |
 | 📝 **编辑 → 发布** | 左右分栏 Markdown 编辑器，实时预览；基于 [doocs/md](https://github.com/doocs/md) 排版，[doocs/cose](https://github.com/doocs/cose) 一键发布到 30+ 平台 |
 | 💬 **微信 AI 助手** | 扫码连接个人微信，手机上和你的知识库对话；发公众号链接自动总结并存入知识库 |
 | 📖 **知识图谱** | 可视化浏览知识关联与结构 |

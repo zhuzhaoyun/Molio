@@ -23,7 +23,7 @@
 <link rel="apple-touch-icon" href="/images/favicon-180.png">
 
 <!-- Styles -->
-<link rel="stylesheet" href="styles.css?v=20260806">
+<link rel="stylesheet" href="styles.css?v=20260806b">
 
 <!-- Open Graph -->
 <meta property="og:title" content="Molio 墨流 — 别再和每一个 AI 从零开始｜会成长的 AI 知识空间">
@@ -73,7 +73,7 @@
         "@type": "Offer",
         "price": "0",
         "priceCurrency": "CNY",
-        "url": "https://molio.cn/download.html"
+        "url": "https://molio.cn/#download"
       },
       "author": { "@type": "Organization", "name": "Molio" }
     }
@@ -91,8 +91,8 @@
       <a href="index.html" class="nav-link active">首页</a>
       <a href="help.html" class="nav-link">使用指南</a>
       <a href="blog/index.html" class="nav-link">博客</a>
-      <a href="enterprise.html" class="nav-link">企业服务</a>
-      <a href="download.html" class="nav-link">下载</a>
+      <a href="enterprise.html" class="nav-link">定制服务</a>
+      <a href="resources.html" class="nav-link">资源</a>
      <a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer" class="nav-gh" aria-label="GitHub 仓库"><svg viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg></a></div>
   </div>
 </nav>
@@ -113,8 +113,13 @@
       </h1>
       <p class="hero-desc reveal" style="--delay:2">别再和每一个 AI 从零开始——你花时间学习、记录和创造的知识，不该随着聊天窗口关闭而消失。Molio 把你的笔记、文档和项目经验变成一个会成长的知识空间：Claude Code、Codex 等 Agent 在里面工作，产出沉淀回空间，越用越懂你的事。</p>
       <div class="hero-actions reveal" style="--delay:3">
-        <a href="download.html" class="btn btn-primary">免费下载</a>
-        <a href="help.html" class="btn btn-secondary">3 分钟上手</a>
+        <a data-dl="win" href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases/v0.3.29/Molio-Setup-0.3.29-windows.exe" class="btn btn-primary">下载 Windows 版</a>
+        <a data-dl="mac" href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases/v0.3.29/Molio-0.3.29-mac-arm64.dmg" class="btn btn-primary">下载 macOS 版</a>
+      </div>
+      <div class="hero-sublinks reveal" style="--delay:4">
+        <a href="#download">麒麟 / NAS / Linux？Docker 自建</a>
+        <span class="hero-sublinks-sep">·</span>
+        <a href="help.html">3 分钟上手</a>
       </div>
     </div>
     <div class="hero-visual reveal" style="--delay:2">
@@ -173,17 +178,95 @@
 <section class="section section-dark section-ent-banner" id="enterprise">
   <div class="ent-banner-inner reveal">
     <div class="ent-banner-text">
-      <span class="section-label dark">Enterprise · 企业服务</span>
+      <span class="section-label dark">Custom · 定制服务</span>
       <h2>把核心知识，<br>留在你自己的院子里</h2>
-      <p class="sub">地基打好了，应用随便长——私有部署、知识库搭建、按需定制，一次演示见真章。</p>
+      <p class="sub">散料炼成知识库，陪你用到会——数据处理、咨询，私有部署按需，一次演示见真章。</p>
       <div class="ent-banner-tags">
+        <span>数据处理</span>
+        <span>咨询</span>
         <span>私有部署</span>
-        <span>知识库搭建</span>
-        <span>定制应用</span>
       </div>
-      <a href="enterprise.html" class="btn btn-light">了解企业服务 →</a>
+      <a href="enterprise.html" class="btn btn-light">了解定制服务 →</a>
     </div>
     <div class="ent-banner-stamp reveal" style="--delay:1">数据<br>不出域</div>
+  </div>
+</section>
+
+<!-- ===== DOWNLOAD: 客户端与扩展 ===== -->
+<section class="section section-inset" id="download">
+  <div style="max-width:var(--max-w); margin:0 auto; padding:0 24px;">
+    <div class="reveal" style="text-align:center; margin-bottom:16px;">
+      <span class="section-label light">Download · 获取 Molio</span>
+      <h2 style="font-family:var(--font-display); font-size:34px; font-weight:700; margin-top:12px;">下载客户端与浏览器扩展</h2>
+      <p style="color:var(--ink-40); margin-top:10px;">找现成的知识库？<a href="resources.html" style="color:var(--seal-dark); text-decoration:underline; text-underline-offset:2px;">去资源库看看 →</a></p>
+    </div>
+
+    <h2 class="download-section-title"> Molio 桌面客户端</h2>
+    <div class="download-grid">
+      <div class="download-card reveal">
+
+        <div class="name">Windows 版</div>
+        <div class="desc">64 位安装包</div>
+        <div class="meta" data-dl-meta="win">Molio-Setup-0.3.29-windows.exe</div>
+        <div class="btn-group">
+          <a data-dl="win" href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases/v0.3.29/Molio-Setup-0.3.29-windows.exe" class="download-btn primary">下载 Windows 版</a>
+        </div>
+      </div>
+      <div class="download-card reveal">
+
+        <div class="name">macOS 版</div>
+        <div class="desc">ARM64 (Apple Silicon)</div>
+        <div class="meta" data-dl-meta="mac">Molio-0.3.29-mac-arm64.dmg</div>
+        <div class="btn-group">
+          <a data-dl="mac" href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases/v0.3.29/Molio-0.3.29-mac-arm64.dmg" class="download-btn primary">下载 macOS 版</a>
+        </div>
+      </div>
+      <div class="download-card reveal">
+
+        <div class="name">麒麟 / NAS / Linux</div>
+        <div class="desc">Docker 自建 Web 服务，一条命令安装</div>
+        <div class="meta">install.sh · amd64 + arm64</div>
+        <div class="btn-group">
+          <a href="https://github.com/zhuzhaoyun/Molio#readme" target="_blank" rel="noopener noreferrer" class="download-btn primary">安装指南</a>
+          <a href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com/script/install.sh" target="_blank" rel="noopener noreferrer" class="download-btn secondary">安装脚本</a>
+        </div>
+      </div>
+    </div>
+
+    <h2 class="download-section-title"> Chrome 浏览器扩展</h2>
+    <div class="download-grid">
+      <div class="download-card reveal">
+
+        <div class="name">COSE</div>
+        <div class="desc">多平台一键发布到微信、知乎、CSDN 等 30+ 内容平台</div>
+        <div class="meta" data-dl-ext-meta="cose">v1.3.6</div>
+        <div class="btn-group">
+          <a data-dl-ext="cose" href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases/cose-extension-v1.3.6.zip" class="download-btn primary">离线安装包</a>
+          <a href="https://chromewebstore.google.com/detail/cose-%E5%A4%9A%E5%B9%B3%E5%8F%B0%E6%96%87%E7%AB%A0%E5%90%8C%E6%AD%A5/ilhikcdphhpjofhlnbojifbihhfmmhfk?hl=zh-CN&utm_source=ext_sidebar" target="_blank" rel="noopener noreferrer" class="download-btn secondary">Chrome 商店</a>
+        </div>
+      </div>
+      <div class="download-card reveal">
+
+        <div class="name">Molio Connect</div>
+        <div class="desc">浏览器剪藏插件，一键保存网页内容到 Molio 知识库</div>
+        <div class="meta" data-dl-ext-meta="mc">v0.2.4</div>
+        <div class="btn-group">
+          <a data-dl-ext="mc" href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases/molio-connect-0.2.4-chrome-store.zip" class="download-btn primary">离线安装包</a>
+          <a href="https://chromewebstore.google.com/detail/molio/pjdacbbkjpegfkogoieejajljplngbik?hl=zh-CN&utm_source=ext_sidebar" target="_blank" rel="noopener noreferrer" class="download-btn secondary">Chrome 商店</a>
+        </div>
+      </div>
+    </div>
+
+    <details class="install-details reveal">
+      <summary>Chrome 扩展离线安装说明</summary>
+      <ol>
+        <li>下载扩展的 <code>.zip</code> 压缩包并解压</li>
+        <li>打开 Chrome 浏览器，地址栏输入 <code>chrome://extensions</code> 并回车</li>
+        <li>开启右上角的「开发者模式」</li>
+        <li>点击「加载已解压的扩展程序」，选择刚才解压的文件夹</li>
+        <li>扩展图标会出现在 Chrome 工具栏上，安装完成</li>
+      </ol>
+    </details>
   </div>
 </section>
 
@@ -191,7 +274,7 @@
 <section class="section section-dark section-cta" id="cta">
   <div class="cta-inner reveal">
     <h2>让你的积累<br>在 AI 时代持续产生价值</h2>
-    <a href="download.html" class="btn btn-light">下载 Molio</a>
+    <a href="#download" class="btn btn-light">下载 Molio</a>
   </div>
 </section>
 
@@ -215,9 +298,9 @@
     <div class="footer-links">
       <h4>产品</h4>
       <a href="index.html">首页</a>
-      <a href="download.html">下载</a>
+      <a href="resources.html">资源</a>
       <a href="help.html">使用指南</a>
-      <a href="enterprise.html">企业服务</a>
+      <a href="enterprise.html">定制服务</a>
       <a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer">GitHub 开源</a>
     </div>
     <div class="footer-links">
@@ -240,7 +323,50 @@
   </div>
 </footer>
 
-<script src="shared.js?v=20260731"></script>
+<script src="shared.js?v=20260804"></script>
+<script>
+(function() {
+  const OSS_BASE = 'https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases';
+
+  function setLinks(selector, url) {
+    document.querySelectorAll(selector).forEach(function(a) { a.href = url; });
+  }
+  function setMetas(selector, text) {
+    document.querySelectorAll(selector).forEach(function(m) { m.textContent = text; });
+  }
+
+  fetch(OSS_BASE + '/latest.json')
+    .then(r => r.json())
+    .then(data => {
+      const v = data.version;
+      if (!v) throw new Error('no version');
+      setLinks('[data-dl="win"]', OSS_BASE + '/v' + v + '/Molio-Setup-' + v + '-windows.exe');
+      setLinks('[data-dl="mac"]', OSS_BASE + '/v' + v + '/Molio-' + v + '-mac-arm64.dmg');
+      setMetas('[data-dl-meta="win"]', 'Molio-Setup-' + v + '-windows.exe');
+      setMetas('[data-dl-meta="mac"]', 'Molio-' + v + '-mac-arm64.dmg');
+    })
+    .catch(() => {
+      // 保持 HTML 中的默认 OSS 链接
+    });
+
+  // 扩展版本动态获取
+  fetch(OSS_BASE + '/extensions-latest.json')
+    .then(r => r.json())
+    .then(data => {
+      if (data.cose) {
+        setLinks('[data-dl-ext="cose"]', OSS_BASE + '/cose-extension-v' + data.cose + '.zip');
+        setMetas('[data-dl-ext-meta="cose"]', 'v' + data.cose);
+      }
+      if (data['molio-connect']) {
+        setLinks('[data-dl-ext="mc"]', OSS_BASE + '/molio-connect-' + data['molio-connect'] + '-chrome-store.zip');
+        setMetas('[data-dl-ext-meta="mc"]', 'v' + data['molio-connect']);
+      }
+    })
+    .catch(() => {
+      // 保持 HTML 中的默认 OSS 链接
+    });
+})();
+</script>
 
 <!-- Google Analytics 4 -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-X6LMX9VR0Y"></script>
