@@ -6,10 +6,15 @@ import path from 'node:path';
 import os from 'node:os';
 import type Database from 'better-sqlite3';
 import { openDatabase, closeDatabase } from '../../../src/core/db.js';
-import { syncSkill, reconcileSync } from '../../../src/core/skills/sync.js';
+import { syncSkill, reconcileSync, planSyncTargets } from '../../../src/core/skills/sync.js';
 import { copyDirSync, isAlreadySynced } from '../../../src/core/skills/dirsync.js';
 import { createSkill } from '../../../src/core/skills/store.js';
-import type { SkillPathsOpts } from '../../../src/core/skills/paths.js';
+import { slugifySkillName, type SkillPathsOpts } from '../../../src/core/skills/paths.js';
+
+/** Dir a library skill named `name` syncs into under the molio-- prefix. */
+function molioDir(name: string): string {
+  return `molio--${slugifySkillName(name)}`;
+}
 
 let molioHome: string;
 let claudeHome: string;
@@ -33,15 +38,17 @@ afterEach(() => {
 });
 
 describe('skills/sync', () => {
-  it('syncSkill writes the library SKILL.md into molio--<id>/', () => {
-    const entry = createSkill(db, { name: 'S', description: '', enabled: false, builtIn: false }, 'body', opts);
-    syncSkill(entry.id, opts);
-    const synced = path.join(claudeHome, 'skills', `molio--${entry.id}`, 'SKILL.md');
+  it('syncSkill writes the library SKILL.md into molio--<dirName>/ (slugified display name)', () => {
+    const entry = createSkill(db, { name: 'My Skill', description: '', enabled: false, builtIn: false }, 'body', opts);
+    syncSkill(entry.id, slugifySkillName(entry.name), opts);
+    const synced = path.join(claudeHome, 'skills', molioDir('My Skill'), 'SKILL.md');
     assert.ok(fs.existsSync(synced));
     assert.ok(fs.readFileSync(synced, 'utf8').includes('body'));
+    // The vault dir is name-based — the DB uuid must NOT appear in the path.
+    assert.ok(!fs.existsSync(path.join(claudeHome, 'skills', `molio--${entry.id}`)));
   });
 
-  it('syncSkill mirrors a multi-file skill (SKILL.md + siblings) into molio--<id>/', () => {
+  it('syncSkill mirrors a multi-file skill (SKILL.md + siblings) into molio--<dirName>/', () => {
     // Build a multi-file source dir and import it verbatim as the skill content.
     const srcDir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-skills-sync-src-'));
     try {
@@ -55,9 +62,9 @@ describe('skills/sync', () => {
         '',
         opts,
       );
-      syncSkill(entry.id, opts);
+      syncSkill(entry.id, slugifySkillName(entry.name), opts);
 
-      const dest = path.join(claudeHome, 'skills', `molio--${entry.id}`);
+      const dest = path.join(claudeHome, 'skills', molioDir('M'));
       assert.ok(fs.existsSync(path.join(dest, 'SKILL.md')), 'SKILL.md synced');
       assert.ok(fs.existsSync(path.join(dest, 'references', 'g.md')), 'nested sibling synced');
       assert.equal(fs.readFileSync(path.join(dest, 'references', 'g.md'), 'utf8'), 'guide\n');
@@ -68,13 +75,13 @@ describe('skills/sync', () => {
 
   it('syncSkill is a read-only no-op when dest already mirrors src', () => {
     const entry = createSkill(db, { name: 'S', description: '', enabled: true, builtIn: false }, 'body', opts);
-    syncSkill(entry.id, opts);
-    const dest = path.join(claudeHome, 'skills', `molio--${entry.id}`);
+    syncSkill(entry.id, slugifySkillName(entry.name), opts);
+    const dest = path.join(claudeHome, 'skills', molioDir('S'));
     const skillMd = path.join(dest, 'SKILL.md');
     const before = fs.statSync(skillMd).mtimeMs;
 
     // Second sync with unchanged source must not rewrite (short-circuit).
-    syncSkill(entry.id, opts);
+    syncSkill(entry.id, slugifySkillName(entry.name), opts);
     assert.equal(fs.statSync(skillMd).mtimeMs, before, 'unchanged source → no rewrite');
     // And it must not leave temp dirs behind in the skills root.
     const leftovers = fs
@@ -85,24 +92,24 @@ describe('skills/sync', () => {
 
   it('syncSkill rewrites when source content changed', () => {
     const entry = createSkill(db, { name: 'S', description: '', enabled: true, builtIn: false }, 'v1', opts);
-    syncSkill(entry.id, opts);
-    const skillMd = path.join(claudeHome, 'skills', `molio--${entry.id}`, 'SKILL.md');
+    syncSkill(entry.id, slugifySkillName(entry.name), opts);
+    const skillMd = path.join(claudeHome, 'skills', molioDir('S'), 'SKILL.md');
     assert.ok(fs.readFileSync(skillMd, 'utf8').includes('v1'));
 
     // Change the library source, re-sync → dest converges to the new content.
     fs.writeFileSync(path.join(molioHome, 'skills', entry.id, 'SKILL.md'), 'v2 changed\n', 'utf8');
-    syncSkill(entry.id, opts);
+    syncSkill(entry.id, slugifySkillName(entry.name), opts);
     assert.ok(fs.readFileSync(skillMd, 'utf8').includes('v2 changed'), 'dest updated on change');
   });
 
   it('syncSkill drops stale siblings on re-sync (rm-first converge)', () => {
     const entry = createSkill(db, { name: 'S', description: '', enabled: true, builtIn: false }, 'body', opts);
-    syncSkill(entry.id, opts);
-    const dest = path.join(claudeHome, 'skills', `molio--${entry.id}`);
+    syncSkill(entry.id, slugifySkillName(entry.name), opts);
+    const dest = path.join(claudeHome, 'skills', molioDir('S'));
     // Simulate an old version having synced an extra sibling that no longer exists.
     fs.writeFileSync(path.join(dest, 'stale.txt'), 'old', 'utf8');
 
-    syncSkill(entry.id, opts);
+    syncSkill(entry.id, slugifySkillName(entry.name), opts);
     assert.ok(!fs.existsSync(path.join(dest, 'stale.txt')), 'stale sibling removed on re-sync');
     assert.ok(fs.existsSync(path.join(dest, 'SKILL.md')), 'SKILL.md still present');
   });
@@ -121,20 +128,20 @@ describe('skills/sync', () => {
     // an enabled library skill — must be synced
     const entry = createSkill(db, { name: 'S', description: '', enabled: false, builtIn: false }, 'body', opts);
 
-    reconcileSync([entry.id], opts);
+    reconcileSync(planSyncTargets([entry]), opts);
 
     assert.ok(fs.existsSync(path.join(userDir, 'SKILL.md')), 'user skill must be untouched');
     assert.ok(!fs.existsSync(orphanDir), 'orphan molio dir must be removed');
-    assert.ok(fs.existsSync(path.join(claudeHome, 'skills', `molio--${entry.id}`, 'SKILL.md')), 'enabled skill synced');
+    assert.ok(fs.existsSync(path.join(claudeHome, 'skills', molioDir('S'), 'SKILL.md')), 'enabled skill synced');
   });
 
   it('reconcileSync is idempotent', () => {
     const entry = createSkill(db, { name: 'S', description: '', enabled: false, builtIn: false }, 'body', opts);
-    reconcileSync([entry.id], opts);
-    const synced = path.join(claudeHome, 'skills', `molio--${entry.id}`, 'SKILL.md');
+    reconcileSync(planSyncTargets([entry]), opts);
+    const synced = path.join(claudeHome, 'skills', molioDir('S'), 'SKILL.md');
     const mtime1 = fs.statSync(synced).mtimeMs;
 
-    reconcileSync([entry.id], opts);
+    reconcileSync(planSyncTargets([entry]), opts);
     assert.ok(fs.existsSync(synced), 'still present after second reconcile');
     // Content identical even if rewritten.
     assert.ok(fs.readFileSync(synced, 'utf8').includes('body'));
@@ -143,16 +150,17 @@ describe('skills/sync', () => {
 
   it('syncSkill removes the stale mirror when the library source dir vanished', () => {
     // Regression: the source dir can vanish (manual deletion, disk cleanup,
-    // corrupted home) while the DB row lives on. The id stays in enabledIds,
-    // so the orphan cleanup SKIPS it — without an explicit removal the outdated
-    // copy stays in every vault and runtime CLIs load it forever.
+    // corrupted home) while the DB row lives on. The target stays in the
+    // planned set, so the orphan cleanup SKIPS it — without an explicit
+    // removal the outdated copy stays in every vault and runtime CLIs load it
+    // forever.
     const entry = createSkill(db, { name: 'S', description: '', enabled: true, builtIn: false }, 'body', opts);
-    syncSkill(entry.id, opts);
-    const dest = path.join(claudeHome, 'skills', `molio--${entry.id}`);
+    syncSkill(entry.id, slugifySkillName(entry.name), opts);
+    const dest = path.join(claudeHome, 'skills', molioDir('S'));
     assert.ok(fs.existsSync(dest), 'mirror created first');
 
     fs.rmSync(path.join(molioHome, 'skills', entry.id), { recursive: true, force: true });
-    syncSkill(entry.id, opts);
+    syncSkill(entry.id, slugifySkillName(entry.name), opts);
 
     assert.ok(!fs.existsSync(dest), 'stale mirror removed when the source is gone');
   });
@@ -170,14 +178,14 @@ describe('skills/sync', () => {
       return;
     }
     const entry = createSkill(db, { name: 'S', description: '', enabled: true, builtIn: false }, 'body', opts);
-    syncSkill(entry.id, opts);
-    const dest = path.join(claudeHome, 'skills', `molio--${entry.id}`);
+    syncSkill(entry.id, slugifySkillName(entry.name), opts);
+    const dest = path.join(claudeHome, 'skills', molioDir('S'));
     assert.ok(fs.existsSync(dest), 'mirror created first');
 
     const libraryDir = path.join(molioHome, 'skills');
     fs.chmodSync(libraryDir, 0o000); // lstat of <library>/<id> now fails EACCES
     try {
-      syncSkill(entry.id, opts);
+      syncSkill(entry.id, slugifySkillName(entry.name), opts);
       assert.ok(fs.existsSync(path.join(dest, 'SKILL.md')), 'mirror kept on EACCES');
     } finally {
       fs.chmodSync(libraryDir, 0o755); // restore so afterEach cleanup works
@@ -217,10 +225,10 @@ describe('skills/sync', () => {
     fs.writeFileSync(stray, 'x', 'utf8');
 
     const entry = createSkill(db, { name: 'S', description: '', enabled: true, builtIn: false }, 'body', opts);
-    reconcileSync([entry.id], opts); // must not throw
+    reconcileSync(planSyncTargets([entry]), opts); // must not throw
 
     assert.ok(fs.existsSync(stray), 'non-directory entries are left alone');
-    assert.ok(fs.existsSync(path.join(skillsDir, `molio--${entry.id}`, 'SKILL.md')));
+    assert.ok(fs.existsSync(path.join(skillsDir, molioDir('S'), 'SKILL.md')));
   });
 
   it('mirroring skips symlinks entirely (no follow, no copy, hash parity kept)', (t) => {
@@ -288,18 +296,108 @@ describe('skills/sync', () => {
     }
   });
 
-  it('reconcileSync with empty enabled set removes all molio dirs but keeps user dirs', () => {
+  it('reconcileSync with empty planned set removes all molio dirs but keeps user dirs', () => {
     const userDir = path.join(claudeHome, 'skills', 'keep-me');
     fs.mkdirSync(userDir, { recursive: true });
     fs.writeFileSync(path.join(userDir, 'SKILL.md'), 'x', 'utf8');
     // Set up a synced molio dir explicitly (createSkill no longer auto-syncs).
     const entry = createSkill(db, { name: 'S', description: '', enabled: true, builtIn: false }, 'body', opts);
-    syncSkill(entry.id, opts);
-    assert.ok(fs.existsSync(path.join(claudeHome, 'skills', `molio--${entry.id}`)));
+    syncSkill(entry.id, slugifySkillName(entry.name), opts);
+    assert.ok(fs.existsSync(path.join(claudeHome, 'skills', molioDir('S'))));
 
     reconcileSync([], opts);
 
-    assert.ok(!fs.existsSync(path.join(claudeHome, 'skills', `molio--${entry.id}`)));
+    assert.ok(!fs.existsSync(path.join(claudeHome, 'skills', molioDir('S'))));
     assert.ok(fs.existsSync(userDir), 'user dir survives');
+  });
+
+  it('reconcileSync sweeps legacy molio--<uuid> dirs left by older builds (upgrade migration)', () => {
+    // Pre-name-based builds synced as molio--<uuid>. After the upgrade those
+    // dirs are orphans to the name-based reconcile and must be removed while
+    // the same skill's new readable dir is created — no migration code needed.
+    const entry = createSkill(db, { name: 'Report', description: '', enabled: true, builtIn: false }, 'body', opts);
+    const legacyDir = path.join(claudeHome, 'skills', `molio--${entry.id}`);
+    fs.mkdirSync(legacyDir, { recursive: true });
+    fs.writeFileSync(path.join(legacyDir, 'SKILL.md'), 'old uuid-named copy', 'utf8');
+
+    reconcileSync(planSyncTargets([entry]), opts);
+
+    assert.ok(!fs.existsSync(legacyDir), 'legacy uuid-named dir removed');
+    assert.ok(
+      fs.existsSync(path.join(claudeHome, 'skills', molioDir('Report'), 'SKILL.md')),
+      'readable name-based dir created',
+    );
+  });
+});
+
+describe('skills/sync: slugifySkillName (paths)', () => {
+  it('keeps CJK + ASCII letters/digits, lowercases, maps the rest to single hyphens', () => {
+    assert.equal(slugifySkillName('微信 Article 提取!'), '微信-article-提取');
+    assert.equal(slugifySkillName('  --Foo  Bar-- '), 'foo-bar');
+    assert.equal(slugifySkillName('C++ 编程'), 'c-编程');
+  });
+
+  it('NFKC-normalizes full-width characters', () => {
+    assert.equal(slugifySkillName('ｖ２全角'), 'v2全角');
+  });
+
+  it('returns empty string when nothing slugifiable remains', () => {
+    assert.equal(slugifySkillName('!!!'), '');
+    assert.equal(slugifySkillName('🚀🚀'), '');
+  });
+
+  it('caps length at 64 code points without a trailing hyphen', () => {
+    const slug = slugifySkillName('a'.repeat(100));
+    assert.equal(Array.from(slug).length, 64);
+    const capped = slugifySkillName('字'.repeat(70));
+    assert.equal(Array.from(capped).length, 64);
+    // a hyphen sitting exactly at the cut point must not survive
+    const withHyphenAtCut = slugifySkillName(`${'a'.repeat(63)}!bbb`);
+    assert.ok(!withHyphenAtCut.endsWith('-'));
+    assert.ok(Array.from(withHyphenAtCut).length <= 64);
+  });
+
+  it('output is always a safe path segment', () => {
+    for (const name of ['../evil', 'a/b\\c', 'CON.', '  x  ', '技能: v1.0 <beta>']) {
+      const slug = slugifySkillName(name);
+      assert.ok(!slug.includes('/') && !slug.includes('\\'), `no separators in ${JSON.stringify(slug)}`);
+      assert.ok(slug !== '.' && slug !== '..', `no dot segments in ${JSON.stringify(slug)}`);
+    }
+  });
+});
+
+describe('skills/sync: planSyncTargets (readable dir names + deterministic collisions)', () => {
+  it('uses the slugified display name', () => {
+    const targets = planSyncTargets([{ id: 'u-1', name: '周报生成', createdAt: 1 }]);
+    assert.deepEqual(targets, [{ id: 'u-1', dirName: '周报生成' }]);
+  });
+
+  it('falls back to skill-<id prefix> when the slug is empty', () => {
+    const targets = planSyncTargets([{ id: 'abcdef12-34', name: '🚀', createdAt: 1 }]);
+    assert.deepEqual(targets, [{ id: 'abcdef12-34', dirName: 'skill-abcdef12' }]);
+  });
+
+  it('same-name skills get a stable id-derived suffix; earliest keeps the plain name', () => {
+    const older = { id: '11111111-aaaa', name: '报告', createdAt: 100 };
+    const newer = { id: '22222222-bbbb', name: '报告', createdAt: 200 };
+    const targets = planSyncTargets([older, newer]);
+    assert.deepEqual(targets, [
+      { id: older.id, dirName: '报告' },
+      { id: newer.id, dirName: '报告-22222222' },
+    ]);
+  });
+
+  it('is deterministic regardless of input order (created_at drives assignment)', () => {
+    const a = { id: '11111111-aaaa', name: '报告', createdAt: 100 };
+    const b = { id: '22222222-bbbb', name: '报告', createdAt: 200 };
+    assert.deepEqual(planSyncTargets([b, a]), planSyncTargets([a, b]));
+  });
+
+  it('distinct names that slugify identically also disambiguate', () => {
+    const a = { id: '11111111-aaaa', name: 'Foo Bar', createdAt: 100 };
+    const b = { id: '22222222-bbbb', name: 'foo--bar!', createdAt: 200 };
+    const targets = planSyncTargets([a, b]);
+    assert.deepEqual(new Set(targets.map((t) => t.dirName)).size, 2, 'no duplicate dir names');
+    assert.equal(targets[0]?.dirName, 'foo-bar');
   });
 });

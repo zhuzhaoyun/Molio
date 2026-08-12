@@ -11,7 +11,9 @@
  *    Hidden from the settings UI and always effective (app-owned). Synced whole-dir
  *    to `<vault>/.claude/skills/<id>/` (plain dir name, no `molio--` prefix).
  *  - `library`: user-created/imported single-file skills. Shown + configurable.
- *    Synced to `<vault>/.claude/skills/molio--<id>/SKILL.md`.
+ *    Synced to `<vault>/.claude/skills/molio--<dirName>/SKILL.md` where dirName
+ *    is the slugified display name (readable; same-name collisions get a stable
+ *    id-derived suffix).
  *  - core (`core: true`): the writing trio — Molio's core job. NOT shown, NOT
  *    configurable, always enabled; synced like a library skill.
  *

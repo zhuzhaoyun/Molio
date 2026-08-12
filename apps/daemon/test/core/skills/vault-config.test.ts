@@ -5,8 +5,8 @@ import path from 'node:path';
 import os from 'node:os';
 import Database from 'better-sqlite3';
 import { openDatabase, closeDatabase, createVault } from '../../../src/core/db.js';
-import { createSkill, toggleSkill } from '../../../src/core/skills/store.js';
-import type { SkillPathsOpts } from '../../../src/core/skills/paths.js';
+import { createSkill, toggleSkill, updateSkill } from '../../../src/core/skills/store.js';
+import { slugifySkillName, type SkillPathsOpts } from '../../../src/core/skills/paths.js';
 import {
   getEffectiveSkillIds,
   reconcileVault,
@@ -51,9 +51,9 @@ function makeVault(name: string) {
   return { dir, vault };
 }
 
-/** Path to a synced skill dir inside a vault's .claude/skills. */
-function molioDirIn(vaultDir: string, id: string): string {
-  return path.join(vaultDir, '.claude', 'skills', `molio--${id}`);
+/** Path to a synced skill dir inside a vault's .claude/skills (name-based). */
+function molioDirIn(vaultDir: string, displayName: string): string {
+  return path.join(vaultDir, '.claude', 'skills', `molio--${slugifySkillName(displayName)}`);
 }
 
 describe('skills/vault-config', () => {
@@ -93,8 +93,8 @@ describe('skills/vault-config', () => {
 
     reconcileVault(db, vault, opts);
 
-    assert.ok(fs.existsSync(path.join(molioDirIn(dir, 'keep'), 'SKILL.md')), 'effective skill synced');
-    assert.ok(!fs.existsSync(molioDirIn(dir, 'off')), 'non-effective skill not present');
+    assert.ok(fs.existsSync(path.join(molioDirIn(dir, 'Keep'), 'SKILL.md')), 'effective skill synced');
+    assert.ok(!fs.existsSync(molioDirIn(dir, 'Off')), 'non-effective skill not present');
     assert.ok(!fs.existsSync(path.join(skillsRoot, 'molio--stale')), 'orphan molio-- dir removed');
     assert.ok(fs.existsSync(path.join(skillsRoot, 'wiki-query', 'SKILL.md')), 'builtin dir untouched');
     assert.ok(fs.existsSync(path.join(skillsRoot, 'my-own', 'SKILL.md')), 'user dir untouched');
@@ -107,20 +107,35 @@ describe('skills/vault-config', () => {
     reconcileVault(db, vault, opts);
     reconcileVault(db, vault, opts);
 
-    assert.ok(fs.existsSync(path.join(molioDirIn(dir, 'x'), 'SKILL.md')));
+    assert.ok(fs.existsSync(path.join(molioDirIn(dir, 'X'), 'SKILL.md')));
     const entries = fs.readdirSync(path.join(dir, '.claude', 'skills')).filter((e) => e.startsWith('molio--'));
     assert.deepEqual(entries, ['molio--x']);
+  });
+
+  it('reconcileVault converges the vault dir when a skill is renamed', () => {
+    // The vault dir follows the display name: renaming must remove the old
+    // slug's dir and create the new one on the next reconcile (orphan cleanup
+    // keyed on the planned dir-name set does this automatically).
+    const { dir, vault } = makeVault('V');
+    const entry = createSkill(db, { name: 'Old Name', description: '', enabled: true, builtIn: false }, 'body', opts);
+    reconcileVault(db, vault, opts);
+    assert.ok(fs.existsSync(molioDirIn(dir, 'Old Name')));
+
+    updateSkill(db, entry.id, { name: 'New Name' }, opts);
+    reconcileVault(db, vault, opts);
+    assert.ok(!fs.existsSync(molioDirIn(dir, 'Old Name')), 'old slug dir removed');
+    assert.ok(fs.existsSync(path.join(molioDirIn(dir, 'New Name'), 'SKILL.md')), 'new slug dir synced');
   });
 
   it('reconcileVault removes a skill that gets disabled after being synced', () => {
     const { dir, vault } = makeVault('V');
     createSkill(db, { id: 'y', name: 'Y', description: '', enabled: true, builtIn: false }, 'body', opts);
     reconcileVault(db, vault, opts);
-    assert.ok(fs.existsSync(molioDirIn(dir, 'y')));
+    assert.ok(fs.existsSync(molioDirIn(dir, 'Y')));
 
     toggleSkill(db, 'y', false);
     reconcileVault(db, vault, opts);
-    assert.ok(!fs.existsSync(molioDirIn(dir, 'y')), 'global disable removes the dir');
+    assert.ok(!fs.existsSync(molioDirIn(dir, 'Y')), 'global disable removes the dir');
   });
 
   // ── reconcileAllVaults ──
@@ -132,8 +147,8 @@ describe('skills/vault-config', () => {
 
     reconcileAllVaults(db, opts);
 
-    assert.ok(fs.existsSync(path.join(molioDirIn(v1.dir, 'all'), 'SKILL.md')));
-    assert.ok(fs.existsSync(path.join(molioDirIn(v2.dir, 'all'), 'SKILL.md')));
+    assert.ok(fs.existsSync(path.join(molioDirIn(v1.dir, 'All'), 'SKILL.md')));
+    assert.ok(fs.existsSync(path.join(molioDirIn(v2.dir, 'All'), 'SKILL.md')));
 
     fs.rmSync(v1.dir, { recursive: true, force: true });
     fs.rmSync(v2.dir, { recursive: true, force: true });
@@ -174,8 +189,8 @@ describe('skills/vault-config: reconcileAllVaultsAsync (startup fan-out must not
 
     await reconcileAllVaultsAsync(db, opts);
 
-    assert.ok(fs.existsSync(path.join(molioDirIn(v1.dir, 'all'), 'SKILL.md')));
-    assert.ok(fs.existsSync(path.join(molioDirIn(v2.dir, 'all'), 'SKILL.md')));
+    assert.ok(fs.existsSync(path.join(molioDirIn(v1.dir, 'All'), 'SKILL.md')));
+    assert.ok(fs.existsSync(path.join(molioDirIn(v2.dir, 'All'), 'SKILL.md')));
 
     fs.rmSync(v1.dir, { recursive: true, force: true });
     fs.rmSync(v2.dir, { recursive: true, force: true });
