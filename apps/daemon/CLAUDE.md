@@ -60,7 +60,8 @@ src/
       client.ts        Lark REST API 包装 (tenant_access_token、im/v1 消息收发：text/interactive card/image/file 共享 postMessage)
       card.ts          buildMarkdownCard — JSON 2.0 interactive 卡片（markdown 元素），回复包成卡片渲染 Markdown，发送失败降级纯文本
       ws-client.ts     WebSocket 长连接 — 接收 im.message.receive_v1 事件
-      message.ts       事件 payload 解析 → ParsedFeishuMessage
+      message.ts       事件 payload 解析 + buildFeishuFrameMessage（首轮前置 channel frame）
+      channel-frame.ts 飞书通道角色帧（收件/URL提取/<attach/>回传/意图分流，问答路由到 wiki-query skill）
       media.ts         图片/文件下载到 raw/feishu/<date>/
       token-store.ts   FeishuTokenStore — tenant_access_token 内存缓存 + 磁盘持久化 + 100min 刷新定时器
       service.ts       状态机 (idle/connecting/connected/reconnecting/error)，token 生命周期委托 token-store
