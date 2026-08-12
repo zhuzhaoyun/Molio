@@ -353,6 +353,15 @@ const en: Record<string, string> = {
   'hub.verified': 'Verified',
   'hub.version': 'v{version}',
   'hub.downloads': '{count} downloads',
+  'hub.sort.default': 'Default',
+  'hub.sort.downloads': 'Downloads',
+  'hub.sort.updated': 'Recently updated',
+  'hub.detail.close': 'Close',
+  'hub.detail.loading': 'Loading details…',
+  'hub.detail.stars': '{n} stars',
+  'hub.detail.updatedAt': 'Updated {date}',
+  'hub.detail.security': 'Security',
+  'hub.detail.noReadme': 'No instructions available',
 
   // ── UpdateNotification ──
   'update.ready': 'Update ready',

@@ -946,6 +946,8 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   transition: border-color 120ms ease;
+  /* The whole card is clickable (opens the detail modal). */
+  cursor: pointer;
 }
 
 .hub-card:hover {
@@ -1040,4 +1042,176 @@
 
 .hub-shell .sk-note a:hover {
   text-decoration: underline;
+}
+
+/* Sort segmented control in the toolbar. Reuses .sk-seg__item for the items;
+   this is the container — same look as .sk-seg but WITHOUT the page-level
+   margin that the 我的技能/技能商店 switch needs. */
+.hub-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  flex-shrink: 0;
+}
+
+/* ───────────────────────────────────────────────────────────
+   Skill detail modal (.hub-detail-*) — mirrors the kb-modal
+   pattern (knowledge.css): fixed overlay + scrolling body.
+   ─────────────────────────────────────────────────────────── */
+
+.hub-detail-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(26, 25, 22, 0.35);
+  backdrop-filter: blur(4px);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hub-detail-modal {
+  background: var(--bg-panel);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  width: min(640px, calc(100vw - 48px));
+  max-height: 80vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.hub-detail-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 18px 24px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.hub-detail-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hub-detail-close {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hub-detail-close:hover {
+  background: var(--bg-subtle);
+  color: var(--text);
+}
+
+/* The modal is capped at 80vh with overflow:hidden — the body must be the
+   scroll container (same reasoning as .kb-modal-body): min-height:0 lets the
+   flex item shrink below its content height so overflow-y can kick in. */
+.hub-detail-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.hub-detail-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.hub-detail-meta__author {
+  max-width: 200px;
+  font-weight: 500;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hub-detail-security {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.hub-detail-security__item {
+  padding: 1px 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--green);
+  background: var(--green-bg);
+  border: 1px solid var(--green-border);
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+
+.hub-detail-desc {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
+}
+
+/* SKILL.md readme rendered by the shared doocs/md engine (#output). The theme
+   CSS supplies the typography; we only frame it and tame oversized content. */
+.hub-detail-readme {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px 18px;
+  overflow-x: auto;
+}
+
+.hub-detail-readme .md-preview {
+  font-size: 13px;
+}
+
+.hub-detail-readme .md-preview img {
+  max-width: 100%;
+}
+
+.hub-detail-noreadme {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-faint);
+}
+
+.hub-detail-footer {
+  flex: none;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 24px;
+  border-top: 1px solid var(--border);
 }

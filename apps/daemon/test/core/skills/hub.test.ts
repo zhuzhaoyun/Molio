@@ -12,6 +12,8 @@ import {
   getHubInstall,
   fetchHubSkills,
   fetchHubCategories,
+  fetchHubSkillDetail,
+  MAX_HUB_README_BYTES,
   HubError,
   _setHubFetchForTests,
 } from '../../../src/core/skills/hub.js';
@@ -373,5 +375,163 @@ describe('skills/hub — catalog fetch mapping', () => {
       { key: 'a', name: '甲' },
       { key: 'b', name: '乙' },
     ]);
+  });
+});
+
+describe('skills/hub — sort param mapping', () => {
+  function captureUrlFetch(): { fake: typeof fetch; urls: string[] } {
+    const urls: string[] = [];
+    const fake = (async (input: unknown) => {
+      urls.push(String(input));
+      return new Response(JSON.stringify({ code: 0, data: { skills: [], total: 0 } }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch;
+    return { fake, urls };
+  }
+
+  it('downloads sort → sortBy=downloads&order=desc upstream', async () => {
+    const { fake, urls } = captureUrlFetch();
+    _setHubFetchForTests(fake);
+    await fetchHubSkills({ sort: 'downloads' });
+    assert.ok(urls[0]?.includes('sortBy=downloads'), urls[0]);
+    assert.ok(urls[0]?.includes('order=desc'), urls[0]);
+  });
+
+  it('updated sort → sortBy=updated_at&order=desc upstream', async () => {
+    const { fake, urls } = captureUrlFetch();
+    _setHubFetchForTests(fake);
+    await fetchHubSkills({ sort: 'updated' });
+    assert.ok(urls[0]?.includes('sortBy=updated_at'), urls[0]);
+    assert.ok(urls[0]?.includes('order=desc'), urls[0]);
+  });
+
+  it('default / unknown sorts keep the hub default ranking (no sortBy)', async () => {
+    for (const sort of [undefined, 'default', 'bogus'] as const) {
+      const { fake, urls } = captureUrlFetch();
+      _setHubFetchForTests(fake);
+      // eslint-disable-next-line no-await-in-loop -- sequential by design
+      await fetchHubSkills(sort === undefined ? {} : { sort: sort as 'default' });
+      assert.ok(!urls[0]?.includes('sortBy='), `sort=${String(sort)} leaked sortBy: ${urls[0]}`);
+    }
+  });
+});
+
+describe('skills/hub — fetchHubSkillDetail', () => {
+  const DETAIL_BODY = {
+    slug: 'demo',
+    contentZhAvailable: true,
+    skill: {
+      slug: 'demo',
+      displayName: 'Demo 技能',
+      category: 'office-efficiency',
+      sourceUrl: 'https://clawhub.ai/alice/demo',
+      iconUrl: 'https://cdn.example/icon.png',
+      createdAt: 1772740044096,
+      updatedAt: 1786541460768,
+      verified: true,
+      labels: { requires_api_key: 'true' },
+      summary: 'english summary',
+      summary_zh: '中文简介',
+      stats: { downloads: 174518, installs: 23940, stars: 518, comments: 3, versions: 4 },
+    },
+    latestVersion: { version: '1.0.2', changelog: 'bugfix release', createdAt: 1774623104337 },
+    owner: { handle: 'alice', displayName: 'Alice', image: null },
+    namespace: { handle: 'alice', canonicalName: '@alice/demo', displayName: 'alice' },
+    securityReports: {
+      keen: { status: 'benign', statusText: '安全，无风险', reportUrl: 'https://report' },
+      sanbu: { status: 'benign', statusText: '安全' },
+    },
+  };
+
+  /** Fake hub: detail JSON + raw SKILL.md text (readme=null → 404 on the file). */
+  function serveDetail(detailBody: unknown, readme: string | null, readmeBytes?: number): typeof fetch {
+    return (async (input: unknown) => {
+      const url = String(input);
+      if (url.includes('/file?path=SKILL.md')) {
+        if (readme === null) return new Response('missing', { status: 404 });
+        const headers: Record<string, string> = { 'Content-Type': 'text/plain' };
+        if (readmeBytes !== undefined) headers['Content-Length'] = String(readmeBytes);
+        return new Response(readme, { status: 200, headers });
+      }
+      if (url.includes('/api/v1/skills/')) {
+        return new Response(JSON.stringify(detailBody), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response('not found', { status: 404 });
+    }) as typeof fetch;
+  }
+
+  it('aggregates detail + SKILL.md readme with frontmatter stripped', async () => {
+    _setHubFetchForTests(
+      serveDetail(DETAIL_BODY, '---\nname: Demo\nversion: 1.0.2\n---\n\n## When to Use\n正文内容'),
+    );
+    const detail = await fetchHubSkillDetail('demo');
+    assert.equal(detail.slug, 'demo');
+    assert.equal(detail.name, 'Demo 技能');
+    assert.equal(detail.description, '中文简介'); // zh-first, same as the list
+    assert.equal(detail.category, 'office-efficiency');
+    assert.equal(detail.sourceUrl, 'https://clawhub.ai/alice/demo');
+    assert.equal(detail.createdAt, 1772740044096);
+    assert.equal(detail.updatedAt, 1786541460768);
+    assert.equal(detail.verified, true);
+    assert.equal(detail.requiresApiKey, true);
+    assert.equal(detail.ownerName, 'Alice');
+    assert.equal(detail.namespace, 'alice');
+    assert.equal(detail.latestVersion, '1.0.2');
+    assert.equal(detail.changelog, 'bugfix release');
+    assert.deepEqual(detail.stats, { downloads: 174518, installs: 23940, stars: 518, versions: 4 });
+    assert.equal(detail.security?.keen, '安全，无风险');
+    assert.equal(detail.security?.sanbu, '安全');
+    assert.equal(detail.readme, '## When to Use\n正文内容'); // frontmatter gone, trimmed
+  });
+
+  it('passes namespace through to both upstream calls', async () => {
+    const urls: string[] = [];
+    _setHubFetchForTests((async (input: unknown) => {
+      urls.push(String(input));
+      const url = String(input);
+      if (url.includes('/file?path=SKILL.md')) return new Response('正文', { status: 200 });
+      return new Response(JSON.stringify(DETAIL_BODY), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch);
+    await fetchHubSkillDetail('demo', 'alice');
+    assert.ok(urls.some((u) => u.includes('/api/v1/skills/demo?namespace=alice')), urls.join('\n'));
+    assert.ok(urls.some((u) => u.includes('/file?path=SKILL.md') && u.includes('namespace=alice')), urls.join('\n'));
+  });
+
+  it('a readme failure never blocks the detail (404 → empty readme)', async () => {
+    _setHubFetchForTests(serveDetail(DETAIL_BODY, null));
+    const detail = await fetchHubSkillDetail('demo');
+    assert.equal(detail.name, 'Demo 技能');
+    assert.equal(detail.readme, '');
+  });
+
+  it('an oversized readme is dropped (bomb guard)', async () => {
+    // Two shapes: a huge Content-Length header (pre-check) and a genuinely
+    // huge body without the header (post-read check).
+    _setHubFetchForTests(serveDetail(DETAIL_BODY, 'small', MAX_HUB_README_BYTES + 1));
+    assert.equal((await fetchHubSkillDetail('demo')).readme, '');
+
+    _setHubFetchForTests(serveDetail(DETAIL_BODY, 'x'.repeat(MAX_HUB_README_BYTES + 1)));
+    assert.equal((await fetchHubSkillDetail('demo')).readme, '');
+  });
+
+  it('maps an unknown slug (upstream 404) to NOT_FOUND', async () => {
+    _setHubFetchForTests((async () => new Response('missing', { status: 404 })) as typeof fetch);
+    await assert.rejects(fetchHubSkillDetail('ghost'), (err: unknown) => {
+      return err instanceof HubError && err.code === 'NOT_FOUND';
+    });
+  });
+
+  it('rejects an empty slug with BAD_REQUEST', async () => {
+    await assert.rejects(fetchHubSkillDetail('  '), (err: unknown) => {
+      return err instanceof HubError && err.code === 'BAD_REQUEST';
+    });
   });
 });

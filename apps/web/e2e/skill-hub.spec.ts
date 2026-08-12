@@ -70,6 +70,30 @@ interface HubMockState {
   installDelayMs: number;
   /** Captured POST /hub/install bodies. */
   installRequests: Array<Record<string, unknown>>;
+  /** Captured GET /hub/skills request URLs (sort param assertions). */
+  listRequests: string[];
+}
+
+/** Build the detail payload the daemon's GET /hub/skill would return. */
+function mockDetailFor(s: MockSkill) {
+  return {
+    slug: s.slug,
+    name: s.name,
+    description: s.description,
+    category: s.category,
+    sourceUrl: `https://skillhub.cn/skills/${s.slug}`,
+    iconUrl: '',
+    createdAt: s.updatedAt - 86_400_000,
+    updatedAt: s.updatedAt,
+    verified: s.verified,
+    requiresApiKey: s.requiresApiKey,
+    ownerName: s.ownerName,
+    latestVersion: s.version,
+    stats: { downloads: s.downloads, installs: Math.floor(s.downloads / 2), stars: 12, versions: 3 },
+    readme: `# ${s.name} 使用说明\n\n这是 ${s.slug} 的 E2E mock readme 正文。`,
+    security: { keen: '安全，无风险' },
+    installed: s.installed,
+  };
 }
 
 /**
@@ -77,7 +101,30 @@ interface HubMockState {
  * (the list + categories requests fire on panel mount).
  */
 async function setupHubMocks(page: import('@playwright/test').Page, state: HubMockState) {
+  // Detail endpoint (GET /hub/skill?slug=…). A REGEX route on purpose: the
+  // glob '**/api/skills/hub/skill*' would also swallow the LIST endpoint
+  // ('/hub/skills…'), and glob '?' is a one-char wildcard, so 'skill?*'
+  // can't disambiguate either.
+  await page.route(/\/api\/skills\/hub\/skill\?/, (route) => {
+    const url = new URL(route.request().url());
+    const slug = url.searchParams.get('slug') ?? '';
+    const src = MOCK_SKILLS.find((s) => s.slug === slug);
+    if (!src) {
+      return route.fulfill({
+        status: 404,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: { code: 'NOT_FOUND', message: 'E2E模拟详情不存在' } }),
+      });
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ detail: mockDetailFor(src) }),
+    });
+  });
+
   await page.route('**/api/skills/hub/skills*', (route) => {
+    state.listRequests.push(route.request().url());
     if (state.failList) {
       return route.fulfill({
         status: 502,
@@ -148,7 +195,7 @@ async function gotoSkillsHub(page: import('@playwright/test').Page) {
 
 test.describe('Skill store (skillhub.cn)', () => {
   test('store view renders catalog cards with meta and category filter', async ({ page }) => {
-    const state: HubMockState = { failList: false, installDelayMs: 0, installRequests: [] };
+    const state: HubMockState = { failList: false, installDelayMs: 0, installRequests: [], listRequests: [] };
     await setupHubMocks(page, state);
 
     await gotoSkillsHub(page);
@@ -170,7 +217,7 @@ test.describe('Skill store (skillhub.cn)', () => {
   });
 
   test('search and category filter re-query the catalog', async ({ page }) => {
-    const state: HubMockState = { failList: false, installDelayMs: 0, installRequests: [] };
+    const state: HubMockState = { failList: false, installDelayMs: 0, installRequests: [], listRequests: [] };
     await setupHubMocks(page, state);
 
     await gotoSkillsHub(page);
@@ -198,7 +245,7 @@ test.describe('Skill store (skillhub.cn)', () => {
 
   test('install click posts the slug and flips the card to installed', async ({ page }) => {
     // Deliberate latency so the 安装中… busy state is observable.
-    const state: HubMockState = { failList: false, installDelayMs: 800, installRequests: [] };
+    const state: HubMockState = { failList: false, installDelayMs: 800, installRequests: [], listRequests: [] };
     await setupHubMocks(page, state);
 
     await gotoSkillsHub(page);
@@ -224,7 +271,7 @@ test.describe('Skill store (skillhub.cn)', () => {
   });
 
   test('one install at a time: every install button is gated while one is in flight', async ({ page }) => {
-    const state: HubMockState = { failList: false, installDelayMs: 800, installRequests: [] };
+    const state: HubMockState = { failList: false, installDelayMs: 800, installRequests: [], listRequests: [] };
     await setupHubMocks(page, state);
 
     await gotoSkillsHub(page);
@@ -247,7 +294,7 @@ test.describe('Skill store (skillhub.cn)', () => {
   });
 
   test('hub browsing state survives switching to the library tab and back', async ({ page }) => {
-    const state: HubMockState = { failList: false, installDelayMs: 0, installRequests: [] };
+    const state: HubMockState = { failList: false, installDelayMs: 0, installRequests: [], listRequests: [] };
     await setupHubMocks(page, state);
 
     await gotoSkillsHub(page);
@@ -270,7 +317,7 @@ test.describe('Skill store (skillhub.cn)', () => {
   });
 
   test('hub unreachable shows the error banner; retry recovers', async ({ page }) => {
-    const state: HubMockState = { failList: true, installDelayMs: 0, installRequests: [] };
+    const state: HubMockState = { failList: true, installDelayMs: 0, installRequests: [], listRequests: [] };
     await setupHubMocks(page, state);
 
     await gotoSkillsHub(page);
@@ -285,5 +332,110 @@ test.describe('Skill store (skillhub.cn)', () => {
     await page.getByTestId('hub-error').locator('button').click();
     await expect(page.getByTestId('hub-grid')).toBeVisible({ timeout: 10_000 });
     await expect(page.getByTestId('hub-card-pdf-tools')).toBeVisible();
+  });
+
+  test('sort buttons re-query the catalog with the matching sort param', async ({ page }) => {
+    const state: HubMockState = { failList: false, installDelayMs: 0, installRequests: [], listRequests: [] };
+    await setupHubMocks(page, state);
+
+    await gotoSkillsHub(page);
+    await expect(page.getByTestId('hub-card-pdf-tools')).toBeVisible({ timeout: 10_000 });
+
+    // Default ranking is active initially; its request carries no sort param.
+    await expect(page.getByTestId('hub-sort-default')).toHaveClass(/sk-seg__item--active/);
+    expect(state.listRequests.some((u) => u.includes('sort='))).toBe(false);
+
+    // Downloads sort → the debounced re-query carries sort=downloads.
+    await page.getByTestId('hub-sort-downloads').click();
+    await expect(page.getByTestId('hub-sort-downloads')).toHaveClass(/sk-seg__item--active/);
+    await expect
+      .poll(() => state.listRequests.some((u) => u.includes('sort=downloads')), { timeout: 10_000 })
+      .toBe(true);
+
+    // Recently updated → sort=updated.
+    await page.getByTestId('hub-sort-updated').click();
+    await expect
+      .poll(() => state.listRequests.some((u) => u.includes('sort=updated')), { timeout: 10_000 })
+      .toBe(true);
+
+    // Back to default: the newest request drops the sort param entirely.
+    await page.getByTestId('hub-sort-default').click();
+    await expect(page.getByTestId('hub-sort-default')).toHaveClass(/sk-seg__item--active/);
+    await expect
+      .poll(() => {
+        const last = state.listRequests[state.listRequests.length - 1];
+        return !!last && !last.includes('sort=');
+      }, { timeout: 10_000 })
+      .toBe(true);
+  });
+
+  test('clicking a card opens the detail modal with readme and stats', async ({ page }) => {
+    const state: HubMockState = { failList: false, installDelayMs: 0, installRequests: [], listRequests: [] };
+    await setupHubMocks(page, state);
+
+    await gotoSkillsHub(page);
+    await expect(page.getByTestId('hub-card-pdf-tools')).toBeVisible({ timeout: 10_000 });
+
+    await page.getByTestId('hub-card-pdf-tools').click();
+
+    const overlay = page.getByTestId('hub-detail-overlay');
+    await expect(overlay).toBeVisible({ timeout: 10_000 });
+
+    // Header name, author and the rendered SKILL.md readme come from the mock.
+    await expect(page.locator('.hub-detail-name')).toHaveText('PDF Tools');
+    await expect(page.getByTestId('hub-detail-body')).toContainText('acme');
+    await expect(page.getByTestId('hub-detail-readme')).toContainText('pdf-tools 的 E2E mock readme 正文');
+    // Security verdict badges show when the detail reports them.
+    await expect(page.getByTestId('hub-detail-security')).toBeVisible();
+    // Not installed in the mock → install button enabled.
+    await expect(page.getByTestId('hub-detail-install')).toBeEnabled();
+
+    // Esc closes the modal (same convention as the resources lightbox).
+    await page.keyboard.press('Escape');
+    await expect(overlay).toHaveCount(0);
+  });
+
+  test('install from the detail modal posts the request and closes the modal', async ({ page }) => {
+    const state: HubMockState = { failList: false, installDelayMs: 0, installRequests: [], listRequests: [] };
+    await setupHubMocks(page, state);
+
+    await gotoSkillsHub(page);
+    await expect(page.getByTestId('hub-card-pdf-tools')).toBeVisible({ timeout: 10_000 });
+
+    const cardBtn = page.getByTestId('hub-install-pdf-tools');
+    const labelBefore = await cardBtn.textContent();
+
+    await page.getByTestId('hub-card-pdf-tools').click();
+    await expect(page.getByTestId('hub-detail-overlay')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId('hub-detail-install')).toBeEnabled();
+
+    await page.getByTestId('hub-detail-install').click();
+
+    // The success banner is the feedback; the modal closes behind it.
+    await expect(page.getByTestId('hub-notice')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('.hub-notice--success')).toBeVisible();
+    await expect(page.getByTestId('hub-detail-overlay')).toHaveCount(0);
+
+    // The daemon received the install request and the card flipped state
+    // (安装 → 更新), asserted on the CHANGE to stay locale-independent.
+    expect(state.installRequests).toHaveLength(1);
+    expect(state.installRequests[0]).toMatchObject({ slug: 'pdf-tools', version: '1.2.0' });
+    await expect(cardBtn).not.toHaveText(labelBefore ?? '');
+  });
+
+  test('clicking the install button on a card does not open the detail modal', async ({ page }) => {
+    const state: HubMockState = { failList: false, installDelayMs: 300, installRequests: [], listRequests: [] };
+    await setupHubMocks(page, state);
+
+    await gotoSkillsHub(page);
+    await expect(page.getByTestId('hub-card-pdf-tools')).toBeVisible({ timeout: 10_000 });
+
+    // Direct install from the card: the click must not bubble into the card's
+    // own onClick (which opens the detail modal).
+    await page.getByTestId('hub-install-pdf-tools').click();
+
+    await expect(page.getByTestId('hub-notice')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId('hub-detail-overlay')).toHaveCount(0);
+    expect(state.installRequests).toHaveLength(1);
   });
 });

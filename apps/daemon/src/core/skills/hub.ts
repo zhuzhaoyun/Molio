@@ -16,20 +16,26 @@
  * coexist as separate installs.
  *
  * The hub API needs no auth for browse/download:
- *   GET <base>/api/skills?page=&pageSize=&keyword=&category=   catalog list
+ *   GET <base>/api/skills?page=&pageSize=&keyword=&category=[&sortBy=&order=]  catalog list
  *   GET <base>/api/v1/categories                               category list
+ *   GET <base>/api/v1/skills/<slug>[?namespace=]               skill detail (plain JSON)
+ *   GET <base>/api/v1/skills/<slug>/file?path=SKILL.md[&namespace=]  raw SKILL.md (302 → COS)
  *   GET <base>/api/v1/download?slug=<slug>[&version=][&namespace=]  zip package
  *
- * Package format == Molio's own: SKILL.md (+ optional _meta.json / siblings).
+ * List sortBy ∈ {score (default), downloads, updated_at, stars, installs};
+ * order ∈ {asc, desc}. The detail endpoint returns the skill page data
+ * (stats/owner/securityReports/…) WITHOUT the {code,data} envelope the list
+ * uses. Package format == Molio's own: SKILL.md (+ optional _meta.json / siblings).
  */
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Unzip, UnzipInflate } from 'fflate';
 import type Database from 'better-sqlite3';
-import { parseSkillMd } from '@molio/contracts';
+import { parseSkillMd, stripFrontmatter } from '@molio/contracts';
 import type {
   HubCategory,
+  HubSkillDetail,
   HubSkillSummary,
   HubSkillsQuery,
   InstallHubSkillRequest,
@@ -160,12 +166,28 @@ export interface HubListResult {
 
 const HUB_PAGE_SIZE_MAX = 50;
 
+/**
+ * Sort options accepted by our API → upstream list params. The hub rejects
+ * unknown sortBy values with a 400, so anything not in this map (including
+ * 'default' and garbage from the query string) silently keeps the hub's own
+ * ranking instead of erroring our UI.
+ */
+const HUB_SORT_MAP: Record<string, { sortBy: string; order: string }> = {
+  downloads: { sortBy: 'downloads', order: 'desc' },
+  updated: { sortBy: 'updated_at', order: 'desc' },
+};
+
 export async function fetchHubSkills(query: HubSkillsQuery): Promise<HubListResult> {
   const page = Math.max(1, Math.floor(query.page ?? 1) || 1);
   const pageSize = Math.min(HUB_PAGE_SIZE_MAX, Math.max(1, Math.floor(query.pageSize ?? 20) || 20));
   const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
   if (query.keyword?.trim()) params.set('keyword', query.keyword.trim());
   if (query.category?.trim()) params.set('category', query.category.trim());
+  const sortCfg = HUB_SORT_MAP[query.sort ?? ''];
+  if (sortCfg) {
+    params.set('sortBy', sortCfg.sortBy);
+    params.set('order', sortCfg.order);
+  }
 
   const body = await hubFetchJson(`${hubApiBase()}/api/skills?${params.toString()}`);
   // Envelope: { code: 0, data: { skills: [...], total }, message }
@@ -201,6 +223,119 @@ export async function fetchHubCategories(): Promise<HubCategory[]> {
         (typeof b.sortOrder === 'number' ? b.sortOrder : 0),
     )
     .map((c) => ({ key: asString(c.key), name: asString(c.name) }));
+}
+
+// ─── Skill detail (store detail modal) ───
+
+/** Cap on the SKILL.md fetched for the detail view — text-only bomb guard. */
+export const MAX_HUB_README_BYTES = 256 * 1024;
+
+function asNumber(v: unknown): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : 0;
+}
+
+/** Loose typing of the raw `GET /api/v1/skills/<slug>` response (no envelope). */
+interface RawHubSkillDetail {
+  slug?: unknown;
+  skill?: {
+    category?: unknown;
+    createdAt?: unknown;
+    displayName?: unknown;
+    iconUrl?: unknown;
+    labels?: { requires_api_key?: unknown } | null;
+    slug?: unknown;
+    sourceUrl?: unknown;
+    stats?: { downloads?: unknown; installs?: unknown; stars?: unknown; versions?: unknown } | null;
+    summary?: unknown;
+    summary_zh?: unknown;
+    updatedAt?: unknown;
+    verified?: unknown;
+  } | null;
+  latestVersion?: { version?: unknown; changelog?: unknown } | null;
+  owner?: { handle?: unknown; displayName?: unknown } | null;
+  namespace?: { handle?: unknown } | null;
+  securityReports?: {
+    keen?: { statusText?: unknown } | null;
+    sanbu?: { statusText?: unknown } | null;
+  } | null;
+}
+
+/**
+ * Fetch the latest SKILL.md body for `slug`, frontmatter stripped. ANY failure
+ * (404, network, oversize) resolves to '' — the readme enriches the detail
+ * modal but must never block the detail itself.
+ */
+async function fetchHubSkillReadme(slug: string, namespace: string | undefined): Promise<string> {
+  try {
+    const params = new URLSearchParams({ path: 'SKILL.md' });
+    if (namespace) params.set('namespace', namespace);
+    const res = await hubFetch(
+      `${hubApiBase()}/api/v1/skills/${encodeURIComponent(slug)}/file?${params.toString()}`,
+      HUB_LIST_TIMEOUT_MS,
+    );
+    if (!res.ok) return '';
+    // The file endpoint 302s to COS (fetch follows it); the CDN usually sends
+    // Content-Length, so pre-check before buffering the body.
+    const len = Number(res.headers.get('content-length'));
+    if (Number.isFinite(len) && len > MAX_HUB_README_BYTES) return '';
+    const text = await res.text();
+    if (text.length > MAX_HUB_README_BYTES) return '';
+    return stripFrontmatter(text).trim();
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Aggregate one hub skill's detail page: `GET /api/v1/skills/<slug>` (stats,
+ * owner, security verdicts, latest version) + its SKILL.md body. Throws
+ * HubError NOT_FOUND for an unknown slug, HUB_UNAVAILABLE on network/parse
+ * failures — same contract as the list endpoints.
+ */
+export async function fetchHubSkillDetail(slug: string, namespace?: string): Promise<HubSkillDetail> {
+  const trimmed = slug.trim();
+  if (!trimmed) throw new HubError('BAD_REQUEST', 'slug is required');
+  const ns = namespace?.trim() || undefined;
+  const qs = ns ? `?namespace=${encodeURIComponent(ns)}` : '';
+  const body = (await hubFetchJson(
+    `${hubApiBase()}/api/v1/skills/${encodeURIComponent(trimmed)}${qs}`,
+  )) as unknown as RawHubSkillDetail;
+
+  const skill = body.skill ?? {};
+  const finalSlug = asString(skill.slug).trim() || trimmed;
+  const nsHandle = asString(body.namespace?.handle).trim() || ns || '';
+  const readme = await fetchHubSkillReadme(trimmed, ns);
+  // Prefer the Chinese summary — same zh-first rule as the list mapper.
+  const description = asString(skill.summary_zh).trim() || asString(skill.summary).trim();
+  const changelog = asString(body.latestVersion?.changelog).trim();
+  const keen = asString(body.securityReports?.keen?.statusText).trim();
+  const sanbu = asString(body.securityReports?.sanbu?.statusText).trim();
+
+  return {
+    slug: finalSlug,
+    name: asString(skill.displayName).trim() || finalSlug,
+    description,
+    category: asString(skill.category),
+    sourceUrl: asString(skill.sourceUrl),
+    iconUrl: asString(skill.iconUrl),
+    createdAt: asNumber(skill.createdAt),
+    updatedAt: asNumber(skill.updatedAt),
+    verified: skill.verified === true,
+    requiresApiKey: skill.labels?.requires_api_key === 'true',
+    ownerName:
+      asString(body.owner?.displayName).trim() || asString(body.owner?.handle).trim() || nsHandle,
+    ...(nsHandle ? { namespace: nsHandle } : {}),
+    latestVersion: asString(body.latestVersion?.version),
+    ...(changelog ? { changelog } : {}),
+    stats: {
+      downloads: asNumber(skill.stats?.downloads),
+      installs: asNumber(skill.stats?.installs),
+      stars: asNumber(skill.stats?.stars),
+      versions: asNumber(skill.stats?.versions),
+    },
+    readme,
+    ...(keen || sanbu ? { security: { ...(keen ? { keen } : {}), ...(sanbu ? { sanbu } : {}) } } : {}),
+  };
 }
 
 // ─── Package download + extraction ───
