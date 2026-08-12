@@ -3,7 +3,6 @@ import { execSync } from 'node:child_process';
 import { app, db, runManager, weixinService, vaultWatcher, preloadManager } from './server.js';
 import { initSkillLibrary } from './core/skills/builtin.js';
 import { reconcileAllVaultsAsync, cleanupLegacyGlobalSync } from './core/skills/vault-config.js';
-import { ensureWikiSysPromptFiles } from './core/wiki-prompts.js';
 import { isKillablePortOccupant } from './core/port-check.js';
 import { startMemoryMonitor } from './core/memory-monitor.js';
 import { pruneRunLogsAsync } from './core/runs-log-prune.js';
@@ -97,12 +96,6 @@ checkAndKillPortOccupant(port);
 // before any vault reconcile reads the table. Fast (SQLite upserts) and kept
 // before listen so API requests never observe an unseeded library.
 const skillsSeeded = initSkillLibrary(db);
-
-// Materialize the feishu wiki role frame (the only channel still delivered via
-// --append-system-prompt-file; weixin prepends its frame, see weixin/dispatcher).
-// One small file write — keep before listen so an early feishu run never reads
-// a missing frame.
-ensureWikiSysPromptFiles();
 
 // ⚠️ Everything below that is HEAVY (run-log prune, per-vault skill fan-out,
 // legacy cleanup, preload detection) runs in runDeferredStartupChores AFTER the

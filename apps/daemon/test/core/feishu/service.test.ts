@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type Database from 'better-sqlite3';
+import type { AgentEvent } from '@molio/contracts';
 import { openDatabase, closeDatabase, getConversationByExternalSession } from '../../../src/core/db.js';
 import { FeishuService } from '../../../src/core/feishu/service.js';
 import { ConversationService } from '../../../src/core/conversations/service.js';
@@ -303,6 +304,149 @@ describe('FeishuService', () => {
       assert.equal(rec.cardChunks[0]?.length, 3000);
       assert.equal(rec.cardChunks[1]?.length, 2000);
       assert.equal(rec.textChunks.length, 0);
+    });
+  });
+
+  describe('frame + reminder wiring — full frame on fresh spawn, <attach/> re-anchor on reuse turns', () => {
+    /**
+     * Feishu mirrors weixin: the full role frame rides the FIRST-TURN message
+     * prepend — the reliable carrier. The old --append-system-prompt-file
+     * path was silently dropped by the CLI in some environments (the frame
+     * never reached the model), and even when it landed, context compaction
+     * in long sessions summarized it away (the 2026-08-11 failure class:
+     * long run generates a file, then claims no way to deliver it). Reuse
+     * turns carry the compact reminder so the <attach/> protocol survives
+     * compaction without re-triggering the frame's 收件/入库/问答 routing.
+     */
+    class CapturingRunManager {
+      private nextId = 1;
+      private created = new Set<string>();
+      private listeners = new Map<string, (ev: AgentEvent) => void>();
+      readonly createRunCalls: Array<{
+        runId: string;
+        message: string;
+        appendSystemPromptFile?: string;
+      }> = [];
+      readonly sendMessageCalls: Array<{ runId: string; message: string }> = [];
+
+      createRun = async (opts: {
+        agentId: string;
+        message: string;
+        appendSystemPromptFile?: string;
+      }): Promise<string> => {
+        const runId = `feishu-run-${this.nextId++}`;
+        this.created.add(runId);
+        this.createRunCalls.push({
+          runId,
+          message: opts.message,
+          appendSystemPromptFile: opts.appendSystemPromptFile,
+        });
+        return runId;
+      };
+
+      canAcceptMessage = (runId: string): boolean => this.created.has(runId);
+
+      sendMessage = (runId: string, message: string): void => {
+        this.sendMessageCalls.push({ runId, message });
+      };
+
+      flushPendingReply = (): void => {};
+      cancelRun = (runId: string): void => { this.created.delete(runId); };
+      cancelAll = (): void => {};
+
+      onEvent = (runId: string, cb: (ev: AgentEvent) => void): (() => void) | null => {
+        if (!this.created.has(runId)) return null;
+        this.listeners.set(runId, cb);
+        return () => { this.listeners.delete(runId); };
+      };
+
+      /** Test helper: emit an event to the run's current listener. */
+      emit(runId: string, ev: AgentEvent): void {
+        this.listeners.get(runId)?.(ev);
+      }
+
+      asRunManager(): RunManager {
+        return this as unknown as RunManager;
+      }
+    }
+
+    /** Let fire-and-forget async paths (finish → drainQueue) settle. */
+    const settle = (ms = 0): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+    let svc: FeishuService;
+    let mock: CapturingRunManager;
+    let originalFetchPort: string | undefined;
+
+    beforeEach(() => {
+      saveConfig({ agents: {}, defaultAgentId: 'claude' } as AppConfig);
+      mock = new CapturingRunManager();
+      svc = new FeishuService(mock.asRunManager(), conversations, db);
+      // A stray desktop-fetch port would make materializeWikiLinks attempt a
+      // real fetch; the test texts carry no feishu URLs, but keep it deterministic.
+      originalFetchPort = process.env.MOLIO_DESKTOP_FETCH_PORT;
+      delete process.env.MOLIO_DESKTOP_FETCH_PORT;
+    });
+
+    afterEach(async () => {
+      if (originalFetchPort === undefined) delete process.env.MOLIO_DESKTOP_FETCH_PORT;
+      else process.env.MOLIO_DESKTOP_FETCH_PORT = originalFetchPort;
+      await svc.stop();
+    });
+
+    const handle = (openId: string, text: string, messageId: string): Promise<void> =>
+      (svc as unknown as { handleRawMessage: (e: FeishuRawEvent) => Promise<void> })
+        .handleRawMessage(makeTextEvent(openId, text, messageId));
+
+    it('carries the FULL frame on fresh spawn, the compact reminder on the reuse turn', async () => {
+      const openId = 'ou_attach_user';
+      await handle(openId, '把那份报告发给我', 'msg-attach-1');
+
+      assert.equal(mock.createRunCalls.length, 1, 'first message spawns a run');
+      const spawn = mock.createRunCalls[0]!;
+      assert.equal(
+        spawn.appendSystemPromptFile,
+        undefined,
+        'no system-prompt file — the frame rides the message, which always reaches the model',
+      );
+      assert.ok(spawn.message.includes('本地知识库的飞书入口助手'), 'fresh-spawn message carries the FULL frame');
+      assert.ok(spawn.message.includes('raw/feishu/'), 'fresh-spawn message carries the ingestion rules');
+      assert.ok(spawn.message.includes('<attach path='), 'fresh-spawn message teaches the marker format');
+      assert.ok(spawn.message.includes('把那份报告发给我'), 'fresh-spawn message preserves the user text');
+
+      const run1 = spawn.runId;
+      mock.emit(run1, { type: 'turn_end', stopReason: 'end_turn' });
+      await settle();
+
+      await handle(openId, '再发一份', 'msg-attach-2');
+      assert.equal(mock.createRunCalls.length, 1, 'second message must reuse the run, not spawn');
+      assert.equal(mock.sendMessageCalls.length, 1);
+      assert.equal(mock.sendMessageCalls[0]!.runId, run1);
+      const reuseMsg = mock.sendMessageCalls[0]!.message;
+      assert.ok(reuseMsg.includes('飞书通道机制提醒'), 'reuse message re-anchors the reminder');
+      assert.ok(reuseMsg.includes('<attach path='), 'reuse message teaches the marker format');
+      assert.ok(!reuseMsg.includes('本地知识库的飞书入口助手'), 'reuse message does NOT re-carry the full frame');
+      assert.ok(reuseMsg.includes('再发一份'), 'reuse message preserves the user text');
+    });
+
+    it('keeps re-anchoring on EVERY reuse turn (compaction can strike late)', async () => {
+      const openId = 'ou_attach_multi';
+      await handle(openId, 'first', 'msg-multi-1');
+      const run1 = mock.createRunCalls[0]!.runId;
+
+      const texts = ['second', 'third', 'fourth'];
+      for (const [i, text] of texts.entries()) {
+        mock.emit(run1, { type: 'turn_end', stopReason: 'end_turn' });
+        await settle();
+        await handle(openId, text, `msg-multi-${i + 2}`);
+      }
+
+      assert.equal(mock.createRunCalls.length, 1, 'all turns reuse the same run');
+      assert.equal(mock.sendMessageCalls.length, 3);
+      for (const [i, text] of texts.entries()) {
+        const msg = mock.sendMessageCalls[i]!.message;
+        assert.ok(msg.includes('飞书通道机制提醒'), `reuse turn ${i + 1} carries the reminder`);
+        assert.ok(msg.includes(text), `reuse turn ${i + 1} preserves the user text`);
+      }
     });
   });
 });

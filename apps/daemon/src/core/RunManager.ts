@@ -85,15 +85,6 @@ export interface CreateRunOptions {
   history?: ChatMessage[];
   /** Called when a turn completes with accumulated text content. */
   onTurnComplete?: (text: string, runId: string) => void;
-  /**
-   * Path to a file with the channel's always-on role frame, appended to the
-   * agent's system prompt on fresh spawns. Only used by channels that still
-   * deliver their frame via --append-system-prompt-file (feishu); weixin
-   * prepends its frame to the first message instead (see core/weixin/
-   * dispatcher.ts). Multi-turn: only the fresh spawn carries it — follow-ups
-   * reuse the same process, which already carries it from turn 1.
-   */
-  appendSystemPromptFile?: string;
 }
 
 export class RunManager {
@@ -286,14 +277,7 @@ export class RunManager {
     env['MOLIO_RUN_ID'] = runId;
     const args = def.buildArgs(
       opts.message,
-      {
-        model: opts.model,
-        // Path to a file with the channel role frame (materialized at daemon
-        // startup by ensureWikiSysPromptFiles). Passed as
-        // --append-system-prompt-file <path> — NOT inline text, which broke
-        // argv parsing on Windows and ate --dangerously-skip-permissions.
-        appendSystemPromptFile: opts.appendSystemPromptFile,
-      },
+      { model: opts.model },
       { cwd: opts.cwd },
     );
 

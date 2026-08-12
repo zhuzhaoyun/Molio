@@ -73,16 +73,17 @@ describe('daemon startup order: HTTP listen must precede heavy chores', () => {
     );
   });
 
-  it('still seeds the skill library and materializes sysprompt files before listen', () => {
-    // These two are fast and correctness-sensitive: routes must never observe
-    // an unseeded skills table, and an early feishu run must find its frame.
+  it('still seeds the skill library before listen', () => {
+    // Fast and correctness-sensitive: routes must never observe an unseeded
+    // skills table. (The feishu frame used to be materialized to a
+    // sysprompt file here too, but #210 moved it onto the first message,
+    // so there is nothing else to do pre-listen.)
     const listenPos = indexTs.indexOf('startServer();');
     const seedPos = indexTs.indexOf('initSkillLibrary(db)');
-    const syspromptPos = indexTs.indexOf('ensureWikiSysPromptFiles()');
     assert.ok(seedPos !== -1 && seedPos < listenPos, 'initSkillLibrary must precede listen');
     assert.ok(
-      syspromptPos !== -1 && syspromptPos < listenPos,
-      'ensureWikiSysPromptFiles must precede listen',
+      !indexTs.includes('ensureWikiSysPromptFiles'),
+      'the sysprompt-file channel was removed in #210 (feishu frame rides the first message) — no pre-listen materialization',
     );
   });
 });
