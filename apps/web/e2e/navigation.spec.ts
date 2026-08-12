@@ -46,6 +46,14 @@ test.describe('Navigation', () => {
     expect(page.url()).toContain('/settings');
   });
 
+  test('navigate to resources', async ({ page }) => {
+    await gotoHome(page);
+    await clickNav(page, 'resources');
+
+    await expect(page.locator('.resources-shell')).toBeVisible({ timeout: 5_000 });
+    expect(page.url()).toContain('/resources');
+  });
+
   test('navigate back to home from another page', async ({ page }) => {
     await gotoHome(page);
     await clickNav(page, 'settings');

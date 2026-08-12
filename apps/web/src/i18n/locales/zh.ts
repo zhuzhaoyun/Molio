@@ -7,12 +7,14 @@ const zh: Record<string, string> = {
   'nav.channels': '渠道',
   'nav.history': '历史记录',
   'nav.graph': '图谱',
+  'nav.resources': '资源',
   'nav.help': '帮助',
   'nav.settings': '设置',
 
   // ── Common ──
   'common.save': '保存',
   'common.cancel': '取消',
+  'common.close': '关闭',
 
   // ── HomePage ──
   'home.newChat': '新对话',
@@ -494,6 +496,51 @@ const zh: Record<string, string> = {
 
   // ── HomePage ──
   'home.fileContextFallback': '请根据以上内容帮我分析。',
+
+  // ── Resources ──
+  'resources.title': '知识库资源',
+  'resources.subtitle': '整理好的知识库资源包，下载解压后用 Molio 打开即可使用，兼容 Obsidian。',
+  'resources.filter.all': '全部',
+  'resources.filter.paid': '付费',
+  'resources.filter.free': '免费',
+  'resources.empty': '该分类下暂无资源',
+  'resources.free': '免费',
+  'resources.buy': '购买 ¥{price}',
+  'resources.download': '下载',
+  'resources.downloadZip': '下载 .zip',
+  'resources.detail': '查看详情',
+  'resources.backToList': '返回资源库',
+  'resources.notFound': '资源不存在',
+  'resources.notFoundHint': '你访问的资源不存在或尚未上架。',
+  'resources.metaLine': 'Markdown 格式 · 兼容 Obsidian · 用 Molio“打开本地仓库”加载',
+  'resources.overview': '概述',
+  'resources.preview': '效果预览',
+  'resources.previewAlt': '{name} 效果预览',
+  'resources.importGuide': '资源包导入说明',
+  'resources.import.step1': '下载资源包 .zip 并解压到本地任意目录',
+  'resources.import.step2': '打开 Molio，在知识库管理界面选择“打开本地仓库”',
+  'resources.import.step3': '选择（或输入）解压后的文件夹路径，资源包立即加载',
+  'resources.openKnowledge': '去打开本地仓库',
+  'resources.info.format': '格式',
+  'resources.info.formatValue': 'Markdown（.zip）',
+  'resources.info.compat': '兼容',
+  'resources.info.compatValue': 'Molio / Obsidian',
+  'resources.info.price': '价格',
+  'resources.info.file': '文件',
+  'resources.sideNote.paid': '扫码支付成功后自动解锁下载，下载链接 1 小时内有效。',
+  'resources.sideNote.payUrl': '点击后在支付页完成付款，自动发货下载链接。',
+  'resources.sideNote.noBase': '购买后会提供下载链接，点击上方按钮联系我们。',
+  'resources.sideNote.free': '下载解压后，用 Molio“打开本地仓库”加载即可开始阅读与写作。',
+  'resources.pay.title': '微信支付',
+  'resources.pay.wechat': '微信支付 ¥{price}',
+  'resources.pay.creating': '正在创建订单…',
+  'resources.pay.scan': '用微信扫码支付 ¥{price}，支付成功后自动解锁下载',
+  'resources.pay.unlocking': '支付成功，正在解锁下载…',
+  'resources.pay.linkReady': '支付成功，下载链接 1 小时内有效',
+  'resources.pay.createFailed': '创建订单失败，请关闭重试，或联系购买',
+  'resources.pay.deliverFailed': '获取下载链接失败，请凭订单号 {order} 联系我们',
+  'resources.pay.noBase': '支付服务未开通，请直接联系购买',
+  'resources.pay.download': '下载资源包',
 };
 
 export default zh;

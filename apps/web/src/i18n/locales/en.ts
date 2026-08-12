@@ -7,12 +7,14 @@ const en: Record<string, string> = {
   'nav.channels': 'Channels',
   'nav.history': 'History',
   'nav.graph': 'Graph',
+  'nav.resources': 'Resources',
   'nav.help': 'Help',
   'nav.settings': 'Settings',
 
   // ── Common ──
   'common.save': 'Save',
   'common.cancel': 'Cancel',
+  'common.close': 'Close',
 
   // ── HomePage ──
   'home.newChat': 'New chat',
@@ -494,6 +496,51 @@ const en: Record<string, string> = {
 
   // ── HomePage ──
   'home.fileContextFallback': 'Please analyze the above content.',
+
+  // ── Resources ──
+  'resources.title': 'Knowledge Base Resources',
+  'resources.subtitle': 'Curated knowledge base packs — download, unzip and open with Molio. Obsidian-compatible.',
+  'resources.filter.all': 'All',
+  'resources.filter.paid': 'Paid',
+  'resources.filter.free': 'Free',
+  'resources.empty': 'No resources in this category yet',
+  'resources.free': 'Free',
+  'resources.buy': 'Buy ¥{price}',
+  'resources.download': 'Download',
+  'resources.downloadZip': 'Download .zip',
+  'resources.detail': 'Details',
+  'resources.backToList': 'Back to resources',
+  'resources.notFound': 'Resource not found',
+  'resources.notFoundHint': 'The resource you are looking for does not exist or is not available yet.',
+  'resources.metaLine': 'Markdown format · Obsidian-compatible · Load via “Open local vault” in Molio',
+  'resources.overview': 'Overview',
+  'resources.preview': 'Preview',
+  'resources.previewAlt': '{name} preview',
+  'resources.importGuide': 'How to import',
+  'resources.import.step1': 'Download the .zip pack and unzip it to any local folder',
+  'resources.import.step2': 'Open Molio and choose “Open local vault” in the knowledge base manager',
+  'resources.import.step3': 'Pick (or type) the unzipped folder path — the pack loads instantly',
+  'resources.openKnowledge': 'Open local vault',
+  'resources.info.format': 'Format',
+  'resources.info.formatValue': 'Markdown (.zip)',
+  'resources.info.compat': 'Compatible',
+  'resources.info.compatValue': 'Molio / Obsidian',
+  'resources.info.price': 'Price',
+  'resources.info.file': 'File',
+  'resources.sideNote.paid': 'Scan to pay — download unlocks automatically. The link stays valid for 1 hour.',
+  'resources.sideNote.payUrl': 'Complete payment on the payment page; the download link is delivered automatically.',
+  'resources.sideNote.noBase': 'A download link will be provided after purchase — click above to contact us.',
+  'resources.sideNote.free': 'After unzipping, load it via “Open local vault” in Molio to start reading and writing.',
+  'resources.pay.title': 'WeChat Pay',
+  'resources.pay.wechat': 'WeChat Pay ¥{price}',
+  'resources.pay.creating': 'Creating order…',
+  'resources.pay.scan': 'Scan with WeChat to pay ¥{price} — download unlocks after payment',
+  'resources.pay.unlocking': 'Payment received, unlocking download…',
+  'resources.pay.linkReady': 'Payment received — the download link is valid for 1 hour',
+  'resources.pay.createFailed': 'Failed to create the order. Close and retry, or contact us to purchase.',
+  'resources.pay.deliverFailed': 'Failed to get the download link. Contact us with order number {order}.',
+  'resources.pay.noBase': 'Payment is not enabled — contact us to purchase.',
+  'resources.pay.download': 'Download pack',
 };
 
 export default en;

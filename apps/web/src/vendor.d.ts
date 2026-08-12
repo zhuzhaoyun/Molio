@@ -5,6 +5,12 @@
  * without requiring strict TypeScript checking on the vendored code itself.
  */
 
+/**
+ * 官网资源数据（apps/landing-page/resources-data.js）——纯副作用脚本，
+ * 向 window.MOLIO_* 赋值，无导出；window 字段类型在 src/data/resources.ts 声明。
+ */
+declare module '*landing-page/resources-data.js';
+
 declare module '*/vendor/doocs-md/src/renderer/renderer-impl' {
   export interface IOpts {
     legend?: string;
