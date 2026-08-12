@@ -301,9 +301,11 @@ describe('buildSpawnEnv', () => {
       if (isWindows) {
         savedUserProfile = process.env['USERPROFILE'];
         process.env['USERPROFILE'] = tmpHome;
-        // Windows 上 augmentPath 还会扫 %LOCALAPPDATA%/%APPDATA% 下的 Python
-        // Scripts 目录（windowsPythonScriptsDirs）——不重定向的话，装了 Python
-        // 的开发机会把真实目录带进 PATH，"不存在则不加"断言必挂。
+        // augmentPath also scans %LOCALAPPDATA%\Programs\Python and
+        // %APPDATA%\Python for globally/`--user`-installed CLIs (docling).
+        // Point them under the empty tmp home too, otherwise a real Python
+        // install on the host machine leaks into PATH and breaks the
+        // "should not add dirs that do not exist" assertion.
         savedLocalAppData = process.env['LOCALAPPDATA'];
         savedAppData = process.env['APPDATA'];
         process.env['LOCALAPPDATA'] = path.join(tmpHome, 'AppData', 'Local');
@@ -368,8 +370,28 @@ describe('buildSpawnEnv', () => {
       );
     });
 
+    it('should add Windows per-user Python Scripts dirs to PATH', { skip: !isWindows ? 'Windows Python layout' : undefined }, () => {
+      // python.org / MS-Store layout: %LOCALAPPDATA%\Programs\Python\Python3xx\Scripts
+      // A globally/`--user`-installed docling lives here but is NOT on the
+      // system PATH — augmentPath must discover it via a dir scan so the
+      // spawned agent can find it.
+      const pyScripts = path.join(
+        process.env['LOCALAPPDATA'] as string, 'Programs', 'Python', 'Python312', 'Scripts',
+      );
+      fs.mkdirSync(pyScripts, { recursive: true });
+
+      const def = makeDef({ id: 'generic' });
+      const env = buildSpawnEnv(def, { Path: 'C:\\Windows\\System32' });
+
+      assert.ok(
+        (env['Path'] ?? '').toLowerCase().includes(pyScripts.toLowerCase()),
+        `Path should contain per-user Python Scripts, got: ${env['Path']}`,
+      );
+    });
+
     it('should not add dirs that do not exist', () => {
-      // No ~/.molio/venv or ~/.local/bin created → PATH unchanged
+      // No ~/.molio/venv, ~/.local/bin, or per-user Python Scripts created
+      // (LOCALAPPDATA/APPDATA point at the empty tmp home) → PATH unchanged.
       const def = makeDef({ id: 'generic' });
       const env = buildSpawnEnv(def, { PATH: '/usr/bin' });
 

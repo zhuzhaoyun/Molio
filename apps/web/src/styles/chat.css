@@ -670,8 +670,9 @@
   box-shadow: var(--shadow-sm);
 }
 .composer textarea {
-  min-height: 88px;
-  max-height: min(184px, 34vh);
+  /* 默认 2 行（44px），随输入自动增长到 COMPOSER_MAX_HEIGHT（chat.css 与 ChatComposer.tsx 同步） */
+  min-height: 44px;
+  max-height: min(280px, 40vh);
   border: none;
   background: transparent;
   padding: 4px 4px;
@@ -1040,18 +1041,30 @@
   overflow: hidden;
 }
 
-/* Header */
-.composer-history-header {
+/* 搜索框（daemon FTS 全文搜索，300ms 防抖；无标题栏，下拉直接从搜索开始） */
+.composer-history-search {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 14px 16px 10px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-strong);
-  flex-shrink: 0;
+  gap: 6px;
+  padding: 10px 12px 8px;
   border-bottom: 1px solid var(--border-soft);
+  flex-shrink: 0;
 }
+.composer-history-search svg {
+  flex-shrink: 0;
+  color: var(--text-soft);
+}
+.composer-history-search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 13px;
+  color: var(--text);
+}
+.composer-history-search input::placeholder { color: var(--text-faint); }
+.composer-history-search input::-webkit-search-cancel-button { cursor: pointer; }
 
 .composer-history-list {
   overflow-y: auto;
@@ -1077,13 +1090,13 @@
   letter-spacing: 0.06em;
 }
 
-/* Item row */
+/* Item row — 单行高密度 */
 .composer-history-item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 4px;
   width: 100%;
-  padding: 9px 16px;
+  padding: 0 10px 0 16px;
   border: none;
   background: transparent;
   text-align: left;
@@ -1097,8 +1110,8 @@
   content: '';
   position: absolute;
   left: 0;
-  top: 4px;
-  bottom: 4px;
+  top: 5px;
+  bottom: 5px;
   width: 0;
   border-radius: 0 2px 2px 0;
   background: var(--accent);
@@ -1113,30 +1126,29 @@
   background: var(--bg-subtle);
 }
 
-/* Item content */
-.composer-history-item-body {
+/* 主点击区（选择该会话） */
+.composer-history-item-main {
   flex: 1;
   min-width: 0;
   display: flex;
-  flex-direction: column;
-  gap: 3px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
 }
 
 .composer-history-title {
+  flex: 1;
+  min-width: 0;
   font-size: 13px;
   line-height: 1.3;
   color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.composer-history-meta {
-  font-size: 11px;
-  color: var(--text-faint);
-  display: flex;
-  align-items: center;
-  gap: 6px;
 }
 
 /* Channel badge — tiny pill */
@@ -1157,8 +1169,70 @@
   font-size: 10.5px;
   color: var(--text-faint);
   flex-shrink: 0;
-  align-self: flex-start;
-  margin-top: 1px;
+}
+
+/* hover 动作（重命名/删除） — 默认不占位，hover / focus 时替代时间位置显示 */
+.composer-history-actions {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.composer-history-item:hover .composer-history-actions,
+.composer-history-item:focus-within .composer-history-actions {
+  display: flex;
+}
+/* hover 时隐藏时间，把右侧位置让给动作按钮（无独立常驻区域） */
+.composer-history-item:hover .composer-history-time,
+.composer-history-item:focus-within .composer-history-time {
+  display: none;
+}
+
+.composer-history-action {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  color: var(--text-soft);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 80ms ease, color 80ms ease;
+}
+.composer-history-action:hover { background: var(--bg-muted); color: var(--text); }
+.composer-history-action.danger:hover { background: var(--accent-tint); color: var(--accent-strong); }
+/* 修复 SVG 图标被 flex 压成 0 宽（logo 不可见） */
+.composer-history-action svg { flex-shrink: 0; }
+.composer-history-action.danger.is-confirming {
+  width: auto;
+  padding: 0 6px;
+  background: var(--accent-tint);
+  color: var(--accent-strong);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* 重命名输入 */
+.composer-history-rename-input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer-history-item,
+  .composer-history-actions,
+  .composer-history-action {
+    transition: none;
+  }
 }
 
 /* Hidden file input */

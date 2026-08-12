@@ -102,3 +102,28 @@ export type {
   SearchResult,
   SearchResponse,
 } from './knowledge.js';
+
+export type {
+  SkillKind,
+  SkillManifestEntry,
+  CreateSkillRequest,
+  UpdateSkillRequest,
+  ImportSkillRequest,
+  PrefillRequest,
+  PrefillResult,
+  SkillListResponse,
+  SkillResponse,
+  SkillDetailResponse,
+  PrefillResponse,
+  HubSkillSummary,
+  HubSkillsQuery,
+  HubSkillsListResponse,
+  HubCategory,
+  HubCategoriesResponse,
+  InstallHubSkillRequest,
+  InstallHubSkillResponse,
+} from './skill.js';
+
+// SKILL.md generate/parse primitives (runtime values, shared daemon ↔ web).
+export { generateSkillMd, stripFrontmatter, parseSkillMd, deriveSkillName } from './skillmd.js';
+export type { ParsedSkillMd } from './skillmd.js';

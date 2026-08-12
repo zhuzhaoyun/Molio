@@ -60,6 +60,9 @@ importers:
       chokidar:
         specifier: ^5.0.0
         version: 5.0.0
+      fflate:
+        specifier: ^0.8.3
+        version: 0.8.3
       hono:
         specifier: ^4.7.0
         version: 4.12.23
@@ -87,8 +90,8 @@ importers:
         version: 6.8.3
     devDependencies:
       '@arms/rum-electron':
-        specifier: ^0.0.5
-        version: 0.0.5(@babel/runtime@7.29.7)(electron@40.10.2)
+        specifier: ^0.0.7
+        version: 0.0.7(@babel/runtime@7.29.7)(electron@40.10.2)
       '@molio/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -176,6 +179,9 @@ importers:
       pdfjs-dist:
         specifier: 6.2.108
         version: 6.2.108
+      qrcode:
+        specifier: ^1.5.4
+        version: 1.5.4
       react:
         specifier: ^19.0.0
         version: 19.2.7
@@ -201,6 +207,9 @@ importers:
       '@types/d3-force':
         specifier: ^3.0.0
         version: 3.0.10
+      '@types/qrcode':
+        specifier: ^1.5.6
+        version: 1.5.6
       '@types/react':
         specifier: ^19.0.0
         version: 19.2.16
@@ -239,8 +248,8 @@ packages:
     peerDependencies:
       '@babel/runtime': ^7.24.5
 
-  '@arms/rum-electron@0.0.5':
-    resolution: {integrity: sha512-Sk1gpyjXE5EsBYrotmiuosUmGdfgoUpn1hMQu8IRX7iqNuuPorrulWAMDN07ZgZSR19mONID42/3hzuX1CIJ1A==}
+  '@arms/rum-electron@0.0.7':
+    resolution: {integrity: sha512-1gThd6oWkzkK+6YPF/LOQal82c6VAXhRwdSpNXONKqFJOYtQLaLxHT5OR/iafAaIot8ePU85c+2+A8tGZ2WZ7A==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
       '@trpc/server': '*'
@@ -3553,7 +3562,7 @@ snapshots:
     dependencies:
       '@babel/runtime': 7.29.7
 
-  '@arms/rum-electron@0.0.5(@babel/runtime@7.29.7)(electron@40.10.2)':
+  '@arms/rum-electron@0.0.7(@babel/runtime@7.29.7)(electron@40.10.2)':
     dependencies:
       '@arms/rum-core': 0.1.7(@babel/runtime@7.29.7)
       electron: 40.10.2

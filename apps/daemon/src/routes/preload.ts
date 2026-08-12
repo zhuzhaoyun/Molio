@@ -9,7 +9,7 @@
 
 import { Hono } from 'hono';
 import type { PreloadManager, PreloadableSkill, PreloadProgressEvent } from '../core/preload-manager.js';
-import { getPreloadLocations, skillsNeedingStart } from '../core/preload-manager.js';
+import { getPreloadLocations, skillsNeedingStart, PRELOADABLE_SKILLS } from '../core/preload-manager.js';
 
 export function preloadRoutes(preloadManager: PreloadManager): Hono {
   const app = new Hono();
@@ -23,7 +23,9 @@ export function preloadRoutes(preloadManager: PreloadManager): Hono {
     const loc = getPreloadLocations();
     const enriched: Record<string, unknown> = {};
     for (const [sk, st] of Object.entries(statuses)) {
-      enriched[sk] = { ...st, path: sk === 'docling' ? loc.docling : loc.remotion };
+      // Only docling is preloadable now (remotion preload was retired with the
+      // bundled skill), so the location map has a single entry.
+      enriched[sk] = { ...st, path: loc[sk as keyof typeof loc] };
     }
     return c.json({ statuses: enriched });
   });
@@ -39,9 +41,8 @@ export function preloadRoutes(preloadManager: PreloadManager): Hono {
     }
 
     // Validate all skills
-    const validSkills: PreloadableSkill[] = ['docling', 'remotion'];
     for (const sk of skills) {
-      if (!validSkills.includes(sk as PreloadableSkill)) {
+      if (!PRELOADABLE_SKILLS.includes(sk as PreloadableSkill)) {
         return c.json({ error: `Unknown skill: ${sk}` }, 400);
       }
     }

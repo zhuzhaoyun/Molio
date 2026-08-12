@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildMolioPrompt, buildWeixinFrameMessage } from '../../../src/core/weixin/message.js';
+import { buildMolioPrompt, buildWeixinFrameMessage, buildWeixinReuseMessage } from '../../../src/core/weixin/message.js';
 
 /**
  * The weixin channel role frame used to ride `--append-system-prompt-file`,
@@ -38,5 +38,42 @@ describe('weixin channel frame message-prepend', () => {
   it('leaves a plain non-URL message unwrapped by buildMolioPrompt', () => {
     // buildMolioPrompt only prepends for article URLs; plain text passes through.
     assert.equal(buildMolioPrompt('普通的知识库问题'), '普通的知识库问题');
+  });
+});
+
+/**
+ * Reuse turns intentionally do NOT re-carry the full channel frame — but long
+ * sessions lose the first-turn frame to context compaction, after which the
+ * model claimed it had no WeChat delivery capability (incident 2026-08-11:
+ * a docx was generated but not delivered until the user sent /new). The
+ * compact reuse reminder keeps the <attach/> protocol alive for the run.
+ */
+describe('weixin reuse-turn attach reminder', () => {
+  it('teaches the <attach/> delivery protocol', () => {
+    const out = buildWeixinReuseMessage('把那份报告发给我');
+    assert.ok(out.includes('<attach path='), 'carries the marker format');
+    assert.ok(out.includes('附件'), 'explains the file becomes a real attachment');
+    assert.ok(out.includes('把那份报告发给我'), 'preserves the user text');
+    assert.ok(
+      out.indexOf('微信通道机制提醒') < out.indexOf('把那份报告发给我'),
+      'reminder comes before the user text',
+    );
+  });
+
+  it('stays minimal — no full-frame routing/ingestion content', () => {
+    // The reminder rides EVERY reuse turn; it must not re-trigger the frame's
+    // 收件/入库/问答 routing on every message.
+    const out = buildWeixinReuseMessage('随便聊两句');
+    assert.ok(!out.includes('微信入口助手'), 'no channel identity');
+    assert.ok(!out.includes('raw/wechat'), 'no ingestion rules');
+    assert.ok(!out.includes('wiki-query'), 'no wiki routing');
+    assert.ok(out.length < 500, 'reminder stays short');
+  });
+
+  it('composes with the article-URL prepend like the frame builder does', () => {
+    const url = 'https://mp.weixin.qq.com/s/abc123';
+    const out = buildWeixinReuseMessage(url);
+    assert.ok(out.includes('公众号文章链接'), 'article-URL handling present');
+    assert.ok(out.includes(url), 'the url is preserved');
   });
 });

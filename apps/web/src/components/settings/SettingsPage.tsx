@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { RuntimesPanel } from './RuntimesPanel';
 import { ChannelsPanel } from './ChannelsPanel';
+import { SkillsPanel } from './SkillsPanel';
 import { useI18n } from '../../i18n';
 import { LanguageSettings } from './LanguageSettings';
 import { ThemeSettings } from './ThemeSettings';
 import { UpdateSettings } from './UpdateSettings';
 
-type Tab = 'general' | 'runtimes' | 'channels';
+type Tab = 'general' | 'runtimes' | 'skills' | 'channels';
 
 export function SettingsPage() {
   const { t } = useI18n();
@@ -37,6 +38,14 @@ export function SettingsPage() {
         </button>
         <button
           type="button"
+          className={`settings-tab-btn${activeTab === 'skills' ? ' is-active' : ''}`}
+          data-testid="settings-tab-skills"
+          onClick={() => setActiveTab('skills')}
+        >
+          {t('settings.tabSkills')}
+        </button>
+        <button
+          type="button"
           className={`settings-tab-btn${activeTab === 'channels' ? ' is-active' : ''}`}
           onClick={() => setActiveTab('channels')}
         >
@@ -54,6 +63,7 @@ export function SettingsPage() {
           </>
         )}
         {activeTab === 'runtimes' && <RuntimesPanel />}
+        {activeTab === 'skills' && <SkillsPanel />}
         {activeTab === 'channels' && <ChannelsPanel />}
       </div>
     </div>

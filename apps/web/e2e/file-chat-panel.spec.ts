@@ -1,68 +1,56 @@
 import { test, expect } from '@playwright/test';
-import { gotoHome, clickNav } from './helpers/navigation';
+import { createTempVault, cleanupTempVault, type TempVault } from './helpers/cleanup';
+import * as fs from 'fs';
+import * as path from 'path';
+
+/**
+ * @area kb
+ * @priority P1
+ *
+ * 文件级问答面板（KB 多会话重构后）：
+ * - 💬问答 (`kb-btn-ask`) 打开 `kb-chat-panel`，QA 会话空态 + composer @当前文档 badge
+ * - 关闭按钮 (`kb-chat-close`) 收起面板
+ * Prerequisites: `pnpm dev`.
+ */
+let vault: TempVault;
 
 test.describe('File chat panel', () => {
+  test.beforeAll(async () => {
+    vault = await createTempVault('e2e-file-chat-panel');
+    fs.writeFileSync(path.join(vault.path, 'doc.md'), '# Doc\n');
+  });
+  test.afterAll(async () => { if (vault) await cleanupTempVault(vault); });
+
   test('toolbar button opens file chat panel', async ({ page }) => {
-    await gotoHome(page);
-    await page.reload({ waitUntil: 'networkidle' });
-    await clickNav(page, 'knowledge');
-    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5000 });
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
-    // Click a file in the file tree to open it
-    const fileItem = page.locator('.kb-tree-item').first();
-    if (await fileItem.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await fileItem.click();
-      await page.waitForTimeout(1000);
+    // 💬问答 (document-scoped) opens the multi-session panel.
+    await page.locator('[data-testid="kb-btn-ask"]').click();
+    const panel = page.locator('[data-testid="kb-chat-panel"]');
+    await expect(panel).toBeVisible();
 
-      // Look for the "询问此文件" button
-      const askBtn = page.locator('[data-testid="kb-btn-ask-file"]');
-      if (await askBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-        await askBtn.click();
-        await page.waitForTimeout(500);
-
-        // Verify the panel appears
-        const panel = page.locator('[data-testid="file-chat-panel"]');
-        expect(await panel.isVisible()).toBe(true);
-
-        // Verify close button works
-        const closeBtn = page.locator('[data-testid="file-chat-close"]');
-        await closeBtn.click();
-        await page.waitForTimeout(300);
-        expect(await panel.isVisible().catch(() => false)).toBe(false);
-      }
-    }
+    // Close button collapses the panel.
+    await page.locator('[data-testid="kb-chat-close"]').click();
+    await expect(panel).toBeHidden();
   });
 
   test('empty state shows composer with current file pre-@-mentioned', async ({ page }) => {
-    await gotoHome(page);
-    await page.reload({ waitUntil: 'networkidle' });
-    await clickNav(page, 'knowledge');
-    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5000 });
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
-    const fileItem = page.locator('.kb-tree-item').first();
-    if (await fileItem.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await fileItem.click();
-      await page.waitForTimeout(1000);
+    await page.locator('[data-testid="kb-btn-ask"]').click();
+    const panel = page.locator('[data-testid="kb-chat-panel"]');
+    await expect(panel).toBeVisible();
 
-      const askBtn = page.locator('[data-testid="kb-btn-ask-file"]');
-      if (await askBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-        await askBtn.click();
-        await page.waitForTimeout(500);
+    // Empty state should be visible before any messages.
+    await expect(panel.locator('.file-chat-empty')).toBeVisible();
 
-        // Empty state should be visible before any messages
-        const emptyState = page.locator('.file-chat-empty');
-        expect(await emptyState.isVisible()).toBe(true);
+    // Composer input should be ready.
+    const input = panel.locator('[data-testid="composer-input"]');
+    await expect(input).toBeVisible();
 
-        // Input should be ready
-        const input = page.locator('[data-testid="file-chat-panel"] [data-testid="composer-input"]');
-        expect(await input.isVisible()).toBe(true);
-
-        // The current file should be pre-filled as a @ ref badge in the composer
-        const fileBadge = page.locator(
-          '[data-testid="file-chat-panel"] [data-testid="composer-file-badge"]',
-        );
-        expect(await fileBadge.first().isVisible()).toBe(true);
-      }
-    }
+    // The current file should be pre-filled as a @ ref badge in the composer.
+    await expect(panel.locator('[data-testid="composer-file-badge"]')).toBeVisible();
   });
 });

@@ -1,5 +1,5 @@
 import type { ParsedWeixinMessage, WeixinAttachment, WeixinRawItem, WeixinRawMessage } from './types.js';
-import { WEIXIN_CHANNEL_FRAME } from './channel-frame.js';
+import { WEIXIN_ATTACH_REMINDER, WEIXIN_CHANNEL_FRAME } from './channel-frame.js';
 
 const ITEM_TEXT = 1;
 
@@ -173,4 +173,19 @@ export function buildMolioPrompt(text: string): string {
  */
 export function buildWeixinFrameMessage(text: string): string {
   return [WEIXIN_CHANNEL_FRAME, '', '## 本次微信消息', '', buildMolioPrompt(text)].join('\n');
+}
+
+/**
+ * Wrap a REUSE-turn weixin message with the compact attach re-anchor.
+ *
+ * Counterpart to `buildWeixinFrameMessage` (fresh spawns only): the first-turn
+ * frame teaches the `<attach/>` file-delivery protocol, but long sessions get
+ * context-compacted and lose it — verified incident 2026-08-11, where a long
+ * run produced a docx yet claimed no WeChat delivery capability; `/new` (fresh
+ * run, fresh frame) delivered it immediately. This short reminder rides every
+ * reuse turn so the protocol survives the whole life of the run. Like the
+ * frame builder it SUBSUMES `buildPrompt` (wraps via buildMolioPrompt).
+ */
+export function buildWeixinReuseMessage(text: string): string {
+  return [WEIXIN_ATTACH_REMINDER, '', buildMolioPrompt(text)].join('\n');
 }

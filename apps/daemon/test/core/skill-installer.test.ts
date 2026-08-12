@@ -3,7 +3,8 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { installBuiltinSkills } from '../../src/core/skill-installer.js';
+import { resolveSkillsSourceDir } from '../../src/core/skill-installer.js';
+import { installAll } from '../helpers/install-all.js';
 
 describe('skill-installer migration', () => {
   let tmpVault: string;
@@ -45,7 +46,7 @@ describe('skill-installer migration', () => {
     fs.writeFileSync(path.join(wikiDir, 'SKILL.md'), '# Wiki build skill');
 
     // Run the installer
-    installBuiltinSkills(tmpVault);
+    installAll(tmpVault);
 
     // Verify deprecated skills are removed
     for (const skill of deprecatedSkills) {
@@ -85,7 +86,7 @@ describe('skill-installer migration', () => {
     fs.writeFileSync(path.join(userPdfDir, 'custom-script.py'), '# User script');
 
     // Run the installer
-    installBuiltinSkills(tmpVault);
+    installAll(tmpVault);
 
     // Verify user-created skill is preserved
     assert.strictEqual(
@@ -101,7 +102,7 @@ describe('skill-installer migration', () => {
   });
 
   it('should inject docling-preference rule into .claude/CLAUDE.md', () => {
-    installBuiltinSkills(tmpVault);
+    installAll(tmpVault);
 
     const claudeMd = path.join(tmpVault, '.claude', 'CLAUDE.md');
     assert.strictEqual(fs.existsSync(claudeMd), true, '.claude/CLAUDE.md should exist');
@@ -115,7 +116,7 @@ describe('skill-installer migration', () => {
   });
 
   it('should inject environment self-healing rule into .claude/CLAUDE.md', () => {
-    installBuiltinSkills(tmpVault);
+    installAll(tmpVault);
 
     const content = fs.readFileSync(
       path.join(tmpVault, '.claude', 'CLAUDE.md'),
@@ -140,7 +141,7 @@ describe('skill-installer migration', () => {
   });
 
   it('should inject web-fetch preference rule into .claude/CLAUDE.md', () => {
-    installBuiltinSkills(tmpVault);
+    installAll(tmpVault);
 
     const content = fs.readFileSync(
       path.join(tmpVault, '.claude', 'CLAUDE.md'),
@@ -170,35 +171,52 @@ describe('skill-installer migration', () => {
     );
   });
 
-  it('should inject remotion-preference rule into .claude/CLAUDE.md', () => {
-    installBuiltinSkills(tmpVault);
+  it('retired remotion rule: never injected, and any legacy block is removed', () => {
+    // remotion is no longer a bundled skill (video creation moved to the skill
+    // hub's am-will/remotion), so its gateSlug is never in the effective set
+    // and ensureMolioRules must REMOVE the block instead of injecting it. The
+    // MOILIO_RULES entry survives precisely so legacy vaults get cleaned up.
+    const claudeDir = path.join(tmpVault, '.claude');
+    fs.mkdirSync(claudeDir, { recursive: true });
+    const claudeMd = path.join(claudeDir, 'CLAUDE.md');
+    // Simulate a vault that got the (wrapped) rule before the retirement,
+    // with user content AFTER the block that must survive the removal.
+    fs.writeFileSync(claudeMd, [
+      '# My Vault Rules',
+      '',
+      '<!-- molio:remotion-preference -->',
+      '## Video Creation — Always Use `remotion`',
+      '',
+      'When the user wants to make/create a video (介绍视频/宣传视频/产品视频/动画/motion graphic/intro/trailer/explainer),',
+      '**use the `remotion` skill** — do NOT reach for `moviepy`, `manim`, or Python video libraries.',
+      'This applies even when the source is wiki notes, articles, or scripts rather than code.',
+      '<!-- /molio:remotion-preference -->',
+      '',
+      'User notes written after the block.',
+    ].join('\n'), 'utf-8');
 
-    const content = fs.readFileSync(
-      path.join(tmpVault, '.claude', 'CLAUDE.md'),
-      'utf-8',
-    );
-    // Core directive: route video creation to the remotion skill, not Python
-    // video libraries. Without this rule the agent defaults to moviepy/ffmpeg
-    // even though the remotion skill is installed — same reason docling needs
-    // a hard rule to win over legacy office skills.
+    installAll(tmpVault);
+
+    const content = fs.readFileSync(claudeMd, 'utf-8');
     assert.ok(
-      content.includes('remotion'),
-      'should mention the remotion skill',
+      !content.includes('<!-- molio:remotion-preference -->'),
+      'legacy remotion block must be removed by sentinel on reconcile',
     );
     assert.ok(
-      content.includes('moviepy') || content.includes('manim'),
-      'should explicitly call out the Python video libraries to avoid',
+      !content.includes('Video Creation — Always Use'),
+      'legacy remotion block body must not linger',
     );
-    // Chinese trigger types must be listed so 介绍视频/宣传视频-style requests
-    // route to the rule via keyword match in the system prompt.
+    // Only remotion was retired — everything else keeps working.
+    assert.ok(content.includes('docling'), 'docling rule must still be injected');
+    assert.ok(content.includes('My Vault Rules'), 'user content before the block must be preserved');
     assert.ok(
-      content.includes('介绍视频') || content.includes('宣传视频'),
-      'should list Chinese video-type triggers',
+      content.includes('User notes written after the block.'),
+      'user content after the removed block must be preserved',
     );
   });
 
   it('should inject wiki-query-preference rule into .claude/CLAUDE.md', () => {
-    installBuiltinSkills(tmpVault);
+    installAll(tmpVault);
 
     const content = fs.readFileSync(
       path.join(tmpVault, '.claude', 'CLAUDE.md'),
@@ -256,7 +274,7 @@ describe('skill-installer migration', () => {
     const userContent = '# My Vault Rules\n\nThis is my personal vault.\n';
     fs.writeFileSync(path.join(claudeDir, 'CLAUDE.md'), userContent);
 
-    installBuiltinSkills(tmpVault);
+    installAll(tmpVault);
 
     const content = fs.readFileSync(path.join(claudeDir, 'CLAUDE.md'), 'utf-8');
     // User content must be preserved
@@ -267,13 +285,13 @@ describe('skill-installer migration', () => {
   });
 
   it('should be idempotent — running twice does not duplicate the rule', () => {
-    installBuiltinSkills(tmpVault);
+    installAll(tmpVault);
     const afterFirst = fs.readFileSync(
       path.join(tmpVault, '.claude', 'CLAUDE.md'),
       'utf-8',
     );
 
-    installBuiltinSkills(tmpVault);
+    installAll(tmpVault);
     const afterSecond = fs.readFileSync(
       path.join(tmpVault, '.claude', 'CLAUDE.md'),
       'utf-8',
@@ -284,7 +302,7 @@ describe('skill-installer migration', () => {
 
   it('should replace outdated rule blocks in place when content changes', () => {
     // First pass: inject current rules
-    installBuiltinSkills(tmpVault);
+    installAll(tmpVault);
     const claudeMd = path.join(tmpVault, '.claude', 'CLAUDE.md');
     const original = fs.readFileSync(claudeMd, 'utf-8');
 
@@ -315,7 +333,7 @@ describe('skill-installer migration', () => {
     assert.ok(withOld.includes('OLD VERBOSE VERSION'), 'old version should be present');
 
     // Second pass: should replace the old verbose block with current version
-    installBuiltinSkills(tmpVault);
+    installAll(tmpVault);
     const afterUpdate = fs.readFileSync(claudeMd, 'utf-8');
 
     // Old content should be gone
@@ -338,10 +356,11 @@ describe('skill-installer migration', () => {
   it('should update a version-less dest when the source gains a version', () => {
     // Reproduces the wiki-large-source-file bug: a skill whose SKILL.md had no
     // `version:` field was shipped to existing vaults, then later gained both
-    // new content AND a `version:` field. The old `shouldUpdateSkill` returned
+    // new content AND a `version:` field. The old version-compare returned
     // false whenever either side lacked a version, so the new content never
-    // reached existing vaults — only new ones. The fix: a versioned source
-    // must refresh a version-less dest.
+    // reached existing vaults — only new ones. Content-hash mirroring
+    // (dirsync.mirrorDirIfChanged) fixes this structurally: any content drift
+    // breaks the hash match and rebuilds the dest.
     const wikiBuildDir = path.join(skillsDir, 'wiki-build');
     fs.mkdirSync(wikiBuildDir, { recursive: true });
     // Simulate an old version-less install (pre-1.1.0, no `version:` line).
@@ -350,7 +369,7 @@ describe('skill-installer migration', () => {
       ['# ---', 'name: wiki-build', 'description: old.', '---', '', '# old body'].join('\n'),
     );
 
-    installBuiltinSkills(tmpVault);
+    installAll(tmpVault);
 
     const installed = fs.readFileSync(path.join(wikiBuildDir, 'SKILL.md'), 'utf-8');
     // Must now carry a version line (proves the versioned source was copied in).
@@ -364,7 +383,7 @@ describe('skill-installer migration', () => {
 
   it('should update skill when version differs, skip when same', () => {
     // First install
-    installBuiltinSkills(tmpVault);
+    installAll(tmpVault);
     const doclingMd = path.join(skillsDir, 'docling', 'SKILL.md');
     const currentContent = fs.readFileSync(doclingMd, 'utf-8');
 
@@ -383,17 +402,74 @@ describe('skill-installer migration', () => {
     );
 
     // Second pass: version differs, should update
-    installBuiltinSkills(tmpVault);
+    installAll(tmpVault);
     assert.ok(
       fs.readFileSync(doclingMd, 'utf-8').includes(`version: ${currentVersion}`),
       'skill should be updated to current version',
     );
 
     // Third pass: version is same, should not rewrite (no error either)
-    installBuiltinSkills(tmpVault);
+    installAll(tmpVault);
     assert.ok(
       fs.readFileSync(doclingMd, 'utf-8').includes(`version: ${currentVersion}`),
       'skill should remain at current version',
+    );
+  });
+});
+
+// Merged from test/tools/skill-installer.test.ts — whole-dir install semantics
+// of reconcileBundledSync (multi-file bundled skills + source-dir resolution).
+describe('reconcileBundledSync (whole-dir install)', () => {
+  it('installs wechat-article-extractor skill to vault .claude/skills/', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-skill-test-'));
+    try {
+      installAll(tmpDir);
+
+      const skillDir = path.join(tmpDir, '.claude', 'skills', 'wechat-article-extractor');
+      assert.ok(fs.existsSync(skillDir), 'skill directory should exist');
+
+      const files = fs.readdirSync(skillDir);
+      assert.ok(files.includes('SKILL.md'), 'should contain SKILL.md');
+      assert.ok(files.includes('extract.js'), 'should contain extract.js');
+      assert.ok(files.includes('package.json'), 'should contain package.json');
+
+      const libDir = path.join(skillDir, 'lib');
+      assert.ok(fs.existsSync(libDir), 'lib directory should exist');
+      const libFiles = fs.readdirSync(libDir);
+      assert.ok(libFiles.includes('errors.js'), 'should contain lib/errors.js');
+      assert.ok(libFiles.includes('fetch.js'), 'should contain lib/fetch.js');
+      assert.ok(libFiles.includes('parser.js'), 'should contain lib/parser.js');
+      assert.ok(libFiles.includes('converter.js'), 'should contain lib/converter.js');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('is idempotent — second call does not overwrite', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-skill-test-'));
+    try {
+      installAll(tmpDir);
+      const skillMd = path.join(tmpDir, '.claude', 'skills', 'wechat-article-extractor', 'SKILL.md');
+      const stat1 = fs.statSync(skillMd);
+
+      installAll(tmpDir);
+      const stat2 = fs.statSync(skillMd);
+
+      assert.equal(stat1.mtimeMs, stat2.mtimeMs, 'file should not be overwritten');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  // Regression: src/core/skills/ is ALSO a source module (the user skill library)
+  // that compiles to dist/src/core/skills/. The resolver must not mistake that
+  // module dir for the packaged built-in skills dir — it has to land on a dir
+  // that actually contains the shipped skills (wechat-article-extractor/SKILL.md).
+  it('resolves the real built-in skills dir, not a same-named module dir', () => {
+    const dir = resolveSkillsSourceDir();
+    assert.ok(
+      fs.existsSync(path.join(dir, 'wechat-article-extractor', 'SKILL.md')),
+      `resolved source dir should contain the built-in skills, got: ${dir}`,
     );
   });
 });

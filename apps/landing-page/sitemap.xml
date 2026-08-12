@@ -7,9 +7,15 @@
     <changefreq>weekly</changefreq>
   </url>
   <url>
-    <loc>https://molio.cn/download.html</loc>
-    <lastmod>2026-06-28</lastmod>
+    <loc>https://molio.cn/resources.html</loc>
+    <lastmod>2026-08-06</lastmod>
     <priority>0.9</priority>
+    <changefreq>weekly</changefreq>
+  </url>
+  <url>
+    <loc>https://molio.cn/resource.html</loc>
+    <lastmod>2026-08-06</lastmod>
+    <priority>0.8</priority>
     <changefreq>weekly</changefreq>
   </url>
   <url>

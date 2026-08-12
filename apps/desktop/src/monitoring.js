@@ -9,13 +9,19 @@
  *    SDK 初始化失败写日志后吞掉，绝不影响应用启动。
  * 3. 脱敏层在 `monitoring-sanitize.js`（纯函数，可单测）。
  * 4. SDK 默认不采集 fetch/XHR body，对话内容不会上报。
+ * 5. SDK 0.0.5 的 electron-reporter.request() 曾有 promise 泄漏：上报请求失败
+ *    触发 unhandledRejection，被 SDK 自己的异常采集器再次上报（"TypeError:
+ *    fetch failed" 自报噪音）。上游 0.0.7 已修复（fetch 链的 catch 改为吞错入
+ *    离线队列重试，不再 rethrow），本地 pnpm patch 已随升级撤掉；beforeReport
+ *    里的 dropFetchFailedNoise 保留为兜底过滤。回归防线见
+ *    `test/monitoring/arms-sdk-fetch-leak.test.js`。
  *
  * 单测见 `test/monitoring/sanitize.test.js`，只 import 纯函数（不 import 本文件，
  * 避免 SDK 加载链在测试环境下失败）。
  */
 
 import armsRum from '@arms/rum-electron';
-import { sanitizeBundle, sanitizeViewName, sanitizeResourceName, injectUserId } from './monitoring-sanitize.js';
+import { sanitizeBundle, sanitizeViewName, sanitizeResourceName, injectUserId, dropFetchFailedNoise } from './monitoring-sanitize.js';
 
 // 从 ARMS 控制台「用户体验监控 → 应用列表 → 应用详情」获取的完整上报地址。
 // SDK 会从 query string 里取 service_id 作为 app.id，不需要单独传 pid。
@@ -50,9 +56,12 @@ export async function initMonitoring({ isDev, version, log, getUserId }) {
       autoInject: true,
       parseViewName: sanitizeViewName,
       parseResourceName: sanitizeResourceName,
-      // 先脱敏再注入 userId。getUserId 缺省（或未传）时 injectUserId 原样返回。
+      // 先丢掉 SDK 自报噪音（fetch failed 自循环异常），再脱敏，最后注入 userId。
+      // dropFetchFailedNoise 返回 null 时一路原样返回 null（sanitizeBundle /
+      // injectUserId 对 null 均不改写），SDK 收到 falsy 会跳过本次上报。
+      // getUserId 缺省（或未传）时 injectUserId 原样返回。
       beforeReport: (bundle) => {
-        const sanitized = sanitizeBundle(bundle);
+        const sanitized = sanitizeBundle(dropFetchFailedNoise(bundle));
         return injectUserId(sanitized, getUserId ? getUserId() : null);
       },
       collectors: {

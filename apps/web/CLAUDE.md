@@ -34,6 +34,9 @@ src/
     useRuntimes.ts     运行时管理
     useWikiChat.ts     Wiki 对话状态管理
     useChannelStatus.ts 渠道状态轮询 + busy/error/runAction（feishu/weixin 共用）
+    useResourcePay.ts  资源购买支付状态机（直连 pay.molio.cn：下单/轮询/交付）
+  data/
+    resources.ts       资源数据桥 —— import 官网 apps/landing-page/resources-data.js（单一数据源）
   stores/
     vaultStore.ts          活跃知识库选择（useSyncExternalStore，App + useKnowledge 共享）
     messageSelectionStore.ts  消息删除勾选态（同模式 + 每气泡精准订阅）
@@ -91,6 +94,12 @@ src/
     settings/          设置组件
       SettingsPage.tsx 设置页面
       updater-state.ts 更新状态管理
+    resources/         资源模块组件
+      ResourcesPage.tsx      资源列表页（筛选 pills + 卡片网格）
+      ResourceDetailPage.tsx 资源详情页（概述/效果预览灯箱/导入说明/侧栏动作卡）
+      ResourceCard.tsx       资源卡片
+      ResourcePayModal.tsx   微信支付弹窗（QR + 轮询 + 下载交付）
+      resourceAction.ts      主按钮动作分发（payUrl 外链 / 微信支付 / 免费直链）
   styles/
     tokens.css     CSS 变量 (颜色、间距、字体)
     base.css       基础重置样式
@@ -104,6 +113,7 @@ src/
     runtimes.css   运行时页面样式
     settings.css   设置页面样式
     account.css    账号面板 + 登录表单样式（复用 kb-overlay/kb-modal/kb-btn）
+    resources.css  资源页样式（列表/详情/灯箱/支付弹窗）
   e2e/
     *.spec.ts       Playwright 自动化测试（需先 pnpm dev）
     helpers/        mock-sse.ts 等测试辅助
@@ -146,6 +156,7 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
 | `src/components/runtimes/` | `e2e/runtimes-page.spec.ts`, `e2e/runtime-provider-config.spec.ts` |
 | `src/components/settings/` | `e2e/runtimes-page.spec.ts`（RuntimesPanel 在此） |
 | `src/components/history/` | `e2e/history.spec.ts` |
+| `src/components/resources/`, `src/data/resources.ts`, `apps/landing-page/resources-data.js` | `e2e/resources.spec.ts` |
 | `src/App.tsx`（路由变更） | `e2e/navigation.spec.ts`, `e2e/bootstrap.spec.ts` |
 
 **检查步骤**：
@@ -166,6 +177,8 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
 | 历史 | `/history` | HistoryPage |
 | 设置 | `/settings` | SettingsPage（含 RuntimesPanel、ChannelsPanel） |
 | 图谱 | `/graph` | GraphPage, Minimap |
+| 资源 | `/resources` | ResourcesPage（列表 + 筛选 + 微信支付弹窗） |
+| 资源详情 | `/resources/:id` | ResourceDetailPage（概述/预览灯箱/导入说明） |
 
 ### 历史记录 (History)
 

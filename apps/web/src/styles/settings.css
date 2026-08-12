@@ -384,3 +384,660 @@
     width: auto;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Skills Panel (.sk-*) — global user skill library
+   Mirrors the Runtimes panel shell/header/list structure.
+   ═══════════════════════════════════════════════════════════ */
+
+/* danger button variant (shared .rt-btn base lives in runtimes.css) */
+.rt-btn--danger {
+  color: var(--red);
+  border-color: var(--red-border);
+  background: var(--red-bg);
+}
+.rt-btn--danger:hover:not(:disabled) {
+  background: var(--red-bg);
+  border-color: var(--red);
+}
+
+.sk-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.sk-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px 12px;
+  border-bottom: 1px solid var(--border-soft);
+  flex-shrink: 0;
+}
+
+.sk-header__left {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.sk-header__title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-strong);
+  margin: 0;
+}
+
+.sk-header__subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  /* Long counts/subtitles must not push the action buttons out — clip them. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.sk-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sk-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 24px 24px;
+}
+
+/* Both skill panes stay mounted for state preservation; the inactive one is
+   hidden rather than unmounted (see SkillsPanel). */
+.sk-content--hidden {
+  display: none;
+}
+
+.sk-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ── Skill Row ── */
+.sk-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color 120ms ease;
+}
+
+.sk-row:hover {
+  border-color: var(--border-strong);
+}
+
+/* A skill that's globally disabled: greyed out, switch locked off (per-vault modal). */
+.sk-row--off {
+  opacity: 0.55;
+}
+
+.sk-row--off .sk-switch {
+  cursor: not-allowed;
+}
+
+.sk-row__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.sk-row__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sk-row__name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sk-row__desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.sk-row__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* ── Toggle Switch ── */
+.sk-switch {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.sk-switch input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.sk-switch__track {
+  width: 36px;
+  height: 20px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-muted);
+  border: 1px solid var(--border);
+  transition: background 140ms ease, border-color 140ms ease;
+  position: relative;
+}
+
+.sk-switch__track::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text-soft);
+  transition: transform 140ms ease, background 140ms ease;
+}
+
+/* Keyboard focus ring: the real checkbox is invisible (opacity: 0), so show
+   focus on the track — otherwise Tab users get no focus indication at all. */
+.sk-switch input:focus-visible + .sk-switch__track {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.sk-switch input:checked + .sk-switch__track {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.sk-switch input:checked + .sk-switch__track::after {
+  transform: translateX(16px);
+  background: #fff;
+}
+
+/* ── Footnote ── */
+.sk-note {
+  margin: 20px 0 0;
+  font-size: 12px;
+  color: var(--text-faint);
+  line-height: 1.6;
+}
+
+/* ── Form Fields (used inside the reused .kb-modal chrome) ── */
+.sk-form-hint {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--accent-soft);
+  border-radius: var(--radius-sm);
+  line-height: 1.5;
+}
+
+.sk-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 14px;
+}
+
+.sk-field__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.sk-field__input,
+.sk-field__textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  transition: border-color 120ms ease;
+}
+
+.sk-field__input:focus,
+.sk-field__textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.sk-field__textarea {
+  resize: vertical;
+  min-height: 80px;
+  line-height: 1.6;
+}
+
+.sk-field__textarea--code {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+/* SKILL.md 编辑器（新增/编辑）——让正文编辑器成为编辑页主体，撑满剩余高度。 */
+.sk-field--grow {
+  flex: 1 1 auto;
+  margin-bottom: 0;
+  min-height: 0;
+}
+
+.sk-field--grow .sk-field__textarea {
+  flex: 1 1 auto;
+  min-height: 0;
+  resize: none;
+}
+
+.sk-field__textarea--md {
+  min-height: 160px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  tab-size: 2;
+}
+
+.sk-import-switch {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  margin-bottom: 14px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.sk-import-switch__btn {
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+
+.sk-import-switch__btn.is-active {
+  background: var(--bg-panel);
+  color: var(--text);
+  box-shadow: var(--shadow-xs);
+}
+
+/* 本地路径输入框 + 浏览按钮一行（选文件夹 / 选 SKILL.md）。 */
+.sk-import-row {
+  display: flex;
+  gap: 8px;
+}
+
+.sk-import-row .sk-field__input {
+  flex: 1;
+  min-width: 0;
+}
+
+.sk-browse-btn {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 120ms ease;
+}
+
+.sk-browse-btn:hover {
+  background: var(--bg-subtle);
+}
+
+.sk-form-error {
+  margin-top: 4px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--red);
+  background: var(--red-bg);
+  border: 1px solid var(--red-border);
+  border-radius: var(--radius-sm);
+}
+
+/* ── Fullscreen Skill Editor（取代旧的 520px 弹框，整屏接管）── */
+.sk-editor {
+  position: fixed;
+  inset: 0;
+  /* Above every overlay in the app (kb overlays/topbars top out at 400): the
+     authoring surface takes over the WHOLE screen and nothing may float over
+     it while content is being typed. */
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+.sk-editor__bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.sk-editor__back {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.sk-editor__back:hover {
+  background: var(--bg-subtle);
+  color: var(--text);
+}
+
+.sk-editor__back:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.sk-editor__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.sk-editor__actions {
+  flex: none;
+  display: flex;
+  gap: 8px;
+}
+
+.sk-editor__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 20px clamp(20px, 6vw, 64px) 24px;
+  overflow-y: auto;
+}
+
+/* 名称 / 描述并排一行，窄屏折为单列。 */
+.sk-editor__meta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+  gap: 16px;
+}
+
+@media (max-width: 720px) {
+  .sk-editor__meta {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Segmented view switch — 我的技能 / 技能商店
+   ═══════════════════════════════════════════════════════════ */
+
+.sk-seg {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 2px;
+  padding: 3px;
+  margin: 12px 24px 0;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  flex-shrink: 0;
+}
+
+.sk-seg__item {
+  padding: 6px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.sk-seg__item:hover {
+  color: var(--text-strong);
+}
+
+.sk-seg__item--active {
+  background: var(--bg-panel);
+  color: var(--text-strong);
+  box-shadow: var(--shadow-xs);
+}
+
+.sk-seg__item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Skill Hub (.hub-*) — 技能商店 (skillhub.cn catalog)
+   ═══════════════════════════════════════════════════════════ */
+
+.hub-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.hub-toolbar {
+  display: flex;
+  /* Narrow windows: let the category select drop below the search field
+     instead of squeezing the search input to zero / overflowing the row. */
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.hub-search {
+  /* 160px basis: once the row can't hold search + select, wrap kicks in. */
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+/* Long-hand background-color (NOT the shorthand): base.css paints the custom
+   <select> arrow via background-image/* and the shorthand would wipe it. */
+.hub-category {
+  flex: 0 0 auto;
+  max-width: 200px;
+  padding: 8px 28px 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text);
+  background-color: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color 120ms ease;
+}
+
+.hub-category:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* Transient install feedback banner (success auto-hides). */
+.hub-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  border-radius: var(--radius-sm);
+}
+
+.hub-notice--success {
+  background: var(--green-bg);
+  border: 1px solid var(--green-border);
+  color: var(--green);
+}
+
+.hub-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.hub-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color 120ms ease;
+}
+
+.hub-card:hover {
+  border-color: var(--border-strong);
+}
+
+.hub-card__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.hub-card__name {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hub-badge {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.hub-badge--verified {
+  color: var(--green);
+  border-color: var(--green-border);
+  background: var(--green-bg);
+}
+
+.hub-card__desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  /* Fixed two-line slot keeps card heights aligned across the grid. */
+  min-height: 36px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.hub-card__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.hub-card__author {
+  max-width: 40%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hub-card__actions {
+  display: flex;
+  margin-top: auto;
+}
+
+.hub-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding-top: 8px;
+}
+
+.hub-footer__total {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.hub-shell .sk-note a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.hub-shell .sk-note a:hover {
+  text-decoration: underline;
+}

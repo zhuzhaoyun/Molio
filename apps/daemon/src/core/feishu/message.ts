@@ -1,3 +1,4 @@
+import { FEISHU_ATTACH_REMINDER, FEISHU_CHANNEL_FRAME } from './channel-frame.js';
 import type { FeishuAttachment, FeishuRawEvent, ParsedFeishuMessage } from './types.js';
 
 /**
@@ -162,4 +163,38 @@ export function buildFeishuPrompt(text: string): string {
     '',
     text,
   ].join('\n');
+}
+
+/**
+ * Wrap a feishu user message with the channel role frame (收件/入库/问答/文件回传
+ * mechanics + wiki skill routing). Prepended on a FRESH spawn only — reuse
+ * turns carry the compact attach reminder instead (see
+ * `buildFeishuReminderMessage`), because the live process already holds the
+ * frame from its first turn.
+ *
+ * This replaces the old `--append-system-prompt-file` injection of
+ * WIKI_FEISHU_PROMPT, which the CLI silently dropped in some environments
+ * (the frame never reached the model — see channel-frame.ts header). A
+ * message prepend always reaches the model, and feishu is a dedicated
+ * channel the daemon fully controls, so prepending the channel frame here
+ * has no cross-context role-lock risk. Symmetric with weixin's
+ * `buildWeixinFrameMessage`.
+ */
+export function buildFeishuFrameMessage(text: string): string {
+  return [FEISHU_CHANNEL_FRAME, '', '## 本次飞书消息', '', buildFeishuPrompt(text)].join('\n');
+}
+
+/**
+ * Wrap a REUSE-turn feishu message with the compact attach re-anchor.
+ *
+ * Counterpart to `buildFeishuFrameMessage` (fresh spawns only): the
+ * first-turn frame teaches the `<attach/>` file-delivery protocol, but long
+ * sessions get context-compacted and lose it — the 2026-08-11 failure class
+ * (long run produces a file, then claims no delivery capability). This short
+ * reminder rides every reuse turn so the protocol survives the whole life of
+ * the run. Like the frame builder it SUBSUMES `buildPrompt` (wraps via
+ * buildFeishuPrompt), mirroring weixin's `buildWeixinReuseMessage`.
+ */
+export function buildFeishuReminderMessage(text: string): string {
+  return [FEISHU_ATTACH_REMINDER, '', buildFeishuPrompt(text)].join('\n');
 }

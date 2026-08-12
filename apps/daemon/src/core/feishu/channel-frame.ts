@@ -1,32 +1,24 @@
 /**
- * Wiki system prompts — role frames materialized as fixed files under
- * `~/.molio/sysprompt/` and injected via `--append-system-prompt-file`.
+ * Feishu channel frame — prepended to the FIRST feishu message of a fresh run
+ * (see `buildFeishuFrameMessage` in ./message.ts), plus the compact per-turn
+ * `<attach/>` re-anchor (`FEISHU_ATTACH_REMINDER`, wired as the dispatcher's
+ * `reuseTurnReminder`).
  *
- * Only the FEISHU frame still lives here. The other two frames this module
- * used to carry have moved to delivery channels that actually reach the model:
+ * History: the full frame used to ride the agent's SYSTEM prompt via
+ * `--append-system-prompt-file` (FEISHU_SYS_PROMPT_FILE, materialized by the
+ * now-deleted wiki-prompts.ts). That channel is unreliable two ways:
+ * 1. the CLI silently drops `--append-system-prompt-file` in some environments
+ *    (verified on Claude Code: the appended frame never reached the model), so
+ *    even a fresh spawn couldn't be trusted to carry it;
+ * 2. even when it lands, long multi-turn sessions get context-compacted and
+ *    the frame's mechanics are summarized away (the 2026-08-11 failure class
+ *    where a long run generated a file, then claimed no delivery capability).
  *
- * - weixin: the CLI silently drops `--append-system-prompt-file` in some
- *   environments (A/B/C probe verified the appended frame never reached the
- *   model). The weixin frame is now a MESSAGE PREPEND on fresh spawns —
- *   `WEIXIN_CHANNEL_FRAME` in core/weixin/channel-frame.ts, wired via
- *   `buildWeixinFrameMessage` + the dispatcher's `frameFirstTurn` dep.
- * - query: retrieval-first behavior is now the `wiki-query` skill plus an
- *   always-on rule in the vault's .claude/CLAUDE.md (see skill-installer.ts),
- *   which the CLI loads natively and reliably.
- *
- * TODO: migrate feishu to the same message-prepend mechanism, then delete
- * this module. Until then feishu keeps the system-prompt path so the channel
- * shipped in #173 keeps working as built.
- *
- * The discrete wiki OPERATIONS (build / ingest / lint / save / query) are NOT
- * here — they are Claude Code skills under src/tools/skills/, invoked on
- * demand by intent (构建/入库/健康检查/归档/问答). This makes chat-typed verbs
- * and UI buttons hit the same procedure without daemon-side verb routing.
+ * The frame is now a MESSAGE PREPEND on the first turn — always reaches the
+ * model — and the compact FEISHU_ATTACH_REMINDER re-anchors the delivery
+ * protocol on every reuse turn, surviving compaction. Symmetric with weixin
+ * (see core/weixin/channel-frame.ts).
  */
-
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 
 // ─── Shared constants ───
 
@@ -58,7 +50,7 @@ sources:
 - \`sources\`：信息来源的 [[wiki 链接]] 列表（source 类型页面填原始文件名，其他类型填参考了哪些 source 页面）
 `;
 
-/** Vault directory structure description shared across prompts. */
+/** Vault directory structure description embedded in the frame. */
 const VAULT_STRUCTURE = `
 vault 根目录就是当前工作目录。源文件在子目录中（如 raw/、notes/、docs/）。
 wiki 相关内容的目录结构：
@@ -108,9 +100,7 @@ const HOT_CACHE_FORMAT = `
 - 重点是让下次会话能快速理解 wiki 当前状态
 `;
 
-// ─── Exported prompts ───
-
-/** One-line manifest of the wiki operation skills, embedded in each frame. */
+/** One-line manifest of the wiki operation skills, embedded in the frame. */
 const WIKI_SKILLS_HINT = `
 ## 可用 wiki 操作 skills
 
@@ -124,7 +114,11 @@ const WIKI_SKILLS_HINT = `
 用户在对话里发「入库」「构建 wiki」「健康检查」「归档」等动词时，调用对应 skill 执行 canonical 流程；发内容性问题时用 \`wiki-query\`。不要自行即兴处理。
 `;
 
-export const WIKI_FEISHU_PROMPT = `你是一个本地知识库的飞书入口助手。
+/**
+ * The frame text. Prepended to the FIRST message of a fresh run (see
+ * `buildFeishuFrameMessage`); reuse turns carry only FEISHU_ATTACH_REMINDER.
+ */
+export const FEISHU_CHANNEL_FRAME = `你是一个本地知识库的飞书入口助手。
 
 你的任务：处理从飞书通道进入的知识库消息。Molio 是以知识库管理和基于知识库创作为核心的产品；飞书通道主要承担低摩擦资料投递、确认入库和知识库问答。
 
@@ -187,31 +181,19 @@ daemon 在把飞书消息交给你之前，已经把其中的文件/图片附件
 
 请根据当前飞书消息和对话历史，选择收件、确认入库（调用 \`wiki-ingest\` skill）、问答或创作处理。`;
 
-// ─── System-prompt file materialization ───
-
 /**
- * Directory under `~/.molio/` where the wiki system-prompt frames are
- * materialized as fixed-name files, so the agent CLI can read them via
- * `--append-system-prompt-file <path>`.
+ * Compact re-anchor prepended to every REUSE turn (see
+ * `buildFeishuReminderMessage` in ./message.ts, wired as the dispatcher's
+ * `reuseTurnReminder`).
  *
- * Why a file (not inline `--append-system-prompt <text>`): the frame is
- * multi-KB with embedded quotes/backslashes; inline it broke the CLI's argv
- * parsing on Windows and silently ate `--dangerously-skip-permissions`. A
- * plain file path has no such pitfall.
+ * The full FEISHU_CHANNEL_FRAME only rides the first turn of a fresh run.
+ * Long multi-turn sessions get context-compacted, and the frame's mechanics
+ * are summarized away — after which the model no longer knows the <attach/>
+ * protocol and tells users it "has no way to send files" (the 2026-08-11
+ * weixin incident, same failure class).
+ *
+ * Deliberately SHORT and scoped to the delivery protocol: it rides every
+ * reuse turn, and re-prepending the full frame would re-trigger 收件/入库/
+ * routing behavior on every message.
  */
-export function sysPromptDir(): string {
-  return path.join(os.homedir(), '.molio', 'sysprompt');
-}
-
-/** Fixed file path for the feishu wiki system-prompt frame (passed to the CLI). */
-export const FEISHU_SYS_PROMPT_FILE = path.join(sysPromptDir(), 'feishu.txt');
-
-/**
- * Write the wiki system-prompt frames to fixed files under `~/.molio/sysprompt/`.
- * Called once at daemon startup (idempotent — overwrites so the files always
- * match the daemon's compiled prompt text). `dir` is overridable for tests.
- */
-export function ensureWikiSysPromptFiles(dir: string = sysPromptDir()): void {
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'feishu.txt'), WIKI_FEISHU_PROMPT, 'utf8');
-}
+export const FEISHU_ATTACH_REMINDER = `【飞书通道机制提醒】你具备给飞书用户发送文件的能力：当用户希望获得文件本体（"发给我/给我一份/发个文件/下载"等）时，在回复中对每个要发送的文件写附件标记 \`<attach path="文件的本地路径"/>\`，Molio 会把文件作为真实附件发到飞书，并自动把标记从文字中剔除。直接发原文件、不转换格式；不要在文字里写本地路径或粘贴文件内容。本次消息不涉及发文件时忽略本提醒。`;
