@@ -97,6 +97,16 @@
       ],
       "specs": []
     },
+    "resources": {
+      "paths": [
+        "apps/web/src/components/resources/*",
+        "apps/web/src/data/resources*",
+        "apps/web/src/hooks/useResourcePay*",
+        "apps/web/src/styles/resources.css",
+        "apps/landing-page/resources-data.js"
+      ],
+      "specs": ["resources", "navigation", "bootstrap"]
+    },
     "kb-import": {
       "paths": [
         "apps/web/src/components/kb/KbFilePanel.*",
@@ -142,6 +152,7 @@
     "pdf-preview": { "priority": "P1", "file": "pdf-preview.spec.ts" },
         "markdown-render": { "priority": "P1", "file": "markdown-render.spec.ts" },
     "navigation": { "priority": "P1", "file": "navigation.spec.ts" },
+    "resources": { "priority": "P1", "file": "resources.spec.ts" },
     "publish-flow": { "priority": "P0", "file": "publish-flow.spec.ts" },
     "runtime-provider-config": { "priority": "P1", "file": "runtime-provider-config.spec.ts" },
     "runtimes-page": { "priority": "P1", "file": "runtimes-page.spec.ts" },

@@ -1,7 +1,8 @@
 /**
  * Molio 知识库资源库 — 列表页 (resources.html) 与详情页 (resource.html) 共享数据。
  *
- * 上架新资源：往 MOLIO_RESOURCES 追加一条即可，两页同时生效。
+ * 上架新资源：往 MOLIO_RESOURCES 追加一条即可，官网列表页/详情页与桌面端资源页同时生效
+ * （桌面端 apps/web/src/data/resources.ts 直接 import 本文件，随应用打包固化）。
  * - 付费资源（price: N，当前全部收费）：
  *   · payUrl 非空 → 详情页按钮跳外部支付页（面包多/虎皮椒等商品链接）；
  *   · payUrl 空且 MOLIO_PAY_BASE 已配置 → 走微信官方 Native 支付（后端在独立私有仓库 wxpay-fc，不公开）；
