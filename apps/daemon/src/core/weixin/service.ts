@@ -15,7 +15,7 @@ import {
 import { MessageDedup } from '../channels/message-dedup.js';
 import { chunkText } from '../channels/text-chunker.js';
 import { DEFAULT_BASE_URL, WeixinApi } from './client.js';
-import { buildMolioPrompt, buildWeixinFrameMessage, parseWeixinMessage } from './message.js';
+import { buildMolioPrompt, buildWeixinFrameMessage, buildWeixinReuseMessage, parseWeixinMessage } from './message.js';
 import { materializeAttachments } from './media.js';
 import type {
   ConnectionState,
@@ -102,6 +102,10 @@ export class WeixinService implements ChannelSink {
       // path (--append-system-prompt-file) is silently dropped by the CLI in
       // some environments; see ./dispatcher.ts header.
       frameFirstTurn: buildWeixinFrameMessage,
+      // Compact <attach/> re-anchor on reuse turns: long sessions lose the
+      // first-turn frame to context compaction and then claim no delivery
+      // capability (incident 2026-08-11).
+      reuseTurnReminder: buildWeixinReuseMessage,
       channelLabel: 'weixin',
     });
   }
