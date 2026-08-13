@@ -513,13 +513,23 @@ describe('skills/hub — fetchHubSkillDetail', () => {
   });
 
   it('an oversized readme is dropped (bomb guard)', async () => {
-    // Two shapes: a huge Content-Length header (pre-check) and a genuinely
-    // huge body without the header (post-read check).
+    // Three shapes: a huge Content-Length header (pre-check), a genuinely huge
+    // body WITHOUT the header, and a LYING header claiming a small body — the
+    // last two are caught by the streaming byte cap, never by res.text()
+    // buffering the whole response first.
     _setHubFetchForTests(serveDetail(DETAIL_BODY, 'small', MAX_HUB_README_BYTES + 1));
     assert.equal((await fetchHubSkillDetail('demo')).readme, '');
 
     _setHubFetchForTests(serveDetail(DETAIL_BODY, 'x'.repeat(MAX_HUB_README_BYTES + 1)));
     assert.equal((await fetchHubSkillDetail('demo')).readme, '');
+
+    _setHubFetchForTests(serveDetail(DETAIL_BODY, 'x'.repeat(MAX_HUB_README_BYTES + 1), 10));
+    assert.equal((await fetchHubSkillDetail('demo')).readme, '');
+  });
+
+  it('a readme at exactly the byte cap still passes (stream boundary)', async () => {
+    _setHubFetchForTests(serveDetail(DETAIL_BODY, 'x'.repeat(MAX_HUB_README_BYTES)));
+    assert.equal((await fetchHubSkillDetail('demo')).readme.length, MAX_HUB_README_BYTES);
   });
 
   it('maps an unknown slug (upstream 404) to NOT_FOUND', async () => {

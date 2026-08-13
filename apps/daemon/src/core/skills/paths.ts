@@ -70,13 +70,26 @@ export function assertSafeSkillPathSegment(segment: string): void {
 const MAX_SLUG_LEN = 64;
 
 /**
+ * Max UTF-8 BYTES of a slug. Filesystems cap a single path component at 255
+ * BYTES (NAME_MAX on Linux/APFS — the Docker/NAS deploy targets), and a code
+ * point cap alone does not bound bytes: 64 astral-plane letters (4-byte UTF-8,
+ * e.g. CJK Extension B) are 256 bytes — ENAMETOOLONG before the `molio--`
+ * prefix is even added, and that skill would then fail to sync on EVERY
+ * reconcile. 200 bytes leaves headroom for the prefix plus collision suffixes
+ * added by planSyncTargets (`-<id8>` = 9B, `-<full uuid>` = 37B, escalated
+ * `-<full uuid>-<id8>` = 46B): worst case 7 + 200 + 46 = 253 ≤ 255.
+ */
+const MAX_SLUG_BYTES = 200;
+
+/**
  * Slugify a skill's display name into a readable, filesystem-safe dir segment
  * (the part after the `molio--` prefix in synced skill dirs).
  *
  * Rules: NFKC-normalize first (full-width ｖ２ → v2); keep Unicode letters and
  * digits (Chinese names stay readable); lowercase (case-insensitive filesystem
  * parity + runtime naming convention); map every other char to `-`; collapse
- * `-` runs; trim edge `-`; cap at MAX_SLUG_LEN code points.
+ * `-` runs; trim edge `-`; cap at MAX_SLUG_LEN code points AND MAX_SLUG_BYTES
+ * UTF-8 bytes (either cap alone is insufficient — see MAX_SLUG_BYTES).
  *
  * May return '' (e.g. emoji-only names) — callers fall back to an id-derived
  * segment. Every NON-EMPTY output satisfies isValidSkillPathSegment (no
@@ -97,6 +110,16 @@ export function slugifySkillName(name: string): string {
   const points = Array.from(slug);
   if (points.length > MAX_SLUG_LEN) {
     slug = points.slice(0, MAX_SLUG_LEN).join('').replace(/-+$/, '');
+  }
+  // Byte cap (NAME_MAX safety — see MAX_SLUG_BYTES). The code-point cap does
+  // not bound bytes for 4-byte astral characters, so trim code points from the
+  // end until the UTF-8 encoding fits.
+  if (Buffer.byteLength(slug, 'utf8') > MAX_SLUG_BYTES) {
+    const pts = Array.from(slug);
+    while (pts.length > 0 && Buffer.byteLength(pts.join(''), 'utf8') > MAX_SLUG_BYTES) {
+      pts.pop();
+    }
+    slug = pts.join('').replace(/-+$/, '');
   }
   return slug;
 }

@@ -275,11 +275,24 @@ async function fetchHubSkillReadme(slug: string, namespace: string | undefined):
     );
     if (!res.ok) return '';
     // The file endpoint 302s to COS (fetch follows it); the CDN usually sends
-    // Content-Length, so pre-check before buffering the body.
+    // Content-Length, so pre-check before touching the body.
     const len = Number(res.headers.get('content-length'));
     if (Number.isFinite(len) && len > MAX_HUB_README_BYTES) return '';
-    const text = await res.text();
-    if (text.length > MAX_HUB_README_BYTES) return '';
+    // Stream the body with a hard byte cap: res.text() would buffer the WHOLE
+    // response before any check could run, so a missing/lying Content-Length
+    // would let an arbitrarily large SKILL.md balloon daemon memory (OOM).
+    // Same early-abort pattern as downloadHubZip. Chunks are collected (not
+    // string-concatenated per chunk) so a multi-byte UTF-8 char split across
+    // two chunks still decodes cleanly.
+    if (!res.body) return '';
+    const chunks: Uint8Array[] = [];
+    let bytes = 0;
+    for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+      bytes += chunk.byteLength;
+      if (bytes > MAX_HUB_README_BYTES) return '';
+      chunks.push(chunk);
+    }
+    const text = Buffer.concat(chunks).toString('utf8');
     return stripFrontmatter(text).trim();
   } catch {
     return '';

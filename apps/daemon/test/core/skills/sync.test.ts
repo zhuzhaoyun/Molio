@@ -311,6 +311,49 @@ describe('skills/sync', () => {
     assert.ok(fs.existsSync(userDir), 'user dir survives');
   });
 
+  it('reconcileSync skips the orphan sweep when any target failed to sync', () => {
+    // Regression (PR #212 review): a rename changes the planned dirName, so a
+    // failed sync of the NEW dir (the NAS EACCES/EBUSY class this module
+    // degrades on) plus an unconditional sweep deleted the OLD dir too — the
+    // vault was left with NO copy of the skill. A degraded pass must keep
+    // everything and retry on the next clean reconcile.
+    const skillsDir = path.join(claudeHome, 'skills');
+
+    // The skill's last good copy under its OLD name — an "orphan" to the
+    // planned set after the rename.
+    const oldCopy = path.join(skillsDir, 'molio--old-name');
+    fs.mkdirSync(oldCopy, { recursive: true });
+    fs.writeFileSync(path.join(oldCopy, 'SKILL.md'), 'last good copy', 'utf8');
+
+    // A genuine orphan (would be swept on a clean pass).
+    const orphan = path.join(skillsDir, 'molio--orphan');
+    fs.mkdirSync(orphan, { recursive: true });
+    fs.writeFileSync(path.join(orphan, 'SKILL.md'), 'stale', 'utf8');
+
+    // Corrupt the library source — a FILE where a dir should be — so
+    // syncSkill throws deterministically on every platform (lstat succeeds,
+    // the mirror copy then hits ENOTDIR), emulating the failure class.
+    const entry = createSkill(db, { name: 'S', description: '', enabled: true, builtIn: false }, 'body', opts);
+    fs.rmSync(path.join(molioHome, 'skills', entry.id), { recursive: true, force: true });
+    fs.writeFileSync(path.join(molioHome, 'skills', entry.id), 'corrupted — not a dir', 'utf8');
+
+    reconcileSync(planSyncTargets([entry]), opts);
+
+    assert.ok(fs.existsSync(path.join(oldCopy, 'SKILL.md')), 'old copy kept when the new-name sync failed');
+    assert.ok(fs.existsSync(orphan), 'orphan sweep skipped on a degraded pass');
+    assert.ok(!fs.existsSync(path.join(skillsDir, molioDir('S'))), 'failed target left no partial mirror');
+
+    // Heal the source → the next pass converges: sync succeeds AND both the
+    // old copy and the orphan are swept.
+    fs.rmSync(path.join(molioHome, 'skills', entry.id), { force: true });
+    fs.mkdirSync(path.join(molioHome, 'skills', entry.id), { recursive: true });
+    fs.writeFileSync(path.join(molioHome, 'skills', entry.id, 'SKILL.md'), 'body', 'utf8');
+    reconcileSync(planSyncTargets([entry]), opts);
+    assert.ok(fs.existsSync(path.join(skillsDir, molioDir('S'), 'SKILL.md')), 'clean pass synced the skill');
+    assert.ok(!fs.existsSync(oldCopy), 'clean pass swept the stale old-name copy');
+    assert.ok(!fs.existsSync(orphan), 'clean pass swept the orphan');
+  });
+
   it('reconcileSync sweeps legacy molio--<uuid> dirs left by older builds (upgrade migration)', () => {
     // Pre-name-based builds synced as molio--<uuid>. After the upgrade those
     // dirs are orphans to the name-based reconcile and must be removed while
@@ -357,6 +400,23 @@ describe('skills/sync: slugifySkillName (paths)', () => {
     assert.ok(Array.from(withHyphenAtCut).length <= 64);
   });
 
+  it('caps UTF-8 bytes for 4-byte astral characters (255-byte NAME_MAX safety)', () => {
+    // Regression (PR #212 review): filesystems cap ONE path component at 255
+    // BYTES, and CJK-Extension-B-style astral letters encode as 4 UTF-8 bytes
+    // each — 64 of them are 256 bytes, ENAMETOOLONG before the `molio--`
+    // prefix even counts. The code-point cap alone cannot catch this.
+    const astral = '\u{20000}';
+    const slug = slugifySkillName(astral.repeat(64));
+    assert.ok(Array.from(slug).length > 0, 'astral letters are slugifiable');
+    assert.ok(Array.from(slug).length < 64, 'byte cap kicks in below the code-point cap');
+    assert.ok(Buffer.byteLength(slug, 'utf8') <= 200, `slug is ${Buffer.byteLength(slug, 'utf8')} bytes`);
+    // The FULL synced dir name — prefix plus the longest collision suffix
+    // planSyncTargets can append (`-<full uuid>-<id8>`) — must stay within one
+    // 255-byte path component.
+    const worstCase = `molio--${slug}-${'u'.repeat(36)}-${'x'.repeat(8)}`;
+    assert.ok(Buffer.byteLength(worstCase, 'utf8') <= 255, worstCase);
+  });
+
   it('output is always a safe path segment', () => {
     for (const name of ['../evil', 'a/b\\c', 'CON.', '  x  ', '技能: v1.0 <beta>']) {
       const slug = slugifySkillName(name);
@@ -399,5 +459,35 @@ describe('skills/sync: planSyncTargets (readable dir names + deterministic colli
     const targets = planSyncTargets([a, b]);
     assert.deepEqual(new Set(targets.map((t) => t.dirName)).size, 2, 'no duplicate dir names');
     assert.equal(targets[0]?.dirName, 'foo-bar');
+  });
+
+  it('full-id fallback checks the taken set and escalates instead of colliding', () => {
+    // Regression (PR #212 review): crafted/imported display names can occupy
+    // BOTH fallback forms of a later skill. Unchecked, the full-id form was
+    // assigned anyway — two skills sharing one dirName silently overwrite each
+    // other's mirror. b's path here: base '报告' taken (a) → suffixed
+    // '报告-22222222' taken (c) → full-id '报告-22222222-bbbb' taken (d) →
+    // must escalate one more level.
+    const c = { id: '33333333-cccc', name: '报告-22222222', createdAt: 50 };
+    const a = { id: '11111111-aaaa', name: '报告', createdAt: 100 };
+    const d = { id: '44444444-dddd', name: '报告-22222222-bbbb', createdAt: 150 };
+    const b = { id: '22222222-bbbb', name: '报告', createdAt: 200 };
+
+    const targets = planSyncTargets([b, d, a, c]);
+    const names = targets.map((t) => t.dirName);
+    assert.equal(new Set(names).size, 4, `dir names must be unique, got: ${names.join(', ')}`);
+    assert.equal(targets.find((t) => t.id === b.id)?.dirName, '报告-22222222-bbbb-22222222');
+  });
+
+  it('planned dir names stay within the 255-byte NAME_MAX even for astral-character names', () => {
+    const name = '\u{20000}'.repeat(64);
+    const a = { id: '11111111-aaaa', name, createdAt: 1 };
+    const b = { id: '22222222-bbbb', name, createdAt: 2 };
+    for (const t of planSyncTargets([a, b])) {
+      assert.ok(
+        Buffer.byteLength(`molio--${t.dirName}`, 'utf8') <= 255,
+        `molio--${t.dirName} exceeds NAME_MAX`,
+      );
+    }
   });
 });

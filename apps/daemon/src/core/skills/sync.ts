@@ -69,7 +69,16 @@ export function planSyncTargets(entries: SkillSyncInput[]): SyncTarget[] {
     let dirName = slugifySkillName(entry.name) || `skill-${entry.id.slice(0, 8)}`;
     if (taken.has(dirName)) {
       const suffixed = `${dirName}-${entry.id.slice(0, 8)}`;
-      dirName = taken.has(suffixed) ? `${dirName}-${entry.id}` : suffixed;
+      if (!taken.has(suffixed)) {
+        dirName = suffixed;
+      } else {
+        // EVERY form must be checked against `taken`: a crafted/imported
+        // display name can slugify to another skill's id-suffixed form, and an
+        // unchecked assignment would hand two skills the SAME dirName — they
+        // would silently overwrite each other's mirror.
+        const fullIdName = `${dirName}-${entry.id}`;
+        dirName = taken.has(fullIdName) ? `${fullIdName}-${entry.id.slice(0, 8)}` : fullIdName;
+      }
     }
     taken.add(dirName);
     targets.push({ id: entry.id, dirName });
@@ -122,12 +131,23 @@ export function syncSkill(id: string, dirName: string, opts?: SkillPathsOpts): v
  * convergence automatic: a renamed skill's old dir (and any pre-name-based
  * `molio--<uuid>` dir left by older builds) simply stops matching the planned
  * set and is swept on the next reconcile.
+ *
+ * BUT the sweep only runs on a FULLY SUCCESSFUL pass. A rename changes the
+ * planned dirName, so if the NEW dir fails to sync (the NAS EACCES/EBUSY
+ * class of errors this module degrades on) while the sweep still runs, the
+ * OLD dir is removed as an orphan and the vault is left with NO copy of the
+ * skill. Skipping the sweep on a degraded pass trades slower garbage
+ * collection for the module's standing rule: a failure degrades to "old
+ * content stays", never "skill gone". Convergence resumes on the next clean
+ * pass.
  */
 export function reconcileSync(targets: SyncTarget[], opts?: SkillPathsOpts): void {
+  let failedSyncs = 0;
   for (const target of targets) {
     try {
       syncSkill(target.id, target.dirName, opts);
     } catch (err) {
+      failedSyncs += 1;
       console.error(`[skills] Failed to sync skill "${target.id}":`, err instanceof Error ? err.message : err);
     }
   }
@@ -138,6 +158,14 @@ export function reconcileSync(targets: SyncTarget[], opts?: SkillPathsOpts): voi
   // Remove staging dirs a killed daemon left inside the scanned skills dir
   // (best-effort, age-guarded; see dirsync.sweepStaleMirrorArtifacts).
   sweepStaleMirrorArtifacts(dir);
+
+  if (failedSyncs > 0) {
+    console.warn(
+      `[skills] Skipping orphan cleanup: ${failedSyncs} target(s) failed to sync this pass ` +
+        '(removing dirs now could delete the only copy of a renamed skill)',
+    );
+    return;
+  }
 
   // Orphan cleanup — fully tolerant: this runs against NAS-mounted vaults
   // where any single fs call can hit EACCES/EBUSY, and it is also called from
