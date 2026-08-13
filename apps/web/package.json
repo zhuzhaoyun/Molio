@@ -7,6 +7,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
+    "test": "node --test \"src/**/*.test.ts\"",
     "test:e2e": "npx playwright test"
   },
   "dependencies": {
@@ -19,13 +20,10 @@
     "@codemirror/state": "^6.7.1",
     "@codemirror/view": "^6.43.6",
     "@molio/contracts": "workspace:*",
-    "@react-sigma/core": "^5.0.6",
     "@reactour/tour": "^3.8.0",
-    "d3-force": "^3.0.0",
     "es-toolkit": "^1.47.0",
     "fflate": "^0.8.3",
     "front-matter": "^4.0.2",
-    "graphology": "^0.26.0",
     "highlight.js": "^11.11.1",
     "isomorphic-dompurify": "^3.15.0",
     "marked": "^18.0.4",
@@ -34,13 +32,11 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.16.0",
-    "sigma": "^3.0.3",
     "turndown": "^7.2.4",
     "turndown-plugin-gfm": "^1.0.2"
   },
   "devDependencies": {
     "@playwright/test": "^1.50.0",
-    "@types/d3-force": "^3.0.0",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",

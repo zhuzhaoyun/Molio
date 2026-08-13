@@ -59,8 +59,15 @@ src/
     icons.tsx          聊天交互 SVG 线条图标
     UpdateNotification.tsx 更新通知
     graph/             知识图谱组件
-      GraphPage.tsx    图谱主页面（Sigma.js + ForceAtlas2 力导向布局）
-      Minimap.tsx      右下角小地图（Canvas 绘制全局节点分布 + 视口指示器）
+      GraphPage.tsx    图谱主页面（取数 + overview/ego/bloom 状态机 + 卡片/搜索编排）
+      GraphSettingsPanel.tsx  设置面板（筛选/外观/力度/图例 4 tab）
+      useGraphSettings.ts    设置持久化 hook（localStorage `molio.graph.settings`）
+      types.ts         设置/主题常量 + NODE_TYPE_COLORS 单一色源
+      engine/          手写 SVG 力导向引擎层（移植自 Tencent WeKnora，MIT）
+        ForceGraphEngine.ts  引擎类：渲染/物理/pan-zoom/高亮/相机动画
+        slicing.ts     ego BFS / bloom 合并 / 代际 LRU 驱逐 / top-N 纯函数
+        slicing.test.ts      node:test 单测（`pnpm --filter @molio/web test`）
+        types.ts       引擎输入输出类型
     kb/                知识库组件
       KnowledgeBasePage.tsx  知识库页面（shell 布局）
       KbFilePanel.tsx         文件面板（搜索、文件列表、vault 切换）
@@ -101,7 +108,7 @@ src/
     rail.css       导航栏样式
     home.css       主页样式
     chat.css       聊天组件样式
-    graph.css      知识图谱样式（画布、顶栏、minimap、加载/错误/空状态）
+    graph.css      知识图谱样式（画布、顶栏、节点卡片/搜索/ego chip、设置面板、加载/错误/空状态）
     knowledge.css  知识库样式（含排版编辑器、样式面板）
     channels.css   渠道页面样式
     history.css    历史页面样式
@@ -145,7 +152,7 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
 | `src/components/HomePage.tsx` | `e2e/bootstrap.spec.ts` |
 | `src/components/NavRail.tsx` | `e2e/bootstrap.spec.ts`, `e2e/navigation.spec.ts` |
 | `src/components/kb/` | `e2e/publish-flow.spec.ts` |
-| `src/components/graph/` | `e2e/graph-settings.spec.ts` |
+| `src/components/graph/` | `e2e/graph-settings.spec.ts`, `e2e/graph-interactions.spec.ts` |
 | `src/components/runtimes/` | `e2e/runtimes-page.spec.ts`, `e2e/runtime-provider-config.spec.ts` |
 | `src/components/settings/` | `e2e/runtimes-page.spec.ts`（RuntimesPanel 在此） |
 | `src/components/history/` | `e2e/history.spec.ts` |
@@ -169,7 +176,7 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
 | 知识库 | `/knowledge` | KnowledgeBasePage + kb/* |
 | 历史 | `/history` | HistoryPage |
 | 设置 | `/settings` | SettingsPage（含 RuntimesPanel、ChannelsPanel） |
-| 图谱 | `/graph` | GraphPage, Minimap |
+| 图谱 | `/graph` | GraphPage（+ engine/ 引擎层） |
 | 资源 | `/resources` | ResourcesPage（列表 + 筛选 + 微信支付弹窗） |
 | 资源详情 | `/resources/:id` | ResourceDetailPage（概述/预览灯箱/导入说明） |
 
@@ -201,17 +208,17 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
 
 ### 知识图谱 (Graph View)
 
-- **渲染引擎**: Sigma.js v3 (WebGL)，通过 `useRef` + `useEffect` 手动绑定
-- **图数据结构**: Graphology
-- **力导向布局**: `graphology-layout-forceatlas2`（ForceAtlas2 算法）
-  - `linLogMode: true` — 近距离强排斥，防止节点重叠
-  - `barnesHutOptimize: true` — O(n log n) 性能优化
-- **交互系统**: 原生 DOM 事件，区分 click / drag / dblclick
-  - 单击选中节点，双击跳转知识库文档
-  - 拖拽节点后通过 `fx`/`fy` 锁定位置
-  - Hover 高亮关联节点和边
-- **Minimap**: Canvas 绘制，右下角显示全局节点分布 + 当前视口矩形
-- **React 性能**: 坐标计算和渲染帧循环在 Sigma 内部闭环，交互状态用 `useRef`，零 React re-render
+- **渲染引擎**: 手写 SVG 力导向（`engine/ForceGraphEngine.ts`，移植自 Tencent WeKnora，MIT），零第三方图库依赖；rAF 驱动物理 tick（斥力按 X 排序剪枝 O(n log n)），布局动画肉眼可见
+- **数据流**: daemon 一次全图（`GET /api/graph/:vaultId`）→ 前端本地归一化（死链合成 `__dead__` 节点）+ ego BFS / bloom 增量合并（代际 LRU，BLOOM_MAX_NODES=1500）+ overview top-800 截断
+- **状态机**: overview（全图/截断）↔ ego（聚焦子图），bloom 合并进画布；`slicing.ts` 纯函数 + node:test 单测
+- **交互映射**:
+  - 单击 = 选中 + 高亮 + flyTo + 左下浮动卡片（打开文档/聚焦/展开邻居）
+  - 双击 = `navigate('/knowledge', { state: { openFile, vaultId } })`（契约勿动）
+  - Shift+单击 / hover ⊕ = bloom（overview 下无新节点回落 pivot）
+  - 拖拽 = pin 留在原地；wheel 光标中心缩放；背景拖拽 pan
+  - 聚焦模式 = 顶栏 ego chip，✕ 返回全图
+- **设置 live 应用**（不全量重建）: theme（容器 data-theme + CSS 变量 + 节点调色板）/ nodeScale / edgeWidth / 过滤（引擎层隐藏，hidden 节点退出力学）/ 力度 4 滑块（映射物理常数，默认值复现 WeKnora 手感）
+- **性能**: 标签 LOD（按 linkCount 分级显隐）、收敛后自动 fitToView（未交互时）
 
 ### 聊天 (Chat)
 
@@ -278,9 +285,6 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
   "front-matter": "^4.0.2",
   "isomorphic-dompurify": "^3.15.0",
   "es-toolkit": "^1.47.0",
-  "fflate": "^0.8.3",
-  "sigma": "^3.x",
-  "graphology": "^0.26.x",
-  "graphology-layout-forceatlas2": "^0.10.x"
+  "fflate": "^0.8.3"
 }
 ```

@@ -1,23 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import type { GraphSettings, ForceParams, ThemeMode } from './types';
-import { NODE_TYPE_LABELS } from './types';
+import { NODE_TYPE_LABELS, NODE_TYPE_COLORS } from './types';
 
 type Tab = 'filter' | 'appearance' | 'forces' | 'legend';
-
-const TYPE_DOT_COLORS: Record<string, string> = {
-  document: '#8899AA',
-  source: '#8899AA',
-  wiki: '#7A8A99',
-  concept: '#8B5CF6',
-  entity: '#8B5CF6',
-  comparison: '#D97706',
-  question: '#D97706',
-  tag: '#8B5CF6',
-  agent: '#8B5CF6',
-  project: '#8899AA',
-  workflow: '#D97706',
-  aiModel: '#D97706',
-};
 
 interface Props {
   settings: GraphSettings;
@@ -126,7 +111,7 @@ export function GraphSettingsPanel({ settings, onUpdateSettings, onUpdateForce, 
                       checked={isTypeVisible(key)}
                       onChange={() => toggleType(key)}
                     />
-                    <span className="graph-settings__checkbox-dot" style={{ background: TYPE_DOT_COLORS[key] ?? '#8899AA' }} />
+                    <span className="graph-settings__checkbox-dot" style={{ background: NODE_TYPE_COLORS[key] ?? '#8899AA' }} />
                     <span>{label}</span>
                   </label>
                 ))}
@@ -260,9 +245,11 @@ export function GraphSettingsPanel({ settings, onUpdateSettings, onUpdateForce, 
             <div className="graph-settings__group">
               <div className="graph-settings__group-title">操作</div>
               <div className="graph-info__hints">
-                <div className="graph-hint">拖拽节点 · 邻居联动</div>
-                <div className="graph-hint">单击选中 · 高亮关联</div>
-                <div className="graph-hint">双击节点 · 打开文章</div>
+                <div className="graph-hint">拖拽节点 · 位置固定</div>
+                <div className="graph-hint">单击选中 · 浮动卡片</div>
+                <div className="graph-hint">双击节点 · 打开文档</div>
+                <div className="graph-hint">Shift+单击或⊕ · 展开邻居</div>
+                <div className="graph-hint">聚焦模式 · 顶栏✕返回</div>
               </div>
             </div>
           </div>

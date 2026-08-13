@@ -1,5 +1,7 @@
 // apps/web/src/components/graph/types.ts
 
+import type { NodePalette } from './engine/types.ts';
+
 export interface ForceParams {
   centerStrength: number;   // forceX/forceY strength, default 0.004
   repelStrength: number;    // forceManyBody strength, default -60
@@ -94,6 +96,35 @@ export function resolveTheme(mode: ThemeMode): 'light' | 'dark' {
 
 export function getThemeColors(mode: ThemeMode): ThemeColors {
   return resolveTheme(mode) === 'dark' ? DARK_THEME : LIGHT_THEME;
+}
+
+/**
+ * 节点类型 → 填充色（单一来源；GraphPage 引擎与设置面板图例共用）。
+ * 中性色（文档类）+ 紫色强调（知识核心）+ 琥珀强调（观点/对比）。
+ */
+export const NODE_TYPE_COLORS: Record<string, string> = {
+  // 中性色（文档类）
+  document:   '#8899AA',
+  source:     '#8899AA',
+  wiki:       '#7A8A99',
+  // 知识核心（紫色强调）
+  concept:    '#8B5CF6',
+  entity:     '#8B5CF6',
+  // 观点/对比（琥珀强调）
+  comparison: '#D97706',
+  question:   '#D97706',
+  // Legacy types
+  tag:        '#8B5CF6',
+  agent:      '#8B5CF6',
+  project:    '#8899AA',
+  workflow:   '#D97706',
+  aiModel:    '#D97706',
+};
+
+/** 引擎节点调色板（非类型色的兜底部分）按明暗主题取自既有 LIGHT/DARK_THEME 常量 */
+export function nodePaletteFor(mode: 'light' | 'dark'): NodePalette {
+  const t = mode === 'dark' ? DARK_THEME : LIGHT_THEME;
+  return { node: t.node, isolated: t.isolated, dead: t.deadNode, selected: t.selected };
 }
 
 export const NODE_TYPE_LABELS: Record<string, string> = {
