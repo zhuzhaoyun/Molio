@@ -1,8 +1,13 @@
 # 知识图谱深度对比：Molio vs Obsidian
 
 > 对比日期：2026-06-15
-> 
+>
 > 本文是 [总体对比文档](./obsidian-comparison.md) 的知识图谱专项展开
+>
+> ⚠️ **历史说明（2026-08-13）**：本文描述的 Molio 图谱实现（Sigma.js + ForceAtlas2 + Minimap）
+> 已被重写替换。现行实现为手写 SVG 力导向引擎（`apps/web/src/components/graph/engine/`，
+> 移植自 Tencent WeKnora，MIT），无 Minimap、无第三方图库依赖。下文涉及 ForceAtlas2 /
+> Minimap / Sigma 的对比内容仅作历史参考。
 
 ---
 
