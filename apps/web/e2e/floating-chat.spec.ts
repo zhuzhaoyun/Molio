@@ -384,4 +384,15 @@ test.describe('Floating chat (方案 D)', () => {
     box = (await panel.boundingBox())!;
     expect(box.x + box.width).toBeLessThan(vw - 90); // 不再贴右缘
   });
+
+  test('活跃标签加粗 + 标签字号 13px（P0 视觉精修）', async ({ page }) => {
+    await mockChatRun(page);
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await page.locator('[data-testid="kb-btn-ask"]').click();
+
+    const activeTab = page.locator('[data-testid="kb-chat-session-tab"].is-active');
+    await expect(activeTab).toHaveCSS('font-weight', '500');
+    await expect(activeTab).toHaveCSS('font-size', '13px');
+  });
 });
