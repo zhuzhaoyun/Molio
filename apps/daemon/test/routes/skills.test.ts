@@ -170,7 +170,8 @@ describe('Skills routes', () => {
         body: JSON.stringify({ name: '传播', description: '', instructions: 'body' }),
       });
       const skill = (await json(created))['skill'] as SkillManifestEntry;
-      const inVault = join(vaultDir, '.claude', 'skills', `molio--${skill.id}`, 'SKILL.md');
+      // Vault dir is name-based (slugified display name), not the DB uuid.
+      const inVault = join(vaultDir, '.claude', 'skills', `molio--${skill.name}`, 'SKILL.md');
       assert.ok(existsSync(inVault), 'enabled skill should be synced into the vault');
 
       // Toggle it off → reconcile removes it from the vault.

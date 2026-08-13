@@ -25,8 +25,9 @@
  *
  * Sync splits the effective set by kind:
  *  - **library + core** → `reconcileSync` (sync.ts) pointed at `<vault>/.claude`,
- *    writing single-file `molio--<id>/SKILL.md` dirs (keeps the molio-- red line
- *    + orphan cleanup for free);
+ *    writing single-file `molio--<dirName>/SKILL.md` dirs where dirName is the
+ *    slugified display name planned by `planSyncTargets` (keeps the molio-- red
+ *    line + orphan cleanup for free);
  *  - **bundled** → `reconcileBundledSync` (skill-installer.ts), syncing whole
  *    multi-file directories under their plain names and converging the CLAUDE.md
  *    rule blocks.
@@ -42,7 +43,7 @@ import type Database from 'better-sqlite3';
 import type { SkillManifestEntry, Vault } from '@molio/contracts';
 import { listVaults } from '../db.js';
 import { listSkills } from './store.js';
-import { reconcileSync } from './sync.js';
+import { reconcileSync, planSyncTargets } from './sync.js';
 import { reconcileBundledSync, RETIRED_BUNDLED_SKILLS } from '../skill-installer.js';
 import type { SkillPathsOpts } from './paths.js';
 
@@ -64,7 +65,8 @@ export function getEffectiveSkillIds(db: Database.Database, vaultId: string): st
 /**
  * Reconcile one vault's `<vault.path>/.claude/skills/` against its effective
  * skill set, splitting by kind:
- *  - library + core → `reconcileSync` (single-file `molio--<id>/SKILL.md`);
+ *  - library + core → `reconcileSync` (single-file `molio--<dirName>/SKILL.md`,
+ *    dirName = slugified display name);
  *  - bundled → `reconcileBundledSync` (whole multi-file dirs, plain names, plus
  *    CLAUDE.md rule convergence).
  * Best-effort: an EACCES on the mounted dir logs and returns rather than
@@ -75,8 +77,10 @@ export function reconcileVault(db: Database.Database, vault: Vault, opts?: Skill
     const effective = getEffectiveSkills(db, vault.id);
 
     // library + core → molio-- single-file sync (orphan cleanup included).
-    const singleFileIds = effective.filter((s) => s.kind !== 'bundled').map((s) => s.id);
-    reconcileSync(singleFileIds, { ...opts, claudeHome: path.join(vault.path, '.claude') });
+    // Dir names are planned from display names (readable in runtime skill
+    // lists); same-name collisions get deterministic id-derived suffixes.
+    const singleFile = effective.filter((s) => s.kind !== 'bundled');
+    reconcileSync(planSyncTargets(singleFile), { ...opts, claudeHome: path.join(vault.path, '.claude') });
 
     // bundled → whole-dir sync. Managed = every bundled row the DB knows about
     // PLUS the retired bundled slugs: their DB rows are deleted on startup

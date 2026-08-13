@@ -353,6 +353,15 @@ const zh: Record<string, string> = {
   'hub.verified': '官方认证',
   'hub.version': 'v{version}',
   'hub.downloads': '{count} 次下载',
+  'hub.sort.default': '默认排序',
+  'hub.sort.downloads': '下载量',
+  'hub.sort.updated': '最近更新',
+  'hub.detail.close': '关闭',
+  'hub.detail.loading': '加载详情…',
+  'hub.detail.stars': '收藏 {n}',
+  'hub.detail.updatedAt': '更新于 {date}',
+  'hub.detail.security': '安全检测',
+  'hub.detail.noReadme': '暂无使用说明',
 
   // ── UpdateNotification ──
   'update.ready': '更新就绪',

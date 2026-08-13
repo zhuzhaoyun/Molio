@@ -1,14 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { HubSkillSummary, InstallHubSkillResponse } from '@molio/contracts';
-import { useSkillHub } from '../../hooks/useSkillHub';
+import { useSkillHub, type HubSort } from '../../hooks/useSkillHub';
 import { useI18n } from '../../i18n';
+import { HubSkillDetailModal, formatDownloads } from './HubSkillDetailModal';
 
-/** Compact download count like the hub site (2249 → 2249, 120000 → 12.0万 / 12.0k). */
-function formatDownloads(n: number, zh: boolean): string {
-  if (n < 10000) return String(n);
-  const v = (n / 10000).toFixed(1);
-  return zh ? `${v}万` : `${v}w`;
-}
+/** Sort options mirror skillhub.cn: default ranking / downloads / newest updates. */
+const HUB_SORTS: HubSort[] = ['default', 'downloads', 'updated'];
 
 function HubCard({
   skill,
@@ -16,6 +13,7 @@ function HubCard({
   busy,
   zh,
   onInstall,
+  onOpenDetail,
 }: {
   skill: HubSkillSummary;
   /** This card's install is in flight (shows the busy label). */
@@ -26,11 +24,29 @@ function HubCard({
   busy: boolean;
   zh: boolean;
   onInstall: () => void;
+  onOpenDetail: () => void;
 }) {
   const { t } = useI18n();
 
   return (
-    <div className="hub-card" data-testid={`hub-card-${skill.slug}`}>
+    <div
+      className="hub-card"
+      data-testid={`hub-card-${skill.slug}`}
+      onClick={onOpenDetail}
+      onKeyDown={(e) => {
+        // Only react to keys pressed on the card ITSELF: keydowns from the
+        // nested install button bubble up here, and preventDefault would
+        // swallow the button's native keyboard activation (Enter fires click
+        // on keydown, Space on keyup) — a keyboard user could never install.
+        if (e.target !== e.currentTarget) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onOpenDetail();
+        }
+      }}
+      role="button"
+      tabIndex={0}
+    >
       <div className="hub-card__head">
         <span className="hub-card__name" title={skill.name}>
           {skill.name}
@@ -57,7 +73,11 @@ function HubCard({
         <button
           className={`rt-btn rt-btn--sm${skill.installed ? ' rt-btn--ghost' : ''}`}
           data-testid={`hub-install-${skill.slug}`}
-          onClick={onInstall}
+          // Direct installs must not open the detail modal (card is clickable).
+          onClick={(e) => {
+            e.stopPropagation();
+            onInstall();
+          }}
           disabled={busy}
           title={skill.installed ? t('hub.update') : undefined}
         >
@@ -86,6 +106,8 @@ export function SkillHubPanel({ onInstalled }: { onInstalled: (res: InstallHubSk
     setKeyword,
     category,
     setCategory,
+    sort,
+    setSort,
     hasMore,
     installingSlug,
     refresh,
@@ -104,6 +126,9 @@ export function SkillHubPanel({ onInstalled }: { onInstalled: (res: InstallHubSk
     return () => clearTimeout(timer);
   }, [notice]);
 
+  // Detail modal: opened by clicking a card; the modal fetches its own data.
+  const [detailSkill, setDetailSkill] = useState<HubSkillSummary | null>(null);
+
   const handleInstall = useCallback(
     async (skill: HubSkillSummary) => {
       // One install at a time (buttons are disabled too — this guards the
@@ -117,6 +142,9 @@ export function SkillHubPanel({ onInstalled }: { onInstalled: (res: InstallHubSk
           kind: 'success',
           text: res.updated ? t('hub.updatedTip') : t('hub.installedTip'),
         });
+        // An install from the detail modal closes it — the success banner
+        // behind is the feedback, and the card grid already flipped state.
+        setDetailSkill((cur) => (cur && cur.slug === skill.slug ? null : cur));
         onInstalled(res);
       } catch (err) {
         setNotice({ kind: 'error', text: (err as Error).message });
@@ -148,6 +176,19 @@ export function SkillHubPanel({ onInstalled }: { onInstalled: (res: InstallHubSk
             </option>
           ))}
         </select>
+        <div className="hub-sort" data-testid="hub-sort" role="group" aria-label={t('hub.sort.default')}>
+          {HUB_SORTS.map((key) => (
+            <button
+              key={key}
+              type="button"
+              className={`sk-seg__item${sort === key ? ' sk-seg__item--active' : ''}`}
+              data-testid={`hub-sort-${key}`}
+              onClick={() => setSort(key)}
+            >
+              {t(`hub.sort.${key}`)}
+            </button>
+          ))}
+        </div>
       </div>
 
       {notice && (
@@ -189,6 +230,7 @@ export function SkillHubPanel({ onInstalled }: { onInstalled: (res: InstallHubSk
                 busy={installingSlug !== null}
                 zh={zh}
                 onInstall={() => void handleInstall(skill)}
+                onOpenDetail={() => setDetailSkill(skill)}
               />
             ))}
           </div>
@@ -214,6 +256,16 @@ export function SkillHubPanel({ onInstalled }: { onInstalled: (res: InstallHubSk
           {t('hub.source')}
         </a>
       </p>
+
+      {detailSkill && (
+        <HubSkillDetailModal
+          skill={detailSkill}
+          busy={installingSlug !== null}
+          notice={notice}
+          onClose={() => setDetailSkill(null)}
+          onInstall={() => void handleInstall(detailSkill)}
+        />
+      )}
     </div>
   );
 }

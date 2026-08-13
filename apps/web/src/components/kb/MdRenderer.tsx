@@ -38,6 +38,13 @@ export interface MdRendererProps {
   options?: Partial<IOpts>;
   /** Additional CSS class */
   className?: string;
+  /**
+   * Content is UNTRUSTED (e.g. a remote hub SKILL.md readme): render under
+   * the strict sanitization profile — no `onerror` allowlist, no
+   * mermaid/infographic protect-and-restore. Leave unset for
+   * locally-authored content (KB docs), which relies on those affordances.
+   */
+  untrusted?: boolean;
 }
 
 // Default renderer options
@@ -71,6 +78,7 @@ export const MdRenderer = memo(function MdRenderer({
   themeConfig,
   options = defaultOptions,
   className,
+  untrusted = false,
 }: MdRendererProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [renderedHtml, setRenderedHtml] = useState('');
@@ -99,14 +107,18 @@ export const MdRenderer = memo(function MdRenderer({
     }
 
     try {
-      const { html, readingTime } = renderMarkdown(content, renderer);
+      const { html, readingTime } = renderMarkdown(
+        content,
+        renderer,
+        untrusted ? { untrusted: true } : undefined,
+      );
       const finalHtml = postProcessHtml(html, readingTime, renderer);
       setRenderedHtml(finalHtml);
     } catch (error) {
       console.error('Markdown rendering error:', error);
       setRenderedHtml(`<p>Error rendering content: ${String(error)}</p>`);
     }
-  }, [content, renderer]);
+  }, [content, renderer, untrusted]);
 
   // Apply theme CSS when themeConfig changes.
   // The doocs/md theme system handles all styles — do NOT inject styles manually.
