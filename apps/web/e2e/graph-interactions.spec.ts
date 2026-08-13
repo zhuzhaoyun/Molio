@@ -157,6 +157,52 @@ test('search locates a node and selects it on the canvas', async ({ page }) => {
   await expect(card).toContainText('gamma');
 });
 
+test('hover highlight takes priority over selection (no combined focus)', async ({ page }) => {
+  await page.goto('/graph');
+  await waitForSettle(page);
+  // 选中 alpha：其连边高亮
+  await nodeCircle(page, 'alpha').click();
+  const alphaGhost = page.locator('line[data-source="alpha.md"][data-target="__dead__ghost"], line[data-source="__dead__ghost"][data-target="alpha.md"]').first();
+  await expect(alphaGhost).toHaveAttribute('stroke-opacity', '0.9');
+  // hover beta 后：高亮只跟随 beta，alpha-ghost 边应回落为暗态
+  await nodeCircle(page, 'beta').hover();
+  await expect(alphaGhost).toHaveAttribute('stroke-opacity', '0.08', { timeout: 3000 });
+  const betaGamma = page.locator('line[data-source="beta.md"][data-target="gamma.md"], line[data-source="gamma.md"][data-target="beta.md"]').first();
+  await expect(betaGamma).toHaveAttribute('stroke-opacity', '0.9');
+});
+
+test('dragging a node onto another triggers collision separation', async ({ page }) => {
+  await page.goto('/graph');
+  await waitForSettle(page);
+  const alpha = nodeCircle(page, 'alpha');
+  const beta = nodeCircle(page, 'beta');
+  const aBox = (await alpha.boundingBox())!;
+  const bBox = (await beta.boundingBox())!;
+  await page.mouse.move(aBox.x + aBox.width / 2, aBox.y + aBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(bBox.x + bBox.width / 2, bBox.y + bBox.height / 2, { steps: 8 });
+  await page.mouse.up();
+  // 松手后碰撞收尾推开（reheat 0.15，约 1-2s 衰减）
+  await page.waitForTimeout(2500);
+  const centers = await page.evaluate(() => {
+    const gs = Array.from(document.querySelectorAll('.graph-svg-host svg g')).filter(
+      (g) => g.querySelector(':scope > circle') && g.querySelector(':scope > text'),
+    );
+    const out: Record<string, [number, number]> = {};
+    for (const g of gs) {
+      const label = g.querySelector('text')?.textContent ?? '';
+      const m = g.getAttribute('transform')?.match(/-?[\d.]+/g);
+      if (m) out[label] = [+m[0], +m[1]];
+    }
+    return out;
+  });
+  const [ax, ay] = centers['alpha'];
+  const [bx, by] = centers['beta'];
+  const dist = Math.hypot(ax - bx, ay - by);
+  // 半径各约 12.4 + PAD 4 → 分离下限约 28.8，留容差断言 > 24
+  expect(dist).toBeGreaterThan(24);
+});
+
 test('node size slider live-updates circle radius', async ({ page }) => {
   await page.goto('/graph');
   await waitForSettle(page);

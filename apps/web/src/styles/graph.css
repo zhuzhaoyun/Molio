@@ -310,6 +310,9 @@
 .graph-svg-host {
   width: 100% !important;
   height: 100% !important;
+  /* 拖拽节点/画布时禁止浏览器文本选择（否则标签出现选区底纹） */
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .graph-svg-host svg {

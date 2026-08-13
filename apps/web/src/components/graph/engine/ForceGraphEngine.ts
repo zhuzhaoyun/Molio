@@ -302,6 +302,8 @@ export class ForceGraphEngine {
       line.setAttribute('stroke', 'var(--border-strong)');
       line.setAttribute('stroke-width', String(this.edgeBaseWidth()));
       line.setAttribute('stroke-opacity', '0.4');
+      line.setAttribute('data-source', edge.source);
+      line.setAttribute('data-target', edge.target);
       line.style.transition = 'stroke 0.2s, stroke-width 0.2s, stroke-opacity 0.2s';
       edgeG.appendChild(line);
       this.edgeEls.push({ line, source: edge.source, target: edge.target });
@@ -505,6 +507,10 @@ export class ForceGraphEngine {
       n.y += n.vy;
     }
 
+    // 碰撞分离：位置修正，防节点重叠（WeKnora 原版只有软斥力，
+    // 收敛后拖拽叠放不会推开；旧 Sigma 版的 forceCollide 等价物）
+    this.resolveCollisions();
+
     // 同帧写回 DOM —— 旧 Sigma 实现缺的正是这一步
     for (const { g, node } of this.nodeEls) {
       if (!node.hidden) g.setAttribute('transform', `translate(${node.x},${node.y})`);
@@ -513,6 +519,52 @@ export class ForceGraphEngine {
 
     this.rafId = requestAnimationFrame(this.tick);
   };
+
+  /**
+   * 碰撞分离 pass：X 排序剪枝，重叠节点沿轴推开（pinned 节点不动，
+   * 对方承担全部位移）。拖拽中/拖拽后 reheat 时持续生效，
+   * 因此把节点拖进人群会实时推开邻居。
+   */
+  private resolveCollisions(): void {
+    const PAD = 4;
+    const maxR = 24 * this.nodeScale; // radius() 上限 × scale
+    const breakDist = 2 * maxR + PAD;
+    const visible = this.nodes.filter((n) => !n.hidden);
+    const sorted = [...visible].sort((a, b) => a.x - b.x);
+    for (let i = 0; i < sorted.length; i++) {
+      const n1 = sorted[i];
+      const r1 = this.radius(n1);
+      for (let j = i + 1; j < sorted.length; j++) {
+        const n2 = sorted[j];
+        const dx = n2.x - n1.x;
+        if (dx > breakDist) break;
+        const minDist = r1 + this.radius(n2) + PAD;
+        if (dx > minDist) continue;
+        const dy = n2.y - n1.y;
+        const distSq = dx * dx + dy * dy;
+        if (distSq >= minDist * minDist) continue;
+        let dist = Math.sqrt(distSq);
+        let ux: number;
+        let uy: number;
+        if (dist < 0.01) {
+          ux = 1;
+          uy = 0;
+          dist = 0.01;
+        } else {
+          ux = dx / dist;
+          uy = dy / dist;
+        }
+        const overlap = minDist - dist;
+        // pinned 承担 0 位移，对方全担；都自由则各半
+        const w1 = n1.pinned ? 0 : n2.pinned ? 1 : 0.5;
+        const w2 = n2.pinned ? 0 : n1.pinned ? 1 : 0.5;
+        n1.x -= ux * overlap * w1;
+        n1.y -= uy * overlap * w1;
+        n2.x += ux * overlap * w2;
+        n2.y += uy * overlap * w2;
+      }
+    }
+  }
 
   /** 唤醒/再加热模拟（设置变更、过滤变更后调用） */
   private reheat(alpha: number): void {
@@ -649,15 +701,11 @@ export class ForceGraphEngine {
         el.bloomBtn.g.style.opacity = '1';
         el.bloomBtn.g.style.pointerEvents = 'auto';
       }
-      if (!this.selectedKey) {
-        if (this.hoverKey === n.key) return;
-        this.hoverKey = n.key;
-        this.applyHighlight(n.key);
-      } else if (this.selectedKey !== n.key) {
-        if (this.hoverKey === n.key) return;
-        this.hoverKey = n.key;
-        this.applyHighlight(this.selectedKey, n.key);
-      }
+      // hover 优先：高亮只跟随当前 hover 节点（与旧 Sigma reducer 的
+      // hovered ?? selected 语义一致）；移开后回落到选中态高亮
+      if (this.hoverKey === n.key) return;
+      this.hoverKey = n.key;
+      this.applyHighlight(n.key);
     });
 
     g.addEventListener('mouseleave', () => {
@@ -748,10 +796,14 @@ export class ForceGraphEngine {
       for (const edge of this.edgeEls) {
         if (edge.source === node.key || edge.target === node.key) this.positionEdge(edge);
       }
+      // 保持物理微热：邻居被弹簧牵引、碰撞实时推开叠放节点
+      this.reheat(0.08);
     };
 
     const onEnd = () => {
       dragging = false;
+      // 松手后再热一轮，让碰撞/弹簧把叠放收尾推开（被拖节点已 pin 不动）
+      this.reheat(0.15);
       const el = this.nodeEls.find((e) => e.node.key === node.key);
       if (el) {
         if (node.dead) {
@@ -775,9 +827,13 @@ export class ForceGraphEngine {
     g.addEventListener('mousedown', (e) => {
       if (e.button !== 0) return;
       e.stopPropagation();
+      e.preventDefault(); // 防拖拽触发浏览器文本选择
       this.hasInteracted = true;
       dragging = true;
       node.pinned = true;
+      // 拖拽期间高亮跟随被拖节点
+      this.hoverKey = node.key;
+      this.applyHighlight(node.key);
       const p = getPoint(e);
       startX = p.x - node.x;
       startY = p.y - node.y;
@@ -819,6 +875,7 @@ export class ForceGraphEngine {
       if (e.button !== 0) return;
       // 仅背景触发 pan（点击节点由节点自己的 mousedown 处理）
       if ((e.target as Element).tagName === 'svg' || (e.target as Element).tagName === 'SVG') {
+        e.preventDefault(); // 防 pan 拖拽触发文本选择
         this.hasInteracted = true;
         this.panning = true;
         this.panStartX = e.clientX - this.translateX;
@@ -962,20 +1019,17 @@ export class ForceGraphEngine {
 
   // ════════════════════════ 高亮 ════════════════════════
 
-  /** 邻接子图高亮（WeKnora applyHighlight，去箭头分支） */
-  private applyHighlight(focusKey: string, hoverKey?: string): void {
+  /** 邻接子图高亮（WeKnora applyHighlight，去箭头分支；单焦点：hover 或选中） */
+  private applyHighlight(focusKey: string): void {
     const neighbors = this.adjacency.get(focusKey) ?? new Set<string>();
-    const hoverNeighbors = hoverKey ? this.adjacency.get(hoverKey) ?? new Set<string>() : new Set<string>();
 
     for (const { g, circle, activeRing, node } of this.nodeEls) {
       const r = this.radius(node);
-      const isFocus = node.key === focusKey;
-      const isHover = hoverKey !== undefined && node.key === hoverKey;
-      if (isFocus || isHover) {
+      if (node.key === focusKey) {
         circle.setAttribute('r', String(r + 3));
         circle.setAttribute('stroke-width', '3');
         g.style.opacity = '1';
-      } else if (neighbors.has(node.key) || hoverNeighbors.has(node.key)) {
+      } else if (neighbors.has(node.key)) {
         circle.setAttribute('r', String(r));
         circle.setAttribute('stroke-width', '2');
         g.style.opacity = '1';
@@ -987,20 +1041,17 @@ export class ForceGraphEngine {
       activeRing.style.opacity = node.key === this.selectedKey ? '1' : '0';
     }
 
-    const highlightColor = (k: string | undefined) => {
-      const n = k ? this.nodeMap.get(k) : undefined;
-      return n?.nodeType && this.nodeColors[n.nodeType] ? this.nodeColors[n.nodeType] : 'var(--accent)';
-    };
+    const focusNode = this.nodeMap.get(focusKey);
+    const hlColor =
+      focusNode?.nodeType && this.nodeColors[focusNode.nodeType]
+        ? this.nodeColors[focusNode.nodeType]
+        : 'var(--accent)';
 
     for (const e of this.edgeEls) {
-      const touchesFocus = e.source === focusKey || e.target === focusKey;
-      const touchesHover =
-        hoverKey !== undefined && (e.source === hoverKey || e.target === hoverKey);
-      if (touchesFocus || touchesHover) {
+      if (e.source === focusKey || e.target === focusKey) {
         e.line.setAttribute('stroke-opacity', '0.9');
         e.line.setAttribute('stroke-width', String(Math.max(this.edgeBaseWidth() * 1.6, 1.5)));
-        const driver = touchesHover ? hoverKey : focusKey;
-        e.line.setAttribute('stroke', highlightColor(driver));
+        e.line.setAttribute('stroke', hlColor);
       } else {
         e.line.setAttribute('stroke-opacity', '0.08');
         e.line.setAttribute('stroke-width', String(this.edgeBaseWidth() * 0.8));
