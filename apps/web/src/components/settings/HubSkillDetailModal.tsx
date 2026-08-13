@@ -13,6 +13,22 @@ export function formatDownloads(n: number, zh: boolean): string {
 }
 
 /**
+ * The readme is attacker-controllable (any hub publisher writes their own
+ * SKILL.md), so it renders under the strict untrusted profile. On top of
+ * that, executable diagram fences are demoted to plain code blocks: their
+ * renderers inject results into the DOM AFTER sanitization (mermaid via
+ * innerHTML, plantuml via outerHTML — and plantuml additionally issues an
+ * external request to plantuml.com with the block content). Showing the
+ * diagram SOURCE as a code block keeps the readme informative without any of
+ * those side channels.
+ */
+const EXECUTABLE_DIAGRAM_FENCE_RE = /^```(?:mermaid|plantuml|infographic)(?=\r?\n)/gm;
+
+export function neutralizeDiagramFences(markdown: string): string {
+  return markdown.replace(EXECUTABLE_DIAGRAM_FENCE_RE, '```text');
+}
+
+/**
  * Skill store detail modal: fetches the hub detail (stats, security verdicts,
  * SKILL.md readme) for one catalog entry on open. The readme is rendered with
  * the shared doocs/md engine; a readme fetch failure never blocks the detail
@@ -21,12 +37,20 @@ export function formatDownloads(n: number, zh: boolean): string {
 export function HubSkillDetailModal({
   skill,
   busy,
+  notice,
   onClose,
   onInstall,
 }: {
   skill: HubSkillSummary;
   /** ANY install is in flight — same one-at-a-time gating as the card grid. */
   busy: boolean;
+  /**
+   * Install feedback from the parent panel. Rendered INSIDE the modal too:
+   * the panel's own banner sits behind the fixed full-viewport overlay, so a
+   * failed install from the modal would otherwise give zero feedback (the
+   * success path closes the modal, the error path keeps it open).
+   */
+  notice: { kind: 'success' | 'error'; text: string } | null;
   onClose: () => void;
   onInstall: () => void;
 }) {
@@ -150,7 +174,11 @@ export function HubSkillDetailModal({
 
               {detail.readme ? (
                 <div className="hub-detail-readme" data-testid="hub-detail-readme">
-                  <MdRenderer content={detail.readme} themeConfig={defaultThemeConfig} />
+                  <MdRenderer
+                    content={neutralizeDiagramFences(detail.readme)}
+                    themeConfig={defaultThemeConfig}
+                    untrusted
+                  />
                 </div>
               ) : (
                 <p className="hub-detail-noreadme">{t('hub.detail.noReadme')}</p>
@@ -158,6 +186,15 @@ export function HubSkillDetailModal({
             </>
           ) : null}
         </div>
+
+        {notice && (
+          <div
+            className={notice.kind === 'success' ? 'hub-notice hub-notice--success' : 'rt-error'}
+            data-testid="hub-detail-notice"
+          >
+            <span>{notice.text}</span>
+          </div>
+        )}
 
         <div className="hub-detail-footer">
           <button

@@ -1207,6 +1207,16 @@
   color: var(--text-faint);
 }
 
+/* Install feedback surfaced INSIDE the detail modal: the panel's own banner
+   renders behind the fixed overlay (invisible), so a failed modal install
+   would otherwise give zero feedback. Direct-child selectors only — the
+   detail fetch's own `.rt-error` retry banner lives inside the body. */
+.hub-detail-modal > .hub-notice,
+.hub-detail-modal > .rt-error {
+  flex: none;
+  margin: 0 24px 12px;
+}
+
 .hub-detail-footer {
   flex: none;
   display: flex;

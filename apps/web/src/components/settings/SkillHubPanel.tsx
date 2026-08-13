@@ -34,6 +34,11 @@ function HubCard({
       data-testid={`hub-card-${skill.slug}`}
       onClick={onOpenDetail}
       onKeyDown={(e) => {
+        // Only react to keys pressed on the card ITSELF: keydowns from the
+        // nested install button bubble up here, and preventDefault would
+        // swallow the button's native keyboard activation (Enter fires click
+        // on keydown, Space on keyup) — a keyboard user could never install.
+        if (e.target !== e.currentTarget) return;
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
           onOpenDetail();
@@ -256,6 +261,7 @@ export function SkillHubPanel({ onInstalled }: { onInstalled: (res: InstallHubSk
         <HubSkillDetailModal
           skill={detailSkill}
           busy={installingSlug !== null}
+          notice={notice}
           onClose={() => setDetailSkill(null)}
           onInstall={() => void handleInstall(detailSkill)}
         />

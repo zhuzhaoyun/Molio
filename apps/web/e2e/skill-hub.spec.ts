@@ -66,12 +66,16 @@ const MOCK_CATEGORIES = [
 interface HubMockState {
   /** When true the list endpoint answers 502 (hub unreachable). */
   failList: boolean;
+  /** When true the install endpoint answers 502 (install failure feedback). */
+  failInstall?: boolean;
   /** Artificial install latency so the busy button state is observable. */
   installDelayMs: number;
   /** Captured POST /hub/install bodies. */
   installRequests: Array<Record<string, unknown>>;
   /** Captured GET /hub/skills request URLs (sort param assertions). */
   listRequests: string[];
+  /** Overrides the readme in the detail payload (untrusted-rendering tests). */
+  readmeOverride?: string;
 }
 
 /** Build the detail payload the daemon's GET /hub/skill would return. */
@@ -116,10 +120,12 @@ async function setupHubMocks(page: import('@playwright/test').Page, state: HubMo
         body: JSON.stringify({ error: { code: 'NOT_FOUND', message: 'E2E模拟详情不存在' } }),
       });
     }
+    const detail = mockDetailFor(src);
+    if (state.readmeOverride !== undefined) detail.readme = state.readmeOverride;
     return route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ detail: mockDetailFor(src) }),
+      body: JSON.stringify({ detail }),
     });
   });
 
@@ -163,6 +169,13 @@ async function setupHubMocks(page: import('@playwright/test').Page, state: HubMo
     state.installRequests.push(body);
     if (state.installDelayMs > 0) {
       await new Promise((r) => setTimeout(r, state.installDelayMs));
+    }
+    if (state.failInstall) {
+      return route.fulfill({
+        status: 502,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: { code: 'HUB_UNAVAILABLE', message: 'E2E模拟安装失败' } }),
+      });
     }
     const src = MOCK_SKILLS.find((s) => s.slug === body.slug);
     return route.fulfill({
@@ -437,5 +450,81 @@ test.describe('Skill store (skillhub.cn)', () => {
     await expect(page.getByTestId('hub-notice')).toBeVisible({ timeout: 10_000 });
     await expect(page.getByTestId('hub-detail-overlay')).toHaveCount(0);
     expect(state.installRequests).toHaveLength(1);
+  });
+
+  test('keyboard: Enter on the install button installs instead of opening the modal', async ({ page }) => {
+    const state: HubMockState = { failList: false, installDelayMs: 200, installRequests: [], listRequests: [] };
+    await setupHubMocks(page, state);
+
+    await gotoSkillsHub(page);
+    await expect(page.getByTestId('hub-card-pdf-tools')).toBeVisible({ timeout: 10_000 });
+
+    // Regression (PR #212 review): the card's onKeyDown swallowed keydowns
+    // bubbling up from the install button — a keyboard user pressing Enter on
+    // the focused button never triggered the install, and the detail modal
+    // popped open instead.
+    await page.getByTestId('hub-install-pdf-tools').focus();
+    await page.keyboard.press('Enter');
+
+    await expect(page.getByTestId('hub-notice')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId('hub-detail-overlay')).toHaveCount(0);
+    expect(state.installRequests).toHaveLength(1);
+  });
+
+  test('install failure from the detail modal surfaces inside the modal', async ({ page }) => {
+    const state: HubMockState = {
+      failList: false,
+      failInstall: true,
+      installDelayMs: 0,
+      installRequests: [],
+      listRequests: [],
+    };
+    await setupHubMocks(page, state);
+
+    await gotoSkillsHub(page);
+    await expect(page.getByTestId('hub-card-pdf-tools')).toBeVisible({ timeout: 10_000 });
+
+    await page.getByTestId('hub-card-pdf-tools').click();
+    await expect(page.getByTestId('hub-detail-overlay')).toBeVisible({ timeout: 10_000 });
+    await page.getByTestId('hub-detail-install').click();
+
+    // Regression (PR #212 review): the panel's error banner renders BEHIND the
+    // fixed full-viewport overlay and the error path keeps the modal open —
+    // the user got zero feedback. The modal must surface the error itself.
+    await expect(page.getByTestId('hub-detail-notice')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId('hub-detail-notice')).toContainText('E2E模拟安装失败');
+    await expect(page.getByTestId('hub-detail-overlay')).toBeVisible();
+    expect(state.installRequests).toHaveLength(1);
+  });
+
+  test('untrusted readme: raw HTML never survives sanitization', async ({ page }) => {
+    const state: HubMockState = { failList: false, installDelayMs: 0, installRequests: [], listRequests: [] };
+    // A malicious hub publisher's SKILL.md: raw-HTML script vectors that the
+    // local-content rendering affordances (onerror allowlist) used to let pass.
+    state.readmeOverride = [
+      '# 恶意 readme',
+      '',
+      '<img src="http://molio-e2e.invalid/x.png" onerror="window.__hubXssImg = 1">',
+      '',
+      '[点我](javascript:window.__hubXssLink = 1)',
+    ].join('\n');
+    await setupHubMocks(page, state);
+
+    await gotoSkillsHub(page);
+    await expect(page.getByTestId('hub-card-pdf-tools')).toBeVisible({ timeout: 10_000 });
+    await page.getByTestId('hub-card-pdf-tools').click();
+
+    const readme = page.getByTestId('hub-detail-readme');
+    await expect(readme).toBeVisible({ timeout: 10_000 });
+    await expect(readme).toContainText('恶意 readme');
+
+    // Give a wrongly-surviving onerror handler the chance to fire on the
+    // broken image, then assert nothing executed and no dangerous attribute
+    // or href survived the strict profile.
+    await page.waitForTimeout(500);
+    expect(await page.evaluate(() => (window as unknown as Record<string, unknown>).__hubXssImg)).toBeUndefined();
+    expect(await page.evaluate(() => (window as unknown as Record<string, unknown>).__hubXssLink)).toBeUndefined();
+    expect(await readme.locator('[onerror]').count()).toBe(0);
+    expect(await readme.locator('a[href^="javascript:"]').count()).toBe(0);
   });
 });
