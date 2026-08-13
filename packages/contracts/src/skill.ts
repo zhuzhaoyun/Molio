@@ -11,7 +11,9 @@
  *    Hidden from the settings UI and always effective (app-owned). Synced whole-dir
  *    to `<vault>/.claude/skills/<id>/` (plain dir name, no `molio--` prefix).
  *  - `library`: user-created/imported single-file skills. Shown + configurable.
- *    Synced to `<vault>/.claude/skills/molio--<id>/SKILL.md`.
+ *    Synced to `<vault>/.claude/skills/molio--<dirName>/SKILL.md` where dirName
+ *    is the slugified display name (readable; same-name collisions get a stable
+ *    id-derived suffix).
  *  - core (`core: true`): the writing trio — Molio's core job. NOT shown, NOT
  *    configurable, always enabled; synced like a library skill.
  *
@@ -139,6 +141,12 @@ export interface HubSkillsQuery {
   pageSize?: number;
   keyword?: string;
   category?: string;
+  /**
+   * Catalog sort order. 'default' (or omitted) keeps the hub's own ranking
+   * (score desc); 'downloads' = most downloaded first; 'updated' = most
+   * recently updated first. Unknown values fall back to 'default'.
+   */
+  sort?: 'default' | 'downloads' | 'updated';
 }
 
 export interface HubSkillsListResponse {
@@ -169,4 +177,47 @@ export interface InstallHubSkillResponse {
   updated: boolean;
   /** The version actually installed (read from the downloaded package). */
   version: string;
+}
+
+export interface HubSkillDetailQuery {
+  slug: string;
+  /** Hub namespace handle — slugs are not globally unique on the hub. */
+  namespace?: string;
+}
+
+/** One hub skill's detail page data, aggregated by the daemon proxy. */
+export interface HubSkillDetail {
+  slug: string;
+  name: string;
+  /** Chinese summary when the hub has one, else the original. */
+  description: string;
+  category: string;
+  /** Upstream project page (clawhub / github / …). May be ''. */
+  sourceUrl: string;
+  iconUrl: string;
+  createdAt: number; // epoch ms
+  updatedAt: number; // epoch ms
+  verified: boolean;
+  requiresApiKey: boolean;
+  /** Author display name. */
+  ownerName: string;
+  namespace?: string;
+  latestVersion: string;
+  /** Latest version's changelog when the hub provides one. */
+  changelog?: string;
+  stats: { downloads: number; installs: number; stars: number; versions: number };
+  /**
+   * SKILL.md body with the YAML frontmatter stripped; '' when the hub has
+   * none / the fetch failed (never blocks the rest of the detail).
+   */
+  readme: string;
+  /** Hub security-scan verdicts (keen/sanbu statusText); keys omitted when absent. */
+  security?: { keen?: string; sanbu?: string };
+  /** Annotated by the daemon from hub_skill_installs (same rules as the list). */
+  installed?: boolean;
+  installedVersion?: string;
+}
+
+export interface HubSkillDetailResponse {
+  detail: HubSkillDetail;
 }

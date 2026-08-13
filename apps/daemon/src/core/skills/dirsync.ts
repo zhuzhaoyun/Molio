@@ -1,6 +1,6 @@
 /**
  * Generic directory-mirroring primitives shared by both sync paths:
- *  - library/core skills → `molio--<id>/` dirs (sync.ts),
+ *  - library/core skills → `molio--<dirName>/` dirs (sync.ts),
  *  - bundled skills → plain `<slug>/` whole dirs (skill-installer.ts).
  *
  * One staleness rule for both: a destination is fresh iff it byte-for-byte

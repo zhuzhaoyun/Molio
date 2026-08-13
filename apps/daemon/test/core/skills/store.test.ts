@@ -111,8 +111,11 @@ describe('skills/store', () => {
       'body',
       opts,
     );
-    const syncedDir = path.join(claudeHome, 'skills', `molio--${entry.id}`);
-    assert.ok(!fs.existsSync(syncedDir), 'store must not write to .claude/skills');
+    const skillsRoot = path.join(claudeHome, 'skills');
+    const molioDirs = fs.existsSync(skillsRoot)
+      ? fs.readdirSync(skillsRoot).filter((n) => n.startsWith('molio--'))
+      : [];
+    assert.deepEqual(molioDirs, [], 'store must not write to .claude/skills');
   });
 
   it('updateSkill rewrites frontmatter (name) and keeps instructions', () => {
@@ -158,7 +161,11 @@ describe('skills/store', () => {
     toggleSkill(db, entry.id, true);
     assert.equal(getSkill(db, entry.id)?.enabled, true);
     // store never writes to .claude/skills
-    assert.ok(!fs.existsSync(path.join(claudeHome, 'skills', `molio--${entry.id}`)));
+    const skillsRoot = path.join(claudeHome, 'skills');
+    const molioDirs = fs.existsSync(skillsRoot)
+      ? fs.readdirSync(skillsRoot).filter((n) => n.startsWith('molio--'))
+      : [];
+    assert.deepEqual(molioDirs, [], 'store must not write to .claude/skills');
   });
 
   it('deleteSkill removes content dir and DB row', () => {

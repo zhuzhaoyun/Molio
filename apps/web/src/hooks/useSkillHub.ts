@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { HubCategory, HubSkillSummary, InstallHubSkillResponse } from '@molio/contracts';
+import type { HubCategory, HubSkillsQuery, HubSkillSummary, InstallHubSkillResponse } from '@molio/contracts';
 import { api } from '../api/client';
 
 /**
@@ -11,6 +11,8 @@ import { api } from '../api/client';
  */
 export const HUB_PAGE_SIZE = 20;
 
+export type HubSort = NonNullable<HubSkillsQuery['sort']>;
+
 export function useSkillHub() {
   const [skills, setSkills] = useState<HubSkillSummary[]>([]);
   const [total, setTotal] = useState(0);
@@ -20,6 +22,7 @@ export function useSkillHub() {
   const [categories, setCategories] = useState<HubCategory[]>([]);
   const [keyword, setKeyword] = useState('');
   const [category, setCategory] = useState('');
+  const [sort, setSort] = useState<HubSort>('default');
   const [hasMore, setHasMore] = useState(false);
   const [installingSlug, setInstallingSlug] = useState<string | null>(null);
 
@@ -40,7 +43,7 @@ export function useSkillHub() {
         setLoadingMore(true);
       }
       try {
-        const data = await api.listHubSkills({ page, pageSize: HUB_PAGE_SIZE, keyword, category });
+        const data = await api.listHubSkills({ page, pageSize: HUB_PAGE_SIZE, keyword, category, sort });
         if (seqRef.current !== seq) return; // superseded by a newer query
         pageRef.current = data.page;
         setTotal(data.total);
@@ -55,10 +58,12 @@ export function useSkillHub() {
         }
       }
     },
-    [keyword, category],
+    // A sort change recreates `load`, and the effect below re-fires page 1 —
+    // same debounced reset path as keyword/category changes.
+    [keyword, category, sort],
   );
 
-  // Initial load + debounced re-query on keyword/category changes.
+  // Initial load + debounced re-query on keyword/category/sort changes.
   useEffect(() => {
     const timer = setTimeout(() => {
       void load(1, true);
@@ -147,6 +152,8 @@ export function useSkillHub() {
     setKeyword,
     category,
     setCategory,
+    sort,
+    setSort,
     hasMore,
     installingSlug,
     refresh,

@@ -39,13 +39,47 @@ function zipOf(files: Record<string, string>): Uint8Array {
 }
 
 /**
- * Fake hub: catalog list + categories + zip download. `failAll` flips every
- * request into a network error to exercise the 502 mapping.
+ * Fake hub: catalog list + categories + zip download + skill detail/readme.
+ * `failAll` flips every request into a network error to exercise the 502 mapping.
  */
 function fakeHubFetch(opts: { failAll?: boolean } = {}): typeof fetch {
   return (async (input: unknown) => {
     if (opts.failAll) throw new Error('ECONNREFUSED (fake)');
     const url = String(input);
+    // Checked BEFORE the detail branch: the readme URL also matches /api/v1/skills/.
+    if (url.includes('/file?path=SKILL.md')) {
+      return new Response('---\nname: 商店技能\nversion: 1.0.0\n---\n\n商店技能详情正文', {
+        status: 200,
+        headers: { 'Content-Type': 'text/plain' },
+      });
+    }
+    if (url.includes('/api/v1/skills/')) {
+      const slug = /\/api\/v1\/skills\/([\w.-]+)/.exec(url)?.[1];
+      if (slug === 'alpha-skill' || slug === 'beta-skill') {
+        return new Response(
+          JSON.stringify({
+            slug,
+            skill: {
+              slug,
+              displayName: slug === 'alpha-skill' ? 'Alpha 详情' : 'Beta 详情',
+              summary: 'english summary',
+              summary_zh: slug === 'alpha-skill' ? '阿尔法详情' : '贝塔详情',
+              category: 'office-efficiency',
+              createdAt: 1785000000000,
+              updatedAt: 1786000000000,
+              labels: { requires_api_key: 'false' },
+              stats: { downloads: 10, installs: 2, stars: 1, versions: 1 },
+            },
+            latestVersion: { version: '1.0.0', changelog: 'init' },
+            owner: { handle: slug === 'alpha-skill' ? 'alice' : 'bob', displayName: 'Owner' },
+            namespace: { handle: slug === 'alpha-skill' ? 'alice' : 'bob' },
+            securityReports: { keen: { status: 'benign', statusText: '安全，无风险' } },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+      return new Response('missing', { status: 404 });
+    }
     if (url.includes('/api/skills?')) {
       return new Response(
         JSON.stringify({
@@ -265,7 +299,57 @@ describe('Skills hub routes', () => {
     assert.notEqual(alpha.installed, true);
   });
 
-  it('hub unreachable → 502 on catalog and install', async () => {
+  it('GET /hub/skill returns detail with readme and the installed annotation', async () => {
+    // From the previous tests: alpha is installed ONLY under namespace
+    // 'alice'; beta under 'bob' + 'carol'. The annotation must follow the
+    // REQUESTED namespace, not the detail response's own namespace field.
+    const alpha = await app.request('/api/skills/hub/skill?slug=alpha-skill');
+    assert.equal(alpha.status, 200);
+    const aBody = ((await json(alpha))['detail'] as Record<string, unknown>);
+    assert.equal(aBody['name'], 'Alpha 详情');
+    assert.equal(aBody['description'], '阿尔法详情'); // zh-first
+    assert.equal(aBody['readme'], '商店技能详情正文'); // frontmatter stripped
+    assert.equal(aBody['installed'], undefined); // no namespace-less install exists
+    assert.equal(aBody['latestVersion'], '1.0.0');
+    assert.deepEqual(aBody['security'], { keen: '安全，无风险' });
+
+    const bob = await app.request('/api/skills/hub/skill?slug=beta-skill&namespace=bob');
+    assert.equal(bob.status, 200);
+    const bBody = ((await json(bob))['detail'] as Record<string, unknown>);
+    assert.equal(bBody['installed'], true);
+    assert.equal(bBody['installedVersion'], '1.0.0');
+
+    // carol's record of the same slug is a separate install — its annotation
+    // must not leak into bob's view and vice versa.
+    const carol = await app.request('/api/skills/hub/skill?slug=beta-skill&namespace=carol');
+    assert.equal(carol.status, 200);
+    assert.equal(((await json(carol))['detail'] as Record<string, unknown>)['installed'], true);
+  });
+
+  it('GET /hub/skill validates input and maps upstream errors', async () => {
+    assert.equal((await app.request('/api/skills/hub/skill')).status, 400);
+    assert.equal((await app.request('/api/skills/hub/skill?slug=ghost-skill')).status, 404);
+  });
+
+  it('GET /hub/skills forwards the sort param upstream', async () => {
+    const urls: string[] = [];
+    _setHubFetchForTests((async (input: unknown) => {
+      urls.push(String(input));
+      return new Response(JSON.stringify({ code: 0, data: { skills: [], total: 0 } }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch);
+    try {
+      const res = await app.request('/api/skills/hub/skills?sort=downloads');
+      assert.equal(res.status, 200);
+      assert.ok(urls.some((u) => u.includes('sortBy=downloads') && u.includes('order=desc')), urls.join('\n'));
+    } finally {
+      _setHubFetchForTests(fakeHubFetch());
+    }
+  });
+
+  it('hub unreachable → 502 on catalog, install and detail', async () => {
     _setHubFetchForTests(fakeHubFetch({ failAll: true }));
     try {
       const list = await app.request('/api/skills/hub/skills');
@@ -278,6 +362,8 @@ describe('Skills hub routes', () => {
       assert.equal(install.status, 502);
       const errBody = await json(install);
       assert.match(String((errBody['error'] as { message: string }).message), /SkillHub/);
+      const detail = await app.request('/api/skills/hub/skill?slug=alpha-skill');
+      assert.equal(detail.status, 502);
     } finally {
       _setHubFetchForTests(fakeHubFetch());
     }

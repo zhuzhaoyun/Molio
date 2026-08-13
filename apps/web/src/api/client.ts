@@ -9,6 +9,7 @@ import type {
   ImportSkillRequest, PrefillResult,
   HubSkillsQuery, HubSkillsListResponse, HubCategoriesResponse,
   InstallHubSkillRequest, InstallHubSkillResponse,
+  HubSkillDetailQuery, HubSkillDetailResponse,
 } from '@molio/contracts';
 
 export type WeixinLoginStatus = 'idle' | 'waiting_scan' | 'scanned' | 'logged_in' | 'error';
@@ -882,11 +883,24 @@ export const api = {
     if (query.pageSize) params.set('pageSize', String(query.pageSize));
     if (query.keyword?.trim()) params.set('keyword', query.keyword.trim());
     if (query.category?.trim()) params.set('category', query.category.trim());
+    if (query.sort && query.sort !== 'default') params.set('sort', query.sort);
     const qs = params.toString();
     const res = await fetch(`${BASE}/skills/hub/skills${qs ? `?${qs}` : ''}`);
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error?.message ?? `Failed to fetch hub skills: ${res.status}`);
+    }
+    return res.json();
+  },
+
+  /** One hub skill's detail (stats + SKILL.md readme + security verdicts). */
+  async hubSkillDetail(query: HubSkillDetailQuery): Promise<HubSkillDetailResponse> {
+    const params = new URLSearchParams({ slug: query.slug });
+    if (query.namespace?.trim()) params.set('namespace', query.namespace.trim());
+    const res = await fetch(`${BASE}/skills/hub/skill?${params.toString()}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message ?? `Failed to fetch hub skill detail: ${res.status}`);
     }
     return res.json();
   },
