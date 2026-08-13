@@ -61,15 +61,24 @@ function readPanelHeight(): number | null {
 }
 
 /* 双形态：悬浮（默认，可拖拽位置/尺寸）与停靠侧边栏（页头之下、右缘、可拖宽）。
-   形态与悬浮位置均持久化；形态切换经按钮（带过渡动画）或拖拽（瞬时）。 */
-const STORAGE_KEY_DOCK_MODE = 'molio.kb.chatDockMode';
+   形态按页记忆并持久化（KB 页默认停靠、其余页面默认悬浮）；悬浮位置持久化；
+   形态切换经按钮（带过渡动画）或拖拽（瞬时）。 */
+const STORAGE_KEY_DOCK_MODE_BY_PAGE = 'molio.kb.chatDockModeByPage';
 const STORAGE_KEY_FLOAT_POS = 'molio.kb.chatFloatPos';
 
-function readDockMode(): 'float' | 'dock' {
+function defaultDockFor(page: string): 'float' | 'dock' {
+  return page === 'knowledge' ? 'dock' : 'float';
+}
+
+function readDockModeByPage(): Record<string, 'float' | 'dock'> {
   try {
-    if (localStorage.getItem(STORAGE_KEY_DOCK_MODE) === 'dock') return 'dock';
+    const raw = localStorage.getItem(STORAGE_KEY_DOCK_MODE_BY_PAGE);
+    if (raw) {
+      const m = JSON.parse(raw);
+      if (m && typeof m === 'object') return m as Record<string, 'float' | 'dock'>;
+    }
   } catch { /* storage unavailable */ }
-  return 'float';
+  return {};
 }
 function readFloatPos(): { left: number; top: number } | null {
   try {
@@ -113,8 +122,18 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   const [panelWidth, setPanelWidth] = useState<number>(readPanelWidth);
   // 面板高度：null = 未自定义 → CSS 默认（calc(100vh-96px) 随视口自适应），拖拽后持久化
   const [panelHeight, setPanelHeight] = useState<number | null>(readPanelHeight);
-  // 形态：'float' 悬浮（可拖位置/尺寸）| 'dock' 停靠侧边栏（可拖宽）。持久化。
-  const [dockMode, setDockModeState] = useState<'float' | 'dock'>(readDockMode);
+  // 形态按页记忆：dockByPage 存每页上次的形态（持久化），dockMode 是当前页生效形态。
+  // 'float' 悬浮（可拖位置/尺寸）| 'dock' 停靠侧边栏（可拖宽）。
+  const [dockByPage, setDockByPage] = useState<Record<string, 'float' | 'dock'>>(readDockModeByPage);
+  const [dockMode, setDockModeState] = useState<'float' | 'dock'>(() =>
+    dockByPage[page] ?? defaultDockFor(page),
+  );
+  // 按页记忆停靠形态：页面切换时，面板形态跟随该页记忆（默认 KB→停靠、其余→悬浮）。
+  useEffect(() => {
+    setDockModeState(dockByPage[page] ?? defaultDockFor(page));
+    // 仅响应 page 导航，不含 dockByPage（切换停靠时 setDockMode 已同步 state，无需回读）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page]);
   // 悬浮位置（left/top）。null = 未移动过 → CSS 默认右下角。持久化。
   const [floatPos, setFloatPos] = useState<{ left: number; top: number } | null>(readFloatPos);
   // 形态切换过渡：切换瞬间加 --morphing 启用几何过渡，260ms 后移除
@@ -311,8 +330,12 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   // ─── 形态切换（悬浮 / 停靠侧边栏） ───
   const setDockMode = useCallback((mode: 'float' | 'dock') => {
     setDockModeState(mode);
-    try { localStorage.setItem(STORAGE_KEY_DOCK_MODE, mode); } catch { /* storage unavailable */ }
-  }, []);
+    setDockByPage((prev) => {
+      const next = { ...prev, [page]: mode };
+      try { localStorage.setItem(STORAGE_KEY_DOCK_MODE_BY_PAGE, JSON.stringify(next)); } catch { /* storage unavailable */ }
+      return next;
+    });
+  }, [page]);
   // 清掉拖拽时手动写入的 inline left/top，把几何交还给 React / CSS 控制
   const clearInlinePos = useCallback(() => {
     const el = panelElRef.current;

@@ -140,11 +140,13 @@ test.describe('Floating chat (方案 D)', () => {
   });
 
   test('面板可拖拽调整高度（顶缘 handle，下锚定），默认撑满视口、重载后高度持久化', async ({ page }) => {
+    // 首页测试：顶缘高度 handle 是悬浮形态独有（停靠形态 display:none），KB 页默认停靠，
+    // 故迁移到首页（默认悬浮）验证拖高。
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
-    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await page.goto('http://localhost:5173/');
+    await expect(page.locator('.home-page')).toBeVisible({ timeout: 5_000 });
 
-    await page.locator('[data-testid="kb-btn-ask"]').click();
+    await page.locator('[data-testid="floating-chat-btn"]').click();
     const panel = page.locator('[data-testid="kb-chat-panel"]');
     await expect(panel).toBeVisible();
     await page.waitForTimeout(250);
@@ -179,8 +181,8 @@ test.describe('Floating chat (方案 D)', () => {
 
     // 重载后高度保留（localStorage 持久化）
     await page.reload();
-    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
-    await page.locator('[data-testid="kb-btn-ask"]').click();
+    await expect(page.locator('.home-page')).toBeVisible({ timeout: 5_000 });
+    await page.locator('[data-testid="floating-chat-btn"]').click();
     await expect(panel).toBeVisible();
     await page.waitForTimeout(250);
     const persisted = (await panel.boundingBox())!.height;
@@ -263,12 +265,15 @@ test.describe('Floating chat (方案 D)', () => {
     const shellPad = () => page.evaluate(() =>
       parseFloat(getComputedStyle(document.querySelector('.kb-shell')!).paddingRight));
 
-    // 初始悬浮：右缘距视口 24px，文档区未被让出
+    // KB 页默认停靠 = 页内分栏：从页顶（y=0）占满整高、贴右缘，而非悬浮式 overlay
     let box = (await panel.boundingBox())!;
-    expect(Math.abs(box.x + box.width - (vw - 24))).toBeLessThan(4);
-    expect(await shellPad()).toBeLessThan(4);
+    expect(Math.abs(box.y)).toBeLessThan(4);
+    expect(Math.abs(box.x + box.width - vw)).toBeLessThan(4);
+    const dockWidth = box.width;
+    // 文档区让出等宽 → 问答与文档分栏（不被覆盖）
+    expect(Math.abs((await shellPad()) - dockWidth)).toBeLessThan(4);
 
-    // 停靠：--morphing 临时启用几何过渡（left/right/top/height 可过渡），随后贴右缘
+    // 切悬浮：--morphing 临时启用几何过渡（left/right/top/height 可过渡），随后恢复全宽
     const toggle = page.locator('[data-testid="kb-chat-dock-toggle"]');
     await expect(toggle).toBeVisible();
     await toggle.click();
@@ -279,12 +284,17 @@ test.describe('Floating chat (方案 D)', () => {
     expect(morphProps).toContain('height');
     await page.waitForTimeout(300); // 等形态过渡结束
     box = (await panel.boundingBox())!;
-    // KB 页停靠 = 页内分栏：从页顶（y=0）占满整高、贴右缘，而非悬浮式 overlay
+    // 悬浮：右缘距视口 24px，文档区恢复全宽（不再被让出）
+    expect(Math.abs(box.x + box.width - (vw - 24))).toBeLessThan(4);
+    expect(await shellPad()).toBeLessThan(4);
+
+    // 切回停靠 → 恢复分栏几何（文档区再次让出等宽）
+    await toggle.click();
+    await page.waitForTimeout(300);
+    box = (await panel.boundingBox())!;
     expect(Math.abs(box.y)).toBeLessThan(4);
     expect(Math.abs(box.x + box.width - vw)).toBeLessThan(4);
-    const dockWidth = box.width;
-    // 文档区让出等宽 → 问答与文档分栏（不被覆盖）
-    expect(Math.abs((await shellPad()) - dockWidth)).toBeLessThan(4);
+    expect(Math.abs((await shellPad()) - box.width)).toBeLessThan(4);
 
     // 停靠形态下左缘拖宽 → 文档区同步重排（拖宽联动）
     const handle = page.locator('[data-testid="kb-chat-resize-handle"]');
@@ -307,11 +317,12 @@ test.describe('Floating chat (方案 D)', () => {
   });
 
   test('悬浮形态可拖拽移动位置，重载后位置保留', async ({ page }) => {
+    // 首页测试：KB 页默认停靠（无悬浮位置可拖），迁移到首页（默认悬浮）验证移动。
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
-    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await page.goto('http://localhost:5173/');
+    await expect(page.locator('.home-page')).toBeVisible({ timeout: 5_000 });
 
-    await page.locator('[data-testid="kb-btn-ask"]').click();
+    await page.locator('[data-testid="floating-chat-btn"]').click();
     const panel = page.locator('[data-testid="kb-chat-panel"]');
     await expect(panel).toBeVisible();
     await page.waitForTimeout(250);
@@ -340,8 +351,8 @@ test.describe('Floating chat (方案 D)', () => {
 
     // 重载 → 位置保留（localStorage 持久化）
     await page.reload();
-    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
-    await page.locator('[data-testid="kb-btn-ask"]').click();
+    await expect(page.locator('.home-page')).toBeVisible({ timeout: 5_000 });
+    await page.locator('[data-testid="floating-chat-btn"]').click();
     await expect(panel).toBeVisible();
     await page.waitForTimeout(250);
     const persisted = (await panel.boundingBox())!;
@@ -350,11 +361,12 @@ test.describe('Floating chat (方案 D)', () => {
   });
 
   test('拖拽互切：悬浮拖到右缘 → 停靠；停靠后向左拖 → 恢复悬浮', async ({ page }) => {
+    // 首页测试：KB 页默认停靠（起点已是停靠，无「悬浮拖到右缘」路径），迁移到首页（默认悬浮）。
     await mockChatRun(page);
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
-    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await page.goto('http://localhost:5173/');
+    await expect(page.locator('.home-page')).toBeVisible({ timeout: 5_000 });
 
-    await page.locator('[data-testid="kb-btn-ask"]').click();
+    await page.locator('[data-testid="floating-chat-btn"]').click();
     const panel = page.locator('[data-testid="kb-chat-panel"]');
     await expect(panel).toBeVisible();
     await page.waitForTimeout(250);
@@ -394,5 +406,22 @@ test.describe('Floating chat (方案 D)', () => {
     const activeTab = page.locator('[data-testid="kb-chat-session-tab"].is-active');
     await expect(activeTab).toHaveCSS('font-weight', '500');
     await expect(activeTab).toHaveCSS('font-size', '13px');
+  });
+
+  test('KB 页打开默认停靠；首页默认悬浮', async ({ page }) => {
+    await mockChatRun(page);
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await page.locator('[data-testid="floating-chat-btn"]').click();
+    const panel = page.locator('[data-testid="kb-chat-panel"]');
+    await expect(panel).toBeVisible();
+    await expect(panel).toHaveClass(/floating-chat-panel--dock-kb/);
+    await expect(page.locator('[data-testid="kb-chat-dock-toggle"]')).toHaveAttribute('aria-pressed', 'true');
+
+    await page.goto('http://localhost:5173/');
+    await expect(page.locator('.home-page')).toBeVisible({ timeout: 5_000 });
+    await page.locator('[data-testid="floating-chat-btn"]').click();
+    await expect(panel).toBeVisible();
+    await expect(panel).not.toHaveClass(/floating-chat-panel--dock/);
   });
 });
