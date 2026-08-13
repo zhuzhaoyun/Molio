@@ -196,10 +196,10 @@ export default function App() {
               element={
                 <HistoryPage
                   onOpenConversation={(conversationId) => {
-                    // 方案 D：面板常驻 App 层，历史会话任意页面就地打开（不再跳转知识库页）。
-                    // openConversation 走面板 handle（运行中去重/就地切换/加载都由它负责），
-                    // openConversation 内部已 setPanelOpen(true)。
-                    kbChatPanelRef.current?.openConversation(conversationId);
+                    // 恢复旧行为：加载到首页聊天 → 跳转首页呈现（撤销方案 D 的「就地打开面板」）。
+                    void chat.loadConversationById(conversationId).then(() => {
+                      navigate('/');
+                    });
                   }}
                 />
               }
