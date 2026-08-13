@@ -122,7 +122,9 @@ export function KbChatSession({
         // 该会话存在活跃 run（回复进行中）→ 重新订阅回放直播，避免 UI 把 run 弄丢
         void maybeResume(loadedConversationId);
         const firstUser = msgs.find((m) => m.role === 'user');
-        if (firstUser && session.mode === 'qa') {
+        // 只在该会话标题仍是占位（新会话/加载中）时派生 —— 用户重命名过的不被历史加载覆盖
+        const curTitle = kbChatSessionsStore.getSessions().find((s) => s.id === session.id)?.title;
+        if (firstUser && session.mode === 'qa' && (curTitle === '新会话' || curTitle === '加载中…')) {
           kbChatSessionsStore.updateSession(session.id, { title: deriveChatTitle(firstUser.content) });
         }
       })
@@ -177,7 +179,9 @@ export function KbChatSession({
           // 切到的历史会话若正在生成 → 恢复直播（与重挂载同一启发式）
           void maybeResume(conversationId);
           const firstUser = msgs.find((m) => m.role === 'user');
-          if (firstUser && session.mode === 'qa') {
+          // 只在该会话标题仍是占位（新会话/加载中）时派生 —— 用户重命名过的不被历史加载覆盖
+          const curTitle = kbChatSessionsStore.getSessions().find((s) => s.id === session.id)?.title;
+          if (firstUser && session.mode === 'qa' && (curTitle === '新会话' || curTitle === '加载中…')) {
             kbChatSessionsStore.updateSession(session.id, { title: deriveChatTitle(firstUser.content) });
           }
         })

@@ -424,6 +424,33 @@ test.describe('Floating chat (方案 D)', () => {
     await expect(title).toHaveText('我的会话');
   });
 
+  test('重命名的标题跨 reload 保留（不被历史加载覆盖）', async ({ page }) => {
+    await mockChatRun(page, {
+      persistedMessages: [{ id: 'm1', role: 'user', content: '原始问题', timestamp: 1 }],
+    });
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await page.locator('[data-testid="kb-btn-ask"]').click();
+
+    const input = page.locator('[data-testid="kb-chat-panel"] [data-testid="composer-input"]');
+    await input.fill('关于 doc.md 的问题');
+    await page.locator('[data-testid="composer-send"]').click();
+    const title = page.locator('[data-testid="kb-chat-session-tab"] .chat-session-tab-title');
+    await expect(title).toHaveText('关于 doc.md 的问题');
+
+    await title.dblclick();
+    await page.locator('[data-testid="kb-chat-session-rename-input"]').fill('我的会话');
+    await page.locator('[data-testid="kb-chat-session-rename-input"]').press('Enter');
+    await expect(title).toHaveText('我的会话');
+
+    await page.reload();
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await page.locator('[data-testid="kb-btn-ask"]').click();
+    // 等历史加载完成（持久化 user 消息出现）再断言，避免异步覆盖造成误判
+    await expect(page.locator('[data-testid="kb-chat-panel"] .file-chat-messages')).toContainText('原始问题');
+    await expect(title).toHaveText('我的会话');
+  });
+
   test('KB 页打开默认停靠；首页默认悬浮', async ({ page }) => {
     await mockChatRun(page);
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
