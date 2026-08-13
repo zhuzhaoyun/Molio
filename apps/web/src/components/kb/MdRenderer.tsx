@@ -15,6 +15,7 @@ import { useEffect, useRef, useMemo, useState, memo } from 'react';
 import { initRenderer } from '@molio/doocs-md/src/renderer/renderer-impl';
 import { renderMarkdown, postProcessHtml } from '@molio/doocs-md/src/utils/markdownHelpers';
 import { applyTheme } from '@molio/doocs-md/src/theme/themeApplicator';
+import { mathJaxReady, ensureMathJax } from '../../utils/mathjaxLoader';
 import type { IOpts } from '@molio/doocs-md/shared/types/common';
 import type { ThemeConfig } from './MdStylePanel';
 
@@ -99,25 +100,47 @@ export const MdRenderer = memo(function MdRenderer({
     finalOptions.themeMode,
   ]);
 
-  // Render markdown content
+  // Render markdown content. Formulas are typeset by the doocs/md KaTeX
+  // extension through the global window.MathJax, which Molio loads lazily as a
+  // local asset. If MathJax isn't ready yet, render immediately with the
+  // extension's raw-LaTeX fallback (so content never waits), then re-render
+  // once MathJax is ready so formulas upgrade to real SVG. If the asset fails
+  // to load, the fallback render stays — no crash, no blank page.
   useEffect(() => {
     if (!content) {
       setRenderedHtml('');
       return;
     }
 
-    try {
-      const { html, readingTime } = renderMarkdown(
-        content,
-        renderer,
-        untrusted ? { untrusted: true } : undefined,
-      );
-      const finalHtml = postProcessHtml(html, readingTime, renderer);
-      setRenderedHtml(finalHtml);
-    } catch (error) {
-      console.error('Markdown rendering error:', error);
-      setRenderedHtml(`<p>Error rendering content: ${String(error)}</p>`);
+    let cancelled = false;
+
+    const doRender = () => {
+      try {
+        const { html, readingTime } = renderMarkdown(
+          content,
+          renderer,
+          untrusted ? { untrusted: true } : undefined,
+        );
+        const finalHtml = postProcessHtml(html, readingTime, renderer);
+        if (!cancelled) setRenderedHtml(finalHtml);
+      } catch (error) {
+        console.error('Markdown rendering error:', error);
+        if (!cancelled) setRenderedHtml(`<p>Error rendering content: ${String(error)}</p>`);
+      }
+    };
+
+    doRender();
+    if (!mathJaxReady()) {
+      ensureMathJax()
+        .then(doRender)
+        .catch((err) => {
+          console.error('MathJax unavailable; formulas render as raw LaTeX:', err);
+        });
     }
+
+    return () => {
+      cancelled = true;
+    };
   }, [content, renderer, untrusted]);
 
   // Apply theme CSS when themeConfig changes.

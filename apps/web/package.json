@@ -29,6 +29,7 @@
     "highlight.js": "^11.11.1",
     "isomorphic-dompurify": "^3.15.0",
     "marked": "^18.0.4",
+    "mathjax": "3.2.2",
     "pdfjs-dist": "6.2.108",
     "qrcode": "^1.5.4",
     "react": "^19.0.0",
