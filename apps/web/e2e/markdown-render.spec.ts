@@ -272,5 +272,13 @@ test.describe('Markdown Rendering', () => {
     const outputText = await page.locator('#output').innerText();
     expect(outputText).not.toContain('$E = mc^2$');
     expect(outputText).not.toContain('\\frac');
+
+    // Regression: MathJax SVG must contain `<use>` glyph references. Without
+    // them (DOMPurify strips `<use>` by default — see sanitizeHtml ADD_TAGS
+    // `use` in vendor/doocs-md/src/utils/markdownHelpers.ts) the formula
+    // renders as a blank box even though the `<svg>` element exists.
+    await expect(page.locator('#output .katex-inline svg use').first()).toBeVisible({ timeout: 10_000 });
+    expect(await page.locator('#output .katex-inline svg use').count()).toBeGreaterThan(0);
+    expect(await page.locator('#output .katex-block svg use').count()).toBeGreaterThan(0);
   });
 });
