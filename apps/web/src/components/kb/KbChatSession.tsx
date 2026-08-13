@@ -9,7 +9,7 @@ import { AssistantMessage } from '../AssistantMessage';
 import { ChatComposer, type FileRef, type PastedImage, buildAttachmentPrefix } from '../ChatComposer';
 import { ActivityTree } from '../ActivityTree';
 import { useI18n } from '../../i18n';
-import { WIKI_QUERY_TRIGGER } from './kbChatPrompts';
+import { WIKI_QUERY_TRIGGER, deriveChatTitle } from './kbChatPrompts';
 
 export interface KbChatSessionApi {
   send: (text: string) => void;
@@ -81,7 +81,7 @@ export function KbChatSession({
       kbChatSessionsStore.updateSession(session.id, { conversationId: result.conversationId });
       const cur = kbChatSessionsStore.getSessions().find((s) => s.id === session.id);
       if (cur && cur.title === '新会话') {
-        kbChatSessionsStore.updateSession(session.id, { title: ctx.message.slice(0, 24) });
+        kbChatSessionsStore.updateSession(session.id, { title: deriveChatTitle(ctx.message) });
       }
     }
     return { runId: result.runId, conversationId: result.conversationId };
@@ -122,8 +122,8 @@ export function KbChatSession({
         // 该会话存在活跃 run（回复进行中）→ 重新订阅回放直播，避免 UI 把 run 弄丢
         void maybeResume(loadedConversationId);
         const firstUser = msgs.find((m) => m.role === 'user');
-        if (firstUser) {
-          kbChatSessionsStore.updateSession(session.id, { title: firstUser.content.slice(0, 24) });
+        if (firstUser && session.mode === 'qa') {
+          kbChatSessionsStore.updateSession(session.id, { title: deriveChatTitle(firstUser.content) });
         }
       })
       .catch(() => { if (!cancelled) onLoadError?.(session.id); });
@@ -177,8 +177,8 @@ export function KbChatSession({
           // 切到的历史会话若正在生成 → 恢复直播（与重挂载同一启发式）
           void maybeResume(conversationId);
           const firstUser = msgs.find((m) => m.role === 'user');
-          if (firstUser) {
-            kbChatSessionsStore.updateSession(session.id, { title: firstUser.content.slice(0, 24) });
+          if (firstUser && session.mode === 'qa') {
+            kbChatSessionsStore.updateSession(session.id, { title: deriveChatTitle(firstUser.content) });
           }
         })
         .catch(() => onLoadError?.(session.id));

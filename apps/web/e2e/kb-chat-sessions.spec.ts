@@ -54,6 +54,21 @@ test.describe('KB chat sessions', () => {
   test.afterAll(async () => { if (vault) await cleanupTempVault(vault); });
   test.afterEach(async ({ page }) => { await unmockAll(page); });
 
+  test('QA 首条消息标题取末句，不含 wiki-query 模板前缀', async ({ page }) => {
+    await mockChatRun(page);
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+
+    await page.locator('[data-testid="kb-btn-ask"]').click();
+    const input = page.locator('[data-testid="kb-chat-panel"] [data-testid="composer-input"]');
+    await input.fill('关于 doc.md 的问题');
+    await page.locator('[data-testid="composer-send"]').click();
+
+    const title = page.locator('[data-testid="kb-chat-session-tab"] .chat-session-tab-title');
+    await expect(title).toHaveText('关于 doc.md 的问题');
+    await expect(title).not.toContainText('知识库问答');
+  });
+
   test('多会话：各自独立消息、切换不串台', async ({ page }) => {
     await mockChatRun(page);
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
