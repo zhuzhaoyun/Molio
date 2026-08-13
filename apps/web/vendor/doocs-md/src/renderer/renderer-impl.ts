@@ -157,6 +157,18 @@ interface ParseResult {
   readingTime: ReadTimeResults
 }
 
+// [MOLIO] Delimiter for a leading YAML frontmatter block. Mirrors the
+// `front-matter` package's own detection (BOM, `---` / `= yaml =` opening,
+// `---` / `...` closing, CRLF tolerated) and is deliberately a superset:
+// matching a block that front-matter ends up not parsing is harmless, while
+// missing one it DOES parse re-leaks raw YAML into the rendered document.
+//
+// SINGLE SOURCE OF TRUTH: also imported by apps/web/src/hooks/useKnowledge.ts
+// (preprocessKbMarkdown) so the preprocessing guard and the parse-failure
+// fallback below can never silently diverge.
+export const FRONTMATTER_BLOCK_RE
+  = /^\uFEFF?(?:---|= yaml =)[ \t]*\r?\n[\s\S]*?\r?\n(?:---|= yaml =|\.\.\.)[ \t]*(?:\r?\n|$)/
+
 function parseFrontMatterAndContent(markdownText: string): ParseResult {
   try {
     const parsed = frontMatter(markdownText)
@@ -179,12 +191,9 @@ function parseFrontMatterAndContent(markdownText: string): ParseResult {
     console.warn(`Error parsing front-matter:`, error)
     // [MOLIO] Strip the malformed frontmatter block instead of rendering it as
     // body — otherwise the raw YAML (--- … ---) leaks into the rendered
-    // document. Delimiter regex mirrors the `front-matter` package (superset,
-    // same one as FRONTMATTER_BLOCK_RE in apps/web/src/hooks/useKnowledge.ts).
-    const withoutBlock = markdownText.replace(
-      /^\uFEFF?(?:---|= yaml =)[ \t]*\r?\n[\s\S]*?\r?\n(?:---|= yaml =|\.\.\.)[ \t]*(?:\r?\n|$)/,
-      '',
-    )
+    // document. Uses the shared FRONTMATTER_BLOCK_RE above (single source of
+    // truth, also imported by apps/web/src/hooks/useKnowledge.ts).
+    const withoutBlock = markdownText.replace(FRONTMATTER_BLOCK_RE, '')
     return {
       yamlData: {},
       markdownContent: withoutBlock,

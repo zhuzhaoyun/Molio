@@ -40,6 +40,9 @@ declare module '*/vendor/doocs-md/src/renderer/renderer-impl' {
 
   export function initRenderer(opts?: IOpts): RendererAPI;
   export const hljs: unknown;
+  /** [MOLIO] Leading YAML frontmatter block delimiter — single source of truth
+   *  shared by the renderer's parse-failure fallback and preprocessKbMarkdown. */
+  export const FRONTMATTER_BLOCK_RE: RegExp;
 }
 
 declare module '*/vendor/doocs-md/src/utils/markdownHelpers' {

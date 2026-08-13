@@ -9,6 +9,7 @@ import { api } from '../api/client';
 import type { ThemeConfig } from '../components/kb/MdStylePanel';
 import { defaultThemeConfig } from '../components/kb/MdStylePanel';
 import { copyHtml } from '@molio/doocs-md/shared/utils/clipboard';
+import { FRONTMATTER_BLOCK_RE } from '@molio/doocs-md/src/renderer/renderer-impl';
 import { vaultStore, useActiveVaultId } from '../stores/vaultStore';
 
 const FILE_LOAD_RETRY_MS = 600;
@@ -123,14 +124,15 @@ export function stripTrackingPixels(markdown: string): string {
  * the block untouched. [[wikilinks]] inside frontmatter stay literal text,
  * which YAML parses fine (KbFrontmatterCard already displays them).
  *
- * The delimiter regex mirrors the `front-matter` package's own detection
- * (BOM, `---` / `= yaml =` opening, `---` / `...` closing, CRLF tolerated),
- * and is deliberately a superset: protecting a block that front-matter ends
- * up not parsing is harmless, while missing one it DOES parse reintroduces
- * the YAML corruption this guard exists to prevent.
+ * The delimiter regex is FRONTMATTER_BLOCK_RE, imported from the vendored
+ * renderer (doocs-md renderer-impl.ts) — a single source of truth shared
+ * with its parse-failure fallback, so the two can never silently drift.
+ * It mirrors the `front-matter` package's own detection (BOM, `---` /
+ * `= yaml =` opening, `---` / `...` closing, CRLF tolerated) and is
+ * deliberately a superset: protecting a block that front-matter ends up not
+ * parsing is harmless, while missing one it DOES parse reintroduces the YAML
+ * corruption this guard exists to prevent.
  */
-const FRONTMATTER_BLOCK_RE =
-  /^\uFEFF?(?:---|= yaml =)[ \t]*\r?\n[\s\S]*?\r?\n(?:---|= yaml =|\.\.\.)[ \t]*(?:\r?\n|$)/;
 
 export function preprocessKbMarkdown(markdown: string, vaultId?: string): string {
   const transform = (body: string): string => {
