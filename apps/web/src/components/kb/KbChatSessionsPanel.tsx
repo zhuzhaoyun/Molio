@@ -703,6 +703,7 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
         onActivate={kbChatSessionsStore.activateSession}
         onClose={handleCloseTab}
         onNewSession={handleNewSession}
+        onRename={(id, title) => kbChatSessionsStore.updateSession(id, { title })}
         onOpenConversation={handleOpenConversation}
         onClosePanel={() => kbChatSessionsStore.setPanelOpen(false)}
         docked={docked}

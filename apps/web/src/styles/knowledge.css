@@ -2944,6 +2944,19 @@
   text-overflow: ellipsis;
   min-width: 0;
 }
+/* 双击重命名 inline 输入框：贴合标签、下划线 accent 提示编辑态 */
+.chat-session-tab-rename {
+  min-width: 0;
+  width: 100%;
+  font: inherit;
+  font-size: 13px;
+  color: inherit;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--accent);
+  outline: none;
+  padding: 0;
+}
 
 /* 关闭按钮：常显（窄栏内比 hover 显隐更易用），hover 加深 */
 .chat-session-tab-close {

@@ -11,6 +11,8 @@ interface Props {
   onActivate: (id: string) => void;
   onClose: (id: string) => void;
   onNewSession: () => void;
+  /** 重命名会话标题（双击 inline 编辑提交） */
+  onRename: (id: string, title: string) => void;
   /** 从历史下拉打开会话（去重入标签） */
   onOpenConversation: (conversationId: string) => void;
   /** 收起面板（保留标签，后台任务继续） */
@@ -50,11 +52,14 @@ function FloatIcon() {
  * 横向滚动容器；溢出时显示 ‹ › 左右翻页箭头（无原生滚动条）；历史 / + 新建 / 收起
  * 三个按钮钉在栏尾始终可见；激活标签变化时自动滚入可见区。运行中的会话标签显示指示点。
  */
-export function ChatSessionTabBar({ sessions, activeSessionId, runningSessionIds, onActivate, onClose, onNewSession, onOpenConversation, onClosePanel, docked = false, onToggleDock, onHeaderDragStart, onHeaderDragMove, onHeaderDragEnd }: Props) {
+export function ChatSessionTabBar({ sessions, activeSessionId, runningSessionIds, onActivate, onClose, onNewSession, onRename, onOpenConversation, onClosePanel, docked = false, onToggleDock, onHeaderDragStart, onHeaderDragMove, onHeaderDragEnd }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<HTMLDivElement>(null);
   const [canLeft, setCanLeft] = useState(false);
   const [canRight, setCanRight] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draftTitle, setDraftTitle] = useState('');
+  const renameCancelRef = useRef(false);
 
   const recompute = () => {
     const el = scrollRef.current;
@@ -85,6 +90,17 @@ export function ChatSessionTabBar({ sessions, activeSessionId, runningSessionIds
       typeof window !== 'undefined' &&
       window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     el.scrollBy({ left: dir * el.clientWidth * 0.8, behavior: reduced ? 'auto' : 'smooth' });
+  };
+
+  const commitRename = (id: string) => {
+    if (renameCancelRef.current) { renameCancelRef.current = false; setEditingId(null); return; }
+    setEditingId(null);
+    const trimmed = draftTitle.trim();
+    if (trimmed) onRename(id, trimmed);
+  };
+  const startRename = (id: string, title: string) => {
+    setEditingId(id);
+    setDraftTitle(title);
   };
 
   return (
@@ -138,7 +154,31 @@ export function ChatSessionTabBar({ sessions, activeSessionId, runningSessionIds
             >
               {isRunning && <span className="chat-session-tab-running" data-testid="kb-chat-session-running" />}
               <span className="chat-session-tab-icon">{s.mode === 'qa' ? '💬' : '⚙️'}</span>
-              <span className="chat-session-tab-title">{s.title}</span>
+              {editingId === s.id ? (
+                <input
+                  className="chat-session-tab-rename"
+                  data-testid="kb-chat-session-rename-input"
+                  value={draftTitle}
+                  autoFocus
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => setDraftTitle(e.target.value)}
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.key === 'Enter') e.currentTarget.blur();
+                    else if (e.key === 'Escape') { renameCancelRef.current = true; e.currentTarget.blur(); }
+                  }}
+                  onBlur={() => commitRename(s.id)}
+                />
+              ) : (
+                <span
+                  className="chat-session-tab-title"
+                  onDoubleClick={(e) => { e.stopPropagation(); startRename(s.id, s.title); }}
+                  title="双击重命名"
+                >
+                  {s.title}
+                </span>
+              )}
               <button
                 type="button"
                 className="chat-session-tab-close"

@@ -408,6 +408,22 @@ test.describe('Floating chat (方案 D)', () => {
     await expect(activeTab).toHaveCSS('font-size', '13px');
   });
 
+  test('双击标签标题重命名：Enter 提交生效', async ({ page }) => {
+    await mockChatRun(page);
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await page.locator('[data-testid="kb-btn-ask"]').click();
+
+    const title = page.locator('[data-testid="kb-chat-session-tab"] .chat-session-tab-title');
+    await title.dblclick();
+    const rename = page.locator('[data-testid="kb-chat-session-rename-input"]');
+    await expect(rename).toBeVisible();
+    await rename.fill('我的会话');
+    await rename.press('Enter');
+
+    await expect(title).toHaveText('我的会话');
+  });
+
   test('KB 页打开默认停靠；首页默认悬浮', async ({ page }) => {
     await mockChatRun(page);
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
