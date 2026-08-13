@@ -13,7 +13,7 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { MdRenderer } from './MdRenderer';
 import { MdStylePanel, defaultThemeConfig, type ThemeConfig } from './MdStylePanel';
-import { preprocessWikiLinks, preprocessWikiEmbeds, proxyExternalImages, stripTrackingPixels } from '../../hooks/useKnowledge';
+import { preprocessKbMarkdown } from '../../hooks/useKnowledge';
 
 export interface MdTypesetEditorProps {
   initialContent: string;
@@ -128,13 +128,12 @@ export function MdTypesetEditor({
 
   // Content for doocs/md themed preview (live-updating as user edits source).
   // Memoized to avoid re-running full-string regex scans on every keystroke.
-  const previewContent = useMemo(() => {
-    const stripped = stripTrackingPixels(content);
-    const withEmbeds = vaultId
-      ? proxyExternalImages(preprocessWikiEmbeds(stripped, vaultId))
-      : proxyExternalImages(stripped);
-    return preprocessWikiLinks(withEmbeds, vaultId);
-  }, [content, vaultId]);
+  // preprocessKbMarkdown keeps any leading YAML frontmatter block verbatim —
+  // rewriting [[wikilinks]] inside it would corrupt the YAML (see useKnowledge).
+  const previewContent = useMemo(
+    () => preprocessKbMarkdown(content, vaultId),
+    [content, vaultId],
+  );
 
   return (
     <div className="kb-typeset-editor">

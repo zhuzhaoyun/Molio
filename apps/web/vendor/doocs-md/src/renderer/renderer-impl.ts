@@ -172,11 +172,23 @@ function parseFrontMatterAndContent(markdownText: string): ParseResult {
     }
   }
   catch (error) {
-    console.error(`Error parsing front-matter:`, error)
+    // [MOLIO] console.warn, not console.error: this is a handled fallback, not
+    // an exception. ARMS only reports consoleError as exceptions, so logging an
+    // error here flooded monitoring for every file whose frontmatter merely
+    // failed to parse (see YAMLException in preprocessKbMarkdown's comment).
+    console.warn(`Error parsing front-matter:`, error)
+    // [MOLIO] Strip the malformed frontmatter block instead of rendering it as
+    // body — otherwise the raw YAML (--- … ---) leaks into the rendered
+    // document. Delimiter regex mirrors the `front-matter` package (superset,
+    // same one as FRONTMATTER_BLOCK_RE in apps/web/src/hooks/useKnowledge.ts).
+    const withoutBlock = markdownText.replace(
+      /^\uFEFF?(?:---|= yaml =)[ \t]*\r?\n[\s\S]*?\r?\n(?:---|= yaml =|\.\.\.)[ \t]*(?:\r?\n|$)/,
+      '',
+    )
     return {
       yamlData: {},
-      markdownContent: markdownText,
-      readingTime: readingTime(markdownText),
+      markdownContent: withoutBlock,
+      readingTime: readingTime(withoutBlock),
     }
   }
 }

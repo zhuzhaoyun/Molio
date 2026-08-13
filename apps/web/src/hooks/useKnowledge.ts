@@ -104,6 +104,47 @@ export function stripTrackingPixels(markdown: string): string {
   );
 }
 
+/* [MOLIO] Frontmatter-safe preprocessing entry point for the doocs/md render path.
+ *
+ * The preprocessing chain below replaces [[wikilinks]] / ![[embeds]] with raw
+ * HTML anchors. It must NEVER touch a leading YAML frontmatter block: the wiki
+ * skills (wiki-build / wiki-save / wiki-ingest) mandate entries like
+ *
+ *   related:
+ *     - "[[相关页面]]"
+ *
+ * Rewriting [[…]] inside a quoted YAML scalar injects unescaped double quotes
+ * (`- "<a class="kb-wiki-link" …`), which makes the frontmatter invalid YAML —
+ * js-yaml throws "bad indentation of a sequence entry", doocs/md's front-matter
+ * parse fails, and its fallback renders the WHOLE text (frontmatter block
+ * included) as body. This was reported by ARMS as a high-volume YAMLException.
+ *
+ * So: split off the frontmatter block, transform only the body, and re-attach
+ * the block untouched. [[wikilinks]] inside frontmatter stay literal text,
+ * which YAML parses fine (KbFrontmatterCard already displays them).
+ *
+ * The delimiter regex mirrors the `front-matter` package's own detection
+ * (BOM, `---` / `= yaml =` opening, `---` / `...` closing, CRLF tolerated),
+ * and is deliberately a superset: protecting a block that front-matter ends
+ * up not parsing is harmless, while missing one it DOES parse reintroduces
+ * the YAML corruption this guard exists to prevent.
+ */
+const FRONTMATTER_BLOCK_RE =
+  /^\uFEFF?(?:---|= yaml =)[ \t]*\r?\n[\s\S]*?\r?\n(?:---|= yaml =|\.\.\.)[ \t]*(?:\r?\n|$)/;
+
+export function preprocessKbMarkdown(markdown: string, vaultId?: string): string {
+  const transform = (body: string): string => {
+    const stripped = stripTrackingPixels(body);
+    const withEmbeds = vaultId ? preprocessWikiEmbeds(stripped, vaultId) : stripped;
+    const proxied = proxyExternalImages(withEmbeds);
+    return preprocessWikiLinks(proxied, vaultId);
+  };
+
+  const match = FRONTMATTER_BLOCK_RE.exec(markdown);
+  if (!match) return transform(markdown);
+  return match[0] + transform(markdown.slice(match[0].length));
+}
+
 interface UseKnowledgeReturn {
   // Data
   vaults: Vault[];
