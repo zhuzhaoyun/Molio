@@ -92,5 +92,22 @@
       ],
       payUrl: '',
     },
+    {
+      id: 'hongloumeng',
+      icon: '🏮', tint: '#F5E3E0', name: '红楼梦',
+      desc: '120 回通行本全文入库，人物、情节、判词互链成图谱，问 AI 任何红楼人物都有原文可溯',
+      file: 'hongloumeng-vault.zip', price: 6.9,
+      tags: ['经典', '文学'],
+      overview: [
+        '《红楼梦》整理版知识库：以 120 回通行本为底本，逐回转写为 Markdown，人物、概念、回目互链成关系图谱，引文附行号可回溯原文。',
+        '贾府上百号人物、千头万绪的情节，PDF 时代只能逐回翻找；现在让 AI 梳理某人物的关系网络、某桩事件的来龙去脉、某首判词的对应情节，回答跨篇互证、原文可溯——曹雪芹埋的线，AI 替你一条条拣出来。',
+      ],
+      highlights: ['120 回全文逐回结构化，人物与情节互链成图谱', '人物、判词、回目引文附行号，可回溯原文', 'Molio / Obsidian 均可直接加载'],
+      preview: [
+        'images/previews/hongloumeng/1.png',
+        'images/previews/hongloumeng/2.png',
+      ],
+      payUrl: '',
+    },
   ];
 })();
