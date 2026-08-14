@@ -161,6 +161,10 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   // 不依赖 el.style.width —— 真实环境里它可能在释放前被清空/覆盖（重渲染/捕获丢失/指针
   // 在窗口外松开由 window 兜底处理），导致提交回退到旧 panelWidth（「拖到最大松开回到拖前宽度」）。
   const dragWidthRef = useRef<number | null>(null);
+  // floatPos 的 ref 镜像：window 兜底清理（[] deps effect）需要读当前 floatPos 判断
+  // 释放时是否保留拖拽左缘（避免悬浮已移动的面板被清 left 后落到默认右侧位）。
+  const floatPosRef = useRef(floatPos);
+  useEffect(() => { floatPosRef.current = floatPos; }, [floatPos]);
 
   const docked = dockMode === 'dock';
   // 知识库页停靠 = 还原改动前的「页内分栏」：面板从页顶占满整高、贴右缘，
@@ -244,15 +248,21 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
       // 保持 inline width 为提交值（而非清空）——避免中间帧闪回 CSS 基础宽 500，
       // 让 ResizeObserver/--kb-dock-w 误同步到旧宽度。
       el.style.width = `${w}px`;
-      el.style.left = '';
-      commitWidth(w);
-      // 悬浮且面板被移动过（floatPos 生效）：左缘此刻是拖拽终点，同步进 floatPos，
-      // 否则重渲染会把 left 跳回旧位置（左缘钉死、右缘外扩的反直觉行为）。
-      if (!docked && floatPos && Number.isFinite(left)) {
+      if (docked) {
+        // 停靠：几何交给 CSS right:0，清掉 inline left
+        el.style.left = '';
+      } else if (floatPos && Number.isFinite(left)) {
+        // 悬浮且面板被移动过：保持拖拽左缘（不清空，避免先落回 CSS right:24 默认位
+        // 再跳回 = 视觉上的「瞬移到最右侧」），并同步进 floatPos 供后续重渲染沿用。
+        el.style.left = `${Math.round(left)}px`;
         const p = { left: Math.round(left), top: floatPos.top };
         setFloatPos(p);
         try { localStorage.setItem(STORAGE_KEY_FLOAT_POS, JSON.stringify(p)); } catch { /* storage unavailable */ }
+      } else {
+        // 悬浮 + 默认位：清 left → CSS right:24px（面板本就在默认位，无跳变）
+        el.style.left = '';
       }
+      commitWidth(w);
     }
     document.body.classList.remove('kb-resizing');
   }, [panelWidth, commitWidth, docked, floatPos, setFloatPos]);
@@ -333,6 +343,7 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
       // 兜底提交：指针捕获被异常释放 / pointerup 发生在窗口外 / 失焦时，handle 的
       // onPointerUp 可能不跑，这里用 dragWidthRef 提交拖拽中的宽度——否则面板停在拖拽
       // 宽度但 panelWidth 状态是旧值，下一次重渲染会跳回拖前宽度（「mouseup 后回退」）。
+      // 与主路径一致：悬浮已移动的面板保持拖拽左缘（不同步清空，避免落到默认右侧位）。
       if (dragWidthRef.current != null) {
         const el = panelElRef.current;
         const w = clampPanelWidth(dragWidthRef.current);
@@ -340,7 +351,16 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
         if (el) {
           el.classList.remove('is-dragging');
           el.style.width = `${w}px`;
-          el.style.left = '';
+          const left = parseFloat(el.style.left);
+          const fp = floatPosRef.current;
+          if (fp && Number.isFinite(left)) {
+            el.style.left = `${Math.round(left)}px`;
+            const p = { left: Math.round(left), top: fp.top };
+            setFloatPos(p);
+            try { localStorage.setItem(STORAGE_KEY_FLOAT_POS, JSON.stringify(p)); } catch { /* storage unavailable */ }
+          } else {
+            el.style.left = '';
+          }
           commitWidth(w);
         }
       }

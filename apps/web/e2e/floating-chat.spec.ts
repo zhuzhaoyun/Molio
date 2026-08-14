@@ -417,6 +417,43 @@ test.describe('Floating chat (方案 D)', () => {
     expect(after).toBeGreaterThanOrEqual(700);
   });
 
+  test('悬浮已移动后面板拖宽到最大释放：位置保持，不跳到最右侧', async ({ page }) => {
+    // 回归：释放时 el.style.left 被清空会把已移动的悬浮面板甩到 CSS 默认 right:24px
+    // （最右侧）再等重渲染跳回。修复后保持拖拽左缘、同步 floatPos，位置不跳变。
+    await mockChatRun(page);
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await page.locator('[data-testid="kb-btn-ask"]').click();
+    const panel = page.locator('[data-testid="kb-chat-panel"]');
+    await expect(panel).toBeVisible();
+    await page.waitForTimeout(300);
+    await page.locator('[data-testid="kb-chat-dock-toggle"]').click();
+    await page.waitForTimeout(300);
+
+    // 先 header 拖动把面板移到自定义位置（floatPos 生效）
+    const tb = (await page.locator('[data-testid="kb-chat-session-tabbar"]').boundingBox())!;
+    await page.mouse.move(tb.x + tb.width - 120, tb.y + 16);
+    await page.mouse.down();
+    await page.mouse.move(tb.x + tb.width - 270, tb.y + 16, { steps: 5 });
+    await page.mouse.up();
+    await page.waitForTimeout(200);
+    const moved = (await panel.boundingBox())!;
+    const movedRight = moved.x + moved.width;
+
+    // 拖宽到最大（右缘应钉在移动后位置）
+    const handle = page.locator('[data-testid="kb-chat-resize-handle"]');
+    const hb = (await handle.boundingBox())!;
+    await page.mouse.move(hb.x + 4, hb.y + 300);
+    await page.mouse.down();
+    await page.mouse.move(hb.x - 400, hb.y + 300, { steps: 8 });
+    await page.mouse.up();
+    await page.waitForTimeout(300);
+
+    const after = (await panel.boundingBox())!;
+    expect(after.width).toBeGreaterThan(moved.width + 100); // 拖宽生效
+    expect(Math.abs(after.x + after.width - movedRight)).toBeLessThan(4); // 右缘不跳到最右侧
+  });
+
   test('悬浮形态可拖拽移动位置，重载后位置保留', async ({ page }) => {
     // KB 页默认停靠 → 经 💬问答 打开后切悬浮，验证移动与位置持久化。
     await mockChatRun(page);
