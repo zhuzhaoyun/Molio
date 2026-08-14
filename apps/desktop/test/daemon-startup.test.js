@@ -310,6 +310,72 @@ describe('main.js: daemon startup failure must show an error page, not spin fore
   });
 });
 
+describe('main.js: daemon startup timeout must tolerate slow first launches', () => {
+  // Regression: the first launch after packaging hit the old 10s timeout while
+  // the daemon did cold-cache startup work before binding its port, showing
+  // "后端服务启动失败" even though the daemon came up seconds later — a restart
+  // "fixed" it. The gate must stay generous (>= 30s).
+  it('should wait at least 30s for the daemon before rejecting', () => {
+    const timeoutMatch = mainJs.match(/daemon startup timeout[\s\S]{0,200}?\},\s*(\d+)\)/);
+    assert.ok(timeoutMatch, 'startup timeout fallback must exist');
+    assert.ok(
+      Number(timeoutMatch[1]) >= 30000,
+      `startup timeout is ${timeoutMatch[1]}ms — must be >= 30000ms`
+    );
+  });
+
+  it('should clear the startup timer once the daemon is ready', () => {
+    assert.ok(
+      mainJs.includes('clearTimeout(startupTimer)'),
+      'the startup timer must be cleared when "listening on" arrives'
+    );
+  });
+});
+
+describe('main.js: early daemon exit must fail startup fast, not wait out the timer', () => {
+  // Regression: when the daemon process died before printing "listening on",
+  // the 'exit' handler only logged — the startup promise was never rejected,
+  // so the app sat out the full 30s startup timer on a blank/spinning window
+  // before finally showing the error page. Both failure paths ('exit' before
+  // ready and spawn 'error') must also clear the timer so a settled promise
+  // never leaves a pending 30s timeout behind.
+  function handlerBlock(marker, endMarker) {
+    const start = mainJs.indexOf(marker);
+    assert.ok(start !== -1, `${marker} must exist in main.js`);
+    const end = mainJs.indexOf(endMarker, start);
+    return mainJs.slice(start, end > start ? end : start + 1500);
+  }
+
+  it('exit handler should reject immediately when the daemon was not started yet', () => {
+    const exitBlock = handlerBlock("daemonProcess.on('exit'", "daemonProcess.on('error'");
+    assert.ok(
+      exitBlock.includes('if (!started)'),
+      'the exit handler must detect a daemon that died before "listening on"'
+    );
+    // Window is generous: the reject carries an explanatory comment block.
+    assert.ok(
+      /if \(!started\)[\s\S]{0,800}?reject\(/.test(exitBlock),
+      'the exit handler must reject the startup promise when the daemon exits early'
+    );
+  });
+
+  it('exit handler should clear the startup timer', () => {
+    const exitBlock = handlerBlock("daemonProcess.on('exit'", "daemonProcess.on('error'");
+    assert.ok(
+      exitBlock.includes('clearTimeout(startupTimer)'),
+      'the exit handler must clear the startup timer so no 30s timeout lingers'
+    );
+  });
+
+  it('spawn error handler should clear the startup timer', () => {
+    const errorBlock = handlerBlock("daemonProcess.on('error'", 'startupTimer = setTimeout');
+    assert.ok(
+      errorBlock.includes('clearTimeout(startupTimer)'),
+      'the spawn error handler must clear the startup timer when it rejects'
+    );
+  });
+});
+
 describe('main.js: graceful daemon shutdown to preserve last assistant reply', () => {
   it('should request /api/shutdown before force-killing daemon', () => {
     assert.ok(

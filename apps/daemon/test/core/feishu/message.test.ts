@@ -1,7 +1,9 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  buildFeishuFrameMessage,
   buildFeishuPrompt,
+  buildFeishuReminderMessage,
   looksLikeArticleUrl,
   parseFeishuMessage,
 } from '../../../src/core/feishu/message.js';
@@ -171,5 +173,74 @@ describe('buildFeishuPrompt', () => {
     assert.ok(prompt.includes('未能自动抓取其正文'));
     assert.ok(prompt.includes('登录飞书账号'));
     assert.ok(prompt.includes(text));
+  });
+});
+
+/**
+ * The full feishu role frame used to ride --append-system-prompt-file, which
+ * the CLI silently drops in some environments (the frame never reached the
+ * model). It is now prepended to the FIRST message of a fresh run — a message
+ * prepend always reaches the model (symmetric with weixin's
+ * buildWeixinFrameMessage).
+ */
+describe('buildFeishuFrameMessage — fresh-spawn full frame', () => {
+  it('prepends the full role frame and preserves the user text', () => {
+    const out = buildFeishuFrameMessage('帮我总结这篇文章');
+    assert.ok(out.includes('本地知识库的飞书入口助手'), 'frame identity present');
+    assert.ok(out.includes('raw/feishu/'), 'ingestion rules present');
+    assert.ok(out.includes('wiki-query'), 'wiki Q&A routing present');
+    assert.ok(out.includes('<attach path='), 'delivery protocol taught by the frame');
+    assert.ok(out.includes('## 本次飞书消息'), 'user-message section header present');
+    assert.ok(out.includes('帮我总结这篇文章'), 'preserves the user text');
+    assert.ok(
+      out.indexOf('本地知识库的飞书入口助手') < out.indexOf('帮我总结这篇文章'),
+      'frame comes before the user text',
+    );
+  });
+
+  it('composes with the injected-markdown reframing from buildFeishuPrompt', () => {
+    const text = '# 某篇飞书文档标题\n\n正文内容…';
+    const out = buildFeishuFrameMessage(text);
+    assert.ok(out.includes('已附带抓取好的 Markdown 正文'), 'prompt reframing present');
+    assert.ok(out.includes(text), 'the markdown body is preserved');
+  });
+});
+
+/**
+ * The first-turn frame teaches the <attach/> protocol, but long sessions get
+ * context-compacted and lose it — the 2026-08-11 failure class (long run
+ * generates a file, then claims no delivery capability). The compact reminder
+ * rides every REUSE turn so the protocol survives the whole life of the run
+ * (the fresh spawn carries the full frame instead, see above).
+ */
+describe('buildFeishuReminderMessage — attach re-anchor', () => {
+  it('teaches the <attach/> delivery protocol and preserves the user text', () => {
+    const out = buildFeishuReminderMessage('把那份报告发给我');
+    assert.ok(out.includes('<attach path='), 'carries the marker format');
+    assert.ok(out.includes('附件'), 'explains the file becomes a real attachment');
+    assert.ok(out.includes('飞书'), 'reminder is feishu-worded');
+    assert.ok(out.includes('把那份报告发给我'), 'preserves the user text');
+    assert.ok(
+      out.indexOf('飞书通道机制提醒') < out.indexOf('把那份报告发给我'),
+      'reminder comes before the user text',
+    );
+  });
+
+  it('stays minimal — no full-frame routing/ingestion content', () => {
+    // Rides every turn; must not re-trigger the frame's 收件/入库/问答 routing.
+    const out = buildFeishuReminderMessage('随便聊两句');
+    assert.ok(!out.includes('wiki-query'), 'no wiki routing');
+    assert.ok(!out.includes('raw/feishu'), 'no ingestion rules');
+    assert.ok(!out.includes('文件回传规则（重要）'), 'not the full frame section');
+    assert.ok(out.length < 600, 'reminder stays short');
+  });
+
+  it('composes with the injected-markdown reframing from buildFeishuPrompt', () => {
+    // materializeWikiLinks case 1: text starts with a fetched markdown body.
+    const text = '# 某篇飞书文档标题\n\n正文内容…';
+    const out = buildFeishuReminderMessage(text);
+    assert.ok(out.includes('已附带抓取好的 Markdown 正文'), 'prompt reframing present');
+    assert.ok(out.includes('飞书通道机制提醒'), 'reminder present');
+    assert.ok(out.includes(text), 'the markdown body is preserved');
   });
 });

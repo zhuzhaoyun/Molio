@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { useAgents } from './hooks/useAgents';
 import { useChat } from './hooks/useChat';
@@ -10,6 +10,8 @@ import { KnowledgeBasePage } from './components/kb/KnowledgeBasePage';
 import { SettingsPage } from './components/settings/SettingsPage';
 import { HistoryPage } from './components/history/HistoryPage';
 import { GraphPage } from './components/graph/GraphPage';
+import { ResourcesPage } from './components/resources/ResourcesPage';
+import { ResourceDetailPage } from './components/resources/ResourceDetailPage';
 import { UpdateNotification } from './components/UpdateNotification';
 import { PreloadToast } from './components/PreloadToast';
 import { LanguageProvider } from './i18n/LanguageProvider';
@@ -17,6 +19,8 @@ import type { Locale } from './i18n';
 import { api } from './api/client';
 import { useActiveVault, vaultStore } from './stores/vaultStore';
 import { messageSelectionStore } from './stores/messageSelectionStore';
+import { usePendingPrefill, skillPrefillStore } from './stores/skillPrefillStore';
+import { SkillEditor, type SkillFormValues } from './components/settings/SkillEditor';
 import './styles/rail.css';
 import './styles/home.css';
 import './styles/knowledge.css';
@@ -25,6 +29,7 @@ import './styles/settings.css';
 import './styles/channels.css';
 import './styles/history.css';
 import './styles/graph.css';
+import './styles/resources.css';
 import './App.css';
 
 const STORAGE_KEY_LAST_ROUTE = 'molio.lastRoute';
@@ -39,6 +44,30 @@ export default function App() {
   const [locale, setLocale] = useState<Locale>('zh');
   const [configLoaded, setConfigLoaded] = useState(false);
   const chat = useChat({ agentId: selectedAgent, cwd: activeVault?.path });
+
+  // "Save as skill" — assistant-message buttons push a prefill into the store;
+  // the fullscreen editor is hosted here (above the chat) to avoid prop-drilling.
+  const pendingPrefill = usePendingPrefill();
+  const [skillPrefillBusy, setSkillPrefillBusy] = useState(false);
+  const [skillPrefillError, setSkillPrefillError] = useState<string | null>(null);
+  const closePrefill = useCallback(() => {
+    skillPrefillStore.setPendingPrefill(null);
+    setSkillPrefillError(null);
+  }, []);
+  const savePrefillSkill = useCallback(async (values: SkillFormValues) => {
+    setSkillPrefillBusy(true);
+    setSkillPrefillError(null);
+    try {
+      await api.createSkill(values);
+      skillPrefillStore.setPendingPrefill(null);
+    } catch (err) {
+      // Keep the editor open with the values so the user can retry; surface the
+      // failure inline instead of swallowing it as an unhandled rejection.
+      setSkillPrefillError((err as Error).message);
+    } finally {
+      setSkillPrefillBusy(false);
+    }
+  }, []);
 
   // Persist current route on change
   useEffect(() => {
@@ -194,10 +223,21 @@ export default function App() {
           } />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/graph" element={<GraphPage />} />
+            <Route path="/resources" element={<ResourcesPage />} />
+            <Route path="/resources/:id" element={<ResourceDetailPage />} />
           </Routes>
         </div>
         <UpdateNotification />
         <PreloadToast />
+        <SkillEditor
+          show={pendingPrefill !== null}
+          mode="prefill"
+          prefillData={pendingPrefill}
+          busy={skillPrefillBusy}
+          externalError={skillPrefillError}
+          onClose={closePrefill}
+          onSave={savePrefillSkill}
+        />
       </div>
     </LanguageProvider>
   );

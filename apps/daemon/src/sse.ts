@@ -123,9 +123,21 @@ export function createSSEStream(
         // Leave the whole gap to pull(), which replays it in order from the
         // run buffer once the consumer drains.
         if (lastId > lastDeliveredId + 1) return;
+        // Advance lastDeliveredId BEFORE enqueueing. controller.enqueue() is
+        // re-entrant: when the consumer has a pending read() (a live renderer
+        // almost always does), Node fulfills that read from the chunk, sees
+        // desiredSize > 0, and SYNCHRONOUSLY calls pull() — while this callback
+        // is still mid-flight. Advancing first makes that re-entrant pull() see
+        // lastDeliveredId === getLastEventId() and skip, instead of replaying
+        // the very event we're delivering and sending the same frame twice (the
+        // v0.3.42 "duplicated assistant reply" bug). If enqueue throws, the
+        // stream is dead; the event is still in run.events and a reconnect
+        // (client ?after=<its last RECEIVED seq>) replays it — the daemon's
+        // lastDeliveredId on a dead stream never feeds a reconnect, so the
+        // advance cannot cause data loss here.
+        lastDeliveredId = lastId;
         try {
           safeEnqueue(controller, frameFor(lastId, event));
-          lastDeliveredId = lastId;
         } catch {
           // Diagnostic: emitEvent fan-out reached this listener but enqueue failed —
           // the stream is dead. This is the smoking gun for assumption 2.
