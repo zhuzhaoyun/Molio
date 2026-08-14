@@ -71,7 +71,7 @@ test.describe('multi-window vault isolation', () => {
     await ctxB.close();
   });
 
-  test('switching vault in one window reflects ?vault= and does not affect the other', async ({ browser }) => {
+  test('vault switcher opens a different vault in a NEW window (Obsidian-like); current window stays', async ({ browser }) => {
     const ctxA = await browser.newContext();
     const ctxB = await browser.newContext();
     const pageA = await ctxA.newPage();
@@ -81,16 +81,20 @@ test.describe('multi-window vault isolation', () => {
     await expect(pageA.locator('.kb-vault-bar__name')).toHaveText('mw-a');
     await expect(pageB.locator('.kb-vault-bar__name')).toHaveText('mw-b');
 
-    // Window A switches to vault B via the vault manager modal.
+    // Window A (already on vault A) picks vault B in the vault manager → the
+    // pick opens a NEW window (popup) loading vault B, NOT replacing window A.
     await pageA.locator('.kb-vault-bar').click();
+    const popupPromise = pageA.waitForEvent('popup');
     await pageA.locator('.vm-vault-item', { hasText: 'mw-b' }).click();
-    await expect(pageA.locator('.kb-vault-bar__name')).toHaveText('mw-b');
+    const popup = await popupPromise;
+    await popup.waitForURL(/vault=/);
+    expect(new URL(popup.url()).searchParams.get('vault')).toBe(vaultBId);
 
-    // URL in window A now carries the new vault.
-    await expect.poll(async () => new URL(pageA.url()).searchParams.get('vault')).toBe(vaultBId);
-    // Window B untouched — still its own vault and URL.
+    // Window A is untouched — still pinned to vault A.
+    await expect(pageA.locator('.kb-vault-bar__name')).toHaveText('mw-a');
+    expect(new URL(pageA.url()).searchParams.get('vault')).toBe(vaultAId);
+    // Window B untouched.
     await expect(pageB.locator('.kb-vault-bar__name')).toHaveText('mw-b');
-    expect(new URL(pageB.url()).searchParams.get('vault')).toBe(vaultBId);
     await ctxA.close();
     await ctxB.close();
   });
@@ -108,9 +112,9 @@ test.describe('multi-window vault isolation', () => {
     await expect(pageA.locator('.kb-vault-bar__name')).toHaveText('mw-a');
     await expect(pageB.locator('.kb-vault-bar__name')).toHaveText('mw-a');
 
-    // Page A 切到 vault B → 写共享 localStorage.activeVaultId=B、URL ?vault=B
-    await pageA.locator('.kb-vault-bar').click();
-    await pageA.locator('.vm-vault-item', { hasText: 'mw-b' }).click();
+    // Page A 切到 vault B（URL 导航——vault 切换 modal 现在开新窗，此测试专注
+    // 共享 localStorage 隔离，故用 URL 路径切换）→ 写共享 localStorage.activeVaultId=B
+    await pageA.goto(`${WEB}/knowledge?vault=${vaultBId}`);
     await expect(pageA.locator('.kb-vault-bar__name')).toHaveText('mw-b');
     await expect.poll(async () => new URL(pageA.url()).searchParams.get('vault')).toBe(vaultBId);
 
@@ -170,9 +174,9 @@ test.describe('multi-window vault isolation', () => {
     await input.press('Enter');
     await expect.poll(() => runs.length).toBeGreaterThanOrEqual(1);
 
-    // Switch to vault B and send again.
-    await page.locator('.kb-vault-bar').click();
-    await page.locator('.vm-vault-item', { hasText: 'mw-b' }).click();
+    // Switch to vault B (URL navigation — the vault-switcher modal now opens a
+    // new window by design) and send again.
+    await page.goto(`${WEB}/knowledge?vault=${vaultBId}`);
     await expect(page.locator('.kb-vault-bar__name')).toHaveText('mw-b');
     await page.locator('.kb-tree-item', { hasText: 'gamma.md' }).first().click();
     await page.locator('[data-testid="kb-btn-ask"]').click();

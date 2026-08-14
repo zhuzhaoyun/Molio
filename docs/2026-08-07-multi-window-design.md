@@ -65,6 +65,7 @@ localStorage `molio.activeVaultId` 降级为「无 URL 参数的新窗口的默�
 | 2. 窗口-vault 关系 | **一窗一 vault**（语义清晰；一窗多 vault = P3 分屏，另论） |
 | 3. daemon `active_vault` 语义 | **最后激活窗口的 vault**（每窗口切换时已同步；Clipper 协议零改动） |
 | 4. 开工时机 | **现在开工**；tabs 分片视 P1 进度——已合并则直接用 `createTabsStore()`，否则本地同形工厂、P1 合并后 rebase 对齐 |
+| 5. vault 切换（2026-08-11 补充） | **Obsidian 式多开**：窗口已 URL 钉在库 A（`?vault=A`）时，vault 管理器选库 B → **新开窗口**加载 B，当前窗保留在 A；窗口未钉库（全新 `/knowledge`）→ 原地加载选中库；选同库 → no-op。判断依据是 URL `?vault=` 而非 `kb.activeVault`（后者回退到持久化默认库，会把首次打开误判为跨库）。**附带修复**：KB 聊天会话跨库泄漏——多开会话 store 是全局的，新窗继承旧库活跃会话（cwd=B + conversationId=A 串线）→ KbChatSession 挂载/切库时按 `session.vaultId ≠ 当前 vaultId` 重置会话血统并重绑定当前库 |
 
 ## 四、实施方案
 

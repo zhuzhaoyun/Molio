@@ -13,7 +13,9 @@ import * as path from 'path';
 let vault: TempVault;
 
 const openTab = async (page: import('@playwright/test').Page, name: string) => {
-  await page.locator('.kb-tree-item').filter({ hasText: name }).click();
+  // Exact-name match — hasText:name is a substring check that collides when the
+  // vault also has e.g. alpha.md (contains "a.md") and sub1/a.md.
+  await page.locator('.kb-tree-item').filter({ has: page.getByText(name, { exact: true }) }).click();
 };
 const expandFolder = async (page: import('@playwright/test').Page, name: string) => {
   await page.locator('.kb-tree-group-label').filter({ hasText: name }).click();

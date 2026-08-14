@@ -370,6 +370,25 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
     openInNewWindow(url);
   }, [kb.activeVault?.id]);
 
+  /**
+   * Obsidian-like vault opening from the vault manager (bottom-left vault bar):
+   * if this window is ALREADY pinned to a vault (?vault= in the URL), picking a
+   * DIFFERENT vault opens it in a NEW window — the current vault stays open,
+   * not replaced. Only when the window is not URL-pinned yet (fresh /knowledge,
+   * even if a vault is persisted/auto-selected) does the pick load in place.
+   * Note: must key on the URL, not kb.activeVault — activeVault falls back to
+   * the persisted default, which would wrongly treat a first-open as cross-vault.
+   */
+  const handleVaultPick = useCallback((id: string) => {
+    const pinnedVaultId = new URLSearchParams(window.location.search).get('vault');
+    if (pinnedVaultId && pinnedVaultId !== id) {
+      kb.setShowVaultSwitcher(false);
+      openInNewWindow(`/knowledge?vault=${encodeURIComponent(id)}`);
+    } else {
+      kb.selectVault(id);
+    }
+  }, [kb.selectVault, kb.setShowVaultSwitcher]);
+
   // When URL navigation resolves, open in tab. The path from external
   // navigation (assistant links, molio://, graph) may omit the extension and/or
   // wiki/ prefix, so ask the daemon to canonicalize it before opening — this
@@ -1070,7 +1089,7 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
         vaults={kb.vaults}
         activeVaultId={kb.activeVault?.id ?? null}
         onClose={() => kb.setShowVaultSwitcher(false)}
-        onSelect={kb.selectVault}
+        onSelect={handleVaultPick}
         onCreate={kb.createVault}
         onOpen={kb.openVault}
         onDelete={kb.deleteVault}

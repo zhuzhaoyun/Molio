@@ -27,6 +27,8 @@ interface KbChatSessionProps {
   active: boolean;
   agentId: string | null;
   vaultPath: string | null;
+  /** 当前窗口的 vault id — 用于挂载时检测跨库会话泄漏 */
+  vaultId: string | null;
   /** 就此提问带入的选中文本（瞬态，首条消息消费） */
   selectedText?: string | null;
   onSelectedTextConsumed?: () => void;
@@ -53,7 +55,7 @@ function toChatMessage(m: ContractChatMessage): ChatMessage {
 }
 
 export function KbChatSession({
-  session, active, agentId, vaultPath, selectedText, onSelectedTextConsumed,
+  session, active, agentId, vaultPath, vaultId, selectedText, onSelectedTextConsumed,
   onRunningChange, onComplete, onLoadError, registerApi, unregisterApi,
 }: KbChatSessionProps) {
   const { t } = useI18n();
@@ -146,11 +148,17 @@ export function KbChatSession({
   useEffect(() => {
     const prev = prevVaultPathRef.current;
     prevVaultPathRef.current = vaultPath;
-    if (prev !== null && prev !== vaultPath) {
+    // 跨库判定：会话所属 vault 与当前窗口 vault 不一致——两种场景都会触发：
+    // ① SPA 切库（vaultPath 变化）② 多开新窗/重载后首轮挂载继承了旧库会话
+    // （此时 vaultPath 首次渲染为 null、vault 加载后才就位，不能依赖 prev===vaultPath 判首挂载）。
+    // 重置会话血统并重绑定当前库，避免 cwd=当前库 + conversationId=旧库 的串线；
+    // 必须一并更新 vaultId，否则重置后每次重跑判定仍跨库、反复重置。
+    const crossVault = session.vaultId != null && vaultId != null && session.vaultId !== vaultId;
+    if ((prev !== null && prev !== vaultPath) || crossVault) {
       resetRef.current();
-      kbChatSessionsStore.updateSession(session.id, { conversationId: null });
+      kbChatSessionsStore.updateSession(session.id, { conversationId: null, vaultId: vaultId ?? session.vaultId });
     }
-  }, [vaultPath, session.id]);
+  }, [vaultPath, session.id, session.vaultId, vaultId]);
   // 重挂载/切历史恢复：DB 加载后若该会话存在活跃 run（running/pending），重新订阅回放直播。
   // listRuns 失败 → 退化为静态历史（不阻塞加载）。守卫条件（末条是 user）在 resumeRun 内部。
   const maybeResume = useCallback(async (conversationId: string) => {
