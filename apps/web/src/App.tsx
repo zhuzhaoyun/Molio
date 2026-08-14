@@ -6,7 +6,6 @@ import { HomePage } from './components/HomePage';
 
 import { NavRail } from './components/NavRail';
 import { KnowledgeBasePage } from './components/kb/KnowledgeBasePage';
-import { FloatingChatButton } from './components/kb/FloatingChatButton';
 import { KbChatSessionsPanel, type KbChatSessionsPanelHandle } from './components/kb/KbChatSessionsPanel';
 import { SettingsPage } from './components/settings/SettingsPage';
 import { HistoryPage } from './components/history/HistoryPage';
@@ -19,6 +18,7 @@ import { api } from './api/client';
 import { useActiveVault, vaultStore } from './stores/vaultStore';
 import { currentContextStore, type CurrentContext } from './stores/currentContextStore';
 import { messageSelectionStore } from './stores/messageSelectionStore';
+import { kbChatSessionsStore } from './stores/kbChatSessionsStore';
 import './styles/rail.css';
 import './styles/home.css';
 import './styles/knowledge.css';
@@ -58,6 +58,14 @@ export default function App() {
     currentContextStore.set({
       page: known.includes(page) ? page : 'other',
     });
+  }, [location.pathname]);
+
+  // 入口收敛（暂时屏蔽右下角悬浮按钮）：面板只在 KB 页经 💬问答 等入口唤起。
+  // 离开 /knowledge 时若面板开着则自动收起——后台任务继续但不可见，回 KB 可重新唤起。
+  useEffect(() => {
+    if (location.pathname !== '/knowledge') {
+      kbChatSessionsStore.setPanelOpen(false);
+    }
   }, [location.pathname]);
 
   // On mount, restore last route (only if at root "/")
@@ -211,9 +219,9 @@ export default function App() {
             <Route path="/graph" element={<GraphPage />} />
           </Routes>
         </div>
-        {/* 全局悬浮对话（方案 D）：面板常驻挂载 + CSS --closed 隐藏，保 ref 恒有效。
-            按钮在面板收起时显示，点击展开面板。任意页面可用。 */}
-        <FloatingChatButton />
+        {/* 全局悬浮对话面板（方案 D）：面板常驻挂载 + CSS --closed 隐藏，保 ref 恒有效。
+            右下角悬浮按钮已暂时屏蔽（Task 6）——面板只在 KB 页经 💬问答 等入口唤起，
+            离开 /knowledge 自动收起（见上方 effect）。FloatingChatButton 组件保留待回退。 */}
         <KbChatSessionsPanel
           ref={kbChatPanelRef}
           agentId={selectedAgent}
