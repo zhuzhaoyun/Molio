@@ -2,6 +2,7 @@
 import { test, expect } from '@playwright/test';
 import { createTempVault, cleanupTempVault, type TempVault } from './helpers/cleanup';
 import { mockChatRun, unmockAll } from './helpers/mock-sse';
+import { clickNav } from './helpers/navigation';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -68,11 +69,28 @@ test.describe('Floating chat (方案 D)', () => {
     await page.locator('[data-testid="kb-btn-ask"]').click();
     await expect(page.locator('[data-testid="kb-chat-panel"]')).toBeVisible();
 
-    // 切到首页 → 面板自动收起（后台任务继续），首页无悬浮按钮可再唤起
-    await page.goto('http://localhost:5173/');
+    // 客户端跳转首页 → 面板自动收起（后台任务继续），首页无悬浮按钮可再唤起
+    await clickNav(page, 'home');
     await expect(page.locator('.home-page')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('[data-testid="kb-chat-panel"]')).toBeHidden();
     await expect(page.locator('[data-testid="floating-chat-btn"]')).toHaveCount(0);
+  });
+
+  test('离开 KB 页面板就地收起：保持停靠形态关闭（不先跳悬浮再消失）', async ({ page }) => {
+    await mockChatRun(page);
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await page.locator('[data-testid="kb-btn-ask"]').click();
+    const panel = page.locator('[data-testid="kb-chat-panel"]');
+    await expect(panel).toBeVisible();
+    await expect(panel).toHaveClass(/floating-chat-panel--dock-kb/);
+
+    // 客户端跳转首页 → 面板自动收起；收起过程保持停靠形态（原地关闭），
+    // 回归：此前页面切换 effect 把 dockMode 换成悬浮，几何跳到浮态再淡出（视觉 bug）
+    await clickNav(page, 'home');
+    await expect(page.locator('.home-page')).toBeVisible({ timeout: 5_000 });
+    await expect(panel).toBeHidden();
+    await expect(panel).toHaveClass(/floating-chat-panel--dock/);
   });
 
   test('面板开合有升入动画：open 态配置 opacity+transform 过渡，收起后 visibility 隐藏', async ({ page }) => {

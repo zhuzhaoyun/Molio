@@ -128,8 +128,12 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   const [dockMode, setDockModeState] = useState<'float' | 'dock'>(() =>
     dockByPage[page] ?? defaultDockFor(page),
   );
-  // 按页记忆停靠形态：页面切换时，面板形态跟随该页记忆（默认 KB→停靠、其余→悬浮）。
+  // 按页记忆停靠形态：进入 KB 页时应用该页记忆（默认停靠）。
+  // 离开 KB 页不切换形态——悬浮按钮已屏蔽、面板只在 KB 页打开，离开时面板即将被自动收起，
+  // 原地从当前几何关闭；若在此把 dockMode 换成悬浮，会先跳到悬浮几何再淡出（视觉 bug）。
+  // 面板无法在非 KB 页打开，故非 KB 页的形态记忆不再需要生效。
   useEffect(() => {
+    if (page !== 'knowledge') return;
     setDockModeState(dockByPage[page] ?? defaultDockFor(page));
     // 仅响应 page 导航，不含 dockByPage（切换停靠时 setDockMode 已同步 state，无需回读）
     // eslint-disable-next-line react-hooks/exhaustive-deps
