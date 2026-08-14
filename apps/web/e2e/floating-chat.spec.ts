@@ -389,6 +389,34 @@ test.describe('Floating chat (方案 D)', () => {
     expect(Math.abs(end.x + end.width - pinnedRight)).toBeLessThan(2);
   });
 
+  test('停靠态拖宽到最大后释放保持，不回退到拖前宽度', async ({ page }) => {
+    // 回归：拖宽提交依赖 el.style.width，真实环境下它可能在释放前被清空/覆盖，
+    // 回退到旧 panelWidth。现从 dragWidthRef 提交（真值源），拖到最大松开必须保持。
+    await mockChatRun(page);
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await page.locator('[data-testid="kb-btn-ask"]').click();
+    const panel = page.locator('[data-testid="kb-chat-panel"]');
+    await expect(panel).toBeVisible();
+    await page.waitForTimeout(300);
+    const before = (await panel.boundingBox())!.width;
+
+    const handle = page.locator('[data-testid="kb-chat-resize-handle"]');
+    const hb = (await handle.boundingBox())!;
+    const sx = hb.x + 4, sy = hb.y + 300;
+    await page.mouse.move(sx, sy);
+    await page.mouse.down();
+    // 拖到远超最大宽度（1280 视口 max=720）
+    await page.mouse.move(sx - 400, sy, { steps: 8 });
+    await page.mouse.up();
+    await page.waitForTimeout(300);
+
+    const after = (await panel.boundingBox())!.width;
+    // 保持最大宽度（720），不回退到拖前宽度
+    expect(after).toBeGreaterThan(before + 100);
+    expect(after).toBeGreaterThanOrEqual(700);
+  });
+
   test('悬浮形态可拖拽移动位置，重载后位置保留', async ({ page }) => {
     // KB 页默认停靠 → 经 💬问答 打开后切悬浮，验证移动与位置持久化。
     await mockChatRun(page);

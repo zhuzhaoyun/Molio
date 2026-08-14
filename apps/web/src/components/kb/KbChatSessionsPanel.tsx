@@ -157,6 +157,10 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   const heightDragRef = useRef<{ startY: number; startHeight: number; opposite: number; handleEl: HTMLElement } | null>(null);
   // 头部拖拽移动悬浮位置（moveRef 真值源：拖动中直接写 DOM，release 时提交 floatPos）
   const moveRef = useRef<{ grabX: number; grabY: number; fromDock: boolean } | null>(null);
+  // 拖宽实时值（真值源）：拖动中写 DOM 的同时记到 ref，release 从 ref 提交。
+  // 不依赖 el.style.width —— 真实环境里它可能在释放前被清空/覆盖（重渲染/捕获丢失/指针
+  // 在窗口外松开由 window 兜底处理），导致提交回退到旧 panelWidth（「拖到最大松开回到拖前宽度」）。
+  const dragWidthRef = useRef<number | null>(null);
 
   const docked = dockMode === 'dock';
   // 知识库页停靠 = 还原改动前的「页内分栏」：面板从页顶占满整高、贴右缘，
@@ -219,6 +223,7 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     const el = panelElRef.current;
     if (!d || !el) return;
     const w = clampPanelWidth(d.startWidth + (d.startX - e.clientX));
+    dragWidthRef.current = w; // 真值源，release 从这提交
     el.style.width = `${w}px`;
     // over-constrained 时 left 生效：显式左缘 = 对侧右缘 - 宽 → 右缘钉死、左缘跟随光标
     el.style.left = `${d.opposite - w}px`;
@@ -231,9 +236,14 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     d?.handleEl.classList.remove('is-dragging');
     if (el) {
       el.classList.remove('is-dragging');
-      const w = clampPanelWidth(parseFloat(el.style.width) || panelWidth);
+      // 从 dragWidthRef 提交（真值源），不依赖 el.style.width —— 避免其被清空/覆盖时
+      // 回退到旧 panelWidth（「拖到最大松开回到拖前宽度」）。
+      const w = clampPanelWidth(dragWidthRef.current ?? panelWidth);
+      dragWidthRef.current = null;
       const left = parseFloat(el.style.left);
-      el.style.width = '';
+      // 保持 inline width 为提交值（而非清空）——避免中间帧闪回 CSS 基础宽 500，
+      // 让 ResizeObserver/--kb-dock-w 误同步到旧宽度。
+      el.style.width = `${w}px`;
       el.style.left = '';
       commitWidth(w);
       // 悬浮且面板被移动过（floatPos 生效）：左缘此刻是拖拽终点，同步进 floatPos，
@@ -320,6 +330,20 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     const endAllDrags = () => {
       dragRef.current?.handleEl.classList.remove('is-dragging');
       heightDragRef.current?.handleEl.classList.remove('is-dragging');
+      // 兜底提交：指针捕获被异常释放 / pointerup 发生在窗口外 / 失焦时，handle 的
+      // onPointerUp 可能不跑，这里用 dragWidthRef 提交拖拽中的宽度——否则面板停在拖拽
+      // 宽度但 panelWidth 状态是旧值，下一次重渲染会跳回拖前宽度（「mouseup 后回退」）。
+      if (dragWidthRef.current != null) {
+        const el = panelElRef.current;
+        const w = clampPanelWidth(dragWidthRef.current);
+        dragWidthRef.current = null;
+        if (el) {
+          el.classList.remove('is-dragging');
+          el.style.width = `${w}px`;
+          el.style.left = '';
+          commitWidth(w);
+        }
+      }
       dragRef.current = null;
       heightDragRef.current = null;
       moveRef.current = null;
