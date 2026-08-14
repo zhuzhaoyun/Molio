@@ -157,6 +157,18 @@ interface ParseResult {
   readingTime: ReadTimeResults
 }
 
+// [MOLIO] Delimiter for a leading YAML frontmatter block. Mirrors the
+// `front-matter` package's own detection (BOM, `---` / `= yaml =` opening,
+// `---` / `...` closing, CRLF tolerated) and is deliberately a superset:
+// matching a block that front-matter ends up not parsing is harmless, while
+// missing one it DOES parse re-leaks raw YAML into the rendered document.
+//
+// SINGLE SOURCE OF TRUTH: also imported by apps/web/src/hooks/useKnowledge.ts
+// (preprocessKbMarkdown) so the preprocessing guard and the parse-failure
+// fallback below can never silently diverge.
+export const FRONTMATTER_BLOCK_RE
+  = /^\uFEFF?(?:---|= yaml =)[ \t]*\r?\n[\s\S]*?\r?\n(?:---|= yaml =|\.\.\.)[ \t]*(?:\r?\n|$)/
+
 function parseFrontMatterAndContent(markdownText: string): ParseResult {
   try {
     const parsed = frontMatter(markdownText)
@@ -172,11 +184,20 @@ function parseFrontMatterAndContent(markdownText: string): ParseResult {
     }
   }
   catch (error) {
-    console.error(`Error parsing front-matter:`, error)
+    // [MOLIO] console.warn, not console.error: this is a handled fallback, not
+    // an exception. ARMS only reports consoleError as exceptions, so logging an
+    // error here flooded monitoring for every file whose frontmatter merely
+    // failed to parse (see YAMLException in preprocessKbMarkdown's comment).
+    console.warn(`Error parsing front-matter:`, error)
+    // [MOLIO] Strip the malformed frontmatter block instead of rendering it as
+    // body — otherwise the raw YAML (--- … ---) leaks into the rendered
+    // document. Uses the shared FRONTMATTER_BLOCK_RE above (single source of
+    // truth, also imported by apps/web/src/hooks/useKnowledge.ts).
+    const withoutBlock = markdownText.replace(FRONTMATTER_BLOCK_RE, '')
     return {
       yamlData: {},
-      markdownContent: markdownText,
-      readingTime: readingTime(markdownText),
+      markdownContent: withoutBlock,
+      readingTime: readingTime(withoutBlock),
     }
   }
 }
