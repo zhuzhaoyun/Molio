@@ -22,6 +22,19 @@ function readPersistedVaultId(): string | null {
   }
 }
 
+/**
+ * Read ?vault= from the window URL — the per-window authoritative vault.
+ * Each BrowserWindow / browser tab is a separate renderer, so this module-level
+ * read is per-window. Fresh loads of /knowledge?vault=X initialize straight to X.
+ */
+function readUrlVaultId(): string | null {
+  try {
+    return new URLSearchParams(window.location.search).get('vault');
+  } catch {
+    return null;
+  }
+}
+
 /** Persist vault ID to localStorage. */
 function persistVaultId(id: string | null) {
   try {
@@ -33,7 +46,7 @@ function persistVaultId(id: string | null) {
   } catch { /* storage unavailable */ }
 }
 
-let activeVaultId: string | null = readPersistedVaultId();
+let activeVaultId: string | null = readUrlVaultId() ?? readPersistedVaultId();
 let vaults: Vault[] = [];
 const listeners = new Set<Listener>();
 

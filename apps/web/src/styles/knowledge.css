@@ -40,7 +40,7 @@
 /* Toolbar icon buttons. `:not(.kb-sort-item)` keeps the 28×28 sizing off the
    sort dropdown's menu items, which live inside the toolbar but need their
    own full-width layout (see .kb-sort-item). */
-.kb-file-toolbar button:not(.kb-sort-item) {
+.kb-file-toolbar button:not(.kb-sort-item):not(.kb-create-item) {
   width: 26px;
   height: 26px;
   padding: 0;
@@ -55,12 +55,12 @@
   transition: all 120ms ease;
 }
 
-.kb-file-toolbar button:not(.kb-sort-item) svg {
+.kb-file-toolbar button:not(.kb-sort-item):not(.kb-create-item) svg {
   width: 15px;
   height: 15px;
 }
 
-.kb-file-toolbar button:not(.kb-sort-item):hover {
+.kb-file-toolbar button:not(.kb-sort-item):not(.kb-create-item):hover {
   background: var(--bg-subtle);
   color: var(--text);
 }
@@ -121,6 +121,67 @@
   display: inline-flex;
   justify-content: center;
   font-size: 12px;
+}
+
+/* Unified 新建 dropdown (left tree toolbar) — note / folder / new-window.
+   The trigger is a standard ghost icon button (plus + tooltip), matching the
+   rest of the toolbar. The dropdown follows the app's context-menu language
+   (ctx-menu): elevated panel, entry animation, rounded items, warm hover. */
+.kb-create-menu {
+  position: relative;
+  flex-shrink: 0;
+}
+/* Dropdown — elevated panel matching ctx-menu, warm hover throughout.
+   position:fixed + inline left/top (computed from the trigger on open) so the
+   file panel's overflow:hidden can't clip it at narrow panel widths. */
+.kb-create-dropdown {
+  position: fixed;
+  min-width: 184px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), 0 1px 4px rgba(0, 0, 0, 0.08);
+  padding: 4px;
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  animation: ctx-menu-in 90ms ease;
+}
+.kb-create-item {
+  background: none;
+  border: none;
+  text-align: left;
+  padding: 7px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  white-space: nowrap;
+  line-height: 1.2;
+  border-radius: 6px;
+  transition: background 90ms ease, color 90ms ease;
+}
+.kb-create-item svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: color 90ms ease;
+}
+.kb-create-dropdown .kb-create-item:hover {
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+.kb-create-dropdown .kb-create-item:hover svg { color: var(--accent); }
+.kb-create-divider {
+  height: 1px;
+  margin: 4px 8px;
+  background: var(--border-soft);
 }
 
 /* Vault bar at bottom */

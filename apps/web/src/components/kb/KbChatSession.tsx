@@ -27,6 +27,8 @@ interface KbChatSessionProps {
   active: boolean;
   agentId: string | null;
   vaultPath: string | null;
+  /** 当前窗口的 vault id — 用于挂载时检测跨库会话泄漏 */
+  vaultId: string | null;
   /** 就此提问带入的选中文本（瞬态，首条消息消费） */
   selectedText?: string | null;
   onSelectedTextConsumed?: () => void;
@@ -53,7 +55,7 @@ function toChatMessage(m: ContractChatMessage): ChatMessage {
 }
 
 export function KbChatSession({
-  session, active, agentId, vaultPath, selectedText, onSelectedTextConsumed,
+  session, active, agentId, vaultPath, vaultId, selectedText, onSelectedTextConsumed,
   onRunningChange, onComplete, onLoadError, registerApi, unregisterApi,
 }: KbChatSessionProps) {
   const { t } = useI18n();
@@ -147,6 +149,28 @@ export function KbChatSession({
   const resumeRef = useRef(chat.resumeRun); resumeRef.current = chat.resumeRun;
   // 防卸载后异步回调（maybeResume 的 listRuns）触发订阅
   const mountedRef = useRef(false);
+  // 会话线程绑定 vault（run 的 cwd）。切换活跃 vault 不得续写旧 vault 的会话线程 ——
+  // 重置会话血统，让下一次发送从新线程开始（多窗口「一窗一 vault」会话隔离）。
+  // 从旧 useKbChat 的 vault 切换重置移植而来：PR #202 的多会话面板在 vault 切换时
+  // 只清 @文件上下文、保留 conversationId，会泄漏旧 vault 线程（multi-window E2E 验证）。
+  // 首轮挂载 prev 为 null → 不触发；仅真正的 vault 变化（prev 非空且不同）才重置。
+  // reset() 会清空消息 + conversationId + 关闭 SSE，但不会 cancel daemon 进程 ——
+  // 与「关闭会话」中途离场一致，遗留 run 的行为可接受（见旧 useKbChat 注释）。
+  const prevVaultPathRef = useRef(vaultPath);
+  useEffect(() => {
+    const prev = prevVaultPathRef.current;
+    prevVaultPathRef.current = vaultPath;
+    // 跨库判定：会话所属 vault 与当前窗口 vault 不一致——两种场景都会触发：
+    // ① SPA 切库（vaultPath 变化）② 多开新窗/重载后首轮挂载继承了旧库会话
+    // （此时 vaultPath 首次渲染为 null、vault 加载后才就位，不能依赖 prev===vaultPath 判首挂载）。
+    // 重置会话血统并重绑定当前库，避免 cwd=当前库 + conversationId=旧库 的串线；
+    // 必须一并更新 vaultId，否则重置后每次重跑判定仍跨库、反复重置。
+    const crossVault = session.vaultId != null && vaultId != null && session.vaultId !== vaultId;
+    if ((prev !== null && prev !== vaultPath) || crossVault) {
+      resetRef.current();
+      kbChatSessionsStore.updateSession(session.id, { conversationId: null, vaultId: vaultId ?? session.vaultId });
+    }
+  }, [vaultPath, session.id, session.vaultId, vaultId]);
   // 重挂载/切历史恢复：DB 加载后若该会话存在活跃 run（running/pending），重新订阅回放直播。
   // listRuns 失败 → 退化为静态历史（不阻塞加载）。守卫条件（末条是 user）在 resumeRun 内部。
   const maybeResume = useCallback(async (conversationId: string) => {

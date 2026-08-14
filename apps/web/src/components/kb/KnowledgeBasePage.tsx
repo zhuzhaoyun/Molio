@@ -7,8 +7,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import type { TreeNode } from '@molio/contracts';
 import { useKnowledge } from '../../hooks/useKnowledge';
-import { useKbTabs, MAX_TABS } from '../../hooks/useKbTabs';
-import { kbTabsStore } from '../../stores/kbTabsStore';
+import { useKbTabs, MAX_TABS, type WorkspaceTab } from '../../hooks/useKbTabs';
 import { vaultStore } from '../../stores/vaultStore';
 import { kbChatSessionsStore } from '../../stores/kbChatSessionsStore';
 import { KbFilePanel, type KbFilePanelHandle } from './KbFilePanel';
@@ -23,6 +22,7 @@ import { ImportConflictDialog } from './ImportConflictDialog';
 import { ContextMenu, type MenuItem } from './ContextMenu';
 import { useI18n } from '../../i18n';
 import { api } from '../../api/client';
+import { openInNewWindow } from '../../utils/openWindow';
 
 interface KnowledgeBasePageProps {
   agentId: string | null;
@@ -133,7 +133,7 @@ function buildFolderDeleteMessage(node: TreeNode, tree: TreeNode[]): string {
 export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePageProps) {
   const { t } = useI18n();
   const kb = useKnowledge();
-  const tabs = useKbTabs();
+  const tabs = useKbTabs(kb.activeVault?.id ?? null);
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -145,17 +145,30 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
   const [showOutline, setShowOutline] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
 
-  // Handle ?vault=<vaultId>&file=<filePath> query params for external navigation
-  // (e.g. from molio:// protocol triggered by Chrome extension after clip save)
+  // URL → store: the window's ?vault= is the per-window source of truth. Fresh
+  // loads are handled by vaultStore module init; this catches in-app navigation
+  // that carries a vault param (graph double-click, new-window clone, protocol nav).
+  useEffect(() => {
+    const urlVault = searchParams.get('vault');
+    if (urlVault) vaultStore.setActiveVaultId(urlVault);
+  }, [searchParams, setSearchParams]);
+
+  // External file navigation (?vault=A&file=B): open the file, keep ?vault=,
+  // drop the transient ?file= (it is held in pendingUrlNav state).
   useEffect(() => {
     const nav = resolveUrlFileNavigation(searchParams, kb);
     if (!nav) return;
-
     setPendingUrlNav(nav);
-    vaultStore.setActiveVaultId(nav.vaultId);
-    // Clear query params after handling (keeps URL clean)
-    setSearchParams({}, { replace: true });
+    setSearchParams({ vault: nav.vaultId }, { replace: true });
   }, [searchParams, kb.vaults, kb.activeVault?.id, setSearchParams]);
+
+  // Store → URL mirror: whenever this window's active vault changes (switch,
+  // create, import, delete), reflect it into ?vault= so the URL stays an
+  // accurate serialization of the window. Must come AFTER the file-nav effect.
+  useEffect(() => {
+    if (!kb.activeVault?.id) return;
+    setSearchParams({ vault: kb.activeVault.id }, { replace: true });
+  }, [kb.activeVault?.id, setSearchParams]);
 
   // Handle location.state for in-app navigation (e.g., from graph double-click)
   useEffect(() => {
@@ -347,7 +360,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
       tabs.closeTab(tabId);
       // After close, the store has already set a new activeTabId.
       // Sync selectedFile with the newly active tab.
-      const newActive = kbTabsStore.getActiveTab();
+      const newActive = tabs.getActiveTab();
       if (newActive && newActive.id.startsWith('file:')) {
         kb.selectFile(newActive.id.slice(5));
       } else {
@@ -356,6 +369,34 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
       }
     });
   }, [tabs, kb, runOrConfirmDiscard]);
+
+  /** Open the tab's file in a new window (Electron IPC or browser popup). */
+  const handleOpenInNewWindow = useCallback((tab: WorkspaceTab) => {
+    const vaultId = kb.activeVault?.id;
+    if (!vaultId) return;
+    const filePath = tab.id.startsWith('file:') ? tab.id.slice(5) : undefined;
+    const url = `/knowledge?vault=${vaultId}${filePath ? `&file=${encodeURIComponent(filePath)}` : ''}`;
+    openInNewWindow(url);
+  }, [kb.activeVault?.id]);
+
+  /**
+   * Obsidian-like vault opening from the vault manager (bottom-left vault bar):
+   * if this window is ALREADY pinned to a vault (?vault= in the URL), picking a
+   * DIFFERENT vault opens it in a NEW window — the current vault stays open,
+   * not replaced. Only when the window is not URL-pinned yet (fresh /knowledge,
+   * even if a vault is persisted/auto-selected) does the pick load in place.
+   * Note: must key on the URL, not kb.activeVault — activeVault falls back to
+   * the persisted default, which would wrongly treat a first-open as cross-vault.
+   */
+  const handleVaultPick = useCallback((id: string) => {
+    const pinnedVaultId = new URLSearchParams(window.location.search).get('vault');
+    if (pinnedVaultId && pinnedVaultId !== id) {
+      kb.setShowVaultSwitcher(false);
+      openInNewWindow(`/knowledge?vault=${encodeURIComponent(id)}`);
+    } else {
+      kb.selectVault(id);
+    }
+  }, [kb.selectVault, kb.setShowVaultSwitcher]);
 
   // When URL navigation resolves, open in tab. The path from external
   // navigation (assistant links, molio://, graph) may omit the extension and/or
@@ -945,6 +986,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
           activeTabId={tabs.activeTabId}
           onActivate={handleActivateTab}
           onClose={handleCloseTab}
+          onOpenInNewWindow={handleOpenInNewWindow}
           actions={
             <>
               <button
@@ -1044,7 +1086,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
         vaults={kb.vaults}
         activeVaultId={kb.activeVault?.id ?? null}
         onClose={() => kb.setShowVaultSwitcher(false)}
-        onSelect={kb.selectVault}
+        onSelect={handleVaultPick}
         onCreate={kb.createVault}
         onOpen={kb.openVault}
         onDelete={kb.deleteVault}

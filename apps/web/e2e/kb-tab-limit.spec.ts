@@ -101,10 +101,11 @@ test.describe('KB tab limit', () => {
       const n = String(i + 1).padStart(2, '0');
       return { id: `file:f${n}.md`, type: 'file', title: `f${n}.md` };
     });
-    await page.addInitScript((tabs) => {
-      localStorage.setItem('molio.kb.tabs', JSON.stringify(tabs));
-      localStorage.setItem('molio.kb.activeTabId', 'file:f01.md');
-    }, seeded);
+    // addInitScript takes a single serializable arg — bundle tabs + vaultId together.
+    await page.addInitScript(({ tabs, vaultId }: { tabs: unknown[]; vaultId: string }) => {
+      localStorage.setItem(`molio.kb.tabs.${vaultId}`, JSON.stringify(tabs));
+      localStorage.setItem(`molio.kb.activeTabId.${vaultId}`, 'file:f01.md');
+    }, { tabs: seeded, vaultId: vault.id });
 
     // 26th new file must be blocked (f22..f25 are already persisted, so use f26).
     fs.writeFileSync(path.join(vault.path, 'f26.md'), '# F26\n');
