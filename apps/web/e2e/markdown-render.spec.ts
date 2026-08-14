@@ -58,6 +58,27 @@ $$
 \\[ a^2 + b^2 = c^2 \\]
 
 \\( x + y = z \\) inline latex.
+// Reproduces the ARMS-reported YAMLException: wiki skills mandate QUOTED
+// wikilink lists in frontmatter (`related: - "[[页面]]"`). The renderer
+// preprocessing used to rewrite [[…]] into `<a class="kb-wiki-link" href="…">`
+// INSIDE the frontmatter block, corrupting the YAML ("bad indentation of a
+// sequence entry" from js-yaml) — doocs/md's front-matter parse then failed
+// and the whole frontmatter block leaked into the rendered body. The fix
+// (preprocessKbMarkdown) keeps the frontmatter block verbatim.
+const FRONTMATTER_WIKILINK_MD = `---
+title: 李白
+type: entity
+tags:
+  - 诗人
+related:
+  - "[[杜甫]]"
+sources:
+  - "[[旧唐书]]"
+---
+
+# 李白
+
+唐代诗人，与 [[杜甫]] 并称"李杜"。
 `;
 
 const RENDER_TEST_MD = `# Test Markdown Rendering
@@ -231,6 +252,41 @@ test.describe('Markdown Rendering', () => {
     // Verify even rows have a background color from doocs/md theme
     const evenRow = page.locator('#output .md-table tbody tr:nth-child(even)').first();
     await expect(evenRow).toBeVisible({ timeout: 5_000 });
+  });
+
+  test('quoted wikilinks inside frontmatter do not corrupt YAML or leak into body', async ({ page }) => {
+    // ARMS regression: preprocessing once rewrote [[…]] inside the frontmatter
+    // block into raw HTML anchors, breaking js-yaml ("bad indentation of a
+    // sequence entry") and dumping the whole frontmatter into the document.
+    const consoleErrors: string[] = [];
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') consoleErrors.push(msg.text());
+    });
+
+    await openRenderTestFile(page, 'frontmatter-wikilink.md');
+
+    const output = page.locator('#output');
+
+    // Body wikilinks are still transformed into navigable anchors — and there
+    // is EXACTLY one: without the fix the leaked frontmatter renders a second
+    // anchor (from `related: - "[[杜甫]]"`), so count > 1 means regression.
+    await expect(
+      output.locator('a.kb-wiki-link[data-file-path="杜甫"]'),
+    ).toHaveCount(1, { timeout: 5_000 });
+
+    // The frontmatter block must NOT leak into the rendered body
+    await expect(output).not.toContainText('related:');
+    await expect(output).not.toContainText('sources:');
+    await expect(output).not.toContainText('type: entity');
+
+    // Frontmatter parsed successfully → property card shows the metadata
+    const fmCard = page.locator('[data-testid="kb-fm-expanded"]');
+    await expect(fmCard).toBeVisible({ timeout: 5_000 });
+    await expect(fmCard).toContainText('李白');
+
+    // No front-matter parse errors were logged (the ARMS-reported symptom)
+    const fmErrors = consoleErrors.filter((t) => /front-matter|YAMLException/i.test(t));
+    expect(fmErrors).toEqual([]);
   });
 
   test('escaped-bracket citation markers do not crash MathJax renderer', async ({ page }) => {
