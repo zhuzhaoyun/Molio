@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { installBuiltinSkills } from '../../src/core/skill-installer.js';
+import { installAll } from '../helpers/install-all.js';
 
 /**
  * The wiki operations (build/ingest/lint/save) are shipped as builtin Claude
@@ -21,7 +21,7 @@ describe('builtin wiki operation skills', () => {
   // Install synchronously at describe-registration time so the inner describe
   // blocks can build their SKILL.md paths (a `before` hook would run too late).
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-wiki-skill-test-'));
-  installBuiltinSkills(tmpDir);
+  installAll(tmpDir);
   const skillsDir = path.join(tmpDir, '.claude', 'skills');
 
   after(() => {

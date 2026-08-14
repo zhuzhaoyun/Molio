@@ -111,3 +111,21 @@ daemon 在把微信消息交给你之前，已经把其中的文件/图片附件
 - 路径用绝对路径最稳妥，相对 vault 根的路径也可以。
 
 请根据当前微信消息和对话历史，选择收件、确认入库（调用 \`wiki-ingest\` skill）、问答或创作（\`wiki-query\` skill）处理。`;
+
+/**
+ * Compact re-anchor prepended to every REUSE turn (see
+ * `buildWeixinReuseMessage` in ./message.ts, wired as the dispatcher's
+ * `reuseTurnReminder`).
+ *
+ * The full WEIXIN_CHANNEL_FRAME only rides the first turn of a fresh run.
+ * Long multi-turn sessions get context-compacted, and the frame's mechanics
+ * are summarized away — after which the model no longer knows the <attach/>
+ * protocol and tells users it "has no way to send files to WeChat" (verified
+ * incident 2026-08-11: a long "digital employee" session generated a docx
+ * but could not deliver it; /new — fresh run with the frame — fixed it).
+ *
+ * Deliberately SHORT and scoped to the delivery protocol: it rides every
+ * reuse turn, and re-prepending the full frame would re-trigger收件/入库/
+ * routing behavior on every message.
+ */
+export const WEIXIN_ATTACH_REMINDER = `【微信通道机制提醒】你具备给微信用户发送文件的能力：当用户希望获得文件本体（"发给我/给我一份/发个文件/下载"等）时，在回复中对每个要发送的文件写附件标记 \`<attach path="文件的本地路径"/>\`，Molio 会把文件作为真实附件发到微信，并自动把标记从文字中剔除。直接发原文件、不转换格式；不要在文字里写本地路径或粘贴文件内容。本次消息不涉及发文件时忽略本提醒。`;

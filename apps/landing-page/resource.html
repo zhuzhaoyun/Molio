@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#1A1714">
+
+<!-- SEO -->
+<title>Molio 知识库资源 — 资源详情</title>
+<meta name="description" content="查看知识库资源包的概述与效果预览，微信支付购买，下载解压后用 Molio 加载即可使用，兼容 Obsidian。">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://molio.cn/resource.html">
+
+<!-- Preconnect -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+<link rel="icon" type="image/png" href="images/favicon-32.png">
+<link rel="apple-touch-icon" href="images/favicon-180.png">
+<link rel="stylesheet" href="styles.css?v=20260813a">
+
+<!-- Open Graph -->
+<meta property="og:title" content="Molio 知识库资源 — 资源详情">
+<meta property="og:description" content="查看知识库资源包的概述与效果预览，微信支付购买。">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://molio.cn/resource.html">
+<meta property="og:image" content="https://molio.cn/images/brand.webp">
+<meta property="og:site_name" content="Molio 墨流">
+<meta property="og:locale" content="zh_CN">
+
+<!-- Twitter -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Molio 知识库资源 — 资源详情">
+<meta name="twitter:description" content="查看知识库资源包的概述与效果预览，微信支付购买。">
+<meta name="twitter:image" content="https://molio.cn/images/brand.webp">
+</head>
+<body>
+
+<nav class="top-nav" aria-label="主导航">
+  <div class="nav-inner">
+    <a href="index.html" class="nav-logo"><span class="logo-icon-sm">M</span> Molio</a>
+    <div class="nav-links">
+      <a href="index.html" class="nav-link">首页</a>
+      <a href="help.html" class="nav-link">使用指南</a>
+      <a href="blog/index.html" class="nav-link">博客</a>
+      <a href="enterprise.html" class="nav-link">定制服务</a>
+      <a href="resources.html" class="nav-link active">资源</a>
+     <a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer" class="nav-gh" aria-label="GitHub 仓库"><svg viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.102 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg></a></div>
+  </div>
+</nav>
+
+<main class="page-content page-wide">
+  <div id="res-detail"></div>
+</main>
+
+<!-- 灯箱：预览图点击放大，点击任意处或 Esc 关闭 -->
+<div class="res-lightbox" id="res-lightbox" hidden role="dialog" aria-modal="true" aria-label="效果预览大图">
+  <button type="button" class="res-lightbox-close" aria-label="关闭">×</button>
+  <img src="" alt="效果预览大图">
+</div>
+
+<!-- 数据 + 二维码库 + 支付弹窗（pay.js 动态创建）+ 详情渲染（须在 shared.js 之前，保证 .reveal 被入场动画接管） -->
+<script src="resources-data.js?v=20260813a"></script>
+<script src="vendor/qrcode.min.js"></script>
+<script src="pay.js?v=20260813a"></script>
+<script>
+(function () {
+  'use strict';
+
+  var RES_BASE = window.MOLIO_RES_BASE;
+  var DEFAULT_PREVIEW = [
+    { src: 'images/main.webp', cap: 'Molio 主界面 — 知识库与 AI 对话' },
+    { src: 'images/wiki_knowledge.webp', cap: 'Wiki 构建 — 碎片整理成知识体系' },
+    { src: 'images/kg-graph.webp', cap: '知识图谱 — 产出回写入库，网络持续生长' }
+  ];
+
+  function esc(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  var root = document.getElementById('res-detail');
+  var id = new URLSearchParams(location.search).get('id');
+  var r = (window.MOLIO_RESOURCES || []).filter(function (x) { return x.id === id; })[0];
+
+  if (!r) {
+    document.title = '资源不存在 — Molio 资源';
+    root.innerHTML =
+      '<div class="breadcrumb"><a href="index.html">首页</a><span class="sep">/</span><a href="resources.html">资源</a></div>' +
+      '<h1 class="page-title">资源不存在</h1>' +
+      '<div class="tip-box">你访问的资源不存在或尚未上架。<a href="resources.html">返回资源库 →</a></div>';
+    return;
+  }
+
+  var paid = r.price > 0;
+  document.title = r.name + ' — Molio 知识库资源';
+
+  /* ---------- 头部 ---------- */
+  var head =
+    '<div class="breadcrumb"><a href="index.html">首页</a><span class="sep">/</span>' +
+    '<a href="resources.html">资源</a><span class="sep">/</span>' + esc(r.name) + '</div>' +
+    '<div class="res-detail-head reveal">' +
+      '<div class="res-icon" style="background:' + esc(r.tint) + '">' + esc(r.icon) + '</div>' +
+      '<div>' +
+        '<div class="res-detail-title"><h1>' + esc(r.name) + '</h1>' +
+        '<span class="res-price ' + (paid ? 'paid' : 'free') + '">' + (paid ? '¥' + r.price : '免费') + '</span></div>' +
+        '<div class="res-meta-line">Markdown 格式 · 兼容 Obsidian · 用 Molio“打开本地仓库”加载</div>' +
+        ((r.tags && r.tags.length) ? '<div class="res-tags">' + r.tags.map(function (t) { return '<span>' + esc(t) + '</span>'; }).join('') + '</div>' : '') +
+      '</div>' +
+    '</div>';
+
+  /* ---------- 左主栏：概述 / 效果预览 / 导入说明 ---------- */
+  var overview =
+    '<h2 class="res-section-title">概述</h2>' +
+    '<div class="article-body">' +
+      (r.overview || [r.desc]).map(function (p) { return '<p>' + esc(p) + '</p>'; }).join('') +
+      ((r.highlights && r.highlights.length) ? '<ul>' + r.highlights.map(function (h) { return '<li><strong>' + esc(h) + '</strong></li>'; }).join('') + '</ul>' : '') +
+    '</div>';
+
+  var previews = (r.preview && r.preview.length)
+    ? r.preview.map(function (p) { return { src: p, cap: '' }; })
+    : DEFAULT_PREVIEW;
+  var preview =
+    '<h2 class="res-section-title">效果预览</h2>' +
+    '<div class="res-preview-grid">' +
+      previews.map(function (p) {
+        return '<figure><a href="' + esc(p.src) + '" target="_blank" rel="noopener noreferrer">' +
+          '<img src="' + esc(p.src) + '" alt="' + esc(r.name + ' 效果预览') + '" loading="lazy"></a>' +
+          (p.cap ? '<figcaption>' + esc(p.cap) + '</figcaption>' : '') +
+          '</figure>';
+      }).join('') +
+    '</div>';
+
+  var importGuide =
+    '<h2 class="res-section-title">资源包导入说明</h2>' +
+    '<div class="step-card"><ol>' +
+      '<li>下载资源包 <code>.zip</code> 并解压到本地任意目录</li>' +
+      '<li>打开 Molio，在知识库管理界面选择“打开本地仓库”</li>' +
+      '<li>选择（或输入）解压后的文件夹路径，资源包立即加载</li>' +
+    '</ol></div>';
+
+  /* ---------- 右侧栏：动作卡 + 信息卡 ---------- */
+  var cta;
+  if (paid) {
+    if (r.payUrl) {
+      cta = '<a class="btn btn-primary" href="' + esc(r.payUrl) + '" target="_blank" rel="noopener noreferrer">购买 ¥' + r.price + '</a>';
+    } else if (window.MOLIO_PAY_BASE) {
+      cta = '<button type="button" class="btn btn-primary" id="pay-btn">微信支付 ¥' + r.price + '</button>';
+    } else {
+      cta = '<a class="btn btn-primary" href="enterprise.html#contact" target="_blank" rel="noopener noreferrer">联系购买 ¥' + r.price + '</a>';
+    }
+  } else {
+    cta = '<a class="btn btn-primary" href="' + RES_BASE + '/' + esc(r.file) + '">下载 .zip</a>';
+  }
+  var sideNote = paid
+    ? (r.payUrl ? '点击后在支付页完成付款，自动发货下载链接。'
+      : (window.MOLIO_PAY_BASE ? '扫码支付成功后自动解锁下载，下载链接 1 小时内有效。'
+        : '购买后会提供下载链接，点击上方按钮联系我们。'))
+    : '下载解压后，用 Molio“打开本地仓库”加载即可开始阅读与写作。';
+
+  var side =
+    '<aside class="res-side">' +
+      '<div class="res-side-card reveal">' + cta + '<p class="res-side-note">' + sideNote + '</p></div>' +
+      '<div class="res-side-card reveal">' +
+        '<div class="res-info-row"><span class="k">格式</span><span class="v">Markdown（.zip）</span></div>' +
+        '<div class="res-info-row"><span class="k">兼容</span><span class="v">Molio / Obsidian</span></div>' +
+        '<div class="res-info-row"><span class="k">价格</span><span class="v">' + (paid ? '¥' + r.price : '免费') + '</span></div>' +
+        '<div class="res-info-row"><span class="k">文件</span><span class="v">' + esc(r.file) + '</span></div>' +
+      '</div>' +
+    '</aside>';
+
+  root.innerHTML = head +
+    '<div class="res-detail-grid">' +
+      '<div class="res-main">' + overview + preview + importGuide + '</div>' +
+      side +
+    '</div>';
+
+  /* ---------- 微信支付：弹窗与下单/轮询/交付逻辑统一在 pay.js ---------- */
+  var payBtn = document.getElementById('pay-btn');
+  if (payBtn) {
+    payBtn.addEventListener('click', function () { window.MolioPay.open(r); });
+  }
+
+  /* ---------- 灯箱：预览图点击放大，点击任意处或 Esc 关闭（JS 失效时退回新标签页） ---------- */
+  var lb = document.getElementById('res-lightbox');
+  var lbImg = lb.querySelector('img');
+  function closeLb() {
+    lb.hidden = true;
+    lbImg.src = '';
+    document.body.style.overflow = '';
+  }
+  root.addEventListener('click', function (e) {
+    var a = e.target.closest('.res-preview-grid a');
+    if (!a) return;
+    e.preventDefault();
+    var thumb = a.querySelector('img');
+    lbImg.src = a.getAttribute('href');
+    lbImg.alt = thumb ? thumb.alt : '';
+    lb.hidden = false;
+    document.body.style.overflow = 'hidden';
+  });
+  lb.addEventListener('click', closeLb);
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !lb.hidden) closeLb();
+  });
+})();
+</script>
+
+<!-- Footer -->
+<footer class="site-footer">
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <a href="index.html" class="footer-logo"><span class="logo-icon-sm">M</span> Molio</a>
+      <p>兼容 Obsidian 的本地 AI 知识库。内置 Claude Code 图形界面、微信 AI 助手和 Chrome Web Clipper，数据全在你自己电脑上。</p>
+    </div>
+    <div class="footer-links">
+      <h4>产品</h4>
+      <a href="index.html">首页</a>
+      <a href="resources.html">资源</a>
+      <a href="help.html">使用指南</a>
+      <a href="enterprise.html">定制服务</a>
+      <a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer">GitHub 开源</a>
+    </div>
+    <div class="footer-links">
+      <h4>资源</h4>
+      <a href="help.html">快速入门</a>
+      <a href="help.html#step-3">排版发布</a>
+      <a href="help.html#connect">连接微信</a>
+      <a href="https://github.com/zhuzhaoyun/Molio/issues" target="_blank" rel="noopener noreferrer">问题反馈</a>
+    </div>
+    <div class="footer-links">
+      <h4>关于</h4>
+      <a href="blog/index.html">博客</a>
+      <a href="privacy.html">隐私政策</a>
+      <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">粤ICP备2023134483号</a>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <span>© 2026 Molio 墨流. 基于 MIT 协议开源.</span>
+    <span>Molio 墨流 — 兼容 Obsidian 的本地知识库 + Claude Code GUI + 微信 AI 助手，数据全在你自己电脑上</span>
+  </div>
+</footer>
+
+<script src="shared.js?v=20260813a"></script>
+<!-- Google Analytics 4 -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-X6LMX9VR0Y"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-X6LMX9VR0Y');
+</script>
+<!-- 百度统计 -->
+<script>
+var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = "https://hm.baidu.com/hm.js?887d065c4dc67dfb05913b2e131a44a3";
+  var s = document.getElementsByTagName("script")[0];
+  s.parentNode.insertBefore(hm, s);
+})();
+</script>
+</body>
+</html>

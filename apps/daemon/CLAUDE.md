@@ -24,7 +24,7 @@ src/
     db.ts              SQLite 数据库初始化
     transcript.ts      多轮对话 transcript 构建
     knowledge.ts       知识库管理（vault、文件树）
-    tools/skills/      Builtin Claude Code skills（wechat-article-extractor, docling, wiki-build/ingest/lint/save/query, remotion）—— wiki 操作走 skills，agent 按动词 on-demand 调用；知识库问答走 wiki-query skill（由 vault .claude/CLAUDE.md 常驻规则 + KB 面板确定性触发），不再有 system-prompt 注入。wiki-* 五件套（build/query/ingest/save/lint）同版本号共进：改任一 skill 时五个 version: 一起 bump 到同一版本（skill-installer 按版本差异同步到既有 vault）
+    tools/skills/      Builtin Claude Code skills（wechat-article-extractor, docling, wiki-build/ingest/lint/save/query）—— wiki 操作走 skills，agent 按动词 on-demand 调用；知识库问答走 wiki-query skill（由 vault .claude/CLAUDE.md 常驻规则 + KB 面板确定性触发），不再有 system-prompt 注入。wiki-* 五件套（build/query/ingest/save/lint）同版本号共进：改任一 skill 时五个 version: 一起 bump 到同一版本（同步本身按内容哈希镜像到既有 vault，version 只作诊断/约定）。remotion 已退役（见 skill-installer.ts 的 RETIRED_BUNDLED_SKILLS）：视频创作改由技能商店 am-will/remotion 按需安装；本目录下的 remotion/ 源文件刻意保留，作为清理旧 vault 副本时的字节级权属证明
     runtimes/
       registry.ts      Agent 定义注册表 (claude, codex, gemini, qwen)
       claude.ts        Claude Code runtime 定义
@@ -60,7 +60,8 @@ src/
       client.ts        Lark REST API 包装 (tenant_access_token、im/v1 消息收发：text/interactive card/image/file 共享 postMessage)
       card.ts          buildMarkdownCard — JSON 2.0 interactive 卡片（markdown 元素），回复包成卡片渲染 Markdown，发送失败降级纯文本
       ws-client.ts     WebSocket 长连接 — 接收 im.message.receive_v1 事件
-      message.ts       事件 payload 解析 → ParsedFeishuMessage
+      message.ts       事件 payload 解析 + buildFeishuFrameMessage（首轮前置 channel frame）
+      channel-frame.ts 飞书通道角色帧（收件/URL提取/<attach/>回传/意图分流，问答路由到 wiki-query skill）
       media.ts         图片/文件下载到 raw/feishu/<date>/
       token-store.ts   FeishuTokenStore — tenant_access_token 内存缓存 + 磁盘持久化 + 100min 刷新定时器
       service.ts       状态机 (idle/connecting/connected/reconnecting/error)，token 生命周期委托 token-store

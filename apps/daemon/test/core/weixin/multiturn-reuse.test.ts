@@ -9,7 +9,7 @@ import { openDatabase, closeDatabase, listMessages, createVault } from '../../..
 import { ConversationService } from '../../../src/core/conversations/service.js';
 import type { RunManager } from '../../../src/core/RunManager.js';
 import { WeixinRunDispatcher, type DispatchRequest } from '../../../src/core/weixin/dispatcher.js';
-import { buildWeixinFrameMessage } from '../../../src/core/weixin/message.js';
+import { buildWeixinFrameMessage, buildWeixinReuseMessage } from '../../../src/core/weixin/message.js';
 
 /**
  * Integration tests for the weixin multi-turn run dispatcher.
@@ -123,6 +123,9 @@ describe('WeixinRunDispatcher multi-turn run reuse', () => {
       sink: { sendText: async () => {}, sendMediaFile: async () => {} },
       buildPrompt: (text) => text,
       frameFirstTurn: buildWeixinFrameMessage,
+      // Mirrors production WeixinService wiring: reuse turns carry the compact
+      // <attach/> re-anchor (first-turn frame is lost to context compaction).
+      reuseTurnReminder: buildWeixinReuseMessage,
       channelLabel: 'weixin',
     });
     const conv = conversations.getOrCreateExternalConversation({
@@ -267,16 +270,65 @@ describe('WeixinRunDispatcher multi-turn run reuse', () => {
     mock.emit(run1, { type: 'turn_end', stopReason: 'end_turn' });
     await settle();
 
-    // Reuse: sendMessage gets the clean message only. The frame is intentionally
-    // NOT re-prepended — the live process already carries it from its first turn.
+    // Reuse: the FULL frame is intentionally NOT re-prepended (the live process
+    // carries it from its first turn, and re-prepending would re-trigger
+    // 收件/入库 routing every turn) — but the compact <attach/> reminder IS
+    // re-anchored, because long sessions lose the first-turn frame to context
+    // compaction and then claim no delivery capability (incident 2026-08-11).
     await dispatch(payload('再问一个'));
     assert.equal(mock.createRunCalls.length, 1, 'reuse must not spawn a new run');
     assert.equal(mock.sendMessageCalls.length, 1);
-    assert.equal(mock.sendMessageCalls[0]!.message, '再问一个', 'reuse message must be clean (no frame)');
+    const reuseMsg = mock.sendMessageCalls[0]!.message;
     assert.ok(
-      !mock.sendMessageCalls[0]!.message.includes('微信入口助手'),
-      'reuse message must not re-carry the frame',
+      !reuseMsg.includes('微信入口助手'),
+      'reuse message must not re-carry the full frame',
     );
+    assert.ok(reuseMsg.includes('微信通道机制提醒'), 'reuse message carries the attach reminder');
+    assert.ok(reuseMsg.includes('<attach path='), 'reminder teaches the <attach/> marker format');
+    assert.ok(reuseMsg.includes('再问一个'), 'reuse message still contains the user text');
+  });
+
+  it('carries the attach reminder on EVERY reuse turn, not just the first', async () => {
+    // Compaction can happen deep into a long session — a one-shot reminder on
+    // the first reuse turn would itself be compacted away later. Every reuse
+    // turn must re-anchor.
+    await dispatch(payload('first'));
+    const run1 = mock.createRunCalls[0]!.runId;
+
+    for (const text of ['second', 'third', 'fourth']) {
+      mock.emit(run1, { type: 'turn_end', stopReason: 'end_turn' });
+      await settle();
+      await dispatch(payload(text));
+    }
+
+    assert.equal(mock.createRunCalls.length, 1, 'all turns reuse the same run');
+    assert.equal(mock.sendMessageCalls.length, 3);
+    for (const [i, text] of ['second', 'third', 'fourth'].entries()) {
+      const msg = mock.sendMessageCalls[i]!.message;
+      assert.ok(msg.includes('微信通道机制提醒'), `reuse turn ${i + 1} carries the reminder`);
+      assert.ok(msg.includes(text), `reuse turn ${i + 1} preserves the user text`);
+    }
+  });
+
+  it('keeps reuse messages clean when no reuseTurnReminder is wired (other channels)', async () => {
+    // feishu (and future channels) don't wire a reminder — reuse must fall back
+    // to the plain buildPrompt output, unchanged.
+    const plain = new WeixinRunDispatcher({
+      runManager: mock.asRunManager(),
+      conversations,
+      db,
+      sink: { sendText: async () => {}, sendMediaFile: async () => {} },
+      buildPrompt: (text) => `wrapped:${text}`,
+      channelLabel: 'plain',
+    });
+    await plain.dispatch(payload('first'));
+    const run1 = mock.createRunCalls[0]!.runId;
+    mock.emit(run1, { type: 'turn_end', stopReason: 'end_turn' });
+    await settle();
+
+    await plain.dispatch(payload('second'));
+    assert.equal(mock.sendMessageCalls.length, 1);
+    assert.equal(mock.sendMessageCalls[0]!.message, 'wrapped:second', 'no reminder → buildPrompt output as-is');
   });
 
   it('re-frames the message when a queued message drains into a fresh spawn', async () => {

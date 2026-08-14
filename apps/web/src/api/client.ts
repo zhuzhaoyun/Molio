@@ -5,6 +5,11 @@ import type {
   Vault, TreeNode, FileContent, KbHistoryEntry, CreateVaultRequest,
   WikiStatusResponse,
   GraphData, SearchResult, SearchResponse,
+  SkillManifestEntry, SkillDetailResponse, CreateSkillRequest, UpdateSkillRequest,
+  ImportSkillRequest, PrefillResult,
+  HubSkillsQuery, HubSkillsListResponse, HubCategoriesResponse,
+  InstallHubSkillRequest, InstallHubSkillResponse,
+  HubSkillDetailQuery, HubSkillDetailResponse,
 } from '@molio/contracts';
 
 export type WeixinLoginStatus = 'idle' | 'waiting_scan' | 'scanned' | 'logged_in' | 'error';
@@ -768,6 +773,158 @@ export const api = {
   async getGraph(vaultId: string): Promise<GraphData> {
     const res = await fetch(`${BASE}/graph/${vaultId}`);
     if (!res.ok) throw new Error(`Failed to fetch graph: ${res.status}`);
+    return res.json();
+  },
+
+  // ─── Skills ───
+
+  async listSkills(): Promise<SkillManifestEntry[]> {
+    const res = await fetch(`${BASE}/skills`);
+    if (!res.ok) throw new Error(`Failed to fetch skills: ${res.status}`);
+    const data = await res.json();
+    return data.skills;
+  },
+
+  /** Fetch one skill with its instructions body (for the edit form). */
+  async getSkill(id: string): Promise<SkillDetailResponse> {
+    const res = await fetch(`${BASE}/skills/${id}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message ?? `Failed to fetch skill: ${res.status}`);
+    }
+    return res.json();
+  },
+
+  async createSkill(req: CreateSkillRequest): Promise<SkillManifestEntry> {
+    const res = await fetch(`${BASE}/skills`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error?.message ?? `Failed to create skill: ${res.status}`);
+    }
+    const data = await res.json();
+    return data.skill;
+  },
+
+  async updateSkill(id: string, req: UpdateSkillRequest): Promise<SkillManifestEntry> {
+    const res = await fetch(`${BASE}/skills/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error?.message ?? `Failed to update skill: ${res.status}`);
+    }
+    const data = await res.json();
+    return data.skill;
+  },
+
+  async toggleSkill(id: string, enabled: boolean): Promise<SkillManifestEntry> {
+    const res = await fetch(`${BASE}/skills/${id}/toggle`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error?.message ?? `Failed to toggle skill: ${res.status}`);
+    }
+    const data = await res.json();
+    return data.skill;
+  },
+
+  async deleteSkill(id: string): Promise<void> {
+    const res = await fetch(`${BASE}/skills/${id}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message ?? `Failed to delete skill: ${res.status}`);
+    }
+  },
+
+  async importSkill(req: ImportSkillRequest): Promise<SkillManifestEntry> {
+    const res = await fetch(`${BASE}/skills/import`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error?.message ?? `Failed to import skill: ${res.status}`);
+    }
+    const data = await res.json();
+    return data.skill;
+  },
+
+  /** One-shot AI call to prefill a skill form. Always resolves (fallback flag set on failure). */
+  async prefillSkill(content: string): Promise<PrefillResult> {
+    const res = await fetch(`${BASE}/skills/prefill`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error?.message ?? `Failed to prefill skill: ${res.status}`);
+    }
+    const data = await res.json();
+    return data.prefill;
+  },
+
+  // ─── Skill hub (store) ───
+
+  /** Browse/search the hub catalog (proxied by the daemon), with install state. */
+  async listHubSkills(query: HubSkillsQuery = {}): Promise<HubSkillsListResponse> {
+    const params = new URLSearchParams();
+    if (query.page) params.set('page', String(query.page));
+    if (query.pageSize) params.set('pageSize', String(query.pageSize));
+    if (query.keyword?.trim()) params.set('keyword', query.keyword.trim());
+    if (query.category?.trim()) params.set('category', query.category.trim());
+    if (query.sort && query.sort !== 'default') params.set('sort', query.sort);
+    const qs = params.toString();
+    const res = await fetch(`${BASE}/skills/hub/skills${qs ? `?${qs}` : ''}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message ?? `Failed to fetch hub skills: ${res.status}`);
+    }
+    return res.json();
+  },
+
+  /** One hub skill's detail (stats + SKILL.md readme + security verdicts). */
+  async hubSkillDetail(query: HubSkillDetailQuery): Promise<HubSkillDetailResponse> {
+    const params = new URLSearchParams({ slug: query.slug });
+    if (query.namespace?.trim()) params.set('namespace', query.namespace.trim());
+    const res = await fetch(`${BASE}/skills/hub/skill?${params.toString()}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message ?? `Failed to fetch hub skill detail: ${res.status}`);
+    }
+    return res.json();
+  },
+
+  async hubCategories(): Promise<HubCategoriesResponse> {
+    const res = await fetch(`${BASE}/skills/hub/categories`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message ?? `Failed to fetch hub categories: ${res.status}`);
+    }
+    return res.json();
+  },
+
+  /** Install (or refresh) a hub skill; the daemon downloads and imports it. */
+  async installHubSkill(req: InstallHubSkillRequest): Promise<InstallHubSkillResponse> {
+    const res = await fetch(`${BASE}/skills/hub/install`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message ?? `Failed to install hub skill: ${res.status}`);
+    }
     return res.json();
   },
 };
