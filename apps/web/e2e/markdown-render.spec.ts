@@ -58,6 +58,8 @@ $$
 \\[ a^2 + b^2 = c^2 \\]
 
 \\( x + y = z \\) inline latex.
+`;
+
 // Reproduces the ARMS-reported YAMLException: wiki skills mandate QUOTED
 // wikilink lists in frontmatter (`related: - "[[页面]]"`). The renderer
 // preprocessing used to rewrite [[…]] into `<a class="kb-wiki-link" href="…">`
@@ -153,6 +155,7 @@ test.describe('Markdown Rendering', () => {
     writeFileSync(join(testVaultPath, 'render-test.md'), RENDER_TEST_MD);
     writeFileSync(join(testVaultPath, 'citation-test.md'), CITATION_TEST_MD);
     writeFileSync(join(testVaultPath, 'formula-test.md'), FORMULA_TEST_MD);
+    writeFileSync(join(testVaultPath, 'frontmatter-wikilink.md'), FRONTMATTER_WIKILINK_MD);
 
     // Register the vault via the daemon API
     const res = await fetch(`${DAEMON_API}/knowledge/vaults`, {

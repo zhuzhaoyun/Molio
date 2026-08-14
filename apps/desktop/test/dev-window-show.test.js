@@ -23,10 +23,10 @@ const mainSource = readFileSync(path.join(__dirname, '..', 'src', 'main.js'), 'u
 
 /** Extract the createWindow() function body (up to the next top-level function). */
 function createWindowSource() {
-  const start = mainSource.indexOf('function createWindow()');
-  assert.notEqual(start, -1, 'createWindow() must exist in main.js');
-  const end = mainSource.indexOf('function loadApp()', start);
-  assert.notEqual(end, -1, 'loadApp() must follow createWindow() in main.js');
+  const start = mainSource.indexOf('function createWindow({ url');
+  assert.notEqual(start, -1, 'createWindow({ url }) must exist in main.js');
+  const end = mainSource.indexOf('function loadAppWindow(', start);
+  assert.notEqual(end, -1, 'loadAppWindow() must follow createWindow() in main.js');
   return mainSource.slice(start, end);
 }
 
@@ -59,24 +59,24 @@ describe('main.js dev-mode window visibility (regression: dev window never shown
     );
   });
 
-  it('production show paths (loadApp / error page) are untouched', () => {
+  it('production show paths (loadAppWindow / error page) are untouched', () => {
     // The ARMS one-navigation-one-injection design requires production to
     // keep showing the window only after the real app URL finishes loading.
-    const loadAppStart = mainSource.indexOf('function loadApp()');
-    assert.notEqual(loadAppStart, -1, 'loadApp() must exist');
+    const loadAppStart = mainSource.indexOf('function loadAppWindow(');
+    assert.notEqual(loadAppStart, -1, 'loadAppWindow() must exist');
     const loadAppSrc = mainSource.slice(
       loadAppStart,
-      mainSource.indexOf('function showDaemonErrorPage()', loadAppStart),
+      mainSource.indexOf('function showDaemonErrorPage(', loadAppStart),
     );
     assert.match(
       loadAppSrc,
       /once\(\s*['"]did-finish-load['"]\s*,\s*onFinish\s*\)/,
-      'loadApp() must keep showing the window via did-finish-load',
+      'loadAppWindow() must keep showing the window via did-finish-load',
     );
     assert.match(
       loadAppSrc,
       /onFinish\s*=[\s\S]*?\.show\(\)/,
-      'loadApp() onFinish must call mainWindow.show()',
+      'loadAppWindow() onFinish must call win.show()',
     );
   });
 });

@@ -13,7 +13,9 @@ import * as path from 'path';
 let vault: TempVault;
 
 const openTab = async (page: import('@playwright/test').Page, name: string) => {
-  await page.locator('.kb-tree-item').filter({ hasText: name }).click();
+  // Exact-name match — hasText:name is a substring check that collides when the
+  // vault also has e.g. alpha.md (contains "a.md") and sub1/a.md.
+  await page.locator('.kb-tree-item').filter({ has: page.getByText(name, { exact: true }) }).click();
 };
 const expandFolder = async (page: import('@playwright/test').Page, name: string) => {
   await page.locator('.kb-tree-group-label').filter({ hasText: name }).click();
@@ -102,11 +104,11 @@ test.describe('KB stale tab cleanup (reactive)', () => {
   test('a tab whose path no longer exists in the tree gets cleaned on load', async ({ page }) => {
     // seed a stale tab pointing at a non-existent path, but with the correct vaultId
     await page.addInitScript((vaultId) => {
-      localStorage.setItem('molio.kb.tabs', JSON.stringify([
+      localStorage.setItem(`molio.kb.tabs.${vaultId}`, JSON.stringify([
         { id: 'file:ghost.md', type: 'file', title: 'ghost.md', vaultId },
         { id: 'file:real.md', type: 'file', title: 'real.md', vaultId },
       ]));
-      localStorage.setItem('molio.kb.activeTabId', 'file:ghost.md');
+      localStorage.setItem(`molio.kb.activeTabId.${vaultId}`, 'file:ghost.md');
     }, vault.id);
 
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
@@ -120,11 +122,11 @@ test.describe('KB stale tab cleanup (reactive)', () => {
   test('tabs belonging to another vault are not cleaned when this vault loads', async ({ page }) => {
     // seed a tab with a foreign vaultId
     await page.addInitScript((vaultId) => {
-      localStorage.setItem('molio.kb.tabs', JSON.stringify([
+      localStorage.setItem(`molio.kb.tabs.${vaultId}`, JSON.stringify([
         { id: 'file:other-vault-file.md', type: 'file', title: 'other-vault-file.md', vaultId: 'vault-foreign' },
         { id: 'file:real.md', type: 'file', title: 'real.md', vaultId },
       ]));
-      localStorage.setItem('molio.kb.activeTabId', 'file:real.md');
+      localStorage.setItem(`molio.kb.activeTabId.${vaultId}`, 'file:real.md');
     }, vault.id);
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
@@ -141,11 +143,11 @@ test.describe('KB stale tab cleanup (reactive)', () => {
     // skips restoration when the active tab's vaultId ≠ current vault, leaving
     // selectedFile null and showing the empty state instead.
     await page.addInitScript((vaultId) => {
-      localStorage.setItem('molio.kb.tabs', JSON.stringify([
+      localStorage.setItem(`molio.kb.tabs.${vaultId}`, JSON.stringify([
         { id: 'file:wiki/entities/墨大夫.md', type: 'file', title: '墨大夫.md', vaultId: 'vault-foreign' },
         { id: 'file:real.md', type: 'file', title: 'real.md', vaultId },
       ]));
-      localStorage.setItem('molio.kb.activeTabId', 'file:wiki/entities/墨大夫.md');
+      localStorage.setItem(`molio.kb.activeTabId.${vaultId}`, 'file:wiki/entities/墨大夫.md');
     }, vault.id);
 
     const foreignRequests: string[] = [];
@@ -162,6 +164,53 @@ test.describe('KB stale tab cleanup (reactive)', () => {
     // No "file not found" error UI — empty state is shown instead.
     await expect(page.locator('.kb-load-error')).toHaveCount(0);
     await expect(page.locator('.kb-empty-state')).toBeVisible();
+  });
+});
+
+test.describe('KB legacy global tab keys migration (multi-window P2)', () => {
+  test.beforeAll(async () => {
+    vault = await createTempVault('e2e-kb-legacy-migrate');
+    fs.unlinkSync(path.join(vault.path, 'test.md'));
+    fs.writeFileSync(path.join(vault.path, 'alpha.md'), '# Alpha\n');
+    fs.writeFileSync(path.join(vault.path, 'beta.md'), '# Beta\n');
+  });
+  test.afterAll(async () => { if (vault) await cleanupTempVault(vault); });
+
+  test('legacy molio.kb.tabs are migrated into the per-vault key once', async ({ page }) => {
+    // Seed ONLY the pre-multi-window global keys (the previous release's format) —
+    // no per-vault key, so the migration must run on load.
+    await page.addInitScript((vaultId) => {
+      localStorage.setItem('molio.kb.tabs', JSON.stringify([
+        { id: 'file:alpha.md', type: 'file', title: 'alpha.md' },
+        { id: 'file:beta.md', type: 'file', title: 'beta.md' },
+      ]));
+      localStorage.setItem('molio.kb.activeTabId', 'file:alpha.md');
+      // Ensure a fresh context for this vault (no leftover per-vault key).
+      localStorage.removeItem(`molio.kb.tabs.${vaultId}`);
+      localStorage.removeItem(`molio.kb.activeTabId.${vaultId}`);
+    }, vault.id);
+
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.kb-tree-item').filter({ hasText: 'alpha.md' })).toBeVisible({ timeout: 10_000 });
+
+    // Legacy tabs appear in the tab bar (migrated into this vault's store).
+    await expect(page.locator('.kb-wtab')).toHaveCount(2, { timeout: 5_000 });
+    await expect(page.locator('.kb-wtab').filter({ hasText: 'alpha.md' })).toBeVisible();
+    await expect(page.locator('.kb-wtab').filter({ hasText: 'beta.md' })).toBeVisible();
+
+    // Legacy global keys are gone (migration ran once, keys cleaned up).
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('molio.kb.tabs'))).toBeNull();
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('molio.kb.activeTabId'))).toBeNull();
+
+    // Per-vault key is populated with the migrated tabs + active tab.
+    const perVaultTabs = await page.evaluate((vid) => localStorage.getItem(`molio.kb.tabs.${vid}`), vault.id);
+    expect(perVaultTabs).not.toBeNull();
+    const parsed = JSON.parse(perVaultTabs!);
+    expect(parsed.map((t: { id: string }) => t.id)).toEqual(['file:alpha.md', 'file:beta.md']);
+    await expect.poll(() =>
+      page.evaluate((vid) => localStorage.getItem(`molio.kb.activeTabId.${vid}`), vault.id),
+    ).toBe('file:alpha.md');
   });
 });
 

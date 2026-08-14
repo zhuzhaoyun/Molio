@@ -59,7 +59,7 @@ describe('main.js: macOS hide-on-close (regression: dock reopen stuck on splash)
 
   it('should have a macOS close handler that hides instead of destroying the window', () => {
     // The close handler must be registered on the window inside createWindow()
-    const closeHandler = mainJs.match(/mainWindow\.on\('close',\s*\(event\)\s*=>\s*\{[\s\S]*?\}/);
+    const closeHandler = mainJs.match(/win\.on\('close',\s*\(event\)\s*=>\s*\{[\s\S]*?\}/);
     assert.ok(closeHandler, 'createWindow must register a close event handler on the window');
 
     const handlerBody = closeHandler[0];
@@ -78,21 +78,21 @@ describe('main.js: macOS hide-on-close (regression: dock reopen stuck on splash)
       'close handler must call event.preventDefault() to stop window destruction on macOS'
     );
     assert.ok(
-      handlerBody.includes('mainWindow?.hide()'),
+      handlerBody.includes('win.hide()'),
       'close handler must hide the window instead of destroying it'
     );
   });
 
-  it('should have a closed handler to clean up mainWindow reference', () => {
+  it('should have a closed handler that drops the window from appWindows', () => {
     assert.ok(
-      mainJs.includes("mainWindow.on('closed'") || mainJs.includes('mainWindow.on("closed"'),
+      mainJs.includes("win.on('closed'") || mainJs.includes('win.on("closed"'),
       'createWindow must register a closed event handler for cleanup'
     );
 
-    const closedMatch = mainJs.match(/mainWindow\.on\('closed',\s*\(\)\s*=>\s*\{[\s\S]*?mainWindow\s*=\s*null[\s\S]*?\}\)/);
+    const closedMatch = mainJs.match(/win\.on\('closed',\s*\(\)\s*=>\s*\{[\s\S]*?appWindows\.delete\(win\)[\s\S]*?\}\)/);
     assert.ok(
       closedMatch,
-      'closed handler must set mainWindow = null so the reference is cleaned up on real destroy'
+      'closed handler must appWindows.delete(win) so the window is dropped from the collection on real destroy'
     );
   });
 
@@ -124,27 +124,27 @@ describe('main.js: macOS hide-on-close (regression: dock reopen stuck on splash)
     const activateBlock = mainJs.slice(activatePos, activateEnd > activatePos ? activateEnd : activatePos + 500);
 
     assert.ok(
-      activateBlock.includes('BrowserWindow.getAllWindows().length === 0'),
+      activateBlock.includes('appWindows.size === 0'),
       'activate must still create a window when none exist (cold start)'
     );
     assert.ok(
-      activateBlock.includes('mainWindow.isMinimized()'),
+      activateBlock.includes('win.isMinimized()'),
       'activate must check isMinimized() to restore dock-minimized windows'
     );
     assert.ok(
-      activateBlock.includes('mainWindow.restore()'),
+      activateBlock.includes('win.restore()'),
       'activate must call restore() for minimized windows'
     );
     assert.ok(
-      activateBlock.includes('!mainWindow.isVisible()'),
+      activateBlock.includes('!win.isVisible()'),
       'activate must check isVisible() for hidden windows (hide-on-close)'
     );
     assert.ok(
-      activateBlock.includes('mainWindow.show()'),
-      'activate must call mainWindow.show() for hidden windows'
+      activateBlock.includes('win.show()'),
+      'activate must call win.show() for hidden windows'
     );
     assert.ok(
-      activateBlock.includes('mainWindow.focus()'),
+      activateBlock.includes('win.focus()'),
       'activate must call focus() to bring window to front'
     );
   });
@@ -164,8 +164,8 @@ describe('main.js: second-instance must restore hidden windows (macOS hide-on-cl
       'second-instance must check isVisible() to restore hidden windows from macOS hide-on-close'
     );
     assert.ok(
-      secondInstanceBlock.includes('mainWindow.show()'),
-      'second-instance must call mainWindow.show() for hidden windows'
+      secondInstanceBlock.includes('win.show()'),
+      'second-instance must call win.show() for hidden windows'
     );
     assert.ok(
       secondInstanceBlock.includes('isMinimized()'),

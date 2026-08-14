@@ -74,8 +74,8 @@ describe('main.js: daemon must use Electron embedded Node.js (not system node)',
 describe('main.js: must load URL only after daemon is ready (not in createWindow)', () => {
   it('createWindow should NOT call loadURL for production (localhost:3100)', () => {
     // Extract createWindow function body
-    const fnStart = mainJs.indexOf('function createWindow()');
-    assert.ok(fnStart !== -1, 'createWindow must exist');
+    const fnStart = mainJs.indexOf('function createWindow({ url');
+    assert.ok(fnStart !== -1, 'createWindow({ url }) must exist');
 
     const fnEnd = mainJs.indexOf('\nfunction ', fnStart + 1);
     const fnBody = mainJs.slice(fnStart, fnEnd);
@@ -90,9 +90,9 @@ describe('main.js: must load URL only after daemon is ready (not in createWindow
     // The splash page caused the ARMS Browser SDK to inject into the splash
     // (whose JS context is destroyed on navigation) and skip the real app,
     // because the SDK's WeakSet prevents re-injection on the same webContents.
-    // Production now keeps the window hidden until loadApp() navigates
+    // Production now keeps the window hidden until loadAppWindow() navigates
     // directly to localhost:3100 — one navigation = one correct injection.
-    const fnStart = mainJs.indexOf('function createWindow()');
+    const fnStart = mainJs.indexOf('function createWindow({ url');
     const fnEnd = mainJs.indexOf('\nfunction ', fnStart + 1);
     const fnBody = mainJs.slice(fnStart, fnEnd);
 
@@ -102,39 +102,39 @@ describe('main.js: must load URL only after daemon is ready (not in createWindow
     );
     assert.ok(
       fnBody.includes('show: false'),
-      'createWindow must keep the window hidden until loadApp() shows it'
+      'createWindow must keep the window hidden until loadAppWindow() shows it'
     );
   });
 
-  it('loadApp should call loadURL for localhost:3100', () => {
+  it('loadAppWindow should call loadURL for localhost:3100', () => {
     assert.ok(
-      mainJs.includes('function loadApp()'),
-      'loadApp function must exist'
+      mainJs.includes('function loadAppWindow('),
+      'loadAppWindow function must exist'
     );
 
-    const fnStart = mainJs.indexOf('function loadApp()');
+    const fnStart = mainJs.indexOf('function loadAppWindow(');
     const fnEnd = mainJs.indexOf('\nfunction ', fnStart + 1);
     const fnBody = mainJs.slice(fnStart, fnEnd > fnStart ? fnEnd : fnStart + 500);
 
     assert.ok(
       fnBody.includes('localhost:3100'),
-      'loadApp must call loadURL for localhost:3100'
+      'loadAppWindow must call loadURL for localhost:3100'
     );
   });
 
-  it('loadApp should be called after startDaemonProduction in whenReady', () => {
+  it('loadAppWindow should be called after startDaemonProduction in whenReady', () => {
     const whenReadyPos = mainJs.indexOf('app.whenReady()');
     assert.ok(whenReadyPos !== -1, 'app.whenReady() must exist');
 
     const whenReadyBlock = mainJs.slice(whenReadyPos);
     const daemonPos = whenReadyBlock.indexOf('startDaemonProduction');
-    const loadAppPos = whenReadyBlock.indexOf('loadApp()');
+    const loadAppPos = whenReadyBlock.indexOf('loadAppWindow(');
 
     assert.ok(daemonPos !== -1, 'startDaemonProduction must be in whenReady block');
-    assert.ok(loadAppPos !== -1, 'loadApp() must be in whenReady block');
+    assert.ok(loadAppPos !== -1, 'loadAppWindow() must be in whenReady block');
     assert.ok(
       loadAppPos > daemonPos,
-      `loadApp() (pos ${loadAppPos}) must be called AFTER startDaemonProduction (pos ${daemonPos})`
+      `loadAppWindow() (pos ${loadAppPos}) must be called AFTER startDaemonProduction (pos ${daemonPos})`
     );
   });
 });
@@ -153,7 +153,7 @@ describe('main.js: protocol launch should load app when daemon is not yet ready'
 
   it('should detect when the app has not loaded yet (waiting for daemon)', () => {
     assert.ok(
-      mainJs.includes('function isWaitingForApp()'),
+      mainJs.includes('function isWaitingForApp('),
       'main.js must detect the blank-window state before handling molio://launch'
     );
     assert.ok(
@@ -166,7 +166,7 @@ describe('main.js: protocol launch should load app when daemon is not yet ready'
     );
   });
 
-  it('molio://launch should call loadApp when app has not loaded yet', () => {
+  it('molio://launch should call loadAppWindow when app has not loaded yet', () => {
     const navigatePos = mainJs.indexOf('function navigateFromProtocolUrl');
     assert.ok(navigatePos !== -1, 'navigateFromProtocolUrl must exist');
 
@@ -179,11 +179,11 @@ describe('main.js: protocol launch should load app when daemon is not yet ready'
       'navigateFromProtocolUrl must handle parsed launch actions'
     );
     assert.ok(
-      navigateBlock.includes('isWaitingForApp()'),
+      navigateBlock.includes('isWaitingForApp(targetWin)'),
       'molio://launch handling must check if the app has not loaded yet'
     );
     assert.ok(
-      navigateBlock.includes('loadApp()'),
+      navigateBlock.includes('loadAppWindow(targetWin)'),
       'molio://launch handling must load the real app when daemon is ready'
     );
   });
@@ -210,11 +210,11 @@ describe('main.js: protocol launch should load app when daemon is not yet ready'
     assert.ok(navigatePos !== -1, 'navigateFromProtocolUrl must exist');
     const navigateBlock = mainJs.slice(navigatePos, navigatePos + 2000);
     assert.ok(
-      navigateBlock.includes('!rendererReady'),
+      navigateBlock.includes('!state?.ready'),
       'open-file navigation must fall back to loadURL when the renderer is not ready'
     );
     assert.ok(
-      /isWaitingForApp\(\)\s*\|\|\s*!rendererReady/.test(navigateBlock),
+      /isWaitingForApp\(targetWin\)\s*\|\|\s*!state\?\.ready/.test(navigateBlock),
       'the loadURL fallback condition must cover both waiting-for-app and not-ready states'
     );
   });
@@ -278,8 +278,8 @@ describe('main.js: daemon startup failure must show an error page, not spin fore
     assert.ok(elsePos !== -1, 'whenReady must have an else branch for daemon-not-ready');
     const afterElse = mainJs.slice(elsePos);
     assert.ok(
-      afterElse.includes('showDaemonErrorPage()'),
-      'the daemon-not-ready else branch must call showDaemonErrorPage()'
+      afterElse.includes('showDaemonErrorPage(firstWindow)'),
+      'the daemon-not-ready else branch must call showDaemonErrorPage(firstWindow)'
     );
   });
 
@@ -405,30 +405,30 @@ describe('main.js: graceful daemon shutdown to preserve last assistant reply', (
   });
 });
 
-describe('main.js: loadApp must handle did-fail-load so a failed load never leaves a dead hidden window', () => {
-  // Regression: loadApp() only listened for did-finish-load before showing the
-  // window. If loadURL fails (daemon crashes between the readiness check and
-  // the page loading, or a transient network error), Electron fires
+describe('main.js: loadAppWindow must handle did-fail-load so a failed load never leaves a dead hidden window', () => {
+  // Regression: loadAppWindow() only listened for did-finish-load before
+  // showing the window. If loadURL fails (daemon crashes between the readiness
+  // check and the page loading, or a transient network error), Electron fires
   // did-fail-load instead — so the window stayed hidden forever with no
   // feedback and the app appeared completely dead.
   function loadAppBody() {
-    const fnStart = mainJs.indexOf('function loadApp()');
-    assert.ok(fnStart !== -1, 'loadApp function must exist');
+    const fnStart = mainJs.indexOf('function loadAppWindow(');
+    assert.ok(fnStart !== -1, 'loadAppWindow function must exist');
     const fnEnd = mainJs.indexOf('\nfunction ', fnStart + 1);
     return mainJs.slice(fnStart, fnEnd > fnStart ? fnEnd : fnStart + 1000);
   }
 
-  it('loadApp should register a did-fail-load handler', () => {
+  it('loadAppWindow should register a did-fail-load handler', () => {
     assert.ok(
       loadAppBody().includes('did-fail-load'),
-      'loadApp must handle did-fail-load — otherwise a failed loadURL leaves the window hidden forever'
+      'loadAppWindow must handle did-fail-load — otherwise a failed loadURL leaves the window hidden forever'
     );
   });
 
   it('did-fail-load handler should surface the daemon error page', () => {
     assert.ok(
       loadAppBody().includes('showDaemonErrorPage'),
-      'on load failure loadApp must show the daemon error page so the user gets feedback instead of a dead window'
+      'on load failure loadAppWindow must show the daemon error page so the user gets feedback instead of a dead window'
     );
   });
 });
