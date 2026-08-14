@@ -339,6 +339,56 @@ test.describe('Floating chat (方案 D)', () => {
     expect(await shellPad()).toBeLessThan(4);
   });
 
+  test('停靠态单击顶部空白区不脱离（仅真实拖动才变悬浮）', async ({ page }) => {
+    // 回归：onHeaderDragStart 原在 pointerdown 立即切 dock→float，单击（无位移）也误触脱离。
+    await mockChatRun(page);
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await page.locator('[data-testid="kb-btn-ask"]').click();
+    const panel = page.locator('[data-testid="kb-chat-panel"]');
+    await expect(panel).toBeVisible();
+    await expect(panel).toHaveClass(/floating-chat-panel--dock-kb/);
+
+    // 单击标签栏空白区（down+up 无位移）→ 保持停靠，不变悬浮
+    const tb = (await page.locator('[data-testid="kb-chat-session-tabbar"]').boundingBox())!;
+    await page.mouse.click(tb.x + tb.width - 120, tb.y + 16);
+    await page.waitForTimeout(200);
+    await expect(panel).toHaveClass(/floating-chat-panel--dock-kb/);
+  });
+
+  test('窄视口拖宽不过 90vw：右缘钉死、不偏出屏（JS clamp 与 CSS max-width 一致）', async ({ page }) => {
+    // 回归：JS clamp 上限 720 与 CSS max-width:min(90vw,720) 在窄窗口（<800px）下不一致，
+    // inline width 超过渲染上限 → left 按 inline 算 → 右缘漂移、面板偏出屏（释放后跳回）。
+    await page.setViewportSize({ width: 700, height: 800 });
+    await mockChatRun(page);
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await page.locator('[data-testid="kb-btn-ask"]').click();
+    const panel = page.locator('[data-testid="kb-chat-panel"]');
+    await expect(panel).toBeVisible();
+    await page.waitForTimeout(300);
+    await page.locator('[data-testid="kb-chat-dock-toggle"]').click();
+    await page.waitForTimeout(300);
+
+    const handle = page.locator('[data-testid="kb-chat-resize-handle"]');
+    const hb = (await handle.boundingBox())!;
+    const sx = hb.x + 4, sy = hb.y + 200;
+    const pinnedRight = 700 - 24; // 浮态右缘距视口 24
+    await page.mouse.move(sx, sy);
+    await page.mouse.down();
+    // 拖到远超 CSS max-width（700px 视口 → min(90vw,720)=630）→ 右缘必须始终钉死
+    for (const dx of [-60, -120, -180, -240, -300, -360]) {
+      await page.mouse.move(sx + dx, sy);
+      const r = (await panel.boundingBox())!;
+      expect(Math.abs(r.x + r.width - pinnedRight)).toBeLessThan(2);
+    }
+    await page.mouse.up();
+    // 释放后仍在视口内（不出屏偏左），右缘依旧钉死
+    const end = (await panel.boundingBox())!;
+    expect(end.x).toBeGreaterThanOrEqual(0);
+    expect(Math.abs(end.x + end.width - pinnedRight)).toBeLessThan(2);
+  });
+
   test('悬浮形态可拖拽移动位置，重载后位置保留', async ({ page }) => {
     // KB 页默认停靠 → 经 💬问答 打开后切悬浮，验证移动与位置持久化。
     await mockChatRun(page);

@@ -26,8 +26,13 @@ const PANEL_WIDTH_MIN = 320;
 const PANEL_WIDTH_MAX = 720;
 const STORAGE_KEY_WIDTH = 'molio.kb.chatPanelWidth';
 
+// 拖宽上限必须与 CSS max-width: min(90vw, 720px) 一致：窄窗口（<800px）下 90vw < 720，
+// 若 JS 仍按 720 clamp，inline width 会超过渲染上限，而 left = opposite - w 按 inline 算，
+// 导致右缘漂移、面板偏出屏（释放后再跳回 = 「不连续位移」）。这里把上限压到 min(720, 90vw)。
 function clampPanelWidth(w: number): number {
-  return Math.min(PANEL_WIDTH_MAX, Math.max(PANEL_WIDTH_MIN, Math.round(w)));
+  const vwMax = typeof window !== 'undefined' ? Math.round(window.innerWidth * 0.9) : PANEL_WIDTH_MAX;
+  const max = Math.min(PANEL_WIDTH_MAX, vwMax);
+  return Math.min(max, Math.max(PANEL_WIDTH_MIN, Math.round(w)));
 }
 function readPanelWidth(): number {
   try {
@@ -374,26 +379,28 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
     const rect = el.getBoundingClientRect();
     const grabX = e.clientX - rect.left;
     const grabY = e.clientY - rect.top;
-    if (dockMode === 'dock') {
-      // 脱离停靠：立即切为悬浮并让面板跟随光标（瞬时，无过渡）
-      setDockMode('float');
-      moveRef.current = { grabX, grabY, fromDock: true };
-      el.style.left = `${clampMoveX(e.clientX - grabX)}px`;
-      el.style.top = `${clampMoveY(e.clientY - grabY)}px`;
-    } else {
-      moveRef.current = { grabX, grabY, fromDock: false };
-    }
+    // 记录拖拽起点；停靠态不在 pointerdown 立即脱离——否则单击顶部空白区也会误触 dock→float。
+    // 脱离在首个真实位移（onHeaderDragMove）时发生。
+    moveRef.current = { grabX, grabY, fromDock: dockMode === 'dock' };
     // 拖动中禁止选中文本：header 拖动与文本预览器的文字选择冲突（用户拖顶移动时误选文档文字）
     document.body.classList.add('kb-moving');
     return true;
-  }, [dockMode, setDockMode, clampMoveX, clampMoveY]);
+  }, [dockMode]);
   const onHeaderDragMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     const d = moveRef.current;
     const el = panelElRef.current;
     if (!d || !el) return;
+    // 停靠态首个真实位移 → 脱离停靠并让面板跟随光标（瞬时，无过渡）。
+    // 单击（无位移）不触发：onHeaderDragEnd 无 left/top → moved=false → 形态不变。
+    if (d.fromDock && dockMode === 'dock') {
+      setDockMode('float');
+      el.style.left = `${clampMoveX(e.clientX - d.grabX)}px`;
+      el.style.top = `${clampMoveY(e.clientY - d.grabY)}px`;
+      return;
+    }
     el.style.left = `${clampMoveX(e.clientX - d.grabX)}px`;
     el.style.top = `${clampMoveY(e.clientY - d.grabY)}px`;
-  }, [clampMoveX, clampMoveY]);
+  }, [dockMode, setDockMode, clampMoveX, clampMoveY]);
   const onHeaderDragEnd = useCallback(() => {
     const d = moveRef.current;
     const el = panelElRef.current;
