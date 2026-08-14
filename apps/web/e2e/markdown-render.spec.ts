@@ -44,6 +44,20 @@ References
 \\[2\\] AI Maker：https://example.com/2
 `;
 
+// LaTeX formulas in every supported syntax. Molio loads MathJax v3 locally
+// (see src/utils/mathjaxLoader.ts) so the doocs/md KaTeX extension typesets
+// these to real SVG; without MathJax they would render as raw LaTeX source.
+const FORMULA_TEST_MD = `# Formula Test
+
+Inline formula $E = mc^2$ here.
+
+$$
+\\int_0^1 x^2 \\, dx = \\frac{1}{3}
+$$
+
+\\[ a^2 + b^2 = c^2 \\]
+
+\\( x + y = z \\) inline latex.
 // Reproduces the ARMS-reported YAMLException: wiki skills mandate QUOTED
 // wikilink lists in frontmatter (`related: - "[[页面]]"`). The renderer
 // preprocessing used to rewrite [[…]] into `<a class="kb-wiki-link" href="…">`
@@ -138,9 +152,7 @@ test.describe('Markdown Rendering', () => {
     testVaultPath = mkdtempSync(join(tmpdir(), 'molio-e2e-render-'));
     writeFileSync(join(testVaultPath, 'render-test.md'), RENDER_TEST_MD);
     writeFileSync(join(testVaultPath, 'citation-test.md'), CITATION_TEST_MD);
-    writeFileSync(join(testVaultPath, 'frontmatter-wikilink.md'), FRONTMATTER_WIKILINK_MD);
-    // Link target for the body wikilink in frontmatter-wikilink.md
-    writeFileSync(join(testVaultPath, '杜甫.md'), '# 杜甫\n\n唐代诗人。\n');
+    writeFileSync(join(testVaultPath, 'formula-test.md'), FORMULA_TEST_MD);
 
     // Register the vault via the daemon API
     const res = await fetch(`${DAEMON_API}/knowledge/vaults`, {
@@ -278,11 +290,12 @@ test.describe('Markdown Rendering', () => {
   });
 
   test('escaped-bracket citation markers do not crash MathJax renderer', async ({ page }) => {
-    // Reproduces the WeChat-clipping crash: `\\[1\\]` citation markers must
-    // NOT be treated as LaTeX block math. MathJax is not loaded in Molio, so
-    // any `\\[ ... \\]` / `$ ... $` token reaching the KaTeX renderer crashes
-    // ("Cannot read properties of undefined (reading 'texReset')"). The guard
-    // must fall back to raw text instead.
+    // WeChat clippings use `\\[1\\]` as escaped-bracket citation markers. They
+    // collide with the LaTeX block rule and (before the #113 guard) crashed the
+    // renderer with "Cannot read properties of undefined (reading 'texReset')"
+    // when MathJax was missing. Now MathJax is loaded locally, but the citation
+    // guard (isCitationLike in katex.ts) must still keep them as literal `[N]`
+    // text — NOT typeset as display math.
     await openRenderTestFile(page, 'citation-test.md');
 
     // Must NOT render the MdRenderer error fallback
@@ -293,5 +306,35 @@ test.describe('Markdown Rendering', () => {
     const output = page.locator('#output');
     await expect(output).toContainText('[1]');
     await expect(output).toContainText('[2]');
+
+    // Regression: even with MathJax loaded, citation markers must NOT be turned
+    // into math — no SVG anywhere in this (formula-free) document.
+    await expect(page.locator('#output svg')).toHaveCount(0, { timeout: 5_000 });
+  });
+
+  test('renders LaTeX formulas as MathJax SVG', async ({ page }) => {
+    // Formulas must render as real math (SVG), not raw LaTeX source. Covers all
+    // four doocs/md syntaxes: `$...$`, `$$...$$`, `\\[ ... \\]`, `\\( ... \\)`.
+    await openRenderTestFile(page, 'formula-test.md');
+
+    // Inline formulas render inside span.katex-inline, block inside section.katex-block
+    const inlineSvg = page.locator('#output .katex-inline svg');
+    const blockSvg = page.locator('#output .katex-block svg');
+    await expect(inlineSvg).toHaveCount(2, { timeout: 10_000 });
+    await expect(blockSvg).toHaveCount(2, { timeout: 10_000 });
+
+    // The raw LaTeX source must NOT leak as visible text (only inside
+    // data-math-raw attributes).
+    const outputText = await page.locator('#output').innerText();
+    expect(outputText).not.toContain('$E = mc^2$');
+    expect(outputText).not.toContain('\\frac');
+
+    // Regression: MathJax SVG must contain `<use>` glyph references. Without
+    // them (DOMPurify strips `<use>` by default — see sanitizeHtml ADD_TAGS
+    // `use` in vendor/doocs-md/src/utils/markdownHelpers.ts) the formula
+    // renders as a blank box even though the `<svg>` element exists.
+    await expect(page.locator('#output .katex-inline svg use').first()).toBeVisible({ timeout: 10_000 });
+    expect(await page.locator('#output .katex-inline svg use').count()).toBeGreaterThan(0);
+    expect(await page.locator('#output .katex-block svg use').count()).toBeGreaterThan(0);
   });
 });

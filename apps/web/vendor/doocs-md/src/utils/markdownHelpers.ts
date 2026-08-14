@@ -55,10 +55,14 @@ function sanitizeHtml(html: string, opts?: SanitizeOptions): string {
   // Allow onerror only for our benign broken-image fallback (set by
   // renderer-impl.ts) — LOCAL content only; for untrusted input the allowlist
   // would let a raw `<img onerror=…>` through.
+  // [MOLIO] ADD_TAGS `use`: MathJax 公式的 SVG 用 `<use xlink:href="#MJX-…">` 引用
+  // `<defs>` 里的字形路径，而 DOMPurify 默认会把 `<use>` 整个剥掉，导致所有公式
+  // 渲染成空白（只有 defs 路径、没有 use 引用）。加回 `use` 即可恢复（xlink:href
+  // 指向文档内片段，DOMPurify 仍会校验其值）。
   html = DOMPurify.sanitize(html, untrusted
     ? {}
     : {
-        ADD_TAGS: [`mp-common-profile`],
+        ADD_TAGS: [`mp-common-profile`, `use`],
         ADD_ATTR: [`onerror`],
       })
 
