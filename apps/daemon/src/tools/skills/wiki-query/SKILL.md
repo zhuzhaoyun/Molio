@@ -1,7 +1,7 @@
 ---
 name: wiki-query
 description: 基于本知识库已构建的 wiki 和源文件回答用户关于库内内容的问题，或为库内主题的任何任务（写作、分析、咨询等，形式不限）提供依据。先读 wiki/hot.md 与根 wiki/INDEX.md、再按需读相关目录的 INDEX.md 定位页面，读取最相关的 wiki 页面，必要时回溯源文件，再用 [[wikilink]] 引用并标注来源给出综合回答或创作依据——默认检索优先，问答与库内主题的创作都要先查本库，即使话题熟悉也不能凭训练记忆产出库内内容。领域无关，适用于任何已构建 wiki 的知识库。Triggers on: 介绍, 讲解, 总结, 概括, 梳理, 有哪些, 是什么, 是谁, 怎么回事, 为什么, 怎么办, 怎么处理, 怎么解决, 如何, 怎样, 方法, 方案, 原因, 影响, 作用, 对比, 区别, 关系, 根据知识库回答, 查知识库, 查一下知识库, wiki 里怎么说的, 知识库里有没有, 问问知识库, answer from the wiki, what does the knowledge base say, who is, what is, how to, how do I, summarize from notes.
-version: 1.7.0
+version: 1.8.0
 ---
 
 # wiki-query: 知识库问答
