@@ -85,6 +85,9 @@ const zh: Record<string, string> = {
   'workTimeline.append': '追加内容',
   'workTimeline.default': '调用工具',
 
+  // ── SourceChips ──
+  'source.title': '引用',
+
   // ── RuntimePage ──
   'runtimes.title': '运行时',
   'runtimes.agentsTab': '代理',

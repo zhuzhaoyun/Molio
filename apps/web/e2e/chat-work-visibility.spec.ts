@@ -54,4 +54,21 @@ test.describe('KB chat — work visibility', () => {
     const done = timeline.locator('[data-step-status="done"]');
     await expect(done).toHaveCount(4); // 读取文件 + 检索内容 + 写入文件 + 生成回复
   });
+
+  test('来源 chips 出现引用文件，点击跳转打开', async ({ page }) => {
+    await mockChatRun(page, { script: SCRIPTS.workflowRun, frameDelay: 200 });
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+
+    await openQaAndSend(page, '总结知识库');
+
+    // 完成后：Read → 笔记/入门.md，Grep → 笔记，去重后 2 个 chip
+    const chips = page.locator('[data-testid="source-chips"] [data-testid="source-chip"]');
+    await expect(chips).toHaveCount(2, { timeout: 10_000 });
+    await expect(chips.first()).toContainText('入门.md');
+
+    // 点击 chip → 导航打开对应文件
+    await chips.first().click();
+    await expect(page.locator('#output')).toContainText('入门笔记', { timeout: 10_000 });
+  });
 });

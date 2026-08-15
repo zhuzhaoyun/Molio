@@ -85,6 +85,9 @@ const en: Record<string, string> = {
   'workTimeline.append': 'Append content',
   'workTimeline.default': 'Tool call',
 
+  // ── SourceChips ──
+  'source.title': 'Sources',
+
   // ── RuntimePage ──
   'runtimes.title': 'Runtimes',
   'runtimes.agentsTab': 'Agents',

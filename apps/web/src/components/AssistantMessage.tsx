@@ -8,6 +8,7 @@ import { useFileNavigation } from '../hooks/useFileNavigation';
 import { ToolCard } from './ToolCard';
 import { ToolGroup, BatchGroup } from './ToolGroup';
 import { ThinkingBlock } from './ThinkingBlock';
+import { SourceChips } from './SourceChips';
 import { SaveToKbButton } from './SaveToKbButton';
 import { SaveAsSkillButton } from './SaveAsSkillButton';
 import { MessageToolbar } from './MessageToolbar';
@@ -254,6 +255,7 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
         </div>
       )}
 
+      <SourceChips tools={message.tools ?? []} />
       {message.streaming && <span className="streaming-cursor" />}
 
       {message.usage && (
