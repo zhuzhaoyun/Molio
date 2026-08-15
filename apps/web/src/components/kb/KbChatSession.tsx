@@ -262,14 +262,6 @@ export function KbChatSession({
       ? [{ vaultId: session.vaultId, filePath: session.filePath }]
       : [];
 
-  const lastAssistantId = (() => {
-    for (let i = chat.messages.length - 1; i >= 0; i--) {
-      const m = chat.messages[i];
-      if (m && m.role === 'assistant') return m.id;
-    }
-    return null;
-  })();
-
   const lastAssistant = (() => {
     for (let i = chat.messages.length - 1; i >= 0; i--) {
       const m = chat.messages[i];
@@ -277,6 +269,7 @@ export function KbChatSession({
     }
     return null;
   })();
+  const lastAssistantId = lastAssistant?.id ?? null;
 
   return (
     <div className="file-chat-session" style={{ display: active ? undefined : 'none' }} data-testid="kb-chat-session">

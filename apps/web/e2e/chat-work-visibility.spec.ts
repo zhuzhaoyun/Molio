@@ -116,8 +116,49 @@ test.describe('KB chat — work visibility', () => {
     await expect(banner).toBeVisible({ timeout: 10_000 });
     // banner 展示产物文件（label 为 basename；完整路径在 button 的 title tooltip）
     await expect(banner).toContainText('总结.md');
+    await expect(banner.locator('[data-testid="work-complete-file"]')).toHaveAttribute('title', '产出/总结.md');
 
     await banner.locator('[data-testid="work-complete-file"]').click();
     await expect(page.locator('#output')).toContainText('总结', { timeout: 10_000 });
+  });
+
+  test('失败的工具不显示为来源 chip 或产物 banner', async ({ page }) => {
+    // 评审 FINDING：tool_result isError:true → useChatCore 映射 status:'error'，
+    // 抽取函数此前只跳过 running，会把失败工具当作成功引用/已写入展示。
+    // 成功 Read/Write 保留展示，失败 Read/Write 必须被排除。
+    await mockChatRun(page, {
+      script: [
+        { type: 'status', label: 'running' },
+        { type: 'tool_use', id: 'r1', name: 'Read', input: { file_path: '笔记/入门.md' } },
+        { type: 'tool_result', toolUseId: 'r1', content: '# 入门笔记', isError: false },
+        { type: 'tool_use', id: 'r2', name: 'Read', input: { file_path: '笔记/缺失.md' } },
+        { type: 'tool_result', toolUseId: 'r2', content: '文件不存在', isError: true },
+        { type: 'tool_use', id: 'w1', name: 'Write', input: { file_path: '产出/成功.md' } },
+        { type: 'tool_result', toolUseId: 'w1', content: '已写入', isError: false },
+        { type: 'tool_use', id: 'w2', name: 'Write', input: { file_path: '产出/失败.md' } },
+        { type: 'tool_result', toolUseId: 'w2', content: '写入失败', isError: true },
+        { type: 'text_delta', delta: '完成。' },
+        { type: 'turn_end', stopReason: 'end_turn' },
+        { type: 'usage', usage: { input_tokens: 400, output_tokens: 60 }, costUsd: 0.02 },
+      ],
+      frameDelay: 150,
+    });
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+
+    await openQaAndSend(page, '总结知识库');
+
+    // 来源 chips：只保留成功的 Read（1 个），失败的 缺失.md 不出现
+    const chips = page.locator('[data-testid="source-chips"] [data-testid="source-chip"]');
+    await expect(chips).toHaveCount(1, { timeout: 10_000 });
+    await expect(chips).toContainText('入门.md');
+    await expect(chips).not.toContainText('缺失.md');
+
+    // 产物 banner：只保留成功的 Write（1 个），失败的 失败.md 不出现
+    const banner = page.locator('[data-testid="work-complete-banner"]');
+    await expect(banner).toBeVisible({ timeout: 10_000 });
+    await expect(banner).toContainText('成功.md');
+    await expect(banner).not.toContainText('失败.md');
+    await expect(banner.locator('[data-testid="work-complete-file"]')).toHaveCount(1);
   });
 });

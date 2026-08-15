@@ -51,14 +51,15 @@ function sourceTarget(tool: ToolEvent): { target: string; navigable: boolean } |
 
 /**
  * 从一条 assistant 消息的 tools 抽取「引用」：Read/Grep/Bash(cat) → 文件，WebFetch → URL，
- * Glob → 搜索 pattern（不可跳转）。按 target 去重，跳过 running 中的工具（完成后再显示）。
+ * Glob → 搜索 pattern（不可跳转）。按 target 去重，仅保留完成（done）的工具 ——
+ * running 中的等完成后再显示，error（tool_result isError）的不当作引用。
  */
 export function extractSources(tools: ToolEvent[]): SourceRef[] {
   const seen = new Set<string>();
   const out: SourceRef[] = [];
   for (const t of tools) {
     if (!SOURCE_TOOLS.has(t.name)) continue;
-    if (t.status === 'running') continue;
+    if (t.status !== 'done') continue;
     const hit = sourceTarget(t);
     if (!hit) continue;
     if (seen.has(hit.target)) continue;
@@ -100,6 +101,8 @@ function writeTarget(tool: ToolEvent): string | null {
 /**
  * 从一条 assistant 消息的 tools 抽取「产物」：Write → 新文件（create），
  * Edit/EditFile/MultiEdit/Append/AppendFile → 更新（update）。按 path 去重。
+ * 仅保留完成（done）的工具 —— error（tool_result isError）的不当作已写入产物，
+ * 避免 banner 标题「已完成，产出已写入知识库」在写入失败时误导用户。
  * 与 extractSources 共用 target 抽取风格，方向 D 与 B 同一 util 文件。
  */
 export function extractWrites(tools: ToolEvent[]): WriteRef[] {
@@ -107,7 +110,7 @@ export function extractWrites(tools: ToolEvent[]): WriteRef[] {
   const out: WriteRef[] = [];
   for (const t of tools) {
     if (!WRITE_TOOLS.has(t.name)) continue;
-    if (t.status === 'running') continue;
+    if (t.status !== 'done') continue;
     const path = writeTarget(t);
     if (!path || seen.has(path)) continue;
     seen.add(path);
