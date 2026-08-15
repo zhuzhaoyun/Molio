@@ -22,7 +22,7 @@ function clientIp(c: Context): string | null {
 
 function handleError(c: Context, e: unknown): Response {
   if (e instanceof ServiceError) {
-    return c.json({ error: e.code, ...e.extra }, e.status as 400 | 401 | 404 | 429);
+    return c.json({ error: e.code, ...e.extra }, e.status as 400 | 401 | 404 | 422 | 429);
   }
   throw e;
 }

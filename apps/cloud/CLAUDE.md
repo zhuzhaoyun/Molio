@@ -17,7 +17,7 @@ Molio 用户模块（第一期 = 身份层）的云端服务。提供邮箱验�
 src/
   index.ts       入口：loadConfig → 按 DATABASE_URL 选 store → serve
   app.ts         Hono 路由（/health + 6 端点）；不配 CORS（无浏览器直连）
-  config.ts      env 加载（MOLIO_ENV / 限频 / TTL / 密钥）
+  config.ts      env 加载（MOLIO_ENV / 限频 / TTL / 密钥 / DirectMail）
   service.ts     AuthService：限频、一次性原子消费、隐式注册、轮换 + 重放检测
   store/
     types.ts     AuthStore 接口（活跃判定 deleted_at IS NULL AND status='active' 收口于此）
@@ -25,7 +25,7 @@ src/
     pg.ts        PgAuthStore（生产）
   jwt.ts         HS256 签发/验签（自实现，kid 留桩）
   crypto.ts      SHA-256(code+pepper) / token hash
-  mailer.ts      daily 写 stdout；prod 未接 DirectMail 时显式报错
+  mailer.ts      daily 写 stdout；prod 走阿里云 DirectMail（SingleSendMail），未配置时 loadConfig fail-fast
 test/
   helpers.ts     可编程 mock（时钟/store/邮件）
   *.test.ts      限频、过期/锁码/一次性、隐式注册、轮换与重放、注销、jwt
@@ -37,7 +37,7 @@ schema.sql       三表 DDL + 部分唯一索引 + 限频索引
 ```bash
 pnpm dev          # tsx src/index.ts（本地 :3200，内存模式）
 pnpm build        # tsc
-pnpm test         # rm dist && tsc && node --test dist/test/**（36 用例）
+pnpm test         # rm dist && tsc && node --test dist/test/**（51 用例）
 pnpm typecheck    # tsc --noEmit
 ```
 
@@ -49,6 +49,12 @@ pnpm typecheck    # tsc --noEmit
 | `DATABASE_URL` | 否 | PG 连接串；缺省走内存 store |
 | `MOLIO_JWT_SECRET` | prod 必填 | HS256 签名密钥，不入代码库 |
 | `MOLIO_CODE_PEPPER` | prod 必填 | 验证码 hash pepper |
+| `MOLIO_DM_ACCESS_KEY_ID` | prod 必填 | DirectMail 发信 RAM AK（建议最小权限 `dm:SingleSendMail`），不入代码库 |
+| `MOLIO_DM_ACCESS_KEY_SECRET` | prod 必填 | DirectMail 发信 RAM SK，不入代码库 |
+| `MOLIO_DM_ACCOUNT_NAME` | prod 必填 | 发信地址（如 `noreply@mail.molio.cn`），须挂在已过 SPF/DKIM 验证的发信域名下 |
+| `MOLIO_DM_REGION` | 否 | DirectMail 地域，决定 endpoint，默认 `cn-hangzhou` |
+| `MOLIO_DM_ENDPOINT` | 否 | endpoint 显式覆盖（缺省按 region 推导：杭州 `dm.aliyuncs.com`，其余 `dm.<region>.aliyuncs.com`） |
+| `MOLIO_DM_REPLY_TO` | 否 | 可选 Reply-To（如企业邮箱人工收件箱） |
 | `PORT` / `CAPort` | 否 | 监听端口（FC Web 函数注入 `CAPort`），默认 3200 |
 | `MOLIO_ACCESS_TTL_SEC` / `MOLIO_CODE_TTL_SEC` / `MOLIO_REFRESH_TTL_SEC` | 否 | token/验证码寿命，默认 15min/5min/30d |
 | `MOLIO_ROTATION_GRACE_SEC` | 否 | 轮换宽限窗（重试误判防护），默认 30 |

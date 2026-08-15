@@ -11,6 +11,23 @@ export interface RateLimits {
   ipDailyMax: number;
 }
 
+/**
+ * 阿里云 DirectMail 发信配置（§十三）。凭据只经 FC 函数 env 注入，绝不入仓库。
+ * 发信地址必须挂在已通过 SPF/DKIM 验证的发信域名下。
+ */
+export interface DirectMailConfig {
+  accessKeyId: string;
+  accessKeySecret: string;
+  /** 发信地址（如 noreply@mail.molio.cn） */
+  accountName: string;
+  /** DirectMail 地域，决定 endpoint；默认 cn-hangzhou */
+  region: string;
+  /** endpoint 显式覆盖（缺省按 region 推导） */
+  endpoint?: string;
+  /** 可选 Reply-To：用户回复验证码邮件时落到该地址（如企业邮箱人工收件） */
+  replyTo?: string;
+}
+
 export interface CloudConfig {
   env: CloudEnv;
   port: number;
@@ -33,6 +50,8 @@ export interface CloudConfig {
   rate: RateLimits;
   /** 无 DATABASE_URL 时走 MemoryAuthStore（§十七 L7） */
   databaseUrl?: string;
+  /** DirectMail 配置齐全时才有值；prod 缺失时 loadConfig 直接抛错（fail-fast） */
+  directMail?: DirectMailConfig;
 }
 
 function intEnv(env: NodeJS.ProcessEnv, key: string, fallback: number): number {
@@ -58,6 +77,27 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CloudConfig {
     if (!codePepper) throw new Error('[cloud] prod 环境必须设置 MOLIO_CODE_PEPPER');
   }
 
+  // DirectMail：三项核心凭据全齐才启用；任一缺失视为未配置。
+  // prod 未配置 → 启动即失败（与 NotConfiguredMailer 同源：绝不允许 prod 静默发不出邮件）。
+  const dmAkId = env.MOLIO_DM_ACCESS_KEY_ID ?? '';
+  const dmAkSecret = env.MOLIO_DM_ACCESS_KEY_SECRET ?? '';
+  const dmAccount = env.MOLIO_DM_ACCOUNT_NAME ?? '';
+  let directMail: DirectMailConfig | undefined;
+  if (dmAkId && dmAkSecret && dmAccount) {
+    directMail = {
+      accessKeyId: dmAkId,
+      accessKeySecret: dmAkSecret,
+      accountName: dmAccount,
+      region: env.MOLIO_DM_REGION || 'cn-hangzhou',
+      endpoint: env.MOLIO_DM_ENDPOINT || undefined,
+      replyTo: env.MOLIO_DM_REPLY_TO || undefined,
+    };
+  } else if (envName === 'prod') {
+    throw new Error(
+      '[cloud] prod 环境必须完整配置 DirectMail：MOLIO_DM_ACCESS_KEY_ID / MOLIO_DM_ACCESS_KEY_SECRET / MOLIO_DM_ACCOUNT_NAME',
+    );
+  }
+
   return {
     env: envName,
     // FC Web 函数注入 CAPort；本地默认 3200（§十三）
@@ -77,5 +117,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CloudConfig {
       ipDailyMax: intEnv(env, 'MOLIO_RATE_IP_DAILY_MAX', 30),
     },
     databaseUrl: env.DATABASE_URL || undefined,
+    directMail,
   };
 }

@@ -8,7 +8,7 @@ import type { Entitlement, User } from '@molio/contracts';
  * - verify/refresh 轮换：refresh 必须携带**当前** refreshToken（旧的→401，模拟轮换）
  * - access 是 JWT（daemon 的 decodeAccessExp 可解出 exp）；服务端有效性由
  *   validAccess 集合控制，invalidateAccess() 模拟"本地看没过期、云端已失效"
- * - queue() 可对指定 (method, path) 预排响应/网络错误，测 5xx 退避与瞬时断网
+ * - queue() 可对指定 (method, path) 预排响应/网络错误，测 5xx 退避、瞬时断网与 4xx 不重试
  */
 
 export interface CloudCall {

@@ -14,7 +14,7 @@ import type {
 
 /**
  * daemon /api/auth/* 错误的类型化包装。daemon 统一回 `{error: code, ...extra}`：
- * - 云端 4xx 原样透传（invalid_email / rate_limited+resendAfterSec / invalid_code / locked）
+ * - 云端 4xx 原样透传（invalid_email / rate_limited+resendAfterSec / invalid_code / locked / mail_failed）
  * - 502 cloud_unreachable（断网）/ 503 auth_not_configured（MOLIO_AUTH_URL 未设置）
  * - 401 no_session（注销账号时无本地会话）
  * UI 按 code 映射文案（i18n），不按 status。

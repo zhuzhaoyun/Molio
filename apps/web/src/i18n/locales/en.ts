@@ -533,6 +533,7 @@ const en: Record<string, string> = {
   'login.agreePrivacy': 'Privacy Policy',
   'login.errInvalidEmail': 'Invalid email address',
   'login.errRateLimited': 'Too many requests. Try again in {sec}s.',
+  'login.errMailFailed': 'Failed to send the code. Please try again later.',
   'login.errInvalidCode': 'Incorrect code. Please try again.',
   'login.errLocked': 'Too many failed attempts. This code is locked — request a new one.',
   'login.errUnreachable': 'Cannot reach the sign-in service. Check your network and retry.',

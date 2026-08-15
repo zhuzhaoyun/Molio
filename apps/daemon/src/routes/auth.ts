@@ -7,7 +7,8 @@ import { AuthClient, AuthCloudError } from '../core/auth/auth-client.js';
  * Web UI 只跟这 4 个端点说话；daemon 是唯一 token 持有者与云端通信方。
  *
  * 错误映射：
- * - 云端 4xx → 原样透传（{error, ...extra}，如 rate_limited 带 resendAfterSec）
+ * - 云端 4xx → 原样透传（{error, ...extra}，如 rate_limited 带 resendAfterSec、
+ *   mail_failed=发信通道失败）
  * - 断网 → 502 cloud_unreachable
  * - MOLIO_AUTH_URL 未配置 → 503 auth_not_configured
  */
@@ -72,7 +73,7 @@ export function authRoutes(client: AuthClient): Hono {
   return app;
 }
 
-type ErrorStatus = 400 | 401 | 404 | 429 | 502 | 503;
+type ErrorStatus = 400 | 401 | 404 | 422 | 429 | 502 | 503;
 
 function cloudError(c: Context, e: unknown): Response {
   if (e instanceof AuthCloudError) {

@@ -533,6 +533,7 @@ const zh: Record<string, string> = {
   'login.agreePrivacy': '《隐私政策》',
   'login.errInvalidEmail': '邮箱格式不正确',
   'login.errRateLimited': '发送过于频繁，请 {sec} 秒后再试',
+  'login.errMailFailed': '验证码发送失败，请稍后再试',
   'login.errInvalidCode': '验证码不正确，请重试',
   'login.errLocked': '错误次数过多，该验证码已锁定，请重新发送',
   'login.errUnreachable': '无法连接登录服务，请检查网络后重试',

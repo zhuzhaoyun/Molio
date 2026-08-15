@@ -194,6 +194,16 @@ describe('AuthClient', () => {
     assert.equal(mock.countCalls('POST', '/auth/send-code'), 3);
   });
 
+  it('422 mail_failed 不重试——即使开了退避也只请求一次（重试会撞 60s 重发限频）', async () => {
+    const retryClient = makeClient({ retryDelaysMs: [0, 0] });
+    mock.queue('POST', '/auth/send-code', { status: 422, body: { error: 'mail_failed' } });
+    await assert.rejects(
+      () => retryClient.sendCode('user@example.com'),
+      (e: AuthCloudError) => e.status === 422 && e.code === 'mail_failed',
+    );
+    assert.equal(mock.countCalls('POST', '/auth/send-code'), 1);
+  });
+
   it('网络错误退避重试直到成功，成功后 cloudState 恢复 ok', async () => {
     const retryClient = makeClient({ retryDelaysMs: [0, 0] });
     mock.queue('POST', '/auth/send-code', 'network-error');

@@ -10,7 +10,8 @@ export type ServiceErrorCode =
   | 'rate_limited'
   | 'invalid_code'
   | 'locked'
-  | 'invalid_token';
+  | 'invalid_token'
+  | 'mail_failed';
 
 export class ServiceError extends Error {
   constructor(
@@ -96,7 +97,17 @@ export class AuthService {
       createdAt: now,
     };
     await store.insertCode(rec);
-    await this.deps.sendMail(email, code);
+    try {
+      await this.deps.sendMail(email, code);
+    } catch (e) {
+      // 发信通道失败（DirectMail 拒绝/超时等）。回 422 而非 5xx：
+      // daemon auth-client 对 5xx 会退避重试，重试撞 60s 重发限频变成误导性的
+      // rate_limited；4xx 原样透传不重试。验证码记录保留（限频完整性优先，
+      // 用户按 resendAfterSec 重试即可）。
+      const detail = e instanceof Error ? e.message : String(e);
+      console.error(`[cloud] send-code mail failed: to=${email} ${detail}`);
+      throw new ServiceError('mail_failed', 422);
+    }
 
     // 防枚举（§十七 L2）：已注册/未注册邮箱一律 202。
     // devCode 仅非 prod 返回（D2：E2E 取码；prod 严格不返回）。

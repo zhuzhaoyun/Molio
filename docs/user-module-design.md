@@ -1,6 +1,6 @@
 # 用户模块（云端认证服务）设计
 
-> 状态: **实施中**（2026-08-07 重启；2026-08-11 M5 完成 = Docker 配置 + cloud CI + 协议/隐私合规 + 文档；M0 备案/DirectMail 待用户启动；附录 B 的 FC 评估结论已折回正文）
+> 状态: **实施中**（2026-08-07 重启；2026-08-11 M5 完成 = Docker 配置 + cloud CI + 协议/隐私合规 + 文档；2026-08-14 DirectMail 代码已接 = `MOLIO_DM_*` env + 422 mail_failed，molio.cn 已备案；M0 剩余：发信凭据注入 + SPF/DKIM 验证（用户动作）；附录 B 的 FC 评估结论已折回正文）
 > 日期: 2026-08-07
 > 范围: 第一期 = 身份层（注册/登录/token）；**不含**多端同步、支付、设备管理
 
@@ -268,7 +268,7 @@ App 启动 → daemon 读本地 token
 | 运行时 | Hono + `@hono/node-server`（与 daemon 一致）；代码保持可容器化，FC 只是部署形态之一 |
 | 部署 | **阿里云函数计算 FC**：Web 函数 / Custom Runtime 形态，HTTP server 原样部署（监听 `CAPort`）；Serverless Devs（`s deploy`）发布；daily/prod 两个函数。VPC 连 PG 有冷启动（百 ms~1-2s），登录低频可接受 |
 | DB | **PolarDB Serverless**（已拍板）：按负载弹性、低流量自动缩到极低规格，与 FC「用才付费」最搭 |
-| 邮件 | 阿里云 DirectMail，走**官方 SDK**（`@alicloud/dm20151123`）；发信域名需配置 SPF/DKIM |
+| 邮件 | 阿里云 DirectMail，走**官方 SDK**（`@alicloud/dm20151123`）；**代码已接**：`MOLIO_DM_*` env 注入凭据，prod 缺配 loadConfig fail-fast；发信通道失败 send-code 回 422 `mail_failed`（daemon 对 4xx 不重试，避免撞重发限频）；发信域名需配置 SPF/DKIM |
 | 域名 | **需 ICP 备案，周期 1-2 周，最先启动**；FC 自定义域名同样要备案，且「备案服务号」FC 可申请但有数量限制，M0 先确认 |
 | 环境 | daily / prod 双环境（对齐 ARMS 的 env 概念）；daily 环境验证码写日志不发真邮件 |
 | 本地开发 | cloud 可本地跑（`pnpm dev:cloud`，tsx + MemoryAuthStore，无 DATABASE_URL 时自动内存模式）；daemon 以 `MOLIO_AUTH_URL=http://localhost:3200` 指向本地 cloud；web E2E 走这条链路（验证码获取方式见 §十四，待定） |

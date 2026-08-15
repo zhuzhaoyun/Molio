@@ -19,6 +19,8 @@ export function authErrorRef(err: unknown): AuthErrorRef {
       return { key: 'login.errInvalidEmail' };
     case 'rate_limited':
       return { key: 'login.errRateLimited', params: { sec: err.resendAfterSec ?? 60 } };
+    case 'mail_failed':
+      return { key: 'login.errMailFailed' };
     case 'invalid_code':
       return { key: 'login.errInvalidCode' };
     case 'locked':

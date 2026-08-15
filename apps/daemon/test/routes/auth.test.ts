@@ -89,6 +89,17 @@ describe('auth routes', () => {
       assert.deepEqual(await res.json(), { error: 'rate_limited', resendAfterSec: 42 });
     });
 
+    it('云端 422 mail_failed 原样透传（发信通道失败，4xx 不重试）', async () => {
+      mock.queue('POST', '/auth/send-code', {
+        status: 422,
+        body: { error: 'mail_failed' },
+      });
+      const res = await post('/api/auth/start', { email: 'user@example.com' });
+      assert.equal(res.status, 422);
+      assert.deepEqual(await res.json(), { error: 'mail_failed' });
+      assert.equal(mock.countCalls('POST', '/auth/send-code'), 1, '只请求一次，不重试');
+    });
+
     it('云端断网 → 502 cloud_unreachable', async () => {
       mock.setMode('down');
       const res = await post('/api/auth/start', { email: 'user@example.com' });
