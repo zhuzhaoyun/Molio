@@ -71,6 +71,20 @@ const en: Record<string, string> = {
   'toolGroup.webSearch': 'web searches',
   'toolGroup.default': 'tool calls',
 
+  // ── WorkTimeline ──
+  'workTimeline.thinking': 'Thinking',
+  'workTimeline.generating': 'Generating reply',
+  'workTimeline.read': 'Read file',
+  'workTimeline.searchFiles': 'Search files',
+  'workTimeline.grep': 'Search content',
+  'workTimeline.bash': 'Run command',
+  'workTimeline.webFetch': 'Fetch web',
+  'workTimeline.webSearch': 'Search web',
+  'workTimeline.write': 'Write file',
+  'workTimeline.edit': 'Update file',
+  'workTimeline.append': 'Append content',
+  'workTimeline.default': 'Tool call',
+
   // ── RuntimePage ──
   'runtimes.title': 'Runtimes',
   'runtimes.agentsTab': 'Agents',

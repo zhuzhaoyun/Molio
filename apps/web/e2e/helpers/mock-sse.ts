@@ -60,6 +60,20 @@ export const SCRIPTS = {
     { type: 'error', message: 'Something went wrong' },
     { type: 'turn_end', stopReason: 'error' },
   ],
+
+  /** 方向 A/B/D：带读写工具的完整工作流（Read → Grep → Write → 文本回复） */
+  workflowRun: [
+    { type: 'status', label: 'running' },
+    { type: 'tool_use', id: 'r1', name: 'Read', input: { file_path: '笔记/入门.md' } },
+    { type: 'tool_result', toolUseId: 'r1', content: '# 入门笔记', isError: false },
+    { type: 'tool_use', id: 'g1', name: 'Grep', input: { path: '笔记', pattern: '知识' } },
+    { type: 'tool_result', toolUseId: 'g1', content: '匹配 3 处', isError: false },
+    { type: 'tool_use', id: 'w1', name: 'Write', input: { file_path: '产出/总结.md' } },
+    { type: 'tool_result', toolUseId: 'w1', content: '已写入', isError: false },
+    { type: 'text_delta', delta: '已完成总结。' },
+    { type: 'turn_end', stopReason: 'end_turn' },
+    { type: 'usage', usage: { input_tokens: 400, output_tokens: 60 }, costUsd: 0.02 },
+  ],
 } as const;
 
 // ── Types ──────────────────────────────────────────────────────────────

@@ -71,6 +71,20 @@ const zh: Record<string, string> = {
   'toolGroup.webSearch': '次网页搜索',
   'toolGroup.default': '次工具调用',
 
+  // ── WorkTimeline ──
+  'workTimeline.thinking': '正在思考',
+  'workTimeline.generating': '生成回复',
+  'workTimeline.read': '读取文件',
+  'workTimeline.searchFiles': '搜索文件',
+  'workTimeline.grep': '检索内容',
+  'workTimeline.bash': '执行命令',
+  'workTimeline.webFetch': '读取网页',
+  'workTimeline.webSearch': '搜索网络',
+  'workTimeline.write': '写入文件',
+  'workTimeline.edit': '更新文件',
+  'workTimeline.append': '追加内容',
+  'workTimeline.default': '调用工具',
+
   // ── RuntimePage ──
   'runtimes.title': '运行时',
   'runtimes.agentsTab': '代理',
