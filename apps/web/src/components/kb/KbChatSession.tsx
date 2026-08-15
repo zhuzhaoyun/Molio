@@ -11,6 +11,7 @@ import { ActivityTree } from '../ActivityTree';
 import { useI18n } from '../../i18n';
 import { deriveWorkSteps } from '../../utils/workSteps';
 import { WorkTimeline } from '../WorkTimeline';
+import { WorkCompleteBanner } from '../WorkCompleteBanner';
 import { WIKI_QUERY_TRIGGER, deriveChatTitle } from './kbChatPrompts';
 
 export interface KbChatSessionApi {
@@ -269,6 +270,14 @@ export function KbChatSession({
     return null;
   })();
 
+  const lastAssistant = (() => {
+    for (let i = chat.messages.length - 1; i >= 0; i--) {
+      const m = chat.messages[i];
+      if (m && m.role === 'assistant') return m;
+    }
+    return null;
+  })();
+
   return (
     <div className="file-chat-session" style={{ display: active ? undefined : 'none' }} data-testid="kb-chat-session">
       <WorkTimeline steps={deriveWorkSteps(chat.messages)} />
@@ -306,6 +315,9 @@ export function KbChatSession({
           </>
         )}
       </div>
+      {!chat.isRunning && lastAssistant && (
+        <WorkCompleteBanner tools={lastAssistant.tools ?? []} />
+      )}
       <ActivityTree activity={chat.activity ?? null} />
       <div className="file-chat-input">
         <ChatComposer

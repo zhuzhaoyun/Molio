@@ -104,4 +104,20 @@ test.describe('KB chat — work visibility', () => {
     // Bash cat -n → 跳过选项，指向实际文件
     await expect(chips.nth(1)).toContainText('入门.md');
   });
+
+  test('完成后展示产物回写 banner，点击跳转打开', async ({ page }) => {
+    await mockChatRun(page, { script: SCRIPTS.workflowRun, frameDelay: 200 });
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+
+    await openQaAndSend(page, '总结知识库');
+
+    const banner = page.locator('[data-testid="work-complete-banner"]');
+    await expect(banner).toBeVisible({ timeout: 10_000 });
+    // banner 展示产物文件（label 为 basename；完整路径在 button 的 title tooltip）
+    await expect(banner).toContainText('总结.md');
+
+    await banner.locator('[data-testid="work-complete-file"]').click();
+    await expect(page.locator('#output')).toContainText('总结', { timeout: 10_000 });
+  });
 });

@@ -88,6 +88,9 @@ const en: Record<string, string> = {
   // ── SourceChips ──
   'source.title': 'Sources',
 
+  // ── WorkCompleteBanner ──
+  'complete.writtenToKb': 'Done — outputs written to your knowledge base',
+
   // ── RuntimePage ──
   'runtimes.title': 'Runtimes',
   'runtimes.agentsTab': 'Agents',

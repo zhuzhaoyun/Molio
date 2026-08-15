@@ -74,3 +74,49 @@ export function extractSources(tools: ToolEvent[]): SourceRef[] {
   }
   return out;
 }
+
+export type WriteKind = 'create' | 'update';
+
+export interface WriteRef {
+  kind: WriteKind;
+  path: string;
+  label: string;
+  toolName: string;
+}
+
+const WRITE_TOOLS = new Set(['Write', 'Edit', 'EditFile', 'MultiEdit', 'Append', 'AppendFile']);
+
+function writeTarget(tool: ToolEvent): string | null {
+  const input = tool.input;
+  if (input && typeof input === 'object') {
+    const o = input as Record<string, unknown>;
+    if (typeof o['file_path'] === 'string') return o['file_path'] as string;
+    if (typeof o['path'] === 'string') return o['path'] as string;
+  }
+  if (typeof input === 'string' && input.length > 0) return input;
+  return null;
+}
+
+/**
+ * 从一条 assistant 消息的 tools 抽取「产物」：Write → 新文件（create），
+ * Edit/EditFile/MultiEdit/Append/AppendFile → 更新（update）。按 path 去重。
+ * 与 extractSources 共用 target 抽取风格，方向 D 与 B 同一 util 文件。
+ */
+export function extractWrites(tools: ToolEvent[]): WriteRef[] {
+  const seen = new Set<string>();
+  const out: WriteRef[] = [];
+  for (const t of tools) {
+    if (!WRITE_TOOLS.has(t.name)) continue;
+    if (t.status === 'running') continue;
+    const path = writeTarget(t);
+    if (!path || seen.has(path)) continue;
+    seen.add(path);
+    out.push({
+      kind: t.name === 'Write' ? 'create' : 'update',
+      path,
+      label: path.split(/[\\/]/).pop() ?? path,
+      toolName: t.name,
+    });
+  }
+  return out;
+}

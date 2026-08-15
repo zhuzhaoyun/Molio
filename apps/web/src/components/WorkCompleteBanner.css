@@ -1,0 +1,28 @@
+.work-complete-banner {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 8px 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(74, 170, 119, 0.35);
+  border-radius: 8px;
+  background: rgba(74, 170, 119, 0.08);
+  font-size: 13px;
+}
+.work-complete-icon { line-height: 1.4; }
+.work-complete-body { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.work-complete-title { color: var(--text-primary, #222); font-weight: 600; }
+.work-complete-files { display: flex; flex-wrap: wrap; gap: 6px; }
+.work-complete-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  color: var(--accent-color, #4a7);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 0;
+}
+.work-complete-file:hover { text-decoration: underline; }
+.work-complete-file-label { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
