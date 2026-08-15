@@ -18,7 +18,7 @@ const SOURCE_TOOLS = new Set(['Read', 'Glob', 'Grep', 'Bash', 'WebFetch']);
 
 /** Bash 只认 `cat/head/tail/less <path>` 这类读文件命令，其余命令不产出来源 */
 function catPathFromCommand(cmd: string): string | null {
-  const m = cmd.trim().match(/^(?:cat|head|tail|less)\s+(\S+)/);
+  const m = cmd.trim().match(/^(?:cat|head|tail|less)(?:\s+-\S+)*\s+(\S+)/);
   return m ? m[1] : null;
 }
 
@@ -41,8 +41,8 @@ function sourceTarget(tool: ToolEvent): { target: string; navigable: boolean } |
   } else if (input && typeof input === 'object') {
     const o = input as Record<string, unknown>;
     if (typeof o['file_path'] === 'string') raw = o['file_path'];
-    else if (typeof o['path'] === 'string') raw = o['path'];
     else if (tool.name === 'Glob' && typeof o['pattern'] === 'string') { raw = o['pattern']; navigable = false; }
+    else if (typeof o['path'] === 'string') raw = o['path'];
     else if (tool.name === 'WebFetch' && typeof o['url'] === 'string') raw = o['url'];
   }
   if (typeof raw !== 'string' || raw.length === 0) return null;

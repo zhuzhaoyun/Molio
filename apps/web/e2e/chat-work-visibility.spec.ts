@@ -71,4 +71,37 @@ test.describe('KB chat — work visibility', () => {
     await chips.first().click();
     await expect(page.locator('#output')).toContainText('入门笔记', { timeout: 10_000 });
   });
+
+  test('Glob pattern chip 不可跳转、Bash cat 跳过选项标志', async ({ page }) => {
+    // Glob 事件同时带 pattern + path：必须取 pattern 且不可跳转（评审 FINDING 1）
+    // Bash `cat -n` 需跳过选项标志、指向实际文件（评审 FINDING 2）
+    await mockChatRun(page, {
+      script: [
+        { type: 'status', label: 'running' },
+        { type: 'tool_use', id: 'g1', name: 'Glob', input: { pattern: '**/*.ts', path: '/base' } },
+        { type: 'tool_result', toolUseId: 'g1', content: '匹配 3 处', isError: false },
+        { type: 'tool_use', id: 'b1', name: 'Bash', input: { command: 'cat -n 笔记/入门.md' } },
+        { type: 'tool_result', toolUseId: 'b1', content: '# 入门笔记', isError: false },
+        { type: 'text_delta', delta: '已完成。' },
+        { type: 'turn_end', stopReason: 'end_turn' },
+        { type: 'usage', usage: { input_tokens: 400, output_tokens: 60 }, costUsd: 0.02 },
+      ],
+      frameDelay: 100,
+    });
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+
+    await openQaAndSend(page, '总结知识库');
+
+    const chips = page.locator('[data-testid="source-chips"] [data-testid="source-chip"]');
+    await expect(chips).toHaveCount(2, { timeout: 10_000 });
+
+    // Glob → pattern（'*.ts'）且 disabled，绝不落入通用 path 分支变可跳转
+    const globChip = chips.nth(0);
+    await expect(globChip).toContainText('*.ts');
+    await expect(globChip).toBeDisabled();
+
+    // Bash cat -n → 跳过选项，指向实际文件
+    await expect(chips.nth(1)).toContainText('入门.md');
+  });
 });
