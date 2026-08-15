@@ -122,6 +122,9 @@ export type {
   HubCategoriesResponse,
   InstallHubSkillRequest,
   InstallHubSkillResponse,
+  HubSkillDetailQuery,
+  HubSkillDetail,
+  HubSkillDetailResponse,
 } from './skill.js';
 
 // SKILL.md generate/parse primitives (runtime values, shared daemon ↔ web).

@@ -41,6 +41,7 @@ import { prefillFromContent } from '../core/skills/prefill.js';
 import {
   fetchHubSkills,
   fetchHubCategories,
+  fetchHubSkillDetail,
   installHubSkill,
   listHubInstalls,
   hubInstallKey,
@@ -90,6 +91,8 @@ export function skillsRoutes(db: Database.Database, runManager: RunManager): Hon
         pageSize: Number.isFinite(pageSize) && pageSize > 0 ? Math.floor(pageSize) : undefined,
         keyword: q['keyword'],
         category: q['category'],
+        // Unknown values fall back to the hub's default ranking in fetchHubSkills.
+        sort: q['sort'] as 'default' | 'downloads' | 'updated' | undefined,
       });
       // Keyed by (namespace, slug) — same slug in different namespaces are
       // separate installs (hubInstallKey normalizes a missing namespace to '').
@@ -102,6 +105,31 @@ export function skillsRoutes(db: Database.Database, runManager: RunManager): Hon
         return { ...s, installed: true, installedVersion: rec.version };
       });
       return c.json({ skills, total: result.total, page: result.page, pageSize: result.pageSize });
+    } catch (err) {
+      return mapHubError(c, err);
+    }
+  });
+
+  // GET /api/skills/hub/skill — one hub skill's detail (store detail modal):
+  // upstream detail + SKILL.md body, annotated with the local install state.
+  // Registered BEFORE the by-id routes: a catalog lookup, never a local id.
+  app.get('/hub/skill', async (c) => {
+    const slug = c.req.query('slug')?.trim();
+    if (!slug) {
+      return c.json({ error: { code: 'BAD_REQUEST', message: 'slug is required' } }, 400);
+    }
+    const namespace = c.req.query('namespace')?.trim() || undefined;
+    try {
+      const detail = await fetchHubSkillDetail(slug, namespace);
+      // Same installed annotation as /hub/skills (incl. the stale-record check).
+      const rec = listHubInstalls(db).find(
+        (r) => hubInstallKey(r.slug, r.namespace) === hubInstallKey(slug, namespace ?? ''),
+      );
+      if (rec && getSkill(db, rec.skill_id)) {
+        detail.installed = true;
+        detail.installedVersion = rec.version;
+      }
+      return c.json({ detail });
     } catch (err) {
       return mapHubError(c, err);
     }

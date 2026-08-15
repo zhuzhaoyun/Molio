@@ -9,6 +9,8 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, 
 import type { TreeNode } from '@molio/contracts';
 import { useI18n } from '../../i18n';
 import { KbFileTree } from './KbFileTree';
+import { OpenNewWindowIcon } from '../icons';
+import { openInNewWindow } from '../../utils/openWindow';
 
 type SortBy = 'name' | 'modified' | 'size';
 
@@ -78,6 +80,31 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
   const [sortBy, setSortBy] = useState<SortBy>('name');
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const sortRef = useRef<HTMLDivElement>(null);
+
+  // Unified 新建 dropdown — note / folder / new-window. Positioned with
+  // position:fixed computed from the trigger, so the file panel's overflow:hidden
+  // can't clip it at narrow panel widths.
+  const [createMenuOpen, setCreateMenuOpen] = useState(false);
+  const createRef = useRef<HTMLDivElement>(null);
+  const createBtnRef = useRef<HTMLButtonElement>(null);
+  const [createMenuPos, setCreateMenuPos] = useState<{ left: number; top: number } | null>(null);
+
+  const toggleCreateMenu = () => {
+    const next = !createMenuOpen;
+    if (next && createBtnRef.current) {
+      const r = createBtnRef.current.getBoundingClientRect();
+      setCreateMenuPos({ left: r.left, top: r.bottom + 6 });
+    } else {
+      setCreateMenuPos(null);
+    }
+    setCreateMenuOpen(next);
+  };
+
+  /** Parent dir for create actions — the selected file's directory (or root). */
+  const createParentDir = () =>
+    selectedFile && selectedFile.includes('/')
+      ? selectedFile.slice(0, selectedFile.lastIndexOf('/'))
+      : undefined;
 
   // Bumped each time the user hits "locate" — KbFileTree scrolls the active
   // file into view when this token changes (see TreeNodeItem effect).
@@ -249,6 +276,29 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
     };
   }, [sortMenuOpen]);
 
+  // Same for the unified 新建 dropdown — close on outside click / ESC, and on
+  // scroll/resize (the fixed-position menu would otherwise drift out of place).
+  useEffect(() => {
+    if (!createMenuOpen) return;
+    const closeAll = () => { setCreateMenuOpen(false); setCreateMenuPos(null); };
+    const onDown = (e: MouseEvent) => {
+      if (createRef.current && !createRef.current.contains(e.target as Node)) closeAll();
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closeAll(); };
+    const onScroll = () => closeAll();
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    // capture=true so scrolling inside the tree (which bubbles) still closes it.
+    document.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onScroll);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onScroll);
+    };
+  }, [createMenuOpen]);
+
   // Ingest status counts for the vault stats bar. Only shown once the vault
   // has version tracking (any node carries ingestStatus). wiki/ subtree is
   // excluded — those are wiki products, not ingest sources.
@@ -278,25 +328,81 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
     >
       {/* Toolbar */}
       <div className="kb-file-toolbar">
-        <button type="button" title={t('kb.newNote')} onClick={() => {
-          const parent = selectedFile ? selectedFile.includes('/') ? selectedFile.slice(0, selectedFile.lastIndexOf('/')) : undefined : undefined;
-          onNewFile(parent);
-        }}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-            <polyline points="14 2 14 8 20 8" />
-            <line x1="12" y1="18" x2="12" y2="12" />
-            <line x1="9" y1="15" x2="15" y2="15" />
-          </svg>
-        </button>
-        <button type="button" title={t('kb.newFolder')} onClick={() => {
-          const parent = selectedFile ? selectedFile.includes('/') ? selectedFile.slice(0, selectedFile.lastIndexOf('/')) : undefined : undefined;
-          onNewFolder(parent);
-        }}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-          </svg>
-        </button>
+        {/* 新建 — unified create menu: note / folder / new-window */}
+        <div className="kb-create-menu" ref={createRef}>
+          <button
+            type="button"
+            ref={createBtnRef}
+            className="kb-create-btn"
+            title={t('kb.create')}
+            onClick={toggleCreateMenu}
+            data-testid="kb-btn-create"
+            aria-haspopup="menu"
+            aria-expanded={createMenuOpen}
+          >
+            {/* plus — the universal "new" glyph (tooltip = 新建) */}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 12h14" />
+              <path d="M12 5v14" />
+            </svg>
+          </button>
+
+          {createMenuOpen && (
+            <div
+              className="kb-create-dropdown"
+              style={createMenuPos ?? undefined}
+              data-testid="kb-create-dropdown"
+              role="menu"
+            >
+              <button
+                type="button"
+                className="kb-create-item"
+                role="menuitem"
+                data-testid="kb-create-note"
+                onClick={() => { setCreateMenuOpen(false); setCreateMenuPos(null); onNewFile(createParentDir()); }}
+              >
+                {/* file-plus */}
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                  <line x1="12" y1="18" x2="12" y2="12" />
+                  <line x1="9" y1="15" x2="15" y2="15" />
+                </svg>
+                <span>{t('kb.newNote')}</span>
+              </button>
+              <button
+                type="button"
+                className="kb-create-item"
+                role="menuitem"
+                data-testid="kb-create-folder"
+                onClick={() => { setCreateMenuOpen(false); setCreateMenuPos(null); onNewFolder(createParentDir()); }}
+              >
+                {/* folder-plus */}
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                  <line x1="12" y1="11" x2="12" y2="17" />
+                  <line x1="9" y1="14" x2="15" y2="14" />
+                </svg>
+                <span>{t('kb.newFolder')}</span>
+              </button>
+
+              <div className="kb-create-divider" />
+
+              {/* 新窗口 — opens a fresh desktop window with no vault forced;
+                  the user picks a vault in the new window via the normal nav. */}
+              <button
+                type="button"
+                className="kb-create-item"
+                role="menuitem"
+                data-testid="kb-create-window"
+                onClick={() => { setCreateMenuOpen(false); setCreateMenuPos(null); openInNewWindow('/'); }}
+              >
+                <OpenNewWindowIcon size={15} />
+                <span>{t('kb.newWindow')}</span>
+              </button>
+            </div>
+          )}
+        </div>
         <button
           type="button"
           title={selectedFile ? t('kb.locateFile') : t('kb.locateFileNeedFile')}

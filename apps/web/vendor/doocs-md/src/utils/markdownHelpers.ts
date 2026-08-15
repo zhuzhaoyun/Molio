@@ -7,45 +7,72 @@ const MERMAID_PLACEHOLDER_REGEX = /<!--mermaid-start-->[\s\S]*?<!--mermaid-end--
 const PROTECTED_SPAN_REGEX = /<span data-md-protected="(\d+)"><\/span>/g
 
 /**
+ * [MOLIO] Rendering profile switch for UNTRUSTED content (e.g. a remote hub
+ * SKILL.md readme). The local-content affordances double as XSS vectors for
+ * attacker-authored input, so the strict profile drops them:
+ *  - no `onerror` allowlist — a remote `<img src=x onerror=…>` would run script;
+ *  - no mermaid/infographic protect-and-restore — restored content bypasses
+ *    sanitization entirely, which is only acceptable for locally-authored docs.
+ * Cost: mermaid diagrams from untrusted input may lose foreignObject content
+ * (the very thing DOMPurify strips) — a broken diagram, not a compromise.
+ */
+export interface SanitizeOptions {
+  untrusted?: boolean
+}
+
+/**
  * DOMPurify v3.1.7+ 会强制移除 foreignObject 内容
  * https://github.com/kkomelin/isomorphic-dompurify/pull/290
  * https://github.com/cure53/DOMPurify/issues/1152
  * 使用占位符方案：在 sanitize 前保护特定内容，sanitize 后还原
  * 注意：HTML 注释会被 DOMPurify 移除，所以使用 span 元素作为占位符
  */
-function sanitizeHtml(html: string): string {
+function sanitizeHtml(html: string, opts?: SanitizeOptions): string {
+  const untrusted = opts?.untrusted === true
   const protectedContents: string[] = []
 
-  // 保护 infographic-diagram（使用注释标记定界，避免嵌套 div 问题）
-  html = html.replace(
-    INFOGRAPHIC_PLACEHOLDER_REGEX,
-    (match) => {
-      protectedContents.push(match)
-      return `<span data-md-protected="${protectedContents.length - 1}"></span>`
-    },
-  )
+  if (!untrusted) {
+    // 保护 infographic-diagram（使用注释标记定界，避免嵌套 div 问题）
+    html = html.replace(
+      INFOGRAPHIC_PLACEHOLDER_REGEX,
+      (match) => {
+        protectedContents.push(match)
+        return `<span data-md-protected="${protectedContents.length - 1}"></span>`
+      },
+    )
 
-  // 保护 mermaid-diagram（使用注释标记定界，避免嵌套 div 问题）
-  html = html.replace(
-    MERMAID_PLACEHOLDER_REGEX,
-    (match) => {
-      protectedContents.push(match)
-      return `<span data-md-protected="${protectedContents.length - 1}"></span>`
-    },
-  )
+    // 保护 mermaid-diagram（使用注释标记定界，避免嵌套 div 问题）
+    html = html.replace(
+      MERMAID_PLACEHOLDER_REGEX,
+      (match) => {
+        protectedContents.push(match)
+        return `<span data-md-protected="${protectedContents.length - 1}"></span>`
+      },
+    )
+  }
 
   // XSS 处理
-  // Allow onerror only for our benign broken-image fallback (set by renderer-impl.ts)
-  html = DOMPurify.sanitize(html, {
-    ADD_TAGS: [`mp-common-profile`],
-    ADD_ATTR: [`onerror`],
-  })
+  // Allow onerror only for our benign broken-image fallback (set by
+  // renderer-impl.ts) — LOCAL content only; for untrusted input the allowlist
+  // would let a raw `<img onerror=…>` through.
+  // [MOLIO] ADD_TAGS `use`: MathJax 公式的 SVG 用 `<use xlink:href="#MJX-…">` 引用
+  // `<defs>` 里的字形路径，而 DOMPurify 默认会把 `<use>` 整个剥掉，导致所有公式
+  // 渲染成空白（只有 defs 路径、没有 use 引用）。加回 `use` 即可恢复（xlink:href
+  // 指向文档内片段，DOMPurify 仍会校验其值）。
+  html = DOMPurify.sanitize(html, untrusted
+    ? {}
+    : {
+        ADD_TAGS: [`mp-common-profile`, `use`],
+        ADD_ATTR: [`onerror`],
+      })
 
-  // 还原被保护的内容
-  html = html.replace(
-    PROTECTED_SPAN_REGEX,
-    (_, i) => protectedContents[Number(i)],
-  )
+  if (!untrusted) {
+    // 还原被保护的内容
+    html = html.replace(
+      PROTECTED_SPAN_REGEX,
+      (_, i) => protectedContents[Number(i)],
+    )
+  }
 
   return html
 }
@@ -54,16 +81,17 @@ function sanitizeHtml(html: string): string {
  * 渲染 Markdown 内容
  * @param raw - 原始 markdown 字符串
  * @param renderer - 渲染器 API
+ * @param opts - [MOLIO] 传 { untrusted: true } 渲染远端不可信内容（严格净化档）
  * @returns 渲染结果，包含 HTML 和阅读时间
  */
-export function renderMarkdown(raw: string, renderer: RendererAPI) {
+export function renderMarkdown(raw: string, renderer: RendererAPI, opts?: SanitizeOptions) {
   // 解析 front-matter 和正文
   const { markdownContent, readingTime }
     = renderer.parseFrontMatterAndContent(raw)
 
   // marked -> html
   let html = renderer.renderMarkdownToHtml(markdownContent)
-  html = sanitizeHtml(html)
+  html = sanitizeHtml(html, opts)
   return { html, readingTime }
 }
 

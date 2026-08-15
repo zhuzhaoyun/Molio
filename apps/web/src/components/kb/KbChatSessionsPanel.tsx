@@ -352,6 +352,7 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
               active={s.id === activeSessionId}
               agentId={agentId}
               vaultPath={vaultPath}
+              vaultId={currentVaultId}
               selectedText={pendingSelectionSessionId === s.id ? pendingSelection : null}
               onSelectedTextConsumed={() => { setPendingSelection(null); setPendingSelectionSessionId(null); }}
               onRunningChange={handleRunningChange}

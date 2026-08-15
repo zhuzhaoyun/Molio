@@ -19,7 +19,7 @@ import { ViewerErrorBoundary } from './ViewerErrorBoundary';
 import type { KbCodeMirrorViewerHandle } from './KbCodeMirrorViewer';
 import { KbFrontmatterCard } from './KbFrontmatterCard';
 import { formatFileSize } from '../../utils/format';
-import { preprocessWikiLinks, preprocessWikiEmbeds, proxyExternalImages, stripTrackingPixels } from '../../hooks/useKnowledge';
+import { preprocessKbMarkdown } from '../../hooks/useKnowledge';
 import { api } from '../../api/client';
 import { useI18n } from '../../i18n';
 import TurndownService from 'turndown';
@@ -201,7 +201,7 @@ export function KbMainContent({
   // runs for the small-.md doocs path — never for the CM source view.
   const renderedContent = useMemo(
     () => isSmallMd
-      ? preprocessWikiLinks(proxyExternalImages(preprocessWikiEmbeds(stripTrackingPixels(editedContent ?? fileContent?.content ?? ''), vaultId ?? '')), vaultId ?? '')
+      ? preprocessKbMarkdown(editedContent ?? fileContent?.content ?? '', vaultId ?? undefined)
       : '',
     [editedContent, fileContent?.content, vaultId, isSmallMd],
   );

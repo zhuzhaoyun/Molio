@@ -15,7 +15,8 @@
  *    unreadable source dir.
  *  - **core** (writing trio): Molio's core job. The body is written to
  *    `~/.molio/skills/<id>/SKILL.md` and synced into every vault like a
- *    library skill (single-file `molio--<id>` dirs).
+ *    library skill (single-file `molio--<dirName>` dirs, dirName planned from
+ *    the display name by sync.planSyncTargets).
  *
  * Seeding is idempotent: an existing row (by id) only gets its name/description
  * refreshed — `enabled`/`core` are NEVER overwritten, so the user's toggle state
@@ -25,7 +26,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type Database from 'better-sqlite3';
 import { parseSkillMd } from '@molio/contracts';
-import { assertSafeSkillId, type SkillPathsOpts } from './paths.js';
+import { assertSafeSkillPathSegment, type SkillPathsOpts } from './paths.js';
 import { createSkill, getSkill } from './store.js';
 import { BUILTIN_SKILLS, RETIRED_BUNDLED_SKILLS, resolveSkillsSourceDir } from '../skill-installer.js';
 
@@ -73,9 +74,9 @@ export function readBundledInstructions(slug: string, sourceDir?: string): strin
   try {
     // Defense in depth: this is an exported file-read entry point (GET
     // /api/skills/:id). Callers pass DB-derived slugs today, but a traversal
-    // id like '../..' must never build a path — assertSafeSkillId throws and
-    // the catch below degrades to ''.
-    assertSafeSkillId(slug);
+    // id like '../..' must never build a path — assertSafeSkillPathSegment
+    // throws and the catch below degrades to ''.
+    assertSafeSkillPathSegment(slug);
     const md = path.join(sourceDir ?? resolveSkillsSourceDir(), slug, 'SKILL.md');
     if (!fs.existsSync(md)) return '';
     return parseSkillMd(fs.readFileSync(md, 'utf8')).instructions;

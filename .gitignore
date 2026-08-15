@@ -27,6 +27,8 @@ docs/superpowers/
 .artifacts/
 /test/
 videos/
+# 官网演示视频必须入仓，否则手动/自动部署都会漏掉（2026-08 molio.cn 首页视频 404 回退 index.html 事故）
+!apps/landing-page/videos/
 .agents/
 
 # 本地测试日志,不入仓

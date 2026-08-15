@@ -178,13 +178,16 @@ importers:
         version: 0.26.0(graphology-types@0.24.8)
       highlight.js:
         specifier: ^11.11.1
-        version: 11.12.0
+        version: 11.11.2
       isomorphic-dompurify:
         specifier: ^3.15.0
         version: 3.15.0
       marked:
         specifier: ^18.0.4
         version: 18.0.4
+      mathjax:
+        specifier: 3.2.2
+        version: 3.2.2
       pdfjs-dist:
         specifier: 6.2.108
         version: 6.2.108
@@ -2180,8 +2183,8 @@ packages:
     resolution: {integrity: sha512-T2UbfbBEF32wiepXIsMlTW9+dDYC6wMh/t/vYA4tuOMKqWz/n3vr1NFSxQiyP+zk2mXsoMA/i/7qV6LKut1t1A==}
     engines: {node: '>= 0.4'}
 
-  highlight.js@11.12.0:
-    resolution: {integrity: sha512-nbfWpyRMcMrPMmDwJB+dhX/eiaPKtc2RB+0QZskqJ3WjRA/FDS0e9hZrx8EC/lbEv8gXy98FcDbNa/dspAaJMg==}
+  highlight.js@11.11.2:
+    resolution: {integrity: sha512-oaXMACAU0kzOMXBjWpNcX+vlwSBCIAiZ9BHa7gA15NOTtT2L/l8OSZDuqS2XppOhZBPJ7hm4o8ep2kyuip2uEQ==}
     engines: {node: '>=12.0.0'}
 
   hono@4.12.23:
@@ -2518,6 +2521,9 @@ packages:
   math-intrinsics@1.1.0:
     resolution: {integrity: sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g==}
     engines: {node: '>= 0.4'}
+
+  mathjax@3.2.2:
+    resolution: {integrity: sha512-Bt+SSVU8eBG27zChVewOicYs7Xsdt40qm4+UpHyX7k0/O9NliPc+x77k1/FEsPsjKPZGJvtRZM1vO+geW0OhGw==}
 
   mdn-data@2.27.1:
     resolution: {integrity: sha512-9Yubnt3e8A0OKwxYSXyhLymGW4sCufcLG6VdiDdUGVkPhpqLxlvP5vl1983gQjJl3tqbrM731mjaZaP68AgosQ==}
@@ -5838,7 +5844,7 @@ snapshots:
     dependencies:
       function-bind: 1.1.2
 
-  highlight.js@11.12.0: {}
+  highlight.js@11.11.2: {}
 
   hono@4.12.23: {}
 
@@ -6168,6 +6174,8 @@ snapshots:
     optional: true
 
   math-intrinsics@1.1.0: {}
+
+  mathjax@3.2.2: {}
 
   mdn-data@2.27.1: {}
 

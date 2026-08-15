@@ -14,53 +14,78 @@ const blockRule = /^\s{0,3}(\${1,2})[ \t]*\n([\s\S]+?)\n\s{0,3}\1[ \t]*(?:\n|$)/
 const inlineLatexRule = /^\\\(([^\\]*(?:\\.[^\\]*)*?)\\\)/
 const blockLatexRule = /^\\\[([^\\]*(?:\\.[^\\]*)*?)\\\]/
 
+/**
+ * [MOLIO] Raw-text fallback used when MathJax is unavailable or a typeset
+ * throws. Renders as standard markdown would: strip the backslash before
+ * brackets / parens so `\[1\]` → `[1]` and `\(x\)` → `(x)` (these are escaped
+ * brackets in CommonMark, which is how WeChat clippings use them as citation
+ * markers). `$...$` / `$$...$$` are kept literal.
+ */
+function fallbackHtml(token: any, display: boolean): string {
+  const raw = escapeHtml((token.raw ?? token.text).replace(/\\([()\[\]])/g, `$1`))
+  return display
+    ? `<section class="katex-block" data-math-display="true" data-math-raw="${raw}">${raw}</section>`
+    : `<span class="katex-inline" data-math-display="false" data-math-raw="${raw}">${raw}</span>`
+}
+
+/**
+ * [MOLIO] WeChat clippings use `\[N\]` / `\[12-15\]` as citation markers
+ * (escaped brackets in CommonMark), which collide with the LaTeX block/inline
+ * rules. Only treat `\[ ... \]` / `\( ... \)` as math when the content is not a
+ * bare citation — i.e. contains something beyond digits, commas, spaces and
+ * dashes. This keeps citation markers rendering as literal `[1]` even once
+ * MathJax is loaded (see katex.ts guard history / #113).
+ */
+function isCitationLike(text: string): boolean {
+  return /^[\d,\s–-]*$/.test(text)
+}
+
 function createRenderer(defaultDisplay: boolean, withStyle: boolean = true) {
   return (token: any) => {
     const display = token.displayMode ?? defaultDisplay
 
     // [MOLIO] Guard: MathJax is loaded lazily and may be absent (not yet
-    // loaded, offline, CDN failure, SSR/test env). Without this guard any
+    // loaded, offline, asset failure, SSR/test env). Without this guard any
     // `\[ ... \]` / `$ ... $` token reaching the renderer crashes with
-    // "Cannot read properties of undefined (reading 'texReset')". WeChat
-    // clippings use `\[1\]` citation markers which collide with the LaTeX
-    // block rule, so this path is hit by ordinary articles, not just math.
-    // Fall back to raw text so the document still renders.
+    // "Cannot read properties of undefined (reading 'texReset')". Fall back to
+    // raw text so the document still renders.
     // @ts-expect-error MathJax is a global variable
     const mathjax = window.MathJax
     if (!mathjax?.texReset || !mathjax?.tex2svg) {
-      // Render as standard markdown would: strip the backslash before brackets
-      // / parens so `\[1\]` → `[1]` and `\(x\)` → `(x)` (these are escaped
-      // brackets in CommonMark, which is how WeChat clippings use them as
-      // citation markers). `$...$` / `$$...$$` are kept literal.
-      const raw = escapeHtml((token.raw ?? token.text).replace(/\\([()\[\]])/g, `$1`))
-      return display
-        ? `<section class="katex-block" data-math-display="true" data-math-raw="${raw}">${raw}</section>`
-        : `<span class="katex-inline" data-math-display="false" data-math-raw="${raw}">${raw}</span>`
+      return fallbackHtml(token, display)
     }
 
-    mathjax.texReset()
-    const mjxContainer = mathjax.tex2svg(token.text, { display })
-    const svg = mjxContainer.firstChild
-    const width = svg.style[`min-width`] || svg.getAttribute(`width`)
-    svg.removeAttribute(`width`)
+    try {
+      mathjax.texReset()
+      const mjxContainer = mathjax.tex2svg(token.text, { display })
+      const svg = mjxContainer.firstChild
+      const width = svg.style[`min-width`] || svg.getAttribute(`width`)
+      svg.removeAttribute(`width`)
 
-    // 行内公式对齐 https://groups.google.com/g/mathjax-users/c/zThKffrrCvE?pli=1
-    // 直接覆盖 style 会覆盖 MathJax 的样式，需要手动设置
-    // svg.style = `max-width: 300vw !important; display: initial; flex-shrink: 0;`
+      // 行内公式对齐 https://groups.google.com/g/mathjax-users/c/zThKffrrCvE?pli=1
+      // 直接覆盖 style 会覆盖 MathJax 的样式，需要手动设置
+      // svg.style = `max-width: 300vw !important; display: initial; flex-shrink: 0;`
 
-    if (withStyle) {
-      svg.style.display = `initial`
-      svg.style.setProperty(`max-width`, `300vw`, `important`)
-      svg.style.flexShrink = `0`
-      svg.style.width = width
+      if (withStyle) {
+        svg.style.display = `initial`
+        svg.style.setProperty(`max-width`, `300vw`, `important`)
+        svg.style.flexShrink = `0`
+        svg.style.width = width
+      }
+
+      if (!display) {
+        // 新主题系统：使用 class 而非内联样式
+        return `<span class="katex-inline" data-math-display="false" data-math-raw="${escapeHtml(token.raw ?? token.text)}">${svg.outerHTML}</span>`
+      }
+
+      return `<section class="katex-block" data-math-display="true" data-math-raw="${escapeHtml(token.raw ?? token.text)}">${svg.outerHTML}</section>`
     }
-
-    if (!display) {
-      // 新主题系统：使用 class 而非内联样式
-      return `<span class="katex-inline" data-math-display="false" data-math-raw="${escapeHtml(token.raw ?? token.text)}">${svg.outerHTML}</span>`
+    catch (error) {
+      // [MOLIO] Invalid / unsupported TeX (or a MathJax hiccup) must not take
+      // down the whole document — fall back to raw text for this one token.
+      console.error(`[MOLIO] MathJax typeset failed, falling back to raw text:`, error)
+      return fallbackHtml(token, display)
     }
-
-    return `<section class="katex-block" data-math-display="true" data-math-raw="${escapeHtml(token.raw ?? token.text)}">${svg.outerHTML}</section>`
   }
 }
 
@@ -136,6 +161,8 @@ function inlineLatexKatex(_options: MarkedKatexOptions | undefined, renderer: an
     tokenizer(src: string) {
       const match = src.match(inlineLatexRule)
       if (match) {
+        // [MOLIO] Skip citation-like content so it renders as literal text
+        if (isCitationLike(match[1])) return undefined
         return {
           type: `inlineLatexKatex`,
           raw: match[0],
@@ -159,6 +186,9 @@ function blockLatexKatex(_options: MarkedKatexOptions | undefined, renderer: any
     tokenizer(src: string) {
       const match = src.match(blockLatexRule)
       if (match) {
+        // [MOLIO] Skip citation-like content (e.g. `\[1\]`, `\[12-15\]`) so it
+        // renders as literal `[1]` instead of being typeset as display math.
+        if (isCitationLike(match[1])) return undefined
         return {
           type: `blockLatexKatex`,
           raw: match[0],
