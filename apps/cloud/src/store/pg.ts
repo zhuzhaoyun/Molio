@@ -40,13 +40,31 @@ function ms(d: Date | null): number | null {
   return d === null ? null : d.getTime();
 }
 
+/** entitlement 防御解析：坏数据（脏 JSON 字符串）不能把 /auth/me 打成 500 */
+function parseEntitlement(raw: Record<string, unknown> | string | null): Record<string, unknown> {
+  if (raw !== null && typeof raw === 'object') return raw;
+  if (typeof raw === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
 function toUser(row: UserRow): UserRecord {
   return {
     id: row.id,
     email: row.email,
     emailVerifiedAt: ms(row.email_verified_at),
-    status: row.status === 'deactivated' ? 'deactivated' : 'active',
-    entitlement: typeof row.entitlement === 'string' ? JSON.parse(row.entitlement) : (row.entitlement ?? {}),
+    // 白名单收窄：未知 status（将来迁移产生的中间态）一律按 deactivated 处理，
+    // 绝不向调用方漏出 union 之外的值
+    status: row.status === 'active' ? 'active' : 'deactivated',
+    entitlement: parseEntitlement(row.entitlement),
     createdAt: row.created_at.getTime(),
     updatedAt: row.updated_at.getTime(),
     deletedAt: ms(row.deleted_at),
@@ -95,7 +113,10 @@ export class PgAuthStore implements AuthStore {
       if (!row) throw new Error('createActiveUser: no row returned');
       return toUser(row);
     } catch (e) {
-      if ((e as { code?: string }).code === '23505') {
+      // 严格匹配 users_email_alive 约束：其他唯一约束冲突（如 id 主键）不该被
+      // 静默当成"邮箱已注册"回退复用，必须原样抛出暴露问题
+      const pgErr = e as { code?: string; constraint?: string };
+      if (pgErr.code === '23505' && pgErr.constraint === 'users_email_alive') {
         throw new UniqueViolationError(`active user exists for email: ${input.email}`);
       }
       throw e;
@@ -145,8 +166,9 @@ export class PgAuthStore implements AuthStore {
   }
 
   async latestCodeForEmail(email: string): Promise<AuthCodeRecord | null> {
+    // id 决胜与内存实现一致：ULID 时间有序，同毫秒插入取最新一条
     const res = await this.pool.query<CodeRow>(
-      `SELECT * FROM auth_codes WHERE email = $1 ORDER BY created_at DESC LIMIT 1`,
+      `SELECT * FROM auth_codes WHERE email = $1 ORDER BY created_at DESC, id DESC LIMIT 1`,
       [email],
     );
     const row = res.rows[0];
@@ -154,36 +176,36 @@ export class PgAuthStore implements AuthStore {
   }
 
   async countCodesForEmailSince(email: string, since: number): Promise<number> {
-    const res = await this.pool.query<{ n: string }>(
-      `SELECT count(*) AS n FROM auth_codes WHERE email = $1 AND created_at >= $2`,
-      [email, new Date(since)],
-    );
-    return Number(res.rows[0]?.n ?? 0);
+    return this.countCodesBy('email', email, since);
   }
 
   async oldestCodeForEmailSince(email: string, since: number): Promise<number | null> {
-    const res = await this.pool.query<{ created_at: Date }>(
-      `SELECT created_at FROM auth_codes WHERE email = $1 AND created_at >= $2
-       ORDER BY created_at ASC LIMIT 1`,
-      [email, new Date(since)],
-    );
-    const row = res.rows[0];
-    return row ? row.created_at.getTime() : null;
+    return this.oldestCodeBy('email', email, since);
   }
 
   async countCodesForIpSince(ip: string, since: number): Promise<number> {
+    return this.countCodesBy('ip', ip, since);
+  }
+
+  async oldestCodeForIpSince(ip: string, since: number): Promise<number | null> {
+    return this.oldestCodeBy('ip', ip, since);
+  }
+
+  // 限频窗口查询：email/ip 两列同构，列名走白名单字面量（不做参数拼接，无注入面）
+
+  private async countCodesBy(column: 'email' | 'ip', value: string, since: number): Promise<number> {
     const res = await this.pool.query<{ n: string }>(
-      `SELECT count(*) AS n FROM auth_codes WHERE ip = $1 AND created_at >= $2`,
-      [ip, new Date(since)],
+      `SELECT count(*) AS n FROM auth_codes WHERE ${column} = $1 AND created_at >= $2`,
+      [value, new Date(since)],
     );
     return Number(res.rows[0]?.n ?? 0);
   }
 
-  async oldestCodeForIpSince(ip: string, since: number): Promise<number | null> {
+  private async oldestCodeBy(column: 'email' | 'ip', value: string, since: number): Promise<number | null> {
     const res = await this.pool.query<{ created_at: Date }>(
-      `SELECT created_at FROM auth_codes WHERE ip = $1 AND created_at >= $2
+      `SELECT created_at FROM auth_codes WHERE ${column} = $1 AND created_at >= $2
        ORDER BY created_at ASC LIMIT 1`,
-      [ip, new Date(since)],
+      [value, new Date(since)],
     );
     const row = res.rows[0];
     return row ? row.created_at.getTime() : null;
@@ -238,11 +260,15 @@ export class PgAuthStore implements AuthStore {
     return row ? toToken(row) : null;
   }
 
-  async revokeRefreshToken(id: string, now: number, replacedBy: string | null): Promise<void> {
-    await this.pool.query(
-      `UPDATE refresh_tokens SET revoked_at = $2, replaced_by = $3 WHERE id = $1`,
+  async revokeRefreshToken(id: string, now: number, replacedBy: string | null): Promise<boolean> {
+    // 条件 UPDATE 保证原子性：并发轮换/登出只有一方 rowCount > 0，
+    // 后到一方拿 false 走重放判定路径（service.refresh）
+    const res = await this.pool.query(
+      `UPDATE refresh_tokens SET revoked_at = $2, replaced_by = $3
+       WHERE id = $1 AND revoked_at IS NULL`,
       [id, new Date(now), replacedBy],
     );
+    return (res.rowCount ?? 0) > 0;
   }
 
   async revokeAllUserTokens(userId: string, now: number): Promise<void> {

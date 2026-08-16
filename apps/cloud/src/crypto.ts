@@ -31,12 +31,14 @@ export function ulid(nowMs: number = Date.now()): string {
   let ts = nowMs % 0x1_0000_0000_0000;
   let time = '';
   for (let i = 0; i < 10; i++) {
-    time = (CROCKFORD[ts % 32] ?? '0') + time;
+    // CROCKFORD 恒为 32 字符，索引恒在 [0,31]：无需 ?? 兜底
+    time = CROCKFORD[ts % 32] + time;
     ts = Math.floor(ts / 32);
   }
-  // 80-bit 随机段 = 16 个 base32 字符（字节 % 32 无取模偏差：256 = 32 × 8）
+  // 80-bit 随机段 = 16 个 base32 字符：16 字节各取低 5 bit（% 32 无取模偏差，256 = 32 × 8），
+  // 16 × 5 bit = 80 bit 熵恰好填满 16 字符容量（每字节高 3 bit 是逐字节 base32 的固有开销）
   const bytes = randomBytes(16);
   let rand = '';
-  for (let i = 0; i < 16; i++) rand += CROCKFORD[(bytes[i] ?? 0) % 32] ?? '0';
+  for (let i = 0; i < 16; i++) rand += CROCKFORD[bytes[i]! % 32];
   return time + rand;
 }

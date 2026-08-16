@@ -30,25 +30,39 @@ export function LoginForm({ onSuccess, onBack }: LoginFormProps) {
   const [notice, setNotice] = useState<string | null>(null);
   const [resendSec, setResendSec] = useState(0);
   const timerRef = useRef<number | null>(null);
+  /**
+   * 邮箱在发送验证码时快照。验证必须用「发出验证码的那个邮箱」，而不是提交时
+   * 输入框的实时值——用户返回上一步改了邮箱再点验证，会把旧验证码对新邮箱
+   * 提交（云端必然失败，且错误提示令人困惑）。
+   */
+  const sentEmailRef = useRef('');
+  /** 组件卸载后（关闭弹窗/切视图）异步续体不得再 setState。 */
+  const aliveRef = useRef(true);
 
   useEffect(() => {
+    aliveRef.current = true;
     return () => {
+      aliveRef.current = false;
       if (timerRef.current !== null) window.clearInterval(timerRef.current);
     };
   }, []);
 
   function startCountdown(sec: number) {
     if (timerRef.current !== null) window.clearInterval(timerRef.current);
-    setResendSec(sec > 0 ? sec : 60);
+    let remaining = sec > 0 ? sec : 60;
+    setResendSec(remaining);
+    // 倒计时状态在 interval 回调里用局部变量维护——setState updater 必须保持
+    // 纯函数（StrictMode 会双调用 updater，副作用放里面会把 clearInterval
+    // 执行两次/提前清零）。
     timerRef.current = window.setInterval(() => {
-      setResendSec((s) => {
-        if (s <= 1) {
-          if (timerRef.current !== null) window.clearInterval(timerRef.current);
-          timerRef.current = null;
-          return 0;
-        }
-        return s - 1;
-      });
+      remaining -= 1;
+      if (remaining <= 0) {
+        if (timerRef.current !== null) window.clearInterval(timerRef.current);
+        timerRef.current = null;
+        setResendSec(0);
+      } else {
+        setResendSec(remaining);
+      }
     }, 1000);
   }
 
@@ -57,16 +71,20 @@ export function LoginForm({ onSuccess, onBack }: LoginFormProps) {
     if (!trimmed || busy || !agreed) return;
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       const res = await api.authSendCode(trimmed);
+      if (!aliveRef.current) return;
+      sentEmailRef.current = trimmed;
       if (fromStep === 'email') setStep('code');
       setNotice(t('login.codeSent'));
       startCountdown(res.resendAfterSec ?? 60);
     } catch (e) {
+      if (!aliveRef.current) return;
       const ref = authErrorRef(e);
       setError(t(ref.key, ref.params));
     } finally {
-      setBusy(false);
+      if (aliveRef.current) setBusy(false);
     }
   }
 
@@ -76,13 +94,15 @@ export function LoginForm({ onSuccess, onBack }: LoginFormProps) {
     setBusy(true);
     setError(null);
     try {
-      await api.authVerify(email.trim(), trimmedCode);
+      await api.authVerify(sentEmailRef.current, trimmedCode);
+      if (!aliveRef.current) return;
       onSuccess();
     } catch (e) {
+      if (!aliveRef.current) return;
       const ref = authErrorRef(e);
       setError(t(ref.key, ref.params));
     } finally {
-      setBusy(false);
+      if (aliveRef.current) setBusy(false);
     }
   }
 
@@ -100,6 +120,7 @@ export function LoginForm({ onSuccess, onBack }: LoginFormProps) {
               value={email}
               placeholder={t('login.emailPlaceholder')}
               autoComplete="email"
+              disabled={busy}
               onChange={(e) => setEmail(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') void sendCode('email');
@@ -148,6 +169,7 @@ export function LoginForm({ onSuccess, onBack }: LoginFormProps) {
               type="button"
               className="account-link-btn"
               data-testid="account-back-btn"
+              disabled={busy}
               onClick={onBack}
             >
               {t('account.cancel')}

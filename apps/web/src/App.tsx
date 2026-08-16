@@ -164,10 +164,18 @@ export default function App() {
   // Auth status snapshot — restore on mount, then keep fresh with a light
   // 30s poll + focus refresh. refresh() never throws: a down daemon keeps
   // the last snapshot (local-first — auth UI degrades, never blocks).
+  // In-flight guard: a slow daemon + focus spam (or overlapping polls) must
+  // not pile up concurrent status requests.
   useEffect(() => {
-    void authStore.refresh();
-    const timer = window.setInterval(() => { void authStore.refresh(); }, 30_000);
-    const onFocus = () => { void authStore.refresh(); };
+    let inFlight = false;
+    const refresh = () => {
+      if (inFlight) return;
+      inFlight = true;
+      void authStore.refresh().finally(() => { inFlight = false; });
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 30_000);
+    const onFocus = refresh;
     window.addEventListener('focus', onFocus);
     return () => {
       window.clearInterval(timer);

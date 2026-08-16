@@ -45,7 +45,7 @@ export interface CloudConfig {
   codeMaxAttempts: number;
   /** refresh token 寿命（秒），30 天滑动 */
   refreshTtlSec: number;
-  /** D1 轮换宽限窗（秒）：被轮换吊销的 token 在窗内重放视为重试而非攻击 */
+  /** 轮换宽限窗（秒）：被轮换吊销的 token 在窗内重放视为重试而非攻击 */
   rotationGraceSec: number;
   rate: RateLimits;
   /** 无 DATABASE_URL 时走 MemoryAuthStore（§十七 L7） */
@@ -54,27 +54,50 @@ export interface CloudConfig {
   directMail?: DirectMailConfig;
 }
 
+function rawPort(env: NodeJS.ProcessEnv): string | undefined {
+  return env.PORT !== undefined && env.PORT !== '' ? env.PORT : undefined;
+}
+
 function intEnv(env: NodeJS.ProcessEnv, key: string, fallback: number): number {
   const raw = env[key];
   if (raw === undefined || raw === '') return fallback;
   const n = Number(raw);
-  if (!Number.isFinite(n) || n <= 0) {
-    throw new Error(`[cloud] env ${key} 必须是正数，实际值: ${raw}`);
+  // 必须是正整数：小数（如 0.5）取整会变 0，导致限频上限为 0 锁死全部发信
+  if (!Number.isInteger(n) || n <= 0) {
+    throw new Error(`[cloud] env ${key} 必须是正整数，实际值: ${raw}`);
   }
-  return Math.floor(n);
+  return n;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): CloudConfig {
-  const envName = (env.MOLIO_ENV ?? 'local') as CloudEnv;
+  const rawEnvName = env.MOLIO_ENV;
+  const envName = (rawEnvName ?? 'local') as CloudEnv;
   if (envName !== 'local' && envName !== 'daily' && envName !== 'prod') {
     throw new Error(`[cloud] MOLIO_ENV 非法: ${envName}（可选 local/daily/prod）`);
   }
+  const databaseUrl = env.DATABASE_URL || undefined;
+  if (rawEnvName === undefined) {
+    // devCode 仅在非 prod 返回；MOLIO_ENV 缺省按 local 处理，部署环境漏配会把验证码后门带上生产，
+    // 因此连持久库（= 部署形态）时强制显式声明环境，其余场景仅告警。
+    if (databaseUrl) {
+      throw new Error('[cloud] 配置 DATABASE_URL 时必须显式设置 MOLIO_ENV（local/daily/prod）');
+    }
+    console.warn('[cloud] MOLIO_ENV 未设置，按 local 处理（send-code 响应将附带 devCode，仅限本地开发）');
+  }
 
-  const jwtSecret = env.MOLIO_JWT_SECRET ?? '';
-  const codePepper = env.MOLIO_CODE_PEPPER ?? '';
+  // trim 后校验：纯空白字符串是 truthy，不能当作有效密钥/pepper
+  const jwtSecret = (env.MOLIO_JWT_SECRET ?? '').trim();
+  const codePepper = (env.MOLIO_CODE_PEPPER ?? '').trim();
   if (envName === 'prod') {
     if (!jwtSecret) throw new Error('[cloud] prod 环境必须设置 MOLIO_JWT_SECRET');
     if (!codePepper) throw new Error('[cloud] prod 环境必须设置 MOLIO_CODE_PEPPER');
+    // prod 禁止内存模式：重启即丢全部用户/会话/验证码状态且无告警（§十七 L7 仅本地开发）
+    if (!databaseUrl) throw new Error('[cloud] prod 环境必须设置 DATABASE_URL（禁止内存模式）');
+  }
+  // 连持久库 = 多实例共享签名密钥与 pepper：随机兜底值会导致跨实例 401 / 验证码 hash 不一致
+  if (databaseUrl) {
+    if (!jwtSecret) throw new Error('[cloud] 配置 DATABASE_URL 时必须设置 MOLIO_JWT_SECRET');
+    if (!codePepper) throw new Error('[cloud] 配置 DATABASE_URL 时必须设置 MOLIO_CODE_PEPPER');
   }
 
   // DirectMail：三项核心凭据全齐才启用；任一缺失视为未配置。
@@ -84,12 +107,22 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CloudConfig {
   const dmAccount = env.MOLIO_DM_ACCOUNT_NAME ?? '';
   let directMail: DirectMailConfig | undefined;
   if (dmAkId && dmAkSecret && dmAccount) {
+    // region/endpoint 启动期格式校验：坏值会在 deriveDirectMailEndpoint 拼成非法 endpoint，
+    // 拖到首次发信才以难懂的 SDK 错误爆出来，与 prod fail-fast 设计不一致
+    const region = env.MOLIO_DM_REGION || 'cn-hangzhou';
+    if (!/^[a-z0-9-]+$/.test(region)) {
+      throw new Error(`[cloud] MOLIO_DM_REGION 非法: ${region}（仅小写字母/数字/连字符，如 cn-hangzhou）`);
+    }
+    const endpoint = env.MOLIO_DM_ENDPOINT || undefined;
+    if (endpoint !== undefined && !/^[a-z0-9.-]+$/.test(endpoint)) {
+      throw new Error(`[cloud] MOLIO_DM_ENDPOINT 非法: ${endpoint}（应为纯主机名，如 dm.aliyuncs.com）`);
+    }
     directMail = {
       accessKeyId: dmAkId,
       accessKeySecret: dmAkSecret,
       accountName: dmAccount,
-      region: env.MOLIO_DM_REGION || 'cn-hangzhou',
-      endpoint: env.MOLIO_DM_ENDPOINT || undefined,
+      region,
+      endpoint,
       replyTo: env.MOLIO_DM_REPLY_TO || undefined,
     };
   } else if (envName === 'prod') {
@@ -100,9 +133,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CloudConfig {
 
   return {
     env: envName,
-    // FC Web 函数注入 CAPort；本地默认 3200（§十三）
-    port: intEnv(env, 'PORT', intEnv(env, 'CAPort', 3200)),
-    // 非 prod 允许缺省（随机生成，重启即失效，与 L7 内存模式一致）
+    // FC Web 函数注入 CAPort；本地默认 3200（§十三）。
+    // 惰性求值：PORT 已设置时不解析 CAPort，无关变量非法不阻断启动。
+    port: rawPort(env) !== undefined ? intEnv(env, 'PORT', 3200) : intEnv(env, 'CAPort', 3200),
+    // 随机兜底仅限本地内存模式：连库（多实例）/prod 已在上方强制显式注入
     jwtSecret: jwtSecret || randomBytes(32).toString('hex'),
     jwtKid: env.MOLIO_JWT_KID || undefined,
     accessTtlSec: intEnv(env, 'MOLIO_ACCESS_TTL_SEC', 15 * 60),
@@ -116,7 +150,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CloudConfig {
       emailDailyMax: intEnv(env, 'MOLIO_RATE_EMAIL_DAILY_MAX', 10),
       ipDailyMax: intEnv(env, 'MOLIO_RATE_IP_DAILY_MAX', 30),
     },
-    databaseUrl: env.DATABASE_URL || undefined,
+    databaseUrl,
     directMail,
   };
 }

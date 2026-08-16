@@ -4,7 +4,9 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import {
   CRYPTO_PORT_ENV,
+  CRYPTO_TOKEN_ENV,
   resolveCryptoPort,
+  resolveCryptoToken,
   encryptWithDesktop,
   decryptWithDesktop,
   isDesktopCryptoConfigured,
@@ -16,19 +18,34 @@ import {
  * 都返回 null、从不抛错（token-store 依赖这个约定做降级）。
  */
 
-type ServerMode = 'normal' | 'status503' | 'badjson' | 'wrongshape' | 'hang';
+type ServerMode = 'normal' | 'status503' | 'badjson' | 'wrongshape' | 'hang' | 'redirect';
 
 interface FakeCryptoServer {
   port: number;
   setMode(m: ServerMode): void;
+  /** 重定向目标地址（mode='redirect' 时 302 过去）。 */
+  setRedirectTarget(url: string): void;
+  /** 最近一次请求的 Authorization 头（测共享密钥透传）。 */
+  lastAuth(): string | undefined;
+  /** 收到的请求计数（作为重定向目标时断言"未被跟随"）。 */
+  hits(): number;
   close(): Promise<void>;
 }
 
 /** 假加密 = 'fake:' + base64（确定性、可区分、可还原），与 crypto-server 同款契约。 */
 function startFakeCryptoServer(): Promise<FakeCryptoServer> {
   let mode: ServerMode = 'normal';
+  let redirectTarget = 'http://127.0.0.1:1/never';
+  let lastAuthHeader: string | undefined;
+  let hitCount = 0;
   const server = http.createServer((req, res) => {
+    hitCount += 1;
+    lastAuthHeader = req.headers.authorization;
     if (mode === 'hang') return; // 接受连接但永不响应 → 客户端超时路径
+    if (mode === 'redirect') {
+      res.writeHead(302, { location: redirectTarget }).end();
+      return;
+    }
     let body = '';
     req.on('data', (chunk: Buffer) => {
       body += chunk;
@@ -81,6 +98,11 @@ function startFakeCryptoServer(): Promise<FakeCryptoServer> {
         setMode: (m) => {
           mode = m;
         },
+        setRedirectTarget: (url) => {
+          redirectTarget = url;
+        },
+        lastAuth: () => lastAuthHeader,
+        hits: () => hitCount,
         close: () =>
           new Promise<void>((done) => {
             server.closeAllConnections?.();
@@ -187,6 +209,38 @@ describe('desktop-crypto', () => {
       process.env[CRYPTO_PORT_ENV] = String(deadPort);
       assert.equal(await encryptWithDesktop('hello'), null);
       assert.equal(await decryptWithDesktop('fake:aGVsbG8='), null);
+    });
+
+    it('配置 CRYPTO_TOKEN 时每次调用携带 Authorization: Bearer（防本机他进程冒用）', async () => {
+      const originalToken = process.env[CRYPTO_TOKEN_ENV];
+      try {
+        process.env[CRYPTO_TOKEN_ENV] = 'secret-abc';
+        assert.equal(resolveCryptoToken(process.env), 'secret-abc');
+        const data = await encryptWithDesktop('hello');
+        assert.ok(data);
+        assert.equal(fake.lastAuth(), 'Bearer secret-abc');
+        // 纯空白按未配置（不带头）
+        process.env[CRYPTO_TOKEN_ENV] = '   ';
+        assert.equal(resolveCryptoToken(process.env), null);
+        await encryptWithDesktop('hello');
+        assert.equal(fake.lastAuth(), undefined);
+      } finally {
+        if (originalToken === undefined) delete process.env[CRYPTO_TOKEN_ENV];
+        else process.env[CRYPTO_TOKEN_ENV] = originalToken;
+      }
+    });
+
+    it('服务端 302 → redirect:error 不跟随（明文不得发往重定向目标），返回 null', async () => {
+      const target = await startFakeCryptoServer();
+      try {
+        const before = target.hits();
+        fake.setRedirectTarget(`http://127.0.0.1:${target.port}/encrypt`);
+        fake.setMode('redirect');
+        assert.equal(await encryptWithDesktop('hello'), null);
+        assert.equal(target.hits(), before, '重定向目标不得收到请求（redirect: error 生效）');
+      } finally {
+        await target.close();
+      }
     });
   });
 });

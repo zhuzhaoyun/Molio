@@ -249,6 +249,10 @@ describe('updater.js: must kill daemon before spawning installer', () => {
       handlerBlock.includes('event.preventDefault()'),
       'before-quit must prevent default to wait for daemon cleanup before quitting'
     );
+    assert.ok(
+      handlerBlock.includes('stopCryptoServer'),
+      'before-quit must stop crypto-server on quit (after daemon exit — daemon may still write tokens during graceful shutdown)'
+    );
   });
 });
 

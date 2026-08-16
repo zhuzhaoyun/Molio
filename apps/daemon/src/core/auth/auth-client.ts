@@ -25,6 +25,12 @@ export const PROACTIVE_REFRESH_MS = 2 * 60 * 1000;
 const DEFAULT_RETRY_DELAYS_MS = [300, 800];
 
 /**
+ * 云端请求整体超时。undici 默认只有 socket 级超时——云端 hang 住（半开连接、
+ * LB 黑洞）时登录/刷新链路会无限阻塞；10s 整体兜底，超时按网络失败走重试/降级。
+ */
+const CLOUD_FETCH_TIMEOUT_MS = 10_000;
+
+/**
  * 云端认证链路错误。
  * - status = 云端 HTTP 状态码（4xx 透传给路由）
  * - status = 0：daemon 自造（断网 cloud_unreachable / 无本地会话 no_session）
@@ -68,6 +74,21 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
+ * 合并请求头：content-type 兜底 + 调用方头统一小写化。
+ * 不做小写化时，调用方传 `Authorization`/`Content-Type`（大写驼峰）会与兜底键
+ * 并存，undici 可能发出重复头，行为不可预期。
+ */
+function mergeJsonHeaders(extra: NonNullable<RequestInit['headers']> | undefined): Record<string, string> {
+  const merged: Record<string, string> = { 'content-type': 'application/json' };
+  if (extra) {
+    new Headers(extra).forEach((value, key) => {
+      merged[key.toLowerCase()] = value;
+    });
+  }
+  return merged;
+}
+
+/**
  * daemon 侧唯一的云端通信方（设计 §五：Web UI 永不直连云端）。
  *
  * 职责：
@@ -98,9 +119,12 @@ export class AuthClient {
     this.entitlementCache = opts.entitlementCache ?? new EntitlementCache();
   }
 
-  /** 云端 base URL（构造参数优先，否则懒读 env）。 */
+  /** 云端 base URL（构造参数优先，否则懒读 env）。两端空白 trim 掉；纯空白按未配置。 */
   getBaseUrl(): string | null {
-    return this.opts.baseUrl ?? process.env[AUTH_URL_ENV] ?? null;
+    const raw = this.opts.baseUrl ?? process.env[AUTH_URL_ENV];
+    if (raw === undefined) return null;
+    const trimmed = raw.trim();
+    return trimmed === '' ? null : trimmed;
   }
 
   isConfigured(): boolean {
@@ -141,22 +165,31 @@ export class AuthClient {
 
   // ── 登录流程（routes/auth.ts 调用） ──────────────────────────────
 
-  /** 转发云端 send-code；响应原样返回（含 daily/local 的 devCode，prod 云端本就不返回）。 */
+  /**
+   * 转发云端 send-code；响应原样返回（含 daily/local 的 devCode，prod 云端本就不返回）。
+   * **不重试**：send-code 非幂等——云端可能已发信才失败，重试会重复发信并撞 60s 重发限频。
+   */
   async sendCode(email: string): Promise<SendCodeResponse> {
-    const resp = await this.fetchFromCloud('/auth/send-code', {
-      method: 'POST',
-      body: JSON.stringify({ email }),
-    });
+    const resp = await this.fetchFromCloud(
+      '/auth/send-code',
+      { method: 'POST', body: JSON.stringify({ email }) },
+      { retryable: false },
+    );
     if (!resp.ok) await this.throwCloudError(resp);
     return (await this.parseBody(resp)) as unknown as SendCodeResponse;
   }
 
-  /** 验证码登录（注册=登录）；成功后 token 落盘，并尽力拉一次权益快照。 */
+  /**
+   * 验证码登录（注册=登录）；成功后 token 落盘，并尽力拉一次权益快照。
+   * **不重试**：verify 消费一次性验证码——云端可能已消费才失败，重试会得到
+   * invalid_code，把"其实已成功"的登录误报为失败。
+   */
   async verify(email: string, code: string): Promise<{ user: User }> {
-    const resp = await this.fetchFromCloud('/auth/verify', {
-      method: 'POST',
-      body: JSON.stringify({ email, code, deviceHint: this.deviceHint }),
-    });
+    const resp = await this.fetchFromCloud(
+      '/auth/verify',
+      { method: 'POST', body: JSON.stringify({ email, code, deviceHint: this.deviceHint }) },
+      { retryable: false },
+    );
     if (!resp.ok) await this.throwCloudError(resp);
     const body = (await this.parseBody(resp)) as unknown as VerifyResponse;
     await this.adoptTokens(body.accessToken, body.refreshToken, body.user);
@@ -179,11 +212,19 @@ export class AuthClient {
     if (cur && this.isConfigured()) {
       try {
         const accessToken = await this.getAccessToken();
-        await this.fetchFromCloud('/auth/session', {
-          method: 'DELETE',
-          headers: { authorization: `Bearer ${accessToken}` },
-          body: JSON.stringify({ refreshToken: cur.refreshToken }),
-        });
+        // getAccessToken 可能触发 refresh（轮换）：必须重读最新 refresh token 去吊销。
+        // 若沿用上面预读的 cur.refreshToken，DELETE body 带的就是已被轮换（云端已吊销）
+        // 的旧 token，云端找不到可吊销对象，本设备 session 在云端残留。
+        const latest = (await this.currentTokens()) ?? cur;
+        await this.fetchFromCloud(
+          '/auth/session',
+          {
+            method: 'DELETE',
+            headers: { authorization: `Bearer ${accessToken}` },
+            body: JSON.stringify({ refreshToken: latest.refreshToken }),
+          },
+          { retryable: false }, // 吊销幂等但无重试价值；失败走本地必清
+        );
       } catch {
         // 云端不可达 / token 已失效 → 仍本地登出
       }
@@ -199,19 +240,7 @@ export class AuthClient {
    * 无本地会话抛 AuthCloudError(0, 'no_session')。
    */
   async deleteAccount(): Promise<void> {
-    let accessToken = await this.getAccessToken();
-    let resp = await this.fetchFromCloud('/auth/account', {
-      method: 'DELETE',
-      headers: { authorization: `Bearer ${accessToken}` },
-    });
-    if (resp.status === 401) {
-      const fresh = await this.refresh();
-      accessToken = fresh.accessToken;
-      resp = await this.fetchFromCloud('/auth/account', {
-        method: 'DELETE',
-        headers: { authorization: `Bearer ${accessToken}` },
-      });
-    }
+    const resp = await this.fetchWithBearer('/auth/account', 'DELETE');
     if (!resp.ok) await this.throwCloudError(resp);
     this.clearSession({ expired: false });
   }
@@ -242,14 +271,16 @@ export class AuthClient {
 
   /**
    * 取可用 access token：剩余寿命 ≥2min 直接返回；否则先刷新。
-   * exp 无法解码时按原样返回，由调用处的 401→刷新→重试兜底。
+   * exp 无法解码（accessExpiresAt 缺省）时**按原样返回**——token 可能完全有效
+   * （云端换发格式/解码异常），由调用处的 401→刷新→重试兜底；此处抢跑刷新会
+   * 在每次调用都白烧一次轮换。
    * 无本地会话抛 AuthCloudError(0, 'no_session')。
    */
   async getAccessToken(): Promise<string> {
     const cur = await this.currentTokens();
     if (!cur) throw new AuthCloudError(0, 'no_session');
     if (
-      cur.accessExpiresAt !== undefined &&
+      cur.accessExpiresAt === undefined ||
       this.now() < cur.accessExpiresAt - PROACTIVE_REFRESH_MS
     ) {
       return cur.accessToken;
@@ -273,19 +304,7 @@ export class AuthClient {
 
   /** GET /auth/me（带 401→刷新→重试一次）；成功后刷新权益快照。 */
   async me(): Promise<MeResponse> {
-    let accessToken = await this.getAccessToken();
-    let resp = await this.fetchFromCloud('/auth/me', {
-      method: 'GET',
-      headers: { authorization: `Bearer ${accessToken}` },
-    });
-    if (resp.status === 401) {
-      const fresh = await this.refresh();
-      accessToken = fresh.accessToken;
-      resp = await this.fetchFromCloud('/auth/me', {
-        method: 'GET',
-        headers: { authorization: `Bearer ${accessToken}` },
-      });
-    }
+    const resp = await this.fetchWithBearer('/auth/me', 'GET');
     if (!resp.ok) await this.throwCloudError(resp);
     const body = (await this.parseBody(resp)) as unknown as MeResponse;
     this.entitlementCache.write({
@@ -298,6 +317,23 @@ export class AuthClient {
 
   // ── 内部 ──────────────────────────────────────────────────────────
 
+  /** Bearer 请求 + 401→刷新→重试一次（me / deleteAccount 共享）。 */
+  private async fetchWithBearer(path: string, method: 'GET' | 'DELETE'): Promise<Response> {
+    let accessToken = await this.getAccessToken();
+    let resp = await this.fetchFromCloud(path, {
+      method,
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    if (resp.status === 401) {
+      const fresh = await this.refresh();
+      resp = await this.fetchFromCloud(path, {
+        method,
+        headers: { authorization: `Bearer ${fresh.accessToken}` },
+      });
+    }
+    return resp;
+  }
+
   private async doRefresh(): Promise<AuthTokens> {
     const cur = await this.currentTokens();
     if (!cur) throw new AuthCloudError(0, 'no_session');
@@ -305,6 +341,10 @@ export class AuthClient {
       method: 'POST',
       body: JSON.stringify({ refreshToken: cur.refreshToken }),
     });
+    // 会话纪元守卫：refresh 在途期间会话被替换（并发新登录 verify / 登出 clearSession）→
+    // 丢弃本次刷新结果。既不能用旧 user 覆盖新会话，也不能拿旧 token 的 401 去清新会话。
+    // 典型场景：index.ts listen 后异步 restoreSession 与用户立即重新登录的竞态。
+    if (this.tokens !== cur) throw new AuthCloudError(409, 'session_replaced');
     if (!resp.ok) {
       if (resp.status === 401) {
         // 云端判定 refresh 失效（过期/吊销/泄漏重放）→ 不盲试，清本地并标记过期（§7.2）
@@ -318,7 +358,7 @@ export class AuthClient {
       await this.throwCloudError(resp);
     }
     const body = (await this.parseBody(resp)) as unknown as RefreshResponse;
-    await this.adoptTokens(body.accessToken, body.refreshToken, cur.user);
+    await this.adoptTokens(body.accessToken, body.refreshToken, cur.user, cur);
     return this.tokens as AuthTokens;
   }
 
@@ -326,8 +366,17 @@ export class AuthClient {
    * 收新 token 对：先写盘再更新内存（fs 写失败抛出，避免内存领先磁盘；同 FeishuTokenStore 约定）。
    * 例外：桌面模式加密失败（crypto 服务暂挂）→ token-store 返回 written:false，
    * 此时仍更新内存（token 本身有效，只是未落盘；重启才会丢，属可接受降级）。
+   *
+   * expectCurrent（doRefresh 传入）：写盘是异步的（桌面加密 RPC），期间会话可能被
+   * 登出/新登录替换。落盘后复核身份：已替换则放弃收编（不复活旧 token），抛
+   * session_replaced。token-store 侧另有 generation 计数防"登出后旧写复活文件"。
    */
-  private async adoptTokens(accessToken: string, refreshToken: string, user: User): Promise<void> {
+  private async adoptTokens(
+    accessToken: string,
+    refreshToken: string,
+    user: User,
+    expectCurrent?: AuthTokens,
+  ): Promise<void> {
     const tokens: AuthTokens = {
       accessToken,
       refreshToken,
@@ -337,7 +386,10 @@ export class AuthClient {
     const exp = decodeAccessExp(accessToken);
     if (exp !== null) tokens.accessExpiresAt = exp;
     const result = await writeAuthTokens(tokens);
-    if (!result.written) {
+    if (expectCurrent !== undefined && this.tokens !== expectCurrent) {
+      throw new AuthCloudError(409, 'session_replaced');
+    }
+    if (!result.written && result.reason === 'encrypt_failed') {
       console.warn(
         'auth: desktop crypto encrypt failed — tokens kept in memory, disk write skipped',
       );
@@ -361,11 +413,18 @@ export class AuthClient {
 
   /**
    * 云端 HTTP 请求 + 退避重试。
-   * - fetch 抛错（断网/DNS/拒连）或 5xx → 按 retryDelaysMs 退避重试
+   * - fetch 抛错（断网/DNS/拒连/超时）或 5xx → 按 retryDelaysMs 退避重试
    * - 4xx 不重试（业务拒绝，重试无意义且可能撞限频）
+   * - **非幂等请求（sendCode/verify/吊销）强制不重试**（retryable:false）
    * - 任何 HTTP 响应都算"云端可达"；只有网络层失败才标 unreachable
+   * - 每次尝试带 10s 整体超时信号，云端 hang 不住登录链路
    */
-  private async fetchFromCloud(path: string, init: RequestInit): Promise<Response> {
+  private async fetchFromCloud(
+    path: string,
+    init: RequestInit,
+    opts: { retryable?: boolean } = {},
+  ): Promise<Response> {
+    const retryable = opts.retryable ?? true;
     const base = this.getBaseUrl();
     if (!base) throw new AuthCloudError(503, 'auth_not_configured');
     const url = `${base.replace(/\/+$/, '')}${path}`;
@@ -374,9 +433,13 @@ export class AuthClient {
       try {
         const resp = await this.fetchImpl(url, {
           ...init,
-          headers: { 'content-type': 'application/json', ...(init.headers ?? {}) },
+          headers: mergeJsonHeaders(init.headers),
+          // 调用方自带 signal 优先；否则每轮尝试新鲜的整体超时
+          signal: init.signal ?? AbortSignal.timeout(CLOUD_FETCH_TIMEOUT_MS),
         });
-        if (resp.status >= 500 && attempt < this.retryDelaysMs.length) {
+        if (resp.status >= 500 && retryable && attempt < this.retryDelaysMs.length) {
+          // 丢弃 5xx 响应体，避免 undici 挂住连接（下一个尝试是新请求）
+          resp.body?.cancel().catch(() => {});
           await sleep(this.retryDelaysMs[attempt] ?? 0);
           attempt += 1;
           continue;
@@ -384,7 +447,7 @@ export class AuthClient {
         this.cloudState = 'ok';
         return resp;
       } catch {
-        if (attempt < this.retryDelaysMs.length) {
+        if (retryable && attempt < this.retryDelaysMs.length) {
           await sleep(this.retryDelaysMs[attempt] ?? 0);
           attempt += 1;
           continue;

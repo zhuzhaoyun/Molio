@@ -18,7 +18,7 @@
 
 <link rel="icon" type="image/png" href="/images/favicon-32.png">
 <link rel="apple-touch-icon" href="/images/favicon-180.png">
-<link rel="stylesheet" href="styles.css?v=20260731">
+<link rel="stylesheet" href="styles.css?v=20260813a">
 
 <!-- Open Graph -->
 <meta property="og:title" content="用户协议 — Molio 墨流">
@@ -99,7 +99,7 @@
 
   <div class="privacy-section reveal">
     <h2>5. 数据与隐私</h2>
-    <p>我们坚持<strong>数据最小化</strong>原则：账号服务仅收集您的邮箱地址，不收集手机号、实名信息等其他个人信息。为排障目的，客户端错误监控会上报不含邮箱的匿名用户标识。您与 AI 服务商之间的对话数据、您的知识库内容均不经过我们的服务器。</p>
+    <p>我们坚持<strong>数据最小化</strong>原则：账号服务仅收集您的邮箱地址（另为安全防护与限频目的，服务端会记录访问 IP 与登录设备标识），不收集手机号、实名信息等其他个人信息。为排障与改进产品质量，登录用户的客户端质量监控会上报不含邮箱的匿名用户标识及脱敏后的错误信息，绝不含您的知识库内容或聊天记录。您与 AI 服务商之间的对话数据、您的知识库内容均不经过我们的服务器。</p>
     <p>详细信息处理规则请参阅 <a href="privacy.html">《隐私政策》</a>。</p>
   </div>
 
@@ -174,25 +174,7 @@
   </div>
 </footer>
 
-<script src="shared.js?v=20260731"></script>
-
-<!-- Google Analytics 4 -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=G-X6LMX9VR0Y"></script>
-<script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){dataLayer.push(arguments);}
-  gtag('js', new Date());
-  gtag('config', 'G-X6LMX9VR0Y');
-</script>
-<!-- 百度统计 -->
-<script>
-var _hmt = _hmt || [];
-(function() {
-  var hm = document.createElement("script");
-  hm.src = "https://hm.baidu.com/hm.js?887d065c4dc67dfb05913b2e131a44a3";
-  var s = document.getElementsByTagName("script")[0];
-  s.parentNode.insertBefore(hm, s);
-})();
-</script>
+<script src="shared.js?v=20260813a"></script>
+<!-- 法律文档页刻意不加载任何第三方统计脚本（GA4/百度统计），与数据最小化承诺保持一致；网站统计披露见《隐私政策》第 6 节 -->
 </body>
 </html>

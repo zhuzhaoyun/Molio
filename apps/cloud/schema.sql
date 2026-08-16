@@ -1,6 +1,9 @@
 -- @molio/cloud 数据库 DDL（托管 PostgreSQL / PolarDB Serverless）
 -- 设计见 docs/user-module-design.md §五。
 -- 所有凭据（验证码、refresh token）只存 hash；时间列统一 TIMESTAMPTZ。
+--
+-- ⚠️ 迁移须知：apply-schema.mjs 全部 IF NOT EXISTS，本文件只对**新建库**生效。
+-- 已有库需要同步下方变更时，手动执行对应 SQL（见各节注释），勿直接重跑本文件期待生效。
 
 CREATE TABLE IF NOT EXISTS users (
   id                TEXT PRIMARY KEY,            -- ULID
@@ -10,7 +13,10 @@ CREATE TABLE IF NOT EXISTS users (
   entitlement       JSONB NOT NULL DEFAULT '{}', -- 权益桩：{plan, expiresAt, ...}，schema 第二期定
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
-  deleted_at        TIMESTAMPTZ                  -- 软删除（个保法要求可注销）
+  deleted_at        TIMESTAMPTZ,                 -- 软删除（个保法要求可注销）
+  -- CHECK 约束只拦应用层 bug（代码路径之外无写入方），新库生效；
+  -- 已有库补约束：ALTER TABLE users ADD CONSTRAINT users_status_check CHECK (status IN ('active','deactivated'));
+  CONSTRAINT users_status_check CHECK (status IN ('active', 'deactivated'))
 );
 
 CREATE TABLE IF NOT EXISTS auth_codes (
@@ -21,7 +27,12 @@ CREATE TABLE IF NOT EXISTS auth_codes (
   attempts    INT NOT NULL DEFAULT 0,            -- 错误次数，≥5 锁定该码
   consumed_at TIMESTAMPTZ,                       -- 一次性：验证成功后立即置位
   ip          TEXT,                              -- IP 限频依赖 index(ip, created_at)
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  -- 已有库补约束：
+  --   ALTER TABLE auth_codes ADD CONSTRAINT auth_codes_attempts_check CHECK (attempts >= 0);
+  --   ALTER TABLE auth_codes ADD CONSTRAINT auth_codes_ttl_check CHECK (expires_at > created_at);
+  CONSTRAINT auth_codes_attempts_check CHECK (attempts >= 0),
+  CONSTRAINT auth_codes_ttl_check CHECK (expires_at > created_at)
 );
 
 CREATE TABLE IF NOT EXISTS refresh_tokens (
@@ -32,14 +43,32 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   expires_at  TIMESTAMPTZ NOT NULL,              -- 30 天，每次轮换顺延（滑动）
   revoked_at  TIMESTAMPTZ,                       -- 吊销：logout / rotation / admin / replay
-  replaced_by TEXT                               -- 轮换产生的新 token id（审计链 + D1 宽限窗追踪）
+  replaced_by TEXT,                              -- 轮换产生的新 token id（审计链 + 宽限窗重放追踪）
+  -- 已有库补约束：
+  --   ALTER TABLE refresh_tokens ADD CONSTRAINT refresh_tokens_ttl_check CHECK (expires_at > created_at);
+  CONSTRAINT refresh_tokens_ttl_check CHECK (expires_at > created_at)
 );
 
--- 部分唯一约束：已注销（软删除）账号不占邮箱位，同邮箱可重新建号
+-- 部分唯一约束：已注销（软删除）或已停用的账号不占邮箱位，同邮箱可重新建号
 -- （§二「注销后再注册」：新建账号，不复活旧账号）
-CREATE UNIQUE INDEX IF NOT EXISTS users_email_alive  ON users (email) WHERE deleted_at IS NULL;
+-- ⚠️ 已有库迁移（谓词新增 status 条件，IF NOT EXISTS 不会更新既有索引）：
+--   DROP INDEX users_email_alive;
+--   CREATE UNIQUE INDEX users_email_alive ON users (email) WHERE deleted_at IS NULL AND status = 'active';
+CREATE UNIQUE INDEX IF NOT EXISTS users_email_alive  ON users (email) WHERE deleted_at IS NULL AND status = 'active';
 -- 限频查询（同邮箱重发间隔 / 每邮箱每日上限 / 每 IP 每日上限）
 CREATE INDEX IF NOT EXISTS auth_codes_email          ON auth_codes (email);
 CREATE INDEX IF NOT EXISTS auth_codes_ip_created     ON auth_codes (ip, created_at);
 -- 「吊销该用户全部 session」（重放检测 / 注销账号）按 user_id 查
 CREATE INDEX IF NOT EXISTS refresh_tokens_user       ON refresh_tokens (user_id);
+-- 保留期清理（下方注释 SQL）扫描用
+CREATE INDEX IF NOT EXISTS auth_codes_created        ON auth_codes (created_at);
+CREATE INDEX IF NOT EXISTS refresh_tokens_expires    ON refresh_tokens (expires_at);
+
+-- ── 保留期清理（§五：第一期无定时任务，手动/运维按需执行） ──
+-- 清理顺序受 FK 约束：refresh_tokens.user_id REFERENCES users(id)，
+-- 将来硬删 users 前必须先删该用户的 refresh_tokens（当前只有软删除，不受影响）。
+--
+-- 验证码 7 天（远超 5min 有效期 + 1 天限频窗口）：
+--   DELETE FROM auth_codes WHERE created_at < now() - interval '7 days';
+-- refresh token 90 天（30 天滑动 TTL + 宽限/审计富余）：
+--   DELETE FROM refresh_tokens WHERE expires_at < now() - interval '90 days';

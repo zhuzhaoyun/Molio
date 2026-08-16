@@ -41,7 +41,7 @@ export interface RefreshTokenRecord {
   createdAt: number;
   expiresAt: number;
   revokedAt: number | null;
-  /** 轮换产生的新 token id（审计链 + D1 宽限窗追踪） */
+  /** 轮换产生的新 token id（审计链 + 宽限窗重放追踪）；人工登出时为 null */
   replacedBy: string | null;
 }
 
@@ -51,6 +51,7 @@ export interface AuthStore {
   createActiveUser(input: { id: string; email: string; now: number }): Promise<UserRecord>;
   findActiveUserByEmail(email: string): Promise<UserRecord | null>;
   findActiveUserById(id: string): Promise<UserRecord | null>;
+  /** 软删除：置 deleted_at。此后 find* 一律查不到该账号（活跃判定收口于 find* 查询） */
   softDeleteUser(id: string, now: number): Promise<void>;
 
   // ── auth_codes（限频全部走查询，FC 多实例无内存限流，§五） ──
@@ -70,7 +71,8 @@ export interface AuthStore {
   insertRefreshToken(token: RefreshTokenRecord): Promise<void>;
   findRefreshTokenByHash(tokenHash: string): Promise<RefreshTokenRecord | null>;
   findRefreshTokenById(id: string): Promise<RefreshTokenRecord | null>;
-  revokeRefreshToken(id: string, now: number, replacedBy: string | null): Promise<void>;
+  /** 原子吊销：仅未吊销的 token 生效。true = 本次调用完成吊销，false = 已被吊销（并发/重放） */
+  revokeRefreshToken(id: string, now: number, replacedBy: string | null): Promise<boolean>;
   /** 吊销该用户全部未吊销 session（重放检测 / 注销账号） */
   revokeAllUserTokens(userId: string, now: number): Promise<void>;
 }

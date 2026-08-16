@@ -5,6 +5,7 @@
  * 关键红线：
  * - userId 只在变化时触发 onUser（不重复上报）
  * - daemon 不可达 ≠ 登出（绝不因请求失败触发 onUser(null)）
+ * - 慢响应不堆叠请求（in-flight 守卫）；stop() 中止在途请求
  */
 
 import { describe, it, beforeEach, afterEach } from 'node:test';
@@ -162,6 +163,50 @@ describe('startAuthStatusPolling', () => {
     assert.deepEqual(seen, ['01HXYZUSER']);
   });
 
+  it('valid JSON with malformed shape must NOT be downgraded to logout', async () => {
+    // Regression: 坏形状快照（{}、loggedIn:true 缺 user.id）曾让 userId 落回 null，
+    // 上一轮已登录时会触发 onUser(null) —— 把"响应坏掉"误判成"用户登出"。
+    // 红线：只有明确的 loggedIn === false 才构成登出转换。
+    const malformedShapes = [{}, { loggedIn: true }, { loggedIn: true, user: { id: 42 } }, 'str'];
+    for (const malformed of malformedShapes) {
+      let phase = 0;
+      globalThis.fetch = async () => statusResponse(phase === 0 ? LOGGED_IN : malformed);
+      const seen = [];
+      stop = startAuthStatusPolling({
+        daemonPort: 3100,
+        onUser: (id) => seen.push(id),
+        log: () => {},
+        intervalMs: FAST_INTERVAL,
+      });
+      await sleep(80);
+      phase = 1;
+      await sleep(150); // 多轮坏响应期间不得出现 null 转换
+      assert.deepEqual(seen, ['01HXYZUSER'], `shape ${JSON.stringify(malformed)} must preserve last state`);
+      stop();
+      stop = null;
+    }
+  });
+
+  it('definitive loggedIn:false after malformed shape still fires logout', async () => {
+    let phase = 0;
+    globalThis.fetch = async () =>
+      statusResponse(phase === 0 ? LOGGED_IN : phase === 1 ? {} : LOGGED_OUT);
+    const seen = [];
+    stop = startAuthStatusPolling({
+      daemonPort: 3100,
+      onUser: (id) => seen.push(id),
+      log: () => {},
+      intervalMs: FAST_INTERVAL,
+    });
+    await sleep(80);
+    phase = 1;
+    await sleep(120); // 坏形状：保持登录态
+    assert.deepEqual(seen, ['01HXYZUSER']);
+    phase = 2;
+    await sleep(120); // 明确登出：触发 null
+    assert.deepEqual(seen, ['01HXYZUSER', null]);
+  });
+
   it('stop() halts polling', async () => {
     let fetchCount = 0;
     globalThis.fetch = async () => {
@@ -180,6 +225,65 @@ describe('startAuthStatusPolling', () => {
     const countAtStop = fetchCount;
     await sleep(120);
     assert.equal(fetchCount, countAtStop, 'no more fetches after stop()');
+  });
+
+  it('上一轮未返回 → 后续轮次跳过（请求不堆叠）', async () => {
+    // daemon 响应慢于轮询间隔时，in-flight 守卫保证任意时刻至多一个在途请求，
+    // 否则快间隔 + 慢响应会线性堆叠请求直到 daemon 雪崩。
+    let release;
+    const gate = new Promise((r) => {
+      release = r;
+    });
+    let inFlightNow = 0;
+    let inFlightMax = 0;
+    globalThis.fetch = async (_url, opts) => {
+      inFlightNow += 1;
+      inFlightMax = Math.max(inFlightMax, inFlightNow);
+      try {
+        await new Promise((resolve, reject) => {
+          gate.then(resolve);
+          opts?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+        });
+        return statusResponse(LOGGED_IN);
+      } finally {
+        inFlightNow -= 1;
+      }
+    };
+    const seen = [];
+    stop = startAuthStatusPolling({
+      daemonPort: 3100,
+      onUser: (id) => seen.push(id),
+      log: () => {},
+      intervalMs: FAST_INTERVAL,
+    });
+    await sleep(150); // 首轮挂起期间已有多次 tick 被跳过
+    assert.equal(inFlightMax, 1, '任意时刻至多一个在途请求');
+    release();
+    await sleep(120);
+    assert.deepEqual(seen, ['01HXYZUSER'], '挂起请求返回后正常触发一次');
+  });
+
+  it('stop() 中止在途请求（不只是清定时器）', async () => {
+    let seenSignal = null;
+    globalThis.fetch = async (_url, opts) => {
+      seenSignal = opts?.signal ?? null;
+      return new Promise((_resolve, reject) => {
+        // 永不自然返回，只有 abort 能终结——模拟退出瞬间 daemon 无响应
+        seenSignal?.addEventListener('abort', () => reject(new Error('AbortError')));
+      });
+    };
+    stop = startAuthStatusPolling({
+      daemonPort: 3100,
+      onUser: () => {},
+      log: () => {},
+      intervalMs: FAST_INTERVAL,
+    });
+    await sleep(80); // 首轮 poll 已发出
+    assert.ok(seenSignal, 'fetch 必须携带 signal');
+    assert.equal(seenSignal.aborted, false, 'stop 前 signal 未中止');
+    stop();
+    stop = null;
+    assert.equal(seenSignal.aborted, true, 'stop() 立即中止在途 signal');
   });
 
   it('onUser throwing does not kill the poller', async () => {

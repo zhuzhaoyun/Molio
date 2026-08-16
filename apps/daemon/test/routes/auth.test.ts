@@ -53,11 +53,17 @@ describe('auth routes', () => {
     rmSync(tempHome, { recursive: true, force: true });
   });
 
+  // WHATWG Request（app.request 的底座）不会自动生成 content-length 头，
+  // 而路由对 /start /verify 有"缺失/超大 CL → 413"的 OOM 闸门，故此处显式带上。
   async function post(path: string, body: unknown): Promise<Response> {
+    const text = JSON.stringify(body);
     return app.request(path, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
+      headers: {
+        'content-type': 'application/json',
+        'content-length': String(Buffer.byteLength(text)),
+      },
+      body: text,
     });
   }
 
@@ -221,12 +227,129 @@ describe('auth routes', () => {
     const unconfigured = new AuthClient({ fetchImpl: mock.fetchImpl, retryDelaysMs: [] });
     const bareApp = new Hono();
     bareApp.route('/api/auth', authRoutes(unconfigured));
+    const text = JSON.stringify({ email: 'user@example.com' });
     const res = await bareApp.request('/api/auth/start', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: 'user@example.com' }),
+      headers: {
+        'content-type': 'application/json',
+        'content-length': String(Buffer.byteLength(text)),
+      },
+      body: text,
     });
     assert.equal(res.status, 503);
     assert.deepEqual(await res.json(), { error: 'auth_not_configured' });
+  });
+
+  describe('CSRF：写端点 Origin 白名单（远程页面不得驱动登录/登出）', () => {
+    async function withOrigin(
+      method: string,
+      path: string,
+      origin: string,
+      body?: unknown,
+    ): Promise<Response> {
+      const text = body !== undefined ? JSON.stringify(body) : undefined;
+      return app.request(path, {
+        method,
+        headers: {
+          'content-type': 'application/json',
+          origin,
+          host: 'localhost:3100',
+          ...(text !== undefined ? { 'content-length': String(Buffer.byteLength(text)) } : {}),
+        },
+        ...(text !== undefined ? { body: text } : {}),
+      });
+    }
+
+    it('远程 Origin → 403 forbidden_origin，不打云端', async () => {
+      const res = await withOrigin('POST', '/api/auth/logout', 'http://evil.example.com', {});
+      assert.equal(res.status, 403);
+      assert.deepEqual(await res.json(), { error: 'forbidden_origin' });
+      assert.equal(mock.calls.length, 0, '拒绝必须先于任何副作用');
+      const start = await withOrigin('POST', '/api/auth/start', 'https://evil.example.com', {
+        email: 'user@example.com',
+      });
+      assert.equal(start.status, 403);
+      const del = await app.request('/api/auth/account', {
+        method: 'DELETE',
+        headers: { origin: 'http://evil.example.com', host: 'localhost:3100' },
+      });
+      assert.equal(del.status, 403);
+    });
+
+    it('dev 拓扑放行：vite(localhost:5173) → daemon(localhost:3100)', async () => {
+      const res = await withOrigin('POST', '/api/auth/start', 'http://localhost:5173', {
+        email: 'user@example.com',
+      });
+      assert.equal(res.status, 202);
+    });
+
+    it('同源放行：Origin host 与 Host 头一致（NAS/生产 web 由 daemon 伺服）', async () => {
+      const text = JSON.stringify({ email: 'user@example.com' });
+      const res = await app.request('/api/auth/start', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          origin: 'http://molio.local:3100',
+          host: 'molio.local:3100',
+          'content-length': String(Buffer.byteLength(text)),
+        },
+        body: text,
+      });
+      assert.equal(res.status, 202);
+    });
+
+    it('无 Origin（curl/非浏览器）放行；Origin 解析失败拒绝', async () => {
+      const res = await post('/api/auth/start', { email: 'user@example.com' });
+      assert.equal(res.status, 202);
+      // URL 构造失败的畸形 Origin
+      const evil = await app.request('/api/auth/logout', {
+        method: 'POST',
+        headers: { origin: 'not a url', host: 'localhost:3100' },
+      });
+      assert.equal(evil.status, 403);
+    });
+  });
+
+  describe('body 尺寸闸门（daemon 无鉴权，防 OOM）', () => {
+    it('超大 body → 413 payload_too_large（body 不被缓冲进云端调用）', async () => {
+      const res = await post('/api/auth/start', { email: `a@${'x'.repeat(70_000)}.com` });
+      assert.equal(res.status, 413);
+      assert.deepEqual(await res.json(), { error: 'payload_too_large' });
+      assert.equal(mock.calls.length, 0);
+    });
+
+    it('Content-Length 缺失/非法 → 413（同 knowledge.ts：绝不先缓冲再检查）', async () => {
+      const missing = await app.request('/api/auth/start', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: 'user@example.com' }),
+      });
+      assert.equal(missing.status, 413);
+      const spoofed = await app.request('/api/auth/verify', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'content-length': 'not-a-number' },
+        body: JSON.stringify({ email: 'user@example.com', code: '1' }),
+      });
+      assert.equal(spoofed.status, 413);
+      assert.equal(mock.calls.length, 0);
+    });
+
+    it('正常小 body 不受影响', async () => {
+      const res = await post('/api/auth/verify', { email: 'user@example.com', code: '123456' });
+      assert.equal(res.status, 200);
+    });
+  });
+
+  it('GET /status 内部异常 → 500 internal（不透栈）', async () => {
+    const broken = {
+      getStatus: async () => {
+        throw new Error('disk exploded');
+      },
+    } as unknown as AuthClient;
+    const bareApp = new Hono();
+    bareApp.route('/api/auth', authRoutes(broken));
+    const res = await bareApp.request('/api/auth/status');
+    assert.equal(res.status, 500);
+    assert.deepEqual(await res.json(), { error: 'internal' });
   });
 });

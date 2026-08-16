@@ -259,7 +259,27 @@ describe('auth token-store', () => {
     });
   });
 
+  it('numeric fields must be finite: Infinity/NaN in savedAt/accessExpiresAt are rejected', async () => {
+    // 手写 JSON（JSON.stringify 会把 Infinity 折成 null，构造不出该路径）
+    writeFileSync(
+      authTokensPath(),
+      '{"accessToken":"a","refreshToken":"b","user":{"id":"u1","email":"a@b.c","createdAt":"2026-08-01T00:00:00.000Z"},"savedAt":1e999,"accessExpiresAt":1e999}',
+      'utf8',
+    );
+    const read = await readAuthTokens();
+    assert.ok(read, 'tokens 本体仍有效');
+    assert.equal(read!.savedAt, 0, 'Infinity savedAt → 0');
+    assert.equal(read!.accessExpiresAt, undefined, 'Infinity exp → 缺省（否则永不过期）');
+  });
+
   describe('decodeAccessExp', () => {
+    /** 手写 payload JSON 的 JWT（JSON.stringify 无法表达 1e999 这类值）。 */
+    function rawJwt(payloadJson: string): string {
+      const h = Buffer.from(JSON.stringify({ alg: 'HS256' }), 'utf8').toString('base64url');
+      const p = Buffer.from(payloadJson, 'utf8').toString('base64url');
+      return `${h}.${p}.sig`;
+    }
+
     it('decodes exp to unix ms', () => {
       const jwt = fakeJwt({ sub: 'u1', exp: 1_800_000_000 });
       assert.equal(decodeAccessExp(jwt), 1_800_000_000_000);
@@ -277,6 +297,73 @@ describe('auth token-store', () => {
     it('returns null when exp missing or not a number', () => {
       assert.equal(decodeAccessExp(fakeJwt({ sub: 'u1' })), null);
       assert.equal(decodeAccessExp(fakeJwt({ sub: 'u1', exp: 'soon' })), null);
+    });
+
+    it('returns null for non-positive exp（永久已过期 → 每次请求抢跑刷新）', () => {
+      assert.equal(decodeAccessExp(fakeJwt({ sub: 'u1', exp: 0 })), null);
+      assert.equal(decodeAccessExp(fakeJwt({ sub: 'u1', exp: -100 })), null);
+    });
+
+    it('returns null when exp*1000 overflows to Infinity（永不过期漏洞）', () => {
+      assert.equal(decodeAccessExp(rawJwt('{"sub":"u1","exp":1e999}')), null);
+      assert.equal(decodeAccessExp(rawJwt('{"sub":"u1","exp":1e306}')), null);
+    });
+  });
+
+  describe('write/clear 序列化（登出竞态）', () => {
+    it('加密在途时 clearAuthTokens → 写入放弃（superseded），已删文件不复活', async () => {
+      let releaseEncrypt!: () => void;
+      const gate = new Promise<void>((r) => (releaseEncrypt = r));
+      const stalling: TokenCryptoProvider = {
+        isConfigured: () => true,
+        async encrypt(plaintext: string) {
+          await gate;
+          return `enc:${Buffer.from(plaintext, 'utf8').toString('base64')}`;
+        },
+        async decrypt(data: string) {
+          if (!data.startsWith('enc:')) return null;
+          return Buffer.from(data.slice('enc:'.length), 'base64').toString('utf8');
+        },
+      };
+      restoreProvider = setTokenCryptoProvider(stalling);
+
+      const writeP = writeAuthTokens(sampleTokens()); // 挂住在途加密
+      clearAuthTokens(); // 登出：generation+1 + 删文件
+      releaseEncrypt();
+
+      const result = await writeP;
+      assert.deepEqual(result, { written: false, reason: 'superseded' });
+      assert.ok(!existsSync(authTokensPath()), '放弃的写入不得复活已删文件（否则重启后旧 token 复活）');
+      assert.equal(await readAuthTokens(), null);
+    });
+
+    it('clear 之后的新写入不受影响（generation 只作废在途写）', async () => {
+      let releaseEncrypt!: () => void;
+      const gate = new Promise<void>((r) => (releaseEncrypt = r));
+      let gating = true;
+      const stalling: TokenCryptoProvider = {
+        isConfigured: () => true,
+        async encrypt(plaintext: string) {
+          if (gating) await gate;
+          return `enc:${Buffer.from(plaintext, 'utf8').toString('base64')}`;
+        },
+        async decrypt(data: string) {
+          if (!data.startsWith('enc:')) return null;
+          return Buffer.from(data.slice('enc:'.length), 'base64').toString('utf8');
+        },
+      };
+      restoreProvider = setTokenCryptoProvider(stalling);
+
+      const staleP = writeAuthTokens(sampleTokens());
+      clearAuthTokens();
+      gating = false;
+      releaseEncrypt();
+      assert.deepEqual(await staleP, { written: false, reason: 'superseded' });
+
+      const fresh = sampleTokens();
+      fresh.refreshToken = 'refresh-after-relogin';
+      assert.deepEqual(await writeAuthTokens(fresh), { written: true, encrypted: true });
+      assert.equal((await readAuthTokens())?.refreshToken, 'refresh-after-relogin');
     });
   });
 });

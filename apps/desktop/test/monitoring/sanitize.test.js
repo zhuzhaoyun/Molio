@@ -135,24 +135,26 @@ describe('injectUserId', () => {
   // ARMS SDK（0.0.5–0.0.7）无 setUser API：bundle.user.id 只取内部匿名设备
   // UID，config.user.id 被显式跳过。beforeReport 注入是唯一路径——这组用例
   // 守护"登录用户的 ULID 替换匿名 uid"的注入契约。
+  // 26 字符 Crockford base32，与云端 apps/cloud crypto.ts ulid() 输出同形。
+  const VALID_ULID = '01HXYPKQVZ0JTM3NRS8W6GDCA5';
 
   it('sets user.id when bundle has no user field', () => {
     const bundle = { type: 'pv', view: { name: '/' } };
-    const out = injectUserId(bundle, '01HXYZUSER');
-    assert.deepEqual(out.user, { id: '01HXYZUSER' });
+    const out = injectUserId(bundle, VALID_ULID);
+    assert.deepEqual(out.user, { id: VALID_ULID });
     assert.equal(out.type, 'pv');
   });
 
   it('overrides anonymous uid but keeps other user fields', () => {
     const bundle = { user: { id: 'anon-device-uid', name: 'x' }, type: 'api' };
-    const out = injectUserId(bundle, '01HXYZUSER');
-    assert.equal(out.user.id, '01HXYZUSER');
+    const out = injectUserId(bundle, VALID_ULID);
+    assert.equal(out.user.id, VALID_ULID);
     assert.equal(out.user.name, 'x');
   });
 
   it('does not mutate the input bundle', () => {
     const bundle = { user: { id: 'anon' } };
-    const out = injectUserId(bundle, '01HXYZUSER');
+    const out = injectUserId(bundle, VALID_ULID);
     assert.equal(bundle.user.id, 'anon');
     assert.notEqual(out, bundle);
     assert.notEqual(out.user, bundle.user);
@@ -166,11 +168,27 @@ describe('injectUserId', () => {
     assert.equal(injectUserId(bundle, 42), bundle);
   });
 
+  it('非 ULID 格式的 userId 一律拒绝（邮箱/畸形串不得流入监控归因字段）', () => {
+    const bundle = { user: { id: 'anon' } };
+    const invalid = [
+      'a@b.c',                        // 邮箱（PII 红线）
+      '01hxyzpqvz0jtm3nrs8w6gdca5',   // 小写（ULID 恒大写）
+      VALID_ULID.slice(0, 25),        // 25 字符
+      VALID_ULID + 'A',               // 27 字符
+      '01HXYPKQVZ0JTM3NRS8W6GDCAI',   // 含 I（Crockford 字母表无 I/L/O/U）
+      '01HXYPKQVZ0JTM3NRS8W6GDCAU',   // 含 U
+      ` ${VALID_ULID}`,               // 前导空白
+    ];
+    for (const bad of invalid) {
+      assert.equal(injectUserId(bundle, bad), bundle, `should reject ${JSON.stringify(bad)}`);
+    }
+  });
+
   it('handles non-object bundle shapes without throwing', () => {
-    assert.equal(injectUserId(null, 'u1'), null);
-    assert.equal(injectUserId('str', 'u1'), 'str');
+    assert.equal(injectUserId(null, VALID_ULID), null);
+    assert.equal(injectUserId('str', VALID_ULID), 'str');
     const arr = [1, 2];
-    assert.equal(injectUserId(arr, 'u1'), arr);
+    assert.equal(injectUserId(arr, VALID_ULID), arr);
   });
 });
 

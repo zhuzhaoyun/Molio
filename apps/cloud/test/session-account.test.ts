@@ -76,6 +76,43 @@ test('session/account: 无 Bearer → 401', async () => {
   assert.equal((await del(app, '/auth/account')).status, 401);
 });
 
+test('logout: 归属校验——他人 token 静默忽略，不得越权吊销', async () => {
+  const { app, clock } = setup();
+  const a = await register(app, 'a@example.com');
+  clock.advance(61_000); // 越过重发间隔
+  const b = await register(app, 'b@example.com');
+
+  // a 用自己的 access token 尝试吊销 b 的 session
+  const out = await del(app, '/auth/session', { refreshToken: b.refreshToken }, {
+    authorization: `Bearer ${a.accessToken}`,
+  });
+  assert.equal(out.status, 200);
+  assert.deepEqual(await out.json(), { ok: true });
+
+  // b 的会话不受影响；a 自己的会话也不受影响
+  assert.equal((await post(app, '/auth/refresh', { refreshToken: b.refreshToken })).status, 200);
+  assert.equal((await post(app, '/auth/refresh', { refreshToken: a.refreshToken })).status, 200);
+});
+
+test('me: Bearer scheme 大小写不敏感（RFC 9110）', async () => {
+  const { app } = setup();
+  const reg = await register(app);
+  const res = await get(app, '/auth/me', { authorization: `bearer ${reg.accessToken}` });
+  assert.equal(res.status, 200);
+});
+
+test('handleError: 非 ServiceError 异常 → 结构化 internal/500（绝不漏纯文本 500）', async () => {
+  const { app, service } = setup();
+  const reg = await register(app);
+  // 制造一个契约外异常（如 DB 驱动错误）
+  service.me = async () => {
+    throw new Error('pg pool exploded');
+  };
+  const res = await get(app, '/auth/me', { authorization: `Bearer ${reg.accessToken}` });
+  assert.equal(res.status, 500);
+  assert.deepEqual(await res.json(), { error: 'internal' });
+});
+
 test('health: 返回 ok + 环境 + 存储类型', async () => {
   const { app } = setup();
   const res = await get(app, '/health');

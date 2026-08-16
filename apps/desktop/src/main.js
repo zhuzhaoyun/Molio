@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell, Menu } from 'electron';
 import { spawn, execSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,7 +9,7 @@ import { log, getLogPath } from './logger.js';
 import { startFetchServer } from './wiki-fetcher.js';
 import { openFeishuLogin, getFeishuLoginStatus } from './wiki-fetcher-login.js';
 import { startDaemonMetricsPolling } from './daemon-metrics.js';
-import { startCryptoServer } from './crypto-server.js';
+import { startCryptoServer, stopCryptoServer } from './crypto-server.js';
 import { startAuthStatusPolling } from './auth-status-watch.js';
 import { CappedBuffer } from './capped-buffer.js';
 import { createVaultRecency } from './vault-recency.js';
@@ -33,8 +34,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const PROTOCOL = 'molio';
 
-/** Base URL of the local daemon (dev and production both bind :3100). */
-const DAEMON_BASE = 'http://localhost:3100';
+/** Local daemon port (dev and production both bind :3100). Single source — no magic copies. */
+const DAEMON_PORT = 3100;
+
+/** Base URL of the local daemon. */
+const DAEMON_BASE = `http://localhost:${DAEMON_PORT}`;
 
 /** Rebuild the macOS dock menu at most this often (vault list changes live in the web layer). */
 const DOCK_REFRESH_THROTTLE_MS = 3000;
@@ -109,13 +113,22 @@ async function startDaemonProduction() {
   // by NOT setting the port env, instead of advertising crypto that 503s
   // every call (which would leave tokens unpersisted).
   let cryptoPort = null;
+  let cryptoToken = null;
   try {
     if (safeStorage.isEncryptionAvailable()) {
-      cryptoPort = await startCryptoServer({
-        isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
-        encryptString: (plaintext) => safeStorage.encryptString(plaintext),
-        decryptString: (data) => safeStorage.decryptString(data),
-      });
+      // Per-launch fresh shared secret: injected into daemon env alongside the
+      // port; crypto-server validates the Bearer on every call. The random port
+      // alone is not a security boundary (local processes can scan for it) —
+      // the secret is what stops other local processes using encrypt/decrypt.
+      cryptoToken = randomBytes(24).toString('base64url');
+      cryptoPort = await startCryptoServer(
+        {
+          isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
+          encryptString: (plaintext) => safeStorage.encryptString(plaintext),
+          decryptString: (data) => safeStorage.decryptString(data),
+        },
+        { token: cryptoToken },
+      );
     } else {
       log('info', 'main', 'safeStorage encryption unavailable — auth tokens use plaintext baseline (D3)');
     }
@@ -130,11 +143,14 @@ async function startDaemonProduction() {
     const daemonEnv = {
       ...process.env,
       ELECTRON_RUN_AS_NODE: '1',
-      MOLIO_PORT: '3100',
+      MOLIO_PORT: String(DAEMON_PORT),
       MOLIO_STATIC_DIR: webStaticDir,
     };
     if (wikiFetchPort) daemonEnv.MOLIO_DESKTOP_FETCH_PORT = String(wikiFetchPort);
-    if (cryptoPort) daemonEnv.MOLIO_DESKTOP_CRYPTO_PORT = String(cryptoPort);
+    if (cryptoPort) {
+      daemonEnv.MOLIO_DESKTOP_CRYPTO_PORT = String(cryptoPort);
+      daemonEnv.MOLIO_DESKTOP_CRYPTO_TOKEN = cryptoToken;
+    }
     daemonProcess = spawn(process.execPath, [daemonEntry], {
       env: daemonEnv,
       stdio: 'pipe',
@@ -498,7 +514,7 @@ function createWindow({ url = '' } = {}) {
 function loadAppWindow(win, url = '') {
   if (!win || win.isDestroyed()) return;
   log('info', 'main', `daemon ready — loading app window url=${url}`);
-  win.loadURL('http://localhost:3100' + url);
+  win.loadURL(DAEMON_BASE + url);
   const wc = win.webContents;
   // Show the window once the app has rendered. This is the first (and
   // only) navigation for this webContents in production, so the ARMS
@@ -586,7 +602,7 @@ function buildKnowledgeUrlFromProtocolTarget(target) {
   const params = new URLSearchParams();
   if (target.vaultId) params.set('vault', target.vaultId);
   params.set('file', target.filePath);
-  return `http://localhost:3100/knowledge?${params.toString()}`;
+  return `${DAEMON_BASE}/knowledge?${params.toString()}`;
 }
 
 /**
@@ -828,7 +844,7 @@ app.whenReady().then(async () => {
     if (daemonReady && armsRum) {
       stopDaemonMetrics = startDaemonMetricsPolling({ armsRum, log });
       stopAuthStatusPolling = startAuthStatusPolling({
-        daemonPort: 3100,
+        daemonPort: DAEMON_PORT,
         log,
         onUser: (userId) => {
           molioUserId = userId;
@@ -931,7 +947,7 @@ function killDaemon() {
 }
 
 function requestDaemonShutdown() {
-  fetch('http://localhost:3100/api/shutdown', { method: 'POST' }).catch((err) => {
+  fetch(`${DAEMON_BASE}/api/shutdown`, { method: 'POST' }).catch((err) => {
     // Network errors are expected once the daemon is already shutting down.
     log('warn', 'main', `Graceful shutdown request failed: ${err instanceof Error ? err.message : String(err)}`);
   });
@@ -965,9 +981,15 @@ app.on('before-quit', (event) => {
     // file handles, leaving locks in the installation directory that
     // cause the NSIS installer to fail on the next update.
     event.preventDefault();
-    killDaemon().then(() => {
+    killDaemon().then(async () => {
+      // crypto-server 服务 daemon 的 token 加解密，必须等 daemon 完全退出后再关：
+      // 优雅关闭窗口内 daemon 仍可能落盘 token（加密失败会降级明文基线）。
+      await stopCryptoServer();
       app.quit();
     });
+  } else {
+    // daemon 未起（如启动即失败）也要收掉自己起的 server，退出路径对称。
+    void stopCryptoServer();
   }
 });
 

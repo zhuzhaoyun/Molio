@@ -108,8 +108,11 @@ export function createDirectMailTransport(config: DirectMailConfig): DirectMailT
         accountName: config.accountName,
         // 1 = 发信地址（控制台配置的地址）；0 是批量收件人列表，不用
         addressType: 1,
-        replyToAddress: config.replyTo !== undefined,
-        replyAddress: config.replyTo,
+        // ReplyToAddress API 规格为必填 0/1 数值：0 = 回信落到发信地址；
+        // 仅配置了 MOLIO_DM_REPLY_TO 时才附带 replyAddress（undefined 字段不进请求）
+        ...(config.replyTo !== undefined
+          ? { replyToAddress: 1, replyAddress: config.replyTo }
+          : { replyToAddress: 0 }),
         toAddress: msg.toAddress,
         subject: msg.subject,
         textBody: msg.textBody,

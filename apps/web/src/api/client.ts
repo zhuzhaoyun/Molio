@@ -101,6 +101,19 @@ export interface FeishuConfig {
 
 const BASE = '/api';
 
+/**
+ * /api/auth/* 统一 fetch 包装：非 2xx 一律抛 AuthApiError（UI 按 code 映射文案，
+ * 见 components/account/authErrors.ts）。5 个 auth 端点共用，避免各自
+ * `if (!res.ok)` 分支漂移。
+ */
+async function authFetch(path: string, init?: RequestInit): Promise<Response> {
+  const res = await fetch(`${BASE}/auth/${path}`, init);
+  if (!res.ok) throw await AuthApiError.from(res);
+  return res;
+}
+
+const AUTH_JSON_HEADERS = { 'Content-Type': 'application/json' } as const;
+
 export const api = {
   // ─── Agents ───
 
@@ -488,43 +501,37 @@ export const api = {
 
   /** 登录态快照（daemon 不发网络请求；未配置云端时 configured=false）。 */
   async getAuthStatus(): Promise<AuthStatus> {
-    const res = await fetch(`${BASE}/auth/status`);
-    if (!res.ok) throw new Error(`Failed to fetch auth status: ${res.status}`);
-    return res.json();
+    return (await authFetch('status')).json();
   },
 
   /** 发送验证码。daemon 原样透传云端响应（daily/local 含 devCode，仅 E2E 用）。 */
   async authSendCode(email: string): Promise<SendCodeResponse> {
-    const res = await fetch(`${BASE}/auth/start`, {
+    const res = await authFetch('start', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: AUTH_JSON_HEADERS,
       body: JSON.stringify({ email }),
     });
-    if (!res.ok) throw await AuthApiError.from(res);
     return res.json();
   },
 
   /** 验证码登录（注册=登录）；成功后 daemon 落盘 token。 */
   async authVerify(email: string, code: string): Promise<{ user: User; loggedIn: true }> {
-    const res = await fetch(`${BASE}/auth/verify`, {
+    const res = await authFetch('verify', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: AUTH_JSON_HEADERS,
       body: JSON.stringify({ email, code }),
     });
-    if (!res.ok) throw await AuthApiError.from(res);
     return res.json();
   },
 
   /** 本机登出：云端吊销尽力而为，本地必清。 */
   async authLogout(): Promise<void> {
-    const res = await fetch(`${BASE}/auth/logout`, { method: 'POST' });
-    if (!res.ok) throw await AuthApiError.from(res);
+    await authFetch('logout', { method: 'POST' });
   },
 
   /** 注销账号（个保法）：云端软删除 + 吊销全部 session。云端不可达会抛错且本地保留。 */
   async authDeleteAccount(): Promise<void> {
-    const res = await fetch(`${BASE}/auth/account`, { method: 'DELETE' });
-    if (!res.ok) throw await AuthApiError.from(res);
+    await authFetch('account', { method: 'DELETE' });
   },
 
   // ─── Knowledge Base ───

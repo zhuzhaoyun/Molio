@@ -5,7 +5,7 @@
  * daemon 本地镜像端点，UI 从不直连云端。
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useI18n } from '../../i18n';
 import { api } from '../../api/client';
 import { authStore, useAuthStatus } from '../../stores/authStore';
@@ -26,10 +26,19 @@ export function AccountModal({ show, onClose }: AccountModalProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ack, setAck] = useState(false);
+  /**
+   * 打开代数（open generation）。模态框关闭时只是隐藏（组件保持挂载），
+   * 登出/注销这类慢请求可能在「关闭 → 再次打开」之后才 settle——若不加守卫，
+   * 上一轮的 setError/setView/setBusy 会打到新一轮打开的 UI 上（例如刚打开
+   * 就冒出上一次请求的错误，或 busy 卡死）。每次打开递增，异步续体只允许
+   * 同一代数内应用状态。
+   */
+  const openGenRef = useRef(0);
 
   // 每次打开时拉最新快照并复位内部状态
   useEffect(() => {
     if (!show) return;
+    openGenRef.current += 1;
     setView('main');
     setBusy(false);
     setError(null);
@@ -41,34 +50,40 @@ export function AccountModal({ show, onClose }: AccountModalProps) {
 
   async function handleLogout() {
     if (busy) return;
+    const gen = openGenRef.current;
     setBusy(true);
     setError(null);
     try {
       await api.authLogout();
       await authStore.invalidate();
+      if (gen !== openGenRef.current) return;
     } catch (e) {
+      if (gen !== openGenRef.current) return;
       const ref = authErrorRef(e);
       setError(t(ref.key, ref.params));
     } finally {
-      setBusy(false);
+      if (gen === openGenRef.current) setBusy(false);
     }
   }
 
   async function handleDelete() {
     if (busy || !ack) return;
+    const gen = openGenRef.current;
     setBusy(true);
     setError(null);
     try {
       await api.authDeleteAccount();
       await authStore.invalidate();
+      if (gen !== openGenRef.current) return;
       setView('main');
       setAck(false);
     } catch (e) {
+      if (gen !== openGenRef.current) return;
       const ref = authErrorRef(e);
       setError(t(ref.key, ref.params));
       setView('main');
     } finally {
-      setBusy(false);
+      if (gen === openGenRef.current) setBusy(false);
     }
   }
 
@@ -77,15 +92,10 @@ export function AccountModal({ show, onClose }: AccountModalProps) {
       return <p className="account-note" data-testid="account-loading">{t('account.loading')}</p>;
     }
 
-    if (!status.configured) {
-      return (
-        <p className="account-note account-note-info" data-testid="account-not-configured">
-          {t('account.notConfigured')}
-        </p>
-      );
-    }
-
-    if (status.loggedIn && status.user) {
+    // loggedIn 先于 configured：已登录但云端未配置（MOLIO_AUTH_URL 后来被移除）时
+    // 本地会话仍在，退出登录是纯本地操作——必须能看到资料卡与退出入口，
+    // 而不是被「未配置」提示挡掉（想退出都做不到）。
+    if (status.loggedIn) {
       const initial = (status.user.email ?? '?').slice(0, 1).toUpperCase();
       return (
         <>
@@ -129,6 +139,15 @@ export function AccountModal({ show, onClose }: AccountModalProps) {
             <span className="account-hint">{t('account.deleteHint')}</span>
           </div>
         </>
+      );
+    }
+
+    // 未登录且云端未配置：登录必然失败，隐藏登录表单、只给说明
+    if (!status.configured) {
+      return (
+        <p className="account-note account-note-info" data-testid="account-not-configured">
+          {t('account.notConfigured')}
+        </p>
       );
     }
 

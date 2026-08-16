@@ -1,4 +1,13 @@
-import type { Entitlement, User } from '@molio/contracts';
+import type {
+  AccountDeleteResponse,
+  Entitlement,
+  MeResponse,
+  RefreshResponse,
+  SendCodeResponse,
+  SessionDeleteResponse,
+  User,
+  VerifyResponse,
+} from '@molio/contracts';
 import type { CloudConfig } from './config.js';
 import { generateAuthCode, generateRefreshToken, hashCode, hashRefreshToken, ulid } from './crypto.js';
 import { signAccessToken } from './jwt.js';
@@ -13,10 +22,13 @@ export type ServiceErrorCode =
   | 'invalid_token'
   | 'mail_failed';
 
+/** 第一期用到的全部服务错误状态码；类型收窄保证 handleError 不做无声转换 */
+export type ServiceErrorStatus = 400 | 401 | 422 | 429;
+
 export class ServiceError extends Error {
   constructor(
     public readonly code: ServiceErrorCode,
-    public readonly status: number,
+    public readonly status: ServiceErrorStatus,
     public readonly extra: Record<string, unknown> = {},
   ) {
     super(code);
@@ -25,8 +37,17 @@ export class ServiceError extends Error {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** 宽限窗重放沿替换链追溯的最大深度（防脏数据成环导致死循环） */
+const REPLACEMENT_CHAIN_MAX = 10;
 // 宽松邮箱格式校验（不做存在性检查）：非空、单个 @、有域名点
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** 日志脱敏：邮箱是个人信息（个保法），集中日志（ARMS）长期留存，只留首两位 + 域名 */
+export function maskEmail(email: string): string {
+  const at = email.lastIndexOf('@');
+  if (at <= 0) return '***';
+  return `${email.slice(0, Math.min(2, at))}***${email.slice(at)}`;
+}
 
 export interface ServiceDeps {
   store: AuthStore;
@@ -50,7 +71,7 @@ export class AuthService {
 
   // ─── POST /auth/send-code ───
 
-  async sendCode(rawEmail: string, ip: string | null) {
+  async sendCode(rawEmail: string, ip: string | null): Promise<SendCodeResponse> {
     const { store, config } = this.deps;
     const now = this.deps.now();
     const email = this.normalizeEmail(rawEmail);
@@ -67,22 +88,9 @@ export class AuthService {
       });
     }
 
-    const emailCount = await store.countCodesForEmailSince(email, now - DAY_MS);
-    if (emailCount >= config.rate.emailDailyMax) {
-      const oldest = await store.oldestCodeForEmailSince(email, now - DAY_MS);
-      throw new ServiceError('rate_limited', 429, {
-        resendAfterSec: oldest === null ? config.rate.emailResendSec : Math.ceil((oldest + DAY_MS - now) / 1000),
-      });
-    }
-
+    await this.checkDailyLimit('email', email, config.rate.emailDailyMax, now);
     if (ip) {
-      const ipCount = await store.countCodesForIpSince(ip, now - DAY_MS);
-      if (ipCount >= config.rate.ipDailyMax) {
-        const oldest = await store.oldestCodeForIpSince(ip, now - DAY_MS);
-        throw new ServiceError('rate_limited', 429, {
-          resendAfterSec: oldest === null ? config.rate.emailResendSec : Math.ceil((oldest + DAY_MS - now) / 1000),
-        });
-      }
+      await this.checkDailyLimit('ip', ip, config.rate.ipDailyMax, now);
     }
 
     const code = generateAuthCode();
@@ -105,7 +113,7 @@ export class AuthService {
       // rate_limited；4xx 原样透传不重试。验证码记录保留（限频完整性优先，
       // 用户按 resendAfterSec 重试即可）。
       const detail = e instanceof Error ? e.message : String(e);
-      console.error(`[cloud] send-code mail failed: to=${email} ${detail}`);
+      console.error(`[cloud] send-code mail failed: to=${maskEmail(email)} ${detail}`);
       throw new ServiceError('mail_failed', 422);
     }
 
@@ -118,9 +126,23 @@ export class AuthService {
     };
   }
 
+  /** 每邮箱/每 IP 每日上限：超限抛 rate_limited，附带解锁倒计时 */
+  private async checkDailyLimit(kind: 'email' | 'ip', key: string, max: number, now: number): Promise<void> {
+    const { store, config } = this.deps;
+    const since = now - DAY_MS;
+    const count =
+      kind === 'email' ? await store.countCodesForEmailSince(key, since) : await store.countCodesForIpSince(key, since);
+    if (count < max) return;
+    const oldest =
+      kind === 'email' ? await store.oldestCodeForEmailSince(key, since) : await store.oldestCodeForIpSince(key, since);
+    throw new ServiceError('rate_limited', 429, {
+      resendAfterSec: oldest === null ? config.rate.emailResendSec : Math.ceil((oldest + DAY_MS - now) / 1000),
+    });
+  }
+
   // ─── POST /auth/verify（注册 = 登录） ───
 
-  async verify(rawEmail: string, rawCode: string, deviceHint?: string) {
+  async verify(rawEmail: string, rawCode: string, deviceHint?: string): Promise<VerifyResponse> {
     const { store, config } = this.deps;
     const now = this.deps.now();
     const email = this.normalizeEmail(rawEmail);
@@ -156,12 +178,15 @@ export class AuthService {
         }
       }
     }
-    if (!user) throw new Error('verify: register race lost (user vanished)');
+    // 窗口极窄（冲突后重查仍查不到）；结构化错误保证客户端拿到可映射的 code 而非裸 500
+    if (!user) throw new ServiceError('invalid_code', 401);
 
-    return this.issueTokens(user, now, deviceHint ?? null);
+    const pair = await this.mintTokenPair(user, now, deviceHint ?? null);
+    return { accessToken: pair.accessToken, refreshToken: pair.refreshToken, user: this.toApiUser(user) };
   }
 
-  private async issueTokens(user: UserRecord, now: number, deviceHint: string | null) {
+  /** 生成一对新 token：ULID id + 随机 refresh + 签名 access（issue/rotate 共用，防两处漂移） */
+  private async mintTokenPair(user: UserRecord, now: number, deviceHint: string | null) {
     const { config, store } = this.deps;
     const tokenId = ulid(now);
     const refreshToken = generateRefreshToken();
@@ -175,8 +200,7 @@ export class AuthService {
       revokedAt: null,
       replacedBy: null,
     });
-    const accessToken = this.signAccess(user, tokenId, now);
-    return { accessToken, refreshToken, user: this.toApiUser(user) };
+    return { tokenId, refreshToken, accessToken: this.signAccess(user, tokenId, now) };
   }
 
   private signAccess(user: UserRecord, tokenId: string, now: number): string {
@@ -189,50 +213,63 @@ export class AuthService {
     );
   }
 
-  // ─── POST /auth/refresh（轮换 + D1 重放检测） ───
+  // ─── POST /auth/refresh（轮换 + 重放检测） ───
 
-  async refresh(rawToken: string) {
-    const { store, config } = this.deps;
+  async refresh(rawToken: string): Promise<RefreshResponse> {
+    const { store } = this.deps;
     const now = this.deps.now();
 
     const rec = await store.findRefreshTokenByHash(hashRefreshToken(rawToken));
     if (!rec) throw new ServiceError('invalid_token', 401);
 
-    if (rec.revokedAt !== null) {
-      const withinGrace = rec.replacedBy !== null && now - rec.revokedAt < config.rotationGraceSec * 1000;
-      if (withinGrace) {
-        // D1 重试宽容：被轮换吊销且窗内重放 → 视为"响应丢失的重试"，
-        // 沿替换链追到当前 head 并轮换，返回新 token 对（不触发全吊销）
-        let head: RefreshTokenRecord = rec;
-        for (let i = 0; i < 10 && head.replacedBy; i++) {
-          const next = await store.findRefreshTokenById(head.replacedBy);
-          if (!next) break;
-          head = next;
-        }
-        if (head.revokedAt === null && head.expiresAt > now) {
-          return this.rotate(head, now);
-        }
-        // 链头也已失效 → 按攻击处理
-        await store.revokeAllUserTokens(rec.userId, now);
-        throw new ServiceError('invalid_token', 401);
-      }
-      // 超宽限窗重放，或人工吊销（logout/admin，无 replaced_by）后再现 → 判定泄漏，全吊销
-      await store.revokeAllUserTokens(rec.userId, now);
-      throw new ServiceError('invalid_token', 401);
+    if (rec.revokedAt === null) {
+      if (rec.expiresAt <= now) throw new ServiceError('invalid_token', 401);
+      const rotated = await this.rotate(rec, now);
+      if (rotated) return rotated;
+      // 原子吊销竞态失败：同一 token 被并发请求先行轮换 → 读最新状态按重放路径处理
+      const fresh = await store.findRefreshTokenById(rec.id);
+      if (!fresh || fresh.revokedAt === null) throw new ServiceError('invalid_token', 401);
+      return this.handleRevokedReplay(fresh, now);
     }
-
-    if (rec.expiresAt <= now) throw new ServiceError('invalid_token', 401);
-    return this.rotate(rec, now);
+    return this.handleRevokedReplay(rec, now);
   }
 
+  /**
+   * 已吊销 token 再现的判定：
+   * - 宽限窗内且有替换链 → 视为"响应丢失的客户端重试"，沿链追到 head 再轮换（不触发全吊销）
+   * - 超窗 / 无替换链（人工登出、admin 吊销）/ 链头也失效 → 判定泄漏，吊销该用户全部 session
+   */
+  private async handleRevokedReplay(rec: RefreshTokenRecord, now: number) {
+    const { store, config } = this.deps;
+    const withinGrace = rec.replacedBy !== null && now - (rec.revokedAt ?? now) < config.rotationGraceSec * 1000;
+    if (withinGrace) {
+      let head: RefreshTokenRecord = rec;
+      for (let i = 0; i < REPLACEMENT_CHAIN_MAX && head.replacedBy; i++) {
+        const next = await store.findRefreshTokenById(head.replacedBy);
+        if (!next) break;
+        head = next;
+      }
+      if (head.revokedAt === null && head.expiresAt > now) {
+        const rotated = await this.rotate(head, now);
+        if (rotated) return rotated;
+      }
+      // 链头也已失效（或再次竞态失败）→ 按攻击处理
+    }
+    await store.revokeAllUserTokens(rec.userId, now);
+    throw new ServiceError('invalid_token', 401);
+  }
+
+  /** 轮换：原子吊销旧 token（仅未吊销行生效）+ 发新对。竞态失败返回 null，调用方走重放路径 */
   private async rotate(rec: RefreshTokenRecord, now: number) {
     const { store, config } = this.deps;
     const user = await store.findActiveUserById(rec.userId);
     if (!user) throw new ServiceError('invalid_token', 401);
 
     const tokenId = ulid(now);
+    const revoked = await store.revokeRefreshToken(rec.id, now, tokenId);
+    if (!revoked) return null;
+
     const refreshToken = generateRefreshToken();
-    await store.revokeRefreshToken(rec.id, now, tokenId);
     await store.insertRefreshToken({
       id: tokenId,
       userId: user.id,
@@ -248,7 +285,7 @@ export class AuthService {
 
   // ─── GET /auth/me ───
 
-  async me(userId: string) {
+  async me(userId: string): Promise<MeResponse> {
     const user = await this.deps.store.findActiveUserById(userId);
     if (!user) throw new ServiceError('invalid_token', 401);
     return { user: this.toApiUser(user), entitlement: user.entitlement as Entitlement };
@@ -256,11 +293,13 @@ export class AuthService {
 
   // ─── DELETE /auth/session（本机登出：只吊销当前设备） ───
 
-  async logout(rawRefreshToken: string) {
+  async logout(userId: string, rawRefreshToken: string): Promise<SessionDeleteResponse> {
     const { store } = this.deps;
     const now = this.deps.now();
     const rec = await store.findRefreshTokenByHash(hashRefreshToken(rawRefreshToken));
-    if (rec && rec.revokedAt === null) {
+    // 归属校验：只吊销调用者自己的 session；他人 token 静默忽略
+    // （不泄露存在性，登出对调用方语义不变；防止越权吊销他人会话）
+    if (rec && rec.userId === userId && rec.revokedAt === null) {
       await store.revokeRefreshToken(rec.id, now, null);
     }
     return { ok: true };
@@ -269,7 +308,7 @@ export class AuthService {
   // ─── DELETE /auth/account（注销：软删除 + 吊销全部 session，个保法） ───
   // 注销后同邮箱再注册 = 新账号（§二拍板，§十七 L8）
 
-  async deleteAccount(userId: string) {
+  async deleteAccount(userId: string): Promise<AccountDeleteResponse> {
     const { store } = this.deps;
     const now = this.deps.now();
     await store.softDeleteUser(userId, now);

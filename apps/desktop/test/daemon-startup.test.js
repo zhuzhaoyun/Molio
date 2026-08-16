@@ -81,8 +81,8 @@ describe('main.js: must load URL only after daemon is ready (not in createWindow
     const fnBody = mainJs.slice(fnStart, fnEnd);
 
     assert.ok(
-      !fnBody.includes('localhost:3100'),
-      'createWindow must NOT call loadURL for localhost:3100 — that causes 404 on slow machines'
+      !fnBody.includes('localhost:3100') && !fnBody.includes('DAEMON_BASE'),
+      'createWindow must NOT call loadURL for the daemon (localhost:3100/DAEMON_BASE) — that causes 404 on slow machines'
     );
   });
 
@@ -116,9 +116,16 @@ describe('main.js: must load URL only after daemon is ready (not in createWindow
     const fnEnd = mainJs.indexOf('\nfunction ', fnStart + 1);
     const fnBody = mainJs.slice(fnStart, fnEnd > fnStart ? fnEnd : fnStart + 500);
 
+    // 生产 URL 经 DAEMON_BASE 常量拼接（端口单点定义 DAEMON_PORT = 3100），
+    // 不再有 'localhost:3100' 字面量。
     assert.ok(
-      fnBody.includes('localhost:3100'),
-      'loadAppWindow must call loadURL for localhost:3100'
+      fnBody.includes('loadURL(DAEMON_BASE + url)'),
+      'loadAppWindow must loadURL the daemon base URL'
+    );
+    assert.ok(
+      mainJs.includes('const DAEMON_PORT = 3100') &&
+        mainJs.includes('const DAEMON_BASE = `http://localhost:${DAEMON_PORT}`'),
+      'DAEMON_BASE must be derived from the single DAEMON_PORT constant (:3100)'
     );
   });
 

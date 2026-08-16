@@ -74,6 +74,23 @@ describe('EntitlementCache', () => {
     assert.equal(new EntitlementCache().read(), null);
   });
 
+  it('snapshot updatedAt 必须有限正数：1e999（Infinity）= 永久宽限漏洞 → 拒读', () => {
+    // 手写 JSON（JSON.stringify 会把 Infinity 折成 null）
+    const file = join(tempHome, '.molio', 'entitlement-cache.json');
+    writeFileSync(
+      file,
+      '{"user":{"id":"u1","email":"a@b.c","createdAt":"2026-08-01T00:00:00.000Z"},"entitlement":{"plan":"pro"},"updatedAt":1e999}',
+      'utf8',
+    );
+    assert.equal(new EntitlementCache().read(), null);
+    writeFileSync(
+      file,
+      '{"user":{"id":"u1","email":"a@b.c","createdAt":"2026-08-01T00:00:00.000Z"},"entitlement":{},"updatedAt":-5}',
+      'utf8',
+    );
+    assert.equal(new EntitlementCache().read(), null);
+  });
+
   describe('grace window', () => {
     it('within grace just before expiry, out just after', () => {
       const cache = new EntitlementCache({ graceDays: 7 });
@@ -102,10 +119,28 @@ describe('EntitlementCache', () => {
       assert.equal(cache.graceMs, DEFAULT_GRACE_DAYS * DAY_MS);
     });
 
+    it("env '0.5' 不再取整成 0（会静默关死宽限）——非整数一律回退默认", () => {
+      process.env.MOLIO_AUTH_GRACE_DAYS = '0.5';
+      assert.equal(new EntitlementCache().graceMs, DEFAULT_GRACE_DAYS * DAY_MS);
+    });
+
+    it("env '1e308' 防溢出——graceMs 不得变 Infinity（永久白嫖）", () => {
+      process.env.MOLIO_AUTH_GRACE_DAYS = '1e308';
+      const cache = new EntitlementCache();
+      assert.equal(cache.graceMs, DEFAULT_GRACE_DAYS * DAY_MS);
+      assert.ok(Number.isFinite(cache.graceMs));
+    });
+
     it('constructor graceDays beats env', () => {
       process.env.MOLIO_AUTH_GRACE_DAYS = '2';
       const cache = new EntitlementCache({ graceDays: 3 });
       assert.equal(cache.graceMs, 3 * DAY_MS);
+    });
+
+    it('constructor graceDays 非法（0/0.5/Infinity）→ RangeError（显式传参是编程错误）', () => {
+      assert.throws(() => new EntitlementCache({ graceDays: 0 }), RangeError);
+      assert.throws(() => new EntitlementCache({ graceDays: 0.5 }), RangeError);
+      assert.throws(() => new EntitlementCache({ graceDays: Infinity }), RangeError);
     });
   });
 });

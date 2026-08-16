@@ -101,13 +101,17 @@ function validateTokens(raw: unknown): AuthTokens | null {
   if (typeof u.id !== 'string' || !u.id) return null;
   if (typeof u.email !== 'string' || !u.email) return null;
   if (typeof u.createdAt !== 'string' || !u.createdAt) return null;
+  // 数值字段必须 isFinite：JSON 里 `1e999` 解析成 Infinity——
+  // accessExpiresAt=Infinity 会让主动刷新判断永不过期，NaN 则每次都抢跑刷新烧轮换。
   const out: AuthTokens = {
     accessToken: r.accessToken,
     refreshToken: r.refreshToken,
     user: { id: u.id, email: u.email, createdAt: u.createdAt },
-    savedAt: typeof r.savedAt === 'number' ? r.savedAt : 0,
+    savedAt: typeof r.savedAt === 'number' && Number.isFinite(r.savedAt) ? r.savedAt : 0,
   };
-  if (typeof r.accessExpiresAt === 'number') out.accessExpiresAt = r.accessExpiresAt;
+  if (typeof r.accessExpiresAt === 'number' && Number.isFinite(r.accessExpiresAt)) {
+    out.accessExpiresAt = r.accessExpiresAt;
+  }
   return out;
 }
 
@@ -138,10 +142,23 @@ export async function readAuthTokens(): Promise<AuthTokens | null> {
   return validateTokens(parsed);
 }
 
-/** 写入结果：落盘成功（明文或信封）；或配置了 crypto 但加密失败 → 跳过落盘。 */
+/**
+ * 写入结果：
+ * - written:true — 落盘成功（encrypted 表明是否信封）
+ * - encrypt_failed — 配置了 crypto 但加密失败 → 跳过落盘（绝不降级明文）
+ * - superseded — 加密在途期间发生了 clearAuthTokens（登出/吊销清理）→ 放弃写入
+ */
 export type WriteTokensResult =
   | { written: true; encrypted: boolean }
-  | { written: false; reason: 'encrypt_failed' };
+  | { written: false; reason: 'encrypt_failed' | 'superseded' };
+
+/**
+ * 写/清序列化 generation：桌面模式加密是异步 RPC，写入在途时若发生登出
+ * （clearAuthTokens），先删的文件会被"登出前"的旧 token 写入覆盖——已吊销的
+ * token 在重启后复活。clearAuthTokens 递增 generation，写入在实际落盘前复核，
+ * 变化即放弃。明文路径无 await，不存在竞态窗口。
+ */
+let writeGeneration = 0;
 
 /**
  * 写入 token（异步：桌面模式需 RPC 加密）。
@@ -154,10 +171,14 @@ export type WriteTokensResult =
  * 文件系统错误仍会抛（沿用 writeCredentials 约定）——落盘失败调用方需知晓。
  */
 export async function writeAuthTokens(tokens: AuthTokens): Promise<WriteTokensResult> {
+  const gen = writeGeneration;
   if (cryptoProvider.isConfigured()) {
     const data = await cryptoProvider.encrypt(JSON.stringify(tokens));
     if (data === null) {
       return { written: false, reason: 'encrypt_failed' };
+    }
+    if (gen !== writeGeneration) {
+      return { written: false, reason: 'superseded' };
     }
     const envelope: EncryptedEnvelope = { v: 1, encrypted: data };
     writeCredentials(authTokensPath(), envelope);
@@ -169,12 +190,17 @@ export async function writeAuthTokens(tokens: AuthTokens): Promise<WriteTokensRe
 
 /** 删除本地 token（尽力而为，不抛）。同步——纯文件删除，不涉及 crypto。 */
 export function clearAuthTokens(): void {
+  writeGeneration += 1; // 令在途加密写入作废，防止旧 token 复活已删文件
   removeCredentials(authTokensPath());
 }
 
 /**
  * 解码 access JWT 的 `exp`（不校验签名——daemon 无云端密钥，签名由云端校验；
  * 这里只用作主动刷新的启发式）。返回 unix ms；格式异常返回 null。
+ *
+ * 拒绝异常 exp：负数/0 = "永远已过期"→ 每次请求都抢跑刷新（白烧轮换）；
+ * `exp*1000` 溢出成 Infinity（如 exp=1e999）= "永不过期"→ 主动刷新永久失效。
+ * 这两种都退回 null，交给调用处的"原样返回 + 401 兜底"路径。
  */
 export function decodeAccessExp(accessToken: string): number | null {
   const parts = accessToken.split('.');
@@ -184,7 +210,9 @@ export function decodeAccessExp(accessToken: string): number | null {
       Buffer.from(parts[1] as string, 'base64url').toString('utf8'),
     ) as { exp?: unknown };
     if (typeof payload.exp !== 'number' || !Number.isFinite(payload.exp)) return null;
-    return Math.floor(payload.exp * 1000);
+    const ms = Math.floor(payload.exp * 1000);
+    if (!Number.isFinite(ms) || ms <= 0) return null;
+    return ms;
   } catch {
     return null;
   }

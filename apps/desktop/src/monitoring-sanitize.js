@@ -76,19 +76,26 @@ export function sanitizeBundle(bundle) {
 }
 
 /**
+ * userId 格式契约：26 字符 Crockford base32（大写），与云端 apps/cloud/src/crypto.ts
+ * 的 ulid() 输出严格一致（字母表无 I/L/O/U）。校验是纵深防御——未来任何来源的
+ * 奇怪字符串（邮箱、SQL、构造错误）都不会流入监控归因字段。
+ */
+const USER_ID_RE = /^[0-9A-HJKMNP-TV-Z]{26}$/;
+
+/**
  * 把 Molio userId 注入 bundle 的 `user.id`（用户模块 M4，设计 §十一）。
  *
  * ARMS SDK（0.0.5–0.0.7）没有 setUser API：reporter 组 bundle 时 `user.id`
  * 只取内部 session 生成的匿名设备 UID，`config.user.id` 被显式跳过。
  * beforeReport 钩子是唯一干净注入点。
  *
- * - userId 为真（非空字符串）时：浅拷贝 bundle，置 `user.id = userId`
+ * - userId 是合法 ULID 时：浅拷贝 bundle，置 `user.id = userId`
  *   （保留 bundle.user 上其他字段；无 user 字段则新建 `{ id }`）。
- * - userId 为空/非字符串（未登录）时：原样返回 bundle，保留 SDK 匿名 uid 兜底。
- * - userId 只允许 ULID（daemon 侧 user.id），**绝不含邮箱**——监控归因不带 PII。
+ * - userId 为空/非字符串/非法格式（未登录或格式违约）时：原样返回 bundle，
+ *   保留 SDK 匿名 uid 兜底。**绝不含邮箱**——监控归因不带 PII。
  */
 export function injectUserId(bundle, userId) {
-  if (typeof userId !== 'string' || userId === '') return bundle;
+  if (typeof userId !== 'string' || !USER_ID_RE.test(userId)) return bundle;
   if (bundle === null || typeof bundle !== 'object' || Array.isArray(bundle)) return bundle;
   const existing = bundle.user;
   const user =
@@ -100,16 +107,14 @@ export function injectUserId(bundle, userId) {
 
 /**
  * URL → view name：脱敏 vaultId 和文件路径参数。
+ * pathname 与 search 各经一次 sanitizeString——脱敏规则单点收口在 sanitizeString，
+ * 不在此处二次套用正则（旧实现拼接后又重跑 VAULT_ID_RE/LOCAL_PATH_RE，纯冗余）。
  */
 export function sanitizeViewName(url) {
   if (typeof url !== 'string' || url === '') return '';
   try {
     const u = new URL(url, 'http://localhost');
-    const pathname = u.pathname || '/';
-    const search = sanitizeString(u.search || '');
-    return `${pathname}${search}`
-      .replace(VAULT_ID_RE, '/vaults/[vaultId]')
-      .replace(LOCAL_PATH_RE, redactLocalPath);
+    return sanitizeString(u.pathname || '/') + sanitizeString(u.search || '');
   } catch {
     return sanitizeString(url);
   }
@@ -150,15 +155,14 @@ export function dropFetchFailedNoise(bundle) {
 }
 
 /**
- * URL → resource name：取 pathname，路径段中的 vaultId 脱敏。
+ * URL → resource name：取 pathname，路径段中的 vaultId/本地路径脱敏。
+ * 同 sanitizeViewName：规则单点走 sanitizeString，不重复实现。
  */
 export function sanitizeResourceName(url) {
   if (typeof url !== 'string' || url === '') return '';
   try {
     const u = new URL(url, 'http://localhost');
-    return (u.pathname || '/')
-      .replace(VAULT_ID_RE, '/vaults/[vaultId]')
-      .replace(LOCAL_PATH_RE, redactLocalPath);
+    return sanitizeString(u.pathname || '/');
   } catch {
     return sanitizeString(url);
   }

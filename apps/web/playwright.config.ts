@@ -1,6 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const isCI = !!process.env.CI;
+/** 云端认证服务（apps/cloud）dev 地址——webServer 健康检查与 daemon env 单点共用。 */
+const CLOUD_BASE_URL = 'http://localhost:3200';
 
 export default defineConfig({
   testDir: './e2e',
@@ -38,7 +40,7 @@ export default defineConfig({
        /api/auth/start 取验证码（UI 不展示 devCode）。 */
     {
       command: 'pnpm --filter @molio/cloud dev',
-      url: 'http://localhost:3200/health',
+      url: `${CLOUD_BASE_URL}/health`,
       reuseExistingServer: !isCI,
       timeout: 60_000,
       env: { MOLIO_ENV: 'local' },
@@ -48,7 +50,7 @@ export default defineConfig({
       url: 'http://localhost:3100/api/health',
       reuseExistingServer: !isCI,
       timeout: 60_000,
-      env: { MOLIO_AUTH_URL: 'http://localhost:3200' },
+      env: { MOLIO_AUTH_URL: CLOUD_BASE_URL },
     },
     {
       command: 'pnpm --filter @molio/web dev',

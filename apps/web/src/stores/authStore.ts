@@ -16,9 +16,34 @@ type Listener = () => void;
 /** null = not yet fetched (initial load) or daemon unreachable before first fetch. */
 let status: AuthStatus | null = null;
 const listeners = new Set<Listener>();
+/**
+ * Monotonic refresh sequence — concurrent refresh() calls (30s poll + focus +
+ * invalidate racing each other) can resolve out of order; only the newest
+ * request may write the snapshot, otherwise a slow stale response overwrites
+ * a fresh one (e.g. logout status clobbered by an older logged-in reply).
+ */
+let refreshSeq = 0;
 
 function emit() {
   for (const l of listeners) l();
+}
+
+async function refresh(): Promise<AuthStatus | null> {
+  const seq = ++refreshSeq;
+  let next: AuthStatus;
+  try {
+    next = await api.getAuthStatus();
+  } catch (err) {
+    // daemon 未启动/不可达：保留旧快照（首次则为 null），不打扰用户。
+    // 留一条 warn（同 vaultStore 模式）：30s 轮询下持续不可达若无任何日志，
+    // 登录态问题将完全无从排查。
+    console.warn('[authStore] refresh failed:', err);
+    return status;
+  }
+  if (seq !== refreshSeq) return status; // superseded by a newer refresh
+  status = next;
+  emit();
+  return next;
 }
 
 export const authStore = {
@@ -31,22 +56,18 @@ export const authStore = {
     return status;
   },
 
-  /** Pull the latest snapshot from the daemon. Resolves null on failure. */
-  async refresh(): Promise<AuthStatus | null> {
-    try {
-      const next = await api.getAuthStatus();
-      status = next;
-      emit();
-      return next;
-    } catch {
-      // daemon 未启动/不可达：保留旧快照（首次则为 null），不打扰用户
-      return status;
-    }
+  /**
+   * Pull the latest snapshot from the daemon. Never throws — resolves with
+   * the last known status on failure (null only before the first successful
+   * fetch), and drops responses superseded by a newer refresh.
+   */
+  refresh(): Promise<AuthStatus | null> {
+    return refresh();
   },
 
   /** 登录/登出/注销成功后由调用方触发；等价于 refresh()。 */
   invalidate(): Promise<AuthStatus | null> {
-    return this.refresh();
+    return refresh();
   },
 };
 

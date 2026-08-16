@@ -160,6 +160,31 @@ describe('AuthClient', () => {
     assert.equal(mock.countCalls('POST', '/auth/refresh'), refreshCalls);
   });
 
+  it('refresh 在途时会话被并发登录替换 → 丢弃刷新结果，不覆盖新会话（epoch 守卫）', async () => {
+    // 门闩 fetch：挂住 /auth/refresh 请求，制造"刷新在途"窗口
+    let releaseRefresh!: () => void;
+    const gate = new Promise<void>((r) => (releaseRefresh = r));
+    const stallingFetch: typeof fetch = async (input, init) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (url.endsWith('/auth/refresh')) await gate;
+      return mock.fetchImpl(input, init);
+    };
+    const gatedClient = makeClient({ fetchImpl: stallingFetch });
+    await gatedClient.verify('user@example.com', '123456'); // session A（refresh-1）
+
+    const refreshInFlight = gatedClient.refresh(); // 挂住在途
+    await gatedClient.verify('user@example.com', '123456'); // 并发新登录 → session B（refresh-2）
+    releaseRefresh();
+
+    await assert.rejects(
+      () => refreshInFlight,
+      (e: AuthCloudError) => e.status === 409 && e.code === 'session_replaced',
+    );
+    // 新会话完好：磁盘仍是 session B 的 token，且未被旧刷新的 401 连带清掉
+    assert.equal((await readAuthTokens())?.refreshToken, 'refresh-2');
+    assert.equal(gatedClient.isLoginExpired(), false);
+  });
+
   // ── 主动刷新（§7.2：<2min） ────────────────────────────────────────
 
   it('access 剩余寿命充足时 getAccessToken 不刷新', async () => {
@@ -168,6 +193,21 @@ describe('AuthClient', () => {
     const token = await client.getAccessToken();
     assert.equal(token, (await readAuthTokens())?.accessToken);
     assert.equal(mock.countCalls('POST', '/auth/refresh'), 0);
+  });
+
+  it('access exp 无法解码（opaque token）→ 原样返回，不抢跑轮换（401 兜底路径负责刷新）', async () => {
+    await client.verify('user@example.com', '123456');
+    const cur = await readAuthTokens();
+    assert.ok(cur);
+    // 手工写入解码不了 exp 的 access（模拟云端换发格式）
+    const { writeAuthTokens } = await import('../../../src/core/auth/token-store.js');
+    await writeAuthTokens({ ...cur!, accessToken: 'opaque-access-token' });
+
+    const restarted = makeClient(); // 重新从磁盘加载
+    mock.calls.length = 0;
+    const token = await restarted.getAccessToken();
+    assert.equal(token, 'opaque-access-token');
+    assert.equal(mock.countCalls('POST', '/auth/refresh'), 0, '旧实现在此处白烧一次轮换');
   });
 
   it('access 剩余 <2min 时 getAccessToken 先刷新', async () => {
@@ -183,18 +223,20 @@ describe('AuthClient', () => {
     assert.equal((await readAuthTokens())?.accessToken, token);
   });
 
-  // ── 退避重试 ──────────────────────────────────────────────────────
+  // ── 退避重试（仅幂等请求；sendCode/verify 非幂等不重试，见下） ────
 
-  it('5xx 退避重试直到成功', async () => {
+  it('5xx 退避重试直到成功（幂等 GET /auth/me）', async () => {
     const retryClient = makeClient({ retryDelaysMs: [0, 0] });
-    mock.queue('POST', '/auth/send-code', { status: 500, body: {} });
-    mock.queue('POST', '/auth/send-code', { status: 502, body: {} });
-    const res = await retryClient.sendCode('user@example.com');
-    assert.equal(res.ok, true);
-    assert.equal(mock.countCalls('POST', '/auth/send-code'), 3);
+    await retryClient.verify('user@example.com', '123456');
+    mock.calls.length = 0;
+    mock.queue('GET', '/auth/me', { status: 500, body: {} });
+    mock.queue('GET', '/auth/me', { status: 502, body: {} });
+    const me = await retryClient.me();
+    assert.deepEqual(me.user, mock.user);
+    assert.equal(mock.countCalls('GET', '/auth/me'), 3);
   });
 
-  it('422 mail_failed 不重试——即使开了退避也只请求一次（重试会撞 60s 重发限频）', async () => {
+  it('422 mail_failed 不重试——4xx 一律只请求一次', async () => {
     const retryClient = makeClient({ retryDelaysMs: [0, 0] });
     mock.queue('POST', '/auth/send-code', { status: 422, body: { error: 'mail_failed' } });
     await assert.rejects(
@@ -204,13 +246,47 @@ describe('AuthClient', () => {
     assert.equal(mock.countCalls('POST', '/auth/send-code'), 1);
   });
 
-  it('网络错误退避重试直到成功，成功后 cloudState 恢复 ok', async () => {
+  it('网络错误退避重试直到成功，成功后 cloudState 恢复 ok（幂等 GET）', async () => {
     const retryClient = makeClient({ retryDelaysMs: [0, 0] });
-    mock.queue('POST', '/auth/send-code', 'network-error');
-    const res = await retryClient.sendCode('user@example.com');
-    assert.equal(res.ok, true);
-    assert.equal(mock.countCalls('POST', '/auth/send-code'), 2);
+    await retryClient.verify('user@example.com', '123456');
+    mock.calls.length = 0;
+    mock.queue('GET', '/auth/me', 'network-error');
+    const me = await retryClient.me();
+    assert.deepEqual(me.user, mock.user);
+    assert.equal(mock.countCalls('GET', '/auth/me'), 2);
     assert.equal(retryClient.getCloudState(), 'ok');
+  });
+
+  it('sendCode 5xx 不重试——非幂等：云端可能已发信才失败，重试会重复发信并撞 60s 重发限频', async () => {
+    const retryClient = makeClient({ retryDelaysMs: [0, 0] });
+    mock.queue('POST', '/auth/send-code', { status: 500, body: {} });
+    await assert.rejects(
+      () => retryClient.sendCode('user@example.com'),
+      (e: AuthCloudError) => e.status === 500,
+    );
+    assert.equal(mock.countCalls('POST', '/auth/send-code'), 1, '即使 5xx 也只请求一次');
+  });
+
+  it('verify 网络错误不重试——非幂等：一次性码可能已被消费，重试误报 invalid_code', async () => {
+    const retryClient = makeClient({ retryDelaysMs: [0, 0] });
+    mock.queue('POST', '/auth/verify', 'network-error');
+    await assert.rejects(
+      () => retryClient.verify('user@example.com', '123456'),
+      (e: AuthCloudError) => e.status === 0 && e.code === 'cloud_unreachable',
+    );
+    assert.equal(mock.countCalls('POST', '/auth/verify'), 1);
+    assert.equal(await readAuthTokens(), null);
+  });
+
+  it('云端请求携带超时 signal（云端 hang 不住登录链路）', async () => {
+    let seen: RequestInit | undefined;
+    const spy: typeof fetch = async (input, init) => {
+      seen = init;
+      return mock.fetchImpl(input, init);
+    };
+    const spyClient = makeClient({ fetchImpl: spy });
+    await spyClient.sendCode('user@example.com');
+    assert.ok(seen?.signal instanceof AbortSignal, 'fetch 必须带超时 signal');
   });
 
   // ── 云端不可达（§7.3 + local-first 红线） ─────────────────────────
@@ -244,6 +320,28 @@ describe('AuthClient', () => {
     assert.ok(del?.auth?.startsWith('Bearer '));
     assert.equal(await readAuthTokens(), null);
     assert.deepEqual(await client.getStatus(), { loggedIn: false, configured: true });
+    // mock 云端语义对齐：被吊销的 refresh token 重放 → 401
+    const replay = await mock.fetchImpl(`${mock.baseUrl}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ refreshToken: 'refresh-1' }),
+    });
+    assert.equal(replay.status, 401, 'logout 后旧 refresh token 已吊销');
+  });
+
+  it('logout: getAccessToken 触发轮换 → 吊销 body 携带最新 refreshToken（不送已轮换旧 token）', async () => {
+    await client.verify('user@example.com', '123456');
+    fakeNow += (900 - 60) * 1000; // access 剩余 <2min → logout 内 getAccessToken 先 refresh
+    mock.calls.length = 0;
+    await client.logout();
+    assert.equal(mock.countCalls('POST', '/auth/refresh'), 1);
+    const del = mock.lastCall('DELETE', '/auth/session');
+    assert.equal(
+      (del?.body as { refreshToken?: string })?.refreshToken,
+      'refresh-2',
+      '必须吊销轮换后的 refresh-2；旧实现预读 refresh-1，云端会漏吊',
+    );
+    assert.equal(await readAuthTokens(), null);
   });
 
   // ── 注销账号（§7.4 个保法；云端权威操作，与 logout 语义不同） ─────
@@ -360,6 +458,15 @@ describe('AuthClient', () => {
     const fromEnv = new AuthClient({ fetchImpl: mock.fetchImpl });
     assert.equal(fromEnv.getBaseUrl(), 'http://env.cloud');
     assert.equal(fromEnv.isConfigured(), true);
+  });
+
+  it('MOLIO_AUTH_URL 纯空白按未配置，两端空白被 trim', () => {
+    const fromEnv = new AuthClient({ fetchImpl: mock.fetchImpl });
+    process.env.MOLIO_AUTH_URL = '   ';
+    assert.equal(fromEnv.getBaseUrl(), null);
+    assert.equal(fromEnv.isConfigured(), false);
+    process.env.MOLIO_AUTH_URL = '  http://env.cloud  ';
+    assert.equal(fromEnv.getBaseUrl(), 'http://env.cloud');
   });
 
   it('云端未配置但本地有 token：restoreSession 不做网络尝试，status 保留登录态', async () => {

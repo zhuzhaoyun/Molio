@@ -68,10 +68,13 @@ export type {
   SendCodeRequest,
   SendCodeResponse,
   VerifyRequest,
+  TokenPair,
   VerifyResponse,
   RefreshRequest,
   RefreshResponse,
   MeResponse,
+  SessionDeleteResponse,
+  AccountDeleteResponse,
 } from './auth.js';
 
 export type {

@@ -100,8 +100,10 @@ test('createMailer: prod 无 DirectMail 配置 → 兜底报错，绝不静默',
 
 // ─── loadConfig 校验（prod fail-fast） ────────────────────────────────
 
+// prod 形态 = 连库 + 密钥齐全；DATABASE_URL 是 prod fail-fast 的必要项（禁止内存模式）
 const DM_ENV = {
   MOLIO_ENV: 'prod',
+  DATABASE_URL: 'postgres://user:pass@localhost/molio',
   MOLIO_JWT_SECRET: 's',
   MOLIO_CODE_PEPPER: 'p',
 };

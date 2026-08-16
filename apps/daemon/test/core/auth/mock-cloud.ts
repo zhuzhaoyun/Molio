@@ -58,6 +58,18 @@ function mintJwt(payload: Record<string, unknown>): string {
   return `${h}.${p}.mocksig`;
 }
 
+function requestUrl(input: Parameters<typeof fetch>[0]): string {
+  if (typeof input === 'string') return input;
+  return input instanceof URL ? input.href : input.url;
+}
+
+/** 与 apps/cloud 一致：scheme 大小写不敏感（`bearer x` 同样有效）。 */
+function bearerToken(auth: string | null): string | null {
+  if (!auth) return null;
+  const m = /^bearer (.+)$/i.exec(auth);
+  return m ? m[1]! : null;
+}
+
 export function makeMockCloud(opts: MockCloudOptions = {}): MockCloud {
   const baseUrl = opts.baseUrl ?? 'http://mock.cloud';
   const user: User = opts.user ?? {
@@ -110,10 +122,8 @@ export function makeMockCloud(opts: MockCloudOptions = {}): MockCloud {
   }
 
   const fetchImpl = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
-    const url =
-      typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     const method = (init?.method ?? 'GET').toUpperCase();
-    const path = new URL(url).pathname;
+    const path = new URL(requestUrl(input)).pathname;
     let body: unknown;
     if (typeof init?.body === 'string' && init.body !== '') {
       try {
@@ -122,8 +132,8 @@ export function makeMockCloud(opts: MockCloudOptions = {}): MockCloud {
         body = init.body;
       }
     }
-    const headers = (init?.headers ?? {}) as Record<string, string>;
-    const auth = typeof headers.authorization === 'string' ? headers.authorization : null;
+    // Headers 归一化：调用方可能传 Headers 实例/数组/大小写混合的对象
+    const auth = new Headers(init?.headers).get('authorization');
     calls.push({ method, path, body, auth });
 
     if (mode === 'down') throw new TypeError('fetch failed');
@@ -157,20 +167,26 @@ export function makeMockCloud(opts: MockCloudOptions = {}): MockCloud {
     }
 
     if (method === 'GET' && path === '/auth/me') {
-      const token = auth?.startsWith('Bearer ') ? auth.slice('Bearer '.length) : null;
+      const token = bearerToken(auth);
       if (!token || !validAccess.has(token)) return json(401, { error: 'invalid_token' });
       return json(200, { user, entitlement });
     }
 
     if (method === 'DELETE' && path === '/auth/session') {
-      const token = auth?.startsWith('Bearer ') ? auth.slice('Bearer '.length) : null;
+      const token = bearerToken(auth);
       if (!token || !validAccess.has(token)) return json(401, { error: 'invalid_token' });
+      // 与云端一致：吊销 body 携带的 refresh token（本设备 session）。
+      // 吊销后再拿它 refresh → 401（daemon 若误传已轮换旧 token，这里能照出云端真实行为）
+      const b = body as { refreshToken?: string } | undefined;
+      if (b && typeof b.refreshToken === 'string' && b.refreshToken === currentRefresh) {
+        currentRefresh = null;
+      }
       return json(200, { ok: true });
     }
 
     if (method === 'DELETE' && path === '/auth/account') {
       if (accountOutcome === 'invalid_token') return json(401, { error: 'invalid_token' });
-      const token = auth?.startsWith('Bearer ') ? auth.slice('Bearer '.length) : null;
+      const token = bearerToken(auth);
       if (!token || !validAccess.has(token)) return json(401, { error: 'invalid_token' });
       // 云端注销后该用户全部 access 失效（吊销全部 session 语义）
       validAccess.clear();

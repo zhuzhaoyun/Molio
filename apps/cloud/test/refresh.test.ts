@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { hashRefreshToken } from '../src/crypto.js';
 import { del, post, register, setup } from './helpers.js';
 
 test('refresh: 轮换——发新 token 对，新旧不同', async () => {
@@ -89,4 +90,60 @@ test('refresh: 未知 token → 401', async () => {
   const res = await post(app, '/auth/refresh', { refreshToken: 'nonexistent-token' });
   assert.equal(res.status, 401);
   assert.equal(((await res.json()) as { error: string }).error, 'invalid_token');
+});
+
+test('refresh: 原子吊销竞态输家 → 重读最新状态走宽限窗重放路径（不误判攻击）', async () => {
+  const { app, store, clock, config } = setup();
+  const reg = await register(app);
+  const rec = await store.findRefreshTokenByHash(hashRefreshToken(reg.refreshToken));
+  assert.ok(rec);
+
+  // 模拟另一实例先完成轮换：本次 revoke 到达时旧 token 已被吊销并发出新对，
+  // 条件吊销返回 false（竞态输家）
+  const realRevoke = store.revokeRefreshToken.bind(store);
+  let raced = false;
+  store.revokeRefreshToken = async (id, now, replacedBy) => {
+    if (!raced && id === rec!.id) {
+      raced = true;
+      await realRevoke(id, now, 'winner-tok');
+      await store.insertRefreshToken({
+        id: 'winner-tok',
+        userId: rec!.userId,
+        tokenHash: hashRefreshToken('winner-raw-token'),
+        deviceHint: null,
+        createdAt: now,
+        expiresAt: now + config.refreshTtlSec * 1000,
+        revokedAt: null,
+        replacedBy: null,
+      });
+      return false;
+    }
+    return realRevoke(id, now, replacedBy);
+  };
+
+  // 输家不抛错也不全吊销：沿替换链找到链头并轮换，客户端拿到可用的新对
+  clock.advance(1_000); // 仍在 30s 宽限窗内
+  const res = await post(app, '/auth/refresh', { refreshToken: reg.refreshToken });
+  assert.equal(res.status, 200);
+  const body = (await res.json()) as { refreshToken: string };
+
+  const next = await post(app, '/auth/refresh', { refreshToken: body.refreshToken });
+  assert.equal(next.status, 200);
+});
+
+test('refresh: 宽限窗内但链头也已失效 → 按攻击处理，全吊销', async () => {
+  const { app, clock } = setup();
+  const reg = await register(app);
+
+  const r1 = await post(app, '/auth/refresh', { refreshToken: reg.refreshToken });
+  const r2 = (await r1.json()) as { refreshToken: string };
+  // 链头 R2 被人工登出（replaced_by 链断在已吊销节点）
+  const out = await del(app, '/auth/session', { refreshToken: r2.refreshToken }, {
+    authorization: `Bearer ${reg.accessToken}`,
+  });
+  assert.equal(out.status, 200);
+
+  // 窗内重放 R1：链头不可用 → 不再宽松，全吊销
+  const replay = await post(app, '/auth/refresh', { refreshToken: reg.refreshToken });
+  assert.equal(replay.status, 401);
 });
