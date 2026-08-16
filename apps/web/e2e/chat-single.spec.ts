@@ -43,7 +43,7 @@ test.describe('Chat — single turn', () => {
     await expect(prose).toContainText('Hello, how can I help you?');
   });
 
-  test('composer disables during streaming and shows stop button', async ({ page }) => {
+  test('composer stays enabled during streaming', async ({ page }) => {
     await gotoHome(page);
 
     const textarea = page.locator('[data-testid="composer-input"]');
@@ -57,11 +57,10 @@ test.describe('Chat — single turn', () => {
     await textarea.fill('Test');
     await textarea.press('Enter');
 
-    // After send: composer should be disabled during streaming
-    // Note: with mock SSE the response is instant, so we check that it was disabled
-    // at some point by verifying the stop button appeared or the response completed.
-    // The mock SSE returns all events immediately, so the composer may re-enable quickly.
-    // We verify the final state: assistant message rendered.
+    // With the queue feature the composer is never locked during streaming.
+    // (The mock SSE returns instantly, so the dedicated "running window"
+    // coverage lives in chat-timeout-fallback / chat-timeout-idle-reset /
+    // chat-composer-queue — here we just confirm the final state renders.)
     await expect(page.locator('[data-testid="assistant-prose"]')).toBeVisible({ timeout: 10_000 });
   });
 

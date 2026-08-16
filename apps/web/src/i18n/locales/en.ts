@@ -24,6 +24,8 @@ const en: Record<string, string> = {
   // ── ChatComposer ──
   'composer.noAgent': 'No agent available',
   'composer.waiting': 'Waiting for response...',
+  'composer.queuePlaceholder': 'Reply in progress — sends when finished',
+  'composer.queueTooltip': 'Sends after the current reply finishes',
   'composer.placeholder': 'Type a message...',
   'composer.stop': 'Stop',
   'composer.send': 'Send',
