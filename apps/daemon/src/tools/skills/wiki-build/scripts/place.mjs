@@ -1,80 +1,135 @@
-// place.mjs — 安置草稿：drafts/*.md → wiki/entities/，并生成 wiki/entities/INDEX.md
-// 用法: node place.mjs <stem> [--vault <dir>]
-// 摘要提取：stub 取正文首行；完整页取 frontmatter 后首个非标题段的第一句
-// 归类：以 manifest 的"地点物品结社"名单为依据（不依赖页面 tags 措辞）；
-//       小节标题可经 rules.json 覆盖: { "indexSections": { "others": "地点物品结社" } }
+// place.mjs — 安置草稿到 wiki/（按批次 TSV 的页类分发）
+//
+// 用法:
+//   node place.mjs <stem> [--vault <dir>] [--append]
+//
+// 读取:
+//   batches/*.tsv（页类列决定分发目标：entity → wiki/entities/，concept → wiki/concepts/）
+//   drafts/*.md（草稿文件）
+//
+// 模式:
+//   默认（build）：全量重写目标目录的 INDEX.md
+//   --append（ingest）：只追加新页条目到现有 INDEX.md，不重写既有条目
+//
+// 零 LLM，确定性。
 import fs from 'node:fs';
 import path from 'node:path';
-import { parseArgs, resolveVault, buildDir, loadRules } from './lib/cli.mjs';
+import { parseArgs, resolveVault, buildDir } from './lib/cli.mjs';
 
 const opts = parseArgs(process.argv.slice(2));
 const [stem] = opts._;
-if (!stem) { console.error('用法: node place.mjs <stem> [--vault <dir>]'); process.exit(1); }
+if (!stem) { console.error('用法: node place.mjs <stem> [--vault <dir>] [--append]'); process.exit(1); }
 
 const vault = resolveVault(opts);
 const wd = buildDir(vault);
 const draftsDir = path.join(wd, 'drafts');
-const entDir = path.join(vault, 'wiki', 'entities');
-const rules = loadRules(vault);
-const OTHERS_HEADING = rules.indexSections?.others ?? '地点物品结社';
-const VBOOK = rules.indexSections?.vaultLabel ?? '红楼梦'; // INDEX 头部显示的库名
+const batchesDir = path.join(wd, 'batches');
+const appendMode = opts._.includes('--append') || process.argv.includes('--append');
 
-fs.mkdirSync(entDir, { recursive: true });
+// ─── 1. 从批次 TSV 读取页类映射 ───
 
-// 以 manifest 的地点物品结社名单为归类依据（不依赖页面 tags 措辞）
-const manifestText = fs.readFileSync(path.join(wd, `page-manifest-${stem}.md`), 'utf8');
-const re = new RegExp(`^##\\s*${OTHERS_HEADING.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'm');
-const othersSection = (manifestText.split(re)[1] || '');
-const othersSet = new Set(othersSection.split(/\r?\n/).filter((l) => l.startsWith('- ')).map((l) => l.slice(2).split('｜')[0].trim()));
+const pageTypeMap = new Map(); // name -> 'entity' | 'concept'
+if (fs.existsSync(batchesDir)) {
+  for (const f of fs.readdirSync(batchesDir).filter(f => f.endsWith('.tsv'))) {
+    for (const raw of fs.readFileSync(path.join(batchesDir, f), 'utf8').split(/\r?\n/)) {
+      const line = raw.trim();
+      if (!line || line.startsWith('#')) continue;
+      const cols = line.split('\t');
+      if (cols.length < 5) continue;
+      const name = cols[0].trim();
+      const pageType = cols[4].trim();
+      if (/^页类:\s*concept/.test(pageType)) pageTypeMap.set(name, 'concept');
+      else pageTypeMap.set(name, 'entity'); // 默认 entity
+    }
+  }
+}
 
-const drafts = fs.readdirSync(draftsDir).filter((f) => f.endsWith('.md'));
-const persons = [];
-const others = [];
-let placed = 0;
+// ─── 2. 安置草稿 ───
+
+if (!fs.existsSync(draftsDir)) {
+  console.error(`drafts 目录不存在: ${draftsDir}`);
+  process.exit(1);
+}
+
+const drafts = fs.readdirSync(draftsDir).filter(f => f.endsWith('.md'));
+const placed = { entity: [], concept: [] };
 
 for (const f of drafts) {
+  const name = f.replace(/\.md$/, '');
   const src = path.join(draftsDir, f);
-  const text = fs.readFileSync(src, 'utf8');
-  // 提取摘要
+  const type = pageTypeMap.get(name) || 'entity';
+  const targetDir = type === 'concept'
+    ? path.join(vault, 'wiki', 'concepts')
+    : path.join(vault, 'wiki', 'entities');
+  fs.mkdirSync(targetDir, { recursive: true });
+  fs.copyFileSync(src, path.join(targetDir, f));
+  placed[type].push(name);
+}
+
+// ─── 3. 生成/更新 INDEX ───
+
+function extractSummary(filePath) {
+  const text = fs.readFileSync(filePath, 'utf8');
   const body = text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '');
-  let summary = '';
   for (const raw of body.split(/\r?\n/)) {
     const line = raw.trim();
     if (!line || line.startsWith('#') || line.startsWith('>')) continue;
     const m = line.match(/^(.*?[。！？!?])/);
-    summary = (m ? m[1] : line).replace(/\[\[|\]\]/g, '');
+    let summary = (m ? m[1] : line).replace(/\[\[|\]\]/g, '');
     if (summary.length > 60) summary = summary.slice(0, 60) + '…';
-    break;
+    return summary;
   }
-  if (!summary) summary = '（待补摘要）';
-  const name = f.replace(/\.md$/, '');
-  const isStub = /^stub:\s*true/m.test(text);
-  const isOther = othersSet.has(name);
-  const dest = path.join(entDir, f);
-  fs.copyFileSync(src, dest);
-  placed++;
-  (isOther ? others : persons).push({ name, summary, isStub });
+  return '（待补摘要）';
 }
 
-function section(title, list) {
-  const full = list.filter((x) => !x.isStub).sort((a, b) => a.name.localeCompare(b.name, 'zh'));
-  const stubs = list.filter((x) => x.isStub).sort((a, b) => a.name.localeCompare(b.name, 'zh'));
-  let out = `## ${title}\n\n`;
-  if (full.length) {
-    out += `### 完整页（${full.length}）\n\n` + full.map((x) => `- [[${x.name}]] — ${x.summary}`).join('\n') + '\n\n';
-  }
-  if (stubs.length) {
-    out += `### stub（${stubs.length}）\n\n` + stubs.map((x) => `- [[${x.name}]] — ${x.summary}`).join('\n') + '\n';
-  }
-  return out;
+function buildIndexEntries(names, dir) {
+  return names
+    .sort((a, b) => a.localeCompare(b, 'zh'))
+    .map(name => {
+      const filePath = path.join(dir, `${name}.md`);
+      const summary = fs.existsSync(filePath) ? extractSummary(filePath) : '（待补摘要）';
+      return `- [[${name}]] — ${summary}`;
+    });
 }
 
-const index = `# 实体索引
+function writeIndex(indexPath, title, entries, appendMode) {
+  if (appendMode && fs.existsSync(indexPath)) {
+    // 追加模式：读取现有 INDEX，只追加新条目（去重）
+    const existing = fs.readFileSync(indexPath, 'utf8');
+    const existingNames = new Set(
+      [...existing.matchAll(/\[\[([^\]|]+?)(?:\|[^\]]*)?\]\]/g)].map(m => m[1].trim())
+    );
+    const newEntries = entries.filter(e => {
+      const name = e.match(/\[\[([^\]|]+?)(?:\|[^\]]*)?\]\]/)?.[1]?.trim();
+      return name && !existingNames.has(name);
+    });
+    if (newEntries.length > 0) {
+      fs.appendFileSync(indexPath, '\n' + newEntries.join('\n') + '\n');
+    }
+    return { appended: newEntries.length, skipped: entries.length - newEntries.length };
+  } else {
+    // 全量重写
+    const content = `# ${title}\n\n${entries.join('\n')}\n`;
+    fs.writeFileSync(indexPath, content);
+    return { written: entries.length };
+  }
+}
 
-> 《${VBOOK}》人物 ${persons.length} 页（完整 ${persons.filter((x) => !x.isStub).length} / stub ${persons.filter((x) => x.isStub).length}），地点物品结社 ${others.length} 页（完整 ${others.filter((x) => !x.isStub).length} / stub ${others.filter((x) => x.isStub).length}）。
+const results = {};
+for (const [type, names] of Object.entries(placed)) {
+  if (names.length === 0) continue;
+  const dir = type === 'concept'
+    ? path.join(vault, 'wiki', 'concepts')
+    : path.join(vault, 'wiki', 'entities');
+  const indexPath = path.join(dir, 'INDEX.md');
+  const title = type === 'concept' ? '概念索引' : '实体索引';
+  const entries = buildIndexEntries(names, dir);
+  results[type] = writeIndex(indexPath, title, entries, appendMode);
+}
 
-${section('人物', persons)}
-${section('地点·物品·结社', others)}`;
-
-fs.writeFileSync(path.join(entDir, 'INDEX.md'), index);
-console.log(JSON.stringify({ placed, persons: persons.length, others: others.length }));
+console.log(JSON.stringify({
+  mode: appendMode ? 'append' : 'rewrite',
+  placedEntities: placed.entity.length,
+  placedConcepts: placed.concept.length,
+  indexResults: results,
+}, null, 2));

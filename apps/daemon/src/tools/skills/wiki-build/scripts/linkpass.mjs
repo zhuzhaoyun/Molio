@@ -44,20 +44,22 @@ function usage() {
   process.stderr.write(
     [
       'Usage:',
-      '  node linkpass.mjs --vault <dir> [--aliases <json>] [--dry-run]',
+      '  node linkpass.mjs --vault <dir> [--aliases <json>] [--batches <dir>] [--dry-run]',
       '',
       'Wraps the first body occurrence of every wiki page name (and alias) in',
       '[[wikilinks]] on every page. Idempotent. Exit 0 success, 2 usage error.',
+      '--batches: read aliases from batch TSV files (别名列), replaces --aliases.',
     ].join('\n') + '\n',
   );
 }
 
 function parseArgs(argv) {
-  const opts = { vault: '.', aliases: null, dryRun: false };
+  const opts = { vault: '.', aliases: null, batches: null, dryRun: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--vault') opts.vault = argv[++i];
     else if (a === '--aliases') opts.aliases = argv[++i];
+    else if (a === '--batches') opts.batches = argv[++i];
     else if (a === '--dry-run') opts.dryRun = true;
     else if (a === '--help' || a === '-h') { usage(); process.exit(0); }
     else { usage(); process.exit(2); }
@@ -167,6 +169,8 @@ function main() {
   // Alias map: alias → canonical (validated against canonicals).
   const aliasMap = new Map();
   const skippedAliases = [];
+
+  // Source 1: --aliases JSON file (legacy format)
   if (opts.aliases) {
     let raw;
     try {
@@ -179,6 +183,30 @@ function main() {
       if (typeof alias !== 'string' || typeof canonical !== 'string' || !alias || !canonical) continue;
       if (!canonicals.has(canonical)) { skippedAliases.push(alias); continue; }
       aliasMap.set(alias, canonical);
+    }
+  }
+
+  // Source 2: --batches TSV files (new format: 别名列 per row)
+  if (opts.batches && fs.existsSync(path.resolve(opts.batches))) {
+    const batchesDir = path.resolve(opts.batches);
+    for (const f of fs.readdirSync(batchesDir).filter(f => f.endsWith('.tsv'))) {
+      for (const raw of fs.readFileSync(path.join(batchesDir, f), 'utf8').split(/\r?\n/)) {
+        const line = raw.trim();
+        if (!line || line.startsWith('#')) continue;
+        const cols = line.split('\t');
+        if (cols.length < 5) continue;
+        const canonical = cols[0].trim();
+        const aliasCol = cols[2].trim(); // 别名: X/Y/Z
+        if (!canonicals.has(canonical)) continue;
+        const aliasStr = aliasCol.replace(/^别名[：:]\s*/, '');
+        if (!aliasStr) continue;
+        for (const alias of aliasStr.split(/[/、,，]/)) {
+          const a = alias.trim();
+          if (!a || a === canonical) continue;
+          if (aliasMap.has(a)) continue; // 先到先得，不覆盖
+          aliasMap.set(a, canonical);
+        }
+      }
     }
   }
 

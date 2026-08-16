@@ -1,7 +1,7 @@
 ---
 name: wiki-build
 description: 构建/重建本地知识库的 Wiki。扫描 vault 中所有源文件，从中构建一个结构化的 wiki（源文件摘要、实体、概念、对比、概述页），创建分层 INDEX（根索引 + 各目录索引）/log/hot，密集交叉链接。支持超长源文件（百万字级小说等）：prep.mjs 确定性预处理 + 分层 digest 构建 + 断点续传。也能把旧单索引库的索引重构为分层布局。Triggers on: 构建 wiki, 重建 wiki, build wiki, 扫描源文件构建, 初始构建, 重新构建知识库, start wiki build, 重构索引, 索引分层, 索引迁移, restructure index.
-version: 1.9.0
+version: 2.0.0
 ---
 
 # wiki-build: 构建 Wiki
@@ -175,31 +175,23 @@ sources:
 - 关键发现：一句话概述
 ```
 
-## 超长源文件处理（prep.mjs 预处理 + 分层构建）
+## 超长源文件处理（prep + curation + 建页 + 对账）
 
-源文件若无法在一次上下文内通读（通读后还要留空间规划+生成+交叉链接），不能按"读全文→语义识别"抽取实体，必须走本节的管线：确定性预处理把机械活（转码、切章、频率普查）做完，LLM 只做语义工作（采样、取证、撰写、链接）。
+源文件若无法在一次上下文内通读（通读后还要留空间规划+生成+交叉链接），不能按"读全文→语义识别"抽取实体，必须走本节的管线：确定性预处理把机械活（转码、切章、频率普查）做完，agent 只做语义工作（curation 审核、取证、撰写、链接）。
 
 **判断超长**：`wc -c 源文件` > 1.5MB（约 50 万中文字），或 Read 工具一次读不完（默认上限 2000 行）。未超长的源文件直接通读建页，不必走本管线。
 
-### 步骤 0：断点检查（每次进入必做）
+### 步骤 0：断点检查 + 构建权（每次进入必做）
 
 ```bash
 ls .molio/wiki-build/ 2>/dev/null
 node "<skill_dir>/scripts/prep.mjs" status <源文件> --vault .
-```
-
-若该源文件已有 `progress-<x>.md` / `candidates-<x>.md`：这是**续传**——不要重跑 prep（除非源文件已变更），不要重置清单。**`status` 输出的 `missingRanges` 就是待办范围清单**（按 `digests/R###.md` 文件是否存在判定，不依赖复选框），只处理这些范围；candidates 只处理未勾选项。构建可能运行数小时，中断是常态，过程文件就是为续传设计的。
-
-### 步骤 0.5：构建权声明（防止双会话撞车）
-
-```bash
 node "<skill_dir>/scripts/build-lock.mjs" acquire "build-<x>-<日期>" --vault .
 ```
 
-- 同一 vault 一次只允许一个构建会话（两个会话会互相覆盖 digests/过程文件，车队过一小时才发现）。**label 用"build-<源文件主名>-<日期>"固定**，整个构建过程（含断开续传）都传同一 label。
-- 别的会话正在构建（异 label 锁）→ 脚本 exit 1 并报告谁在锁；不要抢，等对方 release 或确认其崩溃后 `--force` 接管。
-- 构建结束/放弃时：`node "<skill_dir>/scripts/build-lock.mjs" release "build-<x>-<日期>" --vault .`
-- label 是声明的所有权凭证，不是 PID——CLI 每次调用都是短命进程，PID 判活会把并发会话的锁误判为 stale 放行（这是 build-lock v1 的 bug）。
+- 若已有 `curation-<x>.tsv` / `batches/`：这是**续传**——不要重跑 prep/curation，直接从断点继续建页。
+- 同一 vault 一次只允许一个构建会话。label 用 "build-<源文件主名>-<日期>" 固定，整个构建过程（含断开续传）都传同一 label。异 label 锁 → exit 1，不要抢。
+- 构建结束时：`build-lock.mjs release "build-<x>-<日期>" --vault .`
 
 ### 步骤 1：预处理（确定性，零 LLM）
 
@@ -207,83 +199,94 @@ node "<skill_dir>/scripts/build-lock.mjs" acquire "build-<x>-<日期>" --vault .
 node "<skill_dir>/scripts/prep.mjs" <源文件> --vault . [--profile <name>] [--charset <编码>]
 ```
 
-- **profile 选择**：prep 自动检测（检测到章节结构会选 `novel` 并在 stderr warnings 注明）；你若通读源文件开头后判断不同（如它其实是访谈实录/史料），用 `--profile default` 覆盖。`novel` 提供章节分段 + 中文姓名普查 + 别名扫描；`default` 只做标题分段，不猜实体。自定义 profile 可放 `scripts/profiles/*.json`。
-- **编码**：GBK/Big5 等自动探测转码；若 warnings 报有损解码，用 `--charset` 指定后重跑。
-- 产物（`.molio/wiki-build/`，文件名取源文件主名）：
+- **profile 选择**：prep 自动检测（检测到章节结构会选 `novel` 并在 stderr warnings 注明）；你若通读源文件开头后判断不同（如它其实是访谈实录/史料），用 `--profile default` 覆盖。自定义 profile 可放 `scripts/profiles/*.json`。**注意**：若 prep 回退到 default 且 candidates 为 0，说明 profile 不匹配——必须定制 profile 而非继续。
+- **编码**：GBK/Big5 等自动探测转码；若 warnings 报有损解码或 PUA 字符，用 `--charset` 指定后重跑。
+- 产物（`.molio/wiki-build/`）：`transcode-<x>.txt`（行号稳定地址）、`segments-<x>.json`（分段+范围）、`census-<x>.json`（频率普查+别名线索）
 
-| 文件 | 内容 | 覆盖策略 |
-|---|---|---|
-| `transcode-<x>.txt` | UTF-8 + 行规范化副本（单行 dump 会被切回多行；章节标题独占一行）。**后续所有 grep/Read 的目标，行号是稳定地址** | 总是重生成 |
-| `segments-<x>.json` | 结构分段（章/节/标题）+ 处理范围（每范围 ~10 万字 = 一个 L1 subagent 批次），含行号区间 | 总是重生成 |
-| `census-<x>.json` | 一趟扫描的频率普查：top N 候选（带类别）、别名线索（X 又名 Y）、已排除的通用词 | 总是重生成 |
-| `candidates-<x>.md` | 候选清单（`- [ ] 名字 计数`，频率降序） | **已存在则不覆盖** |
-| `progress-<x>.md` | L1 范围清单 + 层级 TODO | **已存在则不覆盖** |
+### 步骤 2：L1 章节 digest（覆盖全文）
 
-- **建页必须从 candidates/census 取，不要靠记忆或训练知识列名单**——这是让"靠记忆"在结构上不可能的硬约束，记忆只会列出记得住的一小撮名字。census 里的噪音项直接打勾并注明跳过即可。
+每个处理范围（segments.json 的一个 range，≤15 万字）派一个 subagent，只 Read 自己范围的行号区间，输出 `digests/R###.md`（实体+定性+事件+行号+别名线索）。**digest 文件落地 = 该范围完成的唯一信号**。主 agent 不通读全文。
 
-### 步骤 2：分层构建
+### 步骤 3：curation（信息落点判据，脚本预填 + agent 审核）
 
-每层有独立完成条件。**目标层级**：超长源文件默认建到 L2；中途任何中断，已完成的层级都是可用产物（L1 完成即可支撑章节级问答）。
-
-**L0 结构索引** — prep.mjs 产物本身，零 LLM。
-
-**L1 章节 digest**（覆盖全文，O(总量)）：
-- 每个处理范围（segments.json 的一个 range，或相邻若干段，≤15 万字）派一个 **Task subagent**（范围多时可用 Workflow 工具批量编排后台执行）
-- subagent 只 Read 自己范围的行号区间（transcode 文件），输出 digest 文件 `.molio/wiki-build/digests/R###.md`：
-  - 实体：名字 + 一句话定性 + 首现行号
-  - 关键事件与关系（带行号）
-  - 别名线索（"X 又叫 Y"类证据）
-  - 值得引用的原文（带行号）
-- **digest 文件落地 = 该范围完成的唯一信号**（`prep.mjs status` 按 `digests/R###.md` 计数，机械可靠）；progress 复选框可顺手打勾但不是完成依据。每完成一批在 log.md 记一行
-- **主 agent 不通读全文，也不把全部 digest 读进自己的上下文**
-
-**L2 实体主表 + 建页**：
-- a) **合并去重（确定性，零 LLM）**：digest 可以按范围/10 份一批派 subagent 各自产出中间合并表，存为 `.molio/wiki-build/merge/M*.md`（格式：`- 规范名｜别名：…｜身份：…｜分布：R###…｜首现：L###`，分 `## 人物` / `## 地点物品结社` / `## 别名与存疑` 小节），然后**用 `merge-master.mjs` 确定性合并**为实体主表 `entity-master-persons.md` / `entity-master-others.md` / `entity-master-disputes.md`——跨切片归并、别名交叉归并、分布区间合并、首现行号取最小，**全是脚本逻辑，不靠 LLM**（LLM 合并长表是这次构建死亡次数最多的环节，见 .learnings）。语料特异的归并表（优先规范名、人工补并、歧义排除）放 `.molio/wiki-build/rules.json`，不写进代码。
-- a2) **冻结页面清单（链接的前提）**：依据主表按「建页粒度」对**每个**候选一次性做出三档决定（完整页/stub/不建页），写入 `.molio/wiki-build/page-manifest-<x>.md`；残余歧义进 `entity-master-disputes.md` 人工仲裁。随后 **`alias-table.mjs <x>` 确定性推导**别名表 `.molio/wiki-build/aliases-<x>.json`（`{"别名": "规范名"}`，只收唯一指向的别名，一个称呼对应多人的歧义别名自动剔除）。**清单即最终页面集合**：建页 subagent 只能链接清单内的名字，清单外的名字正文用纯文本。死链的根因是"链接写下时页面集合尚不存在"，冻结清单从结构上消除它。
-- a3) **G1 门禁（硬性，exit 1 中止）**：`node "<skill_dir>/scripts/checkoff.mjs" <x> gate-l2a --vault .`——校验 entity-master 三表非空、aliases 存在、master 覆盖 manifest 声明页面（>5% 缺失即 fail）。**不通过不得进入建页**。这是"产物不齐硬跑"的闸（M3 缺失下游空跑是这个坑）。
-- b) **建页 subagent（分批，数量以 batcher 输出为准）**：先 `node "<skill_dir>/scripts/batcher.mjs" <x> --vault .` 把 manifest 切成 8 完整页/30 stub 每批的批次清单。每个批次派一个 subagent，只读主表中该批条目 + 相关 digest 摘录 + 页面清单。**一个 subagent 只做一批，即读即写，不要预先规划多个批次**（预先规划全部批次会让思考 token + 写入内容合超 32k 输出上限，agent 死亡——这是本次构建死亡 4 次的根因）；prompt 里显式写"机械任务、不要长篇思考"。必要时按行号定点 `grep -nF` 取证补充。stub 档的条目也在这一步产出（一句话身份 + 关系链接）。**高频名（>200 次提及）取证封顶**：首现 + 章节标题命中 + 均匀采样（每 500 次取 1 条），总量 ≤30 条。草稿写到 `.molio/wiki-build/drafts/<实体>.md`，**不直接写 wiki/**。
-- c) **确定性安置**：全部草稿生成后，用 `node "<skill_dir>/scripts/place.mjs" <x> --vault .` 一次性安置 drafts/ → wiki/entities/ 并生成 entities/INDEX.md（摘要自动提取、物品/人物归类按 manifest 名单）。**G2 门禁**：`checkoff.mjs <x> gate-l2b`——manifest 声明页面在 wiki/ 中一一对应，缺失 exit 1。若中途打断，续传只需重跑 place（幂等）。**禁止等全部草稿生成完再手动安置**——place 就是要避免 179 个草稿手动逐个挪的机械活。
-
-**L3 长尾**：**会被链接到的**低频候选必须当次至少建 stub 页（死链门禁要求，见"链接对账"）；从不被链接的低频名字可遗留，在 progress 里留 TODO，留给后续 ingest/query 按需补建。**目标层级必须当次完成**，不要停在"已建够"的错觉上。
-
-**后台执行的汇报纪律（重要）**：
-- 用 Workflow/后台 subagent 执行 L1 时，汇报**只说你已启动什么 + 用户如何查进度**（"`prep.mjs status` 或问我当前进度"），不要引用运行时不存在的界面能力（`/workflows` 是 Claude Code REPL 专属命令，Molio 对话面板里没有）
-- **不要承诺"自动接续下一步"**——后台任务完成后能否自动唤醒下一轮取决于运行时；告诉用户"如果长时间没有动静，发任意消息或重新说'构建 wiki'即可从断点续传"
-- 汇报内容必须基于已核实的事实（先 ls 确认产物在写入），不要预报尚未发生的完成
-- **收尾汇报硬规则**：汇报"INDEX/log/hot 已写好""过程文件已清理"等任何完成状态之前，必须先用 `ls`/`find` 实际核验（文件确实存在、非空、时间戳是本次写入）；页面数、分类数等数字必须取自当场 `find wiki -name '*.md' | wc -l` 之类统计的实时输出——**禁止凭记忆报数，更禁止复用别的库或上次构建的数字**。报过"已写好"而文件不在、报过"已清理"而文件还在，是本 skill 最严重的失信行为
-
-### 步骤 3：完成自检（硬性，机械判定）
+这是整条管线的**核心决策环节**——决定建哪些页、什么类型、怎么分批。
 
 ```bash
-node "<skill_dir>/scripts/prep.mjs" status <源文件> --vault .
+# 3a. 脚本预填：census → 草稿 TSV（机械映射，零 LLM）
+node "<skill_dir>/scripts/curate.mjs" draft <x> --vault .
+
+# 3b. agent 审核草稿：按「建页粒度」判据筛选、分组、标注页类
+#     产出: curation-<x>.tsv（审核后的最终版）
+
+# 3c. 脚本分批：校验格式 + 按 # cat= 分组 + 单批超 15 条自动拆分
+node "<skill_dir>/scripts/curate.mjs" split <x> --vault .
 ```
 
-- `rangesDone` 按 `digests/R###.md` 文件计数（机械事实，不看复选框）；`missingRanges` 直接给出待办范围
-- L2 达标 = `rangesDone == rangesTotal` 且 candidates 全部打勾（`complete: true`）
-- L1 达标 = `rangesDone == rangesTotal`
-- **孤儿 stub 审计（soft 报告，不阻塞）**：`node "<skill_dir>/scripts/orphan-audit.mjs" --vault .`——对 stub 页统计"非结构页入度"（排除 INDEX/log/hot 的枚举链接）。入度=0 的 stub = 建了但没人引用，多半是背景语误建页——列出清单，人工确认后删页并从 INDEX/相关链接中移除（或降级为纯文本）。**不能自动删除**：可能来自还没链接完的半成品。
-- 未达标 → 继续处理 `missingRanges` 里的范围/未勾选候选，不要自判"差不多了"
+**批次 TSV 格式**（制表符分隔，每行 5 列）：
+```
+# cat=<类别标签>
+名字	定性	别名: X/Y/Z	证据行号: N,N,N	页类: entity|concept
+```
 
-### 步骤 4：引用抽查（防幻觉，确定性零 LLM）
+**agent 审核时做什么**（脚本做不了的语义判断）：
+- 按「建页粒度」的信息落点判据筛选：删噪音、删背景挂点、保留有引用需求的
+- 按主题分组（`# cat=帝系` / `# cat=概念与制度页` 等）——**批次即类型标签**
+- 每行标注 `页类: entity` 或 `页类: concept`
+- 补全别名（从 census.aliasHints / digest 中认领）
+- 补全证据行号（代表性行号，不是全量）
+
+**脚本预填做什么**（机械部分，agent 不需花 token）：
+- 按 count 排序、过滤低频噪音
+- 预填唯一匹配的别名
+- 预填证据行号（census 有则填，无则留空）
+
+**批次规模**：留白为主（按主题自然分组），脚本兜底（单批超 15 条自动拆分）。
+
+### 步骤 4：建页（每批一个 subagent）
+
+每个批次派一个 subagent，读批次 TSV 该批行 + transcode 取证 → 写 `drafts/<名字>.md`。
+
+- **一个 subagent 只做一批，即读即写**，不要预先规划多个批次（防 32k 输出上限）
+- prompt 按 `页类` 给模板：concept 页写综合论述，entity 页写身份+事件+关系
+- 建页 agent 只能链接**批次 TSV 里出现的名字**（白名单），清单外用纯文本
+- 高频名取证封顶：首现 + 均匀采样，总量 ≤30 条
+- **并发 ≤5-6 个 subagent**（防 API 429 限流）；完成度以磁盘落盘为准，不信通知
+
+### 步骤 5：安置（确定性，零 LLM）
+
+```bash
+node "<skill_dir>/scripts/place.mjs" <x> --vault .
+```
+
+- 按批次 TSV 的 `页类` 列分发：entity → `wiki/entities/`，concept → `wiki/concepts/`
+- 生成/更新对应目录的 INDEX.md（摘要自动提取）
+- 幂等可重跑；中途打断后续传只需重跑 place
+
+### 步骤 6：链接对账（硬性门禁，exit 0 才算通过）
+
+```bash
+node "<skill_dir>/scripts/linkpass.mjs" --vault . --batches .molio/wiki-build/batches
+node "<skill_dir>/scripts/deadcheck.mjs" --vault .
+```
+
+- `linkpass --batches`：从批次 TSV 的别名列读取别名映射，把每个页面名/别名在其他页面正文中的首次出现包成 `[[ ]]`。**庙号/别名死链在这一步自动消解**（如"项王"→`[[项羽|项王]]`）
+- `deadcheck`：exit 0 才算通过。有死链 → 补页或改写链接，重跑直至 exit 0
+
+### 步骤 7：引文核验（确定性，零 LLM）
 
 ```bash
 node "<skill_dir>/scripts/sweep.mjs" <x> --vault .
 ```
 
-- `sweep` 对 wiki/ 下**全部页面**批量跑 `prep.mjs verify`（逐字节比对 transcode 原文），汇总 `failures`（页面 + 失准引文）。`missing` 非空 → 引文是编造或转述失准。
-- **修复用 `repair.mjs`，不要把修复只做进 wiki/**：经验教训是"只改 wiki/ 不改 drafts/，安置脚本一重跑修复就被覆盖"。把[页面路径, 旧串, 新串]写进 `.molio/wiki-build/rules.json` 的 `repair.repl`（无据引文进 `repair.dequote` 去引号转叙述）——repair 会**同时**修正 wiki/ 与 drafts/，且 scripts/drafts 双份保持一致。
-- verify 的判定是**逐字节严格**；建页时全角/半角标点转写（原文 `？` → ASCII `?`）、标题点缀、`[[链接]]` 混入引文都会触发 missing——用 `repair.mjs` 修复后重跑 `sweep` 确认归零。
+- 全量 verify + **missing 分类**：`wikilink`（链接误报）/ `blockquote`（整行提取噪音）/ `pua`（转码差异）/ `real`（真错）
+- **只修 `real` 类**：写进 `rules.json` 的 `repair.repl`，跑 `repair.mjs` 双份修复（wiki + drafts）
+- 其他三类是机械噪音，不需要修
 
-### 步骤 5：链接对账（死链/漏链，确定性零 LLM，硬性门禁）
+### 收尾
 
-```bash
-node "<skill_dir>/scripts/linkpass.mjs" --vault . --aliases .molio/wiki-build/aliases-<x>.json
-node "<skill_dir>/scripts/deadcheck.mjs" --vault .
-```
-
-- `linkpass` 补漏链：把每个页面（含别名）在其他页面正文中的**首次出现**包成 `[[ ]]`，幂等可重跑。图谱的边集由此确定，不再依赖"模型写某句话时是否记得打双括号"。引文（「」引号内）、代码块、H1 标题、已有链接一律不碰——引文保持逐字节原样，`prep.mjs verify` 仍可复验
-- `deadcheck` 死链门禁：**exit 0 才算对账通过**。有死链 → 构建不得汇报完成：为死链目标补 stub 页（首选），或把链接改写为并入页/纯文本，重跑直至 exit 0
-- 别名 json 缺失或某个别名对应页面不存在时自动跳过并警告，不中断
+- 创建/更新根 INDEX.md + log.md + hot.md
+- `build-lock.mjs release`
+- 汇报（页面数必须用 `find wiki -name '*.md' | wc -l` 实时统计，禁止凭记忆报数）
 
 多源文件场景：每个源文件各一套过程文件，逐个走完整管线；链接对账是全库级的，所有源文件安置完后跑一次即可。
 

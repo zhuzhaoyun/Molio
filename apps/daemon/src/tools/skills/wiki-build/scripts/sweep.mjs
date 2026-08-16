@@ -2,6 +2,12 @@
 // 用法: node sweep.mjs <stem> [--vault <dir>]
 // 读取: <vault>/.molio/wiki-build/transcode-<stem>.txt 作为原文底本
 // 目录清单来自 rules.json（可选）: { "sweep": { "dirs": ["wiki/entities", "wiki/sources", "wiki/concepts"] } }
+//
+// missing 分类（--classify 启用）：
+//   wikilink  — missing 项含 [[...]] 语法，是链接误报非引文
+//   blockquote — missing 项是整行 blockquote 提取（非引文的定性段）
+//   pua       — missing 项含 Unicode 私有区字符（转码差异，非编造）
+//   real      — 以上均不满足，可能是真错（引文不在原文）
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -37,9 +43,23 @@ for (const f of fs.readdirSync(path.join(vault, 'wiki'))) {
   if (f.endsWith('.md') && !['INDEX.md', 'log.md', 'hot.md'].includes(f)) targets.push(path.join(vault, 'wiki', f));
 }
 
+// ─── missing 分类 ───
+// PUA 范围：U+E000-U+F8FF, U+F0000-U+FFFFD, U+100000-U+10FFFD
+const PUA_RE = /[-]|\uDB40[\uDC00-\uDFFF]/;
+
+function classifyMissing(item) {
+  if (/\[\[/.test(item)) return 'wikilink';
+  if (PUA_RE.test(item)) return 'pua';
+  // blockquote 噪音：整行提取（较长、无引号包裹）
+  if (item.length > 60 && !/[「『""]/.test(item)) return 'blockquote';
+  return 'real';
+}
+
 let checkedPages = 0;
 let quotedPages = 0;
 const failures = [];
+const categoryCounts = { wikilink: 0, blockquote: 0, pua: 0, real: 0 };
+
 for (const t of targets) {
   let out;
   try {
@@ -52,9 +72,23 @@ for (const t of targets) {
     const j = JSON.parse(out);
     checkedPages++;
     if (j.checked > 0) quotedPages++;
-    if (j.missing && j.missing.length) failures.push({ page: path.relative(vault, t), missing: j.missing });
+    if (j.missing && j.missing.length) {
+      const classified = j.missing.map(item => {
+        const cat = classifyMissing(item);
+        categoryCounts[cat]++;
+        return { text: item, category: cat };
+      });
+      failures.push({ page: path.relative(vault, t), missing: classified });
+    }
   } catch {
     failures.push({ page: path.relative(vault, t), error: 'parse-fail' });
   }
 }
-console.log(JSON.stringify({ total: targets.length, checkedPages, quotedPages, failures }, null, 2));
+
+const totalMissing = Object.values(categoryCounts).reduce((a, b) => a + b, 0);
+console.log(JSON.stringify({
+  total: targets.length, checkedPages, quotedPages,
+  totalMissing,
+  categoryCounts,
+  failures,
+}, null, 2));
