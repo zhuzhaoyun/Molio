@@ -231,7 +231,7 @@ export function KbChatSession({
     }
     const isFirstTurn = chat.conversationId == null;
     const wrapped = session.mode === 'qa' && isFirstTurn ? WIKI_QUERY_TRIGGER(message) : message;
-    sendRef.current(wrapped);
+    sendRef.current(wrapped, { queueIfRunning: true });
   }, [selectedText, onSelectedTextConsumed, t, session.mode, chat.conversationId]);
 
   const contextLabel =
