@@ -435,9 +435,11 @@ export function useChatCore(options: UseChatCoreOptions) {
 
     // Build history for transcript — everything except THIS turn's user +
     // assistant messages (the user message is the `message` prompt; the
-    // assistant message is empty/streaming).
+    // assistant message is empty/streaming). Still-queued messages (queued:
+    // true, not yet dispatched) are excluded too so the agent doesn't answer
+    // them prematurely before their own turn.
     const history = optimisticMessages
-      .filter((m) => (m.role === 'user' || m.role === 'assistant') && m.id !== userMsgId && m.id !== assistantMsg.id)
+      .filter((m) => (m.role === 'user' || m.role === 'assistant') && m.id !== userMsgId && m.id !== assistantMsg.id && !m.queued)
       .map((m) => ({
         id: m.id,
         role: m.role as 'user' | 'assistant',
@@ -678,9 +680,10 @@ export function useChatCore(options: UseChatCoreOptions) {
     // 同步更新 stateRef：调用方（clearAndSend 中断路径）可能在同一事件循环里紧跟 send()，
     // 必须让 send 读到「已取消、runId 已清」的最新状态。
     const prev = stateRef.current;
-    const messages = prev.messages.map((msg) =>
-      msg.streaming ? { ...msg, streaming: false } : msg
-    );
+    // 排队消息作废（设计 §6）：停止时把 queued 消息一并从会话移除，避免残留「排队中」徽标。
+    const messages = prev.messages
+      .filter((msg) => !msg.queued)
+      .map((msg) => (msg.streaming ? { ...msg, streaming: false } : msg));
     const next = { ...prev, messages, isRunning: false, runId: null, runAgentId: null, activity: null, pendingQueue: [] };
     stateRef.current = next;
     setState(next);
