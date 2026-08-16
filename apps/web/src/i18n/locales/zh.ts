@@ -506,6 +506,7 @@ const zh: Record<string, string> = {
 
   // ── UserMessage ──
   'userMessage.viewOriginal': '查看原图',
+  'userMessage.queued': '排队中',
 
   // ── HomePage ──
   'home.fileContextFallback': '请根据以上内容帮我分析。',

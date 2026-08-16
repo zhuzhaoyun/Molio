@@ -506,6 +506,7 @@ const en: Record<string, string> = {
 
   // ── UserMessage ──
   'userMessage.viewOriginal': 'View original',
+  'userMessage.queued': 'Queued',
 
   // ── HomePage ──
   'home.fileContextFallback': 'Please analyze the above content.',
