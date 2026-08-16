@@ -8,7 +8,7 @@
  * and an optional `rewindResend` for regenerating/editing the last user turn.
  */
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import type { AgentEvent, ActivityInfo } from '@molio/contracts';
 import { api } from '../api/client';
 import { subscribeToRun } from '../api/sse';
@@ -43,6 +43,15 @@ export interface ChatMessage {
    *  Kept separate from `content` so saved messages don't carry an "Error:"
    *  prefix — the UI renders this as a distinct banner above the prose. */
   error?: string;
+  /** Frontend-only queue marker — the message is waiting for the current turn
+   *  to end before dispatch. Never sent to the daemon, never persisted. */
+  queued?: boolean;
+}
+
+/** A message queued while a reply is running (see `send` + drain effect). */
+export interface QueuedMessage {
+  id: string;
+  text: string;
 }
 
 interface ChatState {
@@ -58,6 +67,8 @@ interface ChatState {
    * Workflow keeps running — this is what keeps the UI alive in that gap.
    */
   activity: ActivityInfo | null;
+  /** Messages queued while isRunning — drained one per turn-end. */
+  pendingQueue: QueuedMessage[];
 }
 
 export interface RunResult {
@@ -123,6 +134,7 @@ export function useChatCore(options: UseChatCoreOptions) {
     isRunning: false,
     conversationId: initialConversationId,
     activity: null,
+    pendingQueue: [],
   });
 
   // 最新已提交 state 的 ref（每次渲染同步）。事件处理器里读「当前状态」必须走它，而不是渲染闭包——
@@ -386,49 +398,30 @@ export function useChatCore(options: UseChatCoreOptions) {
   }, [agentId, onComplete, clearFallbackTimer, clearWatchdog, armWatchdog, resetFallbackTimer]);
 
   /**
-   * Send a message — tries multi-turn on existing run first, falls back to createRun.
+   * Dispatch a message to the agent — the shared core for both a normal send
+   * and a drained queued message. Tries multi-turn on the existing run first,
+   * falls back to createRun. `optimisticMessages` is the full message list
+   * AFTER this turn's user+assistant messages are in place (attachRun replaces
+   * `messages` with it); its user/assistant members (minus this turn's own
+   * user + assistant messages) form the transcript sent to the daemon.
    */
-  const send = useCallback(async (text: string) => {
-    if (!text.trim()) return;
-
-    const userMsg: ChatMessage = {
-      id: nextMsgId(),
-      role: 'user',
-      content: text.trim(),
-      timestamp: Date.now(),
-    };
-
-    const newAssistantId = nextMsgId();
-    assistantIdRef.current = newAssistantId;
-
-    const assistantMsg: ChatMessage = {
-      id: newAssistantId,
-      role: 'assistant',
-      content: '',
-      timestamp: Date.now(),
-      streaming: true,
-      tools: [],
-    };
+  const dispatchTurn = useCallback(async (
+    text: string,
+    userMsgId: string,
+    assistantMsg: ChatMessage,
+    optimisticMessages: ChatMessage[],
+  ) => {
+    // Route incoming SSE events to the new assistant message.
+    assistantIdRef.current = assistantMsg.id;
 
     // 读最新已提交 state（stateRef 而非渲染闭包）：clear()/cancel() 在同一微任务里同步改过
     // stateRef 后，紧跟的 send() 必须看到清空后的 messages/conversationId（D3 清标签语义）。
     const cur = stateRef.current;
-    const prevMessages = cur.messages;
-
-    setState((prev) => ({
-      ...prev,
-      messages: [...prev.messages, userMsg, assistantMsg],
-      isRunning: true,
-    }));
-
-    // Try multi-turn on existing run — but only if the agent hasn't changed.
-    // When the user switches runtime (e.g. Claude → Qwen), the existing run
-    // belongs to the old agent; sending a follow-up would go to the wrong process.
     const existingRunId = cur.runId;
     const agentChanged = agentId != null && cur.runAgentId != null && agentId !== cur.runAgentId;
     if (existingRunId && !agentChanged) {
       try {
-        await api.sendMessage(existingRunId, text.trim());
+        await api.sendMessage(existingRunId, text);
         // Multi-turn reuses the existing SSE subscription, which does NOT
         // re-arm the fallback timer (attachRun isn't called). Re-arm here so
         // a hung follow-up turn still force-unlocks instead of spinning
@@ -440,9 +433,11 @@ export function useChatCore(options: UseChatCoreOptions) {
       }
     }
 
-    // Build history for transcript
-    const history = prevMessages
-      .filter((m) => m.role === 'user' || m.role === 'assistant')
+    // Build history for transcript — everything except THIS turn's user +
+    // assistant messages (the user message is the `message` prompt; the
+    // assistant message is empty/streaming).
+    const history = optimisticMessages
+      .filter((m) => (m.role === 'user' || m.role === 'assistant') && m.id !== userMsgId && m.id !== assistantMsg.id)
       .map((m) => ({
         id: m.id,
         role: m.role as 'user' | 'assistant',
@@ -463,14 +458,13 @@ export function useChatCore(options: UseChatCoreOptions) {
 
     try {
       const result = await createRun({
-        message: text.trim(),
+        message: text,
         history,
         conversationId: cur.conversationId,
       });
-
-      await attachRun(result.runId, result.conversationId ?? cur.conversationId, newAssistantId, [...prevMessages, userMsg, assistantMsg]);
+      await attachRun(result.runId, result.conversationId ?? cur.conversationId, assistantMsg.id, optimisticMessages);
     } catch (err) {
-      const errId = newAssistantId;
+      const errId = assistantMsg.id;
       setState((prev) => {
         const messages = prev.messages.map((msg) =>
           msg.id === errId
@@ -480,7 +474,92 @@ export function useChatCore(options: UseChatCoreOptions) {
         return { ...prev, messages, isRunning: false };
       });
     }
-  }, [closeEventSource, createRun, agentId, onComplete, attachRun, resetFallbackTimer]);
+  }, [agentId, closeEventSource, createRun, attachRun, resetFallbackTimer]);
+
+  /**
+   * Send a message. With `{ queueIfRunning: true }`, a send while `isRunning`
+   * queues the message (appears immediately with `queued: true`, dispatched by
+   * the drain effect after the current turn ends) instead of interleaving.
+   * All other callers (form submit, "继续", wiki auto-send) keep the flag off —
+   * they must reach the agent immediately.
+   */
+  const send = useCallback(async (text: string, opts?: { queueIfRunning?: boolean }) => {
+    if (!text.trim()) return;
+    const trimmed = text.trim();
+    const cur = stateRef.current;
+
+    // 排队路径：回复进行中发送 → 乐观 user 消息立即上屏 + 标记 queued，等 turn 结束再下发。
+    if (opts?.queueIfRunning && cur.isRunning) {
+      const userMsg: ChatMessage = {
+        id: nextMsgId(),
+        role: 'user',
+        content: trimmed,
+        timestamp: Date.now(),
+        queued: true,
+      };
+      setState((prev) => ({
+        ...prev,
+        messages: [...prev.messages, userMsg],
+        pendingQueue: [...prev.pendingQueue, { id: userMsg.id, text: trimmed }],
+      }));
+      return;
+    }
+
+    const userMsg: ChatMessage = {
+      id: nextMsgId(),
+      role: 'user',
+      content: trimmed,
+      timestamp: Date.now(),
+    };
+    const assistantMsg: ChatMessage = {
+      id: nextMsgId(),
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now(),
+      streaming: true,
+      tools: [],
+    };
+
+    setState((prev) => ({
+      ...prev,
+      messages: [...prev.messages, userMsg, assistantMsg],
+      isRunning: true,
+    }));
+
+    await dispatchTurn(trimmed, userMsg.id, assistantMsg, [...cur.messages, userMsg, assistantMsg]);
+  }, [dispatchTurn]);
+
+  // 排队 drain：当前 turn 结束后（isRunning → false）按序下发 pendingQueue 中的消息。
+  // 任何解锁路径（turn_end / usage / status completed / onDone / fallback）都会触发。
+  // drain 后立即 isRunning=true，effect 不会对同一条重复处理；多条排队逐 turn 下发；
+  // 下发失败（createRun 抛错）→ 标 error、isRunning=false → 继续 drain 下一条。
+  useEffect(() => {
+    if (stateRef.current.isRunning) return;
+    const first = stateRef.current.pendingQueue[0];
+    if (!first) return;
+
+    const assistantMsg: ChatMessage = {
+      id: nextMsgId(),
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now(),
+      streaming: true,
+      tools: [],
+    };
+    // 去掉该用户消息的 queued 标记（徽标消失）并追加本条 assistant 消息。
+    const messages = stateRef.current.messages.map((m) =>
+      m.id === first.id ? { ...m, queued: false } : m
+    );
+    const optimistic = [...messages, assistantMsg];
+    setState((prev) => ({
+      ...prev,
+      pendingQueue: prev.pendingQueue.slice(1),
+      messages: optimistic,
+      isRunning: true,
+    }));
+    void dispatchTurn(first.text, first.id, assistantMsg, optimistic);
+    // 依赖用响应式 state（触发 effect），body 读 stateRef（最新已提交），两者在 effect 运行时恒等。
+  }, [state.isRunning, state.pendingQueue, dispatchTurn]);
 
   const rewindAndResend = useCallback(async (newContent: string) => {
     if (!rewindResend) return;
@@ -602,7 +681,7 @@ export function useChatCore(options: UseChatCoreOptions) {
     const messages = prev.messages.map((msg) =>
       msg.streaming ? { ...msg, streaming: false } : msg
     );
-    const next = { ...prev, messages, isRunning: false, runId: null, runAgentId: null, activity: null };
+    const next = { ...prev, messages, isRunning: false, runId: null, runAgentId: null, activity: null, pendingQueue: [] };
     stateRef.current = next;
     setState(next);
   }, [closeEventSource]);
@@ -611,7 +690,7 @@ export function useChatCore(options: UseChatCoreOptions) {
     closeEventSource();
     assistantIdRef.current = null;
     messageSelectionStore.exit();
-    const next = { messages: [], runId: null, runAgentId: null, isRunning: false, conversationId: null, activity: null };
+    const next = { messages: [], runId: null, runAgentId: null, isRunning: false, conversationId: null, activity: null, pendingQueue: [] };
     stateRef.current = next;
     setState(next);
   }, [closeEventSource]);
@@ -631,6 +710,7 @@ export function useChatCore(options: UseChatCoreOptions) {
       isRunning: false,
       conversationId: conversationId ?? null,
       activity: null,
+      pendingQueue: [],
     };
     stateRef.current = next;
     setState(next);
