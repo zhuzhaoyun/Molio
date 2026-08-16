@@ -15,7 +15,7 @@ interface ModalState {
 
 /**
  * A single skill row: toggle, name/description, duplicate, edit, delete.
- * Only user-managed (library) skills are listed — bundled/core skills are
+ * Only user-managed (library) skills are listed — bundled skills are
  * app-owned, hidden by the API, and always effective.
  */
 function SkillRow({
