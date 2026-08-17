@@ -73,6 +73,7 @@ export type {
   RefreshRequest,
   RefreshResponse,
   MeResponse,
+  UpdateMeRequest,
   SessionDeleteResponse,
   AccountDeleteResponse,
 } from './auth.js';

@@ -8,6 +8,11 @@ export interface User {
   id: string;
   /** 小写归一化邮箱 */
   email: string;
+  /**
+   * 显示昵称（隐式注册时云端自动生成「墨友xxxx」，可经 PATCH /auth/me 修改）。
+   * 可选：旧 token 文件 / 旧快照可能不含该字段，消费方一律 `nickname || email` 兜底。
+   */
+  nickname?: string;
   /** ISO 8601 */
   createdAt: string;
 }
@@ -97,6 +102,15 @@ export interface RefreshResponse extends TokenPair {}
 export interface MeResponse {
   user: User;
   entitlement: Entitlement;
+}
+
+/**
+ * PATCH /auth/me（修改当前用户资料）请求。
+ * 第一期只有 nickname 一个可写字段；不支持清空（空串/纯空白回 invalid_nickname）。
+ * 响应复用 MeResponse——调用方一次拿到最新 user + entitlement，省一次 GET。
+ */
+export interface UpdateMeRequest {
+  nickname: string;
 }
 
 /** DELETE /auth/session（本机登出：吊销当前设备 session）成功响应。 */
