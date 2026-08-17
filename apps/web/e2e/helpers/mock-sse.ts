@@ -81,6 +81,11 @@ export interface MockRunOptions {
   /** 已持久化的会话历史消息（DB 加载 / 重挂载恢复用）。默认 [] —— 避免真实 daemon
    *  对未知 conv 404 → onLoadError 关标签。响应结构对齐 daemon：`{ messages: [...] }`。 */
   persistedMessages?: Array<{ id: string; role: 'user' | 'assistant'; content: string; timestamp: number }>;
+  /** Turn scripts streamed over the SAME SSE connection, one per drained queued
+   *  message, in drain order. Only supported with `frameDelay` set (needs a live
+   *  streaming server). Each element is a full turn script (status running →
+   *  text_delta… → turn_end → usage). */
+  secondTurnScripts?: Array<readonly object[]>;
 }
 
 // ── Main mock function ─────────────────────────────────────────────────
@@ -100,6 +105,22 @@ export async function mockChatRun(page: Page, opts: MockRunOptions = {}) {
   const runId = opts.runId ?? 'test-run-1';
   const convId = opts.conversationId ?? 'test-conv-1';
   const script = opts.script ?? SCRIPTS.simpleTextReply;
+
+  // Multi-turn POST signaling for secondTurnScripts: the SSE server streams each
+  // second-turn script only after the corresponding queued-message POST arrives
+  // (a POST may land BEFORE the primary script finishes — buffer it, don't lose it).
+  let pendingPosts: string[] = [];
+  const postWaiters: Array<() => void> = [];
+  function onMultiTurnPost(text: string) {
+    pendingPosts.push(text);
+    postWaiters.splice(0).forEach((r) => r());
+  }
+  async function waitForNthPost(n: number): Promise<string> {
+    while (pendingPosts.length <= n) {
+      await new Promise<void>((r) => postWaiters.push(r));
+    }
+    return pendingPosts[n]!;
+  }
 
   // 1) POST /api/runs → return { runId, conversationId }
   await page.route('**/api/runs', async (route) => {
@@ -154,9 +175,24 @@ export async function mockChatRun(page: Page, opts: MockRunOptions = {}) {
         socket.on('close', () => connections.delete(socket));
       }
       (async () => {
-        for (let i = 0; i < script.length; i++) {
-          res.write(sseFrame(i + 1, runId, script[i]!));
-          await new Promise((r) => setTimeout(r, opts.frameDelay));
+        // Monotonic seq across ALL scripts on this one connection — the real
+        // daemon numbers a run's events continuously, so a second turn starts
+        // at seq N+1, not 1.
+        let seq = 0;
+        const streamScript = async (turn: readonly object[]) => {
+          for (const evt of turn) {
+            seq += 1;
+            res.write(sseFrame(seq, runId, evt));
+            await new Promise((r) => setTimeout(r, opts.frameDelay));
+          }
+        };
+        await streamScript(script);
+        // Stream the drained turns over the SAME connection — one per queued
+        // message, in drain order, each gated on its POST arriving. If no POST
+        // ever arrives the connection stays open and the test times out.
+        for (let t = 0; t < (opts.secondTurnScripts?.length ?? 0); t++) {
+          await waitForNthPost(t);
+          await streamScript(opts.secondTurnScripts![t]!);
         }
         res.end();
       })();
@@ -190,6 +226,13 @@ export async function mockChatRun(page: Page, opts: MockRunOptions = {}) {
   // 3) POST /api/runs/:id/messages → multi-turn follow-up
   if (opts.multiTurn !== false) {
     await page.route(`**/api/runs/${runId}/messages`, async (route) => {
+      // With secondTurnScripts, signal the SSE server that this queued message
+      // was dispatched, so it can stream the corresponding turn over the same
+      // connection. Body is `{ message: "<text>" }` (matches api.sendMessage).
+      if (opts.secondTurnScripts && route.request().method() === 'POST') {
+        const body = JSON.parse(route.request().postData() || '{}');
+        onMultiTurnPost(typeof body.message === 'string' ? body.message : '');
+      }
       await route.fulfill({
         status: 200,
         contentType: 'application/json',

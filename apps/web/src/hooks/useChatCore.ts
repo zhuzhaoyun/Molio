@@ -560,7 +560,8 @@ export function useChatCore(options: UseChatCoreOptions) {
       isRunning: true,
     }));
     void dispatchTurn(first.text, first.id, assistantMsg, optimistic);
-    // 依赖用响应式 state（触发 effect），body 读 stateRef（最新已提交），两者在 effect 运行时恒等。
+    // 依赖用响应式 state 触发 effect；body 读 stateRef.current（与渲染闭包在 effect 运行时等价的已提交 state）。
+    // 排队是纯前端语义：cancel/reset/setMessages 会清空 pendingQueue 并作废 queued 气泡（见 §6 设计）。
   }, [state.isRunning, state.pendingQueue, dispatchTurn]);
 
   const rewindAndResend = useCallback(async (newContent: string) => {
@@ -577,7 +578,9 @@ export function useChatCore(options: UseChatCoreOptions) {
     })();
     if (lastUserIdx < 0) return;
 
-    const prevMessages = state.messages.slice(0, lastUserIdx); // everything before last user msg
+    const prevMessages = state.messages
+      .slice(0, lastUserIdx) // everything before last user msg
+      .map((m) => (m.queued ? { ...m, queued: false } : m)); // 重发丢弃尾部 → 残余 queued 气泡作废
     const newUserMsg: ChatMessage = {
       id: nextMsgId(),
       role: 'user',
@@ -597,18 +600,25 @@ export function useChatCore(options: UseChatCoreOptions) {
 
     closeEventSource();
 
+    // 重发丢弃消息尾部，排队消息必须随之作废 —— 同步清空队列（写 stateRef + setState，
+    // 与 cancel/reset 一致），避免残留 queued 消息在重发后 ghost drain。
+    const cleared = { ...stateRef.current, pendingQueue: [] };
+    stateRef.current = cleared;
+    setState((prev) => ({ ...prev, pendingQueue: [] }));
+
     try {
       const result = await rewindResend({ conversationId: convId, newContent: newContent.trim() });
       await attachRun(result.runId, result.conversationId ?? convId, newAssistantId, [...prevMessages, newUserMsg, newAssistantMsg]);
     } catch (err) {
       setState((prev) => ({
         ...prev,
-        messages: [...prev.messages, {
+        // 队列已清空，但残余 queued 气泡仍需摘掉徽标，避免 stale badge 残留。
+        messages: prev.messages.map((m) => (m.queued ? { ...m, queued: false } : m)).concat([{
           id: nextMsgId(),
           role: 'error',
           content: `Error: ${(err as Error).message}`,
           timestamp: Date.now(),
-        } as ChatMessage],
+        } as ChatMessage]),
         isRunning: false,
       }));
     }
@@ -625,7 +635,7 @@ export function useChatCore(options: UseChatCoreOptions) {
   const resumeRun = useCallback((opts: { runId: string }) => {
     const msgs = stateRef.current.messages;
     const last = msgs[msgs.length - 1];
-    if (!last || last.role !== 'user') return; // 本轮已结束并持久化 → 恢复会重复
+    if (!last || last.role !== 'user' || last.queued) return; // queued 消息尚未进入回复，跳过恢复
     const newAssistantId = nextMsgId();
     const assistantMsg: ChatMessage = {
       id: newAssistantId,
@@ -728,6 +738,7 @@ export function useChatCore(options: UseChatCoreOptions) {
       setState((prev) => ({
         ...prev,
         messages: prev.messages.filter((m) => !ids.includes(m.id)),
+        pendingQueue: prev.pendingQueue.filter((q) => !ids.includes(q.id)),
       }));
     } catch (err) {
       setState((prev) => ({
@@ -832,6 +843,9 @@ function updateWithEvent(
       }
 
       case 'usage':
+        // 排队 drain 后，上一轮的尾随 usage（本气泡已在流式回复）不属于这个 turn ——
+        // 既不能盖到新气泡上，也不能触发解锁（否则 isRunning 提前回 false → 多条排队乱序下发）。
+        if (msg.streaming) return msg;
         return clearRepairing({
           ...msg,
           usage: {
@@ -865,7 +879,11 @@ function updateWithEvent(
   }
 
   if (event.type === 'usage') {
-    isRunning = false;
+    const target = messages.find((m) => m.id === assistantId);
+    // 上一轮尾随 usage 落到「正在流式回复」的新气泡 → 忽略，不提前解锁。
+    if (target && !target.streaming) {
+      isRunning = false;
+    }
   }
 
   if (event.type === 'status' && (event.label === 'completed' || event.label === 'failed')) {

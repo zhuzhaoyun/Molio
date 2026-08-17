@@ -193,6 +193,7 @@ export default function App() {
                   isRunning={chat.isRunning}
                   activity={chat.activity}
                   onSend={(message) => chat.send(message, { queueIfRunning: true })}
+                  onSubmitForm={(text) => chat.send(text)}
                   onCancel={chat.cancel}
                   onNewChat={handleNewChat}
                   onSubmitToolResult={chat.submitToolResult}
