@@ -23,7 +23,8 @@ const zh: Record<string, string> = {
 
   // ── ChatComposer ──
   'composer.noAgent': '没有可用的代理',
-  'composer.waiting': '等待回复…',
+  'composer.queuePlaceholder': '回复中，发送将排入队列',
+  'composer.queueTooltip': '回复完成后发送',
   'composer.placeholder': '输入消息…',
   'composer.stop': '停止',
   'composer.send': '发送',
@@ -504,6 +505,7 @@ const zh: Record<string, string> = {
 
   // ── UserMessage ──
   'userMessage.viewOriginal': '查看原图',
+  'userMessage.queued': '排队中',
 
   // ── HomePage ──
   'home.fileContextFallback': '请根据以上内容帮我分析。',

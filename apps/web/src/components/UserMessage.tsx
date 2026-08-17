@@ -141,6 +141,12 @@ export function UserMessage({ message, isLast, onEdit, onRequestDelete, disabled
     >
       <div className="role">
         <span className="msg-time">{formatTime(message.timestamp)}</span>
+        {message.queued && (
+          <span className="msg-queued-badge" data-testid="msg-queued-badge">
+            <span className="msg-queued-dot" />
+            {t('userMessage.queued')}
+          </span>
+        )}
       </div>
 
       {selectMode && <MessageCheckbox id={message.id} />}
