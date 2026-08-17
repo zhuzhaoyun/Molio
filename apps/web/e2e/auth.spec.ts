@@ -112,6 +112,56 @@ test.describe('Login chain (requires configured daemon)', () => {
     await gotoHome(page);
   });
 
+  test('login intro makes no cloud-benefit promises (去大饼)', async ({ page }) => {
+    await openAccount(page);
+    const intro = page.locator('.account-intro');
+    await expect(intro).toBeVisible();
+    // 诚实文案：不得再出现「云端权益 / cloud benefits」类空头承诺
+    await expect(intro).not.toHaveText(/云端权益|cloud benefits/i);
+  });
+
+  test('auto-nickname shown after login; entitlement row shows free plan', async ({
+    page,
+  }) => {
+    const email = uniqueEmail('nick');
+    await loginViaUi(page, email);
+
+    // 隐式注册自动生成「墨友 + 4 位随机数」
+    const nickname = page.locator('[data-testid="account-nickname"]');
+    await expect(nickname).toBeVisible();
+    await expect(nickname).toHaveText(/^墨友\d{4}$/, { timeout: 10_000 });
+
+    // 权益行：第一期 plan=free → 显示「免费版 / Free」
+    await expect(page.locator('[data-testid="account-entitlement-value"]')).toHaveText(
+      /免费版|Free/,
+    );
+  });
+
+  test('nickname inline edit persists and survives reopening the panel', async ({
+    page,
+  }) => {
+    const email = uniqueEmail('edit');
+    await loginViaUi(page, email);
+    await expect(page.locator('[data-testid="account-nickname"]')).toBeVisible();
+
+    await page.locator('[data-testid="account-nickname-edit-btn"]').click();
+    const input = page.locator('[data-testid="account-nickname-input"]');
+    await expect(input).toBeVisible();
+    await input.fill('E2E 墨流君');
+    await page.locator('[data-testid="account-nickname-save-btn"]').click();
+
+    // 保存成功 → 回展示态，新昵称立刻可见（daemon 已同步本地快照）
+    const nickname = page.locator('[data-testid="account-nickname"]');
+    await expect(nickname).toHaveText('E2E 墨流君', { timeout: 10_000 });
+    await expect(input).not.toBeVisible();
+
+    // 关闭重开面板仍是新昵称（数据源 = daemon 本地 token/权益快照）
+    await page.locator('[data-testid="account-modal-close"]').click();
+    await expect(page.locator(ACCOUNT_MODAL)).not.toBeVisible();
+    await openAccount(page);
+    await expect(page.locator('[data-testid="account-nickname"]')).toHaveText('E2E 墨流君');
+  });
+
   test('login with verification code, then logout', async ({ page }) => {
     const email = uniqueEmail('login');
     await loginViaUi(page, email);

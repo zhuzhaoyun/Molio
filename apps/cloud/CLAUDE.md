@@ -16,7 +16,7 @@ Molio 用户模块（第一期 = 身份层）的云端服务。提供邮箱验�
 ```
 src/
   index.ts       入口：loadConfig → 按 DATABASE_URL 选 store → serve
-  app.ts         Hono 路由（/health + 6 端点）；不配 CORS（无浏览器直连）
+  app.ts         Hono 路由（/health + 7 端点）；不配 CORS（无浏览器直连）
   config.ts      env 加载（MOLIO_ENV / 限频 / TTL / 密钥 / DirectMail）
   service.ts     AuthService：限频、一次性原子消费、隐式注册、轮换 + 重放检测
   store/
@@ -60,7 +60,7 @@ pnpm typecheck    # tsc --noEmit
 | `MOLIO_ROTATION_GRACE_SEC` | 否 | 轮换宽限窗（重试误判防护），默认 30 |
 | `MOLIO_RATE_EMAIL_RESEND_SEC` / `MOLIO_RATE_EMAIL_DAILY_MAX` / `MOLIO_RATE_IP_DAILY_MAX` | 否 | 三层限频，默认 60/10/30 |
 
-## 六个端点（第一期全集）
+## 七个端点（第一期全集）
 
 | Method | Path | 说明 |
 |---|---|---|
@@ -68,6 +68,7 @@ pnpm typecheck    # tsc --noEmit
 | POST | `/auth/verify` | 校验 + 隐式注册，返回 token 对与 user |
 | POST | `/auth/refresh` | 轮换刷新；重放已用 token → 吊销该用户全部 session（宽限窗内视为重试） |
 | GET | `/auth/me` | Bearer access → user + entitlement（权益快照来源） |
+| PATCH | `/auth/me` | Bearer access → 修改昵称（1-20 code point）返回 `{user, entitlement}`；隐式注册自动生成「墨友+4位随机数」 |
 | DELETE | `/auth/session` | 吊销当前设备（本机登出） |
 | DELETE | `/auth/account` | 注销账号（软删除 + 吊销全部 session） |
 

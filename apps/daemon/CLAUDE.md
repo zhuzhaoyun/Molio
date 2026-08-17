@@ -87,7 +87,7 @@ src/
     maintenance.ts    POST /api/maintenance/rebuild-fts — 重建 FTS 索引（灾难恢复）
     weixin.ts         POST /api/weixin — 微信回调
     feishu.ts         GET/POST /api/feishu/* — 飞书渠道 (status/start/stop/disconnect/config)
-    auth.ts           POST /api/auth/start|verify|logout + GET /status + DELETE /account — 云端认证本地镜像（start 原样透传云端响应含 daily devCode；account 注销云端优先，云端不可达抛 502 不清本地）
+    auth.ts           POST /api/auth/start|verify|logout + PATCH /me + GET /status + DELETE /account — 云端认证本地镜像（start 原样透传云端响应含 daily devCode；me 改昵称成功后同步本地 token/权益快照；account 注销云端优先，云端不可达抛 502 不清本地）
   publish-bridge/
     bridge-page.ts    发布桥接页面逻辑
 test/                  测试用例 (node:test)，按源码模块子目录组织
@@ -140,6 +140,7 @@ pnpm typecheck    # tsc --noEmit
 | PUT | `/api/feishu/config` | 写 App ID/App Secret/默认 agent（写入 ~/.molio/config.json 的 feishu 字段，自动触发重连） |
 | POST | `/api/auth/start` | 发送验证码（转发云端 send-code，响应原样透传，daily/local 含 devCode） |
 | POST | `/api/auth/verify` | 验证码登录（注册=登录），token 落 ~/.molio/auth-tokens.json |
+| PATCH | `/api/auth/me` | 修改昵称（转发云端 PATCH /auth/me）；成功后同步本地 token/权益快照，status 立即反映新昵称 |
 | GET | `/api/auth/status` | 登录态快照（离线时 stale=true；refresh 失效 loginExpired=true） |
 | POST | `/api/auth/logout` | 云端吊销尽力而为 + 本地必清 token/权益快照 |
 | DELETE | `/api/auth/account` | 注销账号：云端软删除 + 吊销全部 session；云端不可达 → 502 且保留本地 token（与 logout 语义相反） |

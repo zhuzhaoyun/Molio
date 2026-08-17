@@ -513,7 +513,7 @@ const en: Record<string, string> = {
   'account.title': 'Account',
   'account.loading': 'Loading…',
   'account.notConfigured': 'Sign-in service is not configured yet. Set the cloud URL (MOLIO_AUTH_URL) on the deployment side to enable sign-in. Local features are unaffected.',
-  'account.loginIntro': 'Sign in to your Molio account to unlock cloud benefits. All local features work without signing in.',
+  'account.loginIntro': 'Sign in to your Molio account. All local features work without signing in.',
   'account.loginCta': 'Sign in / Register',
   'account.stale': 'Cloud unreachable — showing locally cached data',
   'account.loginExpired': 'Your session has expired. Please sign in again.',
@@ -528,6 +528,11 @@ const en: Record<string, string> = {
   'account.deleteConfirm': 'Delete account',
   'account.cancel': 'Cancel',
   'account.busy': 'Working…',
+  'account.save': 'Save',
+  'account.editNickname': 'Edit nickname',
+  'account.nicknamePlaceholder': 'Enter a nickname (1-20 chars)',
+  'account.entitlementLabel': 'Plan',
+  'account.planFree': 'Free',
   'login.emailLabel': 'Email',
   'login.emailPlaceholder': 'Enter your email address',
   'login.sendCode': 'Send code',
@@ -550,6 +555,7 @@ const en: Record<string, string> = {
   'login.errUnreachable': 'Cannot reach the sign-in service. Check your network and retry.',
   'login.errNotConfigured': 'Sign-in service is not configured',
   'login.errExpired': 'Your session has expired. Please sign in again.',
+  'login.errInvalidNickname': 'Nickname must be 1-20 characters',
   'login.errGeneric': 'Operation failed. Please try again later. ({code})',
 
   // ── Resources ──

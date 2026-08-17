@@ -5,7 +5,7 @@ import type {
   Vault, TreeNode, FileContent, KbHistoryEntry, CreateVaultRequest,
   WikiStatusResponse,
   GraphData, SearchResult, SearchResponse,
-  AuthStatus, SendCodeResponse, User,
+  AuthStatus, SendCodeResponse, User, MeResponse,
   SkillManifestEntry, SkillDetailResponse, CreateSkillRequest, UpdateSkillRequest,
   ImportSkillRequest, PrefillResult,
   HubSkillsQuery, HubSkillsListResponse, HubCategoriesResponse,
@@ -103,7 +103,7 @@ const BASE = '/api';
 
 /**
  * /api/auth/* 统一 fetch 包装：非 2xx 一律抛 AuthApiError（UI 按 code 映射文案，
- * 见 components/account/authErrors.ts）。5 个 auth 端点共用，避免各自
+ * 见 components/account/authErrors.ts）。6 个 auth 端点共用，避免各自
  * `if (!res.ok)` 分支漂移。
  */
 async function authFetch(path: string, init?: RequestInit): Promise<Response> {
@@ -520,6 +520,16 @@ export const api = {
       method: 'POST',
       headers: AUTH_JSON_HEADERS,
       body: JSON.stringify({ email, code }),
+    });
+    return res.json();
+  },
+
+  /** 修改当前用户资料（第一期仅昵称）。成功后 daemon 已同步本地 token/权益快照。 */
+  async authUpdateMe(nickname: string): Promise<MeResponse> {
+    const res = await authFetch('me', {
+      method: 'PATCH',
+      headers: AUTH_JSON_HEADERS,
+      body: JSON.stringify({ nickname }),
     });
     return res.json();
   },

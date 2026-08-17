@@ -32,6 +32,8 @@ export function authErrorRef(err: unknown): AuthErrorRef {
     case 'invalid_token':
     case 'no_session':
       return { key: 'login.errExpired' };
+    case 'invalid_nickname':
+      return { key: 'login.errInvalidNickname' };
     default:
       return { key: 'login.errGeneric', params: { code: err.code } };
   }

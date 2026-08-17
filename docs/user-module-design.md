@@ -73,6 +73,7 @@ Molio 目前是纯本地应用：没有任何用户概念，`AppConfig` 只有 a
 CREATE TABLE users (
   id                TEXT PRIMARY KEY,            -- ULID
   email             TEXT NOT NULL,               -- 小写归一化存储；唯一性由下方部分唯一索引保证（注销账号不占位）
+  nickname          TEXT,                        -- 昵称（1-20 code point）；隐式注册自动生成「墨友+4位随机数」，PATCH /auth/me 可改，不做唯一性约束
   email_verified_at TIMESTAMPTZ,
   status            TEXT NOT NULL DEFAULT 'active',  -- active / deactivated（第二期 admin 封禁桩，第一期无写入方）
   entitlement       JSONB NOT NULL DEFAULT '{}', -- 权益桩：{plan, expiresAt, ...}，schema 第二期定
@@ -127,14 +128,15 @@ CREATE INDEX refresh_tokens_user       ON refresh_tokens (user_id);
 
 ## 六、API 设计
 
-### 云端（`@molio/cloud`，第一期全集 = 6 个端点）
+### 云端（`@molio/cloud`，第一期全集 = 7 个端点）
 
 | Method | Path | 入参 | 出参 | 说明 |
 |---|---|---|---|---|
 | POST | `/auth/send-code` | `{email}` | `202 {ok, resendAfterSec}` | 限频（数值可 env 覆盖）：同邮箱 60s 重发间隔 / 每邮箱每日 10 封 / 每 IP 每日 30 次；429 = rate_limited |
-| POST | `/auth/verify` | `{email, code}` | `200 {accessToken, refreshToken, user}` | 邮箱不存在（或对应账号已注销）则隐式建新号；401 = invalid_code / locked |
+| POST | `/auth/verify` | `{email, code}` | `200 {accessToken, refreshToken, user}` | 邮箱不存在（或对应账号已注销）则隐式建新号（自动生成昵称「墨友+4位随机数」）；401 = invalid_code / locked |
 | POST | `/auth/refresh` | `{refreshToken}` | `200 {accessToken, refreshToken}` | 轮换：旧 refresh 作废发新的；**重放检测**：已用过的 refresh 再次出现 → 吊销该用户全部 session |
 | GET | `/auth/me` | Bearer access | `{user, entitlement}` | 权益快照来源 |
+| PATCH | `/auth/me` | Bearer access + `{nickname}` | `{user, entitlement}` | 修改昵称：trim 后按 code point 计数 1-20（emoji 安全），否则 400 invalid_nickname；不支持清空 |
 | DELETE | `/auth/session` | Bearer access + `{refreshToken}` | `{ok}` | 吊销当前设备（本机登出） |
 | DELETE | `/auth/account` | Bearer access | `{ok}` | 注销账号：软删除 + 吊销全部 session（个保法硬要求） |
 
@@ -153,6 +155,7 @@ Token 规格：
 |---|---|---|
 | POST | `/api/auth/start` `{email}` | 转发云端 send-code |
 | POST | `/api/auth/verify` `{email, code}` | 转发云端 verify，token 落本地存储 |
+| PATCH | `/api/auth/me` `{nickname}` | 转发云端 PATCH /auth/me；成功后同步本地 token/权益快照（status 立即反映新昵称） |
 | GET | `/api/auth/status` | 登录态 + 用户 + 权益快照（Web UI 渲染用；离线时返回缓存快照 + `stale: true`；`configured` 标记 MOLIO_AUTH_URL 是否已配置，未配置时 Web 隐藏登录表单） |
 | POST | `/api/auth/logout` | 云端吊销 + 清本地 token |
 | DELETE | `/api/auth/account` | 注销账号（§7.4）：云端软删除 + 吊销全部 session 成功后才清本地 token；云端不可达 → 502 且保留本地 token 供重试（与 logout 的本地优先语义相反） |
@@ -236,8 +239,8 @@ App 启动 → daemon 读本地 token
 
 | 模块 | 改动 |
 |---|---|
-| `packages/contracts` | 新增 `User` / `Entitlement` / `AuthStatus` 类型。⚠️ daemon 测试吃 contracts dist，改后须先 build |
-| `apps/daemon` | 新增 `core/auth/`：`auth-client.ts`（云端 API + 重试退避，复用 retry 模式）、`token-store.ts`、`entitlement-cache.ts`；`routes/auth.ts`（5 个本地端点：start/verify/status/logout/account）；`MOLIO_AUTH_URL` 环境变量 |
+| `packages/contracts` | 新增 `User`（含可选 `nickname`）/ `Entitlement` / `AuthStatus` / `UpdateMeRequest` 类型。⚠️ daemon 测试吃 contracts dist，改后须先 build |
+| `apps/daemon` | 新增 `core/auth/`：`auth-client.ts`（云端 API + 重试退避，复用 retry 模式）、`token-store.ts`、`entitlement-cache.ts`；`routes/auth.ts`（6 个本地端点：start/verify/me/status/logout/account）；`MOLIO_AUTH_URL` 环境变量 |
 | `apps/web` | 登录页（邮箱 + 验证码两步）、账户设置面板、登录态 store；关键交互元素加 `data-testid`，同步 E2E |
 | `apps/desktop` | `safeStorage` token 持久化 IPC；登录后 ARMS 注入 userId。**M4 已实现（2026-08-11）**：主进程起 `crypto-server.js`（127.0.0.1 随机端口 HTTP，端口经 `MOLIO_DESKTOP_CRYPTO_PORT` 注入 daemon，先例 = wiki-fetcher 的 `MOLIO_DESKTOP_FETCH_PORT`）；daemon 侧 `core/auth/desktop-crypto.ts` fetch 客户端（2s 超时、从不抛错）；token 文件信封格式 `{v:1, encrypted:<base64>}`（内层 AuthTokens JSON），明文格式照旧兼容并自动升级；登录态轮询器 `auth-status-watch.js` 维护 userId 供 ARMS beforeReport 注入。`isEncryptionAvailable()=false`（Linux 无 keychain）时不起 crypto server、落明文基线（D3） |
 | Docker 部署 | `.env.example` / `install.sh` 内嵌模板加 `MOLIO_AUTH_URL`（⚠️ install.sh heredoc 同步规则）。**M5 已实现（2026-08-11）**：两处均为注释占位（官方云端地址待 M0 备案后公布；env_file 透传，compose 无需改） |

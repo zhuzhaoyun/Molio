@@ -513,7 +513,7 @@ const zh: Record<string, string> = {
   'account.title': '账号',
   'account.loading': '加载中…',
   'account.notConfigured': '登录服务尚未配置。在部署端配置云端地址（MOLIO_AUTH_URL）后即可登录。本地功能不受影响。',
-  'account.loginIntro': '登录 Molio 账号可解锁云端权益。所有本地功能无需登录即可使用。',
+  'account.loginIntro': '登录 Molio 账号。所有本地功能无需登录即可使用。',
   'account.loginCta': '登录 / 注册',
   'account.stale': '云端暂不可达，当前展示本地缓存数据',
   'account.loginExpired': '登录已过期，请重新登录',
@@ -528,6 +528,11 @@ const zh: Record<string, string> = {
   'account.deleteConfirm': '确认注销',
   'account.cancel': '取消',
   'account.busy': '处理中…',
+  'account.save': '保存',
+  'account.editNickname': '修改昵称',
+  'account.nicknamePlaceholder': '输入昵称（1-20 字）',
+  'account.entitlementLabel': '当前权益',
+  'account.planFree': '免费版',
   'login.emailLabel': '邮箱',
   'login.emailPlaceholder': '请输入邮箱地址',
   'login.sendCode': '发送验证码',
@@ -550,6 +555,7 @@ const zh: Record<string, string> = {
   'login.errUnreachable': '无法连接登录服务，请检查网络后重试',
   'login.errNotConfigured': '登录服务尚未配置',
   'login.errExpired': '登录已过期，请重新登录',
+  'login.errInvalidNickname': '昵称需为 1-20 个字符',
   'login.errGeneric': '操作失败，请稍后重试（{code}）',
 
   // ── Resources ──

@@ -90,11 +90,94 @@
   flex: 0 0 40px;
 }
 
-.account-logged-email {
+.account-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* 昵称行（展示态） */
+.account-nickname-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.account-nickname {
   font-size: 14px;
   font-weight: 600;
   color: var(--text-strong);
   overflow-wrap: anywhere;
+}
+
+/* 铅笔编辑按钮（低调，hover 提亮） */
+.account-nickname-edit-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 2px 5px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+.account-nickname-edit-btn:hover:not(:disabled) {
+  color: var(--accent);
+  background: var(--bg-subtle);
+}
+.account-nickname-edit-btn:disabled {
+  color: var(--text-faint);
+  cursor: not-allowed;
+}
+
+/* 昵称编辑态 */
+.account-nickname-edit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.account-nickname-input {
+  width: 150px;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+}
+.account-nickname-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+/* 邮箱降为昵称下方次要信息 */
+.account-logged-email {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* 权益行 */
+.account-entitlement {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  font-size: 12.5px;
+}
+.account-entitlement-label {
+  color: var(--text-soft);
+}
+.account-entitlement-value {
+  font-weight: 600;
+  color: var(--text-strong);
 }
 
 .account-actions {
