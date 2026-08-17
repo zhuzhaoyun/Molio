@@ -536,6 +536,8 @@ const en: Record<string, string> = {
   'resources.info.formatValue': 'Markdown (.zip)',
   'resources.info.compat': 'Compatible',
   'resources.info.compatValue': 'Molio / Obsidian',
+  'resources.info.author': 'Author',
+  'resources.info.version': 'Version',
   'resources.info.price': 'Price',
   'resources.info.file': 'File',
   'resources.sideNote.paid': 'Scan to pay — download unlocks automatically. The link stays valid for 1 hour.',

@@ -20,6 +20,10 @@ export interface MolioResource {
   name: string;
   /** 一句话描述（列表卡片） */
   desc: string;
+  /** 整理者署名（如“Molio 团队”） */
+  author: string;
+  /** 当前版本号（如 v1.0）；发新版时更新并同步替换 file */
+  version: string;
   /** zip 文件名（免费资源直链 = RES_BASE + '/' + file） */
   file: string;
   /** 价格；0 = 免费 */

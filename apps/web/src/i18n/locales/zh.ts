@@ -536,6 +536,8 @@ const zh: Record<string, string> = {
   'resources.info.formatValue': 'Markdown（.zip）',
   'resources.info.compat': '兼容',
   'resources.info.compatValue': 'Molio / Obsidian',
+  'resources.info.author': '作者',
+  'resources.info.version': '版本',
   'resources.info.price': '价格',
   'resources.info.file': '文件',
   'resources.sideNote.paid': '扫码支付成功后自动解锁下载，下载链接 1 小时内有效。',
