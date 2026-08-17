@@ -146,6 +146,11 @@ export function useChatCore(options: UseChatCoreOptions) {
 
   const esRef = useRef<EventSource | null>(null);
   const assistantIdRef = useRef<string | null>(null);
+  // 排队 drain 后 assistantIdRef 被重定向到新气泡；上一轮的尾随事件（usage / turn_end）
+  // 仍在旧连接上到达，须在「drain → 新气泡首个内容事件」窗口内丢弃，否则会污染新气泡或
+  // 提前把它标记为完成（gemini: usage 先于 turn_end）。窗口外一切正常 —— codex/gemini
+  // 的 usage 发给仍在 streaming 的消息是合法的（它们不发 turn_end 或 turn_end 在后）。
+  const drainedPendingRef = useRef(false);
   // P2-3: fallback timer that force-unlocks the input if the daemon hangs or
   // the SSE dies without a terminal event. Aligned with daemon's
   // promptIdleTimeoutMs (5min) — if no terminal status arrives by then, the
@@ -257,6 +262,8 @@ export function useChatCore(options: UseChatCoreOptions) {
     // multi-turn path (api.sendMessage on an existing run) can retarget
     // events to a new assistant message without resubscribing.
     assistantIdRef.current = assistantId;
+    // 全新连接（createRun / rewindAndResend / resumeRun）不会有上一轮的尾随事件。
+    drainedPendingRef.current = false;
     clearFallbackTimer();
     clearWatchdog();
     reconnectAttemptRef.current = 0;
@@ -298,6 +305,15 @@ export function useChatCore(options: UseChatCoreOptions) {
         };
         window.dispatchEvent(new CustomEvent(ACP_MODELS_UPDATED_EVENT, { detail }));
       }
+      // 尾随窗口：drain 刚重定向、新气泡尚未收到自己的内容 —— 此时到达的 usage / turn_end(end_turn)
+      // 属于上一轮，丢弃（不盖章、不提前解锁、不标记完成）。
+      if (drainedPendingRef.current && (event.type === 'usage' || (event.type === 'turn_end' && event.stopReason !== 'tool_use'))) {
+        return;
+      }
+      // 新气泡开始流动（内容 / 状态 / 非尾随 turn_end(tool_use) / error）→ 关闭窗口。
+      if (event.type !== 'activity' && event.type !== 'usage' && !(event.type === 'turn_end' && event.stopReason !== 'tool_use')) {
+        drainedPendingRef.current = false;
+      }
       setState((prev) => updateWithEvent(prev, currentId, event));
       if (event.type === 'status' && (event.label === 'completed' || event.label === 'failed' || event.label === 'canceled')) {
         clearFallbackTimer();
@@ -313,6 +329,8 @@ export function useChatCore(options: UseChatCoreOptions) {
       console.warn('[chat] SSE onDone (CLOSED) — force-unlocking. runId=' + runId);
       clearWatchdog();
       reconnectRef.current = null;
+      // 连接关闭 → 尾随窗口作废（防御：防止 stale 窗口污染后续 run）。
+      drainedPendingRef.current = false;
       setState((prev) => {
         if (!prev.isRunning) return prev;
         const messages = prev.messages.map((msg) =>
@@ -559,6 +577,9 @@ export function useChatCore(options: UseChatCoreOptions) {
       messages: optimistic,
       isRunning: true,
     }));
+    // 进入尾随窗口：此后到达的 usage / turn_end(end_turn) 属于上一轮（旧连接尾随），
+    // 在新气泡首个内容事件前丢弃，避免污染新气泡或提前把它标记为完成。
+    drainedPendingRef.current = true;
     void dispatchTurn(first.text, first.id, assistantMsg, optimistic);
     // 依赖用响应式 state 触发 effect；body 读 stateRef.current（与渲染闭包在 effect 运行时等价的已提交 state）。
     // 排队是纯前端语义：cancel/reset/setMessages 会清空 pendingQueue 并作废 queued 气泡（见 §6 设计）。
@@ -686,6 +707,7 @@ export function useChatCore(options: UseChatCoreOptions) {
     }
     closeEventSource();
     assistantIdRef.current = null;
+    drainedPendingRef.current = false;
 
     // 同步更新 stateRef：调用方（clearAndSend 中断路径）可能在同一事件循环里紧跟 send()，
     // 必须让 send 读到「已取消、runId 已清」的最新状态。
@@ -702,6 +724,7 @@ export function useChatCore(options: UseChatCoreOptions) {
   const reset = useCallback(() => {
     closeEventSource();
     assistantIdRef.current = null;
+    drainedPendingRef.current = false;
     messageSelectionStore.exit();
     const next = { messages: [], runId: null, runAgentId: null, isRunning: false, conversationId: null, activity: null, pendingQueue: [] };
     stateRef.current = next;
@@ -715,6 +738,7 @@ export function useChatCore(options: UseChatCoreOptions) {
   const setMessages = useCallback((messages: ChatMessage[], conversationId?: string | null) => {
     closeEventSource();
     assistantIdRef.current = null;
+    drainedPendingRef.current = false;
     messageSelectionStore.exit();
     const next = {
       messages,
@@ -843,9 +867,6 @@ function updateWithEvent(
       }
 
       case 'usage':
-        // 排队 drain 后，上一轮的尾随 usage（本气泡已在流式回复）不属于这个 turn ——
-        // 既不能盖到新气泡上，也不能触发解锁（否则 isRunning 提前回 false → 多条排队乱序下发）。
-        if (msg.streaming) return msg;
         return clearRepairing({
           ...msg,
           usage: {
@@ -879,11 +900,7 @@ function updateWithEvent(
   }
 
   if (event.type === 'usage') {
-    const target = messages.find((m) => m.id === assistantId);
-    // 上一轮尾随 usage 落到「正在流式回复」的新气泡 → 忽略，不提前解锁。
-    if (target && !target.streaming) {
-      isRunning = false;
-    }
+    isRunning = false;
   }
 
   if (event.type === 'status' && (event.label === 'completed' || event.label === 'failed')) {

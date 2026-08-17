@@ -209,7 +209,32 @@ export async function mockChatRun(page: Page, opts: MockRunOptions = {}) {
       await route.continue({ url: target });
     });
   } else {
+    // `route.fulfill` closes the response, so EventSource auto-reconnects. For a
+    // NON-terminal script (no status completed/failed) that reconnect re-serves
+    // the script — which the multi-turn tests rely on to simulate the daemon
+    // streaming the next turn over the same connection. But for a TERMINAL script
+    // the run is over: replaying would re-deliver already-seen events and mask a
+    // bug where the FIRST delivery dropped one (e.g. codex `usage` without
+    // `turn_end` — the round-1 streaming guard dropped the stamp, then a replay
+    // re-stamped it against the now-non-streaming bubble, hiding the regression).
+    // Chromium's auto-reconnect carries no `?after=`/Last-Event-ID, so honoring
+    // `after` alone is not enough — terminal scripts serve exactly once.
+    const isTerminal = script.some((evt) => {
+      const e = evt as { type?: string; label?: string };
+      return e.type === 'status' && (e.label === 'completed' || e.label === 'failed');
+    });
+    let served = false;
     await page.route(`**/api/runs/${runId}/events**`, async (route) => {
+      if (served && isTerminal) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'text/event-stream',
+          headers: { 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' },
+          body: '',
+        });
+        return;
+      }
+      served = true;
       const frames = script.map((evt, i) => sseFrame(i + 1, runId, evt)).join('');
       await route.fulfill({
         status: 200,

@@ -139,4 +139,24 @@ test.describe('Chat — single turn', () => {
     await page.locator('[data-testid="assistant-message"]').hover();
     await expect(page.locator('[data-testid="assistant-message"]').locator('[data-testid="msg-copy-btn"]')).toBeVisible();
   });
+
+  test('codex-style turn (usage without turn_end) still renders the usage footer', async ({ page }) => {
+    // Codex emits `usage` (turn.completed) with NO turn_end at all — the usage
+    // arrives while the assistant message is still streaming. The footer must
+    // still render and the input must unlock (regression: the round-1 streaming
+    // guard dropped the stamp AND the unlock for such runtimes).
+    await mockChatRun(page, {
+      script: [
+        { type: 'status', label: 'running' },
+        { type: 'text_delta', delta: 'Codex reply' },
+        { type: 'usage', usage: { input_tokens: 80, output_tokens: 15 }, costUsd: 0.004 },
+        { type: 'status', label: 'completed' },
+      ],
+    });
+    await gotoHome(page);
+    await sendMessage(page, 'Test');
+    await expect(page.locator('[data-testid="usage-footer"]')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('[data-testid="usage-footer"]')).toContainText('80');
+    await expect(page.locator('[data-testid="composer-input"]')).toBeEnabled();
+  });
 });
