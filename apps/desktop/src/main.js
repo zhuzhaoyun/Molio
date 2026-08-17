@@ -40,6 +40,13 @@ const DAEMON_PORT = 3100;
 /** Base URL of the local daemon. */
 const DAEMON_BASE = `http://localhost:${DAEMON_PORT}`;
 
+/**
+ * Official cloud auth endpoint (用户模块). Built-in default for packaged builds
+ * so end users can sign in with zero configuration. An explicit MOLIO_AUTH_URL
+ * env var (私有化部署 / Docker / 测试) always takes precedence.
+ */
+const DEFAULT_AUTH_URL = 'https://auth.molio.cn';
+
 /** Rebuild the macOS dock menu at most this often (vault list changes live in the web layer). */
 const DOCK_REFRESH_THROTTLE_MS = 3000;
 
@@ -146,6 +153,12 @@ async function startDaemonProduction() {
       MOLIO_PORT: String(DAEMON_PORT),
       MOLIO_STATIC_DIR: webStaticDir,
     };
+    // 云端认证地址：显式设置的 MOLIO_AUTH_URL（私有化/Docker/测试）优先；
+    // 缺省或纯空白（与 daemon auth-client 的 trim 语义一致）时注入内置官方地址，
+    // 否则打包客户端 isConfigured()=false，登录表单直接隐藏。
+    if (!String(daemonEnv.MOLIO_AUTH_URL ?? '').trim()) {
+      daemonEnv.MOLIO_AUTH_URL = DEFAULT_AUTH_URL;
+    }
     if (wikiFetchPort) daemonEnv.MOLIO_DESKTOP_FETCH_PORT = String(wikiFetchPort);
     if (cryptoPort) {
       daemonEnv.MOLIO_DESKTOP_CRYPTO_PORT = String(cryptoPort);

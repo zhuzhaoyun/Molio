@@ -70,6 +70,34 @@ test.describe('Account panel (always available)', () => {
     await page.locator('[data-testid="account-modal-close"]').click();
     await expect(page.locator(ACCOUNT_MODAL)).not.toBeVisible();
   });
+
+  // Regression (2026-08-17): base.css 的全局 input{width:100%} 曾把协议勾选框
+  // 撑满整行——勾选框居中、协议文案被挤出模态框右边界不可见。
+  test('terms row: checkbox stays compact and links fit inside the modal', async ({
+    page,
+  }) => {
+    await gotoHome(page);
+    await openAccount(page);
+    await page.locator('[data-testid="account-login-btn"]').click();
+
+    const checkbox = page.locator('[data-testid="account-agree-checkbox"]');
+    await expect(checkbox).toBeVisible();
+    const box = await checkbox.boundingBox();
+    expect(box).not.toBeNull();
+    // 原生勾选框 ~13px；被 width:100% 撑开时会接近模态框宽度（400px）
+    expect(box!.width).toBeLessThanOrEqual(30);
+
+    const modalBox = await page.locator(ACCOUNT_MODAL).boundingBox();
+    const termsLink = page.locator('a[href="https://molio.cn/terms.html"]');
+    await expect(termsLink).toBeVisible();
+    const linkBox = await termsLink.boundingBox();
+    expect(modalBox).not.toBeNull();
+    expect(linkBox).not.toBeNull();
+    expect(linkBox!.x).toBeGreaterThanOrEqual(modalBox!.x);
+    expect(linkBox!.x + linkBox!.width).toBeLessThanOrEqual(
+      modalBox!.x + modalBox!.width + 1,
+    );
+  });
 });
 
 test.describe('Login chain (requires configured daemon)', () => {

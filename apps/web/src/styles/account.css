@@ -138,6 +138,7 @@
 .account-ack-row input {
   margin-top: 2px;
   accent-color: var(--accent);
+  flex: 0 0 auto;
 }
 
 /* ── 登录表单（两步：邮箱 → 验证码） ─────────────────────── */
@@ -186,6 +187,8 @@
   color: var(--text-muted);
   cursor: pointer;
 }
+/* base.css 已豁免 checkbox 的全局 width:100%（见 base.css 注释）；
+   这里 flex: 0 0 auto 防止长文案反过来压缩勾选框。 */
 .account-agree-label input {
   margin-top: 2px;
   accent-color: var(--accent);
