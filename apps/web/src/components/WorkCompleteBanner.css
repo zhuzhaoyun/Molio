@@ -26,3 +26,8 @@
 }
 .work-complete-file:hover { text-decoration: underline; }
 .work-complete-file-label { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.work-complete-file:disabled {
+  cursor: default;
+  opacity: 0.5;
+  text-decoration: none;
+}

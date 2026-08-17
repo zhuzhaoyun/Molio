@@ -31,6 +31,7 @@ export function WorkCompleteBanner({ tools }: Props) {
               className="work-complete-file"
               data-testid="work-complete-file"
               title={w.path}
+              disabled={!vaultId}
               onClick={() => { if (vaultId) openFile(vaultId, w.path); }}
             >
               <span className="work-complete-file-icon" aria-hidden>

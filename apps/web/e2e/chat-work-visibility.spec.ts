@@ -75,6 +75,9 @@ test.describe('KB chat — work visibility', () => {
     await expect(chips).toHaveCount(2, { timeout: 10_000 });
     await expect(chips.first()).toContainText('入门.md');
 
+    // 有 active vault → 文件 chip 可点
+    await expect(chips.first()).toBeEnabled();
+
     // 点击 chip → 导航打开对应文件
     await chips.first().click();
     await expect(page.locator('#output')).toContainText('入门笔记', { timeout: 10_000 });
@@ -125,6 +128,9 @@ test.describe('KB chat — work visibility', () => {
     // banner 展示产物文件（label 为 basename；完整路径在 button 的 title tooltip）
     await expect(banner).toContainText('总结.md');
     await expect(banner.locator('[data-testid="work-complete-file"]')).toHaveAttribute('title', '产出/总结.md');
+
+    // 有 active vault → 产物文件按钮可点
+    await expect(banner.locator('[data-testid="work-complete-file"]')).toBeEnabled();
 
     await banner.locator('[data-testid="work-complete-file"]').click();
     await expect(page.locator('#output')).toContainText('总结', { timeout: 10_000 });

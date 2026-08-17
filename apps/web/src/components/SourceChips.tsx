@@ -28,7 +28,7 @@ export function SourceChips({ tools }: Props) {
           className={`source-chip${s.kind === 'url' ? ' url' : ''}${s.navigable ? ' navigable' : ''}`}
           data-testid="source-chip"
           data-kind={s.kind}
-          disabled={s.kind !== 'url' && !s.navigable}
+          disabled={s.kind !== 'url' && (!s.navigable || !vaultId)}
           onClick={() => {
             if (s.kind === 'url') { window.open(s.target, '_blank'); return; }
             if (s.navigable && vaultId) openFile(vaultId, s.target);
