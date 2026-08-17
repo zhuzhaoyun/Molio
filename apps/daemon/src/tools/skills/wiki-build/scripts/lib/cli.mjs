@@ -60,3 +60,26 @@ export function loadRules(vault) {
 export function usage(name, lines) {
   process.stderr.write([`Usage: node ${name}.mjs ${lines.join(' | ')}`, '', '  --vault <dir>    vault root (default: cwd)', '  --force          overwrite existing artifacts', '  --help           this message', ''].join('\n'));
 }
+
+/**
+ * 清洗别名 token：返回 null 表示该 token 不应作为别名（噪音/自名/单字/占位）。
+ * 两个调用方必须用同一规则，否则 curation 预填的别名 linkpass 里再次校验会不一致：
+ *   curate.mjs draft 预填时
+ *   linkpass.mjs --batches 读取批次别名列时
+ * 规则（按序返回 null）：
+ *   - 空串 / "无" / "-" / "—" / "N/A"
+ *   - 含 "[[" / "]]"（链接语法混入）
+ *   - 等于 canonical 自身（自名）
+ *   - 单字（len<=1，语义错链风险高；如复盘的"赵"级单字大量错链）
+ *   - 含 / 或 、（未拆干净的多别名，调用方应预先 split）
+ */
+export function cleanAliasToken(alias, canonical) {
+  const a = (alias || '').trim();
+  if (!a) return null;
+  if (a === '无' || a === '-' || a === '—' || a === 'N/A' || a === '无') return null;
+  if (a.includes('[[') || a.includes(']]')) return null;
+  if (canonical && a === canonical.trim()) return null;
+  if (a.length <= 1) return null; // 单字别名：语义错链风险高，宁缺勿错
+  if (/[/、,，]/.test(a)) return null; // 未拆干净的多别名
+  return a;
+}

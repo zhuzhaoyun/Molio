@@ -16,7 +16,7 @@
 // 零 LLM，确定性。
 import fs from 'node:fs';
 import path from 'node:path';
-import { parseArgs, resolveVault, buildDir } from './lib/cli.mjs';
+import { parseArgs, resolveVault, buildDir, cleanAliasToken } from './lib/cli.mjs';
 
 const opts = parseArgs(process.argv.slice(2));
 const [cmd, stem] = opts._;
@@ -73,9 +73,13 @@ if (cmd === 'draft') {
   for (const r of candidates) {
     const name = r.surface;
     const qual = `count ${r.count}`;
-    // 别名预填：只有唯一匹配才填
+    // 别名预填：只有唯一匹配 + 清洗通过才填（剔 无/-/单字/自名/链接语法）
     const owners = aliasOwners.get(name);
-    const alias = owners && owners.size === 1 ? `别名: ${[...owners][0]}` : '别名: ';
+    let alias = '别名: ';
+    if (owners && owners.size === 1) {
+      const clean = cleanAliasToken([...owners][0], name);
+      if (clean) alias = `别名: ${clean}`;
+    }
     // 证据行号：census rows 里没有 lines 字段（只有 surface/count/cats），留空让 agent 补
     const evidence = '证据行号: ';
     const pageType = '页类: entity';

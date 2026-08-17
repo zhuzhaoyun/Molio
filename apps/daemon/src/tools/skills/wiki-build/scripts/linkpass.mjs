@@ -35,6 +35,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { cleanAliasToken } from './lib/cli.mjs';
 
 // Navigational pages are link targets of last resort, not prose vocabulary —
 // never auto-link mentions of them, and don't rewrite these files.
@@ -201,8 +202,9 @@ function main() {
         const aliasStr = aliasCol.replace(/^别名[：:]\s*/, '');
         if (!aliasStr) continue;
         for (const alias of aliasStr.split(/[/、,，]/)) {
-          const a = alias.trim();
-          if (!a || a === canonical) continue;
+          // 清洗：剔 无/-/单字/自名/链接语法（与 curate 预填同规则，防 agent 手填脏）
+          const a = cleanAliasToken(alias, canonical);
+          if (!a) continue;
           if (aliasMap.has(a)) continue; // 先到先得，不覆盖
           aliasMap.set(a, canonical);
         }

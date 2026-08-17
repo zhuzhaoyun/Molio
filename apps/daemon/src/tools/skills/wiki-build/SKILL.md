@@ -251,6 +251,13 @@ node "<skill_dir>/scripts/curate.mjs" split <x> --vault .
 - 建页 agent 只能链接**批次 TSV 里出现的名字**（白名单），清单外用纯文本
 - 高频名取证封顶：首现 + 均匀采样，总量 ≤30 条
 - **并发 ≤5-6 个 subagent**（防 API 429 限流）；完成度以磁盘落盘为准，不信通知
+- 全部批次完成后跑**落盘对账门禁**（硬性，exit 1 即中止）：
+  ```bash
+  node "<skill_dir>/scripts/verify-drafts.mjs" <x> --vault .
+  ```
+  - 校验批次 TSV 声明的每个名字在 `drafts/` 有对应文件且非空
+  - 治"subagent 输出超限被截断后静默缺失"和"报告写了卫青、文件实际不存在"——超限与漏写最终都表现为"批次声明了但没落盘"，一个门禁统一定位
+  - 缺页 → 补建后重跑，直至 exit 0
 
 ### 步骤 5：安置（确定性，零 LLM）
 
@@ -262,7 +269,17 @@ node "<skill_dir>/scripts/place.mjs" <x> --vault .
 - 生成/更新对应目录的 INDEX.md（摘要自动提取）
 - 幂等可重跑；中途打断后续传只需重跑 place
 
-### 步骤 6：链接对账（硬性门禁，exit 0 才算通过）
+### 步骤 6：对比页策划（主 agent 创作，数量不固定）
+
+实体/概念页安置完成后，主 agent 从已建页面中识别**值得横向对比的主题**，写 comparison 页到 `wiki/comparisons/`（**由主 agent 直接写，不派 subagent**——数量少、需全局视野，subagent 没有这个上下文）：
+
+
+- **数量由知识网络结构决定，不设固定数**：有多少值得对比的主题就写多少——有天然对比关系（同类的并置、竞争、沿革、对立）才写，宁缺毋滥；没有就不写。不同语料的对比主题多寡差异很大，以实际建出的页面网络为准，不预设数量。
+- **判断标准**：两个及以上实体/概念之间存在可比维度（成败、风格、制度沿革、思想对立），且对比本身能产出超越单页的新洞察——单纯罗列不是对比，不写。
+- 每页带完整 frontmatter（`type: comparison`）+ 交叉链接到被对比的页面，并更新 `wiki/comparisons/INDEX.md`。
+- 这一环节是 agent 的收尾创作，不是从 census 候选筛出来的，所以不在批次 TSV 里。
+
+### 步骤 7：链接对账（硬性门禁，exit 0 才算通过）
 
 ```bash
 node "<skill_dir>/scripts/linkpass.mjs" --vault . --batches .molio/wiki-build/batches
@@ -272,7 +289,7 @@ node "<skill_dir>/scripts/deadcheck.mjs" --vault .
 - `linkpass --batches`：从批次 TSV 的别名列读取别名映射，把每个页面名/别名在其他页面正文中的首次出现包成 `[[ ]]`。**庙号/别名死链在这一步自动消解**（如"项王"→`[[项羽|项王]]`）
 - `deadcheck`：exit 0 才算通过。有死链 → 补页或改写链接，重跑直至 exit 0
 
-### 步骤 7：引文核验（确定性，零 LLM）
+### 步骤 8：引文核验（确定性，零 LLM）
 
 ```bash
 node "<skill_dir>/scripts/sweep.mjs" <x> --vault .
