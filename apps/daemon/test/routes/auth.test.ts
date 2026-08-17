@@ -67,6 +67,19 @@ describe('auth routes', () => {
     });
   }
 
+  /** 同 post：PATCH /me 同样过 OOM 闸门，必须带 content-length。 */
+  async function patchReq(path: string, body: unknown): Promise<Response> {
+    const text = JSON.stringify(body);
+    return app.request(path, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+        'content-length': String(Buffer.byteLength(text)),
+      },
+      body: text,
+    });
+  }
+
   describe('POST /start', () => {
     it('透传云端 202 响应（含 devCode）', async () => {
       const res = await post('/api/auth/start', { email: 'user@example.com' });
@@ -140,6 +153,65 @@ describe('auth routes', () => {
       const res = await post('/api/auth/verify', { email: 'user@example.com' });
       assert.equal(res.status, 400);
       assert.equal(mock.calls.length, 0);
+    });
+  });
+
+  describe('PATCH /me（修改昵称）', () => {
+    it('登录后改昵称 → 200 MeResponse，status 立刻反映新昵称', async () => {
+      await post('/api/auth/verify', { email: 'user@example.com', code: '123456' });
+      const res = await patchReq('/api/auth/me', { nickname: '墨流君' });
+      assert.equal(res.status, 200);
+      const body = (await res.json()) as Record<string, unknown>;
+      assert.equal((body.user as { nickname: string }).nickname, '墨流君');
+      assert.deepEqual(body.entitlement, { plan: 'free' });
+      assert.equal(mock.countCalls('PATCH', '/auth/me'), 1);
+
+      // 本地快照同步：status 不发网络请求即可看到新昵称
+      const status = await app.request('/api/auth/status');
+      const sBody = (await status.json()) as Record<string, unknown>;
+      assert.equal((sBody.user as { nickname: string }).nickname, '墨流君');
+    });
+
+    it('未登录 → 401 no_session，不打云端', async () => {
+      const res = await patchReq('/api/auth/me', { nickname: '墨流君' });
+      assert.equal(res.status, 401);
+      assert.deepEqual(await res.json(), { error: 'no_session' });
+      assert.equal(mock.calls.length, 0);
+    });
+
+    it('nickname 非 string → 400 invalid_nickname，不打云端', async () => {
+      await post('/api/auth/verify', { email: 'user@example.com', code: '123456' });
+      mock.calls.length = 0;
+      const res = await patchReq('/api/auth/me', { nickname: 12345 });
+      assert.equal(res.status, 400);
+      assert.deepEqual(await res.json(), { error: 'invalid_nickname' });
+      assert.equal(mock.calls.length, 0);
+    });
+
+    it('云端 400 原样透传（超长等校验由云端权威判定）', async () => {
+      await post('/api/auth/verify', { email: 'user@example.com', code: '123456' });
+      mock.queue('PATCH', '/auth/me', {
+        status: 400,
+        body: { error: 'invalid_nickname' },
+      });
+      const res = await patchReq('/api/auth/me', { nickname: 'x'.repeat(21) });
+      assert.equal(res.status, 400);
+      assert.deepEqual(await res.json(), { error: 'invalid_nickname' });
+    });
+
+    it('云端断网 → 502 cloud_unreachable，本地登录态保留', async () => {
+      await post('/api/auth/verify', { email: 'user@example.com', code: '123456' });
+      mock.setMode('down');
+      const res = await patchReq('/api/auth/me', { nickname: '墨流君' });
+      assert.equal(res.status, 502);
+      assert.deepEqual(await res.json(), { error: 'cloud_unreachable' });
+
+      const status = await app.request('/api/auth/status');
+      assert.equal(
+        ((await status.json()) as { loggedIn: boolean }).loggedIn,
+        true,
+        '改昵称失败不影响登录态',
+      );
     });
   });
 

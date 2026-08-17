@@ -60,6 +60,23 @@ export function authRoutes(client: AuthClient): Hono {
     }
   });
 
+  // 修改当前用户资料（第一期仅昵称）。云端 PATCH /auth/me 的本地镜像；
+  // 成功后 client 已同步本地 token/权益快照，status 立刻反映新昵称。
+  app.patch('/me', async (c) => {
+    const denied = denyCrossOrigin(c) ?? denyOversizedBody(c);
+    if (denied) return denied;
+    const body = (await readJsonBody(c)) as { nickname?: unknown } | null;
+    if (!body || typeof body.nickname !== 'string') {
+      return c.json({ error: 'invalid_nickname' }, 400);
+    }
+    try {
+      const res = await client.updateMe(body.nickname);
+      return c.json(res, 200);
+    } catch (e) {
+      return cloudError(c, e);
+    }
+  });
+
   // 登录态快照（不发网络请求；离线时 stale=true，数据来自本地缓存）。
   app.get('/status', async (c) => {
     try {

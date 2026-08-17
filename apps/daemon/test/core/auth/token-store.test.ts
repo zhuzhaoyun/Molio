@@ -272,6 +272,31 @@ describe('auth token-store', () => {
     assert.equal(read!.accessExpiresAt, undefined, 'Infinity exp → 缺省（否则永不过期）');
   });
 
+  describe('nickname 字段（validateTokens 白名单放行）', () => {
+    it('带 nickname 写读往返不丢字段', async () => {
+      const tokens = sampleTokens();
+      tokens.user.nickname = '墨友1024';
+      await writeAuthTokens(tokens);
+      assert.deepEqual(await readAuthTokens(), tokens);
+    });
+
+    it('旧版 token 文件无 nickname → 照读，nickname 缺省（undefined 安全）', async () => {
+      writeFileSync(authTokensPath(), JSON.stringify(sampleTokens()), 'utf8');
+      const read = await readAuthTokens();
+      assert.ok(read);
+      assert.equal(read!.user.nickname, undefined);
+    });
+
+    it('非 string 的 nickname 被白名单丢弃（畸形文件防御，不得整文件拒读）', async () => {
+      const raw = JSON.parse(JSON.stringify(sampleTokens())) as Record<string, unknown>;
+      (raw.user as Record<string, unknown>).nickname = 12345;
+      writeFileSync(authTokensPath(), JSON.stringify(raw), 'utf8');
+      const read = await readAuthTokens();
+      assert.ok(read);
+      assert.equal(read!.user.nickname, undefined);
+    });
+  });
+
   describe('decodeAccessExp', () => {
     /** 手写 payload JSON 的 JWT（JSON.stringify 无法表达 1e999 这类值）。 */
     function rawJwt(payloadJson: string): string {

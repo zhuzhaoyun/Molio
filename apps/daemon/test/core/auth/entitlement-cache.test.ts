@@ -74,6 +74,34 @@ describe('EntitlementCache', () => {
     assert.equal(new EntitlementCache().read(), null);
   });
 
+  describe('nickname 字段（validateSnapshot 白名单放行）', () => {
+    it('带 nickname 的快照写读往返不丢字段（重启后离线宽限仍显示新昵称）', () => {
+      const s = snap(NOW);
+      s.user.nickname = '墨流君';
+      new EntitlementCache().write(s);
+      assert.deepEqual(new EntitlementCache().read(), s);
+    });
+
+    it('旧快照无 nickname → 照读，nickname 缺省', () => {
+      new EntitlementCache().write(snap(NOW));
+      assert.equal(new EntitlementCache().read()?.user.nickname, undefined);
+    });
+
+    it('非 string 的 nickname 被白名单丢弃（畸形文件防御）', () => {
+      const file = join(tempHome, '.molio', 'entitlement-cache.json');
+      writeFileSync(
+        file,
+        '{"user":{"id":"u1","email":"a@b.c","createdAt":"2026-08-01T00:00:00.000Z","nickname":12345},"entitlement":{},"updatedAt":' +
+          NOW +
+          '}',
+        'utf8',
+      );
+      const read = new EntitlementCache().read();
+      assert.ok(read);
+      assert.equal(read!.user.nickname, undefined);
+    });
+  });
+
   it('snapshot updatedAt 必须有限正数：1e999（Infinity）= 永久宽限漏洞 → 拒读', () => {
     // 手写 JSON（JSON.stringify 会把 Infinity 折成 null）
     const file = join(tempHome, '.molio', 'entitlement-cache.json');

@@ -75,6 +75,7 @@ export function makeMockCloud(opts: MockCloudOptions = {}): MockCloud {
   const user: User = opts.user ?? {
     id: '01J5MOCKUSER00000000000000',
     email: 'user@example.com',
+    nickname: '墨友1024',
     createdAt: '2026-08-01T00:00:00.000Z',
   };
   const entitlement: Entitlement = opts.entitlement ?? { plan: 'free' };
@@ -169,6 +170,20 @@ export function makeMockCloud(opts: MockCloudOptions = {}): MockCloud {
     if (method === 'GET' && path === '/auth/me') {
       const token = bearerToken(auth);
       if (!token || !validAccess.has(token)) return json(401, { error: 'invalid_token' });
+      return json(200, { user, entitlement });
+    }
+
+    if (method === 'PATCH' && path === '/auth/me') {
+      const token = bearerToken(auth);
+      if (!token || !validAccess.has(token)) return json(401, { error: 'invalid_token' });
+      // 与云端 service.updateMe 同语义：nickname 必须 string，trim 后 1-20 code point
+      const b = body as { nickname?: unknown } | undefined;
+      if (!b || typeof b.nickname !== 'string') return json(400, { error: 'invalid_nickname' });
+      const trimmed = b.nickname.trim();
+      if (trimmed.length === 0 || Array.from(trimmed).length > 20) {
+        return json(400, { error: 'invalid_nickname' });
+      }
+      user.nickname = trimmed;
       return json(200, { user, entitlement });
     }
 

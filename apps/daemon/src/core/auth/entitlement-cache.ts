@@ -121,8 +121,11 @@ function validateSnapshot(raw: unknown): EntitlementSnapshot | null {
   if (typeof u.id !== 'string' || !u.id) return null;
   if (typeof u.email !== 'string' || !u.email) return null;
   if (typeof u.createdAt !== 'string' || !u.createdAt) return null;
+  const user: User = { id: u.id, email: u.email, createdAt: u.createdAt };
+  // 与 token-store.validateTokens 一致：nickname 仅 string 时放行（旧快照无此字段）
+  if (typeof u.nickname === 'string') user.nickname = u.nickname;
   return {
-    user: { id: u.id, email: u.email, createdAt: u.createdAt },
+    user,
     entitlement:
       r.entitlement && typeof r.entitlement === 'object'
         ? (r.entitlement as Entitlement)

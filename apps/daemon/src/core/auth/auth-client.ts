@@ -315,21 +315,51 @@ export class AuthClient {
     return body;
   }
 
+  /**
+   * PATCH /auth/me（修改昵称；带 401→刷新→重试一次）。
+   * 成功后同步两处本地快照：
+   * - 权益快照（与 me() 一致，响应即最新 user + entitlement）
+   * - token 文件里的 user 副本（/api/auth/status 的数据源）——经 adoptTokens
+   *   原 token 对 + 新 user 重写，复用其写盘路径与 generation 守卫；
+   *   不手改 this.tokens，避免绕过「先写盘后内存」不变量
+   */
+  async updateMe(nickname: string): Promise<MeResponse> {
+    const resp = await this.fetchWithBearer('/auth/me', 'PATCH', JSON.stringify({ nickname }));
+    if (!resp.ok) await this.throwCloudError(resp);
+    const body = (await this.parseBody(resp)) as unknown as MeResponse;
+    this.entitlementCache.write({
+      user: body.user,
+      entitlement: body.entitlement ?? {},
+      updatedAt: this.now(),
+    });
+    const cur = await this.currentTokens();
+    if (cur) {
+      await this.adoptTokens(cur.accessToken, cur.refreshToken, body.user);
+    }
+    return body;
+  }
+
   // ── 内部 ──────────────────────────────────────────────────────────
 
-  /** Bearer 请求 + 401→刷新→重试一次（me / deleteAccount 共享）。 */
-  private async fetchWithBearer(path: string, method: 'GET' | 'DELETE'): Promise<Response> {
-    let accessToken = await this.getAccessToken();
-    let resp = await this.fetchFromCloud(path, {
+  /**
+   * Bearer 请求 + 401→刷新→重试一次（me / updateMe / deleteAccount 共享）。
+   * body 是字符串（非 stream）：401 重试时可原样重发。
+   */
+  private async fetchWithBearer(
+    path: string,
+    method: 'GET' | 'DELETE' | 'PATCH',
+    body?: string,
+  ): Promise<Response> {
+    const init = (token: string): RequestInit => ({
       method,
-      headers: { authorization: `Bearer ${accessToken}` },
+      headers: { authorization: `Bearer ${token}` },
+      ...(body !== undefined ? { body } : {}),
     });
+    let accessToken = await this.getAccessToken();
+    let resp = await this.fetchFromCloud(path, init(accessToken));
     if (resp.status === 401) {
       const fresh = await this.refresh();
-      resp = await this.fetchFromCloud(path, {
-        method,
-        headers: { authorization: `Bearer ${fresh.accessToken}` },
-      });
+      resp = await this.fetchFromCloud(path, init(fresh.accessToken));
     }
     return resp;
   }

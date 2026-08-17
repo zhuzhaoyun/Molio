@@ -185,6 +185,51 @@ describe('AuthClient', () => {
     assert.equal(gatedClient.isLoginExpired(), false);
   });
 
+  // ── updateMe（PATCH /auth/me 修改昵称） ───────────────────────────
+
+  it('updateMe: 成功后 status/权益快照/token 落盘三处昵称同步更新', async () => {
+    await client.verify('user@example.com', '123456');
+    mock.calls.length = 0;
+
+    const res = await client.updateMe('墨流君');
+    assert.equal(res.user.nickname, '墨流君');
+    assert.deepEqual(res.entitlement, { plan: 'free' });
+    assert.equal(mock.countCalls('PATCH', '/auth/me'), 1);
+
+    // status（数据源 = token 文件 user 副本）立刻反映新昵称
+    const status = await client.getStatus();
+    assert.ok(status.loggedIn);
+    assert.equal(status.user.nickname, '墨流君');
+    // 权益快照同步刷新（离线宽限的数据来源不能是旧昵称）
+    assert.equal(client.entitlementCache.read()?.user.nickname, '墨流君');
+    // token 文件落盘同步（重启后不丢）；token 对本身不轮换
+    const onDisk = await readAuthTokens();
+    assert.equal(onDisk?.user.nickname, '墨流君');
+    assert.equal(onDisk?.refreshToken, 'refresh-1');
+  });
+
+  it('updateMe 首撞 401 → refresh → 重试一次成功（fetchWithBearer 共享路径）', async () => {
+    await client.verify('user@example.com', '123456');
+    mock.invalidateAccess(); // 本地看没过期、云端已失效
+    mock.calls.length = 0;
+
+    const res = await client.updateMe('墨流君');
+    assert.equal(res.user.nickname, '墨流君');
+    assert.equal(mock.countCalls('POST', '/auth/refresh'), 1);
+    assert.equal(mock.countCalls('PATCH', '/auth/me'), 2, '401 一次 + 重试一次');
+    const retried = await client.getStatus();
+    assert.ok(retried.loggedIn);
+    assert.equal(retried.user.nickname, '墨流君');
+  });
+
+  it('updateMe 未登录 → no_session，不打云端', async () => {
+    await assert.rejects(
+      () => client.updateMe('墨流君'),
+      (e: AuthCloudError) => e.status === 0 && e.code === 'no_session',
+    );
+    assert.equal(mock.calls.length, 0);
+  });
+
   // ── 主动刷新（§7.2：<2min） ────────────────────────────────────────
 
   it('access 剩余寿命充足时 getAccessToken 不刷新', async () => {

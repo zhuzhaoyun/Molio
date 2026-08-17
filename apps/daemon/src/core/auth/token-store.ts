@@ -103,10 +103,14 @@ function validateTokens(raw: unknown): AuthTokens | null {
   if (typeof u.createdAt !== 'string' || !u.createdAt) return null;
   // 数值字段必须 isFinite：JSON 里 `1e999` 解析成 Infinity——
   // accessExpiresAt=Infinity 会让主动刷新判断永不过期，NaN 则每次都抢跑刷新烧轮换。
+  const user: User = { id: u.id, email: u.email, createdAt: u.createdAt };
+  // nickname 白名单放行（仅 string）：不加则落盘读回丢字段，UI 退回邮箱兜底。
+  // 旧版云端/旧 token 文件无该字段 → 省略（undefined），消费方自行兜底。
+  if (typeof u.nickname === 'string') user.nickname = u.nickname;
   const out: AuthTokens = {
     accessToken: r.accessToken,
     refreshToken: r.refreshToken,
-    user: { id: u.id, email: u.email, createdAt: u.createdAt },
+    user,
     savedAt: typeof r.savedAt === 'number' && Number.isFinite(r.savedAt) ? r.savedAt : 0,
   };
   if (typeof r.accessExpiresAt === 'number' && Number.isFinite(r.accessExpiresAt)) {
