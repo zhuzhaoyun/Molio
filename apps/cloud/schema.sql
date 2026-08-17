@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS users (
 );
 -- nickname 是后加列：本文件 IF NOT EXISTS 只对新建库生效。
 -- 已有库迁移：ALTER TABLE users ADD COLUMN nickname TEXT;
+-- ⚠️ 顺序：先 ALTER 再部署含 nickname 的代码——INSERT/UPDATE 显式引用该列，列缺失会 500。
 -- （应用层保证新行非空；存量行 NULL 由 toApiUser 省略该 key、客户端 email 兜底）
 
 CREATE TABLE IF NOT EXISTS auth_codes (
