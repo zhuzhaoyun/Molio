@@ -74,6 +74,18 @@ export const SCRIPTS = {
     { type: 'turn_end', stopReason: 'end_turn' },
     { type: 'usage', usage: { input_tokens: 400, output_tokens: 60 }, costUsd: 0.02 },
   ],
+
+  /** 新闻/资讯任务：WebSearch ×2，result 文本内各含 URL（ws2 重复 ws1 首条测去重） */
+  newsRun: [
+    { type: 'status', label: 'running' },
+    { type: 'tool_use', id: 'ws1', name: 'WebSearch', input: { query: '今日科技新闻' } },
+    { type: 'tool_result', toolUseId: 'ws1', content: '英伟达新动向 https://www.ithome.com/0/887766.html\n小米新机 https://36kr.com/p/12345', isError: false },
+    { type: 'tool_use', id: 'ws2', name: 'WebSearch', input: { query: 'AI 大模型新闻' } },
+    { type: 'tool_result', toolUseId: 'ws2', content: 'Kimi 登顶 https://www.ithome.com/0/887766.html\nSpaceX 双发射 https://sspai.com/post/8765\n谷歌发模型 https://news.example.com/a/b', isError: false },
+    { type: 'text_delta', delta: '已整理今日科技新闻。' },
+    { type: 'turn_end', stopReason: 'end_turn' },
+    { type: 'usage', usage: { input_tokens: 500, output_tokens: 80 }, costUsd: 0.03 },
+  ],
 } as const;
 
 // ── Types ──────────────────────────────────────────────────────────────

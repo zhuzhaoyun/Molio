@@ -189,4 +189,51 @@ test.describe('KB chat — work visibility', () => {
     await expect(banner).toBeVisible({ timeout: 10_000 });
     await expect(banner).toContainText('总结.md');
   });
+
+  test('WebSearch 来源抽 URL 成可点链接 chip（去重 + host 标签）', async ({ page }) => {
+    await mockChatRun(page, { script: SCRIPTS.newsRun, frameDelay: 150 });
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+
+    await openQaAndSend(page, '整理今日新闻');
+
+    // ws1×2 + ws2×3，其中 ithome 首条重复 → 去重后 4 条，各自独立 chip
+    const chips = page.locator('[data-testid="source-chips"] [data-testid="source-chip"]');
+    await expect(chips).toHaveCount(4, { timeout: 10_000 });
+    // 标签 = host（去协议/取首段）。多元素 locator 上 toContainText 会触发 strict mode，
+    // 故用 filter 单元素定位；hasText 子串匹配 + toHaveCount(1) 同时校验去重（每 host 恰好一个 chip）
+    for (const host of ['www.ithome.com', '36kr.com', 'sspai.com', 'news.example.com']) {
+      await expect(chips.filter({ hasText: host })).toHaveCount(1);
+    }
+
+    // URL chip 可点击 → 新标签打开
+    const [popup] = await Promise.all([
+      page.waitForEvent('popup'),
+      chips.filter({ hasText: '36kr.com' }).click(),
+    ]);
+    await expect(popup).toBeDefined();
+    await expect(popup.url()).toContain('36kr.com');
+  });
+
+  test('来源 URL 上限 8 条，超出静默丢弃', async ({ page }) => {
+    const urls = Array.from({ length: 12 }, (_, i) => `https://news.example.com/item/${i}`);
+    await mockChatRun(page, {
+      script: [
+        { type: 'status', label: 'running' },
+        { type: 'tool_use', id: 'ws1', name: 'WebSearch', input: { query: '新闻' } },
+        { type: 'tool_result', toolUseId: 'ws1', content: urls.join('\n'), isError: false },
+        { type: 'text_delta', delta: '整理完毕。' },
+        { type: 'turn_end', stopReason: 'end_turn' },
+        { type: 'usage', usage: { input_tokens: 400, output_tokens: 60 }, costUsd: 0.02 },
+      ],
+      frameDelay: 100,
+    });
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+
+    await openQaAndSend(page, '整理今日新闻');
+
+    const chips = page.locator('[data-testid="source-chips"] [data-testid="source-chip"]');
+    await expect(chips).toHaveCount(8, { timeout: 10_000 }); // MAX_URL_CHIPS = 8
+  });
 });

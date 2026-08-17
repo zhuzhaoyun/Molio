@@ -36,3 +36,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.source-chip[data-kind='url'] {
+  color: var(--accent-color, #4a7);
+}

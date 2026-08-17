@@ -25,10 +25,14 @@ export function SourceChips({ tools }: Props) {
         <button
           key={s.target}
           type="button"
-          className={`source-chip${s.navigable ? ' navigable' : ''}`}
+          className={`source-chip${s.kind === 'url' ? ' url' : ''}${s.navigable ? ' navigable' : ''}`}
           data-testid="source-chip"
-          disabled={!s.navigable}
-          onClick={() => { if (s.navigable && vaultId) openFile(vaultId, s.target); }}
+          data-kind={s.kind}
+          disabled={s.kind !== 'url' && !s.navigable}
+          onClick={() => {
+            if (s.kind === 'url') { window.open(s.target, '_blank'); return; }
+            if (s.navigable && vaultId) openFile(vaultId, s.target);
+          }}
         >
           <span className="source-chip-icon" aria-hidden>{s.kind === 'url' ? '🔗' : '📄'}</span>
           <span className="source-chip-label">{s.label}</span>
