@@ -8,6 +8,7 @@
 CREATE TABLE IF NOT EXISTS users (
   id                TEXT PRIMARY KEY,            -- ULID
   email             TEXT NOT NULL,               -- 小写归一化存储；唯一性由下方部分唯一索引保证（注销账号不占位）
+  nickname          TEXT,                        -- 显示昵称（隐式注册自动生成「墨友xxxx」，可经 PATCH /auth/me 修改）；无唯一约束
   email_verified_at TIMESTAMPTZ,
   status            TEXT NOT NULL DEFAULT 'active',  -- active / deactivated（第二期 admin 封禁桩，第一期无写入方）
   entitlement       JSONB NOT NULL DEFAULT '{}', -- 权益桩：{plan, expiresAt, ...}，schema 第二期定
@@ -18,6 +19,9 @@ CREATE TABLE IF NOT EXISTS users (
   -- 已有库补约束：ALTER TABLE users ADD CONSTRAINT users_status_check CHECK (status IN ('active','deactivated'));
   CONSTRAINT users_status_check CHECK (status IN ('active', 'deactivated'))
 );
+-- nickname 是后加列：本文件 IF NOT EXISTS 只对新建库生效。
+-- 已有库迁移：ALTER TABLE users ADD COLUMN nickname TEXT;
+-- （应用层保证新行非空；存量行 NULL 由 toApiUser 省略该 key、客户端 email 兜底）
 
 CREATE TABLE IF NOT EXISTS auth_codes (
   id          TEXT PRIMARY KEY,

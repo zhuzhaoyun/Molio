@@ -36,28 +36,49 @@ function makeToken(over: Partial<RefreshTokenRecord> = {}): RefreshTokenRecord {
 
 test('store: createActiveUser 主键冲突 → UniqueViolationError（与 PG 行为一致）', async () => {
   const s = new MemoryAuthStore();
-  await s.createActiveUser({ id: 'user-1', email: 'a@example.com', now: T0 });
+  await s.createActiveUser({ id: 'user-1', email: 'a@example.com', nickname: '墨友0001', now: T0 });
   await assert.rejects(
-    () => s.createActiveUser({ id: 'user-1', email: 'b@example.com', now: T0 }),
+    () => s.createActiveUser({ id: 'user-1', email: 'b@example.com', nickname: '墨友0002', now: T0 }),
     UniqueViolationError,
   );
 });
 
 test('store: createActiveUser 活跃邮箱冲突 → UniqueViolationError；软删除后可复用', async () => {
   const s = new MemoryAuthStore();
-  const u = await s.createActiveUser({ id: 'user-1', email: 'a@example.com', now: T0 });
+  const u = await s.createActiveUser({ id: 'user-1', email: 'a@example.com', nickname: '墨友0001', now: T0 });
   await assert.rejects(
-    () => s.createActiveUser({ id: 'user-2', email: 'a@example.com', now: T0 }),
+    () => s.createActiveUser({ id: 'user-2', email: 'a@example.com', nickname: '墨友0002', now: T0 }),
     UniqueViolationError,
   );
   await s.softDeleteUser(u.id, T0 + 1000);
-  const again = await s.createActiveUser({ id: 'user-3', email: 'a@example.com', now: T0 + 2000 });
+  const again = await s.createActiveUser({ id: 'user-3', email: 'a@example.com', nickname: '墨友0003', now: T0 + 2000 });
   assert.equal(again.id, 'user-3');
+});
+
+test('store: createActiveUser 持久化 nickname', async () => {
+  const s = new MemoryAuthStore();
+  const u = await s.createActiveUser({ id: 'user-1', email: 'a@example.com', nickname: '墨友1234', now: T0 });
+  assert.equal(u.nickname, '墨友1234');
+  assert.equal((await s.findActiveUserById('user-1'))!.nickname, '墨友1234');
+});
+
+test('store: updateUserNickname 更新昵称 + updatedAt；未知/已注销账号返回 null', async () => {
+  const s = new MemoryAuthStore();
+  await s.createActiveUser({ id: 'user-1', email: 'a@example.com', nickname: '墨友0001', now: T0 });
+
+  const updated = await s.updateUserNickname('user-1', '新昵称', T0 + 1000);
+  assert.equal(updated!.nickname, '新昵称');
+  assert.equal(updated!.updatedAt, T0 + 1000);
+  assert.equal((await s.findActiveUserById('user-1'))!.nickname, '新昵称');
+
+  assert.equal(await s.updateUserNickname('nonexistent', 'x', T0), null);
+  await s.softDeleteUser('user-1', T0 + 2000);
+  assert.equal(await s.updateUserNickname('user-1', 'y', T0 + 3000), null, '已注销账号不可改昵称');
 });
 
 test('store: find* 返回防御性拷贝——改返回值不污染内部状态', async () => {
   const s = new MemoryAuthStore();
-  await s.createActiveUser({ id: 'user-1', email: 'a@example.com', now: T0 });
+  await s.createActiveUser({ id: 'user-1', email: 'a@example.com', nickname: '墨友0001', now: T0 });
 
   const u = await s.findActiveUserById('user-1');
   assert.ok(u);

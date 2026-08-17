@@ -13,6 +13,8 @@ export class UniqueViolationError extends Error {
 export interface UserRecord {
   id: string;
   email: string;
+  /** 显示昵称（隐式注册自动生成）；null = 存量旧行（应用层保证新行非空） */
+  nickname: string | null;
   emailVerifiedAt: number | null;
   status: 'active' | 'deactivated';
   entitlement: Record<string, unknown>;
@@ -48,9 +50,11 @@ export interface RefreshTokenRecord {
 export interface AuthStore {
   // ── users ──
   /** 活跃邮箱已存在时抛 UniqueViolationError（部分唯一索引 users_email_alive） */
-  createActiveUser(input: { id: string; email: string; now: number }): Promise<UserRecord>;
+  createActiveUser(input: { id: string; email: string; nickname: string | null; now: number }): Promise<UserRecord>;
   findActiveUserByEmail(email: string): Promise<UserRecord | null>;
   findActiveUserById(id: string): Promise<UserRecord | null>;
+  /** 修改昵称。账号不存在/已注销时返回 null（调用方按 401 处理，与其他端点一致） */
+  updateUserNickname(id: string, nickname: string, now: number): Promise<UserRecord | null>;
   /** 软删除：置 deleted_at。此后 find* 一律查不到该账号（活跃判定收口于 find* 查询） */
   softDeleteUser(id: string, now: number): Promise<void>;
 

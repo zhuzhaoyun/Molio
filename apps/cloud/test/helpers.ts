@@ -78,6 +78,14 @@ export function get(app: Hono, path: string, headers: Record<string, string> = {
   return app.request(path, { method: 'GET', headers });
 }
 
+export function patch(app: Hono, path: string, body?: unknown, headers: Record<string, string> = {}) {
+  return app.request(path, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json', ...headers },
+    body: JSON.stringify(body ?? {}),
+  });
+}
+
 /** 走完 send-code → verify 全链路，返回 token 对 + 用户 */
 export async function register(app: Hono, email = 'user@example.com') {
   const r1 = await post(app, '/auth/send-code', { email });
@@ -89,6 +97,6 @@ export async function register(app: Hono, email = 'user@example.com') {
   return (await r2.json()) as {
     accessToken: string;
     refreshToken: string;
-    user: { id: string; email: string; createdAt: string };
+    user: { id: string; email: string; nickname?: string; createdAt: string };
   };
 }

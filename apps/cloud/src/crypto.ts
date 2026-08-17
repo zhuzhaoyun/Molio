@@ -24,6 +24,14 @@ export function generateAuthCode(): string {
   return randomInt(0, 1_000_000).toString().padStart(6, '0');
 }
 
+/**
+ * 隐式注册自动昵称：「墨友」+ 4 位随机数（如「墨友0421」）。
+ * 昵称只是显示名，不做唯一性约束（重名无害，用户可随时经 PATCH /auth/me 修改）。
+ */
+export function generateNickname(): string {
+  return `墨友${randomInt(0, 10_000).toString().padStart(4, '0')}`;
+}
+
 const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 
 /** 轻量 ULID：48-bit 毫秒时间戳（10 字符）+ 80-bit 随机（16 字符） */

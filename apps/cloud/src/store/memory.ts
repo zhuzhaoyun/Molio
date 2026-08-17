@@ -11,7 +11,12 @@ export class MemoryAuthStore implements AuthStore {
   private codes = new Map<string, AuthCodeRecord>();
   private tokens = new Map<string, RefreshTokenRecord>();
 
-  async createActiveUser(input: { id: string; email: string; now: number }): Promise<UserRecord> {
+  async createActiveUser(input: {
+    id: string;
+    email: string;
+    nickname: string | null;
+    now: number;
+  }): Promise<UserRecord> {
     // 与 PG 一致：id 主键冲突与活跃邮箱唯一约束冲突都抛 UniqueViolationError
     if (this.users.has(input.id)) {
       throw new UniqueViolationError(`duplicate user id: ${input.id}`);
@@ -24,6 +29,7 @@ export class MemoryAuthStore implements AuthStore {
     const rec: UserRecord = {
       id: input.id,
       email: input.email,
+      nickname: input.nickname,
       emailVerifiedAt: input.now,
       status: 'active',
       entitlement: {},
@@ -48,6 +54,15 @@ export class MemoryAuthStore implements AuthStore {
   async findActiveUserById(id: string): Promise<UserRecord | null> {
     const u = this.users.get(id);
     return u && u.deletedAt === null && u.status === 'active' ? { ...u } : null;
+  }
+
+  async updateUserNickname(id: string, nickname: string, now: number): Promise<UserRecord | null> {
+    // 与 PG 的条件 UPDATE 同语义：仅活跃且未注销的账号可改
+    const u = this.users.get(id);
+    if (!u || u.deletedAt !== null || u.status !== 'active') return null;
+    u.nickname = nickname;
+    u.updatedAt = now;
+    return { ...u };
   }
 
   async softDeleteUser(id: string, now: number): Promise<void> {

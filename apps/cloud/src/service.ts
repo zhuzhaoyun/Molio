@@ -9,7 +9,7 @@ import type {
   VerifyResponse,
 } from '@molio/contracts';
 import type { CloudConfig } from './config.js';
-import { generateAuthCode, generateRefreshToken, hashCode, hashRefreshToken, ulid } from './crypto.js';
+import { generateAuthCode, generateNickname, generateRefreshToken, hashCode, hashRefreshToken, ulid } from './crypto.js';
 import { signAccessToken } from './jwt.js';
 import type { AuthCodeRecord, AuthStore, RefreshTokenRecord, UserRecord } from './store/types.js';
 import { UniqueViolationError } from './store/types.js';
@@ -20,6 +20,7 @@ export type ServiceErrorCode =
   | 'invalid_code'
   | 'locked'
   | 'invalid_token'
+  | 'invalid_nickname'
   | 'mail_failed';
 
 /** 第一期用到的全部服务错误状态码；类型收窄保证 handleError 不做无声转换 */
@@ -66,7 +67,10 @@ export class AuthService {
   }
 
   private toApiUser(u: UserRecord): User {
-    return { id: u.id, email: u.email, createdAt: new Date(u.createdAt).toISOString() };
+    const user: User = { id: u.id, email: u.email, createdAt: new Date(u.createdAt).toISOString() };
+    // null（存量旧行）不透出：undefined 让 JSON 省略该 key，旧客户端不受影响
+    if (u.nickname !== null) user.nickname = u.nickname;
+    return user;
   }
 
   // ─── POST /auth/send-code ───
@@ -169,7 +173,7 @@ export class AuthService {
     let user = await store.findActiveUserByEmail(email);
     if (!user) {
       try {
-        user = await store.createActiveUser({ id: ulid(now), email, now });
+        user = await store.createActiveUser({ id: ulid(now), email, nickname: generateNickname(), now });
       } catch (e) {
         if (e instanceof UniqueViolationError) {
           user = await store.findActiveUserByEmail(email);
@@ -289,6 +293,26 @@ export class AuthService {
     const user = await this.deps.store.findActiveUserById(userId);
     if (!user) throw new ServiceError('invalid_token', 401);
     return { user: this.toApiUser(user), entitlement: user.entitlement as Entitlement };
+  }
+
+  // ─── PATCH /auth/me（修改当前用户资料，第一期仅 nickname） ───
+
+  /**
+   * 昵称校验：trim 后按 **Unicode code point** 计数 1-20。
+   * 用 Array.from 而非 string.length——后者按 UTF-16 单元计数，
+   * emoji（如 '😀'.length === 2）会被错误折半。
+   * 不支持清空昵称：空串/纯空白一律 400（第一期用户恒有昵称）。
+   */
+  async updateMe(userId: string, nickname: string): Promise<MeResponse> {
+    const now = this.deps.now();
+    const trimmed = nickname.trim();
+    if (trimmed.length === 0 || Array.from(trimmed).length > 20) {
+      throw new ServiceError('invalid_nickname', 400);
+    }
+    const updated = await this.deps.store.updateUserNickname(userId, trimmed, now);
+    // 账号不存在/已注销：与 me() 一致按 401 处理
+    if (!updated) throw new ServiceError('invalid_token', 401);
+    return { user: this.toApiUser(updated), entitlement: updated.entitlement as Entitlement };
   }
 
   // ─── DELETE /auth/session（本机登出：只吊销当前设备） ───

@@ -1,5 +1,5 @@
 import { Hono, type Context } from 'hono';
-import type { RefreshRequest, SendCodeRequest, VerifyRequest } from '@molio/contracts';
+import type { RefreshRequest, SendCodeRequest, UpdateMeRequest, VerifyRequest } from '@molio/contracts';
 import type { CloudConfig } from './config.js';
 import { verifyAccessToken, type AccessPayload } from './jwt.js';
 import { AuthService, ServiceError, type ServiceErrorStatus } from './service.js';
@@ -64,7 +64,7 @@ function bearer(c: Context, config: CloudConfig, now: () => number): AccessPaylo
 }
 
 /**
- * 云端认证服务（第一期 6 端点，§六）。
+ * 云端认证服务（第一期 7 端点，§六）。
  * 不配 CORS：第一期 Web UI 一律经 daemon，无浏览器直连（§八）。
  */
 export function createApp(deps: AppDeps): Hono {
@@ -123,6 +123,21 @@ export function createApp(deps: AppDeps): Hono {
     if (!payload) return c.json({ error: 'invalid_token' }, 401);
     try {
       return c.json(await service.me(payload.sub), 200);
+    } catch (e) {
+      return handleError(c, e);
+    }
+  });
+
+  app.patch('/auth/me', async (c) => {
+    const payload = bearer(c, config, deps.now);
+    if (!payload) return c.json({ error: 'invalid_token' }, 401);
+    const body = await readJsonBody<UpdateMeRequest>(c);
+    // nickname 必须为非空 string；长度/空白校验在 service（回结构化 invalid_nickname）
+    if (!body || typeof body.nickname !== 'string') {
+      return c.json({ error: 'invalid_nickname' }, 400);
+    }
+    try {
+      return c.json(await service.updateMe(payload.sub, body.nickname), 200);
     } catch (e) {
       return handleError(c, e);
     }

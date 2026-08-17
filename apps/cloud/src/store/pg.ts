@@ -6,6 +6,7 @@ import { UniqueViolationError } from './types.js';
 interface UserRow {
   id: string;
   email: string;
+  nickname: string | null;
   email_verified_at: Date | null;
   status: string;
   entitlement: Record<string, unknown> | string | null;
@@ -60,6 +61,7 @@ function toUser(row: UserRow): UserRecord {
   return {
     id: row.id,
     email: row.email,
+    nickname: typeof row.nickname === 'string' ? row.nickname : null,
     emailVerifiedAt: ms(row.email_verified_at),
     // 白名单收窄：未知 status（将来迁移产生的中间态）一律按 deactivated 处理，
     // 绝不向调用方漏出 union 之外的值
@@ -101,13 +103,18 @@ function toToken(row: TokenRow): RefreshTokenRecord {
 export class PgAuthStore implements AuthStore {
   constructor(private pool: Pool) {}
 
-  async createActiveUser(input: { id: string; email: string; now: number }): Promise<UserRecord> {
+  async createActiveUser(input: {
+    id: string;
+    email: string;
+    nickname: string | null;
+    now: number;
+  }): Promise<UserRecord> {
     try {
       const res = await this.pool.query<UserRow>(
-        `INSERT INTO users (id, email, email_verified_at, status, entitlement, created_at, updated_at)
-         VALUES ($1, $2, $3, 'active', '{}', $3, $3)
+        `INSERT INTO users (id, email, nickname, email_verified_at, status, entitlement, created_at, updated_at)
+         VALUES ($1, $2, $4, $3, 'active', '{}', $3, $3)
          RETURNING *`,
-        [input.id, input.email, new Date(input.now)],
+        [input.id, input.email, new Date(input.now), input.nickname],
       );
       const row = res.rows[0];
       if (!row) throw new Error('createActiveUser: no row returned');
@@ -136,6 +143,19 @@ export class PgAuthStore implements AuthStore {
     const res = await this.pool.query<UserRow>(
       `SELECT * FROM users WHERE id = $1 AND deleted_at IS NULL AND status = 'active'`,
       [id],
+    );
+    const row = res.rows[0];
+    return row ? toUser(row) : null;
+  }
+
+  async updateUserNickname(id: string, nickname: string, now: number): Promise<UserRecord | null> {
+    // 条件 UPDATE 与 findActiveUserById 同谓词：仅活跃且未注销的账号可改；
+    // rowCount=0 = 账号不存在/已注销 → null（service 按 401 处理）
+    const res = await this.pool.query<UserRow>(
+      `UPDATE users SET nickname = $2, updated_at = $3
+       WHERE id = $1 AND deleted_at IS NULL AND status = 'active'
+       RETURNING *`,
+      [id, nickname, new Date(now)],
     );
     const row = res.rows[0];
     return row ? toUser(row) : null;
