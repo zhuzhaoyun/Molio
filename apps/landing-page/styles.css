@@ -1495,6 +1495,7 @@ p { margin-bottom: 0; }
 .rl-titles { flex: 1; min-width: 0; }
 .rl-name { font-size: 16px; font-weight: 700; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rl-sub { display: block; margin-top: 2px; font-size: 12px; color: var(--ink-20); }
+.rl-ver { margin-left: 6px; font-style: normal; color: var(--ink-40); }
 .rl-price { flex: none; font-size: 13px; font-weight: 700; padding: 4px 11px; border-radius: 999px; }
 .rl-price.paid { color: var(--seal); background: rgba(196, 30, 36, 0.08); }
 .rl-price.free { color: #1a7f4e; background: rgba(26, 127, 78, 0.08); }

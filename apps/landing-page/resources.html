@@ -117,7 +117,7 @@
         '<div class="rl-icon" style="background:' + r.tint + '">' + r.icon + '</div>' +
         '<div class="rl-titles">' +
           '<h3 class="rl-name">' + r.name + '</h3>' +
-          '<span class="rl-sub">' + (r.tags || []).join(' · ') + '</span>' +
+          '<span class="rl-sub">' + (r.tags || []).join(' · ') + '<em class="rl-ver">' + (r.version || '') + '</em></span>' +
         '</div>' +
         '<span class="rl-price ' + (paid ? 'paid' : 'free') + '">' + (paid ? '¥' + r.price : '免费') + '</span>' +
       '</div>' +

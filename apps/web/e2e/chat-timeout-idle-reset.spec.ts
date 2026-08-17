@@ -37,15 +37,22 @@ test.describe('Chat — idle reset prevents false timeout', () => {
     await sendMessage(page, 'hi');
 
     const input = page.locator('[data-testid="composer-input"]');
-    // During the run the composer is disabled (isRunning=true).
-    await expect(input).toBeDisabled({ timeout: 5_000 });
+    // Must be enabled WHILE the run is live. A 5s window would poll until the
+    // ~4s idle fallback unlock on old code, pushing the post-wait assertions
+    // outside the run window (RED via a timing cascade, not a direct
+    // discriminator). 500ms is below the 1s idle window: old code fails here
+    // directly on "composer disabled during run"; new code passes immediately
+    // and the post-wait composer-stop check lands inside the ~4s active run.
+    await expect(page.locator('[data-testid="composer-stop"]')).toBeVisible({ timeout: 5_000 });
+    await expect(input).toBeEnabled({ timeout: 500 });
 
     // Wait PAST the 1s idle window. The run is still streaming (events arrive
     // every 300ms through ~3s), so the timer has been reset repeatedly — no
-    // false timeout. The composer must still be running and no error banner
+    // false timeout. The composer must still be enabled and no error banner
     // must have surfaced.
     await page.waitForTimeout(1_600);
-    await expect(input).toBeDisabled();
+    await expect(page.locator('[data-testid="composer-stop"]')).toBeVisible();
+    await expect(input).toBeEnabled();
     await expect(page.locator('[data-testid="assistant-error"]')).toHaveCount(0);
   });
 

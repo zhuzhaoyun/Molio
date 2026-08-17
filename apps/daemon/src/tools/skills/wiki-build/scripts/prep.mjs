@@ -44,6 +44,19 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const MAX_SOURCE_BYTES = 500 * 1024 * 1024;
 
+/** 统计字符串中的 Unicode 私有区（PUA）字符数：U+E000–F8FF, U+F0000–FFFFD, U+100000–10FFFD */
+function countPUA(text) {
+  let n = 0;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.codePointAt(i);
+    if ((c >= 0xe000 && c <= 0xf8ff) || (c >= 0xf0000 && c <= 0xffffd) || (c >= 0x100000 && c <= 0x10fffd)) {
+      n++;
+      if (c > 0xffff) i++; // 跳过代理对低半部分
+    }
+  }
+  return n;
+}
+
 // ─── args ───
 
 function usage() {
@@ -244,6 +257,13 @@ function cmdPrepare(opts) {
     progress: path.join(outDir, `progress-${stem}.md`),
   };
 
+  // PUA 检测：GBK 转码生僻字/缺字常落入 Unicode 私有区（U+E000-F8FF 等），
+  // 会同时破坏 grep 匹配与引文逐字节核验——必须在转码阶段就显式警告，不能静默。
+  const puaCount = countPUA(joined);
+  if (puaCount > 0) {
+    warnings.push(`转码底本含 ${puaCount} 个私有区（PUA）字符——GBK 生僻字/缺字占位。grep 匹配实体名可能落空，引文 verify 会报 missing；建页时对含 PUA 的字符需改用行号定位或以规范字转写并注明。`);
+  }
+
   fs.writeFileSync(files.transcode, joined + '\n', 'utf8');
   fs.writeFileSync(files.segments, JSON.stringify({
     source: path.resolve(source),
@@ -430,6 +450,52 @@ function cmdStatus(opts) {
 
 // ─── verify ───
 
+/** 归一化：PUA → �（通配）、常见全角标点 → 半角。用于引文模糊匹配。 */
+const WILD = '�';
+function normForVerify(s) {
+  // PUA → WILD（用码点遍历而非正则字符类，避免手写字符类出错）
+  let out = '';
+  for (let i = 0; i < s.length; i++) {
+    const c = s.codePointAt(i);
+    if ((c >= 0xe000 && c <= 0xf8ff) || (c >= 0xf0000 && c <= 0xffffd) || (c >= 0x100000 && c <= 0x10fffd)) {
+      out += WILD;
+      if (c > 0xffff) i++;
+    } else {
+      out += s[i];
+    }
+  }
+  return out
+    .replace(/[「『]/g, '"').replace(/[」』]/g, '"')
+    .replace(/[：]/g, ':').replace(/[？]/g, '?').replace(/[！]/g, '!');
+}
+
+/**
+ * 模糊子串匹配：严格 includes 失败后的 fallback。
+ * - text 与 query 均已 normForVerify 归一化
+ * - PUA（�）在任一端通配任意单字符（页面写规范字 vs 底本 PUA 的情况）
+ * - 允许源端跳过最多 maxGap 个多余字符（标点转写差异、缺字占位）
+ * 返回 boolean。性能：按 query 首字符锚点定位，锚点数上限 maxAnchors。
+ */
+function fuzzyIncludes(text, q, maxGap = 2, maxAnchors = 200) {
+  if (!q.length) return true;
+  if (text.includes(q)) return true; // 快路径
+  const n = text.length, m = q.length;
+  const first = q[0];
+  let anchors = 0;
+  for (let start = text.indexOf(first); start !== -1 && anchors < maxAnchors; start = text.indexOf(first, start + 1)) {
+    anchors++;
+    let ti = start, qi = 0, gap = 0;
+    while (qi < m && ti < n) {
+      const tc = text[ti], qc = q[qi];
+      if (tc === qc || tc === '�' || qc === '�') { ti++; qi++; }
+      else if (gap < maxGap && ti > start) { ti++; gap++; } // 源端跳过多余字符
+      else break;
+    }
+    if (qi === m) return true;
+  }
+  return false;
+}
+
 function cmdVerify(opts) {
   const [pagePath, sourcePath] = opts._.slice(1);
   if (!pagePath || !sourcePath) { usage(); process.exit(1); }
@@ -441,6 +507,9 @@ function cmdVerify(opts) {
     process.stderr.write(`[prep] ERROR: ${e.message}\n`);
     process.exit(2);
   }
+
+  // 模糊匹配用归一化底本（PUA → 通配，全角标点 → 半角）
+  const sourceNorm = normForVerify(source);
 
   const quotes = new Set();
   const add = (q) => {
@@ -456,9 +525,13 @@ function cmdVerify(opts) {
 
   const missing = [];
   let found = 0;
+  let fuzzyFound = 0;
   for (const q of quotes) {
-    if (source.includes(q)) found++;
-    else missing.push(q);
+    if (source.includes(q)) { found++; continue; }
+    // 严格匹配失败 → 模糊 fallback（PUA 通配 + 间隙容忍）
+    const qNorm = normForVerify(q);
+    if (fuzzyIncludes(sourceNorm, qNorm)) { found++; fuzzyFound++; continue; }
+    missing.push(q);
   }
 
   process.stdout.write(JSON.stringify({
@@ -466,6 +539,7 @@ function cmdVerify(opts) {
     source: path.resolve(sourcePath),
     checked: quotes.size,
     found,
+    fuzzyFound,
     missing,
   }, null, 2) + '\n');
   process.exit(0);

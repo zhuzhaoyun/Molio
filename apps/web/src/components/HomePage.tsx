@@ -18,6 +18,10 @@ interface Props {
   /** Live background subagent/workflow activity (null = nothing to show). */
   activity?: ActivityInfo | null;
   onSend: (message: string) => void;
+  /** Form fallback for AskUserQuestion answers — must reach the agent
+   *  IMMEDIATELY (never queued): the agent is paused waiting for the answer,
+   *  so queueing it would deadlock. Mirrors KbChatSession's unflagged send. */
+  onSubmitForm?: (text: string) => void;
   onCancel: () => void;
   onNewChat: () => void;
   onSubmitToolResult?: (toolUseId: string, content: string) => Promise<void>;
@@ -35,6 +39,7 @@ export function HomePage({
   isRunning,
   activity,
   onSend,
+  onSubmitForm,
   onCancel,
   onNewChat,
   onSubmitToolResult,
@@ -156,7 +161,7 @@ export function HomePage({
                   message={msg}
                   isLast={msg.id === lastAssistantId}
                   onAnswerToolUse={onSubmitToolResult ? onAnswerToolUse : undefined}
-                  onSubmitForm={(text: string) => handleSend(text, [])}
+                  onSubmitForm={onSubmitForm ?? ((text: string) => handleSend(text, []))}
                   onRegenerate={msg.id === lastAssistantId ? onRegenerate : undefined}
                   onContinue={msg.id === lastAssistantId ? onContinue : undefined}
                   onRequestDelete={onRequestDelete}
