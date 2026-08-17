@@ -1,43 +1,102 @@
 .work-timeline {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border-color, rgba(0, 0, 0, 0.08));
+  gap: 6px;
+  width: fit-content;
+  max-width: 100%;
   font-size: 12px;
+  line-height: 1.6;
+}
+
+/* 运行中：单行胶囊进度条 */
+.work-timeline-strip {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  padding: 4px 14px;
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+  border-radius: 999px;
+  background: var(--bg-panel, #fff);
+  color: var(--text-secondary, #666);
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
 }
 .work-step {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  line-height: 1.5;
+  gap: 4px;
+}
+.work-step-sep {
+  margin: 0 8px;
+  color: var(--text-soft, #aaa);
+  user-select: none;
 }
 .work-step-icon {
-  width: 14px;
+  width: 12px;
   text-align: center;
   flex: none;
-  color: var(--text-secondary, #666);
 }
-.work-step[data-step-status='running'] .work-step-icon { color: #4a7; animation: work-step-pulse 1s infinite; }
-.work-step[data-step-status='done'] .work-step-icon { color: #4a7; }
+.work-step[data-step-status='done'] .work-step-icon { color: var(--text-soft, #aaa); }
 .work-step[data-step-status='error'] .work-step-icon { color: #d33; }
-.work-step[data-step-status='running'] .work-step-label { font-weight: 600; }
-.work-step-label { color: var(--text-primary, #222); }
+.work-step[data-step-status='running'] .work-step-icon {
+  color: var(--accent-color, #4a7);
+  animation: work-step-pulse 1s infinite;
+}
+.work-step[data-step-status='running'] .work-step-label {
+  font-weight: 600;
+  color: var(--text-primary, #222);
+}
+.work-step-label { color: var(--text-secondary, #666); }
 .work-step-detail {
-  color: var(--text-secondary, #666);
+  color: var(--text-soft, #999);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 60%;
+  max-width: 240px;
 }
 .work-step-count {
-  margin-left: auto;
   color: var(--text-secondary, #666);
   background: var(--bg-hover, rgba(0, 0, 0, 0.05));
-  border-radius: 8px;
+  border-radius: 999px;
   padding: 0 6px;
   font-size: 11px;
+  line-height: 1.4;
 }
+
+/* 完成态：折叠摘要 + 展开列表 */
+.work-timeline-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 14px;
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+  border-radius: 999px;
+  background: var(--bg-panel, #fff);
+  color: var(--text-secondary, #666);
+  font-size: 12px;
+  cursor: pointer;
+}
+.work-timeline-summary:hover { background: var(--bg-hover, rgba(0, 0, 0, 0.05)); }
+.work-summary-chevron { color: var(--text-soft, #999); }
+.work-summary-icon { color: var(--accent-color, #4a7); }
+
+.work-timeline-detail {
+  list-style: none;
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+  border-radius: 8px;
+  background: var(--bg-panel, #fff);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.work-timeline-detail .work-step[data-step-status='done'] .work-step-icon { color: var(--accent-color, #4a7); }
+.work-timeline-detail .work-step[data-step-status='error'] .work-step-icon { color: #d33; }
+.work-timeline-detail .work-step-label { color: var(--text-primary, #222); }
+.work-timeline-detail .work-step-detail { color: var(--text-secondary, #666); }
+
 @keyframes work-step-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }

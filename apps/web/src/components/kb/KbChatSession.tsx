@@ -267,7 +267,7 @@ export function KbChatSession({
 
   return (
     <div className="file-chat-session" style={{ display: active ? undefined : 'none' }} data-testid="kb-chat-session">
-      <WorkTimeline steps={deriveWorkSteps(chat.messages)} />
+      <WorkTimeline steps={deriveWorkSteps(chat.messages)} isRunning={chat.isRunning} />
       <div className="file-chat-messages">
         {chat.messages.length === 0 ? (
           <div className="file-chat-empty">

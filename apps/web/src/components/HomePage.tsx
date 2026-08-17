@@ -136,7 +136,7 @@ export function HomePage({
 
         {/* Chat log */}
         <div className="home-chat-log" ref={logRef}>
-          <WorkTimeline steps={deriveWorkSteps(messages)} />
+          <WorkTimeline steps={deriveWorkSteps(messages)} isRunning={isRunning} />
           {messages.map((msg) => {
             if (msg.role === 'user') {
               const isLastUser = (() => {

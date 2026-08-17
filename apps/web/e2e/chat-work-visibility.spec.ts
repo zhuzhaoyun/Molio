@@ -2,7 +2,7 @@
  * @area chat
  * @priority P1
  * 工作可见性三件套（方向 A/B/D）：
- *   - WorkTimeline 运行中显示步骤、完成后全部打勾
+ *   - WorkTimeline 运行中单行进度条、完成后折叠成摘要可展开
  *   - SourceChips 出现引用文件 chips，点击跳转打开
  *   - WorkCompleteBanner 完成后展示产物，点击跳转
  * Prerequisites: `pnpm dev`.
@@ -43,24 +43,28 @@ test.describe('KB chat — work visibility', () => {
     })();
   }
 
-  test('WorkTimeline 运行中显示步骤、完成后全部打勾', async ({ page }) => {
-    await mockChatRun(page, { script: SCRIPTS.workflowRun, frameDelay: 300 });
+  test('WorkTimeline 运行中显示单行进度条、完成后折叠成摘要（可展开）', async ({ page }) => {
+    await mockChatRun(page, { script: SCRIPTS.workflowRun, frameDelay: 800 });
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     await openQaAndSend(page, '总结知识库');
 
-    // 运行中：步骤条出现，且有步骤处于 running 状态
+    // 运行中：单行进度条出现，读取文件为当前步（detail 只在当前步）
     const timeline = page.locator('[data-testid="work-timeline"]');
     await expect(timeline).toBeVisible({ timeout: 5_000 });
     await expect(timeline).toContainText('读取文件');
-    await expect(timeline).toContainText('笔记/入门.md');
-    await expect(timeline.locator('[data-step-status="running"]').first()).toBeVisible({ timeout: 5_000 });
+    await expect(timeline.locator('[data-step-status="running"]').first())
+      .toContainText('笔记/入门.md', { timeout: 5_000 });
 
-    // 完成后：全部步骤打勾（无 running 残留）
-    await expect(timeline.locator('[data-step-status="running"]')).toHaveCount(0, { timeout: 10_000 });
-    const done = timeline.locator('[data-step-status="done"]');
-    await expect(done).toHaveCount(4); // 读取文件 + 检索内容 + 写入文件 + 生成回复
+    // 完成后：折叠成一行摘要（可展开），展开后 4 个 done 步骤 + banner
+    const summary = page.locator('[data-testid="work-timeline-summary"]');
+    await expect(summary).toBeVisible({ timeout: 10_000 });
+    await expect(summary).toContainText('4 步');
+    await summary.click();
+    await expect(timeline.locator('[data-step-status="done"]')).toHaveCount(4);
+    const banner = page.locator('[data-testid="work-complete-banner"]');
+    await expect(banner).toBeVisible({ timeout: 10_000 });
   });
 
   test('来源 chips 出现引用文件，点击跳转打开', async ({ page }) => {
@@ -177,7 +181,7 @@ test.describe('KB chat — work visibility', () => {
   });
 
   test('主页问答同样显示时间线与产物 banner', async ({ page }) => {
-    await mockChatRun(page, { script: SCRIPTS.workflowRun, frameDelay: 200 });
+    await mockChatRun(page, { script: SCRIPTS.workflowRun, frameDelay: 800 });
     await page.goto('http://localhost:5173/');
     await expect(page.locator('[data-testid="composer-input"]')).toBeVisible({ timeout: 5_000 });
 
@@ -187,10 +191,13 @@ test.describe('KB chat — work visibility', () => {
     const timeline = page.locator('[data-testid="work-timeline"]');
     await expect(timeline).toBeVisible({ timeout: 5_000 });
     await expect(timeline).toContainText('读取文件');
-    await expect(timeline).toContainText('笔记/入门.md');
+    await expect(timeline.locator('[data-step-status="running"]').first())
+      .toContainText('笔记/入门.md', { timeout: 5_000 });
 
-    // 完成后：无 running 残留，banner 出现
-    await expect(timeline.locator('[data-step-status="running"]')).toHaveCount(0, { timeout: 10_000 });
+    // 完成后：折叠摘要 + banner
+    const summary = page.locator('[data-testid="work-timeline-summary"]');
+    await expect(summary).toBeVisible({ timeout: 10_000 });
+    await expect(summary).toContainText('已完成');
     const banner = page.locator('[data-testid="work-complete-banner"]');
     await expect(banner).toBeVisible({ timeout: 10_000 });
     await expect(banner).toContainText('总结.md');

@@ -84,6 +84,7 @@ const zh: Record<string, string> = {
   'workTimeline.edit': '更新文件',
   'workTimeline.append': '追加内容',
   'workTimeline.default': '调用工具',
+  'workTimeline.doneSummary': '已完成 · {n} 步',
 
   // ── SourceChips ──
   'source.title': '引用',
