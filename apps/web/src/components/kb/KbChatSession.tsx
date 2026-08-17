@@ -9,7 +9,7 @@ import { AssistantMessage } from '../AssistantMessage';
 import { ChatComposer, type FileRef, type PastedImage, buildAttachmentPrefix } from '../ChatComposer';
 import { ActivityTree } from '../ActivityTree';
 import { useI18n } from '../../i18n';
-import { deriveWorkSteps } from '../../utils/workSteps';
+import { deriveWorkSteps, findLastAssistant } from '../../utils/workSteps';
 import { WorkTimeline } from '../WorkTimeline';
 import { WorkCompleteBanner } from '../WorkCompleteBanner';
 import { WIKI_QUERY_TRIGGER, deriveChatTitle } from './kbChatPrompts';
@@ -262,13 +262,7 @@ export function KbChatSession({
       ? [{ vaultId: session.vaultId, filePath: session.filePath }]
       : [];
 
-  const lastAssistant = (() => {
-    for (let i = chat.messages.length - 1; i >= 0; i--) {
-      const m = chat.messages[i];
-      if (m && m.role === 'assistant') return m;
-    }
-    return null;
-  })();
+  const lastAssistant = findLastAssistant(chat.messages);
   const lastAssistantId = lastAssistant?.id ?? null;
 
   return (

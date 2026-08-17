@@ -47,16 +47,24 @@ function toolDetail(tool: ToolEvent): string | undefined {
 }
 
 /**
+ * 从消息列表倒序找最后一条 assistant 消息（当前 run 的回复载体）。
+ * 纯函数 —— 供 deriveWorkSteps 与主页/KB 会话共享。
+ */
+export function findLastAssistant(messages: ChatMessage[]): ChatMessage | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m && m.role === 'assistant') return m;
+  }
+  return null;
+}
+
+/**
  * 从消息列表推导当前 run 的步骤条。只看最后一条 assistant 消息（当前 run 的回复）：
  * thinking 无正文 →「思考中」；tools 逐组展开（连续同名合并 + count）；有正文 →「生成回复」。
  * 纯函数 —— tools 已按消息持久化，历史恢复/重挂载天然还原，不需要 run-scoped 状态。
  */
 export function deriveWorkSteps(messages: ChatMessage[]): WorkStep[] {
-  let last: ChatMessage | null = null;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i];
-    if (m && m.role === 'assistant') { last = m; break; }
-  }
+  const last = findLastAssistant(messages);
   if (!last) return [];
 
   const steps: WorkStep[] = [];

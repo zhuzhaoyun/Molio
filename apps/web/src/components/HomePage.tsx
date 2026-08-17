@@ -3,6 +3,9 @@ import { ChatComposer, buildAttachmentPrefix } from './ChatComposer';
 import type { FileRef, PastedImage } from './ChatComposer';
 import { UserMessage } from './UserMessage';
 import { AssistantMessage } from './AssistantMessage';
+import { WorkTimeline } from './WorkTimeline';
+import { WorkCompleteBanner } from './WorkCompleteBanner';
+import { deriveWorkSteps, findLastAssistant } from '../utils/workSteps';
 import { useI18n } from '../i18n';
 import { useSelectMode, messageSelectionStore } from '../stores/messageSelectionStore';
 import { SelectionConfirmBar } from './SelectionConfirmBar';
@@ -70,13 +73,8 @@ export function HomePage({
   }, [messages]);
 
   // Find the last assistant message ID so only that card stays interactive
-  const lastAssistantId = useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i];
-      if (msg && msg.role === 'assistant') return msg.id;
-    }
-    return null;
-  }, [messages]);
+  const lastAssistant = useMemo(() => findLastAssistant(messages), [messages]);
+  const lastAssistantId = lastAssistant?.id ?? null;
 
   // Wire onAnswerToolUse: route tool_result back to the open stream-json child
   const onAnswerToolUse = useCallback(
@@ -138,6 +136,7 @@ export function HomePage({
 
         {/* Chat log */}
         <div className="home-chat-log" ref={logRef}>
+          <WorkTimeline steps={deriveWorkSteps(messages)} />
           {messages.map((msg) => {
             if (msg.role === 'user') {
               const isLastUser = (() => {
@@ -180,6 +179,9 @@ export function HomePage({
             }
             return null;
           })}
+          {!isRunning && lastAssistant && (
+            <WorkCompleteBanner tools={lastAssistant.tools ?? []} />
+          )}
           <div ref={bottomRef} />
         </div>
 

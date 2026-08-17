@@ -35,6 +35,14 @@ test.describe('KB chat — work visibility', () => {
     })();
   }
 
+  function sendOnHome(page: import('@playwright/test').Page, text: string) {
+    return (async () => {
+      const input = page.locator('[data-testid="composer-input"]');
+      await input.fill(text);
+      await page.locator('[data-testid="composer-send"]').click();
+    })();
+  }
+
   test('WorkTimeline 运行中显示步骤、完成后全部打勾', async ({ page }) => {
     await mockChatRun(page, { script: SCRIPTS.workflowRun, frameDelay: 300 });
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
@@ -160,5 +168,25 @@ test.describe('KB chat — work visibility', () => {
     await expect(banner).toContainText('成功.md');
     await expect(banner).not.toContainText('失败.md');
     await expect(banner.locator('[data-testid="work-complete-file"]')).toHaveCount(1);
+  });
+
+  test('主页问答同样显示时间线与产物 banner', async ({ page }) => {
+    await mockChatRun(page, { script: SCRIPTS.workflowRun, frameDelay: 200 });
+    await page.goto('http://localhost:5173/');
+    await expect(page.locator('[data-testid="composer-input"]')).toBeVisible({ timeout: 5_000 });
+
+    await sendOnHome(page, '总结知识库');
+
+    // 运行中：时间线出现在主页消息流顶部
+    const timeline = page.locator('[data-testid="work-timeline"]');
+    await expect(timeline).toBeVisible({ timeout: 5_000 });
+    await expect(timeline).toContainText('读取文件');
+    await expect(timeline).toContainText('笔记/入门.md');
+
+    // 完成后：无 running 残留，banner 出现
+    await expect(timeline.locator('[data-step-status="running"]')).toHaveCount(0, { timeout: 10_000 });
+    const banner = page.locator('[data-testid="work-complete-banner"]');
+    await expect(banner).toBeVisible({ timeout: 10_000 });
+    await expect(banner).toContainText('总结.md');
   });
 });
