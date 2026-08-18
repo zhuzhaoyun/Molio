@@ -1464,12 +1464,24 @@
 .overflow-menu-item:disabled { opacity: 0.4; cursor: default; }
 .overflow-menu-item svg { flex-shrink: 0; }
 
-/* ─── Message toolbar (hover-reveal) ─── */
+/* ─── Message toolbar (hover-reveal overlay) ───
+ * Absolutely positioned inside the message so the hidden bar never reserves
+ * in-flow space (previously ~32px of phantom gap under every message's last
+ * content — e.g. source chips). Appears over the message's bottom-right on
+ * hover; since it's a .msg descendant, hovering the bar keeps .msg:hover active. */
 .message-toolbar {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  z-index: 20;
   display: flex;
   gap: 2px;
   align-items: center;
-  margin-top: 6px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-soft);
+  box-shadow: var(--shadow-xs);
   opacity: 0;
   transition: opacity 0.12s ease;
   pointer-events: none;
