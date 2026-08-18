@@ -57,21 +57,19 @@ function molioDirIn(vaultDir: string, displayName: string): string {
 }
 
 describe('skills/vault-config', () => {
-  // ── effective set: globally-enabled OR core OR bundled, same for every vault ──
+  // ── effective set: globally-enabled OR bundled, same for every vault ──
 
-  it('getEffectiveSkillIds: globally-enabled OR core OR bundled (app-owned ignores the switch)', () => {
+  it('getEffectiveSkillIds: globally-enabled OR bundled (app-owned ignores the switch)', () => {
     const { vault } = makeVault('V');
     createSkill(db, { id: 'a', name: 'A', description: '', enabled: true, builtIn: false }, 'body', opts);
     createSkill(db, { id: 'b', name: 'B', description: '', enabled: false, builtIn: false }, 'body', opts);
-    createSkill(db, { id: 'c', name: 'C', description: '', enabled: false, builtIn: false, core: true }, 'body', opts);
     createSkill(db, { id: 'd', name: 'D', description: '', enabled: false, builtIn: true, kind: 'bundled' }, '', opts);
 
     // a: global on → in
     // b: global off → out
-    // c: core → in even though globally disabled (hidden but always effective)
     // d: bundled → in even though globally disabled (hidden app functionality,
     //    wired into deterministic app paths; the switch is ignored)
-    assert.deepEqual(getEffectiveSkillIds(db, vault.id), ['a', 'c', 'd']);
+    assert.deepEqual(getEffectiveSkillIds(db, vault.id), ['a', 'd']);
   });
 
   // ── reconcileVault ──
