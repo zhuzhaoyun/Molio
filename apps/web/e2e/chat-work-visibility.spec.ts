@@ -2,7 +2,7 @@
  * @area chat
  * @priority P1
  * 工作可见性三件套（方向 A/B/D）：
- *   - WorkTimeline 运行中单行进度条、完成后折叠成摘要可展开
+ *   - WorkTimeline 锚定最后一条回复：运行中当前动作行+扫描条，完成后结果摘要（可展开、证据回跳）
  *   - SourceChips 出现引用文件 chips，点击跳转打开
  *   - WorkCompleteBanner 完成后展示产物，点击跳转
  * Prerequisites: `pnpm dev`.
@@ -43,26 +43,38 @@ test.describe('KB chat — work visibility', () => {
     })();
   }
 
-  test('WorkTimeline 运行中显示单行进度条、完成后折叠成摘要（可展开）', async ({ page }) => {
+  test('WorkTimeline 锚定最后一条回复：运行中当前动作、完成后结果摘要（可展开 + 证据回跳）', async ({ page }) => {
     await mockChatRun(page, { script: SCRIPTS.workflowRun, frameDelay: 800 });
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     await openQaAndSend(page, '总结知识库');
 
-    // 运行中：单行进度条出现，读取文件为当前步（detail 只在当前步）
-    const timeline = page.locator('[data-testid="work-timeline"]');
+    // 运行中：最后一条 assistant 消息内部出现当前动作行（读取文件 · 笔记/入门.md）
+    const lastAssistant = page.locator('[data-testid="assistant-message"]').last();
+    const timeline = lastAssistant.locator('[data-testid="work-timeline"]');
     await expect(timeline).toBeVisible({ timeout: 5_000 });
-    await expect(timeline).toContainText('读取文件');
-    await expect(timeline.locator('[data-step-status="running"]').first())
-      .toContainText('笔记/入门.md', { timeout: 5_000 });
+    const current = timeline.locator('[data-testid="work-timeline-current"]');
+    await expect(current).toContainText('读取文件');
+    await expect(current).toContainText('笔记/入门.md');
 
-    // 完成后：折叠成一行摘要（可展开），展开后 4 个 done 步骤 + banner
+    // 完成后：折叠成结果摘要（清单非计数），展开显示步骤、点击回跳证据
     const summary = page.locator('[data-testid="work-timeline-summary"]');
     await expect(summary).toBeVisible({ timeout: 10_000 });
-    await expect(summary).toContainText('4 步');
+    await expect(summary).toContainText('已完成');
+    await expect(summary).toContainText('读取文件');
+    await expect(summary).not.toContainText('步');
+
     await summary.click();
-    await expect(timeline.locator('[data-step-status="done"]')).toHaveCount(4);
+    const steps = timeline.locator('[data-testid="work-timeline-step"]');
+    await expect(steps).toHaveCount(3); // Read/Grep/Write（生成回复为静态行，不计按钮）
+    await expect(steps.filter({ hasText: '写入文件' })).toHaveCount(1);
+    await expect(steps.filter({ hasText: '写入文件' })).toContainText('产出/总结.md');
+
+    // 点击「写入文件」步骤 → 滚动到证据 ToolCard
+    await steps.filter({ hasText: '写入文件' }).click();
+    await expect(page.locator('[data-tool-id="w1"]')).toBeInViewport();
+
     const banner = page.locator('[data-testid="work-complete-banner"]');
     await expect(banner).toBeVisible({ timeout: 10_000 });
   });
@@ -180,19 +192,22 @@ test.describe('KB chat — work visibility', () => {
     await expect(banner.locator('[data-testid="work-complete-file"]')).toHaveCount(1);
   });
 
-  test('主页问答同样显示时间线与产物 banner', async ({ page }) => {
+  test('主页问答：时间线锚定最后一条回复（不再悬浮消息流顶部）+ 产物 banner', async ({ page }) => {
     await mockChatRun(page, { script: SCRIPTS.workflowRun, frameDelay: 800 });
     await page.goto('http://localhost:5173/');
     await expect(page.locator('[data-testid="composer-input"]')).toBeVisible({ timeout: 5_000 });
 
     await sendOnHome(page, '总结知识库');
 
-    // 运行中：时间线出现在主页消息流顶部
-    const timeline = page.locator('[data-testid="work-timeline"]');
+    // 运行中：时间线在最后一条 assistant 消息内部，且 .chat-log 首个子元素不再是时间线
+    const chatLog = page.locator('.home-chat-log');
+    const lastAssistant = page.locator('[data-testid="assistant-message"]').last();
+    const timeline = lastAssistant.locator('[data-testid="work-timeline"]');
     await expect(timeline).toBeVisible({ timeout: 5_000 });
-    await expect(timeline).toContainText('读取文件');
-    await expect(timeline.locator('[data-step-status="running"]').first())
-      .toContainText('笔记/入门.md', { timeout: 5_000 });
+    const current = timeline.locator('[data-testid="work-timeline-current"]');
+    await expect(current).toContainText('读取文件');
+    await expect(current).toContainText('笔记/入门.md');
+    await expect(chatLog.locator(':scope > [data-testid="work-timeline"]')).toHaveCount(0);
 
     // 完成后：折叠摘要 + banner
     const summary = page.locator('[data-testid="work-timeline-summary"]');

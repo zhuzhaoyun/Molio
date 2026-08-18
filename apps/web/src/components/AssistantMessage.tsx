@@ -1,6 +1,7 @@
 import { useMemo, useCallback } from 'react';
 import type { ChatMessage, ToolEvent } from '../hooks/useChat';
 import { renderMarkdown, splitContent } from '../utils/markdown';
+import { deriveStepsForMessage } from '../utils/workSteps';
 import { CodeBlock } from './CodeBlock';
 import { useI18n } from '../i18n';
 import { useActiveVaultId } from '../stores/vaultStore';
@@ -8,6 +9,7 @@ import { useFileNavigation } from '../hooks/useFileNavigation';
 import { ToolCard } from './ToolCard';
 import { ToolGroup, BatchGroup } from './ToolGroup';
 import { ThinkingBlock } from './ThinkingBlock';
+import { WorkTimeline } from './WorkTimeline';
 import { SourceChips } from './SourceChips';
 import { SaveToKbButton } from './SaveToKbButton';
 import { SaveAsSkillButton } from './SaveAsSkillButton';
@@ -143,6 +145,8 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
     [message.tools]
   );
 
+  const steps = useMemo(() => deriveStepsForMessage(message), [message]);
+
   const activeVaultId = useActiveVaultId();
   const { openFile } = useFileNavigation();
 
@@ -180,6 +184,8 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
         <span>{t('assistant.label')}</span>
         <span className="msg-time">{formatTime(message.timestamp)}</span>
       </div>
+
+      {isLast && <WorkTimeline steps={steps} isRunning={!!message.streaming} />}
 
       {selectMode && !message.streaming && (
         <MessageCheckbox id={message.id} />

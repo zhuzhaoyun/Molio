@@ -3,9 +3,8 @@ import { ChatComposer, buildAttachmentPrefix } from './ChatComposer';
 import type { FileRef, PastedImage } from './ChatComposer';
 import { UserMessage } from './UserMessage';
 import { AssistantMessage } from './AssistantMessage';
-import { WorkTimeline } from './WorkTimeline';
 import { WorkCompleteBanner } from './WorkCompleteBanner';
-import { deriveWorkSteps, findLastAssistant } from '../utils/workSteps';
+import { findLastAssistant } from '../utils/workSteps';
 import { useI18n } from '../i18n';
 import { useSelectMode, messageSelectionStore } from '../stores/messageSelectionStore';
 import { SelectionConfirmBar } from './SelectionConfirmBar';
@@ -136,7 +135,6 @@ export function HomePage({
 
         {/* Chat log */}
         <div className="home-chat-log" ref={logRef}>
-          <WorkTimeline steps={deriveWorkSteps(messages)} isRunning={isRunning} />
           {messages.map((msg) => {
             if (msg.role === 'user') {
               const isLastUser = (() => {

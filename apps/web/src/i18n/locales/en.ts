@@ -84,7 +84,8 @@ const en: Record<string, string> = {
   'workTimeline.edit': 'Update file',
   'workTimeline.append': 'Append content',
   'workTimeline.default': 'Tool call',
-  'workTimeline.doneSummary': 'Done · {n} steps',
+  'workTimeline.done': 'Done',
+  'workTimeline.failed': 'Failed',
 
   // ── SourceChips ──
   'source.title': 'Sources',

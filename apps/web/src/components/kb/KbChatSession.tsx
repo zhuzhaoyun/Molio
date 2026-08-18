@@ -9,8 +9,7 @@ import { AssistantMessage } from '../AssistantMessage';
 import { ChatComposer, type FileRef, type PastedImage, buildAttachmentPrefix } from '../ChatComposer';
 import { ActivityTree } from '../ActivityTree';
 import { useI18n } from '../../i18n';
-import { deriveWorkSteps, findLastAssistant } from '../../utils/workSteps';
-import { WorkTimeline } from '../WorkTimeline';
+import { findLastAssistant } from '../../utils/workSteps';
 import { WorkCompleteBanner } from '../WorkCompleteBanner';
 import { WIKI_QUERY_TRIGGER, deriveChatTitle } from './kbChatPrompts';
 
@@ -267,7 +266,6 @@ export function KbChatSession({
 
   return (
     <div className="file-chat-session" style={{ display: active ? undefined : 'none' }} data-testid="kb-chat-session">
-      <WorkTimeline steps={deriveWorkSteps(chat.messages)} isRunning={chat.isRunning} />
       <div className="file-chat-messages">
         {chat.messages.length === 0 ? (
           <div className="file-chat-empty">

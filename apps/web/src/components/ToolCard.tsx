@@ -131,7 +131,7 @@ function DefaultToolCard({ tool, allTools }: { tool: ToolEvent; allTools: ToolEv
   };
 
   return (
-    <div className="tool-card-wrapper">
+    <div className="tool-card-wrapper" data-tool-id={tool.id}>
       <div
         className={`tool-line${hasOutput ? ' has-output' : ''}`}
         role={hasOutput ? 'button' : undefined}
