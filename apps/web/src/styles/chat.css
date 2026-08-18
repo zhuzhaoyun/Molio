@@ -617,13 +617,12 @@
   font-style: italic;
 }
 
-/* Thinking block — 内省区：蓝轨道 + 衬线，与「操作」的珊瑚 mono 明显区分 */
+/* Thinking block — 内省区：中性面板，靠标签 + 暗色正文区分，不做彩色装饰（简洁优先） */
 .thinking-block {
-  border: 1px solid var(--blue-border, #d4dbf0);
-  border-left: 3px solid var(--blue, #2a52d0);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   margin: 0 0 6px;
-  background: color-mix(in srgb, var(--blue-bg, #eef1fa) 55%, transparent);
+  background: var(--bg-subtle);
   overflow: hidden;
 }
 .thinking-header {
@@ -631,23 +630,20 @@
   align-items: center;
   gap: 6px;
   padding: 5px 10px;
-  font-family: var(--serif);
-  font-style: italic;
   font-size: 12px;
-  color: color-mix(in srgb, var(--blue, #2a52d0) 85%, var(--text-muted));
+  color: var(--text-muted);
   cursor: pointer;
   user-select: none;
 }
 .thinking-header:hover {
-  color: color-mix(in srgb, var(--blue, #2a52d0) 65%, var(--text));
+  color: var(--text);
 }
 .thinking-content {
   padding: 8px 10px 9px;
-  font-family: var(--serif);
   font-size: 12px;
   line-height: 1.6;
-  color: color-mix(in srgb, var(--blue, #2a52d0) 72%, var(--text-muted));
-  border-top: 1px solid var(--blue-border, #d4dbf0);
+  color: var(--text-muted);
+  border-top: 1px solid var(--border-soft);
   max-height: 220px;
   overflow-y: auto;
   white-space: pre-wrap;
