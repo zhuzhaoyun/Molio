@@ -11,7 +11,7 @@
   margin-bottom: 6px;
 }
 
-/* ── 生成中：当前动作 + 扫描条 ── */
+/* ── 生成中：当前动作 + 静态底条 ── */
 .work-timeline-current {
   display: flex;
   align-items: center;
@@ -37,25 +37,10 @@
   min-width: 0;
 }
 .work-timeline-track {
-  position: relative;
   height: 2px;
   margin: 0 10px 6px;
   border-radius: 2px;
   background: color-mix(in srgb, var(--accent, #c96442) 15%, transparent);
-  overflow: hidden;
-}
-.work-timeline-track::after {
-  content: '';
-  position: absolute;
-  top: 0; bottom: 0; left: 0;
-  width: 30%;
-  border-radius: 2px;
-  background: var(--accent, #c96442);
-  animation: work-scan 1.2s ease-in-out infinite;
-}
-@keyframes work-scan {
-  0% { transform: translateX(-110%); }
-  100% { transform: translateX(340%); }
 }
 @keyframes work-spin {
   to { transform: rotate(360deg); }
@@ -148,5 +133,4 @@
 
 @media (prefers-reduced-motion: reduce) {
   .work-timeline-spinner { animation: none; }
-  .work-timeline-track::after { animation: none; opacity: 0.4; }
 }
