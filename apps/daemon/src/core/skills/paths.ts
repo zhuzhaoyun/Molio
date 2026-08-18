@@ -1,7 +1,7 @@
 /**
  * Path helpers for the global user skill library.
  *
- * Source of truth: `~/.molio/skills/<id>/SKILL.md` (library/core content) +
+ * Source of truth: `~/.molio/skills/<id>/SKILL.md` (library content) +
  *                   the daemon's `skills` table (metadata + master switch).
  * Effect (sync):    `<vault>/.claude/skills/molio--<dirName>/SKILL.md` —
  *                   per-vault fan-out driven by vault-config.ts (claudeHome is
@@ -13,8 +13,10 @@
  *                   touch the user's own skills.
  * Legacy:           pre-per-vault builds synced to `~/.claude/skills/molio--*`;
  *                   startup cleanup removes those (cleanupLegacyGlobalSync).
- *                   Older per-vault builds used `molio--<uuid>` dir names; to
- *                   the name-based reconcile those are plain orphans and get
+ *                   Older per-vault builds used `molio--<uuid>` dir names, and
+ *                   even older ones seeded the retired core writing trio
+ *                   (`molio--写文章` / `molio--总结提炼` / `molio--润色改写`);
+ *                   to the name-based reconcile those are plain orphans and get
  *                   swept automatically — no migration code needed.
  *
  * Every helper accepts optional `molioHome` / `claudeHome` overrides so tests
