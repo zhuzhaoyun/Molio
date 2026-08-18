@@ -19,26 +19,31 @@ test.describe('Chat — streaming details', () => {
   });
 
   test('thinking block renders and is collapsible', async ({ page }) => {
-    await mockChatRun(page, { script: SCRIPTS.withThinking });
+    // frameDelay 拉宽流式窗口：默认瞬时 flush 会让 run 在 Playwright 轮询到前就完成，
+    // 完成态思考块收进折叠工作块不在 DOM，抓不到「流式自动展开」。
+    await mockChatRun(page, { script: SCRIPTS.withThinking, frameDelay: 800 });
     await gotoHome(page);
     await sendMessage(page, 'Analyze this');
 
-    // Thinking block should appear
+    // 流式时：思考块在 WorkBlock 内自动展开，内容可见
     const thinking = page.locator('[data-testid="thinking-block"]');
     await expect(thinking).toBeVisible({ timeout: 10_000 });
-
-    // Header should show "Thinking" label
     await expect(thinking.locator('.thinking-header')).toBeVisible();
+    await expect(thinking.locator('.thinking-content')).toBeVisible();
+    await expect(thinking.locator('.thinking-content')).toContainText('Let me analyze this...');
 
-    // Initially collapsed — content not visible
+    // 完成后：思考块收进折叠的工作块详情（默认收起），需先展开工作块再展开思考块
+    const summary = page.locator('[data-testid="work-timeline-summary"]');
+    await expect(summary).toBeVisible({ timeout: 10_000 });
+    await summary.click();
     await expect(thinking.locator('.thinking-content')).toBeHidden();
 
-    // Click to expand
+    // 点击思考块标题 → 展开
     await thinking.locator('.thinking-header').click();
     await expect(thinking.locator('.thinking-content')).toBeVisible();
     await expect(thinking.locator('.thinking-content')).toContainText('Let me analyze this...');
 
-    // Click to collapse again
+    // 再次点击 → 折叠
     await thinking.locator('.thinking-header').click();
     await expect(thinking.locator('.thinking-content')).toBeHidden();
   });
@@ -51,7 +56,8 @@ test.describe('Chat — streaming details', () => {
     // Wait for the response to complete
     await expect(page.locator('[data-testid="usage-footer"]')).toBeVisible({ timeout: 10_000 });
 
-    // Tool line should be visible with the tool name
+    // 完成后工具行收进折叠的工作块，展开后可见（单工具不分组，直接 .tool-line）
+    await page.locator('[data-testid="work-timeline-summary"]').click();
     const toolLine = page.locator('.tool-line');
     await expect(toolLine).toBeVisible();
     await expect(toolLine.locator('.tool-line-name')).toContainText('Read');

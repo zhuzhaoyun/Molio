@@ -1,33 +1,68 @@
-.work-complete-banner {
+/* 产物卡 —— 消息内 provenance：发丝边框 pill + terracotta 交互，与 SourceChips 同语言 */
+.work-complete {
   display: flex;
-  gap: 8px;
-  align-items: flex-start;
-  margin: 8px 12px;
-  padding: 10px 12px;
-  border: 1px solid rgba(74, 170, 119, 0.35);
-  border-radius: 8px;
-  background: rgba(74, 170, 119, 0.08);
-  font-size: 13px;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 8px;
 }
-.work-complete-icon { line-height: 1.4; }
-.work-complete-body { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.work-complete-title { color: var(--text-primary, #222); font-weight: 600; }
-.work-complete-files { display: flex; flex-wrap: wrap; gap: 6px; }
+.work-complete-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-soft, #9a9894);
+  user-select: none;
+}
+.work-complete-title svg {
+  color: var(--text-soft, #9a9894);
+}
+.work-complete-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
 .work-complete-file {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  border: none;
+  gap: 5px;
+  box-sizing: border-box;
+  height: 20px;
+  max-width: 220px;
+  padding: 0 8px;
+  border: 1px solid var(--border-soft, #edebe8);
+  border-radius: 6px;
   background: transparent;
-  color: var(--accent-color, #4a7);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-muted, #6b6964);
   cursor: pointer;
-  font-size: 13px;
-  padding: 0;
+  transition: border-color 0.15s ease, color 0.15s ease;
 }
-.work-complete-file:hover { text-decoration: underline; }
-.work-complete-file-label { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.work-complete-file-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--accent, #c96442);
+  font-size: 12px;
+  line-height: 1;
+}
+.work-complete-file-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 可点击产物：hover/聚焦时 terracotta 兑现交互 */
+.work-complete-file:hover,
+.work-complete-file:focus-visible {
+  border-color: var(--accent, #c96442);
+  color: var(--accent, #c96442);
+}
+.work-complete-file:focus-visible {
+  outline: 2px solid var(--accent-soft, #f5d8cb);
+  outline-offset: 1px;
+}
 .work-complete-file:disabled {
   cursor: default;
-  opacity: 0.5;
-  text-decoration: none;
+  opacity: 0.55;
 }

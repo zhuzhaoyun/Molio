@@ -3,7 +3,6 @@ import { ChatComposer, buildAttachmentPrefix } from './ChatComposer';
 import type { FileRef, PastedImage } from './ChatComposer';
 import { UserMessage } from './UserMessage';
 import { AssistantMessage } from './AssistantMessage';
-import { WorkCompleteBanner } from './WorkCompleteBanner';
 import { findLastAssistant } from '../utils/workSteps';
 import { useI18n } from '../i18n';
 import { useSelectMode, messageSelectionStore } from '../stores/messageSelectionStore';
@@ -177,9 +176,6 @@ export function HomePage({
             }
             return null;
           })}
-          {!isRunning && lastAssistant && (
-            <WorkCompleteBanner tools={lastAssistant.tools ?? []} />
-          )}
           <div ref={bottomRef} />
         </div>
 

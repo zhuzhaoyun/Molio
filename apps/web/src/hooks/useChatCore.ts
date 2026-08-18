@@ -22,6 +22,9 @@ export interface ToolEvent {
   result?: string;
   isError?: boolean;
   status: 'running' | 'done' | 'error';
+  /** 事件到达的墙钟时间 —— 完成后工作块折叠再展开、工具行重新挂载时，仍能还原真实耗时 */
+  startedAt?: number;
+  finishedAt?: number;
 }
 
 export interface ChatMessage {
@@ -35,6 +38,10 @@ export interface ChatMessage {
   thinking?: string;
   tools?: ToolEvent[];
   streaming?: boolean;
+  /** Model that ran this reply — captured from the status event (best-effort). */
+  model?: string;
+  /** Completion instant — set on any terminal event (turn_end / usage / error). */
+  finishedAt?: number;
   usage?: { input?: number; output?: number; cost?: number };
   /** Transient repair status (hermes [acp] extra auto-install). Cleared on
    *  first real content (text/thinking/tool) or any terminal state. */
@@ -853,22 +860,28 @@ function updateWithEvent(
           ...msg,
           tools: [
             ...(msg.tools ?? []),
-            { id: event.id, name: event.name, input: event.input, status: 'running' as const },
+            { id: event.id, name: event.name, input: event.input, status: 'running' as const, startedAt: Date.now() },
           ],
         });
 
       case 'tool_result': {
         const tools = (msg.tools ?? []).map((t) =>
           t.id === event.toolUseId
-            ? { ...t, result: event.content, isError: event.isError, status: (event.isError ? 'error' : 'done') as ToolEvent['status'] }
+            ? { ...t, result: event.content, isError: event.isError, status: (event.isError ? 'error' : 'done') as ToolEvent['status'], finishedAt: Date.now() }
             : t
         );
         return clearRepairing({ ...msg, tools });
       }
 
+      case 'status':
+        // Capture the model that ran this reply (best-effort — the meta line
+        // in WorkBlock shows it when present).
+        return event.model ? { ...msg, model: event.model } : msg;
+
       case 'usage':
         return clearRepairing({
           ...msg,
+          finishedAt: Date.now(),
           usage: {
             input: event.usage?.input_tokens,
             output: event.usage?.output_tokens,
@@ -878,14 +891,14 @@ function updateWithEvent(
 
       case 'turn_end':
         if (event.stopReason === 'tool_use') return msg;
-        return clearRepairing({ ...msg, streaming: false });
+        return clearRepairing({ ...msg, streaming: false, finishedAt: Date.now() });
 
       case 'error':
         // Keep error separate from content so historical messages don't carry
         // an "Error:" prefix that pollutes the saved text. The UI renders
         // msg.error as a distinct banner above the prose. Also clear repairing
         // so the spinner doesn't coexist with the error.
-        return clearRepairing({ ...msg, error: event.message, streaming: false });
+        return clearRepairing({ ...msg, error: event.message, streaming: false, finishedAt: Date.now() });
 
       default:
         return msg;
@@ -903,11 +916,13 @@ function updateWithEvent(
     isRunning = false;
   }
 
-  if (event.type === 'status' && (event.label === 'completed' || event.label === 'failed')) {
+  if (event.type === 'status' && (event.label === 'completed' || event.label === 'failed' || event.label === 'canceled')) {
     isRunning = false;
     runId = null;
     const finalized = messages.map((msg) =>
-      msg.id === assistantId ? { ...msg, streaming: false } : msg
+      msg.id === assistantId
+        ? { ...msg, streaming: false, finishedAt: msg.finishedAt ?? Date.now() }
+        : msg
     );
     return { ...prev, messages: finalized, isRunning, runId, runAgentId: null, activity: null };
   }

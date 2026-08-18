@@ -10,7 +10,6 @@ import { ChatComposer, type FileRef, type PastedImage, buildAttachmentPrefix } f
 import { ActivityTree } from '../ActivityTree';
 import { useI18n } from '../../i18n';
 import { findLastAssistant } from '../../utils/workSteps';
-import { WorkCompleteBanner } from '../WorkCompleteBanner';
 import { WIKI_QUERY_TRIGGER, deriveChatTitle } from './kbChatPrompts';
 
 export interface KbChatSessionApi {
@@ -300,9 +299,6 @@ export function KbChatSession({
           </>
         )}
       </div>
-      {!chat.isRunning && lastAssistant && (
-        <WorkCompleteBanner tools={lastAssistant.tools ?? []} />
-      )}
       <ActivityTree activity={chat.activity ?? null} />
       <div className="file-chat-input">
         <ChatComposer

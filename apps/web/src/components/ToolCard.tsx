@@ -59,20 +59,25 @@ function DefaultToolCard({ tool, allTools }: { tool: ToolEvent; allTools: ToolEv
   const manualRef = useRef(false); // user manually toggled — disable auto open/close
   const autoExpandedRef = useRef(false); // auto-expand triggered — keep open on done
 
-  // Elapsed-time timer
+  // Elapsed-time timer: 优先用事件携带的 startedAt/finishedAt（工作块折叠再展开、
+  // 工具行重新挂载时依然能还原真实耗时）；运行中则实时累加。
   useEffect(() => {
     if (tool.status === 'running') {
       startRef.current = Date.now();
       setElapsed(0);
       const timer = setInterval(() => {
-        setElapsed(Math.round((Date.now() - startRef.current) / 1000));
+        const start = tool.startedAt ?? startRef.current;
+        setElapsed(Math.max(0, Math.round((Date.now() - start) / 1000)));
       }, 200);
       return () => clearInterval(timer);
-    } else if (startRef.current) {
-      // record final elapsed
-      setElapsed(Math.round((Date.now() - startRef.current) / 1000));
     }
-  }, [tool.status]);
+    // done/error：沉淀为存储时间戳之差（挂载时若仍在流式中途则退化为本挂载计时）
+    if (tool.startedAt != null && tool.finishedAt != null) {
+      setElapsed(Math.max(0, Math.round((tool.finishedAt - tool.startedAt) / 1000)));
+    } else if (startRef.current) {
+      setElapsed(Math.max(0, Math.round((Date.now() - startRef.current) / 1000)));
+    }
+  }, [tool.status, tool.startedAt, tool.finishedAt]);
 
   // Reset auto-expand flag when a new tool mounts
   useEffect(() => {

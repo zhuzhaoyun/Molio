@@ -1,0 +1,138 @@
+/* ── 工作块 WorkBlock —— 执行过程收进一张卡片，与正文显著区分 ──
+   运行中 = 当前动作 + 静态底条 + 思考 + 工具行 + meta（模型·时间）；
+   完成后 = 折叠成摘要头 + meta，展开可看思考与工具行。
+   旧的步骤列表样式已删除（work-timeline-step 移除，工具行就地渲染）。 */
+.work-block {
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid var(--border-soft, #edebe8);
+  border-radius: var(--radius-sm, 8px);
+  background: var(--bg-subtle, #f4f2ef);
+  padding: 4px 10px 6px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-muted, #6b6964);
+}
+
+/* ── 生成中：当前动作 + 静态底条 ── */
+.work-block-current {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 3px 0 4px;
+}
+.work-block-spinner {
+  color: var(--accent, #c96442);
+  animation: work-spin 1s linear infinite;
+  flex: none;
+}
+.work-block-label {
+  font-weight: 600;
+  color: var(--text, #1a1917);
+  white-space: nowrap;
+}
+.work-block-sub {
+  color: var(--text-soft, #9a9894);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.work-block-count {
+  flex: none;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-soft, #9a9894);
+  background: var(--bg-muted, #eae7e2);
+  border-radius: 999px;
+  padding: 0 6px;
+}
+.work-block-track {
+  height: 2px;
+  margin: 0 0 6px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--accent, #c96442) 15%, transparent);
+}
+@keyframes work-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── 完成后：折叠摘要 ── */
+.work-block-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 3px 2px;
+  border: none;
+  border-radius: var(--radius-sm, 8px);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-muted, #6b6964);
+  cursor: pointer;
+  text-align: left;
+}
+.work-block-summary:hover { background: var(--bg-muted, #eae7e2); }
+.work-block-summary:focus-visible {
+  outline: 2px solid var(--accent-soft, #f5d8cb);
+  outline-offset: -2px;
+}
+.work-block-summary-icon { color: var(--accent, #c96442); flex: none; }
+.work-block-summary-icon.error { color: var(--red, #a8322e); }
+.work-block-summary-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text, #1a1917);
+  font-weight: 500;
+}
+.work-block-summary-chevron { color: var(--text-soft, #9a9894); flex: none; }
+
+/* ── 展开详情：思考 + 工具行 ── */
+.work-block-detail {
+  border-top: 1px solid var(--border-soft, #edebe8);
+  margin-top: 3px;
+  padding: 4px 0 2px;
+}
+.work-block-detail .thinking-block,
+.work-block-detail .tool-card-wrapper,
+.work-block-detail .tool-group-inline,
+.work-block-detail .tool-batch-group,
+.work-block.running > .thinking-block,
+.work-block.running > .tool-card-wrapper,
+.work-block.running > .tool-group-inline,
+.work-block.running > .tool-batch-group {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+/* ── meta：模型 · token 进出 · 花费 · 耗时（辅助信息） ── */
+.work-block-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid var(--border-soft, #edebe8);
+  font-size: 11px;
+  color: var(--text-faint, #b8b6b1);
+  font-variant-numeric: tabular-nums;
+}
+.work-block-meta-model {
+  color: var(--accent, #c96442);
+  background: color-mix(in srgb, var(--accent, #c96442) 9%, transparent);
+  border-radius: 999px;
+  padding: 0 7px;
+  font-size: 10.5px;
+  line-height: 1.7;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .work-block-spinner { animation: none; }
+}

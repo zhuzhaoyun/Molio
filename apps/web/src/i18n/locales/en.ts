@@ -91,7 +91,7 @@ const en: Record<string, string> = {
   'source.title': 'Sources',
 
   // ── WorkCompleteBanner ──
-  'complete.writtenToKb': 'Done — outputs written to your knowledge base',
+  'complete.title': 'Artifacts',
 
   // ── RuntimePage ──
   'runtimes.title': 'Runtimes',

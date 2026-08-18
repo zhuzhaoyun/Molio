@@ -43,7 +43,7 @@ test.describe('KB chat — work visibility', () => {
     })();
   }
 
-  test('WorkTimeline 锚定最后一条回复：运行中当前动作、完成后结果摘要（可展开 + 证据回跳）', async ({ page }) => {
+  test('WorkBlock 锚定最后一条回复：运行中当前动作、完成后折叠摘要（展开看工具行）', async ({ page }) => {
     await mockChatRun(page, { script: SCRIPTS.workflowRun, frameDelay: 800 });
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
@@ -58,22 +58,21 @@ test.describe('KB chat — work visibility', () => {
     await expect(current).toContainText('读取文件');
     await expect(current).toContainText('笔记/入门.md');
 
-    // 完成后：折叠成结果摘要（清单非计数），展开显示步骤、点击回跳证据
+    // 完成后：折叠成纯摘要头（不再展开成步骤列表 —— 工具行就地渲染，杜绝容余）
     const summary = page.locator('[data-testid="work-timeline-summary"]');
     await expect(summary).toBeVisible({ timeout: 10_000 });
     await expect(summary).toContainText('已完成');
-    await expect(summary).toContainText('读取文件');
-    await expect(summary).not.toContainText('步');
 
+    // 展开工作块 → 工具收成批量组；展开批量组 → Read/Grep/Write 工具行就地可见
     await summary.click();
-    const steps = timeline.locator('[data-testid="work-timeline-step"]');
-    await expect(steps).toHaveCount(3); // Read/Grep/Write（生成回复为静态行，不计按钮）
-    await expect(steps.filter({ hasText: '写入文件' })).toHaveCount(1);
-    await expect(steps.filter({ hasText: '写入文件' })).toContainText('产出/总结.md');
-
-    // 点击「写入文件」步骤 → 滚动到证据 ToolCard
-    await steps.filter({ hasText: '写入文件' }).click();
-    await expect(page.locator('[data-tool-id="w1"]')).toBeInViewport();
+    const batch = timeline.locator('[data-testid="tool-batch-group"]');
+    await expect(batch).toBeVisible();
+    await batch.click();
+    // 批量组内的工具行只带 .tool-line class（无 data-testid，只有 DefaultToolCard 有）→ 用 class 定位
+    const toolLines = timeline.locator('.tool-line');
+    await expect(toolLines).toHaveCount(3); // Read / Grep / Write
+    await expect(toolLines.filter({ hasText: 'Write' })).toHaveCount(1);
+    await expect(toolLines.filter({ hasText: 'Write' })).toContainText('产出/总结.md');
 
     const banner = page.locator('[data-testid="work-complete-banner"]');
     await expect(banner).toBeVisible({ timeout: 10_000 });

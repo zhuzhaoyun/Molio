@@ -91,7 +91,7 @@ const zh: Record<string, string> = {
   'source.title': '引用',
 
   // ── WorkCompleteBanner ──
-  'complete.writtenToKb': '已完成，产出已写入知识库',
+  'complete.title': '产出文件',
 
   // ── RuntimePage ──
   'runtimes.title': '运行时',

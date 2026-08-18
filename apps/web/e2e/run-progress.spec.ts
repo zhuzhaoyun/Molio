@@ -98,7 +98,8 @@ test.describe('Chat — Run progress visibility', () => {
 
   test('ThinkingBlock auto-expands during streaming', async ({ page }) => {
     await unmockAll(page);
-    await mockChatRun(page, { script: SCRIPTS.withThinking, frameDelay: 150 });
+    // frameDelay 拉宽流式窗口（默认瞬时 flush → 完成态思考块收进折叠工作块，抓不到自动展开）
+    await mockChatRun(page, { script: SCRIPTS.withThinking, frameDelay: 800 });
     await gotoHome(page);
     await sendMessage(page, 'think please');
 
@@ -173,11 +174,13 @@ test.describe('Chat — Run progress visibility', () => {
     await gotoHome(page);
     await sendMessage(page, 'ls');
 
-    // 等待 tool 行出现
-    await expect(page.locator('[data-testid="tool-line"]')).toBeVisible({ timeout: 5_000 });
+    // 完成后展开工作块，工具行可见
+    await expect(page.locator('[data-testid="usage-footer"]')).toBeVisible({ timeout: 10_000 });
+    await page.locator('[data-testid="work-timeline-summary"]').click();
 
     // tool 完成后应显示耗时
     const toolLine = page.locator('[data-testid="tool-line"]');
+    await expect(toolLine).toBeVisible({ timeout: 5_000 });
     // 耗时格式: ⏱ Ns（数字 + s）
     await expect(toolLine).toContainText(/⏱\s*\d+s/, { timeout: 10_000 });
   });
@@ -199,7 +202,9 @@ test.describe('Chat — Run progress visibility', () => {
     await gotoHome(page);
     await sendMessage(page, 'run');
 
-    // 等待 tool 完成（has-output class 出现时才有点击 handler）
+    // 完成后展开工作块，has-output class 出现时才有点击 handler
+    await expect(page.locator('[data-testid="usage-footer"]')).toBeVisible({ timeout: 5_000 });
+    await page.locator('[data-testid="work-timeline-summary"]').click();
     const toolLine = page.locator('[data-testid="tool-line"].has-output');
     await expect(toolLine).toBeVisible({ timeout: 5_000 });
     await toolLine.click();
