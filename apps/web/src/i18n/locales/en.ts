@@ -24,7 +24,8 @@ const en: Record<string, string> = {
 
   // ── ChatComposer ──
   'composer.noAgent': 'No agent available',
-  'composer.waiting': 'Waiting for response...',
+  'composer.queuePlaceholder': 'Reply in progress — sends when finished',
+  'composer.queueTooltip': 'Sends after the current reply finishes',
   'composer.placeholder': 'Type a message...',
   'composer.stop': 'Stop',
   'composer.send': 'Send',
@@ -505,6 +506,7 @@ const en: Record<string, string> = {
 
   // ── UserMessage ──
   'userMessage.viewOriginal': 'View original',
+  'userMessage.queued': 'Queued',
 
   // ── HomePage ──
   'home.fileContextFallback': 'Please analyze the above content.',
@@ -586,6 +588,8 @@ const en: Record<string, string> = {
   'resources.info.formatValue': 'Markdown (.zip)',
   'resources.info.compat': 'Compatible',
   'resources.info.compatValue': 'Molio / Obsidian',
+  'resources.info.author': 'Author',
+  'resources.info.version': 'Version',
   'resources.info.price': 'Price',
   'resources.info.file': 'File',
   'resources.sideNote.paid': 'Scan to pay — download unlocks automatically. The link stays valid for 1 hour.',

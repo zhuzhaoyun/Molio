@@ -9,6 +9,8 @@
  *   · 两者都空 → 降级为“联系购买”（enterprise.html#contact）。
  *   注意：改价时需同步 OSS 上 molio-pay/config/products.json（服务端权威定价，FC 从 OSS 读取）。
  * - preview：专属效果预览图路径数组；空数组 → 详情页兜底显示通用应用截图。
+ * - author / version：整理者署名与当前版本号。一个资源可能迭代多个版本，
+ *   发新版时更新 version 并替换对应 file（如 v1.0 → v1.1，zip 名同步改）。
  * - 文案规范：对外内容不用直角引号，一律标准引号 “” / ‘’。
  */
 (function () {
@@ -23,6 +25,7 @@
   window.MOLIO_RESOURCES = [
     {
       id: 'zizhi-tongjian',
+      author: 'Molio 团队', version: 'v1.0',
       icon: '📖', tint: '#E8EDF2', name: '资治通鉴',
       desc: '1362 年的人物、事件互链成关系图谱，让 AI 梳理因果脉络、人物网络，一目了然',
       file: 'zizhi-tongjian-vault.zip', price: 2.9,
@@ -41,6 +44,7 @@
     },
     {
       id: 'ronganguan-zhaji',
+      author: 'Molio 团队', version: 'v1.0',
       icon: '🖋️', tint: '#F0E8DC', name: '容安馆札记',
       desc: '钱钟书读书札记分专题整理成 wiki 条目，研究与写作的查证、引文核对交给 AI',
       file: 'ronganguan-zhaji-vault.zip', price: 19.9,
@@ -58,6 +62,7 @@
     },
     {
       id: 'zhenyan-yifang-gekuo',
+      author: 'Molio 团队', version: 'v1.0',
       icon: '🌿', tint: '#E8F0E4', name: '诊验医方歌括',
       desc: '医方以歌括体例整理成 wiki 条目，问 AI 方剂组成、主治，歌诀脱口而出',
       file: 'zhenyan-yifang-gekuo-vault.zip', price: 99,
@@ -76,6 +81,7 @@
     },
     {
       id: 'shiji',
+      author: 'Molio 团队', version: 'v1.0',
       icon: '📜', tint: '#F5E9D3', name: '史记',
       desc: '五体整理成 wiki 条目，同一人物的事迹跨篇互链，让 AI 汇总生平、拼出全貌',
       file: 'shiji-vault.zip', price: 9.9,
@@ -93,7 +99,26 @@
       payUrl: '',
     },
     {
+      id: 'mingshi',
+      author: 'Molio 团队', version: 'v1.0',
+      icon: '🏯', tint: '#F2E3D5', name: '明史',
+      desc: '清修《明史》全文结构化入库：306 位帝、后、妃、臣、宦实体互链成图谱，问 AI 明代人物与事件皆有原文可溯',
+      file: 'mingshi-vault.zip', price: 9.9,
+      tags: ['经典', '历史'],
+      overview: [
+        '《明史》整理版知识库：清修官修正史（本纪 24 · 志 75 · 列传 220 + 附录），全文 344 万言逐字整理为 Markdown，帝系、后妃、宗室、开国、大臣、武臣、宦官等 306 个实体互链成关系图谱，全部引文附稳定行号、可回溯原文。',
+        '明代三百年的人物网络、朝局脉络与制度沿革，正是图谱与行号查得着的：问一个大臣的生平与交游、一场党争的来龙去脉、一项军制的沿革，AI 的回答都有库内原文依傍。',
+      ],
+      highlights: ['全文 344 万言整理入库，行号可回溯原文', '306 实体按帝系/后妃/宗室/大臣等十类互链', '明末三案、土木之变、郑和下西洋等知名事件独立成条'],
+      preview: [
+        'images/previews/mingshi/1.png',
+        'images/previews/mingshi/2.png',
+      ],
+      payUrl: '',
+    },
+    {
       id: 'hongloumeng',
+      author: 'Molio 团队', version: 'v1.0',
       icon: '🏮', tint: '#F5E3E0', name: '红楼梦',
       desc: '120 回通行本全文入库，人物、情节、判词互链成图谱，问 AI 任何红楼人物都有原文可溯',
       file: 'hongloumeng-vault.zip', price: 6.9,

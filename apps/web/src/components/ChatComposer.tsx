@@ -198,7 +198,7 @@ export function ChatComposer({
     // them would push broken markdown to the backend.
     const doneImages = pastedImages.filter((p) => p.state === 'done');
     const hasContent = trimmed || fileRefs.length > 0 || doneImages.length > 0;
-    if (hasContent && !isRunning) {
+    if (hasContent) {
       onSend(trimmed, fileRefs, doneImages);
       setText('');
       // Clear the draft cache synchronously *before* the parent re-renders.
@@ -364,12 +364,11 @@ export function ChatComposer({
   const canSend =
     (text.trim().length > 0 || fileRefs.length > 0 || pastedImages.some((p) => p.state === 'done')) &&
     !isUploading &&
-    !isRunning &&
     !disabled;
   const placeholder = disabled
     ? (disabledPlaceholder ?? t('composer.noAgent'))
     : isRunning
-      ? t('composer.waiting')
+      ? t('composer.queuePlaceholder')
       : t('composer.placeholder');
 
   // Get vaultId for FilePicker
@@ -468,7 +467,7 @@ export function ChatComposer({
             onMouseUp={handleMouseUp}
             onPaste={handlePaste}
             placeholder={placeholder}
-            disabled={isRunning || disabled}
+            disabled={disabled}
             rows={1}
           />
 
@@ -487,6 +486,21 @@ export function ChatComposer({
           {isRunning ? (
             <>
               <span className="composer-spacer" />
+              {canSend && (
+                <button
+                  type="button"
+                  data-testid="composer-send"
+                  className="composer-send"
+                  onClick={handleSend}
+                  title={t('composer.queueTooltip')}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="22" y1="2" x2="11" y2="13" />
+                    <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                  </svg>
+                  {t('composer.send')}
+                </button>
+              )}
               <button
                 type="button"
                 data-testid="composer-stop"

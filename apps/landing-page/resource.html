@@ -161,6 +161,8 @@
     '<aside class="res-side">' +
       '<div class="res-side-card reveal">' + cta + '<p class="res-side-note">' + sideNote + '</p></div>' +
       '<div class="res-side-card reveal">' +
+        '<div class="res-info-row"><span class="k">作者</span><span class="v">' + esc(r.author) + '</span></div>' +
+        '<div class="res-info-row"><span class="k">版本</span><span class="v">' + esc(r.version) + '</span></div>' +
         '<div class="res-info-row"><span class="k">格式</span><span class="v">Markdown（.zip）</span></div>' +
         '<div class="res-info-row"><span class="k">兼容</span><span class="v">Molio / Obsidian</span></div>' +
         '<div class="res-info-row"><span class="k">价格</span><span class="v">' + (paid ? '¥' + r.price : '免费') + '</span></div>' +

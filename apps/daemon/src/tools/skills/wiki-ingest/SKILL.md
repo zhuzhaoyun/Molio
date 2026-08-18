@@ -1,7 +1,7 @@
 ---
 name: wiki-ingest
 description: 将源文件/资料增量导入（入库）到现有 wiki，使知识持续积累和演进。读取源文件，生成或更新 source 摘要页与实体/概念/对比等页面，建立交叉链接，检测矛盾，更新分层 INDEX/log/hot（旧单索引库首次入库时自动升级为分层索引）。支持显式文件路径、URL、或无显式目标时自动找最近 raw/wechat 暂存资料。Triggers on: 入库, 导入, 整理进知识库, 保存到知识库, 归档这个文件, ingest, add this to the wiki, process this source, 把这个文件加入 wiki, read and file this.
-version: 1.7.0
+version: 2.0.0
 ---
 
 # wiki-ingest: 增量导入（入库）
@@ -104,26 +104,26 @@ sources:
 
 ## 超长源文件处理
 
-源文件超长（`wc -c` > 1.5MB，约 50 万中文字，或 Read 一次读不完）时，**复用 wiki-build 的预处理管线**（两个 skill 同批安装于 `.claude/skills/`）：
+源文件超长（`wc -c` > 1.5MB，约 50 万中文字，或 Read 一次读不完）时，**复用 wiki-build 的确定性管线脚本**（同批安装于 `.claude/skills/`，维护一份，两个 skill 引同一实现）。完整管线见 wiki-build SKILL.md「超长源文件处理」节，这里只列 ingest 的差异。
 
 ```bash
-# 断点检查（每次进入必做；已有 progress/candidates → 续传，勿重跑 prep）
-node ".claude/skills/wiki-build/scripts/prep.mjs" status <源文件> --vault .
-# 预处理：转码 + 行规范化 + 分段 + 频率普查（确定性，零 LLM）
-node ".claude/skills/wiki-build/scripts/prep.mjs" <源文件> --vault . [--profile novel|default]
+# 管线（与 build 相同）：
+# build-lock acquire → prep → L1 digest → curate draft → agent 审核 → curate split → 建页 → place → linkpass --batches → deadcheck → sweep → repair
 ```
 
-产物在 `.molio/wiki-build/`：`transcode-<x>.txt`（grep/Read 目标，行号稳定）、`segments-<x>.json`（分段+范围）、`census-<x>.json`（频率普查+别名线索）、`candidates-<x>.md` / `progress-<x>.md`（已存在不覆盖，续传依据）。
+**ingest 与 build 的三个关键差异**：
 
-ingest 与 build 的差别：
+1. **place 用 `--append` 模式**（增量追加，不全量重写 INDEX）：
+   ```bash
+   node ".claude/skills/wiki-build/scripts/place.mjs" <x> --vault . --append
+   ```
+   build 全量重写 INDEX；ingest 只追加新页条目到现有 INDEX（去重），不抹掉既有条目。**这是 ingest 与 build 最本质的分界**。
 
-- **建页名单取 candidates/census，不靠记忆列名字**（同 build 的硬约束）；census 噪音项打勾注明跳过即可。
-- **已有清单则复用**：该源文件若被 build 处理过，只处理未勾选且与本次入库相关的候选，不要 `--force` 重置。
-- **增量融合**：新页面必须与现有 wiki 页面建立反向链接、检测矛盾（见下方操作步骤）——这是 ingest 独有的要求。
-- **分层消化**：每个处理范围（≤15 万字）派 Task subagent 读行号区间、产出 digest（实体+定性+事件+行号引用），主 agent 从 digest 建页、安置、打勾；主 agent 不通读全文。草稿先落 `.molio/wiki-build/drafts/` 再由主 agent 安置，避免并行互踩。
-- **高频名取证封顶**：首现 + 标题命中 + 均匀采样（每 500 次取 1），总量 ≤30 条。
-- **ingest 不要求全量**：候选可分批处理，剩余留未勾选（与 build 不同）；但本次认领的范围要处理完。
-- **完成自检（机械判定）**：`prep.mjs status <源文件> --vault .` —— 认领范围全部打勾即可收工。
+2. **curation 只选与本次相关的候选**：ingest 是增量入库，curation 审核时只保留与新源文件相关的候选行（已有 wiki 覆盖的不重建）。不要求全量处理——剩余留待后续 ingest。
+
+3. **增量融合**：新页面必须与现有 wiki 页面建立反向链接、检测矛盾（`> [!contradiction]` callout）——这是 ingest 独有的要求，build 不需要。
+
+**其余完全照 build 管线**：建页判据（信息落点）、批次 TSV 格式、并发限制（≤5-6）、取证封顶（≤30 条）、对账门禁（deadcheck exit 0）、引文核验（sweep 分类 → 只修 real）。
 
 ## 旧库索引自动升级（首触自愈）
 
@@ -137,7 +137,7 @@ ingest 与 build 的差别：
 
 ## 操作步骤
 
-1. **读取源文件**：读取目标源文件/资料，理解其内容。**超长文件走"超长源文件处理"路径，不要通读**
+1. **读取源文件**：读取目标源文件/资料，理解其内容。**超长文件先走 build-lock acquire（见"超长源文件处理"），再走分层消化，不要通读**
 2. **读取现有 wiki**：读根 `wiki/INDEX.md` + 相关目录的 INDEX.md，了解现有结构和已覆盖内容；**若发现是旧单索引布局，先按上节完成索引升级再继续**
 3. **扫描相关页面**：读取与新内容最相关的已有 wiki 页面（3-5 个），了解已有知识
 4. **分析关联**：
@@ -154,7 +154,7 @@ ingest 与 build 的差别：
    - 在两个页面中都添加 `> [!contradiction]` callout 标注
    - 说明矛盾的具体内容和可能的解决方向
    - 告知用户
-8. **更新索引**：新页面条目写入**所在目录的 INDEX.md**，已修改页面的描述同步更新；根 INDEX.md 的对应目录行更新页数与覆盖范围（新目录则补一行）
+8. **更新索引（追加，不重写）**：新页面条目**追加**入**所在目录的 INDEX.md**（对应分组下），已修改页面的描述同步更新；根 INDEX.md 的对应目录行更新页数与覆盖范围（新目录则补一行）。**超长文件禁止用 build 的 place.mjs 重写 INDEX**（会抹掉既有条目）
 9. **追加 wiki/log.md**（最新条目在最上面）：
    ```
    ## YYYY-MM-DD HH:MM | ingest | 文件名
@@ -163,19 +163,16 @@ ingest 与 build 的差别：
    - 关键发现：一句话概述
    ```
 10. **刷新 wiki/hot.md**：完全重写，包含本次操作的摘要和当前 wiki 状态
-11. **汇报**：创建和更新了哪些页面，发现了哪些矛盾或知识缺口
+11. **释放构建权**：超长文件处理时，`build-lock.mjs release "ingest-<主名>-<日期>"`（必须释放，否则后续 build/ingest 会话会被挡）
+12. **汇报**：创建和更新了哪些页面，发现了哪些矛盾或知识缺口
 
 ## 建页粒度
 
-按**内容能否支撑独立页面**判断建页粒度（不靠频率百分比或绝对次数——不同长度/领域的源文件频率分布差异大，阈值会失真）：
+**判据与 wiki-build 共享**，见该 skill 的「建页粒度」节——信息落点三结构量（覆盖深度 / 独立信息量 / 引用需求）+ "讨论对象 vs 背景挂点"二元判据 + 删除测试。**两个 skill 对同一 vault 必须用同一套判据**，不在本文件另写一套规则。
 
-应建独立页（任一满足）：
-- 出现在章节标题/目录中（强信号，必有内容可写）
-- 能用 `grep -nF 名字` 取到足够上下文写出有实质内容的独立描述（首次出现 + 身份归属 + 至少一个关键事件/关系）
-
-只有零星提及（如"某某点头""某某路过"，grep 取证写不出实质内容）→ 放概念页表格行，不独立建页。
-
-不同源文件的粒度不同，按各自内容特征独立判断。
+ingest 侧强调两点：
+- **已有则并入**：新源文件里的名字若已有对应页面，优先链接/并入既有页面，不重复建页（增量积累而非替换）。
+- **零星提及不建页**：grep 取证写不出实质内容（只够"某某点头"级别）→ 放概念页表格行，不独立建页。
 
 ## 入库页面规则
 
