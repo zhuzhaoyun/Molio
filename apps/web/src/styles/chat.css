@@ -610,6 +610,16 @@
   background: var(--bg-subtle);
   overflow: hidden;
 }
+/* 折叠态（运行中让位给操作日志）：去掉空盒子边框底，读起来像一句灰字注释 */
+.thinking-block[data-collapsed="true"] {
+  border: none;
+  background: transparent;
+  margin-bottom: 2px;
+}
+.thinking-block[data-collapsed="true"] .thinking-header {
+  padding: 2px 10px;
+  color: var(--text-soft);
+}
 .thinking-header {
   display: flex;
   align-items: center;

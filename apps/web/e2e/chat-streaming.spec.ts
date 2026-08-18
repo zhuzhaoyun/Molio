@@ -48,6 +48,38 @@ test.describe('Chat — streaming details', () => {
     await expect(thinking.locator('.thinking-content')).toBeHidden();
   });
 
+  test('thinking auto-expands during the pre-tool phase, collapses when the first tool arrives', async ({ page }) => {
+    // 焦点规则：运行中思考只在前置思考阶段（无工具）自动展开；
+    // 第一个工具到达 → 思考折叠让位给操作日志，避免思考+工具+叙事三者同时铺开
+    const script = [
+      { type: 'status', label: 'running' },
+      { type: 'thinking_start' },
+      { type: 'thinking_delta', delta: 'Let me check the files...' },
+      // 插入叙事帧拉宽「纯思考、无工具」窗口
+      { type: 'text_delta', delta: '我先查一下相关文件。' },
+      { type: 'tool_use', id: 't1', name: 'Read', input: { file_path: '/x.ts' } },
+      { type: 'tool_result', toolUseId: 't1', content: 'contents', isError: false },
+      { type: 'text_delta', delta: '这是最终答案。' },
+      { type: 'turn_end', stopReason: 'end_turn' },
+      { type: 'usage', usage: { input_tokens: 100, output_tokens: 20 }, costUsd: 0.005 },
+    ];
+    await mockChatRun(page, { script, frameDelay: 800 });
+    await gotoHome(page);
+    await sendMessage(page, '整理一下');
+
+    // 纯思考阶段（无工具）：思考自动展开，内容可见
+    const thinkContent = page.locator('[data-testid="thinking-block"] .thinking-content');
+    await expect(thinkContent).toBeVisible({ timeout: 10_000 });
+    await expect(thinkContent).toContainText('Let me check the files...');
+
+    // 第一个工具到达：思考折叠（.thinking-content 移出 DOM），操作日志成为焦点
+    await expect(async () => {
+      const toolVisible = await page.locator('[data-testid="tool-line"]').isVisible();
+      const thinkCount = await thinkContent.count();
+      return toolVisible && thinkCount === 0;
+    }).toPass({ timeout: 10_000 });
+  });
+
   test('tool use renders inline with name and status', async ({ page }) => {
     await mockChatRun(page, { script: SCRIPTS.withToolUse });
     await gotoHome(page);

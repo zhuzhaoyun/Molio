@@ -163,7 +163,11 @@ export function WorkBlock({ message, toolItems, processText, isLast, onAnswerToo
         <div className="work-block-track" aria-hidden />
         {hasThinking && (
           <div className="work-block-zone zone-thinking">
-            <ThinkingBlock content={message.thinking!} streaming={true} />
+            <ThinkingBlock
+              content={message.thinking!}
+              streaming={true}
+              autoExpand={liveTools.length === 0}
+            />
           </div>
         )}
         {hasOps && renderLiveOps()}
