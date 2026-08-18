@@ -13,16 +13,22 @@ function stepIcon(status: WorkStep['status']): string {
   return status === 'running' ? '⟳' : status === 'error' ? '✗' : '✓';
 }
 
-/** 滚动到消息内对应的 ToolCard（证据回跳）。无锚点时静默不滚。 */
-function scrollToEvidence(toolId?: string): void {
+/** 滚动到本消息内对应的 ToolCard（证据回跳）。无锚点时静默不滚。 */
+function scrollToEvidence(toolId: string | undefined, fromEl: Element): void {
   if (!toolId) return;
-  const anchor = document.querySelector(`[data-tool-id="${CSS.escape(toolId)}"]`);
+  // 作用域锚定到所属消息：重复 run 时旧消息仍在 DOM，避免误滚到旧消息的证据。
+  const container = fromEl.closest('[data-message-id]');
+  if (!container) return;
+  const anchor = container.querySelector(`[data-tool-id="${CSS.escape(toolId)}"]`);
   if (anchor) {
     anchor.scrollIntoView({ behavior: 'smooth', block: 'center' });
     return;
   }
-  // 工具可能收在折叠的批量组内：派发事件让包含它的批量组展开并定位（见 BatchGroup）。
-  window.dispatchEvent(new CustomEvent('molio:evidence-target', { detail: toolId }));
+  // 工具可能收在折叠的批量组内：派发事件（带消息作用域）让包含它的批量组展开并定位（见 BatchGroup）。
+  const messageId = container.getAttribute('data-message-id');
+  if (messageId) {
+    window.dispatchEvent(new CustomEvent('molio:evidence-target', { detail: { toolId, messageId } }));
+  }
 }
 
 export function WorkTimeline({ steps, isRunning }: Props) {
@@ -85,7 +91,7 @@ export function WorkTimeline({ steps, isRunning }: Props) {
                   className="work-timeline-step"
                   data-testid="work-timeline-step"
                   data-step-status={step.status}
-                  onClick={() => scrollToEvidence(step.toolId)}
+                  onClick={(e) => scrollToEvidence(step.toolId, e.currentTarget)}
                 >
                   <span className="work-step-icon" aria-hidden>{stepIcon(step.status)}</span>
                   <span className="work-step-label">{t(step.label)}</span>

@@ -179,6 +179,7 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
     <div
       className={`msg assistant${selectMode ? ' select-mode' : ''}${selected ? ' selected' : ''}`}
       data-testid="assistant-message"
+      data-message-id={message.id}
     >
       <div className="role">
         <span>{t('assistant.label')}</span>

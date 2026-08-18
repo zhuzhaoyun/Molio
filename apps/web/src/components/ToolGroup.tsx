@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useI18n } from '../i18n';
 import type { ToolEvent } from '../hooks/useChat';
 
@@ -93,15 +93,19 @@ interface BatchGroupProps {
 export function BatchGroup({ tools }: BatchGroupProps) {
   const [expanded, setExpanded] = useState(false);
   const [pendingEvidence, setPendingEvidence] = useState<string | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const runningCount = tools.filter(t => t.status === 'running').length;
   const errorCount = tools.filter(t => t.isError).length;
 
-  // 证据回跳：WorkTimeline 步骤点击指向本组内的工具（折叠时）→ 展开并定位到对应行
+  // 证据回跳：WorkTimeline 步骤点击指向本组内的工具（折叠时）→ 展开并定位到对应行。
+  // 作用域守卫：事件 detail 携带 messageId，必须与本组所属消息一致（重复 run 时旧消息监听器静默忽略）。
   useEffect(() => {
     const handler = (e: Event) => {
-      const toolId = (e as CustomEvent<string>).detail;
-      if (!toolId || !tools.some((t) => t.id === toolId)) return;
-      setPendingEvidence(toolId);
+      const detail = (e as CustomEvent<{ toolId: string; messageId: string }>).detail;
+      if (!detail?.toolId || !tools.some((t) => t.id === detail.toolId)) return;
+      const ownMessageId = rootRef.current?.closest('[data-message-id]')?.getAttribute('data-message-id');
+      if (!ownMessageId || detail.messageId !== ownMessageId) return;
+      setPendingEvidence(detail.toolId);
       setExpanded(true);
     };
     window.addEventListener('molio:evidence-target', handler);
@@ -110,7 +114,7 @@ export function BatchGroup({ tools }: BatchGroupProps) {
 
   useEffect(() => {
     if (expanded && pendingEvidence) {
-      const el = document.querySelector(`[data-tool-id="${CSS.escape(pendingEvidence)}"]`);
+      const el = rootRef.current?.querySelector(`[data-tool-id="${CSS.escape(pendingEvidence)}"]`);
       if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       setPendingEvidence(null);
     }
@@ -120,7 +124,7 @@ export function BatchGroup({ tools }: BatchGroupProps) {
   const statusIcon = runningCount > 0 ? '' : errorCount > 0 ? ` · ${errorCount} 失败` : '';
 
   return (
-    <div className="tool-batch-group" data-testid="tool-batch-group" data-tool-id={tools[0]!.id}>
+    <div ref={rootRef} className="tool-batch-group" data-testid="tool-batch-group" data-tool-id={tools[0]!.id}>
       <div
         className="tool-batch-row"
         onClick={() => setExpanded(e => !e)}
