@@ -3,12 +3,16 @@ import type { ChatMessage, ToolEvent } from '../hooks/useChatCore';
 
 export interface WorkStep {
   id: string;
+  /** thinking | tool | generating —— 摘要清单只取 tool */
+  kind: 'thinking' | 'tool' | 'generating';
   /** i18n key，渲染时 t(label) */
   label: string;
-  /** 路径 / 命令 / URL，展示用 */
+  /** 路径 / 命令 / URL，展示用（仅单步骤） */
   detail?: string;
   /** 连续同名工具数（>1 时渲染 ×N） */
   count?: number;
+  /** kind==='tool' 时：组内首个工具 id，作 ToolCard 证据锚点 */
+  toolId?: string;
   status: 'running' | 'done' | 'error';
 }
 
@@ -59,21 +63,17 @@ export function findLastAssistant(messages: ChatMessage[]): ChatMessage | null {
 }
 
 /**
- * 从消息列表推导当前 run 的步骤条。只看最后一条 assistant 消息（当前 run 的回复）：
- * thinking 无正文 →「思考中」；tools 逐组展开（连续同名合并 + count）；有正文 →「生成回复」。
- * 纯函数 —— tools 已按消息持久化，历史恢复/重挂载天然还原，不需要 run-scoped 状态。
+ * 从单条 assistant 消息推导工作步骤（thinking → tool 组 → generating）。
+ * 纯函数 —— AssistantMessage 逐消息渲染用；deriveWorkSteps 委托它。
  */
-export function deriveWorkSteps(messages: ChatMessage[]): WorkStep[] {
-  const last = findLastAssistant(messages);
-  if (!last) return [];
-
+export function deriveStepsForMessage(message: ChatMessage): WorkStep[] {
   const steps: WorkStep[] = [];
 
-  if (last.thinking && !last.content) {
-    steps.push({ id: 'thinking', label: 'workTimeline.thinking', status: last.streaming ? 'running' : 'done' });
+  if (message.thinking && !message.content) {
+    steps.push({ id: 'thinking', kind: 'thinking', label: 'workTimeline.thinking', status: message.streaming ? 'running' : 'done' });
   }
 
-  const tools = last.tools ?? [];
+  const tools = message.tools ?? [];
   let i = 0;
   while (i < tools.length) {
     const name = tools[i]!.name;
@@ -84,17 +84,28 @@ export function deriveWorkSteps(messages: ChatMessage[]): WorkStep[] {
     const hasError = group.some((t) => t.isError);
     steps.push({
       id: `${name}-${i}`,
+      kind: 'tool',
       label: TOOL_LABEL[name] ?? 'workTimeline.default',
       detail: group.length > 1 ? undefined : toolDetail(group[0]!),
       count: group.length > 1 ? group.length : undefined,
+      toolId: group[0]!.id,
       status: running ? 'running' : hasError ? 'error' : 'done',
     });
     i = j;
   }
 
-  if (last.content) {
-    steps.push({ id: 'generating', label: 'workTimeline.generating', status: last.streaming ? 'running' : 'done' });
+  if (message.content) {
+    steps.push({ id: 'generating', kind: 'generating', label: 'workTimeline.generating', status: message.streaming ? 'running' : 'done' });
   }
 
   return steps;
+}
+
+/**
+ * 从消息列表推导当前 run 的步骤条（委托 findLastAssistant + deriveStepsForMessage）。
+ * 保留导出：既有调用方签名不变。
+ */
+export function deriveWorkSteps(messages: ChatMessage[]): WorkStep[] {
+  const last = findLastAssistant(messages);
+  return last ? deriveStepsForMessage(last) : [];
 }
