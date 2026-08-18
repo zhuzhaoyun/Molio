@@ -1,3 +1,5 @@
+/* 引用来源 —— 助手回复底部的地基证据条（引用文件 / 外部 URL）。
+   静默元数据：发丝边框 token、弱化字级，terracotta 只在 hover/focus 兑现交互。 */
 .source-chips {
   display: flex;
   align-items: center;
@@ -6,36 +8,56 @@
   margin-top: 8px;
 }
 .source-chips-title {
-  font-size: 12px;
-  color: var(--text-secondary, #666);
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-soft, #9a9894);
   margin-right: 2px;
+  user-select: none;
 }
 .source-chip {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  border: 1px solid var(--border-color, rgba(0, 0, 0, 0.12));
-  border-radius: 12px;
-  padding: 2px 10px;
-  font-size: 12px;
-  background: var(--bg-hover, rgba(0, 0, 0, 0.04));
-  color: var(--text-primary, #222);
-  cursor: pointer;
+  gap: 5px;
+  box-sizing: border-box;
+  height: 20px;
   max-width: 220px;
+  padding: 0 8px;
+  border: 1px solid var(--border-soft, #edebe8);
+  border-radius: 6px;
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-muted, #6b6964);
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
 }
-.source-chip.navigable:hover {
-  border-color: var(--accent-color, #4a7);
-  color: var(--accent-color, #4a7);
-}
-.source-chip:disabled {
-  cursor: default;
-  opacity: 0.7;
+.source-chip-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--text-soft, #9a9894);
+  transition: color 0.15s ease;
 }
 .source-chip-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.source-chip[data-kind='url'] {
-  color: var(--accent-color, #4a7);
+/* 可点击来源：hover/聚焦时 terracotta 兑现交互 */
+.source-chip.navigable:hover,
+.source-chip.navigable:focus-visible {
+  border-color: var(--accent, #c96442);
+  color: var(--accent, #c96442);
+}
+.source-chip.navigable:hover .source-chip-icon,
+.source-chip.navigable:focus-visible .source-chip-icon {
+  color: var(--accent, #c96442);
+}
+.source-chip:focus-visible {
+  outline: 2px solid var(--accent-soft, #f5d8cb);
+  outline-offset: 1px;
+}
+.source-chip:disabled {
+  cursor: default;
+  opacity: 0.55;
 }

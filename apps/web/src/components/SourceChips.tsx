@@ -5,6 +5,7 @@ import { extractSources } from '../utils/toolRefs';
 import { useFileNavigation } from '../hooks/useFileNavigation';
 import { useActiveVaultId } from '../stores/vaultStore';
 import { useI18n } from '../i18n';
+import { FileIcon, ExternalLinkIcon } from './icons';
 
 interface Props {
   tools: ToolEvent[];
@@ -28,13 +29,16 @@ export function SourceChips({ tools }: Props) {
           className={`source-chip${s.kind === 'url' ? ' url' : ''}${s.navigable ? ' navigable' : ''}`}
           data-testid="source-chip"
           data-kind={s.kind}
+          title={s.target}
           disabled={s.kind !== 'url' && (!s.navigable || !vaultId)}
           onClick={() => {
             if (s.kind === 'url') { window.open(s.target, '_blank'); return; }
             if (s.navigable && vaultId) openFile(vaultId, s.target);
           }}
         >
-          <span className="source-chip-icon" aria-hidden>{s.kind === 'url' ? '🔗' : '📄'}</span>
+          <span className="source-chip-icon" aria-hidden>
+            {s.kind === 'url' ? <ExternalLinkIcon size={12} /> : <FileIcon size={12} />}
+          </span>
           <span className="source-chip-label">{s.label}</span>
         </button>
       ))}
