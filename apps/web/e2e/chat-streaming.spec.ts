@@ -66,17 +66,59 @@ test.describe('Chat — streaming details', () => {
     await expect(toolLine.locator('.tool-line-status')).toContainText('✓');
   });
 
-  test('assistant prose contains text before and after tool use', async ({ page }) => {
+  test('assistant prose shows only the final answer; narration stays in the work process', async ({ page }) => {
     await mockChatRun(page, { script: SCRIPTS.withToolUse });
     await gotoHome(page);
     await sendMessage(page, 'Read a file');
 
+    // Script emits: "Let me check that file." (工具前叙事) → tool_use → " The file looks good." (最终答案)
     const prose = page.locator('[data-testid="assistant-prose"]');
     await expect(prose).toBeVisible({ timeout: 10_000 });
-
-    // Script emits: "Let me check that file." → tool_use → " The file looks good."
-    await expect(prose).toContainText('Let me check that file.');
     await expect(prose).toContainText('The file looks good.');
+    // 叙事不再进正文 —— 工具前的自言自语收在工作块过程流里
+    await expect(prose).not.toContainText('Let me check that file.');
+
+    // 展开工作块 → 叙事在过程流里可回看
+    await page.locator('[data-testid="work-timeline-summary"]').click();
+    const processText = page.locator('[data-testid="work-block-process"]');
+    await expect(processText).toContainText('Let me check that file.');
+  });
+
+  test('narration streams in the work process; prose shows only the final answer', async ({ page }) => {
+    // 叙事→Read→叙事→Grep→答案：两句叙事都发生在 finalTools(=2) 之前
+    const script = [
+      { type: 'status', label: 'running' },
+      { type: 'text_delta', delta: '我先查一下文件。' },
+      { type: 'tool_use', id: 't1', name: 'Read', input: { file_path: '笔记/入门.md' } },
+      { type: 'tool_result', toolUseId: 't1', content: '# 入门笔记', isError: false },
+      { type: 'text_delta', delta: '再看一下配置。' },
+      { type: 'tool_use', id: 't2', name: 'Grep', input: { pattern: '配置' } },
+      { type: 'tool_result', toolUseId: 't2', content: '匹配 2 处', isError: false },
+      { type: 'text_delta', delta: '这是最终整理结果。' },
+      { type: 'turn_end', stopReason: 'end_turn' },
+      { type: 'usage', usage: { input_tokens: 300, output_tokens: 40 }, costUsd: 0.015 },
+    ];
+    // frameDelay 拉宽流式窗口，验证「流式中叙事在工作块内渐进、正文隐藏」
+    await mockChatRun(page, { script, frameDelay: 600 });
+    await gotoHome(page);
+    await sendMessage(page, '整理一下');
+
+    // 流式中：叙事在工作块内渐进流动，正文尚未出现
+    const processText = page.locator('[data-testid="work-block-process"]');
+    await expect(processText).toBeVisible({ timeout: 10_000 });
+    await expect(processText).toContainText('我先查一下文件。');
+    await expect(page.locator('[data-testid="assistant-prose"]')).toHaveCount(0);
+
+    // 完成后：正文只显示最终答案，两句叙事都留在工作块过程流
+    const prose = page.locator('[data-testid="assistant-prose"]');
+    await expect(prose).toContainText('这是最终整理结果。', { timeout: 10_000 });
+    await expect(prose).not.toContainText('我先查一下文件。');
+    await expect(prose).not.toContainText('再看一下配置。');
+
+    // 展开工作块 → 两句叙事都能回看
+    await page.locator('[data-testid="work-timeline-summary"]').click();
+    await expect(processText).toContainText('我先查一下文件。');
+    await expect(processText).toContainText('再看一下配置。');
   });
 
   test('error event shows in assistant message', async ({ page }) => {

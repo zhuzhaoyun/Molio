@@ -59,6 +59,17 @@
   to { transform: rotate(360deg); }
 }
 
+/* ── 过程叙事流：执行中 agent 的自言自语，在工作卡片内渐进流动，不进正文 ── */
+.work-block-process {
+  margin-top: 4px;
+  padding: 2px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-muted, #6b6964);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* ── 完成后：折叠摘要 ── */
 .work-block-summary {
   display: flex;

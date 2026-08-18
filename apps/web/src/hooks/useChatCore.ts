@@ -37,6 +37,9 @@ export interface ChatMessage {
   // Assistant-only fields
   thinking?: string;
   tools?: ToolEvent[];
+  /** 文本分段：每段记录到达时已完成的（非 running）工具数。完成后据此区分
+   *  「过程叙事」（done < 最终工具数，进工作块）与「最终答案」（其余，进正文）。 */
+  segments?: { text: string; done: number }[];
   streaming?: boolean;
   /** Model that ran this reply — captured from the status event (best-effort). */
   model?: string;
@@ -841,7 +844,15 @@ function updateWithEvent(
         if (!msg.streaming) return msg;
         // First real content arrives — the repair phase is done, drop the
         // transient status line so it doesn't linger in the saved message.
-        return clearRepairing({ ...msg, content: msg.content + event.delta });
+        // 同时记录分段：done = 当前已完成的工具数，完成后据此区分叙事与最终答案。
+        return clearRepairing({
+          ...msg,
+          content: msg.content + event.delta,
+          segments: [
+            ...(msg.segments ?? []),
+            { text: event.delta, done: (msg.tools ?? []).filter((t) => t.status !== 'running').length },
+          ],
+        });
 
       case 'thinking_delta':
         if (!msg.streaming) return msg;

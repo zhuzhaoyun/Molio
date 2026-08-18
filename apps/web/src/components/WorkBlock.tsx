@@ -15,13 +15,15 @@ interface Props {
   message: ChatMessage;
   /** 非交互工具项（AskUserQuestion 已被 AssistantMessage 拆分到卡片外常显） */
   toolItems: ToolItem[];
+  /** 过程叙事文本：运行中 = 全部实时文本流；完成后 = 拆出的叙事（finalTools 前） */
+  processText?: string;
   /** True only for the most recent assistant message — locks AskUserQuestion cards. */
   isLast?: boolean;
   onAnswerToolUse?: (toolUseId: string, content: string) => Promise<boolean | void> | boolean | void;
   onSubmitForm?: (text: string) => void;
 }
 
-export function WorkBlock({ message, toolItems, isLast, onAnswerToolUse, onSubmitForm }: Props) {
+export function WorkBlock({ message, toolItems, processText, isLast, onAnswerToolUse, onSubmitForm }: Props) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const [now, setNow] = useState(Date.now());
@@ -108,6 +110,9 @@ export function WorkBlock({ message, toolItems, isLast, onAnswerToolUse, onSubmi
         <div className="work-block-track" aria-hidden />
         {hasThinking && <ThinkingBlock content={message.thinking!} streaming={true} />}
         {renderTools()}
+        {processText && (
+          <div className="work-block-process" data-testid="work-block-process">{processText}</div>
+        )}
         {metaLine}
       </div>
     );
@@ -135,6 +140,9 @@ export function WorkBlock({ message, toolItems, isLast, onAnswerToolUse, onSubmi
         <div className="work-block-detail">
           {hasThinking && <ThinkingBlock content={message.thinking!} streaming={false} />}
           {renderTools()}
+          {processText && (
+            <div className="work-block-process" data-testid="work-block-process">{processText}</div>
+          )}
         </div>
       )}
       {metaLine}

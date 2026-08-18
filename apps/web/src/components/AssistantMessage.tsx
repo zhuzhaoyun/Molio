@@ -2,6 +2,7 @@ import { useMemo, useCallback } from 'react';
 import type { ChatMessage } from '../hooks/useChat';
 import { renderMarkdown, splitContent } from '../utils/markdown';
 import { groupTools, isInteractive } from '../utils/toolGroups';
+import { splitMessageText } from '../utils/messageText';
 import { CodeBlock } from './CodeBlock';
 import { useI18n } from '../i18n';
 import { useActiveVaultId } from '../stores/vaultStore';
@@ -42,11 +43,13 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
   const hasAskUserQuestion = message.tools?.some(
     (t) => t.name === 'AskUserQuestion' || t.name === 'ask_user_question'
   );
-  const displayContent = hasAskUserQuestion
-    ? suppressAskUserQuestionFallback(message.content)
-    : message.content;
+  // 正文只显示最终答案（最后一个工具之后的文本）；执行中的叙事进工作块过程流。
+  // 运行中（streaming）拆分为 { process: 全文, answer: '' } —— 全部文本在工作卡片内渐进。
+  const { process, answer } = useMemo(() => splitMessageText(message), [message]);
+  const displayAnswer = hasAskUserQuestion ? suppressAskUserQuestionFallback(answer) : answer;
+  const displayProcess = hasAskUserQuestion ? suppressAskUserQuestionFallback(process) : process;
 
-  const segments = useMemo(() => splitContent(displayContent), [displayContent]);
+  const segments = useMemo(() => splitContent(displayAnswer), [displayAnswer]);
   const toolItems = useMemo(
     () => groupTools(message.tools || []),
     [message.tools]
@@ -102,6 +105,7 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
         <WorkBlock
           message={message}
           toolItems={workItems}
+          processText={displayProcess}
           isLast={isLast}
           onAnswerToolUse={onAnswerToolUse}
           onSubmitForm={onSubmitForm}
@@ -152,7 +156,7 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
         </div>
       )}
 
-      {displayContent && (
+      {displayAnswer && (
         <div
           className="assistant-prose"
           data-testid="assistant-prose"
@@ -188,7 +192,7 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
           actions={[
             {
               key: 'copy', label: '复制', testid: 'msg-copy-btn',
-              text: message.content, onClick: () => {},
+              text: displayAnswer, onClick: () => {},
             },
             ...(isLast && onContinue
               ? [{
@@ -205,8 +209,8 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
           ]}
           extra={
             <>
-              <SaveToKbButton content={message.content} />
-              <SaveAsSkillButton content={message.content} />
+              <SaveToKbButton content={displayAnswer} />
+              <SaveAsSkillButton content={displayAnswer} />
             </>
           }
           overflow={onRequestDelete ? [{
