@@ -123,15 +123,15 @@ test.describe('Chat — streaming details', () => {
     await expect(processText).toContainText('再看一下配置。');
   });
 
-  test('grouped tools show running highlight in the ops zone', async ({ page }) => {
-    // 两次同名单工具（WebSearch）→ 流式中先单工具、第二个到达后同名单分组；
-    // 分组行运行中有珊瑚高亮 + 脉冲点（当前动作聚焦，覆盖多工具搜集场景）
+  test('streaming shows individual tool steps; latest reveals output; done groups them', async ({ page }) => {
+    // 流式 = 逐个工具展示（不分组，Codex 进行时模型）：两次 WebSearch 各占一行带序号，
+    // 最新工具结果到达即展开；完成态收进折叠工作块，展开后同名单工具分组归纳。
     const script = [
       { type: 'status', label: 'running' },
       { type: 'tool_use', id: 'ws1', name: 'WebSearch', input: { query: '今日科技新闻' } },
       { type: 'tool_result', toolUseId: 'ws1', content: '英伟达新动向 https://ithome.com/a', isError: false },
       { type: 'tool_use', id: 'ws2', name: 'WebSearch', input: { query: 'AI 大模型新闻' } },
-      // 插入文本帧拉宽 ws2 的 running 窗口，避免窄窗口错过运行态
+      // 插入文本帧拉宽 ws2 的 running 窗口（done=1 < finalTools=2 → 叙事，仍处流式中）
       { type: 'text_delta', delta: '继续整理中…' },
       { type: 'tool_result', toolUseId: 'ws2', content: 'Kimi 登顶 https://sspai.com/post/8', isError: false },
       { type: 'text_delta', delta: '这是最终整理结果。' },
@@ -142,8 +142,18 @@ test.describe('Chat — streaming details', () => {
     await gotoHome(page);
     await sendMessage(page, '搜集新闻资讯');
 
-    // 流式中：第二个 WebSearch 到达后同名单工具分组，分组行运行中高亮
-    await expect(page.locator('.tool-group-row.running')).toBeVisible({ timeout: 10_000 });
+    // 流式中：两个工具逐个展示（不分组），各带步序号 1/2、2/2
+    const toolLines = page.locator('[data-testid="tool-line"]');
+    await expect(toolLines).toHaveCount(2, { timeout: 10_000 });
+    await expect(page.locator('.tool-line-step')).toHaveText(['1/2', '2/2']);
+
+    // 运行中工具行高亮（当前动作聚焦）
+    await expect(page.locator('.tool-line.running')).toBeVisible({ timeout: 10_000 });
+
+    // 最新工具（ws2）结果到达即展开 —— scoped 到 ws2：ws1 的面板流式中也会短暂出现，
+    // 通用 [data-testid="tool-output-panel"] 定位会命中错误的面板
+    const ws2Panel = page.locator('[data-tool-id="ws2"]').locator('[data-testid="tool-output-panel"]');
+    await expect(ws2Panel).toContainText('Kimi 登顶', { timeout: 10_000 });
 
     // 完成后：分组收进折叠工作块，展开可见「2 次网页搜索」摘要
     const summary = page.locator('[data-testid="work-timeline-summary"]');

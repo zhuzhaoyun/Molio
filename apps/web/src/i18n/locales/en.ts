@@ -89,6 +89,7 @@ const en: Record<string, string> = {
 
   // ── WorkBlock zones ──
   'workBlock.opsLabel': 'Operations',
+  'workBlock.steps': 'steps',
 
   // ── SourceChips ──
   'source.title': 'Sources',

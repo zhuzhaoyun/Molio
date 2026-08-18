@@ -59,13 +59,13 @@
   to { transform: rotate(360deg); }
 }
 
-/* ── 过程叙事流：执行中 agent 的自言自语，在工作卡片内渐进流动，不进正文 ── */
+/* ── 过程叙事流：执行中 agent 的自言自语 —— 灰色小字衬底（Codex 式），不再是视觉主角 ── */
 .work-block-process {
   margin-top: 4px;
   padding: 2px 0 0;
-  font-size: 13px;
+  font-size: 11px;
   line-height: 1.6;
-  color: var(--text-muted, #6b6964);
+  color: var(--text-soft, #9a9894);
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -164,6 +164,17 @@
   flex: 1;
   height: 1px;
   background: linear-gradient(90deg, color-mix(in srgb, var(--accent, #c96442) 32%, transparent), transparent);
+}
+/* eyebrow 累计读数：操作 · ⏱ Ns · N 步（流式操作日志） */
+.work-block-zone-meta {
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--text-faint, #b8b6b1);
+  margin-left: 2px;
+  flex: none;
+  font-variant-numeric: tabular-nums;
 }
 
 /* 过程叙事打字机光标：仅流式输出时显示 */

@@ -6,7 +6,7 @@
  *   - RunStatusBar 在 tool_use 时出现，完成后消失
  *   - RunStatusBar 各阶段显示正确（thinking / tool / generating）
  *   - ThinkingBlock 流式时自动展开
- *   - ToolCard 运行 ≥5s 后自动展开输出，快速工具保持折叠
+ *   - ToolCard 流式最新工具结果到达即展开；≥5s 慢工具兜底提前展开；完成后随卡片折叠
  *   - ToolCard 显示耗时
  */
 
@@ -123,7 +123,8 @@ test.describe('Chat — Run progress visibility', () => {
       { type: 'usage', usage: { input_tokens: 10, output_tokens: 5 }, costUsd: 0.001 },
     ];
     await unmockAll(page);
-    // frameDelay 6000ms → tool_use 后 6s 才到 tool_result，触发 ≥5s 自动展开
+    // frameDelay 6000ms → tool_use 后 6s 才到 tool_result：运行中超 5s 先触发兜底展开，
+    // 随后结果到达走 open 态（流式最新工具）接力保持展开 —— 面板全程可见
     await mockChatRun(page, { script, frameDelay: 6000 });
     await gotoHome(page);
     await sendMessage(page, 'install');
@@ -137,23 +138,28 @@ test.describe('Chat — Run progress visibility', () => {
     await expect(panel).toContainText('packages installed');
   });
 
-  test('fast tool stays collapsed', async ({ page }) => {
+  test('latest tool reveals output while streaming; collapses with the card on completion', async ({ page }) => {
     const script = [
       { type: 'status', label: 'running' },
-      { type: 'tool_use', id: 'fast-1', name: 'Read', input: { file_path: '/x.ts' } },
-      { type: 'tool_result', toolUseId: 'fast-1', content: 'file content', isError: false },
+      { type: 'tool_use', id: 'live-1', name: 'Read', input: { file_path: '/x.ts' } },
+      { type: 'tool_result', toolUseId: 'live-1', content: 'file content', isError: false },
       { type: 'text_delta', delta: 'done' },
       { type: 'turn_end', stopReason: 'end_turn' },
       { type: 'usage', usage: { input_tokens: 10, output_tokens: 5 }, costUsd: 0.001 },
     ];
     await unmockAll(page);
-    // 短 frameDelay → tool 快速完成，不会触发自动展开
-    await mockChatRun(page, { script, frameDelay: 50 });
+    // frameDelay 800 → 拉宽流式窗口：tool_result 到达时仍在流式中，最新工具结果即展开
+    await mockChatRun(page, { script, frameDelay: 800 });
     await gotoHome(page);
     await sendMessage(page, 'read file');
 
-    // tool 完成后，输出面板不应自动展开
+    // 流式中：最新工具结果到达即展开输出面板（不再是「快速工具保持折叠」）
     const panel = page.locator('[data-testid="tool-output-panel"]');
+    await expect(panel).toBeVisible({ timeout: 10_000 });
+    await expect(panel).toContainText('file content');
+
+    // 完成后：工作块折叠 → 工具行连同输出面板一并收起，面板不在 DOM
+    await expect(page.locator('[data-testid="usage-footer"]')).toBeVisible({ timeout: 10_000 });
     await expect(panel).toHaveCount(0, { timeout: 5_000 });
   });
 

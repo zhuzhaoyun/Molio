@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ChatMessage } from '../hooks/useChat';
 import { deriveStepsForMessage } from '../utils/workSteps';
-import type { ToolItem } from '../utils/toolGroups';
+import { UNGROUPABLE, type ToolItem } from '../utils/toolGroups';
 import { useI18n } from '../i18n';
 import { ThinkingBlock } from './ThinkingBlock';
 import { ToolCard } from './ToolCard';
@@ -48,6 +48,12 @@ export function WorkBlock({ message, toolItems, processText, isLast, onAnswerToo
   const hasThinking = !!message.thinking;
   const hasTools = toolItems.length > 0;
   const hasOps = hasTools || !!processText;
+
+  // 流式操作日志：运行中逐个展示工具（不分组，Codex 进行时模型），过滤交互工具
+  const liveTools = useMemo(
+    () => (message.tools ?? []).filter((t) => !UNGROUPABLE.has(t.name)),
+    [message.tools],
+  );
 
   // 没有任何工作痕迹时整块不渲染（纯问答、无工具无思考）。
   if (!isRunning && !hasThinking && !hasTools) return null;
@@ -94,6 +100,36 @@ export function WorkBlock({ message, toolItems, processText, isLast, onAnswerToo
     </div>
   );
 
+  // ── 流式操作日志：逐个工具（不分组，Codex 进行时模型）+ 累计读数 + 叙事灰字衬底 ──
+  const renderLiveOps = () => (
+    <div className="work-block-zone zone-ops">
+      <div className="work-block-zone-label" data-testid="work-block-zone-ops-label">
+        <span>{t('workBlock.opsLabel')}</span>
+        {liveTools.length > 0 && (
+          <span className="work-block-zone-meta">⏱ {elapsed}s · {liveTools.length} {t('workBlock.steps')}</span>
+        )}
+      </div>
+      {liveTools.map((tool, idx) => (
+        <ToolCard
+          key={tool.id}
+          tool={tool}
+          isLast={isLast}
+          open={idx === liveTools.length - 1}
+          step={idx + 1}
+          totalSteps={liveTools.length}
+          onAnswerToolUse={onAnswerToolUse}
+          onSubmitForm={onSubmitForm}
+          allTools={message.tools ?? []}
+        />
+      ))}
+      {processText && (
+        <div className="work-block-process" data-testid="work-block-process" data-typing={isRunning}>
+          <TypingText text={processText} active={isRunning} />
+        </div>
+      )}
+    </div>
+  );
+
   // ── meta 行：模型 · token 进出 · 花费 · 耗时（辅助信息，用户点名的"模型/预估token/时间"） ──
   const hasUsage = !!message.usage;
   const metaLine = (
@@ -130,7 +166,7 @@ export function WorkBlock({ message, toolItems, processText, isLast, onAnswerToo
             <ThinkingBlock content={message.thinking!} streaming={true} />
           </div>
         )}
-        {hasOps && renderOps()}
+        {hasOps && renderLiveOps()}
         {metaLine}
       </div>
     );

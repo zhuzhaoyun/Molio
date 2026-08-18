@@ -13,9 +13,14 @@ interface Props {
   onSubmitForm?: (text: string) => void;
   /** Full tools array from the assistant message, used for hasRetrySucceeded check. */
   allTools?: ToolEvent[];
+  /** 流式操作日志：最新工具处于打开态，结果到达即展开（不被默认折叠覆盖）。 */
+  open?: boolean;
+  /** 步序号（流式操作区逐个展示时）。 */
+  step?: number;
+  totalSteps?: number;
 }
 
-export function ToolCard({ tool, isLast, onAnswerToolUse, onSubmitForm, allTools }: Props) {
+export function ToolCard({ tool, isLast, onAnswerToolUse, onSubmitForm, allTools, open, step, totalSteps }: Props) {
   // Dispatch to AskUserQuestionCard for interactive question handling
   if (tool.name === 'AskUserQuestion' || tool.name === 'ask_user_question') {
     return (
@@ -32,7 +37,15 @@ export function ToolCard({ tool, isLast, onAnswerToolUse, onSubmitForm, allTools
     );
   }
 
-  return <DefaultToolCard tool={tool} allTools={allTools ?? []} />;
+  return (
+    <DefaultToolCard
+      tool={tool}
+      allTools={allTools ?? []}
+      open={open}
+      step={step}
+      totalSteps={totalSteps}
+    />
+  );
 }
 
 // ── DefaultToolCard — all hooks live here at top level (Rules of Hooks) ──
@@ -49,9 +62,22 @@ function hasRetrySucceeded(tools: ToolEvent[], toolIndex: number): boolean {
   return false;
 }
 
-function DefaultToolCard({ tool, allTools }: { tool: ToolEvent; allTools: ToolEvent[] }) {
+function DefaultToolCard({
+  tool,
+  allTools,
+  open,
+  step,
+  totalSteps,
+}: {
+  tool: ToolEvent;
+  allTools: ToolEvent[];
+  open?: boolean;
+  step?: number;
+  totalSteps?: number;
+}) {
   const toolIndex = allTools.findIndex(t => t.id === tool.id);
   const retrySucceeded = hasRetrySucceeded(allTools, toolIndex);
+  const hasOutput = tool.status !== 'running' && tool.result !== undefined && tool.result !== '';
   // ── Elapsed time + expand state ──
   const [elapsed, setElapsed] = useState(0);
   const [expanded, setExpanded] = useState(false);
@@ -88,35 +114,44 @@ function DefaultToolCard({ tool, allTools }: { tool: ToolEvent; allTools: ToolEv
   useEffect(() => {
     if (manualRef.current) return;
 
+    // open（流式最新工具）：结果到达即展开 —— 不被默认折叠覆盖；
+    // 无结果（运行中）则落到 ≥5s 规则，保持慢工具提前展开的行为
+    if (open && hasOutput) {
+      setExpanded(true);
+      return;
+    }
+
     // ≥5s running → expand
     if (tool.status === 'running' && elapsed >= 5) {
       setExpanded(true);
       autoExpandedRef.current = true;
+      return;
     }
 
     // Final failure (no later retry succeeded) → expand to show error
     if (tool.status === 'error' && !retrySucceeded) {
       setExpanded(true);
+      return;
     }
 
     // Intermediate failure (later retry succeeded) → collapse
     if (tool.status === 'error' && retrySucceeded) {
       setExpanded(false);
       autoExpandedRef.current = false;
+      return;
     }
 
     // Successfully done, not auto-expanded → collapse
     if (tool.status === 'done' && !tool.isError && !autoExpandedRef.current) {
       setExpanded(false);
     }
-  }, [tool.status, elapsed, tool.isError, retrySucceeded]);
+  }, [open, hasOutput, tool.status, elapsed, tool.isError, retrySucceeded]);
 
   const toggleExpand = () => {
     manualRef.current = true;
     setExpanded((prev) => !prev);
   };
 
-  const hasOutput = tool.status !== 'running' && tool.result !== undefined && tool.result !== '';
   const chevron = hasOutput ? (expanded ? '▾' : '▸') : '';
 
   // ── Tool-line rendering ──
@@ -146,6 +181,9 @@ function DefaultToolCard({ tool, allTools }: { tool: ToolEvent; allTools: ToolEv
         onKeyDown={handleKeyDown}
         data-testid="tool-line"
       >
+        {step != null && totalSteps != null && (
+          <span className="tool-line-step">{step}/{totalSteps}</span>
+        )}
         <span className="tool-line-arrow">{'⎿'}</span>
         <span className="tool-line-name">{tool.name}</span>
         {agentMeta?.badge && <span className="tool-line-badge">{agentMeta.badge}</span>}
@@ -430,6 +468,7 @@ function formatToolInput(input: unknown): string {
     if (typeof obj['file_path'] === 'string') return obj['file_path'] as string;
     if (typeof obj['description'] === 'string') return truncate(obj['description'] as string, 80);
     if (typeof obj['url'] === 'string') return obj['url'] as string;
+    if (typeof obj['query'] === 'string') return truncate(obj['query'] as string, 80);
     return truncate(JSON.stringify(input), 80);
   }
   return '';

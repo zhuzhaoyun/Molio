@@ -89,6 +89,7 @@ const zh: Record<string, string> = {
 
   // ── WorkBlock 分区 ──
   'workBlock.opsLabel': '操作',
+  'workBlock.steps': '步',
 
   // ── SourceChips ──
   'source.title': '引用',

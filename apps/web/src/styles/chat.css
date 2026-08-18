@@ -380,6 +380,13 @@
   color: var(--text-faint);
   flex-shrink: 0;
 }
+.tool-line-step {
+  color: var(--text-faint);
+  font-size: 10px;
+  font-family: var(--mono);
+  margin-right: 2px;
+  flex-shrink: 0;
+}
 .tool-line-name {
   color: var(--text-muted);
   flex-shrink: 0;
@@ -431,28 +438,6 @@
 @keyframes work-dot {
   0%, 100% { opacity: 0.35; transform: scale(0.85); }
   50% { opacity: 1; transform: scale(1.05); }
-}
-
-/* 分组/批量工具行运行中：整行同款珊瑚高亮 + 脉冲点（WebSearch ×2 等分组场景） */
-.tool-group-row.running,
-.tool-batch-row.running {
-  background: color-mix(in srgb, var(--accent) 7%, transparent);
-  border-radius: 4px;
-  margin: 0 -4px;
-  padding: 2px 4px;
-}
-.tool-group-row.running .tool-group-label,
-.tool-batch-row.running .tool-group-label { color: var(--accent); }
-.tool-group-row.running::before,
-.tool-batch-row.running::before {
-  content: '';
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-  flex-shrink: 0;
-  animation: work-dot 1.1s ease-in-out infinite;
 }
 
 /* Tool group — collapsible inline list */

@@ -34,7 +34,7 @@ export function ToolGroup({ tools, toolName }: Props) {
   return (
     <div className="tool-group-inline" data-tool-id={tools[0]!.id}>
       <div
-        className={`tool-group-row${hasRunning ? ' running' : ''}`}
+        className="tool-group-row"
         onClick={() => setExpanded((e) => !e)}
         role="button"
         tabIndex={0}
@@ -46,12 +46,12 @@ export function ToolGroup({ tools, toolName }: Props) {
       {expanded && (
         <div className="tool-group-items">
           {items.map((item, i) => (
-            <div key={i} className={`tool-line${item.status === 'running' ? ' running' : ''}`}>
+            <div key={i} className="tool-line">
               <span className="tool-line-arrow">⎿</span>
               <span className="tool-line-name">{toolName}</span>
               <span className="tool-line-arg">{item.label}</span>
               <span className={`tool-line-status ${item.status}`}>
-                {item.status === 'running' ? '' : item.status === 'error' ? '✗' : '✓'}
+                {item.status === 'running' ? '…' : item.status === 'error' ? '✗' : '✓'}
               </span>
             </div>
           ))}
@@ -126,7 +126,7 @@ export function BatchGroup({ tools }: BatchGroupProps) {
   return (
     <div ref={rootRef} className="tool-batch-group" data-testid="tool-batch-group" data-tool-id={tools[0]!.id}>
       <div
-        className={`tool-batch-row${runningCount > 0 ? ' running' : ''}`}
+        className="tool-batch-row"
         onClick={() => setExpanded(e => !e)}
         role="button"
         tabIndex={0}
@@ -140,12 +140,12 @@ export function BatchGroup({ tools }: BatchGroupProps) {
           {tools.map((tool) => {
             const detail = formatArg(tool);
             return (
-              <div key={tool.id} className={`tool-line${tool.status === 'running' ? ' running' : ''}`} data-tool-id={tool.id}>
+              <div key={tool.id} className="tool-line" data-tool-id={tool.id}>
                 <span className="tool-line-arrow">⎿</span>
                 <span className="tool-line-name">{tool.name}</span>
                 {detail && <span className="tool-line-arg">{detail}</span>}
                 <span className={`tool-line-status ${tool.status === 'running' ? 'running' : tool.isError ? 'error' : 'done'}`}>
-                  {tool.status === 'running' ? '' : tool.isError ? '✗' : '✓'}
+                  {tool.status === 'running' ? '…' : tool.isError ? '✗' : '✓'}
                 </span>
               </div>
             );
