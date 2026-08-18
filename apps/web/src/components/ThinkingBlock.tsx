@@ -19,9 +19,10 @@ export function ThinkingBlock({ content, streaming }: Props) {
     }
   }, [streaming]);
 
-  // 流式结束 → 重置 manual ref，下次流式重新自动展开
+  // 流式结束 → 自动收回（除非用户手动展开过），并重置 manual ref 供下次流式重新展开
   useEffect(() => {
     if (!streaming) {
+      if (!manualRef.current) setExpanded(false);
       manualRef.current = false;
     }
   }, [streaming]);

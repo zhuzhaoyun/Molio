@@ -31,6 +31,18 @@ export const SCRIPTS = {
     { type: 'usage', usage: { input_tokens: 110, output_tokens: 25 }, costUsd: 0.006 },
   ],
 
+  /** Reply with a long thinking block — multiple deltas so the streaming-expanded state is observable */
+  withLongThinking: [
+    { type: 'status', label: 'running' },
+    { type: 'thinking_start' },
+    { type: 'thinking_delta', delta: 'Let me analyze this...' },
+    { type: 'thinking_delta', delta: 'Considering the options...' },
+    { type: 'thinking_delta', delta: 'Weighing trade-offs...' },
+    { type: 'text_delta', delta: 'Based on my analysis, here is the answer.' },
+    { type: 'turn_end', stopReason: 'end_turn' },
+    { type: 'usage', usage: { input_tokens: 200, output_tokens: 30 }, costUsd: 0.01 },
+  ],
+
   /** Reply with thinking block */
   withThinking: [
     { type: 'status', label: 'running' },

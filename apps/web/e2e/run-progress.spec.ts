@@ -5,7 +5,7 @@
  * Run progress visibility:
  *   - RunStatusBar 在 tool_use 时出现，完成后消失
  *   - RunStatusBar 各阶段显示正确（thinking / tool / generating）
- *   - ThinkingBlock 流式时自动展开
+ *   - ThinkingBlock 流式时自动展开，流式结束后自动收回
  *   - ToolCard 运行 ≥5s 后自动展开输出，快速工具保持折叠
  *   - ToolCard 显示耗时
  */
@@ -98,14 +98,31 @@ test.describe('Chat — Run progress visibility', () => {
 
   test('ThinkingBlock auto-expands during streaming', async ({ page }) => {
     await unmockAll(page);
-    await mockChatRun(page, { script: SCRIPTS.withThinking, frameDelay: 150 });
+    // 多个 thinking_delta 拉长思考阶段，让「流式中展开」可被稳定观测
+    await mockChatRun(page, { script: SCRIPTS.withLongThinking, frameDelay: 300 });
     await gotoHome(page);
     await sendMessage(page, 'think please');
 
-    // 思考过程应自动展开，内容可见
+    // 思考阶段应自动展开，内容可见
     const content = page.locator('[data-testid="thinking-block"] .thinking-content');
-    await expect(content).toBeVisible({ timeout: 5_000 });
+    await expect(content).toBeVisible({ timeout: 10_000 });
     await expect(content).toContainText('Let me analyze');
+  });
+
+  test('ThinkingBlock auto-collapses after streaming ends', async ({ page }) => {
+    await unmockAll(page);
+    await mockChatRun(page, { script: SCRIPTS.withLongThinking, frameDelay: 200 });
+    await gotoHome(page);
+    await sendMessage(page, 'think please');
+
+    // 思考中自动展开，内容可见
+    const content = page.locator('[data-testid="thinking-block"] .thinking-content');
+    await expect(content).toBeVisible({ timeout: 10_000 });
+    await expect(content).toContainText('Let me analyze');
+
+    // 正文开始输出（streaming 结束）后，思考块应自动收回
+    await expect(page.locator('[data-testid="assistant-prose"]')).toContainText('here is the answer', { timeout: 10_000 });
+    await expect(content).toHaveCount(0, { timeout: 5_000 });
   });
 
   // ── P1: Tool 智能展开 ──
