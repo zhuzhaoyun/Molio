@@ -383,6 +383,19 @@ describe('skill-installer migration', () => {
     installAll(tmpVault);
 
     const installed = fs.readFileSync(path.join(wikiBuildDir, 'SKILL.md'), 'utf-8');
+    // Must now carry the source's version line (proves the versioned source
+    // was copied in). Read the expected version dynamically so this test
+    // survives skill version bumps — the wiki-* five-piece moves versions
+    // together, and the old hardcoded `1.x` regex broke when it hit 2.0.0.
+    const sourceSkillMd = fs.readFileSync(
+      path.join(resolveSkillsSourceDir(), 'wiki-build', 'SKILL.md'),
+      'utf-8',
+    );
+    const sourceVersion = sourceSkillMd.match(/^version:\s*(.+)$/m)?.[1]?.trim();
+    assert.ok(sourceVersion, 'bundled wiki-build SKILL.md should declare a version');
+    const escapedVersion = sourceVersion.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    assert.match(installed, new RegExp(`^version:\\s*${escapedVersion}$`, 'm'), 'version-less dest should be updated to versioned source');
+    // And the current body content, not the stale old body.
     // Must now carry the bundled source's version line (proves the versioned
     // source was copied in).
     assert.ok(
