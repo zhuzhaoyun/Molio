@@ -3,10 +3,10 @@
  *
  * Skill metadata + the global master switch live in the daemon's SQLite `skills`
  * table (replacing the old `~/.molio/skills/manifest.json`). A skill's body is
- * still a file: library/core skills write `~/.molio/skills/<id>/SKILL.md`, while
+ * still a file: library skills write `~/.molio/skills/<id>/SKILL.md`, while
  * bundled skills ship their content under the app resources (`tools/skills/<id>/`).
  *
- * Three kinds:
+ * Two kinds:
  *  - `bundled`: multi-file skills shipped with Molio (docling / wiki-* / wechat).
  *    Hidden from the settings UI and always effective (app-owned). Synced whole-dir
  *    to `<vault>/.claude/skills/<id>/` (plain dir name, no `molio--` prefix).
@@ -14,13 +14,11 @@
  *    Synced to `<vault>/.claude/skills/molio--<dirName>/SKILL.md` where dirName
  *    is the slugified display name (readable; same-name collisions get a stable
  *    id-derived suffix).
- *  - core (`core: true`): the writing trio — Molio's core job. NOT shown, NOT
- *    configurable, always enabled; synced like a library skill.
  *
  * Scope: sync writes ONLY into each registered vault's `.claude/skills/`, so
  * skills reach runs whose cwd is inside a vault. Runs without a vault (home
  * chat before any vault exists, channels whose defaultCwd isn't a vault path)
- * get no library/bundled/core skills — "always enabled" means "always enabled
+ * get no library/bundled skills — "always enabled" means "always enabled
  * within vault-scoped runs".
  */
 
@@ -35,8 +33,6 @@ export interface SkillManifestEntry {
   builtIn: boolean;
   /** 'bundled' (multi-file, shipped) or 'library' (single-file, user-managed). Defaults to 'library'. */
   kind?: SkillKind;
-  /** Core app functionality (writing trio): hidden, always-on, not configurable. */
-  core?: boolean;
   createdAt: number; // epoch ms
   updatedAt: number; // epoch ms
 }

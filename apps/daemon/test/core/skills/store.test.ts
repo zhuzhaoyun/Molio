@@ -53,7 +53,6 @@ describe('skills/store', () => {
     assert.ok(entry.id, 'should assign an id');
     assert.equal(entry.builtIn, false);
     assert.equal(entry.kind, 'library', 'defaults to library');
-    assert.equal(entry.core, false);
 
     const md = fs.readFileSync(path.join(molioHome, 'skills', entry.id, 'SKILL.md'), 'utf8');
     assert.ok(md.startsWith('---\n'), 'starts with frontmatter fence');
@@ -89,17 +88,6 @@ describe('skills/store', () => {
     assert.equal(entry.kind, 'bundled');
     assert.ok(!fs.existsSync(path.join(molioHome, 'skills', entry.id)), 'no library content dir for bundled');
     assert.equal(getSkill(db, 'docling')?.kind, 'bundled');
-  });
-
-  it('createSkill with core=true marks the row as core', () => {
-    const entry = createSkill(
-      db,
-      { id: 'write-article', name: '写文章', description: '', enabled: true, builtIn: true, core: true },
-      'body',
-      opts,
-    );
-    assert.equal(entry.core, true);
-    assert.equal(getSkill(db, 'write-article')?.core, true);
   });
 
   // store.ts is pure catalog CRUD — it never writes to .claude/skills.

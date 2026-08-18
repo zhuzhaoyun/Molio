@@ -1,5 +1,5 @@
 /**
- * Library/core skill sync — mirror enabled skills from the Molio library
+ * Library skill sync — mirror enabled skills from the Molio library
  * (`~/.molio/skills/`) into the skills dir the runtime CLIs actually read.
  *
  * Which dir that is decided by the caller via `claudeHome`: vault-config.ts
