@@ -9,7 +9,7 @@ import {
   seedBuiltinSkills,
   initSkillLibrary,
   readBundledInstructions,
-  CORE_SKILLS_SEEDS,
+  RETIRED_CORE_SKILLS,
 } from '../../../src/core/skills/builtin.js';
 import { listSkills, toggleSkill } from '../../../src/core/skills/store.js';
 import { BUILTIN_SKILLS } from '../../../src/core/skill-installer.js';
@@ -21,7 +21,7 @@ let dbDir: string;
 let db: Database.Database;
 let opts: SkillPathsOpts;
 
-const EXPECTED_TOTAL = BUILTIN_SKILLS.length + CORE_SKILLS_SEEDS.length;
+const EXPECTED_TOTAL = BUILTIN_SKILLS.length;
 
 beforeEach(() => {
   molioHome = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-skills-builtin-home-'));
@@ -39,29 +39,22 @@ afterEach(() => {
 });
 
 describe('skills/builtin', () => {
-  it('seeds 7 bundled + 3 core built-ins, all flagged builtIn', () => {
+  it('seeds only the bundled built-ins, all flagged builtIn', () => {
     seedBuiltinSkills(db, opts);
     const skills = listSkills(db);
-    assert.equal(skills.length, EXPECTED_TOTAL, '7 bundled + 3 core');
+    assert.equal(skills.length, EXPECTED_TOTAL, 'bundled only (the core writing trio was removed)');
     for (const s of skills) {
       assert.equal(s.builtIn, true);
     }
 
     const bundled = skills.filter((s) => s.kind === 'bundled');
-    const core = skills.filter((s) => s.core);
     assert.equal(bundled.length, BUILTIN_SKILLS.length, 'all bundled skills seeded');
-    assert.equal(core.length, CORE_SKILLS_SEEDS.length, 'all core skills seeded');
 
     // bundled ids match the shipped slugs exactly.
     assert.deepEqual(
       bundled.map((s) => s.id).sort(),
       [...BUILTIN_SKILLS].sort(),
     );
-    // core skills are library-kind + core, and never marked as a toggleable bundled skill.
-    for (const s of core) {
-      assert.equal(s.kind, 'library');
-      assert.equal(s.core, true);
-    }
   });
 
   it('bundled seeds get their display name/description from the shipped SKILL.md', () => {
@@ -70,14 +63,6 @@ describe('skills/builtin', () => {
     assert.ok(docling, 'docling seeded');
     assert.ok(docling!.name.length > 0, 'name read from frontmatter (or fallback)');
     assert.ok(docling!.description.length > 0, 'description read from frontmatter (or fallback)');
-  });
-
-  it('core seeds write their SKILL.md body to the library (behavior preserved)', () => {
-    seedBuiltinSkills(db, opts);
-    const id = CORE_SKILLS_SEEDS[0]?.id;
-    assert.ok(id);
-    const md = path.join(molioHome, 'skills', id!, 'SKILL.md');
-    assert.ok(fs.existsSync(md), 'core skill body written so it can be synced');
   });
 
   it('bundled seeds write NO library content dir (content ships with the app)', () => {
@@ -123,6 +108,50 @@ describe('skills/builtin', () => {
     assert.equal(remotion!.kind, 'library');
   });
 
+  it('upgrade migration: retires the removed core writing trio (rows + content dirs), never a same-id user skill', () => {
+    // Phase 1 — DB + library left behind by an older version that seeded the
+    // core writing trio. The startup retirement must delete every retired row
+    // (guarded on core=1) AND remove the library content dirs.
+    const now = Date.now();
+    for (const id of RETIRED_CORE_SKILLS) {
+      db.prepare(
+        `INSERT INTO skills (id, name, description, kind, core, built_in, enabled, created_at, updated_at)
+         VALUES (?, ?, 'legacy core row', 'library', 1, 1, 1, ?, ?)`,
+      ).run(id, id, now, now);
+      const dir = path.join(molioHome, 'skills', id);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, 'SKILL.md'), 'legacy core body');
+    }
+
+    seedBuiltinSkills(db, opts);
+    const skills = listSkills(db);
+    for (const id of RETIRED_CORE_SKILLS) {
+      assert.ok(!skills.some((s) => s.id === id), `retired core row ${id} must be deleted on upgrade`);
+      assert.ok(
+        !fs.existsSync(path.join(molioHome, 'skills', id)),
+        `library content dir of ${id} must be removed on upgrade`,
+      );
+    }
+    assert.equal(skills.length, EXPECTED_TOTAL);
+
+    // Phase 2 — the user later creates a library skill with a coincidentally
+    // identical id (core=0). The core=1 guard must protect it from the
+    // still-running idempotent retirement delete.
+    db.prepare(
+      `INSERT INTO skills (id, name, description, kind, core, built_in, enabled, created_at, updated_at)
+       VALUES ('summarize', 'summarize', 'user library skill', 'library', 0, 0, 1, ?, ?)`,
+    ).run(now, now);
+    const userDir = path.join(molioHome, 'skills', 'summarize');
+    fs.mkdirSync(userDir, { recursive: true });
+    fs.writeFileSync(path.join(userDir, 'SKILL.md'), 'user body');
+
+    seedBuiltinSkills(db, opts);
+    const user = listSkills(db).find((s) => s.id === 'summarize');
+    assert.ok(user, 'a user library skill with a retired id must survive re-seeding');
+    assert.equal(user!.builtIn, false);
+    assert.ok(fs.existsSync(path.join(userDir, 'SKILL.md')), 'user content dir must survive');
+  });
+
   it('seeding preserves the user toggle state of an existing skill', () => {
     seedBuiltinSkills(db, opts);
     const id = BUILTIN_SKILLS[0];
@@ -135,9 +164,9 @@ describe('skills/builtin', () => {
     assert.equal(listSkills(db).length, EXPECTED_TOTAL);
   });
 
-  it('re-seeding refreshes name/description but never touches enabled/core', () => {
+  it('re-seeding refreshes name/description but never touches enabled', () => {
     seedBuiltinSkills(db, opts);
-    // Flip both a bundled and a core skill, then mutate a name directly.
+    // Flip a bundled skill's switch, then mutate its name directly.
     toggleSkill(db, 'docling', false);
     db.prepare('UPDATE skills SET name = ? WHERE id = ?').run('STALE NAME', 'docling');
 

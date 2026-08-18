@@ -2,7 +2,7 @@
  * Skill library store — DB-backed CRUD + SKILL.md materialization.
  *
  * The daemon's SQLite `skills` table is the source of truth for metadata + the
- * global enabled state (master switch); each library/core skill's content lives
+ * global enabled state (master switch); each library skill's content lives
  * in `~/.molio/skills/<id>/`. A library skill is usually a single generated
  * `SKILL.md`, but an IMPORTED skill may be a whole multi-file directory (SKILL.md
  * + reference/script siblings) copied in verbatim — sync.ts mirrors the entire
@@ -11,7 +11,7 @@
  *
  * This module is pure catalog CRUD and does NOT sync anywhere. Propagating
  * enabled skills into each vault's `<vault>/.claude/skills/` is handled by
- * vault-config.ts (bundled → whole-dir, library/core → molio-- single file) and
+ * vault-config.ts (bundled → whole-dir, library → molio-- single file) and
  * triggered by the routes after a mutation.
  */
 import fs from 'node:fs';
@@ -30,13 +30,16 @@ export class SkillNotFoundError extends Error {
   }
 }
 
-/** Shape of a row in the `skills` table. */
+/**
+ * Shape of a row in the `skills` table. The legacy `core` column (former
+ * writing trio) is deliberately NOT read — it stays in the schema for the
+ * retirement guard in builtin.ts and defaults to 0 for every new row.
+ */
 interface SkillRow {
   id: string;
   name: string;
   description: string;
   kind: string;
-  core: number;
   built_in: number;
   enabled: number;
   created_at: number;
@@ -49,7 +52,6 @@ function rowToEntry(row: SkillRow): SkillManifestEntry {
     name: row.name,
     description: row.description,
     kind: (row.kind === 'bundled' ? 'bundled' : 'library') satisfies SkillKind,
-    core: row.core !== 0,
     builtIn: row.built_in !== 0,
     enabled: row.enabled !== 0,
     createdAt: row.created_at,
@@ -105,8 +107,6 @@ export interface CreateSkillInput {
   builtIn: boolean;
   /** 'bundled' (multi-file, shipped) or 'library' (single-file). Defaults to 'library'. */
   kind?: SkillKind;
-  /** Core app functionality (writing trio): hidden + always-on + not configurable. */
-  core?: boolean;
   /**
    * Import a whole existing directory as the skill's content (multi-file skill:
    * SKILL.md + siblings copied verbatim). When set for a non-bundled skill it
@@ -117,7 +117,7 @@ export interface CreateSkillInput {
 }
 
 /**
- * Create a skill row (+ its SKILL.md content file for library/core skills).
+ * Create a skill row (+ its SKILL.md content file for library skills).
  * Bundled skills have their content shipped under `tools/skills/<id>/`, so no
  * content file is written for them — only the metadata row.
  */
@@ -129,20 +129,18 @@ export function createSkill(
 ): SkillManifestEntry {
   const now = Date.now();
   const kind: SkillKind = input.kind ?? 'library';
-  const core = input.core ?? false;
   const entry: SkillManifestEntry = {
     id: input.id ?? randomUUID(),
     name: input.name,
     description: input.description,
     kind,
-    core,
     enabled: input.enabled,
     builtIn: input.builtIn,
     createdAt: now,
     updatedAt: now,
   };
 
-  // Library + core skills carry their content under ~/.molio/skills/<id>.
+  // Library skills carry their content under ~/.molio/skills/<id>.
   if (kind !== 'bundled') {
     if (input.sourceDir) {
       // Multi-file import: copy the whole source tree verbatim (its own SKILL.md
@@ -153,15 +151,16 @@ export function createSkill(
     }
   }
 
+  // The legacy `core` column is omitted on purpose — its schema DEFAULT 0
+  // keeps it set for every new row (see SkillRow note above).
   db.prepare(
-    `INSERT INTO skills (id, name, description, kind, core, built_in, enabled, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO skills (id, name, description, kind, built_in, enabled, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     entry.id,
     entry.name,
     entry.description,
     kind,
-    core ? 1 : 0,
     entry.builtIn ? 1 : 0,
     entry.enabled ? 1 : 0,
     entry.createdAt,
@@ -176,7 +175,7 @@ export interface UpdateSkillPatch {
   instructions?: string;
 }
 
-/** Update name/description (+ instructions body for library/core). Bundled skills are not editable (guarded by the route). */
+/** Update name/description (+ instructions body for library skills). Bundled skills are not editable (guarded by the route). */
 export function updateSkill(
   db: Database.Database,
   id: string,
@@ -190,7 +189,7 @@ export function updateSkill(
   if (patch.description !== undefined) entry.description = patch.description;
   entry.updatedAt = Date.now();
 
-  // Library/core carry their body in SKILL.md; rewrite it when any field changes.
+  // Library skills carry their body in SKILL.md; rewrite it when any field changes.
   // NOTE: imported multi-file skills may ship extra frontmatter fields
   // (allowed-tools, license, ...); generateSkillMd regenerates the frontmatter
   // with name/description/version only, so such extra fields are dropped on

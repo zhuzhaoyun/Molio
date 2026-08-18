@@ -44,13 +44,18 @@ test.describe('Chat — timeout fallback (W3)', () => {
     await gotoHome(page);
     await sendMessage(page, 'hi');
 
-    // During the run, the composer input is disabled (isRunning=true).
+    // Must be enabled WHILE the run is live. The 2s fallback would also unlock
+    // it, so a 500ms window (below the fallback) keeps this assertion
+    // discriminating: old code (disabled during run) fails it, new code
+    // (never disabled) passes it immediately.
     const input = page.locator('[data-testid="composer-input"]');
-    await expect(input).toBeDisabled({ timeout: 5_000 });
+    await expect(page.locator('[data-testid="composer-stop"]')).toBeVisible({ timeout: 5_000 });
+    await expect(input).toBeEnabled({ timeout: 500 });
 
-    // After the fallback timer (2s via test hook), the input must unlock and
-    // an error message must surface on the assistant bubble.
-    await expect(input).toBeEnabled({ timeout: 5_000 });
+    // After the fallback timer (2s via test hook), the run force-unlocks:
+    // the stop button disappears and an error message surfaces on the
+    // assistant bubble.
+    await expect(page.locator('[data-testid="composer-stop"]')).toBeHidden({ timeout: 5_000 });
     await expect(page.locator('[data-testid="assistant-error"]'))
       .toContainText('响应超时', { timeout: 2_000 });
   });

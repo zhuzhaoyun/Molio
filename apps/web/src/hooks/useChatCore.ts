@@ -8,7 +8,7 @@
  * and an optional `rewindResend` for regenerating/editing the last user turn.
  */
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import type { AgentEvent, ActivityInfo } from '@molio/contracts';
 import { api } from '../api/client';
 import { subscribeToRun } from '../api/sse';
@@ -43,6 +43,15 @@ export interface ChatMessage {
    *  Kept separate from `content` so saved messages don't carry an "Error:"
    *  prefix — the UI renders this as a distinct banner above the prose. */
   error?: string;
+  /** Frontend-only queue marker — the message is waiting for the current turn
+   *  to end before dispatch. Never sent to the daemon, never persisted. */
+  queued?: boolean;
+}
+
+/** A message queued while a reply is running (see `send` + drain effect). */
+export interface QueuedMessage {
+  id: string;
+  text: string;
 }
 
 interface ChatState {
@@ -58,6 +67,8 @@ interface ChatState {
    * Workflow keeps running — this is what keeps the UI alive in that gap.
    */
   activity: ActivityInfo | null;
+  /** Messages queued while isRunning — drained one per turn-end. */
+  pendingQueue: QueuedMessage[];
 }
 
 export interface RunResult {
@@ -123,6 +134,7 @@ export function useChatCore(options: UseChatCoreOptions) {
     isRunning: false,
     conversationId: initialConversationId,
     activity: null,
+    pendingQueue: [],
   });
 
   // 最新已提交 state 的 ref（每次渲染同步）。事件处理器里读「当前状态」必须走它，而不是渲染闭包——
@@ -134,6 +146,11 @@ export function useChatCore(options: UseChatCoreOptions) {
 
   const esRef = useRef<EventSource | null>(null);
   const assistantIdRef = useRef<string | null>(null);
+  // 排队 drain 后 assistantIdRef 被重定向到新气泡；上一轮的尾随事件（usage / turn_end）
+  // 仍在旧连接上到达，须在「drain → 新气泡首个内容事件」窗口内丢弃，否则会污染新气泡或
+  // 提前把它标记为完成（gemini: usage 先于 turn_end）。窗口外一切正常 —— codex/gemini
+  // 的 usage 发给仍在 streaming 的消息是合法的（它们不发 turn_end 或 turn_end 在后）。
+  const drainedPendingRef = useRef(false);
   // P2-3: fallback timer that force-unlocks the input if the daemon hangs or
   // the SSE dies without a terminal event. Aligned with daemon's
   // promptIdleTimeoutMs (5min) — if no terminal status arrives by then, the
@@ -245,6 +262,8 @@ export function useChatCore(options: UseChatCoreOptions) {
     // multi-turn path (api.sendMessage on an existing run) can retarget
     // events to a new assistant message without resubscribing.
     assistantIdRef.current = assistantId;
+    // 全新连接（createRun / rewindAndResend / resumeRun）不会有上一轮的尾随事件。
+    drainedPendingRef.current = false;
     clearFallbackTimer();
     clearWatchdog();
     reconnectAttemptRef.current = 0;
@@ -286,6 +305,15 @@ export function useChatCore(options: UseChatCoreOptions) {
         };
         window.dispatchEvent(new CustomEvent(ACP_MODELS_UPDATED_EVENT, { detail }));
       }
+      // 尾随窗口：drain 刚重定向、新气泡尚未收到自己的内容 —— 此时到达的 usage / turn_end(end_turn)
+      // 属于上一轮，丢弃（不盖章、不提前解锁、不标记完成）。
+      if (drainedPendingRef.current && (event.type === 'usage' || (event.type === 'turn_end' && event.stopReason !== 'tool_use'))) {
+        return;
+      }
+      // 新气泡开始流动（内容 / 状态 / 非尾随 turn_end(tool_use) / error）→ 关闭窗口。
+      if (event.type !== 'activity' && event.type !== 'usage' && !(event.type === 'turn_end' && event.stopReason !== 'tool_use')) {
+        drainedPendingRef.current = false;
+      }
       setState((prev) => updateWithEvent(prev, currentId, event));
       if (event.type === 'status' && (event.label === 'completed' || event.label === 'failed' || event.label === 'canceled')) {
         clearFallbackTimer();
@@ -301,6 +329,8 @@ export function useChatCore(options: UseChatCoreOptions) {
       console.warn('[chat] SSE onDone (CLOSED) — force-unlocking. runId=' + runId);
       clearWatchdog();
       reconnectRef.current = null;
+      // 连接关闭 → 尾随窗口作废（防御：防止 stale 窗口污染后续 run）。
+      drainedPendingRef.current = false;
       setState((prev) => {
         if (!prev.isRunning) return prev;
         const messages = prev.messages.map((msg) =>
@@ -386,49 +416,30 @@ export function useChatCore(options: UseChatCoreOptions) {
   }, [agentId, onComplete, clearFallbackTimer, clearWatchdog, armWatchdog, resetFallbackTimer]);
 
   /**
-   * Send a message — tries multi-turn on existing run first, falls back to createRun.
+   * Dispatch a message to the agent — the shared core for both a normal send
+   * and a drained queued message. Tries multi-turn on the existing run first,
+   * falls back to createRun. `optimisticMessages` is the full message list
+   * AFTER this turn's user+assistant messages are in place (attachRun replaces
+   * `messages` with it); its user/assistant members (minus this turn's own
+   * user + assistant messages) form the transcript sent to the daemon.
    */
-  const send = useCallback(async (text: string) => {
-    if (!text.trim()) return;
-
-    const userMsg: ChatMessage = {
-      id: nextMsgId(),
-      role: 'user',
-      content: text.trim(),
-      timestamp: Date.now(),
-    };
-
-    const newAssistantId = nextMsgId();
-    assistantIdRef.current = newAssistantId;
-
-    const assistantMsg: ChatMessage = {
-      id: newAssistantId,
-      role: 'assistant',
-      content: '',
-      timestamp: Date.now(),
-      streaming: true,
-      tools: [],
-    };
+  const dispatchTurn = useCallback(async (
+    text: string,
+    userMsgId: string,
+    assistantMsg: ChatMessage,
+    optimisticMessages: ChatMessage[],
+  ) => {
+    // Route incoming SSE events to the new assistant message.
+    assistantIdRef.current = assistantMsg.id;
 
     // 读最新已提交 state（stateRef 而非渲染闭包）：clear()/cancel() 在同一微任务里同步改过
     // stateRef 后，紧跟的 send() 必须看到清空后的 messages/conversationId（D3 清标签语义）。
     const cur = stateRef.current;
-    const prevMessages = cur.messages;
-
-    setState((prev) => ({
-      ...prev,
-      messages: [...prev.messages, userMsg, assistantMsg],
-      isRunning: true,
-    }));
-
-    // Try multi-turn on existing run — but only if the agent hasn't changed.
-    // When the user switches runtime (e.g. Claude → Qwen), the existing run
-    // belongs to the old agent; sending a follow-up would go to the wrong process.
     const existingRunId = cur.runId;
     const agentChanged = agentId != null && cur.runAgentId != null && agentId !== cur.runAgentId;
     if (existingRunId && !agentChanged) {
       try {
-        await api.sendMessage(existingRunId, text.trim());
+        await api.sendMessage(existingRunId, text);
         // Multi-turn reuses the existing SSE subscription, which does NOT
         // re-arm the fallback timer (attachRun isn't called). Re-arm here so
         // a hung follow-up turn still force-unlocks instead of spinning
@@ -440,9 +451,13 @@ export function useChatCore(options: UseChatCoreOptions) {
       }
     }
 
-    // Build history for transcript
-    const history = prevMessages
-      .filter((m) => m.role === 'user' || m.role === 'assistant')
+    // Build history for transcript — everything except THIS turn's user +
+    // assistant messages (the user message is the `message` prompt; the
+    // assistant message is empty/streaming). Still-queued messages (queued:
+    // true, not yet dispatched) are excluded too so the agent doesn't answer
+    // them prematurely before their own turn.
+    const history = optimisticMessages
+      .filter((m) => (m.role === 'user' || m.role === 'assistant') && m.id !== userMsgId && m.id !== assistantMsg.id && !m.queued)
       .map((m) => ({
         id: m.id,
         role: m.role as 'user' | 'assistant',
@@ -463,14 +478,13 @@ export function useChatCore(options: UseChatCoreOptions) {
 
     try {
       const result = await createRun({
-        message: text.trim(),
+        message: text,
         history,
         conversationId: cur.conversationId,
       });
-
-      await attachRun(result.runId, result.conversationId ?? cur.conversationId, newAssistantId, [...prevMessages, userMsg, assistantMsg]);
+      await attachRun(result.runId, result.conversationId ?? cur.conversationId, assistantMsg.id, optimisticMessages);
     } catch (err) {
-      const errId = newAssistantId;
+      const errId = assistantMsg.id;
       setState((prev) => {
         const messages = prev.messages.map((msg) =>
           msg.id === errId
@@ -480,7 +494,96 @@ export function useChatCore(options: UseChatCoreOptions) {
         return { ...prev, messages, isRunning: false };
       });
     }
-  }, [closeEventSource, createRun, agentId, onComplete, attachRun, resetFallbackTimer]);
+  }, [agentId, closeEventSource, createRun, attachRun, resetFallbackTimer]);
+
+  /**
+   * Send a message. With `{ queueIfRunning: true }`, a send while `isRunning`
+   * queues the message (appears immediately with `queued: true`, dispatched by
+   * the drain effect after the current turn ends) instead of interleaving.
+   * All other callers (form submit, "继续", wiki auto-send) keep the flag off —
+   * they must reach the agent immediately.
+   */
+  const send = useCallback(async (text: string, opts?: { queueIfRunning?: boolean }) => {
+    if (!text.trim()) return;
+    const trimmed = text.trim();
+    const cur = stateRef.current;
+
+    // 排队路径：回复进行中发送 → 乐观 user 消息立即上屏 + 标记 queued，等 turn 结束再下发。
+    if (opts?.queueIfRunning && cur.isRunning) {
+      const userMsg: ChatMessage = {
+        id: nextMsgId(),
+        role: 'user',
+        content: trimmed,
+        timestamp: Date.now(),
+        queued: true,
+      };
+      setState((prev) => ({
+        ...prev,
+        messages: [...prev.messages, userMsg],
+        pendingQueue: [...prev.pendingQueue, { id: userMsg.id, text: trimmed }],
+      }));
+      return;
+    }
+
+    const userMsg: ChatMessage = {
+      id: nextMsgId(),
+      role: 'user',
+      content: trimmed,
+      timestamp: Date.now(),
+    };
+    const assistantMsg: ChatMessage = {
+      id: nextMsgId(),
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now(),
+      streaming: true,
+      tools: [],
+    };
+
+    setState((prev) => ({
+      ...prev,
+      messages: [...prev.messages, userMsg, assistantMsg],
+      isRunning: true,
+    }));
+
+    await dispatchTurn(trimmed, userMsg.id, assistantMsg, [...cur.messages, userMsg, assistantMsg]);
+  }, [dispatchTurn]);
+
+  // 排队 drain：当前 turn 结束后（isRunning → false）按序下发 pendingQueue 中的消息。
+  // 任何解锁路径（turn_end / usage / status completed / onDone / fallback）都会触发。
+  // drain 后立即 isRunning=true，effect 不会对同一条重复处理；多条排队逐 turn 下发；
+  // 下发失败（createRun 抛错）→ 标 error、isRunning=false → 继续 drain 下一条。
+  useEffect(() => {
+    if (stateRef.current.isRunning) return;
+    const first = stateRef.current.pendingQueue[0];
+    if (!first) return;
+
+    const assistantMsg: ChatMessage = {
+      id: nextMsgId(),
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now(),
+      streaming: true,
+      tools: [],
+    };
+    // 去掉该用户消息的 queued 标记（徽标消失）并追加本条 assistant 消息。
+    const messages = stateRef.current.messages.map((m) =>
+      m.id === first.id ? { ...m, queued: false } : m
+    );
+    const optimistic = [...messages, assistantMsg];
+    setState((prev) => ({
+      ...prev,
+      pendingQueue: prev.pendingQueue.slice(1),
+      messages: optimistic,
+      isRunning: true,
+    }));
+    // 进入尾随窗口：此后到达的 usage / turn_end(end_turn) 属于上一轮（旧连接尾随），
+    // 在新气泡首个内容事件前丢弃，避免污染新气泡或提前把它标记为完成。
+    drainedPendingRef.current = true;
+    void dispatchTurn(first.text, first.id, assistantMsg, optimistic);
+    // 依赖用响应式 state 触发 effect；body 读 stateRef.current（与渲染闭包在 effect 运行时等价的已提交 state）。
+    // 排队是纯前端语义：cancel/reset/setMessages 会清空 pendingQueue 并作废 queued 气泡（见 §6 设计）。
+  }, [state.isRunning, state.pendingQueue, dispatchTurn]);
 
   const rewindAndResend = useCallback(async (newContent: string) => {
     if (!rewindResend) return;
@@ -496,7 +599,9 @@ export function useChatCore(options: UseChatCoreOptions) {
     })();
     if (lastUserIdx < 0) return;
 
-    const prevMessages = state.messages.slice(0, lastUserIdx); // everything before last user msg
+    const prevMessages = state.messages
+      .slice(0, lastUserIdx) // everything before last user msg
+      .map((m) => (m.queued ? { ...m, queued: false } : m)); // 重发丢弃尾部 → 残余 queued 气泡作废
     const newUserMsg: ChatMessage = {
       id: nextMsgId(),
       role: 'user',
@@ -516,18 +621,25 @@ export function useChatCore(options: UseChatCoreOptions) {
 
     closeEventSource();
 
+    // 重发丢弃消息尾部，排队消息必须随之作废 —— 同步清空队列（写 stateRef + setState，
+    // 与 cancel/reset 一致），避免残留 queued 消息在重发后 ghost drain。
+    const cleared = { ...stateRef.current, pendingQueue: [] };
+    stateRef.current = cleared;
+    setState((prev) => ({ ...prev, pendingQueue: [] }));
+
     try {
       const result = await rewindResend({ conversationId: convId, newContent: newContent.trim() });
       await attachRun(result.runId, result.conversationId ?? convId, newAssistantId, [...prevMessages, newUserMsg, newAssistantMsg]);
     } catch (err) {
       setState((prev) => ({
         ...prev,
-        messages: [...prev.messages, {
+        // 队列已清空，但残余 queued 气泡仍需摘掉徽标，避免 stale badge 残留。
+        messages: prev.messages.map((m) => (m.queued ? { ...m, queued: false } : m)).concat([{
           id: nextMsgId(),
           role: 'error',
           content: `Error: ${(err as Error).message}`,
           timestamp: Date.now(),
-        } as ChatMessage],
+        } as ChatMessage]),
         isRunning: false,
       }));
     }
@@ -544,7 +656,7 @@ export function useChatCore(options: UseChatCoreOptions) {
   const resumeRun = useCallback((opts: { runId: string }) => {
     const msgs = stateRef.current.messages;
     const last = msgs[msgs.length - 1];
-    if (!last || last.role !== 'user') return; // 本轮已结束并持久化 → 恢复会重复
+    if (!last || last.role !== 'user' || last.queued) return; // queued 消息尚未进入回复，跳过恢复
     const newAssistantId = nextMsgId();
     const assistantMsg: ChatMessage = {
       id: newAssistantId,
@@ -595,14 +707,16 @@ export function useChatCore(options: UseChatCoreOptions) {
     }
     closeEventSource();
     assistantIdRef.current = null;
+    drainedPendingRef.current = false;
 
     // 同步更新 stateRef：调用方（clearAndSend 中断路径）可能在同一事件循环里紧跟 send()，
     // 必须让 send 读到「已取消、runId 已清」的最新状态。
     const prev = stateRef.current;
-    const messages = prev.messages.map((msg) =>
-      msg.streaming ? { ...msg, streaming: false } : msg
-    );
-    const next = { ...prev, messages, isRunning: false, runId: null, runAgentId: null, activity: null };
+    // 排队消息作废（设计 §6）：停止时把 queued 消息一并从会话移除，避免残留「排队中」徽标。
+    const messages = prev.messages
+      .filter((msg) => !msg.queued)
+      .map((msg) => (msg.streaming ? { ...msg, streaming: false } : msg));
+    const next = { ...prev, messages, isRunning: false, runId: null, runAgentId: null, activity: null, pendingQueue: [] };
     stateRef.current = next;
     setState(next);
   }, [closeEventSource]);
@@ -610,8 +724,9 @@ export function useChatCore(options: UseChatCoreOptions) {
   const reset = useCallback(() => {
     closeEventSource();
     assistantIdRef.current = null;
+    drainedPendingRef.current = false;
     messageSelectionStore.exit();
-    const next = { messages: [], runId: null, runAgentId: null, isRunning: false, conversationId: null, activity: null };
+    const next = { messages: [], runId: null, runAgentId: null, isRunning: false, conversationId: null, activity: null, pendingQueue: [] };
     stateRef.current = next;
     setState(next);
   }, [closeEventSource]);
@@ -623,6 +738,7 @@ export function useChatCore(options: UseChatCoreOptions) {
   const setMessages = useCallback((messages: ChatMessage[], conversationId?: string | null) => {
     closeEventSource();
     assistantIdRef.current = null;
+    drainedPendingRef.current = false;
     messageSelectionStore.exit();
     const next = {
       messages,
@@ -631,6 +747,7 @@ export function useChatCore(options: UseChatCoreOptions) {
       isRunning: false,
       conversationId: conversationId ?? null,
       activity: null,
+      pendingQueue: [],
     };
     stateRef.current = next;
     setState(next);
@@ -645,6 +762,7 @@ export function useChatCore(options: UseChatCoreOptions) {
       setState((prev) => ({
         ...prev,
         messages: prev.messages.filter((m) => !ids.includes(m.id)),
+        pendingQueue: prev.pendingQueue.filter((q) => !ids.includes(q.id)),
       }));
     } catch (err) {
       setState((prev) => ({

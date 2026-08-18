@@ -361,6 +361,17 @@ describe('skill-installer migration', () => {
     // reached existing vaults — only new ones. Content-hash mirroring
     // (dirsync.mirrorDirIfChanged) fixes this structurally: any content drift
     // breaks the hash match and rebuilds the dest.
+    // Read the expected version/content from the bundled source itself (like
+    // the docling test below) instead of hardcoding them: the wiki-* five
+    // skills bump in lockstep, and a hardcoded `1.x` regex broke CI when the
+    // set moved to 2.0.0.
+    const sourceMd = fs.readFileSync(
+      path.join(resolveSkillsSourceDir(), 'wiki-build', 'SKILL.md'),
+      'utf-8',
+    );
+    const sourceVersion = sourceMd.match(/^version:\s*(.+)$/m)?.[1]?.trim() ?? '';
+    assert.ok(sourceVersion, 'bundled wiki-build SKILL.md should declare a version');
+
     const wikiBuildDir = path.join(skillsDir, 'wiki-build');
     fs.mkdirSync(wikiBuildDir, { recursive: true });
     // Simulate an old version-less install (pre-1.1.0, no `version:` line).
@@ -372,12 +383,31 @@ describe('skill-installer migration', () => {
     installAll(tmpVault);
 
     const installed = fs.readFileSync(path.join(wikiBuildDir, 'SKILL.md'), 'utf-8');
-    // Must now carry a version line (proves the versioned source was copied in).
-    assert.match(installed, /^version:\s*1\.\d+\.\d+$/m, 'version-less dest should be updated to versioned source');
+    // Must now carry the source's version line (proves the versioned source
+    // was copied in). Read the expected version dynamically so this test
+    // survives skill version bumps — the wiki-* five-piece moves versions
+    // together, and the old hardcoded `1.x` regex broke when it hit 2.0.0.
+    const sourceSkillMd = fs.readFileSync(
+      path.join(resolveSkillsSourceDir(), 'wiki-build', 'SKILL.md'),
+      'utf-8',
+    );
+    const sourceVersion = sourceSkillMd.match(/^version:\s*(.+)$/m)?.[1]?.trim();
+    assert.ok(sourceVersion, 'bundled wiki-build SKILL.md should declare a version');
+    const escapedVersion = sourceVersion.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    assert.match(installed, new RegExp(`^version:\\s*${escapedVersion}$`, 'm'), 'version-less dest should be updated to versioned source');
     // And the current body content, not the stale old body.
+    // Must now carry the bundled source's version line (proves the versioned
+    // source was copied in).
     assert.ok(
-      installed.includes('超长源文件处理'),
-      'dest should reflect current source content, not the stale version-less copy',
+      installed.includes(`version: ${sourceVersion}`),
+      'version-less dest should be updated to versioned source',
+    );
+    // And content-hash mirroring means the dest is a byte-for-byte copy of the
+    // current source — not the stale version-less body.
+    assert.strictEqual(
+      installed,
+      sourceMd,
+      'dest should mirror the current source content exactly',
     );
   });
 

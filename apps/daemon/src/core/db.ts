@@ -136,9 +136,11 @@ function migrate(db: SqliteDb): void {
 
     -- Global skill library: metadata + the master switch (replaces the old
     -- ~/.molio/skills/manifest.json). kind: 'bundled' (multi-file, shipped) |
-    -- 'library' (single-file, user-managed). core=1 marks the writing trio --
-    -- hidden, always-on, not configurable (exempt from the enabled switch).
-    -- A skill body stays a file; this table only holds config.
+    -- 'library' (single-file, user-managed). A skill body stays a file; this
+    -- table only holds config. The core column is LEGACY: older versions
+    -- marked the built-in writing trio with core=1; those skills were removed
+    -- and the column stays only as the guard for the startup retirement
+    -- delete (builtin.ts). New rows always carry the DEFAULT 0.
     CREATE TABLE IF NOT EXISTS skills (
       id          TEXT PRIMARY KEY,
       name        TEXT NOT NULL,

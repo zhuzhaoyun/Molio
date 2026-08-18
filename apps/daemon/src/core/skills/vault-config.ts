@@ -5,14 +5,14 @@
  * for USER (library) skills: a globally-enabled one is available in every
  * vault. The effective set for a vault is therefore:
  *
- *     globally-enabled OR core OR bundled
+ *     globally-enabled OR bundled
  *
- * `core` skills (the writing trio) and `bundled` skills (shipped with the app:
- * docling / wiki-* / wechat-article-extractor) are exempt from the
- * global switch — always effective. Both are app-owned functionality hidden
- * from the settings UI (routes/skills.ts 404s them) because they back
- * deterministic app paths (KB panel wiki actions, channel routing, preload);
- * the `enabled` flag on their rows is ignored.
+ * `bundled` skills (shipped with the app: docling / wiki-* /
+ * wechat-article-extractor) are exempt from the global switch — always
+ * effective. They are app-owned functionality hidden from the settings UI
+ * (routes/skills.ts 404s them) because they back deterministic app paths
+ * (KB panel wiki actions, channel routing, preload); the `enabled` flag on
+ * their rows is ignored.
  *
  * NOTE: the API stays per-vault (`getEffectiveSkills(db, vaultId)`) on purpose.
  * If per-vault opt-outs ever become a real need again, re-add them as a filter
@@ -21,10 +21,10 @@
  * Scope: sync targets ONLY registered vaults' `<vault.path>/.claude/skills/`,
  * so skills reach runs whose cwd resolves to a vault. Runs without a vault
  * (pre-vault home chat, channels whose defaultCwd is not a vault path) do not
- * see library/bundled/core skills.
+ * see library/bundled skills.
  *
  * Sync splits the effective set by kind:
- *  - **library + core** → `reconcileSync` (sync.ts) pointed at `<vault>/.claude`,
+ *  - **library** → `reconcileSync` (sync.ts) pointed at `<vault>/.claude`,
  *    writing single-file `molio--<dirName>/SKILL.md` dirs where dirName is the
  *    slugified display name planned by `planSyncTargets` (keeps the molio-- red
  *    line + orphan cleanup for free);
@@ -48,13 +48,13 @@ import { reconcileBundledSync, RETIRED_BUNDLED_SKILLS } from '../skill-installer
 import type { SkillPathsOpts } from './paths.js';
 
 /**
- * Effective skill entries for a vault: core and bundled skills always count
- * (app-owned, exempt from the global switch); everything else needs to be
- * globally enabled. `_vaultId` is kept in the signature so per-vault filtering
- * can be re-added without touching callers (see module note).
+ * Effective skill entries for a vault: bundled skills always count (app-owned,
+ * exempt from the global switch); everything else needs to be globally
+ * enabled. `_vaultId` is kept in the signature so per-vault filtering can be
+ * re-added without touching callers (see module note).
  */
 export function getEffectiveSkills(db: Database.Database, _vaultId: string): SkillManifestEntry[] {
-  return listSkills(db).filter((s) => s.core || s.kind === 'bundled' || s.enabled);
+  return listSkills(db).filter((s) => s.kind === 'bundled' || s.enabled);
 }
 
 /** Effective skill ids for a vault (see getEffectiveSkills). */
@@ -65,7 +65,7 @@ export function getEffectiveSkillIds(db: Database.Database, vaultId: string): st
 /**
  * Reconcile one vault's `<vault.path>/.claude/skills/` against its effective
  * skill set, splitting by kind:
- *  - library + core → `reconcileSync` (single-file `molio--<dirName>/SKILL.md`,
+ *  - library → `reconcileSync` (single-file `molio--<dirName>/SKILL.md`,
  *    dirName = slugified display name);
  *  - bundled → `reconcileBundledSync` (whole multi-file dirs, plain names, plus
  *    CLAUDE.md rule convergence).
@@ -76,7 +76,7 @@ export function reconcileVault(db: Database.Database, vault: Vault, opts?: Skill
   try {
     const effective = getEffectiveSkills(db, vault.id);
 
-    // library + core → molio-- single-file sync (orphan cleanup included).
+    // library → molio-- single-file sync (orphan cleanup included).
     // Dir names are planned from display names (readable in runtime skill
     // lists); same-name collisions get deterministic id-derived suffixes.
     const singleFile = effective.filter((s) => s.kind !== 'bundled');

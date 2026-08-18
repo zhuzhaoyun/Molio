@@ -10,6 +10,7 @@ import { getAgentDef, listAgentDefs } from './runtimes/registry.js';
 import { TranscriptWatcher, claudeProjectDir } from './activity/transcript-watcher.js';
 import { resolveAgentBinary, probeVersion, needsShellOnWindows } from './runtimes/launch.js';
 import { buildSpawnEnv, createStderrDecoder } from './runtimes/env.js';
+import { classifyStderrChunk } from './runtimes/stderr.js';
 import { createClaudeStreamHandler } from './streams/claude-stream.js';
 import { createCodexStreamHandler } from './streams/codex-stream.js';
 import { createJsonEventStreamHandler } from './streams/json-event-stream.js';
@@ -469,16 +470,12 @@ export class RunManager {
 
     child.stderr?.on('data', (chunk: Buffer) => {
       const text = stderrDecoder ? stderrDecoder(chunk) : chunk.toString('utf8');
-      const trimmed = text.trim();
-      // Codex CLI logs "Reading prompt from stdin..." and "Reading additional
-      // input from stdin..." to stderr as informational messages, not errors.
-      // Filter them out so they don't show up as red error bubbles in the UI.
-      const isCodexInfoStderr = def.id === 'codex' && (
-        trimmed.includes('Reading prompt from stdin') ||
-        trimmed.includes('Reading additional input from stdin')
-      );
-      if (trimmed && !isCodexInfoStderr) {
-        this.emitEvent(run, { type: 'error', message: trimmed });
+      // Classify the chunk: Codex info lines are dropped, Claude Code
+      // `[claude-code:*]` diagnostics (e.g. unrecognized_model for any
+      // third-party provider) become `raw` log events, everything else stays
+      // an `error` event. See runtimes/stderr.ts for why.
+      for (const event of classifyStderrChunk(def.id, text)) {
+        this.emitEvent(run, event);
       }
     });
 

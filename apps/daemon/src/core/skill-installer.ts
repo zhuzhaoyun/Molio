@@ -570,7 +570,7 @@ export function reconcileBundledSync(
       try {
         // Content-hash mirror (dirsync): installs when missing, updates on any
         // drift (version bump, edited/corrupted dest), no-op when already in
-        // sync — same convergence guarantees as library/core skill sync.
+        // sync — same convergence guarantees as library skill sync.
         if (mirrorDirIfChanged(skillSrc, skillDest)) {
           console.log(`[skill-installer] Installed/updated skill "${skillName}" → ${skillDest}`);
         }

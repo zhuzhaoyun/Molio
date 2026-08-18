@@ -26,7 +26,10 @@ export function ResourceCard({
         <div className="resources-card__titles">
           <h3 className="resources-card__name">{r.name}</h3>
           {r.tags.length > 0 && (
-            <div className="resources-card__sub">{r.tags.join(' · ')}</div>
+            <div className="resources-card__sub">
+              {r.tags.join(' · ')}
+              <span className="resources-card__ver">{r.version}</span>
+            </div>
           )}
         </div>
         <span className={`resources-card__price ${paid ? 'is-paid' : 'is-free'}`}>
