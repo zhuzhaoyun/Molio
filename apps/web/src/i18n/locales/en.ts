@@ -87,6 +87,9 @@ const en: Record<string, string> = {
   'workTimeline.done': 'Done',
   'workTimeline.failed': 'Failed',
 
+  // ── WorkBlock zones ──
+  'workBlock.opsLabel': 'Operations',
+
   // ── SourceChips ──
   'source.title': 'Sources',
 

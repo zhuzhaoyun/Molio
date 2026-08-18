@@ -108,6 +108,8 @@ test.describe('Chat — streaming details', () => {
     await expect(processText).toBeVisible({ timeout: 10_000 });
     await expect(processText).toContainText('我先查一下文件。');
     await expect(page.locator('[data-testid="assistant-prose"]')).toHaveCount(0);
+    // 执行区有「操作」分区标签（思考/操作分区鲜明）
+    await expect(page.locator('[data-testid="work-block-zone-ops-label"]')).toBeVisible({ timeout: 10_000 });
 
     // 完成后：正文只显示最终答案，两句叙事都留在工作块过程流
     const prose = page.locator('[data-testid="assistant-prose"]');
@@ -119,6 +121,35 @@ test.describe('Chat — streaming details', () => {
     await page.locator('[data-testid="work-timeline-summary"]').click();
     await expect(processText).toContainText('我先查一下文件。');
     await expect(processText).toContainText('再看一下配置。');
+  });
+
+  test('grouped tools show running highlight in the ops zone', async ({ page }) => {
+    // 两次同名单工具（WebSearch）→ 流式中先单工具、第二个到达后同名单分组；
+    // 分组行运行中有珊瑚高亮 + 脉冲点（当前动作聚焦，覆盖多工具搜集场景）
+    const script = [
+      { type: 'status', label: 'running' },
+      { type: 'tool_use', id: 'ws1', name: 'WebSearch', input: { query: '今日科技新闻' } },
+      { type: 'tool_result', toolUseId: 'ws1', content: '英伟达新动向 https://ithome.com/a', isError: false },
+      { type: 'tool_use', id: 'ws2', name: 'WebSearch', input: { query: 'AI 大模型新闻' } },
+      // 插入文本帧拉宽 ws2 的 running 窗口，避免窄窗口错过运行态
+      { type: 'text_delta', delta: '继续整理中…' },
+      { type: 'tool_result', toolUseId: 'ws2', content: 'Kimi 登顶 https://sspai.com/post/8', isError: false },
+      { type: 'text_delta', delta: '这是最终整理结果。' },
+      { type: 'turn_end', stopReason: 'end_turn' },
+      { type: 'usage', usage: { input_tokens: 300, output_tokens: 40 }, costUsd: 0.015 },
+    ];
+    await mockChatRun(page, { script, frameDelay: 800 });
+    await gotoHome(page);
+    await sendMessage(page, '搜集新闻资讯');
+
+    // 流式中：第二个 WebSearch 到达后同名单工具分组，分组行运行中高亮
+    await expect(page.locator('.tool-group-row.running')).toBeVisible({ timeout: 10_000 });
+
+    // 完成后：分组收进折叠工作块，展开可见「2 次网页搜索」摘要
+    const summary = page.locator('[data-testid="work-timeline-summary"]');
+    await expect(summary).toBeVisible({ timeout: 10_000 });
+    await summary.click();
+    await expect(page.locator('.tool-group-label')).toContainText('2');
   });
 
   test('error event shows in assistant message', async ({ page }) => {

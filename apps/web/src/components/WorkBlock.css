@@ -114,10 +114,10 @@
 .work-block-detail .tool-card-wrapper,
 .work-block-detail .tool-group-inline,
 .work-block-detail .tool-batch-group,
-.work-block.running > .thinking-block,
-.work-block.running > .tool-card-wrapper,
-.work-block.running > .tool-group-inline,
-.work-block.running > .tool-batch-group {
+.work-block.running .thinking-block,
+.work-block.running .tool-card-wrapper,
+.work-block.running .tool-group-inline,
+.work-block.running .tool-batch-group {
   margin-left: 0;
   margin-right: 0;
 }
@@ -144,6 +144,46 @@
   line-height: 1.7;
 }
 
+/* ── 分区：思考（蓝）/ 操作（珊瑚）—— 把「在想什么 / 在做什么」变成视觉结构 ── */
+.work-block-zone {
+  margin-top: 8px;
+}
+.work-block-zone-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent, #c96442);
+  margin-bottom: 3px;
+}
+.work-block-zone-label::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent, #c96442) 32%, transparent), transparent);
+}
+
+/* 过程叙事打字机光标：仅流式输出时显示 */
+.work-block-process[data-typing="true"]::after {
+  content: '▋';
+  margin-left: 1px;
+  color: var(--accent, #c96442);
+  animation: cb-blink 1s steps(2) infinite;  /* 复用 chat.css 已有 keyframe */
+}
+
+/* 完成态入场：running→done 从展开画面收成摘要的一次性过渡（不再"咔嚓"） */
+.work-block:not(.running) {
+  animation: work-card-in 220ms ease;
+}
+@keyframes work-card-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: none; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .work-block-spinner { animation: none; }
+  .work-block:not(.running) { animation: none; }
 }

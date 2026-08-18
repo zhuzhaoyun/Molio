@@ -87,6 +87,9 @@ const zh: Record<string, string> = {
   'workTimeline.done': '已完成',
   'workTimeline.failed': '执行出错',
 
+  // ── WorkBlock 分区 ──
+  'workBlock.opsLabel': '操作',
+
   // ── SourceChips ──
   'source.title': '引用',
 

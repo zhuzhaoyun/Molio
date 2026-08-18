@@ -138,7 +138,7 @@ function DefaultToolCard({ tool, allTools }: { tool: ToolEvent; allTools: ToolEv
   return (
     <div className="tool-card-wrapper" data-tool-id={tool.id}>
       <div
-        className={`tool-line${hasOutput ? ' has-output' : ''}`}
+        className={`tool-line${hasOutput ? ' has-output' : ''}${tool.status === 'running' ? ' running' : ''}`}
         role={hasOutput ? 'button' : undefined}
         tabIndex={hasOutput ? 0 : undefined}
         aria-expanded={hasOutput ? expanded : undefined}

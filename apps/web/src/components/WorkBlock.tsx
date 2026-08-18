@@ -10,6 +10,7 @@ import { useI18n } from '../i18n';
 import { ThinkingBlock } from './ThinkingBlock';
 import { ToolCard } from './ToolCard';
 import { ToolGroup, BatchGroup } from './ToolGroup';
+import { TypingText } from './TypingText';
 
 interface Props {
   message: ChatMessage;
@@ -46,6 +47,7 @@ export function WorkBlock({ message, toolItems, processText, isLast, onAnswerToo
   const steps = useMemo(() => deriveStepsForMessage(message), [message]);
   const hasThinking = !!message.thinking;
   const hasTools = toolItems.length > 0;
+  const hasOps = hasTools || !!processText;
 
   // 没有任何工作痕迹时整块不渲染（纯问答、无工具无思考）。
   if (!isRunning && !hasThinking && !hasTools) return null;
@@ -75,6 +77,21 @@ export function WorkBlock({ message, toolItems, processText, isLast, onAnswerToo
         />
       ),
     )
+  );
+
+  // ── 执行区（操作 eyebrow + 工具行 + 过程叙事）：运行态与完成态展开详情共用 ──
+  const renderOps = () => (
+    <div className="work-block-zone zone-ops">
+      <div className="work-block-zone-label" data-testid="work-block-zone-ops-label">
+        <span>{t('workBlock.opsLabel')}</span>
+      </div>
+      {renderTools()}
+      {processText && (
+        <div className="work-block-process" data-testid="work-block-process" data-typing={isRunning}>
+          <TypingText text={processText} active={isRunning} />
+        </div>
+      )}
+    </div>
   );
 
   // ── meta 行：模型 · token 进出 · 花费 · 耗时（辅助信息，用户点名的"模型/预估token/时间"） ──
@@ -108,11 +125,12 @@ export function WorkBlock({ message, toolItems, processText, isLast, onAnswerToo
           {count && count > 1 && <span className="work-block-count">×{count}</span>}
         </div>
         <div className="work-block-track" aria-hidden />
-        {hasThinking && <ThinkingBlock content={message.thinking!} streaming={true} />}
-        {renderTools()}
-        {processText && (
-          <div className="work-block-process" data-testid="work-block-process">{processText}</div>
+        {hasThinking && (
+          <div className="work-block-zone zone-thinking">
+            <ThinkingBlock content={message.thinking!} streaming={true} />
+          </div>
         )}
+        {hasOps && renderOps()}
         {metaLine}
       </div>
     );
@@ -138,11 +156,12 @@ export function WorkBlock({ message, toolItems, processText, isLast, onAnswerToo
       </button>
       {expanded && (
         <div className="work-block-detail">
-          {hasThinking && <ThinkingBlock content={message.thinking!} streaming={false} />}
-          {renderTools()}
-          {processText && (
-            <div className="work-block-process" data-testid="work-block-process">{processText}</div>
+          {hasThinking && (
+            <div className="work-block-zone zone-thinking">
+              <ThinkingBlock content={message.thinking!} streaming={false} />
+            </div>
           )}
+          {hasOps && renderOps()}
         </div>
       )}
       {metaLine}
