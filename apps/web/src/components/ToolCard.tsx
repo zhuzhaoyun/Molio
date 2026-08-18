@@ -114,6 +114,15 @@ function DefaultToolCard({
   useEffect(() => {
     if (manualRef.current) return;
 
+    // 被更新的工具取代（流式工作日志中 open 显式翻 false）→ 不再是最新焦点：
+    // 结果到达后一律收起，不受 autoExpandedRef 影响（慢工具 ≥5s 自动展开过也不留）。
+    // 完成态详情 / 交互卡不传 open（undefined），不会落入此分支。
+    if (open === false && hasOutput && !tool.isError) {
+      setExpanded(false);
+      autoExpandedRef.current = false;
+      return;
+    }
+
     // open（流式最新工具）：结果到达即展开 —— 不被默认折叠覆盖；
     // 无结果（运行中）则落到 ≥5s 规则，保持慢工具提前展开的行为
     if (open && hasOutput) {
@@ -121,8 +130,8 @@ function DefaultToolCard({
       return;
     }
 
-    // ≥5s running → expand
-    if (tool.status === 'running' && elapsed >= 5) {
+    // ≥5s running → expand（仅最新/未被取代工具触发；被取代后焦点已转移，不再自动展开）
+    if (open !== false && tool.status === 'running' && elapsed >= 5) {
       setExpanded(true);
       autoExpandedRef.current = true;
       return;

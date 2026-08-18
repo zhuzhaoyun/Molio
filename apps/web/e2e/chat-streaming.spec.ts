@@ -194,6 +194,60 @@ test.describe('Chat — streaming details', () => {
     await expect(page.locator('.tool-group-label')).toContainText('2');
   });
 
+  test('slow tool (≥5s auto-expand) collapses once superseded by a newer tool', async ({ page }) => {
+    // 回归：真实 WebSearch 常跑 >5s —— 触发 ≥5s 自动展开后，autoExpandedRef 会阻止
+    // 后续 done-折叠，导致被取代的慢工具一直展开。修复后：被更新的工具取代一律收起，
+    // 只有最新工具保持展开。
+    // ws1 从 tool_use 到 tool_result 间隔 7 帧（5.6s > 5s）确保触发 ≥5s 自动展开；
+    // 断言窗口取「ws2 运行中、ws1 已收起」——该状态只在流式中存在，完成后整块折叠不算。
+    const script = [
+      { type: 'status', label: 'running' },
+      { type: 'tool_use', id: 'ws1', name: 'WebSearch', input: { query: '今日科技新闻' } },
+      { type: 'text_delta', delta: '查一下。' },
+      { type: 'text_delta', delta: '还在查。' },
+      { type: 'text_delta', delta: '继续。' },
+      { type: 'text_delta', delta: '快好了。' },
+      { type: 'text_delta', delta: '马上。' },
+      { type: 'text_delta', delta: '整理中。' },
+      { type: 'tool_result', toolUseId: 'ws1', content: '英伟达新动向 https://a.com', isError: false },
+      { type: 'text_delta', delta: '搜到第一个，再查第二个。' },
+      { type: 'tool_use', id: 'ws2', name: 'WebSearch', input: { query: 'AI 大模型新闻' } },
+      { type: 'text_delta', delta: '第二个搜索中…' },
+      { type: 'text_delta', delta: '马上好…' },
+      { type: 'tool_result', toolUseId: 'ws2', content: 'Kimi 登顶 https://b.com', isError: false },
+      { type: 'text_delta', delta: '这是最终整理结果。' },
+      { type: 'turn_end', stopReason: 'end_turn' },
+      { type: 'usage', usage: { input_tokens: 300, output_tokens: 40 }, costUsd: 0.015 },
+    ];
+    await mockChatRun(page, { script, frameDelay: 800 });
+    await gotoHome(page);
+    await sendMessage(page, '搜集新闻资讯');
+
+    // 前置条件：ws1 结果到达时仍是最新工具 → 面板展开（证明慢工具确实展开过）
+    const ws1Panel = page.locator('[data-tool-id="ws1"]').locator('[data-testid="tool-output-panel"]');
+    await expect(ws1Panel).toBeVisible({ timeout: 25_000 });
+
+    // 回归断言：ws2 运行中（流式、结果未到）→ ws1 已收起（面板移出 DOM）。
+    // 用 expect.poll：返回对象经 toEqual 严格校验（toPass 回调返回 false 也算通过、
+    // 且内部 expect().toHaveCount 自带自动等待，都会假绿）。该状态只在流式中存在
+    // （完成后 ws2 不再 running、工作块折叠），旧代码 ws1 面板一直保留 → 永不满足 → 超时失败。
+    const ws2Running = page.locator('[data-tool-id="ws2"]').locator('.tool-line.running');
+    await expect.poll(async () => {
+      const ws2Count = await ws2Running.count();
+      const ws1Count = await ws1Panel.count();
+      const workRunning = await page.locator('[data-testid="work-timeline"].running').count();
+      return { streaming: workRunning === 1, ws2Running: ws2Count === 1, ws1Collapsed: ws1Count === 0 };
+    }, { timeout: 10_000, intervals: [250] }).toEqual({
+      streaming: true,
+      ws2Running: true,
+      ws1Collapsed: true,
+    });
+
+    // 最新工具（ws2）结果到达仍展开 —— 修复没有过度折叠
+    const ws2Panel = page.locator('[data-tool-id="ws2"]').locator('[data-testid="tool-output-panel"]');
+    await expect(ws2Panel).toContainText('Kimi 登顶', { timeout: 25_000 });
+  });
+
   test('error event shows in assistant message', async ({ page }) => {
     await mockChatRun(page, { script: SCRIPTS.withError });
     await gotoHome(page);
