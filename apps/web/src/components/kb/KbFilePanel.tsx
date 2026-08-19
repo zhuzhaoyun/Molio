@@ -30,6 +30,9 @@ interface KbFilePanelProps {
   onAddToWiki?: (path: string, isDirectory: boolean) => void;
   /** Context menu handler — fired on right-click of any tree node */
   onContextMenu?: (node: TreeNode, e: React.MouseEvent) => void;
+  /** Context menu handler — fired on right-click of the tree's blank area.
+   *  Node right-clicks stopPropagation, so this only fires on empty space. */
+  onBlankContextMenu?: (e: React.MouseEvent) => void;
   /** Path of node being renamed (null = none) */
   renamingPath?: string | null;
   /** Confirm rename: (oldPath, newName) */
@@ -63,6 +66,7 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
   onVaultClick,
   onAddToWiki,
   onContextMenu,
+  onBlankContextMenu,
   renamingPath,
   onRenameComplete,
   onRenameCancel,
@@ -100,11 +104,12 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
     setCreateMenuOpen(next);
   };
 
-  /** Parent dir for create actions — the selected file's directory (or root). */
-  const createParentDir = () =>
-    selectedFile && selectedFile.includes('/')
-      ? selectedFile.slice(0, selectedFile.lastIndexOf('/'))
-      : undefined;
+  /** Blank-area right-click on the tree opens the root create menu. Node
+   *  right-clicks stopPropagation in KbFileTree, so this only fires on empty space. */
+  const handleTreeBlankContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    onBlankContextMenu?.(e);
+  }, [onBlankContextMenu]);
 
   // Bumped each time the user hits "locate" — KbFileTree scrolls the active
   // file into view when this token changes (see TreeNodeItem effect).
@@ -359,7 +364,7 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
                 className="kb-create-item"
                 role="menuitem"
                 data-testid="kb-create-note"
-                onClick={() => { setCreateMenuOpen(false); setCreateMenuPos(null); onNewFile(createParentDir()); }}
+                onClick={() => { setCreateMenuOpen(false); setCreateMenuPos(null); onNewFile(); }}
               >
                 {/* file-plus */}
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -375,7 +380,7 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
                 className="kb-create-item"
                 role="menuitem"
                 data-testid="kb-create-folder"
-                onClick={() => { setCreateMenuOpen(false); setCreateMenuPos(null); onNewFolder(createParentDir()); }}
+                onClick={() => { setCreateMenuOpen(false); setCreateMenuPos(null); onNewFolder(); }}
               >
                 {/* folder-plus */}
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -504,7 +509,7 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
       )}
 
       {/* File tree */}
-      <div className="kb-tree-scroll">
+      <div className="kb-tree-scroll" onContextMenu={handleTreeBlankContextMenu}>
         <KbFileTree
           nodes={sortedTree}
           selectedFile={selectedFile}
