@@ -14,7 +14,8 @@
  * 为 Molio 适配（仅扩展，不改变 Quartz 渲染模型）：
  *   - setData(统一节点/边) 之外保留 Minimap getSnapshot/subscribeRender、
  *     搜索 focusNode、设置面板 setForces/setStyle 等公共 API
- *   - 单击选中（焦点模式），双击节点打开文件、双击空白 fit
+ *   - hover 高亮节点与连线（焦点模式，hover 优先于搜索选中）；单击节点跳转文档；
+ *     点击空白清除搜索选中；双击空白 fit
  */
 import { Application, Container, Graphics, Text, Circle } from 'pixi.js';
 import {
@@ -60,6 +61,7 @@ export interface EngineEdge {
 }
 
 export interface EngineCallbacks {
+  /** 单击节点（非拖拽）—— Molio 用于跳转文档 */
   onNodeClick?: (key: string, node: EngineNode) => void;
   onNodeDoubleClick?: (key: string, node: EngineNode) => void;
   onHoverChange?: (key: string | null) => void;
@@ -136,6 +138,8 @@ const LABEL_FONT_SIZE = 12;
 /** 焦点模式下非邻居的淡出透明度（hover / 选中） */
 const FADE_ALPHA_HOVER = 0.2;
 const FADE_ALPHA_SELECTED = 0.08;
+/** 单击判定：按下→抬起指针位移 ≤ 该值（canvas CSS px）才算点击，避免快速拖拽误触跳转 */
+const CLICK_MOVE_TOLERANCE = 4;
 /** 标签显隐：屏幕半径阈值（太小不显示）+ 度数预算（候选池上限，实际可见数由碰撞检测决定） */
 const LABEL_MIN_SCREEN_RADIUS = 3;
 /** 标签与节点顶部的屏幕间距（px，不随缩放变化） */
@@ -207,6 +211,8 @@ export class PixiGraphEngine {
   private rafId = 0;
   private dragStartTime = 0;
   private dragging = false;
+  /** drag start 时的指针位置（canvas CSS px），单击位移判定用 */
+  private dragStartXY: { x: number; y: number } | null = null;
 
   private renderListeners = new Set<() => void>();
   /** 上次同步标签 scale 的 k —— 标签恒定屏幕尺寸（scale=1/k），k 变化时才批量更新 */
@@ -610,16 +616,14 @@ export class PixiGraphEngine {
     this.updateFocusAndRender();
   }
 
-  private toggleSelect(id: string): void {
-    this.selectedId = this.selectedId === id ? null : id;
-    this.updateFocusAndRender();
-    const node = this.nodeById.get(id);
-    if (node) this.callbacks.onNodeClick?.(id, toEngineNode(node));
+  /** 当前焦点：hover 优先于搜索选中 —— hover 永远即时高亮指针下的节点 */
+  private get focusId(): string | null {
+    return this.hoveredNodeId ?? this.selectedId;
   }
 
   /** 重算焦点邻居 + 各元素 active 标记 */
   private updateFocus(): void {
-    const focusId = this.selectedId ?? this.hoveredNodeId;
+    const focusId = this.focusId;
     const neighbours = new Set<string>();
     if (focusId) {
       neighbours.add(focusId);
@@ -649,8 +653,8 @@ export class PixiGraphEngine {
   private renderNodesTween(): void {
     this.tweens.get('hover')?.stop();
     const group = new Group();
-    const focusId = this.selectedId ?? this.hoveredNodeId;
-    const dim = this.selectedId ? FADE_ALPHA_SELECTED : FADE_ALPHA_HOVER;
+    const focusId = this.focusId;
+    const dim = focusId !== null && focusId === this.selectedId ? FADE_ALPHA_SELECTED : FADE_ALPHA_HOVER;
     for (const n of this.nodeRenderData) {
       const alpha = focusId === null ? 1 : n.active ? 1 : dim;
       group.add(new Tween<Graphics>(n.gfx).to({ alpha }, 200));
@@ -662,7 +666,7 @@ export class PixiGraphEngine {
   private renderLinksTween(): void {
     this.tweens.get('link')?.stop();
     const group = new Group();
-    const focusId = this.selectedId ?? this.hoveredNodeId;
+    const focusId = this.focusId;
     for (const l of this.linkRenderData) {
       const alpha = focusId === null ? 1 : l.active ? 1 : 0.2;
       l.color = l.active ? this.theme.edgeHover : this.theme.edge;
@@ -684,8 +688,8 @@ export class PixiGraphEngine {
    *    与已放置标签重叠则隐藏——「文字永不叠在一起」。
    */
   private syncLabels(): void {
-    const focusId = this.selectedId ?? this.hoveredNodeId;
-    const dim = this.selectedId ? FADE_ALPHA_SELECTED : FADE_ALPHA_HOVER;
+    const focusId = this.focusId;
+    const dim = focusId !== null && focusId === this.selectedId ? FADE_ALPHA_SELECTED : FADE_ALPHA_HOVER;
     const k = this.currentTransform.k;
     const cx = this.width / 2;
     const cy = this.height / 2;
@@ -853,6 +857,7 @@ export class PixiGraphEngine {
           subj.fy = subj.y;
           subj.initialDragPos = { x: subj.x!, y: subj.y!, fx: subj.fx ?? null, fy: subj.fy ?? null };
           this.dragStartTime = Date.now();
+          this.dragStartXY = { x: event.x, y: event.y };
           this.dragging = true;
         })
         .on('drag', (event: D3DragEvent<HTMLCanvasElement, SimNode | undefined, SimNode | undefined>) => {
@@ -870,8 +875,13 @@ export class PixiGraphEngine {
           subj.fx = null;
           subj.fy = null;
           this.dragging = false;
-          if (Date.now() - this.dragStartTime < 500) {
-            this.toggleSelect(subj.id);
+          const moved = this.dragStartXY
+            ? Math.hypot(event.x - this.dragStartXY.x, event.y - this.dragStartXY.y)
+            : Infinity;
+          this.dragStartXY = null;
+          // 单击（短时 + 几乎无位移）= 跳转文档；高亮由 hover 负责，selectedId 仅供搜索定位
+          if (Date.now() - this.dragStartTime < 500 && moved <= CLICK_MOVE_TOLERANCE) {
+            this.callbacks.onNodeClick?.(subj.id, toEngineNode(subj));
           }
         }),
     );
@@ -884,7 +894,16 @@ export class PixiGraphEngine {
 
   private bindNativeEvents(): void {
     this.canvas.addEventListener('dblclick', this.onDoubleClick);
+    this.canvas.addEventListener('click', this.onCanvasClick);
   }
+
+  /** 点击空白：清除搜索选中（选中态的强淡出会压制 hover，给用户一个还原手段） */
+  private onCanvasClick = (e: MouseEvent): void => {
+    if (this.selectedId === null) return;
+    if (this.hitTest(e)) return; // 点中节点：跳转由 drag end 的单击判定负责
+    this.selectedId = null;
+    this.updateFocusAndRender();
+  };
 
   private onDoubleClick = (e: MouseEvent): void => {
     const node = this.hitTest(e);

@@ -117,8 +117,8 @@ export function GraphPage() {
         eng.destroy();
         return;
       }
-      eng.setCallbacks({
-        onNodeDoubleClick: (_key, node) => {
+      // hover 高亮由引擎内部处理；单击/双击节点都跳转文档
+      const openNode = (_key: string, node: EngineNode) => {
           const vaultId = vaultIdRef.current;
           if (!vaultId) return;
           if (node.path) {
@@ -139,8 +139,8 @@ export function GraphPage() {
                 console.error('[graph] 创建死链目标文件失败:', err);
               });
           }
-        },
-      });
+        };
+      eng.setCallbacks({ onNodeClick: openNode, onNodeDoubleClick: openNode });
       engineRef.current = eng;
       // 开发环境调试句柄：像素提取（renderer.extract）与布局检查
       if (import.meta.env.DEV) {
