@@ -1,5 +1,6 @@
 // apps/web/src/utils/workSteps.ts
 import type { ChatMessage, ToolEvent } from '../hooks/useChatCore';
+import { extractWrites, extractSources, type SourceRef, type WriteRef } from './toolRefs';
 
 export interface WorkStep {
   id: string;
@@ -108,4 +109,34 @@ export function deriveStepsForMessage(message: ChatMessage): WorkStep[] {
 export function deriveWorkSteps(messages: ChatMessage[]): WorkStep[] {
   const last = findLastAssistant(messages);
   return last ? deriveStepsForMessage(last) : [];
+}
+
+export interface SessionOutput {
+  writes: WriteRef[];    // 来自 extractWrites —— 已按 path 去重、仅 done
+  sources: SourceRef[];  // 来自 extractSources —— 已按 target 去重、仅 done
+  turns: number;         // assistant 消息数
+}
+
+/**
+ * 会话级产出聚合：把聚合维度从「最后一条 assistant 消息」扩到「整个会话所有消息」。
+ * 产物/来源复用 extractWrites/extractSources（内部按 path/target 去重、仅收 done）。
+ * 坑：extractSources 的 MAX_URL_CHIPS=8 是「每次调用」上限——不能整会话 tools 拼一次调用
+ * （全会话 URL 会被截到 8 条）。必须按消息逐条抽取、再跨消息按 target 去重，
+ * 每条消息保留其在消息内原有的 8 条 chip 语义。
+ */
+export function aggregateSessionOutput(messages: ChatMessage[]): SessionOutput {
+  const assistantMsgs = messages.filter((m) => m.role === 'assistant');
+  // extractWrites/extractSources 只按 status 过滤（running/error status 被排除），
+  // 但 isError=true 且 status='done' 的异常工具不在其列 —— 会话聚合层统一再滤一次。
+  const writes = extractWrites(assistantMsgs.flatMap((m) => m.tools ?? []).filter((t) => !t.isError));
+  const seen = new Set<string>();
+  const sources: SourceRef[] = [];
+  for (const m of assistantMsgs) {
+    for (const s of extractSources((m.tools ?? []).filter((t) => !t.isError))) {
+      if (seen.has(s.target)) continue;
+      seen.add(s.target);
+      sources.push(s);
+    }
+  }
+  return { writes, sources, turns: assistantMsgs.length };
 }
