@@ -153,14 +153,45 @@ async function installFromNpmNative(
     onEvent({ type: 'log', message: 'Existing installation detected, will overwrite.' });
   }
 
-  // ── Phase 2: Download ──
-  onEvent({ type: 'phase', phase: 'download', message: `Downloading ${nativeInfo.pkgName} v${source.version}...` });
-
   const encodedPkg = encodeURIComponent(nativeInfo.pkgName);
+
+  // ── Phase 2: Version resolution ('latest' → registry dist-tags.latest) ──
+  let version = source.version;
+  if (version === 'latest') {
+    onEvent({ type: 'phase', phase: 'download', message: 'Resolving latest version...' });
+    const resolved = await resolveLatestVersion(encodedPkg, source.registries, onEvent, signal);
+    if (signal?.aborted) {
+      onEvent({ type: 'error', message: 'Installation cancelled', category: 'unknown', retryable: true });
+      return;
+    }
+    if (resolved) {
+      version = resolved;
+      onEvent({ type: 'log', message: `Latest version resolved: ${version}` });
+    } else if (source.fallbackVersion) {
+      version = source.fallbackVersion;
+      onEvent({
+        type: 'log',
+        message: `Could not resolve latest version; falling back to known-good v${version}`,
+      });
+    } else {
+      onEvent({
+        type: 'error',
+        message: `Failed to resolve latest version for ${agentName}`,
+        category: 'network',
+        retryable: true,
+        hint: 'Check your network connection and try again.',
+      });
+      return;
+    }
+  }
+
+  // ── Phase 3: Download ──
+  onEvent({ type: 'phase', phase: 'download', message: `Downloading ${nativeInfo.pkgName} v${version}...` });
+
   // npm tarball naming convention: {pkgName-without-scope}-{version}.tgz
-  // e.g. @anthropic-ai/claude-code-win32-x64 → claude-code-win32-x64-2.1.179.tgz
+  // e.g. @anthropic-ai/claude-code-win32-x64 → claude-code-win32-x64-2.1.235.tgz
   const pkgShortName = nativeInfo.pkgName.split('/').pop()!;
-  const tarballName = `${pkgShortName}-${source.version}.tgz`;
+  const tarballName = `${pkgShortName}-${version}.tgz`;
 
   let tarball: Buffer;
   try {
@@ -181,7 +212,7 @@ async function installFromNpmNative(
     return;
   }
 
-  // ── Phase 3: Extract ──
+  // ── Phase 4: Extract ──
   onEvent({ type: 'phase', phase: 'extract', message: 'Extracting binary from package...' });
 
   let binary: Buffer | null;
@@ -226,7 +257,7 @@ async function installFromNpmNative(
     return;
   }
 
-  // ── Phase 4: Validate ──
+  // ── Phase 5: Validate ──
   onEvent({ type: 'phase', phase: 'validate', message: 'Validating binary integrity...' });
 
   try {
@@ -271,7 +302,7 @@ async function installFromNpmNative(
     return;
   }
 
-  // ── Phase 5: Runtime Test ──
+  // ── Phase 6: Runtime Test ──
   onEvent({ type: 'phase', phase: 'test', message: 'Running version check...' });
 
   let installedVersion: string | undefined;
@@ -307,7 +338,7 @@ async function installFromNpmNative(
     return;
   }
 
-  // ── Phase 6: PATH Update ──
+  // ── Phase 7: PATH Update ──
   onEvent({ type: 'phase', phase: 'path', message: 'Configuring environment PATH...' });
 
   const pathMsg = addToUserPath(binDir);
@@ -354,6 +385,71 @@ function getWindowsBuildNumber(): number | null {
   const parts = os.release().split('.');
   const build = parseInt(parts[parts.length - 1] || '', 10);
   return Number.isFinite(build) ? build : null;
+}
+
+// ─── Version Resolution ────────────────────────────────────────────────────
+
+/** Short timeout for the packument lookup — offline users should hit the fallback fast. */
+const RESOLVE_TIMEOUT_MS = 15_000;
+const RESOLVE_MAX_RETRIES = 1;
+
+/**
+ * Extract `dist-tags.latest` from a registry packument JSON body.
+ * @internal exported for testing
+ */
+export function parseLatestVersionFromPackument(json: string): string | null {
+  try {
+    const meta = JSON.parse(json);
+    const latest = meta?.['dist-tags']?.latest;
+    return typeof latest === 'string' && latest.length > 0 ? latest : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve the `latest` version of a package by querying the registries in
+ * order (abbreviated packument, `dist-tags.latest`). Returns null when all
+ * registries fail — the caller decides on a fallback.
+ */
+async function resolveLatestVersion(
+  encodedPkg: string,
+  registries: string[],
+  onEvent: (event: InstallEvent) => void,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  // Abbreviated packument — much smaller than the full metadata document.
+  const headers = { Accept: 'application/vnd.npm.install-v1+json' };
+
+  for (const registry of registries) {
+    if (signal?.aborted) return null;
+
+    for (let attempt = 0; attempt <= RESOLVE_MAX_RETRIES; attempt++) {
+      if (signal?.aborted) return null;
+      try {
+        const body = await downloadOnce(
+          `${registry}/${encodedPkg}`,
+          () => { /* no progress reporting for metadata lookups */ },
+          signal,
+          RESOLVE_TIMEOUT_MS,
+          headers,
+        );
+        const latest = parseLatestVersionFromPackument(body.toString('utf8'));
+        if (latest) return latest;
+        // Got a response but no dist-tags.latest — package layout unexpected;
+        // don't retry the same registry, move on.
+        break;
+      } catch (err) {
+        if (signal?.aborted) return null;
+        if (attempt < RESOLVE_MAX_RETRIES) {
+          onEvent({ type: 'log', message: `Version lookup failed, retrying (${attempt + 1}/${RESOLVE_MAX_RETRIES})...` });
+          continue;
+        }
+        onEvent({ type: 'log', message: `Registry ${registry} version lookup failed, trying next...` });
+      }
+    }
+  }
+  return null;
 }
 
 // ─── Download ──────────────────────────────────────────────────────────────
@@ -408,6 +504,8 @@ function downloadOnce(
   url: string,
   onEvent: (event: InstallEvent) => void,
   signal?: AbortSignal,
+  timeoutMs: number = DOWNLOAD_TIMEOUT_MS,
+  extraHeaders: Record<string, string> = {},
 ): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
@@ -415,8 +513,8 @@ function downloadOnce(
     let receivedBytes = 0;
 
     const req = https.get(url, {
-      timeout: DOWNLOAD_TIMEOUT_MS,
-      headers: { 'User-Agent': 'molio-installer/1.0' },
+      timeout: timeoutMs,
+      headers: { 'User-Agent': 'molio-installer/1.0', ...extraHeaders },
     }, (res) => {
       if (res.statusCode === 302 || res.statusCode === 301) {
         const location = res.headers.location;
