@@ -99,9 +99,8 @@ const zh: Record<string, string> = {
 
   // ── 会话产出面板（主页 dock）──
   'output.title': '本会话产出',
-  'output.stats': '写入 {writes} · 来源 {sources} · {turns} 轮',
+  'output.stats': '写入 {writes} · {turns} 轮',
   'output.writesLabel': '写入',
-  'output.sourcesLabel': '来源',
   'output.empty': '本会话还没有产出',
   'output.toggle': '产出面板',
   'output.previewBack': '返回',
@@ -109,6 +108,9 @@ const zh: Record<string, string> = {
   'output.previewError': '无法读取文件（可能已删除或移动）',
   'output.previewTooLarge': '文件过大，无法在此预览',
   'output.previewBinary': '该文件类型无法预览',
+
+  // ── App ──
+  'app.vaultSwitchReset': '已切换知识库，会话已重置',
 
   // ── RuntimePage ──
   'runtimes.title': '运行时',

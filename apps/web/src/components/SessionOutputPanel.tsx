@@ -1,6 +1,7 @@
 // apps/web/src/components/SessionOutputPanel.tsx
-// 会话产出聚合面板（主页 dock）——整个会话写入的 KB 文件 + 引用的来源 rollup。
-// 与逐消息 WorkCompleteBanner/SourceChips 共存：dock = 会话级汇总，消息内 = 单条 provenance。
+// 会话产出聚合面板（主页 dock）——本次会话 Molio 写入的 KB 文件 rollup。
+// 与逐消息 WorkCompleteBanner/SourceChips 共存：dock = 会话级汇总，消息内 = 单条 provenance
+// （外部引用只在消息内联的 SourceChips 展示，不在此重复）。
 // 纯前端聚合（aggregateSessionOutput），零 daemon/contracts。
 import { useMemo, useState, useRef, useCallback, useEffect } from 'react';
 import type { ChatMessage } from '../hooks/useChat';
@@ -9,7 +10,6 @@ import { useActiveVaultId } from '../stores/vaultStore';
 import { useI18n } from '../i18n';
 import { api } from '../api/client';
 import { MdRenderer } from './kb/MdRenderer';
-import { FileIcon, ExternalLinkIcon } from './icons';
 
 /** dock 宽度：默认 280，可拖宽 200–480 并持久化（复用 KbChatSessionsPanel 存储模式） */
 const DOCK_W_DEFAULT = 280;
@@ -85,12 +85,11 @@ export function SessionOutputPanel({ messages }: Props) {
     if (e.key === 'ArrowRight') { e.preventDefault(); commitWidth(width + 20); }
   }, [width, commitWidth]);
 
-  const empty = output.writes.length === 0 && output.sources.length === 0;
+  const empty = output.writes.length === 0;
 
-  // 内嵌预览：选中项非空 → 面板切到预览视图（不跳转知识库，保持对话注意力）。
-  // 写入项 + 来源里 navigable 的本地文件可预览；URL 项保持外开新标签。
+  // 内嵌预览：点击写入项 → 面板切到预览视图（不跳转知识库，保持对话注意力）。
   const [preview, setPreview] = useState<{
-    target: { kind: 'create' | 'update' | 'file'; path: string; label: string };
+    target: { kind: 'create' | 'update'; path: string; label: string };
     content: string;
     loading: boolean;
     error: boolean;
@@ -116,7 +115,7 @@ export function SessionOutputPanel({ messages }: Props) {
     return () => { cancelled = true; };
   }, [preview?.target.path]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const openPreview = useCallback((kind: 'create' | 'update' | 'file', path: string, label: string) => {
+  const openPreview = useCallback((kind: 'create' | 'update', path: string, label: string) => {
     if (!vaultId) return;
     if (width < 420) commitWidth(420); // 预览态自动加宽到 md 渲染舒适宽度；返回不缩回
     setPreview({ target: { kind, path, label }, content: '', loading: false, error: false, tooLarge: false });
@@ -167,7 +166,7 @@ export function SessionOutputPanel({ messages }: Props) {
           <header className="session-output-header">
             <span className="session-output-title">{t('output.title')}</span>
             <span className="session-output-stats" data-testid="session-output-stats">
-              {t('output.stats', { writes: output.writes.length, sources: output.sources.length, turns: output.turns })}
+              {t('output.stats', { writes: output.writes.length, turns: output.turns })}
             </span>
           </header>
 
@@ -191,31 +190,6 @@ export function SessionOutputPanel({ messages }: Props) {
                     >
                       <span className="session-output-item-icon" aria-hidden>{w.kind === 'create' ? '＋' : '✎'}</span>
                       <span className="session-output-item-label">{w.label}</span>
-                    </button>
-                  ))}
-                </section>
-              )}
-              {output.sources.length > 0 && (
-                <section className="session-output-section">
-                  <h3 className="session-output-section-label">{t('output.sourcesLabel')}</h3>
-                  {output.sources.map((s) => (
-                    <button
-                      key={s.target}
-                      type="button"
-                      className="session-output-item"
-                      data-testid="session-output-source"
-                      data-kind={s.kind}
-                      title={s.target}
-                      disabled={s.kind !== 'url' && (!s.navigable || !vaultId)}
-                      onClick={() => {
-                        if (s.kind === 'url') { window.open(s.target, '_blank'); return; }
-                        if (s.navigable) openPreview('file', s.target, s.label);
-                      }}
-                    >
-                      <span className="session-output-item-icon" aria-hidden>
-                        {s.kind === 'url' ? <ExternalLinkIcon size={13} /> : <FileIcon size={13} />}
-                      </span>
-                      <span className="session-output-item-label">{s.label}</span>
                     </button>
                   ))}
                 </section>

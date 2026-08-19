@@ -99,9 +99,8 @@ const en: Record<string, string> = {
 
   // ── Session output panel (Home dock) ──
   'output.title': 'Session output',
-  'output.stats': '{writes} writes · {sources} sources · {turns} turns',
+  'output.stats': '{writes} writes · {turns} turns',
   'output.writesLabel': 'Writes',
-  'output.sourcesLabel': 'Sources',
   'output.empty': 'Nothing produced yet',
   'output.toggle': 'Output panel',
   'output.previewBack': 'Back',
@@ -109,6 +108,9 @@ const en: Record<string, string> = {
   'output.previewError': 'Unable to read file (it may have been deleted or moved)',
   'output.previewTooLarge': 'File too large to preview here',
   'output.previewBinary': 'This file type cannot be previewed',
+
+  // ── App ──
+  'app.vaultSwitchReset': 'Vault switched, conversation reset',
 
   // ── RuntimePage ──
   'runtimes.title': 'Runtimes',

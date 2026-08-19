@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { gotoHome, sendMessage } from './helpers/navigation';
+import { gotoHome, sendMessage, clickNav } from './helpers/navigation';
 import { mockChatRun, unmockAll, SCRIPTS } from './helpers/mock-sse';
 import { createTempVault, cleanupTempVault } from './helpers/cleanup';
 
@@ -7,12 +7,13 @@ import { createTempVault, cleanupTempVault } from './helpers/cleanup';
  * @area chat
  * @priority P1
  *
- * 会话产出聚合面板（主页 dock）——整个会话写入的 KB 文件 + 来源 rollup。
- * 纯前端聚合（aggregateSessionOutput）；触及 HomePage.tsx / icons.tsx →
+ * 会话产出聚合面板（主页 dock）——本次会话 Molio 写入的 KB 文件 rollup。
+ * 纯前端聚合（aggregateSessionOutput）；外部引用（读过的文件 / 网页 URL）只在
+ * 消息内联 SourceChips 展示，不进产出面板。触及 HomePage.tsx / App.tsx →
  * 全量 E2E 门禁；CLAUDE.md「UI 改动与 E2E 同 commit」。
  */
 
-// Write 产物 1 个 + WebSearch 来源 2 个（URL 去重后）
+// Write 产物 1 个 + WebSearch 来源 2 个（来源不再进面板，仅用于验证「外部引用不混入产出」）
 const outputRun = [
   { type: 'status', label: 'running' },
   { type: 'tool_use', id: 'w1', name: 'Write', input: { file_path: '产出/总结.md' } },
@@ -29,7 +30,7 @@ test.describe('Home 会话产出面板', () => {
     await unmockAll(page);
   });
 
-  test('dock 默认关闭；toggle 打开后聚合写入/来源/stats', async ({ page }) => {
+  test('dock 默认关闭；toggle 打开后聚合写入/stats（外部引用不混入）', async ({ page }) => {
     await mockChatRun(page, { script: outputRun });
     await gotoHome(page);
     // 默认关闭：面板不在 DOM
@@ -44,13 +45,13 @@ test.describe('Home 会话产出面板', () => {
     // 写入 1 项（label=basename 总结.md）
     await expect(panel.locator('[data-testid="session-output-write"]')).toHaveCount(1);
     await expect(panel.locator('[data-testid="session-output-write"]')).toContainText('总结.md');
-    // 来源 2 项（URL）
-    await expect(panel.locator('[data-testid="session-output-source"]')).toHaveCount(2);
+    // 外部引用不进面板（来源分区已移除，只在消息内联 SourceChips）
+    await expect(panel.locator('[data-testid="session-output-source"]')).toHaveCount(0);
     // stats 行
-    await expect(panel.locator('[data-testid="session-output-stats"]')).toContainText('写入 1 · 来源 2 · 1 轮');
+    await expect(panel.locator('[data-testid="session-output-stats"]')).toContainText('写入 1 · 1 轮');
   });
 
-  test('跨消息聚合去重：两轮 Write 同路径 + 同来源 → 各只显示一次', async ({ page }) => {
+  test('跨消息聚合去重：两轮 Write 同路径 → 只显示一次', async ({ page }) => {
     await mockChatRun(page, { script: outputRun });
     await gotoHome(page);
     await sendMessage(page, '第一轮');
@@ -59,9 +60,8 @@ test.describe('Home 会话产出面板', () => {
     await expect(page.locator('[data-testid="assistant-message"]')).toHaveCount(2, { timeout: 15_000 });
     await page.locator('[data-testid="home-output-toggle"]').click();
     const panel = page.locator('[data-testid="session-output-panel"]');
-    // writes/sources 各自跨消息去重 → 仍 1 项 / 2 项；turns=2
+    // writes 跨消息按 path 去重 → 仍 1 项；turns=2
     await expect(panel.locator('[data-testid="session-output-write"]')).toHaveCount(1);
-    await expect(panel.locator('[data-testid="session-output-source"]')).toHaveCount(2);
     await expect(panel.locator('[data-testid="session-output-stats"]')).toContainText('2 轮');
   });
 
@@ -112,6 +112,38 @@ test.describe('Home 会话产出面板', () => {
     const panel = page.locator('[data-testid="session-output-panel"]');
     await expect(panel.locator('[data-testid="session-output-empty"]')).toBeVisible();
     await expect(panel.locator('[data-testid="session-output-write"]')).toHaveCount(0);
-    await expect(panel.locator('[data-testid="session-output-source"]')).toHaveCount(0);
+  });
+
+  test('切换知识库 → 旧 vault 会话被重置（提示 + 消息清空 + 产出面板空态）', async ({ page }) => {
+    const vaultA = await createTempVault('e2e-reset-a');
+    const vaultB = await createTempVault('e2e-reset-b');
+    try {
+      await page.addInitScript((id) => { localStorage.setItem('molio.activeVaultId', id); }, vaultA.id);
+      await mockChatRun(page, { script: outputRun });
+      await gotoHome(page);
+      await sendMessage(page, '整理产出');
+      await expect(page.locator('[data-testid="work-timeline-summary"]')).toBeVisible({ timeout: 15_000 });
+      // 先确认 vault A 上下文里有产出
+      await page.locator('[data-testid="home-output-toggle"]').click();
+      const panel = page.locator('[data-testid="session-output-panel"]');
+      await expect(panel.locator('[data-testid="session-output-write"]')).toHaveCount(1);
+      // 去知识库页，URL 驱动就地切 vault（KB 页 URL→store effect 触发 setActiveVaultId）
+      await clickNav(page, 'knowledge');
+      await expect(page.locator('.kb-vault-bar')).toBeVisible();
+      await page.evaluate((vid) => {
+        window.history.pushState({}, '', `/knowledge?vault=${vid}`);
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      }, vaultB.id);
+      // 跨 vault 会话重置提示出现
+      await expect(page.locator('[data-testid="vault-switch-notice"]')).toBeVisible({ timeout: 5_000 });
+      // 回主页 → 旧会话已清空：home 回到无对话的 landing 视图，产出面板随之消失
+      await clickNav(page, 'home');
+      await expect(page.locator('[data-testid="assistant-message"]')).toHaveCount(0);
+      await expect(page.locator('.home-landing')).toBeVisible();
+      await expect(page.locator('[data-testid="session-output-panel"]')).toHaveCount(0);
+    } finally {
+      await cleanupTempVault(vaultA);
+      await cleanupTempVault(vaultB);
+    }
   });
 });

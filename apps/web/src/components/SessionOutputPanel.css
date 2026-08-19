@@ -99,15 +99,10 @@
   flex: none;
   transition: color 0.15s ease;
 }
-/* 写入 = 产物（terracotta 字形，沿用 WorkCompleteBanner 语义）；
-   来源 = 引用（中性 feather 线形）。两档层级 = 本面板的信息主次。 */
+/* 写入 = 产物（terracotta 字形，沿用 WorkCompleteBanner 语义） */
 .session-output-item[data-kind='create'] > .session-output-item-icon,
 .session-output-item[data-kind='update'] > .session-output-item-icon {
   color: var(--accent);
-}
-.session-output-item[data-kind='file'] > .session-output-item-icon,
-.session-output-item[data-kind='url'] > .session-output-item-icon {
-  color: var(--text-soft);
 }
 .session-output-item-label {
   overflow: hidden;
