@@ -412,6 +412,17 @@
   margin-left: auto;
   font-size: 10px;
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 12px;
+}
+/* ✓ / ✗ 是 dingbat 字形：在等宽字体（SF Mono/Consolas）里 ink 画在 em-box 上半、
+   descent 为负，视觉中线比行内文字高 ~1.6px。translateY(0.16em) 光学下移对齐；
+   运行态脉冲点是真实 box（非字形），inline-flex 天然居中，不在此列。 */
+.tool-line-status.done,
+.tool-line-status.error {
+  transform: translateY(0.16em);
 }
 .tool-line-status.running { color: var(--accent); }
 .tool-line-status.done { color: var(--green); }
@@ -1640,6 +1651,7 @@
   font-size: 10px;
   color: var(--text-faint);
   flex-shrink: 0;
+  transform: translateY(0.2em); /* ▸ dingbat 字形偏上，与打勾同理下移对齐 */
 }
 
 /* ─── Tool output panel ─── */
