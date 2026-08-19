@@ -491,6 +491,7 @@ const en: Record<string, string> = {
   'kb.frontmatter.expand': 'Show properties',
   'kb.frontmatter.collapse': 'Hide properties',
   'kb.frontmatter.properties': 'Properties',
+  'kb.floatingChat': 'Open AI chat',
 
   // ── FilePicker ──
   'filePicker.justNow': 'Just now',

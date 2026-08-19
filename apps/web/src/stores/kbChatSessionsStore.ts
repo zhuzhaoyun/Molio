@@ -61,6 +61,10 @@ if (state.activeSessionId && !state.sessions.some((s) => s.id === state.activeSe
 
 const listeners = new Set<() => void>();
 
+// wiki 构建完成事件总线：面板（App 层常驻）无法跨层回调 KB 页，改由 store 通知，
+// KB 页挂载时订阅刷新文件树、卸载时取消（见 KnowledgeBasePage）。
+const wikiCompleteListeners = new Set<() => void>();
+
 function persist() {
   try {
     localStorage.setItem(STORAGE_KEY_SESSIONS, JSON.stringify(state.sessions));
@@ -89,6 +93,16 @@ export const kbChatSessionsStore = {
   setPanelOpen(open: boolean) {
     if (state.panelOpen === open) return;
     emit({ ...state, panelOpen: open });
+  },
+
+  /** 订阅 wiki 任务完成（面板通知 → KB 页刷新文件树）。返回取消订阅函数。 */
+  subscribeWikiComplete(cb: () => void) {
+    wikiCompleteListeners.add(cb);
+    return () => { wikiCompleteListeners.delete(cb); };
+  },
+  /** wiki 任务完成时通知订阅者（由面板在 KbChatSession onComplete 触发）。 */
+  notifyWikiComplete() {
+    for (const cb of wikiCompleteListeners) cb();
   },
 
   openSession(tab: Omit<ChatSessionTab, 'id'>): OpenSessionResult {

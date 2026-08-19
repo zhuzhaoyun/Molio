@@ -384,24 +384,12 @@ describe('skill-installer migration', () => {
 
     const installed = fs.readFileSync(path.join(wikiBuildDir, 'SKILL.md'), 'utf-8');
     // Must now carry the source's version line (proves the versioned source
-    // was copied in). Read the expected version dynamically so this test
-    // survives skill version bumps — the wiki-* five-piece moves versions
-    // together, and the old hardcoded `1.x` regex broke when it hit 2.0.0.
-    const sourceSkillMd = fs.readFileSync(
-      path.join(resolveSkillsSourceDir(), 'wiki-build', 'SKILL.md'),
-      'utf-8',
-    );
-    const sourceVersion = sourceSkillMd.match(/^version:\s*(.+)$/m)?.[1]?.trim();
-    assert.ok(sourceVersion, 'bundled wiki-build SKILL.md should declare a version');
+    // was copied in). The expected version was read dynamically from the
+    // bundled source above so this test survives skill version bumps — the
+    // wiki-* five-piece moves versions together, and the old hardcoded `1.x`
+    // regex broke when it hit 2.0.0.
     const escapedVersion = sourceVersion.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     assert.match(installed, new RegExp(`^version:\\s*${escapedVersion}$`, 'm'), 'version-less dest should be updated to versioned source');
-    // And the current body content, not the stale old body.
-    // Must now carry the bundled source's version line (proves the versioned
-    // source was copied in).
-    assert.ok(
-      installed.includes(`version: ${sourceVersion}`),
-      'version-less dest should be updated to versioned source',
-    );
     // And content-hash mirroring means the dest is a byte-for-byte copy of the
     // current source — not the stale version-less body.
     assert.strictEqual(
