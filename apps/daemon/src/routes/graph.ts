@@ -13,6 +13,17 @@ import { scanTree, resolveFilePath } from '../core/knowledge.js';
 import type { GraphNode, GraphEdge, GraphData, DeadLinkInfo } from '@molio/contracts';
 
 /**
+ * 从知识图谱中剔除的文件名：index/log 这类文件只是导航/索引页，不代表知识点，
+ * 无论作为节点还是连线目标都没有意义，一律从图谱中剔除（大小写不敏感）。
+ */
+const GRAPH_EXCLUDED_BASENAMES = new Set(['index', 'log']);
+
+/** 判断某个 .md 文件名（大小写不敏感）是否为图谱剔除的 index/log 类文件。 */
+export function isGraphExcludedFile(fileName: string): boolean {
+  return GRAPH_EXCLUDED_BASENAMES.has(fileName.replace(/\.md$/i, '').toLowerCase());
+}
+
+/**
  * Infer node type from frontmatter or directory path.
  */
 function inferNodeType(filePath: string, content: string): string | undefined {
@@ -128,6 +139,10 @@ export function buildGraph(vaultPath: string): GraphData {
       const rawName = (match[1] ?? '').trim();
       if (!rawName) continue;
 
+      // 指向被剔除文件（index/log）的链接直接忽略，也不记为死链
+      const linkBase = (rawName.replace(/\.md$/i, '').split('/').pop() ?? '').toLowerCase();
+      if (GRAPH_EXCLUDED_BASENAMES.has(linkBase)) continue;
+
       // Try to resolve the link target
       const targetKey = resolveLink(rawName, f.path, nameIndex, pathToKey);
       if (!targetKey) {
@@ -204,7 +219,7 @@ function collectMdFiles(
   result: { name: string; path: string }[],
 ) {
   for (const node of nodes) {
-    if (node.type === 'file' && node.name.endsWith('.md')) {
+    if (node.type === 'file' && node.name.endsWith('.md') && !isGraphExcludedFile(node.name)) {
       result.push({ name: node.name, path: node.path });
     } else if (node.type === 'directory' && Array.isArray(node.children)) {
       collectMdFiles(node.children as typeof nodes, node.path, result);

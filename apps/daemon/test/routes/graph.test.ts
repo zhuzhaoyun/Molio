@@ -1,9 +1,9 @@
 import { describe, it, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { buildGraph } from '../../src/routes/graph.js';
+import { dirname, join } from 'node:path';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { buildGraph, isGraphExcludedFile } from '../../src/routes/graph.js';
 
 /**
  * Unit tests for the graph wikilink parser (buildGraph).
@@ -19,8 +19,9 @@ function makeVault(...files: Array<[rel: string, content: string]>): string {
   const d = mkdtempSync(join(tmpdir(), 'molio-graph-test-'));
   dirs.push(d);
   for (const [rel, content] of files) {
-    // 简单处理子目录（本测试只用到根目录文件）
-    writeFileSync(join(d, rel), content, { encoding: 'utf-8' });
+    const abs = join(d, rel);
+    mkdirSync(dirname(abs), { recursive: true });
+    writeFileSync(abs, content, { encoding: 'utf-8' });
   }
   return d;
 }
@@ -84,5 +85,46 @@ describe('buildGraph dead-link handling', () => {
     const dead = g.nodes.find((n) => n.deadLink && n.label === 'parent/leaf');
     assert.ok(dead, '带路径的死链名作为节点');
     assert.strictEqual(dead.path, '', '死链节点无实际文件路径');
+  });
+});
+
+describe('buildGraph index/log exclusion', () => {
+  it('excludes index.md / INDEX.md / log.md at any depth', () => {
+    const g = buildGraph(
+      makeVault(
+        ['a.md', '# A\n\n[[b]]\n'],
+        ['b.md', '# B\n'],
+        ['index.md', '# root index\n'],
+        ['LOG.md', '# root log\n'],
+        ['wiki/INDEX.md', '# wiki index\n'],
+        ['wiki/log.md', '# wiki log\n'],
+        ['wiki/deep/Index.md', '# deep index\n'],
+      ),
+    );
+
+    const keys = g.nodes.map((n) => n.key).sort();
+    assert.deepStrictEqual(keys, ['a.md', 'b.md'], 'index/log 文件不出现在节点中');
+    assert.strictEqual(g.edges.length, 1);
+  });
+
+  it('links to excluded names are dropped, not dead links', () => {
+    const g = buildGraph(
+      makeVault(['a.md', '# A\n\n[[INDEX]] [[log]] [[wiki/INDEX]] [[Index|首页]]\n']),
+    );
+
+    assert.deepStrictEqual(g.nodes.map((n) => n.key), ['a.md']);
+    assert.strictEqual(g.nodes[0]!.linkCount, 0, '指向 index/log 的链接不计入 linkCount');
+    assert.strictEqual(g.edges.length, 0);
+    assert.strictEqual(g.deadLinks.length, 0, '不产生死链');
+  });
+
+  it('isGraphExcludedFile is case-insensitive and only matches exact names', () => {
+    assert.ok(isGraphExcludedFile('index.md'));
+    assert.ok(isGraphExcludedFile('INDEX.md'));
+    assert.ok(isGraphExcludedFile('log.md'));
+    assert.ok(isGraphExcludedFile('Log.md'));
+    assert.ok(!isGraphExcludedFile('index-x.md'));
+    assert.ok(!isGraphExcludedFile('catalog.md'));
+    assert.ok(!isGraphExcludedFile('login.md'));
   });
 });
