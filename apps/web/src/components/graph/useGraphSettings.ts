@@ -19,6 +19,7 @@ const STORAGE_KEY = 'molio.graph.settings';
  *   v2 → v3：力参数默认值对齐 Quartz v4 全局图配方（center 0.2/repel -50/link 30）
  *   v3 → v4：移除 radial 力（圆环布局根源），Obsidian 式有机布局
  *   v4 → v5：对齐 Obsidian graph.json 实测默认（repel -30 / distance 250），节点半径 2x
+ *   v5 → v6：密集库放大叠团修复 —— repel -120 + 引擎内置 forceX/Y 约束与 collide 半径×5+4（spacingRatio 1.23 → ~5）
  * forces 四个参数语义随引擎变化，旧值直接套用会产生不可用布局，
  * 因此版本不匹配时重置 forces 为新默认值，其余偏好保留。
  */

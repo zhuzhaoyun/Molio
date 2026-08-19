@@ -25,10 +25,10 @@ import { migrateSettings } from './useGraphSettings.ts';
 
 // ── Constants ──
 
-describe('DEFAULT_FORCE_PARAMS (v4 Obsidian-style recipe)', () => {
+describe('DEFAULT_FORCE_PARAMS (v6 Obsidian-style recipe)', () => {
   it('should have correct default force values', () => {
     assert.strictEqual(DEFAULT_FORCE_PARAMS.centerStrength, 0.2);
-    assert.strictEqual(DEFAULT_FORCE_PARAMS.repelStrength, -30);
+    assert.strictEqual(DEFAULT_FORCE_PARAMS.repelStrength, -120);
     assert.strictEqual(DEFAULT_FORCE_PARAMS.linkStrength, 0); // 0 = auto
     assert.strictEqual(DEFAULT_FORCE_PARAMS.linkDistance, 250);
   });

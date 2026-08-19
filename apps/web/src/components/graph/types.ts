@@ -1,7 +1,7 @@
 // apps/web/src/components/graph/types.ts
 
 /**
- * 力参数语义（v5，Obsidian 式有机布局，无 radial 力）：
+ * 力参数语义（v6，Obsidian 式有机布局，无 radial 力；引擎内置 forceX/Y 约束与放大 collide）：
  * - centerStrength: forceCenter().strength()，整体居中（平移）
  * - repelStrength:  forceManyBody().strength()，负值排斥（Obsidian repel 10 的 d3 近似 ≈ -30）
  * - linkStrength:   forceLink().strength()，0 = 自动（d3 默认按度数加权，hub 连线自动变软）
@@ -21,7 +21,7 @@ export interface ForceParams {
 export type ThemeMode = 'light' | 'dark' | 'system';
 
 /** 持久化结构版本号，语义变更时递增以触发迁移 */
-export const SETTINGS_VERSION = 5;
+export const SETTINGS_VERSION = 6;
 
 export interface GraphSettings {
   version: number;          // 持久化结构版本（SETTINGS_VERSION）
@@ -49,13 +49,15 @@ export interface ThemeColors {
   dimmed: string;
 }
 
-// Obsidian 式有机布局配方（v5，无 radial 力）：
-//   对齐 Obsidian graph.json 实测默认（repel 10 / link 1 / distance 250）的 d3 近似：
-//   长连线 + 温和排斥 → hub 聚核、叶子长辐条星状辐射；center 仅 forceCenter 整体居中。
-// 节点半径 = (2 + sqrt(度数)) * 2 * nodeScale，collide iterations 3。
+// Obsidian 式有机布局配方 v6（在史记等密集库上由离线 harness 标定）：\r
+//   密集图（平均度数 ~10）里仅靠 charge 无法撑开局部间距（spacingRatio 1.23，放大即叠团）。\r
+//   v6 = 中等排斥(-120) + forceX/Y 谐波约束(0.06，引擎内置) 控制整体范围 +\r
+//   collide 半径 = 绘制半径×5+4（引擎内置）撑开局部 → spacingRatio ~5，\r
+//   远看均布、放大后节点彼此分离，与 Obsidian 缩放行为一致。\r
+// 节点半径 = (2 + sqrt(度数)) * 2 * nodeScale，collide iterations 3。\r
 export const DEFAULT_FORCE_PARAMS: ForceParams = {
   centerStrength: 0.2,
-  repelStrength: -30,
+  repelStrength: -120,
   linkStrength: 0,   // 0 = d3 默认（按度数加权）
   linkDistance: 250,
 };

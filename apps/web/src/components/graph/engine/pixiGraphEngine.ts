@@ -7,8 +7,9 @@
  *   - d3-zoom（缩放/平移/触控 pinch）+ d3-drag（节点拖拽，<500ms 判为点击）
  *   - @tweenjs/tween.js 做 hover/焦点 alpha 平滑过渡
  *   - 手动 rAF 渲染循环（app autoStart:false），节点坐标 + 画布中心偏移
- *   - 力模型：charge(repelStrength) + center(centerStrength) + link(distance/strength) +
- *     collide(半径, iterations 3)；无 radial 力 —— Obsidian 式有机布局
+ *   - 力模型 v6：charge(repelStrength) + center(centerStrength) + forceX/Y 谐波约束 +
+ *     link(distance/strength) + collide(绘制半径×5+4, iterations 3)。
+ *     collide 半径远大于绘制半径 → 远看均布、放大后节点彼此分离（Obsidian 同款空气感）
  *
  * 为 Molio 适配（仅扩展，不改变 Quartz 渲染模型）：
  *   - setData(统一节点/边) 之外保留 Minimap getSnapshot/subscribeRender、
@@ -20,6 +21,8 @@ import {
   forceSimulation,
   forceManyBody,
   forceCenter,
+  forceX,
+  forceY,
   forceLink,
   forceCollide,
   type Simulation,
@@ -28,6 +31,8 @@ import {
   type ForceLink,
   type ForceManyBody,
   type ForceCenter,
+  type ForceX,
+  type ForceY,
   type ForceCollide,
 } from 'd3-force';
 import { select } from 'd3-selection';
@@ -136,9 +141,14 @@ const LABEL_MIN_SCREEN_RADIUS = 3;
 const LABEL_BUDGET = 150;
 /** 标签碰撞检测的四周留白（stage-local 单位） */
 const LABEL_PAD = 2;
-const K_MIN = 0.25;
+const K_MIN = 0.1;
 const K_MAX = 4;
 const FIT_PADDING = 80;
+/** v6 配方：forceX/Y 谐波约束强度 —— 让长弹簧向心屈服，整体紧凑、局部由 collide 撑开 */
+const CONTAIN_STRENGTH = 0.06;
+/** v6 配方：collide 半径 = 绘制半径 × MULT + PAD —— 远看均布、放大后节点彼此分离（Obsidian 同款空气感） */
+const COLLIDE_RADIUS_MULT = 5;
+const COLLIDE_PAD = 4;
 
 export class PixiGraphEngine {
   private container: HTMLElement;
@@ -359,7 +369,7 @@ export class PixiGraphEngine {
       for (const n of this.nodeById.values()) {
         n.radius = this.radiusOf({ linkCount: n.linkCount, dead: n.dead });
       }
-      this.sim?.force<ForceCollide<SimNode>>('collide')?.radius((d) => d.radius + 2);
+      this.sim?.force<ForceCollide<SimNode>>('collide')?.radius(collideRadius);
     }
     this.redrawAllNodes();
   }
@@ -503,7 +513,14 @@ export class PixiGraphEngine {
             this.forces.linkStrength > 0 ? this.forces.linkStrength : defaultLinkStrength(this.adjacency),
           ),
       )
-      .force('collide', forceCollide<SimNode>().radius((d) => d.radius + 2).iterations(3));
+      .force('x', forceX<SimNode>(0).strength(CONTAIN_STRENGTH))
+      .force('y', forceY<SimNode>(0).strength(CONTAIN_STRENGTH))
+      .force('collide', forceCollide<SimNode>().radius(collideRadius).iterations(3));
+    // 仿真收敛后布局范围才稳定 —— 若用户未交互过，重新 fit 一次，
+    // 避免「早期小范围 fit 的缩放」看「后期大范围布局」导致放大叠团的错觉
+    sim.on('end', () => {
+      if (!this.hasUserInteracted && !this.destroyed) this.fitView({ animate: true });
+    });
     this.sim = sim;
 
     const dpr = window.devicePixelRatio;
@@ -937,6 +954,10 @@ function defaultLinkStrength(adjacency: ReadonlyMap<string, ReadonlySet<string>>
     const dt = Math.max(adjacency.get(t.id)?.size ?? 1, 1);
     return 1 / Math.min(ds, dt);
   };
+}
+
+function collideRadius(d: SimNode): number {
+  return d.radius * COLLIDE_RADIUS_MULT + COLLIDE_PAD;
 }
 
 function toEngineNode(n: SimNode): EngineNode {
