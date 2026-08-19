@@ -59,8 +59,15 @@ src/
     icons.tsx          聊天交互 SVG 线条图标
     UpdateNotification.tsx 更新通知
     graph/             知识图谱组件
-      GraphPage.tsx    图谱主页面（Sigma.js + ForceAtlas2 力导向布局）
-      Minimap.tsx      右下角小地图（Canvas 绘制全局节点分布 + 视口指示器）
+      GraphPage.tsx    图谱主页面（数据获取 / 筛选 / 引擎生命周期 / 回调路由）
+      GraphSearchBox.tsx 顶栏节点搜索定位（模糊匹配 + 键盘导航 + focusNode）
+      GraphSettingsPanel.tsx 设置面板（筛选/外观/力度/图例 4 tab）
+      Minimap.tsx      右下角小地图（事件驱动重绘 + 点击/拖拽视口导航）
+      types.ts         设置/主题/力参数类型 + NODE_TYPE_COLORS/LABELS 单一来源
+      useGraphSettings.ts 设置持久化（localStorage）+ 版本迁移
+      engine/
+        pixiGraphEngine.ts PixiJS WebGL 渲染 + d3-force 仿真引擎（移植自 Quartz v4）
+        graphUtils.ts  纯函数（边去重/力强度/视口计算/缓动，node:test 覆盖）
     kb/                知识库组件
       KnowledgeBasePage.tsx  知识库页面（shell 布局）
       KbFilePanel.tsx         文件面板（搜索、文件列表、vault 切换）
@@ -133,6 +140,7 @@ pnpm dev          # vite dev server (:5173)
 pnpm build        # vite build
 pnpm preview      # vite preview
 pnpm typecheck    # tsc --noEmit
+pnpm test         # node:test 单测（graph engine 纯函数 + settings 迁移，Node 24 原生 TS）
 pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
 ```
 
@@ -145,7 +153,7 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
 | `src/components/HomePage.tsx` | `e2e/bootstrap.spec.ts` |
 | `src/components/NavRail.tsx` | `e2e/bootstrap.spec.ts`, `e2e/navigation.spec.ts` |
 | `src/components/kb/` | `e2e/publish-flow.spec.ts` |
-| `src/components/graph/` | `e2e/graph-settings.spec.ts` |
+| `src/components/graph/` | `e2e/graph.spec.ts`, `e2e/graph-settings.spec.ts` |
 | `src/components/runtimes/` | `e2e/runtimes-page.spec.ts`, `e2e/runtime-provider-config.spec.ts` |
 | `src/components/settings/` | `e2e/runtimes-page.spec.ts`（RuntimesPanel 在此） |
 | `src/components/history/` | `e2e/history.spec.ts` |
@@ -201,17 +209,23 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
 
 ### 知识图谱 (Graph View)
 
-- **渲染引擎**: Sigma.js v3 (WebGL)，通过 `useRef` + `useEffect` 手动绑定
-- **图数据结构**: Graphology
-- **力导向布局**: `graphology-layout-forceatlas2`（ForceAtlas2 算法）
-  - `linLogMode: true` — 近距离强排斥，防止节点重叠
-  - `barnesHutOptimize: true` — O(n log n) 性能优化
-- **交互系统**: 原生 DOM 事件，区分 click / drag / dblclick
-  - 单击选中节点，双击跳转知识库文档
-  - 拖拽节点后通过 `fx`/`fy` 锁定位置
-  - Hover 高亮关联节点和边
-- **Minimap**: Canvas 绘制，右下角显示全局节点分布 + 当前视口矩形
-- **React 性能**: 坐标计算和渲染帧循环在 Sigma 内部闭环，交互状态用 `useRef`，零 React re-render
+- **渲染引擎**: PixiJS 8 (WebGL) + d3-force 仿真，**忠实移植 Quartz v4 的
+  `graph.inline.ts`（MIT）**，核心在 `engine/pixiGraphEngine.ts`：
+  per-node / per-link Graphics（d3 只算坐标，Pixi 每帧同步位置）；标签 Text 用
+  `resolution: devicePixelRatio * 4` 高分辨率栅格化（缩放不糊）；手动 rAF 渲染循环
+  （`app autoStart: false`），节点坐标 + 画布中心偏移
+- **力模型（Quartz 全局图配方）**: forceLink（距离 30，强度 0=d3 按度数加权）+
+  forceManyBody（-50）+ forceCenter（0.2）+ forceCollide（iterations=3）+ forceRadial（0.2）
+  —— 默认值见 `types.ts` 的 `DEFAULT_FORCE_PARAMS`（v3）
+- **交互（d3-zoom + d3-drag，Quartz 同款）**: d3-zoom 缩放/平移/触控 pinch；
+  d3-drag 节点拖拽（<500ms 判为点击）；单击选中（焦点模式）、双击节点打开文件、
+  双击空白 fit
+- **焦点模式动画**: `@tweenjs/tween.js` 做 hover/选中时非邻居节点/边的 alpha 平滑淡出（200ms）
+- **搜索定位**: 顶栏搜索框在可见节点内模糊匹配，选中后 `focusNode` 平滑居中缩放 k=1.5
+- **Minimap**: 订阅引擎 render 事件按需重绘（无 rAF 轮询），支持点击跳转/拖拽视口导航
+- **数据链路**: daemon `GET /api/graph/:vaultId` 解析 `[[wikilink]]` → GraphPage 筛选
+  （类型/孤立节点/死链接）→ `engine.setData()`
+- **React 性能**: 坐标计算和渲染帧循环在引擎内部闭环，零 React re-render
 
 ### 聊天 (Chat)
 
@@ -279,8 +293,11 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
   "isomorphic-dompurify": "^3.15.0",
   "es-toolkit": "^1.47.0",
   "fflate": "^0.8.3",
-  "sigma": "^3.x",
-  "graphology": "^0.26.x",
-  "graphology-layout-forceatlas2": "^0.10.x"
+  "pixi.js": "^8.19.0",
+  "d3-force": "^3.0.0",
+  "d3-selection": "^3.0.0",
+  "d3-drag": "^3.0.0",
+  "d3-zoom": "^3.0.0",
+  "@tweenjs/tween.js": "^25.0.0"
 }
 ```

@@ -89,7 +89,8 @@
   flex: 1;
   position: relative;
   overflow: hidden;
-  background: #FAFAFA;
+  /* 画布背景由 Pixi 引擎按主题设置，容器保持透明避免主题切换闪烁 */
+  background: transparent;
   cursor: grab;
 }
 
@@ -97,9 +98,34 @@
   cursor: grabbing;
 }
 
-.graph-sigma {
-  width: 100% !important;
-  height: 100% !important;
+.graph-pixi {
+  position: absolute;
+  inset: 0;
+}
+
+.graph-pixi canvas {
+  display: block;
+}
+
+/* ── Minimap（右下角，事件驱动重绘 + 点击/拖拽导航）── */
+
+.graph-minimap {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  border-radius: 6px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+  cursor: grab;
+  z-index: 20;
+  touch-action: none;
+}
+
+.graph-minimap.is-dragging {
+  cursor: grabbing;
+}
+
+[data-theme="dark"] .graph-minimap {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
 }
 
 /* ── Loading State ── */
@@ -304,6 +330,118 @@
 
 /* ── Settings Panel (popover) ── */
 
+/* ── Search Box（顶栏节点搜索定位）── */
+
+.graph-search {
+  position: relative;
+  width: 220px;
+}
+
+.graph-search__input {
+  width: 100%;
+  padding: 5px 10px;
+  border: 1px solid #E5E5E5;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #333;
+  background-color: #F9F9F9;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.graph-search__input:focus {
+  border-color: #8B5CF6;
+  background-color: #FFF;
+}
+
+.graph-search__results {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  width: 260px;
+  max-height: 280px;
+  overflow-y: auto;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 10px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.1);
+  backdrop-filter: blur(12px);
+  z-index: 40;
+  padding: 4px;
+  box-sizing: border-box;
+}
+
+.graph-search__option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 12px;
+  color: #333;
+  text-align: left;
+  cursor: pointer;
+}
+
+.graph-search__option:hover,
+.graph-search__option.is-active {
+  background: rgba(139, 92, 246, 0.08);
+}
+
+.graph-search__option-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.graph-search__option-degree {
+  flex-shrink: 0;
+  color: #999;
+  font-size: 11px;
+}
+
+.graph-search__empty {
+  padding: 10px 8px;
+  font-size: 12px;
+  color: #999;
+  text-align: center;
+}
+
+[data-theme="dark"] .graph-search__input {
+  background-color: #1A1A2E;
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #CCC;
+}
+
+[data-theme="dark"] .graph-search__input:focus {
+  border-color: #A78BFA;
+  background-color: #1E1E32;
+}
+
+[data-theme="dark"] .graph-search__results {
+  background: rgba(24, 24, 34, 0.94);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+}
+
+[data-theme="dark"] .graph-search__option {
+  color: #CCC;
+}
+
+[data-theme="dark"] .graph-search__option:hover,
+[data-theme="dark"] .graph-search__option.is-active {
+  background: rgba(139, 92, 246, 0.15);
+}
+
+[data-theme="dark"] .graph-search__option-degree,
+[data-theme="dark"] .graph-search__empty {
+  color: #777;
+}
+
 .graph-settings-panel {
   position: absolute;
   top: 0;
@@ -425,23 +563,6 @@
   height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
-}
-
-.graph-settings__search {
-  width: 100%;
-  padding: 6px 10px;
-  border: 1px solid #E5E5E5;
-  border-radius: 6px;
-  font-size: 12px;
-  color: #333;
-  background: #F9F9F9;
-  outline: none;
-  box-sizing: border-box;
-}
-
-.graph-settings__search:focus {
-  border-color: #8B5CF6;
-  background: #FFF;
 }
 
 .graph-settings__select {
@@ -573,17 +694,6 @@
     background: rgba(255, 255, 255, 0.03);
   }
 
-  html:not([data-theme]) .graph-settings__search {
-    background: #1A1A2E;
-    border-color: rgba(255, 255, 255, 0.1);
-    color: #CCC;
-  }
-
-  html:not([data-theme]) .graph-settings__search:focus {
-    border-color: #A78BFA;
-    background: #1E1E32;
-  }
-
   html:not([data-theme]) .graph-settings__select {
     background: #1A1A2E;
     border-color: rgba(255, 255, 255, 0.1);
@@ -592,5 +702,40 @@
 
   html:not([data-theme]) .graph-settings__select:focus {
     border-color: #A78BFA;
+  }
+
+  html:not([data-theme]) .graph-minimap {
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+  }
+
+  html:not([data-theme]) .graph-search__input {
+    background-color: #1A1A2E;
+    border-color: rgba(255, 255, 255, 0.1);
+    color: #CCC;
+  }
+
+  html:not([data-theme]) .graph-search__input:focus {
+    border-color: #A78BFA;
+    background-color: #1E1E32;
+  }
+
+  html:not([data-theme]) .graph-search__results {
+    background: rgba(24, 24, 34, 0.94);
+    border-color: rgba(255, 255, 255, 0.08);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+  }
+
+  html:not([data-theme]) .graph-search__option {
+    color: #CCC;
+  }
+
+  html:not([data-theme]) .graph-search__option:hover,
+  html:not([data-theme]) .graph-search__option.is-active {
+    background: rgba(139, 92, 246, 0.15);
+  }
+
+  html:not([data-theme]) .graph-search__option-degree,
+  html:not([data-theme]) .graph-search__empty {
+    color: #777;
   }
 }

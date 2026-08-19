@@ -64,7 +64,7 @@ export function graphRoutes(db: Database.Database): Hono {
 /**
  * Scan all .md files in a vault, parse [[wikilinks]], and build a graph.
  */
-function buildGraph(vaultPath: string): GraphData {
+export function buildGraph(vaultPath: string): GraphData {
   const tree = scanTree(vaultPath);
 
   // Collect all .md files (nodes)
@@ -108,7 +108,11 @@ function buildGraph(vaultPath: string): GraphData {
 
   // Parse wikilinks from each file
   const edges = new Set<string>(); // "source→target" strings for dedup
-  const deadLinks = new Set<string>(); // Track dead links to avoid repeating warnings
+  const deadLinks = new Set<string>(); // Track dead links to avoid repeating warnings (lowercase name)
+  // 死链目标节点（Obsidian 行为：未解析的 [[名字]] 也作为节点参与图）：
+  // lowercase name → 首次出现的展示名 / 被引用次数
+  const deadLabels = new Map<string, string>();
+  const deadLinkCounts = new Map<string, number>();
 
   for (const f of mdFiles) {
     const absPath = resolveFilePath(vaultPath, f.path);
@@ -127,10 +131,23 @@ function buildGraph(vaultPath: string): GraphData {
       // Try to resolve the link target
       const targetKey = resolveLink(rawName, f.path, nameIndex, pathToKey);
       if (!targetKey) {
-        // Record dead link
-        if (!deadLinks.has(rawName.toLowerCase())) {
-          deadLinks.add(rawName.toLowerCase());
+        // 死链：目标名作为节点并入图，与引用页建立连线（Obsidian 同款）。
+        // key 用 lowercase 规范化去重（[[Foo]] 与 [[foo]] 指向同一节点）
+        const lowerName = rawName.toLowerCase();
+        if (!deadLinks.has(lowerName)) {
+          deadLinks.add(lowerName);
+          deadLabels.set(lowerName, rawName);
+          deadLinkCounts.set(lowerName, 0);
           deadLinksList.push({ sourceFile: f.path, targetName: rawName });
+        }
+        const deadKey = `__dead__${lowerName}`;
+        const edgeKey = sourceKey < deadKey
+          ? `${sourceKey}→${deadKey}`
+          : `${deadKey}→${sourceKey}`;
+        if (!edges.has(edgeKey)) {
+          edges.add(edgeKey);
+          deadLinkCounts.set(lowerName, (deadLinkCounts.get(lowerName) ?? 0) + 1);
+          linkCounts.set(sourceKey, (linkCounts.get(sourceKey) ?? 0) + 1);
         }
         continue;
       }
@@ -156,6 +173,18 @@ function buildGraph(vaultPath: string): GraphData {
     linkCount: linkCounts.get(pathToKey.get(f.path)!) ?? 0,
     nodeType: nodeTypes.get(pathToKey.get(f.path)!),
   }));
+
+  // 死链节点：path 为空，deadLink 标记供前端区分样式与「点击新建空白页」
+  for (const [lowerName, count] of deadLinkCounts) {
+    nodes.push({
+      key: `__dead__${lowerName}`,
+      label: deadLabels.get(lowerName) ?? lowerName,
+      path: '',
+      linkCount: count,
+      nodeType: undefined,
+      deadLink: true,
+    });
+  }
 
   // Build edge list
   const edgeList: GraphEdge[] = Array.from(edges).map((ek) => {

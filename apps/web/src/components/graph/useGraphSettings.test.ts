@@ -3,6 +3,7 @@ import assert from 'node:assert';
 import {
   DEFAULT_FORCE_PARAMS,
   DEFAULT_SETTINGS,
+  SETTINGS_VERSION,
   LIGHT_THEME,
   DARK_THEME,
   resolveTheme,
@@ -11,29 +12,31 @@ import {
   type ForceParams,
   type GraphSettings,
   type ThemeColors,
-  type ThemeMode,
 } from './types.ts';
+import { migrateSettings } from './useGraphSettings.ts';
 
 /**
- * Unit tests for graph settings type definitions and helpers.
+ * Unit tests for graph settings type definitions, helpers, and migration.
  *
- * These cover the pure functions and constants exported from types.ts
- * that subsequent tasks depend on.
+ * v2 engine (Quartz-style PixiJS + d3-force) changed force parameter
+ * semantics — migration tests guard against stale persisted values
+ * producing broken layouts.
  */
 
 // ── Constants ──
 
-describe('DEFAULT_FORCE_PARAMS', () => {
+describe('DEFAULT_FORCE_PARAMS (v4 Obsidian-style recipe)', () => {
   it('should have correct default force values', () => {
-    assert.strictEqual(DEFAULT_FORCE_PARAMS.centerStrength, 0.004);
-    assert.strictEqual(DEFAULT_FORCE_PARAMS.repelStrength, -60);
-    assert.strictEqual(DEFAULT_FORCE_PARAMS.linkStrength, 0.15);
-    assert.strictEqual(DEFAULT_FORCE_PARAMS.linkDistance, 100);
+    assert.strictEqual(DEFAULT_FORCE_PARAMS.centerStrength, 0.2);
+    assert.strictEqual(DEFAULT_FORCE_PARAMS.repelStrength, -30);
+    assert.strictEqual(DEFAULT_FORCE_PARAMS.linkStrength, 0); // 0 = auto
+    assert.strictEqual(DEFAULT_FORCE_PARAMS.linkDistance, 250);
   });
 });
 
 describe('DEFAULT_SETTINGS', () => {
   it('should have correct default settings', () => {
+    assert.strictEqual(DEFAULT_SETTINGS.version, SETTINGS_VERSION);
     assert.strictEqual(DEFAULT_SETTINGS.theme, 'light');
     assert.strictEqual(DEFAULT_SETTINGS.nodeScale, 1.0);
     assert.strictEqual(DEFAULT_SETTINGS.edgeWidth, 0.8);
@@ -52,6 +55,70 @@ describe('DEFAULT_SETTINGS', () => {
     assert.notStrictEqual(DEFAULT_SETTINGS.forces, DEFAULT_FORCE_PARAMS);
   });
 });
+
+// ── Migration ──
+
+describe('migrateSettings', () => {
+  it('should return defaults for null/undefined input', () => {
+    const s = migrateSettings(null);
+    assert.deepStrictEqual(s.forces, DEFAULT_FORCE_PARAMS);
+    assert.strictEqual(s.version, SETTINGS_VERSION);
+  });
+
+  it('should keep current-version settings intact', () => {
+    const input: GraphSettings = {
+      ...DEFAULT_SETTINGS,
+      theme: 'dark',
+      nodeScale: 1.5,
+      forces: { centerStrength: 0.6, repelStrength: -80, linkStrength: 0.4, linkDistance: 45 },
+    };
+    const s = migrateSettings(input);
+    assert.strictEqual(s.theme, 'dark');
+    assert.strictEqual(s.nodeScale, 1.5);
+    assert.deepStrictEqual(s.forces, input.forces);
+  });
+
+  it('should reset forces when upgrading from v1 (Sigma semantics)', () => {
+    // v1 persisted settings: no version field, forces in old semantics
+    const v1 = {
+      theme: 'dark',
+      nodeScale: 2.0,
+      edgeWidth: 1.2,
+      showOrphans: false,
+      showDeadLinks: false,
+      visibleTypes: ['concept'],
+      forces: { centerStrength: 0.004, repelStrength: -60, linkStrength: 0.15, linkDistance: 100 },
+    };
+    const s = migrateSettings(v1 as Partial<GraphSettings>);
+    // Forces must be reset to new-model defaults — old values are unusable
+    assert.deepStrictEqual(s.forces, DEFAULT_FORCE_PARAMS);
+    assert.strictEqual(s.version, SETTINGS_VERSION);
+    // Non-force preferences are preserved
+    assert.strictEqual(s.theme, 'dark');
+    assert.strictEqual(s.nodeScale, 2.0);
+    assert.strictEqual(s.edgeWidth, 1.2);
+    assert.strictEqual(s.showOrphans, false);
+    assert.deepStrictEqual(s.visibleTypes, ['concept']);
+  });
+
+  it('should fill missing fields with defaults', () => {
+    const s = migrateSettings({ version: SETTINGS_VERSION });
+    assert.strictEqual(s.theme, DEFAULT_SETTINGS.theme);
+    assert.deepStrictEqual(s.forces, DEFAULT_FORCE_PARAMS);
+    assert.deepStrictEqual(s.visibleTypes, []);
+  });
+
+  it('should partially merge forces objects', () => {
+    const s = migrateSettings({
+      version: SETTINGS_VERSION,
+      forces: { linkDistance: 66 } as ForceParams,
+    });
+    assert.strictEqual(s.forces.linkDistance, 66);
+    assert.strictEqual(s.forces.repelStrength, DEFAULT_FORCE_PARAMS.repelStrength);
+  });
+});
+
+// ── Themes ──
 
 describe('LIGHT_THEME', () => {
   it('should have all required ThemeColors keys', () => {
