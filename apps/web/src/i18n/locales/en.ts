@@ -97,6 +97,14 @@ const en: Record<string, string> = {
   // ── WorkCompleteBanner ──
   'complete.title': 'Artifacts',
 
+  // ── Session output panel (Home dock) ──
+  'output.title': 'Session output',
+  'output.stats': '{writes} writes · {sources} sources · {turns} turns',
+  'output.writesLabel': 'Writes',
+  'output.sourcesLabel': 'Sources',
+  'output.empty': 'Nothing produced yet',
+  'output.toggle': 'Output panel',
+
   // ── RuntimePage ──
   'runtimes.title': 'Runtimes',
   'runtimes.agentsTab': 'Agents',

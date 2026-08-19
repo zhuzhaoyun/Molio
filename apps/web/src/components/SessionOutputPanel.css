@@ -1,0 +1,137 @@
+/* 会话产出聚合面板（主页 dock）——右侧栏。
+   发丝边框 + subtle 底；列表行静默态 muted，hover/focus 兑现品牌 terracotta；
+   暗色安全（全部走 token 变体）。宽度由组件 inline style 驱动（无根 CSS 变量）。 */
+.session-output-panel {
+  position: relative;
+  flex: none;
+  height: 100%;
+  overflow-y: auto;
+  border-left: 1px solid var(--border-soft);
+  background-color: var(--bg-subtle);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.session-output-header {
+  padding: 12px 16px 10px;
+  border-bottom: 1px solid var(--border-soft);
+  flex-shrink: 0;
+}
+.session-output-title {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.session-output-stats {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.session-output-body {
+  padding: 10px 8px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.session-output-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.session-output-section-label {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-faint);
+  padding: 0 8px;
+  margin-bottom: 2px;
+  user-select: none;
+}
+.session-output-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background-color: transparent;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-align: left;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+.session-output-item-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--text-soft);
+  transition: color 0.15s ease;
+}
+.session-output-item-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 可点项（写入 + navigable 来源）：hover/focus 兑现 terracotta；disabled 统一 muted */
+.session-output-item:not(:disabled):hover,
+.session-output-item:not(:disabled):focus-visible {
+  color: var(--accent);
+  background-color: var(--bg-elevated);
+}
+.session-output-item:not(:disabled):hover .session-output-item-icon,
+.session-output-item:not(:disabled):focus-visible .session-output-item-icon {
+  color: var(--accent);
+}
+.session-output-item:focus-visible {
+  outline: 2px solid var(--accent-soft);
+  outline-offset: 1px;
+}
+.session-output-item:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.session-output-empty {
+  padding: 24px 16px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* 拖宽手柄：dock 左缘 8px 命中区，hover/拖动显示 2px 陶土抓握条（KbChatSessionsPanel 同款） */
+.session-output-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 8px;
+  cursor: col-resize;
+  z-index: 20;
+  touch-action: none;
+}
+.session-output-resize-handle::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 36px;
+  border-radius: 2px;
+  background-color: transparent;
+  transition: background-color 120ms ease, height 120ms ease;
+}
+.session-output-resize-handle:hover::after,
+.session-output-resize-handle.is-dragging::after {
+  background-color: var(--accent);
+  height: 48px;
+}
+body.home-dock-resizing {
+  cursor: col-resize;
+  user-select: none;
+}

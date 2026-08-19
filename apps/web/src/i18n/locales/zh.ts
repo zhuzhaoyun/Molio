@@ -97,6 +97,14 @@ const zh: Record<string, string> = {
   // ── WorkCompleteBanner ──
   'complete.title': '产出文件',
 
+  // ── 会话产出面板（主页 dock）──
+  'output.title': '本会话产出',
+  'output.stats': '写入 {writes} · 来源 {sources} · {turns} 轮',
+  'output.writesLabel': '写入',
+  'output.sourcesLabel': '来源',
+  'output.empty': '本会话还没有产出',
+  'output.toggle': '产出面板',
+
   // ── RuntimePage ──
   'runtimes.title': '运行时',
   'runtimes.agentsTab': '代理',

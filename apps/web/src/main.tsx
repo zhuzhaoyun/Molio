@@ -12,6 +12,7 @@ import './components/RunStatusBar.css';
 import './components/WorkBlock.css';
 import './components/SourceChips.css';
 import './components/WorkCompleteBanner.css';
+import './components/SessionOutputPanel.css';
 import { initTheme } from './utils/theme';
 
 // 首帧应用持久化主题，避免闪烁
