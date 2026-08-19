@@ -114,6 +114,7 @@ export function SessionOutputPanel({ messages }: Props) {
                   type="button"
                   className="session-output-item"
                   data-testid="session-output-write"
+                  data-kind={w.kind}
                   title={w.path}
                   disabled={!vaultId}
                   onClick={() => { if (vaultId) openFile(vaultId, w.path); }}
