@@ -104,6 +104,11 @@ const en: Record<string, string> = {
   'output.sourcesLabel': 'Sources',
   'output.empty': 'Nothing produced yet',
   'output.toggle': 'Output panel',
+  'output.previewBack': 'Back',
+  'output.previewLoading': 'Loading…',
+  'output.previewError': 'Unable to read file (it may have been deleted or moved)',
+  'output.previewTooLarge': 'File too large to preview here',
+  'output.previewBinary': 'This file type cannot be previewed',
 
   // ── RuntimePage ──
   'runtimes.title': 'Runtimes',

@@ -104,6 +104,11 @@ const zh: Record<string, string> = {
   'output.sourcesLabel': '来源',
   'output.empty': '本会话还没有产出',
   'output.toggle': '产出面板',
+  'output.previewBack': '返回',
+  'output.previewLoading': '加载中…',
+  'output.previewError': '无法读取文件（可能已删除或移动）',
+  'output.previewTooLarge': '文件过大，无法在此预览',
+  'output.previewBinary': '该文件类型无法预览',
 
   // ── RuntimePage ──
   'runtimes.title': '运行时',

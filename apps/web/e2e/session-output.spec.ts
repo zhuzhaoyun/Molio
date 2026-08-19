@@ -65,18 +65,38 @@ test.describe('Home 会话产出面板', () => {
     await expect(panel.locator('[data-testid="session-output-stats"]')).toContainText('2 轮');
   });
 
-  test('点击写入项跳转知识库打开文件', async ({ page }) => {
-    const vault = await createTempVault('e2e-dock-nav');
+  test('点击写入项 → 面板内嵌预览渲染文件内容；返回恢复列表（不跳转知识库）', async ({ page }) => {
+    const vault = await createTempVault('e2e-dock-preview');
     try {
-      // 真实 vault 存在 → vaultStore 保留该 id → 写入项可点
+      // 真实 vault 存在 → 写入项可点；拦截 readFile 返回 mock 内容（不依赖真实文件落盘）
       await page.addInitScript((id) => { localStorage.setItem('molio.activeVaultId', id); }, vault.id);
+      await page.route('**/knowledge/vaults/*/files/**', (route) => {
+        return route.fulfill({
+          json: {
+            path: '产出/总结.md',
+            content: '# Mock 预览标题\n\n预览正文内容段落',
+            size: 100,
+            modifiedAt: Date.now(),
+          },
+        });
+      });
       await mockChatRun(page, { script: outputRun });
       await gotoHome(page);
       await sendMessage(page, '整理产出');
       await expect(page.locator('[data-testid="work-timeline-summary"]')).toBeVisible({ timeout: 15_000 });
       await page.locator('[data-testid="home-output-toggle"]').click();
-      await page.locator('[data-testid="session-output-write"]').click();
-      await page.waitForURL(/\/knowledge/);
+      const panel = page.locator('[data-testid="session-output-panel"]');
+      // 点击写入项 → 预览视图出现，mock 内容渲染可见
+      await panel.locator('[data-testid="session-output-write"]').click();
+      await expect(panel.locator('[data-testid="session-output-preview"]')).toBeVisible();
+      await expect(panel.locator('[data-testid="session-output-preview"]')).toContainText('Mock 预览标题');
+      await expect(panel.locator('[data-testid="session-output-preview"]')).toContainText('预览正文内容段落');
+      // 仍在主页（未跳转知识库）—— 不打破对话注意力
+      await expect(page).toHaveURL(/\/$/);
+      // 返回 → 列表恢复
+      await panel.locator('[data-testid="session-output-preview-back"]').click();
+      await expect(panel.locator('[data-testid="session-output-write"]')).toHaveCount(1);
+      await expect(panel.locator('[data-testid="session-output-preview"]')).toHaveCount(0);
     } finally {
       await cleanupTempVault(vault);
     }

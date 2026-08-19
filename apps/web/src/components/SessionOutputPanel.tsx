@@ -2,12 +2,13 @@
 // 会话产出聚合面板（主页 dock）——整个会话写入的 KB 文件 + 引用的来源 rollup。
 // 与逐消息 WorkCompleteBanner/SourceChips 共存：dock = 会话级汇总，消息内 = 单条 provenance。
 // 纯前端聚合（aggregateSessionOutput），零 daemon/contracts。
-import { useMemo, useState, useRef, useCallback } from 'react';
+import { useMemo, useState, useRef, useCallback, useEffect } from 'react';
 import type { ChatMessage } from '../hooks/useChat';
 import { aggregateSessionOutput } from '../utils/workSteps';
-import { useFileNavigation } from '../hooks/useFileNavigation';
 import { useActiveVaultId } from '../stores/vaultStore';
 import { useI18n } from '../i18n';
+import { api } from '../api/client';
+import { MdRenderer } from './kb/MdRenderer';
 import { FileIcon, ExternalLinkIcon } from './icons';
 
 /** dock 宽度：默认 280，可拖宽 200–480 并持久化（复用 KbChatSessionsPanel 存储模式） */
@@ -38,7 +39,6 @@ export function SessionOutputPanel({ messages }: Props) {
   const { t } = useI18n();
   const output = useMemo(() => aggregateSessionOutput(messages), [messages]);
   const vaultId = useActiveVaultId();
-  const { openFile } = useFileNavigation();
 
   const [width, setWidth] = useState<number>(readDockWidth);
   const panelElRef = useRef<HTMLDivElement>(null);
@@ -87,6 +87,43 @@ export function SessionOutputPanel({ messages }: Props) {
 
   const empty = output.writes.length === 0 && output.sources.length === 0;
 
+  // 内嵌预览：选中项非空 → 面板切到预览视图（不跳转知识库，保持对话注意力）。
+  // 写入项 + 来源里 navigable 的本地文件可预览；URL 项保持外开新标签。
+  const [preview, setPreview] = useState<{
+    target: { kind: 'create' | 'update' | 'file'; path: string; label: string };
+    content: string;
+    loading: boolean;
+    error: boolean;
+    tooLarge: boolean;
+  } | null>(null);
+
+  // 预览加载：进入（path 从 undefined→有值）触发一次；同项重复进入不重跑；
+  // 返回（置 null）cleanup 取消 in-flight。loading 用 updater 置，避免竞态残留。
+  useEffect(() => {
+    const target = preview?.target;
+    if (!target || !vaultId) return;
+    let cancelled = false;
+    setPreview((p) => (p ? { ...p, loading: true, error: false, tooLarge: false } : p));
+    api.readFile(vaultId, target.path)
+      .then((f) => {
+        if (cancelled) return;
+        setPreview({ target, content: f.content, loading: false, error: false, tooLarge: Boolean(f.tooLarge) });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setPreview((p) => (p ? { ...p, loading: false, error: true } : p));
+      });
+    return () => { cancelled = true; };
+  }, [preview?.target.path]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const openPreview = useCallback((kind: 'create' | 'update' | 'file', path: string, label: string) => {
+    if (!vaultId) return;
+    if (width < 420) commitWidth(420); // 预览态自动加宽到 md 渲染舒适宽度；返回不缩回
+    setPreview({ target: { kind, path, label }, content: '', loading: false, error: false, tooLarge: false });
+  }, [vaultId, width, commitWidth]);
+
+  const closePreview = useCallback(() => setPreview(null), []);
+
   return (
     <aside
       ref={panelElRef}
@@ -94,63 +131,98 @@ export function SessionOutputPanel({ messages }: Props) {
       data-testid="session-output-panel"
       style={{ width }}
     >
-      <header className="session-output-header">
-        <span className="session-output-title">{t('output.title')}</span>
-        <span className="session-output-stats" data-testid="session-output-stats">
-          {t('output.stats', { writes: output.writes.length, sources: output.sources.length, turns: output.turns })}
-        </span>
-      </header>
-
-      {empty ? (
-        <p className="session-output-empty" data-testid="session-output-empty">{t('output.empty')}</p>
+      {preview ? (
+        <>
+          <header className="session-output-preview-header">
+            <button
+              type="button"
+              className="session-output-preview-back"
+              data-testid="session-output-preview-back"
+              onClick={closePreview}
+              title={t('output.previewBack')}
+            >
+              <span aria-hidden>{'‹'}</span>
+              <span>{t('output.previewBack')}</span>
+            </button>
+            <span className="session-output-preview-filename" title={preview.target.path}>
+              {preview.target.label}
+            </span>
+          </header>
+          <div className="session-output-preview-body" data-testid="session-output-preview">
+            {preview.loading && <p className="session-output-preview-note">{t('output.previewLoading')}</p>}
+            {!preview.loading && preview.error && <p className="session-output-preview-note">{t('output.previewError')}</p>}
+            {!preview.loading && !preview.error && preview.tooLarge && (
+              <p className="session-output-preview-note">{t('output.previewTooLarge')}</p>
+            )}
+            {!preview.loading && !preview.error && !preview.tooLarge && preview.content === '' && (
+              <p className="session-output-preview-note">{t('output.previewBinary')}</p>
+            )}
+            {!preview.loading && !preview.error && !preview.tooLarge && preview.content !== '' && (
+              <MdRenderer content={preview.content} className="session-output-preview" />
+            )}
+          </div>
+        </>
       ) : (
-        <div className="session-output-body">
-          {output.writes.length > 0 && (
-            <section className="session-output-section">
-              <h3 className="session-output-section-label">{t('output.writesLabel')}</h3>
-              {output.writes.map((w) => (
-                <button
-                  key={w.path}
-                  type="button"
-                  className="session-output-item"
-                  data-testid="session-output-write"
-                  data-kind={w.kind}
-                  title={w.path}
-                  disabled={!vaultId}
-                  onClick={() => { if (vaultId) openFile(vaultId, w.path); }}
-                >
-                  <span className="session-output-item-icon" aria-hidden>{w.kind === 'create' ? '＋' : '✎'}</span>
-                  <span className="session-output-item-label">{w.label}</span>
-                </button>
-              ))}
-            </section>
+        <>
+          <header className="session-output-header">
+            <span className="session-output-title">{t('output.title')}</span>
+            <span className="session-output-stats" data-testid="session-output-stats">
+              {t('output.stats', { writes: output.writes.length, sources: output.sources.length, turns: output.turns })}
+            </span>
+          </header>
+
+          {empty ? (
+            <p className="session-output-empty" data-testid="session-output-empty">{t('output.empty')}</p>
+          ) : (
+            <div className="session-output-body">
+              {output.writes.length > 0 && (
+                <section className="session-output-section">
+                  <h3 className="session-output-section-label">{t('output.writesLabel')}</h3>
+                  {output.writes.map((w) => (
+                    <button
+                      key={w.path}
+                      type="button"
+                      className="session-output-item"
+                      data-testid="session-output-write"
+                      data-kind={w.kind}
+                      title={w.path}
+                      disabled={!vaultId}
+                      onClick={() => openPreview(w.kind, w.path, w.label)}
+                    >
+                      <span className="session-output-item-icon" aria-hidden>{w.kind === 'create' ? '＋' : '✎'}</span>
+                      <span className="session-output-item-label">{w.label}</span>
+                    </button>
+                  ))}
+                </section>
+              )}
+              {output.sources.length > 0 && (
+                <section className="session-output-section">
+                  <h3 className="session-output-section-label">{t('output.sourcesLabel')}</h3>
+                  {output.sources.map((s) => (
+                    <button
+                      key={s.target}
+                      type="button"
+                      className="session-output-item"
+                      data-testid="session-output-source"
+                      data-kind={s.kind}
+                      title={s.target}
+                      disabled={s.kind !== 'url' && (!s.navigable || !vaultId)}
+                      onClick={() => {
+                        if (s.kind === 'url') { window.open(s.target, '_blank'); return; }
+                        if (s.navigable) openPreview('file', s.target, s.label);
+                      }}
+                    >
+                      <span className="session-output-item-icon" aria-hidden>
+                        {s.kind === 'url' ? <ExternalLinkIcon size={13} /> : <FileIcon size={13} />}
+                      </span>
+                      <span className="session-output-item-label">{s.label}</span>
+                    </button>
+                  ))}
+                </section>
+              )}
+            </div>
           )}
-          {output.sources.length > 0 && (
-            <section className="session-output-section">
-              <h3 className="session-output-section-label">{t('output.sourcesLabel')}</h3>
-              {output.sources.map((s) => (
-                <button
-                  key={s.target}
-                  type="button"
-                  className="session-output-item"
-                  data-testid="session-output-source"
-                  data-kind={s.kind}
-                  title={s.target}
-                  disabled={s.kind !== 'url' && (!s.navigable || !vaultId)}
-                  onClick={() => {
-                    if (s.kind === 'url') { window.open(s.target, '_blank'); return; }
-                    if (s.navigable && vaultId) openFile(vaultId, s.target);
-                  }}
-                >
-                  <span className="session-output-item-icon" aria-hidden>
-                    {s.kind === 'url' ? <ExternalLinkIcon size={13} /> : <FileIcon size={13} />}
-                  </span>
-                  <span className="session-output-item-label">{s.label}</span>
-                </button>
-              ))}
-            </section>
-          )}
-        </div>
+        </>
       )}
 
       {/* 拖宽手柄：dock 左缘 8px 命中区，复用 KbChatSessionsPanel resize-handle 模式 */}
