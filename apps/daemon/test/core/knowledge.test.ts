@@ -581,6 +581,46 @@ describe('knowledge filesystem operations', () => {
       assert.equal(resolveCanonicalPath(vaultPath, ''), null);
     });
   });
+
+  describe('readFile / resolveCanonicalPath — agent-absolute & ./ paths', () => {
+    // Regression: Claude Code's Write tool reports file_path as an absolute
+    // path (e.g. `/vault/wiki/hot.md`) or `./wiki/hot.md`. The read API is
+    // documented vault-relative, so these used to hit ENOENT when clicking a
+    // session-output write result ("无法读取文件（可能已删除或移动）").
+    it('reads an in-vault file via its absolute path', () => {
+      mkdirSync(join(vaultPath, 'wiki'), { recursive: true });
+      writeFileSync(join(vaultPath, 'wiki', 'hot.md'), '# 热点\n');
+      const abs = join(vaultPath, 'wiki', 'hot.md');
+      const f = readFile(vaultPath, abs);
+      assert.equal(f.content, '# 热点\n');
+      assert.equal(f.path, abs); // response echoes the caller's path
+    });
+
+    it('reads a ./-prefixed relative path', () => {
+      writeFileSync(join(vaultPath, 'note.md'), 'x');
+      assert.equal(readFile(vaultPath, './note.md').content, 'x');
+    });
+
+    it('resolves an absolute in-vault path to its canonical relative path', () => {
+      mkdirSync(join(vaultPath, 'wiki'), { recursive: true });
+      writeFileSync(join(vaultPath, 'wiki', 'entry.md'), '# x\n');
+      assert.equal(
+        resolveCanonicalPath(vaultPath, join(vaultPath, 'wiki', 'entry.md')),
+        'wiki/entry.md',
+      );
+    });
+
+    it('does NOT read an absolute path outside the vault', () => {
+      const outside = join(vaultPath + '-outside', 'secret.md');
+      try {
+        mkdirSync(vaultPath + '-outside', { recursive: true });
+        writeFileSync(outside, 'OUTSIDE');
+        assert.throws(() => readFile(vaultPath, outside));
+      } finally {
+        rmSync(vaultPath + '-outside', { recursive: true, force: true });
+      }
+    });
+  });
 });
 
 // Pruning + bounded-scan backstop: the architecture that prevents FD exhaustion

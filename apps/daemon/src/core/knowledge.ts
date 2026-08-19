@@ -169,6 +169,10 @@ function countFilesInner(dir: string, ctx: ScanCtx): number {
  * For binary files (images, PDF, DOCX), content is empty — use raw file URL or openPath.
  */
 export function readFile(vaultPath: string, relPath: string, opts: { force?: boolean } = {}): FileContent {
+  // Normalize agent-absolute / ./-prefixed paths for disk resolution, but echo
+  // the caller's original path in the response (existing API contract).
+  const reqPath = relPath;
+  relPath = toVaultRelativePath(vaultPath, relPath);
   let resolved = resolveFilePath(vaultPath, relPath);
 
   if (!fs.existsSync(resolved)) {
@@ -199,11 +203,11 @@ export function readFile(vaultPath: string, relPath: string, opts: { force?: boo
     throw new FileTooLargeError(stat.size);
   }
   if (strategy === 'tooLarge') {
-    return { path: relPath, content: '', size: stat.size, modifiedAt: stat.mtimeMs, mimeType, encoding, tooLarge: true };
+    return { path: reqPath, content: '', size: stat.size, modifiedAt: stat.mtimeMs, mimeType, encoding, tooLarge: true };
   }
 
   const content = isText ? decodeAll(fs.readFileSync(real), encoding ?? 'utf-8') : '';
-  return { path: relPath, content, size: stat.size, modifiedAt: stat.mtimeMs, mimeType, encoding };
+  return { path: reqPath, content, size: stat.size, modifiedAt: stat.mtimeMs, mimeType, encoding };
 }
 
 /** Read up to `n` bytes from the start of a file (for encoding detection). */
@@ -359,6 +363,30 @@ function findFileByStem(
   return result;
 }
 
+/**
+ * Normalize a client-supplied path into a vault-relative path before the
+ * strict resolvers see it. Claude Code's Write tool reports file paths as
+ * absolute (e.g. `/vault/wiki/hot.md`) or `./wiki/hot.md`; the read API is
+ * documented as vault-relative. Absolute paths that live inside the vault are
+ * reduced to vault-relative form; `./` prefixes are stripped. Paths that
+ * resolve outside the vault are left untouched so `resolveFilePath`'s
+ * assertWithinVault still rejects them (defense against traversal).
+ */
+export function toVaultRelativePath(vaultPath: string, relPath: string): string {
+  if (!relPath) return relPath;
+  // Normalize Windows separators — Write input may come from a win agent.
+  const p = relPath.replace(/\\/g, '/');
+  if (path.isAbsolute(p)) {
+    const rel = path.relative(path.resolve(vaultPath), p);
+    if (!rel.startsWith('..') && !path.isAbsolute(rel)) {
+      return rel.split(path.sep).join('/');
+    }
+    return p;
+  }
+  // Relative: strip a leading `./` and redundant leading slashes.
+  return p.replace(/^\.\/+/, '');
+}
+
 /** Resolve a vault-relative path to an absolute filesystem path. */
 export function resolveFilePath(vaultPath: string, relPath: string): string {
   const absFile = path.join(vaultPath, relPath);
@@ -376,6 +404,7 @@ export function resolveFilePath(vaultPath: string, relPath: string): string {
  */
 export function resolveCanonicalPath(vaultPath: string, relPath: string): string | null {
   if (!relPath) return null;
+  relPath = toVaultRelativePath(vaultPath, relPath);
   let resolved: string;
   try {
     resolved = resolveFilePath(vaultPath, relPath);
