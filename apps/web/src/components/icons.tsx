@@ -159,3 +159,13 @@ export function TrashIcon({ size = 16, className }: IconProps) {
     </svg>
   );
 }
+
+/** 双栏面板（左聊天 + 右产出 dock）—— HomePage 产出面板 toggle。 */
+export function PanelIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg {...base(size)} className={className}>
+      <rect x="3" y="4" width="18" height="16" rx="2.5" />
+      <line x1="10" y1="4" x2="10" y2="20" />
+    </svg>
+  );
+}
