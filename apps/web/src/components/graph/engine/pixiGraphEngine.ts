@@ -138,6 +138,8 @@ const FADE_ALPHA_HOVER = 0.2;
 const FADE_ALPHA_SELECTED = 0.08;
 /** 标签显隐：屏幕半径阈值（太小不显示）+ 度数预算（候选池上限，实际可见数由碰撞检测决定） */
 const LABEL_MIN_SCREEN_RADIUS = 3;
+/** 标签与节点顶部的屏幕间距（px，不随缩放变化） */
+const LABEL_GAP_SCREEN = 4;
 const LABEL_BUDGET = 150;
 /** 标签碰撞检测的四周留白（stage-local 单位） */
 const LABEL_PAD = 2;
@@ -207,6 +209,8 @@ export class PixiGraphEngine {
   private dragging = false;
 
   private renderListeners = new Set<() => void>();
+  /** 上次同步标签 scale 的 k —— 标签恒定屏幕尺寸（scale=1/k），k 变化时才批量更新 */
+  private lastLabelK = 0;
 
   private constructor(container: HTMLElement, opts: EngineOptions) {
     this.container = container;
@@ -490,6 +494,7 @@ export class PixiGraphEngine {
 
   private rebuildRendering(): void {
     this.sim?.stop();
+    this.lastLabelK = 0; // 新标签 scale=1，需重新同步 1/k
     this.nodeRenderData = [];
     this.linkRenderData = [];
     this.tweens.forEach((t) => t.stop());
@@ -545,7 +550,7 @@ export class PixiGraphEngine {
         eventMode: 'none',
         text: n.text,
         alpha: 0,
-        anchor: { x: 0.5, y: 1.2 },
+        anchor: { x: 0.5, y: 1 }, // 底边中点对齐 position；position 每帧设在节点上方（屏幕间距）
         style: {
           fontSize: LABEL_FONT_SIZE,
           fill: this.theme.label,
@@ -668,12 +673,15 @@ export class PixiGraphEngine {
   }
 
   /**
-   * 标签显隐 + Obsidian 式去重：可见标签在任何缩放级别下都不重叠。
+   * 标签显隐 + Obsidian 式去重：同一时刻可见标签互不重叠，且随缩放渐进显隐。
+   *
+   * 标签恒定屏幕尺寸（scale = 1/k），因此 stage-local 包围盒 = 屏幕尺寸 / k：
+   * 放大时盒变小 → 更多标签放得下 → 渐进显示；缩小时反之。这正是 Obsidian
+   * 「远看只有 hub 有文字、放大后文字逐个浮现」的行为。
    *
    * 1. 候选：焦点邻域（总是显示）∪（屏幕半径达标 且 度数排名在候选池内）
-   * 2. 贪心碰撞检测：stage-local 坐标下算包围盒（均匀缩放不改变重叠关系，
-   *    结果与缩放无关）。焦点标签先放置且总是显示；普通标签按度数排名放置，
-   *    与已放置标签重叠则隐藏——这就是 Obsidian「文字永不叠在一起」的来源。
+   * 2. 贪心碰撞检测：焦点标签先放置且总是显示；普通标签按度数排名放置，
+   *    与已放置标签重叠则隐藏——「文字永不叠在一起」。
    */
   private syncLabels(): void {
     const focusId = this.selectedId ?? this.hoveredNodeId;
@@ -681,6 +689,13 @@ export class PixiGraphEngine {
     const k = this.currentTransform.k;
     const cx = this.width / 2;
     const cy = this.height / 2;
+
+    // 标签恒定屏幕尺寸：k 变化时批量同步 scale（1/k）
+    if (k !== this.lastLabelK) {
+      this.lastLabelK = k;
+      const s = 1 / k;
+      for (const rd of this.nodeRenderData) rd.label.scale.set(s, s);
+    }
 
     interface Candidate {
       rd: NodeRenderData;
@@ -707,18 +722,20 @@ export class PixiGraphEngine {
     // 度数高的标签优先显示
     normalCands.sort((a, b) => a.rd.simulationData.rank - b.rd.simulationData.rank);
 
-    // anchor {x:0.5, y:1.2} → 标签整体位于节点上方：
-    // 上边缘 ly-1.2h，下边缘 ly-0.2h，水平居中于节点
     const ordered = focusedCands.concat(normalCands);
+    // 包围盒（stage-local）= 屏幕尺寸 / k；标签底边位于节点上方 LABEL_GAP_SCREEN 屏幕像素
     const boxes = ordered.map(({ rd }) => {
       const d = rd.simulationData;
       const lx = d.x! + cx;
-      const ly = d.y! + cy;
+      const top = d.y! + cy - d.radius - LABEL_GAP_SCREEN / k;
+      const w = rd.labelW / k;
+      const h = rd.labelH / k;
+      const pad = LABEL_PAD / k;
       return {
-        x0: lx - rd.labelW / 2 - LABEL_PAD,
-        x1: lx + rd.labelW / 2 + LABEL_PAD,
-        y0: ly - 1.2 * rd.labelH - LABEL_PAD,
-        y1: ly - 0.2 * rd.labelH + LABEL_PAD,
+        x0: lx - w / 2 - pad,
+        x1: lx + w / 2 + pad,
+        y0: top - h - pad,
+        y1: top + pad,
       };
     });
     const visible = greedyLabelLayout(
@@ -911,7 +928,7 @@ export class PixiGraphEngine {
       const x = d.x + cx;
       const y = d.y + cy;
       n.gfx.position.set(x, y);
-      n.label.position.set(x, y);
+      n.label.position.set(x, y - d.radius - LABEL_GAP_SCREEN / this.currentTransform.k);
     }
     for (const l of this.linkRenderData) {
       const d = l.simulationData;
