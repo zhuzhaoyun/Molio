@@ -405,6 +405,19 @@ export const api = {
     }
   },
 
+  async deleteConversationsByIds(ids: string[]): Promise<{ deleted: number }> {
+    const res = await fetch(`${BASE}/conversations/batch-delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      throw new Error(err?.error?.message ?? `Failed to delete conversations: ${res.status}`);
+    }
+    return res.json();
+  },
+
   async updateConversation(
     conversationId: string,
     patch: { title?: string; pinned?: boolean },
