@@ -378,6 +378,8 @@ const zh: Record<string, string> = {
   'graph.edges': '{count} 条链接',
   'graph.selectVault': '选择知识库',
   'graph.empty': '该知识库中没有 Markdown 文件',
+  'graph.searchPlaceholder': '搜索节点…',
+  'graph.searchNoResult': '无匹配节点',
 
   // ── FileChatPanel ──
   'fileChat.running': '运行中…',

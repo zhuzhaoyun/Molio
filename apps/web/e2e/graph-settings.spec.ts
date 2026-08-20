@@ -76,6 +76,17 @@ test.describe('Graph Settings Panel', () => {
     }, vaultId);
   });
 
+  test('pixi canvas renders when graph data loads', async ({ page }) => {
+    await gotoHome(page);
+    await clickNav(page, 'graph');
+    await expect(page.locator('.graph-page')).toBeVisible({ timeout: 5_000 });
+
+    // Wait for graph data (settings button appears when a vault is active),
+    // then the PixiJS engine must attach a canvas to the container.
+    await expect(page.locator('.graph-settings-btn')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('[data-testid="graph-canvas"] canvas')).toBeVisible({ timeout: 10_000 });
+  });
+
   test('settings button opens and closes panel', async ({ page }) => {
     await gotoHome(page);
     await clickNav(page, 'graph');
@@ -162,5 +173,138 @@ test.describe('Graph Settings Panel', () => {
     // Dark chrome from the [data-theme="dark"] graph rules, not the light default
     const bg = await btn.evaluate((el) => getComputedStyle(el).backgroundColor);
     expect(bg).toBe('rgba(40, 40, 50, 0.8)');
+  });
+});
+
+/**
+ * Graph interaction tests (search / camera / minimap).
+ *
+ * 依赖 DEV 调试句柄 `window.__graphEngine`（GraphPage 仅在 import.meta.env.DEV
+ * 下挂载）——Playwright webServer 起的是 `pnpm dev`，句柄可用；
+ * 若未来 CI 改用 build+preview，需给画布另加可断言的 data 属性。
+ */
+test.describe('Graph Interactions', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript((id) => {
+      localStorage.setItem('molio.activeVaultId', id);
+    }, vaultId);
+  });
+
+  async function gotoGraphWithEngine(page: import('@playwright/test').Page) {
+    await gotoHome(page);
+    await clickNav(page, 'graph');
+    await expect(page.locator('.graph-page')).toBeVisible({ timeout: 5_000 });
+    // 搜索框出现 = 引擎就绪 + 数据加载完成
+    await expect(page.locator('[data-testid="graph-search-input"]')).toBeVisible({ timeout: 15_000 });
+    // 等初始布局 + 1.5s refit 定时器窗口过去，避免相机动画干扰断言
+    await page.waitForFunction(
+      () => (window as unknown as { __graphEngine?: unknown }).__graphEngine != null,
+      undefined,
+      { timeout: 10_000 },
+    );
+    await page.waitForTimeout(1_800);
+  }
+
+  test('search locates node: smooth zoom to k=1.5 and selection', async ({ page }) => {
+    await gotoGraphWithEngine(page);
+
+    const input = page.locator('[data-testid="graph-search-input"]');
+    await input.fill('test');
+
+    // 节点 label = 文件 basename（daemon routes/graph.ts），fixture 为 test-node.md
+    const option = page.locator('[data-testid="graph-search-option"]', { hasText: 'test-node' });
+    await expect(option).toBeVisible();
+    // 选中后下拉会关闭，先取 data-key 供后续断言
+    const optionKey = await option.getAttribute('data-key');
+    await input.press('Enter');
+
+    // focusNode：600ms 动画结束后 k≈1.5 且节点被选中
+    await page.waitForFunction(
+      () => {
+        const eng = (window as unknown as {
+          __graphEngine?: { getSelectedKey(): string | null; getViewport(): { k: number } };
+        }).__graphEngine;
+        if (!eng) return false;
+        const sel = eng.getSelectedKey();
+        return !!sel && Math.abs(eng.getViewport().k - 1.5) < 0.05;
+      },
+      undefined,
+      { timeout: 5_000 },
+    );
+
+    // 选中的是搜索命中的节点
+    const selectedKey = await page.evaluate(() =>
+      (window as unknown as { __graphEngine: { getSelectedKey(): string | null } }).__graphEngine.getSelectedKey(),
+    );
+    expect(selectedKey).toBe(optionKey);
+  });
+
+  test('search keyboard navigation selects second result', async ({ page }) => {
+    await gotoGraphWithEngine(page);
+
+    const input = page.locator('[data-testid="graph-search-input"]');
+    // "node" 命中两个 fixture 节点（label = basename：test-node / another-node）
+    await input.fill('node');
+
+    const options = page.locator('[data-testid="graph-search-option"]');
+    await expect(options).toHaveCount(2);
+    const secondKey = await options.nth(1).getAttribute('data-key');
+
+    await input.press('ArrowDown');
+    await input.press('Enter');
+
+    await page.waitForFunction(
+      (key) =>
+        (window as unknown as { __graphEngine?: { getSelectedKey(): string | null } })
+          .__graphEngine?.getSelectedKey() === key,
+      secondKey,
+      { timeout: 5_000 },
+    );
+  });
+
+  test('search shows empty state for no match', async ({ page }) => {
+    await gotoGraphWithEngine(page);
+
+    const input = page.locator('[data-testid="graph-search-input"]');
+    await input.fill('zzz-no-such-node');
+    await expect(page.locator('[data-testid="graph-search-empty"]')).toBeVisible();
+  });
+
+  test('minimap drag recenters main viewport', async ({ page }) => {
+    await gotoGraphWithEngine(page);
+
+    // 拖拽前视口中心（graph 坐标）
+    const before = await page.evaluate(() => {
+      const eng = (window as unknown as {
+        __graphEngine: { getSnapshot(): { view: { x: number; y: number; w: number; h: number } } | null };
+      }).__graphEngine;
+      const view = eng.getSnapshot()?.view;
+      return view ? { cx: view.x + view.w / 2, cy: view.y + view.h / 2 } : null;
+    });
+    expect(before).not.toBeNull();
+
+    // 在 minimap 视口矩形内按下并拖拽（对任意图形几何都成立，静态点击在 2 节点 fixture 下可能落在矩形内不触发跳转）
+    const mm = await page.locator('[data-testid="graph-minimap"]').boundingBox();
+    expect(mm).not.toBeNull();
+    await page.mouse.move(mm!.x + mm!.width / 2, mm!.y + mm!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(mm!.x + 20, mm!.y + 20, { steps: 5 });
+    await page.mouse.up();
+
+    // 拖拽后视口中心应明显移动
+    await page.waitForFunction(
+      (prev) => {
+        const eng = (window as unknown as {
+          __graphEngine?: { getSnapshot(): { view: { x: number; y: number; w: number; h: number } } | null };
+        }).__graphEngine;
+        const view = eng?.getSnapshot()?.view;
+        if (!view || !prev) return false;
+        const cx = view.x + view.w / 2;
+        const cy = view.y + view.h / 2;
+        return Math.hypot(cx - prev.cx, cy - prev.cy) > 5;
+      },
+      before,
+      { timeout: 5_000 },
+    );
   });
 });

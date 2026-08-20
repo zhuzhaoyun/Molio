@@ -13,6 +13,17 @@ import { scanTree, resolveFilePath } from '../core/knowledge.js';
 import type { GraphNode, GraphEdge, GraphData, DeadLinkInfo } from '@molio/contracts';
 
 /**
+ * 从知识图谱中剔除的文件名：index/log 这类文件只是导航/索引页，不代表知识点，
+ * 无论作为节点还是连线目标都没有意义，一律从图谱中剔除（大小写不敏感）。
+ */
+const GRAPH_EXCLUDED_BASENAMES = new Set(['index', 'log']);
+
+/** 判断某个 .md 文件名（大小写不敏感）是否为图谱剔除的 index/log 类文件。 */
+export function isGraphExcludedFile(fileName: string): boolean {
+  return GRAPH_EXCLUDED_BASENAMES.has(fileName.replace(/\.md$/i, '').toLowerCase());
+}
+
+/**
  * Infer node type from frontmatter or directory path.
  */
 function inferNodeType(filePath: string, content: string): string | undefined {
@@ -64,7 +75,7 @@ export function graphRoutes(db: Database.Database): Hono {
 /**
  * Scan all .md files in a vault, parse [[wikilinks]], and build a graph.
  */
-function buildGraph(vaultPath: string): GraphData {
+export function buildGraph(vaultPath: string): GraphData {
   const tree = scanTree(vaultPath);
 
   // Collect all .md files (nodes)
@@ -108,7 +119,11 @@ function buildGraph(vaultPath: string): GraphData {
 
   // Parse wikilinks from each file
   const edges = new Set<string>(); // "source→target" strings for dedup
-  const deadLinks = new Set<string>(); // Track dead links to avoid repeating warnings
+  const deadLinks = new Set<string>(); // Track dead links to avoid repeating warnings (lowercase name)
+  // 死链目标节点（Obsidian 行为：未解析的 [[名字]] 也作为节点参与图）：
+  // lowercase name → 首次出现的展示名 / 被引用次数
+  const deadLabels = new Map<string, string>();
+  const deadLinkCounts = new Map<string, number>();
 
   for (const f of mdFiles) {
     const absPath = resolveFilePath(vaultPath, f.path);
@@ -124,13 +139,30 @@ function buildGraph(vaultPath: string): GraphData {
       const rawName = (match[1] ?? '').trim();
       if (!rawName) continue;
 
+      // 指向被剔除文件（index/log）的链接直接忽略，也不记为死链
+      const linkBase = (rawName.replace(/\.md$/i, '').split('/').pop() ?? '').toLowerCase();
+      if (GRAPH_EXCLUDED_BASENAMES.has(linkBase)) continue;
+
       // Try to resolve the link target
       const targetKey = resolveLink(rawName, f.path, nameIndex, pathToKey);
       if (!targetKey) {
-        // Record dead link
-        if (!deadLinks.has(rawName.toLowerCase())) {
-          deadLinks.add(rawName.toLowerCase());
+        // 死链：目标名作为节点并入图，与引用页建立连线（Obsidian 同款）。
+        // key 用 lowercase 规范化去重（[[Foo]] 与 [[foo]] 指向同一节点）
+        const lowerName = rawName.toLowerCase();
+        if (!deadLinks.has(lowerName)) {
+          deadLinks.add(lowerName);
+          deadLabels.set(lowerName, rawName);
+          deadLinkCounts.set(lowerName, 0);
           deadLinksList.push({ sourceFile: f.path, targetName: rawName });
+        }
+        const deadKey = `__dead__${lowerName}`;
+        const edgeKey = sourceKey < deadKey
+          ? `${sourceKey}→${deadKey}`
+          : `${deadKey}→${sourceKey}`;
+        if (!edges.has(edgeKey)) {
+          edges.add(edgeKey);
+          deadLinkCounts.set(lowerName, (deadLinkCounts.get(lowerName) ?? 0) + 1);
+          linkCounts.set(sourceKey, (linkCounts.get(sourceKey) ?? 0) + 1);
         }
         continue;
       }
@@ -157,6 +189,18 @@ function buildGraph(vaultPath: string): GraphData {
     nodeType: nodeTypes.get(pathToKey.get(f.path)!),
   }));
 
+  // 死链节点：path 为空，deadLink 标记供前端区分样式与「点击新建空白页」
+  for (const [lowerName, count] of deadLinkCounts) {
+    nodes.push({
+      key: `__dead__${lowerName}`,
+      label: deadLabels.get(lowerName) ?? lowerName,
+      path: '',
+      linkCount: count,
+      nodeType: undefined,
+      deadLink: true,
+    });
+  }
+
   // Build edge list
   const edgeList: GraphEdge[] = Array.from(edges).map((ek) => {
     const parts = ek.split('→');
@@ -175,7 +219,7 @@ function collectMdFiles(
   result: { name: string; path: string }[],
 ) {
   for (const node of nodes) {
-    if (node.type === 'file' && node.name.endsWith('.md')) {
+    if (node.type === 'file' && node.name.endsWith('.md') && !isGraphExcludedFile(node.name)) {
       result.push({ name: node.name, path: node.path });
     } else if (node.type === 'directory' && Array.isArray(node.children)) {
       collectMdFiles(node.children as typeof nodes, node.path, result);

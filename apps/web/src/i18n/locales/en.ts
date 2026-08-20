@@ -378,6 +378,8 @@ const en: Record<string, string> = {
   'graph.edges': '{count} edges',
   'graph.selectVault': 'Select vault',
   'graph.empty': 'No Markdown files in this vault',
+  'graph.searchPlaceholder': 'Search nodes…',
+  'graph.searchNoResult': 'No matching nodes',
 
   // ── FileChatPanel ──
   'fileChat.running': 'Running…',

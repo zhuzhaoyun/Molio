@@ -1,23 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import type { GraphSettings, ForceParams, ThemeMode } from './types';
-import { NODE_TYPE_LABELS } from './types';
+import { NODE_TYPE_LABELS, NODE_TYPE_COLORS } from './types';
 
 type Tab = 'filter' | 'appearance' | 'forces' | 'legend';
-
-const TYPE_DOT_COLORS: Record<string, string> = {
-  document: '#8899AA',
-  source: '#8899AA',
-  wiki: '#7A8A99',
-  concept: '#8B5CF6',
-  entity: '#8B5CF6',
-  comparison: '#D97706',
-  question: '#D97706',
-  tag: '#8B5CF6',
-  agent: '#8B5CF6',
-  project: '#8899AA',
-  workflow: '#D97706',
-  aiModel: '#D97706',
-};
 
 interface Props {
   settings: GraphSettings;
@@ -126,7 +111,7 @@ export function GraphSettingsPanel({ settings, onUpdateSettings, onUpdateForce, 
                       checked={isTypeVisible(key)}
                       onChange={() => toggleType(key)}
                     />
-                    <span className="graph-settings__checkbox-dot" style={{ background: TYPE_DOT_COLORS[key] ?? '#8899AA' }} />
+                    <span className="graph-settings__checkbox-dot" style={{ background: NODE_TYPE_COLORS[key] ?? '#8899AA' }} />
                     <span>{label}</span>
                   </label>
                 ))}
@@ -205,14 +190,14 @@ export function GraphSettingsPanel({ settings, onUpdateSettings, onUpdateForce, 
             <SliderControl
               label="向心力"
               min={0}
-              max={0.1}
-              step={0.001}
+              max={1}
+              step={0.01}
               value={settings.forces.centerStrength}
               onChange={(v) => onUpdateForce({ centerStrength: v })}
             />
             <SliderControl
               label="排斥力"
-              min={-500}
+              min={-300}
               max={-10}
               step={1}
               value={settings.forces.repelStrength}
@@ -225,6 +210,7 @@ export function GraphSettingsPanel({ settings, onUpdateSettings, onUpdateForce, 
               step={0.01}
               value={settings.forces.linkStrength}
               onChange={(v) => onUpdateForce({ linkStrength: v })}
+              format={(v) => (v === 0 ? '自动' : v.toFixed(2))}
             />
             <SliderControl
               label="连线距离"
@@ -244,15 +230,15 @@ export function GraphSettingsPanel({ settings, onUpdateSettings, onUpdateForce, 
               <div className="graph-settings__group-title">节点颜色</div>
               <div className="graph-legend">
                 <div className="graph-legend__item">
-                  <span className="graph-legend__dot" style={{ background: '#8899AA' }} />
+                  <span className="graph-legend__dot" style={{ background: NODE_TYPE_COLORS.document }} />
                   <span className="graph-legend__label">文档 / 源文件</span>
                 </div>
                 <div className="graph-legend__item">
-                  <span className="graph-legend__dot" style={{ background: '#8B5CF6' }} />
+                  <span className="graph-legend__dot" style={{ background: NODE_TYPE_COLORS.concept }} />
                   <span className="graph-legend__label">概念 / 实体</span>
                 </div>
                 <div className="graph-legend__item">
-                  <span className="graph-legend__dot" style={{ background: '#D97706' }} />
+                  <span className="graph-legend__dot" style={{ background: NODE_TYPE_COLORS.comparison }} />
                   <span className="graph-legend__label">对比 / 问答</span>
                 </div>
               </div>
@@ -273,18 +259,23 @@ export function GraphSettingsPanel({ settings, onUpdateSettings, onUpdateForce, 
 }
 
 /** Reusable labeled range slider for force parameters. */
-function SliderControl({ label, min, max, step, value, onChange }: {
+function SliderControl({ label, min, max, step, value, onChange, format }: {
   label: string;
   min: number;
   max: number;
   step: number;
   value: number;
   onChange: (v: number) => void;
+  /** 自定义数值展示（如 linkStrength 的 0 = 自动） */
+  format?: (v: number) => string;
 }) {
+  const display = format
+    ? format(value)
+    : (Number.isInteger(step) ? String(value) : value.toFixed(2));
   return (
     <div className="graph-settings__group">
       <label className="graph-settings__label">
-        {label} ({Number.isInteger(step) ? value : value.toFixed(3)})
+        {label} ({display})
       </label>
       <input
         className="graph-settings__range"
