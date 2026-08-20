@@ -4,7 +4,6 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Hono } from 'hono';
-import type Database from 'better-sqlite3';
 import { conversationRoutes } from '../../src/routes/conversations.js';
 import { ConversationService } from '../../src/core/conversations/service.js';
 import {
