@@ -550,6 +550,45 @@ test.describe('History', () => {
     await expect(page.locator('[data-testid=history-search-input]')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('[data-testid=history-filter-vault]')).toBeVisible({ timeout: 3_000 });
   });
+
+  test('deleting the conversation loaded on home clears the home chat', async ({ page }) => {
+    const project = await createProject(`e2e-stale-${Date.now()}`);
+    const conv = await createConversation(project.id, 'Stale Conv');
+    await addMessage(project.id, conv.id, {
+      id: `msg-stale-${Date.now()}`, role: 'user', content: 'stale content marker', timestamp: Date.now(),
+    });
+    await addMessage(project.id, conv.id, {
+      id: `msg-stale-a-${Date.now()}`, role: 'assistant', content: 'reply', timestamp: Date.now() + 1, agentId: 'claude',
+    });
+    try {
+      await gotoHome(page);
+      await clickNav(page, 'history');
+      await page.locator('[data-testid=history-refresh]').click();
+      await page.waitForTimeout(500);
+
+      // 打开该对话 → 跳回主页并显示其消息。
+      await rowByTitle(page, 'Stale Conv').locator('.history-row__main').click();
+      await expect(page.locator('.home-page.chat-active')).toBeVisible({ timeout: 5_000 });
+      await expect(page.getByText('stale content marker')).toBeVisible();
+
+      // 回历史页，经勾选模式删除该对话。
+      await clickNav(page, 'history');
+      const row = rowByTitle(page, 'Stale Conv');
+      await row.hover();
+      await row.locator('[data-testid=history-row-overflow]').click();
+      await row.locator('[data-testid=history-row-delete]').click();
+      await page.locator('[data-testid=history-selection-delete]').click();
+      await page.locator('[data-testid=history-batch-delete-confirm]').click();
+      await expect(rowByTitle(page, 'Stale Conv')).toHaveCount(0, { timeout: 5_000 });
+
+      // 回主页 → 聊天已清空（hero 空状态），旧内容不可见。
+      await clickNav(page, 'home');
+      await expect(page.locator('[data-testid=hero-brand]')).toBeVisible({ timeout: 5_000 });
+      await expect(page.getByText('stale content marker')).toHaveCount(0);
+    } finally {
+      await deleteProject(project.id);
+    }
+  });
 });
 
 /**

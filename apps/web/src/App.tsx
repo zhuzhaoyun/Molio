@@ -300,6 +300,12 @@ export default function App() {
                       navigate('/');
                     });
                   }}
+                  onDeleteConversations={(ids) => {
+                    // 删除的会话恰是主页当前加载的 → 清空主页聊天，避免切回仍显示已删内容。
+                    if (chat.conversationId && ids.includes(chat.conversationId)) {
+                      chat.reset();
+                    }
+                  }}
                 />
               }
             />
