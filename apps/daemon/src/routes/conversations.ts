@@ -1,11 +1,12 @@
 import { Hono } from 'hono';
 import type Database from 'better-sqlite3';
-import type { RewindResendRequest, DeleteMessagesRequest, UpdateConversationRequest } from '@molio/contracts';
+import type { RewindResendRequest, DeleteMessagesRequest, UpdateConversationRequest, BatchDeleteConversationsRequest } from '@molio/contracts';
 import type { RunManager } from '../core/RunManager.js';
 import type { ConversationService } from '../core/conversations/service.js';
 import { startConversationRun } from '../core/conversations/run-starter.js';
 import {
   deleteConversation,
+  deleteConversations,
   getConversation,
   getRewindPoint,
   deleteMessagesFromPosition,
@@ -176,6 +177,21 @@ export function conversationRoutes(
       return c.json({ error: { code: 'NOT_FOUND', message: 'Conversation not found' } }, 404);
     }
     const deleted = deleteMessagesById(db, convId, body.ids);
+    return c.json({ deleted });
+  });
+
+  // POST /api/conversations/batch-delete — delete multiple conversations atomically.
+  app.post('/batch-delete', async (c) => {
+    let body: BatchDeleteConversationsRequest | null;
+    try {
+      body = await c.req.json<BatchDeleteConversationsRequest>();
+    } catch {
+      return c.json({ error: { code: 'BAD_REQUEST', message: 'Invalid JSON body' } }, 400);
+    }
+    if (body == null || !Array.isArray(body.ids) || body.ids.length === 0) {
+      return c.json({ error: { code: 'BAD_REQUEST', message: 'ids must be a non-empty array' } }, 400);
+    }
+    const deleted = deleteConversations(db, body.ids);
     return c.json({ deleted });
   });
 

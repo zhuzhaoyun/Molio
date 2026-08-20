@@ -661,6 +661,17 @@ export function deleteConversation(db: SqliteDb, id: string): void {
   db.prepare('DELETE FROM conversations WHERE id = ?').run(id);
 }
 
+/** Batch delete: atomically remove multiple conversations (messages cascade via FK). */
+export function deleteConversations(db: SqliteDb, ids: string[]): number {
+  const del = db.prepare('DELETE FROM conversations WHERE id = ?');
+  const run = db.transaction((list: string[]) => {
+    let deleted = 0;
+    for (const id of list) deleted += del.run(id).changes;
+    return deleted;
+  });
+  return run(ids);
+}
+
 // ─── Message CRUD ───
 
 export function listMessages(db: SqliteDb, conversationId: string): ChatMessage[] {
