@@ -54,6 +54,21 @@ test.describe('KB chat sessions', () => {
   test.afterAll(async () => { if (vault) await cleanupTempVault(vault); });
   test.afterEach(async ({ page }) => { await unmockAll(page); });
 
+  test('QA 首条消息标题取末句，不含 wiki-query 模板前缀', async ({ page }) => {
+    await mockChatRun(page);
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+
+    await page.locator('[data-testid="kb-btn-ask"]').click();
+    const input = page.locator('[data-testid="kb-chat-panel"] [data-testid="composer-input"]');
+    await input.fill('关于 doc.md 的问题');
+    await page.locator('[data-testid="composer-send"]').click();
+
+    const title = page.locator('[data-testid="kb-chat-session-tab"] .chat-session-tab-title');
+    await expect(title).toHaveText('关于 doc.md 的问题');
+    await expect(title).not.toContainText('知识库问答');
+  });
+
   test('多会话：各自独立消息、切换不串台', async ({ page }) => {
     await mockChatRun(page);
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
@@ -329,11 +344,11 @@ test.describe('KB chat sessions', () => {
     await expect(activeMessages(page)).toContainText('新历史会话内容');
   });
 
-  test('全局历史页打开会话 → 落知识库页，标题从消息回填', async ({ page }) => {
+  test('全局历史页打开会话 → 跳转首页并呈现对话', async ({ page }) => {
     await mockChatRun(page);
     await mockHistoryConv(page);
 
-    // 先落 /knowledge 建立活跃 vault（写 localStorage），供打开会话后跳回 /knowledge 用
+    // 先落 /knowledge 建立活跃 vault（保持与旧测试一致的 setup）
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
@@ -344,12 +359,10 @@ test.describe('KB chat sessions', () => {
     await expect(row).toBeVisible({ timeout: 5_000 });
     await row.locator('.history-row__main').click();
 
-    // App 回调：openConversation + navigate('/knowledge') → 会话以标签呈现，标题回填
-    await expect(page).toHaveURL(/\/knowledge/, { timeout: 5_000 });
-    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
-    await expect(page.locator('[data-testid="kb-chat-session-tab"] .chat-session-tab-title'))
-      .toHaveText(['历史问题'], { timeout: 5_000 });
-    await expect(activeMessages(page)).toContainText('历史问题');
+    // 恢复旧行为：跳转首页并呈现该对话（不再就地打开悬浮面板）
+    await expect(page).toHaveURL(/\/$/, { timeout: 5_000 });
+    await expect(page.locator('.home-page')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.home-chat-log')).toContainText('历史问题', { timeout: 5_000 });
   });
 
   test('历史下拉支持搜索：输入关键词按 query 过滤', async ({ page }) => {

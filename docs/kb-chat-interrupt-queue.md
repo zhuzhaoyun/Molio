@@ -1,30 +1,33 @@
 # KB 聊天：中断 / 排队机制
 
-> 适用：知识库页面的统一聊天面板（`useKbChat` + `KbChatPanel`）。
+> 适用：全局悬浮对话面板（`KbChatSessionsPanel` + `kbChatSessionsStore`，会话标签模型）。
 > 记录「任务运行中再次点击入口按钮」时的交互与底层机制，避免重复造轮子。
 
 ## 背景
 
-KB 页面右侧统一聊天面板由 `useKbChat` 驱动（包 `useChatCore`），入口按钮按**作用域**分布：
+面板常驻 App 层（方案 D：全局悬浮对话，任意页面可用），KB 页不再渲染页内面板。入口按钮经 `chatPanelRef` 下发命令，打开或激活**会话标签**（上限 `MAX_CHAT_SESSIONS` = 10，达上限 toast 拦截）：
 
-- `💬问答`（文档级）→ `kb-main-header`：只激活面板 + 预载 `@当前文档`，**不执行操作**。
-- `📚构建Wiki` / `🩺健康检查`（vault 级）→ `KbTabBar` 尾部 `actions`：**自动发送** skill 提示词，执行操作。
-- `ingest`（树右键「加入 Wiki」）：同 wiki 类，自动发送。
+- `💬问答`（文档级）→ `kb-btn-ask`：`openQa()` —— 激活/另开 qa 会话标签 + 预载 `@当前文档`/选中文本，**不执行操作**。
+- `📚构建Wiki`（vault 级）→ `kb-btn-build-wiki`：`runWikiOp({mode:'build'})` —— **自动发送** skill 提示词，执行操作。
+- `🩺健康检查`（vault 级）→ `kb-btn-lint-wiki`：`runWikiOp({mode:'lint'})`，同 wiki 类，自动发送。
+- `ingest`（树右键「加入 Wiki」）：`runWikiOp({mode:'ingest', filePath, isDirectory})`，同 wiki 类，自动发送。
 
-`useKbChat` 的 `mode`：`'qa' | 'build' | 'lint' | 'ingest' | null`。mode 由入口决定，面板无模式条。
+`ChatSessionMode = 'qa' | 'build' | 'lint' | 'ingest'`。`runWikiOp` 先「找/建该 mode 的 wiki 会话标签」，再判断冲突；`openQa` 直接激活 qa 标签。
 
 ## 核心分情况
 
-当聊天**正在回复中**（`kbChat.isRunning === true`，一个 run 在跑）时，再次点击入口按钮：
+当**任意 wiki 任务正在回复中**（`anyWikiRunning === true`，存在非 qa 且 `runningMap[sessionId]` 的会话）时，再次点击入口按钮：
 
 | 入口 | 行为 | 原因 |
 |------|------|------|
-| `💬问答` | **不中断**——只切 mode='qa' + 预载 `@当前文档` | 问答不是操作，不启动 run；用户 Enter 发送时走正常 send（有 run 在跑就多轮 follow-up，没就新建） |
-| `📚`/`🩺`/`ingest` | 弹 3 按钮确认：**中断立即执行 / 排队等当前完成 / 取消** | 这些会自动发送、启动新任务，需要用户决定如何处理在跑的 run |
+| `💬问答` | **不中断**——激活/另开 qa 标签 + 预载 `@当前文档` | 问答不是操作，不启动 run；用户 Enter 发送时走正常 send（有 run 在跑就多轮 follow-up，没就新建） |
+| `📚`/`🩺`/`ingest` | 弹 3 按钮确认：**中断并立即执行 / 排队等当前完成 / 取消** | 这些会自动发送、启动新任务，需要用户决定如何处理在跑的 run |
+
+> **会话标签语义**（新模型特有）：运行中的会话**切走后台保活**（面板常驻、SSE 不断，切页面/收起面板不中断）；运行中切历史会话 → **另开新标签**保留直播，不就地中断（`handleOpenConversation`）；关闭运行中会话：qa 标签 → 「中断并关闭 / 后台继续并关闭」，wiki 标签 → **只有「中断并关闭 / 取消」**（`closePendingIsWikiRef` 守卫——wiki 不支持后台继续，杜绝已移除标签的 run 逃过 `anyWikiRunning` 单例守卫，防 D3 并发写同一 vault）。
 
 ### 💬问答：为什么不中断
 
-`openQa()` 只 `setMode('qa')`，**不 reset、不 cancel**。在跑的 run 继续跑，对话消息保留。面板因 mode 变化重挂载 `ChatComposer`，预载 `@当前文档`。用户随后输入 + Enter：
+`openQa()` 只激活 qa 标签 + 预载上下文，**不 reset、不 cancel**。在跑的 run 继续跑，对话消息保留。用户随后输入 + Enter：
 
 - 有 `existingRunId` 且 agent 未变 → `useChatCore.send` 走多轮 `api.sendMessage(runId, text)`，作为后续消息进入同一 run。
 - 否则 `createRun` 新建 run。
@@ -38,18 +41,18 @@ KB 页面右侧统一聊天面板由 `useKbChat` 驱动（包 `useChatCore`）�
 ### 链路
 
 ```
-queueWikiOp(type)
-  → chatRef.current.send(WIKI_PROMPTS[type])        // useKbChat
-  → useChatCore.send(text)
-      → 有 existingRunId && !agentChanged?
-          → api.sendMessage(runId, text)            // POST /api/runs/:id/messages
-              → daemon RunManager.sendMessage(runId, msg)
-                  → child.stdin.write(msg + '\n')   // 写入仍在打开的 agent stdin
-          → agent（Claude Code 等）自己排队：处理完当前轮，再处理这条
-          → 失败（stdin 已关）→ 回退 createRun（见下）
+runWikiOp(type) 的「排队」分支
+  → handleConfirmDialog('queue')
+      → 找到正在运行的 wiki 会话，sessionApisRef.get(id).send(prompt)   // KbChatSession → useChatCore.send
+          → 有 existingRunId && !agentChanged?
+              → api.sendMessage(runId, text)            // POST /api/runs/:id/messages
+                  → daemon RunManager.sendMessage(runId, msg)
+                      → child.stdin.write(msg + '\n')   // 写入仍在打开的 agent stdin
+              → agent（Claude Code 等）自己排队：处理完当前轮，再处理这条
+              → 失败（stdin 已关）→ 回退 createRun（见下）
 ```
 
-`queueWikiOp` / `queueIngest` 只调 `chat.send(prompt)`——**不 reset、不 cancel、不改 mode**。提示词作为用户消息立即出现在对话里（排队可见），agent 处理完当前轮后接下一条。
+排队分支只调 `running.send(prompt)`——**不 reset、不 cancel、不改模式**。提示词作为用户消息立即出现在会话里（排队可见），agent 处理完当前轮后接下一条。
 
 ### Pattern A vs Pattern B（运行时差异）
 
@@ -66,39 +69,37 @@ agent 进程本身就是一个消息处理循环（stdin → 处理 → 下一�
 
 ## 中断机制
 
-「中断并立即执行」= `openWikiOp(type)`（或 `openIngest`）：
+「中断并立即执行」= `handleConfirmDialog('interrupt')`：
 
 ```
-openWikiOp(type)
-  → reset()
-      → 清 timerRef（见下）
-      → if (chat.isRunning) chat.cancel()   // api.cancelRun，杀后端 run
-      → conversationIdRef = null
-      → setMode(null)
-      → chat.reset()                        // 关 SSE + 清空消息
-  → setMode(type)
-  → setTimeout(50ms, chatRef.current.send(prompt))  // 新 run
+runWikiOp(type) 的「中断」分支
+  → handleConfirmDialog('interrupt')
+      → 逐个 cancel 所有真正在跑的 wiki 会话并 await    // Promise.all + .catch
+          → api.cancelRun，杀后端 agent 进程
+      → 目标 wiki 标签 clearAndSend
+          → a.cancel()（await，无 run 时是安全 no-op）→ a.clear() → a.send(prompt)
 ```
 
-`chat.cancel()` 调 `api.cancelRun(runId)`，daemon 终止 agent 进程，无泄漏。
+**中断的语义是「停掉正在跑的那个任务」，不是「停掉新任务要落地的那个 tab」**（D3「新构建停旧构建」）。当正在跑的 tab 和新任务 tab 是不同 mode（build 在跑 + 点 lint）时，只 cancel 目标 tab 会落空 → 旧 run 进程没被杀，新旧两个 wiki run 并发写同一 vault（D3 hazard）。所以中断先按 `runningMap` 把所有非 qa 且正在跑的会话全部 cancel 并 `await`，再对目标标签 clear + send。
 
-## 50ms 延迟与快速连点
+`clearAndSend` 里 `await a.cancel()` 才 `clear` + `send`，确保 cancel 的收尾 setState 不会覆盖随后新 run 的 running 状态；cancel 的网络失败不中止中断（旧进程可能没杀掉，但 clear + 新 run 照常进行，避免中断无响应）。
 
-`openWikiOp`/`openIngest` 用 `setTimeout(50ms, chatRef.current.send)` 等 `reset()` 的 state 更新 flush 后再发（`chatRef` 拿最新 `chat`，避免 stale `runId`）。
+## 未挂载会话的补发
 
-`reset()` 里会 `clearTimeout(timerRef.current)`——否则在 50ms 内从 wiki 切到问答（或关闭面板）会让待触发的 wiki 提示词误发进新线程。`openQa` 不 reset 所以不碰 timer，但它也不排定时器，无影响。
+新开的 wiki 会话尚未 mount（API 未注册到 `sessionApisRef`）时，`clearAndSend` 把提示词缓存到 `pendingAutoSendRef`，`registerApi` 时补发。不再需要旧的 50ms `setTimeout` 等 state flush 的 hack——`await a.cancel()` 天然避免 stale runId，无需定时器。
 
 ## 关键代码位置
 
 | 位置 | 职责 |
 |------|------|
-| `apps/web/src/hooks/useKbChat.ts` `openQa` | 问答：只 setMode，不 reset |
-| 同上 `openWikiOp`/`openIngest` | 中断路径：reset + 自动发 |
-| 同上 `queueWikiOp`/`queueIngest` | 排队路径：直接 chat.send（走 sendMessage stdin 队列） |
-| 同上 `reset` | 清 timer + cancel + 清消息（中断/切换/关闭共用） |
-| `apps/web/src/components/kb/KnowledgeBasePage.tsx` `confirmRunningOp` | 3 按钮确认弹窗（中断/排队/取消） |
-| 同上 `handleOpenWikiOp`/`handleIngestFile` | `isRunning` 守卫 → 直接执行 or 弹确认 |
-| `apps/web/src/components/kb/KbModals.tsx` `ConfirmDialog` | 通用确认弹窗，`tertiaryLabel`+`onTertiary` 支持第三按钮 |
+| `apps/web/src/components/kb/KbChatSessionsPanel.tsx` `runWikiOp` | 找/建 wiki 会话标签 + `anyWikiRunning` 守卫 → 三选一 |
+| 同上 `handleConfirmDialog` | `interrupt`：cancel 全部在跑的 wiki + 目标标签 clear+send；`queue`：send 给在跑会话 |
+| 同上 `clearAndSend` | `cancel`（await）→ `clear` → `send` 提示词；未 mount 时缓存 `pendingAutoSendRef` |
+| 同上 `openQa` | 问答：激活 qa 标签 + 预载上下文，不 reset、不 cancel |
+| 同上 `handleCloseConfirm` / `closePendingIsWikiRef` | 关闭运行中会话确认（wiki 只允许「中断并关闭」，无「后台继续」） |
+| 同上 `handleOpenConversation` | 运行中会话切历史 → 另开新标签保留直播（不就地切换） |
+| `apps/web/src/components/kb/KnowledgeBasePage.tsx` `handleBuildWiki`/`handleLintWiki`/`handleIngestFile` | 入口：经 `chatPanelRef.runWikiOp` 下发 |
+| `apps/web/src/components/kb/KbChatSession.tsx` `registerApi`/`send`/`clear`/`cancel`/`loadConversation` | 会话实例 API（每标签一个，注册到 `sessionApisRef`） |
 | `apps/web/src/hooks/useChatCore.ts` `send` | 多轮分支：`existingRunId` → `api.sendMessage`，失败回退 `createRun` |
 | `apps/web/src/api/client.ts` `sendMessage` | `POST /api/runs/:id/messages` |
 | `apps/daemon/src/core/RunManager.ts` `sendMessage` | 写入 agent stdin（Pattern A）/ 抛错（Pattern B） |
@@ -106,6 +107,7 @@ openWikiOp(type)
 ## 测试覆盖
 
 - E2E `apps/web/e2e/kb-chat-entry.spec.ts`：
-  - `💬问答 while a build is active does NOT interrupt — keeps thread + seeds @当前文档`：问答不 reset、build 消息保留 + `@当前文档` 预载。
+  - `💬问答 while a build is active opens a separate qa tab — build tab keeps its thread`：运行中再点问答 → 另开 qa 标签、build 标签保留线程（不中断）。
   - `📚构建Wiki opens chat + auto-sends`：非运行态直接执行。
-- 中断/排队弹窗的 `isRunning` 触发态在无真实 agent 的测试环境非确定，靠逻辑 + 代码审查保证；前端不造独立队列，故无需单独测排队状态机。
+  - `🩺健康检查 disabled when wiki not initialized`：未初始化禁用入口。
+- 中断/排队弹窗的 `anyWikiRunning` 触发态在无真实 agent 的测试环境非确定，靠逻辑 + 代码审查保证；前端不造独立队列，故无需单独测排队状态机。
