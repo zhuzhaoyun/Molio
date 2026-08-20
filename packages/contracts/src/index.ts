@@ -34,6 +34,8 @@ export type {
   CreateRunResponse,
   RewindResendRequest,
   RewindResendResponse,
+  BatchDeleteConversationsRequest,
+  BatchDeleteConversationsResponse,
   DeleteMessagesRequest,
   DeleteMessagesResponse,
   ToolResultRequest,
