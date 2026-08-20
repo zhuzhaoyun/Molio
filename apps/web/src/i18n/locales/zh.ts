@@ -341,6 +341,11 @@ const zh: Record<string, string> = {
   'history.confirm': '确认',
   'history.cancel': '取消',
   'history.pinFailed': '操作失败，请重试',
+  'history.selectedCount': '已选 {count} 条',
+  'history.batchDeleteTitle': '删除会话记录',
+  'history.batchDeleteBody': '确认删除 {count} 条会话记录？此操作不可恢复。',
+  'history.select': '选择',
+  'history.unselect': '取消选择',
 
   // ── Settings ──
   'settings.title': '设置',

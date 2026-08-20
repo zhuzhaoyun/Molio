@@ -131,10 +131,12 @@ export function useHistoryFilters(currentVaultId?: string | null) {
     void fetchFirst(filtersRef.current);
   }, [fetchFirst]);
 
-  /** Optimistic delete: remove locally from both lists; caller rolls back on failure. */
-  const deleteConversationLocal = useCallback((id: string) => {
-    const nextPinned = stateRef.current.pinned.filter((i) => i.conversation.id !== id);
-    const nextItems = stateRef.current.items.filter((i) => i.conversation.id !== id);
+  /** Optimistic delete for one or more conversations: remove from both lists in
+   *  one atomic state update. Caller rolls back on failure. */
+  const deleteConversationsLocal = useCallback((ids: string[]) => {
+    const idSet = new Set(ids);
+    const nextPinned = stateRef.current.pinned.filter((i) => !idSet.has(i.conversation.id));
+    const nextItems = stateRef.current.items.filter((i) => !idSet.has(i.conversation.id));
     setPinnedItems(nextPinned);
     setItems(nextItems);
     syncRef(nextPinned, nextItems);
@@ -196,7 +198,7 @@ export function useHistoryFilters(currentVaultId?: string | null) {
     loadMore,
     refresh,
     hasMore: nextCursor != null,
-    deleteConversationLocal,
+    deleteConversationsLocal,
     updateConversationLocal,
   };
 }
