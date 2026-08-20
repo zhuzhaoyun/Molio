@@ -15,8 +15,18 @@ import {
 } from './token-store.js';
 import { EntitlementCache } from './entitlement-cache.js';
 
-/** 云端地址 env：未设置时登录相关端点回 503 auth_not_configured（域名备案完成前无默认值）。 */
+/** 云端地址 env：显式设置（含纯空白）时覆盖内置默认；纯空白按未配置。 */
 export const AUTH_URL_ENV = 'MOLIO_AUTH_URL';
+
+/**
+ * 官方云端认证地址（auth.molio.cn 已上线）。daemon 内置默认值，让
+ * pnpm dev / Docker / 独立 daemon 全部开箱即用登录，无需任何配置。
+ * 优先级：AuthClientOptions.baseUrl > env MOLIO_AUTH_URL > 本默认值；
+ * env 显式设为空白 = 关闭登录（登录端点回 503 auth_not_configured）。
+ * ⚠️ 与 apps/desktop/src/main.js 的 DEFAULT_AUTH_URL 保持一致
+ * （桌面壳另有一份注入，见该文件；两处值变更须同步）。
+ */
+export const DEFAULT_AUTH_URL = 'https://auth.molio.cn';
 
 /** access 剩余寿命 <2min 主动刷新（设计 §7.2），避免请求中途失败。 */
 export const PROACTIVE_REFRESH_MS = 2 * 60 * 1000;
@@ -119,10 +129,13 @@ export class AuthClient {
     this.entitlementCache = opts.entitlementCache ?? new EntitlementCache();
   }
 
-  /** 云端 base URL（构造参数优先，否则懒读 env）。两端空白 trim 掉；纯空白按未配置。 */
+  /**
+   * 云端 base URL：构造参数 > env MOLIO_AUTH_URL > 内置官方默认（DEFAULT_AUTH_URL）。
+   * 每次调用懒读（测试可中途切换 env）。两端空白 trim 掉；
+   * env 显式纯空白按未配置（私有化关闭登录的口子），env 未设置回落到官方默认。
+   */
   getBaseUrl(): string | null {
-    const raw = this.opts.baseUrl ?? process.env[AUTH_URL_ENV];
-    if (raw === undefined) return null;
+    const raw = this.opts.baseUrl ?? process.env[AUTH_URL_ENV] ?? DEFAULT_AUTH_URL;
     const trimmed = raw.trim();
     return trimmed === '' ? null : trimmed;
   }

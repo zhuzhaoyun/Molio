@@ -1,6 +1,6 @@
 # 用户模块（云端认证服务）设计
 
-> 状态: **实施中**（2026-08-07 重启；2026-08-11 M5 完成 = Docker 配置 + cloud CI + 协议/隐私合规 + 文档；2026-08-14 DirectMail 代码已接 = `MOLIO_DM_*` env + 422 mail_failed，molio.cn 已备案；M0 剩余：发信凭据注入 + SPF/DKIM 验证（用户动作）；附录 B 的 FC 评估结论已折回正文）
+> 状态: **实施中**（2026-08-07 重启；2026-08-11 M5 完成 = Docker 配置 + cloud CI + 协议/隐私合规 + 文档；2026-08-14 DirectMail 代码已接 = `MOLIO_DM_*` env + 422 mail_failed，molio.cn 已备案；M0 剩余：发信凭据注入 + SPF/DKIM 验证（用户动作）；附录 B 的 FC 评估结论已折回正文；**2026-08-20 修订**：auth.molio.cn 上线，daemon 内置官方默认地址（`DEFAULT_AUTH_URL`，env 未设置时回落），pnpm dev / Docker / 独立 daemon 登录开箱即用；`configured=false` 仅剩「MOLIO_AUTH_URL 显式置空白」一条路径——下文「未配置」语义均按此理解）
 > 日期: 2026-08-07
 > 范围: 第一期 = 身份层（注册/登录/token）；**不含**多端同步、支付、设备管理
 
@@ -156,7 +156,7 @@ Token 规格：
 | POST | `/api/auth/start` `{email}` | 转发云端 send-code |
 | POST | `/api/auth/verify` `{email, code}` | 转发云端 verify，token 落本地存储 |
 | PATCH | `/api/auth/me` `{nickname}` | 转发云端 PATCH /auth/me；成功后同步本地 token/权益快照（status 立即反映新昵称） |
-| GET | `/api/auth/status` | 登录态 + 用户 + 权益快照（Web UI 渲染用；离线时返回缓存快照 + `stale: true`；`configured` 标记 MOLIO_AUTH_URL 是否已配置，未配置时 Web 隐藏登录表单） |
+| GET | `/api/auth/status` | 登录态 + 用户 + 权益快照（Web UI 渲染用；离线时返回缓存快照 + `stale: true`；`configured` 标记云端地址是否可用——env 未设置回落内置官方默认，仅显式置空白时 Web 隐藏登录表单，见顶部 2026-08-20 修订） |
 | POST | `/api/auth/logout` | 云端吊销 + 清本地 token |
 | DELETE | `/api/auth/account` | 注销账号（§7.4）：云端软删除 + 吊销全部 session 成功后才清本地 token；云端不可达 → 502 且保留本地 token 供重试（与 logout 的本地优先语义相反） |
 

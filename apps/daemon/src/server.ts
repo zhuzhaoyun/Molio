@@ -37,7 +37,8 @@ export const weixinService = new WeixinService(runManager, conversationService, 
 export const feishuService = new FeishuService(runManager, conversationService, db);
 export const vaultWatcher = new VaultWatcher(db);
 export const preloadManager = createPreloadManager();
-// 云端认证 client（MOLIO_AUTH_URL 懒读；未配置时登录端点回 503）。
+// 云端认证 client（懒读 MOLIO_AUTH_URL，未设置时回落内置官方地址
+// DEFAULT_AUTH_URL；显式空白才算未配置 → 登录端点回 503）。
 // 启动恢复（restoreSession）由 index.ts 在 listen 之后异步触发，不阻塞启动。
 export const authClient = new AuthClient();
 

@@ -32,13 +32,13 @@ export interface Entitlement {
  * - loggedIn=false 不携带 user/entitlement
  *
  * 注意 `loggedIn: true` 与 `configured: false` **可以合法共存**：本地已有会话后
- * MOLIO_AUTH_URL 被移除（token 还在，云端不可达）。消费方应先处理 loggedIn
- * （登出是本地操作，不依赖云端），再按 configured 决定登录表单/说明。
+ * MOLIO_AUTH_URL 被显式置空白关闭（token 还在，云端不可达）。消费方应先处理
+ * loggedIn（登出是本地操作，不依赖云端），再按 configured 决定登录表单/说明。
  */
 export type AuthStatus =
   | {
       loggedIn: true;
-      /** MOLIO_AUTH_URL 已配置（云端可达前提） */
+      /** 云端认证地址可用（env 未设置时回落官方默认；显式空白 = 未配置） */
       configured: boolean;
       user: User;
       entitlement?: Entitlement;
@@ -47,7 +47,7 @@ export type AuthStatus =
     }
   | {
       loggedIn: false;
-      /** MOLIO_AUTH_URL 已配置（云端可达前提）；未配置时 Web UI 隐藏登录表单、只给说明 */
+      /** 云端认证地址可用（env 未设置时回落官方默认）；显式空白未配置时 Web UI 隐藏登录表单、只给说明 */
       configured: boolean;
       /** 云端不可达，数据来自本地缓存 */
       stale?: boolean;

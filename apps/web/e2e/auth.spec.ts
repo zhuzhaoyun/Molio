@@ -9,9 +9,11 @@
  * response's `devCode` field (only returned by daily/local cloud — the UI
  * itself never displays it).
  *
- * Degradation: when the (reused local) daemon has no MOLIO_AUTH_URL, the
- * login-chain tests probe GET /api/auth/status `configured` and skip; the
- * modal open/close test always runs.
+ * Degradation: since auth.molio.cn went live the daemon has a built-in
+ * default URL, so `configured` is false only when MOLIO_AUTH_URL is
+ * explicitly blanked; the login-chain tests probe GET /api/auth/status
+ * `configured` and skip in that case (and skip when a prod-mode cloud
+ * returns no devCode). The modal open/close test always runs.
  *
  * Prerequisites: `pnpm dev` — or let playwright webServer start cloud (:3200)
  * + daemon (with MOLIO_AUTH_URL injected, see playwright.config.ts).

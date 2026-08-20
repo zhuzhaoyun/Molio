@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AuthClient, AuthCloudError } from '../../../src/core/auth/auth-client.js';
+import { AuthClient, AuthCloudError, DEFAULT_AUTH_URL } from '../../../src/core/auth/auth-client.js';
 import { readAuthTokens } from '../../../src/core/auth/token-store.js';
 import { makeMockCloud, type MockCloud } from './mock-cloud.js';
 
@@ -484,7 +484,19 @@ describe('AuthClient', () => {
 
   // ── 配置 ──────────────────────────────────────────────────────────
 
-  it('未配置 MOLIO_AUTH_URL：请求报 auth_not_configured，零网络调用', async () => {
+  it('MOLIO_AUTH_URL 未设置 → 回落内置官方地址（dev/Docker 开箱即用）', () => {
+    // 回归：auth.molio.cn 上线前 daemon 无默认值，pnpm dev / Docker 未配 env
+    // 时登录表单直接隐藏（「登录服务尚未配置」）。现在未设置 = 用官方云端。
+    // 值断言同时锁住与 apps/desktop/src/main.js DEFAULT_AUTH_URL 的同步
+    // （桌面壳测试 daemon-startup.test.js 对 main.js 常量做同样断言）。
+    assert.equal(DEFAULT_AUTH_URL, 'https://auth.molio.cn');
+    const fromDefault = new AuthClient({ fetchImpl: mock.fetchImpl });
+    assert.equal(fromDefault.getBaseUrl(), 'https://auth.molio.cn');
+    assert.equal(fromDefault.isConfigured(), true);
+  });
+
+  it('MOLIO_AUTH_URL 显式空白：请求报 auth_not_configured，零网络调用', async () => {
+    process.env.MOLIO_AUTH_URL = '   ';
     const unconfigured = new AuthClient({
       fetchImpl: mock.fetchImpl,
       now: () => fakeNow,
@@ -516,6 +528,8 @@ describe('AuthClient', () => {
 
   it('云端未配置但本地有 token：restoreSession 不做网络尝试，status 保留登录态', async () => {
     await client.verify('user@example.com', '123456');
+    // 内置官方默认上线后，「未配置」只剩显式空白这一条路径
+    process.env.MOLIO_AUTH_URL = '';
     const unconfigured = new AuthClient({
       fetchImpl: mock.fetchImpl,
       now: () => fakeNow,

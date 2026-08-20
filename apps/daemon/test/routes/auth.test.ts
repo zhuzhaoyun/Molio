@@ -295,7 +295,8 @@ describe('auth routes', () => {
     });
   });
 
-  it('MOLIO_AUTH_URL 未配置 → 503 auth_not_configured', async () => {
+  it('MOLIO_AUTH_URL 显式空白 → 503 auth_not_configured（未设置会回落官方默认）', async () => {
+    process.env.MOLIO_AUTH_URL = '';
     const unconfigured = new AuthClient({ fetchImpl: mock.fetchImpl, retryDelaysMs: [] });
     const bareApp = new Hono();
     bareApp.route('/api/auth', authRoutes(unconfigured));

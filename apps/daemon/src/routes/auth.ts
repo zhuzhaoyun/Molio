@@ -10,7 +10,7 @@ import { AuthClient, AuthCloudError } from '../core/auth/auth-client.js';
  * - 云端 4xx → 原样透传（{error, ...extra}，如 rate_limited 带 resendAfterSec、
  *   mail_failed=发信通道失败）
  * - 断网 → 502 cloud_unreachable
- * - MOLIO_AUTH_URL 未配置 → 503 auth_not_configured
+ * - MOLIO_AUTH_URL 显式置空白（关闭登录；未设置会回落内置官方地址）→ 503 auth_not_configured
  *
  * 本机攻击面说明：daemon 无鉴权且 CORS 放行任意 localhost origin（见 server.ts，
  * dev 拓扑 web:5173 → daemon:3100 必须放行）。因此写端点加 Origin 白名单

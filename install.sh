@@ -501,12 +501,12 @@ cat > .env.example << 'ENV_EXAMPLE_EOF'
 # MOLIO_PORT=3100
 
 # ─── 账号登录（可选） ───
-# Molio 云端认证服务地址（完整 URL）。配置后可在 Web 界面左下角「账号」
-# 中用邮箱验证码登录。登录完全可选，不登录不影响任何本地功能；
-# 不配置时登录入口自动隐藏，本地功能零影响。
-# 官方云端地址待域名备案完成后在此公布；私有化部署可指向自建的
-# @molio/cloud 服务（见仓库 apps/cloud）。
-# MOLIO_AUTH_URL=
+# Molio 云端认证服务地址（完整 URL）。默认已连官方云端
+# https://auth.molio.cn（daemon 内置），开箱即用，通常无需配置；
+# 仅私有化部署需覆盖此项——可指向自建的 @molio/cloud 服务
+# （见仓库 apps/cloud）。配置后可在 Web 界面左下角「账号」中用邮箱
+# 验证码登录。登录完全可选，不登录不影响任何本地功能。
+# MOLIO_AUTH_URL=https://auth.molio.cn
 ENV_EXAMPLE_EOF
 
 # ============================================================
