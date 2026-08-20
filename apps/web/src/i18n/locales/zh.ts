@@ -403,7 +403,7 @@ const zh: Record<string, string> = {
   'kb.locateFile': '在目录中定位',
   'kb.locateFileNeedFile': '请先打开一个文件',
   'kb.newNote': '新建笔记',
-  'kb.newFolder': '新建子文件夹',
+  'kb.newFolder': '新建文件夹',
   'kb.create': '新建',
   'kb.newWindow': '新窗口',
   'kb.collapseAll': '折叠全部',
