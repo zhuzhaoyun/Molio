@@ -255,6 +255,15 @@ export default function App() {
     vaultNoticeTimer.current = setTimeout(() => setVaultSwitchNotice(false), 3000);
   }, [activeVault?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 任一历史入口删除会话后统一收敛：删除的会话恰是主页当前加载的 → 清空主页聊天，
+  // 避免切回主页仍显示已删除的内容。历史页勾选删除 / 主页输入框历史下拉 / KB 会话面板
+  // 历史下拉 共用。
+  const handleConversationsDeleted = (ids: string[]) => {
+    if (chat.conversationId && ids.includes(chat.conversationId)) {
+      chat.reset();
+    }
+  };
+
   if (!configLoaded) return null;
 
   return (
@@ -282,6 +291,7 @@ export default function App() {
                   onOpenConversation={(conversationId) => {
                     void chat.loadConversationById(conversationId);
                   }}
+                  onDeleteConversations={handleConversationsDeleted}
                   onRegenerate={chat.regenerateLast}
                   onEdit={chat.editAndResend}
                   onContinue={() => chat.send('继续')}
@@ -300,12 +310,7 @@ export default function App() {
                       navigate('/');
                     });
                   }}
-                  onDeleteConversations={(ids) => {
-                    // 删除的会话恰是主页当前加载的 → 清空主页聊天，避免切回仍显示已删内容。
-                    if (chat.conversationId && ids.includes(chat.conversationId)) {
-                      chat.reset();
-                    }
-                  }}
+                  onDeleteConversations={handleConversationsDeleted}
                 />
               }
             />
@@ -324,6 +329,7 @@ export default function App() {
         <KbChatSessionsPanel
           ref={kbChatPanelRef}
           agentId={selectedAgent}
+          onDeleteConversations={handleConversationsDeleted}
         />
         <UpdateNotification />
         <PreloadToast />

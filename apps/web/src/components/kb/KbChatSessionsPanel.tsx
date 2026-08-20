@@ -100,10 +100,12 @@ function readFloatPos(): { left: number; top: number } | null {
 
 interface Props {
   agentId: string | null;
+  /** 历史下拉删除成功后通知 App（清空主页已加载会话） */
+  onDeleteConversations?: (ids: string[]) => void;
 }
 
 export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(function KbChatSessionsPanel(
-  { agentId }, ref,
+  { agentId, onDeleteConversations }, ref,
 ) {
   const sessions = useKbChatSessions();
   const activeSessionId = useKbChatActiveSessionId();
@@ -760,6 +762,7 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
         onNewSession={handleNewSession}
         onRename={(id, title) => kbChatSessionsStore.updateSession(id, { title })}
         onOpenConversation={handleOpenConversation}
+        onDeleteConversations={onDeleteConversations}
         onClosePanel={() => kbChatSessionsStore.setPanelOpen(false)}
         docked={docked}
         onToggleDock={toggleDock}

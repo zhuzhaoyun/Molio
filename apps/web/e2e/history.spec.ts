@@ -589,6 +589,87 @@ test.describe('History', () => {
       await deleteProject(project.id);
     }
   });
+
+  test('deleting a loaded conversation via the home composer history menu clears the chat', async ({ page }) => {
+    const project = await createProject(`e2e-csync-${Date.now()}`);
+    const conv = await createConversation(project.id, 'Composer Sync Conv');
+    await addMessage(project.id, conv.id, {
+      id: `msg-csync-${Date.now()}`, role: 'user', content: 'csync content marker', timestamp: Date.now(),
+    });
+    try {
+      await gotoHome(page);
+      await clickNav(page, 'history');
+      await page.locator('[data-testid=history-refresh]').click();
+      await page.waitForTimeout(500);
+
+      // 主页加载该会话（经历史页打开 → 跳回主页显示其消息）。
+      await rowByTitle(page, 'Composer Sync Conv').locator('.history-row__main').click();
+      await expect(page.locator('.home-page.chat-active')).toBeVisible({ timeout: 5_000 });
+      await expect(page.getByText('csync content marker')).toBeVisible();
+
+      // 主页输入框历史下拉 → 悬停目标会话 → 两步确认删除。
+      await page.locator('[data-testid=composer-history-btn]').click();
+      const item = page.locator('[data-testid=composer-history-item]', { hasText: 'Composer Sync Conv' });
+      await expect(item).toBeVisible({ timeout: 5_000 });
+      await item.hover();
+      await item.locator('[data-testid=composer-history-delete]').click();
+      await item.locator('[data-testid=composer-history-delete]').click();
+
+      // 聊天已清空（hero 空状态），旧内容不可见。
+      await expect(page.locator('[data-testid=hero-brand]')).toBeVisible({ timeout: 5_000 });
+      await expect(page.getByText('csync content marker')).toHaveCount(0);
+    } finally {
+      await deleteProject(project.id);
+    }
+  });
+
+  test('deleting a loaded conversation via the KB chat history menu clears the home chat', async ({ page }) => {
+    const project = await createProject(`e2e-kbsync-${Date.now()}`);
+    const conv = await createConversation(project.id, 'KB Sync Conv');
+    await addMessage(project.id, conv.id, {
+      id: `msg-kbsync-${Date.now()}`, role: 'user', content: 'kbsync content marker', timestamp: Date.now(),
+    });
+    const vault = await createTempVault(`e2e-kbsync-${Date.now()}`);
+    try {
+      // 先加载 KB 页并选中 test.md（openTab 持久化文件标签，SPA 往返后可恢复）。
+      await page.goto(`/knowledge?vault=${vault.id}&file=test.md`);
+      await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+      // 等文件导航异步完成（树加载 → resolveFilePath → openTab）——kb-btn-ask 出现即文件已选中、
+      // 标签已持久化，再离开才能保证回来时恢复。
+      await expect(page.locator('[data-testid="kb-btn-ask"]')).toBeVisible({ timeout: 10_000 });
+
+      // 主页加载该会话（经历史页打开 → 跳回主页显示其消息）。
+      await clickNav(page, 'home');
+      await clickNav(page, 'history');
+      await page.locator('[data-testid=history-refresh]').click();
+      await page.waitForTimeout(500);
+      await rowByTitle(page, 'KB Sync Conv').locator('.history-row__main').click();
+      await expect(page.locator('.home-page.chat-active')).toBeVisible({ timeout: 5_000 });
+      await expect(page.getByText('kbsync content marker')).toBeVisible();
+
+      // 回 KB 页 → 文件标签恢复 → 💬问答 打开会话面板。
+      await clickNav(page, 'knowledge');
+      await page.locator('[data-testid="kb-btn-ask"]').click();
+      const panel = page.locator('[data-testid="kb-chat-panel"]');
+      await expect(panel).toBeVisible({ timeout: 5_000 });
+
+      // 面板历史下拉 → 悬停目标会话 → 两步确认删除。
+      await page.locator('[data-testid="kb-chat-session-history"]').click();
+      const item = panel.locator('[data-testid="composer-history-item"]', { hasText: 'KB Sync Conv' });
+      await expect(item).toBeVisible({ timeout: 5_000 });
+      await item.hover();
+      await item.locator('[data-testid="composer-history-delete"]').click();
+      await item.locator('[data-testid="composer-history-delete"]').click();
+
+      // 回主页 → 聊天已清空（hero 空状态），旧内容不可见。
+      await clickNav(page, 'home');
+      await expect(page.locator('[data-testid=hero-brand]')).toBeVisible({ timeout: 5_000 });
+      await expect(page.getByText('kbsync content marker')).toHaveCount(0);
+    } finally {
+      await deleteProject(project.id);
+      await cleanupTempVault(vault);
+    }
+  });
 });
 
 /**

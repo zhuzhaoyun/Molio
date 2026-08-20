@@ -12,6 +12,8 @@ import { api } from '../api/client';
 interface Props {
   /** 用户选中的会话 id */
   onSelect: (conversationId: string) => void;
+  /** 删除成功后通知父级（App 层据此清空已加载会话的主页聊天，避免残留显示） */
+  onDeleteConversations?: (ids: string[]) => void;
   /** 按钮样式类（默认复用 composer-upload-btn） */
   buttonClassName?: string;
   /** 按钮 data-testid */
@@ -22,6 +24,7 @@ interface Props {
 
 export function ConversationHistoryMenu({
   onSelect,
+  onDeleteConversations,
   buttonClassName,
   buttonTestId,
   align = 'up',
@@ -116,9 +119,12 @@ export function ConversationHistoryMenu({
     }
     setConfirmDeleteId(null);
     void api.deleteConversationById(id)
-      .then(() => setItems((prev) => prev.filter((it) => it.conversation.id !== id)))
+      .then(() => {
+        setItems((prev) => prev.filter((it) => it.conversation.id !== id));
+        onDeleteConversations?.([id]);
+      })
       .catch(() => { /* 静默 */ });
-  }, [confirmDeleteId]);
+  }, [confirmDeleteId, onDeleteConversations]);
 
   return (
     // 默认（输入框）不设定位，下拉沿用原 containing block；顶栏变体加定位容器 + 向下展开
