@@ -1,12 +1,12 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { useAgents } from './hooks/useAgents';
 import { useChat } from './hooks/useChat';
 import { HomePage } from './components/HomePage';
-import { kbChatSessionsStore } from './stores/kbChatSessionsStore';
 
 import { NavRail } from './components/NavRail';
 import { KnowledgeBasePage } from './components/kb/KnowledgeBasePage';
+import { KbChatSessionsPanel, type KbChatSessionsPanelHandle } from './components/kb/KbChatSessionsPanel';
 import { SettingsPage } from './components/settings/SettingsPage';
 import { HistoryPage } from './components/history/HistoryPage';
 import { GraphPage } from './components/graph/GraphPage';
@@ -19,7 +19,9 @@ import type { Locale } from './i18n';
 import { api } from './api/client';
 import { useActiveVault, vaultStore } from './stores/vaultStore';
 import { authStore } from './stores/authStore';
+import { currentContextStore, type CurrentContext } from './stores/currentContextStore';
 import { messageSelectionStore } from './stores/messageSelectionStore';
+import { kbChatSessionsStore } from './stores/kbChatSessionsStore';
 import { usePendingPrefill, skillPrefillStore } from './stores/skillPrefillStore';
 import { SkillEditor, type SkillFormValues } from './components/settings/SkillEditor';
 import './styles/rail.css';
@@ -46,6 +48,8 @@ export default function App() {
   const [locale, setLocale] = useState<Locale>('zh');
   const [configLoaded, setConfigLoaded] = useState(false);
   const chat = useChat({ agentId: selectedAgent, cwd: activeVault?.path });
+  // 全局悬浮对话面板句柄（App 层常驻挂载，ref 下发给 KB 页触发 runWikiOp/openQa）
+  const kbChatPanelRef = useRef<KbChatSessionsPanelHandle | null>(null);
 
   // "Save as skill" — assistant-message buttons push a prefill into the store;
   // the fullscreen editor is hosted here (above the chat) to avoid prop-drilling.
@@ -76,6 +80,23 @@ export default function App() {
     try {
       localStorage.setItem(STORAGE_KEY_LAST_ROUTE, location.pathname);
     } catch { /* ignore */ }
+  }, [location.pathname]);
+
+  // 路由切换 → 悬浮对话读取当前页面
+  useEffect(() => {
+    const page = location.pathname.replace('/', '') as CurrentContext['page'];
+    const known: CurrentContext['page'][] = ['knowledge', 'home', 'history', 'graph', 'settings'];
+    currentContextStore.set({
+      page: known.includes(page) ? page : 'other',
+    });
+  }, [location.pathname]);
+
+  // 入口收敛（暂时屏蔽右下角悬浮按钮）：面板只在 KB 页经 💬问答 等入口唤起。
+  // 离开 /knowledge 时若面板开着则自动收起——后台任务继续但不可见，回 KB 可重新唤起。
+  useEffect(() => {
+    if (location.pathname !== '/knowledge') {
+      kbChatSessionsStore.setPanelOpen(false);
+    }
   }, [location.pathname]);
 
   // On mount, restore last route (only if at root "/")
@@ -237,14 +258,16 @@ export default function App() {
               element={
                 <HistoryPage
                   onOpenConversation={(conversationId) => {
-                    kbChatSessionsStore.openConversation(conversationId);
-                    navigate('/knowledge');
+                    // 恢复旧行为：加载到首页聊天 → 跳转首页呈现（撤销方案 D 的「就地打开面板」）。
+                    void chat.loadConversationById(conversationId).then(() => {
+                      navigate('/');
+                    });
                   }}
                 />
               }
             />
             <Route path="/knowledge" element={
-            <KnowledgeBasePage agentId={selectedAgent} />
+            <KnowledgeBasePage agentId={selectedAgent} chatPanelRef={kbChatPanelRef} />
           } />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/graph" element={<GraphPage />} />
@@ -252,6 +275,13 @@ export default function App() {
             <Route path="/resources/:id" element={<ResourceDetailPage />} />
           </Routes>
         </div>
+        {/* 全局悬浮对话面板（方案 D）：面板常驻挂载 + CSS --closed 隐藏，保 ref 恒有效。
+            右下角悬浮按钮已暂时屏蔽（Task 6）——面板只在 KB 页经 💬问答 等入口唤起，
+            离开 /knowledge 自动收起（见上方 effect）。FloatingChatButton 组件保留待回退。 */}
+        <KbChatSessionsPanel
+          ref={kbChatPanelRef}
+          agentId={selectedAgent}
+        />
         <UpdateNotification />
         <PreloadToast />
         <SkillEditor

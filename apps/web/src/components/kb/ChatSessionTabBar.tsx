@@ -11,10 +11,40 @@ interface Props {
   onActivate: (id: string) => void;
   onClose: (id: string) => void;
   onNewSession: () => void;
+  /** 重命名会话标题（双击 inline 编辑提交） */
+  onRename: (id: string, title: string) => void;
   /** 从历史下拉打开会话（去重入标签） */
   onOpenConversation: (conversationId: string) => void;
   /** 收起面板（保留标签，后台任务继续） */
   onClosePanel: () => void;
+  /** 是否停靠侧边栏形态（驱动停靠/悬浮切换按钮的图标与 pressed 态） */
+  docked?: boolean;
+  /** 停靠 ⇄ 悬浮 切换（按钮，带过渡动画） */
+  onToggleDock?: () => void;
+  /** 头部拖拽：悬浮移动 / 停靠时拖离。返回 true 表示开始拖动（调用方应 setPointerCapture）。 */
+  onHeaderDragStart?: (e: React.PointerEvent<HTMLDivElement>) => boolean;
+  onHeaderDragMove?: (e: React.PointerEvent<HTMLDivElement>) => void;
+  onHeaderDragEnd?: () => void;
+}
+
+/** 停靠到侧边栏（面板右缘带分隔线） */
+function DockIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <line x1="9" y1="4" x2="9" y2="20" />
+    </svg>
+  );
+}
+/** 恢复悬浮（窗口 + 弹出箭头） */
+function FloatIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M15 3h6v6" />
+      <path d="M21 3l-8 8" />
+      <rect x="3" y="9" width="12" height="12" rx="1.5" />
+    </svg>
+  );
 }
 
 /**
@@ -22,11 +52,14 @@ interface Props {
  * 横向滚动容器；溢出时显示 ‹ › 左右翻页箭头（无原生滚动条）；历史 / + 新建 / 收起
  * 三个按钮钉在栏尾始终可见；激活标签变化时自动滚入可见区。运行中的会话标签显示指示点。
  */
-export function ChatSessionTabBar({ sessions, activeSessionId, runningSessionIds, onActivate, onClose, onNewSession, onOpenConversation, onClosePanel }: Props) {
+export function ChatSessionTabBar({ sessions, activeSessionId, runningSessionIds, onActivate, onClose, onNewSession, onRename, onOpenConversation, onClosePanel, docked = false, onToggleDock, onHeaderDragStart, onHeaderDragMove, onHeaderDragEnd }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<HTMLDivElement>(null);
   const [canLeft, setCanLeft] = useState(false);
   const [canRight, setCanRight] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draftTitle, setDraftTitle] = useState('');
+  const renameCancelRef = useRef(false);
 
   const recompute = () => {
     const el = scrollRef.current;
@@ -59,8 +92,33 @@ export function ChatSessionTabBar({ sessions, activeSessionId, runningSessionIds
     el.scrollBy({ left: dir * el.clientWidth * 0.8, behavior: reduced ? 'auto' : 'smooth' });
   };
 
+  const commitRename = (id: string) => {
+    if (renameCancelRef.current) { renameCancelRef.current = false; setEditingId(null); return; }
+    setEditingId(null);
+    const trimmed = draftTitle.trim();
+    if (trimmed) onRename(id, trimmed);
+  };
+  const startRename = (id: string, title: string) => {
+    setEditingId(id);
+    setDraftTitle(title);
+  };
+
   return (
-    <div className="chat-session-tabbar" data-testid="kb-chat-session-tabbar">
+    <div
+      className="chat-session-tabbar"
+      data-testid="kb-chat-session-tabbar"
+      onPointerDown={(e) => {
+        // 标签/按钮不触发面板移动，保持各自点击语义；其余空白处开始拖拽移动
+        const t = e.target as HTMLElement;
+        if (t.closest('button, [role="button"]')) return;
+        if (onHeaderDragStart && onHeaderDragStart(e)) {
+          (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+        }
+      }}
+      onPointerMove={onHeaderDragMove}
+      onPointerUp={onHeaderDragEnd}
+      onPointerCancel={onHeaderDragEnd}
+    >
       <button
         type="button"
         className="chat-session-tab-arrow"
@@ -96,7 +154,31 @@ export function ChatSessionTabBar({ sessions, activeSessionId, runningSessionIds
             >
               {isRunning && <span className="chat-session-tab-running" data-testid="kb-chat-session-running" />}
               <span className="chat-session-tab-icon">{s.mode === 'qa' ? '💬' : '⚙️'}</span>
-              <span className="chat-session-tab-title">{s.title}</span>
+              {editingId === s.id ? (
+                <input
+                  className="chat-session-tab-rename"
+                  data-testid="kb-chat-session-rename-input"
+                  value={draftTitle}
+                  autoFocus
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => setDraftTitle(e.target.value)}
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.key === 'Enter') e.currentTarget.blur();
+                    else if (e.key === 'Escape') { renameCancelRef.current = true; e.currentTarget.blur(); }
+                  }}
+                  onBlur={() => commitRename(s.id)}
+                />
+              ) : (
+                <span
+                  className="chat-session-tab-title"
+                  onDoubleClick={(e) => { e.stopPropagation(); startRename(s.id, s.title); }}
+                  title="双击重命名"
+                >
+                  {s.title}
+                </span>
+              )}
               <button
                 type="button"
                 className="chat-session-tab-close"
@@ -138,6 +220,17 @@ export function ChatSessionTabBar({ sessions, activeSessionId, runningSessionIds
           <line x1="12" y1="5" x2="12" y2="19" />
           <line x1="5" y1="12" x2="19" y2="12" />
         </svg>
+      </button>
+      <button
+        type="button"
+        className="chat-session-tab-dock"
+        data-testid="kb-chat-dock-toggle"
+        aria-label={docked ? '切换为悬浮' : '停靠到侧边栏'}
+        aria-pressed={docked}
+        title={docked ? '切换为悬浮' : '停靠到侧边栏'}
+        onClick={onToggleDock}
+      >
+        {docked ? <FloatIcon /> : <DockIcon />}
       </button>
       <button
         type="button"

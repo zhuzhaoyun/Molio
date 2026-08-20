@@ -186,7 +186,7 @@
 
 /* Assistant prose */
 .assistant-prose {
-  font-size: 13.5px;
+  font-size: 14px;
   line-height: 1.7;
   color: var(--text);
 }

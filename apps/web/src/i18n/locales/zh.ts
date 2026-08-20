@@ -492,6 +492,7 @@ const zh: Record<string, string> = {
   'kb.frontmatter.expand': '展开属性',
   'kb.frontmatter.collapse': '收起属性',
   'kb.frontmatter.properties': '文档属性',
+  'kb.floatingChat': '打开 AI 对话',
 
   // ── FilePicker ──
   'filePicker.justNow': '刚刚',

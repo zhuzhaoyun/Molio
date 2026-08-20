@@ -38,7 +38,10 @@ export const claudeAgentDef: RuntimeAgentDef = {
   install: {
     source: {
       type: 'npm-native',
-      version: '2.1.179',
+      // Install the latest Claude Code at install time (dist-tags.latest).
+      // fallbackVersion: last manually verified good version — bump on release.
+      version: 'latest',
+      fallbackVersion: '2.1.235',
       packages: {
         'win32-x64':        { pkgName: '@anthropic-ai/claude-code-win32-x64',       binInTar: 'package/claude.exe' },
         'win32-arm64':      { pkgName: '@anthropic-ai/claude-code-win32-arm64',     binInTar: 'package/claude.exe' },

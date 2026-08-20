@@ -35,4 +35,15 @@ export const WIKI_TITLES: Record<ChatSessionMode, string> = {
   ingest: '加入Wiki',
 };
 
-export { WIKI_PROMPTS, WIKI_INGEST_PROMPT, WIKI_QUERY_TRIGGER };
+/**
+ * 从首条消息派生会话标签标题：取末行非空内容（wiki-query 触发语 / 附件前缀 / 选中上下文
+ * 都以换行结尾，实际问题在末行），collapse 内部空白，截断 24。空则回退「新会话」。
+ */
+function deriveChatTitle(text: string): string {
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+  const last = lines[lines.length - 1] ?? '';
+  const collapsed = last.replace(/\s+/g, ' ').trim();
+  return collapsed.slice(0, 24) || '新会话';
+}
+
+export { WIKI_PROMPTS, WIKI_INGEST_PROMPT, WIKI_QUERY_TRIGGER, deriveChatTitle };
