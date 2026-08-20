@@ -4,7 +4,8 @@ import * as os from 'os';
 import * as path from 'node:path';
 import { gzipSync } from 'node:zlib';
 import type { InstallEvent } from '@molio/contracts';
-import { installAgent, getMolioBinDir, extractFromTarball, addToUserPath, updateCurrentProcessPath, getPlatformKey } from '../../src/core/runtimes/install.js';
+import { installAgent, getMolioBinDir, extractFromTarball, addToUserPath, updateCurrentProcessPath, getPlatformKey, parseLatestVersionFromPackument } from '../../src/core/runtimes/install.js';
+import { claudeAgentDef } from '../../src/core/runtimes/claude.js';
 
 // ─── Platform Detection ───────────────────────────────────────────────────
 
@@ -186,6 +187,46 @@ describe('PATH update after install (error-driven)', () => {
     }
   });
 
+});
+
+// ─── Latest version resolution ────────────────────────────────────────────
+
+describe('parseLatestVersionFromPackument', () => {
+  it('should extract dist-tags.latest from a packument', () => {
+    const json = JSON.stringify({ name: '@anthropic-ai/claude-code-win32-x64', 'dist-tags': { latest: '2.1.235' } });
+    assert.equal(parseLatestVersionFromPackument(json), '2.1.235');
+  });
+
+  it('should return null for malformed JSON', () => {
+    assert.equal(parseLatestVersionFromPackument('<html>502 Bad Gateway</html>'), null);
+    assert.equal(parseLatestVersionFromPackument(''), null);
+  });
+
+  it('should return null when dist-tags.latest is missing or empty', () => {
+    assert.equal(parseLatestVersionFromPackument(JSON.stringify({ 'dist-tags': {} })), null);
+    assert.equal(parseLatestVersionFromPackument(JSON.stringify({ 'dist-tags': { latest: '' } })), null);
+    assert.equal(parseLatestVersionFromPackument(JSON.stringify({ 'dist-tags': { latest: 123 } })), null);
+    assert.equal(parseLatestVersionFromPackument(JSON.stringify({})), null);
+  });
+});
+
+describe('claude agent install source uses latest with fallback', () => {
+  it('should use version "latest" with a concrete fallbackVersion', () => {
+    const source = claudeAgentDef.install?.source;
+    assert.ok(source, 'claude agent must have an install source');
+    assert.equal(source!.type, 'npm-native');
+    assert.equal(source!.version, 'latest', 'version should be "latest" so installs track upstream');
+    if (source!.version === 'latest') {
+      assert.match(
+        source!.fallbackVersion ?? '',
+        /^\d+\.\d+\.\d+/,
+        'fallbackVersion must be a concrete semver so offline installs still work',
+      );
+    }
+  });
+});
+
+describe('PATH update duplication guard (error-driven)', () => {
   it('updateCurrentProcessPath should not duplicate when called twice', () => {
     const tmpDir = path.join(os.tmpdir(), `molio-dup-${Date.now()}`);
     const pathKey = Object.keys(process.env).find(
