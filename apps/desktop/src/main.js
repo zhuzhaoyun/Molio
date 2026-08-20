@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, shell, Menu } from 'electron';
 import { spawn, execSync } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setupAutoUpdater } from './updater.js';
@@ -28,6 +28,9 @@ try {
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+/** App icon for the window/dock in dev mode; packaged apps embed their own (build/icon.*). */
+const DEV_APP_ICON = path.join(__dirname, '..', 'build', 'icon.png');
 
 const PROTOCOL = 'molio';
 
@@ -382,6 +385,10 @@ function createWindow({ url = '' } = {}) {
     title: 'Molio',
     show: false,
     backgroundColor: '#0d1117',
+    // Dev mode (non-packaged) has no exe/bundle icon — set the window/taskbar
+    // icon explicitly so it isn't Electron's default. Packaged apps embed the
+    // icon in the exe/.app, so this file may not exist there.
+    ...(existsSync(DEV_APP_ICON) ? { icon: DEV_APP_ICON } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -727,6 +734,11 @@ app.whenReady().then(async () => {
     log('warn', 'main', 'whenReady fired without single-instance lock — second instance, quitting');
     app.quit();
     return;
+  }
+  // Dev mode: the running binary is Electron.app, whose dock icon is Electron's
+  // default — override it with the Molio logo. Packaged apps use the bundle icon.
+  if (process.platform === 'darwin' && !app.isPackaged && existsSync(DEV_APP_ICON)) {
+    app.dock?.setIcon(DEV_APP_ICON);
   }
   // Register protocol on Windows (must be inside whenReady)
   if (process.platform !== 'darwin') {

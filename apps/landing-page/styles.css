@@ -148,14 +148,8 @@ p { margin-bottom: 0; }
 .logo-icon-sm {
   width: 32px;
   height: 32px;
-  display: grid;
-  place-items: center;
-  background: var(--ink);
-  color: var(--paper);
-  border-radius: 3px;
-  font-size: 15px;
-  font-weight: 700;
-  font-family: var(--font-display);
+  display: block;
+  object-fit: contain;
 }
 
 .nav-links {

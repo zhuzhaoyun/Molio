@@ -11,6 +11,9 @@ import { RunStatusBar } from './RunStatusBar';
 import { ActivityTree } from './ActivityTree';
 import type { ActivityInfo } from '@molio/contracts';
 
+// 品牌 logo（public/images/main.png）——与官网 landing-page/images/new/main.png 同源副本
+const LOGO_MAIN_URL = `${import.meta.env.BASE_URL}images/main.png`;
+
 interface Props {
   selectedAgentName: string | null;
   messages: ChatMessage[];
@@ -109,7 +112,7 @@ export function HomePage({
         {/* Header */}
         <div className="home-header">
           <div className="home-header-left">
-            <span className="home-header-logo">墨</span>
+            <img className="home-header-logo" src={LOGO_MAIN_URL} alt="Molio" />
             <span className="home-header-title">Molio</span>
           </div>
           <div className="home-header-right">
@@ -224,7 +227,7 @@ export function HomePage({
         {/* Hero */}
         <div className="home-hero">
           <div className="home-hero__brand">
-            <span className="home-hero__brand-mark">墨</span>
+            <img className="home-hero__brand-mark" src={LOGO_MAIN_URL} alt="Molio" />
             <span className="home-hero__brand-name" data-testid="hero-brand">Molio</span>
           </div>
           <p className="home-hero__tagline" data-testid="hero-tagline">{t('home.tagline')}</p>
