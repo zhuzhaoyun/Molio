@@ -9,7 +9,7 @@ import { AssistantMessage } from '../AssistantMessage';
 import { ChatComposer, type FileRef, type PastedImage, buildAttachmentPrefix } from '../ChatComposer';
 import { ActivityTree } from '../ActivityTree';
 import { useI18n } from '../../i18n';
-import { WIKI_QUERY_TRIGGER } from './kbChatPrompts';
+import { WIKI_QUERY_TRIGGER, deriveChatTitle } from './kbChatPrompts';
 
 export interface KbChatSessionApi {
   send: (text: string) => void;
@@ -83,7 +83,7 @@ export function KbChatSession({
       kbChatSessionsStore.updateSession(session.id, { conversationId: result.conversationId });
       const cur = kbChatSessionsStore.getSessions().find((s) => s.id === session.id);
       if (cur && cur.title === '新会话') {
-        kbChatSessionsStore.updateSession(session.id, { title: ctx.message.slice(0, 24) });
+        kbChatSessionsStore.updateSession(session.id, { title: deriveChatTitle(ctx.message) });
       }
     }
     return { runId: result.runId, conversationId: result.conversationId };
@@ -104,6 +104,13 @@ export function KbChatSession({
     const loadedConversationId = session.conversationId;
     if (!loadedConversationId) return;
     let cancelled = false;
+    // 全量导航/刷新（桌面端 reload、浏览器刷新）不会执行 React cleanup —— 在途的历史
+    // 加载 fetch 会被中断并 reject，若此时触发 onLoadError → closeSession，会把正在恢复的
+    // 会话标签永久清掉（persist 先于新页面写入空列表）。pagehide 在导航/刷新时必然触发，
+    // 用它兜底把 cancelled 置真，中断的加载一律丢弃、不误关标签（方案 D 面板任意页面
+    // 常驻挂载，恢复加载可能在任意页面进行）。
+    const onPageHide = () => { cancelled = true; };
+    window.addEventListener('pagehide', onPageHide);
     api.listConversationMessages(loadedConversationId)
       .then((msgs) => {
         if (cancelled) return;
@@ -117,12 +124,17 @@ export function KbChatSession({
         // 该会话存在活跃 run（回复进行中）→ 重新订阅回放直播，避免 UI 把 run 弄丢
         void maybeResume(loadedConversationId);
         const firstUser = msgs.find((m) => m.role === 'user');
-        if (firstUser) {
-          kbChatSessionsStore.updateSession(session.id, { title: firstUser.content.slice(0, 24) });
+        // 只在该会话标题仍是占位（新会话/加载中）时派生 —— 用户重命名过的不被历史加载覆盖
+        const curTitle = kbChatSessionsStore.getSessions().find((s) => s.id === session.id)?.title;
+        if (firstUser && session.mode === 'qa' && (curTitle === '新会话' || curTitle === '加载中…')) {
+          kbChatSessionsStore.updateSession(session.id, { title: deriveChatTitle(firstUser.content) });
         }
       })
       .catch(() => { if (!cancelled) onLoadError?.(session.id); });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      window.removeEventListener('pagehide', onPageHide);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -191,8 +203,10 @@ export function KbChatSession({
           // 切到的历史会话若正在生成 → 恢复直播（与重挂载同一启发式）
           void maybeResume(conversationId);
           const firstUser = msgs.find((m) => m.role === 'user');
-          if (firstUser) {
-            kbChatSessionsStore.updateSession(session.id, { title: firstUser.content.slice(0, 24) });
+          // 只在该会话标题仍是占位（新会话/加载中）时派生 —— 用户重命名过的不被历史加载覆盖
+          const curTitle = kbChatSessionsStore.getSessions().find((s) => s.id === session.id)?.title;
+          if (firstUser && session.mode === 'qa' && (curTitle === '新会话' || curTitle === '加载中…')) {
+            kbChatSessionsStore.updateSession(session.id, { title: deriveChatTitle(firstUser.content) });
           }
         })
         .catch(() => onLoadError?.(session.id));
@@ -231,7 +245,7 @@ export function KbChatSession({
     }
     const isFirstTurn = chat.conversationId == null;
     const wrapped = session.mode === 'qa' && isFirstTurn ? WIKI_QUERY_TRIGGER(message) : message;
-    sendRef.current(wrapped);
+    sendRef.current(wrapped, { queueIfRunning: true });
   }, [selectedText, onSelectedTextConsumed, t, session.mode, chat.conversationId]);
 
   const contextLabel =

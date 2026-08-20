@@ -9,11 +9,11 @@ import type { TreeNode } from '@molio/contracts';
 import { useKnowledge } from '../../hooks/useKnowledge';
 import { useKbTabs, MAX_TABS, type WorkspaceTab } from '../../hooks/useKbTabs';
 import { vaultStore } from '../../stores/vaultStore';
-import { kbChatSessionsStore, useKbChatPanelOpen } from '../../stores/kbChatSessionsStore';
+import { kbChatSessionsStore } from '../../stores/kbChatSessionsStore';
 import { KbFilePanel, type KbFilePanelHandle } from './KbFilePanel';
 import { KbTabBar } from './KbTabBar';
 import { KbMainContent } from './KbMainContent';
-import { KbChatSessionsPanel, type KbChatSessionsPanelHandle } from './KbChatSessionsPanel';
+import type { KbChatSessionsPanelHandle } from './KbChatSessionsPanel';
 import { OutlinePanel } from './OutlinePanel';
 import { SearchPanel } from './SearchPanel';
 import { VaultManagerModal } from './VaultManager';
@@ -26,6 +26,8 @@ import { openInNewWindow } from '../../utils/openWindow';
 
 interface KnowledgeBasePageProps {
   agentId: string | null;
+  /** App 层持有的悬浮面板句柄（KbChatSessionsPanel 常驻 App，ref 由 App 下发） */
+  chatPanelRef?: React.RefObject<KbChatSessionsPanelHandle | null>;
 }
 
 interface UrlFileNavigation {
@@ -128,7 +130,7 @@ function buildFolderDeleteMessage(node: TreeNode, tree: TreeNode[]): string {
   return `确定删除空文件夹 "${node.name}"？`;
 }
 
-export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
+export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePageProps) {
   const { t } = useI18n();
   const kb = useKnowledge();
   const tabs = useKbTabs(kb.activeVault?.id ?? null);
@@ -136,8 +138,9 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const panelRef = useRef<KbChatSessionsPanelHandle>(null);
-  const panelOpen = useKbChatPanelOpen();
+  // 方案 D：面板移出 KB 页、常驻 App 层，ref 由 App 下发。这里别名成 panelRef，
+  // 下方 panelRef.current?.openQa/runWikiOp 调用点一行不改。
+  const panelRef = chatPanelRef ?? useRef<KbChatSessionsPanelHandle>(null);
   const [pendingUrlNav, setPendingUrlNav] = useState<UrlFileNavigation | null>(null);
   const [showOutline, setShowOutline] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
@@ -222,6 +225,12 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
   useEffect(() => {
     kbChatSessionsStore.clearFilePaths();
   }, [kb.activeVault?.id]);
+
+  // wiki 任务完成 → 刷新文件树（方案 D：onWikiComplete 改 store 事件总线，KB 页挂载时订阅）
+  useEffect(() => {
+    const unsub = kbChatSessionsStore.subscribeWikiComplete(() => { void kb.refreshTree(); });
+    return unsub;
+  }, [kb.refreshTree]);
 
   // Import conflict dialog state
   const [conflictDialog, setConflictDialog] = useState<{
@@ -1048,18 +1057,6 @@ export function KnowledgeBasePage({ agentId }: KnowledgeBasePageProps) {
             if (tabs.activeTabId) handleCloseTab(tabs.activeTabId);
           }}
           onNavigateToFile={handleNavigateToFile}
-        />
-      </div>
-
-      {/* Unified KB Chat Panel — 常驻保持后台任务；收起仅隐藏 */}
-      <div className={`kb-chat-panel-slot${panelOpen ? '' : ' is-hidden'}`}>
-        <KbChatSessionsPanel
-          ref={panelRef}
-          agentId={agentId}
-          vaultPath={kb.activeVault?.path ?? null}
-          currentFilePath={kb.selectedFile}
-          currentVaultId={kb.activeVault?.id ?? null}
-          onWikiComplete={() => kb.refreshTree()}
         />
       </div>
 

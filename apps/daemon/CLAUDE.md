@@ -150,6 +150,7 @@ pnpm typecheck    # tsc --noEmit
 - **RunManager** 是核心单例，管理所有活跃 run 的生命周期
 - 每个 run 通过 `child_process.spawn` 启动本地 AI CLI 进程
 - stdout 输出经 stream handler 解析为 `AgentEvent`，通过 SSE 推送给前端
+- **stderr ≠ 错误**：agent CLI 会往 stderr 写信息性诊断（Claude Code 2.1.233+ 的 `[claude-code:*]` marker 行、Codex 的 "Reading prompt from stdin"），分流规则集中在 `runtimes/stderr.ts` 的 `classifyStderrChunk`（诊断行 → `raw` 事件只落日志，真错误 → `error` 事件）。新增 agent 或新诊断行时在这里加规则——**不要**把 stderr 直接升级为 `error` 事件：前端收到 error 会置 `streaming:false` 吞掉后续回复流
 - 事件缓冲区限制 2000 条，run TTL 30 分钟
 - 支持多轮对话 (transcript 构建)
 - SQLite 存储项目、会话、知识库等持久化数据

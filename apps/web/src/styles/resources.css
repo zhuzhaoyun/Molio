@@ -132,6 +132,12 @@
   margin-top: 2px;
 }
 
+.resources-card__ver {
+  margin-left: 6px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
 .resources-card__price {
   flex-shrink: 0;
   font-size: 13px;

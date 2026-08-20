@@ -21,8 +21,16 @@ export interface RuntimeContext {
  */
 export interface NpmNativeInstallSource {
   type: 'npm-native';
-  /** Version to install */
+  /**
+   * Version to install. Use `'latest'` to resolve `dist-tags.latest` from the
+   * registry at install time.
+   */
   version: string;
+  /**
+   * Used when `version` is `'latest'` but the registry lookup fails (e.g.
+   * offline / registry unreachable). Should be a known-good version.
+   */
+  fallbackVersion?: string;
   /** Platform key → { npm package name, binary path inside tarball } */
   packages: Record<string, { pkgName: string; binInTar: string }>;
   /** Registry URLs to try in order (first success wins) */

@@ -1,0 +1,225 @@
+/* 方案 D：全局悬浮对话面板（App 层常驻挂载，CSS 隐藏而非条件渲染 —— 保 ref 恒有效）。
+   开合动画：opacity + translateY（从按钮所在右下角升起/回落）+ visibility（收起态参与
+   命中和焦点树，visibility 延迟到动画结束再隐藏，保证退出动画可见）。 */
+.floating-chat-panel {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  /* 自适应 + 可手动调整：高度默认撑满视口（等同原 top:72px / bottom:24px 的几何），
+     顶缘拖拽可改（320–视口高-96，inline height 覆盖）；max-height 按视口收缩
+     （窄窗/矮窗不被挤出屏），min-height 兜底极端矮窗。
+     宽度同理：max-width:min(90vw,720px) 让面板按视口收缩（窄窗/手机不被挤爆），
+     上限 720 给拖拽加宽留空间（320–720 由拖拽逻辑 clamp）。 */
+  height: calc(100vh - 96px);
+  max-height: calc(100vh - 96px);
+  min-height: min(320px, calc(100vh - 96px));
+  width: 500px;
+  max-width: min(90vw, 720px);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+  /* 悬浮层介于页面 chrome（≤60）与模态/菜单（100+）之间：面板打开时打开任意模态对话框，
+     对话框及其遮罩正确盖在面板之上，而非被面板右缘遮住。 */
+  z-index: 90;
+  overflow: hidden;
+  opacity: 1;
+  transform: translateY(0);
+  /* 打开：从按钮方向升起 + 淡入（200ms ease-out）。visibility 立即可见（0s 无延迟）。 */
+  transition:
+    opacity 200ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 200ms cubic-bezier(0.16, 1, 0.3, 1),
+    visibility 0s linear 0s;
+}
+.floating-chat-panel--closed {
+  opacity: 0;
+  transform: translateY(16px);
+  visibility: hidden;
+  pointer-events: none;
+  /* 收起：回落 + 淡出（160ms ease-in）。visibility 延迟到动画结束再隐藏。 */
+  transition:
+    opacity 160ms cubic-bezier(0.55, 0.06, 0.68, 0.19),
+    transform 160ms cubic-bezier(0.55, 0.06, 0.68, 0.19),
+    visibility 0s linear 160ms;
+}
+
+/* 停靠侧边栏形态：贴右缘、页头之下占满剩余高度，宽度仍由左缘 handle 拖拽调整。
+   高度用 top:72 + height:calc(100vh-72) 表达（而非 top/bottom 拉伸），
+   这样形态切换时 top/height 是可插值的长度，能平滑过渡。 */
+.floating-chat-panel--dock {
+  right: 0;
+  top: 72px;
+  bottom: auto;
+  left: auto;
+  height: calc(100vh - 72px);
+  max-height: none;
+  min-height: 0;
+  border-radius: 0;
+  border-right: none;
+  border-top: none;
+  border-bottom: none;
+  box-shadow: none;
+}
+/* 知识库页停靠：从页顶占满整高（对齐 .kb-shell 的文件树，.kb-shell 从 y=0 开始），
+   文档区经 .kb-shell padding-right:var(--kb-dock-w) 让出等宽 → 问答与文档分栏而非覆盖；
+   拖宽时 --kb-dock-w 逐帧同步，文档区随之重排。非 KB 页停靠保持 --dock 基础几何。 */
+.floating-chat-panel--dock.floating-chat-panel--dock-kb {
+  top: 0;
+  height: 100vh;
+  max-height: none;
+}
+/* 停靠形态高度固定，顶缘不再用于改高（也让出整条头部给脱离停靠的拖拽） */
+.floating-chat-panel--dock .floating-chat-resize-handle--h {
+  display: none;
+}
+
+/* 形态切换过渡：按钮停靠/悬浮时临时加此 class 启用几何过渡。
+   拖拽移动/改宽时不启用 —— 避免过渡与逐帧 inline 写入打架。 */
+.floating-chat-panel--morphing {
+  transition:
+    left 220ms cubic-bezier(0.16, 1, 0.3, 1),
+    right 220ms cubic-bezier(0.16, 1, 0.3, 1),
+    top 220ms cubic-bezier(0.16, 1, 0.3, 1),
+    bottom 220ms cubic-bezier(0.16, 1, 0.3, 1),
+    width 220ms cubic-bezier(0.16, 1, 0.3, 1),
+    height 220ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-radius 220ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* 全局悬浮对话按钮（面板收起时显示） */
+.floating-chat-btn {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  z-index: 90;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 120ms ease, transform 120ms ease;
+  /* 收起面板后按钮重新挂载：弹性 pop-in（唯一活泼点，与面板沉稳升起形成对比） */
+  animation: kb-chat-btn-pop 180ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes kb-chat-btn-pop {
+  from { opacity: 0; transform: scale(0.6); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.floating-chat-btn svg {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+.floating-chat-btn:hover {
+  background: var(--accent-strong);
+}
+.floating-chat-btn:active {
+  transform: scale(0.96);
+}
+
+/* 拖拽调整宽度：面板左缘 8px 命中区，hover/拖动时显示 2px 陶土色抓握条。
+   拖拽期间给 body 加全局 col-resize 光标并禁用文本选择（配合 setPointerCapture）。 */
+.floating-chat-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 8px;
+  cursor: col-resize;
+  z-index: 20;
+  touch-action: none;
+}
+.floating-chat-resize-handle::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 36px;
+  border-radius: 2px;
+  background: transparent;
+  transition: background 120ms ease, height 120ms ease;
+}
+.floating-chat-resize-handle:hover::after,
+.floating-chat-resize-handle.is-dragging::after {
+  background: var(--accent);
+  height: 48px;
+}
+body.kb-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+/* 拖拽调整高度：面板顶缘 8px 命中区（下锚定 → 顶缘上下拖）。left:8px 让位给宽度手柄，
+   二者在左上角不重叠；hover/拖动显示 2px 陶土色横抓握条。 */
+.floating-chat-resize-handle--h {
+  position: absolute;
+  top: 0;
+  left: 8px;
+  right: 0;
+  height: 8px;
+  cursor: ns-resize;
+  z-index: 20;
+  touch-action: none;
+}
+.floating-chat-resize-handle--h::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 36px;
+  height: 2px;
+  border-radius: 2px;
+  background: transparent;
+  transition: background 120ms ease, width 120ms ease;
+}
+.floating-chat-resize-handle--h:hover::after,
+.floating-chat-resize-handle--h.is-dragging::after {
+  background: var(--accent);
+  width: 48px;
+}
+body.kb-resizing-v {
+  cursor: ns-resize;
+  user-select: none;
+}
+/* 头部拖拽移动面板期间：抓取光标 + 禁止选中文本（与文本预览器的文字选择冲突） */
+body.kb-moving {
+  cursor: grabbing;
+  user-select: none;
+}
+
+/* 暗色面板：近黑底上 0.18 黑阴影几乎不可见，靠更深阴影 + 边框保持与页面分离 */
+[data-theme="dark"] .floating-chat-panel {
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+[data-theme="dark"] .floating-chat-btn {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+}
+
+/* 减少动态偏好：禁用进出动画、按钮弹性与形态过渡，保持瞬时但立即可见 */
+@media (prefers-reduced-motion: reduce) {
+  .floating-chat-panel,
+  .floating-chat-panel--closed,
+  .floating-chat-panel--morphing {
+    transition: none;
+  }
+  .floating-chat-btn {
+    animation: none;
+    transition: background 120ms ease;
+  }
+  .floating-chat-btn:active {
+    transform: none;
+  }
+}
+

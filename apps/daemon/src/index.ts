@@ -92,9 +92,9 @@ function checkAndKillPortOccupant(port: number): void {
 checkAndKillPortOccupant(port);
 
 // Seed built-in skills into the `skills` table — the master switch source
-// (bundled: docling/wiki-*/wechat; core: writing trio). Must run
-// before any vault reconcile reads the table. Fast (SQLite upserts) and kept
-// before listen so API requests never observe an unseeded library.
+// (bundled: docling/wiki-*/wechat) and retire the removed core writing trio.
+// Must run before any vault reconcile reads the table. Fast (SQLite upserts)
+// and kept before listen so API requests never observe an unseeded library.
 const skillsSeeded = initSkillLibrary(db);
 
 // ⚠️ Everything below that is HEAVY (run-log prune, per-vault skill fan-out,
@@ -131,7 +131,7 @@ async function runDeferredStartupChores(): Promise<void> {
   }
 
   // Fan the effective skills into every vault's <vault>/.claude/skills/ —
-  // bundled (whole-dir) + library/core (molio-- single file) + CLAUDE.md rules.
+  // bundled (whole-dir) + library (molio-- single file) + CLAUDE.md rules.
   // Per-vault, best-effort, yielding between vaults. Covers what the old
   // installBuiltinSkills loop did. Guarded on a successful seed: reconciling
   // against a (partially) empty table would treat missing built-ins as disabled

@@ -214,13 +214,13 @@ describe('Skills routes', () => {
     assert.equal((body['error'] as Record<string, unknown>)['code'], 'BAD_REQUEST');
   });
 
-  // ── bundled / core guards ──
+  // ── bundled guards ──
 
   it('bundled skills are hidden from GET and 404 on by-id routes (always-on app functionality)', async () => {
     // Bundled skills back deterministic app paths (KB panel wiki actions,
-    // channel routing, docling preload), so they are hidden + unconfigurable
-    // exactly like core skills — toggling them would silently break UI that
-    // still shows the feature entry points.
+    // channel routing, docling preload), so they are hidden + unconfigurable —
+    // toggling them would silently break UI that still shows the feature
+    // entry points.
     const bundled = createSkill(
       db,
       { id: 'bundled-route-x', name: 'bundled', description: '', enabled: true, builtIn: true, kind: 'bundled' },
@@ -248,36 +248,6 @@ describe('Skills routes', () => {
     } finally {
       // Remove the row directly so it doesn't pollute later tests.
       db.prepare('DELETE FROM skills WHERE id = ?').run(bundled.id);
-    }
-  });
-
-  it('core skills are hidden from GET and 404 on by-id routes', async () => {
-    const core = createSkill(
-      db,
-      { id: 'core-route-x', name: 'core', description: '', enabled: true, builtIn: true, core: true },
-      'core body',
-    );
-    try {
-      const list = (await json(await app.request('/api/skills')))['skills'] as SkillManifestEntry[];
-      assert.ok(!list.some((s) => s.id === core.id), 'core skill must not be listed');
-
-      for (const [method, suffix, body] of [
-        ['GET', '', undefined],
-        ['PATCH', '', JSON.stringify({ name: 'x' })],
-        ['PATCH', '/toggle', JSON.stringify({ enabled: false })],
-      ] as const) {
-        const res = await app.request(`/api/skills/${core.id}${suffix}`, {
-          method,
-          headers: { 'Content-Type': 'application/json' },
-          body,
-        });
-        assert.equal(res.status, 404, `${method} ${suffix} on core should be 404`);
-      }
-
-      const del = await app.request(`/api/skills/${core.id}`, { method: 'DELETE' });
-      assert.equal(del.status, 404, 'DELETE on core should be 404');
-    } finally {
-      db.prepare('DELETE FROM skills WHERE id = ?').run(core.id);
     }
   });
 

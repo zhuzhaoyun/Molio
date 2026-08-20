@@ -172,6 +172,14 @@ export function ResourceDetailPage() {
             </div>
             <div className="resources-side-card">
               <div className="resources-info-row">
+                <span className="k">{t('resources.info.author')}</span>
+                <span className="v">{r.author}</span>
+              </div>
+              <div className="resources-info-row">
+                <span className="k">{t('resources.info.version')}</span>
+                <span className="v">{r.version}</span>
+              </div>
+              <div className="resources-info-row">
                 <span className="k">{t('resources.info.format')}</span>
                 <span className="v">{t('resources.info.formatValue')}</span>
               </div>
