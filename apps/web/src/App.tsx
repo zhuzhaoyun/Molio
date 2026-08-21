@@ -51,7 +51,7 @@ function VaultSwitchNotice({ visible }: { visible: boolean }) {
 }
 
 export default function App() {
-  const { agents } = useAgents();
+  const { agents, loading: agentsLoading } = useAgents();
   const navigate = useNavigate();
   const location = useLocation();
   const [defaultAgentId, setDefaultAgentId] = useState<string | null>(null);
@@ -265,6 +265,8 @@ export default function App() {
               element={
                 <HomePage
                   selectedAgentName={agents.find((a) => a.id === selectedAgent)?.name ?? null}
+                  agentsReady={!agentsLoading}
+                  onOpenRuntimes={() => navigate('/settings?tab=runtimes')}
                   messages={chat.messages}
                   isRunning={chat.isRunning}
                   activity={chat.activity}

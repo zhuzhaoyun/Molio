@@ -13,6 +13,7 @@ import { ActivityTree } from './ActivityTree';
 import type { ActivityInfo } from '@molio/contracts';
 import { PanelIcon } from './icons';
 import { SessionOutputPanel } from './SessionOutputPanel';
+import { NoRuntimeCard } from './NoRuntimeCard';
 
 const STORAGE_KEY_DOCK_OPEN = 'molio.home-dock-open';
 function readDockOpen(): boolean {
@@ -24,6 +25,10 @@ const LOGO_MAIN_URL = `${import.meta.env.BASE_URL}images/main.png`;
 
 interface Props {
   selectedAgentName: string | null;
+  /** agents 列表是否已加载完成（避免加载中闪空状态卡片）。 */
+  agentsReady: boolean;
+  /** 无可用代理时跳转「设置 → 运行时」的回调。 */
+  onOpenRuntimes: () => void;
   messages: ChatMessage[];
   isRunning: boolean;
   /** Live background subagent/workflow activity (null = nothing to show). */
@@ -46,6 +51,8 @@ interface Props {
 
 export function HomePage({
   selectedAgentName,
+  agentsReady,
+  onOpenRuntimes,
   messages,
   isRunning,
   activity,
@@ -116,6 +123,21 @@ export function HomePage({
       }
     },
     [onSend],
+  );
+
+  // 无可用代理时用空状态卡片替代输入框，引导用户去「设置 → 运行时」安装
+  const composerArea = agentsReady && !selectedAgentName ? (
+    <NoRuntimeCard onOpenRuntimes={onOpenRuntimes} />
+  ) : (
+    <ChatComposer
+      composerKey="home"
+      isRunning={isRunning}
+      onSend={handleSend}
+      onCancel={onCancel}
+      disabled={!selectedAgentName}
+      disabledPlaceholder={t('home.noAgent')}
+      onOpenConversation={onOpenConversation}
+    />
   );
 
   // If there are messages, show chat layout
@@ -230,15 +252,7 @@ export function HomePage({
               onCancel={() => messageSelectionStore.exit()}
             />
           ) : (
-            <ChatComposer
-              composerKey="home"
-              isRunning={isRunning}
-              onSend={handleSend}
-              onCancel={onCancel}
-              disabled={!selectedAgentName}
-              disabledPlaceholder={t('home.noAgent')}
-              onOpenConversation={onOpenConversation}
-            />
+            composerArea
           )}
         </div>
         </div>
@@ -263,15 +277,7 @@ export function HomePage({
 
         {/* Composer */}
         <div className="home-composer-wrap">
-          <ChatComposer
-            composerKey="home"
-            isRunning={isRunning}
-            onSend={handleSend}
-            onCancel={onCancel}
-            disabled={!selectedAgentName}
-            disabledPlaceholder={t('home.noAgent')}
-            onOpenConversation={onOpenConversation}
-          />
+          {composerArea}
         </div>
       </div>
     </div>
