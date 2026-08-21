@@ -22,6 +22,9 @@ const en: Record<string, string> = {
   'home.newChat': 'New chat',
   'home.noAgent': 'No agent selected — set a default in Runtimes',
   'home.tagline': 'Ink stored in the library, flowing through all things',
+  'home.noRuntimeTitle': 'No AI runtime installed',
+  'home.noRuntimeDesc': 'Install Claude Code, Codex, or another runtime to start chatting',
+  'home.openRuntimes': 'Install runtime',
 
   // ── ChatComposer ──
   'composer.noAgent': 'No agent available',
