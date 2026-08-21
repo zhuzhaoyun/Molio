@@ -103,6 +103,7 @@
   align-items: center;
   gap: 8px;
   text-align: center;
+  animation: no-runtime-card-in 280ms ease-out both;
 }
 .home-no-runtime__icon {
   color: var(--text-muted);
@@ -118,22 +119,23 @@
   color: var(--text-muted);
   margin-bottom: 8px;
 }
+/* 复用 base.css 的 button.primary 主按钮样式（accent 底 / hover→accent-hover / 内嵌阴影），
+   这里只覆写尺寸与圆角。 */
 .home-no-runtime__btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: none;
   border-radius: var(--radius);
-  background-color: var(--accent);
-  color: #fff;
   padding: 9px 18px;
   font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 160ms ease;
 }
-.home-no-runtime__btn:hover {
-  background-color: var(--accent-hover);
+
+@keyframes no-runtime-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* ── Chat layout (when messages exist) ── */
@@ -321,6 +323,9 @@
 /* Respect users with vestibular / motion sensitivity. */
 @media (prefers-reduced-motion: reduce) {
   .composer-uploading {
+    animation: none;
+  }
+  .home-no-runtime {
     animation: none;
   }
 }
