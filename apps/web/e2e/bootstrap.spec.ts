@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { gotoHome, waitForLanding } from './helpers/navigation';
+import { mockNoAgents } from './helpers/mock-sse';
 
 /**
  * @area navigation
@@ -46,5 +47,20 @@ test.describe('App bootstrap', () => {
     await waitForLanding(page);
 
     await expect(page.locator('[data-testid="hero-tagline"]')).toBeVisible();
+  });
+
+  test('no runtime: shows NoRuntimeCard and deep-links to settings-runtimes', async ({ page }) => {
+    await mockNoAgents(page);
+    await gotoHome(page);
+
+    // 卡片替代输入框
+    await expect(page.locator('[data-testid="no-runtime-card"]')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid="composer-input"]')).not.toBeVisible();
+
+    // 点击按钮 → 深链到 /settings?tab=runtimes，运行时 tab 激活
+    await page.locator('[data-testid="open-runtimes-btn"]').click();
+    await expect(page).toHaveURL(/\/settings\?tab=runtimes/);
+    await expect(page.locator('[data-testid="settings-tab-runtimes"]')).toHaveClass(/is-active/);
+    await expect(page.locator('.rt-shell')).toBeVisible({ timeout: 5_000 });
   });
 });

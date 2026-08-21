@@ -374,6 +374,28 @@ export async function mockRewindResend(
   });
 }
 
+/**
+ * Mock GET /api/agents → empty list and /api/config → no defaultAgentId,
+ * simulating "no runtime installed". Home page should show the
+ * NoRuntimeCard instead of the composer.
+ */
+export async function mockNoAgents(page: import('@playwright/test').Page) {
+  await page.route('**/api/agents', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ agents: [] }),
+    });
+  });
+  await page.route('**/api/config', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ locale: 'zh' }),
+    });
+  });
+}
+
 // ── Cleanup ────────────────────────────────────────────────────────────
 
 /**
