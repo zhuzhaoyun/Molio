@@ -379,7 +379,7 @@ export async function mockRewindResend(
  * simulating "no runtime installed". Home page should show the
  * NoRuntimeCard instead of the composer.
  */
-export async function mockNoAgents(page: import('@playwright/test').Page) {
+export async function mockNoAgents(page: Page) {
   await page.route('**/api/agents', async (route) => {
     await route.fulfill({
       status: 200,

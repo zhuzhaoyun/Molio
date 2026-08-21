@@ -27,6 +27,8 @@ interface Props {
   selectedAgentName: string | null;
   /** agents 列表是否已加载完成（避免加载中闪空状态卡片）。 */
   agentsReady: boolean;
+  /** agents 列表判定无可用代理（空列表或全部不可用）。 */
+  hasNoUsableAgent: boolean;
   /** 无可用代理时跳转「设置 → 运行时」的回调。 */
   onOpenRuntimes: () => void;
   messages: ChatMessage[];
@@ -52,6 +54,7 @@ interface Props {
 export function HomePage({
   selectedAgentName,
   agentsReady,
+  hasNoUsableAgent,
   onOpenRuntimes,
   messages,
   isRunning,
@@ -125,8 +128,10 @@ export function HomePage({
     [onSend],
   );
 
-  // 无可用代理时用空状态卡片替代输入框，引导用户去「设置 → 运行时」安装
-  const composerArea = agentsReady && !selectedAgentName ? (
+  // 无可用代理时用空状态卡片替代输入框，引导用户去「设置 → 运行时」安装。
+  // 用 agents 列表判定（hasNoUsableAgent）而非 selection：selection 在首帧绘制后
+  // 才生效会闪空状态卡片，且所选 agent 被移除时 selection 会 stale。
+  const composerArea = agentsReady && hasNoUsableAgent ? (
     <NoRuntimeCard onOpenRuntimes={onOpenRuntimes} />
   ) : (
     <ChatComposer

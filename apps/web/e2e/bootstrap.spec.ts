@@ -59,7 +59,7 @@ test.describe('App bootstrap', () => {
 
     // 点击按钮 → 深链到 /settings?tab=runtimes，运行时 tab 激活
     await page.locator('[data-testid="open-runtimes-btn"]').click();
-    await expect(page).toHaveURL(/\/settings\?tab=runtimes/);
+    await expect(page).toHaveURL(/\/settings\?tab=runtimes$/);
     await expect(page.locator('[data-testid="settings-tab-runtimes"]')).toHaveClass(/is-active/);
     await expect(page.locator('.rt-shell')).toBeVisible({ timeout: 5_000 });
   });
