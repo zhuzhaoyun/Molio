@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { gotoHome, waitForLanding } from './helpers/navigation';
-import { mockNoAgents } from './helpers/mock-sse';
+import { mockAgent, mockNoAgents } from './helpers/mock-sse';
 
 /**
  * @area navigation
@@ -23,10 +23,15 @@ test.describe('App bootstrap', () => {
   });
 
   test('composer is visible and ready', async ({ page }) => {
+    // Mock a usable agent so the composer renders regardless of the CI runner
+    // having no runtime installed. Without this, a no-runtime run would show
+    // the NoRuntimeCard instead of the composer and fail here.
+    await mockAgent(page);
     await gotoHome(page);
 
     const composer = page.locator('[data-testid="composer-input"]');
     await expect(composer).toBeVisible();
+    await expect(composer).toBeEnabled();
   });
 
   test('nav rail shows all navigation items', async ({ page }) => {

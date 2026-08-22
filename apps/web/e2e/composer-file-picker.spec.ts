@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { TempVault } from './helpers/cleanup';
+import { mockAgent } from './helpers/mock-sse';
 
 /**
  * @area chat
@@ -78,6 +79,12 @@ test.afterAll(async () => {
 });
 
 test.describe('Composer @ file picker (drill-down)', () => {
+  // Mock a usable agent so the composer renders on a runtime-less CI runner
+  // (otherwise the NoRuntimeCard replaces it and the picker can't be opened).
+  test.beforeEach(async ({ page }) => {
+    await mockAgent(page);
+  });
+
   test('typing @ opens the picker in browse mode: folders first, breadcrumb at root', async ({ page }) => {
     await gotoHomeWithVault(page);
     await openPicker(page);
