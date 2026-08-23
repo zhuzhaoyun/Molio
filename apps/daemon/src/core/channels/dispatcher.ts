@@ -2,10 +2,27 @@ import type Database from 'better-sqlite3';
 import type { AgentEvent, ChatMessage } from '@molio/contracts';
 import type { RunManager } from '../RunManager.js';
 import type { ConversationService } from '../conversations/service.js';
-import { extractOutboundMedia } from './outbound-media.js';
+import { extractOutboundMedia, type OutboundMediaFailReason } from './outbound-media.js';
 import type { ChannelSink } from './types.js';
 
 const RUN_REPLY_TIMEOUT_MS = 5 * 60 * 1000;
+
+/**
+ * User-facing phrasing for why an `<attach/>` marker could not be delivered.
+ * The reply text usually already claimed the file was attached, so these must
+ * be surfaced to the user — never logged-and-dropped.
+ */
+const ATTACH_FAIL_TEXT: Record<OutboundMediaFailReason, string> = {
+  'blocked-traversal': '路径被安全策略拦截',
+  'not-found': '找不到该文件',
+  'not-a-file': '该路径不是文件',
+  'unsupported-type': '文件类型不支持发送',
+};
+
+/** Last path segment of a raw (possibly relative) marker path. */
+function basenameOf(p: string): string {
+  return p.split(/[\\/]/).filter(Boolean).pop() || p;
+}
 /**
  * Hard cap on the per-user pending queue. The daemon is single-user local, so
  * a flood of messages from one user is almost always a stuck agent rather
@@ -300,13 +317,51 @@ export class ChannelDispatcher {
       // never sees a local path. Delivery is explicit-only — files the AI
       // writes via Write/Edit are NOT auto-delivered (that would spam the
       // user with every .md produced during ingestion).
-      const { items, text: cleanText } = extractOutboundMedia(text, cwd);
-      this.deps.conversations.appendAssistantMessage(conversationId, cleanText || text, { agentId, runId });
+      const { items, text: cleanText, failed } = extractOutboundMedia(text, cwd);
+      const hadMarkers = items.length > 0 || failed.length > 0;
+      // When markers were stripped, persist cleanText as-is: falling back to
+      // raw `text` (the old `cleanText || text`) would leak the markers'
+      // local paths into conversation history for attachment-only replies.
+      const persistText = hadMarkers ? (cleanText || '（附件，无文字说明）') : (cleanText || text);
+      this.deps.conversations.appendAssistantMessage(conversationId, persistText, { agentId, runId });
       if (cleanText) {
         await this.deps.sink.sendText(userId, cleanText);
       }
+      // Deliver each attachment independently: one failure must not block the
+      // rest, and every failure is collected so the user is TOLD at the end —
+      // the reply text already claims the files were attached, so silently
+      // skipping them leaves the user waiting for files that never arrive
+      // (2026-08-23 feishu incident: "已附上" text, no files, no notice).
+      const sendFailed: Array<{ fileName: string; error: string }> = [];
       for (const item of items) {
-        await this.deps.sink.sendMediaFile(userId, item);
+        try {
+          await this.deps.sink.sendMediaFile(userId, item);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          // eslint-disable-next-line no-console
+          console.log(
+            `[${this.deps.channelLabel}-attach] send-failed reason=sink-error file=${item.filePath} err=${msg}`,
+          );
+          sendFailed.push({ fileName: item.fileName, error: msg });
+        }
+      }
+      // Visible failure notice — unresolved markers + send failures. Nothing
+      // may be dropped silently here: the user-facing text said "已附上".
+      const problems: string[] = [];
+      for (const f of failed) {
+        // eslint-disable-next-line no-console
+        console.log(
+          `[${this.deps.channelLabel}-attach] undelivered reason=${f.reason} path=${f.path}`,
+        );
+        problems.push(`「${basenameOf(f.path)}」（${ATTACH_FAIL_TEXT[f.reason]}）`);
+      }
+      for (const s of sendFailed) {
+        problems.push(`「${s.fileName}」（发送失败：${s.error}）`);
+      }
+      if (problems.length > 0) {
+        const notice = `⚠️ 有 ${problems.length} 个附件未能发送：${problems.join('；')}`;
+        this.deps.conversations.appendAssistantMessage(conversationId, notice, { agentId, runId });
+        await this.deps.sink.sendText(userId, notice).catch(() => {});
       }
       // Stale-run cleanup: if the run is no longer receptive AND there's
       // nothing queued to drain into a fresh spawn, drop the per-user entry

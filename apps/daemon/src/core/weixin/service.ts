@@ -521,13 +521,16 @@ export class WeixinService implements ChannelSink {
 
   /**
    * Upload a local file to the Weixin CDN and deliver it as an image/file/
-   * video message. Best-effort: failures are logged but never break the text
-   * reply. Drops the context token on session expiry, mirroring sendText.
+   * video message. FAILURES RETHROW (after logging): the dispatcher catches
+   * them and tells the user which file was not delivered — swallowing them
+   * used to leave the user with reply text claiming "已附上" and no file, no
+   * notice (2026-08-23 feishu incident, same failure class). Drops the
+   * context token on session expiry, mirroring sendText.
    */
   async sendMediaFile(toUserId: string, item: OutboundMediaItem): Promise<void> {
-    if (!this.api) return;
+    if (!this.api) throw new Error('WeixinApi not initialized — cannot send attachment');
     const contextToken = this.contextTokens.get(toUserId);
-    if (!contextToken) return;
+    if (!contextToken) throw new Error('微信会话凭证缺失 — 无法发送附件');
 
     const mediaType = item.kind === 'image'
       ? UploadMediaType.IMAGE
@@ -547,12 +550,16 @@ export class WeixinService implements ChannelSink {
       if (ret === SESSION_EXPIRED_CODE || errcode === SESSION_EXPIRED_CODE) {
         this.contextTokens.delete(toUserId);
         this.persistContextTokens();
+        // The send itself failed (session expired) — surface it so the user
+        // is told the attachment did not arrive, not left waiting for it.
+        throw new Error('微信会话已过期 — 附件未发送');
       }
     } catch (err) {
       // eslint-disable-next-line no-console
       console.log(
         `[weixin-send-media] failed: ${err instanceof Error ? err.message : String(err)} file=${item.filePath}`,
       );
+      throw err;
     }
   }
 

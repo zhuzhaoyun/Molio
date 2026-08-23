@@ -419,8 +419,14 @@ export class FeishuService implements ChannelSink {
     }
   }
 
+  /**
+   * Upload + send one attachment. FAILURES RETHROW (after logging): the
+   * dispatcher catches them and tells the user which file was not delivered.
+   * Swallowing here used to leave the user with reply text claiming "已附上"
+   * and no file, no notice (2026-08-23 incident).
+   */
   async sendMediaFile(toUserId: string, item: OutboundMediaItem): Promise<void> {
-    if (!this.api) return;
+    if (!this.api) throw new Error('FeishuApi not initialized — cannot send attachment');
     try {
       const token = await this.tokenStore.getToken();
       // Feishu's image upload endpoint only accepts raster image types
@@ -439,6 +445,7 @@ export class FeishuService implements ChannelSink {
       console.log(
         `[feishu-send-media] failed: ${err instanceof Error ? err.message : String(err)} file=${item.filePath}`,
       );
+      throw err;
     }
   }
 
