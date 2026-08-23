@@ -91,3 +91,27 @@ test('loadConfig: DirectMail region/endpoint 格式非法 → 启动即抛错（
   assert.throws(() => loadConfig({ ...FULL_PROD, MOLIO_DM_REGION: 'cn-hangzhou;evil' }), /MOLIO_DM_REGION 非法/);
   assert.throws(() => loadConfig({ ...FULL_PROD, MOLIO_DM_ENDPOINT: 'https://x.com/path' }), /MOLIO_DM_ENDPOINT 非法/);
 });
+
+// 线上事故（2026-08-23）：MOLIO_DM_REPLY_TO 配了显示名格式，DirectMail 以
+// InvalidReplyToAddress 拒收，每次 send-code 都 422 mail_failed。启动期拦截。
+test('loadConfig: MOLIO_DM_REPLY_TO 格式非法 → 启动即抛错（不留到首次发信 422）', () => {
+  // 显示名格式、+ 号、非邮箱——DirectMail 只接受裸邮箱（@ 前后限数字/字母/下划线/减号/点）
+  assert.throws(
+    () => loadConfig({ ...FULL_PROD, MOLIO_DM_REPLY_TO: '墨友支持 <support@molio.cn>' }),
+    /MOLIO_DM_REPLY_TO 非法/,
+  );
+  assert.throws(() => loadConfig({ ...FULL_PROD, MOLIO_DM_REPLY_TO: 'support+tag@molio.cn' }), /MOLIO_DM_REPLY_TO 非法/);
+  assert.throws(() => loadConfig({ ...FULL_PROD, MOLIO_DM_REPLY_TO: 'not-an-email' }), /MOLIO_DM_REPLY_TO 非法/);
+});
+
+test('loadConfig: MOLIO_DM_REPLY_TO 两端空白被 trim（env 粘贴事故），纯空白按未设置处理', () => {
+  const cfg = loadConfig({ ...FULL_PROD, MOLIO_DM_REPLY_TO: ' support@molio.cn ' });
+  assert.equal(cfg.directMail?.replyTo, 'support@molio.cn');
+  const blank = loadConfig({ ...FULL_PROD, MOLIO_DM_REPLY_TO: '   ' });
+  assert.equal(blank.directMail?.replyTo, undefined);
+});
+
+test('loadConfig: MOLIO_DM_REPLY_TO 合法裸邮箱 → 正常加载', () => {
+  const cfg = loadConfig({ ...FULL_PROD, MOLIO_DM_REPLY_TO: 'support@mail.molio.cn' });
+  assert.equal(cfg.directMail?.replyTo, 'support@mail.molio.cn');
+});

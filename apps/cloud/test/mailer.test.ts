@@ -7,6 +7,7 @@ import {
   buildVerificationMail,
   createMailer,
   deriveDirectMailEndpoint,
+  replyToParams,
   type DirectMailTransport,
 } from '../src/mailer.js';
 import { AuthService } from '../src/service.js';
@@ -41,6 +42,20 @@ test('buildVerificationMail: 验证码做 HTML 转义，无注入面', () => {
 test('deriveDirectMailEndpoint: 杭州区为 dm.aliyuncs.com，其余地域带前缀', () => {
   assert.equal(deriveDirectMailEndpoint('cn-hangzhou'), 'dm.aliyuncs.com');
   assert.equal(deriveDirectMailEndpoint('ap-southeast-1'), 'dm.ap-southeast-1.aliyuncs.com');
+});
+
+// ─── replyToParams（DirectMail 实测约定回归） ─────────────────────────
+
+// 线上事故（2026-08-24）：传数值 0/1 被 DirectMail 以 InvalidReplyToAddress 拒收，
+// 省略参数则 MissingReplyToAddress——只认真正的布尔值。assert/strict 下 0≠false，
+// 本测试锁死该约定，防止再退回数值写法。
+test('replyToParams: 必须布尔 true/false——数值 0/1 会被 DirectMail 拒收', () => {
+  const none = replyToParams(undefined);
+  assert.equal(none.replyToAddress, false);
+  assert.equal(none.replyAddress, undefined);
+  const withReply = replyToParams('support@molio.cn');
+  assert.equal(withReply.replyToAddress, true);
+  assert.equal(withReply.replyAddress, 'support@molio.cn');
 });
 
 // ─── DirectMailMailer（transport 注入 fake，不碰真 SDK） ──────────────

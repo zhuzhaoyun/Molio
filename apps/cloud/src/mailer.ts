@@ -91,6 +91,18 @@ export function deriveDirectMailEndpoint(region: string): string {
   return region === 'cn-hangzhou' ? 'dm.aliyuncs.com' : `dm.${region}.aliyuncs.com`;
 }
 
+/**
+ * Reply-To 相关参数。
+ *
+ * 实测踩坑（2026-08-24 线上事故定位）：ReplyToAddress 必填，且**只认布尔值**
+ * true/false——官方文档写的数值 0/1 会被网关拒收（InvalidReplyToAddress），
+ * 省略则报 MissingReplyToAddress。SDK 类型虽是 boolean，但构造函数签名宽松，
+ * 传 0/1 编译期不报错，拖到发信才炸。单独抽纯函数便于测试锁死该约定。
+ */
+export function replyToParams(replyTo: string | undefined): { replyToAddress: boolean; replyAddress?: string } {
+  return replyTo !== undefined ? { replyToAddress: true, replyAddress: replyTo } : { replyToAddress: false };
+}
+
 /** prod 真发信传输：阿里云 DirectMail SingleSendMail。 */
 export function createDirectMailTransport(config: DirectMailConfig): DirectMailTransport {
   const client = new DM20151123(
@@ -108,11 +120,8 @@ export function createDirectMailTransport(config: DirectMailConfig): DirectMailT
         accountName: config.accountName,
         // 1 = 发信地址（控制台配置的地址）；0 是批量收件人列表，不用
         addressType: 1,
-        // ReplyToAddress API 规格为必填 0/1 数值：0 = 回信落到发信地址；
-        // 仅配置了 MOLIO_DM_REPLY_TO 时才附带 replyAddress（undefined 字段不进请求）
-        ...(config.replyTo !== undefined
-          ? { replyToAddress: 1, replyAddress: config.replyTo }
-          : { replyToAddress: 0 }),
+        // 见 replyToParams：必填且只认布尔值，数值 0/1 会被拒收
+        ...replyToParams(config.replyTo),
         toAddress: msg.toAddress,
         subject: msg.subject,
         textBody: msg.textBody,

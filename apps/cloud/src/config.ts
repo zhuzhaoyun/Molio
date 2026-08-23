@@ -54,6 +54,14 @@ export interface CloudConfig {
   directMail?: DirectMailConfig;
 }
 
+/**
+ * DirectMail 回信地址格式。比通用邮箱校验更严：官方文档要求 @ 前后仅限
+ * 数字/字母/下划线/减号/点——显示名（"客服 <a@b.c>"）、+ 号、空格都会被
+ * SingleSendMail 以 InvalidReplyToAddress 拒收（2026-08-23 线上 422 事故）。
+ * 域名至少含一个点（同 service.ts EMAIL_RE 的思路）。
+ */
+const DM_REPLY_TO_RE = /^[A-Za-z0-9._-]+@([A-Za-z0-9._-]+\.)+[A-Za-z0-9._-]+$/;
+
 function rawPort(env: NodeJS.ProcessEnv): string | undefined {
   return env.PORT !== undefined && env.PORT !== '' ? env.PORT : undefined;
 }
@@ -117,13 +125,22 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CloudConfig {
     if (endpoint !== undefined && !/^[a-z0-9.-]+$/.test(endpoint)) {
       throw new Error(`[cloud] MOLIO_DM_ENDPOINT 非法: ${endpoint}（应为纯主机名，如 dm.aliyuncs.com）`);
     }
+    // 回信地址：先 trim（env 粘贴事故），再按 DirectMail 字符集校验。
+    // 坏值若放过，会在每次 send-code 发信时以难懂的 InvalidReplyToAddress → 422 爆出来，
+    // 与上方 region/endpoint 同理，启动期 fail-fast。
+    const replyToRaw = (env.MOLIO_DM_REPLY_TO ?? '').trim();
+    if (replyToRaw && !DM_REPLY_TO_RE.test(replyToRaw)) {
+      throw new Error(
+        `[cloud] MOLIO_DM_REPLY_TO 非法: ${replyToRaw}（DirectMail 仅接受裸邮箱，@ 前后限数字/字母/下划线/减号/点，不允许显示名/加号/空格）`,
+      );
+    }
     directMail = {
       accessKeyId: dmAkId,
       accessKeySecret: dmAkSecret,
       accountName: dmAccount,
       region,
       endpoint,
-      replyTo: env.MOLIO_DM_REPLY_TO || undefined,
+      replyTo: replyToRaw || undefined,
     };
   } else if (envName === 'prod') {
     throw new Error(
