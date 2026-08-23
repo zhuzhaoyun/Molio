@@ -1,7 +1,7 @@
 import { execFileSync, execSync } from 'node:child_process';
 import {
   mkdirSync, existsSync, chmodSync, writeFileSync, renameSync, unlinkSync,
-  statSync, readFileSync, appendFileSync,
+  statSync, readFileSync, appendFileSync, rmSync,
 } from 'node:fs';
 import https from 'node:https';
 import path from 'node:path';
@@ -140,16 +140,44 @@ async function installFromNpmNative(
     return;
   }
 
-  // Determine target path
+  // Determine target path.
+  // Bundled layout (agents whose binary needs sibling resource files, e.g.
+  // Codex) installs into its own directory ~/.molio/bin/<agentId>/... ;
+  // single-binary agents drop straight into ~/.molio/bin/.
   const binDir = getMolioBinDir();
-  const finalBinName = process.platform === 'win32' && !binName.endsWith('.exe')
-    ? `${binName}.exe` : binName;
-  const targetPath = path.join(binDir, finalBinName);
-  const tmpPath = targetPath + '.tmp';
+  const bundled = !!nativeInfo.extractDir;
+  const installRoot = bundled ? path.join(binDir, def.id) : binDir;
+
+  let targetPath: string;   // final location of the main binary
+  let stagingPath: string;  // where the main binary is written before swap
+  let stagingDir: string | null = null; // bundled: staging tree, swapped in last
+
+  if (bundled) {
+    const prefix = normalizeExtractDir(nativeInfo.extractDir!);
+    if (!nativeInfo.binInTar.startsWith(prefix)) {
+      onEvent({
+        type: 'error',
+        message: `Install config error: binInTar "${nativeInfo.binInTar}" ` +
+          `is not inside extractDir "${prefix}"`,
+        category: 'unknown',
+        retryable: false,
+      });
+      return;
+    }
+    const relMain = nativeInfo.binInTar.slice(prefix.length);
+    targetPath = path.join(installRoot, ...relMain.split('/'));
+    stagingDir = `${installRoot}.staging`;
+    stagingPath = path.join(stagingDir, ...relMain.split('/'));
+  } else {
+    const finalBinName = process.platform === 'win32' && !binName.endsWith('.exe')
+      ? `${binName}.exe` : binName;
+    targetPath = path.join(installRoot, finalBinName);
+    stagingPath = targetPath + '.tmp';
+  }
 
   mkdirSync(binDir, { recursive: true });
 
-  if (existsSync(targetPath)) {
+  if (existsSync(bundled ? installRoot : targetPath)) {
     onEvent({ type: 'log', message: 'Existing installation detected, will overwrite.' });
   }
 
@@ -188,10 +216,7 @@ async function installFromNpmNative(
   // ── Phase 3: Download ──
   onEvent({ type: 'phase', phase: 'download', message: `Downloading ${nativeInfo.pkgName} v${version}...` });
 
-  // npm tarball naming convention: {pkgName-without-scope}-{version}.tgz
-  // e.g. @anthropic-ai/claude-code-win32-x64 → claude-code-win32-x64-2.1.235.tgz
-  const pkgShortName = nativeInfo.pkgName.split('/').pop()!;
-  const tarballName = `${pkgShortName}-${version}.tgz`;
+  const tarballName = buildTarballName(nativeInfo, version);
 
   let tarball: Buffer;
   try {
@@ -215,9 +240,36 @@ async function installFromNpmNative(
   // ── Phase 4: Extract ──
   onEvent({ type: 'phase', phase: 'extract', message: 'Extracting binary from package...' });
 
-  let binary: Buffer | null;
+  // Parsed tar content — either a single binary or a full file tree.
+  let extracted: { relPath: string; data: Buffer }[];
   try {
-    binary = extractFromTarball(tarball, nativeInfo.binInTar);
+    if (bundled) {
+      const files = extractTreeFromTarball(tarball, nativeInfo.extractDir!);
+      if (!files || files.length === 0) {
+        onEvent({
+          type: 'error',
+          message: `No files found under "${nativeInfo.extractDir}" in the downloaded package.`,
+          category: 'extraction',
+          retryable: false,
+          hint: `The package structure may have changed. Try installing ${agentName} manually: ${def.installUrl ?? ''}`,
+        });
+        return;
+      }
+      extracted = files;
+    } else {
+      const binary = extractFromTarball(tarball, nativeInfo.binInTar);
+      if (!binary) {
+        onEvent({
+          type: 'error',
+          message: `Binary "${nativeInfo.binInTar}" not found in the downloaded package.`,
+          category: 'extraction',
+          retryable: false,
+          hint: `The package structure may have changed. Try installing ${agentName} manually: ${def.installUrl ?? ''}`,
+        });
+        return;
+      }
+      extracted = [{ relPath: '', data: binary }];
+    }
   } catch (err) {
     onEvent({
       type: 'error',
@@ -229,22 +281,26 @@ async function installFromNpmNative(
     return;
   }
 
-  if (!binary) {
-    onEvent({
-      type: 'error',
-      message: `Binary "${nativeInfo.binInTar}" not found in the downloaded package.`,
-      category: 'extraction',
-      retryable: false,
-      hint: `The package structure may have changed. Try installing ${agentName} manually: ${def.installUrl ?? ''}`,
-    });
-    return;
-  }
-
-  // Write to temp file
+  // Write to the staging location
   try {
-    writeFileSync(tmpPath, binary);
-    if (process.platform !== 'win32') {
-      chmodSync(tmpPath, 0o755);
+    if (bundled) {
+      rmSync(stagingDir!, { recursive: true, force: true });
+      for (const file of extracted) {
+        const dest = path.join(stagingDir!, ...file.relPath.split('/'));
+        mkdirSync(path.dirname(dest), { recursive: true });
+        writeFileSync(dest, file.data);
+        if (process.platform !== 'win32') {
+          // Every bundled file (binaries, rg, shell, sandbox helpers) must
+          // be executable — they are invoked by the main binary at runtime.
+          chmodSync(dest, 0o755);
+        }
+      }
+      onEvent({ type: 'log', message: `Extracted ${extracted.length} files` });
+    } else {
+      writeFileSync(stagingPath, extracted[0]!.data);
+      if (process.platform !== 'win32') {
+        chmodSync(stagingPath, 0o755);
+      }
     }
   } catch (err) {
     onEvent({
@@ -261,7 +317,7 @@ async function installFromNpmNative(
   onEvent({ type: 'phase', phase: 'validate', message: 'Validating binary integrity...' });
 
   try {
-    const validationError = validateBinary(tmpPath, process.platform);
+    const validationError = validateBinary(stagingPath, process.platform);
     if (validationError) {
       onEvent({
         type: 'error',
@@ -282,14 +338,19 @@ async function installFromNpmNative(
     return;
   }
 
-  // Atomic rename: temp → final
+  // Swap staging into place (near-atomic: rm old, rename new)
   try {
-    if (existsSync(targetPath)) {
-      unlinkSync(targetPath);
-    }
-    renameSync(tmpPath, targetPath);
-    if (process.platform !== 'win32') {
-      chmodSync(targetPath, 0o755);
+    if (bundled) {
+      rmSync(installRoot, { recursive: true, force: true });
+      renameSync(stagingDir!, installRoot);
+    } else {
+      if (existsSync(targetPath)) {
+        unlinkSync(targetPath);
+      }
+      renameSync(stagingPath, targetPath);
+      if (process.platform !== 'win32') {
+        chmodSync(targetPath, 0o755);
+      }
     }
   } catch (err) {
     onEvent({
@@ -341,7 +402,10 @@ async function installFromNpmNative(
   // ── Phase 7: PATH Update ──
   onEvent({ type: 'phase', phase: 'path', message: 'Configuring environment PATH...' });
 
-  const pathMsg = addToUserPath(binDir);
+  // Bundled layout: the binary lives in <installRoot>/bin/, so put that dir
+  // on PATH (binDir itself only holds single-binary agents).
+  const pathDir = bundled ? path.dirname(targetPath) : binDir;
+  const pathMsg = addToUserPath(pathDir);
   onEvent({ type: 'log', message: pathMsg });
 
   // ── Done ──
@@ -351,6 +415,32 @@ async function installFromNpmNative(
     binaryPath: targetPath,
     version: installedVersion,
   });
+}
+
+// ─── Tarball Naming ────────────────────────────────────────────────────────
+
+/**
+ * Build the npm tarball file name for a platform package.
+ *
+ * npm convention: `{pkgName-without-scope}-{tarballVersion}.tgz`
+ * e.g. @anthropic-ai/claude-code-win32-x64 → claude-code-win32-x64-2.1.235.tgz
+ *
+ * When the package entry carries a `tarballVersion` template, `{version}` is
+ * replaced with the resolved version — some publishers (e.g. @openai/codex)
+ * ship platform builds as version-suffixed variants of ONE package:
+ * codex-0.149.0-win32-x64.tgz instead of a separate per-platform package.
+ *
+ * @internal exported for testing
+ */
+export function buildTarballName(
+  nativeInfo: NpmNativeInstallSource['packages'][string],
+  resolvedVersion: string,
+): string {
+  const pkgShortName = nativeInfo.pkgName.split('/').pop()!;
+  const tarballVersion = nativeInfo.tarballVersion
+    ? nativeInfo.tarballVersion.split('{version}').join(resolvedVersion)
+    : resolvedVersion;
+  return `${pkgShortName}-${tarballVersion}.tgz`;
 }
 
 // ─── Platform Detection ────────────────────────────────────────────────────
@@ -576,6 +666,64 @@ function downloadOnce(
 export function extractFromTarball(gzipped: Buffer, targetPath: string): Buffer | null {
   const unzipped = gunzipSync(gzipped) as Buffer;
   return extractFileFromTar(unzipped, targetPath);
+}
+
+/** Ensure the extract prefix ends with '/' so entry matching is unambiguous. */
+function normalizeExtractDir(extractDir: string): string {
+  return extractDir.endsWith('/') ? extractDir : `${extractDir}/`;
+}
+
+export interface ExtractedFile {
+  /** Path relative to the extract prefix, '/'-separated. */
+  relPath: string;
+  data: Buffer;
+}
+
+/**
+ * Extract ALL regular files under a tar path prefix (bundled layout).
+ * Returns files with paths relative to the prefix, or null when nothing
+ * matched. Entries escaping the prefix ('..') are skipped defensively.
+ *
+ * @internal exported for testing
+ */
+export function extractTreeFromTarball(
+  gzipped: Buffer,
+  extractDir: string,
+): ExtractedFile[] | null {
+  const unzipped = gunzipSync(gzipped) as Buffer;
+  const prefix = normalizeExtractDir(extractDir);
+  const files: ExtractedFile[] = [];
+
+  let offset = 0;
+  while (offset < unzipped.length) {
+    const header = unzipped.subarray(offset, offset + 512);
+    offset += 512;
+
+    if (header.length < 512) break;
+
+    const filename = header.toString('utf8', 0, 100).replace(/\0/g, '');
+    if (!filename) break;
+
+    const sizeStr = header.toString('utf8', 124, 136).replace(/\0/g, '').trim();
+    const size = parseInt(sizeStr, 8) || 0;
+
+    // typeflag: '0' or NUL = regular file. Directories ('5'), symlinks ('2'),
+    // pax headers ('x'/'g') etc. are skipped (dirs also have size 0).
+    const typeflag = header[156];
+    const isRegularFile = typeflag === 0x30 || typeflag === 0;
+
+    if (size > 0 && isRegularFile && filename.startsWith(prefix)) {
+      const relPath = filename.slice(prefix.length);
+      if (relPath && !relPath.split('/').includes('..')) {
+        files.push({ relPath, data: unzipped.subarray(offset, offset + size) });
+      }
+    }
+
+    const blocks = Math.ceil(size / 512);
+    offset += blocks * 512;
+  }
+
+  return files.length > 0 ? files : null;
 }
 
 function extractFileFromTar(tarBuffer: Buffer, targetPath: string): Buffer | null {

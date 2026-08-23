@@ -33,6 +33,7 @@ src/
       qwen.ts          Qwen Code runtime 定义
       launch.ts        二进制路径解析 + 版本探测
       env.ts           spawn 环境变量构建
+      install.ts       一键安装引擎（npm-native：版本解析→下载→解包→校验→试运行→PATH）。两种解包布局：单二进制（claude，binInTar 直落 ~/.molio/bin/）；bundled 目录树（codex，extractDir 前缀整树解到 ~/.molio/bin/<agentId>/，二进制依赖同级资源文件时需整体保留）。平台构建以版本后缀发布在单一包时（如 @openai/codex@0.149.0-win32-x64），用 packages[].tarballVersion 模板 {version} 拼 tarball 名
     streams/
       claude-stream.ts     Claude JSONL 流解析
       codex-stream.ts      Codex 流解析

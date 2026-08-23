@@ -171,6 +171,9 @@ export function getWellKnownToolchainDirs(): string[] {
     dirs.push(
       // Molio user-level binary directory (one-click install target)
       path.join(home, '.molio', 'bin'),
+      // Bundled-layout install target (agents whose binary needs sibling
+      // resource files — e.g. Codex one-click install lands here)
+      path.join(home, '.molio', 'bin', 'codex', 'bin'),
       path.join(home, 'AppData', 'Local', 'pnpm'),
       path.join(home, 'AppData', 'Roaming', 'npm'),
       path.join(home, 'AppData', 'Local', 'Yarn', 'bin'),
@@ -230,6 +233,9 @@ export function getWellKnownToolchainDirs(): string[] {
     dirs.push(
       // Molio user-level binary directory (one-click install target)
       path.join(home, '.molio', 'bin'),
+      // Bundled-layout install target (agents whose binary needs sibling
+      // resource files — e.g. Codex one-click install lands here)
+      path.join(home, '.molio', 'bin', 'codex', 'bin'),
       path.join(home, '.local', 'bin'),
       path.join(home, '.npm-global', 'bin'),
       path.join(home, '.npm-packages', 'bin'),
