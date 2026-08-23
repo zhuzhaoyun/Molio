@@ -6,9 +6,9 @@
 <meta name="theme-color" content="#1A1714">
 
 <!-- SEO -->
-<title>Molio 使用指南 — 四步上手，让 AI 在你的知识库上工作</title>
-<meta name="description" content="Molio 使用指南：安装 AI 助手 → 创建知识库 → 让 AI 工作 → 产出回写入库，可选排版发布。">
-<meta name="keywords" content="Molio 使用指南,Claude Code 安装,本地知识库,Obsidian 兼容,微信 AI 助手">
+<title>Molio 使用指南 — 2 分钟看视频上手，让 AI 在你的知识库上工作</title>
+<meta name="description" content="Molio 使用指南：看视频快速上手。让 AI 助手读你的本地知识库做研究、写作、问答，产出回写入库，支持排版发布与多平台分发。">
+<meta name="keywords" content="Molio 使用指南,Claude Code 安装,本地知识库,Obsidian 兼容,微信 AI 助手,知识图谱">
 <meta name="robots" content="index, follow">
 <link rel="canonical" href="https://molio.cn/help.html">
 
@@ -21,8 +21,8 @@
 <link rel="stylesheet" href="styles.css?v=20260731">
 
 <!-- Open Graph -->
-<meta property="og:title" content="Molio 使用指南 — 四步上手，让 AI 在你的知识库上工作">
-<meta property="og:description" content="Molio 使用指南：安装 AI 助手 → 创建知识库 → 让 AI 工作 → 产出回写入库，可选排版发布。">
+<meta property="og:title" content="Molio 使用指南 — 2 分钟看视频上手，让 AI 在你的知识库上工作">
+<meta property="og:description" content="Molio 使用指南：看视频快速上手。让 AI 助手读你的本地知识库做研究、写作、问答，产出回写入库，支持排版发布与多平台分发。">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://molio.cn/help.html">
 <meta property="og:image" content="https://molio.cn/images/brand.png">
@@ -31,24 +31,23 @@
 
 <!-- Twitter -->
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Molio 使用指南 — 四步上手，让 AI 在你的知识库上工作">
-<meta name="twitter:description" content="Molio 使用指南：安装 AI 助手 → 创建知识库 → 让 AI 工作 → 产出回写入库，可选排版发布。">
+<meta name="twitter:title" content="Molio 使用指南 — 2 分钟看视频上手，让 AI 在你的知识库上工作">
+<meta name="twitter:description" content="Molio 使用指南：看视频快速上手。让 AI 助手读你的本地知识库做研究、写作、问答，产出回写入库，支持排版发布与多平台分发。">
 <meta name="twitter:image" content="https://molio.cn/images/brand.png">
 
 <!-- JSON-LD -->
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
-  "@type": "HowTo",
-  "name": "Molio 使用指南 — 四步上手",
-  "description": "四步完成 Molio 的安装、配置与让 AI 工作。",
-  "totalTime": "PT20M",
-  "step": [
-    { "@type": "HowToStep", "name": "安装 AI 助手", "url": "https://molio.cn/help.html#step-1" },
-    { "@type": "HowToStep", "name": "创建知识库", "url": "https://molio.cn/help.html#step-2" },
-    { "@type": "HowToStep", "name": "让 AI 工作", "url": "https://molio.cn/help.html#step-3" },
-    { "@type": "HowToStep", "name": "排版发布", "url": "https://molio.cn/help.html#step-4" }
-  ]
+  "@type": "VideoObject",
+  "name": "Molio 使用指南 — 全流程上手",
+  "description": "Molio 从安装 AI 助手、创建知识库、让 AI 工作到排版发布的全流程上手讲解。",
+  "embedUrl": "https://player.bilibili.com/player.html?bvid=BV1M68H6nEGs",
+  "thumbnailUrl": "https://molio.cn/images/main.webp",
+  "publisher": {
+    "@type": "Organization",
+    "name": "Molio 墨流"
+  }
 }
 </script>
 </head>
@@ -69,93 +68,36 @@
 
 <main class="page-content">
   <h1 class="page-title">Molio 使用指南</h1>
-  <p class="page-subtitle">从安装到让 AI 为你工作，四步完成</p>
+  <p class="page-subtitle">2 分钟看完视频，直接上手</p>
 
-  <article class="step-card reveal" id="step-1">
-    <div class="step-card-header">
-      <div class="step-number brown">1</div>
-      <h2 class="step-title">安装 AI 助手</h2>
-    </div>
-    <div class="content-text">
-      <p>Molio 需要搭配 AI 运行时使用。如果你已经安装了 Claude Code，可以跳过此步骤。</p>
-      <p>如果尚未安装 Claude Code，Molio 支持一键安装：</p>
-      <ol>
-        <li>打开 Molio，进入<strong>「设置」→「运行时」</strong>页面</li>
-        <li>点击 Claude Code 旁的<strong>「一键安装」</strong>按钮即可自动完成</li>
-      </ol>
-      <p>安装完成后，配置 API Key 即可使用：</p>
-      <ol start="3">
-        <li>前往 <a href="https://platform.deepseek.com/top_up" target="_blank" rel="noopener noreferrer">DeepSeek 平台</a>购买 API Token</li>
-        <li>在 API Keys 页面获取你的 API Key</li>
-        <li>回到 Molio 运行时页面，点击 Claude Code 旁的<strong>「模型提供商」</strong>，粘贴 API Key 后点击<strong>「保存」</strong></li>
-      </ol>
-      <div class="tip-box"><strong>提示：</strong>Molio 已内置 DeepSeek、OpenRouter、硅基流动等多家模型提供商，也可自定义接入任意 Anthropic 兼容 API。</div>
-    </div>
-  </article>
+  <!-- 全流程教学视频 -->
+  <div class="guide-video-frame reveal">
+    <iframe src="//player.bilibili.com/player.html?isOutside=true&aid=117123003258811&bvid=BV1M68H6nEGs&cid=41073967153&p=1" scrolling="no" border="0" frameborder="no" framespacing="0" allowfullscreen="true"></iframe>
+  </div>
 
-  <article class="step-card reveal" id="step-2">
-    <div class="step-card-header">
-      <div class="step-number teal">2</div>
-      <h2 class="step-title">创建知识库</h2>
+  <!-- 看完视频，你就拥有了这些能力 -->
+  <section class="guide-cap-section reveal" id="capabilities">
+    <h2 class="guide-cap-head">核心功能</h2>
+    <p class="guide-cap-sub">点击可放大查看</p>
+    <div class="cap-grid">
+      <figure class="cap-card">
+        <img src="images/kg-graph.webp" alt="知识图谱" />
+        <figcaption class="cap-tag">知识图谱</figcaption>
+      </figure>
+      <figure class="cap-card">
+        <img src="images/wiki_knowledge.webp" alt="构建 Wiki" />
+        <figcaption class="cap-tag">构建 Wiki</figcaption>
+      </figure>
+      <figure class="cap-card">
+        <img src="images/main.webp" alt="AI 对话" />
+        <figcaption class="cap-tag">AI 对话</figcaption>
+      </figure>
+      <figure class="cap-card">
+        <img src="images/previews/mingshi/1.png" alt="排版发布" />
+        <figcaption class="cap-tag">排版发布</figcaption>
+      </figure>
     </div>
-    <div class="content-text">
-      <p>知识库是 Molio 的工作空间，存放你的所有文档和资料：</p>
-      <ol>
-        <li>点击左侧导航栏的<strong>「知识库」</strong></li>
-        <li>点击底部的<strong>「创建知识库」</strong>，选择一个本地文件夹作为知识库的存放位置</li>
-        <li>你也可以选择打开已有的文件夹作为知识库</li>
-      </ol>
-      <p>支持同时管理多个知识库，可随时切换。知识库中的 Markdown 文件、双向链接等内容都会被 AI 读取并理解。</p>
-    </div>
-  </article>
-
-  <article class="step-card reveal" id="step-3">
-    <div class="step-card-header">
-      <div class="step-number red">3</div>
-      <h2 class="step-title">让 AI 工作</h2>
-    </div>
-    <div class="content-text">
-      <p>回到「首页」，AI 会基于你的知识库工作：</p>
-      <ol>
-        <li>在对话框选择 Agent、发送消息，AI 读库做研究、分析、创作</li>
-        <li>把产出以 Markdown 存回知识库，成为你积累的一部分</li>
-        <li>在知识库页面点击<strong>「构建 Wiki」</strong>，AI 自动生成索引与摘要，越用越懂你的事</li>
-      </ol>
-      <div class="tip-box"><strong>提示：</strong>连接微信通道（见下文）后，手机上也能在微信里跟知识库对话。</div>
-    </div>
-  </article>
-
-  <article class="step-card reveal" id="step-4">
-    <div class="step-card-header">
-      <div class="step-number brown">4</div>
-      <h2 class="step-title">排版发布</h2>
-    </div>
-    <div class="content-text">
-      <p>产出不必发布。想发布时，可以排版并分发到多个平台：</p>
-      <ol>
-        <li>在知识库中打开一个 Markdown 文件</li>
-        <li>点击右上角的<strong>「排版」</strong>按钮，进入三栏模式：左侧编辑源码、中间实时预览、右侧样式面板</li>
-        <li>在右侧面板调整主题、字体、主题色等样式</li>
-        <li>点击<strong>「复制」</strong>按钮，内容会以富文本格式写入剪贴板，直接粘贴到微信公众号编辑器即可</li>
-        <li>或安装 <strong>COSE Chrome 扩展</strong>（<a href="https://chromewebstore.google.com/detail/cose-%E5%A4%9A%E5%B9%B3%E5%8F%B0%E6%96%87%E7%AB%A0%E5%90%8C%E6%AD%A5/ilhikcdphhpjofhlnbojifbihhfmmhfk?hl=zh-CN&utm_source=ext_sidebar" target="_blank" rel="noopener noreferrer">Chrome 商店</a>），点击<strong>「发布」</strong>按钮一键分发到微信、知乎、CSDN、掘金等 30+ 平台</li>
-      </ol>
-      <div class="tip-box"><strong>国内用户：</strong>如果无法访问 Chrome 商店，可前往 <a href="index.html#download">首页下载区</a> 获取 COSE 扩展的离线安装包。</div>
-    </div>
-  </article>
-
-  <h2 class="section-heading reveal" id="connect">连接微信</h2>
-  <article class="step-card reveal">
-    <div class="content-text">
-      <p>通过微信通道，你可以直接在微信中与 AI 助手对话：</p>
-      <ol>
-        <li>点击左侧导航栏的<strong>「设置」</strong>进入设置页面</li>
-        <li>切换到<strong>「渠道」</strong>标签页</li>
-        <li>选择微信，点击<strong>「连接微信」</strong></li>
-        <li>用手机微信扫描屏幕上的二维码并确认授权</li>
-      </ol>
-      <div class="tip-box"><strong>注意：</strong>微信通道使用你在「运行时」中设置的默认 AI 助手来处理消息。</div>
-    </div>
-  </article>
+  </section>
 
 </main>
 
@@ -177,8 +119,8 @@
     <div class="footer-links">
       <h4>资源</h4>
       <a href="help.html">快速入门</a>
-      <a href="help.html#step-4">排版发布</a>
-      <a href="help.html#connect">连接微信</a>
+      <a href="help.html#capabilities">能力亮点</a>
+      <a href="resources.html">资源</a>
       <a href="https://github.com/zhuzhaoyun/Molio/issues" target="_blank" rel="noopener noreferrer">问题反馈</a>
     </div>
     <div class="footer-links">
@@ -193,6 +135,44 @@
     <span>Molio 墨流 — 别再和每一个 AI 从零开始：会成长的 AI 知识空间，产出回写入库，越用越懂你的事，数据全在你自己电脑上</span>
   </div>
 </footer>
+
+<!-- 能力图灯箱放大 -->
+<div class="guide-lightbox" id="guideLightbox" role="dialog" aria-modal="true" aria-label="能力展示放大图">
+  <button class="guide-lightbox-close" id="guideLightboxClose" aria-label="关闭">×</button>
+  <img id="guideLightboxImg" src="" alt="" />
+  <figcaption id="guideLightboxCaption"></figcaption>
+</div>
+
+<script>
+(function () {
+  var overlay = document.getElementById('guideLightbox');
+  var lbImg = document.getElementById('guideLightboxImg');
+  var lbCap = document.getElementById('guideLightboxCaption');
+  var lbClose = document.getElementById('guideLightboxClose');
+
+  function openLightbox(card) {
+    var img = card.querySelector('img');
+    var tag = card.querySelector('.cap-tag');
+    if (!img) return;
+    lbImg.src = img.getAttribute('src');
+    lbImg.alt = img.getAttribute('alt') || '';
+    lbCap.textContent = tag ? tag.textContent : '';
+    overlay.classList.add('is-open');
+    document.body.style.overflow = 'hidden';
+  }
+  function closeLightbox() {
+    overlay.classList.remove('is-open');
+    document.body.style.overflow = '';
+  }
+
+  document.querySelectorAll('.cap-card').forEach(function (card) {
+    card.addEventListener('click', function () { openLightbox(card); });
+  });
+  lbClose.addEventListener('click', closeLightbox);
+  overlay.addEventListener('click', function (e) { if (e.target === overlay) closeLightbox(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeLightbox(); });
+})();
+</script>
 
 <script src="shared.js?v=20260731"></script>
 
