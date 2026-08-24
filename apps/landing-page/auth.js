@@ -148,6 +148,9 @@
   var modal = null;
   var pendingAuth = null; // requireAuth 去重：弹窗已开时复用同一 Promise
   var countdownTimer = null;
+  var sending = false; // 发送验证码单飞标记：请求进行中时，重复点击 / 回车 / 输入重新启用都不会触发第二次发送
+  var verifying = false; // 校验单飞标记：同上，防止验证码被重复提交
+  var sentEmail = ''; // 发码时快照的邮箱：verify 必须用「发出验证码的那个邮箱」（与桌面端 LoginForm sentEmailRef 同做法）
 
   function esc(s) {
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -181,8 +184,8 @@
           '<p class="auth-note" id="auth-sent-note"></p>' +
           '<label class="auth-label" for="auth-code">验证码</label>' +
           '<input id="auth-code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="6 位验证码">' +
+          '<button type="button" class="btn btn-primary auth-btn" id="auth-verify" disabled>登录</button>' +
           '<div class="auth-row">' +
-            '<button type="button" class="btn btn-primary auth-btn" id="auth-verify" disabled>登录</button>' +
             '<button type="button" class="auth-link" id="auth-resend" disabled>重新发送</button>' +
             '<button type="button" class="auth-link" id="auth-change-email">返回修改邮箱</button>' +
           '</div>' +
@@ -204,13 +207,14 @@
     var resendBtn = el.querySelector('#auth-resend');
 
     function syncSendEnabled() {
+      if (sending) return; // 发送中保持禁用：防止输入/勾选重新启用按钮触发重复发送
       var v = emailInput.value.trim();
       sendBtn.disabled = !v || !EMAIL_RE.test(v) || !agreeBox.checked;
     }
     emailInput.addEventListener('input', syncSendEnabled);
     agreeBox.addEventListener('change', syncSendEnabled);
     emailInput.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !sendBtn.disabled) sendCode(); });
-    codeInput.addEventListener('input', function () { verifyBtn.disabled = !codeInput.value.trim(); });
+    codeInput.addEventListener('input', function () { if (!verifying) verifyBtn.disabled = !codeInput.value.trim(); });
     codeInput.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !verifyBtn.disabled) verify(); });
 
     sendBtn.addEventListener('click', sendCode);
@@ -218,6 +222,8 @@
     resendBtn.addEventListener('click', function () { sendCode(); });
     el.querySelector('#auth-change-email').addEventListener('click', function () {
       showStep('email');
+      codeInput.value = ''; // 与桌面端一致：返回时清空已输入的验证码
+      verifyBtn.disabled = true;
       setError(null);
     });
 
@@ -258,9 +264,19 @@
   }
 
   function sendCode() {
-    var email = modal.querySelector('#auth-email').value.trim();
+    if (sending) return; // 单飞：连点 / 回车 / 请求中重新启用都只触发一次
+    var emailInput = modal.querySelector('#auth-email');
+    var email = emailInput.value.trim();
+    if (!email || !EMAIL_RE.test(email)) return;
     var sendBtn = modal.querySelector('#auth-send');
+    var resendBtn = modal.querySelector('#auth-resend');
+    var resendWasEnabled = !resendBtn.disabled;
+    var ok = false;
+    sending = true;
     sendBtn.disabled = true;
+    resendBtn.disabled = true; // 请求期间同时冻结重发入口，防止连点「重新发送」重复发码
+    sendBtn.textContent = '处理中…'; // 与桌面端 account.busy 一致：请求进行中给即时反馈
+    emailInput.disabled = true; // 与桌面端 busy 一致：发送中邮箱输入框不可编辑
     setError(null);
     fetch(authBase() + '/auth/send-code', {
       method: 'POST',
@@ -277,6 +293,7 @@
         return body;
       });
     }).then(function (body) {
+      ok = true;
       var devBox = modal.querySelector('#auth-dev');
       if (typeof body.devCode === 'string') {
         // 仅 daily/local 云端返回（prod 严格不返回）：联调提示，生产官网不可见
@@ -285,25 +302,35 @@
       } else {
         devBox.hidden = true;
       }
+      sentEmail = email; // 快照：后续 verify 以「发出验证码的邮箱」为准
       modal.querySelector('#auth-sent-note').textContent =
-        '验证码已发送至 ' + email + '，请查收邮件。若未收到，请检查垃圾邮件文件夹。';
+        '验证码已发送，请查收邮件。若未收到，请检查垃圾邮件文件夹。';
       showStep('code');
       startCountdown(typeof body.resendAfterSec === 'number' ? body.resendAfterSec : 60);
     }).catch(function (e) {
       setError(mapError(e));
     }).then(function () {
       // 按钮恢复（发送成功后焦点已转到验证码步）
+      sending = false;
+      sendBtn.textContent = '发送验证码';
+      emailInput.disabled = false;
       var agreeBox = modal.querySelector('#auth-agree');
-      var emailInput = modal.querySelector('#auth-email');
-      sendBtn.disabled = !emailInput.value.trim() || !agreeBox.checked;
+      var v = emailInput.value.trim();
+      sendBtn.disabled = !v || !EMAIL_RE.test(v) || !agreeBox.checked;
+      // 失败时把「重新发送」恢复为本次发送前的状态（成功后由倒计时接管）
+      if (!ok && resendWasEnabled) resendBtn.disabled = false;
     });
   }
 
   function verify() {
-    var email = modal.querySelector('#auth-email').value.trim();
+    if (verifying) return; // 单飞：验证码一次性消费，重复提交会让第二次请求误报 invalid_code
+    // 必须用「发出验证码的邮箱」快照：返回改过邮箱再验证时，拿旧码对新邮箱提交必然失败（与桌面端同做法）
+    var email = sentEmail || modal.querySelector('#auth-email').value.trim();
     var code = modal.querySelector('#auth-code').value.trim();
     var verifyBtn = modal.querySelector('#auth-verify');
+    verifying = true;
     verifyBtn.disabled = true;
+    verifyBtn.textContent = '处理中…'; // 与桌面端 account.busy 一致
     setError(null);
     fetch(authBase() + '/auth/verify', {
       method: 'POST',
@@ -329,6 +356,8 @@
     }).catch(function (e) {
       setError(mapError(e));
     }).then(function () {
+      verifying = false;
+      verifyBtn.textContent = '登录';
       verifyBtn.disabled = !modal.querySelector('#auth-code').value.trim();
     });
   }
@@ -439,11 +468,33 @@
     }
     var name = user.nickname || (user.email ? String(user.email).split('@')[0] : '用户');
     slot.innerHTML =
-      '<span class="nav-user" title="' + esc(user.email || '') + '">' +
-        '<span class="nav-user-name">' + esc(name) + '</span>' +
-        '<button type="button" class="nav-auth-out" id="nav-auth-out">退出</button>' +
-      '</span>';
+      '<div class="nav-user">' +
+        '<button type="button" class="nav-user-btn" id="nav-user-btn" aria-haspopup="menu" aria-expanded="false" title="' + esc(user.email || '') + '">' +
+          '<span class="nav-user-name">' + esc(name) + '</span>' +
+          '<span class="nav-user-caret" aria-hidden="true"></span>' +
+        '</button>' +
+        '<div class="nav-user-menu" id="nav-user-menu" role="menu" hidden>' +
+          '<p class="nav-user-email">' + esc(user.email || '') + '</p>' +
+          '<button type="button" class="nav-auth-out" id="nav-auth-out" role="menuitem">退出</button>' +
+        '</div>' +
+      '</div>';
+    var userBtn = slot.querySelector('#nav-user-btn');
+    var menu = slot.querySelector('#nav-user-menu');
+    userBtn.addEventListener('click', function () {
+      var willOpen = menu.hidden;
+      menu.hidden = !willOpen;
+      userBtn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+    });
     slot.querySelector('#nav-auth-out').addEventListener('click', function () { logout(); });
+  }
+
+  /** 关闭用户名下拉菜单（全局 click / Esc 触发） */
+  function closeNavMenu() {
+    var menu = document.getElementById('nav-user-menu');
+    if (!menu || menu.hidden) return;
+    menu.hidden = true;
+    var btn = document.getElementById('nav-user-btn');
+    if (btn) btn.setAttribute('aria-expanded', 'false');
   }
 
   /* ---------- 跨标签页同步 ---------- */
@@ -462,6 +513,18 @@
 
   function init() {
     renderNavAuth();
+    // 用户名下拉菜单：点击菜单外区域或按 Esc 关闭
+    document.addEventListener('click', function (e) {
+      var menu = document.getElementById('nav-user-menu');
+      if (!menu || menu.hidden) return;
+      var n = e.target;
+      while (n && n.nodeType === 1) {
+        if (n.classList && n.classList.contains('nav-user')) return;
+        n = n.parentNode;
+      }
+      closeNavMenu();
+    });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeNavMenu(); });
     // 其他标签页登录/登出后本页按钮文案同步（如「登录后下载」）
     on('login', refreshLoginLabels);
     on('logout', refreshLoginLabels);

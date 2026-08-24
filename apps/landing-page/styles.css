@@ -208,7 +208,11 @@ p { margin-bottom: 0; }
   z-index: 0;
 }
 
-.btn:hover { transform: translateY(-2px); }
+.btn:hover:not(:disabled) { transform: translateY(-2px); }
+
+/* 禁用态（登录弹窗「发送验证码 / 登录」按钮）：降透明度 + 禁止光标，
+   不触发任何 hover 高亮——邮箱格式不对时一眼看出不可点（桌面端同约定） */
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* Primary: 墨底，hover 印章红涂抹 */
 .btn-primary {
@@ -228,8 +232,8 @@ p { margin-bottom: 0; }
   border-radius: inherit;
 }
 
-.btn-primary:hover::after { transform: scaleX(1); }
-.btn-primary:hover { box-shadow: 0 8px 24px rgba(13,13,13,0.15); }
+.btn-primary:not(:disabled):hover::after { transform: scaleX(1); }
+.btn-primary:not(:disabled):hover { box-shadow: 0 8px 24px rgba(13,13,13,0.15); }
 
 /* Secondary: 透明 + 边框 */
 .btn-secondary {
@@ -238,7 +242,7 @@ p { margin-bottom: 0; }
   border: 1px solid var(--rule);
 }
 
-.btn-secondary:hover {
+.btn-secondary:hover:not(:disabled) {
   border-color: var(--ink);
   box-shadow: 0 4px 16px rgba(0,0,0,0.06);
 }
@@ -249,7 +253,7 @@ p { margin-bottom: 0; }
   color: var(--ink);
 }
 
-.btn-light:hover {
+.btn-light:hover:not(:disabled) {
   box-shadow: 0 8px 24px rgba(0,0,0,0.2);
 }
 
@@ -2692,11 +2696,27 @@ p { margin-bottom: 0; }
 .nav-auth-btn:hover { border-color: var(--ink-40); }
 
 .nav-user {
+  position: relative;
   display: inline-flex;
-  align-items: center;
-  gap: 8px;
   font-size: 13px;
 }
+
+/* 用户名按钮：点击展开下拉，退出入口收进下拉菜单（auth.js 渲染） */
+.nav-user-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  padding: 4px 10px;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+.nav-user-btn:hover { border-color: var(--hair); }
+.nav-user-btn[aria-expanded="true"] { border-color: var(--ink-40); }
 
 .nav-user-name {
   max-width: 120px;
@@ -2706,16 +2726,50 @@ p { margin-bottom: 0; }
   color: var(--ink);
 }
 
-.nav-auth-out {
-  background: none;
-  border: none;
-  padding: 2px 0;
+.nav-user-caret {
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 4px solid currentColor;
+  opacity: 0.55;
+}
+
+.nav-user-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 190px;
+  background: var(--paper);
+  border: 1px solid var(--hair);
+  border-radius: 6px;
+  box-shadow: 0 10px 30px rgba(13, 13, 13, 0.12);
+  padding: 6px;
+  z-index: 210;
+}
+
+.nav-user-email {
+  margin: 0 0 4px;
+  padding: 6px 10px 8px;
+  border-bottom: 1px solid var(--hair);
   font-size: 12px;
   color: var(--ink-40);
-  cursor: pointer;
-  text-decoration: underline;
+  word-break: break-all;
 }
-.nav-auth-out:hover { color: var(--ink); }
+
+.nav-auth-out {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  padding: 7px 10px;
+  font-size: 13px;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.nav-auth-out:hover { background: var(--paper-2); color: var(--seal); }
 
 @media (max-width: 900px) {
   .nav-auth-btn { padding: 4px 10px; font-size: 12px; }
