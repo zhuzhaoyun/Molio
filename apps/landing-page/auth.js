@@ -20,6 +20,9 @@
   var STORAGE_KEY = 'molio.auth.v1';
   /** access 剩余寿命 <2min 先刷新（与桌面端/云端 15min 寿命配套） */
   var PROACTIVE_MS = 2 * 60 * 1000;
+  /** 基础邮箱格式（与云端 AuthService.EMAIL_RE 同规则）：客户端先行拦截，
+      非法输入不发起发码请求（云端 400 invalid_email 仍是兜底） */
+  var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
   function authBase() { return window.MOLIO_AUTH_BASE || 'https://auth.molio.cn'; }
   /** blog/ 子目录页面引用上级目录资源（同 shared.js 的 qrPrefix 模式） */
@@ -164,7 +167,7 @@
       '<div class="auth-card">' +
         '<button type="button" class="pay-close" id="auth-close" aria-label="关闭">×</button>' +
         '<h3>登录 Molio 账号</h3>' +
-        '<p class="auth-sub">登录后即可下载资源、购买并随时查看订单</p>' +
+        '<p class="auth-sub">登录后即可下载免费资源，并免费获取资源更新</p>' +
         '<div class="auth-step" id="auth-step-email">' +
           '<label class="auth-label" for="auth-email">邮箱</label>' +
           '<input id="auth-email" type="email" autocomplete="email" placeholder="请输入邮箱地址">' +
@@ -201,7 +204,8 @@
     var resendBtn = el.querySelector('#auth-resend');
 
     function syncSendEnabled() {
-      sendBtn.disabled = !emailInput.value.trim() || !agreeBox.checked;
+      var v = emailInput.value.trim();
+      sendBtn.disabled = !v || !EMAIL_RE.test(v) || !agreeBox.checked;
     }
     emailInput.addEventListener('input', syncSendEnabled);
     agreeBox.addEventListener('change', syncSendEnabled);

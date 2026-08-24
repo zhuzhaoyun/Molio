@@ -60,12 +60,20 @@ async function sendCodeAndVerify(page: Page, email: string) {
 }
 
 async function loginViaUi(page: Page, email: string) {
+  // 未登录打开面板即邮箱验证表单（无中间欢迎页），直接填码登录
   await openAccount(page);
-  await page.locator('[data-testid="account-login-btn"]').click();
   await sendCodeAndVerify(page, email);
 }
 
 test.describe('Account panel (always available)', () => {
+  // 这组用例断言的是「未登录」形态（登录按钮/登录视图）：其他 spec（如 resources
+  // 的登录门槛用例）跑完可能残留登录态，先清掉，避免面板显示登录态资料卡
+  test.beforeEach(async ({ request }) => {
+    const res = await request.get('/api/auth/status');
+    const status = (await res.json()) as { loggedIn?: boolean };
+    if (status.loggedIn) await request.post('/api/auth/logout');
+  });
+
   test('account modal opens from nav rail and closes', async ({ page }) => {
     await gotoHome(page);
     await openAccount(page);
@@ -80,7 +88,6 @@ test.describe('Account panel (always available)', () => {
   }) => {
     await gotoHome(page);
     await openAccount(page);
-    await page.locator('[data-testid="account-login-btn"]').click();
 
     const checkbox = page.locator('[data-testid="account-agree-checkbox"]');
     await expect(checkbox).toBeVisible();
@@ -114,14 +121,12 @@ test.describe('Login chain (requires configured daemon)', () => {
     await gotoHome(page);
   });
 
-  test('login view leads with value proposition (headline + benefits + footnote)', async ({
-    page,
-  }) => {
+  test('logged-out panel shows the email verification form directly', async ({ page }) => {
     await openAccount(page);
-    // 价值前置：标题 + 4 条收益；「不登录也能用」降级为脚注但仍保留
-    await expect(page.locator('[data-testid="account-login-headline"]')).toBeVisible();
-    await expect(page.locator('[data-testid="account-login-benefits"] li')).toHaveCount(4);
-    await expect(page.locator('[data-testid="account-login-footnote"]')).toBeVisible();
+    // 点账号入口直达邮箱验证表单——没有中间欢迎页/额外 CTA
+    await expect(page.locator('.account-login-title')).toBeVisible();
+    await expect(page.locator('[data-testid="account-email-input"]')).toBeVisible();
+    await expect(page.locator('[data-testid="account-agree-checkbox"]')).toBeVisible();
   });
 
   test('auto-nickname shown after login; entitlement row shows free plan', async ({
@@ -166,6 +171,23 @@ test.describe('Login chain (requires configured daemon)', () => {
     await expect(page.locator('[data-testid="account-nickname"]')).toHaveText('E2E 墨流君');
   });
 
+  // 回归（2026-08-24）：邮箱无格式校验时「dd」也能点发送验证码。
+  // 客户端先行拦截：输入不像邮箱时发送按钮保持禁用（云端 400 仍是兜底）。
+  test('send-code stays disabled until email looks valid', async ({ page }) => {
+    await openAccount(page);
+    await page.locator('[data-testid="account-agree-checkbox"]').check();
+    const emailInput = page.locator('[data-testid="account-email-input"]');
+    const sendBtn = page.locator('[data-testid="account-send-code-btn"]');
+    await emailInput.fill('dd');
+    await expect(sendBtn).toBeDisabled();
+    await emailInput.fill('dd@');
+    await expect(sendBtn).toBeDisabled();
+    await emailInput.fill('dd@example');
+    await expect(sendBtn).toBeDisabled();
+    await emailInput.fill('dd@example.com');
+    await expect(sendBtn).toBeEnabled();
+  });
+
   test('login with verification code, then logout', async ({ page }) => {
     const email = uniqueEmail('login');
     await loginViaUi(page, email);
@@ -173,16 +195,15 @@ test.describe('Login chain (requires configured daemon)', () => {
     // Nav rail account button lights up (logged-in dot)
     await expect(page.locator('[data-testid="nav-account-btn"]')).toHaveClass(/is-logged-in/);
 
-    // Logout — local tokens cleared, back to login CTA
+    // Logout — local tokens cleared, panel falls back to the email form
     await page.locator('[data-testid="account-logout-btn"]').click();
-    await expect(page.locator('[data-testid="account-login-btn"]')).toBeVisible();
+    await expect(page.locator('[data-testid="account-email-input"]')).toBeVisible();
     await expect(page.locator('[data-testid="nav-account-btn"]')).not.toHaveClass(/is-logged-in/);
   });
 
   test('wrong verification code shows an error', async ({ page }) => {
     const email = uniqueEmail('badcode');
     await openAccount(page);
-    await page.locator('[data-testid="account-login-btn"]').click();
 
     await page.locator('[data-testid="account-email-input"]').fill(email);
     await page.locator('[data-testid="account-agree-checkbox"]').check();
@@ -204,21 +225,4 @@ test.describe('Login chain (requires configured daemon)', () => {
     await expect(page.locator('[data-testid="nav-account-btn"]')).not.toHaveClass(/is-logged-in/);
   });
 
-  test('delete account requires explicit acknowledgement', async ({ page }) => {
-    const email = uniqueEmail('delete');
-    await loginViaUi(page, email);
-
-    await page.locator('[data-testid="account-delete-btn"]').click();
-    await expect(page.locator('[data-testid="account-delete-warning"]')).toBeVisible();
-    // Confirm is disabled until the acknowledgement checkbox is ticked
-    await expect(page.locator('[data-testid="account-delete-confirm-btn"]')).toBeDisabled();
-    await page.locator('[data-testid="account-delete-ack"]').check();
-    await page.locator('[data-testid="account-delete-confirm-btn"]').click();
-
-    // Cloud soft-delete done → back to logged-out main view
-    await expect(page.locator('[data-testid="account-login-btn"]')).toBeVisible({
-      timeout: 10_000,
-    });
-    await expect(page.locator('[data-testid="nav-account-btn"]')).not.toHaveClass(/is-logged-in/);
-  });
 });

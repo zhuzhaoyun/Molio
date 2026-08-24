@@ -10,15 +10,17 @@ import { api } from '../../api/client';
 import { authErrorRef } from './authErrors';
 
 interface LoginFormProps {
-  /** 登录成功后回调（父组件刷新 authStore 并切回主视图）。 */
+  /** 登录成功后回调（父组件刷新 authStore）。 */
   onSuccess: () => void;
-  /** 返回上一层（账号面板主视图）。 */
-  onBack: () => void;
 }
 
 type Step = 'email' | 'code';
 
-export function LoginForm({ onSuccess, onBack }: LoginFormProps) {
+/** 基础邮箱格式（与云端 AuthService.EMAIL_RE 同规则）：客户端先行拦截，
+    非法输入不发起发码请求（云端 400 invalid_email 仍是兜底） */
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export function LoginForm({ onSuccess }: LoginFormProps) {
   const { t } = useI18n();
   const [step, setStep] = useState<Step>('email');
   const [email, setEmail] = useState('');
@@ -68,7 +70,7 @@ export function LoginForm({ onSuccess, onBack }: LoginFormProps) {
 
   async function sendCode(fromStep: Step) {
     const trimmed = email.trim();
-    if (!trimmed || busy || !agreed) return;
+    if (!trimmed || busy || !agreed || !EMAIL_RE.test(trimmed)) return;
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -106,11 +108,14 @@ export function LoginForm({ onSuccess, onBack }: LoginFormProps) {
     }
   }
 
+  // 布局对齐官网登录弹窗（landing-page auth.js）：标题 + 价值副标题 +
+  // 纵向表单 + 全宽主按钮 + 链接式次要操作
   return (
     <div className="account-login-form">
+      <h3 className="account-login-title">{t('login.title')}</h3>
+      <p className="account-login-sub">{t('login.subtitle')}</p>
       {step === 'email' ? (
         <>
-          <p className="account-intro">{t('account.loginIntro')}</p>
           <div className="account-field">
             <label htmlFor="account-email">{t('login.emailLabel')}</label>
             <input
@@ -155,31 +160,20 @@ export function LoginForm({ onSuccess, onBack }: LoginFormProps) {
               </span>
             </label>
           </div>
-          <div className="account-form-actions">
-            <button
-              type="button"
-              className="kb-btn kb-btn-primary"
-              data-testid="account-send-code-btn"
-              disabled={busy || email.trim() === '' || !agreed}
-              onClick={() => void sendCode('email')}
-            >
-              {busy ? t('account.busy') : t('login.sendCode')}
-            </button>
-            <button
-              type="button"
-              className="account-link-btn"
-              data-testid="account-back-btn"
-              disabled={busy}
-              onClick={onBack}
-            >
-              {t('account.cancel')}
-            </button>
-          </div>
+          <button
+            type="button"
+            className="kb-btn kb-btn-primary account-login-cta"
+            data-testid="account-send-code-btn"
+            disabled={busy || !EMAIL_RE.test(email.trim()) || !agreed}
+            onClick={() => void sendCode('email')}
+          >
+            {busy ? t('account.busy') : t('login.sendCode')}
+          </button>
         </>
       ) : (
         <>
           {notice && (
-            <p className="account-note account-note-info" data-testid="account-notice">
+            <p className="account-login-note" data-testid="account-notice">
               {notice}
             </p>
           )}
@@ -200,16 +194,16 @@ export function LoginForm({ onSuccess, onBack }: LoginFormProps) {
               }}
             />
           </div>
-          <div className="account-form-actions">
-            <button
-              type="button"
-              className="kb-btn kb-btn-primary"
-              data-testid="account-verify-btn"
-              disabled={busy || code.trim() === ''}
-              onClick={() => void handleVerify()}
-            >
-              {busy ? t('account.busy') : t('login.verify')}
-            </button>
+          <button
+            type="button"
+            className="kb-btn kb-btn-primary account-login-cta"
+            data-testid="account-verify-btn"
+            disabled={busy || code.trim() === ''}
+            onClick={() => void handleVerify()}
+          >
+            {busy ? t('account.busy') : t('login.verify')}
+          </button>
+          <div className="account-login-links">
             <button
               type="button"
               className="account-link-btn"

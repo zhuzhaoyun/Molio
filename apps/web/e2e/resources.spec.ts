@@ -117,10 +117,9 @@ test.describe('Resources login gate', () => {
       test.skip(true, 'daemon MOLIO_AUTH_URL not configured — login chain unavailable');
     }
 
-    // 复用 auth.spec 的 devCode 登录链路
+    // 复用 auth.spec 的 devCode 登录链路（未登录打开面板即邮箱验证表单）
     const email = `molio-e2e-resgate-${Date.now()}@example.com`;
     await page.locator('[data-testid="nav-account-btn"]').click();
-    await page.locator('[data-testid="account-login-btn"]').click();
     await page.locator('[data-testid="account-email-input"]').fill(email);
     await page.locator('[data-testid="account-agree-checkbox"]').check();
     const startResp = page.waitForResponse(
