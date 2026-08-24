@@ -37,6 +37,7 @@ export function testConfig(overrides: TestConfigOverrides = {}): CloudConfig {
     refreshTtlSec: 30 * 24 * 60 * 60,
     rotationGraceSec: 30,
     rate: { emailResendSec: 60, emailDailyMax: 10, ipDailyMax: 30, ...(rate ?? {}) },
+    corsExtraOrigins: [],
     ...rest,
   };
 }

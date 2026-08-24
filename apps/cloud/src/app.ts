@@ -1,6 +1,7 @@
 import { Hono, type Context } from 'hono';
 import type { RefreshRequest, SendCodeRequest, UpdateMeRequest, VerifyRequest } from '@molio/contracts';
 import type { CloudConfig } from './config.js';
+import { corsMiddleware } from './cors.js';
 import { verifyAccessToken, type AccessPayload } from './jwt.js';
 import { AuthService, ServiceError, type ServiceErrorStatus } from './service.js';
 
@@ -65,11 +66,14 @@ function bearer(c: Context, config: CloudConfig, now: () => number): AccessPaylo
 
 /**
  * 云端认证服务（第一期 7 端点，§六）。
- * 不配 CORS：第一期 Web UI 一律经 daemon，无浏览器直连（§八）。
+ * CORS 白名单（见 cors.ts）：官网静态页浏览器直连登录；
+ * Molio 应用内 Web UI 仍一律经 daemon，不走这条路（§八修订）。
  */
 export function createApp(deps: AppDeps): Hono {
   const { service, config } = deps;
   const app = new Hono();
+
+  app.use('*', corsMiddleware(config));
 
   app.get('/health', (c) => c.json({ ok: true, env: config.env, store: deps.storeKind }));
 

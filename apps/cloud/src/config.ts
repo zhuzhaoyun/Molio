@@ -48,6 +48,12 @@ export interface CloudConfig {
   /** 轮换宽限窗（秒）：被轮换吊销的 token 在窗内重放视为重试而非攻击 */
   rotationGraceSec: number;
   rate: RateLimits;
+  /**
+   * CORS 附加白名单（官网域名之外的浏览器直连来源，如预览域名）。
+   * 来自 `MOLIO_CORS_EXTRA_ORIGINS`（逗号分隔，逐项取 URL.origin）。
+   * 官网正式域名（molio.cn）内置于 cors.ts，不经此配置。
+   */
+  corsExtraOrigins: string[];
   /** 无 DATABASE_URL 时走 MemoryAuthStore（§十七 L7） */
   databaseUrl?: string;
   /** DirectMail 配置齐全时才有值；prod 缺失时 loadConfig 直接抛错（fail-fast） */
@@ -75,6 +81,22 @@ function intEnv(env: NodeJS.ProcessEnv, key: string, fallback: number): number {
     throw new Error(`[cloud] env ${key} 必须是正整数，实际值: ${raw}`);
   }
   return n;
+}
+
+/** 解析附加 CORS 来源：逗号分隔，逐项 `new URL()` 只取 origin，非法项启动报错（fail-fast） */
+function parseExtraOrigins(raw: string | undefined): string[] {
+  if (raw === undefined || raw.trim() === '') return [];
+  return raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s !== '')
+    .map((s) => {
+      try {
+        return new URL(s).origin;
+      } catch {
+        throw new Error(`[cloud] MOLIO_CORS_EXTRA_ORIGINS 非法来源: ${s}`);
+      }
+    });
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): CloudConfig {
@@ -167,6 +189,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CloudConfig {
       emailDailyMax: intEnv(env, 'MOLIO_RATE_EMAIL_DAILY_MAX', 10),
       ipDailyMax: intEnv(env, 'MOLIO_RATE_IP_DAILY_MAX', 30),
     },
+    corsExtraOrigins: parseExtraOrigins(env.MOLIO_CORS_EXTRA_ORIGINS),
     databaseUrl,
     directMail,
   };

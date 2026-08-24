@@ -122,6 +122,7 @@
         "apps/web/src/components/resources/*",
         "apps/web/src/data/resources*",
         "apps/web/src/hooks/useResourcePay*",
+        "apps/web/src/stores/loginIntentStore*",
         "apps/web/src/styles/resources.css",
         "apps/landing-page/resources-data.js"
       ],

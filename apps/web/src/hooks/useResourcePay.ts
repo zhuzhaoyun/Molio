@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { PAY_BASE, type MolioResource } from '../data/resources';
+import { authStore } from '../stores/authStore';
 
 export type PayPhase =
   | 'idle'      // 弹窗未打开
@@ -87,7 +88,11 @@ export function useResourcePay(): ResourcePayHandle {
         return;
       }
 
-      fetch(`${PAY_BASE}/pay?id=${encodeURIComponent(r.id)}`)
+      // 订单归属：已登录时把买家用户 id 带给支付后端（写微信订单 attach → 发货台账）
+      const payStatus = authStore.getStatus();
+      const uid = payStatus && payStatus.loggedIn ? payStatus.user.id : null;
+      const payUrl = `${PAY_BASE}/pay?id=${encodeURIComponent(r.id)}${uid ? `&uid=${encodeURIComponent(uid)}` : ''}`;
+      fetch(payUrl)
         .then((res) => {
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           return res.json() as Promise<{ code_url: string; out_trade_no: string }>;

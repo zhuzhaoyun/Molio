@@ -2,7 +2,7 @@
 
 Molio 用户模块（第一期 = 身份层）的云端服务。提供邮箱验证码登录、token 轮换/吊销、权益留桩与账号注销。
 
-**红线**：本地优先。云端只负责身份与权益凭证，**不存任何知识库内容**；云端不可达时客户端本地功能零影响。Web UI **永不直连本服务**，一律经 daemon 本地镜像端点（见 `apps/daemon/src/routes/auth.ts`）。
+**红线**：本地优先。云端只负责身份与权益凭证，**不存任何知识库内容**；云端不可达时客户端本地功能零影响。**Molio 应用内** Web UI 永不直连本服务，一律经 daemon 本地镜像端点（见 `apps/daemon/src/routes/auth.ts`）；**官网静态页**（molio.cn）登录是唯一例外，浏览器直连本服务，走 `src/cors.ts` 的严格 CORS 白名单（无 cookie、不带 credentials）。
 
 ## 技术栈
 
@@ -16,7 +16,8 @@ Molio 用户模块（第一期 = 身份层）的云端服务。提供邮箱验�
 ```
 src/
   index.ts       入口：loadConfig → 按 DATABASE_URL 选 store → serve
-  app.ts         Hono 路由（/health + 7 端点）；不配 CORS（无浏览器直连）
+  app.ts         Hono 路由（/health + 7 端点）；顶部挂 CORS 白名单中间件
+  cors.ts        CORS 白名单：prod 仅 molio.cn(±www)+附加；daily/local 加 localhost；回显 origin 不用 *，不带 credentials
   config.ts      env 加载（MOLIO_ENV / 限频 / TTL / 密钥 / DirectMail）
   service.ts     AuthService：限频、一次性原子消费、隐式注册、轮换 + 重放检测
   store/
@@ -59,6 +60,7 @@ pnpm typecheck    # tsc --noEmit
 | `MOLIO_ACCESS_TTL_SEC` / `MOLIO_CODE_TTL_SEC` / `MOLIO_REFRESH_TTL_SEC` | 否 | token/验证码寿命，默认 15min/5min/30d |
 | `MOLIO_ROTATION_GRACE_SEC` | 否 | 轮换宽限窗（重试误判防护），默认 30 |
 | `MOLIO_RATE_EMAIL_RESEND_SEC` / `MOLIO_RATE_EMAIL_DAILY_MAX` / `MOLIO_RATE_IP_DAILY_MAX` | 否 | 三层限频，默认 60/10/30 |
+| `MOLIO_CORS_EXTRA_ORIGINS` | 否 | CORS 附加白名单（逗号分隔，逐项取 origin，非法项启动报错）；官网域名内置不经此配置 |
 
 ## 七个端点（第一期全集）
 

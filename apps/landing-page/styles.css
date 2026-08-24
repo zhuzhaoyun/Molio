@@ -2452,6 +2452,7 @@ p { margin-bottom: 0; }
   .deploy-grid { grid-template-columns: 1fr; }
 }
 
+
 /* ---------- Guide video (Bilibili embed) ---------- */
 .guide-video-frame {
   position: relative;
@@ -2570,3 +2571,154 @@ p { margin-bottom: 0; }
   transition: opacity .2s;
 }
 .guide-lightbox-close:hover { opacity: 1; }
+
+/* ---------- Auth（登录弹窗 + 导航登录入口，资源下载/购买门槛配套） ---------- */
+.auth-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 310; /* 高于支付弹窗：先登录才能进支付 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(13,13,13,0.45);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  padding: 24px;
+}
+
+.auth-modal[hidden] { display: none; }
+
+.auth-card {
+  position: relative;
+  width: 380px;
+  max-width: 100%;
+  background: var(--paper);
+  border: 1px solid var(--hair);
+  border-radius: 4px;
+  padding: 36px 40px 32px;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.25);
+}
+
+.auth-card h3 { font-size: 20px; margin-bottom: 4px; }
+
+.auth-sub {
+  font-size: 13px;
+  color: var(--ink-40);
+  margin-bottom: 20px;
+}
+
+.auth-step { display: flex; flex-direction: column; gap: 10px; }
+
+.auth-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.auth-step input[type="email"],
+.auth-step input[inputmode] {
+  width: 100%;
+  padding: 9px 12px;
+  font-size: 14px;
+  border: 1px solid var(--hair);
+  border-radius: 3px;
+  background: var(--paper);
+  color: var(--ink);
+  outline: none;
+}
+
+.auth-step input:focus { border-color: var(--ink-40); }
+
+.auth-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-40);
+  cursor: pointer;
+}
+
+.auth-consent input { margin-top: 3px; flex: 0 0 auto; }
+.auth-consent a { color: var(--ink); text-decoration: underline; }
+
+.auth-btn { width: 100%; margin-top: 4px; }
+
+.auth-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+.auth-link {
+  background: none;
+  border: none;
+  padding: 4px 0;
+  font-size: 12.5px;
+  color: var(--ink-40);
+  cursor: pointer;
+  text-decoration: underline;
+}
+.auth-link:disabled { color: var(--hair); cursor: not-allowed; text-decoration: none; }
+
+.auth-note {
+  font-size: 12.5px;
+  color: var(--ink-40);
+  line-height: 1.6;
+}
+
+.auth-dev {
+  margin-top: 12px;
+  padding: 8px 10px;
+  font-size: 12px;
+  border-radius: 3px;
+  background: rgba(200,160,0,0.12);
+  color: var(--ink);
+}
+
+.auth-error {
+  margin-top: 12px;
+  font-size: 12.5px;
+  color: #b3382c;
+}
+
+/* 导航登录入口（#nav-auth，auth.js 渲染） */
+.nav-auth-btn {
+  background: none;
+  border: 1px solid var(--hair);
+  border-radius: 3px;
+  padding: 5px 14px;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+.nav-auth-btn:hover { border-color: var(--ink-40); }
+
+.nav-user {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.nav-user-name {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+}
+
+.nav-auth-out {
+  background: none;
+  border: none;
+  padding: 2px 0;
+  font-size: 12px;
+  color: var(--ink-40);
+  cursor: pointer;
+  text-decoration: underline;
+}
+.nav-auth-out:hover { color: var(--ink); }
+
+@media (max-width: 900px) {
+  .nav-auth-btn { padding: 4px 10px; font-size: 12px; }
+  .nav-user-name { max-width: 72px; }
+}
+

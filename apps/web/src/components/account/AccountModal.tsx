@@ -17,9 +17,13 @@ type View = 'main' | 'login' | 'delete';
 interface AccountModalProps {
   show: boolean;
   onClose: () => void;
+  /** 打开时直达的视图（登录意图场景直达 login；缺省 main） */
+  initialView?: View;
+  /** 登录成功后回调（登录意图场景用来续接被门槛拦下的动作） */
+  onLoggedIn?: () => void;
 }
 
-export function AccountModal({ show, onClose }: AccountModalProps) {
+export function AccountModal({ show, onClose, initialView, onLoggedIn }: AccountModalProps) {
   const { t } = useI18n();
   const status = useAuthStatus();
   const [view, setView] = useState<View>('main');
@@ -38,10 +42,11 @@ export function AccountModal({ show, onClose }: AccountModalProps) {
   const openGenRef = useRef(0);
 
   // 每次打开时拉最新快照并复位内部状态
+  // （initialView 只在 show 翻转瞬间读取：调用方先设 initialView 再打开，同一批状态更新）
   useEffect(() => {
     if (!show) return;
     openGenRef.current += 1;
-    setView('main');
+    setView(initialView ?? 'main');
     setBusy(false);
     setError(null);
     setAck(false);
@@ -254,7 +259,8 @@ export function AccountModal({ show, onClose }: AccountModalProps) {
       );
     }
 
-    // 未登录
+    // 未登录：价值前置——收益列表给出登录动机；
+    // 「不登录也能用」的诚实声明降级为底部小字脚注（见 i18n loginFootnote）
     return (
       <>
         {status.loginExpired && (
@@ -262,7 +268,15 @@ export function AccountModal({ show, onClose }: AccountModalProps) {
             {t('account.loginExpired')}
           </p>
         )}
-        <p className="account-intro">{t('account.loginIntro')}</p>
+        <h3 className="account-headline" data-testid="account-login-headline">
+          {t('account.loginHeadline')}
+        </h3>
+        <ul className="account-benefits" data-testid="account-login-benefits">
+          <li>{t('account.loginBenefit1')}</li>
+          <li>{t('account.loginBenefit2')}</li>
+          <li>{t('account.loginBenefit3')}</li>
+          <li>{t('account.loginBenefit4')}</li>
+        </ul>
         <div className="account-actions">
           <button
             type="button"
@@ -276,6 +290,9 @@ export function AccountModal({ show, onClose }: AccountModalProps) {
             {status.loginExpired ? t('account.relogin') : t('account.loginCta')}
           </button>
         </div>
+        <p className="account-footnote" data-testid="account-login-footnote">
+          {t('account.loginFootnote')}
+        </p>
       </>
     );
   }
@@ -344,6 +361,7 @@ export function AccountModal({ show, onClose }: AccountModalProps) {
               onSuccess={() => {
                 void authStore.invalidate();
                 setView('main');
+                onLoggedIn?.();
               }}
               onBack={() => setView('main')}
             />

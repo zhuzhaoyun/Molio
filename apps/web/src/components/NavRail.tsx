@@ -1,13 +1,36 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useI18n } from '../i18n';
 import { useAuthStatus } from '../stores/authStore';
+import { loginIntentStore } from '../stores/loginIntentStore';
 import { AccountModal } from './account/AccountModal';
 
 export function NavRail() {
   const { t } = useI18n();
   const auth = useAuthStatus();
   const [accountOpen, setAccountOpen] = useState(false);
+  /** 登录意图打开时直达 login 视图（资源下载/购买门槛触发） */
+  const [accountInitialView, setAccountInitialView] = useState<'main' | 'login'>('main');
+  /** 登录成功后要续接的动作（被门槛拦下的下载/购买）；未登录关闭则丢弃 */
+  const loginResumeRef = useRef<(() => void) | null>(null);
+
+  // 资源动作请求登录 → 打开账号面板直达登录视图
+  useEffect(
+    () =>
+      loginIntentStore.subscribe(() => {
+        if (!loginIntentStore.hasPending()) return;
+        loginResumeRef.current = loginIntentStore.consume();
+        setAccountInitialView('login');
+        setAccountOpen(true);
+      }),
+    [],
+  );
+
+  function closeAccount() {
+    setAccountOpen(false);
+    loginResumeRef.current = null;
+    setAccountInitialView('main');
+  }
 
   return (
     <>
@@ -203,7 +226,16 @@ export function NavRail() {
         </NavLink>
       </div>
     </nav>
-    <AccountModal show={accountOpen} onClose={() => setAccountOpen(false)} />
+    <AccountModal
+      show={accountOpen}
+      onClose={closeAccount}
+      initialView={accountInitialView}
+      onLoggedIn={() => {
+        const resume = loginResumeRef.current;
+        loginResumeRef.current = null;
+        if (resume) resume();
+      }}
+    />
     </>
   );
 }

@@ -219,7 +219,7 @@ App 启动 → daemon 读本地 token
 | 验证码滥用 | 三层限频（同邮箱 60s / 每日 10 封 / 每 IP 每日 30 次）+ 错 5 次锁码；后续可加图形验证码 |
 | refresh 泄漏 | 轮换机制：旧 token 被重放 → 判定泄漏 → 吊销该用户全部 session |
 | 本地 token 存储 | 桌面：Electron `safeStorage`；Docker/web：daemon 目录文件 chmod 600。**token 不进明文 `config.json`** |
-| 传输 | 全链路 HTTPS。第一期无浏览器直连云端（Web UI 一律经 daemon），**不配 CORS**；将来若加云端托管登录页再开白名单 |
+| 传输 | 全链路 HTTPS。Molio 应用内 Web UI 一律经 daemon，不直连云端；官网静态登录页（资源下载/购买门槛引入）浏览器直连，走严格 CORS 白名单——prod 仅 `https://molio.cn`(±www)+`MOLIO_CORS_EXTRA_ORIGINS`，daily/local 另放行 localhost；回显 origin 不用 `*`，无 cookie 不带 credentials（天然免疫 CSRF），所有响应 `Vary: Origin` |
 | 密钥管理 | JWT 签名密钥支持 kid 轮换；密钥不入代码库 |
 
 ## 九、离线宽限策略（local-first 红线）

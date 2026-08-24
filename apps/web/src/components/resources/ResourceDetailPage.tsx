@@ -14,6 +14,7 @@ import {
   type MolioResource,
 } from '../../data/resources';
 import { useResourcePay } from '../../hooks/useResourcePay';
+import { useAuthStatus } from '../../stores/authStore';
 import { ResourcePayModal } from './ResourcePayModal';
 import { startResourcePurchase } from './resourceAction';
 
@@ -22,6 +23,8 @@ export function ResourceDetailPage() {
   const { id } = useParams<{ id: string }>();
   const r = RESOURCES.find((x) => x.id === id);
   const pay = useResourcePay();
+  const auth = useAuthStatus();
+  const loggedIn = auth?.loggedIn === true;
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [failedImgs, setFailedImgs] = useState<Set<string>>(new Set());
 
@@ -61,11 +64,12 @@ export function ResourceDetailPage() {
         ? t('resources.sideNote.paid')
         : t('resources.sideNote.noBase');
 
+  // 未登录：按钮文案带「登录后…」前缀（点击的登录门槛在 startResourcePurchase 内）
   const actionLabel = !paid
-    ? t('resources.downloadZip')
+    ? t(loggedIn ? 'resources.downloadZip' : 'resources.downloadZipLogin')
     : r.payUrl || !PAY_BASE
-      ? t('resources.buy', { price: r.price })
-      : t('resources.pay.wechat', { price: r.price });
+      ? t(loggedIn ? 'resources.buy' : 'resources.buyLogin', { price: r.price })
+      : t(loggedIn ? 'resources.pay.wechat' : 'resources.pay.wechatLogin', { price: r.price });
 
   return (
     <div className="resources-shell">

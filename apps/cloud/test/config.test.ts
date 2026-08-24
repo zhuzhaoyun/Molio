@@ -92,6 +92,7 @@ test('loadConfig: DirectMail region/endpoint 格式非法 → 启动即抛错（
   assert.throws(() => loadConfig({ ...FULL_PROD, MOLIO_DM_ENDPOINT: 'https://x.com/path' }), /MOLIO_DM_ENDPOINT 非法/);
 });
 
+
 // 线上事故（2026-08-23）：MOLIO_DM_REPLY_TO 配了显示名格式，DirectMail 以
 // InvalidReplyToAddress 拒收，每次 send-code 都 422 mail_failed。启动期拦截。
 test('loadConfig: MOLIO_DM_REPLY_TO 格式非法 → 启动即抛错（不留到首次发信 422）', () => {
@@ -114,4 +115,17 @@ test('loadConfig: MOLIO_DM_REPLY_TO 两端空白被 trim（env 粘贴事故）�
 test('loadConfig: MOLIO_DM_REPLY_TO 合法裸邮箱 → 正常加载', () => {
   const cfg = loadConfig({ ...FULL_PROD, MOLIO_DM_REPLY_TO: 'support@mail.molio.cn' });
   assert.equal(cfg.directMail?.replyTo, 'support@mail.molio.cn');
+});
+
+test('loadConfig: MOLIO_CORS_EXTRA_ORIGINS 解析——逗号分隔取 origin，空值缺省空数组', () => {
+  const cfg = loadConfig({
+    MOLIO_CORS_EXTRA_ORIGINS: 'https://preview.molio.cn/docs, http://10.0.0.5:8080/x ',
+  });
+  assert.deepEqual(cfg.corsExtraOrigins, ['https://preview.molio.cn', 'http://10.0.0.5:8080']);
+  assert.deepEqual(loadConfig({}).corsExtraOrigins, []);
+  assert.deepEqual(loadConfig({ MOLIO_CORS_EXTRA_ORIGINS: '  ' }).corsExtraOrigins, []);
+});
+
+test('loadConfig: MOLIO_CORS_EXTRA_ORIGINS 非法来源 → 启动即抛错', () => {
+  assert.throws(() => loadConfig({ MOLIO_CORS_EXTRA_ORIGINS: 'not a url' }), /MOLIO_CORS_EXTRA_ORIGINS 非法来源/);
 });

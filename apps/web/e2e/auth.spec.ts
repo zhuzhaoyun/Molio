@@ -114,12 +114,14 @@ test.describe('Login chain (requires configured daemon)', () => {
     await gotoHome(page);
   });
 
-  test('login intro makes no cloud-benefit promises (去大饼)', async ({ page }) => {
+  test('login view leads with value proposition (headline + benefits + footnote)', async ({
+    page,
+  }) => {
     await openAccount(page);
-    const intro = page.locator('.account-intro');
-    await expect(intro).toBeVisible();
-    // 诚实文案：不得再出现「云端权益 / cloud benefits」类空头承诺
-    await expect(intro).not.toHaveText(/云端权益|cloud benefits/i);
+    // 价值前置：标题 + 4 条收益；「不登录也能用」降级为脚注但仍保留
+    await expect(page.locator('[data-testid="account-login-headline"]')).toBeVisible();
+    await expect(page.locator('[data-testid="account-login-benefits"] li')).toHaveCount(4);
+    await expect(page.locator('[data-testid="account-login-footnote"]')).toBeVisible();
   });
 
   test('auto-nickname shown after login; entitlement row shows free plan', async ({
