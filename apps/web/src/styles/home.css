@@ -46,21 +46,6 @@
   gap: 8px;
 }
 
-.home-hero__brand-mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--accent);
-  color: #fff;
-  font-family: var(--serif);
-  font-size: 13px;
-  font-weight: 600;
-  flex-shrink: 0;
-}
-
 .home-hero__brand-name {
   font-family: var(--sans);
   font-size: 22px;
@@ -133,18 +118,12 @@
   min-width: 0;
 }
 
-.home-header-logo {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+.home-header-logo,
+.home-hero__brand-mark {
+  /* 品牌 logo 自带圆角（透明边角），保持自然形状展示，不做圆形裁剪 */
   width: 28px;
   height: 28px;
-  border-radius: 50%;
-  background: var(--accent);
-  color: #fff;
-  font-family: var(--serif);
-  font-size: 12px;
-  font-weight: 600;
+  object-fit: contain;
   flex-shrink: 0;
 }
 
