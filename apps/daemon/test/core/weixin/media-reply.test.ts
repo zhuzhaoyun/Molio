@@ -57,10 +57,14 @@ describe('WeixinService media reply path', () => {
     service = new WeixinService(rm, conversations, db);
 
     // Point getConfig at our temp config + a default agent + cwd.
+    // credentialsPath into tempDir: handleRawMessage persists context tokens,
+    // which must never touch the real ~/.molio/weixin-credentials.json (would
+    // clobber the user's saved tokens and race other tests on the .tmp rename).
     (service as unknown as { getConfig: () => unknown }).getConfig = () => ({
       enabled: true,
       defaultAgentId: 'agent-1',
       defaultCwd: tempDir,
+      credentialsPath: join(tempDir, 'weixin-credentials.json'),
     });
 
     // Attach an API instance (no polling) and monkey-patch its media methods.

@@ -30,6 +30,12 @@ const SESSION_EXPIRED_CODE = -14;
 const QR_LOGIN_TIMEOUT_MS = 8 * 60 * 1000;
 const QR_MAX_REFRESHES = 10;
 const TEXT_CHUNK_LIMIT = 4000;
+/**
+ * Per-user cap on buffered-but-undeliverable texts (see pendingNotices).
+ * Oldest entries are dropped first — a stale "正在处理..." matters less than
+ * the latest failure notice.
+ */
+const MAX_PENDING_NOTICES = 8;
 /** Dedup window for received message_id (matches feishu). */
 const DEDUP_TTL_MS = 7 * 60 * 60 * 1000;
 /** Health probe interval when in unhealthy state (ms). */
@@ -69,6 +75,25 @@ export class WeixinService implements ChannelSink {
   private pollAbort: AbortController | null = null;
   private healthTimer: ReturnType<typeof setInterval> | null = null;
   private contextTokens = new Map<string, string>();
+  /**
+   * Users whose context token expired mid-flight (a send came back -14 and
+   * the token was dropped). While flagged, sendMediaFile's "token missing"
+   * error reports the session expiry (the root cause) instead of the generic
+   * message — otherwise the N items of one turn surface as one "expired" plus
+   * N-1 confusing "missing credential" entries. Cleared when the user's next
+   * inbound message brings a fresh token.
+   */
+  private expiredContextUsers = new Set<string>();
+  /**
+   * Texts we could not deliver because the user's context token (or the whole
+   * API) was gone — buffered here instead of silently dropped. A failure
+   * notice sitting in here is exactly the "your attachment did NOT arrive"
+   * word the user is owed (2026-08-23 incident class: "已附上" text, no file,
+   * no notice). Flushed by handleRawMessage as soon as a fresh token arrives.
+   * In-memory only: the token itself is persisted, IM delivery is ephemeral,
+   * and surviving daemon restarts is not worth a persistence schema.
+   */
+  private pendingNotices = new Map<string, string[]>();
   private readonly dedup = new MessageDedup({ ttlMs: DEDUP_TTL_MS });
   /** Multi-turn run reuse state machine (per-user run/queue/drain). */
   private readonly dispatcher: ChannelDispatcher;
@@ -197,6 +222,9 @@ export class WeixinService implements ChannelSink {
 
   disconnect(): WeixinStatus {
     this.stop();
+    // Deliberate logout — anything buffered for the old login is stale.
+    this.pendingNotices.clear();
+    this.expiredContextUsers.clear();
     removeCredentials(resolveCredentialsPath(this.getConfig()));
     const config = loadConfig();
     config.weixin = {
@@ -432,7 +460,12 @@ export class WeixinService implements ChannelSink {
     this.status.lastMessageAt = Date.now();
     if (parsed.contextToken) {
       this.contextTokens.set(parsed.fromUserId, parsed.contextToken);
+      this.expiredContextUsers.delete(parsed.fromUserId);
       this.persistContextTokens();
+      // Fresh credentials — deliver whatever couldn't be sent while the token
+      // was gone (e.g. the "attachment failed" notice). Awaits before the new
+      // message is processed so the user sees the notice first.
+      await this.flushPendingNotices(parsed.fromUserId);
     }
 
     // Handle /new command — close current conversation, next message starts fresh
@@ -503,9 +536,20 @@ export class WeixinService implements ChannelSink {
   }
 
   async sendText(toUserId: string, text: string): Promise<void> {
-    if (!this.api) return;
+    // No delivery credentials for this user. Do NOT silently drop the text —
+    // the dispatcher's attachment-failure notice travels through here, and
+    // dropping it recreates exactly the hole this service is patched against
+    // (user reads "已附上", waits for a file that never arrives, no notice).
+    // Buffer it; handleRawMessage flushes when a fresh token arrives.
+    if (!this.api) {
+      this.stashPendingNotice(toUserId, text);
+      return;
+    }
     const contextToken = this.contextTokens.get(toUserId);
-    if (!contextToken) return;
+    if (!contextToken) {
+      this.stashPendingNotice(toUserId, text);
+      return;
+    }
 
     for (const chunk of chunkText(text, TEXT_CHUNK_LIMIT)) {
       const response = await this.api.sendText(toUserId, chunk, contextToken);
@@ -513,9 +557,42 @@ export class WeixinService implements ChannelSink {
       const errcode = Number(response.errcode ?? 0);
       if (ret === SESSION_EXPIRED_CODE || errcode === SESSION_EXPIRED_CODE) {
         this.contextTokens.delete(toUserId);
+        this.expiredContextUsers.add(toUserId);
         this.persistContextTokens();
         return;
       }
+    }
+  }
+
+  /** Buffer an undeliverable text for later delivery (see pendingNotices). */
+  private stashPendingNotice(toUserId: string, text: string): void {
+    let list = this.pendingNotices.get(toUserId);
+    if (!list) {
+      list = [];
+      this.pendingNotices.set(toUserId, list);
+    }
+    list.push(text);
+    if (list.length > MAX_PENDING_NOTICES) {
+      list.shift(); // drop the oldest — keep the freshest notices
+    }
+    // eslint-disable-next-line no-console
+    console.log(
+      `[weixin] no delivery credentials for ${toUserId} — buffered pending notice (${list.length} queued)`,
+    );
+  }
+
+  /**
+   * Deliver texts buffered while the user's credentials were missing. Runs
+   * right after an inbound message refreshes the token. If the fresh token is
+   * ALSO expired mid-flush, sendText re-buffers the remainder — the loop stays
+   * finite because a flush only runs on an inbound message.
+   */
+  private async flushPendingNotices(toUserId: string): Promise<void> {
+    const list = this.pendingNotices.get(toUserId);
+    if (!list || list.length === 0) return;
+    this.pendingNotices.delete(toUserId);
+    for (const text of list) {
+      await this.sendText(toUserId, text);
     }
   }
 
@@ -530,7 +607,16 @@ export class WeixinService implements ChannelSink {
   async sendMediaFile(toUserId: string, item: OutboundMediaItem): Promise<void> {
     if (!this.api) throw new Error('WeixinApi not initialized — cannot send attachment');
     const contextToken = this.contextTokens.get(toUserId);
-    if (!contextToken) throw new Error('微信会话凭证缺失 — 无法发送附件');
+    if (!contextToken) {
+      // If the token expired earlier this turn (an earlier item hit -14 and
+      // dropped it), report the root cause for every later item too — the
+      // user-facing notice should name ONE cause, not a mix of expired/missing.
+      throw new Error(
+        this.expiredContextUsers.has(toUserId)
+          ? '微信会话已过期 — 附件未发送'
+          : '微信会话凭证缺失 — 无法发送附件',
+      );
+    }
 
     const mediaType = item.kind === 'image'
       ? UploadMediaType.IMAGE
@@ -549,9 +635,13 @@ export class WeixinService implements ChannelSink {
       const errcode = Number(response.errcode ?? 0);
       if (ret === SESSION_EXPIRED_CODE || errcode === SESSION_EXPIRED_CODE) {
         this.contextTokens.delete(toUserId);
+        this.expiredContextUsers.add(toUserId);
         this.persistContextTokens();
         // The send itself failed (session expired) — surface it so the user
         // is told the attachment did not arrive, not left waiting for it.
+        // (The notice can't be delivered right now — the token that would
+        // carry it is the one that just expired — so sendText buffers it
+        // and handleRawMessage flushes on the next inbound message.)
         throw new Error('微信会话已过期 — 附件未发送');
       }
     } catch (err) {
