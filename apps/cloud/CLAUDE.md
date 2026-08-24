@@ -97,6 +97,7 @@ MOLIO_AUTH_URL=http://localhost:3200 pnpm dev:daemon   # daemon 指向本地 clo
 
 ## 部署（第一期手动）
 
-- 形态：阿里云函数计算 FC（Web 函数/Custom Runtime，HTTP server 原样部署，监听 `CAPort`）+ PolarDB Serverless；Serverless Devs `s deploy` 发布，daily/prod 双函数。
+- 形态：阿里云函数计算 FC（Web 函数/Custom Runtime，HTTP server 原样部署，监听 `CAPort`）+ PolarDB Serverless。**单函数 prod**（cn-hangzhou），自定义域名 `auth.molio.cn` 直连 LATEST 版本（无版本/别名）。
+- 发布：`node apps/cloud/scripts/deploy-package.mjs` 产出 `apps/cloud/molio-cloud-deploy.zip`（内含 linux-x64 Node 运行时 + npm 扁平 node_modules），FC 控制台上传 ZIP。启动命令 `/code/runtime/node /code/dist/src/index.js`。⚠️ **仅改控制台环境变量对常驻实例不生效**，必须上传新代码包强制实例换新（2026-08-24 事故教训，细节见脚本头注释）。
 - 独立部署，**不进 Molio 应用镜像**，不走 OSS/ACR 桌面发版链路。
 - 上线前置：域名 ICP 备案、DirectMail 发信域名（SPF/DKIM）、隐私政策/用户协议（见 `docs/user-module-design.md` §十二）。
