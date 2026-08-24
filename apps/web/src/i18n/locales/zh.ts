@@ -379,6 +379,8 @@ const zh: Record<string, string> = {
   'graph.edges': '{count} 条链接',
   'graph.selectVault': '选择知识库',
   'graph.empty': '该知识库中没有 Markdown 文件',
+  'graph.searchPlaceholder': '搜索节点…',
+  'graph.searchNoResult': '无匹配节点',
 
   // ── FileChatPanel ──
   'fileChat.running': '运行中…',
@@ -402,7 +404,7 @@ const zh: Record<string, string> = {
   'kb.locateFile': '在目录中定位',
   'kb.locateFileNeedFile': '请先打开一个文件',
   'kb.newNote': '新建笔记',
-  'kb.newFolder': '新建子文件夹',
+  'kb.newFolder': '新建文件夹',
   'kb.create': '新建',
   'kb.newWindow': '新窗口',
   'kb.collapseAll': '折叠全部',

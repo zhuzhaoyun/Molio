@@ -7,8 +7,8 @@ import { gotoHome, clickNav } from './helpers/navigation';
  *
  * E2E tests for the Graph (knowledge graph) page.
  *
- * Graph rendering depends on Sigma.js WebGL — these tests verify page structure
- * and state display rather than pixel-perfect rendering.
+ * Graph rendering depends on the PixiJS (WebGL) engine — these tests verify
+ * page structure and state display rather than pixel-perfect rendering.
  *
  * Prerequisites: `pnpm dev` running (daemon :3100, web :5173)
  */

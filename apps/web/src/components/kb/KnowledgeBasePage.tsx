@@ -186,7 +186,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
   }, [location.state, kb.vaults, kb.activeVault?.id, navigate]);
 
   // Context menu state
-  const [ctxMenu, setCtxMenu] = useState<{ node: TreeNode; x: number; y: number } | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{ node: TreeNode | null; x: number; y: number } | null>(null);
 
   // Inline rename state
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
@@ -624,6 +624,11 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     setCtxMenu({ node, x: e.clientX, y: e.clientY });
   }, []);
 
+  /** Right-click on the tree's blank area → root-level create menu. */
+  const handleBlankContextMenu = useCallback((e: React.MouseEvent) => {
+    setCtxMenu({ node: null, x: e.clientX, y: e.clientY });
+  }, []);
+
   const handleCloseCtxMenu = useCallback(() => {
     setCtxMenu(null);
   }, []);
@@ -652,6 +657,23 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
   const getContextMenuItems = useCallback((): MenuItem[] => {
     if (!ctxMenu) return [];
     const { node } = ctxMenu;
+
+    // Right-click on the tree's blank area → create at the vault root.
+    if (node === null) {
+      return [
+        {
+          label: '新建文件',
+          testid: 'kb-ctx-new-file-root',
+          onClick: () => handleNewFile(),
+        },
+        {
+          label: '新建文件夹',
+          testid: 'kb-ctx-new-folder-root',
+          onClick: () => handleNewFolder(),
+        },
+      ];
+    }
+
     const items: MenuItem[] = [];
 
     if (node.type === 'file') {
@@ -970,6 +992,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
         onVaultClick={() => kb.setShowVaultSwitcher(true)}
         onAddToWiki={hasVault ? handleIngestFile : undefined}
         onContextMenu={handleContextMenu}
+        onBlankContextMenu={handleBlankContextMenu}
         renamingPath={renamingPath}
         onRenameComplete={handleRenameComplete}
         onRenameCancel={handleRenameCancel}
