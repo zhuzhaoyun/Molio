@@ -11,6 +11,7 @@ const zh: Record<string, string> = {
   'nav.help': '帮助',
   'nav.settings': '设置',
   'nav.account': '账号',
+  'nav.login': '登录',
 
   // ── Common ──
   'common.save': '保存',

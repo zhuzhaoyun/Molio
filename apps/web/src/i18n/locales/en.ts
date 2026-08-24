@@ -11,6 +11,7 @@ const en: Record<string, string> = {
   'nav.help': 'Help',
   'nav.settings': 'Settings',
   'nav.account': 'Account',
+  'nav.login': 'Sign in',
 
   // ── Common ──
   'common.save': 'Save',

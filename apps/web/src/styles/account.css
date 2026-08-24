@@ -17,12 +17,12 @@
   z-index: 1;
 }
 
-/* ── NavRail 账号按钮：已登录绿点 ─────────────────────────── */
+/* ── NavRail 账号按钮：未登录琥珀提示点（待办：需登录） ───── */
 .entry-nav-rail__btn.is-logged-in {
   color: var(--text);
   /* .entry-nav-rail__dot 是 absolute 定位，锚点必须是这个按钮本身。
      目前恰好由 rail.css 的 [data-tooltip] { position: relative } 提供，
-     但那是 tooltip 的副作用——显式声明，避免 tooltip 规则变动时绿点悄悄
+     但那是 tooltip 的副作用——显式声明，避免 tooltip 规则变动时提示点悄悄
      飘到别的祖先上。 */
   position: relative;
 }
@@ -33,7 +33,7 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--green);
+  background: var(--amber); /* 待办语义：未登录需处理；绿色保留给「成功」类反馈 */
   pointer-events: none;
 }
 

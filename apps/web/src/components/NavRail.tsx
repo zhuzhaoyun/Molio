@@ -154,13 +154,15 @@ export function NavRail() {
 
       {/* Bottom group: Account + Help + Settings */}
       <div className="entry-nav-rail__group">
-        {/* Account — 登录态入口（绿点 = 已登录），打开账号面板（设计 §7.4） */}
+        {/* Account — 登录态入口，打开账号面板（设计 §7.4）。
+            未登录：tooltip「登录」+ 琥珀提示点（待办语义：下载/购买需登录）；
+            已登录：tooltip「账号」，无点（无需用户处理）。 */}
         <button
           type="button"
           className={`entry-nav-rail__btn ${auth?.loggedIn ? 'is-logged-in' : ''}`}
           data-view="account"
           data-testid="nav-account-btn"
-          data-tooltip={t('nav.account')}
+          data-tooltip={auth?.loggedIn ? t('nav.account') : t('nav.login')}
           onClick={() => setAccountOpen(true)}
         >
           <svg
@@ -174,7 +176,7 @@ export function NavRail() {
             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
             <circle cx="12" cy="7" r="4" />
           </svg>
-          {auth?.loggedIn && <span className="entry-nav-rail__dot" />}
+          {!auth?.loggedIn && <span className="entry-nav-rail__dot" />}
         </button>
 
         {/* Help — external link to online docs */}
