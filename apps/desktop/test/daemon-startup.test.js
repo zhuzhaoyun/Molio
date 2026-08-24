@@ -81,8 +81,8 @@ describe('main.js: must load URL only after daemon is ready (not in createWindow
     const fnBody = mainJs.slice(fnStart, fnEnd);
 
     assert.ok(
-      !fnBody.includes('localhost:3100'),
-      'createWindow must NOT call loadURL for localhost:3100 — that causes 404 on slow machines'
+      !fnBody.includes('localhost:3100') && !fnBody.includes('DAEMON_BASE'),
+      'createWindow must NOT call loadURL for the daemon (localhost:3100/DAEMON_BASE) — that causes 404 on slow machines'
     );
   });
 
@@ -116,9 +116,16 @@ describe('main.js: must load URL only after daemon is ready (not in createWindow
     const fnEnd = mainJs.indexOf('\nfunction ', fnStart + 1);
     const fnBody = mainJs.slice(fnStart, fnEnd > fnStart ? fnEnd : fnStart + 500);
 
+    // 生产 URL 经 DAEMON_BASE 常量拼接（端口单点定义 DAEMON_PORT = 3100），
+    // 不再有 'localhost:3100' 字面量。
     assert.ok(
-      fnBody.includes('localhost:3100'),
-      'loadAppWindow must call loadURL for localhost:3100'
+      fnBody.includes('loadURL(DAEMON_BASE + url)'),
+      'loadAppWindow must loadURL the daemon base URL'
+    );
+    assert.ok(
+      mainJs.includes('const DAEMON_PORT = 3100') &&
+        mainJs.includes('const DAEMON_BASE = `http://localhost:${DAEMON_PORT}`'),
+      'DAEMON_BASE must be derived from the single DAEMON_PORT constant (:3100)'
     );
   });
 
@@ -216,6 +223,41 @@ describe('main.js: protocol launch should load app when daemon is not yet ready'
     assert.ok(
       /isWaitingForApp\(targetWin\)\s*\|\|\s*!state\?\.ready/.test(navigateBlock),
       'the loadURL fallback condition must cover both waiting-for-app and not-ready states'
+    );
+  });
+});
+
+describe('main.js: packaged daemon must get MOLIO_AUTH_URL (cloud auth wiring)', () => {
+  // Regression: packaged builds never set MOLIO_AUTH_URL → daemon AuthClient
+  // isConfigured()=false → /api/auth/* 回 503 auth_not_configured，Web UI 隐藏
+  // 登录表单（「登录服务尚未配置」）。官方包必须内置云端地址，env 显式值优先
+  // （私有化/Docker 靠自己的 MOLIO_AUTH_URL）。
+  it('should define a built-in official auth URL', () => {
+    assert.ok(
+      mainJs.includes("const DEFAULT_AUTH_URL = 'https://auth.molio.cn'"),
+      'main.js must define DEFAULT_AUTH_URL pointing at the official cloud'
+    );
+  });
+
+  it('daemon env should fall back to DEFAULT_AUTH_URL when MOLIO_AUTH_URL is unset/blank', () => {
+    assert.ok(
+      /daemonEnv\.MOLIO_AUTH_URL\s*\?\?\s*''/.test(mainJs),
+      'the fallback must treat a missing env as empty string'
+    );
+    assert.ok(
+      mainJs.includes('daemonEnv.MOLIO_AUTH_URL = DEFAULT_AUTH_URL'),
+      'startDaemonProduction must inject DEFAULT_AUTH_URL when the env is missing or blank'
+    );
+  });
+
+  it('an explicitly set MOLIO_AUTH_URL must take precedence (no silent override)', () => {
+    // 用户偏好规则：显式配置不得被静默覆盖——注入只能发生在条件分支里。
+    const fallbackPos = mainJs.indexOf('daemonEnv.MOLIO_AUTH_URL = DEFAULT_AUTH_URL');
+    assert.ok(fallbackPos !== -1, 'fallback injection must exist');
+    const before = mainJs.slice(Math.max(0, fallbackPos - 300), fallbackPos);
+    assert.ok(
+      /if\s*\(/.test(before),
+      'DEFAULT_AUTH_URL must only be injected inside a conditional — explicit env always wins'
     );
   });
 });

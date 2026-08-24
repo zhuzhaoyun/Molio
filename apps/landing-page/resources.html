@@ -18,7 +18,7 @@
 
 <link rel="icon" type="image/png" href="/images/favicon-32.png">
 <link rel="apple-touch-icon" href="/images/favicon-180.png">
-<link rel="stylesheet" href="styles.css?v=20260813a">
+<link rel="stylesheet" href="styles.css?v=20260824a">
 
 <!-- Open Graph -->
 <meta property="og:title" content="Molio 资源 — 知识库资源库下载">
@@ -46,7 +46,7 @@
       <a href="blog/index.html" class="nav-link">博客</a>
       <a href="enterprise.html" class="nav-link">定制服务</a>
       <a href="resources.html" class="nav-link active">资源</a>
-     <a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer" class="nav-gh" aria-label="GitHub 仓库"><svg viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg></a></div>
+     <span id="nav-auth"></span><a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer" class="nav-gh" aria-label="GitHub 仓库"><svg viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg></a></div>
   </div>
 </nav>
 
@@ -106,7 +106,8 @@
 
 <script src="resources-data.js?v=20260813a"></script>
 <script src="vendor/qrcode.min.js"></script>
-<script src="pay.js?v=20260813a"></script>
+<script src="auth.js?v=20260824a"></script>
+<script src="pay.js?v=20260823a"></script>
 <script>
 (function() {
   // 现代市场卡片：图标 + 标题 + 价格胶囊 + 描述 + 底部「购买」胶囊按钮 / 查看详情。
@@ -123,7 +124,8 @@
       '</div>' +
       '<p class="rl-desc">' + r.desc + '</p>' +
       '<div class="rl-actions">' +
-        '<button type="button" class="rl-buy" data-id="' + encodeURIComponent(r.id) + '">' + (paid ? '购买 ¥' + r.price : '下载') + '</button>' +
+        // data-auth-gate：未登录时 auth.js 把文案改写为「登录后购买/下载」
+        '<button type="button" class="rl-buy" data-id="' + encodeURIComponent(r.id) + '" data-auth-gate="' + (paid ? '购买 ¥' + r.price : '下载') + '">' + (paid ? '购买 ¥' + r.price : '下载') + '</button>' +
         '<a class="rl-detail" href="resource.html?id=' + encodeURIComponent(r.id) + '">查看详情 →</a>' +
       '</div>' +
     '</article>';
@@ -135,9 +137,12 @@
     const list = (window.MOLIO_RESOURCES || []).filter(r =>
       filter === 'all' ? true : (filter === 'paid' ? r.price > 0 : r.price === 0));
     grid.innerHTML = list.map(resCard).join('');
+    // 重渲染后重新应用登录门槛文案（新按钮节点没有旧状态）
+    if (window.MolioAuth && window.MolioAuth.refreshLabels) window.MolioAuth.refreshLabels();
   }
 
-  // 购买按钮 → 直接拉起微信支付弹窗（不进详情页）
+  // 购买/下载按钮（不进详情页）：付费 → 微信支付弹窗（pay.js 内含登录门槛）；
+  // 免费 → 登录门槛后打开 OSS 直链
   const grid = document.getElementById('res-grid');
   if (grid) {
     grid.addEventListener('click', (e) => {
@@ -146,7 +151,14 @@
       e.preventDefault();
       const id = decodeURIComponent(btn.dataset.id);
       const r = (window.MOLIO_RESOURCES || []).find(x => x.id === id);
-      if (r) window.MolioPay.open(r);
+      if (!r) return;
+      if (r.price > 0) {
+        window.MolioPay.open(r);
+        return;
+      }
+      const go = () => window.open(window.MOLIO_RES_BASE + '/' + r.file, '_blank', 'noopener,noreferrer');
+      if (window.MolioAuth) window.MolioAuth.requireAuth().then(go, () => { /* 用户取消 */ });
+      else go();
     });
   }
 

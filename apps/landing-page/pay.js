@@ -4,9 +4,12 @@
  * 依赖：
  *   - vendor/qrcode.min.js（二维码渲染）
  *   - window.MOLIO_PAY_BASE（resources-data.js 配置的支付后端地址）
+ *   - window.MolioAuth（auth.js；**必须先于本文件加载**）——付费下载登录门槛：
+ *     未登录先弹登录框，登录成功才下单（订单带买家 uid 归属）。
  *
  * 用法：MolioPay.open(resource)，resource 为 MOLIO_RESOURCES 中的一条。
- * 流程：/pay 下单 → 渲染二维码 → 每 3s 轮询 /order → SUCCESS 后 /deliver 拿 presign 下载链接。
+ * 流程：登录门槛 → /pay 下单（带 uid）→ 渲染二维码 → 每 3s 轮询 /order
+ *       → SUCCESS 后 /deliver 拿 presign 下载链接。
  */
 (function () {
   'use strict';
@@ -50,8 +53,8 @@
     document.getElementById('pay-close').addEventListener('click', closePay);
     modal.addEventListener('click', function (e) { if (e.target === modal) closePay(); });
 
-    window.MolioPay = window.MolioPay || {};
-    window.MolioPay.open = function (r) {
+    /** 实际下单/轮询/交付。uid（买家用户 id）为空时行为与旧版完全一致 */
+    function startOrder(r, uid) {
       var base = payBase();
       modal.hidden = false;
       amountEl.textContent = '¥' + r.price;
@@ -61,7 +64,10 @@
 
       if (!base) { tip.textContent = '支付服务未开通，请直接联系购买'; return; }
 
-      fetch(base + '/pay?id=' + encodeURIComponent(r.id))
+      var payUrl = base + '/pay?id=' + encodeURIComponent(r.id);
+      if (uid) payUrl += '&uid=' + encodeURIComponent(uid);
+
+      fetch(payUrl)
         .then(function (res) { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
         .then(function (data) {
           new QRCode(qrBox, { text: data.code_url, width: 200, height: 200, correctLevel: QRCode.CorrectLevel.M });
@@ -92,6 +98,17 @@
           console.error(e);
           tip.textContent = '创建订单失败，请关闭重试，或联系购买';
         });
+    }
+
+    window.MolioPay = window.MolioPay || {};
+    /** 付费下载门槛：未登录 → 弹登录框，登录成功才下单；用户取消则不创建订单 */
+    window.MolioPay.open = function (r) {
+      var auth = window.MolioAuth;
+      if (!auth) { startOrder(r, null); return; } // auth.js 缺失时优雅降级（旧行为）
+      auth.requireAuth().then(
+        function (user) { startOrder(r, user && user.id); },
+        function () { /* 用户取消登录 */ }
+      );
     };
   }
 

@@ -5,6 +5,7 @@
 import { Link } from 'react-router-dom';
 import { useI18n } from '../../i18n';
 import { isPaid, type MolioResource } from '../../data/resources';
+import { useAuthStatus } from '../../stores/authStore';
 import { startResourcePurchase } from './resourceAction';
 
 export function ResourceCard({
@@ -15,6 +16,8 @@ export function ResourceCard({
   onPay: (r: MolioResource) => void;
 }) {
   const { t } = useI18n();
+  const auth = useAuthStatus();
+  const loggedIn = auth?.loggedIn === true;
   const paid = isPaid(r);
 
   return (
@@ -44,7 +47,9 @@ export function ResourceCard({
           data-testid={`resource-buy-${r.id}`}
           onClick={() => startResourcePurchase(r, onPay)}
         >
-          {paid ? t('resources.buy', { price: r.price }) : t('resources.download')}
+          {paid
+            ? t(loggedIn ? 'resources.buy' : 'resources.buyLogin', { price: r.price })
+            : t(loggedIn ? 'resources.download' : 'resources.downloadLogin')}
         </button>
         <Link
           to={`/resources/${r.id}`}

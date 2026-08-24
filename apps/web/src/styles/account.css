@@ -1,0 +1,303 @@
+/* ============================================================
+   Account — 账号面板模态框 + 登录表单（设计 §7.4）
+   复用 kb-overlay / kb-modal / kb-btn 基础件（knowledge.css）
+   ============================================================ */
+
+.account-modal {
+  position: relative;
+  width: 400px;
+  max-width: calc(100vw - 40px);
+}
+
+/* 无标题栏：关闭按钮悬浮右上角（原 .kb-modal-header 整行已移除） */
+.account-close {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 1;
+}
+
+/* ── NavRail 账号按钮：未登录琥珀提示点（待办：需登录） ───── */
+.entry-nav-rail__btn.is-logged-in {
+  color: var(--text);
+  /* .entry-nav-rail__dot 是 absolute 定位，锚点必须是这个按钮本身。
+     目前恰好由 rail.css 的 [data-tooltip] { position: relative } 提供，
+     但那是 tooltip 的副作用——显式声明，避免 tooltip 规则变动时提示点悄悄
+     飘到别的祖先上。 */
+  position: relative;
+}
+.entry-nav-rail__dot {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--amber); /* 待办语义：未登录需处理；绿色保留给「成功」类反馈 */
+  pointer-events: none;
+}
+
+/* ── 登录表单头部（对齐官网登录弹窗：标题 + 价值副标题） ─── */
+.account-login-title {
+  margin: 0 0 2px;
+  font-family: var(--serif);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-strong);
+}
+
+.account-login-sub {
+  margin: 0 0 16px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+/* 全宽主按钮（对齐官网 .auth-btn） */
+.account-login-cta {
+  width: 100%;
+  justify-content: center;
+  padding: 9px 16px;
+  font-size: 13.5px;
+}
+
+/* 主按钮下方的链接式次要操作（重发 / 返回修改邮箱 / 取消） */
+.account-login-links {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 10px;
+}
+
+/* 验证码已发送提示（对齐官网 .auth-note，比 account-note 卡片轻） */
+.account-login-note {
+  margin: 0 0 12px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.account-note {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-muted);
+  background: var(--bg-subtle);
+}
+.account-note-info {
+  color: var(--blue);
+  background: var(--blue-bg);
+  border: 1px solid var(--blue-border);
+}
+.account-note-warn {
+  color: var(--amber);
+  background: var(--amber-bg);
+  border: 1px solid color-mix(in srgb, var(--amber) 25%, transparent);
+}
+
+.account-error {
+  margin: 12px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--red);
+}
+
+.account-hint {
+  font-size: 11.5px;
+  color: var(--text-soft);
+}
+
+/* ── 登录态主视图 ───────────────────────────────────────── */
+.account-profile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.account-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-tint);
+  color: var(--accent);
+  font-size: 17px;
+  font-weight: 600;
+  flex: 0 0 40px;
+}
+
+.account-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* 昵称行（展示态） */
+.account-nickname-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.account-nickname {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+  overflow-wrap: anywhere;
+}
+
+/* 铅笔编辑按钮（低调，hover 提亮） */
+.account-nickname-edit-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 2px 5px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+.account-nickname-edit-btn:hover:not(:disabled) {
+  color: var(--accent);
+  background: var(--bg-subtle);
+}
+.account-nickname-edit-btn:disabled {
+  color: var(--text-faint);
+  cursor: not-allowed;
+}
+
+/* 昵称编辑态 */
+.account-nickname-edit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.account-nickname-input {
+  width: 150px;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+}
+.account-nickname-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+/* 邮箱降为昵称下方次要信息 */
+.account-logged-email {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* 权益行 */
+.account-entitlement {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  font-size: 12.5px;
+}
+.account-entitlement-label {
+  color: var(--text-soft);
+}
+.account-entitlement-value {
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.account-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+/* ── 登录表单（两步：邮箱 → 验证码） ─────────────────────── */
+.account-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.account-field label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.account-field input {
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+}
+.account-field input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+/* ── 用户协议 / 隐私政策勾选（登录前置，设计 §十二） ───────── */
+.account-agree-row {
+  margin-bottom: 14px;
+}
+.account-agree-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+/* base.css 已豁免 checkbox 的全局 width:100%（见 base.css 注释）；
+   这里 flex: 0 0 auto 防止长文案反过来压缩勾选框。 */
+.account-agree-label input {
+  margin-top: 2px;
+  accent-color: var(--accent);
+  flex: 0 0 auto;
+}
+.account-agree-label a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.account-agree-label a:hover {
+  text-decoration: underline;
+}
+
+/* 链接式按钮（重发 / 返回修改邮箱 / 取消） */
+.account-link-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 4px 2px;
+  font-size: 12.5px;
+  color: var(--accent);
+  cursor: pointer;
+}
+.account-link-btn:hover:not(:disabled) {
+  text-decoration: underline;
+}
+.account-link-btn:disabled {
+  color: var(--text-faint);
+  cursor: not-allowed;
+}

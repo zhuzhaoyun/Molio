@@ -12,26 +12,21 @@
  * (stderr). Cloud log collectors classify stderr as ERROR.
  */
 
+import { resolvePollIntervalMs } from './polling-interval.js';
+
 const DEFAULT_INTERVAL_MS = 60_000;
-// Guard against a misconfigured (tiny) interval flooding the daemon with health
-// requests and ARMS with duplicate metrics. setInterval clamps values <= 0 to
-// 1ms, which would fire the callback thousands of times per second.
-const MIN_INTERVAL_MS = 1_000;
 
 /**
  * Resolve the polling interval from a raw env var value.
  *
- * A negative or zero value is truthy in JS, so a naive `Number(x) || fallback`
- * would let e.g. `-1` through — and `setInterval(fn, -1)` clamps to 1ms,
- * flooding the daemon. Require a finite value at or above MIN_INTERVAL_MS,
- * otherwise fall back to the default.
+ * Parsing rules (incl. the negative-truthy and setInterval<=0-clamp guards)
+ * live in polling-interval.js, shared with auth-status-watch.js.
  *
  * @param {string | undefined} rawValue
  * @returns {number} interval in milliseconds
  */
 export function resolveIntervalMs(rawValue) {
-  const parsed = Number(rawValue);
-  return Number.isFinite(parsed) && parsed >= MIN_INTERVAL_MS ? parsed : DEFAULT_INTERVAL_MS;
+  return resolvePollIntervalMs(rawValue, DEFAULT_INTERVAL_MS);
 }
 
 /**

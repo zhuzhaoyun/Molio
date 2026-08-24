@@ -1,0 +1,34 @@
+name: Cloud Check
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  cloud-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all packages
+        run: pnpm build
+
+      - name: Typecheck cloud
+        run: pnpm --filter @molio/cloud typecheck
+
+      - name: Run cloud tests
+        run: pnpm --filter @molio/cloud test

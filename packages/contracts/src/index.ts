@@ -62,6 +62,23 @@ export type {
 export type { SSEEnvelope } from './sse.js';
 
 export type {
+  User,
+  Entitlement,
+  AuthStatus,
+  SendCodeRequest,
+  SendCodeResponse,
+  VerifyRequest,
+  TokenPair,
+  VerifyResponse,
+  RefreshRequest,
+  RefreshResponse,
+  MeResponse,
+  UpdateMeRequest,
+  SessionDeleteResponse,
+  AccountDeleteResponse,
+} from './auth.js';
+
+export type {
   Vault,
   TreeNode,
   IngestStatus,

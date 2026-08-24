@@ -66,6 +66,11 @@ src/
       token-store.ts   FeishuTokenStore — tenant_access_token 内存缓存 + 磁盘持久化 + 100min 刷新定时器
       service.ts       状态机 (idle/connecting/connected/reconnecting/error)，token 生命周期委托 token-store
       types.ts         FeishuStatus / FeishuConfig / FeishuRawEvent
+    auth/             云端认证 client（用户模块 M2/M4；Web UI 永不直连云端，一切经 daemon）
+      token-store.ts   ~/.molio/auth-tokens.json 异步读写（复用 credentials-store 原子写 + chmod 0o600）；两种落盘格式按字段判别：明文 AuthTokens JSON（基线，D3）/ 信封 {v:1, encrypted:<base64>}（桌面模式 safeStorage 加密）；读失败（损坏/解密失败/未配置 crypto 遇信封）一律 null **不删文件**；写降级按模式判定：配置 crypto 但加密失败 → 跳过落盘保内存（绝不静默明文），未配置 → 明文；crypto provider 模块级可注入（setTokenCryptoProvider，测试用）；解码 access JWT exp；token 不进 config.json
+      desktop-crypto.ts 桌面端加密 RPC 客户端 — daemon 以 ELECTRON_RUN_AS_NODE 运行无 Electron API，fetch 主进程 crypto-server（端口 env MOLIO_DESKTOP_CRYPTO_PORT，先例 = wiki-fetcher 的 MOLIO_DESKTOP_FETCH_PORT）；2s 超时、**从不抛错**（任何失败返回 null，token-store 据此降级）；env 缺失 = 未配置（dev/Docker/独立 daemon → 明文基线）
+      auth-client.ts   AuthClient — 唯一云端通信方（DEFAULT_AUTH_URL 内置官方地址 auth.molio.cn，env 未设置时回落；MOLIO_AUTH_URL 显式空白 = 未配置，端点回 503；值与 desktop main.js 的 DEFAULT_AUTH_URL 同步）：sendCode/verify/logout/deleteAccount（注销云端优先：云端失败抛错不清本地）、single-flight refresh、401→刷新→重试一次、<2min 主动刷新、refresh 被拒不盲试、启动恢复 restoreSession、status 带 configured 标记。token 读写异步化后 currentTokens/getStatus/adoptTokens 均为 async；加密失败跳过落盘时内存仍更新（先写盘后缓存不变量的唯一例外，有 log warn）
+      entitlement-cache.ts  EntitlementCache — 权益快照 ~/.molio/entitlement-cache.json + 7 天离线宽限（MOLIO_AUTH_GRACE_DAYS 可配）
   routes/
     channel.ts        channelRoutes<TConfig>() 工厂 — 5 个标准渠道路由（status/start/stop/disconnect/config）
 
@@ -82,10 +87,11 @@ src/
     maintenance.ts    POST /api/maintenance/rebuild-fts — 重建 FTS 索引（灾难恢复）
     weixin.ts         POST /api/weixin — 微信回调
     feishu.ts         GET/POST /api/feishu/* — 飞书渠道 (status/start/stop/disconnect/config)
+    auth.ts           POST /api/auth/start|verify|logout + PATCH /me + GET /status + DELETE /account — 云端认证本地镜像（start 原样透传云端响应含 daily devCode；me 改昵称成功后同步本地 token/权益快照；account 注销云端优先，云端不可达抛 502 不清本地）
   publish-bridge/
     bridge-page.ts    发布桥接页面逻辑
 test/                  测试用例 (node:test)，按源码模块子目录组织
-  core/               config, db, transcript, run-event-buffer, knowledge, conversations, weixin, feishu
+  core/               config, db, transcript, run-event-buffer, knowledge, conversations, weixin, feishu, auth（mock-cloud.ts 是行为可编程 mock 云端）
   streams/            claude-stream, codex-stream, json-event-stream, jsonl-parser
   runtimes/           env, launch-detection, claude-permission-mode, windows-cmd-resolution
   routes/             agent-test-multiturn, knowledge, publish, sse, feishu
@@ -132,6 +138,12 @@ pnpm typecheck    # tsc --noEmit
 | POST | `/api/feishu/stop` | 停止飞书连接（不清理凭证） |
 | POST | `/api/feishu/disconnect` | 断开连接并清理 tenant_access_token 缓存 |
 | PUT | `/api/feishu/config` | 写 App ID/App Secret/默认 agent（写入 ~/.molio/config.json 的 feishu 字段，自动触发重连） |
+| POST | `/api/auth/start` | 发送验证码（转发云端 send-code，响应原样透传，daily/local 含 devCode） |
+| POST | `/api/auth/verify` | 验证码登录（注册=登录），token 落 ~/.molio/auth-tokens.json |
+| PATCH | `/api/auth/me` | 修改昵称（转发云端 PATCH /auth/me）；成功后同步本地 token/权益快照，status 立即反映新昵称 |
+| GET | `/api/auth/status` | 登录态快照（离线时 stale=true；refresh 失效 loginExpired=true） |
+| POST | `/api/auth/logout` | 云端吊销尽力而为 + 本地必清 token/权益快照 |
+| DELETE | `/api/auth/account` | 注销账号：云端软删除 + 吊销全部 session；云端不可达 → 502 且保留本地 token（与 logout 语义相反） |
 
 ## 关键设计
 

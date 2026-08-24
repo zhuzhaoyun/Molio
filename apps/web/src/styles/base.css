@@ -80,6 +80,19 @@ input:focus, textarea:focus, select:focus {
   box-shadow: 0 0 0 3px var(--selected-soft);
 }
 
+/* 复选框/单选框是原生控件：上面的 width:100% + padding + border 只适用于文本
+   输入。作用于 checkbox 时它会被撑满整行、勾选框在大盒子里居中，行内文字
+   （如登录页协议文案）被挤出容器。 */
+input[type='checkbox'],
+input[type='radio'] {
+  width: auto;
+  height: auto;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background-color: transparent;
+}
+
 select {
   padding-right: 32px;
   appearance: none;
