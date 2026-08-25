@@ -134,3 +134,23 @@ export type {
 // SKILL.md generate/parse primitives (runtime values, shared daemon ↔ web).
 export { generateSkillMd, stripFrontmatter, parseSkillMd, deriveSkillName } from './skillmd.js';
 export type { ParsedSkillMd } from './skillmd.js';
+
+export {
+  MARKET_TAGS,
+  MARKET_ICONS,
+  MARKET_TINTS,
+} from './market.js';
+export type {
+  MarketTag,
+  MarketIcon,
+  MarketTint,
+  MarketListingSource,
+  MarketListingStatus,
+  MarketListing,
+  MarketMyListing,
+  MarketUploadTarget,
+  MarketCreateRequest,
+  MarketCreateResponse,
+  MarketMyResponse,
+  MarketDownloadResponse,
+} from './market.js';
