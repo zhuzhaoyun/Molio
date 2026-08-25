@@ -3,6 +3,11 @@
 // 时间戳接口层统一 epoch 毫秒（与 AuthStore 约定一致）。
 import type { MarketListingSource, MarketListingStatus } from '@molio/contracts';
 
+/** 更新流程暂存声明（confirm 消费后清空） */
+export interface MarketPendingUpdate {
+  previews: { key: string }[]; // 新效果图暂存键；空数组 = 沿用旧图
+}
+
 export interface MarketListingRecord {
   id: string;
   userId: string;
@@ -23,6 +28,8 @@ export interface MarketListingRecord {
   fileSize: number | null;
   status: MarketListingStatus;
   removedReason: string | null;
+  /** 更新流程暂存声明（update 发起时写入，confirm 消费后清空）；undefined 视同 null（兼容既有构造方） */
+  pendingUpdate?: MarketPendingUpdate | null;
   createdAt: number;
   updatedAt: number;
   publishedAt: number | null;
@@ -31,9 +38,9 @@ export interface MarketListingRecord {
 export interface MarketStore {
   insertListing(rec: MarketListingRecord): Promise<void>;
   findListingById(id: string): Promise<MarketListingRecord | null>;
-  /** 部分字段更新；不存在返回 null。status/removedReason/fileSize/version/previews/publishedAt/updatedAt 可改 */
+  /** 部分字段更新；不存在返回 null。status/removedReason/fileSize/version/previews/ossKey/publishedAt/pendingUpdate/updatedAt 可改 */
   updateListing(id: string, patch: Partial<Pick<MarketListingRecord,
-    'status' | 'removedReason' | 'fileSize' | 'version' | 'previews' | 'ossKey' | 'publishedAt'
+    'status' | 'removedReason' | 'fileSize' | 'version' | 'previews' | 'ossKey' | 'publishedAt' | 'pendingUpdate'
   >>, now: number): Promise<MarketListingRecord | null>;
   /** active 列表，published_at DESC */
   listActiveListings(limit: number): Promise<MarketListingRecord[]>;

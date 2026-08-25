@@ -3,13 +3,14 @@
 // JSONB 列（overview/highlights/tags/previews）出入参均为字符串数组；
 // 时间列 TIMESTAMPTZ ↔ epoch 毫秒，同 PgAuthStore 约定。
 import type { Pool } from 'pg';
-import type { MarketListingRecord, MarketStore } from './market-types.js';
+import type { MarketListingRecord, MarketPendingUpdate, MarketStore } from './market-types.js';
 
 type Row = {
   id: string; user_id: string; source: string; name: string; icon: string; tint: string;
   summary: string; overview: string[]; highlights: string[]; tags: string[]; previews: string[];
   version: string; price_cents: number; pay_url: string; author_display: string | null;
   oss_key: string; file_size: string | null; status: string; removed_reason: string | null;
+  pending_update: MarketPendingUpdate | null;
   created_at: Date; updated_at: Date; published_at: Date | null; owner_email?: string | null;
 };
 
@@ -21,6 +22,7 @@ function fromRow(r: Row): MarketListingRecord {
     version: r.version, priceCents: r.price_cents, payUrl: r.pay_url, authorDisplay: r.author_display,
     ossKey: r.oss_key, fileSize: r.file_size === null ? null : Number(r.file_size),
     status: r.status as MarketListingRecord['status'], removedReason: r.removed_reason,
+    pendingUpdate: r.pending_update ?? null,
     createdAt: r.created_at.getTime(), updatedAt: r.updated_at.getTime(),
     publishedAt: r.published_at === null ? null : r.published_at.getTime(),
   };
@@ -28,7 +30,7 @@ function fromRow(r: Row): MarketListingRecord {
 
 const SELECT_COLS = `id, user_id, source, name, icon, tint, summary, overview, highlights, tags,
   previews, version, price_cents, pay_url, author_display, oss_key, file_size, status,
-  removed_reason, created_at, updated_at, published_at`;
+  removed_reason, pending_update, created_at, updated_at, published_at`;
 
 export class PgMarketStore implements MarketStore {
   constructor(private pool: Pool) {}
@@ -37,14 +39,15 @@ export class PgMarketStore implements MarketStore {
     await this.pool.query(
       `INSERT INTO market_listings (id, user_id, source, name, icon, tint, summary, overview,
         highlights, tags, previews, version, price_cents, pay_url, author_display, oss_key,
-        file_size, status, removed_reason, created_at, updated_at, published_at)
+        file_size, status, removed_reason, created_at, updated_at, published_at, pending_update)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,
         to_timestamp($20/1000.0), to_timestamp($21/1000.0),
-        CASE WHEN $22::bigint IS NULL THEN NULL ELSE to_timestamp($22/1000.0) END)`,
+        CASE WHEN $22::bigint IS NULL THEN NULL ELSE to_timestamp($22/1000.0) END, $23)`,
       [rec.id, rec.userId, rec.source, rec.name, rec.icon, rec.tint, rec.summary,
         JSON.stringify(rec.overview), JSON.stringify(rec.highlights), JSON.stringify(rec.tags),
         JSON.stringify(rec.previews), rec.version, rec.priceCents, rec.payUrl, rec.authorDisplay,
-        rec.ossKey, rec.fileSize, rec.status, rec.removedReason, rec.createdAt, rec.updatedAt, rec.publishedAt],
+        rec.ossKey, rec.fileSize, rec.status, rec.removedReason, rec.createdAt, rec.updatedAt, rec.publishedAt,
+        rec.pendingUpdate ? JSON.stringify(rec.pendingUpdate) : null],
     );
   }
 
@@ -56,7 +59,7 @@ export class PgMarketStore implements MarketStore {
   async updateListing(
     id: string,
     patch: Partial<Pick<MarketListingRecord,
-      'status' | 'removedReason' | 'fileSize' | 'version' | 'previews' | 'ossKey' | 'publishedAt'>>,
+      'status' | 'removedReason' | 'fileSize' | 'version' | 'previews' | 'ossKey' | 'publishedAt' | 'pendingUpdate'>>,
     now: number,
   ): Promise<MarketListingRecord | null> {
     // 动态 SET 拼接：字段白名单固定，参数化防注入
@@ -69,6 +72,9 @@ export class PgMarketStore implements MarketStore {
     if (patch.version !== undefined) add('version', patch.version);
     if (patch.previews !== undefined) add('previews', JSON.stringify(patch.previews));
     if (patch.ossKey !== undefined) add('oss_key', patch.ossKey);
+    if (patch.pendingUpdate !== undefined) {
+      add('pending_update', patch.pendingUpdate === null ? null : JSON.stringify(patch.pendingUpdate));
+    }
     if (patch.publishedAt !== undefined) {
       args.push(patch.publishedAt);
       sets.push(`published_at = to_timestamp($${args.length}/1000.0)`);

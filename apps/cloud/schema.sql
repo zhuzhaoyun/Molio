@@ -80,6 +80,7 @@ CREATE INDEX IF NOT EXISTS refresh_tokens_expires    ON refresh_tokens (expires_
 
 -- ── 资源市场（社区知识库分享，设计见 2026-08-25-community-vault-sharing-design.md）──
 -- 已有库迁移（本文件 IF NOT EXISTS 只对新建库生效）：手动执行下方 CREATE TABLE + 两条索引。
+-- 已建 market_listings 的存量库补新列：ALTER TABLE market_listings ADD COLUMN pending_update JSONB;
 CREATE TABLE IF NOT EXISTS market_listings (
   id             TEXT PRIMARY KEY,                 -- ULID
   user_id        TEXT NOT NULL REFERENCES users(id),
@@ -100,6 +101,7 @@ CREATE TABLE IF NOT EXISTS market_listings (
   file_size      BIGINT,
   status         TEXT NOT NULL DEFAULT 'uploading',-- uploading | active | removed
   removed_reason TEXT,
+  pending_update JSONB,                            -- 更新中暂存声明 {previews:[{key}]}；非更新态 NULL
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
   published_at   TIMESTAMPTZ,
