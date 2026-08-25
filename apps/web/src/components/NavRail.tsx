@@ -9,6 +9,8 @@ export function NavRail() {
   const { t } = useI18n();
   const auth = useAuthStatus();
   const [accountOpen, setAccountOpen] = useState(false);
+  /** 账号面板是否由登录意图打开（提层盖过 z-200 的仓库管理器，保证登录视图可见可操作） */
+  const [intentOpen, setIntentOpen] = useState(false);
   /** 登录成功后要续接的动作（被门槛拦下的下载/购买）；未登录关闭则丢弃 */
   const loginResumeRef = useRef<(() => void) | null>(null);
 
@@ -18,6 +20,7 @@ export function NavRail() {
       loginIntentStore.subscribe(() => {
         if (!loginIntentStore.hasPending()) return;
         loginResumeRef.current = loginIntentStore.consume();
+        setIntentOpen(true);
         setAccountOpen(true);
       }),
     [],
@@ -25,6 +28,7 @@ export function NavRail() {
 
   function closeAccount() {
     setAccountOpen(false);
+    setIntentOpen(false);
     loginResumeRef.current = null;
   }
 
@@ -226,10 +230,16 @@ export function NavRail() {
     </nav>
     <AccountModal
       show={accountOpen}
+      elevated={intentOpen}
       onClose={closeAccount}
       onLoggedIn={() => {
         const resume = loginResumeRef.current;
         loginResumeRef.current = null;
+        const wasIntent = intentOpen;
+        setIntentOpen(false);
+        // 登录意图打开时：登录成功即收起面板，直接把画面让给续接动作
+        // （如发布向导自动打开），避免面板盖住续接界面
+        if (wasIntent) setAccountOpen(false);
         if (resume) resume();
       }}
     />

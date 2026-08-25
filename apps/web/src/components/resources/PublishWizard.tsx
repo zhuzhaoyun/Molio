@@ -8,7 +8,8 @@
  * 效果图前端预检：PNG/JPEG/WebP、单张 ≤5MB、1-4 张。
  * 错误码优先映射 t('publish.error.' + code)，未命中回落原始码。
  * 弹层骨架沿用 kb-modal 惯例（见 AccountModal/KbModals），overlay 用
- * publish-overlay（z-index 300，高于 vm-overlay 200 / kb-overlay 100）。
+ * publish-overlay（z-index 300，高于 vm-overlay 200 / 默认 kb-overlay 100；
+ * 登录意图提层的 kb-overlay-elevated z-320 只出现在登录流程，与向导不同时出现）。
  */
 import { useEffect, useMemo, useState } from 'react';
 import { MARKET_ICONS, MARKET_TAGS, type MarketMyListing } from '@molio/contracts';
@@ -112,7 +113,7 @@ export function PublishWizard(props: PublishWizardProps) {
           <img src={previewUrls[i]} alt={file.name} />
           <button
             type="button"
-            aria-label="remove"
+            aria-label={t('publish.removePreview')}
             onClick={() => setPreviews(previews.filter((_, j) => j !== i))}
           >
             &times;

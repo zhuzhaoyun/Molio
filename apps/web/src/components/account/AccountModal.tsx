@@ -21,9 +21,11 @@ interface AccountModalProps {
   onClose: () => void;
   /** 登录成功后回调（登录意图场景用来续接被门槛拦下的动作） */
   onLoggedIn?: () => void;
+  /** 登录意图打开时提层（kb-overlay-elevated，z-320），盖过仓库管理器 vm-overlay(z-200) */
+  elevated?: boolean;
 }
 
-export function AccountModal({ show, onClose, onLoggedIn }: AccountModalProps) {
+export function AccountModal({ show, onClose, onLoggedIn, elevated = false }: AccountModalProps) {
   const { t } = useI18n();
   const status = useAuthStatus();
   const [busy, setBusy] = useState(false);
@@ -249,7 +251,7 @@ export function AccountModal({ show, onClose, onLoggedIn }: AccountModalProps) {
 
   return (
     <div
-      className="kb-overlay show"
+      className={`kb-overlay show${elevated ? ' kb-overlay-elevated' : ''}`}
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div className="kb-modal account-modal">

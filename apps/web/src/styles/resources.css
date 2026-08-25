@@ -1255,3 +1255,14 @@
   opacity: 0.5;
   cursor: default;
 }
+
+/* ── 账号面板提层（登录意图场景） ──
+   知识库管理器（.vm-overlay，z-200）内的发布入口在未登录时经
+   loginIntentStore 打开 AccountModal；默认 .kb-overlay（z-100）会被
+   vm-overlay 全屏遮盖而不可见/不可点击。登录意图打开时附加本类，
+   提至 z-320 盖过仓库管理器，保证登录视图可见可操作。
+   .entry-shell/.entry-main 均不创建栈上下文，与 .vm-overlay 直接在
+   根栈上下文比较，320 > 200 成立。 */
+.kb-overlay.kb-overlay-elevated {
+  z-index: 320;
+}
