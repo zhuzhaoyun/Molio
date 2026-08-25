@@ -43,8 +43,17 @@ export function dedupeEdges(edges: EdgeLike[], nodeExists: (key: string) => bool
 }
 
 /**
+ * 超级 hub 度数阈值：度数超过它的一条边会被按 1/√deg 减弱。
+ * 普通图（度数 ≤ 阈值）完全不变；但像资治通鉴里 deg-683 的「源/索引」节点，
+ * 其 683 条 1/min(deg)=1 的强弹簧会在任何拖拽扰动下把 hub 甩飞（实测 3350u 瞬移）。
+ * 用 1/√max 把这种超级 hub 的连线收敛到弱约束，不让单个节点成为「力放大镜」。
+ */
+export const SUPER_HUB_DEGREE = 60;
+
+/**
  * d3 forceLink 默认强度公式：1 / min(deg_source, deg_target)。
  * hub（高度数节点）的连线自动变软，避免把邻居拽成一团。
+ * 仅当一端是超级 hub（度数 > SUPER_HUB_DEGREE）时改为 1/√max，压制极端 hub 的漂移放大。
  *
  * @param adjacency 邻接表（key → 邻居集合）
  * @returns 可直接传给 forceLink().strength() 的函数
@@ -55,6 +64,8 @@ export function makeAutoLinkStrength(
   return (l) => {
     const ds = Math.max(adjacency.get(l.sourceKey)?.size ?? 1, 1);
     const dt = Math.max(adjacency.get(l.targetKey)?.size ?? 1, 1);
+    const hi = Math.max(ds, dt);
+    if (hi > SUPER_HUB_DEGREE) return 1 / Math.sqrt(hi);
     return 1 / Math.min(ds, dt);
   };
 }
@@ -121,4 +132,87 @@ export function computeFitTransform(
   const tx = screenW / 2 - ((bounds.minX + bounds.maxX) / 2) * k;
   const ty = screenH / 2 - ((bounds.minY + bounds.maxY) / 2) * k;
   return { tx, ty, k };
+}
+
+// ── 平铺输入 ──
+
+/** 孤立平铺输入：需带坐标与度数（孤立判定用）。 */
+export interface GraphDegreeNode {
+  id: string;
+  x: number;
+  y: number;
+  degree: number;
+}
+
+// ── 孤立节点外围平铺（对齐 Obsidian CoSE 的 tile）──
+// force 无法把 degree=0 节点排成规整结构：它们没有边约束，只受向心力与弱排斥力，
+// 最终随机散布。这里以连接节点质心为中心，从中心簇外缘（rIn≈1.3×包围半径）起，
+// 用黄金角螺旋（phyllotaxis）按**固定点间距**向外排成均匀密点云——不用同心环
+// （各环角度对齐会产生放射状辐条）。点间距与中心簇尺度挂钩（≈0.15×包围半径），
+// 使外围密度始终与中心簇协调。
+//
+// 为什么固定间距而非固定环带面积撒点：后者环带面积由包围半径定、与孤立点数无关，
+// n 不够填满时就稀疏、还露出螺旋臂条纹。固定间距下外径随 n 自适应——n 少环带窄
+// （密且中心占比高），n 多外径按 sqrt(n) 慢增长，故无需硬封顶。
+//
+// 布局时（或拖拽全流动解锁后重铺时）调用：外围节点用 fx/fy 固定，不被后续力模拟拉回。
+
+/** 外围点云内缘相对连接簇包围半径的倍数（在中心簇外留空隙）。 */
+const RING_IN_FACTOR = 1.3;
+
+/**
+ * 把 degree=0 节点平铺成围绕连接节点簇的外围圆环。
+ * 必须在力模拟收敛后调用（用收敛后的连接节点位置计算质心/半径）。
+ * @returns 仅含 degree=0 节点的目标位置；无孤立节点时返回空 Map。
+ */
+export function tileIsolatedNodes(
+  nodes: Readonly<GraphDegreeNode[]>,
+): Map<string, { x: number; y: number }> {
+  const connected = nodes.filter((n) => n.degree > 0);
+  const isolated = nodes.filter((n) => n.degree === 0);
+  if (isolated.length === 0) return new Map();
+
+  // 连接节点质心
+  let cx = 0;
+  let cy = 0;
+  for (const n of connected) {
+    cx += n.x;
+    cy += n.y;
+  }
+  if (connected.length > 0) {
+    cx /= connected.length;
+    cy /= connected.length;
+  }
+
+  // 连接节点「典型」包围半径：用 90 分位距离而非最大值。少数被长边甩远的离群点
+  // 会把 max 撑得巨大、把环带带飞——曾退化成分到 2 个的水平直线。分位数对离群稳健。
+  const dists: number[] = [];
+  for (const n of connected) dists.push(Math.hypot(n.x - cx, n.y - cy));
+  dists.sort((a, b) => a - b);
+  const maxR =
+    dists.length === 0
+      ? 0
+      : dists.length < 10
+        ? dists[dists.length - 1]!
+        : dists[Math.floor(dists.length * 0.9)]!;
+
+  // 内缘：在中心簇之外留一点空隙；无连接节点时退化为绝对小圈。
+  const rIn = connected.length > 0 ? Math.max(maxR * RING_IN_FACTOR, 18) : 24;
+  // 点间距与中心簇尺度挂钩（maxR 大 → 中心簇节点间距大 → 外围也疏一点），密度协调。
+  const spacing = Math.max(8, maxR * 0.15);
+
+  // 黄金角螺旋（向日葵籽排布）：角度按黄金角旋转、半径按面积外扩（r² 每点增加 spacing²）。
+  // 形成均匀密点云——无圈痕、无放射状辐条。
+  const n = isolated.length;
+  const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+  const rIn2 = rIn * rIn;
+  const step = spacing * spacing;
+  const out = new Map<string, { x: number; y: number }>();
+  for (let i = 0; i < n; i++) {
+    const r = Math.sqrt(rIn2 + i * step);
+    const angle = i * GOLDEN_ANGLE;
+    const id = isolated[i]!.id;
+    out.set(id, { x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) });
+  }
+  return out;
 }
