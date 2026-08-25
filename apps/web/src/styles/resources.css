@@ -696,7 +696,9 @@
   color: var(--text-soft);
 }
 
-/* ── 知识库列表：发布到资源库按钮（与 vm-vault-delete 同模式） ── */
+/* ── 知识库列表：发布到资源库按钮 ──
+   常驻可见（发布是核心入口，需可发现；区别于删除按钮的悬停才现——
+   破坏性操作藏起来合理，发布操作应主动暴露） */
 
 .vm-vault-publish {
   position: absolute;
@@ -715,7 +717,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  opacity: 0;
+  opacity: 0.6;
   transition: opacity 120ms ease;
 }
 
