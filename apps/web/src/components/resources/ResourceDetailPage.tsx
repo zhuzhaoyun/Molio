@@ -2,31 +2,79 @@
  * 资源详情页（/resources/:id）—— 对应官网 resource.html：
  * 面包屑返回 + head（图标/名称/价格/格式说明/tags）+ 左主栏（概述/效果预览灯箱/导入说明）
  * + 右侧动作卡与信息卡。预览图为官网相对路径拼绝对 URL，加载失败整图跳过。
+ *
+ * id 解析顺序（Task 11 社区变体）：静态 RESOURCES 命中 = 官方条目；未命中时拉取
+ * GET /api/market/listings/:id，200 → marketToEntry 渲染社区变体（预览绝对 URL、
+ * 简介 + 通用使用说明、作者/版本/大小/发布时间、签名下载按钮、底部上传者责任说明
+ * 与举报入口）；失败/404 → 现有「资源不存在」形态。
  */
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import type { MarketListing } from '@molio/contracts';
 import { useI18n } from '../../i18n';
 import {
-  isPaid,
+  marketToEntry,
   PAY_BASE,
   previewUrl,
   RESOURCES,
-  type MolioResource,
+  toEntry,
+  type CatalogEntry,
 } from '../../data/resources';
+import { formatFileSize } from '../../utils/format';
 import { useResourcePay } from '../../hooks/useResourcePay';
 import { useAuthStatus } from '../../stores/authStore';
 import { ResourcePayModal } from './ResourcePayModal';
 import { startResourcePurchase } from './resourceAction';
 
+/**
+ * TODO(i18n)：社区详情页新增文案。本任务文件清单不含 locale 文件，
+ * 先硬编码中文常量，后续统一补 resources.* 键后替换。
+ */
+const COMMUNITY_NOTE_TEXT = '该资源由社区用户上传，内容责任归上传者';
+const COMMUNITY_REPORT_TEXT = '举报该资源';
+const COMMUNITY_REPORT_URL = 'https://molio.cn/enterprise.html#contact';
+const INFO_SIZE_LABEL = '大小';
+const INFO_PUBLISHED_LABEL = '发布时间';
+
+/** ISO 时间 → YYYY-MM-DD（社区条目发布时间展示；解析失败原样返回） */
+function formatPublishedAt(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${mm}-${dd}`;
+}
+
 export function ResourceDetailPage() {
   const { t } = useI18n();
   const { id } = useParams<{ id: string }>();
-  const r = RESOURCES.find((x) => x.id === id);
   const pay = useResourcePay();
   const auth = useAuthStatus();
   const loggedIn = auth?.loggedIn === true;
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [failedImgs, setFailedImgs] = useState<Set<string>>(new Set());
+
+  // id 解析顺序：静态 RESOURCES 命中即官方条目；未命中 → 社区市场 API（仅拉取一次）
+  const [entry, setEntry] = useState<CatalogEntry | null>(() => {
+    const staticHit = RESOURCES.find((r) => r.id === id);
+    return staticHit ? toEntry(staticHit) : null;
+  });
+  useEffect(() => {
+    // 静态命中或已拉到当前 id 的社区条目：不重复请求
+    if (entry && entry.id === id) return;
+    let alive = true;
+    fetch(`/api/market/listings/${id}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((m: MarketListing | null) => {
+        if (alive) setEntry(m ? marketToEntry(m) : null);
+      })
+      .catch(() => {
+        /* 断网/404：保持空条目 → 「资源不存在」形态 */
+      });
+    return () => {
+      alive = false;
+    };
+  }, [id, entry]);
 
   useEffect(() => {
     if (!lightbox) return;
@@ -36,6 +84,9 @@ export function ResourceDetailPage() {
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [lightbox]);
+
+  // 路由参数切换时防止渲染上一 id 的陈旧条目
+  const r = entry && entry.id === id ? entry : null;
 
   if (!r) {
     return (
@@ -53,8 +104,12 @@ export function ResourceDetailPage() {
     );
   }
 
-  const paid = isPaid(r);
+  const community = r.source === 'community';
+  const paid = r.price > 0;
+  // 官方：官网相对路径拼绝对 URL；社区：本就是绝对 URL（previewUrl 原样透传）
   const previews = r.preview.map(previewUrl).filter((src) => !failedImgs.has(src));
+  // 概述段落：官方 = overview 段落；社区 = 一句话简介（summary），通用使用说明见下方导入指引区
+  const overviewParas = community ? [r.desc, ...r.overview].filter(Boolean) : r.overview;
 
   const sideNote = !paid
     ? t('resources.sideNote.free')
@@ -70,6 +125,8 @@ export function ResourceDetailPage() {
     : r.payUrl || !PAY_BASE
       ? t(loggedIn ? 'resources.buy' : 'resources.buyLogin', { price: r.price })
       : t(loggedIn ? 'resources.pay.wechat' : 'resources.pay.wechatLogin', { price: r.price });
+
+  const market = r.market;
 
   return (
     <div className="resources-shell">
@@ -89,6 +146,14 @@ export function ResourceDetailPage() {
           <div>
             <div className="resources-detail-title">
               <h1>{r.name}</h1>
+              {community && (
+                <span
+                  className="resource-badge-community"
+                  data-testid={`resource-badge-community-${r.id}`}
+                >
+                  {t('resources.badge.community')}
+                </span>
+              )}
               <span className={`resources-price ${paid ? 'is-paid' : 'is-free'}`}>
                 {paid ? `¥${r.price}` : t('resources.free')}
               </span>
@@ -108,7 +173,7 @@ export function ResourceDetailPage() {
           <div className="resources-main">
             <h2 className="resources-section-title">{t('resources.overview')}</h2>
             <div className="resources-article">
-              {r.overview.map((p, i) => (
+              {overviewParas.map((p, i) => (
                 <p key={i}>{p}</p>
               ))}
               {r.highlights.length > 0 && (
@@ -183,25 +248,59 @@ export function ResourceDetailPage() {
                 <span className="k">{t('resources.info.version')}</span>
                 <span className="v">{r.version}</span>
               </div>
-              <div className="resources-info-row">
-                <span className="k">{t('resources.info.format')}</span>
-                <span className="v">{t('resources.info.formatValue')}</span>
-              </div>
-              <div className="resources-info-row">
-                <span className="k">{t('resources.info.compat')}</span>
-                <span className="v">{t('resources.info.compatValue')}</span>
-              </div>
-              <div className="resources-info-row">
-                <span className="k">{t('resources.info.price')}</span>
-                <span className="v">{paid ? `¥${r.price}` : t('resources.free')}</span>
-              </div>
-              <div className="resources-info-row">
-                <span className="k">{t('resources.info.file')}</span>
-                <span className="v">{r.file}</span>
-              </div>
+              {community ? (
+                <>
+                  {market?.fileSize != null && (
+                    <div className="resources-info-row">
+                      <span className="k">{INFO_SIZE_LABEL}</span>
+                      <span className="v">{formatFileSize(market.fileSize)}</span>
+                    </div>
+                  )}
+                  {market?.publishedAt != null && (
+                    <div className="resources-info-row">
+                      <span className="k">{INFO_PUBLISHED_LABEL}</span>
+                      <span className="v">{formatPublishedAt(market.publishedAt)}</span>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="resources-info-row">
+                    <span className="k">{t('resources.info.format')}</span>
+                    <span className="v">{t('resources.info.formatValue')}</span>
+                  </div>
+                  <div className="resources-info-row">
+                    <span className="k">{t('resources.info.compat')}</span>
+                    <span className="v">{t('resources.info.compatValue')}</span>
+                  </div>
+                  <div className="resources-info-row">
+                    <span className="k">{t('resources.info.price')}</span>
+                    <span className="v">{paid ? `¥${r.price}` : t('resources.free')}</span>
+                  </div>
+                  <div className="resources-info-row">
+                    <span className="k">{t('resources.info.file')}</span>
+                    <span className="v">{r.file}</span>
+                  </div>
+                </>
+              )}
             </div>
           </aside>
         </div>
+
+        {community && (
+          <p className="resources-community-note" data-testid="resources-community-note">
+            <span>{COMMUNITY_NOTE_TEXT}</span>
+            <a
+              className="resources-community-report"
+              href={COMMUNITY_REPORT_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid="resources-report-link"
+            >
+              {COMMUNITY_REPORT_TEXT}
+            </a>
+          </p>
+        )}
       </div>
 
       {lightbox && (

@@ -1266,3 +1266,32 @@
 .kb-overlay.kb-overlay-elevated {
   z-index: 320;
 }
+
+/* ═══════════════════════════════════════════════════════════
+   社区资源市场 — 详情页社区变体（Task 11）
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── 详情页：社区上传者责任说明行 + 举报入口 ── */
+
+.resources-community-note {
+  margin: 32px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-soft);
+  display: flex;
+  align-items: center;
+  gap: 6px 12px;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text-soft);
+}
+
+.resources-community-report {
+  color: var(--text-muted);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.resources-community-report:hover {
+  color: var(--red);
+}
