@@ -77,3 +77,35 @@ CREATE INDEX IF NOT EXISTS refresh_tokens_expires    ON refresh_tokens (expires_
 --   DELETE FROM auth_codes WHERE created_at < now() - interval '7 days';
 -- refresh token 90 天（30 天滑动 TTL + 宽限/审计富余）：
 --   DELETE FROM refresh_tokens WHERE expires_at < now() - interval '90 days';
+
+-- ── 资源市场（社区知识库分享，设计见 2026-08-25-community-vault-sharing-design.md）──
+-- 已有库迁移（本文件 IF NOT EXISTS 只对新建库生效）：手动执行下方 CREATE TABLE + 两条索引。
+CREATE TABLE IF NOT EXISTS market_listings (
+  id             TEXT PRIMARY KEY,                 -- ULID
+  user_id        TEXT NOT NULL REFERENCES users(id),
+  source         TEXT NOT NULL DEFAULT 'community',-- official | community
+  name           TEXT NOT NULL,
+  icon           TEXT NOT NULL,
+  tint           TEXT NOT NULL,
+  summary        TEXT NOT NULL,
+  overview       JSONB NOT NULL DEFAULT '[]',
+  highlights     JSONB NOT NULL DEFAULT '[]',
+  tags           JSONB NOT NULL DEFAULT '[]',
+  previews       JSONB NOT NULL DEFAULT '[]',      -- 预览图绝对 URL 数组
+  version        TEXT NOT NULL DEFAULT 'v1.0',
+  price_cents    INTEGER NOT NULL DEFAULT 0,       -- Plan 1 恒 0；定价能力 Plan 2
+  pay_url        TEXT NOT NULL DEFAULT '',
+  author_display TEXT,
+  oss_key        TEXT NOT NULL,                    -- resources/{listingId}-vault.zip
+  file_size      BIGINT,
+  status         TEXT NOT NULL DEFAULT 'uploading',-- uploading | active | removed
+  removed_reason TEXT,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  published_at   TIMESTAMPTZ,
+  CONSTRAINT market_listings_status_check CHECK (status IN ('uploading','active','removed')),
+  CONSTRAINT market_listings_source_check CHECK (source IN ('official','community'))
+);
+CREATE INDEX IF NOT EXISTS market_listings_active_idx
+  ON market_listings (published_at DESC) WHERE status = 'active';
+CREATE INDEX IF NOT EXISTS market_listings_user_idx ON market_listings (user_id, created_at DESC);
