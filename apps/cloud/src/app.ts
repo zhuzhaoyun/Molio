@@ -173,12 +173,7 @@ export function createApp(deps: AppDeps): Hono {
     const payload = bearer(c, config, deps.now);
     if (!payload) return c.json({ error: 'invalid_token' }, 401);
     try {
-      const res = await service.deleteAccount(payload.sub);
-      if (deps.market) {
-        try { await deps.market.service.cascadeRemoveUser(payload.sub); }
-        catch (e) { console.error('[cloud] market cascade remove failed:', e); }
-      }
-      return c.json(res, 200);
+      return c.json(await service.deleteAccount(payload.sub), 200);
     } catch (e) {
       return handleError(c, e);
     }

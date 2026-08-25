@@ -244,7 +244,7 @@ export class MarketService {
     return { url: t.url, expiresAt: t.expiresAt };
   }
 
-  // ── 下架 / 恢复 / 管理员 / 注销连坐 ──
+  // ── 下架 / 恢复 / 管理员 ──
 
   async remove(userId: string, listingId: string): Promise<{ ok: true }> {
     const rec = await this.mustFind(listingId);
@@ -284,15 +284,6 @@ export class MarketService {
     const out: Array<{ listing: MarketMyListing; ownerEmail: string | null }> = [];
     for (const r of rows) out.push({ listing: await this.toMy(r.listing), ownerEmail: r.ownerEmail });
     return out;
-  }
-
-  async cascadeRemoveUser(userId: string): Promise<void> {
-    const recs = await this.deps.store.listUserListings(userId);
-    for (const r of recs) {
-      if (r.status === 'active') {
-        await this.deps.store.updateListing(r.id, { status: 'removed', removedReason: 'account_deleted' }, this.now);
-      }
-    }
   }
 
   private assertAdmin(email: string): void {

@@ -123,7 +123,7 @@ test('download：active 可签且带 filename；未上架 404', async () => {
   await assert.rejects(svc.download(u.id, 'nope'), (e: unknown) => (e as MarketServiceError).code === 'listing_not_found');
 });
 
-test('下架软删 → 列表不可见；管理员恢复；注销连坐', async () => {
+test('下架软删 → 列表不可见；管理员恢复', async () => {
   const { svc, users, objects } = makeService({ admins: ['admin@x.com'] });
   const u = await users.createActiveUser({ id: 'u1', email: 'a@x.com', nickname: 'n', now: 1 });
   const admin = await users.createActiveUser({ id: 'u2', email: 'admin@x.com', nickname: '管理', now: 1 });
@@ -134,11 +134,6 @@ test('下架软删 → 列表不可见；管理员恢复；注销连坐', async 
   assert.equal((await svc.list()).length, 0);
   await svc.restore(admin.email, c.listingId);
   assert.equal((await svc.list()).length, 1);
-  await svc.cascadeRemoveUser(u.id);
-  assert.equal((await svc.list()).length, 0);
-  const my = await svc.my(u.id, 'a@x.com');
-  assert.equal(my.listings[0]!.status, 'removed');
-  assert.equal(my.listings[0]!.removedReason, 'account_deleted');
 });
 
 test('adminList：全状态视图（内存 store ownerEmail=null）+ 非管理员 403', async () => {
