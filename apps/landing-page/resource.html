@@ -75,20 +75,44 @@
     { src: 'images/kg-graph.webp', cap: '知识图谱 — 产出回写入库，网络持续生长' }
   ];
 
+  // 云端认证/市场服务地址（本地联调注入点：window.MOLIO_AUTH_BASE）
+  function marketBase() { return window.MOLIO_AUTH_BASE || 'https://auth.molio.cn'; }
+
+  // 通用转义：社区用户文本拼 DOM 必须过这道；官方静态数据也统一过（无害）
   function esc(s) {
-    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  // 字节大小展示（与 apps/web formatFileSize 一致）
+  function formatSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  }
+
+  // ISO 时间 → YYYY-MM-DD（社区详情发布时间）
+  function formatDate(iso) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso);
+    var mm = d.getMonth() + 1;
+    var dd = d.getDate();
+    return d.getFullYear() + '-' + (mm < 10 ? '0' + mm : mm) + '-' + (dd < 10 ? '0' + dd : dd);
   }
 
   var root = document.getElementById('res-detail');
   var id = new URLSearchParams(location.search).get('id');
   var r = (window.MOLIO_RESOURCES || []).filter(function (x) { return x.id === id; })[0];
 
+  if (!id) { renderNotFound(); return; }
+
   if (!r) {
-    document.title = '资源不存在 — Molio 资源';
-    root.innerHTML =
-      '<div class="breadcrumb"><a href="index.html">首页</a><span class="sep">/</span><a href="resources.html">资源</a></div>' +
-      '<h1 class="page-title">资源不存在</h1>' +
-      '<div class="tip-box">你访问的资源不存在或尚未上架。<a href="resources.html">返回资源库 →</a></div>';
+    // 静态未命中：拉社区详情；云端不可达/非 200 → 回退「资源不存在」（静默兜底）
+    fetch(marketBase() + '/market/listings/' + encodeURIComponent(id), { headers: { 'Accept': 'application/json' } })
+      .then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (m) { if (m && m.id) renderCommunityDetail(m); else renderNotFound(); })
+      .catch(function () { renderNotFound(); });
     return;
   }
 
@@ -204,28 +228,137 @@
     });
   }
 
-  /* ---------- 灯箱：预览图点击放大，点击任意处或 Esc 关闭（JS 失效时退回新标签页） ---------- */
-  var lb = document.getElementById('res-lightbox');
-  var lbImg = lb.querySelector('img');
-  function closeLb() {
-    lb.hidden = true;
-    lbImg.src = '';
-    document.body.style.overflow = '';
+  /* ---------- 灯箱：预览图点击放大，点击任意处或 Esc 关闭（静态/社区详情共用，见 setupLightbox） ---------- */
+  setupLightbox();
+
+  /* ---------- 资源不存在（静态未命中且社区详情不可得） ---------- */
+  function renderNotFound() {
+    document.title = '资源不存在 — Molio 资源';
+    root.innerHTML =
+      '<div class="breadcrumb"><a href="index.html">首页</a><span class="sep">/</span><a href="resources.html">资源</a></div>' +
+      '<h1 class="page-title">资源不存在</h1>' +
+      '<div class="tip-box">你访问的资源不存在或尚未上架。<a href="resources.html">返回资源库 →</a></div>';
   }
-  root.addEventListener('click', function (e) {
-    var a = e.target.closest('.res-preview-grid a');
-    if (!a) return;
-    e.preventDefault();
-    var thumb = a.querySelector('img');
-    lbImg.src = a.getAttribute('href');
-    lbImg.alt = thumb ? thumb.alt : '';
-    lb.hidden = false;
-    document.body.style.overflow = 'hidden';
-  });
-  lb.addEventListener('click', closeLb);
-  document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && !lb.hidden) closeLb();
-  });
+
+  /* ---------- 社区详情：复用现有预览栅格 / 导入说明节点；下载走签名端点 ---------- */
+  function renderCommunityDetail(m) {
+    document.title = m.name + ' — Molio 知识库资源';
+
+    var head =
+      '<div class="breadcrumb"><a href="index.html">首页</a><span class="sep">/</span>' +
+      '<a href="resources.html">资源</a><span class="sep">/</span>' + esc(m.name) + '</div>' +
+      '<div class="res-detail-head reveal">' +
+        '<div class="res-icon" style="background:' + esc(m.tint) + '">' + esc(m.icon) + '</div>' +
+        '<div>' +
+          '<div class="res-detail-title"><h1>' + esc(m.name) + '</h1>' +
+          '<span class="res-price free">免费</span></div>' +
+          '<div class="res-meta-line">社区分享 · Markdown 格式 · 兼容 Obsidian · 用 Molio“打开本地仓库”加载</div>' +
+          ((m.tags && m.tags.length) ? '<div class="res-tags">' + m.tags.map(function (t) { return '<span>' + esc(t) + '</span>'; }).join('') + '</div>' : '') +
+        '</div>' +
+      '</div>';
+
+    var overview =
+      '<h2 class="res-section-title">概述</h2>' +
+      '<div class="article-body"><p>' + esc(m.summary) + '</p></div>';
+
+    var previews = (m.previews && m.previews.length)
+      ? m.previews.map(function (p) { return { src: p, cap: '' }; })
+      : DEFAULT_PREVIEW;
+    var preview =
+      '<h2 class="res-section-title">效果预览</h2>' +
+      '<div class="res-preview-grid">' +
+        previews.map(function (p) {
+          return '<figure><a href="' + esc(p.src) + '" target="_blank" rel="noopener noreferrer">' +
+            '<img src="' + esc(p.src) + '" alt="' + esc(m.name + ' 效果预览') + '" loading="lazy"></a>' +
+            (p.cap ? '<figcaption>' + esc(p.cap) + '</figcaption>' : '') +
+            '</figure>';
+        }).join('') +
+      '</div>';
+
+    var importGuide =
+      '<h2 class="res-section-title">资源包导入说明</h2>' +
+      '<div class="step-card"><ol>' +
+        '<li>下载资源包 <code>.zip</code> 并解压到本地任意目录</li>' +
+        '<li>打开 Molio，在知识库管理界面选择“打开本地仓库”</li>' +
+        '<li>选择（或输入）解压后的文件夹路径，资源包立即加载</li>' +
+      '</ol></div>';
+
+    var side =
+      '<aside class="res-side">' +
+        '<div class="res-side-card reveal">' +
+          '<button type="button" class="btn btn-primary" id="community-dl-btn" data-auth-gate="下载 .zip">下载 .zip</button>' +
+          '<p class="res-side-note">下载解压后，用 Molio“打开本地仓库”加载即可开始阅读与写作。</p>' +
+          '<p class="res-side-note">该资源由社区用户上传，内容责任归上传者。<a href="enterprise.html#contact">举报该资源</a></p>' +
+        '</div>' +
+        '<div class="res-side-card reveal">' +
+          '<div class="res-info-row"><span class="k">作者</span><span class="v">' + esc(m.author) + '</span></div>' +
+          '<div class="res-info-row"><span class="k">版本</span><span class="v">' + esc(m.version) + '</span></div>' +
+          '<div class="res-info-row"><span class="k">大小</span><span class="v">' + (m.fileSize != null ? esc(formatSize(m.fileSize)) : '—') + '</span></div>' +
+          '<div class="res-info-row"><span class="k">发布时间</span><span class="v">' + (m.publishedAt ? esc(formatDate(m.publishedAt)) : '—') + '</span></div>' +
+          '<div class="res-info-row"><span class="k">格式</span><span class="v">Markdown（.zip）</span></div>' +
+          '<div class="res-info-row"><span class="k">兼容</span><span class="v">Molio / Obsidian</span></div>' +
+          '<div class="res-info-row"><span class="k">价格</span><span class="v">免费</span></div>' +
+        '</div>' +
+      '</aside>';
+
+    root.innerHTML = head +
+      '<div class="res-detail-grid">' +
+        '<div class="res-main">' + overview + preview + importGuide + '</div>' +
+        side +
+      '</div>';
+
+    /* 下载：登录门槛后带 Bearer 换签名链接；401/失败 → 回登录门槛 */
+    var dlBtn = document.getElementById('community-dl-btn');
+    if (dlBtn) {
+      dlBtn.addEventListener('click', function () {
+        if (!window.MolioAuth) return;
+        window.MolioAuth.requireAuth().then(function () {
+          return window.MolioAuth.getAccessToken();
+        }).then(function (token) {
+          return fetch(marketBase() + '/market/listings/' + encodeURIComponent(m.id) + '/download', {
+            headers: { 'Accept': 'application/json', 'Authorization': 'Bearer ' + token }
+          });
+        }).then(function (res) { return res.ok ? res.json() : null; })
+          .then(function (body) {
+            if (body && body.url) { window.open(body.url, '_blank', 'noopener,noreferrer'); return; }
+            throw new Error('download_failed');
+          })
+          .catch(function () {
+            window.MolioAuth.requireAuth().catch(function () { /* 用户取消 */ });
+          });
+      });
+    }
+
+    setupLightbox();
+
+    // 异步渲染完成后应用「登录后…」门槛文案（auth.js 初次调用早于本节点渲染）
+    if (window.MolioAuth && window.MolioAuth.refreshLabels) window.MolioAuth.refreshLabels();
+  }
+
+  /* ---------- 灯箱：预览图点击放大，点击任意处或 Esc 关闭（JS 失效时退回新标签页） ---------- */
+  function setupLightbox() {
+    var lb = document.getElementById('res-lightbox');
+    var lbImg = lb.querySelector('img');
+    function closeLb() {
+      lb.hidden = true;
+      lbImg.src = '';
+      document.body.style.overflow = '';
+    }
+    root.addEventListener('click', function (e) {
+      var a = e.target.closest('.res-preview-grid a');
+      if (!a) return;
+      e.preventDefault();
+      var thumb = a.querySelector('img');
+      lbImg.src = a.getAttribute('href');
+      lbImg.alt = thumb ? thumb.alt : '';
+      lb.hidden = false;
+      document.body.style.overflow = 'hidden';
+    });
+    lb.addEventListener('click', closeLb);
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && !lb.hidden) closeLb();
+    });
+  }
 })();
 </script>
 

@@ -57,11 +57,18 @@
     <p>从经史典籍到专业领域，逐部整理成篇篇链接的 wiki 知识库——不是落灰的 PDF，而是 AI 吃得动的口粮 · 下载解压即用，微信支付成功后自动解锁下载</p>
   </section>
 
+  <!-- 页头 CTA 条：发布引导 + 付费上架联系 -->
+  <section class="rl-cta">
+    <p>发布你的知识库：在 Molio 中右键知识库 → 发布到资源库（免费）</p>
+    <p>想上架付费知识库？<a href="enterprise.html#contact">联系我们</a></p>
+  </section>
+
   <!-- 胶囊筛选 -->
   <div class="rl-filters" role="tablist" aria-label="资源筛选">
     <button class="rl-tab active" role="tab" aria-selected="true" data-filter="all">全部</button>
     <button class="rl-tab" role="tab" aria-selected="false" data-filter="free">免费</button>
     <button class="rl-tab" role="tab" aria-selected="false" data-filter="paid">付费</button>
+    <button class="rl-tab" role="tab" aria-selected="false" data-filter="community">社区分享</button>
   </div>
 
   <!-- 上架新资源：往 resources-data.js 的 MOLIO_RESOURCES 数组追加一条即可（列表 + 详情同时生效）。 -->
@@ -110,69 +117,140 @@
 <script src="pay.js?v=20260823a"></script>
 <script>
 (function() {
+  'use strict';
+
+  /* ---------- 社区目录：运行时拉取，失败静默回退纯静态 ---------- */
+
+  // 云端认证/市场服务地址（本地联调注入点：window.MOLIO_AUTH_BASE）
+  function marketBase() { return window.MOLIO_AUTH_BASE || 'https://auth.molio.cn'; }
+
+  // 社区目录：运行时拉取；失败 → communityListings 保持 []（纯静态兜底，静默）
+  var communityListings = [];
+  function loadCommunity(cb) {
+    fetch(marketBase() + '/market/listings', { headers: { 'Accept': 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : { listings: [] }; })
+      .then(function (body) {
+        communityListings = ((body && body.listings) || []).map(function (m) {
+          return {
+            id: m.id, icon: m.icon, tint: m.tint, name: m.name, desc: m.summary,
+            author: m.author, version: m.version, price: 0, tags: m.tags || [],
+            preview: m.previews || [], payUrl: '', community: true
+          };
+        });
+        if (cb) cb();
+      })
+      .catch(function () { if (cb) cb(); });
+  }
+
+  // 通用转义：社区用户文本拼 DOM 必须过这道；官方静态数据也统一过（无害）
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  /* ---------- 渲染 ---------- */
+
   // 现代市场卡片：图标 + 标题 + 价格胶囊 + 描述 + 底部「购买」胶囊按钮 / 查看详情。
+  // 所有文本插值过 esc()；社区卡片追加角标与作者行。
   function resCard(r) {
-    const paid = r.price > 0;
+    var paid = r.price > 0;
+    var gate = paid ? '购买 ¥' + r.price : '下载';
     return '<article class="rl-card">' +
       '<div class="rl-top">' +
-        '<div class="rl-icon" style="background:' + r.tint + '">' + r.icon + '</div>' +
+        '<div class="rl-icon" style="background:' + esc(r.tint || '') + '">' + esc(r.icon || '') + '</div>' +
         '<div class="rl-titles">' +
-          '<h3 class="rl-name">' + r.name + '</h3>' +
-          '<span class="rl-sub">' + (r.tags || []).join(' · ') + '<em class="rl-ver">' + (r.version || '') + '</em></span>' +
+          '<h3 class="rl-name">' + esc(r.name) + '</h3>' +
+          '<span class="rl-sub">' + esc((r.tags || []).join(' · ')) + '<em class="rl-ver">' + esc(r.version || '') + '</em></span>' +
         '</div>' +
-        '<span class="rl-price ' + (paid ? 'paid' : 'free') + '">' + (paid ? '¥' + r.price : '免费') + '</span>' +
+        '<span class="rl-price ' + (paid ? 'paid' : 'free') + '">' + (paid ? '¥' + esc(r.price) : '免费') + '</span>' +
+        (r.community ? '<span class="rl-badge-community">社区</span>' : '') +
       '</div>' +
-      '<p class="rl-desc">' + r.desc + '</p>' +
+      '<p class="rl-desc">' + esc(r.desc) + '</p>' +
+      (r.community ? '<div class="rl-author">' + esc(r.author) + ' · 免费</div>' : '') +
       '<div class="rl-actions">' +
         // data-auth-gate：未登录时 auth.js 把文案改写为「登录后购买/下载」
-        '<button type="button" class="rl-buy" data-id="' + encodeURIComponent(r.id) + '" data-auth-gate="' + (paid ? '购买 ¥' + r.price : '下载') + '">' + (paid ? '购买 ¥' + r.price : '下载') + '</button>' +
+        '<button type="button" class="rl-buy" data-id="' + encodeURIComponent(r.id) + '" data-auth-gate="' + gate + '">' + gate + '</button>' +
         '<a class="rl-detail" href="resource.html?id=' + encodeURIComponent(r.id) + '">查看详情 →</a>' +
       '</div>' +
     '</article>';
   }
 
+  // 列表源 = 官方静态条目 + 社区运行时条目
+  function allResources() {
+    return (window.MOLIO_RESOURCES || []).concat(communityListings);
+  }
+
   function renderResCards(filter) {
-    const grid = document.getElementById('res-grid');
+    var grid = document.getElementById('res-grid');
     if (!grid) return;
-    const list = (window.MOLIO_RESOURCES || []).filter(r =>
-      filter === 'all' ? true : (filter === 'paid' ? r.price > 0 : r.price === 0));
+    var list = allResources().filter(function (r) {
+      if (filter === 'community') return !!r.community;
+      if (filter === 'all') return true;
+      if (filter === 'paid') return r.price > 0;
+      return r.price === 0; // free（社区恒免费，落在 free）
+    });
     grid.innerHTML = list.map(resCard).join('');
     // 重渲染后重新应用登录门槛文案（新按钮节点没有旧状态）
     if (window.MolioAuth && window.MolioAuth.refreshLabels) window.MolioAuth.refreshLabels();
   }
 
+  /* ---------- 社区下载：登录门槛后带 Bearer 换签名链接；失败回登录门槛 ---------- */
+  function communityDownload(id) {
+    if (!window.MolioAuth) return;
+    window.MolioAuth.requireAuth().then(function () {
+      return window.MolioAuth.getAccessToken();
+    }).then(function (token) {
+      return fetch(marketBase() + '/market/listings/' + encodeURIComponent(id) + '/download', {
+        headers: { 'Accept': 'application/json', 'Authorization': 'Bearer ' + token }
+      });
+    }).then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (body) {
+        if (body && body.url) { window.open(body.url, '_blank', 'noopener,noreferrer'); return; }
+        throw new Error('download_failed');
+      })
+      .catch(function () {
+        // 401/失败 → 回登录门槛
+        window.MolioAuth.requireAuth().catch(function () { /* 用户取消 */ });
+      });
+  }
+
   // 购买/下载按钮（不进详情页）：付费 → 微信支付弹窗（pay.js 内含登录门槛）；
-  // 免费 → 登录门槛后打开 OSS 直链
-  const grid = document.getElementById('res-grid');
+  // 免费 → 登录门槛后打开 OSS 直链；社区 → 签名下载端点
+  var grid = document.getElementById('res-grid');
   if (grid) {
-    grid.addEventListener('click', (e) => {
-      const btn = e.target.closest('.rl-buy');
+    grid.addEventListener('click', function (e) {
+      var btn = e.target.closest('.rl-buy');
       if (!btn) return;
       e.preventDefault();
-      const id = decodeURIComponent(btn.dataset.id);
-      const r = (window.MOLIO_RESOURCES || []).find(x => x.id === id);
+      var id = decodeURIComponent(btn.getAttribute('data-id'));
+      var list = allResources();
+      var r = null;
+      for (var i = 0; i < list.length; i++) { if (list[i].id === id) { r = list[i]; break; } }
       if (!r) return;
+      if (r.community) { communityDownload(id); return; }
       if (r.price > 0) {
         window.MolioPay.open(r);
         return;
       }
-      const go = () => window.open(window.MOLIO_RES_BASE + '/' + r.file, '_blank', 'noopener,noreferrer');
-      if (window.MolioAuth) window.MolioAuth.requireAuth().then(go, () => { /* 用户取消 */ });
+      var go = function () { window.open(window.MOLIO_RES_BASE + '/' + r.file, '_blank', 'noopener,noreferrer'); };
+      if (window.MolioAuth) window.MolioAuth.requireAuth().then(go, function () { /* 用户取消 */ });
       else go();
     });
   }
 
-  document.querySelectorAll('.rl-tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-      document.querySelectorAll('.rl-tab').forEach(t => {
+  document.querySelectorAll('.rl-tab').forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      document.querySelectorAll('.rl-tab').forEach(function (t) {
         t.classList.toggle('active', t === tab);
         t.setAttribute('aria-selected', t === tab ? 'true' : 'false');
       });
-      renderResCards(tab.dataset.filter);
+      renderResCards(tab.getAttribute('data-filter'));
     });
   });
 
-  renderResCards('all');
+  // 初始化：先拉社区目录（失败静默兜底），再渲染官方 + 社区合并列表
+  loadCommunity(function () { renderResCards('all'); });
 })();
 </script>
 <script src="shared.js?v=20260813a"></script>
