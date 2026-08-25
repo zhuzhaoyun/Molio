@@ -44,3 +44,9 @@ test('限频计数与僵尸清理', async () => {
   assert.equal(await s.deleteStaleUploading(999), 1);
   assert.equal((await s.findListingById('c')), null);
 });
+
+test('insert：重复 id 抛 UniqueViolationError（对齐 PG 主键语义）', async () => {
+  const s = new MemoryMarketStore();
+  await s.insertListing(rec('a'));
+  await assert.rejects(s.insertListing(rec('a')));
+});

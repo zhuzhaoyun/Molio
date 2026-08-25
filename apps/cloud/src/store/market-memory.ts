@@ -1,11 +1,15 @@
 // apps/cloud/src/store/market-memory.ts
 import type { MarketListingRecord, MarketStore } from './market-types.js';
+import { UniqueViolationError } from './types.js';
 
 /** node:test 与本地开发用（无 DATABASE_URL 时，与 MemoryAuthStore 同待遇） */
 export class MemoryMarketStore implements MarketStore {
   private listings = new Map<string, MarketListingRecord>();
 
   async insertListing(rec: MarketListingRecord): Promise<void> {
+    if (this.listings.has(rec.id)) {
+      throw new UniqueViolationError(`duplicate listing id: ${rec.id}`);
+    }
     this.listings.set(rec.id, { ...rec });
   }
 
