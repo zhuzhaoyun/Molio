@@ -3,7 +3,13 @@ import pg from 'pg';
 import { createApp } from './app.js';
 import { loadConfig } from './config.js';
 import { createMailer } from './mailer.js';
+import type { MarketRoutesDeps } from './market/routes.js';
+import { MarketService } from './market/service.js';
+import { OssSigner } from './market/signer.js';
 import { AuthService } from './service.js';
+import { MemoryMarketStore } from './store/market-memory.js';
+import { PgMarketStore } from './store/market-pg.js';
+import type { MarketStore } from './store/market-types.js';
 import { MemoryAuthStore } from './store/memory.js';
 import { PgAuthStore } from './store/pg.js';
 import type { AuthStore } from './store/types.js';
@@ -38,7 +44,18 @@ const service = new AuthService({
   sendMail: (to, code) => mailer.send(to, code),
   now,
 });
-const app = createApp({ service, config, storeKind, now });
+
+// 资源市场装配：仅当 OSS 凭证齐全（config.market 有值）；缺失 → /market 不挂载（404）
+let marketDeps: MarketRoutesDeps | undefined;
+if (config.market) {
+  const marketStore: MarketStore = pool ? new PgMarketStore(pool) : new MemoryMarketStore();
+  const signer = new OssSigner(config.market.oss);
+  marketDeps = {
+    service: new MarketService({ store: marketStore, users: store, signer, config: { market: config.market }, now }),
+  };
+  console.log(`[cloud] market enabled (bucket=${config.market.oss.bucket})`);
+}
+const app = createApp({ service, config, storeKind, now, market: marketDeps });
 
 const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
   console.log(`[cloud] listening :${info.port} env=${config.env} store=${storeKind}`);
