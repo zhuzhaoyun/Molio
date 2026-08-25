@@ -5,7 +5,6 @@
  */
 import { useEffect } from 'react';
 import { useI18n } from '../../i18n';
-import { isPaid } from '../../data/resources';
 import type { ResourcePayHandle } from '../../hooks/useResourcePay';
 
 export function ResourcePayModal({ pay }: { pay: ResourcePayHandle }) {
@@ -72,7 +71,7 @@ export function ResourcePayModal({ pay }: { pay: ResourcePayHandle }) {
         </button>
         <h3>{t('resources.pay.title')}</h3>
         <div className="resources-pay-amount">
-          {isPaid(r) ? `¥${r.price}` : t('resources.free')}
+          {r.price > 0 ? `¥${r.price}` : t('resources.free')}
         </div>
         <div className="resources-pay-qr">
           {phase === 'waiting' && pay.qrDataUrl ? (

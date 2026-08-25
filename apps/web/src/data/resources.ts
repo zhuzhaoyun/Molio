@@ -9,6 +9,7 @@
  * 官网更新资源后，桌面端要发新版才能同步（设计取舍见资源模块移植方案）。
  */
 import '../../../landing-page/resources-data.js';
+import type { MarketListing } from '@molio/contracts';
 
 export interface MolioResource {
   /** 唯一 id，用于路由 /resources/:id 与支付下单 */
@@ -67,4 +68,66 @@ export function previewUrl(src: string): string {
 
 export function isPaid(r: MolioResource): boolean {
   return r.price > 0;
+}
+
+/** 统一渲染条目：官方静态资源 或 社区动态资源 */
+export interface CatalogEntry {
+  id: string;
+  source: 'official' | 'community';
+  icon: string;
+  tint: string;
+  name: string;
+  desc: string;
+  author: string;
+  version: string;
+  price: number; // 元（官方静态数据语义不变；社区恒 0）
+  tags: string[];
+  overview: string[];
+  highlights: string[];
+  preview: string[]; // 绝对 URL（社区）或官网相对路径（官方）
+  payUrl: string;
+  /** 官方资源 zip 文件名（静态数据透传；社区条目无） */
+  file?: string;
+  /** 社区条目：详情页/下载经市场 API；官方条目：沿用现状 */
+  market?: MarketListing;
+}
+
+export function toEntry(r: MolioResource): CatalogEntry {
+  return {
+    id: r.id,
+    source: 'official',
+    icon: r.icon,
+    tint: r.tint,
+    name: r.name,
+    desc: r.desc,
+    author: r.author,
+    version: r.version,
+    price: r.price,
+    tags: r.tags,
+    overview: r.overview,
+    highlights: r.highlights,
+    preview: r.preview,
+    payUrl: r.payUrl,
+    file: r.file,
+  };
+}
+
+export function marketToEntry(m: MarketListing): CatalogEntry {
+  return {
+    id: m.id,
+    source: 'community',
+    icon: m.icon,
+    tint: m.tint,
+    name: m.name,
+    desc: m.summary,
+    author: m.author,
+    version: m.version,
+    price: m.priceCents / 100,
+    tags: m.tags,
+    overview: m.overview,
+    highlights: m.highlights,
+    preview: m.previews,
+    payUrl: m.payUrl,
+    market: m,
+  };
 }

@@ -1,20 +1,23 @@
 /**
  * 资源列表页（/resources）—— 对应官网 resources.html：
- * 标题区 + 筛选 pills（全部/付费/免费）+ 卡片网格；付费购买在应用内弹微信支付。
+ * 标题区 + 筛选 pills（全部/付费/免费/社区分享）+ 卡片网格；付费购买在应用内弹微信支付。
+ * 社区条目经 useMarketCatalog 动态合并（失败降级不影响官方货架）。
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useI18n } from '../../i18n';
-import { RESOURCES, type MolioResource } from '../../data/resources';
+import { marketToEntry, RESOURCES, toEntry, type CatalogEntry } from '../../data/resources';
+import { useMarketCatalog } from '../../hooks/useMarketCatalog';
 import { useResourcePay } from '../../hooks/useResourcePay';
 import { ResourceCard } from './ResourceCard';
 import { ResourcePayModal } from './ResourcePayModal';
 
-type Filter = 'all' | 'paid' | 'free';
-const FILTERS: Filter[] = ['all', 'paid', 'free'];
+type Filter = 'all' | 'paid' | 'free' | 'community';
+const FILTERS: Filter[] = ['all', 'paid', 'free', 'community'];
 
-function applyFilter(list: MolioResource[], f: Filter): MolioResource[] {
-  if (f === 'paid') return list.filter((r) => r.price > 0);
-  if (f === 'free') return list.filter((r) => r.price === 0);
+function applyFilter(list: CatalogEntry[], f: Filter): CatalogEntry[] {
+  if (f === 'paid') return list.filter((e) => e.price > 0);
+  if (f === 'free') return list.filter((e) => e.price === 0);
+  if (f === 'community') return list.filter((e) => e.source === 'community');
   return list;
 }
 
@@ -22,8 +25,17 @@ export function ResourcesPage() {
   const { t } = useI18n();
   const [filter, setFilter] = useState<Filter>('all');
   const pay = useResourcePay();
+  const { community, refresh } = useMarketCatalog();
 
-  const list = applyFilter(RESOURCES, filter);
+  // 进入页面强制刷新一次目录（TTL 内命中缓存则不重复请求）
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const list = applyFilter(
+    [...RESOURCES.map(toEntry), ...community.map(marketToEntry)],
+    filter,
+  );
 
   return (
     <div className="resources-shell">
@@ -49,8 +61,8 @@ export function ResourcesPage() {
         </div>
 
         <div className="resources-grid" data-testid="resources-grid">
-          {list.map((r) => (
-            <ResourceCard key={r.id} r={r} onPay={pay.open} />
+          {list.map((e) => (
+            <ResourceCard key={e.id} r={e} onPay={pay.open} />
           ))}
           {list.length === 0 && (
             <div className="resources-empty">{t('resources.empty')}</div>
