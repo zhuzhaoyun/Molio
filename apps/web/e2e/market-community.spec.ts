@@ -24,8 +24,9 @@ import { gotoHome, clickNav } from './helpers/navigation';
  * MOLIO_OSS_AK/SK/BUCKET + MOLIO_MARKET_OSS_ENDPOINT，签名 URL 与服务端 copyObject
  * （x-oss-copy-source）全部打到本地替身。
  *
- * Prerequisites: `pnpm dev` — or let playwright webServer start cloud (:3200) +
- * daemon (:3100) + web (:5173) + mock-oss (:3199), see playwright.config.ts.
+ * 服务全部由 playwright webServer 自动拉起（无需手动 `pnpm dev`）：cloud (:3200) +
+ * daemon (:3100) + web (:5173) + mock-oss (:3199)；端口冲突可用
+ * `MOLIO_E2E_DAEMON_PORT` 整体平移（见 playwright.config.ts 头注）。
  */
 
 /** daemon 直连地址：跟随 MOLIO_E2E_DAEMON_PORT 平移（见 playwright.config.ts 头注） */

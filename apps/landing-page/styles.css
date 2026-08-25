@@ -1540,6 +1540,35 @@ p { margin-bottom: 0; }
 .rl-guide a { color: var(--seal); text-decoration: none; }
 .rl-guide a:hover { text-decoration: underline; }
 
+/* 页头 CTA 条：发布引导 + 付费上架联系（社区市场） */
+.rl-cta {
+  margin: 28px 0 0;
+  padding: 18px 24px;
+  background: #fff;
+  border: 1px solid rgba(13, 13, 13, 0.06);
+  border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(13, 13, 13, 0.05);
+  text-align: center;
+}
+.rl-cta p { margin: 0; font-size: 13.5px; line-height: 1.9; color: var(--ink-60); }
+.rl-cta p + p { color: var(--ink-40); }
+.rl-cta a { color: var(--seal); text-decoration: none; }
+.rl-cta a:hover { text-decoration: underline; }
+
+/* 社区角标：卡片头部小徽标（与价格徽标同排） */
+.rl-badge-community {
+  flex: none;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--paper-2);
+  color: var(--ink-40);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* 社区卡片作者行 */
+.rl-author { margin-top: 10px; font-size: 12px; color: var(--ink-20); }
+
 /* ---------- Resource detail ---------- */
 .page-content.page-wide { max-width: var(--max-w); }
 

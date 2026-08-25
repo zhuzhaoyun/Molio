@@ -7,8 +7,8 @@
  * 弹出账号面板登录视图，登录成功后自动续接原动作（见 stores/loginIntentStore.ts）。
  * 与官网 apps/landing-page 的门槛语义一致：资源下载/购买不论免费付费都要登录。
  *
- * 入参为统一渲染模型 CatalogEntry；详情页现状仍传 MolioResource（Task 11 改造），
- * 内部经 toEntry 归一后分发。
+ * 入参为联合签名 CatalogEntry | MolioResource：列表卡片与详情页均传统一渲染模型
+ * CatalogEntry；MolioResource 入参内部经 toEntry 归一后分发（兼容保留）。
  */
 import {
   RESOURCES,
@@ -39,7 +39,7 @@ export function startResourcePurchase(
     }
     if (entry.market) {
       // 社区免费：向市场 API 取签名下载链接再打开（登录门槛已在上方校验；401 兜底）
-      fetch(`/api/market/listings/${entry.id}/download`)
+      fetch(`/api/market/listings/${encodeURIComponent(entry.id)}/download`)
         .then((r) => (r.ok ? r.json() : Promise.reject(new Error('download_denied'))))
         .then((body: { url: string }) => window.open(body.url, '_blank', 'noopener,noreferrer'))
         .catch(() => {

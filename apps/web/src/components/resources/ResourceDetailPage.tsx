@@ -26,15 +26,8 @@ import { useAuthStatus } from '../../stores/authStore';
 import { ResourcePayModal } from './ResourcePayModal';
 import { startResourcePurchase } from './resourceAction';
 
-/**
- * TODO(i18n)：社区详情页新增文案。本任务文件清单不含 locale 文件，
- * 先硬编码中文常量，后续统一补 resources.* 键后替换。
- */
-const COMMUNITY_NOTE_TEXT = '该资源由社区用户上传，内容责任归上传者';
-const COMMUNITY_REPORT_TEXT = '举报该资源';
+/** 社区资源举报入口：官网企业页联系表单（固定 URL，非 i18n 文案） */
 const COMMUNITY_REPORT_URL = 'https://molio.cn/enterprise.html#contact';
-const INFO_SIZE_LABEL = '大小';
-const INFO_PUBLISHED_LABEL = '发布时间';
 
 /** ISO 时间 → YYYY-MM-DD（社区条目发布时间展示；解析失败原样返回） */
 function formatPublishedAt(iso: string): string {
@@ -62,8 +55,9 @@ export function ResourceDetailPage() {
   useEffect(() => {
     // 静态命中或已拉到当前 id 的社区条目：不重复请求
     if (entry && entry.id === id) return;
+    if (!id) return; // 路由 :id 恒在；缺失防御——不发请求，保持「资源不存在」形态
     let alive = true;
-    fetch(`/api/market/listings/${id}`)
+    fetch(`/api/market/listings/${encodeURIComponent(id)}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((m: MarketListing | null) => {
         if (alive) setEntry(m ? marketToEntry(m) : null);
@@ -252,13 +246,13 @@ export function ResourceDetailPage() {
                 <>
                   {market?.fileSize != null && (
                     <div className="resources-info-row">
-                      <span className="k">{INFO_SIZE_LABEL}</span>
+                      <span className="k">{t('resources.info.size')}</span>
                       <span className="v">{formatFileSize(market.fileSize)}</span>
                     </div>
                   )}
                   {market?.publishedAt != null && (
                     <div className="resources-info-row">
-                      <span className="k">{INFO_PUBLISHED_LABEL}</span>
+                      <span className="k">{t('resources.info.publishedAt')}</span>
                       <span className="v">{formatPublishedAt(market.publishedAt)}</span>
                     </div>
                   )}
@@ -289,7 +283,7 @@ export function ResourceDetailPage() {
 
         {community && (
           <p className="resources-community-note" data-testid="resources-community-note">
-            <span>{COMMUNITY_NOTE_TEXT}</span>
+            <span>{t('resources.community.note')}</span>
             <a
               className="resources-community-report"
               href={COMMUNITY_REPORT_URL}
@@ -297,7 +291,7 @@ export function ResourceDetailPage() {
               rel="noopener noreferrer"
               data-testid="resources-report-link"
             >
-              {COMMUNITY_REPORT_TEXT}
+              {t('resources.community.report')}
             </a>
           </p>
         )}
