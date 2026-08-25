@@ -14,6 +14,7 @@ import { api } from '../../api/client';
 import { authStore, useAuthStatus } from '../../stores/authStore';
 import { authErrorRef } from './authErrors';
 import { LoginForm } from './LoginForm';
+import { MyListingsPanel } from '../resources/MyListingsPanel';
 
 interface AccountModalProps {
   show: boolean;
@@ -29,6 +30,7 @@ export function AccountModal({ show, onClose, onLoggedIn }: AccountModalProps) {
   const [error, setError] = useState<string | null>(null);
   const [editingNickname, setEditingNickname] = useState(false);
   const [nicknameDraft, setNicknameDraft] = useState('');
+  const [showMyListings, setShowMyListings] = useState(false);
   /**
    * 打开代数（open generation）。模态框关闭时只是隐藏（组件保持挂载），
    * 登出/注销这类慢请求可能在「关闭 → 再次打开」之后才 settle——若不加守卫，
@@ -46,6 +48,7 @@ export function AccountModal({ show, onClose, onLoggedIn }: AccountModalProps) {
     setError(null);
     setEditingNickname(false);
     setNicknameDraft('');
+    setShowMyListings(false);
     void authStore.refresh();
   }, [show]);
 
@@ -195,6 +198,15 @@ export function AccountModal({ show, onClose, onLoggedIn }: AccountModalProps) {
             <button
               type="button"
               className="kb-btn"
+              data-testid="account-my-listings-btn"
+              disabled={busy}
+              onClick={() => setShowMyListings(true)}
+            >
+              {t('account.myListings')}
+            </button>
+            <button
+              type="button"
+              className="kb-btn"
               data-testid="account-logout-btn"
               disabled={busy}
               onClick={() => void handleLogout()}
@@ -260,6 +272,9 @@ export function AccountModal({ show, onClose, onLoggedIn }: AccountModalProps) {
           )}
         </div>
       </div>
+      {showMyListings && (
+        <MyListingsPanel onClose={() => setShowMyListings(false)} />
+      )}
     </div>
   );
 }
