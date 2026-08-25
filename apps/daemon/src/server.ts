@@ -21,6 +21,7 @@ import { weixinRoutes } from './routes/weixin.js';
 import { feishuRoutes } from './routes/feishu.js';
 import { maintenanceRoutes } from './routes/maintenance.js';
 import { authRoutes } from './routes/auth.js';
+import { marketRoutes } from './routes/market.js';
 import { AuthClient } from './core/auth/auth-client.js';
 import { WeixinService } from './core/weixin/service.js';
 import { FeishuService } from './core/feishu/service.js';
@@ -111,6 +112,7 @@ app.route('/api/feishu', feishuRoutes(feishuService));
 app.route('/api/preload', preloadRoutes(preloadManager));
 app.route('/api/maintenance', maintenanceRoutes(db));
 app.route('/api/auth', authRoutes(authClient));
+app.route('/api/market', marketRoutes(db, authClient));
 
 void weixinService.start();
 void feishuService.start();

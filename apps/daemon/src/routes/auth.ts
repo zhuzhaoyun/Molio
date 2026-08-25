@@ -136,7 +136,7 @@ function cloudError(c: Context, e: unknown): Response {
  *   Vite proxy 原样转发 Origin）→ 放行
  * - 其余（远程页面、伪造 Origin）→ 403
  */
-function denyCrossOrigin(c: Context): Response | null {
+export function denyCrossOrigin(c: Context): Response | null {
   const origin = c.req.header('origin');
   if (!origin) return null;
   let allowed = false;

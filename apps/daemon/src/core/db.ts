@@ -175,6 +175,18 @@ function migrate(db: SqliteDb): void {
       updated_at   INTEGER NOT NULL,
       PRIMARY KEY (namespace, slug)
     );
+    -- Community market (Task 8): local publish mapping + offline listings cache.
+    CREATE TABLE IF NOT EXISTS market_local (
+      listing_id TEXT PRIMARY KEY,
+      vault_id   TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS market_cache (
+      key        TEXT PRIMARY KEY,   -- 'listings'
+      json       TEXT NOT NULL,
+      fetched_at INTEGER NOT NULL
+    );
   `);
 
   // hub_skill_installs was first shipped (pre-release) with slug alone as the
