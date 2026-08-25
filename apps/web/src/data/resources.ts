@@ -1,11 +1,14 @@
 /**
- * 资源模块数据桥 —— 与官网 landing-page 共享同一份数据源。
+ * 资源模块数据桥 —— 官方静态资源与官网 landing-page 共享同一份数据源。
  *
- * 单一数据源是 apps/landing-page/resources-data.js（IIFE，向 window.MOLIO_* 赋值）：
+ * 静态数据 = 官方资源：来源是 apps/landing-page/resources-data.js（IIFE，向 window.MOLIO_* 赋值），
  * side-effect import 触发其执行，官网列表页 / 官网详情页 / 桌面端三处同时生效。
- * 上架新资源或改价只需改那一个文件（注意同步 OSS 上的权威定价 products.json）。
+ * 上架新官方资源或改价只需改那一个文件（注意同步 OSS 上的权威定价 products.json）。
  *
- * 桌面端打包时该文件内容被内联进 bundle —— 资源目录随应用版本固化，
+ * 社区 = 运行时目录（见 ../hooks/useMarketCatalog.ts）：条目来自云端 /market/listings，
+ * 与本文件的官方静态数据在渲染层合并，云端不可达时静默回退纯静态。
+ *
+ * 桌面端打包时官方静态数据被内联进 bundle —— 官方资源目录随应用版本固化，
  * 官网更新资源后，桌面端要发新版才能同步（设计取舍见资源模块移植方案）。
  */
 import '../../../landing-page/resources-data.js';
@@ -48,7 +51,7 @@ declare global {
   }
 }
 
-/** 资源条目列表（与官网同一数据源） */
+/** 官方资源条目列表（静态数据，与官网同一数据源；社区条目走运行时目录） */
 export const RESOURCES: MolioResource[] = window.MOLIO_RESOURCES ?? [];
 
 /** 微信支付后端地址；空串表示未开通，付费资源降级为“联系购买” */

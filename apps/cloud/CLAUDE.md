@@ -1,8 +1,8 @@
-# @molio/cloud — 云端认证服务
+# @molio/cloud — 云端认证与资源目录服务
 
-Molio 用户模块（第一期 = 身份层）的云端服务。提供邮箱验证码登录、token 轮换/吊销、权益留桩与账号注销。
+Molio 用户模块的云端服务，两块职责：**身份**（第一期 = 身份层：邮箱验证码登录、token 轮换/吊销、权益留桩与账号注销）+ **资源市场目录**（社区资源条目元数据：上架/下架/管理；文件字节经 OSS 直传/直下，云端不经手内容）。
 
-**红线**：本地优先。云端只负责身份与权益凭证，**不存任何知识库内容**；云端不可达时客户端本地功能零影响。**Molio 应用内** Web UI 永不直连本服务，一律经 daemon 本地镜像端点（见 `apps/daemon/src/routes/auth.ts`）；**官网静态页**（molio.cn）登录是唯一例外，浏览器直连本服务，走 `src/cors.ts` 的严格 CORS 白名单（无 cookie、不带 credentials）。
+**红线**：本地优先。云端只负责身份与权益凭证、资源市场目录元数据（文件字节经 OSS 直传，云端不经手内容），**不存任何知识库内容**；云端不可达时客户端本地功能零影响。**Molio 应用内** Web UI 永不直连本服务，一律经 daemon 本地镜像端点（见 `apps/daemon/src/routes/auth.ts`）；**官网静态页**（molio.cn）登录是唯一例外，浏览器直连本服务，走 `src/cors.ts` 的严格 CORS 白名单（无 cookie、不带 credentials）。
 
 ## 技术栈
 
@@ -16,21 +16,28 @@ Molio 用户模块（第一期 = 身份层）的云端服务。提供邮箱验�
 ```
 src/
   index.ts       入口：loadConfig → 按 DATABASE_URL 选 store → serve
-  app.ts         Hono 路由（/health + 7 端点）；顶部挂 CORS 白名单中间件
+  app.ts         Hono 路由（/health + 7 认证端点 + /market 条件挂载）；顶部挂 CORS 白名单中间件
   cors.ts        CORS 白名单：prod 仅 molio.cn(±www)+附加；daily/local 加 localhost；回显 origin 不用 *，不带 credentials
-  config.ts      env 加载（MOLIO_ENV / 限频 / TTL / 密钥 / DirectMail）
+  config.ts      env 加载（MOLIO_ENV / 限频 / TTL / 密钥 / DirectMail / OSS 与市场）
   service.ts     AuthService：限频、一次性原子消费、隐式注册、轮换 + 重放检测
   store/
     types.ts     AuthStore 接口（活跃判定 deleted_at IS NULL AND status='active' 收口于此）
     memory.ts    MemoryAuthStore（node:test / 本地开发）
     pg.ts        PgAuthStore（生产）
+    market-types.ts  MarketStore 接口（时间戳统一 epoch 毫秒，与 AuthStore 约定一致）
+    market-memory.ts MemoryMarketStore（node:test / 本地开发）
+    market-pg.ts     PgMarketStore（生产，语义与内存版逐条对齐）
   jwt.ts         HS256 签发/验签（自实现，kid 留桩）
   crypto.ts      SHA-256(code+pepper) / token hash
   mailer.ts      daily 写 stdout；prod 走阿里云 DirectMail（SingleSendMail），未配置时 loadConfig fail-fast
+  market/
+    routes.ts    /market/* 路由（公开读 + Bearer 写 + admin 端点；错误归一 {error} JSON）
+    service.ts   MarketService：校验/限频/状态机（uploading→active→removed）/签发
+    signer.ts    阿里云 OSS V1 签名（node:crypto 零依赖）：预签名直传/直下 + 服务端带 Auth 头请求
 test/
   helpers.ts     可编程 mock（时钟/store/邮件）
   *.test.ts      限频、过期/锁码/一次性、隐式注册、轮换与重放、注销、jwt
-schema.sql       三表 DDL + 部分唯一索引 + 限频索引
+schema.sql       四表 DDL（users / auth_codes / refresh_tokens / market_listings）+ 部分唯一索引 + 限频索引
 ```
 
 ## 命令
@@ -38,7 +45,7 @@ schema.sql       三表 DDL + 部分唯一索引 + 限频索引
 ```bash
 pnpm dev          # tsx src/index.ts（本地 :3200，内存模式）
 pnpm build        # tsc
-pnpm test         # rm dist && tsc && node --test dist/test/**（51 用例）
+pnpm test         # rm dist && tsc && node --test dist/test/**（134 用例，含市场四组）
 pnpm typecheck    # tsc --noEmit
 ```
 
@@ -61,6 +68,15 @@ pnpm typecheck    # tsc --noEmit
 | `MOLIO_ROTATION_GRACE_SEC` | 否 | 轮换宽限窗（重试误判防护），默认 30 |
 | `MOLIO_RATE_EMAIL_RESEND_SEC` / `MOLIO_RATE_EMAIL_DAILY_MAX` / `MOLIO_RATE_IP_DAILY_MAX` | 否 | 三层限频，默认 60/10/30 |
 | `MOLIO_CORS_EXTRA_ORIGINS` | 否 | CORS 附加白名单（逗号分隔，逐项取 origin，非法项启动报错）；官网域名内置不经此配置 |
+| `MOLIO_OSS_AK` | 资源市场需要 | 阿里云 OSS AccessKey ID（市场文件桶）；缺失则 `/market` 不挂载 |
+| `MOLIO_OSS_SK` | 资源市场需要 | OSS AccessKey Secret，不入代码库 |
+| `MOLIO_OSS_BUCKET` | 资源市场需要 | 市场文件 OSS 桶名；缺失则 `/market` 不挂载 |
+| `MOLIO_OSS_REGION` | 否 | OSS 地域，默认 `cn-guangzhou` |
+| `MOLIO_MARKET_OSS_ENDPOINT` | 否 | OSS endpoint 显式覆盖（缺省按 `{bucket}.oss-{region}.aliyuncs.com` 推导；本地测试可指向 mock） |
+| `MOLIO_MARKET_MAX_ZIP_MB` | 否 | 单个资源包大小上限（MB），默认 50 |
+| `MOLIO_MARKET_ADMIN_EMAILS` | 否 | 市场管理员邮箱（逗号分隔），命中后可调 `/market/admin/*` |
+| `MOLIO_MARKET_MAX_ACTIVE_PER_USER` | 否 | 单用户在架条目上限，默认 10 |
+| `MOLIO_MARKET_MAX_DAILY_CREATES` | 否 | 单用户每日创建条目上限，默认 5 |
 
 ## 七个端点（第一期全集）
 
@@ -73,6 +89,22 @@ pnpm typecheck    # tsc --noEmit
 | PATCH | `/auth/me` | Bearer access → 修改昵称（1-20 code point）返回 `{user, entitlement}`；隐式注册自动生成「墨友+4位随机数」 |
 | DELETE | `/auth/session` | 吊销当前设备（本机登出） |
 | DELETE | `/auth/account` | 注销账号（软删除 + 吊销全部 session） |
+
+## 资源市场端点（/market/*，OSS 凭证齐全才挂载）
+
+| Method | Path | 说明 |
+|---|---|---|
+| GET | `/market/listings` | 公开目录列表（`Cache-Control: no-store`，未登录可读） |
+| GET | `/market/listings/:id` | 单条详情（`no-store`，未登录可读） |
+| GET | `/market/listings/:id/download` | 登录 → 签发限时 OSS 直下 URL（下载门槛核心） |
+| POST | `/market/listings` | 登录 → 创建条目（元数据校验 + 限频），返回直传签名目标 |
+| POST | `/market/listings/:id/confirm` | 登录 → 直传完成确认（首发 uploading→active；亦用于更新版本确认） |
+| POST | `/market/listings/:id/update` | 登录 → 发起版本更新（预检 + 新上传目标） |
+| DELETE | `/market/listings/:id` | 登录 → 本人下架删除 |
+| GET | `/market/my` | 登录 → 我的条目列表 |
+| GET | `/market/admin/listings` | 管理员 → 全量条目（含归属邮箱） |
+| POST | `/market/admin/listings/:id/remove` | 管理员 → 强制下架（可附原因） |
+| POST | `/market/admin/listings/:id/restore` | 管理员 → 恢复已下架条目 |
 
 ## 关键设计（改动前必读）
 
@@ -102,4 +134,5 @@ MOLIO_AUTH_URL=http://localhost:3200 pnpm dev:daemon   # daemon 指向本地 clo
 - 形态：阿里云函数计算 FC（Web 函数/Custom Runtime，HTTP server 原样部署，监听 `CAPort`）+ PolarDB Serverless。**单函数 prod**（cn-hangzhou），自定义域名 `auth.molio.cn` 直连 LATEST 版本（无版本/别名）。
 - 发布：`node apps/cloud/scripts/deploy-package.mjs` 产出 `apps/cloud/molio-cloud-deploy.zip`（内含 linux-x64 Node 运行时 + npm 扁平 node_modules），FC 控制台上传 ZIP。启动命令 `/code/runtime/node /code/dist/src/index.js`。⚠️ **仅改控制台环境变量对常驻实例不生效**，必须上传新代码包强制实例换新（2026-08-24 事故教训，细节见脚本头注释）。
 - 独立部署，**不进 Molio 应用镜像**，不走 OSS/ACR 桌面发版链路。
+- **资源市场启用条件**：OSS 凭证齐全（`MOLIO_OSS_AK` / `MOLIO_OSS_SK` / `MOLIO_OSS_BUCKET`）才装配 `/market`；缺失则 `/market` 不挂载（访问 404），prod 缺凭证启动时打 warn。
 - 上线前置：域名 ICP 备案、DirectMail 发信域名（SPF/DKIM）、隐私政策/用户协议（见 `docs/user-module-design.md` §十二）。

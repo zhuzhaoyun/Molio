@@ -1,8 +1,9 @@
 /**
  * Molio 知识库资源库 — 列表页 (resources.html) 与详情页 (resource.html) 共享数据。
  *
- * 本文件只含官方静态条目；社区条目来自运行时 API（GET {MOLIO_AUTH_BASE}/market/listings），
- * 由 resources.html / resource.html 的内联脚本动态合并渲染，云端不可达时静默回退纯静态。
+ * 官方静态条目 = 官网兜底快照；社区条目来自运行时 API（GET {MOLIO_AUTH_BASE}/market/listings），
+ * 不入此文件（社区发布走应用内市场流程），由 resources.html / resource.html 的内联脚本动态合并渲染，
+ * 云端不可达时静默回退纯静态。
  *
  * 上架新资源：往 MOLIO_RESOURCES 追加一条即可，官网列表页/详情页与桌面端资源页同时生效
  * （桌面端 apps/web/src/data/resources.ts 直接 import 本文件，随应用打包固化）。
