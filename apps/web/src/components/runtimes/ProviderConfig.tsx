@@ -3,9 +3,11 @@ import { api } from '../../api/client';
 import { useI18n } from '../../i18n';
 import {
   CLAUDE_PROVIDERS,
+  CODEX_PROVIDERS,
   detectProvider,
   buildProviderEnv,
   type ProviderPreset,
+  type CodexProviderPreset,
 } from './providers';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
@@ -34,8 +36,31 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
   const [showMapping, setShowMapping] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>('idle');
 
+  const isCodex = agentId === 'codex';
+  const [codexModel, setCodexModel] = useState('');
+  const [codexWireApi, setCodexWireApi] = useState<'responses' | 'chat'>('responses');
+
   // Load current config on mount
   useEffect(() => {
+    if (isCodex) {
+      api.getAgentProvider(agentId).then((raw) => {
+        const s = raw as { presetHint: string; baseUrl: string | null; model: string | null; wireApi: string | null };
+        const matched = CODEX_PROVIDERS.find((p) => p.id === s.presetHint);
+        if (matched) setProviderId(s.presetHint);
+        if (s.baseUrl) setCustomBaseUrl(s.baseUrl);
+        if (s.wireApi === 'chat' || s.wireApi === 'responses') setCodexWireApi(s.wireApi);
+        if (s.model) {
+          setCodexModel(s.model);
+        } else if (matched && !matched.isCustom && !matched.isOfficial && matched.models.length > 0) {
+          // config.toml 有 model_provider 但没有顶层 model 时，下拉框会显示第一个模型，
+          // 状态也要同步，否则直接保存会发出空 model → 400
+          setCodexModel(matched.models[0]?.id ?? '');
+        }
+      }).catch(() => {
+        // Ignore — defaults are fine
+      });
+      return;
+    }
     api.getAgentConfig(agentId).then((config) => {
       const env = (config.env ?? {}) as Record<string, string>;
       const detected = detectProvider(env);
@@ -57,11 +82,23 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
     }).catch(() => {
       // Ignore — defaults are fine
     });
-  }, [agentId]);
+  }, [agentId, isCodex]);
 
-  const provider = CLAUDE_PROVIDERS.find((p) => p.id === providerId) ?? CLAUDE_PROVIDERS[0];
+  const provider: ProviderPreset | CodexProviderPreset = isCodex
+    ? CODEX_PROVIDERS.find((p) => p.id === providerId) ?? CODEX_PROVIDERS[0]
+    : CLAUDE_PROVIDERS.find((p) => p.id === providerId) ?? CLAUDE_PROVIDERS[0];
+
+  const providers: { id: string; name: string }[] = isCodex ? CODEX_PROVIDERS : CLAUDE_PROVIDERS;
 
   const handleProviderChange = useCallback((id: string) => {
+    if (isCodex) {
+      setProviderId(id);
+      setSaveState('idle');
+      setApiKey('');
+      const p = CODEX_PROVIDERS.find((x) => x.id === id);
+      setCodexModel(p && !p.isCustom && !p.isOfficial ? (p.models[0]?.id ?? '') : '');
+      return;
+    }
     setProviderId(id);
     setSaveState('idle');
     setApiKey('');
@@ -81,22 +118,35 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
     } else {
       setMapping(EMPTY_MAPPING);
     }
-  }, []);
+  }, [isCodex]);
 
   const handleSave = useCallback(async () => {
     setSaveState('saving');
     try {
-      const modelMapping = (mapping.sonnet || mapping.haiku || mapping.opus)
-        ? mapping
-        : undefined;
-      const env = buildProviderEnv(providerId, apiKey, customBaseUrl, modelMapping);
-      await api.updateAgentConfig(agentId, { env });
+      if (isCodex) {
+        const body: Record<string, unknown> = { presetId: providerId };
+        if (providerId === 'custom') {
+          body.baseUrl = customBaseUrl;
+          body.wireApi = codexWireApi;
+        }
+        if (providerId !== 'official') {
+          body.model = codexModel;
+          if (apiKey) body.apiKey = apiKey;
+        }
+        await api.updateAgentProvider(agentId, body);
+      } else {
+        const modelMapping = (mapping.sonnet || mapping.haiku || mapping.opus)
+          ? mapping
+          : undefined;
+        const env = buildProviderEnv(providerId, apiKey, customBaseUrl, modelMapping);
+        await api.updateAgentConfig(agentId, { env });
+      }
       setSaveState('saved');
       setTimeout(() => setSaveState('idle'), 3000);
     } catch (err) {
       setSaveState('error');
     }
-  }, [agentId, providerId, apiKey, customBaseUrl, mapping]);
+  }, [agentId, isCodex, providerId, apiKey, customBaseUrl, mapping, codexModel, codexWireApi]);
 
   const isThirdParty = providerId !== 'anthropic';
 
@@ -136,14 +186,82 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
             value={providerId}
             onChange={(e) => handleProviderChange(e.target.value)}
           >
-            {CLAUDE_PROVIDERS.map((p) => (
+            {providers.map((p) => (
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>
         </label>
 
+        {isCodex && (
+          <p className="rt-provider-form__hint">{t('runtimes.codexConfigHint')}</p>
+        )}
+
+        {isCodex && providerId === 'official' && (
+          <p className="rt-provider-form__hint">{t('runtimes.officialHint')}</p>
+        )}
+
+        {isCodex && providerId !== 'official' && (
+          <label className="rt-provider-form__field">
+            <span className="rt-provider-form__label">{t('runtimes.model')}</span>
+            {(() => {
+              const preset = CODEX_PROVIDERS.find((p) => p.id === providerId);
+              const options = preset?.models ?? [];
+              const inList = options.some((m) => m.id === codexModel);
+              if (!preset?.isCustom && options.length > 0 && (inList || !codexModel)) {
+                return (
+                  <select
+                    data-testid="codex-model-field"
+                    className="rt-provider-form__select"
+                    value={inList || !codexModel ? (codexModel || options[0]?.id || '') : ''}
+                    onChange={(e) => { setCodexModel(e.target.value); setSaveState('idle'); }}
+                  >
+                    {options.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+                  </select>
+                );
+              }
+              return (
+                <input
+                  data-testid="codex-model-field"
+                  type="text"
+                  className="rt-provider-form__input"
+                  value={codexModel}
+                  onChange={(e) => { setCodexModel(e.target.value); setSaveState('idle'); }}
+                  placeholder="deepseek-v4-flash"
+                />
+              );
+            })()}
+          </label>
+        )}
+
+        {isCodex && providerId === 'custom' && (
+          <>
+            <label className="rt-provider-form__field">
+              <span className="rt-provider-form__label">{t('runtimes.baseUrl')}</span>
+              <input
+                type="url"
+                className="rt-provider-form__input"
+                value={customBaseUrl}
+                onChange={(e) => { setCustomBaseUrl(e.target.value); setSaveState('idle'); }}
+                placeholder="https://api.example.com/v1"
+              />
+            </label>
+            <label className="rt-provider-form__field">
+              <span className="rt-provider-form__label">{t('runtimes.wireApi')}</span>
+              <select
+                data-testid="codex-wire-api-field"
+                className="rt-provider-form__select"
+                value={codexWireApi}
+                onChange={(e) => { setCodexWireApi(e.target.value as 'responses' | 'chat'); setSaveState('idle'); }}
+              >
+                <option value="responses">responses</option>
+                <option value="chat">chat</option>
+              </select>
+            </label>
+          </>
+        )}
+
         {/* API Key */}
-        {providerId !== 'anthropic' && (
+        {(isCodex ? providerId !== 'official' : providerId !== 'anthropic') && (
           <label className="rt-provider-form__field">
             <span className="rt-provider-form__label">
               {t('runtimes.apiKey')}
@@ -173,7 +291,7 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
         )}
 
         {/* Base URL (for custom provider) */}
-        {providerId === 'custom' && (
+        {!isCodex && providerId === 'custom' && (
           <label className="rt-provider-form__field">
             <span className="rt-provider-form__label">{t('runtimes.baseUrl')}</span>
             <input
@@ -187,7 +305,7 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
         )}
 
         {/* Model mapping for third-party providers */}
-        {isThirdParty && (
+        {!isCodex && isThirdParty && (
           <div className="rt-provider-form__mapping">
             <button
               type="button"

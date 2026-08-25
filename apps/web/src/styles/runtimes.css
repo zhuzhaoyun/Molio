@@ -832,6 +832,13 @@
   color: var(--text-faint);
 }
 
+p.rt-provider-form__hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  text-transform: none;
+}
+
 .rt-provider-form__select,
 .rt-provider-form__input {
   padding: 6px 10px;
