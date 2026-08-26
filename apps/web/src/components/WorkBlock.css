@@ -59,13 +59,14 @@
   to { transform: rotate(360deg); }
 }
 
-/* ── 过程叙事流：执行中 agent 的自言自语 —— 灰色小字衬底（Codex 式），不再是视觉主角 ── */
+/* ── 过程叙事流：执行中 agent 的自言自语 —— 阅读主线（Codex 真实层级：叙述=主角，
+   工具行=暗灰账本）。13px 正文色，比账本行大且深；工具行见 chat.css 的弱化。 ── */
 .work-block-process {
-  margin-top: 4px;
-  padding: 2px 0 0;
-  font-size: 11px;
-  line-height: 1.6;
-  color: var(--text-soft, #9a9894);
+  margin: 6px 0 2px;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text, #1a1917);
   white-space: pre-wrap;
   word-break: break-word;
 }

@@ -365,15 +365,16 @@
   color: var(--red);
 }
 
-/* -------- Claude Code style: inline tool calls -------------------- */
-/* Single tool call — one line */
+/* -------- Claude Code style: inline tool calls --------------------
+   账本行：11px 浅灰 mono —— 叙事（work-block-process 13px 正文色）是阅读主线，
+   工具行是衬底账本（Codex 真实层级）。状态色/步号/运行高亮保留。 */
 .tool-line {
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 2px 0;
-  font-size: 12px;
-  color: var(--text-soft);
+  font-size: 11px;
+  color: var(--text-faint);
   font-family: var(--mono);
 }
 .tool-line-arrow {
@@ -388,7 +389,7 @@
   flex-shrink: 0;
 }
 .tool-line-name {
-  color: var(--text-muted);
+  color: var(--text-soft);
   flex-shrink: 0;
 }
 .tool-line-badge {
@@ -402,7 +403,7 @@
   flex-shrink: 0;
 }
 .tool-line-arg {
-  color: var(--text-soft);
+  color: var(--text-faint);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
