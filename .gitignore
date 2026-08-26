@@ -16,6 +16,12 @@ deliverables/
 # Environment variables (may contain API keys)
 .env
 
+# 本地真机凭据/OCI 运维脚本与状态文档 —— 含真实密钥，绝不入仓
+# （真实版存本机 D:\work\oss-payload，用户自行维护）
+.env-update.json
+apps/cloud/scripts/update-fc-env.sh
+docs/aliyun-infra-status.md
+
 # macOS
 .DS_Store
 
