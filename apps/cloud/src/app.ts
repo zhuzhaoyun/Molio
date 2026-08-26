@@ -57,7 +57,8 @@ function handleError(c: Context, e: unknown): Response {
     return c.json({ error: e.code, ...e.extra }, e.status satisfies ServiceErrorStatus);
   }
   console.error('[cloud] unhandled route error:', e);
-  return c.json({ error: 'internal' }, 500);
+  // 透传真实 message 给 daemon，便于定位 OSS 等底层错误
+  return c.json({ error: 'internal', detail: e instanceof Error ? e.message : String(e) }, 500);
 }
 
 function bearer(c: Context, config: CloudConfig, now: () => number): AccessPayload | null {

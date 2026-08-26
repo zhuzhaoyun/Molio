@@ -72,12 +72,13 @@ test('confirm：暂存齐全 → active + 效果图转正公共读 + 署名为�
   const my = await svc.confirm(u.id, c.listingId);
   assert.equal(my.status, 'active');
   assert.equal(my.fileSize, 100);
-  assert.equal(copied.some(([s, d, acl]) => d.endsWith('-p1.png') && acl === 'public-read'), true);
+  // 预览图转正到 images/、不设对象 ACL（公开靠桶 Policy 对 images/* 前缀授权，非对象 ACL）
+  assert.equal(copied.some(([, d, acl]) => d.startsWith('images/') && d.endsWith('-p1.png') && acl === undefined), true);
   const pub = await svc.list();
   assert.equal(pub[0]!.author, '墨友0001');
   assert.equal(pub[0]!.priceCents, 0);
   assert.deepEqual(pub[0]!.tags, ['读书', '自定义标签']); // 自定义标签原样保留
-  assert.match(pub[0]!.previews[0]!, /^https:\/\/molio-pay\.oss-cn-guangzhou\.aliyuncs\.com\/resources\/.+p1\.png$/);
+  assert.match(pub[0]!.previews[0]!, /^https:\/\/molio-pay\.oss-cn-guangzhou\.aliyuncs\.com\/images\/.+p1\.png$/);
 });
 
 test('confirm：缺对象 409；zip 超上限 413', async () => {

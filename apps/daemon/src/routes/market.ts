@@ -147,6 +147,7 @@ export function marketRoutes(db: Database.Database, auth: AuthClient, opts: Mark
         .run(created.listingId, vaultId, Date.now());
       return c.json({ listing });
     } catch (e) {
+      console.error('[market.publish] failed:', e); // 定位用：打印真实错误（oss_put_failed 状态等）
       if (listingId) await client.remove(listingId).catch(() => {}); // 已创建的尽力清理
       return cloudError(c, e);
     } finally {

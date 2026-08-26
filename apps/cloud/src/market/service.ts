@@ -116,7 +116,7 @@ export class MarketService {
       tags: [...new Set(req.tags.map((t) => t.trim()))].slice(0, MAX_TAGS), // 自定义允许，去重截断
       previews: req.previews.map((p, i) => `next/${id}-p${i + 1}${p.ext}`), // uploading 期存暂存键
       version: 'v1.0', priceCents: 0, payUrl: '', authorDisplay: null,
-      ossKey: `resources/${id}-vault.zip`, fileSize: null,
+      ossKey: `zips/${id}-vault.zip`, fileSize: null,
       status: 'uploading', removedReason: null, pendingUpdate: null,
       createdAt: this.now, updatedAt: this.now, publishedAt: null,
     };
@@ -167,8 +167,9 @@ export class MarketService {
     const urls: string[] = [];
     for (let i = 0; i < rec.previews.length; i++) {
       const ext = rec.previews[i]!.slice(rec.previews[i]!.lastIndexOf('.'));
-      const live = `resources/${rec.id}-p${i + 1}${ext}`;
-      await this.deps.signer.copyObject(rec.previews[i]!, live, 'public-read');
+      const live = `images/${rec.id}-p${i + 1}${ext}`;
+      // 预览图不设对象 ACL：由桶 Policy 对 images/* 前缀放开公共读，对象仍默认私有（zip 独立，永远私有）
+      await this.deps.signer.copyObject(rec.previews[i]!, live);
       urls.push(`${this.deps.signer.baseUrl()}/${live}`);
     }
     const updated = await this.deps.store.updateListing(rec.id, {
@@ -191,8 +192,8 @@ export class MarketService {
       const urls: string[] = [];
       for (let i = 0; i < pend.previews.length; i++) {
         const ext = pend.previews[i]!.key.slice(pend.previews[i]!.key.lastIndexOf('.'));
-        const live = `resources/${rec.id}-p${i + 1}${ext}`;
-        await this.deps.signer.copyObject(pend.previews[i]!.key, live, 'public-read');
+        const live = `images/${rec.id}-p${i + 1}${ext}`;
+        await this.deps.signer.copyObject(pend.previews[i]!.key, live);
         urls.push(`${this.deps.signer.baseUrl()}/${live}`);
       }
       const urlSet = new Set(urls);

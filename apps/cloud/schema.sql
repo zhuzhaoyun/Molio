@@ -97,7 +97,7 @@ CREATE TABLE IF NOT EXISTS market_listings (
   price_cents    INTEGER NOT NULL DEFAULT 0,       -- Plan 1 恒 0；定价能力 Plan 2
   pay_url        TEXT NOT NULL DEFAULT '',
   author_display TEXT,
-  oss_key        TEXT NOT NULL,                    -- resources/{listingId}-vault.zip
+  oss_key        TEXT NOT NULL,                    -- zips/{listingId}-vault.zip（私有；预览图走 images/，policy 公开读）
   file_size      BIGINT,
   status         TEXT NOT NULL DEFAULT 'uploading',-- uploading | active | removed
   removed_reason TEXT,

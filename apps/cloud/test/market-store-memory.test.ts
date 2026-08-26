@@ -9,7 +9,7 @@ function rec(id: string, over: Partial<MarketListingRecord> = {}): MarketListing
     id, userId: 'u1', source: 'community', name: 'n', icon: '📖', tint: '#E8EDF2',
     summary: 's', overview: [], highlights: [], tags: [], previews: [],
     version: 'v1.0', priceCents: 0, payUrl: '', authorDisplay: null,
-    ossKey: `resources/${id}-vault.zip`, fileSize: null,
+    ossKey: `zips/${id}-vault.zip`, fileSize: null,
     status: 'uploading', removedReason: null,
     createdAt: 1000, updatedAt: 1000, publishedAt: null, ...over,
   };

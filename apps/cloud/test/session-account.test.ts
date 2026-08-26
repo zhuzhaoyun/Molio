@@ -110,7 +110,8 @@ test('handleError: 非 ServiceError 异常 → 结构化 internal/500（绝不�
   };
   const res = await get(app, '/auth/me', { authorization: `Bearer ${reg.accessToken}` });
   assert.equal(res.status, 500);
-  assert.deepEqual(await res.json(), { error: 'internal' });
+  // handleError 透传真实 message 给 daemon 便于定位（OSS 等底层错误）；非 ServiceError → 结构化 internal/500
+  assert.deepEqual(await res.json(), { error: 'internal', detail: 'pg pool exploded' });
 });
 
 test('health: 返回 ok + 环境 + 存储类型', async () => {

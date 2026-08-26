@@ -95,3 +95,15 @@ export interface MarketDownloadResponse {
   url: string;
   expiresAt: number;
 }
+
+/** AI 起草的发布元数据（POST /api/market/publish-suggest 响应） */
+export interface MarketPublishSuggestion {
+  name: string;
+  summary: string;
+  /** AI 起草的标签（≤2 个） */
+  tags: string[];
+  /** 在 MARKET_ICONS 内自动选定（云端白名单校验要求；用户不再手选） */
+  icon: string;
+  /** 起草所用 agent id（前端提示用） */
+  agentId: string;
+}

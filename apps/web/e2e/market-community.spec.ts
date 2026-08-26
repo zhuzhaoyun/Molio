@@ -198,7 +198,7 @@ test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () 
     });
     await page.locator(`[data-testid="resource-buy-${listingId}"]`).click();
     const [popup, ossReq] = await Promise.all([popupPromise, ossReqPromise]);
-    expect(ossReq.url()).toContain(`${MOCK_OSS}/resources/${listingId}-vault.zip`);
+    expect(ossReq.url()).toContain(`${MOCK_OSS}/zips/${listingId}-vault.zip`);
     expect(ossReq.url()).toContain('Signature='); // 预签名 GET，非裸链
     await popup.close().catch(() => {});
   });

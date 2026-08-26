@@ -5,10 +5,7 @@
 import { useState, useCallback } from 'react';
 import type { Vault } from '@molio/contracts';
 import { useI18n } from '../../i18n';
-import { authStore } from '../../stores/authStore';
-import { loginIntentStore } from '../../stores/loginIntentStore';
 import { ConfirmDialog } from './KbModals';
-import { PublishWizard } from '../resources/PublishWizard';
 
 interface VaultListProps {
   vaults: Vault[];
@@ -19,7 +16,6 @@ interface VaultListProps {
 
 export function VaultList({ vaults, activeVaultId, onSelect, onDelete }: VaultListProps) {
   const [deleteTarget, setDeleteTarget] = useState<Vault | null>(null);
-  const [publishTarget, setPublishTarget] = useState<Vault | null>(null);
   const { t } = useI18n();
 
   const handleDelete = useCallback((e: React.MouseEvent, vault: Vault) => {
@@ -36,17 +32,6 @@ export function VaultList({ vaults, activeVaultId, onSelect, onDelete }: VaultLi
 
   const handleCancelDelete = useCallback(() => {
     setDeleteTarget(null);
-  }, []);
-
-  // 发布到资源库：要求登录；未登录挂起登录意图，登录成功后续接打开发布向导
-  const handlePublish = useCallback((e: React.MouseEvent, vault: Vault) => {
-    e.stopPropagation();
-    const status = authStore.getStatus();
-    if (status && status.loggedIn) {
-      setPublishTarget(vault);
-      return;
-    }
-    loginIntentStore.requestLogin(() => setPublishTarget(vault));
   }, []);
 
   return (
@@ -68,14 +53,6 @@ export function VaultList({ vaults, activeVaultId, onSelect, onDelete }: VaultLi
             <div className="vm-vault-name">{vault.name}</div>
             <div className="vm-vault-path">{vault.path}</div>
             <button
-              className="vm-vault-publish"
-              onClick={(e) => handlePublish(e, vault)}
-              title={t('vault.publish')}
-              aria-label={t('vault.publish')}
-            >
-              📤
-            </button>
-            <button
               className="vm-vault-delete"
               onClick={(e) => handleDelete(e, vault)}
               title="Remove from app"
@@ -96,16 +73,6 @@ export function VaultList({ vaults, activeVaultId, onSelect, onDelete }: VaultLi
         onCancel={handleCancelDelete}
       />
 
-      {publishTarget && (
-        <PublishWizard
-          vaultId={publishTarget.id}
-          vaultName={publishTarget.name}
-          onClose={() => setPublishTarget(null)}
-          onPublished={() => {
-            /* 资源页目录有 60s 缓存，下次进入可见更新，此处不主动刷新 */
-          }}
-        />
-      )}
     </aside>
   );
 }
