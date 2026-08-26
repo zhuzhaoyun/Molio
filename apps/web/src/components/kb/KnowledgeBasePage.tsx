@@ -19,7 +19,7 @@ import type { KbChatSessionsPanelHandle } from './KbChatSessionsPanel';
 import { OutlinePanel } from './OutlinePanel';
 import { SearchPanel } from './SearchPanel';
 import { VaultManagerModal } from './VaultManager';
-import { PublishForm } from '../resources/PublishForm';
+import { PublishForm, type PublishFormData } from '../resources/PublishForm';
 import { PUBLISH_TAB_ID } from './kb-constants';
 import { ImportModal, CoseInstallPrompt, InputDialog, ConfirmDialog } from './KbModals';
 import { ImportConflictDialog } from './ImportConflictDialog';
@@ -1029,6 +1029,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
   // 非激活仅 CSS 隐藏 + inert，切走再切回不丢已填内容。
   const publishTabOpen = tabs.tabs.some((tb) => tb.id === PUBLISH_TAB_ID);
   const publishActive = tabs.activeTabId === PUBLISH_TAB_ID;
+  const publishTabData = (tabs.tabs.find((tb) => tb.id === PUBLISH_TAB_ID)?.data ?? undefined) as PublishFormData | undefined;
 
   return (
     <div className="kb-shell">
@@ -1159,6 +1160,10 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
                   /* 资源页目录有 60s 缓存，下次进入可见更新，此处不主动刷新 */
                 }}
                 onDirtyChange={(d) => { publishDirtyRef.current = d; }}
+                initialData={publishTabData}
+                onDataChange={(data) => {
+                  tabs.updateTab(PUBLISH_TAB_ID, { data: data as unknown as Record<string, unknown> });
+                }}
               />
             </div>
           )}

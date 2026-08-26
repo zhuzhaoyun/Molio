@@ -27,6 +27,14 @@ import { MARKET_ICONS, type MarketMyListing, type MarketPublishSuggestion } from
 import { useI18n } from '../../i18n';
 import { api } from '../../api/client';
 
+export interface PublishFormData {
+  name: string;
+  summary: string;
+  tags: string[];
+  icon: string;
+  selectedDirs: string[];
+}
+
 export interface PublishFormProps {
   /** modal = overlay 弹窗；page = KB 页内 tab 面板 */
   variant: 'modal' | 'page';
@@ -41,6 +49,10 @@ export interface PublishFormProps {
   onPublished: () => void;
   /** 填写状态变化上报（关 tab 保护用）；modal 宿主可不传 */
   onDirtyChange?: (dirty: boolean) => void;
+  /** 表单数据变化上报（持久化到 tab data，跨路由恢复用）；modal 宿主不传 */
+  onDataChange?: (data: PublishFormData) => void;
+  /** 恢复上次保存的表单数据（从 tab data 读取） */
+  initialData?: PublishFormData;
 }
 
 const MAX_PREVIEW = 5 * 1024 * 1024;
@@ -52,10 +64,10 @@ type GenPhase = 'idle' | 'loading' | 'done' | 'failed';
 export function PublishForm(props: PublishFormProps) {
   const { t } = useI18n();
   const isUpdate = props.updateListingId !== undefined;
-  const [name, setName] = useState('');
-  const [summary, setSummary] = useState('');
-  const [icon, setIcon] = useState<string>(MARKET_ICONS[0]);
-  const [tags, setTags] = useState<string[]>([]);
+  const [name, setName] = useState(props.initialData?.name ?? '');
+  const [summary, setSummary] = useState(props.initialData?.summary ?? '');
+  const [icon, setIcon] = useState<string>(props.initialData?.icon ?? MARKET_ICONS[0]);
+  const [tags, setTags] = useState<string[]>(props.initialData?.tags ?? []);
   const [tagInput, setTagInput] = useState(''); // 自定义标签输入
   const [previews, setPreviews] = useState<File[]>([]);
   const [agreed, setAgreed] = useState(false);
@@ -64,15 +76,25 @@ export function PublishForm(props: PublishFormProps) {
 
   // ── 目录选择：一级目录列表 + 默认选中 wiki 和 .molio ──
   const [topDirs, setTopDirs] = useState<string[]>([]);
-  const [selectedDirs, setSelectedDirs] = useState<string[]>(['wiki', '.molio']);
+  const [selectedDirs, setSelectedDirs] = useState<string[]>(props.initialData?.selectedDirs ?? ['wiki', '.molio']);
 
   useEffect(() => {
     if (!props.vaultId || isUpdate) return;
     api.getTopDirs(props.vaultId).then((dirs) => {
       setTopDirs(dirs);
-      setSelectedDirs(dirs.filter((d) => d === 'wiki' || d === '.molio'));
+      // 如果有初始数据，沿用其选择；否则默认选 wiki 和 .molio
+      if (!props.initialData) {
+        setSelectedDirs(dirs.filter((d) => d === 'wiki' || d === '.molio'));
+      }
     }).catch(() => { /* 获取失败静默，不阻断发布 */ });
   }, [props.vaultId, isUpdate]);
+
+  // ── 表单数据变化 → 持久化到 tab data（跨路由恢复用）──
+  const onDataChangeRef = useRef(props.onDataChange);
+  onDataChangeRef.current = props.onDataChange;
+  useEffect(() => {
+    onDataChangeRef.current?.({ name, summary, tags, icon, selectedDirs });
+  }, [name, summary, tags, icon, selectedDirs]);
 
   // ── AI 起草：用户主动点「AI 一键配置」才生成；已输入的内容优先
   //    （不覆盖非空字段），「重新生成」显式覆盖。任何失败静默回落手填，
