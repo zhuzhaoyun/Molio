@@ -676,26 +676,6 @@
    社区资源市场 — 卡片角标 / 发布向导 / 我的上架（Task 10）
    ═══════════════════════════════════════════════════════════ */
 
-/* ── 列表卡片：社区分享角标与作者行（Task 9 交接） ── */
-
-.resource-badge-community {
-  flex-shrink: 0;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--accent-strong);
-  background-color: var(--accent-tint);
-  border: 1px solid var(--accent-soft);
-  padding: 2px 9px;
-  border-radius: var(--radius-pill);
-  white-space: nowrap;
-}
-
-.resources-card__author {
-  margin: -8px 0 16px;
-  font-size: 12px;
-  color: var(--text-soft);
-}
-
 /* ── 发布向导 ── */
 
 .publish-overlay {
@@ -1358,27 +1338,3 @@
    社区资源市场 — 详情页社区变体（Task 11）
    ═══════════════════════════════════════════════════════════ */
 
-/* ── 详情页：社区上传者责任说明行 + 举报入口 ── */
-
-.resources-community-note {
-  margin: 32px 0 0;
-  padding-top: 14px;
-  border-top: 1px solid var(--border-soft);
-  display: flex;
-  align-items: center;
-  gap: 6px 12px;
-  flex-wrap: wrap;
-  font-size: 12.5px;
-  line-height: 1.7;
-  color: var(--text-soft);
-}
-
-.resources-community-report {
-  color: var(--text-muted);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-.resources-community-report:hover {
-  color: var(--red);
-}

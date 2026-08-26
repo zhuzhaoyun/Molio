@@ -11,13 +11,12 @@ import { useResourcePay } from '../../hooks/useResourcePay';
 import { ResourceCard } from './ResourceCard';
 import { ResourcePayModal } from './ResourcePayModal';
 
-type Filter = 'all' | 'paid' | 'free' | 'community';
-const FILTERS: Filter[] = ['all', 'paid', 'free', 'community'];
+type Filter = 'all' | 'paid' | 'free';
+const FILTERS: Filter[] = ['all', 'paid', 'free'];
 
 function applyFilter(list: CatalogEntry[], f: Filter): CatalogEntry[] {
   if (f === 'paid') return list.filter((e) => e.price > 0);
   if (f === 'free') return list.filter((e) => e.price === 0);
-  if (f === 'community') return list.filter((e) => e.source === 'community');
   return list;
 }
 

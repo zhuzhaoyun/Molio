@@ -26,10 +26,7 @@ import { useAuthStatus } from '../../stores/authStore';
 import { ResourcePayModal } from './ResourcePayModal';
 import { startResourcePurchase } from './resourceAction';
 
-/** 社区资源举报入口：官网企业页联系表单（固定 URL，非 i18n 文案） */
-const COMMUNITY_REPORT_URL = 'https://molio.cn/enterprise.html#contact';
-
-/** ISO 时间 → YYYY-MM-DD（社区条目发布时间展示；解析失败原样返回） */
+/** ISO 时间 → YYYY-MM-DD（发布时间展示；解析失败原样返回） */
 function formatPublishedAt(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
@@ -98,12 +95,9 @@ export function ResourceDetailPage() {
     );
   }
 
-  const community = r.source === 'community';
   const paid = r.price > 0;
-  // 官方：官网相对路径拼绝对 URL；社区：本就是绝对 URL（previewUrl 原样透传）
   const previews = r.preview.map(previewUrl).filter((src) => !failedImgs.has(src));
-  // 概述段落：官方 = overview 段落；社区 = 一句话简介（summary），通用使用说明见下方导入指引区
-  const overviewParas = community ? [r.desc, ...r.overview].filter(Boolean) : r.overview;
+  const overviewParas = r.overview;
 
   const sideNote = !paid
     ? t('resources.sideNote.free')
@@ -140,14 +134,6 @@ export function ResourceDetailPage() {
           <div>
             <div className="resources-detail-title">
               <h1>{r.name}</h1>
-              {community && (
-                <span
-                  className="resource-badge-community"
-                  data-testid={`resource-badge-community-${r.id}`}
-                >
-                  {t('resources.badge.community')}
-                </span>
-              )}
               <span className={`resources-price ${paid ? 'is-paid' : 'is-free'}`}>
                 {paid ? `¥${r.price}` : t('resources.free')}
               </span>
@@ -242,24 +228,7 @@ export function ResourceDetailPage() {
                 <span className="k">{t('resources.info.version')}</span>
                 <span className="v">{r.version}</span>
               </div>
-              {community ? (
-                <>
-                  {market?.fileSize != null && (
-                    <div className="resources-info-row">
-                      <span className="k">{t('resources.info.size')}</span>
-                      <span className="v">{formatFileSize(market.fileSize)}</span>
-                    </div>
-                  )}
-                  {market?.publishedAt != null && (
-                    <div className="resources-info-row">
-                      <span className="k">{t('resources.info.publishedAt')}</span>
-                      <span className="v">{formatPublishedAt(market.publishedAt)}</span>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <>
-                  <div className="resources-info-row">
+              <div className="resources-info-row">
                     <span className="k">{t('resources.info.format')}</span>
                     <span className="v">{t('resources.info.formatValue')}</span>
                   </div>
@@ -267,6 +236,12 @@ export function ResourceDetailPage() {
                     <span className="k">{t('resources.info.compat')}</span>
                     <span className="v">{t('resources.info.compatValue')}</span>
                   </div>
+                  {market?.fileSize != null && (
+                    <div className="resources-info-row">
+                      <span className="k">{t('resources.info.size')}</span>
+                      <span className="v">{formatFileSize(market.fileSize)}</span>
+                    </div>
+                  )}
                   <div className="resources-info-row">
                     <span className="k">{t('resources.info.price')}</span>
                     <span className="v">{paid ? `¥${r.price}` : t('resources.free')}</span>
@@ -275,27 +250,17 @@ export function ResourceDetailPage() {
                     <span className="k">{t('resources.info.file')}</span>
                     <span className="v">{r.file}</span>
                   </div>
-                </>
-              )}
+                  {market?.publishedAt != null && (
+                    <div className="resources-info-row">
+                      <span className="k">{t('resources.info.publishedAt')}</span>
+                      <span className="v">{formatPublishedAt(market.publishedAt)}</span>
+                    </div>
+                  )}
             </div>
           </aside>
         </div>
 
-        {community && (
-          <p className="resources-community-note" data-testid="resources-community-note">
-            <span>{t('resources.community.note')}</span>
-            <a
-              className="resources-community-report"
-              href={COMMUNITY_REPORT_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              data-testid="resources-report-link"
-            >
-              {t('resources.community.report')}
-            </a>
-          </p>
-        )}
-      </div>
+        </div>
 
       {lightbox && (
         <div

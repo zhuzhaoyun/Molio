@@ -169,20 +169,11 @@ test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () 
       'resource-card-',
       '',
     );
-    await expect(
-      page.locator(`[data-testid="resource-badge-community-${listingId}"]`),
-    ).toBeVisible();
-
-    await page.locator('[data-testid="resources-filter-community"]').click();
-    await expect(card).toBeVisible();
 
     // 5) 详情页（社区变体）：预览图渲染 + 下载按钮 + 社区说明/举报入口
     await page.locator(`[data-testid="resource-detail-link-${listingId}"]`).click();
     await expect(page).toHaveURL(new RegExp(`/resources/${listingId}$`));
     await expect(page.locator('.resources-detail-head h1')).toHaveText(resourceName);
-    await expect(
-      page.locator(`[data-testid="resource-badge-community-${listingId}"]`),
-    ).toBeVisible();
 
     const previewImg = page.locator('.resources-preview-grid img').first();
     await previewImg.scrollIntoViewIfNeeded(); // loading=lazy，滚入视口才会加载
@@ -199,9 +190,6 @@ test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () 
     await expect(page.locator(`[data-testid="resource-buy-${listingId}"]`)).toHaveText(
       '下载 .zip',
     );
-    await expect(page.locator('[data-testid="resources-community-note"]')).toBeVisible();
-    await expect(page.locator('[data-testid="resources-report-link"]')).toBeVisible();
-
     // 6) 点下载：新开页导航指向 mock OSS 的签名 GET（zip 键 + Signature）
     const popupPromise = page.context().waitForEvent('page', { timeout: 15_000 });
     const ossReqPromise = page.context().waitForEvent('request', {
