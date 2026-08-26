@@ -135,10 +135,10 @@ test.describe('Chat — streaming details', () => {
     await gotoHome(page);
     await sendMessage(page, '整理一下');
 
-    // 流式中：叙事在工作块内渐进流动，正文尚未出现
-    const processText = page.locator('[data-testid="work-block-process"]');
-    await expect(processText).toBeVisible({ timeout: 10_000 });
-    await expect(processText).toContainText('我先查一下文件。');
+    // 流式中：第一句叙事在工作块内渐进流动，正文尚未出现
+    const processBlocks = page.locator('[data-testid="work-block-process"]');
+    await expect(processBlocks.first()).toBeVisible({ timeout: 10_000 });
+    await expect(processBlocks.first()).toContainText('我先查一下文件。');
     await expect(page.locator('[data-testid="assistant-prose"]')).toHaveCount(0);
     // 执行区有「操作」分区标签（思考/操作分区鲜明）
     await expect(page.locator('[data-testid="work-block-zone-ops-label"]')).toBeVisible({ timeout: 10_000 });
@@ -149,10 +149,19 @@ test.describe('Chat — streaming details', () => {
     await expect(prose).not.toContainText('我先查一下文件。');
     await expect(prose).not.toContainText('再看一下配置。');
 
-    // 展开工作块 → 两句叙事都能回看
+    // 展开工作块 → 叙事穿插在工具行之间（Codex 式交错）：
+    // 「我先查一下文件」(done=0) 在 Read 之前，「再看一下配置」(done=1) 在 Read 与 Grep 之间
     await page.locator('[data-testid="work-timeline-summary"]').click();
-    await expect(processText).toContainText('我先查一下文件。');
-    await expect(processText).toContainText('再看一下配置。');
+    await expect(processBlocks).toHaveCount(2);
+    await expect(processBlocks.nth(0)).toContainText('我先查一下文件。');
+    await expect(processBlocks.nth(1)).toContainText('再看一下配置。');
+    const domOrder = await page.evaluate(() => {
+      const nodes = document.querySelectorAll(
+        '.work-block-detail [data-testid="tool-line"], .work-block-detail [data-testid="work-block-process"]',
+      );
+      return [...nodes].map((n) => n.getAttribute('data-testid'));
+    });
+    expect(domOrder).toEqual(['work-block-process', 'tool-line', 'work-block-process', 'tool-line']);
   });
 
   test('streaming shows individual tool steps; latest reveals output; done groups them', async ({ page }) => {

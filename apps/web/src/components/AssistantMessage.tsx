@@ -2,7 +2,7 @@ import { useMemo, useCallback } from 'react';
 import type { ChatMessage } from '../hooks/useChat';
 import { renderMarkdown, splitContent } from '../utils/markdown';
 import { groupTools, isInteractive } from '../utils/toolGroups';
-import { splitMessageText } from '../utils/messageText';
+import { splitMessageParts } from '../utils/messageText';
 import { CodeBlock } from './CodeBlock';
 import { useI18n } from '../i18n';
 import { useActiveVaultId } from '../stores/vaultStore';
@@ -45,9 +45,11 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
   );
   // 正文只显示最终答案（最后一个工具之后的文本）；执行中的叙事进工作块过程流。
   // 运行中（streaming）拆分为 { process: 全文, answer: '' } —— 全部文本在工作卡片内渐进。
-  const { process, answer } = useMemo(() => splitMessageText(message), [message]);
+  const { processSegs, process, answer } = useMemo(() => splitMessageParts(message), [message]);
   const displayAnswer = hasAskUserQuestion ? suppressAskUserQuestionFallback(answer) : answer;
   const displayProcess = hasAskUserQuestion ? suppressAskUserQuestionFallback(process) : process;
+  // AskUserQuestion 场景：fallback 抑制只对拼接文本有效，分段不传（工作块退回整块叙事）。
+  const displayProcessSegs = hasAskUserQuestion ? undefined : processSegs;
 
   const segments = useMemo(() => splitContent(displayAnswer), [displayAnswer]);
   const toolItems = useMemo(
@@ -106,6 +108,7 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
           message={message}
           toolItems={workItems}
           processText={displayProcess}
+          processSegments={displayProcessSegs}
           isLast={isLast}
           onAnswerToolUse={onAnswerToolUse}
           onSubmitForm={onSubmitForm}
