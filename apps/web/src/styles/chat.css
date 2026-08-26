@@ -429,12 +429,14 @@
 .tool-line-status.done { color: var(--green); }
 .tool-line-status.error { color: var(--red); }
 
-/* Running tool — 当前执行中的工具行高亮 + 脉冲点（一眼看到"进行到哪一步"） */
+/* Running tool — 当前执行中的工具行 = 日志的播放头：左缘 2px 陶土条（inset 零位移，
+   与叙述的打字光标 ▋ 成对：声音的播放头 / 执行的播放头）+ 洗底 + 脉冲点 */
 .tool-line.running {
   background: color-mix(in srgb, var(--accent) 7%, transparent);
   border-radius: 4px;
   margin: 0 -4px;
   padding: 2px 4px;
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 .tool-line.running .tool-line-name { color: var(--accent); }
 .tool-line-status.running::before {
@@ -1640,12 +1642,13 @@
 }
 
 .tool-line-elapsed {
-  margin-left: auto;
   font-size: 11px;
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
   margin-right: 4px;
+  min-width: 42px;
+  text-align: right; /* 账本列：多行耗时数字右对齐成列；auto 留给 status，meta 簇 [✓ ⏱] 成组靠右 */
 }
 
 .tool-line-chevron {

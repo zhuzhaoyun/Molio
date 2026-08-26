@@ -73,14 +73,37 @@ export function WorkBlock({ message, toolItems, processText, processSegments, is
     return bucketSegmentsByDone(processSegments, anchors);
   }, [processSegments, liveTools, fullIndexById]);
 
+  // 完成态条目：组/批内若落了叙事锚点（startFullIdx < done <= endFullIdx），拆成单行 ——
+  // 时间线保真优先于事后归纳（组内无处安放叙述，会把多段挤成组前的一坨）；
+  // 无叙事锚点的连发仍保持分组。无叙事时不拆（纯工具连发维持归纳视图）。
+  const doneItems = useMemo(() => {
+    if (!processSegments || processSegments.length === 0) return toolItems;
+    const out: ToolItem[] = [];
+    for (const item of toolItems) {
+      if (item.kind === 'single') {
+        out.push(item);
+        continue;
+      }
+      const s = fullIndexById.get(item.tools[0]!.id) ?? 0;
+      const e = fullIndexById.get(item.tools[item.tools.length - 1]!.id) ?? s;
+      const hasInnerAnchor = processSegments.some((seg) => seg.done > s && seg.done <= e);
+      if (hasInnerAnchor) {
+        for (const tl of item.tools) out.push({ kind: 'single', tool: tl });
+      } else {
+        out.push(item);
+      }
+    }
+    return out;
+  }, [toolItems, processSegments, fullIndexById]);
+
   const itemNarrative = useMemo(() => {
     if (!processSegments || processSegments.length === 0) return null;
-    const anchors = toolItems.map((item) => {
+    const anchors = doneItems.map((item) => {
       const first = item.kind === 'single' ? item.tool : item.tools[0];
       return (first && fullIndexById.get(first.id)) ?? 0;
     });
     return bucketSegmentsByDone(processSegments, anchors);
-  }, [processSegments, toolItems, fullIndexById]);
+  }, [processSegments, doneItems, fullIndexById]);
 
   // 过程叙事块：live = 正在打字（仅流式视图最后一块；其余静态，避免多光标闪烁）
   const renderProcessBlock = (text: string, live: boolean, key: string) => (
@@ -116,7 +139,7 @@ export function WorkBlock({ message, toolItems, processText, processSegments, is
       />
     );
 
-  const renderTools = () => toolItems.map((item, idx) => renderItem(item, idx));
+  const renderTools = () => doneItems.map((item, idx) => renderItem(item, idx));
 
   // ── 执行区（操作 eyebrow + 工具行 + 过程叙事）：完成态展开详情 ──
   const renderOps = () => {
@@ -127,7 +150,7 @@ export function WorkBlock({ message, toolItems, processText, processSegments, is
           <span>{t('workBlock.opsLabel')}</span>
         </div>
         {nar
-          ? toolItems.map((item, idx) => (
+          ? doneItems.map((item, idx) => (
               <Fragment key={`item-${idx}`}>
                 {nar.buckets[idx].trim() && renderProcessBlock(nar.buckets[idx], false, `nb-${idx}`)}
                 {renderItem(item, idx)}

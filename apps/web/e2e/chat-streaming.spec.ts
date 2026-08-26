@@ -164,9 +164,9 @@ test.describe('Chat — streaming details', () => {
     expect(domOrder).toEqual(['work-block-process', 'tool-line', 'work-block-process', 'tool-line']);
   });
 
-  test('streaming shows individual tool steps; latest reveals output; done groups them', async ({ page }) => {
+  test('streaming shows individual tool steps; latest reveals output; done splits the burst when narration falls inside', async ({ page }) => {
     // 流式 = 逐个工具展示（不分组，Codex 进行时模型）：两次 WebSearch 各占一行带序号，
-    // 最新工具结果到达即展开；完成态收进折叠工作块，展开后同名单工具分组归纳。
+    // 最新工具结果到达即展开；完成态若叙事锚点落在连发组内 → 拆组为单行转录。
     const script = [
       { type: 'status', label: 'running' },
       { type: 'tool_use', id: 'ws1', name: 'WebSearch', input: { query: '今日科技新闻' } },
@@ -196,11 +196,24 @@ test.describe('Chat — streaming details', () => {
     const ws2Panel = page.locator('[data-tool-id="ws2"]').locator('[data-testid="tool-output-panel"]');
     await expect(ws2Panel).toContainText('Kimi 登顶', { timeout: 10_000 });
 
-    // 完成后：分组收进折叠工作块，展开可见「2 次网页搜索」摘要
+    // 完成后：ws1→ws2 之间夹了叙事（「继续整理中…」done=1 落在组内）→ 拆组为单行，
+    // 时间线保真优先于事后归纳（无组内叙事的连发才保持分组归纳）
     const summary = page.locator('[data-testid="work-timeline-summary"]');
     await expect(summary).toBeVisible({ timeout: 10_000 });
     await summary.click();
-    await expect(page.locator('.tool-group-label')).toContainText('2');
+    const doneLines = page.locator('.work-block-detail [data-testid="tool-line"]');
+    await expect(doneLines).toHaveCount(2);
+    const doneNarration = page.locator('.work-block-detail [data-testid="work-block-process"]');
+    await expect(doneNarration).toHaveCount(1);
+    await expect(doneNarration).toContainText('继续整理中…');
+    // DOM 顺序：ws1 → 叙事 → ws2（拆组不丢时间线位置）
+    const order = await page.evaluate(() => {
+      const nodes = document.querySelectorAll(
+        '.work-block-detail [data-testid="tool-line"], .work-block-detail [data-testid="work-block-process"]',
+      );
+      return [...nodes].map((n) => n.getAttribute('data-testid'));
+    });
+    expect(order).toEqual(['tool-line', 'work-block-process', 'tool-line']);
   });
 
   test('slow tool (≥5s auto-expand) collapses once superseded by a newer tool', async ({ page }) => {

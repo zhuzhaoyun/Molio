@@ -60,12 +60,13 @@
 }
 
 /* ── 过程叙事流：执行中 agent 的自言自语 —— 阅读主线（Codex 真实层级：叙述=主角，
-   工具行=暗灰账本）。13px 正文色，比账本行大且深；工具行见 chat.css 的弱化。 ── */
+   工具行=暗灰账本）。13px 正文色，比账本行大且深；工具行见 chat.css 的弱化。
+   上 8 / 下 4 的呼吸：先说话，再挂回执。 ── */
 .work-block-process {
-  margin: 6px 0 2px;
+  margin: 8px 0 4px;
   padding: 0;
   font-size: 13px;
-  line-height: 1.7;
+  line-height: 1.75;
   color: var(--text, #1a1917);
   white-space: pre-wrap;
   word-break: break-word;
@@ -111,16 +112,25 @@
   margin-top: 3px;
   padding: 4px 0 2px;
 }
+/* 两级缩进树：叙述（work-block-process / thinking）flush 左缘 —— 说话的人在页边；
+   工具行整体缩进 —— 回执挂在下面，⎿ 字形与真实缩进呼应。层级靠结构不靠颜色。 */
 .work-block-detail .thinking-block,
+.work-block.running .thinking-block {
+  margin-left: 0;
+  margin-right: 0;
+}
 .work-block-detail .tool-card-wrapper,
 .work-block-detail .tool-group-inline,
 .work-block-detail .tool-batch-group,
-.work-block.running .thinking-block,
 .work-block.running .tool-card-wrapper,
 .work-block.running .tool-group-inline,
 .work-block.running .tool-batch-group {
-  margin-left: 0;
+  margin-left: 14px;
   margin-right: 0;
+}
+/* 展开的输出面板跟随行缩进，不再叠加自身 18px（否则嵌套过深） */
+.work-block .tool-output-panel {
+  margin-left: 4px;
 }
 
 /* ── meta：模型 · token 进出 · 花费 · 耗时（辅助信息） ── */
