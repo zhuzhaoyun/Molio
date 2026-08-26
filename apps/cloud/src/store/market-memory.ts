@@ -21,7 +21,8 @@ export class MemoryMarketStore implements MarketStore {
   async updateListing(
     id: string,
     patch: Partial<Pick<MarketListingRecord,
-      'status' | 'removedReason' | 'fileSize' | 'version' | 'previews' | 'ossKey' | 'publishedAt' | 'pendingUpdate'>>,
+      'status' | 'removedReason' | 'fileSize' | 'version' | 'previews' | 'ossKey' | 'publishedAt' | 'pendingUpdate'
+      | 'priceCents' | 'payUrl'>>,
     now: number,
   ): Promise<MarketListingRecord | null> {
     const r = this.listings.get(id);

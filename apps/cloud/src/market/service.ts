@@ -13,8 +13,8 @@ import type { OssSigner } from './signer.js';
 
 export type MarketErrorCode =
   | 'invalid_metadata' | 'rate_limited' | 'too_many_active' | 'not_owner'
-  | 'listing_not_found' | 'upload_incomplete' | 'size_exceeded';
-export type MarketErrorStatus = 400 | 403 | 404 | 409 | 413 | 429;
+  | 'listing_not_found' | 'upload_incomplete' | 'size_exceeded' | 'payment_required';
+export type MarketErrorStatus = 400 | 402 | 403 | 404 | 409 | 413 | 429;
 
 export class MarketServiceError extends Error {
   constructor(public readonly code: MarketErrorCode, public readonly status: MarketErrorStatus,
@@ -40,6 +40,8 @@ const MAX_PREVIEW_BYTES = 5 * 1024 * 1024;
 const UPLOAD_TTL_SEC = 60 * 60;
 const DOWNLOAD_TTL_SEC = 60 * 60;
 const LIST_LIMIT = 200;
+/** 单条上架设置价格上限（分=100 万元） */
+const MAX_PRICE_CENTS = 100_000_000;
 const STALE_UPLOADING_MS = 7 * 24 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const PREVIEW_EXT_CT: Record<string, string> = {
@@ -108,6 +110,9 @@ export class MarketService {
     const tint = req.tint && (MARKET_TINTS as readonly string[]).includes(req.tint)
       ? req.tint
       : MARKET_TINTS[(await store.countUserCreationsSince(userId, 0)) % MARKET_TINTS.length]!;
+    // §六 定价规则：仅管理员可设 >0；非管理员传值被服务端忽略，强制 0
+    const priceCents = admin && Number.isInteger(req.priceCents) ? Math.max(0, req.priceCents!) : 0;
+    const payUrl = admin ? (req.payUrl?.trim() ?? '') : '';
     const rec: MarketListingRecord = {
       id, userId, source: 'community',
       name: req.name.trim(), icon: req.icon, tint,
@@ -115,7 +120,7 @@ export class MarketService {
       overview: [], highlights: [],
       tags: [...new Set(req.tags.map((t) => t.trim()))].slice(0, MAX_TAGS), // 自定义允许，去重截断
       previews: req.previews.map((p, i) => `next/${id}-p${i + 1}${p.ext}`), // uploading 期存暂存键
-      version: 'v1.0', priceCents: 0, payUrl: '', authorDisplay: null,
+      version: 'v1.0', priceCents, payUrl, authorDisplay: null,
       ossKey: `zips/${id}-vault.zip`, fileSize: null,
       status: 'uploading', removedReason: null, pendingUpdate: null,
       createdAt: this.now, updatedAt: this.now, publishedAt: null,
@@ -133,7 +138,9 @@ export class MarketService {
       req.tags.some((t) => typeof t !== 'string' || cpLen(t.trim()) < 1 || cpLen(t.trim()) > MAX_TAG_CP) ||
       !Array.isArray(req.previews) || req.previews.length < 1 || req.previews.length > MAX_PREVIEWS ||
       req.previews.some((p) => !(p.ext in PREVIEW_EXT_CT) || !(p.size > 0) || p.size > MAX_PREVIEW_BYTES) ||
-      typeof req.vaultSize !== 'number' || !(req.vaultSize > 0) || req.vaultSize > this.maxZipBytes;
+      typeof req.vaultSize !== 'number' || !(req.vaultSize > 0) || req.vaultSize > this.maxZipBytes ||
+      (req.priceCents !== undefined && (!Number.isInteger(req.priceCents) || req.priceCents < 0 || req.priceCents > MAX_PRICE_CENTS)) ||
+      (req.payUrl !== undefined && typeof req.payUrl !== 'string');
     if (bad) throw new MarketServiceError('invalid_metadata', 400);
   }
 
@@ -211,7 +218,7 @@ export class MarketService {
 
   // ── 更新版本（发起）──
 
-  async update(userId: string, listingId: string, input: { previews?: { ext: string; size: number }[] }): Promise<MarketCreateResponse> {
+  async update(userId: string, listingId: string, input: { previews?: { ext: string; size: number }[]; priceCents?: number; payUrl?: string }): Promise<MarketCreateResponse> {
     const rec = await this.mustFind(listingId);
     if (rec.userId !== userId) throw new MarketServiceError('not_owner', 403);
     if (rec.status !== 'active') throw new MarketServiceError('listing_not_found', 404);
@@ -222,7 +229,13 @@ export class MarketService {
     const pending: MarketPendingUpdate = {
       previews: previews.map((p, i) => ({ key: `next/${rec.id}-p${i + 1}${p.ext}` })),
     };
-    await this.deps.store.updateListing(rec.id, { pendingUpdate: pending }, this.now);
+    // §六：仅管理员可调价；非管理员传值被忽略
+    const user = await this.deps.users.findActiveUserById(userId);
+    const admin = user !== null && this.isAdminEmail(user.email);
+    const updates: Partial<Pick<MarketListingRecord, 'pendingUpdate' | 'priceCents' | 'payUrl'>> = { pendingUpdate: pending };
+    if (admin && Number.isInteger(input.priceCents)) updates.priceCents = Math.max(0, input.priceCents as number);
+    if (admin && typeof input.payUrl === 'string') updates.payUrl = input.payUrl.trim();
+    await this.deps.store.updateListing(rec.id, updates, this.now);
     const zip = this.deps.signer.signPut(`next/${rec.id}-vault.zip`, 'application/zip', UPLOAD_TTL_SEC);
     const imgs = pending.previews.map((p) => {
       const ext = p.key.slice(p.key.lastIndexOf('.'));
@@ -240,6 +253,8 @@ export class MarketService {
   async download(_userId: string, listingId: string): Promise<MarketDownloadResponse> {
     const rec = await this.mustFind(listingId);
     if (rec.status !== 'active') throw new MarketServiceError('listing_not_found', 404);
+    // 付费资源不外发免费签名下载（Model A：付费走 payUrl 外链交付，应用内不外泄 zip）
+    if (rec.priceCents > 0) throw new MarketServiceError('payment_required', 402);
     const filename = `${encodeURIComponent(rec.name)}-vault.zip`;
     const t = this.deps.signer.signGet(rec.ossKey, DOWNLOAD_TTL_SEC, `attachment; filename*=UTF-8''${filename}`);
     return { url: t.url, expiresAt: t.expiresAt };

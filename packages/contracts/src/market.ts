@@ -76,6 +76,10 @@ export interface MarketCreateRequest {
   /** 打包后 zip 字节数（声明值，confirm 以 HEAD 实测为准） */
   vaultSize: number;
   previews: { ext: string; size: number }[];
+  /** 价格（分）；仅管理员可设 >0，非管理员服务端强制 0（§六 定价规则） */
+  priceCents?: number;
+  /** 外部支付链接；非空时详情页按钮跳外部（付费资源 Model A：外链交付） */
+  payUrl?: string;
 }
 
 export interface MarketCreateResponse {

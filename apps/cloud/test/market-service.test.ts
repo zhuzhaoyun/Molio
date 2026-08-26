@@ -164,3 +164,49 @@ test('更新版本：zip 覆盖 + v1.1 + 效果图整组替换', async () => {
   assert.equal(after.previews.length, 1);
   assert.match(after.previews[0]!, /-p1\.jpg$/);
 });
+
+test('定价(§六)：管理员可设价，非管理员传值强制 0；付费下载 402 门禁', async () => {
+  const { svc, users, objects } = makeService({ admins: ['admin@x.com'] });
+  // 管理员：priceCents>0 + payUrl 落库
+  const admin = await users.createActiveUser({ id: 'a1', email: 'admin@x.com', nickname: '管', now: 1 });
+  const ac = await svc.create(admin.id, { ...VALID, name: '付费库', priceCents: 1990, payUrl: 'https://pay.example.com/x' });
+  objects.set(ac.uploads[0]!.key, 1); objects.set(ac.uploads[1]!.key, 1);
+  const amy = await svc.confirm(admin.id, ac.listingId);
+  assert.equal(amy.priceCents, 1990);
+  assert.equal(amy.payUrl, 'https://pay.example.com/x');
+  // 付费未购买 → 402 payment_required（不外发免费签名下载，Model A 走 payUrl 外链）
+  await assert.rejects(
+    svc.download(admin.id, ac.listingId),
+    (e: unknown) => (e as MarketServiceError).code === 'payment_required' && (e as MarketServiceError).status === 402,
+  );
+  // 非管理员：priceCents>0 被服务端强制 0、payUrl 忽略
+  const u = await users.createActiveUser({ id: 'u1', email: 'b@x.com', nickname: 'n', now: 1 });
+  const c = await svc.create(u.id, { ...VALID, name: '免费库', priceCents: 5000, payUrl: 'https://pay.example.com/y' });
+  objects.set(c.uploads[0]!.key, 9); objects.set(c.uploads[1]!.key, 1);
+  const my = await svc.confirm(u.id, c.listingId);
+  assert.equal(my.priceCents, 0);
+  assert.equal(my.payUrl, '');
+  // 免费可正常签下载
+  const dl = await svc.download(u.id, c.listingId);
+  assert.match(dl.url, /response-content-disposition=/);
+});
+
+test('更新版本调价：管理员可改，非管理员传值被忽略', async () => {
+  const { svc, users, objects } = makeService({ admins: ['admin@x.com'] });
+  const admin = await users.createActiveUser({ id: 'a1', email: 'admin@x.com', nickname: '管', now: 1 });
+  const c = await svc.create(admin.id, VALID);
+  objects.set(c.uploads[0]!.key, 1); objects.set(c.uploads[1]!.key, 1);
+  await svc.confirm(admin.id, c.listingId);
+  // 管理员调价：9900 分 + 外链
+  const up = await svc.update(admin.id, c.listingId, { previews: [], priceCents: 9900, payUrl: 'https://pay.example.com/z' });
+  objects.set(up.uploads[0]!.key, 2);
+  await svc.confirm(admin.id, c.listingId);
+  assert.equal((await svc.get(c.listingId)).priceCents, 9900);
+  // 非管理员 owner：调价被忽略（保持 0）
+  const u = await users.createActiveUser({ id: 'u1', email: 'b@x.com', nickname: 'n', now: 1 });
+  const c2 = await svc.create(u.id, VALID);
+  objects.set(c2.uploads[0]!.key, 1); objects.set(c2.uploads[1]!.key, 1);
+  await svc.confirm(u.id, c2.listingId);
+  await svc.update(u.id, c2.listingId, { priceCents: 5000, payUrl: 'https://x.com' });
+  assert.equal((await svc.get(c2.listingId)).priceCents, 0);
+});

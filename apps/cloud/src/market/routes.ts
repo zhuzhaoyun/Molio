@@ -69,7 +69,7 @@ export function marketRoutes(deps: MarketRoutesDeps, config: CloudConfig, now: (
     const denied = guardBody(c); if (denied) return denied;
     const p = bearer(c);
     if (!p) return c.json({ error: 'invalid_token' }, 401);
-    const body = await c.req.json().catch(() => null) as { previews?: { ext: string; size: number }[] } | null;
+    const body = await c.req.json().catch(() => null) as { previews?: { ext: string; size: number }[]; priceCents?: number; payUrl?: string } | null;
     try { return c.json(await service.update(p.sub, c.req.param('id'), body ?? {}), 200); } catch (e) { return handle(c, e); }
   });
 

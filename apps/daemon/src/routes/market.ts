@@ -22,6 +22,12 @@ export const MAX_ADMIN_DIRECT_ZIP_BYTES = 70 * 1024 * 1024;
 /** publish-suggest 的 JSON body 闸门（仅 vaultId 字段，64KB 已宽裕） */
 const MAX_SUGGEST_BODY_BYTES = 64 * 1024;
 
+/** 表单 price（元字符串）→ 分；空/非法/≤0 → undefined（免费）。云端对非管理员再强制 0。 */
+function parsePriceCents(raw: unknown): number | undefined {
+  const v = Number(typeof raw === 'string' && raw.trim() !== '' ? raw : NaN);
+  return Number.isFinite(v) && v > 0 ? Math.round(v * 100) : undefined;
+}
+
 export interface MarketRoutesOptions {
   /** 测试注入：覆盖云端请求与 OSS 直传的 fetch */
   fetchImpl?: typeof fetch;
@@ -42,7 +48,7 @@ export function marketRoutes(db: Database.Database, auth: AuthClient, opts: Mark
   const cloudError = (c: Context, e: unknown): Response => {
     if (e instanceof AuthCloudError) {
       if (e.status === 0) return c.json({ error: 'cloud_unreachable' }, 502);
-      if (e.status === 400 || e.status === 401 || e.status === 403 || e.status === 404 || e.status === 409 || e.status === 413 || e.status === 429) {
+      if (e.status === 400 || e.status === 401 || e.status === 402 || e.status === 403 || e.status === 404 || e.status === 409 || e.status === 413 || e.status === 429) {
         return c.json({ error: e.code, ...e.extra }, e.status);
       }
       return c.json({ error: e.code }, 502);
@@ -138,6 +144,7 @@ export function marketRoutes(db: Database.Database, auth: AuthClient, opts: Mark
       const created = await client.create({
         name: str('name'), summary: str('summary'), icon: str('icon'), tags,
         vaultSize: pack.size, previews: previews.map((p) => ({ ext: p.ext, size: p.size })),
+        priceCents: parsePriceCents(parsed['price']), payUrl: str('payUrl') || undefined,
       });
       listingId = created.listingId;
       await putDirect(created.uploads[0]!, new Uint8Array(fs.readFileSync(pack.zipPath)));
@@ -193,7 +200,11 @@ export function marketRoutes(db: Database.Database, auth: AuthClient, opts: Mark
       try { include = JSON.parse(parsed && typeof parsed['include'] === 'string' ? parsed['include'] : '[]') as string[]; } catch { /* ignore */ }
       pack = await packVaultToZip(vaultPath, { maxBytes: MAX_ZIP_BYTES, include: include?.length ? include : undefined });
       const previews = previewFiles.length > 0 ? await checkPreviews(previewFiles) : []; // 不传 = 沿用旧图
-      const upd = await client.update(id, previews.map((p) => ({ ext: p.ext, size: p.size })));
+      const upd = await client.update(
+        id,
+        previews.map((p) => ({ ext: p.ext, size: p.size })),
+        { priceCents: parsePriceCents(parsed?.['price']), payUrl: (typeof parsed?.['payUrl'] === 'string' && parsed['payUrl']) ? parsed['payUrl'] : undefined },
+      );
       await putDirect(upd.uploads[0]!, new Uint8Array(fs.readFileSync(pack.zipPath)));
       for (let i = 0; i < previews.length; i++) await putDirect(upd.uploads[i + 1]!, previews[i]!.buf);
       const listing = await client.confirm(id);

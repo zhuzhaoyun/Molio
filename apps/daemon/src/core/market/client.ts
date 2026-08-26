@@ -15,6 +15,10 @@ export interface MarketCreateInput {
   tags: string[];
   vaultSize: number;
   previews: { ext: string; size: number }[];
+  /** 价格（分）；仅管理员可设 >0，非管理员云端强制 0 */
+  priceCents?: number;
+  /** 外部支付链接（付费资源 Model A 走外链交付） */
+  payUrl?: string;
 }
 
 /**
@@ -96,9 +100,9 @@ export class MarketClient {
     return (await this.req('POST', `/listings/${id}/confirm`, { auth: true })).json();
   }
 
-  async update(id: string, previews: { ext: string; size: number }[]): Promise<MarketCreateResponse> {
+  async update(id: string, previews: { ext: string; size: number }[], extra?: { priceCents?: number; payUrl?: string }): Promise<MarketCreateResponse> {
     return (await (
-      await this.req('POST', `/listings/${id}/update`, { auth: true, body: { previews } })
+      await this.req('POST', `/listings/${id}/update`, { auth: true, body: { previews, ...extra } })
     ).json()) as MarketCreateResponse;
   }
 

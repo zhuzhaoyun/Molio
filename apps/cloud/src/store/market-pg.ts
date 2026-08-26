@@ -59,7 +59,8 @@ export class PgMarketStore implements MarketStore {
   async updateListing(
     id: string,
     patch: Partial<Pick<MarketListingRecord,
-      'status' | 'removedReason' | 'fileSize' | 'version' | 'previews' | 'ossKey' | 'publishedAt' | 'pendingUpdate'>>,
+      'status' | 'removedReason' | 'fileSize' | 'version' | 'previews' | 'ossKey' | 'publishedAt' | 'pendingUpdate'
+      | 'priceCents' | 'payUrl'>>,
     now: number,
   ): Promise<MarketListingRecord | null> {
     // 动态 SET 拼接：字段白名单固定，参数化防注入
@@ -70,6 +71,8 @@ export class PgMarketStore implements MarketStore {
     if (patch.removedReason !== undefined) add('removed_reason', patch.removedReason);
     if (patch.fileSize !== undefined) add('file_size', patch.fileSize);
     if (patch.version !== undefined) add('version', patch.version);
+    if (patch.priceCents !== undefined) add('price_cents', patch.priceCents);
+    if (patch.payUrl !== undefined) add('pay_url', patch.payUrl);
     if (patch.previews !== undefined) add('previews', JSON.stringify(patch.previews));
     if (patch.ossKey !== undefined) add('oss_key', patch.ossKey);
     if (patch.pendingUpdate !== undefined) {
