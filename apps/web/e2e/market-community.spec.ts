@@ -10,8 +10,8 @@ import { gotoHome, clickNav } from './helpers/navigation';
  *
  * E2E：社区发布 → 展示 → 下载闭环（mock OSS）。
  *
- * 用例 1（登录闭环）：devCode 登录 → 选中含 md 的知识库 → 仓库管理器「发布到资源库」
- * → 向导填名称/简介、上传 1×1 PNG 效果图、勾公开声明 → 发布成功；
+ * 用例 1（登录闭环）：devCode 登录 → ?vault= 直达含 md 的知识库 → 面板「发布到资源库」
+ * 打开页内发布 tab → 填名称/简介、上传 1×1 PNG 效果图、勾公开声明 → 发布成功；
  * /resources 出现新卡片带「社区分享」角标，社区筛选下仍可见；详情页预览图真实渲染
  * （src 指向 mock OSS :3199 且 naturalWidth>0 —— 证明 confirm 的 copyObject 把字节
  * 复制到位而非空字节）、「下载 .zip」按钮在、社区说明与举报入口在；点下载新开页
@@ -19,6 +19,10 @@ import { gotoHome, clickNav } from './helpers/navigation';
  *
  * 用例 2（未登录门槛）：资源页可浏览（官方货架可见）；对免费条目（=用例 1 发布的
  * 社区条目，官方目录全付费）点下载 → 账号面板登录视图出现，未产生任何新页/下载跳转。
+ *
+ * 用例 3（AI 手动触发）：发布 tab 打开即空表单——无 loading、无 publish-suggest
+ * 请求；点「AI 一键配置」才触发（route mock 秒回，避开真实 120s agent spawn），
+ * 回填字段并出现「重新生成」。
  *
  * 依赖：playwright.config webServer 起 fixtures/mock-oss.mjs（:3199）并给 cloud 注入
  * MOLIO_OSS_AK/SK/BUCKET + MOLIO_MARKET_OSS_ENDPOINT，签名 URL 与服务端 copyObject
@@ -128,17 +132,14 @@ test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () 
     await gotoHome(page);
     await loginViaDevCode(page, `molio-e2e-mkt-${Date.now()}@example.com`);
 
-    // 2) 进知识库，打开仓库管理器，选中 beforeAll 建的含 md 库的发布入口
-    //    （reload 让 vault store 重新拉取 daemon 侧新建的库，同 publish-flow 模式）
-    await page.reload({ waitUntil: 'networkidle' });
-    await clickNav(page, 'knowledge');
+    // 2) ?vault= 直达 beforeAll 建的含 md 库的 KB 页（per-window source of truth）
+    await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
-    await page.locator('.kb-vault-bar').first().click({ timeout: 5_000 });
 
-    // 3) 「发布到资源库」→ 发布向导：名称/简介 + 效果图 + 声明 → 提交 → 成功态
-    const vaultItem = page.locator('.vm-vault-item').filter({ hasText: vaultName });
-    await vaultItem.locator('.vm-vault-publish').click({ timeout: 5_000 });
-    await expect(page.locator('.publish-overlay')).toBeVisible({ timeout: 5_000 });
+    // 3) 面板「发布到资源库」→ 页内发布 tab：名称/简介 + 效果图 + 声明 → 提交 → 成功态
+    await page.locator('[data-testid="kb-btn-publish-vault"]').click({ timeout: 5_000 });
+    await expect(page.locator('[data-testid="kb-publish-pane"]')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid="kb-wtab-publish"]')).toHaveClass(/is-active/);
 
     const fields = page.locator('.publish-form .publish-field input'); // [0]=名称 [1]=简介
     await fields.nth(0).fill(resourceName);
@@ -150,15 +151,12 @@ test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () 
     });
     await expect(page.locator('.publish-preview-item')).toHaveCount(1);
     await page.locator('.publish-agreement input[type="checkbox"]').check();
-    await page.locator('.publish-footer .kb-btn-primary').click();
+    await page.locator('[data-testid="publish-submit-btn"]').click();
     // 成功态（文案 publish.done）；打包 + 直传 + confirm 全在本地，秒级但留足余量
     await expect(page.locator('.publish-done')).toContainText('发布成功', { timeout: 30_000 });
-    await page.locator('.publish-footer .kb-btn-primary').click(); // done 态主按钮 = 关闭
-    await expect(page.locator('.publish-overlay')).not.toBeVisible();
-
-    // 仓库管理器是全屏模态（.vm-overlay），点其空白处关闭，露出 NavRail
-    await page.locator('.vm-overlay').click({ position: { x: 5, y: 5 } });
-    await expect(page.locator('.vm-overlay')).not.toBeVisible();
+    await page.locator('[data-testid="publish-close-btn"]').click(); // done 态主按钮 = 关闭（关 tab）
+    await expect(page.locator('[data-testid="kb-publish-pane"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="kb-wtab-publish"]')).toHaveCount(0);
 
     // 4) /resources：新卡片出现且带「社区分享」角标；社区筛选下仍可见
     await clickNav(page, 'resources');
@@ -255,5 +253,49 @@ test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () 
     await page.waitForTimeout(500); // 给潜在的（不应发生的）跳转留出暴露窗口
     expect(unexpectedPopup).toBe(false);
     expect(page.url()).toContain('/resources');
+  });
+
+  test('发布 tab：打开不自动生成，AI 配置仅用户主动点击触发（route mock）', async ({ page }) => {
+    test.setTimeout(60_000);
+
+    // 用例 2 会登出共享登录态——这里自行登录
+    await gotoHome(page);
+    await loginViaDevCode(page, `molio-e2e-ai-${Date.now()}@example.com`);
+
+    await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await page.locator('[data-testid="kb-btn-publish-vault"]').click();
+    await expect(page.locator('[data-testid="kb-publish-pane"]')).toBeVisible();
+
+    // 行为 1：打开即空表单——无 loading 态、无 publish-suggest 请求
+    await expect(page.locator('[data-testid="publish-ai-btn"]')).toBeEnabled();
+    await expect(page.locator('.publish-ai-spinner')).toHaveCount(0);
+    let suggested = false;
+    page.on('request', (r) => {
+      if (r.url().includes('/api/market/publish-suggest')) suggested = true;
+    });
+    await page.waitForTimeout(800);
+    expect(suggested).toBe(false);
+
+    // 行为 2：主动点击才触发（route mock 秒回，避开真实 120s agent spawn）
+    await page.route('**/api/market/publish-suggest', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          name: 'AI模拟名称',
+          summary: 'AI模拟简介',
+          tags: ['模拟标签'],
+          icon: '📚',
+          agentId: 'mock',
+        }),
+      }),
+    );
+    await page.locator('[data-testid="publish-ai-btn"]').click();
+    await expect(page.locator('.publish-form .publish-field input').first()).toHaveValue('AI模拟名称', {
+      timeout: 5_000,
+    });
+    await expect(page.locator('[data-testid="publish-ai-regen"]')).toBeVisible();
+    // 不提交，到此为止（关页面即放弃，不做关 tab 断言以保持用例聚焦）
   });
 });

@@ -143,6 +143,7 @@
     },
     "market": {
       "paths": [
+        "apps/web/src/components/resources/PublishForm.*",
         "apps/web/src/components/resources/PublishWizard.*",
         "apps/web/src/components/resources/MyListingsPanel.*",
         "apps/web/src/components/resources/resourceAction.*",

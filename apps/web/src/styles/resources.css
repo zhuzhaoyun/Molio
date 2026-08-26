@@ -696,40 +696,6 @@
   color: var(--text-soft);
 }
 
-/* ── 知识库列表：发布到资源库按钮 ──
-   常驻可见（发布是核心入口，需可发现；区别于删除按钮的悬停才现——
-   破坏性操作藏起来合理，发布操作应主动暴露） */
-
-.vm-vault-publish {
-  position: absolute;
-  right: 34px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: none;
-  background: transparent;
-  border-radius: 4px;
-  color: var(--text-muted);
-  font-size: 12px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0.6;
-  transition: opacity 120ms ease;
-}
-
-.vm-vault-item:hover .vm-vault-publish {
-  opacity: 1;
-}
-
-.vm-vault-publish:hover {
-  background: var(--bg-muted);
-  color: var(--text);
-}
-
 /* ── 发布向导 ── */
 
 .publish-overlay {
@@ -749,10 +715,85 @@
   max-width: 100%;
 }
 
+/* ── 页内发布面板（KB 页 tab pane，与弹窗壳共用表单主体样式）── */
+
+.kb-publish-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background-color: var(--bg-panel);
+}
+
+.kb-publish-pane-head {
+  flex: none;
+  padding: 18px 24px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.kb-publish-pane-head h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+/* 内容区限宽居中：宽屏下表单不拉满 */
+.kb-publish-pane-body {
+  width: 100%;
+  max-width: 720px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
 .publish-vault {
   margin: 0 0 14px;
   font-size: 12px;
   color: var(--text-soft);
+}
+/* AI 起草提示行（加载态小 spinner / 完成态提示 + 重新生成） */
+.publish-ai {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: -6px 0 14px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.publish-ai-spinner {
+  width: 12px;
+  height: 12px;
+  border-width: 2px;
+}
+
+.publish-ai-regen {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.publish-ai-regen:hover {
+  opacity: 0.8;
+}
+
+/* AI 一键配置（用户主动触发）：主按钮 + 提示；失败态追加重试提示 */
+.publish-ai .publish-ai-btn {
+  flex: none;
+}
+
+.publish-ai-hint {
+  color: var(--text-muted);
+}
+
+.publish-ai-failed {
+  color: var(--red);
 }
 
 .publish-field {
@@ -787,33 +828,58 @@
   box-shadow: 0 0 0 3px var(--selected-soft);
 }
 
-.publish-icons {
-  display: grid;
-  grid-template-columns: repeat(8, 1fr);
+.publish-field > textarea {
+  width: 100%;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  resize: vertical;
+  min-height: 72px;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.publish-field > textarea:focus {
+  border-color: var(--selected);
+  box-shadow: 0 0 0 3px var(--selected-soft);
+}
+
+/* 目录选择树（一级目录 checkbox） */
+.publish-dir-tree {
+  display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
-.publish-icons button {
-  appearance: none;
+.publish-dir-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
   border: 1px solid var(--border);
-  background: var(--bg);
-  border-radius: var(--radius-sm);
-  font-size: 17px;
-  line-height: 1;
-  padding: 7px 0;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  color: var(--text);
   cursor: pointer;
-  transition: border-color 120ms ease, background-color 120ms ease;
+  transition: border-color 120ms ease, background 120ms ease;
+  user-select: none;
 }
 
-.publish-icons button:hover {
+.publish-dir-item:hover {
   border-color: var(--border-strong);
   background: var(--bg-subtle);
 }
 
-.publish-icons button.is-active {
-  border-color: var(--accent);
-  background: var(--accent-tint);
-  box-shadow: 0 0 0 1px var(--accent);
+.publish-dir-item input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
 }
 
 .publish-tags {
@@ -883,6 +949,25 @@
   font-size: 12px;
   font-weight: 600;
   color: var(--text);
+}
+
+/* 预览图工具箱：生成封面 / 截取图谱 */
+.publish-preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.publish-tool-btn {
+  font-size: 12px;
+  padding: 4px 12px;
+}
+
+.publish-tool-error {
+  font-size: 12px;
+  color: var(--red);
 }
 
 .publish-preview-grid {

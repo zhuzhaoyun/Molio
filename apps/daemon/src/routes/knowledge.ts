@@ -4,7 +4,7 @@
 
 import { Hono } from 'hono';
 import { stream } from 'hono/streaming';
-import { createReadStream, existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
+import { createReadStream, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type Database from 'better-sqlite3';
 import type { CreateVaultRequest } from '@molio/contracts';
@@ -143,6 +143,29 @@ export function knowledgeRoutes(
       // Annotate with ingest status (only if the vault has a .git repo).
       await annotateTreeStatus(vault.path, tree);
       return c.json({ tree });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to scan vault';
+      return c.json({ error: { code: 'INTERNAL', message } }, 500);
+    }
+  });
+
+  // GET /api/knowledge/vaults/:id/top-dirs — 一级目录列表（发布页目录选择用）
+  // 排除隐藏目录（. 开头），但 .molio 显式放行（默认选中发布）。
+  app.get('/vaults/:id/top-dirs', (c) => {
+    const vault = getVault(db, c.req.param('id'));
+    if (!vault) {
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
+    }
+    try {
+      const dirs: string[] = [];
+      for (const entry of readdirSync(vault.path, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        // 隐藏目录排除，但 .molio 显式放行
+        if (entry.name.startsWith('.') && entry.name !== '.molio') continue;
+        dirs.push(entry.name);
+      }
+      dirs.sort();
+      return c.json({ dirs });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to scan vault';
       return c.json({ error: { code: 'INTERNAL', message } }, 500);

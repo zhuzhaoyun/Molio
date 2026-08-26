@@ -19,26 +19,27 @@ function isExcluded(name: string): boolean {
   return name.startsWith('.') || JUNK_FILES.has(name.toLowerCase());
 }
 
-function collect(dir: string, prefix: string, out: Record<string, string>): void {
+function collect(dir: string, prefix: string, out: Record<string, string>, include?: string[]): void {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     if (isExcluded(entry.name)) continue;
     const abs = path.join(dir, entry.name);
     const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
     if (entry.isDirectory()) {
-      collect(abs, rel, out);
+      // include 过滤：只收集指定路径下的内容（用于按目录选择打包）
+      if (include && !include.some((inc) => rel === inc || rel.startsWith(`${inc}/`))) continue;
+      collect(abs, rel, out, include);
     } else if (entry.isFile()) {
-      // 同步读取：50MB 上限内内存可控（设计 §十五风险 2）；读取失败直接抛出（阻断）
       out[rel] = abs;
     }
   }
 }
 
-export async function packVaultToZip(vaultPath: string, opts: { maxBytes: number }): Promise<PackResult> {
+export async function packVaultToZip(vaultPath: string, opts: { maxBytes: number; include?: string[] }): Promise<PackResult> {
   if (!fs.existsSync(vaultPath) || !fs.statSync(vaultPath).isDirectory()) {
     throw new Error(`vault_not_found: ${vaultPath}`);
   }
   const files: Record<string, string> = {};
-  collect(vaultPath, '', files);
+  collect(vaultPath, '', files, opts.include);
 
   const zippable: Zippable = {};
   for (const [rel, abs] of Object.entries(files)) {

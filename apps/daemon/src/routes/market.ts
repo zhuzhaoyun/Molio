@@ -8,6 +8,8 @@ import { AuthCloudError, type AuthClient } from '../core/auth/auth-client.js';
 import { MarketClient, putToSignedUrl } from '../core/market/client.js';
 import { packVaultToZip } from '../core/market/packager.js';
 import { denyCrossOrigin } from './auth.js';
+import type { MarketPublishSuggestion } from '@molio/contracts';
+import { suggestPublishMeta } from '../core/market/suggest.js';
 
 /** multipart body 闸门（效果图 1-4×≤5MB + 表单字段，32MB 已宽裕） */
 const MAX_MULTIPART_BYTES = 32 * 1024 * 1024;
@@ -17,17 +19,22 @@ const MAX_PREVIEW_BYTES = 5 * 1024 * 1024;
 const MAX_ZIP_BYTES = 50 * 1024 * 1024;
 /** Plan 2 预留：管理员直传 zip 的 body 闸门（当前未启用） */
 export const MAX_ADMIN_DIRECT_ZIP_BYTES = 70 * 1024 * 1024;
+/** publish-suggest 的 JSON body 闸门（仅 vaultId 字段，64KB 已宽裕） */
+const MAX_SUGGEST_BODY_BYTES = 64 * 1024;
 
 export interface MarketRoutesOptions {
   /** 测试注入：覆盖云端请求与 OSS 直传的 fetch */
   fetchImpl?: typeof fetch;
   baseUrl?: string;
+  /** 测试注入：覆盖发布元数据起草（默认走真实一次性 agent 调用） */
+  suggestImpl?: (vaultPath: string) => Promise<MarketPublishSuggestion>;
 }
 
 export function marketRoutes(db: Database.Database, auth: AuthClient, opts: MarketRoutesOptions = {}): Hono {
   const client = new MarketClient(auth, opts.baseUrl, opts.fetchImpl);
   const putDirect = (t: { url: string; contentType: string }, b: Uint8Array) => putToSignedUrl(t, b, opts.fetchImpl);
   const app = new Hono();
+  const suggestFn = opts.suggestImpl ?? ((vaultPath: string) => suggestPublishMeta(vaultPath));
 
   // 云端错误归一（同 routes/auth.ts 纪律）：
   // 断网/无会话（status=0）→ 502 cloud_unreachable；白名单 4xx 原样透传；其余 → 502。
@@ -123,7 +130,9 @@ export function marketRoutes(db: Database.Database, auth: AuthClient, opts: Mark
     let pack: Awaited<ReturnType<typeof packVaultToZip>> | null = null;
     let listingId: string | null = null;
     try {
-      pack = await packVaultToZip(vaultPath, { maxBytes: MAX_ZIP_BYTES });
+      let include: string[] | undefined;
+      try { include = JSON.parse(str('include') || '[]') as string[]; } catch { /* 非法 include 按空 */ }
+      pack = await packVaultToZip(vaultPath, { maxBytes: MAX_ZIP_BYTES, include: include?.length ? include : undefined });
       let tags: string[] = [];
       try { tags = JSON.parse(str('tags') || '[]') as string[]; } catch { /* 非法 tags 按空，云端再兜底 */ }
       const created = await client.create({
@@ -145,6 +154,25 @@ export function marketRoutes(db: Database.Database, auth: AuthClient, opts: Mark
     }
   });
 
+  // 发布元数据起草（AI 一次性生成）：JSON {vaultId} → MarketPublishSuggestion。
+  // 纯 daemon 本地 agent 调用，不走云端、不要求登录会话；一切失败都归一为错误码，
+  // 前端静默回落手填，绝不阻断发布主流程。
+  app.post('/publish-suggest', async (c) => {
+    const denied = denyCrossOrigin(c) ?? denyOversized(c, MAX_SUGGEST_BODY_BYTES);
+    if (denied) return denied;
+    const body = await c.req.json().catch(() => null) as { vaultId?: unknown } | null;
+    const vaultId = body && typeof body['vaultId'] === 'string' ? body['vaultId'] : '';
+    const vaultPath = vaultId ? vaultPathOf(vaultId) : null;
+    if (!vaultPath) return c.json({ error: 'vault_not_found' }, 400);
+    try {
+      return c.json(await suggestFn(vaultPath));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'suggest_failed';
+      if (msg.startsWith('suggest_unavailable')) return c.json({ error: 'suggest_unavailable' }, 503);
+      if (msg.startsWith('suggest_timeout')) return c.json({ error: 'suggest_timeout' }, 504);
+      return c.json({ error: 'suggest_failed' }, 502);
+    }
+  });
   // 更新：vaultId 缺省回退 market_local 记录；不传效果图 = 沿用旧图。
   app.post('/listings/:id/update', async (c) => {
     const denied = denyCrossOrigin(c) ?? denyOversized(c, MAX_MULTIPART_BYTES);
@@ -160,7 +188,9 @@ export function marketRoutes(db: Database.Database, auth: AuthClient, opts: Mark
 
     let pack: Awaited<ReturnType<typeof packVaultToZip>> | null = null;
     try {
-      pack = await packVaultToZip(vaultPath, { maxBytes: MAX_ZIP_BYTES });
+      let include: string[] | undefined;
+      try { include = JSON.parse(parsed && typeof parsed['include'] === 'string' ? parsed['include'] : '[]') as string[]; } catch { /* ignore */ }
+      pack = await packVaultToZip(vaultPath, { maxBytes: MAX_ZIP_BYTES, include: include?.length ? include : undefined });
       const previews = previewFiles.length > 0 ? await checkPreviews(previewFiles) : []; // 不传 = 沿用旧图
       const upd = await client.update(id, previews.map((p) => ({ ext: p.ext, size: p.size })));
       await putDirect(upd.uploads[0]!, new Uint8Array(fs.readFileSync(pack.zipPath)));
