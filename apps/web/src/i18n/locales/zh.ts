@@ -101,6 +101,7 @@ const zh: Record<string, string> = {
   'output.title': '本会话产出',
   'output.stats': '写入 {writes} · {turns} 轮',
   'output.writesLabel': '写入',
+  'output.locate': '在对话中定位这一步',
   'output.empty': '本会话还没有产出',
   'output.toggle': '产出面板',
   'output.previewBack': '返回',

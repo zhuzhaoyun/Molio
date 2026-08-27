@@ -1658,6 +1658,22 @@
   transform: translateY(0.2em); /* ▸ dingbat 字形偏上，与打勾同理下移对齐 */
 }
 
+/* 溯源定位闪烁：产出面板「定位」→ 目标工具行/组短促 terracotta 洗底提示（1.6s 衰减） */
+.tool-card-wrapper.evidence-flash,
+.tool-group-inline.evidence-flash,
+.tool-batch-group.evidence-flash {
+  animation: evidence-flash 1.6s ease-out;
+}
+@keyframes evidence-flash {
+  0% { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+  100% { background: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tool-card-wrapper.evidence-flash,
+  .tool-group-inline.evidence-flash,
+  .tool-batch-group.evidence-flash { animation: none; }
+}
+
 /* ─── Tool output panel ─── */
 .tool-output-panel {
   margin: 4px 0 4px 18px;

@@ -110,6 +110,8 @@ export interface WriteRef {
   path: string;
   label: string;
   toolName: string;
+  /** 产出溯源：产生该写入的工具事件 id（会话内定位回跳用） */
+  toolId: string;
 }
 
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'EditFile', 'MultiEdit', 'Append', 'AppendFile']);
@@ -146,6 +148,7 @@ export function extractWrites(tools: ToolEvent[]): WriteRef[] {
       path,
       label: path.split(/[\\/]/).pop() ?? path,
       toolName: t.name,
+      toolId: t.id,
     });
   }
   return out;

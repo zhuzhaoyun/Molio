@@ -2,7 +2,7 @@
 // 统一「工作块」：把 工作时间线 + 思考过程 + 工具卡 收进最后一条回复的一张可折叠卡片。
 // 运行中 = 当前动作 + 静态底条 + 思考 + 工具行 + meta（模型·时间）；完成后 = 折叠成摘要头 + meta，
 // 展开可看思考与工具行。旧的步骤列表（work-timeline-step）已删除 —— 工具行本身就地渲染，杜绝与时间线容余。
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChatMessage } from '../hooks/useChat';
 import { deriveStepsForMessage } from '../utils/workSteps';
 import { bucketSegmentsByDone, type MessageSegment } from '../utils/messageText';
@@ -32,6 +32,9 @@ export function WorkBlock({ message, toolItems, processText, processSegments, is
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const [now, setNow] = useState(Date.now());
+  const rootRef = useRef<HTMLDivElement>(null);
+  // 溯源回跳（产出面板「定位」等外部入口）：目标工具先记录，展开完成后定位。
+  const pendingEvidenceRef = useRef<string | null>(null);
 
   const isRunning = !!message.streaming;
 
@@ -47,6 +50,45 @@ export function WorkBlock({ message, toolItems, processText, processSegments, is
     const timer = setInterval(() => setNow(Date.now()), 200);
     return () => clearInterval(timer);
   }, [isRunning]);
+
+  // ── 溯源回跳：外部（产出面板定位等）派发 molio:evidence-target {toolId, messageId}
+  //    → 展开本消息工作块 → 定位到目标工具行并闪烁。作用域守卫：messageId 必须是
+  //    本消息（多 WorkBlock 并存时其余静默忽略，防跨轮误滚）。 ──
+  const locateTool = (toolId: string) => {
+    const el = rootRef.current?.querySelector(`[data-tool-id="${CSS.escape(toolId)}"]`);
+    if (!el) return false;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.classList.remove('evidence-flash');
+    void (el as HTMLElement).offsetWidth; // 重启 animation
+    el.classList.add('evidence-flash');
+    setTimeout(() => el.classList.remove('evidence-flash'), 1800);
+    return true;
+  };
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ toolId: string; messageId: string }>).detail;
+      if (!detail?.toolId || detail.messageId !== message.id) return;
+      if (expanded) { locateTool(detail.toolId); return; }
+      pendingEvidenceRef.current = detail.toolId;
+      setExpanded(true);
+    };
+    window.addEventListener('molio:evidence-target', handler);
+    return () => window.removeEventListener('molio:evidence-target', handler);
+  }, [expanded, message.id]);
+  // 展开后兑现待定位目标：直接定位失败（工具在折叠的 BatchGroup 内）→ 重派事件
+  // 让组的监听器展开自己（BatchGroup 自带 handler），其滚动逻辑接管。
+  useEffect(() => {
+    if (!expanded || !pendingEvidenceRef.current) return;
+    const toolId = pendingEvidenceRef.current;
+    pendingEvidenceRef.current = null;
+    requestAnimationFrame(() => {
+      if (!locateTool(toolId)) {
+        window.dispatchEvent(new CustomEvent('molio:evidence-target', {
+          detail: { toolId, messageId: message.id },
+        }));
+      }
+    });
+  }, [expanded, message.id]);
 
   const steps = useMemo(() => deriveStepsForMessage(message), [message]);
   const hasThinking = !!message.thinking;
@@ -232,7 +274,7 @@ export function WorkBlock({ message, toolItems, processText, processSegments, is
     const detail = current?.detail;
     const count = current?.count;
     return (
-      <div className="work-block running" data-testid="work-timeline">
+      <div ref={rootRef} className="work-block running" data-testid="work-timeline">
         <div className="work-block-current" data-testid="work-timeline-current">
           <span className="work-block-spinner" aria-hidden>⟳</span>
           <span className="work-block-label">{label}</span>
@@ -257,7 +299,7 @@ export function WorkBlock({ message, toolItems, processText, processSegments, is
 
   // ── 完成后：折叠摘要头 + meta，展开看思考与工具行 ──
   return (
-    <div className="work-block" data-testid="work-timeline">
+    <div ref={rootRef} className="work-block" data-testid="work-timeline">
       <button
         type="button"
         className="work-block-summary"

@@ -101,6 +101,7 @@ const en: Record<string, string> = {
   'output.title': 'Session output',
   'output.stats': '{writes} writes · {turns} turns',
   'output.writesLabel': 'Writes',
+  'output.locate': 'Locate this step in the conversation',
   'output.empty': 'Nothing produced yet',
   'output.toggle': 'Output panel',
   'output.previewBack': 'Back',

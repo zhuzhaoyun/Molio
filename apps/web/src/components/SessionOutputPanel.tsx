@@ -178,19 +178,41 @@ export function SessionOutputPanel({ messages }: Props) {
                 <section className="session-output-section">
                   <h3 className="session-output-section-label">{t('output.writesLabel')}</h3>
                   {output.writes.map((w) => (
-                    <button
+                    <div
                       key={w.path}
-                      type="button"
+                      role="button"
+                      tabIndex={0}
                       className="session-output-item"
                       data-testid="session-output-write"
                       data-kind={w.kind}
+                      data-path={w.path}
                       title={w.path}
-                      disabled={!vaultId}
-                      onClick={() => openPreview(w.kind, w.path, w.label)}
+                      onClick={() => { if (vaultId) openPreview(w.kind, w.path, w.label); }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          if (vaultId) openPreview(w.kind, w.path, w.label);
+                        }
+                      }}
                     >
                       <span className="session-output-item-icon" aria-hidden>{w.kind === 'create' ? '＋' : '✎'}</span>
                       <span className="session-output-item-label">{w.label}</span>
-                    </button>
+                      <button
+                        type="button"
+                        className="session-output-item-locate"
+                        data-testid="session-output-locate"
+                        title={t('output.locate')}
+                        aria-label={t('output.locate')}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          window.dispatchEvent(new CustomEvent('molio:evidence-target', {
+                            detail: { toolId: w.toolId, messageId: w.messageId },
+                          }));
+                        }}
+                      >
+                        <span aria-hidden>⌖</span>
+                      </button>
+                    </div>
                   ))}
                 </section>
               )}

@@ -112,7 +112,8 @@ export function deriveWorkSteps(messages: ChatMessage[]): WorkStep[] {
 }
 
 export interface SessionOutput {
-  writes: WriteRef[];    // 来自 extractWrites —— 已按 path 去重、仅 done
+  /** 来自 extractWrites —— 已按 path 去重、仅 done；messageId 用于「定位回对话」溯源 */
+  writes: (WriteRef & { messageId: string })[];
   turns: number;         // assistant 消息数
 }
 
@@ -120,11 +121,20 @@ export interface SessionOutput {
  * 会话级产出聚合：把聚合维度从「最后一条 assistant 消息」扩到「整个会话所有消息」。
  * 产出 = 本次会话 Molio 写入的 KB 文件（复用 extractWrites：按 path 去重、仅收 done）。
  * 外部引用（读过的文件 / 网页 URL）不进会话产出——它们已在每条消息的 SourceChips 内联展示。
+ * 逐消息抽取并挂 messageId（首现去重），供产出面板「定位回对话」溯源。
  */
 export function aggregateSessionOutput(messages: ChatMessage[]): SessionOutput {
   const assistantMsgs = messages.filter((m) => m.role === 'assistant');
-  // extractWrites 只按 status 过滤（running/error status 被排除），
-  // 但 isError=true 且 status='done' 的异常工具不在其列 —— 会话聚合层统一再滤一次。
-  const writes = extractWrites(assistantMsgs.flatMap((m) => m.tools ?? []).filter((t) => !t.isError));
+  const seen = new Set<string>();
+  const writes: (WriteRef & { messageId: string })[] = [];
+  for (const m of assistantMsgs) {
+    // extractWrites 只按 status 过滤（running/error status 被排除），
+    // 但 isError=true 且 status='done' 的异常工具不在其列 —— 会话聚合层统一再滤一次。
+    for (const w of extractWrites((m.tools ?? []).filter((t) => !t.isError))) {
+      if (seen.has(w.path)) continue;
+      seen.add(w.path);
+      writes.push({ ...w, messageId: m.id });
+    }
+  }
   return { writes, turns: assistantMsgs.length };
 }

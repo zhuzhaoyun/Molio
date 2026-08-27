@@ -114,6 +114,23 @@ test.describe('Home 会话产出面板', () => {
     await expect(panel.locator('[data-testid="session-output-write"]')).toHaveCount(0);
   });
 
+  test('点击定位 → 展开工作块并高亮生成该文件的工具步（不触发预览）', async ({ page }) => {
+    await mockChatRun(page, { script: outputRun });
+    await gotoHome(page);
+    await sendMessage(page, '整理产出');
+    await expect(page.locator('[data-testid="work-timeline-summary"]')).toBeVisible({ timeout: 15_000 });
+    await page.locator('[data-testid="home-output-toggle"]').click();
+    const panel = page.locator('[data-testid="session-output-panel"]');
+    // hover 写入行 → 定位按钮可见（stopPropagation：不打开预览）
+    await panel.locator('[data-testid="session-output-write"]').hover();
+    await panel.locator('[data-testid="session-output-locate"]').click();
+    await expect(page.locator('[data-testid="session-output-preview"]')).toHaveCount(0);
+    // 折叠的工作块自动展开，目标工具行（Write w1）出现在 DOM 并被闪烁标记
+    const target = page.locator('.work-block-detail [data-tool-id="w1"]');
+    await expect(target).toBeVisible({ timeout: 5_000 });
+    await expect(target).toHaveClass(/evidence-flash/);
+  });
+
   test('切换知识库 → 旧 vault 会话被重置（提示 + 消息清空 + 产出面板空态）', async ({ page }) => {
     const vaultA = await createTempVault('e2e-reset-a');
     const vaultB = await createTempVault('e2e-reset-b');
