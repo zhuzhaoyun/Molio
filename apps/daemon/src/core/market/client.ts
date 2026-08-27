@@ -17,8 +17,6 @@ export interface MarketCreateInput {
   previews: { ext: string; size: number }[];
   /** 价格（分）；仅管理员可设 >0，非管理员云端强制 0 */
   priceCents?: number;
-  /** 外部支付链接（付费资源 Model A 走外链交付） */
-  payUrl?: string;
 }
 
 /**
@@ -100,7 +98,7 @@ export class MarketClient {
     return (await this.req('POST', `/listings/${id}/confirm`, { auth: true })).json();
   }
 
-  async update(id: string, previews: { ext: string; size: number }[], extra?: { priceCents?: number; payUrl?: string }): Promise<MarketCreateResponse> {
+  async update(id: string, previews: { ext: string; size: number }[], extra?: { priceCents?: number }): Promise<MarketCreateResponse> {
     return (await (
       await this.req('POST', `/listings/${id}/update`, { auth: true, body: { previews, ...extra } })
     ).json()) as MarketCreateResponse;
@@ -108,6 +106,16 @@ export class MarketClient {
 
   async remove(id: string): Promise<void> {
     await this.req('DELETE', `/listings/${id}`, { auth: true });
+  }
+
+  /** 管理员强制下架（可附原因） */
+  async adminRemove(id: string, reason?: string): Promise<void> {
+    await this.req('POST', `/admin/listings/${id}/remove`, { auth: true, body: { reason } });
+  }
+
+  /** 管理员恢复已下架条目 */
+  async adminRestore(id: string): Promise<void> {
+    await this.req('POST', `/admin/listings/${id}/restore`, { auth: true });
   }
 }
 

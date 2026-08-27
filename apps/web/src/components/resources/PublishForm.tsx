@@ -77,7 +77,6 @@ export function PublishForm(props: PublishFormProps) {
   // ── 定价（Model A：仅管理员可设 >0 + 外链 payUrl；非管理员固定 0 元不可交互）──
   const [isAdmin, setIsAdmin] = useState(false);
   const [price, setPrice] = useState<string>(() => (props.listing && props.listing.priceCents > 0 ? String(props.listing.priceCents / 100) : ''));
-  const [payUrl, setPayUrl] = useState<string>(props.listing?.payUrl ?? '');
   useEffect(() => {
     let alive = true;
     fetch('/api/market/my')
@@ -186,7 +185,6 @@ export function PublishForm(props: PublishFormProps) {
     if (isAdmin) {
       const pn = Number(price);
       if (price.trim() && !Number.isFinite(pn)) { setError(t('publish.error.priceInvalid')); return; }
-      if (Number.isFinite(pn) && pn > 0 && !payUrl.trim()) { setError(t('publish.error.payUrlRequired')); return; }
     }
     setPhase('working');
     const form = new FormData();
@@ -202,7 +200,6 @@ export function PublishForm(props: PublishFormProps) {
     // 定价：仅管理员透传，云端对非管理员强制 0
     if (isAdmin) {
       if (price.trim()) form.set('price', price.trim());
-      if (payUrl.trim()) form.set('payUrl', payUrl.trim());
     }
     // 更新模式效果图可选：不传即沿用旧图（daemon 侧语义）
     previews.forEach((f) => form.append('previews', f));
@@ -226,7 +223,7 @@ export function PublishForm(props: PublishFormProps) {
   // ── dirty 上报：有已填内容且未完成 → true（供关 tab 前确认）──
   const dirty = !isUpdate && phase !== 'done'
     && (name.trim() !== '' || summary.trim() !== '' || tags.length > 0 || previews.length > 0
-      || price.trim() !== '' || payUrl.trim() !== '');
+      || price.trim() !== '');
   const onDirtyChangeRef = useRef(props.onDirtyChange);
   onDirtyChangeRef.current = props.onDirtyChange;
   useEffect(() => { onDirtyChangeRef.current?.(dirty); }, [dirty]);
@@ -260,38 +257,29 @@ export function PublishForm(props: PublishFormProps) {
     </div>
   );
 
-  // 定价字段：管理员可编辑价格 + 外链；非管理员只读 ¥0（不可交互）
-  const priceFields = (
-    <>
-      <div className="publish-field">
+  // 定价区（仅管理员）：第一行 = “价格（元）” + 「想上架收费知识库？联系我们」，第二行 = 金额输入框。
+  // 非管理员只显示「想上架收费知识库？联系我们」（付费资源统一走应用内微信支付 Model B，无外链）。
+  const priceFields = isAdmin ? (
+    <div className="publish-price-block">
+      <div className="publish-price-head">
         <span>{t('publish.price')}</span>
-        {isAdmin ? (
-          <input
-            value={price}
-            inputMode="decimal"
-            placeholder={t('publish.pricePlaceholder')}
-            onChange={(e) => setPrice(e.target.value)}
-            data-testid="publish-price-input"
-          />
-        ) : (
-          <input value={t('publish.nonAdminPriceValue')} disabled data-testid="publish-price-input" />
-        )}
-        <span className="publish-field-hint">{isAdmin ? t('publish.priceHint') : t('publish.nonAdminPrice')}</span>
+        <a className="publish-paid-cta" href="https://molio.cn/enterprise.html#contact" target="_blank" rel="noopener noreferrer">
+          {t('publish.paidCta')}
+        </a>
       </div>
-      {isAdmin && (
-        <div className="publish-field">
-          <span>{t('publish.payUrl')}</span>
-          <input
-            value={payUrl}
-            type="url"
-            placeholder={t('publish.payUrlPlaceholder')}
-            onChange={(e) => setPayUrl(e.target.value)}
-            data-testid="publish-payurl-input"
-          />
-          <span className="publish-field-hint">{t('publish.payUrlHint')}</span>
-        </div>
-      )}
-    </>
+      <input
+        className="publish-price-input"
+        value={price}
+        inputMode="decimal"
+        placeholder={t('publish.pricePlaceholder')}
+        onChange={(e) => setPrice(e.target.value)}
+        data-testid="publish-price-input"
+      />
+    </div>
+  ) : (
+    <a className="publish-paid-cta" href="https://molio.cn/enterprise.html#contact" target="_blank" rel="noopener noreferrer">
+      {t('publish.paidCta')}
+    </a>
   );
 
   const bodyContent = (
@@ -344,7 +332,7 @@ export function PublishForm(props: PublishFormProps) {
           </label>
           <label className="publish-field">
             <span>{t('publish.summary')}</span>
-            <textarea value={summary} maxLength={100} rows={3}
+            <textarea value={summary} maxLength={500} rows={5}
               onChange={(e) => setSummary(e.target.value)} />
           </label>
           <div className="publish-field">
@@ -396,18 +384,15 @@ export function PublishForm(props: PublishFormProps) {
               </div>
             </div>
           )}
-          {priceFields}
           <div className="publish-previews">
             <p>{t('publish.previews')}</p>
             {previewGrid}
           </div>
+          {priceFields}
           <label className="publish-agreement">
             <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
             <span>{t('publish.agreement')}</span>
           </label>
-          <a className="publish-paid-cta" href="https://molio.cn/enterprise.html#contact" target="_blank" rel="noopener noreferrer">
-            {t('publish.paidCta')}
-          </a>
         </div>
       )}
       {phase === 'form' && isUpdate && (
@@ -434,18 +419,15 @@ export function PublishForm(props: PublishFormProps) {
               </div>
             </div>
           )}
-          {priceFields}
           <div className="publish-previews">
             <p>{t('publish.previewsUpdate')}</p>
             {previewGrid}
           </div>
+          {priceFields}
           <label className="publish-agreement">
             <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
             <span>{t('publish.agreement')}</span>
           </label>
-          <a className="publish-paid-cta" href="https://molio.cn/enterprise.html#contact" target="_blank" rel="noopener noreferrer">
-            {t('publish.paidCta')}
-          </a>
         </div>
       )}
       {phase === 'working' && (

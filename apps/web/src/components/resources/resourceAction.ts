@@ -11,34 +11,29 @@
  * CatalogEntry；MolioResource 入参内部经 toEntry 归一后分发（兼容保留）。
  */
 import {
-  RESOURCES,
   RES_BASE,
   toEntry,
   type CatalogEntry,
   type MolioResource,
+  type PayItem,
 } from '../../data/resources';
 import { authStore } from '../../stores/authStore';
 import { loginIntentStore } from '../../stores/loginIntentStore';
 
 export function startResourcePurchase(
   e: CatalogEntry | MolioResource,
-  onPay: (r: MolioResource) => void,
+  onPay: (r: PayItem) => void,
 ): void {
   const entry = 'source' in e ? e : toEntry(e);
 
   const act = () => {
-    if (entry.payUrl) {
-      window.open(entry.payUrl, '_blank', 'noopener,noreferrer');
-      return;
-    }
     if (entry.price > 0) {
-      // 付费仅限官方资源（社区恒 0）；支付弹窗消费 MolioResource，按 id 取静态源对象
-      const res = RESOURCES.find((r) => r.id === entry.id);
-      if (res) onPay(res);
+      // 付费资源统一走应用内微信支付（Model B：微信 → OSS 下载链）。官方与市场条目结构上都含 id/name/price。
+      onPay(entry);
       return;
     }
     if (entry.market) {
-      // 社区免费：向市场 API 取签名下载链接再打开（登录门槛已在上方校验；401 兜底）
+      // 免费市场条目：向市场 API 取签名下载链接再打开（登录门槛已在上方校验；401 兜底）
       fetch(`/api/market/listings/${encodeURIComponent(entry.id)}/download`)
         .then((r) => (r.ok ? r.json() : Promise.reject(new Error('download_denied'))))
         .then((body: { url: string }) => window.open(body.url, '_blank', 'noopener,noreferrer'))

@@ -10,7 +10,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
-import { PAY_BASE, type MolioResource } from '../data/resources';
+import { PAY_BASE, type PayItem } from '../data/resources';
 import { authStore } from '../stores/authStore';
 
 export type PayPhase =
@@ -24,14 +24,14 @@ export type PayPhase =
 export type PayErrorKind = 'no-base' | 'create' | 'deliver';
 
 export interface ResourcePayHandle {
-  resource: MolioResource | null;
+  resource: PayItem | null;
   phase: PayPhase;
   qrDataUrl: string;
   downloadUrl: string;
   outTradeNo: string;
   errorKind: PayErrorKind | null;
-  /** 打开支付弹窗并下单；免费资源 / payUrl 资源不应走这里 */
-  open: (r: MolioResource) => void;
+  /** 打开支付弹窗并下单；免费资源不应走这里 */
+  open: (r: PayItem) => void;
   /** 关闭弹窗：清轮询、回 idle */
   close: () => void;
 }
@@ -39,7 +39,7 @@ export interface ResourcePayHandle {
 const POLL_INTERVAL_MS = 3000;
 
 export function useResourcePay(): ResourcePayHandle {
-  const [resource, setResource] = useState<MolioResource | null>(null);
+  const [resource, setResource] = useState<PayItem | null>(null);
   const [phase, setPhase] = useState<PayPhase>('idle');
   const [qrDataUrl, setQrDataUrl] = useState('');
   const [downloadUrl, setDownloadUrl] = useState('');
@@ -69,7 +69,7 @@ export function useResourcePay(): ResourcePayHandle {
   }, [stopPolling]);
 
   const open = useCallback(
-    (r: MolioResource) => {
+    (r: PayItem) => {
       sessionRef.current += 1;
       const session = sessionRef.current;
       const alive = () => sessionRef.current === session;

@@ -38,6 +38,12 @@ export function marketRoutes(deps: MarketRoutesDeps, config: CloudConfig, now: (
     try { return c.json({ listings: await service.list() }, 200); } catch (e) { return handle(c, e); }
   });
 
+  // §九：定价端点，公开给 wxpay-fc（价格是公开信息；file 为 zip 全量 key，桶私有无下载能力）
+  app.get('/pricing/:id', async (c) => {
+    c.header('Cache-Control', 'no-store');
+    try { return c.json(await service.pricing(c.req.param('id')), 200); } catch (e) { return handle(c, e); }
+  });
+
   // 注意顺序：/listings/:id/download 必须先于 /listings/:id 注册（否则 download 被当作 id）
   app.get('/listings/:id/download', async (c) => {
     const p = bearer(c);
@@ -69,7 +75,7 @@ export function marketRoutes(deps: MarketRoutesDeps, config: CloudConfig, now: (
     const denied = guardBody(c); if (denied) return denied;
     const p = bearer(c);
     if (!p) return c.json({ error: 'invalid_token' }, 401);
-    const body = await c.req.json().catch(() => null) as { previews?: { ext: string; size: number }[]; priceCents?: number; payUrl?: string } | null;
+    const body = await c.req.json().catch(() => null) as { previews?: { ext: string; size: number }[]; priceCents?: number } | null;
     try { return c.json(await service.update(p.sub, c.req.param('id'), body ?? {}), 200); } catch (e) { return handle(c, e); }
   });
 

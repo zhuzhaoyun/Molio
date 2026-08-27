@@ -22,7 +22,9 @@ export function MyListingsPanel({ onClose }: MyListingsPanelProps) {
   const [error, setError] = useState<string | null>(null);
   const [updateTarget, setUpdateTarget] = useState<MarketMyListing | null>(null);
   const [removeTarget, setRemoveTarget] = useState<MarketMyListing | null>(null);
+  const [restoreTarget, setRestoreTarget] = useState<MarketMyListing | null>(null);
   const [removing, setRemoving] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const load = useCallback(async () => {
     setError(null);
@@ -31,6 +33,7 @@ export function MyListingsPanel({ onClose }: MyListingsPanelProps) {
       if (!res.ok) throw new Error(`market ${res.status}`);
       const body = (await res.json()) as { isAdmin?: boolean; listings: MarketMyListing[] };
       setListings(body.listings);
+      setIsAdmin(body.isAdmin === true);
     } catch {
       setError(t('myListings.error'));
     }
@@ -53,6 +56,23 @@ export function MyListingsPanel({ onClose }: MyListingsPanelProps) {
       setRemoving(false);
     }
   }, [removeTarget, removing, load, t]);
+
+  // 恢复（管理员）：云端 admin restore，仅 removed 且 isAdmin 时可用
+  const confirmRestore = useCallback(async () => {
+    if (!restoreTarget || removing) return;
+    setRemoving(true);
+    try {
+      const res = await fetch(`/api/market/admin/listings/${restoreTarget.id}/restore`, { method: 'POST' });
+      if (!res.ok) throw new Error(`market ${res.status}`);
+      setRestoreTarget(null);
+      void load();
+    } catch {
+      setRestoreTarget(null);
+      setError(t('myListings.error'));
+    } finally {
+      setRemoving(false);
+    }
+  }, [restoreTarget, removing, load, t]);
 
   return (
     <div
@@ -97,17 +117,31 @@ export function MyListingsPanel({ onClose }: MyListingsPanelProps) {
                     >
                       {t('myListings.view')}
                     </a>
-                    <button type="button" className="mylistings-action" onClick={() => setUpdateTarget(l)}>
-                      {t('myListings.update')}
-                    </button>
-                    <button
-                      type="button"
-                      className="mylistings-action is-danger"
-                      disabled={removing}
-                      onClick={() => { setError(null); setRemoveTarget(l); }}
-                    >
-                      {t('myListings.remove')}
-                    </button>
+                    {l.status === 'active' && (
+                      <>
+                        <button type="button" className="mylistings-action" onClick={() => setUpdateTarget(l)}>
+                          {t('myListings.update')}
+                        </button>
+                        <button
+                          type="button"
+                          className="mylistings-action is-danger"
+                          disabled={removing}
+                          onClick={() => { setError(null); setRemoveTarget(l); }}
+                        >
+                          {t('myListings.remove')}
+                        </button>
+                      </>
+                    )}
+                    {l.status === 'removed' && isAdmin && (
+                      <button
+                        type="button"
+                        className="mylistings-action"
+                        disabled={removing}
+                        onClick={() => { setError(null); setRestoreTarget(l); }}
+                      >
+                        {t('myListings.restore')}
+                      </button>
+                    )}
                   </div>
                 </li>
               ))}
@@ -123,6 +157,19 @@ export function MyListingsPanel({ onClose }: MyListingsPanelProps) {
               </button>
               <button type="button" className="is-danger" disabled={removing} onClick={() => void confirmRemove()}>
                 {t('myListings.remove')}
+              </button>
+            </div>
+          </div>
+        )}
+        {restoreTarget && (
+          <div className="mylistings-confirm">
+            <p>{t('myListings.confirmRestore')}</p>
+            <div className="mylistings-confirm-actions">
+              <button type="button" disabled={removing} onClick={() => setRestoreTarget(null)}>
+                {t('common.cancel')}
+              </button>
+              <button type="button" disabled={removing} onClick={() => void confirmRestore()}>
+                {t('myListings.restore')}
               </button>
             </div>
           </div>

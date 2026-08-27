@@ -144,7 +144,7 @@ export function marketRoutes(db: Database.Database, auth: AuthClient, opts: Mark
       const created = await client.create({
         name: str('name'), summary: str('summary'), icon: str('icon'), tags,
         vaultSize: pack.size, previews: previews.map((p) => ({ ext: p.ext, size: p.size })),
-        priceCents: parsePriceCents(parsed['price']), payUrl: str('payUrl') || undefined,
+        priceCents: parsePriceCents(parsed['price']),
       });
       listingId = created.listingId;
       await putDirect(created.uploads[0]!, new Uint8Array(fs.readFileSync(pack.zipPath)));
@@ -203,7 +203,7 @@ export function marketRoutes(db: Database.Database, auth: AuthClient, opts: Mark
       const upd = await client.update(
         id,
         previews.map((p) => ({ ext: p.ext, size: p.size })),
-        { priceCents: parsePriceCents(parsed?.['price']), payUrl: (typeof parsed?.['payUrl'] === 'string' && parsed['payUrl']) ? parsed['payUrl'] : undefined },
+        { priceCents: parsePriceCents(parsed?.['price']) },
       );
       await putDirect(upd.uploads[0]!, new Uint8Array(fs.readFileSync(pack.zipPath)));
       for (let i = 0; i < previews.length; i++) await putDirect(upd.uploads[i + 1]!, previews[i]!.buf);
@@ -227,6 +227,28 @@ export function marketRoutes(db: Database.Database, auth: AuthClient, opts: Mark
     try {
       await client.remove(id);
       db.prepare('DELETE FROM market_local WHERE listing_id = ?').run(id);
+      return c.json({ ok: true });
+    } catch (e) { return cloudError(c, e); }
+  });
+
+  // 管理员强制下架 / 恢复（云端 admin 接口代理；「我的上架」恢复按钮走这里）。
+  app.post('/admin/listings/:id/remove', async (c) => {
+    const denied = denyCrossOrigin(c);
+    if (denied) return denied;
+    const id = c.req.param('id');
+    const body = await c.req.json().catch(() => null) as { reason?: string } | null;
+    try {
+      await client.adminRemove(id, body?.reason);
+      db.prepare('DELETE FROM market_local WHERE listing_id = ?').run(id);
+      return c.json({ ok: true });
+    } catch (e) { return cloudError(c, e); }
+  });
+  app.post('/admin/listings/:id/restore', async (c) => {
+    const denied = denyCrossOrigin(c);
+    if (denied) return denied;
+    const id = c.req.param('id');
+    try {
+      await client.adminRestore(id);
       return c.json({ ok: true });
     } catch (e) { return cloudError(c, e); }
   });

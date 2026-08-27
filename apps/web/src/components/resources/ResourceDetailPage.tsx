@@ -101,18 +101,16 @@ export function ResourceDetailPage() {
 
   const sideNote = !paid
     ? t('resources.sideNote.free')
-    : r.payUrl
-      ? t('resources.sideNote.payUrl')
-      : PAY_BASE
-        ? t('resources.sideNote.paid')
-        : t('resources.sideNote.noBase');
+    : PAY_BASE
+      ? t('resources.sideNote.paid')
+      : t('resources.sideNote.noBase');
 
   // 未登录：按钮文案带「登录后…」前缀（点击的登录门槛在 startResourcePurchase 内）
   const actionLabel = !paid
     ? t(loggedIn ? 'resources.downloadZip' : 'resources.downloadZipLogin')
-    : r.payUrl || !PAY_BASE
-      ? t(loggedIn ? 'resources.buy' : 'resources.buyLogin', { price: r.price })
-      : t(loggedIn ? 'resources.pay.wechat' : 'resources.pay.wechatLogin', { price: r.price });
+    : PAY_BASE
+      ? t(loggedIn ? 'resources.pay.wechat' : 'resources.pay.wechatLogin', { price: r.price })
+      : t(loggedIn ? 'resources.buy' : 'resources.buyLogin', { price: r.price });
 
   const market = r.market;
 
@@ -153,6 +151,7 @@ export function ResourceDetailPage() {
           <div className="resources-main">
             <h2 className="resources-section-title">{t('resources.overview')}</h2>
             <div className="resources-article">
+              {r.desc && <p className="resources-article__lead">{r.desc}</p>}
               {overviewParas.map((p, i) => (
                 <p key={i}>{p}</p>
               ))}

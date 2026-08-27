@@ -95,6 +95,13 @@ export interface CatalogEntry {
   market?: MarketListing;
 }
 
+/** 微信支付入口的最小商品形状（id/name/price 元）；官方与市场条目都满足 */
+export interface PayItem {
+  id: string;
+  name: string;
+  price: number;
+}
+
 export function toEntry(r: MolioResource): CatalogEntry {
   return {
     id: r.id,

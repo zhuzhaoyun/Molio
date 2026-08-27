@@ -359,6 +359,11 @@
   color: var(--text);
 }
 
+.resources-article__lead {
+  font-size: 15px;
+  font-weight: 500;
+}
+
 .resources-article ul {
   margin: 4px 0 0;
   padding-left: 20px;
@@ -1039,6 +1044,39 @@
 .publish-paid-cta:hover {
   color: var(--accent-hover);
   text-decoration: underline;
+}
+
+/* 定价区：第一行 = “价格（元）” 标签 + 「想上架收费知识库？联系我们」链接（挨近）；第二行 = 短金额输入框 */
+.publish-price-block {
+  margin-bottom: 14px;
+}
+.publish-price-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 5px;
+}
+.publish-price-head > span {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+.publish-price-input {
+  width: 140px;
+  height: 34px;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.publish-price-input:focus {
+  border-color: var(--selected);
+  box-shadow: 0 0 0 3px var(--selected-soft);
 }
 
 .publish-meta {

@@ -33,7 +33,7 @@ export interface MarketConfig {
 
 const MAX_NAME_CP = 30;
 const MAX_TAG_CP = 10;
-const MAX_SUMMARY_CP = 100;
+const MAX_SUMMARY_CP = 500;
 const MAX_TAGS = 3;
 const MAX_PREVIEWS = 4;
 const MAX_PREVIEW_BYTES = 5 * 1024 * 1024;
@@ -81,6 +81,12 @@ export class MarketService {
     return this.toPublic(rec);
   }
 
+  /** 定价端点（§九，公开给 wxpay-fc）：价格是公开信息；file=zip 全量 OSS key 供支付后端 presign 交付（桶私有，key 无下载能力） */
+  async pricing(id: string): Promise<{ id: string; name: string; priceCents: number; file: string; status: string }> {
+    const rec = await this.mustFind(id);
+    return { id: rec.id, name: rec.name, priceCents: rec.priceCents, file: rec.ossKey, status: rec.status };
+  }
+
   async my(userId: string, email: string): Promise<MarketMyResponse> {
     const recs = await this.deps.store.listUserListings(userId);
     const listings: MarketMyListing[] = [];
@@ -112,7 +118,6 @@ export class MarketService {
       : MARKET_TINTS[(await store.countUserCreationsSince(userId, 0)) % MARKET_TINTS.length]!;
     // §六 定价规则：仅管理员可设 >0；非管理员传值被服务端忽略，强制 0
     const priceCents = admin && Number.isInteger(req.priceCents) ? Math.max(0, req.priceCents!) : 0;
-    const payUrl = admin ? (req.payUrl?.trim() ?? '') : '';
     const rec: MarketListingRecord = {
       id, userId, source: 'community',
       name: req.name.trim(), icon: req.icon, tint,
@@ -120,7 +125,7 @@ export class MarketService {
       overview: [], highlights: [],
       tags: [...new Set(req.tags.map((t) => t.trim()))].slice(0, MAX_TAGS), // 自定义允许，去重截断
       previews: req.previews.map((p, i) => `next/${id}-p${i + 1}${p.ext}`), // uploading 期存暂存键
-      version: 'v1.0', priceCents, payUrl, authorDisplay: null,
+      version: 'v1.0', priceCents, payUrl: '', authorDisplay: null,
       ossKey: `zips/${id}-vault.zip`, fileSize: null,
       status: 'uploading', removedReason: null, pendingUpdate: null,
       createdAt: this.now, updatedAt: this.now, publishedAt: null,
@@ -139,8 +144,7 @@ export class MarketService {
       !Array.isArray(req.previews) || req.previews.length < 1 || req.previews.length > MAX_PREVIEWS ||
       req.previews.some((p) => !(p.ext in PREVIEW_EXT_CT) || !(p.size > 0) || p.size > MAX_PREVIEW_BYTES) ||
       typeof req.vaultSize !== 'number' || !(req.vaultSize > 0) || req.vaultSize > this.maxZipBytes ||
-      (req.priceCents !== undefined && (!Number.isInteger(req.priceCents) || req.priceCents < 0 || req.priceCents > MAX_PRICE_CENTS)) ||
-      (req.payUrl !== undefined && typeof req.payUrl !== 'string');
+      (req.priceCents !== undefined && (!Number.isInteger(req.priceCents) || req.priceCents < 0 || req.priceCents > MAX_PRICE_CENTS));
     if (bad) throw new MarketServiceError('invalid_metadata', 400);
   }
 
@@ -218,7 +222,7 @@ export class MarketService {
 
   // ── 更新版本（发起）──
 
-  async update(userId: string, listingId: string, input: { previews?: { ext: string; size: number }[]; priceCents?: number; payUrl?: string }): Promise<MarketCreateResponse> {
+  async update(userId: string, listingId: string, input: { previews?: { ext: string; size: number }[]; priceCents?: number }): Promise<MarketCreateResponse> {
     const rec = await this.mustFind(listingId);
     if (rec.userId !== userId) throw new MarketServiceError('not_owner', 403);
     if (rec.status !== 'active') throw new MarketServiceError('listing_not_found', 404);
@@ -232,9 +236,8 @@ export class MarketService {
     // §六：仅管理员可调价；非管理员传值被忽略
     const user = await this.deps.users.findActiveUserById(userId);
     const admin = user !== null && this.isAdminEmail(user.email);
-    const updates: Partial<Pick<MarketListingRecord, 'pendingUpdate' | 'priceCents' | 'payUrl'>> = { pendingUpdate: pending };
+    const updates: Partial<Pick<MarketListingRecord, 'pendingUpdate' | 'priceCents'>> = { pendingUpdate: pending };
     if (admin && Number.isInteger(input.priceCents)) updates.priceCents = Math.max(0, input.priceCents as number);
-    if (admin && typeof input.payUrl === 'string') updates.payUrl = input.payUrl.trim();
     await this.deps.store.updateListing(rec.id, updates, this.now);
     const zip = this.deps.signer.signPut(`next/${rec.id}-vault.zip`, 'application/zip', UPLOAD_TTL_SEC);
     const imgs = pending.previews.map((p) => {
