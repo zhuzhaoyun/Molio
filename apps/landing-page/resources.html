@@ -57,22 +57,19 @@
     <p>从经史典籍到专业领域，逐部整理成篇篇链接的 wiki 知识库——不是落灰的 PDF，而是 AI 吃得动的口粮 · 下载解压即用，微信支付成功后自动解锁下载</p>
   </section>
 
-  <!-- 页头 CTA 条：发布引导 + 付费上架联系 -->
-  <section class="rl-cta">
-    <p>发布你的知识库：在 Molio 中右键知识库 → 发布到资源库（免费）</p>
-    <p>想上架付费知识库？<a href="enterprise.html#contact">联系我们</a></p>
-  </section>
-
   <!-- 胶囊筛选 -->
   <div class="rl-filters" role="tablist" aria-label="资源筛选">
     <button class="rl-tab active" role="tab" aria-selected="true" data-filter="all">全部</button>
     <button class="rl-tab" role="tab" aria-selected="false" data-filter="free">免费</button>
     <button class="rl-tab" role="tab" aria-selected="false" data-filter="paid">付费</button>
-    <button class="rl-tab" role="tab" aria-selected="false" data-filter="community">社区分享</button>
   </div>
 
-  <!-- 上架新资源：往 resources-data.js 的 MOLIO_RESOURCES 数组追加一条即可（列表 + 详情同时生效）。 -->
   <div class="rl-grid" id="res-grid"></div>
+
+  <!-- 底部 CTA：浏览完没找到 → 引导上架自己的体系 -->
+  <section class="rl-cta">
+    <p>没找到你想要的？想上架自己知识体系？<a href="enterprise.html#contact">请联系我们</a></p>
+  </section>
 
 </main>
 
@@ -111,7 +108,7 @@
   </div>
 </footer>
 
-<script src="resources-data.js?v=20260813a"></script>
+<script src="resources-data.js?v=20260827a"></script>
 <script src="vendor/qrcode.min.js"></script>
 <script src="auth.js?v=20260824a"></script>
 <script src="pay.js?v=20260823a"></script>
@@ -119,22 +116,22 @@
 (function() {
   'use strict';
 
-  /* ---------- 社区目录：运行时拉取，失败静默回退纯静态 ---------- */
+  /* ---------- 市场目录：运行时拉取（官方+用户同目录），失败静默回退空 ---------- */
 
   // 云端认证/市场服务地址（本地联调注入点：window.MOLIO_AUTH_BASE）
   function marketBase() { return window.MOLIO_AUTH_BASE || 'https://auth.molio.cn'; }
 
-  // 社区目录：运行时拉取；失败 → communityListings 保持 []（纯静态兜底，静默）
-  var communityListings = [];
-  function loadCommunity(cb) {
+  // 市场目录：运行时拉取；失败 → listings 保持 []（静默）
+  var listings = [];
+  function loadListings(cb) {
     fetch(marketBase() + '/market/listings', { headers: { 'Accept': 'application/json' } })
       .then(function (r) { return r.ok ? r.json() : { listings: [] }; })
       .then(function (body) {
-        communityListings = ((body && body.listings) || []).map(function (m) {
+        listings = ((body && body.listings) || []).map(function (m) {
           return {
             id: m.id, icon: m.icon, tint: m.tint, name: m.name, desc: m.summary,
-            author: m.author, version: m.version, price: 0, tags: m.tags || [],
-            preview: m.previews || [], payUrl: '', community: true
+            author: m.author, version: m.version, price: m.priceCents / 100,
+            tags: m.tags || [], preview: m.previews || [], payUrl: m.payUrl || ''
           };
         });
         if (cb) cb();
@@ -152,7 +149,7 @@
   /* ---------- 渲染 ---------- */
 
   // 现代市场卡片：图标 + 标题 + 价格胶囊 + 描述 + 底部「购买」胶囊按钮 / 查看详情。
-  // 所有文本插值过 esc()；社区卡片追加角标与作者行。
+  // 所有文本插值过 esc()（市场目录：官方与用户同源，无社区区分）。
   function resCard(r) {
     var paid = r.price > 0;
     var gate = paid ? '购买 ¥' + r.price : '下载';
@@ -164,10 +161,8 @@
           '<span class="rl-sub">' + esc((r.tags || []).join(' · ')) + '<em class="rl-ver">' + esc(r.version || '') + '</em></span>' +
         '</div>' +
         '<span class="rl-price ' + (paid ? 'paid' : 'free') + '">' + (paid ? '¥' + esc(r.price) : '免费') + '</span>' +
-        (r.community ? '<span class="rl-badge-community">社区</span>' : '') +
       '</div>' +
       '<p class="rl-desc">' + esc(r.desc) + '</p>' +
-      (r.community ? '<div class="rl-author">' + esc(r.author) + ' · 免费</div>' : '') +
       '<div class="rl-actions">' +
         // data-auth-gate：未登录时 auth.js 把文案改写为「登录后购买/下载」
         '<button type="button" class="rl-buy" data-id="' + encodeURIComponent(r.id) + '" data-auth-gate="' + gate + '">' + gate + '</button>' +
@@ -176,27 +171,26 @@
     '</article>';
   }
 
-  // 列表源 = 官方静态条目 + 社区运行时条目
+  // 列表源 = 市场运行时目录（官方与用户上架同源）
   function allResources() {
-    return (window.MOLIO_RESOURCES || []).concat(communityListings);
+    return listings;
   }
 
   function renderResCards(filter) {
     var grid = document.getElementById('res-grid');
     if (!grid) return;
     var list = allResources().filter(function (r) {
-      if (filter === 'community') return !!r.community;
       if (filter === 'all') return true;
       if (filter === 'paid') return r.price > 0;
-      return r.price === 0; // free（社区恒免费，落在 free）
+      return r.price === 0; // free
     });
     grid.innerHTML = list.map(resCard).join('');
     // 重渲染后重新应用登录门槛文案（新按钮节点没有旧状态）
     if (window.MolioAuth && window.MolioAuth.refreshLabels) window.MolioAuth.refreshLabels();
   }
 
-  /* ---------- 社区下载：登录门槛后带 Bearer 换签名链接；失败回登录门槛 ---------- */
-  function communityDownload(id) {
+  /* ---------- 下载：登录门槛后带 Bearer 换签名链接；失败回登录门槛 ---------- */
+  function marketDownload(id) {
     if (!window.MolioAuth) return;
     window.MolioAuth.requireAuth().then(function () {
       return window.MolioAuth.getAccessToken();
@@ -228,14 +222,11 @@
       var r = null;
       for (var i = 0; i < list.length; i++) { if (list[i].id === id) { r = list[i]; break; } }
       if (!r) return;
-      if (r.community) { communityDownload(id); return; }
       if (r.price > 0) {
         window.MolioPay.open(r);
         return;
       }
-      var go = function () { window.open(window.MOLIO_RES_BASE + '/' + r.file, '_blank', 'noopener,noreferrer'); };
-      if (window.MolioAuth) window.MolioAuth.requireAuth().then(go, function () { /* 用户取消 */ });
-      else go();
+      marketDownload(id);
     });
   }
 
@@ -249,8 +240,8 @@
     });
   });
 
-  // 初始化：先拉社区目录（失败静默兜底），再渲染官方 + 社区合并列表
-  loadCommunity(function () { renderResCards('all'); });
+  // 初始化：拉市场目录（失败静默兜底），渲染市场列表
+  loadListings(function () { renderResCards('all'); });
 })();
 </script>
 <script src="shared.js?v=20260813a"></script>

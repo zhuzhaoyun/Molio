@@ -60,7 +60,7 @@
 </div>
 
 <!-- 数据 + 二维码库 + 登录（auth.js 须先于 pay.js：付费/下载门槛依赖 MolioAuth）+ 详情渲染（须在 shared.js 之前，保证 .reveal 被入场动画接管） -->
-<script src="resources-data.js?v=20260813a"></script>
+<script src="resources-data.js?v=20260827a"></script>
 <script src="vendor/qrcode.min.js"></script>
 <script src="auth.js?v=20260824a"></script>
 <script src="pay.js?v=20260823a"></script>
@@ -111,7 +111,7 @@
     // 静态未命中：拉社区详情；云端不可达/非 200 → 回退「资源不存在」（静默兜底）
     fetch(marketBase() + '/market/listings/' + encodeURIComponent(id), { headers: { 'Accept': 'application/json' } })
       .then(function (res) { return res.ok ? res.json() : null; })
-      .then(function (m) { if (m && m.id) renderCommunityDetail(m); else renderNotFound(); })
+      .then(function (m) { if (m && m.id) renderMarketDetail(m); else renderNotFound(); })
       .catch(function () { renderNotFound(); });
     return;
   }
@@ -241,8 +241,10 @@
   }
 
   /* ---------- 社区详情：复用现有预览栅格 / 导入说明节点；下载走签名端点 ---------- */
-  function renderCommunityDetail(m) {
+  function renderMarketDetail(m) {
     document.title = m.name + ' — Molio 知识库资源';
+    var curPrice = m.priceCents / 100;
+    var paid = curPrice > 0;
 
     var head =
       '<div class="breadcrumb"><a href="index.html">首页</a><span class="sep">/</span>' +
@@ -251,15 +253,21 @@
         '<div class="res-icon" style="background:' + esc(m.tint) + '">' + esc(m.icon) + '</div>' +
         '<div>' +
           '<div class="res-detail-title"><h1>' + esc(m.name) + '</h1>' +
-          '<span class="res-price free">免费</span></div>' +
-          '<div class="res-meta-line">社区分享 · Markdown 格式 · 兼容 Obsidian · 用 Molio“打开本地仓库”加载</div>' +
+          '<span class="res-price ' + (paid ? 'paid' : 'free') + '">' + (paid ? '¥' + curPrice : '免费') + '</span></div>' +
+          '<div class="res-meta-line">Markdown 格式 · 兼容 Obsidian · 用 Molio“打开本地仓库”加载</div>' +
           ((m.tags && m.tags.length) ? '<div class="res-tags">' + m.tags.map(function (t) { return '<span>' + esc(t) + '</span>'; }).join('') + '</div>' : '') +
         '</div>' +
       '</div>';
 
+    // 概述：简介(多段) + 引擎段落 + 亮点
+    var overviewPara = (m.summary || '').split(/\n{2,}/).map(function (p) { return p.trim(); }).filter(Boolean);
     var overview =
       '<h2 class="res-section-title">概述</h2>' +
-      '<div class="article-body"><p>' + esc(m.summary) + '</p></div>';
+      '<div class="article-body">' +
+        overviewPara.map(function (p) { return '<p>' + esc(p) + '</p>'; }).join('') +
+        ((m.overview && m.overview.length) ? m.overview.map(function (p) { return '<p>' + esc(p) + '</p>'; }).join('') : '') +
+        ((m.highlights && m.highlights.length) ? '<ul>' + m.highlights.map(function (h) { return '<li><strong>' + esc(h) + '</strong></li>'; }).join('') + '</ul>' : '') +
+      '</div>';
 
     var previews = (m.previews && m.previews.length)
       ? m.previews.map(function (p) { return { src: p, cap: '' }; })
@@ -283,13 +291,26 @@
         '<li>选择（或输入）解压后的文件夹路径，资源包立即加载</li>' +
       '</ol></div>';
 
+    var cta, sideNote;
+    if (paid) {
+      if (m.payUrl) {
+        cta = '<button type="button" class="btn btn-primary" id="payurl-btn" data-url="' + esc(m.payUrl) + '" data-auth-gate="购买 ¥' + curPrice + '">购买 ¥' + curPrice + '</button>';
+        sideNote = '点击后在支付页完成付款，自动发货下载链接。';
+      } else if (window.MOLIO_PAY_BASE) {
+        cta = '<button type="button" class="btn btn-primary" id="pay-btn" data-auth-gate="微信支付 ¥' + curPrice + '">微信支付 ¥' + curPrice + '</button>';
+        sideNote = '扫码支付成功后自动解锁下载，下载链接 1 小时内有效。';
+      } else {
+        cta = '<a class="btn btn-primary" href="enterprise.html#contact" target="_blank" rel="noopener noreferrer">联系购买 ¥' + curPrice + '</a>';
+        sideNote = '购买后会提供下载链接，点击上方按钮联系我们。';
+      }
+    } else {
+      cta = '<button type="button" class="btn btn-primary" id="market-dl-btn" data-auth-gate="下载 .zip">下载 .zip</button>';
+      sideNote = '下载解压后，用 Molio“打开本地仓库”加载即可开始阅读与写作。';
+    }
+
     var side =
       '<aside class="res-side">' +
-        '<div class="res-side-card reveal">' +
-          '<button type="button" class="btn btn-primary" id="community-dl-btn" data-auth-gate="下载 .zip">下载 .zip</button>' +
-          '<p class="res-side-note">下载解压后，用 Molio“打开本地仓库”加载即可开始阅读与写作。</p>' +
-          '<p class="res-side-note">该资源由社区用户上传，内容责任归上传者。<a href="enterprise.html#contact">举报该资源</a></p>' +
-        '</div>' +
+        '<div class="res-side-card reveal">' + cta + '<p class="res-side-note">' + sideNote + '</p></div>' +
         '<div class="res-side-card reveal">' +
           '<div class="res-info-row"><span class="k">作者</span><span class="v">' + esc(m.author) + '</span></div>' +
           '<div class="res-info-row"><span class="k">版本</span><span class="v">' + esc(m.version) + '</span></div>' +
@@ -297,7 +318,7 @@
           '<div class="res-info-row"><span class="k">发布时间</span><span class="v">' + (m.publishedAt ? esc(formatDate(m.publishedAt)) : '—') + '</span></div>' +
           '<div class="res-info-row"><span class="k">格式</span><span class="v">Markdown（.zip）</span></div>' +
           '<div class="res-info-row"><span class="k">兼容</span><span class="v">Molio / Obsidian</span></div>' +
-          '<div class="res-info-row"><span class="k">价格</span><span class="v">免费</span></div>' +
+          '<div class="res-info-row"><span class="k">价格</span><span class="v">' + (paid ? '¥' + curPrice : '免费') + '</span></div>' +
         '</div>' +
       '</aside>';
 
@@ -307,8 +328,24 @@
         side +
       '</div>';
 
-    /* 下载：登录门槛后带 Bearer 换签名链接；401/失败 → 回登录门槛 */
-    var dlBtn = document.getElementById('community-dl-btn');
+    // 异步注入发生在 shared.js initReveal 之后，新 .reveal 不会被观察——
+    // 手动补 in-view，否则头部/侧栏卡片保持 opacity:0（整块不可见）
+    root.querySelectorAll('.reveal').forEach(function (el) { el.classList.add('in-view'); });
+
+    /* 购买（微信/外链）：登录门槛 + 下单/轮询/交付统一在 pay.js */
+    var payBtn = document.getElementById('pay-btn');
+    if (payBtn) { payBtn.addEventListener('click', function () { window.MolioPay.open(m); }); }
+    var payUrlBtn = document.getElementById('payurl-btn');
+    if (payUrlBtn) {
+      payUrlBtn.addEventListener('click', function () {
+        var go = function () { window.open(payUrlBtn.getAttribute('data-url'), '_blank', 'noopener,noreferrer'); };
+        if (window.MolioAuth) window.MolioAuth.requireAuth().then(go, function () { /* 用户取消 */ });
+        else go();
+      });
+    }
+
+    /* 免费下载：登录门槛后带 Bearer 换签名链接；401/失败 → 回登录门槛 */
+    var dlBtn = document.getElementById('market-dl-btn');
     if (dlBtn) {
       dlBtn.addEventListener('click', function () {
         if (!window.MolioAuth) return;
