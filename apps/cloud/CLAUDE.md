@@ -1,6 +1,6 @@
 # @molio/cloud — 云端认证与资源目录服务
 
-Molio 用户模块的云端服务，两块职责：**身份**（第一期 = 身份层：邮箱验证码登录、token 轮换/吊销、权益留桩与账号注销）+ **资源市场目录**（社区资源条目元数据：上架/下架/管理；文件字节经 OSS 直传/直下，云端不经手内容）。
+Molio 用户模块的云端服务，两块职责：**身份**（第一期 = 身份层：邮箱验证码登录、token 轮换/吊销、权益留桩与账号注销）+ **资源市场目录**（官方+用户同目录条目元数据：上架/下架/管理；文件字节经 OSS 直传/直下，云端不经手内容）。
 
 **红线**：本地优先。云端只负责身份与权益凭证、资源市场目录元数据（文件字节经 OSS 直传，云端不经手内容），**不存任何知识库内容**；云端不可达时客户端本地功能零影响。**Molio 应用内** Web UI 永不直连本服务，一律经 daemon 本地镜像端点（见 `apps/daemon/src/routes/auth.ts`）；**官网静态页**（molio.cn）登录是唯一例外，浏览器直连本服务，走 `src/cors.ts` 的严格 CORS 白名单（无 cookie、不带 credentials）。
 
@@ -96,7 +96,8 @@ pnpm typecheck    # tsc --noEmit
 |---|---|---|
 | GET | `/market/listings` | 公开目录列表（`Cache-Control: no-store`，未登录可读） |
 | GET | `/market/listings/:id` | 单条详情（`no-store`，未登录可读） |
-| GET | `/market/listings/:id/download` | 登录 → 签发限时 OSS 直下 URL（下载门槛核心） |
+| GET | `/market/listings/:id/download` | 登录 → 签发限时 OSS 直下 URL（免费/已购；付费未购 402） |
+| GET | `/market/pricing/:id` | 公开（wxpay-fc 专用，§九）：`{id,name,priceCents,file,status}`，file=zip 全量 key（桶私有无下载能力） |
 | POST | `/market/listings` | 登录 → 创建条目（元数据校验 + 限频），返回直传签名目标 |
 | POST | `/market/listings/:id/confirm` | 登录 → 直传完成确认（首发 uploading→active；亦用于更新版本确认） |
 | POST | `/market/listings/:id/update` | 登录 → 发起版本更新（预检 + 新上传目标） |
