@@ -224,10 +224,26 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
 - **力模型（Quartz 全局图配方）**: forceLink（距离 30，强度 0=d3 按度数加权）+
   forceManyBody（-50）+ forceCenter（0.2）+ forceCollide（iterations=3）+ forceRadial（0.2）
   —— 默认值见 `types.ts` 的 `DEFAULT_FORCE_PARAMS`（v3）
-- **交互（d3-zoom + d3-drag，Quartz 同款）**: d3-zoom 缩放/平移/触控 pinch；
-  d3-drag 节点拖拽（<500ms 判为点击）；单击选中（焦点模式）、双击节点打开文件、
-  双击空白 fit
-- **焦点模式动画**: `@tweenjs/tween.js` 做 hover/选中时非邻居节点/边的 alpha 平滑淡出（200ms）
+- **交互（d3-zoom + d3-drag，Obsidian 标准 d3-force 拖拽）**: d3-zoom 缩放/平移/触控 pinch；d3-drag
+  节点拖拽。**对齐 Obsidian 官方的标准做法**（调研结论）：只钉被拖节点 fx/fy，**整图自由流动**，用
+  `DRAG_ALPHA_TARGET(0.2)` 中温保温（区别于 Quartz 移植版 `alphaTarget(1.0)` 力满负荷→高频抖）。
+  mousedown 只记录起点、只钉被拖节点（sim 静止时点击零运动）；mousemove 过 `DRAG_THRESHOLD(4px)` 才
+  `activateDragFluid`——`alphaTarget(0.2).restart()` 让整图持续温动贴合拖拽；被拖节点 fx/fy 钉跟光标。
+  松手 `endDragFluid`：`alphaTarget(0)` 冷却 → 整图（含被拖节点，fx/fy 复位为 null）自然沉降、**边像
+  弹簧一样回弹收敛**（不钉落点、不冻结）。**稠密图/hub 专用稳定**（只在度数>60 / 间距<20 才介入，
+  不破坏整图流动的 Obsidian 手感）：
+  ①被拖节点 collide 半径临时调小（`radius+PAD`，防 deg683 超大 hub 拖拽时碾压集群→电荷爆）、
+  ②拖拽期 link×`DRAG_LINK_MULT(0.4)`（683 条弹簧把整图拽向内收缩）、③`velocityDecay(0.6)` 高阻尼扑灭
+  振荡；松手恢复 collide 半径/link/damping 到 rest。叠加全局物理保险丝：`manyBody.distanceMin(20)`
+  封掉拖拽级联的 1/d² 电荷爆、collide 半径 `COLLIDE_MAX(100)` 封顶、super-hub（度数>60）的 link 按
+  `1/√max(deg)` 减弱（防「683 条源边把 hub 甩飞」）。单击（<500ms 且 ≤4px）仍判为点击跳转文档；双击
+  节点打开文件、双击空白 fit
+- **拖拽降质（拖拽期）**: `setMotionMode(true)` → 隐藏标签（`syncLabels` 跳过）+ minimap 重绘监听暂停
+  （collide 迭代**不降级**，保帧也保弹簧手感）；松手恢复
+- **hover 两档细化（M3-⑦）**: `@tweenjs/tween.js` 做 hover/选中时动画（200ms），非邻居 alpha
+  淡出 + **尺寸两档缩小**（hover 75% / 选中 60%）+ 焦点节点放大（hover 1.2× / 选中 1.4×，
+  hover 时关联节点微缩 0.85）；关联边 `zIndex:1` 置顶不被淡化边遮挡；hover 离开 **150ms 迟滞**
+  （跨节点移动不闪烁）。颜色插值暂未 tween（靠 alpha+scale 承担分化）
 - **搜索定位**: 顶栏搜索框在可见节点内模糊匹配，选中后 `focusNode` 平滑居中缩放 k=1.5
 - **Minimap**: 订阅引擎 render 事件按需重绘（无 rAF 轮询），支持点击跳转/拖拽视口导航
 - **数据链路**: daemon `GET /api/graph/:vaultId` 解析 `[[wikilink]]` → GraphPage 筛选

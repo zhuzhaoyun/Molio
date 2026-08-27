@@ -32,8 +32,6 @@ import {
   type ForceLink,
   type ForceManyBody,
   type ForceCenter,
-  type ForceX,
-  type ForceY,
   type ForceCollide,
 } from 'd3-force';
 import { select } from 'd3-selection';
@@ -41,7 +39,16 @@ import { drag, type D3DragEvent } from 'd3-drag';
 import { zoom, zoomIdentity, type ZoomBehavior, type ZoomTransform } from 'd3-zoom';
 import { Group, Tween } from '@tweenjs/tween.js';
 import { NODE_TYPE_COLORS, type ForceParams, type ThemeColors } from '../types';
-import { clamp, easeCubicOut, dedupeEdges, computeFitTransform, greedyLabelLayout } from './graphUtils';
+import {
+  clamp,
+  easeCubicOut,
+  dedupeEdges,
+  computeFitTransform,
+  greedyLabelLayout,
+  tileIsolatedNodes,
+  SUPER_HUB_DEGREE,
+  type GraphDegreeNode,
+} from './graphUtils';
 
 // ── Public types ──
 
@@ -92,8 +99,6 @@ interface SimNode extends SimulationNodeDatum {
   radius: number;
   /** 度数排名（0 = 最高），标签显隐预算用 */
   rank: number;
-  /** drag start 记录的初始位置（quartz 同款） */
-  initialDragPos?: { x: number; y: number; fx: number | null; fy: number | null };
 }
 
 interface SimLink extends SimulationLinkDatum<SimNode> {
@@ -138,8 +143,21 @@ const LABEL_FONT_SIZE = 12;
 /** 焦点模式下非邻居的淡出透明度（hover / 选中） */
 const FADE_ALPHA_HOVER = 0.2;
 const FADE_ALPHA_SELECTED = 0.08;
+/** hover 细化两档：非关联节点尺寸保留比例（hover 75%，选中 60%） */
+const HOVER_DIM_SIZE_RATIO = 0.25;
+const FOCUS_DIM_SIZE_RATIO = 0.4;
+/** 焦点节点放大倍数（hover 1.2×，选中 1.4×）；hover 时关联节点微缩 */
+const HOVER_NODE_SCALE = 1.2;
+const SELECTED_NODE_SCALE = 1.4;
+const HOVER_ACTIVE_SCALE = 0.85;
+/** hover 离开后的迟滞（ms）：跨节点移动时防高亮闪烁 */
+const HOVER_LINGER_MS = 150;
 /** 单击判定：按下→抬起指针位移 ≤ 该值（canvas CSS px）才算点击，避免快速拖拽误触跳转 */
 const CLICK_MOVE_TOLERANCE = 4;
+/** 位移场安装阈值：mousedown 不装位移场，位移超过该值（canvas CSS px）才装（=单击零力零运动） */
+const DRAG_THRESHOLD = 4;
+/** collide 迭代：静止时 3（质量优先），位移场期降到 1（拖拽降质） */
+const COLLIDE_ITERATIONS = 3;
 /** 标签显隐：屏幕半径阈值（太小不显示）+ 度数预算（候选池上限，实际可见数由碰撞检测决定） */
 const LABEL_MIN_SCREEN_RADIUS = 3;
 /** 标签与节点顶部的屏幕间距（px，不随缩放变化） */
@@ -155,6 +173,18 @@ const CONTAIN_STRENGTH = 0.06;
 /** v6 配方：collide 半径 = 绘制半径 × MULT + PAD —— 远看均布、放大后节点彼此分离（Obsidian 同款空气感） */
 const COLLIDE_RADIUS_MULT = 5;
 const COLLIDE_PAD = 4;
+/** collide 半径上限：防止度极高的超级 hub 产生非直觉的巨大排斥圈（见 collideRadius 注释） */
+const COLLIDE_MAX = 100;
+/** manyBody 电荷分母下限：d<DISTANCE_MIN 时按 DISTANCE_MIN 计，封顶 1/d² 电荷爆（拖拽级联的节点瞬时重叠加速） */
+const DISTANCE_MIN = 20;
+/** 位移场期 collide 迭代降到 1（拖拽降质：collide 是每 tick 最大 CPU 成本） */
+const COLLIDE_ITERATIONS_MOTION = 1;
+/** 拖拽期 link 强度倍率：调软防「被拖 hub 的 683 条弹簧把整图拽向内收缩」，松手恢复全强度 */
+const DRAG_LINK_MULT = 0.4;
+/** 拖拽期 alphaTarget：中温保证邻居流体跟随；过高 → 存太多势能松手爆炸，过低 → 僵硬不跟手 */
+const DRAG_ALPHA_TARGET = 0.2;
+/** 拖拽期 velocityDecay：拖拽与松手共用，吸收回弹能量；过高 → 蠕行缓慢，过低 → 弹跳剧烈 */
+const DRAG_VELOCITY_DECAY = 0.6;
 
 export class PixiGraphEngine {
   private container: HTMLElement;
@@ -183,6 +213,8 @@ export class PixiGraphEngine {
 
   private hoveredNodeId: string | null = null;
   private selectedId: string | null = null;
+  /** hover 离开迟滞定时器（150ms）：跨节点移动时防高亮闪烁 */
+  private hoverLingerTimer: ReturnType<typeof setTimeout> | null = null;
   private focusedNeighbours = new Set<string>();
 
   private callbacks: EngineCallbacks = {};
@@ -213,6 +245,16 @@ export class PixiGraphEngine {
   private dragging = false;
   /** drag start 时的指针位置（canvas CSS px），单击位移判定用 */
   private dragStartXY: { x: number; y: number } | null = null;
+
+  // ── 拖拽近流体（P0-1）状态 ──
+  /** 被拖节点在 mousedown 时的图坐标（累计位移与单击判定基准） */
+  private dragNodeAnchor: { x: number; y: number } | null = null;
+  /** 近流体是否已启动——过 DRAG_THRESHOLD 才 true（单击路径恒 false → 零力零运动） */
+  private dragFluidActive = false;
+  /** 被拖节点 id */
+  private dragNodeKey: string | null = null;
+  /** 移动降质：true 时隐藏标签 + collide→1 + minimap 暂停 */
+  private motionMode = false;
 
   private renderListeners = new Set<() => void>();
   /** 上次同步标签 scale 的 k —— 标签恒定屏幕尺寸（scale=1/k），k 变化时才批量更新 */
@@ -263,7 +305,7 @@ export class PixiGraphEngine {
     // （不能用 'none' —— 会剪枝整棵子树，子节点 hover 全部失效）
     this.stage.eventMode = 'passive';
 
-    this.linkLayer = new Container<Graphics>({ zIndex: 1, isRenderGroup: true });
+    this.linkLayer = new Container<Graphics>({ zIndex: 1, isRenderGroup: true, sortableChildren: true });
     this.nodesLayer = new Container<Graphics>({ zIndex: 2, isRenderGroup: true });
     this.labelsLayer = new Container<Text>({ zIndex: 3, isRenderGroup: true });
     this.stage.addChild(this.linkLayer, this.nodesLayer, this.labelsLayer);
@@ -449,6 +491,17 @@ export class PixiGraphEngine {
     return { tx: t.x, ty: t.y, k: t.k };
   }
 
+  /** 调试用：仿真运行态（alpha / alphaTarget / velocityDecay / 是否正在拖拽全流动）。 */
+  getSimState(): { alpha: number; alphaTarget: number; velocityDecay: number; dragging: boolean } {
+    const sim = this.sim;
+    return {
+      alpha: sim ? sim.alpha() : 0,
+      alphaTarget: sim ? sim.alphaTarget() : 0,
+      velocityDecay: sim ? sim.velocityDecay() : 0,
+      dragging: this.dragging,
+    };
+  }
+
   /** Minimap / e2e 快照：节点位置 + 视口（simulation 坐标） */
   getSnapshot(): GraphSnapshot | null {
     if (this.nodes.length === 0) return null;
@@ -478,6 +531,7 @@ export class PixiGraphEngine {
     if (this.destroyed) return;
     this.destroyed = true;
     if (this.refitTimer) clearTimeout(this.refitTimer);
+    if (this.hoverLingerTimer) clearTimeout(this.hoverLingerTimer);
     this.viewportAnim = null;
     this.tweens.forEach((t) => t.stop());
     this.tweens.clear();
@@ -513,7 +567,7 @@ export class PixiGraphEngine {
     this.nodesLayer.addChild(this.selectionGfx);
 
     const sim = forceSimulation<SimNode>(this.nodes)
-      .force('charge', forceManyBody<SimNode>().strength(this.forces.repelStrength))
+      .force('charge', forceManyBody<SimNode>().strength(this.forces.repelStrength).distanceMin(DISTANCE_MIN))
       .force('center', forceCenter<SimNode>(0, 0).strength(this.forces.centerStrength))
       .force(
         'link',
@@ -526,7 +580,7 @@ export class PixiGraphEngine {
       )
       .force('x', forceX<SimNode>(0).strength(CONTAIN_STRENGTH))
       .force('y', forceY<SimNode>(0).strength(CONTAIN_STRENGTH))
-      .force('collide', forceCollide<SimNode>().radius(collideRadius).iterations(3));
+      .force('collide', forceCollide<SimNode>().radius(collideRadius).iterations(COLLIDE_ITERATIONS));
     // 仿真收敛后布局范围才稳定 —— 若用户未交互过，重新 fit 一次，
     // 避免「早期小范围 fit 的缩放」看「后期大范围布局」导致放大叠团的错觉
     sim.on('end', () => {
@@ -604,6 +658,10 @@ export class PixiGraphEngine {
 
   private onNodePointerOver(id: string): void {
     if (this.dragging) return;
+    if (this.hoverLingerTimer) {
+      clearTimeout(this.hoverLingerTimer);
+      this.hoverLingerTimer = null;
+    }
     this.hoveredNodeId = id;
     this.callbacks.onHoverChange?.(id);
     this.updateFocusAndRender();
@@ -611,9 +669,14 @@ export class PixiGraphEngine {
 
   private onNodePointerLeave(_id: string): void {
     if (this.dragging) return;
-    this.hoveredNodeId = null;
-    this.callbacks.onHoverChange?.(null);
-    this.updateFocusAndRender();
+    // 150ms 迟滞：快速跨过多个节点时不闪烁；期间重新进入（over）则取消。
+    if (this.hoverLingerTimer) clearTimeout(this.hoverLingerTimer);
+    this.hoverLingerTimer = setTimeout(() => {
+      this.hoveredNodeId = null;
+      this.callbacks.onHoverChange?.(null);
+      this.updateFocusAndRender();
+      this.hoverLingerTimer = null;
+    }, HOVER_LINGER_MS);
   }
 
   /** 当前焦点：hover 优先于搜索选中 —— hover 永远即时高亮指针下的节点 */
@@ -654,10 +717,29 @@ export class PixiGraphEngine {
     this.tweens.get('hover')?.stop();
     const group = new Group();
     const focusId = this.focusId;
-    const dim = focusId !== null && focusId === this.selectedId ? FADE_ALPHA_SELECTED : FADE_ALPHA_HOVER;
+    const isSelected = focusId !== null && focusId === this.selectedId;
+    const dim = isSelected ? FADE_ALPHA_SELECTED : FADE_ALPHA_HOVER;
     for (const n of this.nodeRenderData) {
-      const alpha = focusId === null ? 1 : n.active ? 1 : dim;
-      group.add(new Tween<Graphics>(n.gfx).to({ alpha }, 200));
+      const id = n.simulationData.id;
+      const active = focusId !== null && n.active;
+      const alpha = focusId === null ? 1 : active ? 1 : dim;
+      // 两档淡化：focus 放大（hover 1.2× / 选中 1.4×）；关联 hover 微缩 0.85；
+      // 非关联按档位缩小（hover 75% / 选中 60%）。alpha + scale 一并 tween。
+      let targetScale = 1;
+      if (focusId !== null) {
+        if (id === focusId) targetScale = isSelected ? SELECTED_NODE_SCALE : HOVER_NODE_SCALE;
+        else if (active) targetScale = isSelected ? 1 : HOVER_ACTIVE_SCALE;
+        else targetScale = 1 - (isSelected ? FOCUS_DIM_SIZE_RATIO : HOVER_DIM_SIZE_RATIO);
+      }
+      const holder = { a: n.gfx.alpha, s: n.gfx.scale.x };
+      group.add(
+        new Tween(holder)
+          .to({ a: alpha, s: targetScale }, 200)
+          .onUpdate(() => {
+            n.gfx.alpha = holder.a;
+            n.gfx.scale.set(holder.s, holder.s);
+          }),
+      );
     }
     group.getAll().forEach((tw) => tw.start());
     this.tweens.set('hover', makeTweenNode(group));
@@ -670,6 +752,8 @@ export class PixiGraphEngine {
     for (const l of this.linkRenderData) {
       const alpha = focusId === null ? 1 : l.active ? 1 : 0.2;
       l.color = l.active ? this.theme.edgeHover : this.theme.edge;
+      // 高亮边置顶（zIndex 1），不被淡化边遮挡；无焦点时归位 0
+      l.gfx.zIndex = l.active ? 1 : 0;
       group.add(new Tween<LinkRenderData>(l).to({ alpha }, 200));
     }
     group.getAll().forEach((tw) => tw.start());
@@ -825,6 +909,106 @@ export class PixiGraphEngine {
     }
   }
 
+  // ── 拖拽全流动流体（P0-1）+ 移动降质（P0-2）──
+
+  /** 由当前 nodes/adjacency 构建平铺函数所需的 degree 节点数组 */
+  private degreeNodes(): GraphDegreeNode[] {
+    return this.nodes.map((n) => ({
+      id: n.id,
+      x: n.x ?? 0,
+      y: n.y ?? 0,
+      degree: this.adjacency.get(n.id)?.size ?? 0,
+    }));
+  }
+
+  /** 把被拖节点钉到指定图坐标（写 x/y/fx/fy；sim 运行时 fx/fy 固定，x/y 落在 fx/fy 处） */
+  private pinGraph(node: SimNode, x: number, y: number): void {
+    node.x = x;
+    node.y = y;
+    node.fx = x;
+    node.fy = y;
+  }
+
+  /** 解除所有节点的 fx/fy（单击路径复位，让图恢复自由布局）。 */
+  private unpinAllNodes(): void {
+    for (const n of this.nodes) {
+      n.fx = null;
+      n.fy = null;
+    }
+  }
+
+  /**
+   * activateDragFluid：过 DRAG_THRESHOLD 后启动拖拽（Obsidian 标准：整图自由流动 + 中温 alphaTarget 0.3）。
+   */
+  /** 设置 link 强度：base(常量或按度数加权) × mult——拖拽期调软防 hub 把整图拽向内，松手恢复全强度。 */
+  private setDragLinkStrength(mult: number): void {
+    const force = this.sim?.force<ForceLink<SimNode, SimLink>>('link');
+    if (!force) return;
+    const base = this.forces.linkStrength > 0 ? this.forces.linkStrength : defaultLinkStrength(this.adjacency);
+    if (typeof base === 'number') force.strength(base * mult);
+    else force.strength((l) => base(l) * mult);
+  }
+
+  private activateDragFluid(): void {
+    const sim = this.sim;
+    if (!sim) return;
+    this.dragFluidActive = true;
+    this.setMotionMode(true); // 拖拽降质：藏标签 + minimap 暂停
+    // Obsidian 标准拖拽（整图自由流动，中温保温）+ hub 专用稳定：
+    // ① 被拖节点 collide 半径调小（deg683 hub 的 285 半径球碾压集群 → 电荷爆），
+    // ② link 调软（hub 的 683 条弹簧把整图拽向内收缩）。整图仍自由流动。
+    const dragKey = this.dragNodeKey;
+    sim.force<ForceCollide<SimNode>>('collide')?.radius((d: SimNode) =>
+      dragKey && d.id === dragKey ? d.radius + COLLIDE_PAD : collideRadius(d),
+    );
+    sim.force<ForceCollide<SimNode>>('collide')?.strength(1);
+    this.setDragLinkStrength(DRAG_LINK_MULT);
+    sim.velocityDecay(DRAG_VELOCITY_DECAY);
+    sim.alphaTarget(DRAG_ALPHA_TARGET).restart();
+  }
+
+  /**
+   * endDragFluid：松手。恢复 rest 力配置（collide 半径 / link 强度 / damping），
+   * Obsidian 标准松手 alphaTarget(0) 冷却：整图（含被拖节点，fx/fy 已在 end 复位为 null）
+   * 自然沉降、边像弹簧一样回弹收敛，不被钉在落点。
+   */
+  private endDragFluid(): void {
+    this.dragFluidActive = false;
+    this.dragNodeKey = null;
+    this.setMotionMode(false);
+    this.tileIsolated();
+    const sim = this.sim;
+    if (!sim) return;
+    sim.force<ForceCollide<SimNode>>('collide')?.radius(collideRadius);
+    sim.force<ForceCollide<SimNode>>('collide')?.strength(1);
+    this.setDragLinkStrength(1);
+    sim.velocityDecay(DRAG_VELOCITY_DECAY);
+    sim.alphaTarget(0);
+  }
+
+  /** 重铺孤立节点到外围圆环并钉住（拖拽全流动解锁后归位）。 */
+  private tileIsolated(): void {
+    const tiled = tileIsolatedNodes(this.degreeNodes());
+    if (tiled.size === 0) return;
+    for (const [id, p] of tiled) {
+      const n = this.nodeById.get(id);
+      if (!n) continue;
+      n.x = p.x;
+      n.y = p.y;
+      n.fx = p.x;
+      n.fy = p.y;
+    }
+  }
+
+  /** 移动降质：拖拽期间隐藏标签 + minimap 暂停（collide 不迭代降级——保帧也保 spring 手感）。 */
+  setMotionMode(active: boolean): void {
+    this.motionMode = active;
+    if (active) {
+      // 隐藏标签：拖拽期不重测/重传标签纹理
+      for (const rd of this.nodeRenderData) rd.label.visible = false;
+    }
+  }
+
   // ── 交互（d3-zoom + d3-drag，Quartz 同款）──
 
   private bindZoomAndDrag(): void {
@@ -852,26 +1036,48 @@ export class PixiGraphEngine {
         .on('start', (event: D3DragEvent<HTMLCanvasElement, SimNode | undefined, SimNode | undefined>) => {
           const subj = event.subject;
           if (!subj) return;
-          if (!event.active) this.sim?.alphaTarget(1).restart();
-          subj.fx = subj.x;
-          subj.fy = subj.y;
-          subj.initialDragPos = { x: subj.x!, y: subj.y!, fx: subj.fx ?? null, fy: subj.fy ?? null };
+          // 单击判定基准 + 全图质心：mousedown 只记录，不装流体、不 wake（=单击零力零运动，
+          // 消除「单击选中时图呼吸抖动」）。仅锁被拖节点防碰撞推走，并解锁其余节点（拖拽全流动）。
           this.dragStartTime = Date.now();
           this.dragStartXY = { x: event.x, y: event.y };
+          this.dragNodeAnchor = { x: subj.x!, y: subj.y! };
+          this.dragFluidActive = false;
+          this.dragNodeKey = subj.id;
           this.dragging = true;
+          this.hasUserInteracted = true; // 交互过 → 拖拽松手后 sim end 不再重新 fit（防视口 pop）
+          // Obsidian 标准：整图自由（无 far-anchor），只钉被拖节点；sim 静止时点击零运动
+          this.pinGraph(subj, subj.x!, subj.y!);
         })
         .on('drag', (event: D3DragEvent<HTMLCanvasElement, SimNode | undefined, SimNode | undefined>) => {
           const subj = event.subject;
-          if (!subj || !subj.initialDragPos) return;
-          const init = subj.initialDragPos;
-          // 补偿缩放：屏幕位移 / k 转 graph 位移（Quartz 同款）
-          subj.fx = init.x + (event.x - init.x) / this.currentTransform.k;
-          subj.fy = init.y + (event.y - init.y) / this.currentTransform.k;
+          if (!subj || !this.dragStartXY || !this.dragNodeAnchor) return;
+          const startPx = this.dragStartXY;
+          const moveDist = Math.hypot(event.x - startPx.x, event.y - startPx.y);
+          const k = this.currentTransform.k;
+          // 累计图坐标位移（屏幕位移/k，拖拽期相机冻结，k 恒定）
+          const accum = { x: (event.x - startPx.x) / k, y: (event.y - startPx.y) / k };
+          const gx = this.dragNodeAnchor.x + accum.x;
+          const gy = this.dragNodeAnchor.y + accum.y;
+
+          if (!this.dragFluidActive) {
+            if (moveDist > DRAG_THRESHOLD) {
+              // 过阈值才启动流体：延后到此刻（mousedown 不装）→ 单击选中不触发任何位移，无点击抖动
+              this.activateDragFluid();
+            } else {
+              // 未过阈值：仅钉被拖节点跟随光标（不动其它、不加热 sim、不进入降质）
+              this.pinGraph(subj, gx, gy);
+              return;
+            }
+          }
+
+          if (!this.dragFluidActive) return; // activateDragFluid 可能因 sim 缺失等提前返回（安全兜底）
+          // 近流体：被拖节点钉跟光标；其余已释放节点交给物理自由流动（有机流体、沿图边流动）
+          this.pinGraph(subj, gx, gy);
         })
         .on('end', (event: D3DragEvent<HTMLCanvasElement, SimNode | undefined, SimNode | undefined>) => {
           const subj = event.subject;
           if (!subj) return;
-          if (!event.active) this.sim?.alphaTarget(0);
+          const wasFluid = this.dragFluidActive;
           subj.fx = null;
           subj.fy = null;
           this.dragging = false;
@@ -879,9 +1085,16 @@ export class PixiGraphEngine {
             ? Math.hypot(event.x - this.dragStartXY.x, event.y - this.dragStartXY.y)
             : Infinity;
           this.dragStartXY = null;
-          // 单击（短时 + 几乎无位移）= 跳转文档；高亮由 hover 负责，selectedId 仅供搜索定位
-          if (Date.now() - this.dragStartTime < 500 && moved <= CLICK_MOVE_TOLERANCE) {
-            this.callbacks.onNodeClick?.(subj.id, toEngineNode(subj));
+          if (wasFluid) {
+            this.endDragFluid(); // 撤质心锚定 + 孤立重铺 + 物理回弹
+          } else {
+            // 单击路径（未过阈值）：零力零运动。清掉 start 时记录的拖拽状态（fluid 未启动，不触发物理）。
+            this.dragNodeAnchor = null;
+            this.dragNodeKey = null;
+            this.unpinAllNodes(); // mousedown 钉过全部，单击也要解除，否则图被钉住
+            if (Date.now() - this.dragStartTime < 500 && moved <= CLICK_MOVE_TOLERANCE) {
+              this.callbacks.onNodeClick?.(subj.id, toEngineNode(subj));
+            }
           }
         }),
     );
@@ -961,11 +1174,14 @@ export class PixiGraphEngine {
         .stroke({ alpha: l.alpha, width: this.edgeWidth, color: l.color });
     }
 
-    this.syncLabels();
+    // 拖拽降质：位移场期跳过标签重排（标签已隐藏）与 minimap 重绘监听
+    if (!this.motionMode) {
+      this.syncLabels();
+      for (const listener of this.renderListeners) listener();
+    }
     this.syncSelectionRing();
 
     this.app.renderer.render(this.stage);
-    for (const listener of this.renderListeners) listener();
     this.rafId = requestAnimationFrame(this.renderFrame);
   };
 }
@@ -981,19 +1197,24 @@ function makeTweenNode(group: Group): TweenNode {
   };
 }
 
-/** d3 forceLink 默认强度：1/min(度数source, 度数target) */
+/** d3 forceLink 默认强度：1/min(度数source, 度数target)；但当一边是超级 hub（度数>阈值）时按 1/√max 大幅减弱 */
 function defaultLinkStrength(adjacency: ReadonlyMap<string, ReadonlySet<string>>) {
   return (l: SimLink) => {
     const s = l.source as SimNode;
     const t = l.target as SimNode;
     const ds = Math.max(adjacency.get(s.id)?.size ?? 1, 1);
     const dt = Math.max(adjacency.get(t.id)?.size ?? 1, 1);
+    const hi = Math.max(ds, dt);
+    if (hi > SUPER_HUB_DEGREE) return 1 / Math.sqrt(hi);
     return 1 / Math.min(ds, dt);
+    // 与 graphUtils.makeAutoLinkStrength 保持一致（单一来源 SUPER_HUB_DEGREE）
   };
 }
 
 function collideRadius(d: SimNode): number {
-  return d.radius * COLLIDE_RADIUS_MULT + COLLIDE_PAD;
+  // 上限：deg-683 巨型 hub 的 collide（radius*5+4 = 285）会让任何扰动在星形图里被放大成连锁爆炸；
+  // 封顶到 COLLIDE_MAX，使单个超级节点不至于用「违反直觉的 285 半径球」碾压整张图。
+  return Math.min(d.radius * COLLIDE_RADIUS_MULT + COLLIDE_PAD, COLLIDE_MAX);
 }
 
 function toEngineNode(n: SimNode): EngineNode {
