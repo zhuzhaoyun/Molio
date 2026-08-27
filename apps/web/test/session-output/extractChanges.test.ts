@@ -35,21 +35,57 @@ describe('extractChanges', () => {
     ]);
   });
 
-  it('Write → create + write-new-file 占位；Append → append 占位', () => {
+  it('Write → create：content 全文渲染为 +行 diff（新建的变更就是整个文件）', () => {
     const msgs = [
       assistant({
         tools: [
-          tool({ id: 'w', name: 'Write', input: { file_path: '/vault/wiki/hot.md' } }),
+          tool({ id: 'w', name: 'Write', input: { file_path: '/vault/scripts/build_report.py', content: 'import re\n\nprint("x")' } }),
+        ],
+      }),
+    ];
+    const [c] = extractChanges(msgs, '/vault');
+    assert.strictEqual(c!.kind, 'create');
+    assert.strictEqual(c!.adds, 3);
+    assert.strictEqual(c!.dels, 0);
+    assert.strictEqual(c!.diff!.length, 3);
+    assert.ok(c!.diff!.every((l) => l.type === 'add'));
+  });
+
+  it('Write 覆写：同会话 Read 过该路径 → 覆写占位且 kind 转 update', () => {
+    const msgs = [
+      assistant({
+        tools: [
+          tool({ id: 'r', name: 'Read', input: { file_path: '/vault/wiki/hot.md' } }),
+          tool({ id: 'w', name: 'Write', input: { file_path: '/vault/wiki/hot.md', content: '# 新内容' } }),
+        ],
+      }),
+    ];
+    const changes = extractChanges(msgs, '/vault');
+    assert.strictEqual(changes.length, 1); // Read 本身不进变更
+    assert.strictEqual(changes[0]!.kind, 'update');
+    assert.strictEqual(changes[0]!.placeholder, 'write-overwrite');
+    assert.strictEqual(changes[0]!.adds, 1);
+    assert.strictEqual(changes[0]!.diff, undefined);
+  });
+
+  it('Write 空内容 → 空文件占位', () => {
+    const msgs = [assistant({ tools: [tool({ id: 'w', name: 'Write', input: { file_path: '/vault/wiki/e.md', content: '' } })] })];
+    const [c] = extractChanges(msgs, '/vault');
+    assert.strictEqual(c!.placeholder, 'write-new-file');
+    assert.strictEqual(c!.adds, 0);
+  });
+
+  it('Write → create + Append → append 占位', () => {
+    const msgs = [
+      assistant({
+        tools: [
           tool({ id: 'ap', name: 'Append', input: { file_path: '/vault/wiki/log.md' } }),
         ],
       }),
     ];
     const changes = extractChanges(msgs, '/vault');
-    assert.strictEqual(changes.length, 2);
-    assert.strictEqual(changes[0]!.kind, 'create');
-    assert.strictEqual(changes[0]!.placeholder, 'write-new-file');
-    assert.strictEqual(changes[1]!.kind, 'append');
-    assert.strictEqual(changes[1]!.placeholder, 'append-file');
+    assert.strictEqual(changes[0]!.kind, 'append');
+    assert.strictEqual(changes[0]!.placeholder, 'append-file');
   });
 
   it('绝对 / ./ 相对形态归一化为同一 path key', () => {
@@ -91,7 +127,7 @@ describe('extractChanges', () => {
     ];
     const [w, ap, ed] = extractChanges(msgs, '/vault');
     assert.strictEqual(w!.adds, 3);
-    assert.strictEqual(w!.dels, undefined);
+    assert.strictEqual(w!.dels, 0);
     assert.strictEqual(ap!.adds, 2);
     assert.strictEqual(ed!.adds, 1);
     assert.strictEqual(ed!.dels, 2);

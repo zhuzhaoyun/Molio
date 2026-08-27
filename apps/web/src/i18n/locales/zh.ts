@@ -119,7 +119,9 @@ const zh: Record<string, string> = {
   'output.changeKind.create': '新建文件',
   'output.changeKind.update': '编辑',
   'output.changeKind.append': '追加',
-  'output.writeNewFile': '整文件新建（改动内容在文件内查看）',
+  'output.writeNewFile': '新建了空文件',
+  'output.writeOverwrite': '整文件替换：旧内容未记录（快照功能上线后支持逐行对比）',
+  'output.diffTruncated': '该文件较长，变更仅展示前 500 行',
   'output.appendFile': '文件尾部追加了内容',
   'output.editNoSource': '此处改动缺少可对比的原文',
 

@@ -119,7 +119,9 @@ const en: Record<string, string> = {
   'output.changeKind.create': 'New file',
   'output.changeKind.update': 'Edited',
   'output.changeKind.append': 'Appended',
-  'output.writeNewFile': 'Whole file created (view content in the file itself)',
+  'output.writeNewFile': 'Created an empty file',
+  'output.writeOverwrite': 'Whole file replaced: previous content was not recorded (line comparison arrives with snapshots)',
+  'output.diffTruncated': 'Large file — showing first 500 lines of changes',
   'output.appendFile': 'Content appended to end of file',
   'output.editNoSource': 'Change lacks a comparable original',
 

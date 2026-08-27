@@ -391,7 +391,7 @@ body.home-dock-resizing {
   font-variant-numeric: tabular-nums;
 }
 .session-output-changes-count .is-add { color: var(--green, #4a7c59); }
-.session-output-changes-count .is-del { color: #c0392b; }
+.session-output-changes-count .is-del { color: var(--red, #c0392b); }
 .session-output-changes-file-count {
   flex: none;
   color: var(--text-faint);
@@ -445,8 +445,8 @@ body.home-dock-resizing {
   word-break: break-word;
 }
 .session-output-diff-line.is-del {
-  background-color: color-mix(in srgb, #c0392b 9%, transparent);
-  color: color-mix(in srgb, #c0392b 78%, var(--text));
+  background-color: color-mix(in srgb, var(--red, #c0392b) 9%, transparent);
+  color: color-mix(in srgb, var(--red, #c0392b) 78%, var(--text));
 }
 .session-output-diff-line.is-add {
   background-color: color-mix(in srgb, var(--green, #4a7c59) 12%, transparent);

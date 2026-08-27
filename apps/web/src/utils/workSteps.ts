@@ -170,21 +170,38 @@ function lineCount(text: string): number {
   return t === '' ? 0 : t.split('\n').length;
 }
 
+/** 视为「读文件」的工具 —— Write 前是否读过该路径 = 新建 vs 覆写的判据
+ *  （Claude Code 有 Read-before-Write 强约束：覆写前必然 Read 过）。 */
+const READ_BEFORE_WRITE_TOOLS = new Set(['Read', 'Glob', 'Grep']);
+
+/** 伪 diff 行数上限：整文件新建的超大文件只渲染前 N 行（防 DOM 爆炸）。 */
+const CREATE_DIFF_MAX_LINES = 500;
+
 /**
  * 从会话抽取「变更序列」（供产出面板变更 tab）：逐消息、逐写入工具展开，
  * 不按 path 去重（同一文件的多次改动都要看），只保留 done、排除 isError。
  * 归一化 path 与 writeKey 一致；label 用「首次出现」时的 basename，同名文件
  * 由调用方 disambiguateLabels 消歧。每条带 adds/dels 概要（文件行合计由
  * 调用方对组内求和）。
+ *
+ * Write 的新建 vs 覆写判定：同会话内该路径被 Read/Glob/Grep 过、或此前已有
+ * 写入记录 → 覆写（旧内容未记录，占位）；否则 → 新建，content 全文渲染为
+ * +行 diff（新建的「变更」就是整个文件，无需等快照）。
  */
 export function extractChanges(messages: ChatMessage[], vaultPath?: string): ChangeEntry[] {
   const out: ChangeEntry[] = [];
+  const touched = new Set<string>(); // 会话内已 Read/Glob/Grep 过的路径（归一化）
+  const written = new Set<string>(); // 会话内已写入过的路径
   for (const m of messages) {
     if (m.role !== 'assistant') continue;
     for (const t of m.tools ?? []) {
       if (t.status !== 'done' || t.isError) continue;
-      if (!isWriteTool(t.name)) continue;
       const path = writeTargetPath(t);
+      if (path && READ_BEFORE_WRITE_TOOLS.has(t.name)) {
+        touched.add(writeKey(path, vaultPath));
+        continue;
+      }
+      if (!isWriteTool(t.name)) continue;
       if (!path) continue;
       const input = (typeof t.input === 'object' && t.input) ? t.input as Record<string, unknown> : {};
       const norm = writeKey(path, vaultPath);
@@ -202,8 +219,9 @@ export function extractChanges(messages: ChatMessage[], vaultPath?: string): Cha
         const newS = typeof input['new_string'] === 'string' ? input['new_string'] as string : '';
         if (oldS || newS) {
           entry.diff = lineDiff(oldS, newS);
-          entry.adds = countDiff(entry.diff).adds;
-          entry.dels = countDiff(entry.diff).dels;
+          const { adds, dels } = countDiff(entry.diff);
+          entry.adds = adds;
+          entry.dels = dels;
         } else {
           entry.placeholder = 'edit-no-source';
         }
@@ -218,22 +236,41 @@ export function extractChanges(messages: ChatMessage[], vaultPath?: string): Cha
         }
         if (diff.length > 0) {
           entry.diff = diff;
-          entry.adds = countDiff(diff).adds;
-          entry.dels = countDiff(diff).dels;
+          const { adds, dels } = countDiff(diff);
+          entry.adds = adds;
+          entry.dels = dels;
         } else {
           entry.placeholder = 'edit-no-source';
         }
       } else if (t.name === 'Write') {
-        // 整文件：旧内容未知（Phase 2 快照前）不出 diff，但新增行数可从 content 统计
         const content = typeof input['content'] === 'string' ? input['content'] as string : '';
-        entry.adds = lineCount(content);
-        entry.placeholder = 'write-new-file';
+        const isOverwrite = touched.has(norm) || written.has(norm);
+        if (isOverwrite) {
+          // 覆写：旧内容未记录（Phase 2 快照后可对比），只给新增行数概要
+          entry.kind = 'update';
+          entry.adds = lineCount(content);
+          entry.placeholder = 'write-overwrite';
+        } else {
+          // 新建：变更 = 整个文件，全文渲染为 +行（超上限截断）；空内容给占位
+          const lines = content === '' ? [] : content.replace(/\r\n/g, '\n').split('\n');
+          if (lines.length === 0) {
+            entry.adds = 0;
+            entry.placeholder = 'write-new-file';
+          } else {
+            const shown = lines.slice(0, CREATE_DIFF_MAX_LINES);
+            entry.diff = shown.map((text) => ({ type: 'add' as const, text }));
+            entry.adds = lines.length;
+            entry.dels = 0;
+            if (lines.length > CREATE_DIFF_MAX_LINES) entry.placeholder = 'diff-truncated';
+          }
+        }
       } else {
         // Append：新追加的行数可统计（旧文件尾部未知，不出 diff）
         const content = typeof input['content'] === 'string' ? input['content'] as string : '';
         entry.adds = lineCount(content);
         entry.placeholder = 'append-file';
       }
+      written.add(norm);
       out.push(entry);
     }
   }

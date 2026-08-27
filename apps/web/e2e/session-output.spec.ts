@@ -26,7 +26,7 @@ function buildAbsRun(vaultPath: string) {
     { type: 'tool_result', toolUseId: 'w3', content: '已更新', isError: false },
     { type: 'tool_use', id: 'w4', name: 'Write', input: { file_path: `${vaultPath}/wiki/hot.md` } },
     { type: 'tool_result', toolUseId: 'w4', content: '已写入', isError: false },
-    { type: 'tool_use', id: 'w5', name: 'Write', input: { file_path: `${vaultPath}/scripts/build_report.py` } },
+    { type: 'tool_use', id: 'w5', name: 'Write', input: { file_path: `${vaultPath}/scripts/build_report.py`, content: 'import re\n\nprint("build report")\n' } },
     { type: 'tool_result', toolUseId: 'w5', content: '已写入', isError: false },
     // 同一 hot.md 的另一种上报形态 —— 聚合层应去重，不得出现两个 hot.md
     { type: 'tool_use', id: 'w6', name: 'Edit', input: { file_path: './wiki/hot.md' } },
@@ -229,6 +229,10 @@ test.describe('Home 会话产出面板', () => {
       // hot.md 组：w4 create 占位 + w6 edit-no-source 占位（无 old/new），两条并列
       const hotGroup = panel.locator('[data-testid="session-output-change-group"]', { hasText: 'hot.md' });
       await expect(hotGroup.locator('[data-testid="session-output-change"]')).toHaveCount(2);
+      // 新建的 .py：content 全文渲染为 +行 diff（含代码行），不再只有占位
+      const pyFile = panel.locator('[data-testid="session-output-change-file"]', { hasText: 'build_report.py' });
+      await pyFile.click();
+      await expect(panel.locator('[data-testid="session-output-diff-add"]', { hasText: 'print("build report")' })).toBeVisible();
 
       // 回到概览，写入列表恢复
       await panel.locator('[data-testid="session-output-tab-overview"]').click();

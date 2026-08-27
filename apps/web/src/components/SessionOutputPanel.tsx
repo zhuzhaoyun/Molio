@@ -315,8 +315,10 @@ export function SessionOutputPanel({ messages }: Props) {
                           ) : (
                             <p className="session-output-change-note">
                               {c.placeholder === 'write-new-file' && t('output.writeNewFile')}
+                              {c.placeholder === 'write-overwrite' && t('output.writeOverwrite')}
                               {c.placeholder === 'append-file' && t('output.appendFile')}
                               {c.placeholder === 'edit-no-source' && t('output.editNoSource')}
+                              {c.placeholder === 'diff-truncated' && t('output.diffTruncated')}
                             </p>
                           )}
                         </div>
