@@ -191,6 +191,18 @@
   background-color: var(--bg-elevated);
   min-width: 0;
 }
+/* 非 markdown 文本（.py/.json/.csv…）的代码视图：等宽 + 保留原文，不被 md 语法吞掉 */
+.session-output-preview-code {
+  margin: 0;
+  padding: 12px 14px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: hidden;
+}
 .session-output-preview-back {
   display: inline-flex;
   align-items: center;

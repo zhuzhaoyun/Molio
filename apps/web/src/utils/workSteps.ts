@@ -1,6 +1,6 @@
 // apps/web/src/utils/workSteps.ts
 import type { ChatMessage, ToolEvent } from '../hooks/useChatCore';
-import { extractWrites, type WriteRef } from './toolRefs';
+import { extractWrites, type WriteRef } from './toolRefs.ts';
 
 export interface WorkStep {
   id: string;
@@ -112,9 +112,46 @@ export function deriveWorkSteps(messages: ChatMessage[]): WorkStep[] {
 }
 
 export interface SessionOutput {
-  /** 来自 extractWrites —— 已按 path 去重、仅 done；messageId 用于「定位回对话」溯源 */
+  /** 来自 extractWrites —— 已按归一化 path 去重、仅 done；messageId 用于「定位回对话」溯源；
+   *  同名文件（如 wiki/INDEX.md 与 sources/INDEX.md）label 自动加父目录消歧。 */
   writes: (WriteRef & { messageId: string })[];
   turns: number;         // assistant 消息数
+}
+
+/**
+ * 把 agent 上报的路径归一化为去重 key：Windows 分隔符统一、剥 ./ 前缀、
+ * vault 内绝对路径还原为相对（与 daemon toVaultRelativePath 同一语义，轻量版）。
+ * Write 工具的上报形态不稳定（同文件可能被先报相对后报绝对），不去重会重复列出。
+ */
+function writeKey(rawPath: string, vaultPath?: string): string {
+  let p = rawPath.replace(/\\/g, '/');
+  p = p.replace(/^\.\/+/, '');
+  if (vaultPath) {
+    const vp = vaultPath.replace(/\\/g, '/').replace(/\/+$/, '');
+    if (p.startsWith(`${vp}/`)) p = p.slice(vp.length + 1);
+    else if (p === vp) p = '';
+  }
+  return p;
+}
+
+/** label 消歧：同名文件（不同目录）在列表里用最短的「能区分开」的尾部路径。 */
+function disambiguateLabels<W extends { path: string; label: string }>(writes: W[]): void {
+  const byLabel = new Map<string, W[]>();
+  for (const w of writes) {
+    const list = byLabel.get(w.label) ?? [];
+    list.push(w);
+    byLabel.set(w.label, list);
+  }
+  for (const [, group] of byLabel) {
+    if (group.length < 2) continue;
+    let depth = 1;
+    while (depth < 6) {
+      const keys = new Set(group.map((w) => w.path.split('/').slice(-depth).join('/')));
+      if (keys.size === group.length) break;
+      depth++;
+    }
+    for (const w of group) w.label = w.path.split('/').slice(-depth).join('/');
+  }
 }
 
 /**
@@ -123,18 +160,29 @@ export interface SessionOutput {
  * 外部引用（读过的文件 / 网页 URL）不进会话产出——它们已在每条消息的 SourceChips 内联展示。
  * 逐消息抽取并挂 messageId（首现去重），供产出面板「定位回对话」溯源。
  */
-export function aggregateSessionOutput(messages: ChatMessage[]): SessionOutput {
+export function aggregateSessionOutput(messages: ChatMessage[], vaultPath?: string): SessionOutput {
   const assistantMsgs = messages.filter((m) => m.role === 'assistant');
-  const seen = new Set<string>();
+  const seen = new Map<string, string>(); // key → 已收录的原始 path
   const writes: (WriteRef & { messageId: string })[] = [];
   for (const m of assistantMsgs) {
     // extractWrites 只按 status 过滤（running/error status 被排除），
     // 但 isError=true 且 status='done' 的异常工具不在其列 —— 会话聚合层统一再滤一次。
     for (const w of extractWrites((m.tools ?? []).filter((t) => !t.isError))) {
-      if (seen.has(w.path)) continue;
-      seen.add(w.path);
+      const key = writeKey(w.path, vaultPath);
+      if (key && seen.has(key)) {
+        // 同一文件的另一种上报形态 —— 若先前只报了无扩展名/短形式，保留更完整的一条
+        const prev = seen.get(key)!;
+        if (w.path.length > prev.length) {
+          const idx = writes.findIndex((x) => x.path === prev);
+          if (idx >= 0 && writes[idx]) writes[idx] = { ...w, messageId: m.id };
+          seen.set(key, w.path);
+        }
+        continue;
+      }
+      if (key) seen.set(key, w.path);
       writes.push({ ...w, messageId: m.id });
     }
   }
+  disambiguateLabels(writes);
   return { writes, turns: assistantMsgs.length };
 }

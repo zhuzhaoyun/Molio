@@ -562,7 +562,18 @@ function isSupportedFile(name: string): boolean {
 }
 
 /** Text file extensions — content read as UTF-8 */
-export const TEXT_EXTS = ['.md', '.txt', '.html', '.htm', '.json', '.yaml', '.yml'];
+export const TEXT_EXTS = [
+  // Documents / structured text
+  '.md', '.txt', '.html', '.htm', '.json', '.yaml', '.yml',
+  // Code — agents routinely write scripts into vaults (e.g. data pipelines
+  // alongside wiki sources); read them back as text, not "binary".
+  '.py', '.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx',
+  '.java', '.c', '.h', '.cpp', '.hpp', '.go', '.rs', '.rb', '.php', '.swift', '.kt',
+  '.sh', '.bash', '.zsh', '.bat', '.ps1',
+  '.css', '.scss', '.less',
+  // Data / config
+  '.csv', '.tsv', '.xml', '.toml', '.ini', '.cfg', '.conf', '.sql', '.log',
+];
 
 /** Image file extensions — displayed inline via <img> */
 export const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp', '.ico'];
@@ -728,6 +739,23 @@ const MIME_TYPES: Record<string, string> = {
   '.json': 'application/json',
   '.yaml': 'text/yaml',
   '.yml': 'text/yaml',
+  // Code / data text — mimeType is informational for the read API card; the
+  // text-vs-binary gate is TEXT_EXTS (isTextFile), not this map.
+  '.py': 'text/x-python',
+  '.js': 'text/javascript',
+  '.mjs': 'text/javascript',
+  '.cjs': 'text/javascript',
+  '.ts': 'text/typescript',
+  '.tsx': 'text/typescript',
+  '.jsx': 'text/javascript',
+  '.css': 'text/css',
+  '.csv': 'text/csv',
+  '.tsv': 'text/tab-separated-values',
+  '.xml': 'application/xml',
+  '.toml': 'text/plain',
+  '.ini': 'text/plain',
+  '.sql': 'application/sql',
+  '.log': 'text/plain',
   // Images
   '.png': 'image/png',
   '.jpg': 'image/jpeg',

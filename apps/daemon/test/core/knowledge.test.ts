@@ -388,6 +388,16 @@ describe('knowledge filesystem operations', () => {
       const file = readFile(vaultPath, 'config.yaml');
       assert.equal(file.mimeType, 'text/yaml');
     });
+
+    // Regression: agents write scripts into vaults (build_report.py etc.); .py
+    // was missing from TEXT_EXTS so readFile returned content:'' (binary path)
+    // and the web preview showed "无法正常显示".
+    it('should read .py as text with code mime (agent scripts in vault)', () => {
+      writeFile(vaultPath, 'scripts/build_report.py', 'print("hello")\n');
+      const file = readFile(vaultPath, 'scripts/build_report.py');
+      assert.equal(file.content, 'print("hello")\n');
+      assert.equal(file.mimeType, 'text/x-python');
+    });
   });
 
   describe('writeFile — edge cases', () => {

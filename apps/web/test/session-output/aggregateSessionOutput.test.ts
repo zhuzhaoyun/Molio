@@ -1,8 +1,8 @@
 // apps/web/test/session-output/aggregateSessionOutput.test.ts
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { aggregateSessionOutput } from '../../src/utils/workSteps';
-import type { ChatMessage, ToolEvent } from '../../src/hooks/useChatCore';
+import { aggregateSessionOutput } from '../../src/utils/workSteps.ts';
+import type { ChatMessage, ToolEvent } from '../../src/hooks/useChatCore.ts';
 
 function tool(over: Partial<ToolEvent> = {}): ToolEvent {
   return { id: 't', name: 'Read', status: 'done', input: {}, isError: false, result: '', ...over };
@@ -40,23 +40,37 @@ describe('aggregateSessionOutput', () => {
     assert.strictEqual(aggregateSessionOutput(msgs).writes.length, 0);
   });
 
-  it('sources 跨消息按 target 去重、仅收 done', () => {
+  it('同一文件多形态上报（绝对 / ./ 相对）归一化去重为一条', () => {
     const msgs = [
-      assistant({ tools: [tool({ name: 'WebSearch', result: 'a https://x.com/1' })] }),
-      assistant({ tools: [tool({ name: 'WebSearch', result: 'https://x.com/1 b https://y.com/2' })] }),
+      assistant({
+        tools: [
+          tool({ name: 'Write', input: { file_path: '/vault/wiki/hot.md' } }),
+          tool({ name: 'Edit', input: { file_path: './wiki/hot.md' } }),
+          tool({ name: 'Write', input: { file_path: '/vault/wiki/hot.md' } }),
+        ],
+      }),
     ];
-    assert.strictEqual(aggregateSessionOutput(msgs).sources.length, 2);
+    const { writes } = aggregateSessionOutput(msgs, '/vault');
+    assert.strictEqual(writes.length, 1);
+    // 去重时保留更完整（更长）的上报形态
+    assert.strictEqual(writes[0]!.path, '/vault/wiki/hot.md');
   });
 
-  it('URL 上限 8 按每条消息计：两条各 10 条不同 URL → 聚合 16 条（非整会话截 8）', () => {
-    const urlsA = Array.from({ length: 10 }, (_, i) => `https://a${i}.com/${i}`);
-    const urlsB = Array.from({ length: 10 }, (_, i) => `https://b${i}.com/${i}`);
+  it('同名不同目录的文件 label 加父目录消歧', () => {
     const msgs = [
-      assistant({ tools: [tool({ name: 'WebSearch', result: urlsA.join(' ') })] }),
-      assistant({ tools: [tool({ name: 'WebSearch', result: urlsB.join(' ') })] }),
+      assistant({
+        tools: [
+          tool({ name: 'Edit', input: { file_path: 'wiki/INDEX.md' } }),
+          tool({ name: 'Edit', input: { file_path: 'wiki/sources/INDEX.md' } }),
+          tool({ name: 'Edit', input: { file_path: 'wiki/log.md' } }),
+        ],
+      }),
     ];
-    // 错误实现（整会话拼一次）得 8；正确实现每消息各 8、跨消息不重复 → 16
-    assert.strictEqual(aggregateSessionOutput(msgs).sources.length, 16);
+    const labels = aggregateSessionOutput(msgs).writes.map((w) => w.label);
+    // log.md 唯一，保持裸名；两个 INDEX.md 用尾部两级路径区分
+    assert.ok(labels.includes('log.md'));
+    const indexLabels = labels.filter((l) => l.endsWith('INDEX.md')).sort();
+    assert.deepEqual(indexLabels, ['sources/INDEX.md', 'wiki/INDEX.md']);
   });
 
   it('turns = assistant 消息数；user 消息不参与聚合', () => {

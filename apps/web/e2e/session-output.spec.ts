@@ -13,21 +13,29 @@ import { createTempVault, cleanupTempVault } from './helpers/cleanup';
  * 全量 E2E 门禁；CLAUDE.md「UI 改动与 E2E 同 commit」。
  */
 
-// Write 产物 4 个 —— 全部绝对路径，对齐真实 agent 上报形态（Write 工具总是报绝对路径）
-const outputRunAbs = [
-  { type: 'status', label: 'running', model: 'claude-sonnet-4-5' },
-  { type: 'tool_use', id: 'w1', name: 'Write', input: { file_path: '/vault/wiki/2026-08-27-新闻要点.md' } },
-  { type: 'tool_result', toolUseId: 'w1', content: '已写入', isError: false },
-  { type: 'tool_use', id: 'w2', name: 'Edit', input: { file_path: '/vault/wiki/INDEX.md' } },
-  { type: 'tool_result', toolUseId: 'w2', content: '已更新', isError: false },
-  { type: 'tool_use', id: 'w3', name: 'Edit', input: { file_path: '/vault/wiki/log.md' } },
-  { type: 'tool_result', toolUseId: 'w3', content: '已更新', isError: false },
-  { type: 'tool_use', id: 'w4', name: 'Write', input: { file_path: '/vault/wiki/hot.md' } },
-  { type: 'tool_result', toolUseId: 'w4', content: '已写入', isError: false },
-  { type: 'text_delta', delta: '归档完成。' },
-  { type: 'turn_end', stopReason: 'end_turn' },
-  { type: 'usage', usage: { input_tokens: 900, output_tokens: 120 }, costUsd: 0.02 },
-];
+// Write/Edit 产物：4 个 md（绝对路径）+ 1 个 .py 脚本 + 同一 hot.md 的 ./ 相对形态
+// （对齐真实 agent：上报形态不稳定、还会把构建脚本写进 vault）。vaultPath 动态注入。
+function buildAbsRun(vaultPath: string) {
+  return [
+    { type: 'status', label: 'running', model: 'claude-sonnet-4-5' },
+    { type: 'tool_use', id: 'w1', name: 'Write', input: { file_path: `${vaultPath}/wiki/2026-08-27-新闻要点.md` } },
+    { type: 'tool_result', toolUseId: 'w1', content: '已写入', isError: false },
+    { type: 'tool_use', id: 'w2', name: 'Edit', input: { file_path: `${vaultPath}/wiki/INDEX.md` } },
+    { type: 'tool_result', toolUseId: 'w2', content: '已更新', isError: false },
+    { type: 'tool_use', id: 'w3', name: 'Edit', input: { file_path: `${vaultPath}/wiki/log.md` } },
+    { type: 'tool_result', toolUseId: 'w3', content: '已更新', isError: false },
+    { type: 'tool_use', id: 'w4', name: 'Write', input: { file_path: `${vaultPath}/wiki/hot.md` } },
+    { type: 'tool_result', toolUseId: 'w4', content: '已写入', isError: false },
+    { type: 'tool_use', id: 'w5', name: 'Write', input: { file_path: `${vaultPath}/scripts/build_report.py` } },
+    { type: 'tool_result', toolUseId: 'w5', content: '已写入', isError: false },
+    // 同一 hot.md 的另一种上报形态 —— 聚合层应去重，不得出现两个 hot.md
+    { type: 'tool_use', id: 'w6', name: 'Edit', input: { file_path: './wiki/hot.md' } },
+    { type: 'tool_result', toolUseId: 'w6', content: '已更新', isError: false },
+    { type: 'text_delta', delta: '归档完成。' },
+    { type: 'turn_end', stopReason: 'end_turn' },
+    { type: 'usage', usage: { input_tokens: 900, output_tokens: 120 }, costUsd: 0.02 },
+  ] as const;
+}
 
 // Write 产物 1 个 + WebSearch 来源 2 个（来源不再进面板，仅用于验证「外部引用不混入产出」）
 const outputRun = [
@@ -147,30 +155,54 @@ test.describe('Home 会话产出面板', () => {
     await expect(target).toHaveClass(/evidence-flash/);
   });
 
-  test('绝对路径写入项预览：readFile 请求保留 %2F 编码（回归：双斜杠被折叠成相对路径致 404）', async ({ page }) => {
+  test('绝对路径写入项预览：readFile 请求保留 %2F 编码；形态归一化去重；py 走代码视图', async ({ page }) => {
     const vault = await createTempVault('e2e-dock-abs-path');
     try {
       await page.addInitScript((id) => { localStorage.setItem('molio.activeVaultId', id); }, vault.id);
-      // 拦 readFile：断言 URL 里绝对路径保持 %2F 编码；若被还原成真实斜杠则判死
+      // 拦 readFile：断言 URL 里绝对路径保持 %2F 编码；若被还原成真实斜杠则判死。
+      // .py 返回代码内容，验证预览走代码视图而非 markdown 渲染。
       let sawEncoded = false;
       let sawRawSlash = false;
+      const hotAbs = `${vault.path}/wiki/hot.md`;
       await page.route('**/knowledge/vaults/*/files/**', (route) => {
         const rawUrl = route.request().url();
-        if (rawUrl.includes('/files/%2Fvault%2Fwiki%2Fhot.md')) sawEncoded = true;
+        if (rawUrl.includes(encodeURIComponent(hotAbs))) sawEncoded = true;
         if (/\/files\/\//.test(rawUrl)) sawRawSlash = true;
+        const decoded = decodeURIComponent(rawUrl);
+        const isPy = decoded.endsWith('.py');
         return route.fulfill({
-          json: { path: '/vault/wiki/hot.md', content: '# 热点\n\n近端上下文正文', size: 100, modifiedAt: Date.now() },
+          json: {
+            path: isPy ? `${vault.path}/scripts/build_report.py` : hotAbs,
+            content: isPy
+              ? 'import re\n\nprint("build report")\n'
+              : '# 热点\n\n近端上下文正文',
+            size: 100, modifiedAt: Date.now(),
+          },
         });
       });
-      await mockChatRun(page, { script: outputRunAbs });
+      await mockChatRun(page, { script: buildAbsRun(vault.path) });
       await gotoHome(page);
       await sendMessage(page, '归档');
       await expect(page.locator('[data-testid="work-timeline-summary"]')).toBeVisible({ timeout: 15_000 });
       await page.locator('[data-testid="home-output-toggle"]').click();
       const panel = page.locator('[data-testid="session-output-panel"]');
-      await panel.locator('[data-testid="session-output-write"]').last().click(); // hot.md
-      // 预览正常渲染（不是「无法读取」错误）
+
+      // 去重：5 个唯一文件（4 md + 1 py），hot.md 的相对形态不产生第二行
+      await expect(panel.locator('[data-testid="session-output-write"]')).toHaveCount(5);
+      await expect(panel.locator(`[data-path="${hotAbs}"]`)).toHaveCount(1);
+
+      // md 预览正常渲染（不是「无法读取」错误）
+      await panel.locator(`[data-path="${hotAbs}"]`).click();
       await expect(panel.locator('[data-testid="session-output-preview"]')).toContainText('热点', { timeout: 5_000 });
+      await panel.locator('[data-testid="session-output-preview-back"]').click();
+
+      // .py 脚本 → 等宽代码视图原文展示，不被 markdown 吞掉
+      const pyAbs = `${vault.path}/scripts/build_report.py`;
+      await panel.locator(`[data-path="${pyAbs}"]`).click();
+      const codeView = panel.locator('.session-output-preview-code');
+      await expect(codeView).toBeVisible({ timeout: 5_000 });
+      await expect(codeView).toContainText('print("build report")');
+
       expect(sawEncoded).toBe(true);
       expect(sawRawSlash).toBe(false);
     } finally {

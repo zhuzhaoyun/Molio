@@ -6,7 +6,7 @@
 import { useMemo, useState, useRef, useCallback, useEffect } from 'react';
 import type { ChatMessage } from '../hooks/useChat';
 import { aggregateSessionOutput } from '../utils/workSteps';
-import { useActiveVaultId } from '../stores/vaultStore';
+import { useActiveVault, useActiveVaultId } from '../stores/vaultStore';
 import { useI18n } from '../i18n';
 import { api } from '../api/client';
 import { MdRenderer } from './kb/MdRenderer';
@@ -16,6 +16,11 @@ const DOCK_W_DEFAULT = 280;
 const DOCK_W_MIN = 200;
 const DOCK_W_MAX = 480;
 const STORAGE_KEY_WIDTH = 'molio.home-dock-w';
+
+/** Markdown 文件走富文本渲染；其余文本（.py/.json/.csv…）用等宽代码视图，避免被 md 语法吞掉。 */
+function isMarkdownPath(p: string): boolean {
+  return /(\.mdown|\.markdown|\.md)$/i.test(p);
+}
 
 function clampDockWidth(w: number): number {
   return Math.min(DOCK_W_MAX, Math.max(DOCK_W_MIN, Math.round(w)));
@@ -37,7 +42,11 @@ interface Props {
 
 export function SessionOutputPanel({ messages }: Props) {
   const { t } = useI18n();
-  const output = useMemo(() => aggregateSessionOutput(messages), [messages]);
+  const activeVault = useActiveVault();
+  const output = useMemo(
+    () => aggregateSessionOutput(messages, activeVault?.path),
+    [messages, activeVault?.path],
+  );
   // 早期会话判定：有 assistant 消息但整段对话没有任何过程数据（tools/thinking
   // 均未持久化的旧数据）→ 空态下附提示，避免误读为「丢了产出」的 bug。
   const legacyConversation = useMemo(
@@ -165,7 +174,9 @@ export function SessionOutputPanel({ messages }: Props) {
               <p className="session-output-preview-note">{t('output.previewBinary')}</p>
             )}
             {!preview.loading && !preview.error && !preview.tooLarge && preview.content !== '' && (
-              <MdRenderer content={preview.content} className="session-output-preview" />
+              isMarkdownPath(preview.target.path)
+                ? <MdRenderer content={preview.content} className="session-output-preview" />
+                : <pre className="session-output-preview-code">{preview.content}</pre>
             )}
           </div>
         </>
