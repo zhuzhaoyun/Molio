@@ -110,6 +110,18 @@ const en: Record<string, string> = {
   'output.previewError': 'Unable to read file (it may have been deleted or moved)',
   'output.previewTooLarge': 'File too large to preview here',
   'output.previewBinary': 'This file type cannot be previewed',
+  'output.tabOverview': 'Overview',
+  'output.tabChanges': 'Changes',
+  'output.changesEmpty': 'No changes to show',
+  'output.statCreates': 'Created',
+  'output.statUpdates': 'Updated',
+  'output.statAppends': 'Appended',
+  'output.changeKind.create': 'New file',
+  'output.changeKind.update': 'Edited',
+  'output.changeKind.append': 'Appended',
+  'output.writeNewFile': 'Whole file created (view content in the file itself)',
+  'output.appendFile': 'Content appended to end of file',
+  'output.editNoSource': 'Change lacks a comparable original',
 
   // ── App ──
   'app.vaultSwitchReset': 'Vault switched, conversation reset',

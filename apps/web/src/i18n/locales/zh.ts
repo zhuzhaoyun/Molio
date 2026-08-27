@@ -110,6 +110,18 @@ const zh: Record<string, string> = {
   'output.previewError': '无法读取文件（可能已删除或移动）',
   'output.previewTooLarge': '文件过大，无法在此预览',
   'output.previewBinary': '该文件类型无法预览',
+  'output.tabOverview': '概览',
+  'output.tabChanges': '变更',
+  'output.changesEmpty': '没有可展示的变更',
+  'output.statCreates': '新建',
+  'output.statUpdates': '更新',
+  'output.statAppends': '追加',
+  'output.changeKind.create': '新建文件',
+  'output.changeKind.update': '编辑',
+  'output.changeKind.append': '追加',
+  'output.writeNewFile': '整文件新建（改动内容在文件内查看）',
+  'output.appendFile': '文件尾部追加了内容',
+  'output.editNoSource': '此处改动缺少可对比的原文',
 
   // ── App ──
   'app.vaultSwitchReset': '已切换知识库，会话已重置',

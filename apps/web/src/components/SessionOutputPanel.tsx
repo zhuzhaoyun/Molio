@@ -5,7 +5,8 @@
 // 纯前端聚合（aggregateSessionOutput），零 daemon/contracts。
 import { useMemo, useState, useRef, useCallback, useEffect } from 'react';
 import type { ChatMessage } from '../hooks/useChat';
-import { aggregateSessionOutput } from '../utils/workSteps';
+import { aggregateSessionOutput, extractChanges, disambiguateLabels, type ChangeEntry } from '../utils/workSteps';
+import type { DiffLine } from '../utils/diff';
 import { useActiveVault, useActiveVaultId } from '../stores/vaultStore';
 import { useI18n } from '../i18n';
 import { api } from '../api/client';
@@ -20,6 +21,32 @@ const STORAGE_KEY_WIDTH = 'molio.home-dock-w';
 /** Markdown 文件走富文本渲染；其余文本（.py/.json/.csv…）用等宽代码视图，避免被 md 语法吞掉。 */
 function isMarkdownPath(p: string): boolean {
   return /(\.mdown|\.markdown|\.md)$/i.test(p);
+}
+
+/** 变更序列按 path 分组（保持首次出现的路径顺序，同 path 的多条改动原序）。 */
+function groupChangesByPath(changes: ChangeEntry[]): { path: string; label: string; items: ChangeEntry[] }[] {
+  const order: string[] = [];
+  const map = new Map<string, { label: string; items: ChangeEntry[] }>();
+  for (const c of changes) {
+    let g = map.get(c.path);
+    if (!g) {
+      g = { label: c.label, items: [] };
+      map.set(c.path, g);
+      order.push(c.path);
+    }
+    g.items.push(c);
+  }
+  return order.map((p) => ({ path: p, label: map.get(p)!.label, items: map.get(p)!.items }));
+}
+
+/** 变更 tab 的单条 diff 行：type 前缀 + 行内容（等宽，280px dock 内宜读）。 */
+function DiffLineRow({ line }: { line: DiffLine }) {
+  return (
+    <span className={`session-output-diff-line is-${line.type}`} data-testid={`session-output-diff-${line.type}`}>
+      <span className="session-output-diff-mark" aria-hidden>{line.type === 'add' ? '+' : '−'}</span>
+      <span className="session-output-diff-text">{line.text || ' '}</span>
+    </span>
+  );
 }
 
 function clampDockWidth(w: number): number {
@@ -40,6 +67,8 @@ interface Props {
   messages: ChatMessage[];
 }
 
+type PanelTab = 'overview' | 'changes';
+
 export function SessionOutputPanel({ messages }: Props) {
   const { t } = useI18n();
   const activeVault = useActiveVault();
@@ -47,6 +76,17 @@ export function SessionOutputPanel({ messages }: Props) {
     () => aggregateSessionOutput(messages, activeVault?.path),
     [messages, activeVault?.path],
   );
+  // 变更序列（同上，纯派生）：同一文件的多次改动并列，不按 path 去重。
+  const changes = useMemo(() => {
+    const cs = extractChanges(messages, activeVault?.path);
+    disambiguateLabels(cs);
+    return groupChangesByPath(cs);
+  }, [messages, activeVault?.path]);
+  const [tab, setTab] = useState<PanelTab>('overview');
+  // 概览统计条：新建/更新来自去重后的写入清单，追加来自变更序列
+  const creates = output.writes.filter((w) => w.kind === 'create').length;
+  const updates = output.writes.filter((w) => w.kind === 'update').length;
+  const appends = changes.reduce((n, g) => n + g.items.filter((c) => c.kind === 'append').length, 0);
   // 早期会话判定：有 assistant 消息但整段对话没有任何过程数据（tools/thinking
   // 均未持久化的旧数据）→ 空态下附提示，避免误读为「丢了产出」的 bug。
   const legacyConversation = useMemo(
@@ -187,9 +227,83 @@ export function SessionOutputPanel({ messages }: Props) {
             <span className="session-output-stats" data-testid="session-output-stats">
               {t('output.stats', { writes: output.writes.length, turns: output.turns })}
             </span>
+            {/* 分段控制：概览 / 变更（WorkBuddy 式多投影；280px dock 用分段而非下拉） */}
+            <nav className="session-output-tabs" role="tablist" aria-label={t('output.title')}>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === 'overview'}
+                className={`session-output-tab${tab === 'overview' ? ' is-active' : ''}`}
+                data-testid="session-output-tab-overview"
+                onClick={() => setTab('overview')}
+              >
+                {t('output.tabOverview')}
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === 'changes'}
+                className={`session-output-tab${tab === 'changes' ? ' is-active' : ''}`}
+                data-testid="session-output-tab-changes"
+                onClick={() => setTab('changes')}
+              >
+                {t('output.tabChanges')}
+                {changes.length > 0 && <span className="session-output-tab-count">{changes.length}</span>}
+              </button>
+            </nav>
           </header>
 
-          {empty ? (
+          {tab === 'changes' ? (
+            /* ── 变更 tab：按文件分组的改动序列（同文件多次改动并列） ── */
+            <div className="session-output-body" data-testid="session-output-changes">
+              {changes.length === 0 ? (
+                <p className="session-output-empty">{t('output.changesEmpty')}</p>
+              ) : (
+                changes.map((g) => (
+                  <section key={g.path} className="session-output-changes-group" data-testid="session-output-change-group">
+                    <h3 className="session-output-changes-file" title={g.path}>
+                      <span className="session-output-changes-file-label">{g.label}</span>
+                      {g.items.length > 1 && <span className="session-output-changes-file-count">×{g.items.length}</span>}
+                    </h3>
+                    {g.items.map((c, i) => (
+                      <div key={`${c.toolId}-${i}`} className="session-output-change" data-testid="session-output-change">
+                        <div className="session-output-change-meta">
+                          <span className={`session-output-change-kind is-${c.kind}`}>
+                            {t(`output.changeKind.${c.kind}`)}
+                          </span>
+                          <button
+                            type="button"
+                            className="session-output-item-locate"
+                            data-testid="session-output-change-locate"
+                            title={t('output.locate')}
+                            aria-label={t('output.locate')}
+                            onClick={() => {
+                              window.dispatchEvent(new CustomEvent('molio:evidence-target', {
+                                detail: { toolId: c.toolId, messageId: c.messageId },
+                              }));
+                            }}
+                          >
+                            <span aria-hidden>⌖</span>
+                          </button>
+                        </div>
+                        {c.diff && c.diff.length > 0 ? (
+                          <div className="session-output-diff" data-testid="session-output-diff">
+                            {c.diff.map((l, li) => <DiffLineRow key={li} line={l} />)}
+                          </div>
+                        ) : (
+                          <p className="session-output-change-note">
+                            {c.placeholder === 'write-new-file' && t('output.writeNewFile')}
+                            {c.placeholder === 'append-file' && t('output.appendFile')}
+                            {c.placeholder === 'edit-no-source' && t('output.editNoSource')}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </section>
+                ))
+              )}
+            </div>
+          ) : empty ? (
             <>
               <p className="session-output-empty" data-testid="session-output-empty">{t('output.empty')}</p>
               {legacyConversation && (
@@ -202,6 +316,24 @@ export function SessionOutputPanel({ messages }: Props) {
             <div className="session-output-body">
               {output.writes.length > 0 && (
                 <section className="session-output-section">
+                  {/* 概览统计条：新建 / 更新 / 追加（纯前端聚合，WorkBuddy 概览式读数） */}
+                  <div className="session-output-statbar" data-testid="session-output-statbar">
+                    {creates > 0 && (
+                      <span className="session-output-stat" data-testid="session-output-stat-creates">
+                        {t('output.statCreates')} <b>{creates}</b>
+                      </span>
+                    )}
+                    {updates > 0 && (
+                      <span className="session-output-stat" data-testid="session-output-stat-updates">
+                        {t('output.statUpdates')} <b>{updates}</b>
+                      </span>
+                    )}
+                    {appends > 0 && (
+                      <span className="session-output-stat" data-testid="session-output-stat-appends">
+                        {t('output.statAppends')} <b>{appends}</b>
+                      </span>
+                    )}
+                  </div>
                   <h3 className="session-output-section-label">{t('output.writesLabel')}</h3>
                   {output.writes.map((w) => (
                     <div

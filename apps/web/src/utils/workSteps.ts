@@ -1,6 +1,24 @@
 // apps/web/src/utils/workSteps.ts
 import type { ChatMessage, ToolEvent } from '../hooks/useChatCore';
 import { extractWrites, type WriteRef } from './toolRefs.ts';
+import { lineDiff, type DiffLine } from './diff.ts';
+
+/** 是否为「写入」类工具（产出产物/改文件），与 toolRefs.WRITE_TOOLS 语义一致。 */
+function isWriteTool(name: string): boolean {
+  return ['Write', 'Edit', 'EditFile', 'MultiEdit', 'Append', 'AppendFile'].includes(name);
+}
+
+/** 取工具 input 的目标路径（对齐 toolRefs.writeTarget）。 */
+function writeTargetPath(tool: ToolEvent): string | null {
+  const input = tool.input;
+  if (input && typeof input === 'object') {
+    const o = input as Record<string, unknown>;
+    if (typeof o['file_path'] === 'string') return o['file_path'] as string;
+    if (typeof o['path'] === 'string') return o['path'] as string;
+  }
+  if (typeof input === 'string' && input.length > 0) return input;
+  return null;
+}
 
 export interface WorkStep {
   id: string;
@@ -118,6 +136,62 @@ export interface SessionOutput {
   turns: number;         // assistant 消息数
 }
 
+/** 变更 tab 的单条编辑：同一路径可能有多条（新建后被后续 Edit 改），按出现顺序保留。 */
+export interface ChangeEntry {
+  path: string;          // 归一化 path（作 key / 展示 / 定位）
+  label: string;
+  toolName: string;
+  kind: 'create' | 'update' | 'append';
+  messageId: string;
+  toolId: string;
+  /** Edit/MultiEdit：old→new 的行级 diff；无则可 undefined */
+  diff?: DiffLine[];
+  /** 无内容可 diff（整文件覆盖的 Write 等）时给占位说明 */
+  placeholder?: string;
+}
+
+/**
+ * 从会话抽取「变更序列」（供产出面板变更 tab）：逐消息、逐写入工具展开，
+ * 不按 path 去重（同一文件的多次改动都要看），只保留 done、排除 isError。
+ * 归一化 path 与 writeKey 一致；label 用「首次出现」时的 basename，同名文件
+ * 由调用方 disambiguateLabels 消歧。
+ */
+export function extractChanges(messages: ChatMessage[], vaultPath?: string): ChangeEntry[] {
+  const out: ChangeEntry[] = [];
+  for (const m of messages) {
+    if (m.role !== 'assistant') continue;
+    for (const t of m.tools ?? []) {
+      if (t.status !== 'done' || t.isError) continue;
+      if (!isWriteTool(t.name)) continue;
+      const path = writeTargetPath(t);
+      if (!path) continue;
+      const input = (typeof t.input === 'object' && t.input) ? t.input as Record<string, unknown> : {};
+      const norm = writeKey(path, vaultPath);
+      if (!norm) continue;
+      const entry: ChangeEntry = {
+        path: norm,
+        label: norm.split(/[\\/]/).pop() ?? norm,
+        toolName: t.name,
+        kind: t.name === 'Write' ? 'create' : (t.name === 'Append' || t.name === 'AppendFile') ? 'append' : 'update',
+        messageId: m.id,
+        toolId: t.id,
+      };
+      if (t.name === 'Edit' || t.name === 'EditFile' || t.name === 'MultiEdit') {
+        const oldS = typeof input['old_string'] === 'string' ? input['old_string'] as string : '';
+        const newS = typeof input['new_string'] === 'string' ? input['new_string'] as string : '';
+        if (oldS || newS) entry.diff = lineDiff(oldS, newS);
+        else entry.placeholder = 'edit-no-source';
+      } else if (t.name === 'Write') {
+        entry.placeholder = 'write-new-file'; // 整文件新增，Phase 2 快照前不产 diff
+      } else {
+        entry.placeholder = 'append-file';
+      }
+      out.push(entry);
+    }
+  }
+  return out;
+}
+
 /**
  * 把 agent 上报的路径归一化为去重 key：Windows 分隔符统一、剥 ./ 前缀、
  * vault 内绝对路径还原为相对（与 daemon toVaultRelativePath 同一语义，轻量版）。
@@ -135,7 +209,7 @@ function writeKey(rawPath: string, vaultPath?: string): string {
 }
 
 /** label 消歧：同名文件（不同目录）在列表里用最短的「能区分开」的尾部路径。 */
-function disambiguateLabels<W extends { path: string; label: string }>(writes: W[]): void {
+export function disambiguateLabels<W extends { path: string; label: string }>(writes: W[]): void {
   const byLabel = new Map<string, W[]>();
   for (const w of writes) {
     const list = byLabel.get(w.label) ?? [];

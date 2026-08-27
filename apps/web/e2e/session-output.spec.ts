@@ -20,7 +20,7 @@ function buildAbsRun(vaultPath: string) {
     { type: 'status', label: 'running', model: 'claude-sonnet-4-5' },
     { type: 'tool_use', id: 'w1', name: 'Write', input: { file_path: `${vaultPath}/wiki/2026-08-27-新闻要点.md` } },
     { type: 'tool_result', toolUseId: 'w1', content: '已写入', isError: false },
-    { type: 'tool_use', id: 'w2', name: 'Edit', input: { file_path: `${vaultPath}/wiki/INDEX.md` } },
+    { type: 'tool_use', id: 'w2', name: 'Edit', input: { file_path: `${vaultPath}/wiki/INDEX.md`, old_string: '内容页共 318 页', new_string: '内容页共 319 页' } },
     { type: 'tool_result', toolUseId: 'w2', content: '已更新', isError: false },
     { type: 'tool_use', id: 'w3', name: 'Edit', input: { file_path: `${vaultPath}/wiki/log.md` } },
     { type: 'tool_result', toolUseId: 'w3', content: '已更新', isError: false },
@@ -202,6 +202,25 @@ test.describe('Home 会话产出面板', () => {
       const codeView = panel.locator('.session-output-preview-code');
       await expect(codeView).toBeVisible({ timeout: 5_000 });
       await expect(codeView).toContainText('print("build report")');
+      await panel.locator('[data-testid="session-output-preview-back"]').click();
+
+      // 概览统计条（buildAbsRun：create×3 = w1/w4/w5；updates×2 = w2/w3；w6 是 hot 的重复形态不计）
+      await expect(panel.locator('[data-testid="session-output-stat-creates"]')).toContainText('3');
+      await expect(panel.locator('[data-testid="session-output-stat-updates"]')).toContainText('2');
+
+      // ── 变更 tab：按文件分组 5 组；w2 的 Edit 有 old/new → 行级 diff（−318 / +319）──
+      await panel.locator('[data-testid="session-output-tab-changes"]').click();
+      await expect(panel.locator('[data-testid="session-output-change-group"]')).toHaveCount(5);
+      const indexGroup = panel.locator('[data-testid="session-output-change-group"]', { hasText: 'INDEX.md' });
+      await expect(indexGroup.locator('[data-testid="session-output-diff-del"]').first()).toContainText('318');
+      await expect(indexGroup.locator('[data-testid="session-output-diff-add"]').first()).toContainText('319');
+      // hot.md 组：w4 create 占位 + w6 edit-no-source 占位（无 old/new），两条并列 ×2
+      const hotGroup = panel.locator('[data-testid="session-output-change-group"]', { hasText: 'hot.md' });
+      await expect(hotGroup.locator('[data-testid="session-output-change"]')).toHaveCount(2);
+
+      // 回到概览，写入列表恢复
+      await panel.locator('[data-testid="session-output-tab-overview"]').click();
+      await expect(panel.locator('[data-testid="session-output-write"]')).toHaveCount(5);
 
       expect(sawEncoded).toBe(true);
       expect(sawRawSlash).toBe(false);
