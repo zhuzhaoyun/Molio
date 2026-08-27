@@ -1,5 +1,6 @@
-import { app, BrowserWindow, dialog, ipcMain, shell, Menu } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell, Menu } from 'electron';
 import { spawn, execSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,6 +9,8 @@ import { log, getLogPath } from './logger.js';
 import { startFetchServer } from './wiki-fetcher.js';
 import { openFeishuLogin, getFeishuLoginStatus } from './wiki-fetcher-login.js';
 import { startDaemonMetricsPolling } from './daemon-metrics.js';
+import { startCryptoServer, stopCryptoServer } from './crypto-server.js';
+import { startAuthStatusPolling } from './auth-status-watch.js';
 import { CappedBuffer } from './capped-buffer.js';
 import { createVaultRecency } from './vault-recency.js';
 
@@ -34,8 +37,18 @@ const DEV_APP_ICON = path.join(__dirname, '..', 'build', 'icon.png');
 
 const PROTOCOL = 'molio';
 
-/** Base URL of the local daemon (dev and production both bind :3100). */
-const DAEMON_BASE = 'http://localhost:3100';
+/** Local daemon port (dev and production both bind :3100). Single source — no magic copies. */
+const DAEMON_PORT = 3100;
+
+/** Base URL of the local daemon. */
+const DAEMON_BASE = `http://localhost:${DAEMON_PORT}`;
+
+/**
+ * Official cloud auth endpoint (用户模块). Built-in default for packaged builds
+ * so end users can sign in with zero configuration. An explicit MOLIO_AUTH_URL
+ * env var (私有化部署 / Docker / 测试) always takes precedence.
+ */
+const DEFAULT_AUTH_URL = 'https://auth.molio.cn';
 
 /** Rebuild the macOS dock menu at most this often (vault list changes live in the web layer). */
 const DOCK_REFRESH_THROTTLE_MS = 3000;
@@ -57,6 +70,14 @@ let lastFocusedAppWindow = null;
 const rendererStates = new Map();
 let daemonProcess = null;
 let stopDaemonMetrics = null;
+let stopAuthStatusPolling = null;
+
+// 当前登录的 Molio userId（ULID，未登录为 null）。由 auth-status-watch 轮询
+// daemon /api/auth/status 维护，经 initMonitoring 的 getUserId 注入 ARMS
+// beforeReport → bundle.user.id。SDK 无 setUser API，这是唯一注入点。
+// 刻意只存 id 不存邮箱——监控归因不带 PII。
+let molioUserId = null;
+
 let daemonReady = false;
 /** Recently-opened vault LRU (macOS dock 「最近使用的知识库」). Created on ready. */
 let vaultRecency = null;
@@ -94,6 +115,37 @@ async function startDaemonProduction() {
     log('warn', 'main', `wiki fetch server failed to start: ${err?.message ?? err}`);
   }
 
+  // Start the safeStorage crypto HTTP server on a random 127.0.0.1 port.
+  // daemon (ELECTRON_RUN_AS_NODE) has no Electron API, so it RPC's us to
+  // encrypt/decrypt the auth token file (Win=DPAPI / mac=Keychain).
+  // Only start when encryption is actually available — on Linux without a
+  // keychain we deliberately fall back to the plaintext baseline (设计 §八 D3)
+  // by NOT setting the port env, instead of advertising crypto that 503s
+  // every call (which would leave tokens unpersisted).
+  let cryptoPort = null;
+  let cryptoToken = null;
+  try {
+    if (safeStorage.isEncryptionAvailable()) {
+      // Per-launch fresh shared secret: injected into daemon env alongside the
+      // port; crypto-server validates the Bearer on every call. The random port
+      // alone is not a security boundary (local processes can scan for it) —
+      // the secret is what stops other local processes using encrypt/decrypt.
+      cryptoToken = randomBytes(24).toString('base64url');
+      cryptoPort = await startCryptoServer(
+        {
+          isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
+          encryptString: (plaintext) => safeStorage.encryptString(plaintext),
+          decryptString: (data) => safeStorage.decryptString(data),
+        },
+        { token: cryptoToken },
+      );
+    } else {
+      log('info', 'main', 'safeStorage encryption unavailable — auth tokens use plaintext baseline (D3)');
+    }
+  } catch (err) {
+    log('warn', 'main', `crypto server failed to start: ${err?.message ?? err}`);
+  }
+
   return new Promise((resolve, reject) => {
     // Use Electron's embedded Node.js to run the daemon.
     // ELECTRON_RUN_AS_NODE=1 makes the Electron binary behave as a standard Node.js process,
@@ -101,10 +153,20 @@ async function startDaemonProduction() {
     const daemonEnv = {
       ...process.env,
       ELECTRON_RUN_AS_NODE: '1',
-      MOLIO_PORT: '3100',
+      MOLIO_PORT: String(DAEMON_PORT),
       MOLIO_STATIC_DIR: webStaticDir,
     };
+    // 云端认证地址：显式设置的 MOLIO_AUTH_URL（私有化/Docker/测试）优先；
+    // 缺省或纯空白（与 daemon auth-client 的 trim 语义一致）时注入内置官方地址，
+    // 否则打包客户端 isConfigured()=false，登录表单直接隐藏。
+    if (!String(daemonEnv.MOLIO_AUTH_URL ?? '').trim()) {
+      daemonEnv.MOLIO_AUTH_URL = DEFAULT_AUTH_URL;
+    }
     if (wikiFetchPort) daemonEnv.MOLIO_DESKTOP_FETCH_PORT = String(wikiFetchPort);
+    if (cryptoPort) {
+      daemonEnv.MOLIO_DESKTOP_CRYPTO_PORT = String(cryptoPort);
+      daemonEnv.MOLIO_DESKTOP_CRYPTO_TOKEN = cryptoToken;
+    }
     daemonProcess = spawn(process.execPath, [daemonEntry], {
       env: daemonEnv,
       stdio: 'pipe',
@@ -472,7 +534,7 @@ function createWindow({ url = '' } = {}) {
 function loadAppWindow(win, url = '') {
   if (!win || win.isDestroyed()) return;
   log('info', 'main', `daemon ready — loading app window url=${url}`);
-  win.loadURL('http://localhost:3100' + url);
+  win.loadURL(DAEMON_BASE + url);
   const wc = win.webContents;
   // Show the window once the app has rendered. This is the first (and
   // only) navigation for this webContents in production, so the ARMS
@@ -560,7 +622,7 @@ function buildKnowledgeUrlFromProtocolTarget(target) {
   const params = new URLSearchParams();
   if (target.vaultId) params.set('vault', target.vaultId);
   params.set('file', target.filePath);
-  return `http://localhost:3100/knowledge?${params.toString()}`;
+  return `${DAEMON_BASE}/knowledge?${params.toString()}`;
 }
 
 /**
@@ -758,6 +820,8 @@ app.whenReady().then(async () => {
     isDev: isDevMode(),
     version: app.getVersion(),
     log,
+    // 闭包读模块级 molioUserId（由下方 auth-status-watch 轮询维护）。
+    getUserId: () => molioUserId,
   });
 
   // ② Build the app menu (文件 → 新窗口, click-only — no ⌘N accelerator)
@@ -799,8 +863,18 @@ app.whenReady().then(async () => {
     }
 
     // ⑥ Bridge daemon memory metrics to ARMS (daemon has no ARMS SDK).
+    //    Also poll login state so ARMS events carry the Molio userId.
+    //    Both are gated on daemonReady && armsRum: no daemon → nothing to
+    //    poll; no ARMS (dev mode) → nothing to inject into.
     if (daemonReady && armsRum) {
       stopDaemonMetrics = startDaemonMetricsPolling({ armsRum, log });
+      stopAuthStatusPolling = startAuthStatusPolling({
+        daemonPort: DAEMON_PORT,
+        log,
+        onUser: (userId) => {
+          molioUserId = userId;
+        },
+      });
     }
 
     // ⑦ Only load the real app URL if daemon started successfully.
@@ -898,7 +972,7 @@ function killDaemon() {
 }
 
 function requestDaemonShutdown() {
-  fetch('http://localhost:3100/api/shutdown', { method: 'POST' }).catch((err) => {
+  fetch(`${DAEMON_BASE}/api/shutdown`, { method: 'POST' }).catch((err) => {
     // Network errors are expected once the daemon is already shutting down.
     log('warn', 'main', `Graceful shutdown request failed: ${err instanceof Error ? err.message : String(err)}`);
   });
@@ -925,15 +999,22 @@ app.on('before-quit', (event) => {
   // of hiding it (macOS hide-on-close behavior).
   forceQuit = true;
   if (stopDaemonMetrics) { stopDaemonMetrics(); stopDaemonMetrics = null; }
+  if (stopAuthStatusPolling) { stopAuthStatusPolling(); stopAuthStatusPolling = null; }
   if (daemonProcess) {
     // Prevent the default quit until daemon is fully terminated.
     // Without this, Electron may exit before the daemon releases its
     // file handles, leaving locks in the installation directory that
     // cause the NSIS installer to fail on the next update.
     event.preventDefault();
-    killDaemon().then(() => {
+    killDaemon().then(async () => {
+      // crypto-server 服务 daemon 的 token 加解密，必须等 daemon 完全退出后再关：
+      // 优雅关闭窗口内 daemon 仍可能落盘 token（加密失败会降级明文基线）。
+      await stopCryptoServer();
       app.quit();
     });
+  } else {
+    // daemon 未起（如启动即失败）也要收掉自己起的 server，退出路径对称。
+    void stopCryptoServer();
   }
 });
 

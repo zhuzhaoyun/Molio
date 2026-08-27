@@ -17,11 +17,11 @@ describe('main.js multi-window (P2) — window collection', () => {
 
   it('createWindow accepts a url param and loads it in dev and prod', () => {
     assert.match(mainSource, /function createWindow\(\{ url/);
-    // Dev base is the Vite server, prod base is the daemon server; both append
-    // the url param. The ['"`]? allows the closing quote of the string literal
-    // base (e.g. `'http://localhost:5173' + url`).
+    // Dev base is the Vite server (string literal), prod base is the daemon
+    // server (DAEMON_BASE constant, single source for the :3100 port); both
+    // append the url param.
     assert.match(mainSource, /localhost:5173['"`]?\s*\+\s*url/);
-    assert.match(mainSource, /localhost:3100['"`]?\s*\+\s*url/);
+    assert.match(mainSource, /DAEMON_BASE\s*\+\s*url/);
   });
 
   it('tracks and clears the last focused app window', () => {

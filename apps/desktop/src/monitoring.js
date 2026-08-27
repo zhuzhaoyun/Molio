@@ -21,7 +21,7 @@
  */
 
 import armsRum from '@arms/rum-electron';
-import { sanitizeBundle, sanitizeViewName, sanitizeResourceName, dropFetchFailedNoise } from './monitoring-sanitize.js';
+import { sanitizeBundle, sanitizeViewName, sanitizeResourceName, injectUserId, dropFetchFailedNoise } from './monitoring-sanitize.js';
 
 // 从 ARMS 控制台「用户体验监控 → 应用列表 → 应用详情」获取的完整上报地址。
 // SDK 会从 query string 里取 service_id 作为 app.id，不需要单独传 pid。
@@ -32,10 +32,13 @@ export const ARMS_ENDPOINT = 'https://j9lbfeoye3-default-cn.rum.aliyuncs.com/rum
  * SDK autoInject 监听 web-contents-created 注入 Browser SDK，init 之前
  * 创建的窗口会错过注入。
  *
- * @param {{ isDev: boolean, version: string, log: Function }} opts
+ * @param {{ isDev: boolean, version: string, log: Function, getUserId?: () => (string|null) }} opts
+ *   `getUserId`：每次上报前被调用，返回当前登录的 Molio userId（ULID，未登录为
+ *   null），注入 bundle.user.id。SDK 无 setUser API（0.0.5–0.0.7），beforeReport
+ *   是唯一注入点；渲染进程事件也经主进程 reporter 上报，故此处覆盖全部事件。
  * @returns {Promise<object|null>} 初始化成功返回 armsRum 实例（truthy），否则 null
  */
-export async function initMonitoring({ isDev, version, log }) {
+export async function initMonitoring({ isDev, version, log, getUserId }) {
   if (isDev && !process.env.MOLIO_ARMS_DEV) {
     log('info', 'monitoring', 'skip ARMS init in dev mode (set MOLIO_ARMS_DEV=1 to force)');
     return null;
@@ -53,10 +56,14 @@ export async function initMonitoring({ isDev, version, log }) {
       autoInject: true,
       parseViewName: sanitizeViewName,
       parseResourceName: sanitizeResourceName,
-      // 先丢掉 SDK 自报噪音（fetch failed 自循环异常），再脱敏。
-      // dropFetchFailedNoise 返回 null 时 sanitizeBundle 原样返回 null，
-      // SDK 收到 falsy 会跳过本次上报。
-      beforeReport: (bundle) => sanitizeBundle(dropFetchFailedNoise(bundle)),
+      // 先丢掉 SDK 自报噪音（fetch failed 自循环异常），再脱敏，最后注入 userId。
+      // dropFetchFailedNoise 返回 null 时一路原样返回 null（sanitizeBundle /
+      // injectUserId 对 null 均不改写），SDK 收到 falsy 会跳过本次上报。
+      // getUserId 缺省（或未传）时 injectUserId 原样返回。
+      beforeReport: (bundle) => {
+        const sanitized = sanitizeBundle(dropFetchFailedNoise(bundle));
+        return injectUserId(sanitized, getUserId ? getUserId() : null);
+      },
       collectors: {
         jsError: true,
         consoleError: true,

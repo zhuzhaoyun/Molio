@@ -13,6 +13,8 @@ onlyBuiltDependencies:
   - electron
   - esbuild
 allowBuilds:
+  # postinstall 只在 Node 10/12 上装旧版 typescript，现代 Node 是 no-op；dist 已预构建，显式禁用
+  '@alicloud/openapi-core': false
   better-sqlite3: true
   electron: true
   esbuild: true

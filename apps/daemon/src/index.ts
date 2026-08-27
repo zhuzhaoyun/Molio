@@ -1,6 +1,6 @@
 import { serve } from '@hono/node-server';
 import { execSync } from 'node:child_process';
-import { app, db, runManager, weixinService, vaultWatcher, preloadManager } from './server.js';
+import { app, db, runManager, weixinService, vaultWatcher, preloadManager, authClient } from './server.js';
 import { initSkillLibrary } from './core/skills/builtin.js';
 import { reconcileAllVaultsAsync, cleanupLegacyGlobalSync } from './core/skills/vault-config.js';
 import { isKillablePortOccupant } from './core/port-check.js';
@@ -164,6 +164,9 @@ async function runDeferredStartupChores(): Promise<void> {
 function startServer(): void {
   const server = serve({ fetch: app.fetch, port }, () => {
     console.log(`Molio daemon listening on http://localhost:${port}`);
+    // 登录态恢复（读本地 token → 云端 refresh 验证 → 拉权益快照）必须在
+    // listen 之后异步执行——重活挂 listen 前会拖垮桌面壳的启动超时（教训）。
+    void authClient.restoreSession();
     // The desktop shell gates readiness on the "listening on" line above —
     // heavy chores must only start after it is printed.
     setImmediate(() => {

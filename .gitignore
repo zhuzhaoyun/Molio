@@ -34,3 +34,8 @@ videos/
 # 本地测试日志,不入仓
 log.txt
 log2.txt
+
+# cloud FC 部署打包产物（脚本 apps/cloud/scripts/deploy-package.mjs 生成，不入仓）
+apps/cloud/.deploy-staging/
+apps/cloud/.runtime-cache/
+apps/cloud/molio-cloud-deploy.zip

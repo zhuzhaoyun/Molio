@@ -5,12 +5,52 @@ import type {
   Vault, TreeNode, FileContent, KbHistoryEntry, CreateVaultRequest,
   WikiStatusResponse,
   GraphData, SearchResult, SearchResponse,
+  AuthStatus, SendCodeResponse, User, MeResponse,
   SkillManifestEntry, SkillDetailResponse, CreateSkillRequest, UpdateSkillRequest,
   ImportSkillRequest, PrefillResult,
   HubSkillsQuery, HubSkillsListResponse, HubCategoriesResponse,
   InstallHubSkillRequest, InstallHubSkillResponse,
   HubSkillDetailQuery, HubSkillDetailResponse,
 } from '@molio/contracts';
+
+/**
+ * daemon /api/auth/* 错误的类型化包装。daemon 统一回 `{error: code, ...extra}`：
+ * - 云端 4xx 原样透传（invalid_email / rate_limited+resendAfterSec / invalid_code / locked / mail_failed）
+ * - 502 cloud_unreachable（断网）/ 503 auth_not_configured（MOLIO_AUTH_URL 显式置空白）
+ * - 401 no_session（注销账号时无本地会话）
+ * UI 按 code 映射文案（i18n），不按 status。
+ */
+export class AuthApiError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly code: string,
+    public readonly extra: Record<string, unknown> = {},
+  ) {
+    super(`auth: ${code} (${status})`);
+    this.name = 'AuthApiError';
+  }
+
+  static async from(res: Response): Promise<AuthApiError> {
+    let code = `http_${res.status}`;
+    let extra: Record<string, unknown> = {};
+    try {
+      const body = (await res.json()) as Record<string, unknown> | null;
+      if (body && typeof body === 'object') {
+        if (typeof body.error === 'string') code = body.error;
+        const { error: _dropped, ...rest } = body;
+        extra = rest;
+      }
+    } catch {
+      // 非 JSON 响应：保留 http_<status> code
+    }
+    return new AuthApiError(res.status, code, extra);
+  }
+
+  /** rate_limited 的重发等待秒数（云端透传） */
+  get resendAfterSec(): number | null {
+    return typeof this.extra.resendAfterSec === 'number' ? this.extra.resendAfterSec : null;
+  }
+}
 
 export type WeixinLoginStatus = 'idle' | 'waiting_scan' | 'scanned' | 'logged_in' | 'error';
 
@@ -60,6 +100,19 @@ export interface FeishuConfig {
 }
 
 const BASE = '/api';
+
+/**
+ * /api/auth/* 统一 fetch 包装：非 2xx 一律抛 AuthApiError（UI 按 code 映射文案，
+ * 见 components/account/authErrors.ts）。6 个 auth 端点共用，避免各自
+ * `if (!res.ok)` 分支漂移。
+ */
+async function authFetch(path: string, init?: RequestInit): Promise<Response> {
+  const res = await fetch(`${BASE}/auth/${path}`, init);
+  if (!res.ok) throw await AuthApiError.from(res);
+  return res;
+}
+
+const AUTH_JSON_HEADERS = { 'Content-Type': 'application/json' } as const;
 
 export const api = {
   // ─── Agents ───
@@ -442,6 +495,53 @@ export const api = {
     const res = await fetch(`${BASE}/feishu/disconnect`, { method: 'POST' });
     if (!res.ok) throw new Error(`Failed to disconnect Feishu: ${res.status}`);
     return res.json();
+  },
+
+  // ─── Auth（云端账号；Web UI 一律经 daemon 本地镜像，设计 §五/§六） ───
+
+  /** 登录态快照（daemon 不发网络请求；未配置云端时 configured=false）。 */
+  async getAuthStatus(): Promise<AuthStatus> {
+    return (await authFetch('status')).json();
+  },
+
+  /** 发送验证码。daemon 原样透传云端响应（daily/local 含 devCode，仅 E2E 用）。 */
+  async authSendCode(email: string): Promise<SendCodeResponse> {
+    const res = await authFetch('start', {
+      method: 'POST',
+      headers: AUTH_JSON_HEADERS,
+      body: JSON.stringify({ email }),
+    });
+    return res.json();
+  },
+
+  /** 验证码登录（注册=登录）；成功后 daemon 落盘 token。 */
+  async authVerify(email: string, code: string): Promise<{ user: User; loggedIn: true }> {
+    const res = await authFetch('verify', {
+      method: 'POST',
+      headers: AUTH_JSON_HEADERS,
+      body: JSON.stringify({ email, code }),
+    });
+    return res.json();
+  },
+
+  /** 修改当前用户资料（第一期仅昵称）。成功后 daemon 已同步本地 token/权益快照。 */
+  async authUpdateMe(nickname: string): Promise<MeResponse> {
+    const res = await authFetch('me', {
+      method: 'PATCH',
+      headers: AUTH_JSON_HEADERS,
+      body: JSON.stringify({ nickname }),
+    });
+    return res.json();
+  },
+
+  /** 本机登出：云端吊销尽力而为，本地必清。 */
+  async authLogout(): Promise<void> {
+    await authFetch('logout', { method: 'POST' });
+  },
+
+  /** 注销账号（个保法）：云端软删除 + 吊销全部 session。云端不可达会抛错且本地保留。 */
+  async authDeleteAccount(): Promise<void> {
+    await authFetch('account', { method: 'DELETE' });
   },
 
   // ─── Knowledge Base ───

@@ -20,6 +20,8 @@ import { graphRoutes } from './routes/graph.js';
 import { weixinRoutes } from './routes/weixin.js';
 import { feishuRoutes } from './routes/feishu.js';
 import { maintenanceRoutes } from './routes/maintenance.js';
+import { authRoutes } from './routes/auth.js';
+import { AuthClient } from './core/auth/auth-client.js';
 import { WeixinService } from './core/weixin/service.js';
 import { FeishuService } from './core/feishu/service.js';
 import { ConversationService } from './core/conversations/service.js';
@@ -35,6 +37,10 @@ export const weixinService = new WeixinService(runManager, conversationService, 
 export const feishuService = new FeishuService(runManager, conversationService, db);
 export const vaultWatcher = new VaultWatcher(db);
 export const preloadManager = createPreloadManager();
+// 云端认证 client（懒读 MOLIO_AUTH_URL，未设置时回落内置官方地址
+// DEFAULT_AUTH_URL；显式空白才算未配置 → 登录端点回 503）。
+// 启动恢复（restoreSession）由 index.ts 在 listen 之后异步触发，不阻塞启动。
+export const authClient = new AuthClient();
 
 export const app = new Hono();
 
@@ -104,6 +110,7 @@ app.route('/api/weixin', weixinRoutes(weixinService));
 app.route('/api/feishu', feishuRoutes(feishuService));
 app.route('/api/preload', preloadRoutes(preloadManager));
 app.route('/api/maintenance', maintenanceRoutes(db));
+app.route('/api/auth', authRoutes(authClient));
 
 void weixinService.start();
 void feishuService.start();

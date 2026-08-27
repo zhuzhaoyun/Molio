@@ -18,6 +18,7 @@ import { LanguageProvider } from './i18n/LanguageProvider';
 import type { Locale } from './i18n';
 import { api } from './api/client';
 import { useActiveVault, vaultStore } from './stores/vaultStore';
+import { authStore } from './stores/authStore';
 import { currentContextStore, type CurrentContext } from './stores/currentContextStore';
 import { messageSelectionStore } from './stores/messageSelectionStore';
 import { kbChatSessionsStore } from './stores/kbChatSessionsStore';
@@ -31,6 +32,7 @@ import './styles/settings.css';
 import './styles/channels.css';
 import './styles/history.css';
 import './styles/graph.css';
+import './styles/account.css';
 import './styles/resources.css';
 import './App.css';
 
@@ -178,6 +180,28 @@ export default function App() {
     api.listVaults()
       .then((list) => vaultStore.setVaults(list))
       .catch(() => {});
+  }, []);
+
+  // Auth status snapshot — restore on mount, then keep fresh with a light
+  // 30s poll + focus refresh. refresh() never throws: a down daemon keeps
+  // the last snapshot (local-first — auth UI degrades, never blocks).
+  // In-flight guard: a slow daemon + focus spam (or overlapping polls) must
+  // not pile up concurrent status requests.
+  useEffect(() => {
+    let inFlight = false;
+    const refresh = () => {
+      if (inFlight) return;
+      inFlight = true;
+      void authStore.refresh().finally(() => { inFlight = false; });
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 30_000);
+    const onFocus = refresh;
+    window.addEventListener('focus', onFocus);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', onFocus);
+    };
   }, []);
 
   // Keep daemon-side defaultCwd aligned with the active knowledge vault

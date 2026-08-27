@@ -1,10 +1,35 @@
+import { useEffect, useRef, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useI18n } from '../i18n';
+import { useAuthStatus } from '../stores/authStore';
+import { loginIntentStore } from '../stores/loginIntentStore';
+import { AccountModal } from './account/AccountModal';
 
 export function NavRail() {
   const { t } = useI18n();
+  const auth = useAuthStatus();
+  const [accountOpen, setAccountOpen] = useState(false);
+  /** 登录成功后要续接的动作（被门槛拦下的下载/购买）；未登录关闭则丢弃 */
+  const loginResumeRef = useRef<(() => void) | null>(null);
+
+  // 资源动作请求登录 → 打开账号面板（未登录时面板直接是邮箱验证表单）
+  useEffect(
+    () =>
+      loginIntentStore.subscribe(() => {
+        if (!loginIntentStore.hasPending()) return;
+        loginResumeRef.current = loginIntentStore.consume();
+        setAccountOpen(true);
+      }),
+    [],
+  );
+
+  function closeAccount() {
+    setAccountOpen(false);
+    loginResumeRef.current = null;
+  }
 
   return (
+    <>
     <nav className="entry-nav-rail">
       <div className="entry-nav-rail__group">
         {/* Home — Create/Chat */}
@@ -127,8 +152,33 @@ export function NavRail() {
         </NavLink>
       </div>
 
-      {/* Bottom group: Help + Settings */}
+      {/* Bottom group: Account + Help + Settings */}
       <div className="entry-nav-rail__group">
+        {/* Account — 登录态入口，打开账号面板（设计 §7.4）。
+            未登录：tooltip「登录」+ 琥珀提示点（待办语义：下载/购买需登录）；
+            已登录：tooltip「账号」，无点（无需用户处理）。 */}
+        <button
+          type="button"
+          className={`entry-nav-rail__btn ${auth?.loggedIn ? 'is-logged-in' : ''}`}
+          data-view="account"
+          data-testid="nav-account-btn"
+          data-tooltip={auth?.loggedIn ? t('nav.account') : t('nav.login')}
+          onClick={() => setAccountOpen(true)}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+            <circle cx="12" cy="7" r="4" />
+          </svg>
+          {!auth?.loggedIn && <span className="entry-nav-rail__dot" />}
+        </button>
+
         {/* Help — external link to online docs */}
         <a
           href="https://molio.cn/help.html"
@@ -174,5 +224,15 @@ export function NavRail() {
         </NavLink>
       </div>
     </nav>
+    <AccountModal
+      show={accountOpen}
+      onClose={closeAccount}
+      onLoggedIn={() => {
+        const resume = loginResumeRef.current;
+        loginResumeRef.current = null;
+        if (resume) resume();
+      }}
+    />
+    </>
   );
 }

@@ -60,6 +60,21 @@ export function readCredentials<T>(
 }
 
 /**
+ * Read a credentials file as raw text (no JSON parse, no validation).
+ * Returns `null` when the file is missing or unreadable. Needed by callers
+ * whose on-disk format isn't always plain JSON (e.g. the auth token store's
+ * encrypted envelope, which must be decrypted before parsing).
+ */
+export function readCredentialsRaw(file: string): string | null {
+  try {
+    if (!fs.existsSync(file)) return null;
+    return fs.readFileSync(file, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Atomically write credentials to `file`. Writes to `<file>.tmp` first, then
  * renames onto the target — a crash mid-write never leaves a half-written
  * file (a subsequent daemon restart would otherwise read a truncated JSON
