@@ -21,9 +21,12 @@ function isExcluded(name: string): boolean {
 
 function collect(dir: string, prefix: string, out: Record<string, string>, include?: string[]): void {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (isExcluded(entry.name)) continue;
     const abs = path.join(dir, entry.name);
     const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+    // 用户显式选中的目录(rel 恰好等于某个 include 项)不套用隐藏文件排除：
+    // 否则 .molio 等顶层点目录即使勾选也被删——设计 §5.1 默认排除仅对未显式选择的内容生效。
+    const explicitDir = entry.isDirectory() && include?.some((inc) => rel === inc);
+    if (!explicitDir && isExcluded(entry.name)) continue;
     if (entry.isDirectory()) {
       // include 过滤：只收集指定路径下的内容（用于按目录选择打包）
       if (include && !include.some((inc) => rel === inc || rel.startsWith(`${inc}/`))) continue;

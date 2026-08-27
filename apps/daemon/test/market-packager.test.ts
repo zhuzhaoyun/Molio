@@ -43,6 +43,18 @@ test('打包：普通文件入包；隐藏文件/目录与系统垃圾排除', a
   assert.equal(fs.existsSync(zipPath), false);
 });
 
+test('include 显式选中 .molio → 纳入(隐藏目录覆盖)；未选中的隐藏仍排除', async () => {
+  const dir = makeVault({
+    '.molio/config.json': 'M',
+    '.obsidian/config.json': 'X',
+    'sub/.hidden.md': 'X',
+  });
+  const { zipPath, dispose } = await packVaultToZip(dir, { maxBytes: 50 * 1024 * 1024, include: ['.molio'] });
+  const buf = new Uint8Array(fs.readFileSync(zipPath));
+  assert.deepEqual(listEntries(buf), ['.molio/config.json']);
+  dispose();
+});
+
 test('超大小上限 → 报错 zip_too_large', async () => {
   // 随机字节不可压缩：压缩后门控必须用随机数据才能触发（'x'.repeat 会被 deflate 压到远小于上限）
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-pack-'));
