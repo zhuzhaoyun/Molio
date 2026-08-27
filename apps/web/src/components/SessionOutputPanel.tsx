@@ -83,6 +83,8 @@ export function SessionOutputPanel({ messages }: Props) {
     return groupChangesByPath(cs);
   }, [messages, activeVault?.path]);
   const [tab, setTab] = useState<PanelTab>('overview');
+  // 变更 tab 的手风琴：单开（点开一个收起其它），null = 全部折叠
+  const [expandedPath, setExpandedPath] = useState<string | null>(null);
   // 概览统计条：新建/更新来自去重后的写入清单，追加来自变更序列
   const creates = output.writes.filter((w) => w.kind === 'create').length;
   const updates = output.writes.filter((w) => w.kind === 'update').length;
@@ -254,53 +256,74 @@ export function SessionOutputPanel({ messages }: Props) {
           </header>
 
           {tab === 'changes' ? (
-            /* ── 变更 tab：按文件分组的改动序列（同文件多次改动并列） ── */
+            /* ── 变更 tab：文件级概要行（±行数）→ 点击展开逐条 diff（WorkBuddy 式两级） ── */
             <div className="session-output-body" data-testid="session-output-changes">
               {changes.length === 0 ? (
                 <p className="session-output-empty">{t('output.changesEmpty')}</p>
               ) : (
-                changes.map((g) => (
-                  <section key={g.path} className="session-output-changes-group" data-testid="session-output-change-group">
-                    <h3 className="session-output-changes-file" title={g.path}>
-                      <span className="session-output-changes-file-label">{g.label}</span>
-                      {g.items.length > 1 && <span className="session-output-changes-file-count">×{g.items.length}</span>}
-                    </h3>
-                    {g.items.map((c, i) => (
-                      <div key={`${c.toolId}-${i}`} className="session-output-change" data-testid="session-output-change">
-                        <div className="session-output-change-meta">
-                          <span className={`session-output-change-kind is-${c.kind}`}>
-                            {t(`output.changeKind.${c.kind}`)}
-                          </span>
-                          <button
-                            type="button"
-                            className="session-output-item-locate"
-                            data-testid="session-output-change-locate"
-                            title={t('output.locate')}
-                            aria-label={t('output.locate')}
-                            onClick={() => {
-                              window.dispatchEvent(new CustomEvent('molio:evidence-target', {
-                                detail: { toolId: c.toolId, messageId: c.messageId },
-                              }));
-                            }}
-                          >
-                            <span aria-hidden>⌖</span>
-                          </button>
-                        </div>
-                        {c.diff && c.diff.length > 0 ? (
-                          <div className="session-output-diff" data-testid="session-output-diff">
-                            {c.diff.map((l, li) => <DiffLineRow key={li} line={l} />)}
+                changes.map((g) => {
+                  const adds = g.items.reduce((n, c) => n + (c.adds ?? 0), 0);
+                  const dels = g.items.reduce((n, c) => n + (c.dels ?? 0), 0);
+                  const expanded = expandedPath === g.path;
+                  return (
+                    <section key={g.path} className="session-output-changes-group" data-testid="session-output-change-group">
+                      <button
+                        type="button"
+                        className="session-output-changes-file"
+                        data-testid="session-output-change-file"
+                        aria-expanded={expanded}
+                        title={g.path}
+                        onClick={() => setExpandedPath(expanded ? null : g.path)}
+                      >
+                        <span className="session-output-changes-chevron" aria-hidden>{expanded ? '▾' : '▸'}</span>
+                        <span className="session-output-changes-file-label">{g.label}</span>
+                        <span className="session-output-changes-count">
+                          {adds + dels > 0 && (
+                            <>
+                              <b className="is-add">+{adds}</b>
+                              {dels > 0 && <b className="is-del">−{dels}</b>}
+                            </>
+                          )}
+                        </span>
+                        {g.items.length > 1 && <span className="session-output-changes-file-count">×{g.items.length}</span>}
+                      </button>
+                      {expanded && g.items.map((c, i) => (
+                        <div key={`${c.toolId}-${i}`} className="session-output-change" data-testid="session-output-change">
+                          <div className="session-output-change-meta">
+                            <span className={`session-output-change-kind is-${c.kind}`}>
+                              {t(`output.changeKind.${c.kind}`)}
+                            </span>
+                            <button
+                              type="button"
+                              className="session-output-item-locate"
+                              data-testid="session-output-change-locate"
+                              title={t('output.locate')}
+                              aria-label={t('output.locate')}
+                              onClick={() => {
+                                window.dispatchEvent(new CustomEvent('molio:evidence-target', {
+                                  detail: { toolId: c.toolId, messageId: c.messageId },
+                                }));
+                              }}
+                            >
+                              <span aria-hidden>⌖</span>
+                            </button>
                           </div>
-                        ) : (
-                          <p className="session-output-change-note">
-                            {c.placeholder === 'write-new-file' && t('output.writeNewFile')}
-                            {c.placeholder === 'append-file' && t('output.appendFile')}
-                            {c.placeholder === 'edit-no-source' && t('output.editNoSource')}
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                  </section>
-                ))
+                          {c.diff && c.diff.length > 0 ? (
+                            <div className="session-output-diff" data-testid="session-output-diff">
+                              {c.diff.map((l, li) => <DiffLineRow key={li} line={l} />)}
+                            </div>
+                          ) : (
+                            <p className="session-output-change-note">
+                              {c.placeholder === 'write-new-file' && t('output.writeNewFile')}
+                              {c.placeholder === 'append-file' && t('output.appendFile')}
+                              {c.placeholder === 'edit-no-source' && t('output.editNoSource')}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </section>
+                  );
+                })
               )}
             </div>
           ) : empty ? (

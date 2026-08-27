@@ -146,15 +146,36 @@ export interface ChangeEntry {
   toolId: string;
   /** Edit/MultiEdit：old→new 的行级 diff；无则可 undefined */
   diff?: DiffLine[];
+  /** 文件级概要行数（WorkBuddy 式 ±）：本条改动的增/删行数；无法统计时缺省 */
+  adds?: number;
+  dels?: number;
   /** 无内容可 diff（整文件覆盖的 Write 等）时给占位说明 */
   placeholder?: string;
+}
+
+/** 统计一个 diff 序列的增/删行数。 */
+function countDiff(diff: DiffLine[]): { adds: number; dels: number } {
+  let adds = 0;
+  let dels = 0;
+  for (const l of diff) {
+    if (l.type === 'add') adds++;
+    else if (l.type === 'del') dels++;
+  }
+  return { adds, dels };
+}
+
+/** 文本行数（尾随换行不多算一行）。 */
+function lineCount(text: string): number {
+  const t = text.replace(/\r\n/g, '\n');
+  return t === '' ? 0 : t.split('\n').length;
 }
 
 /**
  * 从会话抽取「变更序列」（供产出面板变更 tab）：逐消息、逐写入工具展开，
  * 不按 path 去重（同一文件的多次改动都要看），只保留 done、排除 isError。
  * 归一化 path 与 writeKey 一致；label 用「首次出现」时的 basename，同名文件
- * 由调用方 disambiguateLabels 消歧。
+ * 由调用方 disambiguateLabels 消歧。每条带 adds/dels 概要（文件行合计由
+ * 调用方对组内求和）。
  */
 export function extractChanges(messages: ChatMessage[], vaultPath?: string): ChangeEntry[] {
   const out: ChangeEntry[] = [];
@@ -176,14 +197,41 @@ export function extractChanges(messages: ChatMessage[], vaultPath?: string): Cha
         messageId: m.id,
         toolId: t.id,
       };
-      if (t.name === 'Edit' || t.name === 'EditFile' || t.name === 'MultiEdit') {
+      if (t.name === 'Edit' || t.name === 'EditFile') {
         const oldS = typeof input['old_string'] === 'string' ? input['old_string'] as string : '';
         const newS = typeof input['new_string'] === 'string' ? input['new_string'] as string : '';
-        if (oldS || newS) entry.diff = lineDiff(oldS, newS);
-        else entry.placeholder = 'edit-no-source';
+        if (oldS || newS) {
+          entry.diff = lineDiff(oldS, newS);
+          entry.adds = countDiff(entry.diff).adds;
+          entry.dels = countDiff(entry.diff).dels;
+        } else {
+          entry.placeholder = 'edit-no-source';
+        }
+      } else if (t.name === 'MultiEdit') {
+        // MultiEdit：input.edits = [{old_string,new_string},...]，逐段 diff 拼接
+        const edits = Array.isArray(input['edits']) ? input['edits'] as Array<Record<string, unknown>> : [];
+        let diff: DiffLine[] = [];
+        for (const pair of edits) {
+          const oldS = typeof pair['old_string'] === 'string' ? pair['old_string'] as string : '';
+          const newS = typeof pair['new_string'] === 'string' ? pair['new_string'] as string : '';
+          if (oldS || newS) diff = diff.concat(lineDiff(oldS, newS));
+        }
+        if (diff.length > 0) {
+          entry.diff = diff;
+          entry.adds = countDiff(diff).adds;
+          entry.dels = countDiff(diff).dels;
+        } else {
+          entry.placeholder = 'edit-no-source';
+        }
       } else if (t.name === 'Write') {
-        entry.placeholder = 'write-new-file'; // 整文件新增，Phase 2 快照前不产 diff
+        // 整文件：旧内容未知（Phase 2 快照前）不出 diff，但新增行数可从 content 统计
+        const content = typeof input['content'] === 'string' ? input['content'] as string : '';
+        entry.adds = lineCount(content);
+        entry.placeholder = 'write-new-file';
       } else {
+        // Append：新追加的行数可统计（旧文件尾部未知，不出 diff）
+        const content = typeof input['content'] === 'string' ? input['content'] as string : '';
+        entry.adds = lineCount(content);
         entry.placeholder = 'append-file';
       }
       out.push(entry);

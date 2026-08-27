@@ -208,13 +208,25 @@ test.describe('Home 会话产出面板', () => {
       await expect(panel.locator('[data-testid="session-output-stat-creates"]')).toContainText('3');
       await expect(panel.locator('[data-testid="session-output-stat-updates"]')).toContainText('2');
 
-      // ── 变更 tab：按文件分组 5 组；w2 的 Edit 有 old/new → 行级 diff（−318 / +319）──
+      // ── 变更 tab：WorkBuddy 式两级 —— 文件概要行（±行数）默认全折叠，点击展开逐条 diff ──
       await panel.locator('[data-testid="session-output-tab-changes"]').click();
       await expect(panel.locator('[data-testid="session-output-change-group"]')).toHaveCount(5);
+      // 折叠态：不渲染任何 diff
+      await expect(panel.locator('[data-testid="session-output-diff"]')).toHaveCount(0);
+      // INDEX.md 概要：Edit(318→319) 各一行 → +1 −1
+      const indexFile = panel.locator('[data-testid="session-output-change-file"]', { hasText: 'INDEX.md' });
+      await expect(indexFile.locator('.is-add')).toHaveText('+1');
+      await expect(indexFile.locator('.is-del')).toHaveText('−1');
+      // 点击展开 → 行级 diff 出现（−318 / +319）
+      await indexFile.click();
       const indexGroup = panel.locator('[data-testid="session-output-change-group"]', { hasText: 'INDEX.md' });
       await expect(indexGroup.locator('[data-testid="session-output-diff-del"]').first()).toContainText('318');
       await expect(indexGroup.locator('[data-testid="session-output-diff-add"]').first()).toContainText('319');
-      // hot.md 组：w4 create 占位 + w6 edit-no-source 占位（无 old/new），两条并列 ×2
+      // 手风琴单开：展开 hot.md 后 INDEX 收起
+      const hotFile = panel.locator('[data-testid="session-output-change-file"]', { hasText: 'hot.md' });
+      await hotFile.click();
+      await expect(panel.locator('[data-testid="session-output-diff"]')).toHaveCount(0);
+      // hot.md 组：w4 create 占位 + w6 edit-no-source 占位（无 old/new），两条并列
       const hotGroup = panel.locator('[data-testid="session-output-change-group"]', { hasText: 'hot.md' });
       await expect(hotGroup.locator('[data-testid="session-output-change"]')).toHaveCount(2);
 

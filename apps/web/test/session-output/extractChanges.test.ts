@@ -78,4 +78,45 @@ describe('extractChanges', () => {
     ];
     assert.strictEqual(extractChanges(msgs, '/vault').length, 1);
   });
+
+  it('概要行数：Write 的 content 行数 = adds；Append 同理；Edit 由 diff 统计', () => {
+    const msgs = [
+      assistant({
+        tools: [
+          tool({ id: 'w', name: 'Write', input: { file_path: '/vault/wiki/new.md', content: '# 标题\n\n正文' } }),
+          tool({ id: 'ap', name: 'Append', input: { file_path: '/vault/wiki/log.md', content: '新行1\n新行2' } }),
+          tool({ id: 'ed', name: 'Edit', input: { file_path: '/vault/wiki/a.md', old_string: 'a1\na2', new_string: 'b1' } }),
+        ],
+      }),
+    ];
+    const [w, ap, ed] = extractChanges(msgs, '/vault');
+    assert.strictEqual(w!.adds, 3);
+    assert.strictEqual(w!.dels, undefined);
+    assert.strictEqual(ap!.adds, 2);
+    assert.strictEqual(ed!.adds, 1);
+    assert.strictEqual(ed!.dels, 2);
+  });
+
+  it('MultiEdit：edits 数组逐段 diff 拼接，± 为合计', () => {
+    const msgs = [
+      assistant({
+        tools: [
+          tool({
+            id: 'me', name: 'MultiEdit',
+            input: {
+              file_path: '/vault/wiki/a.md',
+              edits: [
+                { old_string: 'x1\nx2', new_string: 'y1' },
+                { old_string: 'z', new_string: 'w1\nw2' },
+              ],
+            },
+          }),
+        ],
+      }),
+    ];
+    const [c] = extractChanges(msgs, '/vault');
+    assert.strictEqual(c!.adds, 3);
+    assert.strictEqual(c!.dels, 3);
+    assert.strictEqual(c!.diff!.length, 6);
+  });
 });
