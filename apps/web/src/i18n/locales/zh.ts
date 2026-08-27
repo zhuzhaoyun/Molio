@@ -98,11 +98,12 @@ const zh: Record<string, string> = {
   'complete.title': '产出文件',
 
   // ── 会话产出面板（主页 dock）──
-  'output.title': '本会话产出',
+  'output.title': '会话产出',
   'output.stats': '写入 {writes} · {turns} 轮',
   'output.writesLabel': '写入',
   'output.locate': '在对话中定位这一步',
-  'output.empty': '本会话还没有产出',
+  'output.empty': '该会话没有写入产出的记录',
+  'output.legacyHint': '较早的会话未记录过程数据，产出档案自本版本起随会话保留',
   'output.toggle': '产出面板',
   'output.previewBack': '返回',
   'output.previewLoading': '加载中…',

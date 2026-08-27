@@ -51,7 +51,7 @@ describe('RunManager persists assistant reply on successful run', () => {
       agentId,
       message: 'Say hello',
       conversationId: conv.id,
-      onTurnComplete: (text, rid) => {
+      onTurnComplete: (text, _tools, rid) => {
         turnCompleteCalled = true;
         turnCompleteText = text;
         conversations.appendMessage(conv.id, {

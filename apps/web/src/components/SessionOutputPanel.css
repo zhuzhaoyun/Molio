@@ -171,6 +171,14 @@
   color: var(--text-soft);
   text-align: center;
 }
+/* 较早会话（过程数据未持久化的旧数据）的说明性附注 */
+.session-output-legacy-hint {
+  margin: -8px 16px 20px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-faint);
+  text-align: center;
+}
 
 /* ── 内嵌预览：面包屑 + 只读正文（点击产出项就地渲染，不跳转知识库）── */
 .session-output-preview-header {

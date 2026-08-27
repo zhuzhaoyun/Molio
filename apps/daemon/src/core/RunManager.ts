@@ -22,7 +22,7 @@ import { createJsonlParser } from './streams/jsonl-parser.js';
 import { loadConfig, getAgentConfig, buildAgentEnv } from './config.js';
 import { buildTranscript, type TranscriptMessage } from './transcript.js';
 import type { RunState, BufferedEvent } from '../types.js';
-import { TurnTextCollector } from './turn-text-collector.js';
+import { TurnTextCollector, type PersistedToolEvent } from './turn-text-collector.js';
 import { dbgLog } from './debug-log.js';
 import { ThrottledWarn } from './throttled-warn.js';
 
@@ -84,8 +84,14 @@ export interface CreateRunOptions {
   assistantMessageId?: string;
   /** Prior conversation messages for transcript building (multi-turn). */
   history?: ChatMessage[];
-  /** Called when a turn completes with accumulated text content. */
-  onTurnComplete?: (text: string, runId: string) => void;
+  /**
+   * Called when a turn completes with accumulated text and the tool events
+   * that ran during this turn (assembled ToolEvents — use/result pairs).
+   * Tools let the persistence layer store the assistant message's own
+   * process record (messages.events_json), powering history reload of
+   * work visibility (output panel / evidence jump).
+   */
+  onTurnComplete?: (text: string, tools: PersistedToolEvent[], runId: string) => void;
 }
 
 export class RunManager {
@@ -860,6 +866,15 @@ export class RunManager {
     // Accumulate text for turn-complete persistence
     if (event.type === 'text_delta') {
       run.turnText.append(event.delta);
+    }
+
+    // Accumulate tool events for turn-complete persistence (use/result pairs →
+    // assembled ToolEvents; see TurnTextCollector.addToolUse/addToolResult).
+    if (event.type === 'tool_use') {
+      run.turnText.addToolUse(event);
+    }
+    if (event.type === 'tool_result') {
+      run.turnText.addToolResult(event);
     }
 
     // Flush on turn completion or terminal status

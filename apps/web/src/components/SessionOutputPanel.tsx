@@ -38,6 +38,14 @@ interface Props {
 export function SessionOutputPanel({ messages }: Props) {
   const { t } = useI18n();
   const output = useMemo(() => aggregateSessionOutput(messages), [messages]);
+  // 早期会话判定：有 assistant 消息但整段对话没有任何过程数据（tools/thinking
+  // 均未持久化的旧数据）→ 空态下附提示，避免误读为「丢了产出」的 bug。
+  const legacyConversation = useMemo(
+    () =>
+      messages.some((m) => m.role === 'assistant')
+        && !messages.some((m) => (m.tools?.length ?? 0) > 0 || !!m.thinking),
+    [messages],
+  );
   const vaultId = useActiveVaultId();
 
   const [width, setWidth] = useState<number>(readDockWidth);
@@ -171,7 +179,14 @@ export function SessionOutputPanel({ messages }: Props) {
           </header>
 
           {empty ? (
-            <p className="session-output-empty" data-testid="session-output-empty">{t('output.empty')}</p>
+            <>
+              <p className="session-output-empty" data-testid="session-output-empty">{t('output.empty')}</p>
+              {legacyConversation && (
+                <p className="session-output-legacy-hint" data-testid="session-output-legacy-hint">
+                  {t('output.legacyHint')}
+                </p>
+              )}
+            </>
           ) : (
             <div className="session-output-body">
               {output.writes.length > 0 && (

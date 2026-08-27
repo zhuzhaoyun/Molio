@@ -46,13 +46,16 @@ export async function startConversationRun(
     cwd: opts.cwd,
     conversationId,
     history: opts.history,
-    onTurnComplete: (text, rid) => {
+    onTurnComplete: (text, tools, rid) => {
       // Defense-in-depth: if the run has already been cancelled (e.g. by the
       // rewind-resend endpoint), drop the late reply so it cannot land after
       // the new user message and produce an orphan assistant turn. cancelRun
       // sets run.status = 'canceled' synchronously, so isTerminal returns true
       // immediately.
       if (runManager.isTerminal(rid)) return;
+      // Tool-only turns persist too — a turn that wrote files but produced no
+      // prose still deserves its process record in history reload.
+      if (!text && tools.length === 0) return;
       conversations.appendMessage(conversationId, {
         id: randomUUID(),
         role: 'assistant',
@@ -60,6 +63,7 @@ export async function startConversationRun(
         timestamp: Date.now(),
         agentId,
         runId: rid,
+        tools: tools as ChatMessage['tools'],
       });
     },
   });
