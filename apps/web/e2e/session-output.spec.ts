@@ -13,6 +13,22 @@ import { createTempVault, cleanupTempVault } from './helpers/cleanup';
  * 全量 E2E 门禁；CLAUDE.md「UI 改动与 E2E 同 commit」。
  */
 
+// Write 产物 4 个 —— 全部绝对路径，对齐真实 agent 上报形态（Write 工具总是报绝对路径）
+const outputRunAbs = [
+  { type: 'status', label: 'running', model: 'claude-sonnet-4-5' },
+  { type: 'tool_use', id: 'w1', name: 'Write', input: { file_path: '/vault/wiki/2026-08-27-新闻要点.md' } },
+  { type: 'tool_result', toolUseId: 'w1', content: '已写入', isError: false },
+  { type: 'tool_use', id: 'w2', name: 'Edit', input: { file_path: '/vault/wiki/INDEX.md' } },
+  { type: 'tool_result', toolUseId: 'w2', content: '已更新', isError: false },
+  { type: 'tool_use', id: 'w3', name: 'Edit', input: { file_path: '/vault/wiki/log.md' } },
+  { type: 'tool_result', toolUseId: 'w3', content: '已更新', isError: false },
+  { type: 'tool_use', id: 'w4', name: 'Write', input: { file_path: '/vault/wiki/hot.md' } },
+  { type: 'tool_result', toolUseId: 'w4', content: '已写入', isError: false },
+  { type: 'text_delta', delta: '归档完成。' },
+  { type: 'turn_end', stopReason: 'end_turn' },
+  { type: 'usage', usage: { input_tokens: 900, output_tokens: 120 }, costUsd: 0.02 },
+];
+
 // Write 产物 1 个 + WebSearch 来源 2 个（来源不再进面板，仅用于验证「外部引用不混入产出」）
 const outputRun = [
   { type: 'status', label: 'running' },
@@ -129,6 +145,37 @@ test.describe('Home 会话产出面板', () => {
     const target = page.locator('.work-block-detail [data-tool-id="w1"]');
     await expect(target).toBeVisible({ timeout: 5_000 });
     await expect(target).toHaveClass(/evidence-flash/);
+  });
+
+  test('绝对路径写入项预览：readFile 请求保留 %2F 编码（回归：双斜杠被折叠成相对路径致 404）', async ({ page }) => {
+    const vault = await createTempVault('e2e-dock-abs-path');
+    try {
+      await page.addInitScript((id) => { localStorage.setItem('molio.activeVaultId', id); }, vault.id);
+      // 拦 readFile：断言 URL 里绝对路径保持 %2F 编码；若被还原成真实斜杠则判死
+      let sawEncoded = false;
+      let sawRawSlash = false;
+      await page.route('**/knowledge/vaults/*/files/**', (route) => {
+        const rawUrl = route.request().url();
+        if (rawUrl.includes('/files/%2Fvault%2Fwiki%2Fhot.md')) sawEncoded = true;
+        if (/\/files\/\//.test(rawUrl)) sawRawSlash = true;
+        return route.fulfill({
+          json: { path: '/vault/wiki/hot.md', content: '# 热点\n\n近端上下文正文', size: 100, modifiedAt: Date.now() },
+        });
+      });
+      await mockChatRun(page, { script: outputRunAbs });
+      await gotoHome(page);
+      await sendMessage(page, '归档');
+      await expect(page.locator('[data-testid="work-timeline-summary"]')).toBeVisible({ timeout: 15_000 });
+      await page.locator('[data-testid="home-output-toggle"]').click();
+      const panel = page.locator('[data-testid="session-output-panel"]');
+      await panel.locator('[data-testid="session-output-write"]').last().click(); // hot.md
+      // 预览正常渲染（不是「无法读取」错误）
+      await expect(panel.locator('[data-testid="session-output-preview"]')).toContainText('热点', { timeout: 5_000 });
+      expect(sawEncoded).toBe(true);
+      expect(sawRawSlash).toBe(false);
+    } finally {
+      await cleanupTempVault(vault);
+    }
   });
 
   test('切换知识库 → 旧 vault 会话被重置（提示 + 消息清空 + 产出面板空态）', async ({ page }) => {
