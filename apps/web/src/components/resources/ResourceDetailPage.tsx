@@ -3,10 +3,9 @@
  * 面包屑返回 + head（图标/名称/价格/格式说明/tags）+ 左主栏（概述/效果预览灯箱/导入说明）
  * + 右侧动作卡与信息卡。预览图为官网相对路径拼绝对 URL，加载失败整图跳过。
  *
- * id 解析顺序（Task 11 社区变体）：静态 RESOURCES 命中 = 官方条目；未命中时拉取
- * GET /api/market/listings/:id，200 → marketToEntry 渲染社区变体（预览绝对 URL、
- * 简介 + 通用使用说明、作者/版本/大小/发布时间、签名下载按钮、底部上传者责任说明
- * 与举报入口）；失败/404 → 现有「资源不存在」形态。
+ * id 解析：统一从 GET /api/market/listings/:id 拉取（官方与用户上架同动态目录），
+ * 200 → marketToEntry 渲染市场变体（预览绝对 URL、简介、作者/版本/大小/发布时间、
+ * 签名下载按钮）；失败/404 → 「资源不存在」形态。
  */
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
@@ -16,8 +15,6 @@ import {
   marketToEntry,
   PAY_BASE,
   previewUrl,
-  RESOURCES,
-  toEntry,
   type CatalogEntry,
 } from '../../data/resources';
 import { formatFileSize } from '../../utils/format';
@@ -44,13 +41,9 @@ export function ResourceDetailPage() {
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [failedImgs, setFailedImgs] = useState<Set<string>>(new Set());
 
-  // id 解析顺序：静态 RESOURCES 命中即官方条目；未命中 → 社区市场 API（仅拉取一次）
-  const [entry, setEntry] = useState<CatalogEntry | null>(() => {
-    const staticHit = RESOURCES.find((r) => r.id === id);
-    return staticHit ? toEntry(staticHit) : null;
-  });
+  // id 解析：统一从市场 API 拉取（官方与用户上架同目录），仅拉取一次
+  const [entry, setEntry] = useState<CatalogEntry | null>(null);
   useEffect(() => {
-    // 静态命中或已拉到当前 id 的社区条目：不重复请求
     if (entry && entry.id === id) return;
     if (!id) return; // 路由 :id 恒在；缺失防御——不发请求，保持「资源不存在」形态
     let alive = true;
@@ -98,6 +91,8 @@ export function ResourceDetailPage() {
   const paid = r.price > 0;
   const previews = r.preview.map(previewUrl).filter((src) => !failedImgs.has(src));
   const overviewParas = r.overview;
+  // 简介(desc)可能含多段落(空行分隔)，按空行切成段落，避免详情页被折叠成一段
+  const descParas = r.desc ? r.desc.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean) : [];
 
   const sideNote = !paid
     ? t('resources.sideNote.free')
@@ -151,7 +146,9 @@ export function ResourceDetailPage() {
           <div className="resources-main">
             <h2 className="resources-section-title">{t('resources.overview')}</h2>
             <div className="resources-article">
-              {r.desc && <p className="resources-article__lead">{r.desc}</p>}
+              {descParas.map((p, i) => (
+                <p key={`d${i}`} className={i === 0 ? 'resources-article__lead' : undefined}>{p}</p>
+              ))}
               {overviewParas.map((p, i) => (
                 <p key={i}>{p}</p>
               ))}
@@ -244,10 +241,6 @@ export function ResourceDetailPage() {
                   <div className="resources-info-row">
                     <span className="k">{t('resources.info.price')}</span>
                     <span className="v">{paid ? `¥${r.price}` : t('resources.free')}</span>
-                  </div>
-                  <div className="resources-info-row">
-                    <span className="k">{t('resources.info.file')}</span>
-                    <span className="v">{r.file}</span>
                   </div>
                   {market?.publishedAt != null && (
                     <div className="resources-info-row">

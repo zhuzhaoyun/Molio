@@ -1,14 +1,14 @@
 /**
- * 社区资源目录运行时拉取 —— daemon 镜像 GET /api/market/listings。
+ * 市场资源目录运行时拉取 —— daemon 镜像 GET /api/market/listings（官方+用户同目录）。
  *
  * 60s 内存缓存防抖：TTL 内多个组件共享同一份数据，不重复请求；
- * 失败不抛 —— 标记 stale 并保留旧数据（或空），社区区块降级，官方货架不受影响。
+ * 失败不抛 —— 标记 stale 并保留旧数据（或空），资源区块降级。
  */
 import { useCallback, useEffect, useState } from 'react';
 import type { MarketListing } from '@molio/contracts';
 
 interface CatalogState {
-  community: MarketListing[];
+  listings: MarketListing[];
   stale: boolean;
   loading: boolean;
 }
@@ -18,14 +18,14 @@ const TTL_MS = 60_000;
 
 export function useMarketCatalog(): CatalogState & { refresh: () => void } {
   const [state, setState] = useState<CatalogState>(() => ({
-    community: memCache?.data ?? [],
+    listings: memCache?.data ?? [],
     stale: false,
     loading: memCache === null,
   }));
 
   const load = useCallback(async (force = false) => {
     if (!force && memCache && Date.now() - memCache.at < TTL_MS) {
-      setState({ community: memCache.data, stale: false, loading: false });
+      setState({ listings: memCache.data, stale: false, loading: false });
       return;
     }
     try {
@@ -33,7 +33,7 @@ export function useMarketCatalog(): CatalogState & { refresh: () => void } {
       if (!res.ok) throw new Error(`market ${res.status}`);
       const body = (await res.json()) as { listings: MarketListing[]; stale?: boolean };
       memCache = { at: Date.now(), data: body.listings };
-      setState({ community: body.listings, stale: body.stale ?? false, loading: false });
+      setState({ listings: body.listings, stale: body.stale ?? false, loading: false });
     } catch {
       // 失败不抛：保留旧数据或空，标记 stale，社区区块降级
       setState((s) => ({ ...s, loading: false, stale: true }));

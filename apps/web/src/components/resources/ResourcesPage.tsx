@@ -5,7 +5,7 @@
  */
 import { useEffect, useState } from 'react';
 import { useI18n } from '../../i18n';
-import { marketToEntry, RESOURCES, toEntry, type CatalogEntry } from '../../data/resources';
+import { marketToEntry, type CatalogEntry } from '../../data/resources';
 import { useMarketCatalog } from '../../hooks/useMarketCatalog';
 import { useResourcePay } from '../../hooks/useResourcePay';
 import { ResourceCard } from './ResourceCard';
@@ -24,17 +24,14 @@ export function ResourcesPage() {
   const { t } = useI18n();
   const [filter, setFilter] = useState<Filter>('all');
   const pay = useResourcePay();
-  const { community, refresh } = useMarketCatalog();
+  const { listings, refresh } = useMarketCatalog();
 
   // 进入页面强制刷新一次目录（TTL 内命中缓存则不重复请求）
   useEffect(() => {
     refresh();
   }, [refresh]);
 
-  const list = applyFilter(
-    [...RESOURCES.map(toEntry), ...community.map(marketToEntry)],
-    filter,
-  );
+  const list = applyFilter(listings.map(marketToEntry), filter);
 
   return (
     <div className="resources-shell">
