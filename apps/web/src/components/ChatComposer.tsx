@@ -163,15 +163,11 @@ export function ChatComposer({
   };
 
   // Re-check trigger on cursor move (arrow keys) / click
-  const handleKeyUp = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    const el = e.currentTarget;
-    updateTriggers(el.value, el.selectionStart);
-  };
-
-  const handleMouseUp = (e: React.MouseEvent<HTMLTextAreaElement>) => {
-    const el = e.currentTarget;
-    updateTriggers(el.value, el.selectionStart);
-  };
+  // NOTE: the @ picker trigger is decided ONLY on text change (handleChange).
+  // It must NOT re-evaluate on keyup/mouseup — after a ref is committed
+  // (`@path` inserted, picker closed), a later cursor move would otherwise
+  // re-match the committed `@token` at the input end and pop the picker back
+  // open (the "can't stop drilling after selecting a folder" bug).
 
   // Remove trigger text + @ from textarea
   const removeTrigger = useCallback(() => {
@@ -540,8 +536,6 @@ export function ChatComposer({
             value={text}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
-            onKeyUp={handleKeyUp}
-            onMouseUp={handleMouseUp}
             onPaste={handlePaste}
             placeholder={placeholder}
             disabled={disabled}

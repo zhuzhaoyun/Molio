@@ -9,6 +9,7 @@ interface Props {
   vaultId: string;
   /** Initial filter text — pre-fills the search input. */
   filterText: string;
+  /** Commit a reference (file, or a folder via its "引用" button / Shift+Enter). */
   onSelect: (filePath: string, isDirectory: boolean) => void;
   onClose: () => void;
 }
@@ -24,6 +25,30 @@ function flattenNodes(nodes: TreeNode[]): TreeNode[] {
   }
   walk(nodes);
   return out;
+}
+
+/** The node at `path` (e.g. 'a/b') in a tree, or undefined. */
+function findNode(nodes: TreeNode[], path: string): TreeNode | undefined {
+  for (const n of nodes) {
+    if (n.path === path) return n;
+    if (n.children) {
+      const found = findNode(n.children, path);
+      if (found) return found;
+    }
+  }
+  return undefined;
+}
+
+/** Direct children of the directory at `cwd` (root when cwd is ''). */
+function childrenAt(tree: TreeNode[], cwd: string): TreeNode[] {
+  if (cwd === '') return tree;
+  return findNode(tree, cwd)?.children ?? [];
+}
+
+/** Parent path of a directory path, or '' for root. */
+function parentOf(path: string): string {
+  const idx = path.lastIndexOf('/');
+  return idx === -1 ? '' : path.slice(0, idx);
 }
 
 /** Folder portion of a vault-relative path (without the filename), or '' at root. */
@@ -52,14 +77,15 @@ export function FilePicker({ vaultId, filterText, onSelect, onClose }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState(filterText);
+  /** Current directory shown in browse mode ('' = vault root). */
+  const [cwd, setCwd] = useState('');
   const [activeIdx, setActiveIdx] = useState(0);
   const activeIdxRef = useRef(0);
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   // Keep activeIdxRef in sync so the keydown handler can read the latest
-  // index without activeIdx in its dependency array (avoids re-binding the
-  // document listener on every ArrowUp/ArrowDown press).
+  // index without activeIdx in its dependency array.
   useEffect(() => { activeIdxRef.current = activeIdx; }, [activeIdx]);
 
   // Sync searchQuery when the parent-provided filterText changes (the parent
@@ -87,28 +113,26 @@ export function FilePicker({ vaultId, filterText, onSelect, onClose }: Props) {
     searchRef.current?.focus();
   }, []);
 
-  // Build the selectable list. With no query, surface top-level directories
-  // first (so folders are discoverable without typing) then recent files.
-  // When searching, match any node — files or nested directories — by name/path.
-  const files = useMemo(() => {
-    if (!searchQuery) {
-      const topDirs = tree
-        .filter((n) => n.type === 'directory')
-        .sort((a, b) => a.name.localeCompare(b.name));
-      const recentFiles = flattenNodes(tree)
-        .filter((n) => n.type === 'file')
-        .sort((a, b) => (b.modifiedAt ?? 0) - (a.modifiedAt ?? 0))
-        .slice(0, 8);
-      return [...topDirs, ...recentFiles].slice(0, 12);
-    }
+  // Browse mode (no search): children of cwd, folders first then files.
+  const browseItems = useMemo(() => {
+    const kids = childrenAt(tree, cwd);
+    const dirs = kids
+      .filter((n) => n.type === 'directory')
+      .sort((a, b) => a.name.localeCompare(b.name));
+    const files = kids
+      .filter((n) => n.type === 'file')
+      .sort((a, b) => a.name.localeCompare(b.name));
+    return [...dirs, ...files];
+  }, [tree, cwd]);
+
+  // Search mode: flat filter across the WHOLE tree (matches any file/folder).
+  const searchItems = useMemo(() => {
     const q = searchQuery.toLowerCase();
     return flattenNodes(tree)
       .filter(
         (f) => f.name.toLowerCase().includes(q) || f.path.toLowerCase().includes(q),
       )
       .sort((a, b) => {
-        // Directories first so a folder named "概念" surfaces above files
-        // that merely contain the word "概念".
         if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
         if (a.type === 'directory') return a.path.localeCompare(b.path);
         return (b.modifiedAt ?? 0) - (a.modifiedAt ?? 0);
@@ -116,28 +140,76 @@ export function FilePicker({ vaultId, filterText, onSelect, onClose }: Props) {
       .slice(0, 50);
   }, [tree, searchQuery]);
 
-  // Reset active index when files change
-  useEffect(() => { setActiveIdx(0); }, [files]);
+  const items = searchQuery ? searchItems : browseItems;
 
-  // Keyboard navigation (document-level for Arrow/Enter/Escape)
+  // Breadcrumb segments up to cwd (clicking a crumb navigates there).
+  const crumbs = useMemo(() => {
+    if (!cwd) return [] as { label: string; path: string }[];
+    const parts = cwd.split('/').filter(Boolean);
+    const out: { label: string; path: string }[] = [];
+    let acc = '';
+    for (const part of parts) {
+      acc = acc ? `${acc}/${part}` : part;
+      out.push({ label: part, path: acc });
+    }
+    return out;
+  }, [cwd]);
+
+  // Reset active index when items change
+  useEffect(() => { setActiveIdx(0); }, [items.length, cwd, searchQuery]);
+
+  const drillInto = useCallback((path: string) => {
+    setCwd(path);
+    setSearchQuery('');
+    setActiveIdx(0);
+  }, []);
+
+  const goUp = useCallback(() => {
+    setCwd((prev) => parentOf(prev));
+    setSearchQuery('');
+    setActiveIdx(0);
+  }, []);
+
+  /**
+   * Primary action on a row:
+   *  - folder  → drill in (navigate), unless shift (reference the folder)
+   *  - file    → commit reference
+   * Shift+Enter / the row's "引用" button always commit a folder reference.
+   */
+  const selectItem = useCallback(
+    (node: TreeNode, referenceFolder: boolean) => {
+      if (node.type === 'directory' && !referenceFolder) {
+        drillInto(node.path);
+      } else {
+        onSelect(node.path, node.type === 'directory');
+      }
+    },
+    [drillInto, onSelect],
+  );
+
+  // Keyboard navigation (document-level for Arrow/Enter/Shift+Enter/Escape)
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
+      if (loading || error) return;
       if (e.key === 'ArrowDown') {
         e.preventDefault();
-        setActiveIdx((prev) => Math.min(prev + 1, files.length - 1));
+        setActiveIdx((prev) => Math.min(prev + 1, items.length - 1));
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         setActiveIdx((prev) => Math.max(prev - 1, 0));
       } else if (e.key === 'Enter') {
         e.preventDefault();
-        const f = files[activeIdxRef.current];
-        if (f) onSelect(f.path, f.type === 'directory');
+        const node = items[activeIdxRef.current];
+        if (node) selectItem(node, e.shiftKey);
       } else if (e.key === 'Escape') {
         e.preventDefault();
-        onClose();
+        // In search → clear search (back to browse); drilled → go up; else close.
+        if (searchQuery) setSearchQuery('');
+        else if (cwd) goUp();
+        else onClose();
       }
     },
-    [files, onSelect, onClose],
+    [loading, error, items, searchQuery, cwd, selectItem, goUp, onClose],
   );
 
   useEffect(() => {
@@ -151,7 +223,7 @@ export function FilePicker({ vaultId, filterText, onSelect, onClose }: Props) {
     el?.scrollIntoView({ block: 'nearest' });
   }, [activeIdx]);
 
-  // Prevent Up/Down from moving cursor in search input (list nav handles it)
+  // Prevent Up/Down from moving cursor in the search input (list nav handles it)
   const handleSearchKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
@@ -160,7 +232,7 @@ export function FilePicker({ vaultId, filterText, onSelect, onClose }: Props) {
 
   if (loading) {
     return (
-      <div className="file-picker-overlay">
+      <div className="file-picker-overlay" data-testid="file-picker">
         <div className="file-picker-empty">{t('filePicker.loading')}</div>
       </div>
     );
@@ -168,7 +240,7 @@ export function FilePicker({ vaultId, filterText, onSelect, onClose }: Props) {
 
   if (error) {
     return (
-      <div className="file-picker-overlay">
+      <div className="file-picker-overlay" data-testid="file-picker">
         <div className="file-picker-empty">{t('filePicker.loadError')}</div>
       </div>
     );
@@ -188,42 +260,104 @@ export function FilePicker({ vaultId, filterText, onSelect, onClose }: Props) {
           onKeyDown={handleSearchKeyDown}
           placeholder={t('filePicker.searchPlaceholder')}
         />
+        {searchQuery && (
+          <button
+            type="button"
+            className="file-picker-search-clear"
+            data-testid="file-picker-search-clear"
+            onClick={() => setSearchQuery('')}
+            aria-label={t('filePicker.clearSearch')}
+          >
+            ×
+          </button>
+        )}
       </div>
+
+      {/* Breadcrumb (browse only) */}
+      {!searchQuery && (
+        <div className="file-picker-breadcrumb" data-testid="file-picker-breadcrumb">
+          <button
+            type="button"
+            className={`file-picker-crumb${cwd ? '' : ' active'}`}
+            onClick={() => { setCwd(''); setActiveIdx(0); }}
+          >
+            {t('filePicker.root')}
+          </button>
+          {crumbs.map((c) => (
+            <span key={c.path}>
+              <span className="file-picker-crumb-sep">/</span>
+              <button
+                type="button"
+                className="file-picker-crumb"
+                onClick={() => { setCwd(c.path); setActiveIdx(0); }}
+              >
+                {c.label}
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* File list */}
       <div ref={listRef}>
-        {files.length === 0 ? (
-          <div className="file-picker-empty">{t('filePicker.noMatch')}</div>
+        {items.length === 0 ? (
+          <div className="file-picker-empty">
+            {searchQuery ? t('filePicker.noMatch') : t('filePicker.empty')}
+          </div>
         ) : (
-          files.map((f, i) => (
-            <div
-              key={f.path}
-              className={`file-picker-item${i === activeIdx ? ' active' : ''}`}
-              data-testid="file-picker-item"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                onSelect(f.path, f.type === 'directory');
-              }}
-            >
-              <span className="file-picker-item-icon">
-                {f.type === 'directory' ? <FolderIcon size={16} /> : <FileDocIcon size={15} />}
-              </span>
-              <div className="file-picker-item-text">
-                <span className="file-picker-item-name">
-                  {f.type === 'directory' ? `${f.name}/` : f.name}
+          items.map((n, i) => {
+            const isDir = n.type === 'directory';
+            return (
+              <div
+                key={n.path}
+                className={`file-picker-item${i === activeIdx ? ' active' : ''}`}
+                data-testid="file-picker-item"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  selectItem(n, false);
+                }}
+              >
+                <span className="file-picker-item-icon">
+                  {isDir ? <FolderIcon size={16} /> : <FileDocIcon size={15} />}
                 </span>
-                {folderPath(f.path) && (
-                  <span className="file-picker-item-dir" title={folderPath(f.path)}>
-                    {folderPath(f.path)}
+                <div className="file-picker-item-text">
+                  <span className="file-picker-item-name">
+                    {isDir ? `${n.name}/` : n.name}
                   </span>
+                  {folderPath(n.path) && (
+                    <span className="file-picker-item-dir" title={folderPath(n.path)}>
+                      {folderPath(n.path)}
+                    </span>
+                  )}
+                </div>
+                {/* Folder "reference, not drill" affordance — explicit commit. */}
+                {isDir && (
+                  <button
+                    type="button"
+                    className="file-picker-ref-btn"
+                    data-testid="file-picker-ref-btn"
+                    title={t('filePicker.referenceFolder')}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onSelect(n.path, true);
+                    }}
+                  >
+                    @
+                  </button>
                 )}
+                <span className="file-picker-item-time">
+                  {n.modifiedAt ? timeAgo(n.modifiedAt, t) : ''}
+                </span>
               </div>
-              <span className="file-picker-item-time">
-                {f.modifiedAt ? timeAgo(f.modifiedAt, t) : ''}
-              </span>
-            </div>
-          ))
+            );
+          })
         )}
+      </div>
+
+      {/* Footer hint */}
+      <div className="file-picker-hint" data-testid="file-picker-hint">
+        {t('filePicker.hint')}
       </div>
     </div>
   );

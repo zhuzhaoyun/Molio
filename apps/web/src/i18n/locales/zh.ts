@@ -569,6 +569,11 @@ const zh: Record<string, string> = {
   'filePicker.loading': '加载中…',
   'filePicker.noMatch': '无匹配文件',
   'filePicker.searchPlaceholder': '搜索文件…',
+  'filePicker.empty': '该目录为空',
+  'filePicker.root': '根',
+  'filePicker.referenceFolder': '引用此目录',
+  'filePicker.clearSearch': '清除搜索',
+  'filePicker.hint': '↑↓ 选择 · Enter 进入目录 · Shift+Enter 引用目录 · Esc 返回/关闭',
   'filePicker.loadError': '加载文件失败',
 
   // ── UserMessage ──

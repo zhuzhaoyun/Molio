@@ -569,6 +569,11 @@ const en: Record<string, string> = {
   'filePicker.loading': 'Loading…',
   'filePicker.noMatch': 'No matching files',
   'filePicker.searchPlaceholder': 'Search files…',
+  'filePicker.empty': 'This folder is empty',
+  'filePicker.root': 'Root',
+  'filePicker.referenceFolder': 'Reference this folder',
+  'filePicker.clearSearch': 'Clear search',
+  'filePicker.hint': '↑↓ select · Enter enter folder · Shift+Enter reference folder · Esc back/close',
   'filePicker.loadError': 'Failed to load files',
 
   // ── UserMessage ──
