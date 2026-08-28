@@ -331,13 +331,15 @@ export function FilePicker({ vaultId, filterText, onSelect, onClose }: Props) {
                   )}
                 </div>
                 {/* Folder "reference, not drill" affordance — explicit commit.
-                    Hover-revealed so it stays quiet until you want it */}
+                    Icon-only + tooltip (the label lives in the footer hint),
+                    revealed on hover / when the row is the keyboard highlight. */}
                 {isDir && (
                   <button
                     type="button"
                     className="file-picker-ref-btn"
                     data-testid="file-picker-ref-btn"
                     title={t('filePicker.referenceFolder')}
+                    aria-label={t('filePicker.referenceFolder')}
                     onMouseDown={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
@@ -345,7 +347,6 @@ export function FilePicker({ vaultId, filterText, onSelect, onClose }: Props) {
                     }}
                   >
                     <span className="file-picker-ref-btn-glyph" aria-hidden="true">＋</span>
-                    {t('filePicker.reference')}
                   </button>
                 )}
                 <span className="file-picker-item-time">

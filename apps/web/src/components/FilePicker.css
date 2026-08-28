@@ -182,19 +182,20 @@
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
   border: 1px solid var(--border);
   background: var(--bg-subtle);
   color: var(--text-muted);
-  font-size: 11px;
   border-radius: 999px;
-  padding: 2px 9px;
   cursor: pointer;
   opacity: 0;
   transition: opacity 0.12s, color 0.12s, border-color 0.12s;
 }
 
-.file-picker-item:hover .file-picker-ref-btn {
+.file-picker-item:hover .file-picker-ref-btn,
+.file-picker-item.active .file-picker-ref-btn {
   opacity: 1;
 }
 
@@ -204,8 +205,9 @@
 }
 
 .file-picker-ref-btn-glyph {
-  font-size: 12px;
+  font-size: 15px;
   line-height: 1;
+  transform: translateY(-0.5px);
 }
 
 .file-picker-hint {
