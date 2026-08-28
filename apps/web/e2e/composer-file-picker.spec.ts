@@ -59,7 +59,7 @@ test.describe('Composer @ file picker', () => {
     }
   });
 
-  test('file ref badge appears after selecting a file', async ({ page }) => {
+  test('selecting a file inserts an inline @ref (no badge)', async ({ page }) => {
     await gotoHome(page);
     await page.reload({ waitUntil: 'networkidle' });
 
@@ -73,13 +73,14 @@ test.describe('Composer @ file picker', () => {
 
     if (hasItems) {
       await items.first().click();
-      // Badge should appear
-      const badges = page.locator('[data-testid="composer-file-badge"]');
-      await expect(badges.first()).toBeVisible({ timeout: 3000 });
+      // Claude Code-style: the reference becomes raw `@path` text in the input,
+      // no separate badge — expansion to markdown happens at send time.
+      await expect(input).toHaveValue(/^@/);
+      await expect(page.locator('[data-testid="composer-file-badge"]')).toHaveCount(0);
     }
   });
 
-  test('file ref badge can be removed', async ({ page }) => {
+  test('a second @ ref can be appended inline', async ({ page }) => {
     await gotoHome(page);
     await page.reload({ waitUntil: 'networkidle' });
 
@@ -87,21 +88,25 @@ test.describe('Composer @ file picker', () => {
     await input.click();
     await input.fill('@');
 
+    const picker = page.locator('[data-testid="file-picker"]');
     const items = page.locator('[data-testid="file-picker-item"]');
     const hasItems = await items.first().isVisible({ timeout: 3000 }).catch(() => false);
+    if (!hasItems) return;
 
-    if (hasItems) {
-      await items.first().click();
-      const badge = page.locator('[data-testid="composer-file-badge"]').first();
-      await expect(badge).toBeVisible({ timeout: 3000 });
+    await items.first().click();
+    await expect(input).toHaveValue(/^@/);
 
-      const removeBtn = page.locator('[data-testid="composer-file-badge-remove"]').first();
-      await removeBtn.click();
-      await expect(badge).not.toBeVisible();
-    }
+    // Type " @" to re-trigger the picker and reference a second node.
+    await input.pressSequentially(' @');
+    await expect(picker).toBeVisible({ timeout: 3000 });
+    await items.first().click();
+
+    const value = await input.inputValue();
+    const atCount = (value.match(/@/g) ?? []).length;
+    expect(atCount).toBeGreaterThanOrEqual(2);
   });
 
-  test('folder can be selected as a @ ref', async ({ page }) => {
+  test('folder can be selected as an inline @ ref', async ({ page }) => {
     await gotoHome(page);
     await page.reload({ waitUntil: 'networkidle' });
 
@@ -123,9 +128,8 @@ test.describe('Composer @ file picker', () => {
     if (!hasFolder) return;
 
     await folderItem.click();
-    const badge = page.locator('[data-testid="composer-file-badge"]').first();
-    await expect(badge).toBeVisible({ timeout: 3000 });
-    // Folder badge label ends with a trailing slash.
-    await expect(badge).toContainText('/');
+    // Folder refs keep the trailing slash so send-time expansion can tell
+    // them apart from files.
+    await expect(input).toHaveValue(/@.*\/$/);
   });
 });

@@ -1,6 +1,6 @@
 import { useRef, useEffect, useCallback, useMemo, useState } from 'react';
 import { ChatComposer, buildAttachmentPrefix } from './ChatComposer';
-import type { FileRef, PastedImage } from './ChatComposer';
+import type { PastedImage } from './ChatComposer';
 import { UserMessage } from './UserMessage';
 import { AssistantMessage } from './AssistantMessage';
 import { findLastAssistant } from '../utils/workSteps';
@@ -104,10 +104,11 @@ export function HomePage({
     [onSubmitToolResult],
   );
 
-  // Wrap onSend to handle fileRefs + pastedImages → message prefix
+  // Wrap onSend to handle pastedImages → message prefix. Inline @/skill refs
+  // in `message` were already expanded by ChatComposer before send.
   const handleSend = useCallback(
-    (message: string, fileRefs?: FileRef[], pastedImages?: PastedImage[]) => {
-      const prefix = buildAttachmentPrefix(fileRefs ?? [], pastedImages ?? []);
+    (message: string, pastedImages?: PastedImage[]) => {
+      const prefix = buildAttachmentPrefix(pastedImages ?? []);
       if (prefix) {
         onSend(`${prefix}\n\n${message || t('home.fileContextFallback')}`);
       } else {

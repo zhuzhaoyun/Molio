@@ -75,8 +75,11 @@ export function SkillPalette({ filterText, onSelect, onClose }: Props) {
 
   // Keyboard navigation (document-level for Arrow/Enter/Escape — the textarea
   // keeps focus, but these keys must drive the palette, not the input).
+  // Ignored while loading/errored: the list is empty, and an ArrowDown before
+  // the data lands would clamp activeIdx to -1 and desync the highlight.
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
+      if (loading || error) return;
       if (e.key === 'ArrowDown') {
         e.preventDefault();
         setActiveIdx((prev) => Math.min(prev + 1, filtered.length - 1));
@@ -92,7 +95,7 @@ export function SkillPalette({ filterText, onSelect, onClose }: Props) {
         onClose();
       }
     },
-    [filtered, onSelect, onClose],
+    [loading, error, filtered, onSelect, onClose],
   );
 
   useEffect(() => {

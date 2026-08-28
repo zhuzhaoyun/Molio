@@ -110,7 +110,7 @@ test.describe('Composer / skill palette', () => {
     await expect(palette.locator('[data-testid="skill-palette-item"]', { hasText: skillBName })).toHaveCount(0);
   });
 
-  test('clicking an item inserts the invocation prefix and closes the palette', async ({ page }) => {
+  test('clicking an item normalizes the input to /<skill name> and closes the palette', async ({ page }) => {
     await gotoHome(page);
     const input = page.locator('[data-testid="composer-input"]');
     await expect(input).toBeVisible();
@@ -123,27 +123,46 @@ test.describe('Composer / skill palette', () => {
       .first();
     await item.click({ timeout: 5_000 });
 
-    // Deterministic zh prefix (default locale), matching the KB panel's
-    // "用 <name> skill …" invocation pattern.
-    await expect(input).toHaveValue(`用 ${skillAName} skill `);
+    // Claude Code-style: the input keeps the RAW slash reference — the
+    // natural-language expansion happens only at send time.
+    await expect(input).toHaveValue(`/${skillAName} `);
     await expect(page.locator('[data-testid="skill-palette"]')).not.toBeVisible();
   });
 
-  test('ArrowDown + Enter selects the next item and inserts its prefix', async ({ page }) => {
+  test('ArrowDown + Enter selects the next item and normalizes its slash ref', async ({ page }) => {
     await gotoHome(page);
     const input = page.locator('[data-testid="composer-input"]');
     await expect(input).toBeVisible();
 
     await input.click();
     await input.fill('/');
-    await expect(page.locator('[data-testid="skill-palette"]')).toBeVisible({ timeout: 5_000 });
+    const palette = page.locator('[data-testid="skill-palette"]');
+    await expect(palette).toBeVisible({ timeout: 5_000 });
+    // Wait for the LIST (not just the overlay) — keys pressed during the
+    // loading state must not drive navigation.
+    await expect(
+      palette.locator('[data-testid="skill-palette-item"]').first(),
+    ).toBeVisible({ timeout: 5_000 });
+
+    // Capture the SECOND visible item's name BEFORE navigating: other skills
+    // may exist in the shared daemon library and sort before ours — only
+    // relative navigation is under test, not absolute list order.
+    const secondName = (
+      await palette
+        .locator('[data-testid="skill-palette-item"]')
+        .nth(1)
+        .locator('.skill-palette-item-name')
+        .innerText()
+    )
+      .replace('内置', '')
+      .trim();
 
     await input.press('ArrowDown');
     await input.press('Enter');
 
     // Enter while the palette is open must SELECT — not send the message.
-    await expect(input).toHaveValue(`用 ${skillBName} skill `);
-    await expect(page.locator('[data-testid="skill-palette"]')).not.toBeVisible();
+    await expect(input).toHaveValue(`/${secondName} `);
+    await expect(palette).not.toBeVisible();
   });
 
   test('Escape closes the palette and clears the trigger text', async ({ page }) => {
@@ -172,6 +191,39 @@ test.describe('Composer / skill palette', () => {
     // URL pasting must not trigger either.
     await input.fill('https://example.com');
     await expect(page.locator('[data-testid="skill-palette"]')).not.toBeVisible();
+  });
+
+  test('Escape with a full typed message keeps the text and only closes the palette', async ({ page }) => {
+    await gotoHome(page);
+    const input = page.locator('[data-testid="composer-input"]');
+    await expect(input).toBeVisible();
+
+    await input.click();
+    await input.fill('/docling 帮我转换这个文件');
+    await expect(page.locator('[data-testid="skill-palette"]')).toBeVisible({ timeout: 5_000 });
+
+    await input.press('Escape');
+    await expect(page.locator('[data-testid="skill-palette"]')).not.toBeVisible();
+    // The text is real message content, not scaffolding — Esc must not wipe it.
+    await expect(input).toHaveValue('/docling 帮我转换这个文件');
+  });
+
+  test('sending a message with a leading /name expands it for the agent', async ({ page }) => {
+    await mockChatRun(page);
+    await gotoHome(page);
+    const input = page.locator('[data-testid="composer-input"]');
+    await expect(input).toBeVisible();
+
+    await input.click();
+    await input.fill('/docling 帮我转换这个文件');
+    // Palette is open (leading /) and the filter has no exact match — Esc
+    // closes it while keeping the text, then Enter sends.
+    await input.press('Escape');
+    await input.press('Enter');
+
+    const userMsg = page.locator('[data-testid="user-message"]').first();
+    await expect(userMsg).toContainText('用 docling skill 帮我转换这个文件', { timeout: 5_000 });
+    await unmockAll(page);
   });
 
   test('sending via the send button while the palette is open resets the trigger', async ({ page }) => {
