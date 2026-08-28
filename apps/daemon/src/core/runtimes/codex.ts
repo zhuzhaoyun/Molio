@@ -97,9 +97,12 @@ export const codexAgentDef: RuntimeAgentDef = {
           extractDir: 'package/vendor/aarch64-unknown-linux-musl/',
         },
       },
+      // Mirror-first: Molio's user base is primarily in China, where direct
+      // downloads from registry.npmjs.org are slow; npmmirror is the fallback
+      // mirror. Official registry stays as the last-resort fallback.
       registries: [
-        'https://registry.npmjs.org',
         'https://registry.npmmirror.com',
+        'https://registry.npmjs.org',
       ],
     },
     requirements: {
