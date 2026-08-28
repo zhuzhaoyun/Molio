@@ -136,29 +136,41 @@ export function ChatComposer({
     setTriggerStartIdx(null);
   }, []);
 
-  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const newValue = e.target.value;
-    setText(newValue);
-    // "/" at input start opens the skill palette (takes precedence over the
-    // @ file-picker trigger — a value can't start with both anyway).
-    if (newValue.startsWith('/')) {
+  // A slash command is a single bare token: while the text is exactly `/query`
+  // with NO whitespace (`/`, `/doc`, `/docling`), the skill palette filters the
+  // query. The moment a space lands — committing the skill (`/docling `) or
+  // typing the rest of the message (`/docling 帮我…`) — the command is done:
+  // the palette closes and control returns to normal text, so `@` file refs
+  // can be picked. Resolving both triggers here keeps the two overlays
+  // MUTUALLY EXCLUSIVE (no stacked FilePicker + SkillPalette, and no stale
+  // empty "暂无可用技能" panel over a committed command).
+  const isSkillQuery = (value: string) => /^\/[^\s]*$/.test(value);
+
+  const updateTriggers = (value: string, cursor: number) => {
+    if (isSkillQuery(value)) {
       setSkillTrigger(true);
       setTriggerStartIdx(null);
     } else {
       setSkillTrigger(false);
-      checkTrigger(newValue, e.target.selectionStart);
+      checkTrigger(value, cursor);
     }
   };
 
-  // Re-check trigger on cursor move (arrow keys)
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newValue = e.target.value;
+    setText(newValue);
+    updateTriggers(newValue, e.target.selectionStart);
+  };
+
+  // Re-check trigger on cursor move (arrow keys) / click
   const handleKeyUp = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const el = e.currentTarget;
-    checkTrigger(el.value, el.selectionStart);
+    updateTriggers(el.value, el.selectionStart);
   };
 
   const handleMouseUp = (e: React.MouseEvent<HTMLTextAreaElement>) => {
     const el = e.currentTarget;
-    checkTrigger(el.value, el.selectionStart);
+    updateTriggers(el.value, el.selectionStart);
   };
 
   // Remove trigger text + @ from textarea

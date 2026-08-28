@@ -193,19 +193,22 @@ test.describe('Composer / skill palette', () => {
     await expect(page.locator('[data-testid="skill-palette"]')).not.toBeVisible();
   });
 
-  test('Escape with a full typed message keeps the text and only closes the palette', async ({ page }) => {
+  test('after committing a /skill, typing @ opens the file picker, not the skill palette', async ({ page }) => {
+    // Regression: selecting a skill writes `/name ` (trailing space = command
+    // committed). Typing @ right after must open the FILE picker for a file
+    // ref — NOT re-open the skill palette (which previously stacked an empty
+    // "暂无可用技能" panel over the FilePicker, since the committed slash
+    // token made the palette's filter match nothing).
     await gotoHome(page);
     const input = page.locator('[data-testid="composer-input"]');
     await expect(input).toBeVisible();
 
     await input.click();
-    await input.fill('/docling 帮我转换这个文件');
-    await expect(page.locator('[data-testid="skill-palette"]')).toBeVisible({ timeout: 5_000 });
+    await input.fill(`/${skillAName} `);
+    await input.pressSequentially('@');
 
-    await input.press('Escape');
+    await expect(page.locator('[data-testid="file-picker"]')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('[data-testid="skill-palette"]')).not.toBeVisible();
-    // The text is real message content, not scaffolding — Esc must not wipe it.
-    await expect(input).toHaveValue('/docling 帮我转换这个文件');
   });
 
   test('sending a message with a leading /name expands it for the agent', async ({ page }) => {
@@ -216,9 +219,6 @@ test.describe('Composer / skill palette', () => {
 
     await input.click();
     await input.fill('/docling 帮我转换这个文件');
-    // Palette is open (leading /) and the filter has no exact match — Esc
-    // closes it while keeping the text, then Enter sends.
-    await input.press('Escape');
     await input.press('Enter');
 
     const userMsg = page.locator('[data-testid="user-message"]').first();
