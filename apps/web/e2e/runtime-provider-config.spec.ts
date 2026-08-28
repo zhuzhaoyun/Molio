@@ -1,4 +1,7 @@
 import { test, expect } from '@playwright/test';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 
 /**
  * @area runtimes
@@ -19,6 +22,24 @@ import { test, expect } from '@playwright/test';
  */
 
 test.describe('Runtime provider config', () => {
+  // These tests write to the REAL ~/.claude/settings.json (Claude provider env
+  // lives there since the settings.json migration). Back it up and restore it so
+  // the suite never clobbers the developer's actual Claude credentials/models.
+  const claudeSettingsJson = path.join(os.homedir(), '.claude', 'settings.json');
+  let claudeSettingsBackup: string | null = null;
+
+  test.beforeAll(() => {
+    if (fs.existsSync(claudeSettingsJson) && fs.statSync(claudeSettingsJson).isFile()) {
+      claudeSettingsBackup = fs.readFileSync(claudeSettingsJson, 'utf8');
+    }
+  });
+
+  test.afterAll(() => {
+    if (claudeSettingsBackup !== null) {
+      fs.writeFileSync(claudeSettingsJson, claudeSettingsBackup);
+    }
+  });
+
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
     // Navigate to Settings → Runtimes tab (standalone /runtimes route was removed)
@@ -31,6 +52,8 @@ test.describe('Runtime provider config', () => {
     // All tests in this suite require Claude Code to be installed and available.
     // Skip gracefully in CI environments where it isn't.
     const claudeCard = page.locator('.rt-agent-card').filter({ hasText: 'Claude Code' });
+    // agent 列表是异步扫描渲染的，先等卡片出现再判断安装状态
+    await claudeCard.first().waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {});
     const hasCard = await claudeCard.count();
     const isAvailable = hasCard > 0 && await claudeCard.locator('.rt-badge--ok').count() > 0;
     test.skip(!isAvailable, 'Claude Code not installed in this environment');
@@ -80,10 +103,12 @@ test.describe('Runtime provider config', () => {
     await expect(apiKeyLink).toBeVisible();
     await expect(apiKeyLink).toHaveAttribute('href', 'https://platform.deepseek.com/api_keys');
 
-    // Should show DeepSeek models
-    const modelsSection = configPanel.locator('.rt-provider-form__models');
-    await expect(modelsSection).toContainText('DeepSeek V4 Pro');
-    await expect(modelsSection).toContainText('DeepSeek V4 Flash');
+    // DeepSeek model mapping is collapsed by default — expand and verify prefilled
+    await configPanel.locator('.rt-provider-mapping-toggle').click();
+    const mappingSection = configPanel.locator('.rt-provider-mapping');
+    await expect(mappingSection).toBeVisible();
+    await expect(mappingSection.locator('.rt-provider-mapping__input').first())
+      .toHaveValue(/deepseek-v4-pro/);
   });
 
   test('save DeepSeek config and verify persistence', async ({ page }) => {
@@ -158,11 +183,143 @@ test.describe('Runtime provider config', () => {
       });
     });
 
-    // Verify
+    // Verify. Since the Claude env → ~/.claude/settings.json migration, clearing
+    // every managed key makes the GET drop the `env` object entirely (env is
+    // undefined), so tolerate both "absent" and "empty string".
     const response = await page.evaluate(async () => {
       const res = await fetch('http://localhost:3100/api/config/agents/claude');
       return res.json();
     });
-    expect(response.env.ANTHROPIC_BASE_URL).toBe('');
+    expect(response.env?.ANTHROPIC_BASE_URL ?? '').toBe('');
+    expect(response.env?.ANTHROPIC_API_KEY ?? '').toBe('');
+  });
+});
+
+test.describe('Codex provider config', () => {
+  const codexDir = path.join(os.homedir(), '.codex');
+  const configToml = path.join(codexDir, 'config.toml');
+  const authJson = path.join(codexDir, 'auth.json');
+  let backupDir = '';
+  const backups: { src: string; bak: string }[] = [];
+  const suiteCreated: string[] = []; // 跑前不存在的文件，afterAll 删掉
+
+  test.beforeAll(() => {
+    backupDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-e2e-backup-'));
+    for (const src of [configToml, authJson]) {
+      if (fs.existsSync(src) && fs.statSync(src).isFile()) {
+        const bak = path.join(backupDir, path.basename(src));
+        fs.copyFileSync(src, bak);
+        backups.push({ src, bak });
+      } else {
+        suiteCreated.push(src);
+      }
+    }
+  });
+
+  test.afterAll(() => {
+    for (const { src, bak } of backups) {
+      fs.copyFileSync(bak, src);
+    }
+    for (const src of suiteCreated) {
+      fs.rmSync(src, { force: true }); // 本来就不存在的，删掉而不是留下测试垃圾
+    }
+    fs.rmSync(backupDir, { recursive: true, force: true });
+  });
+
+  test.beforeEach(async ({ page }) => {
+    // ProviderConfig loads live ~/.codex state ON MOUNT (the agent card mounts
+    // during navigation below). If we seeded state in the test body instead, the
+    // mount-load would already be in flight reading the PREVIOUS test's leftover
+    // and could clobber the selection — a race. So write the deterministic
+    // precondition via the daemon API BEFORE goto, guaranteeing the mount-load
+    // reads exactly this state.
+    const precondition = test.info().title.includes('switch to official')
+      ? { presetId: 'deepseek', model: 'deepseek-v4-pro' }
+      : { presetId: 'official' };
+    const seedRes = await fetch('http://localhost:3100/api/agents/codex/provider', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(precondition),
+    });
+    expect(seedRes.ok, `failed to seed codex provider precondition: ${seedRes.status}`).toBeTruthy();
+
+    await page.goto('/');
+    await page.locator('[data-view="settings"]').click();
+    await expect(page.locator('.settings-shell')).toBeVisible();
+    await page.locator('.settings-tab-btn').filter({ hasText: /Runtime|运行时/ }).click({ timeout: 5_000 });
+    await expect(page.locator('.rt-shell')).toBeVisible();
+
+    const codexCard = page.locator('.rt-agent-card').filter({ hasText: 'Codex' });
+    // agent 列表是异步扫描渲染的，先等卡片出现再判断安装状态
+    await codexCard.first().waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {});
+    const installed = await codexCard.count() > 0
+      && await codexCard.locator('.rt-badge--ok').count() > 0;
+    test.skip(!installed, 'Codex CLI not installed in this environment');
+  });
+
+  test('save DeepSeek provider and verify ~/.codex files', async ({ page }) => {
+    // beforeEach seeded 'official' before mount, so the mount-load shows
+    // 'official' — the select defaults to 'deepseek', so it only reads
+    // 'official' once the async load has been applied.
+    const codexCard = page.locator('.rt-agent-card').filter({ hasText: 'Codex' });
+    await codexCard.locator('.rt-provider-toggle').click();
+    const panel = codexCard.locator('.rt-provider-config');
+    await expect(panel).toBeVisible();
+
+    // codex file hint shown
+    await expect(panel.locator('.rt-provider-form__hint').first()).toContainText('.codex/config.toml');
+
+    // async state load applied — safe to interact without being overwritten
+    await expect(panel.locator('.rt-provider-form__select').first()).toHaveValue('official');
+
+    await panel.locator('.rt-provider-form__select').first().selectOption('deepseek');
+
+    const modelField = panel.locator('[data-testid="codex-model-field"]');
+    await expect(modelField).toBeVisible();
+    // select default model if it's a <select>
+    if (await modelField.evaluate((el) => el.tagName) === 'SELECT') {
+      await modelField.selectOption('deepseek-v4-flash');
+    } else {
+      await modelField.fill('deepseek-v4-flash');
+    }
+
+    await panel.locator('.rt-provider-form__input[type="password"]').fill('sk-e2e-codex-test');
+    await panel.locator('.rt-provider-form__actions .rt-btn').first().click();
+    await expect(panel.locator('.rt-provider-form__status--ok')).toBeVisible({ timeout: 5_000 });
+
+    // daemon wrote the live files
+    const toml = fs.readFileSync(configToml, 'utf8');
+    expect(toml).toContain('base_url = "https://api.deepseek.com"');
+    expect(toml).toContain('model_provider = "custom"');
+    expect(toml).toContain('model = "deepseek-v4-flash"');
+    const auth = JSON.parse(fs.readFileSync(authJson, 'utf8'));
+    expect(auth['OPENAI_API_KEY']).toBe('sk-e2e-codex-test');
+
+    // GET provider reflects live state
+    const state = await page.evaluate(async () => {
+      const res = await fetch('http://localhost:3100/api/agents/codex/provider');
+      return res.json();
+    });
+    expect(state.presetHint).toBe('deepseek');
+    expect(state.hasKey).toBe(true);
+  });
+
+  test('switch to official clears the override', async ({ page }) => {
+    // beforeEach seeded deepseek + 非默认模型 deepseek-v4-pro；加载完成前模型
+    // 下拉框显示默认第一项 deepseek-v4-flash，因此 deepseek-v4-pro 可作为
+    // 「异步状态加载已应用」的可观测标记
+    const codexCard = page.locator('.rt-agent-card').filter({ hasText: 'Codex' });
+    await codexCard.locator('.rt-provider-toggle').click();
+    const panel = codexCard.locator('.rt-provider-config');
+    // 等异步状态加载完成，避免晚到的响应覆盖下面的 official 选择
+    await expect(panel.locator('[data-testid="codex-model-field"]')).toHaveValue('deepseek-v4-pro');
+    await panel.locator('.rt-provider-form__select').first().selectOption('official');
+    await panel.locator('.rt-provider-form__actions .rt-btn').first().click();
+    await expect(panel.locator('.rt-provider-form__status--ok')).toBeVisible({ timeout: 5_000 });
+
+    const toml = fs.readFileSync(configToml, 'utf8');
+    // 用行首锚定正则，避免被保留的 [model_providers.X] 段（含 "model_provider" 子串）误伤
+    expect(toml).not.toMatch(/^model_provider\s*=/m);
+    expect(toml).not.toContain('https://api.deepseek.com');
   });
 });
