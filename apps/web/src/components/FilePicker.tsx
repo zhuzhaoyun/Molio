@@ -330,7 +330,8 @@ export function FilePicker({ vaultId, filterText, onSelect, onClose }: Props) {
                     </span>
                   )}
                 </div>
-                {/* Folder "reference, not drill" affordance — explicit commit. */}
+                {/* Folder "reference, not drill" affordance — explicit commit.
+                    Hover-revealed so it stays quiet until you want it */}
                 {isDir && (
                   <button
                     type="button"
@@ -343,7 +344,8 @@ export function FilePicker({ vaultId, filterText, onSelect, onClose }: Props) {
                       onSelect(n.path, true);
                     }}
                   >
-                    @
+                    <span className="file-picker-ref-btn-glyph" aria-hidden="true">＋</span>
+                    {t('filePicker.reference')}
                   </button>
                 )}
                 <span className="file-picker-item-time">
