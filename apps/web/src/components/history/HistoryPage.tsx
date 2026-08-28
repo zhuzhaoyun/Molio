@@ -117,13 +117,20 @@ export function HistoryPage({ onOpenConversation }: Props) {
               value={filters.vaultFilter}
               onChange={(e) => setFilter('vaultFilter', e.target.value)}
             >
-            {currentVaultId && (
-              <option value="__current__">{t('history.filter.currentVault')}</option>
-            )}
             <option value="">{t('history.filter.all')}</option>
-            {vaults.map((v) => (
-              <option key={v.id} value={v.id}>{v.name}</option>
-            ))}
+            {currentVaultId && (
+              // 窗口自己的库就是默认作用域（本库 + 未关联渠道会话）：一个库名只有
+              // 一个含义，不另设「当前知识库」伪选项。value 保持 '__current__'，
+              // 其余库名严格过滤。库列表未加载完时名字回落到通用文案。
+              <option value="__current__">
+                {vaults.find((v) => v.id === currentVaultId)?.name ?? t('history.filter.currentVault')}
+              </option>
+            )}
+            {vaults
+              .filter((v) => v.id !== currentVaultId)
+              .map((v) => (
+                <option key={v.id} value={v.id}>{v.name}</option>
+              ))}
             <option value="__none__">{t('history.filter.unassociated')}</option>
           </select>
           </label>
