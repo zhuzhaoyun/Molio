@@ -88,7 +88,14 @@ export function useHistoryFilters(currentVaultId?: string | null) {
     }
   }, [nextCursor, loading, buildOpts]);
 
+  // 窗口 vault 的首次可见性：挂载时已知 → 默认作用域已初始化；挂载时为 null
+  // （首访浏览器无 pinned vault）→ 等 vault 列表加载 + auto-select 落地后再采纳。
+  const vaultKnownAtMountRef = useRef(currentVaultId != null);
+  // 用户一旦手动动过筛选/搜索，默认作用域就不再自动切换（尊重显式选择）。
+  const userAdjustedRef = useRef(false);
+
   const setFilter = useCallback((key: 'vaultFilter', value: VaultFilterValue) => {
+    userAdjustedRef.current = true;
     setFilters((prev) => {
       const next = { ...prev, [key]: value };
       void fetchFirst(next);
@@ -97,12 +104,28 @@ export function useHistoryFilters(currentVaultId?: string | null) {
   }, [fetchFirst]);
 
   const setQuery = useCallback((q: string) => {
+    userAdjustedRef.current = true;
     setFilters((prev) => ({ ...prev, query: q }));
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
     debounceTimer.current = setTimeout(() => {
       void fetchFirst(filtersRef.current);
     }, 300);
   }, [fetchFirst]);
+
+  // 迟到采纳：首次访问（无 ?vault= 且 localStorage 为空）时挂载瞬间没有活跃
+  // vault，默认回落「全部」；vaultStore auto-select 完成后把窗口 vault 采纳为
+  // 默认作用域并重查一次。
+  useEffect(() => {
+    if (vaultKnownAtMountRef.current) return;
+    if (!currentVaultId) return;
+    vaultKnownAtMountRef.current = true;
+    if (userAdjustedRef.current) return;
+    setFilters((prev) => {
+      const next = { ...prev, vaultFilter: '__current__' as VaultFilterValue };
+      void fetchFirst(next);
+      return next;
+    });
+  }, [currentVaultId, fetchFirst]);
 
   const refresh = useCallback(() => {
     void fetchFirst(filtersRef.current);

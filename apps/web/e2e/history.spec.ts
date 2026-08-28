@@ -557,6 +557,22 @@ test.describe('History scoped default (current vault)', () => {
     }
   });
 
+  test('fresh window adopts the auto-selected vault as its default scope', async ({ page }) => {
+    // First-visit path: NO localStorage pin — the window's vault only becomes
+    // known once the vault list loads and vaultStore auto-selects the newest.
+    // The history page must adopt it (not stay on "all").
+    const vault = await createTempVault(`e2e-scope-adopt-${Date.now()}`);
+    try {
+      await gotoHome(page);
+      await clickNav(page, 'history');
+
+      const select = page.locator('[data-testid=history-filter-vault]');
+      await expect(select).toHaveValue('__current__', { timeout: 10_000 });
+    } finally {
+      await cleanupTempVault(vault);
+    }
+  });
+
   test('scoped empty state offers view-all and switching restores the full view', async ({ page }) => {
     const vault = await createTempVault(`e2e-scope-empty-${Date.now()}`);
     try {
