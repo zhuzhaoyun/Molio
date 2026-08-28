@@ -10,8 +10,7 @@ import { useKnowledge } from '../../hooks/useKnowledge';
 import { useKbTabs, MAX_TABS, type WorkspaceTab } from '../../hooks/useKbTabs';
 import { vaultStore } from '../../stores/vaultStore';
 import { kbChatSessionsStore } from '../../stores/kbChatSessionsStore';
-import { authStore } from '../../stores/authStore';
-import { loginIntentStore } from '../../stores/loginIntentStore';
+import { useAuthStatus } from '../../stores/authStore';
 import { KbFilePanel, type KbFilePanelHandle } from './KbFilePanel';
 import { KbTabBar } from './KbTabBar';
 import { KbMainContent } from './KbMainContent';
@@ -27,6 +26,21 @@ import { ContextMenu, type MenuItem } from './ContextMenu';
 import { useI18n } from '../../i18n';
 import { api } from '../../api/client';
 import { openInNewWindow } from '../../utils/openWindow';
+
+/** 非管理员 / 未登录点「发布到资源库」的落地页：官网联系方式（顾问个人微信二维码）。 */
+const PUBLISH_CONTACT_URL = 'https://molio.cn/enterprise.html#contact';
+
+/**
+ * 在系统默认浏览器打开联系页（不在应用内跳转）。
+ * Electron 桌面端由 main.js 的 setWindowOpenHandler 统一转交
+ * shell.openExternal；纯浏览器环境（dev / E2E）即新标签页。
+ */
+function openPublishContactPage(): void {
+  // 注意：不带 windowFeatures 第三参——带 'noopener' 时部分 Chromium 场景下
+  // 不产生可观测的新页/外部跳转；Electron 桌面端由 setWindowOpenHandler 统一
+  // 转交系统浏览器，不依赖 opener 隔离。
+  window.open(PUBLISH_CONTACT_URL, '_blank');
+}
 
 interface KnowledgeBasePageProps {
   agentId: string | null;
@@ -552,16 +566,29 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     tabs.openTab({ id: PUBLISH_TAB_ID, type: 'publish', title: t('publish.tabTitle'), vaultId: vault.id });
   }, [tabs, showToast, t]);
 
+  // 发布到资源库门禁（前端拦截，后端不设门槛）：仅管理员可打开发布 tab，未登录/
+  // 非管理员在系统浏览器打开官网联系页（顾问微信上架，人工审核）。管理员身份在
+  // 登录态变化时预取缓存——点击必须同步判定：window.open 在异步续体里会丢用户
+  // 手势、被浏览器弹窗拦截器挡住。预取未决/失败时保守按非管理员处理。
+  const auth = useAuthStatus();
+  const loggedIn = auth?.loggedIn === true;
+  const [isMarketAdmin, setIsMarketAdmin] = useState(false);
+  useEffect(() => {
+    if (!loggedIn) { setIsMarketAdmin(false); return; }
+    let alive = true;
+    fetch('/api/market/my')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((m: { isAdmin?: boolean } | null) => { if (alive) setIsMarketAdmin(m?.isAdmin === true); })
+      .catch(() => { if (alive) setIsMarketAdmin(false); });
+    return () => { alive = false; };
+  }, [loggedIn]);
+
   const handlePublishActive = useCallback(() => {
     const vault = kb.activeVault;
     if (!vault) return;
-    const status = authStore.getStatus();
-    if (status && status.loggedIn) {
-      openPublishTab(vault);
-      return;
-    }
-    loginIntentStore.requestLogin(() => openPublishTab(vault));
-  }, [kb.activeVault, openPublishTab]);
+    if (loggedIn && isMarketAdmin) openPublishTab(vault);
+    else openPublishContactPage();
+  }, [kb.activeVault, loggedIn, isMarketAdmin, openPublishTab]);
   const handleIngestFile = useCallback((filePath: string, isDirectory = false) => {
     if (!agentId) return;
     panelRef.current?.runWikiOp({ mode: 'ingest', filePath, isDirectory });

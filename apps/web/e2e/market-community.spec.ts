@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -10,7 +10,10 @@ import { gotoHome, clickNav } from './helpers/navigation';
  *
  * E2E：社区发布 → 展示 → 下载闭环（mock OSS）。
  *
- * 用例 1（登录闭环）：devCode 登录 → ?vault= 直达含 md 的知识库 → 面板「发布到资源库」
+ * 「发布到资源库」入口现仅管理员可打开发布 tab（非管理员/未登录 → 系统浏览器打开
+ * 官网联系页上架，见用例 4），故用例 1/3 用 playwright.config 注入的管理员邮箱登录。
+ *
+ * 用例 1（登录闭环）：devCode 登录（管理员）→ ?vault= 直达含 md 的知识库 → 面板「发布到资源库」
  * 打开页内发布 tab → 填名称/简介、上传 1×1 PNG 效果图、勾公开声明 → 发布成功；
  * /resources 出现新卡片带「社区分享」角标，社区筛选下仍可见；详情页预览图真实渲染
  * （src 指向 mock OSS :3199 且 naturalWidth>0 —— 证明 confirm 的 copyObject 把字节
@@ -97,6 +100,15 @@ test.afterAll(async () => {
 });
 
 /**
+ * 重置共享 daemon 登录态（登录态落 sqlite，跨运行残留）：已登录则登出，
+ * 保证 loginViaDevCode 看到的是登录表单而非资料卡。照抄 auth.spec.ts 用法。
+ */
+async function ensureLoggedOut(request: APIRequestContext) {
+  const status = (await (await request.get('/api/auth/status')).json()) as { loggedIn?: boolean };
+  if (status.loggedIn) await request.post('/api/auth/logout');
+}
+
+/**
  * devCode 登录（照抄 auth.spec.ts 流程）：邮箱 → 勾协议 → 发送验证码 →
  * 从 /api/auth/start 响应取 devCode（UI 不展示）→ 填码验证 → 关闭面板。
  */
@@ -124,26 +136,44 @@ async function loginViaDevCode(page: Page, email: string) {
 }
 
 test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () => {
-  test('社区发布 → 资源页可见 → 详情 → 下载', async ({ page }) => {
+  test('社区发布 → 资源页可见 → 详情 → 下载', async ({ page, request }) => {
     // 登录 + 发布编排（打包→直传→confirm）+ 资源页/详情页导航，预算放宽
     test.setTimeout(90_000);
 
-    // 1) 登录（现有 devCode 流程）
+    await ensureLoggedOut(request);
+    // 1) 登录（现有 devCode 流程）：发布 tab 现仅管理员可打开（非管理员被引导到官网
+    //    联系页上架）——用 playwright.config 注入的管理员邮箱登录以走通发布闭环。
     await gotoHome(page);
-    await loginViaDevCode(page, `molio-e2e-mkt-${Date.now()}@example.com`);
+    await loginViaDevCode(page, 'admin@test.local');
 
-    // 2) ?vault= 直达 beforeAll 建的含 md 库的 KB 页（per-window source of truth）
+    // 「我的上架」入口仅管理员可见：账号弹层展开应见按钮
+    await page.locator('[data-testid="nav-account-btn"]').click();
+    await expect(page.locator('[data-testid="account-my-listings-btn"]')).toBeVisible({
+      timeout: 5_000,
+    });
+    await page.locator('[data-testid="account-modal-close"]').click();
+    await expect(page.locator(ACCOUNT_MODAL)).not.toBeVisible();
+
+    // 2) ?vault= 直达 beforeAll 建的含 md 库的 KB 页（per-window source of truth）。
+    //    门禁在点击时同步判定 isAdmin——先挂监听等 /my 预取落定再点，消除竞态
+    //    （goto 前挂监听防漏响应）。
+    const mySettled = page
+      .waitForResponse((r) => r.url().includes('/api/market/my'), { timeout: 10_000 })
+      .catch(() => null);
     await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await mySettled;
 
     // 3) 面板「发布到资源库」→ 页内发布 tab：名称/简介 + 效果图 + 声明 → 提交 → 成功态
     await page.locator('[data-testid="kb-btn-publish-vault"]').click({ timeout: 5_000 });
     await expect(page.locator('[data-testid="kb-publish-pane"]')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('[data-testid="kb-wtab-publish"]')).toHaveClass(/is-active/);
 
-    const fields = page.locator('.publish-form .publish-field input'); // [0]=名称 [1]=简介
-    await fields.nth(0).fill(resourceName);
-    await fields.nth(1).fill('E2E 自动发布的社区资源，用于 P1 门禁验证');
+    // 名称是 input、简介是 textarea（旧版用 input 序号 [1] 填简介会误中自定义标签输入框）
+    await page.locator('.publish-form .publish-field input').first().fill(resourceName);
+    await page
+      .locator('.publish-form .publish-field textarea')
+      .fill('E2E 自动发布的社区资源，用于 P1 门禁验证');
     await page.locator('.publish-preview-add input[type="file"]').setInputFiles({
       name: 'preview-1x1.png',
       mimeType: 'image/png',
@@ -207,16 +237,16 @@ test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () 
     test.setTimeout(60_000);
 
     // 全部用例共享同一 daemon 登录态：先清掉上个用例残留的登录
-    const status = (await (await request.get('/api/auth/status')).json()) as {
-      loggedIn?: boolean;
-    };
-    if (status.loggedIn) await request.post('/api/auth/logout');
+    await ensureLoggedOut(request);
 
-    // 浏览可用：未登录也能看官方货架
+    // 浏览可用：未登录也能看货架。目录异步加载——用自等待断言而非即时 count，
+    // 防 shell 已渲染但数据未达的竞态
     await gotoHome(page);
     await clickNav(page, 'resources');
     await expect(page.locator('.resources-shell')).toBeVisible();
-    expect(await page.locator('[data-testid^="resource-card-"]').count()).toBeGreaterThan(0);
+    await expect(page.locator('[data-testid^="resource-card-"]').first()).toBeVisible({
+      timeout: 10_000,
+    });
 
     // 免费条目：官方目录全付费，免费筛选下是上个用例发布的社区条目（价格恒 0）
     await page.locator('[data-testid="resources-filter-free"]').click();
@@ -243,15 +273,22 @@ test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () 
     expect(page.url()).toContain('/resources');
   });
 
-  test('发布 tab：打开不自动生成，AI 配置仅用户主动点击触发（route mock）', async ({ page }) => {
+  test('发布 tab：打开不自动生成，AI 配置仅用户主动点击触发（route mock）', async ({ page, request }) => {
     test.setTimeout(60_000);
 
-    // 用例 2 会登出共享登录态——这里自行登录
+    await ensureLoggedOut(request);
+    // 自行登录；发布 tab 仅管理员可打开，故用管理员邮箱（admin2 与用例 1 错开，
+    // 避免同邮箱撞 send-code 60s 重发限频）
     await gotoHome(page);
-    await loginViaDevCode(page, `molio-e2e-ai-${Date.now()}@example.com`);
+    await loginViaDevCode(page, 'admin2@test.local');
 
+    // 同用例 1：等 /my 预取落定再点，消除门禁竞态
+    const mySettled = page
+      .waitForResponse((r) => r.url().includes('/api/market/my'), { timeout: 10_000 })
+      .catch(() => null);
     await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await mySettled;
     await page.locator('[data-testid="kb-btn-publish-vault"]').click();
     await expect(page.locator('[data-testid="kb-publish-pane"]')).toBeVisible();
 
@@ -285,5 +322,47 @@ test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () 
     });
     await expect(page.locator('[data-testid="publish-ai-regen"]')).toBeVisible();
     // 不提交，到此为止（关页面即放弃，不做关 tab 断言以保持用例聚焦）
+  });
+
+  test('非管理员：点「发布到资源库」→ 系统浏览器打开官网联系页，不进发布 tab', async ({ page, request }) => {
+    test.setTimeout(60_000);
+    await ensureLoggedOut(request);
+    // 登录为非管理员（非 admin@test.local / admin2@test.local）
+    await gotoHome(page);
+    await loginViaDevCode(page, `molio-e2e-gate-${Date.now()}@example.com`);
+
+    // 「我的上架」入口对非管理员隐藏（等 /my 落定再断言，防未决态假通过）
+    const myListingsSettled = page
+      .waitForResponse((r) => r.url().includes('/api/market/my'), { timeout: 10_000 })
+      .catch(() => null);
+    await page.locator('[data-testid="nav-account-btn"]').click();
+    await expect(page.locator(ACCOUNT_MODAL)).toBeVisible();
+    await myListingsSettled;
+    await expect(page.locator('[data-testid="account-my-listings-btn"]')).toHaveCount(0);
+    await page.locator('[data-testid="account-modal-close"]').click();
+    await expect(page.locator(ACCOUNT_MODAL)).not.toBeVisible();
+
+    // 同用例 1：等门禁状态落定再点（也顺带等 vault 解析，防 activeVault 未决早退）
+    const mySettled = page
+      .waitForResponse((r) => r.url().includes('/api/market/my'), { timeout: 10_000 })
+      .catch(() => null);
+    await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await mySettled;
+
+    // 官网联系页（外部真实网络不可依赖）→ context 级 route mock（window.open 的新
+    // 页也在同一 context）；断言新开页指向联系页，且应用页未离开、未打开发布 tab
+    await page.context().route('**/enterprise.html*', (route) =>
+      route.fulfill({ status: 200, contentType: 'text/html', body: '<html><body>联系我们</body></html>' }),
+    );
+    const popupPromise = page.context().waitForEvent('page', { timeout: 10_000 });
+    await page.locator('[data-testid="kb-btn-publish-vault"]').click();
+    const popup = await popupPromise;
+    await popup.waitForLoadState('domcontentloaded').catch(() => {});
+    expect(popup.url()).toContain('enterprise.html');
+    // 应用页留在原处：无 SPA 导航、无发布 tab
+    expect(page.url()).toContain('/knowledge');
+    await expect(page.locator('[data-testid="kb-publish-pane"]')).toHaveCount(0);
+    await popup.close().catch(() => {});
   });
 });

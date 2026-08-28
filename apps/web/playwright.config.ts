@@ -58,7 +58,9 @@ export default defineConfig({
         MOLIO_OSS_SK: 'test-sk',
         MOLIO_OSS_BUCKET: 'molio-pay',
         MOLIO_MARKET_OSS_ENDPOINT: 'http://localhost:3199',
-        MOLIO_MARKET_ADMIN_EMAILS: 'admin@test.local',
+        /* 两个管理员邮箱：market-community 用例 1/3 各用一个，避免同邮箱撞
+           send-code 60s 重发限频（429 → 无 devCode → 用例 skip） */
+        MOLIO_MARKET_ADMIN_EMAILS: 'admin@test.local,admin2@test.local',
       },
     },
     {

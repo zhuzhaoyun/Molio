@@ -33,6 +33,19 @@ export function AccountModal({ show, onClose, onLoggedIn, elevated = false }: Ac
   const [editingNickname, setEditingNickname] = useState(false);
   const [nicknameDraft, setNicknameDraft] = useState('');
   const [showMyListings, setShowMyListings] = useState(false);
+  // 「我的上架」仅市场管理员可见（与「发布到资源库」门禁同源：云端 /market/my 的
+  // isAdmin，daemon 透传）。未登录 / 未决 / 失败一律按非管理员处理（隐藏入口）
+  const [isMarketAdmin, setIsMarketAdmin] = useState(false);
+  const loggedIn = status?.loggedIn === true;
+  useEffect(() => {
+    if (!show || !loggedIn) { setIsMarketAdmin(false); return; }
+    let alive = true;
+    fetch('/api/market/my')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((m: { isAdmin?: boolean } | null) => { if (alive) setIsMarketAdmin(m?.isAdmin === true); })
+      .catch(() => { if (alive) setIsMarketAdmin(false); });
+    return () => { alive = false; };
+  }, [show, loggedIn]);
   /**
    * 打开代数（open generation）。模态框关闭时只是隐藏（组件保持挂载），
    * 登出/注销这类慢请求可能在「关闭 → 再次打开」之后才 settle——若不加守卫，
@@ -197,15 +210,17 @@ export function AccountModal({ show, onClose, onLoggedIn, elevated = false }: Ac
             </span>
           </div>
           <div className="account-actions">
-            <button
-              type="button"
-              className="kb-btn"
-              data-testid="account-my-listings-btn"
-              disabled={busy}
-              onClick={() => setShowMyListings(true)}
-            >
-              {t('account.myListings')}
-            </button>
+            {isMarketAdmin && (
+              <button
+                type="button"
+                className="kb-btn"
+                data-testid="account-my-listings-btn"
+                disabled={busy}
+                onClick={() => setShowMyListings(true)}
+              >
+                {t('account.myListings')}
+              </button>
+            )}
             <button
               type="button"
               className="kb-btn"
