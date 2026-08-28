@@ -1,8 +1,9 @@
-import { useRef, useEffect, useCallback, useMemo } from 'react';
+import { useRef, useEffect, useCallback, useMemo, useState } from 'react';
 import { ChatComposer, buildAttachmentPrefix } from './ChatComposer';
 import type { FileRef, PastedImage } from './ChatComposer';
 import { UserMessage } from './UserMessage';
 import { AssistantMessage } from './AssistantMessage';
+import { findLastAssistant } from '../utils/workSteps';
 import { useI18n } from '../i18n';
 import { useSelectMode, messageSelectionStore } from '../stores/messageSelectionStore';
 import { SelectionConfirmBar } from './SelectionConfirmBar';
@@ -10,6 +11,13 @@ import type { ChatMessage } from '../hooks/useChat';
 import { RunStatusBar } from './RunStatusBar';
 import { ActivityTree } from './ActivityTree';
 import type { ActivityInfo } from '@molio/contracts';
+import { PanelIcon } from './icons';
+import { SessionOutputPanel } from './SessionOutputPanel';
+
+const STORAGE_KEY_DOCK_OPEN = 'molio.home-dock-open';
+function readDockOpen(): boolean {
+  try { return localStorage.getItem(STORAGE_KEY_DOCK_OPEN) === 'true'; } catch { return false; }
+}
 
 // 品牌 logo（public/images/main.png）——与官网 landing-page/images/new/main.png 同源副本
 const LOGO_MAIN_URL = `${import.meta.env.BASE_URL}images/main.png`;
@@ -58,6 +66,15 @@ export function HomePage({
   const bottomRef = useRef<HTMLDivElement>(null);
   const selectMode = useSelectMode();
 
+  const [dockOpen, setDockOpen] = useState<boolean>(readDockOpen);
+  const toggleDock = useCallback(() => {
+    setDockOpen((prev) => {
+      const next = !prev;
+      try { localStorage.setItem(STORAGE_KEY_DOCK_OPEN, String(next)); } catch { /* storage unavailable */ }
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length, messages[messages.length - 1]?.content]);
@@ -70,13 +87,8 @@ export function HomePage({
   }, [messages]);
 
   // Find the last assistant message ID so only that card stays interactive
-  const lastAssistantId = useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i];
-      if (msg && msg.role === 'assistant') return msg.id;
-    }
-    return null;
-  }, [messages]);
+  const lastAssistant = useMemo(() => findLastAssistant(messages), [messages]);
+  const lastAssistantId = lastAssistant?.id ?? null;
 
   // Wire onAnswerToolUse: route tool_result back to the open stream-json child
   const onAnswerToolUse = useCallback(
@@ -109,6 +121,7 @@ export function HomePage({
   if (messages.length > 0) {
     return (
       <div className="home-page chat-active">
+        <div className="home-chat-col">
         {/* Header */}
         <div className="home-header">
           <div className="home-header-left">
@@ -124,6 +137,17 @@ export function HomePage({
                 </svg>
               </button>
             )}
+            <button
+              type="button"
+              data-testid="home-output-toggle"
+              className="icon-only"
+              aria-pressed={dockOpen}
+              aria-label={t('output.toggle')}
+              title={t('output.toggle')}
+              onClick={toggleDock}
+            >
+              <PanelIcon size={16} />
+            </button>
             {selectedAgentName && (
               <span className="home-active-agent">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -216,6 +240,9 @@ export function HomePage({
             />
           )}
         </div>
+        </div>
+
+      {dockOpen && <SessionOutputPanel messages={messages} />}
       </div>
     );
   }

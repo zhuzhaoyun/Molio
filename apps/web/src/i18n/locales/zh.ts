@@ -71,6 +71,63 @@ const zh: Record<string, string> = {
   'toolGroup.webSearch': '次网页搜索',
   'toolGroup.default': '次工具调用',
 
+  // ── WorkTimeline ──
+  'workTimeline.thinking': '正在思考',
+  'workTimeline.generating': '生成回复',
+  'workTimeline.read': '读取文件',
+  'workTimeline.searchFiles': '搜索文件',
+  'workTimeline.grep': '检索内容',
+  'workTimeline.bash': '执行命令',
+  'workTimeline.webFetch': '读取网页',
+  'workTimeline.webSearch': '搜索网络',
+  'workTimeline.write': '写入文件',
+  'workTimeline.edit': '更新文件',
+  'workTimeline.append': '追加内容',
+  'workTimeline.default': '调用工具',
+  'workTimeline.done': '已完成',
+  'workTimeline.failed': '执行出错',
+
+  // ── WorkBlock 分区 ──
+  'workBlock.opsLabel': '操作',
+  'workBlock.steps': '步',
+
+  // ── SourceChips ──
+  'source.title': '引用',
+
+  // ── WorkCompleteBanner ──
+  'complete.title': '产出文件',
+
+  // ── 会话产出面板（主页 dock）──
+  'output.title': '会话产出',
+  'output.stats': '写入 {writes} · {turns} 轮',
+  'output.writesLabel': '写入',
+  'output.locate': '在对话中定位这一步',
+  'output.empty': '该会话没有写入产出的记录',
+  'output.legacyHint': '较早的会话未记录过程数据，产出档案自本版本起随会话保留',
+  'output.toggle': '产出面板',
+  'output.previewBack': '返回',
+  'output.previewLoading': '加载中…',
+  'output.previewError': '无法读取文件（可能已删除或移动）',
+  'output.previewTooLarge': '文件过大，无法在此预览',
+  'output.previewBinary': '该文件类型无法预览',
+  'output.tabOverview': '概览',
+  'output.tabChanges': '变更',
+  'output.changesEmpty': '没有可展示的变更',
+  'output.statCreates': '新建',
+  'output.statUpdates': '更新',
+  'output.statAppends': '追加',
+  'output.changeKind.create': '新建文件',
+  'output.changeKind.update': '编辑',
+  'output.changeKind.append': '追加',
+  'output.writeNewFile': '新建了空文件',
+  'output.writeOverwrite': '整文件替换：旧内容未记录（快照功能上线后支持逐行对比）',
+  'output.diffTruncated': '该文件较长，变更仅展示前 500 行',
+  'output.appendFile': '文件尾部追加了内容',
+  'output.editNoSource': '此处改动缺少可对比的原文',
+
+  // ── App ──
+  'app.vaultSwitchReset': '已切换知识库，会话已重置',
+
   // ── RuntimePage ──
   'runtimes.title': '运行时',
   'runtimes.agentsTab': '代理',

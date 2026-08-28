@@ -1,0 +1,47 @@
+// apps/web/src/components/SourceChips.tsx
+import { useMemo } from 'react';
+import type { ToolEvent } from '../hooks/useChatCore';
+import { extractSources } from '../utils/toolRefs';
+import { useFileNavigation } from '../hooks/useFileNavigation';
+import { useActiveVaultId } from '../stores/vaultStore';
+import { useI18n } from '../i18n';
+import { FileIcon, ExternalLinkIcon } from './icons';
+
+interface Props {
+  tools: ToolEvent[];
+}
+
+export function SourceChips({ tools }: Props) {
+  const { t } = useI18n();
+  const sources = useMemo(() => extractSources(tools), [tools]);
+  const vaultId = useActiveVaultId();
+  const { openFile } = useFileNavigation();
+
+  if (sources.length === 0) return null;
+
+  return (
+    <div className="source-chips" data-testid="source-chips">
+      <span className="source-chips-title">{t('source.title')}</span>
+      {sources.map((s) => (
+        <button
+          key={s.target}
+          type="button"
+          className={`source-chip${s.kind === 'url' ? ' url' : ''}${s.navigable ? ' navigable' : ''}`}
+          data-testid="source-chip"
+          data-kind={s.kind}
+          title={s.target}
+          disabled={s.kind !== 'url' && (!s.navigable || !vaultId)}
+          onClick={() => {
+            if (s.kind === 'url') { window.open(s.target, '_blank'); return; }
+            if (s.navigable && vaultId) openFile(vaultId, s.target);
+          }}
+        >
+          <span className="source-chip-icon" aria-hidden>
+            {s.kind === 'url' ? <ExternalLinkIcon size={12} /> : <FileIcon size={12} />}
+          </span>
+          <span className="source-chip-label">{s.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useI18n } from '../i18n';
 import type { ToolEvent } from '../hooks/useChat';
 
@@ -32,7 +32,7 @@ export function ToolGroup({ tools, toolName }: Props) {
     : [];
 
   return (
-    <div className="tool-group-inline">
+    <div className="tool-group-inline" data-tool-id={tools[0]!.id}>
       <div
         className="tool-group-row"
         onClick={() => setExpanded((e) => !e)}
@@ -92,14 +92,39 @@ interface BatchGroupProps {
 
 export function BatchGroup({ tools }: BatchGroupProps) {
   const [expanded, setExpanded] = useState(false);
+  const [pendingEvidence, setPendingEvidence] = useState<string | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const runningCount = tools.filter(t => t.status === 'running').length;
   const errorCount = tools.filter(t => t.isError).length;
+
+  // 证据回跳：WorkTimeline 步骤点击指向本组内的工具（折叠时）→ 展开并定位到对应行。
+  // 作用域守卫：事件 detail 携带 messageId，必须与本组所属消息一致（重复 run 时旧消息监听器静默忽略）。
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ toolId: string; messageId: string }>).detail;
+      if (!detail?.toolId || !tools.some((t) => t.id === detail.toolId)) return;
+      const ownMessageId = rootRef.current?.closest('[data-message-id]')?.getAttribute('data-message-id');
+      if (!ownMessageId || detail.messageId !== ownMessageId) return;
+      setPendingEvidence(detail.toolId);
+      setExpanded(true);
+    };
+    window.addEventListener('molio:evidence-target', handler);
+    return () => window.removeEventListener('molio:evidence-target', handler);
+  }, [tools]);
+
+  useEffect(() => {
+    if (expanded && pendingEvidence) {
+      const el = rootRef.current?.querySelector(`[data-tool-id="${CSS.escape(pendingEvidence)}"]`);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setPendingEvidence(null);
+    }
+  }, [expanded, pendingEvidence]);
 
   const summary = `批量操作 · ${tools.length} 个工具`;
   const statusIcon = runningCount > 0 ? '' : errorCount > 0 ? ` · ${errorCount} 失败` : '';
 
   return (
-    <div className="tool-batch-group" data-testid="tool-batch-group">
+    <div ref={rootRef} className="tool-batch-group" data-testid="tool-batch-group" data-tool-id={tools[0]!.id}>
       <div
         className="tool-batch-row"
         onClick={() => setExpanded(e => !e)}
@@ -115,12 +140,12 @@ export function BatchGroup({ tools }: BatchGroupProps) {
           {tools.map((tool) => {
             const detail = formatArg(tool);
             return (
-              <div key={tool.id} className="tool-line">
+              <div key={tool.id} className="tool-line" data-tool-id={tool.id}>
                 <span className="tool-line-arrow">⎿</span>
                 <span className="tool-line-name">{tool.name}</span>
                 {detail && <span className="tool-line-arg">{detail}</span>}
                 <span className={`tool-line-status ${tool.status === 'running' ? 'running' : tool.isError ? 'error' : 'done'}`}>
-                  {tool.status === 'running' ? '' : tool.isError ? '✗' : '✓'}
+                  {tool.status === 'running' ? '…' : tool.isError ? '✗' : '✓'}
                 </span>
               </div>
             );

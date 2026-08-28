@@ -365,23 +365,31 @@
   color: var(--red);
 }
 
-/* -------- Claude Code style: inline tool calls -------------------- */
-/* Single tool call — one line */
+/* -------- Claude Code style: inline tool calls --------------------
+   账本行：11px 浅灰 mono —— 叙事（work-block-process 13px 正文色）是阅读主线，
+   工具行是衬底账本（Codex 真实层级）。状态色/步号/运行高亮保留。 */
 .tool-line {
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 2px 0;
-  font-size: 12px;
-  color: var(--text-soft);
+  font-size: 11px;
+  color: var(--text-faint);
   font-family: var(--mono);
 }
 .tool-line-arrow {
   color: var(--text-faint);
   flex-shrink: 0;
 }
+.tool-line-step {
+  color: var(--text-faint);
+  font-size: 10px;
+  font-family: var(--mono);
+  margin-right: 2px;
+  flex-shrink: 0;
+}
 .tool-line-name {
-  color: var(--text-muted);
+  color: var(--text-soft);
   flex-shrink: 0;
 }
 .tool-line-badge {
@@ -395,7 +403,7 @@
   flex-shrink: 0;
 }
 .tool-line-arg {
-  color: var(--text-soft);
+  color: var(--text-faint);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -405,10 +413,46 @@
   margin-left: auto;
   font-size: 10px;
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 12px;
+}
+/* ✓ / ✗ 是 dingbat 字形：在等宽字体（SF Mono/Consolas）里 ink 画在 em-box 上半、
+   descent 为负，视觉中线比行内文字高 ~1.6px。translateY(0.16em) 光学下移对齐；
+   运行态脉冲点是真实 box（非字形），inline-flex 天然居中，不在此列。 */
+.tool-line-status.done,
+.tool-line-status.error {
+  transform: translateY(0.16em);
 }
 .tool-line-status.running { color: var(--accent); }
 .tool-line-status.done { color: var(--green); }
 .tool-line-status.error { color: var(--red); }
+
+/* Running tool — 当前执行中的工具行 = 日志的播放头：左缘 2px 陶土条（inset 零位移，
+   与叙述的打字光标 ▋ 成对：声音的播放头 / 执行的播放头）+ 洗底 + 脉冲点 */
+.tool-line.running {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  border-radius: 4px;
+  margin: 0 -4px;
+  padding: 2px 4px;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.tool-line.running .tool-line-name { color: var(--accent); }
+.tool-line-status.running::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: work-dot 1.1s ease-in-out infinite;
+}
+@keyframes work-dot {
+  0%, 100% { opacity: 0.35; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1.05); }
+}
 
 /* Tool group — collapsible inline list */
 .tool-group-inline {
@@ -572,37 +616,46 @@
   font-style: italic;
 }
 
-/* Thinking block */
+/* Thinking block — 内省区：中性面板，靠标签 + 暗色正文区分，不做彩色装饰（简洁优先） */
 .thinking-block {
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  margin: 6px 0;
+  margin: 0 0 6px;
+  background: var(--bg-subtle);
   overflow: hidden;
+}
+/* 折叠态（运行中让位给操作日志）：去掉空盒子边框底，读起来像一句灰字注释 */
+.thinking-block[data-collapsed="true"] {
+  border: none;
+  background: transparent;
+  margin-bottom: 2px;
+}
+.thinking-block[data-collapsed="true"] .thinking-header {
+  padding: 2px 10px;
+  color: var(--text-soft);
 }
 .thinking-header {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 10px;
-  background: var(--bg-subtle);
-  color: var(--text-soft);
-  font-size: 11.5px;
-  font-weight: 500;
+  padding: 5px 10px;
+  font-size: 12px;
+  color: var(--text-muted);
   cursor: pointer;
   user-select: none;
 }
 .thinking-header:hover {
-  color: var(--text-muted);
+  color: var(--text);
 }
 .thinking-content {
-  padding: 8px 10px;
+  padding: 8px 10px 9px;
   font-size: 12px;
-  color: var(--text-soft);
-  line-height: 1.5;
-  max-height: 200px;
+  line-height: 1.6;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border-soft);
+  max-height: 220px;
   overflow-y: auto;
   white-space: pre-wrap;
-  border-top: 1px solid var(--border-soft);
 }
 
 /* -------- Repairing status (Hermes [acp] extra auto-install) -------- */
@@ -1425,12 +1478,24 @@
 .overflow-menu-item:disabled { opacity: 0.4; cursor: default; }
 .overflow-menu-item svg { flex-shrink: 0; }
 
-/* ─── Message toolbar (hover-reveal) ─── */
+/* ─── Message toolbar (hover-reveal overlay) ───
+ * Absolutely positioned inside the message so the hidden bar never reserves
+ * in-flow space (previously ~32px of phantom gap under every message's last
+ * content — e.g. source chips). Appears over the message's bottom-right on
+ * hover; since it's a .msg descendant, hovering the bar keeps .msg:hover active. */
 .message-toolbar {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  z-index: 20;
   display: flex;
   gap: 2px;
   align-items: center;
-  margin-top: 6px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-soft);
+  box-shadow: var(--shadow-xs);
   opacity: 0;
   transition: opacity 0.12s ease;
   pointer-events: none;
@@ -1577,18 +1642,36 @@
 }
 
 .tool-line-elapsed {
-  margin-left: auto;
   font-size: 11px;
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
   margin-right: 4px;
+  min-width: 42px;
+  text-align: right; /* 账本列：多行耗时数字右对齐成列；auto 留给 status，meta 簇 [✓ ⏱] 成组靠右 */
 }
 
 .tool-line-chevron {
   font-size: 10px;
   color: var(--text-faint);
   flex-shrink: 0;
+  transform: translateY(0.2em); /* ▸ dingbat 字形偏上，与打勾同理下移对齐 */
+}
+
+/* 溯源定位闪烁：产出面板「定位」→ 目标工具行/组短促 terracotta 洗底提示（1.6s 衰减） */
+.tool-card-wrapper.evidence-flash,
+.tool-group-inline.evidence-flash,
+.tool-batch-group.evidence-flash {
+  animation: evidence-flash 1.6s ease-out;
+}
+@keyframes evidence-flash {
+  0% { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+  100% { background: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tool-card-wrapper.evidence-flash,
+  .tool-group-inline.evidence-flash,
+  .tool-batch-group.evidence-flash { animation: none; }
 }
 
 /* ─── Tool output panel ─── */

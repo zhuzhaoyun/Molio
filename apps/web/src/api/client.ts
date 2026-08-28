@@ -603,7 +603,7 @@ export const api = {
   },
 
   async readFile(vaultId: string, filePath: string, opts?: { force?: boolean }): Promise<FileContent> {
-    const encoded = encodeURIComponent(filePath).replace(/%2F/g, '/');
+    const encoded = encodeURIComponent(filePath);
     const query = opts?.force ? '?force=1' : '';
     const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/files/${encoded}${query}`);
     if (!res.ok) throw new Error(`Failed to read file: ${res.status}`);
@@ -618,7 +618,7 @@ export const api = {
    * match the real file.
    */
   async resolveFilePath(vaultId: string, filePath: string): Promise<string | null> {
-    const encoded = encodeURIComponent(filePath).replace(/%2F/g, '/');
+    const encoded = encodeURIComponent(filePath);
     const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/resolve/${encoded}`);
     if (res.status === 404) return null;
     if (!res.ok) throw new Error(`Failed to resolve file path: ${res.status}`);
@@ -628,12 +628,12 @@ export const api = {
 
   /** Build URL for raw file access (images, PDFs, etc.) */
   rawFileUrl(vaultId: string, filePath: string): string {
-    const encoded = encodeURIComponent(filePath).replace(/%2F/g, '/');
+    const encoded = encodeURIComponent(filePath);
     return `${BASE}/knowledge/vaults/${vaultId}/raw/${encoded}`;
   },
 
   async writeFile(vaultId: string, filePath: string, content: string): Promise<void> {
-    const encoded = encodeURIComponent(filePath).replace(/%2F/g, '/');
+    const encoded = encodeURIComponent(filePath);
     const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/files/${encoded}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -693,7 +693,7 @@ export const api = {
   },
 
   async deleteFile(vaultId: string, filePath: string): Promise<void> {
-    const encoded = encodeURIComponent(filePath).replace(/%2F/g, '/');
+    const encoded = encodeURIComponent(filePath);
     const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/files/${encoded}`, { method: 'DELETE' });
     if (!res.ok) {
       const err = await res.json().catch(() => null);
@@ -702,7 +702,7 @@ export const api = {
   },
 
   async renameFile(vaultId: string, oldPath: string, newPath: string): Promise<void> {
-    const encoded = encodeURIComponent(oldPath).replace(/%2F/g, '/');
+    const encoded = encodeURIComponent(oldPath);
     const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/files/${encoded}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -715,7 +715,7 @@ export const api = {
   },
 
   async createDirectory(vaultId: string, dirPath: string): Promise<void> {
-    const encoded = encodeURIComponent(dirPath).replace(/%2F/g, '/');
+    const encoded = encodeURIComponent(dirPath);
     const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/dirs/${encoded}`, {
       method: 'POST',
     });
@@ -723,7 +723,7 @@ export const api = {
   },
 
   async deleteDirectory(vaultId: string, dirPath: string): Promise<void> {
-    const encoded = encodeURIComponent(dirPath).replace(/%2F/g, '/');
+    const encoded = encodeURIComponent(dirPath);
     const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/dirs/${encoded}`, { method: 'DELETE' });
     if (!res.ok) {
       const err = await res.json().catch(() => null);

@@ -61,6 +61,10 @@ test.describe('Chat — activity tree', () => {
     await gotoHome(page);
     await sendMessage(page, 'build wiki');
 
+    // 完成后工具行收进折叠的工作块，先展开
+    await expect(page.locator('[data-testid="usage-footer"]')).toBeVisible({ timeout: 10_000 });
+    await page.locator('[data-testid="work-timeline-summary"]').click();
+
     const wfLine = page.locator('[data-testid="tool-line"]').filter({ hasText: 'Workflow' });
     await expect(wfLine).toBeVisible({ timeout: 10_000 });
     await expect(wfLine).toContainText('demo digest workflow');

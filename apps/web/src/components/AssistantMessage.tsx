@@ -1,110 +1,21 @@
 import { useMemo, useCallback } from 'react';
-import type { ChatMessage, ToolEvent } from '../hooks/useChat';
+import type { ChatMessage } from '../hooks/useChat';
 import { renderMarkdown, splitContent } from '../utils/markdown';
+import { groupTools, isInteractive } from '../utils/toolGroups';
+import { splitMessageParts } from '../utils/messageText';
 import { CodeBlock } from './CodeBlock';
 import { useI18n } from '../i18n';
 import { useActiveVaultId } from '../stores/vaultStore';
 import { useFileNavigation } from '../hooks/useFileNavigation';
 import { ToolCard } from './ToolCard';
-import { ToolGroup, BatchGroup } from './ToolGroup';
-import { ThinkingBlock } from './ThinkingBlock';
+import { WorkBlock } from './WorkBlock';
+import { WorkCompleteBanner } from './WorkCompleteBanner';
+import { SourceChips } from './SourceChips';
 import { SaveToKbButton } from './SaveToKbButton';
 import { SaveAsSkillButton } from './SaveAsSkillButton';
 import { MessageToolbar } from './MessageToolbar';
 import { useSelectMode, useIsSelected } from '../stores/messageSelectionStore';
 import { MessageCheckbox } from './MessageCheckbox';
-
-// Tools that should never be grouped (always shown individually)
-const UNGROUPABLE = new Set(['AskUserQuestion', 'ask_user_question']);
-
-type ToolItem =
-  | { kind: 'single'; tool: ToolEvent }
-  | { kind: 'group'; toolName: string; tools: ToolEvent[] }
-  | { kind: 'batch'; tools: ToolEvent[] };
-
-/**
- * Group consecutive same-type tool calls (≥2 same name), then group
- * consecutive different-name singles into a batch when ≥3.
- */
-function groupTools(tools: ToolEvent[]): ToolItem[] {
-  // First pass: same-name grouping
-  const pass1 = groupSameName(tools);
-
-  // Second pass: merge consecutive different-name singles → batch when ≥3
-  const result: ToolItem[] = [];
-  let i = 0;
-  while (i < pass1.length) {
-    const item = pass1[i]!;
-    if (item.kind !== 'single') {
-      result.push(item);
-      i++;
-      continue;
-    }
-
-    // Collect consecutive singles with different names
-    const batchTools: ToolEvent[] = [item.tool];
-    let j = i + 1;
-    while (j < pass1.length && pass1[j]!.kind === 'single') {
-      const nextTool = (pass1[j] as { kind: 'single'; tool: ToolEvent }).tool;
-      // Don't batch if same name as the previous tool (shouldn't happen after pass1,
-      // but guard against edge cases)
-      if (nextTool.name === batchTools[batchTools.length - 1]!.name) break;
-      // Don't batch UNGROUPABLE tools — they need their interactive card
-      if (UNGROUPABLE.has(nextTool.name)) break;
-      batchTools.push(nextTool);
-      j++;
-    }
-
-    if (batchTools.length >= 3) {
-      result.push({ kind: 'batch', tools: batchTools });
-    } else {
-      for (const t of batchTools) {
-        result.push({ kind: 'single', tool: t });
-      }
-    }
-    i = j;
-  }
-
-  return result;
-}
-
-/**
- * Group consecutive same-name tool calls.
- * Only groups when ≥2 consecutive tools share the same name.
- */
-function groupSameName(tools: ToolEvent[]): ToolItem[] {
-  const result: ToolItem[] = [];
-  let i = 0;
-
-  while (i < tools.length) {
-    const tool = tools[i]!;
-
-    // AskUserQuestion is always single
-    if (UNGROUPABLE.has(tool.name)) {
-      result.push({ kind: 'single', tool });
-      i++;
-      continue;
-    }
-
-    // Count consecutive same-type tools
-    let j = i + 1;
-    while (j < tools.length && tools[j]!.name === tool.name && !UNGROUPABLE.has(tools[j]!.name)) {
-      j++;
-    }
-    const count = j - i;
-
-    if (count >= 2) {
-      // Group them
-      result.push({ kind: 'group', toolName: tool.name, tools: tools.slice(i, j) });
-    } else {
-      // Single tool
-      result.push({ kind: 'single', tool });
-    }
-    i = j;
-  }
-
-  return result;
-}
 
 interface Props {
   message: ChatMessage;
@@ -132,15 +43,26 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
   const hasAskUserQuestion = message.tools?.some(
     (t) => t.name === 'AskUserQuestion' || t.name === 'ask_user_question'
   );
-  const displayContent = hasAskUserQuestion
-    ? suppressAskUserQuestionFallback(message.content)
-    : message.content;
+  // 正文只显示最终答案（最后一个工具之后的文本）；执行中的叙事进工作块过程流。
+  // 运行中（streaming）拆分为 { process: 全文, answer: '' } —— 全部文本在工作卡片内渐进。
+  const { processSegs, process, answer } = useMemo(() => splitMessageParts(message), [message]);
+  const displayAnswer = hasAskUserQuestion ? suppressAskUserQuestionFallback(answer) : answer;
+  const displayProcess = hasAskUserQuestion ? suppressAskUserQuestionFallback(process) : process;
+  // AskUserQuestion 场景：fallback 抑制只对拼接文本有效，分段不传（工作块退回整块叙事）。
+  const displayProcessSegs = hasAskUserQuestion ? undefined : processSegs;
 
-  const segments = useMemo(() => splitContent(displayContent), [displayContent]);
+  const segments = useMemo(() => splitContent(displayAnswer), [displayAnswer]);
   const toolItems = useMemo(
     () => groupTools(message.tools || []),
     [message.tools]
   );
+
+  // 交互卡（AskUserQuestion）必须常显，不进 WorkBlock 折叠；其余工具收进工作块。
+  const interactiveItems = useMemo(() => toolItems.filter(isInteractive), [toolItems]);
+  const workItems = useMemo(() => toolItems.filter((it) => !isInteractive(it)), [toolItems]);
+
+  // 有工作痕迹（思考 / 工具 / 运行中）时整块渲染；纯问答降级为独立 usage-footer。
+  const hasWorkBlock = !!message.streaming || workItems.length > 0 || !!message.thinking;
 
   const activeVaultId = useActiveVaultId();
   const { openFile } = useFileNavigation();
@@ -174,18 +96,27 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
     <div
       className={`msg assistant${selectMode ? ' select-mode' : ''}${selected ? ' selected' : ''}`}
       data-testid="assistant-message"
+      data-message-id={message.id}
     >
       <div className="role">
         <span>{t('assistant.label')}</span>
         <span className="msg-time">{formatTime(message.timestamp)}</span>
       </div>
 
-      {selectMode && !message.streaming && (
-        <MessageCheckbox id={message.id} />
+      {hasWorkBlock && (
+        <WorkBlock
+          message={message}
+          toolItems={workItems}
+          processText={displayProcess}
+          processSegments={displayProcessSegs}
+          isLast={isLast}
+          onAnswerToolUse={onAnswerToolUse}
+          onSubmitForm={onSubmitForm}
+        />
       )}
 
-      {message.thinking && (
-        <ThinkingBlock content={message.thinking} streaming={message.streaming && !message.content} />
+      {selectMode && !message.streaming && (
+        <MessageCheckbox id={message.id} />
       )}
 
       {message.repairing && (
@@ -212,32 +143,23 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
         </div>
       )}
 
-      {toolItems.length > 0 && (
+      {/* 交互式问题卡：始终可见，不随工作块折叠 */}
+      {interactiveItems.length > 0 && (
         <div className="tool-cards">
-          {toolItems.map((item, idx) =>
-            item.kind === 'batch' ? (
-              <BatchGroup key={`batch-${idx}`} tools={item.tools} />
-            ) : item.kind === 'group' ? (
-              <ToolGroup
-                key={`group-${idx}`}
-                tools={item.tools}
-                toolName={item.toolName}
-              />
-            ) : (
-              <ToolCard
-                key={item.tool.id}
-                tool={item.tool}
-                isLast={isLast}
-                onAnswerToolUse={onAnswerToolUse}
-                onSubmitForm={onSubmitForm}
-                allTools={message.tools}
-              />
-            )
-          )}
+          {interactiveItems.map((item) => (
+            <ToolCard
+              key={item.tool.id}
+              tool={item.tool}
+              isLast={isLast}
+              onAnswerToolUse={onAnswerToolUse}
+              onSubmitForm={onSubmitForm}
+              allTools={message.tools}
+            />
+          ))}
         </div>
       )}
 
-      {displayContent && (
+      {displayAnswer && (
         <div
           className="assistant-prose"
           data-testid="assistant-prose"
@@ -254,9 +176,13 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
         </div>
       )}
 
+      {/* 产物卡：移入消息内，逐消息 provenance */}
+      <WorkCompleteBanner tools={message.tools ?? []} />
+
+      <SourceChips tools={message.tools ?? []} />
       {message.streaming && <span className="streaming-cursor" />}
 
-      {message.usage && (
+      {!hasWorkBlock && message.usage && (
         <div className="usage-footer" data-testid="usage-footer">
           {message.usage.input != null && <span>{message.usage.input} in</span>}
           {message.usage.output != null && <span>{message.usage.output} out</span>}
@@ -269,7 +195,7 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
           actions={[
             {
               key: 'copy', label: '复制', testid: 'msg-copy-btn',
-              text: message.content, onClick: () => {},
+              text: displayAnswer, onClick: () => {},
             },
             ...(isLast && onContinue
               ? [{
@@ -286,8 +212,8 @@ export function AssistantMessage({ message, isLast, onAnswerToolUse, onSubmitFor
           ]}
           extra={
             <>
-              <SaveToKbButton content={message.content} />
-              <SaveAsSkillButton content={message.content} />
+              <SaveToKbButton content={displayAnswer} />
+              <SaveAsSkillButton content={displayAnswer} />
             </>
           }
           overflow={onRequestDelete ? [{
@@ -320,4 +246,3 @@ function suppressAskUserQuestionFallback(text: string): string {
   // This is a best-effort heuristic; the interactive card is authoritative.
   return cleaned.trim();
 }
-

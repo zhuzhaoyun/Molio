@@ -122,7 +122,7 @@ describe('TurnTextCollector', () => {
 
   it('should pass runId to callback', () => {
     let capturedRunId: string | null = null;
-    const collector = new TurnTextCollector('my-run-123', (_text, runId) => { capturedRunId = runId; });
+    const collector = new TurnTextCollector('my-run-123', (_text, _tools, runId) => { capturedRunId = runId; });
 
     collector.append('test');
     collector.flush();

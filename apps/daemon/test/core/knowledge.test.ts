@@ -388,6 +388,16 @@ describe('knowledge filesystem operations', () => {
       const file = readFile(vaultPath, 'config.yaml');
       assert.equal(file.mimeType, 'text/yaml');
     });
+
+    // Regression: agents write scripts into vaults (build_report.py etc.); .py
+    // was missing from TEXT_EXTS so readFile returned content:'' (binary path)
+    // and the web preview showed "无法正常显示".
+    it('should read .py as text with code mime (agent scripts in vault)', () => {
+      writeFile(vaultPath, 'scripts/build_report.py', 'print("hello")\n');
+      const file = readFile(vaultPath, 'scripts/build_report.py');
+      assert.equal(file.content, 'print("hello")\n');
+      assert.equal(file.mimeType, 'text/x-python');
+    });
   });
 
   describe('writeFile — edge cases', () => {
@@ -579,6 +589,46 @@ describe('knowledge filesystem operations', () => {
 
     it('returns null for empty input', () => {
       assert.equal(resolveCanonicalPath(vaultPath, ''), null);
+    });
+  });
+
+  describe('readFile / resolveCanonicalPath — agent-absolute & ./ paths', () => {
+    // Regression: Claude Code's Write tool reports file_path as an absolute
+    // path (e.g. `/vault/wiki/hot.md`) or `./wiki/hot.md`. The read API is
+    // documented vault-relative, so these used to hit ENOENT when clicking a
+    // session-output write result ("无法读取文件（可能已删除或移动）").
+    it('reads an in-vault file via its absolute path', () => {
+      mkdirSync(join(vaultPath, 'wiki'), { recursive: true });
+      writeFileSync(join(vaultPath, 'wiki', 'hot.md'), '# 热点\n');
+      const abs = join(vaultPath, 'wiki', 'hot.md');
+      const f = readFile(vaultPath, abs);
+      assert.equal(f.content, '# 热点\n');
+      assert.equal(f.path, abs); // response echoes the caller's path
+    });
+
+    it('reads a ./-prefixed relative path', () => {
+      writeFileSync(join(vaultPath, 'note.md'), 'x');
+      assert.equal(readFile(vaultPath, './note.md').content, 'x');
+    });
+
+    it('resolves an absolute in-vault path to its canonical relative path', () => {
+      mkdirSync(join(vaultPath, 'wiki'), { recursive: true });
+      writeFileSync(join(vaultPath, 'wiki', 'entry.md'), '# x\n');
+      assert.equal(
+        resolveCanonicalPath(vaultPath, join(vaultPath, 'wiki', 'entry.md')),
+        'wiki/entry.md',
+      );
+    });
+
+    it('does NOT read an absolute path outside the vault', () => {
+      const outside = join(vaultPath + '-outside', 'secret.md');
+      try {
+        mkdirSync(vaultPath + '-outside', { recursive: true });
+        writeFileSync(outside, 'OUTSIDE');
+        assert.throws(() => readFile(vaultPath, outside));
+      } finally {
+        rmSync(vaultPath + '-outside', { recursive: true, force: true });
+      }
     });
   });
 });

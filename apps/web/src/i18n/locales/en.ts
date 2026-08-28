@@ -71,6 +71,63 @@ const en: Record<string, string> = {
   'toolGroup.webSearch': 'web searches',
   'toolGroup.default': 'tool calls',
 
+  // ── WorkTimeline ──
+  'workTimeline.thinking': 'Thinking',
+  'workTimeline.generating': 'Generating reply',
+  'workTimeline.read': 'Read file',
+  'workTimeline.searchFiles': 'Search files',
+  'workTimeline.grep': 'Search content',
+  'workTimeline.bash': 'Run command',
+  'workTimeline.webFetch': 'Fetch web',
+  'workTimeline.webSearch': 'Search web',
+  'workTimeline.write': 'Write file',
+  'workTimeline.edit': 'Update file',
+  'workTimeline.append': 'Append content',
+  'workTimeline.default': 'Tool call',
+  'workTimeline.done': 'Done',
+  'workTimeline.failed': 'Failed',
+
+  // ── WorkBlock zones ──
+  'workBlock.opsLabel': 'Operations',
+  'workBlock.steps': 'steps',
+
+  // ── SourceChips ──
+  'source.title': 'Sources',
+
+  // ── WorkCompleteBanner ──
+  'complete.title': 'Artifacts',
+
+  // ── Session output panel (Home dock) ──
+  'output.title': 'Session output',
+  'output.stats': '{writes} writes · {turns} turns',
+  'output.writesLabel': 'Writes',
+  'output.locate': 'Locate this step in the conversation',
+  'output.empty': 'No recorded writes in this conversation',
+  'output.legacyHint': 'Older conversations predate process recording; write archives are kept from this version on',
+  'output.toggle': 'Output panel',
+  'output.previewBack': 'Back',
+  'output.previewLoading': 'Loading…',
+  'output.previewError': 'Unable to read file (it may have been deleted or moved)',
+  'output.previewTooLarge': 'File too large to preview here',
+  'output.previewBinary': 'This file type cannot be previewed',
+  'output.tabOverview': 'Overview',
+  'output.tabChanges': 'Changes',
+  'output.changesEmpty': 'No changes to show',
+  'output.statCreates': 'Created',
+  'output.statUpdates': 'Updated',
+  'output.statAppends': 'Appended',
+  'output.changeKind.create': 'New file',
+  'output.changeKind.update': 'Edited',
+  'output.changeKind.append': 'Appended',
+  'output.writeNewFile': 'Created an empty file',
+  'output.writeOverwrite': 'Whole file replaced: previous content was not recorded (line comparison arrives with snapshots)',
+  'output.diffTruncated': 'Large file — showing first 500 lines of changes',
+  'output.appendFile': 'Content appended to end of file',
+  'output.editNoSource': 'Change lacks a comparable original',
+
+  // ── App ──
+  'app.vaultSwitchReset': 'Vault switched, conversation reset',
+
   // ── RuntimePage ──
   'runtimes.title': 'Runtimes',
   'runtimes.agentsTab': 'Agents',

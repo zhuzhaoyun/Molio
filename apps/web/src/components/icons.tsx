@@ -35,6 +35,29 @@ export function CopyIcon({ size = 16, className }: IconProps) {
   );
 }
 
+/** Document with text lines — a referenced file source (引用文件). */
+export function FileIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg {...base(size)} className={className}>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="16" y1="13" x2="8" y2="13" />
+      <line x1="16" y1="17" x2="8" y2="17" />
+    </svg>
+  );
+}
+
+/** Arrow leaving a frame — an external URL source (opens in a new tab). */
+export function ExternalLinkIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg {...base(size)} className={className}>
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+      <polyline points="15 3 21 3 21 9" />
+      <line x1="10" y1="14" x2="21" y2="3" />
+    </svg>
+  );
+}
+
 /** Window with a corner arrow — "open in a new window" (NavRail new-window). */
 export function OpenNewWindowIcon({ size = 16, className }: IconProps) {
   return (
@@ -133,6 +156,16 @@ export function TrashIcon({ size = 16, className }: IconProps) {
       <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
       <line x1="10" y1="11" x2="10" y2="17" />
       <line x1="14" y1="11" x2="14" y2="17" />
+    </svg>
+  );
+}
+
+/** 双栏面板（左聊天 + 右产出 dock）—— HomePage 产出面板 toggle。 */
+export function PanelIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg {...base(size)} className={className}>
+      <rect x="3" y="4" width="18" height="16" rx="2.5" />
+      <line x1="10" y1="4" x2="10" y2="20" />
     </svg>
   );
 }
