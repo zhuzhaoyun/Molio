@@ -88,7 +88,8 @@ function prepareStaging() {
   fs.rmSync(STAGING, { recursive: true, force: true });
   fs.mkdirSync(STAGING, { recursive: true });
 
-  // package.json：只留运行时依赖；@molio/contracts 是 workspace:* 且仅类型导入，运行时不需要
+  // package.json：只留运行时依赖；@molio/contracts 是 workspace:*，npm 无法从 registry 安装，
+  // 但 market/service.ts 运行时导入 MARKET_ICONS/MARKET_TINTS，必须把它手工打入部署包
   const pkg = JSON.parse(fs.readFileSync(path.join(CLOUD_DIR, 'package.json'), 'utf8'));
   delete pkg.devDependencies;
   delete pkg.scripts;
@@ -103,6 +104,15 @@ function prepareStaging() {
     fail('npm install 失败');
   }
   fs.rmSync(path.join(STAGING, 'package-lock.json'), { force: true });
+
+  // 手工打入 @molio/contracts（构建产物）：它是 workspace 包，npm install 装不上，
+  // 但 cloud 的 market/service.ts 有运行时值导入（MARKET_ICONS/MARKET_TINTS），缺了会 ERR_MODULE_NOT_FOUND。
+  const contractsSrc = path.join(REPO_ROOT, 'packages', 'contracts');
+  if (!fs.existsSync(path.join(contractsSrc, 'dist', 'index.js'))) {
+    fail('缺少 packages/contracts/dist，先运行 pnpm --filter @molio/contracts build');
+  }
+  fs.cpSync(contractsSrc, path.join(STAGING, 'node_modules', '@molio', 'contracts'), { recursive: true });
+  log('已打入 @molio/contracts');
 
   // 产物只要 dist/src（启动命令 /code/dist/src/index.js），测试编译产物不进包
   fs.cpSync(path.join(CLOUD_DIR, 'dist', 'src'), path.join(STAGING, 'dist', 'src'), { recursive: true });

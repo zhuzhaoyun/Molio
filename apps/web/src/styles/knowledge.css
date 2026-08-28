@@ -958,6 +958,23 @@
 .kb-btn.kb-btn-ghost:hover { background: var(--bg-subtle); color: var(--text); border-color: var(--border); }
 .kb-btn.kb-btn-danger { background: #dc3545; border-color: #dc3545; color: #fff; }
 .kb-btn.kb-btn-danger:hover { background: #c82333; border-color: #c82333; }
+.kb-btn.kb-btn-publish {
+  width: auto;
+  gap: 6px;
+  padding: 0 10px;
+  font-size: 12px;
+  background: transparent;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.kb-file-toolbar button:not(.kb-sort-item):not(.kb-create-item).kb-btn.kb-btn-publish {
+  width: auto;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--accent);
+}
+
+.kb-btn.kb-btn-publish:hover:not(:disabled) { background: var(--accent); border-color: var(--accent); color: #fff; }
 .kb-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* Vault option in switcher */
@@ -2341,6 +2358,26 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+/* ── 内容区双 pane：文档 pane + 发布 pane（keep-alive，切换仅隐藏不卸载）── */
+.kb-main-panes {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.kb-pane {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.kb-pane--closed {
+  visibility: hidden;
+  pointer-events: none;
 }
 
 /* ══════════ Workspace Tabs ══════════ */

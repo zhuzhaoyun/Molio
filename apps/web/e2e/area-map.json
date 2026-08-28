@@ -140,6 +140,23 @@
         "apps/daemon/src/core/knowledge.ts"
       ],
       "specs": ["drag-drop-import", "kb-folder-ops", "kb-folder-drag-real", "kb-file-drag-real", "kb-folder-root-drop"]
+    },
+    "market": {
+      "paths": [
+        "apps/web/src/components/resources/PublishForm.*",
+        "apps/web/src/components/resources/PublishWizard.*",
+        "apps/web/src/components/resources/MyListingsPanel.*",
+        "apps/web/src/components/resources/resourceAction.*",
+        "apps/web/src/hooks/useMarketCatalog.*",
+        "apps/web/src/components/kb/VaultList.*",
+        "apps/web/src/stores/loginIntentStore.*",
+        "apps/daemon/src/routes/market.ts",
+        "apps/daemon/src/core/market/*",
+        "apps/cloud/src/market/*",
+        "apps/cloud/src/store/market-*",
+        "apps/web/e2e/fixtures/mock-oss.mjs"
+      ],
+      "specs": ["market-community"]
     }
   },
   "specs": {
@@ -185,6 +202,7 @@
     "kb-folder-ops": { "priority": "P1", "file": "kb-folder-ops.spec.ts" },
     "kb-folder-drag-real": { "priority": "P1", "file": "kb-folder-drag-real.spec.ts" },
     "kb-file-drag-real": { "priority": "P1", "file": "kb-file-drag-real.spec.ts" },
-    "kb-folder-root-drop": { "priority": "P1", "file": "kb-folder-root-drop.spec.ts" }
+    "kb-folder-root-drop": { "priority": "P1", "file": "kb-folder-root-drop.spec.ts" },
+    "market-community": { "priority": "P1", "file": "market-community.spec.ts" }
   }
 }

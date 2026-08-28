@@ -125,6 +125,7 @@ export function KbTabBar({ tabs, activeTabId, onActivate, onClose, onOpenInNewWi
             <div
               key={tab.id}
               className={`kb-wtab ${isActive ? 'is-active' : ''}`}
+              data-testid={tab.id.startsWith('file:') ? undefined : `kb-wtab-${tab.id}`}
               ref={isActive ? activeRef : null}
               onClick={() => onActivate(tab.id)}
               onContextMenu={(e) => {

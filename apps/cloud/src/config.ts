@@ -58,6 +58,14 @@ export interface CloudConfig {
   databaseUrl?: string;
   /** DirectMail 配置齐全时才有值；prod 缺失时 loadConfig 直接抛错（fail-fast） */
   directMail?: DirectMailConfig;
+  /** 资源市场：OSS 凭证齐全才有值；缺失 → /market 不挂载 */
+  market?: {
+    oss: { accessKeyId: string; accessKeySecret: string; bucket: string; region: string; endpointOverride?: string };
+    maxZipMb: number;
+    adminEmails: string[];
+    maxActivePerUser: number;
+    maxDailyCreates: number;
+  };
 }
 
 /**
@@ -170,6 +178,26 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CloudConfig {
     );
   }
 
+  const ossAk = (env.MOLIO_OSS_AK ?? '').trim();
+  const ossSk = (env.MOLIO_OSS_SK ?? '').trim();
+  const ossBucket = (env.MOLIO_OSS_BUCKET ?? '').trim();
+  const ossRegion = (env.MOLIO_OSS_REGION ?? '').trim() || 'cn-guangzhou';
+  const market = ossAk && ossSk && ossBucket
+    ? {
+        oss: {
+          accessKeyId: ossAk, accessKeySecret: ossSk, bucket: ossBucket, region: ossRegion,
+          endpointOverride: (env.MOLIO_MARKET_OSS_ENDPOINT ?? '').trim() || undefined,
+        },
+        maxZipMb: intEnv(env, 'MOLIO_MARKET_MAX_ZIP_MB', 50),
+        adminEmails: (env.MOLIO_MARKET_ADMIN_EMAILS ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
+        maxActivePerUser: intEnv(env, 'MOLIO_MARKET_MAX_ACTIVE_PER_USER', 10),
+        maxDailyCreates: intEnv(env, 'MOLIO_MARKET_MAX_DAILY_CREATES', 5),
+      }
+    : undefined;
+  if (!market && envName === 'prod') {
+    console.warn('[cloud] prod 未配置 MOLIO_OSS_AK/SK/BUCKET：资源市场 /market 不启用');
+  }
+
   return {
     env: envName,
     // FC Web 函数注入 CAPort；本地默认 3200（§十三）。
@@ -192,5 +220,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CloudConfig {
     corsExtraOrigins: parseExtraOrigins(env.MOLIO_CORS_EXTRA_ORIGINS),
     databaseUrl,
     directMail,
+    market,
   };
 }

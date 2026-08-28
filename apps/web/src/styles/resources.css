@@ -359,6 +359,11 @@
   color: var(--text);
 }
 
+.resources-article__lead {
+  font-size: 15px;
+  font-weight: 500;
+}
+
 .resources-article ul {
   margin: 4px 0 0;
   padding-left: 20px;
@@ -672,3 +677,702 @@
     position: static;
   }
 }
+/* ═══════════════════════════════════════════════════════════
+   社区资源市场 — 卡片角标 / 发布向导 / 我的上架（Task 10）
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── 发布向导 ── */
+
+.publish-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: rgba(26, 25, 22, 0.35);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.publish-modal {
+  width: 560px;
+  max-width: 100%;
+}
+
+/* ── 页内发布面板（KB 页 tab pane，与弹窗壳共用表单主体样式）── */
+
+.kb-publish-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background-color: var(--bg-panel);
+}
+
+.kb-publish-pane-head {
+  flex: none;
+  padding: 18px 24px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.kb-publish-pane-head h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+/* 内容区限宽居中：宽屏下表单不拉满 */
+.kb-publish-pane-body {
+  width: 100%;
+  max-width: 720px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.publish-vault {
+  margin: 0 0 14px;
+  font-size: 12px;
+  color: var(--text-soft);
+}
+/* AI 起草提示行（加载态小 spinner / 完成态提示 + 重新生成） */
+.publish-ai {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: -6px 0 14px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.publish-ai-spinner {
+  width: 12px;
+  height: 12px;
+  border-width: 2px;
+}
+
+.publish-ai-regen {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.publish-ai-regen:hover {
+  opacity: 0.8;
+}
+
+/* AI 一键配置（用户主动触发）：主按钮 + 提示；失败态追加重试提示 */
+.publish-ai .publish-ai-btn {
+  flex: none;
+}
+
+.publish-ai-hint {
+  color: var(--text-muted);
+}
+
+.publish-ai-failed {
+  color: var(--red);
+}
+
+.publish-field {
+  display: block;
+  margin-bottom: 14px;
+}
+
+.publish-field > span {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 5px;
+}
+
+.publish-field > input {
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.publish-field > input:focus {
+  border-color: var(--selected);
+  box-shadow: 0 0 0 3px var(--selected-soft);
+}
+
+.publish-field > textarea {
+  width: 100%;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  resize: vertical;
+  min-height: 72px;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.publish-field > textarea:focus {
+  border-color: var(--selected);
+  box-shadow: 0 0 0 3px var(--selected-soft);
+}
+
+/* 目录选择树（一级目录 checkbox） */
+.publish-dir-tree {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.publish-dir-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease;
+  user-select: none;
+}
+
+.publish-dir-item:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-subtle);
+}
+
+.publish-dir-item input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.publish-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.publish-tags button {
+  appearance: none;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+
+.publish-tags button:hover {
+  color: var(--text-strong);
+  border-color: var(--text-soft);
+}
+
+.publish-tags button.is-active {
+  background: var(--text-strong);
+  border-color: var(--text-strong);
+  color: var(--bg);
+}
+
+.publish-tag-custom-chip.is-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.publish-tag-custom {
+  width: 172px;
+  height: 27px;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: transparent;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-pill);
+  outline: none;
+  transition: border-color 120ms ease;
+}
+
+.publish-tag-custom:focus {
+  border-color: var(--selected);
+}
+
+.publish-tag-custom::placeholder {
+  color: var(--text-faint);
+}
+
+.publish-previews {
+  margin-bottom: 14px;
+}
+
+.publish-previews > p {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* 预览图工具箱：生成封面 / 截取图谱 */
+.publish-preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.publish-tool-btn {
+  font-size: 12px;
+  padding: 4px 12px;
+}
+
+.publish-tool-error {
+  font-size: 12px;
+  color: var(--red);
+}
+
+.publish-preview-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.publish-preview-item {
+  position: relative;
+  width: 96px;
+  height: 64px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.publish-preview-item img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.publish-preview-item button {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 13px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.publish-preview-item button:hover {
+  background: rgba(0, 0, 0, 0.75);
+}
+
+.publish-preview-add {
+  width: 96px;
+  height: 64px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-soft);
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 120ms ease, color 120ms ease;
+}
+
+.publish-preview-add:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.publish-agreement {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.publish-agreement input {
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+
+.publish-paid-cta {
+  font-size: 12px;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.publish-paid-cta:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+
+/* 定价区：第一行 = “价格（元）” 标签 + 「想上架收费知识库？联系我们」链接（挨近）；第二行 = 短金额输入框 */
+.publish-price-block {
+  margin-bottom: 14px;
+}
+.publish-price-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 5px;
+}
+.publish-price-head > span {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+.publish-price-input {
+  width: 140px;
+  height: 34px;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.publish-price-input:focus {
+  border-color: var(--selected);
+  box-shadow: 0 0 0 3px var(--selected-soft);
+}
+
+.publish-meta {
+  margin-bottom: 14px;
+  padding: 4px 14px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.publish-meta-row {
+  display: flex;
+  gap: 12px;
+  padding: 7px 0;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.publish-meta-row:last-child {
+  border-bottom: none;
+}
+
+.publish-meta-row .k {
+  flex-shrink: 0;
+  width: 72px;
+  color: var(--text-soft);
+}
+
+.publish-meta-row .v {
+  color: var(--text-strong);
+  word-break: break-all;
+}
+
+.publish-working {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 36px 0;
+}
+
+.publish-working-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: publish-spin 0.8s linear infinite;
+}
+
+@keyframes publish-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.publish-working p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.publish-done {
+  padding: 28px 0;
+  text-align: center;
+}
+
+.publish-done p {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.publish-error {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  color: var(--red);
+}
+
+/* ── 我的上架 ── */
+
+.mylistings-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 250;
+  background: rgba(26, 25, 22, 0.35);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.mylistings-modal {
+  width: 560px;
+  max-width: 100%;
+}
+
+.mylistings-note {
+  margin: 0;
+  padding: 24px 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-soft);
+}
+
+.mylistings-error {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  color: var(--red);
+}
+
+.mylistings-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mylistings-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.mylistings-icon {
+  flex-shrink: 0;
+  font-size: 22px;
+}
+
+.mylistings-titles {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.mylistings-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mylistings-sub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+}
+
+.mylistings-status {
+  padding: 1px 8px;
+  border-radius: var(--radius-pill);
+  font-weight: 600;
+}
+
+.mylistings-status.is-active {
+  color: var(--green);
+  background-color: var(--green-bg);
+}
+
+.mylistings-status.is-uploading {
+  color: var(--amber);
+  background-color: var(--amber-bg);
+}
+
+.mylistings-status.is-removed {
+  color: var(--text-soft);
+  background-color: var(--bg-muted);
+}
+
+.mylistings-ver {
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.mylistings-actions {
+  flex-shrink: 0;
+  display: flex;
+  gap: 6px;
+}
+
+.mylistings-action {
+  appearance: none;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+
+.mylistings-action:hover {
+  color: var(--text-strong);
+  border-color: var(--text-soft);
+  background: var(--bg-subtle);
+}
+
+.mylistings-action.is-danger {
+  color: var(--red);
+  border-color: var(--red-border);
+}
+
+.mylistings-action.is-danger:hover {
+  background: var(--red-bg);
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.mylistings-action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.mylistings-confirm {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 24px 16px;
+  border-top: 1px solid var(--border);
+}
+
+.mylistings-confirm p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.mylistings-confirm-actions {
+  flex-shrink: 0;
+  display: flex;
+  gap: 6px;
+}
+
+.mylistings-confirm-actions button {
+  appearance: none;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+
+.mylistings-confirm-actions button:hover {
+  color: var(--text-strong);
+  background: var(--bg-subtle);
+}
+
+.mylistings-confirm-actions button.is-danger {
+  color: var(--red);
+  border-color: var(--red-border);
+}
+
+.mylistings-confirm-actions button.is-danger:hover {
+  background: var(--red-bg);
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.mylistings-confirm-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ── 账号面板提层（登录意图场景） ──
+   知识库管理器（.vm-overlay，z-200）内的发布入口在未登录时经
+   loginIntentStore 打开 AccountModal；默认 .kb-overlay（z-100）会被
+   vm-overlay 全屏遮盖而不可见/不可点击。登录意图打开时附加本类，
+   提至 z-320 盖过仓库管理器，保证登录视图可见可操作。
+   .entry-shell/.entry-main 均不创建栈上下文，与 .vm-overlay 直接在
+   根栈上下文比较，320 > 200 成立。 */
+.kb-overlay.kb-overlay-elevated {
+  z-index: 320;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   社区资源市场 — 详情页社区变体（Task 11）
+   ═══════════════════════════════════════════════════════════ */
+

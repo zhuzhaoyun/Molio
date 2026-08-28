@@ -257,6 +257,17 @@ p { margin-bottom: 0; }
   box-shadow: 0 8px 24px rgba(0,0,0,0.2);
 }
 
+/* Seal: 印章红实底，首屏强转化 CTA（与墨底 primary 拉开视觉层级） */
+.btn-seal {
+  background: var(--seal);
+  color: #fff;
+}
+
+.btn-seal:hover:not(:disabled) {
+  background: var(--seal-dark);
+  box-shadow: 0 8px 24px rgba(196, 30, 36, 0.28);
+}
+
 .btn-sm { padding: 10px 22px; font-size: 14px; }
 
 /* ---------- Hero ---------- */
@@ -1467,8 +1478,8 @@ p { margin-bottom: 0; }
 .rl-tab:hover { border-color: var(--rule); color: var(--ink); }
 .rl-tab.active { background: var(--ink); border-color: var(--ink); color: var(--paper); }
 
-/* 卡片网格 */
-.rl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
+/* 卡片网格（对齐客户端 .resources-grid：300px 起排、16px 间距） */
+.rl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
 
 .rl-card {
   display: flex;
@@ -1476,30 +1487,40 @@ p { margin-bottom: 0; }
   background: #fff;
   border: 1px solid rgba(13, 13, 13, 0.06);
   border-radius: 16px;
-  padding: 22px;
+  padding: 20px;
   box-shadow: 0 1px 3px rgba(13, 13, 13, 0.05);
-  transition: transform 0.25s var(--ease), box-shadow 0.25s var(--ease);
+  transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease);
 }
-.rl-card:hover { transform: translateY(-4px); box-shadow: 0 14px 36px rgba(13, 13, 13, 0.1); }
+/* hover 轻浮起（对齐客户端 -2px 的克制观感，替代原 -4px 大幅跳动） */
+.rl-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(13, 13, 13, 0.08); }
 
-.rl-top { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.rl-top { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .rl-icon {
   flex: none;
-  width: 46px; height: 46px;
+  width: 48px; height: 48px;
   border-radius: 12px;
   display: flex; align-items: center; justify-content: center;
-  font-size: 23px;
+  font-size: 26px;
 }
 .rl-titles { flex: 1; min-width: 0; }
-.rl-name { font-size: 16px; font-weight: 700; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 标题完整换行不截断（与客户端 .resources-card__name 一致）：
+   标题区夹在图标与价格胶囊之间宽度有限，任何 clamp 都会丢长标题信息；
+   卡片同排高度由网格拉伸对齐，多一行标题不破坏排版 */
+.rl-name {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--ink);
+}
 .rl-sub { display: block; margin-top: 2px; font-size: 12px; color: var(--ink-20); }
-.rl-ver { margin-left: 6px; font-style: normal; color: var(--ink-40); }
-.rl-price { flex: none; font-size: 13px; font-weight: 700; padding: 4px 11px; border-radius: 999px; }
+.rl-ver { margin-left: 6px; font-style: normal; color: var(--ink-40); font-variant-numeric: tabular-nums; }
+.rl-price { flex: none; font-size: 13px; font-weight: 600; padding: 2px 10px; border-radius: 999px; }
 .rl-price.paid { color: var(--seal); background: rgba(196, 30, 36, 0.08); }
 .rl-price.free { color: #1a7f4e; background: rgba(26, 127, 78, 0.08); }
 
 .rl-desc {
   flex: 1;
+  margin: 0 0 16px;
   font-size: 13.5px;
   line-height: 1.65;
   color: var(--ink-40);
@@ -1509,21 +1530,23 @@ p { margin-bottom: 0; }
   overflow: hidden;
 }
 
-.rl-actions { display: flex; align-items: center; justify-content: space-between; margin-top: 18px; }
+/* 动作行：左对齐紧凑排列（对齐客户端 .resources-card__actions），不再两端撑满 */
+.rl-actions { display: flex; align-items: center; gap: 14px; }
 .rl-buy {
-  padding: 9px 22px;
+  padding: 8px 18px;
   border: none;
   border-radius: 999px;
   background: var(--ink);
   color: var(--paper);
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.2s var(--ease), transform 0.2s var(--ease);
+  transition: background 0.15s var(--ease);
 }
-.rl-buy:hover { background: #000; transform: translateY(-1px); }
-.rl-detail { font-size: 13px; color: var(--ink-40); text-decoration: none; transition: color 0.2s; }
-.rl-detail:hover { color: var(--ink); }
+/* hover 转印章红（对齐客户端 hover 转品牌红），替代原纯黑加深 */
+.rl-buy:hover { background: var(--seal-dark); }
+.rl-detail { font-size: 13px; color: var(--ink-40); text-decoration: none; transition: color 0.15s var(--ease); }
+.rl-detail:hover { color: var(--seal-dark); }
 
 /* 导入说明卡 */
 .rl-guide {
@@ -1539,6 +1562,35 @@ p { margin-bottom: 0; }
 .rl-guide p { margin-top: 14px; font-size: 13px; color: var(--ink-40); }
 .rl-guide a { color: var(--seal); text-decoration: none; }
 .rl-guide a:hover { text-decoration: underline; }
+
+/* 页头 CTA 条：发布引导 + 付费上架联系（社区市场） */
+.rl-cta {
+  margin: 28px 0 0;
+  padding: 18px 24px;
+  background: #fff;
+  border: 1px solid rgba(13, 13, 13, 0.06);
+  border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(13, 13, 13, 0.05);
+  text-align: center;
+}
+.rl-cta p { margin: 0; font-size: 13.5px; line-height: 1.9; color: var(--ink-60); }
+.rl-cta p + p { color: var(--ink-40); }
+.rl-cta a { color: var(--seal); text-decoration: none; }
+.rl-cta a:hover { text-decoration: underline; }
+
+/* 社区角标：卡片头部小徽标（与价格徽标同排） */
+.rl-badge-community {
+  flex: none;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--paper-2);
+  color: var(--ink-40);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* 社区卡片作者行 */
+.rl-author { margin-top: 10px; font-size: 12px; color: var(--ink-20); }
 
 /* ---------- Resource detail ---------- */
 .page-content.page-wide { max-width: var(--max-w); }

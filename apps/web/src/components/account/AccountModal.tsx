@@ -14,21 +14,38 @@ import { api } from '../../api/client';
 import { authStore, useAuthStatus } from '../../stores/authStore';
 import { authErrorRef } from './authErrors';
 import { LoginForm } from './LoginForm';
+import { MyListingsPanel } from '../resources/MyListingsPanel';
 
 interface AccountModalProps {
   show: boolean;
   onClose: () => void;
   /** 登录成功后回调（登录意图场景用来续接被门槛拦下的动作） */
   onLoggedIn?: () => void;
+  /** 登录意图打开时提层（kb-overlay-elevated，z-320），盖过仓库管理器 vm-overlay(z-200) */
+  elevated?: boolean;
 }
 
-export function AccountModal({ show, onClose, onLoggedIn }: AccountModalProps) {
+export function AccountModal({ show, onClose, onLoggedIn, elevated = false }: AccountModalProps) {
   const { t } = useI18n();
   const status = useAuthStatus();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editingNickname, setEditingNickname] = useState(false);
   const [nicknameDraft, setNicknameDraft] = useState('');
+  const [showMyListings, setShowMyListings] = useState(false);
+  // 「我的上架」仅市场管理员可见（与「发布到资源库」门禁同源：云端 /market/my 的
+  // isAdmin，daemon 透传）。未登录 / 未决 / 失败一律按非管理员处理（隐藏入口）
+  const [isMarketAdmin, setIsMarketAdmin] = useState(false);
+  const loggedIn = status?.loggedIn === true;
+  useEffect(() => {
+    if (!show || !loggedIn) { setIsMarketAdmin(false); return; }
+    let alive = true;
+    fetch('/api/market/my')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((m: { isAdmin?: boolean } | null) => { if (alive) setIsMarketAdmin(m?.isAdmin === true); })
+      .catch(() => { if (alive) setIsMarketAdmin(false); });
+    return () => { alive = false; };
+  }, [show, loggedIn]);
   /**
    * 打开代数（open generation）。模态框关闭时只是隐藏（组件保持挂载），
    * 登出/注销这类慢请求可能在「关闭 → 再次打开」之后才 settle——若不加守卫，
@@ -46,6 +63,7 @@ export function AccountModal({ show, onClose, onLoggedIn }: AccountModalProps) {
     setError(null);
     setEditingNickname(false);
     setNicknameDraft('');
+    setShowMyListings(false);
     void authStore.refresh();
   }, [show]);
 
@@ -192,6 +210,17 @@ export function AccountModal({ show, onClose, onLoggedIn }: AccountModalProps) {
             </span>
           </div>
           <div className="account-actions">
+            {isMarketAdmin && (
+              <button
+                type="button"
+                className="kb-btn"
+                data-testid="account-my-listings-btn"
+                disabled={busy}
+                onClick={() => setShowMyListings(true)}
+              >
+                {t('account.myListings')}
+              </button>
+            )}
             <button
               type="button"
               className="kb-btn"
@@ -237,7 +266,7 @@ export function AccountModal({ show, onClose, onLoggedIn }: AccountModalProps) {
 
   return (
     <div
-      className="kb-overlay show"
+      className={`kb-overlay show${elevated ? ' kb-overlay-elevated' : ''}`}
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div className="kb-modal account-modal">
@@ -260,6 +289,9 @@ export function AccountModal({ show, onClose, onLoggedIn }: AccountModalProps) {
           )}
         </div>
       </div>
+      {showMyListings && (
+        <MyListingsPanel onClose={() => setShowMyListings(false)} />
+      )}
     </div>
   );
 }

@@ -5,11 +5,12 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import type { TreeNode } from '@molio/contracts';
+import type { TreeNode, Vault } from '@molio/contracts';
 import { useKnowledge } from '../../hooks/useKnowledge';
 import { useKbTabs, MAX_TABS, type WorkspaceTab } from '../../hooks/useKbTabs';
 import { vaultStore } from '../../stores/vaultStore';
 import { kbChatSessionsStore } from '../../stores/kbChatSessionsStore';
+import { useAuthStatus } from '../../stores/authStore';
 import { KbFilePanel, type KbFilePanelHandle } from './KbFilePanel';
 import { KbTabBar } from './KbTabBar';
 import { KbMainContent } from './KbMainContent';
@@ -17,12 +18,29 @@ import type { KbChatSessionsPanelHandle } from './KbChatSessionsPanel';
 import { OutlinePanel } from './OutlinePanel';
 import { SearchPanel } from './SearchPanel';
 import { VaultManagerModal } from './VaultManager';
+import { PublishForm, type PublishFormData } from '../resources/PublishForm';
+import { PUBLISH_TAB_ID } from './kb-constants';
 import { ImportModal, CoseInstallPrompt, InputDialog, ConfirmDialog } from './KbModals';
 import { ImportConflictDialog } from './ImportConflictDialog';
 import { ContextMenu, type MenuItem } from './ContextMenu';
 import { useI18n } from '../../i18n';
 import { api } from '../../api/client';
 import { openInNewWindow } from '../../utils/openWindow';
+
+/** 非管理员 / 未登录点「发布到资源库」的落地页：官网联系方式（顾问个人微信二维码）。 */
+const PUBLISH_CONTACT_URL = 'https://molio.cn/enterprise.html#contact';
+
+/**
+ * 在系统默认浏览器打开联系页（不在应用内跳转）。
+ * Electron 桌面端由 main.js 的 setWindowOpenHandler 统一转交
+ * shell.openExternal；纯浏览器环境（dev / E2E）即新标签页。
+ */
+function openPublishContactPage(): void {
+  // 注意：不带 windowFeatures 第三参——带 'noopener' 时部分 Chromium 场景下
+  // 不产生可观测的新页/外部跳转；Electron 桌面端由 setWindowOpenHandler 统一
+  // 转交系统浏览器，不依赖 opener 隔离。
+  window.open(PUBLISH_CONTACT_URL, '_blank');
+}
 
 interface KnowledgeBasePageProps {
   agentId: string | null;
@@ -144,6 +162,8 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
   const [pendingUrlNav, setPendingUrlNav] = useState<UrlFileNavigation | null>(null);
   const [showOutline, setShowOutline] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  // 发布 tab 表单是否有已填内容（PublishForm 上报）——关 tab 前的放弃确认用
+  const publishDirtyRef = useRef(false);
 
   // URL → store: the window's ?vault= is the per-window source of truth. Fresh
   // loads are handled by vaultStore module init; this catches in-app navigation
@@ -336,38 +356,60 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     }
   }, [kb.tree, kb.treeVaultId, handleSelectFile]);
 
-  /** Switch to a tab and load its file. Prompts before discarding unsaved edits. */
+  /** Switch to a tab and load its file. Prompts only when actually switching
+   *  to a DIFFERENT file (切到非文件 tab / 切回同一文件不弹"放弃修改"). */
   const handleActivateTab = useCallback((tabId: string) => {
     // Clicking the already-active tab is a no-op — don't prompt.
     if (tabId === tabs.activeTabId) return;
-    runOrConfirmDiscard(() => {
+    const targetPath = tabId.startsWith('file:') ? tabId.slice(5) : null;
+    const willSwitchFile = targetPath !== null && kb.selectedFile !== targetPath;
+    const run = () => {
       tabs.activateTab(tabId);
-      if (tabId.startsWith('file:')) {
-        kb.selectFile(tabId.slice(5));
-      }
-    });
+      if (targetPath !== null) kb.selectFile(targetPath);
+    };
+    if (willSwitchFile) runOrConfirmDiscard(run);
+    else run();
   }, [tabs, kb, runOrConfirmDiscard]);
 
-  /** Close a tab; if it was active, the store auto-activates an adjacent tab. */
+  /** Close a tab; if it was active, the store auto-activates an adjacent tab.
+   *  publish tab 有已填内容时先弹「放弃未发布的填写」确认。 */
   const handleCloseTab = useCallback((tabId: string) => {
     const wasActive = tabs.activeTabId === tabId;
-    // Closing a non-active tab doesn't switch the viewed file — no prompt.
-    if (!wasActive) {
+    const isPublishDirty = tabId === PUBLISH_TAB_ID && publishDirtyRef.current;
+    const doClose = () => {
+      if (tabId === PUBLISH_TAB_ID) publishDirtyRef.current = false;
       tabs.closeTab(tabId);
-      return;
-    }
-    runOrConfirmDiscard(() => {
-      tabs.closeTab(tabId);
+      if (!wasActive) return;
       // After close, the store has already set a new activeTabId.
       // Sync selectedFile with the newly active tab.
       const newActive = tabs.getActiveTab();
       if (newActive && newActive.id.startsWith('file:')) {
         kb.selectFile(newActive.id.slice(5));
       } else {
-        // No tabs left — clear selection
+        // No file tabs left — clear selection
         kb.selectFile(null);
       }
-    });
+    };
+    if (isPublishDirty) {
+      setConfirmDialog({
+        show: true,
+        title: '放弃未发布的填写？',
+        message: '发布表单有已填写的内容，关闭标签将丢弃这些内容。',
+        confirmLabel: '放弃并关闭',
+        danger: true,
+        onConfirm: () => {
+          setConfirmDialog((prev) => ({ ...prev, show: false }));
+          doClose();
+        },
+      });
+      return;
+    }
+    // Closing a non-active tab doesn't switch the viewed file — no prompt.
+    if (!wasActive) {
+      doClose();
+      return;
+    }
+    runOrConfirmDiscard(doClose);
   }, [tabs, kb, runOrConfirmDiscard]);
 
   /** Open the tab's file in a new window (Electron IPC or browser popup). */
@@ -512,6 +554,41 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     if (!agentId) return;
     panelRef.current?.runWikiOp({ mode: 'lint' });
   }, [kb.activeVault, kb.wikiInitialized, agentId]);
+  // 发布当前知识库到资源库：打开/激活页内 publish tab（store per-vault，
+  // id 固定即天然单例）。要求登录；未登录挂起登录意图，登录成功后续接打开。
+  const openPublishTab = useCallback((vault: Vault) => {
+    const exists = tabs.tabs.some((tb) => tb.id === PUBLISH_TAB_ID);
+    if (!exists && tabs.tabs.length >= MAX_TABS) {
+      showToast(`已达 ${MAX_TABS} 个标签上限，请先关闭某个标签`);
+      return;
+    }
+    publishDirtyRef.current = false; // 重开/激活时复位，防上次残留
+    tabs.openTab({ id: PUBLISH_TAB_ID, type: 'publish', title: t('publish.tabTitle'), vaultId: vault.id });
+  }, [tabs, showToast, t]);
+
+  // 发布到资源库门禁（前端拦截，后端不设门槛）：仅管理员可打开发布 tab，未登录/
+  // 非管理员在系统浏览器打开官网联系页（顾问微信上架，人工审核）。管理员身份在
+  // 登录态变化时预取缓存——点击必须同步判定：window.open 在异步续体里会丢用户
+  // 手势、被浏览器弹窗拦截器挡住。预取未决/失败时保守按非管理员处理。
+  const auth = useAuthStatus();
+  const loggedIn = auth?.loggedIn === true;
+  const [isMarketAdmin, setIsMarketAdmin] = useState(false);
+  useEffect(() => {
+    if (!loggedIn) { setIsMarketAdmin(false); return; }
+    let alive = true;
+    fetch('/api/market/my')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((m: { isAdmin?: boolean } | null) => { if (alive) setIsMarketAdmin(m?.isAdmin === true); })
+      .catch(() => { if (alive) setIsMarketAdmin(false); });
+    return () => { alive = false; };
+  }, [loggedIn]);
+
+  const handlePublishActive = useCallback(() => {
+    const vault = kb.activeVault;
+    if (!vault) return;
+    if (loggedIn && isMarketAdmin) openPublishTab(vault);
+    else openPublishContactPage();
+  }, [kb.activeVault, loggedIn, isMarketAdmin, openPublishTab]);
   const handleIngestFile = useCallback((filePath: string, isDirectory = false) => {
     if (!agentId) return;
     panelRef.current?.runWikiOp({ mode: 'ingest', filePath, isDirectory });
@@ -975,6 +1052,12 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
 
   const hasVault = !!kb.activeVault;
 
+  // 发布 tab（页内 keep-alive）：tab 存在期间 PublishForm 常驻挂载，
+  // 非激活仅 CSS 隐藏 + inert，切走再切回不丢已填内容。
+  const publishTabOpen = tabs.tabs.some((tb) => tb.id === PUBLISH_TAB_ID);
+  const publishActive = tabs.activeTabId === PUBLISH_TAB_ID;
+  const publishTabData = (tabs.tabs.find((tb) => tb.id === PUBLISH_TAB_ID)?.data ?? undefined) as PublishFormData | undefined;
+
   return (
     <div className="kb-shell">
       {/* File Panel */}
@@ -998,6 +1081,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
         onRenameCancel={handleRenameCancel}
         onImportFiles={handleImportFiles}
         onMoveFile={handleMoveFile}
+        onPublishVault={handlePublishActive}
       >
         <div className="kb-resize-handle" onMouseDown={handleResizeStart} />
       </KbFilePanel>
@@ -1052,35 +1136,65 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
             </>
           }
         />
-        <KbMainContent
-          fileContent={kb.fileContent}
-          selectedFile={kb.selectedFile}
-          fileLoadError={kb.fileLoadError}
-          vaultId={kb.activeVault?.id ?? null}
-          vaultPath={kb.activeVault?.path ?? null}
-          isTypesetMode={kb.isTypesetMode}
-          themeConfig={kb.themeConfig}
-          wikiInitialized={kb.wikiInitialized}
-          hasUnsavedChanges={hasUnsavedChanges}
-          onToggleTypeset={kb.toggleTypesetMode}
-          onThemeConfigChange={kb.setThemeConfig}
-          onContentChange={kb.setEditedContent}
-          onSave={handleSave}
-          onCopy={kb.copyToClipboard}
-          onPublish={kb.publishToChrome}
-          onBuildWiki={handleBuildWiki}
-          onAskAboutSelection={handleAskAboutSelection}
-          onOpenOutline={() => setShowOutline(true)}
-          onAskAboutFile={kb.selectedFile ? handleOpenQa : undefined}
-          showFileName={true}
-          isEditMode={kb.isEditMode}
-          onToggleEdit={kb.toggleEditMode}
-          onForceLoad={kb.forceLoadFile}
-          onCloseTab={() => {
-            if (tabs.activeTabId) handleCloseTab(tabs.activeTabId);
-          }}
-          onNavigateToFile={handleNavigateToFile}
-        />
+        <div className="kb-main-panes">
+          <div
+            className={`kb-pane${publishActive ? ' kb-pane--closed' : ''}`}
+            inert={publishActive}
+            aria-hidden={publishActive || undefined}
+          >
+            <KbMainContent
+              fileContent={kb.fileContent}
+              selectedFile={kb.selectedFile}
+              fileLoadError={kb.fileLoadError}
+              vaultId={kb.activeVault?.id ?? null}
+              vaultPath={kb.activeVault?.path ?? null}
+              isTypesetMode={kb.isTypesetMode}
+              themeConfig={kb.themeConfig}
+              wikiInitialized={kb.wikiInitialized}
+              hasUnsavedChanges={hasUnsavedChanges}
+              onToggleTypeset={kb.toggleTypesetMode}
+              onThemeConfigChange={kb.setThemeConfig}
+              onContentChange={kb.setEditedContent}
+              onSave={handleSave}
+              onCopy={kb.copyToClipboard}
+              onPublish={kb.publishToChrome}
+              onBuildWiki={handleBuildWiki}
+              onAskAboutSelection={handleAskAboutSelection}
+              onOpenOutline={() => setShowOutline(true)}
+              onAskAboutFile={kb.selectedFile ? handleOpenQa : undefined}
+              showFileName={true}
+              isEditMode={kb.isEditMode}
+              onToggleEdit={kb.toggleEditMode}
+              onForceLoad={kb.forceLoadFile}
+              onCloseTab={() => {
+                if (tabs.activeTabId) handleCloseTab(tabs.activeTabId);
+              }}
+              onNavigateToFile={handleNavigateToFile}
+            />
+          </div>
+          {publishTabOpen && (
+            <div
+              className={`kb-pane${publishActive ? '' : ' kb-pane--closed'}`}
+              inert={!publishActive}
+              aria-hidden={!publishActive || undefined}
+            >
+              <PublishForm
+                variant="page"
+                vaultId={kb.activeVault?.id}
+                vaultName={kb.activeVault?.name ?? ''}
+                onClose={() => handleCloseTab(PUBLISH_TAB_ID)}
+                onPublished={() => {
+                  /* 资源页目录有 60s 缓存，下次进入可见更新，此处不主动刷新 */
+                }}
+                onDirtyChange={(d) => { publishDirtyRef.current = d; }}
+                initialData={publishTabData}
+                onDataChange={(data) => {
+                  tabs.updateTab(PUBLISH_TAB_ID, { data: data as unknown as Record<string, unknown> });
+                }}
+              />
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Outline Panel */}

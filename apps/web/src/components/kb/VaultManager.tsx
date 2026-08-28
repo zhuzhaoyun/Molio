@@ -65,8 +65,6 @@ export function VaultManagerModal({
     [onSelect]
   );
 
-  console.log('VaultManagerModal render, show =', show);
-
   if (!show) return null;
 
   return (

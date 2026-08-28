@@ -4,7 +4,7 @@
  */
 import { Link } from 'react-router-dom';
 import { useI18n } from '../../i18n';
-import { isPaid, type MolioResource } from '../../data/resources';
+import { type CatalogEntry, type PayItem } from '../../data/resources';
 import { useAuthStatus } from '../../stores/authStore';
 import { startResourcePurchase } from './resourceAction';
 
@@ -12,13 +12,13 @@ export function ResourceCard({
   r,
   onPay,
 }: {
-  r: MolioResource;
-  onPay: (r: MolioResource) => void;
+  r: CatalogEntry;
+  onPay: (r: PayItem) => void;
 }) {
   const { t } = useI18n();
   const auth = useAuthStatus();
   const loggedIn = auth?.loggedIn === true;
-  const paid = isPaid(r);
+  const paid = r.price > 0;
 
   return (
     <article className="resources-card" data-testid={`resource-card-${r.id}`}>

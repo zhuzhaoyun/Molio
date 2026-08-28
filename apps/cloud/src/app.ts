@@ -3,6 +3,7 @@ import type { RefreshRequest, SendCodeRequest, UpdateMeRequest, VerifyRequest } 
 import type { CloudConfig } from './config.js';
 import { corsMiddleware } from './cors.js';
 import { verifyAccessToken, type AccessPayload } from './jwt.js';
+import { marketRoutes, type MarketRoutesDeps } from './market/routes.js';
 import { AuthService, ServiceError, type ServiceErrorStatus } from './service.js';
 
 export interface AppDeps {
@@ -11,6 +12,8 @@ export interface AppDeps {
   storeKind: 'memory' | 'pg';
   /** 可注入时钟（与 service 同一时钟），测试用 */
   now: () => number;
+  /** 资源市场：OSS 凭证齐全才装配；缺省 → /market 不挂载（404） */
+  market?: MarketRoutesDeps;
 }
 
 // IPv4 点分十段；IPv6 宽松形态（hex/冒号，含 ::ffff:1.2.3.4 映射）。
@@ -54,7 +57,8 @@ function handleError(c: Context, e: unknown): Response {
     return c.json({ error: e.code, ...e.extra }, e.status satisfies ServiceErrorStatus);
   }
   console.error('[cloud] unhandled route error:', e);
-  return c.json({ error: 'internal' }, 500);
+  // 透传真实 message 给 daemon，便于定位 OSS 等底层错误
+  return c.json({ error: 'internal', detail: e instanceof Error ? e.message : String(e) }, 500);
 }
 
 function bearer(c: Context, config: CloudConfig, now: () => number): AccessPayload | null {
@@ -76,6 +80,10 @@ export function createApp(deps: AppDeps): Hono {
   app.use('*', corsMiddleware(config));
 
   app.get('/health', (c) => c.json({ ok: true, env: config.env, store: deps.storeKind }));
+
+  if (deps.market) {
+    app.route('/market', marketRoutes(deps.market, config, deps.now));
+  }
 
   app.post('/auth/send-code', async (c) => {
     const body = await readJsonBody<SendCodeRequest>(c);

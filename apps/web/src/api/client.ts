@@ -553,6 +553,14 @@ export const api = {
     return data.vaults;
   },
 
+  /** 获取 vault 一级目录列表（发布页目录选择用；排除隐藏目录，.molio 除外） */
+  async getTopDirs(vaultId: string): Promise<string[]> {
+    const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/top-dirs`);
+    if (!res.ok) throw new Error(`Failed to fetch top dirs: ${res.status}`);
+    const data = await res.json();
+    return data.dirs as string[];
+  },
+
   async createVault(req: CreateVaultRequest): Promise<Vault> {
     const res = await fetch(`${BASE}/knowledge/vaults`, {
       method: 'POST',

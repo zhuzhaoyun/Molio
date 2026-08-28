@@ -4,6 +4,7 @@
 
 import { useState, useCallback } from 'react';
 import type { Vault } from '@molio/contracts';
+import { useI18n } from '../../i18n';
 import { ConfirmDialog } from './KbModals';
 
 interface VaultListProps {
@@ -15,6 +16,7 @@ interface VaultListProps {
 
 export function VaultList({ vaults, activeVaultId, onSelect, onDelete }: VaultListProps) {
   const [deleteTarget, setDeleteTarget] = useState<Vault | null>(null);
+  const { t } = useI18n();
 
   const handleDelete = useCallback((e: React.MouseEvent, vault: Vault) => {
     e.stopPropagation();
@@ -70,6 +72,7 @@ export function VaultList({ vaults, activeVaultId, onSelect, onDelete }: VaultLi
         onConfirm={handleConfirmDelete}
         onCancel={handleCancelDelete}
       />
+
     </aside>
   );
 }
