@@ -96,7 +96,7 @@ describe('Multi-turn message ordering', () => {
     };
 
     // Create a TurnTextCollector that simulates accumulated assistant text
-    const collector = new TurnTextCollector(runId, (text, rid) => {
+    const collector = new TurnTextCollector(runId, (text, _tools, rid) => {
       conversations.appendMessage(conversation.id, {
         id: `assistant-${Date.now()}`,
         role: 'assistant',
@@ -150,7 +150,7 @@ describe('Multi-turn message ordering', () => {
       return originalAppendMessage(convId, msg);
     };
 
-    const collector = new TurnTextCollector(runId, (text, rid) => {
+    const collector = new TurnTextCollector(runId, (text, _tools, rid) => {
       conversations.appendMessage(conversation.id, {
         id: `assistant-${persistedMessages.length}`,
         role: 'assistant',
@@ -248,7 +248,7 @@ describe('Multi-turn message ordering', () => {
     };
 
     // Collector with NO accumulated text
-    const collector = new TurnTextCollector(runId, (text, rid) => {
+    const collector = new TurnTextCollector(runId, (text, _tools, rid) => {
       conversations.appendMessage(conversation.id, {
         id: `assistant-${persistedMessages.length}`,
         role: 'assistant',
