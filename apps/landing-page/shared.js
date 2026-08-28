@@ -92,6 +92,48 @@
     updateActive();
   }
 
+  /* ---------- 5. 移动端汉堡菜单（按钮由脚本注入，各页 HTML 无需改动） ---------- */
+  function initMobileNav() {
+    const nav = document.querySelector('.top-nav');
+    const inner = nav && nav.querySelector('.nav-inner');
+    const links = nav && nav.querySelector('.nav-links');
+    if (!nav || !inner || !links || nav.querySelector('.nav-toggle')) return;
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'nav-toggle';
+    btn.setAttribute('aria-label', '打开菜单');
+    btn.setAttribute('aria-expanded', 'false');
+    btn.innerHTML = '<span class="nav-toggle-bar"></span><span class="nav-toggle-bar"></span><span class="nav-toggle-bar"></span>';
+    inner.appendChild(btn);
+
+    function setOpen(open) {
+      nav.classList.toggle('nav-open', open);
+      btn.setAttribute('aria-expanded', String(open));
+    }
+
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      setOpen(!nav.classList.contains('nav-open'));
+    });
+
+    // 点击链接 / 登录入口后收起面板
+    links.addEventListener('click', function (e) {
+      if (e.target.closest('a') || e.target.closest('.nav-auth-btn')) setOpen(false);
+    });
+
+    document.addEventListener('click', function (e) {
+      if (nav.classList.contains('nav-open') && !nav.contains(e.target)) setOpen(false);
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') setOpen(false);
+    });
+
+    const mq = window.matchMedia('(min-width: 721px)');
+    const onWiden = function (e) { if (e.matches) setOpen(false); };
+    if (typeof mq.addEventListener === 'function') mq.addEventListener('change', onWiden);
+    else if (typeof mq.addListener === 'function') mq.addListener(onWiden);
+  }
   /* ---------- 初始化 ---------- */
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', run);
@@ -104,5 +146,6 @@
     injectFloaters();
     initReveal();
     initAnchorNav();
+    initMobileNav();
   }
 })();

@@ -3001,3 +3001,98 @@ p { margin-bottom: 0; }
   .hero-actions .dl-seg { width: 100%; }
   .dl-seg__main { flex: 1; }
 }
+
+/* ============================================================
+   移动端导航 — 汉堡按钮 + 下拉面板（≤720px）
+   修复窄屏下导航链接被挤压逐字换行的问题。
+   .nav-toggle 按钮由 shared.js 注入，各页 HTML 无需改动。
+   ============================================================ */
+.nav-link,
+.nav-auth-btn,
+.nav-user-btn { white-space: nowrap; }
+
+.nav-toggle {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 40px;
+  height: 40px;
+  background: none;
+  border: 1px solid var(--hair);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.nav-toggle-bar {
+  display: block;
+  width: 18px;
+  height: 2px;
+  background: var(--ink);
+  border-radius: 1px;
+  transition: transform 0.25s var(--ease), opacity 0.2s var(--ease);
+}
+.nav-open .nav-toggle-bar:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+.nav-open .nav-toggle-bar:nth-child(2) { opacity: 0; }
+.nav-open .nav-toggle-bar:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+
+@media (max-width: 720px) {
+  .nav-toggle { display: inline-flex; }
+
+  .nav-links {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    padding: 6px 16px 14px;
+    background: rgba(245, 240, 232, 0.98);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--hair);
+    box-shadow: 0 18px 40px rgba(13, 13, 13, 0.08);
+    max-height: calc(100vh - var(--nav-h));
+    overflow-y: auto;
+  }
+  .nav-open .nav-links { display: flex; animation: nav-panel-in 0.22s var(--ease); }
+
+  .nav-link {
+    padding: 12px 8px;
+    font-size: 15px;
+    border-bottom: 1px solid var(--hair);
+  }
+  .nav-link::after { display: none; }
+  .nav-link.active { color: var(--seal); }
+
+  .nav-gh {
+    display: inline-flex;
+    padding: 12px 8px;
+  }
+
+  #nav-auth { display: block; margin-top: 10px; }
+  .nav-auth-btn {
+    display: block;
+    width: 100%;
+    padding: 10px 14px;
+    font-size: 14px;
+    text-align: center;
+  }
+  .nav-user { display: flex; width: 100%; }
+  .nav-user-btn {
+    width: 100%;
+    justify-content: space-between;
+    padding: 10px 12px;
+    font-size: 14px;
+    border-color: var(--hair);
+  }
+  .nav-user-name { max-width: none; }
+  .nav-user-menu { left: 0; right: 0; min-width: 0; }
+}
+
+@keyframes nav-panel-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
