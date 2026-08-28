@@ -1,8 +1,10 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import type { SkillManifestEntry } from '@molio/contracts';
 import { useI18n } from '../i18n';
 import { vaultStore } from '../stores/vaultStore';
 import { api } from '../api/client';
 import { FilePicker } from './FilePicker';
+import { SkillPalette } from './SkillPalette';
 import { FolderIcon, FileDocIcon } from './FileIcons';
 import { ConversationHistoryMenu } from './ConversationHistoryMenu';
 
@@ -99,6 +101,9 @@ export function ChatComposer({
   // FilePicker trigger: @ start index in textarea value
   const [triggerStartIdx, setTriggerStartIdx] = useState<number | null>(null);
 
+  // SkillPalette trigger: input starts with "/" (Claude Code-style slash menu).
+  const [skillTrigger, setSkillTrigger] = useState(false);
+
   // Auto-resize textarea：随内容增长，上限 COMPOSER_MAX_HEIGHT（与 CSS max-height 同步）
   useEffect(() => {
     const el = textareaRef.current;
@@ -139,7 +144,15 @@ export function ChatComposer({
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = e.target.value;
     setText(newValue);
-    checkTrigger(newValue, e.target.selectionStart);
+    // "/" at input start opens the skill palette (takes precedence over the
+    // @ file-picker trigger — a value can't start with both anyway).
+    if (newValue.startsWith('/')) {
+      setSkillTrigger(true);
+      setTriggerStartIdx(null);
+    } else {
+      setSkillTrigger(false);
+      checkTrigger(newValue, e.target.selectionStart);
+    }
   };
 
   // Re-check trigger on cursor move (arrow keys)
@@ -186,6 +199,31 @@ export function ChatComposer({
     removeTrigger();
   }, [removeTrigger]);
 
+  // SkillPalette: on select — replace the "/filter" text with the deterministic
+  // invocation prefix (same "用 <name> skill …" pattern the KB panel uses), so
+  // every runtime sees an ordinary message that names the skill.
+  const handleSkillSelect = useCallback(
+    (skill: SkillManifestEntry) => {
+      const prefix = t('composer.skillPrefix', { name: skill.name });
+      setText(prefix);
+      setSkillTrigger(false);
+      requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (el) {
+          el.focus();
+          el.setSelectionRange(prefix.length, prefix.length);
+        }
+      });
+    },
+    [t],
+  );
+
+  // SkillPalette: on close (Escape) — clear the trigger text like @ does.
+  const handleSkillClose = useCallback(() => {
+    setText('');
+    setSkillTrigger(false);
+  }, []);
+
   // Remove a fileRef badge
   const removeFileRef = useCallback((idx: number) => {
     setFileRefs((prev) => prev.filter((_, i) => i !== idx));
@@ -216,6 +254,7 @@ export function ChatComposer({
       }
       setPastedImages([]);
       setTriggerStartIdx(null);
+      setSkillTrigger(false);
       if (textareaRef.current) textareaRef.current.style.height = 'auto';
     }
   };
@@ -223,8 +262,8 @@ export function ChatComposer({
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      // Don't send if FilePicker overlay is open — FilePicker handles Enter
-      if (triggerStartIdx === null) {
+      // Don't send if FilePicker or SkillPalette overlay is open — they handle Enter
+      if (triggerStartIdx === null && !skillTrigger) {
         handleSend();
       }
     }
@@ -480,6 +519,15 @@ export function ChatComposer({
               onClose={handleFilePickerClose}
             />
           )}
+
+          {/* SkillPalette overlay */}
+          {skillTrigger && activeVaultId && (
+            <SkillPalette
+              filterText={text.slice(1)}
+              onSelect={handleSkillSelect}
+              onClose={handleSkillClose}
+            />
+          )}
         </div>
 
         <div className="composer-row">
@@ -560,6 +608,8 @@ export function ChatComposer({
         </div>
       </div>
       <div className="composer-hint">
+        <span className="hint-item"><kbd>/</kbd> <span className="hint-desc">{t('composer.hintSkill')}</span></span>
+        <span className="hint-sep">·</span>
         <span className="hint-item"><kbd>@</kbd> <span className="hint-desc">{t('composer.hintFileRef')}</span></span>
         <span className="hint-sep">·</span>
         <span className="hint-item"><kbd>Enter</kbd> <span className="hint-desc">{t('composer.hintSend')}</span></span>

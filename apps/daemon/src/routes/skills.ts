@@ -69,10 +69,17 @@ async function readJsonObject(c: Context): Promise<Record<string, unknown> | nul
 export function skillsRoutes(db: Database.Database, runManager: RunManager): Hono {
   const app = new Hono();
 
-  // GET /api/skills — list user-managed skills only (bundled skills are hidden
-  // app functionality, always effective and not configurable).
+  // GET /api/skills — list user-managed skills (bundled skills are hidden
+  // app functionality, always effective and not configurable). Opt-in
+  // `?includeBundled=1` surfaces them READ-ONLY for the composer's "/"
+  // skill palette, which lets users explicitly invoke bundled skills like
+  // docling — the settings UI never uses this param, so the bundled
+  // rows stay invisible there.
   app.get('/', (c) => {
-    return c.json({ skills: listSkills(db).filter((s) => s.kind !== 'bundled') });
+    const includeBundled = c.req.query('includeBundled') === '1';
+    return c.json({
+      skills: listSkills(db).filter((s) => includeBundled || s.kind !== 'bundled'),
+    });
   });
 
   // ─── Skill hub (skillhub.cn marketplace, proxied by the daemon) ───
