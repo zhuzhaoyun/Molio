@@ -282,14 +282,25 @@ function findInWellKnownDirs(bin: string): string | null {
   for (const dir of dirs) {
     if (!fs.existsSync(dir)) continue;
     const candidate = path.join(dir, bin + ext);
-    if (fs.existsSync(candidate)) return candidate;
+    // Must be a regular file: bundled-layout installs (e.g. Codex) create a
+    // directory at ~/.molio/bin/<agentId> that would otherwise shadow the
+    // real binary in the later ~/.molio/bin/<agentId>/bin candidate dir.
+    if (isRegularFile(candidate)) return candidate;
     if (process.platform === 'win32') {
       const exeCandidate = path.join(dir, bin + '.exe');
-      if (fs.existsSync(exeCandidate)) return exeCandidate;
+      if (isRegularFile(exeCandidate)) return exeCandidate;
     }
   }
 
   return null;
+}
+
+function isRegularFile(p: string): boolean {
+  try {
+    return fs.statSync(p).isFile();
+  } catch {
+    return false;
+  }
 }
 
 export interface ProbeResult {
