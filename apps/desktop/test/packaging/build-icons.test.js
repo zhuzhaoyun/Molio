@@ -1,8 +1,8 @@
 /**
  * 打包图标资产守护测试。
  *
- * 背景（ERR-20260828-001）：#228 品牌图标重做时，icon.ico 仅包含 16x16 一层
- * （sips -s format ico 会静默只写最小尺寸），NSIS 打包时 electron-builder
+ * 背景：#228 品牌图标重做时，icon.ico 仅包含 16x16 一层
+ * （macOS `sips -s format ico` 会静默只写最小尺寸），NSIS 打包时 electron-builder
  * 校验 "icon.ico must be at least 256x256" 直接失败，阻断 v0.3.49 发版。
  *
  * 本测试解析 ico/icns 二进制头，确保桌面端图标资产始终包含打包所需尺寸：
