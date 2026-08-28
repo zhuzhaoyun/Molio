@@ -183,15 +183,15 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
-  border: 1px solid var(--border);
-  background: var(--bg-subtle);
+  border: none;
+  background: none;
   color: var(--text-muted);
-  border-radius: 999px;
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 3px;
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.12s, color 0.12s, border-color 0.12s;
+  transition: opacity 0.12s, color 0.12s;
 }
 
 .file-picker-item:hover .file-picker-ref-btn,
@@ -201,13 +201,11 @@
 
 .file-picker-ref-btn:hover {
   color: var(--accent);
-  border-color: var(--accent);
 }
 
 .file-picker-ref-btn-glyph {
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1;
-  transform: translateY(-0.5px);
 }
 
 .file-picker-hint {
