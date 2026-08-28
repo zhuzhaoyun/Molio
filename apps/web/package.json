@@ -7,7 +7,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "node --test \"src/components/graph/**/*.test.ts\"",
+    "test": "node --test \"src/components/graph/**/*.test.ts\" \"src/hooks/*.test.ts\"",
     "test:e2e": "npx playwright test"
   },
   "dependencies": {

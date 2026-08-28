@@ -94,7 +94,8 @@
     "history": {
       "paths": [
         "apps/web/src/components/history*",
-        "apps/web/src/hooks/useHistory*"
+        "apps/web/src/hooks/useHistory*",
+        "apps/web/src/hooks/historyFilterQuery*"
       ],
       "specs": ["history"]
     },

@@ -39,6 +39,7 @@ export function conversationRoutes(
     }
     const page = listConversationHistory(db, {
       vaultId: q.vaultId,
+      includeUnassociated: q.includeUnassociated === '1',
       query: q.query,
       before,
       limit,

@@ -5,6 +5,9 @@ import {
   createConversation,
   addMessage,
   deleteProject,
+  createTempVault,
+  cleanupTempVault,
+  type TempVault,
 } from './helpers/cleanup';
 
 /**
@@ -471,5 +474,103 @@ test.describe('History', () => {
     // Vault dropdown is always visible next to the search input (only filter dimension).
     await expect(page.locator('[data-testid=history-search-input]')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('[data-testid=history-filter-vault]')).toBeVisible({ timeout: 3_000 });
+  });
+});
+
+/**
+ * Multi-window default scope: when the window has an active vault, the history
+ * page defaults to "this vault + unassociated" (`__current__`). The window's
+ * vault is pinned via localStorage (`molio.activeVaultId`) — the same source
+ * of truth vaultStore reads for windows without a ?vault= URL param.
+ */
+test.describe('History scoped default (current vault)', () => {
+  /** Point this browser context's window at `vault` before any app code runs. */
+  function pinWindowVault(page: Page, vault: TempVault) {
+    return page.addInitScript((id: string) => {
+      window.localStorage.setItem('molio.activeVaultId', id);
+    }, vault.id);
+  }
+
+  test('defaults to the current-vault scope when the window has an active vault', async ({ page }) => {
+    const vault = await createTempVault(`e2e-scope-def-${Date.now()}`);
+    try {
+      pinWindowVault(page, vault);
+      await gotoHome(page);
+      await clickNav(page, 'history');
+
+      const select = page.locator('[data-testid=history-filter-vault]');
+      await expect(select).toBeVisible({ timeout: 5_000 });
+      // Assert on the value, not the label — hermetic across locales.
+      await expect(select).toHaveValue('__current__');
+    } finally {
+      await cleanupTempVault(vault);
+    }
+  });
+
+  test('default scope keeps unassociated conversations; strict vault selection hides them', async ({ page }) => {
+    const vault = await createTempVault(`e2e-scope-conv-${Date.now()}`);
+    const project = await createProject(`e2e-scope-conv-p-${Date.now()}`);
+    const conv = await createConversation(project.id, 'Scope Unattached');
+    await addMessage(project.id, conv.id, {
+      id: `msg-scope-conv-${Date.now()}`,
+      role: 'user',
+      content: 'unattached but within the default scope',
+      timestamp: Date.now(),
+    });
+    try {
+      pinWindowVault(page, vault);
+      await gotoHome(page);
+      await clickNav(page, 'history');
+
+      const select = page.locator('[data-testid=history-filter-vault]');
+      await expect(select).toHaveValue('__current__', { timeout: 5_000 });
+      // The fresh vault owns nothing, but unattached conversations stay visible.
+      await expect(rowByTitle(page, 'Scope Unattached')).toBeVisible({ timeout: 5_000 });
+
+      // Strict vault filter (the fresh vault) excludes unassociated rows.
+      await select.selectOption(vault.id);
+      await page.waitForTimeout(700);
+      await expect(rowByTitle(page, 'Scope Unattached')).toHaveCount(0);
+
+      // "All" brings them back.
+      await select.selectOption('');
+      await page.waitForTimeout(700);
+      await expect(rowByTitle(page, 'Scope Unattached')).toBeVisible({ timeout: 5_000 });
+    } finally {
+      await deleteProject(project.id);
+      await cleanupTempVault(vault);
+    }
+  });
+
+  test('scoped empty state offers view-all and switching restores the full view', async ({ page }) => {
+    const vault = await createTempVault(`e2e-scope-empty-${Date.now()}`);
+    try {
+      pinWindowVault(page, vault);
+      // Scoped queries (includeUnassociated=1) return an empty page — the
+      // UI branch under test. Everything else passes through to the daemon,
+      // so "view all" exercises the real data path.
+      await page.route('**/api/conversations**', (route) => {
+        if (route.request().url().includes('includeUnassociated=1')) {
+          return route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({ items: [], pinnedItems: [], nextCursor: null }),
+          });
+        }
+        return route.continue();
+      });
+
+      await gotoHome(page);
+      await clickNav(page, 'history');
+
+      await expect(page.locator('[data-testid=history-empty-scoped]')).toBeVisible({ timeout: 5_000 });
+
+      await page.locator('[data-testid=history-view-all]').click();
+      await expect(page.locator('[data-testid=history-empty-scoped]')).toHaveCount(0, { timeout: 5_000 });
+      await expect(page.locator('[data-testid=history-filter-vault]')).toHaveValue('');
+    } finally {
+      await page.unroute('**/api/conversations**');
+      await cleanupTempVault(vault);
+    }
   });
 });

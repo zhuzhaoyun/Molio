@@ -1,18 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ConversationHistoryItem, ListHistoryQuery } from '@molio/contracts';
+import type { ConversationHistoryItem } from '@molio/contracts';
 import { api } from '../api/client';
+import {
+  buildListQuery,
+  initialVaultFilter,
+  type HistoryListQuery,
+  type VaultFilterValue,
+} from './historyFilterQuery';
 
 export interface HistoryFilters {
-  vaultId: string;      // '' = all
-  query: string;        // '' = no search
+  vaultFilter: VaultFilterValue;  // '' = all, '__current__' = this vault + unassociated
+  query: string;                  // '' = no search
 }
 
-const EMPTY_FILTERS: HistoryFilters = { vaultId: '', query: '' };
 const STALE_MS = 30_000;
 const PAGE_SIZE = 50;
 
-export function useHistoryFilters() {
-  const [filters, setFilters] = useState<HistoryFilters>(EMPTY_FILTERS);
+export function useHistoryFilters(currentVaultId?: string | null) {
+  const [filters, setFilters] = useState<HistoryFilters>(() => ({
+    vaultFilter: initialVaultFilter(currentVaultId ?? null),
+    query: '',
+  }));
   const [pinnedItems, setPinnedItems] = useState<ConversationHistoryItem[]>([]);
   const [items, setItems] = useState<ConversationHistoryItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -24,12 +32,12 @@ export function useHistoryFilters() {
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const filtersRef = useRef(filters);
   filtersRef.current = filters;
+  const currentVaultRef = useRef(currentVaultId ?? null);
+  currentVaultRef.current = currentVaultId ?? null;
 
-  const buildOpts = useCallback((f: HistoryFilters, before?: number | null): ListHistoryQuery => {
-    const opts: ListHistoryQuery = { limit: PAGE_SIZE };
-    if (f.vaultId) opts.vaultId = f.vaultId;
-    if (f.query.trim()) opts.query = f.query.trim();
-    if (before != null) opts.before = before;
+  const buildOpts = useCallback((f: HistoryFilters, before?: number | null): HistoryListQuery => {
+    const opts = buildListQuery(f, currentVaultRef.current, before);
+    opts.limit = PAGE_SIZE;
     return opts;
   }, []);
 
@@ -80,7 +88,7 @@ export function useHistoryFilters() {
     }
   }, [nextCursor, loading, buildOpts]);
 
-  const setFilter = useCallback((key: 'vaultId', value: string) => {
+  const setFilter = useCallback((key: 'vaultFilter', value: VaultFilterValue) => {
     setFilters((prev) => {
       const next = { ...prev, [key]: value };
       void fetchFirst(next);

@@ -3,6 +3,7 @@ import type { ConversationHistoryItem, Vault } from '@molio/contracts';
 import { api } from '../../api/client';
 import { useI18n } from '../../i18n';
 import { useHistoryFilters } from '../../hooks/useHistoryFilters';
+import { useActiveVaultId } from '../../stores/vaultStore';
 import { OverflowMenu, type OverflowItem } from '../../components/OverflowMenu';
 
 interface Props {
@@ -11,7 +12,8 @@ interface Props {
 
 export function HistoryPage({ onOpenConversation }: Props) {
   const { t } = useI18n();
-  const { filters, setFilter, setQuery, items, pinnedItems, loading, error, loadMore, refresh, hasMore, deleteConversationLocal, updateConversationLocal } = useHistoryFilters();
+  const currentVaultId = useActiveVaultId();
+  const { filters, setFilter, setQuery, items, pinnedItems, loading, error, loadMore, refresh, hasMore, deleteConversationLocal, updateConversationLocal } = useHistoryFilters(currentVaultId);
   const [vaults, setVaults] = useState<Vault[]>([]);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
@@ -34,7 +36,7 @@ export function HistoryPage({ onOpenConversation }: Props) {
   }, []);
 
   const clearFilters = () => {
-    setFilter('vaultId', '');
+    setFilter('vaultFilter', '');
     setQuery('');
   };
 
@@ -82,7 +84,7 @@ export function HistoryPage({ onOpenConversation }: Props) {
     }
   };
 
-  const isFilterActive = Boolean(filters.vaultId || filters.query.trim());
+  const isFilterActive = Boolean(filters.vaultFilter || filters.query.trim());
 
   return (
     <div className="history-shell">
@@ -112,9 +114,12 @@ export function HistoryPage({ onOpenConversation }: Props) {
             <select
               className="history-filter-select history-filter-select--vault"
               data-testid="history-filter-vault"
-              value={filters.vaultId}
-              onChange={(e) => setFilter('vaultId', e.target.value)}
+              value={filters.vaultFilter}
+              onChange={(e) => setFilter('vaultFilter', e.target.value)}
             >
+            {currentVaultId && (
+              <option value="__current__">{t('history.filter.currentVault')}</option>
+            )}
             <option value="">{t('history.filter.all')}</option>
             {vaults.map((v) => (
               <option key={v.id} value={v.id}>{v.name}</option>
@@ -173,7 +178,21 @@ export function HistoryPage({ onOpenConversation }: Props) {
             ))}
           </div>
         ) : items.length === 0 && pinnedItems.length === 0 ? (
-          isFilterActive ? (
+          filters.query.trim() ? (
+            <div className="history-empty">
+              <p className="history-empty__text">{t('history.noMatch')}</p>
+              <button className="history-clear-filters" data-testid="history-clear-filters" type="button" onClick={clearFilters}>
+                {t('history.clearFilters')}
+              </button>
+            </div>
+          ) : filters.vaultFilter === '__current__' ? (
+            <div className="history-empty" data-testid="history-empty-scoped">
+              <p className="history-empty__text">{t('history.emptyScoped')}</p>
+              <button className="history-clear-filters" data-testid="history-view-all" type="button" onClick={clearFilters}>
+                {t('history.viewAll')}
+              </button>
+            </div>
+          ) : isFilterActive ? (
             <div className="history-empty">
               <p className="history-empty__text">{t('history.noMatch')}</p>
               <button className="history-clear-filters" data-testid="history-clear-filters" type="button" onClick={clearFilters}>
