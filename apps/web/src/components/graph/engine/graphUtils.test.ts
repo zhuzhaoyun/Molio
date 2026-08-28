@@ -7,6 +7,7 @@ import {
   makeAutoLinkStrength,
   computeFitTransform,
   greedyLabelLayout,
+  tileIsolatedNodes,
 } from './graphUtils.ts';
 
 /**
@@ -136,6 +137,25 @@ describe('makeAutoLinkStrength', () => {
     const strength = makeAutoLinkStrength(new Map());
     assert.strictEqual(strength({ sourceKey: 'x', targetKey: 'y' }), 1);
   });
+
+  it('weakens edges touching a super-hub (deg > 60) to 1/sqrt(max)', () => {
+    // deg-683 超级 hub（资治通鉴的「源/索引」节点）：1/min(683,1)=1 → 会因 683 条强弹簧
+    // 而把 hub 甩飞；改为 1/√683 让超级 hub 的连线成为弱约束。
+    const adjacency = new Map<string, Set<string>>([
+      ['hub', new Set(['l1', 'l2', 'l3', 'l4', 'l5'])],
+      ['l1', new Set(['hub'])],
+    ]);
+    const strength = makeAutoLinkStrength(adjacency);
+    // hub 只有 5 条边（degree 5 ≤ 60），仍是普通公式 1/min(5,1)=1
+    assert.strictEqual(strength({ sourceKey: 'hub', targetKey: 'l1' }), 1);
+
+    // 人为增大 hub 度数到 100，超出阈值 → 1/√100 = 0.1（而非 1/min=1）
+    const hiAdj = new Map<string, Set<string>>([['hub', new Set<string>()]]);
+    for (let i = 0; i < 100; i++) hiAdj.get('hub')!.add(`l${i}`);
+    for (let i = 0; i < 100; i++) hiAdj.set(`l${i}`, new Set(['hub']));
+    const hiStrength = makeAutoLinkStrength(hiAdj);
+    assert.ok(Math.abs(hiStrength({ sourceKey: 'hub', targetKey: 'l0' }) - 1 / Math.sqrt(100)) < 1e-9);
+  });
 });
 
 // ── computeFitTransform ──
@@ -257,5 +277,54 @@ describe('greedyLabelLayout', () => {
   it('touching boxes (shared edge) do not count as overlap', () => {
     const visible = greedyLabelLayout([box(0, 0), box(20, 0)]);
     assert.deepStrictEqual(visible, [true, true]);
+  });
+});
+
+// ── tileIsolatedNodes（degree0 外围平铺）──
+
+describe('tileIsolatedNodes', () => {
+  const mk = (id: string, x: number, y: number, degree: number) => ({ id, x, y, degree });
+
+  it('returns positions only for degree-0 nodes', () => {
+    const nodes = [
+      mk('hub', 0, 0, 5),
+      mk('leaf', 10, 0, 1),
+      mk('iso1', 0, 0, 0),
+      mk('iso2', 0, 0, 0),
+    ];
+    const tiled = tileIsolatedNodes(nodes);
+    assert.ok(tiled.has('iso1'));
+    assert.ok(tiled.has('iso2'));
+    assert.strictEqual(tiled.has('hub'), false);
+    assert.strictEqual(tiled.has('leaf'), false);
+  });
+
+  it('returns empty map when there are no isolated nodes', () => {
+    const nodes = [mk('hub', 0, 0, 5), mk('leaf', 10, 0, 1)];
+    assert.strictEqual(tileIsolatedNodes(nodes).size, 0);
+  });
+
+  it('places isolated nodes on a ring outside the connected centroid', () => {
+    const nodes = [
+      mk('hub', 0, 0, 5),
+      mk('a', -20, 0, 1),
+      mk('b', 20, 0, 1),
+      mk('iso1', 0, 0, 0),
+      mk('iso2', 0, 0, 0),
+    ];
+    const tiled = tileIsolatedNodes(nodes);
+    // 连接节点质心 ≈ (0,0)，外围半径 ≥ RING_IN_FACTOR × 包围半径 → 应明显偏离 0
+    for (const p of tiled.values()) {
+      assert.ok(Math.hypot(p.x, p.y) > 1, 'isolated node should be offset from centroid');
+      assert.ok(Number.isFinite(p.x) && Number.isFinite(p.y));
+    }
+    // 无连接节点时退化为绝对小圈，也应有非零偏移
+  });
+
+  it('falls back to a small ring when there are no connected nodes', () => {
+    const nodes = [mk('iso1', 0, 0, 0), mk('iso2', 0, 0, 0)];
+    const tiled = tileIsolatedNodes(nodes);
+    assert.strictEqual(tiled.size, 2);
+    for (const p of tiled.values()) assert.ok(Math.hypot(p.x, p.y) >= 1);
   });
 });
