@@ -5,8 +5,16 @@
  */
 import type { MarketListing } from '@molio/contracts';
 
-/** 微信支付后端地址；空串表示未开通，付费资源降级为“联系购买” */
-export const PAY_BASE: string = window.MOLIO_PAY_BASE ?? '';
+/**
+ * 微信支付后端地址。默认官网支付后端（与 landing-page/resources-data.js 一致，
+ * CORS 已放行 *）；window.MOLIO_PAY_BASE 可覆盖——显式注入空串表示未开通，
+ * 付费资源降级为“联系购买”。
+ *
+ * 历史教训（2026-08）：早期靠 side-effect import resources-data.js 顺带注入该值，
+ * 社区市场重构移除 import 后桌面端静默降级为「支付服务未开通」，官网不受影响。
+ * 因此默认值必须在这里显式声明，不能依赖外部注入。
+ */
+export const PAY_BASE: string = window.MOLIO_PAY_BASE ?? 'https://pay.molio.cn';
 
 /** 官网根：预览图如为相对路径(兼容旧数据)则拼绝对 URL */
 export const SITE_BASE = 'https://molio.cn';
