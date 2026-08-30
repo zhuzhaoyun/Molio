@@ -72,6 +72,81 @@ describe('classifyStderrChunk — claude diagnostics', () => {
   });
 });
 
+/**
+ * Error-driven test: Gemini CLI 0.57.0 headless startup banners must not be
+ * surfaced as UI errors.
+ *
+ * Customer report: after installing Gemini CLI 0.57.0 and picking it as the
+ * default agent, every run showed a red error banner quoting
+ *   YOLO mode is enabled. All tool calls will be automatically approved.
+ *   Ripgrep is not available. Falling back to GrepTool.
+ *   Skill "skill-creator" from "..." is overriding the built-in skill.
+ * even though the run itself completed successfully (reply + usage + turn_end
+ * all present in events.jsonl).
+ *
+ * Root cause: Gemini CLI 0.57.0 prints these informational startup banners to
+ * stderr on every headless run (the YOLO notice twice — once per --yolo and
+ * once per --skip-trust). classifyStderrChunk had no gemini rule, so the
+ * whole chunk became one `error` event; the frontend shows a red banner and
+ * flips streaming:false, making a successful run look failed.
+ *
+ * Fix: gemini branch demotes the known banner lines to `raw` events while
+ * keeping genuine error lines as `error` events.
+ */
+const GEMINI_STARTUP_CHUNK = [
+  'YOLO mode is enabled. All tool calls will be automatically approved.',
+  'YOLO mode is enabled. All tool calls will be automatically approved.',
+  'Ripgrep is not available. Falling back to GrepTool.',
+  'Skill "skill-creator" from "C:\\Users\\dluty\\.agents\\skills\\skill-creator\\SKILL.md" is overriding the built-in skill.',
+].join('\n');
+
+describe('classifyStderrChunk — gemini startup banners', () => {
+  it('reproduces the customer report: 0.57.0 startup chunk emits no error event', () => {
+    const events = classifyStderrChunk('gemini', GEMINI_STARTUP_CHUNK + '\n');
+    assert.ok(events.length > 0, 'banners should still be persisted as raw');
+    for (const ev of events) {
+      assert.notEqual(ev.type, 'error', `must not emit error for: ${JSON.stringify(ev)}`);
+    }
+    assert.equal(events.filter((e) => e.type === 'raw').length, 4);
+  });
+
+  it('demotes each banner line individually', () => {
+    assert.deepEqual(
+      classifyStderrChunk('gemini', 'YOLO mode is enabled. All tool calls will be automatically approved.\n'),
+      [{ type: 'raw', line: 'YOLO mode is enabled. All tool calls will be automatically approved.' }],
+    );
+    assert.deepEqual(
+      classifyStderrChunk('gemini', 'Ripgrep is not available. Falling back to GrepTool.\n'),
+      [{ type: 'raw', line: 'Ripgrep is not available. Falling back to GrepTool.' }],
+    );
+    assert.deepEqual(
+      classifyStderrChunk('gemini', 'Skill "x" from "C:\\a\\b" is overriding the built-in skill.\n'),
+      [{ type: 'raw', line: 'Skill "x" from "C:\\a\\b" is overriding the built-in skill.' }],
+    );
+  });
+
+  it('keeps genuine error lines in a mixed chunk as an error event', () => {
+    const chunk = `Ripgrep is not available. Falling back to GrepTool.\nAPI key not found. Please run gemini auth.\n`;
+    const events = classifyStderrChunk('gemini', chunk);
+    const raws = events.filter((e) => e.type === 'raw');
+    const errors = events.filter((e) => e.type === 'error');
+    assert.equal(raws.length, 1);
+    assert.equal(errors.length, 1);
+    assert.equal(errors[0]!.type === 'error' && errors[0]!.message, 'API key not found. Please run gemini auth.');
+  });
+
+  it('trust-degradation warning stays an error (yolo silently disabled)', () => {
+    const line = 'Approval mode overridden to "default" because the current folder is not trusted.';
+    const events = classifyStderrChunk('gemini', line + '\n');
+    assert.deepEqual(events, [{ type: 'error', message: line }]);
+  });
+
+  it('plain gemini stderr without known banners stays an error event', () => {
+    const events = classifyStderrChunk('gemini', 'Something actually broke\n');
+    assert.deepEqual(events, [{ type: 'error', message: 'Something actually broke' }]);
+  });
+});
+
 describe('classifyStderrChunk — existing behavior preserved', () => {
   it('codex informational stderr is still dropped', () => {
     assert.deepEqual(classifyStderrChunk('codex', 'Reading prompt from stdin...\n'), []);
