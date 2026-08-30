@@ -47,10 +47,14 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
 
       - name: Install dependencies
+        env:
+          # CI runners are outside China — use the official npm registry instead of
+          # npmmirror.com to avoid CDN routing issues (e.g. app-builder-bin timeouts).
+          npm_config_registry: https://registry.npmjs.org
         run: pnpm install --frozen-lockfile
 
       - name: Build all packages
@@ -214,6 +218,8 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
+        env:
+          npm_config_registry: https://registry.npmjs.org
         run: pnpm install --frozen-lockfile
 
       - name: Build all packages
