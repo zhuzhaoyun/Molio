@@ -232,7 +232,7 @@ describe('Codex stream handler', () => {
   });
 
   describe('usage tracking', () => {
-    it('should emit usage event on turn.completed with usage data', () => {
+    it('should emit usage and turn_end on turn.completed with usage data', () => {
       const { events, onEvent } = collectEvents();
       const handler = createCodexStreamHandler(onEvent);
 
@@ -252,6 +252,8 @@ describe('Codex stream handler', () => {
         assert.equal(usageEvents[0]!.usage?.output_tokens, 500);
         assert.equal(usageEvents[0]!.usage?.cached_read_tokens, 800);
       }
+      const turnEndEvents = events.filter((e) => e.type === 'turn_end');
+      assert.equal(turnEndEvents.length, 1);
     });
 
     it('should handle turn.completed without usage data', () => {
@@ -260,9 +262,11 @@ describe('Codex stream handler', () => {
 
       feedLines(handler, JSON.stringify({ type: 'turn.completed' }));
 
-      // Should not emit usage event
+      // Should not emit usage event, but should emit turn_end
       const usageEvents = events.filter((e) => e.type === 'usage');
       assert.equal(usageEvents.length, 0);
+      const turnEndEvents = events.filter((e) => e.type === 'turn_end');
+      assert.equal(turnEndEvents.length, 1);
     });
   });
 
@@ -377,6 +381,7 @@ describe('Codex stream handler', () => {
       assert.ok(types.includes('tool_result')); // command_execution completed
       assert.ok(types.includes('text_delta'));  // agent_message
       assert.ok(types.includes('usage'));       // turn.completed
+      assert.ok(types.includes('turn_end'));   // turn.completed
     });
   });
 });

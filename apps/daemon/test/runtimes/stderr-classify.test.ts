@@ -141,6 +141,20 @@ describe('classifyStderrChunk — gemini startup banners', () => {
     assert.deepEqual(events, [{ type: 'error', message: line }]);
   });
 
+  it('demotes any Warning: line to raw (broad match, not per-message whitelist)', () => {
+    const real = 'Warning: True color (24-bit) support not detected. Using a terminal with true color enabled will result in a better visual experience.';
+    assert.deepEqual(
+      classifyStderrChunk('gemini', real + '\n'),
+      [{ type: 'raw', line: real }],
+    );
+    // hypothetical future warning — must not break the UI
+    const future = 'Warning: Some new terminal compatibility issue detected.';
+    assert.deepEqual(
+      classifyStderrChunk('gemini', future + '\n'),
+      [{ type: 'raw', line: future }],
+    );
+  });
+
   it('plain gemini stderr without known banners stays an error event', () => {
     const events = classifyStderrChunk('gemini', 'Something actually broke\n');
     assert.deepEqual(events, [{ type: 'error', message: 'Something actually broke' }]);
@@ -148,9 +162,33 @@ describe('classifyStderrChunk — gemini startup banners', () => {
 });
 
 describe('classifyStderrChunk — existing behavior preserved', () => {
-  it('codex informational stderr is still dropped', () => {
-    assert.deepEqual(classifyStderrChunk('codex', 'Reading prompt from stdin...\n'), []);
-    assert.deepEqual(classifyStderrChunk('codex', 'Reading additional input from stdin...\n'), []);
+  it('codex informational stderr is demoted to raw, not dropped', () => {
+    assert.deepEqual(
+      classifyStderrChunk('codex', 'Reading prompt from stdin...\n'),
+      [{ type: 'raw', line: 'Reading prompt from stdin...' }],
+    );
+    assert.deepEqual(
+      classifyStderrChunk('codex', 'Reading additional input from stdin...\n'),
+      [{ type: 'raw', line: 'Reading additional input from stdin...' }],
+    );
+  });
+
+  it('known codex info lines do not hide real errors in the same chunk', () => {
+    const chunk = 'Reading prompt from stdin...\nmodel not found\n';
+    const events = classifyStderrChunk('codex', chunk);
+    const raws = events.filter((e) => e.type === 'raw');
+    const errors = events.filter((e) => e.type === 'error');
+    assert.equal(raws.length, 1);
+    assert.equal(errors.length, 1);
+    assert.equal(errors[0]!.type === 'error' && errors[0]!.message, 'model not found');
+  });
+
+  it('codex Warning: lines are demoted to raw', () => {
+    const line = 'Warning: Some terminal compatibility issue.';
+    assert.deepEqual(
+      classifyStderrChunk('codex', line + '\n'),
+      [{ type: 'raw', line }],
+    );
   });
 
   it('codex real errors still surface', () => {
