@@ -191,6 +191,7 @@ const en: Record<string, string> = {
   'runtimes.wireApi': 'API protocol',
   'runtimes.codexConfigHint': 'Written to ~/.codex/config.toml and auth.json — also applies when running codex directly in a terminal',
   'runtimes.officialHint': "Clears Molio's provider override and restores Codex defaults",
+  'runtimes.codexKeySavedHint': 'An API key is already configured (~/.codex/auth.json) — leave blank to keep it',
   'runtimes.models': 'Model Mapping',
   'runtimes.modelMappingHint': 'Claude Code uses sonnet/haiku/opus aliases internally, mapped to provider model names',
   'runtimes.providerDocs': 'View docs',

@@ -213,57 +213,11 @@ function formatClaudeModelId(
  * Codex CLI provider presets. Unlike CLAUDE_PROVIDERS (env-var based, applied
  * at spawn), these are applied by the daemon writing ~/.codex/config.toml +
  * auth.json (cc-switch style), so they also work outside Molio.
- * Keep baseUrl values in sync with daemon CODEX_PROVIDER_PRESETS.
+ *
+ * Single source of truth: @molio/contracts (shared with the daemon's
+ * codex-config.ts) — re-exported here so existing imports keep working.
  */
-export interface CodexProviderPreset {
-  id: string;
-  name: string;
-  baseUrl: string;
-  wireApi: 'responses' | 'chat';
-  models: { id: string; label: string }[];
-  apiKeyHint?: string;   // 与 ProviderPreset 对齐：组件里 provider 是联合类型，会访问 .apiKeyHint
-  apiKeyUrl?: string;
-  docsUrl?: string;
-  /** Official = clear Molio's override and restore Codex defaults. */
-  isOfficial?: boolean;
-  isCustom?: boolean;
-}
+import { CODEX_PROVIDER_PRESETS, type CodexProviderPreset } from '@molio/contracts';
 
-export const CODEX_PROVIDERS: CodexProviderPreset[] = [
-  {
-    id: 'deepseek',
-    name: 'DeepSeek',
-    baseUrl: 'https://api.deepseek.com',
-    wireApi: 'responses',
-    models: [
-      { id: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
-      { id: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
-    ],
-    apiKeyUrl: 'https://platform.deepseek.com/api_keys',
-    docsUrl: 'https://api-docs.deepseek.com/',
-  },
-  {
-    id: 'dashscope',
-    name: '阿里云 DashScope',
-    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-    wireApi: 'responses',
-    models: [{ id: 'qwen3-max', label: 'qwen3-max' }],
-    apiKeyUrl: 'https://dashscope.console.aliyun.com/apiKey',
-  },
-  {
-    id: 'official',
-    name: 'OpenAI 官方',
-    baseUrl: '',
-    wireApi: 'responses',
-    models: [],
-    isOfficial: true,
-  },
-  {
-    id: 'custom',
-    name: '自定义',
-    baseUrl: '',
-    wireApi: 'responses',
-    models: [],
-    isCustom: true,
-  },
-];
+export type { CodexProviderPreset };
+export const CODEX_PROVIDERS: CodexProviderPreset[] = CODEX_PROVIDER_PRESETS;

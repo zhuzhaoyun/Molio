@@ -140,6 +140,13 @@ export {
   MARKET_ICONS,
   MARKET_TINTS,
 } from './market.js';
+
+export { CODEX_PROVIDER_PRESETS, getCodexPreset } from './codex-provider.js';
+export type {
+  CodexWireApi,
+  CodexPresetId,
+  CodexProviderPreset,
+} from './codex-provider.js';
 export type {
   MarketTag,
   MarketIcon,

@@ -21,21 +21,14 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { parse, stringify } from 'smol-toml';
+import {
+  CODEX_PROVIDER_PRESETS,
+  getCodexPreset,
+  type CodexPresetId,
+  type CodexWireApi,
+} from '@molio/contracts';
 
-export type CodexWireApi = 'responses' | 'chat';
-export type CodexPresetId = 'deepseek' | 'dashscope' | 'official' | 'custom';
-
-export interface CodexPresetDef {
-  name: string;
-  baseUrl: string;
-  wireApi: CodexWireApi;
-}
-
-/** Server-side source of truth for preset endpoints (mirrors web CODEX_PROVIDERS). */
-export const CODEX_PROVIDER_PRESETS: Record<string, CodexPresetDef> = {
-  deepseek: { name: 'deepseek', baseUrl: 'https://api.deepseek.com', wireApi: 'responses' },
-  dashscope: { name: 'dashscope', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', wireApi: 'responses' },
-};
+export type { CodexWireApi, CodexPresetId } from '@molio/contracts';
 
 export interface CodexProviderState {
   presetHint: CodexPresetId;
@@ -71,8 +64,10 @@ function readConfigTable(codexDir: string): Record<string, unknown> {
 
 function matchPreset(baseUrl: string | null): CodexPresetId {
   if (!baseUrl) return 'custom';
-  for (const [id, preset] of Object.entries(CODEX_PROVIDER_PRESETS)) {
-    if (baseUrl.startsWith(preset.baseUrl)) return id as CodexPresetId;
+  for (const preset of CODEX_PROVIDER_PRESETS) {
+    // official/custom have no fixed endpoint — never match on URL
+    if (!preset.baseUrl) continue;
+    if (baseUrl.startsWith(preset.baseUrl)) return preset.id;
   }
   return 'custom';
 }
@@ -285,10 +280,15 @@ export function applyCodexProvider(
         name = 'custom';
         wireApi = opts.wireApi === 'chat' ? 'chat' : 'responses';
       } else {
-        const preset = CODEX_PROVIDER_PRESETS[opts.presetId];
-        if (!preset) throw new CodexConfigError(`Unknown codex provider preset: ${opts.presetId}`);
+        // Presets live in @molio/contracts (shared with the web UI). The old
+        // server-side record only held deepseek/dashscope, so keep rejecting
+        // everything that has no fixed endpoint (unknown ids, official, custom).
+        const preset = getCodexPreset(opts.presetId);
+        if (!preset || !preset.baseUrl) {
+          throw new CodexConfigError(`Unknown codex provider preset: ${opts.presetId}`);
+        }
         baseUrl = preset.baseUrl;
-        name = preset.name;
+        name = preset.id;
         wireApi = preset.wireApi;
       }
       if (!opts.model?.trim()) throw new CodexConfigError('model is required');

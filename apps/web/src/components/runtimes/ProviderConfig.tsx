@@ -39,15 +39,20 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
   const isCodex = agentId === 'codex';
   const [codexModel, setCodexModel] = useState('');
   const [codexWireApi, setCodexWireApi] = useState<'responses' | 'chat'>('responses');
+  // auth.json already holds an OPENAI_API_KEY — the key field stays empty by
+  // design (secrets are never sent back to the UI), so show a hint instead of
+  // letting the blank field look like "nothing was saved".
+  const [hasSavedKey, setHasSavedKey] = useState(false);
 
   // Load current config on mount
   useEffect(() => {
     if (isCodex) {
       api.getAgentProvider(agentId).then((raw) => {
-        const s = raw as { presetHint: string; baseUrl: string | null; model: string | null; wireApi: string | null };
+        const s = raw as { presetHint: string; baseUrl: string | null; model: string | null; wireApi: string | null; hasKey: boolean };
         const matched = CODEX_PROVIDERS.find((p) => p.id === s.presetHint);
         if (matched) setProviderId(s.presetHint);
         if (s.baseUrl) setCustomBaseUrl(s.baseUrl);
+        if (s.hasKey) setHasSavedKey(true);
         if (s.wireApi === 'chat' || s.wireApi === 'responses') setCodexWireApi(s.wireApi);
         if (s.model) {
           setCodexModel(s.model);
@@ -134,6 +139,7 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
           if (apiKey) body.apiKey = apiKey;
         }
         await api.updateAgentProvider(agentId, body);
+        if (apiKey) setHasSavedKey(true);
       } else {
         const modelMapping = (mapping.sonnet || mapping.haiku || mapping.opus)
           ? mapping
@@ -286,6 +292,11 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
               >
                 {t('runtimes.getApiKey')} →
               </a>
+            )}
+            {isCodex && hasSavedKey && !apiKey && (
+              <p className="rt-provider-form__hint" data-testid="codex-key-saved-hint">
+                {t('runtimes.codexKeySavedHint')}
+              </p>
             )}
           </label>
         )}

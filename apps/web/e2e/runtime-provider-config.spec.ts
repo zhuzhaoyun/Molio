@@ -233,9 +233,13 @@ test.describe('Codex provider config', () => {
     // and could clobber the selection — a race. So write the deterministic
     // precondition via the daemon API BEFORE goto, guaranteeing the mount-load
     // reads exactly this state.
-    const precondition = test.info().title.includes('switch to official')
+    const title = test.info().title;
+    const precondition = title.includes('switch to official')
       ? { presetId: 'deepseek', model: 'deepseek-v4-pro' }
-      : { presetId: 'official' };
+      : title.includes('saved-key hint')
+        // apiKey so hasKey=true at mount — the hint under test reads it
+        ? { presetId: 'deepseek', model: 'deepseek-v4-flash', apiKey: 'sk-e2e-saved' }
+        : { presetId: 'official' };
     const seedRes = await fetch('http://localhost:3100/api/agents/codex/provider', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -302,6 +306,25 @@ test.describe('Codex provider config', () => {
     });
     expect(state.presetHint).toBe('deepseek');
     expect(state.hasKey).toBe(true);
+  });
+
+  test('shows saved-key hint when auth.json already has a key', async ({ page }) => {
+    // beforeEach seeded deepseek + apiKey BEFORE mount, so the mount-load of
+    // GET /codex/provider sees hasKey=true.
+    const codexCard = page.locator('.rt-agent-card').filter({ hasText: 'Codex' });
+    await codexCard.locator('.rt-provider-toggle').click();
+    const panel = codexCard.locator('.rt-provider-config');
+    await expect(panel).toBeVisible();
+
+    // Secrets never round-trip to the UI — the field stays empty…
+    const keyInput = panel.locator('.rt-provider-form__input[type="password"]');
+    await expect(keyInput).toHaveValue('');
+    // …but the saved-key hint makes that explicit instead of looking "unsaved"
+    await expect(panel.locator('[data-testid="codex-key-saved-hint"]')).toBeVisible();
+
+    // Typing a replacement key hides the hint
+    await keyInput.fill('sk-replacement');
+    await expect(panel.locator('[data-testid="codex-key-saved-hint"]')).toHaveCount(0);
   });
 
   test('switch to official clears the override', async ({ page }) => {
