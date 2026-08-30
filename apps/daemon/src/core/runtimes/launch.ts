@@ -171,6 +171,9 @@ export function getWellKnownToolchainDirs(): string[] {
     dirs.push(
       // Molio user-level binary directory (one-click install target)
       path.join(home, '.molio', 'bin'),
+      // Bundled-layout install target (agents whose binary needs sibling
+      // resource files — e.g. Codex one-click install lands here)
+      path.join(home, '.molio', 'bin', 'codex', 'bin'),
       path.join(home, 'AppData', 'Local', 'pnpm'),
       path.join(home, 'AppData', 'Roaming', 'npm'),
       path.join(home, 'AppData', 'Local', 'Yarn', 'bin'),
@@ -230,6 +233,9 @@ export function getWellKnownToolchainDirs(): string[] {
     dirs.push(
       // Molio user-level binary directory (one-click install target)
       path.join(home, '.molio', 'bin'),
+      // Bundled-layout install target (agents whose binary needs sibling
+      // resource files — e.g. Codex one-click install lands here)
+      path.join(home, '.molio', 'bin', 'codex', 'bin'),
       path.join(home, '.local', 'bin'),
       path.join(home, '.npm-global', 'bin'),
       path.join(home, '.npm-packages', 'bin'),
@@ -276,14 +282,25 @@ function findInWellKnownDirs(bin: string): string | null {
   for (const dir of dirs) {
     if (!fs.existsSync(dir)) continue;
     const candidate = path.join(dir, bin + ext);
-    if (fs.existsSync(candidate)) return candidate;
+    // Must be a regular file: bundled-layout installs (e.g. Codex) create a
+    // directory at ~/.molio/bin/<agentId> that would otherwise shadow the
+    // real binary in the later ~/.molio/bin/<agentId>/bin candidate dir.
+    if (isRegularFile(candidate)) return candidate;
     if (process.platform === 'win32') {
       const exeCandidate = path.join(dir, bin + '.exe');
-      if (fs.existsSync(exeCandidate)) return exeCandidate;
+      if (isRegularFile(exeCandidate)) return exeCandidate;
     }
   }
 
   return null;
+}
+
+function isRegularFile(p: string): boolean {
+  try {
+    return fs.statSync(p).isFile();
+  } catch {
+    return false;
+  }
 }
 
 export interface ProbeResult {

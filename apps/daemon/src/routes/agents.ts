@@ -1,8 +1,15 @@
 import { Hono } from 'hono';
 import { stream } from 'hono/streaming';
 import type { RunManager } from '../core/RunManager.js';
+import { getAgentConfig, setAgentConfig } from '../core/config.js';
 import { getAgentDef } from '../core/runtimes/registry.js';
 import { installAgent } from '../core/runtimes/install.js';
+import {
+  applyCodexProvider,
+  getCodexProviderState,
+  CodexConfigError,
+  type ApplyCodexProviderOpts,
+} from '../core/runtimes/codex-config.js';
 import type { InstallEvent } from '@molio/contracts';
 
 export function agentsRoutes(runManager: RunManager): Hono {
@@ -146,6 +153,70 @@ export function agentsRoutes(runManager: RunManager): Hono {
         },
       });
     });
+  });
+
+  // GET /:agentId/provider — current Codex provider state (reads live ~/.codex files)
+  app.get('/:agentId/provider', (c) => {
+    const agentId = c.req.param('agentId');
+    if (agentId !== 'codex') {
+      return c.json({ error: 'Provider config is only supported for codex' }, 400);
+    }
+    const state = getCodexProviderState();
+    // No override in live files → fall back to last preset saved in Molio config
+    if (state.presetHint === 'official' && !state.model && !state.baseUrl) {
+      const saved = getAgentConfig('codex').provider;
+      if (saved?.presetId && saved.presetId !== 'official') {
+        return c.json({ ...state, presetHint: saved.presetId });
+      }
+    }
+    return c.json(state);
+  });
+
+  // PUT /:agentId/provider — apply Codex provider config (writes ~/.codex files)
+  app.put('/:agentId/provider', async (c) => {
+    const agentId = c.req.param('agentId');
+    if (agentId !== 'codex') {
+      return c.json({ error: 'Provider config is only supported for codex' }, 400);
+    }
+    let body: ApplyCodexProviderOpts;
+    try {
+      body = await c.req.json<ApplyCodexProviderOpts>();
+    } catch {
+      return c.json({ error: 'Invalid JSON body' }, 400);
+    }
+    if (!body || typeof body !== 'object') {
+      return c.json({ error: 'Invalid JSON body' }, 400);
+    }
+    try {
+      applyCodexProvider(body);
+    } catch (err) {
+      if (err instanceof CodexConfigError) {
+        return c.json({ error: err.message }, 400);
+      }
+      return c.json({ error: `Failed to apply provider config: ${(err as Error).message}` }, 500);
+    }
+    // Persist selection meta (no secrets) for the UI's default selection.
+    // ~/.codex files are already updated at this point — a persist failure
+    // must surface as a JSON error (not a plain-text 500) so the UI can
+    // tell the user the provider was applied but the selection wasn't saved.
+    try {
+      const existing = getAgentConfig('codex');
+      setAgentConfig('codex', {
+        ...existing,
+        provider: {
+          presetId: body.presetId,
+          baseUrl: body.baseUrl,
+          model: body.model,
+          wireApi: body.wireApi,
+        },
+      });
+    } catch (err) {
+      return c.json(
+        { error: `Provider applied, but failed to persist selection: ${(err as Error).message}` },
+        500,
+      );
+    }
+    return c.json({ ok: true });
   });
 
   return app;

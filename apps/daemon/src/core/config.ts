@@ -32,9 +32,18 @@ const CLAUDE_MANAGED_ENV_KEYS = new Set([
   'ANTHROPIC_MODEL',
 ]);
 
+/** 供应商选择元信息（不含密钥）。codex 专用：活文件在 ~/.codex/，这里只存 UI 默认选中。 */
+export interface CodexProviderMeta {
+  presetId?: string;
+  baseUrl?: string;
+  model?: string;
+  wireApi?: string;
+}
+
 export interface AgentConfig {
   binaryPath?: string;
   env?: Record<string, string>;
+  provider?: CodexProviderMeta;
 }
 
 export interface WeixinConfig {

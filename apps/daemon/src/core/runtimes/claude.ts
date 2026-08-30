@@ -52,9 +52,11 @@ export const claudeAgentDef: RuntimeAgentDef = {
         'linux-x64-musl':   { pkgName: '@anthropic-ai/claude-code-linux-x64-musl',  binInTar: 'package/claude' },
         'linux-arm64-musl': { pkgName: '@anthropic-ai/claude-code-linux-arm64-musl', binInTar: 'package/claude' },
       },
+      // Mirror-first: see codex.ts — Molio's user base is primarily in China,
+      // where registry.npmjs.org downloads are slow.
       registries: [
-        'https://registry.npmjs.org',
         'https://registry.npmmirror.com',
+        'https://registry.npmjs.org',
       ],
     },
     requirements: {
