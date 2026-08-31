@@ -81,6 +81,25 @@ test.describe('Account panel (always available)', () => {
     await expect(page.locator(ACCOUNT_MODAL)).not.toBeVisible();
   });
 
+  // Regression (2026-08-31): 遮罩（卡片外暗区）点击曾直接关闭面板——用户在验证码
+  // 步骤等邮件时误点弹窗外，已输入的邮箱/验证码全部丢失。现在只认右上角 ×。
+  test('clicking the overlay backdrop does not close the account modal', async ({
+    page,
+  }) => {
+    await gotoHome(page);
+    await openAccount(page);
+    // overlay 全屏铺满、模态卡居中：左上角坐标必落在遮罩自身区域
+    await page
+      .locator('.kb-overlay:has(.account-modal)')
+      .click({ position: { x: 12, y: 12 } });
+    await expect(page.locator(ACCOUNT_MODAL)).toBeVisible();
+    // 表单状态未丢：邮箱输入框仍在（验证码步骤同理，共用同一遮罩）
+    await expect(page.locator('[data-testid="account-email-input"]')).toBeVisible();
+    // × 仍是有效关闭入口
+    await page.locator('[data-testid="account-modal-close"]').click();
+    await expect(page.locator(ACCOUNT_MODAL)).not.toBeVisible();
+  });
+
   // Regression (2026-08-17): base.css 的全局 input{width:100%} 曾把协议勾选框
   // 撑满整行——勾选框居中、协议文案被挤出模态框右边界不可见。
   test('terms row: checkbox stays compact and links fit inside the modal', async ({
