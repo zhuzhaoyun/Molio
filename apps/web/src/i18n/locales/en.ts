@@ -12,6 +12,8 @@ const en: Record<string, string> = {
   'nav.settings': 'Settings',
   'nav.account': 'Account',
   'nav.login': 'Sign in',
+  'nav.back': 'Back',
+  'nav.forward': 'Forward',
 
   // ── Common ──
   'common.save': 'Save',

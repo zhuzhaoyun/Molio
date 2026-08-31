@@ -22,6 +22,7 @@ import { formatFileSize } from '../../utils/format';
 import { preprocessKbMarkdown } from '../../hooks/useKnowledge';
 import { api } from '../../api/client';
 import { useI18n } from '../../i18n';
+import { useNavigationHistory, navigationHistoryStore } from '../../stores/navigationHistoryStore';
 import TurndownService from 'turndown';
 import { gfm } from 'turndown-plugin-gfm';
 import frontMatter from 'front-matter';
@@ -159,6 +160,7 @@ export function KbMainContent({
   onNavigateToFile,
 }: KbMainContentProps) {
   const { t } = useI18n();
+  const { canGoBack, canGoForward } = useNavigationHistory();
   const contentRef = useRef<HTMLDivElement>(null);
   const cmRef = useRef<KbCodeMirrorViewerHandle>(null);
   const pdfRef = useRef<PdfViewerHandle>(null);
@@ -395,10 +397,34 @@ export function KbMainContent({
       {/* Header — always rendered so view actions (search / more-menu) stay
           visible even in empty states. File actions only render when a file is open. */}
       <div className="kb-main-header">
-        {/* ── Frontmatter inline (small-md read mode) — always visible when frontmatter exists.
-              Collapsed: show distilled badges. Expanded: show collapse indicator. ▴/▾ in same spot. */}
+        {/* ── Back/forward (tab view history) — minimal chevrons, greyed when disabled ── */}
+        <div className="kb-nav-group" data-testid="kb-nav-navigation">
+          <button
+            type="button"
+            className="kb-nav-btn"
+            data-testid="nav-back"
+            disabled={!canGoBack}
+            onClick={() => navigationHistoryStore.back()}
+            aria-label={t('nav.back')}
+          >
+            ‹
+          </button>
+          <button
+            type="button"
+            className="kb-nav-btn"
+            data-testid="nav-forward"
+            disabled={!canGoForward}
+            onClick={() => navigationHistoryStore.forward()}
+            aria-label={t('nav.forward')}
+          >
+            ›
+          </button>
+        </div>
+
+        {/* ── Frontmatter property pill (wiki docs only) — badges + collapse toggle in one unit ── */}
         {!isTypesetMode && !isEditMode && isSmallMd && fmCollapsed && (
-          <div className="kb-fm-header-inline">
+          <div className="kb-fm-pill">
+            <span className="kb-fm-pill-title">{t('kb.frontmatter.properties')}</span>
             {fmCollapsed.primaryBadge && (
               <span className={'kb-fm-badge' + (fmExpanded ? ' kb-fm-badge-dimmed' : '')}>
                 <span aria-hidden="true">{fmCollapsed.primaryBadge.icon}</span>
@@ -413,7 +439,7 @@ export function KbMainContent({
             )}
             <button
               type="button"
-              className="kb-fm-expand-btn"
+              className="kb-fm-pill-toggle"
               onClick={() => setFmExpanded((prev) => !prev)}
               title={fmExpanded ? t('kb.frontmatter.collapse') : t('kb.frontmatter.expand')}
             >
