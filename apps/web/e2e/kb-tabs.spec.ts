@@ -7,12 +7,13 @@ import * as path from 'path';
  * @area kb
  * @priority P1
  *
- * KB tab bar: opening a new file from the file tree must open a new tab
- * rather than overwriting the currently active tab.
+ * KB tab bar (load-in-current-tab model): clicking a document reuses the
+ * CURRENT tab instead of opening a new one; a new tab is created only via the
+ * explicit "+" button, the tree right-click「在新标签页中打开」, or right-click
+ * the tab bar. Pinned tabs are never recycled by a doc click.
  *
- * Regression for: previously handleSelectFile replaced the active tab's
- * id/title with the newly clicked file, so the original document's tab was
- * lost. Now each opened file gets its own tab appended to the right.
+ * Regression for: previously handleSelectFile appended a new tab for every
+ * doc, so tab count ballooned to the MAX_TABS cap (20) just from browsing.
  *
  * Prerequisites: `pnpm dev` running (daemon :3100, web :5173).
  */
@@ -22,20 +23,20 @@ let vault: TempVault;
 test.describe('KB tab bar', () => {
   test.beforeAll(async () => {
     vault = await createTempVault('e2e-kb-tabs');
-    // createTempVault seeds test.md — replace with two known files.
     fs.unlinkSync(path.join(vault.path, 'test.md'));
     fs.writeFileSync(path.join(vault.path, 'alpha.md'), '# Alpha\n');
     fs.writeFileSync(path.join(vault.path, 'beta.md'), '# Beta\n');
+    fs.writeFileSync(path.join(vault.path, 'gamma.md'), '# Gamma\n');
   });
   test.afterAll(async () => { if (vault) await cleanupTempVault(vault); });
 
-  test('opening a second file from the tree adds a new tab without losing the first', async ({ page }) => {
-    // Select the vault without opening a file (no leftover tabs).
+  test('open second file reuses the current tab; + creates a fresh tab', async ({ page }) => {
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     const alphaItem = page.locator('.kb-tree-item').filter({ hasText: 'alpha.md' });
     const betaItem = page.locator('.kb-tree-item').filter({ hasText: 'beta.md' });
+    const gammaItem = page.locator('.kb-tree-item').filter({ hasText: 'gamma.md' });
     await expect(alphaItem).toBeVisible({ timeout: 10_000 });
     await expect(betaItem).toBeVisible({ timeout: 10_000 });
 
@@ -44,19 +45,67 @@ test.describe('KB tab bar', () => {
     await expect(page.locator('.kb-wtab')).toHaveCount(1, { timeout: 5_000 });
     await expect(page.locator('.kb-wtab.is-active')).toContainText('alpha.md');
 
-    // 2. Open beta.md from the tree — must ADD a tab, not overwrite alpha.
+    // 2. Open beta.md from the tree — must REUSE the tab (alpha recycled), NOT add.
+    await betaItem.click();
+    await expect(page.locator('.kb-wtab')).toHaveCount(1, { timeout: 5_000 });
+    await expect(page.locator('.kb-wtab.is-active')).toContainText('beta.md');
+    expect(await page.locator('.kb-wtab .kb-wtab-title').allTextContents()).toEqual(['beta.md']);
+
+    // 3. "+" explicitly creates a blank tab.
+    await page.locator('[data-testid="kb-tab-add"]').click();
+    await expect(page.locator('.kb-wtab')).toHaveCount(2, { timeout: 5_000 });
+    await expect(page.locator('.kb-wtab.is-active')).toContainText('新标签页');
+
+    // 4. Clicking a file fills the blank tab (no extra tab).
+    await gammaItem.click();
+    await expect(page.locator('.kb-wtab')).toHaveCount(2, { timeout: 5_000 });
+    await expect(page.locator('.kb-wtab.is-active')).toContainText('gamma.md');
+    expect(await page.locator('.kb-wtab .kb-wtab-title').allTextContents()).toEqual(['beta.md', 'gamma.md']);
+
+    // 5. Clicking an already-open file activates it (count unchanged).
     await betaItem.click();
     await expect(page.locator('.kb-wtab')).toHaveCount(2, { timeout: 5_000 });
-
-    // Both files remain as their own tabs; beta (clicked last) is active.
-    const titles = await page.locator('.kb-wtab .kb-wtab-title').allTextContents();
-    expect(titles).toEqual(['alpha.md', 'beta.md']);
     await expect(page.locator('.kb-wtab.is-active')).toContainText('beta.md');
+  });
 
-    // 3. Click alpha.md again — reuses the existing tab, no third tab created.
+  test('tree right-click「在新标签页中打开」opens a brand-new tab', async ({ page }) => {
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+
+    const alphaItem = page.locator('.kb-tree-item').filter({ hasText: 'alpha.md' });
+    const betaItem = page.locator('.kb-tree-item').filter({ hasText: 'beta.md' });
+    await expect(alphaItem).toBeVisible({ timeout: 10_000 });
+
     await alphaItem.click();
+    await expect(page.locator('.kb-wtab')).toHaveCount(1, { timeout: 5_000 });
+
+    await betaItem.click({ button: 'right' });
+    await page.locator('[data-testid="kb-ctx-open-in-new-tab"]').click();
     await expect(page.locator('.kb-wtab')).toHaveCount(2, { timeout: 5_000 });
-    await expect(page.locator('.kb-wtab.is-active')).toContainText('alpha.md');
+    await expect(page.locator('.kb-wtab.is-active')).toContainText('beta.md');
+    expect(await page.locator('.kb-wtab .kb-wtab-title').allTextContents()).toEqual(['alpha.md', 'beta.md']);
+  });
+
+  test('double-click pins a tab; a pinned tab is never overwritten by a doc click', async ({ page }) => {
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+
+    const alphaItem = page.locator('.kb-tree-item').filter({ hasText: 'alpha.md' });
+    const betaItem = page.locator('.kb-tree-item').filter({ hasText: 'beta.md' });
+    await expect(alphaItem).toBeVisible({ timeout: 10_000 });
+
+    // Open alpha, pin it.
+    await alphaItem.click();
+    await expect(page.locator('.kb-wtab')).toHaveCount(1, { timeout: 5_000 });
+    await page.locator('.kb-wtab').filter({ hasText: 'alpha.md' }).dblclick();
+    await expect(page.locator('.kb-wtab.is-pinned')).toHaveCount(1, { timeout: 3_000 });
+
+    // Click beta — alpha is pinned, so beta opens in a NEW tab; alpha survives.
+    await betaItem.click();
+    await expect(page.locator('.kb-wtab')).toHaveCount(2, { timeout: 5_000 });
+    await expect(page.locator('.kb-wtab').filter({ hasText: 'alpha.md' })).toHaveCount(1);
+    await expect(page.locator('.kb-wtab.is-active')).toContainText('beta.md');
+    await expect(page.locator('.kb-wtab.is-pinned')).toHaveCount(1);
   });
 
   test('switching tabs with unsaved edits prompts to discard', async ({ page }) => {
@@ -75,7 +124,7 @@ test.describe('KB tab bar', () => {
     await expect(textarea).toBeVisible({ timeout: 5_000 });
     await textarea.fill('# Alpha\n\nUNSAVED EDIT MARKER');
 
-    // Click beta.md → unsaved-changes guard must prompt.
+    // Click beta.md → unsaved-changes guard must prompt (recycling = switch file).
     await betaItem.click();
     const overlay = page.locator('.kb-overlay.show');
     await expect(overlay).toBeVisible({ timeout: 3_000 });
@@ -86,11 +135,11 @@ test.describe('KB tab bar', () => {
     await expect(page.locator('.kb-wtab')).toHaveCount(1);
     await expect(textarea).toHaveValue(/UNSAVED EDIT MARKER/);
 
-    // Click beta.md again → confirm discard → switches, new tab added.
+    // Click beta.md again → confirm discard → recycles alpha's tab (still one).
     await betaItem.click();
     await expect(overlay).toBeVisible({ timeout: 3_000 });
     await overlay.locator('button', { hasText: '放弃修改并切换' }).click();
-    await expect(page.locator('.kb-wtab')).toHaveCount(2, { timeout: 5_000 });
+    await expect(page.locator('.kb-wtab')).toHaveCount(1, { timeout: 5_000 });
     await expect(page.locator('.kb-wtab.is-active')).toContainText('beta.md');
   });
 });

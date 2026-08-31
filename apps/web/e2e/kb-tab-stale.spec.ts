@@ -76,7 +76,9 @@ test.describe('KB stale tab cleanup (proactive)', () => {
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expandFolder(page, 'sub1');
     await openTab(page, 'a.md');
+    await expect(page.locator('.kb-wtab')).toHaveCount(1, { timeout: 5_000 });
     await expandFolder(page, 'sub2');
+    await page.locator('[data-testid="kb-tab-add"]').click();
     await openTab(page, 'b.md');
     await expect(page.locator('.kb-wtab')).toHaveCount(2, { timeout: 5_000 });
 
@@ -236,7 +238,9 @@ test.describe('KB same-name tab disambiguation (#5)', () => {
     await expandFolder(page, 'notes');
     await page.locator('.kb-tree-item:visible').filter({ hasText: 'index.md' }).first().click();
     await expandFolder(page, 'drafts');
+    await page.locator('[data-testid="kb-tab-add"]').click();
     await page.locator('.kb-tree-group').filter({ hasText: 'drafts' }).locator('.kb-tree-item').filter({ hasText: 'index.md' }).click();
+    await page.locator('[data-testid="kb-tab-add"]').click();
     await page.locator('.kb-tree-item').filter({ hasText: 'readme.md' }).click();
     await expect(page.locator('.kb-wtab')).toHaveCount(3, { timeout: 5_000 });
 
@@ -263,6 +267,7 @@ test.describe('KB same-name tab disambiguation (#5)', () => {
     await expandFolder(page, 'x');
     await page.locator('.kb-tree-group-label').filter({ hasText: 'foo' }).first().click();
     await page.locator('.kb-tree-item:visible').filter({ hasText: 'index.md' }).first().click();
+    await page.locator('[data-testid="kb-tab-add"]').click();
     await expandFolder(page, 'y');
     await page.locator('.kb-tree-group-label').filter({ hasText: 'foo' }).nth(1).click();
     await page.locator('.kb-tree-item:visible').filter({ hasText: 'index.md' }).nth(1).click();
