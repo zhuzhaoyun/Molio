@@ -326,9 +326,7 @@ const en: Record<string, string> = {
   'history.delete': 'Delete',
   'history.deleteFailed': 'Delete failed, please retry',
   'history.vaultDeleted': 'Vault deleted',
-  'history.deleteConfirm': 'Delete this conversation?',
   'history.deleteConfirmYes': 'Delete',
-  'history.deleteConfirmNo': 'Cancel',
   'history.more': 'More',
   'history.pin': 'Pin',
   'history.unpin': 'Unpin',
@@ -341,6 +339,11 @@ const en: Record<string, string> = {
   'history.confirm': 'Confirm',
   'history.cancel': 'Cancel',
   'history.pinFailed': 'Action failed, please retry',
+  'history.selectedCount': 'Selected {count}',
+  'history.batchDeleteTitle': 'Delete conversations',
+  'history.batchDeleteBody': 'Delete {count} conversation(s)? This cannot be undone.',
+  'history.select': 'Select',
+  'history.unselect': 'Unselect',
 
   // ── Settings ──
   'settings.title': 'Settings',

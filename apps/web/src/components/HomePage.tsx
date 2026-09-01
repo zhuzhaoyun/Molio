@@ -44,6 +44,7 @@ interface Props {
   onNewChat: () => void;
   onSubmitToolResult?: (toolUseId: string, content: string) => Promise<void>;
   onOpenConversation?: (conversationId: string) => void;
+  onDeleteConversations?: (ids: string[]) => void;
   onRegenerate?: () => void;
   onEdit?: (messageId: string, newContent: string) => void;
   onContinue?: () => void;
@@ -65,6 +66,7 @@ export function HomePage({
   onNewChat,
   onSubmitToolResult,
   onOpenConversation,
+  onDeleteConversations,
   onRegenerate,
   onEdit,
   onContinue,
@@ -142,6 +144,7 @@ export function HomePage({
       disabled={!selectedAgentName}
       disabledPlaceholder={t('home.noAgent')}
       onOpenConversation={onOpenConversation}
+      onDeleteConversations={onDeleteConversations}
     />
   );
 

@@ -41,10 +41,11 @@ test.describe('知识库 PDF 预览', () => {
 
     const viewer = page.locator('[data-testid="pdf-viewer"]');
     await expect(viewer).toBeVisible({ timeout: 15_000 });
+    // 等 pdfjs 文档就绪（状态条仅渲染完成后显示「第 1 / 3」）——避免在慢的 headless CI
+    // 上「容器已出现、首页 canvas 尚未画出」的 5s 竞态。与 :52 测试的就绪信号一致。
+    await expect(viewer.locator('[data-testid="pdf-statusbar"]')).toContainText('第 1 / 3', { timeout: 15_000 });
     // 首页 canvas 渲染
     await expect(viewer.locator('[data-testid="pdf-canvas-1"]')).toBeVisible();
-    // 状态条显示第 1 / 3 页
-    await expect(viewer.locator('[data-testid="pdf-statusbar"]')).toContainText('第 1 / 3');
     // 文本层有真实文本（1 个 span）
     await expect(viewer.locator('[data-testid="pdf-text-layer-1"] span')).toHaveCount(1);
   });

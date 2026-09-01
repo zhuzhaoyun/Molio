@@ -5,18 +5,24 @@ import { useI18n } from '../../i18n';
 import { useHistoryFilters } from '../../hooks/useHistoryFilters';
 import { useActiveVaultId } from '../../stores/vaultStore';
 import { OverflowMenu, type OverflowItem } from '../../components/OverflowMenu';
+import { CheckIcon } from '../icons';
 
 interface Props {
   onOpenConversation: (conversationId: string) => void;
+  /** 删除成功后上报被删会话 id（App 据此清空主页聊天）。 */
+  onDeleteConversations?: (ids: string[]) => void;
 }
 
-export function HistoryPage({ onOpenConversation }: Props) {
+export function HistoryPage({ onOpenConversation, onDeleteConversations }: Props) {
   const { t } = useI18n();
   const currentVaultId = useActiveVaultId();
-  const { filters, setFilter, setQuery, items, pinnedItems, loading, error, loadMore, refresh, hasMore, deleteConversationLocal, updateConversationLocal } = useHistoryFilters(currentVaultId);
+  const { filters, setFilter, setQuery, items, pinnedItems, loading, error, loadMore, refresh, hasMore, deleteConversationsLocal, updateConversationLocal } = useHistoryFilters(currentVaultId);
   const [vaults, setVaults] = useState<Vault[]>([]);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [confirmBatchDelete, setConfirmBatchDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const deleteErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [pinnedCollapsed, setPinnedCollapsed] = useState(false);
   const [renameTarget, setRenameTarget] = useState<{ id: string; title: string | null } | null>(null);
@@ -40,16 +46,42 @@ export function HistoryPage({ onOpenConversation }: Props) {
     setQuery('');
   };
 
-  const executeDelete = async (id: string) => {
-    setConfirmingDeleteId(null);
-    deleteConversationLocal(id);
+  const enterSelection = (id: string) => {
+    setSelectedIds(new Set([id]));
+    setSelectMode(true);
+    setConfirmBatchDelete(false);
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const exitSelection = () => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+    setConfirmBatchDelete(false);
+  };
+
+  const executeDelete = async () => {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    setDeleting(true);
+    exitSelection(); // 先退出勾选态（含关弹框），再执行
+    deleteConversationsLocal(ids);
     try {
-      await api.deleteConversationById(id);
+      await api.deleteConversationsByIds(ids);
+      onDeleteConversations?.(ids);
     } catch {
       refresh();
       if (deleteErrorTimer.current) clearTimeout(deleteErrorTimer.current);
       setDeleteError(t('history.deleteFailed'));
       deleteErrorTimer.current = setTimeout(() => setDeleteError(null), 3000);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -149,6 +181,27 @@ export function HistoryPage({ onOpenConversation }: Props) {
       </div>
 
       <main className="history-content">
+        {selectMode && (
+          <div className="history-selection-bar" data-testid="history-selection-bar">
+            <span className="selection-count" data-testid="history-selection-count">
+              {t('history.selectedCount', { count: selectedIds.size })}
+            </span>
+            <div className="selection-actions">
+              <button type="button" className="selection-cancel" data-testid="history-selection-cancel" onClick={exitSelection}>
+                {t('history.cancel')}
+              </button>
+              <button
+                type="button"
+                className="selection-delete"
+                data-testid="history-selection-delete"
+                disabled={selectedIds.size === 0}
+                onClick={() => setConfirmBatchDelete(true)}
+              >
+                {t('history.delete')}
+              </button>
+            </div>
+          </div>
+        )}
         {error && <div className="history-error">{error}</div>}
         {deleteError && (
           <div className="history-error" data-testid="history-delete-error">{deleteError}</div>
@@ -162,10 +215,10 @@ export function HistoryPage({ onOpenConversation }: Props) {
             collapsed={pinnedCollapsed}
             onToggleCollapse={() => setPinnedCollapsed((v) => !v)}
             onOpenConversation={onOpenConversation}
-            confirmingDeleteId={confirmingDeleteId}
-            onDeleteRequest={setConfirmingDeleteId}
-            onDeleteCancel={() => setConfirmingDeleteId(null)}
-            onDeleteConfirm={executeDelete}
+            selectMode={selectMode}
+            selectedIds={selectedIds}
+            onToggleSelect={toggleSelect}
+            onEnterSelection={enterSelection}
             onStartRename={startRename}
             onTogglePin={togglePin}
             t={t}
@@ -216,10 +269,10 @@ export function HistoryPage({ onOpenConversation }: Props) {
           <HistoryList
             items={items}
             onOpenConversation={onOpenConversation}
-            confirmingDeleteId={confirmingDeleteId}
-            onDeleteRequest={setConfirmingDeleteId}
-            onDeleteCancel={() => setConfirmingDeleteId(null)}
-            onDeleteConfirm={executeDelete}
+            selectMode={selectMode}
+            selectedIds={selectedIds}
+            onToggleSelect={toggleSelect}
+            onEnterSelection={enterSelection}
             onStartRename={startRename}
             onTogglePin={togglePin}
             t={t}
@@ -234,17 +287,39 @@ export function HistoryPage({ onOpenConversation }: Props) {
       </main>
 
       <RenameDialog key={renameTarget?.id ?? 'closed'} target={renameTarget} onClose={() => setRenameTarget(null)} onConfirm={confirmRename} t={t} />
+
+      {confirmBatchDelete && (
+        <div className="kb-overlay show" data-testid="history-batch-delete-dialog" onClick={(e) => e.target === e.currentTarget && setConfirmBatchDelete(false)}>
+          <div className="kb-modal" style={{ width: 420 }}>
+            <div className="kb-modal-header">
+              <h2>{t('history.batchDeleteTitle')}</h2>
+              <button className="kb-modal-close" onClick={() => setConfirmBatchDelete(false)}>&times;</button>
+            </div>
+            <div className="kb-modal-body">
+              <p className="history-batch-delete-text">{t('history.batchDeleteBody', { count: selectedIds.size })}</p>
+            </div>
+            <div className="kb-modal-footer">
+              <button className="kb-btn kb-btn-ghost" data-testid="history-batch-delete-cancel" onClick={() => setConfirmBatchDelete(false)}>
+                {t('history.cancel')}
+              </button>
+              <button className="kb-btn kb-btn-danger" data-testid="history-batch-delete-confirm" disabled={deleting} onClick={() => void executeDelete()}>
+                {t('history.deleteConfirmYes')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function HistoryList({ items, onOpenConversation, confirmingDeleteId, onDeleteRequest, onDeleteCancel, onDeleteConfirm, onStartRename, onTogglePin, t }: {
+function HistoryList({ items, onOpenConversation, selectMode, selectedIds, onToggleSelect, onEnterSelection, onStartRename, onTogglePin, t }: {
   items: ConversationHistoryItem[];
   onOpenConversation: (id: string) => void;
-  confirmingDeleteId: string | null;
-  onDeleteRequest: (id: string) => void;
-  onDeleteCancel: () => void;
-  onDeleteConfirm: (id: string) => void;
+  selectMode: boolean;
+  selectedIds: Set<string>;
+  onToggleSelect: (id: string) => void;
+  onEnterSelection: (id: string) => void;
   onStartRename: (item: ConversationHistoryItem) => void;
   onTogglePin: (id: string, currentlyPinned: boolean) => void;
   t: (key: string, params?: Record<string, string | number>) => string;
@@ -285,10 +360,10 @@ function HistoryList({ items, onOpenConversation, confirmingDeleteId, onDeleteRe
                     key={item.conversation.id}
                     item={item}
                     onOpen={() => onOpenConversation(item.conversation.id)}
-                    confirmingDeleteId={confirmingDeleteId}
-                    onDeleteRequest={onDeleteRequest}
-                    onDeleteCancel={onDeleteCancel}
-                    onDeleteConfirm={onDeleteConfirm}
+                    selectMode={selectMode}
+                    selected={selectedIds.has(item.conversation.id)}
+                    onToggleSelect={onToggleSelect}
+                    onEnterSelection={onEnterSelection}
                     onStartRename={onStartRename}
                     onTogglePin={onTogglePin}
                     t={t}
@@ -303,19 +378,18 @@ function HistoryList({ items, onOpenConversation, confirmingDeleteId, onDeleteRe
   );
 }
 
-function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDeleteCancel, onDeleteConfirm, onStartRename, onTogglePin, t }: {
+function HistoryRow({ item, onOpen, selectMode, selected, onToggleSelect, onEnterSelection, onStartRename, onTogglePin, t }: {
   item: ConversationHistoryItem;
   onOpen: () => void;
-  confirmingDeleteId: string | null;
-  onDeleteRequest: (id: string) => void;
-  onDeleteCancel: () => void;
-  onDeleteConfirm: (id: string) => void;
+  selectMode: boolean;
+  selected: boolean;
+  onToggleSelect: (id: string) => void;
+  onEnterSelection: (id: string) => void;
   onStartRename: (item: ConversationHistoryItem) => void;
   onTogglePin: (id: string, currentlyPinned: boolean) => void;
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
   const { conversation, lastMessage, vaultName, vaultExists, vaultId } = item;
-  const isConfirming = confirmingDeleteId === conversation.id;
 
   // Vault indicator:
   // 1. Alive vault          → name badge (gray)
@@ -349,37 +423,31 @@ function HistoryRow({ item, onOpen, confirmingDeleteId, onDeleteRequest, onDelet
       label: t('history.delete'),
       testid: 'history-row-delete',
       danger: true,
-      onClick: () => onDeleteRequest(conversation.id),
+      onClick: () => onEnterSelection(conversation.id),
     },
   ];
 
-  if (isConfirming) {
-    return (
-      <div className="history-row history-row--confirming">
-        <span className="history-row__confirm-text">{t('history.deleteConfirm')}</span>
-        <button
-          type="button"
-          className="history-row__confirm-yes"
-          data-testid="history-row-delete-confirm"
-          onClick={() => onDeleteConfirm(conversation.id)}
-        >
-          {t('history.deleteConfirmYes')}
-        </button>
-        <button
-          type="button"
-          className="history-row__confirm-no"
-          data-testid="history-row-delete-cancel"
-          onClick={onDeleteCancel}
-        >
-          {t('history.deleteConfirmNo')}
-        </button>
-      </div>
-    );
-  }
+  const handleMainClick = () => {
+    if (selectMode) onToggleSelect(conversation.id);
+    else onOpen();
+  };
 
   return (
-    <div className="history-row">
-      <button type="button" className="history-row__main" onClick={onOpen}>
+    <div className={`history-row${selectMode ? ' select-mode' : ''}${selected ? ' selected' : ''}`}>
+      {selectMode && (
+        <button
+          type="button"
+          className={`history-checkbox${selected ? ' checked' : ''}`}
+          data-testid="history-checkbox"
+          data-conv-id={conversation.id}
+          aria-pressed={selected}
+          aria-label={selected ? t('history.unselect') : t('history.select')}
+          onClick={(e) => { e.stopPropagation(); onToggleSelect(conversation.id); }}
+        >
+          {selected && <CheckIcon size={12} />}
+        </button>
+      )}
+      <button type="button" className="history-row__main" onClick={handleMainClick}>
         <span className="history-row__time">{formatTime(conversation.updatedAt)}</span>
         <span className="history-row__body">
           <span className="history-row__title-line">
@@ -461,15 +529,15 @@ function RenameDialog({ target, onClose, onConfirm, t }: {
   }
 }
 
-function PinnedGroup({ items, collapsed, onToggleCollapse, onOpenConversation, confirmingDeleteId, onDeleteRequest, onDeleteCancel, onDeleteConfirm, onStartRename, onTogglePin, t }: {
+function PinnedGroup({ items, collapsed, onToggleCollapse, onOpenConversation, selectMode, selectedIds, onToggleSelect, onEnterSelection, onStartRename, onTogglePin, t }: {
   items: ConversationHistoryItem[];
   collapsed: boolean;
   onToggleCollapse: () => void;
   onOpenConversation: (id: string) => void;
-  confirmingDeleteId: string | null;
-  onDeleteRequest: (id: string) => void;
-  onDeleteCancel: () => void;
-  onDeleteConfirm: (id: string) => void;
+  selectMode: boolean;
+  selectedIds: Set<string>;
+  onToggleSelect: (id: string) => void;
+  onEnterSelection: (id: string) => void;
   onStartRename: (item: ConversationHistoryItem) => void;
   onTogglePin: (id: string, currentlyPinned: boolean) => void;
   t: (key: string, params?: Record<string, string | number>) => string;
@@ -499,10 +567,10 @@ function PinnedGroup({ items, collapsed, onToggleCollapse, onOpenConversation, c
               key={item.conversation.id}
               item={item}
               onOpen={() => onOpenConversation(item.conversation.id)}
-              confirmingDeleteId={confirmingDeleteId}
-              onDeleteRequest={onDeleteRequest}
-              onDeleteCancel={onDeleteCancel}
-              onDeleteConfirm={onDeleteConfirm}
+              selectMode={selectMode}
+              selected={selectedIds.has(item.conversation.id)}
+              onToggleSelect={onToggleSelect}
+              onEnterSelection={onEnterSelection}
               onStartRename={onStartRename}
               onTogglePin={onTogglePin}
               t={t}

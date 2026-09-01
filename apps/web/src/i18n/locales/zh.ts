@@ -326,9 +326,7 @@ const zh: Record<string, string> = {
   'history.delete': '删除',
   'history.deleteFailed': '删除失败，请重试',
   'history.vaultDeleted': '知识库已删除',
-  'history.deleteConfirm': '确认删除这条会话记录？',
   'history.deleteConfirmYes': '确认',
-  'history.deleteConfirmNo': '取消',
   'history.more': '更多',
   'history.pin': '置顶',
   'history.unpin': '取消置顶',
@@ -341,6 +339,11 @@ const zh: Record<string, string> = {
   'history.confirm': '确认',
   'history.cancel': '取消',
   'history.pinFailed': '操作失败，请重试',
+  'history.selectedCount': '已选 {count} 条',
+  'history.batchDeleteTitle': '删除会话记录',
+  'history.batchDeleteBody': '确认删除 {count} 条会话记录？此操作不可恢复。',
+  'history.select': '选择',
+  'history.unselect': '取消选择',
 
   // ── Settings ──
   'settings.title': '设置',

@@ -60,6 +60,14 @@ export interface DeleteMessagesResponse {
   deleted: number;
 }
 
+export interface BatchDeleteConversationsRequest {
+  ids: string[];
+}
+
+export interface BatchDeleteConversationsResponse {
+  deleted: number;
+}
+
 export interface CreateRunResponse {
   runId: string;
   conversationId?: string;

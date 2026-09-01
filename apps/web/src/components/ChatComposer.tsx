@@ -62,6 +62,8 @@ interface Props {
   initialFileRefs?: FileRef[];
   /** Callback when user selects a conversation from history. */
   onOpenConversation?: (conversationId: string) => void;
+  /** Callback when a conversation is deleted from the history menu. */
+  onDeleteConversations?: (ids: string[]) => void;
   /** Stable key for persisting draft text across navigation. */
   composerKey?: string;
 }
@@ -74,6 +76,7 @@ export function ChatComposer({
   disabledPlaceholder,
   initialFileRefs,
   onOpenConversation,
+  onDeleteConversations,
   composerKey,
 }: Props) {
   const { t } = useI18n();
@@ -619,7 +622,7 @@ export function ChatComposer({
                 </svg>
               </button>
               {onOpenConversation && (
-                <ConversationHistoryMenu onSelect={onOpenConversation} />
+                <ConversationHistoryMenu onSelect={onOpenConversation} onDeleteConversations={onDeleteConversations} />
               )}
               <span className="composer-spacer" />
               <button

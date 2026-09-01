@@ -9,6 +9,7 @@ import {
   cleanupTempVault,
   type TempVault,
 } from './helpers/cleanup';
+import { mockAgent } from './helpers/mock-sse';
 
 /**
  * @area history
@@ -200,14 +201,12 @@ test.describe('History', () => {
     }
   });
 
-  test('delete conversation shows confirmation, then removes row; rollback on failure', async ({ page }) => {
+  test('delete via selection mode: pre-checks row, confirm removes it; rollback on failure', async ({ page }) => {
     const project = await createProject(`e2e-del-${Date.now()}`);
     const conv = await createConversation(project.id, 'Delete Me');
     await addMessage(project.id, conv.id, {
       id: `msg-del-${Date.now()}`,
-      role: 'user',
-      content: 'to be deleted',
-      timestamp: Date.now(),
+      role: 'user', content: 'to be deleted', timestamp: Date.now(),
     });
     try {
       await gotoHome(page);
@@ -215,38 +214,115 @@ test.describe('History', () => {
       await page.locator('[data-testid=history-refresh]').click();
       await page.waitForTimeout(500);
 
-      // Intercept DELETE to force an HTTP 500 failure and verify rollback (row restored).
-      await page.route('**/api/conversations/*', (route) => {
-        if (route.request().method() === 'DELETE') {
-          return route.fulfill({
-            status: 500,
-            contentType: 'application/json',
-            body: JSON.stringify({ error: { code: 'FAIL', message: 'forced' } }),
-          });
-        }
-        return route.continue();
-      });
+      // Force a 500 on the batch-delete endpoint to verify rollback.
+      await page.route('**/api/conversations/batch-delete', (route) =>
+        route.fulfill({
+          status: 500,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: { code: 'FAIL', message: 'forced' } }),
+        }),
+      );
 
       const row = page.locator('.history-row', { hasText: 'Delete Me' }).first();
       await expect(row).toBeVisible({ timeout: 5_000 });
 
-      // Step 1: delete action lives in the row's ⋯ overflow menu
+      // Step 1: ⋯ 溢出菜单 → 删除 → 进入勾选模式，被点行预勾选。
       await row.hover();
       await row.locator('[data-testid=history-row-overflow]').click();
       await row.locator('[data-testid=history-row-delete]').click();
-      await expect(page.locator('[data-testid=history-row-delete-confirm]')).toBeVisible({ timeout: 3_000 });
-      await expect(page.locator('[data-testid=history-row-delete-cancel]')).toBeVisible();
 
-      // Step 2: click confirm → actual delete fires (HTTP 500 forced)
-      await page.locator('[data-testid=history-row-delete-confirm]').click();
+      const bar = page.locator('[data-testid=history-selection-bar]');
+      await expect(bar).toBeVisible({ timeout: 3_000 });
+      await expect(page.locator('[data-testid=history-selection-count]')).toContainText('1');
+      await expect(row.locator('[data-testid=history-checkbox]')).toHaveClass(/checked/);
 
-      // Non-blocking transient error is shown.
+      // Step 2: 删除 → 弹确认框 → 确认 → HTTP 500 强制失败。
+      await page.locator('[data-testid=history-selection-delete]').click();
+      await expect(page.locator('[data-testid=history-batch-delete-dialog]')).toBeVisible({ timeout: 3_000 });
+      await page.locator('[data-testid=history-batch-delete-confirm]').click();
+
+      // 非阻塞错误条出现；回滚 refresh → 行恢复。
       await expect(page.locator('[data-testid=history-delete-error]')).toBeVisible({ timeout: 5_000 });
-
-      // Rollback re-fetches → row reappears.
       await expect(page.locator('.history-row', { hasText: 'Delete Me' })).toBeVisible({ timeout: 5_000 });
     } finally {
-      await page.unroute('**/api/conversations/*');
+      await page.unroute('**/api/conversations/batch-delete');
+      await deleteProject(project.id);
+    }
+  });
+
+  test('batch delete removes multiple selected conversations', async ({ page }) => {
+    const project = await createProject(`e2e-bdel-${Date.now()}`);
+    const c1 = await createConversation(project.id, 'Batch A');
+    const c2 = await createConversation(project.id, 'Batch B');
+    const c3 = await createConversation(project.id, 'Batch C');
+    await addMessage(project.id, c1.id, { id: `m1-${Date.now()}`, role: 'user', content: 'a', timestamp: Date.now() });
+    await addMessage(project.id, c2.id, { id: `m2-${Date.now()}`, role: 'user', content: 'b', timestamp: Date.now() + 1 });
+    await addMessage(project.id, c3.id, { id: `m3-${Date.now()}`, role: 'user', content: 'c', timestamp: Date.now() + 2 });
+    try {
+      await gotoHome(page);
+      await clickNav(page, 'history');
+      await page.locator('[data-testid=history-refresh]').click();
+      await page.waitForTimeout(500);
+
+      const rowA = rowByTitle(page, 'Batch A');
+      await expect(rowA).toBeVisible({ timeout: 5_000 });
+
+      // 从行 A 的 ⋯ 删除进入勾选模式（A 预勾选）。
+      await rowA.hover();
+      await rowA.locator('[data-testid=history-row-overflow]').click();
+      await rowA.locator('[data-testid=history-row-delete]').click();
+      await expect(page.locator('[data-testid=history-selection-bar]')).toBeVisible({ timeout: 3_000 });
+
+      // 点 B、C 的行主体追加勾选。
+      await rowByTitle(page, 'Batch B').locator('.history-row__main').click();
+      await rowByTitle(page, 'Batch C').locator('.history-row__main').click();
+
+      // 删除 + 确认。
+      await page.locator('[data-testid=history-selection-delete]').click();
+      const dialog = page.locator('[data-testid=history-batch-delete-dialog]');
+      await expect(dialog).toBeVisible({ timeout: 3_000 });
+      await page.locator('[data-testid=history-batch-delete-confirm]').click();
+
+      // 三行全部消失，确认条消失。
+      await expect(rowByTitle(page, 'Batch A')).toHaveCount(0, { timeout: 5_000 });
+      await expect(rowByTitle(page, 'Batch B')).toHaveCount(0);
+      await expect(rowByTitle(page, 'Batch C')).toHaveCount(0);
+      await expect(page.locator('[data-testid=history-selection-bar]')).toHaveCount(0);
+    } finally {
+      await deleteProject(project.id);
+    }
+  });
+
+  test('cancel exits selection mode without deleting', async ({ page }) => {
+    const project = await createProject(`e2e-bdel-cancel-${Date.now()}`);
+    const conv = await createConversation(project.id, 'Keep Me');
+    await addMessage(project.id, conv.id, { id: `m-${Date.now()}`, role: 'user', content: 'x', timestamp: Date.now() });
+    try {
+      await gotoHome(page);
+      await clickNav(page, 'history');
+      await page.locator('[data-testid=history-refresh]').click();
+      await page.waitForTimeout(500);
+
+      const row = rowByTitle(page, 'Keep Me');
+      await expect(row).toBeVisible({ timeout: 5_000 });
+      await row.hover();
+      await row.locator('[data-testid=history-row-overflow]').click();
+      await row.locator('[data-testid=history-row-delete]').click();
+      await expect(page.locator('[data-testid=history-selection-bar]')).toBeVisible({ timeout: 3_000 });
+
+      let posts = 0;
+      await page.route('**/api/conversations/batch-delete', (route) => {
+        if (route.request().method() === 'POST') posts += 1;
+        return route.continue();
+      });
+
+      await page.locator('[data-testid=history-selection-cancel]').click();
+      await expect(page.locator('[data-testid=history-selection-bar]')).toHaveCount(0);
+      await expect(row.locator('[data-testid=history-checkbox]')).toHaveCount(0);
+      await expect(rowByTitle(page, 'Keep Me')).toBeVisible();
+      expect(posts).toBe(0);
+    } finally {
+      await page.unroute('**/api/conversations/batch-delete');
       await deleteProject(project.id);
     }
   });
@@ -474,6 +550,129 @@ test.describe('History', () => {
     // Vault dropdown is always visible next to the search input (only filter dimension).
     await expect(page.locator('[data-testid=history-search-input]')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('[data-testid=history-filter-vault]')).toBeVisible({ timeout: 3_000 });
+  });
+
+  test('deleting the conversation loaded on home clears the home chat', async ({ page }) => {
+    const project = await createProject(`e2e-stale-${Date.now()}`);
+    const conv = await createConversation(project.id, 'Stale Conv');
+    await addMessage(project.id, conv.id, {
+      id: `msg-stale-${Date.now()}`, role: 'user', content: 'stale content marker', timestamp: Date.now(),
+    });
+    await addMessage(project.id, conv.id, {
+      id: `msg-stale-a-${Date.now()}`, role: 'assistant', content: 'reply', timestamp: Date.now() + 1, agentId: 'claude',
+    });
+    try {
+      await gotoHome(page);
+      await clickNav(page, 'history');
+      await page.locator('[data-testid=history-refresh]').click();
+      await page.waitForTimeout(500);
+
+      // 打开该对话 → 跳回主页并显示其消息。
+      await rowByTitle(page, 'Stale Conv').locator('.history-row__main').click();
+      await expect(page.locator('.home-page.chat-active')).toBeVisible({ timeout: 5_000 });
+      await expect(page.getByText('stale content marker')).toBeVisible();
+
+      // 回历史页，经勾选模式删除该对话。
+      await clickNav(page, 'history');
+      const row = rowByTitle(page, 'Stale Conv');
+      await row.hover();
+      await row.locator('[data-testid=history-row-overflow]').click();
+      await row.locator('[data-testid=history-row-delete]').click();
+      await page.locator('[data-testid=history-selection-delete]').click();
+      await page.locator('[data-testid=history-batch-delete-confirm]').click();
+      await expect(rowByTitle(page, 'Stale Conv')).toHaveCount(0, { timeout: 5_000 });
+
+      // 回主页 → 聊天已清空（hero 空状态），旧内容不可见。
+      await clickNav(page, 'home');
+      await expect(page.locator('[data-testid=hero-brand]')).toBeVisible({ timeout: 5_000 });
+      await expect(page.getByText('stale content marker')).toHaveCount(0);
+    } finally {
+      await deleteProject(project.id);
+    }
+  });
+
+  test('deleting a loaded conversation via the home composer history menu clears the chat', async ({ page }) => {
+    // 无可用运行时（CI 无 agent）时 #230 的 NoRuntimeCard 会顶替输入框，导致首页
+    // composer 历史下拉不可用。mock 一个可用 agent 让 composer 渲染，测试才成立。
+    await mockAgent(page);
+    const project = await createProject(`e2e-csync-${Date.now()}`);
+    const conv = await createConversation(project.id, 'Composer Sync Conv');
+    await addMessage(project.id, conv.id, {
+      id: `msg-csync-${Date.now()}`, role: 'user', content: 'csync content marker', timestamp: Date.now(),
+    });
+    try {
+      await gotoHome(page);
+      await clickNav(page, 'history');
+      await page.locator('[data-testid=history-refresh]').click();
+      await page.waitForTimeout(500);
+
+      // 主页加载该会话（经历史页打开 → 跳回主页显示其消息）。
+      await rowByTitle(page, 'Composer Sync Conv').locator('.history-row__main').click();
+      await expect(page.locator('.home-page.chat-active')).toBeVisible({ timeout: 5_000 });
+      await expect(page.getByText('csync content marker')).toBeVisible();
+
+      // 主页输入框历史下拉 → 悬停目标会话 → 两步确认删除。
+      await page.locator('[data-testid=composer-history-btn]').click();
+      const item = page.locator('[data-testid=composer-history-item]', { hasText: 'Composer Sync Conv' });
+      await expect(item).toBeVisible({ timeout: 5_000 });
+      await item.hover();
+      await item.locator('[data-testid=composer-history-delete]').click();
+      await item.locator('[data-testid=composer-history-delete]').click();
+
+      // 聊天已清空（hero 空状态），旧内容不可见。
+      await expect(page.locator('[data-testid=hero-brand]')).toBeVisible({ timeout: 5_000 });
+      await expect(page.getByText('csync content marker')).toHaveCount(0);
+    } finally {
+      await deleteProject(project.id);
+    }
+  });
+
+  test('deleting a loaded conversation via the KB chat history menu clears the home chat', async ({ page }) => {
+    const project = await createProject(`e2e-kbsync-${Date.now()}`);
+    const conv = await createConversation(project.id, 'KB Sync Conv');
+    await addMessage(project.id, conv.id, {
+      id: `msg-kbsync-${Date.now()}`, role: 'user', content: 'kbsync content marker', timestamp: Date.now(),
+    });
+    const vault = await createTempVault(`e2e-kbsync-${Date.now()}`);
+    try {
+      // 先加载 KB 页并选中 test.md（openTab 持久化文件标签，SPA 往返后可恢复）。
+      await page.goto(`/knowledge?vault=${vault.id}&file=test.md`);
+      await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+      // 等文件导航异步完成（树加载 → resolveFilePath → openTab）——kb-btn-ask 出现即文件已选中、
+      // 标签已持久化，再离开才能保证回来时恢复。
+      await expect(page.locator('[data-testid="kb-btn-ask"]')).toBeVisible({ timeout: 10_000 });
+
+      // 主页加载该会话（经历史页打开 → 跳回主页显示其消息）。
+      await clickNav(page, 'home');
+      await clickNav(page, 'history');
+      await page.locator('[data-testid=history-refresh]').click();
+      await page.waitForTimeout(500);
+      await rowByTitle(page, 'KB Sync Conv').locator('.history-row__main').click();
+      await expect(page.locator('.home-page.chat-active')).toBeVisible({ timeout: 5_000 });
+      await expect(page.getByText('kbsync content marker')).toBeVisible();
+
+      // 回 KB 页 → 文件标签恢复 → 💬问答 打开会话面板。
+      await clickNav(page, 'knowledge');
+      await page.locator('[data-testid="kb-btn-ask"]').click();
+      const panel = page.locator('[data-testid="kb-chat-panel"]');
+      await expect(panel).toBeVisible({ timeout: 5_000 });
+
+      // 面板历史下拉 → 悬停目标会话 → 两步确认删除。
+      await page.locator('[data-testid="kb-chat-session-history"]').click();
+      const item = panel.locator('[data-testid="composer-history-item"]', { hasText: 'KB Sync Conv' });
+      await expect(item).toBeVisible({ timeout: 5_000 });
+      await item.hover();
+      await item.locator('[data-testid="composer-history-delete"]').click();
+      await item.locator('[data-testid="composer-history-delete"]').click();
+
+      // 回主页 → 聊天已清空（hero 空状态），旧内容不可见。
+      await clickNav(page, 'home');
+      await expect(page.locator('[data-testid=hero-brand]')).toBeVisible({ timeout: 5_000 });
+      await expect(page.getByText('kbsync content marker')).toHaveCount(0);
+    } finally {
+      await deleteProject(project.id);
+      await cleanupTempVault(vault);
+    }
   });
 });
 
