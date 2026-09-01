@@ -236,8 +236,9 @@ export function KbChatSession({
     bottomRef.current?.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth' });
   }, [chat.messages.length, chat.messages[chat.messages.length - 1]?.content]);
 
-  const handleSend = useCallback((text: string, fileRefs?: FileRef[], pastedImages?: PastedImage[]) => {
-    const prefix = buildAttachmentPrefix(fileRefs ?? [], pastedImages ?? []);
+  const handleSend = useCallback((text: string, pastedImages?: PastedImage[]) => {
+    // Inline @/skill refs in `text` were already expanded by ChatComposer.
+    const prefix = buildAttachmentPrefix(pastedImages ?? []);
     let message = text;
     if (prefix) message = `${prefix}\n\n${message || ''}`;
     if (selectedText) {

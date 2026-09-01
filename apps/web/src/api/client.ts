@@ -902,8 +902,11 @@ export const api = {
 
   // ─── Skills ───
 
-  async listSkills(): Promise<SkillManifestEntry[]> {
-    const res = await fetch(`${BASE}/skills`);
+  async listSkills(opts?: { includeBundled?: boolean }): Promise<SkillManifestEntry[]> {
+    // includeBundled surfaces app-shipped skills READ-ONLY (composer "/"
+    // palette); the settings UI omits it and keeps them hidden.
+    const qs = opts?.includeBundled ? '?includeBundled=1' : '';
+    const res = await fetch(`${BASE}/skills${qs}`);
     if (!res.ok) throw new Error(`Failed to fetch skills: ${res.status}`);
     const data = await res.json();
     return data.skills;

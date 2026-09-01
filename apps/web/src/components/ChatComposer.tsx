@@ -1,10 +1,12 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import type { SkillManifestEntry } from '@molio/contracts';
 import { useI18n } from '../i18n';
 import { vaultStore } from '../stores/vaultStore';
 import { api } from '../api/client';
 import { FilePicker } from './FilePicker';
-import { FolderIcon, FileDocIcon } from './FileIcons';
+import { SkillPalette } from './SkillPalette';
 import { ConversationHistoryMenu } from './ConversationHistoryMenu';
+import { expandComposerMessage, flattenTreePaths, type ExpandSkillEntry } from './composerExpand';
 
 export interface FileRef {
   vaultId: string;
@@ -24,36 +26,20 @@ export interface PastedImage {
 }
 
 /**
- * Build the markdown prefix for file refs + pasted images. Shared by every
- * ChatComposer host (home page, file-chat panel) so the message format — and
- * the agent's reading cues — stay consistent.
+ * Build the markdown prefix for pasted images. Shared by every ChatComposer
+ * host (home page, KB chat sessions) so the message format stays consistent.
  *
- * Folders get a trailing slash plus a link title that tells the agent to
- * enumerate the directory; files stay plain `[📄 name](path)` links.
+ * File references are NOT part of this prefix anymore: `@path` refs now live
+ * as raw text in the composer input and are expanded to markdown links at
+ * send time by expandComposerMessage (composerExpand.ts) — Claude Code-style
+ * inline references.
  */
-export function buildAttachmentPrefix(fileRefs: FileRef[], pastedImages: PastedImage[]): string {
-  const parts: string[] = [];
-
+export function buildAttachmentPrefix(pastedImages: PastedImage[]): string {
   const doneImages = pastedImages.filter((p) => p.state === 'done');
   if (doneImages.length > 0) {
-    parts.push(doneImages.map((p) => `![image](${p.filePath})`).join('\n'));
+    return doneImages.map((p) => `![image](${p.filePath})`).join('\n');
   }
-
-  if (fileRefs.length > 0) {
-    parts.push(
-      fileRefs
-        .map((r) => {
-          const name = r.filePath.split('/').pop() ?? r.filePath;
-          if (r.isDirectory) {
-            return `[📁 ${name}/](${r.filePath}/ "文件夹，请读取其下所有相关文件")`;
-          }
-          return `[📄 ${name}](${r.filePath})`;
-        })
-        .join(' '),
-    );
-  }
-
-  return parts.length > 0 ? parts.join('\n\n') : '';
+  return '';
 }
 
 /** Module-level draft cache — survives component unmount during navigation. */
@@ -67,11 +53,12 @@ const COMPOSER_MAX_HEIGHT = 280;
 
 interface Props {
   isRunning: boolean;
-  onSend: (message: string, fileRefs: FileRef[], pastedImages: PastedImage[]) => void;
+  /** Receives the EXPANDED message (skill/@refs already resolved at send time). */
+  onSend: (message: string, pastedImages: PastedImage[]) => void;
   onCancel: () => void;
   disabled?: boolean;
   disabledPlaceholder?: string;
-  /** Pre-populated file refs (e.g. "ask about this file" shortcut). */
+  /** Pre-populated inline @ refs (e.g. "ask about this file" shortcut). */
   initialFileRefs?: FileRef[];
   /** Callback when user selects a conversation from history. */
   onOpenConversation?: (conversationId: string) => void;
@@ -90,14 +77,27 @@ export function ChatComposer({
   composerKey,
 }: Props) {
   const { t } = useI18n();
-  const [text, setText] = useState(() => (composerKey ? drafts.get(composerKey) ?? '' : ''));
-  const [fileRefs, setFileRefs] = useState<FileRef[]>(initialFileRefs ?? []);
+  const [text, setText] = useState(() => {
+    const draft = composerKey ? drafts.get(composerKey) ?? '' : '';
+    if (draft) return draft;
+    // "Ask about this file" prefills inline @ refs (raw text, expanded at send).
+    return (initialFileRefs ?? [])
+      .map((r) => `@${r.filePath}${r.isDirectory ? '/' : ''}`)
+      .join(' ');
+  });
   const [pastedImages, setPastedImages] = useState<PastedImage[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Send-time expansion caches — filled lazily only when the drafted text
+  // actually uses a ref, so plain messages never pay an API round-trip.
+  const skillsCacheRef = useRef<ExpandSkillEntry[] | null>(null);
+  const sendingRef = useRef(false);
 
   // FilePicker trigger: @ start index in textarea value
   const [triggerStartIdx, setTriggerStartIdx] = useState<number | null>(null);
+
+  // SkillPalette trigger: input starts with "/" (Claude Code-style slash menu).
+  const [skillTrigger, setSkillTrigger] = useState(false);
 
   // Auto-resize textarea：随内容增长，上限 COMPOSER_MAX_HEIGHT（与 CSS max-height 同步）
   useEffect(() => {
@@ -136,22 +136,38 @@ export function ChatComposer({
     setTriggerStartIdx(null);
   }, []);
 
+  // A slash command is a single bare token: while the text is exactly `/query`
+  // with NO whitespace (`/`, `/doc`, `/docling`), the skill palette filters the
+  // query. The moment a space lands — committing the skill (`/docling `) or
+  // typing the rest of the message (`/docling 帮我…`) — the command is done:
+  // the palette closes and control returns to normal text, so `@` file refs
+  // can be picked. Resolving both triggers here keeps the two overlays
+  // MUTUALLY EXCLUSIVE (no stacked FilePicker + SkillPalette, and no stale
+  // empty "暂无可用技能" panel over a committed command).
+  const isSkillQuery = (value: string) => /^\/[^\s]*$/.test(value);
+
+  const updateTriggers = (value: string, cursor: number) => {
+    if (isSkillQuery(value)) {
+      setSkillTrigger(true);
+      setTriggerStartIdx(null);
+    } else {
+      setSkillTrigger(false);
+      checkTrigger(value, cursor);
+    }
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = e.target.value;
     setText(newValue);
-    checkTrigger(newValue, e.target.selectionStart);
+    updateTriggers(newValue, e.target.selectionStart);
   };
 
-  // Re-check trigger on cursor move (arrow keys)
-  const handleKeyUp = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    const el = e.currentTarget;
-    checkTrigger(el.value, el.selectionStart);
-  };
-
-  const handleMouseUp = (e: React.MouseEvent<HTMLTextAreaElement>) => {
-    const el = e.currentTarget;
-    checkTrigger(el.value, el.selectionStart);
-  };
+  // Re-check trigger on cursor move (arrow keys) / click
+  // NOTE: the @ picker trigger is decided ONLY on text change (handleChange).
+  // It must NOT re-evaluate on keyup/mouseup — after a ref is committed
+  // (`@path` inserted, picker closed), a later cursor move would otherwise
+  // re-match the committed `@token` at the input end and pop the picker back
+  // open (the "can't stop drilling after selecting a folder" bug).
 
   // Remove trigger text + @ from textarea
   const removeTrigger = useCallback(() => {
@@ -166,19 +182,32 @@ export function ChatComposer({
     textareaRef.current?.focus();
   }, [triggerStartIdx]);
 
-  // FilePicker: on select
+  // Replace the active trigger text (`@filter` from triggerStartIdx to cursor)
+  // with inserted raw text, keeping everything around it. Claude Code-style:
+  // the reference lands as literal text — expansion happens only at send.
+  const insertAtTrigger = useCallback(
+    (insertText: string) => {
+      if (triggerStartIdx === null) return;
+      const el = textareaRef.current;
+      const cursor = el?.selectionStart ?? triggerStartIdx;
+      setText((prev) => prev.slice(0, triggerStartIdx) + insertText + prev.slice(cursor));
+      setTriggerStartIdx(null);
+      requestAnimationFrame(() => {
+        el?.focus();
+        const pos = triggerStartIdx + insertText.length;
+        el?.setSelectionRange(pos, pos);
+      });
+    },
+    [triggerStartIdx],
+  );
+
+  // FilePicker: on select — inline `@path` ref (folders keep the trailing slash
+  // so send-time expansion can tell them apart from files).
   const handleFileSelect = useCallback(
     (filePath: string, isDirectory: boolean) => {
-      const vaultId = vaultStore.getActiveVaultId();
-      if (!vaultId) return;
-      // Avoid duplicates
-      setFileRefs((prev) => {
-        if (prev.some((r) => r.filePath === filePath)) return prev;
-        return [...prev, { vaultId, filePath, isDirectory }];
-      });
-      removeTrigger();
+      insertAtTrigger(`@${filePath}${isDirectory ? '/' : ''}`);
     },
-    [removeTrigger],
+    [insertAtTrigger],
   );
 
   // FilePicker: on close (Escape) — clean up @ trigger text
@@ -186,45 +215,109 @@ export function ChatComposer({
     removeTrigger();
   }, [removeTrigger]);
 
-  // Remove a fileRef badge
-  const removeFileRef = useCallback((idx: number) => {
-    setFileRefs((prev) => prev.filter((_, i) => i !== idx));
+  // SkillPalette: on select — normalize the drafted `/filter` to the canonical
+  // `/<skill name> ` raw reference. The input keeps the slash form (WYSIWYG);
+  // expandComposerMessage rewrites it into the natural-language prefix at send.
+  const handleSkillSelect = useCallback(
+    (skill: SkillManifestEntry) => {
+      const value = `/${skill.name} `;
+      setText(value);
+      setSkillTrigger(false);
+      requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (el) {
+          el.focus();
+          el.setSelectionRange(value.length, value.length);
+        }
+      });
+    },
+    [],
+  );
+
+  // SkillPalette: on close (Escape) — pure `/token` scaffolding is cleared;
+  // a full typed message (contains whitespace) is real content and stays.
+  const handleSkillClose = useCallback(() => {
+    setSkillTrigger(false);
+    setText((prev) => (/\s/.test(prev.trim()) ? prev : ''));
   }, []);
 
-  const handleSend = () => {
+  // Send-time expansion: raw `@path` / `/skill` references in the drafted text
+  // become the message an agent receives. Data is fetched lazily — only when
+  // the draft actually uses a ref, so plain messages never hit the API here.
+  // Both fetches are best-effort: a failure sends the raw text unchanged.
+  const expandForSend = useCallback(
+    async (raw: string): Promise<string> => {
+      let skills = skillsCacheRef.current;
+      if (!skills && /^\/\S+/.test(raw.trimStart())) {
+        try {
+          const list = await api.listSkills({ includeBundled: true });
+          skills = list
+            .filter((s) => s.kind === 'bundled' || s.enabled)
+            .map((s) => ({ id: s.id, name: s.name }));
+          skillsCacheRef.current = skills;
+        } catch {
+          // ignore — raw /name is sent as-is
+        }
+      }
+      let knownPaths: Set<string> | undefined;
+      const vaultId = vaultStore.getActiveVaultId();
+      if (raw.includes('@') && vaultId) {
+        try {
+          knownPaths = flattenTreePaths(await api.getFileTree(vaultId));
+        } catch {
+          // ignore — @ tokens stay literal
+        }
+      }
+      return expandComposerMessage(raw, {
+        skills: skills ?? undefined,
+        skillPrefixTemplate: t('composer.skillPrefix'),
+        knownPaths,
+      });
+    },
+    [t],
+  );
+
+  const handleSend = async () => {
+    if (sendingRef.current) return;
     const trimmed = text.trim();
     // Only include images that finished uploading successfully — uploading
     // entries have filePath:'' and error entries have invalid data, so sending
     // them would push broken markdown to the backend.
     const doneImages = pastedImages.filter((p) => p.state === 'done');
-    const hasContent = trimmed || fileRefs.length > 0 || doneImages.length > 0;
+    const hasContent = trimmed || doneImages.length > 0;
     if (hasContent) {
-      onSend(trimmed, fileRefs, doneImages);
-      setText('');
-      // Clear the draft cache synchronously *before* the parent re-renders.
-      // On the home page, the first send flips HomePage from the landing
-      // branch to the chat-active branch, which unmounts this ChatComposer
-      // and mounts a fresh one. That unmount happens before the draft-sync
-      // effect (which depends on `text`) can run for the just-queued
-      // setText(''), so the new instance would otherwise rehydrate from the
-      // stale draft and the input would not be cleared.
-      if (composerKey) drafts.delete(composerKey);
-      setFileRefs([]);
-      // Revoke any remaining blob URLs (error/uploading thumbs) before clearing.
-      for (const img of pastedImages) {
-        if (img.url.startsWith('blob:')) URL.revokeObjectURL(img.url);
+      sendingRef.current = true;
+      try {
+        const expanded = await expandForSend(text);
+        onSend(expanded.trim(), doneImages);
+        setText('');
+        // Clear the draft cache synchronously *before* the parent re-renders.
+        // On the home page, the first send flips HomePage from the landing
+        // branch to the chat-active branch, which unmounts this ChatComposer
+        // and mounts a fresh one. That unmount happens before the draft-sync
+        // effect (which depends on `text`) can run for the just-queued
+        // setText(''), so the new instance would otherwise rehydrate from the
+        // stale draft and the input would not be cleared.
+        if (composerKey) drafts.delete(composerKey);
+        // Revoke any remaining blob URLs (error/uploading thumbs) before clearing.
+        for (const img of pastedImages) {
+          if (img.url.startsWith('blob:')) URL.revokeObjectURL(img.url);
+        }
+        setPastedImages([]);
+        setTriggerStartIdx(null);
+        setSkillTrigger(false);
+        if (textareaRef.current) textareaRef.current.style.height = 'auto';
+      } finally {
+        sendingRef.current = false;
       }
-      setPastedImages([]);
-      setTriggerStartIdx(null);
-      if (textareaRef.current) textareaRef.current.style.height = 'auto';
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      // Don't send if FilePicker overlay is open — FilePicker handles Enter
-      if (triggerStartIdx === null) {
+      // Don't send if FilePicker or SkillPalette overlay is open — they handle Enter
+      if (triggerStartIdx === null && !skillTrigger) {
         handleSend();
       }
     }
@@ -362,7 +455,7 @@ export function ChatComposer({
   // is never pushed to the backend.
   const isUploading = pastedImages.some((p) => p.state === 'uploading');
   const canSend =
-    (text.trim().length > 0 || fileRefs.length > 0 || pastedImages.some((p) => p.state === 'done')) &&
+    (text.trim().length > 0 || pastedImages.some((p) => p.state === 'done')) &&
     !isUploading &&
     !disabled;
   const placeholder = disabled
@@ -382,29 +475,9 @@ export function ChatComposer({
   return (
     <div className="composer">
       <div className="composer-shell">
-        {/* FileRef badges + image thumbnails */}
-        {(fileRefs.length > 0 || pastedImages.length > 0) && (
+        {/* Pasted image thumbnails (file refs are inline `@path` text now) */}
+        {pastedImages.length > 0 && (
           <div className="composer-attachments" data-testid="composer-attachments">
-            {fileRefs.map((ref, i) => (
-              <span key={`file-${ref.filePath}-${i}`} className="composer-file-badge" data-testid="composer-file-badge">
-                <span className="composer-file-badge-icon">
-                  {ref.isDirectory ? <FolderIcon size={13} /> : <FileDocIcon size={12} />}
-                </span>
-                <span className="composer-file-badge-name" title={ref.filePath}>
-                  {ref.filePath.split('/').pop() ?? ref.filePath}
-                  {ref.isDirectory ? '/' : ''}
-                </span>
-                <button
-                  type="button"
-                  className="composer-file-badge-remove"
-                  data-testid="composer-file-badge-remove"
-                  onClick={() => removeFileRef(i)}
-                  aria-label="移除引用"
-                >
-                  ×
-                </button>
-              </span>
-            ))}
             {pastedImages.map((img) => (
               <div
                 key={`img-${img.id}`}
@@ -463,8 +536,6 @@ export function ChatComposer({
             value={text}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
-            onKeyUp={handleKeyUp}
-            onMouseUp={handleMouseUp}
             onPaste={handlePaste}
             placeholder={placeholder}
             disabled={disabled}
@@ -478,6 +549,15 @@ export function ChatComposer({
               filterText={filterText}
               onSelect={handleFileSelect}
               onClose={handleFilePickerClose}
+            />
+          )}
+
+          {/* SkillPalette overlay */}
+          {skillTrigger && activeVaultId && (
+            <SkillPalette
+              filterText={text.slice(1)}
+              onSelect={handleSkillSelect}
+              onClose={handleSkillClose}
             />
           )}
         </div>
@@ -560,6 +640,8 @@ export function ChatComposer({
         </div>
       </div>
       <div className="composer-hint">
+        <span className="hint-item"><kbd>/</kbd> <span className="hint-desc">{t('composer.hintSkill')}</span></span>
+        <span className="hint-sep">·</span>
         <span className="hint-item"><kbd>@</kbd> <span className="hint-desc">{t('composer.hintFileRef')}</span></span>
         <span className="hint-sep">·</span>
         <span className="hint-item"><kbd>Enter</kbd> <span className="hint-desc">{t('composer.hintSend')}</span></span>
