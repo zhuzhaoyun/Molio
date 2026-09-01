@@ -9,6 +9,7 @@ import {
   cleanupTempVault,
   type TempVault,
 } from './helpers/cleanup';
+import { mockAgent } from './helpers/mock-sse';
 
 /**
  * @area history
@@ -591,6 +592,9 @@ test.describe('History', () => {
   });
 
   test('deleting a loaded conversation via the home composer history menu clears the chat', async ({ page }) => {
+    // 无可用运行时（CI 无 agent）时 #230 的 NoRuntimeCard 会顶替输入框，导致首页
+    // composer 历史下拉不可用。mock 一个可用 agent 让 composer 渲染，测试才成立。
+    await mockAgent(page);
     const project = await createProject(`e2e-csync-${Date.now()}`);
     const conv = await createConversation(project.id, 'Composer Sync Conv');
     await addMessage(project.id, conv.id, {
