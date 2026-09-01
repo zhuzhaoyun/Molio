@@ -49,6 +49,41 @@ describe('listConversationHistory filters + cursor', () => {
     assert.ok(!ids.includes(c1.id));
   });
 
+  it('includeUnassociated + vaultId returns vault + unassociated, excludes other vaults', () => {
+    const vA = createVault(db, 'VA', '/tmp/vault-a');
+    const vB = createVault(db, 'VB', '/tmp/vault-b');
+    const cA = createDesktopConversation(db, 'in-vault-a', vA.id);
+    const cB = createDesktopConversation(db, 'in-vault-b', vB.id);
+    const cNone = createDesktopConversation(db, 'channel-chat', null);
+    upsertMessage(db, cA.id, { id: 'u1', role: 'user', content: 'hi', timestamp: Date.now() });
+    upsertMessage(db, cB.id, { id: 'u2', role: 'user', content: 'hi', timestamp: Date.now() });
+    upsertMessage(db, cNone.id, { id: 'u3', role: 'user', content: 'hi', timestamp: Date.now() });
+
+    const page = listConversationHistory(db, { vaultId: vA.id, includeUnassociated: true });
+    const ids = page.items.map((i) => i.conversation.id);
+    assert.ok(ids.includes(cA.id), 'own-vault conversation included');
+    assert.ok(ids.includes(cNone.id), 'unassociated conversation included');
+    assert.ok(!ids.includes(cB.id), 'other-vault conversation excluded');
+  });
+
+  it('includeUnassociated applies to pinned group too', () => {
+    const vA = createVault(db, 'PinVA', '/tmp/pin-va');
+    const vB = createVault(db, 'PinVB', '/tmp/pin-vb');
+    const pA = createDesktopConversation(db, 'pin-a', vA.id);
+    const pB = createDesktopConversation(db, 'pin-b', vB.id);
+    const pNone = createDesktopConversation(db, 'pin-channel', null);
+    updateConversation(db, pA.id, { pinned: true });
+    updateConversation(db, pB.id, { pinned: true });
+    updateConversation(db, pNone.id, { pinned: true });
+    upsertMessage(db, pA.id, { id: 'pu1', role: 'user', content: 'hi', timestamp: Date.now() });
+    upsertMessage(db, pB.id, { id: 'pu2', role: 'user', content: 'hi', timestamp: Date.now() });
+    upsertMessage(db, pNone.id, { id: 'pu3', role: 'user', content: 'hi', timestamp: Date.now() });
+
+    const page = listConversationHistory(db, { vaultId: vA.id, includeUnassociated: true });
+    const pinnedIds = page.pinnedItems.map((i) => i.conversation.id);
+    assert.deepEqual(pinnedIds.sort(), [pA.id, pNone.id].sort());
+  });
+
   it('cursor pagination: limit=2 over 3 items', async () => {
     const p = createProject(db, 'P3');
     const convs = [];

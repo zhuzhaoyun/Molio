@@ -374,6 +374,7 @@ export const api = {
   async listConversationHistory(opts?: ListHistoryQuery): Promise<ConversationHistoryPage> {
     const params = new URLSearchParams();
     if (opts?.vaultId) params.set('vaultId', opts.vaultId);
+    if (opts?.includeUnassociated) params.set('includeUnassociated', '1');
     if (opts?.query) params.set('query', opts.query);
     if (opts?.before != null) params.set('before', String(opts.before));
     if (opts?.limit != null) params.set('limit', String(opts.limit));
