@@ -167,7 +167,7 @@
       '<div class="rl-actions">' +
         // data-auth-gate：未登录时 auth.js 把文案改写为「登录后购买/下载」
         '<button type="button" class="rl-buy" data-id="' + encodeURIComponent(r.id) + '" data-auth-gate="' + gate + '">' + gate + '</button>' +
-        '<a class="rl-detail" href="resource.html?id=' + encodeURIComponent(r.id) + '">查看详情 →</a>' +
+        '<a class="rl-detail" href="resource/' + encodeURIComponent(r.id) + '.html">查看详情 →</a>' +
       '</div>' +
     '</article>';
   }

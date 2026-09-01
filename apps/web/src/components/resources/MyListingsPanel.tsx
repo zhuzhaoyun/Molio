@@ -111,7 +111,7 @@ export function MyListingsPanel({ onClose }: MyListingsPanelProps) {
                   <div className="mylistings-actions">
                     <a
                       className="mylistings-action"
-                      href={`https://molio.cn/resource.html?id=${l.id}`}
+                      href={`https://molio.cn/resource/${l.id}.html`}
                       target="_blank"
                       rel="noopener noreferrer"
                     >

@@ -5,6 +5,7 @@ import { corsMiddleware } from './cors.js';
 import { verifyAccessToken, type AccessPayload } from './jwt.js';
 import { marketRoutes, type MarketRoutesDeps } from './market/routes.js';
 import { AuthService, ServiceError, type ServiceErrorStatus } from './service.js';
+import { ssrRoutes } from './ssr/routes.js';
 
 export interface AppDeps {
   service: AuthService;
@@ -83,6 +84,9 @@ export function createApp(deps: AppDeps): Hono {
 
   if (deps.market) {
     app.route('/market', marketRoutes(deps.market, config, deps.now));
+    // 官网商品页 SSR：/resource/{id}.html 与 /sitemap-products.xml（nginx 反代）。
+    // 依赖市场数据，故与 /market 同条件挂载（无 OSS 凭证 → 同样 404）
+    app.route('/', ssrRoutes({ service: deps.market.service }));
   }
 
   app.post('/auth/send-code', async (c) => {
