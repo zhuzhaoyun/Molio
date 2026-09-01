@@ -32,6 +32,10 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+        env:
+          # CI runners are outside China — use the official npm registry instead of
+          # npmmirror.com to avoid CDN routing issues (e.g. app-builder-bin timeouts).
+          npm_config_registry: https://registry.npmjs.org
 
       - name: Build all packages
         run: pnpm build
