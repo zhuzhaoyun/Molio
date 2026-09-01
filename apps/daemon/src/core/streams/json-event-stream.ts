@@ -113,16 +113,25 @@ function handleCodexEvent(obj: unknown, onEvent: (ev: AgentEvent) => void): bool
       onEvent({ type: 'text_delta', delta: item.text });
       return true;
     }
+
+    // Reasoning / thinking items (Codex 0.149+)
+    if (item.type === 'reasoning' && typeof item.text === 'string') {
+      onEvent({ type: 'thinking_delta', delta: item.text });
+      return true;
+    }
   }
 
-  // Usage
-  if (obj.type === 'turn.completed' && isRecord(obj.usage)) {
-    const u = obj.usage;
-    const usage: UsageInfo = {};
-    if (typeof u.input_tokens === 'number') usage.input_tokens = u.input_tokens;
-    if (typeof u.output_tokens === 'number') usage.output_tokens = u.output_tokens;
-    if (typeof u.cached_input_tokens === 'number') usage.cached_read_tokens = u.cached_input_tokens;
-    onEvent({ type: 'usage', usage });
+  // Usage + turn completion
+  if (obj.type === 'turn.completed') {
+    if (isRecord(obj.usage)) {
+      const u = obj.usage;
+      const usage: UsageInfo = {};
+      if (typeof u.input_tokens === 'number') usage.input_tokens = u.input_tokens;
+      if (typeof u.output_tokens === 'number') usage.output_tokens = u.output_tokens;
+      if (typeof u.cached_input_tokens === 'number') usage.cached_read_tokens = u.cached_input_tokens;
+      onEvent({ type: 'usage', usage });
+    }
+    onEvent({ type: 'turn_end', stopReason: 'end_turn' });
     return true;
   }
 

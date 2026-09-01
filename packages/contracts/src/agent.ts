@@ -31,8 +31,28 @@ export interface NpmNativeInstallSource {
    * offline / registry unreachable). Should be a known-good version.
    */
   fallbackVersion?: string;
-  /** Platform key → { npm package name, binary path inside tarball } */
-  packages: Record<string, { pkgName: string; binInTar: string }>;
+  /**
+   * Platform key → { npm package name, binary path inside tarball }.
+   *
+   * - `tarballVersion`: tarball version template — `{version}` is replaced
+   *   with the resolved version. Needed when platform builds are published
+   *   as version-suffixed variants of ONE package instead of separate
+   *   per-platform packages (e.g. `@openai/codex` publishes
+   *   `0.149.0-win32-x64` → tarball `codex-0.149.0-win32-x64.tgz`).
+   *   Omit when the version is used verbatim (the common case).
+   * - `extractDir`: tar path prefix. When set, ALL regular files under the
+   *   prefix are extracted into `<binDir>/<agentId>/` preserving relative
+   *   paths (bundled layout — agents whose binary needs sibling resource
+   *   files, e.g. Codex ships rg/sandbox helpers next to codex.exe).
+   *   `binInTar` must lie inside `extractDir`. Omit for single-binary
+   *   tarballs, which extract just `binInTar` into `<binDir>/`.
+   */
+  packages: Record<string, {
+    pkgName: string;
+    binInTar: string;
+    tarballVersion?: string;
+    extractDir?: string;
+  }>;
   /** Registry URLs to try in order (first success wins) */
   registries: string[];
 }

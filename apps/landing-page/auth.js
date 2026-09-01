@@ -196,7 +196,8 @@
     document.body.appendChild(el);
     modal = el;
 
-    el.addEventListener('click', function (e) { if (e.target === el) cancelLogin(); });
+    // 关闭只认右上角 ×：点遮罩（卡片外暗区）不关闭。验证码步骤用户常在等邮件时
+    // 误点弹窗外，遮罩关闭会丢掉已输入的邮箱/验证码，体验恶劣——勿恢复遮罩关闭。
     el.querySelector('#auth-close').addEventListener('click', cancelLogin);
 
     var emailInput = el.querySelector('#auth-email');

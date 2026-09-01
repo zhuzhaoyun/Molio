@@ -55,18 +55,33 @@ describe('json-event-stream dispatcher', () => {
       }
     });
 
-    it('should parse turn.completed as usage', () => {
+    it('should parse turn.completed as usage + turn_end', () => {
       const events = collectEvents('codex', [
         JSON.stringify({
           type: 'turn.completed',
           usage: { input_tokens: 100, output_tokens: 50 },
         }),
       ]);
-      assert.equal(events.length, 1);
+      assert.equal(events.length, 2);
       assert.equal(events[0]!.type, 'usage');
       if (events[0]!.type === 'usage') {
         assert.equal(events[0]!.usage?.input_tokens, 100);
         assert.equal(events[0]!.usage?.output_tokens, 50);
+      }
+      assert.equal(events[1]!.type, 'turn_end');
+      if (events[1]!.type === 'turn_end') {
+        assert.equal(events[1]!.stopReason, 'end_turn');
+      }
+    });
+
+    it('should emit turn_end even when turn.completed has no usage', () => {
+      const events = collectEvents('codex', [
+        JSON.stringify({ type: 'turn.completed' }),
+      ]);
+      assert.equal(events.length, 1);
+      assert.equal(events[0]!.type, 'turn_end');
+      if (events[0]!.type === 'turn_end') {
+        assert.equal(events[0]!.stopReason, 'end_turn');
       }
     });
 

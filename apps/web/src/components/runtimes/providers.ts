@@ -208,3 +208,16 @@ function formatClaudeModelId(
   }
   return modelId;
 }
+
+/**
+ * Codex CLI provider presets. Unlike CLAUDE_PROVIDERS (env-var based, applied
+ * at spawn), these are applied by the daemon writing ~/.codex/config.toml +
+ * auth.json (cc-switch style), so they also work outside Molio.
+ *
+ * Single source of truth: @molio/contracts (shared with the daemon's
+ * codex-config.ts) — re-exported here so existing imports keep working.
+ */
+import { CODEX_PROVIDER_PRESETS, type CodexProviderPreset } from '@molio/contracts';
+
+export type { CodexProviderPreset };
+export const CODEX_PROVIDERS: CodexProviderPreset[] = CODEX_PROVIDER_PRESETS;

@@ -7,9 +7,10 @@ import { gotoHome, clickNav } from './helpers/navigation';
  *
  * E2E tests for the resources module (list / filters / detail / not-found).
  *
- * The catalog is bundled from apps/landing-page/resources-data.js (shared
- * single source of truth with the landing page). Counts are asserted
- * relatively (all = paid + free) so adding a resource does not break tests.
+ * The catalog comes from the cloud market via daemon /api/market/listings
+ * (since #233; the old static apps/landing-page/resources-data.js bridge is
+ * retired). Counts are asserted relatively (all = paid + free) so adding a
+ * resource does not break tests.
  *
  * NOTE: the pay button is intentionally NOT clicked here — it would create
  * real orders against pay.molio.cn. The pay modal is covered manually.
@@ -72,6 +73,54 @@ test.describe('Resources page', () => {
     await expect(page.locator('.resources-shell')).toBeVisible();
     await expect(page.locator('.resources-tip-box')).toBeVisible();
     await expect(page.locator('[data-testid="resources-back"]')).toBeVisible();
+  });
+});
+
+/**
+ * 支付可用性回归（2026-08：#233 移除 resources-data.js 的 side-effect import 后，
+ * web 端 window.MOLIO_PAY_BASE 无人注入，桌面端付费资源静默降级为
+ * 「支付服务未开通，请直接联系购买」，官网正常 —— 见 resources.ts 的默认值修复）。
+ *
+ * 只断言文案形态（按钮带「微信支付」+ 侧栏为扫码说明），绝不点击购买按钮。
+ */
+test.describe('Pay base availability', () => {
+  test('paid detail page offers WeChat pay instead of contact-us fallback', async ({ page }) => {
+    // mock 一个付费条目，不依赖开发环境云端目录里是否有付费资源
+    await page.route('**/api/market/listings/pay-regression', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 'pay-regression',
+          source: 'official',
+          name: '支付回归用条目',
+          icon: '💰',
+          tint: '#f5c518',
+          summary: '回归测试专用付费条目',
+          overview: [],
+          highlights: [],
+          tags: [],
+          previews: [],
+          version: '1.0.0',
+          priceCents: 100,
+          payUrl: '',
+          author: 'Molio E2E',
+          fileSize: null,
+          publishedAt: null,
+        }),
+      }),
+    );
+
+    await page.goto('/resources/pay-regression');
+    await expect(page.locator('.resources-detail-head h1')).toHaveText('支付回归用条目');
+
+    // 按钮文案含「微信支付 ¥1」（未登录带「登录后」前缀，登录与否都命中）
+    await expect(page.locator('[data-testid="resource-buy-pay-regression"]')).toContainText(
+      '微信支付 ¥1',
+    );
+    // 侧栏说明为扫码支付文案，而非「支付服务未开通，请直接联系购买」
+    await expect(page.locator('.resources-side-note')).toContainText('扫码支付成功后自动解锁下载');
+    await expect(page.locator('.resources-side-note')).not.toContainText('支付服务未开通');
   });
 });
 

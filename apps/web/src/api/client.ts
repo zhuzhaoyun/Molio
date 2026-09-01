@@ -356,9 +356,25 @@ export const api = {
     if (!res.ok) throw new Error(`Failed to update agent config: ${res.status}`);
   },
 
+  async getAgentProvider(agentId: string): Promise<Record<string, unknown>> {
+    const res = await fetch(`${BASE}/agents/${agentId}/provider`);
+    if (!res.ok) throw new Error(`Failed to fetch agent provider: ${res.status}`);
+    return res.json();
+  },
+
+  async updateAgentProvider(agentId: string, config: Record<string, unknown>): Promise<void> {
+    const res = await fetch(`${BASE}/agents/${agentId}/provider`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    });
+    if (!res.ok) throw new Error(`Failed to update agent provider: ${res.status}`);
+  },
+
   async listConversationHistory(opts?: ListHistoryQuery): Promise<ConversationHistoryPage> {
     const params = new URLSearchParams();
     if (opts?.vaultId) params.set('vaultId', opts.vaultId);
+    if (opts?.includeUnassociated) params.set('includeUnassociated', '1');
     if (opts?.query) params.set('query', opts.query);
     if (opts?.before != null) params.set('before', String(opts.before));
     if (opts?.limit != null) params.set('limit', String(opts.limit));
