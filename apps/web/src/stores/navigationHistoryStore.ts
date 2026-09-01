@@ -4,10 +4,9 @@
  *
  * A module-level singleton with useSyncExternalStore React bindings. Session-only
  * (no persistence), capped at 50 entries. back()/forward() walk the stack and
- * delegate the actual tab activation to the registered openFile callback.
- *
- * The stack is pruned to only contain currently-open tabs — closing a tab drops
- * its history entries, so back/forward never land on a file that isn't open.
+ * delegate the actual file open to the registered openFile callback — which the
+ * KB routes through handleSelectFile (activate an existing tab, else recycle the
+ * current one), so navigating never grows the tab count.
  */
 
 import { useSyncExternalStore } from 'react';
@@ -101,19 +100,6 @@ export const navigationHistoryStore = {
     currentIndex++;
     emit();
     _openFile?.(entries[currentIndex]);
-  },
-
-  /** Drop entries for files no longer open. */
-  prune(validFilePaths: Set<string>) {
-    const current = entries[currentIndex];
-    entries = entries.filter((f) => validFilePaths.has(f));
-    if (entries.length === 0) {
-      currentIndex = -1;
-    } else {
-      let idx = current ? entries.indexOf(current) : -1;
-      currentIndex = idx >= 0 ? idx : entries.length - 1;
-    }
-    emit();
   },
 
   /** For testing: reset store to initial state. */

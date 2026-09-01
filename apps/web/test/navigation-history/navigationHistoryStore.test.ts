@@ -2,9 +2,8 @@
  * Unit tests for navigationHistoryStore — the tab-scoped view-history stack.
  *
  * Tracks the order of files the user has viewed within the KB tab workspace.
- * back()/forward() walk the stack and delegate the actual tab activation to the
- * registered openFile callback. Pruned so it only ever contains currently-open
- * tabs (closed tabs drop out).
+ * back()/forward() walk the stack and delegate the actual file open to the
+ * registered openFile callback (the KB routes it through handleSelectFile).
  */
 import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -111,26 +110,4 @@ describe('navigationHistoryStore', () => {
     assert.deepEqual(opened, []);
   });
 
-  test('prune 丢弃已关闭文件，保持顺序与索引', () => {
-    navigationHistoryStore.push('a.md');
-    navigationHistoryStore.push('b.md');
-    navigationHistoryStore.push('c.md');
-    navigationHistoryStore.prune(new Set(['a.md', 'c.md'])); // 关掉 b.md
-    assert.equal(snap().canGoBack, true); // c 前面仍有 a
-    assert.equal(snap().canGoForward, false);
-    const opened: string[] = [];
-    navigationHistoryStore.registerOpenFile((fp) => opened.push(fp));
-    navigationHistoryStore.back(); // → a.md（b 已被剔除）
-    assert.deepEqual(opened, ['a.md']);
-  });
-
-  test('prune 后当前文件也被关闭时索引回退到边界', () => {
-    navigationHistoryStore.push('a.md');
-    navigationHistoryStore.push('b.md');
-    navigationHistoryStore.push('c.md');
-    navigationHistoryStore.back(); // 到 b.md（index 1）
-    navigationHistoryStore.prune(new Set(['a.md'])); // 只留 a.md
-    assert.equal(snap().canGoBack, false); // 已回退到唯一条目
-    assert.equal(snap().canGoForward, false);
-  });
 });
