@@ -4,8 +4,9 @@
  * 布局：左箭头 + 可横向滚动的 tab 列表 + 右箭头 + 下拉 ▾ + 右侧固定全局操作区。
  * active tab 变化时自动滚入可见区。箭头与下拉在后续 task 接入逻辑。
  */
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode, type MouseEvent as ReactMouseEvent } from 'react';
 import type { WorkspaceTab } from '../../hooks/useKbTabs';
+import { useI18n } from '../../i18n';
 import { ContextMenu } from './ContextMenu';
 
 interface KbTabBarProps {
@@ -13,6 +14,10 @@ interface KbTabBarProps {
   activeTabId: string | null;
   onActivate: (id: string) => void;
   onClose: (id: string) => void;
+  /** "+" button / 右键「新建标签页」— create a fresh blank tab. */
+  onAddTab?: () => void;
+  /** Double-click a tab or the its right-click menu → toggle pinned. */
+  onTogglePin?: (id: string) => void;
   /** Right-click a tab → open it in a new window (Electron IPC or browser popup). */
   onOpenInNewWindow?: (tab: WorkspaceTab) => void;
   actions?: ReactNode;
@@ -42,15 +47,59 @@ function tabDisplayTitle(tab: WorkspaceTab, allTabs: WorkspaceTab[]): { display:
   return { display: stillCollide ? relPath : candidate, tooltip };
 }
 
-export function KbTabBar({ tabs, activeTabId, onActivate, onClose, onOpenInNewWindow, actions }: KbTabBarProps) {
+export function KbTabBar({ tabs, activeTabId, onActivate, onClose, onAddTab, onTogglePin, onOpenInNewWindow, actions }: KbTabBarProps) {
+  const { t } = useI18n();
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<HTMLDivElement>(null);
   const [canLeft, setCanLeft] = useState(false);
   const [canRight, setCanRight] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<{ tab: WorkspaceTab; x: number; y: number } | null>(null);
+  const [barCtxMenu, setBarCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const moreRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Tabs currently animating out (close). Their store removal is deferred by
+  // the exit transition; the width-collapse + sibling slide plays first.
+  const [closingIds, setClosingIds] = useState<Set<string>>(new Set());
+  const tabsRef = useRef(tabs);
+  useEffect(() => { tabsRef.current = tabs; }, [tabs]);
+
+  // Track which tabs are genuinely NEW inserts (→ animate the grow-in entrance)
+  // vs a rename-in-place (recycle a tab onto a new file — same length, so it
+  // swaps content without re-animating). Init with the first tabs so a fresh
+  // load of persisted tabs does NOT all animate in.
+  const prevIdsRef = useRef<Set<string>>(new Set(tabs.map((t) => t.id)));
+  const prevLenRef = useRef(tabs.length);
+  useEffect(() => {
+    prevIdsRef.current = new Set(tabs.map((t) => t.id));
+    prevLenRef.current = tabs.length;
+  }, [tabs]);
+  const grew = tabs.length > prevLenRef.current;
+  const enteredIds = grew
+    ? new Set(tabs.filter((t) => !prevIdsRef.current.has(t.id)).map((t) => t.id))
+    : new Set<string>();
+
+  // Prune closing ids that no longer exist in the tab list (they were removed).
+  useEffect(() => {
+    setClosingIds((prev) => {
+      const next = new Set([...prev].filter((id) => tabs.some((t) => t.id === id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [tabs]);
+
+  // Animate the close: mark the tab as closing so CSS collapses it, then defer
+  // the real store removal until the transition finishes. If the close ends up
+  // showing a confirm dialog instead (dirty tab) and the tab survives, restore it.
+  const requestClose = useCallback((id: string) => {
+    setClosingIds((prev) => { const n = new Set(prev); n.add(id); return n; });
+    window.setTimeout(() => {
+      onClose(id);
+      if (tabsRef.current.some((t) => t.id === id)) {
+        setClosingIds((prev) => { const n = new Set(prev); n.delete(id); return n; });
+      }
+    }, 190);
+  }, [onClose]);
 
   // Close dropdown on Esc or outside click (button + menu count as one unit).
   useEffect(() => {
@@ -104,6 +153,14 @@ export function KbTabBar({ tabs, activeTabId, onActivate, onClose, onOpenInNewWi
     activeRef.current?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
   }, [activeTabId, tabs.length]);
 
+  // Right-click the tab bar's empty strip → create a new blank tab. Right-click
+  // landing on a tab is handled by the tab itself (the event stops there).
+  const handleBarContextMenu = (e: ReactMouseEvent) => {
+    if ((e.target as HTMLElement).closest('.kb-wtab')) return;
+    e.preventDefault();
+    setBarCtxMenu({ x: e.clientX, y: e.clientY });
+  };
+
   if (tabs.length === 0 && !actions) return null;
 
   return (
@@ -117,27 +174,32 @@ export function KbTabBar({ tabs, activeTabId, onActivate, onClose, onOpenInNewWi
         aria-label="向左滚动"
         onClick={() => scrollBy(-1)}
       >‹</button>
-      <div className="kb-wtab-scroll" ref={scrollRef} onScroll={recompute}>
+      <div className="kb-wtab-scroll" ref={scrollRef} onScroll={recompute} onContextMenu={handleBarContextMenu}>
         {tabs.map((tab) => {
           const isActive = tab.id === activeTabId;
+          const isPinned = !!tab.pinned;
+          const isClosing = closingIds.has(tab.id);
+          const isEntering = enteredIds.has(tab.id);
           const { display, tooltip } = tabDisplayTitle(tab, tabs);
           return (
             <div
               key={tab.id}
-              className={`kb-wtab ${isActive ? 'is-active' : ''}`}
+              className={`kb-wtab ${isActive ? 'is-active' : ''} ${isPinned ? 'is-pinned' : ''} ${isClosing ? 'is-closing' : ''} ${isEntering ? 'kb-wtab-enter' : ''}`}
               data-testid={tab.id.startsWith('file:') ? undefined : `kb-wtab-${tab.id}`}
               ref={isActive ? activeRef : null}
               onClick={() => onActivate(tab.id)}
+              onDoubleClick={() => onTogglePin?.(tab.id)}
               onContextMenu={(e) => {
                 // Right-click on the close × shouldn't pop the tab's context menu.
                 if ((e.target as HTMLElement).closest('.kb-wtab-close')) return;
                 e.preventDefault();
+                e.stopPropagation();
                 setCtxMenu({ tab, x: e.clientX, y: e.clientY });
               }}
               onMouseDown={(e) => {
                 if (e.button === 1) {
                   e.preventDefault();
-                  onClose(tab.id);
+                  requestClose(tab.id);
                 }
               }}
               title={tooltip}
@@ -148,13 +210,27 @@ export function KbTabBar({ tabs, activeTabId, onActivate, onClose, onOpenInNewWi
                 className="kb-wtab-close"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onClose(tab.id);
+                  requestClose(tab.id);
                 }}
                 title="关闭"
               >×</button>
             </div>
           );
         })}
+        {/* New-tab button rides directly after the last tab in the scroll row. */}
+        <button
+          type="button"
+          className="kb-wtab-add"
+          data-testid="kb-tab-add"
+          title={t('kb.newTab')}
+          aria-label={t('kb.newTab')}
+          onClick={() => onAddTab?.()}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14" aria-hidden="true">
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+        </button>
       </div>
       <button
         type="button"
@@ -192,7 +268,7 @@ export function KbTabBar({ tabs, activeTabId, onActivate, onClose, onOpenInNewWi
                 <button
                   type="button"
                   className="kb-wtab-dropdown-close"
-                  onClick={(e) => { e.stopPropagation(); onClose(tab.id); }}
+                  onClick={(e) => { e.stopPropagation(); requestClose(tab.id); }}
                   title="关闭"
                 >×</button>
               </div>
@@ -203,11 +279,31 @@ export function KbTabBar({ tabs, activeTabId, onActivate, onClose, onOpenInNewWi
       {actions && <div className="kb-wtab-actions">{actions}</div>}
       {ctxMenu && (
         <ContextMenu
-          items={[
-            { label: '在新窗口打开', testid: 'tab-open-in-new-window', onClick: () => onOpenInNewWindow?.(ctxMenu.tab) },
-          ]}
+          items={(() => {
+            const tab = ctxMenu.tab;
+            const canPin = tab.type === 'file' || tab.type === 'blank';
+            const items = [
+              { label: t('kb.newTab'), testid: 'tab-new-blank', onClick: () => onAddTab?.() },
+              { label: '在新窗口打开', testid: 'tab-open-in-new-window', onClick: () => onOpenInNewWindow?.(tab) },
+            ];
+            if (canPin) {
+              items.push({
+                label: tab.pinned ? t('kb.unpinTab') : t('kb.pinTab'),
+                testid: 'tab-toggle-pin',
+                onClick: () => onTogglePin?.(tab.id),
+              });
+            }
+            return items;
+          })()}
           position={{ x: ctxMenu.x, y: ctxMenu.y }}
           onClose={() => setCtxMenu(null)}
+        />
+      )}
+      {barCtxMenu && (
+        <ContextMenu
+          items={[{ label: t('kb.newTab'), testid: 'tab-bar-new-tab', onClick: () => onAddTab?.() }]}
+          position={{ x: barCtxMenu.x, y: barCtxMenu.y }}
+          onClose={() => setBarCtxMenu(null)}
         />
       )}
     </div>

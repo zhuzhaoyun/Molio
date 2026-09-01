@@ -21,6 +21,9 @@ export interface WorkspaceTab {
   title: string;
   vaultId?: string;
   data?: Record<string, unknown>;
+  /** Pinned tabs are exempt from the load-in-current-tab recycle: they keep
+   *  their document until explicitly unpinned. Persisted with the tab. */
+  pinned?: boolean;
 }
 
 export type Listener = () => void;
@@ -100,6 +103,8 @@ export interface KbTabsStore {
   removeWhere(predicate: (t: WorkspaceTab) => boolean): string[];
   activateTab(id: string): void;
   updateTab(id: string, patch: Partial<WorkspaceTab>): void;
+  /** Toggle a tab's pinned flag in place. */
+  togglePin(id: string): void;
   /** Release listeners when the owning window/vault store is unmounted. */
   destroy(): void;
 }
@@ -196,6 +201,18 @@ export function createTabsStore(vaultId: string): KbTabsStore {
       if (changed && newId && activeTabId === id && id !== newId) {
         activeTabId = newId;
       }
+      if (changed) emit();
+    },
+
+    togglePin(id: string) {
+      let changed = false;
+      tabs = tabs.map((t) => {
+        if (t.id === id) {
+          changed = true;
+          return { ...t, pinned: !t.pinned };
+        }
+        return t;
+      });
       if (changed) emit();
     },
 

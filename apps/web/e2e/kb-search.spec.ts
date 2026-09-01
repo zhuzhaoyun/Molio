@@ -29,12 +29,11 @@ test.describe('KB Full-text Search', () => {
     await expect(panel.locator('[data-testid="kb-search-result"]')).toHaveCount(1, { timeout: 5_000 });
     await expect(panel.locator('[data-testid="kb-search-result"]')).toContainText('a.md');
 
-    // 点击结果打开文件
+    // 点击结果打开文件 —— 复用当前标签（b.md 被回收，标签数不变）
     await panel.locator('[data-testid="kb-search-result"]').click();
-    // 面板关闭，文件在标签栏新开 tab 并切换到 a.md（b.md tab 保留）
     await expect(panel).not.toBeVisible();
     await expect(page.locator('.kb-wtab.is-active .kb-wtab-title')).toContainText('a.md');
-    await expect(page.locator('.kb-wtab')).toHaveCount(2);
+    await expect(page.locator('.kb-wtab')).toHaveCount(1);
   });
 
   test('Ctrl+F opens search panel', async ({ page }) => {
