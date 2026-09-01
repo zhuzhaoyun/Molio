@@ -51,7 +51,10 @@ function VaultSwitchNotice({ visible }: { visible: boolean }) {
 }
 
 export default function App() {
-  const { agents } = useAgents();
+  const { agents, loading: agentsLoading } = useAgents();
+  // 从 agents 列表判定「无可用运行时」，而非依赖 selection：selection 在首帧
+  // 绘制后才生效（会闪空状态卡片），且所选 agent 被移除时 selection 会变 stale。
+  const hasNoUsableAgent = agents.length === 0 || !agents.some((a) => a.available);
   const navigate = useNavigate();
   const location = useLocation();
   const [defaultAgentId, setDefaultAgentId] = useState<string | null>(null);
@@ -265,6 +268,9 @@ export default function App() {
               element={
                 <HomePage
                   selectedAgentName={agents.find((a) => a.id === selectedAgent)?.name ?? null}
+                  agentsReady={!agentsLoading}
+                  hasNoUsableAgent={hasNoUsableAgent}
+                  onOpenRuntimes={() => navigate('/settings?tab=runtimes')}
                   messages={chat.messages}
                   isRunning={chat.isRunning}
                   activity={chat.activity}

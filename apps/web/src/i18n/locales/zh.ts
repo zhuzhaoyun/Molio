@@ -22,6 +22,9 @@ const zh: Record<string, string> = {
   'home.newChat': '新对话',
   'home.noAgent': '未选择代理 — 请在运行时页面设置默认代理',
   'home.tagline': '墨藏于库，流于万象',
+  'home.noRuntimeTitle': '未安装 AI 运行时',
+  'home.noRuntimeDesc': '安装 Claude Code / Codex 等运行时后即可开始对话',
+  'home.openRuntimes': '去安装运行时',
 
   // ── ChatComposer ──
   'composer.noAgent': '没有可用的代理',

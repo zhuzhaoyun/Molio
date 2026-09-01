@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { RuntimesPanel } from './RuntimesPanel';
 import { ChannelsPanel } from './ChannelsPanel';
 import { SkillsPanel } from './SkillsPanel';
@@ -11,7 +12,9 @@ type Tab = 'general' | 'runtimes' | 'skills' | 'channels';
 
 export function SettingsPage() {
   const { t } = useI18n();
-  const [activeTab, setActiveTab] = useState<Tab>('general');
+  const [searchParams] = useSearchParams();
+  const initialTab = searchParams.get('tab');
+  const [activeTab, setActiveTab] = useState<Tab>(initialTab === 'runtimes' ? 'runtimes' : 'general');
 
   return (
     <div className="settings-shell">
@@ -32,6 +35,7 @@ export function SettingsPage() {
         <button
           type="button"
           className={`settings-tab-btn${activeTab === 'runtimes' ? ' is-active' : ''}`}
+          data-testid="settings-tab-runtimes"
           onClick={() => setActiveTab('runtimes')}
         >
           {t('settings.tabRuntimes')}

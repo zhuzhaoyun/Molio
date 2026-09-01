@@ -88,6 +88,56 @@
   box-shadow: 0 4px 24px rgba(26, 25, 23, 0.06), 0 0 0 3px var(--accent-tint);
 }
 
+/* ── 无运行时空状态卡片（替代输入框） ── */
+.home-no-runtime {
+  width: 100%;
+  max-width: 520px;
+  margin: 0 auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background-color: var(--bg-panel);
+  box-shadow: 0 4px 24px rgba(26, 25, 23, 0.06), 0 1px 3px rgba(26, 25, 23, 0.04);
+  padding: 28px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+  animation: no-runtime-card-in 280ms ease-out both;
+}
+.home-no-runtime__icon {
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.home-no-runtime__title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+.home-no-runtime__desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+/* 复用 base.css 的 button.primary 主按钮样式（accent 底 / hover→accent-hover / 内嵌阴影），
+   这里只覆写尺寸与圆角。 */
+.home-no-runtime__btn {
+  border-radius: var(--radius);
+  padding: 9px 18px;
+  font-size: 14px;
+}
+
+@keyframes no-runtime-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* ── Chat layout (when messages exist) ── */
 .home-page.chat-active {
   display: flex;
@@ -273,6 +323,9 @@
 /* Respect users with vestibular / motion sensitivity. */
 @media (prefers-reduced-motion: reduce) {
   .composer-uploading {
+    animation: none;
+  }
+  .home-no-runtime {
     animation: none;
   }
 }

@@ -1,7 +1,14 @@
 import { test, expect } from '@playwright/test';
 import { gotoHome } from './helpers/navigation';
+import { mockAgent } from './helpers/mock-sse';
 
 test.describe('Landing page', () => {
+  // Mock a usable agent so the composer renders regardless of the CI runner
+  // having no runtime installed (otherwise the NoRuntimeCard replaces it).
+  test.beforeEach(async ({ page }) => {
+    await mockAgent(page);
+  });
+
   test('hero brand and tagline are visible', async ({ page }) => {
     await gotoHome(page);
     await page.reload({ waitUntil: 'networkidle' });

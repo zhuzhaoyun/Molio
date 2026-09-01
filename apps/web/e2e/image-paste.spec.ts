@@ -1,10 +1,16 @@
 import { test, expect } from '@playwright/test';
 import { gotoHome } from './helpers/navigation';
+import { mockAgent } from './helpers/mock-sse';
 
 const TEST_VAULT_ID = 'e2e-image-paste-vault';
 const UPLOADED_FILE_PATH = '.molio/assets/e2e-test-1.png';
 
 test.describe('Composer image paste', () => {
+  // Mock a usable agent so the composer renders on a runtime-less CI runner.
+  test.beforeEach(async ({ page }) => {
+    await mockAgent(page);
+  });
+
   test('pasting an image shows thumbnail badge', async ({ page }) => {
     // Mock vault list so an active vault exists for the paste handler.
     await page.route('**/api/knowledge/vaults', async (route) => {
