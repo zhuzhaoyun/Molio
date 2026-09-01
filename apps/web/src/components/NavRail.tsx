@@ -1,16 +1,26 @@
 import { useEffect, useRef, useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import { useI18n } from '../i18n';
 import { useAuthStatus } from '../stores/authStore';
 import { loginIntentStore } from '../stores/loginIntentStore';
+import { useActiveVaultId } from '../stores/vaultStore';
 import { AccountModal } from './account/AccountModal';
 
 export function NavRail() {
   const { t } = useI18n();
+  const navigate = useNavigate();
+  const activeVaultId = useActiveVaultId();
   const auth = useAuthStatus();
   const [accountOpen, setAccountOpen] = useState(false);
   /** 账号面板是否由登录意图打开（提层盖过 z-200 的仓库管理器，保证登录视图可见可操作） */
   const [intentOpen, setIntentOpen] = useState(false);
+
+  /** 图谱入口：进入知识库并打开/激活图谱标签。图谱已从独立页改为标签页。 */
+  const openGraphFromRail = () => {
+    const q = new URLSearchParams({ panel: 'graph' });
+    if (activeVaultId) q.set('vault', activeVaultId);
+    navigate(`/knowledge?${q.toString()}`);
+  };
   /** 登录成功后要续接的动作（被门槛拦下的下载/购买）；未登录关闭则丢弃 */
   const loginResumeRef = useRef<(() => void) | null>(null);
 
@@ -81,12 +91,11 @@ export function NavRail() {
           </svg>
         </NavLink>
 
-        {/* Graph View */}
-        <NavLink
-          to="/graph"
-          className={({ isActive }) =>
-            `entry-nav-rail__btn ${isActive ? 'is-active' : ''}`
-          }
+        {/* Graph View — opens the graph tab in the knowledge-base workspace */}
+        <button
+          type="button"
+          className="entry-nav-rail__btn"
+          onClick={openGraphFromRail}
           data-view="graph"
           data-tooltip={t('nav.graph')}
         >
@@ -105,7 +114,7 @@ export function NavRail() {
             <line x1="16.5" y1="7.5" x2="13.5" y2="16.5" />
             <line x1="6" y1="8" x2="18" y2="8" />
           </svg>
-        </NavLink>
+        </button>
 
         {/* Resources — knowledge base packs (browse / pay / download) */}
         <NavLink

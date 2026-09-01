@@ -219,6 +219,7 @@ export class PixiGraphEngine {
 
   private callbacks: EngineCallbacks = {};
   private destroyed = false;
+  private paused = false;
 
   private width = 0;
   private height = 0;
@@ -330,6 +331,21 @@ export class PixiGraphEngine {
 
   setCallbacks(cb: EngineCallbacks): void {
     this.callbacks = cb;
+  }
+
+  /** Pause/resume the render loop and force simulation, keeping node positions
+   *  and viewport intact. Used when the graph tab is tabbed-away but kept alive —
+   *  stop burning rAF/CPU on a hidden canvas without losing the layout state. */
+  setPaused(paused: boolean): void {
+    if (this.paused === paused) return;
+    this.paused = paused;
+    if (paused) {
+      cancelAnimationFrame(this.rafId);
+      this.sim?.stop();
+    } else {
+      this.rafId = requestAnimationFrame(this.renderFrame);
+      this.sim?.restart();
+    }
   }
 
   setData(nodes: EngineNode[], edges: EngineEdge[]): void {

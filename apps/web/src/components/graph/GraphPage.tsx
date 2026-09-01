@@ -23,7 +23,7 @@ import {
   type EngineEdge,
 } from './engine/pixiGraphEngine';
 
-export function GraphPage() {
+export function GraphPage({ active = true }: { active?: boolean } = {}) {
   const { t } = useI18n();
   const navigate = useNavigate();
 
@@ -157,6 +157,13 @@ export function GraphPage() {
       cancelled = true;
     };
   }, [hasData]);
+
+  // Keep-alive: when the graph tab is tabbed away (active=false) but stays
+  // mounted, pause the engine so a hidden canvas doesn't burn rAF/CPU; resume
+  // on return. Node positions and viewport are preserved across the pause.
+  useEffect(() => {
+    engine?.setPaused(!active);
+  }, [engine, active]);
 
   // 组件卸载时销毁引擎
   useEffect(() => {
