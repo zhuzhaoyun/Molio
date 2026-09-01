@@ -1,0 +1,63 @@
+/* 引用来源 —— 助手回复底部的地基证据条（引用文件 / 外部 URL）。
+   静默元数据：发丝边框 token、弱化字级，terracotta 只在 hover/focus 兑现交互。 */
+.source-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.source-chips-title {
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-soft, #9a9894);
+  margin-right: 2px;
+  user-select: none;
+}
+.source-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  box-sizing: border-box;
+  height: 20px;
+  max-width: 220px;
+  padding: 0 8px;
+  border: 1px solid var(--border-soft, #edebe8);
+  border-radius: 6px;
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-muted, #6b6964);
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+.source-chip-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--text-soft, #9a9894);
+  transition: color 0.15s ease;
+}
+.source-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 可点击来源：hover/聚焦时 terracotta 兑现交互 */
+.source-chip.navigable:hover,
+.source-chip.navigable:focus-visible {
+  border-color: var(--accent, #c96442);
+  color: var(--accent, #c96442);
+}
+.source-chip.navigable:hover .source-chip-icon,
+.source-chip.navigable:focus-visible .source-chip-icon {
+  color: var(--accent, #c96442);
+}
+.source-chip:focus-visible {
+  outline: 2px solid var(--accent-soft, #f5d8cb);
+  outline-offset: 1px;
+}
+.source-chip:disabled {
+  cursor: default;
+  opacity: 0.55;
+}

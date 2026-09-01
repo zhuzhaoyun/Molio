@@ -3,7 +3,10 @@
   "version": "0.1.0",
   "type": "module",
   "main": "dist/src/index.js",
-  "files": ["dist", "src/tools/skills"],
+  "files": [
+    "dist",
+    "src/tools/skills"
+  ],
   "scripts": {
     "dev": "tsx src/index.ts",
     "dev:watch": "tsx watch src/index.ts",
@@ -21,6 +24,7 @@
     "fflate": "^0.8.3",
     "hono": "^4.7.0",
     "qrcode": "^1.5.4",
+    "smol-toml": "^1.8.0",
     "trash": "^10.1.1"
   },
   "devDependencies": {

@@ -15,6 +15,7 @@ import { ResourceDetailPage } from './components/resources/ResourceDetailPage';
 import { UpdateNotification } from './components/UpdateNotification';
 import { PreloadToast } from './components/PreloadToast';
 import { LanguageProvider } from './i18n/LanguageProvider';
+import { useI18n } from './i18n';
 import type { Locale } from './i18n';
 import { api } from './api/client';
 import { useActiveVault, vaultStore } from './stores/vaultStore';
@@ -38,6 +39,17 @@ import './App.css';
 
 const STORAGE_KEY_LAST_ROUTE = 'molio.lastRoute';
 
+/** 切 vault 后会话重置的 transient 提示条（必须渲染在 LanguageProvider 内取 useI18n）。 */
+function VaultSwitchNotice({ visible }: { visible: boolean }) {
+  const { t } = useI18n();
+  if (!visible) return null;
+  return (
+    <div className="vault-switch-notice" role="status" data-testid="vault-switch-notice">
+      {t('app.vaultSwitchReset')}
+    </div>
+  );
+}
+
 export default function App() {
   const { agents } = useAgents();
   const navigate = useNavigate();
@@ -48,6 +60,11 @@ export default function App() {
   const [locale, setLocale] = useState<Locale>('zh');
   const [configLoaded, setConfigLoaded] = useState(false);
   const chat = useChat({ agentId: selectedAgent, cwd: activeVault?.path });
+  // 跨 vault 残留防线：home 会话绑定 activeVault 的 cwd，切 vault 后旧会话在新 vault
+  // 上下文里产出读不到文件。检测到 activeVault 变化且有会话 → 重置 + transient 提示。
+  const [vaultSwitchNotice, setVaultSwitchNotice] = useState(false);
+  const vaultNoticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevVaultIdRef = useRef<string | null>(null);
   // 全局悬浮对话面板句柄（App 层常驻挂载，ref 下发给 KB 页触发 runWikiOp/openQa）
   const kbChatPanelRef = useRef<KbChatSessionsPanelHandle | null>(null);
 
@@ -221,6 +238,20 @@ export default function App() {
     setSelectedAgent(defaultAgentId ?? null);
   };
 
+  // 切 vault → 重置绑定旧 vault 的会话。首载/无 vault/未变化跳过；无会话无需重置。
+  // 保守同步实现（不依赖 daemon 会话归属查询）：只要 activeVault 变化即视为上下文切换。
+  useEffect(() => {
+    const vaultId = activeVault?.id ?? null;
+    const prev = prevVaultIdRef.current;
+    prevVaultIdRef.current = vaultId;
+    if (prev === null || vaultId === null || vaultId === prev) return;
+    if (!chat.conversationId) return;
+    chat.reset();
+    setVaultSwitchNotice(true);
+    if (vaultNoticeTimer.current) clearTimeout(vaultNoticeTimer.current);
+    vaultNoticeTimer.current = setTimeout(() => setVaultSwitchNotice(false), 3000);
+  }, [activeVault?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!configLoaded) return null;
 
   return (
@@ -293,6 +324,7 @@ export default function App() {
           onClose={closePrefill}
           onSave={savePrefillSkill}
         />
+        <VaultSwitchNotice visible={vaultSwitchNotice} />
       </div>
     </LanguageProvider>
   );

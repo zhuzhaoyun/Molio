@@ -110,6 +110,67 @@ describe('resolveAgentBinary with env override', () => {
   });
 });
 
+describe('well-known dir bundled-layout shadowing (regression)', () => {
+  // Bundled-layout installs (Codex) extract a directory tree rooted at
+  // ~/.molio/bin/<agentId>/ — so ~/.molio/bin/<agentId> EXISTS as a
+  // directory. findInWellKnownDirs must not return that directory as the
+  // binary (spawnSync fails with EACCES); it must keep scanning until the
+  // real file in ~/.molio/bin/<agentId>/bin/.
+  it('skips the ~/.molio/bin/codex directory and finds the binary in ~/.molio/bin/codex/bin', async () => {
+    const { resolveAgentBinary } = await import('../../src/core/runtimes/launch.js');
+
+    const prevHome = process.env['HOME'];
+    const prevUserProfile = process.env['USERPROFILE'];
+    const prevPath = process.env['PATH'];
+    const prevCodexBin = process.env['CODEX_BIN'];
+
+    const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-launch-shadow-'));
+    const emptyPathDir = path.join(fakeHome, 'empty-path');
+    fs.mkdirSync(emptyPathDir, { recursive: true });
+
+    try {
+      delete process.env['CODEX_BIN'];
+      if (process.platform === 'win32') {
+        process.env['USERPROFILE'] = fakeHome;
+      } else {
+        process.env['HOME'] = fakeHome;
+      }
+      // Empty PATH so `which`/`where` can never surface a system codex.
+      process.env['PATH'] = emptyPathDir;
+
+      // Bundled layout: the root is a DIRECTORY, the binary one level deeper.
+      const bundledRoot = path.join(fakeHome, '.molio', 'bin', 'codex');
+      const binDir = path.join(bundledRoot, 'bin');
+      fs.mkdirSync(binDir, { recursive: true });
+      const binName = process.platform === 'win32' ? 'codex.exe' : 'codex';
+      const expectedBinary = path.join(binDir, binName);
+      fs.writeFileSync(expectedBinary, 'fake-binary');
+      // Decoy file at the top level should NOT win either (it is not in the
+      // bundled bin dir), but the directory itself is the regression case.
+
+      const def = {
+        id: 'codex',
+        name: 'Codex CLI',
+        bin: 'codex',
+        versionArgs: ['--version'],
+        fallbackModels: [],
+        buildArgs: () => [],
+        streamFormat: 'test',
+      };
+
+      const result = resolveAgentBinary(def as never);
+      assert.equal(result.binary, expectedBinary);
+      assert.equal(result.source, 'well-known');
+    } finally {
+      if (prevHome !== undefined) process.env['HOME'] = prevHome; else delete process.env['HOME'];
+      if (prevUserProfile !== undefined) process.env['USERPROFILE'] = prevUserProfile; else delete process.env['USERPROFILE'];
+      if (prevPath !== undefined) process.env['PATH'] = prevPath; else delete process.env['PATH'];
+      if (prevCodexBin !== undefined) process.env['CODEX_BIN'] = prevCodexBin;
+      fs.rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('validateBinary Mach-O detection', () => {
   it('should accept little-endian 64-bit Mach-O headers', () => {
     const tmpFile = path.join(os.tmpdir(), `molio-macho-${Date.now()}`);

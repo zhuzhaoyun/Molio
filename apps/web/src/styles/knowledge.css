@@ -2523,8 +2523,11 @@
   align-items: center;
   gap: 6px;
   padding: 5px 10px;
-  min-width: 0;
-  max-width: 180px;
+  /* Obsidian-like width: a fixed roomy base that shrinks as more tabs are
+     open. flex-basis 180px each; tabs shrink uniformly down to min-width
+     before the row overflows into horizontal scrolling (arrows + ▾). */
+  flex: 0 1 180px;
+  min-width: 100px;
   border: 1px solid transparent;
   border-bottom: none;
   border-radius: 6px 6px 0 0;
@@ -2533,10 +2536,34 @@
   font-size: 12px;
   cursor: pointer;
   user-select: none;
-  transition: background-color 100ms ease, color 100ms ease, border-color 100ms ease;
+  /* width collapse on close + a gentle fade-in on open */
+  transition: background-color 100ms ease, color 100ms ease, border-color 100ms ease,
+    flex-basis 160ms ease, min-width 160ms ease, padding 160ms ease, opacity 180ms ease;
   position: relative;
   margin-right: 1px;
-  flex-shrink: 0;
+}
+
+/* New-tab entrance: grow the width from 0 and fade in — the exact mirror of
+   the is-closing collapse, so opening and closing share one motion language. */
+.kb-wtab-enter {
+  animation: kb-tab-in 180ms ease;
+}
+@keyframes kb-tab-in {
+  from { opacity: 0; flex-basis: 0px; min-width: 0px; padding-left: 0; padding-right: 0; }
+}
+
+/* Close: collapse the tab's width and fade it out; the sibling tabs slide
+   into the freed space as its width animates. Applied, then the tab is
+   removed from the store after the transition (KbTabBar defers closeTab). */
+.kb-wtab.is-closing {
+  flex-basis: 0px;
+  min-width: 0;
+  margin-right: 0;
+  padding-left: 0;
+  padding-right: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
 }
 
 .kb-wtab:hover {
@@ -2552,6 +2579,7 @@
 }
 
 .kb-wtab-title {
+  flex: 1 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2587,14 +2615,58 @@
   color: var(--text);
 }
 
+/* Pinned tab — a single coral underline says "tacked down", no extra chrome.
+   Never recycled by load-in-current-tab. */
+.kb-wtab.is-pinned::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  border-radius: 0 0 4px 4px;
+  background: var(--accent);
+}
+
+/* "+" explicit new-tab button — rides after the last tab in the scroll row. */
+.kb-wtab-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin: 0 2px;
+  padding: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  align-self: center;
+  transition: background-color 100ms ease, color 100ms ease;
+}
+.kb-wtab-add:hover {
+  background: var(--bg-panel);
+  color: var(--text-strong);
+}
+.kb-wtab-add svg {
+  display: block;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .kb-wtab,
   .kb-wtab-close,
   .kb-wtab-arrow,
   .kb-wtab-more,
+  .kb-wtab-add,
+  .kb-wtab-enter,
+  .kb-wtab.is-pinned::after,
+  .kb-wtab.is-closing,
   .kb-wtab-dropdown-item,
   .kb-wtab-dropdown-close {
     transition: none;
+    animation: none;
   }
 }
 

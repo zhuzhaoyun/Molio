@@ -94,13 +94,16 @@ export function createCodexStreamHandler(
       return;
     }
 
-    if (obj['type'] === 'turn.completed' && typeof obj['usage'] === 'object') {
-      const u = obj['usage'] as Record<string, unknown>;
-      const usage: UsageInfo = {};
-      if (typeof u['input_tokens'] === 'number') usage.input_tokens = u['input_tokens'] as number;
-      if (typeof u['output_tokens'] === 'number') usage.output_tokens = u['output_tokens'] as number;
-      if (typeof u['cached_input_tokens'] === 'number') usage.cached_read_tokens = u['cached_input_tokens'] as number;
-      onEvent({ type: 'usage', usage });
+    if (obj['type'] === 'turn.completed') {
+      if (typeof obj['usage'] === 'object') {
+        const u = obj['usage'] as Record<string, unknown>;
+        const usage: UsageInfo = {};
+        if (typeof u['input_tokens'] === 'number') usage.input_tokens = u['input_tokens'] as number;
+        if (typeof u['output_tokens'] === 'number') usage.output_tokens = u['output_tokens'] as number;
+        if (typeof u['cached_input_tokens'] === 'number') usage.cached_read_tokens = u['cached_input_tokens'] as number;
+        onEvent({ type: 'usage', usage });
+      }
+      onEvent({ type: 'turn_end', stopReason: 'end_turn' });
       return;
     }
   }

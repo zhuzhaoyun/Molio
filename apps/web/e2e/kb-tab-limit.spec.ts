@@ -7,116 +7,115 @@ import * as path from 'path';
  * @area kb
  * @priority P0
  *
- * Tab cap + overflow UI. Regression for: previously tabs grew unbounded
- * with no cap, no overflow affordance, and no scroll-into-view on activate.
+ * Tab cap + overflow UI (load-in-current-tab model).
+ *
+ * The cap (MAX_TABS=20) now guards only EXPLICIT new-tab creation ("+",
+ * tree right-click「在新标签页中打开」, or a new tab when the active tab is
+ * pinned/special). Clicking a plain document recycles the current tab, so it
+ * never grows the count and never trips the cap. Seeding localStorage keeps
+ * these tests fast instead of clicking 20 files.
+ *
+ * Regression for: previously tabs grew unbounded with no cap; then every doc
+ * click appended a tab up to the cap. Now only explicit creation hits it.
  */
 
 let vault: TempVault;
+
+function makeTabs(n: number, pinned?: number): { id: string; type: string; title: string; pinned?: boolean }[] {
+  return Array.from({ length: n }, (_, i) => {
+    const num = String(i + 1).padStart(2, '0');
+    const t: { id: string; type: string; title: string; pinned?: boolean } = {
+      id: `file:f${num}.md`,
+      type: 'file',
+      title: `f${num}.md`,
+    };
+    if (pinned != null && i + 1 === pinned) t.pinned = true;
+    return t;
+  });
+}
+
+const seed = async (page: import('@playwright/test').Page, tabs: unknown[], activeId: string, vaultId: string) => {
+  await page.addInitScript(({ tabs, activeId, vaultId }: { tabs: unknown[]; activeId: string; vaultId: string }) => {
+    localStorage.setItem(`molio.kb.tabs.${vaultId}`, JSON.stringify(tabs));
+    localStorage.setItem(`molio.kb.activeTabId.${vaultId}`, activeId);
+  }, { tabs, activeId, vaultId });
+};
 
 test.describe('KB tab limit', () => {
   test.beforeAll(async () => {
     vault = await createTempVault('e2e-kb-tab-limit');
     fs.unlinkSync(path.join(vault.path, 'test.md'));
-    // 22 files: f01..f22. Limit is 20; 21st/22nd exercise the cap.
-    for (let i = 1; i <= 22; i++) {
+    // 22 files: f01..f22. Limit is 20; 21st/22nd exercise the cap/recycle.
+    for (let i = 1; i <= 26; i++) {
       const n = String(i).padStart(2, '0');
       fs.writeFileSync(path.join(vault.path, `f${n}.md`), `# F${n}\n`);
     }
   });
   test.afterAll(async () => { if (vault) await cleanupTempVault(vault); });
 
-  const openN = async (page: import('@playwright/test').Page, n: number) => {
-    for (let i = 1; i <= n; i++) {
-      const nn = String(i).padStart(2, '0');
-      await page.locator('.kb-tree-item').filter({ hasText: `f${nn}.md` }).click();
-    }
-  };
-
-  test('opening 20 files yields 20 tabs; 21st is blocked with a toast', async ({ page }) => {
+  test('at cap, "+" is blocked with a toast', async ({ page }) => {
+    await seed(page, makeTabs(20), 'file:f20.md', vault.id);
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
-    await expect(page.locator('.kb-tree-item').filter({ hasText: 'f01.md' })).toBeVisible({ timeout: 10_000 });
-
-    await openN(page, 20);
     await expect(page.locator('.kb-wtab')).toHaveCount(20, { timeout: 5_000 });
 
-    const activeBefore = await page.locator('.kb-wtab.is-active').textContent();
-    await page.locator('.kb-tree-item').filter({ hasText: 'f21.md' }).click();
+    await page.locator('[data-testid="kb-tab-add"]').click();
     await expect(page.locator('[data-testid="kb-notice"]')).toBeVisible({ timeout: 3_000 });
     await expect(page.locator('.kb-wtab')).toHaveCount(20);
-    // active did not switch
-    await expect(page.locator('.kb-wtab.is-active')).toContainText(String(activeBefore));
   });
 
-  test('at limit, re-opening an already-open file activates without toast', async ({ page }) => {
+  test('at cap, clicking a new doc reuses the current tab (no toast)', async ({ page }) => {
+    await seed(page, makeTabs(20), 'file:f20.md', vault.id);
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
-    await openN(page, 20);
-    await expect(page.locator('.kb-wtab')).toHaveCount(20);
+    await expect(page.locator('.kb-wtab')).toHaveCount(20, { timeout: 5_000 });
 
-    // f01 is already open → click activates it, no toast, no new tab.
-    await page.locator('.kb-tree-item').filter({ hasText: 'f01.md' }).click();
-    await expect(page.locator('.kb-wtab')).toHaveCount(20);
-    await expect(page.locator('.kb-wtab.is-active')).toContainText('f01.md');
-    await expect(page.locator('[data-testid="kb-notice"]')).toHaveCount(0);
-  });
-
-  test('at limit with unsaved edits, opening a new file does NOT prompt to discard', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
-    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
-    await openN(page, 20);
-    // Enter typeset mode on the 20th (active) file and make an unsaved edit.
-    await page.locator('[data-testid="kb-btn-typeset"]').click();
-    const textarea = page.locator('.kb-typeset-textarea');
-    await expect(textarea).toBeVisible({ timeout: 5_000 });
-    await textarea.fill('# F20\n\nUNSAVED MARKER');
-
-    // Click f21 (new file at limit) → must NOT show discard overlay.
-    await page.locator('.kb-tree-item').filter({ hasText: 'f21.md' }).click();
-    await expect(page.locator('.kb-overlay.show')).toHaveCount(0, { timeout: 1_000 });
-    await expect(page.locator('[data-testid="kb-notice"]')).toBeVisible({ timeout: 3_000 });
-    // Edits preserved.
-    await expect(textarea).toHaveValue(/UNSAVED MARKER/);
-  });
-
-  test('closing one tab at limit re-enables opening a new one', async ({ page }) => {
-    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
-    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
-    await openN(page, 20);
-    await expect(page.locator('.kb-wtab')).toHaveCount(20);
-
-    // Close the active tab's × (last one, f20).
-    await page.locator('.kb-wtab.is-active .kb-wtab-close').click();
-    await expect(page.locator('.kb-wtab')).toHaveCount(19, { timeout: 5_000 });
-
-    // Now f21 can be opened.
+    // Active is the unpinned file tab f20 → clicking f21 recycles it, no growth.
     await page.locator('.kb-tree-item').filter({ hasText: 'f21.md' }).click();
     await expect(page.locator('.kb-wtab')).toHaveCount(20, { timeout: 5_000 });
     await expect(page.locator('.kb-wtab.is-active')).toContainText('f21.md');
+    await expect(page.locator('[data-testid="kb-notice"]')).toHaveCount(0);
+  });
+
+  test('at cap with a pinned active tab, opening a new doc is blocked', async ({ page }) => {
+    await seed(page, makeTabs(20, 20), 'file:f20.md', vault.id);
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.kb-wtab')).toHaveCount(20, { timeout: 5_000 });
+    await expect(page.locator('.kb-wtab.is-pinned')).toHaveCount(1, { timeout: 3_000 });
+
+    // f20 is pinned → cannot recycle; opening f21 would grow → cap blocks it.
+    await page.locator('.kb-tree-item').filter({ hasText: 'f21.md' }).click();
+    await expect(page.locator('[data-testid="kb-notice"]')).toBeVisible({ timeout: 3_000 });
+    await expect(page.locator('.kb-wtab')).toHaveCount(20);
+    await expect(page.locator('.kb-wtab.is-active')).toContainText('f20.md');
+  });
+
+  test('closing one tab at cap re-enables "+"', async ({ page }) => {
+    await seed(page, makeTabs(20), 'file:f20.md', vault.id);
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.kb-wtab')).toHaveCount(20, { timeout: 5_000 });
+
+    // Close the active (f20) tab.
+    await page.locator('.kb-wtab.is-active .kb-wtab-close').click();
+    await expect(page.locator('.kb-wtab')).toHaveCount(19, { timeout: 5_000 });
+
+    await page.locator('[data-testid="kb-tab-add"]').click();
+    await expect(page.locator('.kb-wtab')).toHaveCount(20, { timeout: 5_000 });
   });
 
   test('persisted tabs beyond MAX_TABS are not silently closed on load', async ({ page }) => {
-    // Seed 25 persisted tabs pointing at f01..f25 paths (paths need not exist).
-    const seeded = Array.from({ length: 25 }, (_, i) => {
-      const n = String(i + 1).padStart(2, '0');
-      return { id: `file:f${n}.md`, type: 'file', title: `f${n}.md` };
-    });
-    // addInitScript takes a single serializable arg — bundle tabs + vaultId together.
-    await page.addInitScript(({ tabs, vaultId }: { tabs: unknown[]; vaultId: string }) => {
-      localStorage.setItem(`molio.kb.tabs.${vaultId}`, JSON.stringify(tabs));
-      localStorage.setItem(`molio.kb.activeTabId.${vaultId}`, 'file:f01.md');
-    }, { tabs: seeded, vaultId: vault.id });
-
-    // 26th new file must be blocked (f22..f25 are already persisted, so use f26).
-    fs.writeFileSync(path.join(vault.path, 'f26.md'), '# F26\n');
-
+    // Seed 25 persisted tabs pointing at f01..f25 (paths need exist).
+    await seed(page, makeTabs(25), 'file:f01.md', vault.id);
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-wtab')).toHaveCount(25, { timeout: 5_000 });
 
+    // f26 exists; active f01 is an unpinned file tab → clicking f26 recycles it.
     await page.locator('.kb-tree-item').filter({ hasText: 'f26.md' }).click();
-    await expect(page.locator('[data-testid="kb-notice"]')).toBeVisible({ timeout: 3_000 });
-    await expect(page.locator('.kb-wtab')).toHaveCount(25);
+    await expect(page.locator('.kb-wtab')).toHaveCount(25, { timeout: 5_000 });
+    await expect(page.locator('.kb-wtab.is-active')).toContainText('f26.md');
   });
 });
 
@@ -134,16 +133,28 @@ test.describe('KB tab overflow UI', () => {
   });
   test.afterAll(async () => { if (vault) await cleanupTempVault(vault); });
 
+  // To open N file tabs under the load-in-current model, click the first file
+  // then for each subsequent file click "+" (new blank) then the file (fills it).
+  const openMany = async (page: import('@playwright/test').Page, n: number) => {
+    const clickFile = async (i: number) => {
+      const num = String(i).padStart(2, '0');
+      await page.locator('.kb-tree-item').filter({ hasText: `g${num}.md` }).click();
+    };
+    await clickFile(1);
+    await expect(page.locator('.kb-wtab')).toHaveCount(1, { timeout: 5_000 });
+    for (let i = 2; i <= n; i++) {
+      await page.locator('[data-testid="kb-tab-add"]').click();
+      await clickFile(i);
+      await expect(page.locator('.kb-wtab')).toHaveCount(i, { timeout: 5_000 });
+    }
+  };
+
   test('active tab scrolls into the visible scroll area on open', async ({ page }) => {
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.kb-tree-item').filter({ hasText: 'g01.md' })).toBeVisible({ timeout: 10_000 });
 
-    // Open 8 tabs in a narrow 800px viewport → overflow. The last opened is active.
-    for (let i = 1; i <= 8; i++) {
-      const n = String(i).padStart(2, '0');
-      await page.locator('.kb-tree-item').filter({ hasText: `g${n}.md` }).click();
-    }
+    await openMany(page, 8);
     await expect(page.locator('.kb-wtab')).toHaveCount(8, { timeout: 5_000 });
 
     const scroll = page.locator('.kb-wtab-scroll');
@@ -162,10 +173,7 @@ test.describe('KB tab overflow UI', () => {
   test('arrows appear when tabs overflow and scroll on click', async ({ page }) => {
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
-    for (let i = 1; i <= 8; i++) {
-      const n = String(i).padStart(2, '0');
-      await page.locator('.kb-tree-item').filter({ hasText: `g${n}.md` }).click();
-    }
+    await openMany(page, 8);
     const scroll = page.locator('.kb-wtab-scroll');
 
     // Overflowing → right arrow visible. Because the active (last) tab was
@@ -187,10 +195,7 @@ test.describe('KB tab overflow UI', () => {
   test('dropdown lists all tabs; selecting one activates + scrolls it into view', async ({ page }) => {
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
-    for (let i = 1; i <= 8; i++) {
-      const n = String(i).padStart(2, '0');
-      await page.locator('.kb-tree-item').filter({ hasText: `g${n}.md` }).click();
-    }
+    await openMany(page, 8);
     // g01 is the first-opened, off-screen left after scrolling to g08.
     await page.locator('[data-testid="kb-tab-more"]').click();
     const dropdown = page.locator('[data-testid="kb-tab-dropdown"]');
@@ -209,10 +214,7 @@ test.describe('KB tab overflow UI', () => {
   test('dropdown item × closes that tab without activating it', async ({ page }) => {
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
-    for (let i = 1; i <= 8; i++) {
-      const n = String(i).padStart(2, '0');
-      await page.locator('.kb-tree-item').filter({ hasText: `g${n}.md` }).click();
-    }
+    await openMany(page, 8);
     // Active is g08 before opening dropdown.
     await page.locator('[data-testid="kb-tab-more"]').click();
     const dropdown = page.locator('[data-testid="kb-tab-dropdown"]');

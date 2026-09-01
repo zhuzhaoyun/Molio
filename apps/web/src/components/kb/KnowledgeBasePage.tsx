@@ -305,9 +305,10 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
   }, [kb.editedContent]);
 
   /**
-   * Open a file: activate its tab if already open, otherwise open a new tab
-   * (appended to the right of existing tabs). Never overwrites an existing tab.
-   * Prompts before switching away from unsaved edits.
+   * Open a file by loading it into the CURRENT tab (recycle), unless that tab
+   * is pinned (exempt) or a special tab (publish) — in which case it opens in a
+   * fresh tab. A file already open just activates its tab. Never grows the tab
+   * count from browsing alone. Prompts before switching away from unsaved edits.
    */
   const handleSelectFile = useCallback((path: string) => {
     const action = () => {
@@ -316,23 +317,32 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
       const existingTab = tabs.tabs.find(t => t.id === tabId);
       if (existingTab) {
         tabs.activateTab(tabId);
-      } else {
-        const res = tabs.openTab({ id: tabId, type: 'file', title: fileName, vaultId: kb.activeVault?.id });
-        if (!res.opened && res.reason === 'limit') {
-          // Defensive: pre-check below should have caught this; never switch
-          // the viewed file or discard edits when blocked.
-          showToast(`已达 ${MAX_TABS} 个标签上限，请先关闭某个标签`);
-          return;
-        }
+        kb.selectFile(path);
+        return;
+      }
+      const activeTab = tabs.getActiveTab();
+      // Recycle the active tab in place iff it is a normal (file/blank) tab and
+      // not pinned. Pinned tabs keep their document; special tabs are protected.
+      const recyclable = activeTab && activeTab.pinned !== true && (activeTab.type === 'file' || activeTab.type === 'blank');
+      if (recyclable) {
+        tabs.updateTab(activeTab.id, { id: tabId, type: 'file', title: fileName, vaultId: kb.activeVault?.id, data: undefined, pinned: false });
+        kb.selectFile(path);
+        return;
+      }
+      const res = tabs.openTab({ id: tabId, type: 'file', title: fileName, vaultId: kb.activeVault?.id });
+      if (!res.opened && res.reason === 'limit') {
+        showToast(`已达 ${MAX_TABS} 个标签上限，请先关闭某个标签`);
+        return;
       }
       kb.selectFile(path);
     };
-    // Limit pre-check BEFORE the discard prompt: avoids confirming "discard
-    // edits" only to have the open blocked by the cap. Re-opening an existing
-    // tab is exempt (activate != new open).
+    // Limit pre-check BEFORE the discard prompt: only the open-a-new-tab path
+    // can grow the count, so skip the guard when we'll recycle instead.
     const tabId = `file:${path}`;
     const existingTab = tabs.tabs.find(t => t.id === tabId);
-    if (!existingTab && tabs.tabs.length >= MAX_TABS) {
+    const activeTab = tabs.getActiveTab();
+    const willGrow = !existingTab && !(activeTab && activeTab.pinned !== true && (activeTab.type === 'file' || activeTab.type === 'blank'));
+    if (willGrow && tabs.tabs.length >= MAX_TABS) {
       showToast(`已达 ${MAX_TABS} 个标签上限，请先关闭某个标签`);
       return;
     }
@@ -343,8 +353,41 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     runOrConfirmDiscard(action);
   }, [tabs, kb, runOrConfirmDiscard, showToast]);
 
-  /** Open a file in a new tab — same semantics as handleSelectFile. */
-  const handleOpenInNewTab = handleSelectFile;
+  /** Explicitly open a file in a brand-new tab (tree right-click「在新标签页中打开」). */
+  const handleOpenInNewTab = useCallback((path: string) => {
+    const fileName = path.split('/').pop() ?? path;
+    const tabId = `file:${path}`;
+    if (tabs.tabs.some(t => t.id === tabId)) {
+      tabs.activateTab(tabId);
+      kb.selectFile(path);
+      return;
+    }
+    if (tabs.tabs.length >= MAX_TABS) {
+      showToast(`已达 ${MAX_TABS} 个标签上限，请先关闭某个标签`);
+      return;
+    }
+    const res = tabs.openTab({ id: tabId, type: 'file', title: fileName, vaultId: kb.activeVault?.id });
+    if (!res.opened && res.reason === 'limit') {
+      showToast(`已达 ${MAX_TABS} 个标签上限，请先关闭某个标签`);
+      return;
+    }
+    kb.selectFile(path);
+  }, [tabs, kb, showToast]);
+
+  /** Create and activate a fresh blank tab (tab bar "+" / right-click 新建标签页). */
+  const handleAddTab = useCallback(() => {
+    if (tabs.tabs.length >= MAX_TABS) {
+      showToast(`已达 ${MAX_TABS} 个标签上限，请先关闭某个标签`);
+      return;
+    }
+    const id = `blank:${kb.activeVault?.id ?? 'vault'}:${Math.random().toString(36).slice(2, 8)}`;
+    const res = tabs.openTab({ id, type: 'blank', title: t('kb.newTab'), vaultId: kb.activeVault?.id });
+    if (!res.opened && res.reason === 'limit') {
+      showToast(`已达 ${MAX_TABS} 个标签上限，请先关闭某个标签`);
+      return;
+    }
+    kb.selectFile(null);
+  }, [tabs, kb, showToast, t]);
 
   /** Navigate to a file by wikilink page name — opens in a new tab. */
   const handleNavigateToFile = useCallback((pageName: string) => {
@@ -362,14 +405,21 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     // Clicking the already-active tab is a no-op — don't prompt.
     if (tabId === tabs.activeTabId) return;
     const targetPath = tabId.startsWith('file:') ? tabId.slice(5) : null;
+    const tab = tabs.tabs.find(t => t.id === tabId);
     const willSwitchFile = targetPath !== null && kb.selectedFile !== targetPath;
     const run = () => {
       tabs.activateTab(tabId);
       if (targetPath !== null) kb.selectFile(targetPath);
+      else if (tab?.type === 'blank') kb.selectFile(null);
     };
     if (willSwitchFile) runOrConfirmDiscard(run);
     else run();
   }, [tabs, kb, runOrConfirmDiscard]);
+
+  /** Toggle a tab's pinned flag (double-click / right-click menu). */
+  const handleTogglePin = useCallback((id: string) => {
+    tabs.togglePin(id);
+  }, [tabs]);
 
   /** Close a tab; if it was active, the store auto-activates an adjacent tab.
    *  publish tab 有已填内容时先弹「放弃未发布的填写」确认。 */
@@ -488,6 +538,10 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
       if (kb.selectedFile !== path) {
         kb.selectFile(path);
       }
+    } else if (activeTab?.type === 'blank') {
+      // A blank tab has no file — clear any stale selection so the content
+      // pane shows the "未选择文件" empty state instead of the previous file.
+      if (kb.selectedFile !== null) kb.selectFile(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kb.activeVault?.id, tabs.activeTabId]);
@@ -760,6 +814,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
       });
       items.push({
         label: '在新标签页中打开',
+        testid: 'kb-ctx-open-in-new-tab',
         onClick: () => handleOpenInNewTab(node.path),
       });
       items.push({ divider: true });
@@ -1094,6 +1149,8 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
           onActivate={handleActivateTab}
           onClose={handleCloseTab}
           onOpenInNewWindow={handleOpenInNewWindow}
+          onAddTab={handleAddTab}
+          onTogglePin={handleTogglePin}
           actions={
             <>
               <button

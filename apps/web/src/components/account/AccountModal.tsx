@@ -264,11 +264,10 @@ export function AccountModal({ show, onClose, onLoggedIn, elevated = false }: Ac
     );
   }
 
+  // 关闭只认右上角 ×：点遮罩（卡片外暗区）不关闭。验证码步骤用户常在等邮件时
+  // 误点弹窗外，遮罩关闭会丢掉已输入的邮箱/验证码——勿恢复遮罩关闭。
   return (
-    <div
-      className={`kb-overlay show${elevated ? ' kb-overlay-elevated' : ''}`}
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
+    <div className={`kb-overlay show${elevated ? ' kb-overlay-elevated' : ''}`}>
       <div className="kb-modal account-modal">
         {/* 无标题栏：关闭按钮悬浮右上角，面板空间全留给内容 */}
         <button

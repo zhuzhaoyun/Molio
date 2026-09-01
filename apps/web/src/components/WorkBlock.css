@@ -1,0 +1,211 @@
+/* ── 工作块 WorkBlock —— 执行过程收进一张卡片，与正文显著区分 ──
+   运行中 = 当前动作 + 静态底条 + 思考 + 工具行 + meta（模型·时间）；
+   完成后 = 折叠成摘要头 + meta，展开可看思考与工具行。
+   旧的步骤列表样式已删除（work-timeline-step 移除，工具行就地渲染）。 */
+.work-block {
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid var(--border-soft, #edebe8);
+  border-radius: var(--radius-sm, 8px);
+  background: var(--bg-subtle, #f4f2ef);
+  padding: 4px 10px 6px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-muted, #6b6964);
+}
+
+/* ── 生成中：当前动作 + 静态底条 ── */
+.work-block-current {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 3px 0 4px;
+}
+.work-block-spinner {
+  color: var(--accent, #c96442);
+  animation: work-spin 1s linear infinite;
+  flex: none;
+}
+.work-block-label {
+  font-weight: 600;
+  color: var(--text, #1a1917);
+  white-space: nowrap;
+}
+.work-block-sub {
+  color: var(--text-soft, #9a9894);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.work-block-count {
+  flex: none;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-soft, #9a9894);
+  background: var(--bg-muted, #eae7e2);
+  border-radius: 999px;
+  padding: 0 6px;
+}
+.work-block-track {
+  height: 2px;
+  margin: 0 0 6px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--accent, #c96442) 15%, transparent);
+}
+@keyframes work-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── 过程叙事流：执行中 agent 的自言自语 —— 阅读主线（Codex 真实层级：叙述=主角，
+   工具行=暗灰账本）。13px 正文色，比账本行大且深；工具行见 chat.css 的弱化。
+   上 8 / 下 4 的呼吸：先说话，再挂回执。 ── */
+.work-block-process {
+  margin: 8px 0 4px;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1.75;
+  color: var(--text, #1a1917);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ── 完成后：折叠摘要 ── */
+.work-block-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 3px 2px;
+  border: none;
+  border-radius: var(--radius-sm, 8px);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-muted, #6b6964);
+  cursor: pointer;
+  text-align: left;
+}
+.work-block-summary:hover { background: var(--bg-muted, #eae7e2); }
+.work-block-summary:focus-visible {
+  outline: 2px solid var(--accent-soft, #f5d8cb);
+  outline-offset: -2px;
+}
+.work-block-summary-icon { color: var(--accent, #c96442); flex: none; }
+.work-block-summary-icon.error { color: var(--red, #a8322e); }
+.work-block-summary-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text, #1a1917);
+  font-weight: 500;
+}
+.work-block-summary-chevron { color: var(--text-soft, #9a9894); flex: none; }
+
+/* ── 展开详情：思考 + 工具行 ── */
+.work-block-detail {
+  border-top: 1px solid var(--border-soft, #edebe8);
+  margin-top: 3px;
+  padding: 4px 0 2px;
+}
+/* 两级缩进树：叙述（work-block-process / thinking）flush 左缘 —— 说话的人在页边；
+   工具行整体缩进 —— 回执挂在下面，⎿ 字形与真实缩进呼应。层级靠结构不靠颜色。 */
+.work-block-detail .thinking-block,
+.work-block.running .thinking-block {
+  margin-left: 0;
+  margin-right: 0;
+}
+.work-block-detail .tool-card-wrapper,
+.work-block-detail .tool-group-inline,
+.work-block-detail .tool-batch-group,
+.work-block.running .tool-card-wrapper,
+.work-block.running .tool-group-inline,
+.work-block.running .tool-batch-group {
+  margin-left: 14px;
+  margin-right: 0;
+}
+/* 展开的输出面板跟随行缩进，不再叠加自身 18px（否则嵌套过深） */
+.work-block .tool-output-panel {
+  margin-left: 4px;
+}
+
+/* ── meta：模型 · token 进出 · 花费 · 耗时（辅助信息） ── */
+.work-block-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid var(--border-soft, #edebe8);
+  font-size: 11px;
+  color: var(--text-faint, #b8b6b1);
+  font-variant-numeric: tabular-nums;
+}
+.work-block-meta-model {
+  color: var(--accent, #c96442);
+  background: color-mix(in srgb, var(--accent, #c96442) 9%, transparent);
+  border-radius: 999px;
+  padding: 0 7px;
+  font-size: 10.5px;
+  line-height: 1.7;
+}
+
+/* ── 分区：思考（蓝）/ 操作（珊瑚）—— 把「在想什么 / 在做什么」变成视觉结构 ── */
+.work-block-zone {
+  margin-top: 8px;
+}
+.work-block-zone-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent, #c96442);
+  margin-bottom: 3px;
+}
+.work-block-zone-label::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent, #c96442) 32%, transparent), transparent);
+}
+/* eyebrow 累计读数：操作 · ⏱ Ns · N 步（流式操作日志） */
+.work-block-zone-meta {
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--text-faint, #b8b6b1);
+  margin-left: 2px;
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 过程叙事打字机光标：仅流式输出时显示 */
+.work-block-process[data-typing="true"]::after {
+  content: '▋';
+  margin-left: 1px;
+  color: var(--accent, #c96442);
+  animation: cb-blink 1s steps(2) infinite;  /* 复用 chat.css 已有 keyframe */
+}
+
+/* 完成态入场：running→done 从展开画面收成摘要的一次性过渡（不再"咔嚓"） */
+.work-block:not(.running) {
+  animation: work-card-in 220ms ease;
+}
+@keyframes work-card-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .work-block-spinner { animation: none; }
+  .work-block:not(.running) { animation: none; }
+}

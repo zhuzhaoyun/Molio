@@ -75,7 +75,7 @@ describe('Shutdown route', () => {
       agentId: 'claude',
       message: 'Say hello',
       conversationId: conversation.id,
-      onTurnComplete: (text, rid) => {
+      onTurnComplete: (text, _tools, rid) => {
         conversationService.appendMessage(conversation.id, {
           id: `msg-${Date.now()}`,
           role: 'assistant',

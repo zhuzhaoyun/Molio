@@ -2828,3 +2828,271 @@ p { margin-bottom: 0; }
   .nav-user-name { max-width: 72px; }
 }
 
+
+/* ============================================================
+   首页 v20260828 — 个人知识底座定位
+   ============================================================ */
+
+/* ---------- Why: 知识底座宣言（暗色） ---------- */
+.section-why { padding: 140px 0; }
+.why-inner { max-width: var(--max-w); margin: 0 auto; padding: 0 24px; }
+.section-why .manifesto-inner { padding: 0; }
+
+/* 散落来源 → 底座 的收敛示意 */
+.scatter-flow { max-width: 760px; margin: 72px auto 0; text-align: center; }
+.scatter-sources { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
+.scatter-sources span {
+  padding: 10px 18px;
+  border: 1px dashed rgba(245,240,232,0.28);
+  border-radius: 3px;
+  font-size: 14px;
+  color: rgba(245,240,232,0.55);
+  letter-spacing: 2px;
+}
+.scatter-arrow {
+  margin: 26px 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 3px;
+  color: rgba(245,240,232,0.4);
+}
+.scatter-base {
+  display: inline-block;
+  padding: 18px 40px 16px;
+  border: 1.5px solid var(--seal);
+  border-radius: 3px;
+  background: rgba(196,30,36,0.1);
+  color: var(--paper);
+  font-family: var(--font-zh);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  box-shadow: inset 0 0 24px rgba(196,30,36,0.14);
+}
+.scatter-base em {
+  display: block;
+  margin-top: 6px;
+  font-family: var(--font-body);
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 2px;
+  color: rgba(245,240,232,0.5);
+}
+
+/* 定位三卡：聊天型 AI / 笔记软件 / Molio */
+.position-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  margin-top: 96px;
+}
+.position-card {
+  padding: 28px 26px;
+  border: 1px solid rgba(245,240,232,0.12);
+  border-radius: 4px;
+  background: rgba(245,240,232,0.03);
+  transition: transform .35s var(--ease), border-color .35s;
+}
+.position-card:hover { transform: translateY(-3px); }
+.position-kind {
+  display: block;
+  font-family: var(--font-zh);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: rgba(245,240,232,0.75);
+  margin-bottom: 12px;
+}
+.position-card p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.85;
+  color: rgba(245,240,232,0.5);
+}
+.position-card--molio {
+  border-color: var(--seal);
+  background: rgba(196,30,36,0.1);
+}
+.position-card--molio .position-kind { color: var(--paper); }
+.position-card--molio .position-kind::before {
+  content: '';
+  display: inline-block;
+  width: 8px; height: 8px;
+  margin-right: 9px;
+  background: var(--seal);
+  vertical-align: 2px;
+}
+.position-card--molio p { color: rgba(245,240,232,0.78); }
+
+@media (max-width: 900px) {
+  .section-why { padding: 100px 0; }
+  .position-grid { grid-template-columns: 1fr; margin-top: 64px; }
+  .scatter-flow { margin-top: 56px; }
+}
+
+/* ---------- 资源页 hero 排版细化 (20260828b) ---------- */
+.rl-hero { padding: 64px 0 8px; }
+.rl-hero .rl-sub {
+  max-width: 620px;
+  margin: 20px auto 0;
+  font-size: 15.5px;
+  line-height: 2;
+  color: var(--ink-60);
+}
+.rl-hero .rl-meta {
+  margin-top: 20px;
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 2px;
+  color: var(--ink-20);
+}
+
+/* ---------- 下载分段控件 (20260828c)：OS 选择合并为一个视觉单元 ---------- */
+.dl-seg {
+  display: inline-flex;
+  align-items: stretch;
+  border-radius: 3px;
+  overflow: hidden;
+  transition: transform 0.3s var(--ease), box-shadow 0.3s var(--ease);
+}
+.dl-seg:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(13,13,13,0.15); }
+.dl-seg__main {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 15px 28px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+  position: relative;
+  z-index: 0;
+}
+.dl-seg__main::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--seal);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.4s var(--ease);
+  z-index: -1;
+}
+.dl-seg__main:hover::after { transform: scaleX(1); }
+.dl-seg__alt {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 15px 18px;
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--ink);
+  border-left: none;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.25s var(--ease), color 0.25s var(--ease);
+}
+.dl-seg__alt:hover { background: var(--paper-2); }
+@media (max-width: 600px) {
+  .hero-actions .dl-seg { width: 100%; }
+  .dl-seg__main { flex: 1; }
+}
+
+/* ============================================================
+   移动端导航 — 汉堡按钮 + 下拉面板（≤720px）
+   修复窄屏下导航链接被挤压逐字换行的问题。
+   .nav-toggle 按钮由 shared.js 注入，各页 HTML 无需改动。
+   ============================================================ */
+.nav-link,
+.nav-auth-btn,
+.nav-user-btn { white-space: nowrap; }
+
+.nav-toggle {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 40px;
+  height: 40px;
+  background: none;
+  border: 1px solid var(--hair);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.nav-toggle-bar {
+  display: block;
+  width: 18px;
+  height: 2px;
+  background: var(--ink);
+  border-radius: 1px;
+  transition: transform 0.25s var(--ease), opacity 0.2s var(--ease);
+}
+.nav-open .nav-toggle-bar:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+.nav-open .nav-toggle-bar:nth-child(2) { opacity: 0; }
+.nav-open .nav-toggle-bar:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+
+@media (max-width: 720px) {
+  .nav-toggle { display: inline-flex; }
+
+  .nav-links {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    padding: 6px 16px 14px;
+    background: rgba(245, 240, 232, 0.98);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--hair);
+    box-shadow: 0 18px 40px rgba(13, 13, 13, 0.08);
+    max-height: calc(100vh - var(--nav-h));
+    overflow-y: auto;
+  }
+  .nav-open .nav-links { display: flex; animation: nav-panel-in 0.22s var(--ease); }
+
+  .nav-link {
+    padding: 12px 8px;
+    font-size: 15px;
+    border-bottom: 1px solid var(--hair);
+  }
+  .nav-link::after { display: none; }
+  .nav-link.active { color: var(--seal); }
+
+  .nav-gh {
+    display: inline-flex;
+    padding: 12px 8px;
+  }
+
+  #nav-auth { display: block; margin-top: 10px; }
+  .nav-auth-btn {
+    display: block;
+    width: 100%;
+    padding: 10px 14px;
+    font-size: 14px;
+    text-align: center;
+  }
+  .nav-user { display: flex; width: 100%; }
+  .nav-user-btn {
+    width: 100%;
+    justify-content: space-between;
+    padding: 10px 12px;
+    font-size: 14px;
+    border-color: var(--hair);
+  }
+  .nav-user-name { max-width: none; }
+  .nav-user-menu { left: 0; right: 0; min-width: 0; }
+}
+
+@keyframes nav-panel-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}

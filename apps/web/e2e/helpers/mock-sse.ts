@@ -60,6 +60,32 @@ export const SCRIPTS = {
     { type: 'error', message: 'Something went wrong' },
     { type: 'turn_end', stopReason: 'error' },
   ],
+
+  /** 方向 A/B/D：带读写工具的完整工作流（Read → Grep → Write → 文本回复） */
+  workflowRun: [
+    { type: 'status', label: 'running' },
+    { type: 'tool_use', id: 'r1', name: 'Read', input: { file_path: '笔记/入门.md' } },
+    { type: 'tool_result', toolUseId: 'r1', content: '# 入门笔记', isError: false },
+    { type: 'tool_use', id: 'g1', name: 'Grep', input: { path: '笔记', pattern: '知识' } },
+    { type: 'tool_result', toolUseId: 'g1', content: '匹配 3 处', isError: false },
+    { type: 'tool_use', id: 'w1', name: 'Write', input: { file_path: '产出/总结.md' } },
+    { type: 'tool_result', toolUseId: 'w1', content: '已写入', isError: false },
+    { type: 'text_delta', delta: '已完成总结。' },
+    { type: 'turn_end', stopReason: 'end_turn' },
+    { type: 'usage', usage: { input_tokens: 400, output_tokens: 60 }, costUsd: 0.02 },
+  ],
+
+  /** 新闻/资讯任务：WebSearch ×2，result 文本内各含 URL（ws2 重复 ws1 首条测去重） */
+  newsRun: [
+    { type: 'status', label: 'running' },
+    { type: 'tool_use', id: 'ws1', name: 'WebSearch', input: { query: '今日科技新闻' } },
+    { type: 'tool_result', toolUseId: 'ws1', content: '英伟达新动向 https://www.ithome.com/0/887766.html\n小米新机 https://36kr.com/p/12345', isError: false },
+    { type: 'tool_use', id: 'ws2', name: 'WebSearch', input: { query: 'AI 大模型新闻' } },
+    { type: 'tool_result', toolUseId: 'ws2', content: 'Kimi 登顶 https://www.ithome.com/0/887766.html\nSpaceX 双发射 https://sspai.com/post/8765\n谷歌发模型 https://news.example.com/a/b', isError: false },
+    { type: 'text_delta', delta: '已整理今日科技新闻。' },
+    { type: 'turn_end', stopReason: 'end_turn' },
+    { type: 'usage', usage: { input_tokens: 500, output_tokens: 80 }, costUsd: 0.03 },
+  ],
 } as const;
 
 // ── Types ──────────────────────────────────────────────────────────────

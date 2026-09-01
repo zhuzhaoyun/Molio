@@ -71,6 +71,63 @@ const zh: Record<string, string> = {
   'toolGroup.webSearch': '次网页搜索',
   'toolGroup.default': '次工具调用',
 
+  // ── WorkTimeline ──
+  'workTimeline.thinking': '正在思考',
+  'workTimeline.generating': '生成回复',
+  'workTimeline.read': '读取文件',
+  'workTimeline.searchFiles': '搜索文件',
+  'workTimeline.grep': '检索内容',
+  'workTimeline.bash': '执行命令',
+  'workTimeline.webFetch': '读取网页',
+  'workTimeline.webSearch': '搜索网络',
+  'workTimeline.write': '写入文件',
+  'workTimeline.edit': '更新文件',
+  'workTimeline.append': '追加内容',
+  'workTimeline.default': '调用工具',
+  'workTimeline.done': '已完成',
+  'workTimeline.failed': '执行出错',
+
+  // ── WorkBlock 分区 ──
+  'workBlock.opsLabel': '操作',
+  'workBlock.steps': '步',
+
+  // ── SourceChips ──
+  'source.title': '引用',
+
+  // ── WorkCompleteBanner ──
+  'complete.title': '产出文件',
+
+  // ── 会话产出面板（主页 dock）──
+  'output.title': '会话产出',
+  'output.stats': '写入 {writes} · {turns} 轮',
+  'output.writesLabel': '写入',
+  'output.locate': '在对话中定位这一步',
+  'output.empty': '该会话没有写入产出的记录',
+  'output.legacyHint': '较早的会话未记录过程数据，产出档案自本版本起随会话保留',
+  'output.toggle': '产出面板',
+  'output.previewBack': '返回',
+  'output.previewLoading': '加载中…',
+  'output.previewError': '无法读取文件（可能已删除或移动）',
+  'output.previewTooLarge': '文件过大，无法在此预览',
+  'output.previewBinary': '该文件类型无法预览',
+  'output.tabOverview': '概览',
+  'output.tabChanges': '变更',
+  'output.changesEmpty': '没有可展示的变更',
+  'output.statCreates': '新建',
+  'output.statUpdates': '更新',
+  'output.statAppends': '追加',
+  'output.changeKind.create': '新建文件',
+  'output.changeKind.update': '编辑',
+  'output.changeKind.append': '追加',
+  'output.writeNewFile': '新建了空文件',
+  'output.writeOverwrite': '整文件替换：旧内容未记录（快照功能上线后支持逐行对比）',
+  'output.diffTruncated': '该文件较长，变更仅展示前 500 行',
+  'output.appendFile': '文件尾部追加了内容',
+  'output.editNoSource': '此处改动缺少可对比的原文',
+
+  // ── App ──
+  'app.vaultSwitchReset': '已切换知识库，会话已重置',
+
   // ── RuntimePage ──
   'runtimes.title': '运行时',
   'runtimes.agentsTab': '代理',
@@ -130,6 +187,11 @@ const zh: Record<string, string> = {
   'runtimes.provider': '模型提供商',
   'runtimes.apiKey': 'API Key',
   'runtimes.baseUrl': 'API 地址',
+  'runtimes.model': '模型',
+  'runtimes.wireApi': 'API 协议',
+  'runtimes.codexConfigHint': '配置将写入 ~/.codex/config.toml 与 auth.json，终端直接运行 codex 也生效',
+  'runtimes.officialHint': '清除 Molio 写入的供应商覆盖，恢复 Codex 默认配置',
+  'runtimes.codexKeySavedHint': '已配置 API Key（存于 ~/.codex/auth.json），留空保持不变',
   'runtimes.models': '模型映射',
   'runtimes.modelMappingHint': 'Claude Code 内部使用 sonnet/haiku/opus 别名，映射到第三方模型名称',
   'runtimes.providerDocs': '查看文档',
@@ -423,6 +485,9 @@ const zh: Record<string, string> = {
   'kb.readMode': '阅读模式',
   'kb.openExternal': '用外部程序打开',
   'kb.askButton': '问答',
+  'kb.newTab': '新标签页',
+  'kb.pinTab': '固定标签页',
+  'kb.unpinTab': '取消固定',
   'kb.chatContextBuildWiki': '构建 Wiki',
   'kb.chatContextLintWiki': 'Wiki 健康检查',
   'kb.chatStarting': '正在启动…',

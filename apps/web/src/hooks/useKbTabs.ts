@@ -21,6 +21,7 @@ export interface UseKbTabsReturn {
   removeWhere: (predicate: (t: WorkspaceTab) => boolean) => string[];
   activateTab: (id: string) => void;
   updateTab: (id: string, patch: Partial<WorkspaceTab>) => void;
+  togglePin: (id: string) => void;
   getActiveTab: () => WorkspaceTab | undefined;
 }
 
@@ -52,10 +53,11 @@ export function useKbTabs(vaultId: string | null): UseKbTabsReturn {
   const removeWhere = useCallback((p: (t: WorkspaceTab) => boolean) => store?.removeWhere(p) ?? [], [store]);
   const activateTab = useCallback((id: string) => store?.activateTab(id), [store]);
   const updateTab = useCallback((id: string, patch: Partial<WorkspaceTab>) => store?.updateTab(id, patch), [store]);
+  const togglePin = useCallback((id: string) => store?.togglePin(id), [store]);
   const getActiveTab = useCallback(() => store?.getActiveTab(), [store]);
 
   return useMemo(
-    () => ({ tabs, activeTabId, openTab, closeTab, removeWhere, activateTab, updateTab, getActiveTab }),
-    [tabs, activeTabId, openTab, closeTab, removeWhere, activateTab, updateTab, getActiveTab],
+    () => ({ tabs, activeTabId, openTab, closeTab, removeWhere, activateTab, updateTab, togglePin, getActiveTab }),
+    [tabs, activeTabId, openTab, closeTab, removeWhere, activateTab, updateTab, togglePin, getActiveTab],
   );
 }

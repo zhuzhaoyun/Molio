@@ -9,6 +9,7 @@ import { AssistantMessage } from '../AssistantMessage';
 import { ChatComposer, type FileRef, type PastedImage, buildAttachmentPrefix } from '../ChatComposer';
 import { ActivityTree } from '../ActivityTree';
 import { useI18n } from '../../i18n';
+import { findLastAssistant } from '../../utils/workSteps';
 import { WIKI_QUERY_TRIGGER, deriveChatTitle } from './kbChatPrompts';
 
 export interface KbChatSessionApi {
@@ -259,13 +260,8 @@ export function KbChatSession({
       ? [{ vaultId: session.vaultId, filePath: session.filePath }]
       : [];
 
-  const lastAssistantId = (() => {
-    for (let i = chat.messages.length - 1; i >= 0; i--) {
-      const m = chat.messages[i];
-      if (m && m.role === 'assistant') return m.id;
-    }
-    return null;
-  })();
+  const lastAssistant = findLastAssistant(chat.messages);
+  const lastAssistantId = lastAssistant?.id ?? null;
 
   return (
     <div className="file-chat-session" style={{ display: active ? undefined : 'none' }} data-testid="kb-chat-session">

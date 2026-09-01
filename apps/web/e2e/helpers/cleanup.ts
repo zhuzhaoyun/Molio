@@ -91,7 +91,7 @@ export async function createConversation(projectId: string, title: string) {
 export async function addMessage(
   projectId: string,
   conversationId: string,
-  message: { id: string; role: string; content: string; timestamp: number; agentId?: string },
+  message: { id: string; role: string; content: string; timestamp: number; agentId?: string; runId?: string; tools?: Array<Record<string, unknown>> },
 ) {
   await fetch(`${DAEMON}/api/projects/${projectId}/conversations/${conversationId}/messages/${message.id}`, {
     method: 'PUT',
