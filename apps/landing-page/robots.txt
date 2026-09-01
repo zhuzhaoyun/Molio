@@ -1,7 +1,48 @@
+# ============================================================
+# Molio.cn robots.txt (UTF-8)
+# Allow search engines + AI crawlers, block useless pages
+# ============================================================
+
+# --- General crawlers ---
 User-agent: *
 Allow: /
 
-# 禁止抓取无用页面
+# --- AI / LLM crawlers (GEO: make sure AI can crawl) ---
+# OpenAI / ChatGPT
+User-agent: GPTBot
+Allow: /
+User-agent: OAI-SearchBot
+Allow: /
+User-agent: ChatGPT-User
+Allow: /
+
+# Anthropic / Claude
+User-agent: ClaudeBot
+Allow: /
+User-agent: Claude-Web
+Allow: /
+User-agent: anthropic-ai
+Allow: /
+
+# Perplexity
+User-agent: PerplexityBot
+Allow: /
+
+# ByteDance (Doubao)
+User-agent: Bytespider
+Allow: /
+
+# Moonshot (Kimi)
+User-agent: MoonshotBot
+Allow: /
+
+# Google AI (Gemini / AI Overviews)
+User-agent: Google-Extended
+Allow: /
+
+# ------------------------------------------------------------
+
+# Block useless pages
 Disallow: /api/
 Disallow: /admin/
 Disallow: /*.json$
