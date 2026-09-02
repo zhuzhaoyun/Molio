@@ -75,7 +75,10 @@
   background: var(--bg-subtle);
   border: 1px solid var(--border);
   border-radius: 4px;
-  padding: 2px 6px;
+  padding: 0 10px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
   white-space: nowrap;
 }
 
@@ -345,7 +348,8 @@
 
 .graph-search__input {
   width: 100%;
-  padding: 5px 10px;
+  padding: 0 10px;
+  height: 28px;
   border: 1px solid rgba(0,0,0,0.10);
   border-radius: 6px;
   font-size: 12px;
