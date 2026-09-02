@@ -33,6 +33,10 @@ export function GraphPage({ active = true }: { active?: boolean } = {}) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  // 搜索折叠态：常驻一个 🔍 图标，点开/按 / 展开输入框；统计收敛进 ℹ（点开显示）。
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [showStats, setShowStats] = useState(false);
+  const searchRef = useRef<HTMLDivElement>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<PixiGraphEngine | null>(null);
@@ -100,6 +104,41 @@ export function GraphPage({ active = true }: { active?: boolean } = {}) {
   }, [graphData, settings.showOrphans, settings.showDeadLinks, settings.visibleTypes]);
 
   const hasData = !!engineData && engineData.nodes.length > 0;
+
+  // `/` 快捷键：在非输入态下展开图谱搜索。与全局搜索 Ctrl/Cmd+F 区分，不冲突。
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      if (!hasData || !engine) return;
+      e.preventDefault();
+      setSearchOpen(true);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [hasData, engine]);
+
+  // 搜索开合：外部点击 / Esc 收起（点在搜索框内则保留）。
+  useEffect(() => {
+    if (!searchOpen && !showStats) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (searchRef.current?.contains(t)) return;
+      if ((t as HTMLElement)?.closest?.('.graph-stats-ctrl')) return;
+      setSearchOpen(false);
+      setShowStats(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setSearchOpen(false); setShowStats(false); }
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [searchOpen, showStats]);
 
   // ── 引擎生命周期：首次有数据时异步创建 ──
   useEffect(() => {
@@ -227,30 +266,62 @@ export function GraphPage({ active = true }: { active?: boolean } = {}) {
         {/* 左端：预留前进/后退（#247 设计，等 #244 store 合入后落地） */}
         <div className="graph-topbar__left" />
         <div className="graph-topbar__right">
-          {/* 搜索只覆盖当前可见节点（engineData 已过滤 → 天然尊重筛选） */}
+          {/* 搜索：默认 🔍 图标，点开/按 / 展开输入框（从图标向左滑入）；与全局 Ctrl/Cmd+F 区分 */}
           {hasData && engine && engineData && (
-            <GraphSearchBox
-              nodes={engineData.nodes}
-              onSelect={(key) => {
-                engineRef.current?.focusNode(key);
-              }}
-            />
+            <div className="graph-search-ctrl" ref={searchRef}>
+              {searchOpen && (
+                <div className="graph-search-expand">
+                  <GraphSearchBox
+                    autoFocus
+                    nodes={engineData.nodes}
+                    onSelect={(key) => {
+                      engineRef.current?.focusNode(key);
+                    }}
+                  />
+                </div>
+              )}
+              <button
+                type="button"
+                className={`graph-icon-btn${searchOpen ? ' is-active' : ''}`}
+                onClick={() => setSearchOpen((v) => !v)}
+                title={`${t('graph.searchNodes')} (/)`}
+                aria-label={t('graph.searchNodes')}
+                data-testid="graph-search-open"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
+                  <circle cx="11" cy="11" r="7" />
+                  <line x1="21" y1="21" x2="16.6" y2="16.6" />
+                </svg>
+              </button>
+            </div>
           )}
+          {/* 统计：收敛进 ℹ，点击展示 */}
           {graphData && !loading && (
-            <span className="graph-stat">{t('graph.nodes', { count: nodeCount })}</span>
-          )}
-          {graphData && !loading && (
-            <span className="graph-stat graph-stat--edges">{t('graph.edges', { count: edgeCount })}</span>
-          )}
-          {graphData && graphData.deadLinks && graphData.deadLinks.length > 0 && (
-            <span className="graph-stat graph-stat--deadlink" title={`${graphData.deadLinks.length} dead link(s)`}>
-              死链接 {graphData.deadLinks.length}
-            </span>
+            <div className="graph-stats-ctrl">
+              {showStats && (
+                <div className="graph-stats-pop">
+                  <span>{t('graph.nodes', { count: nodeCount })}</span>
+                  <span>{t('graph.edges', { count: edgeCount })}</span>
+                  {graphData.deadLinks && graphData.deadLinks.length > 0 && (
+                    <span className="graph-stat--deadlink">{t('graph.deadLinks', { count: graphData.deadLinks.length })}</span>
+                  )}
+                </div>
+              )}
+              <button
+                type="button"
+                className={`graph-icon-btn${showStats ? ' is-active' : ''}`}
+                onClick={() => setShowStats((v) => !v)}
+                title={t('graph.stats')}
+                aria-label={t('graph.stats')}
+              >
+                ℹ
+              </button>
+            </div>
           )}
           <button
             className={`graph-settings-btn ${showSettings ? 'is-active' : ''}`}
             onClick={() => setShowSettings(!showSettings)}
-            title="图谱设置"
+            title={t('graph.settings')}
           >
             ⚙
           </button>

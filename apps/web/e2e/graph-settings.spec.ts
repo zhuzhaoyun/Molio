@@ -194,7 +194,8 @@ test.describe('Graph Interactions', () => {
     await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
     await clickNav(page, 'graph');
     await expect(page.locator('.graph-page')).toBeVisible({ timeout: 5_000 });
-    // 搜索框出现 = 引擎就绪 + 数据加载完成
+    // 搜索默认折叠为 🔍 图标——点开展开输入框（引擎就绪 + 数据加载完成）
+    await page.locator('[data-testid="graph-search-open"]').click();
     await expect(page.locator('[data-testid="graph-search-input"]')).toBeVisible({ timeout: 15_000 });
     // 等初始布局 + 1.5s refit 定时器窗口过去，避免相机动画干扰断言
     await page.waitForFunction(

@@ -782,3 +782,81 @@
 [data-theme="dark"] .graph-stat {
   background: rgba(24, 28, 36, 0.72);
 }
+
+/* ── 折叠工具控件：🔍 搜索 || ℹ 统计 —— 磨砂图标按钮 ── */
+.graph-icon-btn {
+  height: 28px;
+  width: 28px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(0, 0, 0, 0.10);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--text);
+  cursor: pointer;
+  pointer-events: auto;
+  backdrop-filter: blur(6px);
+  transition: background 0.15s;
+}
+.graph-icon-btn:hover,
+.graph-icon-btn.is-active {
+  background: var(--bg-hover);
+}
+[data-theme="dark"] .graph-icon-btn {
+  background: rgba(24, 28, 36, 0.6);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #dfe4ec;
+}
+
+/* 搜索：🔍 点开 → 输入框从图标处向左滑入展开 */
+.graph-search-ctrl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: auto;
+}
+.graph-search-expand {
+  animation: graphSearchIn 0.22s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+  pointer-events: auto;
+}
+@keyframes graphSearchIn {
+  from { opacity: 0; transform: translateX(14px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* 统计：ℹ 点开 → 磨砂小面板展示节点/边/死链 */
+.graph-stats-ctrl {
+  position: relative;
+  pointer-events: auto;
+}
+.graph-stats-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.14);
+  font-size: 11px;
+  color: var(--text);
+  white-space: nowrap;
+  z-index: 40;
+  animation: graphPopIn 0.15s ease both;
+}
+.graph-stats-pop .graph-stat--deadlink { color: var(--text-muted); }
+[data-theme="dark"] .graph-stats-pop {
+  background: rgba(24, 28, 36, 0.94);
+  border-color: rgba(255, 255, 255, 0.10);
+  color: #dfe4ec;
+}
+[data-theme="dark"] .graph-stats-pop .graph-stat--deadlink { color: #8a92a0; }
+@keyframes graphPopIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
