@@ -318,7 +318,7 @@ export function GraphPage({ active = true }: { active?: boolean } = {}) {
                 title={t('graph.stats')}
                 aria-label={t('graph.stats')}
               >
-                {/* 柱状图：实心填充，一眼即"数据统计" */}
+                {/* 柱状图：一眼即"数据统计" */}
                 <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
                   <rect x="4" y="12" width="3.6" height="8" rx="1" />
                   <rect x="10.2" y="7" width="3.6" height="13" rx="1" />

@@ -861,21 +861,14 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* OS 深色（未显式 data-theme）：同款暗色磨砂芯片，避免浅色 --text 压在浅芯片上看不见 */
+/* OS 深色（未显式 data-theme）：搜索/统计图标按钮也必须用暗色芯片，
+   否则 --text 变浅色却压在浅色芯片上看不见（浅压浅）。 */
 @media (prefers-color-scheme: dark) {
   html:not([data-theme]) .graph-icon-btn,
-  html:not([data-theme]) .graph-stat,
-  html:not([data-theme]) .graph-settings-btn {
+  html:not([data-theme]) .graph-stat {
     background: rgba(24, 28, 36, 0.6);
     border-color: rgba(255, 255, 255, 0.12);
     color: #dfe4ec;
-  }
-  html:not([data-theme]) .graph-search__input {
-    background: rgba(24, 28, 36, 0.72);
-    color: #dde;
-  }
-  html:not([data-theme]) .graph-search__input::placeholder {
-    color: #8a92a0;
   }
   html:not([data-theme]) .graph-stats-pop {
     background: rgba(24, 28, 36, 0.94);
