@@ -224,8 +224,9 @@ export function GraphPage({ active = true }: { active?: boolean } = {}) {
   return (
     <div className="graph-page">
       <div className="graph-topbar">
-        <div className="graph-topbar__left">
-          <h2 className="graph-topbar__title">{t('graph.title')}</h2>
+        {/* 左端：预留前进/后退（#247 设计，等 #244 store 合入后落地） */}
+        <div className="graph-topbar__left" />
+        <div className="graph-topbar__right">
           {/* 搜索只覆盖当前可见节点（engineData 已过滤 → 天然尊重筛选） */}
           {hasData && engine && engineData && (
             <GraphSearchBox
@@ -235,8 +236,6 @@ export function GraphPage({ active = true }: { active?: boolean } = {}) {
               }}
             />
           )}
-        </div>
-        <div className="graph-topbar__right">
           {graphData && !loading && (
             <span className="graph-stat">{t('graph.nodes', { count: nodeCount })}</span>
           )}

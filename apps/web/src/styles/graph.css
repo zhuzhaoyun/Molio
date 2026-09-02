@@ -21,31 +21,30 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 16px;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
-  background: #FAFAFA;
+  gap: 12px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
   flex-shrink: 0;
-  min-height: 48px;
+  min-height: 44px;
   z-index: 10;
 }
 
+/* 左端：预留前进/后退（#247 设计，等 #244 store 合入后落地） */
 .graph-topbar__left {
   display: flex;
   align-items: center;
-  gap: 12px;
-}
-
-.graph-topbar__title {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-  color: #333333;
+  gap: 2px;
+  flex-shrink: 0;
 }
 
 .graph-topbar__right {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0;
 }
 
 /* ── Vault Selector ── */
@@ -70,9 +69,9 @@
 
 .graph-stat {
   font-size: 11px;
-  color: #888;
-  background: #F5F5F5;
-  border: 1px solid #E5E5E5;
+  color: var(--text-muted);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
   border-radius: 4px;
   padding: 2px 6px;
   white-space: nowrap;

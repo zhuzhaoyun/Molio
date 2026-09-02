@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { gotoHome, clickNav } from './helpers/navigation';
+import { clickNav } from './helpers/navigation';
 
 /**
  * @area graph
@@ -77,7 +77,7 @@ test.describe('Graph Settings Panel', () => {
   });
 
   test('pixi canvas renders when graph data loads', async ({ page }) => {
-    await gotoHome(page);
+    await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
     await clickNav(page, 'graph');
     await expect(page.locator('.graph-page')).toBeVisible({ timeout: 5_000 });
 
@@ -88,7 +88,7 @@ test.describe('Graph Settings Panel', () => {
   });
 
   test('settings button opens and closes panel', async ({ page }) => {
-    await gotoHome(page);
+    await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
     await clickNav(page, 'graph');
     await expect(page.locator('.graph-page')).toBeVisible({ timeout: 5_000 });
 
@@ -110,7 +110,7 @@ test.describe('Graph Settings Panel', () => {
   });
 
   test('tab switching works', async ({ page }) => {
-    await gotoHome(page);
+    await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
     await clickNav(page, 'graph');
     await expect(page.locator('.graph-page')).toBeVisible({ timeout: 5_000 });
 
@@ -127,7 +127,7 @@ test.describe('Graph Settings Panel', () => {
   });
 
   test('force sliders exist and are interactive', async ({ page }) => {
-    await gotoHome(page);
+    await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
     await clickNav(page, 'graph');
     await expect(page.locator('.graph-page')).toBeVisible({ timeout: 5_000 });
 
@@ -149,7 +149,7 @@ test.describe('Graph Settings Panel', () => {
   });
 
   test('old info button is removed', async ({ page }) => {
-    await gotoHome(page);
+    await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
     await clickNav(page, 'graph');
     await expect(page.locator('.graph-page')).toBeVisible({ timeout: 5_000 });
 
@@ -163,7 +163,7 @@ test.describe('Graph Settings Panel', () => {
     await page.addInitScript(() => {
       localStorage.setItem('molio.theme', 'dark');
     });
-    await gotoHome(page);
+    await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
     await clickNav(page, 'graph');
     await expect(page.locator('.graph-page')).toBeVisible({ timeout: 5_000 });
 
@@ -191,7 +191,7 @@ test.describe('Graph Interactions', () => {
   });
 
   async function gotoGraphWithEngine(page: import('@playwright/test').Page) {
-    await gotoHome(page);
+    await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
     await clickNav(page, 'graph');
     await expect(page.locator('.graph-page')).toBeVisible({ timeout: 5_000 });
     // 搜索框出现 = 引擎就绪 + 数据加载完成
