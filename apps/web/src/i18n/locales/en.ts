@@ -715,6 +715,8 @@ const en: Record<string, string> = {
   'publish.agreement': 'I confirm I have the right to publicly share this content, and understand it will be listed immediately and downloadable by any user',
   'publish.submit': 'Publish',
   'publish.submitUpdate': 'Update',
+  'publish.selectListing': 'Update existing listing',
+  'publish.newListing': 'Publish new listing',
   'publish.working': 'Packing and uploading…',
   'publish.done': 'Published successfully',
   'publish.paidCta': 'Want to sell a knowledge base? Contact us',

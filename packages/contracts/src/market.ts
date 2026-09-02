@@ -56,6 +56,8 @@ export interface MarketListing {
 export interface MarketMyListing extends MarketListing {
   status: MarketListingStatus;
   removedReason: string | null;
+  /** daemon 本地 market_local 映射的 vault id（云端不感知，仅 /api/market/my 回传） */
+  vaultId?: string;
 }
 
 /** 单个上传目标（预签名） */
