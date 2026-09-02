@@ -22,6 +22,7 @@ import { VaultManagerModal } from './VaultManager';
 import { PublishForm, type PublishFormData } from '../resources/PublishForm';
 import { PUBLISH_TAB_ID, GRAPH_TAB_ID } from './kb-constants';
 import { GraphPage } from '../graph/GraphPage';
+import { graphViewStore } from '../../stores/graphViewStore';
 import { ImportModal, CoseInstallPrompt, InputDialog, ConfirmDialog } from './KbModals';
 import { ImportConflictDialog } from './ImportConflictDialog';
 import { ContextMenu, type MenuItem } from './ContextMenu';
@@ -1164,6 +1165,12 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
   // （与 publish 同款），切走再切回不丢图谱状态；隐藏时通过 active 暂停引擎省 CPU。
   const graphTabOpen = tabs.tabs.some((tb) => tb.id === GRAPH_TAB_ID);
   const graphActive = tabs.activeTabId === GRAPH_TAB_ID;
+
+  // 让 NavRail「图谱」在 view 图谱标签时高亮；离开 KB 时复位。
+  useEffect(() => {
+    graphViewStore.setActive(graphActive);
+    return () => graphViewStore.setActive(false);
+  }, [graphActive]);
 
   return (
     <div className="kb-shell">

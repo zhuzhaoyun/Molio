@@ -455,10 +455,12 @@ const en: Record<string, string> = {
   'graph.title': 'Graph View',
   'graph.loading': 'Loading graph data…',
   'graph.noVault': 'Create a vault first to see the graph',
+  'graph.noVaultHint': 'Click + in the file panel to create a vault, or switch/import an existing one',
   'graph.nodes': '{count} nodes',
   'graph.edges': '{count} edges',
   'graph.selectVault': 'Select vault',
   'graph.empty': 'No Markdown files in this vault',
+  'graph.emptyHint': 'Write Markdown in this vault and link files with [[links]] — the graph appears automatically',
   'graph.searchPlaceholder': 'Search nodes…',
   'graph.searchNoResult': 'No matching nodes',
 

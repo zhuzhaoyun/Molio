@@ -33,6 +33,9 @@ test.describe('Graph as tab', () => {
 
     // 图谱标签被打开并激活 → 图谱 pane 渲染（graph-open 才挂载 GraphPage）
     await expect(page.locator('.graph-page')).toBeVisible({ timeout: 10_000 });
+
+    // NavRail 图谱按钮在看图谱时高亮（graphViewStore 桥接）
+    await expect(page.locator('[data-view="graph"]')).toHaveClass(/is-active/);
   });
 
   test('graph tab stays mounted (keep-alive) when switching to a file tab', async ({ page }) => {

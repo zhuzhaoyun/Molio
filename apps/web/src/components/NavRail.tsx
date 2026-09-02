@@ -4,12 +4,14 @@ import { useI18n } from '../i18n';
 import { useAuthStatus } from '../stores/authStore';
 import { loginIntentStore } from '../stores/loginIntentStore';
 import { useActiveVaultId } from '../stores/vaultStore';
+import { useGraphViewActive } from '../stores/graphViewStore';
 import { AccountModal } from './account/AccountModal';
 
 export function NavRail() {
   const { t } = useI18n();
   const navigate = useNavigate();
   const activeVaultId = useActiveVaultId();
+  const graphActive = useGraphViewActive();
   const auth = useAuthStatus();
   const [accountOpen, setAccountOpen] = useState(false);
   /** 账号面板是否由登录意图打开（提层盖过 z-200 的仓库管理器，保证登录视图可见可操作） */
@@ -94,7 +96,7 @@ export function NavRail() {
         {/* Graph View — opens the graph tab in the knowledge-base workspace */}
         <button
           type="button"
-          className="entry-nav-rail__btn"
+          className={`entry-nav-rail__btn ${graphActive ? 'is-active' : ''}`}
           onClick={openGraphFromRail}
           data-view="graph"
           data-tooltip={t('nav.graph')}

@@ -215,6 +215,7 @@ export function GraphPage({ active = true }: { active?: boolean } = {}) {
             </svg>
           </div>
           <p>{t('graph.noVault')}</p>
+          <p className="graph-empty__hint">{t('graph.noVaultHint')}</p>
         </div>
       </div>
     );
@@ -274,6 +275,7 @@ export function GraphPage({ active = true }: { active?: boolean } = {}) {
         {!loading && !error && graphData && graphData.nodes.length === 0 && (
           <div className="graph-empty">
             <p>{t('graph.empty')}</p>
+            <p className="graph-empty__hint">{t('graph.emptyHint')}</p>
           </div>
         )}
 

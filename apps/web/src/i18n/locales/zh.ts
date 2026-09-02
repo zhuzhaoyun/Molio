@@ -455,10 +455,12 @@ const zh: Record<string, string> = {
   'graph.title': '关系图谱',
   'graph.loading': '加载图谱数据…',
   'graph.noVault': '请先创建一个知识库来查看关系图谱',
+  'graph.noVaultHint': '在左侧文件面板点「＋」新建知识库，或切换/导入已有知识库',
   'graph.nodes': '{count} 个节点',
   'graph.edges': '{count} 条链接',
   'graph.selectVault': '选择知识库',
   'graph.empty': '该知识库中没有 Markdown 文件',
+  'graph.emptyHint': '在知识库里写 Markdown，并用 [[链接]] 互相关联，关系图谱会自动生成',
   'graph.searchPlaceholder': '搜索节点…',
   'graph.searchNoResult': '无匹配节点',
 

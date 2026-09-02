@@ -2621,6 +2621,13 @@
   white-space: nowrap;
   min-width: 0;
 }
+.kb-wtab-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+  margin-right: 4px;
+}
 
 .kb-wtab-close {
   width: 16px;

@@ -211,6 +211,11 @@
   font-size: 14px;
   color: #999;
 }
+.graph-empty__hint {
+  margin-top: 6px !important;
+  font-size: 12px !important;
+  color: var(--text-muted) !important;
+}
 
 /* ── Legend ── */
 
