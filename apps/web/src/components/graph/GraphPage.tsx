@@ -284,11 +284,10 @@ export function GraphPage({ active = true }: { active?: boolean } = {}) {
                 type="button"
                 className={`graph-icon-btn${searchOpen ? ' is-active' : ''}`}
                 onClick={() => setSearchOpen((v) => !v)}
-                title={`${t('graph.searchNodes')} (/)`}
+                data-tooltip={`${t('graph.searchNodes')} (/)`}
                 aria-label={t('graph.searchNodes')}
                 data-testid="graph-search-open"
               >
-                {/* 定位（crosshair）：在图谱里定位节点，与全局全文搜索的放大镜区分 */}
                 {/* 定位（瞄准镜/定位点）：在图谱里定位节点，与全局搜索放大镜区分 */}
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
                   <circle cx="12" cy="12" r="6.5" />
@@ -317,7 +316,7 @@ export function GraphPage({ active = true }: { active?: boolean } = {}) {
                 type="button"
                 className={`graph-icon-btn${showStats ? ' is-active' : ''}`}
                 onClick={() => setShowStats((v) => !v)}
-                title={t('graph.stats')}
+                data-tooltip={t('graph.stats')}
                 aria-label={t('graph.stats')}
               >
                 {/* 柱状图：一眼即"数据统计" */}
@@ -332,7 +331,7 @@ export function GraphPage({ active = true }: { active?: boolean } = {}) {
           <button
             className={`graph-settings-btn ${showSettings ? 'is-active' : ''}`}
             onClick={() => setShowSettings(!showSettings)}
-            title={t('graph.settings')}
+            data-tooltip={t('graph.settings')}
           >
             {/* 调节滑杆：设置面板（筛选/力度滑杆）一眼即"调整" */}
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
