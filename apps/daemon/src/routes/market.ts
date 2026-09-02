@@ -91,7 +91,15 @@ export function marketRoutes(db: Database.Database, auth: AuthClient, opts: Mark
     try { return c.json(await client.download(c.req.param('id'))); } catch (e) { return cloudError(c, e); }
   });
   app.get('/my', async (c) => {
-    try { return c.json(await client.my()); } catch (e) { return cloudError(c, e); }
+    try {
+      const body = await client.my();
+      // 补充 daemon 本地 market_local 映射的 vaultId（云端不感知）
+      const enriched = body.listings.map((l) => {
+        const local = db.prepare('SELECT vault_id FROM market_local WHERE listing_id = ?').get(l.id) as { vault_id: string } | undefined;
+        return { ...l, vaultId: local?.vault_id };
+      });
+      return c.json({ ...body, listings: enriched });
+    } catch (e) { return cloudError(c, e); }
   });
 
   // ── 写侧：multipart 编排 ──
@@ -203,7 +211,13 @@ export function marketRoutes(db: Database.Database, auth: AuthClient, opts: Mark
       const upd = await client.update(
         id,
         previews.map((p) => ({ ext: p.ext, size: p.size })),
-        { priceCents: parsePriceCents(parsed?.['price']) },
+        {
+          priceCents: parsePriceCents(parsed?.['price']),
+          ...(parsed && typeof parsed['name'] === 'string' && parsed['name'].trim() ? { name: parsed['name'] } : {}),
+          ...(parsed && typeof parsed['summary'] === 'string' && parsed['summary'].trim() ? { summary: parsed['summary'] } : {}),
+          ...(parsed && typeof parsed['icon'] === 'string' && parsed['icon'] ? { icon: parsed['icon'] } : {}),
+          ...(parsed && typeof parsed['tags'] === 'string' ? { tags: JSON.parse(parsed['tags']) as string[] } : {}),
+        },
       );
       await putDirect(upd.uploads[0]!, new Uint8Array(fs.readFileSync(pack.zipPath)));
       for (let i = 0; i < previews.length; i++) await putDirect(upd.uploads[i + 1]!, previews[i]!.buf);

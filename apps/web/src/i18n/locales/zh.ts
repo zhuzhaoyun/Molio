@@ -715,6 +715,8 @@ const zh: Record<string, string> = {
   'publish.agreement': '我确认对以上内容拥有公开分享的权利，并知晓发布后将立即公开上架、任何用户可下载',
   'publish.submit': '发布',
   'publish.submitUpdate': '更新',
+  'publish.selectListing': '更新已有资源',
+  'publish.newListing': '发布新资源',
   'publish.working': '正在打包并上传…',
   'publish.done': '发布成功',
   'publish.paidCta': '想上架收费知识库？联系我们',

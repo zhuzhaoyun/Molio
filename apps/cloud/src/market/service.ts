@@ -216,13 +216,25 @@ export class MarketService {
     }
     const updated = await this.deps.store.updateListing(rec.id, {
       version: bumpVersion(rec.version), previews, pendingUpdate: null,
+      publishedAt: this.now,
+      ...(pend.name !== undefined ? { name: pend.name } : {}),
+      ...(pend.summary !== undefined ? { summary: pend.summary } : {}),
+      ...(pend.icon !== undefined ? { icon: pend.icon } : {}),
+      ...(pend.tags !== undefined ? { tags: pend.tags } : {}),
     }, this.now);
     return this.toMy(updated!);
   }
 
   // ── 更新版本（发起）──
 
-  async update(userId: string, listingId: string, input: { previews?: { ext: string; size: number }[]; priceCents?: number }): Promise<MarketCreateResponse> {
+  async update(userId: string, listingId: string, input: {
+    previews?: { ext: string; size: number }[];
+    priceCents?: number;
+    name?: string;
+    summary?: string;
+    icon?: string;
+    tags?: string[];
+  }): Promise<MarketCreateResponse> {
     const rec = await this.mustFind(listingId);
     if (rec.userId !== userId) throw new MarketServiceError('not_owner', 403);
     if (rec.status !== 'active') throw new MarketServiceError('listing_not_found', 404);
@@ -230,9 +242,28 @@ export class MarketService {
     if (previews.length > MAX_PREVIEWS || previews.some((p) => !(p.ext in PREVIEW_EXT_CT) || !(p.size > 0) || p.size > MAX_PREVIEW_BYTES)) {
       throw new MarketServiceError('invalid_metadata', 400);
     }
+    // 升版元数据校验：仅校验非空提供的字段
+    if (input.name !== undefined && (typeof input.name !== 'string' || cpLen(input.name.trim()) < 1 || cpLen(input.name.trim()) > MAX_NAME_CP)) {
+      throw new MarketServiceError('invalid_metadata', 400);
+    }
+    if (input.summary !== undefined && (typeof input.summary !== 'string' || cpLen(input.summary.trim()) < 1 || cpLen(input.summary.trim()) > MAX_SUMMARY_CP)) {
+      throw new MarketServiceError('invalid_metadata', 400);
+    }
+    if (input.icon !== undefined && !(MARKET_ICONS as readonly string[]).includes(input.icon)) {
+      throw new MarketServiceError('invalid_metadata', 400);
+    }
+    if (input.tags !== undefined) {
+      if (!Array.isArray(input.tags) || input.tags.some((t) => typeof t !== 'string' || cpLen(t.trim()) < 1 || cpLen(t.trim()) > MAX_TAG_CP) || input.tags.length > MAX_TAGS) {
+        throw new MarketServiceError('invalid_metadata', 400);
+      }
+    }
     const pending: MarketPendingUpdate = {
       previews: previews.map((p, i) => ({ key: `next/${rec.id}-p${i + 1}${p.ext}` })),
     };
+    if (input.name !== undefined) pending.name = input.name.trim();
+    if (input.summary !== undefined) pending.summary = input.summary.trim();
+    if (input.icon !== undefined) pending.icon = input.icon;
+    if (input.tags !== undefined) pending.tags = [...new Set(input.tags.map((t) => t.trim()))].slice(0, MAX_TAGS);
     // §六：仅管理员可调价；非管理员传值被忽略
     const user = await this.deps.users.findActiveUserById(userId);
     const admin = user !== null && this.isAdminEmail(user.email);
