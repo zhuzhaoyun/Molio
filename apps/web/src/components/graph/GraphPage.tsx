@@ -288,9 +288,13 @@ export function GraphPage({ active = true }: { active?: boolean } = {}) {
                 aria-label={t('graph.searchNodes')}
                 data-testid="graph-search-open"
               >
+                {/* 定位（crosshair）：在图谱里定位节点，与全局全文搜索的放大镜区分 */}
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
-                  <circle cx="11" cy="11" r="7" />
-                  <line x1="21" y1="21" x2="16.6" y2="16.6" />
+                  <circle cx="12" cy="12" r="6" />
+                  <line x1="12" y1="2" x2="12" y2="6" />
+                  <line x1="12" y1="18" x2="12" y2="22" />
+                  <line x1="2" y1="12" x2="6" y2="12" />
+                  <line x1="18" y1="12" x2="22" y2="12" />
                 </svg>
               </button>
             </div>
@@ -314,7 +318,12 @@ export function GraphPage({ active = true }: { active?: boolean } = {}) {
                 title={t('graph.stats')}
                 aria-label={t('graph.stats')}
               >
-                ℹ
+                {/* 柱状图：一眼即"数据统计" */}
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
+                  <rect x="4" y="12" width="3.4" height="8" rx="1" />
+                  <rect x="10.3" y="7" width="3.4" height="13" rx="1" />
+                  <rect x="16.6" y="3" width="3.4" height="17" rx="1" />
+                </svg>
               </button>
             </div>
           )}
@@ -323,7 +332,13 @@ export function GraphPage({ active = true }: { active?: boolean } = {}) {
             onClick={() => setShowSettings(!showSettings)}
             title={t('graph.settings')}
           >
-            ⚙
+            {/* 调节滑杆：设置面板（筛选/力度滑杆）一眼即"调整" */}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
+              <line x1="4" y1="8" x2="20" y2="8" />
+              <circle cx="9" cy="8" r="2.4" />
+              <line x1="4" y1="16" x2="20" y2="16" />
+              <circle cx="15" cy="16" r="2.4" />
+            </svg>
           </button>
         </div>
       </div>
