@@ -64,7 +64,7 @@ export const DEFAULT_FORCE_PARAMS: ForceParams = {
 
 export const DEFAULT_SETTINGS: GraphSettings = {
   version: SETTINGS_VERSION,
-  theme: 'light',
+  theme: 'system',
   nodeScale: 1.0,
   edgeWidth: 0.8,
   showOrphans: true,
@@ -104,9 +104,15 @@ export const DARK_THEME: ThemeColors = {
   dimmed: '#1A1D2A',
 };
 
-/** Resolve theme mode to actual colors, respecting system preference. */
+/** Resolve theme mode to actual colors, following the app chrome theme first. */
 export function resolveTheme(mode: ThemeMode): 'light' | 'dark' {
   if (mode === 'system') {
+    // 优先跟随 app 的 data-theme（Obsidian 一致：深色 app → 深色画布），再回退 OS
+    if (typeof document !== 'undefined') {
+      const appTheme = document.documentElement.getAttribute('data-theme');
+      if (appTheme === 'dark') return 'dark';
+      if (appTheme === 'light') return 'light';
+    }
     if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches) {
       return 'dark';
     }

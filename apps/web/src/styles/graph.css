@@ -767,9 +767,13 @@
 .graph-settings-btn {
   background: rgba(255, 255, 255, 0.72);
 }
-/* 深色主题：半透明深底 */
+/* 深色主题：半透明深底 + 浅色文字（占位可读） */
 [data-theme="dark"] .graph-search__input {
   background: rgba(24, 28, 36, 0.72);
+  color: #dde;
+}
+[data-theme="dark"] .graph-search__input::placeholder {
+  color: #8a92a0;
 }
 [data-theme="dark"] .graph-stat {
   background: rgba(24, 28, 36, 0.72);
