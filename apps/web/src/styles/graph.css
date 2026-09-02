@@ -12,22 +12,24 @@
   inset: 0;
   display: flex;
   flex-direction: column;
-  background: #FAFAFA;
+  background: transparent;
 }
 
 /* ── Top Bar ── */
 
+/* 顶栏：透明浮层悬浮在画布上方（不再是不透明条），控件各自成磨砂芯片 */
 .graph-topbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-panel);
-  flex-shrink: 0;
-  min-height: 44px;
-  z-index: 10;
+  padding: 8px 12px;
+  pointer-events: none;
 }
 
 /* 左端：预留前进/后退（#247 设计，等 #244 store 合入后落地） */
@@ -41,7 +43,7 @@
 .graph-topbar__right {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
   justify-content: flex-end;
   min-width: 0;
@@ -344,11 +346,12 @@
 .graph-search__input {
   width: 100%;
   padding: 5px 10px;
-  border: 1px solid #E5E5E5;
+  border: 1px solid rgba(0,0,0,0.10);
   border-radius: 6px;
   font-size: 12px;
   color: #333;
-  background-color: #F9F9F9;
+  background-color: rgba(255,255,255,0.80);
+  backdrop-filter: blur(6px);
   outline: none;
   box-sizing: border-box;
 }
@@ -448,10 +451,10 @@
 
 .graph-settings-panel {
   position: absolute;
-  top: 0;
+  top: 50px; /* 避开悬浮顶栏（顶栏浮在画布上方） */
   right: 0;
   width: 260px;
-  max-height: calc(100% - 16px);
+  max-height: calc(100% - 66px);
   margin: 8px;
   background: rgba(255, 255, 255, 0.96);
   border: 1px solid rgba(0, 0, 0, 0.06);
@@ -742,4 +745,32 @@
   html:not([data-theme]) .graph-search__empty {
     color: #777;
   }
+}
+
+/* ── 磨砂悬浮芯片：顶栏控件浮在画布上、可点击且免受画布遮挡 ── */
+.graph-topbar__right > *,
+.graph-topbar__left > * {
+  pointer-events: auto;
+}
+.graph-search__input,
+.graph-stat,
+.graph-settings-btn {
+  backdrop-filter: blur(6px);
+}
+.graph-search__input:focus {
+  background-color: rgba(255, 255, 255, 0.92);
+}
+/* 浅色画布：半透明浅底 */
+.graph-stat {
+  background: rgba(255, 255, 255, 0.72);
+}
+.graph-settings-btn {
+  background: rgba(255, 255, 255, 0.72);
+}
+/* 深色主题：半透明深底 */
+[data-theme="dark"] .graph-search__input {
+  background: rgba(24, 28, 36, 0.72);
+}
+[data-theme="dark"] .graph-stat {
+  background: rgba(24, 28, 36, 0.72);
 }
