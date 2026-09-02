@@ -290,7 +290,7 @@
   border: 1px solid #E5E5E5;
   border-radius: 6px;
   background: #FFFFFF;
-  color: var(--text);
+  color: var(--text-muted);
   font-size: 15px;
   cursor: pointer;
   display: flex;
@@ -791,23 +791,25 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(0, 0, 0, 0.10);
-  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
   background: rgba(255, 255, 255, 0.72);
-  color: var(--text);
+  color: var(--text-muted);
   cursor: pointer;
   pointer-events: auto;
   backdrop-filter: blur(6px);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
   transition: background 0.15s;
 }
 .graph-icon-btn:hover,
 .graph-icon-btn.is-active {
   background: var(--bg-hover);
+  color: var(--text);
 }
 [data-theme="dark"] .graph-icon-btn {
   background: rgba(24, 28, 36, 0.6);
   border-color: rgba(255, 255, 255, 0.12);
-  color: #dfe4ec;
+  color: var(--text-muted);
 }
 
 /* 搜索：🔍 点开 → 输入框从图标处向左滑入展开 */
@@ -868,12 +870,12 @@
   html:not([data-theme]) .graph-stat {
     background: rgba(24, 28, 36, 0.6);
     border-color: rgba(255, 255, 255, 0.12);
-    color: #dfe4ec;
+    color: var(--text-muted);
   }
   html:not([data-theme]) .graph-stats-pop {
     background: rgba(24, 28, 36, 0.94);
     border-color: rgba(255, 255, 255, 0.10);
-    color: #dfe4ec;
+    color: var(--text-muted);
   }
   html:not([data-theme]) .graph-stats-pop .graph-stat--deadlink { color: #8a92a0; }
 }
