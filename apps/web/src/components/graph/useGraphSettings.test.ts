@@ -37,7 +37,7 @@ describe('DEFAULT_FORCE_PARAMS (v6 Obsidian-style recipe)', () => {
 describe('DEFAULT_SETTINGS', () => {
   it('should have correct default settings', () => {
     assert.strictEqual(DEFAULT_SETTINGS.version, SETTINGS_VERSION);
-    assert.strictEqual(DEFAULT_SETTINGS.theme, 'light');
+    assert.strictEqual(DEFAULT_SETTINGS.theme, 'system');
     assert.strictEqual(DEFAULT_SETTINGS.nodeScale, 1.0);
     assert.strictEqual(DEFAULT_SETTINGS.edgeWidth, 0.8);
     assert.strictEqual(DEFAULT_SETTINGS.showOrphans, true);

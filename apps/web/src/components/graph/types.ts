@@ -96,7 +96,7 @@ export const DARK_THEME: ThemeColors = {
   hover: '#D1D5DB',
   selected: '#8B5CF6',
   selectedBorder: '#7C3AED',
-  edge: 'rgba(255,255,255,0.08)',
+  edge: 'rgba(255,255,255,0.24)',
   edgeHover: 'rgba(139,92,246,0.6)',
   edgeSelected: '#8B5CF6',
   label: '#9CA3AF',
