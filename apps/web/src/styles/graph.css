@@ -290,7 +290,7 @@
   border: 1px solid #E5E5E5;
   border-radius: 6px;
   background: #FFFFFF;
-  color: #666;
+  color: var(--text);
   font-size: 15px;
   cursor: pointer;
   display: flex;
@@ -859,4 +859,28 @@
 @keyframes graphPopIn {
   from { opacity: 0; transform: translateY(-4px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+
+/* OS 深色（未显式 data-theme）：同款暗色磨砂芯片，避免浅色 --text 压在浅芯片上看不见 */
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme]) .graph-icon-btn,
+  html:not([data-theme]) .graph-stat,
+  html:not([data-theme]) .graph-settings-btn {
+    background: rgba(24, 28, 36, 0.6);
+    border-color: rgba(255, 255, 255, 0.12);
+    color: #dfe4ec;
+  }
+  html:not([data-theme]) .graph-search__input {
+    background: rgba(24, 28, 36, 0.72);
+    color: #dde;
+  }
+  html:not([data-theme]) .graph-search__input::placeholder {
+    color: #8a92a0;
+  }
+  html:not([data-theme]) .graph-stats-pop {
+    background: rgba(24, 28, 36, 0.94);
+    border-color: rgba(255, 255, 255, 0.10);
+    color: #dfe4ec;
+  }
+  html:not([data-theme]) .graph-stats-pop .graph-stat--deadlink { color: #8a92a0; }
 }
