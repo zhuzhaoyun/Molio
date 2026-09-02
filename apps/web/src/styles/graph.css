@@ -877,3 +877,12 @@
   }
   html:not([data-theme]) .graph-stats-pop .graph-stat--deadlink { color: #8a92a0; }
 }
+
+/* 图标按钮里的 SVG 必须固定尺寸 + 不可被 flex 压扁（本 .graph-icon-btn/.graph-settings-btn
+   是 flex 容器，此前 svg 被 flex-shrink 压到 2px → 图标看不见）。 */
+.graph-icon-btn svg,
+.graph-settings-btn svg {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+}
