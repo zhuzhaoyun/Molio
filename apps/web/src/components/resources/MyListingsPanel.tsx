@@ -10,7 +10,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { MarketMyListing } from '@molio/contracts';
 import { useI18n } from '../../i18n';
-import { PublishWizard } from './PublishWizard';
 
 interface MyListingsPanelProps {
   onClose: () => void;
@@ -20,7 +19,6 @@ export function MyListingsPanel({ onClose }: MyListingsPanelProps) {
   const { t } = useI18n();
   const [listings, setListings] = useState<MarketMyListing[] | null>(null); // null = 加载中
   const [error, setError] = useState<string | null>(null);
-  const [updateTarget, setUpdateTarget] = useState<MarketMyListing | null>(null);
   const [removeTarget, setRemoveTarget] = useState<MarketMyListing | null>(null);
   const [restoreTarget, setRestoreTarget] = useState<MarketMyListing | null>(null);
   const [removing, setRemoving] = useState(false);
@@ -111,7 +109,7 @@ export function MyListingsPanel({ onClose }: MyListingsPanelProps) {
                   <div className="mylistings-actions">
                     <a
                       className="mylistings-action"
-                      href={`https://molio.cn/resource.html?id=${l.id}`}
+                      href={`https://molio.cn/resource/${l.id}.html`}
                       target="_blank"
                       rel="noopener noreferrer"
                     >
@@ -119,9 +117,6 @@ export function MyListingsPanel({ onClose }: MyListingsPanelProps) {
                     </a>
                     {l.status === 'active' && (
                       <>
-                        <button type="button" className="mylistings-action" onClick={() => setUpdateTarget(l)}>
-                          {t('myListings.update')}
-                        </button>
                         <button
                           type="button"
                           className="mylistings-action is-danger"
@@ -175,16 +170,6 @@ export function MyListingsPanel({ onClose }: MyListingsPanelProps) {
           </div>
         )}
       </div>
-
-      {updateTarget && (
-        <PublishWizard
-          vaultName={updateTarget.name}
-          updateListingId={updateTarget.id}
-          listing={updateTarget}
-          onClose={() => setUpdateTarget(null)}
-          onPublished={() => { void load(); }}
-        />
-      )}
     </div>
   );
 }

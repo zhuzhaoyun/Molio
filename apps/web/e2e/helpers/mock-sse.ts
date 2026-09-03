@@ -301,39 +301,10 @@ export async function mockChatRun(page: Page, opts: MockRunOptions = {}) {
     });
   });
 
-  // 5) GET /api/agents → return a fake available agent so the composer is enabled
-  await page.route('**/api/agents', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        agents: [
-          {
-            id: 'claude',
-            name: 'Claude',
-            available: true,
-            binary: '/usr/bin/claude',
-            source: 'path',
-            version: '1.0.0',
-            models: [],
-            installUrl: 'https://claude.ai',
-          },
-        ],
-      }),
-    });
-  });
-
-  // 6) GET /api/config → return defaultAgentId so the agent is auto-selected
-  await page.route('**/api/config', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        defaultAgentId: 'claude',
-        locale: 'zh',
-      }),
-    });
-  });
+  // 5) GET /api/agents → a fake available agent + defaultAgentId so the composer
+  //    renders and is auto-selected (independent of the real runtime state).
+  // 6) GET /api/config → same (mockAgent installs both).
+  await mockAgent(page, { agentId: 'claude', name: 'Claude' });
 
   // 7) GET /api/conversations/:convId/messages → persisted session history
   //    （重挂载恢复的 DB 加载源；默认空历史避免真实 daemon 对未知 conv 404 → onLoadError）
@@ -370,6 +341,65 @@ export async function mockRewindResend(
       contentType: 'text/event-stream',
       headers: { 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' },
       body: frames,
+    });
+  });
+}
+
+/**
+ * Mock GET /api/agents → one usable agent and /api/config → defaultAgentId,
+ * so the composer renders (and is auto-selected) regardless of the real
+ * runtime state. Deterministic for tests that need the composer present
+ * on a CI runner that has no agent installed.
+ */
+export async function mockAgent(page: Page, opts: { agentId?: string; name?: string } = {}) {
+  const agentId = opts.agentId ?? 'claude';
+  await page.route('**/api/agents', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        agents: [
+          {
+            id: agentId,
+            name: opts.name ?? 'Claude',
+            available: true,
+            binary: '/usr/bin/claude',
+            source: 'path',
+            version: '1.0.0',
+            models: [],
+            installUrl: 'https://claude.ai',
+          },
+        ],
+      }),
+    });
+  });
+  await page.route('**/api/config', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ defaultAgentId: agentId, locale: 'zh' }),
+    });
+  });
+}
+
+/**
+ * Mock GET /api/agents → empty list and /api/config → no defaultAgentId,
+ * simulating "no runtime installed". Home page should show the
+ * NoRuntimeCard instead of the composer.
+ */
+export async function mockNoAgents(page: Page) {
+  await page.route('**/api/agents', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ agents: [] }),
+    });
+  });
+  await page.route('**/api/config', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ locale: 'zh' }),
     });
   });
 }

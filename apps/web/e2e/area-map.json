@@ -32,7 +32,7 @@
         "apps/daemon/src/core/conversations/run-starter.ts",
         "apps/daemon/src/streams/*"
       ],
-      "specs": ["chat-single", "chat-multi", "chat-streaming", "chat-copy", "chat-regenerate", "chat-edit-resend", "chat-codeblock", "chat-continue", "chat-save-kb", "chat-overflow-menu", "chat-delete", "chat-repairing", "chat-timeout-fallback", "chat-work-visibility"]
+      "specs": ["chat-single", "chat-multi", "chat-streaming", "chat-copy", "chat-regenerate", "chat-edit-resend", "chat-codeblock", "chat-continue", "chat-save-kb", "chat-overflow-menu", "chat-delete", "chat-repairing", "chat-timeout-fallback", "chat-work-visibility", "file-ref-navigation"]
     },
     "kb": {
       "paths": [
@@ -94,7 +94,8 @@
     "history": {
       "paths": [
         "apps/web/src/components/history*",
-        "apps/web/src/hooks/useHistory*"
+        "apps/web/src/hooks/useHistory*",
+        "apps/web/src/hooks/historyFilterQuery*"
       ],
       "specs": ["history"]
     },
@@ -172,6 +173,7 @@
     "chat-edit-resend": { "priority": "P0", "file": "chat-edit-resend.spec.ts" },
     "chat-codeblock": { "priority": "P0", "file": "chat-codeblock.spec.ts" },
     "chat-repairing": { "priority": "P1", "file": "chat-repairing.spec.ts" },
+    "file-ref-navigation": { "priority": "P0", "file": "file-ref-navigation.spec.ts" },
     "create-vault-form": { "priority": "P0", "file": "create-vault-form.spec.ts" },
     "graph": { "priority": "P1", "file": "graph.spec.ts" },
     "graph-settings": { "priority": "P2", "file": "graph-settings.spec.ts" },

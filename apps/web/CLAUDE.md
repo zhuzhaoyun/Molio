@@ -197,7 +197,7 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
   - vault pill：灰色=存活，红色=已删除。vault_name 反范式化存储，vault 删除后仍可显示原名。
   - channel pill：仅非 desktop 渠道显示（绿色 `[微信]`、蓝色 `[飞书]` / `[企业微信]`）。
 - **日期组**: 按日期分组，serif 字体标题，可折叠/展开，标题右侧显示该组会话数量。
-- **删除**: 两步确认——点击删除 → 行变红色确认态 → 确认/取消。失败回滚 + 3 秒 transient error。
+- **删除**: 勾选式批量删除——行内 ⋯ 溢出菜单 →「删除」→ 进入勾选模式，被点行预勾选；勾选模式下点行主体/复选框切换勾选（跨置顶区 + 日期分组均可选），⋯ 溢出菜单隐藏；顶部浮动确认条「已选 N 条」+「取消/删除」→「删除」弹确认框 → 确认后批量删除。乐观移除 + 调 `POST /conversations/batch-delete`，失败 `refresh()` 回滚 + 3 秒 transient error。删除成功经 `onDeleteConversations` 通知 App——若删除的正是主页当前加载的会话，主页聊天会被清空。
 - **缓存**: 30s stale cache，跨页切换不重复请求。
 - **骨架屏**: 初始加载显示 5 行 shimmer 占位。
 - **相关文件**: `hooks/useHistoryFilters.ts`（筛选/分页/缓存/乐观删除状态管理）

@@ -513,67 +513,52 @@
   white-space: nowrap;
 }
 
-/* ── Delete Confirmation ── */
-.history-row--confirming {
-  background: var(--red-bg);
-  border-color: var(--red-border);
-  gap: 10px;
-}
-
-.history-row--confirming:hover {
-  background: var(--red-bg);
-}
-
-.history-row__confirm-text {
-  flex: 1 1 auto;
-  font-size: 14px;
-  color: var(--red);
-  font-weight: 500;
-}
-
-.history-row__confirm-yes {
-  display: inline-flex;
+/* ── Selection mode (勾选式批量删除) ── */
+.history-selection-bar {
+  display: flex;
   align-items: center;
-  height: 30px;
-  padding: 0 14px;
-  border: 1px solid var(--red);
-  border-radius: var(--radius-sm);
-  background: var(--red);
-  color: #fff;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
-  flex-shrink: 0;
-  transition: opacity 120ms ease;
-}
-
-.history-row__confirm-yes:hover {
-  opacity: 0.85;
-}
-
-.history-row__confirm-no {
-  display: inline-flex;
-  align-items: center;
-  height: 30px;
-  padding: 0 14px;
+  justify-content: space-between;
+  gap: 12px;
+  position: sticky;
+  top: 12px;
+  z-index: 20;
+  margin-bottom: 12px;
+  padding: 8px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg-panel);
-  color: var(--text-muted);
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-  white-space: nowrap;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+}
+/* 复用 chat.css 的 .selection-count / .selection-actions / .selection-cancel / .selection-delete */
+
+.history-checkbox {
   flex-shrink: 0;
-  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--bg-panel);
+  color: #fff;
+  cursor: pointer;
+  padding: 0;
+}
+.history-checkbox.checked {
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
-.history-row__confirm-no:hover {
-  color: var(--text);
-  border-color: var(--border-strong);
+.history-row.select-mode { cursor: pointer; }
+.history-row.select-mode .history-row__main { cursor: pointer; }
+.history-row.select-mode.selected {
+  background: var(--bg-subtle);
+  box-shadow: inset 2px 0 0 var(--accent-soft);
 }
+.history-row.select-mode.selected:hover { background: var(--bg-subtle); }
+.history-row.select-mode .overflow-menu { opacity: 0; pointer-events: none; }
+.history-batch-delete-text { margin: 0; font-size: 14px; color: var(--text); line-height: 1.6; }
 
 /* ── Load More ── */
 .history-load-more {

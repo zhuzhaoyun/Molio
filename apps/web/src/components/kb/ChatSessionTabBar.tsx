@@ -15,6 +15,8 @@ interface Props {
   onRename: (id: string, title: string) => void;
   /** 从历史下拉打开会话（去重入标签） */
   onOpenConversation: (conversationId: string) => void;
+  /** 历史下拉删除成功后通知 App（清空主页已加载会话） */
+  onDeleteConversations?: (ids: string[]) => void;
   /** 收起面板（保留标签，后台任务继续） */
   onClosePanel: () => void;
   /** 是否停靠侧边栏形态（驱动停靠/悬浮切换按钮的图标与 pressed 态） */
@@ -52,7 +54,7 @@ function FloatIcon() {
  * 横向滚动容器；溢出时显示 ‹ › 左右翻页箭头（无原生滚动条）；历史 / + 新建 / 收起
  * 三个按钮钉在栏尾始终可见；激活标签变化时自动滚入可见区。运行中的会话标签显示指示点。
  */
-export function ChatSessionTabBar({ sessions, activeSessionId, runningSessionIds, onActivate, onClose, onNewSession, onRename, onOpenConversation, onClosePanel, docked = false, onToggleDock, onHeaderDragStart, onHeaderDragMove, onHeaderDragEnd }: Props) {
+export function ChatSessionTabBar({ sessions, activeSessionId, runningSessionIds, onActivate, onClose, onNewSession, onRename, onOpenConversation, onDeleteConversations, onClosePanel, docked = false, onToggleDock, onHeaderDragStart, onHeaderDragMove, onHeaderDragEnd }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<HTMLDivElement>(null);
   const [canLeft, setCanLeft] = useState(false);
@@ -205,6 +207,7 @@ export function ChatSessionTabBar({ sessions, activeSessionId, runningSessionIds
       </button>
       <ConversationHistoryMenu
         onSelect={onOpenConversation}
+        onDeleteConversations={onDeleteConversations}
         align="down"
         buttonClassName="chat-session-tab-history"
         buttonTestId="kb-chat-session-history"

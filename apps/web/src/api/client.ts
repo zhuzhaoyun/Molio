@@ -374,6 +374,7 @@ export const api = {
   async listConversationHistory(opts?: ListHistoryQuery): Promise<ConversationHistoryPage> {
     const params = new URLSearchParams();
     if (opts?.vaultId) params.set('vaultId', opts.vaultId);
+    if (opts?.includeUnassociated) params.set('includeUnassociated', '1');
     if (opts?.query) params.set('query', opts.query);
     if (opts?.before != null) params.set('before', String(opts.before));
     if (opts?.limit != null) params.set('limit', String(opts.limit));
@@ -402,6 +403,19 @@ export const api = {
       const err = await res.json().catch(() => null);
       throw new Error(err?.error?.message ?? `Failed to delete conversation: ${res.status}`);
     }
+  },
+
+  async deleteConversationsByIds(ids: string[]): Promise<{ deleted: number }> {
+    const res = await fetch(`${BASE}/conversations/batch-delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      throw new Error(err?.error?.message ?? `Failed to delete conversations: ${res.status}`);
+    }
+    return res.json();
   },
 
   async updateConversation(
@@ -901,8 +915,11 @@ export const api = {
 
   // ─── Skills ───
 
-  async listSkills(): Promise<SkillManifestEntry[]> {
-    const res = await fetch(`${BASE}/skills`);
+  async listSkills(opts?: { includeBundled?: boolean }): Promise<SkillManifestEntry[]> {
+    // includeBundled surfaces app-shipped skills READ-ONLY (composer "/"
+    // palette); the settings UI omits it and keeps them hidden.
+    const qs = opts?.includeBundled ? '?includeBundled=1' : '';
+    const res = await fetch(`${BASE}/skills${qs}`);
     if (!res.ok) throw new Error(`Failed to fetch skills: ${res.status}`);
     const data = await res.json();
     return data.skills;

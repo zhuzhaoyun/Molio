@@ -60,7 +60,7 @@ export class PgMarketStore implements MarketStore {
     id: string,
     patch: Partial<Pick<MarketListingRecord,
       'status' | 'removedReason' | 'fileSize' | 'version' | 'previews' | 'ossKey' | 'publishedAt' | 'pendingUpdate'
-      | 'priceCents' | 'payUrl'>>,
+      | 'priceCents' | 'payUrl' | 'name' | 'summary' | 'icon' | 'tags'>>,
     now: number,
   ): Promise<MarketListingRecord | null> {
     // 动态 SET 拼接：字段白名单固定，参数化防注入
@@ -73,6 +73,10 @@ export class PgMarketStore implements MarketStore {
     if (patch.version !== undefined) add('version', patch.version);
     if (patch.priceCents !== undefined) add('price_cents', patch.priceCents);
     if (patch.payUrl !== undefined) add('pay_url', patch.payUrl);
+    if (patch.name !== undefined) add('name', patch.name);
+    if (patch.summary !== undefined) add('summary', patch.summary);
+    if (patch.icon !== undefined) add('icon', patch.icon);
+    if (patch.tags !== undefined) add('tags', JSON.stringify(patch.tags));
     if (patch.previews !== undefined) add('previews', JSON.stringify(patch.previews));
     if (patch.ossKey !== undefined) add('oss_key', patch.ossKey);
     if (patch.pendingUpdate !== undefined) {

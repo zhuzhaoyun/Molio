@@ -1,18 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ConversationHistoryItem, ListHistoryQuery } from '@molio/contracts';
+import type { ConversationHistoryItem } from '@molio/contracts';
 import { api } from '../api/client';
+import {
+  buildListQuery,
+  initialVaultFilter,
+  type HistoryListQuery,
+  type VaultFilterValue,
+} from './historyFilterQuery';
 
 export interface HistoryFilters {
-  vaultId: string;      // '' = all
-  query: string;        // '' = no search
+  vaultFilter: VaultFilterValue;  // '' = all, '__current__' = this vault + unassociated
+  query: string;                  // '' = no search
 }
 
-const EMPTY_FILTERS: HistoryFilters = { vaultId: '', query: '' };
 const STALE_MS = 30_000;
 const PAGE_SIZE = 50;
 
-export function useHistoryFilters() {
-  const [filters, setFilters] = useState<HistoryFilters>(EMPTY_FILTERS);
+export function useHistoryFilters(currentVaultId?: string | null) {
+  const [filters, setFilters] = useState<HistoryFilters>(() => ({
+    vaultFilter: initialVaultFilter(currentVaultId ?? null),
+    query: '',
+  }));
   const [pinnedItems, setPinnedItems] = useState<ConversationHistoryItem[]>([]);
   const [items, setItems] = useState<ConversationHistoryItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -24,12 +32,12 @@ export function useHistoryFilters() {
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const filtersRef = useRef(filters);
   filtersRef.current = filters;
+  const currentVaultRef = useRef(currentVaultId ?? null);
+  currentVaultRef.current = currentVaultId ?? null;
 
-  const buildOpts = useCallback((f: HistoryFilters, before?: number | null): ListHistoryQuery => {
-    const opts: ListHistoryQuery = { limit: PAGE_SIZE };
-    if (f.vaultId) opts.vaultId = f.vaultId;
-    if (f.query.trim()) opts.query = f.query.trim();
-    if (before != null) opts.before = before;
+  const buildOpts = useCallback((f: HistoryFilters, before?: number | null): HistoryListQuery => {
+    const opts = buildListQuery(f, currentVaultRef.current, before);
+    opts.limit = PAGE_SIZE;
     return opts;
   }, []);
 
@@ -80,7 +88,14 @@ export function useHistoryFilters() {
     }
   }, [nextCursor, loading, buildOpts]);
 
-  const setFilter = useCallback((key: 'vaultId', value: string) => {
+  // 窗口 vault 的首次可见性：挂载时已知 → 默认作用域已初始化；挂载时为 null
+  // （首访浏览器无 pinned vault）→ 等 vault 列表加载 + auto-select 落地后再采纳。
+  const vaultKnownAtMountRef = useRef(currentVaultId != null);
+  // 用户一旦手动动过筛选/搜索，默认作用域就不再自动切换（尊重显式选择）。
+  const userAdjustedRef = useRef(false);
+
+  const setFilter = useCallback((key: 'vaultFilter', value: VaultFilterValue) => {
+    userAdjustedRef.current = true;
     setFilters((prev) => {
       const next = { ...prev, [key]: value };
       void fetchFirst(next);
@@ -89,6 +104,7 @@ export function useHistoryFilters() {
   }, [fetchFirst]);
 
   const setQuery = useCallback((q: string) => {
+    userAdjustedRef.current = true;
     setFilters((prev) => ({ ...prev, query: q }));
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
     debounceTimer.current = setTimeout(() => {
@@ -96,14 +112,31 @@ export function useHistoryFilters() {
     }, 300);
   }, [fetchFirst]);
 
+  // 迟到采纳：首次访问（无 ?vault= 且 localStorage 为空）时挂载瞬间没有活跃
+  // vault，默认回落「全部」；vaultStore auto-select 完成后把窗口 vault 采纳为
+  // 默认作用域并重查一次。
+  useEffect(() => {
+    if (vaultKnownAtMountRef.current) return;
+    if (!currentVaultId) return;
+    vaultKnownAtMountRef.current = true;
+    if (userAdjustedRef.current) return;
+    setFilters((prev) => {
+      const next = { ...prev, vaultFilter: '__current__' as VaultFilterValue };
+      void fetchFirst(next);
+      return next;
+    });
+  }, [currentVaultId, fetchFirst]);
+
   const refresh = useCallback(() => {
     void fetchFirst(filtersRef.current);
   }, [fetchFirst]);
 
-  /** Optimistic delete: remove locally from both lists; caller rolls back on failure. */
-  const deleteConversationLocal = useCallback((id: string) => {
-    const nextPinned = stateRef.current.pinned.filter((i) => i.conversation.id !== id);
-    const nextItems = stateRef.current.items.filter((i) => i.conversation.id !== id);
+  /** Optimistic delete for one or more conversations: remove from both lists in
+   *  one atomic state update. Caller rolls back on failure. */
+  const deleteConversationsLocal = useCallback((ids: string[]) => {
+    const idSet = new Set(ids);
+    const nextPinned = stateRef.current.pinned.filter((i) => !idSet.has(i.conversation.id));
+    const nextItems = stateRef.current.items.filter((i) => !idSet.has(i.conversation.id));
     setPinnedItems(nextPinned);
     setItems(nextItems);
     syncRef(nextPinned, nextItems);
@@ -165,7 +198,7 @@ export function useHistoryFilters() {
     loadMore,
     refresh,
     hasMore: nextCursor != null,
-    deleteConversationLocal,
+    deleteConversationsLocal,
     updateConversationLocal,
   };
 }

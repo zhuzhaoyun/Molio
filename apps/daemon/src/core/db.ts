@@ -451,8 +451,14 @@ export function listConversationHistory(
     if (opts.vaultId === '__none__') {
       where.push('c.vault_id IS NULL');
     } else if (opts.vaultId) {
-      where.push('c.vault_id = ?');
-      params.push(opts.vaultId);
+      if (opts.includeUnassociated) {
+        // "This vault + channel chats": own-vault conversations plus unassociated ones.
+        where.push('(c.vault_id = ? OR c.vault_id IS NULL)');
+        params.push(opts.vaultId);
+      } else {
+        where.push('c.vault_id = ?');
+        params.push(opts.vaultId);
+      }
     }
     if (hitIds) {
       where.push(`c.id IN (${hitIds.map(() => '?').join(', ')})`);
@@ -653,6 +659,17 @@ export function createExternalConversation(db: SqliteDb, input: ExternalConversa
 
 export function deleteConversation(db: SqliteDb, id: string): void {
   db.prepare('DELETE FROM conversations WHERE id = ?').run(id);
+}
+
+/** Batch delete: atomically remove multiple conversations (messages cascade via FK). */
+export function deleteConversations(db: SqliteDb, ids: string[]): number {
+  const del = db.prepare('DELETE FROM conversations WHERE id = ?');
+  const run = db.transaction((list: string[]) => {
+    let deleted = 0;
+    for (const id of list) deleted += del.run(id).changes;
+    return deleted;
+  });
+  return run(ids);
 }
 
 // ─── Message CRUD ───

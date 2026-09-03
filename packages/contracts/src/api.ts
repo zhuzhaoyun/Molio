@@ -60,6 +60,14 @@ export interface DeleteMessagesResponse {
   deleted: number;
 }
 
+export interface BatchDeleteConversationsRequest {
+  ids: string[];
+}
+
+export interface BatchDeleteConversationsResponse {
+  deleted: number;
+}
+
 export interface CreateRunResponse {
   runId: string;
   conversationId?: string;
@@ -137,6 +145,8 @@ export interface ConversationHistoryListResponse {
 export interface ListHistoryQuery {
   /** undefined/null = all conversations; '__none__' = only unassociated (vault_id IS NULL) */
   vaultId?: string | null;
+  /** With a concrete vaultId: also include unassociated (vault_id IS NULL) conversations — "this vault + channel chats". */
+  includeUnassociated?: boolean;
   /** Full-text search over message content. Empty = skip FTS. */
   query?: string;
   /** updated_at cursor (exclusive). Omit for first page. */

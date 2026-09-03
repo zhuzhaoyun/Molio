@@ -108,4 +108,10 @@ test.describe('Runtimes page', () => {
     const cardCount = await cards.count();
     expect(cardCount).toBeGreaterThan(0);
   });
+
+  test('deep link ?tab=runtimes activates the runtimes tab', async ({ page }) => {
+    await page.goto('/settings?tab=runtimes');
+    await expect(page.locator('[data-testid="settings-tab-runtimes"]')).toHaveClass(/is-active/);
+    await expect(page.locator('.rt-shell')).toBeVisible({ timeout: 5_000 });
+  });
 });

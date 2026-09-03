@@ -224,3 +224,66 @@ test('pricing(§九)：公开返回价目，file=zip 全量 key；未知 id 404'
   assert.equal(p.status, 'active');
   await assert.rejects(svc.pricing('nope'), (e: unknown) => (e as MarketServiceError).code === 'listing_not_found');
 });
+
+test('更新版本：修改名称/摘要/标签 → confirm 后生效', async () => {
+  const { svc, users, objects } = makeService();
+  const u = await users.createActiveUser({ id: 'u1', email: 'a@x.com', nickname: 'n', now: 1 });
+  const c = await svc.create(u.id, VALID);
+  objects.set(c.uploads[0]!.key, 1); objects.set(c.uploads[1]!.key, 1);
+  await svc.confirm(u.id, c.listingId);
+  // 升版：改名称、摘要、标签
+  const up = await svc.update(u.id, c.listingId, {
+    previews: [],
+    name: '新名字',
+    summary: '新简介',
+    tags: ['新标签'],
+  });
+  objects.set(up.uploads[0]!.key, 2);
+  const after = await svc.confirm(u.id, c.listingId);
+  assert.equal(after.version, 'v1.1');
+  assert.equal(after.name, '新名字');
+  assert.equal(after.summary, '新简介');
+  assert.deepEqual(after.tags, ['新标签']);
+  // 图标未传，保持原值
+  assert.equal(after.icon, VALID.icon);
+});
+
+test('更新版本：只改部分字段 → 未传字段保持原值', async () => {
+  const { svc, users, objects } = makeService();
+  const u = await users.createActiveUser({ id: 'u1', email: 'a@x.com', nickname: 'n', now: 1 });
+  const c = await svc.create(u.id, VALID);
+  objects.set(c.uploads[0]!.key, 1); objects.set(c.uploads[1]!.key, 1);
+  await svc.confirm(u.id, c.listingId);
+  // 只改名称，不动摘要和标签
+  const up = await svc.update(u.id, c.listingId, {
+    previews: [],
+    name: '仅改名',
+  });
+  objects.set(up.uploads[0]!.key, 2);
+  const after = await svc.confirm(u.id, c.listingId);
+  assert.equal(after.name, '仅改名');
+  assert.equal(after.summary, VALID.summary); // 未传 → 保持原值
+  assert.deepEqual(after.tags, VALID.tags); // 未传 → 保持原值
+  assert.equal(after.icon, VALID.icon);
+});
+
+test('更新版本：元数据非法（空名/超长/非法图标）→ 400', async () => {
+  const { svc, users, objects } = makeService();
+  const u = await users.createActiveUser({ id: 'u1', email: 'a@x.com', nickname: 'n', now: 1 });
+  const c = await svc.create(u.id, VALID);
+  objects.set(c.uploads[0]!.key, 1); objects.set(c.uploads[1]!.key, 1);
+  await svc.confirm(u.id, c.listingId);
+  const badCases = [
+    { name: 'x'.repeat(31) },
+    { summary: '' },
+    { icon: '🚀' },
+    { tags: ['x'.repeat(11)] },
+    { tags: ['a', 'b', 'c', 'd'] }, // 超 3 个
+  ];
+  for (const bc of badCases) {
+    await assert.rejects(
+      svc.update(u.id, c.listingId, { previews: [], ...bc }),
+      (e: unknown) => (e as MarketServiceError).code === 'invalid_metadata',
+    );
+  }
+});

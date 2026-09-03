@@ -50,7 +50,7 @@ test.describe('File chat panel', () => {
     const input = panel.locator('[data-testid="composer-input"]');
     await expect(input).toBeVisible();
 
-    // The current file should be pre-filled as a @ ref badge in the composer.
-    await expect(panel.locator('[data-testid="composer-file-badge"]')).toBeVisible();
+    // The current file should be pre-filled as an inline @ ref in the composer.
+    await expect(input).toHaveValue(/^@doc\.md/);
   });
 });

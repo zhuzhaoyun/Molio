@@ -98,7 +98,7 @@ export class MarketClient {
     return (await this.req('POST', `/listings/${id}/confirm`, { auth: true })).json();
   }
 
-  async update(id: string, previews: { ext: string; size: number }[], extra?: { priceCents?: number }): Promise<MarketCreateResponse> {
+  async update(id: string, previews: { ext: string; size: number }[], extra?: { priceCents?: number; name?: string; summary?: string; icon?: string; tags?: string[] }): Promise<MarketCreateResponse> {
     return (await (
       await this.req('POST', `/listings/${id}/update`, { auth: true, body: { previews, ...extra } })
     ).json()) as MarketCreateResponse;

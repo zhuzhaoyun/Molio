@@ -1,7 +1,10 @@
 /**
  * 发布表单 —— 双外壳共享组件（modal / page 两个 variant）：
- * - variant="modal"：overlay 弹窗（PublishWizard shim 沿用，「我的上架」更新模式）。
- * - variant="page"：KB 页内独立 tab 页（首发入口）。
+ * - variant="modal"：overlay 弹窗（PublishWizard shim 沿用）。
+ * - variant="page"：KB 页内独立 tab 页（首发 + 更新入口）。
+ *
+ * page 模式下顶部显示已上架条目选择器：选中某条目 → 切换为更新模式，
+ * 用当前 vault 内容打包上传；未选中 → 首发模式。
  *
  * AI 起草（名称/简介/标签/图标）由用户**主动点击**「AI 一键配置」触发
  * （POST /api/market/publish-suggest，见 daemon core/market/suggest.ts），
@@ -10,9 +13,8 @@
  * 效果图一律用户手动上传（1-4 张，前端预检），无任何图片生成。
  *
  * 提交：元数据 + 效果图 → POST /api/market/publish。
- * 更新模式（updateListingId）：元数据只读回显、效果图可选，
- * 走 POST /api/market/listings/:id/update；vaultId 缺省时由 daemon 回退
- * market_local 本地映射（见 apps/daemon/src/routes/market.ts）。
+ * 更新模式：元数据可编辑、效果图可选，
+ * 走 POST /api/market/listings/:id/update。
  * 错误码优先映射 t('publish.error.' + code)，未命中回落原始码。
  *
  * modal 外壳骨架沿用 kb-modal 惯例（见 AccountModal/KbModals），overlay 用
@@ -63,20 +65,58 @@ type GenPhase = 'idle' | 'loading' | 'done' | 'failed';
 
 export function PublishForm(props: PublishFormProps) {
   const { t } = useI18n();
-  const isUpdate = props.updateListingId !== undefined;
-  const [name, setName] = useState(props.initialData?.name ?? '');
-  const [summary, setSummary] = useState(props.initialData?.summary ?? '');
-  const [icon, setIcon] = useState<string>(props.initialData?.icon ?? MARKET_ICONS[0]);
-  const [tags, setTags] = useState<string[]>(props.initialData?.tags ?? []);
+
+  // ── page 模式：已上架条目选择器（选中 → 更新模式，用当前 vault 打包）──
+  const [myListings, setMyListings] = useState<MarketMyListing[]>([]);
+  const [selectedListingId, setSelectedListingId] = useState<string | null>(null);
+  useEffect(() => {
+    if (props.variant !== 'page') return;
+    let alive = true;
+    fetch('/api/market/my')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((m: { listings?: MarketMyListing[] } | null) => {
+        if (alive && m) setMyListings(m.listings ?? []);
+      })
+      .catch(() => { /* 未登录/失败：不显示选择器 */ });
+    return () => { alive = false; };
+  }, [props.variant]);
+
+  // 有效 listing：props 传入（modal）或 page 内选择
+  const selectedListing = myListings.find((l) => l.id === selectedListingId) ?? null;
+  const effectiveListing = props.listing ?? selectedListing;
+  const isUpdate = props.updateListingId !== undefined || selectedListingId !== null;
+  const effectiveUpdateListingId = props.updateListingId ?? selectedListingId ?? undefined;
+
+  const [name, setName] = useState(props.initialData?.name ?? props.listing?.name ?? '');
+  const [summary, setSummary] = useState(props.initialData?.summary ?? props.listing?.summary ?? '');
+  const [icon, setIcon] = useState<string>(props.initialData?.icon ?? props.listing?.icon ?? MARKET_ICONS[0]);
+  const [tags, setTags] = useState<string[]>(props.initialData?.tags ?? props.listing?.tags ?? []);
   const [tagInput, setTagInput] = useState(''); // 自定义标签输入
   const [previews, setPreviews] = useState<File[]>([]);
   const [agreed, setAgreed] = useState(false);
   const [phase, setPhase] = useState<'form' | 'working' | 'done'>('form');
   const [error, setError] = useState<string | null>(null);
 
+  // page 模式切换 listing 时，重置表单为所选 listing 的元数据
+  useEffect(() => {
+    if (!selectedListing) return;
+    setName(selectedListing.name);
+    setSummary(selectedListing.summary);
+    setIcon(selectedListing.icon);
+    setTags(selectedListing.tags);
+    setPrice(selectedListing.priceCents > 0 ? String(selectedListing.priceCents / 100) : '');
+    setPreviews([]);
+    setAgreed(false);
+    setPhase('form');
+    setError(null);
+  }, [selectedListingId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── 定价（Model A：仅管理员可设 >0 + 外链 payUrl；非管理员固定 0 元不可交互）──
   const [isAdmin, setIsAdmin] = useState(false);
-  const [price, setPrice] = useState<string>(() => (props.listing && props.listing.priceCents > 0 ? String(props.listing.priceCents / 100) : ''));
+  const [price, setPrice] = useState<string>(() => {
+    const l = props.listing ?? null;
+    return l && l.priceCents > 0 ? String(l.priceCents / 100) : '';
+  });
   useEffect(() => {
     let alive = true;
     fetch('/api/market/my')
@@ -91,10 +131,10 @@ export function PublishForm(props: PublishFormProps) {
   const [selectedDirs, setSelectedDirs] = useState<string[]>(props.initialData?.selectedDirs ?? ['wiki', '.molio']);
 
   useEffect(() => {
+    // 升版不显示目录选择（打包整个 vault），仅首发需要
     if (!props.vaultId || isUpdate) return;
     api.getTopDirs(props.vaultId).then((dirs) => {
       setTopDirs(dirs);
-      // 如果有初始数据，沿用其选择；否则默认选 wiki 和 .molio
       if (!props.initialData) {
         setSelectedDirs(dirs.filter((d) => d === 'wiki' || d === '.molio'));
       }
@@ -177,11 +217,9 @@ export function PublishForm(props: PublishFormProps) {
 
   const submit = async () => {
     setError(null);
-    if (!isUpdate) {
-      if (!name.trim() || !summary.trim()) { setError(t('publish.error.required')); return; }
-      if (previews.length < 1) { setError(t('publish.error.previewRequired')); return; }
-      if (!agreed) { setError(t('publish.error.agreement')); return; }
-    }
+    if (!name.trim() || !summary.trim()) { setError(t('publish.error.required')); return; }
+    if (!isUpdate && previews.length < 1) { setError(t('publish.error.previewRequired')); return; }
+    if (!agreed) { setError(t('publish.error.agreement')); return; }
     if (isAdmin) {
       const pn = Number(price);
       if (price.trim() && !Number.isFinite(pn)) { setError(t('publish.error.priceInvalid')); return; }
@@ -189,14 +227,12 @@ export function PublishForm(props: PublishFormProps) {
     setPhase('working');
     const form = new FormData();
     if (props.vaultId) form.set('vaultId', props.vaultId);
-    if (!isUpdate) {
-      form.set('name', name.trim());
-      form.set('summary', summary.trim());
-      form.set('icon', icon);
-      form.set('tags', JSON.stringify(tags));
-      // 目录选择：始终传递（即使全选也不依赖默认值，保持显式语义）
-      if (selectedDirs.length > 0) form.set('include', JSON.stringify(selectedDirs));
-    }
+    form.set('name', name.trim());
+    form.set('summary', summary.trim());
+    form.set('icon', icon);
+    form.set('tags', JSON.stringify(tags));
+    // 目录选择：仅首发传递；升版不传 include（daemon 打包整个 vault）
+    if (!isUpdate && selectedDirs.length > 0) form.set('include', JSON.stringify(selectedDirs));
     // 定价：仅管理员透传，云端对非管理员强制 0
     if (isAdmin) {
       if (price.trim()) form.set('price', price.trim());
@@ -204,7 +240,7 @@ export function PublishForm(props: PublishFormProps) {
     // 更新模式效果图可选：不传即沿用旧图（daemon 侧语义）
     previews.forEach((f) => form.append('previews', f));
     const url = isUpdate
-      ? `/api/market/listings/${props.updateListingId}/update`
+      ? `/api/market/listings/${effectiveUpdateListingId}/update`
       : '/api/market/publish';
     try {
       const res = await fetch(url, { method: 'POST', body: form });
@@ -285,47 +321,65 @@ export function PublishForm(props: PublishFormProps) {
   const bodyContent = (
     <>
       <p className="publish-vault">{icon} {props.vaultName}</p>
-      {!isUpdate && (
-        <div className="publish-ai" aria-live="polite">
-          {(genPhase === 'idle' || genPhase === 'failed') && (
-            <>
-              <button
-                type="button"
-                className="kb-btn kb-btn-primary publish-ai-btn"
-                data-testid="publish-ai-btn"
-                disabled={phase !== 'form'}
-                onClick={() => generateSuggestion(false)}
-              >
-                {genPhase === 'failed' ? t('publish.aiRetry') : t('publish.aiConfig')}
-              </button>
-              <span className="publish-ai-hint">{t('publish.aiConfigHint')}</span>
-              {genPhase === 'failed' && <span className="publish-ai-failed">{t('publish.aiFailed')}</span>}
-            </>
-          )}
-          {genPhase === 'loading' && (
-            <>
-              <span className="publish-working-spinner publish-ai-spinner" aria-hidden="true" />
-              <span>{t('publish.aiGenerating')}</span>
-            </>
-          )}
-          {genPhase === 'done' && (
-            <>
-              <span>{t('publish.aiHint')}</span>
-              <button
-                type="button"
-                className="publish-ai-regen"
-                data-testid="publish-ai-regen"
-                disabled={phase !== 'form'}
-                onClick={() => generateSuggestion(true)}
-              >
-                {t('publish.aiRegenerate')}
-              </button>
-            </>
-          )}
+      {props.variant === 'page' && myListings.length > 0 && (
+        <div className="publish-listing-select">
+          <label className="publish-field">
+            <span>{t('publish.selectListing')}</span>
+            <select
+              value={selectedListingId ?? ''}
+              onChange={(e) => setSelectedListingId(e.target.value || null)}
+            >
+              <option value="">{t('publish.newListing')}</option>
+              {myListings.filter((l) => l.status === 'active').map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.icon} {l.name} ({l.version})
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
       )}
-      {phase === 'form' && !isUpdate && (
+      {phase === 'form' && (
         <div className="publish-form">
+          {!isUpdate && (
+            <div className="publish-ai" aria-live="polite">
+              {(genPhase === 'idle' || genPhase === 'failed') && (
+                <>
+                  <button
+                    type="button"
+                    className="kb-btn kb-btn-primary publish-ai-btn"
+                    data-testid="publish-ai-btn"
+                    disabled={phase !== 'form'}
+                    onClick={() => generateSuggestion(false)}
+                  >
+                    {genPhase === 'failed' ? t('publish.aiRetry') : t('publish.aiConfig')}
+                  </button>
+                  <span className="publish-ai-hint">{t('publish.aiConfigHint')}</span>
+                  {genPhase === 'failed' && <span className="publish-ai-failed">{t('publish.aiFailed')}</span>}
+                </>
+              )}
+              {genPhase === 'loading' && (
+                <>
+                  <span className="publish-working-spinner publish-ai-spinner" aria-hidden="true" />
+                  <span>{t('publish.aiGenerating')}</span>
+                </>
+              )}
+              {genPhase === 'done' && (
+                <>
+                  <span>{t('publish.aiHint')}</span>
+                  <button
+                    type="button"
+                    className="publish-ai-regen"
+                    data-testid="publish-ai-regen"
+                    disabled={phase !== 'form'}
+                    onClick={() => generateSuggestion(true)}
+                  >
+                    {t('publish.aiRegenerate')}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
           <label className="publish-field">
             <span>{t('publish.name')}</span>
             <input value={name} maxLength={30} onChange={(e) => setName(e.target.value)} />
@@ -338,7 +392,6 @@ export function PublishForm(props: PublishFormProps) {
           <div className="publish-field">
             <span>{t('publish.tags')}</span>
             <div className="publish-tags" aria-label={t('publish.tags')}>
-              {/* 标签由 AI 起草（≤2 个），点击移除；自定义标签同样可移除 */}
               {tags.map((tg) => (
                 <button
                   key={tg}
@@ -385,42 +438,7 @@ export function PublishForm(props: PublishFormProps) {
             </div>
           )}
           <div className="publish-previews">
-            <p>{t('publish.previews')}</p>
-            {previewGrid}
-          </div>
-          {priceFields}
-          <label className="publish-agreement">
-            <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
-            <span>{t('publish.agreement')}</span>
-          </label>
-        </div>
-      )}
-      {phase === 'form' && isUpdate && (
-        <div className="publish-form">
-          {props.listing && (
-            <div className="publish-meta">
-              <div className="publish-meta-row">
-                <span className="k">{t('publish.name')}</span>
-                <span className="v">{props.listing.icon} {props.listing.name}</span>
-              </div>
-              <div className="publish-meta-row">
-                <span className="k">{t('publish.summary')}</span>
-                <span className="v">{props.listing.summary}</span>
-              </div>
-              {props.listing.tags.length > 0 && (
-                <div className="publish-meta-row">
-                  <span className="k">{t('publish.tags')}</span>
-                  <span className="v">{props.listing.tags.join(' · ')}</span>
-                </div>
-              )}
-              <div className="publish-meta-row">
-                <span className="k">{t('resources.info.version')}</span>
-                <span className="v">{props.listing.version}</span>
-              </div>
-            </div>
-          )}
-          <div className="publish-previews">
-            <p>{t('publish.previewsUpdate')}</p>
+            <p>{isUpdate ? t('publish.previewsUpdate') : t('publish.previews')}</p>
             {previewGrid}
           </div>
           {priceFields}
