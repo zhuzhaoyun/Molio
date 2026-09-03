@@ -7,7 +7,7 @@
 // 绝不 5xx 长阻塞拖垮爬虫与代理链路。
 import { Hono, type Context } from 'hono';
 import { MarketServiceError, type MarketService } from '../market/service.js';
-import { renderNotFoundPage, renderProductPage, renderProductsSitemap } from './render.js';
+import { renderLlmsTxt, renderNotFoundPage, renderProductPage, renderProductsSitemap } from './render.js';
 
 export interface SsrRoutesDeps { service: MarketService; }
 
@@ -55,6 +55,19 @@ export function ssrRoutes(deps: SsrRoutesDeps): Hono {
     c.header('Content-Type', 'application/xml; charset=utf-8');
     c.header('Cache-Control', SITEMAP_CACHE);
     return c.body(renderProductsSitemap(listings));
+  });
+
+  app.get('/llms.txt', async (c) => {
+    let listings: Awaited<ReturnType<MarketService['list']>> = [];
+    try {
+      listings = await deps.service.list();
+    } catch (e) {
+      // 接口故障 → 返回合法但商品为空的 llms.txt（骨架仍在），好过 5xx 拖垮 AI 爬虫
+      console.error('[cloud] ssr llms.txt error:', e);
+    }
+    c.header('Content-Type', 'text/plain; charset=utf-8');
+    c.header('Cache-Control', SITEMAP_CACHE);
+    return c.body(renderLlmsTxt(listings));
   });
 
   return app;

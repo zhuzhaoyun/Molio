@@ -164,4 +164,31 @@ test('市场未挂载（无 OSS 凭证）→ SSR 路由同样 404', async () => 
   const { appNoMarket } = await bootSsrApp();
   assert.equal((await appNoMarket.request('/resource/01JABCDE0000000000000001.html')).status, 404);
   assert.equal((await appNoMarket.request('/sitemap-products.xml')).status, 404);
+  assert.equal((await appNoMarket.request('/llms.txt')).status, 404);
+});
+
+test('动态 llms.txt：资源重心定位 + 免费款在前 + 价格', async () => {
+  const { app, marketStore } = await bootSsrApp();
+  // 先插付费款再插免费款，验证免费排前（排序不依赖插入顺序）
+  await marketStore.insertListing(listing({})); // priceCents 590 付费
+  await marketStore.insertListing(listing({ id: '01JABCDE0000000000000002', name: '免费示例图谱', priceCents: 0 }));
+  const res = await app.request('/llms.txt');
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type') ?? '', /text\/plain/);
+  assert.equal(res.headers.get('cache-control'), 'public, max-age=600');
+  const txt = await res.text();
+  assert.ok(txt.startsWith('# Molio 墨流 · 知识图谱资源库'), '资源重心标题');
+  assert.ok(txt.includes('红楼梦人物关系图谱'));
+  assert.ok(txt.includes('免费示例图谱'));
+  assert.ok(txt.indexOf('### 免费资源') < txt.indexOf('### 付费资源'), '免费小节在前');
+  assert.ok(txt.indexOf('免费示例图谱') < txt.indexOf('红楼梦人物关系图谱'), '免费商品排在付费商品前');
+  assert.ok(txt.includes('¥5.9'), '付费价格（分→元）');
+});
+
+test('llms.txt：用户提交内容做 HTML 转义', async () => {
+  const { app, marketStore } = await bootSsrApp();
+  await marketStore.insertListing(listing({ name: '<script>alert(1)</script>' }));
+  const txt = await (await app.request('/llms.txt')).text();
+  assert.ok(!txt.includes('<script>alert(1)</script>'), '不得出现未转义脚本');
+  assert.ok(txt.includes('&lt;script&gt;alert(1)&lt;/script&gt;'), 'name 转义');
 });

@@ -378,3 +378,88 @@ ${urls}
 </urlset>
 `;
 }
+
+// ── llms.txt ──
+
+/**
+ * llms.txt：给 AI 爬虫 / 大模型读的站点说明书（设计：docs/2026-09-01-llms-txt-dynamic-design.md）。
+ * 与 /sitemap-products.xml 对称 —— 运行时实时拼出全部在售商品，新上架自动出现，零手工维护。
+ * 定位「资源重心」：知识图谱商品是营收主角，Molio 软件降级为免费载体。
+ * 纯文本 Markdown（text/plain），不产出 HTML；name/summary 是用户提交内容，过 escapeHtml 防注入。
+ */
+export function renderLlmsTxt(listings: MarketListing[]): string {
+  const sorted = [...listings].sort((a, b) => a.priceCents - b.priceCents);
+  const free = sorted.filter((m) => m.priceCents === 0);
+  const paid = sorted.filter((m) => m.priceCents > 0);
+  // name 会进 Markdown 链接文本，折叠换行防注入伪造结构
+  const safeName = (m: MarketListing) => escapeHtml(m.name).replace(/[\r\n]+/g, ' ').trim();
+
+  const out: string[] = [
+    '# Molio 墨流 · 知识图谱资源库',
+    '',
+    '> 本站是「结构化知识图谱 / 知识体系」资源库。提供《红楼梦》人物关系图谱、《资治通鉴》知识体系、妇产超声知识图谱、知识工程全景图谱等，Markdown 格式，购买后可一键导入 Molio 或 Obsidian 等本地 AI 知识库。',
+    '',
+    '## 本站卖什么',
+    '',
+    '- **知识图谱资源（核心，付费）**：把经典著作 / 专业领域整理成结构化、可关联、可被 AI 问答引用的知识图谱，不是散乱资料堆。',
+    '- **Molio 软件（免费开源）**：本地优先的 AI 知识库 + 知识图谱桌面应用，是上述资源的阅读器与载体，永久免费。',
+    '',
+    '## 与免费开源资源的区别',
+    '',
+    '免费开源图谱（如 OpenKG、HonglouData）是「原始数据集」，需自行清洗、建关系、写导读；本站资源是「成品」——已结构化、带导读、可直接导入 AI 知识库做问答与联想。',
+    '',
+    '## 资源品类',
+    '',
+    '- **文学国学**：经典著作的结构化知识图谱，涵盖人物关系、历史脉络、意象解读。',
+    '- **哲学**：中西哲学思想体系，概念关联与流派演变。',
+    '- **医学中医**：临床知识与传统医学理论的图谱化整理。',
+    '- **技术工程**：知识工程全景图谱，涵盖本体论、知识表示、语义网、RAG/GraphRAG、AI Agent 工程等关键概念。',
+    '',
+    '## 在售资源',
+    '',
+  ];
+
+  if (free.length > 0) {
+    out.push('### 免费资源');
+    for (const m of free) {
+      out.push(`- [${safeName(m)}](${productUrl(m.id)})：${escapeHtml(metaDescription(m.summary, 60))}`);
+    }
+    out.push('');
+  }
+  if (paid.length > 0) {
+    out.push('### 付费资源');
+    for (const m of paid) {
+      out.push(`- [${safeName(m)}](${productUrl(m.id)})：¥${formatPriceYuan(m.priceCents)} — ${escapeHtml(metaDescription(m.summary, 60))}`);
+    }
+    out.push('');
+  }
+
+  out.push(
+    '## 软件（免费）',
+    '',
+    '- Molio 桌面端：本地 AI 知识库，免费开源（MIT），GitHub：https://github.com/zhuzhaoyun/Molio',
+    '',
+    '## 核心页面',
+    '',
+    '- [首页](https://molio.cn/)：产品介绍、下载入口。',
+    '- [资源市场](https://molio.cn/resources.html)：全部在售知识图谱资源。',
+    '- [使用指南](https://molio.cn/help.html)',
+    '- [博客](https://molio.cn/blog/index.html)',
+    '',
+    '## 博客文章',
+    '',
+    '- [Obsidian 替代方案](https://molio.cn/blog/obsidian-alternative.html)',
+    '- [Molio vs Obsidian 对比](https://molio.cn/blog/molio-vs-obsidian.html)',
+    '- [Claude Code 图形界面指南](https://molio.cn/blog/claude-code-gui-guide.html)',
+    '- [本地知识库搭建](https://molio.cn/blog/local-knowledge-base.html)',
+    '',
+    '## 关键信息',
+    '',
+    '- 品牌：Molio（墨流）；域名：molio.cn；源码：github.com/zhuzhaoyun/Molio。',
+    '- 商品格式：Markdown（.zip）；兼容：Molio / Obsidian。',
+    '- 购买：付费资源扫码支付后自动发货，下载链接 1 小时内有效；免费资源直接下载。',
+    '',
+  );
+
+  return out.join('\n');
+}
