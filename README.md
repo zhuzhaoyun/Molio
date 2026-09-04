@@ -2,7 +2,7 @@
 
 # 📚 Molio
 
-**AI that knows your work. Local-first, and every byte stays yours.**
+**Give AI your personal knowledge base. Local-first, and every byte stays yours.**
 
 [English](README.md) · [中文](README_zh.md) · [🌐 Official Website](https://molio.cn/)
 
@@ -15,26 +15,43 @@
 
 ---
 
-Generic chatbots draw on the internet at large. Molio draws on your library. It is a **local-first** workbench that plugs Claude Code, Codex, and other AI runtimes into your Obsidian vault: they read what you have accumulated, research, analyze, and create, then write the results back into the vault. The longer you use it, the better it knows you. Everything runs on your machine, never through a third-party server.
+Your experience, methods, and professional insights are scattered across notes, documents, and chat logs — invisible to AI, so every conversation starts from zero.
+
+Molio turns that scattered material into a **personal knowledge base** that AI can read and use: Claude Code, Codex, and other agents enter your knowledge space, work on top of everything you've accumulated — researching, writing, answering, analyzing — and write their results back as Markdown, so the base grows thicker with every task. Everything runs on your machine, never through a third-party server.
+
+Starting from zero? The [resource library](https://molio.cn/resources.html) ships ready-made knowledge bases that keep growing — import one and start asking.
 
 <div align="center">
 
 [<img src="docs/img/video-poster.webp" alt="Zizhi Tongjian knowledge base demo" width="100%" style="border-radius: 8px;" />](https://molio.cn/videos/zizhitongjian-overview.mp4)
 
-**▶ Click to watch the demo** — one book, one knowledge universe: 1,362 years of history from the *Zizhi Tongjian*, organized by Molio into an AI-explorable knowledge system
+**▶ Click to watch the demo** — one book, one knowledge universe: 1,362 years of history from the *Zizhi Tongjian*, processed by Molio into an AI-explorable knowledge base
 
 </div>
 
-### 🌟 Why Molio?
+### 🔁 How It Works
 
-| Feature | Description |
-|---------|-------------|
-| 🗂️ **Obsidian-Compatible** | Point Molio at your existing Obsidian vault — zero migration, pure Markdown, no vendor lock-in |
-| 🤖 **Multi-Agent + Local-First** | Use Claude Code, Codex, Gemini CLI, Qwen Code in a unified GUI with streaming output — all data stays on your machine, never touching third-party servers |
-| ✂️ **[Web Clipper](https://chromewebstore.google.com/detail/pjdacbbkjpegfkogoieejajljplngbik)** | Chrome extension clips web pages to your vault with one click, auto-opens the desktop app. [Chrome Web Store](https://chromewebstore.google.com/detail/pjdacbbkjpegfkogoieejajljplngbik) \| [Other Browsers](https://molio.cn/#download) |
-| 📝 **Editor → Publish** | Split-pane Markdown editor with real-time preview, typesetting powered by [doocs/md](https://github.com/doocs/md), one-click publishing to 30+ platforms via [doocs/cose](https://github.com/doocs/cose) |
-| 💬 **Messaging Integration** | Mobile chat with your knowledge base via WeChat (regional integration) |
-| 📖 **Knowledge Graph** | Visual browsing of your knowledge connections and relationships |
+**01 · Collect & Process — from scattered fragments to a callable knowledge base**
+
+Clip pages with one click via the [Web Clipper](https://chromewebstore.google.com/detail/pjdacbbkjpegfkogoieejajljplngbik), open your Obsidian vault directly, or batch-import local documents — pure Markdown, zero migration, no lock-in. The Wiki engine extracts entities and concepts, builds indexes and summaries, and the knowledge graph links everything together. Data becomes a foundation only after it's processed.
+
+**02 · Work & Task — agents run on your data**
+
+Claude Code, Codex, Gemini CLI, Qwen Code — agents work inside your knowledge space, researching, writing, answering, and analyzing. What they see is no blank slate, but everything you've accumulated. Pick an agent in a unified GUI with streaming output; scan a QR code to chat with your base from your phone via WeChat.
+
+**03 · Reflow & Deposit — the base grows thicker with use**
+
+Every task's output is written back as Markdown — a reusable, long-term asset. The knowledge graph keeps growing, so the next task starts from higher ground. Ready to publish? Typeset with doocs/md and distribute to 30+ platforms in one click.
+
+### 📦 Ready-made Knowledge Bases
+
+Beyond the tool itself, Molio offers **ready-made structured knowledge graphs** — entire books and professional domains pre-organized into AI-ready knowledge bases you can import in one click, no building from scratch.
+
+Covering **literature, history, philosophy, traditional Chinese medicine, and medicine**, with **new resources added regularly**. Highlights include the ontology knowledge base, the *Zizhi Tongjian* knowledge system, and an obstetric-ultrasound knowledge base — free starter sets and premium deep-dive graphs alike. See the resource library for the full, always-current catalog.
+
+> These are uniquely structured assets that AI cannot conjure on its own. Import one into Molio and instantly run AI Q&A, relationship lookup, and topical research.
+
+**[Browse all resources →](https://molio.cn/resources.html)**
 
 ### 📡 Channels
 
@@ -58,24 +75,24 @@ A single Molio instance can serve multiple channels in parallel. Most channels c
     <td width="50%" align="center">
       <img src="docs/img/main.png" alt="AI Chat" width="100%" style="border-radius: 8px;" />
       <br/>
-      <sub>AI Chat: Multi-agent support with streaming responses</sub>
+      <sub>Agent Workbench: multi-agent support with streaming responses</sub>
     </td>
     <td width="50%" align="center">
-      <img src="apps/landing-page/images/wiki_knowledge.webp" alt="Knowledge Base" width="100%" style="border-radius: 8px;" />
+      <img src="apps/landing-page/images/wiki_knowledge.webp" alt="Knowledge Space" width="100%" style="border-radius: 8px;" />
       <br/>
-      <sub>Knowledge Base: Vault file tree with Markdown rendering</sub>
+      <sub>Knowledge Space: vault file tree with Markdown rendering</sub>
     </td>
   </tr>
   <tr>
     <td width="50%" align="center">
       <img src="apps/landing-page/images/kg-graph.webp" alt="Knowledge Graph" width="100%" style="border-radius: 8px;" />
       <br/>
-      <sub>Knowledge Graph: Visual map of your knowledge connections</sub>
+      <sub>Knowledge Graph: visual map of your knowledge connections</sub>
     </td>
     <td width="50%" align="center">
       <img src="docs/img/publish.png" alt="Publishing" width="100%" style="border-radius: 8px;" />
       <br/>
-      <sub>Publishing: One-click sync to 30+ platforms</sub>
+      <sub>Publishing: one-click sync to 30+ platforms</sub>
     </td>
   </tr>
 </table>
@@ -203,6 +220,27 @@ Molio/
 - **Desktop:** Electron 40 + electron-builder
 - **Build:** pnpm workspace monorepo
 
+## ❓ FAQ
+
+### macOS says the app is "damaged and can't be opened"
+
+This is macOS Gatekeeper's security warning, because Molio is currently **not notarized with Apple** (requires an Apple Developer Program subscription at $99/year). It's not a problem with the app itself. Either:
+
+**Option 1 (recommended)**: Right-click the app → "Open" → click "Open" in the dialog (first launch only).
+
+**Option 2**: Run in Terminal:
+```bash
+sudo xattr -d com.apple.quarantine /Applications/Molio.app
+```
+
+After that, it opens normally with a double-click.
+
+## 🏢 Custom Services
+
+Keep your core knowledge in your own yard — data processing, consulting, and private deployment on demand. One demo says it all.
+
+**[Learn more →](https://molio.cn/enterprise.html)**
+
 ## 🤝 Contributing
 
 Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
@@ -212,6 +250,12 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for gui
 - Follow [Conventional Commits](https://www.conventionalcommits.org/): `feat(scope): description`
 - Add tests for bug fixes (unit tests for daemon/desktop, E2E for web)
 - Run smoke tests before submitting PRs
+
+## 💬 Community & Support
+
+File an issue on [GitHub](https://github.com/zhuzhaoyun/Molio/issues), or scan the QR code below to join our WeChat community:
+
+<img src="apps/landing-page/images/qrcode.png" alt="WeChat Community QR Code" width="200" />
 
 ## ❤️ Acknowledgments
 
@@ -223,12 +267,6 @@ Molio is inspired and supported by these excellent open-source projects:
 - **[WeKnora](https://github.com/Tencent/WeKnora)** — Tencent's open-source knowledge management platform, providing design philosophy reference
 
 Thanks to the authors and communities of these projects!
-
-## 💬 Community & Support
-
-File an issue on [GitHub](https://github.com/zhuzhaoyun/Molio/issues), or scan the QR code below to join our WeChat community:
-
-<img src="apps/landing-page/images/qrcode.png" alt="WeChat Community QR Code" width="200" />
 
 ## 📄 License
 
