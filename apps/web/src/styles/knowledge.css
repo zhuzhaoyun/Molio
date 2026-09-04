@@ -2441,6 +2441,9 @@
 }
 
 .kb-companion-header {
+  /* 提到 .graph-page（absolute inset:0）之上：视觉透明但会拦截头部点击 */
+  position: relative;
+  z-index: 20;
   display: flex;
   align-items: center;
   justify-content: space-between;
