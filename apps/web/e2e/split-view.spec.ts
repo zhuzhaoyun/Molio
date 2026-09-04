@@ -67,7 +67,9 @@ test.describe('KB split view', () => {
     await splitViaContextMenu(page, 'tab-split-file');
     // FilePicker 弹层出现；等文件树加载完成（loaded 态才渲染搜索框、Esc 才生效）
     await expect(page.locator('[data-testid="file-picker"]')).toBeVisible();
-    await expect(page.locator('[data-testid="file-picker-search"]')).toBeVisible({ timeout: 10_000 });
+    // toBeInViewport 而非 toBeVisible：弹层曾被 absolute+bottom:100% 定位飞出视口顶部，
+    // 有包围盒但用户看不见——必须断言在视口内
+    await expect(page.locator('[data-testid="file-picker-search"]')).toBeInViewport({ timeout: 10_000 });
     // Esc 取消，不产生副格
     await page.keyboard.press('Escape');
     await expect(page.locator('[data-testid="file-picker"]')).toHaveCount(0);

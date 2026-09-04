@@ -1463,7 +1463,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
           onClick={() => setShowSplitFilePicker(false)}
         >
-          <div onClick={(e) => e.stopPropagation()}>
+          <div className="kb-split-file-picker" onClick={(e) => e.stopPropagation()}>
             <FilePicker
               vaultId={kb.activeVault.id}
               filterText=""

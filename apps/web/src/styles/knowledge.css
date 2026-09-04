@@ -2417,6 +2417,20 @@
 }
 
 /* ── 单库分屏：副视图 pane + 可拖拽分隔条 ── */
+
+/* 文件对照的 FilePicker：原样式为输入框上方弹出（absolute + bottom:100%），
+   在分屏选择弹层里改为面板内常规流式渲染，否则面板会飞出视口顶部 */
+.kb-split-file-picker {
+  width: min(480px, 80vw);
+}
+.kb-split-file-picker .file-picker-overlay {
+  position: relative;
+  bottom: auto;
+  left: auto;
+  right: auto;
+  max-height: 360px;
+}
+
 .kb-split-divider {
   position: absolute;
   top: 0;
