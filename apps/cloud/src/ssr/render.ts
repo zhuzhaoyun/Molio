@@ -108,7 +108,7 @@ const NAV = `
       <a href="/help.html" class="nav-link">使用指南</a>
       <a href="/blog/index.html" class="nav-link">博客</a>
       <a href="/enterprise.html" class="nav-link">定制服务</a>
-      <a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer" class="nav-gh" aria-label="GitHub 仓库"><svg viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.102 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg></a>
+      <span id="nav-auth"></span><a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer" class="nav-gh" aria-label="GitHub 仓库"><svg viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.102 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg></a>
     </div>
   </div>
 </nav>`;
@@ -359,6 +359,215 @@ ${NAV}
   <div class="tip-box">你访问的资源不存在或已下架。<a href="/resources.html">返回资源库 →</a></div>
 </main>
 ${FOOTER}
+</body>
+</html>`;
+}
+
+// ── 资源市场列表页（SSR）──
+
+/**
+ * ItemList 结构化数据：列表页让搜索引擎/AI 干净提取「商品名/价格/链接」清单。
+ * 与详情页 Product JSON-LD 互补 —— 详情页给单品的富摘要，列表页给整站的商品目录。
+ */
+function itemListJsonLd(listings: MarketListing[]): string {
+  const items = listings.map((m, i) => {
+    const image = m.previews.length > 0 ? m.previews[0] : `${SITE_BASE}/images/brand.webp`;
+    return {
+      '@type': 'ListItem',
+      position: i + 1,
+      item: {
+        '@type': 'Product',
+        name: m.name,
+        url: productUrl(m.id),
+        image,
+        description: metaDescription(m.summary, 160),
+        offers: {
+          '@type': 'Offer',
+          url: productUrl(m.id),
+          priceCurrency: 'CNY',
+          price: (m.priceCents / 100).toFixed(2),
+          availability: 'https://schema.org/InStock',
+        },
+      },
+    };
+  });
+  const ld = {
+    '@context': 'https://schema.org',
+    '@type': 'ItemList',
+    name: 'Molio 知识资源库',
+    itemListElement: items,
+  };
+  return `<script type="application/ld+json">${safeJson(ld)}</script>`;
+}
+
+/** 单个商品卡片（与官网 resources.html 的 resCard() 同款结构） */
+function renderResourceCard(m: MarketListing): string {
+  const paid = m.priceCents > 0;
+  const price = formatPriceYuan(m.priceCents);
+  const gate = paid ? `购买 ¥${price}` : '下载';
+  const tags = m.tags.length > 0 ? m.tags.map((t) => escapeHtml(t)).join(' · ') : '';
+  return `<article class="rl-card" data-price="${m.priceCents}">
+    <div class="rl-top">
+      <div class="rl-icon" style="background:${escapeHtml(m.tint)}">${escapeHtml(m.icon)}</div>
+      <div class="rl-titles">
+        <h3 class="rl-name">${escapeHtml(m.name)}</h3>
+        <span class="rl-sub">${tags}<em class="rl-ver">${escapeHtml(m.version)}</em></span>
+      </div>
+      <span class="rl-price ${paid ? 'paid' : 'free'}">${paid ? '¥' + escapeHtml(price) : '免费'}</span>
+    </div>
+    <p class="rl-desc">${escapeHtml(metaDescription(m.summary, 120))}</p>
+    <div class="rl-actions">
+      <button type="button" class="rl-buy" data-id="${encodeURIComponent(m.id)}" data-auth-gate="${escapeHtml(gate)}">${escapeHtml(gate)}</button>
+      <a class="rl-detail" href="/resource/${encodeURIComponent(m.id)}.html">查看详情 →</a>
+    </div>
+  </article>`;
+}
+
+/**
+ * 渲染资源市场列表页。
+ * 正文（全部商品卡片 + 内链到详情页）服务端产出，爬虫零 JS 可读 —— 这是列表页
+ * 此前 CSR 空壳导致的收录失败的关键修复。交互（筛选/购买/下载）由内嵌 __LISTINGS__
+ * 驱动的轻量脚本渐进增强，脚本加载前商品已完整可见。
+ */
+export function renderListingPage(listings: MarketListing[]): string {
+  const cards = listings.map(renderResourceCard).join('\n');
+  const grid = listings.length > 0
+    ? cards
+    : '<p class="rl-empty">资源整理中，稍后回来看看。</p>';
+  const title = '知识图谱资源库 — 现成可导入 AI 的结构化知识底座 | Molio 墨流';
+  const desc = '从红楼梦、史记、资治通鉴等经史典籍，到专业领域的积累，逐部提取实体与概念、建立关联，加工成结构化的知识底座：你可以顺着图谱阅读探索，Claude Code、Codex 也能立即在它上面工作。微信支付后自动解锁下载，兼容 Obsidian。';
+
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#1A1714">
+
+<!-- SEO -->
+<title>${escapeHtml(title)}</title>
+<meta name="description" content="${escapeHtml(desc)}">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="${SITE_BASE}/resources.html">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="icon" type="image/png" href="/images/favicon-32.png">
+<link rel="apple-touch-icon" href="/images/favicon-180.png">
+<link rel="stylesheet" href="/styles.css?v=20260828b">
+
+<!-- Open Graph -->
+<meta property="og:title" content="${escapeHtml(title)}">
+<meta property="og:description" content="${escapeHtml(desc)}">
+<meta property="og:type" content="website">
+<meta property="og:url" content="${SITE_BASE}/resources.html">
+<meta property="og:image" content="${SITE_BASE}/images/brand.webp">
+<meta property="og:site_name" content="Molio 墨流">
+<meta property="og:locale" content="zh_CN">
+
+<!-- Twitter -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${escapeHtml(title)}">
+<meta name="twitter:description" content="${escapeHtml(desc)}">
+<meta name="twitter:image" content="${SITE_BASE}/images/brand.webp">
+
+${itemListJsonLd(listings)}
+</head>
+<body>
+${NAV}
+
+<main class="rl-page">
+  <section class="rl-hero">
+    <h1>你读得懂、<em>AI 用得上</em>的现成知识底座</h1>
+    <p class="rl-sub">从经史典籍与专业资料中提取实体与概念、建立关联，加工成结构化的知识底座：你顺着图谱阅读探索，Claude Code、Codex 立即在它上面工作。</p>
+    <p class="rl-meta">下载 · 解压 · 加载 · 微信支付成功后自动解锁 · 兼容 Obsidian</p>
+  </section>
+
+  <div class="rl-filters" role="tablist" aria-label="资源筛选">
+    <button class="rl-tab active" role="tab" aria-selected="true" data-filter="all">全部</button>
+    <button class="rl-tab" role="tab" aria-selected="false" data-filter="free">免费</button>
+    <button class="rl-tab" role="tab" aria-selected="false" data-filter="paid">付费</button>
+  </div>
+
+  <div class="rl-grid" id="res-grid">${grid}</div>
+
+  <section class="rl-cta">
+    <p>没找到想要的底座？想把你自己的积累加工成底座上架？<a href="/enterprise.html#contact">请联系我们</a></p>
+  </section>
+</main>
+
+${FOOTER}
+
+<script>window.MOLIO_PAY_BASE = '${PAY_BASE}';window.__LISTINGS__ = ${safeJson(listings)};</script>
+<script src="/vendor/qrcode.min.js"></script>
+<script src="/auth.js?v=20260824a"></script>
+<script src="/pay.js?v=20260823a"></script>
+<script>
+(function () {
+  'use strict';
+  var listings = window.__LISTINGS__ || [];
+  function marketBase() { return window.MOLIO_AUTH_BASE || 'https://auth.molio.cn'; }
+  function byId(id) {
+    for (var i = 0; i < listings.length; i++) if (listings[i].id === id) return listings[i];
+    return null;
+  }
+  function marketDownload(id) {
+    if (!window.MolioAuth) return;
+    window.MolioAuth.requireAuth().then(function () {
+      return window.MolioAuth.getAccessToken();
+    }).then(function (token) {
+      return fetch(marketBase() + '/market/listings/' + encodeURIComponent(id) + '/download', {
+        headers: { 'Accept': 'application/json', 'Authorization': 'Bearer ' + token }
+      });
+    }).then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (body) {
+        if (body && body.url) { window.open(body.url, '_blank', 'noopener,noreferrer'); return; }
+        throw new Error('download_failed');
+      })
+      .catch(function () { window.MolioAuth.requireAuth().catch(function () { /* 用户取消 */ }); });
+  }
+
+  // 筛选：只切换已服务端渲染卡片的显隐，不重新拉取
+  var tabs = document.querySelectorAll('.rl-tab');
+  function applyFilter(f) {
+    document.querySelectorAll('#res-grid .rl-card').forEach(function (card) {
+      var price = parseInt(card.getAttribute('data-price'), 10) || 0;
+      var show = f === 'all' || (f === 'paid' ? price > 0 : price === 0);
+      card.style.display = show ? '' : 'none';
+    });
+  }
+  tabs.forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      tabs.forEach(function (t) {
+        t.classList.toggle('active', t === tab);
+        t.setAttribute('aria-selected', t === tab ? 'true' : 'false');
+      });
+      applyFilter(tab.getAttribute('data-filter'));
+    });
+  });
+
+  // 购买/下载：与官网 resources.html 同逻辑，改读内嵌 __LISTINGS__
+  var grid = document.getElementById('res-grid');
+  if (grid) {
+    grid.addEventListener('click', function (e) {
+      var btn = e.target.closest('.rl-buy');
+      if (!btn) return;
+      e.preventDefault();
+      var r = byId(decodeURIComponent(btn.getAttribute('data-id')));
+      if (!r) return;
+      if (r.priceCents > 0) {
+        window.MolioPay.open({ id: r.id, price: r.priceCents / 100 });
+        return;
+      }
+      marketDownload(r.id);
+    });
+  }
+
+  if (window.MolioAuth && window.MolioAuth.refreshLabels) window.MolioAuth.refreshLabels();
+})();
+</script>
+<script src="/shared.js?v=20260813a"></script>
+${ANALYTICS}
 </body>
 </html>`;
 }

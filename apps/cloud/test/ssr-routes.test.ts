@@ -160,9 +160,57 @@ test('动态 sitemap：全量在售商品 + lastmod，非法/下架条目不出�
   assert.match(xml, /<lastmod>\d{4}-\d{2}-\d{2}<\/lastmod>/);
 });
 
+test('资源列表页 SSR：200 + SEO 要素 + 服务端商品卡片 + ItemList JSON-LD', async () => {
+  const { app, marketStore } = await bootSsrApp();
+  await marketStore.insertListing(listing({})); // 付费 ¥5.9
+  await marketStore.insertListing(listing({ id: '01JABCDE0000000000000002', name: '免费示例图谱', priceCents: 0 }));
+  const res = await app.request('/resources.html');
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('cache-control'), 'public, max-age=3600');
+  const html = await res.text();
+  // 爬虫零 JS 可读：商品名/价格/简介/详情内链直接在 HTML 里（CSR 时代是空壳）
+  assert.ok(html.includes('红楼梦人物关系图谱'), '商品名在 HTML');
+  assert.ok(html.includes('免费示例图谱'));
+  assert.ok(html.includes('¥5.9'), '价格（分→元）');
+  assert.ok(html.includes('/resource/01JABCDE0000000000000001.html'), '内链到详情页');
+  assert.ok(html.includes('/resource/01JABCDE0000000000000002.html'));
+  // SEO 标签
+  assert.ok(html.includes('<link rel="canonical" href="https://molio.cn/resources.html">'));
+  assert.ok(html.includes('<meta name="robots" content="index, follow">'));
+  // ItemList 结构化数据：价格换算 + InStock
+  assert.ok(html.includes('"@type":"ItemList"'));
+  assert.ok(html.includes('"@type":"Product"'));
+  assert.ok(html.includes('"price":"5.90"'));
+  assert.ok(html.includes('"price":"0.00"'));
+  assert.ok(html.includes('https://schema.org/InStock'));
+  // 内嵌数据供筛选/购买交互层使用
+  assert.ok(html.includes('window.__LISTINGS__'));
+  // 与静态页平权：导航登录入口挂载点（auth.js 渲染）+ 支付后端地址（缺失则付费按钮降级"联系购买"）
+  assert.ok(html.includes('id="nav-auth"'), '导航登录入口挂载点');
+  assert.ok(html.includes("window.MOLIO_PAY_BASE = 'https://pay.molio.cn'"), '支付后端地址内嵌');
+});
+
+test('资源列表页 SSR：用户提交内容做 XSS 转义', async () => {
+  const { app, marketStore } = await bootSsrApp();
+  await marketStore.insertListing(listing({ name: '<script>alert(1)</script>' }));
+  const html = await (await app.request('/resources.html')).text();
+  assert.ok(!html.includes('<script>alert(1)</script>'), 'HTML 中不得出现未转义脚本');
+  assert.ok(html.includes('&lt;script&gt;alert(1)&lt;/script&gt;'), 'name 转义');
+});
+
+test('资源列表页 SSR：无商品 → 200 空态（不 5xx）', async () => {
+  const { app } = await bootSsrApp();
+  const res = await app.request('/resources.html');
+  assert.equal(res.status, 200);
+  const html = await res.text();
+  assert.ok(html.includes('rl-empty'), '空态提示');
+  assert.ok(html.includes('window.__LISTINGS__ = []'), '空数组内嵌');
+});
+
 test('市场未挂载（无 OSS 凭证）→ SSR 路由同样 404', async () => {
   const { appNoMarket } = await bootSsrApp();
   assert.equal((await appNoMarket.request('/resource/01JABCDE0000000000000001.html')).status, 404);
+  assert.equal((await appNoMarket.request('/resources.html')).status, 404);
   assert.equal((await appNoMarket.request('/sitemap-products.xml')).status, 404);
   assert.equal((await appNoMarket.request('/llms.txt')).status, 404);
 });

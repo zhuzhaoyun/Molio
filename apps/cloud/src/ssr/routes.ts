@@ -7,7 +7,7 @@
 // 绝不 5xx 长阻塞拖垮爬虫与代理链路。
 import { Hono, type Context } from 'hono';
 import { MarketServiceError, type MarketService } from '../market/service.js';
-import { renderLlmsTxt, renderNotFoundPage, renderProductPage, renderProductsSitemap } from './render.js';
+import { renderListingPage, renderLlmsTxt, renderNotFoundPage, renderProductPage, renderProductsSitemap } from './render.js';
 
 export interface SsrRoutesDeps { service: MarketService; }
 
@@ -42,6 +42,18 @@ export function ssrRoutes(deps: SsrRoutesDeps): Hono {
       }
       return notFound(c);
     }
+  });
+
+  app.get('/resources.html', async (c) => {
+    let listings: Awaited<ReturnType<MarketService['list']>> = [];
+    try {
+      listings = await deps.service.list();
+    } catch (e) {
+      // 市场数据取不到 → 渲染空态列表页（骨架/导航仍在），绝不 5xx 拖垮爬虫
+      console.error('[cloud] ssr listing error:', e);
+    }
+    c.header('Cache-Control', PAGE_CACHE);
+    return c.html(renderListingPage(listings));
   });
 
   app.get('/sitemap-products.xml', async (c) => {
