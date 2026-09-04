@@ -1203,6 +1203,30 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     }
   }, [handleActivateTab, split]);
 
+  // 分屏分隔条拖拽：按指针在 panes 容器内的水平位置求主格占比（clamp 0.25–0.75 在 store 内）
+  const mainPanesRef = useRef<HTMLDivElement>(null);
+  const handleSplitDragStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const el = mainPanesRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const onMove = (ev: MouseEvent) => {
+      const ratio = (ev.clientX - rect.left) / rect.width;
+      split?.setRatio(ratio);
+    };
+    const onUp = () => {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, [split]);
+
   // 让 NavRail「图谱」在 view 图谱标签（或副视图=图谱的分屏）时高亮；离开 KB 时复位。
   useEffect(() => {
     const graphCompanion = split?.companion?.type === 'graph';
@@ -1291,7 +1315,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
             </>
           }
         />
-        <div className="kb-main-panes">
+        <div className="kb-main-panes" ref={mainPanesRef}>
           <div
             className={`kb-pane${publishActive || graphActive ? ' kb-pane--closed' : ''}`}
             inert={publishActive || graphActive}
@@ -1362,8 +1386,17 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
           {/* 副视图（单库分屏右格）：companion 存在期间 keep-alive 常驻挂载；
               主视图切到图谱/发布时整幅显示、副格隐藏（GraphPage 引擎经 active=false 暂停） */}
           {split?.companion && (
-            <div
-              className={`kb-pane kb-pane--companion${companionShown ? '' : ' kb-pane--closed'}`}
+            <>
+              {companionShown && (
+                <div
+                  className="kb-split-divider"
+                  data-testid="kb-split-divider"
+                  onMouseDown={handleSplitDragStart}
+                  style={{ left: `calc(${(split?.ratio ?? 0.5) * 100}% - 3px)` }}
+                />
+              )}
+              <div
+                className={`kb-pane kb-pane--companion${companionShown ? '' : ' kb-pane--closed'}`}
               data-testid="kb-companion-pane"
               inert={!companionShown}
               aria-hidden={!companionShown || undefined}
@@ -1398,7 +1431,8 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
                   onNavigateToFile={handleNavigateToFile}
                 />
               )}
-            </div>
+              </div>
+            </>
           )}
         </div>
       </div>
