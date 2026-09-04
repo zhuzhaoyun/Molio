@@ -404,29 +404,33 @@ export function KbMainContent({
       {/* Header — always rendered so view actions (search / more-menu) stay
           visible even in empty states. File actions only render when a file is open. */}
       <div className="kb-main-header">
-        {/* ── Back/forward (tab view history) — minimal chevrons, greyed when disabled ── */}
-        <div className="kb-nav-group" data-testid="kb-nav-navigation">
-          <button
-            type="button"
-            className="kb-nav-btn"
-            data-testid="nav-back"
-            disabled={!canGoBack}
-            onClick={() => navigationHistoryStore.back()}
-            aria-label={t('nav.back')}
-          >
-            ‹
-          </button>
-          <button
-            type="button"
-            className="kb-nav-btn"
-            data-testid="nav-forward"
-            disabled={!canGoForward}
-            onClick={() => navigationHistoryStore.forward()}
-            aria-label={t('nav.forward')}
-          >
-            ›
-          </button>
-        </div>
+        {/* ── Back/forward (tab view history) — minimal chevrons, greyed when disabled.
+            主格专属：副视图（分屏对照/镜像）复用同一份历史但自身不导览，隐藏该组
+            以免「在右格点后退、左格却变了」的误导。 ── */}
+        {!companion && (
+          <div className="kb-nav-group" data-testid="kb-nav-navigation">
+            <button
+              type="button"
+              className="kb-nav-btn"
+              data-testid="nav-back"
+              disabled={!canGoBack}
+              onClick={() => navigationHistoryStore.back()}
+              aria-label={t('nav.back')}
+            >
+              ‹
+            </button>
+            <button
+              type="button"
+              className="kb-nav-btn"
+              data-testid="nav-forward"
+              disabled={!canGoForward}
+              onClick={() => navigationHistoryStore.forward()}
+              aria-label={t('nav.forward')}
+            >
+              ›
+            </button>
+          </div>
+        )}
 
         {/* ── Frontmatter property pill (wiki docs only) — badges + collapse toggle in one unit ── */}
         {!isTypesetMode && !isEditMode && isSmallMd && fmCollapsed && (

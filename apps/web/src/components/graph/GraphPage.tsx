@@ -267,29 +267,33 @@ export function GraphPage({ active = true, onCloseCompanion }: { active?: boolea
     <div className="graph-page">
       <div className="graph-topbar">
         {/* 左端：前进/后退（与文件标签标题栏最左同一份历史；常驻、disabled 置灰，
-            与 #244 的 .kb-nav-btn 同款裸 chevron 样式） */}
-        <div className="kb-nav-group graph-topbar__left" data-testid="graph-nav-navigation">
-          <button
-            type="button"
-            className="kb-nav-btn"
-            data-testid="graph-nav-back"
-            disabled={!canGoBack}
-            onClick={() => navigationHistoryStore.back()}
-            aria-label={t('nav.back')}
-          >
-            ‹
-          </button>
-          <button
-            type="button"
-            className="kb-nav-btn"
-            data-testid="graph-nav-forward"
-            disabled={!canGoForward}
-            onClick={() => navigationHistoryStore.forward()}
-            aria-label={t('nav.forward')}
-          >
-            ›
-          </button>
-        </div>
+            与 #244 的 .kb-nav-btn 同款裸 chevron 样式）。
+            主格专属：图谱做副视图（分屏对照，onCloseCompanion 存在）时不渲染，
+            避免「在右格点后退、左格却变了」的误导。 */}
+        {!onCloseCompanion && (
+          <div className="kb-nav-group graph-topbar__left" data-testid="graph-nav-navigation">
+            <button
+              type="button"
+              className="kb-nav-btn"
+              data-testid="graph-nav-back"
+              disabled={!canGoBack}
+              onClick={() => navigationHistoryStore.back()}
+              aria-label={t('nav.back')}
+            >
+              ‹
+            </button>
+            <button
+              type="button"
+              className="kb-nav-btn"
+              data-testid="graph-nav-forward"
+              disabled={!canGoForward}
+              onClick={() => navigationHistoryStore.forward()}
+              aria-label={t('nav.forward')}
+            >
+              ›
+            </button>
+          </div>
+        )}
         <div className="graph-topbar__right">
           {/* 搜索：默认 🔍 图标，点开/按 / 展开输入框（从图标向左滑入）；与全局 Ctrl/Cmd+F 区分 */}
           {hasData && engine && engineData && (
