@@ -22,12 +22,13 @@ test.describe('Navigation', () => {
     expect(page.url()).toContain('/knowledge');
   });
 
-  test('navigate to graph', async ({ page }) => {
+  test('graph entry lands in the knowledge-base workspace', async ({ page }) => {
     await gotoHome(page);
     await clickNav(page, 'graph');
 
-    await expect(page.locator('.graph-page')).toBeVisible({ timeout: 5_000 });
-    expect(page.url()).toContain('/graph');
+    // 图谱不再有独立页：入口跳转知识库工作区（勾选 graph 标签需先有 vault，见 graph.spec）
+    await expect(page).toHaveURL(/\/knowledge/, { timeout: 5_000 });
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
   });
 
   test('navigate to history', async ({ page }) => {

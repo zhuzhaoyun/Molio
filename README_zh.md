@@ -2,7 +2,7 @@
 
 # 📚 Molio (墨流)
 
-**让你的积累，在 AI 时代持续产生价值。数据全为你所有。**
+**让 AI 拥有你的个人知识底座。数据全在本地，始终属于你。**
 
 [English](README.md) · [中文](README_zh.md) · [🌐 官网](https://molio.cn/)
 
@@ -15,26 +15,43 @@
 
 ---
 
-别再和每一个 AI 从零开始。Molio 把你的笔记、文档和项目经验变成一个会成长的知识空间：Claude Code / Codex 等 Agent 带着你的背景研究、写作、问答、分析，产出写回库，越用越懂你的事。所有内容存在你自己的电脑上，不经过任何第三方服务器。
+每个人都有自己的经验、方法和专业积累，但它们长期散落在笔记、文档和聊天记录中——AI 看不见它们，于是每一次对话，都从零开始。
+
+Molio 把这些积累加工成 AI 可读、可调用的**个人知识底座**：Claude Code、Codex 等 Agent 进入你的知识空间，基于你的全部积累做研究、写作、问答、分析，产出以 Markdown 写回沉淀，底座越用越厚。所有内容存在你自己的电脑上，不经过任何第三方服务器。
+
+还没有现成积累？[知识图谱资源库](https://molio.cn/resources.html)里有持续上新的**现成知识底座**，一键导入、开箱即用。
 
 <div align="center">
 
 [<img src="docs/img/video-poster.webp" alt="资治通鉴知识库演示" width="100%" style="border-radius: 8px;" />](https://molio.cn/videos/zizhitongjian-overview.mp4)
 
-**▶ 点击播放演示** — 一本书，一个知识宇宙：《资治通鉴》1362 年史料 · 由 Molio 整理成 AI 可探索的知识体系
+**▶ 点击播放演示** — 一本书，一个知识宇宙：《资治通鉴》1362 年史料 · 由 Molio 加工成 AI 可探索的知识底座
 
 </div>
 
-### 🌟 核心能力
+### 🔁 它如何工作
 
-| 功能 | 说明 |
-|------|------|
-| 🗂️ **Obsidian 兼容** | 直接打开你的 Obsidian 目录，零迁移；纯 Markdown 文件，无厂商锁定，随时切回 |
-| 🤖 **多 Agent + 本地优先** | 在统一界面里使用 Claude Code、Codex、Gemini CLI、Qwen Code，支持流式输出 — 知识库、AI 对话、所有设置全在本地，不经过任何第三方服务器 |
-| ✂️ **[Web Clipper](https://chromewebstore.google.com/detail/pjdacbbkjpegfkogoieejajljplngbik)** | Chrome 扩展一键剪藏网页到知识库，自动唤起桌面端定位到刚保存的文件。[Chrome 应用商店](https://chromewebstore.google.com/detail/pjdacbbkjpegfkogoieejajljplngbik) \| [其他浏览器](https://molio.cn/#download) |
-| 📝 **编辑 → 发布** | 左右分栏 Markdown 编辑器，实时预览；基于 [doocs/md](https://github.com/doocs/md) 排版，[doocs/cose](https://github.com/doocs/cose) 一键发布到 30+ 平台 |
-| 💬 **微信 AI 助手** | 扫码连接个人微信，手机上和你的知识库对话；发公众号链接自动总结并存入知识库 |
-| 📖 **知识图谱** | 可视化浏览知识关联与结构 |
+**01 · 收集与加工 — 从散落碎片，到可调用的知识底座**
+
+Chrome 一键剪藏（[Web Clipper](https://chromewebstore.google.com/detail/pjdacbbkjpegfkogoieejajljplngbik)）、Obsidian 目录直接打开、本地文档批量导入——纯 Markdown，零迁移、无锁定，随时切回；Wiki 自动提取实体与概念、构建索引与摘要，知识图谱在它们之间建立关联。数据被加工，才开始成为底座。
+
+**02 · Agent 工作 — 基于你的数据运行**
+
+Claude Code、Codex、Gemini CLI、Qwen Code 等 Agent 在你的知识空间里做研究、写作、问答与分析——它们看到的不再是一张白纸，而是你的全部积累。统一图形界面选 Agent、看流式输出；微信扫码，手机上随时跟你的底座对话。
+
+**03 · 沉淀回流 — 底座越用越厚**
+
+每一次任务的产出都以 Markdown 写回知识空间，成为可复用的长期资产；知识图谱随之生长，下一次任务站得更高。想对外发布？doocs/md 排版 + doocs/cose 一键分发 30+ 平台，出口就在这里。
+
+### 📦 知识图谱资源库
+
+除了工具本身，Molio 还提供**现成的结构化知识图谱**——把一本书、一个专业领域预先整理成可直接导入 AI 的知识底座，开箱即用，不用从零搭建。
+
+涵盖**文学、历史、哲学、中医、医学**等专业领域，**持续上新**。代表性资源如本体知识库、资治通鉴知识体系、妇产超声知识体系等，既有免费入门资源，也有深度整理的精品图谱——完整与最新清单见资源库页面。
+
+> 这些是「人整理出来、AI 现搜不到现成结构」的独特内容。一键导入 Molio，立刻用 AI 做问答、关系查询、主题研究。
+
+**[浏览全部资源 →](https://molio.cn/resources.html)**
 
 ### 📡 渠道支持
 
@@ -58,12 +75,12 @@
     <td width="50%" align="center">
       <img src="docs/img/main.png" alt="AI 对话" width="100%" style="border-radius: 8px;" />
       <br/>
-      <sub>AI 对话：多 Agent 支持，流式响应</sub>
+      <sub>Agent 工作台：多 Agent 支持，流式响应</sub>
     </td>
     <td width="50%" align="center">
-      <img src="apps/landing-page/images/wiki_knowledge.webp" alt="知识库" width="100%" style="border-radius: 8px;" />
+      <img src="apps/landing-page/images/wiki_knowledge.webp" alt="知识空间" width="100%" style="border-radius: 8px;" />
       <br/>
-      <sub>知识库：Vault 文件树管理与 Markdown 渲染</sub>
+      <sub>知识空间：Vault 文件树管理与 Markdown 渲染</sub>
     </td>
   </tr>
   <tr>
@@ -217,6 +234,12 @@ sudo xattr -d com.apple.quarantine /Applications/Molio.app
 ```
 
 之后即可正常双击打开。
+
+## 🏢 定制服务
+
+把核心知识，留在你自己的院子里。散料炼成知识库，陪你用到会——数据处理、咨询、私有部署按需，一次演示见真章。
+
+**[了解定制服务 →](https://molio.cn/enterprise.html)**
 
 ## 💬 用户交流群
 

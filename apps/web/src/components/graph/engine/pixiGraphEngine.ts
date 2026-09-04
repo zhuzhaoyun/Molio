@@ -219,6 +219,8 @@ export class PixiGraphEngine {
 
   private callbacks: EngineCallbacks = {};
   private destroyed = false;
+  private paused = false;
+  private resizeObserver: ResizeObserver | null = null;
 
   private width = 0;
   private height = 0;
@@ -318,18 +320,38 @@ export class PixiGraphEngine {
 
     this.rafId = requestAnimationFrame(this.renderFrame);
 
-    const ro = new ResizeObserver(() => {
+    this.resizeObserver = new ResizeObserver(() => {
       this.width = this.container.clientWidth;
       this.height = this.container.clientHeight;
       this.app.renderer.resize(this.width, this.height);
     });
-    ro.observe(this.container);
+    this.resizeObserver.observe(this.container);
   }
 
   // ── Public API ──
 
   setCallbacks(cb: EngineCallbacks): void {
     this.callbacks = cb;
+  }
+
+  /** Pause/resume the render loop and force simulation, keeping node positions
+   *  and viewport intact. Used when the graph tab is tabbed-away but kept alive —
+   *  stop burning rAF/CPU on a hidden canvas without losing the layout state. */
+  setPaused(paused: boolean): void {
+    if (this.paused === paused) return;
+    this.paused = paused;
+    if (paused) {
+      cancelAnimationFrame(this.rafId);
+      this.sim?.stop();
+      // A hidden pane has zero size — don't let it resize the renderer to 0.
+      this.resizeObserver?.disconnect();
+    } else {
+      this.rafId = requestAnimationFrame(this.renderFrame);
+      // Only resume motion if the sim was still settling; otherwise just
+      // re-render the static layout (no re-motion jitter after a pause).
+      if (this.sim && this.sim.alpha() > 0) this.sim.restart();
+      this.resizeObserver?.observe(this.container);
+    }
   }
 
   setData(nodes: EngineNode[], edges: EngineEdge[]): void {
@@ -536,6 +558,7 @@ export class PixiGraphEngine {
     this.tweens.forEach((t) => t.stop());
     this.tweens.clear();
     this.renderListeners.clear();
+    this.resizeObserver?.disconnect();
     cancelAnimationFrame(this.rafId);
     this.sim?.stop();
     if (this.app) {

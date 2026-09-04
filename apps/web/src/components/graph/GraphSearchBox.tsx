@@ -21,11 +21,13 @@ export interface SearchableNode {
 interface Props {
   nodes: SearchableNode[];
   onSelect: (key: string, label: string) => void;
+  /** Focus the input on mount — used when the collapsed icon expands to the field. */
+  autoFocus?: boolean;
 }
 
 const MAX_RESULTS = 20;
 
-export function GraphSearchBox({ nodes, onSelect }: Props) {
+export function GraphSearchBox({ nodes, onSelect, autoFocus }: Props) {
   const { t } = useI18n();
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
@@ -89,6 +91,7 @@ export function GraphSearchBox({ nodes, onSelect }: Props) {
     <div className="graph-search">
       <input
         ref={inputRef}
+        autoFocus={autoFocus}
         data-testid="graph-search-input"
         className="graph-search__input"
         type="text"

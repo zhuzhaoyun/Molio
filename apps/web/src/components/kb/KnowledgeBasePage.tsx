@@ -20,7 +20,9 @@ import { OutlinePanel } from './OutlinePanel';
 import { SearchPanel } from './SearchPanel';
 import { VaultManagerModal } from './VaultManager';
 import { PublishForm, type PublishFormData } from '../resources/PublishForm';
-import { PUBLISH_TAB_ID } from './kb-constants';
+import { PUBLISH_TAB_ID, GRAPH_TAB_ID } from './kb-constants';
+import { GraphPage } from '../graph/GraphPage';
+import { graphViewStore } from '../../stores/graphViewStore';
 import { ImportModal, CoseInstallPrompt, InputDialog, ConfirmDialog } from './KbModals';
 import { ImportConflictDialog } from './ImportConflictDialog';
 import { ContextMenu, type MenuItem } from './ContextMenu';
@@ -390,25 +392,57 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     kb.selectFile(null);
   }, [tabs, kb, showToast, t]);
 
+  /** Open the graph tab: activate it if already open (per-vault singleton via
+   *  the fixed GRAPH_TAB_ID), else open it. Clicking a file from the graph is a
+   *  normal file open (a graph tab is never recycled, so it stays alive). */
+  const openGraphTab = useCallback(() => {
+    if (tabs.tabs.some((tb) => tb.id === GRAPH_TAB_ID)) {
+      tabs.activateTab(GRAPH_TAB_ID);
+    } else {
+      const res = tabs.openTab({ id: GRAPH_TAB_ID, type: 'graph', title: t('nav.graph'), vaultId: kb.activeVault?.id });
+      if (!res.opened && res.reason === 'limit') {
+        showToast(`已达 ${MAX_TABS} 个标签上限，请先关闭某个标签`);
+      }
+    }
+  }, [tabs, kb, t, showToast]);
+
+  // NavRail「图谱」入口到来：URL 带 ?panel=graph → 打开/激活图谱标签，随后去掉该参数。
+  useEffect(() => {
+    if (searchParams.get('panel') !== 'graph') return;
+    openGraphTab();
+    const next = new URLSearchParams(searchParams);
+    next.delete('panel');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams, openGraphTab]);
+
   // ─── Navigation history: tab-scoped view history ───
-  // Records the order of files the user has viewed. Subscribing to activeTabId
-  // keeps it in sync with every activation (open file / recycle / click a tab;
-  // a back/forward re-activation dedups against the current position).
-  // back/forward re-open the target file via handleSelectFile, which activates
-  // an existing tab, else recycles the current one — so navigating never grows
-  // the tab count, and unsaved-edit discard prompts still apply.
+  // Records the order of views the user has visited (files AND the graph tab).
+  // Subscribing to activeTabId keeps it in sync with every activation (open
+  // file / recycle / click a tab / activate graph; a back/forward re-activation
+  // dedups against the current position).
+  // back/forward re-open the target: files via handleSelectFile (activates an
+  // existing tab, else recycles the current one — navigating never grows the
+  // tab count, and unsaved-edit discard prompts still apply), graph via
+  // openGraphTab (activates or re-opens the per-vault graph tab).
   const handleSelectFileRef = useRef(handleSelectFile);
   handleSelectFileRef.current = handleSelectFile;
+  const openGraphTabRef = useRef(openGraphTab);
+  openGraphTabRef.current = openGraphTab;
   useEffect(() => {
     navigationHistoryStore.registerOpenFile((filePath) => {
       handleSelectFileRef.current(filePath);
+    });
+    navigationHistoryStore.registerOpenGraph(() => {
+      openGraphTabRef.current();
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const active = tabs.activeTabId;
     if (active?.startsWith('file:')) {
-      navigationHistoryStore.push(active.slice(5));
+      navigationHistoryStore.push({ kind: 'file', path: active.slice(5) });
+    } else if (active === GRAPH_TAB_ID) {
+      navigationHistoryStore.push({ kind: 'graph' });
     }
   }, [tabs.activeTabId]);
 
@@ -1136,6 +1170,17 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
   const publishActive = tabs.activeTabId === PUBLISH_TAB_ID;
   const publishTabData = (tabs.tabs.find((tb) => tb.id === PUBLISH_TAB_ID)?.data ?? undefined) as PublishFormData | undefined;
 
+  // 图谱标签页 keep-alive：标签存在期间 GraphPage 常驻挂载，非激活仅 CSS 隐藏 + inert
+  // （与 publish 同款），切走再切回不丢图谱状态；隐藏时通过 active 暂停引擎省 CPU。
+  const graphTabOpen = tabs.tabs.some((tb) => tb.id === GRAPH_TAB_ID);
+  const graphActive = tabs.activeTabId === GRAPH_TAB_ID;
+
+  // 让 NavRail「图谱」在 view 图谱标签时高亮；离开 KB 时复位。
+  useEffect(() => {
+    graphViewStore.setActive(graphActive);
+    return () => graphViewStore.setActive(false);
+  }, [graphActive]);
+
   return (
     <div className="kb-shell">
       {/* File Panel */}
@@ -1218,9 +1263,9 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
         />
         <div className="kb-main-panes">
           <div
-            className={`kb-pane${publishActive ? ' kb-pane--closed' : ''}`}
-            inert={publishActive}
-            aria-hidden={publishActive || undefined}
+            className={`kb-pane${publishActive || graphActive ? ' kb-pane--closed' : ''}`}
+            inert={publishActive || graphActive}
+            aria-hidden={publishActive || graphActive || undefined}
           >
             <KbMainContent
               fileContent={kb.fileContent}
@@ -1272,6 +1317,15 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
                   tabs.updateTab(PUBLISH_TAB_ID, { data: data as unknown as Record<string, unknown> });
                 }}
               />
+            </div>
+          )}
+          {graphTabOpen && (
+            <div
+              className={`kb-pane${graphActive ? '' : ' kb-pane--closed'}`}
+              inert={!graphActive}
+              aria-hidden={!graphActive || undefined}
+            >
+              <GraphPage active={graphActive} />
             </div>
           )}
         </div>

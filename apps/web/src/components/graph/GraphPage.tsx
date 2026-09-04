@@ -12,6 +12,7 @@ import type { GraphData, GraphNode } from '@molio/contracts';
 import { api } from '../../api/client';
 import { useI18n } from '../../i18n';
 import { useActiveVaultId, vaultStore } from '../../stores/vaultStore';
+import { navigationHistoryStore, useNavigationHistory } from '../../stores/navigationHistoryStore';
 import { useGraphSettings } from './useGraphSettings';
 import { GraphSettingsPanel } from './GraphSettingsPanel';
 import { GraphSearchBox } from './GraphSearchBox';
@@ -23,9 +24,11 @@ import {
   type EngineEdge,
 } from './engine/pixiGraphEngine';
 
-export function GraphPage() {
+export function GraphPage({ active = true }: { active?: boolean } = {}) {
   const { t } = useI18n();
   const navigate = useNavigate();
+  // 与文件标签标题栏同一份视图历史（#244 store）——图谱也是一个「被看过的视图」
+  const { canGoBack, canGoForward } = useNavigationHistory();
 
   // 跟随知识库的活跃 vault，知识库切换时图谱自动切换
   const activeVaultId = useActiveVaultId();
@@ -33,6 +36,10 @@ export function GraphPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  // 搜索折叠态：常驻一个 🔍 图标，点开/按 / 展开输入框；统计收敛进 ℹ（点开显示）。
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [showStats, setShowStats] = useState(false);
+  const searchRef = useRef<HTMLDivElement>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<PixiGraphEngine | null>(null);
@@ -101,6 +108,41 @@ export function GraphPage() {
 
   const hasData = !!engineData && engineData.nodes.length > 0;
 
+  // `/` 快捷键：在非输入态下展开图谱搜索。与全局搜索 Ctrl/Cmd+F 区分，不冲突。
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      if (!hasData || !engine) return;
+      e.preventDefault();
+      setSearchOpen(true);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [hasData, engine]);
+
+  // 搜索开合：外部点击 / Esc 收起（点在搜索框内则保留）。
+  useEffect(() => {
+    if (!searchOpen && !showStats) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (searchRef.current?.contains(t)) return;
+      if ((t as HTMLElement)?.closest?.('.graph-stats-ctrl')) return;
+      setSearchOpen(false);
+      setShowStats(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setSearchOpen(false); setShowStats(false); }
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [searchOpen, showStats]);
+
   // ── 引擎生命周期：首次有数据时异步创建 ──
   useEffect(() => {
     if (!hasData || !containerRef.current || engineRef.current) return;
@@ -158,6 +200,13 @@ export function GraphPage() {
     };
   }, [hasData]);
 
+  // Keep-alive: when the graph tab is tabbed away (active=false) but stays
+  // mounted, pause the engine so a hidden canvas doesn't burn rAF/CPU; resume
+  // on return. Node positions and viewport are preserved across the pause.
+  useEffect(() => {
+    engine?.setPaused(!active);
+  }, [engine, active]);
+
   // 组件卸载时销毁引擎
   useEffect(() => {
     return () => {
@@ -208,6 +257,7 @@ export function GraphPage() {
             </svg>
           </div>
           <p>{t('graph.noVault')}</p>
+          <p className="graph-empty__hint">{t('graph.noVaultHint')}</p>
         </div>
       </div>
     );
@@ -216,36 +266,105 @@ export function GraphPage() {
   return (
     <div className="graph-page">
       <div className="graph-topbar">
-        <div className="graph-topbar__left">
-          <h2 className="graph-topbar__title">{t('graph.title')}</h2>
-          {/* 搜索只覆盖当前可见节点（engineData 已过滤 → 天然尊重筛选） */}
-          {hasData && engine && engineData && (
-            <GraphSearchBox
-              nodes={engineData.nodes}
-              onSelect={(key) => {
-                engineRef.current?.focusNode(key);
-              }}
-            />
-          )}
+        {/* 左端：前进/后退（与文件标签标题栏最左同一份历史；常驻、disabled 置灰，
+            与 #244 的 .kb-nav-btn 同款裸 chevron 样式） */}
+        <div className="kb-nav-group graph-topbar__left" data-testid="graph-nav-navigation">
+          <button
+            type="button"
+            className="kb-nav-btn"
+            data-testid="graph-nav-back"
+            disabled={!canGoBack}
+            onClick={() => navigationHistoryStore.back()}
+            aria-label={t('nav.back')}
+          >
+            ‹
+          </button>
+          <button
+            type="button"
+            className="kb-nav-btn"
+            data-testid="graph-nav-forward"
+            disabled={!canGoForward}
+            onClick={() => navigationHistoryStore.forward()}
+            aria-label={t('nav.forward')}
+          >
+            ›
+          </button>
         </div>
         <div className="graph-topbar__right">
-          {graphData && !loading && (
-            <span className="graph-stat">{t('graph.nodes', { count: nodeCount })}</span>
+          {/* 搜索：默认 🔍 图标，点开/按 / 展开输入框（从图标向左滑入）；与全局 Ctrl/Cmd+F 区分 */}
+          {hasData && engine && engineData && (
+            <div className="graph-search-ctrl" ref={searchRef}>
+              {searchOpen && (
+                <div className="graph-search-expand">
+                  <GraphSearchBox
+                    autoFocus
+                    nodes={engineData.nodes}
+                    onSelect={(key) => {
+                      engineRef.current?.focusNode(key);
+                    }}
+                  />
+                </div>
+              )}
+              <button
+                type="button"
+                className={`graph-icon-btn${searchOpen ? ' is-active' : ''}`}
+                onClick={() => setSearchOpen((v) => !v)}
+                data-tooltip={`${t('graph.searchNodes')} (/)`}
+                aria-label={t('graph.searchNodes')}
+                data-testid="graph-search-open"
+              >
+                {/* 定位（瞄准镜/定位点）：在图谱里定位节点，与全局搜索放大镜区分 */}
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
+                  <circle cx="12" cy="12" r="6.5" />
+                  <line x1="12" y1="1.5" x2="12" y2="5.5" />
+                  <line x1="12" y1="18.5" x2="12" y2="22.5" />
+                  <line x1="1.5" y1="12" x2="5.5" y2="12" />
+                  <line x1="18.5" y1="12" x2="22.5" y2="12" />
+                  <circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none" />
+                </svg>
+              </button>
+            </div>
           )}
+          {/* 统计：收敛进 ℹ，点击展示 */}
           {graphData && !loading && (
-            <span className="graph-stat graph-stat--edges">{t('graph.edges', { count: edgeCount })}</span>
-          )}
-          {graphData && graphData.deadLinks && graphData.deadLinks.length > 0 && (
-            <span className="graph-stat graph-stat--deadlink" title={`${graphData.deadLinks.length} dead link(s)`}>
-              死链接 {graphData.deadLinks.length}
-            </span>
+            <div className="graph-stats-ctrl">
+              {showStats && (
+                <div className="graph-stats-pop">
+                  <span>{t('graph.nodes', { count: nodeCount })}</span>
+                  <span>{t('graph.edges', { count: edgeCount })}</span>
+                  {graphData.deadLinks && graphData.deadLinks.length > 0 && (
+                    <span className="graph-stat--deadlink">{t('graph.deadLinks', { count: graphData.deadLinks.length })}</span>
+                  )}
+                </div>
+              )}
+              <button
+                type="button"
+                className={`graph-icon-btn${showStats ? ' is-active' : ''}`}
+                onClick={() => setShowStats((v) => !v)}
+                data-tooltip={t('graph.stats')}
+                aria-label={t('graph.stats')}
+              >
+                {/* 柱状图：一眼即"数据统计" */}
+                <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+                  <rect x="4" y="13" width="3.8" height="7" rx="1.9" />
+                  <rect x="10.1" y="9" width="3.8" height="11" rx="1.9" />
+                  <rect x="16.2" y="5" width="3.8" height="15" rx="1.9" />
+                </svg>
+              </button>
+            </div>
           )}
           <button
             className={`graph-settings-btn ${showSettings ? 'is-active' : ''}`}
             onClick={() => setShowSettings(!showSettings)}
-            title="图谱设置"
+            data-tooltip={t('graph.settings')}
           >
-            ⚙
+            {/* 调节滑杆：设置面板（筛选/力度滑杆）一眼即"调整" */}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
+              <line x1="4" y1="8" x2="20" y2="8" />
+              <circle cx="9" cy="8" r="2.7" />
+              <line x1="4" y1="16" x2="20" y2="16" />
+              <circle cx="15" cy="16" r="2.7" />
+            </svg>
           </button>
         </div>
       </div>
@@ -267,6 +386,7 @@ export function GraphPage() {
         {!loading && !error && graphData && graphData.nodes.length === 0 && (
           <div className="graph-empty">
             <p>{t('graph.empty')}</p>
+            <p className="graph-empty__hint">{t('graph.emptyHint')}</p>
           </div>
         )}
 
