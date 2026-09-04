@@ -191,7 +191,11 @@ export function KbTabBar({ tabs, activeTabId, onActivate, onClose, onAddTab, onT
               data-testid={tab.id.startsWith('file:') ? undefined : `kb-wtab-${tab.id}`}
               ref={isActive ? activeRef : null}
               onClick={() => onActivate(tab.id)}
-              onDoubleClick={() => onTogglePin?.(tab.id)}
+              onDoubleClick={() => {
+                // 与右键菜单的 canPin 同一准入：固定用于保护文件/空白标签不被回收，
+                // 图谱等特殊标签永不回收，固定无意义（双击不响应）。
+                if (tab.type === 'file' || tab.type === 'blank') onTogglePin?.(tab.id);
+              }}
               onContextMenu={(e) => {
                 // Right-click on the close × shouldn't pop the tab's context menu.
                 if ((e.target as HTMLElement).closest('.kb-wtab-close')) return;
