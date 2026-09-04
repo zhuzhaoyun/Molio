@@ -8,6 +8,11 @@
 (function () {
   'use strict';
 
+  // 脚本自身地址（求值期捕获；回调里 document.currentScript 为 null）。
+  // 作为悬浮二维码的解析基准：根部署（/shared.js）、blog（../shared.js 解析后同址）、
+  // SSR 商品页（/resource/*.html 加载 /shared.js）、本地 file:// 预览，全部落到正确路径。
+  const SCRIPT_BASE = document.currentScript && document.currentScript.src;
+
   const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   /* ---------- 1. 注入全局氛围层 ---------- */
@@ -23,10 +28,13 @@
   function injectFloaters() {
     if (document.getElementById('molio-floaters')) return;
 
-    const qrPrefix = location.pathname.includes('/blog/') ? '../' : '';
     const customQr = document.body.dataset.floatQr;
     const customCaption = document.body.dataset.floatCaption;
-    const qrSrc = customQr ? (qrPrefix + customQr) : (qrPrefix + '/images/qrcode.png');
+    // 相对脚本位置解析：此前固定根绝对路径 '/images/qrcode.png'，
+    // 在本地 file:// / 非根路径预览下解析到盘符根目录 → 裂图。
+    const qrSrc = SCRIPT_BASE
+      ? new URL(customQr || 'images/qrcode.png', SCRIPT_BASE).href
+      : ((location.pathname.includes('/blog/') ? '../' : '') + (customQr || '/images/qrcode.png'));
     const caption = customCaption || '加入用户群';
     const altText = customCaption ? (customCaption + '二维码') : 'Molio 墨流用户交流群二维码';
 
