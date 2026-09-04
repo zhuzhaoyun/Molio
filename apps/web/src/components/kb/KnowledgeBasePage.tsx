@@ -416,24 +416,33 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
   }, [searchParams, setSearchParams, openGraphTab]);
 
   // ─── Navigation history: tab-scoped view history ───
-  // Records the order of files the user has viewed. Subscribing to activeTabId
-  // keeps it in sync with every activation (open file / recycle / click a tab;
-  // a back/forward re-activation dedups against the current position).
-  // back/forward re-open the target file via handleSelectFile, which activates
-  // an existing tab, else recycles the current one — so navigating never grows
-  // the tab count, and unsaved-edit discard prompts still apply.
+  // Records the order of views the user has visited (files AND the graph tab).
+  // Subscribing to activeTabId keeps it in sync with every activation (open
+  // file / recycle / click a tab / activate graph; a back/forward re-activation
+  // dedups against the current position).
+  // back/forward re-open the target: files via handleSelectFile (activates an
+  // existing tab, else recycles the current one — navigating never grows the
+  // tab count, and unsaved-edit discard prompts still apply), graph via
+  // openGraphTab (activates or re-opens the per-vault graph tab).
   const handleSelectFileRef = useRef(handleSelectFile);
   handleSelectFileRef.current = handleSelectFile;
+  const openGraphTabRef = useRef(openGraphTab);
+  openGraphTabRef.current = openGraphTab;
   useEffect(() => {
     navigationHistoryStore.registerOpenFile((filePath) => {
       handleSelectFileRef.current(filePath);
+    });
+    navigationHistoryStore.registerOpenGraph(() => {
+      openGraphTabRef.current();
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const active = tabs.activeTabId;
     if (active?.startsWith('file:')) {
-      navigationHistoryStore.push(active.slice(5));
+      navigationHistoryStore.push({ kind: 'file', path: active.slice(5) });
+    } else if (active === GRAPH_TAB_ID) {
+      navigationHistoryStore.push({ kind: 'graph' });
     }
   }, [tabs.activeTabId]);
 

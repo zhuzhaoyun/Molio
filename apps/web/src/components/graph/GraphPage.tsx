@@ -12,6 +12,7 @@ import type { GraphData, GraphNode } from '@molio/contracts';
 import { api } from '../../api/client';
 import { useI18n } from '../../i18n';
 import { useActiveVaultId, vaultStore } from '../../stores/vaultStore';
+import { navigationHistoryStore, useNavigationHistory } from '../../stores/navigationHistoryStore';
 import { useGraphSettings } from './useGraphSettings';
 import { GraphSettingsPanel } from './GraphSettingsPanel';
 import { GraphSearchBox } from './GraphSearchBox';
@@ -26,6 +27,8 @@ import {
 export function GraphPage({ active = true }: { active?: boolean } = {}) {
   const { t } = useI18n();
   const navigate = useNavigate();
+  // 与文件标签标题栏同一份视图历史（#244 store）——图谱也是一个「被看过的视图」
+  const { canGoBack, canGoForward } = useNavigationHistory();
 
   // 跟随知识库的活跃 vault，知识库切换时图谱自动切换
   const activeVaultId = useActiveVaultId();
@@ -263,8 +266,30 @@ export function GraphPage({ active = true }: { active?: boolean } = {}) {
   return (
     <div className="graph-page">
       <div className="graph-topbar">
-        {/* 左端：预留前进/后退（#247 设计，等 #244 store 合入后落地） */}
-        <div className="graph-topbar__left" />
+        {/* 左端：前进/后退（与文件标签标题栏最左同一份历史；常驻、disabled 置灰，
+            与 #244 的 .kb-nav-btn 同款裸 chevron 样式） */}
+        <div className="kb-nav-group graph-topbar__left" data-testid="graph-nav-navigation">
+          <button
+            type="button"
+            className="kb-nav-btn"
+            data-testid="graph-nav-back"
+            disabled={!canGoBack}
+            onClick={() => navigationHistoryStore.back()}
+            aria-label={t('nav.back')}
+          >
+            ‹
+          </button>
+          <button
+            type="button"
+            className="kb-nav-btn"
+            data-testid="graph-nav-forward"
+            disabled={!canGoForward}
+            onClick={() => navigationHistoryStore.forward()}
+            aria-label={t('nav.forward')}
+          >
+            ›
+          </button>
+        </div>
         <div className="graph-topbar__right">
           {/* 搜索：默认 🔍 图标，点开/按 / 展开输入框（从图标向左滑入）；与全局 Ctrl/Cmd+F 区分 */}
           {hasData && engine && engineData && (
