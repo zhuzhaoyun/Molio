@@ -46,7 +46,8 @@ test.describe('KB split view', () => {
     const companion = page.locator('[data-testid="kb-companion-pane"]');
     await expect(companion).toBeVisible();
     await expect(companion.locator('.graph-page')).toBeVisible({ timeout: 10_000 });
-    await expect(companion.locator('[data-testid="companion-title"]')).toContainText('图谱');
+    // 关闭 × 已并入图谱自己的悬浮 topbar（不再有独立副格标题栏）
+    await expect(companion.locator('[data-testid="companion-close"]')).toBeVisible();
     // 主格文件未被换掉
     await expect(page.locator('.kb-wtab.is-active')).toContainText('alpha.md');
   });
@@ -57,9 +58,9 @@ test.describe('KB split view', () => {
 
     const companion = page.locator('[data-testid="kb-companion-pane"]');
     await expect(companion).toBeVisible();
-    // 副格是同一文件的只读视图（有文件名头部、无动作按钮）
+    // 副格是同一文件的只读视图：有文件名头部，动作区只有关闭 ×（无编辑/排版等按钮）
     await expect(companion.locator('.kb-header-filename-center')).toContainText('alpha.md');
-    await expect(companion.locator('.kb-header-actions')).toBeEmpty();
+    await expect(companion.locator('[data-testid="companion-close"]')).toBeVisible();
   });
 
   test('文件对照: picker opens and cancel works', async ({ page }) => {

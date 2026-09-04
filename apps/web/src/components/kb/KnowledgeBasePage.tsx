@@ -25,7 +25,6 @@ import { GraphPage } from '../graph/GraphPage';
 import { graphViewStore } from '../../stores/graphViewStore';
 import { useSplitView } from '../../stores/splitViewStore';
 import { useCompanionFile } from '../../hooks/useCompanionFile';
-import { CompanionHeader } from './CompanionHeader';
 import { FilePicker } from '../FilePicker';
 import { ImportModal, CoseInstallPrompt, InputDialog, ConfirmDialog } from './KbModals';
 import { ImportConflictDialog } from './ImportConflictDialog';
@@ -1402,17 +1401,12 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
               aria-hidden={!companionShown || undefined}
               style={{ left: `${(split?.ratio ?? 0.5) * 100}%` }}
             >
-              <CompanionHeader
-                title={split.companion.type === 'graph'
-                  ? t('nav.graph')
-                  : (split.companion.filePath.split('/').pop() ?? split.companion.filePath)}
-                onClose={() => split.setCompanion(null)}
-              />
               {split.companion.type === 'graph' ? (
-                <GraphPage active={companionShown} />
+                <GraphPage active={companionShown} onCloseCompanion={() => split.setCompanion(null)} />
               ) : (
                 <KbMainContent
                   companion
+                  onCloseCompanion={() => split.setCompanion(null)}
                   fileContent={companionFile.fileContent}
                   fileLoadError={companionFile.error}
                   selectedFile={split.companion.filePath}

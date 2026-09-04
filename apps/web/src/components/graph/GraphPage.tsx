@@ -24,7 +24,7 @@ import {
   type EngineEdge,
 } from './engine/pixiGraphEngine';
 
-export function GraphPage({ active = true }: { active?: boolean } = {}) {
+export function GraphPage({ active = true, onCloseCompanion }: { active?: boolean; onCloseCompanion?: () => void } = {}) {
   const { t } = useI18n();
   const navigate = useNavigate();
   // 与文件标签标题栏同一份视图历史（#244 store）——图谱也是一个「被看过的视图」
@@ -366,6 +366,22 @@ export function GraphPage({ active = true }: { active?: boolean } = {}) {
               <circle cx="15" cy="16" r="2.7" />
             </svg>
           </button>
+          {/* 副视图（分屏）关闭 × —— 与搜索/统计/设置同款磨砂 chip，放进图谱自己的 topbar */}
+          {onCloseCompanion && (
+            <button
+              type="button"
+              className="graph-icon-btn"
+              onClick={onCloseCompanion}
+              data-tooltip={t('kb.close')}
+              aria-label={t('kb.close')}
+              data-testid="companion-close"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
+                <line x1="6" y1="6" x2="18" y2="18" />
+                <line x1="18" y1="6" x2="6" y2="18" />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
 
