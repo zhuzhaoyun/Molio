@@ -12,6 +12,8 @@ const zh: Record<string, string> = {
   'nav.settings': '设置',
   'nav.account': '账号',
   'nav.login': '登录',
+  'nav.back': '后退',
+  'nav.forward': '前进',
 
   // ── Common ──
   'common.save': '保存',

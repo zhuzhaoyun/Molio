@@ -10,6 +10,7 @@ import { useKnowledge } from '../../hooks/useKnowledge';
 import { useKbTabs, MAX_TABS, type WorkspaceTab } from '../../hooks/useKbTabs';
 import { vaultStore } from '../../stores/vaultStore';
 import { kbChatSessionsStore } from '../../stores/kbChatSessionsStore';
+import { navigationHistoryStore } from '../../stores/navigationHistoryStore';
 import { useAuthStatus } from '../../stores/authStore';
 import { KbFilePanel, type KbFilePanelHandle } from './KbFilePanel';
 import { KbTabBar } from './KbTabBar';
@@ -388,6 +389,28 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     }
     kb.selectFile(null);
   }, [tabs, kb, showToast, t]);
+
+  // ─── Navigation history: tab-scoped view history ───
+  // Records the order of files the user has viewed. Subscribing to activeTabId
+  // keeps it in sync with every activation (open file / recycle / click a tab;
+  // a back/forward re-activation dedups against the current position).
+  // back/forward re-open the target file via handleSelectFile, which activates
+  // an existing tab, else recycles the current one — so navigating never grows
+  // the tab count, and unsaved-edit discard prompts still apply.
+  const handleSelectFileRef = useRef(handleSelectFile);
+  handleSelectFileRef.current = handleSelectFile;
+  useEffect(() => {
+    navigationHistoryStore.registerOpenFile((filePath) => {
+      handleSelectFileRef.current(filePath);
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const active = tabs.activeTabId;
+    if (active?.startsWith('file:')) {
+      navigationHistoryStore.push(active.slice(5));
+    }
+  }, [tabs.activeTabId]);
 
   /** Navigate to a file by wikilink page name — opens in a new tab. */
   const handleNavigateToFile = useCallback((pageName: string) => {
