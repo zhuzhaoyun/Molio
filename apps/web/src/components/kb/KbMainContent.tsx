@@ -130,6 +130,8 @@ interface KbMainContentProps {
   onCloseTab?: () => void;
   /** Navigate to another file in the same vault (for [[wikilink]] clicks). */
   onNavigateToFile?: (filePath: string) => void;
+  /** 只读副视图模式：隐藏头部全部动作按钮（副格由 CompanionHeader 承担关闭/标识）。 */
+  companion?: boolean;
 }
 
 export function KbMainContent({
@@ -158,6 +160,7 @@ export function KbMainContent({
   onForceLoad,
   onCloseTab,
   onNavigateToFile,
+  companion = false,
 }: KbMainContentProps) {
   const { t } = useI18n();
   const { canGoBack, canGoForward } = useNavigationHistory();
@@ -456,6 +459,8 @@ export function KbMainContent({
           </div>
         )}
         <div className="kb-header-actions">
+          {!companion && (
+            <>
           {/* ── File edit / output actions (text files only, small-.md doocs path) ── */}
           {category === 'text' && selectedFile && !isCmPath && (
             <>
@@ -779,6 +784,8 @@ export function KbMainContent({
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
               </svg>
             </button>
+          )}
+            </>
           )}
         </div>
       </div>
