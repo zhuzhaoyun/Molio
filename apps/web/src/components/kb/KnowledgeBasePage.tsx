@@ -23,6 +23,10 @@ import { PublishForm, type PublishFormData } from '../resources/PublishForm';
 import { PUBLISH_TAB_ID, GRAPH_TAB_ID } from './kb-constants';
 import { GraphPage } from '../graph/GraphPage';
 import { graphViewStore } from '../../stores/graphViewStore';
+import { useSplitView } from '../../stores/splitViewStore';
+import { useCompanionFile } from '../../hooks/useCompanionFile';
+import { CompanionHeader } from './CompanionHeader';
+import { FilePicker } from '../FilePicker';
 import { ImportModal, CoseInstallPrompt, InputDialog, ConfirmDialog } from './KbModals';
 import { ImportConflictDialog } from './ImportConflictDialog';
 import { ContextMenu, type MenuItem } from './ContextMenu';
@@ -1175,11 +1179,36 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
   const graphTabOpen = tabs.tabs.some((tb) => tb.id === GRAPH_TAB_ID);
   const graphActive = tabs.activeTabId === GRAPH_TAB_ID;
 
-  // 让 NavRail「图谱」在 view 图谱标签时高亮；离开 KB 时复位。
+  // ── 单库分屏：主格由标签栏驱动；副格由 splitViewStore 驱动 ──
+  const split = useSplitView(kb.activeVault?.id ?? null);
+  const companionFile = useCompanionFile(
+    kb.activeVault?.id ?? null,
+    split?.companion?.type === 'file' ? split.companion.filePath : null,
+  );
+  const fileMain = !publishActive && !graphActive;
+  const companionShown = !!(split?.companion && fileMain);
+  const [showSplitFilePicker, setShowSplitFilePicker] = useState(false);
+
+  /** 右键标签 → 分屏预设：主格切到该标签，副格按 mode 设定。幂等，永不产生第 3 格。 */
+  const openSplit = useCallback((tab: WorkspaceTab, mode: 'graph' | 'file' | 'copy') => {
+    if (!tab.id.startsWith('file:')) return;
+    handleActivateTab(tab.id);
+    if (mode === 'graph') {
+      split?.setCompanion({ type: 'graph' });
+    } else if (mode === 'copy') {
+      // Obsidian「复制当前」：副格直接打开同一文件（只读）
+      split?.setCompanion({ type: 'file', filePath: tab.id.slice(5) });
+    } else {
+      setShowSplitFilePicker(true);
+    }
+  }, [handleActivateTab, split]);
+
+  // 让 NavRail「图谱」在 view 图谱标签（或副视图=图谱的分屏）时高亮；离开 KB 时复位。
   useEffect(() => {
-    graphViewStore.setActive(graphActive);
+    const graphCompanion = split?.companion?.type === 'graph';
+    graphViewStore.setActive(graphActive || (!!graphCompanion && fileMain));
     return () => graphViewStore.setActive(false);
-  }, [graphActive]);
+  }, [graphActive, split?.companion, fileMain]);
 
   return (
     <div className="kb-shell">
@@ -1217,6 +1246,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
           onActivate={handleActivateTab}
           onClose={handleCloseTab}
           onOpenInNewWindow={handleOpenInNewWindow}
+          onSplit={openSplit}
           onAddTab={handleAddTab}
           onTogglePin={handleTogglePin}
           actions={
@@ -1266,6 +1296,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
             className={`kb-pane${publishActive || graphActive ? ' kb-pane--closed' : ''}`}
             inert={publishActive || graphActive}
             aria-hidden={publishActive || graphActive || undefined}
+            style={companionShown ? { right: `${(1 - (split?.ratio ?? 0.5)) * 100}%` } : undefined}
           >
             <KbMainContent
               fileContent={kb.fileContent}
@@ -1328,6 +1359,47 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
               <GraphPage active={graphActive} />
             </div>
           )}
+          {/* 副视图（单库分屏右格）：companion 存在期间 keep-alive 常驻挂载；
+              主视图切到图谱/发布时整幅显示、副格隐藏（GraphPage 引擎经 active=false 暂停） */}
+          {split?.companion && (
+            <div
+              className={`kb-pane kb-pane--companion${companionShown ? '' : ' kb-pane--closed'}`}
+              data-testid="kb-companion-pane"
+              inert={!companionShown}
+              aria-hidden={!companionShown || undefined}
+              style={{ left: `${(split?.ratio ?? 0.5) * 100}%` }}
+            >
+              <CompanionHeader
+                title={split.companion.type === 'graph'
+                  ? t('nav.graph')
+                  : (split.companion.filePath.split('/').pop() ?? split.companion.filePath)}
+                onClose={() => split.setCompanion(null)}
+              />
+              {split.companion.type === 'graph' ? (
+                <GraphPage active={companionShown} />
+              ) : (
+                <KbMainContent
+                  companion
+                  fileContent={companionFile.fileContent}
+                  fileLoadError={companionFile.error}
+                  selectedFile={split.companion.filePath}
+                  vaultId={kb.activeVault?.id ?? null}
+                  vaultPath={kb.activeVault?.path ?? null}
+                  isTypesetMode={false}
+                  themeConfig={kb.themeConfig}
+                  wikiInitialized={kb.wikiInitialized}
+                  onToggleTypeset={() => {}}
+                  onThemeConfigChange={() => {}}
+                  onContentChange={() => {}}
+                  onCopy={() => {}}
+                  onPublish={() => {}}
+                  onBuildWiki={() => {}}
+                  showFileName={true}
+                  onNavigateToFile={handleNavigateToFile}
+                />
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -1349,6 +1421,26 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
           }}
           onClose={() => setShowSearch(false)}
         />
+      )}
+
+      {/* 文件对照：选副格文件 */}
+      {showSplitFilePicker && kb.activeVault && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
+          onClick={() => setShowSplitFilePicker(false)}
+        >
+          <div onClick={(e) => e.stopPropagation()}>
+            <FilePicker
+              vaultId={kb.activeVault.id}
+              filterText=""
+              onSelect={(p) => {
+                setShowSplitFilePicker(false);
+                split?.setCompanion({ type: 'file', filePath: p });
+              }}
+              onClose={() => setShowSplitFilePicker(false)}
+            />
+          </div>
+        </div>
       )}
 
       {/* Vault Manager Modal */}
