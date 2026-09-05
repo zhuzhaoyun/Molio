@@ -13,6 +13,12 @@
 // readable. Idempotent — existing [[...]] regions are protected, re-runs are
 // no-ops.
 //
+// Word boundaries: a name is only linked when it stands on its own. An
+// occurrence embedded in a larger Latin/ASCII word (`abi` in "Capabilities",
+// `OWL` in "KNOWLEDGE", `RDF` in "RDFox") is skipped, so the pass never
+// mangles ordinary words into links. CJK names have no word boundaries and are
+// linked freely (flush CJK text is normal, not a larger "word").
+//
 // Protected regions (never touched, so quotes stay verbatim for
 // `prep.mjs verify` and code stays intact):
 //   - YAML frontmatter
@@ -40,6 +46,11 @@ import { cleanAliasToken } from './lib/cli.mjs';
 // Navigational pages are link targets of last resort, not prose vocabulary —
 // never auto-link mentions of them, and don't rewrite these files.
 const NAV_BASES = new Set(['index', 'log', 'hot']);
+
+// A "word" character for boundary purposes = ASCII letter/digit/underscore.
+// CJK has no such boundaries, so CJK page names stay freely linkable even when
+// flush against other CJK text; only Latin/ASCII runs get boundary protection.
+const LATIN_WORD = /[A-Za-z0-9_]/;
 
 function usage() {
   process.stderr.write(
@@ -272,6 +283,14 @@ function main() {
     const inLongerName = (o) => occ.some(
       q => q.surface.length > o.surface.length && q.start <= o.start && o.end <= q.end,
     );
+    // Reject occurrences embedded in a larger Latin/ASCII word — `abi` inside
+    // "Capabilities", `OWL` inside "KNOWLEDGE", `RDF` inside "RDFox". Without
+    // this, indexOf substring-matching mangles ordinary words into links.
+    const boundaryOK = (s, e) => {
+      const prev = s > 0 ? content[s - 1] : '';
+      const next = e < content.length ? content[e] : '';
+      return !LATIN_WORD.test(prev) && !LATIN_WORD.test(next);
+    };
 
     const edits = [];
     for (const { surface, target } of names) {
@@ -281,6 +300,8 @@ function main() {
       if (!first) continue;                        // never mentioned → nothing to do
       if (containingInterval(first.start, first.end)) continue; // inside link/quote/H1:
       //   covered or untouchable — and unchanged by this pass, so idempotent.
+      if (!boundaryOK(first.start, first.end)) continue; // embedded in a larger word —
+      //   leave it alone (and unchanged by this pass, so idempotent).
       if (inLongerName(first)) continue;           // part of a longer name (e.g. 元妃 in
       //   元妃省亲, 宝玉 in 贾宝玉) — the longer name's own handling governs.
       const replacement = surface === target ? `[[${target}]]` : `[[${target}|${surface}]]`;
