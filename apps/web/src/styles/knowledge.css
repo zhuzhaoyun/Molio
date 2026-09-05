@@ -2416,6 +2416,44 @@
   pointer-events: none;
 }
 
+/* ── 单库分屏：副视图 pane + 可拖拽分隔条 ── */
+
+/* 文件对照的 FilePicker：原样式为输入框上方弹出（absolute + bottom:100%），
+   在分屏选择弹层里改为面板内常规流式渲染，否则面板会飞出视口顶部 */
+.kb-split-file-picker {
+  width: min(480px, 80vw);
+}
+.kb-split-file-picker .file-picker-overlay {
+  position: relative;
+  bottom: auto;
+  left: auto;
+  right: auto;
+  max-height: 360px;
+}
+
+.kb-split-divider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  z-index: 5;
+  cursor: col-resize;
+  background: transparent;
+}
+.kb-split-divider:hover,
+.kb-split-divider.is-dragging {
+  background: var(--border);
+}
+
+.kb-pane--companion {
+  /* 覆盖 .kb-pane 的 inset:0 —— left 由 inline style（ratio）驱动 */
+  right: 0;
+  border-left: 1px solid var(--border);
+  /* 与图谱页背景一致（graph.css 用 #FAFAFA 硬编码），避免 GraphPage 副格透底 */
+  background: #FAFAFA;
+  min-width: 240px;
+}
+
 /* ══════════ Workspace Tabs ══════════ */
 
 .kb-workspace-tabs {
