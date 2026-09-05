@@ -708,15 +708,21 @@ export function KbMainContent({
             </>
           )}
 
-          {/* Binary file: open with system app (Electron only) */}
+          {/* Binary/PDF file: open with system app (Electron only) — icon-only, label 移到 tooltip，
+              避免「用外部程序打开」宽文本把 header action 区顶宽、与居中的文件名重叠。 */}
           {(category === 'binary' || category === 'pdf') && isElectron && (
-            <button type="button" className="kb-btn" onClick={handleOpenExternal}>
+            <button
+              type="button"
+              className="kb-btn"
+              onClick={handleOpenExternal}
+              title={t('kb.openExternal')}
+              data-testid="kb-btn-open-external"
+            >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
                 <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
                 <polyline points="15 3 21 3 21 9" />
                 <line x1="10" y1="14" x2="21" y2="3" />
               </svg>
-              <span>{t('kb.openExternal')}</span>
             </button>
           )}
 
