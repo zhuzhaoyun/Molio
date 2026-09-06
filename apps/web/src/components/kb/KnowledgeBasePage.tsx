@@ -23,6 +23,7 @@ import { PublishForm, type PublishFormData } from '../resources/PublishForm';
 import { PUBLISH_TAB_ID, GRAPH_TAB_ID } from './kb-constants';
 import { GraphPage } from '../graph/GraphPage';
 import { graphViewStore } from '../../stores/graphViewStore';
+import { currentContextStore } from '../../stores/currentContextStore';
 import { ImportModal, CoseInstallPrompt, InputDialog, ConfirmDialog } from './KbModals';
 import { ImportConflictDialog } from './ImportConflictDialog';
 import { ContextMenu, type MenuItem } from './ContextMenu';
@@ -1193,6 +1194,16 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     graphViewStore.setActive(graphActive);
     return () => graphViewStore.setActive(false);
   }, [graphActive]);
+
+  // 悬浮对话上下文镜像（供面板「+ 新会话」等消费方读取）：图谱/发布面板激活时
+  // 可见上下文是库而非被隐藏的文档，这里以「可见视图」为准覆盖 useKnowledge
+  // 写入的 selectedFile 镜像（后者不感知标签页状态）。切换文件时两处写入同值。
+  useEffect(() => {
+    currentContextStore.set({
+      filePath: graphActive || publishActive ? null : kb.selectedFile,
+      page: 'knowledge',
+    });
+  }, [graphActive, publishActive, kb.selectedFile]);
 
   return (
     <div className="kb-shell">

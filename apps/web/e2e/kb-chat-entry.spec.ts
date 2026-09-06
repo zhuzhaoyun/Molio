@@ -222,6 +222,25 @@ test.describe('KB chat entry (scoped buttons)', () => {
     await expect(panel.locator('.file-chat-input')).not.toContainText(/doc\.md/);
   });
 
+  test('panel + 新会话 from graph tab stays vault-scoped (no hidden file)', async ({ page }) => {
+    // 同一契约覆盖面板「+」入口：图谱页新建会话不绑被隐藏的 selectedFile
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.kb-main')).toContainText('Doc', { timeout: 10_000 });
+    await page.locator('[data-testid="kb-btn-ask-tab"]').click();
+    const panel = page.locator('[data-testid="kb-chat-panel"]');
+    await expect(panel).toBeVisible();
+    await expect(panel.locator('.file-chat-input')).toContainText(/doc\.md/);
+
+    // 切图谱 → 面板 + 新建 → 新会话应为库级（composer 无 @doc.md）
+    await page.locator('[data-view="graph"]').click();
+    await expect(page.locator('[data-testid="kb-wtab-graph"]')).toBeVisible({ timeout: 10_000 });
+    await page.locator('[data-testid="kb-chat-session-new"]').click();
+    await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(2);
+    const activeInput = panel.locator('[data-testid="kb-chat-session"]:visible .file-chat-input');
+    await expect(activeInput).not.toContainText(/doc\.md/);
+  });
+
   test('💬问答 empty-state CTA also in 未选择文件 state (wiki initialized, no file)', async ({ page }) => {
     // wiki/INDEX.md 存在 → wikiInitialized=true → 空状态走「未选择文件」分支
     // （放 describe 末尾：写 INDEX.md 会翻转后续测试的 wiki 状态）
