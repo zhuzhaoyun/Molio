@@ -303,7 +303,11 @@ export function KbChatSession({
       <ActivityTree activity={chat.activity ?? null} />
       <div className="file-chat-input">
         <ChatComposer
-          key={session.id}
+          // key 带 filePath：openQa 把活跃会话重新指向新文件时（updateSession），
+          // 重挂载 composer 让 initialFileRefs 重新播种 @ —— 否则 store 变了、
+          // 挂载过的输入框永远不更新（#4 语义此前对 UI 无效）。草稿经 composerKey
+          // 保留：已输入文字优先，不会被重指向覆盖。
+          key={`${session.id}:${session.filePath ?? ''}`}
           composerKey={`kb:${session.id}`}
           isRunning={chat.isRunning}
           onSend={handleSend}

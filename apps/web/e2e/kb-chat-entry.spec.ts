@@ -136,6 +136,27 @@ test.describe('KB chat entry (scoped buttons)', () => {
     await expect(panel).toBeVisible();
   });
 
+  test('💬问答 re-points an existing empty qa session to the newly opened file', async ({ page }) => {
+    // 先无文件开会话（@ 为空）→ 关面板 → 打开文件 → 再点问答：
+    // #4 语义（显式问答把活跃会话重新指向当前文件）必须真正落到 composer
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await page.locator('[data-testid="kb-btn-ask-tab"]').click();
+    const panel = page.locator('[data-testid="kb-chat-panel"]');
+    await expect(panel).toBeVisible();
+    await expect(panel.locator('.file-chat-input')).not.toContainText(/doc\.md/);
+    await page.locator('[data-testid="kb-chat-close"]').click();
+    await expect(panel).toBeHidden();
+
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    // 头部文档级按钮渲染 = selectedFile 已就绪（?file= 异步解析完成），否则点击时 filePath 仍为 null
+    await expect(page.locator('[data-testid="kb-btn-ask"]')).toBeVisible({ timeout: 10_000 });
+    await page.locator('[data-testid="kb-btn-ask-tab"]').click();
+    await expect(panel).toBeVisible();
+    await expect(panel.locator('.file-chat-input')).toContainText(/doc\.md/);
+  });
+
   test('💬问答 empty-state CTA also in 未选择文件 state (wiki initialized, no file)', async ({ page }) => {
     // wiki/INDEX.md 存在 → wikiInitialized=true → 空状态走「未选择文件」分支
     // （放 describe 末尾：写 INDEX.md 会翻转后续测试的 wiki 状态）
