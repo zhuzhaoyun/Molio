@@ -4,7 +4,7 @@ import type {
   ConversationHistoryPage, ListHistoryQuery,
   Vault, TreeNode, FileContent, KbHistoryEntry, CreateVaultRequest,
   WikiStatusResponse,
-  GraphData, SearchResult, SearchResponse,
+  GraphData, GraphScope, SearchResult, SearchResponse,
   AuthStatus, SendCodeResponse, User, MeResponse,
   SkillManifestEntry, SkillDetailResponse, CreateSkillRequest, UpdateSkillRequest,
   ImportSkillRequest, PrefillResult,
@@ -910,6 +910,15 @@ export const api = {
   async getGraph(vaultId: string): Promise<GraphData> {
     const res = await fetch(`${BASE}/graph/${vaultId}`);
     if (!res.ok) throw new Error(`Failed to fetch graph: ${res.status}`);
+    return res.json();
+  },
+
+  /** 局部图谱：scope=file 单文档 1 跳邻域 / scope=dir 文件夹子图；返回含 focusNodes。 */
+  async getLocalGraph(vaultId: string, scope: GraphScope): Promise<GraphData> {
+    const params = new URLSearchParams({ scope: scope.type, path: scope.path });
+    if (scope.type === 'file' && scope.depth != null) params.set('depth', String(scope.depth));
+    const res = await fetch(`${BASE}/graph/${vaultId}/local?${params.toString()}`);
+    if (!res.ok) throw new Error(`Failed to fetch local graph: ${res.status}`);
     return res.json();
   },
 
