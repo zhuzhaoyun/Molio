@@ -22,6 +22,7 @@ test.describe('KB chat entry (scoped buttons)', () => {
     vault = await createTempVault('e2e-chat-entry');
     fs.unlinkSync(path.join(vault.path, 'test.md'));
     fs.writeFileSync(path.join(vault.path, 'doc.md'), '# Doc\n');
+    fs.writeFileSync(path.join(vault.path, 'doc2.md'), '# Doc2\n');
   });
   test.afterAll(async () => { if (vault) await cleanupTempVault(vault); });
   test.afterEach(async ({ page }) => { await unmockAll(page); });
@@ -155,6 +156,30 @@ test.describe('KB chat entry (scoped buttons)', () => {
     await page.locator('[data-testid="kb-btn-ask-tab"]').click();
     await expect(panel).toBeVisible();
     await expect(panel.locator('.file-chat-input')).toContainText(/doc\.md/);
+  });
+
+  test('💬问答 re-point updates @ when switching files between asks', async ({ page }) => {
+    // 会话 @ doc.md → 关面板 → 切到 doc2.md → 再点问答：@ 必须跟着切到 doc2
+    // （composer 草稿缓存按 会话:文件 分桶，不得让旧文件的草稿压过新种子）
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid="kb-btn-ask"]')).toBeVisible({ timeout: 10_000 });
+    await page.locator('[data-testid="kb-btn-ask-tab"]').click();
+    const panel = page.locator('[data-testid="kb-chat-panel"]');
+    await expect(panel).toBeVisible();
+    await expect(panel.locator('.file-chat-input')).toContainText(/doc\.md/);
+    await page.locator('[data-testid="kb-chat-close"]').click();
+    await expect(panel).toBeHidden();
+
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc2.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-testid="kb-btn-ask"]')).toBeVisible({ timeout: 10_000 });
+    // 头部按钮可见只证明「有选中文件」——文件 tab 栏会从 localStorage 恢复旧 tab，
+    // ?file=doc2.md 异步解析有先后。等内容真正渲染出 Doc2 才能保证 selectedFile=doc2.md。
+    await expect(page.locator('.kb-main')).toContainText('Doc2', { timeout: 10_000 });
+    await page.locator('[data-testid="kb-btn-ask-tab"]').click();
+    await expect(panel).toBeVisible();
+    await expect(panel.locator('.file-chat-input')).toContainText(/doc2\.md/);
   });
 
   test('💬问答 empty-state CTA also in 未选择文件 state (wiki initialized, no file)', async ({ page }) => {

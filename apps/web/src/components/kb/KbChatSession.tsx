@@ -305,10 +305,12 @@ export function KbChatSession({
         <ChatComposer
           // key 带 filePath：openQa 把活跃会话重新指向新文件时（updateSession），
           // 重挂载 composer 让 initialFileRefs 重新播种 @ —— 否则 store 变了、
-          // 挂载过的输入框永远不更新（#4 语义此前对 UI 无效）。草稿经 composerKey
-          // 保留：已输入文字优先，不会被重指向覆盖。
+          // 挂载过的输入框永远不更新（#4 语义此前对 UI 无效）。
+          // composerKey（草稿命名空间）同样带 filePath：播种出的 @ 文本会被存成
+          // 草稿，若草稿只按会话分桶，重指向时旧文件的 @ 草稿会压过新种子；
+          // 按会话:文件 分桶后，新文件无草稿 → 新种子胜出，切回旧文件还能恢复其草稿。
           key={`${session.id}:${session.filePath ?? ''}`}
-          composerKey={`kb:${session.id}`}
+          composerKey={`kb:${session.id}:${session.filePath ?? ''}`}
           isRunning={chat.isRunning}
           onSend={handleSend}
           onCancel={chat.cancel}
