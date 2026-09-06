@@ -800,12 +800,24 @@ export function KbMainContent({
             <button type="button" className="wiki-cta-btn" onClick={onBuildWiki}>
               开始构建 Wiki
             </button>
+            {/* 库级问答 CTA —— 不建 Wiki 也能直接对话（ghost 次级样式，主推仍是构建 Wiki） */}
+            {onAskAboutFile && (
+              <button type="button" className="wiki-cta-btn wiki-cta-btn--ghost" data-testid="kb-empty-ask-cta" onClick={onAskAboutFile}>
+                💬 与知识库问答
+              </button>
+            )}
           </div>
         ) : (
           <div className="kb-empty-state">
             <div className="kb-empty-icon">📄</div>
             <h3>未选择文件</h3>
             <p>从左侧文件树中选择一个文件查看内容。</p>
+            {/* 库级问答 CTA —— 未打开文件时也能对话（样式复用「开始构建 Wiki」） */}
+            {onAskAboutFile && (
+              <button type="button" className="wiki-cta-btn" data-testid="kb-empty-ask-cta" onClick={onAskAboutFile}>
+                💬 与知识库问答
+              </button>
+            )}
           </div>
         )
       ) : fileLoadError ? (

@@ -23,6 +23,7 @@ import { PublishForm, type PublishFormData } from '../resources/PublishForm';
 import { PUBLISH_TAB_ID, GRAPH_TAB_ID } from './kb-constants';
 import { GraphPage } from '../graph/GraphPage';
 import { graphViewStore } from '../../stores/graphViewStore';
+import { currentContextStore } from '../../stores/currentContextStore';
 import { ImportModal, CoseInstallPrompt, InputDialog, ConfirmDialog } from './KbModals';
 import { ImportConflictDialog } from './ImportConflictDialog';
 import { ContextMenu, type MenuItem } from './ContextMenu';
@@ -244,9 +245,17 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     onConfirm: () => void;
   }>({ show: false, title: '', message: '', onConfirm: () => {} });
 
-  // vault 切换：清空所有会话的 @文件上下文（旧库引用失效）
+  // vault 切换：清空所有会话的 @文件上下文（旧库引用失效）。
+  // 仅在「已解析的 vault id」之间变化时清理：页面加载时 activeVault 走
+  // null → 解析出 id 的过程，若把 null→id 也当切换，每次刷新/进页都会
+  // 无感觉清掉持久化会话的文件绑定（D7 会话记忆文档被刷新击穿）。
+  const prevVaultIdRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
-    kbChatSessionsStore.clearFilePaths();
+    const current = kb.activeVault?.id ?? null;
+    if (prevVaultIdRef.current !== undefined && prevVaultIdRef.current !== null && prevVaultIdRef.current !== current) {
+      kbChatSessionsStore.clearFilePaths();
+    }
+    prevVaultIdRef.current = current;
   }, [kb.activeVault?.id]);
 
   // wiki 任务完成 → 刷新文件树（方案 D：onWikiComplete 改 store 事件总线，KB 页挂载时订阅）
@@ -265,9 +274,16 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
   const pendingImportRef = useRef<{ files: File[]; targetDir: string; oversizedCount: number } | null>(null);
 
   const handleOpenQa = useCallback(() => {
-    if (!kb.selectedFile) return;
-    panelRef.current?.openQa({ filePath: kb.selectedFile, vaultId: kb.activeVault?.id ?? null, selectedText: null });
-  }, [kb.selectedFile, kb.activeVault?.id]);
+    // 上下文跟随可见视图：图谱/发布预览面板激活时，可见上下文是库（vault）而非文档，
+    // 不携带被隐藏的 selectedFile——否则会凭空给新会话绑定、或把活跃会话改绑到
+    // 一个用户当前看不见的文件。openQa 约定 filePath=null = 打开/继续会话且不改绑。
+    const contextHidden = tabs.activeTabId === GRAPH_TAB_ID || tabs.activeTabId === PUBLISH_TAB_ID;
+    panelRef.current?.openQa({
+      filePath: contextHidden ? null : kb.selectedFile ?? null,
+      vaultId: kb.activeVault?.id ?? null,
+      selectedText: null,
+    });
+  }, [tabs.activeTabId, kb.selectedFile, kb.activeVault?.id]);
 
   const handleAskAboutSelection = useCallback((selectedText: string) => {
     if (!kb.selectedFile) return;
@@ -717,22 +733,21 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     return () => document.removeEventListener('keydown', handler);
   }, []);
 
-  // Ctrl/Cmd+K — open KB chat in QA mode for the current file
+  // Ctrl/Cmd+K — 打开 KB 问答（契约同 Tab 栏 💬：上下文跟随可见视图，见 handleOpenQa）
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         const tag = (e.target as HTMLElement)?.tagName;
         if (tag === 'INPUT' || tag === 'TEXTAREA') return;
         e.preventDefault();
-        if (!kb.selectedFile) return;
-        panelRef.current?.openQa({ filePath: kb.selectedFile, vaultId: kb.activeVault?.id ?? null, selectedText: null });
+        handleOpenQa();
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [kb.selectedFile, kb.activeVault?.id]);
+  }, [handleOpenQa]);
 
-  // Ctrl+L / Cmd+L — open file chat for current file (legacy shortcut, now opens QA)
+  // Ctrl+L / Cmd+L — legacy 快捷键，行为同 Cmd+K
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       // Don't trigger when focus is in an input/textarea
@@ -741,8 +756,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
 
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') {
         e.preventDefault();
-        if (!kb.selectedFile) return;
-        panelRef.current?.openQa({ filePath: kb.selectedFile, vaultId: kb.activeVault?.id ?? null, selectedText: null });
+        handleOpenQa();
       }
     };
     document.addEventListener('keydown', handler);
@@ -1181,6 +1195,16 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     return () => graphViewStore.setActive(false);
   }, [graphActive]);
 
+  // 悬浮对话上下文镜像（供面板「+ 新会话」等消费方读取）：图谱/发布面板激活时
+  // 可见上下文是库而非被隐藏的文档，这里以「可见视图」为准覆盖 useKnowledge
+  // 写入的 selectedFile 镜像（后者不感知标签页状态）。切换文件时两处写入同值。
+  useEffect(() => {
+    currentContextStore.set({
+      filePath: graphActive || publishActive ? null : kb.selectedFile,
+      page: 'knowledge',
+    });
+  }, [graphActive, publishActive, kb.selectedFile]);
+
   return (
     <div className="kb-shell">
       {/* File Panel */}
@@ -1221,6 +1245,19 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
           onTogglePin={handleTogglePin}
           actions={
             <>
+              {/* 💬问答 — vault 级常驻入口：有文件 = 带 @文档上下文，无文件 = 库级问答 */}
+              <button
+                type="button"
+                className="kb-btn kb-btn-ghost"
+                onClick={handleOpenQa}
+                disabled={!kb.activeVault}
+                title={kb.activeVault ? t('kb.askButton') : t('kb.cmdNeedsVault')}
+                data-testid="kb-btn-ask-tab"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                </svg>
+              </button>
               <button
                 type="button"
                 className="kb-btn kb-btn-ghost"
@@ -1286,7 +1323,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
               onBuildWiki={handleBuildWiki}
               onAskAboutSelection={handleAskAboutSelection}
               onOpenOutline={() => setShowOutline(true)}
-              onAskAboutFile={kb.selectedFile ? handleOpenQa : undefined}
+              onAskAboutFile={handleOpenQa}
               showFileName={true}
               isEditMode={kb.isEditMode}
               onToggleEdit={kb.toggleEditMode}
