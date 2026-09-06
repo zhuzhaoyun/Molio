@@ -69,6 +69,53 @@ export function graphRoutes(db: Database.Database): Hono {
     }
   });
 
+  // GET /api/graph/:vaultId/local — scoped sub-graph（file=1跳邻域 / dir=文件夹子图）
+  app.get('/:vaultId/local', (c) => {
+    const vault = getVault(db, c.req.param('vaultId'));
+    if (!vault) {
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
+    }
+
+    const scopeType = c.req.query('scope');
+    if (scopeType !== 'file' && scopeType !== 'dir') {
+      return c.json(
+        { error: { code: 'BAD_REQUEST', message: "query 'scope' must be 'file' or 'dir'" } },
+        400,
+      );
+    }
+    const scopePath = (c.req.query('path') ?? '').trim().replace(/\/+$/, '');
+    if (!scopePath) {
+      return c.json({ error: { code: 'BAD_REQUEST', message: "query 'path' is required" } }, 400);
+    }
+    const depthRaw = c.req.query('depth');
+    let depth = 1;
+    if (depthRaw != null && depthRaw !== '') {
+      depth = Number(depthRaw);
+      if (!Number.isInteger(depth) || depth < 1) {
+        return c.json(
+          { error: { code: 'BAD_REQUEST', message: "query 'depth' must be a positive integer" } },
+          400,
+        );
+      }
+      if (depth > 1) {
+        return c.json(
+          { error: { code: 'BAD_REQUEST', message: 'depth > 1 is not supported yet' } },
+          400,
+        );
+      }
+    }
+
+    try {
+      const scope: GraphScope =
+        scopeType === 'file' ? { type: 'file', path: scopePath, depth } : { type: 'dir', path: scopePath };
+      const graphData = buildLocalGraph(vault.path, scope);
+      return c.json(graphData);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to build local graph';
+      return c.json({ error: { code: 'INTERNAL', message } }, 500);
+    }
+  });
+
   return app;
 }
 
