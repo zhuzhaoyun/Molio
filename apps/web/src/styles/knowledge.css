@@ -2294,6 +2294,17 @@
   background: var(--accent-hover);
 }
 
+/* 次级 CTA：与主 CTA 并列时不抢视觉焦点（如空状态的「💬 与知识库问答」） */
+.wiki-cta-btn--ghost {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.wiki-cta-btn--ghost:hover {
+  background: var(--bg-panel);
+}
+
 /* ══════════ Image Viewer ══════════ */
 
 .kb-image-viewer {

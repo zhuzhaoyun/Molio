@@ -265,8 +265,10 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
   const pendingImportRef = useRef<{ files: File[]; targetDir: string; oversizedCount: number } | null>(null);
 
   const handleOpenQa = useCallback(() => {
-    if (!kb.selectedFile) return;
-    panelRef.current?.openQa({ filePath: kb.selectedFile, vaultId: kb.activeVault?.id ?? null, selectedText: null });
+    // 无 selectedFile 时为库级问答（openQa 接受 filePath: null）。头部文档级按钮
+    // 由 KbMainContent 的 selectedFile 条件守门，这里不做二次拦截——
+    // Tab 栏常驻入口与空状态 CTA 在未打开文件时也要可用（用户反馈：找不到对话按钮）。
+    panelRef.current?.openQa({ filePath: kb.selectedFile ?? null, vaultId: kb.activeVault?.id ?? null, selectedText: null });
   }, [kb.selectedFile, kb.activeVault?.id]);
 
   const handleAskAboutSelection = useCallback((selectedText: string) => {
@@ -1221,6 +1223,19 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
           onTogglePin={handleTogglePin}
           actions={
             <>
+              {/* 💬问答 — vault 级常驻入口：有文件 = 带 @文档上下文，无文件 = 库级问答 */}
+              <button
+                type="button"
+                className="kb-btn kb-btn-ghost"
+                onClick={handleOpenQa}
+                disabled={!kb.activeVault}
+                title={kb.activeVault ? t('kb.askButton') : t('kb.cmdNeedsVault')}
+                data-testid="kb-btn-ask-tab"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                </svg>
+              </button>
               <button
                 type="button"
                 className="kb-btn kb-btn-ghost"
@@ -1286,7 +1301,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
               onBuildWiki={handleBuildWiki}
               onAskAboutSelection={handleAskAboutSelection}
               onOpenOutline={() => setShowOutline(true)}
-              onAskAboutFile={kb.selectedFile ? handleOpenQa : undefined}
+              onAskAboutFile={handleOpenQa}
               showFileName={true}
               isEditMode={kb.isEditMode}
               onToggleEdit={kb.toggleEditMode}

@@ -10,6 +10,8 @@ import * as path from 'path';
  *
  * Unified chat panel + scoped entry buttons:
  * - 💬问答 (document) in kb-main-header → 1 click, qa mode + @当前文档.
+ * - 💬问答 (vault) in KbTabBar actions → 无文件也可用（库级问答，不带 @文档）.
+ * - 💬问答 empty-state CTA in「未选择文件」空状态 → 同上.
  * - 📚构建Wiki / 🩺健康检查 (vault) in KbTabBar actions → open + auto-send.
  * Prerequisites: `pnpm dev`.
  */
@@ -95,11 +97,33 @@ test.describe('KB chat entry (scoped buttons)', () => {
     await expect(page.locator('[data-testid="kb-btn-lint-wiki"]')).toBeDisabled();
   });
 
-  test('💬问答 disabled when no file open', async ({ page }) => {
+  test('💬问答 available when no file open (tab-bar entry, vault-scoped)', async ({ page }) => {
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
-    // no ?file= → no selectedFile → ask button absent (rendered only when selectedFile)
+    // 头部文档级按钮仍只在选中文件时渲染（就近上下文入口，职责不变）
     await expect(page.locator('[data-testid="kb-btn-ask"]')).toHaveCount(0);
+    // Tab 栏常驻入口可见可用（无论是否打开文件）
+    const tabAsk = page.locator('[data-testid="kb-btn-ask-tab"]');
+    await expect(tabAsk).toBeVisible();
+    await expect(tabAsk).toBeEnabled();
+    // 空状态 CTA 可见
+    await expect(page.locator('[data-testid="kb-empty-ask-cta"]')).toBeVisible();
+
+    // 点击 Tab 栏入口 → 面板打开，无文件 → 不带 @文档上下文
+    await tabAsk.click();
+    const panel = page.locator('[data-testid="kb-chat-panel"]');
+    await expect(panel).toBeVisible();
+    await expect(panel.locator('.file-chat-input')).not.toContainText(/doc\.md/);
+  });
+
+  test('💬问答 empty-state CTA opens chat when no file open', async ({ page }) => {
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    const cta = page.locator('[data-testid="kb-empty-ask-cta"]');
+    await expect(cta).toBeVisible();
+    await cta.click();
+    const panel = page.locator('[data-testid="kb-chat-panel"]');
+    await expect(panel).toBeVisible();
   });
 
   test('Cmd+K opens qa panel', async ({ page }) => {
@@ -110,5 +134,20 @@ test.describe('KB chat entry (scoped buttons)', () => {
     await page.keyboard.press('Control+KeyK');
     const panel = page.locator('[data-testid="kb-chat-panel"]');
     await expect(panel).toBeVisible();
+  });
+
+  test('💬问答 empty-state CTA also in 未选择文件 state (wiki initialized, no file)', async ({ page }) => {
+    // wiki/INDEX.md 存在 → wikiInitialized=true → 空状态走「未选择文件」分支
+    // （放 describe 末尾：写 INDEX.md 会翻转后续测试的 wiki 状态）
+    fs.mkdirSync(path.join(vault.path, 'wiki'), { recursive: true });
+    fs.writeFileSync(path.join(vault.path, 'wiki', 'INDEX.md'), '# Index\n');
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    // 限定 .kb-main：文件面板的「Empty vault」也用 .kb-empty-state，不限定会 strict 冲突
+    await expect(page.locator('.kb-main .kb-empty-state')).toContainText('未选择文件');
+    const cta = page.locator('[data-testid="kb-empty-ask-cta"]');
+    await expect(cta).toBeVisible();
+    await cta.click();
+    await expect(page.locator('[data-testid="kb-chat-panel"]')).toBeVisible();
+    fs.rmSync(path.join(vault.path, 'wiki'), { recursive: true, force: true });
   });
 });
