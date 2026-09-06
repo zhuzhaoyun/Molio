@@ -914,7 +914,7 @@ export const api = {
   },
 
   /** 局部图谱：scope=file 单文档 1 跳邻域 / scope=dir 文件夹子图；返回含 focusNodes。 */
-  async getLocalGraph(vaultId: string, scope: GraphScope): Promise<GraphData> {
+  async getLocalGraph(vaultId: string, scope: GraphScope): Promise<GraphData & { focusNodes: string[] }> {
     const params = new URLSearchParams({ scope: scope.type, path: scope.path });
     if (scope.type === 'file' && scope.depth != null) params.set('depth', String(scope.depth));
     const res = await fetch(`${BASE}/graph/${vaultId}/local?${params.toString()}`);
