@@ -4,9 +4,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { Hono } from 'hono';
-import { buildLocalGraph, graphRoutes } from '../../src/routes/graph.js';
+import { buildGraph, buildLocalGraph, graphRoutes } from '../../src/routes/graph.js';
 import { openDatabase, closeDatabase, createVault } from '../../src/core/db.js';
-import type { GraphScope } from '@molio/contracts';
 
 /**
  * 局部图谱单测（buildLocalGraph + GET /api/graph/:vaultId/local）。
@@ -90,9 +89,9 @@ describe('buildLocalGraph — file scope（1 跳邻域）', () => {
     assert.deepStrictEqual(g.focusNodes, []);
   });
 
-  it('不存在的 path / 被剔除名（index.md）→ 空图', () => {
-    const vault = makeVault(['a.md', '# A\n'], ['index.md', '# idx\n']);
-    for (const p of ['nope.md', 'index.md']) {
+  it('不存在的 path / 被剔除名（index.md）/ 非 .md 目标 → 空图', () => {
+    const vault = makeVault(['a.md', '# A\n'], ['index.md', '# idx\n'], ['img.png', 'not-md']);
+    for (const p of ['nope.md', 'index.md', 'img.png']) {
       const g = buildLocalGraph(vault, { type: 'file', path: p });
       assert.strictEqual(g.nodes.length, 0, p);
       assert.deepStrictEqual(g.focusNodes, []);
@@ -137,6 +136,13 @@ describe('buildLocalGraph — dir scope（文件夹子图）', () => {
       assert.strictEqual(g.nodes.length, 0, p);
       assert.deepStrictEqual(g.focusNodes, []);
     }
+  });
+});
+
+describe('buildGraph 全量图不受 focusNodes 污染', () => {
+  it('全量图输出不含 focusNodes 字段', () => {
+    const g = buildGraph(makeVault(['a.md', '# A\n\n[[b]]\n'], ['b.md', '# B\n']));
+    assert.ok(!('focusNodes' in g));
   });
 });
 
