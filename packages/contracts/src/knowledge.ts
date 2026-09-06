@@ -139,10 +139,21 @@ export interface DeadLinkInfo {
   targetName: string;
 }
 
+/**
+ * 局部图 scope：
+ * - file：单文档 1 跳邻域（depth 预留，当前仅支持 1）
+ * - dir：文件夹（递归）子图
+ */
+export type GraphScope =
+  | { type: 'file'; path: string; depth?: number }
+  | { type: 'dir'; path: string };
+
 export interface GraphData {
   nodes: GraphNode[];
   edges: GraphEdge[];
   deadLinks: DeadLinkInfo[];
+  /** 仅局部图接口回填：file=圆心单点；dir=子图全部节点；空图=[]。全量图不设。 */
+  focusNodes?: string[];
 }
 
 // ─── Search ───

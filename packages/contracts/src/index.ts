@@ -103,6 +103,7 @@ export type {
   GraphNode,
   GraphEdge,
   GraphData,
+  GraphScope,
   DeadLinkInfo,
   // Search
   SearchResult,
