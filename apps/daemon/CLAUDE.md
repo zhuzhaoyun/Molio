@@ -84,7 +84,7 @@ src/
     projects.ts       CRUD /api/projects — 项目管理
     knowledge.ts      CRUD /api/knowledge — 知识库管理
     publish.ts        POST /api/publish — 发布到内容平台
-    graph.ts          GET /api/graph — 知识图谱数据
+    graph.ts          GET /api/graph/:vaultId 全量图 + /:vaultId/local 局部子图（buildLocalGraph，scope=file|dir，返回含 focusNodes）
     maintenance.ts    POST /api/maintenance/rebuild-fts — 重建 FTS 索引（灾难恢复）
     weixin.ts         POST /api/weixin — 微信回调
     feishu.ts         GET/POST /api/feishu/* — 飞书渠道 (status/start/stop/disconnect/config)
@@ -132,7 +132,8 @@ pnpm typecheck    # tsc --noEmit
 | POST | `/api/maintenance/rebuild-fts` | 重建 messages_fts 索引（灾难恢复） |
 | GET/POST/PUT/DELETE | `/api/knowledge` | 知识库管理 |
 | POST | `/api/publish` | 发布到内容平台 |
-| GET | `/api/graph` | 知识图谱数据 |
+| GET | `/api/graph/:vaultId` | 知识图谱数据（全量） |
+| GET | `/api/graph/:vaultId/local` | 局部子图（?scope=file\|dir&path=&depth=，返回含 focusNodes） |
 | POST | `/api/weixin` | 微信回调 |
 | GET | `/api/feishu/status` | 飞书通道状态 |
 | POST | `/api/feishu/start` | 启动飞书 WebSocket 长连接 |
