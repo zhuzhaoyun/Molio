@@ -244,9 +244,17 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     onConfirm: () => void;
   }>({ show: false, title: '', message: '', onConfirm: () => {} });
 
-  // vault 切换：清空所有会话的 @文件上下文（旧库引用失效）
+  // vault 切换：清空所有会话的 @文件上下文（旧库引用失效）。
+  // 仅在「已解析的 vault id」之间变化时清理：页面加载时 activeVault 走
+  // null → 解析出 id 的过程，若把 null→id 也当切换，每次刷新/进页都会
+  // 无感觉清掉持久化会话的文件绑定（D7 会话记忆文档被刷新击穿）。
+  const prevVaultIdRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
-    kbChatSessionsStore.clearFilePaths();
+    const current = kb.activeVault?.id ?? null;
+    if (prevVaultIdRef.current !== undefined && prevVaultIdRef.current !== null && prevVaultIdRef.current !== current) {
+      kbChatSessionsStore.clearFilePaths();
+    }
+    prevVaultIdRef.current = current;
   }, [kb.activeVault?.id]);
 
   // wiki 任务完成 → 刷新文件树（方案 D：onWikiComplete 改 store 事件总线，KB 页挂载时订阅）
@@ -265,11 +273,16 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
   const pendingImportRef = useRef<{ files: File[]; targetDir: string; oversizedCount: number } | null>(null);
 
   const handleOpenQa = useCallback(() => {
-    // 无 selectedFile 时为库级问答（openQa 接受 filePath: null）。头部文档级按钮
-    // 由 KbMainContent 的 selectedFile 条件守门，这里不做二次拦截——
-    // Tab 栏常驻入口与空状态 CTA 在未打开文件时也要可用（用户反馈：找不到对话按钮）。
-    panelRef.current?.openQa({ filePath: kb.selectedFile ?? null, vaultId: kb.activeVault?.id ?? null, selectedText: null });
-  }, [kb.selectedFile, kb.activeVault?.id]);
+    // 上下文跟随可见视图：图谱/发布预览面板激活时，可见上下文是库（vault）而非文档，
+    // 不携带被隐藏的 selectedFile——否则会凭空给新会话绑定、或把活跃会话改绑到
+    // 一个用户当前看不见的文件。openQa 约定 filePath=null = 打开/继续会话且不改绑。
+    const contextHidden = tabs.activeTabId === GRAPH_TAB_ID || tabs.activeTabId === PUBLISH_TAB_ID;
+    panelRef.current?.openQa({
+      filePath: contextHidden ? null : kb.selectedFile ?? null,
+      vaultId: kb.activeVault?.id ?? null,
+      selectedText: null,
+    });
+  }, [tabs.activeTabId, kb.selectedFile, kb.activeVault?.id]);
 
   const handleAskAboutSelection = useCallback((selectedText: string) => {
     if (!kb.selectedFile) return;
@@ -719,22 +732,21 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     return () => document.removeEventListener('keydown', handler);
   }, []);
 
-  // Ctrl/Cmd+K — open KB chat in QA mode for the current file
+  // Ctrl/Cmd+K — 打开 KB 问答（契约同 Tab 栏 💬：上下文跟随可见视图，见 handleOpenQa）
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         const tag = (e.target as HTMLElement)?.tagName;
         if (tag === 'INPUT' || tag === 'TEXTAREA') return;
         e.preventDefault();
-        if (!kb.selectedFile) return;
-        panelRef.current?.openQa({ filePath: kb.selectedFile, vaultId: kb.activeVault?.id ?? null, selectedText: null });
+        handleOpenQa();
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [kb.selectedFile, kb.activeVault?.id]);
+  }, [handleOpenQa]);
 
-  // Ctrl+L / Cmd+L — open file chat for current file (legacy shortcut, now opens QA)
+  // Ctrl+L / Cmd+L — legacy 快捷键，行为同 Cmd+K
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       // Don't trigger when focus is in an input/textarea
@@ -743,8 +755,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
 
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') {
         e.preventDefault();
-        if (!kb.selectedFile) return;
-        panelRef.current?.openQa({ filePath: kb.selectedFile, vaultId: kb.activeVault?.id ?? null, selectedText: null });
+        handleOpenQa();
       }
     };
     document.addEventListener('keydown', handler);

@@ -182,6 +182,46 @@ test.describe('KB chat entry (scoped buttons)', () => {
     await expect(panel.locator('.file-chat-input')).toContainText(/doc2\.md/);
   });
 
+  test('💬问答 from graph tab keeps the session file binding', async ({ page }) => {
+    // 契约：上下文跟随可见视图。图谱标签页激活时可见上下文是库（图谱），
+    // 点 💬 = 打开/继续会话，不改绑、不清除文件绑定（被隐藏的 selectedFile 不参与）。
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.kb-main')).toContainText('Doc', { timeout: 10_000 });
+    await page.locator('[data-testid="kb-btn-ask-tab"]').click();
+    const panel = page.locator('[data-testid="kb-chat-panel"]');
+    await expect(panel).toBeVisible();
+    await expect(panel.locator('.file-chat-input')).toContainText(/doc\.md/);
+    await page.locator('[data-testid="kb-chat-close"]').click();
+    await expect(panel).toBeHidden();
+
+    // 打开 doc2.md（selectedFile 变为 doc2）→ 经 NavRail 切到图谱标签 → 点问答
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc2.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.kb-main')).toContainText('Doc2', { timeout: 10_000 });
+    // SPA 路径进图谱（不用 ?panel=graph 首载：tab 恢复会与图谱激活竞态，图谱会被抢回文档 tab）
+    await page.locator('[data-view="graph"]').click();
+    await expect(page.locator('[data-testid="kb-wtab-graph"]')).toBeVisible({ timeout: 10_000 });
+    await page.locator('[data-testid="kb-btn-ask-tab"]').click();
+    await expect(panel).toBeVisible();
+    await expect(panel.locator('.file-chat-input')).toContainText(/doc\.md/);
+    await expect(panel.locator('.file-chat-input')).not.toContainText(/doc2\.md/);
+  });
+
+  test('💬问答 from graph tab starts vault-scoped session (no hidden file)', async ({ page }) => {
+    // 图谱页新建会话：不带被隐藏的 selectedFile，纯库级问答
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.kb-main')).toContainText('Doc', { timeout: 10_000 });
+    // 不创建任何会话，经 NavRail 切图谱（SPA，避开 ?panel=graph 首载竞态）
+    await page.locator('[data-view="graph"]').click();
+    await expect(page.locator('[data-testid="kb-wtab-graph"]')).toBeVisible({ timeout: 10_000 });
+    await page.locator('[data-testid="kb-btn-ask-tab"]').click();
+    const panel = page.locator('[data-testid="kb-chat-panel"]');
+    await expect(panel).toBeVisible();
+    await expect(panel.locator('.file-chat-input')).not.toContainText(/doc\.md/);
+  });
+
   test('💬问答 empty-state CTA also in 未选择文件 state (wiki initialized, no file)', async ({ page }) => {
     // wiki/INDEX.md 存在 → wikiInitialized=true → 空状态走「未选择文件」分支
     // （放 describe 末尾：写 INDEX.md 会翻转后续测试的 wiki 状态）
