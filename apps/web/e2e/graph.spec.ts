@@ -54,4 +54,28 @@ test.describe('Graph as tab', () => {
     // 图谱 pane 仍在 DOM（挂载、隐藏），证明 keep-alive 而非 re-mount
     await expect(page.locator('.graph-page')).toHaveCount(1);
   });
+
+  test('dark theme: hidden (keep-alive) graph tab must not repaint the main area light', async ({ page }) => {
+    // 深色主题在应用加载前写入 localStorage（否则首帧是浅色）
+    await page.addInitScript(() => localStorage.setItem('molio.theme', 'dark'));
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 10_000 });
+
+    const alpha = page.locator('.kb-tree-item').filter({ hasText: 'alpha.md' });
+    await expect(alpha).toBeVisible({ timeout: 10_000 });
+    await alpha.click();
+    await expect(page.locator('.kb-wtab.is-active')).toContainText('alpha.md', { timeout: 5_000 });
+
+    // 图谱标签 keep-alive 常驻：切回文档后 .graph-page 仍在 DOM（仅 visibility:hidden）
+    await clickNav(page, 'graph');
+    await expect(page.locator('.graph-page')).toBeVisible({ timeout: 10_000 });
+    await alpha.click();
+    await expect(page.locator('.kb-wtab.is-active')).toContainText('alpha.md', { timeout: 5_000 });
+    await expect(page.locator('.graph-page')).toHaveCount(1);
+
+    // 回归：图谱画布底曾把 .entry-main 硬编码成 #FAFAFA，且 :has() 只看 DOM 存在性，
+    // 于是隐藏的图谱标签也会让文档区整片发白。文档 pane 各层透明，底色就是 .entry-main。
+    const bg = await page.locator('.entry-main').evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(bg).toBe('rgb(24, 24, 22)'); // --bg（深色）= #181816
+  });
 });

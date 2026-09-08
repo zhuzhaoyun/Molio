@@ -1,10 +1,13 @@
 /* ── Graph Page Layout ── */
 
-/* When graph page is active, make .entry-main a positioning container */
+/* When graph page is active, make .entry-main a positioning container.
+   不设背景：画布底色由 Pixi 引擎按图谱主题自绘（getThemeColors().bg），
+   loading/empty/error 各自有覆盖层。这里曾硬编码 #FAFAFA，而 :has() 只看 DOM
+   存在性——图谱标签是 keep-alive 的，隐藏时也会把整个主区域刷成浅色，
+   深色模式下文档区因此整片发白。底色跟随主题（rail.css 的 --bg）。 */
 .entry-main:has(.graph-page) {
   position: relative;
   overflow: hidden;
-  background: #FAFAFA;
 }
 
 .graph-page {
