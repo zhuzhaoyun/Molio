@@ -32,12 +32,16 @@ export function GraphPage({
   graphScope = null,
   onNodeOpen,
   onScopeReset,
+  // 单击聚焦开关（默认 false = 严格 no-op）：true 时单击节点只做平滑居中缩放、不跳文档。
+  // 供局部图「单纯看邻域」模式使用；接线在后续任务，默认必须零行为差异。
+  nodeClickFocus = false,
 }: {
   active?: boolean;
   onCloseCompanion?: () => void;
   graphScope?: GraphScope | null;
   onNodeOpen?: () => void;
   onScopeReset?: () => void;
+  nodeClickFocus?: boolean;
 } = {}) {
   const { t } = useI18n();
   const navigate = useNavigate();
@@ -82,6 +86,9 @@ export function GraphPage({
   onNodeOpenRef.current = onNodeOpen;
   const onScopeResetRef = useRef(onScopeReset);
   onScopeResetRef.current = onScopeReset;
+  // 单击聚焦开关镜像：nodeClickFocus 变化时无需重建引擎（setCallbacks 只在引擎创建时调用一次）
+  const nodeClickFocusRef = useRef(nodeClickFocus);
+  nodeClickFocusRef.current = nodeClickFocus;
   // scope 的稳定标识：换 file / 换 dir 才重新拉数据
   const scopeKey = graphScope ? `${graphScope.type}:${graphScope.path}` : null;
 
@@ -202,7 +209,7 @@ export function GraphPage({
         eng.destroy();
         return;
       }
-      // hover 高亮由引擎内部处理；单击/双击节点都跳转文档
+      // hover 高亮由引擎内部处理；双击节点都跳转文档
       const openNode = (_key: string, node: EngineNode) => {
           const vaultId = vaultIdRef.current;
           if (!vaultId) return;
@@ -228,7 +235,17 @@ export function GraphPage({
               });
           }
         };
-      eng.setCallbacks({ onNodeClick: openNode, onNodeDoubleClick: openNode });
+      // 单击聚焦分支：nodeClickFocusRef.current 为 true（局部图「单纯看邻域」）时单击只做平滑居中缩放，
+      // 不跳文档；false（默认，全量图/companion）退化为 openNode 跳转文档 —— 严格 no-op，零行为差异。
+      // focusNode 走动画路径会置 hasUserInteracted=true，从而抑制 setData 后 1.5s / sim end 的自动 refit。
+      const singleClick = (key: string, node: EngineNode) => {
+        if (nodeClickFocusRef.current) {
+          eng.focusNode(node.key, { durationMs: 600 });
+          return;
+        }
+        openNode(key, node);
+      };
+      eng.setCallbacks({ onNodeClick: singleClick, onNodeDoubleClick: openNode });
       engineRef.current = eng;
       // 开发环境调试句柄：像素提取（renderer.extract）与布局检查
       if (import.meta.env.DEV) {
@@ -441,9 +458,9 @@ export function GraphPage({
               <circle cx="15" cy="16" r="2.7" />
             </svg>
           </button>
-          {/* 局部图 dir 作用域的「回到当前文档」：仅 dir 子图提供（file 作用域跟随当前文档，无需返回）
+          {/* 局部图作用域的「回到全量图」：任意非空 scope 都显示（file/dir 均由宿主是否传 onScopeReset 决定）
               —— 与搜索/统计/设置同款磨砂 icon-btn；onClick 走 ref，避免闭包过期 */}
-          {graphScope?.type === 'dir' && onScopeReset && (
+          {graphScope && onScopeReset && (
             <button
               type="button"
               className="graph-icon-btn"

@@ -467,7 +467,7 @@ const zh: Record<string, string> = {
   'graph.emptyHint': '在知识库里写 Markdown，并用 [[链接]] 互相关联，关系图谱会自动生成',
   'graph.searchPlaceholder': '搜索节点…',
   'graph.searchNoResult': '无匹配节点',
-  'graph.scopeBack': '回到当前文档',
+  'graph.scopeBack': '回到全量图',
 
   // ── FileChatPanel ──
   'fileChat.running': '运行中…',

@@ -467,7 +467,7 @@ const en: Record<string, string> = {
   'graph.emptyHint': 'Write Markdown in this vault and link files with [[links]] — the graph appears automatically',
   'graph.searchPlaceholder': 'Search nodes…',
   'graph.searchNoResult': 'No matching nodes',
-  'graph.scopeBack': 'Back to current doc',
+  'graph.scopeBack': 'Back to full graph',
 
   // ── FileChatPanel ──
   'fileChat.running': 'Running…',
