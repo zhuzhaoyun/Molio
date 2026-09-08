@@ -859,8 +859,9 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     tabs.removeWhere(t => t.vaultId === kb.activeVault?.id && t.id.startsWith(prefix));
   }, [kb, tabs, showToast]);
 
-  // 图谱/发布/分屏状态：先于 getContextMenuItems 声明——右键菜单「查看局部图谱」的
-  // onClick 要写 graphTabScope 并调 openGraphTab；graphTabOpen 供下方 reset effect 消费。
+  // 图谱/发布/分屏状态（供 getContextMenuItems / 下方挂载与 reset effect 消费）。
+  // graphTabScope 是更低处的 KBP useState；因 setGraphTabScope 为稳定 setter 且
+  // getContextMenuItems 的 deps 仅含其闭包依赖，onClick 可安全引用——与声明先后无关。
   const publishTabOpen = tabs.tabs.some((tb) => tb.id === PUBLISH_TAB_ID);
   const publishActive = tabs.activeTabId === PUBLISH_TAB_ID;
   const graphTabOpen = tabs.tabs.some((tb) => tb.id === GRAPH_TAB_ID);

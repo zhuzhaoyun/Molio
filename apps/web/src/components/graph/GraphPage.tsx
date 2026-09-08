@@ -28,12 +28,12 @@ export function GraphPage({
   active = true,
   onCloseCompanion,
   // 局部图作用域（null = 全量图，严格 no-op）：file=单文档 1 跳邻域 / dir=文件夹子图。
-  // 本任务只铺纯组件分支，接线在后续任务（Task 2）——默认必须零行为差异。
+  // 由宿主传入：对照副视图传 file-scope，主格图谱 tab 传 graphTabScope（file/dir）。
   graphScope = null,
   onNodeOpen,
   onScopeReset,
   // 单击聚焦开关（默认 false = 严格 no-op）：true 时单击节点只做平滑居中缩放、不跳文档。
-  // 供局部图「单纯看邻域」模式使用；接线在后续任务，默认必须零行为差异。
+  // 供「局部知识图谱」主格图谱 tab 使用（有 scope 时 true）；全量图/对照副视图默认 false。
   nodeClickFocus = false,
 }: {
   active?: boolean;
@@ -217,7 +217,8 @@ export function GraphPage({
             navigateRef.current('/knowledge', {
               state: { openFile: node.path, vaultId },
             });
-            // 局部图模式：通知宿主打开对应文档（必须走 ref —— setCallbacks 只在引擎创建时调用一次）
+            // 可选宿主通知：在本组件已 navigate 到节点文件后触发一次（走 ref——setCallbacks 只在引擎创建时调用一次）。
+            // 当前无宿主传 onNodeOpen，此调用为 no-op；如未来 graph-as-tab 宿主接管跳转可在此接收。
             onNodeOpenRef.current?.();
           } else if (node.dead) {
             // 死链节点 → 新建空白页并打开（Obsidian 行为：点未解析链接即建笔记）
