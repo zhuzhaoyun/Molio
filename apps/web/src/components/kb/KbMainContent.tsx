@@ -130,6 +130,11 @@ interface KbMainContentProps {
   onCloseTab?: () => void;
   /** Navigate to another file in the same vault (for [[wikilink]] clicks). */
   onNavigateToFile?: (filePath: string) => void;
+  /** 只读副视图模式：隐藏头部全部动作按钮（副格由 CompanionHeader 承担关闭/标识）。
+   *  (原注释保留) */
+  companion?: boolean;
+  /** 副视图（分屏）时头部右侧的关闭 ×（而非独立的副格标题栏）。 */
+  onCloseCompanion?: () => void;
 }
 
 export function KbMainContent({
@@ -158,6 +163,8 @@ export function KbMainContent({
   onForceLoad,
   onCloseTab,
   onNavigateToFile,
+  companion = false,
+  onCloseCompanion,
 }: KbMainContentProps) {
   const { t } = useI18n();
   const { canGoBack, canGoForward } = useNavigationHistory();
@@ -397,29 +404,33 @@ export function KbMainContent({
       {/* Header — always rendered so view actions (search / more-menu) stay
           visible even in empty states. File actions only render when a file is open. */}
       <div className="kb-main-header">
-        {/* ── Back/forward (tab view history) — minimal chevrons, greyed when disabled ── */}
-        <div className="kb-nav-group" data-testid="kb-nav-navigation">
-          <button
-            type="button"
-            className="kb-nav-btn"
-            data-testid="nav-back"
-            disabled={!canGoBack}
-            onClick={() => navigationHistoryStore.back()}
-            aria-label={t('nav.back')}
-          >
-            ‹
-          </button>
-          <button
-            type="button"
-            className="kb-nav-btn"
-            data-testid="nav-forward"
-            disabled={!canGoForward}
-            onClick={() => navigationHistoryStore.forward()}
-            aria-label={t('nav.forward')}
-          >
-            ›
-          </button>
-        </div>
+        {/* ── Back/forward (tab view history) — minimal chevrons, greyed when disabled.
+            主格专属：副视图（分屏对照/镜像）复用同一份历史但自身不导览，隐藏该组
+            以免「在右格点后退、左格却变了」的误导。 ── */}
+        {!companion && (
+          <div className="kb-nav-group" data-testid="kb-nav-navigation">
+            <button
+              type="button"
+              className="kb-nav-btn"
+              data-testid="nav-back"
+              disabled={!canGoBack}
+              onClick={() => navigationHistoryStore.back()}
+              aria-label={t('nav.back')}
+            >
+              ‹
+            </button>
+            <button
+              type="button"
+              className="kb-nav-btn"
+              data-testid="nav-forward"
+              disabled={!canGoForward}
+              onClick={() => navigationHistoryStore.forward()}
+              aria-label={t('nav.forward')}
+            >
+              ›
+            </button>
+          </div>
+        )}
 
         {/* ── Frontmatter property pill (wiki docs only) — badges + collapse toggle in one unit ── */}
         {!isTypesetMode && !isEditMode && isSmallMd && fmCollapsed && (
@@ -456,6 +467,8 @@ export function KbMainContent({
           </div>
         )}
         <div className="kb-header-actions">
+          {!companion && (
+            <>
           {/* ── File edit / output actions (text files only, small-.md doocs path) ── */}
           {category === 'text' && selectedFile && !isCmPath && (
             <>
@@ -777,6 +790,24 @@ export function KbMainContent({
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              </svg>
+            </button>
+          )}
+            </>
+          )}
+          {/* 副视图（分屏）关闭 × —— 放入视图自身 header，而非独立副格标题栏 */}
+          {onCloseCompanion && (
+            <button
+              type="button"
+              className="kb-btn kb-btn-ghost"
+              onClick={onCloseCompanion}
+              title={t('kb.close')}
+              aria-label={t('kb.close')}
+              data-testid="companion-close"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
             </button>
           )}

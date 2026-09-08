@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode, type MouseEve
 import type { WorkspaceTab } from '../../hooks/useKbTabs';
 import { useI18n } from '../../i18n';
 import { ContextMenu } from './ContextMenu';
+import type { MenuItem } from './ContextMenu';
 
 interface KbTabBarProps {
   tabs: WorkspaceTab[];
@@ -20,6 +21,8 @@ interface KbTabBarProps {
   onTogglePin?: (id: string) => void;
   /** Right-click a tab → open it in a new window (Electron IPC or browser popup). */
   onOpenInNewWindow?: (tab: WorkspaceTab) => void;
+  /** Right-click a FILE tab → split presets. mode: graph=图谱对照, file=文件对照, copy=左右分屏. */
+  onSplit?: (tab: WorkspaceTab, mode: 'graph' | 'file' | 'copy') => void;
   actions?: ReactNode;
 }
 
@@ -47,7 +50,7 @@ function tabDisplayTitle(tab: WorkspaceTab, allTabs: WorkspaceTab[]): { display:
   return { display: stillCollide ? relPath : candidate, tooltip };
 }
 
-export function KbTabBar({ tabs, activeTabId, onActivate, onClose, onAddTab, onTogglePin, onOpenInNewWindow, actions }: KbTabBarProps) {
+export function KbTabBar({ tabs, activeTabId, onActivate, onClose, onAddTab, onTogglePin, onOpenInNewWindow, onSplit, actions }: KbTabBarProps) {
   const { t } = useI18n();
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<HTMLDivElement>(null);
@@ -188,7 +191,11 @@ export function KbTabBar({ tabs, activeTabId, onActivate, onClose, onAddTab, onT
               data-testid={tab.id.startsWith('file:') ? undefined : `kb-wtab-${tab.id}`}
               ref={isActive ? activeRef : null}
               onClick={() => onActivate(tab.id)}
-              onDoubleClick={() => onTogglePin?.(tab.id)}
+              onDoubleClick={() => {
+                // 与右键菜单的 canPin 同一准入：固定用于保护文件/空白标签不被回收，
+                // 图谱等特殊标签永不回收，固定无意义（双击不响应）。
+                if (tab.type === 'file' || tab.type === 'blank') onTogglePin?.(tab.id);
+              }}
               onContextMenu={(e) => {
                 // Right-click on the close × shouldn't pop the tab's context menu.
                 if ((e.target as HTMLElement).closest('.kb-wtab-close')) return;
@@ -294,7 +301,7 @@ export function KbTabBar({ tabs, activeTabId, onActivate, onClose, onAddTab, onT
           items={(() => {
             const tab = ctxMenu.tab;
             const canPin = tab.type === 'file' || tab.type === 'blank';
-            const items = [
+            const items: MenuItem[] = [
               { label: t('kb.newTab'), testid: 'tab-new-blank', onClick: () => onAddTab?.() },
               { label: '在新窗口打开', testid: 'tab-open-in-new-window', onClick: () => onOpenInNewWindow?.(tab) },
             ];
@@ -304,6 +311,14 @@ export function KbTabBar({ tabs, activeTabId, onActivate, onClose, onAddTab, onT
                 testid: 'tab-toggle-pin',
                 onClick: () => onTogglePin?.(tab.id),
               });
+            }
+            if (tab.type === 'file') {
+              items.push(
+                { divider: true },
+                { label: t('kb.splitGraph'), testid: 'tab-split-graph', disabled: !onSplit, onClick: () => onSplit?.(tab, 'graph') },
+                { label: t('kb.splitFile'), testid: 'tab-split-file', disabled: !onSplit, onClick: () => onSplit?.(tab, 'file') },
+                { label: t('kb.splitCopy'), testid: 'tab-split-copy', disabled: !onSplit, onClick: () => onSplit?.(tab, 'copy') },
+              );
             }
             return items;
           })()}
