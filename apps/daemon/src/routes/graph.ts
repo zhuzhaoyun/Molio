@@ -10,7 +10,7 @@ import path from 'node:path';
 import type Database from 'better-sqlite3';
 import { getVault } from '../core/db.js';
 import { scanTree, resolveFilePath } from '../core/knowledge.js';
-import type { GraphNode, GraphEdge, GraphData, DeadLinkInfo } from '@molio/contracts';
+import type { GraphNode, GraphEdge, GraphData, DeadLinkInfo, GraphScope } from '@molio/contracts';
 
 /**
  * 从知识图谱中剔除的文件名：index/log 这类文件只是导航/索引页，不代表知识点，
@@ -65,6 +65,53 @@ export function graphRoutes(db: Database.Database): Hono {
       return c.json(graphData);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to build graph';
+      return c.json({ error: { code: 'INTERNAL', message } }, 500);
+    }
+  });
+
+  // GET /api/graph/:vaultId/local — scoped sub-graph（file=1跳邻域 / dir=文件夹子图）
+  app.get('/:vaultId/local', (c) => {
+    const vault = getVault(db, c.req.param('vaultId'));
+    if (!vault) {
+      return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
+    }
+
+    const scopeType = c.req.query('scope');
+    if (scopeType !== 'file' && scopeType !== 'dir') {
+      return c.json(
+        { error: { code: 'BAD_REQUEST', message: "query 'scope' must be 'file' or 'dir'" } },
+        400,
+      );
+    }
+    const scopePath = (c.req.query('path') ?? '').trim().replace(/\/+$/, '');
+    if (!scopePath) {
+      return c.json({ error: { code: 'BAD_REQUEST', message: "query 'path' is required" } }, 400);
+    }
+    const depthRaw = c.req.query('depth');
+    let depth = 1;
+    if (depthRaw != null && depthRaw !== '') {
+      depth = Number(depthRaw);
+      if (!Number.isInteger(depth) || depth < 1) {
+        return c.json(
+          { error: { code: 'BAD_REQUEST', message: "query 'depth' must be a positive integer" } },
+          400,
+        );
+      }
+      if (depth > 1) {
+        return c.json(
+          { error: { code: 'BAD_REQUEST', message: 'depth > 1 is not supported yet' } },
+          400,
+        );
+      }
+    }
+
+    try {
+      const scope: GraphScope =
+        scopeType === 'file' ? { type: 'file', path: scopePath, depth } : { type: 'dir', path: scopePath };
+      const graphData = buildLocalGraph(vault.path, scope);
+      return c.json(graphData);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to build local graph';
       return c.json({ error: { code: 'INTERNAL', message } }, 500);
     }
   });
@@ -208,6 +255,58 @@ export function buildGraph(vaultPath: string): GraphData {
   });
 
   return { nodes, edges: edgeList, deadLinks: deadLinksList };
+}
+
+/**
+ * Build a scoped sub-graph from the full vault graph（设计 docs/2026-09-04-local-graph-scope-design.md §3）.
+ *
+ * - file scope：圆心（path 精确匹配）+ 1 跳闭邻域 + 诱导边；圆心不存在/被剔除/孤立（linkCount===0）→ 空图
+ * - dir scope：目录前缀下全部 .md 节点 + 它们之间的边；目录内节点引用的目录外死链目标并入；跨目录真实文件边界不含
+ * 返回必含 focusNodes：file=圆心单点；dir=子图全部节点；空图=[]（全量图接口不回填该字段）。
+ */
+// 返回类型收窄：局部图必含 focusNodes（GraphData 里是可选字段，全量图接口才不回填）
+export function buildLocalGraph(vaultPath: string, scope: GraphScope): GraphData & { focusNodes: string[] } {
+  const full = buildGraph(vaultPath);
+  const inSet = new Set<string>();
+  let focus: string[] = [];
+
+  if (scope.type === 'file') {
+    const center = full.nodes.find((n) => !n.deadLink && n.path === scope.path);
+    if (!center || center.linkCount === 0) {
+      return { nodes: [], edges: [], deadLinks: [], focusNodes: [] };
+    }
+    inSet.add(center.key);
+    for (const e of full.edges) {
+      if (e.source === center.key) inSet.add(e.target);
+      else if (e.target === center.key) inSet.add(e.source);
+    }
+    focus = [center.key];
+  } else {
+    const prefix = `${scope.path.replace(/\/+$/, '')}/`;
+    for (const n of full.nodes) {
+      if (!n.deadLink && n.path.startsWith(prefix)) inSet.add(n.key);
+    }
+    if (inSet.size === 0) {
+      return { nodes: [], edges: [], deadLinks: [], focusNodes: [] };
+    }
+    // 目录内节点链到目录外死链目标 → 死链节点并入（点它可新建页面）；
+    // 真实文件的跨目录边界不含（后续增强）。死链节点无出边，不会级联扩散。
+    for (const e of full.edges) {
+      const sIn = inSet.has(e.source);
+      const tIn = inSet.has(e.target);
+      if (sIn === tIn) continue;
+      const otherKey = sIn ? e.target : e.source;
+      if (full.nodes.some((n) => n.key === otherKey && n.deadLink)) inSet.add(otherKey);
+    }
+    focus = Array.from(inSet);
+  }
+
+  const nodes = full.nodes.filter((n) => inSet.has(n.key));
+  const keys = new Set(nodes.map((n) => n.key));
+  const edges = full.edges.filter((e) => keys.has(e.source) && keys.has(e.target));
+  // deadLinks 元数据按「死链节点在子图内」过滤（不按 sourceFile——首见 source 可能不在子图）
+  const deadLinks = full.deadLinks.filter((d) => keys.has(`__dead__${d.targetName.toLowerCase()}`));
+  return { nodes, edges, deadLinks, focusNodes: focus };
 }
 
 /**
