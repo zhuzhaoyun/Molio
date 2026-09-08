@@ -160,7 +160,7 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
 | `src/components/NavRail.tsx` | `e2e/bootstrap.spec.ts`, `e2e/navigation.spec.ts`, `e2e/auth.spec.ts` |
 | `src/components/account/`, `src/stores/authStore.ts` | `e2e/auth.spec.ts` |
 | `src/components/kb/` | `e2e/publish-flow.spec.ts` |
-| `src/components/graph/` | `e2e/graph.spec.ts`, `e2e/graph-settings.spec.ts` |
+| `src/components/graph/` | `e2e/graph.spec.ts`, `e2e/graph-settings.spec.ts`, `e2e/graph-local.spec.ts` |
 | `src/components/runtimes/` | `e2e/runtimes-page.spec.ts`, `e2e/runtime-provider-config.spec.ts` |
 | `src/components/settings/` | `e2e/runtimes-page.spec.ts`（RuntimesPanel 在此） |
 | `src/components/history/` | `e2e/history.spec.ts` |
@@ -213,6 +213,11 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
 - **渲染引擎**: 基于 doocs/md (`marked` v18 + 扩展 + 主题系统)
 - **Tab 系统**: 多文件 Tab 切换，上限 20（`MAX_TABS`，达上限拦截 + toast，不静默淘汰）；溢出时左右箭头 + `▾` 下拉收纳；active tab 自动滚入可见区；状态持久化到 localStorage
 - **全局悬浮对话面板** (`KbChatSessionsPanel` + `kbChatSessionsStore`)：App 层常驻挂载、任意页面可用（右下角 `FloatingChatButton` 开合）。KB 页 `💬问答` 文档级入口（`kb-btn-ask`，主内容区头部，选中文件才渲染）与 vault 级常驻入口（`kb-btn-ask-tab`，Tab 栏 actions 首位，无文件=库级问答；空状态两分支亦有「💬 与知识库问答」CTA `kb-empty-ask-cta`）/ `📚构建Wiki`（`kb-btn-build-wiki`）/ `🩺健康检查`（`kb-btn-lint-wiki`）及树右键「加入 Wiki」经 `chatPanelRef.openQa/runWikiOp` 下发，打开/激活**会话标签**（上限 `MAX_CHAT_SESSIONS`=10，达上限 toast 拦截）。双形态：**悬浮**（右下角，可拖移/拖宽/拖高，宽度高度位置持久化）/ **停靠侧边栏**（KB 页 = 页内分栏：文档区经 `--kb-dock-w` 让出等宽、拖宽联动重排，其余页面 = 页头下悬浮式侧边栏）。任务运行中再点入口：问答不中断（另开/激活 qa 标签）、wiki 类弹「中断/排队/取消」；关闭运行中 wiki 会话仅允许「中断并关闭」（`anyWikiRunning` 单例守卫，防 D3 并发写同一 vault）。排队复用 agent stdin 原生队列，详见 [docs/kb-chat-interrupt-queue.md](../../docs/kb-chat-interrupt-queue.md)。
+- **单库分屏副视图图谱（graphScope）**：副格图谱默认 `kb.selectedFile` 的 **file-scope** 局部图（随主格文档自动切换 + 重锚定）；
+  树右键文件夹「查看局部图谱」（`kb-ctx-local-graph`）切到 **dir-scope** 文件夹子图（不随主格重锚定），点图中节点（`onNodeOpen`）
+  或「回到当前文档」（`graph-scope-back`）切回 file-scope。scope 状态 keep-alive 在副格内（`companionGraphScope`），
+  副格关闭/切 vault 复位、不随 vault 持久化。主格=图谱/发布标签时该菜单项置灰（`disabled:!fileMain`，副格隐藏点了无反应）。
+- **副视图图谱不渲染顶栏导航箭头**（`graph-nav-navigation` 为 0），关闭走图谱自己的悬浮 `companion-close`。
 
 ### 知识图谱 (Graph View)
 
@@ -248,6 +253,12 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
 - **Minimap**: 订阅引擎 render 事件按需重绘（无 rAF 轮询），支持点击跳转/拖拽视口导航
 - **数据链路**: daemon `GET /api/graph/:vaultId` 解析 `[[wikilink]]` → GraphPage 筛选
   （类型/孤立节点/死链接）→ `engine.setData()`
+- **局部图/图谱范围（graphScope）**: GraphPage 接收 `graphScope?: GraphScope`（`@molio/contracts`）——
+  `null`（默认）= 全量图；`{type:'file', path}` = 当前文档 1 跳邻域（`GET /api/graph/:vaultId/local`，响应含
+  `focusNodes`）；`{type:'dir', path}` = 文件夹子图。副视图专属：主格图谱 tab 恒为 `null`；scope 为副视图
+  keep-alive 内的状态（KBP `companionScope` useMemo 身份稳定，KBP 内 `companionGraphScope` useState 驱动）。
+  setData 后按 scope 居中分派：file → `focusNode(focusNodes[0])`（不存在则兜底 `fitView`）；dir → `fitView`。
+  **筛选三开关（类型/孤立/死链）照常复用于局部数据**；空数据翻 `hasData` 必须 `engine.setData([],[])` 清引擎。
 - **React 性能**: 坐标计算和渲染帧循环在引擎内部闭环，零 React re-render
 
 ### 聊天 (Chat)

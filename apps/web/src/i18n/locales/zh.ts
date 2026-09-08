@@ -528,6 +528,7 @@ const zh: Record<string, string> = {
   'kb.statsReadTimeSuffix': '分钟',
   'kb.askAboutFile': '问答',
   'kb.askSelection': '就此提问',
+  'kb.ctxLocalGraph': '查看局部图谱',
   'kb.cannotOpen': '无法打开文件',
   'kb.loadFailed': '加载失败',
   'kb.fileNotFound': '该文件可能已被删除、重命名或从未被创建（可能是 AI 生成的错误引用）',

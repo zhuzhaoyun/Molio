@@ -528,6 +528,7 @@ const en: Record<string, string> = {
   'kb.statsReadTimeSuffix': 'min',
   'kb.askAboutFile': 'Ask AI',
   'kb.askSelection': 'Ask about this',
+  'kb.ctxLocalGraph': 'View local graph',
   'kb.cannotOpen': 'Cannot open file',
   'kb.loadFailed': 'Load failed',
   'kb.fileNotFound': 'This file may have been deleted, renamed, or never created (possibly an AI-generated broken reference).',

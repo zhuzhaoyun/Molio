@@ -3,9 +3,9 @@
  * Now with: workspace tab system + right-click context menu + inline rename.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import type { TreeNode, Vault } from '@molio/contracts';
+import type { TreeNode, Vault, GraphScope } from '@molio/contracts';
 import { useKnowledge } from '../../hooks/useKnowledge';
 import { useKbTabs, MAX_TABS, type WorkspaceTab } from '../../hooks/useKbTabs';
 import { vaultStore } from '../../stores/vaultStore';
@@ -859,6 +859,15 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     tabs.removeWhere(t => t.vaultId === kb.activeVault?.id && t.id.startsWith(prefix));
   }, [kb, tabs, showToast]);
 
+  // 图谱/发布/分屏状态：先于 getContextMenuItems 声明（右键菜单 2b 要在 deps 里引用
+  // fileMain + split，声明在其后会在 useCallback 求值 deps 时触发 TDZ）
+  const publishTabOpen = tabs.tabs.some((tb) => tb.id === PUBLISH_TAB_ID);
+  const publishActive = tabs.activeTabId === PUBLISH_TAB_ID;
+  const graphTabOpen = tabs.tabs.some((tb) => tb.id === GRAPH_TAB_ID);
+  const graphActive = tabs.activeTabId === GRAPH_TAB_ID;
+  const split = useSplitView(kb.activeVault?.id ?? null);
+  const fileMain = !publishActive && !graphActive;
+
   const getContextMenuItems = useCallback((): MenuItem[] => {
     if (!ctxMenu) return [];
     const { node } = ctxMenu;
@@ -911,6 +920,17 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
       items.push({
         label: '新建子文件夹',
         onClick: () => handleNewFolder(node.path),
+      });
+      items.push({
+        label: t('kb.ctxLocalGraph'),
+        testid: 'kb-ctx-local-graph',
+        // 主格=图谱/发布标签时副格隐藏，点了没反应的洞 → 置灰
+        disabled: !fileMain,
+        title: fileMain ? undefined : '副视图需主格为文档',
+        onClick: () => {
+          setCompanionGraphScope({ type: 'dir', path: node.path });
+          split?.setCompanion({ type: 'graph' });
+        },
       });
       items.push({ divider: true });
     }
@@ -985,7 +1005,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     }
 
     return items;
-  }, [ctxMenu, kb, showToast, handleNewFile, handleNewFolder, handleSelectFile, handleOpenInNewTab, handleDeleteFile, handleDeleteFolder]);
+  }, [ctxMenu, kb, showToast, handleNewFile, handleNewFolder, handleSelectFile, handleOpenInNewTab, handleDeleteFile, handleDeleteFolder, fileMain, split]);
 
   // ─── Inline rename ───
 
@@ -1183,24 +1203,35 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
 
   // 发布 tab（页内 keep-alive）：tab 存在期间 PublishForm 常驻挂载，
   // 非激活仅 CSS 隐藏 + inert，切走再切回不丢已填内容。
-  const publishTabOpen = tabs.tabs.some((tb) => tb.id === PUBLISH_TAB_ID);
-  const publishActive = tabs.activeTabId === PUBLISH_TAB_ID;
   const publishTabData = (tabs.tabs.find((tb) => tb.id === PUBLISH_TAB_ID)?.data ?? undefined) as PublishFormData | undefined;
 
-  // 图谱标签页 keep-alive：标签存在期间 GraphPage 常驻挂载，非激活仅 CSS 隐藏 + inert
-  // （与 publish 同款），切走再切回不丢图谱状态；隐藏时通过 active 暂停引擎省 CPU。
-  const graphTabOpen = tabs.tabs.some((tb) => tb.id === GRAPH_TAB_ID);
-  const graphActive = tabs.activeTabId === GRAPH_TAB_ID;
-
   // ── 单库分屏：主格由标签栏驱动；副格由 splitViewStore 驱动 ──
-  const split = useSplitView(kb.activeVault?.id ?? null);
+  // split / publishActive / graphActive / fileMain 声明已上移到 getContextMenuItems 之前
+  // （2b 的右键菜单项要在 deps 里引用 fileMain + split，防 TDZ）。此处仅保留后续消费。
   const companionFile = useCompanionFile(
     kb.activeVault?.id ?? null,
     split?.companion?.type === 'file' ? split.companion.filePath : null,
   );
-  const fileMain = !publishActive && !graphActive;
   const companionShown = !!(split?.companion && fileMain);
   const [showSplitFilePicker, setShowSplitFilePicker] = useState(false);
+
+  // 副视图图谱局部化：null=全量图；file=当前主格文档 1 跳邻域（随主格切换重锚定）；
+  // dir=文件夹子图（树右键「查看局部图谱」触发、不随主格重锚定，2b 接入）。
+  // 用 useMemo 强制稳定身份——否则 JSX 内联对象每渲染新身份会使 GraphPage fetch 无限重取。
+  const [companionGraphScope, setCompanionGraphScope] = useState<GraphScope | null>(null);
+  const companionScope = useMemo<GraphScope | null>(
+    () => companionGraphScope ?? (kb.selectedFile ? { type: 'file', path: kb.selectedFile } : null),
+    [companionGraphScope, kb.selectedFile],
+  );
+
+  // 切 vault 复位 dir-scope（路径在新 vault 无意义）；重载回 file-scope 默认。
+  useEffect(() => setCompanionGraphScope(null), [kb.activeVault?.id]);
+
+  // 副格关闭或切到非图谱类型（file/copy）时复位局部 scope——否则重开图谱会静默恢复
+  // 陈旧目录范围（清单 #9）。副格是图谱时不清（file-scope/dir-scope 需在切换中存活）。
+  useEffect(() => {
+    if (!split?.companion || split.companion.type !== 'graph') setCompanionGraphScope(null);
+  }, [split?.companion?.type]);
 
   /** 右键标签 → 分屏预设：主格切到该标签，副格按 mode 设定。幂等，永不产生第 3 格。 */
   const openSplit = useCallback((tab: WorkspaceTab, mode: 'graph' | 'file' | 'copy') => {
@@ -1439,7 +1470,13 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
               style={{ left: `${(split?.ratio ?? 0.5) * 100}%` }}
             >
               {split.companion.type === 'graph' ? (
-                <GraphPage active={companionShown} onCloseCompanion={() => split.setCompanion(null)} />
+                <GraphPage
+                  active={companionShown}
+                  onCloseCompanion={() => { split.setCompanion(null); setCompanionGraphScope(null); }}
+                  graphScope={companionScope}
+                  onNodeOpen={() => setCompanionGraphScope(null)}
+                  onScopeReset={() => setCompanionGraphScope(null)}
+                />
               ) : (
                 <KbMainContent
                   companion
