@@ -2462,8 +2462,9 @@
   /* 覆盖 .kb-pane 的 inset:0 —— left 由 inline style（ratio）驱动 */
   right: 0;
   border-left: 1px solid var(--border);
-  /* 与图谱页背景一致（graph.css 用 #FAFAFA 硬编码），避免 GraphPage 副格透底 */
-  background: #FAFAFA;
+  /* 底色跟随主题（曾硬编码 #FAFAFA 对齐图谱画布，深色模式下副格整片发白）。
+     图谱画布自绘底色，不需要这层兜底。 */
+  background: var(--bg);
   min-width: 240px;
 }
 
