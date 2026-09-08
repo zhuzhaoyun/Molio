@@ -107,11 +107,14 @@
     "graph": {
       "paths": [
         "apps/web/src/components/graph/*",
-        "apps/web/src/styles/graph.css"
+        "apps/web/src/styles/graph.css",
+        "apps/daemon/src/routes/graph.ts"
       ],
       "specs": [
         "graph",
-        "graph-settings"
+        "graph-settings",
+        "graph-local",
+        "split-view"
       ]
     },
     "navigation": {
@@ -292,6 +295,14 @@
     "graph-settings": {
       "priority": "P2",
       "file": "graph-settings.spec.ts"
+    },
+    "graph-local": {
+      "priority": "P1",
+      "file": "graph-local.spec.ts"
+    },
+    "split-view": {
+      "priority": "P1",
+      "file": "split-view.spec.ts"
     },
     "history": {
       "priority": "P1",
