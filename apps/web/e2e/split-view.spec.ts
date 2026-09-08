@@ -67,6 +67,18 @@ test.describe('KB split view', () => {
     await expect(companion.locator('[data-testid="kb-nav-navigation"]')).toHaveCount(0);
   });
 
+  test('dark theme: companion pane follows the theme (no white pane)', async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem('molio.theme', 'dark'));
+    await openAlpha(page);
+    await splitViaContextMenu(page, 'tab-split-copy');
+
+    const companion = page.locator('[data-testid="kb-companion-pane"]');
+    await expect(companion).toBeVisible();
+    // 回归：副格底色曾硬编码 #FAFAFA（对齐图谱画布），深色模式下整格发白
+    const bg = await companion.evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(bg).toBe('rgb(24, 24, 22)'); // --bg（深色）= #181816
+  });
+
   test('文件对照: picker opens and cancel works', async ({ page }) => {
     await openAlpha(page);
     await splitViaContextMenu(page, 'tab-split-file');
