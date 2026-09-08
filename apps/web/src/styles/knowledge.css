@@ -1060,17 +1060,19 @@
 /* ══════════ Typeset Editor Styles ══════════ */
 
 .kb-header-filename-center {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
+  /* 改为 flex 流内居中截断，而非绝对定位浮动覆盖右侧 actions。
+     原来的 `position:absolute; left:50%; translate(-50%,-50%)` 会把文件名盖在
+     header action 按钮上（文件名很长时 overlap），且 max-width:50% 挡不住右侧
+     已占用的宽度。现在让它作为中间弹性项，长文件名用省略号截断、永远不越入按钮区。 */
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: center;
   font-size: 13px;
   font-weight: 600;
   color: var(--text-strong);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 50%;
   pointer-events: none;
 }
 
