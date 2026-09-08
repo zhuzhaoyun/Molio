@@ -23,7 +23,9 @@
   top: 0;
   left: 0;
   right: 0;
-  z-index: 10;
+  /* 空态 .graph-empty（z-index:10）会盖住 topbar 控件——topbar 作为浮层 chrome 必须恒在其上，
+     故提到 30（>10 空态遮罩 / minimap20，<40 属性面板，<100 modal） */
+  z-index: 30;
   display: flex;
   align-items: center;
   justify-content: space-between;
