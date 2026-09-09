@@ -49,6 +49,9 @@
   flex-wrap: wrap;
   justify-content: flex-end;
   min-width: 0;
+  /* 顶栏是 space-between；副视图（对照）不渲染左端导航组，只剩这一个子元素时会贴到左端。
+     margin-left:auto 让它在任何情况下都靠右——主格场景 space-between 已推右，此句幂等。 */
+  margin-left: auto;
 }
 
 /* ── Vault Selector ── */

@@ -215,7 +215,8 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
 - **全局悬浮对话面板** (`KbChatSessionsPanel` + `kbChatSessionsStore`)：App 层常驻挂载、任意页面可用（右下角 `FloatingChatButton` 开合）。KB 页 `💬问答` 文档级入口（`kb-btn-ask`，主内容区头部，选中文件才渲染）与 vault 级常驻入口（`kb-btn-ask-tab`，Tab 栏 actions 首位，无文件=库级问答；空状态两分支亦有「💬 与知识库问答」CTA `kb-empty-ask-cta`）/ `📚构建Wiki`（`kb-btn-build-wiki`）/ `🩺健康检查`（`kb-btn-lint-wiki`）及树右键「加入 Wiki」经 `chatPanelRef.openQa/runWikiOp` 下发，打开/激活**会话标签**（上限 `MAX_CHAT_SESSIONS`=10，达上限 toast 拦截）。双形态：**悬浮**（右下角，可拖移/拖宽/拖高，宽度高度位置持久化）/ **停靠侧边栏**（KB 页 = 页内分栏：文档区经 `--kb-dock-w` 让出等宽、拖宽联动重排，其余页面 = 页头下悬浮式侧边栏）。任务运行中再点入口：问答不中断（另开/激活 qa 标签）、wiki 类弹「中断/排队/取消」；关闭运行中 wiki 会话仅允许「中断并关闭」（`anyWikiRunning` 单例守卫，防 D3 并发写同一 vault）。排队复用 agent stdin 原生队列，详见 [docs/kb-chat-interrupt-queue.md](../../docs/kb-chat-interrupt-queue.md)。
 - **单库分屏副视图图谱（对照）**：副格图谱为**纯 file-scope**，始终跟随主格当前文档
   （`companionScope = kb.selectedFile ? {type:'file', path} : null`，useMemo 稳定身份防无限重取），主格换文档自动重锚定。
-  无 dir-scope、无「回到当前文档」按钮、不接 `onNodeOpen`/`onScopeReset`——点图中节点即打开对应文件到主格。
+  无 dir-scope、无「回到当前文档」按钮、不接 `onNodeOpen`/`onScopeReset`——**双击**图中节点打开对应文件到主格
+  （单击为选中 + 高亮关联，与另外两处图谱一致）。
 - **副视图图谱不渲染顶栏导航箭头**（`graph-nav-navigation` 为 0，前进/后退为主格图谱 tab 专属），关闭走图谱自己的悬浮 `companion-close` chip。
 - **局部知识图谱（主格图谱 tab）**：树右键文件/文件夹「查看局部图谱」（`kb-ctx-local-graph`，文件/文件夹均有、永不置灰）
   进入主格图谱 tab（`data-testid="kb-graph-pane"`），交互见下方「知识图谱」节。
@@ -242,8 +243,9 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
   ②拖拽期 link×`DRAG_LINK_MULT(0.4)`（683 条弹簧把整图拽向内收缩）、③`velocityDecay(0.6)` 高阻尼扑灭
   振荡；松手恢复 collide 半径/link/damping 到 rest。叠加全局物理保险丝：`manyBody.distanceMin(20)`
   封掉拖拽级联的 1/d² 电荷爆、collide 半径 `COLLIDE_MAX(100)` 封顶、super-hub（度数>60）的 link 按
-  `1/√max(deg)` 减弱（防「683 条源边把 hub 甩飞」）。单击（<500ms 且 ≤4px）默认跳转文档；`nodeClickFocus`
-  开启时（局部知识图谱）单击改为只聚焦节点、不跳文档，双击节点仍打开文件；双击空白 fit
+  `1/√max(deg)` 减弱（防「683 条源边把 hub 甩飞」）。单击（<500ms 且 ≤4px）选中节点 + 高亮关联
+  （`selectNode`，**三处图谱语义一致、都不跳转文档**）；`centerOnSelect` 开启时（局部知识图谱）额外平滑居中；
+  双击节点打开文件（死链节点新建空白页再打开）；双击空白 fit
 - **拖拽降质（拖拽期）**: `setMotionMode(true)` → 隐藏标签（`syncLabels` 跳过）+ minimap 重绘监听暂停
   （collide 迭代**不降级**，保帧也保弹簧手感）；松手恢复
 - **hover 两档细化（M3-⑦）**: `@tweenjs/tween.js` 做 hover/选中时动画（200ms），非邻居 alpha
@@ -260,9 +262,10 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
   （`companionScope`，纯跟随主格文档），主格图谱 tab 传 `graphTabScope`（file/dir，树右键「查看局部图谱」写入）。
   setData 后按 scope 居中分派：file → `focusNode(focusNodes[0])`（不存在或被筛选滤掉则兜底 `fitView`）；dir → `fitView`。
   **筛选三开关（类型/孤立/死链）照常复用于局部数据**；空数据翻 `hasData` 必须 `engine.setData([],[])` 清引擎。
-- **局部知识图谱交互（nodeClickFocus / 回到全量图）**：主格图谱 tab 传 `nodeClickFocus={!!graphTabScope}`——
-  有 scope 时单击节点只做平滑居中缩放（`focusNode`，不跳文档）、双击打开文件；全量图/对照副视图不传（默认 false），
-  单击即跳文档。`graphScope && onScopeReset` 时顶栏渲染「回到全量图」按钮（`graph-scope-back`，文案 `graph.scopeBack`）。
+- **节点交互（三处统一）**：单击 = 选中节点 + 高亮关联（`selectNode`，**任何一处都不跳转文档**）；
+  双击 = 打开文件（死链节点新建空白页再打开）；双击空白 = fit。主格图谱 tab 传 `centerOnSelect={!!graphTabScope}`——
+  有 scope（局部知识图谱）时单击额外平滑居中（`focusNode`），全量图/对照副视图不传（默认 false），仅选中不移动相机。
+  `graphScope && onScopeReset` 时顶栏渲染「回到全量图」按钮（`graph-scope-back`，文案 `graph.scopeBack`）。
   `graphTabScope`（KBP useState）生命周期：关图谱 tab（`!graphTabOpen`）/ 切 vault / 点「回到全量图」复位为 null；
   tab 间切换（keep-alive）保留。
 - **React 性能**: 坐标计算和渲染帧循环在引擎内部闭环，零 React re-render

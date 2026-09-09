@@ -1454,7 +1454,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
                 active={graphActive}
                 graphScope={graphTabScope}
                 onScopeReset={() => setGraphTabScope(null)}
-                nodeClickFocus={!!graphTabScope}
+                centerOnSelect={!!graphTabScope}
               />
             </div>
           )}

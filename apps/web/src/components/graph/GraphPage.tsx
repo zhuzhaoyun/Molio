@@ -32,16 +32,17 @@ export function GraphPage({
   graphScope = null,
   onNodeOpen,
   onScopeReset,
-  // 单击聚焦开关（默认 false = 严格 no-op）：true 时单击节点只做平滑居中缩放、不跳文档。
-  // 供「局部知识图谱」主格图谱 tab 使用（有 scope 时 true）；全量图/对照副视图默认 false。
-  nodeClickFocus = false,
+  // 单击选中时是否额外平滑居中（默认 false）——只影响相机，不影响单击语义：
+  // 单击恒为「选中节点 + 高亮关联」，三处图谱一致、都不跳转文档。
+  // 「局部知识图谱」主格图谱 tab（有 scope）传 true：子图小，点一下即聚焦。
+  centerOnSelect = false,
 }: {
   active?: boolean;
   onCloseCompanion?: () => void;
   graphScope?: GraphScope | null;
   onNodeOpen?: () => void;
   onScopeReset?: () => void;
-  nodeClickFocus?: boolean;
+  centerOnSelect?: boolean;
 } = {}) {
   const { t } = useI18n();
   const navigate = useNavigate();
@@ -86,9 +87,9 @@ export function GraphPage({
   onNodeOpenRef.current = onNodeOpen;
   const onScopeResetRef = useRef(onScopeReset);
   onScopeResetRef.current = onScopeReset;
-  // 单击聚焦开关镜像：nodeClickFocus 变化时无需重建引擎（setCallbacks 只在引擎创建时调用一次）
-  const nodeClickFocusRef = useRef(nodeClickFocus);
-  nodeClickFocusRef.current = nodeClickFocus;
+  // 单击居中选择镜像：centerOnSelect 变化时无需重建引擎（setCallbacks 只在引擎创建时调用一次）
+  const centerOnSelectRef = useRef(centerOnSelect);
+  centerOnSelectRef.current = centerOnSelect;
   // scope 的稳定标识：换 file / 换 dir 才重新拉数据
   const scopeKey = graphScope ? `${graphScope.type}:${graphScope.path}` : null;
 
@@ -236,17 +237,17 @@ export function GraphPage({
               });
           }
         };
-      // 单击聚焦分支：nodeClickFocusRef.current 为 true（局部图「单纯看邻域」）时单击只做平滑居中缩放，
-      // 不跳文档；false（默认，全量图/companion）退化为 openNode 跳转文档 —— 严格 no-op，零行为差异。
+      // 单击 = 选中节点 + 高亮关联 —— 三处图谱（全量图 / 局部知识图谱 / 对照）语义一致，都不跳转文档。
+      // centerOnSelect 为 true（局部知识图谱）时额外平滑居中：子图小，点一下即聚焦。
       // focusNode 走动画路径会置 hasUserInteracted=true，从而抑制 setData 后 1.5s / sim end 的自动 refit。
-      const singleClick = (key: string, node: EngineNode) => {
-        if (nodeClickFocusRef.current) {
+      const handleNodeClick = (key: string, node: EngineNode) => {
+        if (centerOnSelectRef.current) {
           eng.focusNode(node.key, { durationMs: 600 });
           return;
         }
-        openNode(key, node);
+        eng.selectNode(node.key);
       };
-      eng.setCallbacks({ onNodeClick: singleClick, onNodeDoubleClick: openNode });
+      eng.setCallbacks({ onNodeClick: handleNodeClick, onNodeDoubleClick: openNode });
       engineRef.current = eng;
       // 开发环境调试句柄：像素提取（renderer.extract）与布局检查
       if (import.meta.env.DEV) {
