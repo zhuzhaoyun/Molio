@@ -23,7 +23,9 @@
   top: 0;
   left: 0;
   right: 0;
-  z-index: 10;
+  /* 空态 .graph-empty（z-index:10）会盖住 topbar 控件——topbar 作为浮层 chrome 必须恒在其上，
+     故提到 30（>10 空态遮罩 / minimap20，<40 属性面板，<100 modal） */
+  z-index: 30;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -47,6 +49,9 @@
   flex-wrap: wrap;
   justify-content: flex-end;
   min-width: 0;
+  /* 顶栏是 space-between；副视图（对照）不渲染左端导航组，只剩这一个子元素时会贴到左端。
+     margin-left:auto 让它在任何情况下都靠右——主格场景 space-between 已推右，此句幂等。 */
+  margin-left: auto;
 }
 
 /* ── Vault Selector ── */

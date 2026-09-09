@@ -160,7 +160,7 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
 | `src/components/NavRail.tsx` | `e2e/bootstrap.spec.ts`, `e2e/navigation.spec.ts`, `e2e/auth.spec.ts` |
 | `src/components/account/`, `src/stores/authStore.ts` | `e2e/auth.spec.ts` |
 | `src/components/kb/` | `e2e/publish-flow.spec.ts` |
-| `src/components/graph/` | `e2e/graph.spec.ts`, `e2e/graph-settings.spec.ts` |
+| `src/components/graph/` | `e2e/graph.spec.ts`, `e2e/graph-settings.spec.ts`, `e2e/graph-local.spec.ts` |
 | `src/components/runtimes/` | `e2e/runtimes-page.spec.ts`, `e2e/runtime-provider-config.spec.ts` |
 | `src/components/settings/` | `e2e/runtimes-page.spec.ts`（RuntimesPanel 在此） |
 | `src/components/history/` | `e2e/history.spec.ts` |
@@ -212,7 +212,17 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
 - **样式面板**: 右侧悬浮面板，支持主题、字体、字号、主题色、排版选项切换
 - **渲染引擎**: 基于 doocs/md (`marked` v18 + 扩展 + 主题系统)
 - **Tab 系统**: 多文件 Tab 切换，上限 20（`MAX_TABS`，达上限拦截 + toast，不静默淘汰）；溢出时左右箭头 + `▾` 下拉收纳；active tab 自动滚入可见区；状态持久化到 localStorage
-- **全局悬浮对话面板** (`KbChatSessionsPanel` + `kbChatSessionsStore`)：App 层常驻挂载、任意页面可用（右下角 `FloatingChatButton` 开合）。KB 页 `💬问答`（`kb-btn-ask`）/ `📚构建Wiki`（`kb-btn-build-wiki`）/ `🩺健康检查`（`kb-btn-lint-wiki`）及树右键「加入 Wiki」经 `chatPanelRef.openQa/runWikiOp` 下发，打开/激活**会话标签**（上限 `MAX_CHAT_SESSIONS`=10，达上限 toast 拦截）。双形态：**悬浮**（右下角，可拖移/拖宽/拖高，宽度高度位置持久化）/ **停靠侧边栏**（KB 页 = 页内分栏：文档区经 `--kb-dock-w` 让出等宽、拖宽联动重排，其余页面 = 页头下悬浮式侧边栏）。任务运行中再点入口：问答不中断（另开/激活 qa 标签）、wiki 类弹「中断/排队/取消」；关闭运行中 wiki 会话仅允许「中断并关闭」（`anyWikiRunning` 单例守卫，防 D3 并发写同一 vault）。排队复用 agent stdin 原生队列，详见 [docs/kb-chat-interrupt-queue.md](../../docs/kb-chat-interrupt-queue.md)。
+- **全局悬浮对话面板** (`KbChatSessionsPanel` + `kbChatSessionsStore`)：App 层常驻挂载、任意页面可用（右下角 `FloatingChatButton` 开合）。KB 页 `💬问答` 文档级入口（`kb-btn-ask`，主内容区头部，选中文件才渲染）与 vault 级常驻入口（`kb-btn-ask-tab`，Tab 栏 actions 首位，无文件=库级问答；空状态两分支亦有「💬 与知识库问答」CTA `kb-empty-ask-cta`）/ `📚构建Wiki`（`kb-btn-build-wiki`）/ `🩺健康检查`（`kb-btn-lint-wiki`）及树右键「加入 Wiki」经 `chatPanelRef.openQa/runWikiOp` 下发，打开/激活**会话标签**（上限 `MAX_CHAT_SESSIONS`=10，达上限 toast 拦截）。双形态：**悬浮**（右下角，可拖移/拖宽/拖高，宽度高度位置持久化）/ **停靠侧边栏**（KB 页 = 页内分栏：文档区经 `--kb-dock-w` 让出等宽、拖宽联动重排，其余页面 = 页头下悬浮式侧边栏）。任务运行中再点入口：问答不中断（另开/激活 qa 标签）、wiki 类弹「中断/排队/取消」；关闭运行中 wiki 会话仅允许「中断并关闭」（`anyWikiRunning` 单例守卫，防 D3 并发写同一 vault）。排队复用 agent stdin 原生队列，详见 [docs/kb-chat-interrupt-queue.md](../../docs/kb-chat-interrupt-queue.md)。
+- **单库分屏副视图图谱（对照）**：副格图谱为**纯 file-scope**，始终跟随主格当前文档
+  （`companionScope = kb.selectedFile ? {type:'file', path} : null`，useMemo 稳定身份防无限重取），主格换文档自动重锚定。
+  无 dir-scope、无「回到当前文档」按钮、不接 `onNodeOpen`/`onScopeReset`——单击图中节点即打开对应文件到主格
+  （悬停高亮关联，三处图谱一致）。**取景与主格不同**（传 `companion` prop）：小参照面板 + 随主格文档
+  **高频重锚定** → 用 `fitView` 框住**整张子图**（而非 file-scope 的圆心居中放大——小画布下会裁掉邻居），
+  且 `engine.preSettle()` 同步跑完布局 + 瞬时取景，**不做过渡动画**（两段式「先落位、收敛后再动画」在高频
+  切换下只会拖沓）。回归：`e2e/graph-camera.spec.ts` 的 companion 用例（数据一到即框全 + 3.5s 内视口不变）。
+- **副视图图谱不渲染顶栏导航箭头**（`graph-nav-navigation` 为 0，前进/后退为主格图谱 tab 专属），关闭走图谱自己的悬浮 `companion-close` chip。
+- **局部知识图谱（主格图谱 tab）**：树右键文件/文件夹「查看局部图谱」（`kb-ctx-local-graph`，文件/文件夹均有、永不置灰）
+  进入主格图谱 tab（`data-testid="kb-graph-pane"`），交互见下方「知识图谱」节。
 
 ### 知识图谱 (Graph View)
 
@@ -236,8 +246,8 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
   ②拖拽期 link×`DRAG_LINK_MULT(0.4)`（683 条弹簧把整图拽向内收缩）、③`velocityDecay(0.6)` 高阻尼扑灭
   振荡；松手恢复 collide 半径/link/damping 到 rest。叠加全局物理保险丝：`manyBody.distanceMin(20)`
   封掉拖拽级联的 1/d² 电荷爆、collide 半径 `COLLIDE_MAX(100)` 封顶、super-hub（度数>60）的 link 按
-  `1/√max(deg)` 减弱（防「683 条源边把 hub 甩飞」）。单击（<500ms 且 ≤4px）仍判为点击跳转文档；双击
-  节点打开文件、双击空白 fit
+  `1/√max(deg)` 减弱（防「683 条源边把 hub 甩飞」）。**悬停高亮关联、单击打开文章**（`onNodeClick` → `openNode`，
+  三处图谱一致，与 Obsidian 原生图谱同款）；死链节点单击新建空白页再打开；双击空白 fit
 - **拖拽降质（拖拽期）**: `setMotionMode(true)` → 隐藏标签（`syncLabels` 跳过）+ minimap 重绘监听暂停
   （collide 迭代**不降级**，保帧也保弹簧手感）；松手恢复
 - **hover 两档细化（M3-⑦）**: `@tweenjs/tween.js` 做 hover/选中时动画（200ms），非邻居 alpha
@@ -248,6 +258,29 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
 - **Minimap**: 订阅引擎 render 事件按需重绘（无 rAF 轮询），支持点击跳转/拖拽视口导航
 - **数据链路**: daemon `GET /api/graph/:vaultId` 解析 `[[wikilink]]` → GraphPage 筛选
   （类型/孤立节点/死链接）→ `engine.setData()`
+- **局部图/图谱范围（graphScope）**: GraphPage 接收 `graphScope?: GraphScope`（`@molio/contracts`）——
+  `null`（默认）= 全量图；`{type:'file', path}` = 当前文档 1 跳邻域（`GET /api/graph/:vaultId/local`，响应含
+  `focusNodes`）；`{type:'dir', path}` = 文件夹子图。**两套交互共用**：对照副视图只传 file-scope
+  （`companionScope`，纯跟随主格文档），主格图谱 tab 传 `graphTabScope`（file/dir，树右键「查看局部图谱」写入）。
+  setData 后按 scope 取景分派：file → `fitView` **框全 1 跳邻域** + `selectNode(focusNodes[0])` 选中圆心做视觉锚点
+  （圆心不存在或被筛选滤掉则只 `fitView`）；dir → `fitView`。**不再用 `focusNode(k=1.5)` 圆心居中放大**——
+  大 hub 下那会裁掉外圈邻居（回归：`e2e/graph-camera.spec.ts` 的 file-scope 用例）。
+  **筛选三开关（类型/孤立/死链）照常复用于局部数据**；空数据翻 `hasData` 必须 `engine.setData([],[])` 清引擎。
+- **空态文案按 scope 细分**（GraphPage `emptyCopy`）：全量图 →「该知识库中没有 Markdown 文件」；
+  file-scope 且是普通 .md →「这篇笔记还没有链接」；file-scope 且非 .md 或 index/log 类 →「该文件不在关系图谱中」；
+  dir-scope →「该文件夹下没有 Markdown 笔记」。原因：局部图空态若沿用全量图那句，会误导成「整个库没有 md」。
+  （`GRAPH_EXCLUDED_BASENAMES` 是 daemon `routes/graph.ts` 的镜像，只用于挑文案，不参与过滤。）
+- **scope 切换的取景（两方向统一）**：布局在收敛前一直在动，**早取景会落在错误位置**（这是「切换后视角不对、
+  且看不到初始化过渡」的根因）。故 scope 切换（局部图 ⇄ 全量图）时：先 `applyView(false)` **立即落位**（非动画，
+  先给个合理视角），再 `engine.reframeAfterSettle(fn)` 注册**收敛后的动画取景**（file→框全邻域+选中圆心、dir/全量→fit），
+  平滑过渡到正确视角。同 scope 内筛选变化仍直接动画取景。用户中途平移/缩放则放弃这次自动取景（让位用户）。
+  回归保护：`e2e/graph-camera.spec.ts`（断言收敛后视口变了 **且** 框住全部节点）。
+- **节点交互（三处统一）**：**悬停 = 高亮关联**（引擎 hover 两档，非邻居淡化 + 关联边置顶）；
+  **单击 = 打开文章**（死链节点新建空白页再打开）；双击空白 = fit。三处图谱（全量图 / 局部知识图谱 / 对照）
+  行为完全相同——**不提供「单击选中」**：它与悬停高亮重复，而「看邻域」已由局部知识图谱专门承担（Obsidian 同款）。
+  `graphScope && onScopeReset` 时顶栏渲染「回到全量图」按钮（`graph-scope-back`，文案 `graph.scopeBack`）。
+  `graphTabScope`（KBP useState）生命周期：关图谱 tab（`!graphTabOpen`）/ 切 vault / 点「回到全量图」复位为 null；
+  tab 间切换（keep-alive）保留。
 - **React 性能**: 坐标计算和渲染帧循环在引擎内部闭环，零 React re-render
 
 ### 聊天 (Chat)

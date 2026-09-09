@@ -8,7 +8,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { GraphData, GraphNode } from '@molio/contracts';
+import type { GraphData, GraphNode, GraphScope } from '@molio/contracts';
 import { api } from '../../api/client';
 import { useI18n } from '../../i18n';
 import { useActiveVaultId, vaultStore } from '../../stores/vaultStore';
@@ -24,7 +24,30 @@ import {
   type EngineEdge,
 } from './engine/pixiGraphEngine';
 
-export function GraphPage({ active = true }: { active?: boolean } = {}) {
+/** 图谱剔除的 .md 基名（小写）——镜像 daemon `routes/graph.ts` 的 GRAPH_EXCLUDED_BASENAMES，
+ *  仅用于挑空态文案，不参与数据过滤（过滤在 daemon）。 */
+const GRAPH_EXCLUDED_BASENAMES = new Set(['index', 'log']);
+
+export function GraphPage({
+  active = true,
+  onCloseCompanion,
+  // 局部图作用域（null = 全量图，严格 no-op）：file=单文档 1 跳邻域 / dir=文件夹子图。
+  // 由宿主传入：对照副视图传 file-scope，主格图谱 tab 传 graphTabScope（file/dir）。
+  graphScope = null,
+  onNodeOpen,
+  onScopeReset,
+  // 副视图（对照）模式：小参照面板 + 随主格文档高频重锚定。取景与时机都不同——
+  // 取景用「整张子图 fit」而非「圆心居中放大」（小画布下后者会裁掉邻居），
+  // 且布局同步跑完、瞬时取景，不做过渡动画（见下方数据推送 effect）。
+  companion = false,
+}: {
+  active?: boolean;
+  onCloseCompanion?: () => void;
+  graphScope?: GraphScope | null;
+  onNodeOpen?: () => void;
+  onScopeReset?: () => void;
+  companion?: boolean;
+} = {}) {
   const { t } = useI18n();
   const navigate = useNavigate();
   // 与文件标签标题栏同一份视图历史（#244 store）——图谱也是一个「被看过的视图」
@@ -57,18 +80,41 @@ export function GraphPage({ active = true }: { active?: boolean } = {}) {
   settingsRef.current = settings;
   const themeRef = useRef(themeColors);
   themeRef.current = themeColors;
+  // 局部图分支同样经 ref 读取最新值：fetch/push effect 的 deps 只放 scopeKey 字符串，
+  // 绝不 dep scope 对象（父组件每次渲染都新建对象字面量会把 effect 打成每次渲染重跑）
+  const scopeRef = useRef<GraphScope | null>(graphScope);
+  scopeRef.current = graphScope;
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  // 引擎回调 / topbar 按钮都只创建一次，必须走 ref 才能拿到最新的回调实现
+  const onNodeOpenRef = useRef(onNodeOpen);
+  onNodeOpenRef.current = onNodeOpen;
+  const onScopeResetRef = useRef(onScopeReset);
+  onScopeResetRef.current = onScopeReset;
+  // scope 的稳定标识：换 file / 换 dir 才重新拉数据
+  const scopeKey = graphScope ? `${graphScope.type}:${graphScope.path}` : null;
 
-  // Fetch graph data when active vault changes
+  // Fetch graph data when active vault / scope changes
   useEffect(() => {
     if (!activeVaultId) return;
 
+    // 局部分支：按 scopeRef.current 分派局部图 / 全量图（deps 用 scopeKey，不含 scope 对象）
+    const scope = scopeRef.current;
+
+    // cancelled：快速切换 scope/file 时丢弃陈旧响应（慢的旧请求晚到不能覆盖新数据）
+    let cancelled = false;
     setLoading(true);
     setError(null);
-    api.getGraph(activeVaultId)
+    const req = scope
+      ? api.getLocalGraph(activeVaultId, scope)
+      : api.getGraph(activeVaultId);
+    req
       .then((data) => {
+        if (cancelled) return;
         setGraphData(data);
       })
       .catch((err) => {
+        if (cancelled) return;
         if (err.message?.includes('404')) {
           // Vault no longer exists in DB — clear stale selection.
           // App.tsx's setVaults() will auto-select a valid vault,
@@ -80,8 +126,14 @@ export function GraphPage({ active = true }: { active?: boolean } = {}) {
         }
         setGraphData(null);
       })
-      .finally(() => setLoading(false));
-  }, [activeVaultId]);
+      .finally(() => {
+        if (cancelled) return;
+        setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeVaultId, scopeKey]);
 
   // ── 筛选后的图数据（引擎只接收可见节点）──
   const engineData = useMemo((): { nodes: EngineNode[]; edges: EngineEdge[] } | null => {
@@ -107,6 +159,22 @@ export function GraphPage({ active = true }: { active?: boolean } = {}) {
   }, [graphData, settings.showOrphans, settings.showDeadLinks, settings.visibleTypes]);
 
   const hasData = !!engineData && engineData.nodes.length > 0;
+
+  // 空态文案按 scope 细分——全量图空态只说「库里没有 md」，对局部图是误导
+  // （库里有 md，只是这个文件/目录没有可显示的关系）。
+  const emptyCopy = useMemo(() => {
+    const scope = graphScope;
+    if (!scope) return { title: t('graph.empty'), hint: t('graph.emptyHint') };
+    if (scope.type === 'dir') return { title: t('graph.emptyDir'), hint: t('graph.emptyDirHint') };
+    // file-scope：图谱只收录除 index / log 之外的 .md（与 daemon 的 isGraphExcludedFile 同规则，
+    // 仅用于选文案；规则若变更这里只需同步措辞，不影响功能）。
+    const base = scope.path.split('/').pop() ?? scope.path;
+    const isMd = /\.md$/i.test(base);
+    const excluded = isMd && GRAPH_EXCLUDED_BASENAMES.has(base.replace(/\.md$/i, '').toLowerCase());
+    return isMd && !excluded
+      ? { title: t('graph.emptyFile'), hint: t('graph.emptyFileHint') }
+      : { title: t('graph.emptyOutOfGraph'), hint: t('graph.emptyOutOfGraphHint') };
+  }, [graphScope, t]);
 
   // `/` 快捷键：在非输入态下展开图谱搜索。与全局搜索 Ctrl/Cmd+F 区分，不冲突。
   useEffect(() => {
@@ -159,7 +227,7 @@ export function GraphPage({ active = true }: { active?: boolean } = {}) {
         eng.destroy();
         return;
       }
-      // hover 高亮由引擎内部处理；单击/双击节点都跳转文档
+      // hover 高亮由引擎内部处理；单击/双击节点都跳转文档（见下方 setCallbacks）
       const openNode = (_key: string, node: EngineNode) => {
           const vaultId = vaultIdRef.current;
           if (!vaultId) return;
@@ -167,6 +235,9 @@ export function GraphPage({ active = true }: { active?: boolean } = {}) {
             navigateRef.current('/knowledge', {
               state: { openFile: node.path, vaultId },
             });
+            // 可选宿主通知：在本组件已 navigate 到节点文件后触发一次（走 ref——setCallbacks 只在引擎创建时调用一次）。
+            // 当前无宿主传 onNodeOpen，此调用为 no-op；如未来 graph-as-tab 宿主接管跳转可在此接收。
+            onNodeOpenRef.current?.();
           } else if (node.dead) {
             // 死链节点 → 新建空白页并打开（Obsidian 行为：点未解析链接即建笔记）
             const fileName = /\.md$/i.test(node.label) ? node.label : `${node.label}.md`;
@@ -176,12 +247,16 @@ export function GraphPage({ active = true }: { active?: boolean } = {}) {
                 navigateRef.current('/knowledge', {
                   state: { openFile: fileName, vaultId },
                 });
+                onNodeOpenRef.current?.();
               })
               .catch((err) => {
                 console.error('[graph] 创建死链目标文件失败:', err);
               });
           }
         };
+      // 单击 / 双击节点都打开文章 —— 三处图谱（全量图 / 局部知识图谱 / 对照）行为完全一致。
+      // 「高亮关联」由悬停承担（引擎 hover 两档：非邻居淡化 + 关联边置顶），与 Obsidian 原生图谱同款
+      // （悬停高亮、单击打开）；「单击选中」不提供——它与悬停重复，而「看邻域」已由局部知识图谱专门承担。
       eng.setCallbacks({ onNodeClick: openNode, onNodeDoubleClick: openNode });
       engineRef.current = eng;
       // 开发环境调试句柄：像素提取（renderer.extract）与布局检查
@@ -217,14 +292,68 @@ export function GraphPage({ active = true }: { active?: boolean } = {}) {
 
   // ── 数据推送：vault 切换时先清位置缓存，再 setData ──
   const lastVaultRef = useRef<string | null>(null);
+  // 上一次的 scope 标识：用于识别「局部图 → 全量图」的返回（需要重新取景）
+  const prevScopeKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!engine || !engineData) return;
+    if (!engine) return;
+    const scope = scopeRef.current;
+    const currentScopeKey = scope ? `${scope.type}:${scope.path}` : null;
+    const prevScopeKey = prevScopeKeyRef.current;
+    prevScopeKeyRef.current = currentScopeKey;
+
+    // 空数据必须清引擎：hasData 翻转后 .graph-empty 只是视觉遮罩（不透明背景 + z-index），
+    // 不清掉的话旧子图仍在遮罩背后继续仿真耗 CPU；但引擎本身不销毁（tab 切回还要用）。
+    if (!engineData) {
+      engine.setData([], []);
+      return;
+    }
     if (lastVaultRef.current !== activeVaultId) {
       lastVaultRef.current = activeVaultId;
       engine.resetPositions();
     }
     engine.setData(engineData.nodes, engineData.edges);
-  }, [engine, engineData, activeVaultId]);
+
+    // ── 取景：对照副格 → 整张子图 fit；file → 圆心居中放大；dir → 子图 fit；全量图 → 整图 fit ──
+    // 布局在收敛前一直在动，早取景会落在错误位置（这是「切换后视角不对」的根因），所以：
+    //   scope 切换（含局部图 ⇄ 全量图）→ 立即落位（不动画，先给个合理视角）
+    //                                    + 注册收敛后的动画取景，平滑过渡到正确视角
+    //   同 scope 内筛选变化 → 照旧直接动画取景（数据规模没变，位置基本稳定）
+    // 注意非动画 setTransform 不置 hasUserInteracted，动画路径会置——故立即落位必须非动画，
+    // 否则会抑制收敛后的 reframe。active 读 activeRef（不进 deps）：companion 开合若触发
+    // effect 会全量重跑 setData。
+    const applyView = (animated: boolean) => {
+      if (companion) {
+        // 对照副格：始终瞬时 fit 整张子图（高频重锚定 + 小画布，动画只会拖沓且裁掉邻居）
+        engine.fitView({ animate: false });
+        return;
+      }
+      if (scope?.type === 'file') {
+        const focusKey = graphData?.focusNodes?.[0];
+        // 圆心被筛选条件滤掉（不在可见节点里）时退化为整图 fit
+        if (focusKey && engineData.nodes.some((n) => n.key === focusKey)) {
+          // 框全整张 1 跳邻域（大 hub 下 focusNode 的 k=1.5 会裁掉外圈），并选中圆心做视觉锚点
+          engine.fitView({ animate: animated });
+          engine.selectNode(focusKey);
+          return;
+        }
+      }
+      engine.fitView({ animate: animated });
+    };
+    if (companion) {
+      // 布局同步跑完 → 取景一次到位：无过渡动画、无延迟，每次重锚定都是完整视角
+      engine.preSettle();
+      applyView(false);
+      return;
+    }
+    if (prevScopeKey !== currentScopeKey) {
+      if (currentScopeKey || prevScopeKey) {
+        applyView(false);
+        engine.reframeAfterSettle(() => applyView(activeRef.current));
+      }
+    } else if (scope) {
+      applyView(activeRef.current);
+    }
+  }, [engine, engineData, activeVaultId, graphData, companion]);
 
   // ── 外观/力度参数实时下发（不重建仿真布局）──
   useEffect(() => {
@@ -267,29 +396,33 @@ export function GraphPage({ active = true }: { active?: boolean } = {}) {
     <div className="graph-page">
       <div className="graph-topbar">
         {/* 左端：前进/后退（与文件标签标题栏最左同一份历史；常驻、disabled 置灰，
-            与 #244 的 .kb-nav-btn 同款裸 chevron 样式） */}
-        <div className="kb-nav-group graph-topbar__left" data-testid="graph-nav-navigation">
-          <button
-            type="button"
-            className="kb-nav-btn"
-            data-testid="graph-nav-back"
-            disabled={!canGoBack}
-            onClick={() => navigationHistoryStore.back()}
-            aria-label={t('nav.back')}
-          >
-            ‹
-          </button>
-          <button
-            type="button"
-            className="kb-nav-btn"
-            data-testid="graph-nav-forward"
-            disabled={!canGoForward}
-            onClick={() => navigationHistoryStore.forward()}
-            aria-label={t('nav.forward')}
-          >
-            ›
-          </button>
-        </div>
+            与 #244 的 .kb-nav-btn 同款裸 chevron 样式）。
+            主格专属：图谱做副视图（分屏对照，onCloseCompanion 存在）时不渲染，
+            避免「在右格点后退、左格却变了」的误导。 */}
+        {!onCloseCompanion && (
+          <div className="kb-nav-group graph-topbar__left" data-testid="graph-nav-navigation">
+            <button
+              type="button"
+              className="kb-nav-btn"
+              data-testid="graph-nav-back"
+              disabled={!canGoBack}
+              onClick={() => navigationHistoryStore.back()}
+              aria-label={t('nav.back')}
+            >
+              ‹
+            </button>
+            <button
+              type="button"
+              className="kb-nav-btn"
+              data-testid="graph-nav-forward"
+              disabled={!canGoForward}
+              onClick={() => navigationHistoryStore.forward()}
+              aria-label={t('nav.forward')}
+            >
+              ›
+            </button>
+          </div>
+        )}
         <div className="graph-topbar__right">
           {/* 搜索：默认 🔍 图标，点开/按 / 展开输入框（从图标向左滑入）；与全局 Ctrl/Cmd+F 区分 */}
           {hasData && engine && engineData && (
@@ -366,6 +499,40 @@ export function GraphPage({ active = true }: { active?: boolean } = {}) {
               <circle cx="15" cy="16" r="2.7" />
             </svg>
           </button>
+          {/* 局部图作用域的「回到全量图」：任意非空 scope 都显示（file/dir 均由宿主是否传 onScopeReset 决定）
+              —— 与搜索/统计/设置同款磨砂 icon-btn；onClick 走 ref，避免闭包过期 */}
+          {graphScope && onScopeReset && (
+            <button
+              type="button"
+              className="graph-icon-btn"
+              onClick={() => onScopeResetRef.current?.()}
+              data-tooltip={t('graph.scopeBack')}
+              aria-label={t('graph.scopeBack')}
+              data-testid="graph-scope-back"
+            >
+              {/* 左指箭头：返回全量图 */}
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
+                <path d="M19 12H5" />
+                <path d="M11 6l-6 6 6 6" />
+              </svg>
+            </button>
+          )}
+          {/* 副视图（分屏）关闭 × —— 与搜索/统计/设置同款磨砂 chip，放进图谱自己的 topbar */}
+          {onCloseCompanion && (
+            <button
+              type="button"
+              className="graph-icon-btn"
+              onClick={onCloseCompanion}
+              data-tooltip={t('kb.close')}
+              aria-label={t('kb.close')}
+              data-testid="companion-close"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
+                <line x1="6" y1="6" x2="18" y2="18" />
+                <line x1="18" y1="6" x2="6" y2="18" />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
 
@@ -385,8 +552,8 @@ export function GraphPage({ active = true }: { active?: boolean } = {}) {
 
         {!loading && !error && graphData && graphData.nodes.length === 0 && (
           <div className="graph-empty">
-            <p>{t('graph.empty')}</p>
-            <p className="graph-empty__hint">{t('graph.emptyHint')}</p>
+            <p>{emptyCopy.title}</p>
+            <p className="graph-empty__hint">{emptyCopy.hint}</p>
           </div>
         )}
 

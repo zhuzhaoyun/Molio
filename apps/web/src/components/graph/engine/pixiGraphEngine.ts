@@ -242,6 +242,8 @@ export class PixiGraphEngine {
   private hasUserInteracted = false;
   private hasFitFirstLayout = false;
   private refitTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 仿真收敛后要执行的取景（见 reframeAfterSettle）；用户中途交互则放弃 */
+  private pendingReframe: (() => void) | null = null;
   private rafId = 0;
   private dragStartTime = 0;
   private dragging = false;
@@ -416,6 +418,41 @@ export class PixiGraphEngine {
     this.updateFocusAndRender();
   }
 
+  /**
+   * 注册「仿真收敛后再取景」：数据上下文已换（如局部图 ⇄ 全量图），旧视口无意义，
+   * 故先清掉交互标记；布局稳定后执行 reframe（通常是一次动画取景，此时范围才正确）。
+   * 期间用户若自己平移/缩放，收敛时放弃这次自动取景（让位给用户）。
+   * 注意：布局收敛前节点坐标仍在变，早取景会落在错误位置——所以必须等收敛。
+   */
+  reframeAfterSettle(reframe: () => void): void {
+    this.hasUserInteracted = false;
+    this.pendingReframe = reframe;
+    if (this.refitTimer) {
+      clearTimeout(this.refitTimer);
+      this.refitTimer = null;
+    }
+  }
+
+  /**
+   * 同步跑完仿真并停表（小图 / 对照副格用）：布局一次到位，取景即可正确，省掉
+   * 「先落位 → 收敛后再取景」的两段式过渡——副格随主格文档高频重锚定时后者很拖沓。
+   * 顺带标记首屏已 fit 并清掉自动 refit 定时器，避免后续多余动画。
+   */
+  preSettle(maxTicks = 1000): void {
+    const sim = this.sim;
+    if (!sim) return;
+    const min = sim.alphaMin();
+    let ticks = 0;
+    while (sim.alpha() > min && ticks++ < maxTicks) sim.tick();
+    sim.alpha(0);
+    sim.stop();
+    this.hasFitFirstLayout = true;
+    if (this.refitTimer) {
+      clearTimeout(this.refitTimer);
+      this.refitTimer = null;
+    }
+  }
+
   setForces(f: ForceParams): void {
     this.forces = { ...f };
     const sim = this.sim;
@@ -490,13 +527,21 @@ export class PixiGraphEngine {
     }
   }
 
+  /** 选中节点：置选中态 + 高亮关联（不动相机）。与 fitView 搭配用于「框全子图 + 高亮圆心」。 */
+  selectNode(key: string): boolean {
+    if (this.destroyed) return false;
+    if (!this.nodeById.has(key)) return false;
+    this.selectedId = key;
+    this.updateFocusAndRender();
+    return true;
+  }
+
   /** 定位并选中节点（搜索用）：平滑居中缩放 */
   focusNode(key: string, opts?: { targetK?: number; durationMs?: number }): boolean {
     if (this.destroyed) return false;
     const node = this.nodeById.get(key);
     if (!node || node.x == null || node.y == null) return false;
-    this.selectedId = key;
-    this.updateFocusAndRender();
+    this.selectNode(key);
     const targetK = clamp(opts?.targetK ?? 1.5, K_MIN, K_MAX);
     const tx = this.width / 2 - (node.x + this.width / 2) * targetK;
     const ty = this.height / 2 - (node.y + this.height / 2) * targetK;
@@ -554,6 +599,7 @@ export class PixiGraphEngine {
     this.destroyed = true;
     if (this.refitTimer) clearTimeout(this.refitTimer);
     if (this.hoverLingerTimer) clearTimeout(this.hoverLingerTimer);
+    this.pendingReframe = null;
     this.viewportAnim = null;
     this.tweens.forEach((t) => t.stop());
     this.tweens.clear();
@@ -605,9 +651,18 @@ export class PixiGraphEngine {
       .force('y', forceY<SimNode>(0).strength(CONTAIN_STRENGTH))
       .force('collide', forceCollide<SimNode>().radius(collideRadius).iterations(COLLIDE_ITERATIONS));
     // 仿真收敛后布局范围才稳定 —— 若用户未交互过，重新 fit 一次，
-    // 避免「早期小范围 fit 的缩放」看「后期大范围布局」导致放大叠团的错觉
+    // 避免「早期小范围 fit 的缩放」看「后期大范围布局」导致放大叠团的错觉。
+    // 若宿主注册了 pendingReframe（scope 切换：局部图 ⇄ 全量图），优先执行它
+    // （file-scope 要的是「圆心居中放大」而非 fit，目标不同）。
     sim.on('end', () => {
-      if (!this.hasUserInteracted && !this.destroyed) this.fitView({ animate: true });
+      if (this.destroyed) return;
+      const pending = this.pendingReframe;
+      this.pendingReframe = null;
+      if (pending) {
+        if (!this.hasUserInteracted) pending();
+        return;
+      }
+      if (!this.hasUserInteracted) this.fitView({ animate: true });
     });
     this.sim = sim;
 
