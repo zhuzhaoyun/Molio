@@ -64,9 +64,10 @@ linked files, e.g. `notes/alpha.md` (`[[beta]]`) and `notes/beta.md` (`[[alpha]]
 - The `graph-scope-back` button remains present while a scope is active (it is a scope
   affordance, unaffected by node clicking); clicking it clears the scope and returns to the
   full graph.
-- **回到全量图会重新取景**：点击后全量图立即框满视口，随后仿真收敛时再平滑 fit 一次 ——
-  观感应与「关掉图谱 tab 再打开」基本一致，不会停在局部图的缩放/平移位置。若在收敛前自己
-  拖动/缩放了画布，自动 fit 让位于用户操作（不抢视口）。
+- **进入/离开局部图都会重新取景**：切换瞬间立即落位（先给个合理视角），随后仿真收敛时**平滑过渡到
+  正确取景**（进入：圆心居中/子图 fit；返回：整图 fit）—— 与「关掉图谱 tab 再打开」同一观感，
+  不会停在上一张图的缩放/平移位置，也不会出现「布局还在动就取景」导致的错误视角。
+  若在收敛前自己拖动/缩放了画布，自动取景让位于用户操作（不抢视口）。
 
 ## Pass criteria
 

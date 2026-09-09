@@ -114,7 +114,8 @@
         "graph",
         "graph-settings",
         "graph-local",
-        "split-view"
+        "split-view",
+        "graph-camera"
       ]
     },
     "navigation": {

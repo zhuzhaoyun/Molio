@@ -292,8 +292,9 @@ export function GraphPage({
   useEffect(() => {
     if (!engine) return;
     const scope = scopeRef.current;
+    const currentScopeKey = scope ? `${scope.type}:${scope.path}` : null;
     const prevScopeKey = prevScopeKeyRef.current;
-    prevScopeKeyRef.current = scope ? `${scope.type}:${scope.path}` : null;
+    prevScopeKeyRef.current = currentScopeKey;
 
     // 空数据必须清引擎：hasData 翻转后 .graph-empty 只是视觉遮罩（不透明背景 + z-index），
     // 不清掉的话旧子图仍在遮罩背后继续仿真耗 CPU；但引擎本身不销毁（tab 切回还要用）。
@@ -307,30 +308,32 @@ export function GraphPage({
     }
     engine.setData(engineData.nodes, engineData.edges);
 
-    if (!scope) {
-      // 全量图：从局部图返回时旧视口（局部子图的缩放/平移）已无意义 —— 立即框住整图，
-      // 并清掉交互标记，让仿真收敛后再平滑 fit 一次（与首次打开全量图同样的观感）。
-      if (prevScopeKey) {
-        engine.fitView({ animate: false });
-        engine.reframeOnSettle();
-      }
-      return;
-    }
-    // 局部图：setData 后按 scope 类型居中。必须走动画路径：animateToViewport 会置
-    // hasUserInteracted=true，从而抑制 sim end 的自动 refit；非动画 setTransform 不置位，
-    // 居中结果会被 refit 覆盖。active 不进 deps（读 activeRef）——companion 开合若触发
+    // ── 取景：file → 圆心居中放大；dir → 子图 fit；全量图 → 整图 fit ──
+    // 布局在收敛前一直在动，早取景会落在错误位置（这是「切换后视角不对」的根因），所以：
+    //   scope 切换（含局部图 ⇄ 全量图）→ 立即落位（不动画，先给个合理视角）
+    //                                    + 注册收敛后的动画取景，平滑过渡到正确视角
+    //   同 scope 内筛选变化 → 照旧直接动画取景（数据规模没变，位置基本稳定）
+    // 注意非动画 setTransform 不置 hasUserInteracted，动画路径会置——故立即落位必须非动画，
+    // 否则会抑制收敛后的 reframe。active 读 activeRef（不进 deps）：companion 开合若触发
     // effect 会全量重跑 setData。
-    if (scope.type === 'file') {
-      // file：圆心节点居中放大；圆心被筛选条件滤掉（不在可见节点里）时退化为整图 fit
-      const focusKey = graphData?.focusNodes?.[0];
-      if (focusKey && engineData.nodes.some((n) => n.key === focusKey)) {
-        engine.focusNode(focusKey, { durationMs: activeRef.current ? 600 : 0 });
-      } else {
-        engine.fitView({ animate: false });
+    const applyView = (animated: boolean) => {
+      if (scope?.type === 'file') {
+        const focusKey = graphData?.focusNodes?.[0];
+        // 圆心被筛选条件滤掉（不在可见节点里）时退化为整图 fit
+        if (focusKey && engineData.nodes.some((n) => n.key === focusKey)) {
+          engine.focusNode(focusKey, { durationMs: animated ? 600 : 0 });
+          return;
+        }
       }
-    } else {
-      // dir：子图整体 fit（可见时平滑动画，隐藏的 companion 副格直接落位）
-      engine.fitView({ animate: activeRef.current });
+      engine.fitView({ animate: animated });
+    };
+    if (prevScopeKey !== currentScopeKey) {
+      if (currentScopeKey || prevScopeKey) {
+        applyView(false);
+        engine.reframeAfterSettle(() => applyView(activeRef.current));
+      }
+    } else if (scope) {
+      applyView(activeRef.current);
     }
   }, [engine, engineData, activeVaultId, graphData]);
 
