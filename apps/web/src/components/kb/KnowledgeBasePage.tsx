@@ -23,6 +23,10 @@ import { PublishForm, type PublishFormData } from '../resources/PublishForm';
 import { PUBLISH_TAB_ID, GRAPH_TAB_ID } from './kb-constants';
 import { GraphPage } from '../graph/GraphPage';
 import { graphViewStore } from '../../stores/graphViewStore';
+import { currentContextStore } from '../../stores/currentContextStore';
+import { useSplitView } from '../../stores/splitViewStore';
+import { useCompanionFile } from '../../hooks/useCompanionFile';
+import { FilePicker } from '../FilePicker';
 import { ImportModal, CoseInstallPrompt, InputDialog, ConfirmDialog } from './KbModals';
 import { ImportConflictDialog } from './ImportConflictDialog';
 import { ContextMenu, type MenuItem } from './ContextMenu';
@@ -244,9 +248,17 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     onConfirm: () => void;
   }>({ show: false, title: '', message: '', onConfirm: () => {} });
 
-  // vault 切换：清空所有会话的 @文件上下文（旧库引用失效）
+  // vault 切换：清空所有会话的 @文件上下文（旧库引用失效）。
+  // 仅在「已解析的 vault id」之间变化时清理：页面加载时 activeVault 走
+  // null → 解析出 id 的过程，若把 null→id 也当切换，每次刷新/进页都会
+  // 无感觉清掉持久化会话的文件绑定（D7 会话记忆文档被刷新击穿）。
+  const prevVaultIdRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
-    kbChatSessionsStore.clearFilePaths();
+    const current = kb.activeVault?.id ?? null;
+    if (prevVaultIdRef.current !== undefined && prevVaultIdRef.current !== null && prevVaultIdRef.current !== current) {
+      kbChatSessionsStore.clearFilePaths();
+    }
+    prevVaultIdRef.current = current;
   }, [kb.activeVault?.id]);
 
   // wiki 任务完成 → 刷新文件树（方案 D：onWikiComplete 改 store 事件总线，KB 页挂载时订阅）
@@ -265,9 +277,16 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
   const pendingImportRef = useRef<{ files: File[]; targetDir: string; oversizedCount: number } | null>(null);
 
   const handleOpenQa = useCallback(() => {
-    if (!kb.selectedFile) return;
-    panelRef.current?.openQa({ filePath: kb.selectedFile, vaultId: kb.activeVault?.id ?? null, selectedText: null });
-  }, [kb.selectedFile, kb.activeVault?.id]);
+    // 上下文跟随可见视图：图谱/发布预览面板激活时，可见上下文是库（vault）而非文档，
+    // 不携带被隐藏的 selectedFile——否则会凭空给新会话绑定、或把活跃会话改绑到
+    // 一个用户当前看不见的文件。openQa 约定 filePath=null = 打开/继续会话且不改绑。
+    const contextHidden = tabs.activeTabId === GRAPH_TAB_ID || tabs.activeTabId === PUBLISH_TAB_ID;
+    panelRef.current?.openQa({
+      filePath: contextHidden ? null : kb.selectedFile ?? null,
+      vaultId: kb.activeVault?.id ?? null,
+      selectedText: null,
+    });
+  }, [tabs.activeTabId, kb.selectedFile, kb.activeVault?.id]);
 
   const handleAskAboutSelection = useCallback((selectedText: string) => {
     if (!kb.selectedFile) return;
@@ -717,22 +736,21 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     return () => document.removeEventListener('keydown', handler);
   }, []);
 
-  // Ctrl/Cmd+K — open KB chat in QA mode for the current file
+  // Ctrl/Cmd+K — 打开 KB 问答（契约同 Tab 栏 💬：上下文跟随可见视图，见 handleOpenQa）
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         const tag = (e.target as HTMLElement)?.tagName;
         if (tag === 'INPUT' || tag === 'TEXTAREA') return;
         e.preventDefault();
-        if (!kb.selectedFile) return;
-        panelRef.current?.openQa({ filePath: kb.selectedFile, vaultId: kb.activeVault?.id ?? null, selectedText: null });
+        handleOpenQa();
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [kb.selectedFile, kb.activeVault?.id]);
+  }, [handleOpenQa]);
 
-  // Ctrl+L / Cmd+L — open file chat for current file (legacy shortcut, now opens QA)
+  // Ctrl+L / Cmd+L — legacy 快捷键，行为同 Cmd+K
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       // Don't trigger when focus is in an input/textarea
@@ -741,8 +759,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
 
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') {
         e.preventDefault();
-        if (!kb.selectedFile) return;
-        panelRef.current?.openQa({ filePath: kb.selectedFile, vaultId: kb.activeVault?.id ?? null, selectedText: null });
+        handleOpenQa();
       }
     };
     document.addEventListener('keydown', handler);
@@ -1175,11 +1192,70 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
   const graphTabOpen = tabs.tabs.some((tb) => tb.id === GRAPH_TAB_ID);
   const graphActive = tabs.activeTabId === GRAPH_TAB_ID;
 
-  // 让 NavRail「图谱」在 view 图谱标签时高亮；离开 KB 时复位。
+  // ── 单库分屏：主格由标签栏驱动；副格由 splitViewStore 驱动 ──
+  const split = useSplitView(kb.activeVault?.id ?? null);
+  const companionFile = useCompanionFile(
+    kb.activeVault?.id ?? null,
+    split?.companion?.type === 'file' ? split.companion.filePath : null,
+  );
+  const fileMain = !publishActive && !graphActive;
+  const companionShown = !!(split?.companion && fileMain);
+  const [showSplitFilePicker, setShowSplitFilePicker] = useState(false);
+
+  /** 右键标签 → 分屏预设：主格切到该标签，副格按 mode 设定。幂等，永不产生第 3 格。 */
+  const openSplit = useCallback((tab: WorkspaceTab, mode: 'graph' | 'file' | 'copy') => {
+    if (!tab.id.startsWith('file:')) return;
+    handleActivateTab(tab.id);
+    if (mode === 'graph') {
+      split?.setCompanion({ type: 'graph' });
+    } else if (mode === 'copy') {
+      // Obsidian「复制当前」：副格直接打开同一文件（只读）
+      split?.setCompanion({ type: 'file', filePath: tab.id.slice(5) });
+    } else {
+      setShowSplitFilePicker(true);
+    }
+  }, [handleActivateTab, split]);
+
+  // 分屏分隔条拖拽：按指针在 panes 容器内的水平位置求主格占比（clamp 0.25–0.75 在 store 内）
+  const mainPanesRef = useRef<HTMLDivElement>(null);
+  const handleSplitDragStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const el = mainPanesRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const onMove = (ev: MouseEvent) => {
+      const ratio = (ev.clientX - rect.left) / rect.width;
+      split?.setRatio(ratio);
+    };
+    const onUp = () => {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, [split]);
+
+  // 让 NavRail「图谱」在 view 图谱标签（或副视图=图谱的分屏）时高亮；离开 KB 时复位。
   useEffect(() => {
-    graphViewStore.setActive(graphActive);
+    const graphCompanion = split?.companion?.type === 'graph';
+    graphViewStore.setActive(graphActive || (!!graphCompanion && fileMain));
     return () => graphViewStore.setActive(false);
-  }, [graphActive]);
+  }, [graphActive, split?.companion, fileMain]);
+
+  // 悬浮对话上下文镜像（供面板「+ 新会话」等消费方读取）：图谱/发布面板激活时
+  // 可见上下文是库而非被隐藏的文档，这里以「可见视图」为准覆盖 useKnowledge
+  // 写入的 selectedFile 镜像（后者不感知标签页状态）。切换文件时两处写入同值。
+  useEffect(() => {
+    currentContextStore.set({
+      filePath: graphActive || publishActive ? null : kb.selectedFile,
+      page: 'knowledge',
+    });
+  }, [graphActive, publishActive, kb.selectedFile]);
 
   return (
     <div className="kb-shell">
@@ -1217,10 +1293,24 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
           onActivate={handleActivateTab}
           onClose={handleCloseTab}
           onOpenInNewWindow={handleOpenInNewWindow}
+          onSplit={openSplit}
           onAddTab={handleAddTab}
           onTogglePin={handleTogglePin}
           actions={
             <>
+              {/* 💬问答 — vault 级常驻入口：有文件 = 带 @文档上下文，无文件 = 库级问答 */}
+              <button
+                type="button"
+                className="kb-btn kb-btn-ghost"
+                onClick={handleOpenQa}
+                disabled={!kb.activeVault}
+                title={kb.activeVault ? t('kb.askButton') : t('kb.cmdNeedsVault')}
+                data-testid="kb-btn-ask-tab"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                </svg>
+              </button>
               <button
                 type="button"
                 className="kb-btn kb-btn-ghost"
@@ -1261,11 +1351,12 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
             </>
           }
         />
-        <div className="kb-main-panes">
+        <div className="kb-main-panes" ref={mainPanesRef}>
           <div
             className={`kb-pane${publishActive || graphActive ? ' kb-pane--closed' : ''}`}
             inert={publishActive || graphActive}
             aria-hidden={publishActive || graphActive || undefined}
+            style={companionShown ? { right: `${(1 - (split?.ratio ?? 0.5)) * 100}%` } : undefined}
           >
             <KbMainContent
               fileContent={kb.fileContent}
@@ -1286,7 +1377,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
               onBuildWiki={handleBuildWiki}
               onAskAboutSelection={handleAskAboutSelection}
               onOpenOutline={() => setShowOutline(true)}
-              onAskAboutFile={kb.selectedFile ? handleOpenQa : undefined}
+              onAskAboutFile={handleOpenQa}
               showFileName={true}
               isEditMode={kb.isEditMode}
               onToggleEdit={kb.toggleEditMode}
@@ -1328,6 +1419,52 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
               <GraphPage active={graphActive} />
             </div>
           )}
+          {/* 副视图（单库分屏右格）：companion 存在期间 keep-alive 常驻挂载；
+              主视图切到图谱/发布时整幅显示、副格隐藏（GraphPage 引擎经 active=false 暂停） */}
+          {split?.companion && (
+            <>
+              {companionShown && (
+                <div
+                  className="kb-split-divider"
+                  data-testid="kb-split-divider"
+                  onMouseDown={handleSplitDragStart}
+                  style={{ left: `calc(${(split?.ratio ?? 0.5) * 100}% - 3px)` }}
+                />
+              )}
+              <div
+                className={`kb-pane kb-pane--companion${companionShown ? '' : ' kb-pane--closed'}`}
+              data-testid="kb-companion-pane"
+              inert={!companionShown}
+              aria-hidden={!companionShown || undefined}
+              style={{ left: `${(split?.ratio ?? 0.5) * 100}%` }}
+            >
+              {split.companion.type === 'graph' ? (
+                <GraphPage active={companionShown} onCloseCompanion={() => split.setCompanion(null)} />
+              ) : (
+                <KbMainContent
+                  companion
+                  onCloseCompanion={() => split.setCompanion(null)}
+                  fileContent={companionFile.fileContent}
+                  fileLoadError={companionFile.error}
+                  selectedFile={split.companion.filePath}
+                  vaultId={kb.activeVault?.id ?? null}
+                  vaultPath={kb.activeVault?.path ?? null}
+                  isTypesetMode={false}
+                  themeConfig={kb.themeConfig}
+                  wikiInitialized={kb.wikiInitialized}
+                  onToggleTypeset={() => {}}
+                  onThemeConfigChange={() => {}}
+                  onContentChange={() => {}}
+                  onCopy={() => {}}
+                  onPublish={() => {}}
+                  onBuildWiki={() => {}}
+                  showFileName={true}
+                  onNavigateToFile={handleNavigateToFile}
+                />
+              )}
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -1349,6 +1486,26 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
           }}
           onClose={() => setShowSearch(false)}
         />
+      )}
+
+      {/* 文件对照：选副格文件 */}
+      {showSplitFilePicker && kb.activeVault && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
+          onClick={() => setShowSplitFilePicker(false)}
+        >
+          <div className="kb-split-file-picker" onClick={(e) => e.stopPropagation()}>
+            <FilePicker
+              vaultId={kb.activeVault.id}
+              filterText=""
+              onSelect={(p) => {
+                setShowSplitFilePicker(false);
+                split?.setCompanion({ type: 'file', filePath: p });
+              }}
+              onClose={() => setShowSplitFilePicker(false)}
+            />
+          </div>
+        </div>
       )}
 
       {/* Vault Manager Modal */}
