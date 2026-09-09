@@ -44,15 +44,16 @@ test.describe('Graph camera framing', () => {
         `# Root ${i}\n\n[[root${(i + 1) % 4}]]${cross}\n`,
       );
     }
-    // 对照副格用例：8 邻居的 hub —— 1 跳邻域铺得开，才暴露「focusNode 放大裁掉邻居」
+    // 取景用例：16 邻居的 hub —— 1 跳邻域铺得足够开（包围盒超过主格画布在 k=1.5 下的可视范围），
+    // 才暴露「focusNode 放大裁掉邻居」。
     fs.writeFileSync(
       path.join(vault.path, 'hub.md'),
-      `# Hub\n\n${Array.from({ length: 8 }, (_, i) => `[[n${i}]]`).join(' ')}\n`,
+      `# Hub\n\n${Array.from({ length: 16 }, (_, i) => `[[n${i}]]`).join(' ')}\n`,
     );
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 16; i++) {
       fs.writeFileSync(
         path.join(vault.path, `n${i}.md`),
-        `# N${i}\n\n[[hub]] [[n${(i + 1) % 8}]]\n`,
+        `# N${i}\n\n[[hub]] [[n${(i + 1) % 16}]]\n`,
       );
     }
   });
@@ -171,5 +172,34 @@ test.describe('Graph camera framing', () => {
     const vpB = await readVp(page);
     expect(vpB).toEqual(vpA);
     await expectAllNodesFramed(page);
+  });
+
+  /**
+   * 主格「局部知识图谱」的 file-scope：取景 = fit 整张 1 跳邻域 + 选中圆心。
+   * （早先是 focusNode(k=1.5) 圆心居中放大 —— 大 hub 下会裁掉外圈邻居。）
+   */
+  test('main graph tab: file scope frames the whole 1-hop neighborhood and selects the anchor', async ({ page }) => {
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 10_000 });
+
+    const item = page.locator('.kb-tree-item').filter({ hasText: 'hub.md' }).first();
+    await expect(item).toBeVisible({ timeout: 10_000 });
+    await item.click({ button: 'right' });
+    await expect(page.locator('.ctx-menu')).toBeVisible({ timeout: 5_000 });
+    await page.locator('[data-testid="kb-ctx-local-graph"]').click();
+
+    const pane = page.locator('[data-testid="kb-graph-pane"]');
+    await expect(pane.locator('[data-testid="graph-scope-back"]')).toBeVisible({ timeout: 10_000 });
+    // 未开副格 → 主格图谱 tab 是唯一 GraphPage 实例
+    await expect(pane.locator('[data-testid="graph-search-open"]')).toBeVisible({ timeout: 15_000 });
+    await page.waitForTimeout(4_000); // 等收敛 + 收敛后取景
+
+    // 整张 1 跳邻域都在视口内（16 邻居的包围盒超出 k=1.5 的可视范围 → 旧实现会失败）
+    await expectAllNodesFramed(page);
+    // 圆心仍是视觉锚点（fit 不移动相机，靠 selectNode 选中）
+    const selected = await page.evaluate(
+      () => (window as unknown as { __graphEngine?: { getSelectedKey(): string | null } }).__graphEngine?.getSelectedKey() ?? null,
+    );
+    expect(selected).toBe('hub.md');
   });
 });

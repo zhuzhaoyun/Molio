@@ -262,7 +262,9 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
   `null`（默认）= 全量图；`{type:'file', path}` = 当前文档 1 跳邻域（`GET /api/graph/:vaultId/local`，响应含
   `focusNodes`）；`{type:'dir', path}` = 文件夹子图。**两套交互共用**：对照副视图只传 file-scope
   （`companionScope`，纯跟随主格文档），主格图谱 tab 传 `graphTabScope`（file/dir，树右键「查看局部图谱」写入）。
-  setData 后按 scope 居中分派：file → `focusNode(focusNodes[0])`（不存在或被筛选滤掉则兜底 `fitView`）；dir → `fitView`。
+  setData 后按 scope 取景分派：file → `fitView` **框全 1 跳邻域** + `selectNode(focusNodes[0])` 选中圆心做视觉锚点
+  （圆心不存在或被筛选滤掉则只 `fitView`）；dir → `fitView`。**不再用 `focusNode(k=1.5)` 圆心居中放大**——
+  大 hub 下那会裁掉外圈邻居（回归：`e2e/graph-camera.spec.ts` 的 file-scope 用例）。
   **筛选三开关（类型/孤立/死链）照常复用于局部数据**；空数据翻 `hasData` 必须 `engine.setData([],[])` 清引擎。
 - **空态文案按 scope 细分**（GraphPage `emptyCopy`）：全量图 →「该知识库中没有 Markdown 文件」；
   file-scope 且是普通 .md →「这篇笔记还没有链接」；file-scope 且非 .md 或 index/log 类 →「该文件不在关系图谱中」；
@@ -270,7 +272,7 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
   （`GRAPH_EXCLUDED_BASENAMES` 是 daemon `routes/graph.ts` 的镜像，只用于挑文案，不参与过滤。）
 - **scope 切换的取景（两方向统一）**：布局在收敛前一直在动，**早取景会落在错误位置**（这是「切换后视角不对、
   且看不到初始化过渡」的根因）。故 scope 切换（局部图 ⇄ 全量图）时：先 `applyView(false)` **立即落位**（非动画，
-  先给个合理视角），再 `engine.reframeAfterSettle(fn)` 注册**收敛后的动画取景**（file→圆心居中放大、dir/全量→fit），
+  先给个合理视角），再 `engine.reframeAfterSettle(fn)` 注册**收敛后的动画取景**（file→框全邻域+选中圆心、dir/全量→fit），
   平滑过渡到正确视角。同 scope 内筛选变化仍直接动画取景。用户中途平移/缩放则放弃这次自动取景（让位用户）。
   回归保护：`e2e/graph-camera.spec.ts`（断言收敛后视口变了 **且** 框住全部节点）。
 - **节点交互（三处统一）**：**悬停 = 高亮关联**（引擎 hover 两档，非邻居淡化 + 关联边置顶）；

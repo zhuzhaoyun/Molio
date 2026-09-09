@@ -331,7 +331,9 @@ export function GraphPage({
         const focusKey = graphData?.focusNodes?.[0];
         // 圆心被筛选条件滤掉（不在可见节点里）时退化为整图 fit
         if (focusKey && engineData.nodes.some((n) => n.key === focusKey)) {
-          engine.focusNode(focusKey, { durationMs: animated ? 600 : 0 });
+          // 框全整张 1 跳邻域（大 hub 下 focusNode 的 k=1.5 会裁掉外圈），并选中圆心做视觉锚点
+          engine.fitView({ animate: animated });
+          engine.selectNode(focusKey);
           return;
         }
       }
