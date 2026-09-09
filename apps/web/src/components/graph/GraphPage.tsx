@@ -24,6 +24,10 @@ import {
   type EngineEdge,
 } from './engine/pixiGraphEngine';
 
+/** 图谱剔除的 .md 基名（小写）——镜像 daemon `routes/graph.ts` 的 GRAPH_EXCLUDED_BASENAMES，
+ *  仅用于挑空态文案，不参与数据过滤（过滤在 daemon）。 */
+const GRAPH_EXCLUDED_BASENAMES = new Set(['index', 'log']);
+
 export function GraphPage({
   active = true,
   onCloseCompanion,
@@ -151,6 +155,22 @@ export function GraphPage({
 
   const hasData = !!engineData && engineData.nodes.length > 0;
 
+  // 空态文案按 scope 细分——全量图空态只说「库里没有 md」，对局部图是误导
+  // （库里有 md，只是这个文件/目录没有可显示的关系）。
+  const emptyCopy = useMemo(() => {
+    const scope = graphScope;
+    if (!scope) return { title: t('graph.empty'), hint: t('graph.emptyHint') };
+    if (scope.type === 'dir') return { title: t('graph.emptyDir'), hint: t('graph.emptyDirHint') };
+    // file-scope：图谱只收录除 index / log 之外的 .md（与 daemon 的 isGraphExcludedFile 同规则，
+    // 仅用于选文案；规则若变更这里只需同步措辞，不影响功能）。
+    const base = scope.path.split('/').pop() ?? scope.path;
+    const isMd = /\.md$/i.test(base);
+    const excluded = isMd && GRAPH_EXCLUDED_BASENAMES.has(base.replace(/\.md$/i, '').toLowerCase());
+    return isMd && !excluded
+      ? { title: t('graph.emptyFile'), hint: t('graph.emptyFileHint') }
+      : { title: t('graph.emptyOutOfGraph'), hint: t('graph.emptyOutOfGraphHint') };
+  }, [graphScope, t]);
+
   // `/` 快捷键：在非输入态下展开图谱搜索。与全局搜索 Ctrl/Cmd+F 区分，不冲突。
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -267,8 +287,14 @@ export function GraphPage({
 
   // ── 数据推送：vault 切换时先清位置缓存，再 setData ──
   const lastVaultRef = useRef<string | null>(null);
+  // 上一次的 scope 标识：用于识别「局部图 → 全量图」的返回（需要重新取景）
+  const prevScopeKeyRef = useRef<string | null>(null);
   useEffect(() => {
     if (!engine) return;
+    const scope = scopeRef.current;
+    const prevScopeKey = prevScopeKeyRef.current;
+    prevScopeKeyRef.current = scope ? `${scope.type}:${scope.path}` : null;
+
     // 空数据必须清引擎：hasData 翻转后 .graph-empty 只是视觉遮罩（不透明背景 + z-index），
     // 不清掉的话旧子图仍在遮罩背后继续仿真耗 CPU；但引擎本身不销毁（tab 切回还要用）。
     if (!engineData) {
@@ -281,12 +307,19 @@ export function GraphPage({
     }
     engine.setData(engineData.nodes, engineData.edges);
 
-    // 局部图：setData 后按 scope 类型居中（全量图 scope=null → 保持原有 1.5s 自动 refit 行为）。
-    // 必须走动画路径：animateToViewport 会置 hasUserInteracted=true，从而抑制 setData 后
-    // 1.5s / sim end 的自动 refit；非动画 setTransform 不置位，居中结果会被 refit 覆盖。
-    // active 不进 deps（读 activeRef）——companion 开合若触发 effect 会全量重跑 setData。
-    const scope = scopeRef.current;
-    if (!scope) return;
+    if (!scope) {
+      // 全量图：从局部图返回时旧视口（局部子图的缩放/平移）已无意义 —— 立即框住整图，
+      // 并清掉交互标记，让仿真收敛后再平滑 fit 一次（与首次打开全量图同样的观感）。
+      if (prevScopeKey) {
+        engine.fitView({ animate: false });
+        engine.reframeOnSettle();
+      }
+      return;
+    }
+    // 局部图：setData 后按 scope 类型居中。必须走动画路径：animateToViewport 会置
+    // hasUserInteracted=true，从而抑制 sim end 的自动 refit；非动画 setTransform 不置位，
+    // 居中结果会被 refit 覆盖。active 不进 deps（读 activeRef）——companion 开合若触发
+    // effect 会全量重跑 setData。
     if (scope.type === 'file') {
       // file：圆心节点居中放大；圆心被筛选条件滤掉（不在可见节点里）时退化为整图 fit
       const focusKey = graphData?.focusNodes?.[0];
@@ -498,8 +531,8 @@ export function GraphPage({
 
         {!loading && !error && graphData && graphData.nodes.length === 0 && (
           <div className="graph-empty">
-            <p>{t('graph.empty')}</p>
-            <p className="graph-empty__hint">{t('graph.emptyHint')}</p>
+            <p>{emptyCopy.title}</p>
+            <p className="graph-empty__hint">{emptyCopy.hint}</p>
           </div>
         )}
 

@@ -416,6 +416,15 @@ export class PixiGraphEngine {
     this.updateFocusAndRender();
   }
 
+  /**
+   * 重新取景：清掉「用户已交互」标记，使本次数据重排后仿真收敛时自动平滑 fit 一次。
+   * 用于数据整体切换（如局部图 → 全量图）——旧视口已无意义，需要重新框住整图；
+   * 期间若用户自己平移/缩放，标记会被重新置位，自动 fit 让位于用户操作。
+   */
+  reframeOnSettle(): void {
+    this.hasUserInteracted = false;
+  }
+
   setForces(f: ForceParams): void {
     this.forces = { ...f };
     const sim = this.sim;

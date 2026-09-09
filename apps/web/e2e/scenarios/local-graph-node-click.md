@@ -46,6 +46,7 @@ linked files, e.g. `notes/alpha.md` (`[[beta]]`) and `notes/beta.md` (`[[alpha]]
    (`kb-ctx-local-graph`). The main graph tab opens showing a scoped sub-graph and a
    **回到全量图** (`graph-scope-back`) button.
 5. **Hover** the `beta` node, then **single-click** it.
+6. After the file opens, click the graph tab again, then click **回到全量图** (`graph-scope-back`).
 
 ### C. 对照（副视图）
 
@@ -63,6 +64,9 @@ linked files, e.g. `notes/alpha.md` (`[[beta]]`) and `notes/beta.md` (`[[alpha]]
 - The `graph-scope-back` button remains present while a scope is active (it is a scope
   affordance, unaffected by node clicking); clicking it clears the scope and returns to the
   full graph.
+- **回到全量图会重新取景**：点击后全量图立即框满视口，随后仿真收敛时再平滑 fit 一次 ——
+  观感应与「关掉图谱 tab 再打开」基本一致，不会停在局部图的缩放/平移位置。若在收敛前自己
+  拖动/缩放了画布，自动 fit 让位于用户操作（不抢视口）。
 
 ## Pass criteria
 

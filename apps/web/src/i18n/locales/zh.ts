@@ -465,6 +465,13 @@ const zh: Record<string, string> = {
   'graph.selectVault': '选择知识库',
   'graph.empty': '该知识库中没有 Markdown 文件',
   'graph.emptyHint': '在知识库里写 Markdown，并用 [[链接]] 互相关联，关系图谱会自动生成',
+  // 局部图空态按 scope 细分（全量图空态见上）
+  'graph.emptyFile': '这篇笔记还没有链接',
+  'graph.emptyFileHint': '用 [[链接]] 关联到其他笔记，关系图谱会自动生成',
+  'graph.emptyOutOfGraph': '该文件不在关系图谱中',
+  'graph.emptyOutOfGraphHint': '图谱只收录除 index / log 之外的 Markdown 笔记',
+  'graph.emptyDir': '该文件夹下没有 Markdown 笔记',
+  'graph.emptyDirHint': '在这个文件夹里新建 Markdown 笔记，关系图谱会自动生成',
   'graph.searchPlaceholder': '搜索节点…',
   'graph.searchNoResult': '无匹配节点',
   'graph.scopeBack': '回到全量图',

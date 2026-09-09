@@ -261,6 +261,13 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
   （`companionScope`，纯跟随主格文档），主格图谱 tab 传 `graphTabScope`（file/dir，树右键「查看局部图谱」写入）。
   setData 后按 scope 居中分派：file → `focusNode(focusNodes[0])`（不存在或被筛选滤掉则兜底 `fitView`）；dir → `fitView`。
   **筛选三开关（类型/孤立/死链）照常复用于局部数据**；空数据翻 `hasData` 必须 `engine.setData([],[])` 清引擎。
+- **空态文案按 scope 细分**（GraphPage `emptyCopy`）：全量图 →「该知识库中没有 Markdown 文件」；
+  file-scope 且是普通 .md →「这篇笔记还没有链接」；file-scope 且非 .md 或 index/log 类 →「该文件不在关系图谱中」；
+  dir-scope →「该文件夹下没有 Markdown 笔记」。原因：局部图空态若沿用全量图那句，会误导成「整个库没有 md」。
+  （`GRAPH_EXCLUDED_BASENAMES` 是 daemon `routes/graph.ts` 的镜像，只用于挑文案，不参与过滤。）
+- **局部图 → 全量图的重新取景**：引擎的「首次布局才 fit」+ `hasUserInteracted` 抑制会让返回路径停在局部图视口，
+  故返回时显式 `fitView({animate:false})` 立即框住 + `engine.reframeOnSettle()` 清交互标记，让仿真收敛后
+  再平滑 fit 一次（与首次打开全量图同观感）。仅在 scope 非空 → null 的转变触发，筛选开关变化不会误触发。
 - **节点交互（三处统一）**：**悬停 = 高亮关联**（引擎 hover 两档，非邻居淡化 + 关联边置顶）；
   **单击 = 打开文章**（死链节点新建空白页再打开）；双击空白 = fit。三处图谱（全量图 / 局部知识图谱 / 对照）
   行为完全相同——**不提供「单击选中」**：它与悬停高亮重复，而「看邻域」已由局部知识图谱专门承担（Obsidian 同款）。

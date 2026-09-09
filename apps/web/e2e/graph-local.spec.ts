@@ -15,7 +15,8 @@ import * as path from 'path';
  *   2. 局部知识图谱（主格图谱 tab，keep-alive pane `[data-testid="kb-graph-pane"]`）：
  *      树右键「查看局部图谱」（kb-ctx-local-graph）→ dir-scope 文件夹子图 / file-scope 1 跳；
  *      有 scope 时显示「回到全量图」（graph-scope-back），点它回全量图。
- *      dir-scope 跨 tab 切换 keep-alive 不重锚定；单击聚焦/双击打开为 WebGL 命中，不可自动化。
+ *      dir-scope 跨 tab 切换 keep-alive 不重锚定；悬停高亮/单击打开为 WebGL 命中，不可自动化。
+ *   3. 空态文案按 scope 细分：全量图 / file-scope（无链接 or 不在图谱中）/ dir-scope 各有不同原因。
  *
  * 图谱渲染依赖 PixiJS (WebGL) canvas，节点无法 DOM 查询 → 用 GraphSearchBox 候选下拉
  * （graph-search-option / graph-search-empty）作节点存在性断言；空图用 .graph-empty。
@@ -34,6 +35,9 @@ test.describe('Graph local scope', () => {
     fs.writeFileSync(path.join(vault.path, 'notes', 'beta.md'), '# Beta\n\n[[alpha]] [[gamma]]\n');
     fs.writeFileSync(path.join(vault.path, 'notes', 'gamma.md'), '# Gamma\n\n[[beta]]\n');
     fs.writeFileSync(path.join(vault.path, 'solo.md'), '# Solo\n');
+    // 非 md 文件（树里会显示，但不是图谱节点）+ 空文件夹 —— 用于空态文案按 scope 细分的用例
+    fs.writeFileSync(path.join(vault.path, 'notes', 'diagram.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    fs.mkdirSync(path.join(vault.path, 'empty-dir'), { recursive: true });
   });
   test.afterAll(async () => { if (vault) await cleanupTempVault(vault); });
 
@@ -205,6 +209,8 @@ test.describe('Graph local scope', () => {
     await expect(pane.locator('.graph-page')).toBeVisible({ timeout: 10_000 });
     // solo 无出链 → file-scope 空图 → .graph-empty；无搜索框
     await expect(pane.locator('.graph-empty')).toBeVisible({ timeout: 10_000 });
+    // 空态文案按 scope 细分：solo.md 是正常 .md 且无链接 → 「还没有链接」（不再是全量图那句）
+    await expect(pane.locator('.graph-empty')).toContainText('这篇笔记还没有链接');
 
     // 关闭副格
     await pane.locator('[data-testid="companion-close"]').click();
@@ -222,5 +228,42 @@ test.describe('Graph local scope', () => {
     await expect(pane.locator('[data-testid="graph-scope-back"]')).toHaveCount(0);
     await searchGraph(page, pane, 'solo');
     await expect(pane.locator('[data-testid="graph-search-option"]').first()).toBeVisible();
+  });
+
+  // 空态文案按 scope 细分（见 GraphPage 的 emptyCopy）：非 md 文件 / 空文件夹 都不是「库中没有 md」
+  test('main graph tab: non-markdown file scope shows the "not in graph" empty copy', async ({ page }) => {
+    await gotoVault(page);
+    await openNoteFile(page, 'alpha.md'); // 展开 notes/，让 diagram.png 可见
+
+    const imgItem = page.locator('.kb-tree-item').filter({ hasText: 'diagram.png' }).first();
+    await expect(imgItem).toBeVisible({ timeout: 10_000 });
+    await imgItem.click({ button: 'right' });
+    await expect(page.locator('.ctx-menu')).toBeVisible({ timeout: 5_000 });
+    await page.locator('[data-testid="kb-ctx-local-graph"]').click();
+
+    const pane = graphTab(page);
+    await expect(pane).toBeVisible({ timeout: 10_000 });
+    // scope 非空 → 仍有「回到全量图」；但图谱只收录 .md → 空态，且文案是「不在关系图谱中」
+    await expect(pane.locator('[data-testid="graph-scope-back"]')).toBeVisible();
+    const empty = pane.locator('.graph-empty');
+    await expect(empty).toBeVisible({ timeout: 10_000 });
+    await expect(empty).toContainText('该文件不在关系图谱中');
+  });
+
+  test('main graph tab: empty folder scope shows the "no markdown here" empty copy', async ({ page }) => {
+    await gotoVault(page);
+
+    const folder = page.locator('.kb-tree-group-label').filter({ hasText: 'empty-dir' }).first();
+    await expect(folder).toBeVisible({ timeout: 10_000 });
+    await folder.click({ button: 'right' });
+    await expect(page.locator('.ctx-menu')).toBeVisible({ timeout: 5_000 });
+    await page.locator('[data-testid="kb-ctx-local-graph"]').click();
+
+    const pane = graphTab(page);
+    await expect(pane).toBeVisible({ timeout: 10_000 });
+    await expect(pane.locator('[data-testid="graph-scope-back"]')).toBeVisible();
+    const empty = pane.locator('.graph-empty');
+    await expect(empty).toBeVisible({ timeout: 10_000 });
+    await expect(empty).toContainText('该文件夹下没有 Markdown 笔记');
   });
 });
