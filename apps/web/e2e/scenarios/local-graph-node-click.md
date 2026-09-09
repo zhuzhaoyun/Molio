@@ -8,24 +8,26 @@
 
 The graph canvas is a WebGL render target, not a DOM element. Playwright can query the
 topbar/search/buttons (real DOM) but cannot inspect or dispatch to the canvas-drawn nodes,
-so "click/double-click a canvas node" is provable only by a human/AI driving the real app.
+so "hover/click a canvas node" is provable only by a human/AI driving the real app.
 
-## Behavior being verified (统一后)
+## Behavior being verified
 
-The same interaction applies to **all three hosts** — 全量图 (NavRail 图谱 → main graph tab,
+The interaction is **identical in all three hosts** — 全量图 (NavRail 图谱 → main graph tab,
 no scope), 局部知识图谱 (main graph tab with `graphScope`), and 对照 (split-view companion):
 
-1. **Single-click** on a node **selects it and highlights its connections** — it **never**
-   navigates away from the graph. With `centerOnSelect` (局部知识图谱 only, i.e. a scope is
-   active) it additionally **centers** the node with a smooth animation; the full graph and
-   the companion only select/highlight, leaving the camera untouched.
-2. **Double-click** on a node **opens that node's file** in the knowledge base (main pane),
+1. **Hover** a node → it and its connections **highlight** (neighbors stay bright, unconnected
+   nodes dim, connected edges render on top). This is the ONLY highlight affordance — there is
+   no click-to-select.
+2. **Single-click** a node → **opens that node's file** in the knowledge base main pane,
    switching away from the graph tab. Dead-link nodes create a blank file and open it.
-3. **Double-click on empty canvas** fits the whole graph into view.
+3. **Double-click on empty canvas** → fits the whole graph into view.
 4. **Drag** (>4px) moves the node with fluid neighbor motion; a click is only recognized when
    press-to-release is `<500ms` and movement `≤4px`.
 
-This matches the settings-panel legend (图例 tab): 「单击选中 · 高亮关联」/「双击节点 · 打开文章」.
+Rationale: this matches the settings-panel legend (图例 tab) 「悬停节点 · 高亮关联」/「单击节点 ·
+打开文章」 and the native Obsidian graph model (hover highlights, click opens). Click-to-select
+is deliberately NOT offered — it duplicates hover highlighting, and "look at a node's
+neighborhood" is already served by the dedicated 局部知识图谱 view.
 
 ## Steps
 
@@ -36,35 +38,34 @@ linked files, e.g. `notes/alpha.md` (`[[beta]]`) and `notes/beta.md` (`[[alpha]]
 
 1. Open `http://localhost:5173/knowledge?vault=<id>`.
 2. NavRail → 图谱 (`data-view="graph"`). No `graph-scope-back` button.
-3. **Single-click** the `beta` node. Then **double-click** it.
+3. **Hover** the `beta` node, then **single-click** it.
 
 ### B. 局部知识图谱（有 scope）
 
 4. Right-click the `notes/` folder (or `alpha.md`) in the tree → **查看局部图谱**
    (`kb-ctx-local-graph`). The main graph tab opens showing a scoped sub-graph and a
    **回到全量图** (`graph-scope-back`) button.
-5. **Single-click** the `beta` node. Then **double-click** it.
+5. **Hover** the `beta` node, then **single-click** it.
 
 ### C. 对照（副视图）
 
 6. Right-click a file tab → **图谱对照** (`tab-split-graph`). The companion pane shows the
    main doc's 1-hop neighborhood.
-7. **Single-click** the `beta` node. Then **double-click** it.
+7. **Hover** the `beta` node, then **single-click** it.
 
 ## Expected result
 
-- **Single-click** selects + highlights in every host: the clicked node stays focused, its
-  neighbors stay bright and unconnected nodes dim — and **the graph tab stays put; no file
-  opens**. In the 局部知识图谱 case (B) the camera additionally centers the node.
-- **Double-click** opens `notes/beta.md` in the main pane (active tab becomes `beta.md`),
+- **Hover** highlights the node + its connections in every host; moving the pointer away
+  (after the ~150ms hysteresis) restores the graph.
+- **Single-click** opens `notes/beta.md` in the main pane (active tab becomes `beta.md`),
   switching away from the graph tab. In the companion case (C) the file opens in the **main**
-  pane, not inside the companion.
+  pane, not inside the companion. No host requires a double-click to open a node.
 - The `graph-scope-back` button remains present while a scope is active (it is a scope
   affordance, unaffected by node clicking); clicking it clears the scope and returns to the
   full graph.
 
 ## Pass criteria
 
-Single-click selects/highlights without navigating in all three hosts (centering only in the
-scoped 局部知识图谱); double-click opens the file everywhere; scope-back remains available.
-Record any deviation.
+Hover highlights connections in all three hosts; a single click opens the file everywhere
+(no double-click needed, no click-to-select state); scope-back remains available. Record any
+deviation.

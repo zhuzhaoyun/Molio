@@ -490,21 +490,13 @@ export class PixiGraphEngine {
     }
   }
 
-  /** 选中节点：置选中态 + 高亮关联（不动相机）。单击节点的语义，三处图谱一致。 */
-  selectNode(key: string): boolean {
-    if (this.destroyed) return false;
-    if (!this.nodeById.has(key)) return false;
-    this.selectedId = key;
-    this.updateFocusAndRender();
-    return true;
-  }
-
   /** 定位并选中节点（搜索用）：平滑居中缩放 */
   focusNode(key: string, opts?: { targetK?: number; durationMs?: number }): boolean {
     if (this.destroyed) return false;
     const node = this.nodeById.get(key);
     if (!node || node.x == null || node.y == null) return false;
-    this.selectNode(key);
+    this.selectedId = key;
+    this.updateFocusAndRender();
     const targetK = clamp(opts?.targetK ?? 1.5, K_MIN, K_MAX);
     const tx = this.width / 2 - (node.x + this.width / 2) * targetK;
     const ty = this.height / 2 - (node.y + this.height / 2) * targetK;

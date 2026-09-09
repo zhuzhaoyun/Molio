@@ -32,17 +32,12 @@ export function GraphPage({
   graphScope = null,
   onNodeOpen,
   onScopeReset,
-  // 单击选中时是否额外平滑居中（默认 false）——只影响相机，不影响单击语义：
-  // 单击恒为「选中节点 + 高亮关联」，三处图谱一致、都不跳转文档。
-  // 「局部知识图谱」主格图谱 tab（有 scope）传 true：子图小，点一下即聚焦。
-  centerOnSelect = false,
 }: {
   active?: boolean;
   onCloseCompanion?: () => void;
   graphScope?: GraphScope | null;
   onNodeOpen?: () => void;
   onScopeReset?: () => void;
-  centerOnSelect?: boolean;
 } = {}) {
   const { t } = useI18n();
   const navigate = useNavigate();
@@ -87,9 +82,6 @@ export function GraphPage({
   onNodeOpenRef.current = onNodeOpen;
   const onScopeResetRef = useRef(onScopeReset);
   onScopeResetRef.current = onScopeReset;
-  // 单击居中选择镜像：centerOnSelect 变化时无需重建引擎（setCallbacks 只在引擎创建时调用一次）
-  const centerOnSelectRef = useRef(centerOnSelect);
-  centerOnSelectRef.current = centerOnSelect;
   // scope 的稳定标识：换 file / 换 dir 才重新拉数据
   const scopeKey = graphScope ? `${graphScope.type}:${graphScope.path}` : null;
 
@@ -210,7 +202,7 @@ export function GraphPage({
         eng.destroy();
         return;
       }
-      // hover 高亮由引擎内部处理；双击节点都跳转文档
+      // hover 高亮由引擎内部处理；单击/双击节点都跳转文档（见下方 setCallbacks）
       const openNode = (_key: string, node: EngineNode) => {
           const vaultId = vaultIdRef.current;
           if (!vaultId) return;
@@ -237,17 +229,10 @@ export function GraphPage({
               });
           }
         };
-      // 单击 = 选中节点 + 高亮关联 —— 三处图谱（全量图 / 局部知识图谱 / 对照）语义一致，都不跳转文档。
-      // centerOnSelect 为 true（局部知识图谱）时额外平滑居中：子图小，点一下即聚焦。
-      // focusNode 走动画路径会置 hasUserInteracted=true，从而抑制 setData 后 1.5s / sim end 的自动 refit。
-      const handleNodeClick = (key: string, node: EngineNode) => {
-        if (centerOnSelectRef.current) {
-          eng.focusNode(node.key, { durationMs: 600 });
-          return;
-        }
-        eng.selectNode(node.key);
-      };
-      eng.setCallbacks({ onNodeClick: handleNodeClick, onNodeDoubleClick: openNode });
+      // 单击 / 双击节点都打开文章 —— 三处图谱（全量图 / 局部知识图谱 / 对照）行为完全一致。
+      // 「高亮关联」由悬停承担（引擎 hover 两档：非邻居淡化 + 关联边置顶），与 Obsidian 原生图谱同款
+      // （悬停高亮、单击打开）；「单击选中」不提供——它与悬停重复，而「看邻域」已由局部知识图谱专门承担。
+      eng.setCallbacks({ onNodeClick: openNode, onNodeDoubleClick: openNode });
       engineRef.current = eng;
       // 开发环境调试句柄：像素提取（renderer.extract）与布局检查
       if (import.meta.env.DEV) {

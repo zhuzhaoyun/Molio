@@ -247,8 +247,8 @@ export function GraphSettingsPanel({ settings, onUpdateSettings, onUpdateForce, 
               <div className="graph-settings__group-title">操作</div>
               <div className="graph-info__hints">
                 <div className="graph-hint">拖拽节点 · 邻居联动</div>
-                <div className="graph-hint">单击选中 · 高亮关联</div>
-                <div className="graph-hint">双击节点 · 打开文章</div>
+                <div className="graph-hint">悬停节点 · 高亮关联</div>
+                <div className="graph-hint">单击节点 · 打开文章</div>
               </div>
             </div>
           </div>
