@@ -1478,6 +1478,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
             >
               {split.companion.type === 'graph' ? (
                 <GraphPage
+                  companion
                   active={companionShown}
                   onCloseCompanion={() => split.setCompanion(null)}
                   graphScope={companionScope}

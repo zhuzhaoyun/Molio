@@ -216,7 +216,10 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
 - **单库分屏副视图图谱（对照）**：副格图谱为**纯 file-scope**，始终跟随主格当前文档
   （`companionScope = kb.selectedFile ? {type:'file', path} : null`，useMemo 稳定身份防无限重取），主格换文档自动重锚定。
   无 dir-scope、无「回到当前文档」按钮、不接 `onNodeOpen`/`onScopeReset`——单击图中节点即打开对应文件到主格
-  （悬停高亮关联，三处图谱一致）。
+  （悬停高亮关联，三处图谱一致）。**取景与主格不同**（传 `companion` prop）：小参照面板 + 随主格文档
+  **高频重锚定** → 用 `fitView` 框住**整张子图**（而非 file-scope 的圆心居中放大——小画布下会裁掉邻居），
+  且 `engine.preSettle()` 同步跑完布局 + 瞬时取景，**不做过渡动画**（两段式「先落位、收敛后再动画」在高频
+  切换下只会拖沓）。回归：`e2e/graph-camera.spec.ts` 的 companion 用例（数据一到即框全 + 3.5s 内视口不变）。
 - **副视图图谱不渲染顶栏导航箭头**（`graph-nav-navigation` 为 0，前进/后退为主格图谱 tab 专属），关闭走图谱自己的悬浮 `companion-close` chip。
 - **局部知识图谱（主格图谱 tab）**：树右键文件/文件夹「查看局部图谱」（`kb-ctx-local-graph`，文件/文件夹均有、永不置灰）
   进入主格图谱 tab（`data-testid="kb-graph-pane"`），交互见下方「知识图谱」节。

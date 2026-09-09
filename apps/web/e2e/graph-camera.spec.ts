@@ -44,6 +44,17 @@ test.describe('Graph camera framing', () => {
         `# Root ${i}\n\n[[root${(i + 1) % 4}]]${cross}\n`,
       );
     }
+    // 对照副格用例：8 邻居的 hub —— 1 跳邻域铺得开，才暴露「focusNode 放大裁掉邻居」
+    fs.writeFileSync(
+      path.join(vault.path, 'hub.md'),
+      `# Hub\n\n${Array.from({ length: 8 }, (_, i) => `[[n${i}]]`).join(' ')}\n`,
+    );
+    for (let i = 0; i < 8; i++) {
+      fs.writeFileSync(
+        path.join(vault.path, `n${i}.md`),
+        `# N${i}\n\n[[hub]] [[n${(i + 1) % 8}]]\n`,
+      );
+    }
   });
   test.afterAll(async () => { if (vault) await cleanupTempVault(vault); });
 
@@ -126,6 +137,39 @@ test.describe('Graph camera framing', () => {
     expect(backEarly).not.toBeNull();
     expect(backSettled).not.toBeNull();
     expect(vpDiff(backEarly!, backSettled!)).toBeGreaterThan(0.1);
+    await expectAllNodesFramed(page);
+  });
+
+  /**
+   * 对照副格：随主格文档高频重锚定 → 取景必须「瞬时 + 完整」——
+   * 用 fit 整张子图（而非 file-scope 的圆心居中放大，小画布下会裁掉邻居），
+   * 且布局同步跑完，不做「先落位 → 收敛后再动画」的两段式过渡。
+   */
+  test('companion frames the whole 1-hop neighborhood immediately, with no late re-frame', async ({ page }) => {
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 10_000 });
+
+    // 主格打开 hub.md，再右键标签 → 图谱对照
+    await page.locator('.kb-tree-item').filter({ hasText: 'hub.md' }).first().click();
+    await expect(page.locator('.kb-wtab.is-active')).toContainText('hub', { timeout: 5_000 });
+    await page.locator('.kb-wtab.is-active').click({ button: 'right' });
+    await expect(page.locator('[data-testid="tab-split-graph"]')).toBeVisible({ timeout: 5_000 });
+    await page.locator('[data-testid="tab-split-graph"]').click();
+
+    const pane = page.locator('[data-testid="kb-companion-pane"]');
+    await expect(pane).toBeVisible({ timeout: 10_000 });
+    // 未开主格图谱 tab → 副格是唯一的 GraphPage 实例，__graphEngine 即副格引擎
+    await expect(pane.locator('[data-testid="graph-search-open"]')).toBeVisible({ timeout: 15_000 });
+
+    // ① 数据一到就框住整张 1 跳邻域（hub + 8 邻居）
+    await expectAllNodesFramed(page);
+    const vpA = await readVp(page);
+    expect(vpA).not.toBeNull();
+
+    // ② 不再有「约 2.8s 后的迟到取景」：等过一个仿真收敛周期，视口必须纹丝不动
+    await page.waitForTimeout(3_500);
+    const vpB = await readVp(page);
+    expect(vpB).toEqual(vpA);
     await expectAllNodesFramed(page);
   });
 });

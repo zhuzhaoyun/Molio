@@ -36,12 +36,17 @@ export function GraphPage({
   graphScope = null,
   onNodeOpen,
   onScopeReset,
+  // 副视图（对照）模式：小参照面板 + 随主格文档高频重锚定。取景与时机都不同——
+  // 取景用「整张子图 fit」而非「圆心居中放大」（小画布下后者会裁掉邻居），
+  // 且布局同步跑完、瞬时取景，不做过渡动画（见下方数据推送 effect）。
+  companion = false,
 }: {
   active?: boolean;
   onCloseCompanion?: () => void;
   graphScope?: GraphScope | null;
   onNodeOpen?: () => void;
   onScopeReset?: () => void;
+  companion?: boolean;
 } = {}) {
   const { t } = useI18n();
   const navigate = useNavigate();
@@ -308,7 +313,7 @@ export function GraphPage({
     }
     engine.setData(engineData.nodes, engineData.edges);
 
-    // ── 取景：file → 圆心居中放大；dir → 子图 fit；全量图 → 整图 fit ──
+    // ── 取景：对照副格 → 整张子图 fit；file → 圆心居中放大；dir → 子图 fit；全量图 → 整图 fit ──
     // 布局在收敛前一直在动，早取景会落在错误位置（这是「切换后视角不对」的根因），所以：
     //   scope 切换（含局部图 ⇄ 全量图）→ 立即落位（不动画，先给个合理视角）
     //                                    + 注册收敛后的动画取景，平滑过渡到正确视角
@@ -317,6 +322,11 @@ export function GraphPage({
     // 否则会抑制收敛后的 reframe。active 读 activeRef（不进 deps）：companion 开合若触发
     // effect 会全量重跑 setData。
     const applyView = (animated: boolean) => {
+      if (companion) {
+        // 对照副格：始终瞬时 fit 整张子图（高频重锚定 + 小画布，动画只会拖沓且裁掉邻居）
+        engine.fitView({ animate: false });
+        return;
+      }
       if (scope?.type === 'file') {
         const focusKey = graphData?.focusNodes?.[0];
         // 圆心被筛选条件滤掉（不在可见节点里）时退化为整图 fit
@@ -327,6 +337,12 @@ export function GraphPage({
       }
       engine.fitView({ animate: animated });
     };
+    if (companion) {
+      // 布局同步跑完 → 取景一次到位：无过渡动画、无延迟，每次重锚定都是完整视角
+      engine.preSettle();
+      applyView(false);
+      return;
+    }
     if (prevScopeKey !== currentScopeKey) {
       if (currentScopeKey || prevScopeKey) {
         applyView(false);
@@ -335,7 +351,7 @@ export function GraphPage({
     } else if (scope) {
       applyView(activeRef.current);
     }
-  }, [engine, engineData, activeVaultId, graphData]);
+  }, [engine, engineData, activeVaultId, graphData, companion]);
 
   // ── 外观/力度参数实时下发（不重建仿真布局）──
   useEffect(() => {

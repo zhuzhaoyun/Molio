@@ -433,6 +433,26 @@ export class PixiGraphEngine {
     }
   }
 
+  /**
+   * 同步跑完仿真并停表（小图 / 对照副格用）：布局一次到位，取景即可正确，省掉
+   * 「先落位 → 收敛后再取景」的两段式过渡——副格随主格文档高频重锚定时后者很拖沓。
+   * 顺带标记首屏已 fit 并清掉自动 refit 定时器，避免后续多余动画。
+   */
+  preSettle(maxTicks = 1000): void {
+    const sim = this.sim;
+    if (!sim) return;
+    const min = sim.alphaMin();
+    let ticks = 0;
+    while (sim.alpha() > min && ticks++ < maxTicks) sim.tick();
+    sim.alpha(0);
+    sim.stop();
+    this.hasFitFirstLayout = true;
+    if (this.refitTimer) {
+      clearTimeout(this.refitTimer);
+      this.refitTimer = null;
+    }
+  }
+
   setForces(f: ForceParams): void {
     this.forces = { ...f };
     const sim = this.sim;
