@@ -1,7 +1,13 @@
 /**
  * Right-side action panel for the vault manager.
- * Branding + "Create vault" / "Open local vault" actions, plus the
- * external source roots section for the active vault.
+ *
+ * Two scopes share this panel and must not read as siblings:
+ *   • app scope   — the collection-level actions (create / open a vault).
+ *                   They don't apply to any one vault.
+ *   • vault scope — external source roots, which belong to whichever vault is
+ *                   highlighted in the left column.
+ * The `当前仓库 · <name>` header is what marks the second scope, so the panel
+ * never leaves "which vault does this setting belong to?" unanswered.
  */
 
 import { useCallback, useEffect, useState } from 'react';
@@ -13,6 +19,9 @@ interface VaultActionPanelProps {
   onOpenLocal: () => void;
   /** Active vault — the external-roots section is per vault. */
   activeVault?: Vault | null;
+  /** Whether any vault exists at all. Distinguishes "nothing selected yet"
+   *  from first run, where there is nothing to select. */
+  hasVaults?: boolean;
   /** Fired after a mount/unmount so the page can refresh the file tree and
    *  pick up (or drop) the `external/<label>` node. */
   onExternalRootsChanged?: () => void;
@@ -22,45 +31,44 @@ export function VaultActionPanel({
   onCreate,
   onOpenLocal,
   activeVault,
+  hasVaults,
   onExternalRootsChanged,
 }: VaultActionPanelProps) {
   return (
     <div className="vm-action-panel">
-      {/* Branding */}
-      <div className="vm-brand">
-        <div className="vm-brand-logo">📚</div>
-        <div className="vm-brand-title">Molio 知识库</div>
-        <div className="vm-brand-version">版本 1.0</div>
-      </div>
-
-      {/* Actions */}
+      {/* App scope — nothing below this line depends on the left-column selection. */}
       <div className="vm-actions">
-        <div className="vm-action-card">
-          <div className="vm-action-text">
-            <div className="vm-action-title">新建仓库</div>
-            <div className="vm-action-desc">在指定文件夹下创建一个新的仓库。</div>
-          </div>
-          <button className="vm-action-btn vm-action-btn-primary" onClick={onCreate}>
-            创建
-          </button>
-        </div>
-
-        <div className="vm-action-card">
-          <div className="vm-action-text">
-            <div className="vm-action-title">打开本地仓库</div>
-            <div className="vm-action-desc">将一个本地文件夹作为仓库在 Molio 中打开。</div>
-          </div>
-          <button className="vm-action-btn" onClick={onOpenLocal}>
-            打开
-          </button>
-        </div>
+        <button
+          type="button"
+          className="vm-action-btn vm-action-btn-primary"
+          data-testid="vault-create-action"
+          onClick={onCreate}
+        >
+          新建仓库
+        </button>
+        <button
+          type="button"
+          className="vm-action-btn"
+          data-testid="vault-open-action"
+          onClick={onOpenLocal}
+        >
+          打开本地仓库
+        </button>
       </div>
 
-      {activeVault && (
-        <ExternalRootsSection
-          vault={activeVault}
-          onChanged={onExternalRootsChanged}
-        />
+      {activeVault ? (
+        <ExternalRootsSection vault={activeVault} onChanged={onExternalRootsChanged} />
+      ) : (
+        hasVaults && (
+          // Distinct testid on purpose: `kb-external-roots.spec.ts` treats the
+          // presence of `external-root-section` as "an active vault has
+          // resolved", and re-selects one in the list when it hasn't.
+          <section className="vm-roots is-idle" data-testid="external-root-idle">
+            <p className="vm-roots-note">
+              在左侧选中一个仓库，即可在这里为它挂载外部素材根。
+            </p>
+          </section>
+        )
       )}
     </div>
   );
@@ -180,12 +188,16 @@ function ExternalRootsSection({ vault, onChanged }: ExternalRootsSectionProps) {
 
   return (
     <section className="vm-roots" data-testid="external-root-section">
-      <div className="vm-roots-head">
-        <div className="vm-action-text">
-          <div className="vm-action-title">外部素材根</div>
-          <div className="vm-action-desc">
-            只读挂载本地文件夹作为素材来源，挂载内容不可新建 / 重命名 / 删除。
-          </div>
+      {/* Vault scope — everything below belongs to `vault` alone. */}
+      <div className="vm-scope">
+        <div className="vm-scope-id">
+          <span className="vm-scope-kicker">当前仓库</span>
+          <span className="vm-scope-sep" aria-hidden="true">
+            ·
+          </span>
+          <span className="vm-scope-name" data-testid="external-root-scope" title={vault.name}>
+            {vault.name}
+          </span>
         </div>
         <button
           type="button"
@@ -198,6 +210,10 @@ function ExternalRootsSection({ vault, onChanged }: ExternalRootsSectionProps) {
           添加外部文件夹
         </button>
       </div>
+
+      <p className="vm-roots-note">
+        外部素材根 · 只读挂载本机文件夹，不复制、不可修改。
+      </p>
 
       {formOpen && !isDesktop && (
         <div className="vm-roots-form">

@@ -149,6 +149,10 @@ test('external root mounts read-only on the tree, stays readable, and unmounts',
   await expect(row).toContainText(extLabel);
   await expect(page.locator('[data-testid="external-root-error"]')).toHaveCount(0);
 
+  // 作用域：这块设置点名它属于哪个仓库。面板上方还有「新建仓库 / 打开本地仓库」
+  // 两个不针对任何具体仓库的动作，作用域头是两者不混为一谈的唯一依据。
+  await expect(page.locator('[data-testid="external-root-scope"]')).toHaveText(vaultName);
+
   await closeVaultManager(page);
 
   // ── 2. 只读（核心保证）：external/<label> 子树 ─────────────────────────

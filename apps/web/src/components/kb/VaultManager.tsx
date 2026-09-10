@@ -18,6 +18,18 @@ import { CreateVaultForm } from './CreateVaultForm';
 
 export type VaultManagerView = 'list' | 'create' | 'open';
 
+/**
+ * Real app version from the Electron shell, or null in a plain browser
+ * (dev / Docker deploy) — where we show nothing rather than a stale number.
+ */
+function readAppVersion(): string | null {
+  try {
+    return window.__electron__?.appInfo?.version ?? null;
+  } catch {
+    return null;
+  }
+}
+
 interface VaultManagerModalProps {
   show: boolean;
   vaults: Vault[];
@@ -45,6 +57,7 @@ export function VaultManagerModal({
 }: VaultManagerModalProps) {
   const [view, setView] = useState<VaultManagerView>('list');
   const [creating, setCreating] = useState(false);
+  const appVersion = readAppVersion();
 
   const handleCreate = useCallback(
     async (name: string, path: string, description?: string) => {
@@ -86,49 +99,59 @@ export function VaultManagerModal({
 
         {/* Right: Action Panel / Create Form / Open Form */}
         <div className="vm-modal-right">
-          {view === 'list' ? (
-            <VaultActionPanel
-              activeVault={vaults.find((v) => v.id === activeVaultId) ?? null}
-              onExternalRootsChanged={onExternalRootsChanged}
-              onCreate={() => setView('create')}
-              onOpenLocal={async () => {
-                // Electron: use native directory picker
-                if (window.__electron__?.showDirectoryPicker) {
-                  try {
-                    const pickedPath = await window.__electron__.showDirectoryPicker();
-                    if (pickedPath) {
-                      await onOpen(pickedPath);
-                      setView('list');
-                    }
-                  } catch { /* user cancelled */ }
-                  return;
-                }
+          <div className="vm-panel-header">
+            <span className="vm-panel-mark" aria-hidden="true">
+              📚
+            </span>
+            <span className="vm-panel-name">Molio 知识库</span>
+            {appVersion && <span className="vm-panel-version">v{appVersion}</span>}
+          </div>
+          <div className="vm-panel-body">
+            {view === 'list' ? (
+              <VaultActionPanel
+                activeVault={vaults.find((v) => v.id === activeVaultId) ?? null}
+                hasVaults={vaults.length > 0}
+                onExternalRootsChanged={onExternalRootsChanged}
+                onCreate={() => setView('create')}
+                onOpenLocal={async () => {
+                  // Electron: use native directory picker
+                  if (window.__electron__?.showDirectoryPicker) {
+                    try {
+                      const pickedPath = await window.__electron__.showDirectoryPicker();
+                      if (pickedPath) {
+                        await onOpen(pickedPath);
+                        setView('list');
+                      }
+                    } catch { /* user cancelled */ }
+                    return;
+                  }
 
-                // Browser: show inline path input form
-                setView('open');
-              }}
-            />
-          ) : view === 'create' ? (
-            <CreateVaultForm
-              onCreate={handleCreate}
-              onCancel={handleBackToList}
-              isLoading={creating}
-            />
-          ) : (
-            <OpenVaultForm
-              onOpen={async (path: string) => {
-                setCreating(true);
-                try {
-                  await onOpen(path);
-                  setView('list');
-                } finally {
-                  setCreating(false);
-                }
-              }}
-              onCancel={handleBackToList}
-              isLoading={creating}
-            />
-          )}
+                  // Browser: show inline path input form
+                  setView('open');
+                }}
+              />
+            ) : view === 'create' ? (
+              <CreateVaultForm
+                onCreate={handleCreate}
+                onCancel={handleBackToList}
+                isLoading={creating}
+              />
+            ) : (
+              <OpenVaultForm
+                onOpen={async (path: string) => {
+                  setCreating(true);
+                  try {
+                    await onOpen(path);
+                    setView('list');
+                  } finally {
+                    setCreating(false);
+                  }
+                }}
+                onCancel={handleBackToList}
+                isLoading={creating}
+              />
+            )}
+          </div>
         </div>
       </div>
     </div>

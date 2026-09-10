@@ -1698,14 +1698,42 @@
   overflow: hidden;
 }
 
-.vm-list-header {
-  padding: 16px 20px;
+/* Column headers — "知识库仓库" over the list, the app name over the panel.
+   Identical height and rule so the two columns share one horizontal line. */
+.vm-list-header,
+.vm-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 48px;
+  padding: 0 20px;
+  flex-shrink: 0;
   font-size: 13px;
   font-weight: 600;
   color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.vm-list-header {
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  border-bottom: 1px solid var(--border);
+}
+
+.vm-panel-mark {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.vm-panel-name {
+  letter-spacing: -0.01em;
+}
+
+.vm-panel-version {
+  margin-left: auto;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
 }
 
 .vm-list-body {
@@ -1805,18 +1833,26 @@
 /* ── Right: Action Panel ── */
 .vm-modal-right {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* `flex-start` + the children's `margin-block: auto` (below) is the
+   overflow-safe way to centre: once the content is taller than the body, the
+   auto margins collapse and the top stays reachable by scrolling.
+   `justify-content:center` would clip it above the scroll origin instead. */
+.vm-panel-body {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  /* `flex-start` + the children's `margin-block: auto` (below) is the
-     overflow-safe way to centre: once the content is taller than the modal
-     (the vault panel grew with the external-roots section), the auto margins
-     collapse and the top stays reachable by scrolling. `justify-content:center`
-     would clip it above the scroll origin instead. */
   justify-content: flex-start;
   overflow-y: auto;
-  padding: 40px 32px;
-  background: var(--bg);
+  padding: 32px;
 }
 
 .vm-action-panel,
@@ -1829,75 +1865,16 @@
   max-width: 520px;
   display: flex;
   flex-direction: column;
-  align-items: center;
 }
 
-/* Branding */
-.vm-brand {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  margin-bottom: 48px;
-}
-
-.vm-brand-logo {
-  font-size: 64px;
-  margin-bottom: 16px;
-  opacity: 0.8;
-}
-
-.vm-brand-title {
-  font-size: 28px;
-  font-weight: 700;
-  color: var(--text-strong);
-  letter-spacing: -0.02em;
-  margin-bottom: 6px;
-}
-
-.vm-brand-version {
-  font-size: 13px;
-  color: var(--text-muted);
-}
-
-/* Action cards */
+/* App-level actions. They don't apply to any one vault, so they sit as a plain
+   button row — deliberately NOT the card vocabulary used by vault-scoped
+   content below, so the two scopes can't be misread as siblings. */
 .vm-actions {
   width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.vm-action-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 20px;
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  transition: all 120ms ease;
-}
-
-.vm-action-card:hover {
-  border-color: var(--border-strong);
-  box-shadow: var(--shadow-sm);
-}
-
-.vm-action-text {
-  flex: 1;
-  min-width: 0;
-}
-
-.vm-action-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-strong);
-  margin-bottom: 4px;
-}
-
-.vm-action-desc {
-  font-size: 12.5px;
-  color: var(--text-muted);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
 }
 
 .vm-action-btn {
@@ -1921,45 +1898,95 @@
   border-color: var(--border-strong);
 }
 
+/* Lead action, not the loudest thing in the panel: a tinted pill rather than a
+   solid coral block. The accent's full strength belongs to the vault-scoped
+   rule below, which is what the modal is actually for. */
 .vm-action-btn-primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
+  background-color: var(--accent-tint);
+  border-color: var(--accent-soft);
+  color: var(--accent-hover);
 }
 
 .vm-action-btn-primary:hover {
-  background: var(--accent-hover);
+  background-color: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-hover);
 }
 
 /* ── External source roots (read-only mounts) ── */
+/* Vault-scoped: everything here belongs to the vault highlighted in the left
+   column. The accent rule echoes that item's accent border, and the kicker
+   names it outright — the two together are what keep this block from reading
+   as a third sibling of the app-level buttons above. */
 .vm-roots {
   width: 100%;
-  margin-top: 32px;
-  padding-top: 24px;
-  border-top: 1px solid var(--border);
-}
-
-.vm-roots-head {
+  margin-top: 26px;
+  padding-left: 14px;
+  border-left: 2px solid var(--accent-soft);
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 12px;
+  flex-direction: column;
 }
 
-/* Unmounted / broken mounts */
+/* The hint isn't scoped to anything, so it drops the rule and the indent that
+   goes with it, and lines up with the buttons above. */
+.vm-roots.is-idle {
+  border-left: none;
+  padding-left: 0;
+}
+
+.vm-scope {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.vm-scope-id {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  flex: 1;
+  min-width: 0;
+}
+
+.vm-scope-kicker {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.vm-scope-sep {
+  color: var(--text-faint);
+}
+
+.vm-scope-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vm-roots-note {
+  margin: 0 0 12px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+/* Unmounted / broken mounts. No inner scroll — the panel body is the only
+   scroll container, so there is never a scrollbar nested in a scrollbar. */
 .vm-roots-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 220px;
-  overflow-y: auto;
 }
 
 .vm-roots-empty {
   font-size: 12.5px;
   color: var(--text-faint);
-  padding: 10px 2px;
+  padding: 2px 0;
 }
 
 .vm-root-item {
@@ -2035,6 +2062,7 @@
 
 .vm-roots-form {
   display: flex;
+  align-items: center;
   gap: 8px;
   margin-bottom: 12px;
 }
@@ -2120,6 +2148,7 @@
 
 .vm-form-row {
   display: flex;
+  align-items: center;
   gap: 8px;
 }
 
