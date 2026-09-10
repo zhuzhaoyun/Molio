@@ -25,8 +25,9 @@
  *   8. 文件级只读  —— 挂载**文件**的右键菜单同样没有写操作（第 2 步只测了目录）
  *   9. 无挂载对照  —— 一个自己就有 `external/` 文件夹、但没注册任何挂载的 vault，
  *                     该目录必须仍是普通目录（可拖放、可编辑、可重命名）
- *  10. 切换不关面板 —— 选中一个仓库后设置面板保持打开、作用域跟着换，同一趟就能挂
- *                     外部文件夹（用户反馈：以前选中即关闭，得再点开一次）
+ *  10. 切换不关面板 —— 选中一个仓库（含跨仓库）后设置面板保持打开、就地切换、不开
+ *                     新窗口，同一趟就能挂外部文件夹（用户反馈：以前选中即关闭，
+ *                     pinned 窗口甚至会另开新窗口）
  *
  * 前置：`pnpm dev`（daemon :3100 + web :5173）。
  * Playwright 里没有 Electron，`window.__electron__.showDirectoryPicker` 不存在，
@@ -107,7 +108,7 @@ async function openVaultManager(page: Page) {
   const section = page.locator('[data-testid="external-root-section"]');
   if (!(await section.isVisible().catch(() => false))) {
     // activeVault 还没解析出来时右栏是空的 —— 显式在列表里选一次本 vault
-    // （URL 已 pin 到同一个 vault，所以是原地切换、不会开新窗口）。
+    // （选中就是就地切换，不会离开这个窗口）。
     // 列表是异步渲染的（仓库 retries: 0），先等它出现再点，否则这里会静默
     // 点空 → 后面等 section 可见时超时。
     await expect(page.locator('.vm-vault-item').first()).toBeVisible({ timeout: 5_000 });
@@ -413,11 +414,12 @@ test('a mount whose target vanished is flagged invalid and stays removable', asy
 });
 
 /**
- * 用户反馈：以前点仓库名就直接切过去并关掉面板，想给这个仓库挂外部文件夹得再点开
- * 一次。现在选中只是切换 + 面板留住，右栏就地变成这个仓库的设置。
+ * 用户反馈（两次）：以前点仓库名，未 pin 的窗口就地切换并关面板、pin 过的窗口更是
+ * 直接另开一个新窗口 —— 想给这个仓库挂外部文件夹总得重新点开切换页。现在选中一律
+ * 就地切换 + 面板留住，右栏就地变成这个仓库的设置。
  *
- * 本窗口不带 `?vault=`（未 pin），所以选中是在当前窗口就地切换 —— pin 过的窗口走
- * 的是「另开一个窗口」那条路径，由 multi-window.spec.ts 覆盖。
+ * 本窗口不带 `?vault=`，且两次选择都是跨仓库 —— 原实现里 pinned + 跨仓库正是
+ * 「另开新窗口」的触发条件（URL 镜像效果让几乎每个窗口都是 pinned 的）。
  */
 test('picking a vault keeps the manager open, so it is configurable in the same pass', async ({ page }) => {
   // 名字不能是 vaultName 的子串，否则 `.vm-vault-item` 的 hasText 会同时命中两个。
@@ -441,18 +443,20 @@ test('picking a vault keeps the manager open, so it is configurable in the same 
     const section = page.locator('[data-testid="external-root-section"]');
     const scope = page.locator('[data-testid="external-root-scope"]');
 
-    // ── 1. 选中另一个仓库：换过去，但面板留着、作用域跟着换 ─────────────
+    // ── 1. 选中另一个仓库：就地切过去，面板留住、作用域跟着换、不开新窗口 ──
     await page.locator('.vm-vault-item').filter({ hasText: otherName }).click();
     await expect(page.locator('.vm-overlay')).toBeVisible();
     await expect(section).toBeVisible({ timeout: 5_000 });
     await expect(scope).toHaveText(otherName);
+    expect(new URL(page.url()).searchParams.get('vault')).toBe(otherId);
 
-    // ── 2. 再点一次当前仓库：仍然留在面板里，不需要重开 ──────────────────
-    // （切换后 URL 已镜像到 ?vault=，所以"再点别的仓库"是跨窗口那条路径，
-    //   由 multi-window.spec.ts 覆盖；这里点的是同一个，走就地切换。）
-    await page.locator('.vm-vault-item').filter({ hasText: otherName }).click();
+    // ── 2. 再选回本用例的仓库：同样就地切换，仍然留在面板里 ─────────────
+    await page.locator('.vm-vault-item').filter({ hasText: vaultName }).click();
     await expect(page.locator('.vm-overlay')).toBeVisible();
-    await expect(scope).toHaveText(otherName, { timeout: 5_000 });
+    await expect(scope).toHaveText(vaultName, { timeout: 5_000 });
+    expect(new URL(page.url()).searchParams.get('vault')).toBe(vaultId);
+    // 两次都是跨仓库选择 —— 曾几何时这条路径是「另开一个新窗口」。
+    expect(page.context().pages().length, '不开新窗口').toBe(1);
 
     // ── 3. 显式出口：✕（overlay 内边距点击之外至少有一个看得见的）────────
     await page.locator('[data-testid="vault-manager-close"]').click();

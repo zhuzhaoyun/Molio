@@ -71,7 +71,7 @@ test.describe('multi-window vault isolation', () => {
     await ctxB.close();
   });
 
-  test('vault switcher opens a different vault in a NEW window (Obsidian-like); current window stays', async ({ browser }) => {
+  test('vault switcher picks a different vault in place; manager stays open, no popup', async ({ browser }) => {
     const ctxA = await browser.newContext();
     const ctxB = await browser.newContext();
     const pageA = await ctxA.newPage();
@@ -82,17 +82,19 @@ test.describe('multi-window vault isolation', () => {
     await expect(pageB.locator('.kb-vault-bar__name')).toHaveText('mw-b');
 
     // Window A (already on vault A) picks vault B in the vault manager → the
-    // pick opens a NEW window (popup) loading vault B, NOT replacing window A.
+    // pick switches window A to vault B IN PLACE. The manager stays open (its
+    // right panel is the picked vault's settings — external source roots), and
+    // no popup is spawned. 「在新窗口打开」 lives elsewhere (tab right-click,
+    // file panel), not on this gesture.
     await pageA.locator('.kb-vault-bar').click();
-    const popupPromise = pageA.waitForEvent('popup');
+    await expect(pageA.locator('.vm-overlay')).toBeVisible({ timeout: 5_000 });
     await pageA.locator('.vm-vault-item', { hasText: 'mw-b' }).click();
-    const popup = await popupPromise;
-    await popup.waitForURL(/vault=/);
-    expect(new URL(popup.url()).searchParams.get('vault')).toBe(vaultBId);
 
-    // Window A is untouched — still pinned to vault A.
-    await expect(pageA.locator('.kb-vault-bar__name')).toHaveText('mw-a');
-    expect(new URL(pageA.url()).searchParams.get('vault')).toBe(vaultAId);
+    await expect(pageA.locator('.vm-overlay'), '选中后面板留住').toBeVisible();
+    await expect(pageA.locator('.kb-vault-bar__name')).toHaveText('mw-b');
+    expect(new URL(pageA.url()).searchParams.get('vault')).toBe(vaultBId);
+    expect(pageA.context().pages().length, '不开新窗口').toBe(1);
+
     // Window B untouched.
     await expect(pageB.locator('.kb-vault-bar__name')).toHaveText('mw-b');
     await ctxA.close();
