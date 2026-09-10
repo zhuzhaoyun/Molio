@@ -99,6 +99,8 @@ describe('external reads', () => {
     assert.equal(file.path, 'external/AgentA/mem.md');
   });
 
+  // Unknown label → normal vault resolution; the real mount link is then
+  // refused by the realpath boundary (the link target is outside the vault).
   it('rejects an unregistered external path', () => {
     const { vault } = setup();
     assert.throws(
@@ -107,7 +109,6 @@ describe('external reads', () => {
     );
   });
 
-  // No registry == pre-feature behaviour: the namespace is not readable at all.
   it('rejects the virtual namespace when no roots are passed', () => {
     const { vault } = setup();
     assert.throws(() => readFile(vault, 'external/AgentA/mem.md'), /Path traversal|not found/i);
@@ -151,6 +152,33 @@ describe('external reads', () => {
     );
     assert.equal(readFile(vault, 'external/AgentA/mem.md', { externalRoots: rootsFor(ext) }).content, '# memory');
   });
+
+  // R8: `external/` is only reserved while a mount is registered. With no
+  // registry, a genuine folder of that name is an ordinary vault folder and
+  // reads exactly as it did before this feature.
+  it('reads a plain vault folder named external/ when no root is registered', () => {
+    const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-v-'));
+    fs.mkdirSync(path.join(vault, 'external', 'notes'), { recursive: true });
+    fs.writeFileSync(path.join(vault, 'external', 'notes', 'real.md'), '# real');
+    assert.equal(readFile(vault, 'external/notes/real.md').content, '# real');
+    assert.equal(resolveCanonicalPath(vault, 'external/notes/real.md'), 'external/notes/real.md');
+  });
+
+  // ...and an unknown label stays an ordinary folder even while ANOTHER label
+  // is mounted: the registry miss must not turn into "not found".
+  it('still reads a plain folder under external/ when other labels are mounted', () => {
+    const { vault, ext } = setup();
+    fs.mkdirSync(path.join(vault, 'external', 'notes'), { recursive: true });
+    fs.writeFileSync(path.join(vault, 'external', 'notes', 'real.md'), '# real');
+    const roots = rootsFor(ext); // AgentA mounted, `notes` is not
+    assert.equal(readFile(vault, 'external/notes/real.md', { externalRoots: roots }).content, '# real');
+    assert.equal(
+      resolveCanonicalPath(vault, 'external/notes/real.md', roots),
+      'external/notes/real.md',
+    );
+    // the mounted label is still resolved through the registry, not the vault
+    assert.equal(readFile(vault, 'external/AgentA/mem.md', { externalRoots: roots }).content, '# memory');
+  });
 });
 
 // resolveCanonicalPath backs "open from an assistant link / molio:// / wiki
@@ -190,10 +218,40 @@ describe('external namespace is read-only', () => {
     );
   });
 
-  it('refuses the external/ mount directory itself', () => {
+  it('refuses the mount root itself', () => {
     const { vault } = setup();
-    assert.throws(() => writeFile(vault, 'external', 'x'), { code: 'E_EXTERNAL_READONLY' });
-    assert.throws(() => createDirectory(vault, 'external'), { code: 'E_EXTERNAL_READONLY' });
+    assert.throws(() => writeFile(vault, 'external/AgentA', 'x'), { code: 'E_EXTERNAL_READONLY' });
+    assert.throws(() => createDirectory(vault, 'external/AgentA'), { code: 'E_EXTERNAL_READONLY' });
+  });
+
+  // The guard is resolved, not string-matched, so it also covers aliases the
+  // path string cannot spell — here a vault-internal link into an external root.
+  it('refuses writes through a vault-internal link into an external root', async () => {
+    const { vault, ext } = setup();
+    createDirectoryLink(fs.realpathSync(ext), path.join(vault, 'alias'));
+    assert.throws(() => writeFile(vault, 'alias/new.md', 'x'), { code: 'E_EXTERNAL_READONLY' });
+    await assert.rejects(() => deleteFile(vault, 'alias/mem.md'), { code: 'E_EXTERNAL_READONLY' });
+    assert.equal(fs.existsSync(path.join(fs.realpathSync(ext), 'new.md')), false);
+    assert.equal(fs.readFileSync(path.join(fs.realpathSync(ext), 'mem.md'), 'utf-8'), '# memory');
+  });
+
+  // win32 and default macOS filesystems are case-insensitive, so a case variant
+  // names the SAME junction. A case-sensitive host instead creates a brand-new
+  // directory there (no data loss), which makes the probe meaningless — hence
+  // the gate.
+  it('refuses case variants of the mount (case-insensitive filesystems)', async (t) => {
+    const { vault, ext } = setup();
+    if (!fs.existsSync(path.join(vault, 'EXTERNAL', 'AgentA'))) {
+      t.skip('case-sensitive filesystem: External/ is a distinct directory, not the mount');
+      return;
+    }
+    assert.throws(() => writeFile(vault, 'External/AgentA/new.md', 'x'), { code: 'E_EXTERNAL_READONLY' });
+    assert.throws(() => createDirectory(vault, 'EXTERNAL/AgentA/sub'), { code: 'E_EXTERNAL_READONLY' });
+    await assert.rejects(() => deleteFile(vault, 'External/AgentA/mem.md'), { code: 'E_EXTERNAL_READONLY' });
+    // nothing landed in, and nothing was removed from, the user's folder
+    assert.equal(fs.existsSync(path.join(fs.realpathSync(ext), 'new.md')), false);
+    assert.equal(fs.existsSync(path.join(fs.realpathSync(ext), 'sub')), false);
+    assert.equal(fs.readFileSync(path.join(fs.realpathSync(ext), 'mem.md'), 'utf-8'), '# memory');
   });
 
   it('refuses to delete a mounted file or directory', async () => {
@@ -223,17 +281,33 @@ describe('external namespace is read-only', () => {
     assert.equal(readFile(vault, 'note.md').content, 'hi');
   });
 
-  it('refuses to create a directory inside the namespace', () => {
+  it('refuses to create a directory inside a mounted root', () => {
     const { vault } = setup();
-    assert.throws(() => createDirectory(vault, 'external/AgentB'), { code: 'E_EXTERNAL_READONLY' });
+    assert.throws(() => createDirectory(vault, 'external/AgentA/sub'), { code: 'E_EXTERNAL_READONLY' });
   });
 
-  // The guard keys off the path STRING, so an obfuscated form must not slip
-  // through: `path.resolve` (used by every write) collapses these to the mount.
+  // The mount is the link BELOW `external/`, not the container itself, so a
+  // not-yet-mounted name there is an ordinary (in-vault) directory.
+  it('allows creating a directory for an unmounted label', () => {
+    const { vault, ext } = setup();
+    createDirectory(vault, 'external/AgentB');
+    assert.ok(fs.existsSync(path.join(vault, 'external', 'AgentB')));
+    assert.equal(fs.existsSync(path.join(fs.realpathSync(ext), 'AgentB')), false);
+  });
+
+  // `path.resolve` (used by every write) collapses these onto the mount, and
+  // the resolved guard must see through all of them.
   it('sees through `..` / `./` obfuscation of the namespace', () => {
     const { vault } = setup();
     assert.throws(() => writeFile(vault, 'notes/../external/AgentA/new.md', 'x'), { code: 'E_EXTERNAL_READONLY' });
     assert.throws(() => writeFile(vault, './external/AgentA/new.md', 'x'), { code: 'E_EXTERNAL_READONLY' });
+  });
+
+  // Backslash is a path separator on win32 only; on POSIX it is a legal
+  // filename character, so `external\AgentA\new.md` is a file in the vault
+  // rather than a mount write — nothing to refuse there.
+  it('sees through backslash separators on win32', { skip: process.platform !== 'win32' }, () => {
+    const { vault } = setup();
     assert.throws(() => writeFile(vault, 'external\\AgentA\\new.md', 'x'), { code: 'E_EXTERNAL_READONLY' });
   });
 
@@ -243,6 +317,23 @@ describe('external namespace is read-only', () => {
     createDirectory(vault, 'notes');
     writeFile(vault, 'notes/../top.md', 'hi');
     assert.equal(readFile(vault, 'top.md').content, 'hi');
+  });
+
+  // R8's write half: with no registry the `external/` container is Molio's own
+  // in-vault directory (the mount is the link BELOW it), so writing there is
+  // just a vault write — the mount target stays untouched.
+  it('writes into a plain external/ folder when no root is registered', () => {
+    const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-v-'));
+    fs.mkdirSync(path.join(vault, 'external', 'notes'), { recursive: true });
+    writeFile(vault, 'external/notes/real.md', '# updated');
+    assert.equal(readFile(vault, 'external/notes/real.md').content, '# updated');
+  });
+
+  it('allows a vault write next to a registered mount', () => {
+    const { vault, ext } = setup();
+    writeFile(vault, 'external/plain.md', 'in-vault file');
+    assert.equal(readFile(vault, 'external/plain.md').content, 'in-vault file');
+    assert.equal(fs.existsSync(path.join(fs.realpathSync(ext), 'plain.md')), false);
   });
 });
 

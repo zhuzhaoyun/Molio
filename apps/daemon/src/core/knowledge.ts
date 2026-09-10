@@ -15,6 +15,7 @@ import { isPrunedDirName, MAX_DIR_ENTRIES, MAX_TOTAL, warnOversizedDir } from '.
 import { ThrottledWarn } from './throttled-warn.js';
 import {
   withinBoundary,
+  isWithinRoot,
   safeRealpath,
   isExternalMountPath,
   resolveVirtualToReal,
@@ -226,19 +227,22 @@ export function readFile(
   const reqPath = relPath;
   relPath = toVaultRelativePath(vaultPath, relPath);
 
-  // The external mount namespace addresses a real folder OUTSIDE the vault, so
-  // it cannot go through resolveFilePath/fallbacks — look it up in the registry
-  // instead and boundary-check the realpath below.
+  // A registered mount addresses a real folder OUTSIDE the vault, so it cannot
+  // go through resolveFilePath/fallbacks — resolve it against the registry and
+  // boundary-check the realpath below. An UNKNOWN label falls through to the
+  // normal resolution instead: `external/` is then just an ordinary vault
+  // folder, and a genuine (unregistered) mount link is still refused by the
+  // realpath boundary a few lines down.
   let resolved: string;
   let external = false;
-  if (isExternalMountPath(relPath)) {
-    const target = resolveVirtualToReal(vaultPath, roots, relPath);
-    if (!target || !fs.existsSync(target)) {
+  const mountTarget = resolveVirtualToReal(vaultPath, roots, relPath);
+  if (mountTarget) {
+    if (!fs.existsSync(mountTarget)) {
       const err = new Error(`File not found: ${relPath}`) as NodeJS.ErrnoException;
       err.code = 'ENOENT';
       throw err;
     }
-    resolved = target;
+    resolved = mountTarget;
     external = true;
   } else {
     resolved = resolveFilePath(vaultPath, relPath);
@@ -487,14 +491,18 @@ export function resolveCanonicalPath(
   if (!relPath) return null;
   relPath = toVaultRelativePath(vaultPath, relPath);
   if (isExternalMountPath(relPath)) {
+    // Unknown label → fall through and treat `external/` as an ordinary vault
+    // folder (the realpath boundary below still refuses a genuine mount link).
     const target = resolveVirtualToReal(vaultPath, externalRoots, relPath);
-    if (!target || !fs.existsSync(target)) return null;
-    try {
-      realWithinBoundary(vaultPath, target, externalRoots);
-    } catch {
-      return null;
+    if (target) {
+      if (!fs.existsSync(target)) return null;
+      try {
+        realWithinBoundary(vaultPath, target, externalRoots);
+      } catch {
+        return null;
+      }
+      return relPath;
     }
-    return relPath;
   }
   let resolved: string;
   try {
@@ -565,26 +573,44 @@ function realWithinBoundary(vaultPath: string, resolved: string, roots: External
 }
 
 /**
- * True when a relative path addresses the read-only external namespace.
+ * True when a mutation's destination is physically inside the vault.
  *
- * Normalized first: `notes/../external/x.md` reaches the mount even though the
- * string does not start with it, and every write below feeds its path through
- * `path.resolve`, which treats the two forms identically.
+ * A string prefix check cannot express this, so this resolves instead: Windows
+ * and default macOS filesystems are case-insensitive (`External/` names the
+ * same junction as `external/`), win32 additionally strips trailing dots/spaces
+ * and offers 8.3 short names (`external./…`, `EXTERNAL~1/…`), and a symlink
+ * inside the vault can alias any target. Paths are also routinely produced by
+ * an LLM, so spelling variants are the normal case, not the adversarial one.
+ *
+ * We resolve the destination's nearest EXISTING ancestor — the deepest
+ * component the OS will hand a realpath back for; for a file that does not
+ * exist yet that is its parent directory, i.e. where the write would land —
+ * and require the result to stay inside the vault. External roots are
+ * deliberately NOT part of this boundary: they are read-only.
+ *
+ * Accepted delta: a write routed through a vault-internal symlink pointing
+ * outside the vault is refused instead of followed.
  */
-function isExternalWritePath(relPath: string): boolean {
-  if (!relPath) return false;
-  return isExternalMountPath(path.posix.normalize(relPath.replace(/\\/g, '/')));
+function isWriteWithinVault(resolved: string, vaultPath: string): boolean {
+  let probe = resolved;
+  while (!fs.existsSync(probe)) {
+    const parent = path.dirname(probe);
+    if (parent === probe) break; // filesystem root
+    probe = parent;
+  }
+  // safeRealpath, not realpathSync: a dangling link would otherwise throw a
+  // filesystem error here instead of being judged by the caller.
+  return isWithinRoot(safeRealpath(vaultPath), safeRealpath(probe));
 }
 
 /**
- * Reject any mutation targeting the read-only external namespace. The external
- * roots are folders Molio does not own (a link, not a copy), so a write there
- * would silently edit files outside the vault — refuse by path, independent of
- * whether the caller passed the registry.
+ * Reject a mutation whose destination resolves outside the vault — the external
+ * source roots are folders Molio does not own (a link, not a copy), so a write
+ * there would silently edit files outside the vault.
  */
-function assertNotExternalWrite(relPath: string): void {
-  if (!isExternalWritePath(relPath)) return;
-  const err = new Error('External source roots are read-only') as NodeJS.ErrnoException;
+function assertWriteWithinVault(resolved: string, vaultPath: string): void {
+  if (isWriteWithinVault(resolved, vaultPath)) return;
+  const err = new Error('External source roots are read-only (cannot write outside the vault)') as NodeJS.ErrnoException;
   err.code = 'E_EXTERNAL_READONLY';
   throw err;
 }
@@ -593,12 +619,13 @@ function assertNotExternalWrite(relPath: string): void {
  * Write content to a file in a vault. Creates parent directories if needed.
  */
 export function writeFile(vaultPath: string, relPath: string, content: string): void {
-  assertNotExternalWrite(relPath);
   const absFile = path.join(vaultPath, relPath);
 
-  // Security: prevent path traversal (sibling-directory bypass)
+  // Security: prevent path traversal (sibling-directory bypass), then confirm
+  // where the write actually lands (symlink / case-insensitive aliases).
   const resolved = path.resolve(absFile);
   assertWithinVault(vaultPath, resolved);
+  assertWriteWithinVault(resolved, vaultPath);
 
   fs.mkdirSync(path.dirname(resolved), { recursive: true });
   fs.writeFileSync(resolved, content, 'utf-8');
@@ -608,11 +635,11 @@ export function writeFile(vaultPath: string, relPath: string, content: string): 
  * Delete a file from a vault — moves to system recycle bin instead of permanent deletion.
  */
 export async function deleteFile(vaultPath: string, relPath: string): Promise<void> {
-  assertNotExternalWrite(relPath);
   const absFile = path.join(vaultPath, relPath);
 
   const resolved = path.resolve(absFile);
   assertWithinVault(vaultPath, resolved);
+  assertWriteWithinVault(resolved, vaultPath);
 
   if (fs.existsSync(resolved)) {
     await trash(resolved);
@@ -623,16 +650,17 @@ export async function deleteFile(vaultPath: string, relPath: string): Promise<vo
  * Rename / move a file or directory within a vault.
  */
 export function renamePath(vaultPath: string, oldRelPath: string, newRelPath: string): void {
-  // Read-only namespace: refuse both directions — moving a mounted file out
-  // would delete it from the user's folder, moving one in would write to it.
-  assertNotExternalWrite(oldRelPath);
-  assertNotExternalWrite(newRelPath);
   const absOld = path.resolve(path.join(vaultPath, oldRelPath));
   const absNew = path.resolve(path.join(vaultPath, newRelPath));
 
-  // Security: both paths must be inside the vault
+  // Security: both paths must be inside the vault...
   assertWithinVault(vaultPath, absOld);
   assertWithinVault(vaultPath, absNew);
+  // ...and both must resolve there on disk. Both directions of a move matter:
+  // moving a mounted file out would remove it from the user's folder, moving
+  // one in would write to it.
+  assertWriteWithinVault(absOld, vaultPath);
+  assertWriteWithinVault(absNew, vaultPath);
 
   // Protected-dir guard: don't move files out of or into protected directories
   if (isInsideProtected(oldRelPath)) {
@@ -655,11 +683,11 @@ export function renamePath(vaultPath: string, oldRelPath: string, newRelPath: st
  * Delete a directory (recursively) from a vault — moves to system recycle bin.
  */
 export async function deleteDirectory(vaultPath: string, relPath: string): Promise<void> {
-  assertNotExternalWrite(relPath);
   const absDir = path.resolve(path.join(vaultPath, relPath));
 
-  // Security: prevent path traversal
+  // Security: prevent path traversal, then confirm where it resolves to
   assertWithinVault(vaultPath, absDir);
+  assertWriteWithinVault(absDir, vaultPath);
 
   if (fs.existsSync(absDir)) {
     await trash(absDir);
@@ -670,11 +698,11 @@ export async function deleteDirectory(vaultPath: string, relPath: string): Promi
  * Create a directory inside a vault.
  */
 export function createDirectory(vaultPath: string, relPath: string): void {
-  assertNotExternalWrite(relPath);
   const absDir = path.join(vaultPath, relPath);
 
   const resolved = path.resolve(absDir);
   assertWithinVault(vaultPath, resolved);
+  assertWriteWithinVault(resolved, vaultPath);
 
   fs.mkdirSync(resolved, { recursive: true });
 }
@@ -786,9 +814,11 @@ export function importFiles(
       result.errors.push({ file: f.name, reason: 'protected_dir' });
       continue;
     }
-    // External mounts are read-only — reported per-file (bulk API) rather than
-    // thrown, so one rejected target never discards the rest of the batch.
-    if (isExternalWritePath(relPath)) {
+    // Read-only boundary, resolved rather than string-matched — a case variant,
+    // a vault-internal symlink alias or a link into an external root all land
+    // outside the vault. Reported per-file (bulk API) rather than thrown, so
+    // one rejected target never discards the rest of the batch.
+    if (!isWriteWithinVault(path.resolve(path.join(vaultPath, relPath)), vaultPath)) {
       result.errors.push({ file: f.name, reason: 'external_readonly' });
       continue;
     }
