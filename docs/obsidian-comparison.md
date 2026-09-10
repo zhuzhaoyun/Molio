@@ -31,11 +31,14 @@
 | **Vault 删除** | 删除 `.obsidian/` 配置 | 仅删数据库记录，**不清除文件**（解除关联语义） |
 | **跨 Vault 关联** | 不支持 | 不支持 |
 | **Vault 数量上限** | 不限 | 不限 |
+| **接入外部文件夹**（2026-09-10 增补） | 强烈劝退 + 部分封禁（官方帮助文档：数据丢失/损坏/崩溃风险；库内互链禁止；外部改动不监听） | ✅ 一等公民：junction/symlink 白名单挂载到 `external/<label>/`，默认只读，树/搜索/图谱/监听全覆盖 |
+| **外部素材与 AI** | 无原生 AI | 挂载素材直接进 Wiki 构建 / 检索 / 问答，物理文件留在原位 |
 
 **关键差异**：
 - Obsidian 每个 vault 独立窗口，Molio 统一窗口内切换（类似 VS Code 多项目）
 - Molio 的 vault 删除是"解除关联"语义，不碰磁盘文件，更安全
 - Obsidian 元数据存 `.obsidian/` 目录，Molio 存 SQLite
+- 对「链接外部文件夹」，Obsidian 的答案是风险自担，Molio 的答案是白名单 + 默认只读 + 产品兜底（详见 [2026-09-08-cross-folder-kb-strategy.md](./2026-09-08-cross-folder-kb-strategy.md)）
 
 ---
 

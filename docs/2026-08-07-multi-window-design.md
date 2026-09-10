@@ -94,6 +94,7 @@ localStorage `molio.activeVaultId` 降级为「无 URL 参数的新窗口的默�
 `KnowledgeBasePage.tsx`：
 - 改掉 :162 的 `setSearchParams({}, ...)` 全清逻辑 → 只清 `?file=`、**保留 `?vault=`**。
 - 新增 **URL 镜像 effect**：`kb.activeVault?.id` 变化时 `setSearchParams({ vault: id }, { replace: true })`——所有 vault 切换入口（KbFilePanel、VaultManager、创建/导入/删除）经 store 收口后自动回写 URL，无需逐点改。
+  - ⚠️ **2026-09-10 增补（外部素材根分支的交互定论）**：URL 镜像意味着每个窗口几乎立刻都是「pinned」的——任何按「是否 pinned」分叉的逻辑，实际都会走到 pinned 分支。仓库管理器选中仓库的最终行为：未跨仓库 → 就地切换、面板不收起（`selectVault` 不再隐式关面板）；已 pinned 跨仓库 → 新窗口 `?vault=<id>&manage=1`，新窗口 vault 解析后自动打开管理器并剥掉参数。详见 linked-source-roots 设计文档 §6.1。
 - 现有 `resolveUrlFileNavigation`（:151）保留并微调：in-app 导航到带 vault 的 URL 时同步 store，不再清 vault。
 
 `App.tsx`：
