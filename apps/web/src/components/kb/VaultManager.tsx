@@ -10,25 +10,13 @@
  *   'create'  → show create vault form
  */
 
-import { useState, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { Vault } from '@molio/contracts';
 import { VaultList } from './VaultList';
 import { VaultActionPanel } from './VaultActionPanel';
 import { CreateVaultForm } from './CreateVaultForm';
 
 export type VaultManagerView = 'list' | 'create' | 'open';
-
-/**
- * Real app version from the Electron shell, or null in a plain browser
- * (dev / Docker deploy) — where we show nothing rather than a stale number.
- */
-function readAppVersion(): string | null {
-  try {
-    return window.__electron__?.appInfo?.version ?? null;
-  } catch {
-    return null;
-  }
-}
 
 interface VaultManagerModalProps {
   show: boolean;
@@ -57,7 +45,19 @@ export function VaultManagerModal({
 }: VaultManagerModalProps) {
   const [view, setView] = useState<VaultManagerView>('list');
   const [creating, setCreating] = useState(false);
-  const appVersion = readAppVersion();
+
+  // Escape closes the panel — but never on top of the delete confirmation,
+  // which is a nested overlay that owns Escape while it is up.
+  useEffect(() => {
+    if (!show) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (document.querySelector('[data-testid="confirm-dialog"]')) return;
+      onClose();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [show, onClose]);
 
   const handleCreate = useCallback(
     async (name: string, path: string, description?: string) => {
@@ -99,13 +99,16 @@ export function VaultManagerModal({
 
         {/* Right: Action Panel / Create Form / Open Form */}
         <div className="vm-modal-right">
-          <div className="vm-panel-header">
-            <span className="vm-panel-mark" aria-hidden="true">
-              📚
-            </span>
-            <span className="vm-panel-name">Molio 知识库</span>
-            {appVersion && <span className="vm-panel-version">v{appVersion}</span>}
-          </div>
+          <button
+            type="button"
+            className="vm-close"
+            data-testid="vault-manager-close"
+            aria-label="关闭"
+            title="关闭"
+            onClick={onClose}
+          >
+            &times;
+          </button>
           <div className="vm-panel-body">
             {view === 'list' ? (
               <VaultActionPanel

@@ -25,6 +25,8 @@
  *   8. 文件级只读  —— 挂载**文件**的右键菜单同样没有写操作（第 2 步只测了目录）
  *   9. 无挂载对照  —— 一个自己就有 `external/` 文件夹、但没注册任何挂载的 vault，
  *                     该目录必须仍是普通目录（可拖放、可编辑、可重命名）
+ *  10. 切换不关面板 —— 选中一个仓库后设置面板保持打开、作用域跟着换，同一趟就能挂
+ *                     外部文件夹（用户反馈：以前选中即关闭，得再点开一次）
  *
  * 前置：`pnpm dev`（daemon :3100 + web :5173）。
  * Playwright 里没有 Electron，`window.__electron__.showDirectoryPicker` 不存在，
@@ -109,8 +111,9 @@ async function openVaultManager(page: Page) {
     // 列表是异步渲染的（仓库 retries: 0），先等它出现再点，否则这里会静默
     // 点空 → 后面等 section 可见时超时。
     await expect(page.locator('.vm-vault-item').first()).toBeVisible({ timeout: 5_000 });
+    // 选中即切换，但面板不再自动关闭 —— 右栏就地变成这个 vault 的设置，同一趟
+    // 就能挂外部文件夹（这正是这条路径存在的理由）。
     await page.locator('.vm-vault-item').filter({ hasText: vaultName }).click();
-    await page.locator('.kb-vault-bar').first().click();
   }
   await expect(section).toBeVisible({ timeout: 5_000 });
   return section;
@@ -407,4 +410,80 @@ test('a mount whose target vanished is flagged invalid and stays removable', asy
   } finally {
     fs.rmSync(gonePath, { recursive: true, force: true });
   }
+});
+
+/**
+ * 用户反馈：以前点仓库名就直接切过去并关掉面板，想给这个仓库挂外部文件夹得再点开
+ * 一次。现在选中只是切换 + 面板留住，右栏就地变成这个仓库的设置。
+ *
+ * 本窗口不带 `?vault=`（未 pin），所以选中是在当前窗口就地切换 —— pin 过的窗口走
+ * 的是「另开一个窗口」那条路径，由 multi-window.spec.ts 覆盖。
+ */
+test('picking a vault keeps the manager open, so it is configurable in the same pass', async ({ page }) => {
+  // 名字不能是 vaultName 的子串，否则 `.vm-vault-item` 的 hasText 会同时命中两个。
+  const otherName = `e2e-ext-roots-two-${Date.now()}`;
+  const otherPath = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-e2e-extvault-two-'));
+  let otherId = '';
+  try {
+    const res = await fetch(`${DAEMON}/knowledge/vaults`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: otherName, path: otherPath }),
+    });
+    expect(res.ok, `vault POST failed: ${res.status}`).toBe(true);
+    otherId = (await res.json()).id;
+
+    await page.goto('/knowledge');
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 10_000 });
+    await page.locator('.kb-vault-bar').first().click();
+    await expect(page.locator('.vm-overlay')).toBeVisible({ timeout: 5_000 });
+
+    const section = page.locator('[data-testid="external-root-section"]');
+    const scope = page.locator('[data-testid="external-root-scope"]');
+
+    // ── 1. 选中另一个仓库：换过去，但面板留着、作用域跟着换 ─────────────
+    await page.locator('.vm-vault-item').filter({ hasText: otherName }).click();
+    await expect(page.locator('.vm-overlay')).toBeVisible();
+    await expect(section).toBeVisible({ timeout: 5_000 });
+    await expect(scope).toHaveText(otherName);
+
+    // ── 2. 再点一次当前仓库：仍然留在面板里，不需要重开 ──────────────────
+    // （切换后 URL 已镜像到 ?vault=，所以"再点别的仓库"是跨窗口那条路径，
+    //   由 multi-window.spec.ts 覆盖；这里点的是同一个，走就地切换。）
+    await page.locator('.vm-vault-item').filter({ hasText: otherName }).click();
+    await expect(page.locator('.vm-overlay')).toBeVisible();
+    await expect(scope).toHaveText(otherName, { timeout: 5_000 });
+
+    // ── 3. 显式出口：✕（overlay 内边距点击之外至少有一个看得见的）────────
+    await page.locator('[data-testid="vault-manager-close"]').click();
+    await expect(page.locator('.vm-overlay')).toBeHidden({ timeout: 5_000 });
+  } finally {
+    if (otherId) {
+      await fetch(`${DAEMON}/knowledge/vaults/${otherId}`, { method: 'DELETE' }).catch(() => {});
+    }
+    fs.rmSync(otherPath, { recursive: true, force: true });
+  }
+});
+
+/**
+ * Escape 关面板，但删除确认框弹着的时候不能顺手把整块面板也关掉 —— 那个对话框
+ * 自己也吃 Escape，两个都监听 document 的话会一起触发。
+ */
+test('Escape closes the manager, but not while the delete confirmation is up', async ({ page }) => {
+  await openKb(page);
+  await page.locator('.kb-vault-bar').first().click();
+  await expect(page.locator('.vm-overlay')).toBeVisible({ timeout: 5_000 });
+
+  // 删仓库的 ⋯ 只在 hover 时可见 —— 先 hover 行再点。
+  const row = page.locator('.vm-vault-item').filter({ hasText: vaultName }).first();
+  await row.hover();
+  await row.locator('.vm-vault-delete').click();
+  await expect(page.locator('[data-testid="confirm-dialog"]')).toBeVisible({ timeout: 5_000 });
+
+  await page.keyboard.press('Escape');
+  await expect(page.locator('[data-testid="confirm-dialog"]')).toBeHidden({ timeout: 5_000 });
+  await expect(page.locator('.vm-overlay'), 'Escape 只该关确认框').toBeVisible();
+
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.vm-overlay')).toBeHidden({ timeout: 5_000 });
 });

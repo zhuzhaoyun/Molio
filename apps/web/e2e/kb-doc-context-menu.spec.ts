@@ -54,6 +54,10 @@ async function openFile(page: import('@playwright/test').Page, filename = 'sel-t
   await page.waitForTimeout(400);
   await page.locator('.vm-vault-item').filter({ hasText: vaultName }).click();
   await page.waitForTimeout(800);
+  // Picking a vault no longer dismisses the manager (it stays open so the new
+  // vault's external-roots settings are reachable in the same pass) — close it.
+  await page.locator('[data-testid="vault-manager-close"]').click();
+  await expect(page.locator('.vm-overlay')).toBeHidden({ timeout: 5_000 });
   await page.locator('.kb-tree-item').filter({ hasText: filename }).click();
   await page.waitForSelector('.kb-content-area #output section', { timeout: 10_000 });
 }

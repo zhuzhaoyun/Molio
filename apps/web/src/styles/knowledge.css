@@ -1698,42 +1698,20 @@
   overflow: hidden;
 }
 
-/* Column headers — "知识库仓库" over the list, the app name over the panel.
-   Identical height and rule so the two columns share one horizontal line. */
-.vm-list-header,
-.vm-panel-header {
+/* Column header over the vault list. The right column has no matching bar —
+   its brand block is centred in the panel body instead. */
+.vm-list-header {
   display: flex;
   align-items: center;
-  gap: 8px;
   height: 48px;
   padding: 0 20px;
   flex-shrink: 0;
   font-size: 13px;
   font-weight: 600;
   color: var(--text-muted);
-  border-bottom: 1px solid var(--border);
-}
-
-.vm-list-header {
   text-transform: uppercase;
   letter-spacing: 0.06em;
-}
-
-.vm-panel-mark {
-  font-size: 15px;
-  line-height: 1;
-}
-
-.vm-panel-name {
-  letter-spacing: -0.01em;
-}
-
-.vm-panel-version {
-  margin-left: auto;
-  font-size: 11.5px;
-  font-weight: 500;
-  color: var(--text-faint);
-  font-variant-numeric: tabular-nums;
+  border-bottom: 1px solid var(--border);
 }
 
 .vm-list-body {
@@ -1832,12 +1810,41 @@
 
 /* ── Right: Action Panel ── */
 .vm-modal-right {
+  position: relative; /* anchors .vm-close */
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   background: var(--bg);
+}
+
+/* Picking a vault no longer dismisses the panel, so leaving it has to be
+   something you can see. Sits in the gutter next to the content, which is
+   capped at 520px — it only overlaps once the column gets narrow. */
+.vm-close {
+  position: absolute;
+  z-index: 1;
+  top: 12px;
+  right: 12px;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.vm-close:hover {
+  background: var(--bg-muted);
+  color: var(--text-strong);
 }
 
 /* `flex-start` + the children's `margin-block: auto` (below) is the
@@ -1852,7 +1859,7 @@
   align-items: center;
   justify-content: flex-start;
   overflow-y: auto;
-  padding: 32px;
+  padding: 28px 32px;
 }
 
 .vm-action-panel,
@@ -1867,14 +1874,101 @@
   flex-direction: column;
 }
 
-/* App-level actions. They don't apply to any one vault, so they sit as a plain
-   button row — deliberately NOT the card vocabulary used by vault-scoped
-   content below, so the two scopes can't be misread as siblings. */
+/* ── Branding ── */
+.vm-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 26px;
+}
+
+.vm-brand-logo {
+  font-size: 44px;
+  margin-bottom: 10px;
+  opacity: 0.8;
+}
+
+.vm-brand-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-strong);
+  letter-spacing: -0.02em;
+  margin-bottom: 4px;
+}
+
+.vm-brand-version {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── App-level actions ── */
+/* The whole card is the target — the original carried a second button on the
+   right, which said the same thing twice and ate the width the descriptions
+   needed. These apply to the collection, not to any one vault; the
+   vault-scoped block below is set apart by a rule and names its vault, so the
+   two scopes never read as one list of three. */
 .vm-actions {
   width: 100%;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
+  flex-direction: column;
   gap: 10px;
+}
+
+.vm-action-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  padding: 13px 18px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.vm-action-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-sm);
+}
+
+.vm-action-text {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The copy sits inside a <button>, so each line has to be blockified by hand. */
+.vm-action-title,
+.vm-action-desc {
+  display: block;
+}
+
+.vm-action-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+  margin-bottom: 3px;
+}
+
+.vm-action-desc {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.vm-action-go {
+  flex-shrink: 0;
+  font-size: 15px;
+  color: var(--text-faint);
+  transition: color 120ms ease, transform 120ms ease;
+}
+
+.vm-action-card:hover .vm-action-go {
+  color: var(--accent);
+  transform: translateX(2px);
 }
 
 .vm-action-btn {
@@ -1898,47 +1992,32 @@
   border-color: var(--border-strong);
 }
 
-/* Lead action, not the loudest thing in the panel: a tinted pill rather than a
-   solid coral block. The accent's full strength belongs to the vault-scoped
-   rule below, which is what the modal is actually for. */
-.vm-action-btn-primary {
-  background-color: var(--accent-tint);
-  border-color: var(--accent-soft);
-  color: var(--accent-hover);
-}
-
-.vm-action-btn-primary:hover {
-  background-color: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--accent-hover);
-}
-
 /* ── External source roots (read-only mounts) ── */
 /* Vault-scoped: everything here belongs to the vault highlighted in the left
-   column. The accent rule echoes that item's accent border, and the kicker
-   names it outright — the two together are what keep this block from reading
-   as a third sibling of the app-level buttons above. */
+   column. The rule divides it from the app-level cards above, and the kicker
+   names the vault outright — together they keep this block from reading as a
+   third card in that list. */
 .vm-roots {
   width: 100%;
-  margin-top: 26px;
-  padding-left: 14px;
-  border-left: 2px solid var(--accent-soft);
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
   display: flex;
   flex-direction: column;
 }
 
-/* The hint isn't scoped to anything, so it drops the rule and the indent that
-   goes with it, and lines up with the buttons above. */
+/* The hint isn't scoped to anything, so it drops the rule that would otherwise
+   announce a scope it doesn't have. */
 .vm-roots.is-idle {
-  border-left: none;
-  padding-left: 0;
+  border-top: none;
+  padding-top: 0;
 }
 
 .vm-scope {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 
 .vm-scope-id {

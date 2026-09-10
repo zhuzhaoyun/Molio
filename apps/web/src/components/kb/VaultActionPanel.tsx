@@ -6,8 +6,8 @@
  *                   They don't apply to any one vault.
  *   • vault scope — external source roots, which belong to whichever vault is
  *                   highlighted in the left column.
- * The `当前仓库 · <name>` header is what marks the second scope, so the panel
- * never leaves "which vault does this setting belong to?" unanswered.
+ * A rule divides the two, and the second one opens with `当前仓库 · <name>` — so
+ * the panel never leaves "which vault does this setting belong to?" unanswered.
  */
 
 import { useCallback, useEffect, useState } from 'react';
@@ -27,6 +27,18 @@ interface VaultActionPanelProps {
   onExternalRootsChanged?: () => void;
 }
 
+/**
+ * Real app version from the Electron shell, or null in a plain browser
+ * (dev / Docker deploy) — where we show nothing rather than a stale number.
+ */
+function readAppVersion(): string | null {
+  try {
+    return window.__electron__?.appInfo?.version ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export function VaultActionPanel({
   onCreate,
   onOpenLocal,
@@ -34,25 +46,47 @@ export function VaultActionPanel({
   hasVaults,
   onExternalRootsChanged,
 }: VaultActionPanelProps) {
+  const appVersion = readAppVersion();
+
   return (
     <div className="vm-action-panel">
+      <div className="vm-brand">
+        <div className="vm-brand-logo" aria-hidden="true">
+          📚
+        </div>
+        <div className="vm-brand-title">Molio 知识库</div>
+        {appVersion && <div className="vm-brand-version">v{appVersion}</div>}
+      </div>
+
       {/* App scope — nothing below this line depends on the left-column selection. */}
       <div className="vm-actions">
         <button
           type="button"
-          className="vm-action-btn vm-action-btn-primary"
+          className="vm-action-card"
           data-testid="vault-create-action"
           onClick={onCreate}
         >
-          新建仓库
+          <span className="vm-action-text">
+            <span className="vm-action-title">新建仓库</span>
+            <span className="vm-action-desc">在指定文件夹下创建一个新的仓库。</span>
+          </span>
+          <span className="vm-action-go" aria-hidden="true">
+            ›
+          </span>
         </button>
         <button
           type="button"
-          className="vm-action-btn"
+          className="vm-action-card"
           data-testid="vault-open-action"
           onClick={onOpenLocal}
         >
-          打开本地仓库
+          <span className="vm-action-text">
+            <span className="vm-action-title">打开本地仓库</span>
+            <span className="vm-action-desc">将一个本地文件夹作为仓库在 Molio 中打开。</span>
+          </span>
+          <span className="vm-action-go" aria-hidden="true">
+            ›
+          </span>
         </button>
       </div>
 
