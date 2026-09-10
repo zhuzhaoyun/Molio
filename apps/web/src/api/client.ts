@@ -115,39 +115,6 @@ async function authFetch(path: string, init?: RequestInit): Promise<Response> {
 
 const AUTH_JSON_HEADERS = { 'Content-Type': 'application/json' } as const;
 
-/**
- * Wire shape of an external root. The daemon's external-root routes spread the
- * `ExternalRootRow` straight into the response (apps/daemon/src/routes/
- * knowledge.ts), so unlike every other KB endpoint these fields arrive in
- * snake_case. `ExternalRoot` (the contract the UI consumes) is camelCase like
- * `Vault` / `KbHistoryEntry`, so the mapping lives here and nowhere else.
- */
-interface ExternalRootWire {
-  id: string;
-  vault_id: string;
-  label: string;
-  target: string;
-  created_at: number;
-  /** Computed per-request: target still on disk AND the mount link intact. */
-  valid: boolean;
-}
-
-/** Same envelope as {@link ExternalRootsResponse}, carrying the raw rows. */
-type ExternalRootsWireResponse = Omit<ExternalRootsResponse, 'roots'> & {
-  roots: ExternalRootWire[];
-};
-
-function toExternalRoot(row: ExternalRootWire): ExternalRoot {
-  return {
-    id: row.id,
-    vaultId: row.vault_id,
-    label: row.label,
-    target: row.target,
-    valid: row.valid,
-    createdAt: row.created_at,
-  };
-}
-
 export const api = {
   // ─── Agents ───
 
@@ -668,8 +635,8 @@ export const api = {
   async listExternalRoots(vaultId: string): Promise<ExternalRoot[]> {
     const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/external-roots`);
     if (!res.ok) throw new Error(`Failed to fetch external roots: ${res.status}`);
-    const data = (await res.json()) as ExternalRootsWireResponse;
-    return data.roots.map(toExternalRoot);
+    const data = (await res.json()) as ExternalRootsResponse;
+    return data.roots;
   },
 
   /**
@@ -687,8 +654,8 @@ export const api = {
       const err = await res.json().catch(() => null);
       throw new Error(err?.error?.message ?? `Failed to mount external root: ${res.status}`);
     }
-    const data = (await res.json()) as { root: ExternalRootWire };
-    return toExternalRoot(data.root);
+    const data = (await res.json()) as { root: ExternalRoot };
+    return data.root;
   },
 
   /** Unmount: drops the registry row and the mount link (204, no body). */

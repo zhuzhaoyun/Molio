@@ -7,7 +7,7 @@ import { stream } from 'hono/streaming';
 import { createReadStream, existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type Database from 'better-sqlite3';
-import type { CreateVaultRequest } from '@molio/contracts';
+import type { CreateVaultRequest, ExternalRoot, ExternalRootsResponse } from '@molio/contracts';
 import {
   listVaults,
   getVault,
@@ -20,6 +20,7 @@ import {
   listExternalRoots,
   addExternalRoot,
   removeExternalRoot,
+  rowToExternalRoot,
 } from '../core/db.js';
 import {
   withinBoundary,
@@ -420,8 +421,8 @@ export function knowledgeRoutes(
   app.get('/vaults/:id/external-roots', (c) => {
     const vault = getVault(db, c.req.param('id'));
     if (!vault) return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
-    const roots = listExternalRoots(db, vault.id).map((r) => ({
-      ...r,
+    const roots: ExternalRootsResponse['roots'] = listExternalRoots(db, vault.id).map((r) => ({
+      ...rowToExternalRoot(r),
       valid:
         existsSync(r.target) &&
         mountLinkState(path.join(externalMountDir(vault.path), r.label)) === 'link',
@@ -482,7 +483,10 @@ export function knowledgeRoutes(
       const row = addExternalRoot(db, vault.id, label, realpathSync(target));
       // A newly mounted root adds watch coverage for its target.
       vaultWatcher.watch(vault.id, vault.path).catch(() => {});
-      return c.json({ root: { ...row, valid: true } }, 201);
+      // `valid` is true by construction here (the link was just created), and
+      // the rest of the shape matches the GET list item for item.
+      const root: ExternalRoot = { ...rowToExternalRoot(row), valid: true };
+      return c.json({ root }, 201);
     } catch (err) {
       // Roll back the link so a DB failure cannot leave an unregistered mount.
       // If the rollback itself fails the invariant is genuinely broken, so that

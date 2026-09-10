@@ -70,12 +70,23 @@ describe('external-root routes', () => {
     assert.equal(add.status, 201);
     const root = (await json<any>(add)).root;
     assert.equal(root.label, path.basename(ext));
+    // Wire shape: the route maps the DB row, so the payload is camelCase and
+    // carries `valid`, exactly like every other KB endpoint. A regression to
+    // raw column names would silently hand the UI `vaultId: undefined`.
+    assert.equal(root.vaultId, vault.id);
+    assert.equal(root.target, fs.realpathSync(ext));
+    assert.equal(root.valid, true);
+    assert.ok(root.createdAt > 0);
+    assert.equal(root.vault_id, undefined);
     // Mounting re-arms the watcher so the new coverage takes effect.
     assert.deepEqual(watchCalls, [[vault.id, vaultPath]]);
 
     // A live mount (target present, link in place) is the only `valid:true`.
     const listed = (await json<any>(await a.request(`/vaults/${vault.id}/external-roots`))).roots;
     assert.equal(listed[0].valid, true);
+    // Same shape as the POST response — one contract, two entry points.
+    assert.deepEqual(Object.keys(listed[0]).sort(), Object.keys(root).sort());
+    assert.equal(listed[0].vaultId, vault.id);
 
     const tree = await json<any>(await a.request(`/vaults/${vault.id}/tree`));
     const flat = JSON.stringify(tree.tree);

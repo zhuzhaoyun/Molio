@@ -10,7 +10,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
-import type { ChatMessage, Project, Conversation, ConversationHistoryItem, ConversationHistoryPage, ListHistoryQuery, Vault, KbHistoryEntry } from '@molio/contracts';
+import type { ChatMessage, Project, Conversation, ConversationHistoryItem, ConversationHistoryPage, ListHistoryQuery, Vault, KbHistoryEntry, ExternalRoot } from '@molio/contracts';
 
 type SqliteDb = Database.Database;
 
@@ -1017,6 +1017,20 @@ function rowToVault(row: Record<string, unknown>): Vault {
     description: (row.description as string) ?? undefined,
     fileCount: 0, // Computed at tree-scan time
     createdAt: row.created_at as number,
+  };
+}
+
+/**
+ * camelCase view of a mount row for the API. `valid` is per-request liveness
+ * (target on disk + link intact), so it is added by the route, not here.
+ */
+export function rowToExternalRoot(row: ExternalRootRow): Omit<ExternalRoot, 'valid'> {
+  return {
+    id: row.id,
+    vaultId: row.vault_id,
+    label: row.label,
+    target: row.target,
+    createdAt: row.created_at,
   };
 }
 

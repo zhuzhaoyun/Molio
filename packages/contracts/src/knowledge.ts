@@ -163,10 +163,9 @@ export interface SearchResponse {
 /**
  * A read-only external folder mounted into a vault under `external/<label>`.
  *
- * The daemon's external-root endpoints return the raw registry row, so those
- * payloads are snake_case (`vault_id` / `created_at`); the web API client maps
- * them to this shape, keeping it camelCase like the rest of the KB contracts
- * (cf. {@link Vault}, {@link KbHistoryEntry}).
+ * Mirrors the registry row; `valid` is not persisted but computed per response
+ * (target still on disk and its mount link intact) — false means the UI should
+ * offer an unmount rather than pretend the folder is still readable.
  */
 export interface ExternalRoot {
   id: string;
