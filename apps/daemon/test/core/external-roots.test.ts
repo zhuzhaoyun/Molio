@@ -17,6 +17,29 @@ describe('isWithinRoot', () => {
     assert.equal(isWithinRoot('/a/b', '/a/bc'), false);   // prefix trap
     assert.equal(isWithinRoot('/a/b', '/a'), false);
   });
+
+  // Filesystem roots end with a separator, so the naive `r + path.sep` prefix
+  // ('/' → '//', 'D:\\' → 'D:\\\\') matches no descendant. That silently made a
+  // whole mounted drive unreadable: validation passed and the link was created,
+  // yet withinBoundary rejected every file under it.
+  it('treats the filesystem root as an ancestor of everything beneath it', () => {
+    const fsRoot = path.parse(process.cwd()).root;   // '/' on POSIX, 'C:\\' on win32
+    assert.equal(isWithinRoot(fsRoot, fsRoot), true);
+    assert.equal(isWithinRoot(fsRoot, path.join(fsRoot, 'a', 'b')), true);
+  });
+
+  // Candidates are resolved too: without this the predicate was purely lexical,
+  // so '..' segments could walk out of the root while still matching the prefix,
+  // and a POSIX-literal candidate failed on Windows against a drive-rooted root.
+  it('resolves the candidate, so `..` cannot escape lexically', () => {
+    const vault = path.join(path.sep, 'vault');
+    const escape = vault + path.sep + '..' + path.sep + 'etc' + path.sep + 'passwd';
+    assert.equal(isWithinRoot(vault, escape), false);
+  });
+
+  it('resolves a relative candidate against cwd', () => {
+    assert.equal(isWithinRoot(process.cwd(), 'x.md'), true);
+  });
 });
 
 describe('withinBoundary', () => {

@@ -31,10 +31,22 @@ export function safeRealpath(p: string): string {
   }
 }
 
-/** True when `candidate` is `root` itself or lives beneath it (separator-aware). */
+/**
+ * True when `candidate` is `root` itself or lives beneath it (separator-aware).
+ *
+ * Both sides are resolved, which matters three ways: a relative/lexically
+ * unresolved candidate is normalized instead of silently comparing false, `..`
+ * segments cannot walk out of the root while still matching the prefix, and
+ * POSIX-literal paths compare correctly against a drive-rooted path on Windows.
+ * The prefix keeps its trailing separator when the root already ends in one,
+ * otherwise a filesystem root ('/' or 'D:\') would compose '//' / 'D:\\' and
+ * match no descendant at all.
+ */
 export function isWithinRoot(root: string, candidate: string): boolean {
   const r = path.resolve(root);
-  return candidate === r || candidate.startsWith(r + path.sep);
+  const c = path.resolve(candidate);
+  const prefix = r.endsWith(path.sep) ? r : r + path.sep;
+  return c === r || c.startsWith(prefix);
 }
 
 /**
