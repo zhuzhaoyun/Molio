@@ -157,3 +157,31 @@ export interface SearchResponse {
   results: SearchResult[];
   truncated: boolean; // 是否因 limit 截断
 }
+
+// ─── External source roots ───
+
+/**
+ * A read-only external folder mounted into a vault under `external/<label>`.
+ *
+ * The daemon's external-root endpoints return the raw registry row, so those
+ * payloads are snake_case (`vault_id` / `created_at`); the web API client maps
+ * them to this shape, keeping it camelCase like the rest of the KB contracts
+ * (cf. {@link Vault}, {@link KbHistoryEntry}).
+ */
+export interface ExternalRoot {
+  id: string;
+  vaultId: string;
+  label: string;
+  target: string; // Absolute path of the source folder
+  valid: boolean; // false when the target no longer exists on disk
+  createdAt: number;
+}
+
+export interface ExternalRootsResponse {
+  roots: ExternalRoot[];
+}
+
+export interface AddExternalRootRequest {
+  target: string;
+  label?: string;
+}
