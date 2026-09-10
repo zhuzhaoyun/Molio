@@ -13,7 +13,13 @@ import { detectEncoding, decodeAll, decideReadStrategy, FileTooLargeError, ENCOD
 export { PRUNE_DIR_NAMES, isPrunedDirName, MAX_DIR_ENTRIES, MAX_TOTAL } from './vault-prune.js';
 import { isPrunedDirName, MAX_DIR_ENTRIES, MAX_TOTAL, warnOversizedDir } from './vault-prune.js';
 import { ThrottledWarn } from './throttled-warn.js';
-import { withinBoundary, safeRealpath, type ExternalRootRef } from './external-roots.js';
+import {
+  withinBoundary,
+  safeRealpath,
+  isExternalMountPath,
+  resolveVirtualToReal,
+  type ExternalRootRef,
+} from './external-roots.js';
 
 // The "hit MAX_TOTAL … truncating" warning fires at most once per scan, but the
 // UI rescans the vault on every `tree-changed` event and on mount/vault-switch —
@@ -205,16 +211,40 @@ function countFilesInner(dir: string, ctx: ScanCtx): number {
  * Read a file from a vault. Path is relative to vault root.
  * For text files, returns content as UTF-8 string.
  * For binary files (images, PDF, DOCX), content is empty — use raw file URL or openPath.
+ *
+ * `externalRoots` widens the readable boundary to the registered source roots
+ * (see external-roots.ts); without it only the vault itself is readable.
  */
-export function readFile(vaultPath: string, relPath: string, opts: { force?: boolean } = {}): FileContent {
+export function readFile(
+  vaultPath: string,
+  relPath: string,
+  opts: { force?: boolean; externalRoots?: ExternalRootRef[] } = {},
+): FileContent {
+  const roots = opts.externalRoots ?? [];
   // Normalize agent-absolute / ./-prefixed paths for disk resolution, but echo
   // the caller's original path in the response (existing API contract).
   const reqPath = relPath;
   relPath = toVaultRelativePath(vaultPath, relPath);
-  let resolved = resolveFilePath(vaultPath, relPath);
 
-  if (!fs.existsSync(resolved)) {
-    resolved = resolveWithFallbacks(vaultPath, relPath);
+  // The external mount namespace addresses a real folder OUTSIDE the vault, so
+  // it cannot go through resolveFilePath/fallbacks — look it up in the registry
+  // instead and boundary-check the realpath below.
+  let resolved: string;
+  let external = false;
+  if (isExternalMountPath(relPath)) {
+    const target = resolveVirtualToReal(vaultPath, roots, relPath);
+    if (!target || !fs.existsSync(target)) {
+      const err = new Error(`File not found: ${relPath}`) as NodeJS.ErrnoException;
+      err.code = 'ENOENT';
+      throw err;
+    }
+    resolved = target;
+    external = true;
+  } else {
+    resolved = resolveFilePath(vaultPath, relPath);
+    if (!fs.existsSync(resolved)) {
+      resolved = resolveWithFallbacks(vaultPath, relPath);
+    }
   }
 
   if (!fs.existsSync(resolved)) {
@@ -223,9 +253,13 @@ export function readFile(vaultPath: string, relPath: string, opts: { force?: boo
     throw err;
   }
 
-  // Follow symlinks and re-validate the real path is still inside the vault
-  // before reading — defends against a symlink swapped in to escape the vault.
-  const real = resolveRealWithinVault(vaultPath, resolved);
+  // Follow symlinks and re-validate the real path is still inside the vault (or
+  // a registered external root) before reading — defends against a symlink
+  // swapped in to escape the boundary. Mounted paths are already outside the
+  // vault lexically, so only the realpath whitelist applies to them.
+  const real = external
+    ? realWithinBoundary(vaultPath, resolved, roots)
+    : resolveRealWithinVault(vaultPath, resolved, roots);
 
   const stat = fs.statSync(real);
   const mimeType = getMimeType(path.basename(real));
@@ -439,10 +473,29 @@ export function resolveFilePath(vaultPath: string, relPath: string): string {
  * matches. Used by the resolve API so the frontend can normalize assistant /
  * molio:// / wiki-link paths against the same logic readFile uses — keeping
  * "open from chat link" consistent with "open from directory".
+ *
+ * `externalRoots` mirrors readFile: a path under the virtual external namespace
+ * resolves against the registry, and its canonical form IS the virtual path
+ * (the on-disk target is meaningless to the tree, which lists mount content
+ * under `external/<label>/...`).
  */
-export function resolveCanonicalPath(vaultPath: string, relPath: string): string | null {
+export function resolveCanonicalPath(
+  vaultPath: string,
+  relPath: string,
+  externalRoots: ExternalRootRef[] = [],
+): string | null {
   if (!relPath) return null;
   relPath = toVaultRelativePath(vaultPath, relPath);
+  if (isExternalMountPath(relPath)) {
+    const target = resolveVirtualToReal(vaultPath, externalRoots, relPath);
+    if (!target || !fs.existsSync(target)) return null;
+    try {
+      realWithinBoundary(vaultPath, target, externalRoots);
+    } catch {
+      return null;
+    }
+    return relPath;
+  }
   let resolved: string;
   try {
     resolved = resolveFilePath(vaultPath, relPath);
@@ -454,11 +507,11 @@ export function resolveCanonicalPath(vaultPath: string, relPath: string): string
   }
   if (!fs.existsSync(resolved)) return null;
   try {
-    // Security: confirm the real path is still inside the vault (symlink-escape
-    // guard). We do NOT use the realpath for the relative path computation —
-    // scanTree stores paths relative to the (non-realpath) vaultPath, so we
-    // match that to keep tree node.path equality correct.
-    resolveRealWithinVault(vaultPath, resolved);
+    // Security: confirm the real path is still inside the vault or a whitelisted
+    // external root (symlink-escape guard). We do NOT use the realpath for the
+    // relative path computation — scanTree stores paths relative to the
+    // (non-realpath) vaultPath, so we match that to keep tree node.path equal.
+    resolveRealWithinVault(vaultPath, resolved, externalRoots);
   } catch {
     return null;
   }
@@ -481,34 +534,66 @@ function assertWithinVault(vaultPath: string, resolved: string): void {
 
 /**
  * Resolve the real on-disk path (following symlinks) and confirm it remains
- * inside the vault. Closes a TOCTOU/symlink-escape: between an existsSync
- * check and a later read, a file could be replaced with a symlink pointing
- * outside the vault, and statSync/readFileSync follow symlinks by default.
+ * inside the vault OR inside a registered external root. Closes a
+ * TOCTOU/symlink-escape: between an existsSync check and a later read, a file
+ * could be replaced with a symlink pointing outside the boundary, and
+ * statSync/readFileSync follow symlinks by default.
  *
  * The vault root itself may contain symlink components (e.g. macOS tmpdir
  * `/var` → `/private/var`), so we canonicalize both sides before comparing.
+ * `roots` is the whitelist; an empty list degrades to the vault-only boundary.
  */
-function resolveRealWithinVault(vaultPath: string, resolved: string): string {
+function resolveRealWithinVault(vaultPath: string, resolved: string, roots: ExternalRootRef[] = []): string {
+  // Lexical layer: the path string must not escape the vault. Kept separate
+  // from the realpath layer so `external/<label>/...` (lexically inside the
+  // vault, physically outside it) passes here and is judged below.
   assertWithinVault(vaultPath, resolved);
+  return realWithinBoundary(vaultPath, resolved, roots);
+}
+
+/**
+ * realpath the candidate and enforce the readable boundary (vault ∪ registered
+ * external roots). `withinBoundary` compares the path it is handed verbatim —
+ * it never realpaths — so the symlink resolution has to happen here.
+ */
+function realWithinBoundary(vaultPath: string, resolved: string, roots: ExternalRootRef[]): string {
   const real = fs.realpathSync(resolved);
-  // Canonicalize the vault root the same way so a symlinked root doesn't
-  // cause legitimate reads to be rejected.
-  let realVault: string;
-  try {
-    realVault = fs.realpathSync(path.resolve(vaultPath));
-  } catch {
-    realVault = path.resolve(vaultPath);
-  }
-  if (real !== realVault && !real.startsWith(realVault + path.sep)) {
+  if (!withinBoundary(real, vaultPath, roots)) {
     throw new Error('Path traversal not allowed');
   }
   return real;
 }
 
 /**
+ * True when a relative path addresses the read-only external namespace.
+ *
+ * Normalized first: `notes/../external/x.md` reaches the mount even though the
+ * string does not start with it, and every write below feeds its path through
+ * `path.resolve`, which treats the two forms identically.
+ */
+function isExternalWritePath(relPath: string): boolean {
+  if (!relPath) return false;
+  return isExternalMountPath(path.posix.normalize(relPath.replace(/\\/g, '/')));
+}
+
+/**
+ * Reject any mutation targeting the read-only external namespace. The external
+ * roots are folders Molio does not own (a link, not a copy), so a write there
+ * would silently edit files outside the vault — refuse by path, independent of
+ * whether the caller passed the registry.
+ */
+function assertNotExternalWrite(relPath: string): void {
+  if (!isExternalWritePath(relPath)) return;
+  const err = new Error('External source roots are read-only') as NodeJS.ErrnoException;
+  err.code = 'E_EXTERNAL_READONLY';
+  throw err;
+}
+
+/**
  * Write content to a file in a vault. Creates parent directories if needed.
  */
 export function writeFile(vaultPath: string, relPath: string, content: string): void {
+  assertNotExternalWrite(relPath);
   const absFile = path.join(vaultPath, relPath);
 
   // Security: prevent path traversal (sibling-directory bypass)
@@ -523,6 +608,7 @@ export function writeFile(vaultPath: string, relPath: string, content: string): 
  * Delete a file from a vault — moves to system recycle bin instead of permanent deletion.
  */
 export async function deleteFile(vaultPath: string, relPath: string): Promise<void> {
+  assertNotExternalWrite(relPath);
   const absFile = path.join(vaultPath, relPath);
 
   const resolved = path.resolve(absFile);
@@ -537,6 +623,10 @@ export async function deleteFile(vaultPath: string, relPath: string): Promise<vo
  * Rename / move a file or directory within a vault.
  */
 export function renamePath(vaultPath: string, oldRelPath: string, newRelPath: string): void {
+  // Read-only namespace: refuse both directions — moving a mounted file out
+  // would delete it from the user's folder, moving one in would write to it.
+  assertNotExternalWrite(oldRelPath);
+  assertNotExternalWrite(newRelPath);
   const absOld = path.resolve(path.join(vaultPath, oldRelPath));
   const absNew = path.resolve(path.join(vaultPath, newRelPath));
 
@@ -565,6 +655,7 @@ export function renamePath(vaultPath: string, oldRelPath: string, newRelPath: st
  * Delete a directory (recursively) from a vault — moves to system recycle bin.
  */
 export async function deleteDirectory(vaultPath: string, relPath: string): Promise<void> {
+  assertNotExternalWrite(relPath);
   const absDir = path.resolve(path.join(vaultPath, relPath));
 
   // Security: prevent path traversal
@@ -579,6 +670,7 @@ export async function deleteDirectory(vaultPath: string, relPath: string): Promi
  * Create a directory inside a vault.
  */
 export function createDirectory(vaultPath: string, relPath: string): void {
+  assertNotExternalWrite(relPath);
   const absDir = path.join(vaultPath, relPath);
 
   const resolved = path.resolve(absDir);
@@ -692,6 +784,12 @@ export function importFiles(
     // protected-dir check on the TARGET
     if (isInsideProtected(relPath)) {
       result.errors.push({ file: f.name, reason: 'protected_dir' });
+      continue;
+    }
+    // External mounts are read-only — reported per-file (bulk API) rather than
+    // thrown, so one rejected target never discards the rest of the batch.
+    if (isExternalWritePath(relPath)) {
+      result.errors.push({ file: f.name, reason: 'external_readonly' });
       continue;
     }
     valid.push({ name: f.name, buffer: f.buffer, relPath });
