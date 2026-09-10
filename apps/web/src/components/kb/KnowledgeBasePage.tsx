@@ -20,7 +20,7 @@ import { OutlinePanel } from './OutlinePanel';
 import { SearchPanel } from './SearchPanel';
 import { VaultManagerModal } from './VaultManager';
 import { PublishForm, type PublishFormData } from '../resources/PublishForm';
-import { PUBLISH_TAB_ID, GRAPH_TAB_ID } from './kb-constants';
+import { PUBLISH_TAB_ID, GRAPH_TAB_ID, isExternalPath } from './kb-constants';
 import { GraphPage } from '../graph/GraphPage';
 import { graphViewStore } from '../../stores/graphViewStore';
 import { currentContextStore } from '../../stores/currentContextStore';
@@ -84,6 +84,7 @@ function summarizeErrors(errors: Array<{ file: string; reason: string }>): strin
   if (counts['file_too_large']) parts.push(`${counts['file_too_large']} 个超过 50MB 限制`);
   if (counts['illegal_chars']) parts.push(`${counts['illegal_chars']} 个文件名含非法字符`);
   if (counts['protected_dir']) parts.push(`${counts['protected_dir']} 个目标为受保护目录`);
+  if (counts['external_readonly']) parts.push(`${counts['external_readonly']} 个目标为只读的外部素材目录`);
   if (counts['rename_exhausted']) parts.push(`${counts['rename_exhausted']} 个重命名失败`);
   if (parts.length === 0) parts.push(`${errors.length} 个文件无法导入`);
   return parts.join('，');
@@ -881,6 +882,11 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
 
     const items: MenuItem[] = [];
 
+    // Mounted external sources (`external/<label>/…`) are read-only: the daemon
+    // rejects any write resolving outside the vault, so never offer new /
+    // rename / delete on them. Reading, asking and copy-path stay available.
+    const readonly = isExternalPath(node.path);
+
     if (node.type === 'file') {
       items.push({
         label: '打开',
@@ -902,7 +908,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
           panelRef.current?.openQa({ filePath: node.path, vaultId: kb.activeVault?.id ?? null, selectedText: null });
         },
       });
-    } else {
+    } else if (!readonly) {
       // Directory: offer create file / subfolder inside
       items.push({
         label: '新建文件',
@@ -937,6 +943,16 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
       });
 
       items.push({ divider: true });
+    }
+
+    if (readonly) {
+      // Explain the short menu instead of silently dropping the write actions.
+      items.push({
+        label: '外部素材 · 只读',
+        disabled: true,
+        title: '挂载的外部文件夹为只读，不能新建 / 重命名 / 删除',
+      });
+      return items;
     }
 
     items.push({
@@ -1518,6 +1534,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
         onCreate={kb.createVault}
         onOpen={kb.openVault}
         onDelete={kb.deleteVault}
+        onExternalRootsChanged={kb.refreshTree}
       />
 
       {/* Import modal */}

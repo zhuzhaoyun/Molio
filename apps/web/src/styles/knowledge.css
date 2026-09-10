@@ -1808,10 +1808,20 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  /* `flex-start` + the children's `margin-block: auto` (below) is the
+     overflow-safe way to centre: once the content is taller than the modal
+     (the vault panel grew with the external-roots section), the auto margins
+     collapse and the top stays reachable by scrolling. `justify-content:center`
+     would clip it above the scroll origin instead. */
+  justify-content: flex-start;
   overflow-y: auto;
   padding: 40px 32px;
   background: var(--bg);
+}
+
+.vm-action-panel,
+.vm-create-form {
+  margin-block: auto;
 }
 
 .vm-action-panel {
@@ -1919,6 +1929,125 @@
 
 .vm-action-btn-primary:hover {
   background: var(--accent-hover);
+}
+
+/* ── External source roots (read-only mounts) ── */
+.vm-roots {
+  width: 100%;
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+
+.vm-roots-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+/* Unmounted / broken mounts */
+.vm-roots-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.vm-roots-empty {
+  font-size: 12.5px;
+  color: var(--text-faint);
+  padding: 10px 2px;
+}
+
+.vm-root-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+/* Target gone from disk — the row stays so it can be unmounted. */
+.vm-root-item.is-invalid {
+  border-color: var(--red-border);
+  background: var(--red-bg);
+}
+
+.vm-root-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.vm-root-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.vm-root-badge {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: var(--red, #dc2626);
+  border: 1px solid currentColor;
+}
+
+.vm-root-target {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vm-root-remove {
+  flex-shrink: 0;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+
+.vm-root-remove:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.vm-root-remove:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.vm-roots-form {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.vm-roots-form .vm-form-input {
+  flex: 1;
+}
+
+.vm-roots-error {
+  margin-top: 10px;
+  font-size: 12.5px;
+  color: var(--red, #dc2626);
+  line-height: 1.5;
 }
 
 /* ── Create Vault Form ── */
@@ -2230,6 +2359,21 @@
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
+}
+
+/* Read-only marker on the top of a mounted external source (`external/<label>`).
+   Everything under it rejects new / rename / delete / drag. */
+.kb-tree-readonly-badge {
+  flex-shrink: 0;
+  font-size: 9.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  padding: 0 4px;
+  border-radius: 3px;
+  color: var(--text-faint);
+  border: 1px solid var(--border);
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 /* Cancel the `+` button's auto-margin now that it lives inside a trailing group */

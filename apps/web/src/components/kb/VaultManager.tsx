@@ -27,6 +27,9 @@ interface VaultManagerModalProps {
   onCreate: (name: string, path: string, description?: string) => Promise<void>;
   onOpen: (path: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
+  /** Fired after an external source root is mounted/unmounted, so the page can
+   *  refresh the file tree (the new `external/<label>` node). */
+  onExternalRootsChanged?: () => void;
 }
 
 export function VaultManagerModal({
@@ -38,6 +41,7 @@ export function VaultManagerModal({
   onCreate,
   onOpen,
   onDelete,
+  onExternalRootsChanged,
 }: VaultManagerModalProps) {
   const [view, setView] = useState<VaultManagerView>('list');
   const [creating, setCreating] = useState(false);
@@ -84,6 +88,8 @@ export function VaultManagerModal({
         <div className="vm-modal-right">
           {view === 'list' ? (
             <VaultActionPanel
+              activeVault={vaults.find((v) => v.id === activeVaultId) ?? null}
+              onExternalRootsChanged={onExternalRootsChanged}
               onCreate={() => setView('create')}
               onOpenLocal={async () => {
                 // Electron: use native directory picker

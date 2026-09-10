@@ -7,6 +7,7 @@
 
 import { useCallback, useRef, useEffect } from 'react';
 import type { TreeNode, IngestStatus } from '@molio/contracts';
+import { isExternalPath } from './kb-constants';
 
 /** Directories that reject drag-and-drop operations. */
 const PROTECTED_DIRS = ['wiki', 'docling_output'];
@@ -159,6 +160,17 @@ function TreeNodeItem({
   const nodeProtected = isInsideProtected(node.path);
   const showAddButton = onAddToWiki && !nodeProtected;
 
+  // Mounted external sources are read-only: no new file/folder, no rename, no
+  // delete, and no drag in or out. The daemon refuses any write resolving
+  // outside the vault (`assertWriteWithinVault`), so the tree must not offer
+  // one. Distinct from `nodeProtected`, which additionally mutes the ingest
+  // badge and the "加入 Wiki" action — reads of mounted sources stay allowed.
+  const nodeReadonly = isExternalPath(node.path);
+  // Badge the read-only region once, at its top (`external` / `external/<label>`),
+  // instead of repeating a lock on every mounted file.
+  const showReadonlyBadge =
+    nodeReadonly && node.type === 'directory' && node.path.split('/').length <= 2;
+
   const handleAdd = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     onAddToWiki?.(node.path, node.type === 'directory');
@@ -197,9 +209,10 @@ function TreeNodeItem({
   if (node.type === 'directory') {
     // Determine drop acceptance for this directory.
     // Both external import and internal move targets need to be non-protected.
-    const acceptsDrop = !nodeProtected;
-    // Directory is draggable unless protected (e.g. wiki/, docling_output/).
-    const canDrag = !nodeProtected;
+    const acceptsDrop = !nodeProtected && !nodeReadonly;
+    // Directory is draggable unless protected (e.g. wiki/) or read-only
+    // (external/ — a drag out of a mount is a move outside the vault).
+    const canDrag = !nodeProtected && !nodeReadonly;
 
     const handleDirDragOver = useCallback((e: React.DragEvent) => {
       if (!acceptsDrop) {
@@ -295,7 +308,8 @@ function TreeNodeItem({
     return (
       <div
           className="kb-tree-group"
-          {...(!nodeProtected ? { 'data-drop-dir': node.path } : {})}
+          {...(!nodeProtected && !nodeReadonly ? { 'data-drop-dir': node.path } : {})}
+          {...(nodeReadonly ? { 'data-readonly': 'true' } : {})}
           onDragOver={handleDirDragOver}
           onDragLeave={handleDirDragLeave}
           onDrop={handleDirDrop}
@@ -317,6 +331,11 @@ function TreeNodeItem({
             />
           ) : (
             <span>{node.name}</span>
+          )}
+          {showReadonlyBadge && (
+            <span className="kb-tree-readonly-badge" title="只读挂载：不能新建 / 重命名 / 删除">
+              只读
+            </span>
           )}
           {(!nodeProtected && node.ingestStatus) || showAddButton ? (
             <div className="kb-tree-trailing">
@@ -361,7 +380,9 @@ function TreeNodeItem({
   }
 
   // File node
-  const canDrag = !nodeProtected;
+  // No drag for protected dirs or read-only mounts (dragging a mounted file
+  // out of the mount is a move outside the vault).
+  const canDrag = !nodeProtected && !nodeReadonly;
 
   const handleDragStart = useCallback((e: React.DragEvent) => {
     if (!canDrag) {
@@ -398,6 +419,7 @@ function TreeNodeItem({
     <div
       ref={itemRef}
       className={`kb-tree-item ${isActive ? 'is-active' : ''} ${revealMatch ? 'just-moved' : ''}`}
+      {...(nodeReadonly ? { 'data-readonly': 'true' } : {})}
       onClick={() => !isRenaming && onSelectFile(node.path)}
       onContextMenu={handleFileContextMenu}
       draggable={canDrag}
