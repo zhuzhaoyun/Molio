@@ -470,6 +470,18 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams, openGraphTab]);
 
+  // ?manage=1（仓库管理器选中别的仓库时，新窗口带上的参数）：等 vault 解析出来
+  // 就自动打开管理器 —— 右栏此时即该仓库的外部素材根设置。随后去掉参数，刷新或
+  // 克隆这个 URL 时不再弹。与上面 ?panel=graph 同一个「参数即一次性意图」套路。
+  useEffect(() => {
+    if (searchParams.get('manage') !== '1') return;
+    if (!kb.activeVault?.id) return; // 右栏要有作用域，先等 vault 就绪
+    kb.setShowVaultSwitcher(true);
+    const next = new URLSearchParams(searchParams);
+    next.delete('manage');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams, kb.activeVault?.id, kb.setShowVaultSwitcher]);
+
   // ─── Navigation history: tab-scoped view history ───
   // Records the order of views the user has visited (files AND the graph tab).
   // Subscribing to activeTabId keeps it in sync with every activation (open
@@ -584,21 +596,30 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
   }, [kb.activeVault?.id]);
 
   /**
-   * Vault manager pick: switch THIS window to the picked vault, in place, and
-   * keep the manager open — its right panel is that vault's settings (external
-   * source roots), so closing on pick forced a reopen for "pick, then
-   * configure". The earlier "pinned window picks a different vault → open it
-   * in a NEW window" behavior is gone: the URL mirror effect pins every window
-   * almost immediately, so that path captured nearly every cross-vault pick.
-   * Multi-window remains available through its explicit entries — tab
-   * right-click 「在新窗口打开」, the file panel's new-window button, deep links.
+   * Obsidian-like vault opening from the vault manager (bottom-left vault bar):
+   * if this window is ALREADY pinned to a vault (?vault= in the URL), picking a
+   * DIFFERENT vault opens it in a NEW window — the current vault stays open,
+   * not replaced. Only when the window is not URL-pinned yet (fresh /knowledge,
+   * even if a vault is persisted/auto-selected) does the pick load in place.
+   * Note: must key on the URL, not kb.activeVault — activeVault falls back to
+   * the persisted default, which would wrongly treat a first-open as cross-vault.
+   *
+   * The new window carries `manage=1` so it comes up with the vault manager
+   * already open, scoped to the picked vault: the common reason to pick a vault
+   * here is to configure it (external source roots), and without the flag the
+   * new window would drop the user into a bare tree, forcing them to reopen
+   * the manager they just used. The flag is stripped after the first open, so
+   * reloads and cloned URLs don't re-pop the modal.
    */
-  const handleVaultPick = useCallback(
-    (id: string) => {
+  const handleVaultPick = useCallback((id: string) => {
+    const pinnedVaultId = new URLSearchParams(window.location.search).get('vault');
+    if (pinnedVaultId && pinnedVaultId !== id) {
+      kb.setShowVaultSwitcher(false);
+      openInNewWindow(`/knowledge?vault=${encodeURIComponent(id)}&manage=1`);
+    } else {
       kb.selectVault(id);
-    },
-    [kb.selectVault]
-  );
+    }
+  }, [kb.selectVault, kb.setShowVaultSwitcher]);
 
   // When URL navigation resolves, open in tab. The path from external
   // navigation (assistant links, molio://, graph) may omit the extension and/or

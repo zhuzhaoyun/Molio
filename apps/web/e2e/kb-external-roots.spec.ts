@@ -25,9 +25,9 @@
  *   8. 文件级只读  —— 挂载**文件**的右键菜单同样没有写操作（第 2 步只测了目录）
  *   9. 无挂载对照  —— 一个自己就有 `external/` 文件夹、但没注册任何挂载的 vault，
  *                     该目录必须仍是普通目录（可拖放、可编辑、可重命名）
- *  10. 切换不关面板 —— 选中一个仓库（含跨仓库）后设置面板保持打开、就地切换、不开
- *                     新窗口，同一趟就能挂外部文件夹（用户反馈：以前选中即关闭，
- *                     pinned 窗口甚至会另开新窗口）
+ *  10. 选中即可配置 —— 未跨仓库：面板留住就地配置；已 pin 窗口选别的仓库（多窗口
+ *                     语义保留）：新窗口承载该仓库且管理器直接打开（manage=1），
+ *                     配置不用再点开一次（用户反馈：以前两条路都得重开面板）
  *
  * 前置：`pnpm dev`（daemon :3100 + web :5173）。
  * Playwright 里没有 Electron，`window.__electron__.showDirectoryPicker` 不存在，
@@ -108,7 +108,7 @@ async function openVaultManager(page: Page) {
   const section = page.locator('[data-testid="external-root-section"]');
   if (!(await section.isVisible().catch(() => false))) {
     // activeVault 还没解析出来时右栏是空的 —— 显式在列表里选一次本 vault
-    // （选中就是就地切换，不会离开这个窗口）。
+    // （URL 已 pin 到同一个 vault，所以是原地切换、不会开新窗口）。
     // 列表是异步渲染的（仓库 retries: 0），先等它出现再点，否则这里会静默
     // 点空 → 后面等 section 可见时超时。
     await expect(page.locator('.vm-vault-item').first()).toBeVisible({ timeout: 5_000 });
@@ -414,14 +414,14 @@ test('a mount whose target vanished is flagged invalid and stays removable', asy
 });
 
 /**
- * 用户反馈（两次）：以前点仓库名，未 pin 的窗口就地切换并关面板、pin 过的窗口更是
- * 直接另开一个新窗口 —— 想给这个仓库挂外部文件夹总得重新点开切换页。现在选中一律
- * 就地切换 + 面板留住，右栏就地变成这个仓库的设置。
- *
- * 本窗口不带 `?vault=`，且两次选择都是跨仓库 —— 原实现里 pinned + 跨仓库正是
- * 「另开新窗口」的触发条件（URL 镜像效果让几乎每个窗口都是 pinned 的）。
+ * 用户反馈：点仓库名是想「切过去并配置它（挂外部素材根）」，但面板总会关掉，得
+ * 再点开一次。两个分支都要顾及：
+ *   • 未跨仓库（就地切换）：面板留住，右栏就地保持该仓库的设置。
+ *   • 已 pin 窗口选别的仓库（多窗口语义，保留）：新窗口承载该仓库，且 URL 带
+ *     manage=1 让管理器在新窗口里直接打开 —— 不用在新窗口里再点开一次。
+ * 固定 pin 到本用例的仓库再操作，走哪条分支不依赖「URL 镜像是否已写入」的时序。
  */
-test('picking a vault keeps the manager open, so it is configurable in the same pass', async ({ page }) => {
+test('picking a vault lands you in its settings — in place, or in the new window', async ({ page }) => {
   // 名字不能是 vaultName 的子串，否则 `.vm-vault-item` 的 hasText 会同时命中两个。
   const otherName = `e2e-ext-roots-two-${Date.now()}`;
   const otherPath = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-e2e-extvault-two-'));
@@ -435,32 +435,35 @@ test('picking a vault keeps the manager open, so it is configurable in the same 
     expect(res.ok, `vault POST failed: ${res.status}`).toBe(true);
     otherId = (await res.json()).id;
 
-    await page.goto('/knowledge');
-    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 10_000 });
+    await openKb(page);
     await page.locator('.kb-vault-bar').first().click();
     await expect(page.locator('.vm-overlay')).toBeVisible({ timeout: 5_000 });
 
-    const section = page.locator('[data-testid="external-root-section"]');
     const scope = page.locator('[data-testid="external-root-scope"]');
 
-    // ── 1. 选中另一个仓库：就地切过去，面板留住、作用域跟着换、不开新窗口 ──
-    await page.locator('.vm-vault-item').filter({ hasText: otherName }).click();
-    await expect(page.locator('.vm-overlay')).toBeVisible();
-    await expect(section).toBeVisible({ timeout: 5_000 });
-    await expect(scope).toHaveText(otherName);
-    expect(new URL(page.url()).searchParams.get('vault')).toBe(otherId);
-
-    // ── 2. 再选回本用例的仓库：同样就地切换，仍然留在面板里 ─────────────
+    // ── 1. 点当前仓库（未跨仓库 → 就地）：面板留住，作用域不变 ──────────
     await page.locator('.vm-vault-item').filter({ hasText: vaultName }).click();
     await expect(page.locator('.vm-overlay')).toBeVisible();
-    await expect(scope).toHaveText(vaultName, { timeout: 5_000 });
-    expect(new URL(page.url()).searchParams.get('vault')).toBe(vaultId);
-    // 两次都是跨仓库选择 —— 曾几何时这条路径是「另开一个新窗口」。
-    expect(page.context().pages().length, '不开新窗口').toBe(1);
+    await expect(scope).toHaveText(vaultName);
 
-    // ── 3. 显式出口：✕（overlay 内边距点击之外至少有一个看得见的）────────
-    await page.locator('[data-testid="vault-manager-close"]').click();
+    // ── 2. 点别的仓库（已 pin + 跨仓库 → 多窗口）：新窗口承载它，管理器在新窗口
+    //       直接打开、作用域就是它 —— 配置它不需要再点开一次；原窗口原样不动 ──
+    const popupPromise = page.context().waitForEvent('page');
+    await page.locator('.vm-vault-item').filter({ hasText: otherName }).click();
+    const popup = await popupPromise;
+    await popup.waitForURL(/vault=/);
+    expect(new URL(popup.url()).searchParams.get('vault')).toBe(otherId);
+    await expect(popup.locator('.vm-overlay')).toBeVisible({ timeout: 5_000 });
+    await expect(popup.locator('[data-testid="external-root-scope"]')).toHaveText(otherName);
+
+    // 原窗口：管理器收起（新窗口已接手配置），仓库与 URL 都没动。
     await expect(page.locator('.vm-overlay')).toBeHidden({ timeout: 5_000 });
+    await expect(page.locator('.kb-vault-bar__name')).toHaveText(vaultName);
+    expect(new URL(page.url()).searchParams.get('vault')).toBe(vaultId);
+
+    // ── 3. 显式出口：新窗口里 ✕ 关掉管理器 ─────────────────────────────
+    await popup.locator('[data-testid="vault-manager-close"]').click();
+    await expect(popup.locator('.vm-overlay')).toBeHidden({ timeout: 5_000 });
   } finally {
     if (otherId) {
       await fetch(`${DAEMON}/knowledge/vaults/${otherId}`, { method: 'DELETE' }).catch(() => {});

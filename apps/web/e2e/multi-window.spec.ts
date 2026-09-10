@@ -71,7 +71,7 @@ test.describe('multi-window vault isolation', () => {
     await ctxB.close();
   });
 
-  test('vault switcher picks a different vault in place; manager stays open, no popup', async ({ browser }) => {
+  test('vault switcher opens a different vault in a NEW window (Obsidian-like); current window stays', async ({ browser }) => {
     const ctxA = await browser.newContext();
     const ctxB = await browser.newContext();
     const pageA = await ctxA.newPage();
@@ -82,19 +82,24 @@ test.describe('multi-window vault isolation', () => {
     await expect(pageB.locator('.kb-vault-bar__name')).toHaveText('mw-b');
 
     // Window A (already on vault A) picks vault B in the vault manager → the
-    // pick switches window A to vault B IN PLACE. The manager stays open (its
-    // right panel is the picked vault's settings — external source roots), and
-    // no popup is spawned. 「在新窗口打开」 lives elsewhere (tab right-click,
-    // file panel), not on this gesture.
+    // pick opens a NEW window (popup) loading vault B, NOT replacing window A.
     await pageA.locator('.kb-vault-bar').click();
-    await expect(pageA.locator('.vm-overlay')).toBeVisible({ timeout: 5_000 });
+    const popupPromise = pageA.waitForEvent('popup');
     await pageA.locator('.vm-vault-item', { hasText: 'mw-b' }).click();
+    const popup = await popupPromise;
+    await popup.waitForURL(/vault=/);
+    expect(new URL(popup.url()).searchParams.get('vault')).toBe(vaultBId);
 
-    await expect(pageA.locator('.vm-overlay'), '选中后面板留住').toBeVisible();
-    await expect(pageA.locator('.kb-vault-bar__name')).toHaveText('mw-b');
-    expect(new URL(pageA.url()).searchParams.get('vault')).toBe(vaultBId);
-    expect(pageA.context().pages().length, '不开新窗口').toBe(1);
+    // 新窗口带着管理器直接打开（URL 上的 manage=1），右栏作用域就是刚选的仓库
+    // —— 「选仓库 → 配置它（挂外部素材根）」不需要在新窗口里再点开一次。
+    await expect(popup.locator('.vm-overlay')).toBeVisible({ timeout: 5_000 });
+    await expect(popup.locator('[data-testid="external-root-scope"]')).toHaveText('mw-b');
+    // 参数是一次性意图，打开后即剥掉，刷新/克隆这个 URL 不会再弹。
+    await expect.poll(() => new URL(popup.url()).searchParams.get('manage')).toBeNull();
 
+    // Window A is untouched — still pinned to vault A.
+    await expect(pageA.locator('.kb-vault-bar__name')).toHaveText('mw-a');
+    expect(new URL(pageA.url()).searchParams.get('vault')).toBe(vaultAId);
     // Window B untouched.
     await expect(pageB.locator('.kb-vault-bar__name')).toHaveText('mw-b');
     await ctxA.close();
