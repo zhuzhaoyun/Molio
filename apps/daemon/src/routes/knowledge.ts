@@ -18,8 +18,18 @@ import {
   getActiveVaultId,
   setActiveVaultId,
   listExternalRoots,
+  addExternalRoot,
+  removeExternalRoot,
 } from '../core/db.js';
-import { withinBoundary, resolveVirtualToReal, type ExternalRootRef } from '../core/external-roots.js';
+import {
+  withinBoundary,
+  resolveVirtualToReal,
+  validateExternalRoot,
+  createDirectoryLink,
+  removeDirectoryLink,
+  externalMountDir,
+  type ExternalRootRef,
+} from '../core/external-roots.js';
 import {
   scanTree,
   countFiles,
@@ -395,6 +405,86 @@ export function knowledgeRoutes(
       const message = err instanceof Error ? err.message : 'Failed to read file';
       return c.json({ error: { code: 'INTERNAL', message } }, 500);
     }
+  });
+
+  // ─── External source roots (read-only mounts) ───
+
+  // GET /api/knowledge/vaults/:id/external-roots — list mounts + liveness.
+  // `valid:false` means the target vanished since it was mounted; the registry
+  // row (and its dangling link) is kept so the UI can offer an unmount instead
+  // of silently dropping the user's configuration.
+  app.get('/vaults/:id/external-roots', (c) => {
+    const vault = getVault(db, c.req.param('id'));
+    if (!vault) return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
+    const roots = listExternalRoots(db, vault.id).map((r) => ({ ...r, valid: existsSync(r.target) }));
+    return c.json({ roots });
+  });
+
+  // POST /api/knowledge/vaults/:id/external-roots { target, label? } — mount.
+  // The only route in the feature that mutates the filesystem.
+  app.post('/vaults/:id/external-roots', async (c) => {
+    const vault = getVault(db, c.req.param('id'));
+    if (!vault) return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
+    const body = await c.req.json().catch(() => ({}));
+    const target = String(body.target ?? '').trim();
+    if (!target) return c.json({ error: { code: 'BAD_REQUEST', message: 'target is required' } }, 400);
+
+    const existing = listExternalRoots(db, vault.id);
+    try {
+      // Existence, and disjointness from both the vault and every registered
+      // root — two paths to the same file would break the read-only contract.
+      validateExternalRoot(vault.path, target, existing.map((r) => ({ label: r.label, target: r.target })));
+    } catch (err) {
+      return c.json({ error: { code: 'BAD_REQUEST', message: (err as Error).message } }, 400);
+    }
+
+    const label = String(body.label ?? path.basename(target)).trim();
+    if (!label || ILLEGAL_LABEL.test(label) || label === '.' || label === '..') {
+      return c.json({ error: { code: 'BAD_REQUEST', message: 'Invalid label' } }, 400);
+    }
+
+    // The container dir may already hold an in-vault file/dir with this name
+    // (writes directly under external/ are allowed — the mount is the link
+    // BELOW it). Refuse rather than clobber.
+    const linkPath = path.join(externalMountDir(vault.path), label);
+    if (existsSync(linkPath)) {
+      return c.json({ error: { code: 'CONFLICT', message: `Mount already exists: ${label}` } }, 409);
+    }
+    if (existing.some((r) => r.label === label)) {
+      return c.json({ error: { code: 'CONFLICT', message: `Label already in use: ${label}` } }, 409);
+    }
+
+    mkdirSync(externalMountDir(vault.path), { recursive: true });
+    try {
+      createDirectoryLink(target, linkPath);
+    } catch (err) {
+      return c.json({ error: { code: 'INTERNAL', message: (err as Error).message } }, 500);
+    }
+    try {
+      const row = addExternalRoot(db, vault.id, label, realpathSync(target));
+      // A newly mounted root adds watch coverage for its target.
+      vaultWatcher.watch(vault.id, vault.path).catch(() => {});
+      return c.json({ root: { ...row, valid: true } }, 201);
+    } catch (err) {
+      // Roll back the link so a DB failure cannot leave an unregistered mount.
+      try { removeDirectoryLink(linkPath); } catch { /* best-effort */ }
+      return c.json({ error: { code: 'CONFLICT', message: (err as Error).message } }, 409);
+    }
+  });
+
+  // DELETE /api/knowledge/vaults/:id/external-roots/:rootId — unmount.
+  // Drops the link and the registry row; a link already missing on disk (target
+  // deleted out of band) is not an error — the row still has to go.
+  app.delete('/vaults/:id/external-roots/:rootId', (c) => {
+    const vault = getVault(db, c.req.param('id'));
+    if (!vault) return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
+    const row = listExternalRoots(db, vault.id).find((r) => r.id === c.req.param('rootId'));
+    if (!row) return c.json({ error: { code: 'NOT_FOUND', message: 'Root not found' } }, 404);
+    const linkPath = path.join(externalMountDir(vault.path), row.label);
+    try { if (existsSync(linkPath)) removeDirectoryLink(linkPath); } catch { /* best-effort */ }
+    removeExternalRoot(db, vault.id, row.id);
+    vaultWatcher.watch(vault.id, vault.path).catch(() => {});
+    return c.body(null, 204);
   });
 
   // ─── Asset upload ───
@@ -800,6 +890,9 @@ function createVaultSSEStream(
     },
   };
 }
+
+/** Characters a mount label may not contain (Windows-illegal + path separators). */
+const ILLEGAL_LABEL = /[\\/:*?"<>|]/;
 
 const RAW_MIME: Record<string, string> = {
   '.png': 'image/png',
