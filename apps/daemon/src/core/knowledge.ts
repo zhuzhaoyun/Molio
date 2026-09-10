@@ -13,6 +13,7 @@ import { detectEncoding, decodeAll, decideReadStrategy, FileTooLargeError, ENCOD
 export { PRUNE_DIR_NAMES, isPrunedDirName, MAX_DIR_ENTRIES, MAX_TOTAL } from './vault-prune.js';
 import { isPrunedDirName, MAX_DIR_ENTRIES, MAX_TOTAL, warnOversizedDir } from './vault-prune.js';
 import { ThrottledWarn } from './throttled-warn.js';
+import { withinBoundary, safeRealpath, type ExternalRootRef } from './external-roots.js';
 
 // The "hit MAX_TOTAL … truncating" warning fires at most once per scan, but the
 // UI rescans the vault on every `tree-changed` event and on mount/vault-switch —
@@ -32,12 +33,17 @@ interface ScanCtx {
   stopped: boolean;
   maxDirEntries: number;
   maxTotal: number;
+  roots: ExternalRootRef[];
+  /** realpaths of symlink-derived directories already entered — cycle guard. */
+  seen: Set<string>;
 }
 
 /** Optional overrides for scanTree / countFiles caps (mainly for tests). */
 export interface ScanOpts {
   maxDirEntries?: number;
   maxTotal?: number;
+  /** Registered external roots — links resolving outside these are invisible. */
+  externalRoots?: ExternalRootRef[];
 }
 
 /**
@@ -51,6 +57,8 @@ export function scanTree(vaultPath: string, relBase = '', opts: ScanOpts = {}): 
     stopped: false,
     maxDirEntries: opts.maxDirEntries ?? MAX_DIR_ENTRIES,
     maxTotal: opts.maxTotal ?? MAX_TOTAL,
+    roots: opts.externalRoots ?? [],
+    seen: new Set<string>([safeRealpath(vaultPath)]),
   });
 }
 
@@ -77,11 +85,37 @@ function scanTreeInner(vaultPath: string, relBase: string, ctx: ScanCtx): TreeNo
     if (isPrunedDirName(entry.name)) continue;
     const relPath = relBase ? `${relBase}/${entry.name}` : entry.name;
 
-    if (entry.isDirectory()) {
+    let isDir = entry.isDirectory();
+    let isFile = entry.isFile();
+    let linkReal: string | null = null;
+
+    // A junction/symlink reports neither isDirectory nor isFile on its Dirent.
+    // Follow it, but only if the real target is inside the whitelist; otherwise
+    // treat it as invisible (not an error).
+    if (entry.isSymbolicLink()) {
+      try {
+        const linkAbs = path.join(absDir, entry.name);
+        const real = fs.realpathSync(linkAbs);
+        if (!withinBoundary(real, vaultPath, ctx.roots)) continue;
+        const st = fs.statSync(linkAbs);
+        isDir = st.isDirectory();
+        isFile = st.isFile();
+        linkReal = real;
+      } catch {
+        continue; // dangling link
+      }
+    }
+
+    if (isDir) {
+      // Cycle guard: only symlink-derived dirs can form loops.
+      if (linkReal) {
+        if (ctx.seen.has(linkReal)) continue;
+        ctx.seen.add(linkReal);
+      }
       const children = scanTreeInner(vaultPath, relPath, ctx);
       nodes.push({ name: entry.name, path: relPath, type: 'directory', children });
       if (ctx.stopped) break;
-    } else if (entry.isFile() && isSupportedFile(entry.name)) {
+    } else if (isFile && isSupportedFile(entry.name)) {
       ctx.visited++;
       if (ctx.visited > ctx.maxTotal) {
         if (!ctx.stopped) {
@@ -119,11 +153,15 @@ function scanTreeInner(vaultPath: string, relBase: string, ctx: ScanCtx): TreeNo
  * Pruned directories (PRUNE_DIR_NAMES / oversized) are not descended into.
  */
 export function countFiles(vaultPath: string, opts: ScanOpts = {}): number {
+  // Deliberately does NOT follow links: the count stays conservative and never
+  // queries the external-root whitelist (see scanTree for the followed variant).
   return countFilesInner(vaultPath, {
     visited: 0,
     stopped: false,
     maxDirEntries: opts.maxDirEntries ?? MAX_DIR_ENTRIES,
     maxTotal: opts.maxTotal ?? MAX_TOTAL,
+    roots: [],
+    seen: new Set<string>(),
   });
 }
 
