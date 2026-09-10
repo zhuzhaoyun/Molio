@@ -20,6 +20,12 @@
  * 额外一条（brief「建议」项，非必测）：源目录被从磁盘删除后，挂载行保留、标 `data-valid="false"`
  * 并可移除——daemon 的契约是「失效也返回该行，让 UI 提供 unmount」。
  *
+ * 其余三条是终审（whole-branch review）后的补测：
+ *   7. 拖放        —— 拖到挂载上被拒（不落到 vault 根），拖到面板空白处仍照常导入
+ *   8. 文件级只读  —— 挂载**文件**的右键菜单同样没有写操作（第 2 步只测了目录）
+ *   9. 无挂载对照  —— 一个自己就有 `external/` 文件夹、但没注册任何挂载的 vault，
+ *                     该目录必须仍是普通目录（可拖放、可编辑、可重命名）
+ *
  * 前置：`pnpm dev`（daemon :3100 + web :5173）。
  * Playwright 里没有 Electron，`window.__electron__.showDirectoryPicker` 不存在，
  * 挂载走的是设置面板的「内联路径输入」分支（与桌面端原生选择器共用同一个挂载 API）。
@@ -64,7 +70,13 @@ test.beforeAll(async () => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name: vaultName, path: vaultPath }),
   });
+  // Never let a failed POST slide through: `vaultId` would stay '' and every
+  // mount in this file would land in whatever vault the daemon has active —
+  // leaking a registry row + a link into the developer's real vault while the
+  // temp dirs are deleted underneath it.
+  expect(res.ok, `vault POST failed: ${res.status}`).toBe(true);
   vaultId = (await res.json()).id;
+  expect(vaultId, 'vault POST returned no id').toBeTruthy();
 });
 
 test.afterAll(async () => {
@@ -94,6 +106,9 @@ async function openVaultManager(page: Page) {
   if (!(await section.isVisible().catch(() => false))) {
     // activeVault 还没解析出来时右栏是空的 —— 显式在列表里选一次本 vault
     // （URL 已 pin 到同一个 vault，所以是原地切换、不会开新窗口）。
+    // 列表是异步渲染的（仓库 retries: 0），先等它出现再点，否则这里会静默
+    // 点空 → 后面等 section 可见时超时。
+    await expect(page.locator('.vm-vault-item').first()).toBeVisible({ timeout: 5_000 });
     await page.locator('.vm-vault-item').filter({ hasText: vaultName }).click();
     await page.locator('.kb-vault-bar').first().click();
   }
@@ -187,6 +202,18 @@ test('external root mounts read-only on the tree, stays readable, and unmounts',
   await expect(page.locator('[data-testid="kb-btn-typeset"]')).toHaveCount(0);
   await expect(page.locator('[data-testid="kb-btn-save"]')).toHaveCount(0);
 
+  // 4b. 挂载**文件**的右键菜单同样没有任何写操作 —— 只读是整棵子树的性质，
+  // 文件级回归（目录只读、文件却可重命名/删除）在这里必须挂。
+  await mountedFile.click({ button: 'right' });
+  await expect(page.locator('.ctx-menu')).toBeVisible({ timeout: 5_000 });
+  await expect(page.locator('[data-testid="kb-ctx-external-readonly"]')).toBeVisible();
+  for (const writeAction of ['重命名', '删除', '新建文件', '新建子文件夹']) {
+    await expect(page.locator('.ctx-menu-item').filter({ hasText: writeAction })).toHaveCount(0);
+  }
+  expect(await page.locator('.ctx-menu-item.is-danger').count()).toBe(0);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.ctx-menu')).toBeHidden();
+
   // ── 5. 对照组：vault 自己的内容不受只读影响 ──────────────────────────
   const notesGroup = page.locator('.kb-tree-group[data-drop-dir="notes"]');
   await expect(notesGroup).toBeVisible();
@@ -222,6 +249,128 @@ test('external root mounts read-only on the tree, stays readable, and unmounts',
   await closeVaultManager(page);
 
   await expect(treeGroupLabels(page, extLabel)).toHaveCount(0, { timeout: 10_000 });
+});
+
+test('a drop onto a mount is rejected, a drop on empty panel space still imports', async ({ page }) => {
+  const srcPath = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-e2e-extdrop-'));
+  const label = path.basename(srcPath);
+  let rootId = '';
+  try {
+    fs.writeFileSync(path.join(srcPath, 'kept.md'), '# kept\n');
+    const add = await fetch(`${DAEMON}/knowledge/vaults/${vaultId}/external-roots`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target: srcPath }),
+    });
+    expect(add.ok, `mount POST failed: ${add.status}`).toBe(true);
+    rootId = (await add.json()).root.id;
+
+    await openKb(page);
+    await treeGroupLabels(page, 'external').first().click();
+    const mountGroup = treeGroupLabels(page, label).first().locator('xpath=..');
+    await expect(mountGroup).toBeVisible({ timeout: 10_000 });
+    await expect(mountGroup).toHaveAttribute('data-readonly', 'true');
+
+    // 拖到只读挂载上：挂载子树自身的 drop handler 对外部文件是「静默放行」
+    // （不打 preventDefault），事件冒泡到面板；面板必须把它拒掉，而不是把
+    // 目标目录解析成空串（挂载节点没有 data-drop-dir）后导到 vault 根。
+    const droppedOnMount = await page.evaluate((labelText: string) => {
+      // 只看 group 自己的 label（`external` 组的 label 里不含挂载 label，
+      // 展开后它的 textContent 才包含子节点）。
+      const groups = Array.from(document.querySelectorAll('.kb-tree-group[data-readonly="true"]'));
+      const group = groups.find((g) => {
+        const lbl = g.querySelector(':scope > .kb-tree-group-label');
+        return (lbl?.textContent ?? '').includes(labelText);
+      }) as HTMLElement | undefined;
+      if (!group) return 'mount-group-not-found';
+      const dt = new DataTransfer();
+      dt.items.add(new File(['# nope'], 'rejected-in-mount.md', { type: 'text/markdown' }));
+      group.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: dt }));
+      group.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+      return 'ok';
+    }, label);
+    expect(droppedOnMount).toBe('ok');
+
+    // 对照组（正面）：拖到面板空白处仍然导到 vault 根 —— 拒绝不能把这条路径
+    // 也一起废掉。它同时是上面那条「没有导入」断言的同步点：这条导入跑完，
+    // 说明导入链路确实在工作。
+    await page.evaluate(() => {
+      const panel = document.querySelector('.kb-file-panel') as HTMLElement | null;
+      if (!panel) return;
+      const dt = new DataTransfer();
+      dt.items.add(new File(['# hello'], 'allowed-at-root.md', { type: 'text/markdown' }));
+      panel.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: dt }));
+      panel.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+    });
+    await expect(
+      page.locator('.kb-tree-item .kb-tree-name').filter({ hasText: 'allowed-at-root.md' }),
+    ).toBeVisible({ timeout: 10_000 });
+    expect(fs.existsSync(path.join(vaultPath, 'allowed-at-root.md'))).toBe(true);
+
+    // 负面：被拒的那次一个字节都没落盘，树里也不该出现。
+    expect(fs.existsSync(path.join(vaultPath, 'rejected-in-mount.md'))).toBe(false);
+    await expect(page.locator('.kb-tree-name').filter({ hasText: 'rejected-in-mount.md' })).toHaveCount(0);
+  } finally {
+    if (rootId) {
+      await fetch(`${DAEMON}/knowledge/vaults/${vaultId}/external-roots/${rootId}`, {
+        method: 'DELETE',
+      }).catch(() => {});
+    }
+    fs.rmSync(srcPath, { recursive: true, force: true });
+  }
+});
+
+test('a vault that mounted nothing treats its own external/ folder as ordinary', async ({ page }) => {
+  // 「没有外部素材根的 vault 行为不变」：`external/` 只是个普通目录名。
+  const ownVaultPath = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-e2e-extown-'));
+  fs.mkdirSync(path.join(ownVaultPath, 'external'), { recursive: true });
+  fs.writeFileSync(
+    path.join(ownVaultPath, 'external', 'mine.md'),
+    '# mine\n\nowned by an unmounted vault\n',
+  );
+  const ownName = `e2e-ext-own-${Date.now()}`;
+  const res = await fetch(`${DAEMON}/knowledge/vaults`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: ownName, path: ownVaultPath }),
+  });
+  expect(res.ok, `vault POST failed: ${res.status}`).toBe(true);
+  const ownVaultId = (await res.json()).id;
+  expect(ownVaultId).toBeTruthy();
+
+  try {
+    await page.goto(`/knowledge?vault=${ownVaultId}`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 10_000 });
+
+    // 目录节点照样是可拖放落点、不是只读节点（有挂载时这两个断言都会反转）。
+    const externalGroup = page.locator('.kb-tree-group[data-drop-dir="external"]');
+    await expect(externalGroup).toBeVisible({ timeout: 10_000 });
+    expect(await externalGroup.getAttribute('data-readonly')).toBeNull();
+
+    await treeGroupLabels(page, 'external').first().click();
+    const mine = page.locator('.kb-tree-item').filter({ hasText: 'mine.md' });
+    await expect(mine).toBeVisible({ timeout: 10_000 });
+    await mine.click();
+    await expect(page.locator('.kb-content-area #output')).toContainText(
+      'owned by an unmounted vault',
+    );
+
+    // 文档头部三个写入入口都在（只读时一个都不渲染）。
+    await expect(page.locator('[data-testid="kb-btn-edit"]').first()).toBeVisible();
+    await expect(page.locator('[data-testid="kb-btn-typeset"]').first()).toBeVisible();
+
+    // 右键菜单有写操作，没有只读说明项。
+    await mine.click({ button: 'right' });
+    await expect(page.locator('.ctx-menu')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.ctx-menu-item').filter({ hasText: '重命名' })).toHaveCount(1);
+    await expect(page.locator('.ctx-menu-item').filter({ hasText: '删除' })).toHaveCount(1);
+    await expect(page.locator('[data-testid="kb-ctx-external-readonly"]')).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.ctx-menu')).toBeHidden();
+  } finally {
+    await fetch(`${DAEMON}/knowledge/vaults/${ownVaultId}`, { method: 'DELETE' }).catch(() => {});
+    fs.rmSync(ownVaultPath, { recursive: true, force: true });
+  }
 });
 
 test('a mount whose target vanished is flagged invalid and stays removable', async ({ page }) => {

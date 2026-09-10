@@ -24,6 +24,14 @@ interface KbFileTreeProps {
   searchQuery: string;
   expandedPaths: Set<string>;
   /**
+   * Whether the active vault has ≥1 registered external source root. Read-only
+   * mounts are `external/<label>/…`, but `external/` is only special when such a
+   * root exists — a vault without mounts must treat it as an ordinary folder.
+   * Owned by the page (it fetches the roots) and threaded down, so the tree does
+   * not re-fetch per node.
+   */
+  hasExternalRoots?: boolean;
+  /**
    * Incremented by the parent to request the active file scroll itself into
    * view (used by the "locate" button). The effect in TreeNodeItem depends on
    * this token, so a change re-runs the scroll even if the file was already
@@ -59,6 +67,7 @@ export function KbFileTree({
   selectedFile,
   searchQuery,
   expandedPaths,
+  hasExternalRoots = false,
   revealToken,
   revealPath,
   onRevealConsumed,
@@ -94,6 +103,7 @@ export function KbFileTree({
           selectedFile={selectedFile}
           searchQuery={searchQuery}
           expandedPaths={expandedPaths}
+          hasExternalRoots={hasExternalRoots}
           revealToken={revealToken}
           revealPath={revealPath}
           onRevealConsumed={onRevealConsumed}
@@ -120,6 +130,7 @@ interface TreeNodeItemProps {
   selectedFile: string | null;
   searchQuery: string;
   expandedPaths: Set<string>;
+  hasExternalRoots?: boolean;
   revealToken?: number;
   revealPath?: string | null;
   onRevealConsumed?: () => void;
@@ -140,6 +151,7 @@ function TreeNodeItem({
   selectedFile,
   searchQuery,
   expandedPaths,
+  hasExternalRoots = false,
   revealToken,
   revealPath,
   onRevealConsumed,
@@ -165,7 +177,7 @@ function TreeNodeItem({
   // outside the vault (`assertWriteWithinVault`), so the tree must not offer
   // one. Distinct from `nodeProtected`, which additionally mutes the ingest
   // badge and the "加入 Wiki" action — reads of mounted sources stay allowed.
-  const nodeReadonly = isExternalPath(node.path);
+  const nodeReadonly = isExternalPath(node.path, hasExternalRoots);
   // Badge the read-only region once, at its top (`external` / `external/<label>`),
   // instead of repeating a lock on every mounted file.
   const showReadonlyBadge =
@@ -363,6 +375,7 @@ function TreeNodeItem({
               selectedFile={selectedFile}
               searchQuery={searchQuery}
               expandedPaths={expandedPaths}
+              hasExternalRoots={hasExternalRoots}
               revealToken={revealToken}
               revealPath={revealPath}
               onRevealConsumed={onRevealConsumed}

@@ -97,9 +97,15 @@ function resolveEntry(
       const real = fs.realpathSync(linkAbs);
       if (!withinBoundary(real, vaultPath, roots)) return null;
       // Pruning is name-based on the LINK name; a link whose real target is a
-      // pruned artifact dir (e.g. `notes -> <vault>/node_modules`) would
-      // otherwise be walked, bypassing vault-prune's FD/event-loop safeguard.
-      if (isPrunedDirName(path.basename(real))) return null;
+      // pruned artifact dir *inside the vault* (e.g. `notes -> <vault>/node_modules`)
+      // would otherwise be walked, bypassing vault-prune's FD/event-loop safeguard.
+      // Scoped to in-vault targets on purpose: a REGISTERED external root is
+      // explicitly requested by the user, so a target folder legitimately named
+      // `dist` / `out` / `.notes` must not silently vanish from the tree while
+      // the API keeps reporting the mount as valid ("registered ⇒ visible").
+      if (isWithinRoot(safeRealpath(vaultPath), real) && isPrunedDirName(path.basename(real))) {
+        return null;
+      }
       const st = fs.statSync(linkAbs);
       isDir = st.isDirectory();
       isFile = st.isFile();
@@ -131,11 +137,22 @@ function scanTreeInner(vaultPath: string, relBase: string, ctx: ScanCtx): TreeNo
   }
 
   for (const entry of entries) {
-    if (isPrunedDirName(entry.name)) continue;
     const relPath = relBase ? `${relBase}/${entry.name}` : entry.name;
 
+    // Resolve first: the name-based prune below must be able to tell a plain
+    // artifact directory from a REGISTERED external mount link whose label
+    // happens to be a pruned name. The default label is the target's basename,
+    // so mounting `/data/dist` or `~/.notes` yields exactly that — and hiding it
+    // would leave a mount the API reports as valid with no tree entry at all.
     const entryInfo = resolveEntry(entry, absDir, vaultPath, ctx.roots);
     if (!entryInfo) continue;
+
+    // Prune by entry name (node_modules / dist / .git …) — but never a link that
+    // resolves into a registered external root: that mount was explicitly
+    // requested, so its label must not silently hide it.
+    const isRegisteredMount =
+      !!entryInfo.linkReal && !isWithinRoot(safeRealpath(vaultPath), entryInfo.linkReal);
+    if (isPrunedDirName(entry.name) && !isRegisteredMount) continue;
 
     if (entryInfo.isDir) {
       // Cycle guard: only symlink-derived dirs can form loops.
@@ -1008,10 +1025,15 @@ export function searchFiles(
     // dataset is wasteful (readFileSync per file) and a real hit never lives there.
     if (entries.length > MAX_DIR_ENTRIES) return;
     for (const entry of entries) {
-      if (isPrunedDirName(entry.name)) continue;
       const abs = path.join(absDir, entry.name);
       const info = resolveEntry(entry, absDir, vaultPath, externalRoots);
       if (!info) continue;
+      // Same exception as scanTree: a registered external mount is never hidden
+      // by a pruned *label* (default label = the target's basename, so a mount
+      // of `/data/dist` is a link named `dist`).
+      const isRegisteredMount =
+        !!info.linkReal && !isWithinRoot(safeRealpath(vaultPath), info.linkReal);
+      if (isPrunedDirName(entry.name) && !isRegisteredMount) continue;
       if (info.isDir) {
         if (info.linkReal) {
           if (seen.has(info.linkReal)) continue;

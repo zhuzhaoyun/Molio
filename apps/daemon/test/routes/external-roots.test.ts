@@ -100,6 +100,32 @@ describe('external-root routes', () => {
     assert.equal(watchCalls.length, 2);
   });
 
+  // The registry contract is "registered ⇒ visible". A target whose basename is
+  // an artifact name (`dist`, `out`, `env`, anything dot-prefixed) is the normal
+  // case for a build-output mount, and the default label is that basename — so
+  // the two surfaces must still agree: valid:true in the list AND a node in the
+  // tree. Before the fix the tree swallowed it silently.
+  it('renders a mount whose target basename is a pruned name', async () => {
+    const { db, a } = app();
+    const vaultPath = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-v-'));
+    const ext = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'molio-x-')), 'dist');
+    fs.mkdirSync(ext);
+    fs.writeFileSync(path.join(ext, 'artifact.md'), 'hi');
+    const vault = createVault(db, 'V', vaultPath);
+
+    const add = await post(a, vault.id, { target: ext });
+    assert.equal(add.status, 201);
+    assert.equal((await json<any>(add)).root.label, 'dist');
+
+    const listed = (await json<any>(await a.request(`/vaults/${vault.id}/external-roots`))).roots;
+    assert.equal(listed[0].valid, true);
+
+    const tree = await json<any>(await a.request(`/vaults/${vault.id}/tree`));
+    const flat = JSON.stringify(tree.tree);
+    assert.ok(flat.includes('dist'), 'the pruned-name mount should render');
+    assert.ok(flat.includes('artifact.md'), 'mounted content should render');
+  });
+
   it('rejects a target inside the vault with 400', async () => {
     const { db, a } = app();
     const vaultPath = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-v-'));

@@ -118,6 +118,25 @@ describe('scanTree follows external-root links', () => {
     assert.equal(find(tree, 'external/notes'), undefined);
     assert.equal(find(tree, 'external/notes/dep.md'), undefined);
   });
+
+  // The other half of that rule: registered ⇒ visible. The default label is the
+  // target's basename, so mounting /data/dist or ~/.notes produces a link
+  // literally named `dist` / `.notes` — a valid, listed mount must not be hidden
+  // by the pruned-name rule, which only guards artifacts inside the vault.
+  it('shows a registered root whose label (target basename) is a pruned name', () => {
+    const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-v-'));
+    fs.mkdirSync(path.join(vault, 'external'), { recursive: true });
+    const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-ext-'));
+    const dist = path.join(parent, 'dist');
+    fs.mkdirSync(dist);
+    fs.writeFileSync(path.join(dist, 'artifact.md'), '# artifact');
+    createDirectoryLink(dist, path.join(vault, 'external', 'dist'));
+    const tree = scanTree(vault, '', {
+      externalRoots: [{ label: 'dist', target: fs.realpathSync(dist) }],
+    });
+    assert.ok(find(tree, 'external/dist'), 'the mount node itself must appear');
+    assert.ok(find(tree, 'external/dist/artifact.md'), 'mounted content must appear');
+  });
 });
 
 // Search is the other traversal of the vault: a mounted folder the tree shows
@@ -176,6 +195,22 @@ describe('searchFiles follows external-root links', () => {
       { label: 'notes', target: path.join(vault, 'node_modules') },
     ]);
     assert.deepEqual(results, []);
+  });
+
+  // Mirror of the scanTree case: a registered mount whose label is a pruned name
+  // must be searched too — tree and search share one visibility rule.
+  it('searches a registered root whose label is a pruned name', () => {
+    const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-v-'));
+    fs.mkdirSync(path.join(vault, 'external'), { recursive: true });
+    const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-ext-'));
+    const dist = path.join(parent, 'dist');
+    fs.mkdirSync(dist);
+    fs.writeFileSync(path.join(dist, 'artifact.md'), 'needle');
+    createDirectoryLink(dist, path.join(vault, 'external', 'dist'));
+    const { results } = searchFiles(vault, 'needle', 20, [
+      { label: 'dist', target: fs.realpathSync(dist) },
+    ]);
+    assert.deepEqual(results.map((r) => r.filePath), ['external/dist/artifact.md']);
   });
 
   // A mount link whose target is a folder of links, one of which escapes the

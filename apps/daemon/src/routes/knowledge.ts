@@ -366,13 +366,18 @@ export function knowledgeRoutes(
       // link, and any symlink nested inside the vault) must land inside the
       // vault or a registered root. Without this the stream served whatever a
       // link pointed at — resolveFilePath only checks the lexical path.
-      if (!withinBoundary(realpathSync(absPath), vault.path, roots)) {
+      //
+      // The boundary is proven on the realpath, so the stream must open THAT
+      // path: opening the lexical `absPath` re-walks the symlink and a swap
+      // between the two calls would stream an unvalidated file (TOCTOU).
+      const real = realpathSync(absPath);
+      if (!withinBoundary(real, vault.path, roots)) {
         return c.json({ error: { code: 'FORBIDDEN', message: 'Path traversal not allowed' } }, 403);
       }
 
       const ext = path.extname(absPath).toLowerCase();
       const mime = RAW_MIME[ext] ?? 'application/octet-stream';
-      const stat = statSync(absPath);
+      const stat = statSync(real);
       const fileSize = stat.size;
 
       // HTTP Range support — required for <video>/<audio> seek and efficient
@@ -385,7 +390,7 @@ export function knowledgeRoutes(
         const start = parseInt(rangeMatch[1]!, 10);
         const end = rangeMatch[2] ? parseInt(rangeMatch[2], 10) : fileSize - 1;
         const chunkSize = end - start + 1;
-        const partial = createReadStream(absPath, { start, end });
+        const partial = createReadStream(real, { start, end });
         return new Response(partial as any, {
           status: 206,
           headers: {
@@ -397,7 +402,7 @@ export function knowledgeRoutes(
         });
       }
 
-      const fullStream = createReadStream(absPath);
+      const fullStream = createReadStream(real);
       return new Response(fullStream as any, {
         headers: {
           'Content-Type': mime,
