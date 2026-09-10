@@ -69,6 +69,48 @@ export function scanTree(vaultPath: string, relBase = '', opts: ScanOpts = {}): 
   });
 }
 
+/**
+ * Resolve a directory entry's real type, following symlinks only when the real
+ * target stays inside the whitelist (vault ∪ registered external roots).
+ * Returns null when the entry must be treated as invisible — an unregistered
+ * or dangling link, or one whose real target is a pruned directory.
+ *
+ * `linkReal` is non-null only for symlink-derived entries and is what the
+ * callers' cycle guards key on (a plain directory can never close a loop).
+ */
+function resolveEntry(
+  entry: fs.Dirent,
+  absDir: string,
+  vaultPath: string,
+  roots: ExternalRootRef[],
+): { isDir: boolean; isFile: boolean; linkReal: string | null } | null {
+  let isDir = entry.isDirectory();
+  let isFile = entry.isFile();
+  let linkReal: string | null = null;
+
+  // A junction/symlink reports neither isDirectory nor isFile on its Dirent.
+  // Follow it, but only if the real target is inside the whitelist; otherwise
+  // treat it as invisible (not an error).
+  if (entry.isSymbolicLink()) {
+    try {
+      const linkAbs = path.join(absDir, entry.name);
+      const real = fs.realpathSync(linkAbs);
+      if (!withinBoundary(real, vaultPath, roots)) return null;
+      // Pruning is name-based on the LINK name; a link whose real target is a
+      // pruned artifact dir (e.g. `notes -> <vault>/node_modules`) would
+      // otherwise be walked, bypassing vault-prune's FD/event-loop safeguard.
+      if (isPrunedDirName(path.basename(real))) return null;
+      const st = fs.statSync(linkAbs);
+      isDir = st.isDirectory();
+      isFile = st.isFile();
+      linkReal = real;
+    } catch {
+      return null; // dangling link
+    }
+  }
+  return { isDir, isFile, linkReal };
+}
+
 function scanTreeInner(vaultPath: string, relBase: string, ctx: ScanCtx): TreeNode[] {
   if (ctx.stopped) return [];
   const absDir = relBase ? path.join(vaultPath, relBase) : vaultPath;
@@ -92,37 +134,24 @@ function scanTreeInner(vaultPath: string, relBase: string, ctx: ScanCtx): TreeNo
     if (isPrunedDirName(entry.name)) continue;
     const relPath = relBase ? `${relBase}/${entry.name}` : entry.name;
 
-    let isDir = entry.isDirectory();
-    let isFile = entry.isFile();
-    let linkReal: string | null = null;
+    const entryInfo = resolveEntry(entry, absDir, vaultPath, ctx.roots);
+    if (!entryInfo) continue;
 
-    // A junction/symlink reports neither isDirectory nor isFile on its Dirent.
-    // Follow it, but only if the real target is inside the whitelist; otherwise
-    // treat it as invisible (not an error).
-    if (entry.isSymbolicLink()) {
-      try {
-        const linkAbs = path.join(absDir, entry.name);
-        const real = fs.realpathSync(linkAbs);
-        if (!withinBoundary(real, vaultPath, ctx.roots)) continue;
-        const st = fs.statSync(linkAbs);
-        isDir = st.isDirectory();
-        isFile = st.isFile();
-        linkReal = real;
-      } catch {
-        continue; // dangling link
-      }
-    }
-
-    if (isDir) {
+    if (entryInfo.isDir) {
       // Cycle guard: only symlink-derived dirs can form loops.
-      if (linkReal) {
-        if (ctx.seen.has(linkReal)) continue;
-        ctx.seen.add(linkReal);
+      if (entryInfo.linkReal) {
+        if (ctx.seen.has(entryInfo.linkReal)) continue;
+        ctx.seen.add(entryInfo.linkReal);
       }
       const children = scanTreeInner(vaultPath, relPath, ctx);
+      // Release on unwind: cycles still terminate (an ancestor stays on the
+      // stack while its descendant re-enters), but the same real dir reached
+      // through two sibling links is no longer silently dropped, and the
+      // winner no longer depends on readdir order.
+      if (entryInfo.linkReal) ctx.seen.delete(entryInfo.linkReal);
       nodes.push({ name: entry.name, path: relPath, type: 'directory', children });
       if (ctx.stopped) break;
-    } else if (isFile && isSupportedFile(entry.name)) {
+    } else if (entryInfo.isFile && isSupportedFile(entry.name)) {
       ctx.visited++;
       if (ctx.visited > ctx.maxTotal) {
         if (!ctx.stopped) {
@@ -948,14 +977,24 @@ const MIME_TYPES: Record<string, string> = {
  * - 跳过超大目录（> MAX_DIR_ENTRIES，避免对 dump 出来的大目录逐文件 readFileSync）
  * - 只搜 TEXT_EXTS 内的文件
  * - limit 截断，truncated 标记是否还有更多
+ *
+ * `externalRoots` is the same whitelist scanTree takes: mounted folders are
+ * searched too (reported under their virtual `external/<label>/...` path), and
+ * a link outside the whitelist stays invisible. Omitting it degrades to the
+ * vault-only walk of a vault without external roots.
  */
 export function searchFiles(
   vaultPath: string,
   query: string,
   limit = 20,
+  externalRoots: ExternalRootRef[] = [],
 ): { results: SearchResult[]; truncated: boolean } {
   const results: SearchResult[] = [];
   let truncated = false;
+  // Cycle guard, mirroring scanTree's ctx.seen — only symlink-derived dirs can
+  // form loops. Entries are released when the walk unwinds, so it bounds depth
+  // without swallowing a second sibling mount of the same real folder.
+  const seen = new Set<string>([safeRealpath(vaultPath)]);
 
   const walk = (absDir: string): void => {
     if (truncated) return;
@@ -971,10 +1010,17 @@ export function searchFiles(
     for (const entry of entries) {
       if (isPrunedDirName(entry.name)) continue;
       const abs = path.join(absDir, entry.name);
-      if (entry.isDirectory()) {
+      const info = resolveEntry(entry, absDir, vaultPath, externalRoots);
+      if (!info) continue;
+      if (info.isDir) {
+        if (info.linkReal) {
+          if (seen.has(info.linkReal)) continue;
+          seen.add(info.linkReal);
+        }
         walk(abs);
+        if (info.linkReal) seen.delete(info.linkReal);
         if (truncated) return;
-      } else if (entry.isFile() && isTextFile(entry.name)) {
+      } else if (info.isFile && isTextFile(entry.name)) {
         try {
           const content = fs.readFileSync(abs, 'utf-8');
           const idx = content.indexOf(query);
@@ -982,7 +1028,7 @@ export function searchFiles(
             const start = Math.max(0, idx - 30);
             const end = Math.min(content.length, idx + query.length + 30);
             const snippet = content.slice(start, end).replace(/\s+/g, ' ').trim();
-            // vault 相对路径
+            // vault 相对路径（挂载文件即 external/<label>/... 虚路径）
             const relPath = path.relative(vaultPath, abs).split(path.sep).join('/');
             results.push({ filePath: relPath, fileName: entry.name, snippet });
             if (results.length >= limit) {

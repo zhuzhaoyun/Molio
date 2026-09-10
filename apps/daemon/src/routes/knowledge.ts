@@ -4,7 +4,7 @@
 
 import { Hono } from 'hono';
 import { stream } from 'hono/streaming';
-import { createReadStream, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { createReadStream, existsSync, mkdirSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type Database from 'better-sqlite3';
 import type { CreateVaultRequest } from '@molio/contracts';
@@ -17,7 +17,9 @@ import {
   addKbHistory,
   getActiveVaultId,
   setActiveVaultId,
+  listExternalRoots,
 } from '../core/db.js';
+import { withinBoundary, resolveVirtualToReal, type ExternalRootRef } from '../core/external-roots.js';
 import {
   scanTree,
   countFiles,
@@ -139,7 +141,8 @@ export function knowledgeRoutes(
     }
 
     try {
-      const tree = scanTree(vault.path);
+      // Mounted folders are part of the tree (external/<label>/...).
+      const tree = scanTree(vault.path, '', { externalRoots: externalRefs(db, vault.id) });
       // Annotate with ingest status (only if the vault has a .git repo).
       await annotateTreeStatus(vault.path, tree);
       return c.json({ tree });
@@ -192,7 +195,7 @@ export function knowledgeRoutes(
 
     try {
       const force = c.req.query('force') === '1';
-      const file = readFile(vault.path, relPath, { force });
+      const file = readFile(vault.path, relPath, { force, externalRoots: externalRefs(db, vault.id) });
       return c.json(file);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to read file';
@@ -225,7 +228,9 @@ export function knowledgeRoutes(
       return c.json({ error: { code: 'BAD_REQUEST', message: 'File path is required' } }, 400);
     }
 
-    const canonical = resolveCanonicalPath(vault.path, relPath);
+    // Must consult the registry: opening a mounted file from a chat link /
+    // molio:// / graph goes through this endpoint.
+    const canonical = resolveCanonicalPath(vault.path, relPath, externalRefs(db, vault.id));
     if (canonical === null) {
       return c.json({ error: { code: 'NOT_FOUND', message: 'File not found' } }, 404);
     }
@@ -337,7 +342,20 @@ export function knowledgeRoutes(
     }
 
     try {
-      const absPath = resolveFilePath(vault.path, relPath);
+      // A mounted binary (image / PDF / video) lives physically outside the
+      // vault, so map the virtual `external/<label>/...` path to its real
+      // target first; everything else is an ordinary vault path.
+      const roots = externalRefs(db, vault.id);
+      const absPath =
+        resolveVirtualToReal(vault.path, roots, relPath) ?? resolveFilePath(vault.path, relPath);
+      // Same readable boundary as readFile: the realpath (following the mount
+      // link, and any symlink nested inside the vault) must land inside the
+      // vault or a registered root. Without this the stream served whatever a
+      // link pointed at — resolveFilePath only checks the lexical path.
+      if (!withinBoundary(realpathSync(absPath), vault.path, roots)) {
+        return c.json({ error: { code: 'FORBIDDEN', message: 'Path traversal not allowed' } }, 403);
+      }
+
       const ext = path.extname(absPath).toLowerCase();
       const mime = RAW_MIME[ext] ?? 'application/octet-stream';
       const stat = statSync(absPath);
@@ -552,6 +570,12 @@ export function knowledgeRoutes(
       }
 
       const result = importFiles(vault.path, fileEntries, targetDir, conflict);
+      // Per-file reasons ride along verbatim (`unsupported_format`,
+      // `protected_dir`, …, `external_readonly`). The mounted source roots are
+      // read-only, so an import naming one lands here as `external_readonly`
+      // and MUST stay in the response — dropping it would look like a silent
+      // success. User-facing copy for the reason is Task 8's; the route's job
+      // is only to not swallow it.
       result.errors = [...perFileErrors, ...result.errors];
 
       // If conflict: "ask" and conflicts were found, return 409
@@ -664,7 +688,7 @@ export function knowledgeRoutes(
       : Math.min(rawLimit, 100);
 
     try {
-      const { results, truncated } = searchFiles(vault.path, q, limit);
+      const { results, truncated } = searchFiles(vault.path, q, limit, externalRefs(db, vault.id));
       return c.json({ results, truncated });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to search vault';
@@ -698,6 +722,11 @@ export function knowledgeRoutes(
   });
 
   return app;
+}
+
+/** Registered external roots as scanner refs (label + canonical target). */
+function externalRefs(db: Database.Database, vaultId: string): ExternalRootRef[] {
+  return listExternalRoots(db, vaultId).map((r) => ({ label: r.label, target: r.target }));
 }
 
 /** Safe count — return 0 if vault path doesn't exist yet. */
