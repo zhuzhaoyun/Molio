@@ -333,7 +333,11 @@ function TreeNodeItem({
             <span>{node.name}</span>
           )}
           {showReadonlyBadge && (
-            <span className="kb-tree-readonly-badge" title="只读挂载：不能新建 / 重命名 / 删除">
+            <span
+              className="kb-tree-readonly-badge"
+              data-testid="kb-tree-readonly-badge"
+              title="只读挂载：不能新建 / 重命名 / 删除"
+            >
               只读
             </span>
           )}

@@ -949,6 +949,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
       // Explain the short menu instead of silently dropping the write actions.
       items.push({
         label: '外部素材 · 只读',
+        testid: 'kb-ctx-external-readonly',
         disabled: true,
         title: '挂载的外部文件夹为只读，不能新建 / 重命名 / 删除',
       });
@@ -1183,8 +1184,18 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
 
   // ─── Save edited content ───
 
+  /**
+   * 当前文档是否只读（挂载的外部素材根 `external/<label>/…`）。
+   * 只读内容不给任何写入入口：编辑 / 排版 / 保存三个按钮都不渲染（KbMainContent
+   * 的 `readonly`），handleSave 也在这里兜一道——daemon 的 realpath 写入边界必然
+   * 拒绝这类写入，UI 不该先把按钮递出去再让用户撞报错。
+   */
+  const selectedFileReadonly = isExternalPath(kb.selectedFile ?? '');
+
   const handleSave = useCallback(async () => {
     if (!kb.selectedFile || kb.editedContent === null) return;
+    // 只读挂载：不发起写入（正常路径下按钮已隐藏，这里防漏网调用）
+    if (isExternalPath(kb.selectedFile)) return;
     try {
       await kb.saveFile(kb.selectedFile, kb.editedContent);
       showToast('已保存');
@@ -1380,7 +1391,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
               fileLoadError={kb.fileLoadError}
               vaultId={kb.activeVault?.id ?? null}
               vaultPath={kb.activeVault?.path ?? null}
-              isTypesetMode={kb.isTypesetMode}
+              isTypesetMode={kb.isTypesetMode && !selectedFileReadonly}
               themeConfig={kb.themeConfig}
               wikiInitialized={kb.wikiInitialized}
               hasUnsavedChanges={hasUnsavedChanges}
@@ -1395,8 +1406,9 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
               onOpenOutline={() => setShowOutline(true)}
               onAskAboutFile={handleOpenQa}
               showFileName={true}
-              isEditMode={kb.isEditMode}
+              isEditMode={kb.isEditMode && !selectedFileReadonly}
               onToggleEdit={kb.toggleEditMode}
+              readonly={selectedFileReadonly}
               onForceLoad={kb.forceLoadFile}
               onCloseTab={() => {
                 if (tabs.activeTabId) handleCloseTab(tabs.activeTabId);

@@ -26,7 +26,12 @@ export const EXTERNAL_MOUNT_DIR = 'external';
  * 写入点是否落在 vault 内（`assertWriteWithinVault`），凡是解析到 vault 外的
  * 写入一律拒绝。UI 用路径前缀判定只是保守近似——宁可把 `external/` 整个
  * 子树都当作只读，也不给用户一个必然失败的写入入口。
+ *
+ * 分隔符归一化与 daemon 的 `isExternalMountPath`（core/external-roots.ts）保持
+ * 逐字一致：现有调用点传的都是树里来的正斜杠路径，但两个函数在注释里互为镜像，
+ * 不能只在一侧兼容 Windows 反斜杠。
  */
 export function isExternalPath(relPath: string): boolean {
-  return relPath === EXTERNAL_MOUNT_DIR || relPath.startsWith(`${EXTERNAL_MOUNT_DIR}/`);
+  const p = relPath.replace(/\\/g, '/');
+  return p === EXTERNAL_MOUNT_DIR || p.startsWith(`${EXTERNAL_MOUNT_DIR}/`);
 }

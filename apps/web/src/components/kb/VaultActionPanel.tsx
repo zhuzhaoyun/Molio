@@ -138,12 +138,19 @@ function ExternalRootsSection({ vault, onChanged }: ExternalRootsSectionProps) {
     setError(null);
     const picker = nativeDirectoryPicker();
     if (picker) {
-      // Desktop: one click → native folder picker → mount.
+      // Desktop: one click → native folder picker → mount. `busy` is raised
+      // around the picker too — otherwise a double click opens two dialogs
+      // (mount() only sets it after the picker resolves).
+      setBusy(true);
       try {
         const picked = await picker();
         if (picked) await mount(picked);
-      } catch {
-        /* user cancelled or picker error — stay silent */
+      } catch (err) {
+        // Cancel resolves to null (desktop main.js), so a throw is a real
+        // failure — surface it instead of dropping it on the floor.
+        setError(`打开文件夹选择器失败：${err instanceof Error ? err.message : String(err)}`);
+      } finally {
+        setBusy(false);
       }
       return;
     }
@@ -199,6 +206,7 @@ function ExternalRootsSection({ vault, onChanged }: ExternalRootsSectionProps) {
             type="text"
             value={target}
             placeholder="文件夹路径，例如 /data/素材"
+            aria-label="外部文件夹路径"
             data-testid="external-root-target"
             disabled={busy}
             onChange={(e) => setTarget(e.target.value)}
