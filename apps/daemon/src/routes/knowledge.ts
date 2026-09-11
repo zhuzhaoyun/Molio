@@ -4,10 +4,10 @@
 
 import { Hono } from 'hono';
 import { stream } from 'hono/streaming';
-import { createReadStream, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { createReadStream, existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type Database from 'better-sqlite3';
-import type { CreateVaultRequest } from '@molio/contracts';
+import type { CreateVaultRequest, ExternalRoot, ExternalRootsResponse } from '@molio/contracts';
 import {
   listVaults,
   getVault,
@@ -17,7 +17,20 @@ import {
   addKbHistory,
   getActiveVaultId,
   setActiveVaultId,
+  listExternalRoots,
+  addExternalRoot,
+  removeExternalRoot,
+  rowToExternalRoot,
 } from '../core/db.js';
+import {
+  withinBoundary,
+  resolveVirtualToReal,
+  validateExternalRoot,
+  createDirectoryLink,
+  removeDirectoryLink,
+  externalMountDir,
+  type ExternalRootRef,
+} from '../core/external-roots.js';
 import {
   scanTree,
   countFiles,
@@ -40,6 +53,9 @@ import { VAULT_TREE_CHANGED_EVENT, type VaultWatcher } from '../core/vault-watch
 import type { RunManager } from '../core/RunManager.js';
 import { reconcileVault } from '../core/skills/vault-config.js';
 import { FileTooLargeError } from '../core/encoding.js';
+
+/** Characters a mount label may not contain (Windows-illegal + path separators). */
+const ILLEGAL_LABEL = /[\\/:*?"<>|]/;
 
 export function knowledgeRoutes(
   db: Database.Database,
@@ -139,7 +155,8 @@ export function knowledgeRoutes(
     }
 
     try {
-      const tree = scanTree(vault.path);
+      // Mounted folders are part of the tree (external/<label>/...).
+      const tree = scanTree(vault.path, '', { externalRoots: externalRefs(db, vault.id) });
       // Annotate with ingest status (only if the vault has a .git repo).
       await annotateTreeStatus(vault.path, tree);
       return c.json({ tree });
@@ -192,7 +209,7 @@ export function knowledgeRoutes(
 
     try {
       const force = c.req.query('force') === '1';
-      const file = readFile(vault.path, relPath, { force });
+      const file = readFile(vault.path, relPath, { force, externalRoots: externalRefs(db, vault.id) });
       return c.json(file);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to read file';
@@ -225,7 +242,9 @@ export function knowledgeRoutes(
       return c.json({ error: { code: 'BAD_REQUEST', message: 'File path is required' } }, 400);
     }
 
-    const canonical = resolveCanonicalPath(vault.path, relPath);
+    // Must consult the registry: opening a mounted file from a chat link /
+    // molio:// / graph goes through this endpoint.
+    const canonical = resolveCanonicalPath(vault.path, relPath, externalRefs(db, vault.id));
     if (canonical === null) {
       return c.json({ error: { code: 'NOT_FOUND', message: 'File not found' } }, 404);
     }
@@ -337,10 +356,28 @@ export function knowledgeRoutes(
     }
 
     try {
-      const absPath = resolveFilePath(vault.path, relPath);
+      // A mounted binary (image / PDF / video) lives physically outside the
+      // vault, so map the virtual `external/<label>/...` path to its real
+      // target first; everything else is an ordinary vault path.
+      const roots = externalRefs(db, vault.id);
+      const absPath =
+        resolveVirtualToReal(vault.path, roots, relPath) ?? resolveFilePath(vault.path, relPath);
+      // Same readable boundary as readFile: the realpath (following the mount
+      // link, and any symlink nested inside the vault) must land inside the
+      // vault or a registered root. Without this the stream served whatever a
+      // link pointed at — resolveFilePath only checks the lexical path.
+      //
+      // The boundary is proven on the realpath, so the stream must open THAT
+      // path: opening the lexical `absPath` re-walks the symlink and a swap
+      // between the two calls would stream an unvalidated file (TOCTOU).
+      const real = realpathSync(absPath);
+      if (!withinBoundary(real, vault.path, roots)) {
+        return c.json({ error: { code: 'FORBIDDEN', message: 'Path traversal not allowed' } }, 403);
+      }
+
       const ext = path.extname(absPath).toLowerCase();
       const mime = RAW_MIME[ext] ?? 'application/octet-stream';
-      const stat = statSync(absPath);
+      const stat = statSync(real);
       const fileSize = stat.size;
 
       // HTTP Range support — required for <video>/<audio> seek and efficient
@@ -353,7 +390,7 @@ export function knowledgeRoutes(
         const start = parseInt(rangeMatch[1]!, 10);
         const end = rangeMatch[2] ? parseInt(rangeMatch[2], 10) : fileSize - 1;
         const chunkSize = end - start + 1;
-        const partial = createReadStream(absPath, { start, end });
+        const partial = createReadStream(real, { start, end });
         return new Response(partial as any, {
           status: 206,
           headers: {
@@ -365,7 +402,7 @@ export function knowledgeRoutes(
         });
       }
 
-      const fullStream = createReadStream(absPath);
+      const fullStream = createReadStream(real);
       return new Response(fullStream as any, {
         headers: {
           'Content-Type': mime,
@@ -377,6 +414,136 @@ export function knowledgeRoutes(
       const message = err instanceof Error ? err.message : 'Failed to read file';
       return c.json({ error: { code: 'INTERNAL', message } }, 500);
     }
+  });
+
+  // ─── External source roots (read-only mounts) ───
+
+  // GET /api/knowledge/vaults/:id/external-roots — list mounts + liveness.
+  // `valid:false` covers both a target that vanished (folder deleted / drive
+  // unplugged) and a row whose link was removed out from under it. The registry
+  // row is kept either way so the UI can offer an unmount instead of silently
+  // dropping the user's configuration.
+  app.get('/vaults/:id/external-roots', (c) => {
+    const vault = getVault(db, c.req.param('id'));
+    if (!vault) return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
+    const roots: ExternalRootsResponse['roots'] = listExternalRoots(db, vault.id).map((r) => ({
+      ...rowToExternalRoot(r),
+      valid:
+        existsSync(r.target) &&
+        mountLinkState(path.join(externalMountDir(vault.path), r.label)) === 'link',
+    }));
+    return c.json({ roots });
+  });
+
+  // POST /api/knowledge/vaults/:id/external-roots { target, label? } — mount.
+  // The only route in the feature that mutates the filesystem.
+  app.post('/vaults/:id/external-roots', async (c) => {
+    const vault = getVault(db, c.req.param('id'));
+    if (!vault) return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
+    // A literal `null` body parses to null, so the fallback needs its own `??`.
+    const body = (await c.req.json().catch(() => ({}))) ?? {};
+    const target = String(body.target ?? '').trim();
+    if (!target) return c.json({ error: { code: 'BAD_REQUEST', message: 'target is required' } }, 400);
+
+    const existing = listExternalRoots(db, vault.id);
+    try {
+      // Existence, and disjointness from both the vault and every registered
+      // root — two paths to the same file would break the read-only contract.
+      validateExternalRoot(vault.path, target, existing.map((r) => ({ label: r.label, target: r.target })));
+    } catch (err) {
+      return c.json({ error: { code: 'BAD_REQUEST', message: (err as Error).message } }, 400);
+    }
+
+    const label = String(body.label ?? path.basename(target)).trim();
+    if (!label || ILLEGAL_LABEL.test(label) || label === '.' || label === '..') {
+      return c.json({ error: { code: 'BAD_REQUEST', message: 'Invalid label' } }, 400);
+    }
+
+    // The container dir may already hold an in-vault file/dir with this name
+    // (writes directly under external/ are allowed — the mount is the link
+    // BELOW it), or a leftover link from an earlier mount. Refuse rather than
+    // clobber. `mountLinkState` (lstat) and not `existsSync`: the latter is
+    // blind to a DANGLING link, which would then make the create below die with
+    // EEXIST and render the label permanently unmountable.
+    const linkPath = path.join(externalMountDir(vault.path), label);
+    if (mountLinkState(linkPath) !== 'absent') {
+      return c.json({ error: { code: 'CONFLICT', message: `Mount already exists: ${label}` } }, 409);
+    }
+    if (existing.some((r) => r.label === label)) {
+      return c.json({ error: { code: 'CONFLICT', message: `Label already in use: ${label}` } }, 409);
+    }
+
+    mkdirSync(externalMountDir(vault.path), { recursive: true });
+    try {
+      createDirectoryLink(target, linkPath);
+    } catch (err) {
+      // EEXIST here means something took the name between the check above and
+      // this call — a race, still a conflict, not a server fault.
+      if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
+        return c.json({ error: { code: 'CONFLICT', message: `Mount already exists: ${label}` } }, 409);
+      }
+      return c.json({ error: { code: 'INTERNAL', message: (err as Error).message } }, 500);
+    }
+    try {
+      const row = addExternalRoot(db, vault.id, label, realpathSync(target));
+      // A newly mounted root adds watch coverage for its target.
+      vaultWatcher.watch(vault.id, vault.path).catch(() => {});
+      // `valid` is true by construction here (the link was just created), and
+      // the rest of the shape matches the GET list item for item.
+      const root: ExternalRoot = { ...rowToExternalRoot(row), valid: true };
+      return c.json({ root }, 201);
+    } catch (err) {
+      // Roll back the link so a DB failure cannot leave an unregistered mount.
+      // If the rollback itself fails the invariant is genuinely broken, so that
+      // case is reported distinctly instead of masquerading as a conflict.
+      try {
+        removeDirectoryLink(linkPath);
+      } catch (rollbackErr) {
+        console.error('[knowledge] external-root rollback failed:', rollbackErr);
+        return c.json(
+          {
+            error: {
+              code: 'INTERNAL',
+              message: `Mount not registered and cleanup failed — a stale link remains at ${linkPath}`,
+            },
+          },
+          500,
+        );
+      }
+      // The duplicate-label conflict is already handled by the pre-check above,
+      // so anything thrown by the insert is an internal fault (DB/disk), not
+      // something the caller can fix by changing the request.
+      console.error('[knowledge] external-root registration failed:', err);
+      return c.json({ error: { code: 'INTERNAL', message: (err as Error).message } }, 500);
+    }
+  });
+
+  // DELETE /api/knowledge/vaults/:id/external-roots/:rootId — unmount.
+  // Unlinks ONLY when the path really is the mount link. `external/` is
+  // in-vault-writable by design, so a plain file/dir that has since taken the
+  // name must be left untouched. The registry row is dropped either way.
+  app.delete('/vaults/:id/external-roots/:rootId', (c) => {
+    const vault = getVault(db, c.req.param('id'));
+    if (!vault) return c.json({ error: { code: 'NOT_FOUND', message: 'Vault not found' } }, 404);
+    const row = listExternalRoots(db, vault.id).find((r) => r.id === c.req.param('rootId'));
+    if (!row) return c.json({ error: { code: 'NOT_FOUND', message: 'Root not found' } }, 404);
+
+    const linkPath = path.join(externalMountDir(vault.path), row.label);
+    // lstat-based, so a dangling link (target deleted out of band) is still
+    // recognised and removed — `existsSync` reports it missing and would orphan
+    // it forever: the row is gone afterwards, so nothing could clean it up.
+    if (mountLinkState(linkPath) === 'link') {
+      try {
+        removeDirectoryLink(linkPath);
+      } catch (err) {
+        // Keep the row: it is the only handle left that can retry the cleanup.
+        console.error('[knowledge] external-root unmount failed:', err);
+        return c.json({ error: { code: 'INTERNAL', message: (err as Error).message } }, 500);
+      }
+    }
+    removeExternalRoot(db, vault.id, row.id);
+    vaultWatcher.watch(vault.id, vault.path).catch(() => {});
+    return c.body(null, 204);
   });
 
   // ─── Asset upload ───
@@ -552,6 +719,12 @@ export function knowledgeRoutes(
       }
 
       const result = importFiles(vault.path, fileEntries, targetDir, conflict);
+      // Per-file reasons ride along verbatim (`unsupported_format`,
+      // `protected_dir`, …, `external_readonly`). The mounted source roots are
+      // read-only, so an import naming one lands here as `external_readonly`
+      // and MUST stay in the response — dropping it would look like a silent
+      // success. User-facing copy for the reason is Task 8's; the route's job
+      // is only to not swallow it.
       result.errors = [...perFileErrors, ...result.errors];
 
       // If conflict: "ask" and conflicts were found, return 409
@@ -664,7 +837,7 @@ export function knowledgeRoutes(
       : Math.min(rawLimit, 100);
 
     try {
-      const { results, truncated } = searchFiles(vault.path, q, limit);
+      const { results, truncated } = searchFiles(vault.path, q, limit, externalRefs(db, vault.id));
       return c.json({ results, truncated });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to search vault';
@@ -698,6 +871,31 @@ export function knowledgeRoutes(
   });
 
   return app;
+}
+
+/**
+ * Classify what occupies a mount path: `'absent'`, `'link'` (a directory link —
+ * POSIX dir symlink or Windows junction, both reported as symbolic links by
+ * `lstat`), or `'other'` (a plain file/directory).
+ *
+ * `lstat`, never `stat`/`existsSync`: a dangling link — the normal state once a
+ * mounted folder is deleted or its drive unplugged — still `lstat`s fine while
+ * `existsSync` calls it missing. That difference decides both whether a mount
+ * may be created here (a dangling link still occupies the name and would make
+ * `symlinkSync` fail with EEXIST) and whether an unmount may unlink the path
+ * (a plain in-vault file must survive).
+ */
+function mountLinkState(p: string): 'absent' | 'link' | 'other' {
+  try {
+    return lstatSync(p).isSymbolicLink() ? 'link' : 'other';
+  } catch {
+    return 'absent';
+  }
+}
+
+/** Registered external roots as scanner refs (label + canonical target). */
+function externalRefs(db: Database.Database, vaultId: string): ExternalRootRef[] {
+  return listExternalRoots(db, vaultId).map((r) => ({ label: r.label, target: r.target }));
 }
 
 /** Safe count — return 0 if vault path doesn't exist yet. */

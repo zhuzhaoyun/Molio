@@ -10,7 +10,7 @@
  *   'create'  → show create vault form
  */
 
-import { useState, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { Vault } from '@molio/contracts';
 import { VaultList } from './VaultList';
 import { VaultActionPanel } from './VaultActionPanel';
@@ -27,6 +27,9 @@ interface VaultManagerModalProps {
   onCreate: (name: string, path: string, description?: string) => Promise<void>;
   onOpen: (path: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
+  /** Fired after an external source root is mounted/unmounted, so the page can
+   *  refresh the file tree (the new `external/<label>` node). */
+  onExternalRootsChanged?: () => void;
 }
 
 export function VaultManagerModal({
@@ -38,9 +41,23 @@ export function VaultManagerModal({
   onCreate,
   onOpen,
   onDelete,
+  onExternalRootsChanged,
 }: VaultManagerModalProps) {
   const [view, setView] = useState<VaultManagerView>('list');
   const [creating, setCreating] = useState(false);
+
+  // Escape closes the panel — but never on top of the delete confirmation,
+  // which is a nested overlay that owns Escape while it is up.
+  useEffect(() => {
+    if (!show) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (document.querySelector('[data-testid="confirm-dialog"]')) return;
+      onClose();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [show, onClose]);
 
   const handleCreate = useCallback(
     async (name: string, path: string, description?: string) => {
@@ -82,47 +99,62 @@ export function VaultManagerModal({
 
         {/* Right: Action Panel / Create Form / Open Form */}
         <div className="vm-modal-right">
-          {view === 'list' ? (
-            <VaultActionPanel
-              onCreate={() => setView('create')}
-              onOpenLocal={async () => {
-                // Electron: use native directory picker
-                if (window.__electron__?.showDirectoryPicker) {
-                  try {
-                    const pickedPath = await window.__electron__.showDirectoryPicker();
-                    if (pickedPath) {
-                      await onOpen(pickedPath);
-                      setView('list');
-                    }
-                  } catch { /* user cancelled */ }
-                  return;
-                }
+          <button
+            type="button"
+            className="vm-close"
+            data-testid="vault-manager-close"
+            aria-label="关闭"
+            title="关闭"
+            onClick={onClose}
+          >
+            &times;
+          </button>
+          <div className="vm-panel-body">
+            {view === 'list' ? (
+              <VaultActionPanel
+                activeVault={vaults.find((v) => v.id === activeVaultId) ?? null}
+                hasVaults={vaults.length > 0}
+                onExternalRootsChanged={onExternalRootsChanged}
+                onCreate={() => setView('create')}
+                onOpenLocal={async () => {
+                  // Electron: use native directory picker
+                  if (window.__electron__?.showDirectoryPicker) {
+                    try {
+                      const pickedPath = await window.__electron__.showDirectoryPicker();
+                      if (pickedPath) {
+                        await onOpen(pickedPath);
+                        setView('list');
+                      }
+                    } catch { /* user cancelled */ }
+                    return;
+                  }
 
-                // Browser: show inline path input form
-                setView('open');
-              }}
-            />
-          ) : view === 'create' ? (
-            <CreateVaultForm
-              onCreate={handleCreate}
-              onCancel={handleBackToList}
-              isLoading={creating}
-            />
-          ) : (
-            <OpenVaultForm
-              onOpen={async (path: string) => {
-                setCreating(true);
-                try {
-                  await onOpen(path);
-                  setView('list');
-                } finally {
-                  setCreating(false);
-                }
-              }}
-              onCancel={handleBackToList}
-              isLoading={creating}
-            />
-          )}
+                  // Browser: show inline path input form
+                  setView('open');
+                }}
+              />
+            ) : view === 'create' ? (
+              <CreateVaultForm
+                onCreate={handleCreate}
+                onCancel={handleBackToList}
+                isLoading={creating}
+              />
+            ) : (
+              <OpenVaultForm
+                onOpen={async (path: string) => {
+                  setCreating(true);
+                  try {
+                    await onOpen(path);
+                    setView('list');
+                  } finally {
+                    setCreating(false);
+                  }
+                }}
+                onCancel={handleBackToList}
+                isLoading={creating}
+              />
+            )}
+          </div>
         </div>
       </div>
     </div>

@@ -438,9 +438,12 @@ export function useKnowledge(): UseKnowledgeReturn {
 
   const activeVault = vaults.find((v) => v.id === activeVaultId) ?? null;
 
+  // Switching does NOT dismiss the manager: the manager is also where a vault's
+  // own settings live (external source roots), and closing on pick forced a
+  // reopen for "pick the vault, then configure it". Leaving is explicit —
+  // the ✕, Escape, or an overlay click.
   const selectVault = useCallback((id: string) => {
     vaultStore.setActiveVaultId(id);
-    setShowVaultSwitcher(false);
   }, []);
 
   const createVault = useCallback(async (name: string, path: string, description?: string) => {

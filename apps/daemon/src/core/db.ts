@@ -10,7 +10,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
-import type { ChatMessage, Project, Conversation, ConversationHistoryItem, ConversationHistoryPage, ListHistoryQuery, Vault, KbHistoryEntry } from '@molio/contracts';
+import type { ChatMessage, Project, Conversation, ConversationHistoryItem, ConversationHistoryPage, ListHistoryQuery, Vault, KbHistoryEntry, ExternalRoot } from '@molio/contracts';
 
 type SqliteDb = Database.Database;
 
@@ -133,6 +133,20 @@ function migrate(db: SqliteDb): void {
 
     CREATE INDEX IF NOT EXISTS idx_kb_history_vault
       ON kb_history(vault_id, created_at DESC);
+
+    -- Registry of external folders mounted into a vault as read-only "source
+    -- roots" (task 1: storage only — the scanner/boundary checks/routes/UI
+    -- consume these rows later). label is the user-facing mount name and is
+    -- unique per vault; target is the absolute path outside the vault.
+    CREATE TABLE IF NOT EXISTS vault_external_roots (
+      id TEXT PRIMARY KEY,
+      vault_id TEXT NOT NULL,
+      label TEXT NOT NULL,
+      target TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      UNIQUE (vault_id, label),
+      FOREIGN KEY(vault_id) REFERENCES vaults(id) ON DELETE CASCADE
+    );
 
     -- Global skill library: metadata + the master switch (replaces the old
     -- ~/.molio/skills/manifest.json). kind: 'bundled' (multi-file, shipped) |
@@ -910,6 +924,53 @@ export function addKbHistory(db: SqliteDb, vaultId: string, action: string, deta
   ).run(randomUUID(), vaultId, action, detail, Date.now());
 }
 
+// ─── vault external roots ───
+
+export interface ExternalRootRow {
+  id: string;
+  vault_id: string;
+  label: string;
+  target: string;
+  created_at: number;
+}
+
+export function listExternalRoots(db: SqliteDb, vaultId: string): ExternalRootRow[] {
+  return db
+    .prepare('SELECT * FROM vault_external_roots WHERE vault_id = ? ORDER BY created_at ASC')
+    .all(vaultId) as ExternalRootRow[];
+}
+
+export function getExternalRootByLabel(db: SqliteDb, vaultId: string, label: string): ExternalRootRow | null {
+  return (db
+    .prepare('SELECT * FROM vault_external_roots WHERE vault_id = ? AND label = ?')
+    .get(vaultId, label) as ExternalRootRow | undefined) ?? null;
+}
+
+export function addExternalRoot(db: SqliteDb, vaultId: string, label: string, target: string): ExternalRootRow {
+  const row: ExternalRootRow = {
+    id: randomUUID(),
+    vault_id: vaultId,
+    label,
+    target,
+    created_at: Date.now(),
+  };
+  try {
+    db.prepare(
+      'INSERT INTO vault_external_roots (id, vault_id, label, target, created_at) VALUES (?, ?, ?, ?, ?)',
+    ).run(row.id, row.vault_id, row.label, row.target, row.created_at);
+  } catch (err) {
+    if (String((err as Error).message).includes('UNIQUE')) {
+      throw new Error(`External root label already in use: ${label}`);
+    }
+    throw err;
+  }
+  return row;
+}
+
+export function removeExternalRoot(db: SqliteDb, vaultId: string, id: string): void {
+  db.prepare('DELETE FROM vault_external_roots WHERE vault_id = ? AND id = ?').run(vaultId, id);
+}
+
 // ─── Row mappers ───
 
 function rowToProject(row: Record<string, unknown>): Project {
@@ -956,6 +1017,20 @@ function rowToVault(row: Record<string, unknown>): Vault {
     description: (row.description as string) ?? undefined,
     fileCount: 0, // Computed at tree-scan time
     createdAt: row.created_at as number,
+  };
+}
+
+/**
+ * camelCase view of a mount row for the API. `valid` is per-request liveness
+ * (target on disk + link intact), so it is added by the route, not here.
+ */
+export function rowToExternalRoot(row: ExternalRootRow): Omit<ExternalRoot, 'valid'> {
+  return {
+    id: row.id,
+    vaultId: row.vault_id,
+    label: row.label,
+    target: row.target,
+    createdAt: row.created_at,
   };
 }
 

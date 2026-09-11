@@ -13,6 +13,14 @@ import { detectEncoding, decodeAll, decideReadStrategy, FileTooLargeError, ENCOD
 export { PRUNE_DIR_NAMES, isPrunedDirName, MAX_DIR_ENTRIES, MAX_TOTAL } from './vault-prune.js';
 import { isPrunedDirName, MAX_DIR_ENTRIES, MAX_TOTAL, warnOversizedDir } from './vault-prune.js';
 import { ThrottledWarn } from './throttled-warn.js';
+import {
+  withinBoundary,
+  isWithinRoot,
+  safeRealpath,
+  isExternalMountPath,
+  resolveVirtualToReal,
+  type ExternalRootRef,
+} from './external-roots.js';
 
 // The "hit MAX_TOTAL … truncating" warning fires at most once per scan, but the
 // UI rescans the vault on every `tree-changed` event and on mount/vault-switch —
@@ -32,12 +40,17 @@ interface ScanCtx {
   stopped: boolean;
   maxDirEntries: number;
   maxTotal: number;
+  roots: ExternalRootRef[];
+  /** realpaths of symlink-derived directories already entered — cycle guard. */
+  seen: Set<string>;
 }
 
 /** Optional overrides for scanTree / countFiles caps (mainly for tests). */
 export interface ScanOpts {
   maxDirEntries?: number;
   maxTotal?: number;
+  /** Registered external roots — links resolving outside these are invisible. */
+  externalRoots?: ExternalRootRef[];
 }
 
 /**
@@ -51,7 +64,57 @@ export function scanTree(vaultPath: string, relBase = '', opts: ScanOpts = {}): 
     stopped: false,
     maxDirEntries: opts.maxDirEntries ?? MAX_DIR_ENTRIES,
     maxTotal: opts.maxTotal ?? MAX_TOTAL,
+    roots: opts.externalRoots ?? [],
+    seen: new Set<string>([safeRealpath(vaultPath)]),
   });
+}
+
+/**
+ * Resolve a directory entry's real type, following symlinks only when the real
+ * target stays inside the whitelist (vault ∪ registered external roots).
+ * Returns null when the entry must be treated as invisible — an unregistered
+ * or dangling link, or one whose real target is a pruned directory.
+ *
+ * `linkReal` is non-null only for symlink-derived entries and is what the
+ * callers' cycle guards key on (a plain directory can never close a loop).
+ */
+function resolveEntry(
+  entry: fs.Dirent,
+  absDir: string,
+  vaultPath: string,
+  roots: ExternalRootRef[],
+): { isDir: boolean; isFile: boolean; linkReal: string | null } | null {
+  let isDir = entry.isDirectory();
+  let isFile = entry.isFile();
+  let linkReal: string | null = null;
+
+  // A junction/symlink reports neither isDirectory nor isFile on its Dirent.
+  // Follow it, but only if the real target is inside the whitelist; otherwise
+  // treat it as invisible (not an error).
+  if (entry.isSymbolicLink()) {
+    try {
+      const linkAbs = path.join(absDir, entry.name);
+      const real = fs.realpathSync(linkAbs);
+      if (!withinBoundary(real, vaultPath, roots)) return null;
+      // Pruning is name-based on the LINK name; a link whose real target is a
+      // pruned artifact dir *inside the vault* (e.g. `notes -> <vault>/node_modules`)
+      // would otherwise be walked, bypassing vault-prune's FD/event-loop safeguard.
+      // Scoped to in-vault targets on purpose: a REGISTERED external root is
+      // explicitly requested by the user, so a target folder legitimately named
+      // `dist` / `out` / `.notes` must not silently vanish from the tree while
+      // the API keeps reporting the mount as valid ("registered ⇒ visible").
+      if (isWithinRoot(safeRealpath(vaultPath), real) && isPrunedDirName(path.basename(real))) {
+        return null;
+      }
+      const st = fs.statSync(linkAbs);
+      isDir = st.isDirectory();
+      isFile = st.isFile();
+      linkReal = real;
+    } catch {
+      return null; // dangling link
+    }
+  }
+  return { isDir, isFile, linkReal };
 }
 
 function scanTreeInner(vaultPath: string, relBase: string, ctx: ScanCtx): TreeNode[] {
@@ -74,14 +137,38 @@ function scanTreeInner(vaultPath: string, relBase: string, ctx: ScanCtx): TreeNo
   }
 
   for (const entry of entries) {
-    if (isPrunedDirName(entry.name)) continue;
     const relPath = relBase ? `${relBase}/${entry.name}` : entry.name;
 
-    if (entry.isDirectory()) {
+    // Resolve first: the name-based prune below must be able to tell a plain
+    // artifact directory from a REGISTERED external mount link whose label
+    // happens to be a pruned name. The default label is the target's basename,
+    // so mounting `/data/dist` or `~/.notes` yields exactly that — and hiding it
+    // would leave a mount the API reports as valid with no tree entry at all.
+    const entryInfo = resolveEntry(entry, absDir, vaultPath, ctx.roots);
+    if (!entryInfo) continue;
+
+    // Prune by entry name (node_modules / dist / .git …) — but never a link that
+    // resolves into a registered external root: that mount was explicitly
+    // requested, so its label must not silently hide it.
+    const isRegisteredMount =
+      !!entryInfo.linkReal && !isWithinRoot(safeRealpath(vaultPath), entryInfo.linkReal);
+    if (isPrunedDirName(entry.name) && !isRegisteredMount) continue;
+
+    if (entryInfo.isDir) {
+      // Cycle guard: only symlink-derived dirs can form loops.
+      if (entryInfo.linkReal) {
+        if (ctx.seen.has(entryInfo.linkReal)) continue;
+        ctx.seen.add(entryInfo.linkReal);
+      }
       const children = scanTreeInner(vaultPath, relPath, ctx);
+      // Release on unwind: cycles still terminate (an ancestor stays on the
+      // stack while its descendant re-enters), but the same real dir reached
+      // through two sibling links is no longer silently dropped, and the
+      // winner no longer depends on readdir order.
+      if (entryInfo.linkReal) ctx.seen.delete(entryInfo.linkReal);
       nodes.push({ name: entry.name, path: relPath, type: 'directory', children });
       if (ctx.stopped) break;
-    } else if (entry.isFile() && isSupportedFile(entry.name)) {
+    } else if (entryInfo.isFile && isSupportedFile(entry.name)) {
       ctx.visited++;
       if (ctx.visited > ctx.maxTotal) {
         if (!ctx.stopped) {
@@ -119,11 +206,15 @@ function scanTreeInner(vaultPath: string, relBase: string, ctx: ScanCtx): TreeNo
  * Pruned directories (PRUNE_DIR_NAMES / oversized) are not descended into.
  */
 export function countFiles(vaultPath: string, opts: ScanOpts = {}): number {
+  // Deliberately does NOT follow links: the count stays conservative and never
+  // queries the external-root whitelist (see scanTree for the followed variant).
   return countFilesInner(vaultPath, {
     visited: 0,
     stopped: false,
     maxDirEntries: opts.maxDirEntries ?? MAX_DIR_ENTRIES,
     maxTotal: opts.maxTotal ?? MAX_TOTAL,
+    roots: [],
+    seen: new Set<string>(),
   });
 }
 
@@ -167,16 +258,43 @@ function countFilesInner(dir: string, ctx: ScanCtx): number {
  * Read a file from a vault. Path is relative to vault root.
  * For text files, returns content as UTF-8 string.
  * For binary files (images, PDF, DOCX), content is empty — use raw file URL or openPath.
+ *
+ * `externalRoots` widens the readable boundary to the registered source roots
+ * (see external-roots.ts); without it only the vault itself is readable.
  */
-export function readFile(vaultPath: string, relPath: string, opts: { force?: boolean } = {}): FileContent {
+export function readFile(
+  vaultPath: string,
+  relPath: string,
+  opts: { force?: boolean; externalRoots?: ExternalRootRef[] } = {},
+): FileContent {
+  const roots = opts.externalRoots ?? [];
   // Normalize agent-absolute / ./-prefixed paths for disk resolution, but echo
   // the caller's original path in the response (existing API contract).
   const reqPath = relPath;
   relPath = toVaultRelativePath(vaultPath, relPath);
-  let resolved = resolveFilePath(vaultPath, relPath);
 
-  if (!fs.existsSync(resolved)) {
-    resolved = resolveWithFallbacks(vaultPath, relPath);
+  // A registered mount addresses a real folder OUTSIDE the vault, so it cannot
+  // go through resolveFilePath/fallbacks — resolve it against the registry and
+  // boundary-check the realpath below. An UNKNOWN label falls through to the
+  // normal resolution instead: `external/` is then just an ordinary vault
+  // folder, and a genuine (unregistered) mount link is still refused by the
+  // realpath boundary a few lines down.
+  let resolved: string;
+  let external = false;
+  const mountTarget = resolveVirtualToReal(vaultPath, roots, relPath);
+  if (mountTarget) {
+    if (!fs.existsSync(mountTarget)) {
+      const err = new Error(`File not found: ${relPath}`) as NodeJS.ErrnoException;
+      err.code = 'ENOENT';
+      throw err;
+    }
+    resolved = mountTarget;
+    external = true;
+  } else {
+    resolved = resolveFilePath(vaultPath, relPath);
+    if (!fs.existsSync(resolved)) {
+      resolved = resolveWithFallbacks(vaultPath, relPath);
+    }
   }
 
   if (!fs.existsSync(resolved)) {
@@ -185,9 +303,13 @@ export function readFile(vaultPath: string, relPath: string, opts: { force?: boo
     throw err;
   }
 
-  // Follow symlinks and re-validate the real path is still inside the vault
-  // before reading — defends against a symlink swapped in to escape the vault.
-  const real = resolveRealWithinVault(vaultPath, resolved);
+  // Follow symlinks and re-validate the real path is still inside the vault (or
+  // a registered external root) before reading — defends against a symlink
+  // swapped in to escape the boundary. Mounted paths are already outside the
+  // vault lexically, so only the realpath whitelist applies to them.
+  const real = external
+    ? realWithinBoundary(vaultPath, resolved, roots)
+    : resolveRealWithinVault(vaultPath, resolved, roots);
 
   const stat = fs.statSync(real);
   const mimeType = getMimeType(path.basename(real));
@@ -401,10 +523,33 @@ export function resolveFilePath(vaultPath: string, relPath: string): string {
  * matches. Used by the resolve API so the frontend can normalize assistant /
  * molio:// / wiki-link paths against the same logic readFile uses — keeping
  * "open from chat link" consistent with "open from directory".
+ *
+ * `externalRoots` mirrors readFile: a path under the virtual external namespace
+ * resolves against the registry, and its canonical form IS the virtual path
+ * (the on-disk target is meaningless to the tree, which lists mount content
+ * under `external/<label>/...`).
  */
-export function resolveCanonicalPath(vaultPath: string, relPath: string): string | null {
+export function resolveCanonicalPath(
+  vaultPath: string,
+  relPath: string,
+  externalRoots: ExternalRootRef[] = [],
+): string | null {
   if (!relPath) return null;
   relPath = toVaultRelativePath(vaultPath, relPath);
+  if (isExternalMountPath(relPath)) {
+    // Unknown label → fall through and treat `external/` as an ordinary vault
+    // folder (the realpath boundary below still refuses a genuine mount link).
+    const target = resolveVirtualToReal(vaultPath, externalRoots, relPath);
+    if (target) {
+      if (!fs.existsSync(target)) return null;
+      try {
+        realWithinBoundary(vaultPath, target, externalRoots);
+      } catch {
+        return null;
+      }
+      return relPath;
+    }
+  }
   let resolved: string;
   try {
     resolved = resolveFilePath(vaultPath, relPath);
@@ -416,11 +561,11 @@ export function resolveCanonicalPath(vaultPath: string, relPath: string): string
   }
   if (!fs.existsSync(resolved)) return null;
   try {
-    // Security: confirm the real path is still inside the vault (symlink-escape
-    // guard). We do NOT use the realpath for the relative path computation —
-    // scanTree stores paths relative to the (non-realpath) vaultPath, so we
-    // match that to keep tree node.path equality correct.
-    resolveRealWithinVault(vaultPath, resolved);
+    // Security: confirm the real path is still inside the vault or a whitelisted
+    // external root (symlink-escape guard). We do NOT use the realpath for the
+    // relative path computation — scanTree stores paths relative to the
+    // (non-realpath) vaultPath, so we match that to keep tree node.path equal.
+    resolveRealWithinVault(vaultPath, resolved, externalRoots);
   } catch {
     return null;
   }
@@ -443,28 +588,77 @@ function assertWithinVault(vaultPath: string, resolved: string): void {
 
 /**
  * Resolve the real on-disk path (following symlinks) and confirm it remains
- * inside the vault. Closes a TOCTOU/symlink-escape: between an existsSync
- * check and a later read, a file could be replaced with a symlink pointing
- * outside the vault, and statSync/readFileSync follow symlinks by default.
+ * inside the vault OR inside a registered external root. Closes a
+ * TOCTOU/symlink-escape: between an existsSync check and a later read, a file
+ * could be replaced with a symlink pointing outside the boundary, and
+ * statSync/readFileSync follow symlinks by default.
  *
  * The vault root itself may contain symlink components (e.g. macOS tmpdir
  * `/var` → `/private/var`), so we canonicalize both sides before comparing.
+ * `roots` is the whitelist; an empty list degrades to the vault-only boundary.
  */
-function resolveRealWithinVault(vaultPath: string, resolved: string): string {
+function resolveRealWithinVault(vaultPath: string, resolved: string, roots: ExternalRootRef[] = []): string {
+  // Lexical layer: the path string must not escape the vault. Kept separate
+  // from the realpath layer so `external/<label>/...` (lexically inside the
+  // vault, physically outside it) passes here and is judged below.
   assertWithinVault(vaultPath, resolved);
+  return realWithinBoundary(vaultPath, resolved, roots);
+}
+
+/**
+ * realpath the candidate and enforce the readable boundary (vault ∪ registered
+ * external roots). `withinBoundary` compares the path it is handed verbatim —
+ * it never realpaths — so the symlink resolution has to happen here.
+ */
+function realWithinBoundary(vaultPath: string, resolved: string, roots: ExternalRootRef[]): string {
   const real = fs.realpathSync(resolved);
-  // Canonicalize the vault root the same way so a symlinked root doesn't
-  // cause legitimate reads to be rejected.
-  let realVault: string;
-  try {
-    realVault = fs.realpathSync(path.resolve(vaultPath));
-  } catch {
-    realVault = path.resolve(vaultPath);
-  }
-  if (real !== realVault && !real.startsWith(realVault + path.sep)) {
+  if (!withinBoundary(real, vaultPath, roots)) {
     throw new Error('Path traversal not allowed');
   }
   return real;
+}
+
+/**
+ * True when a mutation's destination is physically inside the vault.
+ *
+ * A string prefix check cannot express this, so this resolves instead: Windows
+ * and default macOS filesystems are case-insensitive (`External/` names the
+ * same junction as `external/`), win32 additionally strips trailing dots/spaces
+ * and offers 8.3 short names (`external./…`, `EXTERNAL~1/…`), and a symlink
+ * inside the vault can alias any target. Paths are also routinely produced by
+ * an LLM, so spelling variants are the normal case, not the adversarial one.
+ *
+ * We resolve the destination's nearest EXISTING ancestor — the deepest
+ * component the OS will hand a realpath back for; for a file that does not
+ * exist yet that is its parent directory, i.e. where the write would land —
+ * and require the result to stay inside the vault. External roots are
+ * deliberately NOT part of this boundary: they are read-only.
+ *
+ * Accepted delta: a write routed through a vault-internal symlink pointing
+ * outside the vault is refused instead of followed.
+ */
+function isWriteWithinVault(resolved: string, vaultPath: string): boolean {
+  let probe = resolved;
+  while (!fs.existsSync(probe)) {
+    const parent = path.dirname(probe);
+    if (parent === probe) break; // filesystem root
+    probe = parent;
+  }
+  // safeRealpath, not realpathSync: a dangling link would otherwise throw a
+  // filesystem error here instead of being judged by the caller.
+  return isWithinRoot(safeRealpath(vaultPath), safeRealpath(probe));
+}
+
+/**
+ * Reject a mutation whose destination resolves outside the vault — the external
+ * source roots are folders Molio does not own (a link, not a copy), so a write
+ * there would silently edit files outside the vault.
+ */
+function assertWriteWithinVault(resolved: string, vaultPath: string): void {
+  if (isWriteWithinVault(resolved, vaultPath)) return;
+  const err = new Error('External source roots are read-only (cannot write outside the vault)') as NodeJS.ErrnoException;
+  err.code = 'E_EXTERNAL_READONLY';
+  throw err;
 }
 
 /**
@@ -473,9 +667,11 @@ function resolveRealWithinVault(vaultPath: string, resolved: string): string {
 export function writeFile(vaultPath: string, relPath: string, content: string): void {
   const absFile = path.join(vaultPath, relPath);
 
-  // Security: prevent path traversal (sibling-directory bypass)
+  // Security: prevent path traversal (sibling-directory bypass), then confirm
+  // where the write actually lands (symlink / case-insensitive aliases).
   const resolved = path.resolve(absFile);
   assertWithinVault(vaultPath, resolved);
+  assertWriteWithinVault(resolved, vaultPath);
 
   fs.mkdirSync(path.dirname(resolved), { recursive: true });
   fs.writeFileSync(resolved, content, 'utf-8');
@@ -489,6 +685,7 @@ export async function deleteFile(vaultPath: string, relPath: string): Promise<vo
 
   const resolved = path.resolve(absFile);
   assertWithinVault(vaultPath, resolved);
+  assertWriteWithinVault(resolved, vaultPath);
 
   if (fs.existsSync(resolved)) {
     await trash(resolved);
@@ -502,9 +699,14 @@ export function renamePath(vaultPath: string, oldRelPath: string, newRelPath: st
   const absOld = path.resolve(path.join(vaultPath, oldRelPath));
   const absNew = path.resolve(path.join(vaultPath, newRelPath));
 
-  // Security: both paths must be inside the vault
+  // Security: both paths must be inside the vault...
   assertWithinVault(vaultPath, absOld);
   assertWithinVault(vaultPath, absNew);
+  // ...and both must resolve there on disk. Both directions of a move matter:
+  // moving a mounted file out would remove it from the user's folder, moving
+  // one in would write to it.
+  assertWriteWithinVault(absOld, vaultPath);
+  assertWriteWithinVault(absNew, vaultPath);
 
   // Protected-dir guard: don't move files out of or into protected directories
   if (isInsideProtected(oldRelPath)) {
@@ -529,8 +731,9 @@ export function renamePath(vaultPath: string, oldRelPath: string, newRelPath: st
 export async function deleteDirectory(vaultPath: string, relPath: string): Promise<void> {
   const absDir = path.resolve(path.join(vaultPath, relPath));
 
-  // Security: prevent path traversal
+  // Security: prevent path traversal, then confirm where it resolves to
   assertWithinVault(vaultPath, absDir);
+  assertWriteWithinVault(absDir, vaultPath);
 
   if (fs.existsSync(absDir)) {
     await trash(absDir);
@@ -545,6 +748,7 @@ export function createDirectory(vaultPath: string, relPath: string): void {
 
   const resolved = path.resolve(absDir);
   assertWithinVault(vaultPath, resolved);
+  assertWriteWithinVault(resolved, vaultPath);
 
   fs.mkdirSync(resolved, { recursive: true });
 }
@@ -654,6 +858,14 @@ export function importFiles(
     // protected-dir check on the TARGET
     if (isInsideProtected(relPath)) {
       result.errors.push({ file: f.name, reason: 'protected_dir' });
+      continue;
+    }
+    // Read-only boundary, resolved rather than string-matched — a case variant,
+    // a vault-internal symlink alias or a link into an external root all land
+    // outside the vault. Reported per-file (bulk API) rather than thrown, so
+    // one rejected target never discards the rest of the batch.
+    if (!isWriteWithinVault(path.resolve(path.join(vaultPath, relPath)), vaultPath)) {
+      result.errors.push({ file: f.name, reason: 'external_readonly' });
       continue;
     }
     valid.push({ name: f.name, buffer: f.buffer, relPath });
@@ -782,14 +994,24 @@ const MIME_TYPES: Record<string, string> = {
  * - 跳过超大目录（> MAX_DIR_ENTRIES，避免对 dump 出来的大目录逐文件 readFileSync）
  * - 只搜 TEXT_EXTS 内的文件
  * - limit 截断，truncated 标记是否还有更多
+ *
+ * `externalRoots` is the same whitelist scanTree takes: mounted folders are
+ * searched too (reported under their virtual `external/<label>/...` path), and
+ * a link outside the whitelist stays invisible. Omitting it degrades to the
+ * vault-only walk of a vault without external roots.
  */
 export function searchFiles(
   vaultPath: string,
   query: string,
   limit = 20,
+  externalRoots: ExternalRootRef[] = [],
 ): { results: SearchResult[]; truncated: boolean } {
   const results: SearchResult[] = [];
   let truncated = false;
+  // Cycle guard, mirroring scanTree's ctx.seen — only symlink-derived dirs can
+  // form loops. Entries are released when the walk unwinds, so it bounds depth
+  // without swallowing a second sibling mount of the same real folder.
+  const seen = new Set<string>([safeRealpath(vaultPath)]);
 
   const walk = (absDir: string): void => {
     if (truncated) return;
@@ -803,12 +1025,24 @@ export function searchFiles(
     // dataset is wasteful (readFileSync per file) and a real hit never lives there.
     if (entries.length > MAX_DIR_ENTRIES) return;
     for (const entry of entries) {
-      if (isPrunedDirName(entry.name)) continue;
       const abs = path.join(absDir, entry.name);
-      if (entry.isDirectory()) {
+      const info = resolveEntry(entry, absDir, vaultPath, externalRoots);
+      if (!info) continue;
+      // Same exception as scanTree: a registered external mount is never hidden
+      // by a pruned *label* (default label = the target's basename, so a mount
+      // of `/data/dist` is a link named `dist`).
+      const isRegisteredMount =
+        !!info.linkReal && !isWithinRoot(safeRealpath(vaultPath), info.linkReal);
+      if (isPrunedDirName(entry.name) && !isRegisteredMount) continue;
+      if (info.isDir) {
+        if (info.linkReal) {
+          if (seen.has(info.linkReal)) continue;
+          seen.add(info.linkReal);
+        }
         walk(abs);
+        if (info.linkReal) seen.delete(info.linkReal);
         if (truncated) return;
-      } else if (entry.isFile() && isTextFile(entry.name)) {
+      } else if (info.isFile && isTextFile(entry.name)) {
         try {
           const content = fs.readFileSync(abs, 'utf-8');
           const idx = content.indexOf(query);
@@ -816,7 +1050,7 @@ export function searchFiles(
             const start = Math.max(0, idx - 30);
             const end = Math.min(content.length, idx + query.length + 30);
             const snippet = content.slice(start, end).replace(/\s+/g, ' ').trim();
-            // vault 相对路径
+            // vault 相对路径（挂载文件即 external/<label>/... 虚路径）
             const relPath = path.relative(vaultPath, abs).split(path.sep).join('/');
             results.push({ filePath: relPath, fileName: entry.name, snippet });
             if (results.length >= limit) {
