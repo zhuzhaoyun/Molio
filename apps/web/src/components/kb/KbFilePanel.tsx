@@ -22,6 +22,8 @@ interface KbFilePanelProps {
   selectedFile: string | null;
   searchQuery: string;
   vaultName: string;
+  /** Active vault has ≥1 registered external root — see KbFileTree. */
+  hasExternalRoots?: boolean;
   onSearchChange: (q: string) => void;
   onSelectFile: (path: string) => void;
   onNewFile: (parentPath?: string) => void;
@@ -61,6 +63,7 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
   selectedFile,
   searchQuery,
   vaultName,
+  hasExternalRoots = false,
   onSearchChange,
   onSelectFile,
   onNewFile,
@@ -228,6 +231,19 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
     document.querySelectorAll('.kb-tree-group.drag-target, .kb-tree-group-label.drag-target').forEach((el) => {
       el.classList.remove('drag-target');
     });
+
+    // Read-only mounts are not drop targets — reject the drop outright.
+    // A mounted group/file paints `drag-reject` and its own drop handler bails
+    // out of the external-files branch WITHOUT preventDefault, so the event
+    // reaches us; without this check the drop would resolve no target
+    // directory (mounts carry no `data-drop-dir`) and get imported at the vault
+    // ROOT — the mount says "refused", the write says "accepted, elsewhere".
+    // Same for an internal move: nothing may be moved into or out of a mount.
+    if ((e.target as HTMLElement).closest('[data-readonly]')) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
 
     // Internal drag (no Files type): drop on panel background = move to root.
     // Drops on a specific directory's group are handled by that group's own
@@ -534,6 +550,7 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
           selectedFile={selectedFile}
           searchQuery={searchQuery}
           expandedPaths={expandedPaths}
+          hasExternalRoots={hasExternalRoots}
           revealToken={revealToken}
           revealPath={revealPath}
           onRevealConsumed={handleRevealConsumed}

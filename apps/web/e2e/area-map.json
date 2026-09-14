@@ -80,7 +80,8 @@
         "kb-large-file-too-large",
         "pdf-preview",
         "chat-work-visibility",
-        "split-view"
+        "split-view",
+        "kb-external-roots"
       ]
     },
     "publish": {
@@ -412,6 +413,10 @@
     "chat-work-visibility": {
       "priority": "P1",
       "file": "chat-work-visibility.spec.ts"
+    },
+    "kb-external-roots": {
+      "priority": "P1",
+      "file": "kb-external-roots.spec.ts"
     }
   }
 }

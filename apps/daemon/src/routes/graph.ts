@@ -8,8 +8,9 @@ import { Hono } from 'hono';
 import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import type Database from 'better-sqlite3';
-import { getVault } from '../core/db.js';
+import { getVault, listExternalRoots } from '../core/db.js';
 import { scanTree, resolveFilePath } from '../core/knowledge.js';
+import type { ExternalRootRef } from '../core/external-roots.js';
 import type { GraphNode, GraphEdge, GraphData, DeadLinkInfo } from '@molio/contracts';
 
 /**
@@ -61,7 +62,8 @@ export function graphRoutes(db: Database.Database): Hono {
     }
 
     try {
-      const graphData = buildGraph(vault.path);
+      // Mounted folders contribute nodes too — the graph must match the tree.
+      const graphData = buildGraph(vault.path, externalRefs(db, vault.id));
       return c.json(graphData);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to build graph';
@@ -72,11 +74,18 @@ export function graphRoutes(db: Database.Database): Hono {
   return app;
 }
 
+/** Registered external roots as scanner refs (label + canonical target). */
+function externalRefs(db: Database.Database, vaultId: string): ExternalRootRef[] {
+  return listExternalRoots(db, vaultId).map((r) => ({ label: r.label, target: r.target }));
+}
+
 /**
  * Scan all .md files in a vault, parse [[wikilinks]], and build a graph.
+ * `externalRoots` is the same whitelist scanTree takes — mounted markdown is
+ * indexed under its virtual `external/<label>/...` path.
  */
-export function buildGraph(vaultPath: string): GraphData {
-  const tree = scanTree(vaultPath);
+export function buildGraph(vaultPath: string, externalRoots: ExternalRootRef[] = []): GraphData {
+  const tree = scanTree(vaultPath, '', { externalRoots });
 
   // Collect all .md files (nodes)
   const mdFiles: { name: string; path: string }[] = [];

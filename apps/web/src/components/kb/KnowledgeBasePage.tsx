@@ -20,7 +20,7 @@ import { OutlinePanel } from './OutlinePanel';
 import { SearchPanel } from './SearchPanel';
 import { VaultManagerModal } from './VaultManager';
 import { PublishForm, type PublishFormData } from '../resources/PublishForm';
-import { PUBLISH_TAB_ID, GRAPH_TAB_ID } from './kb-constants';
+import { PUBLISH_TAB_ID, GRAPH_TAB_ID, isExternalPath } from './kb-constants';
 import { GraphPage } from '../graph/GraphPage';
 import { graphViewStore } from '../../stores/graphViewStore';
 import { currentContextStore } from '../../stores/currentContextStore';
@@ -84,6 +84,7 @@ function summarizeErrors(errors: Array<{ file: string; reason: string }>): strin
   if (counts['file_too_large']) parts.push(`${counts['file_too_large']} 个超过 50MB 限制`);
   if (counts['illegal_chars']) parts.push(`${counts['illegal_chars']} 个文件名含非法字符`);
   if (counts['protected_dir']) parts.push(`${counts['protected_dir']} 个目标为受保护目录`);
+  if (counts['external_readonly']) parts.push(`${counts['external_readonly']} 个目标为只读的外部素材目录`);
   if (counts['rename_exhausted']) parts.push(`${counts['rename_exhausted']} 个重命名失败`);
   if (parts.length === 0) parts.push(`${errors.length} 个文件无法导入`);
   return parts.join('，');
@@ -267,6 +268,41 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     return unsub;
   }, [kb.refreshTree]);
 
+  // ─── 外部素材根（只读挂载）是否存在的开关 ───
+  //
+  // `external/` 这个名字本身没有特殊性：没有挂载的 vault 里它就是个普通文件夹，
+  // 必须和本特性引入前完全一样（可写）。所以只读判定统一以「本 vault 有 ≥1 个
+  // 已注册 root」为前提，由页面取一次并往下传，树里不重复请求。
+  // 取不到挂载列表时不把内容降级为只读（fail-open）：真正的写入边界在 daemon，
+  // 而「没有挂载的 vault 行为不变」是硬契约。
+  const [hasExternalRoots, setHasExternalRoots] = useState(false);
+  const externalRootsReqRef = useRef(0);
+  const refreshExternalRoots = useCallback(async () => {
+    const vaultId = kb.activeVault?.id;
+    const req = ++externalRootsReqRef.current;
+    if (!vaultId) {
+      setHasExternalRoots(false);
+      return;
+    }
+    try {
+      const roots = await api.listExternalRoots(vaultId);
+      if (req === externalRootsReqRef.current) setHasExternalRoots(roots.length > 0);
+    } catch {
+      if (req === externalRootsReqRef.current) setHasExternalRoots(false);
+    }
+  }, [kb.activeVault?.id]);
+
+  // 切库时重新判定；挂载/解除挂载走 VaultActionPanel 的 onChanged 回调。
+  useEffect(() => {
+    void refreshExternalRoots();
+  }, [refreshExternalRoots]);
+
+  // 挂载变化后既要刷新树（新增/移除 external/<label>），也要重新判定只读开关。
+  const handleExternalRootsChanged = useCallback(() => {
+    void kb.refreshTree();
+    void refreshExternalRoots();
+  }, [kb.refreshTree, refreshExternalRoots]);
+
   // Import conflict dialog state
   const [conflictDialog, setConflictDialog] = useState<{
     show: boolean;
@@ -434,6 +470,18 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams, openGraphTab]);
 
+  // ?manage=1（仓库管理器选中别的仓库时，新窗口带上的参数）：等 vault 解析出来
+  // 就自动打开管理器 —— 右栏此时即该仓库的外部素材根设置。随后去掉参数，刷新或
+  // 克隆这个 URL 时不再弹。与上面 ?panel=graph 同一个「参数即一次性意图」套路。
+  useEffect(() => {
+    if (searchParams.get('manage') !== '1') return;
+    if (!kb.activeVault?.id) return; // 右栏要有作用域，先等 vault 就绪
+    kb.setShowVaultSwitcher(true);
+    const next = new URLSearchParams(searchParams);
+    next.delete('manage');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams, kb.activeVault?.id, kb.setShowVaultSwitcher]);
+
   // ─── Navigation history: tab-scoped view history ───
   // Records the order of views the user has visited (files AND the graph tab).
   // Subscribing to activeTabId keeps it in sync with every activation (open
@@ -555,12 +603,19 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
    * even if a vault is persisted/auto-selected) does the pick load in place.
    * Note: must key on the URL, not kb.activeVault — activeVault falls back to
    * the persisted default, which would wrongly treat a first-open as cross-vault.
+   *
+   * The new window carries `manage=1` so it comes up with the vault manager
+   * already open, scoped to the picked vault: the common reason to pick a vault
+   * here is to configure it (external source roots), and without the flag the
+   * new window would drop the user into a bare tree, forcing them to reopen
+   * the manager they just used. The flag is stripped after the first open, so
+   * reloads and cloned URLs don't re-pop the modal.
    */
   const handleVaultPick = useCallback((id: string) => {
     const pinnedVaultId = new URLSearchParams(window.location.search).get('vault');
     if (pinnedVaultId && pinnedVaultId !== id) {
       kb.setShowVaultSwitcher(false);
-      openInNewWindow(`/knowledge?vault=${encodeURIComponent(id)}`);
+      openInNewWindow(`/knowledge?vault=${encodeURIComponent(id)}&manage=1`);
     } else {
       kb.selectVault(id);
     }
@@ -881,6 +936,11 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
 
     const items: MenuItem[] = [];
 
+    // Mounted external sources (`external/<label>/…`) are read-only: the daemon
+    // rejects any write resolving outside the vault, so never offer new /
+    // rename / delete on them. Reading, asking and copy-path stay available.
+    const readonly = isExternalPath(node.path, hasExternalRoots);
+
     if (node.type === 'file') {
       items.push({
         label: '打开',
@@ -902,7 +962,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
           panelRef.current?.openQa({ filePath: node.path, vaultId: kb.activeVault?.id ?? null, selectedText: null });
         },
       });
-    } else {
+    } else if (!readonly) {
       // Directory: offer create file / subfolder inside
       items.push({
         label: '新建文件',
@@ -937,6 +997,17 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
       });
 
       items.push({ divider: true });
+    }
+
+    if (readonly) {
+      // Explain the short menu instead of silently dropping the write actions.
+      items.push({
+        label: '外部素材 · 只读',
+        testid: 'kb-ctx-external-readonly',
+        disabled: true,
+        title: '挂载的外部文件夹为只读，不能新建 / 重命名 / 删除',
+      });
+      return items;
     }
 
     items.push({
@@ -985,7 +1056,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     }
 
     return items;
-  }, [ctxMenu, kb, showToast, handleNewFile, handleNewFolder, handleSelectFile, handleOpenInNewTab, handleDeleteFile, handleDeleteFolder]);
+  }, [ctxMenu, kb, hasExternalRoots, showToast, handleNewFile, handleNewFolder, handleSelectFile, handleOpenInNewTab, handleDeleteFile, handleDeleteFolder]);
 
   // ─── Inline rename ───
 
@@ -1167,15 +1238,26 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
 
   // ─── Save edited content ───
 
+  /**
+   * 当前文档是否只读（挂载的外部素材根 `external/<label>/…`，且本 vault 确实
+   * 有挂载——见 refreshExternalRoots 的说明）。
+   * 只读内容不给任何写入入口：编辑 / 排版 / 保存三个按钮都不渲染（KbMainContent
+   * 的 `readonly`），handleSave 也在这里兜一道——daemon 的 realpath 写入边界必然
+   * 拒绝这类写入，UI 不该先把按钮递出去再让用户撞报错。
+   */
+  const selectedFileReadonly = isExternalPath(kb.selectedFile ?? '', hasExternalRoots);
+
   const handleSave = useCallback(async () => {
     if (!kb.selectedFile || kb.editedContent === null) return;
+    // 只读挂载：不发起写入（正常路径下按钮已隐藏，这里防漏网调用）
+    if (isExternalPath(kb.selectedFile, hasExternalRoots)) return;
     try {
       await kb.saveFile(kb.selectedFile, kb.editedContent);
       showToast('已保存');
     } catch (err) {
       showToast(`保存失败：${err instanceof Error ? err.message : String(err)}`);
     }
-  }, [kb.selectedFile, kb.editedContent, kb.saveFile, showToast]);
+  }, [kb.selectedFile, kb.editedContent, kb.saveFile, hasExternalRoots, showToast]);
 
   const hasUnsavedChanges = kb.editedContent !== null;
 
@@ -1267,6 +1349,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
         selectedFile={kb.selectedFile}
         searchQuery={kb.searchQuery}
         vaultName={kb.activeVault?.name ?? ''}
+        hasExternalRoots={hasExternalRoots}
         onSearchChange={kb.setSearchQuery}
         onSelectFile={handleSelectFile}
         onNewFile={handleNewFile}
@@ -1364,7 +1447,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
               fileLoadError={kb.fileLoadError}
               vaultId={kb.activeVault?.id ?? null}
               vaultPath={kb.activeVault?.path ?? null}
-              isTypesetMode={kb.isTypesetMode}
+              isTypesetMode={kb.isTypesetMode && !selectedFileReadonly}
               themeConfig={kb.themeConfig}
               wikiInitialized={kb.wikiInitialized}
               hasUnsavedChanges={hasUnsavedChanges}
@@ -1379,8 +1462,9 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
               onOpenOutline={() => setShowOutline(true)}
               onAskAboutFile={handleOpenQa}
               showFileName={true}
-              isEditMode={kb.isEditMode}
+              isEditMode={kb.isEditMode && !selectedFileReadonly}
               onToggleEdit={kb.toggleEditMode}
+              readonly={selectedFileReadonly}
               onForceLoad={kb.forceLoadFile}
               onCloseTab={() => {
                 if (tabs.activeTabId) handleCloseTab(tabs.activeTabId);
@@ -1518,6 +1602,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
         onCreate={kb.createVault}
         onOpen={kb.openVault}
         onDelete={kb.deleteVault}
+        onExternalRootsChanged={handleExternalRootsChanged}
       />
 
       {/* Import modal */}

@@ -116,6 +116,12 @@ interface KbMainContentProps {
   /** 是否为编辑模式（仅文本文件） */
   isEditMode?: boolean;
   onToggleEdit?: () => void;
+  /**
+   * 只读内容（挂载的外部素材根 `external/<label>/…`）：隐藏 编辑 / 排版 / 保存
+   * 三个写入入口。daemon 侧 `assertWriteWithinVault` 必然拒绝这类写入，UI 不
+   * 应该先把按钮递到用户面前再让他撞一次报错。
+   */
+  readonly?: boolean;
   /** Callback when user selects text and clicks the float "就此提问" button. */
   onAskAboutSelection?: (selectedText: string) => void;
   /** Open the document outline panel. */
@@ -156,6 +162,7 @@ export function KbMainContent({
   showFileName = true,
   isEditMode = false,
   onToggleEdit,
+  readonly = false,
   onAskAboutSelection,
   onOpenOutline,
   onAskAboutFile,
@@ -473,8 +480,14 @@ export function KbMainContent({
           {category === 'text' && selectedFile && !isCmPath && (
             <>
               {/* Save — only in editing modes (read mode has nothing to save) */}
-              {onSave && (isEditMode || isTypesetMode) && (
-                <button type="button" className="kb-btn kb-btn-ghost" onClick={onSave} title={t('kb.save')}>
+              {onSave && !readonly && (isEditMode || isTypesetMode) && (
+                <button
+                  type="button"
+                  className="kb-btn kb-btn-ghost"
+                  onClick={onSave}
+                  title={t('kb.save')}
+                  data-testid="kb-btn-save"
+                >
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
                     <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
                     <polyline points="17 21 17 13 7 13 7 21" />
@@ -502,7 +515,9 @@ export function KbMainContent({
               )}
 
               {/* Typeset toggle — signature action. Read mode: T icon + "排版"
-                  label (entry, prominent). Typeset mode: exit icon only (leave). */}
+                  label (entry, prominent). Typeset mode: exit icon only (leave).
+                  Hidden for read-only mounts: 排版 is an edit-and-publish loop. */}
+              {!readonly && (
               <button
                 type="button"
                 className={`kb-btn ${isTypesetMode ? 'is-active' : ''}`}
@@ -525,6 +540,7 @@ export function KbMainContent({
                 )}
                 {!isTypesetMode && <span>{t('kb.typeset')}</span>}
               </button>
+              )}
             </>
           )}
 
@@ -765,8 +781,9 @@ export function KbMainContent({
             </button>
           )}
 
-          {/* Edit / Read toggle — markdown 专属（PDF 不支持编辑，不显示） */}
-          {category === 'text' && !isTypesetMode && !isCmPath && (
+          {/* Edit / Read toggle — markdown 专属（PDF 不支持编辑，不显示）。
+              只读挂载不显示：编辑 + 保存是一条必然失败的写入链路。 */}
+          {category === 'text' && !isTypesetMode && !isCmPath && !readonly && (
             <button
               type="button"
               className={`kb-btn kb-btn-ghost ${isEditMode ? 'is-active' : ''}`}

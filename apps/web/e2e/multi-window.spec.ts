@@ -90,6 +90,13 @@ test.describe('multi-window vault isolation', () => {
     await popup.waitForURL(/vault=/);
     expect(new URL(popup.url()).searchParams.get('vault')).toBe(vaultBId);
 
+    // 新窗口带着管理器直接打开（URL 上的 manage=1），右栏作用域就是刚选的仓库
+    // —— 「选仓库 → 配置它（挂外部素材根）」不需要在新窗口里再点开一次。
+    await expect(popup.locator('.vm-overlay')).toBeVisible({ timeout: 5_000 });
+    await expect(popup.locator('[data-testid="external-root-scope"]')).toHaveText('mw-b');
+    // 参数是一次性意图，打开后即剥掉，刷新/克隆这个 URL 不会再弹。
+    await expect.poll(() => new URL(popup.url()).searchParams.get('manage')).toBeNull();
+
     // Window A is untouched — still pinned to vault A.
     await expect(pageA.locator('.kb-vault-bar__name')).toHaveText('mw-a');
     expect(new URL(pageA.url()).searchParams.get('vault')).toBe(vaultAId);

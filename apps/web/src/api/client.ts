@@ -11,6 +11,7 @@ import type {
   HubSkillsQuery, HubSkillsListResponse, HubCategoriesResponse,
   InstallHubSkillRequest, InstallHubSkillResponse,
   HubSkillDetailQuery, HubSkillDetailResponse,
+  ExternalRoot, ExternalRootsResponse, AddExternalRootRequest,
 } from '@molio/contracts';
 
 /**
@@ -622,6 +623,50 @@ export const api = {
       body: JSON.stringify({ id }),
     });
     if (!res.ok) throw new Error(`Failed to set active vault: ${res.status}`);
+  },
+
+  // ─── External source roots（vault 挂载的只读外部目录） ───
+
+  /**
+   * List a vault's mounted source roots. `valid:false` means the target is gone
+   * from disk (or its mount link was removed out from under the registry) —
+   * the row is still returned so the UI can offer an unmount.
+   */
+  async listExternalRoots(vaultId: string): Promise<ExternalRoot[]> {
+    const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/external-roots`);
+    if (!res.ok) throw new Error(`Failed to fetch external roots: ${res.status}`);
+    const data = (await res.json()) as ExternalRootsResponse;
+    return data.roots;
+  },
+
+  /**
+   * Mount an external folder read-only under `<vault>/external/<label>`.
+   * `label` defaults to the target's basename. Throws with the daemon's message
+   * on a 400 (invalid target/label) or 409 (name or label already taken).
+   */
+  async addExternalRoot(vaultId: string, req: AddExternalRootRequest): Promise<ExternalRoot> {
+    const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/external-roots`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      throw new Error(err?.error?.message ?? `Failed to mount external root: ${res.status}`);
+    }
+    const data = (await res.json()) as { root: ExternalRoot };
+    return data.root;
+  },
+
+  /** Unmount: drops the registry row and the mount link (204, no body). */
+  async removeExternalRoot(vaultId: string, rootId: string): Promise<void> {
+    const res = await fetch(`${BASE}/knowledge/vaults/${vaultId}/external-roots/${rootId}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      throw new Error(err?.error?.message ?? `Failed to unmount external root: ${res.status}`);
+    }
   },
 
   async getFileTree(vaultId: string): Promise<TreeNode[]> {

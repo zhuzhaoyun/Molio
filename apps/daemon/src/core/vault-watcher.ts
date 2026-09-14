@@ -15,11 +15,11 @@
  * non-pruned oversized directory so an unknown giant folder can't exhaust FDs.
  */
 import { EventEmitter } from 'node:events';
-import { realpathSync } from 'node:fs';
+import { realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 import type Database from 'better-sqlite3';
 import chokidar, { type FSWatcher } from 'chokidar';
-import { listVaults } from './db.js';
+import { listExternalRoots, listVaults } from './db.js';
 // Import from vault-prune (not knowledge) so this module does NOT transitively
 // pull in encoding.ts — tests tune encoding's size caps via env vars at load.
 import { isPrunedDirName, MAX_DIR_ENTRIES } from './vault-prune.js';
@@ -28,6 +28,26 @@ import { ThrottledWarn } from './throttled-warn.js';
 export const VAULT_TREE_CHANGED_EVENT = 'tree-changed';
 
 const DEBOUNCE_MS = 300;
+
+/**
+ * Real paths of those `candidates` that currently resolve to a directory.
+ * Only existing directories can be watch targets: a registered root whose
+ * target is temporarily gone (unplugged drive, deleted folder) is skipped
+ * rather than failing the whole vault watch, and a non-directory would make
+ * chokidar watch a file as if it were a tree.
+ */
+function resolvableDirRealpaths(candidates: string[]): string[] {
+  const dirs: string[] = [];
+  for (const candidate of candidates) {
+    try {
+      const real = realpathSync(candidate);
+      if (statSync(real).isDirectory()) dirs.push(real);
+    } catch {
+      /* missing or unreadable — not watchable right now */
+    }
+  }
+  return dirs;
+}
 
 export class VaultWatcher extends EventEmitter {
   private watchers = new Map<string, FSWatcher>();
@@ -83,25 +103,37 @@ export class VaultWatcher extends EventEmitter {
       }
       const root = path.resolve(resolvedPath);
 
+      // Registered external source roots are watched alongside the vault, so a
+      // file landing in a mounted folder also refreshes the tree — the design
+      // rule is "refresh boundary == scan boundary" (scanTree walks the same
+      // roots). Canonicalized like the vault root above: chokidar compares the
+      // paths it was handed, and the mount link (`<vault>/external/<label>`)
+      // may point at a target that is itself a symlink.
+      const extraRoots = resolvableDirRealpaths(
+        listExternalRoots(this.db, vaultId).map((r) => r.target),
+      );
+
       // Per-directory child counter — best-effort backstop so a non-pruned
       // oversized directory (a folder the user dumped into the vault) can't
       // exhaust file descriptors. chokidar calls `ignored` once per path it
       // considers; once a single parent has been asked about more than
-      // MAX_DIR_ENTRIES children, ignore the rest. The vault root is never
-      // pruned (handled by the `resolved === root` check below), so this only
-      // bounds nested directories. Walk order is not guaranteed, so this is a
-      // hard cap on per-directory work, not a precise threshold.
+      // MAX_DIR_ENTRIES children, ignore the rest. The vault root and each
+      // external root are never pruned (the check below), so this only bounds
+      // nested directories. Walk order is not guaranteed, so this is a hard cap
+      // on per-directory work, not a precise threshold.
       const dirChildCounts = new Map<string, number>();
 
-      const watcher = await chokidar.watch(resolvedPath, {
+      const watcher = await chokidar.watch([resolvedPath, ...extraRoots], {
         // Ignore dotfile entries (.git, .claude, .gitignore) and build/dependency
         // directories (node_modules, dist, …) via the shared isPrunedDirName —
         // same predicate scanTree uses, so the watcher and the displayed tree
-        // agree on what counts as knowledge. Never ignore the vault root itself,
-        // even if its name or an ancestor starts with a dot.
+        // agree on what counts as knowledge. Never ignore the vault root, nor an
+        // external root itself (same exemption as the vault root — the mounted
+        // folder is knowledge no matter what it is named or where it lives),
+        // even if the name or an ancestor starts with a dot.
         ignored: (p) => {
           const resolved = path.resolve(p);
-          if (resolved === root) return false;
+          if (resolved === root || extraRoots.includes(resolved)) return false;
           const base = resolved.split(/[/\\]/).pop() ?? '';
           if (isPrunedDirName(base)) return true;
           // Per-dir backstop: count how many children of this parent chokidar

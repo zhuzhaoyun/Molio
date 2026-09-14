@@ -204,6 +204,7 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
 
 ### 知识库 (Knowledge Base)
 
+- **仓库管理器（VaultManager，`.vm-*`）**: 底部 vault bar 唤起的双栏模态。左栏仓库列表，右栏品牌块 + 应用级动作卡（新建/打开）+ **当前仓库的外部素材根设置**（作用域头「当前仓库 · <名>」点名归属）。选中仓库的分支：未跨仓库 → 就地切换且**面板不收起**（`selectVault` 不隐式关面板）；已 pinned 跨仓库 → 新窗口 `?vault=<id>&manage=1`（新窗口 vault 解析后自动开管理器、随即剥参）。出口只有 ✕ / Esc / 点遮罩。改这块前先读 `docs/2026-09-08-linked-source-roots-design.md` §6.1 与 `multi-window.spec.ts`——两条路径 + URL 镜像 effect 是这段交互最容易改错的地方
 - **文件面板**: 左侧文件树，支持搜索、vault 切换
 - **主内容区**: 
   - **默认模式**: 直接显示 doocs/md 渲染内容

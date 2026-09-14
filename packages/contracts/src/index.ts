@@ -107,6 +107,10 @@ export type {
   // Search
   SearchResult,
   SearchResponse,
+  // External source roots
+  ExternalRoot,
+  ExternalRootsResponse,
+  AddExternalRootRequest,
 } from './knowledge.js';
 
 export type {

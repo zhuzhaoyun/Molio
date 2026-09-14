@@ -128,3 +128,46 @@ describe('buildGraph index/log exclusion', () => {
     assert.ok(!isGraphExcludedFile('login.md'));
   });
 });
+
+// 挂载的外部源根同样参与图谱：只扫 vault 会让「树里有、图里没有」的节点凭空消失。
+describe('graphRoutes — external source roots', () => {
+  it('indexes mounted markdown as external/<label>/... nodes', async () => {
+    const { graphRoutes } = await import('../../src/routes/graph.js');
+    const { openDatabase, closeDatabase, createVault, addExternalRoot } = await import(
+      '../../src/core/db.js'
+    );
+    const { createDirectoryLink } = await import('../../src/core/external-roots.js');
+    const { Hono } = await import('hono');
+
+    const dataDir = mkdtempSync(join(tmpdir(), 'molio-graph-db-'));
+    const vaultDir = makeVault(['local.md', '# Local\n\n[[Mounted]]\n']);
+    const extDir = mkdtempSync(join(tmpdir(), 'molio-graph-ext-'));
+    writeFileSync(join(extDir, 'mounted.md'), '# Mounted\n\n[[Local]]\n');
+    mkdirSync(join(vaultDir, 'external'), { recursive: true });
+    createDirectoryLink(extDir, join(vaultDir, 'external', 'AgentA'));
+
+    const db = openDatabase(dataDir);
+    const vault = createVault(db, 'graph-ext', vaultDir);
+    addExternalRoot(db, vault.id, 'AgentA', extDir);
+
+    try {
+      const root = new Hono();
+      root.route('/api/graph', graphRoutes(db));
+      const res = await root.request(`/api/graph/${vault.id}`);
+      assert.strictEqual(res.status, 200);
+      const body = (await res.json()) as { nodes: Array<{ key: string; linkCount: number }> };
+      assert.deepStrictEqual(
+        body.nodes.map((n) => n.key).sort(),
+        ['external/AgentA/mounted.md', 'local.md'],
+      );
+      // 双向 wikilink 解析成功 → 两边各计一次引用（不是死链）
+      assert.strictEqual(body.nodes.find((n) => n.key === 'local.md')!.linkCount, 1);
+      assert.strictEqual(body.nodes.find((n) => n.key === 'external/AgentA/mounted.md')!.linkCount, 1);
+    } finally {
+      closeDatabase();
+      rmSync(dataDir, { recursive: true, force: true });
+      rmSync(vaultDir, { recursive: true, force: true });
+      rmSync(extDir, { recursive: true, force: true });
+    }
+  });
+});
