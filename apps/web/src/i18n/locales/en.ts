@@ -10,8 +10,12 @@ const en: Record<string, string> = {
   'nav.resources': 'Resources',
   'nav.help': 'Help',
   'nav.settings': 'Settings',
-  'nav.account': 'Account',
+  'nav.me': 'Me',
   'nav.login': 'Sign in',
+  'me.title': 'My Account',
+  'me.tabProfile': 'Profile',
+  'me.tabPurchases': 'Purchases',
+  'me.tabListings': 'Listings',
   'nav.back': 'Back',
   'nav.forward': 'Forward',
 
@@ -707,6 +711,7 @@ const en: Record<string, string> = {
   // ── Community market: publish wizard / my listings / vault entry (Task 10) ──
   'vault.publish': 'Publish to market',
   'account.myListings': 'My listings',
+  'account.myPurchases': 'My purchases',
   'publish.title': 'Publish to market',
   'publish.tabTitle': 'Publish',
   'publish.name': 'Name',
@@ -766,6 +771,17 @@ const en: Record<string, string> = {
   'myListings.status.uploading': 'Uploading',
   'myListings.status.active': 'Active',
   'myListings.status.removed': 'Removed',
+  // ── My purchases (account panel entry; source = wxpay-fc purchase index) ──
+  'myPurchases.empty': 'No purchases yet',
+  'myPurchases.error': 'Failed to load - please try again later',
+  'myPurchases.retry': 'Retry',
+  'myPurchases.download': 'Download',
+  'myPurchases.downloading': 'Getting link…',
+  'myPurchases.downloadError': 'Failed to get download link - please try again later',
+  'myPurchases.unavailable': 'Unavailable',
+  'myPurchases.removed': 'Resource removed',
+  'myPurchases.purchasedAt': 'Purchased {{date}}',
+  'myPurchases.updateHint': 'When a resource is updated, download again to get the latest version',
 };
 
 export default en;

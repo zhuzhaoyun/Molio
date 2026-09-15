@@ -131,8 +131,10 @@ async function loginViaDevCode(page: Page, email: string) {
   await expect(page.locator('[data-testid="account-logged-email"]')).toHaveText(email, {
     timeout: 10_000,
   });
-  await page.locator('[data-testid="account-modal-close"]').click();
+  // 账号模块页面化：登录成功（非登录意图）→ 弹窗自动收起，NavRail 导航 /me「我的」页面，
+  // account-logged-email 在 /me 资料 Tab 渲染（上面的断言即等到导航完成）
   await expect(page.locator(ACCOUNT_MODAL)).not.toBeVisible();
+  await expect(page).toHaveURL(/\/me$/);
 }
 
 test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () => {
@@ -146,13 +148,10 @@ test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () 
     await gotoHome(page);
     await loginViaDevCode(page, 'admin@test.local');
 
-    // 「我的上架」入口仅管理员可见：账号弹层展开应见按钮
-    await page.locator('[data-testid="nav-account-btn"]').click();
-    await expect(page.locator('[data-testid="account-my-listings-btn"]')).toBeVisible({
+    // 「上架」Tab 仅管理员可见：登录后已在 /me，等 isAdmin 门禁落定即应见 Tab
+    await expect(page.locator('[data-testid="me-tab-listings"]')).toBeVisible({
       timeout: 5_000,
     });
-    await page.locator('[data-testid="account-modal-close"]').click();
-    await expect(page.locator(ACCOUNT_MODAL)).not.toBeVisible();
 
     // 2) ?vault= 直达 beforeAll 建的含 md 库的 KB 页（per-window source of truth）。
     //    门禁在点击时同步判定 isAdmin——先挂监听等 /my 预取落定再点，消除竞态
@@ -161,7 +160,7 @@ test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () 
       .waitForResponse((r) => r.url().includes('/api/market/my'), { timeout: 10_000 })
       .catch(() => null);
     await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
-    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 15_000 }); // vite dev 冷转换可超 5s（Windows 本地）
     await mySettled;
 
     // 3) 面板「发布到资源库」→ 页内发布 tab：名称/简介 + 效果图 + 声明 → 提交 → 成功态
@@ -287,7 +286,7 @@ test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () 
       .waitForResponse((r) => r.url().includes('/api/market/my'), { timeout: 10_000 })
       .catch(() => null);
     await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
-    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 15_000 }); // vite dev 冷转换可超 5s（Windows 本地）
     await mySettled;
     await page.locator('[data-testid="kb-btn-publish-vault"]').click();
     await expect(page.locator('[data-testid="kb-publish-pane"]')).toBeVisible();
@@ -331,23 +330,25 @@ test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () 
     await gotoHome(page);
     await loginViaDevCode(page, `molio-e2e-gate-${Date.now()}@example.com`);
 
-    // 「我的上架」入口对非管理员隐藏（等 /my 落定再断言，防未决态假通过）
+    // 「上架」Tab 对非管理员隐藏（等 /my 落定再断言，防未决态假通过）。
+    // loginViaDevCode 登录后已在 /me（首次 /my 预取可能早于监听挂载）——先离开再经
+    // nav 按钮回来，确保监听器捕获本次挂载触发的 /my 请求
+    await gotoHome(page);
     const myListingsSettled = page
       .waitForResponse((r) => r.url().includes('/api/market/my'), { timeout: 10_000 })
       .catch(() => null);
+    // 已登录点账号入口 → 导航 /me（authStore 未决时弹窗一闪、由 NavRail 竞态兜底导航）
     await page.locator('[data-testid="nav-account-btn"]').click();
-    await expect(page.locator(ACCOUNT_MODAL)).toBeVisible();
+    await expect(page).toHaveURL(/\/me$/, { timeout: 10_000 });
     await myListingsSettled;
-    await expect(page.locator('[data-testid="account-my-listings-btn"]')).toHaveCount(0);
-    await page.locator('[data-testid="account-modal-close"]').click();
-    await expect(page.locator(ACCOUNT_MODAL)).not.toBeVisible();
+    await expect(page.locator('[data-testid="me-tab-listings"]')).toHaveCount(0);
 
     // 同用例 1：等门禁状态落定再点（也顺带等 vault 解析，防 activeVault 未决早退）
     const mySettled = page
       .waitForResponse((r) => r.url().includes('/api/market/my'), { timeout: 10_000 })
       .catch(() => null);
     await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
-    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 15_000 }); // vite dev 冷转换可超 5s（Windows 本地）
     await mySettled;
 
     // 官网联系页（外部真实网络不可依赖）→ context 级 route mock（window.open 的新

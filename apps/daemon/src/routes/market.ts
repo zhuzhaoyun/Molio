@@ -90,6 +90,11 @@ export function marketRoutes(db: Database.Database, auth: AuthClient, opts: Mark
   app.get('/listings/:id/download', async (c) => {
     try { return c.json(await client.download(c.req.param('id'))); } catch (e) { return cloudError(c, e); }
   });
+  // 我的已购：云端权威（wxpay-fc 已购索引 + 目录元数据合并），无本地缓存——
+  // 断网时直接 502 cloud_unreachable，已购列表不做离线降级（下载本来也需要在线签名）
+  app.get('/purchases', async (c) => {
+    try { return c.json(await client.purchases()); } catch (e) { return cloudError(c, e); }
+  });
   app.get('/my', async (c) => {
     try {
       const body = await client.my();

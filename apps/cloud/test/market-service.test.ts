@@ -27,12 +27,12 @@ function mockOss() {
   return { stub, objects, copied };
 }
 
-function makeService(over: { admins?: string[]; maxZipMb?: number } = {}) {
+function makeService(over: { admins?: string[]; maxZipMb?: number; pay?: { listPurchases: (uid: string) => Promise<Array<{ id: string; purchased_at?: string }>> } } = {}) {
   const users = new MemoryAuthStore();
   const store = new MemoryMarketStore();
   const { stub, objects, copied } = mockOss();
   const config = { market: { maxZipMb: over.maxZipMb ?? 50, adminEmails: over.admins ?? [], maxActivePerUser: 10, maxDailyCreates: 5 } };
-  const svc = new MarketService({ store, users, signer: stub as never, config: config as never, now: () => 1_700_000_000_000 });
+  const svc = new MarketService({ store, users, signer: stub as never, config: config as never, now: () => 1_700_000_000_000, pay: over.pay });
   return { svc, users, store, objects, copied };
 }
 
@@ -209,6 +209,101 @@ test('更新版本调价：管理员可改，非管理员传值被忽略', async
   await svc.confirm(u.id, c2.listingId);
   await svc.update(u.id, c2.listingId, { priceCents: 5000 });
   assert.equal((await svc.get(c2.listingId)).priceCents, 0);
+});
+
+/** 建一个已上架的付费条目（管理员定价）供已购测试用 */
+async function makePaidListing(svc: MarketService, users: MemoryAuthStore, objects: Map<string, number>, adminId = 'a1') {
+  const admin = await users.createActiveUser({ id: adminId, email: 'admin@x.com', nickname: '管', now: 1 });
+  const c = await svc.create(admin.id, { ...VALID, name: '付费库', priceCents: 1990 });
+  objects.set(c.uploads[0]!.key, 1); objects.set(c.uploads[1]!.key, 1);
+  await svc.confirm(admin.id, c.listingId);
+  return c.listingId;
+}
+
+test('已购下载放行：付费资源已购 → 签名 URL；未购/其他用户 → 402', async () => {
+  const bought = new Map<string, Array<{ id: string; purchased_at?: string }>>([
+    ['u1', [{ id: 'pending', purchased_at: '2026-09-01T00:00:00.000Z' }]],
+  ]);
+  const pay = { listPurchases: async (uid: string) => bought.get(uid) ?? [] };
+  const { svc, users, objects } = makeService({ admins: ['admin@x.com'], pay });
+  const listingId = await makePaidListing(svc, users, objects);
+  bought.set('u1', [{ id: listingId, purchased_at: '2026-09-01T00:00:00.000Z' }]);
+
+  const buyer = await users.createActiveUser({ id: 'u1', email: 'b@x.com', nickname: '买', now: 1 });
+  const other = await users.createActiveUser({ id: 'u2', email: 'c@x.com', nickname: '路', now: 1 });
+
+  // 已购 → 放行（重复下载 = 最新版）
+  const dl = await svc.download(buyer.id, listingId);
+  assert.match(dl.url, /response-content-disposition=/);
+  // 未购用户 → 402
+  await assert.rejects(
+    svc.download(other.id, listingId),
+    (e: unknown) => (e as MarketServiceError).code === 'payment_required' && (e as MarketServiceError).status === 402,
+  );
+});
+
+test('已购下载：pay 客户端未配置 → 付费一律 402（旧行为不变）', async () => {
+  const { svc, users, objects } = makeService({ admins: ['admin@x.com'] });
+  const listingId = await makePaidListing(svc, users, objects);
+  const admin = await users.findActiveUserById('a1');
+  await assert.rejects(
+    svc.download(admin!.id, listingId),
+    (e: unknown) => (e as MarketServiceError).code === 'payment_required',
+  );
+});
+
+test('purchases：合并目录元数据、按购买时间倒序、已删条目 available=false', async () => {
+  const items: Array<{ id: string; purchased_at?: string }> = [];
+  const pay = { listPurchases: async () => items };
+  const { svc, users, objects, store } = makeService({ admins: ['admin@x.com'], pay });
+  const buyer = await users.createActiveUser({ id: 'u1', email: 'b@x.com', nickname: '买', now: 1 });
+
+  // 空索引 → 空列表
+  assert.deepEqual(await svc.purchases(buyer.id), { purchases: [] });
+
+  const lid1 = await makePaidListing(svc, users, objects);
+  // 第二个付费条目 + 一个幽灵条目（索引里有、目录里没有）
+  const admin = await users.findActiveUserById('a1');
+  const c2 = await svc.create(admin!.id, { ...VALID, name: '付费库2', priceCents: 990 });
+  objects.set(c2.uploads[0]!.key, 1); objects.set(c2.uploads[1]!.key, 1);
+  await svc.confirm(admin!.id, c2.listingId);
+  // 下架 lid1 → available=false 但仍在已购列表
+  await svc.remove(admin!.id, lid1);
+
+  items.push(
+    { id: c2.listingId, purchased_at: '2026-09-02T00:00:00.000Z' },
+    { id: lid1, purchased_at: '2026-09-05T00:00:00.000Z' },
+    { id: 'ghost-listing' },
+  );
+  const res = await svc.purchases(buyer.id);
+  assert.equal(res.purchases.length, 3);
+  // 倒序：lid1(09-05) → c2(09-02) → ghost(null 沉底)
+  assert.equal(res.purchases[0]!.id, lid1);
+  assert.equal(res.purchases[0]!.available, false, '已下架不可下载');
+  assert.equal(res.purchases[0]!.listing!.name, '付费库');
+  assert.equal(res.purchases[1]!.id, c2.listingId);
+  assert.equal(res.purchases[1]!.available, true);
+  assert.equal(res.purchases[1]!.listing!.priceCents, 990);
+  assert.equal(res.purchases[2]!.id, 'ghost-listing');
+  assert.equal(res.purchases[2]!.listing, null, '目录查不到 → 元数据 null');
+  assert.equal(res.purchases[2]!.purchasedAt, null);
+  assert.equal(res.purchases[2]!.available, false);
+  assert.ok(store, 'store 引用存在');
+});
+
+test('purchases/download：wxpay-fc 不可达 → 502 pay_unreachable（不谎报 402）', async () => {
+  const pay = { listPurchases: async () => { throw new Error('network down'); } };
+  const { svc, users, objects } = makeService({ admins: ['admin@x.com'], pay });
+  const listingId = await makePaidListing(svc, users, objects);
+  const buyer = await users.createActiveUser({ id: 'u1', email: 'b@x.com', nickname: '买', now: 1 });
+  await assert.rejects(
+    svc.purchases(buyer.id),
+    (e: unknown) => (e as MarketServiceError).code === 'pay_unreachable' && (e as MarketServiceError).status === 502,
+  );
+  await assert.rejects(
+    svc.download(buyer.id, listingId),
+    (e: unknown) => (e as MarketServiceError).code === 'pay_unreachable' && (e as MarketServiceError).status === 502,
+  );
 });
 
 test('pricing(§九)：公开返回价目，file=zip 全量 key；未知 id 404', async () => {

@@ -5,6 +5,7 @@ import type {
   MarketDownloadResponse,
   MarketListing,
   MarketMyResponse,
+  MarketPurchasesResponse,
 } from '@molio/contracts';
 import { AuthCloudError, type AuthClient } from '../auth/auth-client.js';
 
@@ -88,6 +89,11 @@ export class MarketClient {
 
   async my(): Promise<MarketMyResponse> {
     return (await (await this.req('GET', '/my', { auth: true })).json()) as MarketMyResponse;
+  }
+
+  /** 我的已购（云端合并 wxpay-fc 已购索引 + 目录元数据） */
+  async purchases(): Promise<MarketPurchasesResponse> {
+    return (await (await this.req('GET', '/purchases', { auth: true })).json()) as MarketPurchasesResponse;
   }
 
   async create(input: MarketCreateInput): Promise<MarketCreateResponse> {

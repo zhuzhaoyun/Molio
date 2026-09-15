@@ -85,3 +85,12 @@ test('market 未配置（无 OSS 凭证）→ 404（路由未挂载）', async (
   const { appNoMarket } = await bootMarketApp();
   assert.equal((await appNoMarket.request('/market/listings')).status, 404);
 });
+
+test('GET /market/purchases：未登录 401；登录 200 + no-store（pay 未配置 → 空列表）', async () => {
+  const { app, token } = await bootMarketApp();
+  assert.equal((await app.request('/market/purchases')).status, 401);
+  const res = await app.request('/market/purchases', { headers: { authorization: `Bearer ${token}` } });
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('cache-control'), 'no-store');
+  assert.deepEqual((await res.json()) as { purchases: unknown[] }, { purchases: [] });
+});

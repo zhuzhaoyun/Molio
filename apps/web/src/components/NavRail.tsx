@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useI18n } from '../i18n';
 import { useAuthStatus } from '../stores/authStore';
 import { loginIntentStore } from '../stores/loginIntentStore';
@@ -10,6 +10,7 @@ import { AccountModal } from './account/AccountModal';
 export function NavRail() {
   const { t } = useI18n();
   const navigate = useNavigate();
+  const location = useLocation();
   const activeVaultId = useActiveVaultId();
   const graphActive = useGraphViewActive();
   const auth = useAuthStatus();
@@ -43,6 +44,22 @@ export function NavRail() {
     setIntentOpen(false);
     loginResumeRef.current = null;
   }
+
+  /**
+   * 竞态兜底：整页加载后 authStore 快照未决（首拉 /api/auth/status 尚未落定）时
+   * 点账号入口会误走「打开登录弹窗」分支。快照落定发现其实已登录 → 收起弹窗；
+   * 有挂起的登录意图则续接原动作（下载/发布门槛场景），否则导航 /me——
+   * 用户点击账号入口的意图就是进入「我的」。
+   */
+  useEffect(() => {
+    if (!accountOpen || auth?.loggedIn !== true) return;
+    const resume = loginResumeRef.current;
+    loginResumeRef.current = null;
+    setIntentOpen(false);
+    setAccountOpen(false);
+    if (resume) resume();
+    else navigate('/me');
+  }, [accountOpen, auth?.loggedIn, navigate]);
 
   return (
     <>
@@ -169,16 +186,19 @@ export function NavRail() {
 
       {/* Bottom group: Account + Help + Settings */}
       <div className="entry-nav-rail__group">
-        {/* Account — 登录态入口，打开账号面板（设计 §7.4）。
-            未登录：tooltip「登录」+ 琥珀提示点（待办语义：下载/购买需登录）；
-            已登录：tooltip「账号」，无点（无需用户处理）。 */}
+        {/* Account — 登录态分流入口。
+            未登录：打开登录弹窗，tooltip「登录」+ 琥珀提示点（待办语义：下载/购买需登录）；
+            已登录：导航 /me「我的」页面（资料/已购/上架），tooltip「我的」，无点。 */}
         <button
           type="button"
-          className={`entry-nav-rail__btn ${auth?.loggedIn ? 'is-logged-in' : ''}`}
+          className={`entry-nav-rail__btn ${auth?.loggedIn ? 'is-logged-in' : ''} ${location.pathname === '/me' ? 'is-active' : ''}`}
           data-view="account"
           data-testid="nav-account-btn"
-          data-tooltip={auth?.loggedIn ? t('nav.account') : t('nav.login')}
-          onClick={() => setAccountOpen(true)}
+          data-tooltip={auth?.loggedIn ? t('nav.me') : t('nav.login')}
+          onClick={() => {
+            if (auth?.loggedIn) navigate('/me');
+            else setAccountOpen(true);
+          }}
         >
           <svg
             viewBox="0 0 24 24"
@@ -248,10 +268,15 @@ export function NavRail() {
         loginResumeRef.current = null;
         const wasIntent = intentOpen;
         setIntentOpen(false);
-        // 登录意图打开时：登录成功即收起面板，直接把画面让给续接动作
-        // （如发布向导自动打开），避免面板盖住续接界面
-        if (wasIntent) setAccountOpen(false);
-        if (resume) resume();
+        // 弹窗只承担登录职责，登录成功一律收起（loggedIn 态渲染 null，留着也无内容）
+        setAccountOpen(false);
+        if (wasIntent && resume) {
+          // 登录意图：把画面让给续接动作（如下载/发布向导自动打开），不抢导航
+          resume();
+        } else {
+          // 用户主动点账号按钮登录：登录的目的地就是「我的」页面
+          navigate('/me');
+        }
       }}
     />
     </>

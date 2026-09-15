@@ -162,5 +162,7 @@ export type {
   MarketCreateResponse,
   MarketMyResponse,
   MarketDownloadResponse,
+  MarketPurchase,
+  MarketPurchasesResponse,
   MarketPublishSuggestion,
 } from './market.js';

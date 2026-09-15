@@ -212,7 +212,9 @@
       "paths": [
         "apps/web/src/components/resources/PublishForm.*",
         "apps/web/src/components/resources/PublishWizard.*",
-        "apps/web/src/components/resources/MyListingsPanel.*",
+        "apps/web/src/components/account/AccountPage.*",
+        "apps/web/src/components/account/ListingsSection.*",
+        "apps/web/src/components/account/PurchasesSection.*",
         "apps/web/src/components/resources/resourceAction.*",
         "apps/web/src/hooks/useMarketCatalog.*",
         "apps/web/src/components/kb/VaultList.*",

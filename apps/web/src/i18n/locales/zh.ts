@@ -10,8 +10,12 @@ const zh: Record<string, string> = {
   'nav.resources': '资源',
   'nav.help': '帮助',
   'nav.settings': '设置',
-  'nav.account': '账号',
+  'nav.me': '我的',
   'nav.login': '登录',
+  'me.title': '我的',
+  'me.tabProfile': '资料',
+  'me.tabPurchases': '已购',
+  'me.tabListings': '上架',
   'nav.back': '后退',
   'nav.forward': '前进',
 
@@ -707,6 +711,7 @@ const zh: Record<string, string> = {
   // ── 社区资源市场：发布向导 / 我的上架 / 知识库入口（Task 10） ──
   'vault.publish': '发布到资源库',
   'account.myListings': '我的上架',
+  'account.myPurchases': '我的已购',
   'publish.title': '发布到资源库',
   'publish.tabTitle': '发布',
   'publish.name': '名称',
@@ -766,6 +771,17 @@ const zh: Record<string, string> = {
   'myListings.status.uploading': '上传中',
   'myListings.status.active': '已上架',
   'myListings.status.removed': '已下架',
+  // ── 我的已购（账号面板入口，数据源 wxpay-fc 已购索引） ──
+  'myPurchases.empty': '还没有购买记录',
+  'myPurchases.error': '加载失败，请稍后重试',
+  'myPurchases.retry': '重试',
+  'myPurchases.download': '下载',
+  'myPurchases.downloading': '获取链接…',
+  'myPurchases.downloadError': '获取下载链接失败，请稍后重试',
+  'myPurchases.unavailable': '不可下载',
+  'myPurchases.removed': '资源已下架',
+  'myPurchases.purchasedAt': '购于 {{date}}',
+  'myPurchases.updateHint': '资源更新后，重新下载即可获得最新版本',
 };
 
 export default zh;

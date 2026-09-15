@@ -301,3 +301,30 @@
   color: var(--text-faint);
   cursor: not-allowed;
 }
+
+/* ── 「我的」页面（/me，AccountPage）——复用 settings-shell 骨架 + account-*/mylistings-* 内容样式 ── */
+
+/* 分区容器：限制阅读宽度，避免资料行/列表在宽屏下拉满整页 */
+.me-section {
+  max-width: 640px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* 加载失败重试行（mylistings-confirm-actions 按钮样式的居中容器） */
+.me-section-retry {
+  margin-top: 4px;
+  justify-content: center;
+}
+
+/* 下架/恢复二次确认条：页面内嵌（非弹层绝对定位），改为常规块级卡片 */
+.me-section-confirm {
+  position: static;
+  margin-top: 6px;
+}
+
+/* 未登录直达 /me 时的内嵌登录表单：给表单一个卡片化的宽度约束 */
+.me-login-inline {
+  max-width: 400px;
+}

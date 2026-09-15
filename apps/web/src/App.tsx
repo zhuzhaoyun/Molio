@@ -8,6 +8,7 @@ import { NavRail } from './components/NavRail';
 import { KnowledgeBasePage } from './components/kb/KnowledgeBasePage';
 import { KbChatSessionsPanel, type KbChatSessionsPanelHandle } from './components/kb/KbChatSessionsPanel';
 import { SettingsPage } from './components/settings/SettingsPage';
+import { AccountPage } from './components/account/AccountPage';
 import { HistoryPage } from './components/history/HistoryPage';
 import { ResourcesPage } from './components/resources/ResourcesPage';
 import { ResourceDetailPage } from './components/resources/ResourceDetailPage';
@@ -317,6 +318,7 @@ export default function App() {
             <KnowledgeBasePage agentId={selectedAgent} chatPanelRef={kbChatPanelRef} />
           } />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/me" element={<AccountPage />} />
             <Route path="/resources" element={<ResourcesPage />} />
             <Route path="/resources/:id" element={<ResourceDetailPage />} />
           </Routes>

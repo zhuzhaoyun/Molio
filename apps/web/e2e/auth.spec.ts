@@ -154,6 +154,10 @@ test.describe('Login chain (requires configured daemon)', () => {
     const email = uniqueEmail('nick');
     await loginViaUi(page, email);
 
+    // 登录成功（非登录意图）→ 自动导航「我的」页面
+    await expect(page).toHaveURL(/\/me$/);
+    await expect(page.locator('[data-testid="me-page"]')).toBeVisible();
+
     // 隐式注册自动生成「墨友 + 4 位随机数」
     const nickname = page.locator('[data-testid="account-nickname"]');
     await expect(nickname).toBeVisible();
@@ -165,7 +169,7 @@ test.describe('Login chain (requires configured daemon)', () => {
     );
   });
 
-  test('nickname inline edit persists and survives reopening the panel', async ({
+  test('nickname inline edit persists and survives leaving and returning to /me', async ({
     page,
   }) => {
     const email = uniqueEmail('edit');
@@ -183,10 +187,10 @@ test.describe('Login chain (requires configured daemon)', () => {
     await expect(nickname).toHaveText('E2E 墨流君', { timeout: 10_000 });
     await expect(input).not.toBeVisible();
 
-    // 关闭重开面板仍是新昵称（数据源 = daemon 本地 token/权益快照）
-    await page.locator('[data-testid="account-modal-close"]').click();
-    await expect(page.locator(ACCOUNT_MODAL)).not.toBeVisible();
-    await openAccount(page);
+    // 离开再回到 /me 仍是新昵称（数据源 = daemon 本地 token/权益快照）
+    await page.locator('[data-view="home"]').click();
+    await expect(page.locator('[data-testid="me-page"]')).not.toBeVisible();
+    await page.locator('[data-testid="nav-account-btn"]').click();
     await expect(page.locator('[data-testid="account-nickname"]')).toHaveText('E2E 墨流君');
   });
 
@@ -214,7 +218,8 @@ test.describe('Login chain (requires configured daemon)', () => {
     // Nav rail account button lights up (logged-in dot)
     await expect(page.locator('[data-testid="nav-account-btn"]')).toHaveClass(/is-logged-in/);
 
-    // Logout — local tokens cleared, panel falls back to the email form
+    // Logout（/me 资料 Tab）— local tokens cleared, page falls back to inline login form
+    await expect(page).toHaveURL(/\/me$/);
     await page.locator('[data-testid="account-logout-btn"]').click();
     await expect(page.locator('[data-testid="account-email-input"]')).toBeVisible();
     await expect(page.locator('[data-testid="nav-account-btn"]')).not.toHaveClass(/is-logged-in/);
@@ -242,6 +247,69 @@ test.describe('Login chain (requires configured daemon)', () => {
     // Still on the code step, not logged in
     await expect(page.locator('[data-testid="account-code-input"]')).toBeVisible();
     await expect(page.locator('[data-testid="nav-account-btn"]')).not.toHaveClass(/is-logged-in/);
+  });
+
+  // 「我的已购」Tab（/me?tab=purchases）：daemon 镜像 /api/market/purchases →
+  // 列表 + 下载（下载走 /api/market/listings/:id/download 拿最新版签名 URL）。
+  // E2E 环境 cloud 未配市场 OSS 凭证，daemon 镜像端点用 page.route mock。
+  test('my-purchases tab lists purchases and re-downloads via signed URL', async ({ page }) => {
+    const email = uniqueEmail('purchases');
+    await loginViaUi(page, email);
+
+    await page.route('**/api/market/purchases', (route) =>
+      route.fulfill({
+        json: {
+          purchases: [
+            {
+              id: 'l1',
+              purchasedAt: '2026-09-01T08:00:00.000Z',
+              listing: { name: '史记研读库', icon: '📖', tint: '#E8EDF2', version: 'v1.2', priceCents: 1990, summary: 's' },
+              available: true,
+            },
+            { id: 'l2', purchasedAt: null, listing: null, available: false },
+          ],
+        },
+      }),
+    );
+    let downloadHits = 0;
+    await page.route('**/api/market/listings/l1/download', (route) => {
+      downloadHits++;
+      return route.fulfill({ json: { url: 'https://oss.local/signed-latest.zip', expiresAt: 0 } });
+    });
+    // 拦截 window.open：不真开新页，只记录 URL
+    await page.evaluate(() => {
+      (window as unknown as { __opened: string[] }).__opened = [];
+      window.open = ((u: string) => {
+        (window as unknown as { __opened: string[] }).__opened.push(u);
+        return null;
+      }) as typeof window.open;
+    });
+
+    await page.locator('[data-testid="me-tab-purchases"]').click();
+    await expect(page).toHaveURL(/\/me\?tab=purchases/);
+    const section = page.locator('[data-testid="my-purchases-section"]');
+    await expect(section).toBeVisible();
+    await expect(page.locator('[data-testid="my-purchases-item"]')).toHaveCount(2);
+    await expect(section).toContainText('史记研读库');
+    await expect(section).toContainText('v1.2');
+    // 已下架条目：显示占位名 + 下载按钮禁用
+    await expect(section).toContainText(/资源已下架|Resource removed/);
+    const buttons = page.locator('[data-testid="my-purchases-download-btn"]');
+    await expect(buttons.nth(1)).toBeDisabled();
+
+    // 可用条目点击下载 → 请求签名 URL → window.open
+    await buttons.nth(0).click();
+    await expect
+      .poll(() =>
+        page.evaluate(() => (window as unknown as { __opened: string[] }).__opened),
+      )
+      .toEqual(['https://oss.local/signed-latest.zip']);
+    expect(downloadHits).toBe(1);
+
+    // 切回资料 Tab：URL 复位、资料卡可见
+    await page.locator('[data-testid="me-tab-profile"]').click();
+    await expect(page).toHaveURL(/\/me$/);
+    await expect(page.locator('[data-testid="account-profile"]')).toBeVisible();
   });
 
 });

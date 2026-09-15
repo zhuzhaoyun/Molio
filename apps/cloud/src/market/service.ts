@@ -4,17 +4,20 @@
 import {
   MARKET_ICONS, MARKET_TINTS,
   type MarketCreateRequest, type MarketCreateResponse, type MarketDownloadResponse,
-  type MarketListing, type MarketMyListing, type MarketMyResponse, type MarketUploadTarget,
+  type MarketListing, type MarketMyListing, type MarketMyResponse,
+  type MarketPurchase, type MarketPurchasesResponse, type MarketUploadTarget,
 } from '@molio/contracts';
 import { ulid } from '../crypto.js';
 import type { AuthStore } from '../store/types.js';
 import type { MarketListingRecord, MarketPendingUpdate, MarketStore } from '../store/market-types.js';
 import type { OssSigner } from './signer.js';
+import type { PayInternalClient } from './pay-client.js';
 
 export type MarketErrorCode =
   | 'invalid_metadata' | 'rate_limited' | 'too_many_active' | 'not_owner'
-  | 'listing_not_found' | 'upload_incomplete' | 'size_exceeded' | 'payment_required';
-export type MarketErrorStatus = 400 | 402 | 403 | 404 | 409 | 413 | 429;
+  | 'listing_not_found' | 'upload_incomplete' | 'size_exceeded' | 'payment_required'
+  | 'pay_unreachable';
+export type MarketErrorStatus = 400 | 402 | 403 | 404 | 409 | 413 | 429 | 502;
 
 export class MarketServiceError extends Error {
   constructor(public readonly code: MarketErrorCode, public readonly status: MarketErrorStatus,
@@ -56,6 +59,8 @@ export interface MarketServiceDeps {
   signer: OssSigner;
   config: { market: MarketConfig };
   now: () => number;
+  /** wxpay-fc 已购索引客户端；未配置时「我的已购」为空、付费下载一律 402（与旧行为一致） */
+  pay?: PayInternalClient;
 }
 
 export class MarketService {
@@ -284,14 +289,55 @@ export class MarketService {
 
   // ── 下载（登录门槛核心）──
 
-  async download(_userId: string, listingId: string): Promise<MarketDownloadResponse> {
+  async download(userId: string, listingId: string): Promise<MarketDownloadResponse> {
     const rec = await this.mustFind(listingId);
     if (rec.status !== 'active') throw new MarketServiceError('listing_not_found', 404);
-    // 付费资源不外发免费签名下载（Model A：付费走 payUrl 外链交付，应用内不外泄 zip）
-    if (rec.priceCents > 0) throw new MarketServiceError('payment_required', 402);
+    // 付费资源：已购放行（重复下载 = 最新版，更新覆盖同一 ossKey）；未购 402
+    if (rec.priceCents > 0 && !(await this.hasPurchased(userId, listingId))) {
+      throw new MarketServiceError('payment_required', 402);
+    }
     const filename = `${encodeURIComponent(rec.name)}-vault.zip`;
     const t = this.deps.signer.signGet(rec.ossKey, DOWNLOAD_TTL_SEC, `attachment; filename*=UTF-8''${filename}`);
     return { url: t.url, expiresAt: t.expiresAt };
+  }
+
+  // ── 我的已购（数据源 = wxpay-fc 已购索引，见 pay-client.ts 信任链说明）──
+
+  async purchases(userId: string): Promise<MarketPurchasesResponse> {
+    if (!this.deps.pay) return { purchases: [] };
+    const items = await this.listPurchasesOr502(userId);
+    const out: MarketPurchase[] = [];
+    for (const it of items) {
+      const rec = await this.deps.store.findListingById(it.id);
+      out.push({
+        id: it.id,
+        purchasedAt: typeof it.purchased_at === 'string' && it.purchased_at ? it.purchased_at : null,
+        listing: rec
+          ? { name: rec.name, icon: rec.icon, tint: rec.tint, version: rec.version, priceCents: rec.priceCents, summary: rec.summary }
+          : null,
+        available: rec?.status === 'active',
+      });
+    }
+    // 最近购买在前；无时间的沉底
+    out.sort((a, b) => (b.purchasedAt ?? '').localeCompare(a.purchasedAt ?? ''));
+    return { purchases: out };
+  }
+
+  /** 已购判定：pay 客户端未配置 = 无人购买过（保持旧 402 行为） */
+  private async hasPurchased(userId: string, listingId: string): Promise<boolean> {
+    if (!this.deps.pay) return false;
+    const items = await this.listPurchasesOr502(userId);
+    return items.some((it) => it.id === listingId);
+  }
+
+  /** wxpay-fc 不可达 → 502 pay_unreachable（不谎报 402，客户端可提示稍后重试） */
+  private async listPurchasesOr502(userId: string) {
+    try {
+      return await this.deps.pay!.listPurchases(userId);
+    } catch (e) {
+      console.error('[cloud] pay internal unreachable:', e);
+      throw new MarketServiceError('pay_unreachable', 502);
+    }
   }
 
   // ── 下架 / 恢复 / 管理员 ──

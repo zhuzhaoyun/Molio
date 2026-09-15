@@ -87,8 +87,11 @@ src/
       VaultList.tsx           Vault 列表
       VaultManager.tsx        Vault 管理器
       WikiChatPanel.tsx       Wiki 对话面板
-    account/           账号组件（用户模块 M3；合规勾选 M5）
-      AccountModal.tsx     账号面板模态框（登录态展示 + 退出登录 + 注销账号二次确认；main/login/delete 三视图）
+    account/           账号组件（用户模块 M3；合规勾选 M5；「我的」页面化）
+      AccountPage.tsx      「我的」独立页面（/me，页内 Tab：资料/已购/上架[仅管理员]；未登录直达时内嵌登录表单）
+      AccountModal.tsx     登录弹窗（纯登录职责；NavRail 分流：未登录点击 → 弹窗，已登录 → 导航 /me；登录成功非意图场景自动导航 /me）
+      PurchasesSection.tsx 我的已购分区（/me?tab=purchases；GET /api/market/purchases + 下载按钮重复下载最新版）
+      ListingsSection.tsx  我的上架分区（/me?tab=listings；查看/下架/恢复，前身 MyListingsPanel 弹层）
       LoginForm.tsx        验证码登录表单（邮箱 → 验证码两步 + 重发倒计时；注册=登录）；发送验证码前须勾选「用户协议 + 隐私政策」（个保法前置，链接 molio.cn/terms|privacy）
       authErrors.ts        daemon /api/auth 错误码 → i18n 文案映射
     channels/          渠道组件
@@ -158,7 +161,7 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
 |---------|-------------|
 | `src/components/HomePage.tsx` | `e2e/bootstrap.spec.ts` |
 | `src/components/NavRail.tsx` | `e2e/bootstrap.spec.ts`, `e2e/navigation.spec.ts`, `e2e/auth.spec.ts` |
-| `src/components/account/`, `src/stores/authStore.ts` | `e2e/auth.spec.ts` |
+| `src/components/account/`, `src/stores/authStore.ts` | `e2e/auth.spec.ts`, `e2e/market-community.spec.ts`, `e2e/resources.spec.ts`（登录链路共用 loginViaDevCode/登录门槛） |
 | `src/components/kb/` | `e2e/publish-flow.spec.ts` |
 | `src/components/graph/` | `e2e/graph.spec.ts`, `e2e/graph-settings.spec.ts` |
 | `src/components/runtimes/` | `e2e/runtimes-page.spec.ts`, `e2e/runtime-provider-config.spec.ts` |
@@ -187,6 +190,7 @@ pnpm test:e2e     # Playwright E2E 测试（需先运行 pnpm dev）
 | 图谱 | `/graph` | GraphPage, Minimap |
 | 资源 | `/resources` | ResourcesPage（列表 + 筛选 + 微信支付弹窗） |
 | 资源详情 | `/resources/:id` | ResourceDetailPage（概述/预览灯箱/导入说明） |
+| 我的 | `/me` | AccountPage（Tab：资料/已购/上架[管理员]；`?tab=` 深链） |
 
 ### 历史记录 (History)
 

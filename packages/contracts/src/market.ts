@@ -100,6 +100,26 @@ export interface MarketDownloadResponse {
   expiresAt: number;
 }
 
+/**
+ * 「我的已购」条目（GET /market/purchases）。
+ * 购买归属来自 wxpay-fc 已购索引（下单时 attach 携带的 uid），云端合并目录元数据后下发。
+ * 下载永远拿最新版：资源更新会覆盖同一 OSS key，重新签名即最新内容。
+ */
+export interface MarketPurchase {
+  /** listing id（已购索引中的商品 id） */
+  id: string;
+  /** 首次购买时间（ISO）；索引缺失时为 null */
+  purchasedAt: string | null;
+  /** 条目仍在目录中时携带展示元数据；已删除/查不到时为 null（UI 显示"资源已下架"） */
+  listing: Pick<MarketListing, 'name' | 'icon' | 'tint' | 'version' | 'priceCents' | 'summary'> | null;
+  /** 是否可下载（条目 active 才可；removed/uploading 不可） */
+  available: boolean;
+}
+
+export interface MarketPurchasesResponse {
+  purchases: MarketPurchase[];
+}
+
 /** AI 起草的发布元数据（POST /api/market/publish-suggest 响应） */
 export interface MarketPublishSuggestion {
   name: string;

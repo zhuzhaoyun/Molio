@@ -77,6 +77,8 @@ pnpm typecheck    # tsc --noEmit
 | `MOLIO_MARKET_ADMIN_EMAILS` | 否 | 市场管理员邮箱（逗号分隔），命中后可调 `/market/admin/*` |
 | `MOLIO_MARKET_MAX_ACTIVE_PER_USER` | 否 | 单用户在架条目上限，默认 10 |
 | `MOLIO_MARKET_MAX_DAILY_CREATES` | 否 | 单用户每日创建条目上限，默认 5 |
+| `MOLIO_PAY_INTERNAL_URL` | 已购功能需要 | wxpay-fc 地址（如 `https://pay.molio.cn`）；与 TOKEN 成对配置才启用「我的已购」与付费已购下载放行 |
+| `MOLIO_PAY_INTERNAL_TOKEN` | 已购功能需要 | wxpay-fc `/purchases` 内部接口共享密钥（与其 `PURCHASES_INTERNAL_TOKEN` 同值），不入代码库 |
 
 ## 七个端点（第一期全集）
 
@@ -96,13 +98,14 @@ pnpm typecheck    # tsc --noEmit
 |---|---|---|
 | GET | `/market/listings` | 公开目录列表（`Cache-Control: no-store`，未登录可读） |
 | GET | `/market/listings/:id` | 单条详情（`no-store`，未登录可读） |
-| GET | `/market/listings/:id/download` | 登录 → 签发限时 OSS 直下 URL（免费/已购；付费未购 402） |
+| GET | `/market/listings/:id/download` | 登录 → 签发限时 OSS 直下 URL（免费/付费已购放行——已购判定经 wxpay-fc 已购索引，重复下载即最新版；付费未购 402；wxpay-fc 不可达 502 pay_unreachable） |
 | GET | `/market/pricing/:id` | 公开（wxpay-fc 专用，§九）：`{id,name,priceCents,file,status}`，file=zip 全量 key（桶私有无下载能力） |
 | POST | `/market/listings` | 登录 → 创建条目（元数据校验 + 限频），返回直传签名目标 |
 | POST | `/market/listings/:id/confirm` | 登录 → 直传完成确认（首发 uploading→active；亦用于更新版本确认） |
 | POST | `/market/listings/:id/update` | 登录 → 发起版本更新（预检 + 新上传目标） |
 | DELETE | `/market/listings/:id` | 登录 → 本人下架删除 |
 | GET | `/market/my` | 登录 → 我的条目列表 |
+| GET | `/market/purchases` | 登录 → 我的已购（wxpay-fc 已购索引 + 目录元数据合并；身份以 Bearer JWT 为准，杜绝 uid 冒用） |
 | GET | `/market/admin/listings` | 管理员 → 全量条目（含归属邮箱） |
 | POST | `/market/admin/listings/:id/remove` | 管理员 → 强制下架（可附原因） |
 | POST | `/market/admin/listings/:id/restore` | 管理员 → 恢复已下架条目 |

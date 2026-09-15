@@ -96,3 +96,35 @@ test('listings：成功落缓存；云端不可达回缓存 stale', async () => 
   assert.equal(body.stale, true);
   assert.equal(body.listings.length, 1); // 来自缓存
 });
+
+test('purchases：带 Bearer 透传云端；云端 502 pay_unreachable 原样归一；断网 502 cloud_unreachable', async () => {
+  const db = openDatabase(fs.mkdtempSync(path.join(os.tmpdir(), 'molio-db-')));
+  const mk = (fetchImpl: typeof fetch) => {
+    const app = new Hono();
+    app.route('/api/market', marketRoutes(db, { getAccessToken: async () => 'tok' } as never, { fetchImpl, baseUrl: 'https://cloud.local' }));
+    return app;
+  };
+
+  // 成功：Authorization 头透传 + 响应原样
+  let sawAuth = '';
+  const okFetch = (async (url: string, init?: RequestInit) => {
+    assert.ok(String(url).endsWith('/market/purchases'));
+    sawAuth = String((init?.headers as Record<string, string>)?.['authorization'] ?? '');
+    return new Response(JSON.stringify({ purchases: [{ id: 'l1', purchasedAt: '2026-09-01T00:00:00.000Z', listing: null, available: false }] }), { status: 200 });
+  }) as unknown as typeof fetch;
+  const res = await mk(okFetch).request('/api/market/purchases');
+  assert.equal(res.status, 200);
+  assert.equal(sawAuth, 'Bearer tok');
+  assert.equal(((await res.json()) as { purchases: unknown[] }).purchases.length, 1);
+
+  // 云端 502（pay_unreachable）→ 非白名单状态 → 502 + code 透传
+  const pay502 = (async () => new Response(JSON.stringify({ error: 'pay_unreachable' }), { status: 502 })) as unknown as typeof fetch;
+  const res2 = await mk(pay502).request('/api/market/purchases');
+  assert.equal(res2.status, 502);
+  assert.equal(((await res2.json()) as { error: string }).error, 'pay_unreachable');
+
+  // 断网 → 502 cloud_unreachable
+  const res3 = await mk(makeCloud({ fail: true }).fetchImpl).request('/api/market/purchases');
+  assert.equal(res3.status, 502);
+  assert.equal(((await res3.json()) as { error: string }).error, 'cloud_unreachable');
+});

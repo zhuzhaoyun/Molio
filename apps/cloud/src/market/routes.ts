@@ -91,6 +91,14 @@ export function marketRoutes(deps: MarketRoutesDeps, config: CloudConfig, now: (
     try { return c.json(await service.my(p.sub, p.email), 200); } catch (e) { return handle(c, e); }
   });
 
+  // 我的已购（数据源 = wxpay-fc 已购索引；身份以 Bearer JWT 为准，杜绝 uid 冒用）
+  app.get('/purchases', async (c) => {
+    c.header('Cache-Control', 'no-store');
+    const p = bearer(c);
+    if (!p) return c.json({ error: 'invalid_token' }, 401);
+    try { return c.json(await service.purchases(p.sub), 200); } catch (e) { return handle(c, e); }
+  });
+
   app.get('/admin/listings', async (c) => {
     const p = bearer(c);
     if (!p) return c.json({ error: 'invalid_token' }, 401);

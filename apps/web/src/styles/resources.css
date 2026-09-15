@@ -1190,6 +1190,13 @@
   color: var(--red);
 }
 
+/* 「我的已购」顶部提示（复用 mylistings 骨架的说明行） */
+.mylistings-hint {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--text-soft);
+}
+
 .mylistings-list {
   margin: 0;
   padding: 0;

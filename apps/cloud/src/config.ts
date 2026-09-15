@@ -65,6 +65,11 @@ export interface CloudConfig {
     adminEmails: string[];
     maxActivePerUser: number;
     maxDailyCreates: number;
+    /**
+     * wxpay-fc 内部接口（已购索引查询）：URL 与共享密钥成对配置才启用。
+     * 缺失 → 「我的已购」为空、付费下载一律 402（与未接入支付时行为一致）。
+     */
+    payInternal?: { url: string; token: string };
   };
 }
 
@@ -182,6 +187,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CloudConfig {
   const ossSk = (env.MOLIO_OSS_SK ?? '').trim();
   const ossBucket = (env.MOLIO_OSS_BUCKET ?? '').trim();
   const ossRegion = (env.MOLIO_OSS_REGION ?? '').trim() || 'cn-guangzhou';
+  // wxpay-fc 内部接口：URL + 共享密钥成对配置才启用（只配一个视为未配置并告警，防半吊子上线）
+  const payUrl = (env.MOLIO_PAY_INTERNAL_URL ?? '').trim();
+  const payToken = (env.MOLIO_PAY_INTERNAL_TOKEN ?? '').trim();
+  if ((payUrl === '') !== (payToken === '')) {
+    console.warn('[cloud] MOLIO_PAY_INTERNAL_URL / MOLIO_PAY_INTERNAL_TOKEN 需成对配置，已购功能不启用');
+  }
+  const payInternal = payUrl && payToken ? { url: payUrl, token: payToken } : undefined;
+
   const market = ossAk && ossSk && ossBucket
     ? {
         oss: {
@@ -192,6 +205,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CloudConfig {
         adminEmails: (env.MOLIO_MARKET_ADMIN_EMAILS ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
         maxActivePerUser: intEnv(env, 'MOLIO_MARKET_MAX_ACTIVE_PER_USER', 10),
         maxDailyCreates: intEnv(env, 'MOLIO_MARKET_MAX_DAILY_CREATES', 5),
+        payInternal,
       }
     : undefined;
   if (!market && envName === 'prod') {
