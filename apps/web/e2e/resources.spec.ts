@@ -78,6 +78,35 @@ test.describe('Resources page', () => {
     await expect(page.locator('.resources-tip-box')).toBeVisible();
     await expect(page.locator('[data-testid="resources-back"]')).toBeVisible();
   });
+
+  /**
+   * 首载 loading 态回归（2026-09 资源页首开白屏 15s）：
+   * 目录在途时渲染骨架屏占位卡片，而非与「暂无资源」同形的空白网格；
+   * 数据落定（空目录）后骨架屏消失、显示空态文案。
+   */
+  test('shows skeleton while catalog loads, then resolves', async ({ page }) => {
+    await page.route('**/api/market/listings', async (route) => {
+      await new Promise((r) => setTimeout(r, 1_000)); // 模拟慢云端
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ listings: [], stale: false }),
+      });
+    });
+
+    await gotoHome(page);
+    await clickNav(page, 'resources');
+
+    // 在途：骨架屏可见，且不误显空态
+    await expect(page.locator('[data-testid="resources-skeleton-card"]').first()).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.locator('.resources-empty')).not.toBeVisible();
+
+    // 落定：骨架屏消失，空目录显示空态文案
+    await expect(page.locator('.resources-empty')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('[data-testid="resources-skeleton-card"]')).toHaveCount(0);
+  });
 });
 
 /**

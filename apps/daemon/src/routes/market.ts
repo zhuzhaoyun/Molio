@@ -21,6 +21,10 @@ const MAX_ZIP_BYTES = 50 * 1024 * 1024;
 export const MAX_ADMIN_DIRECT_ZIP_BYTES = 70 * 1024 * 1024;
 /** publish-suggest 的 JSON body 闸门（仅 vaultId 字段，64KB 已宽裕） */
 const MAX_SUGGEST_BODY_BYTES = 64 * 1024;
+/** 无缓存冷启动时同步等云端的上限：云端 FC 冷启动 + 慢网络可拖到十几秒，超时降级空目录 */
+export const LISTINGS_COLD_TIMEOUT_MS = 8_000;
+/** SWR 后台刷新最小间隔：缓存足够新不打云端（前端每次进资源页都会强制 refresh，需防抖） */
+const LISTINGS_REFRESH_MIN_AGE_MS = 30_000;
 
 /** 表单 price（元字符串）→ 分；空/非法/≤0 → undefined（免费）。云端对非管理员再强制 0。 */
 function parsePriceCents(raw: unknown): number | undefined {
@@ -34,6 +38,8 @@ export interface MarketRoutesOptions {
   baseUrl?: string;
   /** 测试注入：覆盖发布元数据起草（默认走真实一次性 agent 调用） */
   suggestImpl?: (vaultPath: string) => Promise<MarketPublishSuggestion>;
+  /** 测试注入：listings 冷启动同步等待上限（默认 LISTINGS_COLD_TIMEOUT_MS） */
+  listingsTimeoutMs?: number;
 }
 
 export function marketRoutes(db: Database.Database, auth: AuthClient, opts: MarketRoutesOptions = {}): Hono {
@@ -66,19 +72,59 @@ export function marketRoutes(db: Database.Database, auth: AuthClient, opts: Mark
     return null;
   };
 
-  // ── 读侧：公开数据透传 + 离线缓存 ──
+  // ── 读侧：stale-while-revalidate + 冷启动超时兜底 ──
+  // 教训（2026-09）：旧实现只在云端「不可达」时才读缓存，云端「慢」（FC 冷启动 +
+  // 慢网络）时无超时无限干等 —— 资源页首次打开白屏 15s+。现在：
+  // - 有缓存 → 立即返回（stale:true），过期则后台单飞刷新，首屏永不等云端
+  // - 无缓存（首装/清库/写侧失效后）→ 同步等云端但有超时上限，超时降级空目录
+  // 写侧（publish/update/remove/admin*）成功后失效缓存，保证本机改动尽快可见。
+
+  const listingsTimeoutMs = opts.listingsTimeoutMs ?? LISTINGS_COLD_TIMEOUT_MS;
+  let listingsRefreshInFlight = false;
+
+  const readListingsCache = (): { listings: unknown[]; fetchedAt: number } | null => {
+    const row = db.prepare("SELECT json, fetched_at FROM market_cache WHERE key = 'listings'").get() as { json: string; fetched_at: number } | undefined;
+    if (!row) return null;
+    try {
+      return { listings: JSON.parse(row.json) as unknown[], fetchedAt: row.fetched_at };
+    } catch {
+      return null; // 缓存损坏视同无缓存，走冷启动路径重建
+    }
+  };
+
+  const writeListingsCache = (listings: unknown[]): void => {
+    db.prepare(`INSERT INTO market_cache (key, json, fetched_at) VALUES ('listings', ?, ?)
+      ON CONFLICT(key) DO UPDATE SET json = excluded.json, fetched_at = excluded.fetched_at`)
+      .run(JSON.stringify(listings), Date.now());
+  };
+
+  const invalidateListingsCache = (): void => {
+    db.prepare("DELETE FROM market_cache WHERE key = 'listings'").run();
+  };
+
+  /** 后台单飞刷新：成功静默更新缓存，失败静默保留旧数据（下次请求再试） */
+  const refreshListingsInBackground = (): void => {
+    if (listingsRefreshInFlight) return;
+    listingsRefreshInFlight = true;
+    void client.list({ timeoutMs: listingsTimeoutMs })
+      .then((body) => writeListingsCache(body.listings))
+      .catch(() => {})
+      .finally(() => { listingsRefreshInFlight = false; });
+  };
 
   app.get('/listings', async (c) => {
+    const cached = readListingsCache();
+    if (cached) {
+      if (Date.now() - cached.fetchedAt >= LISTINGS_REFRESH_MIN_AGE_MS) refreshListingsInBackground();
+      return c.json({ listings: cached.listings, stale: true });
+    }
     try {
-      const body = await client.list();
-      db.prepare(`INSERT INTO market_cache (key, json, fetched_at) VALUES ('listings', ?, ?)
-        ON CONFLICT(key) DO UPDATE SET json = excluded.json, fetched_at = excluded.fetched_at`)
-        .run(JSON.stringify(body.listings), Date.now());
+      const body = await client.list({ timeoutMs: listingsTimeoutMs });
+      writeListingsCache(body.listings);
       return c.json({ listings: body.listings, stale: false });
     } catch (e) {
       if (e instanceof AuthCloudError && e.status === 0) {
-        const row = db.prepare("SELECT json FROM market_cache WHERE key = 'listings'").get() as { json: string } | undefined;
-        return c.json({ listings: row ? (JSON.parse(row.json) as unknown[]) : [], stale: true });
+        return c.json({ listings: [], stale: true });
       }
       return cloudError(c, e);
     }
@@ -165,6 +211,7 @@ export function marketRoutes(db: Database.Database, auth: AuthClient, opts: Mark
       const listing = await client.confirm(created.listingId);
       db.prepare('INSERT OR REPLACE INTO market_local (listing_id, vault_id, created_at) VALUES (?, ?, ?)')
         .run(created.listingId, vaultId, Date.now());
+      invalidateListingsCache(); // 自己的上架立即反映到目录页
       return c.json({ listing });
     } catch (e) {
       console.error('[market.publish] failed:', e); // 定位用：打印真实错误（oss_put_failed 状态等）
@@ -230,6 +277,7 @@ export function marketRoutes(db: Database.Database, auth: AuthClient, opts: Mark
       if (bodyVaultId) {
         db.prepare('INSERT OR REPLACE INTO market_local (listing_id, vault_id, created_at) VALUES (?, ?, ?)').run(id, bodyVaultId, Date.now());
       }
+      invalidateListingsCache(); // 更新版本立即反映到目录页
       return c.json({ listing });
     } catch (e) {
       return cloudError(c, e);
@@ -246,6 +294,7 @@ export function marketRoutes(db: Database.Database, auth: AuthClient, opts: Mark
     try {
       await client.remove(id);
       db.prepare('DELETE FROM market_local WHERE listing_id = ?').run(id);
+      invalidateListingsCache(); // 下架立即反映到目录页
       return c.json({ ok: true });
     } catch (e) { return cloudError(c, e); }
   });
@@ -259,6 +308,7 @@ export function marketRoutes(db: Database.Database, auth: AuthClient, opts: Mark
     try {
       await client.adminRemove(id, body?.reason);
       db.prepare('DELETE FROM market_local WHERE listing_id = ?').run(id);
+      invalidateListingsCache();
       return c.json({ ok: true });
     } catch (e) { return cloudError(c, e); }
   });
@@ -268,6 +318,7 @@ export function marketRoutes(db: Database.Database, auth: AuthClient, opts: Mark
     const id = c.req.param('id');
     try {
       await client.adminRestore(id);
+      invalidateListingsCache();
       return c.json({ ok: true });
     } catch (e) { return cloudError(c, e); }
   });

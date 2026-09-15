@@ -209,6 +209,64 @@
   padding: 48px 0;
 }
 
+/* ── 首载骨架屏（shimmer 模式同 history-skeleton） ── */
+.resources-skeleton-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+}
+
+.resources-skeleton-card__top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.resources-skeleton-card span {
+  display: block;
+  background: var(--bg-muted);
+  animation: resources-shimmer 1.6s ease-in-out infinite;
+}
+
+.resources-skeleton-card__icon {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius);
+  flex-shrink: 0;
+}
+
+.resources-skeleton-card__title {
+  width: 45%;
+  height: 16px;
+  border-radius: 4px;
+}
+
+.resources-skeleton-card__line {
+  width: 90%;
+  height: 12px;
+  border-radius: 4px;
+}
+
+.resources-skeleton-card__line.is-short {
+  width: 60%;
+}
+
+@keyframes resources-shimmer {
+  0%   { opacity: 1; }
+  50%  { opacity: 0.35; }
+  100% { opacity: 1; }
+}
+
+.resources-skeleton-card:nth-child(2) span { animation-delay: 0.12s; }
+.resources-skeleton-card:nth-child(3) span { animation-delay: 0.24s; }
+.resources-skeleton-card:nth-child(4) span { animation-delay: 0.36s; }
+.resources-skeleton-card:nth-child(5) span { animation-delay: 0.48s; }
+.resources-skeleton-card:nth-child(6) span { animation-delay: 0.6s; }
+
 /* ── 详情页：面包屑 ── */
 
 .resources-breadcrumb {

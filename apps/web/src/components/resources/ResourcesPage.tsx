@@ -20,11 +20,14 @@ function applyFilter(list: CatalogEntry[], f: Filter): CatalogEntry[] {
   return list;
 }
 
+/** 首载骨架屏占位卡片数（与网格列宽自适应，纯装饰 aria-hidden） */
+const SKELETON_CARDS = 6;
+
 export function ResourcesPage() {
   const { t } = useI18n();
   const [filter, setFilter] = useState<Filter>('all');
   const pay = useResourcePay();
-  const { listings, refresh } = useMarketCatalog();
+  const { listings, loading, refresh } = useMarketCatalog();
 
   // 进入页面强制刷新一次目录（TTL 内命中缓存则不重复请求）
   useEffect(() => {
@@ -32,6 +35,8 @@ export function ResourcesPage() {
   }, [refresh]);
 
   const list = applyFilter(listings.map(marketToEntry), filter);
+  // 首次加载（无任何数据在途）→ 骨架屏，避免"加载中"与"暂无资源"同形的空白页
+  const skeleton = loading && list.length === 0;
 
   return (
     <div className="resources-shell">
@@ -56,11 +61,27 @@ export function ResourcesPage() {
           ))}
         </div>
 
-        <div className="resources-grid" data-testid="resources-grid">
-          {list.map((e) => (
-            <ResourceCard key={e.id} r={e} onPay={pay.open} />
-          ))}
-          {list.length === 0 && (
+        <div className="resources-grid" data-testid="resources-grid" aria-busy={skeleton}>
+          {skeleton ? (
+            Array.from({ length: SKELETON_CARDS }, (_, i) => (
+              <div
+                key={i}
+                className="resources-skeleton-card"
+                data-testid="resources-skeleton-card"
+                aria-hidden="true"
+              >
+                <div className="resources-skeleton-card__top">
+                  <span className="resources-skeleton-card__icon" />
+                  <span className="resources-skeleton-card__title" />
+                </div>
+                <span className="resources-skeleton-card__line" />
+                <span className="resources-skeleton-card__line is-short" />
+              </div>
+            ))
+          ) : (
+            list.map((e) => <ResourceCard key={e.id} r={e} onPay={pay.open} />)
+          )}
+          {!skeleton && list.length === 0 && (
             <div className="resources-empty">{t('resources.empty')}</div>
           )}
         </div>

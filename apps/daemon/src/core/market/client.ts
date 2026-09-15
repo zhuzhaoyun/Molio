@@ -49,7 +49,7 @@ export class MarketClient {
   private async req(
     method: string,
     path: string,
-    opts: { auth: boolean; body?: unknown },
+    opts: { auth: boolean; body?: unknown; timeoutMs?: number },
   ): Promise<Response> {
     const headers: Record<string, string> = {};
     if (opts.body !== undefined) headers['content-type'] = 'application/json';
@@ -60,6 +60,9 @@ export class MarketClient {
         method,
         headers,
         body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
+        // 超时归一为网络层失败（AbortSignal.timeout 触发 → fetch reject → cloud_unreachable），
+        // 由调用方决定降级路径（如 /listings 落缓存）。不传则不设超时（发布上传等大流量操作）。
+        ...(opts.timeoutMs !== undefined ? { signal: AbortSignal.timeout(opts.timeoutMs) } : {}),
       });
     } catch {
       throw new AuthCloudError(0, 'cloud_unreachable');
@@ -71,8 +74,9 @@ export class MarketClient {
     return resp;
   }
 
-  async list(): Promise<{ listings: MarketListing[] }> {
-    return (await (await this.req('GET', '/listings', { auth: false })).json()) as {
+  /** 目录列表（公开数据）。timeoutMs：读侧渲染链路的兜底超时，防止云端慢时无限挂起。 */
+  async list(opts?: { timeoutMs?: number }): Promise<{ listings: MarketListing[] }> {
+    return (await (await this.req('GET', '/listings', { auth: false, timeoutMs: opts?.timeoutMs })).json()) as {
       listings: MarketListing[];
     };
   }

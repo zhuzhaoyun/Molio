@@ -97,6 +97,92 @@ test('listings：成功落缓存；云端不可达回缓存 stale', async () => 
   assert.equal(body.listings.length, 1); // 来自缓存
 });
 
+// ── listings SWR + 超时兜底（2026-09 资源页首开白屏 15s 回归） ──
+
+function mkApp(db: ReturnType<typeof openDatabase>, fetchImpl: typeof fetch, extra: object = {}) {
+  const app = new Hono();
+  app.route('/api/market', marketRoutes(db, { getAccessToken: async () => 'tok' } as never, { fetchImpl, baseUrl: 'https://cloud.local', ...extra }));
+  return app;
+}
+
+function seedListingsCache(db: ReturnType<typeof openDatabase>, listings: unknown[], fetchedAt: number): void {
+  db.prepare(`INSERT INTO market_cache (key, json, fetched_at) VALUES ('listings', ?, ?)
+    ON CONFLICT(key) DO UPDATE SET json = excluded.json, fetched_at = excluded.fetched_at`)
+    .run(JSON.stringify(listings), fetchedAt);
+}
+
+test('listings SWR：有缓存立即返回（stale），过期缓存触发后台刷新落库', async () => {
+  const db = openDatabase(fs.mkdtempSync(path.join(os.tmpdir(), 'molio-db-')));
+  // fetched_at 足够旧（> 30s 最小刷新间隔）→ 应触发后台刷新
+  seedListingsCache(db, [{ id: 'cached', name: '缓存条目', priceCents: 0 }], Date.now() - 120_000);
+  const ok = makeCloud();
+  const app = mkApp(db, ok.fetchImpl);
+
+  const res = await app.request('/api/market/listings');
+  assert.equal(res.status, 200);
+  const body = (await res.json()) as { stale: boolean; listings: Array<{ id: string }> };
+  assert.equal(body.stale, true);
+  assert.equal(body.listings[0]?.id, 'cached'); // 首屏来自缓存，不等云端
+
+  // 后台刷新最终把云端数据写回缓存（轮询等待，上限 2s）
+  const deadline = Date.now() + 2_000;
+  let refreshed = false;
+  while (Date.now() < deadline) {
+    const row = db.prepare("SELECT json FROM market_cache WHERE key = 'listings'").get() as { json: string } | undefined;
+    if (row && row.json.includes('"id":"x"')) { refreshed = true; break; }
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  assert.ok(refreshed, '缓存过期后应后台刷新写入云端数据');
+});
+
+test('listings SWR：缓存新鲜时不打云端（后台刷新防抖）', async () => {
+  const db = openDatabase(fs.mkdtempSync(path.join(os.tmpdir(), 'molio-db-')));
+  seedListingsCache(db, [{ id: 'fresh' }], Date.now()); // 刚写入 → age < 30s
+  let calls = 0;
+  const counting = (async () => {
+    calls++;
+    return new Response(JSON.stringify({ listings: [] }), { status: 200 });
+  }) as unknown as typeof fetch;
+  const app = mkApp(db, counting);
+
+  const res1 = await app.request('/api/market/listings');
+  const res2 = await app.request('/api/market/listings');
+  assert.equal(res1.status, 200);
+  assert.equal(res2.status, 200);
+  assert.equal(calls, 0, '缓存新鲜时不应发起云端请求');
+});
+
+test('listings 冷启动：云端 hang → 超时后返回空目录 stale，不无限干等', async () => {
+  const db = openDatabase(fs.mkdtempSync(path.join(os.tmpdir(), 'molio-db-')));
+  // 尊重 abort signal 的「永不响应」mock：AbortSignal.timeout 触发后 reject
+  const hang = ((_url: string, init?: RequestInit) =>
+    new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(init.signal?.reason));
+    })) as unknown as typeof fetch;
+  const app = mkApp(db, hang, { listingsTimeoutMs: 100 });
+
+  const t0 = Date.now();
+  const res = await app.request('/api/market/listings');
+  const elapsed = Date.now() - t0;
+  assert.equal(res.status, 200);
+  assert.ok(elapsed < 2_000, `应在超时上限附近返回，实际 ${elapsed}ms`);
+  const body = (await res.json()) as { stale: boolean; listings: unknown[] };
+  assert.deepEqual(body.listings, []);
+  assert.equal(body.stale, true);
+});
+
+test('写侧成功失效 listings 缓存：下架后目录缓存被清除', async () => {
+  const db = openDatabase(fs.mkdtempSync(path.join(os.tmpdir(), 'molio-db-')));
+  seedListingsCache(db, [{ id: 'old' }], Date.now());
+  const ok = makeCloud();
+  const app = mkApp(db, ok.fetchImpl);
+
+  const res = await app.request('/api/market/listings/old', { method: 'DELETE' });
+  assert.equal(res.status, 200);
+  const row = db.prepare("SELECT json FROM market_cache WHERE key = 'listings'").get();
+  assert.equal(row, undefined, '写侧成功后应失效缓存，下次目录页走云端拿最新');
+});
+
 test('purchases：带 Bearer 透传云端；云端 502 pay_unreachable 原样归一；断网 502 cloud_unreachable', async () => {
   const db = openDatabase(fs.mkdtempSync(path.join(os.tmpdir(), 'molio-db-')));
   const mk = (fetchImpl: typeof fetch) => {
