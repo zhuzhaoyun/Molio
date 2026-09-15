@@ -32,7 +32,23 @@
         "apps/daemon/src/core/conversations/run-starter.ts",
         "apps/daemon/src/streams/*"
       ],
-      "specs": ["chat-single", "chat-multi", "chat-streaming", "chat-copy", "chat-regenerate", "chat-edit-resend", "chat-codeblock", "chat-continue", "chat-save-kb", "chat-overflow-menu", "chat-delete", "chat-repairing", "chat-timeout-fallback", "chat-work-visibility", "file-ref-navigation"]
+      "specs": [
+        "chat-single",
+        "chat-multi",
+        "chat-streaming",
+        "chat-copy",
+        "chat-regenerate",
+        "chat-edit-resend",
+        "chat-codeblock",
+        "chat-continue",
+        "chat-save-kb",
+        "chat-overflow-menu",
+        "chat-delete",
+        "chat-repairing",
+        "chat-timeout-fallback",
+        "chat-work-visibility",
+        "file-ref-navigation"
+      ]
     },
     "kb": {
       "paths": [
@@ -42,9 +58,30 @@
         "apps/web/src/stores/kbChatSessionsStore*",
         "apps/daemon/src/core/knowledge.ts",
         "apps/daemon/src/core/db.ts",
-        "apps/daemon/src/routes/knowledge.ts"
+        "apps/daemon/src/routes/knowledge.ts",
+        "apps/web/src/stores/splitViewStore*",
+        "apps/web/src/hooks/useCompanionFile*",
+        "apps/web/src/components/kb/CompanionHeader*"
       ],
-      "specs": ["create-vault-form", "knowledge", "markdown-render", "kb-tree-sort-locate", "kb-chat-entry", "kb-chat-sessions", "kb-qa-trigger", "file-chat-panel", "kb-tab-limit", "kb-tab-stale", "kb-large-file", "kb-large-file-gbk", "kb-large-file-15mb", "kb-large-file-too-large", "pdf-preview", "chat-work-visibility"]
+      "specs": [
+        "create-vault-form",
+        "knowledge",
+        "markdown-render",
+        "kb-tree-sort-locate",
+        "kb-chat-entry",
+        "kb-chat-sessions",
+        "kb-qa-trigger",
+        "file-chat-panel",
+        "kb-tab-limit",
+        "kb-tab-stale",
+        "kb-large-file",
+        "kb-large-file-gbk",
+        "kb-large-file-15mb",
+        "kb-large-file-too-large",
+        "pdf-preview",
+        "chat-work-visibility",
+        "split-view"
+      ]
     },
     "publish": {
       "paths": [
@@ -52,7 +89,9 @@
         "apps/daemon/src/routes/publish.ts",
         "apps/web/src/components/publish*"
       ],
-      "specs": ["publish-flow"]
+      "specs": [
+        "publish-flow"
+      ]
     },
     "runtimes": {
       "paths": [
@@ -60,14 +99,20 @@
         "apps/web/src/components/runtimes/*",
         "apps/web/src/hooks/useRuntimes*"
       ],
-      "specs": ["runtimes-page", "runtime-provider-config"]
+      "specs": [
+        "runtimes-page",
+        "runtime-provider-config"
+      ]
     },
     "graph": {
       "paths": [
         "apps/web/src/components/graph/*",
         "apps/web/src/styles/graph.css"
       ],
-      "specs": ["graph", "graph-settings"]
+      "specs": [
+        "graph",
+        "graph-settings"
+      ]
     },
     "navigation": {
       "paths": [
@@ -76,7 +121,10 @@
         "apps/web/src/App.tsx",
         "apps/web/src/main.tsx"
       ],
-      "specs": ["bootstrap", "navigation"]
+      "specs": [
+        "bootstrap",
+        "navigation"
+      ]
     },
     "settings": {
       "paths": [
@@ -89,7 +137,11 @@
         "apps/daemon/src/core/skills/*",
         "apps/daemon/src/routes/skills.ts"
       ],
-      "specs": ["settings", "skills", "skill-hub"]
+      "specs": [
+        "settings",
+        "skills",
+        "skill-hub"
+      ]
     },
     "history": {
       "paths": [
@@ -97,7 +149,9 @@
         "apps/web/src/hooks/useHistory*",
         "apps/web/src/hooks/historyFilterQuery*"
       ],
-      "specs": ["history"]
+      "specs": [
+        "history"
+      ]
     },
     "desktop": {
       "paths": [
@@ -116,7 +170,9 @@
         "apps/daemon/src/routes/auth.ts",
         "apps/cloud/src/*"
       ],
-      "specs": ["auth"]
+      "specs": [
+        "auth"
+      ]
     },
     "resources": {
       "paths": [
@@ -127,7 +183,11 @@
         "apps/web/src/styles/resources.css",
         "apps/landing-page/resources-data.js"
       ],
-      "specs": ["resources", "navigation", "bootstrap"]
+      "specs": [
+        "resources",
+        "navigation",
+        "bootstrap"
+      ]
     },
     "kb-import": {
       "paths": [
@@ -140,7 +200,13 @@
         "apps/daemon/src/routes/knowledge.ts",
         "apps/daemon/src/core/knowledge.ts"
       ],
-      "specs": ["drag-drop-import", "kb-folder-ops", "kb-folder-drag-real", "kb-file-drag-real", "kb-folder-root-drop"]
+      "specs": [
+        "drag-drop-import",
+        "kb-folder-ops",
+        "kb-folder-drag-real",
+        "kb-file-drag-real",
+        "kb-folder-root-drop"
+      ]
     },
     "market": {
       "paths": [
@@ -157,55 +223,195 @@
         "apps/cloud/src/store/market-*",
         "apps/web/e2e/fixtures/mock-oss.mjs"
       ],
-      "specs": ["market-community"]
+      "specs": [
+        "market-community"
+      ]
     }
   },
   "specs": {
-    "auth": { "priority": "P1", "file": "auth.spec.ts" },
-    "bootstrap": { "priority": "P0", "file": "bootstrap.spec.ts" },
-    "chat-single": { "priority": "P0", "file": "chat-single.spec.ts" },
-    "chat-multi": { "priority": "P0", "file": "chat-multi.spec.ts" },
-    "chat-streaming": { "priority": "P1", "file": "chat-streaming.spec.ts" },
-    "chat-copy": { "priority": "P0", "file": "chat-copy.spec.ts" },
-    "chat-overflow-menu": { "priority": "P0", "file": "chat-overflow-menu.spec.ts" },
-    "chat-delete": { "priority": "P0", "file": "chat-delete.spec.ts" },
-    "chat-regenerate": { "priority": "P0", "file": "chat-regenerate.spec.ts" },
-    "chat-edit-resend": { "priority": "P0", "file": "chat-edit-resend.spec.ts" },
-    "chat-codeblock": { "priority": "P0", "file": "chat-codeblock.spec.ts" },
-    "chat-repairing": { "priority": "P1", "file": "chat-repairing.spec.ts" },
-    "file-ref-navigation": { "priority": "P0", "file": "file-ref-navigation.spec.ts" },
-    "create-vault-form": { "priority": "P0", "file": "create-vault-form.spec.ts" },
-    "graph": { "priority": "P1", "file": "graph.spec.ts" },
-    "graph-settings": { "priority": "P2", "file": "graph-settings.spec.ts" },
-    "history": { "priority": "P1", "file": "history.spec.ts" },
-    "knowledge": { "priority": "P0", "file": "knowledge.spec.ts" },
-    "kb-tree-sort-locate": { "priority": "P1", "file": "kb-tree-sort-locate.spec.ts" },
-    "kb-chat-entry": { "priority": "P1", "file": "kb-chat-entry.spec.ts" },
-    "kb-chat-sessions": { "priority": "P1", "file": "kb-chat-sessions.spec.ts" },
-    "kb-qa-trigger": { "priority": "P1", "file": "kb-qa-trigger.spec.ts" },
-    "file-chat-panel": { "priority": "P1", "file": "file-chat-panel.spec.ts" },
-    "kb-tab-limit": { "priority": "P0", "file": "kb-tab-limit.spec.ts" },
-    "kb-tab-stale": { "priority": "P1", "file": "kb-tab-stale.spec.ts" },
-    "kb-large-file": { "priority": "P0", "file": "kb-large-file.spec.ts" },
-    "kb-large-file-gbk": { "priority": "P0", "file": "kb-large-file-gbk.spec.ts" },
-    "kb-large-file-15mb": { "priority": "P0", "file": "kb-large-file-15mb.spec.ts" },
-    "kb-large-file-too-large": { "priority": "P2", "file": "kb-large-file-too-large.spec.ts" },
-    "markdown-render": { "priority": "P1", "file": "markdown-render.spec.ts" },
-    "navigation": { "priority": "P1", "file": "navigation.spec.ts" },
-    "resources": { "priority": "P1", "file": "resources.spec.ts" },
-    "pdf-preview": { "priority": "P1", "file": "pdf-preview.spec.ts" },
-    "publish-flow": { "priority": "P0", "file": "publish-flow.spec.ts" },
-    "runtime-provider-config": { "priority": "P1", "file": "runtime-provider-config.spec.ts" },
-    "runtimes-page": { "priority": "P1", "file": "runtimes-page.spec.ts" },
-    "settings": { "priority": "P1", "file": "settings.spec.ts" },
-    "skills": { "priority": "P1", "file": "skills.spec.ts" },
-    "skill-hub": { "priority": "P1", "file": "skill-hub.spec.ts" },
-    "drag-drop-import": { "priority": "P1", "file": "drag-drop-import.spec.ts" },
-    "kb-folder-ops": { "priority": "P1", "file": "kb-folder-ops.spec.ts" },
-    "kb-folder-drag-real": { "priority": "P1", "file": "kb-folder-drag-real.spec.ts" },
-    "kb-file-drag-real": { "priority": "P1", "file": "kb-file-drag-real.spec.ts" },
-    "kb-folder-root-drop": { "priority": "P1", "file": "kb-folder-root-drop.spec.ts" },
-    "market-community": { "priority": "P1", "file": "market-community.spec.ts" },
-    "chat-work-visibility": { "priority": "P1", "file": "chat-work-visibility.spec.ts" }
+    "auth": {
+      "priority": "P1",
+      "file": "auth.spec.ts"
+    },
+    "bootstrap": {
+      "priority": "P0",
+      "file": "bootstrap.spec.ts"
+    },
+    "chat-single": {
+      "priority": "P0",
+      "file": "chat-single.spec.ts"
+    },
+    "chat-multi": {
+      "priority": "P0",
+      "file": "chat-multi.spec.ts"
+    },
+    "chat-streaming": {
+      "priority": "P1",
+      "file": "chat-streaming.spec.ts"
+    },
+    "chat-copy": {
+      "priority": "P0",
+      "file": "chat-copy.spec.ts"
+    },
+    "chat-overflow-menu": {
+      "priority": "P0",
+      "file": "chat-overflow-menu.spec.ts"
+    },
+    "chat-delete": {
+      "priority": "P0",
+      "file": "chat-delete.spec.ts"
+    },
+    "chat-regenerate": {
+      "priority": "P0",
+      "file": "chat-regenerate.spec.ts"
+    },
+    "chat-edit-resend": {
+      "priority": "P0",
+      "file": "chat-edit-resend.spec.ts"
+    },
+    "chat-codeblock": {
+      "priority": "P0",
+      "file": "chat-codeblock.spec.ts"
+    },
+    "chat-repairing": {
+      "priority": "P1",
+      "file": "chat-repairing.spec.ts"
+    },
+    "file-ref-navigation": {
+      "priority": "P0",
+      "file": "file-ref-navigation.spec.ts"
+    },
+    "create-vault-form": {
+      "priority": "P0",
+      "file": "create-vault-form.spec.ts"
+    },
+    "graph": {
+      "priority": "P1",
+      "file": "graph.spec.ts"
+    },
+    "graph-settings": {
+      "priority": "P2",
+      "file": "graph-settings.spec.ts"
+    },
+    "history": {
+      "priority": "P1",
+      "file": "history.spec.ts"
+    },
+    "knowledge": {
+      "priority": "P0",
+      "file": "knowledge.spec.ts"
+    },
+    "kb-tree-sort-locate": {
+      "priority": "P1",
+      "file": "kb-tree-sort-locate.spec.ts"
+    },
+    "kb-chat-entry": {
+      "priority": "P1",
+      "file": "kb-chat-entry.spec.ts"
+    },
+    "kb-chat-sessions": {
+      "priority": "P1",
+      "file": "kb-chat-sessions.spec.ts"
+    },
+    "kb-qa-trigger": {
+      "priority": "P1",
+      "file": "kb-qa-trigger.spec.ts"
+    },
+    "file-chat-panel": {
+      "priority": "P1",
+      "file": "file-chat-panel.spec.ts"
+    },
+    "kb-tab-limit": {
+      "priority": "P0",
+      "file": "kb-tab-limit.spec.ts"
+    },
+    "kb-tab-stale": {
+      "priority": "P1",
+      "file": "kb-tab-stale.spec.ts"
+    },
+    "kb-large-file": {
+      "priority": "P0",
+      "file": "kb-large-file.spec.ts"
+    },
+    "kb-large-file-gbk": {
+      "priority": "P0",
+      "file": "kb-large-file-gbk.spec.ts"
+    },
+    "kb-large-file-15mb": {
+      "priority": "P0",
+      "file": "kb-large-file-15mb.spec.ts"
+    },
+    "kb-large-file-too-large": {
+      "priority": "P2",
+      "file": "kb-large-file-too-large.spec.ts"
+    },
+    "markdown-render": {
+      "priority": "P1",
+      "file": "markdown-render.spec.ts"
+    },
+    "navigation": {
+      "priority": "P1",
+      "file": "navigation.spec.ts"
+    },
+    "resources": {
+      "priority": "P1",
+      "file": "resources.spec.ts"
+    },
+    "pdf-preview": {
+      "priority": "P1",
+      "file": "pdf-preview.spec.ts"
+    },
+    "publish-flow": {
+      "priority": "P0",
+      "file": "publish-flow.spec.ts"
+    },
+    "runtime-provider-config": {
+      "priority": "P1",
+      "file": "runtime-provider-config.spec.ts"
+    },
+    "runtimes-page": {
+      "priority": "P1",
+      "file": "runtimes-page.spec.ts"
+    },
+    "settings": {
+      "priority": "P1",
+      "file": "settings.spec.ts"
+    },
+    "skills": {
+      "priority": "P1",
+      "file": "skills.spec.ts"
+    },
+    "skill-hub": {
+      "priority": "P1",
+      "file": "skill-hub.spec.ts"
+    },
+    "drag-drop-import": {
+      "priority": "P1",
+      "file": "drag-drop-import.spec.ts"
+    },
+    "kb-folder-ops": {
+      "priority": "P1",
+      "file": "kb-folder-ops.spec.ts"
+    },
+    "kb-folder-drag-real": {
+      "priority": "P1",
+      "file": "kb-folder-drag-real.spec.ts"
+    },
+    "kb-file-drag-real": {
+      "priority": "P1",
+      "file": "kb-file-drag-real.spec.ts"
+    },
+    "kb-folder-root-drop": {
+      "priority": "P1",
+      "file": "kb-folder-root-drop.spec.ts"
+    },
+    "market-community": {
+      "priority": "P1",
+      "file": "market-community.spec.ts"
+    },
+    "chat-work-visibility": {
+      "priority": "P1",
+      "file": "chat-work-visibility.spec.ts"
+    }
   }
 }

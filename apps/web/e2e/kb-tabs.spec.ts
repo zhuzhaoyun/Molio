@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { clickNav } from './helpers/navigation';
 import { createTempVault, cleanupTempVault, type TempVault } from './helpers/cleanup';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -106,6 +107,21 @@ test.describe('KB tab bar', () => {
     await expect(page.locator('.kb-wtab').filter({ hasText: 'alpha.md' })).toHaveCount(1);
     await expect(page.locator('.kb-wtab.is-active')).toContainText('beta.md');
     await expect(page.locator('.kb-wtab.is-pinned')).toHaveCount(1);
+  });
+
+  test('double-click does NOT pin the graph tab (pinning only applies to file/blank tabs)', async ({ page }) => {
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+
+    // 图谱标签永不回收（per-vault 单例），固定对它无意义：双击不应打 pinned 标记，
+    // 与右键菜单对图谱标签隐藏「固定标签」项保持一致。
+    await clickNav(page, 'graph');
+    await expect(page.locator('.graph-page')).toBeVisible({ timeout: 10_000 });
+    const graphTab = page.locator('.kb-wtab.is-active');
+    await expect(graphTab).toContainText('图谱', { timeout: 5_000 });
+
+    await graphTab.dblclick();
+    await expect(page.locator('.kb-wtab.is-pinned')).toHaveCount(0, { timeout: 3_000 });
   });
 
   test('switching tabs with unsaved edits prompts to discard', async ({ page }) => {

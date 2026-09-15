@@ -622,10 +622,14 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
       // #4: 用户对「新选中的文件」再次 💬问答 → 把活跃 qa 会话的 @上下文指向该文件，
       // 否则 composer badge 仍显示旧文档（D7「每个会话记忆自己的文档」依然成立——
       // 显式问答动作把会话重新指向当前文件，恢复旧单会话行为）。
-      kbChatSessionsStore.updateSession(active.id, {
-        filePath: opts.filePath,
-        vaultId: opts.vaultId ?? active.vaultId,
-      });
+      // filePath 为 null（图谱/发布页、无文件入口）= 打开/继续会话，不改绑不清除——
+      // 避免把一个文档会话无声降级为库级。
+      if (opts.filePath) {
+        kbChatSessionsStore.updateSession(active.id, {
+          filePath: opts.filePath,
+          vaultId: opts.vaultId ?? active.vaultId,
+        });
+      }
       return;
     }
     const res = kbChatSessionsStore.openSession({
