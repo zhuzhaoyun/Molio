@@ -608,7 +608,23 @@ export class PixiGraphEngine {
     cancelAnimationFrame(this.rafId);
     this.sim?.stop();
     if (this.app) {
-      this.app.destroy(true, { children: true });
+      // 步骤断开 + 各自吞错：销毁是终态操作，任何一步失败都只记日志——异常逃逸出 React
+      // effect cleanup 会卸载整棵树（v0.3.56 线上全局白屏）。
+      // 注意不要在用户侧销毁 Text 的托管纹理（{texture:true} 等）：v8 文本纹理由
+      // CanvasTextPipe 引用计数管理，用户侧触碰会扰乱计数，令 app.destroy 内部的
+      // GC 清扫在纹理池上抛 returnTexture TypeError（日志可见，纯上游缺陷）。
+      // 这里只把标签从舞台摘除（Container 级），纹理交给管道自己的销毁清扫。
+      try {
+        this.labelsLayer.removeChildren().forEach((c) => c.destroy({ children: true }));
+        this.nodeRenderData = [];
+      } catch (err) {
+        console.warn('[graph] engine destroy: label cleanup failed', err);
+      }
+      try {
+        this.app.destroy(true, { children: true });
+      } catch (err) {
+        console.warn('[graph] engine destroy: app destroy failed', err);
+      }
     }
   }
 

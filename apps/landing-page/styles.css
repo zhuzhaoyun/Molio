@@ -2996,3 +2996,46 @@ p { margin-bottom: 0; }
   from { opacity: 0; transform: translateY(-6px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* ===== 博客文末「现成知识底座」区块 =====
+   商品 ID 来自云端商品库（不在仓库里），下架商品时需同步更新
+   blog/*.html 里写死的 resource 链接。 */
+.kg-links {
+  background: var(--paper-2);
+  border: 1px solid var(--hair);
+  border-radius: 2px;
+  padding: 32px;
+  margin-top: 32px;
+}
+
+.kg-links h2 {
+  font-family: var(--font-display);
+  font-size: 20px;
+  margin: 0 0 8px;
+  padding: 0;
+  border: none;
+}
+
+.kg-links > p {
+  font-size: 14px;
+  color: var(--ink-40);
+  margin: 0 0 8px;
+}
+
+.kg-links li {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--hair);
+}
+
+.kg-links li:last-child { border: none; }
+
+.kg-links a {
+  color: var(--seal-dark);
+  font-weight: 500;
+}
+
+.kg-links a:hover { color: var(--seal); }
+
+@media (max-width: 600px) {
+  .kg-links { padding: 24px 20px; }
+}

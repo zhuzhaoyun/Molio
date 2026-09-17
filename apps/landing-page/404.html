@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>页面不存在 — Molio 墨流</title>
+<meta name="robots" content="noindex">
+
+<!--
+  nginx error_page 404 的落地页。
+  这里所有路径必须写根绝对（/styles.css 这种）：error_page 是内部跳转，
+  浏览器地址栏仍是被访问的那个坏地址，相对路径会解析到它的父目录下
+  ——比如请求 /foo/bar/baz 时，"styles.css" 会去找 /foo/bar/styles.css。
+  状态码保持 404，不做 301 到首页：不存在的地址就该是 404，
+  返回 200+首页会被 Google 判为软 404，白白消耗抓取配额。
+-->
+
+<link rel="icon" type="image/png" href="/images/favicon-32.png">
+<link rel="apple-touch-icon" href="/images/favicon-32.png">
+<link rel="stylesheet" href="/styles.css?v=20260917">
+</head>
+<body>
+
+<nav class="top-nav" aria-label="主导航">
+  <div class="nav-inner">
+    <a href="/index.html" class="nav-logo"><img class="logo-icon-sm" src="/images/new/black.png" alt="Molio" /> Molio</a>
+    <div class="nav-links">
+      <a href="/index.html" class="nav-link">首页</a>
+      <a href="/resources.html" class="nav-link">资源</a>
+      <a href="/help.html" class="nav-link">使用指南</a>
+      <a href="/blog/index.html" class="nav-link">博客</a>
+      <a href="/enterprise.html" class="nav-link">定制服务</a>
+      <span id="nav-auth"></span><a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer" class="nav-gh" aria-label="GitHub 仓库"><svg viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg></a>
+    </div>
+  </div>
+</nav>
+
+<main class="page-content page-wide">
+  <div class="breadcrumb"><a href="/index.html">首页</a><span class="sep">/</span>页面不存在</div>
+  <h1 class="page-title">页面不存在</h1>
+  <p class="page-subtitle">你访问的地址不存在或已失效——可能是链接输错了，也可能这个页面已经下线。</p>
+
+  <div class="tip-box">
+    <strong>别急着走。</strong>你大概率要找的是下面这些地方之一。
+  </div>
+
+  <div class="related-links" style="margin-top:0;">
+    <h2>从这里继续</h2>
+    <ul>
+      <li><a href="/resources.html">知识图谱资源库</a> —— 现成的结构化知识底座，可直接导入 Obsidian 与本地 AI</li>
+      <li><a href="/index.html">Molio 首页</a> —— 看看 Molio 能做什么</li>
+      <li><a href="/help.html">使用指南</a> —— 从下载到上手，3 分钟</li>
+      <li><a href="/blog/index.html">博客</a> —— 知识管理、Obsidian 技巧与 AI 创作</li>
+      <li><a href="/enterprise.html">定制服务</a> —— 数据处理、咨询与私有部署</li>
+    </ul>
+  </div>
+</main>
+
+<!-- Footer -->
+<footer class="site-footer">
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <a href="/index.html" class="footer-logo"><img class="logo-icon-sm" src="/images/new/black.png" alt="Molio" /> Molio</a>
+      <p>会成长的 AI 知识空间。Claude Code、Codex 等 Agent 带着你的背景研究、写作、问答、分析，产出回写入库，数据全在你自己电脑上。</p>
+    </div>
+    <div class="footer-links">
+      <h4>产品</h4>
+      <a href="/index.html">首页</a>
+      <a href="/resources.html">资源</a>
+      <a href="/help.html">使用指南</a>
+      <a href="/enterprise.html">定制服务</a>
+      <a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer">GitHub 开源</a>
+    </div>
+    <div class="footer-links">
+      <h4>资源</h4>
+      <a href="/help.html">快速入门</a>
+      <a href="/blog/index.html">博客</a>
+      <a href="/resources.html">资源库</a>
+      <a href="https://github.com/zhuzhaoyun/Molio/issues" target="_blank" rel="noopener noreferrer">问题反馈</a>
+    </div>
+    <div class="footer-links">
+      <h4>关于</h4>
+      <a href="/blog/index.html">博客</a>
+      <a href="/privacy.html">隐私政策</a>
+      <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">粤ICP备2023134483号-4</a>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <span>© 2026 Molio 墨流. 基于 MIT 协议开源.</span>
+    <span>Molio 墨流 — 别再和每一个 AI 从零开始：会成长的 AI 知识空间，产出回写入库，越用越懂你的事，数据全在你自己电脑上</span>
+  </div>
+</footer>
+
+<script src="/auth.js?v=20260824a"></script>
+</body>
+</html>

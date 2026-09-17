@@ -93,7 +93,7 @@ test('SSR 商品页（/resource/xxx.html 加载 /pay.js）：SCRIPT_BASE 为根�
 test('本地 file:// 预览：解析到脚本同目录的 images/qrcode.png（不裂图）', () => {
   const { groupQrSrc } = loadPay({
     scriptSrc: 'file:///D:/work/02-code/Molio/apps/landing-page/pay.js',
-    pathname: '/D:/work/02-code/Molio/apps/landing-page/resources.html',
+    pathname: '/D:/work/02-code/Molio/apps/landing-page/index.html',
   });
   assert.equal(groupQrSrc, 'file:///D:/work/02-code/Molio/apps/landing-page/images/qrcode.png');
 });
