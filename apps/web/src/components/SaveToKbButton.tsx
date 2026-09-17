@@ -68,11 +68,13 @@ export function SaveToKbButton({ content }: Props) {
       setSavedPath(filename);
       setTip(`已保存 · ${filename}`);
       if (timerRef.current) clearTimeout(timerRef.current);
+      // 成功反馈窗 6s（check + tooltip + 「在资源管理器中显示」伴随图标同进退）：
+      // 非技术用户读完 tooltip 再移动鼠标，2.5s 不够用。失败分支维持 2.5s——错误反馈要干脆。
       timerRef.current = setTimeout(() => {
         setSaved(false);
         setSavedPath(null);
         setTip('保存到知识库');
-      }, 2500);
+      }, 6000);
     } catch {
       setSaved(false);
       setTip('保存失败');
