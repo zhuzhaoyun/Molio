@@ -90,6 +90,9 @@ test.describe('Chat — save to knowledge base', () => {
     const btn = page.locator('[data-testid="msg-save-kb-btn"]');
     await expect(btn).toHaveAttribute('data-tip', /^已保存/);
 
+    // 浏览器（非 Electron）环境不出现「在资源管理器中显示」伴随按钮——桌面壳专属能力
+    await expect(page.locator('[data-testid="msg-save-kb-reveal-btn"]')).toHaveCount(0);
+
     await page.unroute('**/api/knowledge/vaults/vault-1/files/**');
   });
 

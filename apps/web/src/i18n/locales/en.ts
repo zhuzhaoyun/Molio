@@ -111,12 +111,14 @@ const en: Record<string, string> = {
 
   // ── WorkCompleteBanner ──
   'complete.title': 'Artifacts',
+  'complete.reveal': 'Show in folder',
 
   // ── Session output panel (Home dock) ──
   'output.title': 'Session output',
   'output.stats': '{writes} writes · {turns} turns',
   'output.writesLabel': 'Writes',
   'output.locate': 'Locate this step in the conversation',
+  'output.reveal': 'Show in folder',
   'output.empty': 'No recorded writes in this conversation',
   'output.legacyHint': 'Older conversations predate process recording; write archives are kept from this version on',
   'output.toggle': 'Output panel',

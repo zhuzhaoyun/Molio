@@ -66,3 +66,38 @@
   cursor: default;
   opacity: 0.55;
 }
+/* 「在资源管理器中显示」次级动作：平时宽 0 隐去，hover 沿 pill 右缘展开，
+   不给静态清单增加死宽（同 SessionOutputPanel locate 的 hover 显现语义） */
+.work-complete-file-wrap {
+  display: inline-flex;
+  align-items: center;
+}
+.work-complete-file-reveal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 0;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  font: inherit;
+  line-height: 1;
+  color: var(--text-muted, #6b6964);
+  cursor: pointer;
+  overflow: hidden;
+  opacity: 0;
+  transition: width 0.15s ease, opacity 0.15s ease, color 0.15s ease;
+}
+.work-complete-file-wrap:hover .work-complete-file-reveal,
+.work-complete-file-wrap:focus-within .work-complete-file-reveal,
+.work-complete-file-reveal:focus-visible {
+  width: 16px;
+  opacity: 1;
+}
+.work-complete-file-reveal:hover,
+.work-complete-file-reveal:focus-visible {
+  color: var(--accent, #c96442);
+}

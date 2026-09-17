@@ -1,7 +1,8 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { api } from '../api/client';
-import { useActiveVaultId } from '../stores/vaultStore';
-import { SaveIcon, CheckIcon } from './icons';
+import { useActiveVault, useActiveVaultId } from '../stores/vaultStore';
+import { isRevealAvailable, revealInFolder } from '../utils/reveal';
+import { SaveIcon, CheckIcon, FolderIcon } from './icons';
 
 interface Props {
   /** Raw markdown content of the assistant message to persist. */
@@ -39,9 +40,14 @@ function timestampStamp(): string {
  */
 export function SaveToKbButton({ content }: Props) {
   const vaultId = useActiveVaultId();
+  const activeVault = useActiveVault();
   const [saved, setSaved] = useState(false);
+  // 保存成功的文件名：驱动「在资源管理器中显示」伴随按钮（与 saved 同一 2.5s 窗口）
+  const [savedPath, setSavedPath] = useState<string | null>(null);
   const [tip, setTip] = useState<string>(vaultId ? '保存到知识库' : '先选择一个知识库');
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 仅桌面壳（window.__electron__）且选中 vault 时提供定位能力（纯浏览器不渲染）
+  const canReveal = isRevealAvailable() && !!activeVault?.path;
 
   useEffect(() => () => {
     if (timerRef.current) clearTimeout(timerRef.current);
@@ -59,10 +65,12 @@ export function SaveToKbButton({ content }: Props) {
     try {
       await api.writeFile(vaultId, filename, content);
       setSaved(true);
+      setSavedPath(filename);
       setTip(`已保存 · ${filename}`);
       if (timerRef.current) clearTimeout(timerRef.current);
       timerRef.current = setTimeout(() => {
         setSaved(false);
+        setSavedPath(null);
         setTip('保存到知识库');
       }, 2500);
     } catch {
@@ -74,16 +82,30 @@ export function SaveToKbButton({ content }: Props) {
   }, [vaultId, content]);
 
   return (
-    <button
-      type="button"
-      className={`icon-btn${saved ? ' copied' : ''}`}
-      data-tip={tip}
-      data-testid="msg-save-kb-btn"
-      onClick={save}
-      disabled={!vaultId}
-      aria-label={tip}
-    >
-      {saved ? <CheckIcon size={15} /> : <SaveIcon size={15} />}
-    </button>
+    <>
+      <button
+        type="button"
+        className={`icon-btn${saved ? ' copied' : ''}`}
+        data-tip={tip}
+        data-testid="msg-save-kb-btn"
+        onClick={save}
+        disabled={!vaultId}
+        aria-label={tip}
+      >
+        {saved ? <CheckIcon size={15} /> : <SaveIcon size={15} />}
+      </button>
+      {saved && canReveal && savedPath && (
+        <button
+          type="button"
+          className="icon-btn"
+          data-tip="在资源管理器中显示"
+          data-testid="msg-save-kb-reveal-btn"
+          aria-label={`在资源管理器中显示 · ${savedPath}`}
+          onClick={() => { if (activeVault?.path && savedPath) revealInFolder(activeVault.path, savedPath); }}
+        >
+          <FolderIcon size={15} />
+        </button>
+      )}
+    </>
   );
 }

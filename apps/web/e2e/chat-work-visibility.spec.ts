@@ -147,6 +147,9 @@ test.describe('KB chat — work visibility', () => {
     // 有 active vault → 产物文件按钮可点
     await expect(banner.locator('[data-testid="work-complete-file"]')).toBeEnabled();
 
+    // 浏览器（非 Electron）环境不渲染「在资源管理器中显示」——桌面壳专属能力
+    await expect(banner.locator('[data-testid="work-complete-file-reveal"]')).toHaveCount(0);
+
     await banner.locator('[data-testid="work-complete-file"]').click();
     await expect(page.locator('#output')).toContainText('总结', { timeout: 10_000 });
   });

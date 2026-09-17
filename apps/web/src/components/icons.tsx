@@ -127,6 +127,15 @@ export function SaveIcon({ size = 16, className }: IconProps) {
   );
 }
 
+/** Folder — reveal the file in the system file manager (在资源管理器中显示). */
+export function FolderIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg {...base(size)} className={className}>
+      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+    </svg>
+  );
+}
+
 /** Four-point sparkle — "save as skill" (AI-distilled capability). */
 export function SparkleIcon({ size = 16, className }: IconProps) {
   return (

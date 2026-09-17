@@ -10,7 +10,9 @@ import type { DiffLine } from '../utils/diff';
 import { useActiveVault, useActiveVaultId } from '../stores/vaultStore';
 import { useI18n } from '../i18n';
 import { api } from '../api/client';
+import { isRevealAvailable, revealInFolder } from '../utils/reveal';
 import { MdRenderer } from './kb/MdRenderer';
+import { FolderIcon } from './icons';
 
 /** dock 宽度：默认 280，可拖宽 200–480 并持久化（复用 KbChatSessionsPanel 存储模式） */
 const DOCK_W_DEFAULT = 280;
@@ -98,6 +100,8 @@ export function SessionOutputPanel({ messages }: Props) {
     [messages],
   );
   const vaultId = useActiveVaultId();
+  // 「在资源管理器中显示」：仅桌面壳（window.__electron__）且选中 vault 时渲染
+  const revealReady = isRevealAvailable() && !!activeVault?.path;
 
   const [width, setWidth] = useState<number>(readDockWidth);
   const panelElRef = useRef<HTMLDivElement>(null);
@@ -395,6 +399,21 @@ export function SessionOutputPanel({ messages }: Props) {
                       >
                         <span aria-hidden>⌖</span>
                       </button>
+                      {revealReady && (
+                        <button
+                          type="button"
+                          className="session-output-item-reveal"
+                          data-testid="session-output-reveal"
+                          title={t('output.reveal')}
+                          aria-label={`${t('output.reveal')} · ${w.path}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (activeVault?.path) revealInFolder(activeVault.path, w.path);
+                          }}
+                        >
+                          <FolderIcon size={12} />
+                        </button>
+                      )}
                     </div>
                   ))}
                 </section>

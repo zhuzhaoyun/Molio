@@ -5,10 +5,11 @@
 import { useMemo } from 'react';
 import type { ToolEvent } from '../hooks/useChatCore';
 import { extractWrites } from '../utils/toolRefs';
+import { isRevealAvailable, revealInFolder } from '../utils/reveal';
 import { useFileNavigation } from '../hooks/useFileNavigation';
-import { useActiveVaultId } from '../stores/vaultStore';
+import { useActiveVault } from '../stores/vaultStore';
 import { useI18n } from '../i18n';
-import { FileIcon } from './icons';
+import { FileIcon, FolderIcon } from './icons';
 
 interface Props {
   tools: ToolEvent[];
@@ -17,8 +18,12 @@ interface Props {
 export function WorkCompleteBanner({ tools }: Props) {
   const { t } = useI18n();
   const writes = useMemo(() => extractWrites(tools), [tools]);
-  const vaultId = useActiveVaultId();
+  const activeVault = useActiveVault();
+  const vaultId = activeVault?.id ?? null;
+  const vaultPath = activeVault?.path ?? null;
   const { openFile } = useFileNavigation();
+  // 「在资源管理器中显示」：仅桌面壳（window.__electron__）且选中 vault 时渲染
+  const revealReady = isRevealAvailable() && !!vaultPath;
 
   if (writes.length === 0) return null;
 
@@ -30,20 +35,33 @@ export function WorkCompleteBanner({ tools }: Props) {
       </span>
       <div className="work-complete-files">
         {writes.map((w) => (
-          <button
-            key={w.path}
-            type="button"
-            className="work-complete-file"
-            data-testid="work-complete-file"
-            title={w.path}
-            disabled={!vaultId}
-            onClick={() => { if (vaultId) openFile(vaultId, w.path); }}
-          >
-            <span className="work-complete-file-icon" aria-hidden>
-              {w.kind === 'create' ? '＋' : '✎'}
-            </span>
-            <span className="work-complete-file-label">{w.label}</span>
-          </button>
+          <span key={w.path} className="work-complete-file-wrap">
+            <button
+              type="button"
+              className="work-complete-file"
+              data-testid="work-complete-file"
+              title={w.path}
+              disabled={!vaultId}
+              onClick={() => { if (vaultId) openFile(vaultId, w.path); }}
+            >
+              <span className="work-complete-file-icon" aria-hidden>
+                {w.kind === 'create' ? '＋' : '✎'}
+              </span>
+              <span className="work-complete-file-label">{w.label}</span>
+            </button>
+            {revealReady && (
+              <button
+                type="button"
+                className="work-complete-file-reveal"
+                data-testid="work-complete-file-reveal"
+                title={t('complete.reveal')}
+                aria-label={`${t('complete.reveal')} · ${w.path}`}
+                onClick={() => { if (vaultPath) revealInFolder(vaultPath, w.path); }}
+              >
+                <FolderIcon size={11} />
+              </button>
+            )}
+          </span>
         ))}
       </div>
     </div>

@@ -111,12 +111,14 @@ const zh: Record<string, string> = {
 
   // ── WorkCompleteBanner ──
   'complete.title': '产出文件',
+  'complete.reveal': '在资源管理器中显示',
 
   // ── 会话产出面板（主页 dock）──
   'output.title': '会话产出',
   'output.stats': '写入 {writes} · {turns} 轮',
   'output.writesLabel': '写入',
   'output.locate': '在对话中定位这一步',
+  'output.reveal': '在资源管理器中显示',
   'output.empty': '该会话没有写入产出的记录',
   'output.legacyHint': '较早的会话未记录过程数据，产出档案自本版本起随会话保留',
   'output.toggle': '产出面板',
