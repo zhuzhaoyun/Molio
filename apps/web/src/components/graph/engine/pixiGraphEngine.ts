@@ -608,7 +608,21 @@ export class PixiGraphEngine {
     cancelAnimationFrame(this.rafId);
     this.sim?.stop();
     if (this.app) {
-      this.app.destroy(true, { children: true });
+      // 标签纹理先于 renderer 显式归还：Text 纹理的卸载若留在 renderer 销毁后的 children
+      // 级联里，可能落入已失效的纹理池（线上 v0.3.56 白屏：returnTexture undefined.push）。
+      // 在 renderer 存活时逐个销毁，让纹理走存活的归还路径。步骤断开 + 各自吞错：销毁是终态
+      // 操作，任何一步失败都只记日志——异常逃逸出 React effect cleanup 会卸载整棵树（全局白屏）。
+      try {
+        this.labelsLayer.removeChildren().forEach((c) => c.destroy({ texture: true, textureSource: true }));
+        this.nodeRenderData = [];
+      } catch (err) {
+        console.warn('[graph] engine destroy: label texture cleanup failed', err);
+      }
+      try {
+        this.app.destroy(true, { children: true });
+      } catch (err) {
+        console.warn('[graph] engine destroy: app destroy failed', err);
+      }
     }
   }
 

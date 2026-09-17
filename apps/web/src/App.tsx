@@ -14,6 +14,7 @@ import { ResourcesPage } from './components/resources/ResourcesPage';
 import { ResourceDetailPage } from './components/resources/ResourceDetailPage';
 import { UpdateNotification } from './components/UpdateNotification';
 import { PreloadToast } from './components/PreloadToast';
+import { AppErrorBoundary } from './components/AppErrorBoundary';
 import { LanguageProvider } from './i18n/LanguageProvider';
 import { useI18n } from './i18n';
 import type { Locale } from './i18n';
@@ -268,6 +269,7 @@ export default function App() {
 
   return (
     <LanguageProvider initialLocale={locale}>
+      <AppErrorBoundary>
       <div className="entry-shell">
         <NavRail />
         <div className="entry-main">
@@ -344,6 +346,7 @@ export default function App() {
         />
         <VaultSwitchNotice visible={vaultSwitchNotice} />
       </div>
+      </AppErrorBoundary>
     </LanguageProvider>
   );
 }
