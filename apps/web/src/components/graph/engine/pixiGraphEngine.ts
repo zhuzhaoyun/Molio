@@ -608,15 +608,17 @@ export class PixiGraphEngine {
     cancelAnimationFrame(this.rafId);
     this.sim?.stop();
     if (this.app) {
-      // 标签纹理先于 renderer 显式归还：Text 纹理的卸载若留在 renderer 销毁后的 children
-      // 级联里，可能落入已失效的纹理池（线上 v0.3.56 白屏：returnTexture undefined.push）。
-      // 在 renderer 存活时逐个销毁，让纹理走存活的归还路径。步骤断开 + 各自吞错：销毁是终态
-      // 操作，任何一步失败都只记日志——异常逃逸出 React effect cleanup 会卸载整棵树（全局白屏）。
+      // 步骤断开 + 各自吞错：销毁是终态操作，任何一步失败都只记日志——异常逃逸出 React
+      // effect cleanup 会卸载整棵树（v0.3.56 线上全局白屏）。
+      // 注意不要在用户侧销毁 Text 的托管纹理（{texture:true} 等）：v8 文本纹理由
+      // CanvasTextPipe 引用计数管理，用户侧触碰会扰乱计数，令 app.destroy 内部的
+      // GC 清扫在纹理池上抛 returnTexture TypeError（日志可见，纯上游缺陷）。
+      // 这里只把标签从舞台摘除（Container 级），纹理交给管道自己的销毁清扫。
       try {
-        this.labelsLayer.removeChildren().forEach((c) => c.destroy({ texture: true, textureSource: true }));
+        this.labelsLayer.removeChildren().forEach((c) => c.destroy({ children: true }));
         this.nodeRenderData = [];
       } catch (err) {
-        console.warn('[graph] engine destroy: label texture cleanup failed', err);
+        console.warn('[graph] engine destroy: label cleanup failed', err);
       }
       try {
         this.app.destroy(true, { children: true });
