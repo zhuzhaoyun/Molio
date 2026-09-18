@@ -52,6 +52,16 @@ describe('main.js per-window title (taskbar hover previews)', () => {
     assert.ok(body.includes('windowTitleSeq'), '必须用序号丢弃过期的异步结果（快速连续导航）');
   });
 
+  it('阻止页面静态 <title> 覆盖窗口标题（page-title-updated preventDefault）', () => {
+    // web index.html 有静态 <title>Molio</title>，全量加载后 page-title-updated
+    // 会把 setTitle 的结果冲掉——真机验证抓到的回归点，必须锁住。
+    assert.match(
+      mainSource,
+      /win\.on\('page-title-updated',\s*\(event\)\s*=>\s*event\.preventDefault\(\)\)/,
+      '缺少 page-title-updated preventDefault — 页面静态标题会覆盖每窗口 vault 标题',
+    );
+  });
+
   it('recency 记录的 vaultRecency 空值守卫不影响标题更新', () => {
     const body = navigationHandlerBody();
     assert.ok(body.includes('if (vaultId && vaultRecency) vaultRecency.touch(vaultId);'), 'recency 仍受 vaultRecency 空值守卫');

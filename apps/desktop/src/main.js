@@ -542,6 +542,11 @@ function createWindow({ url = '' } = {}) {
   win.webContents.on('did-navigate', recordVaultNavigation);
   win.webContents.on('did-navigate-in-page', recordVaultNavigation);
 
+  // The page's static <title>Molio</title> fires page-title-updated after every
+  // full load and would clobber the per-vault title set above. The web layer
+  // never sets document.title dynamically, so the main process owns the title.
+  win.on('page-title-updated', (event) => event.preventDefault());
+
   // F12 / Ctrl+Shift+I toggles DevTools in production builds for debugging.
   win.webContents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return;
