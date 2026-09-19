@@ -58,6 +58,7 @@ scripts/
   prepare-resources.mjs  构建时打包 daemon 和复制资源
   package.mjs            打包脚本
   fix-exe-metadata.mjs   修复 exe 元数据
+e2e/                Playwright Electron GUI E2E（打 win-unpacked 真包驱动；Windows only，每 spec 独占 app 生命周期 + 3100 端口，不进 PR 快检；nightly e2e.yml `desktop-e2e` job 运行，可 workflow_dispatch 手动触发）
 ```
 
 ### 用户模块 M4：token 加密 + ARMS userId（2026-08-11）

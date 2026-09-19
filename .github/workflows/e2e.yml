@@ -65,3 +65,68 @@ jobs:
           name: test-results-full-${{ github.run_id }}
           path: apps/web/test-results/
           retention-days: 7
+
+  # Desktop GUI E2E (apps/desktop/e2e): launches the packaged win-unpacked app
+  # and drives it over CDP. Windows-only: each spec owns the full app lifecycle
+  # (single-instance lock + exclusive port 3100), so this runs nightly instead
+  # of in PR checks — rot is caught within 24h without blocking PRs or releases.
+  # Pre-release gate: dispatch this workflow manually on the release branch.
+  desktop-e2e:
+    runs-on: windows-2022
+    timeout-minutes: 40
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch || 'main' }}
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        env:
+          # CI runners are outside China — use the official npm registry instead of
+          # npmmirror.com to avoid CDN routing issues (e.g. app-builder-bin timeouts).
+          npm_config_registry: https://registry.npmjs.org
+
+      - name: Build all packages
+        run: pnpm build
+
+      - name: Build unpacked app (win-unpacked)
+        working-directory: apps/desktop
+        # On overseas CI runners, electron-builder downloads the Electron zip and
+        # NSIS binaries directly from GitHub — no mirror needed. For local builds
+        # inside China, set ELECTRON_MIRROR and ELECTRON_BUILDER_BINARIES_MIRROR
+        # to npmmirror.com first (better-sqlite3 prebuilds already fall back to
+        # npmmirror via prebuild-install config).
+        run: npx electron-builder --win --dir
+
+      # No `playwright install` needed: _electron drives our own packaged
+      # Electron binary over CDP, not a downloaded browser.
+      - name: Run desktop E2E
+        run: pnpm --filter @molio/desktop test:e2e
+        env:
+          CI: 'true'
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-e2e-report-${{ github.run_id }}
+          path: apps/desktop/e2e-results/
+          retention-days: 30
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-e2e-results-${{ github.run_id }}
+          path: apps/desktop/test-results/
+          retention-days: 7

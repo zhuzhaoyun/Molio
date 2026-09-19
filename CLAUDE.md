@@ -169,6 +169,7 @@ apps/daemon/src/core/RunManager.ts, conversations/run-starter.ts, db.ts
 | Unit | `node:test` | `apps/daemon/test/**`, `apps/desktop/test/**` | 每次 PR (win + mac) |
 | E2E | Playwright | `apps/web/e2e/*.spec.ts` | 每次 PR (ubuntu) — affected + P0 |
 | E2E Full | Playwright | 同上 | nightly 03:00 UTC + manual |
+| Desktop E2E | Playwright (Electron) | `apps/desktop/e2e/specs/**` | nightly 03:00 UTC + manual（e2e.yml `desktop-e2e` job, windows-2022；每 spec 独占 app 生命周期 + 3100 端口，不进 PR 快检） |
 | Release Smoke | inline (release.yml) | `apps/desktop/dist/win-unpacked` 等 | tag 触发 |
 | Impact Analysis | grep + area-map | `scripts/codegraph-impact.mjs` | PR opened/synchronize/reopened |
 
@@ -194,7 +195,7 @@ area 映射在 `apps/web/e2e/area-map.json`，包含 path globs → specs。
 | Workflow | 触发 | 作用 |
 |---|---|---|
 | `pr-check.yml` | PR | matrix `[windows-latest, macos-latest]` 跑 build+typecheck+unit；ubuntu job 跑 affected E2E |
-| `e2e.yml` | nightly + manual | 全量 E2E (P0+P1+P2) |
+| `e2e.yml` | nightly + manual | 全量 web E2E (P0+P1+P2) + desktop GUI E2E（win-unpacked, windows-2022）|
 | `impact-analysis.yml` | PR opened/synchronize/reopened | 分析 diff + 命中 area + 会跑的 E2E 清单 → PR 评论 |
 | `release.yml` | tag `v*` | win + mac 打包 + smoke (启动 exe → 验证 daemon 健康 → 验证 web UI) |
 | `coverage-reminder.yml` | daily 18:00 Asia/Shanghai | 扫描前 24h 合并的 PR，检查 area 覆盖 |
