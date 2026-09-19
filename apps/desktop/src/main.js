@@ -57,6 +57,14 @@ const DOCK_REFRESH_THROTTLE_MS = 3000;
 // shown in Windows protocol association dialogs ("要打开 Molio 吗?").
 app.name = 'Molio';
 
+// Windows: the AppUserModelID must equal build.appId in package.json. The NSIS
+// installer stamps that ID onto its shortcuts; without it, windows get an
+// auto-generated AUMID matching no shortcut, so the taskbar Jump List name,
+// pinning and toast notifications fall back to the exe's FileDescription
+// (which older unpatched builds show as "Electron").
+// The trailing marker comment is load-bearing: packaging tests assert on it.
+app.setAppUserModelId('com.molio.desktop'); // molio:aumid-call
+
 /** All open application windows (feishu login windows are NOT tracked here). */
 const appWindows = new Set();
 /** Most recently focused application window — target for second-instance/activate. */
@@ -374,6 +382,49 @@ async function refreshDockMenu() {
   app.dock.setMenu(buildDockMenu(ranked));
 }
 
+/**
+ * Vault id → display name cache for per-window titles. Fetched lazily from the
+ * daemon; a cache miss (vault created/renamed after the first fetch) triggers
+ * one refetch. Stays null while the daemon is unreachable so the next
+ * navigation retries.
+ */
+let vaultNameCache = null;
+
+async function resolveVaultName(vaultId) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (!vaultNameCache) {
+      try {
+        const res = await fetch(`${DAEMON_BASE}/api/knowledge/vaults`, { signal: AbortSignal.timeout(2500) });
+        const body = res.ok ? await res.json() : {};
+        const vaults = Array.isArray(body.vaults) ? body.vaults : [];
+        vaultNameCache = new Map(vaults.map((v) => [v.id, v.name || v.id]));
+      } catch {
+        return null;
+      }
+    }
+    if (vaultNameCache.has(vaultId)) return vaultNameCache.get(vaultId);
+    vaultNameCache = null;
+  }
+  return null;
+}
+
+/**
+ * Windows taskbar hover previews and Alt+Tab show the per-window title — with
+ * N windows all titled "Molio" there is no way to tell them apart. Lead with
+ * the vault name; non-vault pages (home/chat) keep the plain app name. The
+ * sequence number drops stale async results when navigations arrive faster
+ * than the daemon answers.
+ */
+const windowTitleSeq = new WeakMap();
+
+async function updateWindowTitle(win, vaultId) {
+  const seq = (windowTitleSeq.get(win) || 0) + 1;
+  windowTitleSeq.set(win, seq);
+  const name = vaultId ? await resolveVaultName(vaultId) : null;
+  if (win.isDestroyed() || windowTitleSeq.get(win) !== seq) return;
+  win.setTitle(name ? `${name} — Molio` : 'Molio');
+}
+
 /** Throttled refresh — vault list changes happen inside web windows we can't observe. */
 function throttleRefreshDockMenu() {
   const now = Date.now();
@@ -484,17 +535,25 @@ function createWindow({ url = '' } = {}) {
     return { action: 'deny' };
   });
 
-  // Feed the macOS dock 「最近使用的知识库」 menu. Record the vault in the URL on
-  // ANY navigation: full loads (did-navigate — initial open, molio://, cloned
-  // windows) and SPA vault switches (did-navigate-in-page — pushState).
+  // Record the vault in the URL on ANY navigation: full loads (did-navigate —
+  // initial open, molio://, cloned windows) and SPA vault switches
+  // (did-navigate-in-page — pushState). Drives two consumers: the macOS dock
+  // 「最近使用的知识库」 menu (recency) and the per-window title (taskbar hover
+  // previews distinguish windows by vault name).
   const recordVaultNavigation = (_event, url, isMainFrame) => {
-    if (!isMainFrame || !vaultRecency) return;
+    if (!isMainFrame) return;
     let vaultId = null;
-    try { vaultId = new URL(url).searchParams.get('vault'); } catch { return; }
-    if (vaultId) vaultRecency.touch(vaultId);
+    try { vaultId = new URL(url).searchParams.get('vault'); } catch { /* fall through — still resets the title below */ }
+    if (vaultId && vaultRecency) vaultRecency.touch(vaultId);
+    void updateWindowTitle(win, vaultId);
   };
   win.webContents.on('did-navigate', recordVaultNavigation);
   win.webContents.on('did-navigate-in-page', recordVaultNavigation);
+
+  // The page's static <title>Molio</title> fires page-title-updated after every
+  // full load and would clobber the per-vault title set above. The web layer
+  // never sets document.title dynamically, so the main process owns the title.
+  win.on('page-title-updated', (event) => event.preventDefault());
 
   // F12 / Ctrl+Shift+I toggles DevTools in production builds for debugging.
   win.webContents.on('before-input-event', (event, input) => {
