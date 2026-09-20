@@ -23,7 +23,7 @@
 <link rel="apple-touch-icon" href="/images/favicon-180.png">
 
 <!-- Styles -->
-<link rel="stylesheet" href="styles.css?v=20260828a">
+<link rel="stylesheet" href="styles.css?v=20260920a">
 
 <!-- Open Graph -->
 <meta property="og:title" content="Molio 墨流 — 让 AI 拥有你的个人知识底座">
@@ -76,6 +76,16 @@
         "url": "https://molio.cn/#download"
       },
       "author": { "@type": "Organization", "name": "Molio" }
+    },
+    {
+      "@type": "VideoObject",
+      "name": "《资治通鉴》知识底座演示",
+      "description": "一本书，一个知识宇宙：《资治通鉴》1362 年史料由 Molio 加工成 AI 可探索的知识底座。",
+      "thumbnailUrl": "https://molio.cn/images/kg-graph.webp",
+      "contentUrl": "https://molio.cn/videos/zizhitongjian-overview-v2.mp4",
+      "uploadDate": "2026-09-20",
+      "duration": "PT18S",
+      "publisher": { "@type": "Organization", "name": "Molio" }
     }
   ]
 }
@@ -90,7 +100,6 @@
     <div class="nav-links">
       <a href="index.html" class="nav-link active">首页</a>
       <a href="resources.html" class="nav-link">资源</a>
-      <a href="help.html" class="nav-link">使用指南</a>
       <a href="blog/index.html" class="nav-link">博客</a>
       <a href="enterprise.html" class="nav-link">定制服务</a>
      <span id="nav-auth"></span><a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer" class="nav-gh" aria-label="GitHub 仓库"><svg viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg></a></div>
@@ -111,30 +120,18 @@
         <span class="hero-title-line">让 AI 拥有</span><br>
         <span class="hero-title-sub">你的个人知识底座</span>
       </h1>
-      <p class="hero-desc reveal" style="--delay:2">你的积累不止一种形态：笔记、文档、聊天记录里的经验与方法，也有整本书、带图表的 PDF、成堆的行业资料。Molio 把它们统一加工成 AI 可读的知识空间，让这些积累被组织、连接和调用，成为 AI 可以理解和使用的长期资产。</p>
-      <ul class="hero-checks reveal" style="--delay:3">
-        <li>Claude Code、Codex 在知识空间中工作</li>
-        <li>新的成果持续沉淀回来</li>
-        <li>本地运行，数据始终属于你</li>
-      </ul>
-      <div class="hero-actions reveal" style="--delay:4">
+      <p class="hero-desc reveal" style="--delay:2">散落的笔记、整本书、带图 PDF，Molio 加工成 AI 可读的本地知识底座；Claude Code、Codex 基于你的积累工作，数据始终在本地。</p>
+      <div class="hero-actions reveal" style="--delay:3">
         <div class="dl-seg">
           <a data-dl="win" href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases/v0.3.29/Molio-Setup-0.3.29-windows.exe" class="dl-seg__main">下载 Windows 版</a>
           <a data-dl="mac" href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases/v0.3.29/Molio-0.3.29-mac-arm64.dmg" class="dl-seg__alt">macOS 版</a>
         </div>
         <a href="resources.html" class="btn btn-seal">免费领现成知识底座</a>
       </div>
-      <div class="hero-sublinks reveal" style="--delay:5">
-        <a href="#download">麒麟 / NAS / Linux？Docker 自建</a>
-        <span class="hero-sublinks-sep">·</span>
-        <a href="help.html">3 分钟上手</a>
-      </div>
     </div>
     <div class="hero-visual reveal" style="--delay:2">
-      <div class="showcase-video-frame">
-        <video controls preload="none" poster="images/kg-graph.webp">
-          <source src="videos/zizhitongjian-overview.mp4" type="video/mp4">
-        </video>
+      <div class="hero-video-stack" id="heroVideoStack">
+        <img src="images/kg-graph.webp" alt="《资治通鉴》知识图谱：由 Molio 加工成 AI 可探索的知识底座" width="1280" height="842" fetchpriority="high" decoding="async">
       </div>
       <p class="hero-video-caption">一本书，一个知识宇宙：《资治通鉴》1362 年史料 · 由 Molio 加工成 AI 可探索的知识底座</p>
     </div>
@@ -147,7 +144,7 @@
     <div class="manifesto-inner reveal">
       <span class="section-label dark">Why · 为什么需要知识底座</span>
       <h2>你的积累，<br>正散落在各处</h2>
-      <p>笔记里的片段、硬盘里的整本书、带图表的 PDF、聊天记录里的灵感——那是你多年攒下的东西，却从未被真正组织起来。AI 看不见它们，于是每一次对话，都从零开始。</p>
+      <p>笔记里的片段、硬盘里的整本书、带图表的 PDF、聊天记录里的灵感，那是你多年攒下的东西，却从未被真正组织起来。AI 看不见它们，于是每一次对话，都从零开始。</p>
     </div>
     <div class="scatter-flow reveal" style="--delay:1">
       <div class="scatter-sources">
@@ -173,37 +170,75 @@
   </div>
 </section>
 
-<!-- ===== ENTERPRISE BANNER ===== -->
-<section class="section section-dark section-ent-banner" id="enterprise">
-  <div class="ent-banner-inner reveal">
-    <div class="ent-banner-text">
-      <span class="section-label dark">Custom · 定制服务</span>
-      <h2>把核心知识，<br>留在你自己的院子里</h2>
-      <p class="sub">散料炼成知识库，陪你用到会——数据处理、咨询，私有部署按需，一次演示见真章。</p>
-      <div class="ent-banner-tags">
-        <span>数据处理</span>
-        <span>咨询</span>
-        <span>私有部署</span>
+<!-- ===== LOOP: 知识复利循环 ===== -->
+<section class="section section-inset section-closure" id="loop">
+  <div class="closure-inner reveal">
+    <span class="section-label light">Loop · 积累的复利</span>
+    <h2>越用，越懂你</h2>
+    <p class="loop-sub">你的每一次使用都在喂养它，积累开始复利。</p>
+    <div class="closure-ring">
+      <div class="closure-center">M</div>
+      <div class="closure-node" style="--angle: 0deg">
+        <div class="node-dot">01</div>
+        <div class="node-label">收集<small>Collect</small></div>
       </div>
-      <a href="enterprise.html" class="btn btn-light">了解定制服务 →</a>
+      <div class="closure-node" style="--angle: 72deg">
+        <div class="node-dot">02</div>
+        <div class="node-label">整理<small>Organize</small></div>
+      </div>
+      <div class="closure-node" style="--angle: 144deg">
+        <div class="node-dot">03</div>
+        <div class="node-label">创作<small>Create</small></div>
+      </div>
+      <div class="closure-node" style="--angle: 216deg">
+        <div class="node-dot">04</div>
+        <div class="node-label">回写<small>Reflow</small></div>
+      </div>
+      <div class="closure-node" style="--angle: 288deg">
+        <div class="node-dot">05</div>
+        <div class="node-label">生长<small>Grow</small></div>
+      </div>
     </div>
-    <div class="ent-banner-stamp reveal" style="--delay:1">数据<br>不出域</div>
+  </div>
+</section>
+
+<!-- ===== CAPS: 能力四图 ===== -->
+<section class="section section-dark section-caps" id="caps">
+  <div class="caps-inner">
+    <h2 class="reveal">知识底座长这样</h2>
+    <p class="caps-sub reveal">四个核心界面，点击可放大查看</p>
+    <div class="cap-grid">
+      <figure class="cap-card reveal" style="--delay:1">
+        <img src="images/kg-graph.webp" alt="知识图谱" loading="lazy" />
+        <figcaption class="cap-tag">知识图谱</figcaption>
+      </figure>
+      <figure class="cap-card reveal" style="--delay:2">
+        <img src="images/wiki_knowledge.webp" alt="构建 Wiki" loading="lazy" />
+        <figcaption class="cap-tag">构建 Wiki</figcaption>
+      </figure>
+      <figure class="cap-card reveal" style="--delay:3">
+        <img src="images/main.webp" alt="AI 对话" loading="lazy" />
+        <figcaption class="cap-tag">AI 对话</figcaption>
+      </figure>
+      <figure class="cap-card reveal" style="--delay:4">
+        <img src="images/previews/mingshi/1.png" alt="排版发布" loading="lazy" />
+        <figcaption class="cap-tag">排版发布</figcaption>
+      </figure>
+    </div>
   </div>
 </section>
 
 <!-- ===== DOWNLOAD: 客户端与扩展 ===== -->
 <section class="section section-inset" id="download">
-  <div style="max-width:var(--max-w); margin:0 auto; padding:0 24px;">
-    <div class="reveal" style="text-align:center; margin-bottom:16px;">
-      <span class="section-label light">Download · 获取 Molio</span>
-      <h2 style="font-family:var(--font-display); font-size:34px; font-weight:700; margin-top:12px;">下载客户端与浏览器扩展</h2>
-      <p style="color:var(--ink-40); margin-top:10px;">找现成的知识库？<a href="resources.html" style="color:var(--seal-dark); text-decoration:underline; text-underline-offset:2px;">去资源库看看 →</a></p>
+  <div class="dl-inner">
+    <div class="dl-header reveal">
+      <h2>下载客户端与浏览器扩展</h2>
+      <p class="dl-header-sub">找现成的知识库？<a href="resources.html">去资源库看看 →</a> · 第一次上手？<a href="https://www.bilibili.com/video/BV1M68H6nEGs/" target="_blank" rel="noopener noreferrer">看 2 分钟上手视频 ↗</a></p>
     </div>
 
-    <h2 class="download-section-title"> Molio 桌面客户端</h2>
-    <div class="download-grid">
-      <div class="download-card reveal">
-
+    <h3 class="download-section-title">Molio 桌面客户端</h3>
+    <div class="dl-desktop-grid">
+      <div class="download-card download-card--primary reveal">
         <div class="name">Windows 版</div>
         <div class="desc">64 位安装包</div>
         <div class="meta" data-dl-meta="win">Molio-Setup-0.3.29-windows.exe</div>
@@ -212,7 +247,6 @@
         </div>
       </div>
       <div class="download-card reveal">
-
         <div class="name">macOS 版</div>
         <div class="desc">ARM64 (Apple Silicon)</div>
         <div class="meta" data-dl-meta="mac">Molio-0.3.29-mac-arm64.dmg</div>
@@ -220,22 +254,21 @@
           <a data-dl="mac" href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases/v0.3.29/Molio-0.3.29-mac-arm64.dmg" class="download-btn primary">下载 macOS 版</a>
         </div>
       </div>
-      <div class="download-card reveal">
-
-        <div class="name">麒麟 / NAS / Linux</div>
-        <div class="desc">Docker 自建 Web 服务，一条命令安装</div>
-        <div class="meta">install.sh · amd64 + arm64</div>
-        <div class="btn-group">
-          <a href="https://github.com/zhuzhaoyun/Molio#readme" target="_blank" rel="noopener noreferrer" class="download-btn primary">安装指南</a>
-          <a href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com/script/install.sh" target="_blank" rel="noopener noreferrer" class="download-btn secondary">安装脚本</a>
-        </div>
+    </div>
+    <div class="dl-docker-row reveal">
+      <div class="dl-docker-text">
+        <strong>麒麟 / NAS / Linux</strong>
+        <span>Docker 自建 Web 服务，一条命令安装，amd64 + arm64</span>
+      </div>
+      <div class="dl-docker-actions">
+        <a href="https://github.com/zhuzhaoyun/Molio#readme" target="_blank" rel="noopener noreferrer" class="download-btn primary">安装指南</a>
+        <a href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com/script/install.sh" target="_blank" rel="noopener noreferrer" class="download-btn secondary">安装脚本</a>
       </div>
     </div>
 
-    <h2 class="download-section-title"> Chrome 浏览器扩展</h2>
+    <h3 class="download-section-title">Chrome 浏览器扩展</h3>
     <div class="download-grid">
       <div class="download-card reveal">
-
         <div class="name">COSE</div>
         <div class="desc">多平台一键发布到微信、知乎、CSDN 等 30+ 内容平台</div>
         <div class="meta" data-dl-ext-meta="cose">v1.3.6</div>
@@ -245,7 +278,6 @@
         </div>
       </div>
       <div class="download-card reveal">
-
         <div class="name">Molio Connect</div>
         <div class="desc">浏览器剪藏插件，一键保存网页内容到 Molio 知识库</div>
         <div class="meta" data-dl-ext-meta="mc">v0.2.4</div>
@@ -269,11 +301,28 @@
   </div>
 </section>
 
+<!-- ===== ENTERPRISE BANNER ===== -->
+<section class="section section-dark section-ent-banner" id="enterprise">
+  <div class="ent-banner-inner reveal">
+    <div class="ent-banner-text">
+      <h2>把核心知识，<br>留在你自己的院子里</h2>
+      <p class="sub">散料炼成知识库，陪你用到会。数据处理、咨询、私有部署按需，一次演示见真章。</p>
+      <div class="ent-banner-tags">
+        <span>数据处理</span>
+        <span>咨询</span>
+        <span>私有部署</span>
+      </div>
+      <a href="enterprise.html" class="btn btn-light">了解定制服务 →</a>
+    </div>
+    <div class="ent-banner-stamp reveal" style="--delay:1">数据<br>不出域</div>
+  </div>
+</section>
+
 <!-- ===== FINAL CTA ===== -->
-<section class="section section-dark section-cta" id="cta">
-  <div class="cta-inner reveal">
+<section class="section section-cta-final" id="cta">
+  <div class="cta-final-inner reveal">
     <h2>让 AI 拥有<br>你的个人知识底座</h2>
-    <a href="#download" class="btn btn-light">下载 Molio</a>
+    <a href="#download" class="btn btn-seal">下载 Molio</a>
   </div>
 </section>
 
@@ -283,7 +332,16 @@
 <div class="anchor-nav" aria-label="页面章节导航">
   <a href="#hero" class="active" data-anchor></a>
   <a href="#why" data-anchor></a>
-  <a href="#enterprise" data-anchor></a>
+  <a href="#loop" data-anchor></a>
+  <a href="#caps" data-anchor></a>
+  <a href="#download" data-anchor></a>
+</div>
+
+<!-- 能力图灯箱放大 -->
+<div class="guide-lightbox" id="guideLightbox" role="dialog" aria-modal="true" aria-label="能力展示放大图">
+  <button class="guide-lightbox-close" id="guideLightboxClose" aria-label="关闭">×</button>
+  <img id="guideLightboxImg" src="" alt="" />
+  <figcaption id="guideLightboxCaption"></figcaption>
 </div>
 
 <!-- Footer -->
@@ -297,15 +355,13 @@
       <h4>产品</h4>
       <a href="index.html">首页</a>
       <a href="resources.html">资源</a>
-      <a href="help.html">使用指南</a>
       <a href="enterprise.html">定制服务</a>
       <a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer">GitHub 开源</a>
     </div>
     <div class="footer-links">
       <h4>资源</h4>
-      <a href="help.html">快速入门</a>
-      <a href="help.html#step-4">排版发布</a>
-      <a href="help.html#connect">连接微信</a>
+      <a href="https://www.bilibili.com/video/BV1M68H6nEGs/" target="_blank" rel="noopener noreferrer">2 分钟上手视频</a>
+      <a href="resources.html">现成知识底座</a>
       <a href="https://github.com/zhuzhaoyun/Molio/issues" target="_blank" rel="noopener noreferrer">问题反馈</a>
     </div>
     <div class="footer-links">
@@ -323,6 +379,65 @@
 
 <script src="auth.js?v=20260824a"></script>
 <script src="shared.js?v=20260804"></script>
+<script>
+(function() {
+  // 首屏演示视频：海报图打底（LCP），非 reduced-motion 用户注入自动播放的静音循环视频
+  try {
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var stack = document.getElementById('heroVideoStack');
+    if (!stack) return;
+    var v = document.createElement('video');
+    v.muted = true;
+    v.loop = true;
+    v.playsInline = true;
+    v.autoplay = true;
+    v.preload = 'metadata';
+    v.setAttribute('aria-hidden', 'true');
+    var s = document.createElement('source');
+    s.src = 'videos/zizhitongjian-overview-v2.mp4';
+    s.type = 'video/mp4';
+    v.appendChild(s);
+    v.addEventListener('canplay', function() {
+      v.classList.add('is-live');
+      var p = v.play();
+      if (p && p.catch) p.catch(function() {});
+    }, { once: true });
+    stack.appendChild(v);
+  } catch (e) { /* 静默降级为海报图 */ }
+})();
+</script>
+<script>
+(function() {
+  // 能力图灯箱
+  var overlay = document.getElementById('guideLightbox');
+  var lbImg = document.getElementById('guideLightboxImg');
+  var lbCap = document.getElementById('guideLightboxCaption');
+  var lbClose = document.getElementById('guideLightboxClose');
+  if (!overlay || !lbImg) return;
+
+  function openLightbox(card) {
+    var img = card.querySelector('img');
+    var tag = card.querySelector('.cap-tag');
+    if (!img) return;
+    lbImg.src = img.getAttribute('src');
+    lbImg.alt = img.getAttribute('alt') || '';
+    lbCap.textContent = tag ? tag.textContent : '';
+    overlay.classList.add('is-open');
+    document.body.style.overflow = 'hidden';
+  }
+  function closeLightbox() {
+    overlay.classList.remove('is-open');
+    document.body.style.overflow = '';
+  }
+
+  document.querySelectorAll('.cap-card').forEach(function (card) {
+    card.addEventListener('click', function () { openLightbox(card); });
+  });
+  lbClose.addEventListener('click', closeLightbox);
+  overlay.addEventListener('click', function (e) { if (e.target === overlay) closeLightbox(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeLightbox(); });
+})();
+</script>
 <script>
 (function() {
   const OSS_BASE = 'https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases';

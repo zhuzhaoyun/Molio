@@ -55,6 +55,75 @@
         { "@type": "ListItem", "position": 2, "name": "博客", "item": "https://molio.cn/blog/index.html" },
         { "@type": "ListItem", "position": 3, "name": "红楼梦知识图谱", "item": "https://molio.cn/blog/hongloumeng-knowledge-graph.html" }
       ]
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "已经有很清楚的《红楼梦》人物关系图了，这个有什么不同？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "图的用处是让你看清\"谁和谁有关系\"，它的极限也在这里——它没法告诉你这个人怎么样。Molio（墨流）这套知识图谱的重点不是画得更清楚的图，而是把人物做成成组的对照：钗黛、袭人晴雯、三春、尤二姐尤三姐。人物的性格是靠对照显出来的，这是单张关系图做不到的事。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "判词为什么把黛玉和宝钗合写在一首里？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "\"可叹停机德，堪怜咏絮才\"——停机德说的宝钗，是德；咏絮才说的黛玉，是才。一德一才，各占一极。曹雪芹把两人放在同一首判词里，是在定调：她们不是两个可以分开评判的人，而是同一悲剧的两个侧面。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "这个知识图谱能自己建吗？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "能，网上有不少构建教程，用 Neo4j 之类的图数据库就能做。但那是\"要你花时间建\"——这套是已经建好的成品，买来放进环境即可用，而且每条论述都标了原文回目位置，可以自己核对。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "适合什么程度的人用？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "两种人都合适。读过原著的，可以用对照页深化理解；还没读过的，可以拿它当人物索引，边读边查，不至于读到一半被人名淹没。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "《红楼梦》里一共有多少人物？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "按 Molio（墨流）知识图谱的整理口径，收录了 60 个人物条目，覆盖主角（宝玉、黛玉、宝钗、凤姐、贾母）、十二钗与小姐、丫鬟仆役（袭人、晴雯、平儿、鸳鸯等），以及薛家、刘姥姥、柳湘莲、贾雨村、甄士隐这些府外相关人物。 这里说的是\"有条目的人\"，不是\"出现过的人\"。《红楼梦》里出现过名字的人物数以百计，但多数只露一两次面，把它们都做成条目反而会把真正重要的关系淹掉。60 个是可用的规模——每个条目都带关系、带原文位置。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "读《红楼梦》总是记不住人怎么办？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "不用记，用查的。这是这套东西和一张人物关系图最本质的区别：图要你记住，体系让你查到。 更实际的建议是成组记，不要逐个背。人物的性格是靠对照显出来的——把袭人和晴雯放一起，宝钗和黛玉放一起，迎春探春惜春放一起，记 6 组比记 60 个容易得多，理解也深得多。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "我已经读过几遍原著了，还用得上吗？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "读过反而更能用上。第一遍读红楼，多半是被情节推着走；读第二三遍时才会开始琢磨\"这一处作者为什么这么写\"\"这个人的转变从哪开始\"。这时候对照页和概念页才真正有用——比如钗黛那条判词为什么要合写在一首里，光读情节是看不出答案的。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "买来只能自己看吗？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "不是，这正是它和电子书的区别。它是一个本地文件夹，除了人自己能读能查，放进你自己的环境后，Claude Code、Codex、WorkBuddy 这类 AI Agent 也能直接读取，成为它们在这个领域的知识底座。电子书是给人读的终点，知识图谱是给 AI 用的起点。"
+          }
+        }
+      ]
     }
   ]
 }
@@ -67,7 +136,6 @@
     <div class="nav-links">
       <a href="../index.html" class="nav-link">首页</a>
       <a href="../resources.html" class="nav-link">资源</a>
-      <a href="../help.html" class="nav-link">使用指南</a>
       <a href="./index.html" class="nav-link active">博客</a>
       <a href="../enterprise.html" class="nav-link">定制服务</a>
      <span id="nav-auth"></span><a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer" class="nav-gh" aria-label="GitHub 仓库"><svg viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg></a></div>
@@ -142,7 +210,7 @@
     <h2>现成知识底座</h2>
     <p>这一篇讲的知识底座不用自己攒——同系列的几部都在这里，导入即用。</p>
     <ul>
-      <li><a href="../resource/01M110NNMKNWXKBXT01HVJ06ZW.html">《红楼梦》人物与意象关系图谱</a></li>
+      <li><a href="../resource/01M110NNMKNWXKBXT01HVJ06ZW.html">《红楼梦》人物与意象关系图谱：120回原著知识图鉴</a></li>
       <li><a href="../resource/01M10RZP9118BA6YRBZ1D4FKM2.html">《资治通鉴》千年兴亡：人物、事件与制度知识图谱</a></li>
       <li><a href="../resource/01M10WWK7WNMM61QNJJJXHNWS2.html">《史记》人物·制度·思想全景图谱</a></li>
       <li><a href="../resource/01M111M5CSYX96FTKGC3V1QC2T.html">《明史》帝国兴衰知识图谱：人物、制度与朝局演变</a></li>
@@ -165,15 +233,13 @@
       <h4>产品</h4>
       <a href="../index.html">首页</a>
       <a href="../resources.html">资源</a>
-      <a href="../help.html">使用指南</a>
       <a href="../enterprise.html">定制服务</a>
       <a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer">GitHub 开源</a>
     </div>
     <div class="footer-links">
       <h4>资源</h4>
-      <a href="../help.html">快速入门</a>
-      <a href="../help.html#step-6">排版教程</a>
-      <a href="../help.html#step-7">发布指南</a>
+      <a href="https://www.bilibili.com/video/BV1M68H6nEGs/" target="_blank" rel="noopener noreferrer">2 分钟上手视频</a>
+      <a href="../resources.html">现成知识底座</a>
       <a href="https://github.com/zhuzhaoyun/Molio/issues" target="_blank" rel="noopener noreferrer">问题反馈</a>
     </div>
     <div class="footer-links">

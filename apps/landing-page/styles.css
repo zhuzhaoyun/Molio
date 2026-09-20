@@ -3165,3 +3165,112 @@ p { margin-bottom: 0; }
 @media (max-width: 600px) {
   .kg-links { padding: 24px 20px; }
 }
+
+/* ============================================================
+   首页 v20260920 — 区块重建（只追加，不改上方任何既有规则）
+   结构：hero 视频自动播放 / 闭环图 / 能力四图（暗底）/ 下载区层级 / 纸底 CTA
+   ============================================================ */
+
+/* ---------- Hero 演示视频：海报打底 + 静音循环自动播放 ---------- */
+.hero-video-stack {
+  position: relative;
+  aspect-ratio: 1280 / 842;
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--ink);
+  box-shadow:
+    0 1px 2px rgba(0,0,0,0.3),
+    0 24px 64px rgba(0,0,0,0.5);
+}
+.hero-video-stack img,
+.hero-video-stack video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.hero-video-stack video {
+  opacity: 0;
+  transition: opacity 0.8s var(--ease);
+}
+.hero-video-stack video.is-live { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .hero-video-stack video { display: none; }
+}
+
+/* ---------- Loop 闭环图（首页专属覆盖：为副标题让出间距） ---------- */
+.section-closure .closure-inner h2 { margin-bottom: 14px; }
+.loop-sub {
+  font-size: 16px;
+  color: var(--ink-40);
+  margin: 0 0 64px;
+}
+
+/* ---------- Caps 能力四图（暗底） ---------- */
+.caps-inner { max-width: var(--max-w); margin: 0 auto; padding: 0 24px; }
+.caps-inner h2 { text-align: center; margin-bottom: 0; }
+.caps-sub {
+  text-align: center;
+  font-size: 15px;
+  margin: 12px 0 48px;
+}
+
+/* ---------- Download 下载区层级 ---------- */
+.dl-inner { max-width: var(--max-w); margin: 0 auto; padding: 0 24px; }
+.dl-header { text-align: center; margin-bottom: 8px; }
+.dl-header h2 { font-size: clamp(28px, 4vw, 38px); }
+.dl-header-sub { margin-top: 10px; font-size: 15px; color: var(--ink-40); }
+.dl-header-sub a {
+  color: var(--seal-dark);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.dl-header-sub a:hover { color: var(--seal); }
+
+.dl-desktop-grid {
+  display: grid;
+  grid-template-columns: 1.25fr 1fr;
+  gap: 24px;
+}
+.download-card--primary {
+  background: var(--paper);
+  border-color: var(--seal);
+}
+
+.dl-docker-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px 24px;
+  padding: 20px 24px;
+  border: 1px dashed var(--rule);
+  border-radius: 2px;
+  margin: 16px 0 32px;
+}
+.dl-docker-text { display: flex; flex-direction: column; gap: 4px; }
+.dl-docker-text strong {
+  font-family: var(--font-zh);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.dl-docker-text span { font-size: 13px; color: var(--ink-40); }
+
+/* ---------- 纸底最终 CTA ---------- */
+.section-cta-final { padding: 120px 0; text-align: center; }
+.cta-final-inner { max-width: 800px; margin: 0 auto; padding: 0 24px; }
+.cta-final-inner h2 {
+  font-size: clamp(36px, 5.5vw, 64px);
+  margin-bottom: 40px;
+  color: var(--ink);
+}
+.cta-final-inner .btn { font-size: 16px; padding: 18px 40px; }
+
+/* ---------- 首页 v20260920 响应式 ---------- */
+@media (max-width: 900px) {
+  .dl-desktop-grid { grid-template-columns: 1fr; }
+  .dl-docker-row { flex-direction: column; align-items: flex-start; }
+  .section-cta-final { padding: 100px 0; }
+}

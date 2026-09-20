@@ -55,6 +55,75 @@
         { "@type": "ListItem", "position": 2, "name": "博客", "item": "https://molio.cn/blog/index.html" },
         { "@type": "ListItem", "position": 3, "name": "明史人物与制度", "item": "https://molio.cn/blog/mingshi-people-and-institutions.html" }
       ]
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "《明史》是清朝修的，改动大吗？可信吗？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "《明史》是清廷开局纂修、乾隆四年定本的官修正史，修史带有时代立场是客观事实。Molio（墨流）的《明史》知识体系不试图替它辩护，也不做翻案，而是提供一个可核对的基础：每条论述都标注原文行号，完整引文逐字核对过原文（3,209 条，0 缺失）。哪一条你有疑问，翻到那一行自己判断。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "怎么确认这里的内容没被改动过？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "靠行号。引文不是转述，而是从原文逐字摘出并标注稳定行号。你手上有任意版本《明史》全文，都可以拿来对照检索。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "明史人物那么多，怎么理得清？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "311 个条目已经按身份分成十类：帝系 16、后妃 24、宗室 36、开国 48、大臣 88、武臣 38、宦官 14、文士 16、叛军 13、边外 18。分类不是装饰——明朝人物的身份基本决定了他们的处境和结局。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "明朝的制度为什么特别难懂？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "因为内阁、司礼监、厂卫这三支力量是交缠的，而《明史》里制度在\"志\"、人物在\"列传\"，读原文时天然分开。这个知识库把制度单独建成概念页（内阁、司礼监、都察院、卫所等 26 个），并专门做了一页\"内阁与宦官权势消长\"的对比。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "明史如何入门？应该从哪里开始读？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "不建议从《明史》第一卷开始啃。比较有效的路径是先抓一条主线——比如\"内阁与宦官的权力消长\"，这条线贯穿明朝始终，抓住它，张居正、魏忠贤、东林党这些人和事就都能挂上去。然后按人物进入，最后再看制度。原因是《明史》里制度和人物是分开编的，先看制度会没有落脚点。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "\"明史\"一般指什么？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "通常是两个意思：一是指《明史》这本书——清代官修、张廷玉等总裁、乾隆四年定本的纪传体正史；二是指明代（1368—1644）这一段历史本身。Molio（墨流）的《明史》知识体系是以《明史》全文本为底本整理的，所以内容范围以这部正史的记述为准。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "为什么那么多人喜欢读明史？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "几个原因叠在一起：它是最后一部体例完整的官修正史，记的一朝离今天最近、材料最全；同时明代本身的戏剧性很强——布衣开国、叔侄相残、皇帝被俘、夺门复辟、党争贯穿朝野。更关键的是，明朝留下了大量制度细节（内阁票拟、批红、厂卫），这些细节让\"权力怎么运作\"这件事第一次看得这么清楚。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "买来只能自己看吗？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "不是，这正是它和电子书的区别。它是一个本地文件夹，除了人自己能读能查，放进你自己的环境后，Claude Code、Codex、WorkBuddy 这类 AI Agent 也能直接读取，成为它们在这个领域的知识底座。电子书是给人读的终点，知识体系是给 AI 用的起点。"
+          }
+        }
+      ]
     }
   ]
 }
@@ -67,7 +136,6 @@
     <div class="nav-links">
       <a href="../index.html" class="nav-link">首页</a>
       <a href="../resources.html" class="nav-link">资源</a>
-      <a href="../help.html" class="nav-link">使用指南</a>
       <a href="./index.html" class="nav-link active">博客</a>
       <a href="../enterprise.html" class="nav-link">定制服务</a>
      <span id="nav-auth"></span><a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer" class="nav-gh" aria-label="GitHub 仓库"><svg viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg></a></div>
@@ -158,7 +226,7 @@
       <li><a href="../resource/01M111M5CSYX96FTKGC3V1QC2T.html">《明史》帝国兴衰知识图谱：人物、制度与朝局演变</a></li>
       <li><a href="../resource/01M10RZP9118BA6YRBZ1D4FKM2.html">《资治通鉴》千年兴亡：人物、事件与制度知识图谱</a></li>
       <li><a href="../resource/01M10WWK7WNMM61QNJJJXHNWS2.html">《史记》人物·制度·思想全景图谱</a></li>
-      <li><a href="../resource/01M110NNMKNWXKBXT01HVJ06ZW.html">《红楼梦》人物与意象关系图谱</a></li>
+      <li><a href="../resource/01M110NNMKNWXKBXT01HVJ06ZW.html">《红楼梦》人物与意象关系图谱：120回原著知识图鉴</a></li>
       <li><a href="../resources.html">查看全部知识底座 →</a></li>
     </ul>
   </div>
@@ -178,15 +246,13 @@
       <h4>产品</h4>
       <a href="../index.html">首页</a>
       <a href="../resources.html">资源</a>
-      <a href="../help.html">使用指南</a>
       <a href="../enterprise.html">定制服务</a>
       <a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer">GitHub 开源</a>
     </div>
     <div class="footer-links">
       <h4>资源</h4>
-      <a href="../help.html">快速入门</a>
-      <a href="../help.html#step-6">排版教程</a>
-      <a href="../help.html#step-7">发布指南</a>
+      <a href="https://www.bilibili.com/video/BV1M68H6nEGs/" target="_blank" rel="noopener noreferrer">2 分钟上手视频</a>
+      <a href="../resources.html">现成知识底座</a>
       <a href="https://github.com/zhuzhaoyun/Molio/issues" target="_blank" rel="noopener noreferrer">问题反馈</a>
     </div>
     <div class="footer-links">

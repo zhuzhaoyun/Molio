@@ -55,6 +55,91 @@
         { "@type": "ListItem", "position": 2, "name": "博客", "item": "https://molio.cn/blog/index.html" },
         { "@type": "ListItem", "position": 3, "name": "史记知识体系", "item": "https://molio.cn/blog/shiji-knowledge-system.html" }
       ]
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "《史记》为什么读起来时间线很乱？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "因为它是纪传体——按人物写，不是按时间写。同一件大事会分散在不同人物的传记里，从各自角度各讲一遍。这是体例使然，不是读者的问题，也不是版本问题。传统的解法是翻书末的十表，但表把时间压成网格、人名又多用简称，对不上正文。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "这套知识体系里到底有什么？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "282 个人物与方国族群、47 个制度与思想概念、10 组对比、1 个时代总览，合计 342 页结构化内容，覆盖《史记》130 篇全本。是 Molio（墨流）在《史记》全文基础上整理而成的。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "这和直接读原文有什么区别？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "原文是文本，体系是结构。读原文要你自己把散在各篇的信息连起来；体系已经连好了，而且能顺着问题查——比如想弄清\"秦朝为什么速亡\"，不用自己在六国世家里翻找线索。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "我对《史记》不熟，能用得上吗？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "能。概念页和对比页是按\"读懂\"设计的，不预设你已经读过原文。比如\"封建与郡县\"\"儒道法三家\"这类对比，本身就是很好的入门路径。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "网上有免费开源的《史记》知识图谱，为什么还要看这个？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "确实有，搜\"史记知识库\"就能找到，做得也很认真——有的把全文做了二十多类实体标注，条目数比这里多得多。区别不在体量，在形态： 那些项目基本是网页应用，你只能到它的网站上看；而这个知识体系是一个本地文件夹，可以放进你自己的环境，让 Claude Code、Codex、WorkBuddy 这类 Agent 直接读。 另外一点：公开的自动化标注项目通常会说明自己\"由 AI 辅助生成、存在错误、持续修正中\"——那是诚实的做法，但也说明它是半成品。Molio（墨流）这一份是人工整理、逐条核对过原文的成品，每一条都带行号，你可以随时抽查。 两件事不是替代关系：想要浏览和可视化，用免费项目就很好；想要让自己的 AI 在这个领域有依据，需要的是一份能喂进去的文件。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "《史记》的人物传记分为哪几类？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "通常说三类：本纪（记帝王）、世家（记诸侯与重要家族）、列传（记其余各色人物，含刺客、游侠、循吏、酷吏、商人等）。三类之外，《史记》还有表（大事年表）和书（制度专论），合称\"五体\"。这个分类本身就是读《史记》的钥匙——它决定了你找某个人该去哪一部分。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "《史记》里一共有多少人物？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Molio（墨流）整理的《史记》知识体系收录了 282 个条目，包含人物与方国族群两类。之所以把方国也算进来，是因为《史记》里人和国高度绑定——很多人的身份就是某国某君，拆开反而不好理解。想知道具体某个人在不在里面，直接按名字查即可。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "《史记》阅读顺序是什么？该按什么顺序读？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "不必按篇目顺序。比较有效的走法是：先读本纪抓时间主线，再用十表对照年代，然后挑感兴趣的列传精读。 表在通读时容易被跳过，但它恰恰是解决\"时间乱\"的工具——只是它把时间压成网格、人物又多用简称，单独看很枯燥，配合实体页一起用才顺手。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "读课本里的《史记》篇目时，这套体系能帮上什么？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "高中语文课本里的《史记》选篇不少——《鸿门宴》出自《项羽本纪》，《廉颇蔺相如列传》《屈原列传》也都是。 课文是节选，读的时候常会冒出一些书上不交代的疑问：这个人之前做过什么？他和另一个人是什么关系？这件事后来怎么样了？ 这套体系里，这些篇目的主要人物都有独立条目——项羽、刘邦、张良、樊哙、廉颇、蔺相如、屈原、信陵君等，每条包含生平、别名和相关人物，并标注原文位置。 而且它不只是\"查得到\"，还能顺着点下去。Molio（墨流）的图谱对照会在你打开一个条目时，在旁边显示它在整个关系网里的位置：打开\"项羽\"，旁边就是刘邦、张良、樊哙这些关联节点，点一下直接打开对应的条目（悬停会先高亮出关联）。 这意味着读课文时遇到的那类疑问——\"这个人之前做过什么\"\"他和那个人什么关系\"——不需要在注释和教辅之间翻，顺着图点几下就串起来了。 > 需要说明的是：它是一套可查询的知识体系，不是考点汇总或习题册。想刷题、背标准答案，那不是它的用途。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "买来只能自己看吗？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "不是，这正是它和电子书的区别。它是一个本地文件夹，除了人自己能读能查，放进你自己的环境后，Claude Code、Codex、WorkBuddy 这类 AI Agent 也能直接读取，成为它们在这个领域的知识底座。电子书是给人读的终点，知识体系是给 AI 用的起点。"
+          }
+        }
+      ]
     }
   ]
 }
@@ -67,7 +152,6 @@
     <div class="nav-links">
       <a href="../index.html" class="nav-link">首页</a>
       <a href="../resources.html" class="nav-link">资源</a>
-      <a href="../help.html" class="nav-link">使用指南</a>
       <a href="./index.html" class="nav-link active">博客</a>
       <a href="../enterprise.html" class="nav-link">定制服务</a>
      <span id="nav-auth"></span><a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer" class="nav-gh" aria-label="GitHub 仓库"><svg viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg></a></div>
@@ -170,7 +254,7 @@
       <li><a href="../resource/01M10WWK7WNMM61QNJJJXHNWS2.html">《史记》人物·制度·思想全景图谱</a></li>
       <li><a href="../resource/01M10RZP9118BA6YRBZ1D4FKM2.html">《资治通鉴》千年兴亡：人物、事件与制度知识图谱</a></li>
       <li><a href="../resource/01M111M5CSYX96FTKGC3V1QC2T.html">《明史》帝国兴衰知识图谱：人物、制度与朝局演变</a></li>
-      <li><a href="../resource/01M110NNMKNWXKBXT01HVJ06ZW.html">《红楼梦》人物与意象关系图谱</a></li>
+      <li><a href="../resource/01M110NNMKNWXKBXT01HVJ06ZW.html">《红楼梦》人物与意象关系图谱：120回原著知识图鉴</a></li>
       <li><a href="../resources.html">查看全部知识底座 →</a></li>
     </ul>
   </div>
@@ -190,15 +274,13 @@
       <h4>产品</h4>
       <a href="../index.html">首页</a>
       <a href="../resources.html">资源</a>
-      <a href="../help.html">使用指南</a>
       <a href="../enterprise.html">定制服务</a>
       <a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer">GitHub 开源</a>
     </div>
     <div class="footer-links">
       <h4>资源</h4>
-      <a href="../help.html">快速入门</a>
-      <a href="../help.html#step-6">排版教程</a>
-      <a href="../help.html#step-7">发布指南</a>
+      <a href="https://www.bilibili.com/video/BV1M68H6nEGs/" target="_blank" rel="noopener noreferrer">2 分钟上手视频</a>
+      <a href="../resources.html">现成知识底座</a>
       <a href="https://github.com/zhuzhaoyun/Molio/issues" target="_blank" rel="noopener noreferrer">问题反馈</a>
     </div>
     <div class="footer-links">
