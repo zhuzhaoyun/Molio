@@ -133,10 +133,12 @@ export function KbTabBar({ tabs, activeTabId, onActivate, onClose, onAddTab, onT
   // ─── Drag-to-reorder state (refs only: no re-renders during a drag) ───
   const dragRef = useRef<DragCtx | null>(null);
   const dragRafRef = useRef<number | null>(null);
-  // Set when a real drag just ends: the drop's trailing click must not change
-  // activation. It may land on ANY tab (the browser dispatches it against
-  // whichever DOM is current, which can predate the reorder commit), so this
-  // suppresses the first tab click regardless of id, then self-expires.
+  // A real drag (>threshold) must not end in activation. When the drop lands
+  // back on the dragged tab, the browser still fires a normal click there
+  // (mousedown + mouseup on the same element) — Chrome swallows it, so we do
+  // too. Drops onto OTHER tabs land on the tabs' common ancestor (the scroll
+  // container), which no tab onClick handles — nothing to suppress there.
+  // Self-expires so a stale flag can never eat a later genuine click.
   const suppressClickRef = useRef(false);
   const onReorderRef = useRef(onReorder);
   useEffect(() => { onReorderRef.current = onReorder; }, [onReorder]);
@@ -376,8 +378,8 @@ export function KbTabBar({ tabs, activeTabId, onActivate, onClose, onAddTab, onT
               data-testid={tab.id.startsWith('file:') ? undefined : `kb-wtab-${tab.id}`}
               ref={isActive ? activeRef : null}
               onClick={() => {
-                // A real drag just ended — swallow the drop's trailing click
-                // (whichever tab it landed on) so the drop can't re-activate.
+                // A real drag just ended — swallow its trailing click so the
+                // drop can't activate the dragged tab (Chrome-style).
                 if (suppressClickRef.current) {
                   suppressClickRef.current = false;
                   return;
