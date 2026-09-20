@@ -2723,6 +2723,29 @@
   background: var(--accent);
 }
 
+/* Drag-to-reorder — the dragged tab lifts and follows the pointer; siblings
+   glide one slot aside (transform only, no layout thrash). The vacated gap IS
+   the drop indicator, Chrome-style. Styles are toggled via direct DOM in
+   KbTabBar (zero React re-renders per frame); the store updates once on drop. */
+.kb-wtab.is-shifting {
+  transition: transform 160ms ease;
+}
+.kb-wtab.is-dragging {
+  z-index: 10;
+  transition: none;
+  /* A lifted tab needs an opaque body — transparent inactive tabs would cast a
+     hollow shadow. Same surface language as is-active, so "picked up" reads
+     as "the focused surface", in both themes. */
+  background: var(--bg-panel);
+  color: var(--text);
+  border-color: var(--border);
+  box-shadow: var(--shadow-md);
+  cursor: grabbing;
+}
+.kb-wtab.is-dragging .kb-wtab-close {
+  opacity: 0;
+}
+
 /* "+" explicit new-tab button — rides after the last tab in the scroll row. */
 .kb-wtab-add {
   display: inline-flex;
