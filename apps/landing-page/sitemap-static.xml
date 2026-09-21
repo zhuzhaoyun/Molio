@@ -114,4 +114,10 @@
     <priority>0.7</priority>
     <changefreq>weekly</changefreq>
   </url>
+  <url>
+    <loc>https://molio.cn/blog/own-materials-to-knowledge-base.html</loc>
+    <lastmod>2026-09-21</lastmod>
+    <priority>0.7</priority>
+    <changefreq>weekly</changefreq>
+  </url>
 </urlset>

@@ -1,5 +1,10 @@
 [
   {
+    "slug": "own-materials-to-knowledge-base",
+    "title": "知识库导入：为什么资料喂给 AI 还是查不全，先结构化再接入",
+    "date": "2026-09-21"
+  },
+  {
     "slug": "ontology-modeling-guide",
     "title": "本体论怎么落地：GB/T 48000 要求的三类构件，和 Palantir 多出的那个“动作”",
     "date": "2026-09-20"
