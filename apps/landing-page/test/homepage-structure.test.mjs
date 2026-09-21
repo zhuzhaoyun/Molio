@@ -35,6 +35,12 @@ test('首页 Hero：图谱退为背景世界，而不是被框住的展品', () 
   assert.match(hero, /class="hero-world-svg hero-world-svg--port"/, '竖屏必须换竖版世界');
   assert.match(hero, /class="mg-node mg-node--/, '背景必须是真图谱（有节点）');
   assert.match(hero, /class="mg-edge mg-edge--live"/, '背景保留唯一一条印章红主线');
+  assert.match(hero, /class="wf-glyph"/, '底图必须有资料来源页片（PDF / 网页 / Word…）');
+  assert.match(hero, /class="wf-end"/, '底图必须有 Agent 端点');
+  assert.match(hero, /01 导入/, '底图必须有导入站标注');
+  assert.match(hero, /02 加工/, '底图必须有加工站标注（加工舱标题块）');
+  assert.match(hero, /03 调用/, '底图必须有调用站标注');
+  assert.match(hero, /class="wf-core"/, '加工舱里必须坐着真图谱');
   assert.doesNotMatch(body, /home-hero-flow/, '旧的底图示意图已随重做删除');
   assert.doesNotMatch(body, /home-hero-graph/, '旧的框住图谱的容器已随重做删除');
   assert.doesNotMatch(body, /home-flow-panel/, '旧的两侧面板已随重做删除');
@@ -51,8 +57,8 @@ test('首页 Hero：居中栈只有 Slogan / 说明 / 两个按钮 / 演示', ()
   assert.match(core, /class="home-cta-primary" href="#download"/,
     '下载按钮只允许锚到下载屏，平台选择在那里做');
   assert.ok(resAt > dlAt, '「获取领域知识」必须排在下载按钮旁边');
-  assert.match(core, /class="home-cta-ink" href="#resources"/,
-    '「获取领域知识」必须锚到资源屏');
+  assert.match(core, /class="home-cta-ink" href="resources\.html"/,
+    '「获取领域知识」必须直接跳到资源页');
   assert.ok(demoAt > resAt, '演示小字链接必须排在两个按钮之后');
   assert.doesNotMatch(hero, /data-dl=/, '首屏不允许直接挂安装包链接');
   assert.doesNotMatch(hero, /dl-seg/, '首屏的 Win/mac 分段已收敛进下载屏');
@@ -83,11 +89,16 @@ test('首页叙事：四步工作流闭环，含成果回流', () => {
   assert.doesNotMatch(body, /home-fact-list/, '重复的 1362 年事实卡已并入演示说明');
 });
 
-test('首页演示：合并屏保留资治通鉴视频与产品界面截图', () => {
+test('首页演示：合并屏保留资治通鉴视频，产品截图已撤下', () => {
   assert.match(body, /id="heroVideoStack"/, '演示视频容器必须保留');
   assert.match(body, /images\/kg-graph\.webp/, '视频海报图必须保留');
-  assert.match(body, /images\/main\.webp/, '产品工作界面截图必须保留');
-  assert.match(body, /images\/wiki_knowledge\.webp/, 'Wiki 界面截图必须保留');
+  const showcase = body.match(/<section class="section section-inset home-showcase"[\s\S]*?<\/section>/)?.[0] ?? '';
+  assert.ok(showcase.length > 0, 'showcase 屏必须存在');
+  assert.doesNotMatch(showcase, /home-showcase-shots/, '界面截图块已按需求删除');
+  assert.doesNotMatch(showcase, /images\/main\.webp/, '导入后截图已按需求删除');
+  assert.doesNotMatch(showcase, /images\/wiki_knowledge\.webp/, '加工后截图已按需求删除');
+  assert.doesNotMatch(showcase, /导入后：原始目录结构原样保留/, '导入后文案已按需求删除');
+  assert.doesNotMatch(showcase, /加工后：Molio 自动构建 Wiki/, '加工后文案已按需求删除');
 });
 
 test('首页锚点：导航覆盖首屏/演示/资源/下载四个锚点，且不产生死链', () => {
@@ -125,11 +136,3 @@ test('首页 CTA 收敛：三次重复的下载入口收敛为两处', () => {
   assert.match(body, /别让多年积累，只躺在硬盘里/, '收尾鼓动句并入 download 区块导语保留');
 });
 
-test('首页演示：产品界面截图整行铺开，不再嵌在左列里', () => {
-  const copy = body.match(/<div class="home-showcase-copy reveal">[\s\S]*?<div class="home-showcase-media/)?.[0] ?? '';
-  assert.ok(copy.length > 0, 'showcase 左列必须存在');
-  assert.doesNotMatch(copy, /home-showcase-shots/,
-    '截图不应嵌在左列（每张只分到约 250px，界面内容完全读不出来）');
-  assert.match(body, /<div class="home-showcase-shots reveal">/,
-    '截图应作为整行区块排在两列网格之后');
-});

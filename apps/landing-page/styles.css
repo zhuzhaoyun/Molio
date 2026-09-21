@@ -3286,7 +3286,7 @@ body.home .home-hero-world {
   inset: 0;
   pointer-events: none;
   z-index: 0;
-  opacity: 0.52;
+  opacity: 0.58;
   mask-image: radial-gradient(circle at 50% 46%,
     rgba(0, 0, 0, 0.14) 0%,
     rgba(0, 0, 0, 0.3) 40%,
@@ -3367,12 +3367,119 @@ body.home .hero-world-svg--port .mg-label--hub { font-size: 38px; }
 body.home .hero-world-svg--port .mg-label--major { font-size: 33px; }
 body.home .hero-world-svg--port .mg-edge { stroke-width: 1.6; }
 
+/* 加工流程叙事（底图两侧）：来源页片 → 加工舱 → Agent 端点。
+   不透明度按「wrapper 0.52 × 径向遮罩」反推：边缘落到 ≈13–24%，
+   属于第二眼；中央图谱的对比度保持不变。 */
+body.home .wf-glyph rect,
+body.home .wf-glyph path {
+  fill: none;
+  stroke: var(--ink);
+  vector-effect: non-scaling-stroke;
+}
+
+body.home .wf-glyph rect { stroke-opacity: 0.5; }
+body.home .wf-glyph path { stroke-opacity: 0.3; }
+
+body.home .wf-link path {
+  fill: none;
+  stroke: var(--ink);
+  stroke-opacity: 0.45;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 2 9;
+  animation: hfMarch 8s linear infinite;
+}
+
+body.home .wf-link--out path { animation-direction: reverse; }
+
+body.home .wf-chamber {
+  fill: none;
+  stroke: var(--ink);
+  stroke-opacity: 0.4;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 5 7;
+  animation: hfChamber 46s linear infinite;
+}
+
+body.home .wf-corner path {
+  fill: none;
+  stroke: var(--ink);
+  stroke-opacity: 0.5;
+  stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;
+}
+
+body.home .wf-end rect {
+  fill: none;
+  stroke: var(--ink);
+  stroke-opacity: 0.5;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+body.home .wf-end circle {
+  fill: var(--ink);
+  fill-opacity: 0.5;
+}
+
+body.home .wf-label {
+  fill: var(--ink);
+  fill-opacity: 0.8;
+  font-family: var(--font-mono);
+  font-size: 26px;
+  letter-spacing: 0.08em;
+}
+
+body.home .wf-caption {
+  fill: var(--ink);
+  fill-opacity: 1;
+  font-family: var(--font-mono);
+  font-size: 30px;
+  letter-spacing: 0.22em;
+}
+
+/* 加工舱里的真图谱：比管线家具强一档 —— 它是这条流程的产物，
+   用户凑近看时应该能认出节点和中文标签。 */
+body.home .wf-core .mg-node { fill-opacity: 1; }
+
+body.home .wf-core .mg-edge { stroke-opacity: 0.3; }
+
+body.home .wf-core .mg-edge--strong { stroke-opacity: 0.4; }
+
+body.home .wf-core .mg-edge--live { stroke-opacity: 0.5; }
+
+body.home .wf-core .mg-label { fill-opacity: 0.9; }
+
+body.home .wf-core .mg-label--hub { fill-opacity: 1; }
+
+body.home .wf-core .mg-label--major { fill-opacity: 0.95; }
+body.home .wf-pulse {
+  stroke-width: 1.6;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 260 3000;
+  animation: hfTrace 12s linear infinite;
+}
+
+/* 竖版画布更窄，字号要跟着放大 */
+body.home .hero-world-svg--port .wf-label { font-size: 34px; }
+body.home .hero-world-svg--port .wf-caption {
+  font-size: 26px;
+  letter-spacing: 0.08em;
+}
+
 @media (prefers-reduced-motion: reduce) {
   body.home .home-hero-world { animation: none; transform: scale(1.05); }
 
+  body.home .mg-edge--live,
+  body.home .wf-link path,
+  body.home .wf-chamber,
+  body.home .wf-pulse {
+    animation: none;
+  }
+
   body.home .mg-edge--live {
     stroke-dasharray: none;
-    animation: none;
     stroke-opacity: 0.4;
   }
 }
@@ -3667,34 +3774,6 @@ body.home .home-showcase .hero-video-caption {
   line-height: 1.75;
 }
 
-/* 产品界面截图整行铺开，每张拿到约 700px，界面内容才读得出来 */
-body.home .home-showcase-shots {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: clamp(16px, 2vw, 28px);
-  margin-top: clamp(40px, 5vw, 72px);
-}
-
-body.home .home-showcase-shots figure {
-  min-width: 0;
-}
-
-body.home .home-showcase-shots img {
-  width: 100%;
-  aspect-ratio: 16 / 10;
-  object-fit: cover;
-  object-position: top center;
-  border: 1px solid var(--hair);
-  border-radius: 4px;
-  background: var(--paper-3);
-}
-
-body.home .home-showcase-shots figcaption {
-  margin-top: 12px;
-  color: var(--ink-40);
-  font-size: 13.5px;
-  line-height: 1.7;
-}
 
 /* ============================================================
    ⑤ Download — 页面上唯一的转化区
@@ -3918,10 +3997,6 @@ body.home .home-resources-more a:hover {
 
   body.home .home-cta-primary,
   body.home .home-cta-ink { width: 100%; }
-
-  body.home .home-showcase-shots {
-    grid-template-columns: minmax(0, 1fr);
-  }
 
   body.home .home-secondary-links a {
     width: 100%;
