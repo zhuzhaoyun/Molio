@@ -47,8 +47,18 @@ export function isPrunedDirName(name: string): boolean {
  * above this is almost certainly not knowledge (a dumped dataset, a decompressed
  * archive) — prune the whole subtree instead of stat-ing thousands of files.
  * One readdir is a single syscall, so this never blocks the event loop.
+ *
+ * 2026-09: raised 1000 → 5000. Legitimate entity-wiki directories can hold
+ * thousands of notes (史记-rebuild wiki/entities = 1350, silently pruned at
+ * 1000 — tree/graph/search/wikilinks all lost the folder). Flat file counts
+ * don't drive FD pressure (watchers hold per-directory handles); the cap's
+ * real jobs are dumping-ground exclusion and bounding stat work — a 5000-file
+ * flat dir costs ~2.5ms to scan locally (APFS, warm) and MAX_TOTAL still
+ * bounds the whole-vault walk. See test/core/knowledge.test.ts
+ * "constants sanity" for the guard that keeps this an order of magnitude
+ * below the ~10k FD-exhaustion scale.
  */
-export const MAX_DIR_ENTRIES = 1000;
+export const MAX_DIR_ENTRIES = 5000;
 
 /**
  * Hard cap on total files processed in one scan. Guards against deep trees

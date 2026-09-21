@@ -743,6 +743,46 @@ describe('vault scan pruning + bounded backstop', () => {
         rmSync(clean, { recursive: true, force: true });
       }
     });
+
+    // Regression (2026-09): 史记-rebuild wiki/entities holds 1350 entity notes
+    // (+ INDEX.md) — a legitimate knowledge directory the old 1000-entry cap
+    // silently pruned, so the folder looked unopenable in the tree and the
+    // graph / search / wikilink resolution all missed every entity file.
+    it('does not prune a legitimate large wiki entity directory (~1350 entries)', () => {
+      const clean = mkdtempSync(join(tmpdir(), 'molio-prune-entities-'));
+      try {
+        mkdirSync(join(clean, 'entities'));
+        // The real-world trigger: 1349 entity notes + INDEX.md.
+        for (let i = 0; i < 1350; i++) {
+          writeFileSync(join(clean, 'entities', `实体${i}.md`), 'x');
+        }
+        writeFileSync(join(clean, 'entities', 'INDEX.md'), 'x');
+        const tree = scanTree(clean);
+        const entities = tree.find((n) => n.name === 'entities');
+        assert.ok(entities, 'entities dir node should exist');
+        assert.equal(entities!.children?.length, 1351);
+      } finally {
+        rmSync(clean, { recursive: true, force: true });
+      }
+    });
+
+    // Pin the exclusive-cap semantics: entries.length > MAX_DIR_ENTRIES prunes,
+    // exactly-at-cap does not. Guards against a future `>` → `>=` flip.
+    it('keeps a directory with exactly MAX_DIR_ENTRIES entries', () => {
+      const clean = mkdtempSync(join(tmpdir(), 'molio-prune-at-cap-'));
+      try {
+        mkdirSync(join(clean, 'notes'));
+        for (let i = 0; i < MAX_DIR_ENTRIES; i++) {
+          writeFileSync(join(clean, 'notes', `n${i}.md`), 'x');
+        }
+        const tree = scanTree(clean);
+        const notes = tree.find((n) => n.name === 'notes');
+        assert.ok(notes, 'notes dir node should exist');
+        assert.equal(notes!.children?.length, MAX_DIR_ENTRIES);
+      } finally {
+        rmSync(clean, { recursive: true, force: true });
+      }
+    });
   });
 
   // Regression: the oversized-directory warning used to fire on EVERY scan, so a
@@ -858,7 +898,7 @@ describe('vault scan pruning + bounded backstop', () => {
       try {
         mkdirSync(join(clean, 'notes'), { recursive: true });
         for (let i = 0; i < 20; i++) writeFileSync(join(clean, 'notes', `n${i}.md`), 'x');
-        // Defaults (MAX_DIR_ENTRIES=1000, MAX_TOTAL=50000) must not prune 20 files.
+        // Defaults (MAX_DIR_ENTRIES=5000, MAX_TOTAL=50000) must not prune 20 files.
         assert.equal(countFiles(clean), 20);
       } finally {
         rmSync(clean, { recursive: true, force: true });
@@ -867,8 +907,13 @@ describe('vault scan pruning + bounded backstop', () => {
   });
 
   describe('constants sanity', () => {
-    it('MAX_DIR_ENTRIES is below the ~10k FD-exhaustion ceiling', () => {
-      assert.ok(MAX_DIR_ENTRIES < 5000, `MAX_DIR_ENTRIES too high: ${MAX_DIR_ENTRIES}`);
+    it('MAX_DIR_ENTRIES stays an order of magnitude below the ~10k FD-exhaustion scale', () => {
+      // 2026-09: raised 1000 → 5000 — flat entity-wiki directories (史记
+      // entities = 1350 notes) are legitimate knowledge, and flat file counts
+      // don't drive FD pressure (watchers hold per-directory handles). The
+      // guard keeps the cap well under the ~10k-file dumps behind the
+      // original FD-exhaustion incident.
+      assert.ok(MAX_DIR_ENTRIES <= 5000, `MAX_DIR_ENTRIES too high: ${MAX_DIR_ENTRIES}`);
     });
     it('MAX_TOTAL is set and generous', () => {
       assert.ok(MAX_TOTAL >= 10000 && MAX_TOTAL <= 100000);
