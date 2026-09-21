@@ -63,6 +63,7 @@ const zh: Record<string, string> = {
   'composer.modelDefault': '跟随默认',
   'composer.currentDefault': '当前默认 {model}',
   'composer.notInstalledHint': '未安装 · 点击前往设置安装',
+  'composer.hintTitle': '快捷键与输入提示',
   'composer.noHistory': '暂无历史记录',
   'composer.historySearchPlaceholder': '搜索历史会话',
   'composer.noSearchResults': '没有匹配的会话',

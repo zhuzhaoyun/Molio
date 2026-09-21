@@ -51,7 +51,8 @@
         "chat-timeout-fallback",
         "chat-work-visibility",
         "file-ref-navigation",
-        "model-switcher"
+        "model-switcher",
+        "composer-hints"
       ]
     },
     "kb": {

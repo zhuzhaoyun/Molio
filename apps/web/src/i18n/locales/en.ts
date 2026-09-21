@@ -63,6 +63,7 @@ const en: Record<string, string> = {
   'composer.modelDefault': 'Default',
   'composer.currentDefault': 'Default is currently {model}',
   'composer.notInstalledHint': 'Not installed · click to open Settings → Runtimes',
+  'composer.hintTitle': 'Shortcuts & input hints',
   'composer.noHistory': 'No conversation history',
   'composer.historySearchPlaceholder': 'Search conversations',
   'composer.noSearchResults': 'No matching conversations',

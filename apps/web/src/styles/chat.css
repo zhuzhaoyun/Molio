@@ -793,14 +793,42 @@
   border-color: var(--text-strong);
   color: var(--bg);
 }
-.composer-hint {
+/* ── 快捷键提示：? 图标 + hover/focus 浮层（不常显，省一行高度） ──
+   触发按钮复用 .composer-upload-btn（与图片/历史按钮同节奏），仅包一层定位 */
+.composer-keys {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+/* 浮层锚 .composer-keys；仅 hover / 键盘 focus 时可见 */
+.composer-keys-tip {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  margin-bottom: 8px;
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  padding: 9px 12px;
   font-size: 11px;
   color: var(--text-faint);
-  margin: 0 8px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  z-index: 40;
   user-select: none;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+  white-space: nowrap;
+}
+.composer-keys:hover .composer-keys-tip,
+.composer-keys:focus-within .composer-keys-tip {
+  opacity: 1;
+  visibility: visible;
 }
 .hint-item {
   display: inline-flex;
@@ -813,7 +841,7 @@
   font-size: 8px;
   line-height: 1;
 }
-.composer-hint kbd {
+.composer-keys-tip kbd {
   display: inline-flex;
   align-items: center;
   justify-content: center;

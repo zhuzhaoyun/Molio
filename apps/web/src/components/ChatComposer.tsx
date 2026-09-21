@@ -600,6 +600,29 @@ export function ChatComposer({
             </>
           )}
           <RuntimeModelPill />
+          {/* 快捷键/触发提示：hover（或键盘 focus）时浮出，不常显——
+              学会一次就再不需要的信息，常显白占一行高度 */}
+          <div className="composer-keys" data-testid="composer-keys">
+            <button
+              type="button"
+              className="composer-upload-btn"
+              data-testid="composer-keys-trigger"
+              aria-label={t('composer.hintTitle')}
+              title={t('composer.hintTitle')}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+            </button>
+            <div className="composer-keys-tip" role="tooltip">
+              <span className="hint-item"><kbd>/</kbd> <span className="hint-desc">{t('composer.hintSkill')}</span></span>
+              <span className="hint-item"><kbd>@</kbd> <span className="hint-desc">{t('composer.hintFileRef')}</span></span>
+              <span className="hint-item"><kbd>Enter</kbd> <span className="hint-desc">{t('composer.hintSend')}</span></span>
+              <span className="hint-item"><kbd>Shift</kbd><span className="hint-kbd-plus">+</span><kbd>Enter</kbd> <span className="hint-desc">{t('composer.hintNewline')}</span></span>
+            </div>
+          </div>
           <span className="composer-spacer" />
           {isRunning ? (
             <>
@@ -646,15 +669,6 @@ export function ChatComposer({
             </button>
           )}
         </div>
-      </div>
-      <div className="composer-hint">
-        <span className="hint-item"><kbd>/</kbd> <span className="hint-desc">{t('composer.hintSkill')}</span></span>
-        <span className="hint-sep">·</span>
-        <span className="hint-item"><kbd>@</kbd> <span className="hint-desc">{t('composer.hintFileRef')}</span></span>
-        <span className="hint-sep">·</span>
-        <span className="hint-item"><kbd>Enter</kbd> <span className="hint-desc">{t('composer.hintSend')}</span></span>
-        <span className="hint-sep">·</span>
-        <span className="hint-item"><kbd>Shift</kbd><span className="hint-kbd-plus">+</span><kbd>Enter</kbd> <span className="hint-desc">{t('composer.hintNewline')}</span></span>
       </div>
     </div>
   );
