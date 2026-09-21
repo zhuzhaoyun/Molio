@@ -263,6 +263,12 @@
 }
 
 .kb-tree-group-label:hover { background: var(--bg-subtle); }
+/* Expanded folder keeps a persistent tint + accent chevron — otherwise an
+   empty/childless folder shows no visible change on click ("did nothing"). */
+.kb-tree-group-label.is-open { background: var(--bg-subtle); }
+.kb-tree-group-label.is-open .kb-tree-chevron { color: var(--accent); }
+/* Press acknowledgment: fires on mousedown, before React state re-renders. */
+.kb-tree-group-label:active { background: var(--accent-tint); }
 
 .kb-tree-chevron {
   width: 14px;
@@ -285,6 +291,19 @@
 
 .kb-tree-children.collapsed {
   display: none;
+}
+
+/* Ghost row: sits where children would be, states why there are none.
+   Same rhythm as tree rows but quieter — it is a status, not a node. */
+.kb-tree-ghost-row {
+  padding: 3px 8px;
+  font-size: 12px;
+  color: var(--text-faint);
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
 }
 
 .kb-tree-item {

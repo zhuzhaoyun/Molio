@@ -292,6 +292,14 @@ function TreeNodeItem({
       }
     }, [canDrag, node.path]);
 
+    // Ghost rows: an expanded-but-childless folder must say WHY, or the
+    // chevron flip alone is imperceptible and the click reads as "did
+    // nothing" — the exact report behind the entities-folder bug.
+    // Suppressed while searching: filterTree empties children for non-matching
+    // dirs, and "no search hits" is not "empty folder".
+    const searching = searchQuery.trim().length > 0;
+    const childless = (node.children?.length ?? 0) === 0;
+
     return (
       <div
           className="kb-tree-group"
@@ -304,7 +312,7 @@ function TreeNodeItem({
         >
         <div
           ref={labelRef}
-          className={`kb-tree-group-label ${revealMatch ? 'just-moved' : ''}`}
+          className={`kb-tree-group-label ${expanded ? 'is-open' : ''} ${revealMatch ? 'just-moved' : ''}`}
           onClick={() => onTogglePath(node.path)}
           onContextMenu={handleContextMenu}
         >
@@ -354,6 +362,19 @@ function TreeNodeItem({
               onNodeDragOver={onNodeDragOver}
               onNodeDragLeave={onNodeDragLeave}
             />
+          ))}
+          {expanded && !searching && childless && (node.pruned ? (
+            <div
+              className="kb-tree-ghost-row"
+              data-testid="kb-tree-pruned-hint"
+              title="该文件夹内文件过多，未在文件树中显示"
+            >
+              文件过多，未显示
+            </div>
+          ) : (
+            <div className="kb-tree-ghost-row" data-testid="kb-tree-empty-hint">
+              空文件夹
+            </div>
           ))}
         </div>
       </div>

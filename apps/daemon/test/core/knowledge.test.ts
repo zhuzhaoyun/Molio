@@ -724,6 +724,8 @@ describe('vault scan pruning + bounded backstop', () => {
         assert.ok(dump, 'dump dir node should still exist (pruned, not hidden)');
         // Pruned → empty children, NOT MAX_DIR_ENTRIES+1 stat'd file nodes.
         assert.equal(dump!.children?.length, 0);
+        // Flagged so the UI can show "too many files" instead of a silent blank.
+        assert.equal(dump!.pruned, true);
       } finally {
         rmSync(clean, { recursive: true, force: true });
       }
@@ -761,6 +763,8 @@ describe('vault scan pruning + bounded backstop', () => {
         const entities = tree.find((n) => n.name === 'entities');
         assert.ok(entities, 'entities dir node should exist');
         assert.equal(entities!.children?.length, 1351);
+        // Scanned in full → NOT flagged pruned (the UI must not show the hint).
+        assert.equal(entities!.pruned, undefined);
       } finally {
         rmSync(clean, { recursive: true, force: true });
       }
@@ -779,6 +783,7 @@ describe('vault scan pruning + bounded backstop', () => {
         const notes = tree.find((n) => n.name === 'notes');
         assert.ok(notes, 'notes dir node should exist');
         assert.equal(notes!.children?.length, MAX_DIR_ENTRIES);
+        assert.equal(notes!.pruned, undefined);
       } finally {
         rmSync(clean, { recursive: true, force: true });
       }

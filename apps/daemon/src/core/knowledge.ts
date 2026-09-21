@@ -51,35 +51,48 @@ export function scanTree(vaultPath: string, relBase = '', opts: ScanOpts = {}): 
     stopped: false,
     maxDirEntries: opts.maxDirEntries ?? MAX_DIR_ENTRIES,
     maxTotal: opts.maxTotal ?? MAX_TOTAL,
-  });
+  }).nodes;
 }
 
-function scanTreeInner(vaultPath: string, relBase: string, ctx: ScanCtx): TreeNode[] {
-  if (ctx.stopped) return [];
+interface ScanResult {
+  nodes: TreeNode[];
+  /** This directory itself was pruned (over the per-dir entry cap). */
+  selfPruned?: true;
+}
+
+function scanTreeInner(vaultPath: string, relBase: string, ctx: ScanCtx): ScanResult {
+  if (ctx.stopped) return { nodes: [] };
   const absDir = relBase ? path.join(vaultPath, relBase) : vaultPath;
   let entries: fs.Dirent[];
   try {
     entries = fs.readdirSync(absDir, { withFileTypes: true });
   } catch {
-    return [];
+    return { nodes: [] };
   }
-  const nodes: TreeNode[] = [];
 
   // Backstop: prune oversized subtrees instead of stat-ing thousands of files.
-  // Return empty children — the parent call still pushes a directory node (now
-  // empty), which surfaces the dir as pruned without stat-ing its contents.
+  // Return empty children flagged selfPruned — the parent still pushes the
+  // directory node (now empty + pruned) so the UI can show a "too many files"
+  // hint instead of a silent blank that reads as "the click did nothing".
   if (entries.length > ctx.maxDirEntries) {
     warnOversizedDir('scanTree', absDir, entries.length, ctx.maxDirEntries);
-    return [];
+    return { nodes: [], selfPruned: true };
   }
+  const nodes: TreeNode[] = [];
 
   for (const entry of entries) {
     if (isPrunedDirName(entry.name)) continue;
     const relPath = relBase ? `${relBase}/${entry.name}` : entry.name;
 
     if (entry.isDirectory()) {
-      const children = scanTreeInner(vaultPath, relPath, ctx);
-      nodes.push({ name: entry.name, path: relPath, type: 'directory', children });
+      const child = scanTreeInner(vaultPath, relPath, ctx);
+      nodes.push({
+        name: entry.name,
+        path: relPath,
+        type: 'directory',
+        children: child.nodes,
+        pruned: child.selfPruned || undefined,
+      });
       if (ctx.stopped) break;
     } else if (entry.isFile() && isSupportedFile(entry.name)) {
       ctx.visited++;
@@ -111,7 +124,7 @@ function scanTreeInner(vaultPath: string, relBase: string, ctx: ScanCtx): TreeNo
     return a.name.localeCompare(b.name);
   });
 
-  return nodes;
+  return { nodes };
 }
 
 /**
