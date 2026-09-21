@@ -7,7 +7,7 @@
 
 <!-- SEO -->
 <title>Molio 墨流 — 让 AI 拥有你的个人知识底座</title>
-<meta name="description" content="散落的笔记、整本书、带图 PDF——Molio 都加工成 AI 可读的本地知识底座；Claude Code、Codex 等 Agent 基于你的全部积累工作，数据全在本地。">
+<meta name="description" content="散落的笔记、整本书、带图 PDF——Molio 都加工成 AI 可读的本地知识底座；Claude Code、Codex、WorkBuddy、豆包工作等 Agent 基于你的全部积累工作，数据全在本地。">
 <meta name="keywords" content="个人知识底座,AI知识空间,本地知识库,Claude Code GUI,Obsidian替代,Web Clipper,知识管理">
 <meta name="author" content="Molio">
 <meta name="robots" content="index, follow">
@@ -23,11 +23,11 @@
 <link rel="apple-touch-icon" href="/images/favicon-180.png">
 
 <!-- Styles -->
-<link rel="stylesheet" href="styles.css?v=20260920a">
+<link rel="stylesheet" href="styles.css?v=20260921c">
 
 <!-- Open Graph -->
 <meta property="og:title" content="Molio 墨流 — 让 AI 拥有你的个人知识底座">
-<meta property="og:description" content="散落的笔记、整本书、带图 PDF，Molio 都能加工成 AI 可读的本地知识底座。Claude Code、Codex 等 Agent 在知识空间中工作，成果持续沉淀回来，数据始终属于你。">
+<meta property="og:description" content="散落的笔记、整本书、带图 PDF，Molio 都能加工成 AI 可读的本地知识底座。Claude Code、Codex、WorkBuddy、豆包工作等 Agent 在知识空间中工作，成果持续沉淀回来，数据始终属于你。">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://molio.cn/">
 <meta property="og:image" content="https://molio.cn/images/brand.png">
@@ -38,7 +38,7 @@
 <!-- Twitter Card -->
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Molio 墨流 — 让 AI 拥有你的个人知识底座">
-<meta name="twitter:description" content="让 AI 拥有你的个人知识底座。积累被组织、连接和调用，Claude Code、Codex 等 Agent 基于你的数据工作，成果持续沉淀，数据全在你自己电脑上。">
+<meta name="twitter:description" content="让 AI 拥有你的个人知识底座。积累被组织、连接和调用，Claude Code、Codex、WorkBuddy、豆包工作等 Agent 基于你的数据工作，成果持续沉淀，数据全在你自己电脑上。">
 <meta name="twitter:image" content="https://molio.cn/images/brand.png">
 
 <!-- JSON-LD -->
@@ -64,7 +64,7 @@
       "name": "Molio 墨流",
       "applicationCategory": "KnowledgeManagementApplication",
       "operatingSystem": "Windows, macOS",
-      "description": "个人知识底座：把散落的笔记、整本书、带图 PDF 与行业资料统一加工成 AI 可读、可调用的知识空间；Claude Code、Codex 等 Agent 基于你的数据研究、写作、问答、分析，成果回写沉淀，数据全在本地。",
+      "description": "个人知识底座：把散落的笔记、整本书、带图 PDF 与行业资料统一加工成 AI 可读、可调用的知识空间；Claude Code、Codex、WorkBuddy、豆包工作等 Agent 基于你的数据研究、写作、问答、分析，成果回写沉淀，数据全在本地。",
       "url": "https://molio.cn/",
       "image": "https://molio.cn/images/brand.png",
       "screenshot": "https://molio.cn/images/main.webp",
@@ -91,7 +91,7 @@
 }
 </script>
 </head>
-<body>
+<body class="home">
 
 <!-- Navigation -->
 <nav class="top-nav" aria-label="主导航">
@@ -108,221 +108,179 @@
 
 <main>
 
-<!-- ===== HERO ===== -->
-<section class="hero" id="hero">
-  <div class="hero-inner">
-    <div class="hero-text">
-      <div class="hero-eyebrow reveal" style="--delay:0">
+<!-- ===== HERO：知识世界是底，Slogan 与 CTA 从中央浮出来 ===== -->
+<section class="hero home-hero" id="hero">
+
+  <!-- 背景层：真实的《资治通鉴》知识图谱铺满整屏，节点从四边进入。
+       中央被径向遮罩压到几乎看不见，四周逐渐清晰 —— 第二眼才发现它。 -->
+  <div class="home-hero-world" aria-hidden="true">
+<svg class="hero-world-svg hero-world-svg--land" viewBox="0 0 2000 600" preserveAspectRatio="xMidYMid slice"><g class="mg-edges"><path class="mg-edge mg-edge--live" d="M994 294L1016 349" style="--mg-delay:6.5s"/><path class="mg-edge mg-edge--strong" d="M994 294L944 258"/><path class="mg-edge mg-edge--strong" d="M994 294L1026 174"/><path class="mg-edge mg-edge--strong" d="M994 294L1011 233"/><path class="mg-edge mg-edge--strong" d="M994 294L1133 331"/><path class="mg-edge mg-edge--live" d="M994 294L883 293" style="--mg-delay:4s"/><path class="mg-edge mg-edge--strong" d="M994 294L890 222"/><path class="mg-edge mg-edge--live" d="M994 294L1093 238" style="--mg-delay:2s"/><path class="mg-edge mg-edge--live" d="M994 294L1081 303" style="--mg-delay:0s"/><path class="mg-edge mg-edge--strong" d="M994 294L960 176"/><path class="mg-edge mg-edge--strong" d="M994 294L927 343"/><path class="mg-edge mg-edge--strong" d="M668 163L614 100"/><path class="mg-edge mg-edge--strong" d="M668 163L491 97"/><path class="mg-edge mg-edge--strong" d="M668 163L605 167"/><path class="mg-edge mg-edge--strong" d="M668 163L566 69"/><path class="mg-edge mg-edge--strong" d="M668 163L603 227"/><path class="mg-edge mg-edge--strong" d="M668 163L554 131"/><path class="mg-edge mg-edge--strong" d="M668 163L779 138"/><path class="mg-edge mg-edge--strong" d="M668 163L478 157"/><path class="mg-edge mg-edge--strong" d="M668 163L529 192"/><path class="mg-edge mg-edge--strong" d="M668 163L669 260"/><path class="mg-edge mg-edge--strong" d="M668 163L742 212"/><path class="mg-edge mg-edge--strong" d="M1320 217L1402 144"/><path class="mg-edge mg-edge--strong" d="M1320 217L1497 169"/><path class="mg-edge mg-edge--strong" d="M1320 217L1429 91"/><path class="mg-edge mg-edge--strong" d="M1320 217L1252 192"/><path class="mg-edge mg-edge--strong" d="M1320 217L1347 99"/><path class="mg-edge mg-edge--strong" d="M1320 217L1385 266"/><path class="mg-edge mg-edge--strong" d="M1320 217L1559 165"/><path class="mg-edge mg-edge--strong" d="M1320 217L1535 106"/><path class="mg-edge mg-edge--strong" d="M1320 217L1177 179"/><path class="mg-edge mg-edge--strong" d="M1320 217L1492 80"/><path class="mg-edge mg-edge--strong" d="M1320 217L1444 185"/><path class="mg-edge mg-edge--strong" d="M1320 217L1443 241"/><path class="mg-edge mg-edge--strong" d="M1320 217L1381 52"/><path class="mg-edge mg-edge--strong" d="M1320 217L1389 204"/><path class="mg-edge mg-edge--strong" d="M1320 217L1274 123"/><path class="mg-edge mg-edge--strong" d="M1320 217L1499 216"/><path class="mg-edge mg-edge--strong" d="M1320 217L1451 40"/><path class="mg-edge mg-edge--live" d="M1320 217L1458 131" style="--mg-delay:3s"/><path class="mg-edge mg-edge--strong" d="M1320 217L1351 157"/><path class="mg-edge mg-edge--strong" d="M525 375L577 384"/><path class="mg-edge mg-edge--strong" d="M525 375L526 484"/><path class="mg-edge mg-edge--strong" d="M525 375L533 436"/><path class="mg-edge mg-edge--strong" d="M525 375L335 331"/><path class="mg-edge mg-edge--strong" d="M525 375L396 355"/><path class="mg-edge mg-edge--strong" d="M525 375L470 477"/><path class="mg-edge mg-edge--strong" d="M525 375L456 533"/><path class="mg-edge mg-edge--live" d="M525 375L360 456" style="--mg-delay:8s"/><path class="mg-edge mg-edge--strong" d="M525 375L646 339"/><path class="mg-edge mg-edge--strong" d="M525 375L387 302"/><path class="mg-edge mg-edge--strong" d="M525 375L327 396"/><path class="mg-edge mg-edge--strong" d="M525 375L652 421"/><path class="mg-edge mg-edge--strong" d="M525 375L404 500"/><path class="mg-edge mg-edge--strong" d="M525 375L572 317"/><path class="mg-edge mg-edge--strong" d="M525 375L511 325"/><path class="mg-edge mg-edge--strong" d="M525 375L583 470"/><path class="mg-edge mg-edge--strong" d="M525 375L446 318"/><path class="mg-edge mg-edge--strong" d="M525 375L430 394"/><path class="mg-edge mg-edge--strong" d="M525 375L420 444"/><path class="mg-edge mg-edge--strong" d="M525 375L379 405"/><path class="mg-edge mg-edge--strong" d="M525 375L469 364"/><path class="mg-edge mg-edge--strong" d="M525 375L442 264"/><path class="mg-edge mg-edge--strong" d="M525 375L486 422"/><path class="mg-edge mg-edge--strong" d="M525 375L380 245"/><path class="mg-edge mg-edge--strong" d="M525 375L508 277"/><path class="mg-edge mg-edge--strong" d="M1445 383L1439 510"/><path class="mg-edge mg-edge--strong" d="M1445 383L1673 343"/><path class="mg-edge mg-edge--strong" d="M1445 383L1388 471"/><path class="mg-edge mg-edge--strong" d="M1445 383L1397 417"/><path class="mg-edge mg-edge--live" d="M1445 383L1545 459" style="--mg-delay:1s"/><path class="mg-edge mg-edge--strong" d="M1445 383L1502 420"/><path class="mg-edge mg-edge--strong" d="M1445 383L1485 535"/><path class="mg-edge mg-edge--strong" d="M1445 383L1516 312"/><path class="mg-edge mg-edge--strong" d="M1445 383L1569 338"/><path class="mg-edge mg-edge--strong" d="M1445 383L1313 419"/><path class="mg-edge mg-edge--strong" d="M1445 383L1505 360"/><path class="mg-edge mg-edge--strong" d="M1445 383L1643 265"/><path class="mg-edge mg-edge--strong" d="M1445 383L1452 322"/><path class="mg-edge mg-edge--strong" d="M1445 383L1668 452"/><path class="mg-edge mg-edge--strong" d="M1445 383L1587 417"/><path class="mg-edge mg-edge--strong" d="M1445 383L1622 318"/><path class="mg-edge mg-edge--strong" d="M1445 383L1657 400"/><path class="mg-edge mg-edge--strong" d="M1445 383L1546 392"/><path class="mg-edge mg-edge--strong" d="M1445 383L1607 510"/><path class="mg-edge mg-edge--strong" d="M1445 383L1544 515"/><path class="mg-edge mg-edge--strong" d="M1445 383L1610 458"/><path class="mg-edge mg-edge--strong" d="M1445 383L1613 373"/><path class="mg-edge mg-edge--strong" d="M1445 383L1385 356"/><path class="mg-edge mg-edge--strong" d="M1445 383L1498 476"/><path class="mg-edge mg-edge--strong" d="M1445 383L1452 446"/><path class="mg-edge mg-edge--strong" d="M1445 383L1570 273"/><path class="mg-edge mg-edge--live" d="M936 412L1146 481" style="--mg-delay:5.5s"/><path class="mg-edge mg-edge--strong" d="M936 412L1110 409"/><path class="mg-edge mg-edge--strong" d="M936 412L1059 409"/><path class="mg-edge mg-edge--strong" d="M936 412L898 503"/><path class="mg-edge mg-edge--strong" d="M936 412L1014 472"/><path class="mg-edge mg-edge--strong" d="M936 412L947 560"/><path class="mg-edge mg-edge--strong" d="M936 412L958 486"/><path class="mg-edge mg-edge--strong" d="M936 412L1060 510"/><path class="mg-edge mg-edge--strong" d="M936 412L1015 558"/><path class="mg-edge" d="M944 258L1026 174"/><path class="mg-edge" d="M1026 174L1093 238"/><path class="mg-edge" d="M1011 233L1016 349"/><path class="mg-edge" d="M883 293L1011 233"/><path class="mg-edge" d="M890 222L1081 303"/><path class="mg-edge" d="M1093 238L1016 349"/><path class="mg-edge" d="M1081 303L883 293"/><path class="mg-edge" d="M960 176L944 258"/><path class="mg-edge" d="M927 343L1016 349"/><path class="mg-edge" d="M614 100L742 212"/><path class="mg-edge" d="M491 97L566 69"/><path class="mg-edge" d="M605 167L491 97"/><path class="mg-edge" d="M566 69L742 212"/><path class="mg-edge mg-edge--live" d="M603 227L554 131" style="--mg-delay:4.5s"/><path class="mg-edge" d="M554 131L779 138"/><path class="mg-edge" d="M478 157L603 227"/><path class="mg-edge" d="M529 192L614 100"/><path class="mg-edge" d="M669 260L529 192"/><path class="mg-edge" d="M1402 144L1497 169"/><path class="mg-edge" d="M1402 144L1252 192"/><path class="mg-edge" d="M1497 169L1389 204"/><path class="mg-edge" d="M1497 169L1492 80"/><path class="mg-edge" d="M1429 91L1499 216"/><path class="mg-edge" d="M1429 91L1351 157"/><path class="mg-edge" d="M1252 192L1177 179"/><path class="mg-edge" d="M1347 99L1451 40"/><path class="mg-edge" d="M1347 99L1252 192"/><path class="mg-edge" d="M1385 266L1444 185"/><path class="mg-edge" d="M1385 266L1497 169"/><path class="mg-edge" d="M1559 165L1458 131"/><path class="mg-edge" d="M1559 165L1497 169"/><path class="mg-edge" d="M1535 106L1347 99"/><path class="mg-edge" d="M1535 106L1497 169"/><path class="mg-edge" d="M1177 179L1347 99"/><path class="mg-edge" d="M1177 179L1351 157"/><path class="mg-edge" d="M1492 80L1381 52"/><path class="mg-edge" d="M1492 80L1499 216"/><path class="mg-edge" d="M1444 185L1559 165"/><path class="mg-edge" d="M1444 185L1451 40"/><path class="mg-edge" d="M1443 241L1351 157"/><path class="mg-edge" d="M1443 241L1429 91"/><path class="mg-edge" d="M1381 52L1389 204"/><path class="mg-edge" d="M1381 52L1402 144"/><path class="mg-edge" d="M1389 204L1458 131"/><path class="mg-edge" d="M1274 123L1389 204"/><path class="mg-edge" d="M1274 123L1444 185"/><path class="mg-edge" d="M1499 216L1402 144"/><path class="mg-edge" d="M1499 216L1389 204"/><path class="mg-edge" d="M1451 40L1402 144"/><path class="mg-edge" d="M1451 40L1535 106"/><path class="mg-edge" d="M1458 131L1274 123"/><path class="mg-edge" d="M1458 131L1535 106"/><path class="mg-edge" d="M1351 157L1499 216"/><path class="mg-edge" d="M1351 157L1492 80"/><path class="mg-edge" d="M577 384L469 364"/><path class="mg-edge" d="M577 384L652 421"/><path class="mg-edge" d="M526 484L456 533"/><path class="mg-edge" d="M526 484L652 421"/><path class="mg-edge" d="M533 436L430 394"/><path class="mg-edge" d="M533 436L652 421"/><path class="mg-edge" d="M335 331L469 364"/><path class="mg-edge" d="M335 331L360 456"/><path class="mg-edge" d="M396 355L420 444"/><path class="mg-edge" d="M396 355L511 325"/><path class="mg-edge" d="M470 477L652 421"/><path class="mg-edge" d="M470 477L360 456"/><path class="mg-edge" d="M456 533L379 405"/><path class="mg-edge" d="M456 533L360 456"/><path class="mg-edge" d="M360 456L486 422"/><path class="mg-edge" d="M360 456L396 355"/><path class="mg-edge" d="M646 339L486 422"/><path class="mg-edge" d="M646 339L511 325"/><path class="mg-edge" d="M387 302L430 394"/><path class="mg-edge" d="M327 396L446 318"/><path class="mg-edge" d="M327 396L470 477"/><path class="mg-edge" d="M652 421L511 325"/><path class="mg-edge" d="M652 421L469 364"/><path class="mg-edge" d="M404 500L396 355"/><path class="mg-edge" d="M404 500L430 394"/><path class="mg-edge" d="M572 317L652 421"/><path class="mg-edge" d="M572 317L583 470"/><path class="mg-edge" d="M511 325L360 456"/><path class="mg-edge" d="M583 470L486 422"/><path class="mg-edge" d="M583 470L404 500"/><path class="mg-edge" d="M446 318L511 325"/><path class="mg-edge" d="M446 318L526 484"/><path class="mg-edge" d="M430 394L470 477"/><path class="mg-edge" d="M430 394L442 264"/><path class="mg-edge" d="M420 444L442 264"/><path class="mg-edge" d="M420 444L446 318"/><path class="mg-edge" d="M379 405L442 264"/><path class="mg-edge" d="M469 364L446 318"/><path class="mg-edge" d="M469 364L420 444"/><path class="mg-edge" d="M442 264L387 302"/><path class="mg-edge" d="M442 264L335 331"/><path class="mg-edge" d="M486 422L508 277"/><path class="mg-edge" d="M486 422L446 318"/><path class="mg-edge" d="M380 245L469 364"/><path class="mg-edge" d="M380 245L335 331"/><path class="mg-edge" d="M508 277L646 339"/><path class="mg-edge" d="M508 277L526 484"/><path class="mg-edge" d="M1439 510L1544 515"/><path class="mg-edge" d="M1439 510L1546 392"/><path class="mg-edge" d="M1673 343L1546 392"/><path class="mg-edge" d="M1673 343L1610 458"/><path class="mg-edge" d="M1388 471L1385 356"/><path class="mg-edge" d="M1388 471L1545 459"/><path class="mg-edge" d="M1397 417L1545 459"/><path class="mg-edge" d="M1545 459L1668 452"/><path class="mg-edge" d="M1502 420L1610 458"/><path class="mg-edge" d="M1502 420L1569 338"/><path class="mg-edge" d="M1485 535L1388 471"/><path class="mg-edge" d="M1485 535L1397 417"/><path class="mg-edge" d="M1516 312L1610 458"/><path class="mg-edge" d="M1516 312L1570 273"/><path class="mg-edge" d="M1569 338L1498 476"/><path class="mg-edge" d="M1569 338L1657 400"/><path class="mg-edge" d="M1313 419L1502 420"/><path class="mg-edge" d="M1313 419L1388 471"/><path class="mg-edge" d="M1505 360L1388 471"/><path class="mg-edge" d="M1505 360L1544 515"/><path class="mg-edge" d="M1643 265L1570 273"/><path class="mg-edge" d="M1643 265L1569 338"/><path class="mg-edge" d="M1452 322L1385 356"/><path class="mg-edge" d="M1452 322L1313 419"/><path class="mg-edge" d="M1668 452L1673 343"/><path class="mg-edge" d="M1668 452L1607 510"/><path class="mg-edge" d="M1587 417L1505 360"/><path class="mg-edge" d="M1587 417L1452 446"/><path class="mg-edge" d="M1622 318L1516 312"/><path class="mg-edge" d="M1622 318L1587 417"/><path class="mg-edge" d="M1657 400L1545 459"/><path class="mg-edge" d="M1657 400L1502 420"/><path class="mg-edge" d="M1546 392L1544 515"/><path class="mg-edge" d="M1607 510L1622 318"/><path class="mg-edge" d="M1544 515L1613 373"/><path class="mg-edge" d="M1544 515L1502 420"/><path class="mg-edge" d="M1610 458L1544 515"/><path class="mg-edge" d="M1610 458L1485 535"/><path class="mg-edge" d="M1613 373L1607 510"/><path class="mg-edge" d="M1613 373L1643 265"/><path class="mg-edge" d="M1385 356L1313 419"/><path class="mg-edge" d="M1498 476L1610 458"/><path class="mg-edge" d="M1452 446L1313 419"/><path class="mg-edge" d="M1452 446L1505 360"/><path class="mg-edge" d="M1570 273L1502 420"/><path class="mg-edge" d="M1146 481L1014 472"/><path class="mg-edge" d="M1110 409L1060 510"/><path class="mg-edge" d="M1059 409L1146 481"/><path class="mg-edge" d="M898 503L1014 472"/><path class="mg-edge" d="M1014 472L1110 409"/><path class="mg-edge" d="M947 560L1014 472"/><path class="mg-edge" d="M958 486L1015 558"/><path class="mg-edge" d="M1060 510L1015 558"/><path class="mg-edge" d="M1015 558L1146 481"/><path class="mg-edge mg-edge--strong" d="M994 294L1320 217"/><path class="mg-edge mg-edge--strong" d="M994 294L1445 383"/><path class="mg-edge mg-edge--strong" d="M994 294L668 163"/><path class="mg-edge mg-edge--live" d="M994 294L525 375" style="--mg-delay:7.5s"/><path class="mg-edge mg-edge--live" d="M994 294L936 412" style="--mg-delay:5s"/><path class="mg-edge" d="M1133 331L1397 417"/><path class="mg-edge mg-edge--strong" d="M669 260L936 412"/><path class="mg-edge mg-edge--strong" d="M1110 409L1320 217"/><path class="mg-edge mg-edge--live" d="M1146 481L1445 383" style="--mg-delay:6s"/><path class="mg-edge" d="M1146 481L1388 471"/><path class="mg-edge" d="M1516 312L1397 417"/><path class="mg-edge" d="M1516 312L1452 446"/><path class="mg-edge" d="M742 212L1252 192"/><path class="mg-edge mg-edge--strong" d="M742 212L936 412"/><path class="mg-edge mg-edge--strong" d="M1059 409L1320 217"/><path class="mg-edge" d="M1060 510L1059 409"/><path class="mg-edge" d="M1177 179L646 339"/><path class="mg-edge" d="M387 302L327 396"/><path class="mg-edge" d="M327 396L404 500"/><path class="mg-edge" d="M652 421L1313 419"/><path class="mg-edge" d="M1313 419L1485 535"/><path class="mg-edge" d="M1485 535L1452 446"/><path class="mg-edge mg-edge--live" d="M1439 510L1545 459" style="--mg-delay:1.5s"/><path class="mg-edge" d="M1388 471L1452 322"/><path class="mg-edge" d="M1587 417L1668 452"/><path class="mg-edge" d="M1657 400L1546 392"/><path class="mg-edge" d="M1613 373L1610 458"/><path class="mg-edge" d="M1385 356L1498 476"/><path class="mg-edge" d="M614 100L491 97"/><path class="mg-edge" d="M605 167L478 157"/><path class="mg-edge" d="M529 192L605 167"/><path class="mg-edge" d="M577 384L511 325"/><path class="mg-edge" d="M646 339L583 470"/><path class="mg-edge" d="M526 484L430 394"/><path class="mg-edge" d="M526 484L420 444"/><path class="mg-edge" d="M533 436L420 444"/><path class="mg-edge" d="M335 331L420 444"/><path class="mg-edge" d="M533 436L379 405"/><path class="mg-edge" d="M396 355L533 436"/><path class="mg-edge" d="M470 477L396 355"/><path class="mg-edge" d="M469 364L442 264"/><path class="mg-edge" d="M442 264L572 317"/><path class="mg-edge" d="M486 422L652 421"/><path class="mg-edge" d="M1402 144L1429 91"/><path class="mg-edge" d="M1402 144L1535 106"/><path class="mg-edge" d="M1402 144L1559 165"/><path class="mg-edge" d="M1402 144L1444 185"/><path class="mg-edge" d="M1497 169L1443 241"/><path class="mg-edge" d="M1402 144L1443 241"/><path class="mg-edge" d="M1274 123L779 138"/><path class="mg-edge" d="M1492 80L1402 144"/><path class="mg-edge mg-edge--live" d="M1093 238L1320 217" style="--mg-delay:2.5s"/><path class="mg-edge mg-edge--live" d="M1081 303L1445 383" style="--mg-delay:0.5s"/><path class="mg-edge mg-edge--live" d="M883 293L603 227" style="--mg-delay:3.5s"/><path class="mg-edge" d="M890 222L605 167"/><path class="mg-edge" d="M779 138L1177 179"/><path class="mg-edge" d="M577 384L387 302"/><path class="mg-edge" d="M1569 338L1668 452"/><path class="mg-edge" d="M1397 417L1544 515"/><path class="mg-edge" d="M1502 420L1505 360"/><path class="mg-edge mg-edge--live" d="M1016 349L944 258" style="--mg-delay:7s"/><path class="mg-edge" d="M577 384L446 318"/><path class="mg-edge" d="M646 339L446 318"/><path class="mg-edge" d="M1397 417L1546 392"/><path class="mg-edge" d="M1673 343L1569 338"/><path class="mg-edge" d="M1146 481L1110 409"/><path class="mg-edge" d="M947 560L958 486"/><path class="mg-edge" d="M1502 420L1388 471"/></g>
+<g class="mg-nodes"><circle class="mg-node mg-node--minor" cx="882.5" cy="293.2" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="890.2" cy="221.7" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="1092.8" cy="238.2" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="1081.2" cy="302.8" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="959.5" cy="175.5" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="927.4" cy="342.8" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="528.5" cy="191.8" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="668.8" cy="260.3" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="741.7" cy="211.6" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="1492.4" cy="80.1" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="1444.4" cy="185.3" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="1442.7" cy="241.4" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="1381.3" cy="51.9" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="1389.3" cy="203.6" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="1274.1" cy="123.3" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="1498.9" cy="216.1" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="1450.9" cy="40" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="1457.7" cy="131.1" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="1351.1" cy="156.5" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="404.1" cy="499.6" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="571.8" cy="316.5" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="510.6" cy="324.5" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="583.2" cy="469.8" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="446.4" cy="318" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="430.2" cy="394.2" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="419.7" cy="444.2" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="378.7" cy="404.6" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="468.7" cy="364" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="442.2" cy="264" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="486" cy="421.6" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="380.4" cy="245" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="507.5" cy="277.3" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="1312.6" cy="419.2" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="1504.5" cy="359.5" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="1643.3" cy="264.9" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="1452.2" cy="322.4" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="1668.4" cy="451.7" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="1586.7" cy="417.4" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="1621.5" cy="318.1" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="1657.1" cy="399.7" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="1545.8" cy="392.2" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="1606.8" cy="509.5" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="1544.1" cy="514.9" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="1609.6" cy="458.2" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="1612.5" cy="372.9" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="1385.4" cy="356" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="1497.6" cy="476.1" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="1451.9" cy="446.3" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="1570.3" cy="273.1" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="897.6" cy="502.6" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="1014.2" cy="471.6" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="947" cy="560" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="957.7" cy="485.9" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="1059.8" cy="510.2" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="1014.6" cy="557.8" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--mid" cx="1025.7" cy="174.2" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="1011.2" cy="233.3" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="1133.4" cy="330.8" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="566.3" cy="69.2" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="602.9" cy="227.3" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="554.2" cy="131.4" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="779.2" cy="138.4" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="478.4" cy="156.6" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="1252.3" cy="191.6" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="1347.3" cy="99.3" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="1384.9" cy="265.9" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="1558.7" cy="165.3" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="1535.3" cy="106.4" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="1176.6" cy="179.2" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="334.8" cy="331.3" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="395.6" cy="354.5" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="469.5" cy="477.1" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="456.2" cy="533" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="359.9" cy="455.9" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="646.2" cy="339.1" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="386.8" cy="301.5" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="327" cy="395.8" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="652.1" cy="420.7" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="1502.3" cy="419.6" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="1484.5" cy="535" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="1515.7" cy="312" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="1568.9" cy="338.1" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="1110" cy="408.5" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="1059.1" cy="409.2" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--major" cx="1016.4" cy="349.3" r="8.86" fill-opacity="0.69"/><circle class="mg-node mg-node--major" cx="943.6" cy="257.6" r="8.86" fill-opacity="0.69"/><circle class="mg-node mg-node--major" cx="613.6" cy="99.5" r="8.86" fill-opacity="0.69"/><circle class="mg-node mg-node--major" cx="491.3" cy="97.3" r="8.86" fill-opacity="0.69"/><circle class="mg-node mg-node--major" cx="605.4" cy="166.7" r="8.86" fill-opacity="0.69"/><circle class="mg-node mg-node--major" cx="1401.9" cy="144.1" r="8.86" fill-opacity="0.69"/><circle class="mg-node mg-node--major" cx="1497.1" cy="169.2" r="8.86" fill-opacity="0.69"/><circle class="mg-node mg-node--major" cx="1429.1" cy="91" r="8.86" fill-opacity="0.69"/><circle class="mg-node mg-node--major" cx="576.8" cy="383.8" r="8.86" fill-opacity="0.69"/><circle class="mg-node mg-node--major" cx="525.6" cy="484.1" r="8.86" fill-opacity="0.69"/><circle class="mg-node mg-node--major" cx="533.2" cy="436.4" r="8.86" fill-opacity="0.69"/><circle class="mg-node mg-node--major" cx="1439.1" cy="509.7" r="8.86" fill-opacity="0.69"/><circle class="mg-node mg-node--major" cx="1673" cy="343.1" r="8.86" fill-opacity="0.69"/><circle class="mg-node mg-node--major" cx="1388.4" cy="471.2" r="8.86" fill-opacity="0.69"/><circle class="mg-node mg-node--major" cx="1396.5" cy="416.9" r="8.86" fill-opacity="0.69"/><circle class="mg-node mg-node--major" cx="1545.3" cy="459.4" r="8.86" fill-opacity="0.69"/><circle class="mg-node mg-node--major" cx="1146" cy="480.6" r="8.86" fill-opacity="0.69"/><circle class="mg-node mg-node--hub" cx="993.5" cy="293.9" r="12" fill-opacity="0.88"/><circle class="mg-node mg-node--hub" cx="668.1" cy="163.3" r="12" fill-opacity="0.88"/><circle class="mg-node mg-node--hub" cx="1319.9" cy="216.6" r="12" fill-opacity="0.88"/><circle class="mg-node mg-node--hub" cx="525.2" cy="374.7" r="12" fill-opacity="0.88"/><circle class="mg-node mg-node--hub" cx="1444.7" cy="383.3" r="12" fill-opacity="0.88"/><circle class="mg-node mg-node--hub" cx="936.1" cy="411.9" r="12" fill-opacity="0.88"/></g>
+<g class="mg-labels"><text class="mg-label mg-label--hub" x="1014.5" y="283.9" text-anchor="start">资治通鉴</text><text class="mg-label mg-label--hub" x="689.1" y="187.9" text-anchor="start">商鞅变法</text><text class="mg-label mg-label--hub" x="1340.9" y="241.2" text-anchor="start">汉武帝</text><text class="mg-label mg-label--hub" x="525.2" y="408.75" text-anchor="middle">淝水之战</text><text class="mg-label mg-label--hub" x="1465.7" y="390.3" text-anchor="start">唐太宗</text><text class="mg-label mg-label--hub" x="915.1" y="418.9" text-anchor="end">三省六部</text><text class="mg-label mg-label--major" x="1034.26" y="356.3" text-anchor="start">司马光</text><text class="mg-label mg-label--major" x="925.74" y="264.6" text-anchor="end">编年体</text><text class="mg-label mg-label--major" x="587.54" y="173.7" text-anchor="end">秦始皇</text><text class="mg-label mg-label--major" x="1419.76" y="165.55999999999997" text-anchor="start">刘邦</text><text class="mg-label mg-label--major" x="1497.1" y="152.33999999999997" text-anchor="middle">项羽</text><text class="mg-label mg-label--major" x="543.46" y="505.56000000000006" text-anchor="start">曹操</text><text class="mg-label mg-label--major" x="1690.86" y="350.1" text-anchor="start">魏征</text><text class="mg-label mg-label--major" x="1406.26" y="478.2" text-anchor="start">武则天</text><text class="mg-label mg-label--major" x="1396.5" y="446.76" text-anchor="middle">安史之乱</text><text class="mg-label mg-label--major" x="1163.86" y="487.6" text-anchor="start">科举制</text></g></svg>
+<svg class="hero-world-svg hero-world-svg--port" viewBox="0 0 900 1500" preserveAspectRatio="xMidYMid slice"><g class="mg-edges"><path class="mg-edge mg-edge--live" d="M372 504L254 248" style="--mg-delay:6.5s"/><path class="mg-edge mg-edge--strong" d="M372 504L346 243"/><path class="mg-edge mg-edge--strong" d="M372 504L340 376"/><path class="mg-edge mg-edge--strong" d="M372 504L251 339"/><path class="mg-edge mg-edge--strong" d="M372 504L183 461"/><path class="mg-edge mg-edge--live" d="M372 504L395 320" style="--mg-delay:4s"/><path class="mg-edge mg-edge--strong" d="M372 504L319 308"/><path class="mg-edge mg-edge--live" d="M372 504L242 409" style="--mg-delay:2s"/><path class="mg-edge mg-edge--live" d="M372 504L283 472" style="--mg-delay:0s"/><path class="mg-edge mg-edge--strong" d="M372 504L192 283"/><path class="mg-edge mg-edge--strong" d="M372 504L160 353"/><path class="mg-edge mg-edge--strong" d="M574 377L728 407"/><path class="mg-edge mg-edge--strong" d="M574 377L650 239"/><path class="mg-edge mg-edge--strong" d="M574 377L524 295"/><path class="mg-edge mg-edge--strong" d="M574 377L741 341"/><path class="mg-edge mg-edge--strong" d="M574 377L573 245"/><path class="mg-edge mg-edge--strong" d="M574 377L655 387"/><path class="mg-edge mg-edge--strong" d="M574 377L508 440"/><path class="mg-edge mg-edge--strong" d="M574 377L711 271"/><path class="mg-edge mg-edge--strong" d="M574 377L644 316"/><path class="mg-edge mg-edge--strong" d="M574 377L675 495"/><path class="mg-edge mg-edge--strong" d="M574 377L593 502"/><path class="mg-edge mg-edge--strong" d="M294 727L181 706"/><path class="mg-edge mg-edge--strong" d="M294 727L180 805"/><path class="mg-edge mg-edge--strong" d="M294 727L130 626"/><path class="mg-edge mg-edge--strong" d="M294 727L360 595"/><path class="mg-edge mg-edge--strong" d="M294 727L200 635"/><path class="mg-edge mg-edge--strong" d="M294 727L121 767"/><path class="mg-edge mg-edge--strong" d="M294 727L321 795"/><path class="mg-edge mg-edge--strong" d="M294 727L62 663"/><path class="mg-edge mg-edge--strong" d="M294 727L386 670"/><path class="mg-edge mg-edge--strong" d="M294 727L264 627"/><path class="mg-edge mg-edge--strong" d="M294 727L313 663"/><path class="mg-edge mg-edge--strong" d="M294 727L60 736"/><path class="mg-edge mg-edge--strong" d="M294 727L81 581"/><path class="mg-edge mg-edge--strong" d="M294 727L124 692"/><path class="mg-edge mg-edge--strong" d="M294 727L294 561"/><path class="mg-edge mg-edge--strong" d="M294 727L233 771"/><path class="mg-edge mg-edge--strong" d="M294 727L152 554"/><path class="mg-edge mg-edge--live" d="M294 727L236 691" style="--mg-delay:3s"/><path class="mg-edge mg-edge--strong" d="M294 727L217 572"/><path class="mg-edge mg-edge--strong" d="M644 740L782 754"/><path class="mg-edge mg-edge--strong" d="M644 740L738 806"/><path class="mg-edge mg-edge--strong" d="M644 740L696 687"/><path class="mg-edge mg-edge--strong" d="M644 740L642 613"/><path class="mg-edge mg-edge--strong" d="M644 740L824 810"/><path class="mg-edge mg-edge--strong" d="M644 740L741 870"/><path class="mg-edge mg-edge--strong" d="M644 740L840 722"/><path class="mg-edge mg-edge--live" d="M644 740L761 684" style="--mg-delay:8s"/><path class="mg-edge mg-edge--strong" d="M644 740L511 826"/><path class="mg-edge mg-edge--strong" d="M644 740L800 884"/><path class="mg-edge mg-edge--strong" d="M644 740L578 879"/><path class="mg-edge mg-edge--strong" d="M644 740L573 795"/><path class="mg-edge mg-edge--strong" d="M644 740L727 937"/><path class="mg-edge mg-edge--strong" d="M644 740L521 681"/><path class="mg-edge mg-edge--strong" d="M644 740L683 857"/><path class="mg-edge mg-edge--strong" d="M644 740L671 794"/><path class="mg-edge mg-edge--strong" d="M644 740L625 684"/><path class="mg-edge mg-edge--strong" d="M644 740L641 899"/><path class="mg-edge mg-edge--strong" d="M644 740L622 820"/><path class="mg-edge mg-edge--strong" d="M644 740L574 725"/><path class="mg-edge mg-edge--strong" d="M644 740L718 621"/><path class="mg-edge mg-edge--strong" d="M644 740L719 744"/><path class="mg-edge mg-edge--strong" d="M644 740L569 635"/><path class="mg-edge mg-edge--strong" d="M644 740L808 630"/><path class="mg-edge mg-edge--strong" d="M644 740L505 753"/><path class="mg-edge mg-edge--strong" d="M269 999L137 961"/><path class="mg-edge mg-edge--strong" d="M269 999L290 1197"/><path class="mg-edge mg-edge--strong" d="M269 999L393 1079"/><path class="mg-edge mg-edge--strong" d="M269 999L225 911"/><path class="mg-edge mg-edge--live" d="M269 999L211 1106" style="--mg-delay:1s"/><path class="mg-edge mg-edge--strong" d="M269 999L328 1143"/><path class="mg-edge mg-edge--strong" d="M269 999L268 1064"/><path class="mg-edge mg-edge--strong" d="M269 999L266 1130"/><path class="mg-edge mg-edge--strong" d="M269 999L178 1160"/><path class="mg-edge mg-edge--strong" d="M269 999L407 988"/><path class="mg-edge mg-edge--strong" d="M269 999L359 1227"/><path class="mg-edge mg-edge--strong" d="M269 999L133 1037"/><path class="mg-edge mg-edge--strong" d="M269 999L325 935"/><path class="mg-edge mg-edge--strong" d="M269 999L85 1160"/><path class="mg-edge mg-edge--strong" d="M269 999L231 1199"/><path class="mg-edge mg-edge--strong" d="M269 999L182 1254"/><path class="mg-edge mg-edge--strong" d="M269 999L280 1261"/><path class="mg-edge mg-edge--strong" d="M269 999L326 1076"/><path class="mg-edge mg-edge--strong" d="M269 999L61 1083"/><path class="mg-edge mg-edge--strong" d="M269 999L199 1052"/><path class="mg-edge mg-edge--strong" d="M269 999L137 1108"/><path class="mg-edge mg-edge--strong" d="M269 999L128 1208"/><path class="mg-edge mg-edge--strong" d="M269 999L205 981"/><path class="mg-edge mg-edge--strong" d="M269 999L68 1004"/><path class="mg-edge mg-edge--strong" d="M269 999L399 1151"/><path class="mg-edge mg-edge--strong" d="M269 999L342 1011"/><path class="mg-edge mg-edge--live" d="M607 972L524 1162" style="--mg-delay:5.5s"/><path class="mg-edge mg-edge--strong" d="M607 972L519 1055"/><path class="mg-edge mg-edge--strong" d="M607 972L584 1070"/><path class="mg-edge mg-edge--strong" d="M607 972L724 1201"/><path class="mg-edge mg-edge--strong" d="M607 972L628 1160"/><path class="mg-edge mg-edge--strong" d="M607 972L664 1249"/><path class="mg-edge mg-edge--strong" d="M607 972L760 1132"/><path class="mg-edge mg-edge--strong" d="M607 972L587 1222"/><path class="mg-edge mg-edge--strong" d="M607 972L678 1115"/><path class="mg-edge" d="M346 243L340 376"/><path class="mg-edge" d="M340 376L242 409"/><path class="mg-edge" d="M251 339L254 248"/><path class="mg-edge" d="M395 320L251 339"/><path class="mg-edge" d="M319 308L283 472"/><path class="mg-edge" d="M242 409L254 248"/><path class="mg-edge" d="M283 472L395 320"/><path class="mg-edge" d="M192 283L346 243"/><path class="mg-edge" d="M160 353L254 248"/><path class="mg-edge" d="M728 407L593 502"/><path class="mg-edge" d="M650 239L741 341"/><path class="mg-edge" d="M524 295L650 239"/><path class="mg-edge" d="M741 341L593 502"/><path class="mg-edge mg-edge--live" d="M573 245L655 387" style="--mg-delay:4.5s"/><path class="mg-edge" d="M655 387L508 440"/><path class="mg-edge" d="M711 271L573 245"/><path class="mg-edge" d="M644 316L728 407"/><path class="mg-edge" d="M675 495L644 316"/><path class="mg-edge" d="M181 706L180 805"/><path class="mg-edge" d="M181 706L360 595"/><path class="mg-edge" d="M180 805L124 692"/><path class="mg-edge" d="M180 805L264 627"/><path class="mg-edge" d="M130 626L233 771"/><path class="mg-edge" d="M130 626L217 572"/><path class="mg-edge" d="M360 595L386 670"/><path class="mg-edge" d="M200 635L152 554"/><path class="mg-edge" d="M200 635L360 595"/><path class="mg-edge" d="M121 767L313 663"/><path class="mg-edge" d="M121 767L180 805"/><path class="mg-edge" d="M321 795L236 691"/><path class="mg-edge" d="M321 795L180 805"/><path class="mg-edge" d="M62 663L200 635"/><path class="mg-edge" d="M62 663L180 805"/><path class="mg-edge" d="M386 670L200 635"/><path class="mg-edge" d="M386 670L217 572"/><path class="mg-edge" d="M264 627L81 581"/><path class="mg-edge" d="M264 627L233 771"/><path class="mg-edge" d="M313 663L321 795"/><path class="mg-edge" d="M313 663L152 554"/><path class="mg-edge" d="M60 736L217 572"/><path class="mg-edge" d="M60 736L130 626"/><path class="mg-edge" d="M81 581L124 692"/><path class="mg-edge" d="M81 581L181 706"/><path class="mg-edge" d="M124 692L236 691"/><path class="mg-edge" d="M294 561L124 692"/><path class="mg-edge" d="M294 561L313 663"/><path class="mg-edge" d="M233 771L181 706"/><path class="mg-edge" d="M233 771L124 692"/><path class="mg-edge" d="M152 554L181 706"/><path class="mg-edge" d="M152 554L62 663"/><path class="mg-edge" d="M236 691L294 561"/><path class="mg-edge" d="M236 691L62 663"/><path class="mg-edge" d="M217 572L233 771"/><path class="mg-edge" d="M217 572L264 627"/><path class="mg-edge" d="M782 754L718 621"/><path class="mg-edge" d="M782 754L573 795"/><path class="mg-edge" d="M738 806L840 722"/><path class="mg-edge" d="M738 806L573 795"/><path class="mg-edge" d="M696 687L641 899"/><path class="mg-edge" d="M696 687L573 795"/><path class="mg-edge" d="M642 613L718 621"/><path class="mg-edge" d="M642 613L761 684"/><path class="mg-edge" d="M824 810L622 820"/><path class="mg-edge" d="M824 810L683 857"/><path class="mg-edge" d="M741 870L573 795"/><path class="mg-edge" d="M741 870L761 684"/><path class="mg-edge" d="M840 722L574 725"/><path class="mg-edge" d="M840 722L761 684"/><path class="mg-edge" d="M761 684L569 635"/><path class="mg-edge" d="M761 684L824 810"/><path class="mg-edge" d="M511 826L569 635"/><path class="mg-edge" d="M511 826L683 857"/><path class="mg-edge" d="M800 884L641 899"/><path class="mg-edge" d="M578 879L625 684"/><path class="mg-edge" d="M578 879L741 870"/><path class="mg-edge" d="M573 795L683 857"/><path class="mg-edge" d="M573 795L718 621"/><path class="mg-edge" d="M727 937L824 810"/><path class="mg-edge" d="M727 937L641 899"/><path class="mg-edge" d="M521 681L573 795"/><path class="mg-edge" d="M521 681L671 794"/><path class="mg-edge" d="M683 857L761 684"/><path class="mg-edge" d="M671 794L569 635"/><path class="mg-edge" d="M671 794L727 937"/><path class="mg-edge" d="M625 684L683 857"/><path class="mg-edge" d="M625 684L738 806"/><path class="mg-edge" d="M641 899L741 870"/><path class="mg-edge" d="M641 899L719 744"/><path class="mg-edge" d="M622 820L719 744"/><path class="mg-edge" d="M622 820L625 684"/><path class="mg-edge" d="M574 725L719 744"/><path class="mg-edge" d="M718 621L625 684"/><path class="mg-edge" d="M718 621L622 820"/><path class="mg-edge" d="M719 744L800 884"/><path class="mg-edge" d="M719 744L642 613"/><path class="mg-edge" d="M569 635L505 753"/><path class="mg-edge" d="M569 635L625 684"/><path class="mg-edge" d="M808 630L718 621"/><path class="mg-edge" d="M808 630L642 613"/><path class="mg-edge" d="M505 753L511 826"/><path class="mg-edge" d="M505 753L738 806"/><path class="mg-edge" d="M137 961L199 1052"/><path class="mg-edge" d="M137 961L326 1076"/><path class="mg-edge" d="M290 1197L326 1076"/><path class="mg-edge" d="M290 1197L137 1108"/><path class="mg-edge" d="M393 1079L205 981"/><path class="mg-edge" d="M393 1079L211 1106"/><path class="mg-edge" d="M225 911L211 1106"/><path class="mg-edge" d="M211 1106L85 1160"/><path class="mg-edge" d="M328 1143L137 1108"/><path class="mg-edge" d="M328 1143L178 1160"/><path class="mg-edge" d="M268 1064L393 1079"/><path class="mg-edge" d="M268 1064L225 911"/><path class="mg-edge" d="M266 1130L137 1108"/><path class="mg-edge" d="M266 1130L342 1011"/><path class="mg-edge" d="M178 1160L68 1004"/><path class="mg-edge" d="M178 1160L280 1261"/><path class="mg-edge" d="M407 988L328 1143"/><path class="mg-edge" d="M407 988L393 1079"/><path class="mg-edge" d="M359 1227L393 1079"/><path class="mg-edge" d="M359 1227L199 1052"/><path class="mg-edge" d="M133 1037L342 1011"/><path class="mg-edge" d="M133 1037L178 1160"/><path class="mg-edge" d="M325 935L205 981"/><path class="mg-edge" d="M325 935L407 988"/><path class="mg-edge" d="M85 1160L290 1197"/><path class="mg-edge" d="M85 1160L61 1083"/><path class="mg-edge" d="M231 1199L359 1227"/><path class="mg-edge" d="M231 1199L399 1151"/><path class="mg-edge" d="M182 1254L266 1130"/><path class="mg-edge" d="M182 1254L231 1199"/><path class="mg-edge" d="M280 1261L211 1106"/><path class="mg-edge" d="M280 1261L328 1143"/><path class="mg-edge" d="M326 1076L199 1052"/><path class="mg-edge" d="M61 1083L182 1254"/><path class="mg-edge" d="M199 1052L128 1208"/><path class="mg-edge" d="M199 1052L328 1143"/><path class="mg-edge" d="M137 1108L199 1052"/><path class="mg-edge" d="M137 1108L268 1064"/><path class="mg-edge" d="M128 1208L61 1083"/><path class="mg-edge" d="M128 1208L133 1037"/><path class="mg-edge" d="M205 981L407 988"/><path class="mg-edge" d="M68 1004L137 1108"/><path class="mg-edge" d="M399 1151L407 988"/><path class="mg-edge" d="M399 1151L359 1227"/><path class="mg-edge" d="M342 1011L328 1143"/><path class="mg-edge" d="M524 1162L628 1160"/><path class="mg-edge" d="M519 1055L587 1222"/><path class="mg-edge" d="M584 1070L524 1162"/><path class="mg-edge" d="M724 1201L628 1160"/><path class="mg-edge" d="M628 1160L519 1055"/><path class="mg-edge" d="M664 1249L628 1160"/><path class="mg-edge" d="M760 1132L678 1115"/><path class="mg-edge" d="M587 1222L678 1115"/><path class="mg-edge" d="M678 1115L524 1162"/><path class="mg-edge mg-edge--strong" d="M372 504L294 727"/><path class="mg-edge mg-edge--strong" d="M372 504L269 999"/><path class="mg-edge mg-edge--strong" d="M372 504L574 377"/><path class="mg-edge mg-edge--live" d="M372 504L644 740" style="--mg-delay:7.5s"/><path class="mg-edge mg-edge--live" d="M372 504L607 972" style="--mg-delay:5s"/><path class="mg-edge" d="M183 461L225 911"/><path class="mg-edge mg-edge--strong" d="M675 495L607 972"/><path class="mg-edge mg-edge--strong" d="M519 1055L294 727"/><path class="mg-edge mg-edge--live" d="M524 1162L269 999" style="--mg-delay:6s"/><path class="mg-edge" d="M524 1162L393 1079"/><path class="mg-edge" d="M266 1130L225 911"/><path class="mg-edge" d="M266 1130L399 1151"/><path class="mg-edge" d="M593 502L360 595"/><path class="mg-edge mg-edge--strong" d="M593 502L607 972"/><path class="mg-edge mg-edge--strong" d="M584 1070L294 727"/><path class="mg-edge" d="M587 1222L584 1070"/><path class="mg-edge" d="M386 670L511 826"/><path class="mg-edge" d="M800 884L578 879"/><path class="mg-edge" d="M578 879L727 937"/><path class="mg-edge" d="M573 795L407 988"/><path class="mg-edge" d="M407 988L268 1064"/><path class="mg-edge" d="M268 1064L399 1151"/><path class="mg-edge mg-edge--live" d="M137 961L211 1106" style="--mg-delay:1.5s"/><path class="mg-edge" d="M393 1079L325 935"/><path class="mg-edge" d="M231 1199L85 1160"/><path class="mg-edge" d="M280 1261L326 1076"/><path class="mg-edge" d="M128 1208L137 1108"/><path class="mg-edge" d="M205 981L68 1004"/><path class="mg-edge" d="M728 407L650 239"/><path class="mg-edge" d="M524 295L711 271"/><path class="mg-edge" d="M644 316L524 295"/><path class="mg-edge" d="M782 754L683 857"/><path class="mg-edge" d="M511 826L671 794"/><path class="mg-edge" d="M738 806L641 899"/><path class="mg-edge" d="M738 806L622 820"/><path class="mg-edge" d="M696 687L622 820"/><path class="mg-edge" d="M642 613L622 820"/><path class="mg-edge" d="M696 687L574 725"/><path class="mg-edge" d="M824 810L696 687"/><path class="mg-edge" d="M741 870L824 810"/><path class="mg-edge" d="M718 621L719 744"/><path class="mg-edge" d="M719 744L521 681"/><path class="mg-edge" d="M569 635L573 795"/><path class="mg-edge" d="M181 706L130 626"/><path class="mg-edge" d="M181 706L62 663"/><path class="mg-edge" d="M181 706L321 795"/><path class="mg-edge" d="M181 706L313 663"/><path class="mg-edge" d="M180 805L60 736"/><path class="mg-edge" d="M181 706L60 736"/><path class="mg-edge" d="M294 561L508 440"/><path class="mg-edge" d="M264 627L181 706"/><path class="mg-edge mg-edge--live" d="M242 409L294 727" style="--mg-delay:2.5s"/><path class="mg-edge mg-edge--live" d="M283 472L269 999" style="--mg-delay:0.5s"/><path class="mg-edge mg-edge--live" d="M395 320L573 245" style="--mg-delay:3.5s"/><path class="mg-edge" d="M319 308L524 295"/><path class="mg-edge" d="M508 440L386 670"/><path class="mg-edge" d="M782 754L800 884"/><path class="mg-edge" d="M178 1160L85 1160"/><path class="mg-edge" d="M225 911L199 1052"/><path class="mg-edge" d="M328 1143L359 1227"/><path class="mg-edge mg-edge--live" d="M254 248L346 243" style="--mg-delay:7s"/><path class="mg-edge" d="M782 754L625 684"/><path class="mg-edge" d="M511 826L625 684"/><path class="mg-edge" d="M225 911L326 1076"/><path class="mg-edge" d="M290 1197L178 1160"/><path class="mg-edge" d="M524 1162L519 1055"/><path class="mg-edge" d="M664 1249L760 1132"/><path class="mg-edge" d="M328 1143L393 1079"/></g>
+<g class="mg-nodes"><circle class="mg-node mg-node--minor" cx="394.5" cy="320.1" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="318.9" cy="307.9" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="241.5" cy="409.3" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="283.4" cy="471.7" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="192.4" cy="282.9" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="159.8" cy="352.6" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="644.1" cy="316.4" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="675.3" cy="495" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="592.8" cy="501.9" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="263.7" cy="626.8" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="313.4" cy="662.7" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="60" cy="736.1" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="81.2" cy="580.7" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="123.5" cy="691.5" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="294.2" cy="560.5" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="233.4" cy="770.7" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="151.7" cy="553.7" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="235.5" cy="691.2" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="217.1" cy="571.6" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="726.6" cy="937.4" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="520.7" cy="681.2" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="683.2" cy="856.5" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="670.7" cy="793.9" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="625.3" cy="684.4" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="641.1" cy="898.9" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="621.6" cy="819.8" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="574" cy="725" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="717.5" cy="620.7" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="719.3" cy="744.3" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="568.6" cy="634.6" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="807.7" cy="629.9" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="505" cy="752.9" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="406.5" cy="988.3" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="358.5" cy="1226.9" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="132.6" cy="1037.1" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="324.8" cy="934.6" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="84.7" cy="1160.4" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="231" cy="1199.1" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="182.1" cy="1253.8" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="279.6" cy="1260.8" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="325.6" cy="1075.8" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="61.4" cy="1083.1" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="199" cy="1052.1" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="136.5" cy="1108.1" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="128.3" cy="1207.7" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="205.4" cy="981.1" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="68.3" cy="1003.7" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="398.8" cy="1151.2" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="342.3" cy="1011.3" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="723.8" cy="1201" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="627.9" cy="1160.2" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="663.6" cy="1249.2" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="759.9" cy="1131.5" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="586.9" cy="1221.5" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--minor" cx="677.8" cy="1115.3" r="4.75" fill-opacity="0.45"/><circle class="mg-node mg-node--mid" cx="340.4" cy="376" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="250.7" cy="339.3" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="183.4" cy="460.5" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="740.7" cy="341.4" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="573.2" cy="244.9" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="655.1" cy="387.4" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="507.6" cy="440" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="711.2" cy="271.3" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="359.9" cy="594.9" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="199.5" cy="634.8" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="121.1" cy="766.8" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="321" cy="794.5" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="61.7" cy="663.2" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="386" cy="669.7" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="641.9" cy="613.3" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="823.6" cy="809.5" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="741.2" cy="869.7" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="840" cy="721.7" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="761.2" cy="683.8" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="510.9" cy="826.2" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="800" cy="884.1" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="578.2" cy="879.1" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="572.5" cy="795.4" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="328.2" cy="1142.7" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="267.8" cy="1064.4" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="265.5" cy="1129.9" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="177.5" cy="1160.2" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="518.7" cy="1055.4" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--mid" cx="584" cy="1070.2" r="6.61" fill-opacity="0.56"/><circle class="mg-node mg-node--major" cx="254" cy="248.1" r="8.86" fill-opacity="0.69"/><circle class="mg-node mg-node--major" cx="345.9" cy="242.8" r="8.86" fill-opacity="0.69"/><circle class="mg-node mg-node--major" cx="728" cy="406.8" r="8.86" fill-opacity="0.69"/><circle class="mg-node mg-node--major" cx="649.5" cy="239.2" r="8.86" fill-opacity="0.69"/><circle class="mg-node mg-node--major" cx="524.4" cy="295.1" r="8.86" fill-opacity="0.69"/><circle class="mg-node mg-node--major" cx="181.2" cy="706.3" r="8.86" fill-opacity="0.69"/><circle class="mg-node mg-node--major" cx="179.8" cy="804.9" r="8.86" fill-opacity="0.69"/><circle class="mg-node mg-node--major" cx="129.6" cy="625.9" r="8.86" fill-opacity="0.69"/><circle class="mg-node mg-node--major" cx="781.7" cy="753.7" r="8.86" fill-opacity="0.69"/><circle class="mg-node mg-node--major" cx="737.5" cy="806.2" r="8.86" fill-opacity="0.69"/><circle class="mg-node mg-node--major" cx="696.3" cy="686.6" r="8.86" fill-opacity="0.69"/><circle class="mg-node mg-node--major" cx="137" cy="961.3" r="8.86" fill-opacity="0.69"/><circle class="mg-node mg-node--major" cx="289.8" cy="1196.5" r="8.86" fill-opacity="0.69"/><circle class="mg-node mg-node--major" cx="393.2" cy="1078.9" r="8.86" fill-opacity="0.69"/><circle class="mg-node mg-node--major" cx="224.8" cy="910.6" r="8.86" fill-opacity="0.69"/><circle class="mg-node mg-node--major" cx="210.5" cy="1106.3" r="8.86" fill-opacity="0.69"/><circle class="mg-node mg-node--major" cx="523.5" cy="1161.6" r="8.86" fill-opacity="0.69"/><circle class="mg-node mg-node--hub" cx="372.4" cy="504.3" r="12" fill-opacity="0.88"/><circle class="mg-node mg-node--hub" cx="574.1" cy="377.2" r="12" fill-opacity="0.88"/><circle class="mg-node mg-node--hub" cx="294.2" cy="726.9" r="12" fill-opacity="0.88"/><circle class="mg-node mg-node--hub" cx="643.5" cy="739.5" r="12" fill-opacity="0.88"/><circle class="mg-node mg-node--hub" cx="269" cy="998.6" r="12" fill-opacity="0.88"/><circle class="mg-node mg-node--hub" cx="607.2" cy="972.1" r="12" fill-opacity="0.88"/></g>
+<g class="mg-labels"><text class="mg-label mg-label--hub" x="351.4" y="511.3" text-anchor="end">资治通鉴</text><text class="mg-label mg-label--hub" x="553.1" y="384.2" text-anchor="end">商鞅变法</text><text class="mg-label mg-label--hub" x="315.2" y="733.9" text-anchor="start">汉武帝</text><text class="mg-label mg-label--hub" x="643.5" y="783" text-anchor="middle">淝水之战</text><text class="mg-label mg-label--hub" x="248" y="1028.6" text-anchor="end">唐太宗</text><text class="mg-label mg-label--hub" x="628.2" y="979.1" text-anchor="start">三省六部</text><text class="mg-label mg-label--major" x="236.14" y="255.1" text-anchor="end">司马光</text><text class="mg-label mg-label--major" x="363.76" y="249.8" text-anchor="start">编年体</text><text class="mg-label mg-label--major" x="542.26" y="288.24" text-anchor="start">秦始皇</text><text class="mg-label mg-label--major" x="163.33999999999997" y="733.16" text-anchor="end">刘邦</text><text class="mg-label mg-label--major" x="161.94" y="811.9" text-anchor="end">项羽</text><text class="mg-label mg-label--major" x="719.64" y="833.0600000000001" text-anchor="end">曹操</text><text class="mg-label mg-label--major" x="307.66" y="1203.5" text-anchor="start">魏征</text><text class="mg-label mg-label--major" x="411.06" y="1085.9" text-anchor="start">武则天</text><text class="mg-label mg-label--major" x="206.94" y="917.6" text-anchor="end">安史之乱</text><text class="mg-label mg-label--major" x="505.64" y="1168.6" text-anchor="end">科举制</text></g></svg>
+  </div>
+
+  <!-- 中央纸色柔光：把世界再推远一点，让 Slogan 成为唯一清晰的东西 -->
+  <div class="home-hero-veil" aria-hidden="true"></div>
+
+  <div class="hero-inner home-hero-inner">
+
+    <div class="home-hero-rail reveal" style="--delay:0">
+      <div class="hero-eyebrow">
         <span class="hero-eyebrow-line"></span>
-        <span>Personal Knowledge Base · 个人知识底座</span>
+        <span>Personal Knowledge OS · Molio 墨流</span>
       </div>
+      <ul class="home-hero-proof" aria-label="核心信任点">
+        <li>本地数据</li>
+        <li>Agent 可接入</li>
+        <li>成果会沉淀</li>
+      </ul>
+    </div>
+
+    <div class="home-hero-core">
       <h1 class="reveal" style="--delay:1">
-        <span class="hero-title-line">让 AI 拥有</span><br>
-        <span class="hero-title-sub">你的个人知识底座</span>
+        把过去的积累，<br>
+        <span class="home-hero-title-accent">变成今天的生产力</span>
       </h1>
-      <p class="hero-desc reveal" style="--delay:2">散落的笔记、整本书、带图 PDF，Molio 加工成 AI 可读的本地知识底座；Claude Code、Codex 基于你的积累工作，数据始终在本地。</p>
+      <p class="hero-desc reveal" style="--delay:2">Molio 把笔记、书籍、PDF、网页和项目资料，整理成本地个人知识底座，让 Agent 可以直接读取、调用，并将成果继续沉淀回来。</p>
       <div class="hero-actions reveal" style="--delay:3">
-        <div class="dl-seg">
-          <a data-dl="win" href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases/v0.3.29/Molio-Setup-0.3.29-windows.exe" class="dl-seg__main">下载 Windows 版</a>
-          <a data-dl="mac" href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases/v0.3.29/Molio-0.3.29-mac-arm64.dmg" class="dl-seg__alt">macOS 版</a>
+        <a class="home-cta-primary" href="#download">下载 Molio</a>
+        <a class="home-cta-ink" href="#resources">获取领域知识</a>
+      </div>
+      <a class="home-demo-link reveal" style="--delay:4" href="#showcase">看演示视频
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11M11 5l5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+    </div>
+
+  </div>
+</section><!-- ===== WORKFLOW + SHOWCASE：三步建立与加工效果，合并为一屏 ===== -->
+<section class="section section-inset home-showcase" id="showcase">
+  <div class="home-container">
+    <header class="home-section-head reveal">
+      <span class="section-label">Workflow · 三步建立</span>
+      <h2>从一堆资料，到可被 AI 调用</h2>
+      <p>不需要先理解复杂概念。放入资料，Molio 完成整理，AI 开始基于你的积累工作。右侧是《资治通鉴》1362 年史料进入 Molio 后的结果。</p>
+    </header>
+    <div class="home-showcase-grid">
+      <div class="home-showcase-copy reveal">
+        <ol class="home-step-line">
+          <li>
+            <span class="home-step-line-index">01</span>
+            <div class="home-step-line-body">
+              <strong>导入</strong>
+              <p>Obsidian 笔记、书籍、带图 PDF、网页剪藏放进 Molio，保留原始文件与目录结构。</p>
+            </div>
+          </li>
+          <li>
+            <span class="home-step-line-index">02</span>
+            <div class="home-step-line-body">
+              <strong>加工</strong>
+              <p>自动整理结构、构建 Wiki、生成知识图谱，让资料变成 AI 可理解的知识空间。</p>
+            </div>
+          </li>
+          <li>
+            <span class="home-step-line-index">03</span>
+            <div class="home-step-line-body">
+              <strong>使用</strong>
+              <p>Claude Code、Codex、WorkBuddy、豆包工作或内置 AI 基于你的知识库研究、写作与问答，产出回写沉淀。</p>
+            </div>
+          </li>
+          <li>
+            <span class="home-step-line-index">04</span>
+            <div class="home-step-line-body">
+              <strong>回流</strong>
+              <p>Agent 的研究、写作与代码成果回写知识库，成为下一轮工作的起点。</p>
+            </div>
+          </li>
+        </ol>
+      </div>
+      <div class="home-showcase-media reveal" style="--delay:1">
+        <div class="hero-video-stack" id="heroVideoStack">
+          <img src="images/kg-graph.webp" alt="《资治通鉴》知识图谱：由 Molio 加工成 AI 可探索的知识底座" width="1280" height="842" loading="lazy" decoding="async">
         </div>
-        <a href="resources.html" class="btn btn-seal">免费领现成知识底座</a>
+        <p class="hero-video-caption">《资治通鉴》：一本书，一个知识宇宙。1362 年史料被整理成可探索的 Wiki 与知识图谱，AI 可以顺着人物、事件和时间关系继续追问。</p>
       </div>
     </div>
-    <div class="hero-visual reveal" style="--delay:2">
-      <div class="hero-video-stack" id="heroVideoStack">
-        <img src="images/kg-graph.webp" alt="《资治通鉴》知识图谱：由 Molio 加工成 AI 可探索的知识底座" width="1280" height="842" fetchpriority="high" decoding="async">
-      </div>
-      <p class="hero-video-caption">一本书，一个知识宇宙：《资治通鉴》1362 年史料 · 由 Molio 加工成 AI 可探索的知识底座</p>
-    </div>
-  </div>
-</section>
-
-<!-- ===== WHY: 为什么需要知识底座 ===== -->
-<section class="section section-dark section-why" id="why">
-  <div class="why-inner">
-    <div class="manifesto-inner reveal">
-      <span class="section-label dark">Why · 为什么需要知识底座</span>
-      <h2>你的积累，<br>正散落在各处</h2>
-      <p>笔记里的片段、硬盘里的整本书、带图表的 PDF、聊天记录里的灵感，那是你多年攒下的东西，却从未被真正组织起来。AI 看不见它们，于是每一次对话，都从零开始。</p>
-    </div>
-    <div class="scatter-flow reveal" style="--delay:1">
-      <div class="scatter-sources">
-        <span>笔记</span><span>文档</span><span>聊天记录</span><span>网页剪藏</span><span>整本书</span><span>PDF</span><span>项目文件</span>
-      </div>
-      <div class="scatter-arrow" aria-hidden="true">↓ 组织 · 连接 · 调用</div>
-      <div class="scatter-base">你的知识底座<em>AI 可理解 · 可使用 · 可沉淀</em></div>
-    </div>
-    <div class="position-grid">
-      <div class="position-card reveal" style="--delay:1">
-        <span class="position-kind">聊天型 AI</span>
-        <p>对话结束，上下文清零；你的积累进不去，也留不下。</p>
-      </div>
-      <div class="position-card reveal" style="--delay:2">
-        <span class="position-kind">笔记软件</span>
-        <p>记录为止，数据沉睡；写下的东西，很少再被调用。</p>
-      </div>
-      <div class="position-card position-card--molio reveal" style="--delay:3">
-        <span class="position-kind">Molio · 数据底座</span>
-        <p>把散料加工成知识，让 Agent 基于你的数据工作，把成果沉淀回来。</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ===== LOOP: 知识复利循环 ===== -->
-<section class="section section-inset section-closure" id="loop">
-  <div class="closure-inner reveal">
-    <span class="section-label light">Loop · 积累的复利</span>
-    <h2>越用，越懂你</h2>
-    <p class="loop-sub">你的每一次使用都在喂养它，积累开始复利。</p>
-    <div class="closure-ring">
-      <div class="closure-center">M</div>
-      <div class="closure-node" style="--angle: 0deg">
-        <div class="node-dot">01</div>
-        <div class="node-label">收集<small>Collect</small></div>
-      </div>
-      <div class="closure-node" style="--angle: 72deg">
-        <div class="node-dot">02</div>
-        <div class="node-label">整理<small>Organize</small></div>
-      </div>
-      <div class="closure-node" style="--angle: 144deg">
-        <div class="node-dot">03</div>
-        <div class="node-label">创作<small>Create</small></div>
-      </div>
-      <div class="closure-node" style="--angle: 216deg">
-        <div class="node-dot">04</div>
-        <div class="node-label">回写<small>Reflow</small></div>
-      </div>
-      <div class="closure-node" style="--angle: 288deg">
-        <div class="node-dot">05</div>
-        <div class="node-label">生长<small>Grow</small></div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ===== CAPS: 能力四图 ===== -->
-<section class="section section-dark section-caps" id="caps">
-  <div class="caps-inner">
-    <h2 class="reveal">知识底座长这样</h2>
-    <p class="caps-sub reveal">四个核心界面，点击可放大查看</p>
-    <div class="cap-grid">
-      <figure class="cap-card reveal" style="--delay:1">
-        <img src="images/kg-graph.webp" alt="知识图谱" loading="lazy" />
-        <figcaption class="cap-tag">知识图谱</figcaption>
+    <div class="home-showcase-shots reveal">
+      <figure>
+        <img src="images/main.webp" alt="Molio 导入资料后的工作界面" loading="lazy" decoding="async">
+        <figcaption>导入后：原始目录结构原样保留，笔记、PDF、剪藏共处一个知识库。</figcaption>
       </figure>
-      <figure class="cap-card reveal" style="--delay:2">
-        <img src="images/wiki_knowledge.webp" alt="构建 Wiki" loading="lazy" />
-        <figcaption class="cap-tag">构建 Wiki</figcaption>
-      </figure>
-      <figure class="cap-card reveal" style="--delay:3">
-        <img src="images/main.webp" alt="AI 对话" loading="lazy" />
-        <figcaption class="cap-tag">AI 对话</figcaption>
-      </figure>
-      <figure class="cap-card reveal" style="--delay:4">
-        <img src="images/previews/mingshi/1.png" alt="排版发布" loading="lazy" />
-        <figcaption class="cap-tag">排版发布</figcaption>
+      <figure>
+        <img src="images/wiki_knowledge.webp" alt="Molio 自动构建 Wiki 的界面" loading="lazy" decoding="async">
+        <figcaption>加工后：Molio 自动构建 Wiki 与知识图谱，AI 顺着关系继续追问。</figcaption>
       </figure>
     </div>
   </div>
 </section>
 
-<!-- ===== DOWNLOAD: 客户端与扩展 ===== -->
-<section class="section section-inset" id="download">
-  <div class="dl-inner">
-    <div class="dl-header reveal">
-      <h2>下载客户端与浏览器扩展</h2>
-      <p class="dl-header-sub">找现成的知识库？<a href="resources.html">去资源库看看 →</a> · 第一次上手？<a href="https://www.bilibili.com/video/BV1M68H6nEGs/" target="_blank" rel="noopener noreferrer">看 2 分钟上手视频 ↗</a></p>
+<!-- ===== RESOURCES：直接看看别人已经整理好的知识 ===== -->
+<section class="section home-resources" id="resources">
+  <div class="home-container">
+    <header class="home-section-head reveal">
+      <span class="section-label">Resources · 现成知识底座</span>
+      <h2>直接看看别人已经整理好的知识</h2>
+      <p>不必从零开始：这些领域知识底座已经结构化、带导读，一键导入 Molio 或 Obsidian，AI 立刻可以基于它工作。</p>
+    </header>
+    <div class="home-resources-grid">
+      <a class="home-res-card reveal" href="resources.html">
+        <img src="images/previews/zizhi-tongjian/1.png" alt="《资治通鉴》知识图谱预览" loading="lazy" decoding="async">
+        <strong>资治通鉴</strong>
+        <span>1362 年史料 → 可探索的 Wiki 与知识图谱</span>
+      </a>
+      <a class="home-res-card reveal" style="--delay:1" href="resources.html">
+        <img src="images/previews/shiji/1.png" alt="《史记》知识体系预览" loading="lazy" decoding="async">
+        <strong>史记</strong>
+        <span>黄帝到汉武帝 3000 年，怎么读才不乱</span>
+      </a>
+      <a class="home-res-card reveal" style="--delay:2" href="resources.html">
+        <img src="images/previews/hongloumeng/1.png" alt="红楼梦人物关系图谱预览" loading="lazy" decoding="async">
+        <strong>红楼梦</strong>
+        <span>60 个人物、6 组对照，把人物读明白</span>
+      </a>
+      <a class="home-res-card reveal" style="--delay:3" href="resources.html">
+        <img src="images/previews/mingshi/1.png" alt="明史人物与制度图谱预览" loading="lazy" decoding="async">
+        <strong>明史</strong>
+        <span>列传 220 卷、311 个人物条目，每条回到原文</span>
+      </a>
     </div>
-
-    <h3 class="download-section-title">Molio 桌面客户端</h3>
-    <div class="dl-desktop-grid">
-      <div class="download-card download-card--primary reveal">
-        <div class="name">Windows 版</div>
-        <div class="desc">64 位安装包</div>
-        <div class="meta" data-dl-meta="win">Molio-Setup-0.3.29-windows.exe</div>
-        <div class="btn-group">
-          <a data-dl="win" href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases/v0.3.29/Molio-Setup-0.3.29-windows.exe" class="download-btn primary">下载 Windows 版</a>
-        </div>
-      </div>
-      <div class="download-card reveal">
-        <div class="name">macOS 版</div>
-        <div class="desc">ARM64 (Apple Silicon)</div>
-        <div class="meta" data-dl-meta="mac">Molio-0.3.29-mac-arm64.dmg</div>
-        <div class="btn-group">
-          <a data-dl="mac" href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases/v0.3.29/Molio-0.3.29-mac-arm64.dmg" class="download-btn primary">下载 macOS 版</a>
-        </div>
-      </div>
-    </div>
-    <div class="dl-docker-row reveal">
-      <div class="dl-docker-text">
-        <strong>麒麟 / NAS / Linux</strong>
-        <span>Docker 自建 Web 服务，一条命令安装，amd64 + arm64</span>
-      </div>
-      <div class="dl-docker-actions">
-        <a href="https://github.com/zhuzhaoyun/Molio#readme" target="_blank" rel="noopener noreferrer" class="download-btn primary">安装指南</a>
-        <a href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com/script/install.sh" target="_blank" rel="noopener noreferrer" class="download-btn secondary">安装脚本</a>
-      </div>
-    </div>
-
-    <h3 class="download-section-title">Chrome 浏览器扩展</h3>
-    <div class="download-grid">
-      <div class="download-card reveal">
-        <div class="name">COSE</div>
-        <div class="desc">多平台一键发布到微信、知乎、CSDN 等 30+ 内容平台</div>
-        <div class="meta" data-dl-ext-meta="cose">v1.3.6</div>
-        <div class="btn-group">
-          <a data-dl-ext="cose" href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases/cose-extension-v1.3.6.zip" class="download-btn primary">离线安装包</a>
-          <a href="https://chromewebstore.google.com/detail/cose-%E5%A4%9A%E5%B9%B3%E5%8F%B0%E6%96%87%E7%AB%A0%E5%90%8C%E6%AD%A5/ilhikcdphhpjofhlnbojifbihhfmmhfk?hl=zh-CN&utm_source=ext_sidebar" target="_blank" rel="noopener noreferrer" class="download-btn secondary">Chrome 商店</a>
-        </div>
-      </div>
-      <div class="download-card reveal">
-        <div class="name">Molio Connect</div>
-        <div class="desc">浏览器剪藏插件，一键保存网页内容到 Molio 知识库</div>
-        <div class="meta" data-dl-ext-meta="mc">v0.2.4</div>
-        <div class="btn-group">
-          <a data-dl-ext="mc" href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases/molio-connect-0.2.4-chrome-store.zip" class="download-btn primary">离线安装包</a>
-          <a href="https://chromewebstore.google.com/detail/molio/pjdacbbkjpegfkogoieejajljplngbik?hl=zh-CN&utm_source=ext_sidebar" target="_blank" rel="noopener noreferrer" class="download-btn secondary">Chrome 商店</a>
-        </div>
-      </div>
-    </div>
-
-    <details class="install-details reveal">
-      <summary>Chrome 扩展离线安装说明</summary>
-      <ol>
-        <li>下载扩展的 <code>.zip</code> 压缩包并解压</li>
-        <li>打开 Chrome 浏览器，地址栏输入 <code>chrome://extensions</code> 并回车</li>
-        <li>开启右上角的「开发者模式」</li>
-        <li>点击「加载已解压的扩展程序」，选择刚才解压的文件夹</li>
-        <li>扩展图标会出现在 Chrome 工具栏上，安装完成</li>
-      </ol>
-    </details>
+    <p class="home-resources-more"><a href="resources.html">进资源库看全部 →</a></p>
   </div>
 </section>
 
-<!-- ===== ENTERPRISE BANNER ===== -->
-<section class="section section-dark section-ent-banner" id="enterprise">
-  <div class="ent-banner-inner reveal">
-    <div class="ent-banner-text">
-      <h2>把核心知识，<br>留在你自己的院子里</h2>
-      <p class="sub">散料炼成知识库，陪你用到会。数据处理、咨询、私有部署按需，一次演示见真章。</p>
-      <div class="ent-banner-tags">
-        <span>数据处理</span>
-        <span>咨询</span>
-        <span>私有部署</span>
-      </div>
-      <a href="enterprise.html" class="btn btn-light">了解定制服务 →</a>
+<!-- ===== DOWNLOAD：一个转化区 ===== -->
+<section class="section home-download" id="download">
+  <div class="home-container">
+    <header class="home-section-head reveal">
+      <span class="section-label">Download · 开始使用</span>
+      <h2>下载 Molio，开始你的知识底座</h2>
+      <p>桌面端负责导入、加工与本地管理；Agent 负责研究、写作与执行。别让多年积累，只躺在硬盘里。</p>
+    </header>
+    <div class="home-download-grid">
+      <article class="home-download-card reveal">
+        <div class="home-download-meta">
+          <strong>Windows</strong>
+          <span data-dl-meta="win">Molio-Setup-0.3.29-windows.exe</span>
+        </div>
+        <a data-dl="win" href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases/v0.3.29/Molio-Setup-0.3.29-windows.exe" class="home-download-btn primary">下载 Windows 版</a>
+      </article>
+      <article class="home-download-card reveal" style="--delay:1">
+        <div class="home-download-meta">
+          <strong>macOS</strong>
+          <span data-dl-meta="mac">Molio-0.3.29-mac-arm64.dmg</span>
+        </div>
+        <a data-dl="mac" href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases/v0.3.29/Molio-0.3.29-mac-arm64.dmg" class="home-download-btn ink">下载 macOS 版</a>
+      </article>
     </div>
-    <div class="ent-banner-stamp reveal" style="--delay:1">数据<br>不出域</div>
-  </div>
-</section>
-
-<!-- ===== FINAL CTA ===== -->
-<section class="section section-cta-final" id="cta">
-  <div class="cta-final-inner reveal">
-    <h2>让 AI 拥有<br>你的个人知识底座</h2>
-    <a href="#download" class="btn btn-seal">下载 Molio</a>
+    <nav class="home-secondary-links" aria-label="更多入口">
+      <a href="https://github.com/zhuzhaoyun/Molio#readme" target="_blank" rel="noopener noreferrer">Linux / Docker</a>
+      <a href="resources.html">Chrome 扩展</a>
+      <a href="resources.html">免费资源库</a>
+      <a href="https://www.bilibili.com/video/BV1M68H6nEGs/" target="_blank" rel="noopener noreferrer">2 分钟上手视频</a>
+      <a href="enterprise.html">企业私有部署</a>
+    </nav>
   </div>
 </section>
 
@@ -330,18 +288,10 @@
 
 <!-- Anchor nav -->
 <div class="anchor-nav" aria-label="页面章节导航">
-  <a href="#hero" class="active" data-anchor></a>
-  <a href="#why" data-anchor></a>
-  <a href="#loop" data-anchor></a>
-  <a href="#caps" data-anchor></a>
-  <a href="#download" data-anchor></a>
-</div>
-
-<!-- 能力图灯箱放大 -->
-<div class="guide-lightbox" id="guideLightbox" role="dialog" aria-modal="true" aria-label="能力展示放大图">
-  <button class="guide-lightbox-close" id="guideLightboxClose" aria-label="关闭">×</button>
-  <img id="guideLightboxImg" src="" alt="" />
-  <figcaption id="guideLightboxCaption"></figcaption>
+  <a href="#hero" class="active" data-anchor aria-label="首屏"></a>
+  <a href="#showcase" data-anchor aria-label="工作流与演示"></a>
+  <a href="#resources" data-anchor aria-label="现成知识底座"></a>
+  <a href="#download" data-anchor aria-label="下载"></a>
 </div>
 
 <!-- Footer -->
@@ -349,7 +299,7 @@
   <div class="footer-inner">
     <div class="footer-brand">
       <a href="index.html" class="footer-logo"><img class="logo-icon-sm" src="images/new/black.png" alt="Molio" /> Molio</a>
-      <p>让 AI 拥有你的个人知识底座。把散落的积累组织、连接成 AI 可用的长期资产，Claude Code、Codex 等 Agent 基于你的数据工作，成果持续沉淀，数据全在你自己电脑上。</p>
+      <p>让 AI 拥有你的个人知识底座。把散落的积累组织、连接成 AI 可用的长期资产，Claude Code、Codex、WorkBuddy、豆包工作等 Agent 基于你的数据工作，成果持续沉淀，数据全在你自己电脑上。</p>
     </div>
     <div class="footer-links">
       <h4>产品</h4>
@@ -376,7 +326,6 @@
     <span>Molio 墨流：让 AI 拥有你的个人知识底座。积累被组织、连接和调用，Agent 基于你的数据工作，成果持续沉淀，数据全在你自己电脑上</span>
   </div>
 </footer>
-
 <script src="auth.js?v=20260824a"></script>
 <script src="shared.js?v=20260804"></script>
 <script>
@@ -404,38 +353,6 @@
     }, { once: true });
     stack.appendChild(v);
   } catch (e) { /* 静默降级为海报图 */ }
-})();
-</script>
-<script>
-(function() {
-  // 能力图灯箱
-  var overlay = document.getElementById('guideLightbox');
-  var lbImg = document.getElementById('guideLightboxImg');
-  var lbCap = document.getElementById('guideLightboxCaption');
-  var lbClose = document.getElementById('guideLightboxClose');
-  if (!overlay || !lbImg) return;
-
-  function openLightbox(card) {
-    var img = card.querySelector('img');
-    var tag = card.querySelector('.cap-tag');
-    if (!img) return;
-    lbImg.src = img.getAttribute('src');
-    lbImg.alt = img.getAttribute('alt') || '';
-    lbCap.textContent = tag ? tag.textContent : '';
-    overlay.classList.add('is-open');
-    document.body.style.overflow = 'hidden';
-  }
-  function closeLightbox() {
-    overlay.classList.remove('is-open');
-    document.body.style.overflow = '';
-  }
-
-  document.querySelectorAll('.cap-card').forEach(function (card) {
-    card.addEventListener('click', function () { openLightbox(card); });
-  });
-  lbClose.addEventListener('click', closeLightbox);
-  overlay.addEventListener('click', function (e) { if (e.target === overlay) closeLightbox(); });
-  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeLightbox(); });
 })();
 </script>
 <script>
