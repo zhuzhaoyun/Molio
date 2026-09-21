@@ -497,6 +497,11 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     tabs.togglePin(id);
   }, [tabs]);
 
+  /** Drag-to-reorder: persist the tab's new position in the workspace. */
+  const handleReorderTab = useCallback((id: string, toIndex: number) => {
+    tabs.moveTab(id, toIndex);
+  }, [tabs]);
+
   /** Close a tab; if it was active, the store auto-activates an adjacent tab.
    *  publish tab 有已填内容时先弹「放弃未发布的填写」确认。 */
   const handleCloseTab = useCallback((tabId: string) => {
@@ -1329,6 +1334,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
           onSplit={openSplit}
           onAddTab={handleAddTab}
           onTogglePin={handleTogglePin}
+          onReorder={handleReorderTab}
           actions={
             <>
               {/* 💬问答 — vault 级常驻入口：有文件 = 带 @文档上下文，无文件 = 库级问答 */}
