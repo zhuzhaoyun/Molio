@@ -108,4 +108,10 @@
     <priority>0.7</priority>
     <changefreq>weekly</changefreq>
   </url>
+  <url>
+    <loc>https://molio.cn/blog/western-philosophy-history-map.html</loc>
+    <lastmod>2026-09-20</lastmod>
+    <priority>0.7</priority>
+    <changefreq>weekly</changefreq>
+  </url>
 </urlset>
