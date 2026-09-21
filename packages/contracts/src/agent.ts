@@ -3,6 +3,8 @@
 export interface RuntimeModelOption {
   id: string;
   label: string;
+  /** 副行说明（来源/角色，如「Opus 映射 · glm-5.3-flash[1M]」）；缺省无副行。 */
+  detail?: string;
 }
 
 export interface RuntimeBuildOptions {
@@ -184,6 +186,12 @@ export interface AgentInfo {
   /** Detailed error message when probeVersion failed (for diagnostics). */
   probeError?: string | null;
   models: RuntimeModelOption[];
+  /**
+   * 「跟随默认」时 runtime 实际会用的默认模型（如 CC Switch 写入的
+   * ANTHROPIC_MODEL）。仅当能从配置解析出来时才有值——供 UI 的
+   * 「跟随默认」行显示「当前默认 xxx」副行。
+   */
+  defaultModel?: RuntimeModelOption;
   installUrl?: string;
   /** True when `def.install` is present (auto-install supported). */
   installable: boolean;

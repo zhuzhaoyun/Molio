@@ -7,12 +7,20 @@
  *
  * 选择语义（用户拍板）：切模型/切 runtime 对**下一条消息**即时生效；
  * 模型按 runtime 记入 localStorage（chatRuntimeStore 持久化），全局默认仍在设置页。
+ *
+ * 条目两行式（借鉴 VS Code Claude Code 插件的模型选择器）：主行 = 实际会运行的
+ * 模型，副行 = 来源/角色说明（如「Opus 映射 · glm-5.3-flash[1M]」——CC Switch
+ * 写入 ~/.claude/settings.json 的映射由 daemon 解析后随 AgentInfo 下发）。
+ * 「运行时」组常驻：未安装的 runtime 灰态显示，点击跳「设置 → 运行时」。
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useI18n } from '../i18n';
 import { useAgents } from '../hooks/useAgents';
 import { chatRuntimeStore, useChatRuntime } from '../stores/chatRuntimeStore';
 import { buildModelOptions, formatPillLabel } from './runtimeModelOptions';
+
+/** 未安装 runtime 行的点击事件 —— App 层监听并导航到设置页（SPA 内跳转）。 */
+export const OPEN_RUNTIME_SETTINGS_EVENT = 'molio:open-runtime-settings';
 
 /** 选中项右侧的对勾（模型组 / 运行时组共用）。 */
 function CheckIcon() {
@@ -56,8 +64,10 @@ export function RuntimeModelPill() {
   if (!current) return null;
 
   const label = formatPillLabel(current.name, model, current.models);
-  const modelOptions = buildModelOptions(current.models, t('composer.modelDefault'));
-  const runtimeChoices = agents.filter((a) => a.available);
+  const defaultDetail = current.defaultModel?.label
+    ? t('composer.currentDefault', { model: current.defaultModel.label })
+    : undefined;
+  const modelOptions = buildModelOptions(current.models, t('composer.modelDefault'), defaultDetail);
 
   return (
     // 菜单的定位锚点是 .composer（而非本 wrapper）——见 chat.css 的说明：
@@ -87,15 +97,18 @@ export function RuntimeModelPill() {
               data-testid="composer-model-option"
               onClick={() => pickModel(opt.id)}
             >
-              <span className="composer-model-option-label">{opt.label}</span>
+              <span className="composer-model-option-text">
+                <span className="composer-model-option-label">{opt.label}</span>
+                {opt.detail && <span className="composer-model-option-detail">{opt.detail}</span>}
+              </span>
               {model === opt.id && <CheckIcon />}
             </button>
           ))}
-          {runtimeChoices.length > 1 && (
-            <>
-              <div className="composer-model-divider" />
-              <div className="composer-model-group">{t('composer.runtimeGroup')}</div>
-              {runtimeChoices.map((a) => (
+          <div className="composer-model-divider" />
+          <div className="composer-model-group">{t('composer.runtimeGroup')}</div>
+          {agents.map((a) => {
+            if (a.available) {
+              return (
                 <button
                   key={a.id}
                   type="button"
@@ -103,12 +116,33 @@ export function RuntimeModelPill() {
                   data-testid="composer-runtime-option"
                   onClick={() => pickRuntime(a.id)}
                 >
-                  <span className="composer-model-option-label">{a.name}</span>
+                  <span className="composer-model-option-text">
+                    <span className="composer-model-option-label">{a.name}</span>
+                  </span>
                   {a.id === agentId && <CheckIcon />}
                 </button>
-              ))}
-            </>
-          )}
+              );
+            }
+            // 未安装：灰态，点击跳「设置 → 运行时」去安装
+            return (
+              <button
+                key={a.id}
+                type="button"
+                className="composer-model-option is-unavailable"
+                data-testid="composer-runtime-option-unavailable"
+                title={t('composer.notInstalledHint')}
+                onClick={() => {
+                  setShow(false);
+                  window.dispatchEvent(new CustomEvent(OPEN_RUNTIME_SETTINGS_EVENT));
+                }}
+              >
+                <span className="composer-model-option-text">
+                  <span className="composer-model-option-label">{a.name}</span>
+                  <span className="composer-model-option-detail">{t('composer.notInstalledHint')}</span>
+                </span>
+              </button>
+            );
+          })}
         </div>
       )}
     </div>

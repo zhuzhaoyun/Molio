@@ -6,7 +6,7 @@ import type { RuntimeModelOption } from '@molio/contracts';
 describe('buildModelOptions', () => {
   it('空模型列表 → 仅「跟随默认」一项', () => {
     assert.deepEqual(buildModelOptions([], '跟随默认'), [
-      { id: null, label: '跟随默认' },
+      { id: null, label: '跟随默认', detail: undefined },
     ]);
   });
 
@@ -17,9 +17,9 @@ describe('buildModelOptions', () => {
       { id: 'opus', label: 'Opus (alias)' },
     ];
     assert.deepEqual(buildModelOptions(models, '跟随默认'), [
-      { id: null, label: '跟随默认' },
-      { id: 'sonnet', label: 'Sonnet (alias)' },
-      { id: 'opus', label: 'Opus (alias)' },
+      { id: null, label: '跟随默认', detail: undefined },
+      { id: 'sonnet', label: 'Sonnet (alias)', detail: undefined },
+      { id: 'opus', label: 'Opus (alias)', detail: undefined },
     ]);
   });
 
@@ -32,6 +32,21 @@ describe('buildModelOptions', () => {
     const opts = buildModelOptions(models, '跟随默认');
     assert.equal(opts.length, 3);
     assert.equal(opts[1]!.label, 'Sonnet');
+  });
+});
+
+describe('buildModelOptions — defaultModel 副行', () => {
+  it('传入 defaultDetail 时挂在「跟随默认」行上', () => {
+    const models: RuntimeModelOption[] = [{ id: 'sonnet', label: 'Sonnet (alias)' }];
+    const opts = buildModelOptions(models, '跟随默认', '当前默认 glm-5.3-flash[1M]');
+    assert.equal(opts[0]!.id, null);
+    assert.equal(opts[0]!.label, '跟随默认');
+    assert.equal(opts[0]!.detail, '当前默认 glm-5.3-flash[1M]');
+  });
+
+  it('无 defaultDetail → 跟随默认行无 detail', () => {
+    const opts = buildModelOptions([], '跟随默认');
+    assert.equal(opts[0]!.detail, undefined);
   });
 });
 

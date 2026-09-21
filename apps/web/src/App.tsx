@@ -21,6 +21,7 @@ import type { Locale } from './i18n';
 import { api } from './api/client';
 import { useActiveVault, vaultStore } from './stores/vaultStore';
 import { chatRuntimeStore, useChatAgentId } from './stores/chatRuntimeStore';
+import { OPEN_RUNTIME_SETTINGS_EVENT } from './components/RuntimeModelPill';
 import { authStore } from './stores/authStore';
 import { currentContextStore, type CurrentContext } from './stores/currentContextStore';
 import { messageSelectionStore } from './stores/messageSelectionStore';
@@ -114,6 +115,14 @@ export default function App() {
       page: known.includes(page) ? page : 'other',
     });
   }, [location.pathname]);
+
+  // 模型 pill 的未安装 runtime 行 → SPA 内跳「设置 → 运行时」。
+  // 走 router 而非 location.href：产物静态服务无 SPA history fallback，硬导航可能 404。
+  useEffect(() => {
+    const handler = () => navigate('/settings?tab=runtimes');
+    window.addEventListener(OPEN_RUNTIME_SETTINGS_EVENT, handler);
+    return () => window.removeEventListener(OPEN_RUNTIME_SETTINGS_EVENT, handler);
+  }, [navigate]);
 
   // 入口收敛（暂时屏蔽右下角悬浮按钮）：面板只在 KB 页经 💬问答 等入口唤起。
   // 离开 /knowledge 时若面板开着则自动收起——后台任务继续但不可见，回 KB 可重新唤起。

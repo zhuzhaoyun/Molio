@@ -108,9 +108,11 @@ export interface MockRunOptions {
    *  对未知 conv 404 → onLoadError 关标签。响应结构对齐 daemon：`{ messages: [...] }`。 */
   persistedMessages?: Array<{ id: string; role: 'user' | 'assistant'; content: string; timestamp: number }>;
   /** 当前 agent 的模型列表 —— runtime/model pill 测试用（默认 []） */
-  agentModels?: Array<{ id: string; label: string }>;
-  /** 额外的可用 agent —— 测「运行时」分组切换用 */
-  extraAgents?: Array<{ id: string; name: string; available?: boolean; models?: Array<{ id: string; label: string }> }>;
+  agentModels?: Array<{ id: string; label: string; detail?: string }>;
+  /** 「跟随默认」实际会用的默认模型（AgentInfo.defaultModel） */
+  agentDefaultModel?: { id: string; label: string };
+  /** 额外的 agent —— 测「运行时」分组切换用；available=false 模拟未安装 */
+  extraAgents?: Array<{ id: string; name: string; available?: boolean; models?: Array<{ id: string; label: string; detail?: string }> }>;
   /** Turn scripts streamed over the SAME SSE connection, one per drained queued
    *  message, in drain order. Only supported with `frameDelay` set (needs a live
    *  streaming server). Each element is a full turn script (status running →
@@ -312,6 +314,7 @@ export async function mockChatRun(page: Page, opts: MockRunOptions = {}) {
     agentId: 'claude',
     name: 'Claude',
     models: opts.agentModels,
+    defaultModel: opts.agentDefaultModel,
     extraAgents: opts.extraAgents,
   });
 
@@ -364,9 +367,11 @@ export async function mockAgent(page: Page, opts: {
   agentId?: string;
   name?: string;
   /** 模型列表（RuntimeModelOption[]）——runtime/model pill 相关测试用 */
-  models?: Array<{ id: string; label: string }>;
+  models?: Array<{ id: string; label: string; detail?: string }>;
+  /** 「跟随默认」实际会用的默认模型（AgentInfo.defaultModel） */
+  defaultModel?: { id: string; label: string };
   /** 额外的 agent——测「运行时」分组切换用 */
-  extraAgents?: Array<{ id: string; name: string; available?: boolean; models?: Array<{ id: string; label: string }> }>;
+  extraAgents?: Array<{ id: string; name: string; available?: boolean; models?: Array<{ id: string; label: string; detail?: string }> }>;
 } = {}) {
   const agentId = opts.agentId ?? 'claude';
   const agents = [
@@ -378,6 +383,7 @@ export async function mockAgent(page: Page, opts: {
       source: 'path',
       version: '1.0.0',
       models: opts.models ?? [],
+      defaultModel: opts.defaultModel,
       installUrl: 'https://claude.ai',
     },
     ...(opts.extraAgents ?? []).map((a) => ({

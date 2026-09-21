@@ -168,6 +168,41 @@ test.describe('Chat — runtime/model pill', () => {
     await expect(page.getByTestId('composer-model-pill')).toHaveText('Claude · Sonnet (alias)');
   });
 
+  test('「跟随默认」副行显示 runtime 当前默认模型（CC Switch 场景）', async ({ page }) => {
+    await mockChatRun(page, {
+      agentModels: [
+        { id: 'opus', label: 'glm-5.3-flash', detail: 'Opus 映射 · glm-5.3-flash[1M]' },
+      ],
+      agentDefaultModel: { id: 'default', label: 'glm-5.3-flash[1M]' },
+    });
+    await gotoHome(page);
+
+    await page.getByTestId('composer-model-pill').click();
+    const menu = page.getByTestId('composer-model-menu');
+    const defaultRow = menu.getByTestId('composer-model-option').first();
+    await expect(defaultRow).toContainText('跟随默认');
+    await expect(defaultRow).toContainText('当前默认 glm-5.3-flash[1M]');
+    // 映射行：主行 = 解析后的真实模型，副行 = 角色说明
+    const mapped = menu.getByTestId('composer-model-option').filter({ hasText: 'Opus 映射' });
+    await expect(mapped).toContainText('glm-5.3-flash');
+  });
+
+  test('运行时组常驻：未安装 runtime 灰态显示，点击跳设置', async ({ page }) => {
+    await mockChatRun(page, {
+      extraAgents: [{ id: 'codex', name: 'Codex', available: false }],
+    });
+    await gotoHome(page);
+
+    // 单可用 runtime 也显示「运行时」组
+    await page.getByTestId('composer-model-pill').click();
+    const unavailable = page.getByTestId('composer-runtime-option-unavailable');
+    await expect(unavailable).toContainText('Codex');
+    await expect(unavailable).toContainText('未安装');
+
+    await unavailable.click();
+    await page.waitForURL(/\/settings\?tab=runtimes/);
+  });
+
   test('运行中 pill 保持可见（为排队消息挑模型）', async ({ page }) => {
     // 脚本刻意不含 turn_end —— run 始终保持「运行中」，断言窗口稳定
     await mockChatRun(page, {

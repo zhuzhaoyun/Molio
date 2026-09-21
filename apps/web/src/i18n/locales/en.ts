@@ -61,6 +61,8 @@ const en: Record<string, string> = {
   'composer.modelGroup': 'Model',
   'composer.runtimeGroup': 'Runtime',
   'composer.modelDefault': 'Default',
+  'composer.currentDefault': 'Default is currently {model}',
+  'composer.notInstalledHint': 'Not installed · click to open Settings → Runtimes',
   'composer.noHistory': 'No conversation history',
   'composer.historySearchPlaceholder': 'Search conversations',
   'composer.noSearchResults': 'No matching conversations',
