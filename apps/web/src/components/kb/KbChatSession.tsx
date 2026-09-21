@@ -4,6 +4,7 @@ import type { ChatMessage as ContractChatMessage } from '@molio/contracts';
 import { api } from '../../api/client';
 import { useChatCore, type CreateRunContext, type ChatMessage } from '../../hooks/useChatCore';
 import { kbChatSessionsStore, type ChatSessionTab } from '../../stores/kbChatSessionsStore';
+import { chatRuntimeStore } from '../../stores/chatRuntimeStore';
 import { UserMessage } from '../UserMessage';
 import { AssistantMessage } from '../AssistantMessage';
 import { ChatComposer, type FileRef, type PastedImage, buildAttachmentPrefix } from '../ChatComposer';
@@ -76,6 +77,8 @@ export function KbChatSession({
     const result = await api.createRun({
       agentId,
       message: ctx.message,
+      // 发送瞬间读 store 快照——pill 选择的模型对下一条消息即时生效
+      model: chatRuntimeStore.getState().model ?? undefined,
       cwd: vaultPath ?? undefined,
       conversationId: ctx.conversationId ?? undefined,
       history: contractHistory.length > 0 ? contractHistory : undefined,

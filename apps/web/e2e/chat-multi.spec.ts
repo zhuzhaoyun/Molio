@@ -79,16 +79,17 @@ test.describe('Chat — multi-turn', () => {
     await expect(textarea).toBeEnabled();
   });
 
-  test('header shows active agent name during chat', async ({ page }) => {
+  test('composer pill shows active agent name during chat', async ({ page }) => {
     await gotoHome(page);
     await sendMessage(page, 'Test message');
 
     await expect(page.locator('.chat-active')).toBeVisible({ timeout: 10_000 });
 
-    // The active agent badge should be visible in the header
-    const agentBadge = page.locator('.home-active-agent');
-    await expect(agentBadge).toBeVisible();
+    // The runtime/model pill in the composer should show the agent name
+    // （原顶栏 .home-active-agent 已移除——信息移到 composer pill，见 model-switcher.spec）
+    const pill = page.locator('[data-testid="composer-model-pill"]');
+    await expect(pill).toBeVisible();
     // Agent name should be non-empty (depends on which agent is available)
-    await expect(agentBadge).not.toHaveText('');
+    await expect(pill).not.toHaveText('');
   });
 });

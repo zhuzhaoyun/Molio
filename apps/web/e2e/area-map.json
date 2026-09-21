@@ -30,7 +30,10 @@
         "apps/daemon/src/routes/conversations.ts",
         "apps/daemon/src/core/RunManager.ts",
         "apps/daemon/src/core/conversations/run-starter.ts",
-        "apps/daemon/src/streams/*"
+        "apps/daemon/src/streams/*",
+        "apps/web/src/components/RuntimeModelPill.*",
+        "apps/web/src/components/runtimeModelOptions.*",
+        "apps/web/src/stores/chatRuntimeStore.*"
       ],
       "specs": [
         "chat-single",
@@ -47,7 +50,8 @@
         "chat-repairing",
         "chat-timeout-fallback",
         "chat-work-visibility",
-        "file-ref-navigation"
+        "file-ref-navigation",
+        "model-switcher"
       ]
     },
     "kb": {

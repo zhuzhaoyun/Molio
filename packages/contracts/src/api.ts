@@ -45,6 +45,8 @@ export interface RewindResendRequest {
   newContent: string;
   agentId?: string;
   cwd?: string;
+  /** Model override for the replayed run (follows CLI default when absent). */
+  model?: string;
 }
 
 export interface RewindResendResponse {

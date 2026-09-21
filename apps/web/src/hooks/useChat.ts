@@ -11,6 +11,7 @@
 import { useCallback, useEffect } from 'react';
 import { api } from '../api/client';
 import { useChatCore } from './useChatCore';
+import { chatRuntimeStore } from '../stores/chatRuntimeStore';
 import type { ChatMessage } from './useChatCore';
 
 export type { ChatMessage, ToolEvent } from './useChatCore';
@@ -54,6 +55,8 @@ export function useChat(options: UseChatOptions | string | null) {
       return api.createRun({
         agentId: agentId!,
         message,
+        // 发送瞬间读 store 快照——pill 选择的模型对下一条消息即时生效
+        model: chatRuntimeStore.getState().model ?? undefined,
         conversationId: conversationId ?? undefined,
         history: contractHistory.length > 0 ? contractHistory : undefined,
         cwd: cwd ?? undefined,
@@ -64,6 +67,8 @@ export function useChat(options: UseChatOptions | string | null) {
         newContent,
         agentId: agentId ?? undefined,
         cwd: cwd ?? undefined,
+        // 重新生成/编辑重发也遵循当前 pill 选择（与首次发送一致）
+        model: chatRuntimeStore.getState().model ?? undefined,
       });
     },
   });

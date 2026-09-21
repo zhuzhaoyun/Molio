@@ -1101,6 +1101,121 @@
   cursor: not-allowed;
 }
 
+/* ── Runtime/model pill（composer-row 左侧，承接原顶栏 agent chip 的视觉基因） ── */
+/* 默认透明底，hover 才浮出 bg-subtle——安静、不与图标按钮抢视觉 */
+.composer-model-wrap {
+  flex-shrink: 1;
+  min-width: 0;
+}
+.composer-model-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 5px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 120ms ease, background 120ms ease;
+}
+.composer-model-pill:hover,
+.composer-model-pill[aria-expanded='true'] {
+  background: var(--bg-subtle);
+  color: var(--text);
+}
+.composer-model-pill-label {
+  min-width: 0;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.composer-model-caret {
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+/* 菜单 — 套用 composer-history-dropdown 的基因：白底 1px border、radius 12、
+   shadow-lg、z-40。定位锚点是 .composer（position:relative）而非 pill 本身：
+   bottom:100% 让菜单弹在**整个输入框之上**，避免盖住 textarea 被其拦截点击
+   （pill 在 pill-wrap 内，若以其为锚点菜单会压住输入框）。 */
+.composer-model-menu {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  margin-bottom: 8px;
+  width: min(280px, 100%);
+  max-height: 340px;
+  overflow-y: auto;
+  padding: 4px 0;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  z-index: 40;
+}
+.composer-model-group {
+  padding: 8px 16px 2px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.composer-model-divider {
+  height: 1px;
+  margin: 6px 0;
+  background: var(--border-soft);
+}
+.composer-model-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 32px;
+  padding: 0 12px 0 16px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  position: relative;
+  transition: background 120ms ease;
+}
+/* 左侧珊瑚标记 — 与 composer-history-item 同款 signature detail */
+.composer-model-option::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 5px;
+  bottom: 5px;
+  width: 0;
+  border-radius: 0 2px 2px 0;
+  background: var(--accent);
+  transition: width 150ms ease;
+}
+.composer-model-option:hover::before {
+  width: 3px;
+}
+.composer-model-option:hover {
+  background: var(--bg-subtle);
+}
+.composer-model-option-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer-model-check {
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--accent);
+}
+
 /* ── History dropdown ── */
 .composer-history-dropdown {
   position: absolute;

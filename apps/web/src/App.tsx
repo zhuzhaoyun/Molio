@@ -20,6 +20,7 @@ import { useI18n } from './i18n';
 import type { Locale } from './i18n';
 import { api } from './api/client';
 import { useActiveVault, vaultStore } from './stores/vaultStore';
+import { chatRuntimeStore, useChatAgentId } from './stores/chatRuntimeStore';
 import { authStore } from './stores/authStore';
 import { currentContextStore, type CurrentContext } from './stores/currentContextStore';
 import { messageSelectionStore } from './stores/messageSelectionStore';
@@ -59,7 +60,9 @@ export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
   const [defaultAgentId, setDefaultAgentId] = useState<string | null>(null);
-  const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
+  // 当前 runtime 选择迁移到 chatRuntimeStore（composer 的 runtime/model pill 与
+  // App 共享同一事实源）；此处只订阅 agentId 供 useChat / KB 面板消费。
+  const selectedAgent = useChatAgentId();
   const activeVault = useActiveVault();
   const [locale, setLocale] = useState<Locale>('zh');
   const [configLoaded, setConfigLoaded] = useState(false);
@@ -168,14 +171,14 @@ export default function App() {
 
     if (defaultAgentId) {
       if (agents.some((a) => a.id === defaultAgentId && a.available)) {
-        setSelectedAgent(defaultAgentId);
+        chatRuntimeStore.setAgentId(defaultAgentId);
       }
       return;
     }
 
     const firstAvailable = agents.find((a) => a.available);
     if (firstAvailable) {
-      setSelectedAgent(firstAvailable.id);
+      chatRuntimeStore.setAgentId(firstAvailable.id);
       setDefaultAgentId(firstAvailable.id);
       api.updateConfig({ defaultAgentId: firstAvailable.id }).catch(() => {});
     }
@@ -189,7 +192,7 @@ export default function App() {
         if (id && id !== defaultAgentId) {
           setDefaultAgentId(id);
           if (agents.some((a) => a.id === id && a.available)) {
-            setSelectedAgent(id);
+            chatRuntimeStore.setAgentId(id);
           }
         }
       })
@@ -239,7 +242,7 @@ export default function App() {
 
   const handleNewChat = () => {
     chat.reset();
-    setSelectedAgent(defaultAgentId ?? null);
+    chatRuntimeStore.setAgentId(defaultAgentId ?? null);
   };
 
   // 切 vault → 重置绑定旧 vault 的会话。首载/无 vault/未变化跳过；无会话无需重置。

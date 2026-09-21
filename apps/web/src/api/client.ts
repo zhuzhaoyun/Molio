@@ -1,5 +1,6 @@
 import type {
   AgentInfo, InstallEvent, RunInfo, CreateRunRequest, ToolResultRequest,
+  RewindResendRequest,
   ChatMessage, Project, Conversation, ConversationHistoryItem,
   ConversationHistoryPage, ListHistoryQuery,
   Vault, TreeNode, FileContent, KbHistoryEntry, CreateVaultRequest,
@@ -434,7 +435,7 @@ export const api = {
     return res.json();
   },
 
-  async rewindResend(conversationId: string, req: { newContent: string; agentId?: string; cwd?: string }): Promise<{ runId: string; conversationId: string }> {
+  async rewindResend(conversationId: string, req: RewindResendRequest): Promise<{ runId: string; conversationId: string }> {
     const res = await fetch(`${BASE}/conversations/${conversationId}/rewind-resend`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

@@ -156,6 +156,7 @@ export function conversationRoutes(
         conversationId: convId,
         history,
         cwd: body.cwd,
+        model: body.model,
       });
       return c.json({ runId, conversationId: convId }, 200);
     } catch (err) {

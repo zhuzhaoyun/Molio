@@ -202,25 +202,6 @@
   margin-left: auto;
 }
 
-/* Active agent indicator */
-.home-active-agent {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 10px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-subtle);
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.home-active-agent svg {
-  flex-shrink: 0;
-  color: var(--text-soft);
-}
-
 /* Chat log */
 .home-chat-log {
   flex: 1;
