@@ -324,39 +324,54 @@
   </div>
 </section>
 
-<!-- ===== DOWNLOAD：一个转化区 ===== -->
+<!-- ===== DOWNLOAD：页面上唯一的转化区（发布清单） ===== -->
 <section class="section home-download" id="download">
   <div class="home-container">
-    <header class="home-section-head reveal">
-      <span class="section-label">Download · 开始使用</span>
-      <h2>下载 Molio，开始你的知识底座</h2>
-      <p>桌面端负责导入、加工与本地管理；Agent 负责研究、写作与执行。别让多年积累，只躺在硬盘里。</p>
-    </header>
-    <div class="home-download-grid">
-      <article class="home-download-card reveal">
-        <div class="home-download-meta">
-          <strong>Windows</strong>
-          <span data-dl-meta="win">Molio-Setup-0.3.29-windows.exe</span>
+    <div class="home-download-layout">
+      <div class="home-download-copy reveal">
+        <span class="section-label">Download · 开始使用</span>
+        <h2>下载 Molio，开始你的知识底座</h2>
+        <p>桌面端负责导入、加工与本地管理；Agent 负责研究、写作与执行。别让多年积累，只躺在硬盘里。</p>
+        <ul class="home-download-chips" aria-label="下载承诺">
+          <li>MIT 开源</li>
+          <li>数据本地</li>
+          <li>永久免费</li>
+        </ul>
+      </div>
+
+      <div class="home-dl-panel reveal" style="--delay:1">
+        <div class="home-dl-panel-head">
+          <strong>RELEASE · 桌面端</strong>
+          <span data-dl-meta="ver">v0.3.29</span>
         </div>
-        <a data-dl="win" href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases/v0.3.29/Molio-Setup-0.3.29-windows.exe" class="home-download-btn primary">下载 Windows 版</a>
-      </article>
-      <article class="home-download-card reveal" style="--delay:1">
-        <div class="home-download-meta">
-          <strong>macOS</strong>
-          <span data-dl-meta="mac">Molio-0.3.29-mac-arm64.dmg</span>
+        <div class="home-dl-row">
+          <div class="home-download-meta">
+            <strong>Windows</strong>
+            <span data-dl-meta="win">Molio-Setup-0.3.29-windows.exe</span>
+          </div>
+          <a data-dl="win" href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases/v0.3.29/Molio-Setup-0.3.29-windows.exe" class="home-download-btn primary">下载 Windows 版</a>
         </div>
-        <a data-dl="mac" href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases/v0.3.29/Molio-0.3.29-mac-arm64.dmg" class="home-download-btn ink">下载 macOS 版</a>
-      </article>
+        <div class="home-dl-row">
+          <div class="home-download-meta">
+            <strong>macOS</strong>
+            <span data-dl-meta="mac">Molio-0.3.29-mac-arm64.dmg</span>
+          </div>
+          <a data-dl="mac" href="https://molio-releases.oss-cn-guangzhou.aliyuncs.com/releases/v0.3.29/Molio-0.3.29-mac-arm64.dmg" class="home-download-btn ink">下载 macOS 版</a>
+        </div>
+        <p class="home-dl-note">免费开源 · MIT 协议 · 数据始终留在你自己电脑上。</p>
+      </div>
     </div>
-    <nav class="home-secondary-links" aria-label="更多入口">
-      <a href="https://github.com/zhuzhaoyun/Molio#readme" target="_blank" rel="noopener noreferrer">Linux / Docker</a>
-      <a href="resources.html">Chrome 扩展</a>
-      <a href="resources.html">免费资源库</a>
-      <a href="https://www.bilibili.com/video/BV1M68H6nEGs/" target="_blank" rel="noopener noreferrer">2 分钟上手视频</a>
-      <a href="enterprise.html">企业私有部署</a>
+
+    <nav class="home-dl-links" aria-label="更多入口">
+      <a class="home-dl-link" href="https://github.com/zhuzhaoyun/Molio#readme" target="_blank" rel="noopener noreferrer"><span class="idx">01</span><strong>Linux / Docker</strong><small>GitHub README</small></a>
+      <a class="home-dl-link" href="resources.html"><span class="idx">02</span><strong>Chrome 扩展</strong><small>网页剪藏</small></a>
+      <a class="home-dl-link" href="resources.html"><span class="idx">03</span><strong>免费资源库</strong><small>现成知识底座</small></a>
+      <a class="home-dl-link" href="https://www.bilibili.com/video/BV1M68H6nEGs/" target="_blank" rel="noopener noreferrer"><span class="idx">04</span><strong>2 分钟上手视频</strong><small>Bilibili</small></a>
+      <a class="home-dl-link" href="enterprise.html"><span class="idx">05</span><strong>企业私有部署</strong><small>定制服务</small></a>
     </nav>
   </div>
 </section>
+
 
 </main>
 
@@ -449,6 +464,7 @@
       setLinks('[data-dl="mac"]', OSS_BASE + '/v' + v + '/Molio-' + v + '-mac-arm64.dmg');
       setMetas('[data-dl-meta="win"]', 'Molio-Setup-' + v + '-windows.exe');
       setMetas('[data-dl-meta="mac"]', 'Molio-' + v + '-mac-arm64.dmg');
+      setMetas('[data-dl-meta="ver"]', 'v' + v);
     })
     .catch(() => {
       // 保持 HTML 中的默认 OSS 链接

@@ -3776,45 +3776,116 @@ body.home .home-showcase .hero-video-caption {
 
 
 /* ============================================================
-   ⑤ Download — 页面上唯一的转化区
+   ⑤ Download — 页面上唯一的转化区：一张发布清单
+   左：为什么下载 + 三条承诺；右：RELEASE 面板（版本号实时）；
+   下：编号清单式的更多入口，替代一排匿名药丸。
    ============================================================ */
 
 body.home .home-download {
   padding: clamp(72px, 8vw, 112px) 0;
   background: var(--paper);
+  border-top: 1px solid var(--hair);
 }
 
-body.home .home-download-grid {
+body.home .home-download-layout {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 20px;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: clamp(28px, 4vw, 72px);
+  align-items: start;
 }
 
-body.home .home-download-card {
+body.home .home-download-copy h2 {
+  margin-bottom: 16px;
+  color: var(--ink);
+  font-family: var(--font-zh);
+  font-weight: 700;
+  font-size: clamp(30px, 3.4vw, 46px);
+  line-height: 1.2;
+}
+
+body.home .home-download-copy p {
+  max-width: 34em;
+  color: var(--ink-40);
+  font-size: 16px;
+  line-height: 1.8;
+}
+
+body.home .home-download-chips {
   display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 24px;
-  padding: 28px;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 24px;
+  list-style: none;
+}
+
+body.home .home-download-chips li {
+  padding: 6px 12px;
+  border: 1px solid var(--hair);
+  border-radius: 999px;
+  background: var(--paper-2);
+  color: var(--ink-60);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+
+/* RELEASE 面板：像一份发布清单，而不是两张广告卡 */
+body.home .home-dl-panel {
   border: 1px solid var(--rule);
   border-radius: 4px;
   background: #fff;
+  box-shadow: 0 1px 2px rgba(13, 13, 13, 0.03);
 }
+
+body.home .home-dl-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--hair);
+  border-radius: 4px 4px 0 0;
+  background: var(--paper-2);
+}
+
+body.home .home-dl-panel-head strong {
+  color: var(--ink-60);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+}
+
+body.home .home-dl-panel-head span {
+  color: var(--ink-40);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+body.home .home-dl-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 20px;
+}
+
+body.home .home-dl-row + .home-dl-row { border-top: 1px solid var(--hair); }
 
 body.home .home-download-meta strong {
   display: block;
   color: var(--ink);
   font-family: var(--font-zh);
-  font-size: 22px;
+  font-size: 17px;
   font-weight: 700;
 }
 
 body.home .home-download-meta span {
   display: block;
-  margin-top: 6px;
+  margin-top: 4px;
   color: var(--ink-40);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 11.5px;
   overflow-wrap: anywhere;
 }
 
@@ -3822,56 +3893,82 @@ body.home .home-download-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 50px;
-  padding: 0 24px;
+  min-height: 46px;
+  padding: 0 22px;
   border: 1px solid transparent;
   border-radius: 3px;
-  font-size: 15px;
+  font-size: 14.5px;
   font-weight: 600;
-  transition: background 0.25s var(--ease), color 0.25s var(--ease), border-color 0.25s var(--ease);
+  white-space: nowrap;
+  transition: background 0.25s var(--ease);
 }
 
-/* 一屏一个印章红主按钮：Windows 是 primary，macOS 走 Button Ink */
+/* 一屏一个印章红：Windows 走 primary，macOS 走墨色 */
 body.home .home-download-btn.primary {
   background: var(--seal);
   color: var(--paper);
 }
 
-body.home .home-download-btn.primary:hover {
-  background: var(--seal-dark);
-}
+body.home .home-download-btn.primary:hover { background: var(--seal-dark); }
 
 body.home .home-download-btn.ink {
   background: var(--ink);
   color: var(--paper);
 }
 
-body.home .home-download-btn.ink:hover {
-  background: var(--ink-80);
+body.home .home-download-btn.ink:hover { background: var(--ink-80); }
+
+body.home .home-dl-note {
+  padding: 12px 20px;
+  border-top: 1px solid var(--hair);
+  color: var(--ink-40);
+  font-size: 12.5px;
+  line-height: 1.7;
 }
 
-body.home .home-secondary-links {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 10px;
-  margin-top: 32px;
+/* 更多入口：编号清单，替代匿名药丸 */
+body.home .home-dl-links {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0 clamp(20px, 3vw, 48px);
+  margin-top: clamp(32px, 4vw, 56px);
 }
 
-body.home .home-secondary-links a {
-  padding: 8px 16px;
-  border: 1px solid var(--hair);
-  border-radius: 999px;
-  background: var(--paper-2);
+body.home .home-dl-link {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 12px;
+  padding: 14px 2px;
+  border-top: 1px solid var(--hair);
+  text-decoration: none;
+  transition: border-color 0.25s var(--ease);
+}
+
+body.home .home-dl-link .idx {
+  color: var(--ink-40);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+body.home .home-dl-link strong {
   color: var(--ink-60);
-  font-size: 13.5px;
-  transition: border-color 0.25s var(--ease), color 0.25s var(--ease);
+  font-family: var(--font-zh);
+  font-size: 15px;
+  font-weight: 600;
+  transition: color 0.25s var(--ease);
 }
 
-body.home .home-secondary-links a:hover {
-  border-color: var(--ink);
-  color: var(--ink);
+body.home .home-dl-link small {
+  color: var(--ink-40);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  justify-self: end;
 }
+
+body.home .home-dl-link:hover { border-color: var(--ink); }
+
+body.home .home-dl-link:hover strong { color: var(--ink); }
 
 /* 页脚是整条墨色带 —— logo 是黑色 PNG，反相后才在墨底上可见 */
 body.home .site-footer .logo-icon-sm {
@@ -3986,6 +4083,8 @@ body.home .home-resources-more a:hover {
   body.home .home-hero .hero-desc { max-width: 100%; }
 
   body.home .home-hero-core { padding-bottom: clamp(10px, 3vh, 40px); }
+
+  body.home .home-download-layout { grid-template-columns: minmax(0, 1fr); }
 }
 
 @media (max-width: 600px) {
@@ -3998,10 +4097,14 @@ body.home .home-resources-more a:hover {
   body.home .home-cta-primary,
   body.home .home-cta-ink { width: 100%; }
 
-  body.home .home-secondary-links a {
-    width: 100%;
-    text-align: center;
+  body.home .home-dl-row {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
   }
+
+  body.home .home-download-btn { width: 100%; }
+
+  body.home .home-dl-links { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* 宽屏 / 超宽：Slogan 跟着视口长，世界始终盖满 */
