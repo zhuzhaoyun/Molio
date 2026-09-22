@@ -23,6 +23,25 @@ export default defineConfig({
   worker: {
     format: 'es',
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // 稳定的 vendor 分包：框架层与 markdown 渲染层各自独立 chunk，
+        // 业务代码迭代不打爆用户缓存。pixi/d3/marked/hljs 本体已由路由级
+        // lazy（App.tsx / HomePage.tsx）拆出首屏，这里只做归拢。
+        manualChunks(id: string) {
+          if (!id.includes('node_modules')) return undefined;
+          if (/node_modules\/(react|react-dom|scheduler|react-router|react-router-dom)\//.test(id)) {
+            return 'vendor-react';
+          }
+          if (/node_modules\/(marked|highlight\.js|katex|dompurify|isomorphic-dompurify|front-matter)\//.test(id)) {
+            return 'vendor-md';
+          }
+          return undefined;
+        },
+      },
+    },
+  },
   server: {
     port: 5173,
     strictPort: true,

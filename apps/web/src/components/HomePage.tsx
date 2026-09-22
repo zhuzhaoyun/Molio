@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useMemo, useState } from 'react';
+import { useRef, useEffect, useCallback, useMemo, useState, lazy, Suspense } from 'react';
 import { ChatComposer, buildAttachmentPrefix } from './ChatComposer';
 import type { PastedImage } from './ChatComposer';
 import { UserMessage } from './UserMessage';
@@ -12,8 +12,12 @@ import { RunStatusBar } from './RunStatusBar';
 import { ActivityTree } from './ActivityTree';
 import type { ActivityInfo } from '@molio/contracts';
 import { PanelIcon } from './icons';
-import { SessionOutputPanel } from './SessionOutputPanel';
 import { NoRuntimeCard } from './NoRuntimeCard';
+
+// 会话产出面板只在 dock 展开时渲染，却把整条 doocs-md/marked/highlight.js
+// 依赖链拖进首屏 chunk —— 懒加载（启动性能优化）。
+const SessionOutputPanel = lazy(() =>
+  import('./SessionOutputPanel').then((m) => ({ default: m.SessionOutputPanel })));
 
 const STORAGE_KEY_DOCK_OPEN = 'molio.home-dock-open';
 function readDockOpen(): boolean {
@@ -265,7 +269,11 @@ export function HomePage({
         </div>
         </div>
 
-      {dockOpen && <SessionOutputPanel messages={messages} />}
+      {dockOpen && (
+        <Suspense fallback={null}>
+          <SessionOutputPanel messages={messages} />
+        </Suspense>
+      )}
       </div>
     );
   }
