@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { gotoHome, clickNav } from './helpers/navigation';
 
-const DAEMON_API = 'http://localhost:3100/api';
+const DAEMON_API = `http://localhost:${process.env.MOLIO_E2E_DAEMON_PORT ?? '3100'}/api`;
 const MD = `# Selection Repro
 
 这是一段用来测试选中的中文内容。Another English paragraph here with enough text to drag across.

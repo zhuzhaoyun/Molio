@@ -12,7 +12,7 @@ import { test, expect } from '@playwright/test';
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 
 const WEB = 'http://localhost:5173';
-const DAEMON_API = 'http://localhost:3100/api';
+const DAEMON_API = `http://localhost:${process.env.MOLIO_E2E_DAEMON_PORT ?? '3100'}/api`;
 
 async function createVault(name: string, vaultPath: string): Promise<string> {
   const res = await fetch(`${DAEMON_API}/knowledge/vaults`, {

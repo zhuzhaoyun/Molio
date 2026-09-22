@@ -21,7 +21,7 @@ import { createTempVault, cleanupTempVault, type TempVault } from './helpers/cle
  * so the palette also asserts one.
  */
 
-const DAEMON = 'http://localhost:3100';
+const DAEMON = `http://localhost:${process.env.MOLIO_E2E_DAEMON_PORT ?? '3100'}`;
 
 let vault: TempVault;
 let skillAId = '';
