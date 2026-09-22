@@ -474,3 +474,71 @@ describe('main.js: loadAppWindow must handle did-fail-load so a failed load neve
     );
   });
 });
+
+describe('main.js: startup parallelism — daemon kicked off alongside monitoring, ARMS wait bounded', () => {
+  // Regression (startup perf 2026-09): whenReady used to run
+  // `await initMonitoring` → createWindow → setupAutoUpdater → `await
+  // startDaemonProduction` strictly serially. ARMS init (unbounded) delayed
+  // both window creation and the daemon spawn — the heaviest leg — even
+  // though neither depends on the other. Now the daemon spawn starts in
+  // parallel and the ARMS wait is capped so a hung init can never hold
+  // startup hostage (renderer-side injection is the accepted degradation).
+  function whenReadyBlock() {
+    const pos = mainJs.indexOf('app.whenReady()');
+    assert.ok(pos !== -1, 'app.whenReady() must exist');
+    return mainJs.slice(pos);
+  }
+
+  it('should NOT block on initMonitoring directly (no `await initMonitoring`)', () => {
+    assert.ok(
+      !/await\s+initMonitoring/.test(mainJs),
+      'initMonitoring must be started as a promise, not awaited inline — it runs in parallel with daemon startup now'
+    );
+  });
+
+  it('daemon start should be kicked off BEFORE the monitoring race resolves (parallel)', () => {
+    const block = whenReadyBlock();
+    const daemonPos = block.indexOf('startDaemonProduction()');
+    const racePos = block.indexOf('Promise.race');
+    assert.ok(daemonPos !== -1, 'startDaemonProduction() must be in whenReady');
+    assert.ok(racePos !== -1, 'Promise.race (bounded monitoring wait) must be in whenReady');
+    assert.ok(
+      daemonPos < racePos,
+      'daemon spawn must be kicked off before awaiting the monitoring race — that is the whole point of the parallelism'
+    );
+  });
+
+  it('monitoring wait should be bounded by MONITORING_INIT_TIMEOUT_MS', () => {
+    assert.ok(
+      mainJs.includes('const MONITORING_INIT_TIMEOUT_MS = 2000'),
+      'a named 2s timeout constant must gate the ARMS wait'
+    );
+    const block = whenReadyBlock();
+    assert.ok(
+      block.includes('MONITORING_INIT_TIMEOUT_MS'),
+      'the whenReady race must reference the timeout constant'
+    );
+  });
+
+  it('daemon readiness should come from awaiting the parallel start promise', () => {
+    assert.ok(
+      mainJs.includes('daemonReady = (await daemonStartPromise) === true'),
+      'daemonReady must be set from the parallel daemonStartPromise result, preserving the error-page fallback'
+    );
+    assert.ok(
+      mainJs.includes('showDaemonErrorPage(firstWindow)'),
+      'daemon failure must still surface the error page'
+    );
+  });
+
+  it('helper servers (wiki fetcher + crypto) should start in parallel', () => {
+    const fnStart = mainJs.indexOf('async function startDaemonProduction');
+    assert.ok(fnStart !== -1, 'startDaemonProduction must exist');
+    const fnEnd = mainJs.indexOf('\nfunction ', fnStart + 1);
+    const fnBody = mainJs.slice(fnStart, fnEnd > fnStart ? fnEnd : fnStart + 4000);
+    assert.ok(
+      fnBody.includes('Promise.all'),
+      'startFetchServer and startCryptoServer must be launched with Promise.all, not sequential awaits'
+    );
+  });
+});

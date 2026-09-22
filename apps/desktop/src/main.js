@@ -53,6 +53,15 @@ const DEFAULT_AUTH_URL = 'https://auth.molio.cn';
 /** Rebuild the macOS dock menu at most this often (vault list changes live in the web layer). */
 const DOCK_REFRESH_THROTTLE_MS = 3000;
 
+/**
+ * Bounded wait for ARMS SDK init before creating the first window (ms).
+ * autoInject requires init to precede window creation, but a hung init
+ * (weak network / SDK issue) must never hold startup hostage — after the
+ * timeout we create the window anyway and accept losing renderer-side
+ * collectors for it (main-process collectors are unaffected).
+ */
+const MONITORING_INIT_TIMEOUT_MS = 2000;
+
 // Set app name before any other app API calls — this controls the display name
 // shown in Windows protocol association dialogs ("要打开 Molio 吗?").
 app.name = 'Molio';
@@ -103,48 +112,52 @@ async function startDaemonProduction() {
   log('info', 'main', `Starting daemon: ${daemonEntry}`);
   log('info', 'main', `Using Electron binary: ${process.execPath}`);
 
-  // Start the wiki/docx fetcher HTTP server on a random 127.0.0.1 port.
-  // Port 0 → OS assigns a free port; we pass it to the daemon via env so the
-  // feishu service can pre-fetch wiki content before dispatching to the agent.
-  // Failure here is non-fatal — daemon simply skips the pre-fetch step and
-  // the agent sees the bare URL (with a "未启用桌面端抓取" note).
-  let wikiFetchPort = null;
-  try {
-    wikiFetchPort = await startFetchServer();
-  } catch (err) {
-    log('warn', 'main', `wiki fetch server failed to start: ${err?.message ?? err}`);
-  }
-
-  // Start the safeStorage crypto HTTP server on a random 127.0.0.1 port.
-  // daemon (ELECTRON_RUN_AS_NODE) has no Electron API, so it RPC's us to
-  // encrypt/decrypt the auth token file (Win=DPAPI / mac=Keychain).
-  // Only start when encryption is actually available — on Linux without a
-  // keychain we deliberately fall back to the plaintext baseline (设计 §八 D3)
-  // by NOT setting the port env, instead of advertising crypto that 503s
-  // every call (which would leave tokens unpersisted).
-  let cryptoPort = null;
-  let cryptoToken = null;
-  try {
-    if (safeStorage.isEncryptionAvailable()) {
-      // Per-launch fresh shared secret: injected into daemon env alongside the
-      // port; crypto-server validates the Bearer on every call. The random port
-      // alone is not a security boundary (local processes can scan for it) —
-      // the secret is what stops other local processes using encrypt/decrypt.
-      cryptoToken = randomBytes(24).toString('base64url');
-      cryptoPort = await startCryptoServer(
-        {
-          isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
-          encryptString: (plaintext) => safeStorage.encryptString(plaintext),
-          decryptString: (data) => safeStorage.decryptString(data),
-        },
-        { token: cryptoToken },
-      );
-    } else {
-      log('info', 'main', 'safeStorage encryption unavailable — auth tokens use plaintext baseline (D3)');
-    }
-  } catch (err) {
-    log('warn', 'main', `crypto server failed to start: ${err?.message ?? err}`);
-  }
+  // Start both helper servers IN PARALLEL — they are independent (wiki/docx
+  // fetcher for feishu pre-fetch; safeStorage crypto RPC for auth tokens) and
+  // each is just a random-port listen. Sequential awaits here added latency
+  // to the cold-start serial chain for no reason.
+  //
+  // - wiki fetcher: Port 0 → OS assigns a free port; passed to the daemon via
+  //   env so the feishu service can pre-fetch wiki content before dispatching
+  //   to the agent. Failure is non-fatal — daemon skips the pre-fetch step and
+  //   the agent sees the bare URL (with a "未启用桌面端抓取" note).
+  // - crypto server: daemon (ELECTRON_RUN_AS_NODE) has no Electron API, so it
+  //   RPC's us to encrypt/decrypt the auth token file (Win=DPAPI / mac=Keychain).
+  //   Only started when encryption is actually available — on Linux without a
+  //   keychain we deliberately fall back to the plaintext baseline (设计 §八 D3)
+  //   by NOT setting the port env, instead of advertising crypto that 503s
+  //   every call (which would leave tokens unpersisted).
+  const [wikiFetchPort, cryptoInfo] = await Promise.all([
+    startFetchServer().catch((err) => {
+      log('warn', 'main', `wiki fetch server failed to start: ${err?.message ?? err}`);
+      return null;
+    }),
+    (async () => {
+      try {
+        if (!safeStorage.isEncryptionAvailable()) {
+          log('info', 'main', 'safeStorage encryption unavailable — auth tokens use plaintext baseline (D3)');
+          return null;
+        }
+        // Per-launch fresh shared secret: injected into daemon env alongside the
+        // port; crypto-server validates the Bearer on every call. The random port
+        // alone is not a security boundary (local processes can scan for it) —
+        // the secret is what stops other local processes using encrypt/decrypt.
+        const token = randomBytes(24).toString('base64url');
+        const port = await startCryptoServer(
+          {
+            isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
+            encryptString: (plaintext) => safeStorage.encryptString(plaintext),
+            decryptString: (data) => safeStorage.decryptString(data),
+          },
+          { token },
+        );
+        return { port, token };
+      } catch (err) {
+        log('warn', 'main', `crypto server failed to start: ${err?.message ?? err}`);
+        return null;
+      }
+    })(),
+  ]);
 
   return new Promise((resolve, reject) => {
     // Use Electron's embedded Node.js to run the daemon.
@@ -163,9 +176,9 @@ async function startDaemonProduction() {
       daemonEnv.MOLIO_AUTH_URL = DEFAULT_AUTH_URL;
     }
     if (wikiFetchPort) daemonEnv.MOLIO_DESKTOP_FETCH_PORT = String(wikiFetchPort);
-    if (cryptoPort) {
-      daemonEnv.MOLIO_DESKTOP_CRYPTO_PORT = String(cryptoPort);
-      daemonEnv.MOLIO_DESKTOP_CRYPTO_TOKEN = cryptoToken;
+    if (cryptoInfo) {
+      daemonEnv.MOLIO_DESKTOP_CRYPTO_PORT = String(cryptoInfo.port);
+      daemonEnv.MOLIO_DESKTOP_CRYPTO_TOKEN = cryptoInfo.token;
     }
     daemonProcess = spawn(process.execPath, [daemonEntry], {
       env: daemonEnv,
@@ -814,15 +827,48 @@ app.whenReady().then(async () => {
     }
   }
 
-  // 监控初始化必须在 createWindow 之前——SDK autoInject 监听 web-contents-created
-  // 注入 Browser SDK，init 之前创建的窗口会错过注入。
-  const armsRum = await initMonitoring({
+  // 监控初始化必须**完成于 createWindow 之前**——SDK autoInject 监听
+  // web-contents-created 注入 Browser SDK，init 之前创建的窗口会错过注入。
+  // 但它与 daemon 启动互不依赖：两者并行发起，ARMS 用有界等待（见下），
+  // daemon（最长的一段）在窗口创建期间继续跑——串行改并行后 ARMS 耗时
+  // 从启动关键路径上消失。
+  let armsRum = null;
+  const monitoringReady = initMonitoring({
     isDev: isDevMode(),
     version: app.getVersion(),
     log,
     // 闭包读模块级 molioUserId（由下方 auth-status-watch 轮询维护）。
     getUserId: () => molioUserId,
-  });
+  }).then(
+    (r) => { armsRum = r; return 'ok'; },
+    () => null, // initMonitoring 内部已吞错并写日志；双保险防 unhandled rejection
+  );
+
+  // ⑤' Daemon 提前并行启动（原第⑤步在窗口创建之后才 spawn——冷启动最重的
+  //     一段被白白排在 ARMS/菜单/建窗后面）。失败不抛出：置 null，由下方
+  //     daemonReady 判定走错误页；updater 不受影响。
+  const daemonStartPromise = isDevMode()
+    ? null
+    : startDaemonProduction()
+      .then(() => true)
+      .catch((err) => {
+        log('error', 'main', `daemon startup failed: ${err?.message ?? err}`);
+        return false;
+      });
+
+  // 有界等待 ARMS init：正常是本地 SDK 装配（数百 ms）；弱网/SDK 异常时
+  // 最多等 MONITORING_INIT_TIMEOUT_MS 就建窗——错过注入只损失该窗口的
+  // 渲染端采集（主进程 collectors 不受影响），监控降级可接受、启动卡死不可接受。
+  const monitoringT0 = Date.now();
+  const monitorOutcome = await Promise.race([
+    monitoringReady,
+    new Promise((resolve) => setTimeout(() => resolve('timeout'), MONITORING_INIT_TIMEOUT_MS)),
+  ]);
+  if (monitorOutcome === 'timeout') {
+    log('warn', 'main', `ARMS init exceeded ${MONITORING_INIT_TIMEOUT_MS}ms — creating window without it (renderer-side collectors may miss this window)`);
+  } else {
+    log('info', 'main', `monitoring init settled in ${Date.now() - monitoringT0}ms`);
+  }
 
   // ② Build the app menu (文件 → 新窗口, click-only — no ⌘N accelerator)
   //    before creating windows.
@@ -846,21 +892,17 @@ app.whenReady().then(async () => {
   //    In production the window stays hidden until the daemon is ready.
   const firstWindow = createWindow();
 
-  // ④ Set up auto-updater IMMEDIATELY — before daemon.
+  // ④ Set up auto-updater IMMEDIATELY — before awaiting the daemon result.
   // Even if daemon fails to start, the updater must be operational
   // so we can push fixes to users.
   // Pass killDaemon so the updater can release file locks before install.
   setupAutoUpdater(() => lastFocusedAppWindow ?? (appWindows.values().next().value ?? null), killDaemon);
 
-  // ⑤ Start daemon last — failure here must not affect updater
+  // ⑤ Await the daemon start that was kicked off IN PARALLEL with monitoring
+  //    init (see daemonStartPromise above) — failure here must not affect the
+  //    updater, which is already wired by now.
   if (!isDevMode()) {
-    try {
-      await startDaemonProduction();
-      daemonReady = true;
-    } catch (err) {
-      log('error', 'main', `daemon startup failed: ${err?.message ?? err}`);
-      // Daemon failure is not fatal for the updater.
-    }
+    daemonReady = (await daemonStartPromise) === true;
 
     // ⑥ Bridge daemon memory metrics to ARMS (daemon has no ARMS SDK).
     //    Also poll login state so ARMS events carry the Molio userId.

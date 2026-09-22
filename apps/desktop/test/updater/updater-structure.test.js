@@ -19,50 +19,50 @@ const mainJs = readFileSync(
   'utf-8'
 );
 
-describe('main.js: updater must initialize before daemon', () => {
-  it('setupAutoUpdater should be called before startDaemonProduction', () => {
-    const updaterPos = mainJs.indexOf('setupAutoUpdater');
-    const daemonPos = mainJs.indexOf('startDaemonProduction');
-
-    assert.ok(updaterPos !== -1, 'setupAutoUpdater must be called in main.js');
-    assert.ok(daemonPos !== -1, 'startDaemonProduction must exist in main.js');
-
-    // In app.whenReady(), setupAutoUpdater must appear BEFORE startDaemonProduction
-    // Find the whenReady block
+describe('main.js: updater must initialize before the daemon result is awaited', () => {
+  // Startup-perf (2026-09) changed the SHAPE of this invariant: the daemon
+  // spawn is now KICKED OFF first (as a background promise, in parallel with
+  // ARMS init) and awaited only AFTER setupAutoUpdater is wired. The original
+  // regression — "updater starts after daemon, so a daemon failure/hang
+  // blocks update capability" — is still caught, but a plain text-order check
+  // of setupAutoUpdater < startDaemonProduction would now be WRONG.
+  it('setupAutoUpdater runs before awaiting daemonStartPromise', () => {
     const whenReadyPos = mainJs.indexOf('app.whenReady()');
     assert.ok(whenReadyPos !== -1, 'app.whenReady() must exist');
-
     const whenReadyBlock = mainJs.slice(whenReadyPos);
-    const updaterInBlock = whenReadyBlock.indexOf('setupAutoUpdater');
-    const daemonInBlock = whenReadyBlock.indexOf('startDaemonProduction');
 
-    assert.ok(updaterInBlock !== -1, 'setupAutoUpdater must be in whenReady block');
-    assert.ok(daemonInBlock !== -1, 'startDaemonProduction must be in whenReady block');
+    const kickOffPos = whenReadyBlock.indexOf('startDaemonProduction()');
+    const updaterPos = whenReadyBlock.indexOf('setupAutoUpdater(');
+    const awaitPos = whenReadyBlock.indexOf('await daemonStartPromise');
+
+    assert.ok(kickOffPos !== -1, 'startDaemonProduction must be kicked off in whenReady');
+    assert.ok(updaterPos !== -1, 'setupAutoUpdater must be called in whenReady');
+    assert.ok(awaitPos !== -1, 'daemonStartPromise must be awaited in whenReady');
+
     assert.ok(
-      updaterInBlock < daemonInBlock,
-      `setupAutoUpdater (pos ${updaterInBlock}) must be called BEFORE startDaemonProduction (pos ${daemonInBlock}) in app.whenReady()`
+      kickOffPos < updaterPos,
+      `daemon start (pos ${kickOffPos}) should be KICKED OFF before setupAutoUpdater (pos ${updaterPos}) — parallel startup`
+    );
+    assert.ok(
+      updaterPos < awaitPos,
+      `setupAutoUpdater (pos ${updaterPos}) must run BEFORE awaiting the daemon result (pos ${awaitPos}) — a daemon failure/hang must never block update capability`
     );
   });
 
   it('daemon startup failure should be caught (not crash the app)', () => {
-    // startDaemonProduction must be wrapped in try/catch
+    // The daemon promise chain must carry a .catch that resolves to false
+    // (error page path) instead of a try/catch around an await — the kick-off
+    // is fire-and-forget until after the updater is wired.
     const whenReadyPos = mainJs.indexOf('app.whenReady()');
     const whenReadyBlock = mainJs.slice(whenReadyPos);
 
-    // Find the try/catch around startDaemonProduction
-    const daemonPos = whenReadyBlock.indexOf('startDaemonProduction');
-    const beforeDaemon = whenReadyBlock.slice(0, daemonPos);
+    const daemonPos = whenReadyBlock.indexOf('startDaemonProduction()');
+    assert.ok(daemonPos !== -1, 'startDaemonProduction must be kicked off in whenReady');
 
-    // There should be a 'try {' before startDaemonProduction in the whenReady block.
-    // Match 'try {' (with brace) to avoid matching the substring 'try' inside
-    // unrelated words like 'entry'.
-    const lastTry = beforeDaemon.lastIndexOf('try {');
-    assert.ok(lastTry !== -1, 'startDaemonProduction must be wrapped in try/catch');
-
-    // The try should be close to startDaemonProduction (within ~200 chars)
+    const chainAfterDaemon = whenReadyBlock.slice(daemonPos, daemonPos + 400);
     assert.ok(
-      daemonPos - lastTry < 200,
-      `try block (pos ${lastTry}) should be near startDaemonProduction (pos ${daemonPos})`
+      /\.catch\(/.test(chainAfterDaemon),
+      'startDaemonProduction() must be chained with .catch — failure resolves to false (daemon error page) instead of crashing whenReady'
     );
   });
 });
