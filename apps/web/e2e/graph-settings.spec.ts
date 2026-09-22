@@ -9,7 +9,7 @@ import { clickNav } from './helpers/navigation';
  * @priority P2
  */
 
-const DAEMON_API = 'http://localhost:3100/api';
+const DAEMON_API = `http://localhost:${process.env.MOLIO_E2E_DAEMON_PORT ?? 3100}/api`;
 
 /** fetch with a hard timeout so beforeAll never hangs if daemon is unreachable */
 async function fetchWithTimeout(url: string, init: RequestInit = {}, ms = 10_000) {

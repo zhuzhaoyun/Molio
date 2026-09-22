@@ -26,7 +26,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { gotoHome, clickNav } from './helpers/navigation';
 
-const DAEMON_API = 'http://localhost:3100/api';
+const DAEMON_API = `http://localhost:${process.env.MOLIO_E2E_DAEMON_PORT ?? 3100}/api`;
 
 // Reproduces the WeChat-clipping citation-marker crash: articles use
 // `\\[1\\]` `\\[2\\]` as escaped-bracket reference markers, which the KaTeX

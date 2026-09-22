@@ -6,7 +6,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
-const DAEMON = 'http://localhost:3100';
+// 端口平移（MOLIO_E2E_DAEMON_PORT，见 playwright.config.ts）：此前硬编码 3100，
+// 恰逢已安装的 Molio.app 占着 3100 而"侥幸可用"——测试 vault 全建进了安装版的
+// 数据库。现在遵守平移机制，vault 建到 E2E 自己的 daemon 上。
+const DAEMON = `http://localhost:${process.env.MOLIO_E2E_DAEMON_PORT ?? 3100}`;
 
 // ── Delete helpers ─────────────────────────────────────────────────────
 

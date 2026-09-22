@@ -1,4 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
+import { rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const isCI = !!process.env.CI;
 /** 云端认证服务（apps/cloud）dev 地址——webServer 健康检查与 daemon env 单点共用。 */
@@ -10,6 +13,15 @@ const CLOUD_BASE_URL = 'http://localhost:3200';
  * 整体平移：daemon（MOLIO_PORT）+ vite 代理（MOLIO_DAEMON）+ spec 直连同一端口。
  */
 const DAEMON_PORT = Number(process.env.MOLIO_E2E_DAEMON_PORT ?? 3100);
+/**
+ * E2E daemon 数据目录（MOLIO_DATA_DIR，db.ts 环境钩子）：一次一清的洁净目录，
+ * 使 E2E 不读写用户真实 ~/.molio（测试 vault 不污染真实数据），也避开真实重型
+ * vault 同步扫描阻塞事件循环导致的散点 fetch failed。
+ * 注意：仅对"本次 playwright 新拉起的 daemon"生效；reuseExistingServer 复用
+ * 已有 daemon 时以对方的数据目录为准。
+ */
+const E2E_DATA_DIR = join(tmpdir(), `molio-e2e-daemon-${DAEMON_PORT}`);
+rmSync(E2E_DATA_DIR, { recursive: true, force: true });
 
 export default defineConfig({
   testDir: './e2e',
@@ -68,7 +80,11 @@ export default defineConfig({
       url: `http://localhost:${DAEMON_PORT}/api/health`,
       reuseExistingServer: !isCI,
       timeout: 60_000,
-      env: { MOLIO_AUTH_URL: CLOUD_BASE_URL, MOLIO_PORT: String(DAEMON_PORT) },
+      env: {
+        MOLIO_AUTH_URL: CLOUD_BASE_URL,
+        MOLIO_PORT: String(DAEMON_PORT),
+        MOLIO_DATA_DIR: E2E_DATA_DIR,
+      },
     },
     {
       command: 'pnpm --filter @molio/web dev',

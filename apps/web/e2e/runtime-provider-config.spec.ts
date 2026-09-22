@@ -3,6 +3,9 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+// 端口平移（MOLIO_E2E_DAEMON_PORT，见 playwright.config.ts）——不要硬编码 3100
+const DAEMON = `http://localhost:${process.env.MOLIO_E2E_DAEMON_PORT ?? 3100}`;
+
 /**
  * @area runtimes
  * @priority P1
@@ -134,10 +137,10 @@ test.describe('Runtime provider config', () => {
     await expect(configPanel.locator('.rt-provider-form__status--ok')).toBeVisible({ timeout: 5000 });
 
     // Verify via API that config was persisted correctly
-    const response = await page.evaluate(async () => {
-      const res = await fetch('http://localhost:3100/api/config/agents/claude');
+    const response = await page.evaluate(async (url) => {
+      const res = await fetch(url);
       return res.json();
-    });
+    }, `${DAEMON}/api/config/agents/claude`);
 
     expect(response.env).toBeDefined();
     expect(response.env.ANTHROPIC_BASE_URL).toBe('https://api.deepseek.com/anthropic');
@@ -175,21 +178,21 @@ test.describe('Runtime provider config', () => {
 
   test('clean up: reset to Anthropic default', async ({ page }) => {
     // Reset via API
-    await page.evaluate(async () => {
-      await fetch('http://localhost:3100/api/config/agents/claude', {
+    await page.evaluate(async (url) => {
+      await fetch(url, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ env: { ANTHROPIC_BASE_URL: '', ANTHROPIC_API_KEY: '' } }),
       });
-    });
+    }, `${DAEMON}/api/config/agents/claude`);
 
     // Verify. Since the Claude env → ~/.claude/settings.json migration, clearing
     // every managed key makes the GET drop the `env` object entirely (env is
     // undefined), so tolerate both "absent" and "empty string".
-    const response = await page.evaluate(async () => {
-      const res = await fetch('http://localhost:3100/api/config/agents/claude');
+    const response = await page.evaluate(async (url) => {
+      const res = await fetch(url);
       return res.json();
-    });
+    }, `${DAEMON}/api/config/agents/claude`);
     expect(response.env?.ANTHROPIC_BASE_URL ?? '').toBe('');
     expect(response.env?.ANTHROPIC_API_KEY ?? '').toBe('');
   });
@@ -240,7 +243,7 @@ test.describe('Codex provider config', () => {
         // apiKey so hasKey=true at mount — the hint under test reads it
         ? { presetId: 'deepseek', model: 'deepseek-v4-flash', apiKey: 'sk-e2e-saved' }
         : { presetId: 'official' };
-    const seedRes = await fetch('http://localhost:3100/api/agents/codex/provider', {
+    const seedRes = await fetch(`${DAEMON}/api/agents/codex/provider`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(precondition),
@@ -300,10 +303,10 @@ test.describe('Codex provider config', () => {
     expect(auth['OPENAI_API_KEY']).toBe('sk-e2e-codex-test');
 
     // GET provider reflects live state
-    const state = await page.evaluate(async () => {
-      const res = await fetch('http://localhost:3100/api/agents/codex/provider');
+    const state = await page.evaluate(async (url) => {
+      const res = await fetch(url);
       return res.json();
-    });
+    }, `${DAEMON}/api/agents/codex/provider`);
     expect(state.presetHint).toBe('deepseek');
     expect(state.hasKey).toBe(true);
   });

@@ -9,6 +9,10 @@ import * as os from 'node:os';
  * the test's beforeEach runs.
  */
 function configDir(): string {
+  // MOLIO_DATA_DIR（见 db.ts 同名钩子）：E2E 洁净数据目录——config.json 与
+  // app.sqlite 同迁，测试读写 agent/provider 配置不再落到用户真实 ~/.molio。
+  // claudeDir（~/.claude）刻意不跟随：读取真实 CC Switch 配置是功能语义。
+  if (process.env.MOLIO_DATA_DIR) return process.env.MOLIO_DATA_DIR;
   return path.join(os.homedir(), '.molio');
 }
 function configFile(): string {

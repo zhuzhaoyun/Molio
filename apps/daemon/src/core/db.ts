@@ -43,9 +43,12 @@ function migrateLegacyDir(): void {
  * Creates the data directory and runs migrations on first open.
  */
 export function openDatabase(dataDir?: string): SqliteDb {
-  if (!dataDir) migrateLegacyDir();
+  // MOLIO_DATA_DIR：数据目录环境钩子（E2E 用洁净目录，避免与真实 ~/.molio
+  // 共库——测试建删 vault 不再读写用户数据，也免去重型真实 vault 的同步扫描）。
+  // 显式参数优先级最高。
+  if (!dataDir && !process.env.MOLIO_DATA_DIR) migrateLegacyDir();
 
-  const dir = dataDir ?? path.join(os.homedir(), '.molio');
+  const dir = dataDir ?? process.env.MOLIO_DATA_DIR ?? path.join(os.homedir(), '.molio');
   const file = path.join(dir, 'app.sqlite');
 
   if (dbInstance && dbFile === file) return dbInstance;

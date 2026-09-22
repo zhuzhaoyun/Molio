@@ -318,6 +318,9 @@ export function ChatComposer({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // 中文输入法组词中按 Enter 确认候选词（isComposing / keyCode 229）——
+    // 不能当成「发送」，否则带拼音半成的消息会被直接发出
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       // Don't send if FilePicker or SkillPalette overlay is open — they handle Enter
@@ -588,7 +591,7 @@ export function ChatComposer({
                 disabled={disabled}
                 title={t('composer.uploadImage')}
               >
-                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="3" y="3" width="18" height="18" rx="2" />
                   <circle cx="8.5" cy="8.5" r="1.5" />
                   <path d="M21 15l-5-5-7 7" />

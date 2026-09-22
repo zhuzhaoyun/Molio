@@ -743,9 +743,11 @@
   gap: 6px;
   transition: border-color 120ms ease, box-shadow 120ms ease;
 }
+/* 焦点态与落地页同一套珊瑚语言（home.css 落地 wrap 同款值）——
+   之前聊天态只有灰描边，几乎不可感知，用户从落地进入对话后「激活感」消失 */
 .composer-shell:focus-within {
-  border-color: var(--border-strong);
-  box-shadow: var(--shadow-sm);
+  border-color: var(--accent);
+  box-shadow: 0 4px 24px rgba(26, 25, 23, 0.06), 0 0 0 3px var(--accent-tint);
 }
 .composer textarea {
   /* 默认 2 行（44px），随输入自动增长到 COMPOSER_MAX_HEIGHT（chat.css 与 ChatComposer.tsx 同步） */

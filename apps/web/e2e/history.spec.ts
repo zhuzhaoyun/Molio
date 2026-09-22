@@ -45,7 +45,7 @@ function pinnedRowByTitle(page: Page, title: string) {
  * Prerequisites: `pnpm dev` running (daemon :3100, web :5173)
  */
 
-const DAEMON_API = 'http://localhost:3100/api';
+const DAEMON_API = `http://localhost:${process.env.MOLIO_E2E_DAEMON_PORT ?? 3100}/api`;
 
 test.describe('History', () => {
   test('shows history shell when navigating to history', async ({ page }) => {
