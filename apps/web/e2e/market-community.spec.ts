@@ -154,14 +154,19 @@ test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () 
     });
 
     // 2) ?vault= 直达 beforeAll 建的含 md 库的 KB 页（per-window source of truth）。
-    //    门禁在点击时同步判定 isAdmin——先挂监听等 /my 预取落定再点，消除竞态
-    //    （goto 前挂监听防漏响应）。
-    const mySettled = page
-      .waitForResponse((r) => r.url().includes('/api/market/my'), { timeout: 10_000 })
-      .catch(() => null);
+    //    门禁在点击时**同步**判定 isAdmin，而 isAdmin 是异步落定的（登录态 →
+    //    GET /api/market/my → setState）。首屏去掉 configLoaded 白屏 gate 后，按钮在
+    //    门禁未决时就可点——点了会误走非管理员分支（系统浏览器打开官网联系页），
+    //    页内发布 tab 永远不出现。等 `/my` 的**网络响应**不够贴近：响应到达 ≠ React
+    //    已提交（且 goto 前挂的监听可能吃到上一个页面 /me 的响应）。改等按钮上的
+    //    data-publish-gate 属性变成 admin，即「状态已渲染到 UI」的可观测信号。
     await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 15_000 }); // vite dev 冷转换可超 5s（Windows 本地）
-    await mySettled;
+    await expect(page.locator('[data-testid="kb-btn-publish-vault"]')).toHaveAttribute(
+      'data-publish-gate',
+      'admin',
+      { timeout: 10_000 },
+    );
 
     // 3) 面板「发布到资源库」→ 页内发布 tab：名称/简介 + 效果图 + 声明 → 提交 → 成功态
     await page.locator('[data-testid="kb-btn-publish-vault"]').click({ timeout: 5_000 });
@@ -281,13 +286,14 @@ test.describe('社区发布 → 展示 → 下载闭环（P1，mock OSS）', () 
     await gotoHome(page);
     await loginViaDevCode(page, 'admin2@test.local');
 
-    // 同用例 1：等 /my 预取落定再点，消除门禁竞态
-    const mySettled = page
-      .waitForResponse((r) => r.url().includes('/api/market/my'), { timeout: 10_000 })
-      .catch(() => null);
+    // 同用例 1：等门禁渲染成 admin（而非只等 /my 网络响应）再点，消除竞态
     await page.goto(`http://localhost:5173/knowledge?vault=${vaultId}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 15_000 }); // vite dev 冷转换可超 5s（Windows 本地）
-    await mySettled;
+    await expect(page.locator('[data-testid="kb-btn-publish-vault"]')).toHaveAttribute(
+      'data-publish-gate',
+      'admin',
+      { timeout: 10_000 },
+    );
     await page.locator('[data-testid="kb-btn-publish-vault"]').click();
     await expect(page.locator('[data-testid="kb-publish-pane"]')).toBeVisible();
 
