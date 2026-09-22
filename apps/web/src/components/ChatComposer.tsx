@@ -584,7 +584,9 @@ export function ChatComposer({
                 data-testid="composer-file-input"
                 onChange={handleFileInputChange}
               />
-              {/* + 添加：业界通行的内容聚合入口（当前仅图片上传，未来扩展文件等） */}
+              {/* 图片上传：Molio 唯一的真实聊天附件（文件上下文走 @ 引用体系，
+                  不做 workbuddy/codex 式 + 聚合菜单——单项菜单是反模式）。
+                  图标诚实表达唯一功能；未来出现第二种附件类型再升级为 + 菜单。 */}
               <button
                 type="button"
                 className="composer-upload-btn"
@@ -594,36 +596,14 @@ export function ChatComposer({
                 title={t('composer.uploadImage')}
               >
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="12" y1="5" x2="12" y2="19" />
-                  <line x1="5" y1="12" x2="19" y2="12" />
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <circle cx="8.5" cy="8.5" r="1.5" />
+                  <path d="M21 15l-5-5-7 7" />
                 </svg>
               </button>
               {onOpenConversation && (
                 <ConversationHistoryMenu onSelect={onOpenConversation} onDeleteConversations={onDeleteConversations} />
               )}
-              {/* 快捷键/触发提示：hover（或键盘 focus）时浮出，不常显——
-                  @ 与 / 已进 placeholder 常驻可见，这里承载 Enter/Shift+Enter */}
-              <div className="composer-keys" data-testid="composer-keys">
-                <button
-                  type="button"
-                  className="composer-upload-btn"
-                  data-testid="composer-keys-trigger"
-                  aria-label={t('composer.hintTitle')}
-                  title={t('composer.hintTitle')}
-                >
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="10" />
-                    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
-                    <line x1="12" y1="17" x2="12.01" y2="17" />
-                  </svg>
-                </button>
-                <div className="composer-keys-tip" role="tooltip">
-                  <span className="hint-item"><kbd>/</kbd> <span className="hint-desc">{t('composer.hintSkill')}</span></span>
-                  <span className="hint-item"><kbd>@</kbd> <span className="hint-desc">{t('composer.hintFileRef')}</span></span>
-                  <span className="hint-item"><kbd>Enter</kbd> <span className="hint-desc">{t('composer.hintSend')}</span></span>
-                  <span className="hint-item"><kbd>Shift</kbd><span className="hint-kbd-plus">+</span><kbd>Enter</kbd> <span className="hint-desc">{t('composer.hintNewline')}</span></span>
-                </div>
-              </div>
             </>
           )}
           <span className="composer-spacer" />

@@ -6,8 +6,9 @@ import { mockChatRun, unmockAll } from './helpers/mock-sse';
  * @area chat
  * @priority P1
  *
- * Composer 快捷键提示：不常显（省一行高度），hover / 键盘 focus 时经
- * 「?」图标浮出。原常显提示行已移除。
+ * Composer 提示的归属演进：
+ *   v1 常显提示行 → v2 ? 图标 hover 浮层 → v3 @ 与 / 内嵌 placeholder，
+ *   ? 图标移除（与历史时钟图标形似易混，且 Enter/Shift+Enter 属通用惯例）。
  *
  * Prerequisites: `pnpm dev` running（daemon + web）。
  */
@@ -17,30 +18,24 @@ test.describe('Chat — composer hints', () => {
     await unmockAll(page);
   });
 
-  test('提示浮层默认隐藏，hover 图标时浮出', async ({ page }) => {
+  test('@ 与 / 提示内嵌 placeholder（空输入时天然可见）', async ({ page }) => {
     await mockChatRun(page);
     await gotoHome(page);
 
-    const trigger = page.getByTestId('composer-keys-trigger');
-    await expect(trigger).toBeVisible();
-    const tip = page.getByTestId('composer-keys');
-    // 默认不可见（visibility:hidden + opacity:0）
-    await expect(tip.locator('.composer-keys-tip')).toBeHidden();
-
-    await trigger.hover();
-    await expect(tip.locator('.composer-keys-tip')).toBeVisible();
-    await expect(tip.locator('.composer-keys-tip')).toContainText('调用技能');
-    await expect(tip.locator('.composer-keys-tip')).toContainText('引用文件/目录');
+    const input = page.getByTestId('composer-input');
+    await expect(input).toHaveAttribute('placeholder', /@ 引用文件/);
+    await expect(input).toHaveAttribute('placeholder', /调用技能/);
   });
 
-  test('常显提示行已移除', async ({ page }) => {
+  test('? 指引图标与常显提示行均已移除', async ({ page }) => {
     await mockChatRun(page);
     await gotoHome(page);
 
-    // 回归保护：旧的常显 .composer-hint 行不应再出现
+    // 回归保护：? 图标（与历史时钟形似）与旧常显 .composer-hint 行不再出现
+    await expect(page.getByTestId('composer-keys-trigger')).toHaveCount(0);
     await expect(page.locator('.composer-hint')).toHaveCount(0);
-    // @ 与 / 提示内嵌 placeholder（workbuddy 式：空输入时天然可见）
-    await expect(page.getByTestId('composer-input')).toHaveAttribute('placeholder', /@ 引用文件/);
-    await expect(page.getByTestId('composer-input')).toHaveAttribute('placeholder', /调用技能/);
+    // 左簇只剩 [+ 图片] [历史]
+    await expect(page.getByTestId('composer-upload-btn')).toBeVisible();
+    await expect(page.getByTestId('composer-history-btn')).toBeVisible();
   });
 });
