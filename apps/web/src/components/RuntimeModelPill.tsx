@@ -63,7 +63,7 @@ export function RuntimeModelPill() {
   const current = agents.find((a) => a.id === agentId);
   if (!current) return null;
 
-  const label = formatPillLabel(current.name, model, current.models);
+  const label = formatPillLabel(current.name, model, current.models, current.defaultModel?.label);
   const defaultDetail = current.defaultModel?.label
     ? t('composer.currentDefault', { model: current.defaultModel.label })
     : undefined;

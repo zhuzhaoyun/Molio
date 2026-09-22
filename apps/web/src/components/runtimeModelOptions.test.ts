@@ -59,6 +59,18 @@ describe('formatPillLabel', () => {
     assert.equal(formatPillLabel('Claude Code', null, []), 'Claude Code');
   });
 
+  it('未选模型但已知默认模型 → 显示 runtime · 真实默认（Codex 式透明）', () => {
+    assert.equal(
+      formatPillLabel('Claude', null, [], 'glm-5.3-flash[1M]'),
+      'Claude · glm-5.3-flash[1M]',
+    );
+  });
+
+  it('已选模型时 defaultModelLabel 不参与', () => {
+    const models: RuntimeModelOption[] = [{ id: 'sonnet', label: 'Sonnet (alias)' }];
+    assert.equal(formatPillLabel('Claude', 'sonnet', models, 'glm-5.3-flash[1M]'), 'Claude · Sonnet (alias)');
+  });
+
   it('已选模型 → runtime 名 · 模型 label', () => {
     const models: RuntimeModelOption[] = [{ id: 'sonnet', label: 'Sonnet (alias)' }];
     assert.equal(formatPillLabel('Claude Code', 'sonnet', models), 'Claude Code · Sonnet (alias)');

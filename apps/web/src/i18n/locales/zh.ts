@@ -36,7 +36,7 @@ const zh: Record<string, string> = {
   'composer.noAgent': '没有可用的代理',
   'composer.queuePlaceholder': '回复中，发送将排入队列',
   'composer.queueTooltip': '回复完成后发送',
-  'composer.placeholder': '输入消息…',
+  'composer.placeholder': '输入消息… @ 引用文件 · / 调用技能',
   'composer.stop': '停止',
   'composer.send': '发送',
   'composer.hint': 'Shift+Enter 换行',

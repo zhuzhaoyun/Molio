@@ -168,6 +168,15 @@ test.describe('Chat — runtime/model pill', () => {
     await expect(page.getByTestId('composer-model-pill')).toHaveText('Claude · Sonnet (alias)');
   });
 
+  test('跟随默认时 pill 也显示真实默认模型（Codex 式透明）', async ({ page }) => {
+    await mockChatRun(page, {
+      agentDefaultModel: { id: 'default', label: 'glm-5.3-flash[1M]' },
+    });
+    await gotoHome(page);
+
+    await expect(page.getByTestId('composer-model-pill')).toHaveText('Claude · glm-5.3-flash[1M]');
+  });
+
   test('「跟随默认」副行显示 runtime 当前默认模型（CC Switch 场景）', async ({ page }) => {
     await mockChatRun(page, {
       agentModels: [

@@ -32,14 +32,19 @@ export function buildModelOptions(
   return options;
 }
 
-/** pill 文案：`Runtime` 或 `Runtime · Model`；无 agent 返回空串（宿主不渲染）。 */
+/** pill 文案：`Runtime` / `Runtime · Model`；跟随默认但已知默认模型时也显示
+ *  真实默认（Codex 式透明——数据来自 daemon 解析的 CC Switch 配置）；
+ *  无 agent 返回空串（宿主不渲染）。 */
 export function formatPillLabel(
   agentName: string | null,
   model: string | null,
   models: RuntimeModelOption[],
+  defaultModelLabel?: string,
 ): string {
   if (!agentName) return '';
-  if (!model) return agentName;
+  if (!model) {
+    return defaultModelLabel ? `${agentName} · ${defaultModelLabel}` : agentName;
+  }
   const label = models.find((m) => m.id === model)?.label ?? model;
   return `${agentName} · ${label}`;
 }

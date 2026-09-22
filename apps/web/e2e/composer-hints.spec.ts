@@ -39,5 +39,8 @@ test.describe('Chat — composer hints', () => {
 
     // 回归保护：旧的常显 .composer-hint 行不应再出现
     await expect(page.locator('.composer-hint')).toHaveCount(0);
+    // @ 与 / 提示内嵌 placeholder（workbuddy 式：空输入时天然可见）
+    await expect(page.getByTestId('composer-input')).toHaveAttribute('placeholder', /@ 引用文件/);
+    await expect(page.getByTestId('composer-input')).toHaveAttribute('placeholder', /调用技能/);
   });
 });
