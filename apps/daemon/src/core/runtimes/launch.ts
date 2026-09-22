@@ -1,8 +1,11 @@
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
+import { promisify } from 'node:util';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import type { RuntimeAgentDef } from '@molio/contracts';
+
+const execFileAsync = promisify(execFile);
 
 export interface ResolveOptions {
   configuredEnv?: Record<string, string>;
@@ -161,6 +164,115 @@ function resolveOnPath(bin: string): string | null {
     }
   }
   return null;
+}
+
+/**
+ * Async twin of {@link resolveOnPath} — replaces the `where.exe` / `which`
+ * `execFileSync` spawns with promisified `execFile` so PATH lookups for
+ * several agents can run concurrently without blocking the event loop.
+ * Same candidate-filtering semantics as the sync variant.
+ */
+async function resolveOnPathAsync(bin: string): Promise<string | null> {
+  if (process.platform === 'win32') {
+    const whereCmds = [
+      'C:\\Windows\\System32\\where.exe',
+      'where.exe',
+      'where',
+    ];
+
+    for (const cmd of whereCmds) {
+      try {
+        const { stdout } = await execFileAsync(cmd, [bin], {
+          encoding: 'utf8',
+          windowsHide: true,
+          timeout: 3000,
+        });
+        if (stdout && stdout.trim().length > 0) {
+          const lines = stdout.trim().split(/\r?\n/);
+          const executableExts = ['.exe', '.cmd', '.bat'];
+
+          for (const line of lines) {
+            const ext = path.extname(line).toLowerCase();
+            if (executableExts.includes(ext) && fs.existsSync(line)) {
+              return line;
+            }
+          }
+
+          for (const line of lines) {
+            if (fs.existsSync(line)) {
+              const cmdVersion = line + '.cmd';
+              if (fs.existsSync(cmdVersion)) {
+                return cmdVersion;
+              }
+              return line;
+            }
+          }
+        }
+      } catch {
+        // try next
+      }
+    }
+  } else {
+    try {
+      const { stdout } = await execFileAsync('which', [bin], {
+        encoding: 'utf8',
+        timeout: 3000,
+      });
+      if (stdout && stdout.trim().length > 0) {
+        const firstLine = stdout.trim().split(/\r?\n/)[0];
+        if (firstLine && fs.existsSync(firstLine)) {
+          return firstLine;
+        }
+      }
+    } catch {
+      // not found
+    }
+  }
+  return null;
+}
+
+/**
+ * Async twin of {@link resolveAgentBinary} — identical resolution order
+ * (env override → PATH → well-known dirs → fallback bins), but the PATH
+ * lookup spawns (`where.exe` / `which`) are async. The well-known-dir scan
+ * stays sync fs.stat (cheap, no subprocess).
+ */
+export async function resolveAgentBinaryAsync(
+  def: RuntimeAgentDef,
+  options: ResolveOptions = {},
+): Promise<ResolveResult> {
+  // 1. Environment variable override
+  const envKey = `${def.id.toUpperCase()}_BIN`;
+  const envBin = options.configuredEnv?.[envKey] || process.env[envKey];
+  if (envBin && fs.existsSync(envBin)) {
+    return { binary: envBin, source: 'env-override' };
+  }
+
+  // 2. PATH lookup
+  const pathResult = await resolveOnPathAsync(def.bin);
+  if (pathResult) {
+    return { binary: pathResult, source: 'path' };
+  }
+
+  // 3. Well-known user toolchain directories
+  const wellKnownBin = findInWellKnownDirs(def.bin);
+  if (wellKnownBin) {
+    return { binary: wellKnownBin, source: 'well-known' };
+  }
+
+  // 4. Fallback binaries
+  for (const fb of def.fallbackBins ?? []) {
+    const fbPath = await resolveOnPathAsync(fb);
+    if (fbPath) {
+      return { binary: fbPath, source: 'fallback-bin' };
+    }
+    const fbWellKnown = findInWellKnownDirs(fb);
+    if (fbWellKnown) {
+      return { binary: fbWellKnown, source: 'well-known' };
+    }
+  }
+
+  return { binary: null, source: 'not-found' };
 }
 
 export function getWellKnownToolchainDirs(): string[] {
@@ -328,17 +440,24 @@ export function needsShellOnWindows(binaryPath: string): boolean {
   return path.extname(binaryPath) === '';
 }
 
+/**
+ * Build the augmented PATH used by version probes: the binary's own dir plus
+ * the well-known toolchain dirs, prepended only when missing from the current
+ * PATH. Shared by the sync and async probe variants.
+ */
+function buildProbeEnvPath(bin: string): string {
+  const extraDirs = [path.dirname(bin), ...getWellKnownToolchainDirs()];
+  const currentPath = process.env['PATH'] || '';
+  const pathSep = process.platform === 'win32' ? ';' : ':';
+  const missingDirs = extraDirs.filter(d => !currentPath.includes(d));
+  return missingDirs.length > 0
+    ? `${missingDirs.join(pathSep)}${pathSep}${currentPath}`
+    : currentPath;
+}
+
 export function probeVersion(bin: string, args: string[], timeoutMs = 5000): ProbeResult {
   try {
     const needsShell = needsShellOnWindows(bin);
-
-    const extraDirs = [path.dirname(bin), ...getWellKnownToolchainDirs()];
-    const currentPath = process.env['PATH'] || '';
-    const pathSep = process.platform === 'win32' ? ';' : ':';
-    const missingDirs = extraDirs.filter(d => !currentPath.includes(d));
-    const envPath = missingDirs.length > 0
-      ? `${missingDirs.join(pathSep)}${pathSep}${currentPath}`
-      : currentPath;
 
     const stdout = execFileSync(bin, args, {
       encoding: 'utf8',
@@ -346,7 +465,38 @@ export function probeVersion(bin: string, args: string[], timeoutMs = 5000): Pro
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
       shell: needsShell,
-      env: { ...process.env, PATH: envPath },
+      env: { ...process.env, PATH: buildProbeEnvPath(bin) },
+    });
+    return { version: stdout.trim().split('\n')[0] ?? null };
+  } catch (err: any) {
+    const msg = err?.stderr || err?.message || String(err);
+    return { version: null, error: msg };
+  }
+}
+
+/**
+ * Async twin of {@link probeVersion} — same semantics (never rejects: failures
+ * come back as `{ version: null, error }`), but uses promisified `execFile` so
+ * probing several agent CLIs doesn't freeze the daemon event loop. Cold CLI
+ * starts (Claude Code on Windows: 1-3s each) used to serialize into a
+ * multi-second full-process stall via the sync variant — the root cause of the
+ * slow app boot (GET /api/agents blocking every other first-screen request).
+ */
+export async function probeVersionAsync(
+  bin: string,
+  args: string[],
+  timeoutMs = 5000,
+): Promise<ProbeResult> {
+  try {
+    const needsShell = needsShellOnWindows(bin);
+
+    const { stdout } = await execFileAsync(bin, args, {
+      encoding: 'utf8',
+      timeout: timeoutMs,
+      windowsHide: true,
+      shell: needsShell,
+      maxBuffer: 4 * 1024 * 1024,
+      env: { ...process.env, PATH: buildProbeEnvPath(bin) },
     });
     return { version: stdout.trim().split('\n')[0] ?? null };
   } catch (err: any) {

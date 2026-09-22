@@ -15,9 +15,11 @@ import type { InstallEvent } from '@molio/contracts';
 export function agentsRoutes(runManager: RunManager): Hono {
   const app = new Hono();
 
-  // GET / — list detected agents (re-scans each call)
-  app.get('/', (c) => {
-    const agents = runManager.detectAgents();
+  // GET / — list detected agents. Detection is async + TTL-cached + probed in
+  // parallel (see RunManager.detectAgentsAsync): the old sync re-scan froze
+  // the whole daemon event loop for seconds on every first-screen load.
+  app.get('/', async (c) => {
+    const agents = await runManager.detectAgentsAsync();
     return c.json({ agents });
   });
 
@@ -30,7 +32,9 @@ export function agentsRoutes(runManager: RunManager): Hono {
     const isAcp = def?.transport === 'acp-jsonrpc';
     const timeoutMs = isAcp ? 120_000 : 30_000;
 
-    const agents = runManager.detectAgents();
+    // Explicit connectivity test — force a fresh probe, not the TTL cache.
+    runManager.invalidateAgentCache();
+    const agents = await runManager.detectAgentsAsync();
     const agent = agents.find((a) => a.id === agentId);
     if (!agent) {
       return c.json({ ok: false, error: `Unknown agent: ${agentId}` }, 404);
@@ -118,7 +122,7 @@ export function agentsRoutes(runManager: RunManager): Hono {
   });
 
   // POST /:agentId/install — one-click install an agent via SSE
-  app.post('/:agentId/install', (c) => {
+  app.post('/:agentId/install', async (c) => {
     const agentId = c.req.param('agentId');
     const def = getAgentDef(agentId);
 
@@ -129,8 +133,9 @@ export function agentsRoutes(runManager: RunManager): Hono {
       return c.json({ error: `Agent ${agentId} does not support auto-install` }, 400);
     }
 
-    // Check if already installed
-    const agents = runManager.detectAgents();
+    // Check if already installed — fresh probe, not the TTL cache.
+    runManager.invalidateAgentCache();
+    const agents = await runManager.detectAgentsAsync();
     const agent = agents.find((a) => a.id === agentId);
     if (agent?.available) {
       return c.json({ error: `${agentId} is already installed` }, 400);
@@ -145,13 +150,20 @@ export function agentsRoutes(runManager: RunManager): Hono {
       // Abort install when the client disconnects
       s.onAbort(() => ac.abort());
 
-      await installAgent({
-        agentId,
-        signal: ac.signal,
-        onEvent: (event: InstallEvent) => {
-          s.write(`data: ${JSON.stringify(event)}\n\n`);
-        },
-      });
+      try {
+        await installAgent({
+          agentId,
+          signal: ac.signal,
+          onEvent: (event: InstallEvent) => {
+            s.write(`data: ${JSON.stringify(event)}\n\n`);
+          },
+        });
+      } finally {
+        // Success or failure: the on-disk binary situation may have changed
+        // (installed / partially installed) — never serve a stale cache here,
+        // or the UI would keep showing "not installed" for up to the TTL.
+        runManager.invalidateAgentCache();
+      }
     });
   });
 

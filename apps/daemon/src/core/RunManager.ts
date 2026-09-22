@@ -8,7 +8,11 @@ import type {
 } from '@molio/contracts';
 import { getAgentDef, listAgentDefs } from './runtimes/registry.js';
 import { TranscriptWatcher, claudeProjectDir } from './activity/transcript-watcher.js';
-import { resolveAgentBinary, probeVersion, needsShellOnWindows } from './runtimes/launch.js';
+import {
+  resolveAgentBinary, probeVersion, needsShellOnWindows,
+  resolveAgentBinaryAsync, probeVersionAsync,
+  type ResolveResult, type ProbeResult, type ResolveOptions,
+} from './runtimes/launch.js';
 import { buildSpawnEnv, createStderrDecoder } from './runtimes/env.js';
 import { classifyStderrChunk } from './runtimes/stderr.js';
 import { createClaudeStreamHandler } from './streams/claude-stream.js';
@@ -94,6 +98,17 @@ export interface CreateRunOptions {
   onTurnComplete?: (text: string, tools: PersistedToolEvent[], runId: string) => void;
 }
 
+/** Injectable hooks for agent detection — tests override these to avoid
+ * spawning real CLI processes; production defaults to the launch.ts impls. */
+export interface AgentDetectDeps {
+  resolve?: (def: RuntimeAgentDef, options?: ResolveOptions) => Promise<ResolveResult>;
+  probe?: (bin: string, args: string[], timeoutMs?: number) => Promise<ProbeResult>;
+  now?: () => number;
+}
+
+/** Default TTL for the agent-detection cache. Override via env (0 disables). */
+const DEFAULT_AGENT_CACHE_TTL_MS = 30_000;
+
 export class RunManager {
   private runs = new Map<string, RunState>();
   private runsLogDir: string;
@@ -101,10 +116,22 @@ export class RunManager {
   // dbgLog channel (stdout + debug file, NOT stderr) so it never reads as ERROR.
   private readonly noSubscriberWarn = new ThrottledWarn({ sink: (m) => dbgLog(m) });
 
-  constructor() {
+  private readonly detectDeps: AgentDetectDeps;
+  /** TTL cache for detectAgentsAsync — probing spawns CLI processes (cold
+   * Claude start = 1-3s), so back-to-back GET /api/agents must not re-probe. */
+  private agentCache: { at: number; agents: AgentInfo[] } | null = null;
+  /** In-flight dedup — concurrent callers share one probe round. */
+  private agentProbeInFlight: Promise<AgentInfo[]> | null = null;
+
+  constructor(detectDeps: AgentDetectDeps = {}) {
     this.runsLogDir = path.join(os.homedir(), '.molio', 'runs');
+    this.detectDeps = detectDeps;
   }
 
+  /**
+   * @deprecated Sync variant kept for internal/legacy callers — it blocks the
+   * event loop while spawning `where`/CLI probes. Use {@link detectAgentsAsync}.
+   */
   detectAgents(): AgentInfo[] {
     const config = loadConfig();
     return listAgentDefs().map((def) => {
@@ -129,19 +156,92 @@ export class RunManager {
         }
       }
 
-      return {
-        id: def.id,
-        name: def.name,
-        available,
-        binary,
-        source: result.source,
-        version,
-        probeError: probeError,
-        models: def.fallbackModels,
-        installUrl: def.installUrl,
-        installable: !!def.install,
-      };
+      return this.toAgentInfo(def, result, { version, error: probeError ?? undefined });
     });
+  }
+
+  /**
+   * Non-blocking agent detection with a short TTL cache. All agents are
+   * resolved + version-probed **in parallel** via async spawns, so the total
+   * cost is ~max(single probe) instead of sum, and the daemon event loop stays
+   * responsive (other first-screen requests aren't queued behind it).
+   *
+   * Cache invalidation: TTL (default 30s, `MOLIO_AGENT_CACHE_TTL_MS`, 0 =
+   * always re-probe) + explicit {@link invalidateAgentCache} from the install
+   * and config-write routes so a freshly installed/configured agent shows up
+   * immediately.
+   */
+  async detectAgentsAsync(): Promise<AgentInfo[]> {
+    const now = (this.detectDeps.now ?? Date.now)();
+    const ttl = this.agentCacheTtlMs();
+    if (ttl > 0 && this.agentCache && now - this.agentCache.at < ttl) {
+      return this.agentCache.agents;
+    }
+    if (this.agentProbeInFlight) return this.agentProbeInFlight;
+
+    const promise = this.runAgentDetection().finally(() => {
+      this.agentProbeInFlight = null;
+    });
+    this.agentProbeInFlight = promise;
+    return promise;
+  }
+
+  /** Drop the detection cache — next detectAgentsAsync re-probes. */
+  invalidateAgentCache(): void {
+    this.agentCache = null;
+  }
+
+  private agentCacheTtlMs(): number {
+    const raw = process.env['MOLIO_AGENT_CACHE_TTL_MS'];
+    if (raw === undefined || raw.trim() === '') return DEFAULT_AGENT_CACHE_TTL_MS;
+    const n = Number(raw);
+    return Number.isFinite(n) && n >= 0 ? n : DEFAULT_AGENT_CACHE_TTL_MS;
+  }
+
+  private async runAgentDetection(): Promise<AgentInfo[]> {
+    const resolve = this.detectDeps.resolve ?? resolveAgentBinaryAsync;
+    const probe = this.detectDeps.probe ?? probeVersionAsync;
+    const config = loadConfig();
+    const agents = await Promise.all(
+      listAgentDefs().map(async (def) => {
+        const agentConfig = config.agents[def.id] || {};
+        const configuredEnv = agentConfig.env || {};
+        const result = await resolve(def, { configuredEnv });
+        let probeResult: ProbeResult = { version: null };
+        if (result.binary) {
+          probeResult = await probe(result.binary, def.versionArgs);
+        }
+        return this.toAgentInfo(def, result, probeResult);
+      }),
+    );
+    this.agentCache = { at: (this.detectDeps.now ?? Date.now)(), agents };
+    return agents;
+  }
+
+  /** Shared sync/async AgentInfo assembly — availability semantics live here:
+   * a binary that exists on disk but fails its version probe is NOT usable
+   * (stale/broken installs must not surface as available). */
+  private toAgentInfo(
+    def: RuntimeAgentDef,
+    result: ResolveResult,
+    probeResult: ProbeResult,
+  ): AgentInfo {
+    let available = result.binary !== null;
+    if (result.binary && !probeResult.version && probeResult.error) {
+      available = false;
+    }
+    return {
+      id: def.id,
+      name: def.name,
+      available,
+      binary: result.binary,
+      source: result.source,
+      version: probeResult.version,
+      probeError: probeResult.error ?? null,
+      models: def.fallbackModels,
+      installUrl: def.installUrl,
+      installable: !!def.install,
+    };
   }
 
   listAgents(): AgentInfo[] {
