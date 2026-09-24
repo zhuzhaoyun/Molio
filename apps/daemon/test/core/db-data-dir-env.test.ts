@@ -45,11 +45,11 @@ describe('openDatabase MOLIO_DATA_DIR', () => {
     process.env.MOLIO_DATA_DIR = dir;
     const explicit = mkdtempSync(join(tmpdir(), 'molio-data-dir-explicit-'));
     try {
-      const db = openDatabase(join(explicit, 'app.sqlite'));
+      openDatabase(explicit);
       assert.ok(existsSync(join(explicit, 'app.sqlite')));
       assert.ok(!existsSync(join(dir, 'app.sqlite')));
-      void db;
     } finally {
+      closeDatabase();
       rmSync(explicit, { recursive: true, force: true });
     }
   });
