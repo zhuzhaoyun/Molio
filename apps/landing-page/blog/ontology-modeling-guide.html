@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#1A1714">
+
+<!-- SEO -->
+<title>本体论怎么落地：GB/T 48000 要求的三类构件，和 Palantir 多出的那个“动作”</title>
+<meta name="description" content="AI 回答你的领域问题总是似是而非，调检索没用，多半是知识本身没结构。这篇讲清本体（Ontology）在知识工程里干什么、国标 GB/T 48000.3 对构件的要求、Palantir 四要素里多出的“动作”，以及怎么用一份六项清单在花钱前验出假本体。">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://molio.cn/blog/ontology-modeling-guide.html">
+
+<!-- Preconnect -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+<link rel="icon" type="image/png" href="../images/favicon-32.png">
+<link rel="apple-touch-icon" href="../images/favicon-32.png">
+<link rel="stylesheet" href="../styles.css?v=20260827c">
+
+<!-- Open Graph -->
+<meta property="og:title" content="本体论怎么落地：GB/T 48000 要求的三类构件，和 Palantir 多出的那个“动作”">
+<meta property="og:description" content="AI 回答你的领域问题总是似是而非，调检索没用，多半是知识本身没结构。这篇讲清本体（Ontology）在知识工程里干什么、国标 GB/T 48000.3 对构件的要求、Palantir 四要素里多出的“动作”，以及怎么用一份六项清单在花钱前验出假本体。">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://molio.cn/blog/ontology-modeling-guide.html">
+<meta property="og:image" content="https://molio.cn/images/brand.png">
+<meta property="og:site_name" content="Molio 墨流">
+<meta property="og:locale" content="zh_CN">
+
+<!-- Twitter -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="本体论怎么落地：GB/T 48000 要求的三类构件，和 Palantir 多出的那个“动作”">
+<meta name="twitter:description" content="AI 回答你的领域问题总是似是而非，调检索没用，多半是知识本身没结构。这篇讲清本体（Ontology）在知识工程里干什么、国标 GB/T 48000.3 对构件的要求、Palantir 四要素里多出的“动作”，以及怎么用一份六项清单在花钱前验出假本体。">
+<meta name="twitter:image" content="https://molio.cn/images/brand.png">
+
+<!-- JSON-LD -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Article",
+      "headline": "本体论怎么落地：GB/T 48000 要求的三类构件，和 Palantir 多出的那个“动作”",
+      "description": "AI 回答你的领域问题总是似是而非，调检索没用，多半是知识本身没结构。这篇讲清本体（Ontology）在知识工程里干什么、国标 GB/T 48000.3 对构件的要求、Palantir 四要素里多出的“动作”，以及怎么用一份六项清单在花钱前验出假本体。",
+      "url": "https://molio.cn/blog/ontology-modeling-guide.html",
+      "datePublished": "2026-09-20",
+      "author": { "@type": "Organization", "name": "Molio" },
+      "publisher": { "@type": "Organization", "name": "Molio", "logo": { "@type": "ImageObject", "url": "https://molio.cn/images/brand.png" } }
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "首页", "item": "https://molio.cn/" },
+        { "@type": "ListItem", "position": 2, "name": "博客", "item": "https://molio.cn/blog/index.html" },
+        { "@type": "ListItem", "position": 3, "name": "本体论怎么落地", "item": "https://molio.cn/blog/ontology-modeling-guide.html" }
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "本体和知识图谱有什么区别？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "知识图谱是实例的网，具体的公司、人、事件和它们之间的关系。本体是类型的规则，规定允许有哪些类、哪些关系、什么约束。图谱是本体的一份实例。没有本体的图谱换一个领域就没法复用，因为没人说得清哪些结构是本质的、哪些只是这次碰巧。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "本体论和 Ontology 是一回事吗？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "同一个词的两面。哲学里译成本体论，追问存在本身。计算机领域直接用 Ontology，指对概念化体系的明确规范，这个定义 1993 年由 Thomas Gruber 给出。这篇讲的是后者。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "建本体需要什么工具？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "看你要什么。要推出新知识，走语义本体那条路，RDF 和 OWL 描述，SHACL 校验，建模用 Protégé，推理机用 HermiT、Pellet 或 ELK。要让 AI 安全地干活，走 Palantir 那条路，把对象、链接、动作、权限建成一套能执行、能写回的运行系统。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "本体建好之后怎么用？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "两个方向。给人查，结构化检索，市场部的“客户”和财务部的“客户”不再是两个东西。给 AI 调，Agent 知道有哪些对象、能做什么动作、需要什么权限。前者是能回答，后者是能动手。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "不建本体行不行？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "行，代价是大概率撞上七种死法里的文件堆积和精度不足，这两类加起来占知识库失败原因的近一半。堆文档和有结构的区别在于，文档搜得出段落，搜不出没写下来但逻辑必然的关联，也校验不了数据对不对。"
+          }
+        }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<nav class="top-nav" aria-label="主导航">
+  <div class="nav-inner">
+    <a href="../index.html" class="nav-logo"><img class="logo-icon-sm" src="../images/new/black.png" alt="Molio" /> Molio</a>
+    <div class="nav-links">
+      <a href="../index.html" class="nav-link">首页</a>
+      <a href="../resources.html" class="nav-link">资源</a>
+      <a href="./index.html" class="nav-link active">博客</a>
+      <a href="../enterprise.html" class="nav-link">定制服务</a>
+     <span id="nav-auth"></span><a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer" class="nav-gh" aria-label="GitHub 仓库"><svg viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg></a></div>
+  </div>
+</nav>
+<main class="page-content">
+  <div class="breadcrumb">
+    <a href="../index.html">首页</a><span class="sep">/</span><a href="./index.html">博客</a><span class="sep">/</span>本体论怎么落地
+  </div>
+  <h1 class="page-title">本体论怎么落地：GB/T 48000 要求的三类构件，和 Palantir 多出的那个“动作”</h1>
+  <div class="article-meta"><span>2026-09-20</span><span>知识工程</span></div>
+<article class="article-body reveal">
+<p>你大概碰到过这种情况。</p>
+<p>把一摞自己领域的文档喂给 AI，问它一个具体问题。它答得四平八稳，说不上哪里错，但就是没有细节。你追问，它开始绕。你去调分块、换 embedding、加重排，好一点，有限。</p>
+<p>到这一步，多数人继续在检索上使劲。但问题多半不在检索。一堆没有结构的文档，检索得再准也只是找到段落，不是找到知识，模型拿到的还是碎片，它自然只能给你碎片级别的回答。</p>
+<p>缺的那个东西有名字，叫本体，英文 Ontology。这个词眼下很热，热到什么产品都敢往上贴：真做工程的人在讲，卖课的也在讲，还有人把它印在包装上当卖点。你想认真学，或者打算买相关的资料，先得能分清什么是实货。</p>
+<p>这篇就干这件事。判断的标准不是名字，是它实际做了什么。</p>
+<h2>“本体”这个词，为什么总讲不清</h2>
+<p>因为它至少指四种不同的东西，而讲的人经常没意识到自己在混着讲。</p>
+<p>第一种，语义本体，干推理的活。你在里面声明“涡扇发动机是发动机的一种”“通过适航认证的发动机，配装机型自动合规”，推理机会替你把没写过的结论算出来。它的标准语言是 OWL，医学界用得最狠，几十万条医学概念靠它维持秩序。</p>
+<p>第二种，知识图谱本体，干遍历的活。数据是点和边，查询是沿着关系走，多跳找关联。Neo4j 那套是它的地盘。</p>
+<p>第三种，Palantir 的本体。它比前两种多了一样东西，后面单独讲。</p>
+<p>第四种，Agent 本体，管的是约束。AI 要调工具、要执行动作之前，先过它这道闸。</p>
+<p>想快速区分，有三个问题可以问。它的核心操作是什么，推理、遍历、执行还是校验。它的世界假设是哪一种，“没查到”到底等于“不存在”，还是只等于“未知”。它能不能写，只读、读写，还是连源系统一起改。</p>
+<p>这三个问题比背十几个维度的对照表管用，也解释了混着用为什么出事。最常见的失败是拿图谱当本体，图很漂亮，查询能跑，但问不出新东西。遍历只能沿已经画出来的边走，推理能推出逻辑上必然、却从没写下来的关联。</p>
+<h2>连国家标准都下场了</h2>
+<p>判断一个领域成不成熟，有个土办法，看有没有国标。本体这个领域有了，GB/T 48000.3-2026，全名《标准数字化本体建模要求》。</p>
+<p>国标对构件的要求是三类：实体类型、属性、公理。技术栈也定了，RDF 和 OWL 做描述，Turtle 和 JSON-LD 做序列化，SHACL 做约束校验，每个实体要有全球唯一的 IRI。</p>
+<p>条款读起来枯燥，真正值得看的是它要求你把知识拆到什么颗粒度。标准文件里有句话很普通：</p>
+<blockquote><p>“电池单体初始容量应不低于额定容量且不超过 110%。”</p></blockquote>
+<p>人读没问题，机器读不了，它看到的是一串字符。按国标的拆法，这句话要拆成三件：对象是电池单体；特性是初始容量，属于约束型特性；约束逻辑是最小值等于额定容量，最大值等于它的 110%，带测量单位。拆完，这句话才变成机器能执行、能校验的结构。</p>
+<p>这就是建本体和整理文档的分界。文档是给人读的，本体里的每句话都要能拆成机器能干活的结构。为此国标定义了 18 类核心实体类型和 34 项对象属性，每一项都规定了定义域、值域和语义，连“标准引用文件”“标准代替标准”这类关系都有正式约束。</p>
+<h2>Palantir 多出来的那个“动作”</h2>
+<p>现在说第三种本体。Palantir 的 Ontology 也分四块。Data 是各系统把数据映射成对象、属性、链接。Logic 是业务规则和模型绑到对象上。Security 是权限跟着对象走。这几样，前面几种本体多少都有。</p>
+<p>多出来的是 Action。决策执行被建成原子化的操作，可以模拟、可以审批、可以写回源系统。</p>
+<p>这个差别比看上去大。前三种本体都在描述世界，Palantir 这一种在世界里做事。它官方文档里有句话把这件事说得最透：Wiki 偏阅读，Ontology 偏行动。</p>
+<p>对 AI 的实际意义在这里。给 AI 一份传统文档，它能回答问题。给 AI 一个带 Action 的本体，它知道这个业务世界里有哪些对象、对象之间什么关系、哪些动作可以执行、执行前要过什么权限。前者是能回答，后者是能动手。做 Agent 的人对这一步感受最深，因为 Agent 出事故几乎都出在动手的环节。</p>
+<h2>六项清单，花钱前验货用</h2>
+<p>上面讲的是应该怎么建。更现实的问题是验货，尤其是掏钱之前。</p>
+<p>有一套六项清单，源码级，拿来就能查任何自称“本体”的项目：</p>
+<ol><li>有没有 Object / Type / Schema 这类核心数据结构的真实定义</li><li>有没有实现完整的增删改查</li><li>有没有真正的运行时校验，类型注解、配置文件、TODO 都不算</li><li>有没有真的读写数据库或文件，而不是纯内存</li><li>有没有 HTTP / gRPC / CLI 接口</li><li>有没有真实的测试代码</li></ol>
+<p>判定规则不客气。六项全过算真本体，缺一到两项算边缘，缺三项以上就是空壳，或者挂错了牌子。</p>
+<p>第三项淘汰的人最多。不少项目标着“本体”，里面其实是几个 Python dataclass、一份 JSON Schema、一张字典常量。看着有结构，那个结构不执行。</p>
+<p>这套清单被拿来拆过 15 个开源项目。结果是 5 个真本体，6 个边缘，其余空壳或误标。有几个还挺有名，它们的“知识图谱”功能是营销部门起的名字。</p>
+<h2>建错了会怎么死</h2>
+<p>最后说代价，也把开头的问题接回来。</p>
+<p>知识库项目失败有七种典型死法。文件堆积，只堆文档没有组织。精度不足，检索不相关，用户弃用。知识过时，半年不更新和业务脱钩。静默污染，错误内容悄悄混进来。规模超载。业务脱节，建出来没人用。版本混乱，无法回滚。</p>
+<p>其中高频的三种，业务脱节约占三成，文件堆积约四分之一，精度不足约两成，加起来七成半。技术问题反而是少数。</p>
+<p>开头那种“答得四平八稳但没细节”，在死法目录里能找到对应，就是文件堆积加精度不足。你喂的是没结构的文档，怪不得模型给不出结构化的回答。这份目录可以当体检表，每季度对照一遍，能在项目烂掉之前发现问题。</p>
+<p>不建本体行不行？行，代价就是大概率撞进上面七种里的某一种。</p>
+<h2>常见问题</h2>
+<h3>本体和知识图谱有什么区别？</h3>
+<p>知识图谱是实例的网，具体的公司、人、事件和它们之间的关系。本体是类型的规则，规定允许有哪些类、哪些关系、什么约束。图谱是本体的一份实例。没有本体的图谱换一个领域就没法复用，因为没人说得清哪些结构是本质的、哪些只是这次碰巧。</p>
+<h3>本体论和 Ontology 是一回事吗？</h3>
+<p>同一个词的两面。哲学里译成本体论，追问存在本身。计算机领域直接用 Ontology，指对概念化体系的明确规范，这个定义 1993 年由 Thomas Gruber 给出。这篇讲的是后者。</p>
+<h3>建本体需要什么工具？</h3>
+<p>看你要什么。要推出新知识，走语义本体那条路，RDF 和 OWL 描述，SHACL 校验，建模用 Protégé，推理机用 HermiT、Pellet 或 ELK。要让 AI 安全地干活，走 Palantir 那条路，把对象、链接、动作、权限建成一套能执行、能写回的运行系统。</p>
+<h3>本体建好之后怎么用？</h3>
+<p>两个方向。给人查，结构化检索，市场部的“客户”和财务部的“客户”不再是两个东西。给 AI 调，Agent 知道有哪些对象、能做什么动作、需要什么权限。前者是能回答，后者是能动手。</p>
+<h3>不建本体行不行？</h3>
+<p>行，代价是大概率撞上七种死法里的文件堆积和精度不足，这两类加起来占知识库失败原因的近一半。堆文档和有结构的区别在于，文档搜得出段落，搜不出没写下来但逻辑必然的关联，也校验不了数据对不对。</p>
+<hr>
+<p>这篇的框架到这里是完整的，但每一块往下都还有一层。国标那 18 类实体类型和 34 项属性怎么落，四种本体的完整选型怎么判，15 个开源项目的逐个拆解记录，都在 Molio（墨流）的《知识工程全景图谱》里，202 页，Markdown 格式，导入 Molio 或 Obsidian 就能用，也可以直接喂给 AI 当知识底座。</p>
+<p>想先把整体过一遍，有一本免费的知识工程绿皮书，从技术趋势、方法论到实践框架，二十节。</p>
+<p>→ <a href="https://molio.cn/blog/knowledge-engineering-green-paper.html">知识工程绿皮书（免费，119 页）</a></p>
+<hr>
+<p><strong>相关资源</strong>：<a href="../resource/01M13QT669Q6E94PWACEH00YJF.html">知识工程全景图谱-RAG-本体-Agent工程</a></p>
+<p><strong>延伸阅读</strong>：</p>
+<ul><li><a href="https://molio.cn/blog/claude-code-gui-guide.html">Claude Code 图形界面完全指南：告别命令行，Molio 让 AI 编程触手可及</a></li><li><a href="https://molio.cn/blog/local-knowledge-base.html">为什么本地知识库才是你的最佳选择？2026 年知识管理软件推荐</a></li></ul>
+</article>
+  <div class="related-links reveal">
+    <h2>相关文章</h2>
+    <ul>
+      <li><a href="claude-code-gui-guide.html">Claude Code 图形界面完全指南：告别命令行，Molio 让 AI 编程触手可及</a></li>
+      <li><a href="local-knowledge-base.html">为什么本地知识库才是你的最佳选择？2026 年知识管理软件推荐</a></li>
+    </ul>
+  </div>
+  <div class="kg-links reveal">
+    <h2>现成知识底座</h2>
+    <p>这一篇讲的知识底座不用自己攒——同系列的几部都在这里，导入即用。</p>
+    <ul>
+      <li><a href="../resource/01M13QT669Q6E94PWACEH00YJF.html">知识工程全景图谱-RAG-本体-Agent工程</a></li>
+      <li><a href="../resources.html">查看全部知识底座 →</a></li>
+    </ul>
+  </div>
+  <div class="cta-box reveal">
+    <p>别再和每一个 AI 从零开始。</p>
+    <a href="../index.html#download" class="btn btn-primary">免费下载 Molio →</a>
+  </div>
+</main>
+<!-- Footer -->
+<footer class="site-footer">
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <a href="../index.html" class="footer-logo"><img class="logo-icon-sm" src="../images/new/black.png" alt="Molio" /> Molio</a>
+      <p>会成长的 AI 知识空间。Claude Code、Codex 等 Agent 带着你的背景研究、写作、问答、分析，产出回写入库，数据全在你自己电脑上。</p>
+    </div>
+    <div class="footer-links">
+      <h4>产品</h4>
+      <a href="../index.html">首页</a>
+      <a href="../resources.html">资源</a>
+      <a href="../enterprise.html">定制服务</a>
+      <a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer">GitHub 开源</a>
+    </div>
+    <div class="footer-links">
+      <h4>资源</h4>
+      <a href="../help.html">快速入门</a>
+      <a href="../help.html#step-6">排版教程</a>
+      <a href="../help.html#step-7">发布指南</a>
+      <a href="https://github.com/zhuzhaoyun/Molio/issues" target="_blank" rel="noopener noreferrer">问题反馈</a>
+    </div>
+    <div class="footer-links">
+      <h4>关于</h4>
+      <a href="./index.html">博客</a>
+      <a href="../privacy.html">隐私政策</a>
+      <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">粤ICP备2023134483号-4</a>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <span>© 2026 Molio 墨流. 基于 MIT 协议开源.</span>
+    <span>Molio 墨流 — 别再和每一个 AI 从零开始：会成长的 AI 知识空间，产出回写入库，数据全在你自己电脑上</span>
+  </div>
+</footer>
+<script src="../auth.js?v=20260824a"></script>
+<script src="../shared.js?v=20260824a"></script>
+<script>
+var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = "https://hm.baidu.com/hm.js?887d065c4dc67dfb05913b2e131a44a3";
+  var s = document.getElementsByTagName("script")[0];
+  s.parentNode.insertBefore(hm, s);
+})();
+</script>
+</body>
+</html>

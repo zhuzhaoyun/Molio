@@ -23,7 +23,7 @@ Molio 把它们统一加工成 AI 可读、可调用的**个人知识底座**：
 
 <div align="center">
 
-[<img src="docs/img/video-poster.webp" alt="资治通鉴知识库演示" width="100%" style="border-radius: 8px;" />](https://molio.cn/videos/zizhitongjian-overview.mp4)
+[<img src="docs/img/video-poster.webp" alt="资治通鉴知识库演示" width="100%" style="border-radius: 8px;" />](https://molio.cn/videos/zizhitongjian-overview-v2.mp4)
 
 **▶ 点击播放演示** — 一本书，一个知识宇宙：《资治通鉴》1362 年史料 · 由 Molio 加工成 AI 可探索的知识底座
 

@@ -23,7 +23,7 @@ Starting from zero? The [resource library](https://molio.cn/resources.html) ship
 
 <div align="center">
 
-[<img src="docs/img/video-poster.webp" alt="Zizhi Tongjian knowledge base demo" width="100%" style="border-radius: 8px;" />](https://molio.cn/videos/zizhitongjian-overview.mp4)
+[<img src="docs/img/video-poster.webp" alt="Zizhi Tongjian knowledge base demo" width="100%" style="border-radius: 8px;" />](https://molio.cn/videos/zizhitongjian-overview-v2.mp4)
 
 **▶ Click to watch the demo** — one book, one knowledge universe: 1,362 years of history from the *Zizhi Tongjian*, processed by Molio into an AI-explorable knowledge base
 

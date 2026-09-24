@@ -224,41 +224,55 @@ function downloadElectronPrebuilds() {
   // Copy package.json so prebuild-install can determine the module version
   cpSync(join(sqliteSrc, 'package.json'), join(tempDir, 'package.json'));
 
-  // Retry up to 3 times with exponential backoff
-  const maxRetries = 3;
+  // 下载源多级回退（信创/国内网络原则，与 install.sh 一致）：默认走 GitHub
+  // releases，全部失败后回退 npmmirror 二进制镜像。prebuild-install 用
+  // npm_config_better_sqlite3_binary_host 覆盖下载 host（--mirror 参数无效）。
+  // 也可用 MOLIO_PREBUILD_HOST 显式指定第一来源（如 CI 已配镜像时跳过 GitHub 尝试）。
+  const sources = [
+    { name: process.env.MOLIO_PREBUILD_HOST ? 'MOLIO_PREBUILD_HOST' : 'GitHub releases', host: process.env.MOLIO_PREBUILD_HOST || null, tries: 3 },
+    { name: 'npmmirror', host: 'https://registry.npmmirror.com/-/binary/better-sqlite3', tries: 2 },
+  ];
   let lastError = null;
 
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      execSync('npx prebuild-install --runtime electron --target ' + electronVersion + ' --arch ' + process.arch, {
-        cwd: tempDir,
-        stdio: 'pipe',
-        encoding: 'utf-8',
-        env: {
-          ...process.env,
-          // Support npm registry mirror via environment variable
-          ...(process.env.NPM_REGISTRY ? { npm_config_registry: process.env.NPM_REGISTRY } : {}),
-        },
-      });
-      lastError = null;
-      break; // Success
-    } catch (err) {
-      lastError = err;
-      if (attempt < maxRetries) {
-        const delay = attempt * 3000; // 3s, 6s
-        console.warn(`  Attempt ${attempt}/${maxRetries} failed, retrying in ${delay/1000}s...`);
-        sleepSync(delay);
+  for (const source of sources) {
+    let ok = false;
+    for (let attempt = 1; attempt <= source.tries; attempt++) {
+      try {
+        execSync('npx prebuild-install --runtime electron --target ' + electronVersion + ' --arch ' + process.arch, {
+          cwd: tempDir,
+          stdio: 'pipe',
+          encoding: 'utf-8',
+          env: {
+            ...process.env,
+            // Support npm registry mirror via environment variable
+            ...(process.env.NPM_REGISTRY ? { npm_config_registry: process.env.NPM_REGISTRY } : {}),
+            ...(source.host ? { npm_config_better_sqlite3_binary_host: source.host } : {}),
+          },
+        });
+        lastError = null;
+        ok = true;
+        if (source.host) console.log(`  Downloaded via ${source.name}`);
+        break;
+      } catch (err) {
+        lastError = err;
+        if (attempt < source.tries) {
+          const delay = attempt * 3000; // 3s, 6s
+          console.warn(`  Attempt ${attempt}/${source.tries} (${source.name}) failed, retrying in ${delay / 1000}s...`);
+          sleepSync(delay);
+        }
       }
     }
+    if (ok) break;
+    console.warn(`  ${source.name} unreachable — trying next source`);
   }
 
   if (lastError) {
     rmSync(tempDir, { recursive: true, force: true });
     throw new Error(
-      `Failed to download Electron prebuild for better-sqlite3 (after ${maxRetries} retries): ${lastError.stderr || lastError.message}\n` +
+      `Failed to download Electron prebuild for better-sqlite3 (GitHub + npmmirror both failed): ${lastError.stderr || lastError.message}\n` +
       `Tips:\n` +
       `  1. 设置代理再重试: export https_proxy=http://127.0.0.1:7890 && export http_proxy=http://127.0.0.1:7890\n` +
-      `  2. 设置 npm 镜像源: export NPM_REGISTRY=https://registry.npmmirror.com\n` +
+      `  2. 显式指定下载源: export MOLIO_PREBUILD_HOST=https://registry.npmmirror.com/-/binary/better-sqlite3\n` +
       `  3. 手动确认 prebuild-install 可用: npx prebuild-install`
     );
   }
