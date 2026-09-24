@@ -263,6 +263,12 @@
 }
 
 .kb-tree-group-label:hover { background: var(--bg-subtle); }
+/* Expanded folder keeps a persistent tint + accent chevron — otherwise an
+   empty/childless folder shows no visible change on click ("did nothing"). */
+.kb-tree-group-label.is-open { background: var(--bg-subtle); }
+.kb-tree-group-label.is-open .kb-tree-chevron { color: var(--accent); }
+/* Press acknowledgment: fires on mousedown, before React state re-renders. */
+.kb-tree-group-label:active { background: var(--accent-tint); }
 
 .kb-tree-chevron {
   width: 14px;
@@ -285,6 +291,19 @@
 
 .kb-tree-children.collapsed {
   display: none;
+}
+
+/* Ghost row: sits where children would be, states why there are none.
+   Same rhythm as tree rows but quieter — it is a status, not a node. */
+.kb-tree-ghost-row {
+  padding: 3px 8px;
+  font-size: 12px;
+  color: var(--text-faint);
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
 }
 
 .kb-tree-item {
@@ -2721,6 +2740,29 @@
   height: 2px;
   border-radius: 0 0 4px 4px;
   background: var(--accent);
+}
+
+/* Drag-to-reorder — the dragged tab lifts and follows the pointer; siblings
+   glide one slot aside (transform only, no layout thrash). The vacated gap IS
+   the drop indicator, Chrome-style. Styles are toggled via direct DOM in
+   KbTabBar (zero React re-renders per frame); the store updates once on drop. */
+.kb-wtab.is-shifting {
+  transition: transform 160ms ease;
+}
+.kb-wtab.is-dragging {
+  z-index: 10;
+  transition: none;
+  /* A lifted tab needs an opaque body — transparent inactive tabs would cast a
+     hollow shadow. Same surface language as is-active, so "picked up" reads
+     as "the focused surface", in both themes. */
+  background: var(--bg-panel);
+  color: var(--text);
+  border-color: var(--border);
+  box-shadow: var(--shadow-md);
+  cursor: grabbing;
+}
+.kb-wtab.is-dragging .kb-wtab-close {
+  opacity: 0;
 }
 
 /* "+" explicit new-tab button — rides after the last tab in the scroll row. */

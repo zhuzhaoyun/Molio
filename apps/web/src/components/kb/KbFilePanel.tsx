@@ -45,6 +45,13 @@ interface KbFilePanelProps {
   onMoveFile?: (srcPath: string, destDir: string) => void;
   /** Publish the current vault to the resources hub. */
   onPublishVault: () => void;
+  /**
+   * 「发布到资源库」门禁的当前判定结果（管理员=页内发布 tab / 其他=系统浏览器打开
+   * 官网联系页）。门禁是**异步**落定的（登录态 → GET /api/market/my → setState），
+   * 而按钮首帧就可点；把它渲染成属性，调用方/E2E 才能等门禁落定后再点，否则会在
+   * 未决窗口里误走联系页分支。undefined = 调用方未提供（不渲染该属性）。
+   */
+  publishGate?: 'admin' | 'contact';
   children?: ReactNode;
 }
 
@@ -75,6 +82,7 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
   onImportFiles,
   onMoveFile,
   onPublishVault,
+  publishGate,
   children,
 }, ref) {
   const { t } = useI18n();
@@ -495,6 +503,7 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
             title={t('vault.publish')}
             onClick={onPublishVault}
             data-testid="kb-btn-publish-vault"
+            data-publish-gate={publishGate}
           >
             {/* upload — publish to resources */}
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

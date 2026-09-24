@@ -20,7 +20,7 @@ import { mockAgent } from './helpers/mock-sse';
  * auto-selects whatever vault sorts first, which is not our test vault).
  */
 
-const DAEMON = `http://localhost:${process.env.MOLIO_E2E_DAEMON_PORT ?? 3100}`;
+const DAEMON = `http://localhost:${process.env.MOLIO_E2E_DAEMON_PORT ?? '3100'}`;
 
 let vault: TempVault;
 

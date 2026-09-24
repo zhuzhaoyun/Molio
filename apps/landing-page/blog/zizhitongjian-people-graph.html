@@ -55,6 +55,83 @@
         { "@type": "ListItem", "position": 2, "name": "博客", "item": "https://molio.cn/blog/index.html" },
         { "@type": "ListItem", "position": 3, "name": "资治通鉴人物关系图", "item": "https://molio.cn/blog/zizhitongjian-people-graph.html" }
       ]
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "《资治通鉴》里到底有多少人物？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "以 Molio（墨流）整理的《资治通鉴》知识图谱为口径，与全书相关的人物与政权共 626 个。需要说明的是，626 是人物与政权的合计口径，而非单纯的\"人数\"——因为《资治通鉴》里政权、君主、部族首领常与人物混编，单独统计\"人\"会失真。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "有了人物关系图，为什么还需要知识图谱？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "因为图能看、不能查。一张图能告诉你\"这两人有关系\"，但答不了\"什么关系、凭什么\"。知识图谱把每一条关系连同考据一起记录下来，可以查询、可以追问、也能被 AI 直接读取。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "买来只能自己看吗？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "不是，这正是它和电子书的区别。除了人自己能读、能查、能梳理，它是一个本地文件夹，放进你自己的环境后，Claude Code、Codex、WorkBuddy 这类 AI Agent 也能直接读取，成为它们在这个领域的知识底座。电子书是给人读的终点，知识图谱是给 AI 用的起点。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "我平时直接问 AI 历史问题，为什么还需要这个？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "通用大模型回答历史问题靠的是训练时记住的概括，细节容易串、容易编，而且它自己也无法指出依据。挂载整理好的知识图谱后，AI 的答案来自一份有出处的关系网络——比如问\"安禄山和史思明什么关系\"，通用模型大概会说\"安史之乱的同伙\"，而依据图谱能答出\"同里闬、先后一日生，骁勇相亲爱，后为叛军主将\"。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "《资治通鉴》如何读？应该从哪一卷开始？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "不必从第一卷开始。战国到秦这一段在《史记》里写得更细，很多人会跳过，直接从汉代或隋唐入手。唐纪占全书近四成、叙事最成熟，对初学者最友好。真要通读，也可以先挑一个感兴趣的时代读熟，再往前补——编年体的好处是每一段都相对独立，跳读不会断线。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "《资治通鉴》读不完怎么办？有必要通读吗？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "没有必要。司马光编它是给治国者看治乱兴衰的，本就不是设计成\"从头读到尾\"的书。绝大多数人是按主题挑读。真正麻烦的不是读不完，是读到一半想回头查某个人时查不到——编年体没有列传，按年份排的书，找一个人只能一页页翻。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "人物太多记不住怎么办？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "不用记，用查的。记 626 个人是不可能完成的任务，也不必要——你需要记住的只是\"这事跟谁有关\"，具体是谁、什么关系，交给能查的东西。这也是这套知识图谱和一张关系图最大的区别：图要你记住，体系让你查到。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "有白话译本和讲解视频，还需要这个吗？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "两者解决的不是同一个问题。白话译本和讲解解决的是\"听人讲明白\"；Molio（墨流）这套知识图谱解决的是\"自己查得到\"。听完讲解想回头核实某个人是谁、某件事牵涉哪些人，仍然需要一个能按名字检索的东西。而且它还能顺手喂给你自己的 AI，让 AI 回答时有依据。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "这套图谱适合谁用？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "三类人：读《资治通鉴》原文时需要随时查人查事的人；写历史类文章、需要核对人物关系与事件脉络的人；以及想让自己的 AI 在历史领域答得更准的人。"
+          }
+        }
+      ]
     }
   ]
 }
@@ -67,7 +144,6 @@
     <div class="nav-links">
       <a href="../index.html" class="nav-link">首页</a>
       <a href="../resources.html" class="nav-link">资源</a>
-      <a href="../help.html" class="nav-link">使用指南</a>
       <a href="./index.html" class="nav-link active">博客</a>
       <a href="../enterprise.html" class="nav-link">定制服务</a>
      <span id="nav-auth"></span><a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer" class="nav-gh" aria-label="GitHub 仓库"><svg viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg></a></div>
@@ -145,7 +221,7 @@
 <h3>这套图谱适合谁用？</h3>
 <p>三类人：读《资治通鉴》原文时需要随时查人查事的人；写历史类文章、需要核对人物关系与事件脉络的人；以及想让自己的 AI 在历史领域答得更准的人。</p>
 <hr>
-<p><strong>相关资源</strong>：<a href="https://molio.cn/resource/01M10RZP9118BA6YRBZ1D4FKM2.html">《资治通鉴》千年兴亡：人物、事件与制度知识图谱</a></p>
+<p><strong>相关资源</strong>：<a href="../resource/01M10RZP9118BA6YRBZ1D4FKM2.html">《资治通鉴》千年兴亡：人物、事件与制度知识图谱</a></p>
 <p><strong>延伸阅读</strong>：</p>
 <ul><li><a href="https://molio.cn/blog/shiji-knowledge-system.html">史记知识体系：130 篇、近 3000 年，怎么读才不乱</a></li><li><a href="https://molio.cn/blog/mingshi-people-and-institutions.html">明史人物与制度：列传 220 卷、311 个人物条目，每条都能回到原文</a></li><li><a href="https://molio.cn/blog/hongloumeng-knowledge-graph.html">红楼梦知识图谱：60 个人物、6 组对照，怎么把人物读明白</a></li></ul>
 </article>
@@ -164,7 +240,7 @@
       <li><a href="../resource/01M10RZP9118BA6YRBZ1D4FKM2.html">《资治通鉴》千年兴亡：人物、事件与制度知识图谱</a></li>
       <li><a href="../resource/01M10WWK7WNMM61QNJJJXHNWS2.html">《史记》人物·制度·思想全景图谱</a></li>
       <li><a href="../resource/01M111M5CSYX96FTKGC3V1QC2T.html">《明史》帝国兴衰知识图谱：人物、制度与朝局演变</a></li>
-      <li><a href="../resource/01M110NNMKNWXKBXT01HVJ06ZW.html">《红楼梦》人物与意象关系图谱</a></li>
+      <li><a href="../resource/01M110NNMKNWXKBXT01HVJ06ZW.html">《红楼梦》人物与意象关系图谱：120回原著知识图鉴</a></li>
       <li><a href="../resources.html">查看全部知识底座 →</a></li>
     </ul>
   </div>
@@ -184,7 +260,6 @@
       <h4>产品</h4>
       <a href="../index.html">首页</a>
       <a href="../resources.html">资源</a>
-      <a href="../help.html">使用指南</a>
       <a href="../enterprise.html">定制服务</a>
       <a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer">GitHub 开源</a>
     </div>

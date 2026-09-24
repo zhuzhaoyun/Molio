@@ -103,6 +103,10 @@ export interface KbTabsStore {
   removeWhere(predicate: (t: WorkspaceTab) => boolean): string[];
   activateTab(id: string): void;
   updateTab(id: string, patch: Partial<WorkspaceTab>): void;
+  /** Reorder a tab to `toIndex` (clamped; same-index and unknown ids are
+   *  no-ops). Selection follows the tab, not the position: activeTabId is
+   *  untouched. Pinned tabs reorder like any other. */
+  moveTab(id: string, toIndex: number): void;
   /** Toggle a tab's pinned flag in place. */
   togglePin(id: string): void;
   /** Release listeners when the owning window/vault store is unmounted. */
@@ -202,6 +206,18 @@ export function createTabsStore(vaultId: string): KbTabsStore {
         activeTabId = newId;
       }
       if (changed) emit();
+    },
+
+    moveTab(id: string, toIndex: number) {
+      const from = tabs.findIndex((t) => t.id === id);
+      if (from === -1) return;
+      const to = Math.max(0, Math.min(toIndex, tabs.length - 1));
+      if (to === from) return;
+      const next = tabs.slice();
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      tabs = next;
+      emit();
     },
 
     togglePin(id: string) {

@@ -3,8 +3,9 @@
  *
  * 布局：左箭头 + 可横向滚动的 tab 列表 + 右箭头 + 下拉 ▾ + 右侧固定全局操作区。
  * active tab 变化时自动滚入可见区。箭头与下拉在后续 task 接入逻辑。
+ * 标签支持鼠标拖拽排序（Chrome 式：被拖标签跟手、其余让位，空出的槽位即落点指示）。
  */
-import { useCallback, useEffect, useRef, useState, type ReactNode, type MouseEvent as ReactMouseEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import type { WorkspaceTab } from '../../hooks/useKbTabs';
 import { useI18n } from '../../i18n';
 import { ContextMenu } from './ContextMenu';
@@ -23,6 +24,8 @@ interface KbTabBarProps {
   onOpenInNewWindow?: (tab: WorkspaceTab) => void;
   /** Right-click a FILE tab → split presets. mode: graph=图谱对照, file=文件对照, copy=左右分屏. */
   onSplit?: (tab: WorkspaceTab, mode: 'graph' | 'file' | 'copy') => void;
+  /** Drag-to-reorder: tab `id` was dropped at `toIndex` (final array position). */
+  onReorder?: (id: string, toIndex: number) => void;
   actions?: ReactNode;
 }
 
@@ -50,7 +53,72 @@ function tabDisplayTitle(tab: WorkspaceTab, allTabs: WorkspaceTab[]): { display:
   return { display: stillCollide ? relPath : candidate, tooltip };
 }
 
-export function KbTabBar({ tabs, activeTabId, onActivate, onClose, onAddTab, onTogglePin, onOpenInNewWindow, onSplit, actions }: KbTabBarProps) {
+// ─── Drag-to-reorder (mouse only) ───
+// Pointer-capture-free window-listener design: the drag is tracked in
+// content coordinates (viewport X + scrollLeft) so edge auto-scroll keeps the
+// math valid. Transforms are applied via direct DOM (zero React re-renders
+// per frame); the store is updated once on drop.
+
+/** Pointer must move this far (px) before a press becomes a drag — below it,
+ *  click / double-click semantics stay untouched. */
+const DRAG_THRESHOLD = 4;
+/** Distance from the scroll container edge where dragging auto-scrolls. */
+const EDGE_ZONE = 28;
+
+interface DragCtx {
+  id: string;
+  from: number;
+  /** scroll container's viewport left at press time (stable while dragging). */
+  containerLeft: number;
+  startContentX: number;
+  lastClientX: number;
+  /** dragged tab width + its 1px margin-right — one "slot" for sibling shifts. */
+  slotWidth: number;
+  /** content-coordinate center of every tab at press time (index-aligned). */
+  centers: number[];
+  /** tab DOM nodes captured at press time, index-aligned with `centers`. */
+  nodes: HTMLElement[];
+  /** past the threshold? (press alone must not disturb click semantics) */
+  active: boolean;
+  /** current computed drop index. */
+  lastTo: number;
+}
+
+/** Final array index for the dragged tab: how many OTHER tabs have their
+ *  original center left of the cursor. Equals the drop position because that
+ *  many tabs will end up before it. */
+function computeTargetIndex(ctx: DragCtx, contentX: number): number {
+  let k = 0;
+  for (let j = 0; j < ctx.centers.length; j++) {
+    if (j !== ctx.from && ctx.centers[j] < contentX) k += 1;
+  }
+  return k;
+}
+
+/** Dragged tab follows the cursor; siblings between origin and target glide
+ *  one slot aside, opening the gap that doubles as the drop indicator. */
+function applyDragTransforms(ctx: DragCtx, contentX: number) {
+  const k = (ctx.lastTo = computeTargetIndex(ctx, contentX));
+  ctx.nodes.forEach((node, j) => {
+    if (j === ctx.from) {
+      node.style.transform = `translateX(${contentX - ctx.startContentX}px)`;
+      return;
+    }
+    let shift = 0;
+    if (k > ctx.from && j > ctx.from && j <= k) shift = -ctx.slotWidth;
+    else if (k < ctx.from && j >= k && j < ctx.from) shift = ctx.slotWidth;
+    node.style.transform = shift ? `translateX(${shift}px)` : '';
+  });
+}
+
+function clearDragStyles(ctx: DragCtx) {
+  ctx.nodes.forEach((node) => {
+    node.style.transform = '';
+    node.classList.remove('is-dragging', 'is-shifting');
+  });
+}
+
+export function KbTabBar({ tabs, activeTabId, onActivate, onClose, onAddTab, onTogglePin, onOpenInNewWindow, onSplit, onReorder, actions }: KbTabBarProps) {
   const { t } = useI18n();
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<HTMLDivElement>(null);
@@ -61,6 +129,125 @@ export function KbTabBar({ tabs, activeTabId, onActivate, onClose, onAddTab, onT
   const [barCtxMenu, setBarCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const moreRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // ─── Drag-to-reorder state (refs only: no re-renders during a drag) ───
+  const dragRef = useRef<DragCtx | null>(null);
+  const dragRafRef = useRef<number | null>(null);
+  // A real drag (>threshold) must not end in activation. When the drop lands
+  // back on the dragged tab, the browser still fires a normal click there
+  // (mousedown + mouseup on the same element) — Chrome swallows it, so we do
+  // too. Drops onto OTHER tabs land on the tabs' common ancestor (the scroll
+  // container), which no tab onClick handles — nothing to suppress there.
+  // Self-expires so a stale flag can never eat a later genuine click.
+  const suppressClickRef = useRef(false);
+  const onReorderRef = useRef(onReorder);
+  useEffect(() => { onReorderRef.current = onReorder; }, [onReorder]);
+
+  const stopDragListeners = useCallback(() => {
+    window.removeEventListener('pointermove', handleDragMove);
+    window.removeEventListener('pointerup', handleDragEnd);
+    window.removeEventListener('pointercancel', handleDragEnd);
+  }, []);
+
+  const stopAutoScroll = useCallback(() => {
+    if (dragRafRef.current != null) {
+      cancelAnimationFrame(dragRafRef.current);
+      dragRafRef.current = null;
+    }
+  }, []);
+
+  /** Auto-scroll the strip while the cursor parks in an edge zone. */
+  const runAutoScroll = useCallback(() => {
+    const ctx = dragRef.current;
+    const el = scrollRef.current;
+    if (!ctx?.active || !el) { dragRafRef.current = null; return; }
+    const rect = el.getBoundingClientRect();
+    const x = ctx.lastClientX - rect.left;
+    let dx = 0;
+    if (x < EDGE_ZONE) dx = -Math.ceil((EDGE_ZONE - x) / 4);
+    else if (x > rect.width - EDGE_ZONE) dx = Math.ceil((x - (rect.width - EDGE_ZONE)) / 4);
+    if (dx !== 0) {
+      const max = el.scrollWidth - el.clientWidth;
+      const next = Math.max(0, Math.min(el.scrollLeft + dx, max));
+      if (next !== el.scrollLeft) {
+        el.scrollLeft = next;
+        applyDragTransforms(ctx, ctx.lastClientX - ctx.containerLeft + el.scrollLeft);
+      }
+    }
+    dragRafRef.current = requestAnimationFrame(runAutoScroll);
+  }, []);
+
+  const handleDragMove = useCallback((e: PointerEvent) => {
+    const ctx = dragRef.current;
+    const el = scrollRef.current;
+    if (!ctx || !el || !e.isPrimary) return;
+    ctx.lastClientX = e.clientX;
+    if (!ctx.active) {
+      const contentX = e.clientX - ctx.containerLeft + el.scrollLeft;
+      if (Math.abs(contentX - ctx.startContentX) <= DRAG_THRESHOLD) return;
+      ctx.active = true;
+      ctx.nodes[ctx.from]?.classList.add('is-dragging');
+      ctx.nodes.forEach((n, j) => { if (j !== ctx.from) n.classList.add('is-shifting'); });
+    }
+    e.preventDefault();
+    applyDragTransforms(ctx, e.clientX - ctx.containerLeft + el.scrollLeft);
+    if (dragRafRef.current == null) dragRafRef.current = requestAnimationFrame(runAutoScroll);
+  }, [runAutoScroll]);
+
+  const handleDragEnd = useCallback(() => {
+    stopDragListeners();
+    stopAutoScroll();
+    const ctx = dragRef.current;
+    dragRef.current = null;
+    if (!ctx) return;
+    clearDragStyles(ctx);
+    if (!ctx.active) return;
+    suppressClickRef.current = true;
+    window.setTimeout(() => { suppressClickRef.current = false; }, 250);
+    if (ctx.lastTo !== ctx.from) onReorderRef.current?.(ctx.id, ctx.lastTo);
+  }, [stopDragListeners, stopAutoScroll]);
+
+  // Pointerdown on a tab: measure once, arm the drag. Movement past the
+  // threshold (in handleDragMove) flips it active. Mouse-only — touch keeps
+  // native horizontal panning of the strip.
+  const handleTabPointerDown = (e: ReactPointerEvent<HTMLDivElement>, index: number) => {
+    if (e.pointerType !== 'mouse' || e.button !== 0) return;
+    if ((e.target as HTMLElement).closest('.kb-wtab-close')) return; // × stays a plain click
+    const el = scrollRef.current;
+    if (!el || !onReorderRef.current) return;
+    suppressClickRef.current = false; // a fresh press restarts interaction state
+    const nodes = Array.from(el.querySelectorAll<HTMLElement>('.kb-wtab'));
+    const node = nodes[index];
+    if (!node) return;
+    const rect = node.getBoundingClientRect();
+    const containerLeft = el.getBoundingClientRect().left;
+    dragRef.current = {
+      id: tabs[index].id,
+      from: index,
+      containerLeft,
+      startContentX: e.clientX - containerLeft + el.scrollLeft,
+      lastClientX: e.clientX,
+      slotWidth: rect.width + 1, // .kb-wtab margin-right: 1px
+      centers: nodes.map((n) => {
+        const r = n.getBoundingClientRect();
+        return r.left - containerLeft + el.scrollLeft + r.width / 2;
+      }),
+      nodes,
+      active: false,
+      lastTo: index,
+    };
+    window.addEventListener('pointermove', handleDragMove);
+    window.addEventListener('pointerup', handleDragEnd);
+    window.addEventListener('pointercancel', handleDragEnd);
+  };
+
+  // Safety net: if the bar unmounts mid-drag, don't leak window listeners/rAF.
+  useEffect(() => () => {
+    stopDragListeners();
+    stopAutoScroll();
+    if (dragRef.current) clearDragStyles(dragRef.current);
+    dragRef.current = null;
+  }, [stopDragListeners, stopAutoScroll]);
 
   // Tabs currently animating out (close). Their store removal is deferred by
   // the exit transition; the width-collapse + sibling slide plays first.
@@ -178,7 +365,7 @@ export function KbTabBar({ tabs, activeTabId, onActivate, onClose, onAddTab, onT
         onClick={() => scrollBy(-1)}
       >‹</button>
       <div className="kb-wtab-scroll" ref={scrollRef} onScroll={recompute} onContextMenu={handleBarContextMenu}>
-        {tabs.map((tab) => {
+        {tabs.map((tab, index) => {
           const isActive = tab.id === activeTabId;
           const isPinned = !!tab.pinned;
           const isClosing = closingIds.has(tab.id);
@@ -190,7 +377,16 @@ export function KbTabBar({ tabs, activeTabId, onActivate, onClose, onAddTab, onT
               className={`kb-wtab ${isActive ? 'is-active' : ''} ${isPinned ? 'is-pinned' : ''} ${isClosing ? 'is-closing' : ''} ${isEntering ? 'kb-wtab-enter' : ''}`}
               data-testid={tab.id.startsWith('file:') ? undefined : `kb-wtab-${tab.id}`}
               ref={isActive ? activeRef : null}
-              onClick={() => onActivate(tab.id)}
+              onClick={() => {
+                // A real drag just ended — swallow its trailing click so the
+                // drop can't activate the dragged tab (Chrome-style).
+                if (suppressClickRef.current) {
+                  suppressClickRef.current = false;
+                  return;
+                }
+                onActivate(tab.id);
+              }}
+              onPointerDown={(e) => handleTabPointerDown(e, index)}
               onDoubleClick={() => {
                 // 与右键菜单的 canPin 同一准入：固定用于保护文件/空白标签不被回收，
                 // 图谱等特殊标签永不回收，固定无意义（双击不响应）。

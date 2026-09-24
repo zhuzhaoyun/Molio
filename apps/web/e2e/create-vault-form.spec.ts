@@ -18,7 +18,7 @@ import { gotoHome, clickNav } from './helpers/navigation';
  * Prerequisites: `pnpm dev` running (daemon :3100, web :5173)
  */
 
-const DAEMON_API = `http://localhost:${process.env.MOLIO_E2E_DAEMON_PORT ?? 3100}/api`;
+const DAEMON_API = `http://localhost:${process.env.MOLIO_E2E_DAEMON_PORT ?? '3100'}/api`;
 
 async function navigateToCreateForm(page: import('@playwright/test').Page) {
   await gotoHome(page);

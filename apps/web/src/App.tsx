@@ -1,17 +1,11 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { useAgents } from './hooks/useAgents';
 import { useChat } from './hooks/useChat';
 import { HomePage } from './components/HomePage';
 
 import { NavRail } from './components/NavRail';
-import { KnowledgeBasePage } from './components/kb/KnowledgeBasePage';
 import { KbChatSessionsPanel, type KbChatSessionsPanelHandle } from './components/kb/KbChatSessionsPanel';
-import { SettingsPage } from './components/settings/SettingsPage';
-import { AccountPage } from './components/account/AccountPage';
-import { HistoryPage } from './components/history/HistoryPage';
-import { ResourcesPage } from './components/resources/ResourcesPage';
-import { ResourceDetailPage } from './components/resources/ResourceDetailPage';
 import { UpdateNotification } from './components/UpdateNotification';
 import { PreloadToast } from './components/PreloadToast';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
@@ -23,6 +17,7 @@ import { useActiveVault, vaultStore } from './stores/vaultStore';
 import { chatRuntimeStore, useChatAgentId } from './stores/chatRuntimeStore';
 import { OPEN_RUNTIME_SETTINGS_EVENT } from './components/RuntimeModelPill';
 import { authStore } from './stores/authStore';
+import { configStore, useAppConfig } from './stores/configStore';
 import { currentContextStore, type CurrentContext } from './stores/currentContextStore';
 import { messageSelectionStore } from './stores/messageSelectionStore';
 import { kbChatSessionsStore } from './stores/kbChatSessionsStore';
@@ -39,6 +34,23 @@ import './styles/graph.css';
 import './styles/account.css';
 import './styles/resources.css';
 import './App.css';
+
+// Route-level code splitting: everything except HomePage (first screen) and
+// KbChatSessionsPanel (must stay mounted for background wiki/qa tasks) loads
+// on navigation. Biggest wins: KnowledgeBasePage drags in pixi.js + d3 +
+// doocs-md/marked/highlight.js via GraphPage & KbMainContent.
+const KnowledgeBasePage = lazy(() =>
+  import('./components/kb/KnowledgeBasePage').then((m) => ({ default: m.KnowledgeBasePage })));
+const SettingsPage = lazy(() =>
+  import('./components/settings/SettingsPage').then((m) => ({ default: m.SettingsPage })));
+const AccountPage = lazy(() =>
+  import('./components/account/AccountPage').then((m) => ({ default: m.AccountPage })));
+const HistoryPage = lazy(() =>
+  import('./components/history/HistoryPage').then((m) => ({ default: m.HistoryPage })));
+const ResourcesPage = lazy(() =>
+  import('./components/resources/ResourcesPage').then((m) => ({ default: m.ResourcesPage })));
+const ResourceDetailPage = lazy(() =>
+  import('./components/resources/ResourceDetailPage').then((m) => ({ default: m.ResourceDetailPage })));
 
 const STORAGE_KEY_LAST_ROUTE = 'molio.lastRoute';
 
@@ -65,8 +77,20 @@ export default function App() {
   // App 共享同一事实源）；此处只订阅 agentId 供 useChat / KB 面板消费。
   const selectedAgent = useChatAgentId();
   const activeVault = useActiveVault();
-  const [locale, setLocale] = useState<Locale>('zh');
-  const [configLoaded, setConfigLoaded] = useState(false);
+  // 共享 config 快照（configStore，in-flight 去重）。首帧不再等 daemon：
+  // locale 先用 localStorage 兜底立即渲染，config 到达后由 LanguageProvider
+  // 同步（用户手动改过语言则锁定，不回跳）。旧的 `configLoaded` 白屏 gate
+  // 已移除——daemon 慢/挂时用户立刻看到 UI 而非白屏。
+  const config = useAppConfig();
+  const storedLocale = useMemo<Locale>(() => {
+    try {
+      const v = localStorage.getItem('molio.locale');
+      if (v === 'en' || v === 'zh') return v;
+    } catch { /* ignore */ }
+    return 'zh';
+  }, []);
+  const cfgLocale = config?.['locale'];
+  const locale: Locale = cfgLocale === 'en' || cfgLocale === 'zh' ? cfgLocale : storedLocale;
   const chat = useChat({ agentId: selectedAgent, cwd: activeVault?.path });
   // 跨 vault 残留防线：home 会话绑定 activeVault 的 cwd，切 vault 后旧会话在新 vault
   // 上下文里产出读不到文件。检测到 activeVault 变化且有会话 → 重置 + transient 提示。
@@ -160,17 +184,10 @@ export default function App() {
     return unsub;
   }, [navigate]);
 
-  // Load config to get defaultAgentId and locale
+  // Load config once into the shared store (mount). refresh() never throws —
+  // a down daemon just leaves the snapshot null and the UI keeps its fallbacks.
   useEffect(() => {
-    api.getConfig()
-      .then((cfg) => {
-        const id = (cfg as { defaultAgentId?: string }).defaultAgentId;
-        if (id) setDefaultAgentId(id);
-        const loc = (cfg as { locale?: string }).locale;
-        if (loc === 'en' || loc === 'zh') setLocale(loc);
-        setConfigLoaded(true);
-      })
-      .catch(() => { setConfigLoaded(true); });
+    void configStore.refresh();
   }, []);
 
   // Resolve the active agent once both agents and config are loaded.
@@ -193,20 +210,24 @@ export default function App() {
     }
   }, [agents, defaultAgentId, selectedAgent]);
 
-  // Sync selectedAgent with config when navigating back from Settings page.
+  // Re-read config on navigation (e.g. back from Settings where the user may
+  // have changed the default agent). Goes through the shared store — the
+  // in-flight dedup collapses this with any concurrent refresh.
   useEffect(() => {
-    api.getConfig()
-      .then((cfg) => {
-        const id = (cfg as { defaultAgentId?: string }).defaultAgentId;
-        if (id && id !== defaultAgentId) {
-          setDefaultAgentId(id);
-          if (agents.some((a) => a.id === id && a.available)) {
-            chatRuntimeStore.setAgentId(id);
-          }
-        }
-      })
-      .catch(() => {});
-  }, [location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+    void configStore.refresh();
+  }, [location.pathname]);
+
+  // Sync defaultAgentId/selectedAgent whenever the stored config's default
+  // changes (replaces the old pathname-keyed getConfig().then(...) handler).
+  const cfgDefaultAgentId = config?.['defaultAgentId'];
+  useEffect(() => {
+    const id = typeof cfgDefaultAgentId === 'string' ? cfgDefaultAgentId : null;
+    if (!id || id === defaultAgentId) return;
+    setDefaultAgentId(id);
+    if (agents.some((a) => a.id === id && a.available)) {
+      chatRuntimeStore.setAgentId(id);
+    }
+  }, [cfgDefaultAgentId, defaultAgentId, agents]);
 
   // Load vaults into the shared store on mount
   useEffect(() => {
@@ -237,14 +258,19 @@ export default function App() {
     };
   }, []);
 
-  // Keep daemon-side defaultCwd aligned with the active knowledge vault
+  // Keep daemon-side defaultCwd aligned with the active knowledge vault.
+  // Reads via the shared store (dedup) and mirrors the write locally with
+  // applyPatch so the snapshot never goes stale between refreshes.
   useEffect(() => {
     const cwd = activeVault?.path;
     if (!cwd) return;
-    api.getConfig()
+    void configStore.refresh()
       .then((cfg) => {
+        if (!cfg) return;
         if ((cfg as { defaultCwd?: string }).defaultCwd === cwd) return;
-        return api.updateConfig({ ...cfg, defaultCwd: cwd });
+        return api.updateConfig({ ...cfg, defaultCwd: cwd }).then(() => {
+          configStore.applyPatch({ defaultCwd: cwd });
+        });
       })
       .catch(() => {});
   }, [activeVault?.path]);
@@ -277,14 +303,14 @@ export default function App() {
     }
   };
 
-  if (!configLoaded) return null;
-
   return (
     <LanguageProvider initialLocale={locale}>
       <AppErrorBoundary>
       <div className="entry-shell">
         <NavRail />
         <div className="entry-main">
+          {/* fallback=null：懒路由 chunk 本地加载是毫秒级，闪 skeleton 反而抖动。 */}
+          <Suspense fallback={null}>
           <Routes>
             <Route
               path="/"
@@ -336,6 +362,7 @@ export default function App() {
             <Route path="/resources" element={<ResourcesPage />} />
             <Route path="/resources/:id" element={<ResourceDetailPage />} />
           </Routes>
+          </Suspense>
         </div>
         {/* 全局悬浮对话面板（方案 D）：面板常驻挂载 + CSS --closed 隐藏，保 ref 恒有效。
             右下角悬浮按钮已暂时屏蔽（Task 6）——面板只在 KB 页经 💬问答 等入口唤起，

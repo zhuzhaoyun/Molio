@@ -1,3 +1,4 @@
+
 /* ============================================================
    Molio 墨流 — Ink & Paper 设计系统 v2
    墨 + 印章红 + 纸。去掉 emoji、模板感，建立编辑/文学视觉语言。
@@ -16,7 +17,7 @@
   --ink: #0D0D0D;
   --ink-80: #1A1A1A;
   --ink-60: #404040;
-  --ink-40: #707070;
+  --ink-40: #666666;
   --ink-20: #A0A0A0;
   --ink-10: #C8C4BC;
 
@@ -968,40 +969,6 @@ p { margin-bottom: 0; }
   color: var(--ink-20);
   font-family: var(--font-mono);
   margin-bottom: 16px;
-}
-
-.download-btn {
-  display: inline-block;
-  padding: 10px 22px;
-  border-radius: 3px;
-  font-size: 14px;
-  font-weight: 600;
-  text-decoration: none;
-  transition: all 0.25s var(--ease);
-  border: 1px solid transparent;
-  cursor: pointer;
-}
-
-.download-btn.primary {
-  background: var(--ink);
-  color: var(--paper);
-}
-
-.download-btn.primary:hover {
-  background: var(--seal-dark);
-  transform: translateY(-2px);
-}
-
-.download-btn.secondary {
-  background: transparent;
-  color: var(--ink-60);
-  border-color: var(--rule);
-  margin-left: 8px;
-}
-
-.download-btn.secondary:hover {
-  border-color: var(--ink);
-  color: var(--ink);
 }
 
 .install-details {
@@ -3164,4 +3131,991 @@ p { margin-bottom: 0; }
 
 @media (max-width: 600px) {
   .kg-links { padding: 24px 20px; }
+}
+
+/* ============================================================
+   首页 v20260920 — 区块重建（只追加，不改上方任何既有规则）
+   结构：hero 视频自动播放 / 闭环图 / 能力四图（暗底）/ 下载区层级 / 纸底 CTA
+   ============================================================ */
+
+/* ---------- Hero 演示视频：海报打底 + 静音循环自动播放 ---------- */
+.hero-video-stack {
+  position: relative;
+  aspect-ratio: 1280 / 842;
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--ink);
+  box-shadow:
+    0 1px 2px rgba(0,0,0,0.3),
+    0 24px 64px rgba(0,0,0,0.5);
+}
+.hero-video-stack img,
+.hero-video-stack video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.hero-video-stack video {
+  opacity: 0;
+  transition: opacity 0.8s var(--ease);
+}
+.hero-video-stack video.is-live { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .hero-video-stack video { display: none; }
+}
+
+/* ---------- Loop 闭环图（首页专属覆盖：为副标题让出间距） ---------- */
+.section-closure .closure-inner h2 { margin-bottom: 14px; }
+.loop-sub {
+  font-size: 16px;
+  color: var(--ink-40);
+  margin: 0 0 64px;
+}
+
+/* ---------- Caps 能力四图（暗底） ---------- */
+.caps-inner { max-width: var(--max-w); margin: 0 auto; padding: 0 24px; }
+.caps-inner h2 { text-align: center; margin-bottom: 0; }
+.caps-sub {
+  text-align: center;
+  font-size: 15px;
+  margin: 12px 0 48px;
+}
+
+/* ---------- Download 下载区层级 ---------- */
+.dl-inner { max-width: var(--max-w); margin: 0 auto; padding: 0 24px; }
+.dl-header { text-align: center; margin-bottom: 8px; }
+.dl-header h2 { font-size: clamp(28px, 4vw, 38px); }
+.dl-header-sub { margin-top: 10px; font-size: 15px; color: var(--ink-40); }
+.dl-header-sub a {
+  color: var(--seal-dark);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.dl-header-sub a:hover { color: var(--seal); }
+
+.dl-desktop-grid {
+  display: grid;
+  grid-template-columns: 1.25fr 1fr;
+  gap: 24px;
+}
+.download-card--primary {
+  background: var(--paper);
+  border-color: var(--seal);
+}
+
+.dl-docker-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px 24px;
+  padding: 20px 24px;
+  border: 1px dashed var(--rule);
+  border-radius: 2px;
+  margin: 16px 0 32px;
+}
+.dl-docker-text { display: flex; flex-direction: column; gap: 4px; }
+.dl-docker-text strong {
+  font-family: var(--font-zh);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.dl-docker-text span { font-size: 13px; color: var(--ink-40); }
+
+/* ---------- 纸底最终 CTA ---------- */
+.section-cta-final { padding: 120px 0; text-align: center; }
+.cta-final-inner { max-width: 800px; margin: 0 auto; padding: 0 24px; }
+.cta-final-inner h2 {
+  font-size: clamp(36px, 5.5vw, 64px);
+  margin-bottom: 40px;
+  color: var(--ink);
+}
+.cta-final-inner .btn { font-size: 16px; padding: 18px 40px; }
+
+/* ---------- 首页 v20260920 响应式 ---------- */
+@media (max-width: 900px) {
+  .dl-desktop-grid { grid-template-columns: 1fr; }
+  .dl-docker-row { flex-direction: column; align-items: flex-start; }
+  .section-cta-final { padding: 100px 0; }
+}
+/* ============================================================
+   Molio 首页 — 单层样式块 v20260921
+   依据 DESIGN.md：纸为主、墨为辅、印章红点睛；宽屏铺满、内容收窄。
+
+   历史包袱：上一版先写了深色首屏（深墨底、纸色字），随后又在文件末尾
+   追加一块「首页改为亮色」的补丁逐条覆盖颜色。补丁只动颜色不动几何，
+   于是约 15 组选择器被定义两遍，深色层成为永不生效的死代码，而
+   数据流连线与脉冲点仍停留在纸色 —— 在纸底上等于看不见。
+
+   本块整体重写为单层，只作用于 body.home，
+   不影响 enterprise / resources / help / blog 等共用 styles.css 的页面。
+   ============================================================ */
+
+body.home {
+  background: var(--paper);
+}
+
+/* ============================================================
+   ① 首屏 — 知识世界是底，Slogan 与 CTA 从中央浮出来
+   三层：z0 真实图谱铺满整屏（中央被遮罩压暗）→ z1 纸色柔光 → z2 文案
+   ============================================================ */
+
+body.home .home-hero {
+  position: relative;
+  min-height: 100svh;
+  padding-top: calc(var(--nav-h) + clamp(14px, 2.4vh, 30px));
+  padding-bottom: clamp(18px, 3vh, 40px);
+  color: var(--ink);
+  /* 纸色基底 + 极淡径向渐变：光落在纸上，而不是暗房 */
+  background:
+    radial-gradient(circle at 14% 4%, rgba(196, 30, 36, 0.04) 0%, transparent 30%),
+    radial-gradient(circle at 88% 2%, rgba(13, 13, 13, 0.03) 0%, transparent 32%),
+    linear-gradient(172deg, #F8F4ED 0%, var(--paper) 52%, var(--paper-2) 100%);
+  overflow: clip;
+}
+
+/* ---------- 背景层：真实的知识图谱，铺满整屏 ----------
+   不模糊、不抽象化 —— 它就是那张《资治通鉴》图谱，只是退到背景里：
+   径向遮罩让中央几乎看不见（≈8% 对比），越往四周越清晰（≈25%），
+   用户第二眼才发现「这不是装饰，是一个真的知识网络」。 */
+body.home .home-hero-world {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.58;
+  mask-image: radial-gradient(circle at 50% 46%,
+    rgba(0, 0, 0, 0.14) 0%,
+    rgba(0, 0, 0, 0.3) 40%,
+    rgba(0, 0, 0, 0.46) 72%,
+    rgba(0, 0, 0, 0.55) 100%);
+  -webkit-mask-image: radial-gradient(circle at 50% 46%,
+    rgba(0, 0, 0, 0.14) 0%,
+    rgba(0, 0, 0, 0.3) 40%,
+    rgba(0, 0, 0, 0.46) 72%,
+    rgba(0, 0, 0, 0.55) 100%);
+  /* 知识在生长：极慢的漂移，慢到用户不会意识到它在动 */
+  animation: worldDrift 90s ease-in-out infinite alternate;
+}
+
+@keyframes worldDrift {
+  from { transform: translate3d(-1.2%, -0.8%, 0) scale(1.04); }
+  to   { transform: translate3d(1.2%, 0.8%, 0) scale(1.08); }
+}
+
+/* slice + 100%/100%：图谱盖满画布，节点从四边进入，没有「截图框」 */
+body.home .hero-world-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+body.home .hero-world-svg--port { display: none; }
+
+body.home .mg-edge {
+  fill: none;
+  stroke: var(--ink);
+  stroke-opacity: 0.15;
+  stroke-width: 1;
+}
+
+body.home .mg-edge--strong { stroke-opacity: 0.21; }
+
+/* 背景里的主线：偶尔有一条关系被轻轻点亮，仍然是全屏唯一的红 */
+body.home .mg-edge--live {
+  stroke: var(--seal);
+  stroke-opacity: 0.35;
+  stroke-width: 1.2;
+  stroke-dasharray: 90 1500;
+  animation: mgThread 9s linear infinite;
+  animation-delay: var(--mg-delay, 0s);
+}
+
+@keyframes mgThread {
+  0%   { stroke-dashoffset: 1590; }
+  100% { stroke-dashoffset: 0; }
+}
+
+body.home .mg-node { fill: var(--ink); }
+
+/* 背景层的标签整体压淡：中央近乎隐形，四周可辨 */
+body.home .mg-label {
+  fill: var(--ink);
+  fill-opacity: 0.5;
+  font-family: var(--font-zh);
+  font-size: 21px;
+}
+
+body.home .mg-label--hub {
+  font-size: 27px;
+  font-weight: 900;
+  fill-opacity: 0.62;
+}
+
+body.home .mg-label--major {
+  font-size: 23px;
+  font-weight: 700;
+  fill-opacity: 0.56;
+}
+
+/* 竖屏换成竖版世界，否则横图盖满窄屏时节点会挤成一团 */
+body.home .hero-world-svg--port .mg-label { font-size: 30px; }
+body.home .hero-world-svg--port .mg-label--hub { font-size: 38px; }
+body.home .hero-world-svg--port .mg-label--major { font-size: 33px; }
+body.home .hero-world-svg--port .mg-edge { stroke-width: 1.6; }
+
+/* 加工流程叙事（底图两侧）：来源页片 → 加工舱 → Agent 端点。
+   不透明度按「wrapper 0.52 × 径向遮罩」反推：边缘落到 ≈13–24%，
+   属于第二眼；中央图谱的对比度保持不变。 */
+body.home .wf-glyph rect,
+body.home .wf-glyph path {
+  fill: none;
+  stroke: var(--ink);
+  vector-effect: non-scaling-stroke;
+}
+
+body.home .wf-glyph rect { stroke-opacity: 0.5; }
+body.home .wf-glyph path { stroke-opacity: 0.3; }
+
+body.home .wf-link path {
+  fill: none;
+  stroke: var(--ink);
+  stroke-opacity: 0.45;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 2 9;
+  animation: hfMarch 8s linear infinite;
+}
+
+body.home .wf-link--out path { animation-direction: reverse; }
+
+body.home .wf-chamber {
+  fill: none;
+  stroke: var(--ink);
+  stroke-opacity: 0.4;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 5 7;
+  animation: hfChamber 46s linear infinite;
+}
+
+body.home .wf-corner path {
+  fill: none;
+  stroke: var(--ink);
+  stroke-opacity: 0.5;
+  stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;
+}
+
+body.home .wf-end rect {
+  fill: none;
+  stroke: var(--ink);
+  stroke-opacity: 0.5;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+body.home .wf-end circle {
+  fill: var(--ink);
+  fill-opacity: 0.5;
+}
+
+body.home .wf-label {
+  fill: var(--ink);
+  fill-opacity: 0.8;
+  font-family: var(--font-mono);
+  font-size: 26px;
+  letter-spacing: 0.08em;
+}
+
+body.home .wf-caption {
+  fill: var(--ink);
+  fill-opacity: 1;
+  font-family: var(--font-mono);
+  font-size: 30px;
+  letter-spacing: 0.22em;
+}
+
+/* 加工舱里的真图谱：比管线家具强一档 —— 它是这条流程的产物，
+   用户凑近看时应该能认出节点和中文标签。 */
+body.home .wf-core .mg-node { fill-opacity: 1; }
+
+body.home .wf-core .mg-edge { stroke-opacity: 0.3; }
+
+body.home .wf-core .mg-edge--strong { stroke-opacity: 0.4; }
+
+body.home .wf-core .mg-edge--live { stroke-opacity: 0.5; }
+
+body.home .wf-core .mg-label { fill-opacity: 0.9; }
+
+body.home .wf-core .mg-label--hub { fill-opacity: 1; }
+
+body.home .wf-core .mg-label--major { fill-opacity: 0.95; }
+body.home .wf-pulse {
+  stroke-width: 1.6;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 260 3000;
+  animation: hfTrace 12s linear infinite;
+}
+
+/* 竖版画布更窄，字号要跟着放大 */
+body.home .hero-world-svg--port .wf-label { font-size: 34px; }
+body.home .hero-world-svg--port .wf-caption {
+  font-size: 26px;
+  letter-spacing: 0.08em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.home .home-hero-world { animation: none; transform: scale(1.05); }
+
+  body.home .mg-edge--live,
+  body.home .wf-link path,
+  body.home .wf-chamber,
+  body.home .wf-pulse {
+    animation: none;
+  }
+
+  body.home .mg-edge--live {
+    stroke-dasharray: none;
+    stroke-opacity: 0.4;
+  }
+}
+
+/* ---------- 中央纸色柔光：把世界推远，让 Slogan 成为唯一清晰的东西 ---------- */
+body.home .home-hero-veil {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  background: radial-gradient(ellipse 58% 50% at 50% 46%,
+    rgba(248, 244, 237, 0.94) 0%,
+    rgba(248, 244, 237, 0.62) 46%,
+    rgba(248, 244, 237, 0) 74%);
+}
+
+/* ---------- 前景：顶部导轨 + 居中文案 ---------- */
+body.home .home-hero-inner {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  min-height: calc(100svh - var(--nav-h) - clamp(32px, 5.4vh, 70px));
+  padding-left: clamp(24px, 4vw, 96px);
+  padding-right: clamp(24px, 4vw, 96px);
+}
+
+body.home .home-hero-rail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px 24px;
+}
+
+body.home .home-hero .hero-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--ink-60);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+}
+
+body.home .home-hero .hero-eyebrow-line {
+  flex: none;
+  width: 28px;
+  height: 1px;
+  background: var(--ink);
+}
+
+body.home .home-hero-proof {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  list-style: none;
+}
+
+body.home .home-hero-proof li {
+  padding: 6px 12px;
+  border: 1px solid var(--hair);
+  border-radius: 999px;
+  background: var(--paper-2);
+  color: var(--ink-60);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+
+/* 居中栈：整屏唯一的高对比区域 */
+body.home .home-hero-core {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  text-align: center;
+  gap: clamp(14px, 2.4vh, 26px);
+  /* 光学居中：比几何中心略高一点 */
+  padding-bottom: clamp(24px, 6vh, 84px);
+}
+
+body.home .home-hero h1 {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--font-zh);
+  font-weight: 900;
+  font-size: clamp(34px, 4.6vw, 78px);
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+/* 第二行回到与首行同一墨色。原先的渐变文字在亮色下三个色值差不到 8%，
+   等于没有效果，却让整行标题在背景裁剪失效时变成全透明。 */
+body.home .home-hero-title-accent {
+  display: block;
+  color: inherit;
+}
+
+body.home .home-hero .hero-desc {
+  max-width: 44em;
+  margin: 0;
+  color: var(--ink-40);
+  font-size: 17px;
+  line-height: 1.8;
+}
+
+body.home .home-hero .hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 12px 14px;
+}
+
+/* 首屏只有两个动作：下载（跳到下载屏选平台）与获取领域知识（跳到资源屏）。
+   平台选择不在首屏做 —— 首屏只负责把人送到对的地方。 */
+body.home .home-cta-primary,
+body.home .home-cta-ink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 50px;
+  padding: 0 28px;
+  border-radius: 3px;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: background 0.25s var(--ease);
+}
+
+/* 主 CTA：一屏唯一一个印章红实底 */
+body.home .home-cta-primary {
+  background: var(--seal);
+  color: var(--paper);
+}
+
+body.home .home-cta-primary:hover { background: var(--seal-dark); }
+
+/* 第二动作：墨色实底，不能比主 CTA 更亮 */
+body.home .home-cta-ink {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+body.home .home-cta-ink:hover { background: var(--ink-80); }
+/* 次级动作：一行小字链接，不再是一个框 */
+body.home .home-demo-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-60);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: color 0.25s var(--ease), border-color 0.25s var(--ease);
+}
+
+body.home .home-demo-link svg { width: 16px; height: 16px; }
+
+body.home .home-demo-link:hover {
+  color: var(--ink);
+  border-color: var(--rule);
+}
+
+/* ============================================================
+   ③ 区块通用
+   ============================================================ */
+
+body.home .home-container {
+  width: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+/* 首页区块标签走等宽元数据样式、墨 60（对纸底 9.14:1）。
+   共用 .section-label.light 的 ink-20 只有约 2.5:1，低于 WCAG AA。 */
+body.home .section-label {
+  margin-bottom: 16px;
+  color: var(--ink-60);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+}
+
+body.home .home-section-head {
+  max-width: 720px;
+  margin-bottom: 56px;
+}
+
+body.home .home-section-head h2 {
+  margin-bottom: 16px;
+  color: var(--ink);
+  font-family: var(--font-zh);
+  font-weight: 700;
+  font-size: clamp(30px, 4vw, 52px);
+  line-height: 1.16;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+body.home .home-section-head p {
+  color: var(--ink-40);
+  font-size: 16.5px;
+  line-height: 1.8;
+}
+
+/* ============================================================
+   ④ Workflow + Showcase：三步建立与加工效果
+   ============================================================ */
+
+body.home .home-showcase {
+  padding: clamp(72px, 8vw, 112px) 0;
+  background: var(--paper-2);
+}
+
+body.home .home-showcase-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.94fr) minmax(0, 1.06fr);
+  gap: clamp(36px, 4vw, 64px);
+  align-items: center;
+}
+
+body.home .home-step-line {
+  display: grid;
+  gap: 20px;
+  list-style: none;
+}
+
+body.home .home-step-line li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 16px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--hair);
+}
+
+body.home .home-step-line li:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+/* 序号是元数据，不用印章红（红只留给主 CTA、资源库入口与数据流线路） */
+body.home .home-step-line-index {
+  color: var(--ink-40);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  line-height: 1.95;
+}
+
+body.home .home-step-line-body strong {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--ink);
+  font-family: var(--font-zh);
+  font-size: 21px;
+  font-weight: 700;
+}
+
+body.home .home-step-line-body p {
+  color: var(--ink-40);
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+body.home .home-showcase .hero-video-stack {
+  width: 100%;
+  max-width: none;
+  aspect-ratio: 1280 / 842;
+  border: 1px solid var(--hair);
+  border-radius: 4px;
+  background: var(--paper-3);
+  box-shadow: 0 22px 56px rgba(13, 13, 13, 0.16);
+}
+
+body.home .home-showcase .hero-video-caption {
+  margin-top: 16px;
+  text-align: left;
+  color: var(--ink-40);
+  font-size: 13.5px;
+  line-height: 1.75;
+}
+
+
+/* ============================================================
+   ⑤ Download — 页面上唯一的转化区：一张发布清单
+   左：为什么下载 + 三条承诺；右：RELEASE 面板（版本号实时）；
+   下：编号清单式的更多入口，替代一排匿名药丸。
+   ============================================================ */
+
+body.home .home-download {
+  padding: clamp(72px, 8vw, 112px) 0;
+  background: var(--paper);
+  border-top: 1px solid var(--hair);
+}
+
+body.home .home-download-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: clamp(28px, 4vw, 72px);
+  align-items: start;
+}
+
+body.home .home-download-copy h2 {
+  margin-bottom: 16px;
+  color: var(--ink);
+  font-family: var(--font-zh);
+  font-weight: 700;
+  font-size: clamp(30px, 3.4vw, 46px);
+  line-height: 1.2;
+}
+
+body.home .home-download-copy p {
+  max-width: 34em;
+  color: var(--ink-40);
+  font-size: 16px;
+  line-height: 1.8;
+}
+
+body.home .home-download-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 24px;
+  list-style: none;
+}
+
+body.home .home-download-chips li {
+  padding: 6px 12px;
+  border: 1px solid var(--hair);
+  border-radius: 999px;
+  background: var(--paper-2);
+  color: var(--ink-60);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+
+/* RELEASE 面板：像一份发布清单，而不是两张广告卡 */
+body.home .home-dl-panel {
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(13, 13, 13, 0.03);
+}
+
+body.home .home-dl-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--hair);
+  border-radius: 4px 4px 0 0;
+  background: var(--paper-2);
+}
+
+body.home .home-dl-panel-head strong {
+  color: var(--ink-60);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+}
+
+body.home .home-dl-panel-head span {
+  color: var(--ink-40);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+body.home .home-dl-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 20px;
+}
+
+body.home .home-dl-row + .home-dl-row { border-top: 1px solid var(--hair); }
+
+body.home .home-download-meta strong {
+  display: block;
+  color: var(--ink);
+  font-family: var(--font-zh);
+  font-size: 17px;
+  font-weight: 700;
+}
+
+body.home .home-download-meta span {
+  display: block;
+  margin-top: 4px;
+  color: var(--ink-40);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+body.home .home-download-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 46px;
+  padding: 0 22px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  font-size: 14.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background 0.25s var(--ease);
+}
+
+/* 一屏一个印章红：Windows 走 primary，macOS 走墨色 */
+body.home .home-download-btn.primary {
+  background: var(--seal);
+  color: var(--paper);
+}
+
+body.home .home-download-btn.primary:hover { background: var(--seal-dark); }
+
+body.home .home-download-btn.ink {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+body.home .home-download-btn.ink:hover { background: var(--ink-80); }
+
+body.home .home-dl-note {
+  padding: 12px 20px;
+  border-top: 1px solid var(--hair);
+  color: var(--ink-40);
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+
+/* 更多入口：编号清单，替代匿名药丸 */
+body.home .home-dl-links {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0 clamp(20px, 3vw, 48px);
+  margin-top: clamp(32px, 4vw, 56px);
+}
+
+body.home .home-dl-link {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 12px;
+  padding: 14px 2px;
+  border-top: 1px solid var(--hair);
+  text-decoration: none;
+  transition: border-color 0.25s var(--ease);
+}
+
+body.home .home-dl-link .idx {
+  color: var(--ink-40);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+body.home .home-dl-link strong {
+  color: var(--ink-60);
+  font-family: var(--font-zh);
+  font-size: 15px;
+  font-weight: 600;
+  transition: color 0.25s var(--ease);
+}
+
+body.home .home-dl-link small {
+  color: var(--ink-40);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  justify-self: end;
+}
+
+body.home .home-dl-link:hover { border-color: var(--ink); }
+
+body.home .home-dl-link:hover strong { color: var(--ink); }
+
+/* 页脚是整条墨色带 —— logo 是黑色 PNG，反相后才在墨底上可见 */
+body.home .site-footer .logo-icon-sm {
+  filter: invert(1);
+}
+
+/* ============================================================
+   ⑤b 资源条 —— 直接看看别人已经整理好的知识
+   ============================================================ */
+
+body.home .home-resources {
+  border-top: 1px solid var(--hair);
+}
+
+body.home .home-resources-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 20px;
+}
+
+body.home .home-res-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--hair);
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(13, 13, 13, 0.03);
+  text-decoration: none;
+  transition: border-color 0.25s var(--ease), transform 0.25s var(--ease);
+}
+
+body.home .home-res-card:hover {
+  border-color: var(--rule);
+  transform: translateY(-2px);
+}
+
+body.home .home-res-card img {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  object-position: top center;
+  border: 1px solid var(--hair);
+  border-radius: 3px;
+  background: var(--paper-2);
+}
+
+body.home .home-res-card strong {
+  color: var(--ink);
+  font-family: var(--font-zh);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+body.home .home-res-card span {
+  color: var(--ink-40);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+body.home .home-resources-more {
+  margin-top: 28px;
+  text-align: center;
+}
+
+body.home .home-resources-more a {
+  color: var(--seal-dark);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(196, 30, 36, 0.4);
+  transition: border-color 0.25s var(--ease);
+}
+
+body.home .home-resources-more a:hover {
+  border-color: var(--seal);
+}
+
+/* ============================================================
+   ⑥ 响应式
+   ============================================================ */
+
+@media (max-width: 1440px) {
+  body.home .home-hero h1 { font-size: clamp(32px, 4.2vw, 64px); }
+}
+
+@media (max-width: 1200px) {
+  body.home .home-hero .hero-desc { font-size: 16px; }
+
+  body.home .home-hero-core { gap: clamp(12px, 2vh, 20px); }
+}
+
+/* 竖屏：世界换竖版，导轨改竖排，文案仍居中浮在世界上 */
+@media (max-width: 900px) {
+  body.home .home-hero {
+    padding-top: calc(var(--nav-h) + 18px);
+    /* 给右下角悬浮二维码留出通道 */
+    padding-bottom: 116px;
+  }
+
+  body.home .home-hero-rail {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  body.home .hero-world-svg--land { display: none; }
+  body.home .hero-world-svg--port { display: block; }
+
+  body.home .home-hero h1 { font-size: clamp(30px, 8.6vw, 50px); }
+
+  body.home .home-hero .hero-desc { max-width: 100%; }
+
+  body.home .home-hero-core { padding-bottom: clamp(10px, 3vh, 40px); }
+
+  body.home .home-download-layout { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 600px) {
+  body.home .home-hero .hero-actions {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  body.home .home-cta-primary,
+  body.home .home-cta-ink { width: 100%; }
+
+  body.home .home-dl-row {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+
+  body.home .home-download-btn { width: 100%; }
+
+  body.home .home-dl-links { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* 宽屏 / 超宽：Slogan 跟着视口长，世界始终盖满 */
+@media (min-width: 1441px) {
+  body.home .home-hero h1 {
+    font-size: clamp(56px, 4.2vw, 92px);
+  }
+}
+
+@media (min-width: 1921px) {
+  body.home .home-hero h1 {
+    font-size: clamp(68px, 3.6vw, 104px);
+  }
 }
