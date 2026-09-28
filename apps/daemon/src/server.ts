@@ -85,7 +85,7 @@ app.post('/api/shutdown', async (c) => {
   weixinService.stop();
   await feishuService.stop();
   void vaultWatcher.stop();
-  runManager.cancelAll();
+  runManager.cancelAll('shutdown:desktop-request');
   closeDatabase();
   // Give the HTTP response a chance to be sent before exiting
   setTimeout(() => process.exit(0), 100);
@@ -195,7 +195,7 @@ function gracefulShutdown(): void {
   cleanupAllBridges();
   weixinService.stop();
   void vaultWatcher.stop();
-  runManager.cancelAll();
+  runManager.cancelAll('shutdown:graceful');
   // Kill any in-progress preload subprocess trees so we don't orphan detached
   // pip/npm children (they'd keep downloading after the daemon is gone).
   preloadManager.stopAll();
