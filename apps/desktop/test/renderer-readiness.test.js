@@ -62,7 +62,10 @@ describe('renderer-readiness: same-document navigation must NOT clear readiness'
   });
 
   it('stays ready when a subframe loads (iframe insert)', () => {
-    // Publishing embeds an iframe; a subframe load does not touch the top document.
+    // This is the case that produced the bug end-to-end: a subframe navigation
+    // clears `did-start-loading`-based readiness and NOTHING restores it (no
+    // location change → the web effect never re-runs), so every later clip
+    // reloaded the window. The top document is untouched, so readiness stays.
     const readiness = bootedRenderer();
     assert.equal(readiness.onNavigationStarted(WD_ID, NAV.iframeInsert), false);
     assert.equal(readiness.isReady(WD_ID), true);
