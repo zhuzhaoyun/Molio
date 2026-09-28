@@ -64,6 +64,38 @@ export const hermesAgentDef: RuntimeAgentDef = {
   ],
 
   installUrl: 'https://github.com/NousResearch/hermes-agent',
+
+  // One-click install via the official installer scripts. The PyPI package
+  // (hermes-agent) is stale — upstream ships weekly date-versioned releases on
+  // GitHub only — so wrapping the official scripts is the only current path.
+  // The scripts clone the repo, bootstrap uv + a venv, and (on Windows) fetch
+  // PortableGit; those GitHub downloads are hardcoded, hence the long timeout
+  // and the MOLIO_HERMES_REPO_URL mirror passthrough in the install engine.
+  install: {
+    source: {
+      type: 'script',
+      scripts: {
+        'win32-x64': 'https://hermes-agent.nousresearch.com/install.ps1',
+        'win32-arm64': 'https://hermes-agent.nousresearch.com/install.ps1',
+        'darwin-x64': 'https://hermes-agent.nousresearch.com/install.sh',
+        'darwin-arm64': 'https://hermes-agent.nousresearch.com/install.sh',
+        'linux-x64': 'https://hermes-agent.nousresearch.com/install.sh',
+        'linux-arm64': 'https://hermes-agent.nousresearch.com/install.sh',
+      },
+      // Browser tooling pulls a full Chromium (~150MB+) — skip by default;
+      // users can add it later via `hermes pm install agent-browser`.
+      // -NonInteractive / --non-interactive are added by the install engine.
+      platformArgs: {
+        win32: ['-SkipBrowser'],
+        posix: ['--skip-browser'],
+      },
+      // Source install: git clone + uv bootstrap + dependency resolution.
+      timeoutMs: 600_000,
+      // --check validates the [acp] extra is importable; --version yields the
+      // installed version string for the done event.
+      verifyArgs: [['--check'], ['--version']],
+    },
+  },
 };
 
 // ─── Just-in-time [acp] extra auto-repair ───

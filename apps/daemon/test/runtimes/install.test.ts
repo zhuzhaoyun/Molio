@@ -4,9 +4,10 @@ import * as os from 'os';
 import * as path from 'node:path';
 import { gzipSync } from 'node:zlib';
 import type { InstallEvent } from '@molio/contracts';
-import { installAgent, getMolioBinDir, extractFromTarball, extractTreeFromTarball, buildTarballName, addToUserPath, updateCurrentProcessPath, getPlatformKey, parseLatestVersionFromPackument } from '../../src/core/runtimes/install.js';
+import { installAgent, getMolioBinDir, extractFromTarball, extractTreeFromTarball, buildTarballName, addToUserPath, updateCurrentProcessPath, getPlatformKey, parseLatestVersionFromPackument, matchPlatformArgs, classifyScriptExitError } from '../../src/core/runtimes/install.js';
 import { claudeAgentDef } from '../../src/core/runtimes/claude.js';
 import { codexAgentDef } from '../../src/core/runtimes/codex.js';
+import { hermesAgentDef } from '../../src/core/runtimes/hermes.js';
 import { getAgentDef } from '../../src/core/runtimes/registry.js';
 
 // ─── Platform Detection ───────────────────────────────────────────────────
@@ -349,6 +350,7 @@ describe('codex agent install config', () => {
   });
 
   it('should cover win32/darwin/linux platform keys', () => {
+    if (source!.type !== 'npm-native') assert.fail('expected npm-native source');
     const keys = Object.keys(source!.packages);
     for (const required of ['win32-x64', 'win32-arm64', 'darwin-arm64', 'darwin-x64', 'linux-x64', 'linux-arm64']) {
       assert.ok(keys.includes(required), `missing platform package for ${required}`);
@@ -407,5 +409,144 @@ describe('PATH update duplication guard (error-driven)', () => {
     } finally {
       process.env[pathKey] = savedPath;
     }
+  });
+});
+
+// ─── hermes script install config ──────────────────────────────────────────
+
+describe('hermes agent install config (script source)', () => {
+  const source = hermesAgentDef.install?.source;
+
+  it('should be installable via the registry', () => {
+    const def = getAgentDef('hermes');
+    assert.ok(def?.install, 'hermes must expose an install config so the one-click button shows');
+  });
+
+  it('should use the script strategy with the official installer URLs', () => {
+    assert.ok(source, 'hermes must have an install source');
+    assert.equal(source.type, 'script');
+    if (source.type !== 'script') assert.fail('expected script source');
+    for (const [platformKey, url] of Object.entries(source.scripts)) {
+      assert.match(url, /^https:\/\/hermes-agent\.nousresearch\.com\/install\.(ps1|sh)$/,
+        `${platformKey}: unexpected script URL ${url}`);
+      if (platformKey.startsWith('win32')) {
+        assert.ok(url.endsWith('.ps1'), `${platformKey}: windows must use the .ps1 installer`);
+      } else {
+        assert.ok(url.endsWith('.sh'), `${platformKey}: non-windows must use the .sh installer`);
+      }
+    }
+  });
+
+  it('should cover win32/darwin/linux platform keys', () => {
+    if (source?.type !== 'script') assert.fail('expected script source');
+    const keys = Object.keys(source.scripts);
+    for (const required of ['win32-x64', 'win32-arm64', 'darwin-x64', 'darwin-arm64', 'linux-x64', 'linux-arm64']) {
+      assert.ok(keys.includes(required), `missing installer script for ${required}`);
+    }
+  });
+
+  it('should skip browser tools by default and verify with --check + --version', () => {
+    if (source?.type !== 'script') assert.fail('expected script source');
+    assert.deepEqual(source.platformArgs?.['win32'], ['-SkipBrowser']);
+    assert.deepEqual(source.platformArgs?.['posix'], ['--skip-browser']);
+    assert.deepEqual(source.verifyArgs, [['--check'], ['--version']]);
+    assert.equal(source.timeoutMs, 600_000);
+  });
+
+  it('should keep installUrl for manual-install fallback', () => {
+    assert.ok(hermesAgentDef.installUrl, 'installUrl must stay for error hints / manual install');
+  });
+});
+
+// ─── matchPlatformArgs ─────────────────────────────────────────────────────
+
+describe('matchPlatformArgs', () => {
+  it('should return empty array when platformArgs is undefined', () => {
+    assert.deepEqual(matchPlatformArgs('win32-x64', undefined), []);
+  });
+
+  it('should match family-specific keys by platform prefix', () => {
+    const args = { win32: ['-SkipBrowser'], darwin: ['--darwin-flag'] };
+    assert.deepEqual(matchPlatformArgs('win32-x64', args), ['-SkipBrowser']);
+    assert.deepEqual(matchPlatformArgs('win32-arm64', args), ['-SkipBrowser']);
+    assert.deepEqual(matchPlatformArgs('darwin-arm64', args), ['--darwin-flag']);
+  });
+
+  it('should fall back to posix for any non-win32 platform', () => {
+    const args = { win32: ['-SkipBrowser'], posix: ['--skip-browser'] };
+    assert.deepEqual(matchPlatformArgs('darwin-x64', args), ['--skip-browser']);
+    assert.deepEqual(matchPlatformArgs('linux-x64', args), ['--skip-browser']);
+    assert.deepEqual(matchPlatformArgs('linux-arm64-musl', args), ['--skip-browser']);
+  });
+
+  it('should prefer family-specific over posix', () => {
+    const args = { darwin: ['--darwin-only'], posix: ['--skip-browser'] };
+    assert.deepEqual(matchPlatformArgs('darwin-arm64', args), ['--darwin-only']);
+  });
+
+  it('should NOT apply posix to win32', () => {
+    const args = { posix: ['--skip-browser'] };
+    assert.deepEqual(matchPlatformArgs('win32-x64', args), []);
+  });
+
+  it('should return empty array when nothing matches', () => {
+    assert.deepEqual(matchPlatformArgs('freebsd-x64', { darwin: ['--x'] }), []);
+  });
+});
+
+// ─── classifyScriptExitError ───────────────────────────────────────────────
+
+describe('classifyScriptExitError', () => {
+  it('should classify DNS failures as network + retryable with mirror hint', () => {
+    const r = classifyScriptExitError(
+      'fatal: unable to access \'https://github.com/NousResearch/hermes-agent/\': Could not resolve host: github.com',
+      128,
+    );
+    assert.equal(r.category, 'network');
+    assert.equal(r.retryable, true);
+    assert.match(r.hint ?? '', /MOLIO_HERMES_REPO_URL/);
+    assert.match(r.hint ?? '', /proxy/i);
+  });
+
+  it('should classify connection failures as network + retryable', () => {
+    const networkStderrs = [
+      'connect ECONNREFUSED 140.82.112.3:443',
+      'getaddrinfo ENOTFOUND github.com',
+      'Connection timed out after 30000 milliseconds',
+      'error: RPC failed; curl 56 OpenSSL SSL_read: connection was aborted (github.com)',
+    ];
+    for (const stderr of networkStderrs) {
+      const r = classifyScriptExitError(stderr, 1);
+      assert.equal(r.category, 'network', `expected network for: ${stderr}`);
+      assert.equal(r.retryable, true);
+    }
+  });
+
+  it('should classify permission failures as permission + non-retryable', () => {
+    for (const stderr of [
+      'mkdir: cannot create directory \'/opt/hermes\': Permission denied',
+      'Error: EACCES: permission denied, mkdir',
+      'Access is denied. (os error 5)',
+    ]) {
+      const r = classifyScriptExitError(stderr, 1);
+      assert.equal(r.category, 'permission');
+      assert.equal(r.retryable, false);
+    }
+  });
+
+  it('should classify unknown failures as runtime + retryable', () => {
+    const r = classifyScriptExitError('uv panicked: internal compiler error', 101);
+    assert.equal(r.category, 'runtime');
+    assert.equal(r.retryable, true);
+  });
+
+  it('should carry the last stderr line as detail', () => {
+    const r = classifyScriptExitError('noise line\nfatal: something exploded\n', 1);
+    assert.match(r.detail ?? '', /something exploded/);
+  });
+
+  it('should include installUrl in the network hint when given', () => {
+    const r = classifyScriptExitError('Could not resolve host: github.com', 1, 'https://example.com/hermes');
+    assert.match(r.hint ?? '', /example\.com\/hermes/);
   });
 });

@@ -357,6 +357,10 @@ export function getWellKnownToolchainDirs(): string[] {
       path.join(home, '.volta', 'bin'),
       '/opt/homebrew/bin',
       '/usr/local/bin',
+      // Hermes Agent — official install.sh drops the venv here (POSIX twin of
+      // the win32 %LOCALAPPDATA%\hermes entry above). Well-known resolution
+      // avoids depending on PATH propagation to an already-running daemon.
+      path.join(home, '.hermes', 'hermes-agent', 'venv', 'bin'),
     );
 
     const nvmDir = path.join(home, '.nvm', 'versions', 'node');

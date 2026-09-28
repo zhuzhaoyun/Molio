@@ -192,6 +192,7 @@ const en: Record<string, string> = {
   'runtimes.installPhasePreflight': 'Checking system…',
   'runtimes.installPhaseDownload': 'Downloading…',
   'runtimes.installPhaseExtract': 'Extracting files…',
+  'runtimes.installPhaseInstall': 'Installing…',
   'runtimes.installPhaseValidate': 'Validating binary…',
   'runtimes.installPhaseTest': 'Running tests…',
   'runtimes.installPhasePath': 'Configuring environment…',

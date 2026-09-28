@@ -192,6 +192,7 @@ const zh: Record<string, string> = {
   'runtimes.installPhasePreflight': '检查系统环境…',
   'runtimes.installPhaseDownload': '下载中…',
   'runtimes.installPhaseExtract': '解压文件…',
+  'runtimes.installPhaseInstall': '安装中…',
   'runtimes.installPhaseValidate': '校验文件…',
   'runtimes.installPhaseTest': '运行测试…',
   'runtimes.installPhasePath': '配置环境变量…',

@@ -10,6 +10,7 @@ export type {
   InstallEvent,
   InstallSource,
   NpmNativeInstallSource,
+  ScriptInstallSource,
   PlatformRequirement,
   InstallConfig,
   InstallPhase,
