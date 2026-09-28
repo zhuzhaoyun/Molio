@@ -217,7 +217,20 @@ function formatClaudeModelId(
  * Single source of truth: @molio/contracts (shared with the daemon's
  * codex-config.ts) — re-exported here so existing imports keep working.
  */
-import { CODEX_PROVIDER_PRESETS, type CodexProviderPreset } from '@molio/contracts';
+import {
+  CODEX_PROVIDER_PRESETS,
+  HERMES_PROVIDER_PRESETS,
+  type CodexProviderPreset,
+  type HermesProviderPreset,
+} from '@molio/contracts';
 
-export type { CodexProviderPreset };
+export type { CodexProviderPreset, HermesProviderPreset };
 export const CODEX_PROVIDERS: CodexProviderPreset[] = CODEX_PROVIDER_PRESETS;
+
+/**
+ * Hermes Agent provider presets — same pattern as CODEX_PROVIDERS: the daemon
+ * writes hermes-native config (<hermes home>/config.yaml + .env), so the
+ * selection also works for `hermes` outside Molio. Single source of truth:
+ * @molio/contracts (shared with the daemon's hermes-config.ts).
+ */
+export const HERMES_PROVIDERS: HermesProviderPreset[] = HERMES_PROVIDER_PRESETS;

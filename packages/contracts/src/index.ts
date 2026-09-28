@@ -151,6 +151,12 @@ export type {
   CodexPresetId,
   CodexProviderPreset,
 } from './codex-provider.js';
+
+export { HERMES_PROVIDER_PRESETS, getHermesPreset } from './hermes-provider.js';
+export type {
+  HermesPresetId,
+  HermesProviderPreset,
+} from './hermes-provider.js';
 export type {
   MarketTag,
   MarketIcon,

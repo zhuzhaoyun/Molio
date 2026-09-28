@@ -84,6 +84,9 @@ importers:
       trash:
         specifier: ^10.1.1
         version: 10.1.1
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
     devDependencies:
       '@types/better-sqlite3':
         specifier: ^7.6.13
@@ -233,7 +236,7 @@ importers:
         version: 3.0.10
       '@types/d3-selection':
         specifier: ^3.0.0
-        version: 3.0.11
+        version: 3.0.12
       '@types/d3-zoom':
         specifier: ^3.0.0
         version: 3.0.8
@@ -251,16 +254,16 @@ importers:
         version: 5.0.6
       '@vitejs/plugin-react':
         specifier: ^4.3.0
-        version: 4.3.0(vite@6.4.3(@types/node@24.13.1)(tsx@4.22.4))
+        version: 4.3.0(vite@6.4.3(@types/node@24.13.1)(tsx@4.22.4)(yaml@2.9.1))
       typescript:
         specifier: ^5.8.3
         version: 5.8.3
       vite:
         specifier: ^6.3.0
-        version: 6.4.3(@types/node@24.13.1)(tsx@4.22.4)
+        version: 6.4.3(@types/node@24.13.1)(tsx@4.22.4)(yaml@2.9.1)
       vite-plugin-static-copy:
         specifier: ^4.1.1
-        version: 4.1.1(vite@6.4.3(@types/node@24.13.1)(tsx@4.22.4))
+        version: 4.1.1(vite@6.4.3(@types/node@24.13.1)(tsx@4.22.4)(yaml@2.9.1))
 
   packages/contracts:
     dependencies:
@@ -1310,8 +1313,8 @@ packages:
   '@types/d3-interpolate@3.0.4':
     resolution: {integrity: sha512-mgLPETlrpVV1YRJIglr4Ez47g7Yxjl1lj7YKsiMCb27VJH9W8NVM6Bb9d8kkpG/uAQS5AmbA48q2IAolKKo1MA==}
 
-  '@types/d3-selection@3.0.11':
-    resolution: {integrity: sha512-bhAXu23DJWsrI45xafYpkQ4NtcKMwWnAC/vKrd2l+nxMFuvOT3XMYTIj2opv8vq8AO5Yh7Qac/nSeP/3zjTK0w==}
+  '@types/d3-selection@3.0.12':
+    resolution: {integrity: sha512-Qe/KWYhEiIIxGs7HrAAjMfShxKldx19SJtr5zu53f3afPsdZNz7HHtdTLXo/kqeiWNXVycI24kSnfzBYkTzpgw==}
 
   '@types/d3-zoom@3.0.8':
     resolution: {integrity: sha512-iqMC4/YlFCSlO8+2Ii1GGGliCAY4XdeG748w5vQUbevlbDu0zSjH/+jojorQVBK/se0j6DUFNPBGSqD3YWYnDw==}
@@ -3699,6 +3702,11 @@ packages:
   yallist@4.0.0:
     resolution: {integrity: sha512-3wdGidZyq5PB084XLES5TpOSRA3wjXAlIWMhum2kRcv/41Sn2emQ0dycQW4uZXLejwKvg6EsvbdlVL+FYEct7A==}
 
+  yaml@2.9.1:
+    resolution: {integrity: sha512-3NxN8+78OdzbT7C/WjGsyfPAtJaN3FNDsWxv7Y7mcDsT/oOmgW8BpyQQFFBnvZE3j9Y2Sdz1ULFLezL7Eb2yFw==}
+    engines: {node: '>= 14.6'}
+    hasBin: true
+
   yargs-parser@18.1.3:
     resolution: {integrity: sha512-o50j0JeToy/4K6OZcaQmW6lyXXKhq7csREXcDwk2omFPJEwUNOVtJKvmDr9EI1fAJZUyZcRF7kxGBWmRXudrCQ==}
     engines: {node: '>=6'}
@@ -4757,7 +4765,7 @@ snapshots:
 
   '@types/d3-drag@3.0.7':
     dependencies:
-      '@types/d3-selection': 3.0.11
+      '@types/d3-selection': 3.0.12
 
   '@types/d3-force@3.0.10': {}
 
@@ -4765,12 +4773,12 @@ snapshots:
     dependencies:
       '@types/d3-color': 3.1.3
 
-  '@types/d3-selection@3.0.11': {}
+  '@types/d3-selection@3.0.12': {}
 
   '@types/d3-zoom@3.0.8':
     dependencies:
       '@types/d3-interpolate': 3.0.4
-      '@types/d3-selection': 3.0.11
+      '@types/d3-selection': 3.0.12
 
   '@types/debug@4.1.13':
     dependencies:
@@ -4847,14 +4855,14 @@ snapshots:
       '@types/node': 24.13.1
     optional: true
 
-  '@vitejs/plugin-react@4.3.0(vite@6.4.3(@types/node@24.13.1)(tsx@4.22.4))':
+  '@vitejs/plugin-react@4.3.0(vite@6.4.3(@types/node@24.13.1)(tsx@4.22.4)(yaml@2.9.1))':
     dependencies:
       '@babel/core': 7.29.7
       '@babel/plugin-transform-react-jsx-self': 7.29.7(@babel/core@7.29.7)
       '@babel/plugin-transform-react-jsx-source': 7.29.7(@babel/core@7.29.7)
       '@types/babel__core': 7.20.5
       react-refresh: 0.14.2
-      vite: 6.4.3(@types/node@24.13.1)(tsx@4.22.4)
+      vite: 6.4.3(@types/node@24.13.1)(tsx@4.22.4)(yaml@2.9.1)
     transitivePeerDependencies:
       - supports-color
 
@@ -7248,15 +7256,15 @@ snapshots:
       extsprintf: 1.4.1
     optional: true
 
-  vite-plugin-static-copy@4.1.1(vite@6.4.3(@types/node@24.13.1)(tsx@4.22.4)):
+  vite-plugin-static-copy@4.1.1(vite@6.4.3(@types/node@24.13.1)(tsx@4.22.4)(yaml@2.9.1)):
     dependencies:
       chokidar: 3.6.0
       p-map: 7.0.6
       picocolors: 1.1.1
       tinyglobby: 0.2.17
-      vite: 6.4.3(@types/node@24.13.1)(tsx@4.22.4)
+      vite: 6.4.3(@types/node@24.13.1)(tsx@4.22.4)(yaml@2.9.1)
 
-  vite@6.4.3(@types/node@24.13.1)(tsx@4.22.4):
+  vite@6.4.3(@types/node@24.13.1)(tsx@4.22.4)(yaml@2.9.1):
     dependencies:
       esbuild: 0.25.0
       fdir: 6.5.0(picomatch@4.0.4)
@@ -7268,6 +7276,7 @@ snapshots:
       '@types/node': 24.13.1
       fsevents: 2.3.3
       tsx: 4.22.4
+      yaml: 2.9.1
 
   w3c-keyname@2.2.8: {}
 
@@ -7369,6 +7378,8 @@ snapshots:
   yallist@3.1.1: {}
 
   yallist@4.0.0: {}
+
+  yaml@2.9.1: {}
 
   yargs-parser@18.1.3:
     dependencies:
