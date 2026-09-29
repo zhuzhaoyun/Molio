@@ -398,7 +398,7 @@ test.describe('Hermes provider config', () => {
     const precondition = title.includes('saved-key hint')
       // apiKey so hasKey=true at mount — the hint under test reads it
       ? { presetId: 'anthropic', apiKey: 'sk-e2e-saved' }
-      // anthropic ≠ the UI's zai default → observable "async load applied" marker
+      // anthropic ≠ the UI's deepseek default → observable "async load applied" marker
       : { presetId: 'anthropic' };
     const seedRes = await fetch(`${DAEMON_API}/agents/hermes/provider`, {
       method: 'PUT',
@@ -430,7 +430,7 @@ test.describe('Hermes provider config', () => {
     // hermes native-config hint shown
     await expect(panel.locator('[data-testid="hermes-config-hint"]')).toContainText('config.yaml');
 
-    // async state load applied (seeded anthropic ≠ zai default) — safe to interact
+    // async state load applied (seeded anthropic ≠ deepseek default) — safe to interact
     await expect(panel.locator('.rt-provider-form__select').first()).toHaveValue('anthropic');
 
     await panel.locator('.rt-provider-form__select').first().selectOption('zai');
@@ -460,6 +460,43 @@ test.describe('Hermes provider config', () => {
     expect(state.presetHint).toBe('zai');
     expect(state.hasKey).toBe(true);
     expect(JSON.stringify(state)).not.toContain('sk-e2e-hermes-test');
+  });
+
+  test('save deepseek provider and verify hermes native files', async ({ page }) => {
+    const hermesCard = page.locator('.rt-agent-card').filter({ hasText: 'Hermes' });
+    await hermesCard.locator('.rt-provider-toggle').click();
+    const panel = hermesCard.locator('.rt-provider-config');
+    await expect(panel).toBeVisible();
+
+    // async state load applied (seeded anthropic ≠ deepseek default) — safe to interact
+    await expect(panel.locator('.rt-provider-form__select').first()).toHaveValue('anthropic');
+
+    await panel.locator('.rt-provider-form__select').first().selectOption('deepseek');
+
+    // deepseek supports a DEEPSEEK_BASE_URL override but pre-fills nothing —
+    // hermes's built-in endpoint (api.deepseek.com/v1) applies while blank
+    await expect(panel.locator('[data-testid="hermes-baseurl-field"]')).toHaveValue('');
+
+    await panel.locator('[data-testid="hermes-model-field"]').fill('deepseek-chat');
+    await panel.locator('.rt-provider-form__input[type="password"]').fill('sk-e2e-deepseek');
+    await panel.locator('.rt-provider-form__actions .rt-btn').first().click();
+    await expect(panel.locator('.rt-provider-form__status--ok')).toBeVisible({ timeout: 5_000 });
+
+    // daemon wrote the live hermes-native files
+    const yaml = fs.readFileSync(configYaml, 'utf8');
+    expect(yaml).toMatch(/provider:\s*deepseek/);
+    expect(yaml).toMatch(/default:\s*deepseek-chat/);
+    const env = fs.readFileSync(dotEnv, 'utf8');
+    expect(env).toMatch(/^DEEPSEEK_API_KEY=sk-e2e-deepseek$/m);
+
+    // GET provider reflects live state, never the key itself
+    const state = await page.evaluate(async (api) => {
+      const res = await fetch(`${api}/agents/hermes/provider`);
+      return res.json();
+    }, DAEMON_API);
+    expect(state.presetHint).toBe('deepseek');
+    expect(state.hasKey).toBe(true);
+    expect(JSON.stringify(state)).not.toContain('sk-e2e-deepseek');
   });
 
   test('shows saved-key hint when .env already has a key', async ({ page }) => {

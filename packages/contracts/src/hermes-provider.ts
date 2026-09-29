@@ -20,6 +20,7 @@
  */
 
 export type HermesPresetId =
+  | 'deepseek'
   | 'zai'
   | 'kimi-coding'
   | 'minimax-cn'
@@ -58,6 +59,19 @@ export interface HermesProviderPreset {
 }
 
 export const HERMES_PROVIDER_PRESETS: HermesProviderPreset[] = [
+  {
+    id: 'deepseek',
+    name: 'DeepSeek',
+    providerValue: 'deepseek',
+    envKey: 'DEEPSEEK_API_KEY',
+    baseUrlEnvKey: 'DEEPSEEK_BASE_URL',
+    // 不预填 defaultBaseUrl：hermes 内置默认就是官方端点 api.deepseek.com/v1，
+    // DeepSeek 也没有国内外分站（区别于 zai），留空走内置默认即可。
+    models: [],
+    apiKeyHint: 'sk-...',
+    apiKeyUrl: 'https://platform.deepseek.com/api_keys',
+    docsUrl: 'https://api-docs.deepseek.com/',
+  },
   {
     id: 'zai',
     name: '智谱 GLM',

@@ -89,6 +89,19 @@ describe('getHermesProviderState', () => {
     assert.equal(s.hasKey, true);
   });
 
+  it('detects the deepseek preset from config.yaml + .env key', () => {
+    fs.writeFileSync(cfgPath(), `model:
+  provider: deepseek
+  default: deepseek-chat
+`);
+    fs.writeFileSync(dotEnvPath(), 'DEEPSEEK_API_KEY=sk-ds-123\n');
+    const s = getHermesProviderState(hermesHome);
+    assert.equal(s.presetHint, 'deepseek');
+    assert.equal(s.provider, 'deepseek');
+    assert.equal(s.model, 'deepseek-chat');
+    assert.equal(s.hasKey, true);
+  });
+
   it('reads the model id from `model` when `default` is absent', () => {
     fs.writeFileSync(cfgPath(), `model:
   provider: anthropic
@@ -163,6 +176,30 @@ describe('applyHermesProvider — preset providers', () => {
     const env = fs.readFileSync(dotEnvPath(), 'utf8');
     assert.match(env, /^GLM_API_KEY=sk-glm$/m);
     assert.match(env, /^GLM_BASE_URL=https:\/\/open\.bigmodel\.cn\/api\/paas\/v4$/m);
+  });
+
+  it('writes provider/default to config.yaml and key to .env (deepseek — no base-url line by default)', () => {
+    applyHermesProvider(
+      { presetId: 'deepseek', apiKey: 'sk-ds', model: 'deepseek-chat' },
+      hermesHome, backupDir,
+    );
+
+    const doc = parseDocument(fs.readFileSync(cfgPath(), 'utf8'));
+    assert.equal(doc.getIn(['model', 'provider']), 'deepseek');
+    assert.equal(doc.getIn(['model', 'default']), 'deepseek-chat');
+
+    const env = fs.readFileSync(dotEnvPath(), 'utf8');
+    assert.match(env, /^DEEPSEEK_API_KEY=sk-ds$/m);
+    assert.ok(!env.includes('DEEPSEEK_BASE_URL'), 'no defaultBaseUrl → hermes built-in endpoint is used');
+  });
+
+  it('deepseek accepts an explicit base-url override into DEEPSEEK_BASE_URL', () => {
+    applyHermesProvider(
+      { presetId: 'deepseek', apiKey: 'sk-ds', baseUrl: 'https://api.deepseek.com/v1' },
+      hermesHome, backupDir,
+    );
+    const env = fs.readFileSync(dotEnvPath(), 'utf8');
+    assert.match(env, /^DEEPSEEK_BASE_URL=https:\/\/api\.deepseek\.com\/v1$/m);
   });
 
   it('explicit baseUrl overrides the preset default', () => {

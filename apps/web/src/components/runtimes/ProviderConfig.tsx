@@ -30,8 +30,8 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
 
-  // Form state — hermes defaults to the first 国内 preset; claude to deepseek.
-  const [providerId, setProviderId] = useState(agentId === 'hermes' ? 'zai' : 'deepseek');
+  // Form state — hermes defaults to the first 国内 preset (deepseek); claude to deepseek.
+  const [providerId, setProviderId] = useState('deepseek');
   const [apiKey, setApiKey] = useState('');
   const [customBaseUrl, setCustomBaseUrl] = useState('');
   const [mapping, setMapping] = useState<ModelMapping>(EMPTY_MAPPING);
@@ -287,7 +287,7 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
                 className="rt-provider-form__input"
                 value={hermesModel}
                 onChange={(e) => { setHermesModel(e.target.value); markTouched(); }}
-                placeholder="glm-4.6"
+                placeholder="deepseek-chat"
               />
               <span className="rt-provider-form__hint">{t('runtimes.hermesModelHint')}</span>
             </label>
