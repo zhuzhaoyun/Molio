@@ -5,6 +5,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { Vault } from '@molio/contracts';
+import { MAX_IMPORT_FILE_SIZE } from '@molio/contracts';
 import { api } from '../../api/client';
 
 // ═══════════════════════════════════════════
@@ -260,7 +261,7 @@ export function ImportModal({ show, vaultName, vaultId, onClose, onImportComplet
 
   const handleFiles = useCallback((fileList: FileList | null) => {
     if (!fileList) return;
-    const MAX_FILE_SIZE = 50 * 1024 * 1024;
+    const MAX_FILE_SIZE = MAX_IMPORT_FILE_SIZE;
     const validExts = [
       '.md', '.pdf', '.txt', '.docx', '.doc', '.html', '.htm',
       '.pptx', '.ppt', '.xlsx', '.xls',
@@ -276,7 +277,7 @@ export function ImportModal({ show, vaultName, vaultId, onClose, onImportComplet
       if (!validExts.includes(ext)) continue;
       if (file.size > MAX_FILE_SIZE) {
         skippedFiles.push(file.name);
-        newFiles.push({ name: file.name, size: file.size, error: '超过 50MB 限制' });
+        newFiles.push({ name: file.name, size: file.size, error: '文件过大（>100MB）' });
         continue;
       }
       newFiles.push({ name: file.name, size: file.size });
@@ -532,6 +533,9 @@ interface ConfirmDialogProps {
   tertiaryLabel?: string;
   onTertiary?: () => void;
   danger?: boolean;
+  /** Hide the 取消 button — for informational dialogs whose only action is to
+   *  dismiss (two buttons with identical outcomes read as a choice that isn't). */
+  hideCancel?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -544,6 +548,7 @@ export function ConfirmDialog({
   tertiaryLabel,
   onTertiary,
   danger = false,
+  hideCancel = false,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -572,7 +577,9 @@ export function ConfirmDialog({
           </p>
         </div>
         <div className="kb-modal-footer">
-          <button className="kb-btn kb-btn-ghost" onClick={onCancel}>取消</button>
+          {!hideCancel && (
+            <button className="kb-btn kb-btn-ghost" onClick={onCancel}>取消</button>
+          )}
           {tertiaryLabel && onTertiary && (
             <button className="kb-btn kb-btn-ghost" onClick={onTertiary}>{tertiaryLabel}</button>
           )}

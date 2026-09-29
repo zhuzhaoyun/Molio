@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import type { TreeNode, GraphScope } from '@molio/contracts';
+import { MAX_IMPORT_FILE_SIZE } from '@molio/contracts';
 import { useKnowledge } from '../../hooks/useKnowledge';
 import { useKbTabs, MAX_TABS, type WorkspaceTab } from '../../hooks/useKbTabs';
 import { vaultStore, useActiveVaultId } from '../../stores/vaultStore';
@@ -1121,12 +1122,12 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     }
 
     // Pre-flight checks — filter out files that would fail before any network request.
-    const MAX_FILE_SIZE = 50 * 1024 * 1024;
+    const MAX_FILE_SIZE = MAX_IMPORT_FILE_SIZE;
     const oversized = Array.from(files).filter((f) => f.size > MAX_FILE_SIZE);
     const validFiles = Array.from(files).filter((f) => f.size <= MAX_FILE_SIZE);
     const preflightErrors: string[] = [];
     if (oversized.length > 0) {
-      preflightErrors.push(`${oversized.length} 个超过 50MB 限制`);
+      preflightErrors.push(`${oversized.length} 个文件导入失败（文件大小超过 100MB）`);
     }
     if (validFiles.length === 0) {
       showToast(preflightErrors.join('，'));
