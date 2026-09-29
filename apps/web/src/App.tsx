@@ -20,6 +20,7 @@ import { OPEN_RUNTIME_SETTINGS_EVENT } from './components/RuntimeModelPill';
 import { authStore } from './stores/authStore';
 import { configStore, useAppConfig } from './stores/configStore';
 import { currentContextStore, type CurrentContext } from './stores/currentContextStore';
+import { installExternalLinkHandler } from './utils/externalLinks';
 import { messageSelectionStore } from './stores/messageSelectionStore';
 import { kbChatSessionsStore } from './stores/kbChatSessionsStore';
 import { usePendingPrefill, skillPrefillStore } from './stores/skillPrefillStore';
@@ -152,6 +153,11 @@ export default function App() {
       localStorage.setItem(STORAGE_KEY_LAST_ROUTE, location.pathname);
     } catch { /* ignore */ }
   }, [location.pathname]);
+
+  // 外链（http/https 且跨源）一律经 window.open 打开新页：浏览器里是新标签页，
+  // Electron 壳里被 setWindowOpenHandler 转交系统浏览器——否则渲染出的
+  // markdown 普通 <a href> 会把整个应用窗口导航走，用户被甩出 Molio。
+  useEffect(() => installExternalLinkHandler(), []);
 
   // 路由切换 → 悬浮对话读取当前页面
   useEffect(() => {
