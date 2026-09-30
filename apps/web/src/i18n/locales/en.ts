@@ -722,6 +722,17 @@ const en: Record<string, string> = {
   'resources.pay.download': 'Download pack',
   // ── Community market: publish wizard / my listings / vault entry (Task 10) ──
   'vault.publish': 'Publish to market',
+  // ── Vault list: inline ⋯ menu (copy ID / reveal / remove) ──
+  'vault.listHeader': 'Vaults',
+  'vault.listEmpty': 'No vaults yet',
+  'vault.more': 'More actions',
+  'vault.copyId': 'Copy vault ID',
+  'vault.idCopied': 'Vault ID copied',
+  'vault.revealInFolder': 'Show vault folder in file manager',
+  'vault.remove': 'Remove from vault list',
+  'vault.removeTitle': 'Remove vault',
+  'vault.removeMessage':
+    'Remove vault "{name}" from the list? This only removes it from the app — your local files are not deleted. Files stay at {path}.',
   'account.myListings': 'My listings',
   'account.myPurchases': 'My purchases',
   'publish.title': 'Publish to market',

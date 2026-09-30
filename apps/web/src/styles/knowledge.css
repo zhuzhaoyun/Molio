@@ -1715,6 +1715,8 @@
   flex-direction: column;
   height: 100%;
   overflow: hidden;
+  /* Positioning context for the transient copy-confirmation hint. */
+  position: relative;
 }
 
 .vm-list-header {
@@ -1792,7 +1794,7 @@
   white-space: nowrap;
 }
 
-.vm-vault-delete {
+.vm-vault-more {
   position: absolute;
   right: 8px;
   top: 50%;
@@ -1812,13 +1814,40 @@
   transition: opacity 120ms ease;
 }
 
-.vm-vault-item:hover .vm-vault-delete {
+.vm-vault-item:hover .vm-vault-more,
+.vm-vault-more:focus-visible {
   opacity: 1;
 }
 
-.vm-vault-delete:hover {
+/* Touch devices have no hover: without this the row actions are rendered but
+   permanently invisible and therefore unreachable (the web/NAS deploy is
+   reachable from a tablet). */
+@media (hover: none) {
+  .vm-vault-more {
+    opacity: 1;
+  }
+}
+
+.vm-vault-more:hover {
   background: var(--bg-muted);
   color: var(--text);
+}
+
+/* Transient 「已复制仓库 ID」 confirmation — copy is silent otherwise, and
+   "did it work?" is exactly the kind of doubt this panel should not create. */
+.vm-copy-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--bg-elevated, var(--bg-muted));
+  color: var(--text);
+  font-size: 12px;
+  box-shadow: 0 2px 10px rgb(0 0 0 / 12%);
+  pointer-events: none;
+  z-index: 10;
 }
 
 /* ── Right: Action Panel ── */
@@ -2846,6 +2875,24 @@
   cursor: pointer;
   text-align: left;
   transition: background 80ms ease;
+}
+
+/* Icons are opt-in per item (`icon` field) — label-only menus keep the tight
+   original layout, so only icon-bearing items get the gap. */
+.ctx-menu-item.has-icon {
+  gap: 8px;
+}
+
+.ctx-menu-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+
+.ctx-menu-label {
+  min-width: 0;
 }
 
 .ctx-menu-item:hover {

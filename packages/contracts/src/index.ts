@@ -167,3 +167,6 @@ export type {
   MarketPurchasesResponse,
   MarketPublishSuggestion,
 } from './market.js';
+
+// Value exports — shared limits (single source of truth)
+export { MAX_IMPORT_FILE_SIZE, MAX_IMPORT_BATCH_SIZE } from './knowledge.js';

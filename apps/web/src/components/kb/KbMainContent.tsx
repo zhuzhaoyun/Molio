@@ -333,6 +333,13 @@ export function KbMainContent({
     return sel ? sel.toString().trim() : '';
   }, []);
 
+  // 小 .md 阅读路径的滚动容器在切换文件时被 React 复用（同位置同元素），
+  // scrollTop 会残留上一篇的位置，新文档因此从中间打开 —— 切文件时重置到顶部。
+  // CM / PDF 路径各自在内部重建视图，不依赖此效果。
+  useEffect(() => {
+    contentRef.current?.scrollTo({ top: 0 });
+  }, [selectedFile]);
+
   // Capture-phase click handler: intercept wiki link clicks within the KB
   // shell. Prevents native <a href> navigation, checks if the file exists
   // via API, and either opens it (exists) or shows a toast (not found).

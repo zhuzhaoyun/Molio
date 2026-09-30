@@ -722,6 +722,17 @@ const zh: Record<string, string> = {
   'resources.pay.download': '下载资源包',
   // ── 社区资源市场：发布向导 / 我的上架 / 知识库入口（Task 10） ──
   'vault.publish': '发布到资源库',
+  // ── 知识库列表：行内 ⋯ 菜单（复制 ID / 定位文件 / 移除） ──
+  'vault.listHeader': '知识库仓库',
+  'vault.listEmpty': '还没有仓库',
+  'vault.more': '更多操作',
+  'vault.copyId': '复制仓库 ID',
+  'vault.idCopied': '已复制仓库 ID',
+  'vault.revealInFolder': '在资源管理器中显示仓库文件夹',
+  'vault.remove': '从仓库列表中移除',
+  'vault.removeTitle': '移除仓库',
+  'vault.removeMessage':
+    '确定从列表中移除仓库「{name}」？这只会从应用中移除，不会删除本地文件——文件仍保留在 {path}。',
   'account.myListings': '我的上架',
   'account.myPurchases': '我的已购',
   'publish.title': '发布到资源库',
