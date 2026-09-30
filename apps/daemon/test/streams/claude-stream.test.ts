@@ -525,6 +525,89 @@ describe('Claude stream handler', () => {
       }
     });
 
+    // Bug (user report): expired GLM token → Claude Code retries the 401 with
+    // exponential backoff (10 attempts, ~3 min) emitting system/api_retry
+    // events, no result event — the runtimes test button just hit its 30s
+    // timeout ("Test timed out after 30s") and chat showed a silent spinner.
+    // Shape below captured live from Claude Code 2.1.116.
+    it('should fail fast with auth error on system/api_retry 401', () => {
+      const { events, onEvent } = collectEvents();
+      const handler = createClaudeStreamHandler(onEvent);
+
+      feedLines(handler, JSON.stringify({
+        type: 'system',
+        subtype: 'api_retry',
+        attempt: 1,
+        max_retries: 10,
+        retry_delay_ms: 514.8312331673899,
+        error_status: 401,
+        error: 'authentication_failed',
+        session_id: '45e728e5-0031-472a-aa0e-569382314d23',
+      }));
+
+      const statusEvents = events.filter((e) => e.type === 'status');
+      assert.equal(statusEvents.length, 1);
+      if (statusEvents[0]!.type === 'status') {
+        assert.equal(statusEvents[0]!.label, 'retrying');
+        assert.equal(statusEvents[0]!.retry?.errorStatus, 401);
+        assert.equal(statusEvents[0]!.retry?.error, 'authentication_failed');
+        assert.equal(statusEvents[0]!.retry?.attempt, 1);
+        assert.equal(statusEvents[0]!.retry?.maxRetries, 10);
+      }
+
+      const errorEvents = events.filter((e) => e.type === 'error');
+      assert.equal(errorEvents.length, 1, 'auth failures must fail fast, not retry');
+      if (errorEvents[0]!.type === 'error') {
+        assert.match(errorEvents[0]!.message, /authentication failed/i);
+        assert.match(errorEvents[0]!.message, /401/);
+        assert.match(errorEvents[0]!.message, /invalid or expired/i);
+      }
+    });
+
+    it('should emit the auth error only once across repeated 401 retries', () => {
+      const { events, onEvent } = collectEvents();
+      const handler = createClaudeStreamHandler(onEvent);
+
+      for (const attempt of [1, 2, 3]) {
+        feedLines(handler, JSON.stringify({
+          type: 'system',
+          subtype: 'api_retry',
+          attempt,
+          max_retries: 10,
+          retry_delay_ms: 500 * attempt,
+          error_status: 401,
+          error: 'authentication_failed',
+        }));
+      }
+
+      assert.equal(events.filter((e) => e.type === 'error').length, 1);
+      assert.equal(events.filter((e) => e.type === 'status').length, 3);
+    });
+
+    it('should emit retrying status without error for transient 429/5xx retries', () => {
+      const { events, onEvent } = collectEvents();
+      const handler = createClaudeStreamHandler(onEvent);
+
+      feedLines(handler, JSON.stringify({
+        type: 'system',
+        subtype: 'api_retry',
+        attempt: 2,
+        max_retries: 10,
+        retry_delay_ms: 1049.5,
+        error_status: 429,
+        error: 'rate_limit_exceeded',
+      }));
+
+      const statusEvents = events.filter((e) => e.type === 'status');
+      assert.equal(statusEvents.length, 1);
+      if (statusEvents[0]!.type === 'status') {
+        assert.equal(statusEvents[0]!.label, 'retrying');
+        assert.equal(statusEvents[0]!.retry?.errorStatus, 429);
+      }
+      // Transient errors may recover on retry — must NOT fail the run.
+      assert.equal(events.filter((e) => e.type === 'error').length, 0);
+    });
+
     it('should include subtype and api_error_status when no error text is present', () => {
       const { events, onEvent } = collectEvents();
       const handler = createClaudeStreamHandler(onEvent);

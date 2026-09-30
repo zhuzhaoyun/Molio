@@ -66,12 +66,48 @@ export function createClaudeStreamHandler(
   let currentMessageId: string | null = null;
   const textStreamed = new Set<string>();
   const thinkingStreamed = new Set<string>();
+  let authRetryErrorEmitted = false;
 
   function blockKey(index: unknown): string {
     return `${currentMessageId ?? 'anon'}:${index}`;
   }
 
   function handleObject(obj: Record<string, unknown>): void {
+    // Claude Code retries failed API calls with exponential backoff — up to
+    // 10 attempts spanning ~3 minutes — emitting one system/api_retry per
+    // attempt (shape captured live from CC 2.1.116 against a 401 provider).
+    // Auth failures (401/403) can NEVER succeed on retry, so fail fast with
+    // an actionable message instead of letting the runtimes test button hit
+    // its 30s timeout and chat sit on a silent spinner for minutes.
+    // Transient statuses (429/5xx/network) only surface a 'retrying' status.
+    if (obj['type'] === 'system' && obj['subtype'] === 'api_retry') {
+      const errorStatus = typeof obj['error_status'] === 'number'
+        ? obj['error_status'] as number
+        : undefined;
+      const errorReason = typeof obj['error'] === 'string'
+        ? obj['error'] as string
+        : undefined;
+      onEvent({
+        type: 'status',
+        label: 'retrying',
+        retry: {
+          attempt: typeof obj['attempt'] === 'number' ? obj['attempt'] as number : undefined,
+          maxRetries: typeof obj['max_retries'] === 'number' ? obj['max_retries'] as number : undefined,
+          delayMs: typeof obj['retry_delay_ms'] === 'number' ? obj['retry_delay_ms'] as number : undefined,
+          errorStatus,
+          error: errorReason,
+        },
+      });
+      if ((errorStatus === 401 || errorStatus === 403) && !authRetryErrorEmitted) {
+        authRetryErrorEmitted = true;
+        onEvent({
+          type: 'error',
+          message: `API authentication failed (HTTP ${errorStatus}${errorReason ? `: ${errorReason}` : ''}) — the API key/token is invalid or expired; retrying will not help. Check the provider configuration (e.g. CC Switch / ANTHROPIC_AUTH_TOKEN / ANTHROPIC_BASE_URL).`,
+        });
+      }
+      return;
+    }
+
     if (obj['type'] === 'system' && obj['subtype'] === 'init') {
       onEvent({
         type: 'status',
