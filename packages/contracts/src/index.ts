@@ -24,6 +24,7 @@ export type {
   StreamHandler,
   ActivityInfo,
   SubagentActivity,
+  ApiRetryInfo,
 } from './event.js';
 
 export type {

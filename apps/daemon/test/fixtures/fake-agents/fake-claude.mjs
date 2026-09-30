@@ -3,7 +3,7 @@
 // Accepts the same CLI flags as Claude Code but ignores stdin content and
 // emits a deterministic stream-json response on stdout for each received line.
 //
-// Supports four modes via environment variables:
+// Supports these modes via environment variables:
 //   - default: emit one turn with turn_end/result, then exit (single-turn)
 //   - FAKE_CLAUDE_NO_TURN_END=1: emit text_delta but no turn_end/result, keep alive
 //   - FAKE_CLAUDE_MULTI_TURN=1: emit turn_end/result each turn, keep stdin open
@@ -13,6 +13,13 @@
 //     FAKE_CLAUDE_MULTI_TURN=1 to reproduce issue #87: without resetting the
 //     turn-end guard on message_start, the 2nd turn's result fallback is
 //     suppressed and the last assistant reply is never flushed.
+//   - FAKE_CLAUDE_API_RETRY=<status>: mimic real Claude Code behavior against a
+//     failing provider (captured live from CC 2.1.116 + expired GLM token):
+//     emit system/init, then system/api_retry events with exponential backoff
+//     and NEVER a result event — the process just keeps retrying. The real CLI
+//     burns 10 attempts (~3 min) before giving up; the fake emits attempt 1
+//     immediately so tests can assert fast-fail behavior without waiting.
+//     Use 401/403 for auth failures, 429/500 for transient-retry behavior.
 
 import { createInterface } from 'node:readline';
 
@@ -26,6 +33,11 @@ if (args.includes('--version')) {
 
 const NO_TURN_END = process.env['FAKE_CLAUDE_NO_TURN_END'] === '1';
 const MULTI_TURN = process.env['FAKE_CLAUDE_MULTI_TURN'] === '1';
+// When set to an HTTP status (e.g. "401"), emulate a failing provider: emit
+// system/api_retry events with that error_status forever, never a result.
+const API_RETRY_STATUS = process.env['FAKE_CLAUDE_API_RETRY']
+  ? Number(process.env['FAKE_CLAUDE_API_RETRY'])
+  : null;
 // In real Claude Code stream-json, assistant message blocks carry stop_reason:
 // null during streaming; the real stop_reason only appears on the `result`
 // event. When enabled, emit stop_reason: null (matching production) so turn_end
@@ -38,6 +50,33 @@ function emit(obj) {
 
 let turnCount = 0;
 let responded = false;
+
+function runApiRetryLoop() {
+  // Real Claude Code against a failing provider: init once, then one
+  // system/api_retry per attempt with exponential backoff, no result event
+  // for minutes. Attempt 1 fires immediately so tests don't wait on backoff.
+  emit({ type: 'system', subtype: 'init', model: 'fake-claude' });
+  let attempt = 0;
+  const tick = () => {
+    attempt += 1;
+    emit({
+      type: 'system',
+      subtype: 'api_retry',
+      attempt,
+      max_retries: 10,
+      retry_delay_ms: Math.min(500 * 2 ** (attempt - 1), 33_000),
+      error_status: API_RETRY_STATUS,
+      // Mirror the real provider error strings (captured live from GLM 401).
+      error: API_RETRY_STATUS === 401 || API_RETRY_STATUS === 403
+        ? 'authentication_failed'
+        : 'overloaded_error',
+      session_id: 'fake-session',
+    });
+    if (attempt < 10) setTimeout(tick, 300);
+  };
+  tick();
+  // Never exits — like the real CLI mid-backoff, stdin stays open.
+}
 
 function runResponse() {
   turnCount += 1;
@@ -95,6 +134,12 @@ function maybeExit() {
 const rl = createInterface({ input: process.stdin });
 
 rl.on('line', () => {
+  if (API_RETRY_STATUS) {
+    if (responded) return;
+    responded = true;
+    runApiRetryLoop();
+    return;
+  }
   if (NO_TURN_END && responded) return;
   responded = true;
   runResponse();
@@ -103,6 +148,7 @@ rl.on('line', () => {
 
 rl.on('close', () => {
   if (responded) return;
+  if (API_RETRY_STATUS) return; // process would already be dead; nothing to do
   runResponse();
   maybeExit();
 });
