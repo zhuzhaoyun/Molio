@@ -80,6 +80,15 @@ Molio Chrome 扩展保存剪藏时通过 `molio://` 唤起桌面端。协议约�
 
 桌面端只负责解析协议并导航到 `/knowledge?...`；Web 端负责等待目标 vault 的文件树加载完成，再选中文件。扩展可能先发出文件打开意图再完成写入，因此 Web 端文件读取允许一次短重试。改这条链路时要同时检查 `molio-connect/background.js`、`apps/desktop/src/main.js`、`apps/web/src/components/kb/KnowledgeBasePage.tsx` 和 `apps/web/src/hooks/useKnowledge.ts`。
 
+主进程按「渲染进程就绪标志」在两条投递路径间二选一：**就绪 → 页内 IPC**（React Router 跳转，不重载、不丢状态）；**未就绪 → 整页 `loadURL` 兜底**（冷启动 / daemon 错误页 / 渲染进程已死）。因此**该标志的清除条件是这条链路的命门**：只允许被「主框架 + 非同文档」的真实文档替换（`did-start-navigation` 的 `isMainFrame && !isSameDocument`）、窗口关闭、渲染进程崩溃清除。
+
+**不要用 `did-start-loading` 清标志**。2026-09-28 实测（Electron 40，真实 app 端到端）：该事件只被**导航**触发——主框架同文档（pushState / replaceState / hash）与**子框架（iframe / 任何 subframe 导航）**都会触发，而图片、`fetch`、XHR 不会。恢复侧只有一条路：Web 端 `App.tsx` 的上报 effect 依赖 `navigate`，**每次路由变化**才重发一次就绪。于是这两类误清后果完全不同：
+
+- 同文档路由跳转：误清后约 25ms 就被下一次路由变化恢复（实测 `CLEARED → RESTORED` 成对出现），窗口极窄；
+- **子框架导航：不产生 location 变化，没有任何东西会恢复它** —— 标志从此永久为 false，直到用户下一次路由跳转。此后**每一次**剪藏都退化成整页重载：React 树被销毁、正在流式输出的回复从界面消失、run 变孤儿继续跑（用户 2026-09 的真实报障即此，日志里 10 次 `molio://open` 有 8 次 `renderer not ready`）。
+
+规则与回归测试见 `apps/desktop/src/renderer-readiness.js` 与 `apps/desktop/test/clip-open-navigation.test.js`（含「子框架加载不得清标志」的用例）。
+
 ## Runtime Context Loading
 
 Agent CLI（Claude Code、Codex 等）通过 `cwd` 参数加载项目上下文。spawn 进程时设置 `cwd` 为项目的 `localPath`，agent CLI 会自动读取该目录下的 `CLAUDE.md`、`.claude/` 配置、以及所有 markdown 文件。

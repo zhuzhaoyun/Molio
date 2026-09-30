@@ -111,7 +111,7 @@ export function runsRoutes(
 
   // DELETE /api/runs/:id — cancel a run
   app.delete('/:id', (c) => {
-    runManager.cancelRun(c.req.param('id'));
+    runManager.cancelRun(c.req.param('id'), 'api:delete-run');
     return c.body(null, 204);
   });
 
