@@ -22,13 +22,6 @@ name: Probe OSS upload throughput
 
 on:
   workflow_dispatch:
-  # workflow_dispatch only works once this file is registered on the default
-  # branch, so while the probe lives on a side branch it is driven by pushes
-  # that touch the probe itself or the upload script it measures.
-  push:
-    paths:
-      - '.github/workflows/probe-oss-throughput.yml'
-      - 'scripts/upload-release-assets.sh'
     inputs:
       size_mb:
         description: 'Size of each probe file, in MiB'
@@ -36,6 +29,13 @@ on:
       file_count:
         description: 'How many probe files per phase'
         default: '4'
+  # workflow_dispatch only works once this file is registered on the default
+  # branch, so while the probe lives on a side branch it is driven by pushes
+  # that touch the probe itself or the upload script it measures.
+  push:
+    paths:
+      - '.github/workflows/probe-oss-throughput.yml'
+      - 'scripts/upload-release-assets.sh'
 
 permissions:
   id-token: write
@@ -89,15 +89,27 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Generate probe payload
+        # The `|| '10'` fallbacks are load-bearing: on a push event there is no
+        # `inputs` context at all, so `${{ inputs.size_mb }}` renders as an
+        # empty string — which silently produced a zero-file payload and made
+        # the first probe run "measure" nothing (run 36700797222).
+        env:
+          SIZE_MB: ${{ inputs.size_mb || '10' }}
+          COUNT: ${{ inputs.file_count || '4' }}
         run: |
-          SIZE_MB="${{ inputs.size_mb }}"
-          COUNT="${{ inputs.file_count }}"
           mkdir -p probe-assets
           for i in $(seq 1 "${COUNT}"); do
             head -c $((SIZE_MB * 1024 * 1024)) /dev/urandom > "probe-assets/probe-${i}.bin"
           done
           ls -la probe-assets
-          echo "payload=$((SIZE_MB * COUNT)) MiB" | tee -a "$GITHUB_STEP_SUMMARY"
+          # An empty payload must abort here: the upload script would report a
+          # meaningless "aggregate" from zero bytes and we would read it as data.
+          generated=$(find probe-assets -type f | wc -l)
+          if [ "${generated}" -lt 2 ]; then
+            echo "::error::generated ${generated} probe files — need at least 2 to compare serial vs 4-wide"
+            exit 1
+          fi
+          echo "payload=$((SIZE_MB * COUNT)) MiB in ${generated} files" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Phase 1 — serial (parallel=1)
         id: serial
@@ -109,6 +121,10 @@ jobs:
         run: |
           bash scripts/upload-release-assets.sh ./probe-assets | tee /tmp/serial.txt
           rate=$(grep -oE 'aggregate [0-9]+ KB/s' /tmp/serial.txt | grep -oE '[0-9]+')
+          if [ -z "${rate}" ]; then
+            echo "::error::serial phase printed no aggregate line — see the output above"
+            exit 1
+          fi
           echo "serial_kbps=${rate}" >> "$GITHUB_OUTPUT"
 
       - name: Phase 2 — 4-wide (parallel=4)
@@ -121,6 +137,10 @@ jobs:
         run: |
           bash scripts/upload-release-assets.sh ./probe-assets | tee /tmp/wide.txt
           rate=$(grep -oE 'aggregate [0-9]+ KB/s' /tmp/wide.txt | grep -oE '[0-9]+')
+          if [ -z "${rate}" ]; then
+            echo "::error::4-wide phase printed no aggregate line — see the output above"
+            exit 1
+          fi
           echo "wide_kbps=${rate}" >> "$GITHUB_OUTPUT"
 
       - name: Verdict
