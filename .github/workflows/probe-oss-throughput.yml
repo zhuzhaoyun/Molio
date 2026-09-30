@@ -1,24 +1,23 @@
 name: Probe OSS upload throughput
 
-# Diagnostic only — never runs on push/PR, and never touches a release.
+# Diagnostic only — never runs on push to main, and never touches a release.
 #
 # Why this exists: v0.3.59's OSS upload died at the 1h STS token boundary
 # because the runner→Guangzhou OSS path had collapsed from ~16.9MB/s (v0.3.56,
 # 09-18) to ~156KB/s (v0.3.58, 09-24) with no repo change. Parallelising the
-# transfers only fixes that if the throttle is PER CONNECTION — if the whole
-# link is capped, four streams move the same aggregate as one and the release
-# would burn another hour to fail the same way.
+# transfers only fixes that if the throttle is PER CONNECTION; if the whole
+# link is capped, four streams move the same aggregate and the release burns
+# another hour to fail the same way.
 #
-# So measure instead of betting: upload the same payload twice through the real
-# script, once serial and once 4-wide, and compare the aggregate rates.
-#   aggregate(4) ≈ 4 × aggregate(1)  → per-connection cap → parallel works
-#   aggregate(4) ≈     aggregate(1)  → link-wide cap → need OSS transfer
-#                                      acceleration instead
-#
-# Objects land under releases/_probe-<run-id>/ and are deleted at the end
-# (best-effort: a failed cleanup warns, it does not hide the measurements).
-# That prefix is inert — electron-updater reads latest*.yml / latest.json at
-# the root of releases/, never a directory listing.
+# Design note — phases ALTERNATE (1,4,1,4) rather than running "all serial,
+# then all parallel". That link varies by ~100x between releases, so a
+# back-to-back A-then-B comparison cannot tell a concurrency effect from link
+# drift. The first version of this probe did exactly that and reported 0.4x
+# from run 36700991995 — an unusable number, because it also drifted. Averaging
+# two interleaved repetitions of each configuration is what makes the ratio
+# readable. Objects land under releases/_probe-<run-id>/... and are deleted at
+# the end; that prefix is inert (electron-updater reads latest*.yml /
+# latest.json at the root of releases/, never a directory listing).
 
 on:
   workflow_dispatch:
@@ -45,7 +44,13 @@ jobs:
   probe:
     name: Measure upload throughput (serial vs 4-wide)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
+    env:
+      # Resolved once here: on a push event there is no `inputs` context at all,
+      # so `${{ inputs.size_mb }}` would render empty and silently generate a
+      # zero-byte payload (run 36700797222).
+      SIZE_MB: ${{ inputs.size_mb || '10' }}
+      FILE_COUNT: ${{ inputs.file_count || '4' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -89,16 +94,9 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Generate probe payload
-        # The `|| '10'` fallbacks are load-bearing: on a push event there is no
-        # `inputs` context at all, so `${{ inputs.size_mb }}` renders as an
-        # empty string — which silently produced a zero-file payload and made
-        # the first probe run "measure" nothing (run 36700797222).
-        env:
-          SIZE_MB: ${{ inputs.size_mb || '10' }}
-          COUNT: ${{ inputs.file_count || '4' }}
         run: |
           mkdir -p probe-assets
-          for i in $(seq 1 "${COUNT}"); do
+          for i in $(seq 1 "${FILE_COUNT}"); do
             head -c $((SIZE_MB * 1024 * 1024)) /dev/urandom > "probe-assets/probe-${i}.bin"
           done
           ls -la probe-assets
@@ -109,78 +107,85 @@ jobs:
             echo "::error::generated ${generated} probe files — need at least 2 to compare serial vs 4-wide"
             exit 1
           fi
-          echo "payload=$((SIZE_MB * COUNT)) MiB in ${generated} files" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "payload=$((SIZE_MB * FILE_COUNT)) MiB in ${generated} files (per phase)" | tee -a "$GITHUB_STEP_SUMMARY"
 
-      - name: Phase 1 — serial (parallel=1)
-        id: serial
+      - name: Alternate serial / 4-wide phases
         env:
           OSS_BUCKET: ${{ vars.OSS_BUCKET }}
           OSS_ENDPOINT: ${{ vars.OSS_ENDPOINT }}
-          OSS_UPLOAD_PARALLEL: '1'
-          TAG: '_probe-serial-${{ github.run_id }}'
         run: |
-          bash scripts/upload-release-assets.sh ./probe-assets | tee /tmp/serial.txt
-          rate=$(grep -oE 'aggregate [0-9]+ KB/s' /tmp/serial.txt | grep -oE '[0-9]+')
-          if [ -z "${rate}" ]; then
-            echo "::error::serial phase printed no aggregate line — see the output above"
-            exit 1
-          fi
-          echo "serial_kbps=${rate}" >> "$GITHUB_OUTPUT"
+          : > /tmp/results.txt
+          run_phase() {
+            local parallel="$1" label="$2"
+            echo "::group::phase ${label} (parallel=${parallel})"
+            OSS_UPLOAD_PARALLEL="${parallel}" \
+            TAG="_probe-${label}-${{ github.run_id }}" \
+              bash scripts/upload-release-assets.sh ./probe-assets | tee "/tmp/${label}.txt"
+            local rate
+            rate=$(grep -oE 'aggregate [0-9]+ KB/s' "/tmp/${label}.txt" | grep -oE '[0-9]+')
+            echo "::endgroup::"
+            if [ -z "${rate}" ]; then
+              echo "::error::phase ${label} printed no aggregate line"
+              exit 1
+            fi
+            echo "${label} ${parallel} ${rate}" >> /tmp/results.txt
+          }
 
-      - name: Phase 2 — 4-wide (parallel=4)
-        id: wide
-        env:
-          OSS_BUCKET: ${{ vars.OSS_BUCKET }}
-          OSS_ENDPOINT: ${{ vars.OSS_ENDPOINT }}
-          OSS_UPLOAD_PARALLEL: '4'
-          TAG: '_probe-wide-${{ github.run_id }}'
-        run: |
-          bash scripts/upload-release-assets.sh ./probe-assets | tee /tmp/wide.txt
-          rate=$(grep -oE 'aggregate [0-9]+ KB/s' /tmp/wide.txt | grep -oE '[0-9]+')
-          if [ -z "${rate}" ]; then
-            echo "::error::4-wide phase printed no aggregate line — see the output above"
-            exit 1
-          fi
-          echo "wide_kbps=${rate}" >> "$GITHUB_OUTPUT"
+          # Interleaved so that any drift in the link hits both configurations.
+          run_phase 1 a1
+          run_phase 4 b1
+          run_phase 1 a2
+          run_phase 4 b2
+
+          cat /tmp/results.txt
 
       - name: Verdict
         run: |
-          # Default to 0: if a phase's log had no aggregate line the grep left
-          # the output empty, and `[ "" -gt 0 ]` would abort this step under
-          # bash -e before it printed anything useful.
-          serial="${{ steps.serial.outputs.serial_kbps }}"; serial="${serial:-0}"
-          wide="${{ steps.wide.outputs.wide_kbps }}"; wide="${wide:-0}"
-          echo "serial(1-wide): ${serial} KB/s    wide(4-wide): ${wide} KB/s"
-          # Integer ratio, one decimal. Guard the divide-by-zero that a fully
-          # failed phase would otherwise cause.
+          # Mean of each configuration's repetitions, one decimal.
+          read -r serial wide <<<"$(awk '
+            $2 == 1 { s += $3; ns++ }
+            $2 == 4 { w += $3; nw++ }
+            END {
+              s = (ns ? s / ns : 0); w = (nw ? w / nw : 0)
+              printf "%d %d", s, w
+            }' /tmp/results.txt)"
+
+          echo "serial (1 stream): ${serial} KB/s    wide (4 streams): ${wide} KB/s"
           if [ "${serial}" -gt 0 ]; then
             ratio_x10=$(( wide * 10 / serial ))
             echo "speedup: $(( ratio_x10 / 10 )).$(( ratio_x10 % 10 ))x from 4 streams"
           else
-            echo "speedup: n/a (serial phase reported 0 KB/s — check its log)"
+            echo "speedup: n/a (serial phases reported 0 KB/s — check their logs)"
           fi
+
           {
             echo "### OSS upload probe"
             echo ""
-            echo "| phase | aggregate |"
+            echo "| configuration | mean aggregate over its phases |"
             echo "|---|---|"
             echo "| serial (1 stream) | ${serial} KB/s |"
-            echo "| wide (4 streams) | ${wide} KB/s |"
+            echo "| 4-wide (4 streams) | ${wide} KB/s |"
+            echo ""
+            echo "Raw phases (label, parallel, KB/s):"
+            echo '```'
+            cat /tmp/results.txt
+            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
           echo ""
           echo "Interpretation:"
-          echo "  ~4x here  → the cap is per-connection; the parallel fix is enough"
-          echo "  ~1x here  → the cap is on the whole link; parallelism buys nothing,"
-          echo "              switch the upload to OSS transfer acceleration"
+          echo "  ~4x → per-connection cap; keep the parallel upload"
+          echo "  ~1x → the link, not the stream count, is the limit; ship serial"
+          echo "        and reach for OSS transfer acceleration when it recurs"
 
       - name: Clean up probe objects
         if: always()
         run: |
-          for tag in "_probe-serial-${{ github.run_id }}" "_probe-wide-${{ github.run_id }}"; do
-            ossutil rm -r -f "oss://${{ vars.OSS_BUCKET }}/releases/${tag}/" \
+          for label in a1 b1 a2 b2; do
+            ossutil rm -r -f "oss://${{ vars.OSS_BUCKET }}/releases/_probe-${label}-${{ github.run_id }}/" \
               --endpoint="${{ vars.OSS_ENDPOINT }}" \
               -i "${OSS_ACCESS_KEY_ID}" \
               -k "${OSS_ACCESS_KEY_SECRET}" \
               -t "${OSS_SECURITY_TOKEN}" \
-              || echo "::warning::cleanup of ${tag} failed — remove it manually"
+              || echo "::warning::cleanup of _probe-${label} failed — remove it manually"
           done
