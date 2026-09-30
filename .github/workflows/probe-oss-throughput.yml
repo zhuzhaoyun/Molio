@@ -22,6 +22,13 @@ name: Probe OSS upload throughput
 
 on:
   workflow_dispatch:
+  # workflow_dispatch only works once this file is registered on the default
+  # branch, so while the probe lives on a side branch it is driven by pushes
+  # that touch the probe itself or the upload script it measures.
+  push:
+    paths:
+      - '.github/workflows/probe-oss-throughput.yml'
+      - 'scripts/upload-release-assets.sh'
     inputs:
       size_mb:
         description: 'Size of each probe file, in MiB'
