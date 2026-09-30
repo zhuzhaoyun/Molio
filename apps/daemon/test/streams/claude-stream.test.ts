@@ -475,6 +475,75 @@ describe('Claude stream handler', () => {
       }
     });
 
+    // Bug: real Claude Code error results do NOT carry `error.message` (that is
+    // Qwen Code's shape). Claude Code puts the cause in `errors: string[]` /
+    // `result` / `subtype` / `api_error_status`. The old code fell through to
+    // the generic 'Agent returned error result', masking the real cause in the
+    // runtimes test button and chat (e.g. "Invalid API key", provider 4xx/5xx).
+    it('should surface errors[] from real Claude Code error_during_execution result', () => {
+      const { events, onEvent } = collectEvents();
+      const handler = createClaudeStreamHandler(onEvent);
+
+      // Shape verified against real Claude Code 2.1.x stream-json output:
+      // top-level subtype/result/api_error_status, no error.message object.
+      feedLines(handler, JSON.stringify({
+        type: 'result',
+        subtype: 'error_during_execution',
+        is_error: true,
+        api_error_status: 401,
+        duration_ms: 1200,
+        num_turns: 1,
+        errors: ['API Error: 401 {"error":{"type":"authentication_error","message":"invalid x-api-key"}}'],
+        session_id: 'abc-123',
+        usage: { input_tokens: 0, output_tokens: 0 },
+      }));
+
+      const errorEvents = events.filter((e) => e.type === 'error');
+      assert.equal(errorEvents.length, 1);
+      if (errorEvents[0]!.type === 'error') {
+        assert.match(errorEvents[0]!.message, /authentication_error|invalid x-api-key/);
+        assert.ok(!errorEvents[0]!.message.includes('Agent returned error result'));
+      }
+    });
+
+    it('should fall back to result string when errors[] absent on error result', () => {
+      const { events, onEvent } = collectEvents();
+      const handler = createClaudeStreamHandler(onEvent);
+
+      feedLines(handler, JSON.stringify({
+        type: 'result',
+        subtype: 'error_during_execution',
+        is_error: true,
+        result: 'API Error: Request was aborted.',
+        usage: { input_tokens: 0, output_tokens: 0 },
+      }));
+
+      const errorEvents = events.filter((e) => e.type === 'error');
+      assert.equal(errorEvents.length, 1);
+      if (errorEvents[0]!.type === 'error') {
+        assert.equal(errorEvents[0]!.message, 'API Error: Request was aborted.');
+      }
+    });
+
+    it('should include subtype and api_error_status when no error text is present', () => {
+      const { events, onEvent } = collectEvents();
+      const handler = createClaudeStreamHandler(onEvent);
+
+      feedLines(handler, JSON.stringify({
+        type: 'result',
+        subtype: 'error_max_turns',
+        is_error: true,
+        api_error_status: null,
+        usage: { input_tokens: 0, output_tokens: 0 },
+      }));
+
+      const errorEvents = events.filter((e) => e.type === 'error');
+      assert.equal(errorEvents.length, 1);
+      if (errorEvents[0]!.type === 'error') {
+        assert.match(errorEvents[0]!.message, /error_max_turns/);
+      }
+    });
+
     it('should emit turn_end when result arrives without prior stop_reason (Qwen fix)', () => {
       // Bug: Qwen Code assistant messages lack stop_reason, so turn_end was never
       // emitted. Messages stayed in "streaming" state forever in the frontend.
