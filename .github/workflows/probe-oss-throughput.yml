@@ -1,0 +1,159 @@
+name: Probe OSS upload throughput
+
+# Diagnostic only — never runs on push/PR, and never touches a release.
+#
+# Why this exists: v0.3.59's OSS upload died at the 1h STS token boundary
+# because the runner→Guangzhou OSS path had collapsed from ~16.9MB/s (v0.3.56,
+# 09-18) to ~156KB/s (v0.3.58, 09-24) with no repo change. Parallelising the
+# transfers only fixes that if the throttle is PER CONNECTION — if the whole
+# link is capped, four streams move the same aggregate as one and the release
+# would burn another hour to fail the same way.
+#
+# So measure instead of betting: upload the same payload twice through the real
+# script, once serial and once 4-wide, and compare the aggregate rates.
+#   aggregate(4) ≈ 4 × aggregate(1)  → per-connection cap → parallel works
+#   aggregate(4) ≈     aggregate(1)  → link-wide cap → need OSS transfer
+#                                      acceleration instead
+#
+# Objects land under releases/_probe-<run-id>/ and are deleted at the end
+# (best-effort: a failed cleanup warns, it does not hide the measurements).
+# That prefix is inert — electron-updater reads latest*.yml / latest.json at
+# the root of releases/, never a directory listing.
+
+on:
+  workflow_dispatch:
+    inputs:
+      size_mb:
+        description: 'Size of each probe file, in MiB'
+        default: '10'
+      file_count:
+        description: 'How many probe files per phase'
+        default: '4'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  probe:
+    name: Measure upload throughput (serial vs 4-wide)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ossutil
+        run: |
+          curl -fsSL https://gosspublic.alicdn.com/ossutil/install.sh | sudo bash
+
+      - name: Obtain STS credentials via OIDC
+        env:
+          ALIYUN_ROLE_ARN: ${{ vars.ALIYUN_ROLE_ARN }}
+          ALIYUN_OIDC_PROVIDER_ARN: ${{ vars.ALIYUN_OIDC_PROVIDER_ARN }}
+        run: |
+          export ID_TOKEN=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.aliyuncs.com" | jq -r '.value')
+          if [ -z "$ID_TOKEN" ] || [ "$ID_TOKEN" = "null" ]; then
+            echo "❌ Failed to get OIDC token from GitHub"
+            exit 1
+          fi
+          echo "✅ OIDC token obtained (${#ID_TOKEN} chars)"
+
+          pip install -q alibabacloud_sts20150401 alibabacloud_credentials
+          python3 scripts/sts_oidc.py \
+            --role-arn "${ALIYUN_ROLE_ARN}" \
+            --oidc-provider-arn "${ALIYUN_OIDC_PROVIDER_ARN}" \
+            --session-name "probe-oss-${{ github.run_id }}" \
+            > /tmp/sts_output.json
+          CREDENTIALS=$(cat /tmp/sts_output.json)
+
+          AK_ID=$(echo "$CREDENTIALS" | jq -r '.AccessKeyId')
+          AK_SECRET=$(echo "$CREDENTIALS" | jq -r '.AccessKeySecret')
+          STS_TOKEN=$(echo "$CREDENTIALS" | jq -r '.SecurityToken')
+          if [ -z "$AK_ID" ] || [ "$AK_ID" = "null" ]; then
+            echo "❌ Failed to extract credentials from STS response: $CREDENTIALS"
+            exit 1
+          fi
+          echo "✅ STS credentials obtained"
+
+          {
+            echo "OSS_ACCESS_KEY_ID=$AK_ID"
+            echo "OSS_ACCESS_KEY_SECRET=$AK_SECRET"
+            echo "OSS_SECURITY_TOKEN=$STS_TOKEN"
+          } >> "$GITHUB_ENV"
+
+      - name: Generate probe payload
+        run: |
+          SIZE_MB="${{ inputs.size_mb }}"
+          COUNT="${{ inputs.file_count }}"
+          mkdir -p probe-assets
+          for i in $(seq 1 "${COUNT}"); do
+            head -c $((SIZE_MB * 1024 * 1024)) /dev/urandom > "probe-assets/probe-${i}.bin"
+          done
+          ls -la probe-assets
+          echo "payload=$((SIZE_MB * COUNT)) MiB" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Phase 1 — serial (parallel=1)
+        id: serial
+        env:
+          OSS_BUCKET: ${{ vars.OSS_BUCKET }}
+          OSS_ENDPOINT: ${{ vars.OSS_ENDPOINT }}
+          OSS_UPLOAD_PARALLEL: '1'
+          TAG: '_probe-serial-${{ github.run_id }}'
+        run: |
+          bash scripts/upload-release-assets.sh ./probe-assets | tee /tmp/serial.txt
+          rate=$(grep -oE 'aggregate [0-9]+ KB/s' /tmp/serial.txt | grep -oE '[0-9]+')
+          echo "serial_kbps=${rate}" >> "$GITHUB_OUTPUT"
+
+      - name: Phase 2 — 4-wide (parallel=4)
+        id: wide
+        env:
+          OSS_BUCKET: ${{ vars.OSS_BUCKET }}
+          OSS_ENDPOINT: ${{ vars.OSS_ENDPOINT }}
+          OSS_UPLOAD_PARALLEL: '4'
+          TAG: '_probe-wide-${{ github.run_id }}'
+        run: |
+          bash scripts/upload-release-assets.sh ./probe-assets | tee /tmp/wide.txt
+          rate=$(grep -oE 'aggregate [0-9]+ KB/s' /tmp/wide.txt | grep -oE '[0-9]+')
+          echo "wide_kbps=${rate}" >> "$GITHUB_OUTPUT"
+
+      - name: Verdict
+        run: |
+          # Default to 0: if a phase's log had no aggregate line the grep left
+          # the output empty, and `[ "" -gt 0 ]` would abort this step under
+          # bash -e before it printed anything useful.
+          serial="${{ steps.serial.outputs.serial_kbps }}"; serial="${serial:-0}"
+          wide="${{ steps.wide.outputs.wide_kbps }}"; wide="${wide:-0}"
+          echo "serial(1-wide): ${serial} KB/s    wide(4-wide): ${wide} KB/s"
+          # Integer ratio, one decimal. Guard the divide-by-zero that a fully
+          # failed phase would otherwise cause.
+          if [ "${serial}" -gt 0 ]; then
+            ratio_x10=$(( wide * 10 / serial ))
+            echo "speedup: $(( ratio_x10 / 10 )).$(( ratio_x10 % 10 ))x from 4 streams"
+          else
+            echo "speedup: n/a (serial phase reported 0 KB/s — check its log)"
+          fi
+          {
+            echo "### OSS upload probe"
+            echo ""
+            echo "| phase | aggregate |"
+            echo "|---|---|"
+            echo "| serial (1 stream) | ${serial} KB/s |"
+            echo "| wide (4 streams) | ${wide} KB/s |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo ""
+          echo "Interpretation:"
+          echo "  ~4x here  → the cap is per-connection; the parallel fix is enough"
+          echo "  ~1x here  → the cap is on the whole link; parallelism buys nothing,"
+          echo "              switch the upload to OSS transfer acceleration"
+
+      - name: Clean up probe objects
+        if: always()
+        run: |
+          for tag in "_probe-serial-${{ github.run_id }}" "_probe-wide-${{ github.run_id }}"; do
+            ossutil rm -r -f "oss://${{ vars.OSS_BUCKET }}/releases/${tag}/" \
+              --endpoint="${{ vars.OSS_ENDPOINT }}" \
+              -i "${OSS_ACCESS_KEY_ID}" \
+              -k "${OSS_ACCESS_KEY_SECRET}" \
+              -t "${OSS_SECURITY_TOKEN}" \
+              || echo "::warning::cleanup of ${tag} failed — remove it manually"
+          done
