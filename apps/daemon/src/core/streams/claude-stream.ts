@@ -8,6 +8,56 @@ interface BlockState {
   input: string;
 }
 
+/**
+ * Extract a human-readable cause from an error `result` event.
+ *
+ * Different agents put the error text in different fields:
+ * - Qwen Code:        `error: { message: string }`
+ * - Claude Code 2.x:  `errors: string[]` (verified live; also `subtype`,
+ *                     `api_error_status`, and `result` are top-level — there
+ *                     is NO `error.message` object)
+ * - some builds:      `result: string` carries the error text
+ *
+ * The old code only checked `error.message` and fell back to a generic
+ * 'Agent returned error result', which masked the real cause (bad API key,
+ * provider 4xx/5xx, max turns…) in the runtimes test button and chat.
+ */
+function extractResultError(obj: Record<string, unknown>): string {
+  // 1. Qwen Code shape: error.message
+  const err = obj['error'];
+  if (typeof err === 'object' && err !== null) {
+    const m = (err as Record<string, unknown>)['message'];
+    if (typeof m === 'string' && m.trim()) return m;
+  }
+  if (typeof err === 'string' && err.trim()) return err;
+
+  // 2. Claude Code shape: errors[]
+  if (Array.isArray(obj['errors'])) {
+    const parts = obj['errors'].filter(
+      (e): e is string => typeof e === 'string' && e.trim() !== '',
+    );
+    if (parts.length > 0) return parts.join('; ');
+  }
+
+  // 3. Error text in the result string
+  if (typeof obj['result'] === 'string' && obj['result'].trim()) {
+    return obj['result'];
+  }
+
+  // 4. No text anywhere — surface subtype / api_error_status so the message
+  //    is still diagnostic instead of a contentless generic string.
+  const details: string[] = [];
+  if (typeof obj['subtype'] === 'string' && obj['subtype'].trim()) {
+    details.push(obj['subtype']);
+  }
+  if (typeof obj['api_error_status'] === 'number') {
+    details.push(`api_error_status=${obj['api_error_status']}`);
+  }
+  return details.length > 0
+    ? `Agent returned error result (${details.join(', ')})`
+    : 'Agent returned error result';
+}
+
 export function createClaudeStreamHandler(
   onEvent: (ev: AgentEvent) => void,
 ): StreamHandler {
@@ -106,11 +156,7 @@ export function createClaudeStreamHandler(
     if (obj['type'] === 'result') {
       // Handle error results — emit error event instead of usage
       if (obj['is_error'] === true) {
-        const err = obj['error'] as Record<string, unknown> | undefined;
-        const message = typeof err?.['message'] === 'string'
-          ? err['message'] as string
-          : 'Agent returned error result';
-        onEvent({ type: 'error', message });
+        onEvent({ type: 'error', message: extractResultError(obj) });
         return;
       }
       // `result` is the terminal signal of a turn — emit turn_end
