@@ -2,7 +2,7 @@
  * Floating context menu for right-click actions on file tree nodes.
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 
 export interface MenuItem {
   label?: string;
@@ -17,6 +17,8 @@ export interface MenuItem {
   title?: string;
   /** data-testid for stable E2E selection */
   testid?: string;
+  /** Optional leading glyph. Omitted items keep the plain (label-only) layout. */
+  icon?: ReactNode;
 }
 
 interface ContextMenuProps {
@@ -95,7 +97,7 @@ export function ContextMenu({ items, position, onClose }: ContextMenuProps) {
               key={i}
               type="button"
               data-testid={item.testid}
-              className={`ctx-menu-item${item.danger ? ' is-danger' : ''}${item.disabled ? ' is-disabled' : ''}`}
+              className={`ctx-menu-item${item.danger ? ' is-danger' : ''}${item.disabled ? ' is-disabled' : ''}${item.icon ? ' has-icon' : ''}`}
               disabled={item.disabled}
               title={item.title}
               onClick={() => {
@@ -103,7 +105,8 @@ export function ContextMenu({ items, position, onClose }: ContextMenuProps) {
                 onClose();
               }}
             >
-              {item.label}
+              {item.icon && <span className="ctx-menu-icon">{item.icon}</span>}
+              <span className="ctx-menu-label">{item.label}</span>
             </button>
           );
         })}

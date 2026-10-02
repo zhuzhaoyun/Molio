@@ -5,7 +5,7 @@
  * - Binary (pdf/docx/pptx): file info card + "open with system app" button
  */
 
-import { useEffect, useState, useRef, useMemo, useCallback, lazy, Suspense } from 'react';
+import { useEffect, useState, useRef, useMemo, useCallback, lazy, Suspense, type RefObject } from 'react';
 import { MAX_ASK_SELECTION } from './kb-constants';
 import type { FileContent } from '@molio/contracts';
 import type { ThemeConfig } from './MdStylePanel';
@@ -20,6 +20,7 @@ import type { KbCodeMirrorViewerHandle } from './KbCodeMirrorViewer';
 import { KbFrontmatterCard } from './KbFrontmatterCard';
 import { formatFileSize } from '../../utils/format';
 import { preprocessKbMarkdown } from '../../hooks/useKnowledge';
+import { useScrollMemory, type ScrollIntent } from '../../hooks/useScrollMemory';
 import { api } from '../../api/client';
 import { useI18n } from '../../i18n';
 import { useNavigationHistory, navigationHistoryStore } from '../../stores/navigationHistoryStore';
@@ -135,6 +136,12 @@ interface KbMainContentProps {
   companion?: boolean;
   /** 副视图（分屏）时头部右侧的关闭 ×（而非独立的副格标题栏）。 */
   onCloseCompanion?: () => void;
+  /**
+   * 本次导航的滚动落位意图（restore = 切回已开着的文档；fresh = 开进没有它的
+   * 标签）。由 KnowledgeBasePage 在触发选择前**同步**写入（ref，不是 state；
+   * 原因见 useScrollMemory 约束 5）。缺省 = restore。
+   */
+  scrollIntentRef?: RefObject<ScrollIntent>;
 }
 
 export function KbMainContent({
@@ -165,6 +172,7 @@ export function KbMainContent({
   onNavigateToFile,
   companion = false,
   onCloseCompanion,
+  scrollIntentRef,
 }: KbMainContentProps) {
   const { t } = useI18n();
   const { canGoBack, canGoForward } = useNavigationHistory();
@@ -198,13 +206,6 @@ export function KbMainContent({
   // CM path: text category, not too-large, and (large md OR non-markdown).
   const isCmPath = category === 'text' && !fileContent?.tooLarge && (isLargeMd || !isMarkdown);
 
-  // Raw text used by the CM viewer — NO doocs preprocessing (those transforms
-  // mutate HTML/rendered markdown, not raw source).
-  const rawContent = useMemo(
-    () => editedContent ?? fileContent?.content ?? '',
-    [editedContent, fileContent?.content],
-  );
-
   // Memoize the rendered markdown content so MdRenderer (wrapped in memo)
   // doesn't see a new string prop on unrelated re-renders. Preprocessing only
   // runs for the small-.md doocs path — never for the CM source view.
@@ -214,6 +215,71 @@ export function KbMainContent({
       : '',
     [editedContent, fileContent?.content, vaultId, isSmallMd],
   );
+
+  // Raw text used by the CM viewer — NO doocs preprocessing (those transforms
+  // mutate HTML/rendered markdown, not raw source).
+  // （位置记忆的 CM 就绪判定要拿它比对，故声明在此处、滚动记忆之前。）
+  const rawContent = useMemo(
+    () => editedContent ?? fileContent?.content ?? '',
+    [editedContent, fileContent?.content],
+  );
+
+  // 「已上屏的内容」——MdRenderer 渲染完一篇后回传的那一份内容串。
+  // 位置记忆靠它判断容器里到底画的是哪一篇（见下 scrollMemoryReady）。
+  const [mdRenderedSource, setMdRenderedSource] = useState<string | null>(null);
+
+  // ── 阅读视窗位置记忆（小 .md 阅读路径 + 源码视图两条路） ──
+  // key 带 pane 前缀：同一文档同时出现在主格与副格时两者位置互不覆盖。
+  // vaultId + 相对路径 = 文档身份（文件 tab 的 id 本就是 `file:${path}`，等价）。
+  // 源码视图额外加 `cm:` 段：同一篇文档在阅读视图与源码视图里是两套高度模型，
+  // 位置不可互换。
+  // 不在记忆范围的：PDF / 图片（容器是 PDF 阅读器 / 图片查看器，PDF 还得连页码和缩放
+  // 一起记，另排期）、排版与编辑模式。这些路径 key 为 null，hook 整个让位。
+  const isReadingPath = category === 'text' && isSmallMd && !isTypesetMode && !isEditMode && !!selectedFile;
+  const isCmMemoryPath = isCmPath && !!selectedFile;
+  const panePrefix = companion ? 'companion' : 'main';
+  const scrollMemoryKey = isReadingPath
+    ? `${panePrefix}:${vaultId ?? ''}:${selectedFile ?? ''}`
+    : isCmMemoryPath
+      ? `${panePrefix}:cm:${vaultId ?? ''}:${selectedFile ?? ''}`
+      : null;
+
+  // 指纹（size:modifiedAt）：文档被 AI/外部改写过则旧位置作废，回顶部。
+  const scrollMemoryFp =
+    fileContent != null ? `${fileContent.size}:${fileContent.modifiedAt}` : null;
+  // 源码视图的滚动元素由 CM 自己交出（量过一遍之后，见 KbCodeMirrorViewer.onMeasured）。
+  // 这里用 state 而不是 ref：容器到位那一刻要触发 hook 的 effect 重跑（挂监听 + 落位），
+  // 而 ref 的 current 变化不会让任何 effect 重跑。故按元素身份造一个新的 ref 对象。
+  const [cmScrollHost, setCmScrollHost] = useState<{ el: HTMLElement; source: string } | null>(null);
+  const cmContainerRef = useMemo<RefObject<HTMLElement | null>>(
+    () => ({ current: cmScrollHost?.el ?? null }),
+    [cmScrollHost],
+  );
+  const handleCmMeasured = useCallback((el: HTMLElement | null, source: string | null) => {
+    setCmScrollHost(el && source != null ? { el, source } : null);
+  }, []);
+
+  // 内容已就绪 = ①手上这份 fileContent 正是当前选中的文件，且②它真的已经画到容器里了。
+  // ②不能省：MdRenderer 把渲染结果放在自己的 state 里、在 effect 中异步写入
+  // （见 MdRenderer「Render markdown content」），所以 fileContent 到手那一帧容器里
+  // 还是上一篇——此时落位会被上一篇的 scrollHeight 截断（上一篇越短截得越狠，
+  // 无滚动条的短文档直接截到 0，表现为「切回长文档却回到顶部」）。
+  // 用「已上屏的内容串 === 当前要渲染的内容串」判定，字符串相等即同一篇，
+  // 换文档自动失效，不会误判为就绪。
+  // 源码视图同理，判据换成「CM 量过的那份内容 === 当前内容」（CM 侧不变量见 onMeasured）。
+  const scrollMemoryReady = isCmMemoryPath
+    ? cmScrollHost != null && cmScrollHost.source === rawContent
+    : fileContent != null &&
+      fileContent.path === selectedFile &&
+      mdRenderedSource != null &&
+      mdRenderedSource === renderedContent;
+  const { scrollToTop } = useScrollMemory({
+    containerRef: isCmMemoryPath ? cmContainerRef : contentRef,
+    key: scrollMemoryKey,
+    fingerprint: scrollMemoryFp,
+    ready: scrollMemoryReady,
+    intentRef: scrollIntentRef,
+  });
 
   // Parse YAML frontmatter from the raw source for the property card.
   // Only meaningful for small .md files (doocs path).
@@ -332,6 +398,14 @@ export function KbMainContent({
     const sel = window.getSelection();
     return sel ? sel.toString().trim() : '';
   }, []);
+
+  // 这里曾有一段「selectedFile 变即 scrollTo 顶部」的 effect（#274）：它修掉了
+  // 容器复用导致的 scrollTop 残留，但把「点标签切回」「后退回到刚才那篇」也一并
+  // 顶回了顶部。现在滚动位置统一由 useScrollMemory 负责（见上方「阅读视窗位置
+  // 记忆」）：新开文档回顶、切回已有标签/前进后退恢复，残留由它的无记录分支兜住。
+  // 不要再把无条件回顶改回来——那会让恢复永远看不到效果。
+  // （CM / 源码路径的滚动容器是 CodeMirror 自己的 .cm-scroller，不在 contentRef
+  //   上，本 hook 对它 key 为 null、整体让位——那条路径的位置记忆尚未做。）
 
   // Capture-phase click handler: intercept wiki link clicks within the KB
   // shell. Prevents native <a href> navigation, checks if the file exists
@@ -472,6 +546,24 @@ export function KbMainContent({
           {/* ── File edit / output actions (text files only, small-.md doocs path) ── */}
           {category === 'text' && selectedFile && !isCmPath && (
             <>
+              {/* 阅读路径的「回到顶部」—— 与 CM 路径的 kb-btn-top 同款同 testid
+                  （两条路径互斥，不会同时渲染）。有了位置记忆后，这是「我想从头
+                  重读」的显式逃逸口：CM 路径本来就有，阅读路径此前没有。 */}
+              {isReadingPath && (
+                <button
+                  type="button"
+                  className="kb-btn kb-btn-ghost"
+                  onClick={scrollToTop}
+                  title={t('kb.scrollToTop')}
+                  data-testid="kb-btn-top"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                    <line x1="12" y1="19" x2="12" y2="5" />
+                    <polyline points="5 12 12 5 19 12" />
+                  </svg>
+                </button>
+              )}
+
               {/* Save — only in editing modes (read mode has nothing to save) */}
               {onSave && (isEditMode || isTypesetMode) && (
                 <button type="button" className="kb-btn kb-btn-ghost" onClick={onSave} title={t('kb.save')}>
@@ -902,7 +994,11 @@ export function KbMainContent({
           <div className="kb-content-area" ref={contentRef} onContextMenu={handleContextMenu}>
             {fileContent ? (
               // 优先使用编辑后的内容（未保存的更改），否则使用原始文件内容
-              <MdRenderer content={renderedContent} themeConfig={themeConfig} />
+              <MdRenderer
+                content={renderedContent}
+                themeConfig={themeConfig}
+                onRendered={setMdRenderedSource}
+              />
             ) : (
               <div className="kb-empty-state"><p>Loading...</p></div>
             )}
@@ -932,6 +1028,7 @@ export function KbMainContent({
                 fileName={fileName}
                 wrap={wrap}
                 onRequestContextMenu={handleCmContextMenu}
+                onMeasured={handleCmMeasured}
               />
             </Suspense>
           </ViewerErrorBoundary>

@@ -6,7 +6,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import type { TreeNode, GraphScope } from '@molio/contracts';
+import { MAX_IMPORT_FILE_SIZE } from '@molio/contracts';
 import { useKnowledge } from '../../hooks/useKnowledge';
+import type { ScrollIntent } from '../../hooks/useScrollMemory';
 import { useKbTabs, MAX_TABS, type WorkspaceTab } from '../../hooks/useKbTabs';
 import { vaultStore, useActiveVaultId } from '../../stores/vaultStore';
 import { kbChatSessionsStore } from '../../stores/kbChatSessionsStore';
@@ -335,21 +337,44 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
   }, [kb.editedContent]);
 
   /**
+   * 本次导航的滚动落位意图（见 useScrollMemory 的 ScrollIntent）。每个会切换
+   * 「当前阅读文档」的入口都必须在调 kb.selectFile **之前同步写入**它，hook 在
+   * 文档 key 变化的那次 effect 里读（用 ref 而非 state 的原因见该 hook 约束 5）。
+   * 缺省 'restore' 只影响「谁都没写」的意外路径：无记录时它同样回顶，安全。
+   */
+  const scrollIntentRef = useRef<ScrollIntent>('restore');
+
+  /**
+   * 副格（对照）的落位意图，与主格分开：复用一个 ref 会让「上一次主格导航的
+   * 意图」泄漏到副格下一次换文档上（副格换文档不经过主格的任何回调）。
+   * 副格只有「选一篇文件放进来」这一个入口（它没有导航历史，也就没有「回到刚才
+   * 那篇」的诉求），所以恒定 fresh = 放进来就从顶部开始读。
+   */
+  const companionScrollIntentRef = useRef<ScrollIntent>('fresh');
+
+  /**
    * Open a file by loading it into the CURRENT tab (recycle), unless that tab
    * is pinned (exempt) or a special tab (publish) — in which case it opens in a
    * fresh tab. A file already open just activates its tab. Never grows the tab
    * count from browsing alone. Prompts before switching away from unsaved edits.
+   *
+   * `opts.intent` 覆盖「换文档」时的滚动落位语义（缺省 fresh = 回顶）：只有
+   * 前进/后退这类「回到刚才那篇」的调用才传 restore。文档已开在某个标签里
+   * （走 activateTab 分支）时一律 restore——那正是「多标签切回」的主场景。
    */
-  const handleSelectFile = useCallback((path: string) => {
+  const handleSelectFile = useCallback((path: string, opts?: { intent?: ScrollIntent }) => {
     const action = () => {
       const fileName = path.split('/').pop() ?? path;
       const tabId = `file:${path}`;
       const existingTab = tabs.tabs.find(t => t.id === tabId);
       if (existingTab) {
+        scrollIntentRef.current = 'restore';
         tabs.activateTab(tabId);
         kb.selectFile(path);
         return;
       }
+      // 换文档（回收当前标签 / 新开标签）：默认「重新开始读」。
+      scrollIntentRef.current = opts?.intent ?? 'fresh';
       const activeTab = tabs.getActiveTab();
       // Recycle the active tab in place iff it is a normal (file/blank) tab and
       // not pinned. Pinned tabs keep their document; special tabs are protected.
@@ -388,6 +413,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     const fileName = path.split('/').pop() ?? path;
     const tabId = `file:${path}`;
     if (tabs.tabs.some(t => t.id === tabId)) {
+      scrollIntentRef.current = 'restore';
       tabs.activateTab(tabId);
       kb.selectFile(path);
       return;
@@ -401,6 +427,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
       showToast(`已达 ${MAX_TABS} 个标签上限，请先关闭某个标签`);
       return;
     }
+    scrollIntentRef.current = 'fresh';
     kb.selectFile(path);
   }, [tabs, kb, showToast]);
 
@@ -462,7 +489,9 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
   openGraphTabRef.current = openGraphTab;
   useEffect(() => {
     navigationHistoryStore.registerOpenFile((filePath) => {
-      handleSelectFileRef.current(filePath);
+      // 前进/后退 = 「回到刚才看过的那篇」→ 恢复阅读位置（哪怕它是被回收进当前
+      // 标签的，这也区别于从树里点开同一篇）。
+      handleSelectFileRef.current(filePath, { intent: 'restore' });
     });
     navigationHistoryStore.registerOpenGraph(() => {
       openGraphTabRef.current();
@@ -497,6 +526,8 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     const tab = tabs.tabs.find(t => t.id === tabId);
     const willSwitchFile = targetPath !== null && kb.selectedFile !== targetPath;
     const run = () => {
+      // 点标签切回一篇已经开着的文档 = 这轮交互里最该保留阅读位置的场景。
+      scrollIntentRef.current = 'restore';
       tabs.activateTab(tabId);
       if (targetPath !== null) kb.selectFile(targetPath);
       else if (tab?.type === 'blank') kb.selectFile(null);
@@ -528,6 +559,8 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
       // Sync selectedFile with the newly active tab.
       const newActive = tabs.getActiveTab();
       if (newActive && newActive.id.startsWith('file:')) {
+        // 关掉当前标签后落到相邻标签：那是「切回一篇已经开着的文档」→ 恢复。
+        scrollIntentRef.current = 'restore';
         kb.selectFile(newActive.id.slice(5));
       } else {
         // No file tabs left — clear selection
@@ -630,6 +663,9 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
       if (activeTab.vaultId && activeTab.vaultId !== kb.activeVault.id) return;
       const path = activeTab.id.slice(5);
       if (kb.selectedFile !== path) {
+        // 把「已经活着的标签」的文档补进 selectedFile（挂载 / 切 vault / 换标签）
+        // ——是恢复，不是新读一篇。
+        scrollIntentRef.current = 'restore';
         kb.selectFile(path);
       }
     } else if (activeTab?.type === 'blank') {
@@ -1121,12 +1157,12 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
     }
 
     // Pre-flight checks — filter out files that would fail before any network request.
-    const MAX_FILE_SIZE = 50 * 1024 * 1024;
+    const MAX_FILE_SIZE = MAX_IMPORT_FILE_SIZE;
     const oversized = Array.from(files).filter((f) => f.size > MAX_FILE_SIZE);
     const validFiles = Array.from(files).filter((f) => f.size <= MAX_FILE_SIZE);
     const preflightErrors: string[] = [];
     if (oversized.length > 0) {
-      preflightErrors.push(`${oversized.length} 个超过 50MB 限制`);
+      preflightErrors.push(`${oversized.length} 个文件导入失败（文件大小超过 100MB）`);
     }
     if (validFiles.length === 0) {
       showToast(preflightErrors.join('，'));
@@ -1263,6 +1299,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
       split?.setCompanion({ type: 'graph' });
     } else if (mode === 'copy') {
       // Obsidian「复制当前」：副格直接打开同一文件（只读）
+      companionScrollIntentRef.current = 'fresh';
       split?.setCompanion({ type: 'file', filePath: tab.id.slice(5) });
     } else {
       setShowSplitFilePicker(true);
@@ -1441,6 +1478,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
                 if (tabs.activeTabId) handleCloseTab(tabs.activeTabId);
               }}
               onNavigateToFile={handleNavigateToFile}
+              scrollIntentRef={scrollIntentRef}
             />
           </div>
           {publishTabOpen && (
@@ -1525,6 +1563,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
                   onBuildWiki={() => {}}
                   showFileName={true}
                   onNavigateToFile={handleNavigateToFile}
+                  scrollIntentRef={companionScrollIntentRef}
                 />
               )}
               </div>
@@ -1565,6 +1604,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
               filterText=""
               onSelect={(p) => {
                 setShowSplitFilePicker(false);
+                companionScrollIntentRef.current = 'fresh';
                 split?.setCompanion({ type: 'file', filePath: p });
               }}
               onClose={() => setShowSplitFilePicker(false)}

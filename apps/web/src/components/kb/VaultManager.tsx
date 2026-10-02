@@ -15,6 +15,7 @@ import type { Vault } from '@molio/contracts';
 import { VaultList } from './VaultList';
 import { VaultActionPanel } from './VaultActionPanel';
 import { CreateVaultForm } from './CreateVaultForm';
+import { ConfirmDialog } from './KbModals';
 
 export type VaultManagerView = 'list' | 'create' | 'open';
 
@@ -41,6 +42,49 @@ export function VaultManagerModal({
 }: VaultManagerModalProps) {
   const [view, setView] = useState<VaultManagerView>('list');
   const [creating, setCreating] = useState(false);
+  const [openError, setOpenError] = useState<string | null>(null);
+
+  /**
+   * Both "open" entry points (native picker + browser form) funnel here so a
+   * daemon rejection surfaces in ONE place.
+   *
+   * Regression (2026-09): the Electron branch's cancel-handling catch also
+   * wrapped the `onOpen` call, so a rejected path (e.g. a dot-directory like
+   * `.claude`) was reported as "user cancelled" — silent no-op; and the browser
+   * form awaited `onOpen` with no catch at all (unhandled rejection, no UI).
+   * 「创建仓库」 always showed a message (CreateVaultForm catches), which is why
+   * only the open path looked broken.
+   */
+  const handleOpen = useCallback(
+    async (path: string) => {
+      setCreating(true);
+      try {
+        await onOpen(path);
+        setView('list');
+      } catch (err) {
+        setOpenError(err instanceof Error ? err.message : '打开仓库失败');
+      } finally {
+        setCreating(false);
+      }
+    },
+    [onOpen]
+  );
+
+  /** Native picker (Electron) or the inline path form (browser). */
+  const handlePickLocal = useCallback(async () => {
+    if (!window.__electron__?.showDirectoryPicker) {
+      // Browser: show inline path input form
+      setView('open');
+      return;
+    }
+    let pickedPath: string | null = null;
+    try {
+      pickedPath = await window.__electron__.showDirectoryPicker();
+    } catch {
+      return; // picker dismissed or failed — nothing to report to the user
+    }
+    if (pickedPath) await handleOpen(pickedPath);
+  }, [handleOpen]);
 
   const handleCreate = useCallback(
     async (name: string, path: string, description?: string) => {
@@ -85,22 +129,7 @@ export function VaultManagerModal({
           {view === 'list' ? (
             <VaultActionPanel
               onCreate={() => setView('create')}
-              onOpenLocal={async () => {
-                // Electron: use native directory picker
-                if (window.__electron__?.showDirectoryPicker) {
-                  try {
-                    const pickedPath = await window.__electron__.showDirectoryPicker();
-                    if (pickedPath) {
-                      await onOpen(pickedPath);
-                      setView('list');
-                    }
-                  } catch { /* user cancelled */ }
-                  return;
-                }
-
-                // Browser: show inline path input form
-                setView('open');
-              }}
+              onOpenLocal={handlePickLocal}
             />
           ) : view === 'create' ? (
             <CreateVaultForm
@@ -110,21 +139,24 @@ export function VaultManagerModal({
             />
           ) : (
             <OpenVaultForm
-              onOpen={async (path: string) => {
-                setCreating(true);
-                try {
-                  await onOpen(path);
-                  setView('list');
-                } finally {
-                  setCreating(false);
-                }
-              }}
+              onOpen={handleOpen}
               onCancel={handleBackToList}
               isLoading={creating}
             />
           )}
         </div>
       </div>
+
+      {/* Sits outside the modal box but inside the overlay so it stacks above it. */}
+      <ConfirmDialog
+        show={!!openError}
+        title="无法打开仓库"
+        message={openError ?? ''}
+        confirmLabel="知道了"
+        hideCancel
+        onConfirm={() => setOpenError(null)}
+        onCancel={() => setOpenError(null)}
+      />
     </div>
   );
 }

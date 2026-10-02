@@ -2,6 +2,17 @@
  * Knowledge Base shared types — vaults, file tree, file content.
  */
 
+// ─── Import size limits (single source of truth) ───
+// Previously duplicated as magic numbers in daemon import route + two web
+// pre-flight checks; drift between them showed up as misleading errors.
+// 2026-09-25: 50MB → 100MB — docling itself handles 200MB+ PDFs, the upload
+// layer was the only bottleneck. Scanned books routinely exceed 50MB.
+/** Per-file import cap. Enforced by the daemon import route and mirrored by the web pre-flight checks. */
+export const MAX_IMPORT_FILE_SIZE = 100 * 1024 * 1024; // 100MB
+/** Whole-request Content-Length backstop for one import batch — loose enough
+ *  for several large files in a single upload, tight enough to abort abuse. */
+export const MAX_IMPORT_BATCH_SIZE = MAX_IMPORT_FILE_SIZE * 4; // 400MB
+
 export interface Vault {
   id: string;
   name: string;

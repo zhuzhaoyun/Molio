@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { _electron, type ElectronApplication } from '@playwright/test';
 import { waitForDaemon, waitForDaemonShutdown } from '../helpers/daemon-health';
+import { resolveClipFixture } from '../helpers/kb-fixture';
 import { spawn } from 'node:child_process';
 
 /**
@@ -17,36 +18,35 @@ import { spawn } from 'node:child_process';
  *
  * Fix: guard in app.whenReady() — bail if singleLock is false.
  *
+ * Machine-independent: the executable comes from MOLIO_EXE_PATH (resolved by
+ * global-setup.ts, same convention as launchMolioApp), and the vault/file
+ * target is resolved from the running daemon — first vault + any .md file,
+ * creating fixture data only when the machine has none.
+ *
  * Prerequisites: pnpm build && pnpm --filter @molio/desktop package:dir
  * Run: pnpm test:e2e
  */
 
-const EXE_PATH = 'D:\\work\\02-code\\Molio\\apps\\desktop\\dist\\win-unpacked\\Molio.exe';
-const VAULT_ID = '55dceff1-2055-4305-8c52-cf2daa421108';
-const FILE_PATH = 'Clippings/(2 条消息) 为什么要远离社会底层？ - 知乎.md';
-const PROTOCOL_URL = `molio://open/vault/${VAULT_ID}/file/${encodeURIComponent(FILE_PATH).replace(/%2F/g, '/')}`;
-
 let electronApp: ElectronApplication;
 let page: Page;
+let exePath: string;
+let protocolUrl: string;
 
-async function clickNav(href: string) {
-  // Try data-tooltip first (smoke-test convention), fall back to href match
-  const tooltip = ['Home', 'Knowledge Base'].find((t) =>
-    href === '/' ? t === 'Home' : t === 'Knowledge Base',
-  );
-  if (tooltip) {
-    try {
-      await page.click(`[data-tooltip="${tooltip}"]`, { timeout: 3_000 });
-      return;
-    } catch { /* fall through */ }
-  }
-  const link = page.locator(`a.entry-nav-rail__btn[href="${href}"]`);
-  await link.click();
+async function clickNav(view: 'home' | 'knowledge') {
+  await page.click(`[data-view="${view}"]`);
 }
 
 test.beforeAll(async () => {
+  exePath = process.env.MOLIO_EXE_PATH ?? '';
+  if (!exePath) {
+    throw new Error(
+      '[e2e] MOLIO_EXE_PATH is not set — global-setup.ts should have resolved it. ' +
+        'Build first: pnpm build && pnpm --filter @molio/desktop package:dir',
+    );
+  }
+
   electronApp = await _electron.launch({
-    executablePath: EXE_PATH,
+    executablePath: exePath,
     args: ['--disable-gpu', '--no-sandbox', 'molio://launch'],
     env: { ...process.env, MOLIO_DISABLE_UPDATER: '1' },
   });
@@ -54,6 +54,13 @@ test.beforeAll(async () => {
   await page.waitForLoadState('domcontentloaded');
   await waitForDaemon(3100, 45_000);
   await page.waitForTimeout(6_000);
+
+  // Resolve the open-file target from this machine's daemon (no hardcoded vault).
+  const fixture = await resolveClipFixture(3100);
+  protocolUrl =
+    `molio://open/vault/${fixture.vaultId}/file/` +
+    encodeURIComponent(fixture.filePath).replace(/%2F/g, '/');
+  console.log(`[e2e] Protocol target: vault="${fixture.vaultName}" file=${fixture.filePath}`);
 });
 
 test.afterAll(async () => {
@@ -66,7 +73,7 @@ test.afterAll(async () => {
 test('cold-start protocol flow: KB opens, survives Home → KB round-trip', async () => {
   // Step 1: spawn second Molio process with molio://open/... (real flow)
   await new Promise<void>((resolve) => {
-    const child = spawn(EXE_PATH, ['--disable-gpu', '--no-sandbox', PROTOCOL_URL], {
+    const child = spawn(exePath, ['--disable-gpu', '--no-sandbox', protocolUrl], {
       detached: true, stdio: 'ignore', windowsHide: true,
     });
     child.unref();
@@ -86,11 +93,11 @@ test('cold-start protocol flow: KB opens, survives Home → KB round-trip', asyn
   expect(daemonHealthy).toBe(true);
 
   // Step 2: Home → KB round-trip
-  await clickNav('/');
+  await clickNav('home');
   await page.waitForSelector('.home-page', { state: 'visible', timeout: 10_000 });
   await page.waitForTimeout(1_000);
 
-  await clickNav('/knowledge');
+  await clickNav('knowledge');
   await page.waitForSelector('.kb-file-panel', { state: 'visible', timeout: 15_000 });
   await page.waitForTimeout(3_000);
 
