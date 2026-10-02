@@ -31,6 +31,17 @@ interface Props {
   fileName: string;
   wrap: boolean;
   onRequestContextMenu: (e: { x: number; y: number; selectedText: string; source: 'codemirror' }) => void;
+  /**
+   * CM **量过一遍**（第一次 measure 完成）后回调，交出滚动容器 `.cm-scroller` 和它量的是
+   * 哪一份内容；视图销毁时回调 `(null, null)`。阅读视窗位置记忆靠它拿容器。
+   *
+   * 为什么不能用「内容已写进 DOM」当就绪信号（md 阅读路径是那样判的）：CM 的滚动高度来自
+   * 它自己的高度模型（measure 周期），不是 DOM 布局的自然结果 —— 刚 `new` 出来时读
+   * `scrollHeight` 拿到的还是未测量的估计值，此刻落位会被 clamp 成 0 且不会重来。
+   * 故借 CM 自己的 `requestMeasure({ read })`：read 阶段跑在 `viewState.measure()`
+   * 之后，此时行高已经量过。
+   */
+  onMeasured?: (scrollEl: HTMLElement | null, source: string | null) => void;
 }
 
 function languageFor(fileName: string) {
@@ -58,7 +69,7 @@ const molioTheme = EditorView.theme({
 });
 
 export const KbCodeMirrorViewer = forwardRef<KbCodeMirrorViewerHandle, Props>(function KbCodeMirrorViewer(
-  { content, fileName, wrap, onRequestContextMenu },
+  { content, fileName, wrap, onRequestContextMenu, onMeasured },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -98,7 +109,15 @@ export const KbCodeMirrorViewer = forwardRef<KbCodeMirrorViewerHandle, Props>(fu
       parent: hostRef.current,
     });
     viewRef.current = view;
-    return () => { view.destroy(); viewRef.current = null; };
+    // 量过一遍后再把滚动容器交出去（见 onMeasured 注释）。
+    view.requestMeasure({
+      read: (v) => { onMeasured?.(v.scrollDOM, content); },
+    });
+    return () => {
+      onMeasured?.(null, null);
+      view.destroy();
+      viewRef.current = null;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [content, fileName]);
 

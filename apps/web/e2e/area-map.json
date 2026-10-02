@@ -60,6 +60,7 @@
         "apps/web/src/components/kb/*",
         "apps/web/src/hooks/useKnowledge*",
         "apps/web/src/hooks/useKbTabs*",
+        "apps/web/src/hooks/useScrollMemory*",
         "apps/web/src/stores/kbChatSessionsStore*",
         "apps/daemon/src/core/knowledge.ts",
         "apps/daemon/src/core/db.ts",
@@ -70,6 +71,7 @@
       ],
       "specs": [
         "create-vault-form",
+        "kb-vault-list-menu",
         "kb-open-vault-error",
         "knowledge",
         "markdown-render",
@@ -80,6 +82,8 @@
         "file-chat-panel",
         "kb-tab-limit",
         "kb-tab-stale",
+        "kb-scroll-memory",
+        "kb-scroll-reset",
         "kb-large-file",
         "kb-large-file-gbk",
         "kb-large-file-15mb",
@@ -348,6 +352,14 @@
     "kb-tab-stale": {
       "priority": "P1",
       "file": "kb-tab-stale.spec.ts"
+    },
+    "kb-scroll-memory": {
+      "priority": "P1",
+      "file": "kb-scroll-memory.spec.ts"
+    },
+    "kb-scroll-reset": {
+      "priority": "P1",
+      "file": "kb-scroll-reset.spec.ts"
     },
     "kb-large-file": {
       "priority": "P0",

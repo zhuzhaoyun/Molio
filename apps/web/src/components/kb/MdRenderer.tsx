@@ -46,6 +46,15 @@ export interface MdRendererProps {
    * locally-authored content (KB docs), which relies on those affordances.
    */
   untrusted?: boolean;
+  /**
+   * 渲染结果**已写入 DOM** 后回调，回传产出这份 HTML 的 `content`。
+   *
+   * 渲染是异步的（下方 effect 里 setState），所以「入参换了」并不等于「DOM
+   * 里已经是新的」。需要等真正上屏才能做事的调用方（如阅读视窗的滚动位置
+   * 恢复——落位会被上一篇的 scrollHeight 截断）靠这个信号判断。
+   * 用内容串而非布尔：调用方拿它跟当前 content 比相等即可，换文档自动失效。
+   */
+  onRendered?: (content: string) => void;
 }
 
 // Default renderer options
@@ -80,9 +89,16 @@ export const MdRenderer = memo(function MdRenderer({
   options = defaultOptions,
   className,
   untrusted = false,
+  onRendered,
 }: MdRendererProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [renderedHtml, setRenderedHtml] = useState('');
+  // html + 产出它的 content 一起存：一起 setState 保证「DOM 里的 html」与
+  // 「它是哪一篇」永远同步，onRendered 才敢照实回传。
+  const [rendered, setRendered] = useState<{ html: string; source: string }>({
+    html: '',
+    source: '',
+  });
+  const renderedHtml = rendered.html;
   // Store the latest loaded code theme CSS so it can be re-appended
   // after applyTheme overwrites #md-theme.
   const codeThemeCssRef = useRef<string>('');
@@ -108,7 +124,7 @@ export const MdRenderer = memo(function MdRenderer({
   // to load, the fallback render stays — no crash, no blank page.
   useEffect(() => {
     if (!content) {
-      setRenderedHtml('');
+      setRendered({ html: '', source: '' });
       return;
     }
 
@@ -122,10 +138,10 @@ export const MdRenderer = memo(function MdRenderer({
           untrusted ? { untrusted: true } : undefined,
         );
         const finalHtml = postProcessHtml(html, readingTime, renderer);
-        if (!cancelled) setRenderedHtml(finalHtml);
+        if (!cancelled) setRendered({ html: finalHtml, source: content });
       } catch (error) {
         console.error('Markdown rendering error:', error);
-        if (!cancelled) setRenderedHtml(`<p>Error rendering content: ${String(error)}</p>`);
+        if (!cancelled) setRendered({ html: `<p>Error rendering content: ${String(error)}</p>`, source: content });
       }
     };
 
@@ -142,6 +158,12 @@ export const MdRenderer = memo(function MdRenderer({
       cancelled = true;
     };
   }, [content, renderer, untrusted]);
+
+  // 上屏通知：这个 effect 属于「rendered 已提交」的那次 commit，此刻 DOM 里
+  // 就是 rendered.source 那一篇（MathJax 就绪后的二次渲染 source 不变，不重复通知）。
+  useEffect(() => {
+    onRendered?.(rendered.source);
+  }, [rendered.source, onRendered]);
 
   // Apply theme CSS when themeConfig changes.
   // The doocs/md theme system handles all styles — do NOT inject styles manually.
