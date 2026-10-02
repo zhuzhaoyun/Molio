@@ -14,6 +14,7 @@ import {
 } from '../channels/credentials-store.js';
 import { MessageDedup } from '../channels/message-dedup.js';
 import { chunkText } from '../channels/text-chunker.js';
+import { getActiveVaultCwd } from '../channels/active-vault-cwd.js';
 import { DEFAULT_BASE_URL, WeixinApi } from './client.js';
 import { buildMolioPrompt, buildWeixinFrameMessage, buildWeixinReuseMessage, parseWeixinMessage } from './message.js';
 import { materializeAttachments } from './media.js';
@@ -574,7 +575,11 @@ export class WeixinService implements ChannelSink {
   }
 
   private resolveRunCwd(cfg: WeixinConfig): string | undefined {
-    return loadConfig().defaultCwd || cfg.defaultCwd;
+    // UI-synced active vault wins (POST /active-vault fires on every switch);
+    // defaultCwd is only a fallback — it lags behind user switches and can be
+    // overwritten with a stale vault by the web App's startup sync effect.
+    // See channels/active-vault-cwd.ts (2026-10 微信入库进错库 incident).
+    return getActiveVaultCwd(this.db) || loadConfig().defaultCwd || cfg.defaultCwd;
   }
 
   private sleep(ms: number, signal?: AbortSignal): Promise<void> {
