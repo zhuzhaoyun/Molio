@@ -40,13 +40,25 @@ import {
 export type { HermesPresetId } from '@molio/contracts';
 
 export interface HermesProviderState {
-  /** Matched preset id, or 'custom' when a base_url is set but nothing matches. */
+  /**
+   * Matched preset id. When hermes is still on its out-of-the-box defaults
+   * (provider 'auto'/unset) this is a neutral UI default (the first preset),
+   * NOT a saved choice — see `configured`.
+   */
   presetHint: HermesPresetId;
   provider: string | null;
   baseUrl: string | null;
   model: string | null;
   /** True when an API key is present (never returns the key itself). */
   hasKey: boolean;
+  /**
+   * False when hermes has not been pointed at a real provider yet — i.e. it is
+   * still on the installer's default `provider: auto`. A fresh install also
+   * ships a built-in `base_url` (openrouter), which must NOT be surfaced as a
+   * deliberate 'custom' selection; the UI uses this flag to show "not
+   * configured" instead of a provider name.
+   */
+  configured: boolean;
 }
 
 /** Validation / parse problems (→ HTTP 400). Anything else surfaces as 500. */
@@ -164,16 +176,35 @@ function readEnvKey(hermesHome: string, key: string): string | null {
   return found && found.trim() ? found : null;
 }
 
+/**
+ * Map the live config to a preset id.
+ *
+ * hermes ships `provider: auto` out of the box, meaning "no explicit provider
+ * chosen" — it is NOT a real selection, and its built-in `base_url` (openrouter)
+ * must not be mistaken for a user-configured custom endpoint. So 'auto'/empty
+ * falls through to a neutral default (the first preset) rather than 'custom';
+ * getHermesProviderState separately reports `configured:false` for that case.
+ *
+ * Only a real, non-'auto' provider that isn't one of our presets but carries a
+ * base_url is treated as genuinely 'custom'.
+ */
 function matchPreset(provider: string | null, baseUrl: string | null): HermesPresetId {
+  // hermes ships `provider: auto` out of the box alongside a built-in base_url
+  // (openrouter). That is NOT a real selection and its base_url is NOT a
+  // user-chosen custom endpoint — return a neutral default, never 'custom'.
+  if (provider === 'auto') return HERMES_PROVIDER_PRESETS[0]!.id;
+
   if (provider) {
     for (const preset of HERMES_PROVIDER_PRESETS) {
       if (preset.providerValue === provider) return preset.id;
     }
   }
+  // No preset matched: a base_url (whether or not an unmatched provider is set)
+  // is a user-configured custom endpoint.
   if (baseUrl) return 'custom';
-  // No provider configured yet — hermes defaults to 'auto'; surface as the
-  // first preset so the UI has a sensible default selection.
-  return 'custom';
+  // Nothing configured at all → neutral UI default. `configured:false` tells the
+  // UI this is not a saved choice.
+  return HERMES_PROVIDER_PRESETS[0]!.id;
 }
 
 export function getHermesProviderState(hermesHome?: string): HermesProviderState {
@@ -189,6 +220,12 @@ export function getHermesProviderState(hermesHome?: string): HermesProviderState
 
   const presetHint = matchPreset(section.provider, section.baseUrl);
   const preset = getHermesPreset(presetHint);
+
+  // "Configured" = the user pointed hermes at a real provider. The installer's
+  // out-of-the-box `provider: auto` (with its built-in base_url) is NOT a
+  // choice — report configured:false so the UI shows "not configured" instead
+  // of a misleading 'custom (OpenAI compatible)' selection.
+  const configured = !!section.provider && section.provider !== 'auto';
 
   let hasKey = false;
   let baseUrl = section.baseUrl;
@@ -210,6 +247,7 @@ export function getHermesProviderState(hermesHome?: string): HermesProviderState
     baseUrl,
     model: section.model,
     hasKey,
+    configured,
   };
 }
 

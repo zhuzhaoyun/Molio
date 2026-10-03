@@ -47,6 +47,10 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
   // design (secrets are never sent back to the UI), so show a hint instead of
   // letting the blank field look like "nothing was saved".
   const [hasSavedKey, setHasSavedKey] = useState(false);
+  // Hermes only: whether a real provider has been chosen. A fresh install ships
+  // `provider: auto` + a built-in base_url — that is NOT configured, and the
+  // collapsed card must say so instead of showing a misleading provider name.
+  const [hermesConfigured, setHermesConfigured] = useState(false);
 
   /**
    * 用户是否已经动过表单。挂载期的配置加载是异步的，而卡片本身要等 agent 扫描
@@ -64,12 +68,16 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
   useEffect(() => {
     if (isHermes) {
       api.getAgentProvider(agentId).then((raw) => {
-        if (touchedRef.current) return; // 用户已在编辑，不覆盖
-        const s = raw as { presetHint: string; provider: string | null; baseUrl: string | null; model: string | null; hasKey: boolean };
-        // Only override the default selection when hermes is actually
-        // configured — an empty config.yaml reports presetHint 'custom',
-        // which would look like a deliberate choice.
-        if (s.provider && HERMES_PROVIDERS.some((p) => p.id === s.presetHint)) {
+        const s = raw as { presetHint: string; provider: string | null; baseUrl: string | null; model: string | null; hasKey: boolean; configured?: boolean };
+        // Factual disk state — always refresh (drives the collapsed "not
+        // configured" label even if the user is mid-edit).
+        setHermesConfigured(!!s.configured);
+        if (touchedRef.current) return; // 用户已在编辑，不覆盖表单字段
+        // Only adopt the backend's preset when hermes is ACTUALLY configured.
+        // A fresh install reports provider:'auto' + a built-in base_url
+        // (configured:false) — adopting it would show a deliberate-looking
+        // 'custom (OpenAI compatible)' choice that was never made.
+        if (s.configured && HERMES_PROVIDERS.some((p) => p.id === s.presetHint)) {
           setProviderId(s.presetHint);
         }
         if (s.model) setHermesModel(s.model);
@@ -195,6 +203,9 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
         }
         await api.updateAgentProvider(agentId, body);
         if (apiKey) setHasSavedKey(true);
+        // A real provider was just written — the card should stop saying
+        // "not configured" once collapsed.
+        setHermesConfigured(true);
       } else if (isCodex) {
         const body: Record<string, unknown> = { presetId: providerId };
         if (providerId === 'custom') {
@@ -224,6 +235,11 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
   const isThirdParty = providerId !== 'anthropic';
 
   if (!expanded) {
+    // A fresh hermes install is not configured — say so instead of showing the
+    // form-default provider name (which reads like a saved, working choice).
+    const currentLabel = isHermes && !hermesConfigured
+      ? t('runtimes.providerNotConfigured')
+      : provider.name;
     return (
       <button
         className="rt-btn rt-btn--sm rt-btn--ghost rt-provider-toggle"
@@ -231,8 +247,8 @@ export function ProviderConfig({ agentId }: ProviderConfigProps) {
       >
         <span className="rt-provider-toggle__icon">⚙</span>
         {t('runtimes.provider')}
-        <span className="rt-provider-toggle__current">
-          {provider.name}
+        <span className="rt-provider-toggle__current" data-testid="provider-current-label">
+          {currentLabel}
         </span>
       </button>
     );

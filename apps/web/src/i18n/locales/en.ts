@@ -204,6 +204,7 @@ const en: Record<string, string> = {
   'runtimes.installErrorRuntime': 'Runtime test failed',
   'runtimes.installErrorUnknown': 'Unknown error',
   'runtimes.provider': 'Model Provider',
+  'runtimes.providerNotConfigured': 'Not configured',
   'runtimes.apiKey': 'API Key',
   'runtimes.baseUrl': 'Base URL',
   'runtimes.model': 'Model',

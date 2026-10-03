@@ -67,13 +67,41 @@ describe('resolveHermesHome', () => {
 /* ─── getHermesProviderState ─── */
 
 describe('getHermesProviderState', () => {
-  it('returns empty/custom state when no files exist', () => {
+  it('returns neutral unconfigured state when no files exist', () => {
     const s = getHermesProviderState(hermesHome);
-    assert.equal(s.presetHint, 'custom');
+    // No files = nothing chosen. Must NOT report 'custom' (that would look like
+    // a deliberate OpenAI-compatible setup); neutral first preset + configured:false.
+    assert.equal(s.presetHint, 'deepseek');
     assert.equal(s.provider, null);
     assert.equal(s.baseUrl, null);
     assert.equal(s.model, null);
     assert.equal(s.hasKey, false);
+    assert.equal(s.configured, false);
+  });
+
+  it('fresh install (provider: auto + built-in base_url) is unconfigured, not custom', () => {
+    // Exactly what the official hermes installer writes on a clean machine:
+    // provider "auto", the built-in openrouter base_url, api_key commented out.
+    // Regression: this used to surface as 'custom (OpenAI compatible)' + look
+    // configured, so users thought setup was done and hit Internal error on test.
+    fs.writeFileSync(cfgPath(), `model:
+  provider: "auto"
+  # api_key: "your-key-here"
+  base_url: "https://openrouter.ai/api/v1"
+`);
+    const s = getHermesProviderState(hermesHome);
+    assert.equal(s.configured, false, 'auto provider must be reported as unconfigured');
+    assert.notEqual(s.presetHint, 'custom', 'auto + built-in base_url must not look custom');
+    assert.equal(s.hasKey, false, 'commented-out api_key is not a key');
+  });
+
+  it('a real provider selection reports configured:true', () => {
+    fs.writeFileSync(cfgPath(), 'model:\n  provider: deepseek\n');
+    fs.writeFileSync(dotEnvPath(), 'DEEPSEEK_API_KEY=sk-ds\n');
+    const s = getHermesProviderState(hermesHome);
+    assert.equal(s.configured, true);
+    assert.equal(s.presetHint, 'deepseek');
+    assert.equal(s.hasKey, true);
   });
 
   it('detects the zai preset from config.yaml + .env key', () => {
@@ -135,9 +163,10 @@ describe('getHermesProviderState', () => {
   it('tolerates malformed YAML — defaults, no throw', () => {
     fs.writeFileSync(cfgPath(), 'model: [unclosed\n\tbad: indent');
     const s = getHermesProviderState(hermesHome);
-    assert.equal(s.presetHint, 'custom');
+    assert.equal(s.presetHint, 'deepseek');
     assert.equal(s.provider, null);
     assert.equal(s.hasKey, false);
+    assert.equal(s.configured, false);
   });
 
   it('.env parsing: export prefix, quotes, comments, last occurrence wins', () => {

@@ -204,6 +204,7 @@ const zh: Record<string, string> = {
   'runtimes.installErrorRuntime': '运行测试失败',
   'runtimes.installErrorUnknown': '未知错误',
   'runtimes.provider': '模型提供商',
+  'runtimes.providerNotConfigured': '未配置',
   'runtimes.apiKey': 'API Key',
   'runtimes.baseUrl': 'API 地址',
   'runtimes.model': '模型',
