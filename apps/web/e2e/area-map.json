@@ -209,6 +209,7 @@
       "paths": [
         "apps/web/src/components/kb/KbFilePanel.*",
         "apps/web/src/components/kb/KbFileTree.*",
+        "apps/web/src/components/kb/KbMainContent.*",
         "apps/web/src/components/kb/KbModals.*",
         "apps/web/src/components/kb/ImportConflictDialog.*",
         "apps/web/src/components/kb/KnowledgeBasePage.*",

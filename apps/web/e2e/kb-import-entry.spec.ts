@@ -32,6 +32,18 @@ test.describe('KB 导入入口', () => {
     if (emptyVault) await cleanupTempVault(emptyVault);
   });
 
+  /**
+   * 「英文语系」那条用例必须还原 daemon 的 locale。
+   *
+   * 坑：App 在 activeVault 的 path 与 config.defaultCwd 不一致时，会把**整份 config 快照**
+   * PUT 回 daemon（App.tsx 里为对齐 defaultCwd 的那次写入）。于是我们 mock 出来的
+   * `{locale:'en'}` 会被真实落盘，后续所有用例（乃至手动跑的 dev app）都变成英文。
+   * settings.spec.ts 踩过同一个坑，同样是 afterEach 还原。
+   */
+  test.afterEach(async ({ request }) => {
+    await request.put('/api/config', { data: { locale: 'zh' } }).catch(() => {});
+  });
+
   test('文件面板工具栏有常驻的「导入」按钮', async ({ page }) => {
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
@@ -129,12 +141,61 @@ test.describe('KB 导入入口', () => {
     await expect(hint).toContainText(/导入|拖/);
   });
 
-  test('空库首屏的主 CTA 是「导入文件」，点击同样打开导入弹窗', async ({ page }) => {
+  test('有文件但未建 Wiki 时，空态给出「导入文件」次级出口', async ({ page }) => {
+    // 这屏的语境是「已经有文件、还没建 Wiki」——正是「我看了一下，还想再补几个文件」
+    // 最自然的时刻，而原来这里只有「建 Wiki」和「问答」两条路，想补素材得回头找工具栏图标。
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+
+    const build = page.locator('[data-testid="kb-empty-build-cta"]');
+    const imp = page.locator('[data-testid="kb-empty-import-cta"]');
+    await expect(build).toBeVisible({ timeout: 5_000 });
+    await expect(imp).toBeVisible({ timeout: 5_000 });
+
+    // 这屏的主推仍是建 Wiki，导入是次级——主次必须看得出来（用户拍板「次级描边」）
+    await expect(build).not.toHaveClass(/wiki-cta-btn--outline/);
+    await expect(imp).toHaveClass(/wiki-cta-btn--outline/);
+
+    await imp.click();
+    await expect(importDialog(page)).toBeVisible({ timeout: 5_000 });
+  });
+
+  test('这屏的中文里不再冒出英文 vault', async ({ page }) => {
+    // 术语统一成「知识库」是同一批修复的一部分，但这行文案漏网过
+    //（术语守卫 spec 当时只覆盖了仓库管理器）。中文句子里夹一个 vault 很扎眼。
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+
+    const state = page.locator('.kb-empty-state').first();
+    await expect(state).toBeVisible({ timeout: 5_000 });
+    await expect(state).toContainText('知识库');
+    await expect(state).not.toContainText('vault');
+  });
+
+  test('英文语系下空态是英文的（这几个空态原来硬编码中文）', async ({ page }) => {
+    // config 的 locale 优先于 localStorage（App 里 cfgLocale 先判），所以要
+    // 从 daemon 响应那一层换成 en，光写 localStorage 会被 config 快照盖回去。
+    await page.route('**/api/config', (route) =>
+      route.request().method() === 'GET'
+        ? route.fulfill({ json: { locale: 'en' } })
+        : route.continue(),
+    );
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+
+    const state = page.locator('.kb-empty-state').first();
+    await expect(state).toBeVisible({ timeout: 10_000 });
+    // 整屏不许残留中文——硬编码中文时这条必红
+    await expect(state).not.toContainText(/[一-鿿]/);
+  });
+
+  test('空库首屏的主 CTA 是「导入文件」，且「构建 Wiki」不可点', async ({ page }) => {
     await page.goto(`http://localhost:5173/knowledge?vault=${emptyVault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     const cta = page.locator('[data-testid="kb-empty-import-cta"]');
     await expect(cta).toBeVisible({ timeout: 5_000 });
+    // 一个文件都没有时构建 Wiki 不成立（AI 没素材可读）——它必须被置灰，
+    // 否则用户会点进去、什么也没发生，然后卡住。
+    await expect(page.locator('[data-testid="kb-empty-build-cta"]')).toBeDisabled();
 
     await cta.click();
     await expect(importDialog(page)).toBeVisible({ timeout: 5_000 });

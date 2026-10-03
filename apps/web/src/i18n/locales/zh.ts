@@ -530,6 +530,20 @@ const zh: Record<string, string> = {
   'kb.emptyImportCta': '导入文件',
   'kb.emptyImportTitle': '先放点东西进来',
   'kb.emptyImportBody': '导入 Markdown、PDF、Word 等文件，之后就能让 AI 基于它们研究、写作、问答。',
+  // 空态（三个分支共用）。标题说「会得到什么」而不是产物名——
+  // 「Wiki」是自家术语，不解释的话用户没法判断要不要点。
+  'kb.buildWikiTitle': '把知识库整理成 Wiki',
+  'kb.buildWikiBody': 'AI 会读一遍知识库里的文件，整理成互相链接的 Wiki 页面。',
+  'kb.buildWikiCta': '开始构建 Wiki',
+  // 空库时「构建 Wiki」置灰的悬浮说明——把「先导文件、再建 Wiki」这层先后关系说出来
+  'kb.buildWikiNeedsFiles': '先导入一些文件',
+  'kb.askVault': '与知识库问答',
+  'kb.welcomeTitle': '欢迎使用知识库',
+  'kb.welcomeBody': '创建一个知识库来管理你的文档和笔记。',
+  'kb.welcomeHint': '知识库是存储和组织文档的地方，支持 Markdown 文件管理、AI 辅助阅读和 Wiki 生成。',
+  'kb.createVaultCta': '新建知识库',
+  'kb.noFileTitle': '未选择文件',
+  'kb.noFileBody': '从左侧文件树中选择一个文件查看内容。',
   'kb.collapseAll': '折叠全部',
   'kb.expandAll': '展开全部',
   'kb.save': '保存',
