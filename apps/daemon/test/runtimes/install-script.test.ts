@@ -16,6 +16,7 @@ import type { InstallEvent, RuntimeAgentDef, ScriptInstallSource } from '@molio/
 import {
   installFromScript,
   runScriptProcess,
+  applyPypiMirrorEnv,
   type ScriptInstallDeps,
   type RunScriptArgs,
   type RunScriptResult,
@@ -570,5 +571,85 @@ describe('runScriptProcess — real tree kill (orphaned-installer regression)', 
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+// ─── PyPI / uv mirror injection (信创/内网 dependency sync) ──────────────────
+//
+// The official hermes installer syncs Python deps with its own pinned uv under
+// `UV_NO_CONFIG=1`. On 内网/信创 machines pypi.org is blocked, so that step
+// hangs until the install timeout. The engine must redirect uv/pip to a
+// reachable mirror via index env vars (which uv/pip honor even with
+// UV_NO_CONFIG). Precedence: explicit MOLIO_PYPI_MIRROR > user-set index >
+// probe pypi.org and fall back to aliyun only when unreachable.
+
+const PYPI_KEYS = ['UV_DEFAULT_INDEX', 'UV_INDEX_URL', 'PIP_INDEX_URL'] as const;
+
+describe('applyPypiMirrorEnv — precedence', () => {
+  it('explicit MOLIO_PYPI_MIRROR wins and sets uv+pip index vars', async () => {
+    const env: NodeJS.ProcessEnv = { MOLIO_PYPI_MIRROR: 'https://my.mirror/simple/' };
+    let probed = false;
+    await applyPypiMirrorEnv(env, async () => { probed = true; return true; }, () => {});
+    for (const k of PYPI_KEYS) assert.equal(env[k], 'https://my.mirror/simple/');
+    assert.equal(probed, false, 'explicit mirror must short-circuit the probe');
+  });
+
+  it('a pre-existing user index is never clobbered', async () => {
+    const env: NodeJS.ProcessEnv = { UV_INDEX_URL: 'https://corp.index/simple/' };
+    // Even with pypi.org unreachable, the user's explicit index must survive.
+    await applyPypiMirrorEnv(env, async () => false, () => {});
+    assert.equal(env['UV_INDEX_URL'], 'https://corp.index/simple/');
+    assert.equal(env['PIP_INDEX_URL'], undefined, 'must not inject other keys over a user index');
+  });
+
+  it('pypi.org unreachable → falls back to the aliyun mirror', async () => {
+    const env: NodeJS.ProcessEnv = {};
+    const logs: string[] = [];
+    await applyPypiMirrorEnv(
+      env,
+      async (url) => !url.includes('pypi.org'), // github ok, pypi blocked
+      (e) => { if (e.type === 'log') logs.push(e.message); },
+    );
+    for (const k of PYPI_KEYS) assert.equal(env[k], 'https://mirrors.aliyun.com/pypi/simple/');
+    assert.ok(logs.some((m) => /pypi\.org is not reachable/i.test(m)), 'must log the fallback');
+  });
+
+  it('pypi.org reachable + no override → injects nothing (stock behavior)', async () => {
+    const env: NodeJS.ProcessEnv = {};
+    await applyPypiMirrorEnv(env, async () => true, () => {});
+    for (const k of PYPI_KEYS) assert.equal(env[k], undefined);
+  });
+});
+
+describe('installFromScript — PyPI mirror wiring', () => {
+  it('injects the mirror into the installer env when pypi.org is unreachable', async () => {
+    const capturedEnvs: NodeJS.ProcessEnv[] = [];
+    const deps = makeDeps({
+      probeNetwork: async (url) => !url.includes('pypi.org'),
+      runScript: async (args) => { capturedEnvs.push(args.env); return OK_RESULT; },
+    });
+    await run(deps);
+    assert.equal(capturedEnvs.length, 1);
+    assert.equal(capturedEnvs[0]!['PIP_INDEX_URL'], 'https://mirrors.aliyun.com/pypi/simple/');
+    assert.equal(capturedEnvs[0]!['UV_DEFAULT_INDEX'], 'https://mirrors.aliyun.com/pypi/simple/');
+  });
+
+  it('MOLIO_PYPI_MIRROR is passed through to the installer env', async () => {
+    const mirror = 'https://internal.pypi/simple/';
+    const saved = process.env['MOLIO_PYPI_MIRROR'];
+    process.env['MOLIO_PYPI_MIRROR'] = mirror;
+    const capturedEnvs: NodeJS.ProcessEnv[] = [];
+    try {
+      const deps = makeDeps({
+        runScript: async (args) => { capturedEnvs.push(args.env); return OK_RESULT; },
+      });
+      await run(deps);
+    } finally {
+      if (saved === undefined) delete process.env['MOLIO_PYPI_MIRROR'];
+      else process.env['MOLIO_PYPI_MIRROR'] = saved;
+    }
+    assert.equal(capturedEnvs.length, 1);
+    assert.equal(capturedEnvs[0]!['PIP_INDEX_URL'], mirror);
+    assert.equal(capturedEnvs[0]!['UV_INDEX_URL'], mirror);
   });
 });

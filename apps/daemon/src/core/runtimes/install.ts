@@ -475,6 +475,67 @@ const DEFAULT_SCRIPT_TIMEOUT_MS = 600_000;
 const VERIFY_TIMEOUT_MS = 15_000;
 
 /**
+ * Default CN PyPI mirror used when pypi.org is unreachable (内网/信创).
+ * Aliyun first per the root CLAUDE.md 信创原则: *.aliyun.com/*.aliyuncs.com is
+ * typically allow-listed on isolated networks, and an overseas source must never
+ * be the only path. The install script's own pinned uv/pip honors these index
+ * env vars even under `UV_NO_CONFIG=1` (that flag only disables config FILES).
+ */
+const DEFAULT_PYPI_MIRROR = 'https://mirrors.aliyun.com/pypi/simple/';
+
+/** Index env keys read by uv (UV_DEFAULT_INDEX current / UV_INDEX_URL legacy)
+ *  and pip (PIP_INDEX_URL). We set all three so the redirect works whichever
+ *  tool the installer's dependency sync ends up using. */
+const PYPI_INDEX_ENV_KEYS = ['UV_DEFAULT_INDEX', 'UV_INDEX_URL', 'PIP_INDEX_URL'] as const;
+
+/**
+ * Inject a PyPI/uv index into `env` (mutated in place) so the installer's
+ * Python dependency sync can reach a mirror when the default index is blocked.
+ *
+ * Precedence (highest first):
+ *  1. explicit `MOLIO_PYPI_MIRROR` — always applied;
+ *  2. a uv/pip index the user already exported — left untouched (never clobber
+ *     an intentional private-index setup);
+ *  3. otherwise probe pypi.org and fall back to {@link DEFAULT_PYPI_MIRROR}
+ *     ONLY when it is unreachable, so users with a working pypi.org keep the
+ *     stock behavior.
+ *
+ * @internal exported for testing.
+ */
+export async function applyPypiMirrorEnv(
+  env: NodeJS.ProcessEnv,
+  probe: (url: string, timeoutMs: number) => Promise<boolean>,
+  onEvent: (event: InstallEvent) => void,
+): Promise<void> {
+  const setIndex = (url: string) => {
+    for (const key of PYPI_INDEX_ENV_KEYS) env[key] = url;
+  };
+
+  const explicit = env['MOLIO_PYPI_MIRROR'];
+  if (explicit && explicit.trim()) {
+    setIndex(explicit.trim());
+    onEvent({ type: 'log', message: `PyPI mirror (MOLIO_PYPI_MIRROR): ${explicit.trim()}` });
+    return;
+  }
+
+  // Respect a pre-existing uv/pip index — don't override an explicit setup.
+  if (PYPI_INDEX_ENV_KEYS.some((k) => env[k] && env[k]!.trim())) {
+    return;
+  }
+
+  const pypiReachable = await probe('https://pypi.org', 5_000);
+  if (!pypiReachable) {
+    setIndex(DEFAULT_PYPI_MIRROR);
+    onEvent({
+      type: 'log',
+      message: "pypi.org is not reachable — routing the installer's Python " +
+        `dependency sync through a mirror (${DEFAULT_PYPI_MIRROR}). ` +
+        'Set MOLIO_PYPI_MIRROR to override.',
+    });
+  }
+}
+
+/**
  * @internal exported for testing — tests drive this directly with synthetic
  * defs/sources so scenarios (unsupported platform, missing shell) don't
  * depend on the host machine or the real hermes registry entry.
@@ -645,6 +706,10 @@ export async function installFromScript(
   if (repoMirror) {
     env['HERMES_REPO_URL'] = repoMirror;
   }
+
+  // Redirect the installer's Python dependency sync to a reachable PyPI mirror
+  // when the default index is blocked (内网/信创). See applyPypiMirrorEnv.
+  await applyPypiMirrorEnv(env, probeFn, onEvent);
 
   const onLine = (line: string) => {
     if (line.trim()) onEvent({ type: 'log', message: line });
