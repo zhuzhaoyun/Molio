@@ -9,9 +9,13 @@
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import type { InstallEvent, RuntimeAgentDef, ScriptInstallSource } from '@molio/contracts';
 import {
   installFromScript,
+  runScriptProcess,
   type ScriptInstallDeps,
   type RunScriptArgs,
   type RunScriptResult,
@@ -442,5 +446,129 @@ describe('installFromScript — env passthrough', () => {
 
     assert.equal(capturedEnvs.length, 1);
     assert.equal(capturedEnvs[0]!['HERMES_REPO_URL'], undefined);
+  });
+});
+
+// ─── Real subprocess tree-kill (regression: orphaned installer) ─────────────
+//
+// The tests above stub `runScript` entirely, so the real killTree / settle path
+// in runScriptProcess never runs. That is exactly why CI stayed green while a
+// real abort/timeout orphaned the installer: the script forks a subshell that
+// inherits the stdio pipes, survives a direct-child-only kill, keeps
+// downloading, and keeps 'close' from ever firing (so the promise never
+// settles and no cancelled/error event reaches the UI).
+//
+// These cases spawn a REAL tree-forking subprocess, abort mid-run, and assert
+// (a) the promise settles promptly and (b) the grandchild is dead, not
+// reparented. Both fail on the pre-fix implementation.
+
+/** Poll until `pid` no longer exists (or timeout). Returns true if it died. */
+async function waitForDeath(pid: number, timeoutMs = 5_000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      process.kill(pid, 0);
+    } catch {
+      return true; // ESRCH (or EPERM on a zombie) — treat as gone
+    }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  try { process.kill(pid, 0); return false; } catch { return true; }
+}
+
+describe('runScriptProcess — real tree kill (orphaned-installer regression)', () => {
+  it('abort kills the forked grandchild and settles promptly (POSIX)', {
+    skip: isWindows ? 'POSIX-only reproduction (bash process group)' : false,
+  }, async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'molio-killtree-'));
+    const gpPidFile = path.join(dir, 'gp.pid');
+    const scriptPath = path.join(dir, 'install.sh');
+    try {
+      // Stand-in for the real installer: fork a long-lived grandchild that
+      // inherits stdout/stderr (the fd that kept the pipe open + orphaned the
+      // installer), record its pid, then keep the parent alive too.
+      writeFileSync(
+        scriptPath,
+        `#!/usr/bin/env bash\nsleep 300 &\necho $! > "${gpPidFile}"\necho started\nsleep 300\n`,
+        { mode: 0o755 },
+      );
+
+      const ac = new AbortController();
+      let sawStarted = false;
+      const t0 = Date.now();
+      const result = await runScriptProcess({
+        cmd: 'bash',
+        args: [scriptPath],
+        env: { ...process.env },
+        timeoutMs: 60_000,
+        signal: ac.signal,
+        onLine: (line) => {
+          if (!sawStarted && line.includes('started')) {
+            sawStarted = true;
+            setTimeout(() => ac.abort(), 150);
+          }
+        },
+      });
+      const elapsed = Date.now() - t0;
+
+      assert.equal(sawStarted, true, 'grandchild must have started before abort');
+      assert.equal(result.aborted, true, 'result must be flagged aborted');
+      assert.ok(elapsed < 10_000, `must settle promptly, took ${elapsed}ms (orphaned pipe would hang)`);
+
+      const gpPid = parseInt(readFileSync(gpPidFile, 'utf8').trim(), 10);
+      assert.ok(Number.isFinite(gpPid) && gpPid > 0, 'grandchild pid recorded');
+      assert.equal(await waitForDeath(gpPid), true, `grandchild ${gpPid} must be killed, not orphaned`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('abort kills the child tree and settles promptly (win32)', {
+    skip: !isWindows ? 'win32-only reproduction (taskkill /T)' : false,
+  }, async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'molio-killtree-'));
+    const gpPidFile = path.join(dir, 'gp.pid');
+    const scriptPath = path.join(dir, 'install.ps1');
+    try {
+      // Launch a long-lived grandchild (ping -t), record its pid, then idle.
+      writeFileSync(
+        scriptPath,
+        [
+          '$ErrorActionPreference = "Stop"',
+          `$p = Start-Process -FilePath "ping.exe" -ArgumentList "-t","127.0.0.1" -PassThru -WindowStyle Hidden`,
+          `$p.Id | Out-File -FilePath "${gpPidFile}" -Encoding ascii`,
+          'Write-Output "started"',
+          'Start-Sleep -Seconds 300',
+        ].join('\r\n'),
+      );
+
+      const ac = new AbortController();
+      let sawStarted = false;
+      const t0 = Date.now();
+      const result = await runScriptProcess({
+        cmd: 'powershell',
+        args: ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-NonInteractive', '-File', scriptPath],
+        env: { ...process.env },
+        timeoutMs: 60_000,
+        signal: ac.signal,
+        onLine: (line) => {
+          if (!sawStarted && line.includes('started')) {
+            sawStarted = true;
+            setTimeout(() => ac.abort(), 300);
+          }
+        },
+      });
+      const elapsed = Date.now() - t0;
+
+      assert.equal(sawStarted, true, 'grandchild must have started before abort');
+      assert.equal(result.aborted, true, 'result must be flagged aborted');
+      assert.ok(elapsed < 10_000, `must settle promptly, took ${elapsed}ms`);
+
+      const gpPid = parseInt(readFileSync(gpPidFile, 'utf8').trim(), 10);
+      assert.ok(Number.isFinite(gpPid) && gpPid > 0, 'grandchild pid recorded');
+      assert.equal(await waitForDeath(gpPid), true, `grandchild ${gpPid} must be killed, not orphaned`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

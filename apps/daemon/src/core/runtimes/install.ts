@@ -878,22 +878,39 @@ function writeTempScriptFile(content: Buffer, isWindows: boolean): string {
 
 /**
  * Spawn the installer script, streaming stdout/stderr line-by-line to onLine.
- * Enforces an absolute timeout and abort support: SIGTERM first, SIGKILL 3s
- * later if the process tree ignores it. Never rejects — the result object
- * carries the failure mode (code / timedOut / aborted).
+ * Enforces an absolute timeout and abort support: the whole process TREE is
+ * signalled (SIGTERM first, SIGKILL 3s later if it ignores it). Never rejects —
+ * the result object carries the failure mode (code / timedOut / aborted).
+ *
+ * Two hardening details, both learned from a real orphaned-installer bug:
+ *  - POSIX: the child is spawned `detached` so it becomes its own process-group
+ *    leader; killTree signals the negative pid to reach subshells the installer
+ *    forks (git clone, package managers). Without this, grandchildren survive
+ *    abort/timeout, keep downloading, and keep the stdio pipes open.
+ *  - settle() is driven by 'close' (full output drained) but backstopped by
+ *    'exit' + a short grace timer: if some fd on the pipe is still held after
+ *    the direct child exits, we still resolve instead of hanging forever.
+ *
+ * Exported for integration tests that spawn a real (tree-forking) subprocess.
  */
-function runScriptProcess(args: RunScriptArgs): Promise<RunScriptResult> {
+export function runScriptProcess(args: RunScriptArgs): Promise<RunScriptResult> {
   return new Promise((resolve) => {
+    const isWin = process.platform === 'win32';
     const child: ChildProcess = spawn(args.cmd, args.args, {
       env: args.env,
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
+      // Own process group on POSIX so killTree can signal the whole tree.
+      // On win32 `detached` would spawn a new console window; we tree-kill via
+      // `taskkill /T` instead, so keep it false there.
+      detached: !isWin,
     });
 
     let stderrTail = '';
     let timedOut = false;
     let aborted = false;
     let settled = false;
+    let exitFallback: NodeJS.Timeout | undefined;
 
     const timer = setTimeout(() => {
       timedOut = true;
@@ -923,6 +940,7 @@ function runScriptProcess(args: RunScriptArgs): Promise<RunScriptResult> {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      if (exitFallback) clearTimeout(exitFallback);
       args.signal?.removeEventListener('abort', onAbort);
       resolve({
         code: spawnError ? 1 : code,
@@ -935,16 +953,54 @@ function runScriptProcess(args: RunScriptArgs): Promise<RunScriptResult> {
     };
 
     child.on('error', (err) => settle(null, `spawn failed: ${err.message}`));
+    // Primary: 'close' fires once every stdio fd is closed → stderrTail complete.
     child.on('close', (code) => settle(code));
+    // Backstop: the direct child exited but a lingering fd (e.g. a grandchild
+    // that escaped the group kill) could keep 'close' from ever firing. Give the
+    // pipes a short grace period to drain, then force-settle so we never hang.
+    child.on('exit', (code) => {
+      exitFallback = setTimeout(() => settle(code), 2_000);
+      exitFallback.unref?.();
+    });
   });
 }
 
-/** SIGTERM, escalating to SIGKILL after 3s if the process ignores it. */
+/**
+ * Kill the installer's entire process tree, not just the direct child.
+ *  - POSIX: the child was spawned `detached`, so it leads its own process group;
+ *    signalling `-pid` reaches every subshell the script forked.
+ *  - win32: `taskkill /pid <pid> /T /F` walks the child-process tree.
+ * SIGTERM first, escalating to SIGKILL after 3s if the tree ignores it.
+ */
 function killTree(child: ChildProcess): void {
-  try { child.kill('SIGTERM'); } catch { /* already dead */ }
-  const t = setTimeout(() => {
-    try { child.kill('SIGKILL'); } catch { /* already dead */ }
-  }, 3_000);
+  const pid = child.pid;
+  const isWin = process.platform === 'win32';
+
+  const signalTree = (sig: 'SIGTERM' | 'SIGKILL') => {
+    try {
+      if (isWin) {
+        // Windows has no graceful console-tree kill; /T = tree, /F = force.
+        if (pid) {
+          const killer = spawn('taskkill', ['/pid', String(pid), '/T', '/F'], {
+            windowsHide: true,
+            stdio: 'ignore',
+          });
+          killer.unref?.();
+        }
+      } else if (pid) {
+        // Negative pid targets the whole process group (child is the leader).
+        process.kill(-pid, sig);
+      } else {
+        child.kill(sig);
+      }
+    } catch {
+      // Group/already dead — fall back to signalling the direct child.
+      try { child.kill(sig); } catch { /* already dead */ }
+    }
+  };
+
+  signalTree('SIGTERM');
+  const t = setTimeout(() => signalTree('SIGKILL'), 3_000);
   // Don't hold the event loop open just for the escalation timer.
   t.unref?.();
 }
