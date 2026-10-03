@@ -13,6 +13,7 @@ import { ActivityTree } from './ActivityTree';
 import type { ActivityInfo } from '@molio/contracts';
 import { PanelIcon } from './icons';
 import { NoRuntimeCard } from './NoRuntimeCard';
+import { FirstRunOnboarding } from './home/FirstRunOnboarding';
 
 // 会话产出面板只在 dock 展开时渲染，却把整条 doocs-md/marked/highlight.js
 // 依赖链拖进首屏 chunk —— 懒加载（启动性能优化）。
@@ -273,6 +274,9 @@ export function HomePage({
   return (
     <div className="home-page home-landing">
       <div className="home-hero-view">
+        {/* 首次运行引导 —— 只在落地页出现（有会话说明人已经在用了，不再打扰） */}
+        <FirstRunOnboarding />
+
         {/* Hero */}
         <div className="home-hero">
           <div className="home-hero__brand">
