@@ -17,6 +17,7 @@ import {
   installFromScript,
   runScriptProcess,
   applyPypiMirrorEnv,
+  applyPythonInstallMirrorEnv,
   type ScriptInstallDeps,
   type RunScriptArgs,
   type RunScriptResult,
@@ -651,5 +652,84 @@ describe('installFromScript — PyPI mirror wiring', () => {
     assert.equal(capturedEnvs.length, 1);
     assert.equal(capturedEnvs[0]!['PIP_INDEX_URL'], mirror);
     assert.equal(capturedEnvs[0]!['UV_INDEX_URL'], mirror);
+  });
+});
+
+// ─── uv managed-Python (python-build-standalone) mirror injection ───────────
+//
+// The hermes installer's uv downloads a managed CPython from GitHub's release
+// CDN (objects.githubusercontent.com). On CN networks that CDN stalls even when
+// github.com itself is reachable — observed in the field: a 161MB PBS `.part`
+// preallocated but 0 bytes transferred (`.ranges` empty), install killed at the
+// 600s wall-clock timeout with no hermes-acp produced. It's the same PBS source
+// docling's python-provision.ts mirrors via npmmirror (aliyun). The engine must
+// set UV_PYTHON_INSTALL_MIRROR so uv pulls the interpreter from npmmirror.
+// Precedence: explicit MOLIO_PYTHON_MIRROR > user-set UV_PYTHON_INSTALL_MIRROR >
+// probe npmmirror and use it when reachable (else stock GitHub for overseas).
+
+const PBS_NPMMIRROR = 'https://registry.npmmirror.com/-/binary/python-build-standalone';
+
+describe('applyPythonInstallMirrorEnv — precedence', () => {
+  it('explicit MOLIO_PYTHON_MIRROR wins and sets UV_PYTHON_INSTALL_MIRROR', async () => {
+    const env: NodeJS.ProcessEnv = { MOLIO_PYTHON_MIRROR: 'https://my.mirror/pbs/' };
+    let probed = false;
+    await applyPythonInstallMirrorEnv(env, async () => { probed = true; return true; }, () => {});
+    assert.equal(env['UV_PYTHON_INSTALL_MIRROR'], 'https://my.mirror/pbs'); // trailing slash stripped
+    assert.equal(probed, false, 'explicit mirror must short-circuit the probe');
+  });
+
+  it('a pre-existing UV_PYTHON_INSTALL_MIRROR is never clobbered', async () => {
+    const env: NodeJS.ProcessEnv = { UV_PYTHON_INSTALL_MIRROR: 'https://corp/pbs' };
+    await applyPythonInstallMirrorEnv(env, async () => true, () => {});
+    assert.equal(env['UV_PYTHON_INSTALL_MIRROR'], 'https://corp/pbs');
+  });
+
+  it('npmmirror reachable → routes the PBS download through it', async () => {
+    const env: NodeJS.ProcessEnv = {};
+    const logs: string[] = [];
+    await applyPythonInstallMirrorEnv(
+      env,
+      async () => true,
+      (e) => { if (e.type === 'log') logs.push(e.message); },
+    );
+    assert.equal(env['UV_PYTHON_INSTALL_MIRROR'], PBS_NPMMIRROR);
+    assert.ok(logs.some((m) => /npmmirror|python-build-standalone/i.test(m)), 'must log the redirect');
+  });
+
+  it('npmmirror unreachable → injects nothing (stock GitHub download)', async () => {
+    const env: NodeJS.ProcessEnv = {};
+    await applyPythonInstallMirrorEnv(env, async () => false, () => {});
+    assert.equal(env['UV_PYTHON_INSTALL_MIRROR'], undefined);
+  });
+});
+
+describe('installFromScript — uv Python mirror wiring', () => {
+  it('injects the npmmirror PBS mirror into the installer env when reachable', async () => {
+    const capturedEnvs: NodeJS.ProcessEnv[] = [];
+    const deps = makeDeps({
+      probeNetwork: async () => true, // npmmirror reachable
+      runScript: async (args) => { capturedEnvs.push(args.env); return OK_RESULT; },
+    });
+    await run(deps);
+    assert.equal(capturedEnvs.length, 1);
+    assert.equal(capturedEnvs[0]!['UV_PYTHON_INSTALL_MIRROR'], PBS_NPMMIRROR);
+  });
+
+  it('MOLIO_PYTHON_MIRROR is passed through to UV_PYTHON_INSTALL_MIRROR', async () => {
+    const mirror = 'https://internal/pbs';
+    const saved = process.env['MOLIO_PYTHON_MIRROR'];
+    process.env['MOLIO_PYTHON_MIRROR'] = mirror;
+    const capturedEnvs: NodeJS.ProcessEnv[] = [];
+    try {
+      const deps = makeDeps({
+        runScript: async (args) => { capturedEnvs.push(args.env); return OK_RESULT; },
+      });
+      await run(deps);
+    } finally {
+      if (saved === undefined) delete process.env['MOLIO_PYTHON_MIRROR'];
+      else process.env['MOLIO_PYTHON_MIRROR'] = saved;
+    }
+    assert.equal(capturedEnvs.length, 1);
+    assert.equal(capturedEnvs[0]!['UV_PYTHON_INSTALL_MIRROR'], mirror);
   });
 });

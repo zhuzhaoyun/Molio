@@ -15,6 +15,7 @@ import type {
 } from '@molio/contracts';
 import { validateBinary, resolveAgentBinary, needsShellOnWindows } from './launch.js';
 import { getAgentDef } from './registry.js';
+import { NPMMIRROR_BASE } from '../python-provision.js';
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 
@@ -536,6 +537,58 @@ export async function applyPypiMirrorEnv(
 }
 
 /**
+ * Inject `UV_PYTHON_INSTALL_MIRROR` into `env` (mutated in place) so uv pulls
+ * its managed CPython (python-build-standalone) from a CN-reachable mirror.
+ *
+ * Why this is separate from {@link applyPypiMirrorEnv}: the interpreter is NOT
+ * a PyPI package. uv fetches it from GitHub's release-asset CDN
+ * (`objects.githubusercontent.com`), which is commonly throttled/reset on CN
+ * networks EVEN WHEN `github.com` itself is reachable — so the preflight
+ * github.com probe passes, the git clone succeeds, then the ~160MB PBS download
+ * stalls at 0 bytes and the install dies on the wall-clock timeout. uv replaces
+ * the GitHub release-download base with this mirror, keeping `/{tag}/{file}`;
+ * npmmirror's PBS binary layout matches (same source python-provision.ts uses).
+ *
+ * Precedence (highest first):
+ *  1. explicit `MOLIO_PYTHON_MIRROR` (shared with python-provision) — always applied;
+ *  2. a `UV_PYTHON_INSTALL_MIRROR` the user already exported — left untouched;
+ *  3. otherwise probe npmmirror and use it ONLY when reachable, so networks that
+ *     can't reach aliyun (overseas without the mirror) keep the stock GitHub path.
+ *
+ * @internal exported for testing.
+ */
+export async function applyPythonInstallMirrorEnv(
+  env: NodeJS.ProcessEnv,
+  probe: (url: string, timeoutMs: number) => Promise<boolean>,
+  onEvent: (event: InstallEvent) => void,
+): Promise<void> {
+  const normalize = (url: string) => url.trim().replace(/\/+$/, '');
+
+  const explicit = env['MOLIO_PYTHON_MIRROR'];
+  if (explicit && explicit.trim()) {
+    env['UV_PYTHON_INSTALL_MIRROR'] = normalize(explicit);
+    onEvent({ type: 'log', message: `uv Python install mirror (MOLIO_PYTHON_MIRROR): ${env['UV_PYTHON_INSTALL_MIRROR']}` });
+    return;
+  }
+
+  // Respect a pre-existing mirror — don't override an explicit setup.
+  if (env['UV_PYTHON_INSTALL_MIRROR'] && env['UV_PYTHON_INSTALL_MIRROR']!.trim()) {
+    return;
+  }
+
+  const mirrorReachable = await probe(`${NPMMIRROR_BASE}/`, 5_000);
+  if (mirrorReachable) {
+    env['UV_PYTHON_INSTALL_MIRROR'] = NPMMIRROR_BASE;
+    onEvent({
+      type: 'log',
+      message: "Routing uv's managed-Python (python-build-standalone) download " +
+        `through the npmmirror mirror (${NPMMIRROR_BASE}) — GitHub's release CDN ` +
+        'often stalls on CN networks. Set MOLIO_PYTHON_MIRROR to override.',
+    });
+  }
+}
+
+/**
  * @internal exported for testing — tests drive this directly with synthetic
  * defs/sources so scenarios (unsupported platform, missing shell) don't
  * depend on the host machine or the real hermes registry entry.
@@ -710,6 +763,11 @@ export async function installFromScript(
   // Redirect the installer's Python dependency sync to a reachable PyPI mirror
   // when the default index is blocked (内网/信创). See applyPypiMirrorEnv.
   await applyPypiMirrorEnv(env, probeFn, onEvent);
+
+  // Redirect uv's managed-Python (python-build-standalone) download to the
+  // npmmirror mirror when reachable — GitHub's release CDN stalls on CN networks
+  // even though github.com itself probes fine. See applyPythonInstallMirrorEnv.
+  await applyPythonInstallMirrorEnv(env, probeFn, onEvent);
 
   const onLine = (line: string) => {
     if (line.trim()) onEvent({ type: 'log', message: line });
