@@ -88,7 +88,8 @@ export interface ScriptInstallSource {
   /**
    * Max time (ms) to let the installer script run before killing it.
    * Source-installing agents can take several minutes (toolchain bootstrap,
-   * dependency resolution). Default: 600_000 (10 min).
+   * dependency resolution). Default: 600_000 (10 min). When `stages` is set
+   * this is a PER-STAGE budget (each stage run gets the full timeoutMs).
    */
   timeoutMs?: number;
   /**
@@ -97,6 +98,37 @@ export interface ScriptInstallSource {
    * containing '--version' is used as the installed version string.
    */
   verifyArgs?: string[][];
+  /**
+   * Ordered installer stage names. When set, the engine drives the installer
+   * through its stage protocol — one script invocation per stage
+   * (`-Stage NAME` on Windows / `--stage NAME` on POSIX) — instead of a single
+   * full-ladder run, so it can inject work between stages (see
+   * `mirrorLockfile`). Stages that need user input (e.g. setup/gateway) may be
+   * listed for full-ladder parity: the engine's non-interactive flag makes the
+   * installer skip them with exit 0.
+   */
+  stages?: string[];
+  /**
+   * CN-mirror rewrite hook for the installer's JSON lockfile (meaningful only
+   * with `stages`). After `afterStage` completes — i.e. once the tool's repo
+   * is on disk but before dependency/tool downloads start — the engine locates
+   * `<home>/<relPath>` and rewrites download URLs to mirrors reachable on CN
+   * networks (github.com → a probed GitHub-proxy prefix or the upstream
+   * sha256-addressed asset mirror; nodejs.org/dist → npmmirror). Integrity is
+   * anchored by the lockfile's own sha256 pins — the installer verifies every
+   * downloaded byte — so a rewrite can never swap content, and a rewrite
+   * failure is a logged warning, never an install failure.
+   */
+  mirrorLockfile?: {
+    /** Stage after which the rewrite runs (typically the clone/checkout stage). */
+    afterStage: string;
+    /** Lockfile path relative to the tool's home directory. */
+    relPath: string;
+    /** Env var that overrides the home directory (the installer's own convention). */
+    homeEnv?: string;
+    /** Default home when homeEnv is unset. `~` and `%VAR%` are expanded. */
+    defaultHome: { win32: string; posix: string };
+  };
 }
 
 /** Extensible install source union. Add new variants here for future agents. */

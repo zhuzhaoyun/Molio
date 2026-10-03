@@ -445,15 +445,43 @@ describe('hermes agent install config (script source)', () => {
     }
   });
 
-  it('should skip browser tools by default and verify with --check + --version', () => {
+  it('should skip browser + computer-use tools by default and verify with --check + --version', () => {
     if (source?.type !== 'script') assert.fail('expected script source');
-    assert.deepEqual(source.platformArgs?.['win32'], ['-SkipBrowser']);
-    assert.deepEqual(source.platformArgs?.['posix'], ['--skip-browser']);
+    assert.deepEqual(source.platformArgs?.['win32'], ['-SkipBrowser', '-SkipComputerUse']);
+    assert.deepEqual(source.platformArgs?.['posix'], ['--skip-browser', '--skip-computer-use']);
     assert.deepEqual(source.verifyArgs, [['--check'], ['--version']]);
-    // 30min, not 10min: pm's ffmpeg tool download (~190MB GitHub release)
-    // alone needs ~11min on CN lines — a real first install was tree-killed
-    // at 600s with 169MB/190MB of the .part written. See hermes.ts comment.
+    // 30min PER-STAGE budget: the real-world failure was pm's ffmpeg download
+    // (~169MB GitHub release) trickle-throttled on CN lines — the .part file
+    // was fully PRE-ALLOCATED at 169MB but only ~8MB of ranges were durable
+    // when the 600s wall-clock kill fired. With `stages` set the budget
+    // applies to each stage run separately. See hermes.ts comment.
     assert.equal(source.timeoutMs, 1_800_000);
+  });
+
+  it('should drive the installer through its official stage protocol', () => {
+    if (source?.type !== 'script') assert.fail('expected script source');
+    // Must match install.ps1's $Stages ladder order (Invoke-StageByName
+    // dispatcher rejects unknown stages with exit 2).
+    assert.deepEqual(source.stages, [
+      'prerequisites', 'repository', 'venv', 'python-deps',
+      'config', 'products', 'setup', 'gateway', 'complete',
+    ]);
+  });
+
+  it('should rewrite the pm lockfile via CN mirrors after the clone stage', () => {
+    if (source?.type !== 'script') assert.fail('expected script source');
+    const cfg = source.mirrorLockfile;
+    assert.ok(cfg, 'mirrorLockfile must be configured — GitHub CDN trickle-throttling on CN lines was the install timeout root cause');
+    // Hook must fire after the repo is on disk but BEFORE python-deps, where
+    // pm starts pulling ffmpeg & co.
+    assert.equal(cfg.afterStage, 'repository');
+    const repoIdx = source.stages!.indexOf(cfg.afterStage);
+    const depsIdx = source.stages!.indexOf('python-deps');
+    assert.ok(repoIdx >= 0 && depsIdx > repoIdx, 'afterStage must precede python-deps in the stage ladder');
+    assert.equal(cfg.relPath, 'hermes-agent/pm/lock.json');
+    assert.equal(cfg.homeEnv, 'HERMES_HOME');
+    assert.equal(cfg.defaultHome.win32, '%LOCALAPPDATA%\\hermes');
+    assert.equal(cfg.defaultHome.posix, '~/.hermes');
   });
 
   it('should keep installUrl for manual-install fallback', () => {

@@ -588,6 +588,278 @@ export async function applyPythonInstallMirrorEnv(
   }
 }
 
+// ─── Installer lockfile CN-mirror rewriting (mirrorLockfile hook) ──────────
+
+/**
+ * GitHub proxy prefixes probed (in order) when `MOLIO_GITHUB_PROXY` is unset.
+ * Both are public "paste the whole GitHub URL after the prefix" accelerators
+ * commonly reachable from CN networks. First probe success wins. Integrity is
+ * never delegated to them: the lockfile's own sha256 pins verify every byte,
+ * so a proxy can slow down or fail, but it cannot swap content.
+ */
+const GITHUB_PROXY_CANDIDATES = ['https://ghfast.top', 'https://gh-proxy.com'];
+
+/**
+ * Upstream's content-addressed artifact mirror (pm/artifact-mirror.json:
+ * origin + prefix). Hosts a reviewed copy of every sha256-pinned lockfile
+ * artifact, so any pinned URL can be replaced by `<base>/<sha256>`. Last
+ * resort in the probe chain — the GitHub proxies are faster from CN when up.
+ */
+const HERMES_ASSETS_SHA_BASE = 'https://hermes-assets.nousresearch.com/upstream/sha256';
+
+/** npmmirror's Node.js dist mirror — layout matches nodejs.org/dist (`/vX.Y.Z/<file>`). */
+const NPMMIRROR_NODE_DIST_BASE = 'https://registry.npmmirror.com/-/binary/node';
+
+/** Full lowercase sha256 — the lockfile pin format (pm object_key rejects anything else). */
+const SHA256_RE = /^[a-f0-9]{64}$/;
+
+/** How a resolved mirror rewrites lockfile download URLs. */
+export type LockMirror =
+  /** Prefix mode: `https://github.com/<path>` → `<base>/https://github.com/<path>`. */
+  | { kind: 'prefix'; base: string }
+  /** sha256 mode: any pinned http(s) URL → `<base>/<sha256>`. */
+  | { kind: 'sha256'; base: string };
+
+interface LockMirrorSamples {
+  /** First github.com URL in the lockfile (probe target for prefix candidates). */
+  githubUrl?: string;
+  /** First artifact sha256 (probe target for the content-addressed mirror). */
+  sha256?: string;
+}
+
+/**
+ * Decide which mirror lockfile URLs should be rewritten through.
+ *
+ * Precedence (highest first):
+ *  1. `MOLIO_GITHUB_PROXY=off` → no rewriting (explicit user opt-out);
+ *  2. `MOLIO_GITHUB_PROXY=<base>` → prefix mode, trusted without probing
+ *     (same "explicit config always applies" rule as applyPypiMirrorEnv);
+ *  3. probe the public GitHub-proxy candidates with a REAL lockfile URL —
+ *     first reachable wins;
+ *  4. probe the upstream sha256-addressed mirror with a real artifact sha;
+ *  5. nothing reachable → null: keep upstream URLs. A slow download can
+ *     resume (pm partials are durable, 6h GC grace); a rewrite to a dead
+ *     mirror would hard-fail, so "no mirror" must never force one.
+ *
+ * @internal exported for testing.
+ */
+export async function resolveLockMirror(
+  env: NodeJS.ProcessEnv,
+  probe: (url: string, timeoutMs: number) => Promise<boolean>,
+  samples: LockMirrorSamples,
+  onEvent: (event: InstallEvent) => void,
+): Promise<LockMirror | null> {
+  const normalize = (url: string) => url.trim().replace(/\/+$/, '');
+
+  const explicit = env['MOLIO_GITHUB_PROXY'];
+  if (explicit && explicit.trim()) {
+    const value = explicit.trim();
+    if (value.toLowerCase() === 'off') {
+      onEvent({ type: 'log', message: 'Lockfile mirror rewriting disabled (MOLIO_GITHUB_PROXY=off)' });
+      return null;
+    }
+    onEvent({ type: 'log', message: `GitHub mirror (MOLIO_GITHUB_PROXY): ${normalize(value)}` });
+    return { kind: 'prefix', base: normalize(value) };
+  }
+
+  if (samples.githubUrl) {
+    for (const candidate of GITHUB_PROXY_CANDIDATES) {
+      if (await probe(`${candidate}/${samples.githubUrl}`, 8_000)) {
+        onEvent({ type: 'log', message: `GitHub proxy reachable: ${candidate} — lockfile downloads will use it` });
+        return { kind: 'prefix', base: candidate };
+      }
+    }
+  }
+
+  if (samples.sha256) {
+    if (await probe(`${HERMES_ASSETS_SHA_BASE}/${samples.sha256}`, 8_000)) {
+      onEvent({ type: 'log', message: `Upstream artifact mirror reachable: ${HERMES_ASSETS_SHA_BASE}` });
+      return { kind: 'sha256', base: HERMES_ASSETS_SHA_BASE };
+    }
+  }
+
+  onEvent({
+    type: 'log',
+    message: 'No CN-reachable GitHub mirror found — keeping upstream download URLs ' +
+      '(set MOLIO_GITHUB_PROXY to override, or =off to silence this probe).',
+  });
+  return null;
+}
+
+/**
+ * Rewrite download URLs in a pm-style JSON lockfile to go through `mirror`.
+ *
+ * Shape handled: `{ packages: { <name>: { artifacts: { <target>: entry } } } }`
+ * where `entry` is `{ url, sha256 }` OR a LIST of such objects (multi-candidate
+ * artifacts — iron-proxy/tirith/llamacpp-cuda ship lists).
+ *
+ * Rewrite rules:
+ *  - prefix mode: `https://github.com/…` and `https://raw.githubusercontent.com/…`
+ *    → `<base>/<original-url>`; `https://nodejs.org/dist/<rest>` →
+ *    `<NPMMIRROR_NODE_DIST_BASE>/<rest>`. Everything else (npm registry,
+ *    playwright CDN, docker://, …) untouched.
+ *  - sha256 mode: any http(s) URL whose entry carries a full 64-hex sha256 pin
+ *    → `<base>/<sha256>`. Non-http URLs (docker://…) and unpinned entries
+ *    untouched.
+ *
+ * `sha256` fields themselves are NEVER modified — they are the integrity
+ * anchor that makes any URL swap safe (the installer verifies every downloaded
+ * byte). The write is atomic (tmp + rename in the same directory) and the
+ * rewrite is idempotent (already-prefixed URLs are skipped). Malformed JSON or
+ * an unreadable file → `{ rewritten: 0 }`, file left alone.
+ *
+ * @internal exported for testing.
+ */
+export function rewriteLockfileMirrors(
+  lockPath: string,
+  mirror: LockMirror,
+): { rewritten: number } {
+  let doc: unknown;
+  try {
+    // Tolerate a leading BOM — the installer's own python reads lock files
+    // with encoding='utf-8-sig'.
+    doc = JSON.parse(readFileSync(lockPath, 'utf8').replace(/^﻿/, ''));
+  } catch {
+    return { rewritten: 0 };
+  }
+
+  const packages = (doc as { packages?: unknown })?.packages;
+  if (!packages || typeof packages !== 'object') return { rewritten: 0 };
+
+  let rewritten = 0;
+
+  const rewriteUrl = (url: unknown, sha: unknown): string | null => {
+    if (typeof url !== 'string' || !url) return null;
+    if (mirror.kind === 'sha256') {
+      if (!/^https?:\/\//.test(url)) return null;
+      if (typeof sha !== 'string' || !SHA256_RE.test(sha)) return null;
+      const next = `${mirror.base}/${sha}`;
+      return next === url ? null : next;
+    }
+    // prefix mode
+    if (url.startsWith(`${mirror.base}/`)) return null; // idempotent
+    if (url.startsWith('https://github.com/') || url.startsWith('https://raw.githubusercontent.com/')) {
+      return `${mirror.base}/${url}`;
+    }
+    const nodeDistPrefix = 'https://nodejs.org/dist/';
+    if (url.startsWith(nodeDistPrefix)) {
+      return `${NPMMIRROR_NODE_DIST_BASE}/${url.slice(nodeDistPrefix.length)}`;
+    }
+    return null;
+  };
+
+  const visitEntry = (entry: unknown) => {
+    if (!entry || typeof entry !== 'object') return;
+    const e = entry as { url?: unknown; sha256?: unknown };
+    const next = rewriteUrl(e.url, e.sha256);
+    if (next) {
+      e.url = next;
+      rewritten++;
+    }
+  };
+
+  for (const pkg of Object.values(packages) as Array<{ artifacts?: unknown }>) {
+    const artifacts = pkg?.artifacts;
+    if (!artifacts || typeof artifacts !== 'object') continue;
+    for (const art of Object.values(artifacts)) {
+      if (Array.isArray(art)) art.forEach(visitEntry);
+      else visitEntry(art);
+    }
+  }
+
+  if (rewritten === 0) return { rewritten: 0 };
+
+  const tmpPath = `${lockPath}.molio-mirror.tmp`;
+  writeFileSync(tmpPath, JSON.stringify(doc, null, 2), 'utf8');
+  renameSync(tmpPath, lockPath);
+  return { rewritten };
+}
+
+/** Extract probe samples (first github URL + first artifact sha) from a lockfile. */
+function sampleLockfileUrls(lockPath: string): LockMirrorSamples {
+  const samples: LockMirrorSamples = {};
+  try {
+    const doc = JSON.parse(readFileSync(lockPath, 'utf8').replace(/^﻿/, '')) as {
+      packages?: Record<string, { artifacts?: Record<string, unknown> }>;
+    };
+    for (const pkg of Object.values(doc?.packages ?? {})) {
+      for (const art of Object.values(pkg?.artifacts ?? {})) {
+        for (const entry of (Array.isArray(art) ? art : [art]) as Array<{ url?: unknown; sha256?: unknown }>) {
+          if (!entry || typeof entry !== 'object') continue;
+          if (!samples.githubUrl && typeof entry.url === 'string' && entry.url.startsWith('https://github.com/')) {
+            samples.githubUrl = entry.url;
+          }
+          if (!samples.sha256 && typeof entry.sha256 === 'string' && SHA256_RE.test(entry.sha256)) {
+            samples.sha256 = entry.sha256;
+          }
+          if (samples.githubUrl && samples.sha256) return samples;
+        }
+      }
+    }
+  } catch { /* best effort — resolveLockMirror degrades gracefully without samples */ }
+  return samples;
+}
+
+/** Expand `%VAR%` (Windows) and leading `~` (POSIX home) in an installer home path. */
+function expandHomePath(raw: string, env: NodeJS.ProcessEnv): string {
+  let out = raw;
+  if (out === '~' || out.startsWith('~/') || out.startsWith('~\\')) {
+    out = path.join(env['HOME'] || os.homedir(), out.slice(1));
+  }
+  return out.replace(/%([A-Za-z0-9_]+)%/g, (m, name: string) => env[name] ?? m);
+}
+
+/**
+ * Best-effort CN-mirror rewrite of the installer's JSON lockfile — the engine
+ * side of the `mirrorLockfile` hook. Called after `cfg.afterStage` completes:
+ * the tool's repo is on disk (so the lockfile exists) but dependency/tool
+ * downloads have not started yet.
+ *
+ * NEVER fails the install: every error path (missing lockfile, unreadable
+ * JSON, rename failure, no reachable mirror) degrades to a logged warning and
+ * keeps the upstream URLs — worst case the install is as slow as it was
+ * before this hook existed.
+ *
+ * @internal exported for testing.
+ */
+export async function applyLockfileMirror(
+  env: NodeJS.ProcessEnv,
+  cfg: NonNullable<ScriptInstallSource['mirrorLockfile']>,
+  probe: (url: string, timeoutMs: number) => Promise<boolean>,
+  onEvent: (event: InstallEvent) => void,
+): Promise<void> {
+  try {
+    const isWindows = process.platform === 'win32';
+    const homeRaw =
+      (cfg.homeEnv && env[cfg.homeEnv]?.trim()) ||
+      cfg.defaultHome[isWindows ? 'win32' : 'posix'];
+    const lockPath = path.join(expandHomePath(homeRaw, env), cfg.relPath);
+
+    if (!existsSync(lockPath)) {
+      onEvent({ type: 'log', message: `Mirror hook: lockfile not found (${lockPath}) — skipping rewrite` });
+      return;
+    }
+
+    // Probe with REAL lockfile values so the reachability check hits the same
+    // hosts/shas the installer will actually download.
+    const mirror = await resolveLockMirror(env, probe, sampleLockfileUrls(lockPath), onEvent);
+    if (!mirror) return;
+
+    const { rewritten } = rewriteLockfileMirrors(lockPath, mirror);
+    onEvent({
+      type: 'log',
+      message: rewritten > 0
+        ? `Rewrote ${rewritten} lockfile download URL(s) via ${mirror.kind === 'prefix' ? mirror.base : `${mirror.base}/<sha256>`}`
+        : 'Lockfile needs no mirror rewrite',
+    });
+  } catch (err) {
+    onEvent({
+      type: 'log',
+      message: `Mirror rewrite skipped (${err instanceof Error ? err.message : String(err)}) — keeping upstream URLs`,
+    });
+  }
+}
+
 /**
  * @internal exported for testing — tests drive this directly with synthetic
  * defs/sources so scenarios (unsupported platform, missing shell) don't
@@ -747,9 +1019,6 @@ export async function installFromScript(
 
   const extraArgs = matchPlatformArgs(platformKey, source.platformArgs);
   const timeoutMs = source.timeoutMs ?? DEFAULT_SCRIPT_TIMEOUT_MS;
-  const cmdArgs = isWindows
-    ? ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-NonInteractive', '-File', scriptPath, '-NonInteractive', ...extraArgs]
-    : [scriptPath, '--non-interactive', ...extraArgs];
 
   // Env passthrough: MOLIO_HERMES_REPO_URL → HERMES_REPO_URL lets users point
   // the installer's git clone at a reachable mirror (engine-level convention;
@@ -773,11 +1042,87 @@ export async function installFromScript(
     if (line.trim()) onEvent({ type: 'log', message: line });
   };
 
-  let result: RunScriptResult;
+  const runOnce = (stageArgs: string[]): Promise<RunScriptResult> => {
+    const cmdArgs = isWindows
+      ? ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-NonInteractive', '-File', scriptPath, '-NonInteractive', ...extraArgs, ...stageArgs]
+      : [scriptPath, '--non-interactive', ...extraArgs, ...stageArgs];
+    return deps?.runScript
+      ? deps.runScript({ cmd: shellCmd, args: cmdArgs, env, timeoutMs, signal, onLine })
+      : runScriptProcess({ cmd: shellCmd, args: cmdArgs, env, timeoutMs, signal, onLine });
+  };
+
+  // Failure captured inside the run loop, surfaced after temp-script cleanup.
+  let failure: { message: string; category: ErrorCategory; retryable: boolean; hint?: string } | null = null;
+  let cancelled = false;
+
   try {
-    result = deps?.runScript
-      ? await deps.runScript({ cmd: shellCmd, args: cmdArgs, env, timeoutMs, signal, onLine })
-      : await runScriptProcess({ cmd: shellCmd, args: cmdArgs, env, timeoutMs, signal, onLine });
+    if (source.stages?.length) {
+      // Stage protocol: one script invocation per stage (`-Stage NAME` /
+      // `--stage NAME`) instead of a single full-ladder run, so the engine can
+      // check abort between stages and inject the mirrorLockfile hook after
+      // the clone stage. `timeoutMs` is a PER-STAGE budget here — each stage
+      // run gets the full timeout.
+      let mirrorPending = source.mirrorLockfile ?? null;
+      for (const stage of source.stages) {
+        if (signal?.aborted) { cancelled = true; break; }
+        onEvent({ type: 'log', message: `Installer stage: ${stage}` });
+        const result = await runOnce(isWindows ? ['-Stage', stage] : ['--stage', stage]);
+
+        if (result.aborted || signal?.aborted) { cancelled = true; break; }
+        if (result.timedOut) {
+          failure = {
+            message: `Installer timed out after ${Math.round(timeoutMs / 1000)}s (stage: ${stage})`,
+            category: 'runtime',
+            retryable: true,
+            hint: `Source-based installs can be slow on first run (toolchain bootstrap). ` +
+              `Try again, or install ${agentName} manually: ${def.installUrl ?? ''}`,
+          };
+          break;
+        }
+        if (result.code !== 0) {
+          const classified = classifyScriptExitError(result.stderrTail, result.code, def.installUrl);
+          failure = {
+            message: `Installer stage '${stage}' exited with code ${result.code}${classified.detail ? `: ${classified.detail}` : ''}`,
+            category: classified.category,
+            retryable: classified.retryable,
+            hint: classified.hint,
+          };
+          break;
+        }
+        onEvent({ type: 'log', message: `Stage complete: ${stage}` });
+
+        // One-shot hook: rewrite the freshly-cloned lockfile's download URLs
+        // to CN-reachable mirrors BEFORE the dependency stages start pulling.
+        // The repository stage hard-resets the checkout on every run (so a
+        // previous rewrite is wiped on retry) — hence the hook lives in the
+        // loop and re-applies each run. Best-effort; never fails the install.
+        if (mirrorPending && stage === mirrorPending.afterStage) {
+          await applyLockfileMirror(env, mirrorPending, probeFn, onEvent);
+          mirrorPending = null;
+        }
+      }
+    } else {
+      const result = await runOnce([]);
+      if (result.aborted || signal?.aborted) {
+        cancelled = true;
+      } else if (result.timedOut) {
+        failure = {
+          message: `Installer timed out after ${Math.round(timeoutMs / 1000)}s`,
+          category: 'runtime',
+          retryable: true,
+          hint: `Source-based installs can be slow on first run (toolchain bootstrap). ` +
+            `Try again, or install ${agentName} manually: ${def.installUrl ?? ''}`,
+        };
+      } else if (result.code !== 0) {
+        const classified = classifyScriptExitError(result.stderrTail, result.code, def.installUrl);
+        failure = {
+          message: `Installer exited with code ${result.code}${classified.detail ? `: ${classified.detail}` : ''}`,
+          category: classified.category,
+          retryable: classified.retryable,
+          hint: classified.hint,
+        };
+      }
+    }
   } finally {
     // Always remove the temp script, success or failure.
     try {
@@ -786,30 +1131,12 @@ export async function installFromScript(
     } catch { /* best effort */ }
   }
 
-  if (result.aborted || signal?.aborted) {
+  if (cancelled) {
     onEvent({ type: 'error', message: 'Installation cancelled', category: 'unknown', retryable: true });
     return;
   }
-  if (result.timedOut) {
-    onEvent({
-      type: 'error',
-      message: `Installer timed out after ${Math.round(timeoutMs / 1000)}s`,
-      category: 'runtime',
-      retryable: true,
-      hint: `Source-based installs can be slow on first run (toolchain bootstrap). ` +
-        `Try again, or install ${agentName} manually: ${def.installUrl ?? ''}`,
-    });
-    return;
-  }
-  if (result.code !== 0) {
-    const classified = classifyScriptExitError(result.stderrTail, result.code, def.installUrl);
-    onEvent({
-      type: 'error',
-      message: `Installer exited with code ${result.code}${classified.detail ? `: ${classified.detail}` : ''}`,
-      category: classified.category,
-      retryable: classified.retryable,
-      hint: classified.hint,
-    });
+  if (failure) {
+    onEvent({ type: 'error', ...failure });
     return;
   }
   onEvent({ type: 'log', message: 'Installer script completed' });

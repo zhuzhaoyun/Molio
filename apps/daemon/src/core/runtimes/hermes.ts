@@ -82,20 +82,48 @@ export const hermesAgentDef: RuntimeAgentDef = {
         'linux-x64': 'https://hermes-agent.nousresearch.com/install.sh',
         'linux-arm64': 'https://hermes-agent.nousresearch.com/install.sh',
       },
-      // Browser tooling pulls a full Chromium (~150MB+) — skip by default;
-      // users can add it later via `hermes pm install agent-browser`.
+      // Browser tooling pulls a full Chromium (~150MB+) and computer-use pulls
+      // the cua-driver from GitHub — both skipped by default (Molio drives
+      // hermes via ACP chat, neither tool is used). Users can add them later
+      // via `hermes pm install agent-browser` / `hermes pm install cua-driver`.
       // -NonInteractive / --non-interactive are added by the install engine.
       platformArgs: {
-        win32: ['-SkipBrowser'],
-        posix: ['--skip-browser'],
+        win32: ['-SkipBrowser', '-SkipComputerUse'],
+        posix: ['--skip-browser', '--skip-computer-use'],
+      },
+      // Drive the installer through its official stage protocol (one process
+      // per stage) instead of a single full-ladder run, so the engine can
+      // inject the mirrorLockfile rewrite after the clone and report/abort
+      // per stage. `setup`/`gateway` need user input — the engine's
+      // -NonInteractive flag makes the installer skip them with exit 0 (kept
+      // in the list for full-ladder parity). timeoutMs below is PER-STAGE.
+      stages: [
+        'prerequisites', 'repository', 'venv', 'python-deps',
+        'config', 'products', 'setup', 'gateway', 'complete',
+      ],
+      // After the clone lands (repository) but before pm starts pulling its
+      // tool set (python-deps), rewrite pm/lock.json's GitHub/nodejs URLs to
+      // CN-reachable mirrors. Without this, ffmpeg (~169MB, GitHub Releases
+      // CDN) trickle-throttles at ~300KB/s on CN lines and the install dies
+      // on the per-stage timeout — the CDN connects fine, it just never
+      // finishes, so pm's own fallback mirror never triggers. Integrity stays
+      // anchored by the lockfile's sha256 pins.
+      mirrorLockfile: {
+        afterStage: 'repository',
+        relPath: 'hermes-agent/pm/lock.json',
+        homeEnv: 'HERMES_HOME',
+        defaultHome: {
+          win32: '%LOCALAPPDATA%\\hermes',
+          posix: '~/.hermes',
+        },
       },
       // Source install: git clone + uv bootstrap + dependency sync, then pm
-      // pulls its default tool set from GitHub releases — ffmpeg alone is a
-      // ~190MB zip, which on CN lines (~300KB/s observed, real 600s timeout
-      // kill at 169MB) needs ~11min AFTER everything else. pm downloads are
-      // resumable (cache/partials keyed by sha256, 6h GC grace) so a timeout
-      // isn't fatal — but 30min lets a first run finish without a retry
-      // round-trip. Matches acp.absoluteTimeoutMs's 30min reasoning.
+      // pulls its default tool set from GitHub releases. With `stages` set,
+      // this is a PER-STAGE budget; 30min per stage comfortably covers the
+      // worst single stage (python-deps: ffmpeg ~169MB even through a mirror,
+      // plus PyPI sync). pm downloads are resumable (cache/partials keyed by
+      // sha256, 6h GC grace) so a timeout isn't fatal — a retry continues
+      // where it left off. Matches acp.absoluteTimeoutMs's 30min reasoning.
       timeoutMs: 1_800_000,
       // --check validates the [acp] extra is importable; --version yields the
       // installed version string for the done event.

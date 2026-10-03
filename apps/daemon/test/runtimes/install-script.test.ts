@@ -9,7 +9,7 @@
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, existsSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { InstallEvent, RuntimeAgentDef, ScriptInstallSource } from '@molio/contracts';
@@ -18,6 +18,9 @@ import {
   runScriptProcess,
   applyPypiMirrorEnv,
   applyPythonInstallMirrorEnv,
+  resolveLockMirror,
+  rewriteLockfileMirrors,
+  applyLockfileMirror,
   type ScriptInstallDeps,
   type RunScriptArgs,
   type RunScriptResult,
@@ -731,5 +734,562 @@ describe('installFromScript — uv Python mirror wiring', () => {
     }
     assert.equal(capturedEnvs.length, 1);
     assert.equal(capturedEnvs[0]!['UV_PYTHON_INSTALL_MIRROR'], mirror);
+  });
+});
+
+// ─── Staged install protocol + lockfile CN-mirror hook ──────────────────────
+//
+// Root cause of the real-world 600s install timeout: pm's ffmpeg artifact
+// (~169MB, GitHub Releases CDN) trickle-throttles on CN lines — the CDN
+// connects fine, so pm's own pinned-source fallback never triggers, and the
+// download never finishes. The fix: drive the installer through its official
+// `-Stage NAME` / `--stage NAME` protocol and, after the clone stage lands the
+// repo but BEFORE python-deps starts pulling artifacts, rewrite pm/lock.json's
+// GitHub/nodejs URLs to a probed CN-reachable mirror. Integrity stays anchored
+// by the lockfile's sha256 pins (the installer verifies every downloaded byte).
+
+const STAGE_FLAG = isWindows ? '-Stage' : '--stage';
+
+/** Extract the stage name from a captured invocation (last arg after the flag). */
+function stageOf(invocation: RunScriptArgs): string | undefined {
+  const args = invocation.args;
+  return args[args.length - 2] === STAGE_FLAG ? args[args.length - 1] : undefined;
+}
+
+/** A lock.json shaped like the real pm lockfile: object AND list artifacts,
+ *  github/nodejs/npm/raw/docker URLs, every http entry sha256-pinned. */
+function lockFixture() {
+  return {
+    schema: 1,
+    packages: {
+      ffmpeg: {
+        version: '9.0.1',
+        artifacts: {
+          'win32-x64': {
+            url: 'https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild/ffmpeg.zip',
+            sha256: 'a'.repeat(64),
+          },
+        },
+      },
+      node: {
+        version: '26.7.0',
+        artifacts: {
+          'win32-x64': {
+            url: 'https://nodejs.org/dist/v26.7.0/node-v26.7.0-win-x64.zip',
+            sha256: 'b'.repeat(64),
+          },
+        },
+      },
+      'agent-browser': {
+        version: '0.26.0',
+        artifacts: {
+          any: {
+            url: 'https://registry.npmjs.org/agent-browser/-/agent-browser-0.26.0.tgz',
+            sha256: 'c'.repeat(64),
+          },
+        },
+      },
+      'iron-proxy': {
+        version: '1.0',
+        artifacts: {
+          'win32-x64': [
+            { url: 'https://raw.githubusercontent.com/paradigmxyz/iron-proxy/main/public-key.asc', sha256: 'd'.repeat(64) },
+            { url: 'https://github.com/paradigmxyz/iron-proxy/releases/download/v1/ip.zip', sha256: 'e'.repeat(64) },
+          ],
+        },
+      },
+      'termux-docker': {
+        artifacts: {
+          docker: { url: `docker://termux/termux-docker@sha256:${'f'.repeat(64)}`, sha256: null },
+        },
+      },
+    },
+  };
+}
+
+function writeLockFixture(dir: string, rel = path.join('pm', 'lock.json')): string {
+  const lockPath = path.join(dir, rel);
+  mkdirSync(path.dirname(lockPath), { recursive: true });
+  writeFileSync(lockPath, JSON.stringify(lockFixture(), null, 2), 'utf8');
+  return lockPath;
+}
+
+describe('installFromScript — staged stage protocol', () => {
+  it('runs one invocation per stage, in order, with the stage flag appended', async () => {
+    const captured: RunScriptArgs[] = [];
+    const deps = makeDeps({
+      runScript: async (args) => { captured.push(args); return OK_RESULT; },
+    });
+    const stages = ['prerequisites', 'repository', 'complete'];
+    const events = await run(deps, { source: makeSource({ stages }) });
+
+    assert.equal(captured.length, stages.length, 'one process per stage');
+    assert.deepEqual(captured.map(stageOf), stages);
+    for (const invocation of captured) {
+      assert.equal(invocation.timeoutMs, 60_000, 'timeoutMs is a PER-STAGE budget');
+      assert.ok(
+        invocation.args.includes(isWindows ? '-SkipBrowser' : '--skip-browser'),
+        'platformArgs must be present in every stage invocation',
+      );
+    }
+    assert.ok(doneOf(events), 'staged success must reach the done event');
+    assert.equal(errorOf(events), undefined);
+  });
+
+  it('stage failure stops the ladder and the error names the stage', async () => {
+    const ran: string[] = [];
+    const deps = makeDeps({
+      runScript: async (args) => {
+        const stage = stageOf(args)!;
+        ran.push(stage);
+        if (stage === 'repository') {
+          return {
+            code: 128,
+            stderrTail: "fatal: unable to access 'https://github.com/NousResearch/hermes-agent/': Could not resolve host: github.com",
+            timedOut: false,
+            aborted: false,
+          };
+        }
+        return OK_RESULT;
+      },
+    });
+
+    const events = await run(deps, {
+      source: makeSource({ stages: ['prerequisites', 'repository', 'python-deps', 'complete'] }),
+    });
+
+    assert.deepEqual(ran, ['prerequisites', 'repository'], 'later stages must not run');
+    const err = errorOf(events);
+    assert.ok(err);
+    assert.match(err.message, /stage 'repository'/);
+    assert.equal(err.category, 'network');
+    assert.equal(doneOf(events), undefined);
+  });
+
+  it('stage timeout reports the stage name and stays retryable', async () => {
+    const deps = makeDeps({
+      runScript: async (args) =>
+        stageOf(args) === 'python-deps'
+          ? { code: null, stderrTail: '', timedOut: true, aborted: false }
+          : OK_RESULT,
+    });
+
+    const events = await run(deps, {
+      source: makeSource({ stages: ['repository', 'python-deps', 'complete'] }),
+    });
+
+    const err = errorOf(events);
+    assert.ok(err);
+    assert.match(err.message, /timed out after 60s \(stage: python-deps\)/);
+    assert.equal(err.category, 'runtime');
+    assert.equal(err.retryable, true);
+    assert.equal(doneOf(events), undefined);
+  });
+
+  it('abort between stages cancels without running later stages', async () => {
+    const ac = new AbortController();
+    const ran: string[] = [];
+    const deps = makeDeps({
+      runScript: async (args) => {
+        const stage = stageOf(args)!;
+        ran.push(stage);
+        if (stage === 'repository') ac.abort(); // user hits cancel mid-ladder
+        return OK_RESULT;
+      },
+    });
+
+    const events = await run(deps, {
+      source: makeSource({ stages: ['prerequisites', 'repository', 'python-deps', 'complete'] }),
+      signal: ac.signal,
+    });
+
+    assert.deepEqual(ran, ['prerequisites', 'repository']);
+    const err = errorOf(events);
+    assert.ok(err);
+    assert.match(err.message, /cancelled/i);
+    assert.equal(err.retryable, true);
+  });
+
+  it('temp script is cleaned up when a stage fails', async () => {
+    let cleaned = false;
+    const deps = makeDeps({
+      runScript: async () => ({ code: 1, stderrTail: 'boom', timedOut: false, aborted: false }),
+      cleanupTempScript: () => { cleaned = true; },
+    });
+    await run(deps, { source: makeSource({ stages: ['prerequisites', 'complete'] }) });
+    assert.equal(cleaned, true);
+  });
+});
+
+describe('installFromScript — mirrorLockfile hook wiring', () => {
+  const HOME_ENV = 'MOLIO_TEST_HERMES_HOME';
+
+  function stagedSourceWithMirror(overrides: Partial<ScriptInstallSource> = {}): ScriptInstallSource {
+    return makeSource({
+      stages: ['repository', 'python-deps', 'complete'],
+      mirrorLockfile: {
+        afterStage: 'repository',
+        relPath: path.join('pm', 'lock.json'),
+        homeEnv: HOME_ENV,
+        defaultHome: { win32: '%MOLIO_TEST_NOWHERE%', posix: '%MOLIO_TEST_NOWHERE%' },
+      },
+      ...overrides,
+    });
+  }
+
+  function withHomeEnv<T>(dir: string, fn: () => Promise<T>): Promise<T> {
+    const saved = process.env[HOME_ENV];
+    process.env[HOME_ENV] = dir;
+    return fn().finally(() => {
+      if (saved === undefined) delete process.env[HOME_ENV];
+      else process.env[HOME_ENV] = saved;
+    });
+  }
+
+  it('rewrites the lockfile AFTER the clone stage and BEFORE the next stage runs', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'molio-lockmirror-'));
+    const lockPath = writeLockFixture(dir);
+    try {
+      await withHomeEnv(dir, async () => {
+        let lockSeenByDepsStage = '';
+        const deps = makeDeps({
+          runScript: async (args) => {
+            // python-deps must observe the ALREADY-rewritten lockfile — that's
+            // the whole point of the hook placement.
+            if (stageOf(args) === 'python-deps') lockSeenByDepsStage = readFileSync(lockPath, 'utf8');
+            return OK_RESULT;
+          },
+        });
+
+        const events = await run(deps, { source: stagedSourceWithMirror() });
+        assert.ok(doneOf(events), 'mirror rewrite must not break the install');
+        assert.match(lockSeenByDepsStage, /ghfast\.top/, 'rewrite must land before python-deps runs');
+
+        const lock = JSON.parse(readFileSync(lockPath, 'utf8'));
+        assert.equal(
+          lock.packages.ffmpeg.artifacts['win32-x64'].url,
+          'https://ghfast.top/https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild/ffmpeg.zip',
+        );
+        // sha256 pins are the integrity anchor — never touched.
+        assert.equal(lock.packages.ffmpeg.artifacts['win32-x64'].sha256, 'a'.repeat(64));
+
+        const rewriteLogs = events.filter(
+          (e) => e.type === 'log' && /Rewrote \d+ lockfile download URL/.test((e as any).message),
+        );
+        assert.equal(rewriteLogs.length, 1, 'hook must fire exactly once');
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('missing lockfile → warning log, install proceeds (best-effort hook)', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'molio-lockmirror-'));
+    try {
+      await withHomeEnv(dir, async () => {
+        const events = await run(makeDeps(), { source: stagedSourceWithMirror() });
+        const warn = events.find((e) => e.type === 'log' && /lockfile not found/i.test((e as any).message));
+        assert.ok(warn, 'must log a warning naming the missing lockfile');
+        assert.ok(doneOf(events), 'a missing lockfile must never fail the install');
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('no reachable mirror → lockfile untouched, install proceeds on upstream URLs', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'molio-lockmirror-'));
+    const lockPath = writeLockFixture(dir);
+    const before = readFileSync(lockPath, 'utf8');
+    try {
+      await withHomeEnv(dir, async () => {
+        const deps = makeDeps({ probeNetwork: async () => false });
+        const events = await run(deps, { source: stagedSourceWithMirror() });
+        assert.equal(readFileSync(lockPath, 'utf8'), before, 'file must be byte-identical');
+        assert.ok(events.some((e) => e.type === 'log' && /keeping upstream download URLs/i.test((e as any).message)));
+        assert.ok(doneOf(events));
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('mirrorLockfile WITHOUT stages never fires (hook requires the stage protocol)', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'molio-lockmirror-'));
+    const lockPath = writeLockFixture(dir);
+    const before = readFileSync(lockPath, 'utf8');
+    try {
+      await withHomeEnv(dir, async () => {
+        const source = makeSource({
+          mirrorLockfile: {
+            afterStage: 'repository',
+            relPath: path.join('pm', 'lock.json'),
+            homeEnv: HOME_ENV,
+            defaultHome: { win32: '%MOLIO_TEST_NOWHERE%', posix: '%MOLIO_TEST_NOWHERE%' },
+          },
+        });
+        const captured: RunScriptArgs[] = [];
+        const deps = makeDeps({ runScript: async (a) => { captured.push(a); return OK_RESULT; } });
+        const events = await run(deps, { source });
+        assert.equal(captured.length, 1, 'single full-ladder invocation');
+        assert.equal(stageOf(captured[0]!), undefined, 'no stage flag in single-run mode');
+        assert.equal(readFileSync(lockPath, 'utf8'), before, 'hook must not fire without stages');
+        assert.ok(doneOf(events));
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('resolveLockMirror — precedence and probe chain', () => {
+  const samples = {
+    githubUrl: 'https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild/ffmpeg.zip',
+    sha256: 'a'.repeat(64),
+  };
+  const logs: string[] = [];
+  const onEvent = (e: InstallEvent) => { if (e.type === 'log') logs.push((e as any).message); };
+
+  it('MOLIO_GITHUB_PROXY=off → null, no probing', async () => {
+    let probed = 0;
+    const mirror = await resolveLockMirror(
+      { MOLIO_GITHUB_PROXY: 'off' },
+      async () => { probed++; return true; },
+      samples,
+      onEvent,
+    );
+    assert.equal(mirror, null);
+    assert.equal(probed, 0, 'explicit opt-out must short-circuit probing');
+  });
+
+  it('explicit MOLIO_GITHUB_PROXY → prefix mirror, trusted without probing, slash-trimmed', async () => {
+    let probed = 0;
+    const mirror = await resolveLockMirror(
+      { MOLIO_GITHUB_PROXY: 'https://corp.proxy.example/' },
+      async () => { probed++; return true; },
+      samples,
+      onEvent,
+    );
+    assert.deepEqual(mirror, { kind: 'prefix', base: 'https://corp.proxy.example' });
+    assert.equal(probed, 0);
+  });
+
+  it('probe chain: first reachable GitHub proxy wins, probed with a REAL lockfile URL', async () => {
+    const probedUrls: string[] = [];
+    const mirror = await resolveLockMirror(
+      {},
+      async (url) => { probedUrls.push(url); return url.startsWith('https://gh-proxy.com'); },
+      samples,
+      onEvent,
+    );
+    assert.deepEqual(mirror, { kind: 'prefix', base: 'https://gh-proxy.com' });
+    // ghfast.top probed first (with the sample URL appended), then gh-proxy.com.
+    assert.equal(probedUrls[0], `https://ghfast.top/${samples.githubUrl}`);
+    assert.equal(probedUrls[1], `https://gh-proxy.com/${samples.githubUrl}`);
+    assert.equal(probedUrls.length, 2, 'must stop at the first reachable candidate');
+  });
+
+  it('all proxies down but upstream artifact mirror reachable → sha256 mode', async () => {
+    const mirror = await resolveLockMirror(
+      {},
+      async (url) => url.startsWith('https://hermes-assets.nousresearch.com/upstream/sha256/'),
+      samples,
+      onEvent,
+    );
+    assert.deepEqual(mirror, {
+      kind: 'sha256',
+      base: 'https://hermes-assets.nousresearch.com/upstream/sha256',
+    });
+  });
+
+  it('nothing reachable → null + a log telling the user how to override', async () => {
+    const localLogs: string[] = [];
+    const mirror = await resolveLockMirror(
+      {},
+      async () => false,
+      samples,
+      (e) => { if (e.type === 'log') localLogs.push(e.message); },
+    );
+    assert.equal(mirror, null);
+    assert.ok(localLogs.some((m) => /keeping upstream download URLs/i.test(m) && /MOLIO_GITHUB_PROXY/.test(m)));
+  });
+
+  it('no samples → nothing to probe with, returns null without hanging', async () => {
+    let probed = 0;
+    const mirror = await resolveLockMirror({}, async () => { probed++; return true; }, {}, onEvent);
+    assert.equal(mirror, null);
+    assert.equal(probed, 0);
+  });
+});
+
+describe('rewriteLockfileMirrors — prefix mode', () => {
+  it('rewrites github + raw.githubusercontent + nodejs dist; leaves npm/docker/sha256 alone', () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'molio-rewrite-'));
+    const lockPath = writeLockFixture(dir);
+    try {
+      const { rewritten } = rewriteLockfileMirrors(lockPath, { kind: 'prefix', base: 'https://ghfast.top' });
+      // ffmpeg github (1) + node dist (1) + iron-proxy list (2) = 4; npm + docker untouched.
+      assert.equal(rewritten, 4);
+
+      const lock = JSON.parse(readFileSync(lockPath, 'utf8'));
+      assert.equal(
+        lock.packages.ffmpeg.artifacts['win32-x64'].url,
+        'https://ghfast.top/https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild/ffmpeg.zip',
+      );
+      assert.equal(
+        lock.packages.node.artifacts['win32-x64'].url,
+        'https://registry.npmmirror.com/-/binary/node/v26.7.0/node-v26.7.0-win-x64.zip',
+      );
+      assert.equal(
+        lock.packages['iron-proxy'].artifacts['win32-x64'][0].url,
+        'https://ghfast.top/https://raw.githubusercontent.com/paradigmxyz/iron-proxy/main/public-key.asc',
+      );
+      assert.equal(
+        lock.packages['agent-browser'].artifacts.any.url,
+        'https://registry.npmjs.org/agent-browser/-/agent-browser-0.26.0.tgz',
+        'npm registry URLs have their own mirror mechanism — untouched',
+      );
+      assert.match(lock.packages['termux-docker'].artifacts.docker.url, /^docker:\/\//);
+      // sha256 pins = integrity anchor, never modified.
+      assert.equal(lock.packages.ffmpeg.artifacts['win32-x64'].sha256, 'a'.repeat(64));
+      assert.equal(lock.packages.node.artifacts['win32-x64'].sha256, 'b'.repeat(64));
+      assert.equal(existsSync(`${lockPath}.molio-mirror.tmp`), false, 'atomic write must not leave the tmp behind');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('is idempotent — a second pass rewrites nothing', () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'molio-rewrite-'));
+    const lockPath = writeLockFixture(dir);
+    try {
+      const first = rewriteLockfileMirrors(lockPath, { kind: 'prefix', base: 'https://ghfast.top' });
+      const afterFirst = readFileSync(lockPath, 'utf8');
+      const second = rewriteLockfileMirrors(lockPath, { kind: 'prefix', base: 'https://ghfast.top' });
+      assert.ok(first.rewritten > 0);
+      assert.equal(second.rewritten, 0);
+      assert.equal(readFileSync(lockPath, 'utf8'), afterFirst);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('rewriteLockfileMirrors — sha256 mode', () => {
+  it('rewrites every pinned http(s) URL to <base>/<sha256>; docker and unpinned untouched', () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'molio-rewrite-'));
+    const lockPath = writeLockFixture(dir);
+    try {
+      const { rewritten } = rewriteLockfileMirrors(lockPath, {
+        kind: 'sha256',
+        base: 'https://hermes-assets.nousresearch.com/upstream/sha256',
+      });
+      // ffmpeg + node + npm + iron-proxy list (2) = 5; docker:// has no valid pin.
+      assert.equal(rewritten, 5);
+
+      const lock = JSON.parse(readFileSync(lockPath, 'utf8'));
+      assert.equal(
+        lock.packages.ffmpeg.artifacts['win32-x64'].url,
+        `https://hermes-assets.nousresearch.com/upstream/sha256/${'a'.repeat(64)}`,
+      );
+      assert.equal(
+        lock.packages['agent-browser'].artifacts.any.url,
+        `https://hermes-assets.nousresearch.com/upstream/sha256/${'c'.repeat(64)}`,
+      );
+      assert.match(lock.packages['termux-docker'].artifacts.docker.url, /^docker:\/\//);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('rewriteLockfileMirrors — malformed input (never throws)', () => {
+  it('bad JSON → rewritten 0, file byte-identical', () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'molio-rewrite-'));
+    const lockPath = path.join(dir, 'lock.json');
+    writeFileSync(lockPath, 'not json {{{', 'utf8');
+    try {
+      const { rewritten } = rewriteLockfileMirrors(lockPath, { kind: 'prefix', base: 'https://ghfast.top' });
+      assert.equal(rewritten, 0);
+      assert.equal(readFileSync(lockPath, 'utf8'), 'not json {{{');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('missing file → rewritten 0', () => {
+    const { rewritten } = rewriteLockfileMirrors(
+      path.join(os.tmpdir(), 'molio-definitely-missing-lock.json'),
+      { kind: 'prefix', base: 'https://ghfast.top' },
+    );
+    assert.equal(rewritten, 0);
+  });
+
+  it('BOM-prefixed JSON is parsed (installer reads locks with utf-8-sig)', () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'molio-rewrite-'));
+    const lockPath = writeLockFixture(dir);
+    writeFileSync(lockPath, `﻿${readFileSync(lockPath, 'utf8')}`, 'utf8');
+    try {
+      const { rewritten } = rewriteLockfileMirrors(lockPath, { kind: 'prefix', base: 'https://ghfast.top' });
+      assert.equal(rewritten, 4);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('applyLockfileMirror — home resolution (best-effort, never throws)', () => {
+  const cfgFor = (rel: string): NonNullable<ScriptInstallSource['mirrorLockfile']> => ({
+    afterStage: 'repository',
+    relPath: rel,
+    homeEnv: 'MOLIO_TEST_HERMES_HOME2',
+    defaultHome: { win32: '%MOLIO_TEST_HOME_EXPANDED%\\hermes', posix: '%MOLIO_TEST_HOME_EXPANDED%/hermes' },
+  });
+
+  it('homeEnv wins when set', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'molio-applymirror-'));
+    const lockPath = writeLockFixture(dir);
+    const logs: string[] = [];
+    try {
+      await applyLockfileMirror(
+        { MOLIO_TEST_HERMES_HOME2: dir, MOLIO_GITHUB_PROXY: 'https://ghfast.top' },
+        cfgFor(path.join('pm', 'lock.json')),
+        async () => true,
+        (e) => { if (e.type === 'log') logs.push(e.message); },
+      );
+      assert.match(readFileSync(lockPath, 'utf8'), /ghfast\.top/);
+      assert.ok(logs.some((m) => /Rewrote \d+ lockfile/.test(m)));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('defaultHome %VAR% expansion when homeEnv is unset', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'molio-applymirror-'));
+    // defaultHome expands to `<dir>\hermes` (win32) / `<dir>/hermes` (posix)
+    // via %MOLIO_TEST_HOME_EXPANDED% — the fixture must sit exactly there.
+    const lockPath = writeLockFixture(path.join(dir, 'hermes'));
+    try {
+      await applyLockfileMirror(
+        { MOLIO_TEST_HOME_EXPANDED: dir, MOLIO_GITHUB_PROXY: 'https://ghfast.top' },
+        cfgFor(path.join('pm', 'lock.json')),
+        async () => true,
+        () => {},
+      );
+      assert.match(readFileSync(lockPath, 'utf8'), /ghfast\.top/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('unreadable/missing paths degrade to a warning — never throws', async () => {
+    const logs: string[] = [];
+    await applyLockfileMirror(
+      {},
+      cfgFor(path.join('pm', 'lock.json')),
+      async () => true,
+      (e) => { if (e.type === 'log') logs.push(e.message); },
+    );
+    assert.ok(logs.some((m) => /lockfile not found|skipped/i.test(m)));
   });
 });
