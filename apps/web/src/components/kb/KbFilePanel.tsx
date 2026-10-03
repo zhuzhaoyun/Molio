@@ -448,7 +448,14 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
           )}
         </div>
         {/* 导入 — the explicit entry point. Drag-and-drop alone was undiscoverable:
-            users reported not knowing how to get files into the knowledge base. */}
+            users reported not knowing how to get files into the knowledge base.
+
+            跟「＋ 菜单首位的导入项」刻意重复，**别把其中任一处当冗余删掉**（2026-10-03 拍板）：
+            两处位置相邻、图标相同，确实会让菜单项读起来像重复——但重复的代价只是观感，
+            而删掉的代价是重演这次的事故（客户卡一小时）。分工是：这颗按钮管「一眼扫到、
+            一次点到」，菜单项管「带文字的说明，接住点 ＋ 的反射动作」——图标可以看不懂，
+            文字不会，而 tooltip 要悬停才出现、对「不知道有这功能」的人等于不存在。
+            删按钮 → 导入退成两级菜单；删菜单项 → 只剩一个抽象图标。 */}
         {onImportClick && (
           <button
             type="button"
