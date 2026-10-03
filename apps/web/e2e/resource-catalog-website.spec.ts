@@ -35,6 +35,17 @@ test('website SSR enhancement: groups, search, scroll loading, URL reload and mo
   await page.locator('#rl-clear').click();
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   await expect(page.locator('[data-resource-id]')).toHaveCount(17);
+  // 购买按钮必须压住「铺满卡片」的标题链接，否则点购买会变成跳详情
+  const buyBtn = page.locator('.rl-buy').first();
+  await buyBtn.scrollIntoViewIfNeeded();
+  expect(
+    await buyBtn.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return hit === el || el.contains(hit);
+    }),
+  ).toBe(true);
+
   await page.setViewportSize({width:390,height:844});
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   await page.screenshot({path:'test-results/catalog-website-mobile.png',fullPage:true});

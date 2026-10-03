@@ -89,6 +89,14 @@ test.describe('Resources page', () => {
     await page.locator('[data-testid="resources-back"]').click();
     await expect(page).toHaveURL(/\/resources$/);
     await expect(page.locator('[data-testid="resources-grid"]')).toBeVisible();
+
+    // 「查看详情」按钮已删，整张卡片可点（标题链接的 ::after 铺满卡片）。
+    // 用真实鼠标点描述区域（不是标题、不是购买按钮）—— 这里不能用 locator.click()：
+    // 该点最上层是链接的伪元素，Playwright 的命中检查会判为被遮挡。
+    const desc = page.locator(`[data-testid="resource-card-${id}"] .resources-card__desc`);
+    const box = await desc.boundingBox();
+    await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height / 2);
+    await expect(page).toHaveURL(new RegExp(`/resources/${id}$`));
   });
 
   test('unknown resource id shows not-found state', async ({ page }) => {

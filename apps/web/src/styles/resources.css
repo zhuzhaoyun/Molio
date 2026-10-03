@@ -31,6 +31,7 @@
 }
 
 .resources-card {
+  position: relative; /* 标题链接的 ::after 以此为定位基准铺满整卡 */
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -91,7 +92,10 @@
   overflow-wrap: anywhere;
 }
 
-/* 标题本身是详情入口（底栏不再单独放「查看详情」） */
+/* 标题本身是详情入口（底栏不再单独放「查看详情」）。
+   用「拉伸链接」把它的可点区域铺满整张卡片 —— 比给 article 挂 onClick 稳：
+   语义仍是链接（可键盘聚焦、可中键/Cmd 新开标签），也不用嵌套 <a> 或在
+   购买按钮上 stopPropagation。 */
 .resources-card__name a {
   color: inherit;
   text-decoration: none;
@@ -99,6 +103,12 @@
 
 .resources-card__name a:hover {
   color: var(--accent);
+}
+
+.resources-card__name a::after {
+  content: '';
+  position: absolute;
+  inset: 0;
 }
 
 /* 价格：原型把它做成大号衬线文本（免费则降为 14px 无衬线），不是配色 pill */
@@ -163,7 +173,10 @@
   margin-right: auto;
 }
 
+/* 抬到铺满卡片的那层链接之上，否则点购买会被链接截走 */
 .resources-card__buy {
+  position: relative;
+  z-index: 1;
   appearance: none;
   border: none;
   background-color: var(--text-strong);
