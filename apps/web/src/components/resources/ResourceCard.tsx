@@ -1,8 +1,9 @@
 /**
- * 资源卡片（列表页网格项）—— 对应官网 resources.html 的 resCard() 模板：
- * emoji 图标（tint 底色）+ 名称 + tags 副标题 + desc + 价格 pill + 购买/下载 + 详情。
+ * 资源卡片（列表页网格项）—— 对应设计原型 docs/prototype/resources-catalog.html 的卡片：
+ * 元信息条（emoji 符号 + 分类 / 类型 + 版本）、衬线标题、描述（3 行截断）、标签、底栏（价格 + 动作）。
+ * 原型底栏只有「查看详情」；实现侧额外承载购买/下载 —— 那是应用的收入入口，必须保留。
  */
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useI18n } from '../../i18n';
 import { type CatalogEntry, type PayItem } from '../../data/resources';
 import { useAuthStatus } from '../../stores/authStore';
@@ -16,31 +17,52 @@ export function ResourceCard({
   onPay: (r: PayItem) => void;
 }) {
   const { t } = useI18n();
+  const location = useLocation();
   const auth = useAuthStatus();
   const loggedIn = auth?.loggedIn === true;
   const paid = r.price > 0;
 
   return (
     <article className="resources-card" data-testid={`resource-card-${r.id}`}>
-      <div className="resources-card__top">
-        <div className="resources-card__icon" style={{ backgroundColor: r.tint }} aria-hidden="true">
-          {r.icon}
+      <div className="resources-card__meta">
+        <span className="resources-card__stamp">
+          <span
+            className="resources-card__symbol"
+            style={{ backgroundColor: r.tint }}
+            aria-hidden="true"
+          >
+            {r.icon}
+          </span>
+          {r.market?.category?.name ?? t('catalog.uncategorized')} /{' '}
+          {r.market?.resourceType?.name ?? '知识库'}
+        </span>
+        <span className="resources-card__ver">{r.version}</span>
+      </div>
+
+      {/* 标题即详情入口：底栏再放一个「查看详情」只是同一个去处的重复，且挤占底栏宽度 */}
+      <h3 className="resources-card__name">
+        <Link
+          to={`/resources/${r.id}`}
+          state={{ catalogSearch: location.search }}
+          data-testid={`resource-detail-link-${r.id}`}
+        >
+          {r.name}
+        </Link>
+      </h3>
+      <p className="resources-card__desc">{r.desc}</p>
+
+      {r.tags.length > 0 && (
+        <div className="resources-card__tags">
+          {r.tags.map((tag) => (
+            <span key={tag}>{tag}</span>
+          ))}
         </div>
-        <div className="resources-card__titles">
-          <h3 className="resources-card__name">{r.name}</h3>
-          {r.tags.length > 0 && (
-            <div className="resources-card__sub">
-              {r.tags.join(' · ')}
-              <span className="resources-card__ver">{r.version}</span>
-            </div>
-          )}
-        </div>
+      )}
+
+      <div className="resources-card__actions">
         <span className={`resources-card__price ${paid ? 'is-paid' : 'is-free'}`}>
           {paid ? `¥${r.price}` : t('resources.free')}
         </span>
-      </div>
-      <p className="resources-card__desc">{r.desc}</p>
-      <div className="resources-card__actions">
         <button
           type="button"
           className="resources-card__buy"
@@ -51,13 +73,6 @@ export function ResourceCard({
             ? t(loggedIn ? 'resources.buy' : 'resources.buyLogin', { price: r.price })
             : t(loggedIn ? 'resources.download' : 'resources.downloadLogin')}
         </button>
-        <Link
-          to={`/resources/${r.id}`}
-          className="resources-card__detail"
-          data-testid={`resource-detail-link-${r.id}`}
-        >
-          {t('resources.detail')}
-        </Link>
       </div>
     </article>
   );

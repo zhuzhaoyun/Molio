@@ -1,9 +1,18 @@
+import { INITIAL_MARKET_TAXA, type MarketTaxon } from '@molio/contracts';
 // apps/cloud/src/store/market-memory.ts
 import type { MarketListingRecord, MarketStore } from './market-types.js';
 import { UniqueViolationError } from './types.js';
 
 /** node:test 与本地开发用（无 DATABASE_URL 时，与 MemoryAuthStore 同待遇） */
 export class MemoryMarketStore implements MarketStore {
+  private taxa = INITIAL_MARKET_TAXA.map(t => ({...t}));
+  async listTaxa(): Promise<MarketTaxon[]> { return this.taxa.map(t => ({...t})); }
+  async createTaxon(taxon: MarketTaxon): Promise<MarketTaxon> {
+    const existing = this.taxa.find(t => t.kind === taxon.kind && t.name.toLowerCase() === taxon.name.toLowerCase());
+    if (existing) return {...existing};
+    const next = {...taxon, position: this.taxa.filter(t => t.kind === taxon.kind).length};
+    this.taxa.push(next); return {...next};
+  }
   private listings = new Map<string, MarketListingRecord>();
 
   async insertListing(rec: MarketListingRecord): Promise<void> {
@@ -22,7 +31,7 @@ export class MemoryMarketStore implements MarketStore {
     id: string,
     patch: Partial<Pick<MarketListingRecord,
       'status' | 'removedReason' | 'fileSize' | 'version' | 'previews' | 'ossKey' | 'publishedAt' | 'pendingUpdate'
-      | 'priceCents' | 'payUrl' | 'name' | 'summary' | 'icon' | 'tags'>>,
+      | 'categoryId' | 'resourceTypeId' | 'priceCents' | 'payUrl' | 'name' | 'summary' | 'icon' | 'tags'>>,
     now: number,
   ): Promise<MarketListingRecord | null> {
     const r = this.listings.get(id);
@@ -31,7 +40,7 @@ export class MemoryMarketStore implements MarketStore {
     return { ...r };
   }
 
-  async listActiveListings(limit: number): Promise<MarketListingRecord[]> {
+  async listActiveListings(limit?: number): Promise<MarketListingRecord[]> {
     return [...this.listings.values()]
       .filter((r) => r.status === 'active')
       .sort((a, b) => (b.publishedAt ?? 0) - (a.publishedAt ?? 0))

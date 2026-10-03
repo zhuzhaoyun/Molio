@@ -166,7 +166,7 @@ test('资源列表页 SSR：200 + SEO 要素 + 服务端商品卡片 + ItemList 
   await marketStore.insertListing(listing({ id: '01JABCDE0000000000000002', name: '免费示例图谱', priceCents: 0 }));
   const res = await app.request('/resources.html');
   assert.equal(res.status, 200);
-  assert.equal(res.headers.get('cache-control'), 'public, max-age=3600');
+  assert.equal(res.headers.get('cache-control'), 'no-store');
   const html = await res.text();
   // 爬虫零 JS 可读：商品名/价格/简介/详情内链直接在 HTML 里（CSR 时代是空壳）
   assert.ok(html.includes('红楼梦人物关系图谱'), '商品名在 HTML');
@@ -185,6 +185,9 @@ test('资源列表页 SSR：200 + SEO 要素 + 服务端商品卡片 + ItemList 
   assert.ok(html.includes('https://schema.org/InStock'));
   // 内嵌数据供筛选/购买交互层使用
   assert.ok(html.includes('window.__LISTINGS__'));
+  // 关键词搜索框 + 无匹配空态（客户端过滤已渲染卡片，不重新拉取）
+  assert.ok(html.includes('id="rl-search"'), '搜索框挂载点');
+  assert.ok(html.includes('id="rl-no-match"'), '无匹配空态挂载点');
   // 与静态页平权：导航登录入口挂载点（auth.js 渲染）+ 支付后端地址（缺失则付费按钮降级"联系购买"）
   assert.ok(html.includes('id="nav-auth"'), '导航登录入口挂载点');
   assert.ok(html.includes("window.MOLIO_PAY_BASE = 'https://pay.molio.cn'"), '支付后端地址内嵌');
@@ -239,4 +242,21 @@ test('llms.txt：用户提交内容做 HTML 转义', async () => {
   const txt = await (await app.request('/llms.txt')).text();
   assert.ok(!txt.includes('<script>alert(1)</script>'), '不得出现未转义脚本');
   assert.ok(txt.includes('&lt;script&gt;alert(1)&lt;/script&gt;'), 'name 转义');
+});
+
+
+test('catalog API and SSR keep every active resource beyond the former 200 limit', async () => {
+  const {app,marketStore}=await bootSsrApp();
+  for(let i=0;i<217;i++) await marketStore.insertListing(listing({id:String(i).padStart(26,'0'),categoryId:'history-literature'}));
+  const body=await (await app.request('/market/listings')).json() as {listings:unknown[]};
+  assert.equal(body.listings.length,217);
+  const html=await (await app.request('/resources.html')).text();
+  assert.equal((html.match(/data-resource-id=/g)??[]).length,217);
+});
+test('catalog upstream failure returns 503, not an empty successful catalog', async () => {
+  const {app,marketStore}=await bootSsrApp();
+  marketStore.listActiveListings=async()=>{throw new Error('offline');};
+  const res=await app.request('/resources.html');
+  assert.equal(res.status,503);
+  assert.equal(res.headers.get('cache-control'),'no-store');
 });

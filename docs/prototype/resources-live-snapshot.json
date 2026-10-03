@@ -1,0 +1,405 @@
+{
+  "listings": [
+    {
+      "id": "01M3VY2DZXW6KN1X5AFP7PXJ05",
+      "source": "community",
+      "name": "中国古典诗文集全景图谱",
+      "icon": "📖",
+      "tint": "#F5EEE0",
+      "summary": "本套《中国古典诗文集知识库》系统收录自东汉末年至晚清民国之交约一千八百年间的古典诗文别集与总集共 168 部，按「汉魏六朝·隋唐 / 宋金元 / 明（含清初遗民）/ 清」四册编次，完整覆盖从曹植、陶渊明、李白、杜甫、韩愈、白居易，到苏轼、欧阳修、陆游、元好问，再到归有光、李贽、钱谦益、龚自珍、黄遵宪等一代大家的核心典籍——约七成采用四库全书底本（多附四库提要，兼具版本与批评史料价值），并杂采历代刊本、辑本与名家笺注本（如赵殿成《王右丞集笺注》、倪璠《庾子山集注》、千家注杜等）。除原始文本外，随库配备 366 页结构化 Wiki：168 篇源文件摘要、166 个人物实体页、20 个流派与理论概念页（唐宋八大家、江西诗派、前后七子、公安派、明末遗民文学、同光体等）、7 组专题对比（李白与杜甫、苏轼与黄庭坚、豪放与婉约等）及四篇断代文学概观，零死链、可点击跳转，既是古典文学研究者的一站式原始资料库，也是诗词爱好者、文史创作者按图索骥、深入流派与版本源流的高效学习底本。",
+      "overview": [],
+      "highlights": [],
+      "tags": [],
+      "previews": [
+        "https://molio-pay.oss-cn-guangzhou.aliyuncs.com/images/01M3VY2DZXW6KN1X5AFP7PXJ05-p1.png",
+        "https://molio-pay.oss-cn-guangzhou.aliyuncs.com/images/01M3VY2DZXW6KN1X5AFP7PXJ05-p2.png"
+      ],
+      "version": "v1.0",
+      "priceCents": 990,
+      "payUrl": "",
+      "author": "Molio 团队",
+      "fileSize": 419403,
+      "publishedAt": "2026-10-01T14:32:13.380Z"
+    },
+    {
+      "id": "01M3VX66XMG5NHQ5HP9TK0Q2DC",
+      "source": "community",
+      "name": "PCB 柔性制造全景图谱：从在线下单到黑灯工厂",
+      "icon": "📖",
+      "tint": "#E6E9F5",
+      "summary": "以 PCB 打样 为载体，梳理从在线下单、CAM、拼单排产，到自动化产线、MES、AGV、发货的柔性制造完整链路。全库 48 页，覆盖 ISA-95 五层架构、24 条行业标准、16 项 KPI，重点分析黑灯工厂的适用边界、钻孔自动化、识别孔、CAM 自研/采购、拼单合板等关键工程决策。资源可直接导入 Molio，作为本地知识库供 Codex、WorkBuddy 等 Agent 检索和调用，适合用于 PCB 数字化工厂、MES、工业自动化及柔性制造方案研究与设计。\r\n具体调度算法、接口参数及设备对接需结合实际业务落地。",
+      "overview": [],
+      "highlights": [],
+      "tags": [],
+      "previews": [
+        "https://molio-pay.oss-cn-guangzhou.aliyuncs.com/images/01M3VX66XMG5NHQ5HP9TK0Q2DC-p1.png",
+        "https://molio-pay.oss-cn-guangzhou.aliyuncs.com/images/01M3VX66XMG5NHQ5HP9TK0Q2DC-p2.png"
+      ],
+      "version": "v1.0",
+      "priceCents": 9900,
+      "payUrl": "",
+      "author": "Molio 团队",
+      "fileSize": 23138356,
+      "publishedAt": "2026-10-01T14:16:56.751Z"
+    },
+    {
+      "id": "01M10MC4S9ZH54WVFCXJWZ2JWS",
+      "source": "community",
+      "name": "中西哲学思想图谱：给你本地 AI 的哲学知识底座",
+      "icon": "📚",
+      "tint": "#F5E3E0",
+      "summary": "这不是一份单纯给人阅读的哲学资料，而是一套可以同时服务于人的学习与 AI 知识调用的哲学知识体系。\r\n\r\n内容经过结构化整理，包含 6部哲学经典摘要、100位中西哲学家、135个核心概念与15组思想对比，覆盖苏格拉底、柏拉图、康德、尼采、海德格尔、罗素、孔子、朱熹、王阳明、冯友兰等重要思想家。\r\n\r\n你可以用它快速建立自己的中西哲学思想地图，也可以将其导入 workbuddy、codex 等本地知识环境，让自己的 AI 基于这些内容进行检索、关联和分析。\r\n\r\n不是读完就结束的一份资料，而是一套可以沉淀到个人知识库、长期被 AI 调用的知识资产。\r\n\r\n适合哲学学习者、读书研究者，以及希望为自己的本地 AI 建立哲学知识体系的人。",
+      "overview": [],
+      "highlights": [],
+      "tags": [
+        "哲学",
+        "中西比较"
+      ],
+      "previews": [
+        "https://molio-pay.oss-cn-guangzhou.aliyuncs.com/images/01M10MC4S9ZH54WVFCXJWZ2JWS-p1.png",
+        "https://molio-pay.oss-cn-guangzhou.aliyuncs.com/images/01M10MC4S9ZH54WVFCXJWZ2JWS-p2.png"
+      ],
+      "version": "v1.1",
+      "priceCents": 1990,
+      "payUrl": "",
+      "author": "Molio 团队",
+      "fileSize": 2867350,
+      "publishedAt": "2026-09-25T01:53:35.221Z"
+    },
+    {
+      "id": "01M35RVX9S3TQK6ZE0QT9J6NG4",
+      "source": "community",
+      "name": "三国人物关系图：120 回本的三国演义知识图谱",
+      "icon": "📖",
+      "tint": "#F5E3E0",
+      "summary": "把《三国演义》120 回拆成一张能查的关系网。以通行本为底本，整理为 223 页结构化内容：人物、组织与势力实体 157 个，事件、谋略与器物概念 49 个，对照分析 15 篇。全书 179 条别名线索全部映射入库。“孔明”即诸葛亮、“玄德”即刘备、“云长”即关羽，读到哪个称呼都对得上同一条目。 每一条关系不是一个点或一根连线，而是一段带事件坐标的叙述。关羽与曹操之间是约三事而降、封侯赐爵、斩颜良诛文丑立功以报、挂印封金而去、华容道义释败军——这条线随事件翻转，静态关系图表达不了。15 篇对照分析是理解三国的另一条路：官渡与赤壁两场以弱胜强互为镜像，隆中对与榻上策两份战略蓝图在荆州相撞，诸葛亮与司马懿同受托孤之重、结出两种结局。总览页给出全书三条主线（魏线、蜀线、吴线）与三绝，从任何一页进去都能接上全局。下载解压后，用Molio 的“打开本地仓库”直接加载——Molio 是这套资源的阅读器与载体，也支持导入 workbuddy 或 Obsidian。",
+      "overview": [],
+      "highlights": [],
+      "tags": [
+        "三国"
+      ],
+      "previews": [
+        "https://molio-pay.oss-cn-guangzhou.aliyuncs.com/images/01M35RVX9S3TQK6ZE0QT9J6NG4-p1.png",
+        "https://molio-pay.oss-cn-guangzhou.aliyuncs.com/images/01M35RVX9S3TQK6ZE0QT9J6NG4-p2.png"
+      ],
+      "version": "v1.0",
+      "priceCents": 990,
+      "payUrl": "",
+      "author": "Molio 团队",
+      "fileSize": 2833939,
+      "publishedAt": "2026-09-22T23:57:54.608Z"
+    },
+    {
+      "id": "01M35QEB3RMK46SGCQ6WSZ3GZR",
+      "source": "community",
+      "name": "图纸数据提取：工程图纸数字化与 AI 识别技术全景",
+      "icon": "📖",
+      "tint": "#F2E3D5",
+      "summary": "工程图纸数据提取的全景指南把图纸从“人读的图”变成“机器可计算的数据”。以《AI 时代的工程图纸数据处理》书稿为底本：14 节正文梳理从 DWG/DXF 解析、图元图层块标注识别，到构件、门窗表、机电系统这些业务对象怎么组装成可用数据；再往下走完五类 AI 应用——入库即结构化的图纸管理、问答助手、图纸智能体、AI 审查、AI  算量。术语表、制图规范与图例库、工程对象字典三份附录单独成篇，整理为 73 个概念条目、11 个实体条目与 3 组对比分析。八个核心论点贯穿始终：语义不在文件里， 在制图约定里；位图化是不可逆的语义断崖；解析与识别必须分链；算量的核心是口径而非精度；当前阶段是 AI 增强 CAD，签字责任与规范解释仍由人承担。  导入 workbuddy、Molio 或 Obsidian 后，可作为你的工程图纸 AI 知识库。",
+      "overview": [],
+      "highlights": [],
+      "tags": [
+        "图纸识别",
+        "AI识图"
+      ],
+      "previews": [
+        "https://molio-pay.oss-cn-guangzhou.aliyuncs.com/images/01M35QEB3RMK46SGCQ6WSZ3GZR-p1.png",
+        "https://molio-pay.oss-cn-guangzhou.aliyuncs.com/images/01M35QEB3RMK46SGCQ6WSZ3GZR-p2.png"
+      ],
+      "version": "v1.0",
+      "priceCents": 19900,
+      "payUrl": "",
+      "author": "Molio 团队",
+      "fileSize": 809546,
+      "publishedAt": "2026-09-22T23:33:01.733Z"
+    },
+    {
+      "id": "01M112AA9MV91T3FJD5Z2GSPY8",
+      "source": "community",
+      "name": "中医经典辨证体系：伤寒论六经·金匮病证·温病三焦知识图谱",
+      "icon": "📜",
+      "tint": "#E8F0E4",
+      "summary": "将《灵枢经》《伤寒论》《金匮要略》与清代珍稀医籍结构化整理为中医经典辨证体系，贯穿汉代至光绪约一千八百年。《伤寒论》398  条按六经逐段拆解：太阳至厥阴每经的提纲、传变、主方与禁忌各自成页，桂枝汤、麻黄汤、小柴胡汤、承气汤等经方方族连同加减变化一并梳理。《金匮要略》25 篇病证证治、约 260   首经方；《灵枢经》十二经脉与针灸理论体系；加上《伤寒经解》《竹亭医案》《诊验医方歌括》《温病辨证》四种清代抄本，织成伤寒与温病两大立场、经方与时方同病对照的关联知识网络。导入workbuddy、 Molio 或 Obsidian 后，可作为你的个人中医 AI 知识库：帮助 AI 快速检索条文与方剂、关联辨证理论、整理医家观点，辅助学习研究与临床资料整理。适合中医学习者、等级考试备考梳理体系、经典临床从业者与古籍爱好者。",
+      "overview": [],
+      "highlights": [],
+      "tags": [
+        "中医古籍",
+        "伤寒温病",
+        "古文新编"
+      ],
+      "previews": [
+        "https://molio-pay.oss-cn-guangzhou.aliyuncs.com/images/01M112AA9MV91T3FJD5Z2GSPY8-p1.png",
+        "https://molio-pay.oss-cn-guangzhou.aliyuncs.com/images/01M112AA9MV91T3FJD5Z2GSPY8-p2.png"
+      ],
+      "version": "v1.3",
+      "priceCents": 2990,
+      "payUrl": "",
+      "author": "Molio 团队",
+      "fileSize": 29240733,
+      "publishedAt": "2026-09-22T14:42:07.947Z"
+    },
+    {
+      "id": "01M10WWK7WNMM61QNJJJXHNWS2",
+      "source": "community",
+      "name": "史记知识库：130 篇全本的人物、制度与思想图谱",
+      "icon": "📜",
+      "tint": "#F5EEE0",
+      "summary": "以《史记》130 篇全本（约 65.7 万字）为基础的结构化知识库，构建人物、制度与思想之间的关联网络。整理出 1349 个实体条目（人物、方国族群、地名关隘）、82 个制度与思想概念、10  组历史对比，从五帝三代到汉武帝，本纪、世家、列传、八书全覆盖。每个条目都带行号引文，全书 15473 条引文逐条核验，99.88% 逐字可信，无一条杜撰；同一人物的异称别号（沛公、秦昭王  、五羖大夫等）归并到正名页，不因称呼不同而漏检。点击任何一个人物，可以顺着关联跳到相关人物与事件，并随时回到原文对应行。适合文史学习、历史写作、资料查证与专题研究；导入  workbuddy 或 Obsidian 后，可作为 AI 可检索、可关联的历史知识底座，帮助 AI 理解人物、事件与思想之间的复杂关系。",
+      "overview": [],
+      "highlights": [],
+      "tags": [
+        "史记研究",
+        "中国历史"
+      ],
+      "previews": [
+        "https://molio-pay.oss-cn-guangzhou.aliyuncs.com/images/01M10WWK7WNMM61QNJJJXHNWS2-p1.png",
+        "https://molio-pay.oss-cn-guangzhou.aliyuncs.com/images/01M10WWK7WNMM61QNJJJXHNWS2-p2.png"
+      ],
+      "version": "v1.1",
+      "priceCents": 990,
+      "payUrl": "",
+      "author": "Molio 团队",
+      "fileSize": 4057227,
+      "publishedAt": "2026-09-22T14:05:19.755Z"
+    },
+    {
+      "id": "01M2QAYVBMH2YCF68BEA393BY4",
+      "source": "community",
+      "name": "法考刑法·131考点与主观题观点训练知识图谱",
+      "icon": "📖",
+      "tint": "#F5E9D3",
+      "summary": "一套面向法考备考的刑法结构化知识底座。\r\n\r\n覆盖刑法总则48个考点 + 分则83个考点，共131个考点，其中 59个高频考点以星标标注，可按清单逐项自查，快速发现复习盲区。\r\n\r\n针对主观题，整理了最常见的10大观点展示”命题套路。每个套路配一张真题案例卡，将案情、不同观点、论证理由与答题骨架放在一起，方便对照真题训练观点分析和答题表达。\r\n\r\n同时收录刑法全文及十余件重要司法解释，对资源中的法条逐条进行原文核验，引用精确到行号，并通过知识图谱建立考点 → 法条 → 司法解释 → 真题案例 → 观点之间的关联。\r\n\r\n点击一个考点，即可继续追溯对应的法条原文、司法解释和案例，不再需要在教材、法条和真题之间反复翻找。\r\n\r\n适合：\r\n\r\n主观题冲刺：按考点查漏补缺，训练观点展示\r\n一轮备考：按照131个考点建立刑法复习清单\r\n考前复盘：快速定位高频考点、法条和典型案例\r\nAI辅助学习：让 AI 基于结构化知识底座进行检索、解释、串联和复习",
+      "overview": [],
+      "highlights": [],
+      "tags": [
+        "司法考试",
+        "刑法"
+      ],
+      "previews": [
+        "https://molio-pay.oss-cn-guangzhou.aliyuncs.com/images/01M2QAYVBMH2YCF68BEA393BY4-p1.png",
+        "https://molio-pay.oss-cn-guangzhou.aliyuncs.com/images/01M2QAYVBMH2YCF68BEA393BY4-p2.png"
+      ],
+      "version": "v1.0",
+      "priceCents": 990,
+      "payUrl": "",
+      "author": "Molio 团队",
+      "fileSize": 463009,
+      "publishedAt": "2026-09-17T09:25:28.916Z"
+    },
+    {
+      "id": "01M2GAA83Q83CMQZPN40T9GQZ8",
+      "source": "community",
+      "name": "《金瓶梅》人物·商业·社会运行全景知识图谱",
+      "icon": "📖",
+      "tint": "#E8F0E4",
+      "summary": "把《金瓶梅》拆解为一套可探索、可连接、可供 AI 使用的知识图谱。\r\n收录全书100回、104位人物，并系统整理人物关系、商业活动、金钱往来、财产消费、社会身份、利益关系与重要情节。\r\n从人物关系出发，进一步连接财富、商业与社会运行，探索《金瓶梅》背后的人情往来、利益交换与人物命运。\r\n\r\n导入 workbuddy / Obsidian，让 AI 真正读懂这部小说。",
+      "overview": [],
+      "highlights": [],
+      "tags": [],
+      "previews": [
+        "https://molio-pay.oss-cn-guangzhou.aliyuncs.com/images/01M2GAA83Q83CMQZPN40T9GQZ8-p1.png",
+        "https://molio-pay.oss-cn-guangzhou.aliyuncs.com/images/01M2GAA83Q83CMQZPN40T9GQZ8-p2.png"
+      ],
+      "version": "v1.0",
+      "priceCents": 690,
+      "payUrl": "",
+      "author": "Molio 团队",
+      "fileSize": 2230053,
+      "publishedAt": "2026-09-14T15:59:34.538Z"
+    },
+    {
+      "id": "01M2DFJ9E66FARK5SEBMPT92K0",
+      "source": "community",
+      "name": "广东高考志愿填报·高校专业全景知识库",
+      "icon": "📖",
+      "tint": "#F0E8DC",
+      "summary": "高校相关知识庞杂且分散，单纯依靠搜索需要反复查找和整理，通用大模型虽然能够快速生成答案，却难以保证知识的持续沉淀、来源追溯和跨学校对比。高校 Wiki 将高校、学院、专业、课程、学科、培养方向等信息进行系统整理，让分散的信息形成一套可查询、可关联、可复用的领域知识库，可用于高校研究分析、教育咨询、内容生产及 AI 应用。适合希望系统了解、对比高校与专业的家长和学生，以及升学规划、教培机构和教育领域内容创作者使用。",
+      "overview": [],
+      "highlights": [],
+      "tags": [
+        "高考",
+        "志愿填报"
+      ],
+      "previews": [
+        "https://molio-pay.oss-cn-guangzhou.aliyuncs.com/images/01M2DFJ9E66FARK5SEBMPT92K0-p1.png",
+        "https://molio-pay.oss-cn-guangzhou.aliyuncs.com/images/01M2DFJ9E66FARK5SEBMPT92K0-p2.png",
+        "https://molio-pay.oss-cn-guangzhou.aliyuncs.com/images/01M2DFJ9E66FARK5SEBMPT92K0-p3.png"
+      ],
+      "version": "v1.0",
+      "priceCents": 9900,
+      "payUrl": "",
+      "author": "Molio 团队",
+      "fileSize": 6801340,
+      "publishedAt": "2026-09-13T13:33:37.049Z"
+    },
+    {
+      "id": "01M13QT669Q6E94PWACEH00YJF",
+      "source": "community",
+      "name": "知识工程全景图谱-RAG-本体-Agent工程",
+      "icon": "📚",
+      "tint": "#E8EDF2",
+      "summary": "一套面向 AI Agent 时代的本体论与结构化知识底座，以 Ontology（本体论）与知识建模为核心，系统整理本体、Palantir Foundry / AIP、AI Agent 工程、RAG、GraphRAG 与 AI 软件工程等领域的书籍与文章，将零散内容重新组织为人可阅读、AI 可理解和调用的知识资产。共 202 页，包含 16 个源文件摘要、64 个核心实体、117 个关键概念及 4 组方法与架构对比。它不仅是一份学习资料，更是一套可接入 AI 工作流、辅助 Agent 理解和调用的结构化知识底座，让领域知识成为 AI 能理解、能调用、可持续扩展的长期资产。",
+      "overview": [],
+      "highlights": [],
+      "tags": [
+        "知识工程",
+        "AI工程",
+        "本体"
+      ],
+      "previews": [
+        "https://molio-pay.oss-cn-guangzhou.aliyuncs.com/images/01M13QT669Q6E94PWACEH00YJF-p1.png",
+        "https://molio-pay.oss-cn-guangzhou.aliyuncs.com/images/01M13QT669Q6E94PWACEH00YJF-p2.png"
+      ],
+      "version": "v1.3",
+      "priceCents": 4990,
+      "payUrl": "",
+      "author": "Molio 团队",
+      "fileSize": 1930556,
+      "publishedAt": "2026-09-05T03:22:04.585Z"
+    },
+    {
+      "id": "01M12YMV1144F4RZMX1HBK8GQ0",
+      "source": "community",
+      "name": "《周易》六十四卦全解｜卦变·象数·义理知识图谱",
+      "icon": "📜",
+      "tint": "#F5E3E0",
+      "summary": "系统整理《周易》六十四卦知识体系，收录王弼本《周易》经传全文、六十四卦详解、卦变关系及象数义理内容。通过知识图谱方式组织经典文本与易学概念，支持快速检索、关联探索，并可作为 AI 深度理解与辅助研究《周易》的知识基础。",
+      "overview": [],
+      "highlights": [],
+      "tags": [
+        "周易六十四卦",
+        "易学研读"
+      ],
+      "previews": [
+        "https://molio-pay.oss-cn-guangzhou.aliyuncs.com/images/01M12YMV1144F4RZMX1HBK8GQ0-p1.png",
+        "https://molio-pay.oss-cn-guangzhou.aliyuncs.com/images/01M12YMV1144F4RZMX1HBK8GQ0-p2.png"
+      ],
+      "version": "v1.0",
+      "priceCents": 0,
+      "payUrl": "",
+      "author": "Molio 团队",
+      "fileSize": 164275,
+      "publishedAt": "2026-08-28T01:09:47.861Z"
+    },
+    {
+      "id": "01M1152PE8YE365S9ZXDMNYCW6",
+      "source": "community",
+      "name": "妇产超声知识图谱：胎儿畸形诊断、征象与鉴别体系",
+      "icon": "📚",
+      "tint": "#F2E3D5",
+      "summary": "基于 Callen《妇产超声学》第6版等权威资料构建的妇产超声结构化知识体系，整理600余条临床知识，覆盖胎儿畸形各论、典型超声征象、疾病鉴别诊断及中国Ⅰ~Ⅳ级产前检查规范。\r\n\r\n围绕“疾病—超声表现—鉴别诊断—检查规范”建立关联框架，帮助医生快速检索关键影像特征，提升胎儿异常筛查与诊断思路。\r\n\r\n导入 Molio 等本地知识环境后，可作为个人妇产超声 AI 知识库，让 AI 辅助查询疾病特征、比较鉴别诊断、整理诊断思路和学习专业知识。\r\n\r\n适合产前诊断医生、妇产科医师、超声科医生及规培生用于临床学习、病例复盘与诊断参考。",
+      "overview": [],
+      "highlights": [],
+      "tags": [
+        "妇产超声",
+        "产前诊断"
+      ],
+      "previews": [
+        "https://molio-pay.oss-cn-guangzhou.aliyuncs.com/images/01M1152PE8YE365S9ZXDMNYCW6-p1.png",
+        "https://molio-pay.oss-cn-guangzhou.aliyuncs.com/images/01M1152PE8YE365S9ZXDMNYCW6-p2.png"
+      ],
+      "version": "v1.0",
+      "priceCents": 3990,
+      "payUrl": "",
+      "author": "Molio 团队",
+      "fileSize": 1027384,
+      "publishedAt": "2026-08-27T08:23:44.682Z"
+    },
+    {
+      "id": "01M114523M19P4J7GZMZ7E6188",
+      "source": "community",
+      "name": "老庄思想图谱：《道德经》与《庄子》核心概念体系",
+      "icon": "🌿",
+      "tint": "#F5E9D3",
+      "summary": "围绕《道德经》与《庄子》的思想体系进行结构化整理，涵盖帛书版《老子》、王弼注本与《庄子》核心概念网络，梳理“道”“德”“无为”“逍遥”等关键思想范畴及其内在关联。\r\n\r\n通过老庄思想对照，帮助读者建立道家哲学的整体理解框架，适合经典研读、哲学学习与思想研究。\r\n\r\n导入 obsidian、workbuddy、molio 等本地知识环境后，可作为个人道家思想知识库，让 AI 能够关联经典文本、概念体系与思想演变，辅助阅读、比较与专题研究。",
+      "overview": [],
+      "highlights": [],
+      "tags": [
+        "道家哲学",
+        "老庄思想"
+      ],
+      "previews": [
+        "https://molio-pay.oss-cn-guangzhou.aliyuncs.com/images/01M114523M19P4J7GZMZ7E6188-p1.png",
+        "https://molio-pay.oss-cn-guangzhou.aliyuncs.com/images/01M114523M19P4J7GZMZ7E6188-p2.png"
+      ],
+      "version": "v1.0",
+      "priceCents": 0,
+      "payUrl": "",
+      "author": "Molio 团队",
+      "fileSize": 231842,
+      "publishedAt": "2026-08-27T08:07:32.728Z"
+    },
+    {
+      "id": "01M111M5CSYX96FTKGC3V1QC2T",
+      "source": "community",
+      "name": "《明史》帝国兴衰知识图谱：人物、制度与朝局演变",
+      "icon": "📖",
+      "tint": "#F0E8DC",
+      "summary": "以《明史》内容为基础进行结构化整理，构建明代人物、制度与朝局变化之间的关联知识体系。包含311个帝系、后妃、宗室、大臣、宦官人物条目，整理18个官制与重要事件概念，以及5组核心朝局对比：帝系治理风格、宦官与内阁权力消长、藩王制度演变、军制沿革等。\r\n\r\n适合明史研读、历史写作、论文查证与专题学习；导入 Molio 等本地知识环境后，也可作为 AI 可检索、可关联的历史知识资源，帮助 AI 理解人物关系、制度变化与历史因果。\r\n\r\n不是简单的《明史》资料索引，而是一套将三百年明代政治运行逻辑重新组织起来的历史知识网络。",
+      "overview": [],
+      "highlights": [],
+      "tags": [
+        "明史",
+        "历史"
+      ],
+      "previews": [
+        "https://molio-pay.oss-cn-guangzhou.aliyuncs.com/images/01M111M5CSYX96FTKGC3V1QC2T-p1.png",
+        "https://molio-pay.oss-cn-guangzhou.aliyuncs.com/images/01M111M5CSYX96FTKGC3V1QC2T-p2.png"
+      ],
+      "version": "v1.0",
+      "priceCents": 1690,
+      "payUrl": "",
+      "author": "Molio 团队",
+      "fileSize": 5226536,
+      "publishedAt": "2026-08-27T07:23:23.404Z"
+    },
+    {
+      "id": "01M110NNMKNWXKBXT01HVJ06ZW",
+      "source": "community",
+      "name": "《红楼梦》人物与意象关系图谱：120回原著知识图鉴",
+      "icon": "🏮",
+      "tint": "#E8EDF2",
+      "summary": "围绕《红楼梦》120回原著内容进行结构化整理，包含120回回目一句话速览、60位核心人物解析，以及太虚幻境、大观园、护官符等11个关键概念体系。\r\n\r\n帮助读者快速建立人物关系、家族结构、情节发展与象征意涵之间的关联网络，适合原著研读、红学赏析、写作参考与内容检索。\r\n\r\n导入obsidian, workbuddy 等本地知识环境后，也可以作为 AI 可检索、可关联的《红楼梦》知识资源，让 AI 不只是回答情节问题，而能够理解人物关系、命运走向与作品主题。",
+      "overview": [],
+      "highlights": [],
+      "tags": [
+        "红楼梦",
+        "人物概念"
+      ],
+      "previews": [
+        "https://molio-pay.oss-cn-guangzhou.aliyuncs.com/images/01M110NNMKNWXKBXT01HVJ06ZW-p1.png",
+        "https://molio-pay.oss-cn-guangzhou.aliyuncs.com/images/01M110NNMKNWXKBXT01HVJ06ZW-p2.png"
+      ],
+      "version": "v1.0",
+      "priceCents": 590,
+      "payUrl": "",
+      "author": "Molio 团队",
+      "fileSize": 1490992,
+      "publishedAt": "2026-08-27T07:06:43.284Z"
+    },
+    {
+      "id": "01M10RZP9118BA6YRBZ1D4FKM2",
+      "source": "community",
+      "name": "《资治通鉴》千年兴亡：人物、事件与制度知识图谱",
+      "icon": "📜",
+      "tint": "#E6E9F5",
+      "summary": "将《资治通鉴》的千年历史整理为结构化、可关联的知识体系，覆盖626个政权与人物、44个事件与制度概念、23 组历史对比。\r\n\r\n适合历史学习、史学研读、写作查证与快速建立《资治通鉴》的整体脉络；导入 Molio 或 obsidan 等本地知识环境后，也可作为 AI 的历史知识源，让 AI 能够围绕人物、事件、政权与制度进行检索、关联与分析。\r\n\r\n不是简单的《资治通鉴》摘要，而是将分散的历史信息组织成一套可以被人阅读，也可以被 AI 长期调用的知识资产。",
+      "overview": [],
+      "highlights": [],
+      "tags": [
+        "资治通鉴",
+        "历史知识图谱"
+      ],
+      "previews": [
+        "https://molio-pay.oss-cn-guangzhou.aliyuncs.com/images/01M10RZP9118BA6YRBZ1D4FKM2-p1.png",
+        "https://molio-pay.oss-cn-guangzhou.aliyuncs.com/images/01M10RZP9118BA6YRBZ1D4FKM2-p2.png"
+      ],
+      "version": "v1.0",
+      "priceCents": 990,
+      "payUrl": "",
+      "author": "Molio 团队",
+      "fileSize": 5572595,
+      "publishedAt": "2026-08-27T04:52:25.154Z"
+    }
+  ]
+}
