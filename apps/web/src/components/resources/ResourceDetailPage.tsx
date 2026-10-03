@@ -44,19 +44,34 @@ export function ResourceDetailPage() {
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [failedImgs, setFailedImgs] = useState<Set<string>>(new Set());
 
-  // id 解析：统一从市场 API 拉取（官方与用户上架同目录），仅拉取一次
+  // id 解析：统一从市场 API 拉取（官方与用户上架同目录），仅拉取一次。
+  // loading 与「确实不存在」必须分开：否则请求还没回来就先摆出「资源不存在」，
+  // 点卡片进来会先闪一句吓人的话再出内容。
   const [entry, setEntry] = useState<CatalogEntry | null>(null);
+  const [loading, setLoading] = useState(true);
   useEffect(() => {
     if (entry && entry.id === id) return;
-    if (!id) return; // 路由 :id 恒在；缺失防御——不发请求，保持「资源不存在」形态
+    if (!id) {
+      // 路由 :id 恒在；缺失防御——不发请求，直接判为不存在
+      setEntry(null);
+      setLoading(false);
+      return;
+    }
     let alive = true;
+    setLoading(true);
     fetch(`/api/market/listings/${encodeURIComponent(id)}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((m: MarketListing | null) => {
-        if (alive) setEntry(m ? marketToEntry(m) : null);
+        if (!alive) return;
+        setEntry(m ? marketToEntry(m) : null);
+        setLoading(false);
       })
       .catch(() => {
-        /* 断网/404：保持空条目 → 「资源不存在」形态 */
+        /* 断网/404：空条目 → 「资源不存在」形态 */
+        if (alive) {
+          setEntry(null);
+          setLoading(false);
+        }
       });
     return () => {
       alive = false;
@@ -75,6 +90,33 @@ export function ResourceDetailPage() {
   // 路由参数切换时防止渲染上一 id 的陈旧条目
   const r = entry && entry.id === id ? entry : null;
 
+  // 数据未到：给与正文同形的骨架屏，别抢跑「资源不存在」
+  if (!r && loading) {
+    return (
+      <div className="resources-shell">
+        <div className="resources-scroll">
+          <div className="resources-breadcrumb">
+            <Link to={backTo} data-testid="resources-back">
+              {t('resources.backToList')}
+            </Link>
+          </div>
+          <div className="resources-detail-skeleton" data-testid="resources-detail-skeleton" aria-busy="true">
+            <div className="resources-detail-skeleton__head">
+              <span className="resources-detail-skeleton__icon" />
+              <div className="resources-detail-skeleton__lines">
+                <span className="resources-detail-skeleton__title" />
+                <span className="resources-detail-skeleton__line is-short" />
+              </div>
+            </div>
+            <span className="resources-detail-skeleton__line" />
+            <span className="resources-detail-skeleton__line" />
+            <span className="resources-detail-skeleton__line is-short" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!r) {
     return (
       <div className="resources-shell">
@@ -84,7 +126,9 @@ export function ResourceDetailPage() {
               {t('resources.backToList')}
             </Link>
           </div>
-          <h1 className="resources-page-title">{t('resources.notFound')}</h1>
+          <h1 className="resources-page-title" data-testid="resources-not-found">
+            {t('resources.notFound')}
+          </h1>
           <div className="resources-tip-box">{t('resources.notFoundHint')}</div>
         </div>
       </div>

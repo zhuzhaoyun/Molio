@@ -105,8 +105,29 @@ test.describe('Resources page', () => {
 
     // 直接整页加载详情路由：vite dev 冷转换可超默认 5s，放宽等待
     await expect(page.locator('.resources-shell')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('resources-not-found')).toBeVisible();
     await expect(page.locator('.resources-tip-box')).toBeVisible();
     await expect(page.locator('[data-testid="resources-back"]')).toBeVisible();
+  });
+
+  /**
+   * 详情页加载态回归：数据在途时先渲染骨架屏，绝不抢跑「资源不存在」——
+   * 否则从卡片点进来会先闪一句「你访问的资源不存在或尚未上架」再出内容。
+   */
+  test('detail shows a skeleton, not the not-found copy, while the listing loads', async ({ page }) => {
+    // 覆盖 beforeEach 的即时 mock：给这个 id 的详情请求加延迟
+    await page.route('**/api/market/listings/math-0', async (route) => {
+      await new Promise((r) => setTimeout(r, 1_000)); // 模拟慢云端
+      await route.fulfill({ json: fixture.find((x) => x.id === 'math-0') });
+    });
+
+    await page.goto('/resources/math-0');
+    await expect(page.getByTestId('resources-detail-skeleton')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('resources-not-found')).toHaveCount(0);
+
+    // 数据到达：骨架屏让位给正文
+    await expect(page.locator('.resources-detail-head h1')).toHaveText('数学 0');
+    await expect(page.getByTestId('resources-detail-skeleton')).toHaveCount(0);
   });
 
   /**
