@@ -89,8 +89,14 @@ export const hermesAgentDef: RuntimeAgentDef = {
         win32: ['-SkipBrowser'],
         posix: ['--skip-browser'],
       },
-      // Source install: git clone + uv bootstrap + dependency resolution.
-      timeoutMs: 600_000,
+      // Source install: git clone + uv bootstrap + dependency sync, then pm
+      // pulls its default tool set from GitHub releases — ffmpeg alone is a
+      // ~190MB zip, which on CN lines (~300KB/s observed, real 600s timeout
+      // kill at 169MB) needs ~11min AFTER everything else. pm downloads are
+      // resumable (cache/partials keyed by sha256, 6h GC grace) so a timeout
+      // isn't fatal — but 30min lets a first run finish without a retry
+      // round-trip. Matches acp.absoluteTimeoutMs's 30min reasoning.
+      timeoutMs: 1_800_000,
       // --check validates the [acp] extra is importable; --version yields the
       // installed version string for the done event.
       verifyArgs: [['--check'], ['--version']],

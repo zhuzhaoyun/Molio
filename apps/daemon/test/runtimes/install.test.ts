@@ -450,7 +450,10 @@ describe('hermes agent install config (script source)', () => {
     assert.deepEqual(source.platformArgs?.['win32'], ['-SkipBrowser']);
     assert.deepEqual(source.platformArgs?.['posix'], ['--skip-browser']);
     assert.deepEqual(source.verifyArgs, [['--check'], ['--version']]);
-    assert.equal(source.timeoutMs, 600_000);
+    // 30min, not 10min: pm's ffmpeg tool download (~190MB GitHub release)
+    // alone needs ~11min on CN lines — a real first install was tree-killed
+    // at 600s with 169MB/190MB of the .part written. See hermes.ts comment.
+    assert.equal(source.timeoutMs, 1_800_000);
   });
 
   it('should keep installUrl for manual-install fallback', () => {
