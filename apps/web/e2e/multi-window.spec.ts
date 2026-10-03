@@ -245,7 +245,7 @@ test.describe('multi-window vault isolation', () => {
     await ctx.close();
   });
 
-  test('unified 新建 dropdown offers note, folder, and new-window', async ({ browser }) => {
+  test('unified 新建 dropdown offers import, note, folder, and new-window', async ({ browser }) => {
     const ctx = await browser.newContext();
     const page = await ctx.newPage();
 
@@ -254,6 +254,7 @@ test.describe('multi-window vault isolation', () => {
 
     await page.locator('[data-testid="kb-btn-create"]').click();
     await expect(page.locator('[data-testid="kb-create-dropdown"]')).toBeVisible();
+    await expect(page.locator('[data-testid="kb-create-import"]')).toBeVisible();
     await expect(page.locator('[data-testid="kb-create-note"]')).toBeVisible();
     await expect(page.locator('[data-testid="kb-create-folder"]')).toBeVisible();
     await expect(page.locator('[data-testid="kb-create-window"]')).toBeVisible();

@@ -73,14 +73,19 @@
   color: var(--text-muted);
 }
 
-.kb-file-toolbar .kb-toolbar-btn-accent {
+/* ⚠️ 选择器必须跟上面那条基色规则同形（带 :not(.kb-sort-item):not(.kb-create-item)）。
+   基色规则的 (0,3,1) 会盖掉任何只写 `.kb-file-toolbar .kb-toolbar-btn-accent`（(0,2,0)）
+   的规则——踩过一次：高亮代码看着在，按钮渲染出来还是灰的。改这里请连带跑
+   kb-import-entry.spec.ts 的「醒目」用例。 */
+.kb-file-toolbar button:not(.kb-sort-item):not(.kb-create-item).kb-toolbar-btn-accent {
   color: var(--accent);
 }
 
 /* 导入按钮 —— 客户反馈「不知道怎么把文件放进知识库」的直接修复。
-   拖拽是隐式交互，这个按钮是显式常驻入口，所以给它 hover 底色（其他
-   安静图标按钮 hover 只换字色），让它在工具栏里能被一眼看到。 */
-.kb-file-toolbar button.kb-btn-import:hover {
+   拖拽是隐式交互，这个按钮是显式常驻入口，所以它比工具栏其他图标按钮更显眼：
+   常驻 accent 字色 + hover 底色（其他安静图标按钮 hover 只换字色）。 */
+.kb-file-toolbar button:not(.kb-sort-item):not(.kb-create-item).kb-btn-import:hover {
+  color: var(--accent);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
@@ -179,6 +184,11 @@
   flex-shrink: 0;
   color: var(--text-muted);
   transition: color 90ms ease;
+}
+/* 「导入文件」首条 —— 跟工具栏那颗同一个 accent，让它在菜单里也跳出来。
+   菜单里其余项都是「造新东西」，只有这条是「把已有的拿进来」。 */
+.kb-create-item--accent svg {
+  color: var(--accent);
 }
 .kb-create-dropdown .kb-create-item:hover {
   background: var(--accent-tint);

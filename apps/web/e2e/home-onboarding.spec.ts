@@ -1,5 +1,5 @@
 /**
- * @area home
+ * @area navigation
  * @priority P1
  *
  * 首次运行引导。背景：全新安装（零知识库）时首页直接落在聊天框上，

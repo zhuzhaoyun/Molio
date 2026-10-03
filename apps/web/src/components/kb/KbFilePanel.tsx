@@ -374,6 +374,30 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
               data-testid="kb-create-dropdown"
               role="menu"
             >
+              {/* 导入文件 — 置于首位。＋ 是通用的「添加」形状、又是工具栏第一颗按钮，
+                  想「把已有的文件拿进来」的人第一反应就是点它；菜单里若只有新建项，
+                  用户会在最显眼的控件上再次走进死胡同（原客户反馈的死因）。
+                  与下方「新建/新窗口」用分隔线分组：拿进来 vs 造新的。 */}
+              {onImportClick && (
+                <>
+                  <button
+                    type="button"
+                    className="kb-create-item kb-create-item--accent"
+                    role="menuitem"
+                    data-testid="kb-create-import"
+                    onClick={() => { setCreateMenuOpen(false); setCreateMenuPos(null); onImportClick(); }}
+                  >
+                    {/* folder-input — 与工具栏那颗同一个形状 */}
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M2 9V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-1" />
+                      <path d="M2 13h10" />
+                      <path d="m9 16 3-3-3-3" />
+                    </svg>
+                    <span>{t('kb.importTitle')}…</span>
+                  </button>
+                  <div className="kb-create-divider" />
+                </>
+              )}
               <button
                 type="button"
                 className="kb-create-item"
@@ -433,11 +457,14 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
             onClick={onImportClick}
             data-testid="kb-btn-import"
           >
-            {/* download-into-tray — "bring files in" */}
+            {/* folder-input — 横向箭头进入文件夹 =「把文件放进这个库」。
+                刻意不用「托盘 + 向下箭头」：那是 download 的标准画法，而本工具栏右侧的
+                「发布」正是它的镜像（托盘 + 向上箭头 = upload），两颗按钮会读成一对
+                下载/上传；何况资源市场里真的有一个「下载」。横向箭头没有这种读法。 */}
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="7 10 12 15 17 10" />
-              <line x1="12" y1="15" x2="12" y2="3" />
+              <path d="M2 9V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-1" />
+              <path d="M2 13h10" />
+              <path d="m9 16 3-3-3-3" />
             </svg>
           </button>
         )}

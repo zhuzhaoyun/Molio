@@ -38,6 +38,30 @@ test.describe('KB 导入入口', () => {
     await expect(page.locator('[data-testid="kb-btn-import"]')).toBeVisible({ timeout: 5_000 });
   });
 
+  test('「导入」按钮在工具栏里是醒目的，不是一颗普通灰图标', async ({ page }) => {
+    // 这个按钮的全部价值就是「能被一眼看到」。工具栏基色规则
+    // `.kb-file-toolbar button:not(.kb-sort-item):not(.kb-create-item)` 的特异度是 (0,3,1)，
+    // 早先写的 accent 规则只有 (0,2,0)，被静默盖掉——按钮渲染成了跟旁边一样的灰图标，
+    // 代码看着像做了高亮，实际完全没生效（截图才发现）。这条断言锁死「它必须跟邻居不同色」。
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await expect(page.locator('[data-testid="kb-btn-import"]')).toBeVisible({ timeout: 5_000 });
+
+    const { importColor, neighborColor } = await page.evaluate(() => {
+      const pick = (sel: string) => {
+        const el = document.querySelector(sel);
+        return el ? getComputedStyle(el).color : null;
+      };
+      return {
+        importColor: pick('[data-testid="kb-btn-import"]'),
+        neighborColor: pick('[data-testid="kb-btn-locate"]'),
+      };
+    });
+
+    expect(neighborColor).toBeTruthy();
+    expect(importColor).toBeTruthy();
+    expect(importColor).not.toBe(neighborColor);
+  });
+
   test('点「导入」按钮打开导入弹窗', async ({ page }) => {
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
@@ -47,6 +71,24 @@ test.describe('KB 导入入口', () => {
     const dialog = importDialog(page);
     await expect(dialog).toBeVisible({ timeout: 5_000 });
     await expect(dialog.locator('.kb-dropzone')).toBeVisible();
+  });
+
+  test('「＋」菜单第一条就是导入文件，点击打开导入弹窗', async ({ page }) => {
+    // ＋ 是通用的「添加」形状、又是工具栏第一颗按钮，想要导文件的人第一反应是点它。
+    // 菜单里如果只有「新建笔记/新建文件夹/新窗口」，用户会在最显眼的控件上再次走进死胡同。
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+
+    await page.locator('[data-testid="kb-btn-create"]').click();
+    const dropdown = page.locator('[data-testid="kb-create-dropdown"]');
+    await expect(dropdown).toBeVisible({ timeout: 5_000 });
+
+    // 必须排在「新建笔记」之前 —— 否则「找已有的文件」的人得先越过两条无关项
+    const firstItem = dropdown.locator('.kb-create-item').first();
+    await expect(firstItem).toContainText('导入');
+
+    await page.locator('[data-testid="kb-create-import"]').click();
+    await expect(importDialog(page)).toBeVisible({ timeout: 5_000 });
   });
 
   test('导入弹窗是中文的，并标明文件会落到哪个库', async ({ page }) => {
