@@ -475,6 +475,158 @@ describe('Claude stream handler', () => {
       }
     });
 
+    // Bug: real Claude Code error results do NOT carry `error.message` (that is
+    // Qwen Code's shape). Claude Code puts the cause in `errors: string[]` /
+    // `result` / `subtype` / `api_error_status`. The old code fell through to
+    // the generic 'Agent returned error result', masking the real cause in the
+    // runtimes test button and chat (e.g. "Invalid API key", provider 4xx/5xx).
+    it('should surface errors[] from real Claude Code error_during_execution result', () => {
+      const { events, onEvent } = collectEvents();
+      const handler = createClaudeStreamHandler(onEvent);
+
+      // Shape verified against real Claude Code 2.1.x stream-json output:
+      // top-level subtype/result/api_error_status, no error.message object.
+      feedLines(handler, JSON.stringify({
+        type: 'result',
+        subtype: 'error_during_execution',
+        is_error: true,
+        api_error_status: 401,
+        duration_ms: 1200,
+        num_turns: 1,
+        errors: ['API Error: 401 {"error":{"type":"authentication_error","message":"invalid x-api-key"}}'],
+        session_id: 'abc-123',
+        usage: { input_tokens: 0, output_tokens: 0 },
+      }));
+
+      const errorEvents = events.filter((e) => e.type === 'error');
+      assert.equal(errorEvents.length, 1);
+      if (errorEvents[0]!.type === 'error') {
+        assert.match(errorEvents[0]!.message, /authentication_error|invalid x-api-key/);
+        assert.ok(!errorEvents[0]!.message.includes('Agent returned error result'));
+      }
+    });
+
+    it('should fall back to result string when errors[] absent on error result', () => {
+      const { events, onEvent } = collectEvents();
+      const handler = createClaudeStreamHandler(onEvent);
+
+      feedLines(handler, JSON.stringify({
+        type: 'result',
+        subtype: 'error_during_execution',
+        is_error: true,
+        result: 'API Error: Request was aborted.',
+        usage: { input_tokens: 0, output_tokens: 0 },
+      }));
+
+      const errorEvents = events.filter((e) => e.type === 'error');
+      assert.equal(errorEvents.length, 1);
+      if (errorEvents[0]!.type === 'error') {
+        assert.equal(errorEvents[0]!.message, 'API Error: Request was aborted.');
+      }
+    });
+
+    // Bug (user report): expired GLM token → Claude Code retries the 401 with
+    // exponential backoff (10 attempts, ~3 min) emitting system/api_retry
+    // events, no result event — the runtimes test button just hit its 30s
+    // timeout ("Test timed out after 30s") and chat showed a silent spinner.
+    // Shape below captured live from Claude Code 2.1.116.
+    it('should fail fast with auth error on system/api_retry 401', () => {
+      const { events, onEvent } = collectEvents();
+      const handler = createClaudeStreamHandler(onEvent);
+
+      feedLines(handler, JSON.stringify({
+        type: 'system',
+        subtype: 'api_retry',
+        attempt: 1,
+        max_retries: 10,
+        retry_delay_ms: 514.8312331673899,
+        error_status: 401,
+        error: 'authentication_failed',
+        session_id: '45e728e5-0031-472a-aa0e-569382314d23',
+      }));
+
+      const statusEvents = events.filter((e) => e.type === 'status');
+      assert.equal(statusEvents.length, 1);
+      if (statusEvents[0]!.type === 'status') {
+        assert.equal(statusEvents[0]!.label, 'retrying');
+        assert.equal(statusEvents[0]!.retry?.errorStatus, 401);
+        assert.equal(statusEvents[0]!.retry?.error, 'authentication_failed');
+        assert.equal(statusEvents[0]!.retry?.attempt, 1);
+        assert.equal(statusEvents[0]!.retry?.maxRetries, 10);
+      }
+
+      const errorEvents = events.filter((e) => e.type === 'error');
+      assert.equal(errorEvents.length, 1, 'auth failures must fail fast, not retry');
+      if (errorEvents[0]!.type === 'error') {
+        assert.match(errorEvents[0]!.message, /authentication failed/i);
+        assert.match(errorEvents[0]!.message, /401/);
+        assert.match(errorEvents[0]!.message, /invalid or expired/i);
+      }
+    });
+
+    it('should emit the auth error only once across repeated 401 retries', () => {
+      const { events, onEvent } = collectEvents();
+      const handler = createClaudeStreamHandler(onEvent);
+
+      for (const attempt of [1, 2, 3]) {
+        feedLines(handler, JSON.stringify({
+          type: 'system',
+          subtype: 'api_retry',
+          attempt,
+          max_retries: 10,
+          retry_delay_ms: 500 * attempt,
+          error_status: 401,
+          error: 'authentication_failed',
+        }));
+      }
+
+      assert.equal(events.filter((e) => e.type === 'error').length, 1);
+      assert.equal(events.filter((e) => e.type === 'status').length, 3);
+    });
+
+    it('should emit retrying status without error for transient 429/5xx retries', () => {
+      const { events, onEvent } = collectEvents();
+      const handler = createClaudeStreamHandler(onEvent);
+
+      feedLines(handler, JSON.stringify({
+        type: 'system',
+        subtype: 'api_retry',
+        attempt: 2,
+        max_retries: 10,
+        retry_delay_ms: 1049.5,
+        error_status: 429,
+        error: 'rate_limit_exceeded',
+      }));
+
+      const statusEvents = events.filter((e) => e.type === 'status');
+      assert.equal(statusEvents.length, 1);
+      if (statusEvents[0]!.type === 'status') {
+        assert.equal(statusEvents[0]!.label, 'retrying');
+        assert.equal(statusEvents[0]!.retry?.errorStatus, 429);
+      }
+      // Transient errors may recover on retry — must NOT fail the run.
+      assert.equal(events.filter((e) => e.type === 'error').length, 0);
+    });
+
+    it('should include subtype and api_error_status when no error text is present', () => {
+      const { events, onEvent } = collectEvents();
+      const handler = createClaudeStreamHandler(onEvent);
+
+      feedLines(handler, JSON.stringify({
+        type: 'result',
+        subtype: 'error_max_turns',
+        is_error: true,
+        api_error_status: null,
+        usage: { input_tokens: 0, output_tokens: 0 },
+      }));
+
+      const errorEvents = events.filter((e) => e.type === 'error');
+      assert.equal(errorEvents.length, 1);
+      if (errorEvents[0]!.type === 'error') {
+        assert.match(errorEvents[0]!.message, /error_max_turns/);
+      }
+    });
+
     it('should emit turn_end when result arrives without prior stop_reason (Qwen fix)', () => {
       // Bug: Qwen Code assistant messages lack stop_reason, so turn_end was never
       // emitted. Messages stayed in "streaming" state forever in the frontend.
