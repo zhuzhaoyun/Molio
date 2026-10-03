@@ -24,6 +24,8 @@ src/
     db.ts              SQLite 数据库初始化
     transcript.ts      多轮对话 transcript 构建
     knowledge.ts       知识库管理（vault、文件树）
+    preload-manager.ts 技能预下载管理（当前仅 docling：Phase 0 Python 发现→1 venv→2 pip 多镜像回退→3 HF 模型预热；进度/暂停/停止状态机）。Phase 0 找不到 Python ≥3.10 时不再报错，自动调 python-provision 供给独立解释器；buildPyProbes 把 ~/.molio/python 放探针首位（重启幂等，不重复下载）；stop 清理删 venv + docling HF 模型 + python.staging-* 残留但保留已完成的 ~/.molio/python（可复用基建）；测试钩子 __setPreloadPythonHooksForTest 注入 findPython/provision
+    python-provision.ts docling 免装 Python：下载 python-build-standalone（PBS，3.12 pin、install_only_stripped ~22MB）到 ~/.molio/python。源链 MOLIO_PYTHON_MIRROR env → npmmirror（JSON 目录列表动态发现最新 tag/patch）→ GitHub pinned tag 兜底；同目录 SHA256SUMS 强校验（不匹配换源；取不到记警告继续）；系统 tar 解压（POSIX symlink 保真，Win10+ 自带 tar.exe）→ staging 试运行 --version 验证 → 原子换位；PythonProvisionDeps 全 side-effect 可注入（零真实网络单测）
     tools/skills/      Builtin Claude Code skills（wechat-article-extractor, docling, wiki-build/ingest/lint/save/query）—— wiki 操作走 skills，agent 按动词 on-demand 调用；知识库问答走 wiki-query skill（由 vault .claude/CLAUDE.md 常驻规则 + KB 面板确定性触发），不再有 system-prompt 注入。wiki-* 五件套（build/query/ingest/save/lint）同版本号共进：改任一 skill 时五个 version: 一起 bump 到同一版本，同一 PR（或一次对外发布）内的连续修订只 bump 一次（同步本身按内容哈希镜像到既有 vault，version 只作诊断/约定）。remotion 已退役（见 skill-installer.ts 的 RETIRED_BUNDLED_SKILLS）：视频创作改由技能商店 am-will/remotion 按需安装；本目录下的 remotion/ 源文件刻意保留，作为清理旧 vault 副本时的字节级权属证明
     runtimes/
       registry.ts      Agent 定义注册表 (claude, codex, gemini, qwen)
