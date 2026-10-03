@@ -1,10 +1,12 @@
 // apps/cloud/src/store/market-types.ts
 // MarketStore 持久层抽象：PgMarketStore（生产）+ MemoryMarketStore（node:test）。
 // 时间戳接口层统一 epoch 毫秒（与 AuthStore 约定一致）。
-import type { MarketListingSource, MarketListingStatus } from '@molio/contracts';
+import type { MarketTaxon, MarketListingSource, MarketListingStatus } from '@molio/contracts';
 
 /** 更新流程暂存声明（confirm 消费后清空） */
 export interface MarketPendingUpdate {
+  categoryId?: string;
+  resourceTypeId?: string;
   previews: { key: string }[]; // 新效果图暂存键；空数组 = 沿用旧图
   name?: string;
   summary?: string;
@@ -13,6 +15,8 @@ export interface MarketPendingUpdate {
 }
 
 export interface MarketListingRecord {
+  categoryId?: string | null;
+  resourceTypeId?: string | null;
   id: string;
   userId: string;
   source: MarketListingSource;
@@ -40,15 +44,17 @@ export interface MarketListingRecord {
 }
 
 export interface MarketStore {
+  listTaxa(): Promise<MarketTaxon[]>;
+  createTaxon(taxon: MarketTaxon): Promise<MarketTaxon>;
   insertListing(rec: MarketListingRecord): Promise<void>;
   findListingById(id: string): Promise<MarketListingRecord | null>;
   /** 部分字段更新；不存在返回 null */
   updateListing(id: string, patch: Partial<Pick<MarketListingRecord,
     'status' | 'removedReason' | 'fileSize' | 'version' | 'previews' | 'ossKey' | 'publishedAt' | 'pendingUpdate'
-    | 'priceCents' | 'payUrl' | 'name' | 'summary' | 'icon' | 'tags'
+    | 'categoryId' | 'resourceTypeId' | 'priceCents' | 'payUrl' | 'name' | 'summary' | 'icon' | 'tags'
   >>, now: number): Promise<MarketListingRecord | null>;
   /** active 列表，published_at DESC */
-  listActiveListings(limit: number): Promise<MarketListingRecord[]>;
+  listActiveListings(limit?: number): Promise<MarketListingRecord[]>;
   /** 某用户全部条目，created_at DESC */
   listUserListings(userId: string): Promise<MarketListingRecord[]>;
   /** 管理员视图：全部条目 + 上传者邮箱（账号已注销时为 null） */

@@ -8,7 +8,7 @@
  * 签名下载按钮）；失败/404 → 「资源不存在」形态。
  */
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useLocation } from 'react-router-dom';
 import type { MarketListing } from '@molio/contracts';
 import { useI18n } from '../../i18n';
 import {
@@ -34,6 +34,9 @@ function formatPublishedAt(iso: string): string {
 
 export function ResourceDetailPage() {
   const { t } = useI18n();
+  const location = useLocation();
+  const catalogSearch = typeof location.state?.catalogSearch === 'string' ? location.state.catalogSearch : '';
+  const backTo = '/resources' + (catalogSearch.startsWith('?') ? catalogSearch : '');
   const { id } = useParams<{ id: string }>();
   const pay = useResourcePay();
   const auth = useAuthStatus();
@@ -77,7 +80,7 @@ export function ResourceDetailPage() {
       <div className="resources-shell">
         <div className="resources-scroll">
           <div className="resources-breadcrumb">
-            <Link to="/resources" data-testid="resources-back">
+            <Link to={backTo} data-testid="resources-back">
               {t('resources.backToList')}
             </Link>
           </div>
@@ -113,7 +116,7 @@ export function ResourceDetailPage() {
     <div className="resources-shell">
       <div className="resources-scroll">
         <div className="resources-breadcrumb">
-          <Link to="/resources" data-testid="resources-back">
+          <Link to={backTo} data-testid="resources-back">
             {t('resources.backToList')}
           </Link>
           <span className="resources-breadcrumb__sep">/</span>

@@ -21,31 +21,53 @@ import { gotoHome, clickNav } from './helpers/navigation';
 const cards = (page: import('@playwright/test').Page) =>
   page.locator('[data-testid="resources-grid"] [data-testid^="resource-card-"]');
 
+const fixture = Array.from({length:14}, (_,i) => ({
+  id:i===13?'literature':`math-${i}`, source:'official', name:i===13?'文学':'数学 '+i,
+  icon:'📚', tint:'#eee', summary:'资源简介', overview:['概述'], highlights:[], tags:[], previews:[],
+  version:'1.0', priceCents:0, payUrl:'', author:'test', fileSize:1024, publishedAt:null,
+  category:{id:i===13?'history-literature':'math',name:i===13?'历史与文学':'数学',kind:'category',position:i===13?1:0},
+  resourceType:{id:'knowledge',name:'知识库',kind:'type',position:0},
+}));
+test.beforeEach(async ({page}) => {
+  await page.route('**/api/market/listings*', r=>r.fulfill({json:{listings:fixture,stale:false}}));
+  await page.route('**/api/market/listings/*', r=> {
+    const item=fixture.find(x=>r.request().url().endsWith('/'+x.id));
+    return r.fulfill({status:item?200:404,json:item??{error:'not_found'}});
+  });
+});
+
 test.describe('Resources page', () => {
-  test('list renders catalog with filters', async ({ page }) => {
-    await gotoHome(page);
-    await clickNav(page, 'resources');
+  test('loads more on scroll (grouped and flat), keeps scope during search and restores URL', async ({ page }) => {
+    await page.goto('/resources');
+    // 分组视图也走滚动加载：滚到底后各分类都展开到全量（13 math + 1 文学 = 14）。
+    // 不断言中间批次的条数：视口没填满时会连续加载，条数取决于布局，断言会飘。
+    await page.locator('.resources-scroll').evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+    await expect(cards(page)).toHaveCount(14);
+    // 显示条数是视图状态、不进 URL（避免与用户输入抢导航）：刷新回到第一批，滚到底再次展开
+    expect(page.url()).not.toContain('shown=');
+    await page.reload();
+    await page.locator('.resources-scroll').evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+    await expect(cards(page)).toHaveCount(14);
 
-    await expect(page.locator('.resources-shell')).toBeVisible();
-    // 目录是异步拉取（daemon → cloud）：先等首卡落地再计数，
-    // 否则 shell 渲染与 fetch 落定之间的竞态会数到 0（Windows 本地冷启动必现）
-    await expect(cards(page).first()).toBeVisible({ timeout: 15_000 });
-    const total = await cards(page).count();
-    expect(total).toBeGreaterThan(0);
+    // 分类筛选改走顶部 chip（分组标题里的「查看全部」按钮已删）。
+    // 先等 chip 的选中态落到 DOM（渲染产物）再输入：立刻 fill 会和还没提交的
+    // re-render 交错，受控输入框被按旧的 q 重置、输入丢掉（真实击键不会）。
+    await page.getByTestId('resources-category-math').click();
+    await expect(page.getByTestId('resources-category-math')).toHaveAttribute('aria-pressed', 'true');
+    await page.getByTestId('resources-search').fill('文学');
+    await expect(page.locator('.resources-empty')).toBeVisible();
+    await page.getByRole('button', {name:'搜索全部资源'}).click();
+    await expect(cards(page)).toHaveCount(1);
+    await page.getByTestId('resource-detail-link-literature').click();
+    await page.getByTestId('resources-back').click();
+    await expect(page.getByTestId('resources-search')).toHaveValue('文学');
+    await expect(cards(page)).toHaveCount(1);
 
-    // filter pills: all / paid / free; counts must satisfy all = paid + free
-    await page.locator('[data-testid="resources-filter-paid"]').click();
-    const paid = await cards(page).count();
-
-    await page.locator('[data-testid="resources-filter-free"]').click();
-    const free = await cards(page).count();
-    if (free === 0) {
-      await expect(page.locator('.resources-empty')).toBeVisible();
-    }
-
-    await page.locator('[data-testid="resources-filter-all"]').click();
-    expect(await cards(page).count()).toBe(total);
-    expect(total).toBe(paid + free);
+    // 窄屏不横向溢出（页面顶部那批控件最容易撑破）
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
   });
 
   test('navigate to detail and back', async ({ page }) => {

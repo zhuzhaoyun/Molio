@@ -29,7 +29,7 @@ export function useMarketCatalog(): CatalogState & { refresh: () => void } {
       return;
     }
     try {
-      const res = await fetch('/api/market/listings');
+      const res = await fetch('/api/market/listings' + (force ? '?refresh=1' : ''));
       if (!res.ok) throw new Error(`market ${res.status}`);
       const body = (await res.json()) as { listings: MarketListing[]; stale?: boolean };
       memCache = { at: Date.now(), data: body.listings };

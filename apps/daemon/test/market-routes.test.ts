@@ -90,7 +90,7 @@ test('listings：成功落缓存；云端不可达回缓存 stale', async () => 
   const res1 = await mk(ok.fetchImpl).request('/api/market/listings');
   assert.equal(res1.status, 200);
   assert.equal(((await res1.json()) as { stale?: boolean }).stale ?? false, false);
-  const res2 = await mk(makeCloud({ fail: true }).fetchImpl).request('/api/market/listings');
+  const res2 = await mk(makeCloud({ fail: true }).fetchImpl).request('/api/market/listings?refresh=1');
   assert.equal(res2.status, 200);
   const body = (await res2.json()) as { stale: boolean; listings: unknown[] };
   assert.equal(body.stale, true);
@@ -111,7 +111,7 @@ function seedListingsCache(db: ReturnType<typeof openDatabase>, listings: unknow
     .run(JSON.stringify(listings), fetchedAt);
 }
 
-test('listings SWR：有缓存立即返回（stale），过期缓存触发后台刷新落库', async () => {
+test('listings SWR：有缓存立即返回（不算 stale、标记 revalidating），过期缓存触发后台刷新落库', async () => {
   const db = openDatabase(fs.mkdtempSync(path.join(os.tmpdir(), 'molio-db-')));
   // fetched_at 足够旧（> 30s 最小刷新间隔）→ 应触发后台刷新
   seedListingsCache(db, [{ id: 'cached', name: '缓存条目', priceCents: 0 }], Date.now() - 120_000);
@@ -120,8 +120,11 @@ test('listings SWR：有缓存立即返回（stale），过期缓存触发后台
 
   const res = await app.request('/api/market/listings');
   assert.equal(res.status, 200);
-  const body = (await res.json()) as { stale: boolean; listings: Array<{ id: string }> };
-  assert.equal(body.stale, true);
+  const body = (await res.json()) as { stale: boolean; revalidating: boolean; listings: Array<{ id: string }> };
+  // 先回缓存、后台刷新是常规路径，不是故障：stale 只留「取不到云端」这一种含义，
+  // 否则前端会对每次缓存命中都弹「暂时无法获取最新资源」
+  assert.equal(body.stale, false);
+  assert.equal(body.revalidating, true);
   assert.equal(body.listings[0]?.id, 'cached'); // 首屏来自缓存，不等云端
 
   // 后台刷新最终把云端数据写回缓存（轮询等待，上限 2s）
@@ -150,6 +153,9 @@ test('listings SWR：缓存新鲜时不打云端（后台刷新防抖）', async
   assert.equal(res1.status, 200);
   assert.equal(res2.status, 200);
   assert.equal(calls, 0, '缓存新鲜时不应发起云端请求');
+  const body = (await res1.json()) as { stale: boolean; revalidating: boolean };
+  assert.equal(body.stale, false);
+  assert.equal(body.revalidating, false, '缓存还新鲜就不该标记成正在重验证');
 });
 
 test('listings 冷启动：云端 hang → 超时后返回空目录 stale，不无限干等', async () => {
@@ -213,4 +219,16 @@ test('purchases：带 Bearer 透传云端；云端 502 pay_unreachable 原样归
   const res3 = await mk(makeCloud({ fail: true }).fetchImpl).request('/api/market/purchases');
   assert.equal(res3.status, 502);
   assert.equal(((await res3.json()) as { error: string }).error, 'cloud_unreachable');
+});
+
+
+test('manual refresh bypasses even fresh cache and returns the new catalog', async () => {
+  const db = openDatabase(fs.mkdtempSync(path.join(os.tmpdir(), 'molio-db-')));
+  try {
+    seedListingsCache(db, [{id:'old'}], Date.now());
+    const app = mkApp(db, makeCloud().fetchImpl);
+    const body = await (await app.request('/api/market/listings?refresh=1')).json() as {stale:boolean;listings:{id:string}[]};
+    assert.equal(body.stale, false);
+    assert.equal(body.listings[0]?.id, 'x');
+  } finally { db.close(); }
 });
