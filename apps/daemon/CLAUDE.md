@@ -28,14 +28,17 @@ src/
     python-provision.ts docling 免装 Python：下载 python-build-standalone（PBS，3.12 pin、install_only_stripped ~22MB）到 ~/.molio/python。源链 MOLIO_PYTHON_MIRROR env → npmmirror（JSON 目录列表动态发现最新 tag/patch）→ GitHub pinned tag 兜底；同目录 SHA256SUMS 强校验（不匹配换源；取不到记警告继续）；系统 tar 解压（POSIX symlink 保真，Win10+ 自带 tar.exe）→ staging 试运行 --version 验证 → 原子换位；PythonProvisionDeps 全 side-effect 可注入（零真实网络单测）
     tools/skills/      Builtin Claude Code skills（wechat-article-extractor, docling, wiki-build/ingest/lint/save/query）—— wiki 操作走 skills，agent 按动词 on-demand 调用；知识库问答走 wiki-query skill（由 vault .claude/CLAUDE.md 常驻规则 + KB 面板确定性触发），不再有 system-prompt 注入。wiki-* 五件套（build/query/ingest/save/lint）同版本号共进：改任一 skill 时五个 version: 一起 bump 到同一版本，同一 PR（或一次对外发布）内的连续修订只 bump 一次（同步本身按内容哈希镜像到既有 vault，version 只作诊断/约定）。remotion 已退役（见 skill-installer.ts 的 RETIRED_BUNDLED_SKILLS）：视频创作改由技能商店 am-will/remotion 按需安装；本目录下的 remotion/ 源文件刻意保留，作为清理旧 vault 副本时的字节级权属证明
     runtimes/
-      registry.ts      Agent 定义注册表 (claude, codex, gemini, qwen)
+      registry.ts      Agent 定义注册表 (claude, codex, gemini, qwen, hermes)
       claude.ts        Claude Code runtime 定义
       codex.ts         OpenAI Codex runtime 定义
       gemini.ts        Gemini CLI runtime 定义
       qwen.ts          Qwen Code runtime 定义
+      hermes.ts        Hermes Agent runtime 定义（ACP transport；install.source=script 走官方安装脚本）
       launch.ts        二进制路径解析 + 版本探测
       env.ts           spawn 环境变量构建
-      install.ts       一键安装引擎（npm-native：版本解析→下载→解包→校验→试运行→PATH）。两种解包布局：单二进制（claude，binInTar 直落 ~/.molio/bin/）；bundled 目录树（codex，extractDir 前缀整树解到 ~/.molio/bin/<agentId>/，二进制依赖同级资源文件时需整体保留）。平台构建以版本后缀发布在单一包时（如 @openai/codex@0.149.0-win32-x64），用 packages[].tarballVersion 模板 {version} 拼 tarball 名
+      codex-config.ts  Codex provider 配置（~/.codex/config.toml + auth.json 原子写 + 备份回滚）
+      hermes-config.ts Hermes provider 配置（仿 codex-config）：写 hermes 原生 <hermes home>/config.yaml（yaml Document 合并编辑，保留注释与 _config_version）+ .env（行级 upsert，0600）；hermes 的 .env 以 override=True 加载压过进程 env，spawn 注入不可靠 → 必须写原生文件；home 解析 HERMES_HOME env → win %LOCALAPPDATA%\hermes / POSIX ~/.hermes；密钥永不回传 UI（只回 hasKey）；备份 ~/.molio/backups/hermes/ + 失败回滚；预设单一来源在 contracts/hermes-provider.ts（custom 例外：无 envKey，密钥走 config.yaml model.api_key）
+      install.ts       一键安装引擎，两种策略：① npm-native（版本解析→下载→解包→校验→试运行→PATH）——两种解包布局：单二进制（claude，binInTar 直落 ~/.molio/bin/）；bundled 目录树（codex，extractDir 前缀整树解到 ~/.molio/bin/<agentId>/，二进制依赖同级资源文件时需整体保留）；平台构建以版本后缀发布在单一包时（如 @openai/codex@0.149.0-win32-x64），用 packages[].tarballVersion 模板 {version} 拼 tarball 名。② script（hermes）——下载官方安装脚本（install.ps1/install.sh）到临时文件→非交互执行（引擎自动加 -NonInteractive/--non-interactive + platformArgs，输出逐行转 log 事件）→verifyArgs 试运行→仅更新 daemon 进程 PATH（用户级 PATH 由官方脚本自管）；MOLIO_HERMES_REPO_URL→HERMES_REPO_URL 透传支持 git 镜像；退出码 stderr 分类（classifyScriptExitError：网络→network+镜像 hint / 权限→permission / 其余→runtime）；ScriptInstallDeps 测试 seam 全 side-effect 可注入
     streams/
       claude-stream.ts     Claude JSONL 流解析
       codex-stream.ts      Codex 流解析
@@ -78,7 +81,7 @@ src/
   routes/
     channel.ts        channelRoutes<TConfig>() 工厂 — 5 个标准渠道路由（status/start/stop/disconnect/config）
 
-    agents.ts         GET /api/agents — 列出可用 agent
+    agents.ts         GET /api/agents — 列出可用 agent；POST /:agentId/test 连通性测试；POST /:agentId/install 一键安装（SSE）；GET/PUT /:agentId/provider — provider 配置（按 agentId 分发 codex/hermes，其余 400；GET 读原生配置活文件并在无 provider 时回填 Molio config 存的 presetHint；PUT 写原生配置 + HermesConfigError/CodexConfigError→400 + setAgentConfig 持久化选择元信息（不含密钥））
     runs.ts           POST /api/runs — 创建 run, GET 列出/查询
     events.ts         GET /api/runs/:id/events — SSE 事件流
     tool-result.ts    POST /api/runs/:id/tool-result — 提交工具结果
@@ -118,6 +121,10 @@ pnpm typecheck    # tsc --noEmit
 |--------|------|------|
 | GET | `/api/health` | 健康检查 |
 | GET | `/api/agents` | 列出可用 runtime agent |
+| POST | `/api/agents/:id/test` | agent 连通性测试（ACP agent 只验握手） |
+| POST | `/api/agents/:id/install` | 一键安装（SSE InstallEvent 流） |
+| GET | `/api/agents/:id/provider` | 读取 provider 配置状态（codex/hermes，密钥只回 hasKey） |
+| PUT | `/api/agents/:id/provider` | 应用 provider 配置（codex/hermes，写原生配置文件） |
 | POST | `/api/runs` | 创建新 run |
 | GET | `/api/runs` | 列出所有 run |
 | GET | `/api/runs/:id` | 查询单个 run |

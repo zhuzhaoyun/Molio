@@ -1,4 +1,5 @@
-import { execFileSync, execSync } from 'node:child_process';
+import { execFile, execFileSync, execSync, spawn } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import {
   mkdirSync, existsSync, chmodSync, writeFileSync, renameSync, unlinkSync,
   statSync, readFileSync, appendFileSync, rmSync,
@@ -6,13 +7,15 @@ import {
 import https from 'node:https';
 import path from 'node:path';
 import os from 'node:os';
+import { createInterface } from 'node:readline';
 import { gunzipSync } from 'node:zlib';
 import type {
   InstallEvent, InstallPhase, ErrorCategory,
-  NpmNativeInstallSource, RuntimeAgentDef,
+  NpmNativeInstallSource, ScriptInstallSource, RuntimeAgentDef,
 } from '@molio/contracts';
-import { validateBinary } from './launch.js';
+import { validateBinary, resolveAgentBinary, needsShellOnWindows } from './launch.js';
 import { getAgentDef } from './registry.js';
+import { NPMMIRROR_BASE } from '../python-provision.js';
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 
@@ -28,6 +31,11 @@ export interface InstallOptions {
   onEvent: (event: InstallEvent) => void;
   /** Optional abort signal — when aborted, install stops at the next checkpoint. */
   signal?: AbortSignal;
+  /**
+   * @internal Test seam — injected side effects for the `script` strategy.
+   * Never set by production callers (routes use plain { agentId, onEvent, signal }).
+   */
+  _deps?: ScriptInstallDeps;
 }
 
 // ─── Main Entry Point ──────────────────────────────────────────────────────
@@ -38,6 +46,7 @@ export interface InstallOptions {
  *
  * Currently supported strategies:
  * - `npm-native`: downloads pre-built native binaries from npm registry
+ * - `script`: downloads and runs an official installer script non-interactively
  */
 export async function installAgent(opts: InstallOptions): Promise<void> {
   const { agentId, onEvent, signal } = opts;
@@ -61,6 +70,8 @@ export async function installAgent(opts: InstallOptions): Promise<void> {
   // 2. Dispatch by source type
   if (source.type === 'npm-native') {
     await installFromNpmNative(def, source, onEvent, signal);
+  } else if (source.type === 'script') {
+    await installFromScript(def, source, onEvent, signal, opts._deps);
   } else {
     onEvent({
       type: 'error',
@@ -414,6 +425,732 @@ async function installFromNpmNative(
     message: `${agentName} installed successfully`,
     binaryPath: targetPath,
     version: installedVersion,
+  });
+}
+
+// ─── script Install Strategy ───────────────────────────────────────────────
+
+/**
+ * Outcome of a spawned installer script process.
+ * `stderrTail` keeps only the last ~8KB — enough for error classification
+ * without unbounded memory on chatty installers.
+ */
+export interface RunScriptResult {
+  code: number | null;
+  stderrTail: string;
+  timedOut: boolean;
+  aborted: boolean;
+}
+
+export interface RunScriptArgs {
+  cmd: string;
+  args: string[];
+  env: NodeJS.ProcessEnv;
+  timeoutMs: number;
+  signal?: AbortSignal;
+  onLine: (line: string) => void;
+}
+
+/**
+ * Test seam for {@link installFromScript}. Every side effect (network,
+ * filesystem, child processes) is injectable so integration tests can drive
+ * the full state machine — success, network failure, timeout, abort,
+ * validation failure — without real downloads or installs.
+ */
+export interface ScriptInstallDeps {
+  downloadScript?: (url: string, signal?: AbortSignal) => Promise<Buffer>;
+  writeTempScript?: (content: Buffer, isWindows: boolean) => string;
+  cleanupTempScript?: (scriptPath: string) => void;
+  probeNetwork?: (url: string, timeoutMs: number) => Promise<boolean>;
+  findShell?: (isWindows: boolean) => string | null;
+  runScript?: (args: RunScriptArgs) => Promise<RunScriptResult>;
+  resolveBinary?: (def: RuntimeAgentDef) => string | null;
+  runVerify?: (binary: string, args: string[]) => Promise<{ ok: boolean; stdout: string; stderr: string }>;
+}
+
+/** Max installer script size — anything larger is a misconfigured mirror. */
+const MAX_SCRIPT_BYTES = 5 * 1024 * 1024;
+/** Default script install timeout (source installs bootstrap toolchains). */
+const DEFAULT_SCRIPT_TIMEOUT_MS = 600_000;
+/** Per-invocation timeout for post-install verify args. */
+const VERIFY_TIMEOUT_MS = 15_000;
+
+/**
+ * Default CN PyPI mirror used when pypi.org is unreachable (内网/信创).
+ * Aliyun first per the root CLAUDE.md 信创原则: *.aliyun.com/*.aliyuncs.com is
+ * typically allow-listed on isolated networks, and an overseas source must never
+ * be the only path. The install script's own pinned uv/pip honors these index
+ * env vars even under `UV_NO_CONFIG=1` (that flag only disables config FILES).
+ */
+const DEFAULT_PYPI_MIRROR = 'https://mirrors.aliyun.com/pypi/simple/';
+
+/** Index env keys read by uv (UV_DEFAULT_INDEX current / UV_INDEX_URL legacy)
+ *  and pip (PIP_INDEX_URL). We set all three so the redirect works whichever
+ *  tool the installer's dependency sync ends up using. */
+const PYPI_INDEX_ENV_KEYS = ['UV_DEFAULT_INDEX', 'UV_INDEX_URL', 'PIP_INDEX_URL'] as const;
+
+/**
+ * Inject a PyPI/uv index into `env` (mutated in place) so the installer's
+ * Python dependency sync can reach a mirror when the default index is blocked.
+ *
+ * Precedence (highest first):
+ *  1. explicit `MOLIO_PYPI_MIRROR` — always applied;
+ *  2. a uv/pip index the user already exported — left untouched (never clobber
+ *     an intentional private-index setup);
+ *  3. otherwise probe pypi.org and fall back to {@link DEFAULT_PYPI_MIRROR}
+ *     ONLY when it is unreachable, so users with a working pypi.org keep the
+ *     stock behavior.
+ *
+ * @internal exported for testing.
+ */
+export async function applyPypiMirrorEnv(
+  env: NodeJS.ProcessEnv,
+  probe: (url: string, timeoutMs: number) => Promise<boolean>,
+  onEvent: (event: InstallEvent) => void,
+): Promise<void> {
+  const setIndex = (url: string) => {
+    for (const key of PYPI_INDEX_ENV_KEYS) env[key] = url;
+  };
+
+  const explicit = env['MOLIO_PYPI_MIRROR'];
+  if (explicit && explicit.trim()) {
+    setIndex(explicit.trim());
+    onEvent({ type: 'log', message: `PyPI mirror (MOLIO_PYPI_MIRROR): ${explicit.trim()}` });
+    return;
+  }
+
+  // Respect a pre-existing uv/pip index — don't override an explicit setup.
+  if (PYPI_INDEX_ENV_KEYS.some((k) => env[k] && env[k]!.trim())) {
+    return;
+  }
+
+  const pypiReachable = await probe('https://pypi.org', 5_000);
+  if (!pypiReachable) {
+    setIndex(DEFAULT_PYPI_MIRROR);
+    onEvent({
+      type: 'log',
+      message: "pypi.org is not reachable — routing the installer's Python " +
+        `dependency sync through a mirror (${DEFAULT_PYPI_MIRROR}). ` +
+        'Set MOLIO_PYPI_MIRROR to override.',
+    });
+  }
+}
+
+/**
+ * Inject `UV_PYTHON_INSTALL_MIRROR` into `env` (mutated in place) so uv pulls
+ * its managed CPython (python-build-standalone) from a CN-reachable mirror.
+ *
+ * Why this is separate from {@link applyPypiMirrorEnv}: the interpreter is NOT
+ * a PyPI package. uv fetches it from GitHub's release-asset CDN
+ * (`objects.githubusercontent.com`), which is commonly throttled/reset on CN
+ * networks EVEN WHEN `github.com` itself is reachable — so the preflight
+ * github.com probe passes, the git clone succeeds, then the ~160MB PBS download
+ * stalls at 0 bytes and the install dies on the wall-clock timeout. uv replaces
+ * the GitHub release-download base with this mirror, keeping `/{tag}/{file}`;
+ * npmmirror's PBS binary layout matches (same source python-provision.ts uses).
+ *
+ * Precedence (highest first):
+ *  1. explicit `MOLIO_PYTHON_MIRROR` (shared with python-provision) — always applied;
+ *  2. a `UV_PYTHON_INSTALL_MIRROR` the user already exported — left untouched;
+ *  3. otherwise probe npmmirror and use it ONLY when reachable, so networks that
+ *     can't reach aliyun (overseas without the mirror) keep the stock GitHub path.
+ *
+ * @internal exported for testing.
+ */
+export async function applyPythonInstallMirrorEnv(
+  env: NodeJS.ProcessEnv,
+  probe: (url: string, timeoutMs: number) => Promise<boolean>,
+  onEvent: (event: InstallEvent) => void,
+): Promise<void> {
+  const normalize = (url: string) => url.trim().replace(/\/+$/, '');
+
+  const explicit = env['MOLIO_PYTHON_MIRROR'];
+  if (explicit && explicit.trim()) {
+    env['UV_PYTHON_INSTALL_MIRROR'] = normalize(explicit);
+    onEvent({ type: 'log', message: `uv Python install mirror (MOLIO_PYTHON_MIRROR): ${env['UV_PYTHON_INSTALL_MIRROR']}` });
+    return;
+  }
+
+  // Respect a pre-existing mirror — don't override an explicit setup.
+  if (env['UV_PYTHON_INSTALL_MIRROR'] && env['UV_PYTHON_INSTALL_MIRROR']!.trim()) {
+    return;
+  }
+
+  const mirrorReachable = await probe(`${NPMMIRROR_BASE}/`, 5_000);
+  if (mirrorReachable) {
+    env['UV_PYTHON_INSTALL_MIRROR'] = NPMMIRROR_BASE;
+    onEvent({
+      type: 'log',
+      message: "Routing uv's managed-Python (python-build-standalone) download " +
+        `through the npmmirror mirror (${NPMMIRROR_BASE}) — GitHub's release CDN ` +
+        'often stalls on CN networks. Set MOLIO_PYTHON_MIRROR to override.',
+    });
+  }
+}
+
+/**
+ * @internal exported for testing — tests drive this directly with synthetic
+ * defs/sources so scenarios (unsupported platform, missing shell) don't
+ * depend on the host machine or the real hermes registry entry.
+ */
+export async function installFromScript(
+  def: RuntimeAgentDef,
+  source: ScriptInstallSource,
+  onEvent: (event: InstallEvent) => void,
+  signal?: AbortSignal,
+  deps?: ScriptInstallDeps,
+): Promise<void> {
+  const agentName = def.name;
+  const isWindows = process.platform === 'win32';
+
+  // ── Phase 1: Preflight ──
+  onEvent({ type: 'phase', phase: 'preflight', message: 'Checking system environment...' });
+
+  const platformKey = getPlatformKey();
+  onEvent({ type: 'log', message: `Platform: ${platformKey}` });
+
+  if (def.install?.requirements?.supportedPlatforms?.length) {
+    const allowed = def.install.requirements.supportedPlatforms;
+    if (!allowed.includes(platformKey)) {
+      onEvent({
+        type: 'error',
+        message: `Unsupported platform: ${platformKey}`,
+        category: 'platform',
+        retryable: false,
+        hint: `Supported platforms: ${allowed.join(', ')}.`,
+      });
+      return;
+    }
+  }
+
+  const scriptUrl = source.scripts[platformKey];
+  if (!scriptUrl) {
+    onEvent({
+      type: 'error',
+      message: `No installer script for platform: ${platformKey}`,
+      category: 'platform',
+      retryable: false,
+      hint: `Supported platforms: ${Object.keys(source.scripts).join(', ')}. ` +
+        `Install ${agentName} manually: ${def.installUrl ?? 'the project website'}`,
+    });
+    return;
+  }
+
+  // Shell the installer script runs under: pwsh → powershell on Windows,
+  // bash everywhere else.
+  const findShellFn = deps?.findShell ?? findInstallerShell;
+  const shellCmd = findShellFn(isWindows);
+  if (!shellCmd) {
+    onEvent({
+      type: 'error',
+      message: isWindows ? 'PowerShell not found' : 'bash not found',
+      category: 'platform',
+      retryable: false,
+      hint: isWindows
+        ? `The ${agentName} installer requires PowerShell. Restore Windows PowerShell ` +
+          `or install pwsh, then retry.`
+        : `The ${agentName} installer requires bash.`,
+    });
+    return;
+  }
+  onEvent({ type: 'log', message: `Installer shell: ${shellCmd}` });
+
+  // Soft reachability probe — official scripts clone the repo and download
+  // toolchain bits from GitHub. Unreachable is a warning, not a blocker:
+  // HERMES_REPO_URL mirrors and system proxies can still carry the install.
+  const probeFn = deps?.probeNetwork ?? probeUrlReachable;
+  const githubReachable = await probeFn('https://github.com', 5_000);
+  if (!githubReachable) {
+    onEvent({
+      type: 'log',
+      message: 'Warning: github.com is not reachable — the installer downloads ' +
+        'dependencies from GitHub and may fail. Consider a proxy or a repo mirror ' +
+        '(MOLIO_HERMES_REPO_URL).',
+    });
+  }
+
+  if (signal?.aborted) {
+    onEvent({ type: 'error', message: 'Installation cancelled', category: 'unknown', retryable: true });
+    return;
+  }
+
+  // ── Phase 2: Download the installer script ──
+  onEvent({ type: 'phase', phase: 'download', message: 'Downloading installer script...' });
+
+  let scriptBuf: Buffer;
+  try {
+    scriptBuf = deps?.downloadScript
+      ? await deps.downloadScript(scriptUrl, signal)
+      : await downloadOnce(scriptUrl, onEvent, signal, 30_000);
+  } catch (err) {
+    if (signal?.aborted) {
+      onEvent({ type: 'error', message: 'Installation cancelled during download', category: 'unknown', retryable: true });
+      return;
+    }
+    onEvent({
+      type: 'error',
+      message: `Failed to download installer script: ${err instanceof Error ? err.message : String(err)}`,
+      category: 'network',
+      retryable: true,
+      hint: 'Check your network connection and try again.',
+    });
+    return;
+  }
+
+  // Guard against captive portals / error pages masquerading as the script.
+  if (scriptBuf.length > MAX_SCRIPT_BYTES) {
+    onEvent({
+      type: 'error',
+      message: `Installer script is too large (${scriptBuf.length} bytes) — expected a text script`,
+      category: 'network',
+      retryable: true,
+      hint: 'A proxy or mirror may have returned unexpected content. Try again.',
+    });
+    return;
+  }
+  const head = scriptBuf.subarray(0, 512).toString('utf8').trimStart().toLowerCase();
+  if (head.startsWith('<!doctype') || head.startsWith('<html')) {
+    onEvent({
+      type: 'error',
+      message: 'Downloaded installer is an HTML page, not a script',
+      category: 'network',
+      retryable: true,
+      hint: 'A proxy or captive portal intercepted the download. ' +
+        'Check your network settings and try again.',
+    });
+    return;
+  }
+
+  if (signal?.aborted) {
+    onEvent({ type: 'error', message: 'Installation cancelled', category: 'unknown', retryable: true });
+    return;
+  }
+
+  let scriptPath: string;
+  try {
+    scriptPath = deps?.writeTempScript
+      ? deps.writeTempScript(scriptBuf, isWindows)
+      : writeTempScriptFile(scriptBuf, isWindows);
+  } catch (err) {
+    onEvent({
+      type: 'error',
+      message: `Failed to write installer script: ${err instanceof Error ? err.message : String(err)}`,
+      category: 'permission',
+      retryable: false,
+      hint: `Check write permissions for ${os.tmpdir()}`,
+    });
+    return;
+  }
+
+  // ── Phase 3: Run the installer ──
+  onEvent({ type: 'phase', phase: 'install', message: `Running ${agentName} installer (this can take several minutes)...` });
+
+  const extraArgs = matchPlatformArgs(platformKey, source.platformArgs);
+  const timeoutMs = source.timeoutMs ?? DEFAULT_SCRIPT_TIMEOUT_MS;
+  const cmdArgs = isWindows
+    ? ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-NonInteractive', '-File', scriptPath, '-NonInteractive', ...extraArgs]
+    : [scriptPath, '--non-interactive', ...extraArgs];
+
+  // Env passthrough: MOLIO_HERMES_REPO_URL → HERMES_REPO_URL lets users point
+  // the installer's git clone at a reachable mirror (engine-level convention;
+  // no contracts surface for it).
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  const repoMirror = env['MOLIO_HERMES_REPO_URL'];
+  if (repoMirror) {
+    env['HERMES_REPO_URL'] = repoMirror;
+  }
+
+  // Redirect the installer's Python dependency sync to a reachable PyPI mirror
+  // when the default index is blocked (内网/信创). See applyPypiMirrorEnv.
+  await applyPypiMirrorEnv(env, probeFn, onEvent);
+
+  // Redirect uv's managed-Python (python-build-standalone) download to the
+  // npmmirror mirror when reachable — GitHub's release CDN stalls on CN networks
+  // even though github.com itself probes fine. See applyPythonInstallMirrorEnv.
+  await applyPythonInstallMirrorEnv(env, probeFn, onEvent);
+
+  const onLine = (line: string) => {
+    if (line.trim()) onEvent({ type: 'log', message: line });
+  };
+
+  let result: RunScriptResult;
+  try {
+    result = deps?.runScript
+      ? await deps.runScript({ cmd: shellCmd, args: cmdArgs, env, timeoutMs, signal, onLine })
+      : await runScriptProcess({ cmd: shellCmd, args: cmdArgs, env, timeoutMs, signal, onLine });
+  } finally {
+    // Always remove the temp script, success or failure.
+    try {
+      if (deps?.cleanupTempScript) deps.cleanupTempScript(scriptPath);
+      else unlinkSync(scriptPath);
+    } catch { /* best effort */ }
+  }
+
+  if (result.aborted || signal?.aborted) {
+    onEvent({ type: 'error', message: 'Installation cancelled', category: 'unknown', retryable: true });
+    return;
+  }
+  if (result.timedOut) {
+    onEvent({
+      type: 'error',
+      message: `Installer timed out after ${Math.round(timeoutMs / 1000)}s`,
+      category: 'runtime',
+      retryable: true,
+      hint: `Source-based installs can be slow on first run (toolchain bootstrap). ` +
+        `Try again, or install ${agentName} manually: ${def.installUrl ?? ''}`,
+    });
+    return;
+  }
+  if (result.code !== 0) {
+    const classified = classifyScriptExitError(result.stderrTail, result.code, def.installUrl);
+    onEvent({
+      type: 'error',
+      message: `Installer exited with code ${result.code}${classified.detail ? `: ${classified.detail}` : ''}`,
+      category: classified.category,
+      retryable: classified.retryable,
+      hint: classified.hint,
+    });
+    return;
+  }
+  onEvent({ type: 'log', message: 'Installer script completed' });
+
+  // ── Phase 4: Validate the installation ──
+  onEvent({ type: 'phase', phase: 'validate', message: 'Verifying installation...' });
+
+  const binary = deps?.resolveBinary
+    ? deps.resolveBinary(def)
+    : resolveAgentBinary(def).binary;
+  if (!binary) {
+    onEvent({
+      type: 'error',
+      message: `${agentName} binary (${def.bin}) not found after install`,
+      category: 'validation',
+      retryable: false,
+      hint: `The installer finished but the binary could not be located. ` +
+        `Restart Molio so PATH changes take effect, or install ${agentName} manually: ${def.installUrl ?? ''}`,
+    });
+    return;
+  }
+  onEvent({ type: 'log', message: `Binary found: ${binary}` });
+
+  let installedVersion: string | undefined;
+  for (const verifyArgs of source.verifyArgs ?? []) {
+    const vres = deps?.runVerify
+      ? await deps.runVerify(binary, verifyArgs)
+      : await runVerifyOnce(binary, verifyArgs);
+    if (!vres.ok) {
+      const detail = (vres.stderr || vres.stdout).trim().split('\n')[0]?.slice(0, 300) || 'no output';
+      onEvent({
+        type: 'error',
+        message: `Verification failed (${verifyArgs.join(' ')}): ${detail}`,
+        category: 'validation',
+        retryable: false,
+        hint: `The installer ran but ${def.bin} does not work correctly. ` +
+          `Try installing ${agentName} manually: ${def.installUrl ?? ''}`,
+      });
+      return;
+    }
+    if (verifyArgs.some((a) => a.includes('--version'))) {
+      // Empty --version output degrades to unknown version, not a failure —
+      // some shims print the version to stderr or nothing at all.
+      const firstLine = vres.stdout.trim().split('\n')[0]?.trim();
+      if (firstLine) installedVersion = firstLine;
+    }
+    onEvent({ type: 'log', message: `Verified: ${verifyArgs.join(' ') || '(no args)'}` });
+  }
+
+  // ── Phase 5: PATH (daemon process only) ──
+  onEvent({ type: 'phase', phase: 'path', message: 'Configuring environment PATH...' });
+
+  // The official installer already manages the USER-level PATH; we only make
+  // the binary visible to this daemon process so runs work without a restart.
+  const binDir = path.dirname(binary);
+  updateCurrentProcessPath(binDir);
+  onEvent({ type: 'log', message: `Added ${binDir} to daemon process PATH` });
+
+  // ── Done ──
+  onEvent({
+    type: 'done',
+    message: `${agentName} installed successfully`,
+    binaryPath: binary,
+    version: installedVersion,
+  });
+}
+
+// ─── script helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Match per-platform-family extra args for a platform key.
+ * Keys are platform-key prefixes ('win32' | 'darwin' | 'linux' | …) with the
+ * special key 'posix' matching any non-win32 platform. Family-specific wins.
+ *
+ * @internal exported for testing
+ */
+export function matchPlatformArgs(
+  platformKey: string,
+  platformArgs?: Record<string, string[]>,
+): string[] {
+  if (!platformArgs) return [];
+  const family = platformKey.split('-')[0]!;
+  if (platformArgs[family]) return platformArgs[family];
+  if (family !== 'win32' && platformArgs['posix']) return platformArgs['posix'];
+  return [];
+}
+
+export interface ClassifiedScriptError {
+  category: ErrorCategory;
+  retryable: boolean;
+  /** First meaningful stderr line (trimmed), for the error message. */
+  detail?: string;
+  hint?: string;
+}
+
+/**
+ * Map installer stderr to an ErrorCategory. Network failures dominate in
+ * practice — official scripts clone from GitHub and download toolchain
+ * binaries (uv, PortableGit) with hardcoded GitHub URLs.
+ *
+ * @internal exported for testing
+ */
+export function classifyScriptExitError(
+  stderr: string,
+  code: number | null,
+  installUrl?: string,
+): ClassifiedScriptError {
+  const text = (stderr || '').toLowerCase();
+  const detail = (stderr || '').trim().split('\n').filter(Boolean).slice(-1)[0]?.slice(0, 300);
+
+  const networkPatterns = [
+    'could not resolve host', 'econnrefused', 'enotfound', 'etimedout',
+    'connection timed out', 'unable to access', 'failed to connect',
+    'network is unreachable', 'github.com',
+  ];
+  if (networkPatterns.some((p) => text.includes(p))) {
+    return {
+      category: 'network',
+      retryable: true,
+      detail,
+      hint: 'The installer needs to reach github.com (repo clone + toolchain downloads). ' +
+        'Configure a system proxy, or set MOLIO_HERMES_REPO_URL to a reachable git mirror, ' +
+        `or install manually: ${installUrl ?? 'the project website'}`,
+    };
+  }
+
+  if (text.includes('permission denied') || text.includes('eacces') || text.includes('access is denied')) {
+    return {
+      category: 'permission',
+      retryable: false,
+      detail,
+      hint: 'Check write permissions for the install directory and try again.',
+    };
+  }
+
+  return {
+    category: 'runtime',
+    retryable: true,
+    detail: detail ?? (code != null ? `exit code ${code}` : undefined),
+  };
+}
+
+/** Locate the shell used to run installer scripts: pwsh → powershell / bash. */
+function findInstallerShell(isWindows: boolean): string | null {
+  const candidates = isWindows ? ['pwsh', 'powershell'] : ['bash'];
+  for (const cmd of candidates) {
+    try {
+      execFileSync(isWindows ? 'where' : 'which', [cmd], {
+        encoding: 'utf8',
+        timeout: 5_000,
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      return cmd;
+    } catch { /* try next */ }
+  }
+  return null;
+}
+
+/** HEAD-probe a URL; resolves false on any error/timeout (never throws). */
+function probeUrlReachable(url: string, timeoutMs: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const req = https.request(url, { method: 'HEAD', timeout: timeoutMs }, (res) => {
+      res.resume();
+      resolve(true);
+    });
+    req.on('error', () => resolve(false));
+    req.on('timeout', () => { req.destroy(); resolve(false); });
+    req.end();
+  });
+}
+
+/** Write the downloaded script to a temp file (POSIX: chmod 0755 + LF endings). */
+function writeTempScriptFile(content: Buffer, isWindows: boolean): string {
+  const ext = isWindows ? '.ps1' : '.sh';
+  const file = path.join(
+    os.tmpdir(),
+    `molio-install-${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`,
+  );
+  if (isWindows) {
+    writeFileSync(file, content);
+  } else {
+    // Normalize CRLF → LF defensively: bash chokes on \r line endings.
+    writeFileSync(file, content.toString('utf8').replace(/\r\n/g, '\n'), 'utf8');
+    chmodSync(file, 0o755);
+  }
+  return file;
+}
+
+/**
+ * Spawn the installer script, streaming stdout/stderr line-by-line to onLine.
+ * Enforces an absolute timeout and abort support: the whole process TREE is
+ * signalled (SIGTERM first, SIGKILL 3s later if it ignores it). Never rejects —
+ * the result object carries the failure mode (code / timedOut / aborted).
+ *
+ * Two hardening details, both learned from a real orphaned-installer bug:
+ *  - POSIX: the child is spawned `detached` so it becomes its own process-group
+ *    leader; killTree signals the negative pid to reach subshells the installer
+ *    forks (git clone, package managers). Without this, grandchildren survive
+ *    abort/timeout, keep downloading, and keep the stdio pipes open.
+ *  - settle() is driven by 'close' (full output drained) but backstopped by
+ *    'exit' + a short grace timer: if some fd on the pipe is still held after
+ *    the direct child exits, we still resolve instead of hanging forever.
+ *
+ * Exported for integration tests that spawn a real (tree-forking) subprocess.
+ */
+export function runScriptProcess(args: RunScriptArgs): Promise<RunScriptResult> {
+  return new Promise((resolve) => {
+    const isWin = process.platform === 'win32';
+    const child: ChildProcess = spawn(args.cmd, args.args, {
+      env: args.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+      // Own process group on POSIX so killTree can signal the whole tree.
+      // On win32 `detached` would spawn a new console window; we tree-kill via
+      // `taskkill /T` instead, so keep it false there.
+      detached: !isWin,
+    });
+
+    let stderrTail = '';
+    let timedOut = false;
+    let aborted = false;
+    let settled = false;
+    let exitFallback: NodeJS.Timeout | undefined;
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      killTree(child);
+    }, args.timeoutMs);
+
+    const onAbort = () => {
+      aborted = true;
+      killTree(child);
+    };
+    args.signal?.addEventListener('abort', onAbort, { once: true });
+
+    if (child.stdout) {
+      const rl = createInterface({ input: child.stdout });
+      rl.on('line', args.onLine);
+    }
+    if (child.stderr) {
+      const rl = createInterface({ input: child.stderr });
+      rl.on('line', (line) => {
+        stderrTail += line + '\n';
+        if (stderrTail.length > 8_000) stderrTail = stderrTail.slice(-8_000);
+        args.onLine(line);
+      });
+    }
+
+    const settle = (code: number | null, spawnError?: string) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (exitFallback) clearTimeout(exitFallback);
+      args.signal?.removeEventListener('abort', onAbort);
+      resolve({
+        code: spawnError ? 1 : code,
+        stderrTail: spawnError
+          ? `${stderrTail}\n${spawnError}`.trim()
+          : stderrTail.trim(),
+        timedOut,
+        aborted,
+      });
+    };
+
+    child.on('error', (err) => settle(null, `spawn failed: ${err.message}`));
+    // Primary: 'close' fires once every stdio fd is closed → stderrTail complete.
+    child.on('close', (code) => settle(code));
+    // Backstop: the direct child exited but a lingering fd (e.g. a grandchild
+    // that escaped the group kill) could keep 'close' from ever firing. Give the
+    // pipes a short grace period to drain, then force-settle so we never hang.
+    child.on('exit', (code) => {
+      exitFallback = setTimeout(() => settle(code), 2_000);
+      exitFallback.unref?.();
+    });
+  });
+}
+
+/**
+ * Kill the installer's entire process tree, not just the direct child.
+ *  - POSIX: the child was spawned `detached`, so it leads its own process group;
+ *    signalling `-pid` reaches every subshell the script forked.
+ *  - win32: `taskkill /pid <pid> /T /F` walks the child-process tree.
+ * SIGTERM first, escalating to SIGKILL after 3s if the tree ignores it.
+ */
+function killTree(child: ChildProcess): void {
+  const pid = child.pid;
+  const isWin = process.platform === 'win32';
+
+  const signalTree = (sig: 'SIGTERM' | 'SIGKILL') => {
+    try {
+      if (isWin) {
+        // Windows has no graceful console-tree kill; /T = tree, /F = force.
+        if (pid) {
+          const killer = spawn('taskkill', ['/pid', String(pid), '/T', '/F'], {
+            windowsHide: true,
+            stdio: 'ignore',
+          });
+          killer.unref?.();
+        }
+      } else if (pid) {
+        // Negative pid targets the whole process group (child is the leader).
+        process.kill(-pid, sig);
+      } else {
+        child.kill(sig);
+      }
+    } catch {
+      // Group/already dead — fall back to signalling the direct child.
+      try { child.kill(sig); } catch { /* already dead */ }
+    }
+  };
+
+  signalTree('SIGTERM');
+  const t = setTimeout(() => signalTree('SIGKILL'), 3_000);
+  // Don't hold the event loop open just for the escalation timer.
+  t.unref?.();
+}
+
+/**
+ * Run one verify invocation against the resolved binary (15s cap).
+ * Mirrors the needsShellOnWindows handling from launch.ts probes — Python
+ * venv shims may be extensionless on Windows and need cmd.exe PATHEXT lookup.
+ */
+function runVerifyOnce(
+  binary: string,
+  args: string[],
+): Promise<{ ok: boolean; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    const useShell = needsShellOnWindows(binary);
+    execFile(useShell ? `"${binary}"` : binary, args, {
+      encoding: 'utf8',
+      timeout: VERIFY_TIMEOUT_MS,
+      windowsHide: true,
+      shell: useShell,
+    }, (err, stdout, stderr) => {
+      resolve({
+        ok: !err,
+        stdout: stdout ?? '',
+        stderr: stderr ?? (err && !stderr ? err.message : ''),
+      });
+    });
   });
 }
 

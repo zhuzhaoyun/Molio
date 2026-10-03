@@ -10,7 +10,16 @@ import {
   CodexConfigError,
   type ApplyCodexProviderOpts,
 } from '../core/runtimes/codex-config.js';
+import {
+  applyHermesProvider,
+  getHermesProviderState,
+  HermesConfigError,
+  type ApplyHermesProviderOpts,
+} from '../core/runtimes/hermes-config.js';
 import type { InstallEvent } from '@molio/contracts';
+
+/** Agent ids whose provider config Molio manages (native config files). */
+const PROVIDER_AGENTS = new Set(['codex', 'hermes']);
 
 export function agentsRoutes(runManager: RunManager): Hono {
   const app = new Hono();
@@ -167,12 +176,27 @@ export function agentsRoutes(runManager: RunManager): Hono {
     });
   });
 
-  // GET /:agentId/provider — current Codex provider state (reads live ~/.codex files)
+  // GET /:agentId/provider — current provider state (reads live native config:
+  // ~/.codex for codex, <hermes home>/config.yaml+.env for hermes)
   app.get('/:agentId/provider', (c) => {
     const agentId = c.req.param('agentId');
-    if (agentId !== 'codex') {
-      return c.json({ error: 'Provider config is only supported for codex' }, 400);
+    if (!PROVIDER_AGENTS.has(agentId)) {
+      return c.json({ error: `Provider config is only supported for: ${[...PROVIDER_AGENTS].join(', ')}` }, 400);
     }
+
+    if (agentId === 'hermes') {
+      const state = getHermesProviderState();
+      // Nothing configured in live files → fall back to the last preset saved
+      // in Molio config so the UI shows the user's previous selection.
+      if (!state.provider && !state.baseUrl && !state.model) {
+        const saved = getAgentConfig('hermes').provider;
+        if (saved?.presetId) {
+          return c.json({ ...state, presetHint: saved.presetId });
+        }
+      }
+      return c.json(state);
+    }
+
     const state = getCodexProviderState();
     // No override in live files → fall back to last preset saved in Molio config
     if (state.presetHint === 'official' && !state.model && !state.baseUrl) {
@@ -184,23 +208,54 @@ export function agentsRoutes(runManager: RunManager): Hono {
     return c.json(state);
   });
 
-  // PUT /:agentId/provider — apply Codex provider config (writes ~/.codex files)
+  // PUT /:agentId/provider — apply provider config (writes native config files)
   app.put('/:agentId/provider', async (c) => {
     const agentId = c.req.param('agentId');
-    if (agentId !== 'codex') {
-      return c.json({ error: 'Provider config is only supported for codex' }, 400);
+    if (!PROVIDER_AGENTS.has(agentId)) {
+      return c.json({ error: `Provider config is only supported for: ${[...PROVIDER_AGENTS].join(', ')}` }, 400);
     }
-    let body: ApplyCodexProviderOpts;
+    let body: Record<string, unknown>;
     try {
-      body = await c.req.json<ApplyCodexProviderOpts>();
+      body = await c.req.json<Record<string, unknown>>();
     } catch {
       return c.json({ error: 'Invalid JSON body' }, 400);
     }
     if (!body || typeof body !== 'object') {
       return c.json({ error: 'Invalid JSON body' }, 400);
     }
+
+    if (agentId === 'hermes') {
+      const opts = body as unknown as ApplyHermesProviderOpts;
+      try {
+        applyHermesProvider(opts);
+      } catch (err) {
+        if (err instanceof HermesConfigError) {
+          return c.json({ error: err.message }, 400);
+        }
+        return c.json({ error: `Failed to apply provider config: ${(err as Error).message}` }, 500);
+      }
+      try {
+        const existing = getAgentConfig('hermes');
+        setAgentConfig('hermes', {
+          ...existing,
+          provider: {
+            presetId: opts.presetId,
+            baseUrl: opts.baseUrl,
+            model: opts.model,
+          },
+        });
+      } catch (err) {
+        return c.json(
+          { error: `Provider applied, but failed to persist selection: ${(err as Error).message}` },
+          500,
+        );
+      }
+      return c.json({ ok: true });
+    }
+
+    const opts = body as unknown as ApplyCodexProviderOpts;
     try {
-      applyCodexProvider(body);
+      applyCodexProvider(opts);
     } catch (err) {
       if (err instanceof CodexConfigError) {
         return c.json({ error: err.message }, 400);
@@ -216,10 +271,10 @@ export function agentsRoutes(runManager: RunManager): Hono {
       setAgentConfig('codex', {
         ...existing,
         provider: {
-          presetId: body.presetId,
-          baseUrl: body.baseUrl,
-          model: body.model,
-          wireApi: body.wireApi,
+          presetId: opts.presetId,
+          baseUrl: opts.baseUrl,
+          model: opts.model,
+          wireApi: opts.wireApi,
         },
       });
     } catch (err) {

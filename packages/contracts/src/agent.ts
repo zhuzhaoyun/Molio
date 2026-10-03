@@ -59,8 +59,48 @@ export interface NpmNativeInstallSource {
   registries: string[];
 }
 
+/**
+ * Official installer script install source.
+ * Downloads a platform-specific installer script (PowerShell / shell) and runs
+ * it non-interactively. Unlike npm-native, the script manages its own download,
+ * extraction, and PATH setup — Molio only orchestrates invocation, progress
+ * streaming, and post-install verification. Used for agents that are not
+ * distributed as npm native binaries (e.g. Hermes Agent, a Python source app
+ * whose PyPI releases lag the upstream GitHub releases).
+ */
+export interface ScriptInstallSource {
+  type: 'script';
+  /**
+   * Platform key → installer script URL. Keys match the `getPlatformKey()`
+   * format (e.g. 'win32-x64', 'darwin-arm64'). `win32-*` entries must point
+   * to a .ps1 script (run via powershell -File); all others must point to a
+   * shell script (run via bash).
+   */
+  scripts: Record<string, string>;
+  /**
+   * Per-platform-family extra args appended to the script invocation.
+   * Keys are matched by platform-key prefix ('win32' | 'darwin' | 'linux' | …)
+   * with the special key 'posix' matching any non-win32 platform.
+   * Platform-mandatory non-interactive flags (-NonInteractive / --non-interactive)
+   * are added by the install engine automatically — don't repeat them here.
+   */
+  platformArgs?: Record<string, string[]>;
+  /**
+   * Max time (ms) to let the installer script run before killing it.
+   * Source-installing agents can take several minutes (toolchain bootstrap,
+   * dependency resolution). Default: 600_000 (10 min).
+   */
+  timeoutMs?: number;
+  /**
+   * Post-install verification: list of arg vectors passed to the resolved
+   * binary in order; every invocation must exit 0. stdout of an invocation
+   * containing '--version' is used as the installed version string.
+   */
+  verifyArgs?: string[][];
+}
+
 /** Extensible install source union. Add new variants here for future agents. */
-export type InstallSource = NpmNativeInstallSource;
+export type InstallSource = NpmNativeInstallSource | ScriptInstallSource;
 
 /** Platform compatibility constraints for preflight checks. */
 export interface PlatformRequirement {
@@ -199,7 +239,12 @@ export interface AgentInfo {
 
 // ─── Agent install events (SSE) ───
 
-export type InstallPhase = 'preflight' | 'download' | 'extract' | 'validate' | 'test' | 'path';
+/**
+ * 'install' = running an installer script (ScriptInstallSource). Kept separate
+ * from 'extract' so the UI shows a phase label + log stream instead of a
+ * percentage progress bar (scripts don't report download percentages).
+ */
+export type InstallPhase = 'preflight' | 'download' | 'extract' | 'install' | 'validate' | 'test' | 'path';
 
 export type ErrorCategory =
   | 'platform'

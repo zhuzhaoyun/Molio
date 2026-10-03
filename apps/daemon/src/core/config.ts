@@ -36,8 +36,13 @@ const CLAUDE_MANAGED_ENV_KEYS = new Set([
   'ANTHROPIC_MODEL',
 ]);
 
-/** 供应商选择元信息（不含密钥）。codex 专用：活文件在 ~/.codex/，这里只存 UI 默认选中。 */
-export interface CodexProviderMeta {
+/**
+ * 供应商选择元信息（不含密钥），codex / hermes 共用形状。活文件在各自原生
+ * 配置（~/.codex/、<hermes home>/config.yaml+.env），这里只存 UI 默认选中，
+ * 供 GET /:agentId/provider 在活文件无 provider 时回填 presetHint。
+ * `wireApi` 仅 codex 使用。
+ */
+export interface AgentProviderMeta {
   presetId?: string;
   baseUrl?: string;
   model?: string;
@@ -47,7 +52,7 @@ export interface CodexProviderMeta {
 export interface AgentConfig {
   binaryPath?: string;
   env?: Record<string, string>;
-  provider?: CodexProviderMeta;
+  provider?: AgentProviderMeta;
 }
 
 export interface WeixinConfig {
