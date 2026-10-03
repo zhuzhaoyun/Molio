@@ -41,6 +41,9 @@ interface KbFilePanelProps {
   onRenameCancel?: () => void;
   /** Called when files are dropped from the OS file manager. */
   onImportFiles?: (files: File[], targetDir: string) => void;
+  /** Open the import dialog. Kept separate from `onImportFiles` (which runs the
+   *  ingest itself) — this one is the explicit, visible entry point. */
+  onImportClick?: () => void;
   /** Called when a file is dragged from one directory to another within the tree. */
   onMoveFile?: (srcPath: string, destDir: string) => void;
   /** Publish the current vault to the resources hub. */
@@ -80,6 +83,7 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
   onRenameComplete,
   onRenameCancel,
   onImportFiles,
+  onImportClick,
   onMoveFile,
   onPublishVault,
   publishGate,
@@ -419,6 +423,24 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
             </div>
           )}
         </div>
+        {/* 导入 — the explicit entry point. Drag-and-drop alone was undiscoverable:
+            users reported not knowing how to get files into the knowledge base. */}
+        {onImportClick && (
+          <button
+            type="button"
+            className="kb-btn-import kb-toolbar-btn-accent"
+            title={t('kb.import')}
+            onClick={onImportClick}
+            data-testid="kb-btn-import"
+          >
+            {/* download-into-tray — "bring files in" */}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+          </button>
+        )}
         <button
           type="button"
           title={selectedFile ? t('kb.locateFile') : t('kb.locateFileNeedFile')}
@@ -566,7 +588,7 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
           <path d="M2 7h12" />
           <circle cx="5" cy="10" r="0.8" fill="currentColor" />
         </svg>
-        <span className="kb-vault-bar__name">{vaultName || 'No vault selected'}</span>
+        <span className="kb-vault-bar__name">{vaultName || t('kb.noVaultSelected')}</span>
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
           <polyline points="3 5 6 8 9 5" />
         </svg>

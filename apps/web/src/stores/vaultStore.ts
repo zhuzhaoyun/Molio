@@ -48,6 +48,12 @@ function persistVaultId(id: string | null) {
 
 let activeVaultId: string | null = readUrlVaultId() ?? readPersistedVaultId();
 let vaults: Vault[] = [];
+/**
+ * 库列表是否已从 daemon 取回过。首帧 `vaults` 也是空数组，跟「真有 0 个库」
+ * 无法区分——没有这个标志，首次运行引导会在已装好库的用户面前闪一下。
+ * 取数失败时保持 false（宁可不出引导，也不能对着有库的人说「你还没建库」）。
+ */
+let vaultsLoaded = false;
 const listeners = new Set<Listener>();
 
 function emit() {
@@ -77,6 +83,8 @@ export const vaultStore = {
 
   getVaults() { return vaults; },
 
+  getVaultsLoaded() { return vaultsLoaded; },
+
   getActiveVault(): Vault | null {
     return vaults.find((v) => v.id === activeVaultId) ?? null;
   },
@@ -92,6 +100,7 @@ export const vaultStore = {
 
   setVaults(list: Vault[]) {
     vaults = list;
+    vaultsLoaded = true;
     // If persisted vault is still in the list, keep it
     if (activeVaultId && !list.some((v) => v.id === activeVaultId)) {
       // Persisted vault no longer exists — clear and fall through to auto-select
@@ -125,5 +134,23 @@ export function useActiveVaultId(): string | null {
     vaultStore.subscribe,
     vaultStore.getActiveVaultId,
     vaultStore.getActiveVaultId,
+  );
+}
+
+/** Subscribe to the full vault list (identity-stable — replaced on setVaults). */
+export function useVaults(): Vault[] {
+  return useSyncExternalStore(
+    vaultStore.subscribe,
+    vaultStore.getVaults,
+    vaultStore.getVaults,
+  );
+}
+
+/** Subscribe to "库列表已取回" —— 用于区分「还没加载」和「真的一个都没有」。 */
+export function useVaultsLoaded(): boolean {
+  return useSyncExternalStore(
+    vaultStore.subscribe,
+    vaultStore.getVaultsLoaded,
+    vaultStore.getVaultsLoaded,
   );
 }

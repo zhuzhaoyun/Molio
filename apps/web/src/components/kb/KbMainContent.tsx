@@ -112,6 +112,13 @@ interface KbMainContentProps {
   onCopy: () => void;
   onPublish: () => void;
   onBuildWiki: () => void;
+  /** Open the import dialog (file panel toolbar's 导入 按钮的双生入口)。 */
+  onImport?: () => void;
+  /** 打开知识库管理器（建库/打开已有库）。用于「一个库都没有」的空态。 */
+  onOpenVaultManager?: () => void;
+  /** vault 里有没有文件。false 时空库主 CTA 换成「导入文件」——
+   *  空库推「构建 Wiki」是错的：没有素材，AI 无从扫起。 */
+  hasFiles?: boolean;
   /** 当 tab bar 存在时，可选择隐藏 header 中的文件名 */
   showFileName?: boolean;
   /** 是否为编辑模式（仅文本文件） */
@@ -160,6 +167,9 @@ export function KbMainContent({
   onCopy,
   onPublish,
   onBuildWiki,
+  onImport,
+  onOpenVaultManager,
+  hasFiles,
   showFileName = true,
   isEditMode = false,
   onToggleEdit,
@@ -920,6 +930,41 @@ export function KbMainContent({
             <h3>欢迎使用知识库</h3>
             <p>创建一个知识库来管理你的文档和笔记。</p>
             <p className="kb-empty-hint">知识库是存储和组织文档的地方，支持 Markdown 文件管理、AI 辅助阅读和 Wiki 生成。</p>
+            {/* 原来这段只有说明没按钮——从导航点进来的人到此为止，无路可走 */}
+            {onOpenVaultManager && (
+              <button
+                type="button"
+                className="wiki-cta-btn"
+                data-testid="kb-empty-create-vault-cta"
+                onClick={onOpenVaultManager}
+              >
+                新建知识库
+              </button>
+            )}
+          </div>
+        ) : !wikiInitialized && !hasFiles && onImport ? (
+          /* 空库：先有素材才谈得上建 Wiki。主 CTA = 导入文件，构建 Wiki 降为次级
+             （没有文件时点它是死路一条，反而把人推离正轨）。 */
+          <div className="kb-empty-state">
+            <div className="kb-empty-icon">📥</div>
+            <h3>{t('kb.emptyImportTitle')}</h3>
+            <p>{t('kb.emptyImportBody')}</p>
+            <button
+              type="button"
+              className="wiki-cta-btn"
+              data-testid="kb-empty-import-cta"
+              onClick={onImport}
+            >
+              {t('kb.emptyImportCta')}
+            </button>
+            <button type="button" className="wiki-cta-btn wiki-cta-btn--ghost" onClick={onBuildWiki}>
+              开始构建 Wiki
+            </button>
+            {onAskAboutFile && (
+              <button type="button" className="wiki-cta-btn wiki-cta-btn--ghost" data-testid="kb-empty-ask-cta" onClick={onAskAboutFile}>
+                💬 与知识库问答
+              </button>
+            )}
           </div>
         ) : !wikiInitialized ? (
           <div className="kb-empty-state">

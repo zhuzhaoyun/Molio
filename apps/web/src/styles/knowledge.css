@@ -77,6 +77,13 @@
   color: var(--accent);
 }
 
+/* 导入按钮 —— 客户反馈「不知道怎么把文件放进知识库」的直接修复。
+   拖拽是隐式交互，这个按钮是显式常驻入口，所以给它 hover 底色（其他
+   安静图标按钮 hover 只换字色），让它在工具栏里能被一眼看到。 */
+.kb-file-toolbar button.kb-btn-import:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
 /* Sort dropdown (left tree toolbar) — same ghost-button sizing as the toolbar */
 .kb-sort-menu {
   position: relative;
