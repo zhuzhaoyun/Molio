@@ -139,6 +139,8 @@ describe('WeixinService state machine — integration', () => {
   let healthCheckResult: boolean;
   let originalGetUpdates: typeof import('../../../src/core/weixin/client.js').WeixinApi.prototype.getUpdates;
   let originalHealthCheck: typeof import('../../../src/core/weixin/client.js').WeixinApi.prototype.healthCheck;
+  let originalFetchQrCode: typeof import('../../../src/core/weixin/client.js').WeixinApi.prototype.fetchQrCode;
+  let originalPollQrStatus: typeof import('../../../src/core/weixin/client.js').WeixinApi.prototype.pollQrStatus;
 
   beforeEach(async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'molio-weixin-int-test-'));
@@ -175,6 +177,20 @@ describe('WeixinService state machine — integration', () => {
     WeixinApi.prototype.healthCheck = async function () {
       return healthCheckResult;
     };
+
+    // beginLogin() 的 QR 登录循环在后台真实请求微信服务器：fetchQrCode /
+    // pollQrStatus 不带超时参数，走 undici 默认 ~30s headersTimeout，会把
+    // 测试进程挂到 --test-timeout=30000 边界（全量并行下必现 flaky）。
+    // 桩成即时返回的「永不过期、永不确认」：登录循环空转不写凭证，
+    // afterEach 的 stop() 正常收尾。
+    originalFetchQrCode = WeixinApi.prototype.fetchQrCode;
+    originalPollQrStatus = WeixinApi.prototype.pollQrStatus;
+    WeixinApi.prototype.fetchQrCode = async function () {
+      return { qrcode: 'mock-qrcode', qrcode_img_content: '' };
+    };
+    WeixinApi.prototype.pollQrStatus = async function () {
+      return { status: 'wait' };
+    };
   });
 
   afterEach(() => {
@@ -183,6 +199,8 @@ describe('WeixinService state machine — integration', () => {
     // Restore original methods
     WeixinApi.prototype.getUpdates = originalGetUpdates;
     WeixinApi.prototype.healthCheck = originalHealthCheck;
+    WeixinApi.prototype.fetchQrCode = originalFetchQrCode;
+    WeixinApi.prototype.pollQrStatus = originalPollQrStatus;
 
     closeDatabase();
     rmSync(tempDir, { recursive: true, force: true });
@@ -310,8 +328,8 @@ describe('WeixinService state machine — integration', () => {
     const callsBeforeLogin = getUpdatesCallCount;
 
     // beginLogin should abort existing pollLoop
-    // Note: beginLogin will try to fetch QR code which will also be intercepted
-    // by our mock. We just verify that the old pollLoop stops.
+    // Note: the QR login loop hits the stubbed fetchQrCode/pollQrStatus
+    // (see beforeEach) — no real network. We just verify the old pollLoop stops.
     const loginStatus = await service.beginLogin();
 
     // Should be in connecting/waiting_scan state for QR flow
