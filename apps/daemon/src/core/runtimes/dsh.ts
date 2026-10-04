@@ -23,6 +23,15 @@ import type { RuntimeAgentDef } from '@molio/contracts';
  * option, consistent with the auto-approve posture of the other runtimes
  * (claude --dangerously-skip-permissions, codex danger-full-access on Win).
  *
+ * Credentials: env-only (DEEPSEEK_API_KEY via the provider config UI; no
+ * backing file), so env.ts deliberately has NO strip branch for dsh. The
+ * handshake AND the card's Test button succeed without a key — the failure
+ * only surfaces on the first real prompt, in dsh's own vocabulary
+ * ("credentials service", "web Models page" — concepts Molio doesn't have).
+ * runtimes/error-hints.ts maps that error to a Molio-actionable hint
+ * (设置 → 运行时 → DeepSeek Harness → 配置). Real-machine observation,
+ * 2026-10-04.
+ *
  * Install: the first `npm-js` install source. dsh is a JS launcher package
  * (~90 @deepseek-ai/* deps) requiring host Node >= 22. The installer probes
  * host node/npm via CHILD PROCESS — never process.version, because the

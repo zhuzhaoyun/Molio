@@ -29,6 +29,11 @@
 //     the turn normally. Verifies RunManager.handleAcpStderr's dsh branch:
 //     warnings → raw events (no streaming:false swallow), explicit errors →
 //     error events.
+//   - FAKE_DSH_NO_API_KEY=1: session/prompt fails with the VERBATIM -32603
+//     error real dsh produces when DEEPSEEK_API_KEY is missing (observed on a
+//     real machine). RunManager must annotate it with a Molio-actionable hint
+//     (runtimes/error-hints.ts) — dsh's own advice points at its credentials
+//     service / web Models page, which don't exist in Molio.
 
 import readline from 'node:readline';
 
@@ -43,6 +48,7 @@ const REQUEST_PERMISSION = process.env['FAKE_DSH_REQUEST_PERMISSION'] === '1';
 const PERMISSION_NO_OPTIONS = process.env['FAKE_DSH_PERMISSION_NO_OPTIONS'] === '1';
 const MODEL_MISSING = process.env['FAKE_DSH_MODEL_MISSING'] === '1';
 const STDERR_SAMPLE = process.env['FAKE_DSH_STDERR_SAMPLE'] === '1';
+const NO_API_KEY = process.env['FAKE_DSH_NO_API_KEY'] === '1';
 
 const SESSION_ID = 'fake-dsh-session-0001';
 
@@ -120,6 +126,20 @@ function handleRequest(msg) {
   }
 
   if (msg.method === 'session/prompt') {
+    if (NO_API_KEY) {
+      // Verbatim production text (dsh 0.2.0-rc.2, missing DEEPSEEK_API_KEY):
+      // handshake + session/new succeed WITHOUT a key, so this only fires on
+      // the first real prompt — exactly the trap a Molio user hits after
+      // "Install → Test OK".
+      send({
+        jsonrpc: '2.0', id: msg.id,
+        error: {
+          code: -32603,
+          message: 'Internal error: turn failed: llm-deepseek: no API key for provider route "deepseek-official"; store DEEPSEEK_API_KEY through the credentials service (the web Models page writes it), or export DEEPSEEK_API_KEY in the launching environment',
+        },
+      });
+      return;
+    }
     if (STDERR_SAMPLE) {
       process.stderr.write('dsh: warning: 1 entry did not activate\n');
       process.stderr.write('dsh: error: provider key missing\n');

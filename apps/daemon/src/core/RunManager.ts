@@ -15,6 +15,7 @@ import {
 } from './runtimes/launch.js';
 import { buildSpawnEnv, createStderrDecoder } from './runtimes/env.js';
 import { classifyStderrChunk } from './runtimes/stderr.js';
+import { agentErrorHint } from './runtimes/error-hints.js';
 import { resolveClaudeModels } from './runtimes/claude-models.js';
 import { createClaudeStreamHandler } from './streams/claude-stream.js';
 import { createCodexStreamHandler } from './streams/codex-stream.js';
@@ -959,7 +960,14 @@ export class RunManager {
           // Also include the binary path so users can spot "wrong install" cases.
           const lastStderr = run.lastStderrLine ? ` (last stderr: "${run.lastStderrLine}")` : '';
           const binarySuffix = run.binaryPath ? ` [binary: ${run.binaryPath}]` : '';
-          this.emitEvent(run, { type: 'error', message: `prompt failed: ${err.message}${lastStderr}${binarySuffix}` });
+          // Agents report config problems in their own vocabulary (e.g. dsh's
+          // "store DEEPSEEK_API_KEY through the credentials service" — a
+          // concept Molio's UI doesn't have). Append a Molio-actionable hint
+          // when the message matches a known pattern; original text stays for
+          // diagnostics.
+          const hint = agentErrorHint(run.agentId, err.message);
+          const hintSuffix = hint ? ` | Molio 提示：${hint}` : '';
+          this.emitEvent(run, { type: 'error', message: `prompt failed: ${err.message}${lastStderr}${binarySuffix}${hintSuffix}` });
           // Without finishRun here, the run stays in 'running' until the 30-min
           // TTL cleanup fires — the UI shows a spinner forever after a prompt failure.
           this.finishRun(run, 'failed', 1, null);

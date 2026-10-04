@@ -173,6 +173,29 @@ describe('RunManager ACP integration (dsh)', () => {
     delete process.env['FAKE_DSH_MODEL_MISSING'];
   });
 
+  it('missing API key error is annotated with a Molio-actionable hint', async () => {
+    process.env['FAKE_DSH_NO_API_KEY'] = '1';
+    const runId = await runManager.createRun({ agentId: 'dsh', message: 'hi' });
+    const events = await collectEvents(runId, (ev) => ev.type === 'error');
+    const errEv = events.find((e) => e.type === 'error') as Extract<AgentEvent, { type: 'error' }>;
+    // Real-world failure (2026-10-04): dsh's own text advises "the credentials
+    // service (the web Models page writes it)" — concepts Molio doesn't have.
+    // The original cause must survive (diagnostics) AND a Molio hint pointing
+    // at 设置→运行时→DeepSeek Harness→配置 must be appended.
+    assert.ok(
+      errEv.message.includes('no API key for provider route'),
+      `original dsh cause must be preserved, got: ${errEv.message}`,
+    );
+    assert.ok(
+      errEv.message.includes('Molio 提示') && errEv.message.includes('设置')
+        && errEv.message.includes('DeepSeek Harness'),
+      `Molio-actionable hint must be appended, got: ${errEv.message}`,
+    );
+    const status = await waitForTerminal(runId);
+    assert.equal(status, 'failed');
+    delete process.env['FAKE_DSH_NO_API_KEY'];
+  });
+
   it('session/request_permission is auto-approved and the turn completes', async () => {
     process.env['FAKE_DSH_REQUEST_PERMISSION'] = '1';
     const runId = await runManager.createRun({ agentId: 'dsh', message: 'hi' });
