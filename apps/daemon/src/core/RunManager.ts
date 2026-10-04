@@ -72,6 +72,58 @@ function mapAcpUsage(u: any): import('@molio/contracts').UsageInfo {
 }
 
 /**
+ * Parse the dsh-style `configOptions` shape returned by session/new into a
+ * flat model list. Returns null when the session carries no model select
+ * (hermes uses session.models instead).
+ *
+ * dsh's model configOption is a grouped select; each leaf option's `value`
+ * is a JSON-encoded [provider, model] tuple string, e.g.
+ * '["deepseek-official","deepseek-v4-pro"]'. The tuple's model slug becomes
+ * the entry id (matching dshAgentDef.fallbackModels ids); `name` is the
+ * display label. `value` is kept verbatim — session/set_config_option wants
+ * the exact tuple string back.
+ */
+function parseConfigOptionsModels(session: any): {
+  entries: { id: string; label: string; value: string }[];
+  currentSlug?: string;
+} | null {
+  const configOptions: any = session?.configOptions;
+  if (!Array.isArray(configOptions)) return null;
+  const modelOption = configOptions.find(
+    (o: any) => o && (o.category === 'model' || o.id === 'model') && o.type === 'select',
+  );
+  if (!modelOption || !Array.isArray(modelOption.options)) return null;
+
+  // Flatten grouped options ({group, name, options:[…]}) and bare leaves.
+  const leaves: any[] = [];
+  for (const opt of modelOption.options) {
+    if (Array.isArray(opt?.options)) leaves.push(...opt.options);
+    else if (opt && typeof opt.value === 'string') leaves.push(opt);
+  }
+
+  const slugOf = (value: string): string | null => {
+    try {
+      const tuple = JSON.parse(value);
+      if (Array.isArray(tuple) && typeof tuple[1] === 'string') return tuple[1];
+    } catch { /* not a tuple — fall back to the display name below */ }
+    return null;
+  };
+
+  const entries: { id: string; label: string; value: string }[] = [];
+  for (const leaf of leaves) {
+    if (typeof leaf?.value !== 'string') continue;
+    const label = typeof leaf.name === 'string' && leaf.name ? leaf.name : leaf.value;
+    entries.push({ id: slugOf(leaf.value) ?? label, label, value: leaf.value });
+  }
+  if (entries.length === 0) return null;
+
+  const currentSlug = typeof modelOption.currentValue === 'string'
+    ? (slugOf(modelOption.currentValue) ?? undefined)
+    : undefined;
+  return { entries, currentSlug };
+}
+
+/**
  * Build a system-hint prefix that tells the agent CLI which runtime
  * it is running as inside Molio.  Prepended to the first user message.
  */
@@ -422,13 +474,16 @@ export class RunManager {
         })
       : args;
 
-    // ── Just-in-time [acp] extra auto-repair (Hermes) ──────────────────────
-    // Before spawning an ACP agent, probe `hermes-acp --check`. If the venv is
-    // missing the [acp] extra (agent-client-protocol), auto-install it into
-    // the venv so the user doesn't have to drop into a terminal. Other missing
-    // modules surface as an error with a copyable manual-fix command. See
+    // ── Just-in-time [acp] extra auto-repair (Hermes only) ─────────────────
+    // Before spawning, probe `hermes-acp --check`. If the venv is missing the
+    // [acp] extra (agent-client-protocol), auto-install it into the venv so
+    // the user doesn't have to drop into a terminal. Other missing modules
+    // surface as an error with a copyable manual-fix command. See
     // runtimes/hermes.ts:ensureAcpExtra for the full state machine.
-    if (def.transport === 'acp-jsonrpc') {
+    // Gated on def.acp.preflightRepair: the probe assumes `--check` is a valid
+    // invocation, which is hermes-specific — dsh rejects unknown flags with
+    // exit 1, so running the probe against it would fail every run pre-spawn.
+    if (def.transport === 'acp-jsonrpc' && def.acp?.preflightRepair) {
       try {
         await ensureAcpExtra(result.binary, {
           onProgress: (message) => {
@@ -467,12 +522,12 @@ export class RunManager {
     const stderrDecoder = createStderrDecoder();
 
     if (def.transport === 'acp-jsonrpc') {
-      // ── ACP path (Hermes) — long-running JSON-RPC server over stdio ──
+      // ── ACP path (Hermes, DeepSeek Harness) — long-running JSON-RPC server over stdio ──
       // No stdin prompt, no selectParser. Drive initialize/session/new/session/prompt via AcpTransport.
       // ACP schema requires cwd to be absolute; resolve against process.cwd()
       // so a relative MOLIO_CWD env var doesn't silently break session/new.
       const acpCwd = path.resolve(opts.cwd || agentConfig.env?.['MOLIO_CWD'] || process.cwd());
-      this.initAcp(run, def, child, acpCwd)
+      this.initAcp(run, def, child, acpCwd, opts.model)
         .then(() => {
           // After init, drive the first session/prompt with the user's message.
           // Subsequent turns go through sendMessage.
@@ -507,7 +562,7 @@ export class RunManager {
         const wasCancelled = run.acp
           ? run.acp.transport.isCancelled(run.acp.sessionId)
           : false;
-        run.acp?.transport.rejectAll(new Error(`hermes-acp process exited (code=${code})`));
+        run.acp?.transport.rejectAll(new Error(`${def.bin} process exited (code=${code})`));
         // ACP runs are long-running — the process exiting is never a "clean
         // success" on its own. Decide terminal status by what triggered it:
         //   - cancelRun marked the session → 'canceled'
@@ -624,12 +679,17 @@ export class RunManager {
    * Fire-and-forget from createRun so runId is returned immediately; failures
    * emit error events and finish the run. On success, sets run.acp and pushes
    * models to the frontend.
+   *
+   * `model` is the user-selected model id (undefined/'default' = agent's own
+   * default). dsh applies it post-session/new via session/set_config_option;
+   * hermes has no model-set RPC and ignores it.
    */
   private async initAcp(
     run: RunState,
     def: RuntimeAgentDef,
     child: ChildProcess,
     cwd: string,
+    model?: string | null,
   ): Promise<void> {
     const transport = new AcpTransport(
       (json) => {
@@ -689,7 +749,11 @@ export class RunManager {
     }
     run.acp.sessionId = sessionId;
 
-    // Capture available models for the frontend
+    // Capture available models for the frontend. Two session/new shapes exist:
+    //  - hermes: session.models.availableModels [{modelId, name}] + currentModelId
+    //  - dsh: session.configOptions — a grouped select whose option `value` is
+    //    a JSON-encoded [provider, model] tuple; switching goes through
+    //    session/set_config_option (no session/set_model support).
     const models: any = session?.models?.availableModels;
     if (Array.isArray(models)) {
       run.acpModels = models.map((m: any) => ({
@@ -703,6 +767,35 @@ export class RunManager {
           ? session.models.currentModelId
           : undefined,
       });
+    } else {
+      const dshModels = parseConfigOptionsModels(session);
+      if (dshModels) {
+        let currentModelId = dshModels.currentSlug;
+        if (model && model !== 'default') {
+          const match = dshModels.entries.find((m) => m.id === model || m.label === model);
+          if (!match) {
+            // User-preference rule: never silently fall back to another model.
+            // Surface the mismatch and fail the run so the user can pick a
+            // valid model.
+            throw new Error(
+              `Model "${model}" is not available in ${def.name}. Available: `
+              + dshModels.entries.map((m) => m.id).join(', '),
+            );
+          }
+          await transport.request(
+            'session/set_config_option',
+            { sessionId, configId: 'model', value: match.value },
+            { idleTimeoutMs: idleTimeout, absoluteTimeoutMs: absoluteTimeout },
+          );
+          currentModelId = match.id;
+        }
+        run.acpModels = dshModels.entries.map((m) => ({ modelId: m.id, name: m.label }));
+        this.emitEvent(run, {
+          type: 'models',
+          models: dshModels.entries.map((m) => ({ id: m.id, label: m.label })),
+          currentModelId,
+        });
+      }
     }
 
     // Session is live — stdin stays open for multi-turn follow-ups via
@@ -725,11 +818,26 @@ export class RunManager {
    */
   private handleAcpStderr(run: RunState, text: string): void {
     if (!text) return;
+    const def = getAgentDef(run.agentId);
     const lines = text.split(/\r?\n/);
     for (const raw of lines) {
       const line = raw.trim();
       if (!line) continue;
       run.lastStderrLine = line;
+      if (def?.id === 'dsh') {
+        // dsh (Node) writes non-fatal diagnostics to stderr: "dsh: warning: N
+        // entry did not activate", plugin-activation ValidationError detail
+        // lines, Node ExperimentalWarnings, fetch notices. Escalating those to
+        // `error` events would flip the frontend to streaming:false and
+        // swallow the reply stream, so only explicit error headers surface —
+        // everything else stays a log-only `raw` event. ACP-level failures
+        // reach the UI through JSON-RPC error responses, not stderr.
+        const isExplicitError = /^dsh:\s*error\b/i.test(line) || /^Error:/i.test(line);
+        this.emitEvent(run, isExplicitError
+          ? { type: 'error', message: line }
+          : { type: 'raw', line });
+        continue;
+      }
       // Hermes log format: YYYY-MM-DD HH:MM:SS [LEVEL] logger: message
       const isInfoLevel = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \[(INFO|WARNING|DEBUG)\]/;
       if (isInfoLevel.test(line)) {

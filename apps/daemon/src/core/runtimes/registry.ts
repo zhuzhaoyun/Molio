@@ -4,6 +4,7 @@ import { codexAgentDef } from './codex.js';
 import { geminiAgentDef } from './gemini.js';
 import { qwenAgentDef } from './qwen.js';
 import { hermesAgentDef } from './hermes.js';
+import { dshAgentDef } from './dsh.js';
 
 const AGENT_DEFS: RuntimeAgentDef[] = [
   claudeAgentDef,
@@ -11,6 +12,7 @@ const AGENT_DEFS: RuntimeAgentDef[] = [
   geminiAgentDef,
   qwenAgentDef,
   hermesAgentDef,
+  dshAgentDef,
 ];
 
 const ids = new Set<string>();

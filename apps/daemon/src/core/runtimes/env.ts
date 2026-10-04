@@ -79,6 +79,15 @@ export function buildSpawnEnv(
   if (def.id === 'codex') {
     stripUnlessCustomBaseUrl(env, 'OPENAI_BASE_URL', ['OPENAI_API_KEY', 'CODEX_API_KEY']);
   }
+  // NOTE: dsh deliberately has NO strip branch. claude/codex read credentials
+  // from files on disk (~/.claude/settings.json, ~/.codex/auth.json), so env
+  // vars are a redundant/hijackable override that stripUnlessCustomBaseUrl
+  // safely removes for the official endpoint. dsh is different: its LLM
+  // provider is configured with `apiKeyEnv: DEEPSEEK_API_KEY` — the env var is
+  // the SOLE credential channel, with no backing file. Stripping it would
+  // leave dsh keyless. The user's Molio-configured key (agents.dsh.env) wins
+  // over any host value because buildAgentEnv merges agentConfig.env AFTER
+  // process.env, so no leak-prevention strip is needed.
 
   // Ensure Molio-installed agent binaries are in PATH.
   augmentPath(env);
