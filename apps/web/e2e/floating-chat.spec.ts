@@ -9,8 +9,9 @@ import * as path from 'path';
 /**
  * @area kb
  * @priority P1
- * KB 锚定的悬浮对话面板：右下角悬浮按钮已暂时屏蔽——面板只在 KB 页经 💬问答 等入口唤起、
- * 离开 KB 页面板自动收起（后台任务继续）；KB 页默认停靠页内分栏、可切悬浮。
+ * 全局悬浮对话面板（方案 D）：除主页外任意页面右下角悬浮按钮常驻（面板展开时按钮让位）；
+ * 面板跨页面保持开启（后台任务继续）；KB 页默认停靠页内分栏、可切悬浮。
+ * 主页是唯一例外——主页自身即聊天页，按钮不渲染，且到达主页时面板收起。
  * Prerequisites: `pnpm dev`.
  */
 
@@ -24,30 +25,31 @@ test.describe('Floating chat (方案 D)', () => {
   test.afterAll(async () => { if (vault) await cleanupTempVault(vault); });
   test.afterEach(async ({ page }) => { await unmockAll(page); });
 
-  test('KB 页无右下角悬浮按钮；面板默认收起', async ({ page }) => {
+  test('KB 页有右下角悬浮按钮；面板默认收起', async ({ page }) => {
     await mockChatRun(page);
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
-    // 悬浮按钮已暂时屏蔽（面板只在 KB 页经 💬问答 等入口唤起）
-    await expect(page.locator('[data-testid="floating-chat-btn"]')).toHaveCount(0);
+    // 方案 D：面板收起时右下角常驻悬浮按钮
+    await expect(page.locator('[data-testid="floating-chat-btn"]')).toHaveCount(1);
     // 面板 DOM 常驻（保 ref 恒有效），收起态是 CSS --closed → visibility:hidden（不参与命中/焦点）
     await expect(page.locator('[data-testid="kb-chat-panel"]')).toBeHidden();
   });
 
-  test('💬问答唤起面板；收起后无按钮复现', async ({ page }) => {
+  test('💬问答唤起面板，按钮让位；收起后按钮复现', async ({ page }) => {
     await mockChatRun(page);
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
 
     await page.locator('[data-testid="kb-btn-ask"]').click();
     await expect(page.locator('[data-testid="kb-chat-panel"]')).toBeVisible();
+    // 面板展开时按钮让位（FloatingChatButton 在 panelOpen 时返回 null）
     await expect(page.locator('[data-testid="floating-chat-btn"]')).toHaveCount(0);
 
-    // 收起 → 面板隐藏，无按钮复现
+    // 收起 → 面板隐藏，按钮复现可再次唤起
     await page.locator('[data-testid="kb-chat-close"]').click();
     await expect(page.locator('[data-testid="kb-chat-panel"]')).toBeHidden();
-    await expect(page.locator('[data-testid="floating-chat-btn"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="floating-chat-btn"]')).toHaveCount(1);
   });
 
   test('KB 页内 💬问答展开的是同一全局面板，按钮隐藏', async ({ page }) => {
@@ -62,21 +64,51 @@ test.describe('Floating chat (方案 D)', () => {
     await expect(page.locator('[data-testid="kb-chat-session-tab"]')).toHaveCount(1);
   });
 
-  test('离开 KB 页面板自动收起；非 KB 页无悬浮按钮', async ({ page }) => {
+  test('离开 KB 页面板保持开启；非 KB 页有悬浮按钮', async ({ page }) => {
+    await mockChatRun(page);
+    await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
+    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+    await page.locator('[data-testid="kb-btn-ask"]').click();
+    const panel = page.locator('[data-testid="kb-chat-panel"]');
+    await expect(panel).toBeVisible();
+
+    // 客户端跳转历史页 → 面板保持开启（不再离开 KB 就收起），后台任务继续且可见
+    await clickNav(page, 'history');
+    await expect(page.locator('.history-shell')).toBeVisible({ timeout: 5_000 });
+
+    // 必须等过「收起动画 160ms + effect flush」窗口再断言：否则 toBeVisible 会在
+    // 面板尚未收起的瞬时窗口里通过，测不出「离开 KB 自动收起」这个旧行为（假绿）。
+    await page.waitForTimeout(600);
+    await expect(panel).toBeVisible();
+    await expect(panel).not.toHaveClass(/floating-chat-panel--closed/);
+    // 面板开着时按钮让位
+    await expect(page.locator('[data-testid="floating-chat-btn"]')).toHaveCount(0);
+  });
+
+  test('非 KB 页收起面板后，悬浮按钮可重新唤起', async ({ page }) => {
     await mockChatRun(page);
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
     await page.locator('[data-testid="kb-btn-ask"]').click();
     await expect(page.locator('[data-testid="kb-chat-panel"]')).toBeVisible();
 
-    // 客户端跳转首页 → 面板自动收起（后台任务继续），首页无悬浮按钮可再唤起
-    await clickNav(page, 'home');
-    await expect(page.locator('.home-page')).toBeVisible({ timeout: 5_000 });
+    await clickNav(page, 'history');
+    await expect(page.locator('.history-shell')).toBeVisible({ timeout: 5_000 });
+    // 等过收起动画窗口：旧行为下这里面板已自动收起、关闭按钮不可点，用例会翻车
+    await page.waitForTimeout(600);
+    await page.locator('[data-testid="kb-chat-close"]').click();
     await expect(page.locator('[data-testid="kb-chat-panel"]')).toBeHidden();
-    await expect(page.locator('[data-testid="floating-chat-btn"]')).toHaveCount(0);
+
+    // 非 KB 页收起后按钮复现，点击可再次展开（方案 D 的「全局可用」）
+    const btn = page.locator('[data-testid="floating-chat-btn"]');
+    await expect(btn).toHaveCount(1);
+    await btn.click();
+    await expect(page.locator('[data-testid="kb-chat-panel"]')).toBeVisible();
+    // 就地展开，不发生路由跳转
+    await expect(page).toHaveURL(/\/history$/);
   });
 
-  test('离开 KB 页面板就地收起：保持停靠形态关闭（不先跳悬浮再消失）', async ({ page }) => {
+  test('主页是例外：到达主页时面板收起且保持停靠形态，无悬浮按钮', async ({ page }) => {
     await mockChatRun(page);
     await page.goto(`http://localhost:5173/knowledge?vault=${vault.id}&file=doc.md`);
     await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
@@ -85,12 +117,16 @@ test.describe('Floating chat (方案 D)', () => {
     await expect(panel).toBeVisible();
     await expect(panel).toHaveClass(/floating-chat-panel--dock-kb/);
 
-    // 客户端跳转首页 → 面板自动收起；收起过程保持停靠形态（原地关闭），
-    // 回归：此前页面切换 effect 把 dockMode 换成悬浮，几何跳到浮态再淡出（视觉 bug）
+    // 到达主页 → 面板收起（主页自身即聊天页，避免同屏两个聊天框）
     await clickNav(page, 'home');
     await expect(page.locator('.home-page')).toBeVisible({ timeout: 5_000 });
     await expect(panel).toBeHidden();
+
+    // 收起过程保持停靠形态（原地关闭），不先跳到悬浮几何再消失。
+    // 由 KbChatSessionsPanel 的 `if (page === 'home') return;` 保证。
     await expect(panel).toHaveClass(/floating-chat-panel--dock/);
+    // 主页不渲染悬浮按钮
+    await expect(page.locator('[data-testid="floating-chat-btn"]')).toHaveCount(0);
   });
 
   test('面板开合有升入动画：open 态配置 opacity+transform 过渡，收起后 visibility 隐藏', async ({ page }) => {

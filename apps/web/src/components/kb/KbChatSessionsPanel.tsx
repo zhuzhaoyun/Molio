@@ -135,12 +135,13 @@ export const KbChatSessionsPanel = forwardRef<KbChatSessionsPanelHandle, Props>(
   const [dockMode, setDockModeState] = useState<'float' | 'dock'>(() =>
     dockByPage[page] ?? defaultDockFor(page),
   );
-  // 按页记忆停靠形态：进入 KB 页时应用该页记忆（默认停靠）。
-  // 离开 KB 页不切换形态——悬浮按钮已屏蔽、面板只在 KB 页打开，离开时面板即将被自动收起，
-  // 原地从当前几何关闭；若在此把 dockMode 换成悬浮，会先跳到悬浮几何再淡出（视觉 bug）。
-  // 面板无法在非 KB 页打开，故非 KB 页的形态记忆不再需要生效。
+  // 按页记忆停靠形态：每页应用自己记住的形态（KB 页默认停靠、其余页默认悬浮）。
+  // 面板现已全局可用，因此非 KB 页的形态记忆也要生效——离开 KB 页不再切换形态，
+  // 面板保持原样跨页（App 层只在到达主页时收起它）。
+  // 主页例外：面板在主页不可见（App 层收起且不渲染悬浮按钮），若在此把停靠切成悬浮，
+  // 会先跳到悬浮几何再消失——回归保护见 e2e/floating-chat.spec.ts 的「主页是例外」用例。
   useEffect(() => {
-    if (page !== 'knowledge') return;
+    if (page === 'home') return;
     setDockModeState(dockByPage[page] ?? defaultDockFor(page));
     // 仅响应 page 导航，不含 dockByPage（切换停靠时 setDockMode 已同步 state，无需回读）
     // eslint-disable-next-line react-hooks/exhaustive-deps

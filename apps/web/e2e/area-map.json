@@ -80,6 +80,7 @@
         "kb-chat-sessions",
         "kb-qa-trigger",
         "file-chat-panel",
+        "floating-chat",
         "kb-tab-limit",
         "kb-tab-stale",
         "kb-scroll-memory",
@@ -353,6 +354,10 @@
     "file-chat-panel": {
       "priority": "P1",
       "file": "file-chat-panel.spec.ts"
+    },
+    "floating-chat": {
+      "priority": "P1",
+      "file": "floating-chat.spec.ts"
     },
     "kb-tab-limit": {
       "priority": "P0",

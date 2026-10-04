@@ -5,6 +5,7 @@ import { useChat } from './hooks/useChat';
 import { HomePage } from './components/HomePage';
 
 import { NavRail } from './components/NavRail';
+import { FloatingChatButton } from './components/kb/FloatingChatButton';
 import { KbChatSessionsPanel, type KbChatSessionsPanelHandle } from './components/kb/KbChatSessionsPanel';
 import { UpdateNotification } from './components/UpdateNotification';
 import { PreloadToast } from './components/PreloadToast';
@@ -133,7 +134,11 @@ export default function App() {
 
   // 路由切换 → 悬浮对话读取当前页面
   useEffect(() => {
-    const page = location.pathname.replace('/', '') as CurrentContext['page'];
+    // 主页路由是 `/`，replace 后得到空串，会被判成 'other' —— 'home' 这个取值因此永远不可达。
+    // 显式特判，让 'home' 真正生效（悬浮面板据此跳过主页：见 KbChatSessionsPanel 的 dock effect）。
+    const page = location.pathname === '/'
+      ? 'home'
+      : location.pathname.replace('/', '') as CurrentContext['page'];
     const known: CurrentContext['page'][] = ['knowledge', 'home', 'history', 'graph', 'settings'];
     currentContextStore.set({
       page: known.includes(page) ? page : 'other',
@@ -148,10 +153,11 @@ export default function App() {
     return () => window.removeEventListener(OPEN_RUNTIME_SETTINGS_EVENT, handler);
   }, [navigate]);
 
-  // 入口收敛（暂时屏蔽右下角悬浮按钮）：面板只在 KB 页经 💬问答 等入口唤起。
-  // 离开 /knowledge 时若面板开着则自动收起——后台任务继续但不可见，回 KB 可重新唤起。
+  // 面板在除主页外的任意页面常驻可用（方案 D）：跨页保持开启，后台任务继续且可见。
+  // 唯独到达主页时收起——主页自身就是一个聊天页，再叠一个悬浮对话会在同屏出现两个聊天框。
+  // 主页在后续改造中不再是聊天页后，本 effect 与下方渲染处的 `/` 例外一并删除。
   useEffect(() => {
-    if (location.pathname !== '/knowledge') {
+    if (location.pathname === '/') {
       kbChatSessionsStore.setPanelOpen(false);
     }
   }, [location.pathname]);
@@ -365,8 +371,9 @@ export default function App() {
           </Suspense>
         </div>
         {/* 全局悬浮对话面板（方案 D）：面板常驻挂载 + CSS --closed 隐藏，保 ref 恒有效。
-            右下角悬浮按钮已暂时屏蔽（Task 6）——面板只在 KB 页经 💬问答 等入口唤起，
-            离开 /knowledge 自动收起（见上方 effect）。FloatingChatButton 组件保留待回退。 */}
+            悬浮按钮在除主页外的任意页面显示——主页自己就是聊天页，按钮在那里等于第二个聊天框；
+            面板展开时按钮自动让位（FloatingChatButton 在 panelOpen 时返回 null）。 */}
+        {location.pathname !== '/' && <FloatingChatButton />}
         <KbChatSessionsPanel
           ref={kbChatPanelRef}
           agentId={selectedAgent}
