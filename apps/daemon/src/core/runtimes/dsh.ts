@@ -80,6 +80,14 @@ export const dshAgentDef: RuntimeAgentDef = {
     // preflightRepair deliberately NOT set — `dsh --check` is not a valid
     // invocation (exits 1 with "--profile <name> is required"), so the
     // hermes-style venv repair probe must never run against this binary.
+
+    // Test button must run a REAL minimal turn, not just the handshake:
+    // dsh's session/new succeeds WITHOUT an API key (models come from local
+    // configOptions), so a handshake-only test shows green while the first
+    // real message fails "no API key for provider route" — the exact trap hit
+    // on a real machine (2026-10-04). One tiny LLM call per Test click is a
+    // fair price for "Test OK == actually usable".
+    testWithPrompt: true,
   },
 
   multiTurn: true,

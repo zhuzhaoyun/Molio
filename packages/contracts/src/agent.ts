@@ -209,6 +209,17 @@ export interface RuntimeAgentDef {
      * so the probe would fail every run before the process is even spawned.
      */
     preflightRepair?: boolean;
+    /**
+     * Make the card's "Test" button run a real minimal LLM turn
+     * ('Reply with exactly: "pong"' → wait for turn_end) instead of treating
+     * the handshake alone as success. Required for agents whose session/new
+     * succeeds WITHOUT credentials: dsh returns its model list (configOptions)
+     * with no API key configured, so a handshake-only test shows green and the
+     * user hits a missing-key wall on their first real message (observed on a
+     * real machine, 2026-10-04). Leave unset where the handshake is a valid
+     * install check and LLM latency would only make the test flaky (hermes).
+     */
+    testWithPrompt?: boolean;
   };
 
   fallbackModels: RuntimeModelOption[];

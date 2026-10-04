@@ -121,6 +121,16 @@ describe('RunManager ACP integration (dsh)', () => {
       (def.acp?.idleTimeoutMs ?? 0) >= 60000,
       `dsh acp.idleTimeoutMs must be >= 60s for cold-start AV scans, got ${def.acp?.idleTimeoutMs}`,
     );
+    // The Test button must run a REAL minimal turn: dsh's session/new
+    // succeeds WITHOUT credentials, so a handshake-only test green-lights a
+    // missing API key and the user hits the wall on their first message
+    // (real-machine trap, 2026-10-04).
+    assert.equal(def.acp?.testWithPrompt, true);
+    assert.equal(
+      getAgentDef('hermes')?.acp?.testWithPrompt,
+      undefined,
+      'hermes must stay handshake-only — LLM latency would make its test flaky',
+    );
   });
 
   it('session/new configOptions → models event with tuple-slug ids', async () => {
