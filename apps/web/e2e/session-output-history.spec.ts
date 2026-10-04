@@ -35,8 +35,8 @@ test('从历史打开会话 → 产出面板恢复写入列表 + 溯源定位', 
     await expect(row).toBeVisible({ timeout: 5_000 });
     await row.click();
 
-    // 会话恢复到主页：assistant 消息带持久化的 tools 渲染
-    await expect(page).toHaveURL(/\/$/);
+    // 会话恢复到整页对话：assistant 消息带持久化的 tools 渲染
+    await expect(page).toHaveURL(/\/chat$/);
     await expect(page.locator('[data-testid="assistant-message"]')).toHaveCount(1);
 
     // readFile 内容拦截（磁盘上并无 /vault/... 文件；此处只验证 UI 链路）

@@ -196,7 +196,8 @@ test.describe('KB chat — work visibility', () => {
 
   test('主页问答：时间线锚定最后一条回复（不再悬浮消息流顶部）+ 产物 banner', async ({ page }) => {
     await mockChatRun(page, { script: SCRIPTS.workflowRun, frameDelay: 800 });
-    await page.goto('http://localhost:5173/');
+    // 整页对话在 /chat（入口 `/` 只做重定向，见 apps/web/src/routes.ts）
+    await page.goto('http://localhost:5173/chat');
     await expect(page.locator('[data-testid="composer-input"]')).toBeVisible({ timeout: 5_000 });
 
     await sendOnHome(page, '总结知识库');

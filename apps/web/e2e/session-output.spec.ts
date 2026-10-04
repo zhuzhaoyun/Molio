@@ -115,8 +115,8 @@ test.describe('Home 会话产出面板', () => {
       await expect(panel.locator('[data-testid="session-output-preview"]')).toBeVisible();
       await expect(panel.locator('[data-testid="session-output-preview"]')).toContainText('Mock 预览标题');
       await expect(panel.locator('[data-testid="session-output-preview"]')).toContainText('预览正文内容段落');
-      // 仍在主页（未跳转知识库）—— 不打破对话注意力
-      await expect(page).toHaveURL(/\/$/);
+      // 仍在整页对话（未跳转知识库）—— 不打破对话注意力
+      await expect(page).toHaveURL(/\/chat$/);
       // 返回 → 列表恢复
       await panel.locator('[data-testid="session-output-preview-back"]').click();
       await expect(panel.locator('[data-testid="session-output-write"]')).toHaveCount(1);

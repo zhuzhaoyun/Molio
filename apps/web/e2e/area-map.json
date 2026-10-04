@@ -141,7 +141,8 @@
       "specs": [
         "bootstrap",
         "navigation",
-        "home-onboarding"
+        "home-onboarding",
+        "default-landing"
       ]
     },
     "settings": {
@@ -420,6 +421,10 @@
     "navigation": {
       "priority": "P1",
       "file": "navigation.spec.ts"
+    },
+    "default-landing": {
+      "priority": "P1",
+      "file": "default-landing.spec.ts"
     },
     "resources": {
       "priority": "P1",

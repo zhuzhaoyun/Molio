@@ -43,7 +43,8 @@ async function createVaultWithTree(): Promise<TempVault> {
 }
 
 async function gotoHomeWithVault(page: import('@playwright/test').Page) {
-  await page.goto(`/?vault=${vault.id}`);
+  // 整页对话在 /chat（入口 `/` 只做重定向）；`?vault=` 由 vaultStore 在模块加载时读走
+  await page.goto(`/chat?vault=${vault.id}`);
   await Promise.race([
     page.waitForLoadState('networkidle'),
     page.waitForTimeout(5_000),

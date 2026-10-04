@@ -6,6 +6,7 @@ import { loginIntentStore } from '../stores/loginIntentStore';
 import { useActiveVaultId } from '../stores/vaultStore';
 import { useGraphViewActive } from '../stores/graphViewStore';
 import { AccountModal } from './account/AccountModal';
+import { CHAT_ROUTE, DEFAULT_ROUTE } from '../routes';
 
 export function NavRail() {
   const { t } = useI18n();
@@ -65,32 +66,10 @@ export function NavRail() {
     <>
     <nav className="entry-nav-rail">
       <div className="entry-nav-rail__group">
-        {/* Home — Create/Chat */}
+        {/* Knowledge Base — 排第一：它就是应用的落地页（入口 `/` 默认落到这里），
+            导航顺序与落地页一致，用户第一眼看到的就是第一项被选中。 */}
         <NavLink
-          to="/"
-          end
-          data-view="home"
-          className={({ isActive }) =>
-            `entry-nav-rail__btn ${isActive ? 'is-active' : ''}`
-          }
-          data-tooltip={t('nav.home')}
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-            <polyline points="9 22 9 12 15 12 15 22" />
-          </svg>
-        </NavLink>
-
-        {/* Knowledge Base */}
-        <NavLink
-          to="/knowledge"
+          to={DEFAULT_ROUTE}
           data-view="knowledge"
           className={({ isActive }) =>
             `entry-nav-rail__btn ${isActive ? 'is-active' : ''}`
@@ -107,6 +86,29 @@ export function NavRail() {
           >
             <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
             <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+          </svg>
+        </NavLink>
+
+        {/* 整页对话（原「首页」）——搬到 CHAT_ROUTE 后仍完整可达，
+            只是不再是应用入口。名字待定，先保持原样。 */}
+        <NavLink
+          to={CHAT_ROUTE}
+          data-view="home"
+          className={({ isActive }) =>
+            `entry-nav-rail__btn ${isActive ? 'is-active' : ''}`
+          }
+          data-tooltip={t('nav.home')}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+            <polyline points="9 22 9 12 15 12 15 22" />
           </svg>
         </NavLink>
 
