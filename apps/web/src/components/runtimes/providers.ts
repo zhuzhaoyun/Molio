@@ -221,3 +221,62 @@ import { CODEX_PROVIDER_PRESETS, type CodexProviderPreset } from '@molio/contrac
 
 export type { CodexProviderPreset };
 export const CODEX_PROVIDERS: CodexProviderPreset[] = CODEX_PROVIDER_PRESETS;
+
+/**
+ * DeepSeek Harness (dsh) provider presets.
+ *
+ * dsh's LLM provider reads credentials SOLELY from env vars (no backing config
+ * file like claude/codex):
+ * - DEEPSEEK_API_KEY: the only credential channel (`apiKeyEnv`)
+ * - DEEPSEEK_BASE_URL: optional Messages-compatible endpoint root; unset falls
+ *   back to the official https://api.deepseek.com/anthropic
+ *
+ * No model mapping here — dsh exposes its model catalog at runtime via ACP
+ * `session.configOptions`, and RunManager applies the user's selection with
+ * `session/set_config_option`.
+ */
+export interface DshProviderPreset {
+  id: string;
+  name: string;
+  /** Hint text for API key input. */
+  apiKeyHint?: string;
+  /** Link to the provider's API key page. */
+  apiKeyUrl?: string;
+  /** Link to provider docs. */
+  docsUrl?: string;
+}
+
+export const DSH_PROVIDERS: DshProviderPreset[] = [
+  {
+    id: 'deepseek',
+    name: 'DeepSeek',
+    apiKeyHint: 'sk-...',
+    apiKeyUrl: 'https://platform.deepseek.com/api_keys',
+    docsUrl: 'https://github.com/deepseek-ai/dsh',
+  },
+  {
+    id: 'custom',
+    name: 'Custom (Messages-compatible)',
+    apiKeyHint: 'sk-...',
+  },
+];
+
+/** 'custom' when a non-official DEEPSEEK_BASE_URL is configured, else 'deepseek'. */
+export function detectDshProvider(env: Record<string, string>): string {
+  return env['DEEPSEEK_BASE_URL']?.trim() ? 'custom' : 'deepseek';
+}
+
+/**
+ * Build the env vars to persist for dsh. Official clears DEEPSEEK_BASE_URL so
+ * dsh falls back to the public API root; custom sets it to the user's endpoint.
+ */
+export function buildDshEnv(
+  providerId: string,
+  apiKey: string,
+  customBaseUrl?: string,
+): Record<string, string> {
+  return {
+    DEEPSEEK_API_KEY: apiKey,
+    DEEPSEEK_BASE_URL: providerId === 'custom' ? (customBaseUrl ?? '') : '',
+  };
+}
