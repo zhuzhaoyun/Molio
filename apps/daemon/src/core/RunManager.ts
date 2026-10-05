@@ -16,6 +16,7 @@ import {
 import { buildSpawnEnv, createStderrDecoder } from './runtimes/env.js';
 import { classifyStderrChunk } from './runtimes/stderr.js';
 import { agentErrorHint } from './runtimes/error-hints.js';
+import { killAgentProcessTree } from './runtimes/kill-tree.js';
 import { resolveClaudeModels } from './runtimes/claude-models.js';
 import { createClaudeStreamHandler } from './streams/claude-stream.js';
 import { createCodexStreamHandler } from './streams/codex-stream.js';
@@ -698,17 +699,10 @@ export class RunManager {
       },
       (ev) => this.emitEvent(run, ev),
       // On idle/absolute timeout the transport rejects the pending request,
-      // then calls this to kill the child so a hung hermes-acp doesn't leak
-      // until the 30-min TTL. SIGTERM → 5s → SIGKILL matches cancelRun's pattern.
-      () => {
-        if (child.killed) return;
-        try { child.kill('SIGTERM'); } catch { /* already dead */ }
-        setTimeout(() => {
-          if (!child.killed) {
-            try { child.kill('SIGKILL'); } catch { /* ignore */ }
-          }
-        }, 5000);
-      },
+      // then calls this to kill the child so a hung hermes-acp/dsh doesn't leak
+      // until the 30-min TTL. Tree-kills on Windows (the cmd.exe wrapper's node
+      // grandchild would otherwise be orphaned); SIGTERM→SIGKILL on POSIX.
+      () => killAgentProcessTree(child),
     );
 
     // Assign to run.acp early (sessionId filled in after session/new) so the
@@ -1048,26 +1042,14 @@ export class RunManager {
       const cancelTimeout = def.acp?.cancelTimeoutMs ?? 5000;
       // Cancel is a short ack — strict absolute deadline, no idle timer.
       transport.request('session/cancel', { sessionId }, { absoluteTimeoutMs: cancelTimeout })
-        .catch(() => { /* cancel itself failed — fall through to SIGTERM */ })
-        .finally(() => {
-          if (run.child && !run.child.killed) {
-            run.child.kill('SIGTERM');
-            setTimeout(() => {
-              if (run.child && !run.child.killed) run.child.kill('SIGKILL');
-            }, 5000);
-          }
-        });
+        .catch(() => { /* cancel itself failed — fall through to the kill */ })
+        .finally(() => killAgentProcessTree(run.child));
       return;
     }
 
-    if (run.child && !run.child.killed) {
-      run.child.kill('SIGTERM');
-      setTimeout(() => {
-        if (run.child && !run.child.killed) {
-          run.child.kill('SIGKILL');
-        }
-      }, 5000);
-    }
+    // Tree-kill on Windows (reap the cmd.exe wrapper's agent grandchild);
+    // SIGTERM→SIGKILL on POSIX. See runtimes/kill-tree.ts.
+    killAgentProcessTree(run.child);
     if (run.stdinOpen && run.child?.stdin?.writable) {
       try { run.child.stdin.end(); } catch { /* ignore */ }
       run.stdinOpen = false;
