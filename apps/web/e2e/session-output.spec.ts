@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { gotoHome, sendMessage, clickNav } from './helpers/navigation';
+import { gotoHome, gotoChatSpa, sendMessage, clickNav } from './helpers/navigation';
 import { mockChatRun, unmockAll, SCRIPTS } from './helpers/mock-sse';
 import { createTempVault, cleanupTempVault } from './helpers/cleanup';
 
@@ -268,7 +268,7 @@ test.describe('Home 会话产出面板', () => {
       // 跨 vault 会话重置提示出现
       await expect(page.locator('[data-testid="vault-switch-notice"]')).toBeVisible({ timeout: 5_000 });
       // 回主页 → 旧会话已清空：home 回到无对话的 landing 视图，产出面板随之消失
-      await clickNav(page, 'home');
+      await gotoChatSpa(page);
       await expect(page.locator('[data-testid="assistant-message"]')).toHaveCount(0);
       await expect(page.locator('.home-landing')).toBeVisible();
       await expect(page.locator('[data-testid="session-output-panel"]')).toHaveCount(0);

@@ -40,8 +40,10 @@ test.describe('App bootstrap', () => {
     const nav = page.locator('.entry-nav-rail');
     await expect(nav).toBeVisible();
 
-    // Verify all nav items are present (home, knowledge, graph, resources, history, account, settings, help)
-    const expectedViews = ['home', 'knowledge', 'graph', 'resources', 'history', 'account', 'settings', 'help'];
+    // Verify all nav items are present (knowledge, graph, resources, history, account, settings, help).
+    // 「home」不在其中：`/` 已直接落到知识库，原「首页」不再是并列的导航目的地，
+    // 页面本体仍在 `/chat` 但只由深链抵达（见 default-landing.spec.ts）。
+    const expectedViews = ['knowledge', 'graph', 'resources', 'history', 'account', 'settings', 'help'];
     for (const view of expectedViews) {
       await expect(page.locator(`[data-view="${view}"]`)).toBeVisible();
     }

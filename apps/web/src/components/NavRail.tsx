@@ -6,7 +6,7 @@ import { loginIntentStore } from '../stores/loginIntentStore';
 import { useActiveVaultId } from '../stores/vaultStore';
 import { useGraphViewActive } from '../stores/graphViewStore';
 import { AccountModal } from './account/AccountModal';
-import { CHAT_ROUTE, DEFAULT_ROUTE } from '../routes';
+import { DEFAULT_ROUTE } from '../routes';
 
 export function NavRail() {
   const { t } = useI18n();
@@ -89,28 +89,9 @@ export function NavRail() {
           </svg>
         </NavLink>
 
-        {/* 整页对话（原「首页」）——搬到 CHAT_ROUTE 后仍完整可达，
-            只是不再是应用入口。名字待定，先保持原样。 */}
-        <NavLink
-          to={CHAT_ROUTE}
-          data-view="home"
-          className={({ isActive }) =>
-            `entry-nav-rail__btn ${isActive ? 'is-active' : ''}`
-          }
-          data-tooltip={t('nav.home')}
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-            <polyline points="9 22 9 12 15 12 15 22" />
-          </svg>
-        </NavLink>
+        {/* 原「首页」（整页对话）**不再占一个导航项**：`/` 直接落到知识库之后，
+            它既不是入口、也不再是一个需要并列陈列的目的地。页面本体仍在
+            `CHAT_ROUTE`（历史页回跳、深链、多窗口都用它），只是不再从导航栏可达。 */}
 
         {/* Graph View — opens the graph tab in the knowledge-base workspace */}
         <button

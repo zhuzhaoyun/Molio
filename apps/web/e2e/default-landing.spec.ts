@@ -1,5 +1,4 @@
 import { test, expect } from '@playwright/test';
-import { clickNav } from './helpers/navigation';
 
 /**
  * @area navigation
@@ -9,8 +8,8 @@ import { clickNav } from './helpers/navigation';
  *
  * `/` 不再是一个页面，而是一次「去哪」的决策：
  *   有上次访问的路由 → 恢复它；否则 → 默认落点（知识库）。
- * 首页本体挪到 `/chat`，因此它仍可被深链、被导航栏直接抵达，
- * 只是不再是应用入口。
+ * 原「首页」（整页对话）本体挪到 `/chat` 并**从导航栏撤下**：它既不是入口，
+ * 也不再是一个与知识库并列的导航目的地，只能被深链（历史页回跳、多窗口）抵达。
  *
  * 这样 `gotoHome` 这类「显式 goto 某个页面」的用法不受入口改动影响
  * ——入口只影响 `/` 这一个地址，不劫持其他路由。
@@ -32,7 +31,7 @@ test.describe('默认落点：打开即进知识库', () => {
     await expect(page.locator('.kb-shell')).toHaveCount(0);
   });
 
-  test('导航栏第一项是知识库（落地页与导航一致）', async ({ page }) => {
+  test('导航栏第一项是知识库，且不再有「首页」项', async ({ page }) => {
     await page.goto('/chat');
     await expect(page.locator('.home-page')).toBeVisible({ timeout: 5_000 });
 
@@ -42,17 +41,36 @@ test.describe('默认落点：打开即进知识库', () => {
       .locator('[data-view]')
       .evaluateAll((els) => els.map((el) => el.getAttribute('data-view')));
     expect(views[0]).toBe('knowledge');
-    // 「首页」入口仍在，只是不再排第一（名字待定，此断言只看顺序）
-    expect(views).toContain('home');
+    // 「首页」不再是一个并列目的地：页面本体还在 `/chat`（见上一条深链用例），
+    // 但导航栏不该再给出入口 —— 否则等于给「知识库是第一个页面」留了个后门。
+    expect(views).not.toContain('home');
   });
 
-  test('导航栏「首页」入口 → `/chat`（整页对话仍可达）', async ({ page }) => {
-    await page.goto('/knowledge');
-    await expect(page.locator('.kb-shell')).toBeVisible({ timeout: 5_000 });
+  test('零知识库首启：空态给出「新建知识库」CTA，点击进仓库管理器', async ({ page }) => {
+    // 零仓库空态现在是**新装用户的第一屏**（`/` → `/knowledge`）。桌面端不挂
+    // `/vaults`，`maybeCreateDefaultVault` 不生效，所以这是常态而非边缘情况。
+    // 回归点：这里以前只有一句「创建一个知识库」的文案而没有按钮，新用户得自己
+    // 找到左下角那条 kb-vault-bar 才进得去。
+    //
+    // 仓库列表用 route 伪装成空：daemon 是干净的（MOLIO_DATA_DIR 一次一清），
+    // 但同一次跑里别的 spec 会建库，靠"真的没有仓库"来断言会随执行顺序飘。
+    // 正则锚到列表端点本身：宽 glob 会连 `.../vaults/<id>/tree` 一起吞掉。
+    await page.route(/\/api\/knowledge\/vaults(\?.*)?$/, (route) =>
+      route.fulfill({ json: { vaults: [] } }),
+    );
 
-    await clickNav(page, 'home');
-    await expect(page).toHaveURL(/\/chat$/, { timeout: 5_000 });
-    await expect(page.locator('.home-page')).toBeVisible({ timeout: 5_000 });
+    await page.goto('/knowledge');
+    // 限定 .kb-main：文件面板的「Empty vault」也用 .kb-empty-state，
+    // 不限定会 strict 冲突（见 kb-chat-entry.spec.ts 同款注释）
+    const empty = page.locator('.kb-main .kb-empty-state');
+    await expect(empty).toContainText('欢迎使用知识库', { timeout: 5_000 });
+
+    const cta = page.locator('[data-testid="kb-empty-create-vault-cta"]');
+    await expect(cta).toBeVisible();
+    await cta.click();
+
+    // 落到仓库管理器：面板可见，且「创建」动作可用（而不是把自己又关回去）
+    await expect(page.locator('.vm-action-btn-primary')).toBeVisible({ timeout: 5_000 });
   });
 
   test('入口的 query 在重定向中原样保留（?vault= / ?file= 是跨路由深链参数）', async ({ page }) => {

@@ -23,6 +23,25 @@ export async function gotoHome(page: Page) {
   ]);
 }
 
+/**
+ * SPA 内导航到整页对话（`/chat`），**不触发整页重载**。
+ *
+ * 为什么要它：`/chat` 已从导航栏移除（原「首页」不再是并列目的地），但有一批
+ * spec 需要在应用内切到整页对话、观察 **SPA 卸载**行为——图谱引擎的 destroy、
+ * 闲聊面板在到达主页时收起、切库后旧对话被清空。这些断言若改用 `gotoHome`
+ * （整页 goto）就会因为页面被整个换掉而**假通过**：卸载是真的发生了，但发生
+ * 的原因是重载，不是被测代码。那条路径测不到任何东西。
+ *
+ * pushState + popstate 是 react-router 认的 SPA 导航信号，
+ * 与用户点击导航项走同一条路径（session-output.spec.ts 已有先例）。
+ */
+export async function gotoChatSpa(page: Page) {
+  await page.evaluate(() => {
+    window.history.pushState({}, '', '/chat');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  });
+}
+
 /** Click a NavRail button by its data-view attribute. */
 export async function clickNav(page: Page, view: string) {
   await page.locator(`[data-view="${view}"]`).click();

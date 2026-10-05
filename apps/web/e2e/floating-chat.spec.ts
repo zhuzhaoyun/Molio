@@ -2,7 +2,7 @@
 import { test, expect } from '@playwright/test';
 import { createTempVault, cleanupTempVault, type TempVault } from './helpers/cleanup';
 import { mockChatRun, unmockAll } from './helpers/mock-sse';
-import { clickNav } from './helpers/navigation';
+import { gotoChatSpa, clickNav } from './helpers/navigation';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -118,7 +118,7 @@ test.describe('Floating chat (方案 D)', () => {
     await expect(panel).toHaveClass(/floating-chat-panel--dock-kb/);
 
     // 到达主页 → 面板收起（主页自身即聊天页，避免同屏两个聊天框）
-    await clickNav(page, 'home');
+    await gotoChatSpa(page);
     await expect(page.locator('.home-page')).toBeVisible({ timeout: 5_000 });
     await expect(panel).toBeHidden();
 

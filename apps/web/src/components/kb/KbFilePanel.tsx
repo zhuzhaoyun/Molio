@@ -11,6 +11,7 @@ import { useI18n } from '../../i18n';
 import { KbFileTree } from './KbFileTree';
 import { OpenNewWindowIcon } from '../icons';
 import { openInNewWindow } from '../../utils/openWindow';
+import { DEFAULT_ROUTE } from '../../routes';
 
 type SortBy = 'name' | 'modified' | 'size';
 
@@ -432,14 +433,16 @@ export const KbFilePanel = forwardRef<KbFilePanelHandle, KbFilePanelProps>(funct
 
               <div className="kb-create-divider" />
 
-              {/* 新窗口 — opens a fresh desktop window with no vault forced;
-                  the user picks a vault in the new window via the normal nav. */}
+              {/* 新窗口 — opens a fresh desktop window onto the knowledge base.
+                  目标是显式的 DEFAULT_ROUTE 而不是 `'/'`：`/` 现在是入口重定向
+                  （见 src/routes.ts），落点取决于新窗口那份 localStorage 里的
+                  上次路由，等于把「新窗口开到哪」交给历史状态。 */}
               <button
                 type="button"
                 className="kb-create-item"
                 role="menuitem"
                 data-testid="kb-create-window"
-                onClick={() => { setCreateMenuOpen(false); setCreateMenuPos(null); openInNewWindow('/'); }}
+                onClick={() => { setCreateMenuOpen(false); setCreateMenuPos(null); openInNewWindow(DEFAULT_ROUTE); }}
               >
                 <OpenNewWindowIcon size={15} />
                 <span>{t('kb.newWindow')}</span>
