@@ -242,6 +242,69 @@ describe('buildSpawnEnv', () => {
     });
   });
 
+  // Error-driven (2026-10-05): dsh ACP init failed with -32603. The web
+  // provider form persisted DEEPSEEK_BASE_URL: '' for the official DeepSeek
+  // preset ("clear the custom endpoint"), and dsh's resolveAdapterOptions
+  // does `config.baseURL ?? env.DEEPSEEK_BASE_URL ?? default` — an empty
+  // string is NOT nullish, so `new URL('')` threw TypeError: Invalid URL,
+  // both llm-deepseek entries failed to activate, and initialize never
+  // answered. Empty/whitespace-only DEEPSEEK_BASE_URL must be dropped at
+  // the spawn boundary so dsh falls back to its built-in official root.
+  describe('dsh empty DEEPSEEK_BASE_URL sanitization', () => {
+    it('should drop empty DEEPSEEK_BASE_URL for dsh (regression: Invalid URL crash)', () => {
+      const def = makeDef({ id: 'dsh' });
+      const env = buildSpawnEnv(def, {
+        DEEPSEEK_API_KEY: 'sk-test',
+        DEEPSEEK_BASE_URL: '',
+      });
+
+      assert.equal(env['DEEPSEEK_API_KEY'], 'sk-test');
+      assert.equal('DEEPSEEK_BASE_URL' in env, false);
+    });
+
+    it('should drop whitespace-only DEEPSEEK_BASE_URL for dsh', () => {
+      const def = makeDef({ id: 'dsh' });
+      const env = buildSpawnEnv(def, { DEEPSEEK_BASE_URL: '   ' });
+
+      assert.equal('DEEPSEEK_BASE_URL' in env, false);
+    });
+
+    it('should drop empty DEEPSEEK_BASE_URL coming from def.env', () => {
+      const def = makeDef({ id: 'dsh', env: { DEEPSEEK_BASE_URL: '' } });
+      const env = buildSpawnEnv(def, {});
+
+      assert.equal('DEEPSEEK_BASE_URL' in env, false);
+    });
+
+    it('should keep a valid DEEPSEEK_BASE_URL for dsh', () => {
+      const def = makeDef({ id: 'dsh' });
+      const env = buildSpawnEnv(def, {
+        DEEPSEEK_BASE_URL: 'https://api.example.com/anthropic',
+      });
+
+      assert.equal(env['DEEPSEEK_BASE_URL'], 'https://api.example.com/anthropic');
+    });
+
+    it('should never strip DEEPSEEK_API_KEY (sole credential channel)', () => {
+      const def = makeDef({ id: 'dsh' });
+      const env = buildSpawnEnv(def, {
+        DEEPSEEK_API_KEY: 'sk-sole-channel',
+        DEEPSEEK_BASE_URL: '',
+      });
+
+      assert.equal(env['DEEPSEEK_API_KEY'], 'sk-sole-channel');
+    });
+
+    it('should leave other agents untouched by the dsh sanitization', () => {
+      const def = makeDef({ id: 'gemini' });
+      const env = buildSpawnEnv(def, { DEEPSEEK_BASE_URL: '' });
+
+      // Only dsh parses DEEPSEEK_BASE_URL through new URL(); other agents
+      // are not sanitized for it.
+      assert.equal(env['DEEPSEEK_BASE_URL'], '');
+    });
+  });
+
   describe('Molio runtime identity injection', () => {
     it('should inject MOLIO_AGENT_ID and MOLIO_AGENT_NAME for all agents', () => {
       const def = makeDef({ id: 'qwen', name: 'Qwen Code' });

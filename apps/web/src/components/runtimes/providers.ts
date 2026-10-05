@@ -267,16 +267,22 @@ export function detectDshProvider(env: Record<string, string>): string {
 }
 
 /**
- * Build the env vars to persist for dsh. Official clears DEEPSEEK_BASE_URL so
+ * Build the env vars to persist for dsh. Official OMITS DEEPSEEK_BASE_URL so
  * dsh falls back to the public API root; custom sets it to the user's endpoint.
+ *
+ * Never persist an empty-string DEEPSEEK_BASE_URL: dsh resolves the endpoint
+ * with `??` (empty string is not nullish) and `new URL('')` throws
+ * TypeError: Invalid URL, which kills both llm-deepseek entries and fails ACP
+ * initialize with -32603. The daemon additionally sanitizes empty values at
+ * the spawn boundary (buildSpawnEnv) as defense in depth.
  */
 export function buildDshEnv(
   providerId: string,
   apiKey: string,
   customBaseUrl?: string,
 ): Record<string, string> {
-  return {
-    DEEPSEEK_API_KEY: apiKey,
-    DEEPSEEK_BASE_URL: providerId === 'custom' ? (customBaseUrl ?? '') : '',
-  };
+  const env: Record<string, string> = { DEEPSEEK_API_KEY: apiKey };
+  const baseUrl = providerId === 'custom' ? (customBaseUrl ?? '').trim() : '';
+  if (baseUrl) env['DEEPSEEK_BASE_URL'] = baseUrl;
+  return env;
 }

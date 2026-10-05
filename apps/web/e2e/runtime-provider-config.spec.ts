@@ -457,6 +457,40 @@ test.describe('dsh provider config', () => {
       .toHaveValue('https://api.example.com/anthropic');
   });
 
+  // Error-driven regression (2026-10-05): saving the OFFICIAL preset used to
+  // persist DEEPSEEK_BASE_URL: '' — dsh resolves the endpoint with `??`, an
+  // empty string is not nullish, `new URL('')` throws TypeError: Invalid URL,
+  // both llm-deepseek entries fail to activate and ACP initialize dies with
+  // -32603 ("at file:///…/.dsh/profiles/acp/#include"). The official preset
+  // must OMIT the key entirely.
+  test('save dsh official config omits DEEPSEEK_BASE_URL entirely', async ({ page }) => {
+    const dshCard = await openDshCard(page);
+    await dshCard.locator('.rt-provider-toggle').click();
+    const panel = dshCard.locator('.rt-provider-config');
+    await expect(panel).toBeVisible();
+
+    // Start from custom with a URL, then switch back to official — the saved
+    // env must drop the key, not blank it.
+    await panel.locator('.rt-provider-form__select').selectOption('custom');
+    await panel.locator('[data-testid="dsh-base-url-field"]').fill('https://api.example.com/anthropic');
+    await panel.locator('.rt-provider-form__select').selectOption('deepseek');
+    await panel.locator('.rt-provider-form__input[type="password"]').fill('sk-e2e-official');
+    await panel.locator('.rt-provider-form__actions .rt-btn').first().click();
+    await expect(panel.locator('.rt-provider-form__status--ok')).toBeVisible({ timeout: 5_000 });
+
+    const response = await page.evaluate(async (api) => {
+      const res = await fetch(`${api}/config/agents/dsh`);
+      return res.json();
+    }, DAEMON_API);
+    expect(response.env?.['DEEPSEEK_API_KEY']).toBe('sk-e2e-official');
+    expect(response.env).toBeDefined();
+    expect(Object.keys(response.env ?? {})).not.toContain('DEEPSEEK_BASE_URL');
+
+    // Reload → provider detection reads back as official.
+    const reloadedCard = await openDshCard(page);
+    await expect(reloadedCard.locator('.rt-provider-toggle__current')).toHaveText(/DeepSeek/i, { timeout: 10_000 });
+  });
+
   test('clean up: reset dsh env via API', async ({ page }) => {
     await page.evaluate(async (api) => {
       await fetch(`${api}/config/agents/dsh`, {
