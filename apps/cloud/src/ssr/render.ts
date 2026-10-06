@@ -1,3 +1,4 @@
+import { marketCatalogView } from '@molio/contracts';
 // apps/cloud/src/ssr/render.ts
 // 商品详情页 / 动态 sitemap 的服务端渲染（设计：docs/2026-09-01-ssr-product-pages-design.md）。
 // 纯函数模块：只吃 MarketListing 吐字符串，不发请求、不碰时钟 → 可单测。
@@ -189,18 +190,8 @@ function renderCta(m: MarketListing): { cta: string; note: string } {
 
 function renderRelated(related: MarketListing[]): string {
   if (related.length === 0) return '';
-  const cards = related.map((r) => {
-    const paid = r.priceCents > 0;
-    return `<article class="rl-card">
-      <div class="rl-top">
-        <div class="rl-icon" style="background:${escapeHtml(r.tint)}">${escapeHtml(r.icon)}</div>
-        <div class="rl-titles"><h3 class="rl-name">${escapeHtml(r.name)}</h3></div>
-        <span class="rl-price ${paid ? 'paid' : 'free'}">${paid ? '¥' + escapeHtml(formatPriceYuan(r.priceCents)) : '免费'}</span>
-      </div>
-      <p class="rl-desc">${escapeHtml(metaDescription(r.summary, 80))}</p>
-      <div class="rl-actions"><a class="rl-detail" href="/resource/${encodeURIComponent(r.id)}.html">查看详情 →</a></div>
-    </article>`;
-  }).join('\n');
+  // 复用列表页的卡片：全站一种卡片一套样式（原型 .card）
+  const cards = related.map(renderResourceCard).join('\n');
   return `
 <section class="res-section">
   <h2 class="res-section-title">相关资源</h2>
@@ -251,7 +242,7 @@ export function renderProductPage(m: MarketListing, related: MarketListing[]): s
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="icon" type="image/png" href="/images/favicon-32.png">
 <link rel="apple-touch-icon" href="/images/favicon-180.png">
-<link rel="stylesheet" href="/styles.css?v=20260828a">
+<link rel="stylesheet" href="/styles.css?v=20261003a">
 
 <!-- Open Graph -->
 <meta property="og:title" content="${escapeHtml(title)}">
@@ -346,7 +337,7 @@ export function renderNotFoundPage(): string {
 <title>资源不存在 — Molio 资源</title>
 <meta name="robots" content="noindex">
 <link rel="icon" type="image/png" href="/images/favicon-32.png">
-<link rel="stylesheet" href="/styles.css?v=20260828a">
+<link rel="stylesheet" href="/styles.css?v=20261003a">
 </head>
 <body>
 ${NAV}
@@ -397,25 +388,34 @@ function itemListJsonLd(listings: MarketListing[]): string {
   return `<script type="application/ld+json">${safeJson(ld)}</script>`;
 }
 
-/** 单个商品卡片（与官网 resources.html 的 resCard() 同款结构） */
+/**
+ * 单个商品卡片 —— 结构对齐设计原型 docs/prototype/resources-catalog.html 的 .card：
+ * 元信息条（符号 + 分类 / 类型 + 版本）、衬线标题、描述（3 行截断）、标签、底栏（价格 + 动作）。
+ * 列表页与详情页「相关资源」共用这一份（renderRelated 直接复用），全站一种卡片一套样式。
+ *
+ * 两个钩子不能动：data-resource-id（resource-catalog.js 据此索引 SSR 卡片节点）、
+ * .rl-buy[data-id]（内联脚本在 #res-grid 上做购买/下载事件委托）。
+ * 详情入口在标题的 <a> 上 —— 底栏再放一个「查看详情」是同一个去处的重复，也挤占底栏宽度。
+ */
 function renderResourceCard(m: MarketListing): string {
   const paid = m.priceCents > 0;
   const price = formatPriceYuan(m.priceCents);
   const gate = paid ? `购买 ¥${price}` : '下载';
-  const tags = m.tags.length > 0 ? m.tags.map((t) => escapeHtml(t)).join(' · ') : '';
-  return `<article class="rl-card" data-price="${m.priceCents}">
-    <div class="rl-top">
-      <div class="rl-icon" style="background:${escapeHtml(m.tint)}">${escapeHtml(m.icon)}</div>
-      <div class="rl-titles">
-        <h3 class="rl-name">${escapeHtml(m.name)}</h3>
-        <span class="rl-sub">${tags}<em class="rl-ver">${escapeHtml(m.version)}</em></span>
-      </div>
-      <span class="rl-price ${paid ? 'paid' : 'free'}">${paid ? '¥' + escapeHtml(price) : '免费'}</span>
+  const tags =
+    m.tags.length > 0
+      ? `<div class="rl-tags">${m.tags.map((t) => `<span>${escapeHtml(t)}</span>`).join('')}</div>`
+      : '';
+  return `<article class="rl-card" data-resource-id="${escapeHtml(m.id)}" data-price="${m.priceCents}">
+    <div class="rl-cardmeta">
+      <span class="rl-stamp"><span class="rl-symbol" style="background:${escapeHtml(m.tint)}">${escapeHtml(m.icon)}</span>${escapeHtml(m.category?.name ?? '未分类')} / ${escapeHtml(m.resourceType?.name ?? '知识库')}</span>
+      <span class="rl-ver">${escapeHtml(m.version)}</span>
     </div>
-    <p class="rl-desc">${escapeHtml(metaDescription(m.summary, 120))}</p>
-    <div class="rl-actions">
+    <h3 class="rl-name"><a href="/resource/${encodeURIComponent(m.id)}.html">${escapeHtml(m.name)}</a></h3>
+    <p class="rl-desc">${escapeHtml(metaDescription(m.summary, 160))}</p>
+    ${tags}
+    <div class="rl-cardfoot">
+      <span class="rl-price ${paid ? 'paid' : 'free'}">${paid ? '¥' + escapeHtml(price) : '免费'}</span>
       <button type="button" class="rl-buy" data-id="${encodeURIComponent(m.id)}" data-auth-gate="${escapeHtml(gate)}">${escapeHtml(gate)}</button>
-      <a class="rl-detail" href="/resource/${encodeURIComponent(m.id)}.html">查看详情 →</a>
     </div>
   </article>`;
 }
@@ -427,7 +427,16 @@ function renderResourceCard(m: MarketListing): string {
  * 驱动的轻量脚本渐进增强，脚本加载前商品已完整可见。
  */
 export function renderListingPage(listings: MarketListing[]): string {
-  const cards = listings.map(renderResourceCard).join('\n');
+  const catalog = marketCatalogView(listings);
+  // 这里必须输出**全部**卡片，不能按分类截断到 6 条：列表页的 SEO 价值就在于这些
+  // 指向商品详情页的内链（见 docs/2026-09-03-seo-strategy-resources.md），
+  // 「每类只露 6 条」是 resource-catalog.js 拿到 DOM 之后的交互裁剪。
+  const cards = catalog.categories
+    .map((c) => {
+      const items = listings.filter((m) => (m.category?.id ?? 'uncategorized') === c.id);
+      return `<section class="rl-section"><header><h2>${escapeHtml(c.name)}<small>${items.length} 个资源</small></h2></header><div class="rl-grid">${items.map(renderResourceCard).join('')}</div></section>`;
+    })
+    .join('');
   const grid = listings.length > 0
     ? cards
     : '<p class="rl-empty">资源整理中，稍后回来看看。</p>';
@@ -451,7 +460,7 @@ export function renderListingPage(listings: MarketListing[]): string {
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="icon" type="image/png" href="/images/favicon-32.png">
 <link rel="apple-touch-icon" href="/images/favicon-180.png">
-<link rel="stylesheet" href="/styles.css?v=20260828b">
+<link rel="stylesheet" href="/styles.css?v=20261003a">
 
 <!-- Open Graph -->
 <meta property="og:title" content="${escapeHtml(title)}">
@@ -474,19 +483,39 @@ ${itemListJsonLd(listings)}
 ${NAV}
 
 <main class="rl-page">
-  <section class="rl-hero">
-    <h1>你读得懂、<em>AI 用得上</em>的现成知识底座</h1>
-    <p class="rl-sub">从经史典籍与专业资料中提取实体与概念、建立关联，加工成结构化的知识底座：你顺着图谱阅读探索，Claude Code、Codex 立即在它上面工作。</p>
-    <p class="rl-meta">下载 · 解压 · 加载 · 微信支付成功后自动解锁 · 兼容 Obsidian</p>
-  </section>
+  <header class="rl-hero">
+    <div>
+      <div class="rl-eyebrow">MOLIO / RESOURCE LIBRARY</div>
+      <h1>让知识，<span>即刻可用。</span></h1>
+      <p class="rl-intro">为学习、研究与工作，找到下一份有用的积累。</p>
+      <p class="rl-sub">从经史典籍与专业资料中提取实体与概念、建立关联，加工成结构化的知识底座：你顺着图谱阅读探索，Claude Code、Codex 立即在它上面工作。</p>
+    </div>
+    <div>
+      <div class="rl-searchbox">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="10" cy="10" r="6.5"/><path d="m15 15 6 6"/></svg>
+        <input type="search" id="rl-search" aria-label="搜索资源" placeholder="搜索名称、关键词或简介" autocomplete="off">
+        <button type="button" id="rl-search-clear" hidden>清空</button>
+      </div>
+      <div class="rl-searchhint">试试<button type="button" data-query="红楼梦">红楼梦</button><button type="button" data-query="知识工程">知识工程</button><button type="button" data-query="哲学">哲学</button></div>
+    </div>
+  </header>
 
-  <div class="rl-filters" role="tablist" aria-label="资源筛选">
-    <button class="rl-tab active" role="tab" aria-selected="true" data-filter="all">全部</button>
-    <button class="rl-tab" role="tab" aria-selected="false" data-filter="free">免费</button>
-    <button class="rl-tab" role="tab" aria-selected="false" data-filter="paid">付费</button>
+  <div class="rl-filters">
+    <div class="rl-filterrow">
+      <div id="rl-categories" class="rl-quick" role="group" aria-label="资源分类"></div>
+      <button id="rl-all-categories" class="rl-allcats" type="button">全部分类 ▾</button>
+    </div>
+    <div class="rl-types" id="rl-type-label" hidden><label for="rl-type">资源类型</label><select id="rl-type" aria-label="资源类型"></select><span>可与分类、搜索组合使用</span></div>
   </div>
 
-  <div class="rl-grid" id="res-grid">${grid}</div>
+  <div class="rl-resultbar">
+    <div class="rl-scope"><strong id="rl-scope"></strong><span id="rl-count" role="status"></span></div>
+    <button id="rl-clear" class="rl-clear" type="button" hidden>清除条件</button>
+  </div>
+  <div id="res-grid">${grid}</div>
+  <div class="rl-empty" id="rl-no-match" hidden><h2>暂时没有找到匹配的资源</h2><p>试试更短的关键词，或扩大搜索范围。</p><button class="primary" id="rl-search-all" type="button">搜索全部资源</button><button id="rl-empty-clear" type="button">清除条件</button></div>
+  <div id="rl-sentinel" aria-hidden="true"></div>
+  <dialog id="rl-dialog"><div class="rl-dialoghead"><h2>全部分类</h2><button type="button" id="rl-close" aria-label="关闭分类">×</button></div><input type="search" id="rl-cat-search" class="rl-dialogsearch" aria-label="查找分类" placeholder="查找分类"><div id="rl-cat-list" class="rl-categorylist"></div></dialog>
 
   <section class="rl-cta">
     <p>没找到想要的底座？想把你自己的积累加工成底座上架？<a href="/enterprise.html#contact">请联系我们</a></p>
@@ -495,7 +524,8 @@ ${NAV}
 
 ${FOOTER}
 
-<script>window.MOLIO_PAY_BASE = '${PAY_BASE}';window.__LISTINGS__ = ${safeJson(listings)};</script>
+<script>window.MOLIO_PAY_BASE = '${PAY_BASE}';window.__LISTINGS__ = ${safeJson(listings)};window.MolioCatalogView = ${marketCatalogView.toString()};</script>
+<script src="/resource-catalog.js?v=20261003a" defer></script>
 <script src="/vendor/qrcode.min.js"></script>
 <script src="/auth.js?v=20260824a"></script>
 <script src="/pay.js?v=20260905a"></script>
@@ -523,25 +553,6 @@ ${FOOTER}
       })
       .catch(function () { window.MolioAuth.requireAuth().catch(function () { /* 用户取消 */ }); });
   }
-
-  // 筛选：只切换已服务端渲染卡片的显隐，不重新拉取
-  var tabs = document.querySelectorAll('.rl-tab');
-  function applyFilter(f) {
-    document.querySelectorAll('#res-grid .rl-card').forEach(function (card) {
-      var price = parseInt(card.getAttribute('data-price'), 10) || 0;
-      var show = f === 'all' || (f === 'paid' ? price > 0 : price === 0);
-      card.style.display = show ? '' : 'none';
-    });
-  }
-  tabs.forEach(function (tab) {
-    tab.addEventListener('click', function () {
-      tabs.forEach(function (t) {
-        t.classList.toggle('active', t === tab);
-        t.setAttribute('aria-selected', t === tab ? 'true' : 'false');
-      });
-      applyFilter(tab.getAttribute('data-filter'));
-    });
-  });
 
   // 购买/下载：与官网 resources.html 同逻辑，改读内嵌 __LISTINGS__
   var grid = document.getElementById('res-grid');

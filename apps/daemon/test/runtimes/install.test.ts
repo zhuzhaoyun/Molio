@@ -1,12 +1,20 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import * as os from 'os';
+import * as fs from 'fs';
 import * as path from 'node:path';
 import { gzipSync } from 'node:zlib';
-import type { InstallEvent } from '@molio/contracts';
-import { installAgent, getMolioBinDir, extractFromTarball, extractTreeFromTarball, buildTarballName, addToUserPath, updateCurrentProcessPath, getPlatformKey, parseLatestVersionFromPackument } from '../../src/core/runtimes/install.js';
+import { createHash } from 'node:crypto';
+import type { InstallEvent, NpmJsInstallSource } from '@molio/contracts';
+import {
+  installAgent, getMolioBinDir, extractFromTarball, extractTreeFromTarball,
+  buildTarballName, addToUserPath, updateCurrentProcessPath, getPlatformKey,
+  parseLatestVersionFromPackument, parseShaForFile, writeShim, nodeDistInfo,
+  probeHostNode, ensureManagedNode, installNpmDeps, managedNodeBin, managedNpmCli,
+} from '../../src/core/runtimes/install.js';
 import { claudeAgentDef } from '../../src/core/runtimes/claude.js';
 import { codexAgentDef } from '../../src/core/runtimes/codex.js';
+import { dshAgentDef } from '../../src/core/runtimes/dsh.js';
 import { getAgentDef } from '../../src/core/runtimes/registry.js';
 
 // ─── Platform Detection ───────────────────────────────────────────────────
@@ -330,7 +338,10 @@ describe('extractTreeFromTarball', () => {
 });
 
 describe('codex agent install config', () => {
-  const source = codexAgentDef.install?.source;
+  const installSource = codexAgentDef.install?.source;
+  // Narrow to npm-native once so native-only fields (.packages, .fallbackVersion)
+  // type-check — InstallSource is a union now that npm-js (dsh) exists.
+  const source = installSource?.type === 'npm-native' ? installSource : undefined;
 
   it('should be installable via the registry', () => {
     const def = getAgentDef('codex');
@@ -379,6 +390,404 @@ describe('codex agent install config', () => {
       assert.match(name, /^codex-0\.149\.0-[a-z0-9-]+\.tgz$/, `${platformKey}: bad tarball name ${name}`);
     }
   });
+});
+
+// ─── dsh (npm-js) install config ───────────────────────────────────────────
+
+describe('dsh agent install config (npm-js)', () => {
+  const installSource = dshAgentDef.install?.source;
+  const source = installSource?.type === 'npm-js' ? installSource : undefined;
+
+  it('should be installable via the registry', () => {
+    const def = getAgentDef('dsh');
+    assert.ok(def?.install, 'dsh must expose an install config so the one-click button shows');
+  });
+
+  it('should use the npm-js source with a pinned exact version', () => {
+    assert.ok(source, 'dsh must have an npm-js install source');
+    assert.equal(source!.type, 'npm-js');
+    assert.equal(source!.pkgName, '@deepseek-ai/dsh');
+    // dist-tag bug #4222: never 'latest' — pin an exact version so installs are
+    // reproducible and a bad upstream rc doesn't silently break one-click install.
+    assert.notEqual(source!.version, 'latest');
+    assert.match(source!.version, /^\d+\.\d+\.\d+/, 'version must be an exact semver');
+    assert.ok(source!.binEntry.length > 0, 'binEntry must point at the launcher JS');
+  });
+
+  it('should require Node >= 22 and configure multi-mirror managed Node', () => {
+    assert.ok(source);
+    assert.equal(source!.minNodeMajor, 22, 'dsh requires Node >= 22');
+    assert.match(source!.managedNode.version, /^v\d+\.\d+\.\d+$/, 'managed Node version must be exact');
+    // Multi-tier mirror fallback: at least one China mirror + the official dist.
+    assert.ok(source!.managedNode.mirrors.length >= 2, 'need mirror fallback');
+    assert.ok(
+      source!.managedNode.mirrors.some((m) => m.includes('npmmirror') || m.includes('tencent') || m.includes('aliyun')),
+      'should include a China mirror for non-technical users',
+    );
+    assert.ok(
+      source!.managedNode.mirrors.some((m) => m.includes('nodejs.org')),
+      'should include the official nodejs.org dist as final fallback',
+    );
+  });
+
+  it('should configure registry fallback (npmmirror first, npmjs last)', () => {
+    assert.ok(source);
+    assert.ok(source!.registries.length >= 2, 'need registry fallback');
+    assert.ok(source!.registries[0]!.includes('npmmirror'), 'npmmirror should be tried first');
+    assert.ok(
+      source!.registries[source!.registries.length - 1]!.includes('npmjs.org'),
+      'official npmjs should be the last-resort registry',
+    );
+  });
+});
+
+// ─── parseShaForFile ─────────────────────────────────────────────────────────
+
+describe('parseShaForFile', () => {
+  const shasums = [
+    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  node-v22.20.0-linux-x64.tar.gz',
+    'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  node-v22.20.0-win-x64.zip',
+    'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc  node-v22.20.0-darwin-arm64.tar.gz',
+  ].join('\n');
+
+  it('should extract the sha256 for a matching filename', () => {
+    assert.equal(
+      parseShaForFile(shasums, 'node-v22.20.0-win-x64.zip'),
+      'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    );
+  });
+
+  it('should return null for a filename not in the list', () => {
+    assert.equal(parseShaForFile(shasums, 'node-v22.20.0-win-arm64.zip'), null);
+  });
+
+  it('should return null for malformed / empty input', () => {
+    assert.equal(parseShaForFile('', 'x.zip'), null);
+    assert.equal(parseShaForFile('not-a-sha-line', 'x.zip'), null);
+  });
+
+  it('should not match a filename that is a prefix of another', () => {
+    const body = 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd  node-v22.20.0-win-x64.zip.extra\n';
+    assert.equal(parseShaForFile(body, 'node-v22.20.0-win-x64.zip'), null);
+  });
+});
+
+// ─── nodeDistInfo ────────────────────────────────────────────────────────────
+
+describe('nodeDistInfo', () => {
+  it('should build a plausible distribution filename for the current platform', () => {
+    const info = nodeDistInfo('v22.20.0');
+    assert.equal(info.distName, `node-v22.20.0-${process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'darwin' : 'linux'}-${info.distName.split('-').pop()}`);
+    assert.equal(info.ext, process.platform === 'win32' ? 'zip' : 'tar.gz');
+    assert.equal(info.fileName, `${info.distName}.${info.ext}`);
+  });
+});
+
+// ─── writeShim ───────────────────────────────────────────────────────────────
+
+describe('writeShim', () => {
+  function withTmpDir(fn: (dir: string) => void): void {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-shim-'));
+    try {
+      fn(dir);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it('should quote node + binEntry paths (spaces / CJK usernames safe)', () => {
+    withTmpDir((dir) => {
+      const nodeBin = path.join(dir, 'path with space', 'node');
+      const binEntry = path.join(dir, 'path with space', 'bin.js');
+      const shimPath = writeShim(dir, 'dsh', nodeBin, binEntry);
+      const content = fs.readFileSync(shimPath, 'utf8');
+      assert.ok(content.includes(`"${nodeBin}"`), 'node path must be quoted');
+      assert.ok(content.includes(`"${binEntry}"`), 'binEntry path must be quoted');
+    });
+  });
+
+  if (process.platform === 'win32') {
+    it('should write a .cmd shim that forwards args via %*', () => {
+      withTmpDir((dir) => {
+        const shimPath = writeShim(dir, 'dsh', 'C:\\n\\node.exe', 'C:\\n\\bin.js');
+        assert.ok(shimPath.endsWith('dsh.cmd'), `expected .cmd on Windows, got ${shimPath}`);
+        const content = fs.readFileSync(shimPath, 'utf8');
+        assert.match(content, /@echo off/);
+        assert.match(content, /%\*/, 'must forward args with %*');
+      });
+    });
+  } else {
+    it('should write an executable sh shim that forwards args via "$@"', () => {
+      withTmpDir((dir) => {
+        const shimPath = writeShim(dir, 'dsh', '/usr/bin/node', '/n/bin.js');
+        assert.equal(path.basename(shimPath), 'dsh');
+        const content = fs.readFileSync(shimPath, 'utf8');
+        assert.match(content, /^#!/, 'must start with a shebang');
+        assert.match(content, /"\$@"/, 'must forward args with "$@"');
+        const mode = fs.statSync(shimPath).mode & 0o777;
+        assert.equal(mode, 0o755, 'shim must be chmod 755');
+      });
+    });
+  }
+});
+
+// ─── probeHostNode (child-process probe, never process.version) ──────────────
+
+describe('probeHostNode', () => {
+  const pathKey = process.platform === 'win32' ? 'Path' : 'PATH';
+
+  it('should return null when no node is on PATH, regardless of process.version', () => {
+    // THE desktop scenario: the daemon runs under ELECTRON_RUN_AS_NODE with an
+    // embedded Node (process.version says v22+), but the HOST has no node/npm.
+    // probeHostNode must spawn a child against the host PATH — so with PATH
+    // stripped it returns null even though process.version is high. This is the
+    // whole reason we never read process.version.
+    assert.match(process.version, /^v\d+\./, 'sanity: the test runner has a process.version');
+    const savedPath = process.env[pathKey];
+    const emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-nopath-'));
+    try {
+      process.env[pathKey] = emptyDir; // node/npm not resolvable
+      const events: InstallEvent[] = [];
+      const result = probeHostNode(22, (e) => events.push(e));
+      assert.equal(result, null, 'must fall back to portable Node when the host has none');
+      assert.ok(events.some((e) => e.type === 'log'), 'should log why it fell back');
+    } finally {
+      if (savedPath === undefined) delete process.env[pathKey];
+      else process.env[pathKey] = savedPath;
+      fs.rmSync(emptyDir, { recursive: true, force: true });
+    }
+  });
+
+  it('should reject a host Node below the required major', () => {
+    // minMajor=999 is impossible for any real node → the child-process probe
+    // reports the true host version as too old (proving it reads the child's
+    // `node --version`, not a hard-coded pass).
+    const events: InstallEvent[] = [];
+    const result = probeHostNode(999, (e) => events.push(e));
+    assert.equal(result, null);
+  });
+
+  it('should return nodeBin + version when the host Node satisfies the minimum', (t) => {
+    // Only meaningful on a machine that actually has node on PATH (CI + dev do).
+    const events: InstallEvent[] = [];
+    const result = probeHostNode(1, (e) => events.push(e));
+    if (result === null) {
+      t.skip('host has no node on PATH — nothing to assert');
+      return;
+    }
+    assert.match(result.version, /^v\d+\./);
+    assert.ok(fs.existsSync(result.nodeBin), 'nodeBin must be an existing absolute path');
+  });
+});
+
+// ─── ensureManagedNode (mirror fallback + sha256 + atomic swap) ──────────────
+
+describe('ensureManagedNode', () => {
+  const version = 'v22.20.0';
+  const { fileName, distName } = nodeDistInfo(version);
+  const archive = Buffer.from('fake-node-distribution-archive-bytes');
+  const goodSha = createHash('sha256').update(archive).digest('hex');
+  const badSha = 'f'.repeat(64);
+
+  function makeSource(mirrors: string[]): NpmJsInstallSource {
+    return {
+      type: 'npm-js',
+      pkgName: '@deepseek-ai/dsh',
+      version: '0.2.0-rc.2',
+      binEntry: 'lib/bin.js',
+      registries: ['https://registry.npmmirror.com'],
+      minNodeMajor: 22,
+      managedNode: { version, mirrors },
+    };
+  }
+
+  /** Fake extract that lays down a minimal valid portable-Node tree. */
+  async function fakeExtract(_archive: Buffer, _ext: 'zip' | 'tar.gz', stagingDir: string): Promise<void> {
+    const innerDir = path.join(stagingDir, distName);
+    fs.mkdirSync(path.dirname(managedNodeBin(innerDir)), { recursive: true });
+    fs.writeFileSync(managedNodeBin(innerDir), 'fake-node');
+    fs.mkdirSync(path.dirname(managedNpmCli(innerDir)), { recursive: true });
+    fs.writeFileSync(managedNpmCli(innerDir), 'fake-npm-cli');
+  }
+
+  /** Run fn with HOME/USERPROFILE pointed at a throwaway dir. */
+  function withFakeHome(fn: (home: string) => Promise<void>): Promise<void> {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-home-'));
+    const savedHome = process.env['HOME'];
+    const savedProfile = process.env['USERPROFILE'];
+    process.env['HOME'] = home;
+    process.env['USERPROFILE'] = home;
+    return fn(home).finally(() => {
+      if (savedHome === undefined) delete process.env['HOME']; else process.env['HOME'] = savedHome;
+      if (savedProfile === undefined) delete process.env['USERPROFILE']; else process.env['USERPROFILE'] = savedProfile;
+      fs.rmSync(home, { recursive: true, force: true });
+    });
+  }
+
+  it('should download, verify, extract and atomically place portable Node', () =>
+    withFakeHome(async (home) => {
+      const source = makeSource(['https://cdn.npmmirror.com/binaries/node']);
+      const urls: string[] = [];
+      const deps = {
+        download: async (url: string): Promise<Buffer> => {
+          urls.push(url);
+          if (url.endsWith('SHASUMS256.txt')) return Buffer.from(`${goodSha}  ${fileName}\n`);
+          return archive;
+        },
+        extract: fakeExtract,
+      };
+      const dir = await ensureManagedNode(source, () => {}, undefined, deps);
+      assert.equal(dir, path.join(home, '.molio', 'node', version));
+      assert.ok(fs.existsSync(managedNodeBin(dir)), 'node binary must be in place');
+      assert.ok(fs.existsSync(managedNpmCli(dir)), 'npm-cli.js must be in place');
+      assert.ok(urls.some((u) => u.endsWith(fileName)), 'should fetch the archive');
+      assert.ok(urls.some((u) => u.endsWith('SHASUMS256.txt')), 'should fetch SHASUMS256.txt from the same mirror');
+    }));
+
+  it('should fall back to the next mirror when the first fails', () =>
+    withFakeHome(async (home) => {
+      const source = makeSource(['https://broken.example/node', 'https://cdn.npmmirror.com/binaries/node']);
+      const hosts: string[] = [];
+      const deps = {
+        download: async (url: string): Promise<Buffer> => {
+          hosts.push(new URL(url).host);
+          if (url.includes('broken.example')) throw new Error('HTTP 500');
+          if (url.endsWith('SHASUMS256.txt')) return Buffer.from(`${goodSha}  ${fileName}\n`);
+          return archive;
+        },
+        extract: fakeExtract,
+      };
+      const dir = await ensureManagedNode(source, () => {}, undefined, deps);
+      assert.ok(fs.existsSync(managedNodeBin(dir)));
+      assert.equal(hosts[0], 'broken.example', 'first mirror tried first');
+      assert.ok(hosts.some((h) => h.includes('npmmirror')), 'should fall back to the second mirror');
+    }));
+
+  it('should reject a mirror whose sha256 does not match', () =>
+    withFakeHome(async (home) => {
+      const source = makeSource(['https://badsha.example/node', 'https://cdn.npmmirror.com/binaries/node']);
+      const deps = {
+        download: async (url: string): Promise<Buffer> => {
+          if (url.includes('badsha.example') && url.endsWith('SHASUMS256.txt')) {
+            return Buffer.from(`${badSha}  ${fileName}\n`);
+          }
+          if (url.endsWith('SHASUMS256.txt')) return Buffer.from(`${goodSha}  ${fileName}\n`);
+          return archive;
+        },
+        extract: fakeExtract,
+      };
+      const dir = await ensureManagedNode(source, () => {}, undefined, deps);
+      // Succeeded via the good mirror because the bad-sha mirror was rejected.
+      assert.ok(fs.existsSync(managedNodeBin(dir)));
+      assert.ok(!fs.existsSync(path.join(home, '.molio', 'node', `${version}.staging`)), 'no leftover staging');
+    }));
+
+  it('should throw when every mirror fails', () =>
+    withFakeHome(async () => {
+      const source = makeSource(['https://a.example/node', 'https://b.example/node']);
+      const deps = {
+        download: async (): Promise<Buffer> => { throw new Error('network down'); },
+        extract: fakeExtract,
+      };
+      await assert.rejects(
+        () => ensureManagedNode(source, () => {}, undefined, deps),
+        /All Node\.js mirrors failed/,
+      );
+    }));
+
+  it('should reuse an existing portable Node without a network hit', () =>
+    withFakeHome(async (home) => {
+      const dir = path.join(home, '.molio', 'node', version);
+      fs.mkdirSync(path.dirname(managedNodeBin(dir)), { recursive: true });
+      fs.writeFileSync(managedNodeBin(dir), 'existing-node');
+      fs.mkdirSync(path.dirname(managedNpmCli(dir)), { recursive: true });
+      fs.writeFileSync(managedNpmCli(dir), 'existing-npm');
+
+      let downloadCalled = false;
+      const deps = {
+        download: async (): Promise<Buffer> => { downloadCalled = true; return archive; },
+        extract: fakeExtract,
+      };
+      const source = makeSource(['https://cdn.npmmirror.com/binaries/node']);
+      const result = await ensureManagedNode(source, () => {}, undefined, deps);
+      assert.equal(result, dir);
+      assert.equal(downloadCalled, false, 'idempotent: existing install must not re-download');
+    }));
+});
+
+// ─── installNpmDeps (registry fallback + abort) ──────────────────────────────
+
+describe('installNpmDeps', () => {
+  // A runner that shells out to the real node, running an inline script that
+  // exits non-zero for a registry whose host contains "bad".
+  const script =
+    'const a=process.argv;const i=a.indexOf("--registry");const reg=i>=0?a[i+1]:"";' +
+    'if(reg.includes("bad")){process.stderr.write("npm ERR! 404 Not Found");process.exit(1);}process.exit(0);';
+  const runner = { cmd: process.execPath, baseArgs: ['-e', script], shell: false };
+  const flags = ['--no-save', '--no-package-lock'];
+
+  function withTmpCwd(fn: (cwd: string) => Promise<void>): Promise<void> {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'molio-npm-'));
+    return fn(cwd).finally(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  }
+
+  it('should fall back to the next registry when the first fails', () =>
+    withTmpCwd(async (cwd) => {
+      const events: InstallEvent[] = [];
+      const res = await installNpmDeps(
+        runner,
+        ['https://bad.example', 'https://good.example'],
+        flags,
+        cwd,
+        (e) => events.push(e),
+      );
+      assert.equal(res.installed, true, 'should succeed on the second registry');
+      assert.equal(res.aborted, false);
+      assert.match(res.lastFailure, /404 Not Found/, 'captures the failing registry stderr');
+      assert.ok(events.some((e) => e.type === 'log' && /trying next/i.test(e.message)));
+    }));
+
+  it('should report not-installed when every registry fails', () =>
+    withTmpCwd(async (cwd) => {
+      const res = await installNpmDeps(runner, ['https://bad1.example', 'https://bad2.example'], flags, cwd, () => {});
+      assert.equal(res.installed, false);
+      assert.equal(res.aborted, false);
+    }));
+
+  it('should short-circuit to aborted when the signal is already aborted', () =>
+    withTmpCwd(async (cwd) => {
+      const ac = new AbortController();
+      ac.abort();
+      // If it tried to spawn, cmd would be a nonexistent binary — but the
+      // aborted check must break before any spawn.
+      const res = await installNpmDeps(
+        { cmd: 'this-binary-does-not-exist', baseArgs: [], shell: false },
+        ['https://good.example'],
+        flags,
+        cwd,
+        () => {},
+        ac.signal,
+      );
+      assert.equal(res.aborted, true);
+      assert.equal(res.installed, false);
+    }));
+
+  it('should kill the npm child and report aborted when cancelled mid-install', () =>
+    withTmpCwd(async (cwd) => {
+      const slowRunner = {
+        cmd: process.execPath,
+        baseArgs: ['-e', 'setTimeout(()=>{},30000)'],
+        shell: false,
+      };
+      const ac = new AbortController();
+      const started = Date.now();
+      const promise = installNpmDeps(slowRunner, ['https://good.example'], flags, cwd, () => {}, ac.signal);
+      setTimeout(() => ac.abort(), 300);
+      const res = await promise;
+      assert.equal(res.aborted, true, 'abort must propagate');
+      assert.equal(res.installed, false);
+      assert.ok(Date.now() - started < 5000, 'should not wait for the 30s child — abort kills it');
+    }));
 });
 
 describe('PATH update duplication guard (error-driven)', () => {

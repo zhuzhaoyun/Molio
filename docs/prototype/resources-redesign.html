@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>资源页布局原型 — Molio</title>
+<!--
+  资源页改版原型（自包含单文件，双击浏览器打开即可）。
+  数据是线上 15 条真实资源（2026-10-01 拉取），分类按「主题 6 类」预置。
+  顶部黑色控制条是原型专用的，正式版会移除。
+-->
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700&family=Source+Serif+4:ital,wght@0,400;0,600;0,700&family=Noto+Serif+SC:wght@400;600;700;900&display=swap');
+
+:root {
+  --paper: #F5F0E8; --paper-2: #EDE6D8; --paper-3: #E4DBCB;
+  --ink: #0D0D0D; --ink-80: #1A1A1A; --ink-60: #404040; --ink-40: #666666;
+  --ink-20: #A0A0A0; --ink-10: #C8C4BC;
+  --seal: #C41E24; --seal-light: #D4303A; --seal-dark: #8B1519;
+  --hair: #D8D0C2; --rule: #C8BFB0;
+  --font-display: 'Fraunces', Georgia, 'Noto Serif SC', serif;
+  --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', monospace;
+  --max-w: 1200px; --nav-h: 64px;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+*, *::before, *::after { box-sizing: border-box; }
+* { margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: var(--font-body); background-color: var(--paper); color: var(--ink);
+  line-height: 1.7; -webkit-font-smoothing: antialiased; overflow-x: hidden;
+}
+img, svg { display: block; max-width: 100%; }
+a { color: inherit; text-decoration: none; }
+ul, ol { list-style: none; }
+button { font-family: inherit; }
+[hidden] { display: none !important; }
+h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 700; color: var(--ink); line-height: 1.15; letter-spacing: -0.02em; }
+
+.atmosphere {
+  position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background-color: var(--paper);
+  background-image:
+    radial-gradient(ellipse 700px 500px at 10% 15%, rgba(13,13,13,0.03) 0%, transparent 70%),
+    radial-gradient(ellipse 500px 600px at 90% 85%, rgba(196,30,36,0.01) 0%, transparent 70%);
+}
+
+/* ---------- 顶部导航（对齐线上 .top-nav） ---------- */
+.top-nav {
+  position: fixed; top: 0; left: 0; right: 0; height: var(--nav-h); z-index: 200;
+  background: rgba(245, 240, 232, 0.92); backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--hair);
+}
+.nav-inner { display: flex; align-items: center; justify-content: space-between; height: 100%; max-width: var(--max-w); margin: 0 auto; padding: 0 24px; }
+.nav-logo { display: inline-flex; align-items: center; gap: 10px; font-family: var(--font-display); font-size: 20px; font-weight: 700; }
+.nav-links { display: flex; align-items: center; gap: 28px; }
+.nav-link { font-size: 14px; font-weight: 500; color: var(--ink-40); }
+.nav-link.active { color: var(--ink); font-weight: 600; }
+
+/* ---------- 原型控制条（正式版移除） ---------- */
+.proto-bar { background: var(--ink); color: var(--paper); font-size: 12.5px; }
+.proto-bar-inner {
+  max-width: var(--max-w); margin: 0 auto; padding: 10px 24px;
+  display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+}
+.proto-bar b { font-weight: 700; letter-spacing: 0.04em; color: #fff; }
+.proto-group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.proto-group > span { color: rgba(245,240,232,0.55); }
+.proto-btn {
+  padding: 4px 12px; border-radius: 999px; cursor: pointer;
+  border: 1px solid rgba(245,240,232,0.28); background: transparent;
+  color: rgba(245,240,232,0.85); font-size: 12.5px; transition: all 0.18s var(--ease);
+}
+.proto-btn:hover { border-color: rgba(245,240,232,0.6); color: #fff; }
+.proto-btn.on { background: var(--paper); border-color: var(--paper); color: var(--ink); font-weight: 600; }
+
+/* ---------- 页面骨架 ---------- */
+.rl-page { max-width: 1100px; margin: 0 auto; padding: 40px 24px 72px; }
+.rl-hero { text-align: center; padding: 48px 0 8px; }
+.rl-hero h1 { font-family: var(--font-body); font-size: 40px; font-weight: 800; letter-spacing: 0.01em; line-height: 1.25; }
+.rl-hero h1 em { font-style: normal; color: var(--seal); }
+.rl-hero .rl-sub { margin-top: 14px; font-size: 15px; color: var(--ink-40); }
+.rl-hero .rl-meta { margin-top: 10px; font-size: 13px; color: var(--ink-20); }
+
+/* ---------- 共用控制区（吸顶）：分类控件 + 价格筛选 + 搜索 ---------- */
+.rl-controls {
+  position: sticky; top: 0; z-index: 100;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap;
+  margin: 32px 0 0; padding: 12px 0;
+  background: rgba(245,240,232,0.94); backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--hair);
+}
+/* 分类行恒定单行、溢出横向滚动：吸顶栏高度不随分类数量增长（换行会让吸顶栏吃到 2-3 行） */
+.rl-catcontrol {
+  display: flex; align-items: center; gap: 6px;
+  /* flex-basis: 0 —— 不按内容宽度参与换行计算，否则分类一多就把搜索框挤到下一行 */
+  flex: 1 1 0; min-width: 0;
+  flex-wrap: nowrap; overflow-x: auto;
+  scrollbar-width: none; -ms-overflow-style: none;
+}
+.rl-catcontrol::-webkit-scrollbar { display: none; }
+/* 溢出时右缘渐隐，提示还有内容可横向滚动 */
+.rl-catcontrol.is-scrollable {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent);
+}
+.rl-catcontrol > * { flex: none; }
+.rl-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.rl-search {
+  width: 220px; padding: 7px 16px; border-radius: 999px; border: 1px solid var(--hair);
+  background: #fff; color: var(--ink); font-family: inherit; font-size: 13.5px; outline: none;
+  transition: border-color 0.2s var(--ease);
+}
+.rl-search:focus { border-color: var(--rule); }
+.rl-search::placeholder { color: var(--ink-40); }
+
+/* 方案 A 的分类控件：锚点（导航语义，非筛选） */
+.rl-anchor {
+  display: inline-flex; align-items: baseline; gap: 5px;
+  padding: 5px 13px; border-radius: 999px; font-size: 13px; font-weight: 500;
+  color: var(--ink-60); border: 1px solid transparent; transition: all 0.18s var(--ease);
+  white-space: nowrap;
+}
+.rl-anchor:hover { color: var(--ink); background: rgba(13,13,13,0.04); }
+.rl-anchor.active { color: var(--ink); font-weight: 700; border-color: var(--rule); background: #fff; }
+.rl-anchor .n { font-size: 11.5px; color: var(--ink-20); font-variant-numeric: tabular-nums; }
+
+/* 方案 B 的分类控件：筛选胶囊（筛选语义，单选） */
+.rl-catchip {
+  padding: 7px 16px; border-radius: 999px; border: 1px solid var(--hair); background: #fff;
+  color: var(--ink-60); font-size: 13px; font-weight: 500; cursor: pointer;
+  transition: all 0.2s var(--ease);
+  white-space: nowrap;
+}
+.rl-catchip:hover { border-color: var(--rule); color: var(--ink); }
+.rl-catchip.on { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+.rl-catchip .n { margin-left: 5px; font-size: 11.5px; opacity: 0.6; font-variant-numeric: tabular-nums; }
+
+/* ---------- 卡片（沿用线上 .rl-card） ---------- */
+.rl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+.rl-card {
+  display: flex; flex-direction: column; background: #fff;
+  border: 1px solid rgba(13,13,13,0.06); border-radius: 16px; padding: 20px;
+  box-shadow: 0 1px 3px rgba(13,13,13,0.05);
+  transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease);
+}
+.rl-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(13,13,13,0.08); }
+.rl-top { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.rl-icon { flex: none; width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 26px; }
+.rl-titles { flex: 1; min-width: 0; }
+.rl-name { font-size: 16px; font-weight: 700; line-height: 1.3; }
+.rl-sub { display: block; margin-top: 3px; font-size: 12px; color: var(--ink-20); }
+.rl-ver { margin-left: 6px; font-style: normal; color: var(--ink-40); font-variant-numeric: tabular-nums; }
+.rl-price { flex: none; font-size: 13px; font-weight: 600; padding: 2px 10px; border-radius: 999px; white-space: nowrap; }
+.rl-price.paid { color: var(--seal); background: rgba(196,30,36,0.08); }
+.rl-price.free { color: #1a7f4e; background: rgba(26,127,78,0.08); }
+.rl-desc {
+  flex: 1; margin: 0 0 16px; font-size: 13.5px; line-height: 1.65; color: var(--ink-40);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.rl-actions { display: flex; align-items: center; gap: 14px; }
+.rl-buy {
+  padding: 8px 18px; border: none; border-radius: 999px; background: var(--ink);
+  color: var(--paper); font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.15s var(--ease);
+}
+.rl-buy:hover { background: var(--seal-dark); }
+.rl-detail { font-size: 13px; color: var(--ink-40); }
+.rl-detail:hover { color: var(--seal-dark); }
+
+/* 卡片上的分类标签（借 blog .index-tag 的编辑体观感） */
+.rl-cat {
+  display: inline-block; margin-bottom: 4px;
+  font-family: var(--font-display); font-size: 11px; font-style: italic;
+  font-weight: 600; letter-spacing: 0.06em; color: var(--seal);
+}
+/* 分类轴上「非学科轴」的例外标记（应试与备考按用途切） */
+.rl-catmark { margin-left: 2px; color: var(--seal); font-weight: 700; cursor: help; }
+
+/* 压力测试造的样例卡角标 */
+.rl-demo { margin-left: 6px; font-size: 10.5px; font-weight: 600; color: var(--ink-20); border: 1px solid var(--hair); border-radius: 999px; padding: 0 6px; font-style: normal; }
+
+/* ---------- 方案 A：分组 section ---------- */
+.rl-section { padding-top: 36px; scroll-margin-top: 84px; }
+.rl-section-title {
+  display: flex; align-items: baseline; gap: 10px;
+  font-size: 22px; font-weight: 700; padding-bottom: 12px; margin-bottom: 20px;
+  border-bottom: 1px solid var(--hair);
+}
+.rl-section-title .n { font-family: var(--font-body); font-size: 12.5px; font-weight: 600; color: var(--ink-20); font-variant-numeric: tabular-nums; }
+
+/* ---------- 方案 B：平铺网格 ---------- */
+.view-b .rl-grid { margin-top: 28px; }
+
+.rl-empty { margin-top: 32px; text-align: center; font-size: 14px; color: var(--ink-40); }
+
+/* ---------- 页尾 CTA（线上 .rl-cta） ---------- */
+.rl-cta {
+  margin: 44px 0 0; padding: 18px 24px; background: #fff;
+  border: 1px solid rgba(13,13,13,0.06); border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(13,13,13,0.05); text-align: center;
+}
+.rl-cta p { font-size: 13.5px; line-height: 1.9; color: var(--ink-60); }
+.rl-cta a { color: var(--seal); }
+.rl-cta a:hover { text-decoration: underline; }
+
+/* ---------- 底部说明 ---------- */
+.proto-note { max-width: 1100px; margin: 0 auto; padding: 0 24px 80px; }
+.proto-note h4 { font-size: 15px; margin-bottom: 10px; }
+.proto-note ul { font-size: 13.5px; color: var(--ink-40); line-height: 1.95; }
+.proto-note li { padding-left: 16px; position: relative; }
+.proto-note li::before { content: '·'; position: absolute; left: 4px; color: var(--seal); }
+.proto-note code { font-family: var(--font-mono); font-size: 12px; background: var(--paper-2); padding: 1px 6px; border-radius: 4px; }
+
+@media (max-width: 860px) {
+  .rl-controls { justify-content: flex-start; }
+  .rl-catcontrol { width: 100%; -webkit-overflow-scrolling: touch; }
+  .rl-tools { width: 100%; justify-content: space-between; }
+  .rl-search { flex: 1; min-width: 0; width: auto; }
+}
+@media (max-width: 720px) {
+  .rl-hero h1 { font-size: 30px; }
+}
+</style>
+</head>
+<body>
+<div class="atmosphere"></div>
+
+<nav class="top-nav" aria-label="主导航">
+  <div class="nav-inner">
+    <a href="#" class="nav-logo"><span>Molio</span></a>
+    <div class="nav-links">
+      <a href="#" class="nav-link">首页</a>
+      <a href="#" class="nav-link active">资源</a>
+      <a href="#" class="nav-link">博客</a>
+      <a href="#" class="nav-link">定制服务</a>
+    </div>
+  </div>
+</nav>
+
+<!-- 原型控制条：正式版移除 -->
+<div class="proto-bar">
+  <div class="proto-bar-inner">
+    <b>原型控制</b>
+    <div class="proto-group">
+      <span>布局</span>
+      <button class="proto-btn on" data-layout="a">方案 A · 分组 + 吸顶锚点</button>
+      <button class="proto-btn" data-layout="b">方案 B · 胶囊分类筛选</button>
+    </div>
+    <div class="proto-group">
+      <span>数据量</span>
+      <button class="proto-btn on" data-scale="now">当前 15 条 · 6 类</button>
+      <button class="proto-btn" data-scale="stress">压力测试 60 条 · 12 类</button>
+    </div>
+  </div>
+</div>
+
+<main class="rl-page">
+  <section class="rl-hero">
+    <h1>你读得懂、<em>AI 用得上</em>的现成知识底座</h1>
+    <p class="rl-sub">从经史典籍与专业资料中提取实体与概念、建立关联，加工成结构化的知识底座：你顺着图谱阅读探索，Claude Code、Codex 立即在它上面工作。</p>
+    <p class="rl-meta">下载 · 解压 · 加载 · 微信支付成功后自动解锁 · 兼容 Obsidian</p>
+  </section>
+
+  <!-- 共用控制区（吸顶）：分类控件随方案切换，搜索恒定 -->
+  <div class="rl-controls" id="controls">
+    <div class="rl-catcontrol" id="catcontrol"></div>
+    <div class="rl-tools">
+      <input type="search" class="rl-search" id="rl-search" placeholder="搜索名称 / 标签 / 简介" aria-label="搜索资源" autocomplete="off">
+    </div>
+  </div>
+
+  <div class="view-a" id="viewA"><div id="sections"></div></div>
+  <div class="view-b" id="viewB" hidden><div class="rl-grid" id="flatgrid"></div></div>
+
+  <p class="rl-empty" id="no-match" hidden>没有匹配的资源，换个关键词试试。</p>
+
+  <section class="rl-cta">
+    <p>没找到想要的底座？想把你自己的积累加工成底座上架？<a href="#">请联系我们</a></p>
+  </section>
+</main>
+
+<section class="proto-note">
+  <h4>这个原型在演示什么</h4>
+  <ul>
+    <li><b>数据是线上真实的 15 条资源</b>（含图标、底色、简介、标签、价格、版本），只有「分类」是这次新加的，共 6 类。</li>
+    <li><b>分类统一按「学科」切</b>，命名也换成学科语言（中国历史 / 中国古典文学 / 哲学与思想 / 中医与医学 / 工程与技术 / 应试与备考），对齐图书电商与中图法的做法。早先的「历史典籍 / 文学名著」是按<b>文献体裁</b>切的，会和「学科」混轴 —— 《三国演义》进「文学名著」还是「历史典籍」都能挂，边界就糊了；换成学科语言后，它是小说归古典文学，三国这段历史归中国历史，不再有歧义。</li>
+    <li><b>带 <span class="rl-catmark">*</span> 的「应试与备考」是唯一例外</b>，按<b>用途</b>而非学科切（鼠标悬停有说明）。原因是法考与高考在学科上分属法律和教育，拆开会各只剩 1 条资源。这是 15 条规模下的务实妥协，标出来是为了让它看着像有意为之，不是疏忽。</li>
+    <li><b>筛选维度只有分类一个</b>：分类控件占左侧主位，搜索在右侧。原来的「全部/免费/付费」价格筛选已去掉，价格信息仍保留在卡片徽标上 —— 少一个维度，控制区就不用挤成两排。</li>
+    <li><b>方案 A（推荐）</b>：分类不做筛选器，做成分组标题 + 吸顶锚点。每个分类是 <code>&lt;h2&gt;</code>，点锚点滚动定位，滚动时锚点自动高亮。6 类时是一页目录；切到压力测试看 12 类时锚点行的表现。</li>
+    <li><b>方案 B</b>：分类做成单行胶囊筛选（全部 + 6 类），卡片平铺。分类少时好看；13 个胶囊时看是否还能一眼扫完。</li>
+    <li><b>压力测试</b>克隆出 12 类 60 条（新增 6 类：法律实务 / 金融投资 / 家谱世系 / 军事战略 / 语言学习 / 计算机科学，卡片带「示例」角标），看两种布局在数据量翻 4 倍、分类翻 2 倍时会不会崩。</li>
+    <li><b>搜索</b>全局过滤：命中时隐藏空 section，并显示无匹配空态。搜到结果时锚点上的数字同步变化。</li>
+  </ul>
+</section>
+
+<script>
+// ── 分类注册表（key 稳定、label 可改、order 控制顺序）：正式版从云端下发，contracts 留兜底 ──
+var CATEGORIES = [
+  { key: 'classics',    label: '中国历史',     order: 10 },
+  { key: 'literature',  label: '中国古典文学', order: 20 },
+  { key: 'philosophy',  label: '哲学与思想',   order: 30 },
+  { key: 'medicine',    label: '中医与医学',   order: 40 },
+  { key: 'engineering', label: '工程与技术',   order: 50 },
+  // 唯一一个按「用途」而非「学科」切的分类（法考与高考在学科上分属法律/教育，拆开各只剩 1 条）；
+  // mark 让它在界面上带 * 标出来，是有意的例外而非疏忽。
+  { key: 'exams',       label: '应试与备考',   order: 60, mark: '用途轴' }
+];
+var EXTRA_CATEGORIES = [
+  { key: 'law',       label: '法律实务',   order: 70 },
+  { key: 'finance',   label: '金融投资',   order: 80 },
+  { key: 'genealogy', label: '家谱世系',   order: 90 },
+  { key: 'military',  label: '军事战略',   order: 100 },
+  { key: 'language',  label: '语言学习',   order: 110 },
+  { key: 'cs',        label: '计算机科学', order: 120 }
+];
+
+// ── 线上真实资源（2026-10-01 拉取），cat 为本次新增的分类 ──
+var BASE = [
+  { icon:'📜', tint:'#F5EEE0', name:'史记知识库：130 篇全本的人物、制度与思想图谱', cat:'classics', tags:['史记研究','中国历史'], price:990, ver:'v1.1',
+    desc:'以《史记》130 篇全本（约 65.7 万字）为基础的结构化知识库，构建人物、制度与思想之间的关联网络。整理出 1349 个实体条目、82 个制度与思想概念、10 组历史对比。' },
+  { icon:'📜', tint:'#E6E9F5', name:'《资治通鉴》千年兴亡：人物、事件与制度知识图谱', cat:'classics', tags:['资治通鉴','历史知识图谱'], price:990, ver:'v1.0',
+    desc:'将《资治通鉴》的千年历史整理为结构化、可关联的知识体系，覆盖 626 个政权与人物、44 个事件与制度概念、23 组历史对比。适合历史学习、史学研读与写作查证。' },
+  { icon:'📖', tint:'#F0E8DC', name:'《明史》帝国兴衰知识图谱：人物、制度与朝局演变', cat:'classics', tags:['明史','历史'], price:1690, ver:'v1.0',
+    desc:'以《明史》内容为基础进行结构化整理，构建明代人物、制度与朝局变化之间的关联知识体系。包含 311 个帝系、后妃、宗室、大臣、宦官人物条目与 18 个官制概念。' },
+  { icon:'📖', tint:'#F5E3E0', name:'三国人物关系图：120 回本的三国演义知识图谱', cat:'literature', tags:['三国'], price:990, ver:'v1.0',
+    desc:'把《三国演义》120 回拆成一张能查的关系网。人物、组织与势力实体 157 个，事件、谋略与器物概念 49 个，对照分析 15 篇，全书 179 条别名线索全部映射入库。' },
+  { icon:'🏮', tint:'#E8EDF2', name:'《红楼梦》人物与意象关系图谱：120 回原著知识图鉴', cat:'literature', tags:['红楼梦','人物概念'], price:590, ver:'v1.0',
+    desc:'围绕《红楼梦》120 回原著内容进行结构化整理，包含 120 回回目一句话速览、60 位核心人物解析，以及太虚幻境、大观园、护官符等 11 个关键概念体系。' },
+  { icon:'📖', tint:'#E8F0E4', name:'《金瓶梅》人物·商业·社会运行全景知识图谱', cat:'literature', tags:[], price:690, ver:'v1.0',
+    desc:'把《金瓶梅》拆解为一套可探索、可连接、可供 AI 使用的知识图谱。收录全书 100 回、104 位人物，并系统整理人物关系、商业活动、金钱往来、财产消费与社会身份。' },
+  { icon:'📚', tint:'#F5E3E0', name:'中西哲学思想图谱：给你本地 AI 的哲学知识底座', cat:'philosophy', tags:['哲学','中西比较'], price:1990, ver:'v1.1',
+    desc:'一套可以同时服务于人的学习与 AI 知识调用的哲学知识体系。包含 6 部哲学经典摘要、100 位中西哲学家、135 个核心概念与 15 组思想对比，从孔子、朱熹、王阳明到苏格拉底、康德、尼采。' },
+  { icon:'📜', tint:'#F5E3E0', name:'《周易》六十四卦全解｜卦变·象数·义理知识图谱', cat:'philosophy', tags:['周易六十四卦','易学研读'], price:0, ver:'v1.0',
+    desc:'系统整理《周易》六十四卦知识体系，收录王弼本《周易》经传全文、六十四卦详解、卦变关系及象数义理内容，可作为 AI 深度理解与辅助研究《周易》的知识底座。' },
+  { icon:'🌿', tint:'#F5E9D3', name:'老庄思想图谱：《道德经》与《庄子》核心概念体系', cat:'philosophy', tags:['道家哲学','老庄思想'], price:0, ver:'v1.0',
+    desc:'围绕《道德经》与《庄子》的思想体系进行结构化整理，涵盖帛书版《老子》、王弼注本与《庄子》核心概念网络，梳理「道」「德」「无为」「逍遥」等关键范畴的内在关联。' },
+  { icon:'📜', tint:'#E8F0E4', name:'中医经典辨证体系：伤寒论六经·金匮病证·温病三焦知识图谱', cat:'medicine', tags:['中医古籍','伤寒温病','古文新编'], price:2990, ver:'v1.3',
+    desc:'将《灵枢经》《伤寒论》《金匮要略》与清代珍稀医籍结构化整理为中医经典辨证体系。《伤寒论》398 条按六经逐段拆解，《金匮要略》25 篇病证证治、约 260 首经方。' },
+  { icon:'📚', tint:'#F2E3D5', name:'妇产超声知识图谱：胎儿畸形诊断、征象与鉴别体系', cat:'medicine', tags:['妇产超声','产前诊断'], price:3990, ver:'v1.0',
+    desc:'基于 Callen《妇产超声学》第 6 版等权威资料构建的结构化知识体系，整理 600 余条临床知识，覆盖胎儿畸形各论、典型超声征象、疾病鉴别诊断及产前检查规范。' },
+  { icon:'📖', tint:'#F5E9D3', name:'法考刑法·131 考点与主观题观点训练知识图谱', cat:'exams', tags:['司法考试','刑法'], price:990, ver:'v1.0',
+    desc:'面向法考备考的刑法结构化知识底座。覆盖刑法总则 48 个考点 + 分则 83 个考点，其中 59 个高频考点以星标标注；针对主观题整理最常见的 10 大观点展示。' },
+  { icon:'📖', tint:'#F0E8DC', name:'广东高考志愿填报·高校专业全景知识库', cat:'exams', tags:['高考','志愿填报'], price:9900, ver:'v1.0',
+    desc:'将高校、学院、专业、课程、学科、培养方向等信息进行系统整理，解决通用大模型难以保证知识持续沉淀、来源追溯和跨学校对比的问题。' },
+  { icon:'📖', tint:'#F2E3D5', name:'图纸数据提取：工程图纸数字化与 AI 识别技术全景', cat:'engineering', tags:['图纸识别','AI识图'], price:19900, ver:'v1.0',
+    desc:'以《AI 时代的工程图纸数据处理》书稿为底本：14 节正文梳理从 DWG/DXF 解析、图元图层块标注识别，到构件、门窗表、机电系统如何组装成可用数据。' },
+  { icon:'📚', tint:'#E8EDF2', name:'知识工程全景图谱-RAG-本体-Agent工程', cat:'engineering', tags:['知识工程','AI工程','本体'], price:4990, ver:'v1.3',
+    desc:'面向 AI Agent 时代的本体论与结构化知识底座，以 Ontology 与知识建模为核心，系统整理本体、Palantir Foundry / AIP、AI Agent 工程、RAG、GraphRAG 等主题。' }
+];
+
+// 压力测试：12 类 60 条，验证布局在数据量增长时的表现
+function stressData() {
+  var out = BASE.slice();
+  CATEGORIES.concat(EXTRA_CATEGORIES).forEach(function (c, ci) {
+    for (var i = 0; i < 4; i++) {
+      var src = BASE[(ci * 4 + i) % BASE.length];
+      out.push({
+        icon: src.icon, tint: src.tint, cat: c.key, demo: true,
+        name: src.name.split('：')[0] + '：扩展样例 ' + (i + 1),
+        tags: src.tags, price: src.price, ver: src.ver, desc: src.desc
+      });
+    }
+  });
+  return out;
+}
+
+var state = { layout: 'a', scale: 'now', cat: 'all', q: '' };
+var DATA = BASE;
+
+function cats() { return state.scale === 'now' ? CATEGORIES : CATEGORIES.concat(EXTRA_CATEGORIES); }
+function catLabel(key) {
+  var c = cats().filter(function (x) { return x.key === key; })[0];
+  return c ? c.label : '未分类';
+}
+function byOrder(a, b) { return a.order - b.order; }
+// 例外分类带 * 标记（title 说明为什么它是例外）
+function mark(c) {
+  return c.mark ? '<span class="rl-catmark" title="这个分类按' + c.mark + '切，是本页唯一非学科轴的分类">*</span>' : '';
+}
+function yuan(cents) { return (cents / 100).toFixed(cents % 100 === 0 ? 0 : 1); }
+
+function matches(r) {
+  if (state.q) {
+    var hay = (r.name + ' ' + r.tags.join(' ') + ' ' + r.desc + ' ' + catLabel(r.cat)).toLowerCase();
+    if (hay.indexOf(state.q) === -1) return false;
+  }
+  return true;
+}
+function inCat(r) { return state.cat === 'all' || r.cat === state.cat; }
+
+function cardHtml(r) {
+  var paid = r.price > 0;
+  var tagline = r.tags.length ? r.tags.join(' · ') + ' ' : '';
+  return '<article class="rl-card" data-price="' + r.price + '" data-cat="' + r.cat + '">' +
+    '<div class="rl-top">' +
+      '<div class="rl-icon" style="background:' + r.tint + '">' + r.icon + '</div>' +
+      '<div class="rl-titles">' +
+        '<span class="rl-cat">' + catLabel(r.cat) + '</span>' +
+        '<h3 class="rl-name">' + r.name + (r.demo ? '<span class="rl-demo">示例</span>' : '') + '</h3>' +
+        '<span class="rl-sub">' + tagline + '<em class="rl-ver">' + r.ver + '</em></span>' +
+      '</div>' +
+      '<span class="rl-price ' + (paid ? 'paid' : 'free') + '">' + (paid ? '¥' + yuan(r.price) : '免费') + '</span>' +
+    '</div>' +
+    '<p class="rl-desc">' + r.desc + '</p>' +
+    '<div class="rl-actions">' +
+      '<button class="rl-buy" type="button">' + (paid ? '购买 ¥' + yuan(r.price) : '下载') + '</button>' +
+      '<a class="rl-detail" href="#">查看详情 →</a>' +
+    '</div>' +
+  '</article>';
+}
+
+// 某个分类下「符合搜索条件」的条数（锚点与胶囊上的数字都来自这里）
+function catCount(key) {
+  var n = 0;
+  DATA.forEach(function (r) { if (r.cat === key && matches(r)) n++; });
+  return n;
+}
+
+// ── 方案 A：分组 section ──
+function renderA() {
+  var anchors = '';
+  var sections = '';
+  cats().slice().sort(byOrder).forEach(function (c) {
+    var n = catCount(c.key);
+    anchors += '<a class="rl-anchor" href="#cat-' + c.key + '" data-cat="' + c.key + '">' + c.label + mark(c) +
+      '<span class="n">' + n + '</span></a>';
+    var cards = DATA.filter(function (r) { return r.cat === c.key && matches(r); }).map(cardHtml).join('');
+    sections += '<section class="rl-section" id="cat-' + c.key + '" data-cat="' + c.key + '"' + (n === 0 ? ' hidden' : '') + '>' +
+      '<h2 class="rl-section-title">' + c.label + mark(c) + '<span class="n">' + n + ' 个</span></h2>' +
+      '<div class="rl-grid">' + cards + '</div></section>';
+  });
+  document.getElementById('catcontrol').innerHTML = anchors;
+  document.getElementById('sections').innerHTML = sections;
+}
+
+// ── 方案 B：胶囊筛选 + 平铺 ──
+function renderB() {
+  var chips = '<button class="rl-catchip' + (state.cat === 'all' ? ' on' : '') + '" data-cat="all">全部' +
+    '<span class="n">' + DATA.filter(matches).length + '</span></button>';
+  cats().slice().sort(byOrder).forEach(function (c) {
+    chips += '<button class="rl-catchip' + (state.cat === c.key ? ' on' : '') + '" data-cat="' + c.key + '">' + c.label + mark(c) +
+      '<span class="n">' + catCount(c.key) + '</span></button>';
+  });
+  document.getElementById('catcontrol').innerHTML = chips;
+  document.getElementById('flatgrid').innerHTML = DATA.filter(function (r) {
+    return matches(r) && inCat(r);
+  }).map(cardHtml).join('');
+}
+
+function visibleCount() {
+  return state.layout === 'a' ? DATA.filter(matches).length
+                              : DATA.filter(function (r) { return matches(r) && inCat(r); }).length;
+}
+
+// 分类行溢出时给右缘渐隐提示（单行横向滚动，不换行）
+function updateScrollHint() {
+  var el = document.getElementById('catcontrol');
+  el.classList.toggle('is-scrollable', el.scrollWidth > el.clientWidth + 1);
+}
+
+var spy = null;
+function render() {
+  document.getElementById('viewA').hidden = state.layout !== 'a';
+  document.getElementById('viewB').hidden = state.layout !== 'b';
+  if (state.layout === 'a') renderA(); else renderB();
+  document.getElementById('no-match').hidden = visibleCount() !== 0;
+  updateScrollHint();
+  if (spy) { spy.disconnect(); spy = null; }
+  if (state.layout === 'a') initSpy();
+}
+window.addEventListener('resize', updateScrollHint);
+
+// ── 滚动高亮（scroll-spy）：方案 A 特有 ──
+function initSpy() {
+  if (!('IntersectionObserver' in window)) return;
+  spy = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) {
+      if (!e.isIntersecting) return;
+      var c = e.target.getAttribute('data-cat');
+      document.querySelectorAll('.rl-anchor').forEach(function (a) {
+        a.classList.toggle('active', a.getAttribute('data-cat') === c);
+      });
+    });
+  }, { rootMargin: '-90px 0px -70% 0px' });
+  document.querySelectorAll('.rl-section').forEach(function (s) { spy.observe(s); });
+}
+
+// ── 事件 ──
+document.querySelectorAll('[data-layout]').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    state.layout = btn.getAttribute('data-layout');
+    document.querySelectorAll('[data-layout]').forEach(function (b) { b.classList.toggle('on', b === btn); });
+    render();
+  });
+});
+document.querySelectorAll('[data-scale]').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    state.scale = btn.getAttribute('data-scale');
+    DATA = state.scale === 'now' ? BASE : stressData();
+    state.cat = 'all';
+    document.querySelectorAll('[data-scale]').forEach(function (b) { b.classList.toggle('on', b === btn); });
+    render();
+  });
+});
+document.getElementById('rl-search').addEventListener('input', function (e) {
+  state.q = e.target.value.trim().toLowerCase();
+  render();
+});
+// 分类控件：A 是锚点（导航，点了清筛选条件），B 是胶囊（筛选）
+document.getElementById('catcontrol').addEventListener('click', function (e) {
+  var chip = e.target.closest('.rl-catchip');
+  if (chip) { state.cat = chip.getAttribute('data-cat'); render(); return; }
+  var anchor = e.target.closest('.rl-anchor');
+  if (!anchor) return;
+  // 导航语义：先清掉搜索，否则目标 section 可能正被筛掉
+  state.q = '';
+  document.getElementById('rl-search').value = '';
+  render();
+  var target = document.querySelector(anchor.getAttribute('href'));
+  if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+
+render();
+</script>
+</body>
+</html>

@@ -45,24 +45,39 @@ export function agentsRoutes(runManager: RunManager): Hono {
 
     const startedAt = Date.now();
     try {
-      // For ACP agents (Hermes), the test verifies the **handshake only**
-      // (initialize + session/new) — not a full LLM turn. Reasons:
-      //   1. LLM latency is environment-dependent (provider, network, model)
-      //      and can exceed any reasonable idle timeout — making the test
-      //      flaky for reasons unrelated to "is hermes installed correctly".
-      //   2. The test button's job is to verify the runtime is installed and
-      //      the ACP transport works. LLM issues surface in real chat usage.
-      // The `models` event fires after session/new completes, signalling that
-      // the full handshake (MCP load, plugin discovery, provider connection)
-      // succeeded. For stdio-jsonl agents, keep sending "pong" as before.
-      const message = isAcp ? '' : 'Reply with exactly: "pong"';
+      // ACP test depth — two modes:
+      //   • Handshake-only (default; hermes): initialize + session/new. The
+      //     `models` event signals the full handshake (MCP load, plugin
+      //     discovery, provider connection) succeeded. Deliberately NOT a
+      //     real LLM turn: LLM latency is environment-dependent (provider,
+      //     network, model) and would make the test flaky for reasons
+      //     unrelated to "is the runtime installed correctly".
+      //   • Real minimal turn (acp.testWithPrompt; dsh): dsh's session/new
+      //     succeeds WITHOUT credentials (models come from local
+      //     configOptions), so a handshake-only test shows green while the
+      //     first real message fails on a missing API key — the exact trap
+      //     hit on a real machine (2026-10-04). Send the same "pong" ping
+      //     the stdio agents use and require turn_end.
+      // For stdio-jsonl agents, keep sending "pong" as before.
+      const acpPromptTest = isAcp && def?.acp?.testWithPrompt === true;
+      const message = isAcp && !acpPromptTest ? '' : 'Reply with exactly: "pong"';
       const runId = await runManager.createRun({ agentId, message });
 
       let turnCompleted = false;
       let turnError: string | null = null;
 
       const unsubscribe = runManager.onEvent(runId, (event) => {
-        if (isAcp && event.type === 'models') {
+        if (acpPromptTest) {
+          // Real-turn mode: `models` fires early (right after session/new)
+          // and must NOT count as success — only turn_end proves credentials
+          // and the LLM path actually work.
+          if (event.type === 'turn_end') {
+            turnCompleted = true;
+          } else if (event.type === 'error') {
+            turnError = event.message;
+            turnCompleted = true;
+          }
+        } else if (isAcp && event.type === 'models') {
           // ACP handshake complete: initialize + session/new succeeded,
           // plugins loaded, provider connected, models returned.
           turnCompleted = true;

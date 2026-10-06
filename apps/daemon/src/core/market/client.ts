@@ -1,7 +1,7 @@
 // apps/daemon/src/core/market/client.ts
 // 云端 /market/* 客户端：token 取自 AuthClient（唯一持有者），错误映射同 auth 纪律。
 import type {
-  MarketCreateResponse,
+  MarketCreateResponse, MarketTaxon, MarketTaxonomy,
   MarketDownloadResponse,
   MarketListing,
   MarketMyResponse,
@@ -10,6 +10,8 @@ import type {
 import { AuthCloudError, type AuthClient } from '../auth/auth-client.js';
 
 export interface MarketCreateInput {
+  categoryId?: string;
+  resourceTypeId?: string;
   name: string;
   summary: string;
   icon: string;
@@ -81,6 +83,12 @@ export class MarketClient {
     };
   }
 
+  async taxonomy(): Promise<MarketTaxonomy> {
+    return (await this.req('GET', '/taxonomy', {auth:false, timeoutMs:10000})).json() as Promise<MarketTaxonomy>;
+  }
+  async createTaxon(input: unknown): Promise<MarketTaxon> {
+    return (await this.req('POST', '/taxonomy', {auth:true, body:input, timeoutMs:10000})).json() as Promise<MarketTaxon>;
+  }
   async get(id: string): Promise<MarketListing> {
     return (await (await this.req('GET', `/listings/${id}`, { auth: false })).json()) as MarketListing;
   }
@@ -108,7 +116,7 @@ export class MarketClient {
     return (await this.req('POST', `/listings/${id}/confirm`, { auth: true })).json();
   }
 
-  async update(id: string, previews: { ext: string; size: number }[], extra?: { priceCents?: number; name?: string; summary?: string; icon?: string; tags?: string[] }): Promise<MarketCreateResponse> {
+  async update(id: string, previews: { ext: string; size: number }[], extra?: { priceCents?: number; name?: string; summary?: string; icon?: string; tags?: string[]; categoryId?: string; resourceTypeId?: string }): Promise<MarketCreateResponse> {
     return (await (
       await this.req('POST', `/listings/${id}/update`, { auth: true, body: { previews, ...extra } })
     ).json()) as MarketCreateResponse;

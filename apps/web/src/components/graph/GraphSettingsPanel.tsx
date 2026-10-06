@@ -8,6 +8,8 @@ interface Props {
   settings: GraphSettings;
   onUpdateSettings: (patch: Partial<GraphSettings>) => void;
   onUpdateForce: (patch: Partial<ForceParams>) => void;
+  /** 恢复默认设置（一键回出厂：筛选 / 外观 / 力度） */
+  onReset: () => void;
   onClose: () => void;
   // Node types present in the current graph data (for checkboxes)
   availableTypes: string[];
@@ -32,7 +34,14 @@ function getTypeOptions(availableTypes: string[]): { key: string; label: string 
   return result;
 }
 
-export function GraphSettingsPanel({ settings, onUpdateSettings, onUpdateForce, onClose, availableTypes }: Props) {
+export function GraphSettingsPanel({
+  settings,
+  onUpdateSettings,
+  onUpdateForce,
+  onReset,
+  onClose,
+  availableTypes,
+}: Props) {
   const [tab, setTab] = useState<Tab>('filter');
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -253,6 +262,19 @@ export function GraphSettingsPanel({ settings, onUpdateSettings, onUpdateForce, 
             </div>
           </div>
         )}
+      </div>
+
+      {/* 底栏常驻（不随 tab 切换）：对齐 Obsidian 的 Restore default settings —— 改乱了
+          一键回出厂，不弹确认框（改动都是可再调的偏好，代价低）。 */}
+      <div className="graph-settings__footer">
+        <button
+          type="button"
+          className="graph-settings__reset"
+          data-testid="graph-settings-reset"
+          onClick={onReset}
+        >
+          恢复默认设置
+        </button>
       </div>
     </div>
   );

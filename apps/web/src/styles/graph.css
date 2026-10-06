@@ -522,6 +522,31 @@
   padding: 14px 16px;
 }
 
+/* 底栏：常驻在 body 滚动区之外，切到任一 tab 都点得到 */
+.graph-settings__footer {
+  flex-shrink: 0;
+  padding: 8px 12px 10px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.graph-settings__reset {
+  width: 100%;
+  padding: 6px 0;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 5px;
+  background: transparent;
+  color: #666;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.graph-settings__reset:hover {
+  background: #F5F3FF;
+  border-color: rgba(139, 92, 246, 0.35);
+  color: #8B5CF6;
+}
+
 .graph-settings__section {
   display: flex;
   flex-direction: column;
@@ -671,6 +696,21 @@
   border-color: #A78BFA;
 }
 
+[data-theme="dark"] .graph-settings__footer {
+  border-top-color: rgba(255, 255, 255, 0.06);
+}
+
+[data-theme="dark"] .graph-settings__reset {
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #999;
+}
+
+[data-theme="dark"] .graph-settings__reset:hover {
+  background: rgba(139, 92, 246, 0.15);
+  border-color: rgba(167, 139, 250, 0.5);
+  color: #A78BFA;
+}
+
 @media (prefers-color-scheme: dark) {
   html:not([data-theme]) .graph-settings-panel {
     background: rgba(24, 24, 34, 0.94);
@@ -721,6 +761,21 @@
 
   html:not([data-theme]) .graph-settings__select:focus {
     border-color: #A78BFA;
+  }
+
+  html:not([data-theme]) .graph-settings__footer {
+    border-top-color: rgba(255, 255, 255, 0.06);
+  }
+
+  html:not([data-theme]) .graph-settings__reset {
+    border-color: rgba(255, 255, 255, 0.12);
+    color: #999;
+  }
+
+  html:not([data-theme]) .graph-settings__reset:hover {
+    background: rgba(139, 92, 246, 0.15);
+    border-color: rgba(167, 139, 250, 0.5);
+    color: #A78BFA;
   }
 
   html:not([data-theme]) .graph-minimap {

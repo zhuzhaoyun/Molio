@@ -45,15 +45,13 @@ export function ssrRoutes(deps: SsrRoutesDeps): Hono {
   });
 
   app.get('/resources.html', async (c) => {
-    let listings: Awaited<ReturnType<MarketService['list']>> = [];
+    c.header('Cache-Control', 'no-store');
     try {
-      listings = await deps.service.list();
+      return c.html(renderListingPage(await deps.service.list()));
     } catch (e) {
-      // 市场数据取不到 → 渲染空态列表页（骨架/导航仍在），绝不 5xx 拖垮爬虫
       console.error('[cloud] ssr listing error:', e);
+      return c.html('<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>资源暂时无法加载</title><main><h1>资源暂时无法加载</h1><p>请稍后重试。</p><a href="/resources.html">重新加载</a></main></html>', 503);
     }
-    c.header('Cache-Control', PAGE_CACHE);
-    return c.html(renderListingPage(listings));
   });
 
   app.get('/sitemap-products.xml', async (c) => {

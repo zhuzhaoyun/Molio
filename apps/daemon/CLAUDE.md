@@ -52,6 +52,7 @@ src/
       text-chunker.ts      chunkText(text, limit) — 按 \n\n / \n / 硬切 三级切分
       outbound-media.ts 渠道回复中"图片/文件"出站协议
       media-helpers.ts  共享 media 下载/缓存工具
+      active-vault-cwd.ts  getActiveVaultCwd(db) — 渠道 run cwd 解析首选：UI 同步的 active vault（POST /active-vault 写入的 active_vault KV，含目录存在校验），weixin/feishu 的 resolveRunCwd 用它优先于 config defaultCwd
     weixin/
       client.ts        微信消息收发
       message.ts       消息解析 + buildWeixinFrameMessage（首轮前置 channel frame）

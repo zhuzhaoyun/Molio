@@ -27,9 +27,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MARKET_ICONS, type MarketMyListing, type MarketPublishSuggestion } from '@molio/contracts';
 import { useI18n } from '../../i18n';
+import { TaxonomyFields } from './TaxonomyFields';
 import { api } from '../../api/client';
 
 export interface PublishFormData {
+  categoryId?: string;
+  resourceTypeId?: string;
   name: string;
   summary: string;
   tags: string[];
@@ -87,6 +90,8 @@ export function PublishForm(props: PublishFormProps) {
   const isUpdate = props.updateListingId !== undefined || selectedListingId !== null;
   const effectiveUpdateListingId = props.updateListingId ?? selectedListingId ?? undefined;
 
+  const [categoryId, setCategoryId] = useState(props.initialData?.categoryId ?? props.listing?.categoryId ?? '');
+  const [resourceTypeId, setResourceTypeId] = useState(props.initialData?.resourceTypeId ?? props.listing?.resourceTypeId ?? 'knowledge');
   const [name, setName] = useState(props.initialData?.name ?? props.listing?.name ?? '');
   const [summary, setSummary] = useState(props.initialData?.summary ?? props.listing?.summary ?? '');
   const [icon, setIcon] = useState<string>(props.initialData?.icon ?? props.listing?.icon ?? MARKET_ICONS[0]);
@@ -104,6 +109,8 @@ export function PublishForm(props: PublishFormProps) {
     setSummary(selectedListing.summary);
     setIcon(selectedListing.icon);
     setTags(selectedListing.tags);
+    setCategoryId(selectedListing.categoryId ?? '');
+    setResourceTypeId(selectedListing.resourceTypeId ?? 'knowledge');
     setPrice(selectedListing.priceCents > 0 ? String(selectedListing.priceCents / 100) : '');
     setPreviews([]);
     setAgreed(false);
@@ -145,8 +152,8 @@ export function PublishForm(props: PublishFormProps) {
   const onDataChangeRef = useRef(props.onDataChange);
   onDataChangeRef.current = props.onDataChange;
   useEffect(() => {
-    onDataChangeRef.current?.({ name, summary, tags, icon, selectedDirs });
-  }, [name, summary, tags, icon, selectedDirs]);
+    onDataChangeRef.current?.({ name, summary, tags, icon, selectedDirs, categoryId, resourceTypeId });
+  }, [name, summary, tags, icon, selectedDirs, categoryId, resourceTypeId]);
 
   // ── AI 起草：用户主动点「AI 一键配置」才生成；已输入的内容优先
   //    （不覆盖非空字段），「重新生成」显式覆盖。任何失败静默回落手填，
@@ -217,6 +224,7 @@ export function PublishForm(props: PublishFormProps) {
 
   const submit = async () => {
     setError(null);
+    if (!categoryId || !resourceTypeId) { setError(t('catalog.required')); return; }
     if (!name.trim() || !summary.trim()) { setError(t('publish.error.required')); return; }
     if (!isUpdate && previews.length < 1) { setError(t('publish.error.previewRequired')); return; }
     if (!agreed) { setError(t('publish.error.agreement')); return; }
@@ -227,6 +235,8 @@ export function PublishForm(props: PublishFormProps) {
     setPhase('working');
     const form = new FormData();
     if (props.vaultId) form.set('vaultId', props.vaultId);
+    form.set('categoryId', categoryId);
+    form.set('resourceTypeId', resourceTypeId);
     form.set('name', name.trim());
     form.set('summary', summary.trim());
     form.set('icon', icon);
@@ -259,7 +269,7 @@ export function PublishForm(props: PublishFormProps) {
   // ── dirty 上报：有已填内容且未完成 → true（供关 tab 前确认）──
   const dirty = !isUpdate && phase !== 'done'
     && (name.trim() !== '' || summary.trim() !== '' || tags.length > 0 || previews.length > 0
-      || price.trim() !== '');
+      || price.trim() !== '' || categoryId !== '' || resourceTypeId !== 'knowledge');
   const onDirtyChangeRef = useRef(props.onDirtyChange);
   onDirtyChangeRef.current = props.onDirtyChange;
   useEffect(() => { onDirtyChangeRef.current?.(dirty); }, [dirty]);
@@ -341,6 +351,7 @@ export function PublishForm(props: PublishFormProps) {
       )}
       {phase === 'form' && (
         <div className="publish-form">
+          <TaxonomyFields categoryId={categoryId} resourceTypeId={resourceTypeId} isAdmin={isAdmin} onChange={(key,value)=>key === 'categoryId' ? setCategoryId(value) : setResourceTypeId(value)} />
           {!isUpdate && (
             <div className="publish-ai" aria-live="polite">
               {(genPhase === 'idle' || genPhase === 'failed') && (

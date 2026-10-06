@@ -1518,6 +1518,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
                 active={graphActive}
                 graphScope={graphTabScope}
                 onScopeReset={() => setGraphTabScope(null)}
+                revision={kb.treeRevision}
               />
             </div>
           )}
@@ -1546,6 +1547,7 @@ export function KnowledgeBasePage({ agentId, chatPanelRef }: KnowledgeBasePagePr
                   active={companionShown}
                   onCloseCompanion={() => split.setCompanion(null)}
                   graphScope={companionScope}
+                  revision={kb.treeRevision}
                 />
               ) : (
                 <KbMainContent

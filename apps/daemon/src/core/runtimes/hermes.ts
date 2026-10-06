@@ -54,6 +54,10 @@ export const hermesAgentDef: RuntimeAgentDef = {
     // much faster in normal operation.
     absoluteTimeoutMs: 1800000,
     cancelTimeoutMs: 5000,
+    // Opt in to the pre-spawn `hermes-acp --check` integrity probe with the
+    // just-in-time [acp] extra auto-repair (see ensureAcpExtra below). This
+    // is hermes-specific: other ACP agents don't implement `--check`.
+    preflightRepair: true,
   },
 
   // streamFormat left unset — ACP path bypasses selectParser entirely.

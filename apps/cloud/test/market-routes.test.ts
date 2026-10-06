@@ -94,3 +94,20 @@ test('GET /market/purchases：未登录 401；登录 200 + no-store（pay 未配
   assert.equal(res.headers.get('cache-control'), 'no-store');
   assert.deepEqual((await res.json()) as { purchases: unknown[] }, { purchases: [] });
 });
+
+
+test('taxonomy routes: public registry, protected creation, duplicate reuse and kind validation', async () => {
+  const {app,token}=await bootMarketApp();
+  const send=(bearer:string,body:unknown)=>app.request('/market/taxonomy',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+bearer},body:JSON.stringify(body)});
+  const reg=await (await app.request('/market/taxonomy')).json() as {categories:unknown[]};
+  assert.equal(reg.categories.length,6);
+  assert.equal((await send('',{kind:'category',name:'数学'})).status,401);
+  assert.equal((await send(token,{kind:'category',name:'数学'})).status,403);
+  const admin=await register(app,'admin@x.com');
+  const first=await send(admin.accessToken,{kind:'category',name:' 数学 '});
+  assert.equal(first.status,201);
+  const a=await first.json() as {id:string};
+  const b=await (await send(admin.accessToken,{kind:'category',name:'数学'})).json() as {id:string};
+  assert.equal(a.id,b.id);
+  assert.equal((await send(admin.accessToken,{kind:'invalid',name:'数学'})).status,400);
+});
