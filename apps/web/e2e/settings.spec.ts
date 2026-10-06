@@ -218,6 +218,23 @@ test.describe('Update card', () => {
     await expect(page.locator('.settings-progress__label')).toContainText('42%');
   });
 
+  test('known version but not yet downloading offers download, not re-check', async ({ page }) => {
+    // 主进程 updater.js 会上报 available:true + downloading:false 的组合
+    await stubUpdater(page, {
+      ok: true, status: 'idle', currentVersion: '0.3.59',
+      available: true, latestVersion: '0.3.60', downloading: false,
+    });
+    await openSettings(page);
+
+    const btn = page.locator('[data-testid="update-check-btn"]');
+    // 状态行已经说了「发现新版本」，按钮再说「检查更新」就是自相矛盾：
+    // 检查已经做完了，此刻缺的是下载
+    await expect(page.locator('.settings-update-card__status')).toHaveText(/v0\.3\.60/);
+    await expect(btn).toHaveText(/下载更新|Download update/);
+    await expect(btn).toBeEnabled();
+    await expect(btn.locator('svg.is-spinning')).toHaveCount(0);
+  });
+
   test('downloaded state turns the card action into restart, with a single CTA', async ({ page }) => {
     await stubUpdater(page, {
       ok: true, status: 'downloaded', currentVersion: '0.3.59', latestVersion: '0.3.60',

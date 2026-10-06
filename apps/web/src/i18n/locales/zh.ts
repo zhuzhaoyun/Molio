@@ -410,6 +410,7 @@ const zh: Record<string, string> = {
   'settings.restartNow': '立即重启',
   'settings.desktopOnly': '更新功能仅在桌面客户端可用',
   'settings.downloadingShort': '下载中…',
+  'settings.downloadUpdate': '下载更新',
   'settings.officialSite': '官方网站',
   'settings.changelog': '更新日志',
   'settings.github': 'GitHub',

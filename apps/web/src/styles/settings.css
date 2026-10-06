@@ -227,9 +227,13 @@
   }
 }
 
+/*
+ * web 端「为什么没有更新按钮」的唯一说明。用 --text-faint 时在白卡上只有 2.03:1，
+ * 低于 WCAG AA 的 4.5:1 —— 全卡最该读清的一句反而做得最浅，这里升到 --text-muted（5.5:1）。
+ */
 .settings-update-card__hint {
   font-size: 12px;
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 
 /*

@@ -208,6 +208,9 @@ function UpdateButton({
   const { t } = useI18n();
 
   const downloading = result.status === 'available' && result.downloading;
+  // 已知有新版本但尚未开下载（主进程 updater.js 会以 available:true + downloading:false 上报）。
+  // 此时再叫「检查更新」就是让按钮说谎 —— 检查已经做完了，缺的是下载。
+  const awaitingDownload = result.status === 'available' && !result.downloading;
   const installing = result.status === 'installing';
   const ready = result.status === 'downloaded' || installing;
   const busy = result.status === 'checking' || installing || downloading;
@@ -216,9 +219,11 @@ function UpdateButton({
     ? t('settings.restartNow')
     : downloading
       ? t('settings.downloadingShort')
-      : result.status === 'checking'
-        ? t('settings.checking')
-        : t('settings.checkUpdate');
+      : awaitingDownload
+        ? t('settings.downloadUpdate')
+        : result.status === 'checking'
+          ? t('settings.checking')
+          : t('settings.checkUpdate');
 
   return (
     <button

@@ -410,6 +410,7 @@ const en: Record<string, string> = {
   'settings.restartNow': 'Restart now',
   'settings.desktopOnly': 'Update is only available in the desktop client',
   'settings.downloadingShort': 'Downloading…',
+  'settings.downloadUpdate': 'Download update',
   'settings.officialSite': 'Website',
   'settings.changelog': 'Changelog',
   'settings.github': 'GitHub',
