@@ -73,6 +73,20 @@ export const DEFAULT_SETTINGS: GraphSettings = {
   forces: { ...DEFAULT_FORCE_PARAMS },
 };
 
+/**
+ * 出厂设置的全新副本（深到 visibleTypes / forces 一级）。
+ *
+ * 一定要新对象：默认值里的数组和对象若被直接引用出去，后续 updateSettings /
+ * 拖滑块会把改动写回这两份常量，「恢复默认设置」就只干净一次。
+ */
+export function defaultSettings(): GraphSettings {
+  return {
+    ...DEFAULT_SETTINGS,
+    visibleTypes: [...DEFAULT_SETTINGS.visibleTypes],
+    forces: { ...DEFAULT_FORCE_PARAMS },
+  };
+}
+
 export const LIGHT_THEME: ThemeColors = {
   bg: '#FAFAFA',
   node: '#5C5C5C',

@@ -120,4 +120,16 @@
     <priority>0.7</priority>
     <changefreq>weekly</changefreq>
   </url>
+  <url>
+    <loc>https://molio.cn/blog/drawing-data-extraction.html</loc>
+    <lastmod>2026-09-23</lastmod>
+    <priority>0.7</priority>
+    <changefreq>weekly</changefreq>
+  </url>
+  <url>
+    <loc>https://molio.cn/blog/sanguo-people-graph.html</loc>
+    <lastmod>2026-09-23</lastmod>
+    <priority>0.7</priority>
+    <changefreq>weekly</changefreq>
+  </url>
 </urlset>

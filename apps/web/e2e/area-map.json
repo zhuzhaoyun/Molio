@@ -116,7 +116,7 @@
     },
     "graph": {
       "paths": [
-        "apps/web/src/components/graph/*",
+        "apps/web/src/components/graph/**",
         "apps/web/src/styles/graph.css",
         "apps/daemon/src/routes/graph.ts"
       ],
@@ -125,7 +125,8 @@
         "graph-settings",
         "graph-local",
         "split-view",
-        "graph-camera"
+        "graph-camera",
+        "graph-live-refresh"
       ]
     },
     "navigation": {
@@ -195,10 +196,13 @@
         "apps/web/src/hooks/useResourcePay*",
         "apps/web/src/stores/loginIntentStore*",
         "apps/web/src/styles/resources.css",
-        "apps/landing-page/resources-data.js"
+        "apps/landing-page/resources-data.js",
+        "apps/landing-page/resource-catalog.js",
+        "apps/web/e2e/resource-catalog-website.spec.ts"
       ],
       "specs": [
         "resources",
+        "resource-catalog-website",
         "navigation",
         "bootstrap"
       ]
@@ -237,6 +241,8 @@
         "apps/daemon/src/core/market/*",
         "apps/cloud/src/market/*",
         "apps/cloud/src/store/market-*",
+        "apps/cloud/src/ssr/*",
+        "packages/contracts/src/catalog.ts",
         "apps/web/e2e/fixtures/mock-oss.mjs"
       ],
       "specs": [
@@ -313,6 +319,14 @@
       "priority": "P1",
       "file": "graph-local.spec.ts"
     },
+    "graph-camera": {
+      "priority": "P1",
+      "file": "graph-camera.spec.ts"
+    },
+    "graph-live-refresh": {
+      "priority": "P1",
+      "file": "graph-live-refresh.spec.ts"
+    },
     "split-view": {
       "priority": "P1",
       "file": "split-view.spec.ts"
@@ -388,6 +402,10 @@
     "resources": {
       "priority": "P1",
       "file": "resources.spec.ts"
+    },
+    "resource-catalog-website": {
+      "priority": "P1",
+      "file": "resource-catalog-website.spec.ts"
     },
     "pdf-preview": {
       "priority": "P1",

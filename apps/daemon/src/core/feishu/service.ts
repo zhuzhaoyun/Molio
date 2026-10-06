@@ -11,6 +11,7 @@ import {
 } from '../channels/credentials-store.js';
 import { MessageDedup } from '../channels/message-dedup.js';
 import { chunkText } from '../channels/text-chunker.js';
+import { getActiveVaultCwd } from '../channels/active-vault-cwd.js';
 import { buildMarkdownCard } from './card.js';
 import { DEFAULT_BASE_URL, FeishuApi } from './client.js';
 import { FeishuWSClient } from './ws-client.js';
@@ -453,7 +454,11 @@ export class FeishuService implements ChannelSink {
   }
 
   private resolveRunCwd(cfg: FeishuConfig): string | undefined {
-    return loadConfig().defaultCwd || cfg.defaultCwd;
+    // UI-synced active vault wins (POST /active-vault fires on every switch);
+    // defaultCwd is only a fallback — it lags behind user switches and can be
+    // overwritten with a stale vault by the web App's startup sync effect.
+    // See channels/active-vault-cwd.ts (2026-10 渠道入库进错库 incident).
+    return getActiveVaultCwd(this.db) || loadConfig().defaultCwd || cfg.defaultCwd;
   }
 
   private transitionTo(state: ConnectionState): void {

@@ -188,6 +188,8 @@ interface UseKnowledgeReturn {
   deleteVault: (id: string) => Promise<void>;
   selectFile: (path: string | null) => void;
   refreshTree: () => void;
+  /** 「库变了」信号计数（每次 refreshTree +1）——供图谱等派生视图订阅自动刷新。 */
+  treeRevision: number;
   checkWikiStatus: () => void;
   setPanelWidth: (w: number) => void;
   setSearchQuery: (q: string) => void;
@@ -234,6 +236,9 @@ export function useKnowledge(): UseKnowledgeReturn {
   const activeVaultId = useActiveVaultId();
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [treeVaultId, setTreeVaultId] = useState<string | null>(null);
+  // 每次收到「库变了」的信号就 +1。文件树自己重取即可，但别的视图（图谱）需要知道
+  // 「该重取了」这件事本身——把信号变成可订阅的计数器，比让每个视图各自开一条 SSE 便宜。
+  const [treeRevision, setTreeRevision] = useState(0);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<FileContent | null>(null);
   const [fileLoadError, setFileLoadError] = useState<string | null>(null);
@@ -486,6 +491,7 @@ export function useKnowledge(): UseKnowledgeReturn {
 
   const refreshTree = useCallback(() => {
     if (!activeVaultId) return;
+    setTreeRevision((v) => v + 1);
     api.getFileTree(activeVaultId)
       .then((t) => {
         setTree(t);
@@ -703,6 +709,7 @@ export function useKnowledge(): UseKnowledgeReturn {
     deleteVault,
     selectFile,
     refreshTree,
+    treeRevision,
     checkWikiStatus,
     setPanelWidth,
     setSearchQuery,

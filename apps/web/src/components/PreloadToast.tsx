@@ -62,7 +62,7 @@ const SKILL_LABELS: Record<PreloadableSkill, {
   docling: {
     label: 'docling',
     scenario: '解析 PDF / Word / PPT / Excel、图片 OCR、音视频转写',
-    includes: 'Python 包（含 PyTorch）+ AI 模型',
+    includes: 'Python 运行环境（本机没有时自动准备）+ docling 包（含 PyTorch）+ AI 模型',
     size: '约 1.5 GB',
     time: '5–15 分钟',
   },

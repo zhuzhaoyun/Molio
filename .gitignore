@@ -27,6 +27,7 @@ docs/aliyun-infra-status.md
 
 .codegraph/
 .cursor/
+/.idea/
 
 # Superpowers docs (design specs, plans)
 docs/superpowers/

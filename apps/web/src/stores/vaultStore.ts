@@ -7,7 +7,6 @@
 
 import { useSyncExternalStore } from 'react';
 import type { Vault } from '@molio/contracts';
-import { api } from '../api/client.js';
 
 type Listener = () => void;
 
@@ -46,7 +45,16 @@ function persistVaultId(id: string | null) {
   } catch { /* storage unavailable */ }
 }
 
-let activeVaultId: string | null = readUrlVaultId() ?? readPersistedVaultId();
+const initialUrlVaultId = readUrlVaultId();
+let activeVaultId: string | null = initialUrlVaultId ?? readPersistedVaultId();
+// A window opened with ?vault= (protocol launch from the Web Clipper, cloned
+// window, "open in new window", graph double-click) must also PERSIST that
+// choice. It used to live in memory only: the follow-up setActiveVaultId(sameId)
+// from KnowledgeBasePage's URL→store effect short-circuits on the `!==` guard,
+// so persistVaultId never ran — and the next cold start (no URL param) restored
+// a stale localStorage vault instead of the one the user actually closed the app
+// on (2026-10 user report: "重启后永远打开最初那个 vault").
+if (initialUrlVaultId) persistVaultId(initialUrlVaultId);
 let vaults: Vault[] = [];
 const listeners = new Set<Listener>();
 
@@ -56,11 +64,26 @@ function emit() {
 
 /**
  * Push the current active vault id to the daemon so external clients
- * (e.g. the Molio-forked Web Clipper) can follow "save to the open vault".
+ * (e.g. the Molio-forked Web Clipper) can follow "save to the open vault",
+ * and channel runs (weixin/feishu resolveRunCwd) inherit the selection.
  * Fire-and-forget — failing to sync is non-fatal (UI keeps working locally).
+ *
+ * Test seam: the default impl dynamically imports api/client (unreachable
+ * under plain node:test); tests swap in a stub via __setActiveVaultSyncer —
+ * same pattern as configStore's __setConfigFetcher.
  */
+let activeVaultSyncer: (id: string | null) => Promise<void> = async (id) => {
+  const { api } = await import('../api/client.js');
+  return api.setActiveVault(id);
+};
+
+/** @internal test-only: replace the daemon sync transport. */
+export function __setActiveVaultSyncer(fn: (id: string | null) => Promise<void>): void {
+  activeVaultSyncer = fn;
+}
+
 function syncActiveVaultToServer(id: string | null): void {
-  void api.setActiveVault(id).catch((err) => {
+  void activeVaultSyncer(id).catch((err) => {
     // Swallow: the daemon may be down or unreachable; localStorage still holds
     // the source of truth for the UI.
     console.warn('[vaultStore] failed to sync active vault to daemon:', err);
