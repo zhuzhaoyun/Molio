@@ -1,6 +1,26 @@
 import { test, expect } from '@playwright/test';
 import { gotoHome, clickNav } from './helpers/navigation';
 
+async function openSettings(page: import('@playwright/test').Page) {
+  await gotoHome(page);
+  await clickNav(page, 'settings');
+  await expect(page.locator('.settings-update-card')).toBeVisible({ timeout: 5_000 });
+}
+
+/** WCAG 2.x 对比度 —— 给「字看不看得清」这类断言一个可量化的判据。 */
+function contrastRatio(fg: string, bg: string): number {
+  const luminance = (css: string) => {
+    const [r, g, b] = (css.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
+    const lin = (v: number) => {
+      const c = v / 255;
+      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    };
+    return 0.2126 * lin(r ?? 0) + 0.7152 * lin(g ?? 0) + 0.0722 * lin(b ?? 0);
+  };
+  const [hi, lo] = [luminance(fg), luminance(bg)].sort((a, b) => b - a);
+  return ((hi ?? 0) + 0.05) / ((lo ?? 0) + 0.05);
+}
+
 /**
  * @area settings
  * @priority P1
@@ -141,12 +161,6 @@ test.describe('Update card', () => {
     }, state);
   }
 
-  async function openSettings(page: import('@playwright/test').Page) {
-    await gotoHome(page);
-    await clickNav(page, 'settings');
-    await expect(page.locator('.settings-update-card')).toBeVisible({ timeout: 5_000 });
-  }
-
   test('external links point at repo, site and releases', async ({ page }) => {
     await openSettings(page);
 
@@ -282,5 +296,38 @@ test.describe('Update card', () => {
 
     await expect(page.locator('[data-testid="update-desktop-only"]')).toBeVisible();
     await expect(page.locator('[data-testid="update-check-btn"]')).toHaveCount(0);
+  });
+});
+
+/**
+ * 深色有两条路，都要成立，且**只有第二条盖得住**：
+ *
+ *   [data-theme="dark"]                  用户手动选「深色」→ html 带属性
+ *   @media (prefers-color-scheme: dark)  「跟随系统」+ 深色系统 → html 无属性
+ *
+ * 上面那些用例跑在默认浅色下，一条都碰不到这里。tokens.css 的媒体查询那份曾经漏掉
+ * amber/red/green/blue/purple 五组语义色，于是这条路上 --amber-bg 回落到浅色 #fdf5e8，
+ * Star 引导条 hover 成了浅底 + 浅字（对比度 1.11，字看不见）。默认设置恰恰是「跟随系统」，
+ * 手动深色只是显式选择 —— 只在手动深色下截图，就会看到一切正常。
+ */
+test.describe('Star CTA on a dark OS', () => {
+  test.use({ colorScheme: 'dark' });
+
+  test('hover keeps the row readable when the theme follows the system', async ({ page }) => {
+    await openSettings(page);
+
+    // 新上下文没有 molio.theme → 默认「跟随系统」→ 走媒体查询那条路
+    expect(await page.evaluate(() => document.documentElement.getAttribute('data-theme'))).toBeNull();
+
+    const star = page.locator('[data-testid="update-star-cta"]');
+    await star.hover();
+    // 等 140ms 过渡走完，否则量到的是中间帧
+    await page.waitForTimeout(300);
+
+    const { color, background } = await star.evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return { color: cs.color, background: cs.backgroundColor };
+    });
+    expect(contrastRatio(color, background)).toBeGreaterThanOrEqual(4.5);
   });
 });
