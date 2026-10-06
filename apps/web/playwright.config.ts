@@ -1,5 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
-import { rmSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -20,8 +20,8 @@ const DAEMON_PORT = Number(process.env.MOLIO_E2E_DAEMON_PORT ?? 3100);
  * 注意：仅对"本次 playwright 新拉起的 daemon"生效；reuseExistingServer 复用
  * 已有 daemon 时以对方的数据目录为准。
  */
-const E2E_DATA_DIR = join(tmpdir(), `molio-e2e-daemon-${DAEMON_PORT}`);
-rmSync(E2E_DATA_DIR, { recursive: true, force: true });
+// Workers re-import this config; share one run directory without deleting an open SQLite DB.
+const E2E_DATA_DIR = process.env.MOLIO_E2E_DATA_DIR ??= mkdtempSync(join(tmpdir(), `molio-e2e-daemon-${DAEMON_PORT}-`));
 
 export default defineConfig({
   testDir: './e2e',

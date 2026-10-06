@@ -33,6 +33,17 @@ export function marketRoutes(deps: MarketRoutesDeps, config: CloudConfig, now: (
     return null;
   };
 
+  app.get('/taxonomy', async (c) => {
+    c.header('Cache-Control', 'no-store');
+    try { return c.json(await service.taxonomy()); } catch (e) { return handle(c, e); }
+  });
+  app.post('/taxonomy', async (c) => {
+    const denied = guardBody(c); if (denied) return denied;
+    const p = bearer(c); if (!p) return c.json({error:'invalid_token'}, 401);
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return c.json({error:'invalid_metadata'}, 400);
+    try { return c.json(await service.createTaxon(p.sub, body), 201); } catch (e) { return handle(c, e); }
+  });
   app.get('/listings', async (c) => {
     c.header('Cache-Control', 'no-store');
     try { return c.json({ listings: await service.list() }, 200); } catch (e) { return handle(c, e); }
@@ -75,7 +86,7 @@ export function marketRoutes(deps: MarketRoutesDeps, config: CloudConfig, now: (
     const denied = guardBody(c); if (denied) return denied;
     const p = bearer(c);
     if (!p) return c.json({ error: 'invalid_token' }, 401);
-    const body = await c.req.json().catch(() => null) as { previews?: { ext: string; size: number }[]; priceCents?: number; name?: string; summary?: string; icon?: string; tags?: string[] } | null;
+    const body = await c.req.json().catch(() => null) as { previews?: { ext: string; size: number }[]; priceCents?: number; name?: string; summary?: string; icon?: string; tags?: string[]; categoryId?: string; resourceTypeId?: string } | null;
     try { return c.json(await service.update(p.sub, c.req.param('id'), body ?? {}), 200); } catch (e) { return handle(c, e); }
   });
 

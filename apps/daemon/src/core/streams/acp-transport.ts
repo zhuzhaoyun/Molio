@@ -299,8 +299,75 @@ export class AcpTransport {
       return;
     }
 
-    // Other notifications / server-initiated requests (e.g. session/request_permission)
-    // Phase 1: ignore. Phase 2 will handle permission requests.
+    // Server-initiated request (has BOTH id and method) — e.g. dsh's
+    // session/request_permission. Must be answered or the agent blocks forever.
+    if (msg.id !== undefined && typeof msg.method === 'string') {
+      this.handleServerRequest(msg);
+      return;
+    }
+
+    // Other notifications (no id) — nothing to answer, safe to ignore.
+  }
+
+  /**
+   * Answer a server-initiated JSON-RPC request.
+   *
+   * `session/request_permission`: Molio runs agents in an auto-approve posture
+   * (claude --dangerously-skip-permissions, codex danger-full-access on Win,
+   * dsh DSH_PERMISSION_MODE=workspace-write), and the UI has no permission
+   * dialog — so pick the most permissive allow option (allow_always →
+   * allow_once → any allow-ish option → first option). The decision is logged
+   * as a `raw` event for diagnosis. With no selectable options, answer
+   * `cancelled` so the agent proceeds down its rejection path instead of
+   * hanging until the idle timeout.
+   *
+   * Unknown server requests get a spec-compliant -32601 so a well-behaved
+   * agent can degrade instead of waiting forever.
+   */
+  private handleServerRequest(msg: any): void {
+    if (msg.method === 'session/request_permission') {
+      const options: any[] = Array.isArray(msg.params?.options) ? msg.params.options : [];
+      const byKind = (kind: string) => options.find((o) => o?.kind === kind);
+      const chosen =
+        byKind('allow_always')
+        ?? byKind('allow_once')
+        ?? options.find((o) => typeof o?.kind === 'string' && o.kind.startsWith('allow'))
+        ?? options.find((o) => typeof o?.optionId === 'string' && o.optionId.startsWith('allow'))
+        ?? options[0];
+      const toolTitle = msg.params?.toolCall?.title ?? msg.params?.toolCall?.kind ?? '';
+      if (chosen && typeof chosen.optionId === 'string') {
+        this.onEvent({
+          type: 'raw',
+          line: `[acp] auto-approved permission request${toolTitle ? ` (${toolTitle})` : ''}: ${chosen.optionId}`,
+        });
+        this.send(JSON.stringify({
+          jsonrpc: '2.0',
+          id: msg.id,
+          result: { outcome: { outcome: 'selected', optionId: chosen.optionId } },
+        }) + '\n');
+      } else {
+        this.onEvent({
+          type: 'raw',
+          line: `[acp] permission request has no selectable options — answering cancelled${toolTitle ? ` (${toolTitle})` : ''}`,
+        });
+        this.send(JSON.stringify({
+          jsonrpc: '2.0',
+          id: msg.id,
+          result: { outcome: { outcome: 'cancelled' } },
+        }) + '\n');
+      }
+      return;
+    }
+
+    this.onEvent({
+      type: 'raw',
+      line: `[acp] unsupported server request: ${msg.method}`,
+    });
+    this.send(JSON.stringify({
+      jsonrpc: '2.0',
+      id: msg.id,
+      error: { code: -32601, message: `Method not found: ${msg.method}` },
+    }) + '\n');
   }
 
   private mapUpdate(update: any): void {

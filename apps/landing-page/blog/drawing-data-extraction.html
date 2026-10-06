@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#1A1714">
+
+<!-- SEO -->
+<title>图纸数据提取：为什么直接读 DWG 拿不到门窗表，从解析到导出 Excel 的完整链路</title>
+<meta name="description" content="图纸数据提取难在哪：DWG 解析读得到图元、图层与块，读不到工程语义——语义在制图约定里，不在文件里。这篇讲清 CAD 图纸数据提取导出 Excel 的完整链路：位图化的不可逆损失、解析与识别分链、表格识别与计算口径，兼答图纸为什么要矢量化和 AI 审图的边界。">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://molio.cn/blog/drawing-data-extraction.html">
+
+<!-- Preconnect -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+<link rel="icon" type="image/png" href="../images/favicon-32.png">
+<link rel="apple-touch-icon" href="../images/favicon-32.png">
+<link rel="stylesheet" href="../styles.css?v=20260827c">
+
+<!-- Open Graph -->
+<meta property="og:title" content="图纸数据提取：为什么直接读 DWG 拿不到门窗表，从解析到导出 Excel 的完整链路">
+<meta property="og:description" content="图纸数据提取难在哪：DWG 解析读得到图元、图层与块，读不到工程语义——语义在制图约定里，不在文件里。这篇讲清 CAD 图纸数据提取导出 Excel 的完整链路：位图化的不可逆损失、解析与识别分链、表格识别与计算口径，兼答图纸为什么要矢量化和 AI 审图的边界。">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://molio.cn/blog/drawing-data-extraction.html">
+<meta property="og:image" content="https://molio.cn/images/brand.png">
+<meta property="og:site_name" content="Molio 墨流">
+<meta property="og:locale" content="zh_CN">
+
+<!-- Twitter -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="图纸数据提取：为什么直接读 DWG 拿不到门窗表，从解析到导出 Excel 的完整链路">
+<meta name="twitter:description" content="图纸数据提取难在哪：DWG 解析读得到图元、图层与块，读不到工程语义——语义在制图约定里，不在文件里。这篇讲清 CAD 图纸数据提取导出 Excel 的完整链路：位图化的不可逆损失、解析与识别分链、表格识别与计算口径，兼答图纸为什么要矢量化和 AI 审图的边界。">
+<meta name="twitter:image" content="https://molio.cn/images/brand.png">
+
+<!-- JSON-LD -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Article",
+      "headline": "图纸数据提取：为什么直接读 DWG 拿不到门窗表，从解析到导出 Excel 的完整链路",
+      "description": "图纸数据提取难在哪：DWG 解析读得到图元、图层与块，读不到工程语义——语义在制图约定里，不在文件里。这篇讲清 CAD 图纸数据提取导出 Excel 的完整链路：位图化的不可逆损失、解析与识别分链、表格识别与计算口径，兼答图纸为什么要矢量化和 AI 审图的边界。",
+      "url": "https://molio.cn/blog/drawing-data-extraction.html",
+      "datePublished": "2026-09-23",
+      "author": { "@type": "Organization", "name": "Molio" },
+      "publisher": { "@type": "Organization", "name": "Molio", "logo": { "@type": "ImageObject", "url": "https://molio.cn/images/brand.png" } }
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "首页", "item": "https://molio.cn/" },
+        { "@type": "ListItem", "position": 2, "name": "博客", "item": "https://molio.cn/blog/index.html" },
+        { "@type": "ListItem", "position": 3, "name": "图纸数据提取", "item": "https://molio.cn/blog/drawing-data-extraction.html" }
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "图纸为什么要矢量化？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "因为计算和统计需要的是几何元素，不是像素。扫描件和截图是像素矩阵，没有对象、没有边界、没有图层，必须先经二值化、细化、骨架跟踪、曲线拟合把像素还原成线段和圆弧，构件识别才能开始。矢量化只能得到近似结果，精度受扫描分辨率限制，所以它是对只有位图入口时的补救，不是首选路线。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "CAD 图纸数据怎么导出 Excel？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "分三步。解析：把 DWG/DXF 里的图元、图层、块、标注、表格实体完整读出，读不了的对象进异常清单而不是静默跳过。识别：判定构件类型与属性，块属性优先于几何推断，标注文字做校验。组装：表格实体直接按接口读取，手画表格做结构还原，再与图面编号建立对应，输出带来源引用和置信度的记录。全程不要走截图加 OCR 的路线。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "PDF 图纸能提取数据吗？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "分两种。矢量 PDF 保留了部分对象信息，但书稿的定位是 PDF 只适合归档交付，不适合做数据中间载体。扫描版 PDF 本质是位图，图层、图元属性、块引用、标注关联四类语义载体已一次性丢失且不可逆，只能走矢量化补救，精度受原件质量限制。有 DWG/DXF 就用 DWG/DXF。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "AI 审图能替代人工吗？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "不能，书稿把这个边界写得很明确：AI 审图的输出定位是候选问题清单加判定依据，审查结论由审查人签署，系统不承担审查责任；签字责任、规范解释、特殊工况判断必须由人承担。审图里误报和漏报的代价不对称，系统按严重等级分级输出，强条召回优先。它替代的是工作量最大、重复性最高的规范比对和一致性检查，不是审查人本身。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "把图纸喂给大模型，让它自己提取数据行不行？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "部分行。书稿的边界是：语言模型适合抽取、检索、起草，比如标注解析、表格内容还原、条文检索；但数值判定和工程量计算必须由确定性程序完成，几何判定同理。让模型做算术和汇总，错误不易被发现——在工程语境里，不易发现的错误比明显的错误危险得多。"
+          }
+        }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<nav class="top-nav" aria-label="主导航">
+  <div class="nav-inner">
+    <a href="../index.html" class="nav-logo"><img class="logo-icon-sm" src="../images/new/black.png" alt="Molio" /> Molio</a>
+    <div class="nav-links">
+      <a href="../index.html" class="nav-link">首页</a>
+      <a href="../resources.html" class="nav-link">资源</a>
+      <a href="../help.html" class="nav-link">使用指南</a>
+      <a href="./index.html" class="nav-link active">博客</a>
+      <a href="../enterprise.html" class="nav-link">定制服务</a>
+     <span id="nav-auth"></span><a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer" class="nav-gh" aria-label="GitHub 仓库"><svg viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg></a></div>
+  </div>
+</nav>
+<main class="page-content">
+  <div class="breadcrumb">
+    <a href="../index.html">首页</a><span class="sep">/</span><a href="./index.html">博客</a><span class="sep">/</span>图纸数据提取
+  </div>
+  <h1 class="page-title">图纸数据提取：为什么直接读 DWG 拿不到门窗表，从解析到导出 Excel 的完整链路</h1>
+  <div class="article-meta"><span>2026-09-23</span><span>工程图纸数字化</span></div>
+<article class="article-body reveal">
+<p><strong>把 CAD 图纸里的门窗表、设备明细、构件数量导出 Excel，难点不在“读文件”，在两处：一是文件里本来就没有你要的那层语义——工程含义不保存在 DWG/DXF 的文件结构里，而在各设计单位的制图约定里；二是很多方案第一步就走错——先转 PDF 或截图再 OCR，把仅存的语义线索一次性烧掉，且不可逆。可行的路线是：保留矢量入口，解析读全四层数据，识别判定构件，组装成业务对象输出，每条数据带来源和置信度。</strong></p>
+<p>这篇的框架和细节来自《AI 时代的工程图纸数据处理》这套技术书稿，引书里的判断都会注明。写给两类人：手里有 DWG/DXF 想提取数据的工程师，和要为团队选型图纸数字化方案的 B 端技术负责人。</p>
+<h2>图纸数据提取到底难在哪：先分清两类问题</h2>
+<p>书稿给了一个贯穿全局的框架，叫三级转换：图纸变成机器可用的数据，要经过图像级、图形级、语义级三站。图像级把扫描件的像素矩阵还原成线段、圆弧等几何元素；图形级把几何元素组合成门、窗、梁、柱这些构件对象；语义级再往构件上挂编号体系、受力体系、构造做法这些工程含义。</p>
+<p>关键在于，三级不是同一类困难。前两级属于<strong>信息损耗</strong>，理论上可用更好的算法与训练数据去减少；第三级属于<strong>知识缺失</strong>，必须引入行业知识体系才补得上。结构平面图上的 KL1、L2，模型就算把文字认得一个不差，也不知道它们对应框架梁、非框架梁，更不知道各自对应什么抗震要求——这层对应关系在规范和工程经验里，不在文件里。分不清这两类困难就会走错改进方向：拿语义问题去堆识别算法，或拿算法问题去硬编规则。</p>
+<h2>直接读 DWG，为什么还是拿不到你要的数据</h2>
+<p>先说能拿到什么。以 DXF 为例，文件按段组织：HEADER 段记录图形范围、单位与文件版本；TABLES 段保存图层表、线型表、文字样式表、标注样式表与块表；BLOCKS 段保存块定义；ENTITIES 段保存图面实体；OBJECTS 段保存词典与扩展数据。DWG 解析做到位，你能完整拿到每个图元的几何坐标、所在图层、块定义与块引用的对应关系，以及标注和文字的内容。</p>
+<p>再说拿不到什么。书稿第一章的核心论断是：<strong>工程图纸的语义不在文件里，在约定里。</strong> 图纸的大部分约定信息集中在 TABLES 段，而这些约定由制图单位自行维护，缺少统一标准。图层命名、线型含义、块命名、标注习惯，各设计单位各不相同；同一个配电箱，在电气原理图里是带引线的方框，在平面布置图里是实心矩形，在剖面图里是带标注的线段——物理上同一个设备，图面上三种长相。</p>
+<p>由此有两个直接推论。</p>
+<p>第一，图层不能当可靠的分类依据。图层是图纸里使用频率最高的组织手段、语义推断的首要线索，但有书稿总结的三重制约：命名不规范、图层复用（一个图层承载多种构件）、图层缺省（图元画在默认层上）。所以图层只能作先验。块机制可靠得多：块的命名与属性往往直接对应构件类型与规格，阀门、灯具、门窗这些标准构件以块定义形式存在，设备明细、门窗统计往往就是块属性汇总出来的。书稿给出的判定次序很明确：<strong>块引用优先于纯几何形态，凡属性可读的字段优先按属性读取</strong>，文字识别结果降为校验项。</p>
+<p>第二，提取的数据不能只有几何。书稿把图纸数据划成四层，划分依据是信息的性质与可靠性，而非存储位置：</p>
+<table><thead><tr><th>层次</th><th>提供什么</th><th>要注意什么</th></tr></thead><tbody><tr><td>几何数据</td><td>点、线、圆弧等图元的坐标与形状</td><td>唯一不依赖人工约定就能精确读取，但数量大、缺组织</td></tr><tr><td>属性数据</td><td>图层、线型、块与参照等组织信息</td><td>可靠性取决于制图规范性，同一图层可能混装多种构件</td></tr><tr><td>标注数据</td><td>尺寸、规格、文字注释、表格</td><td>可能因图面比例和示意画法与几何实际长度不一致，精度上标注优先于几何</td></tr><tr><td>业务数据</td><td>标题栏、明细表、图名图号、设计说明</td><td>检索、版本管理与审查的主要依据</td></tr></tbody></table>
+<p>书稿的结论很硬：完整的业务对象要同时引用四层，任一层缺失，这个对象就不可用。一段墙体需要轴线与厚度的几何、图层归属、厚度与标高的标注，加上所在楼层与图号。解析阶段必须四层全保，只捞几何等于白干。</p>
+<h2>先转 PDF 或截图再 OCR，错在哪</h2>
+<p>这是最常见的路线错误，对应书稿第二个核心论点：<strong>位图化是不可逆的语义断崖。</strong> 图纸导出成 PNG、JPG 之后，图层合并到同一平面，图元降级成像素组合，块引用关系断裂，标注的关联关系与测量值不再可读——四类语义载体在格式转换这一步一次性丢失，无法由像素反推。</p>
+<p>注意，损失发生在格式转换环节，不是识别环节。OCR 做得再好，都只是在断崖底下捡碎片。书稿给过一个案例：某项目把结构平面图导出 JPG 后交给模型统计梁数，一根梁被计成了两根，因为梁中部画着一根轴线，模型把它判断成两根并排构件。轴线在 CAD 里只起定位作用、不代表实体，这个区分在像素层面不存在了。书稿的判断是，图纸处理里最常见的误差并非来自识别算法，而是来自位图转换环节。</p>
+<p>数据形态的转换还不对等：矢量转位图丢信息且无法恢复，位图恢复成矢量只能得到近似结果。所以 PDF 的定位要摆正——适合归档交付，不适合做数据链路的中间载体。手里只有扫描件时，只能走矢量化补救：去噪、二值化、倾斜校正、线条细化、骨架跟踪、曲线拟合，输出精度受扫描分辨率和原图质量的直接限制。书稿对必须位图化的场合给了三条原则：能拿到矢量文件的环节坚决不位图化；必须位图化就提高分辨率、用无损格式；记录位图与原图的对应关系，给核验留依据。</p>
+<h2>解析和识别必须分成两条链</h2>
+<p>“文件里有什么”和“这是什么构件”是两个问题。解析回答前者，把文件里的对象、属性与关系原样读出，结果可完全由文件内容验证——同一文件、同一解析器、同一配置，应当得到同一结果；识别回答后者，把几何和属性映射到业务语义，依赖规则和模型。两者错误的表现也不同：解析错误是缺数据或数据偏差，用计数、图层统计、来源清单就能发现；识别错误是误判，需要业务校验。混在一起，出了问题定位困难，也没法分别评估解析完整性与识别准确率。书稿还有一条更硬的理由：<strong>解析结果的完整性决定识别精度的上限</strong>——解析阶段丢失的信息，识别阶段无法恢复。</p>
+<p>分链之后，解析环节有条容易被忽视的纪律：异常清单原则。图纸里相当一部分对象“存在但不能按预期方式读取”——第三方专业软件的扩展实体、没装字体的文字、路径失效的外部参照。处理原则是把“已正确读取”和“存在但未能解释”显式分开，后者进异常清单。书稿特别点了一句：第三方扩展实体往往正是专业属性最集中的构件信息（结构配筋、机电设备与管线），静默跳过会让结果表面完整、实际缺的恰是专业属性最重的部分——这是最危险的缺失形式，因为没有任何提示。</p>
+<p>识别侧的要点可压成三条：<strong>确定性优先</strong>——凡可由几何约束或规则判定的事项不由模型判定，比如墙体轴线由平行线与厚度就能确定；<strong>交叉验证</strong>——几何规则、检测模型、邻近文字三来源判同一对象，一致给高置信度，冲突进人工复核；<strong>结果可追溯</strong>——每个判定记录所依据的图元与规则或模型版本，否则出错无法定位。</p>
+<h2>从图纸到 Excel：最后一公里做什么</h2>
+<p>先看表格。图纸里的门窗表、配筋表、设备表有两种形态：绘图软件创建的表格实体，内容与行列结构可按接口直接读取；用直线画框、文字填格的手画表格，没有结构信息，必须经表区定位、结构还原、内容解析三步还原。书稿点了一个常见错误：对两种形态用同一套办法，拿结构还原去处理表格实体——放着现成的行列结构不用，从线条位置重新推断，既增加工作量又降低准确率。</p>
+<p>更要紧的是，表格识别的核心价值不在把表格读出来，而在<strong>建立表格与图面的对应关系</strong>：门窗表对图面门窗编号，设备表对图面设备编号。对应方法里编号匹配最可靠；对不上的输出两份清单——成功项记匹配依据，失败项记单侧存在情况。失败项不是垃圾数据：图面有编号而表格没条目，往往提示图面漏识别或设计不一致，恰是业务上最该看的信息。</p>
+<p>导出 Excel 前还有两件事不能省。一是每条数据带来源引用和置信度，低置信度进人工复核队列——没有出处的数据，签字的场合没人敢用。二是想清楚数据用途：如果它要支撑算量，书稿的论断是<strong>算量的核心是口径而非精度</strong>——梁柱相交处的归属、洞口扣减的面积下限、装饰面层算不算柱侧壁，在不同计量规范、地方定额与企业口径下答案不同，多数对量差异源于口径而非识别误差。把口径差异误判成精度问题，改进方向就错了。落地次序上，书稿建议按构件统计、土建主体量、装饰、机电、钢筋五个阶段推进——构件统计（门窗数量与规格、房间面积）结果可直接用、争议小，适合作为首个交付；钢筋构造规则最多，放在最后。</p>
+<h2>这条链路的知识散在几十份资料里，没人替你串</h2>
+<p>回看这条链：DXF 段结构和块机制在 CAD 二次开发的资料里；矢量化和识别方法在计算机视觉的资料里；表格对应关系和计算口径在造价资料里。每一环都有人讲，串起来的完整链路——从一个 DWG 文件到一条带来源、带置信度、口径明确的 Excel 记录——没有现成的地方可查。</p>
+<p>《AI 时代的工程图纸数据处理》做的就是这个串联：第 1 章讲为什么，第 2 章讲怎么做，第 3 章讲做什么，共 14 节正文，加术语表、制图规范与图例库、工程对象字典三份附录，八个核心论点贯穿全书。Molio（墨流）把这套书稿整理成了结构化的“工程图纸数字化应用”知识库，工程对象字典、判定规则、附录资产都拆成了可检索、可引用的条目。这套知识库已上线：<a href="../resource/01M35QEB3RMK46SGCQ6WSZ3GZR.html">图纸数据提取：工程图纸数字化与 AI 识别技术全景</a>。给工程对象建统一字典，本质上是一次本体建模，字段与层级怎么定义可以看<a href="https://molio.cn/blog/ontology-modeling-guide.html">这篇</a>。</p>
+<p>还有一层要说破：软件解决共性，制图约定和口径解决不了共性——你单位的图层习惯、你项目采用的计量口径，只能你的团队自己定义。团队要基于这套知识做内部方案定制，可以从<a href="https://molio.cn/enterprise.html">企业定制</a>入口谈。</p>
+<h2>常见问题</h2>
+<h3>图纸为什么要矢量化？</h3>
+<p>因为计算和统计需要的是几何元素，不是像素。扫描件和截图是像素矩阵，没有对象、没有边界、没有图层，必须先经二值化、细化、骨架跟踪、曲线拟合把像素还原成线段和圆弧，构件识别才能开始。矢量化只能得到近似结果，精度受扫描分辨率限制，所以它是对只有位图入口时的补救，不是首选路线。</p>
+<h3>CAD 图纸数据怎么导出 Excel？</h3>
+<p>分三步。解析：把 DWG/DXF 里的图元、图层、块、标注、表格实体完整读出，读不了的对象进异常清单而不是静默跳过。识别：判定构件类型与属性，块属性优先于几何推断，标注文字做校验。组装：表格实体直接按接口读取，手画表格做结构还原，再与图面编号建立对应，输出带来源引用和置信度的记录。全程不要走截图加 OCR 的路线。</p>
+<h3>PDF 图纸能提取数据吗？</h3>
+<p>分两种。矢量 PDF 保留了部分对象信息，但书稿的定位是 PDF 只适合归档交付，不适合做数据中间载体。扫描版 PDF 本质是位图，图层、图元属性、块引用、标注关联四类语义载体已一次性丢失且不可逆，只能走矢量化补救，精度受原件质量限制。有 DWG/DXF 就用 DWG/DXF。</p>
+<h3>AI 审图能替代人工吗？</h3>
+<p>不能，书稿把这个边界写得很明确：AI 审图的输出定位是候选问题清单加判定依据，审查结论由审查人签署，系统不承担审查责任；签字责任、规范解释、特殊工况判断必须由人承担。审图里误报和漏报的代价不对称，系统按严重等级分级输出，强条召回优先。它替代的是工作量最大、重复性最高的规范比对和一致性检查，不是审查人本身。</p>
+<h3>把图纸喂给大模型，让它自己提取数据行不行？</h3>
+<p>部分行。书稿的边界是：语言模型适合抽取、检索、起草，比如标注解析、表格内容还原、条文检索；但数值判定和工程量计算必须由确定性程序完成，几何判定同理。让模型做算术和汇总，错误不易被发现——在工程语境里，不易发现的错误比明显的错误危险得多。</p>
+<hr>
+<p><strong>相关资源</strong>：<a href="../resource/01M35QEB3RMK46SGCQ6WSZ3GZR.html">图纸数据提取：工程图纸数字化与 AI 识别技术全景</a></p>
+<p><strong>延伸阅读</strong>：</p>
+<ul><li><a href="https://molio.cn/blog/own-materials-to-knowledge-base.html">知识库导入：为什么资料喂给 AI 还是查不全，先结构化再接入</a></li><li><a href="https://molio.cn/blog/ontology-modeling-guide.html">本体建模指南</a></li></ul>
+</article>
+  <div class="related-links reveal">
+    <h2>相关文章</h2>
+    <ul>
+      <li><a href="own-materials-to-knowledge-base.html">知识库导入：为什么资料喂给 AI 还是查不全，先结构化再接入</a></li>
+      <li><a href="ontology-modeling-guide.html">本体论怎么落地：GB/T 48000 要求的三类构件，和 Palantir 多出的那个“动作”</a></li>
+    </ul>
+  </div>
+  <div class="kg-links reveal">
+    <h2>现成知识底座</h2>
+    <p>这一篇讲的知识底座不用自己攒——同系列的几部都在这里，导入即用。</p>
+    <ul>
+      <li><a href="../resource/01M35QEB3RMK46SGCQ6WSZ3GZR.html">图纸数据提取：工程图纸数字化与 AI 识别技术全景</a></li>
+      <li><a href="../resources.html">查看全部知识底座 →</a></li>
+    </ul>
+  </div>
+  <div class="cta-box reveal">
+    <p>别再和每一个 AI 从零开始。</p>
+    <a href="../index.html#download" class="btn btn-primary">免费下载 Molio →</a>
+  </div>
+</main>
+<!-- Footer -->
+<footer class="site-footer">
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <a href="../index.html" class="footer-logo"><img class="logo-icon-sm" src="../images/new/black.png" alt="Molio" /> Molio</a>
+      <p>会成长的 AI 知识空间。Claude Code、Codex 等 Agent 带着你的背景研究、写作、问答、分析，产出回写入库，数据全在你自己电脑上。</p>
+    </div>
+    <div class="footer-links">
+      <h4>产品</h4>
+      <a href="../index.html">首页</a>
+      <a href="../resources.html">资源</a>
+      <a href="../help.html">使用指南</a>
+      <a href="../enterprise.html">定制服务</a>
+      <a href="https://github.com/zhuzhaoyun/Molio" target="_blank" rel="noopener noreferrer">GitHub 开源</a>
+    </div>
+    <div class="footer-links">
+      <h4>资源</h4>
+      <a href="../help.html">快速入门</a>
+      <a href="../help.html#step-6">排版教程</a>
+      <a href="../help.html#step-7">发布指南</a>
+      <a href="https://github.com/zhuzhaoyun/Molio/issues" target="_blank" rel="noopener noreferrer">问题反馈</a>
+    </div>
+    <div class="footer-links">
+      <h4>关于</h4>
+      <a href="./index.html">博客</a>
+      <a href="../privacy.html">隐私政策</a>
+      <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">粤ICP备2023134483号-4</a>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <span>© 2026 Molio 墨流. 基于 MIT 协议开源.</span>
+    <span>Molio 墨流 — 别再和每一个 AI 从零开始：会成长的 AI 知识空间，产出回写入库，数据全在你自己电脑上</span>
+  </div>
+</footer>
+<script src="../auth.js?v=20260824a"></script>
+<script src="../shared.js?v=20260824a"></script>
+<script>
+var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = "https://hm.baidu.com/hm.js?887d065c4dc67dfb05913b2e131a44a3";
+  var s = document.getElementsByTagName("script")[0];
+  s.parentNode.insertBefore(hm, s);
+})();
+</script>
+</body>
+</html>

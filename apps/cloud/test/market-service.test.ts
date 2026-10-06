@@ -382,3 +382,34 @@ test('更新版本：元数据非法（空名/超长/非法图标）→ 400', as
     );
   }
 });
+
+
+test('taxonomy: only admins create; duplicate names reuse id; unknown IDs rejected', async () => {
+  const { svc, users } = makeService({ admins: ['admin@x.com'] });
+  const admin = await users.createActiveUser({ id: 'ta', email: 'admin@x.com', nickname: 'a', now: 1 });
+  const user = await users.createActiveUser({ id: 'tu', email: 'u@x.com', nickname: 'u', now: 1 });
+  await assert.rejects(svc.createTaxon(user.id, { kind: 'category', name: '数学' }), /not_owner/);
+  const cat = await svc.createTaxon(admin.id, { kind: 'category', name: ' 数学 ' });
+  const duplicate = await svc.createTaxon(admin.id, { kind: 'category', name: '数学' });
+  assert.equal(cat.id, duplicate.id);
+  assert.equal((await svc.taxonomy()).categories.filter(c => c.name === '数学').length, 1);
+  await assert.rejects(svc.create(user.id, { ...VALID, categoryId: 'missing' }), /invalid_metadata/);
+});
+
+test('taxonomy: changed category stays pending until successful confirm; omitted fields preserved', async () => {
+  const { svc, users, objects } = makeService({ admins: ['admin@x.com'] });
+  const user = await users.createActiveUser({ id: 'tc', email: 'admin@x.com', nickname: 'a', now: 1 });
+  const cat = await svc.createTaxon(user.id, { kind: 'category', name: '数学' });
+  const c = await svc.create(user.id, { ...VALID, categoryId: cat.id, resourceTypeId: 'knowledge' });
+  c.uploads.forEach(t => objects.set(t.key, 1));
+  await svc.confirm(user.id, c.listingId);
+  assert.equal((await svc.get(c.listingId)).category?.name, '数学');
+  const next = await svc.createTaxon(user.id, { kind: 'category', name: '物理' });
+  await svc.update(user.id, c.listingId, { categoryId: next.id });
+  assert.equal((await svc.get(c.listingId)).category?.id, cat.id);
+  await svc.confirm(user.id, c.listingId);
+  assert.equal((await svc.get(c.listingId)).category?.id, next.id);
+  await svc.update(user.id, c.listingId, { summary: 'new' });
+  await svc.confirm(user.id, c.listingId);
+  assert.equal((await svc.get(c.listingId)).category?.id, next.id);
+});

@@ -1261,106 +1261,81 @@ p { margin-bottom: 0; }
   text-overflow: ellipsis;
 }
 
-/* ---------- Resource list (modern marketplace, ref skillhub) ---------- */
-.rl-page { max-width: 1100px; margin: 0 auto; padding: 40px 24px 72px; }
+/* ---------- Resource catalog（对齐设计原型 docs/prototype/resources-catalog.html） ---------- */
 
-.rl-hero { text-align: center; padding: 48px 0 8px; }
-.rl-hero h1 {
-  font-family: var(--font-body);
-  font-size: 40px;
-  font-weight: 800;
-  letter-spacing: 0.01em;
-  color: var(--ink);
-  line-height: 1.25;
-}
-.rl-hero h1 em { font-style: normal; color: var(--seal); }
-.rl-hero p { margin-top: 14px; font-size: 15px; color: var(--ink-40); }
+/* 内容区容器（原型 .wrap）：1280 居中，≥1600px 放宽到 1440，窄屏收到 100% - 32px。
+   站内导航是 position:fixed，所以这里要自己让出 --nav-h（首页 .hero 的让位不影响本页）。 */
+.rl-page { width: min(1280px, 100% - 64px); margin: 0 auto; padding: calc(var(--nav-h) + 24px) 0 72px; }
 
-/* 胶囊筛选 */
-.rl-filters { display: flex; justify-content: center; gap: 8px; margin: 32px 0 28px; }
-.rl-tab {
-  padding: 8px 20px;
-  border-radius: 999px;
-  border: 1px solid var(--hair);
-  background: #fff;
-  color: var(--ink-60);
-  font-size: 13.5px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.2s var(--ease), color 0.2s var(--ease), border-color 0.2s var(--ease);
-}
-.rl-tab:hover { border-color: var(--rule); color: var(--ink); }
-.rl-tab.active { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+/* 卡片网格（原型 .grid 原为 3 列）：底栏收成「价格 + 购买」后可以上 4 列 */
+.rl-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; }
 
-/* 卡片网格（对齐客户端 .resources-grid：300px 起排、16px 间距） */
-.rl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
-
+/* 商品卡片（原型 .card）—— 列表页与详情页「相关资源」共用同一份标记 */
 .rl-card {
+  position: relative; /* 标题链接的 ::after 以此为定位基准铺满整卡 */
   display: flex;
   flex-direction: column;
-  background: #fff;
-  border: 1px solid rgba(13, 13, 13, 0.06);
-  border-radius: 16px;
-  padding: 20px;
-  box-shadow: 0 1px 3px rgba(13, 13, 13, 0.05);
-  transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease);
+  min-width: 0;
+  /* 站内是纯浅色站，这个暖白没有对应 token，按原型字面量写死 */
+  background: #fffaf4;
+  border: 1px solid var(--hair);
+  border-radius: 4px;
+  padding: 22px;
+  transition: border-color 0.15s var(--ease), transform 0.15s var(--ease);
 }
-/* hover 轻浮起（对齐客户端 -2px 的克制观感，替代原 -4px 大幅跳动） */
-.rl-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(13, 13, 13, 0.08); }
+.rl-card:hover { border-color: #968b78; transform: translateY(-2px); }
 
-.rl-top { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-.rl-icon {
-  flex: none;
-  width: 48px; height: 48px;
-  border-radius: 12px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 26px;
-}
-.rl-titles { flex: 1; min-width: 0; }
-/* 标题完整换行不截断（与客户端 .resources-card__name 一致）：
-   标题区夹在图标与价格胶囊之间宽度有限，任何 clamp 都会丢长标题信息；
-   卡片同排高度由网格拉伸对齐，多一行标题不破坏排版 */
-.rl-name {
-  font-size: 16px;
-  font-weight: 700;
-  line-height: 1.3;
-  color: var(--ink);
-}
-.rl-sub { display: block; margin-top: 2px; font-size: 12px; color: var(--ink-20); }
-.rl-ver { margin-left: 6px; font-style: normal; color: var(--ink-40); font-variant-numeric: tabular-nums; }
-.rl-price { flex: none; font-size: 13px; font-weight: 600; padding: 2px 10px; border-radius: 999px; }
-.rl-price.paid { color: var(--seal); background: rgba(196, 30, 36, 0.08); }
-.rl-price.free { color: #1a7f4e; background: rgba(26, 127, 78, 0.08); }
+/* 元信息条：左「符号 + 分类 / 类型」，右版本 */
+.rl-cardmeta { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 20px; font-size: 11px; color: var(--ink-40); }
+.rl-stamp { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.rl-symbol { flex: none; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-size: 16px; border-radius: 3px; }
+.rl-ver { flex: none; font-style: normal; color: var(--ink-20); font-variant-numeric: tabular-nums; }
+
+.rl-name { margin: 0 0 12px; font-family: var(--font-display); font-size: 19px; font-weight: 700; line-height: 1.55; color: var(--ink); overflow-wrap: anywhere; }
+/* 标题即详情入口（底栏不再单独放「查看详情」）。
+   用「拉伸链接」把它铺满整张卡：语义仍是链接，键盘/中键新开标签都保留，
+   也不用嵌套 <a> 或在购买按钮上拦截冒泡。 */
+.rl-name a { color: inherit; text-decoration: none; }
+.rl-name a:hover { color: var(--seal); }
+.rl-name a::after { content: ''; position: absolute; inset: 0; }
 
 .rl-desc {
-  flex: 1;
+  /* 描述块是 flex item，部分 Chromium 会把它的 display:-webkit-box 做 blockify、
+     令 -webkit-line-clamp 失效；max-height 钉死三行做几何兜底，裁切线永远落在行边界 */
+  flex: none;
   margin: 0 0 16px;
-  font-size: 13.5px;
-  line-height: 1.65;
+  font-size: 13px;
+  line-height: 1.85;
   color: var(--ink-40);
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
+  max-height: calc(3 * 1.85em);
   overflow: hidden;
 }
+.rl-tags { display: flex; flex-wrap: wrap; gap: 7px; margin: 0 0 20px; font-size: 11px; color: var(--ink-40); }
+.rl-tags span { background: var(--paper-2); padding: 1px 7px; border-radius: 2px; }
 
-/* 动作行：左对齐紧凑排列（对齐客户端 .resources-card__actions），不再两端撑满 */
-.rl-actions { display: flex; align-items: center; gap: 14px; }
+/* 底栏（原型 .cardfoot）：上边框 + 价格靠左、动作靠右 */
+.rl-cardfoot { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: auto; padding-top: 16px; border-top: 1px solid var(--hair); }
+.rl-price { flex: none; margin-right: auto; font-family: Georgia, serif; font-size: 20px; color: var(--ink); }
+.rl-price.free { font-family: inherit; font-size: 14px; color: var(--ink-40); }
 .rl-buy {
-  padding: 8px 18px;
+  /* 抬到铺满卡片的那层链接之上，否则点购买会被链接截走 */
+  position: relative;
+  z-index: 1;
+  padding: 7px 14px;
   border: none;
-  border-radius: 999px;
+  border-radius: 3px;
   background: var(--ink);
   color: var(--paper);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
+  white-space: nowrap;
   cursor: pointer;
   transition: background 0.15s var(--ease);
 }
-/* hover 转印章红（对齐客户端 hover 转品牌红），替代原纯黑加深 */
 .rl-buy:hover { background: var(--seal-dark); }
-.rl-detail { font-size: 13px; color: var(--ink-40); text-decoration: none; transition: color 0.15s var(--ease); }
-.rl-detail:hover { color: var(--seal-dark); }
 
 /* 导入说明卡 */
 .rl-guide {
@@ -2924,22 +2899,7 @@ p { margin-bottom: 0; }
   .scatter-flow { margin-top: 56px; }
 }
 
-/* ---------- 资源页 hero 排版细化 (20260828b) ---------- */
-.rl-hero { padding: 64px 0 8px; }
-.rl-hero .rl-sub {
-  max-width: 620px;
-  margin: 20px auto 0;
-  font-size: 15.5px;
-  line-height: 2;
-  color: var(--ink-60);
-}
-.rl-hero .rl-meta {
-  margin-top: 20px;
-  font-size: 12.5px;
-  font-weight: 500;
-  letter-spacing: 2px;
-  color: var(--ink-20);
-}
+/* ---------- 资源页 hero 已按设计原型重排，样式统一放在文件末尾的 catalog 块 ---------- */
 
 /* ---------- 下载分段控件 (20260828c)：OS 选择合并为一个视觉单元 ---------- */
 .dl-seg {
@@ -4118,4 +4078,97 @@ body.home .home-resources-more a:hover {
   body.home .home-hero h1 {
     font-size: clamp(68px, 3.6vw, 104px);
   }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   资源目录页内容区 —— 对齐设计原型 docs/prototype/resources-catalog.html
+   原型用的就是本站这套调色板（--paper / --paper-2 / --ink / --ink-40 / --hair /
+   --seal / --font-display），因此这里不需要新增任何 token。
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── hero：左标题 / 右搜索（原型 .hero） ── */
+.rl-hero { display: grid; grid-template-columns: 1fr 1fr; align-items: end; gap: 48px; padding: 40px 0 30px; }
+.rl-eyebrow { font-size: 11px; letter-spacing: 2px; color: var(--ink-40); }
+.rl-hero h1 { margin: 10px 0 14px; font-family: var(--font-display); font-size: clamp(32px, 4vw, 48px); font-weight: 700; line-height: 1.25; color: var(--ink); }
+.rl-hero h1 span { font-weight: 400; }
+.rl-intro { margin: 0; font-size: 14px; color: var(--ink-40); }
+.rl-sub { margin: 14px 0 0; font-size: 13px; line-height: 1.9; color: var(--ink-40); }
+
+/* 搜索框（原型 .searchbox）：图标内嵌、输入框无边框 */
+.rl-searchbox { display: flex; align-items: center; gap: 10px; padding: 4px 6px 4px 16px; background: #fffaf3; border: 1px solid #bdb3a2; border-radius: 4px; }
+.rl-searchbox svg { flex: none; width: 19px; color: var(--ink-40); }
+.rl-searchbox input { flex: 1; min-width: 0; width: 100%; padding: 11px 0; border: 0; background: none; color: var(--ink); font: inherit; font-size: 15px; outline: none; }
+.rl-searchbox input::placeholder { color: var(--ink-40); }
+.rl-searchbox button { flex: none; padding: 0 6px; font-size: 12px; color: var(--ink-40); background: none; border: 0; white-space: nowrap; cursor: pointer; }
+.rl-searchbox:focus-within { outline: 2px solid var(--ink); outline-offset: 2px; }
+.rl-searchhint { margin-top: 9px; font-size: 12px; color: var(--ink-40); }
+.rl-searchhint button { margin: 0 5px; padding: 0; font-size: 12px; color: inherit; background: none; border: 0; border-bottom: 1px solid var(--hair); cursor: pointer; }
+.rl-searchhint button:hover { color: var(--ink); }
+
+/* ── sticky 分类条（原型 .filters） ── */
+/* 原型里 .filters 是 sticky；这里改成随页面滚走（浮起来会在内容上压出一道硬边） */
+.rl-filters { padding: 12px 0; border-block: 1px solid var(--hair); scroll-margin-top: var(--nav-h); }
+/* 触底加载哨兵：不占视觉空间，只给 IntersectionObserver 一个目标 */
+#rl-sentinel { height: 1px; }
+.rl-filterrow { display: flex; align-items: center; gap: 8px; }
+.rl-quick { display: flex; flex: 1; min-width: 0; gap: 5px; overflow: auto; scrollbar-width: thin; }
+.rl-quick button { flex: none; padding: 7px 15px; font-size: 13px; color: var(--ink-40); background: none; border: 0; border-radius: 3px; white-space: nowrap; cursor: pointer; }
+.rl-quick button:hover { background: var(--paper-2); color: var(--ink); }
+.rl-quick button[aria-pressed=true] { background: var(--ink); color: var(--paper); }
+.rl-quick button small { margin-left: 8px; opacity: .65; }
+.rl-allcats { flex: none; padding: 7px 12px; font-size: 13px; color: var(--ink-40); background: none; border: 1px solid var(--hair); border-radius: 3px; cursor: pointer; }
+.rl-allcats:hover { color: var(--ink); border-color: var(--ink-40); }
+.rl-types { display: flex; align-items: center; gap: 10px; margin-top: 10px; font-size: 12px; color: var(--ink-40); }
+.rl-types select { width: auto; padding: 4px 8px; border: 1px solid var(--hair); border-radius: 3px; background: transparent; color: var(--ink); font-size: 12px; }
+
+/* ── 结果栏（原型 .resultbar） ── */
+.rl-resultbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 22px 0 0; font-size: 13px; color: var(--ink-40); }
+.rl-scope { min-width: 0; }
+.rl-scope strong { color: var(--ink); }
+.rl-clear { flex: none; padding: 0; font-size: 13px; color: inherit; background: none; border: 0; border-bottom: 1px solid var(--hair); cursor: pointer; }
+.rl-clear:hover { color: var(--ink); }
+
+/* ── 分组标题（原型 .sectionhead） ── */
+.rl-section { padding-top: 28px; scroll-margin-top: 160px; }
+.rl-section > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.rl-section h2 { margin: 0; font-family: var(--font-display); font-size: 24px; font-weight: 700; color: var(--ink); }
+.rl-section h2 small { margin-left: 12px; font-family: var(--font-body); font-size: 12px; font-weight: 400; color: var(--ink-40); }
+
+/* ── 空态（原型 .empty） ── */
+.rl-empty { padding: 65px 20px; text-align: center; }
+.rl-empty h2 { font-family: var(--font-display); font-size: 24px; font-weight: 700; color: var(--ink); }
+.rl-empty p { color: var(--ink-40); }
+.rl-empty button { margin: 7px; padding: 10px 20px; font-size: 13px; color: var(--ink-40); background: none; border: 1px solid var(--hair); border-radius: 3px; cursor: pointer; }
+.rl-empty button.primary { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+
+
+/* ── 全部分类弹窗（原型 dialog / .categorylist） ── */
+#rl-dialog { width: min(660px, calc(100% - 32px)); max-height: 85vh; overflow: auto; margin: auto; padding: 28px; border: 1px solid var(--hair); border-radius: 5px; background: var(--paper); color: var(--ink); }
+#rl-dialog::backdrop { background: rgba(13, 13, 13, .4); }
+.rl-dialoghead { display: flex; align-items: center; justify-content: space-between; gap: 15px; margin-bottom: 18px; }
+.rl-dialoghead h2 { margin: 0; font-family: var(--font-display); font-size: 24px; font-weight: 700; color: var(--ink); }
+.rl-dialoghead button { width: 34px; height: 34px; font-size: 23px; line-height: 1; color: var(--ink-40); background: none; border: 0; border-radius: 3px; cursor: pointer; }
+.rl-dialoghead button:hover { background: var(--paper-2); color: var(--ink); }
+.rl-dialogsearch { width: 100%; margin-bottom: 18px; padding: 10px 12px; background: #fffaf4; border: 1px solid var(--hair); border-radius: 3px; font: inherit; font-size: 14px; color: var(--ink); }
+.rl-categorylist { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.rl-categorylist p { grid-column: 1 / -1; margin: 0; color: var(--ink-40); }
+.rl-categorylist button { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 13px; font-size: 13px; color: var(--ink); text-align: left; background: none; border: 1px solid var(--hair); border-radius: 3px; cursor: pointer; }
+.rl-categorylist button:hover { background: var(--paper-2); }
+.rl-categorylist button[aria-pressed=true] { border-color: var(--ink); }
+.rl-categorylist button small { color: var(--ink-40); }
+
+@media (max-width: 1200px) { .rl-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 960px) {
+  .rl-hero { gap: 24px; }
+  .rl-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 620px) {
+  .rl-page { width: calc(100% - 32px); }
+  .rl-hero { grid-template-columns: 1fr; gap: 22px; padding: 28px 0 24px; }
+  .rl-hero h1 { font-size: 34px; }
+  .rl-grid { grid-template-columns: minmax(0, 1fr); }
+  .rl-card { padding: 20px; }
+  .rl-resultbar { align-items: flex-start; }
+  .rl-section > header { flex-wrap: wrap; }
+  .rl-categorylist { grid-template-columns: 1fr; }
 }
