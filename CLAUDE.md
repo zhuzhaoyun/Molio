@@ -28,7 +28,7 @@ pnpm dev:web      # web only
 pnpm dev:desktop  # daemon + web + electron (需确保 5173/3100 端口未被占用)
 pnpm dev:cloud    # cloud auth service only (tsx :3200, 无 DATABASE_URL 自动内存模式)
 pnpm build        # build all packages
-pnpm test         # run cloud + daemon + desktop tests (node:test)
+pnpm test         # run cloud + daemon + desktop + web tests (node:test)
 pnpm test:e2e     # run web E2E tests (Playwright, 需先 pnpm dev)
 pnpm typecheck    # typecheck all packages
 ```
@@ -166,7 +166,7 @@ apps/daemon/src/core/RunManager.ts, conversations/run-starter.ts, db.ts
 
 | 层 | 工具 | 位置 | 触发时机 |
 |---|---|---|---|
-| Unit | `node:test` | `apps/daemon/test/**`, `apps/desktop/test/**` | 每次 PR (win + mac) |
+| Unit | `node:test` | `apps/daemon/test/**`, `apps/desktop/test/**`, `apps/web/test/**` + `apps/web/src/**/*.test.ts` | 每次 PR (win + mac) |
 | E2E | Playwright | `apps/web/e2e/*.spec.ts` | 每次 PR (ubuntu) — affected + P0 |
 | E2E Full | Playwright | 同上 | nightly 03:00 UTC + manual |
 | Release Smoke | inline (release.yml) | `apps/desktop/dist/win-unpacked` 等 | tag 触发 |
