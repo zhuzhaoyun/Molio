@@ -413,7 +413,7 @@ const zh: Record<string, string> = {
   'settings.officialSite': '官方网站',
   'settings.changelog': '更新日志',
   'settings.github': 'GitHub',
-  'settings.githubHint': '在 GitHub 上给 Molio 点个 Star',
+  'settings.starCta': '如果 Molio 帮到了你，去 GitHub 点个 Star，让更多人发现它',
   'settings.tabGeneral': '通用',
   'settings.tabRuntimes': '运行时',
   'settings.tabSkills': '技能',

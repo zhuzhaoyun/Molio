@@ -206,6 +206,27 @@ export function GlobeIcon({ size = 16, className }: IconProps) {
 }
 
 /**
+ * 五角星 —— 「在 GitHub 点个 Star」。
+ *
+ * 与本文件的线条风格不同，走实心填充：星形靠内凹的五个角成形，描边会把它画成一圈
+ * 多边形轮廓，失去「星」的瞬间识别。颜色由父级决定（卡片页脚用 --amber）。
+ */
+export function StarIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      className={className}
+      aria-hidden
+    >
+      <path d="M12 2.5 14.29 8.85 21.04 9.06 15.71 13.21 17.58 19.69 12 15.9 6.42 19.69 8.29 13.21 2.96 9.06 9.71 8.85Z" />
+    </svg>
+  );
+}
+
+/**
  * GitHub 品牌标记 —— 外链到仓库（顺手点 Star）。
  *
  * 品牌标记用实心填充而非本文件的线条风格：GitHub 的 Octocat 轮廓靠负空间成形，

@@ -5,7 +5,14 @@ import {
   onCheckResult,
 } from './updater-state';
 import { useI18n } from '../../i18n';
-import { FileIcon, GitHubIcon, GlobeIcon, RefreshIcon } from '../icons';
+import {
+  ExternalLinkIcon,
+  FileIcon,
+  GitHubIcon,
+  GlobeIcon,
+  RefreshIcon,
+  StarIcon,
+} from '../icons';
 
 // 品牌 logo（public/images/main.png）—— 与 HomePage 同一副本
 const LOGO_MAIN_URL = `${import.meta.env.BASE_URL}images/main.png`;
@@ -71,7 +78,6 @@ export function UpdateSettings() {
             href={REPO_URL}
             target="_blank"
             rel="noopener noreferrer"
-            title={t('settings.githubHint')}
             data-testid="update-link-github"
           >
             <GitHubIcon size={14} />
@@ -105,6 +111,22 @@ export function UpdateSettings() {
             </span>
           )}
         </div>
+
+        {/*
+         * Star 引导条：形态取自卡片页脚而非正文中部 —— 「顺便帮个忙」应该排在读完之后，
+         * 不该插在版本号和按钮之间打断主任务。整条即链接（比只让末尾几个字可点更好点中）。
+         */}
+        <a
+          className="settings-update-card__star"
+          href={REPO_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          data-testid="update-star-cta"
+        >
+          <StarIcon size={15} className="settings-update-card__star-icon" />
+          {t('settings.starCta')}
+          <ExternalLinkIcon size={13} className="settings-update-card__star-go" />
+        </a>
       </div>
 
       {result.status === 'available' && result.downloading && (

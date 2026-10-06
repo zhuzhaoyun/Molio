@@ -164,6 +164,26 @@ test.describe('Update card', () => {
     await expect(page.locator('.settings-update-card__logo')).toBeVisible();
   });
 
+  test('star CTA is a full footer row, not a fourth action button', async ({ page }) => {
+    await openSettings(page);
+
+    const star = page.locator('[data-testid="update-star-cta"]');
+    await expect(star).toBeVisible();
+    await expect(star).toHaveAttribute('href', REPO_URL);
+    await expect(star).toHaveAttribute('target', '_blank');
+    await expect(star).toHaveAttribute('rel', /noopener/);
+    await expect(star).toHaveText(/点个 Star|star it on GitHub/);
+
+    // 版式意图：引导条要自成一行、铺满卡片宽度。混进操作区就成了第二个 CTA，
+    // 挤在同一行则不叫「顺便」。这两条断言就是钉住这个意图。
+    const actions = await page.locator('.settings-update-card__actions').boundingBox();
+    const starBox = await star.boundingBox();
+    expect(actions).not.toBeNull();
+    expect(starBox).not.toBeNull();
+    expect(starBox!.y).toBeGreaterThanOrEqual(actions!.y + actions!.height);
+    expect(starBox!.width).toBeGreaterThan(actions!.width);
+  });
+
   test('changelog deep-links to the tag once a version is known', async ({ page }) => {
     await stubUpdater(page, {
       ok: true, status: 'downloaded', currentVersion: '0.3.59', latestVersion: '0.3.60',

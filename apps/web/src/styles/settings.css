@@ -232,6 +232,48 @@
   color: var(--text-faint);
 }
 
+/*
+ * Star 引导条 —— 整行铺满（flex-basis:100% 把它挤到第二行），压一条分隔线。
+ * 分隔线是这个设计的要点：有它，这条读起来是「页脚」，不与上方主动作争注意力；
+ * 没它，一句请求就会混进操作区，变成第二个 CTA。
+ */
+.settings-update-card__star {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-basis: 100%;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: color 120ms ease;
+}
+
+.settings-update-card__star:hover {
+  color: var(--text);
+}
+
+.settings-update-card__star:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* 星标走 amber（暖金）：星是通用符号，且要与主动作的 accent 拉开，不争同一个色 */
+.settings-update-card__star-icon {
+  color: var(--amber);
+  flex-shrink: 0;
+}
+
+/*
+ * 外链箭头跟随文字色（不再单独调浅）：它比文字还浅时读起来是渲染污点而非「会跳走」的
+ * 提示，反而削弱可点击感。父级改色时它自动跟随。
+ */
+.settings-update-card__star-go {
+  flex-shrink: 0;
+}
+
 /* ── Progress Bar ── */
 .settings-progress {
   position: relative;
@@ -412,6 +454,12 @@
   .settings-update-card {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  /* 卡片转为纵向后 flex-basis 作用于主轴（高度），改用 width 铺满 */
+  .settings-update-card__star {
+    flex-basis: auto;
+    width: 100%;
   }
 
   .update-toast {
