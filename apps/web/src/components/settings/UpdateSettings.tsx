@@ -91,7 +91,7 @@ export function UpdateSettings() {
             data-testid="update-link-site"
           >
             <GlobeIcon size={14} />
-            {t('settings.officialSite')}
+            {t('settings.homepage')}
           </a>
           <a
             className="settings-update-card__link"

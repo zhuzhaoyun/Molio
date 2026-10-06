@@ -240,15 +240,21 @@
  * Star 引导条 —— 整行铺满（flex-basis:100% 把它挤到第二行），压一条分隔线。
  * 分隔线是这个设计的要点：有它，这条读起来是「页脚」，不与上方主动作争注意力；
  * 没它，一句请求就会混进操作区，变成第二个 CTA。
+ *
+ * align-items 是 flex-start 而非 center：窄屏下这句话会折成两行，center 会把星标和
+ * 外链箭头摆到两行的中缝上——星悬在左边空白里，像是谁掉在那儿的。图标属于**第一行**，
+ * 所以按第一行对齐，再用 margin-top 把各自光学居中到那一行里。
+ * 行高这里写死 1.5（与全局一致），下面的 margin 数值是按 1.5×13px=19.5px 算的。
  */
 .settings-update-card__star {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   flex-basis: 100%;
   padding-top: 12px;
   border-top: 1px solid var(--border);
   font-size: 13px;
+  line-height: 1.5;
   color: var(--text-muted);
   text-decoration: none;
   transition: color 120ms ease;
@@ -268,6 +274,8 @@
 .settings-update-card__star-icon {
   color: var(--amber);
   flex-shrink: 0;
+  /* (19.5 - 15) / 2 —— 在一行文字里光学居中 */
+  margin-top: 2px;
 }
 
 /*
@@ -276,6 +284,8 @@
  */
 .settings-update-card__star-go {
   flex-shrink: 0;
+  /* (19.5 - 13) / 2 */
+  margin-top: 3px;
 }
 
 /* ── Progress Bar ── */
